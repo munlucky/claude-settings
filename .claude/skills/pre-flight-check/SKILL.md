@@ -1,0 +1,42 @@
+---
+name: pre-flight-check
+description: Checks essential information and project status before starting a task.
+---
+
+# Pre-Flight Check Skill
+
+**역할**: 작업 시작 전에 필수 정보와 프로젝트 상태를 점검해 누락을 줄입니다.
+
+## 입력
+- 기능명/브랜치명 (선택)
+- 필수 문서 경로: CLAUDE.md, context.md 등
+
+## 체크 항목
+- 화면 정의서 버전/디자인 산출물 존재 여부
+- API 스펙 확보 여부
+- 유사 기능 참조 여부
+- git 상태/브랜치, 빌드 상태
+- context.md 최신 여부, pending-questions.md 미해결 항목
+
+## 출력 (예시)
+```markdown
+# 사전 체크 결과
+
+## 필수 정보
+✅ 화면 정의서: v3 (YYYY-MM-DD)
+✅ API 스펙: 초안 확보
+⚠️  유사 기능 참조: 찾지 못함
+
+## 프로젝트 상태
+✅ git 상태: clean
+✅ 브랜치: feature/{feature-name}
+✅ 빌드 상태: 성공
+
+## 문서
+✅ CLAUDE.md: 최신
+⚠️  context.md: 없음 (생성 필요)
+
+## 권장 액션
+1. [HIGH] context.md 생성 (ContextBuilder Agent)
+2. [MEDIUM] 디자인 산출물 확인 (design-spec-extractor 호출)
+```

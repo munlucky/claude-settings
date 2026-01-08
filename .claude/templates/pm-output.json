@@ -1,0 +1,25 @@
+{
+  "taskType": "feature | modification | bugfix | refactor",
+  "complexity": "simple | medium | complex",
+  "phase": "planning | implementation | integration | verification",
+  "estimatedTime": "1h",
+  "estimatedFiles": 1,
+  "riskLevel": "low | medium | high",
+  "requiredAgents": [
+    "RequirementsAnalyzer",
+    "ContextBuilder",
+    "ImplementationAgent",
+    "VerificationAgent"
+  ],
+  "missingInfo": [
+    {
+      "category": "Screen Definition",
+      "priority": "HIGH",
+      "question": "Question text...",
+      "reason": "Why needed"
+    }
+  ],
+  "recommendations": [
+    "Recommendation 1"
+  ]
+}
