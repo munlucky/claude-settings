@@ -14,6 +14,26 @@ description: Analyzes user requests to clarify requirements and drafts prelimina
 - 디자인 스펙(있다면)
 - 유사 기능 코드 경로
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
+
+### 🎯 토큰 효율적 입력 (Token-Efficient Input)
+PM Agent로부터 받는 최소 페이로드 (YAML):
+```yaml
+task: "작업 1줄 요약"
+userRequest: "원본 요청 (50자 이내)"
+projectPatterns:
+  - "entity-request 분리"
+  - "axios 래퍼"
+outputFile: ".claude/features/xxx/agreement.md"
+designSpecFile: ".claude/features/xxx/design-spec.md"  # 있는 경우
+similarFeaturePaths:  # 있는 경우
+  - "src/pages/similar/*.tsx"
+```
+
+**원칙**:
+- 프로젝트 규칙 문서 경로만 받고, 필요한 섹션만 선택적 Read
+- 디자인 스펙 파일도 경로만, 내용은 직접 Read
+- 유사 기능은 파일 경로 목록만 (내용 X)
+- 패턴은 키워드만 (상세 설명 X)
 ## Outputs
 - 사전 합의서: `.claude/docs/agreements/{feature-name}-agreement.md`
 - 미해결 질문(필요 시): `.claude/docs/tasks/{feature-name}/pending-questions.md`

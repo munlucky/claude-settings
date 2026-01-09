@@ -11,6 +11,60 @@
 - Implementation은 즉시 코딩을 시작합니다.
 - 동기화(Sync)는 Validator가 완료된 후 수행됩니다.
 
+### 🎯 토큰 중복 방지 전략
+**문제**: Validator와 Implementation을 병렬로 실행하면 같은 컨텍스트가 2번 로드됨
+**해결**:
+1. **공통 스냅샷 1회 준비**:
+   - PM Agent가 병렬 실행 전 단일 JSON 스냅샷 생성
+   - 두 에이전트 모두 이 스냅샷을 참조
+2. **역할별 최소 정보만 추가**:
+   - Validator: `"mode": "readonly"` + 검토 대상 파일 경로만
+   - Implementation: `"mode": "write"` + 구현 대상 파일 경로만
+3. **파일 내용은 포함 안 함**:
+   - 스냅샷에는 파일 경로만 (`src/pages/xxx/*.tsx`)
+   - 각 에이전트가 필요시 직접 Read 호출
+4. **이전 단계 출력 파일 경로만 전달**:
+   - `agreement.md`, `context.md` 경로만 제공
+   - 파일 내용은 에이전트가 필요시 읽음
+
+**예시 - 공통 스냅샷 (YAML)**:
+```yaml
+featureName: "배치 관리"
+agreementFile: ".claude/features/batch/agreement.md"
+contextFile: ".claude/features/batch/context.md"
+patterns:
+  entityRequest: "entity와 request 타입 분리"
+  apiProxy: "axios 래퍼 패턴"
+relevantFilePaths:
+  - "src/pages/batch/*.tsx"
+  - "src/api/batch.ts"
+  - "src/types/batch/*.ts"
+```
+
+**예시 - Validator 추가 정보 (YAML)**:
+```yaml
+mode: "readonly"
+reviewFocus:
+  - "엣지 케이스"
+  - "타입 안정성"
+  - "에러 처리"
+```
+
+**예시 - Implementation 추가 정보 (YAML)**:
+```yaml
+mode: "write"
+targetFiles:
+  - "src/pages/batch/BatchListPage.tsx"
+  - "src/api/batch.ts"
+```
+
+**토큰 절약 효과**:
+- 공통 정보 중복 제거: ~50% 절약
+- 파일 내용 지연 로드: ~30% 절약
+- 역할별 필요 정보만: ~20% 절약
+- YAML 사용 (vs JSON): ~20-30% 절약
+- **총 예상 절약**: 병렬 실행 시 ~50-70% 토큰 절감
+
 ## 실행 스크립트 로직 (Execution Script Logic)
 ```bash
 # Context Builder 완료 후

@@ -12,6 +12,25 @@ description: Executes automated verification (typecheck, build, lint) and summar
 ## Inputs
 - staged 변경 사항
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
+
+### 🎯 토큰 효율적 입력 (Token-Efficient Input)
+PM Agent로부터 받는 최소 페이로드 (YAML):
+```yaml
+agreementFile: ".claude/features/xxx/agreement.md"
+implementedFiles:
+  - "src/pages/xxx/Page.tsx"
+  - "src/api/xxx.ts"
+verificationCommands:
+  - "npm run typecheck"
+  - "npm run build"
+outputFile: ".claude/features/xxx/verification-result.md"
+```
+
+**원칙**:
+- 구현된 파일 경로 목록만 받음 (변경 내용은 git diff로 직접 확인)
+- agreement.md 경로만 (내용은 필요시 Read)
+- 검증 명령어만 받고 직접 실행
+- 프로젝트 규칙은 필요시 선택적 Read
 ## Outputs
 - 검증 결과 요약
 - 결과 파일: `.claude/verification-results-YYYYMMDD-HHMMSS.txt`

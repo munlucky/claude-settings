@@ -12,6 +12,22 @@ description: Creates implementation plans (context.md) based on preliminary agre
 - 사전 합의서 (`.claude/docs/agreements/{feature-name}-agreement.md`)
 - 유사 기능 코드 경로
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
+
+### 🎯 토큰 효율적 입력 (Token-Efficient Input)
+PM Agent로부터 받는 최소 페이로드 (YAML):
+```yaml
+agreementFile: ".claude/features/xxx/agreement.md"
+relevantFilePaths:
+  - "src/pages/similar/*.tsx"
+  - "src/api/similar.ts"
+outputFile: ".claude/features/xxx/context.md"
+```
+
+**원칙**:
+- agreement.md 경로만 받고, 내용은 직접 Read
+- 유사 기능 파일 목록만 받음 (내용 X)
+- 필요한 파일만 선택적으로 Read
+- 프로젝트 규칙 문서도 필요한 섹션만 읽음
 ## Outputs
 - 구현 계획 문서: `.claude/docs/tasks/{feature-name}/context.md`
 ## Workflow
