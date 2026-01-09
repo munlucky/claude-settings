@@ -45,33 +45,24 @@ description: Synchronizes documentation across agents to reflect planning change
 
 ## 🔧 입력 형식
 
-### JSON 형식 (권장)
+### YAML 형식 (권장)
 
-```json
-{
-  "feature_name": "batch-management",
-  "updates": [
-    {
-      "file": "context.md",
-      "section": "Phase 1",
-      "action": "append",
-      "content": "날짜 입력 검증 강화: 과거 30일 제한 추가"
-    },
-    {
-      "file": "pending-questions.md",
-      "action": "add_question",
-      "priority": "MEDIUM",
-      "content": "에러 메시지를 Toast로 변경할까요?",
-      "context": "사용자 경험 개선"
-    },
-    {
-      "file": "flow-report.md",
-      "action": "update_phase",
-      "phase": "Planning",
-      "status": "completed"
-    }
-  ]
-}
+```yaml
+feature_name: batch-management
+updates:
+  - file: context.md
+    section: Phase 1
+    action: append
+    content: "날짜 입력 검증 강화: 과거 30일 제한 추가"
+  - file: pending-questions.md
+    action: add_question
+    priority: MEDIUM
+    content: "에러 메시지를 Toast로 변경할까요?"
+    context: "사용자 경험 개선"
+  - file: flow-report.md
+    action: update_phase
+    phase: Planning
+    status: completed
 ```
 
 ### 수동 트리거 (사용자가 직접 호출)
@@ -90,13 +81,11 @@ doc-sync 시작: batch-management
 ### 1. context.md
 
 #### 액션: `append` (섹션 끝에 추가)
-```json
-{
-  "file": "context.md",
-  "section": "Phase 1",
-  "action": "append",
-  "content": "날짜 입력 검증 강화: 과거 30일 제한 추가"
-}
+```yaml
+file: context.md
+section: Phase 1
+action: append
+content: "날짜 입력 검증 강화: 과거 30일 제한 추가"
 ```
 
 **결과**:
@@ -111,24 +100,20 @@ doc-sync 시작: batch-management
 ```
 
 #### 액션: `update` (특정 내용 수정)
-```json
-{
-  "file": "context.md",
-  "section": "위험 및 대안",
-  "action": "update",
-  "old_content": "확률: Medium",
-  "new_content": "확률: Low (API 스펙 확정 완료)"
-}
+```yaml
+file: context.md
+section: "위험 및 대안"
+action: update
+old_content: "확률: Medium"
+new_content: "확률: Low (API 스펙 확정 완료)"
 ```
 
 #### 액션: `prepend` (섹션 앞에 추가)
-```json
-{
-  "file": "context.md",
-  "section": "변경 대상 파일",
-  "action": "prepend",
-  "content": "⚠️  Validator 권장사항 반영됨 (2025-12-20)"
-}
+```yaml
+file: context.md
+section: "변경 대상 파일"
+action: prepend
+content: "⚠️  Validator 권장사항 반영됨 (2025-12-20)"
 ```
 
 ---
@@ -136,15 +121,17 @@ doc-sync 시작: batch-management
 ### 2. pending-questions.md
 
 #### 액션: `add_question` (질문 추가)
-```json
-{
-  "file": "pending-questions.md",
-  "action": "add_question",
-  "priority": "HIGH",
-  "content": "과거 날짜 허용 범위는 어디까지인가요?",
-  "context": "Validator 피드백: 과거 30일 제한 권장",
-  "options": ["30일", "60일", "90일", "무제한"]
-}
+```yaml
+file: pending-questions.md
+action: add_question
+priority: HIGH
+content: "과거 날짜 허용 범위는 어디까지인가요?"
+context: "Validator 피드백: 과거 30일 제한 권장"
+options:
+  - 30일
+  - 60일
+  - 90일
+  - 무제한
 ```
 
 **결과**:
@@ -163,14 +150,12 @@ doc-sync 시작: batch-management
 ```
 
 #### 액션: `resolve_question` (질문 해결)
-```json
-{
-  "file": "pending-questions.md",
-  "action": "resolve_question",
-  "question_id": 1,
-  "resolution": "30일로 결정",
-  "resolved_at": "2025-12-20 09:30"
-}
+```yaml
+file: pending-questions.md
+action: resolve_question
+question_id: 1
+resolution: "30일로 결정"
+resolved_at: "2025-12-20 09:30"
 ```
 
 **결과**:
@@ -181,12 +166,10 @@ doc-sync 시작: batch-management
 ```
 
 #### 액션: `clear` (모든 질문 제거 - Finalize 시)
-```json
-{
-  "file": "pending-questions.md",
-  "action": "clear",
-  "archive": true
-}
+```yaml
+file: pending-questions.md
+action: clear
+archive: true
 ```
 
 ---
@@ -194,14 +177,12 @@ doc-sync 시작: batch-management
 ### 3. flow-report.md
 
 #### 액션: `update_phase` (Phase 상태 업데이트)
-```json
-{
-  "file": "flow-report.md",
-  "action": "update_phase",
-  "phase": "Planning",
-  "status": "completed",
-  "timestamp": "2025-12-20 09:25"
-}
+```yaml
+file: flow-report.md
+action: update_phase
+phase: Planning
+status: completed
+timestamp: "2025-12-20 09:25"
 ```
 
 **결과**:
@@ -213,14 +194,12 @@ doc-sync 시작: batch-management
 ```
 
 #### 액션: `add_event` (이벤트 추가)
-```json
-{
-  "file": "flow-report.md",
-  "action": "add_event",
-  "event": "Validator 피드백 반영",
-  "description": "context.md에 날짜 검증 강화 추가",
-  "timestamp": "2025-12-20 09:25"
-}
+```yaml
+file: flow-report.md
+action: add_event
+event: "Validator 피드백 반영"
+description: "context.md에 날짜 검증 강화 추가"
+timestamp: "2025-12-20 09:25"
 ```
 
 **결과**:
@@ -311,52 +290,35 @@ doc-sync 시작: batch-management
 ### 시나리오 1: Codex Validator 피드백 자동 반영
 
 **Validator 출력**:
-```json
-{
-  "status": "pass_with_changes",
-  "auto_apply": [
-    {
-      "priority": "HIGH",
-      "target": "context.md",
-      "section": "Phase 1",
-      "content": "날짜 입력 검증 강화: 과거 30일 제한 추가"
-    }
-  ],
-  "user_confirm": [
-    {
-      "priority": "MEDIUM",
-      "content": "에러 메시지를 Toast로 변경 권장"
-    }
-  ]
-}
+```yaml
+status: pass_with_changes
+auto_apply:
+  - priority: HIGH
+    target: context.md
+    section: Phase 1
+    content: "날짜 입력 검증 강화: 과거 30일 제한 추가"
+user_confirm:
+  - priority: MEDIUM
+    content: "에러 메시지를 Toast로 변경 권장"
 ```
 
 **Doc Sync 실행**:
-```json
-{
-  "feature_name": "batch-management",
-  "updates": [
-    {
-      "file": "context.md",
-      "section": "Phase 1",
-      "action": "append",
-      "content": "### Validator 피드백 (HIGH)\n- 날짜 입력 검증 강화: 과거 30일 제한 추가"
-    },
-    {
-      "file": "pending-questions.md",
-      "action": "add_question",
-      "priority": "MEDIUM",
-      "content": "에러 메시지를 Toast로 변경할까요?",
-      "context": "Validator 권장사항"
-    },
-    {
-      "file": "flow-report.md",
-      "action": "add_event",
-      "event": "Validator 피드백 반영",
-      "description": "context.md 업데이트 + pending-questions 1개 추가"
-    }
-  ]
-}
+```yaml
+feature_name: batch-management
+updates:
+  - file: context.md
+    section: Phase 1
+    action: append
+    content: "### Validator 피드백 (HIGH)\n- 날짜 입력 검증 강화: 과거 30일 제한 추가"
+  - file: pending-questions.md
+    action: add_question
+    priority: MEDIUM
+    content: "에러 메시지를 Toast로 변경할까요?"
+    context: "Validator 권장사항"
+  - file: flow-report.md
+    action: add_event
+    event: "Validator 피드백 반영"
+    description: "context.md 업데이트 + pending-questions 1개 추가"
 ```
 
 **결과**:
@@ -368,43 +330,31 @@ doc-sync 시작: batch-management
 ### 시나리오 2: Requirements Completion Check 후 재실행
 
 **PM Agent Completion Check 결과**:
-```json
-{
-  "status": "incomplete",
-  "incomplete_items": [
-    "에러 처리 Alert 추가",
-    "메뉴/권한 설정"
-  ]
-}
+```yaml
+status: incomplete
+incomplete_items:
+  - "에러 처리 Alert 추가"
+  - "메뉴/권한 설정"
 ```
 
 **Doc Sync 실행**:
-```json
-{
-  "feature_name": "batch-management",
-  "updates": [
-    {
-      "file": "pending-questions.md",
-      "action": "add_question",
-      "priority": "HIGH",
-      "content": "에러 처리 Alert 구현 필요",
-      "context": "Requirements Completion Check: 사전 합의서 미완료 항목"
-    },
-    {
-      "file": "pending-questions.md",
-      "action": "add_question",
-      "priority": "HIGH",
-      "content": "메뉴/권한 설정 필요",
-      "context": "context.md Phase 3 체크포인트 미완료"
-    },
-    {
-      "file": "flow-report.md",
-      "action": "update_phase",
-      "phase": "Implementation",
-      "status": "재실행 필요"
-    }
-  ]
-}
+```yaml
+feature_name: batch-management
+updates:
+  - file: pending-questions.md
+    action: add_question
+    priority: HIGH
+    content: "에러 처리 Alert 구현 필요"
+    context: "Requirements Completion Check: 사전 합의서 미완료 항목"
+  - file: pending-questions.md
+    action: add_question
+    priority: HIGH
+    content: "메뉴/권한 설정 필요"
+    context: "context.md Phase 3 체크포인트 미완료"
+  - file: flow-report.md
+    action: update_phase
+    phase: Implementation
+    status: "재실행 필요"
 ```
 
 **결과**:
@@ -416,29 +366,20 @@ doc-sync 시작: batch-management
 ### 시나리오 3: Documentation Finalize 전 최종 동기화
 
 **Documentation Agent 요청**:
-```json
-{
-  "feature_name": "batch-management",
-  "updates": [
-    {
-      "file": "context.md",
-      "section": "최종 상태",
-      "action": "append",
-      "content": "- [x] 모든 Phase 완료\n- [x] 검증 통과\n- [x] 문서화 완료"
-    },
-    {
-      "file": "pending-questions.md",
-      "action": "clear",
-      "archive": true
-    },
-    {
-      "file": "flow-report.md",
-      "action": "update_phase",
-      "phase": "Documentation",
-      "status": "completed"
-    }
-  ]
-}
+```yaml
+feature_name: batch-management
+updates:
+  - file: context.md
+    section: "최종 상태"
+    action: append
+    content: "- [x] 모든 Phase 완료\n- [x] 검증 통과\n- [x] 문서화 완료"
+  - file: pending-questions.md
+    action: clear
+    archive: true
+  - file: flow-report.md
+    action: update_phase
+    phase: Documentation
+    status: completed
 ```
 
 **결과**:
