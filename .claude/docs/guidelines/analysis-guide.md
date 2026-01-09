@@ -46,13 +46,60 @@
 **조건**: 1-2개 파일, 100줄 미만, 1시간 이내
 **에이전트 시퀀스**: Implementation → Verification
 
+**전달 컨텍스트 (최소화, YAML 사용)**:
+```yaml
+task: "작업 1줄 요약"
+targetFiles:
+  - "file1.ts"
+userRequest: "원본 요청 텍스트 (50자 이내)"
+```
+- **토큰 절약**: 파일 내용 전달 X, 경로만 전달 → 에이전트가 직접 Read
+- **YAML 사용**: JSON 대비 20-30% 토큰 절감 (따옴표, 중괄호 제거)
+
 ### medium (중간)
 **조건**: 3-5개 파일, 100-300줄, 1-3시간
 **에이전트 시퀀스**: Requirements → Context → Implementation → Verification → Documentation
 
+**전달 컨텍스트 (체인 방식, YAML 사용)**:
+- Requirements → `agreement.md` 생성
+- Context → `agreement.md` 경로 받음, `context.md` 생성
+- Implementation → `context.md` 경로 + 핵심 제약 3-5개만:
+```yaml
+contextFile: ".claude/features/xxx/context.md"
+coreConstraints:
+  - "페이징 필수"
+  - "엔티티-요청 분리"
+targetPattern: "src/pages/xxx/*.tsx"
+```
+- **토큰 절약**: 각 에이전트는 이전 출력물 경로만 받고, 필요시 해당 파일 Read
+- **YAML 효과**: JSON 대비 구조가 간결해 토큰 20-30% 절감
+
 ### complex (복잡)
 **조건**: 6개 이상 파일, 300줄 이상, 3시간 이상
 **에이전트 시퀀스**: Requirements → Context → CodexValidator → Implementation → TypeSafety → Verification → Documentation
+
+**전달 컨텍스트 (병렬 실행 고려, YAML 사용)**:
+- Requirements → `agreement.md` 생성
+- Context → `agreement.md` + `context.md` 생성
+- **병렬 실행 시점** (Validator || Implementation):
+  - 공통 스냅샷 1회 준비:
+```yaml
+agreementFile: ".claude/features/xxx/agreement.md"
+contextFile: ".claude/features/xxx/context.md"
+codebasePatterns:
+  entityRequest: "src/types/entities vs src/types/requests"
+  apiProxy: "axios 래퍼 사용 중"
+relevantFiles:
+  - "src/pages/xxx/*.tsx"
+  - "src/api/xxx.ts"
+  - "src/types/xxx/*.ts"
+```
+  - Validator: 스냅샷 + 검토 대상 파일 경로만 받음 (읽기 전용)
+  - Implementation: 스냅샷 + 구현 대상 파일 경로만 받음 (쓰기 가능)
+- **토큰 절약**:
+  - 공통 정보는 YAML 1회만 준비 (JSON 대비 20-30% 적음)
+  - 각 에이전트는 필요한 파일만 선택적 Read
+  - 파일 내용은 스냅샷에 포함 X
 
 ## 3. 단계 판단 (Phase Determination)
 ### Planning (계획)

@@ -29,6 +29,27 @@ description: Extracts UI/feature requirements from design assets (Figma, PDF) in
    - 예: `src/app/service/cs/migration/page.tsx`
 4. **기존 design-spec.md 존재 여부**
    - 존재하면 업데이트, 없으면 신규 생성
+
+### 🎯 토큰 효율적 입력 (Token-Efficient Input)
+PM Agent로부터 받는 최소 페이로드 (YAML):
+```yaml
+featureName: "batch-management"
+designFiles:
+  - ".claude/docs/디채오늘의문장/배치관리_v3.pdf"
+  - ".claude/docs/디채오늘의문장/batch-ui-export.css"
+similarScreenPaths:  # 선택
+  - "src/app/service/cs/migration/page.tsx"
+existingDesignSpec: ".claude/features/batch/design-spec.md"  # 있으면
+outputFiles:
+  designSpec: ".claude/features/batch/design-spec.md"
+  pendingQuestions: ".claude/features/batch/pending-questions.md"
+```
+
+**원칙**:
+- 디자인 파일 경로만 전달, Read 도구로 직접 읽음
+- 유사 화면 경로만 (코드 내용 X)
+- 기존 design-spec.md도 경로만 (업데이트 시 Read)
+- 프로젝트 규칙은 필요시 선택적 참조
 ---
 ## 작업 절차
 ### Step 1: 입력 파일 확인 및 읽기 (5분)

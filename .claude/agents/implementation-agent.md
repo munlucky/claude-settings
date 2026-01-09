@@ -13,6 +13,25 @@ description: Implements code changes based on the plan (context.md), following p
 - 사전 합의서
 - 유사 기능 코드
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
+
+### 🎯 토큰 효율적 입력 (Token-Efficient Input)
+PM Agent로부터 받는 최소 페이로드 (YAML):
+```yaml
+mode: "write"
+contextFile: ".claude/features/xxx/context.md"
+targetFiles:
+  - "src/pages/xxx/Page.tsx"
+  - "src/api/xxx.ts"
+patterns:
+  entityRequest: "타입 분리 패턴"
+  apiProxy: "axios 래퍼 패턴"
+```
+
+**원칙**:
+- 파일 경로만 받고, 내용은 직접 Read
+- context.md 전체가 아닌 경로만 받음
+- 필요한 패턴 문서도 경로로만 받고 선택적 로드
+- 유사 기능 코드는 "파일명:라인" 참조로 받음
 ## Outputs
 - 구현된 코드 변경 사항
 - 단계별 커밋 메시지(필요 시)

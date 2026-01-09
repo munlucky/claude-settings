@@ -13,6 +13,24 @@ description: Documents task results, updates context/session logs, and finalizes
 - 변경 내역/커밋 로그
 - 검증 결과
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
+
+### 🎯 토큰 효율적 입력 (Token-Efficient Input)
+PM Agent로부터 받는 최소 페이로드 (YAML):
+```yaml
+mode: "update"  # or "finalize"
+contextFile: ".claude/features/xxx/context.md"
+verificationResultFile: ".claude/features/xxx/verification-result.md"
+sessionLogFile: ".claude/features/xxx/session-logs/day-2026-01-10.md"
+commitHashes:  # git log로 직접 확인 가능하지만, 빠른 참조용
+  - "7b0072e"
+  - "c07d9b6"
+```
+
+**원칙**:
+- 파일 경로만 전달, 내용은 직접 Read
+- git log, git diff 등은 직접 실행
+- mode가 "finalize"인 경우만 효율성 리포트 생성
+- 커밋 해시는 참조용 (실제 내용은 git show로 확인)
 ## Outputs
 - 구현 계획 업데이트: `.claude/docs/tasks/{feature-name}/context.md`
 - 세션 로그: `.claude/docs/tasks/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
