@@ -42,16 +42,21 @@ usage() {
 사용법: $0 [OPTIONS]
 
 옵션:
-  --no-backup        기존 .claude 백업하지 않음
-  --dry-run          실제 변경 없이 미리보기만
-  --force            확인 없이 강제 실행
-  --exclude PATTERN  특정 파일/디렉토리 제외 (예: --exclude "PROJECT.md")
-  -h, --help         도움말 출력
+  --no-backup            기존 .claude 백업하지 않음
+  --dry-run              실제 변경 없이 미리보기만
+  --force                확인 없이 강제 실행
+  --include-project      PROJECT.md 포함 (기본값: 제외)
+  --exclude PATTERN      추가로 특정 파일/디렉토리 제외
+  -h, --help             도움말 출력
+
+기본 동작:
+  - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
+  - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 예시:
-  $0                                    # 기본 실행 (백업 후 설치)
-  $0 --no-backup --force                # 백업 없이 강제 설치
-  $0 --exclude "PROJECT.md"             # PROJECT.md 제외하고 설치
+  $0                                    # 기본 실행 (PROJECT.md 제외)
+  $0 --include-project                  # PROJECT.md 포함하여 설치
+  $0 --exclude "*.local.json"           # 추가 파일 제외
   $0 --dry-run                          # 미리보기
 
 EOF
@@ -62,6 +67,7 @@ EOF
 DO_BACKUP=true
 DRY_RUN=false
 FORCE=false
+INCLUDE_PROJECT=false
 EXCLUDE_PATTERNS=()
 
 while [[ $# -gt 0 ]]; do
@@ -78,6 +84,10 @@ while [[ $# -gt 0 ]]; do
             FORCE=true
             shift
             ;;
+        --include-project)
+            INCLUDE_PROJECT=true
+            shift
+            ;;
         --exclude)
             EXCLUDE_PATTERNS+=("$2")
             shift 2
@@ -91,6 +101,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# 기본값: PROJECT.md 제외 (--include-project가 없으면)
+if [ "$INCLUDE_PROJECT" = false ]; then
+    EXCLUDE_PATTERNS+=("PROJECT.md")
+fi
 
 print_header
 
@@ -108,7 +123,7 @@ print_info "✓ 필수 도구 확인 완료"
 if [ -d ".claude" ]; then
     print_warn ".claude 디렉토리가 이미 존재합니다."
 
-    if [ "$FORCE" = false ]; then
+    if [ "$FORCE" = false ] && [ "$DRY_RUN" = false ]; then
         read -p "덮어쓰시겠습니까? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then

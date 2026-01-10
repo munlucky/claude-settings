@@ -138,18 +138,20 @@ curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/insta
 curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/install-claude.sh -o install-claude.sh
 chmod +x install-claude.sh
 
-# 기본 실행 (백업 포함)
+# 기본 실행 (PROJECT.md는 자동으로 제외됨)
 ./install-claude.sh
 
-# 백업 없이 강제 설치
-./install-claude.sh --no-backup --force
+# PROJECT.md 포함하여 설치
+./install-claude.sh --include-project
 
-# PROJECT.md 제외하고 설치 (기존 설정 유지)
-./install-claude.sh --exclude "PROJECT.md"
+# 추가 파일 제외
+./install-claude.sh --exclude "*.local.json"
 
 # 미리보기 (실제 변경 없음)
 ./install-claude.sh --dry-run
 ```
+
+> **기본 동작**: PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됩니다.
 
 ### 📋 설치 옵션
 
@@ -158,7 +160,8 @@ chmod +x install-claude.sh
 | `--no-backup` | 기존 `.claude` 백업하지 않음 |
 | `--dry-run` | 실제 변경 없이 미리보기만 |
 | `--force` | 확인 없이 강제 실행 |
-| `--exclude PATTERN` | 특정 파일/디렉토리 제외 (예: `PROJECT.md`) |
+| `--include-project` | PROJECT.md 포함 (기본값: 제외) |
+| `--exclude PATTERN` | 추가로 특정 파일/디렉토리 제외 |
 | `-h`, `--help` | 도움말 출력 |
 
 ### ⚙️ 수동 설치
@@ -181,8 +184,11 @@ cp -r claude-settings/.claude /your-project/
 필요한 에이전트나 스킬만 선택적으로 복사할 수 있습니다.
 
 ```bash
-# 특정 스킬만 설치
+# 스킬만 설치 (agents, docs 제외)
 ./install-claude.sh --exclude "agents" --exclude "docs"
+
+# 로컬 설정 파일도 제외
+./install-claude.sh --exclude "*.local.json"
 
 # 또는 수동 복사
 cp -r claude-settings/.claude/skills/pm-orchestrator /your-project/.claude/skills/
@@ -216,11 +222,11 @@ cp -r claude-settings/.claude/skills/pm-orchestrator /your-project/.claude/skill
 최신 버전으로 업데이트하려면:
 
 ```bash
-# 백업 후 업데이트
+# 기본 업데이트 (PROJECT.md 자동 제외)
 ./install-claude.sh
 
-# 또는 PROJECT.md 유지하고 업데이트
-./install-claude.sh --exclude "PROJECT.md"
+# PROJECT.md도 함께 업데이트
+./install-claude.sh --include-project
 ```
 
 ### 🔗 워크플로우 실행
