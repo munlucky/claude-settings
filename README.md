@@ -1,137 +1,118 @@
-# Claude Settings
+﻿# Claude Settings
 
-> Claude Code를 위한 프로젝트 설정 및 워크플로우 관리 시스템
+> Claude Code를 위한 프로젝트 설정과 Moonshot 워크플로우 템플릿 모음
 
 ## 개요
 
-이 프로젝트는 Claude Code에서 사용할 수 있는 설정 파일, 에이전트, 스킬, 템플릿을 중앙 집중식으로 관리하는 저장소입니다. 다양한 프로젝트에서 재사용 가능한 개발 워크플로우와 가이드라인을 제공합니다.
+이 저장소는 Claude Code에서 사용할 규칙, 에이전트, 스킬, 문서 템플릿을 한곳에서 관리합니다. 다양한 프로젝트에 재사용 가능한 워크플로우를 제공하고, 설치 스크립트로 손쉽게 배포할 수 있습니다.
 
-## 주요 기능
+## 구성 요약
 
-- **전역 규칙 관리**: 모든 프로젝트에서 공통으로 적용되는 개발 지침
-- **프로젝트별 템플릿**: 프로젝트마다 커스터마이징 가능한 설정 템플릿
-- **에이전트 시스템**: 요구사항 분석, 구현, 검증, 문서화를 위한 전문화된 에이전트
-- **스킬 라이브러리**: 반복 작업을 자동화하는 재사용 가능한 스킬
-- **문서 템플릿**: 일관된 문서화를 위한 표준 템플릿
+- `.claude/`에 규칙, 에이전트, 스킬, 문서, 템플릿을 집중 관리
+- 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
+- `install-claude.sh`로 다른 프로젝트에 빠르게 설치
 
 ## 디렉터리 구조
 
 ```
 claude-settings/
+├── install-claude.sh
+├── README.md
 ├── .claude/
-│   ├── CLAUDE.md              # 전역 개발 지침
-│   ├── PROJECT.md             # 프로젝트별 설정 템플릿
-│   ├── AGENT.md               # 에이전트 정규 형식
-│   ├── README.md              # Moonshot Agent v2 시스템 설명
-│   ├── settings.local.json    # 로컬 설정
-│   │
-│   ├── agents/                # 전문화된 에이전트 정의
-│   │   ├── moonshot-agent.md
+│   ├── CLAUDE.md / CLAUDE.ko.md
+│   ├── PROJECT.md / PROJECT.ko.md
+│   ├── AGENT.md / AGENT.ko.md
+│   ├── README.md / README.ko.md
+│   ├── settings.local.json
+│   ├── agents/
 │   │   ├── requirements-analyzer.md
 │   │   ├── context-builder.md
 │   │   ├── implementation-agent.md
 │   │   ├── verification-agent.md
-│   │   └── documentation-agent.md
-│   │
-│   ├── skills/                # 재사용 가능한 스킬
+│   │   ├── documentation-agent.md
+│   │   └── design-spec-extractor.md
+│   ├── skills/
+│   │   ├── moonshot-orchestrator/
+│   │   ├── moonshot-classify-task/
+│   │   ├── moonshot-evaluate-complexity/
+│   │   ├── moonshot-detect-uncertainty/
+│   │   ├── moonshot-decide-sequence/
 │   │   ├── pre-flight-check/
-│   │   ├── session-logger/
+│   │   ├── implementation-runner/
+│   │   ├── codex-validate-plan/
+│   │   ├── codex-test-integration/
+│   │   ├── claude-codex-guardrail-loop/
 │   │   ├── doc-sync/
 │   │   ├── efficiency-tracker/
-│   │   ├── claude-codex-guardrail-loop/
+│   │   ├── session-logger/
 │   │   ├── design-asset-parser/
-│   │   └── receiving-code-review/
-│   │
-│   ├── docs/                  # 가이드라인 및 문서
+│   │   ├── receiving-code-review/
+│   │   └── project-md-refresh/
+│   ├── docs/
 │   │   ├── guidelines/
 │   │   │   ├── analysis-guide.md
 │   │   │   ├── parallel-execution.md
 │   │   │   ├── question-templates.md
-│   │   │   └── requirements-check.md
-│   │   └── tasks/             # 작업 문서 보관소
-│   │
-│   └── templates/             # 문서 템플릿
-│       ├── moonshot-output.json
+│   │   │   ├── requirements-check.md
+│   │   │   └── token-optimization.md
+│   │   ├── examples/
+│   │   │   └── token-optimization-example.md
+│   │   └── tasks/
+│   │       └── context.md
+│   └── templates/
 │       ├── moonshot-output.md
-│       ├── session-log-template.md
-│       ├── context-template.md
-│       └── agreement-template.md
-│
-└── .history/                  # 파일 변경 히스토리
+│       ├── moonshot-output.ko.md
+│       └── moonshot-output.yaml
+└── .history/
 ```
 
 ## 핵심 구성 요소
 
-### 1. 규칙 문서
+### 규칙 문서
 
-#### CLAUDE.md (전역 규칙)
-모든 프로젝트에 공통으로 적용되는 기본 원칙과 작업 방식을 정의합니다.
+- `CLAUDE.md`: 전역 규칙과 기본 작업 방식
+- `PROJECT.md`: 프로젝트별 규칙 템플릿
+- `AGENT.md`: 에이전트 프롬프트 규격
 
-- 기본 응답 언어: 한국어
-- 역할: 시니어 풀스택 엔지니어/분석가
-- 우선순위: 정확성 > 간결성 > 완전성
-- 작업 진행: 계획 → 구현 → 검증 → 요약
+### Moonshot 워크플로우
 
-#### PROJECT.md (프로젝트별 템플릿)
-각 프로젝트에 맞게 커스터마이징할 수 있는 템플릿입니다.
+- `moonshot-orchestrator` 스킬이 요청을 분석하고 최적의 에이전트 체인을 구성합니다.
+- 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence` 스킬로 구성됩니다.
 
-- 프로젝트 개요 (서비스, 스택)
-- 핵심 규칙
-- 디렉터리 구조
-- API/데이터 통신 패턴
-- 검증 명령
-- 환경 변수
-
-#### AGENT.md (에이전트 규칙)
-에이전트 시스템의 표준 형식과 워크플로우를 정의합니다.
-
-### 2. 에이전트 시스템
-
-전문화된 에이전트들이 개발 프로세스의 각 단계를 담당합니다.
+### 에이전트
 
 | 에이전트 | 역할 | 주요 작업 |
 |---------|------|----------|
-| **Moonshot Agent** | 프로젝트 매니저 | 작업 타입/복잡도 분석, 에이전트 조율 |
 | **Requirements Analyzer** | 요구사항 분석 | 사전 합의서 작성, 요구사항 명확화 |
 | **Context Builder** | 구현 계획 수립 | context.md 작성, 단계별 계획 수립 |
 | **Implementation Agent** | 코드 구현 | 실제 코드 작성, 패턴 준수 |
 | **Verification Agent** | 검증 실행 | typecheck, build, lint 실행 |
-| **Documentation Agent** | 문서화 | 세션 로그, 최종 문서화, 효율성 리포트 |
+| **Documentation Agent** | 문서화 | 세션 로그, 최종 문서화 |
+| **Design Spec Extractor** | 디자인 분석 | 디자인 스펙 추출, 입력 데이터 정리 |
 
-### 3. 스킬 라이브러리
+### 스킬 라이브러리
 
-반복 작업을 자동화하는 재사용 가능한 스킬입니다.
+- Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
+- 실행/검증: `implementation-runner`, `codex-validate-plan`, `codex-test-integration`, `claude-codex-guardrail-loop`
+- 문서/세션: `doc-sync`, `session-logger`, `efficiency-tracker`, `receiving-code-review`
+- 보조 도구: `pre-flight-check`, `design-asset-parser`, `project-md-refresh`
 
-| 스킬 | 목적 |
-|------|------|
-| **pre-flight-check** | 작업 시작 전 필수 정보 확인 |
-| **session-logger** | 개발 세션 실시간 기록 |
-| **doc-sync** | 에이전트 간 문서 동기화 |
-| **efficiency-tracker** | 워크플로우 효율성 추적 |
-| **claude-codex-guardrail-loop** | 계획/구현 품질 검증 |
-| **design-asset-parser** | 디자인 에셋(Figma, PDF) 파싱 |
-| **receiving-code-review** | 코드 리뷰 피드백 수집 및 정리 |
+### 문서와 템플릿
 
-### 4. 문서 템플릿
-
-일관된 문서화를 위한 표준 템플릿을 제공합니다.
-
-- **agreement-template.md**: 사전 합의서
-- **context-template.md**: 구현 계획
-- **session-log-template.md**: 세션 로그
-- **moonshot-output.json/md**: Moonshot Agent 출력 형식
+- 가이드라인: `docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화)
+- 예시: `docs/examples/token-optimization-example.md`
+- 작업 템플릿: `docs/tasks/context.md`
+- 출력 템플릿: `templates/moonshot-output.*`
 
 ## 빠른 시작
 
-### 🚀 한 줄 설치 (권장)
-
-다른 프로젝트에서 최신 `.claude` 설정을 즉시 적용하세요:
+### 한 줄 설치 (권장)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/install-claude.sh | bash
 ```
 
-또는 옵션과 함께 사용:
+옵션과 함께 사용:
 
 ```bash
 # 다운로드 후 실행
@@ -151,42 +132,29 @@ chmod +x install-claude.sh
 ./install-claude.sh --dry-run
 ```
 
-> **기본 동작**: PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됩니다.
+기본 동작:
+- `.claude`, `.codex`, `.gemini` 중 하나라도 존재하면 자동 백업 후 설치
+- PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
 
-### 🛡️ 사용자 파일 자동 보호
-
-기존 `.claude` 디렉토리가 있는 경우, 다음 패턴의 파일들은 자동으로 보호됩니다:
-
+보호되는 사용자 파일 패턴:
 ```
-✓ PROJECT.md              # 프로젝트 설정
-✓ *.local.json            # 로컬 설정 파일
-✓ *.local.yaml            # 로컬 YAML 설정
-✓ settings.local.*        # 로컬 세팅
-✓ custom/                 # 사용자 커스텀 디렉토리
-✓ .env*                   # 환경 변수 파일
+PROJECT.md
+*.local.json
+*.local.yaml
+*.local.md
+settings.local.*
+custom/
+.env*
 ```
 
-**동작 방식**:
-1. 기존 `.claude` 디렉토리 스캔
-2. 보호 패턴과 일치하는 파일 자동 감지
-3. 설치 시 해당 파일들 제외
-4. 설치 완료 후 보호된 파일 목록 표시
+### PROJECT.md 자동 생성/갱신
 
-### 📋 설치 옵션
+설치 후 `.claude/PROJECT.md`가 없다면 `project-md-refresh` 스킬을 실행해 프로젝트 분석 기반으로 생성하거나 갱신할 수 있습니다.
 
-| 옵션 | 설명 |
-|------|------|
-| `--no-backup` | 기존 AI 설정 백업하지 않음 |
-| `--dry-run` | 실제 변경 없이 미리보기만 |
-| `--include-project` | PROJECT.md 포함 (기본값: 제외) |
-| `--exclude PATTERN` | 추가로 특정 파일/디렉토리 제외 |
-| `-h`, `--help` | 도움말 출력 |
+예시:
+- Claude Code에 이 저장소에서 `project-md-refresh`를 실행해달라고 요청
 
-> **자동 백업**: `.claude`, `.codex`, `.gemini` 중 하나라도 존재하면 자동으로 백업 후 설치됩니다.
-
-### ⚙️ 수동 설치
-
-스크립트를 사용하지 않으려면:
+### 수동 설치
 
 ```bash
 # 1. .claude 폴더 복사
@@ -194,37 +162,25 @@ cp -r claude-settings/.claude /your-project/
 
 # 2. PROJECT.md 커스터마이징
 # 프로젝트 개요, 스택, 규칙 등을 프로젝트에 맞게 수정
-
-# 3. settings.local.json 설정 (선택)
-# 프로젝트별 설정 조정
 ```
 
-### 🎯 부분 적용
-
-필요한 에이전트나 스킬만 선택적으로 복사할 수 있습니다.
+### 부분 적용
 
 ```bash
 # 스킬만 설치 (agents, docs 제외)
 ./install-claude.sh --exclude "agents" --exclude "docs"
 
-# 로컬 설정 파일도 제외
+# 로컬 설정 파일 제외
 ./install-claude.sh --exclude "*.local.json"
 
 # 또는 수동 복사
 cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude/skills/
 ```
 
-### 📦 설치 후 다음 단계
+### .codex 설정 (선택)
 
-설치가 완료되면 다음 프롬프트가 나타납니다:
+설치 마지막에 `.codex` 폴더 설정을 묻는 프롬프트가 표시됩니다. `y`를 선택하면 다음 구조가 생성됩니다.
 
-```
-.codex 폴더도 설정하시겠습니까? (y/N): _
-```
-
-#### .codex 설정 (선택)
-
-`y` 선택 시 자동으로 생성되는 구조:
 ```
 .codex/
 ├── CODEX.md         # 심볼릭 링크 → .claude/CLAUDE.md
@@ -232,155 +188,66 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 └── README.md        # Codex MCP 활용 가이드
 ```
 
-**Codex MCP 활용**:
+Codex MCP 활용:
 - 계획 검증: `codex-validate-plan`
 - 코드 리뷰: `codex-review-code`
-- 통합 테스트: `codex-test-integration`
+- 통합 테스트 검증: `codex-test-integration`
 
-#### 다음 단계
+### 다음 단계
 
-1. **PROJECT.md 커스터마이징**
-   ```bash
-   # .claude/PROJECT.md를 프로젝트에 맞게 수정
-   # - 프로젝트 개요, 기술 스택
-   # - 핵심 규칙, API 패턴
-   # - 검증 명령 등
-   ```
+1. `.claude/PROJECT.md`를 프로젝트에 맞게 수정
+2. Git에 커밋: `git add .claude && git commit -m "Add Claude Code settings"`
+3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
 
-2. **Git에 커밋**
-   ```bash
-   git add .claude
-   # .codex 설정했다면
-   git add .codex
-   git commit -m "Add Claude Code settings"
-   ```
+## Moonshot 워크플로우 v2 요약
 
-3. **Claude Code에서 바로 사용**
-   ```
-   User: "사용자 대시보드 기능 구현해줘"
-   Claude: [자동으로 /moonshot-orchestrator 실행]
-           → 작업 분석 → 요구사항 명확화 → 구현 → 검증 → 문서화
-   ```
+- 병렬 실행: 계획 검증과 구현을 동시에 진행
+- Doc Sync: 문서 자동 동기화로 피드백 루프 유지
+- Completion Check: 요구사항 누락 방지
 
-### 🔄 업데이트
-
-최신 버전으로 업데이트하려면:
-
-```bash
-# 기본 업데이트 (PROJECT.md 자동 제외)
-./install-claude.sh
-
-# PROJECT.md도 함께 업데이트
-./install-claude.sh --include-project
-```
-
-### 🔗 워크플로우 실행
-
-설치 후 PM Orchestrator가 자동으로 작업을 분석하고 적절한 에이전트를 호출합니다.
-
-```
-User: "배치 관리 기능 구현해줘"
-  ↓
-Moonshot Agent: 작업 타입/복잡도 분석
-  ↓
-Requirements Analyzer: 사전 합의서 작성
-  ↓
-Context Builder: 구현 계획 수립
-  ↓
-Parallel 실행:
-  ├─ Codex Validator → Doc Sync
-  └─ Implementation Agent
-  ↓
-Verification Agent: typecheck, build, lint
-  ↓
-Moonshot Agent: 요구사항 완료 체크
-  ↓
-Documentation Agent: 최종 문서화
-```
-
-## Moonshot Agent 시스템 v2
-
-최신 버전의 Moonshot Agent 시스템은 다음과 같은 개선 사항을 포함합니다:
-
-- **병렬 실행**: Codex Validator와 Implementation을 동시 실행 (20% 시간 단축)
-- **실시간 피드백 루프**: Doc Sync 스킬을 통한 문서 자동 동기화
-- **요구사항 완료 보장**: Completion Check로 누락 방지 100%
-- **효율성 리포트**: 작업 시간, 재작업 비율, 생산성 자동 측정
-
-자세한 내용은 [.claude/README.md](.claude/README.md)를 참조하세요.
-
-## 문서 경로 규칙
-
-프로젝트에서 생성되는 문서는 다음 경로를 따릅니다:
-
-```
-.claude/docs/
-├── agreements/
-│   └── {feature-name}-agreement.md          # 사전 합의서
-├── tasks/
-│   └── {feature-name}/
-│       ├── context.md                        # 구현 계획
-│       ├── design-spec.md                    # 디자인 스펙
-│       ├── pending-questions.md              # 미해결 질문
-│       └── session-logs/
-│           └── day-{YYYY-MM-DD}.md           # 세션 로그
-```
-
-## 기대 효과
-
-### 정량적 효과 (complex 작업 기준)
-
-| 지표 | 개선 효과 |
-|------|-----------|
-| 작업 시간 | 20% 단축 |
-| 재작업 비율 | 0% 유지 |
-| 요구사항 누락 | 100% 방지 |
-| 문서 불일치 | 100% 개선 |
-| 전체 생산성 | 96% |
-
-### 정성적 효과
-
-- **실시간 피드백 루프**: 에이전트 간 즉시 정보 공유
-- **문서 일관성 보장**: 모든 에이전트가 최신 문서 참조
-- **요구사항 완료 보장**: 누락 항목 자동 감지 및 재실행
-- **효율성 가시화**: 자동 생성되는 효율성 리포트
+자세한 내용은 `.claude/README.md`를 참고하세요.
 
 ## 설정 커스터마이징
 
 ### settings.local.json
 
-프로젝트별 설정을 조정할 수 있습니다.
+현재 저장소의 로컬 설정 예시:
 
 ```json
 {
-  "defaultLanguage": "ko",
-  "agentSettings": {
-    "pmAgent": {
-      "enableParallelExecution": true,
-      "enableCompletionCheck": true
-    }
-  },
-  "skillSettings": {
-    "docSync": {
-      "autoUpdate": true
-    }
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "WebFetch(domain:exhibition-admin-api-docs)",
+      "Bash(cat:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run lint:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git checkout:*)",
+      "Skill(codex-claude-loop)",
+      "mcp__codex__spawn_agent",
+      "Skill(claude-codex-guardrail-loop)",
+      "Bash(awk:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)",
+      "Bash(git log:*)",
+      "Bash(npm run:*)",
+      "Bash(jq:*)",
+      "Bash(python3:*)",
+      "Bash(chmod:*)"
+    ],
+    "deny": [],
+    "ask": []
   }
 }
 ```
 
-## 마이그레이션 가이드
-
-기존 프로젝트에서 v2 시스템으로 업그레이드하려면:
-
-1. Doc Sync Skill 추가
-2. Moonshot Agent 프롬프트 업데이트 (5단계, 6단계)
-3. Documentation Agent 프롬프트 업데이트 (Finalize Mode)
-
-자세한 내용은 [.claude/README.md](.claude/README.md)의 마이그레이션 가이드를 참조하세요.
-
 ## 버전 관리
 
-- `.history/` 폴더에 파일 변경 히스토리 자동 저장
+- `.history/`에 파일 변경 히스토리 저장
 - 주요 설정 파일의 이전 버전 추적 가능
 
 ## 라이선스
@@ -389,8 +256,4 @@ Documentation Agent: 최종 문서화
 
 ## 기여
 
-개선 사항이나 버그 리포트는 이슈를 통해 제출해주세요.
-
----
-
-**Claude Settings로 체계적이고 효율적인 개발 워크플로우를 구축하세요!**
+개선 사항이나 버그 리포트는 이슈로 남겨주세요.

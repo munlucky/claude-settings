@@ -1,341 +1,64 @@
-# Moonshot Agent System v2 Changes
-
-> **Updated**: 2025-01-08
-> **Version**: v2.0
-> **Key improvements**: parallel execution, feedback loop, requirements completion check
-
----
-
-## Change Summary
-
-### Previous system (v1)
-```
-User Request
-  |
-  v
-Moonshot Agent -> Requirements -> Context -> Codex Validator
-  |
-  v
-Implementation -> Type Safety -> Verification -> Documentation
-```
-- **Sequential execution**
-- **No feedback loop**
-- **No requirements completion check**
-
-### New system (v2)
-```
-User Request
-  |
-  v
-Moonshot Agent -> Requirements -> Context
-  |
-  v
-{{PARALLEL}}
-  |-- Codex Validator -> Doc Sync (context.md auto update)
-  `-- Implementation (full progress)
-  |
-  v
-Type Safety -> Verification
-  |
-  v
-Moonshot Agent: Requirements Completion Check
-  |-- Incomplete -> Re-run Implementation
-  `-- Complete -> Documentation Finalize
-```
-- **Parallel execution** (Codex Validator || Implementation)
-- **Real-time feedback loop** (Doc Sync Skill)
-- **Requirements completion guaranteed** (Completion Check)
-
----
-
-## New Features
-
-### 1. Doc Sync Skill
-**Location**: `.claude/skills/doc-sync/skill.md`
-
-**Purpose**: Automate document synchronization between agents
-
-**Capabilities**:
-- Auto-update context.md (apply validator feedback)
-- Auto-manage pending-questions.md
-- Real-time progress tracking in flow-report.md
-
-**When to call**:
-- After Codex Validator completes
-- After Requirements Completion Check
-- Before Documentation Finalize
-
-**Example**:
-```json
-{
-  "feature_name": "batch-management",
-  "updates": [
-    {
-      "file": "context.md",
-      "section": "Phase 1",
-      "action": "append",
-      "content": "Strengthen date input validation: limit to past 30 days"
-    }
-  ]
-}
-```
-
----
-
-### 2. Parallel Execution (Moonshot Agent)
-**Location**: `.claude/agents/moonshot-agent/prompt.md` (step 5)
-
-**Purpose**: Save time by running Codex Validator and Implementation in parallel
-
-**How it works**:
-1. After Context Builder completes
-2. Start Codex Validator (async, read-only)
-3. Start Implementation Agent (async, full progress)
-4. Validator finishes first -> Doc Sync called
-5. Implementation finishes -> verify latest context.md
-
-**Expected effects**:
-- Remove validator overlap (5 minutes)
-- Real-time feedback so Implementation follows latest plan
-
----
+﻿# Moonshot 워크플로우 가이드
 
-### 3. Requirements Completion Check (Moonshot Agent)
-**Location**: `.claude/agents/moonshot-agent/prompt.md` (step 6)
+> 이 문서는 현재 저장소의 Moonshot 워크플로우 구성요소를 설명합니다. 프로젝트별 규칙은 `.claude/PROJECT.md`를 참고하세요.
 
-**Purpose**: Ensure every requirement is complete and prevent omissions
+## 진입점
 
-**Checklist**:
-1. Cross-check against preliminary agreement
-2. context.md checkpoints
-3. unresolved items in pending-questions.md
+- 전역 규칙: `.claude/CLAUDE.md`
+- 프로젝트 규칙: `.claude/PROJECT.md`
+- 에이전트 포맷: `.claude/AGENT.md`
+- 오케스트레이터 스킬: `.claude/skills/moonshot-orchestrator/SKILL.md`
 
-**If incomplete**:
-- Re-run Implementation Agent (only incomplete items)
-- Re-run Type Safety -> Verification
-- Re-run Completion Check
+## 에이전트
 
-**If complete**:
-- Call Documentation Finalize
+- Requirements Analyzer: `.claude/agents/requirements-analyzer.md`
+- Context Builder: `.claude/agents/context-builder.md`
+- Implementation Agent: `.claude/agents/implementation-agent.md`
+- Verification Agent: `.claude/agents/verification-agent.md`
+- Documentation Agent: `.claude/agents/documentation-agent.md`
+- Design Spec Extractor: `.claude/agents/design-spec-extractor.md`
+- 검증 스크립트: `.claude/agents/verification/verify-changes.sh`
 
-**Expected effects**:
-- 100% prevention of missed requirements
-- Minimize rework (re-run only incomplete items)
+## 스킬
 
----
+### Moonshot 분석
+- `moonshot-classify-task`
+- `moonshot-evaluate-complexity`
+- `moonshot-detect-uncertainty`
+- `moonshot-decide-sequence`
 
-### 4. Documentation Finalize (Documentation Agent)
-**Location**: `.claude/agents/documentation/prompt.md` (Finalize Mode)
+### 실행 및 검증
+- `pre-flight-check`
+- `implementation-runner`
+- `codex-validate-plan`
+- `codex-test-integration`
+- `claude-codex-guardrail-loop`
+- `receiving-code-review`
 
-**Purpose**: Final documentation + efficiency report + retrospective notes
-
-**Additional tasks**:
-1. Final verification (commits, verification results, pending questions)
-2. Close documents (context.md, session-log.md, flow-report.md, pending-questions.md)
-3. Efficiency report (time allocation, rework ratio, parallel effect, completion check effect)
-4. Retrospective notes (wins, improvements, learnings, next suggestions)
+### 문서 및 로깅
+- `doc-sync`
+- `session-logger`
+- `efficiency-tracker`
 
-**Output example**:
-```markdown
-# Documentation Finalize Complete
+### 유틸리티
+- `design-asset-parser`
+- `project-md-refresh`
 
-## Final Summary
-- Work time: 2.58h (5m shorter than 2.67h)
-- Rework ratio: 0%
-- Productivity: 96%
-
-## Key Improvement Effects
-- Parallel execution: saved 5m
-- Real-time doc sync: 0% rework
-- Completion Check: 100% missing prevention
-```
-
----
-
-## Expected Impact Comparison
+## 일반 흐름 (예시)
 
-### Quantitative impact (for complex tasks)
-
-| Metric | v1 | v2 | Improvement |
-|------|----|----|--------|
-| Work time | 2.5h | 2.0h | 20% down |
-| Rework ratio | 0% | 0% | unchanged |
-| Missing requirements | possible | 0% | 100% improved |
-| Doc mismatch | 30% | 0% | 100% improved |
-| Productivity | 95% | 96% | 1% up |
-
-### Qualitative impact
+1. `moonshot-orchestrator`가 요청을 분석하고 체인을 구성합니다.
+2. `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
+3. 복잡한 작업은 `codex-validate-plan`과 `implementation-runner`를 병렬로 실행합니다.
+4. `verification-agent`와 `verify-changes.sh`로 품질을 확인합니다.
+5. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
 
-1. **Real-time feedback loop**
-   - Validator -> Doc Sync -> Implementation (immediate reflection)
-   - Prevent rework (save ~15 minutes on average)
+## 문서와 템플릿
 
-2. **Document consistency**
-   - All agents reference the latest docs
-   - 0% doc mismatch errors
+- 작업 문서는 `.claude/docs` 하위에 두며 경로 규칙은 `.claude/PROJECT.md`를 따릅니다.
+- 출력 템플릿: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 
-3. **Requirements completion guarantee**
-   - Completion Check prevents missing items
-   - Final gate for quality assurance
+## 유지보수 노트 (이 저장소)
 
-4. **Visibility of efficiency**
-   - Auto-generate efficiency reports
-   - Quantify improvement effects
-
----
-
-## Usage
-
-### Scenario: new feature implementation (complex)
-
-#### 1. Moonshot Agent analysis (auto)
-```
-User: "Implement batch management"
-Moonshot Agent: asks about uncertainty (UI spec version, API spec)
-```
-
-#### 2. Requirements Analyzer (auto)
-```
-User: provides answers
-Requirements Analyzer: creates preliminary agreement
-```
-
-#### 3. Context Builder (auto)
-```
-Context Builder: writes implementation plan (context.md)
-```
-
-#### 4. Parallel execution (auto)
-```
-Codex Validator (async):
-  - Validate plan (5m)
-  - Call Doc Sync -> update context.md
-
-Implementation Agent (async):
-  - Execute Phase 1-3 (2h)
-  - Check latest context.md
-```
-
-#### 5. Type Safety -> Verification (auto)
-```
-Type Safety: verify entity-request separation
-Verification: typecheck, build, lint
-```
-
-#### 6. Requirements Completion Check (auto)
-```
-Moonshot Agent:
-  - Cross-check agreement
-  - Check context.md checkpoints
-  - Check pending-questions.md
-
-If incomplete:
-  - Re-run Implementation
-  - Run Completion Check again
-
-If complete:
-  - Call Documentation Finalize
-```
-
-#### 7. Documentation Finalize (auto)
-```
-Documentation Agent:
-  - Final verification
-  - Close docs
-  - Efficiency report
-  - Retrospective notes
-```
-
----
-
-## Changed Files
-
-### New
-- `.claude/skills/doc-sync/skill.md`
-
-### Updated
-- `.claude/agents/moonshot-agent/prompt.md` (added steps 5 and 6)
-- `.claude/agents/documentation/prompt.md` (added Finalize Mode)
-
-### Unchanged (compatibility maintained)
-- `.claude/agents/verification/prompt.md`
-- `.claude/agents/context-builder/prompt.md`
-- `.claude/agents/implementation/prompt.md`
-
----
-
-## Migration Guide
-
-### Applying to existing projects
-
-1. **Add Doc Sync Skill**
-   ```bash
-   cp .claude/skills/doc-sync/skill.md [your-project]/.claude/skills/doc-sync/
-   ```
-
-2. **Update Moonshot Agent prompt**
-   - Step 5: add parallel execution section
-   - Step 6: add Requirements Completion Check section
-
-3. **Update Documentation Agent prompt**
-   - Add Finalize Mode section
-
-4. **Ready to use**
-   - Fully compatible with existing workflow
-   - No extra configuration required
-
----
-
-## Next Steps (Optional)
-
-### Phase 7: automation expansion (future)
-1. **Validator recommendation DB**
-   - Patternize repeated recommendations
-   - Expand auto-apply scope
-
-2. **Efficiency report dashboard**
-   - Collect efficiency metrics per task
-   - Visualize improvement effects
-
-3. **AI-based Completion Check**
-   - Auto-map requirements
-   - Predict missing items
-
----
-
-## FAQ
-
-### Q1: Does it apply to existing work?
-A: Yes. It is 100% backward compatible and integrates automatically.
-
-### Q2: Does parallel execution run for simple tasks?
-A: No. It runs only for complexity: complex. simple/medium remain sequential.
-
-### Q3: What if Doc Sync fails?
-A: Log the partial success and guide manual resolution. Rollback is supported.
-
-### Q4: Can we skip Completion Check?
-A: Not recommended, but it can be disabled in Moonshot Agent settings.
-
-### Q5: Is the efficiency report required?
-A: Optional. It is auto-generated in Documentation Finalize, but can be omitted.
-
----
-
-## Actual Impact (Projected)
-
-### For 10 complex tasks per month
-- **Time saved**: 10 x 30m = 5 hours/month
-- **Rework prevention**: 0% (unchanged)
-- **Missing requirements**: 0 cases (previously 1-2/month)
-- **Doc mismatch**: 0 cases (previously 3-5/month)
-
-### ROI
-- **Initial investment**: 1 week (system improvements)
-- **Monthly savings**: 5 hours
-- **Payback period**: ~1.5 weeks
-- **Annual impact**: 60 hours saved (= 7.5 days)
-
----
-
-**Boost development productivity to the next level with Moonshot Agent System v2.**
+- 영문 `.md`는 ASCII만 사용하고 동일한 `.ko.md`를 함께 유지합니다.
+- 이름이나 경로를 바꾸면 이 문서와 `install-claude.sh`를 함께 갱신합니다.
+- 대상 프로젝트에 `PROJECT.md`가 없다면 `project-md-refresh` 스킬을 실행합니다.
