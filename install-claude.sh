@@ -42,14 +42,15 @@ usage() {
 사용법: $0 [OPTIONS]
 
 옵션:
-  --no-backup            기존 .claude 백업하지 않음
+  --no-backup            기존 AI 설정 백업하지 않음
   --dry-run              실제 변경 없이 미리보기만
-  --force                확인 없이 강제 실행
+  --force                (deprecated, 자동 백업 후 설치)
   --include-project      PROJECT.md 포함 (기본값: 제외)
   --exclude PATTERN      추가로 특정 파일/디렉토리 제외
   -h, --help             도움말 출력
 
 기본 동작:
+  - .claude, .codex, .gemini 중 하나라도 존재하면 자동 백업 후 설치
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
@@ -119,33 +120,45 @@ for cmd in curl unzip; do
 done
 print_info "✓ 필수 도구 확인 완료"
 
-# 2. 기존 .claude 디렉토리 확인
-if [ -d ".claude" ]; then
-    print_warn ".claude 디렉토리가 이미 존재합니다."
+# 2. 기존 AI 설정 디렉토리 확인 및 자동 백업
+BACKUP_DIRS=()
+HAS_EXISTING=false
 
-    if [ "$FORCE" = false ] && [ "$DRY_RUN" = false ]; then
-        read -p "덮어쓰시겠습니까? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_info "설치 취소됨"
-            exit 0
+for dir in ".claude" ".codex" ".gemini"; do
+    if [ -d "$dir" ]; then
+        HAS_EXISTING=true
+        if [ "$DO_BACKUP" = true ]; then
+            BACKUP_DIRS+=("$dir")
         fi
     fi
+done
 
-    # 백업
-    if [ "$DO_BACKUP" = true ] && [ "$DRY_RUN" = false ]; then
-        BACKUP_DIR=".claude${BACKUP_SUFFIX}"
-        print_info "기존 .claude를 백업 중... → $BACKUP_DIR"
-        cp -r .claude "$BACKUP_DIR"
-        print_info "✓ 백업 완료"
+if [ "$HAS_EXISTING" = true ]; then
+    if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
+        print_info "기존 AI 설정 디렉토리 발견: ${BACKUP_DIRS[*]}"
+
+        # 백업 실행
+        if [ "$DRY_RUN" = false ]; then
+            for dir in "${BACKUP_DIRS[@]}"; do
+                BACKUP_DIR="${dir}${BACKUP_SUFFIX}"
+                print_info "백업 중: $dir → $BACKUP_DIR"
+                cp -r "$dir" "$BACKUP_DIR"
+            done
+            print_info "✓ 백업 완료 (${#BACKUP_DIRS[@]}개 디렉토리)"
+        fi
+    else
+        print_warn "기존 디렉토리가 존재하지만 --no-backup 옵션으로 백업하지 않습니다."
     fi
 fi
 
 # 3. Dry-run 모드
 if [ "$DRY_RUN" = true ]; then
     print_info "[DRY-RUN] 다음 작업이 수행됩니다:"
+    if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
+        echo "  - 백업할 디렉토리: ${BACKUP_DIRS[*]}"
+    fi
     echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
-    echo "  - .claude 디렉토리 덮어쓰기"
+    echo "  - .claude 디렉토리 설치"
     if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
         echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
     fi
@@ -223,10 +236,16 @@ echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
 echo "  2. Git에 커밋: git add .claude && git commit -m 'Add Claude Code settings'"
 echo "  3. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
-if [ "$DO_BACKUP" = true ] && [ -d ".claude${BACKUP_SUFFIX}" ]; then
+if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
     echo ""
-    print_info "백업 위치: .claude${BACKUP_SUFFIX}"
-    echo "  복원: mv .claude${BACKUP_SUFFIX} .claude"
+    print_info "백업된 디렉토리:"
+    for dir in "${BACKUP_DIRS[@]}"; do
+        BACKUP_DIR="${dir}${BACKUP_SUFFIX}"
+        if [ -d "$BACKUP_DIR" ]; then
+            echo "  ✓ $BACKUP_DIR"
+            echo "    복원: mv $BACKUP_DIR $dir"
+        fi
+    done
 fi
 
 echo ""

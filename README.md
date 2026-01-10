@@ -157,12 +157,13 @@ chmod +x install-claude.sh
 
 | 옵션 | 설명 |
 |------|------|
-| `--no-backup` | 기존 `.claude` 백업하지 않음 |
+| `--no-backup` | 기존 AI 설정 백업하지 않음 |
 | `--dry-run` | 실제 변경 없이 미리보기만 |
-| `--force` | 확인 없이 강제 실행 |
 | `--include-project` | PROJECT.md 포함 (기본값: 제외) |
 | `--exclude PATTERN` | 추가로 특정 파일/디렉토리 제외 |
 | `-h`, `--help` | 도움말 출력 |
+
+> **자동 백업**: `.claude`, `.codex`, `.gemini` 중 하나라도 존재하면 자동으로 백업 후 설치됩니다.
 
 ### ⚙️ 수동 설치
 
