@@ -1,5 +1,5 @@
 ---
-name: pm-orchestrator
+name: moonshot-orchestrator
 description: PM workflow orchestrator. Analyzes user requests and automatically runs the optimal agent chain.
 ---
 
@@ -58,17 +58,17 @@ notes: []
 ### 2. Run PM skills sequentially
 
 #### 2.1 Task classification
-Run `/pm-classify-task` using the Skill tool.
+Run `/moonshot-classify-task` using the Skill tool.
 - Merge returned patch into analysisContext
 - Example: add `request.taskType`, `request.keywords`, `notes`
 
 #### 2.2 Complexity evaluation
-Run `/pm-evaluate-complexity` using the Skill tool.
+Run `/moonshot-evaluate-complexity` using the Skill tool.
 - Merge returned patch into analysisContext
 - Example: update `complexity`, `estimates.*`
 
 #### 2.3 Uncertainty detection
-Run `/pm-detect-uncertainty` using the Skill tool.
+Run `/moonshot-detect-uncertainty` using the Skill tool.
 - Merge returned patch into analysisContext
 - Check `missingInfo` array
 
@@ -83,12 +83,12 @@ If `missingInfo` is not empty:
    - Design spec answers -> store design file paths
    - Other answers -> record in `notes`
 4. Set `signals.hasPendingQuestions = false`
-5. Re-run `/pm-detect-uncertainty` if needed
+5. Re-run `/moonshot-detect-uncertainty` if needed
 
 If `missingInfo` is empty, proceed.
 
 #### 2.5 Sequence decision
-Run `/pm-decide-sequence` using the Skill tool.
+Run `/moonshot-decide-sequence` using the Skill tool.
 - Merge returned patch into analysisContext
 - Set `phase`, `decisions.skillChain`, `decisions.parallelGroups`
 
@@ -122,7 +122,7 @@ Run `decisions.skillChain` in order:
 - `implementation-runner` -> `subagent_type: "implementation-agent"`
 
 ### 4. Record results
-Save final analysisContext to `.claude/docs/pm-analysis.yaml`.
+Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
 
 ## Output format
 

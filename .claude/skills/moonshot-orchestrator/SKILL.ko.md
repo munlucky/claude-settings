@@ -1,5 +1,5 @@
 ---
-name: pm-orchestrator
+name: moonshot-orchestrator
 description: PM 워크플로우 오케스트레이터. 사용자 요청을 분석하고 최적의 에이전트 체인을 자동으로 실행한다.
 ---
 
@@ -58,17 +58,17 @@ notes: []
 ### 2. PM 스킬 순차 실행
 
 #### 2.1 작업 분류
-`Skill` 도구를 사용하여 `/pm-classify-task` 실행
+`Skill` 도구를 사용하여 `/moonshot-classify-task` 실행
 - 반환된 patch를 analysisContext에 병합
 - 예: `request.taskType`, `request.keywords`, `notes` 추가
 
 #### 2.2 복잡도 평가
-`Skill` 도구를 사용하여 `/pm-evaluate-complexity` 실행
+`Skill` 도구를 사용하여 `/moonshot-evaluate-complexity` 실행
 - 반환된 patch를 analysisContext에 병합
 - 예: `complexity`, `estimates.*` 업데이트
 
 #### 2.3 불확실성 검출
-`Skill` 도구를 사용하여 `/pm-detect-uncertainty` 실행
+`Skill` 도구를 사용하여 `/moonshot-detect-uncertainty` 실행
 - 반환된 patch를 analysisContext에 병합
 - `missingInfo` 배열 확인
 
@@ -83,12 +83,12 @@ notes: []
    - 디자인 스펙 답변 → 디자인 파일 경로 저장
    - 기타 답변 → `notes`에 기록
 4. `signals.hasPendingQuestions = false` 설정
-5. 필요시 `/pm-detect-uncertainty` 재실행
+5. 필요시 `/moonshot-detect-uncertainty` 재실행
 
 `missingInfo`가 비면 다음 단계로 진행.
 
 #### 2.5 시퀀스 결정
-`Skill` 도구를 사용하여 `/pm-decide-sequence` 실행
+`Skill` 도구를 사용하여 `/moonshot-decide-sequence` 실행
 - 반환된 patch를 analysisContext에 병합
 - `phase`, `decisions.skillChain`, `decisions.parallelGroups` 설정
 
@@ -122,7 +122,7 @@ notes: []
 - `implementation-runner` → `subagent_type: "implementation-agent"`
 
 ### 4. 결과 기록
-최종 analysisContext를 `.claude/docs/pm-analysis.yaml`에 저장.
+최종 analysisContext를 `.claude/docs/moonshot-analysis.yaml`에 저장.
 
 ## 출력 형식
 

@@ -1,5 +1,5 @@
 ---
-name: pm-agent
+name: moonshot-agent
 description: Project manager agent that analyzes user requests and decides task sequence, complexity, and phase.
 ---
 
@@ -51,12 +51,12 @@ Determine execution order by complexity (see analysis-guide.md).
 ## Output Format
 
 ### YAML output (use YAML instead of JSON)
-**Template:** `.claude/templates/pm-output.yaml`
+**Template:** `.claude/templates/moonshot-output.yaml`
 - Follow this YAML structure strictly.
 - **Important**: Do not use JSON; always use YAML (20-30% token savings)
 
 ### Markdown output (for user)
-**Template:** `.claude/templates/pm-output.md`
+**Template:** `.claude/templates/moonshot-output.md`
 - Follow this markdown structure strictly.
 
 ---

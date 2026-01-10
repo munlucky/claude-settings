@@ -156,10 +156,10 @@ relevantFilePaths:
 ---
 
 ## 📚 참조 문서
-- `.claude/agents/pm-agent.md` - PM 워크플로우
+- `.claude/agents/moonshot-agent.md` - PM 워크플로우
 - `.claude/docs/guidelines/analysis-guide.md` - 복잡도별 컨텍스트
 - `.claude/docs/guidelines/parallel-execution.md` - 병렬 실행 전략
-- `.claude/templates/pm-output.json` - 페이로드 구조
+- `.claude/templates/moonshot-output.json` - 페이로드 구조
 
 ---
 

@@ -77,7 +77,7 @@ PM Agent: Requirements Completion Check
 ---
 
 ### 2. Parallel 실행 (PM Agent)
-**위치**: `.claude/agents/pm-agent/prompt.md` (5단계)
+**위치**: `.claude/agents/moonshot-agent/prompt.md` (5단계)
 
 **목적**: Codex Validator와 Implementation 병렬 실행으로 시간 절약
 
@@ -95,7 +95,7 @@ PM Agent: Requirements Completion Check
 ---
 
 ### 3. Requirements Completion Check (PM Agent)
-**위치**: `.claude/agents/pm-agent/prompt.md` (6단계)
+**위치**: `.claude/agents/moonshot-agent/prompt.md` (6단계)
 
 **목적**: 모든 요구사항 완료 여부 확인, 누락 방지
 
@@ -248,7 +248,7 @@ Documentation Agent:
 - `.claude/skills/doc-sync/skill.md`
 
 ### 수정
-- `.claude/agents/pm-agent/prompt.md` (5단계, 6단계 추가)
+- `.claude/agents/moonshot-agent/prompt.md` (5단계, 6단계 추가)
 - `.claude/agents/documentation/prompt.md` (Finalize Mode 추가)
 
 ### 변경 없음 (호환성 유지)

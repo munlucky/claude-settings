@@ -1,5 +1,5 @@
 ﻿---
-name: pm-evaluate-complexity
+name: moonshot-evaluate-complexity
 description: 예상 파일 수/라인 수/시간을 기준으로 복잡도(`simple`, `medium`, `complex`)를 평가한다. 작업 분류 이후에 사용.
 ---
 

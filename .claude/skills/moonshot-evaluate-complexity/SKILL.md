@@ -1,5 +1,5 @@
 ---
-name: pm-evaluate-complexity
+name: moonshot-evaluate-complexity
 description: Evaluates complexity (simple, medium, complex) based on estimated files/lines/time. Use after task classification.
 ---
 

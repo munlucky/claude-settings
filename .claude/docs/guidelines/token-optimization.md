@@ -156,10 +156,10 @@ relevantFilePaths:
 ---
 
 ## References
-- `.claude/agents/pm-agent.md` - PM workflow
+- `.claude/agents/moonshot-agent.md` - PM workflow
 - `.claude/docs/guidelines/analysis-guide.md` - complexity-specific context
 - `.claude/docs/guidelines/parallel-execution.md` - parallel strategy
-- `.claude/templates/pm-output.json` - payload structure
+- `.claude/templates/moonshot-output.json` - payload structure
 
 ---
 

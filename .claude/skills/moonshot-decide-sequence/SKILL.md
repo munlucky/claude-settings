@@ -1,5 +1,5 @@
 ---
-name: pm-decide-sequence
+name: moonshot-decide-sequence
 description: Determines phase and execution chain based on analysisContext (task type, complexity, signals). Use after uncertainty detection.
 ---
 
@@ -50,7 +50,7 @@ notes: []
 5. otherwise -> planning
 
 ## Chain rules
-Include only stages to run **after pm-decide-sequence** (do not include pm-* skills).
+Include only stages to run **after moonshot-decide-sequence** (do not include moonshot-* skills).
 
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> implementation-runner -> codex-review-code -> efficiency-tracker
@@ -62,7 +62,7 @@ Complex always includes the Codex three-step validation.
 Only run dependency-free steps in parallel. If results affect the next stage, do not parallelize.
 
 **Possible parallel examples**:
-- After `/pm-classify-task`: `/pm-evaluate-complexity` + `/pm-detect-uncertainty`
+- After `/moonshot-classify-task`: `/moonshot-evaluate-complexity` + `/moonshot-detect-uncertainty`
 - After implementation: `codex-review-code` + `verify-changes.sh` (re-run verify if review changes)
 - Logging: `efficiency-tracker` + `session-logger`
 
@@ -78,8 +78,8 @@ decisions.skillChain:
   - requirements-analyzer
   - context-builder
 decisions.parallelGroups:
-  - - pm-evaluate-complexity
-    - pm-detect-uncertainty
+  - - moonshot-evaluate-complexity
+    - moonshot-detect-uncertainty
 decisions.recommendedAgents:
   - requirements-analyzer
   - context-builder

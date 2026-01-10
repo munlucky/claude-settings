@@ -1,5 +1,5 @@
 ---
-name: pm-classify-task
+name: moonshot-classify-task
 description: Classifies a user request into task types (feature, modification, bugfix, refactor) and extracts intent keywords. Use at the start of PM analysis.
 ---
 
