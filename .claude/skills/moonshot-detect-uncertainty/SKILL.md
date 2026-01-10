@@ -1,5 +1,5 @@
 ---
-name: pm-detect-uncertainty
+name: moonshot-detect-uncertainty
 description: Detects missing requirements and generates clarification questions. Use after classification/complexity to decide if user input is needed.
 ---
 

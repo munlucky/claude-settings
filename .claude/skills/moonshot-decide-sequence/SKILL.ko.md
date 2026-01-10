@@ -1,5 +1,5 @@
 ﻿---
-name: pm-decide-sequence
+name: moonshot-decide-sequence
 description: `analysisContext`(작업 유형, 복잡도, 시그널)를 기준으로 단계(`phase`)와 실행 체인을 결정한다. 불확실성 검출 후 체인 구성 시 사용.
 ---
 
@@ -50,7 +50,7 @@ notes: []
 5. 그 외 -> planning
 
 ## 체인 규칙
-skillChain에는 **pm-decide-sequence 이후** 실행할 단계만 포함한다(pm-* 스킬은 포함하지 않음).
+skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함한다(moonshot-* 스킬은 포함하지 않음).
 
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> implementation-runner -> codex-review-code -> efficiency-tracker
@@ -62,7 +62,7 @@ complex는 항상 Codex 3단계 검증을 포함한다.
 의존성이 없는 단계만 병렬로 실행한다. 결과가 다음 단계에 영향을 주면 병렬 금지.
 
 **가능한 병렬 조합 예시**:
-- `/pm-classify-task` 이후: `/pm-evaluate-complexity` + `/pm-detect-uncertainty`
+- `/moonshot-classify-task` 이후: `/moonshot-evaluate-complexity` + `/moonshot-detect-uncertainty`
 - 구현 완료 후: `codex-review-code` + `verify-changes.sh` (리뷰 수정 시 `verify-changes.sh` 재실행)
 - 로깅: `efficiency-tracker` + `session-logger`
 
@@ -78,8 +78,8 @@ decisions.skillChain:
   - requirements-analyzer
   - context-builder
 decisions.parallelGroups:
-  - - pm-evaluate-complexity
-    - pm-detect-uncertainty
+  - - moonshot-evaluate-complexity
+    - moonshot-detect-uncertainty
 decisions.recommendedAgents:
   - requirements-analyzer
   - context-builder

@@ -26,7 +26,7 @@ claude-settings/
 │   ├── settings.local.json    # 로컬 설정
 │   │
 │   ├── agents/                # 전문화된 에이전트 정의
-│   │   ├── pm-agent.md
+│   │   ├── moonshot-agent.md
 │   │   ├── requirements-analyzer.md
 │   │   ├── context-builder.md
 │   │   ├── implementation-agent.md
@@ -51,8 +51,8 @@ claude-settings/
 │   │   └── tasks/             # 작업 문서 보관소
 │   │
 │   └── templates/             # 문서 템플릿
-│       ├── pm-output.json
-│       ├── pm-output.md
+│       ├── moonshot-output.json
+│       ├── moonshot-output.md
 │       ├── session-log-template.md
 │       ├── context-template.md
 │       └── agreement-template.md
@@ -119,7 +119,7 @@ claude-settings/
 - **agreement-template.md**: 사전 합의서
 - **context-template.md**: 구현 계획
 - **session-log-template.md**: 세션 로그
-- **pm-output.json/md**: PM Agent 출력 형식
+- **moonshot-output.json/md**: PM Agent 출력 형식
 
 ## 빠른 시작
 
@@ -211,7 +211,7 @@ cp -r claude-settings/.claude /your-project/
 ./install-claude.sh --exclude "*.local.json"
 
 # 또는 수동 복사
-cp -r claude-settings/.claude/skills/pm-orchestrator /your-project/.claude/skills/
+cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude/skills/
 ```
 
 ### 📦 설치 후 다음 단계
@@ -258,7 +258,7 @@ cp -r claude-settings/.claude/skills/pm-orchestrator /your-project/.claude/skill
 3. **Claude Code에서 바로 사용**
    ```
    User: "사용자 대시보드 기능 구현해줘"
-   Claude: [자동으로 /pm-orchestrator 실행]
+   Claude: [자동으로 /moonshot-orchestrator 실행]
            → 작업 분석 → 요구사항 명확화 → 구현 → 검증 → 문서화
    ```
 

@@ -320,8 +320,8 @@ fi
 if [ -f ".claude/PROJECT.md" ]; then
 	echo "  ✓ .claude/PROJECT.md         (프로젝트별 규칙 템플릿)"
 fi
-if [ -d ".claude/skills/pm-orchestrator" ]; then
-	echo "  ✓ .claude/skills/pm-*        (PM 워크플로우 스킬)"
+if [ -d ".claude/skills/moonshot-orchestrator" ]; then
+	echo "  ✓ .claude/skills/moonshot-*        (PM 워크플로우 스킬)"
 fi
 if [ -d ".claude/agents" ]; then
 	echo "  ✓ .claude/agents/            (에이전트 프롬프트)"

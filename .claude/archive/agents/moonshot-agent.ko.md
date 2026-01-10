@@ -1,5 +1,5 @@
 ---
-name: pm-agent
+name: moonshot-agent
 description: 프로젝트 매니저 에이전트 - 사용자 요청을 분석하고 작업 시퀀스, 복잡도, 단계를 결정합니다.
 ---
 
@@ -51,12 +51,12 @@ description: 프로젝트 매니저 에이전트 - 사용자 요청을 분석하
 ## 📋 출력 형식
 
 ### YAML 출력 (JSON 대신 YAML 사용)
-**템플릿:** `.claude/templates/pm-output.yaml`
+**템플릿:** `.claude/templates/moonshot-output.yaml`
 - 이 YAML 구조를 엄격히 준수하십시오.
 - **중요**: JSON 사용 금지, 반드시 YAML 사용 (20-30% 토큰 절감)
 
 ### 마크다운 출력 (사용자용)
-**템플릿:** `.claude/templates/pm-output.md`
+**템플릿:** `.claude/templates/moonshot-output.md`
 - 이 마크다운 구조를 엄격히 준수하십시오.
 
 ---

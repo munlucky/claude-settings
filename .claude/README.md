@@ -83,7 +83,7 @@ PM Agent: Requirements Completion Check
 ---
 
 ### 2. Parallel Execution (PM Agent)
-**Location**: `.claude/agents/pm-agent/prompt.md` (step 5)
+**Location**: `.claude/agents/moonshot-agent/prompt.md` (step 5)
 
 **Purpose**: Save time by running Codex Validator and Implementation in parallel
 
@@ -101,7 +101,7 @@ PM Agent: Requirements Completion Check
 ---
 
 ### 3. Requirements Completion Check (PM Agent)
-**Location**: `.claude/agents/pm-agent/prompt.md` (step 6)
+**Location**: `.claude/agents/moonshot-agent/prompt.md` (step 6)
 
 **Purpose**: Ensure every requirement is complete and prevent omissions
 
@@ -254,7 +254,7 @@ Documentation Agent:
 - `.claude/skills/doc-sync/skill.md`
 
 ### Updated
-- `.claude/agents/pm-agent/prompt.md` (added steps 5 and 6)
+- `.claude/agents/moonshot-agent/prompt.md` (added steps 5 and 6)
 - `.claude/agents/documentation/prompt.md` (added Finalize Mode)
 
 ### Unchanged (compatibility maintained)

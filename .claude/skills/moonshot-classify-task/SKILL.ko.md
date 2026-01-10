@@ -1,5 +1,5 @@
 ﻿---
-name: pm-classify-task
+name: moonshot-classify-task
 description: 사용자 요청을 작업 유형(`feature`, `modification`, `bugfix`, `refactor`)으로 분류하고 의도 키워드를 추출한다. PM 분석 시작 시 사용.
 ---
 
