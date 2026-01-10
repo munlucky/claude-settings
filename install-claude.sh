@@ -249,7 +249,7 @@ print_info "✓ 다운로드 완료"
 
 # 5. 압축 해제
 print_info ".claude 디렉토리 추출 중..."
-unzip -q "$ZIP_FILE" "claude-settings-$BRANCH/.claude/*" -d "$TEMP_DIR"
+unzip -q "$ZIP_FILE" -d "$TEMP_DIR"
 
 if [ ! -d "$TEMP_DIR/claude-settings-$BRANCH/.claude" ]; then
     print_error ".claude 디렉토리를 찾을 수 없습니다"
