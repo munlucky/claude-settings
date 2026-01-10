@@ -121,9 +121,49 @@ claude-settings/
 - **session-log-template.md**: 세션 로그
 - **pm-output.json/md**: PM Agent 출력 형식
 
-## 사용 방법
+## 빠른 시작
 
-### 1. 새 프로젝트에 적용
+### 🚀 한 줄 설치 (권장)
+
+다른 프로젝트에서 최신 `.claude` 설정을 즉시 적용하세요:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/install-claude.sh | bash
+```
+
+또는 옵션과 함께 사용:
+
+```bash
+# 다운로드 후 실행
+curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/install-claude.sh -o install-claude.sh
+chmod +x install-claude.sh
+
+# 기본 실행 (백업 포함)
+./install-claude.sh
+
+# 백업 없이 강제 설치
+./install-claude.sh --no-backup --force
+
+# PROJECT.md 제외하고 설치 (기존 설정 유지)
+./install-claude.sh --exclude "PROJECT.md"
+
+# 미리보기 (실제 변경 없음)
+./install-claude.sh --dry-run
+```
+
+### 📋 설치 옵션
+
+| 옵션 | 설명 |
+|------|------|
+| `--no-backup` | 기존 `.claude` 백업하지 않음 |
+| `--dry-run` | 실제 변경 없이 미리보기만 |
+| `--force` | 확인 없이 강제 실행 |
+| `--exclude PATTERN` | 특정 파일/디렉토리 제외 (예: `PROJECT.md`) |
+| `-h`, `--help` | 도움말 출력 |
+
+### ⚙️ 수동 설치
+
+스크립트를 사용하지 않으려면:
 
 ```bash
 # 1. .claude 폴더 복사
@@ -132,25 +172,60 @@ cp -r claude-settings/.claude /your-project/
 # 2. PROJECT.md 커스터마이징
 # 프로젝트 개요, 스택, 규칙 등을 프로젝트에 맞게 수정
 
-# 3. settings.local.json 설정
+# 3. settings.local.json 설정 (선택)
 # 프로젝트별 설정 조정
 ```
 
-### 2. 기존 프로젝트에 부분 적용
+### 🎯 부분 적용
 
 필요한 에이전트나 스킬만 선택적으로 복사할 수 있습니다.
 
 ```bash
-# 특정 에이전트만 복사
-cp claude-settings/.claude/agents/pm-agent.md /your-project/.claude/agents/
+# 특정 스킬만 설치
+./install-claude.sh --exclude "agents" --exclude "docs"
 
-# 특정 스킬만 복사
-cp -r claude-settings/.claude/skills/doc-sync /your-project/.claude/skills/
+# 또는 수동 복사
+cp -r claude-settings/.claude/skills/pm-orchestrator /your-project/.claude/skills/
 ```
 
-### 3. 워크플로우 실행
+### 📦 설치 후 다음 단계
 
-PM Agent가 자동으로 작업을 분석하고 적절한 에이전트를 호출합니다.
+1. **PROJECT.md 커스터마이징**
+   ```bash
+   # .claude/PROJECT.md를 프로젝트에 맞게 수정
+   # - 프로젝트 개요, 기술 스택
+   # - 핵심 규칙, API 패턴
+   # - 검증 명령 등
+   ```
+
+2. **Git에 커밋**
+   ```bash
+   git add .claude
+   git commit -m "Add Claude Code settings"
+   ```
+
+3. **Claude Code에서 바로 사용**
+   ```
+   User: "사용자 대시보드 기능 구현해줘"
+   Claude: [자동으로 /pm-orchestrator 실행]
+           → 작업 분석 → 요구사항 명확화 → 구현 → 검증 → 문서화
+   ```
+
+### 🔄 업데이트
+
+최신 버전으로 업데이트하려면:
+
+```bash
+# 백업 후 업데이트
+./install-claude.sh
+
+# 또는 PROJECT.md 유지하고 업데이트
+./install-claude.sh --exclude "PROJECT.md"
+```
+
+### 🔗 워크플로우 실행
+
+설치 후 PM Orchestrator가 자동으로 작업을 분석하고 적절한 에이전트를 호출합니다.
 
 ```
 User: "배치 관리 기능 구현해줘"
