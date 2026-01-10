@@ -1,42 +1,42 @@
-﻿---
+---
 name: codex-validate-plan
-description: Codex MCP로 아키텍처/계획 품질을 검증한다. `complex` 작업의 `feature`/`refactor`에서 `context.md` 작성 후 사용.
+description: Validate architecture/plan quality via Codex MCP. Use after writing context.md for complex feature/refactor work.
 ---
 
-# Codex 계획 검증
+# Codex Plan Validation
 
-## 사용 시점
+## When to use
 - `complexity`: `complex`
-- `taskType`: `feature` 또는 `refactor`
-- `context.md`가 존재하거나 갱신됨
+- `taskType`: `feature` or `refactor`
+- `context.md` exists or was updated
 
-## 절차
-1. context.md 내용을 수집한다.
-2. Codex MCP로 계획 검증 프롬프트를 실행한다.
-3. 치명/경고/제안을 정리하고 통과/실패를 판단한다.
+## Procedure
+1. Collect the contents of context.md.
+2. Run the plan validation prompt via Codex MCP.
+3. Summarize critical/warning/suggestion items and decide pass/fail.
 
-## 프롬프트 템플릿
+## Prompt template
 ```
-다음 구현 계획(context.md)을 검토해주세요:
+Please review the following implementation plan (context.md):
 
-[context.md 내용]
+[context.md contents]
 
-검증 항목:
-1. 아키텍처 적합성 및 유지보수성
-2. 기술 스택 적합성
-3. 파일/모듈 경계
-4. 성능 리스크
-5. 보안 리스크
-6. 핵심 기술 리스크
+Validation items:
+1. Architecture suitability and maintainability
+2. Tech stack suitability
+3. File/module boundaries
+4. Performance risks
+5. Security risks
+6. Core technical risks
 
-출력:
-- 통과 항목
-- 경고 항목
-- 치명 항목
+Output:
+- Pass items
+- Warnings
+- Critical issues
 ```
 
-## 출력 (patch)
+## Output (patch)
 ```yaml
 notes:
-  - "codex-plan: 통과, 경고=2"
+  - "codex-plan: pass, warnings=2"
 ```

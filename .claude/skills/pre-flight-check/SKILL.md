@@ -5,38 +5,38 @@ description: Checks essential information and project status before starting a t
 
 # Pre-Flight Check Skill
 
-**역할**: 작업 시작 전에 필수 정보와 프로젝트 상태를 점검해 누락을 줄입니다.
+**Role**: Check essential info and project status before starting work to reduce omissions.
 
-## 입력
-- 기능명/브랜치명 (선택)
-- 필수 문서 경로: CLAUDE.md, context.md 등
+## Inputs
+- Feature name/branch name (optional)
+- Required doc paths: CLAUDE.md, context.md, etc.
 
-## 체크 항목
-- 화면 정의서 버전/디자인 산출물 존재 여부
-- API 스펙 확보 여부
-- 유사 기능 참조 여부
-- git 상태/브랜치, 빌드 상태
-- context.md 최신 여부, pending-questions.md 미해결 항목
+## Checklist
+- UI spec version/design assets availability
+- API spec availability
+- Similar feature references
+- git status/branch, build status
+- context.md freshness, unresolved items in pending-questions.md
 
-## 출력 (예시)
+## Output (example)
 ```markdown
-# 사전 체크 결과
+# Pre-flight Check Results
 
-## 필수 정보
-✅ 화면 정의서: v3 (YYYY-MM-DD)
-✅ API 스펙: 초안 확보
-⚠️  유사 기능 참조: 찾지 못함
+## Required Info
+OK UI spec: v3 (YYYY-MM-DD)
+OK API spec: draft available
+WARN similar feature reference: not found
 
-## 프로젝트 상태
-✅ git 상태: clean
-✅ 브랜치: feature/{feature-name}
-✅ 빌드 상태: 성공
+## Project Status
+OK git status: clean
+OK branch: feature/{feature-name}
+OK build status: success
 
-## 문서
-✅ CLAUDE.md: 최신
-⚠️  context.md: 없음 (생성 필요)
+## Docs
+OK CLAUDE.md: latest
+WARN context.md: missing (needs creation)
 
-## 권장 액션
-1. [HIGH] context.md 생성 (ContextBuilder Agent)
-2. [MEDIUM] 디자인 산출물 확인 (design-spec-extractor 호출)
+## Recommended Actions
+1. [HIGH] Create context.md (ContextBuilder Agent)
+2. [MEDIUM] Verify design assets (invoke design-spec-extractor)
 ```

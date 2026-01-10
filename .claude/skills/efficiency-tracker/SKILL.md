@@ -5,31 +5,31 @@ description: Tracks workflow status and generates a flow report.
 
 # Efficiency Tracker Skill
 
-**역할**: 작업 흐름 상태를 기록하고 흐름 리포트(flow-report)를 생성합니다. (타임라인, 블로킹, 검증 결과, 커밋 링크)
+**Role**: Record workflow status and generate a flow report (timeline, blocking, verification results, commit links).
 
-## 입력
-- 기능명: `{feature-name}`
-- Phase/브랜치 정보(선택)
-- 검증 명령 결과 로그(선택)
+## Inputs
+- Feature name: `{feature-name}`
+- Phase/branch info (optional)
+- Verification command results (optional)
 
-## 동작
-1. 시작/종료 타임스탬프, 활성 Phase를 기록.
-2. 블로킹 구간(예: 화면 정의서 확인 대기, API 스펙 대기)을 메모로 추가.
-3. 실행한 검증 명령(typecheck/build/lint 등)과 결과를 기록.
-4. 변경 파일/커밋 링크와 작성자 메모를 남김.
-5. `.claude/docs/tasks/{feature-name}/flow-report.md`에 append 또는 생성.
+## Behavior
+1. Record start/end timestamps and active phase.
+2. Add blocking intervals (e.g., waiting for UI spec, waiting for API spec) as notes.
+3. Record verification commands (typecheck/build/lint) and results.
+4. Record changed files/commit links and author notes.
+5. Append to or create `.claude/docs/tasks/{feature-name}/flow-report.md`.
 
-## 출력
-- flow-report.md 업데이트 로그
-- 필요 시 session-log/day-...에 타임라인 항목 추가
+## Outputs
+- flow-report.md update log
+- Optionally add timeline entries to session-log/day-...
 
-## 실행 스니펫
+## Execution snippet
 ```
-작업 흐름 리포트를 업데이트해줘.
-- 기능: {featureName}
+Update the workflow report.
+- Feature: {featureName}
 - Phase: {phase}
-- 블로킹 메모: {blockingNotes}
-- 검증 결과: {verifyResults}
-- 커밋/파일: {commitRefs}
-출력: flow-report.md 업데이트
+- Blocking notes: {blockingNotes}
+- Verification results: {verifyResults}
+- Commits/files: {commitRefs}
+Output: flow-report.md update
 ```

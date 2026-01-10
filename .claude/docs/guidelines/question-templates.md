@@ -1,56 +1,56 @@
-# 불확실성 탐지를 위한 질문 템플릿
+# Question Templates for Uncertainty Detection
 
-## 1. UI/화면 정의 (UI/Screen Definition)
-**트리거**: 버전 정보 없이 "UI", "화면", "레이아웃" 키워드 등장.
-**템플릿**:
+## 1. UI/Screen Definition
+**Trigger**: Keywords like "UI", "screen", "layout" without version info.
+**Template**:
 ```
-❓ 화면 정의서 버전을 확인해주세요.
-- 최신 버전: v3 (2025-12-18)
-- 이전 버전: v2 (2025-12-10)
-- 주요 변경사항: [날짜 입력 방식, 컬럼 구조 등]
-어느 버전을 기준으로 할까요?
-```
-
-## 2. API 사양 (API Specifications)
-**트리거**: 엔드포인트 없이 "API", "백엔드", "연동" 키워드 등장.
-**템플릿**:
-```
-❓ API 스펙 초안을 공유해주세요.
-필요 정보:
-- 엔드포인트: POST /api/admin/...
-- 요청 파라미터: { "date": "yyyyMMdd" }
-- 응답 필드: { "success": true, "job_execution_id": 12345, ... }
-- 에러 응답 구조
-Swagger 링크나 JSON 스키마가 있으면 더 좋습니다.
+? Please confirm the UI spec version.
+- Latest version: v3 (2025-12-18)
+- Previous version: v2 (2025-12-10)
+- Key changes: [date input format, column structure, etc.]
+Which version should we use?
 ```
 
-## 3. 날짜/기간 로직 (Date/Period Logic)
-**트리거**: "날짜", "기간" 키워드가 있으나 단일/범위 여부 불명확.
-**템플릿**:
+## 2. API Specifications
+**Trigger**: Keywords like "API", "backend", "integration" without endpoints.
+**Template**:
 ```
-❓ 날짜 입력 방식을 명확히 해주세요.
-- 옵션 A: 단일 일자 (yyyy-mm-dd)
-- 옵션 B: 기간 범위 (시작일 ~ 종료일)
-어떤 방식을 선호하시나요?
-```
-
-## 4. 페이징 전략 (Pagination Strategy)
-**트리거**: 페이징 정보 없이 "목록", "테이블" 키워드 등장.
-**템플릿**:
-```
-❓ 페이징 전략을 확인해주세요.
-- 옵션 A: 서버 사이드 (page, size 파라미터)
-- 옵션 B: 클라이언트 사이드 (전체 로드 후 프론트 필터링)
-어떤 방식을 선호하시나요?
+? Please share the API spec draft.
+Required info:
+- Endpoint: POST /api/admin/...
+- Request params: { "date": "yyyyMMdd" }
+- Response fields: { "success": true, "job_execution_id": 12345, ... }
+- Error response schema
+Swagger link or JSON schema is helpful.
 ```
 
-## 5. 에러 처리 정책 (Error Handling Policy)
-**트리거**: 에러 정책 없는 신규 기능 요청.
-**템플릿**:
+## 3. Date/Period Logic
+**Trigger**: "date" or "period" keywords without single/range clarity.
+**Template**:
 ```
-❓ 에러 처리 정책을 확인해주세요.
-- 옵션 A: Alert (window.alert)
-- 옵션 B: Toast (react-hot-toast)
-- 옵션 C: 인라인 메시지 (Inline Message)
-프로젝트 표준이 있나요?
+? Please clarify the date input mode.
+- Option A: single date (yyyy-mm-dd)
+- Option B: date range (start ~ end)
+Which do you prefer?
+```
+
+## 4. Pagination Strategy
+**Trigger**: "list" or "table" keywords without paging details.
+**Template**:
+```
+? Please confirm the pagination strategy.
+- Option A: server-side (page, size params)
+- Option B: client-side (load all, then filter in UI)
+Which do you prefer?
+```
+
+## 5. Error Handling Policy
+**Trigger**: new feature request without error policy.
+**Template**:
+```
+? Please confirm the error handling policy.
+- Option A: Alert (window.alert)
+- Option B: Toast (react-hot-toast)
+- Option C: Inline message
+Do we have a project standard?
 ```

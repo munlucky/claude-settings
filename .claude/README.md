@@ -1,65 +1,71 @@
-# PM Agent 시스템 v2 변경 사항
+# PM Agent System v2 Changes
 
-> **업데이트 일자**: 2025-01-08
-> **버전**: v2.0
-> **주요 개선**: 병렬 실행, 피드백 루프, 요구사항 완료 체크
+> **Updated**: 2025-01-08
+> **Version**: v2.0
+> **Key improvements**: parallel execution, feedback loop, requirements completion check
 
 ---
 
-## 📊 변경 요약
+## Change Summary
 
-### 기존 시스템 (v1)
+### Previous system (v1)
 ```
 User Request
-  ↓
-PM Agent → Requirements → Context → Codex Validator
-  ↓
-Implementation → Type Safety → Verification → Documentation
+  |
+  v
+PM Agent -> Requirements -> Context -> Codex Validator
+  |
+  v
+Implementation -> Type Safety -> Verification -> Documentation
 ```
-- **순차 실행**
-- **피드백 루프 없음**
-- **요구사항 완료 체크 없음**
+- **Sequential execution**
+- **No feedback loop**
+- **No requirements completion check**
 
-### 새로운 시스템 (v2)
+### New system (v2)
 ```
 User Request
-  ↓
-PM Agent → Requirements → Context
-  ↓
+  |
+  v
+PM Agent -> Requirements -> Context
+  |
+  v
 {{PARALLEL}}
-  ├─ Codex Validator → Doc Sync (context.md 자동 업데이트)
-  └─ Implementation (전체 진행)
-  ↓
-Type Safety → Verification
-  ↓
+  |-- Codex Validator -> Doc Sync (context.md auto update)
+  `-- Implementation (full progress)
+  |
+  v
+Type Safety -> Verification
+  |
+  v
 PM Agent: Requirements Completion Check
-  ├─ Incomplete → Implementation 재실행
-  └─ Complete → Documentation Finalize
+  |-- Incomplete -> Re-run Implementation
+  `-- Complete -> Documentation Finalize
 ```
-- **병렬 실행** (Codex Validator || Implementation)
-- **실시간 피드백 루프** (Doc Sync Skill)
-- **요구사항 완료 보장** (Completion Check)
+- **Parallel execution** (Codex Validator || Implementation)
+- **Real-time feedback loop** (Doc Sync Skill)
+- **Requirements completion guaranteed** (Completion Check)
 
 ---
 
-## 🆕 신규 기능
+## New Features
 
 ### 1. Doc Sync Skill
-**위치**: `.claude/skills/doc-sync/skill.md`
+**Location**: `.claude/skills/doc-sync/skill.md`
 
-**목적**: 에이전트 간 문서 동기화 자동화
+**Purpose**: Automate document synchronization between agents
 
-**기능**:
-- context.md 자동 업데이트 (Validator 피드백 반영)
-- pending-questions.md 자동 관리
-- flow-report.md 실시간 진척도 추적
+**Capabilities**:
+- Auto-update context.md (apply validator feedback)
+- Auto-manage pending-questions.md
+- Real-time progress tracking in flow-report.md
 
-**호출 시점**:
-- Codex Validator 완료 후
-- Requirements Completion Check 후
-- Documentation Finalize 전
+**When to call**:
+- After Codex Validator completes
+- After Requirements Completion Check
+- Before Documentation Finalize
 
-**예시**:
+**Example**:
 ```json
 {
   "feature_name": "batch-management",
@@ -68,7 +74,7 @@ PM Agent: Requirements Completion Check
       "file": "context.md",
       "section": "Phase 1",
       "action": "append",
-      "content": "날짜 입력 검증 강화: 과거 30일 제한 추가"
+      "content": "Strengthen date input validation: limit to past 30 days"
     }
   ]
 }
@@ -76,260 +82,260 @@ PM Agent: Requirements Completion Check
 
 ---
 
-### 2. Parallel 실행 (PM Agent)
-**위치**: `.claude/agents/pm-agent/prompt.md` (5단계)
+### 2. Parallel Execution (PM Agent)
+**Location**: `.claude/agents/pm-agent/prompt.md` (step 5)
 
-**목적**: Codex Validator와 Implementation 병렬 실행으로 시간 절약
+**Purpose**: Save time by running Codex Validator and Implementation in parallel
 
-**동작 방식**:
-1. Context Builder 완료 후
-2. Codex Validator 시작 (비동기, Read-Only)
-3. Implementation Agent 시작 (비동기, 전체 진행)
-4. Validator 먼저 완료 → Doc Sync 호출
-5. Implementation 완료 → 최신 context.md 확인
+**How it works**:
+1. After Context Builder completes
+2. Start Codex Validator (async, read-only)
+3. Start Implementation Agent (async, full progress)
+4. Validator finishes first -> Doc Sync called
+5. Implementation finishes -> verify latest context.md
 
-**기대 효과**:
-- Validator 시간 (5분) 중복 제거
-- 실시간 피드백으로 Implementation이 최신 계획 반영
+**Expected effects**:
+- Remove validator overlap (5 minutes)
+- Real-time feedback so Implementation follows latest plan
 
 ---
 
 ### 3. Requirements Completion Check (PM Agent)
-**위치**: `.claude/agents/pm-agent/prompt.md` (6단계)
+**Location**: `.claude/agents/pm-agent/prompt.md` (step 6)
 
-**목적**: 모든 요구사항 완료 여부 확인, 누락 방지
+**Purpose**: Ensure every requirement is complete and prevent omissions
 
-**체크 항목**:
-1. 사전 합의서 대조
-2. context.md 체크포인트
-3. pending-questions.md 미해결 항목
+**Checklist**:
+1. Cross-check against preliminary agreement
+2. context.md checkpoints
+3. unresolved items in pending-questions.md
 
-**미완료 시**:
-- Implementation Agent 재실행 (미완료 항목만)
-- Type Safety → Verification 재실행
-- Completion Check 재실행
+**If incomplete**:
+- Re-run Implementation Agent (only incomplete items)
+- Re-run Type Safety -> Verification
+- Re-run Completion Check
 
-**완료 시**:
-- Documentation Finalize 호출
+**If complete**:
+- Call Documentation Finalize
 
-**기대 효과**:
-- 요구사항 누락 방지 100%
-- 재작업 최소화 (미완료 항목만 재실행)
+**Expected effects**:
+- 100% prevention of missed requirements
+- Minimize rework (re-run only incomplete items)
 
 ---
 
 ### 4. Documentation Finalize (Documentation Agent)
-**위치**: `.claude/agents/documentation/prompt.md` (Finalize Mode)
+**Location**: `.claude/agents/documentation/prompt.md` (Finalize Mode)
 
-**목적**: 최종 문서화 + 효율성 리포트 + 회고 메모
+**Purpose**: Final documentation + efficiency report + retrospective notes
 
-**추가 작업**:
-1. 최종 검증 (커밋, 검증 결과, pending-questions)
-2. 문서 마감 (context.md, session-log.md, flow-report.md, pending-questions.md)
-3. 효율성 리포트 (시간 분배, 재작업 비율, 병렬 실행 효과, Completion Check 효과)
-4. 회고 메모 (잘한 점, 개선할 점, 배운 점, 다음 작업 제안)
+**Additional tasks**:
+1. Final verification (commits, verification results, pending questions)
+2. Close documents (context.md, session-log.md, flow-report.md, pending-questions.md)
+3. Efficiency report (time allocation, rework ratio, parallel effect, completion check effect)
+4. Retrospective notes (wins, improvements, learnings, next suggestions)
 
-**출력 예시**:
+**Output example**:
 ```markdown
-# Documentation Finalize 완료
+# Documentation Finalize Complete
 
-## 📊 최종 요약
-- 작업 시간: 2.58h (예상 2.67h 대비 5분 단축)
-- 재작업 비율: 0%
-- 생산성: 96%
+## Final Summary
+- Work time: 2.58h (5m shorter than 2.67h)
+- Rework ratio: 0%
+- Productivity: 96%
 
-## 💡 주요 개선 효과
-- 병렬 실행: 5분 절약
-- 실시간 문서 동기화: 재작업 0%
-- Completion Check: 누락 방지 100%
+## Key Improvement Effects
+- Parallel execution: saved 5m
+- Real-time doc sync: 0% rework
+- Completion Check: 100% missing prevention
 ```
 
 ---
 
-## 📈 기대 효과 비교
+## Expected Impact Comparison
 
-### 정량적 효과 (complex 작업 기준)
+### Quantitative impact (for complex tasks)
 
-| 지표 | v1 | v2 | 개선율 |
+| Metric | v1 | v2 | Improvement |
 |------|----|----|--------|
-| 작업 시간 | 2.5h | 2.0h | 20% ↓ |
-| 재작업 비율 | 0% | 0% | 유지 |
-| 요구사항 누락 | 가능 | 0% | 100% 개선 |
-| 문서 불일치 | 30% | 0% | 100% 개선 |
-| 생산성 | 95% | 96% | 1% ↑ |
+| Work time | 2.5h | 2.0h | 20% down |
+| Rework ratio | 0% | 0% | unchanged |
+| Missing requirements | possible | 0% | 100% improved |
+| Doc mismatch | 30% | 0% | 100% improved |
+| Productivity | 95% | 96% | 1% up |
 
-### 정성적 효과
+### Qualitative impact
 
-1. **실시간 피드백 루프**
-   - Validator → Doc Sync → Implementation (즉시 반영)
-   - 재작업 예방 (평균 15분 절약)
+1. **Real-time feedback loop**
+   - Validator -> Doc Sync -> Implementation (immediate reflection)
+   - Prevent rework (save ~15 minutes on average)
 
-2. **문서 일관성 보장**
-   - 모든 에이전트가 최신 문서 참조
-   - 문서 불일치 오류 0%
+2. **Document consistency**
+   - All agents reference the latest docs
+   - 0% doc mismatch errors
 
-3. **요구사항 완료 보장**
-   - Completion Check로 누락 방지
-   - 품질 보증의 마지막 관문
+3. **Requirements completion guarantee**
+   - Completion Check prevents missing items
+   - Final gate for quality assurance
 
-4. **효율성 가시화**
-   - 효율성 리포트 자동 생성
-   - 개선 효과 정량 측정
+4. **Visibility of efficiency**
+   - Auto-generate efficiency reports
+   - Quantify improvement effects
 
 ---
 
-## 🔧 사용 방법
+## Usage
 
-### 시나리오: 신규 기능 구현 (complex)
+### Scenario: new feature implementation (complex)
 
-#### 1. PM Agent 분석 (자동)
+#### 1. PM Agent analysis (auto)
 ```
-사용자: "배치 관리 기능 구현해줘"
-PM Agent: 불확실한 부분 질문 (화면 정의서 버전, API 스펙)
-```
-
-#### 2. Requirements Analyzer (자동)
-```
-사용자: 답변 제공
-Requirements Analyzer: 사전 합의서 생성
+User: "Implement batch management"
+PM Agent: asks about uncertainty (UI spec version, API spec)
 ```
 
-#### 3. Context Builder (자동)
+#### 2. Requirements Analyzer (auto)
 ```
-Context Builder: 구현 계획 작성 (context.md)
-```
-
-#### 4. Parallel 실행 (자동)
-```
-Codex Validator (비동기):
-  - 계획 검증 (5분)
-  - Doc Sync 호출 → context.md 업데이트
-
-Implementation Agent (비동기):
-  - Phase 1-3 전체 진행 (2h)
-  - 최신 context.md 확인
+User: provides answers
+Requirements Analyzer: creates preliminary agreement
 ```
 
-#### 5. Type Safety → Verification (자동)
+#### 3. Context Builder (auto)
 ```
-Type Safety: Entity-Request 분리 확인
+Context Builder: writes implementation plan (context.md)
+```
+
+#### 4. Parallel execution (auto)
+```
+Codex Validator (async):
+  - Validate plan (5m)
+  - Call Doc Sync -> update context.md
+
+Implementation Agent (async):
+  - Execute Phase 1-3 (2h)
+  - Check latest context.md
+```
+
+#### 5. Type Safety -> Verification (auto)
+```
+Type Safety: verify entity-request separation
 Verification: typecheck, build, lint
 ```
 
-#### 6. Requirements Completion Check (자동)
+#### 6. Requirements Completion Check (auto)
 ```
 PM Agent:
-  - 사전 합의서 대조
-  - context.md 체크포인트
-  - pending-questions.md 확인
+  - Cross-check agreement
+  - Check context.md checkpoints
+  - Check pending-questions.md
 
-미완료 시:
-  - Implementation 재실행
-  - 다시 Completion Check
+If incomplete:
+  - Re-run Implementation
+  - Run Completion Check again
 
-완료 시:
-  - Documentation Finalize 호출
+If complete:
+  - Call Documentation Finalize
 ```
 
-#### 7. Documentation Finalize (자동)
+#### 7. Documentation Finalize (auto)
 ```
 Documentation Agent:
-  - 최종 검증
-  - 문서 마감
-  - 효율성 리포트
-  - 회고 메모
+  - Final verification
+  - Close docs
+  - Efficiency report
+  - Retrospective notes
 ```
 
 ---
 
-## 📁 변경 파일 목록
+## Changed Files
 
-### 신규 생성
+### New
 - `.claude/skills/doc-sync/skill.md`
 
-### 수정
-- `.claude/agents/pm-agent/prompt.md` (5단계, 6단계 추가)
-- `.claude/agents/documentation/prompt.md` (Finalize Mode 추가)
+### Updated
+- `.claude/agents/pm-agent/prompt.md` (added steps 5 and 6)
+- `.claude/agents/documentation/prompt.md` (added Finalize Mode)
 
-### 변경 없음 (호환성 유지)
+### Unchanged (compatibility maintained)
 - `.claude/agents/verification/prompt.md`
 - `.claude/agents/context-builder/prompt.md`
 - `.claude/agents/implementation/prompt.md`
 
 ---
 
-## 🚀 마이그레이션 가이드
+## Migration Guide
 
-### 기존 프로젝트에 적용 시
+### Applying to existing projects
 
-1. **Doc Sync Skill 추가**
+1. **Add Doc Sync Skill**
    ```bash
    cp .claude/skills/doc-sync/skill.md [your-project]/.claude/skills/doc-sync/
    ```
 
-2. **PM Agent 프롬프트 업데이트**
-   - 5단계: Parallel 실행 섹션 추가
-   - 6단계: Requirements Completion Check 섹션 추가
+2. **Update PM Agent prompt**
+   - Step 5: add parallel execution section
+   - Step 6: add Requirements Completion Check section
 
-3. **Documentation Agent 프롬프트 업데이트**
-   - Finalize Mode 섹션 추가
+3. **Update Documentation Agent prompt**
+   - Add Finalize Mode section
 
-4. **즉시 사용 가능**
-   - 기존 워크플로우와 100% 호환
-   - 추가 설정 불필요
-
----
-
-## 🎯 다음 단계 (선택적)
-
-### Phase 7: 자동화 확장 (미래 계획)
-1. **Validator 권장사항 DB**
-   - 반복되는 권장사항 패턴화
-   - 자동 적용 범위 확대
-
-2. **효율성 리포트 대시보드**
-   - 작업마다 효율성 지표 자동 수집
-   - 개선 효과 시각화
-
-3. **AI 기반 Completion Check**
-   - 요구사항 자동 매핑
-   - 누락 항목 예측
+4. **Ready to use**
+   - Fully compatible with existing workflow
+   - No extra configuration required
 
 ---
 
-## 💡 FAQ
+## Next Steps (Optional)
 
-### Q1: 기존 작업에도 적용되나요?
-A: 네, 100% 하위 호환됩니다. 기존 워크플로우에 자동으로 통합됩니다.
+### Phase 7: automation expansion (future)
+1. **Validator recommendation DB**
+   - Patternize repeated recommendations
+   - Expand auto-apply scope
 
-### Q2: simple 작업에도 병렬 실행되나요?
-A: 아니요, complexity: complex일 때만 병렬 실행됩니다. simple/medium은 기존과 동일하게 순차 실행됩니다.
+2. **Efficiency report dashboard**
+   - Collect efficiency metrics per task
+   - Visualize improvement effects
 
-### Q3: Doc Sync가 실패하면?
-A: 부분 성공 시 로그 기록 + 수동 해결 안내. 롤백 기능 지원.
-
-### Q4: Completion Check를 스킵할 수 있나요?
-A: 권장하지 않지만, PM Agent 설정으로 비활성화 가능합니다.
-
-### Q5: 효율성 리포트는 필수인가요?
-A: 선택적입니다. Documentation Finalize 시 자동 생성되지만, 생략 가능합니다.
+3. **AI-based Completion Check**
+   - Auto-map requirements
+   - Predict missing items
 
 ---
 
-## 📊 실제 효과 (예상)
+## FAQ
 
-### 월 10개 complex 작업 기준
-- **시간 절약**: 10개 × 30분 = 5시간/월
-- **재작업 방지**: 0% 유지
-- **요구사항 누락**: 0건 (기존 1-2건/월)
-- **문서 불일치**: 0건 (기존 3-5건/월)
+### Q1: Does it apply to existing work?
+A: Yes. It is 100% backward compatible and integrates automatically.
+
+### Q2: Does parallel execution run for simple tasks?
+A: No. It runs only for complexity: complex. simple/medium remain sequential.
+
+### Q3: What if Doc Sync fails?
+A: Log the partial success and guide manual resolution. Rollback is supported.
+
+### Q4: Can we skip Completion Check?
+A: Not recommended, but it can be disabled in PM Agent settings.
+
+### Q5: Is the efficiency report required?
+A: Optional. It is auto-generated in Documentation Finalize, but can be omitted.
+
+---
+
+## Actual Impact (Projected)
+
+### For 10 complex tasks per month
+- **Time saved**: 10 x 30m = 5 hours/month
+- **Rework prevention**: 0% (unchanged)
+- **Missing requirements**: 0 cases (previously 1-2/month)
+- **Doc mismatch**: 0 cases (previously 3-5/month)
 
 ### ROI
-- **초기 투자**: 1주 (시스템 개선)
-- **월 절약**: 5시간
-- **회수 기간**: 약 1.5주
-- **연간 효과**: 60시간 절약 (= 7.5일)
+- **Initial investment**: 1 week (system improvements)
+- **Monthly savings**: 5 hours
+- **Payback period**: ~1.5 weeks
+- **Annual impact**: 60 hours saved (= 7.5 days)
 
 ---
 
-**PM Agent 시스템 v2로 개발 생산성을 한 단계 더 높이세요!**
+**Boost development productivity to the next level with PM Agent System v2.**

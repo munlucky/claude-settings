@@ -1,187 +1,187 @@
-# 토큰 효율화 가이드라인 (Token Optimization Guidelines)
+# Token Optimization Guidelines
 
-## 📌 목표
-에이전트 간 컨텍스트 전달 시 토큰 낭비를 최소화하고, 특히 `context: fork`를 사용한 병렬 실행에서 중복 비용을 제거합니다.
+## Goal
+Minimize token waste when passing context between agents, and remove duplicate cost especially in parallel execution with `context: fork`.
 
 ---
 
-## 🎯 5대 핵심 원칙
+## Five Core Principles
 
-### 1. 최소 정보 전달 (Minimal Context Transfer)
-**문제**: 전체 컨텍스트를 sub-agent에게 전달하면 토큰이 2배로 소비됨
-**해결**:
-- 각 에이전트에게 **필요한 정보만** YAML 스냅샷(5-10줄)으로 전달
-- 파일 내용 대신 **파일 경로만** 전달
-- **YAML 사용**: JSON 대비 20-30% 토큰 절감 (따옴표, 중괄호, 쉼표 제거)
-- 예시:
+### 1. Minimal Context Transfer
+**Problem**: Passing full context to sub-agents doubles token usage
+**Solution**:
+- Send only **necessary info** in a small YAML snapshot (5-10 lines)
+- Send **file paths only**, not file contents
+- **Use YAML**: 20-30% fewer tokens vs JSON (fewer quotes/braces/commas)
+- Example:
 ```yaml
-task: "배치 관리 기능 구현"
+task: "implement batch management"
 targetFiles:
   - "src/pages/batch/*.tsx"
 constraints:
-  - "페이징 필수"
+  - "paging required"
 ```
 
 ### 2. Progressive Disclosure
-**문제**: 처음부터 모든 파일을 로드하면 불필요한 토큰 소비
-**해결**:
-- 에이전트는 처음에 경로 목록만 받음
-- 작업 중 **필요한 파일만 선택적으로 Read**
-- PM은 "어디를 보면 되는지" 안내만 제공
+**Problem**: Loading all files upfront wastes tokens
+**Solution**:
+- Agents receive only path lists at first
+- **Read only necessary files** during work
+- PM only tells "where to look"
 
-### 3. 출력 체인 (Output Chaining)
-**문제**: 전체 대화 히스토리를 다음 에이전트에게 넘기면 누적 증가
-**해결**:
-- 이전 에이전트의 **출력 파일 경로만** 전달
-- 전체 히스토리를 넘기지 않음
-- 예시 체인:
-  - Requirements → `agreement.md` 생성
-  - Context → `agreement.md` 경로만 받음, `context.md` 생성
-  - Implementation → `context.md` 경로만 받음
+### 3. Output Chaining
+**Problem**: Passing full conversation history to the next agent grows cost
+**Solution**:
+- Pass only the **output file paths** from the previous agent
+- Do not pass full history
+- Example chain:
+  - Requirements -> create `agreement.md`
+  - Context -> receive `agreement.md` path, create `context.md`
+  - Implementation -> receive `context.md` path only
 
-### 4. 병렬 실행 시 공통 컨텍스트 단일화
-**문제**: Validator와 Implementation을 병렬 실행하면 같은 컨텍스트가 2번 로드됨
-**해결**:
-- PM이 **공통 스냅샷을 1회만 준비**
-- 두 에이전트 모두 이 스냅샷 참조
-- 역할별 최소 정보만 추가:
-  - Validator: `"mode": "readonly"` + 검토 대상 파일 경로
-  - Implementation: `"mode": "write"` + 구현 대상 파일 경로
+### 4. Single Shared Context for Parallel Execution
+**Problem**: Parallel Validator and Implementation load the same context twice
+**Solution**:
+- PM prepares **one shared snapshot**
+- Both agents reference the same snapshot
+- Add only role-specific minimums:
+  - Validator: `"mode": "readonly"` + review file paths
+  - Implementation: `"mode": "write"` + target file paths
 
-**예시 (YAML)**:
+**Example (YAML)**:
 ```yaml
-# 공통 스냅샷 (1회 준비)
-featureName: "배치 관리"
+# Shared snapshot (prepared once)
+featureName: "batch management"
 contextFile: ".claude/features/batch/context.md"
 patterns:
-  entityRequest: "타입 분리 패턴"
+  entityRequest: "type separation pattern"
 relevantFilePaths:
   - "src/pages/batch/*.tsx"
 
-# Validator 추가 정보
+# Validator extra info
 mode: "readonly"
 reviewFocus:
-  - "엣지 케이스"
+  - "edge cases"
 
-# Implementation 추가 정보
+# Implementation extra info
 mode: "write"
 targetFiles:
   - "src/pages/batch/BatchListPage.tsx"
 ```
 
-### 5. 참조 기반 전달 (Reference-Based Transfer)
-**문제**: 파일 전체 내용을 전달하면 수백~수천 줄이 컨텍스트에 포함
-**해결**:
-- `파일명:라인` 형태로 참조만 전달
-- 예: `src/api/batch.ts:45-67` (해당 함수만 보면 됨)
-- 에이전트가 필요시 해당 범위만 Read
+### 5. Reference-Based Transfer
+**Problem**: Passing full file content adds hundreds or thousands of lines
+**Solution**:
+- Pass references only in `file:line` format
+- Example: `src/api/batch.ts:45-67` (only that function is needed)
+- Agent reads only the referenced range if needed
 
 ---
 
-## 📊 복잡도별 적용 전략
+## Strategy by Complexity
 
-### Simple (1-2개 파일)
+### Simple (1-2 files)
 ```yaml
-task: "작업 1줄 요약"
+task: "one-line task summary"
 targetFiles:
   - "file1.ts"
-userRequest: "원본 요청 (50자 이내)"
+userRequest: "original request (<= 50 chars)"
 ```
-- 파일 경로만, 내용 X
-- YAML로 JSON 대비 20-30% 절감
+- File paths only, no contents
+- YAML saves 20-30% vs JSON
 
-### Medium (3-5개 파일)
-**체인 방식**:
-- Requirements → `agreement.md` 경로
-- Context → `context.md` 경로
-- Implementation → `context.md` 경로 + 핵심 제약 3-5개
+### Medium (3-5 files)
+**Chained approach**:
+- Requirements -> `agreement.md` path
+- Context -> `context.md` path
+- Implementation -> `context.md` path + 3-5 core constraints
 
-### Complex (6개 이상 파일)
-**병렬 실행 + 공통 스냅샷 (YAML)**:
+### Complex (6+ files)
+**Parallel + shared snapshot (YAML)**:
 ```yaml
 agreementFile: ".claude/features/xxx/agreement.md"
 contextFile: ".claude/features/xxx/context.md"
 codebasePatterns:
-  entityRequest: "entity와 request 분리"
-  apiProxy: "axios 래퍼"
+  entityRequest: "separate entity and request"
+  apiProxy: "axios wrapper"
 relevantFilePaths:
   - "src/pages/xxx/*.tsx"
   - "src/api/xxx.ts"
 ```
-- Validator와 Implementation이 이 스냅샷 공유
-- 각자 필요한 파일만 선택적 로드
-- YAML 사용으로 추가 20-30% 절감
+- Validator and Implementation share the same snapshot
+- Each reads only the needed files
+- YAML saves an additional 20-30%
 
 ---
 
-## 📈 예상 효과
+## Expected Impact
 
-### 병렬 실행 시 토큰 절감
-- 공통 정보 중복 제거: **~50% 절약**
-- 파일 내용 지연 로드: **~30% 절약**
-- 역할별 필요 정보만: **~20% 절약**
-- YAML 사용 (vs JSON): **~20-30% 절약**
-- **총 예상 절감**: 병렬 실행 시 **50-70% 토큰 절감**
+### Token savings in parallel execution
+- Remove duplicate shared info: **~50% saved**
+- Deferred file content loading: **~30% saved**
+- Role-specific minimums only: **~20% saved**
+- YAML (vs JSON): **~20-30% saved**
+- **Total expected savings**: **50-70%** tokens in parallel
 
-### 순차 실행 시 토큰 절감
-- 출력 체인 적용: **~30% 절약**
-- Progressive Disclosure: **~25% 절약**
-- 참조 기반 전달: **~15% 절약**
-- YAML 사용 (vs JSON): **~20-30% 절약**
-- **총 예상 절감**: 순차 실행 시 **40-50% 토큰 절감**
-
----
-
-## 🛠️ 구현 체크리스트
-
-### PM Agent 수행 항목
-- [ ] 에이전트별 최소 페이로드 YAML 생성 (JSON 사용 금지)
-- [ ] 파일 경로만 포함, 내용 제외
-- [ ] 병렬 실행 시 공통 스냅샷 1회 준비
-- [ ] 이전 단계 출력 파일 경로만 전달
-
-### 개별 에이전트 수행 항목
-- [ ] 받은 페이로드에서 파일 경로 확인
-- [ ] 필요한 파일만 선택적으로 Read
-- [ ] 전체 히스토리 요청 금지
-- [ ] 출력 파일 생성 (다음 에이전트가 경로로 참조)
-
-### 금지 사항
-- ❌ 파일 전체 내용을 페이로드에 포함
-- ❌ 전체 대화 히스토리를 다음 에이전트에게 전달
-- ❌ 병렬 실행 시 각 에이전트에게 별도 컨텍스트 준비
-- ❌ 처음부터 모든 파일 로드
-- ❌ JSON 사용 (반드시 YAML 사용)
+### Token savings in sequential execution
+- Output chaining: **~30% saved**
+- Progressive Disclosure: **~25% saved**
+- Reference-based transfer: **~15% saved**
+- YAML (vs JSON): **~20-30% saved**
+- **Total expected savings**: **40-50%** tokens in sequence
 
 ---
 
-## 📚 참조 문서
-- `.claude/agents/pm-agent.md` - PM 워크플로우
-- `.claude/docs/guidelines/analysis-guide.md` - 복잡도별 컨텍스트
-- `.claude/docs/guidelines/parallel-execution.md` - 병렬 실행 전략
-- `.claude/templates/pm-output.json` - 페이로드 구조
+## Implementation Checklist
+
+### PM Agent items
+- [ ] Build minimal per-agent YAML payloads (no JSON)
+- [ ] Include only file paths, not contents
+- [ ] Prepare one shared snapshot for parallel execution
+- [ ] Pass only previous output file paths
+
+### Per-agent items
+- [ ] Confirm file paths from the payload
+- [ ] Read only needed files
+- [ ] Do not request full history
+- [ ] Create output files (next agents reference paths)
+
+### Prohibited
+- Do not include full file contents in the payload
+- Do not pass full conversation history to the next agent
+- Do not prepare separate contexts for each agent in parallel
+- Do not load all files upfront
+- Do not use JSON (use YAML)
 
 ---
 
-## 💡 실전 팁
-
-### 디버깅 시
-- 토큰 사용량이 예상보다 높다면 페이로드에 파일 내용이 포함되었는지 확인
-- 각 에이전트의 첫 번째 동작이 "파일 Read"인지 확인
-
-### 최적화 우선순위
-1. **병렬 실행 구간** (가장 큰 효과)
-2. **Complex 작업** (파일이 많아 누적 효과)
-3. **Medium 작업** (중간 효과)
-4. **Simple 작업** (효과는 작지만 일관성 유지)
-
-### 측정 방법
-- 실제 토큰 사용량을 로깅해서 개선 효과 측정
-- 복잡도별/단계별 토큰 소비 패턴 분석
-- 병렬 실행 전후 비교
+## References
+- `.claude/agents/pm-agent.md` - PM workflow
+- `.claude/docs/guidelines/analysis-guide.md` - complexity-specific context
+- `.claude/docs/guidelines/parallel-execution.md` - parallel strategy
+- `.claude/templates/pm-output.json` - payload structure
 
 ---
 
-**작성일**: 2026-01-10
-**버전**: 1.0
-**상태**: 활성
+## Practical Tips
+
+### Debugging
+- If token usage is higher than expected, check whether file contents were included
+- Confirm the first agent action is "read file"
+
+### Optimization priority
+1. **Parallel execution sections** (largest impact)
+2. **Complex tasks** (more files, bigger gains)
+3. **Medium tasks** (moderate impact)
+4. **Simple tasks** (small but consistent)
+
+### Measurement
+- Log actual token usage to measure improvements
+- Analyze token spending by complexity and phase
+- Compare before/after parallel execution
+
+---
+
+**Date**: 2026-01-10
+**Version**: 1.0
+**Status**: Active

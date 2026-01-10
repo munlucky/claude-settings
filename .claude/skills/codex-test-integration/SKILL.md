@@ -1,41 +1,41 @@
-﻿---
+---
 name: codex-test-integration
-description: Codex MCP로 통합 영향과 회귀 리스크를 검증한다. `complex` 작업 또는 API 연동 시 사용.
+description: Validate integration impact and regression risks via Codex MCP. Use for complex tasks or API integration.
 ---
 
-# Codex 통합 검증
+# Codex Integration Validation
 
-## 사용 시점
-- `complexity`: `complex` (항상)
-- 또는 `apiSpecConfirmed == true && hasMockImplementation == true`
+## When to use
+- `complexity`: `complex` (always)
+- or `apiSpecConfirmed == true && hasMockImplementation == true`
 
-## 절차
-1. 변경 범위와 엔드포인트를 요약한다.
-2. Codex MCP로 통합 검증 프롬프트를 실행한다.
-3. 회귀 리스크와 추가 테스트 항목을 기록한다.
+## Procedure
+1. Summarize change scope and endpoints.
+2. Run the integration validation prompt via Codex MCP.
+3. Record regression risks and extra test items.
 
-## 프롬프트 템플릿
+## Prompt template
 ```
-다음 통합 변경사항을 검증해주세요:
-- 기능 요약
-- 변경 파일
-- API 엔드포인트
+Please validate the following integration changes:
+- Feature summary
+- Changed files
+- API endpoints
 
-검증 항목:
-1. 회귀 리스크
-2. 계약 준수
-3. 엣지 케이스
-4. 성능 이슈
-5. 누락된 시나리오
+Checklist:
+1. Regression risks
+2. Contract compliance
+3. Edge cases
+4. Performance issues
+5. Missing scenarios
 
-출력:
-- 통과
-- 추가 테스트
-- 회귀 리스크
+Output:
+- Pass items
+- Additional tests
+- Regression risks
 ```
 
-## 출력 (patch)
+## Output (patch)
 ```yaml
 notes:
-  - "codex-integration: 통과, 추가-테스트=2"
+  - "codex-integration: pass, extra-tests=2"
 ```

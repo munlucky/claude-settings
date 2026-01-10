@@ -1,30 +1,30 @@
-﻿---
+---
 name: pm-classify-task
-description: 사용자 요청을 작업 유형(`feature`, `modification`, `bugfix`, `refactor`)으로 분류하고 의도 키워드를 추출한다. PM 분석 시작 시 사용.
+description: Classifies a user request into task types (feature, modification, bugfix, refactor) and extracts intent keywords. Use at the start of PM analysis.
 ---
 
-# PM 작업 분류
+# PM Task Classification
 
-## 입력
+## Inputs
 - `analysisContext.request.userMessage`
 
-## 절차
-1. 사용자 메시지에서 의도 키워드를 식별한다.
-2. taskType을 하나 선택한다: `feature | modification | bugfix | refactor`.
-3. 신뢰도를 설정한다: `high | medium | low`.
+## Procedure
+1. Identify intent keywords from the user message.
+2. Select one taskType: `feature | modification | bugfix | refactor`.
+3. Set confidence: `high | medium | low`.
 
-## 휴리스틱
-- feature: "신규", "추가", "구현", "만들기", "생성"
-- modification: "변경", "수정", "개선", "조정", "제거"
-- bugfix: "버그", "에러", "오류", "안 됨", "깨짐"
-- refactor: "리팩터링", "정리", "재구성", "중복 제거"
+## Heuristics
+- feature: "new", "add", "implement", "create", "build"
+- modification: "change", "modify", "improve", "adjust", "remove"
+- bugfix: "bug", "error", "broken", "fails"
+- refactor: "refactor", "clean up", "restructure", "remove duplication"
 
-## 출력 (patch)
+## Output (patch)
 ```yaml
 request.taskType: feature
 request.keywords:
-  - 구현
-  - 배치
+  - implement
+  - batch
 notes:
   - "taskType=feature, confidence=high"
 ```

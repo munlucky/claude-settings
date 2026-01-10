@@ -5,47 +5,47 @@ description: Synchronizes documentation across agents to reflect planning change
 
 # Doc Sync Skill
 
-> **목적**: 에이전트 간 문서 동기화를 자동화하여 계획 변경사항, 진행 상황, 미해결 질문을 실시간 반영
-> **사용 시점**: Codex Validator 완료 후, Requirements Completion Check 후, Documentation Finalize 전
-> **출력**: `.claude/docs/tasks/{feature-name}/context.md`, `pending-questions.md`, `flow-report.md`
+> **Purpose**: Automate document sync across agents so plan changes, progress, and open questions update in real time
+> **When to use**: After Codex Validator completes, after Requirements Completion Check, before Documentation Finalize
+> **Outputs**: `.claude/docs/tasks/{feature-name}/context.md`, `pending-questions.md`, `flow-report.md`
 
 ---
 
-## 🎯 목표
+## Goals
 
-### 문제점
-- **기존 시스템**: 문서 업데이트가 Documentation Agent에서만 수행
-- **중간 단계 문서 동기화 부재**: Validator가 계획을 수정해도 즉시 반영 안 됨
-- **피드백 루프 지연**: Implementation Agent가 구버전 context.md 참조
+### Problems
+- **Previous system**: docs updated only by Documentation Agent
+- **No mid-step sync**: Validator plan edits not reflected immediately
+- **Delayed feedback loop**: Implementation Agent references stale context.md
 
-### 해결 방안
-- Codex Validator 완료 후 즉시 context.md 업데이트
-- 실시간 진행 상황 추적 (flow-report.md)
-- 미해결 질문 중앙화 관리 (pending-questions.md)
-
----
-
-## 📝 자동 트리거 시점
-
-### 1. Codex Validator 완료 후
-- Validator가 생성한 auto_apply 항목을 context.md에 자동 반영
-- 새로운 권장사항을 pending-questions.md에 추가
-- flow-report.md에 "Planning 완료" 표시
-
-### 2. Requirements Completion Check 후
-- 미완료 항목을 pending-questions.md에 추가
-- flow-report.md에 "Implementation 재실행" 기록
-
-### 3. Documentation Finalize 전
-- 최종 동기화 (모든 문서 최신 상태 확인)
-- pending-questions.md 비우기 또는 "Resolved" 표시
-- flow-report.md 완료 표시
+### Solution
+- Update context.md immediately after Codex Validator
+- Track real-time progress (flow-report.md)
+- Centralize open questions (pending-questions.md)
 
 ---
 
-## 🔧 입력 형식
+## Auto-trigger points
 
-### YAML 형식 (권장)
+### 1. After Codex Validator completes
+- Apply Validator auto_apply items to context.md
+- Add new recommendations to pending-questions.md
+- Mark "Planning complete" in flow-report.md
+
+### 2. After Requirements Completion Check
+- Add incomplete items to pending-questions.md
+- Record "Implementation re-run" in flow-report.md
+
+### 3. Before Documentation Finalize
+- Final sync (ensure all docs are current)
+- Clear pending-questions.md or mark as Resolved
+- Mark flow-report.md as complete
+
+---
+
+## Input format
+
+### YAML (recommended)
 
 ```yaml
 feature_name: batch-management
@@ -53,119 +53,119 @@ updates:
   - file: context.md
     section: Phase 1
     action: append
-    content: "날짜 입력 검증 강화: 과거 30일 제한 추가"
+    content: "Strengthen date input validation: limit to past 30 days"
   - file: pending-questions.md
     action: add_question
     priority: MEDIUM
-    content: "에러 메시지를 Toast로 변경할까요?"
-    context: "사용자 경험 개선"
+    content: "Should error messages use Toast?"
+    context: "Improve user experience"
   - file: flow-report.md
     action: update_phase
     phase: Planning
     status: completed
 ```
 
-### 수동 트리거 (사용자가 직접 호출)
+### Manual trigger (user direct)
 
 ```
-doc-sync 시작: batch-management
-  - context.md: Phase 1 수정
-  - pending-questions.md: 1개 추가
-  - flow-report.md: Planning 완료
+doc-sync start: batch-management
+  - context.md: update Phase 1
+  - pending-questions.md: add 1 item
+  - flow-report.md: Planning complete
 ```
 
 ---
 
-## 📋 지원 파일 및 액션
+## Supported files and actions
 
 ### 1. context.md
 
-#### 액션: `append` (섹션 끝에 추가)
+#### Action: `append` (add to end of section)
 ```yaml
 file: context.md
 section: Phase 1
 action: append
-content: "날짜 입력 검증 강화: 과거 30일 제한 추가"
+content: "Strengthen date input validation: limit to past 30 days"
 ```
 
-**결과**:
+**Result**:
 ```markdown
-## Phase 1: Mock 기반 UI (1시간)
-1. 타입 정의 (15분)
-2. Mock 데이터 (10분)
+## Phase 1: Mock-based UI (1h)
+1. Type definitions (15m)
+2. Mock data (10m)
 ...
 
-### Validator 피드백 (2025-12-20 추가)
-- 날짜 입력 검증 강화: 과거 30일 제한 추가
+### Validator Feedback (added 2025-12-20)
+- Strengthen date input validation: limit to past 30 days
 ```
 
-#### 액션: `update` (특정 내용 수정)
+#### Action: `update` (edit specific content)
 ```yaml
 file: context.md
-section: "위험 및 대안"
+section: "Risks and Alternatives"
 action: update
-old_content: "확률: Medium"
-new_content: "확률: Low (API 스펙 확정 완료)"
+old_content: "Probability: Medium"
+new_content: "Probability: Low (API spec confirmed)"
 ```
 
-#### 액션: `prepend` (섹션 앞에 추가)
+#### Action: `prepend` (add to beginning of section)
 ```yaml
 file: context.md
-section: "변경 대상 파일"
+section: "Target Files"
 action: prepend
-content: "⚠️  Validator 권장사항 반영됨 (2025-12-20)"
+content: "WARN Validator recommendations applied (2025-12-20)"
 ```
 
 ---
 
 ### 2. pending-questions.md
 
-#### 액션: `add_question` (질문 추가)
+#### Action: `add_question` (add a question)
 ```yaml
 file: pending-questions.md
 action: add_question
 priority: HIGH
-content: "과거 날짜 허용 범위는 어디까지인가요?"
-context: "Validator 피드백: 과거 30일 제한 권장"
+content: "What is the allowed range for past dates?"
+context: "Validator feedback: recommend limiting to past 30 days"
 options:
-  - 30일
-  - 60일
-  - 90일
-  - 무제한
+  - 30 days
+  - 60 days
+  - 90 days
+  - unlimited
 ```
 
-**결과**:
+**Result**:
 ```markdown
-## 미해결 질문
+## Pending Questions
 
-### [HIGH] 과거 날짜 허용 범위는 어디까지인가요?
-- **발견 시각**: 2025-12-20 09:25
-- **컨텍스트**: Validator 피드백: 과거 30일 제한 권장
-- **옵션**:
-  - 30일
-  - 60일
-  - 90일
-  - 무제한
-- **상태**: 대기 중
+### [HIGH] What is the allowed range for past dates?
+- **Found at**: 2025-12-20 09:25
+- **Context**: Validator feedback: recommend limiting to past 30 days
+- **Options**:
+  - 30 days
+  - 60 days
+  - 90 days
+  - unlimited
+- **Status**: pending
 ```
 
-#### 액션: `resolve_question` (질문 해결)
+#### Action: `resolve_question` (resolve a question)
 ```yaml
 file: pending-questions.md
 action: resolve_question
 question_id: 1
-resolution: "30일로 결정"
+resolution: "Decided on 30 days"
 resolved_at: "2025-12-20 09:30"
 ```
 
-**결과**:
+**Result**:
 ```markdown
-### [HIGH] ~~과거 날짜 허용 범위는 어디까지인가요?~~ (해결됨)
-- **결론**: 30일로 결정
-- **해결 시각**: 2025-12-20 09:30
+### [HIGH] ~~What is the allowed range for past dates?~~ (resolved)
+- **Decision**: 30 days
+- **Resolved at**: 2025-12-20 09:30
 ```
 
-#### 액션: `clear` (모든 질문 제거 - Finalize 시)
+#### Action: `clear` (remove all questions, for Finalize)
 ```yaml
 file: pending-questions.md
 action: clear
@@ -176,7 +176,7 @@ archive: true
 
 ### 3. flow-report.md
 
-#### 액션: `update_phase` (Phase 상태 업데이트)
+#### Action: `update_phase` (update phase status)
 ```yaml
 file: flow-report.md
 action: update_phase
@@ -185,194 +185,197 @@ status: completed
 timestamp: "2025-12-20 09:25"
 ```
 
-**결과**:
+**Result**:
 ```markdown
-| Phase | 상태 | 시작 시각 | 완료 시각 |
-|-------|------|----------|----------|
-| Planning | ✅ 완료 | 09:00 | 09:25 |
-| Implementation | 🔄 진행 중 | 09:30 | - |
+| Phase | Status | Start | End |
+|-------|--------|-------|-----|
+| Planning | OK complete | 09:00 | 09:25 |
+| Implementation | In progress | 09:30 | - |
 ```
 
-#### 액션: `add_event` (이벤트 추가)
+#### Action: `add_event` (add event)
 ```yaml
 file: flow-report.md
 action: add_event
-event: "Validator 피드백 반영"
-description: "context.md에 날짜 검증 강화 추가"
+event: "Validator feedback applied"
+description: "Added date validation to context.md"
 timestamp: "2025-12-20 09:25"
 ```
 
-**결과**:
+**Result**:
 ```markdown
-## 주요 이벤트
+## Key Events
 
-- [09:25] **Validator 피드백 반영**: context.md에 날짜 검증 강화 추가
+- [09:25] **Validator feedback applied**: added date validation to context.md
 ```
 
 ---
 
-## 📊 출력 형식
+## Output format
 
-### 성공 시
+### Success
 ```markdown
-✅ Doc Sync 완료
+OK Doc Sync complete
 
-## 업데이트 파일
-- context.md: Phase 1 섹션에 Validator 피드백 추가
-- pending-questions.md: 1개 질문 추가 (HIGH)
-- flow-report.md: Planning 완료 표시
+## Updated files
+- context.md: added Validator feedback to Phase 1
+- pending-questions.md: added 1 question (HIGH)
+- flow-report.md: marked Planning complete
 
-## 변경 요약
-- Validator 피드백: 날짜 입력 검증 강화 (과거 30일 제한)
-- 새로운 질문: 과거 날짜 허용 범위 결정 필요
-- Planning Phase 완료 (소요 시간: 25분)
+## Change summary
+- Validator feedback: strengthen date validation (past 30 days)
+- New question: decide past date range
+- Planning phase complete (elapsed: 25m)
 
-## 다음 단계
-- Implementation Agent 재확인 (최신 context.md 반영)
-- pending-questions 답변 대기 (HIGH 1개)
+## Next steps
+- Implementation Agent re-check (use latest context.md)
+- Await pending-questions answers (HIGH 1 item)
 ```
 
-### 오류 시
+### Error
 ```markdown
-❌ Doc Sync 실패
+ERROR Doc Sync failed
 
-## 오류 내역
-- context.md: 섹션 "Phase 1" 찾을 수 없음
-- pending-questions.md: 업데이트 성공 ✅
-- flow-report.md: 파일 없음 (생성 필요)
+## Error details
+- context.md: section "Phase 1" not found
+- pending-questions.md: update succeeded
+- flow-report.md: file not found (needs creation)
 
-## 조치 필요
-- context.md의 섹션 구조 확인
-- flow-report.md 수동 생성
+## Action required
+- Check context.md section structure
+- Create flow-report.md manually
 
-## 부분 성공
-1/3 파일 업데이트 완료
+## Partial success
+1/3 files updated
 ```
 
 ---
 
-## 🔗 연계 에이전트/스킬
+## Related agents/skills
 
-### 입력 (사용하는 정보)
-- **Codex Validator**: auto_apply, user_confirm 항목
-- **PM Agent (Completion Check)**: incomplete_items 리스트
-- **Documentation Agent**: 최종 동기화 요청
+### Inputs (consumed)
+- **Codex Validator**: auto_apply, user_confirm items
+- **PM Agent (Completion Check)**: incomplete_items list
+- **Documentation Agent**: final sync request
 
-### 출력 (제공하는 정보)
-- **Implementation Agent**: 최신 context.md
-- **PM Agent**: pending-questions 개수, flow-report 상태
-- **Documentation Agent**: 모든 문서 최신화 완료 확인
+### Outputs (provided)
+- **Implementation Agent**: latest context.md
+- **PM Agent**: pending-questions count, flow-report status
+- **Documentation Agent**: confirmation that docs are up to date
 
 ---
 
-## 📦 파일 구조
+## File structure
 
-### 문서 경로
+### Document paths
 ```
 .claude/docs/tasks/{feature-name}/
-├── context.md              # 구현 계획 (실시간 업데이트)
-├── pending-questions.md    # 미해결 질문 (실시간 업데이트)
-└── flow-report.md         # Phase별 진행 상황 (실시간 업데이트)
+|-- context.md              # implementation plan (real-time updates)
+|-- pending-questions.md    # open questions (real-time updates)
+`-- flow-report.md          # per-phase progress (real-time updates)
 ```
 
-### 아카이브 (선택적)
+### Archive (optional)
 ```
 .claude/docs/tasks/{feature-name}/archives/
-├── context-v1.md          # Validator 피드백 전
-├── context-v2.md          # Validator 피드백 후
-└── pending-questions-resolved.md  # 해결된 질문들
+|-- context-v1.md              # before Validator feedback
+|-- context-v2.md              # after Validator feedback
+`-- pending-questions-resolved.md  # resolved questions
 ```
 
 ---
 
-## 🎨 사용 시나리오
+## Usage scenarios
 
-### 시나리오 1: Codex Validator 피드백 자동 반영
+### Scenario 1: Apply Codex Validator feedback automatically
 
-**Validator 출력**:
+**Validator output**:
 ```yaml
 status: pass_with_changes
 auto_apply:
   - priority: HIGH
     target: context.md
     section: Phase 1
-    content: "날짜 입력 검증 강화: 과거 30일 제한 추가"
+    content: "Strengthen date input validation: limit to past 30 days"
 user_confirm:
   - priority: MEDIUM
-    content: "에러 메시지를 Toast로 변경 권장"
+    content: "Recommend changing error messages to Toast"
 ```
 
-**Doc Sync 실행**:
+**Doc Sync run**:
 ```yaml
 feature_name: batch-management
 updates:
   - file: context.md
     section: Phase 1
     action: append
-    content: "### Validator 피드백 (HIGH)\n- 날짜 입력 검증 강화: 과거 30일 제한 추가"
+    content: "### Validator Feedback (HIGH)
+- Strengthen date input validation: limit to past 30 days"
   - file: pending-questions.md
     action: add_question
     priority: MEDIUM
-    content: "에러 메시지를 Toast로 변경할까요?"
-    context: "Validator 권장사항"
+    content: "Should we change error messages to Toast?"
+    context: "Validator recommendation"
   - file: flow-report.md
     action: add_event
-    event: "Validator 피드백 반영"
-    description: "context.md 업데이트 + pending-questions 1개 추가"
+    event: "Validator feedback applied"
+    description: "context.md updated + 1 pending question added"
 ```
 
-**결과**:
-- Implementation Agent는 최신 context.md 읽어서 날짜 검증 코드 추가
-- 사용자는 pending-questions에서 Toast 변경 여부 답변
+**Result**:
+- Implementation Agent reads latest context.md and applies date validation
+- User answers pending-questions about Toast
 
 ---
 
-### 시나리오 2: Requirements Completion Check 후 재실행
+### Scenario 2: Re-run after Requirements Completion Check
 
-**PM Agent Completion Check 결과**:
+**PM Agent Completion Check result**:
 ```yaml
 status: incomplete
 incomplete_items:
-  - "에러 처리 Alert 추가"
-  - "메뉴/권한 설정"
+  - "Add error alert"
+  - "Configure menu/permissions"
 ```
 
-**Doc Sync 실행**:
+**Doc Sync run**:
 ```yaml
 feature_name: batch-management
 updates:
   - file: pending-questions.md
     action: add_question
     priority: HIGH
-    content: "에러 처리 Alert 구현 필요"
-    context: "Requirements Completion Check: 사전 합의서 미완료 항목"
+    content: "Implement error alert handling"
+    context: "Completion Check: missing in preliminary agreement"
   - file: pending-questions.md
     action: add_question
     priority: HIGH
-    content: "메뉴/권한 설정 필요"
-    context: "context.md Phase 3 체크포인트 미완료"
+    content: "Configure menu/permissions"
+    context: "context.md Phase 3 checkpoint incomplete"
   - file: flow-report.md
     action: update_phase
     phase: Implementation
-    status: "재실행 필요"
+    status: "re-run required"
 ```
 
-**결과**:
-- Implementation Agent 재실행 (미완료 항목만)
-- flow-report.md에 재실행 이력 기록
+**Result**:
+- Re-run Implementation Agent (only incomplete items)
+- flow-report.md records the re-run
 
 ---
 
-### 시나리오 3: Documentation Finalize 전 최종 동기화
+### Scenario 3: Final sync before Documentation Finalize
 
-**Documentation Agent 요청**:
+**Documentation Agent request**:
 ```yaml
 feature_name: batch-management
 updates:
   - file: context.md
-    section: "최종 상태"
+    section: "Final State"
     action: append
-    content: "- [x] 모든 Phase 완료\n- [x] 검증 통과\n- [x] 문서화 완료"
+    content: "- [x] All phases complete
+- [x] Verification passed
+- [x] Documentation complete"
   - file: pending-questions.md
     action: clear
     archive: true
@@ -382,67 +385,67 @@ updates:
     status: completed
 ```
 
-**결과**:
-- pending-questions.md 비우기 (resolved 항목은 archives로 이동)
-- flow-report.md 최종 완료 표시
-- context.md에 최종 상태 기록
+**Result**:
+- pending-questions.md cleared (resolved items moved to archives)
+- flow-report.md marked complete
+- context.md updated with final state
 
 ---
 
-## 💡 사용 팁
+## Tips
 
-### 1. 충돌 방지
-- 동시 업데이트 감지: 타임스탬프 비교
-- 충돌 시 사용자에게 알림 + 수동 해결
+### 1. Avoid conflicts
+- Detect simultaneous updates by comparing timestamps
+- Notify user and resolve manually on conflict
 
-### 2. 버전 관리 (선택적)
-- 중요한 변경 시 이전 버전 백업
-- context-v1.md, context-v2.md 형태로 보관
+### 2. Versioning (optional)
+- Backup prior versions for important changes
+- Store as context-v1.md, context-v2.md
 
-### 3. 롤백 지원
-- 마지막 변경 전 스냅샷 저장
-- 문제 발생 시 즉시 복구 가능
+### 3. Rollback support
+- Save snapshot before last change
+- Restore immediately on failure
 
-### 4. 검증 자동화
-- 업데이트 후 파일 구조 검증
-- 필수 섹션 누락 체크
-
----
-
-## 🎯 기대 효과
-
-### 정성적 효과
-1. **실시간 피드백 루프**: Validator → Doc Sync → Implementation (즉시 반영)
-2. **문서 일관성 보장**: 모든 에이전트가 최신 문서 참조
-3. **미해결 질문 중앙화**: pending-questions.md로 통합 관리
-4. **진행 상황 투명화**: flow-report.md로 실시간 추적
-
-### 정량적 효과
-- **피드백 반영 시간**: 수동 10분 → 자동 즉시 (100% 단축)
-- **문서 불일치 오류**: 30% → 0% (완전 제거)
-- **재작업 방지**: Validator 피드백 즉시 반영으로 평균 15분 절약
+### 4. Verification automation
+- Validate file structure after updates
+- Check required sections are present
 
 ---
 
-## 🔧 구현 세부사항
+## Expected impact
 
-### Quality Bar
-- 기존 내용 유지 (섹션 구조 변경 금지)
-- 충돌 방지 (동시 업데이트 감지)
-- 원자성 보장 (일부 실패 시 롤백)
-- 검증 자동화 (업데이트 후 파일 구조 체크)
+### Qualitative impact
+1. **Real-time feedback loop**: Validator -> Doc Sync -> Implementation (immediate reflection)
+2. **Document consistency**: all agents reference the latest docs
+3. **Centralized open questions**: pending-questions.md as the source of truth
+4. **Progress transparency**: real-time tracking via flow-report.md
 
-### 에러 처리
-1. **파일 없음**: 자동 생성 (템플릿 사용)
-2. **섹션 없음**: 경고 + 파일 끝에 추가
-3. **동시 업데이트 충돌**: 타임스탬프 비교 + 사용자 알림
-4. **포맷 오류**: 검증 실패 + 롤백
-
-### 로깅
-- 모든 업데이트를 flow-report.md에 자동 기록
-- 타임스탬프, 변경 파일, 변경 내용 포함
-- 오류 발생 시 상세 로그 저장
+### Quantitative impact
+- **Feedback turnaround**: manual 10m -> instant (100% reduction)
+- **Doc mismatch errors**: 30% -> 0% (eliminated)
+- **Rework prevention**: instant feedback saves ~15m on average
 
 ---
 
-**이 스킬을 활성화하면 모든 문서가 실시간으로 동기화됩니다!**
+## Implementation details
+
+### Quality bar
+- Preserve existing content (do not change section structure)
+- Prevent conflicts (detect concurrent updates)
+- Ensure atomicity (rollback on partial failure)
+- Automate validation (check structure after updates)
+
+### Error handling
+1. **Missing file**: auto-create (use template)
+2. **Missing section**: warn and append to end
+3. **Concurrent update conflict**: compare timestamps and notify user
+4. **Format error**: validation fails -> rollback
+
+### Logging
+- Record all updates in flow-report.md automatically
+- Include timestamp, changed files, change details
+- Store detailed logs on failure
+
+---
+
+**Enabling this skill keeps all docs in real-time sync.**

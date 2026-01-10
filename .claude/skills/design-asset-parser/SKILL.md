@@ -5,281 +5,281 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 
 # Design Asset Parser Skill
 
-> **목적**: 디자인 산출물(Figma export 이미지/CSS/HTML, 화면정의서 PDF)을 파싱하여 개발 스펙 초안 생성
-> **출력**: `.claude/docs/tasks/{feature-name}/design-spec.md`, `pending-questions.md`
-> **사용 시점**: 신규 기능 구현 전, 디자인 산출물이 제공되었을 때
+> **Purpose**: Parse design deliverables (Figma export images/CSS/HTML, screen-spec PDF) to produce a draft dev spec
+> **Outputs**: `.claude/docs/tasks/{feature-name}/design-spec.md`, `pending-questions.md`
+> **When to use**: Before implementing a new feature when design assets are provided
 
 ---
 
-## 역할
+## Role
 
-디자인 산출물에서 UI/기능 요구사항을 자동으로 추출하고, 개발자가 바로 구현할 수 있는 구조화된 스펙 문서를 생성합니다.
+Automatically extract UI/feature requirements from design assets and generate a structured spec that developers can implement immediately.
 
-### 입력 파일 유형
-1. **화면정의서 PDF**: `.claude/docs/디채오늘의문장/*.pdf` 등
-2. **Figma export**: 이미지(PNG/JPG), CSS/HTML export
-3. **디자인 가이드**: 색상/폰트/간격 토큰 정의
+### Input file types
+1. **Screen-spec PDF**: `.claude/docs/design-assets/*.pdf`
+2. **Figma export**: images (PNG/JPG), CSS/HTML export
+3. **Design guide**: color/font/spacing tokens
 
-### 주요 기능
-- PDF 텍스트/이미지 추출 (OCR 지원)
-- CSS/HTML export에서 컴포넌트/스타일 토큰 추출
-- UI 요소, 밸리데이션, 상태, 엣지 케이스 구조화
-- 불명확한 요구사항 자동 검출 및 질문 생성
+### Key capabilities
+- Extract text/images from PDF (OCR supported)
+- Extract components/style tokens from CSS/HTML export
+- Structure UI elements, validation, states, edge cases
+- Auto-detect unclear requirements and generate questions
 
 ---
 
-## 트리거
+## Triggers
 
-다음 상황에서 자동 또는 수동으로 호출:
+Call automatically or manually in these cases:
 
-### 자동 트리거
-1. `.claude/docs/디채오늘의문장/` 디렉토리에 PDF 추가 감지
-2. Figma export zip 파일 추가 감지
-3. PM Agent가 신규 기능으로 분류 + 디자인 산출물 경로 발견
+### Automatic triggers
+1. PDF added under `.claude/docs/design-assets/`
+2. Figma export zip added
+3. PM Agent classifies as new feature and finds design asset paths
 
-### 수동 트리거
+### Manual triggers
 ```bash
-# 사용자 요청 예시
-"화면정의서 PDF를 파싱해서 개발 스펙 만들어줘"
-"Figma export CSS를 분석해서 스타일 토큰 정리해줘"
+# Example user requests
+"Parse the screen-spec PDF and create a dev spec"
+"Analyze Figma export CSS and organize style tokens"
 ```
 
 ---
 
-## 동작 흐름
+## Flow
 
-### 1단계: 입력 파일 확인 (1분)
+### Step 1: Verify input files (1m)
 ```markdown
-입력 파일 목록:
-- 화면정의서: .claude/docs/디채오늘의문장/배치관리_v3.pdf
-- Figma export: .claude/docs/디채오늘의문장/batch-management-export.zip
-- 기능명: batch-management
+Input file list:
+- Screen spec: .claude/docs/design-assets/batch-management_v3.pdf
+- Figma export: .claude/docs/design-assets/batch-management-export.zip
+- Feature name: batch-management
 ```
 
-### 2단계: PDF 파싱 (3-5분)
-**작업 내용**:
-- PDF 텍스트 추출 (Read 도구로 PDF 읽기)
-- 이미지 추출 및 OCR (필요 시)
-- 섹션별 구조 파악 (화면 구성, 필드 정의, 기능 요구사항)
+### Step 2: Parse PDF (3-5m)
+**Work**:
+- Extract PDF text (read PDF with Read tool)
+- Extract images and run OCR (if needed)
+- Identify section structure (screen layout, field definitions, feature requirements)
 
-**추출 항목**:
-- 페이지/모달/탭 구조
-- Form 필드: 이름, 타입, 필수 여부, 기본값, 밸리데이션
-- Table/Grid: 컬럼명, 정렬/필터, 페이징, 빈 상태
-- 버튼/액션: 라벨, 동작, 허용/비활성 조건
-- 상태/에러/로딩: 메시지 규칙
+**Extract items**:
+- Page/modal/tab structure
+- Form fields: name, type, required, default, validation
+- Table/Grid: columns, sort/filter, paging, empty state
+- Buttons/actions: label, action, enable/disable conditions
+- State/error/loading: message rules
 
-### 3단계: CSS/HTML 파싱 (2-3분)
-**작업 내용**:
-- CSS 변수 추출 (색상, 폰트, 간격)
-- 컴포넌트 클래스 및 변형 추출 (Primary/Secondary/Disabled)
-- HTML 구조 파악 (레이아웃, 컴포넌트 계층)
+### Step 3: Parse CSS/HTML (2-3m)
+**Work**:
+- Extract CSS variables (color, font, spacing)
+- Extract component classes and variants (Primary/Secondary/Disabled)
+- Identify HTML structure (layout, component hierarchy)
 
-**추출 항목**:
+**Extract items**:
 ```css
-/* 스타일 토큰 */
+/* Style tokens */
 --color-primary: #1a73e8;
 --font-size-base: 14px;
 --spacing-md: 16px;
 ```
 
-### 4단계: 스펙 초안 작성 (5-10분)
-**출력 파일**: `.claude/docs/tasks/{feature-name}/design-spec.md`
+### Step 4: Draft spec (5-10m)
+**Output file**: `.claude/docs/tasks/{feature-name}/design-spec.md`
 
-기본 구조:
+Base structure:
 ```markdown
-# 디자인 기반 개발 스펙
+# Design-based Development Spec
 
-## 화면 개요
-- 페이지 구조
-- 주요 플로우
+## Screen Overview
+- Page structure
+- Main flow
 
-## UI 요소 및 동작
-### Form 필드
-| 필드명 | 타입 | 필수 | 기본값 | 밸리데이션 |
-|--------|------|------|--------|------------|
+## UI Elements and Behavior
+### Form Fields
+| Field | Type | Required | Default | Validation |
+|--------|------|---------|--------|------------|
 
-### Table 컬럼
-| 컬럼명 | 정렬 | 필터 | 비고 |
-|--------|------|------|------|
+### Table Columns
+| Column | Sort | Filter | Notes |
+|--------|------|--------|------|
 
-### 버튼/액션
-- 버튼명: 동작 설명
+### Buttons/Actions
+- Button: action description
 
-### 상태/에러/로딩
-- 로딩: Spinner 위치
-- 성공/에러: 메시지 규칙
+### State/Error/Loading
+- Loading: spinner location
+- Success/Error: message rules
 
-## 스타일 토큰
-- 색상, 폰트, 간격
+## Style Tokens
+- Colors, fonts, spacing
 
-## 자산 매니페스트
-- 이미지/아이콘 목록
+## Asset Manifest
+- Image/icon list
 
-## 추출 근거
-- 출처 파일, 페이지 번호
+## Extraction Evidence
+- Source files, page numbers
 
-## 미해결/질문
-- 불명확한 요구사항 목록
+## Open Questions
+- List of unclear requirements
 ```
 
-### 5단계: 미해결 질문 기록 (1-2분)
-**출력 파일**: `.claude/docs/tasks/{feature-name}/pending-questions.md`
+### Step 5: Record open questions (1-2m)
+**Output file**: `.claude/docs/tasks/{feature-name}/pending-questions.md`
 
 ```markdown
-# 미해결 질문 (Pending Questions)
+# Pending Questions
 
-## 날짜: {YYYY-MM-DD}
+## Date: {YYYY-MM-DD}
 
-### 우선순위: HIGH
-1. **질문 제목**
-   - 출처: design-spec.md 섹션
-   - 질문: 구체적인 질문
-   - 영향: 구현/설계에 미치는 영향
+### Priority: HIGH
+1. **Question title**
+   - Source: design-spec.md section
+   - Question: specific question
+   - Impact: impact on implementation/design
 ```
 
-### 6단계: 결과 요약 및 다음 단계 안내
+### Step 6: Summarize results and next steps
 ```markdown
-✅ Design Asset Parser Skill 완료
+OK Design Asset Parser Skill complete
 
-## 산출물
-- design-spec.md: N개 UI 요소, N개 스타일 토큰
-- pending-questions.md: N개 미해결 질문
+## Outputs
+- design-spec.md: N UI elements, N style tokens
+- pending-questions.md: N open questions
 
-## 다음 단계
-1. pending-questions.md의 HIGH 우선순위 질문 해결
-2. Requirements Analyzer Agent 호출
-3. Context Builder Agent 호출
+## Next steps
+1. Resolve HIGH priority questions in pending-questions.md
+2. Call Requirements Analyzer Agent
+3. Call Context Builder Agent
 ```
 
 ---
 
-## 프롬프트 템플릿
+## Prompt Template
 
 ```markdown
-당신은 Design Asset Parser Skill입니다.
-디자인 산출물을 읽고 개발 스펙을 구조화합니다.
+You are the Design Asset Parser Skill.
+Read design assets and structure a dev spec.
 
-## 입력
-- 디자인 파일 경로: {designPaths}
-- 대상 기능명: {featureName}
-- 기존 design-spec.md 존재 여부: {hasSpec}
+## Input
+- Design file paths: {designPaths}
+- Target feature name: {featureName}
+- Existing design-spec.md: {hasSpec}
 
-## 작업
-1. PDF/Figma export 파일 읽기 (Read 도구 사용)
-2. UI 요소 추출 (Form/Table/Button/State)
-3. 밸리데이션/엣지 케이스 명시
-4. 스타일 토큰 추출 (CSS 있을 때)
-5. 자산 매니페스트 작성
-6. 미해결/질문 정리
+## Tasks
+1. Read PDF/Figma export files (use Read tool)
+2. Extract UI elements (Form/Table/Button/State)
+3. Specify validation/edge cases
+4. Extract style tokens (if CSS exists)
+5. Build asset manifest
+6. Organize open questions
 
-## 출력
-- `.claude/docs/tasks/{feature-name}/design-spec.md`: 구조화된 개발 스펙
-- `.claude/docs/tasks/{feature-name}/pending-questions.md`: 미해결 질문 목록
+## Output
+- `.claude/docs/tasks/{feature-name}/design-spec.md`: structured dev spec
+- `.claude/docs/tasks/{feature-name}/pending-questions.md`: open questions list
 
-## 품질 기준
-- UI 요소는 테이블 형식으로 정리
-- 밸리데이션 규칙 명확히 기술 (길이/패턴/범위)
-- 불명확한 요구사항은 질문으로 변환
-- 우선순위 명시 (HIGH/MEDIUM/LOW)
+## Quality bar
+- UI elements in table format
+- Validation rules clearly specified (length/pattern/range)
+- Convert ambiguous requirements into questions
+- Priority included (HIGH/MEDIUM/LOW)
 ```
 
 ---
 
-## 사용 예시
+## Usage Examples
 
-### 예시 1: PDF 화면정의서 파싱
+### Example 1: Parse screen-spec PDF
 ```
-사용자: "화면정의서 PDF를 파싱해서 개발 스펙 만들어줘.
-         경로: .claude/docs/디채오늘의문장/배치관리_v3.pdf
-         기능명: batch-management"
+User: "Parse the screen-spec PDF and create a dev spec.
+       Path: .claude/docs/design-assets/batch-management_v3.pdf
+       Feature: batch-management"
 
-Design Asset Parser Skill 실행 →
-1. PDF 읽기 (Read 도구)
-2. 섹션별 파싱 (화면 구성, 필드 정의, 기능 요구사항)
-3. design-spec.md 생성
-4. pending-questions.md 생성 (불명확한 부분)
+Design Asset Parser Skill ->
+1. Read PDF (Read tool)
+2. Parse by section (layout, field definitions, requirements)
+3. Create design-spec.md
+4. Create pending-questions.md (unclear parts)
 
-산출물:
+Outputs:
 - .claude/docs/tasks/batch-management/design-spec.md
 - .claude/docs/tasks/batch-management/pending-questions.md
 ```
 
-### 예시 2: Figma CSS export 파싱
+### Example 2: Parse Figma CSS export
 ```
-사용자: "Figma CSS export를 분석해서 스타일 토큰 정리해줘.
-         경로: .claude/docs/디채오늘의문장/batch-ui-export.css
-         기능명: batch-management"
+User: "Analyze Figma CSS export and organize style tokens.
+       Path: .claude/docs/design-assets/batch-ui-export.css
+       Feature: batch-management"
 
-Design Asset Parser Skill 실행 →
-1. CSS 파일 읽기
-2. CSS 변수 추출 (--color-*, --font-*, --spacing-*)
-3. 컴포넌트 클래스 추출 (.button--primary, .button--disabled)
-4. design-spec.md의 "스타일 토큰" 섹션 업데이트
+Design Asset Parser Skill ->
+1. Read CSS file
+2. Extract CSS variables (--color-*, --font-*, --spacing-*)
+3. Extract component classes (.button--primary, .button--disabled)
+4. Update the "Style Tokens" section in design-spec.md
 
-산출물:
-- design-spec.md (스타일 토큰 섹션 갱신)
+Outputs:
+- design-spec.md (style tokens updated)
 ```
 
-### 예시 3: PDF + CSS 동시 파싱
+### Example 3: Parse PDF + CSS together
 ```
-사용자: "화면정의서 PDF와 Figma CSS를 함께 파싱해줘.
-         PDF: .claude/docs/디채오늘의문장/배치관리_v3.pdf
-         CSS: .claude/docs/디채오늘의문장/batch-ui-export.css
-         기능명: batch-management"
+User: "Parse the screen-spec PDF and Figma CSS together.
+       PDF: .claude/docs/design-assets/batch-management_v3.pdf
+       CSS: .claude/docs/design-assets/batch-ui-export.css
+       Feature: batch-management"
 
-Design Asset Parser Skill 실행 →
-1. PDF 파싱 → UI 요소, 기능 요구사항
-2. CSS 파싱 → 스타일 토큰
-3. 두 결과 병합 → design-spec.md
-4. 불일치/충돌 사항 → pending-questions.md
+Design Asset Parser Skill ->
+1. Parse PDF -> UI elements, feature requirements
+2. Parse CSS -> style tokens
+3. Merge results -> design-spec.md
+4. Conflicts -> pending-questions.md
 
-산출물:
-- design-spec.md (UI + 스타일 통합)
-- pending-questions.md (충돌 사항 질문)
+Outputs:
+- design-spec.md (UI + styles merged)
+- pending-questions.md (conflict questions)
 ```
 
 ---
 
-## 통합 워크플로우
+## Integrated Workflow
 
-### Design Asset Parser → Design Spec Extractor Agent
+### Design Asset Parser -> Design Spec Extractor Agent
 ```
 1. Design Asset Parser Skill:
-   - 입력: PDF/CSS 파일
-   - 출력: design-spec.md (초안), pending-questions.md
+   - Input: PDF/CSS files
+   - Output: design-spec.md (draft), pending-questions.md
 
-2. 사용자:
-   - pending-questions.md 확인
-   - HIGH 우선순위 질문 답변
+2. User:
+   - Review pending-questions.md
+   - Answer HIGH priority questions
 
 3. Design Spec Extractor Agent:
-   - design-spec.md 검토
-   - CLAUDE.md 규칙과 비교
-   - 프로젝트 패턴 반영
-   - 최종 design-spec.md 생성
+   - Review design-spec.md
+   - Compare with CLAUDE.md rules
+   - Apply project patterns
+   - Generate final design-spec.md
 
 4. Requirements Analyzer Agent:
-   - design-spec.md 기반 사전 합의서 생성
+   - Create preliminary agreement based on design-spec.md
 ```
 
 ---
 
-## 참고 정보
+## Reference Info
 
-### 프로젝트별 디자인 산출물 경로
-- **디채 오늘의 문장**: `.claude/docs/디채오늘의문장/*.pdf`
-- **Figma export**: `.claude/docs/디채오늘의문장/*.zip`, `*.css`, `*.html`
+### Project design asset paths
+- **Example product**: `.claude/docs/design-assets/*.pdf`
+- **Figma export**: `.claude/docs/design-assets/*.zip`, `*.css`, `*.html`
 
-### 기존 프로젝트 패턴 (CLAUDE.md 준수)
-- Entity-Request 분리
-- API 프록시 패턴
-- 활동 로그 헤더 규칙
-- fp-ts Either 패턴
+### Existing project patterns (follow CLAUDE.md)
+- Entity-Request separation
+- API proxy pattern
+- Activity log header rules
+- fp-ts Either pattern
 - TypeScript strict mode
 
-### 주의사항
-1. **PDF 파싱 제약**: 이미지 위주 PDF는 OCR 필요
-2. **CSS 파싱 제약**: Inline 스타일은 추출 불가
-3. **자동화 한계**: 애매한 요구사항은 질문으로 남기기
-4. **버전 관리**: design-spec.md 변경 시 버전 히스토리 기록
+### Notes
+1. **PDF parsing limits**: image-heavy PDFs need OCR
+2. **CSS parsing limits**: inline styles cannot be extracted
+3. **Automation limits**: ambiguous requirements should become questions
+4. **Versioning**: record version history when design-spec.md changes

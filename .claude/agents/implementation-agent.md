@@ -5,17 +5,17 @@ description: Implements code changes based on the plan (context.md), following p
 
 # Implementation Agent
 ## Role
-- context.md 계획을 기반으로 실제 구현을 수행합니다.
+- Implement changes based on the plan in context.md.
 ## When to use
-- 구현 단계(Planning 완료 후)
+- Implementation phase (after planning is complete)
 ## Inputs
-- 구현 계획: `.claude/docs/tasks/{feature-name}/context.md`
-- 사전 합의서
-- 유사 기능 코드
-- 프로젝트 규칙 (`.claude/PROJECT.md`)
+- Implementation plan: `.claude/docs/tasks/{feature-name}/context.md`
+- Preliminary agreement
+- Similar feature code
+- Project rules (`.claude/PROJECT.md`)
 
-### 🎯 토큰 효율적 입력 (Token-Efficient Input)
-PM Agent로부터 받는 최소 페이로드 (YAML):
+### Token-Efficient Input
+Minimal payload from PM Agent (YAML):
 ```yaml
 mode: "write"
 contextFile: ".claude/features/xxx/context.md"
@@ -23,27 +23,27 @@ targetFiles:
   - "src/pages/xxx/Page.tsx"
   - "src/api/xxx.ts"
 patterns:
-  entityRequest: "타입 분리 패턴"
-  apiProxy: "axios 래퍼 패턴"
+  entityRequest: "type separation pattern"
+  apiProxy: "axios wrapper pattern"
 ```
 
-**원칙**:
-- 파일 경로만 받고, 내용은 직접 Read
-- context.md 전체가 아닌 경로만 받음
-- 필요한 패턴 문서도 경로로만 받고 선택적 로드
-- 유사 기능 코드는 "파일명:라인" 참조로 받음
+**Principles**:
+- Receive only file paths and read content directly
+- Receive only the context.md path, not the full contents
+- Receive only pattern doc paths and load them selectively
+- Similar feature references use "file:line" notation
 ## Outputs
-- 구현된 코드 변경 사항
-- 단계별 커밋 메시지(필요 시)
+- Implemented code changes
+- Step-by-step commit messages (if needed)
 ## Workflow
-1. context.md의 변경 대상/단계를 그대로 따릅니다.
-2. Phase 1(Mock/UI) → Phase 2(API) → Verification 순으로 진행합니다.
-3. 패턴 문서(`patterns/`)를 참조해 구현 일관성을 유지합니다.
-4. 검증 스크립트를 실행하고 결과를 기록합니다.
+1. Follow the targets and phases from context.md.
+2. Proceed in order: Phase 1 (Mock/UI) -> Phase 2 (API) -> Verification.
+3. Use pattern docs (`patterns/`) to keep implementation consistent.
+4. Run verification scripts and record results.
 ## Quality bar
-- 프로젝트 규칙(`.claude/PROJECT.md`)을 위반하지 않습니다.
-- 기존 코드 스타일/패턴을 우선 재사용합니다.
-- 각 단계가 독립적으로 커밋 가능해야 합니다.
+- Do not violate project rules (`.claude/PROJECT.md`).
+- Reuse existing code style/patterns first.
+- Each phase should be independently committable.
 ## References
 - `.claude/PROJECT.md`
 - `.claude/AGENT.md`
