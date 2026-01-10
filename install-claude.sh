@@ -52,7 +52,15 @@ usage() {
 기본 동작:
   - .claude, .codex, .gemini 중 하나라도 존재하면 자동 백업 후 설치
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
+  - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
+
+보호되는 파일 패턴:
+  - PROJECT.md (기본값, --include-project로 포함 가능)
+  - *.local.json, *.local.yaml, *.local.md
+  - settings.local.*
+  - custom/ 디렉토리
+  - .env* 파일
 
 예시:
   $0                                    # 기본 실행 (PROJECT.md 제외)
@@ -108,6 +116,59 @@ if [ "$INCLUDE_PROJECT" = false ]; then
     EXCLUDE_PATTERNS+=("PROJECT.md")
 fi
 
+# 사용자 파일 자동 보호 (기존 .claude가 있을 경우)
+USER_FILES=()
+declare -A SEEN_FILES  # 중복 방지
+
+if [ -d ".claude" ]; then
+    # 보호할 파일 패턴 정의
+    PROTECTED_PATTERNS=(
+        "*.local.json"
+        "*.local.yaml"
+        "*.local.md"
+        "settings.local.*"
+        ".env*"
+    )
+
+    PROTECTED_DIRS=(
+        "custom"
+    )
+
+    # 파일 패턴 검색
+    for pattern in "${PROTECTED_PATTERNS[@]}"; do
+        while IFS= read -r file; do
+            if [ -n "$file" ]; then
+                # .claude/ 접두사 제거
+                rel_file="${file#./}"
+                rel_file="${rel_file#.claude/}"
+
+                # 중복 체크
+                if [ -z "${SEEN_FILES[$rel_file]}" ]; then
+                    USER_FILES+=("$rel_file")
+                    EXCLUDE_PATTERNS+=("$rel_file")
+                    SEEN_FILES[$rel_file]=1
+                fi
+            fi
+        done < <(find .claude -type f -name "$pattern" 2>/dev/null)
+    done
+
+    # 디렉토리 패턴 검색
+    for dir_pattern in "${PROTECTED_DIRS[@]}"; do
+        while IFS= read -r dir; do
+            if [ -n "$dir" ]; then
+                rel_dir="${dir#./}"
+                rel_dir="${rel_dir#.claude/}"
+
+                if [ -z "${SEEN_FILES[$rel_dir]}" ]; then
+                    USER_FILES+=("$rel_dir/")
+                    EXCLUDE_PATTERNS+=("$rel_dir")
+                    SEEN_FILES[$rel_dir]=1
+                fi
+            fi
+        done < <(find .claude -type d -name "$dir_pattern" 2>/dev/null)
+    done
+fi
+
 print_header
 
 # 1. 필수 도구 확인
@@ -161,6 +222,13 @@ if [ "$DRY_RUN" = true ]; then
     echo "  - .claude 디렉토리 설치"
     if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
         echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
+    fi
+    if [ ${#USER_FILES[@]} -gt 0 ]; then
+        echo ""
+        print_info "보호될 사용자 파일 (${#USER_FILES[@]}개):"
+        for file in "${USER_FILES[@]}"; do
+            echo "    ✓ $file"
+        done
     fi
     exit 0
 fi
@@ -231,6 +299,16 @@ if [ -d ".claude/agents" ]; then
 fi
 
 echo ""
+
+# 보호된 사용자 파일 표시
+if [ ${#USER_FILES[@]} -gt 0 ]; then
+    print_info "보호된 사용자 파일 (${#USER_FILES[@]}개):"
+    for file in "${USER_FILES[@]}"; do
+        echo "  ✓ .claude/$file"
+    done
+    echo ""
+fi
+
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
 echo "  2. Git에 커밋: git add .claude && git commit -m 'Add Claude Code settings'"
