@@ -197,6 +197,29 @@ cp -r claude-settings/.claude/skills/pm-orchestrator /your-project/.claude/skill
 
 ### 📦 설치 후 다음 단계
 
+설치가 완료되면 다음 프롬프트가 나타납니다:
+
+```
+.codex 폴더도 설정하시겠습니까? (y/N): _
+```
+
+#### .codex 설정 (선택)
+
+`y` 선택 시 자동으로 생성되는 구조:
+```
+.codex/
+├── CODEX.md         # 심볼릭 링크 → .claude/CLAUDE.md
+├── PROJECT.md       # 복사본 (수정 가능)
+└── README.md        # Codex MCP 활용 가이드
+```
+
+**Codex MCP 활용**:
+- 계획 검증: `codex-validate-plan`
+- 코드 리뷰: `codex-review-code`
+- 통합 테스트: `codex-test-integration`
+
+#### 다음 단계
+
 1. **PROJECT.md 커스터마이징**
    ```bash
    # .claude/PROJECT.md를 프로젝트에 맞게 수정
@@ -208,6 +231,8 @@ cp -r claude-settings/.claude/skills/pm-orchestrator /your-project/.claude/skill
 2. **Git에 커밋**
    ```bash
    git add .claude
+   # .codex 설정했다면
+   git add .codex
    git commit -m "Add Claude Code settings"
    ```
 

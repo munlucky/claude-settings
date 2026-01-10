@@ -248,4 +248,58 @@ if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
     done
 fi
 
+# 10. .codex 설정 여부 확인
+echo ""
+if [ ! -d ".codex" ]; then
+    echo ""
+    print_warn "추가 설정"
+    read -p ".codex 폴더도 설정하시겠습니까? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        print_info ".codex 디렉토리 생성 중..."
+        mkdir -p .codex
+
+        # .claude의 주요 파일을 .codex에 심볼릭 링크
+        if [ -f ".claude/CLAUDE.md" ]; then
+            ln -sf "../.claude/CLAUDE.md" ".codex/CODEX.md"
+            print_info "✓ .codex/CODEX.md 생성 (→ .claude/CLAUDE.md)"
+        fi
+
+        if [ -f ".claude/PROJECT.md" ]; then
+            cp ".claude/PROJECT.md" ".codex/PROJECT.md"
+            print_info "✓ .codex/PROJECT.md 생성 (복사본)"
+        fi
+
+        # .codex용 간단한 README 생성
+        cat > .codex/README.md << 'CODEX_EOF'
+# Codex MCP 설정
+
+이 디렉토리는 Codex MCP 서버 설정을 위한 공간입니다.
+
+## 기본 설정
+
+- `CODEX.md`: 글로벌 규칙 (심볼릭 링크 → .claude/CLAUDE.md)
+- `PROJECT.md`: 프로젝트별 규칙 (수정 가능)
+
+## Codex MCP 활용
+
+Codex MCP를 통해 다음 기능을 사용할 수 있습니다:
+- 계획 검증 (codex-validate-plan)
+- 코드 리뷰 (codex-review-code)
+- 통합 테스트 검증 (codex-test-integration)
+
+자세한 내용은 `.claude/skills/codex-*` 스킬을 참고하세요.
+CODEX_EOF
+        print_info "✓ .codex/README.md 생성"
+
+        echo ""
+        print_info ".codex 설정 완료!"
+        echo "  - .codex/CODEX.md (심볼릭 링크)"
+        echo "  - .codex/PROJECT.md"
+        echo "  - .codex/README.md"
+    else
+        print_info ".codex 설정을 건너뜁니다."
+    fi
+fi
+
 echo ""
