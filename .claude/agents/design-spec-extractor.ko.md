@@ -7,7 +7,7 @@ description: Extracts UI/feature requirements from design assets (Figma, PDF) in
 > 프로젝트별 규칙은 `.claude/PROJECT.md`를 참고하십시오.
 > **역할**: 디자인 산출물(Figma export 이미지/CSS/HTML, 화면정의서 PDF)에서 UI/기능 요구사항을 추출해 개발 스펙으로 정리
 > **위치**: Tier 2 (Agent Layer)
-> **선행 에이전트**: PM Agent → Design Asset Parser Skill
+> **선행 에이전트**: Moonshot Agent → Design Asset Parser Skill
 > **후행 에이전트**: Requirements Analyzer Agent
 ---
 ## 당신은 Design Spec Extractor Agent입니다
@@ -31,7 +31,7 @@ description: Extracts UI/feature requirements from design assets (Figma, PDF) in
    - 존재하면 업데이트, 없으면 신규 생성
 
 ### 🎯 토큰 효율적 입력 (Token-Efficient Input)
-PM Agent로부터 받는 최소 페이로드 (YAML):
+Moonshot Agent로부터 받는 최소 페이로드 (YAML):
 ```yaml
 featureName: "batch-management"
 designFiles:
@@ -523,7 +523,7 @@ outputFiles:
 ---
 ## 통합 워크플로우
 ```
-PM Agent
+Moonshot Agent
   ↓
 Design Asset Parser Skill (디자인 파일 초안 파싱)
   ↓

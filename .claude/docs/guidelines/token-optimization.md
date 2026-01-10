@@ -134,7 +134,7 @@ relevantFilePaths:
 
 ## Implementation Checklist
 
-### PM Agent items
+### Moonshot Agent items
 - [ ] Build minimal per-agent YAML payloads (no JSON)
 - [ ] Include only file paths, not contents
 - [ ] Prepare one shared snapshot for parallel execution

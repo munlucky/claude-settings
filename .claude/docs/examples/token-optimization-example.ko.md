@@ -8,7 +8,7 @@
 
 ## ❌ 비효율적 방식 (Before - JSON 사용)
 
-### PM Agent가 Implementation Agent에게 전달 (JSON 형식)
+### Moonshot Agent가 Implementation Agent에게 전달 (JSON 형식)
 ```yaml
 # 이것도 실제로는 JSON으로 전달했지만, YAML로 표시
 task: "배치 관리 기능 구현"
@@ -37,7 +37,7 @@ conversationHistory:
 
 ## ✅ 효율적 방식 (After)
 
-### 1단계: PM Agent 분석 (YAML 사용)
+### 1단계: Moonshot Agent 분석 (YAML 사용)
 ```yaml
 taskType: "feature"
 complexity: "medium"

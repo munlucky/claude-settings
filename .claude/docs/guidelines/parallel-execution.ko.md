@@ -15,7 +15,7 @@
 **문제**: Validator와 Implementation을 병렬로 실행하면 같은 컨텍스트가 2번 로드됨
 **해결**:
 1. **공통 스냅샷 1회 준비**:
-   - PM Agent가 병렬 실행 전 단일 JSON 스냅샷 생성
+   - Moonshot Agent가 병렬 실행 전 단일 JSON 스냅샷 생성
    - 두 에이전트 모두 이 스냅샷을 참조
 2. **역할별 최소 정보만 추가**:
    - Validator: `"mode": "readonly"` + 검토 대상 파일 경로만

@@ -35,7 +35,7 @@ Call automatically or manually in these cases:
 ### Automatic triggers
 1. PDF added under `.claude/docs/design-assets/`
 2. Figma export zip added
-3. PM Agent classifies as new feature and finds design asset paths
+3. Moonshot Agent classifies as new feature and finds design asset paths
 
 ### Manual triggers
 ```bash

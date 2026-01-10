@@ -22,7 +22,7 @@ claude-settings/
 │   ├── CLAUDE.md              # 전역 개발 지침
 │   ├── PROJECT.md             # 프로젝트별 설정 템플릿
 │   ├── AGENT.md               # 에이전트 정규 형식
-│   ├── README.md              # PM Agent v2 시스템 설명
+│   ├── README.md              # Moonshot Agent v2 시스템 설명
 │   ├── settings.local.json    # 로컬 설정
 │   │
 │   ├── agents/                # 전문화된 에이전트 정의
@@ -91,7 +91,7 @@ claude-settings/
 
 | 에이전트 | 역할 | 주요 작업 |
 |---------|------|----------|
-| **PM Agent** | 프로젝트 매니저 | 작업 타입/복잡도 분석, 에이전트 조율 |
+| **Moonshot Agent** | 프로젝트 매니저 | 작업 타입/복잡도 분석, 에이전트 조율 |
 | **Requirements Analyzer** | 요구사항 분석 | 사전 합의서 작성, 요구사항 명확화 |
 | **Context Builder** | 구현 계획 수립 | context.md 작성, 단계별 계획 수립 |
 | **Implementation Agent** | 코드 구현 | 실제 코드 작성, 패턴 준수 |
@@ -119,7 +119,7 @@ claude-settings/
 - **agreement-template.md**: 사전 합의서
 - **context-template.md**: 구현 계획
 - **session-log-template.md**: 세션 로그
-- **moonshot-output.json/md**: PM Agent 출력 형식
+- **moonshot-output.json/md**: Moonshot Agent 출력 형식
 
 ## 빠른 시작
 
@@ -281,7 +281,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 ```
 User: "배치 관리 기능 구현해줘"
   ↓
-PM Agent: 작업 타입/복잡도 분석
+Moonshot Agent: 작업 타입/복잡도 분석
   ↓
 Requirements Analyzer: 사전 합의서 작성
   ↓
@@ -293,14 +293,14 @@ Parallel 실행:
   ↓
 Verification Agent: typecheck, build, lint
   ↓
-PM Agent: 요구사항 완료 체크
+Moonshot Agent: 요구사항 완료 체크
   ↓
 Documentation Agent: 최종 문서화
 ```
 
-## PM Agent 시스템 v2
+## Moonshot Agent 시스템 v2
 
-최신 버전의 PM Agent 시스템은 다음과 같은 개선 사항을 포함합니다:
+최신 버전의 Moonshot Agent 시스템은 다음과 같은 개선 사항을 포함합니다:
 
 - **병렬 실행**: Codex Validator와 Implementation을 동시 실행 (20% 시간 단축)
 - **실시간 피드백 루프**: Doc Sync 스킬을 통한 문서 자동 동기화
@@ -373,7 +373,7 @@ Documentation Agent: 최종 문서화
 기존 프로젝트에서 v2 시스템으로 업그레이드하려면:
 
 1. Doc Sync Skill 추가
-2. PM Agent 프롬프트 업데이트 (5단계, 6단계)
+2. Moonshot Agent 프롬프트 업데이트 (5단계, 6단계)
 3. Documentation Agent 프롬프트 업데이트 (Finalize Mode)
 
 자세한 내용은 [.claude/README.md](.claude/README.md)의 마이그레이션 가이드를 참조하세요.

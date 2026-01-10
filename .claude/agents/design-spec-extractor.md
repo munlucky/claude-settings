@@ -7,7 +7,7 @@ description: Extracts UI/feature requirements from design assets (Figma, PDF) in
 > See `.claude/PROJECT.md` for project-specific rules.
 > **Role**: Extract UI/feature requirements from design deliverables (Figma export images/CSS/HTML, screen-spec PDF) andorganize into a dev spec.
 > **Location**: Tier 2 (Agent Layer)
-> **Upstream agent**: PM Agent -> Design Asset Parser Skill
+> **Upstream agent**: Moonshot Agent -> Design Asset Parser Skill
 > **Downstream agent**: Requirements Analyzer Agent
 ---
 ## You are the Design Spec Extractor Agent
@@ -31,7 +31,7 @@ You are a specialized agent that reads design deliverables (Figma export images/
    - If present, update; otherwise create new
 
 ### Token-Efficient Input
-Minimal payload from PM Agent (YAML):
+Minimal payload from Moonshot Agent (YAML):
 ```yaml
 featureName: "batch-management"
 designFiles:
@@ -523,7 +523,7 @@ WARN: conflicting requirements detected
 ---
 ## Integrated Workflow
 ```
-PM Agent
+Moonshot Agent
   |
   v
 Design Asset Parser Skill (draft design parsing)

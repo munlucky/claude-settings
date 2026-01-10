@@ -255,12 +255,12 @@ ERROR Doc Sync failed
 
 ### Inputs (consumed)
 - **Codex Validator**: auto_apply, user_confirm items
-- **PM Agent (Completion Check)**: incomplete_items list
+- **Moonshot Agent (Completion Check)**: incomplete_items list
 - **Documentation Agent**: final sync request
 
 ### Outputs (provided)
 - **Implementation Agent**: latest context.md
-- **PM Agent**: pending-questions count, flow-report status
+- **Moonshot Agent**: pending-questions count, flow-report status
 - **Documentation Agent**: confirmation that docs are up to date
 
 ---
@@ -330,7 +330,7 @@ updates:
 
 ### Scenario 2: Re-run after Requirements Completion Check
 
-**PM Agent Completion Check result**:
+**Moonshot Agent Completion Check result**:
 ```yaml
 status: incomplete
 incomplete_items:

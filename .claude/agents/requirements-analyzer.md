@@ -16,7 +16,7 @@ description: Analyzes user requests to clarify requirements and drafts prelimina
 - Project rules (`.claude/PROJECT.md`)
 
 ### Token-Efficient Input
-Minimal payload from PM Agent (YAML):
+Minimal payload from Moonshot Agent (YAML):
 ```yaml
 task: "one-line task summary"
 userRequest: "original request (<= 50 chars)"

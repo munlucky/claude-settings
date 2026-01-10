@@ -35,7 +35,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 ### 자동 트리거
 1. `.claude/docs/디채오늘의문장/` 디렉토리에 PDF 추가 감지
 2. Figma export zip 파일 추가 감지
-3. PM Agent가 신규 기능으로 분류 + 디자인 산출물 경로 발견
+3. Moonshot Agent가 신규 기능으로 분류 + 디자인 산출물 경로 발견
 
 ### 수동 트리거
 ```bash
