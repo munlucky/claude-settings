@@ -36,6 +36,34 @@ print_header() {
 	echo ""
 }
 
+# 압축 해제 함수 (unzip 또는 python 사용)
+extract_zip() {
+	local zip_file=$1
+	local dest_dir=$2
+
+	if [ "$HAS_UNZIP" = true ]; then
+		unzip -q "$zip_file" -d "$dest_dir"
+		return
+	fi
+
+	if [ -n "$PYTHON_CMD" ]; then
+		"$PYTHON_CMD" - "$zip_file" "$dest_dir" <<'PY'
+import sys
+import zipfile
+
+zip_path = sys.argv[1]
+dest = sys.argv[2]
+
+with zipfile.ZipFile(zip_path) as zf:
+    zf.extractall(dest)
+PY
+		return
+	fi
+
+	print_error "압축 해제 도구(unzip 또는 python)가 필요합니다."
+	exit 1
+}
+
 # 사용법 출력
 usage() {
 	cat <<EOF
@@ -173,13 +201,28 @@ print_header
 
 # 1. 필수 도구 확인
 print_info "필수 도구 확인 중..."
-for cmd in curl unzip; do
-	if ! command -v $cmd &>/dev/null; then
-		print_error "$cmd가 설치되어 있지 않습니다."
-		exit 1
-	fi
-done
-print_info "✓ 필수 도구 확인 완료"
+if ! command -v curl &>/dev/null; then
+	print_error "curl이 설치되어 있지 않습니다."
+	exit 1
+fi
+
+HAS_UNZIP=false
+if command -v unzip &>/dev/null; then
+	HAS_UNZIP=true
+fi
+
+PYTHON_CMD=""
+if command -v python3 &>/dev/null; then
+	PYTHON_CMD="python3"
+elif command -v python &>/dev/null; then
+	PYTHON_CMD="python"
+fi
+
+if [ "$HAS_UNZIP" = false ] && [ -z "$PYTHON_CMD" ]; then
+	print_error "unzip 또는 python이 설치되어 있지 않습니다."
+	exit 1
+fi
+print_info "필수 도구 확인 완료"
 
 # 2. 기존 AI 설정 디렉토리 확인 및 자동 백업
 BACKUP_DIRS=()
@@ -249,7 +292,7 @@ print_info "✓ 다운로드 완료"
 
 # 5. 압축 해제
 print_info ".claude 디렉토리 추출 중..."
-unzip -q "$ZIP_FILE" -d "$TEMP_DIR"
+extract_zip "$ZIP_FILE" "$TEMP_DIR"
 
 if [ ! -d "$TEMP_DIR/claude-settings-$BRANCH/.claude" ]; then
 	print_error ".claude 디렉토리를 찾을 수 없습니다"
