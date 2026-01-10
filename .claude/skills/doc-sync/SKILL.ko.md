@@ -255,12 +255,12 @@ timestamp: "2025-12-20 09:25"
 
 ### 입력 (사용하는 정보)
 - **Codex Validator**: auto_apply, user_confirm 항목
-- **PM Agent (Completion Check)**: incomplete_items 리스트
+- **Moonshot Agent (Completion Check)**: incomplete_items 리스트
 - **Documentation Agent**: 최종 동기화 요청
 
 ### 출력 (제공하는 정보)
 - **Implementation Agent**: 최신 context.md
-- **PM Agent**: pending-questions 개수, flow-report 상태
+- **Moonshot Agent**: pending-questions 개수, flow-report 상태
 - **Documentation Agent**: 모든 문서 최신화 완료 확인
 
 ---
@@ -329,7 +329,7 @@ updates:
 
 ### 시나리오 2: Requirements Completion Check 후 재실행
 
-**PM Agent Completion Check 결과**:
+**Moonshot Agent Completion Check 결과**:
 ```yaml
 status: incomplete
 incomplete_items:

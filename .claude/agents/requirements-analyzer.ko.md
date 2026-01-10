@@ -16,7 +16,7 @@ description: Analyzes user requests to clarify requirements and drafts prelimina
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
 
 ### 🎯 토큰 효율적 입력 (Token-Efficient Input)
-PM Agent로부터 받는 최소 페이로드 (YAML):
+Moonshot Agent로부터 받는 최소 페이로드 (YAML):
 ```yaml
 task: "작업 1줄 요약"
 userRequest: "원본 요청 (50자 이내)"

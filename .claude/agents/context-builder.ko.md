@@ -14,7 +14,7 @@ description: Creates implementation plans (context.md) based on preliminary agre
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
 
 ### 🎯 토큰 효율적 입력 (Token-Efficient Input)
-PM Agent로부터 받는 최소 페이로드 (YAML):
+Moonshot Agent로부터 받는 최소 페이로드 (YAML):
 ```yaml
 agreementFile: ".claude/features/xxx/agreement.md"
 relevantFilePaths:

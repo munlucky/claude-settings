@@ -1,4 +1,4 @@
-# PM Agent 출력 템플릿 (YAML 형식)
+# Moonshot Agent 출력 템플릿 (YAML 형식)
 # JSON 대비 20-30% 토큰 절감 효과
 
 taskType: "feature | modification | bugfix | refactor"

@@ -15,7 +15,7 @@ description: Documents task results, updates context/session logs, and finalizes
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
 
 ### 🎯 토큰 효율적 입력 (Token-Efficient Input)
-PM Agent로부터 받는 최소 페이로드 (YAML):
+Moonshot Agent로부터 받는 최소 페이로드 (YAML):
 ```yaml
 mode: "update"  # or "finalize"
 contextFile: ".claude/features/xxx/context.md"
@@ -44,7 +44,7 @@ commitHashes:  # git log로 직접 확인 가능하지만, 빠른 참조용
 ---
 ## 🎯 Finalize Mode (신규)
 ### 실행 조건
-- PM Agent의 Requirements Completion Check 통과 후만 실행
+- Moonshot Agent의 Requirements Completion Check 통과 후만 실행
 - 모든 요구사항이 완료되었음을 확인
 ### 목적
 - 최종 문서화 + 효율성 리포트 + 회고 메모 작성

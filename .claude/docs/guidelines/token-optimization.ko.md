@@ -134,7 +134,7 @@ relevantFilePaths:
 
 ## 🛠️ 구현 체크리스트
 
-### PM Agent 수행 항목
+### Moonshot Agent 수행 항목
 - [ ] 에이전트별 최소 페이로드 YAML 생성 (JSON 사용 금지)
 - [ ] 파일 경로만 포함, 내용 제외
 - [ ] 병렬 실행 시 공통 스냅샷 1회 준비

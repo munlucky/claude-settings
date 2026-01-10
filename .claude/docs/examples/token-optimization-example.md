@@ -8,7 +8,7 @@ User request: "Implement batch management. We need list view, detail view, and r
 
 ## Inefficient Approach (Before - JSON)
 
-### PM Agent -> Implementation Agent (JSON format)
+### Moonshot Agent -> Implementation Agent (JSON format)
 ```yaml
 # Actually sent as JSON, shown here as YAML
 task: "Implement batch management"
@@ -37,7 +37,7 @@ conversationHistory:
 
 ## Efficient Approach (After)
 
-### Step 1: PM Agent analysis (YAML)
+### Step 1: Moonshot Agent analysis (YAML)
 ```yaml
 taskType: "feature"
 complexity: "medium"

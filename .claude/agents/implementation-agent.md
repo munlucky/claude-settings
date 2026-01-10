@@ -15,7 +15,7 @@ description: Implements code changes based on the plan (context.md), following p
 - Project rules (`.claude/PROJECT.md`)
 
 ### Token-Efficient Input
-Minimal payload from PM Agent (YAML):
+Minimal payload from Moonshot Agent (YAML):
 ```yaml
 mode: "write"
 contextFile: ".claude/features/xxx/context.md"

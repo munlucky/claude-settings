@@ -15,7 +15,7 @@ Run **Codex Validator** (plan review) and **Implementation Agent** (coding) in p
 **Problem**: Running Validator and Implementation in parallel loads the same context twice
 **Solution**:
 1. **Prepare one shared snapshot**:
-   - PM Agent prepares a single JSON snapshot before parallel execution
+   - Moonshot Agent prepares a single JSON snapshot before parallel execution
    - Both agents reference the same snapshot
 2. **Add only role-specific minimums**:
    - Validator: `"mode": "readonly"` + review file paths only

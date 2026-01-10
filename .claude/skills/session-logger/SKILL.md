@@ -213,7 +213,7 @@ session-logger start: implement batch management
 
 ### [09:00] Work started
 - User request: "Implement batch management"
-- PM Agent analysis: feature, complex, planning phase
+- Moonshot Agent analysis: feature, complex, planning phase
 - Uncertainties: UI spec version, API spec draft
 
 ### [09:05] User response (clarified requirements)
@@ -346,7 +346,7 @@ session-logger start: implement batch management
 ## Related agents/skills
 
 ### Inputs (consumed)
-- PM Agent: task type, complexity, phase decision
+- Moonshot Agent: task type, complexity, phase decision
 - Requirements Analyzer: preliminary agreement, question list
 - Context Builder: implementation plan, checkpoints
 - Implementation Agent: commit messages, changed files

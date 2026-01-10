@@ -1,4 +1,4 @@
-# PM Agent System v2 Changes
+# Moonshot Agent System v2 Changes
 
 > **Updated**: 2025-01-08
 > **Version**: v2.0
@@ -13,7 +13,7 @@
 User Request
   |
   v
-PM Agent -> Requirements -> Context -> Codex Validator
+Moonshot Agent -> Requirements -> Context -> Codex Validator
   |
   v
 Implementation -> Type Safety -> Verification -> Documentation
@@ -27,7 +27,7 @@ Implementation -> Type Safety -> Verification -> Documentation
 User Request
   |
   v
-PM Agent -> Requirements -> Context
+Moonshot Agent -> Requirements -> Context
   |
   v
 {{PARALLEL}}
@@ -38,7 +38,7 @@ PM Agent -> Requirements -> Context
 Type Safety -> Verification
   |
   v
-PM Agent: Requirements Completion Check
+Moonshot Agent: Requirements Completion Check
   |-- Incomplete -> Re-run Implementation
   `-- Complete -> Documentation Finalize
 ```
@@ -82,7 +82,7 @@ PM Agent: Requirements Completion Check
 
 ---
 
-### 2. Parallel Execution (PM Agent)
+### 2. Parallel Execution (Moonshot Agent)
 **Location**: `.claude/agents/moonshot-agent/prompt.md` (step 5)
 
 **Purpose**: Save time by running Codex Validator and Implementation in parallel
@@ -100,7 +100,7 @@ PM Agent: Requirements Completion Check
 
 ---
 
-### 3. Requirements Completion Check (PM Agent)
+### 3. Requirements Completion Check (Moonshot Agent)
 **Location**: `.claude/agents/moonshot-agent/prompt.md` (step 6)
 
 **Purpose**: Ensure every requirement is complete and prevent omissions
@@ -188,10 +188,10 @@ PM Agent: Requirements Completion Check
 
 ### Scenario: new feature implementation (complex)
 
-#### 1. PM Agent analysis (auto)
+#### 1. Moonshot Agent analysis (auto)
 ```
 User: "Implement batch management"
-PM Agent: asks about uncertainty (UI spec version, API spec)
+Moonshot Agent: asks about uncertainty (UI spec version, API spec)
 ```
 
 #### 2. Requirements Analyzer (auto)
@@ -224,7 +224,7 @@ Verification: typecheck, build, lint
 
 #### 6. Requirements Completion Check (auto)
 ```
-PM Agent:
+Moonshot Agent:
   - Cross-check agreement
   - Check context.md checkpoints
   - Check pending-questions.md
@@ -273,7 +273,7 @@ Documentation Agent:
    cp .claude/skills/doc-sync/skill.md [your-project]/.claude/skills/doc-sync/
    ```
 
-2. **Update PM Agent prompt**
+2. **Update Moonshot Agent prompt**
    - Step 5: add parallel execution section
    - Step 6: add Requirements Completion Check section
 
@@ -315,7 +315,7 @@ A: No. It runs only for complexity: complex. simple/medium remain sequential.
 A: Log the partial success and guide manual resolution. Rollback is supported.
 
 ### Q4: Can we skip Completion Check?
-A: Not recommended, but it can be disabled in PM Agent settings.
+A: Not recommended, but it can be disabled in Moonshot Agent settings.
 
 ### Q5: Is the efficiency report required?
 A: Optional. It is auto-generated in Documentation Finalize, but can be omitted.
@@ -338,4 +338,4 @@ A: Optional. It is auto-generated in Documentation Finalize, but can be omitted.
 
 ---
 
-**Boost development productivity to the next level with PM Agent System v2.**
+**Boost development productivity to the next level with Moonshot Agent System v2.**

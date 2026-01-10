@@ -15,7 +15,7 @@ description: Documents task results, updates context/session logs, and finalizes
 - Project rules (`.claude/PROJECT.md`)
 
 ### Token-Efficient Input
-Minimal payload from PM Agent (YAML):
+Minimal payload from Moonshot Agent (YAML):
 ```yaml
 mode: "update"  # or "finalize"
 contextFile: ".claude/features/xxx/context.md"
@@ -44,7 +44,7 @@ commitHashes:  # quick references, even though git log is available
 ---
 ## Finalize Mode (New)
 ### Execution conditions
-- Run only after the PM Agent Requirements Completion Check passes
+- Run only after the Moonshot Agent Requirements Completion Check passes
 - Confirm all requirements are complete
 ### Purpose
 - Final documentation + efficiency report + retrospective notes

@@ -1,4 +1,4 @@
-# PM Agent 시스템 v2 변경 사항
+# Moonshot Agent 시스템 v2 변경 사항
 
 > **업데이트 일자**: 2025-01-08
 > **버전**: v2.0
@@ -12,7 +12,7 @@
 ```
 User Request
   ↓
-PM Agent → Requirements → Context → Codex Validator
+Moonshot Agent → Requirements → Context → Codex Validator
   ↓
 Implementation → Type Safety → Verification → Documentation
 ```
@@ -24,7 +24,7 @@ Implementation → Type Safety → Verification → Documentation
 ```
 User Request
   ↓
-PM Agent → Requirements → Context
+Moonshot Agent → Requirements → Context
   ↓
 {{PARALLEL}}
   ├─ Codex Validator → Doc Sync (context.md 자동 업데이트)
@@ -32,7 +32,7 @@ PM Agent → Requirements → Context
   ↓
 Type Safety → Verification
   ↓
-PM Agent: Requirements Completion Check
+Moonshot Agent: Requirements Completion Check
   ├─ Incomplete → Implementation 재실행
   └─ Complete → Documentation Finalize
 ```
@@ -76,7 +76,7 @@ PM Agent: Requirements Completion Check
 
 ---
 
-### 2. Parallel 실행 (PM Agent)
+### 2. Parallel 실행 (Moonshot Agent)
 **위치**: `.claude/agents/moonshot-agent/prompt.md` (5단계)
 
 **목적**: Codex Validator와 Implementation 병렬 실행으로 시간 절약
@@ -94,7 +94,7 @@ PM Agent: Requirements Completion Check
 
 ---
 
-### 3. Requirements Completion Check (PM Agent)
+### 3. Requirements Completion Check (Moonshot Agent)
 **위치**: `.claude/agents/moonshot-agent/prompt.md` (6단계)
 
 **목적**: 모든 요구사항 완료 여부 확인, 누락 방지
@@ -182,10 +182,10 @@ PM Agent: Requirements Completion Check
 
 ### 시나리오: 신규 기능 구현 (complex)
 
-#### 1. PM Agent 분석 (자동)
+#### 1. Moonshot Agent 분석 (자동)
 ```
 사용자: "배치 관리 기능 구현해줘"
-PM Agent: 불확실한 부분 질문 (화면 정의서 버전, API 스펙)
+Moonshot Agent: 불확실한 부분 질문 (화면 정의서 버전, API 스펙)
 ```
 
 #### 2. Requirements Analyzer (자동)
@@ -218,7 +218,7 @@ Verification: typecheck, build, lint
 
 #### 6. Requirements Completion Check (자동)
 ```
-PM Agent:
+Moonshot Agent:
   - 사전 합의서 대조
   - context.md 체크포인트
   - pending-questions.md 확인
@@ -267,7 +267,7 @@ Documentation Agent:
    cp .claude/skills/doc-sync/skill.md [your-project]/.claude/skills/doc-sync/
    ```
 
-2. **PM Agent 프롬프트 업데이트**
+2. **Moonshot Agent 프롬프트 업데이트**
    - 5단계: Parallel 실행 섹션 추가
    - 6단계: Requirements Completion Check 섹션 추가
 
@@ -309,7 +309,7 @@ A: 아니요, complexity: complex일 때만 병렬 실행됩니다. simple/mediu
 A: 부분 성공 시 로그 기록 + 수동 해결 안내. 롤백 기능 지원.
 
 ### Q4: Completion Check를 스킵할 수 있나요?
-A: 권장하지 않지만, PM Agent 설정으로 비활성화 가능합니다.
+A: 권장하지 않지만, Moonshot Agent 설정으로 비활성화 가능합니다.
 
 ### Q5: 효율성 리포트는 필수인가요?
 A: 선택적입니다. Documentation Finalize 시 자동 생성되지만, 생략 가능합니다.
@@ -332,4 +332,4 @@ A: 선택적입니다. Documentation Finalize 시 자동 생성되지만, 생략
 
 ---
 
-**PM Agent 시스템 v2로 개발 생산성을 한 단계 더 높이세요!**
+**Moonshot Agent 시스템 v2로 개발 생산성을 한 단계 더 높이세요!**
