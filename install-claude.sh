@@ -265,12 +265,43 @@ if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
         print_info "  ✓ 제외: $pattern"
     done
 fi
+# 6.5. Stash protected user files from existing .claude
+USER_STASH_DIR=""
+if [ ${#USER_FILES[@]} -gt 0 ]; then
+    print_info "Stashing protected user files..."
+    USER_STASH_DIR="$TEMP_DIR/user-files"
+    mkdir -p "$USER_STASH_DIR"
+    for file in "${USER_FILES[@]}"; do
+        item="${file%/}"
+        src=".claude/$item"
+        dest="$USER_STASH_DIR/$item"
+        if [ -e "$src" ]; then
+            mkdir -p "$(dirname "$dest")"
+            cp -r "$src" "$dest"
+        fi
+    done
+fi
+
 
 # 7. .claude 디렉토리 복사
 print_info ".claude 디렉토리 설치 중..."
-rm -rf .claude
-cp -r "$TEMP_DIR/claude-settings-$BRANCH/.claude" .
+mkdir -p .claude
+cp -r "$TEMP_DIR/claude-settings-$BRANCH/.claude/." .claude/
 print_info "✓ 설치 완료"
+# 7.5. Restore protected user files into new .claude
+if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
+    print_info "Restoring protected user files..."
+    for file in "${USER_FILES[@]}"; do
+        item="${file%/}"
+        src="$USER_STASH_DIR/$item"
+        dest=".claude/$item"
+        if [ -e "$src" ]; then
+            mkdir -p "$(dirname "$dest")"
+            cp -r "$src" "$dest"
+        fi
+    done
+fi
+
 
 # 8. 정리
 rm -rf "$TEMP_DIR"
