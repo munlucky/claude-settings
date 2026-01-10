@@ -337,6 +337,19 @@ if [ ${#USER_FILES[@]} -gt 0 ]; then
     for file in "${USER_FILES[@]}"; do
         echo "  ✓ .claude/$file"
     done
+		echo ""
+
+		fi
+
+		# Suggest generating PROJECT.md when missing
+
+		if [ ! -f ".claude/PROJECT.md" ]; then
+
+			print_warn "PROJECT.md not found."
+
+			echo "  - Run the 'project-md-refresh' skill to generate/update it."
+
+			echo "  - Example: ask Claude Code to run project-md-refresh for this repo."
     echo ""
 fi
 
