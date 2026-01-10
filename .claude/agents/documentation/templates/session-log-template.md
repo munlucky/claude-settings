@@ -1,44 +1,44 @@
-# {YYYY-MM-DD} {feature-name} 세션 로그
+# {YYYY-MM-DD} {feature-name} Session Log
 
-> 프로젝트 규칙: `.claude/PROJECT.md`
+> Project rules: `.claude/PROJECT.md`
 
-## 세션 메타데이터
+## Session Metadata
 
-- 시작 시간: {HH:MM}
-- 종료 시간: {HH:MM}
-- 브랜치: {branch}
-- 작업자: {userName}
-- 복잡도: {simple|medium|complex}
+- Start time: {HH:MM}
+- End time: {HH:MM}
+- Branch: {branch}
+- Owner: {userName}
+- Complexity: {simple|medium|complex}
 
-## 타임라인
+## Timeline
 
-| 시간    | 단계           | 요약   | 산출물        |
-| ------- | -------------- | ------ | ------------- |
-| {HH:MM} | Requirements   | {요약} | agreement.md  |
-| {HH:MM} | Context        | {요약} | context.md    |
-| {HH:MM} | Implementation | {요약} | commit {hash} |
-| {HH:MM} | Verification   | {요약} | verify 결과   |
-| {HH:MM} | Documentation  | {요약} | session log   |
+| Time  | Phase          | Summary | Artifact       |
+| ----- | -------------- | ------- | -------------- |
+| {HH:MM} | Requirements   | {summary} | agreement.md |
+| {HH:MM} | Context        | {summary} | context.md   |
+| {HH:MM} | Implementation | {summary} | commit {hash} |
+| {HH:MM} | Verification   | {summary} | verify result |
+| {HH:MM} | Documentation  | {summary} | session log  |
 
-## 의사결정 로그
+## Decision Log
 
-- {결정 사항} / 이유: {이유} / 대안: {대안}
+- {decision} / Reason: {reason} / Alternative: {alternative}
 
-## 이슈 로그
+## Issue Log
 
-- {이슈/해결}
+- {issue/resolution}
 
-## 검증 결과
+## Verification Results
 
-- `npx tsc --noEmit`: {결과}
-- `npm run build`: {결과}
-- `npm run lint`: {결과}
+- `npx tsc --noEmit`: {result}
+- `npm run build`: {result}
+- `npm run lint`: {result}
 
-## 산출물
+## Deliverables
 
-- 변경 파일: {요약}
-- 커밋: {hash/메시지}
+- Changed files: {summary}
+- Commits: {hash/message}
 
-## 남은 작업
+## Remaining Work
 
-- [ ] {남은 작업}
+- [ ] {remaining work}

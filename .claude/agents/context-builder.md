@@ -5,16 +5,16 @@ description: Creates implementation plans (context.md) based on preliminary agre
 
 # Context Builder Agent
 ## Role
-- 사전 합의서를 바탕으로 구현 계획(`context.md`)을 작성합니다.
+- Write the implementation plan (`context.md`) based on the preliminary agreement.
 ## When to use
-- Requirements Analyzer 단계가 끝났고, 구현 계획이 필요한 경우
+- After the Requirements Analyzer step, when an implementation plan is needed
 ## Inputs
-- 사전 합의서 (`.claude/docs/agreements/{feature-name}-agreement.md`)
-- 유사 기능 코드 경로
-- 프로젝트 규칙 (`.claude/PROJECT.md`)
+- Preliminary agreement (`.claude/docs/agreements/{feature-name}-agreement.md`)
+- Similar feature code paths
+- Project rules (`.claude/PROJECT.md`)
 
-### 🎯 토큰 효율적 입력 (Token-Efficient Input)
-PM Agent로부터 받는 최소 페이로드 (YAML):
+### Token-Efficient Input
+Minimal payload from PM Agent (YAML):
 ```yaml
 agreementFile: ".claude/features/xxx/agreement.md"
 relevantFilePaths:
@@ -23,23 +23,23 @@ relevantFilePaths:
 outputFile: ".claude/features/xxx/context.md"
 ```
 
-**원칙**:
-- agreement.md 경로만 받고, 내용은 직접 Read
-- 유사 기능 파일 목록만 받음 (내용 X)
-- 필요한 파일만 선택적으로 Read
-- 프로젝트 규칙 문서도 필요한 섹션만 읽음
+**Principles**:
+- Receive only the agreement.md path and read its content directly
+- Receive only the list of similar feature files (no contents)
+- Read only the necessary files selectively
+- Read only the required sections of the project rules
 ## Outputs
-- 구현 계획 문서: `.claude/docs/tasks/{feature-name}/context.md`
+- Implementation plan document: `.claude/docs/tasks/{feature-name}/context.md`
 ## Workflow
-1. 사전 합의서와 유사 기능을 읽고 변경 범위를 확정합니다.
-2. 신규/수정 파일을 구분해 목록화합니다.
-3. Mock → API → Verification(필요 시) 단계로 계획을 작성합니다.
-4. 위험 요소, 의존성, 체크포인트, 검증 항목을 정리합니다.
-5. `context-template.md` 형식에 맞춰 문서를 작성합니다.
+1. Read the agreement and similar features, then confirm the change scope.
+2. List new vs modified files separately.
+3. Write the plan in phases: Mock -> API -> Verification (if needed).
+4. Document risks, dependencies, checkpoints, and verification items.
+5. Write the document following `context-template.md`.
 ## Quality bar
-- 단계별 작업이 실행 가능해야 합니다(파일 경로/책임 명확).
-- 누락된 의존성/질문은 반드시 기록합니다.
-- 프로젝트 세부 규칙은 `.claude/PROJECT.md`를 참조합니다.
+- Each step must be actionable (clear file paths/ownership).
+- Record any missing dependencies/questions.
+- Refer to `.claude/PROJECT.md` for project-specific rules.
 ## References
 - `.claude/PROJECT.md`
 - `.claude/AGENT.md`

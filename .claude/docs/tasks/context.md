@@ -1,130 +1,130 @@
-# 어드민 권한 타입 확장 작업 (MIGRATION_MANAGEMENT, BATCH_MANAGEMENT)
+# Admin Permission Type Expansion (MIGRATION_MANAGEMENT, BATCH_MANAGEMENT)
 
-## 작업 일시
+## Work Date
 2025-12-19
 
-## 작업 개요
-- **목적**: 권한 타입/화면에 신규 메뉴 2개(`MIGRATION_MANAGEMENT`, `BATCH_MANAGEMENT`)를 추가하여 조회·부여·저장 가능하도록 정합성 확보
-- **전제**: 백엔드도 동일한 `Menu` 키로 응답/수신, 카테고리는 "서비스 관리 > CS 관리"에 포함
+## Overview
+- **Goal**: Add two new menus (`MIGRATION_MANAGEMENT`, `BATCH_MANAGEMENT`) to permission types/screens so they can be viewed, granted, and saved consistently.
+- **Assumption**: Backend responds/accepts the same `Menu` keys, and the category is under "Service Management > CS Management".
 
-## 변경 대상 파일
-1. `src/app/_entities/admin/types.ts` - Menu 유니온 타입
+## Target Files
+1. `src/app/_entities/admin/types.ts` - Menu union types
 2. `src/app/users/admins/list/[id]/permissions/_constants/permissionData.ts` - initialPermissions, MENU_MAPPING
-3. `src/app/users/admins/logs/permission/page.tsx` - getMenuLabel 메뉴 라벨 매핑 (Codex 검증 결과)
-4. `src/app/users/admins/list/[id]/permissions/page.tsx` - convertApiToScreenFormat (검토만, 수정 불필요)
+3. `src/app/users/admins/logs/permission/page.tsx` - getMenuLabel label mapping (Codex validation result)
+4. `src/app/users/admins/list/[id]/permissions/page.tsx` - convertApiToScreenFormat (review only, no change)
 
-## 현재 상태 분석
+## Current State Analysis
 
-### 1. Menu 타입 (types.ts:7-23)
-- 현재 18개 메뉴 정의됨
-- `NOTICE_MANAGEMENT`, `REPORT_MANAGEMENT` 등 CS 관리 메뉴 포함
+### 1. Menu types (types.ts:7-23)
+- 18 menus currently defined
+- CS management menus include `NOTICE_MANAGEMENT`, `REPORT_MANAGEMENT`
 
 ### 2. initialPermissions (permissionData.ts:118-132)
-- "서비스 관리 / CS 관리" 블록:
-  - 공지사항 관리: read/write/delete 모두 false
-  - 신고 관리: read/write는 false, **delete는 null** (삭제 불가)
+- "Service Management / CS Management" block:
+  - Notice Management: read/write/delete all false
+  - Report Management: read/write false, **delete is null** (delete not allowed)
 
 ### 3. MENU_MAPPING (permissionData.ts:136-159)
-- 18개 메뉴 모두 매핑
-- `Record<Menu, { permissionId: string; featureName: string }>` 타입
-- `NOTICE_MANAGEMENT`, `REPORT_MANAGEMENT`는 `service-cs` permissionId에 매핑
+- All 18 menus mapped
+- `Record<Menu, { permissionId: string; featureName: string }>` type
+- `NOTICE_MANAGEMENT`, `REPORT_MANAGEMENT` map to `service-cs` permissionId
 
 ### 4. convertApiToScreenFormat (page.tsx:56-62)
-- `ADMIN_LOG`, `NICKNAME_DICTIONARY`만 read-only 특수 처리 (write/delete를 null로 강제)
-- 신규 메뉴는 read-only가 아니므로 수정 불필요
+- Only `ADMIN_LOG` and `NICKNAME_DICTIONARY` are special-cased as read-only (write/delete forced to null)
+- New menus are not read-only, so no changes needed
 
-## 구현 계획
+## Implementation Plan
 
-### 1단계: Menu 타입 확장
-**파일**: `src/app/_entities/admin/types.ts`
-- `Menu` 유니온에 추가:
+### Step 1: Extend Menu types
+**File**: `src/app/_entities/admin/types.ts`
+- Add to the `Menu` union:
   ```typescript
   | "MIGRATION_MANAGEMENT"
   | "BATCH_MANAGEMENT"
   ```
-- 위치: 마지막 메뉴(`CHALLENGE_MANAGEMENT`) 뒤에 추가
+- Insert after the last menu (`CHALLENGE_MANAGEMENT`)
 
-### 2단계: initialPermissions 확장
-**파일**: `src/app/users/admins/list/[id]/permissions/_constants/permissionData.ts`
-- "서비스 관리 / CS 관리" features 배열에 추가 (라인 130 다음):
+### Step 2: Extend initialPermissions
+**File**: `src/app/users/admins/list/[id]/permissions/_constants/permissionData.ts`
+- Add to the "Service Management / CS Management" features array (after line 130):
   ```typescript
   {
-    name: "마이그레이션 관리",
+    name: "Migration Management",
     permissions: { read: false, write: false, delete: false },
   },
   {
-    name: "배치 관리",
+    name: "Batch Management",
     permissions: { read: false, write: false, delete: false },
   },
   ```
-- **권한 기본값 결정**:
-  - read/write/delete 모두 false로 설정 (공지사항 관리와 동일)
-  - 삭제 권한도 허용 (신고 관리처럼 delete: null이 아님)
+- **Default permissions**:
+  - Set read/write/delete to false (same as Notice Management)
+  - Allow delete (not null like Report Management)
 
-### 3단계: MENU_MAPPING 확장
-**파일**: `src/app/users/admins/list/[id]/permissions/_constants/permissionData.ts`
-- MENU_MAPPING 객체에 추가 (라인 158 다음):
+### Step 3: Extend MENU_MAPPING
+**File**: `src/app/users/admins/list/[id]/permissions/_constants/permissionData.ts`
+- Add to MENU_MAPPING (after line 158):
   ```typescript
-  MIGRATION_MANAGEMENT: { permissionId: "service-cs", featureName: "마이그레이션 관리" },
-  BATCH_MANAGEMENT: { permissionId: "service-cs", featureName: "배치 관리" },
+  MIGRATION_MANAGEMENT: { permissionId: "service-cs", featureName: "Migration Management" },
+  BATCH_MANAGEMENT: { permissionId: "service-cs", featureName: "Batch Management" },
   ```
 
-### 4단계: 타입 체크 및 검증
-- `npm run typecheck` 실행하여 TypeScript 에러 확인
-- MENU_MAPPING이 Menu 타입의 모든 키를 포함하는지 확인 (Record 타입 강제)
+### Step 4: Typecheck and verify
+- Run `npm run typecheck` to confirm TypeScript errors
+- Ensure MENU_MAPPING includes all Menu keys (Record type enforcement)
 
-## 제약 및 주의사항
+## Constraints and Notes
 
-### 절대 규칙 (CLAUDE.md)
-1. **TypeScript 정합성**: MENU_MAPPING은 `Record<Menu, ...>` 타입이므로 모든 Menu 키를 포함해야 함
-2. **백엔드 계약**: 백엔드가 동일한 Menu 키(`MIGRATION_MANAGEMENT`, `BATCH_MANAGEMENT`)로 응답/수신하는지 확인 필요
-3. **권한 기본값**: 다른 기능들과 동일하게 모든 권한을 false로 초기화
-4. **UI 동작**: 토글/저장/취소 기능이 정상 동작하는지 수동 테스트 필요
+### Hard Rules (CLAUDE.md)
+1. **TypeScript consistency**: MENU_MAPPING is `Record<Menu, ...>` so all Menu keys must be included
+2. **Backend contract**: confirm backend responds/accepts `MIGRATION_MANAGEMENT`, `BATCH_MANAGEMENT`
+3. **Default permissions**: initialize all permissions to false
+4. **UI behavior**: manually test toggle/save/cancel flows
 
-### 변경 범위 제한
-- **변경 금지**: `convertApiToScreenFormat` (page.tsx) - 신규 메뉴는 read-only가 아님
-- **변경 금지**: `menu-mapping.ts` - 권한 화면 전용이므로 글로벌 메뉴 매핑 불필요
-- **변경 금지**: API 라우트 - 백엔드가 이미 신규 메뉴를 지원한다고 가정
+### Scope Limits
+- **Do not change**: `convertApiToScreenFormat` (page.tsx) - new menus are not read-only
+- **Do not change**: `menu-mapping.ts` - permission page only, no global mapping
+- **Do not change**: API routes - assume backend already supports new menus
 
-## 검증 체크리스트
-- [ ] Menu 타입에 2개 추가
-- [ ] initialPermissions에 2개 기능 추가 (service-cs 블록)
-- [ ] MENU_MAPPING에 2개 매핑 추가
-- [ ] `npm run typecheck` 통과 (Record<Menu> 타입 정합성)
-- [ ] 권한 페이지 로딩 확인
-- [ ] 권한 토글 동작 확인
-- [ ] 권한 저장/취소 동작 확인
-- [ ] GENERAL 그룹에서 admin-management 숨김 로직 영향 없음 확인
+## Verification Checklist
+- [ ] Add 2 items to Menu types
+- [ ] Add 2 features to initialPermissions (service-cs block)
+- [ ] Add 2 mappings to MENU_MAPPING
+- [ ] `npm run typecheck` passes (Record<Menu> consistency)
+- [ ] Permission page loads
+- [ ] Permission toggles work
+- [ ] Permission save/cancel works
+- [ ] Confirm no impact on admin-management hide logic in GENERAL group
 
-## 위험 및 대안
+## Risks and Alternatives
 
-### 위험 1: MENU_MAPPING 불일치
-- **증상**: `MENU_MAPPING`이 `Menu` 타입과 불일치하면 TypeScript 에러 발생
-- **원인**: `Record<Menu, ...>` 타입은 모든 Menu 키를 요구함
-- **대안**: 모든 Menu 키를 MENU_MAPPING에 추가하여 정합성 유지
+### Risk 1: MENU_MAPPING mismatch
+- **Symptom**: TypeScript error if `MENU_MAPPING` does not match `Menu` type
+- **Cause**: `Record<Menu, ...>` requires all keys
+- **Alternative**: add missing Menu keys to MENU_MAPPING
 
-### 위험 2: 백엔드 미지원
-- **증상**: 백엔드가 신규 메뉴를 지원하지 않으면 저장 실패 가능
-- **원인**: 백엔드 API 스펙 미확인
-- **대안**: 백엔드 팀과 사전 합의 필요 (전제 조건에 명시됨)
+### Risk 2: Backend not supported
+- **Symptom**: save may fail if backend does not support new menus
+- **Cause**: backend API spec not confirmed
+- **Alternative**: align with backend team in advance (stated in assumptions)
 
-### 위험 3: UI 초기화 누락
-- **증상**: 신규 메뉴가 권한 화면에 표시되지 않음
-- **원인**: `initialPermissions`에 추가하지 않으면 화면 구조 누락
-- **대안**: initialPermissions에 기본 구조 추가
+### Risk 3: UI initialization missing
+- **Symptom**: new menus do not appear on permission page
+- **Cause**: missing in `initialPermissions`
+- **Alternative**: add base structure to initialPermissions
 
-## 산출물 포맷
-- TypeScript strict mode 준수
-- `Record<Menu, ...>` 타입 정합성 유지
-- 기존 코드 스타일 준수 (들여쓰기, 네이밍)
-- 최소 변경 원칙 (불필요한 리팩터링 금지)
+## Output Format
+- Follow TypeScript strict mode
+- Maintain `Record<Menu, ...>` consistency
+- Follow existing code style (indentation, naming)
+- Minimal changes only (no unnecessary refactors)
 
-## 다음 단계
-1. ✅ context.md 작성
-2. ⏳ Codex 계획 검증 (옵션, 사용자 요청 시)
-3. ⏳ 1단계: Menu 타입 확장
-4. ⏳ 2단계: initialPermissions 확장
-5. ⏳ 3단계: MENU_MAPPING 확장
-6. ⏳ 4단계: 타입 체크 (`npm run typecheck`)
-7. ⏳ Codex 구현 리뷰
-8. ⏳ 수동 테스트 (권한 페이지 로딩, 토글, 저장)
+## Next Steps
+1. OK context.md created
+2. Pending: Codex plan validation (optional, on request)
+3. Pending: Step 1 - extend Menu types
+4. Pending: Step 2 - extend initialPermissions
+5. Pending: Step 3 - extend MENU_MAPPING
+6. Pending: Step 4 - typecheck (`npm run typecheck`)
+7. Pending: Codex implementation review
+8. Pending: Manual tests (permission page load, toggle, save)

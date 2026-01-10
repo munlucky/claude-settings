@@ -3,151 +3,151 @@ name: claude-codex-guardrail-loop
 description: Use after planning or implementing non-trivial tasks - runs Codex MCP background verification/review for quality gates (plan validation + implementation review)
 ---
 
-# Codex-Claude 엔지니어링 루프 스킬
+# Codex-Claude Engineering Loop Skill
 
-## 언제 사용하는가 (When to Use)
+## When to use
 
-**다음 작업 후 사용 권장 (Plan 검증은 요청 시/합의 시에만 실행):**
-- 비 trivial한 계획 수립 후 (3단계 이상, 아키텍처 영향, 여러 파일 변경) → Plan 검증은 사용자 합의/요청 시 진행
-- 코드 구현 완료 후 (새 기능, 리팩터링, API 변경)
-- 빌드/배포 전 최종 검증
-- 주요 작업 완료 후 품질 게이트 통과 확인
+**Recommended after the following (plan validation runs only on request/approval):**
+- After building a non-trivial plan (3+ steps, architecture impact, multi-file changes) -> run plan validation only if user requests/approves
+- After implementation completes (new feature, refactor, API change)
+- Final validation before build/deploy
+- Quality gate check after major work
 
-**사용하지 않는 경우:**
-- 단순 설정 변경 (환경 변수, 포맷 설정 등)
-- 문서 업데이트만 수행한 경우
-- 1-2줄 간단한 수정 (오타, 스타일 조정)
+**Do not use for:**
+- Simple config changes (env vars, formatter settings)
+- Documentation-only updates
+- 1-2 line trivial edits (typos, minor styling)
 
-## 역할 (Role)
-- 기본 역할은 `CLAUDE.md` 정의를 따른다. Codex는 계획·구현을 검증하는 리뷰어다.
-- 항상 마지막으로 정리한 에이전트가 이어받아 작업한다.
+## Role
+- Base role follows `CLAUDE.md`. Codex is a reviewer for plan/implementation.
+- The last agent that summarized continues the work.
 
-## 제약 기반 가드레일 (Gemini 프롬프트 전략 반영)
-- **컨텍스트 범위 명시**: 변경 대상 파일·폴더 외에는 추측·가정·수정 금지. 근거는 파일/라인으로 지목.
-- **산출물 형식 고정**: 요청된 출력 포맷(Plan/Implementation/Review)과 길이 제한을 명시하고 유지한다.
-- **허용/금지 행동 선언**: 외부 리소스 호출, 새로운 의존성 추가, 대규모 리팩터는 사전 합의 없이는 금지.
-- **불확실성 처리**: 정보 부족·모호 시 짧게 질의 후 진행. 모를 때는 추측 대신 “확인 필요”로 명시.
-- **체크리스트 기반 자기검증**: 응답 직전 핵심 제약(파일 범위, 포맷, 금지 항목, 리스크 포함 여부)을 빠르게 점검 후 제출.
+## Constraint-based guardrails (Gemini prompt strategy)
+- **Specify context scope**: do not guess/assume/edit beyond target files/folders. Cite evidence by file/line.
+- **Fix output format**: keep requested output format (Plan/Implementation/Review) and length constraints.
+- **Declare allowed/forbidden actions**: no external resources, no new deps, no large refactors without approval.
+- **Handle uncertainty**: ask briefly when info is missing; mark as "needs confirmation" instead of guessing.
+- **Checklist self-check**: before sending, verify key constraints (file scope, format, forbidden items, risks).
 
-## 응답 템플릿
-### 사용자 입력 (User Context)
-- 변경 대상 파일/폴더:
-- 현재 동작:
-- 추가 맥락:
-- (필요 시) 제약/우선순위: 허용/금지 행동, 출력 길이·포맷, 모호성 해소 질문 필요 여부
+## Response template
+### User context
+- Target files/folders:
+- Current behavior:
+- Additional context:
+- (If needed) constraints/priorities: allowed/forbidden actions, output length/format, whether questions needed
 
-#### 예시
-- 변경 대상 파일/폴더:
+#### Example
+- Target files/folders:
   - `src/app/page.tsx`
   - `src/store/dashboardStore.ts`
-- 현재 동작: 서버에서 데이터 fetch 후 로컬 상태에 저장
-- 추가 맥락: React 19 대응 예정이라 Suspense / useOptimistic 사용 가능
+- Current behavior: fetch data from server and store in local state
+- Additional context: can use Suspense / useOptimistic for React 19 support
 
-### 작업 (Task)
-- 사용자가 요청한 작업을 bullet로 정리한다.
-- 예시:
-  - dashboard 상태관리 로직을 Zustand + Immer로 분리
-  - 기존 코드에서 발생 가능한 breakage를 최소화
-  - 타입 안전성(타입 좁히기, ReturnType 등) 고려
-- 제약을 다시 한 번 요약한다(금지/허용 행동, 출력 포맷, 길이, 확인 필요 사항).
+### Task
+- Summarize the user request as bullets.
+- Example:
+  - Split dashboard state management into Zustand + Immer
+  - Minimize potential breakage in existing code
+  - Consider type safety (narrowing, ReturnType, etc.)
+- Re-summarize constraints (allowed/forbidden actions, format, length, confirm needs).
 
-### 출력 형식 (Output Format)
-1. Plan(계획): 핵심 단계, 가설, 리스크를 요약한다.
-2. Implementation(구현): 파일별 변경점과 근거를 요약한다.
-3. Review(리뷰): edge case, 테스트 방법, 남은 리스크를 정리한다.
+### Output format
+1. Plan: summarize key steps, assumptions, risks.
+2. Implementation: summarize file-by-file changes and evidence.
+3. Review: summarize edge cases, test approach, remaining risks.
 
-### 최종 지시 (Final Instruction)
-- 반드시 Plan → Implementation → Review 순서로 답변한다.
+### Final instruction
+- Always respond in Plan -> Implementation -> Review order.
 
-## Codex-Claude Loop 절차
-1. **계획(Claude)**: 상세 계획을 수립하고 `.claude/docs/tasks/context.md`에 기록한다.
-2. **계획 검증(Codex)** *(옵션)*: 사용자 요청/합의가 있을 때 MCP 도구로 백그라운드 검증을 요청한다.
-   - `mcp__codex__spawn_agent` 도구 사용
-   - 프롬프트 예시:
+## Codex-Claude Loop Procedure
+1. **Plan (Claude)**: build a detailed plan and record it in `.claude/docs/tasks/context.md`.
+2. **Plan validation (Codex)** *(optional)*: when requested/approved, ask MCP to validate in background.
+   - Use `mcp__codex__spawn_agent`
+   - Prompt example:
    ```
-   이 구현 계획을 검토하고 문제를 찾아줘:
-   [Claude의 계획 내용]
+   Review this implementation plan and find issues:
+   [Claude's plan]
 
-   아래를 중점적으로 확인해:
-   - 논리 오류 및 누락된 엣지 케이스
-   - 데이터/흐름 일관성, API 계약 위반 여부
-   - 타입 안전성(타입 좁히기, null/undefined 처리)과 에러 처리
-   - 성능/자원 낭비 가능성
-   - 보안/권한/입력 검증
-   - 프레임워크/언어 베스트프랙티스 준수 여부
-   - 프로젝트별 코드 컨벤션 및 레포 규칙 준수 여부 (CLAUDE.md 등)
+   Focus on:
+   - Logic errors and missing edge cases
+   - Data/flow consistency and API contract violations
+   - Type safety (narrowing, null/undefined) and error handling
+   - Performance/resource waste
+   - Security/auth/input validation
+   - Framework/language best practices
+   - Project code conventions and repo rules (CLAUDE.md, etc.)
 
-   제약:
-   - Plan/Implementation/Review 포맷 유지, 산출물은 요약본만
-   - 컨텍스트에 없는 파일·의존성 언급 금지, 모르면 “확인 필요”로 표시
-   - 근거를 파일/라인 근처로 지목
+   Constraints:
+   - Keep Plan/Implementation/Review format, summary only
+   - Do not mention files/deps not in context; mark "needs confirmation" if unknown
+   - Cite evidence near file/line
    ```
-   - **결과 요약**: Codex 응답에서 핵심 이슈만 추출해 사용자에게 전달 (전체 로그는 필요시만)
-3. **피드백 루프**: Codex가 지적한 핵심 이슈를 요약해 공유하고 계획을 보완한다. 필요 시 사용자에게 "계획을 수정하고 재검증할까요, 아니면 수정하면서 진행할까요?"로 확인 후 재검증한다.
-4. **구현(Claude)**: 검증된 계획대로 단계별로 구현하고, 오류 처리와 변경사항을 명시적으로 기록한다.
-5. **교차 리뷰(Codex)**: 구현 후 MCP 도구로 백그라운드에서 리뷰를 요청한다.
-   - `mcp__codex__spawn_agent` 도구 사용
-   - 프롬프트 예시:
+   - **Summarize results**: extract only key issues from Codex response for the user (full logs only if needed)
+3. **Feedback loop**: summarize Codex issues, update the plan, and ask the user whether to re-validate or proceed.
+4. **Implementation (Claude)**: implement step-by-step following the validated plan and record errors/changes explicitly.
+5. **Cross review (Codex)**: request background review after implementation.
+   - Use `mcp__codex__spawn_agent`
+   - Prompt example:
    ```
-   구현을 리뷰하고 아래를 확인해줘:
+   Review the implementation and check:
 
-   - 논리/흐름 오류, 엣지 케이스 누락
-   - 타입 안전성 및 null/undefined 방어, 에러/예외 처리
-   - API 계약 및 데이터 모델 정합성
-   - 성능, 자원 낭비 가능성
-   - 보안/권한/입력 검증
-   - 프레임워크/언어 베스트프랙티스 준수
-   - 프로젝트별 코드 컨벤션 및 레포 규칙 준수 (CLAUDE.md 등)
-   - 코드 복잡도 및 유지보수성
+   - Logic/flow errors, missing edge cases
+   - Type safety and null/undefined guards, error/exception handling
+   - API contract and data model consistency
+   - Performance/resource waste
+   - Security/auth/input validation
+   - Framework/language best practices
+   - Project code conventions and repo rules (CLAUDE.md, etc.)
+   - Code complexity and maintainability
 
-   제약:
-   - 응답을 Plan/Implementation/Review 포맷으로 요약
-   - 컨텍스트 밖 의존성·파일 제안 금지, 필요 시 “확인 필요”로 명시
-   - 발견마다 파일/라인 근거를 짧게 지목
+   Constraints:
+   - Summarize response in Plan/Implementation/Review format
+   - Do not suggest deps/files outside context; mark "needs confirmation" if required
+   - Cite file/line evidence for each issue
    ```
-   - **결과 요약**: 치명적 이슈, 경고, 제안을 분류해 요약 전달
-6. **재검증 및 이어가기**: 치명적 이슈는 즉시 수정하고, 큰 구조 변경은 사용자와 상의한다. 수정 후 필요시 MCP로 재검증한다.
-7. **에러 처리**: Codex 또는 구현 에러가 나면 원인 분석 → 수정 전략 조정 → 대규모/파급 변경 전 사용자 확인을 거친다.
+   - **Summarize results**: classify as critical issues, warnings, suggestions
+6. **Re-validate and continue**: fix critical issues immediately; confirm large changes with the user; re-validate if needed.
+7. **Error handling**: on Codex or implementation errors, analyze cause -> adjust strategy -> confirm before large-impact changes.
 
-## Codex 결과 요약 가이드
+## Codex Result Summary Guide
 
-### 요약 원칙
-- **핵심만 전달**: 치명적 이슈 > 경고 > 제안 순으로 우선순위
-- **간결성**: 사용자에게는 3-5개 핵심 포인트만 전달
-- **컨텍스트 절약**: 전체 Codex 로그는 채팅에 표시하지 않음
-- **액션 중심**: 각 이슈에 대한 조치 방안 포함
+### Summary principles
+- **Only the essentials**: critical issues > warnings > suggestions
+- **Brevity**: deliver only 3-5 key points
+- **Context savings**: do not dump full Codex logs
+- **Action-oriented**: include a fix approach for each issue
 
-### 요약 템플릿
+### Summary template
 
 ```
-Codex 검증 완료:
+Codex validation complete:
 
-🔴 치명적 이슈 (즉시 수정 필요):
-- [이슈 1]: [간단한 설명] → [조치 방안]
+Critical issues (fix immediately):
+- [Issue 1]: [short description] -> [action]
 
-🟡 경고 (개선 권장):
-- [이슈 2]: [간단한 설명] → [조치 방안]
+Warnings (improve if possible):
+- [Issue 2]: [short description] -> [action]
 
-💡 제안:
-- [이슈 3]: [간단한 설명]
+Suggestions:
+- [Issue 3]: [short description]
 ```
 
-### 예시
+### Example
 ```
-Codex 검증 완료:
+Codex validation complete:
 
-🔴 치명적 이슈:
-- 타입 안전성: PagingResponse<T> 미사용 → API 응답에 PagingResponse 타입 적용 필요
+Critical issues:
+- Type safety: PagingResponse<T> missing -> apply PagingResponse type to API response
 
-🟡 경고:
-- 에러 핸들링: Either Left 케이스 누락 → fold로 양쪽 처리 추가 권장
+Warnings:
+- Error handling: Either Left case missing -> add fold handling
 
-💡 제안:
-- 성능: useMemo로 리스트 필터링 최적화 고려
+Suggestions:
+- Performance: consider useMemo for list filtering
 ```
 
-## 참고 사항
-- **Plan 검증**: `mcp__codex__spawn_agent` 도구로 계획 검증 프롬프트 실행
-- **구현**: Claude Edit/Write/Read 도구 사용
-- **리뷰**: `mcp__codex__spawn_agent` 도구로 구현 리뷰 프롬프트 실행
-- **병렬 검증**: 여러 관점에서 동시 검증이 필요하면 `mcp__codex__spawn_agents_parallel` 사용
+## Notes
+- **Plan validation**: run plan validation via `mcp__codex__spawn_agent`
+- **Implementation**: use Claude Edit/Write/Read tools
+- **Review**: run review prompt via `mcp__codex__spawn_agent`
+- **Parallel validation**: use `mcp__codex__spawn_agents_parallel` for multi-angle checks

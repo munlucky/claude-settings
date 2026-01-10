@@ -1,53 +1,53 @@
-# {feature-name} 사전 합의서
+# {feature-name} Preliminary Agreement
 
-> 프로젝트 규칙: `.claude/PROJECT.md`
+> Project rules: `.claude/PROJECT.md`
 
-## 메타데이터
+## Metadata
 
-- 작성일: {YYYY-MM-DD HH:MM}
-- 작성자: Requirements Analyzer Agent
-- 작업 타입: {feature|modification|bugfix|refactor}
-- 복잡도: {simple|medium|complex}
+- Created: {YYYY-MM-DD HH:MM}
+- Author: Requirements Analyzer Agent
+- Task type: {feature|modification|bugfix|refactor}
+- Complexity: {simple|medium|complex}
 
-## 요청 요약
+## Request Summary
 
 ```
-{사용자 원본 메시지}
+{original user message}
 ```
 
-## 요구사항 확정
+## Requirements Confirmation
 
-- 화면 정의서: {버전/경로/확정 여부}
-- API 스펙: {엔드포인트/요청/응답/확정 여부}
-- 메뉴/권한: {필요 여부/경로}
-- 유사 기능: {경로}
+- UI spec: {version/path/confirmed}
+- API spec: {endpoint/request/response/confirmed}
+- Menu/permissions: {needed/path}
+- Similar feature: {path}
 
-## 범위
+## Scope
 
-- 포함: {구현할 내용}
-- 제외: {제외할 내용}
+- Included: {what to implement}
+- Excluded: {what to exclude}
 
-## 미해결 질문
+## Open Questions
 
 ### HIGH
 
-1. {질문}
+1. {question}
 
 ### MEDIUM
 
-1. {질문}
+1. {question}
 
 ### LOW
 
-1. {질문}
+1. {question}
 
-## 영향 범위 (추정)
+## Impact Scope (Estimate)
 
-- 신규 파일: {N}
-- 수정 파일: {N}
-- 위험 요소: {요약}
+- New files: {N}
+- Modified files: {N}
+- Risks: {summary}
 
-## 다음 단계
+## Next Steps
 
-- [ ] 사용자 확인/승인
-- [ ] Context Builder 호출
+- [ ] User confirmation/approval
+- [ ] Invoke Context Builder
