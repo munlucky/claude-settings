@@ -1,6 +1,7 @@
 ---
 name: codex-test-integration
-description: Validate integration impact and regression risks via Codex MCP. Use for complex tasks or API integration.
+description: Validate integration impact and regression risks via Codex CLI (context: fork). Use for complex tasks or API integration.
+context: fork
 ---
 
 # Codex Integration Validation
@@ -10,13 +11,17 @@ description: Validate integration impact and regression risks via Codex MCP. Use
 - or `apiSpecConfirmed == true && hasMockImplementation == true`
 
 ## Procedure
-1. Summarize change scope and endpoints.
-2. Run the integration validation prompt via Codex MCP.
+1. Summarize change scope and endpoints, and capture the context.md path.
+2. Run the integration validation prompt via Codex CLI (pass the prompt directly) with `context: fork` in the background.
 3. Record regression risks and extra test items.
 
 ## Prompt template
 ```
-Please validate the following integration changes:
+context: fork
+Please validate the integration changes at this path (context.md):
+- [context.md path]
+
+Context summary:
 - Feature summary
 - Changed files
 - API endpoints
