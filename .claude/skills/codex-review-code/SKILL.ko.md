@@ -1,19 +1,19 @@
 ---
 name: codex-review-code
-description: Codex CLI로 구현 품질과 회귀 리스크를 검토한다 (context: fork). 구현 완료 후 복잡한 작업, 리팩터, API 변경에서 사용.
-context: fork
+description: code-review로 구현 품질과 회귀 리스크를 검토한다. 구현 완료 후 복잡한 작업, 리팩터, API 변경에서 사용.
+
 ---
 
 # Codex 코드 리뷰
 
 ## 절차
 1. 변경 범위, 변경 파일, 핵심 동작을 요약하고 context.md 경로를 기록한다.
-2. Codex CLI에 프롬프트를 직접 전달하고 `context: fork`로 백그라운드 실행한다.
+2. code-review에 프롬프트를 직접 전달하고  백그라운드 실행한다.
 3. 치명/경고/제안을 기록한다.
 
 ## 프롬프트 템플릿
 ```
-context: fork
+
 다음 구현을 검토해주세요 (context.md 경로 참조):
 - [context.md 경로]
 

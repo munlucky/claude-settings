@@ -1,7 +1,7 @@
 ﻿---
 name: codex-validate-plan
-description: Codex CLI로 아키텍처/계획 품질을 검증한다 (context: fork). `complex` 작업의 `feature`/`refactor`에서 `context.md` 작성 후 사용.
-context: fork
+description: code-review로 아키텍처/계획 품질을 검증한다. `complex` 작업의 `feature`/`refactor`에서 `context.md` 작성 후 사용.
+
 ---
 
 # Codex 계획 검증
@@ -13,7 +13,7 @@ context: fork
 
 ## 절차
 1. context.md 경로를 수집한다.
-2. Codex CLI에 프롬프트를 직접 전달하고 `context: fork`로 백그라운드 실행한다.
+2. code-review에 프롬프트를 직접 전달하고  백그라운드 실행한다.
 3. 치명/경고/제안을 정리하고 통과/실패를 판단한다.
 
 ## 프롬프트 템플릿

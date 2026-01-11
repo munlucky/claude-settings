@@ -1,7 +1,7 @@
 # Token Optimization Guidelines
 
 ## Goal
-Minimize token waste when passing context between agents, and remove duplicate cost especially in parallel execution with `context: fork`.
+Minimize token waste when passing context between agents, and remove duplicate cost especially in parallel execution with ``.
 
 ---
 
