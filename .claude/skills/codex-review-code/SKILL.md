@@ -1,19 +1,19 @@
 ---
 name: codex-review-code
-description: Review implementation quality and regression risks via Codex CLI (context: fork). Use after implementation for complex tasks, refactors, or API changes.
-context: fork
+description: Review implementation quality and regression risks via code-review . Use after implementation for complex tasks, refactors, or API changes.
+
 ---
 
 # Codex Code Review
 
 ## Procedure
 1. Summarize change scope, changed files, and key behaviors, and capture the context.md path.
-2. Run the review prompt via Codex CLI (pass the prompt directly) with `context: fork` in the background.
+2. Run the review prompt via code-review (pass the prompt directly) with `` in the background.
 3. Record critical issues, warnings, and suggestions.
 
 ## Prompt template
 ```
-context: fork
+
 Please review the implementation at this path (context.md):
 - [context.md path]
 

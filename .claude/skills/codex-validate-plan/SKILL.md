@@ -1,7 +1,7 @@
 ---
 name: codex-validate-plan
-description: Validate architecture/plan quality via Codex CLI (context: fork). Use after writing context.md for complex feature/refactor work.
-context: fork
+description: Validate architecture/plan quality via code-review . Use after writing context.md for complex feature/refactor work.
+
 ---
 
 # Codex Plan Validation
@@ -13,7 +13,7 @@ context: fork
 
 ## Procedure
 1. Collect the path to context.md.
-2. Run the plan validation prompt via Codex CLI (pass the prompt directly) with `context: fork` in the background.
+2. Run the plan validation prompt via code-review (pass the prompt directly) with `` in the background.
 3. Summarize critical/warning/suggestion items and decide pass/fail.
 
 ## Prompt template

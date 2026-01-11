@@ -1,7 +1,7 @@
 ---
 name: codex-test-integration
-description: Validate integration impact and regression risks via Codex CLI (context: fork). Use for complex tasks or API integration.
-context: fork
+description: Validate integration impact and regression risks via code-review . Use for complex tasks or API integration.
+
 ---
 
 # Codex Integration Validation
@@ -12,12 +12,12 @@ context: fork
 
 ## Procedure
 1. Summarize change scope and endpoints, and capture the context.md path.
-2. Run the integration validation prompt via Codex CLI (pass the prompt directly) with `context: fork` in the background.
+2. Run the integration validation prompt via code-review (pass the prompt directly) with `` in the background.
 3. Record regression risks and extra test items.
 
 ## Prompt template
 ```
-context: fork
+
 Please validate the integration changes at this path (context.md):
 - [context.md path]
 

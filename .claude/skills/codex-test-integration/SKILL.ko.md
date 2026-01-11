@@ -1,7 +1,7 @@
 ﻿---
 name: codex-test-integration
-description: Codex CLI로 통합 영향과 회귀 리스크를 검증한다 (context: fork). `complex` 작업 또는 API 연동 시 사용.
-context: fork
+description: code-review로 통합 영향과 회귀 리스크를 검증한다. `complex` 작업 또는 API 연동 시 사용.
+
 ---
 
 # Codex 통합 검증
@@ -12,12 +12,12 @@ context: fork
 
 ## 절차
 1. 변경 범위와 엔드포인트를 요약하고 context.md 경로를 기록한다.
-2. Codex CLI에 프롬프트를 직접 전달하고 `context: fork`로 백그라운드 실행한다.
+2. code-review에 프롬프트를 직접 전달하고  백그라운드 실행한다.
 3. 회귀 리스크와 추가 테스트 항목을 기록한다.
 
 ## 프롬프트 템플릿
 ```
-context: fork
+
 다음 통합 변경사항을 검증해주세요 (context.md 경로 참조):
 - [context.md 경로]
 
