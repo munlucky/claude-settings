@@ -1,6 +1,7 @@
 ---
 name: codex-validate-plan
-description: Validate architecture/plan quality via Codex MCP. Use after writing context.md for complex feature/refactor work.
+description: Validate architecture/plan quality via Codex CLI (context: fork). Use after writing context.md for complex feature/refactor work.
+context: fork
 ---
 
 # Codex Plan Validation
@@ -11,15 +12,15 @@ description: Validate architecture/plan quality via Codex MCP. Use after writing
 - `context.md` exists or was updated
 
 ## Procedure
-1. Collect the contents of context.md.
-2. Run the plan validation prompt via Codex MCP.
+1. Collect the path to context.md.
+2. Run the plan validation prompt via Codex CLI (pass the prompt directly) with `context: fork` in the background.
 3. Summarize critical/warning/suggestion items and decide pass/fail.
 
 ## Prompt template
 ```
-Please review the following implementation plan (context.md):
+Please review the implementation plan at this path (context.md):
 
-[context.md contents]
+[context.md path]
 
 Validation items:
 1. Architecture suitability and maintainability
