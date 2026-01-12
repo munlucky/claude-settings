@@ -15,10 +15,11 @@ description: Validate integration impact and regression risks via claude-delegat
 ## Procedure
 1. Read the expert prompt file: `${CLAUDE_PLUGIN_ROOT}/prompts/code-reviewer.md`
 2. Summarize change scope, endpoints, and integration points
-3. Capture the context.md path and read relevant code
+3. Capture the context.md path (default: `.claude/docs/tasks/{feature-name}/context.md`) and read relevant code
 4. Build delegation prompt using 7-section format (integration-focused)
 5. Call `mcp__codex__codex` with Code Reviewer expert
 6. Record regression risks and additional test scenarios
+7. If a saved report is needed, store the full review in `.claude/docs/tasks/{feature-name}/archives/` and keep only a short summary in `context.md`
 
 ## Delegation Format
 

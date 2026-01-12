@@ -15,10 +15,11 @@ description: claude-delegator(Code Reviewer 전문가)를 통해 구현 품질�
 ## 절차
 1. 전문가 프롬프트 파일 읽기: `${CLAUDE_PLUGIN_ROOT}/prompts/code-reviewer.md`
 2. 변경 범위, 변경된 파일, 핵심 동작 요약
-3. context.md 경로를 캡처하고 관련 코드 읽기
+3. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `.claude/docs/tasks/{feature-name}/context.md`)
 4. 7-섹션 형식으로 위임 프롬프트 구성
 5. Code Reviewer 전문가와 함께 `mcp__codex__codex` 호출
 6. 중대 이슈, 경고, 제안사항 기록
+7. 결과를 저장해야 한다면 전체 리뷰는 `.claude/docs/tasks/{feature-name}/archives/`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## 위임 형식
 

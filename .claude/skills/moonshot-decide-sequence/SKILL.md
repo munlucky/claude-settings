@@ -37,7 +37,7 @@ decisions:
   skillChain: []
   parallelGroups: []
 artifacts:
-  contextDocPath: .claude/context.md
+  contextDocPath: .claude/docs/tasks/{feature-name}/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
 notes: []
 ```

@@ -15,10 +15,11 @@ description: claude-delegator(Code Reviewer 전문가)를 통해 통합 영향 �
 ## 절차
 1. 전문가 프롬프트 파일 읽기: `${CLAUDE_PLUGIN_ROOT}/prompts/code-reviewer.md`
 2. 변경 범위, 엔드포인트, 통합 지점 요약
-3. context.md 경로를 캡처하고 관련 코드 읽기
+3. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `.claude/docs/tasks/{feature-name}/context.md`)
 4. 7-섹션 형식으로 위임 프롬프트 구성 (통합 중심)
 5. Code Reviewer 전문가와 함께 `mcp__codex__codex` 호출
 6. 회귀 위험 및 추가 테스트 시나리오 기록
+7. 결과를 저장해야 한다면 전체 리뷰는 `.claude/docs/tasks/{feature-name}/archives/`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## 위임 형식
 
