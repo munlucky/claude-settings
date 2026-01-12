@@ -1,4 +1,6 @@
 {
+  "includeCoAuthoredBy": false,
+   "gitAttribution": false,
   "permissions": {
     "allow": [
       "Bash(tree:*)",
@@ -21,7 +23,17 @@
       "Bash(npm run:*)",
       "Bash(jq:*)",
       "Bash(python3:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(echo:*)",
+      "Bash(codex -m gpt-5.2-codex mcp-server:*)",
+      "Bash(codex --version:*)",
+      "Bash(ls:*)",
+      "Bash(codex login status:*)",
+      "Bash(codex --help:*)",
+      "Bash(codex exec:*)",
+      "Bash(claude --version:*)",
+      "mcp__codex__codex",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd codex MCP integration for delegator skills\n\n- Update codex-validate-plan, codex-review-code, codex-test-integration skills to use mcp__codex__codex tool\n- Add mcp__codex__codex permission to settings.local.json\n- All skills now properly delegate to GPT experts via Codex MCP server\n- Tested and verified: Plan Reviewer, Code Reviewer, and Integration Validator all working\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ],
     "deny": [],
     "ask": []

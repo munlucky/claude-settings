@@ -1,46 +1,90 @@
 ---
 name: codex-test-integration
-description: Validate integration impact and regression risks via code-review . Use for complex tasks or API integration.
+description: Validate integration impact and regression risks via claude-delegator (Code Reviewer expert). Use for complex tasks or API integration.
 
 ---
 
-# Codex Integration Validation
+# Codex Integration Validation (via claude-delegator)
 
 ## When to use
 - `complexity`: `complex` (always)
-- or `apiSpecConfirmed == true && hasMockImplementation == true`
+- OR `apiSpecConfirmed == true && hasMockImplementation == true`
+- Integration with external APIs
+- Multi-component changes
 
 ## Procedure
-1. Summarize change scope and endpoints, and capture the context.md path.
-2. Run the integration validation prompt via code-review (pass the prompt directly) with `` in the background.
-3. Record regression risks and extra test items.
+1. Read the expert prompt file: `${CLAUDE_PLUGIN_ROOT}/prompts/code-reviewer.md`
+2. Summarize change scope, endpoints, and integration points
+3. Capture the context.md path and read relevant code
+4. Build delegation prompt using 7-section format (integration-focused)
+5. Call `mcp__codex__codex` with Code Reviewer expert
+6. Record regression risks and additional test scenarios
 
-## Prompt template
+## Delegation Format
+
+Use the 7-section format with integration focus:
+
+```
+TASK: Validate integration changes at [context.md path] for regression risks and contract compliance.
+
+EXPECTED OUTCOME: Regression risk assessment with additional test scenarios.
+
+CONTEXT:
+- Integration to validate: [feature/API description]
+- Changed files: [list of modified files]
+- API endpoints affected:
+  * [Endpoint 1: method, path, purpose]
+  * [Endpoint 2: method, path, purpose]
+- Integration points: [external systems, services, databases]
+
+CONSTRAINTS:
+- Must maintain backward compatibility
+- Existing contracts must not break
+- Technical stack: [languages, frameworks, API versions]
+
+MUST DO:
+- Identify regression risks across all integration points
+- Verify contract compliance (request/response schemas)
+- Check edge cases and error handling for each endpoint
+- Assess performance implications of integration changes
+- Identify missing test scenarios
+- Check for proper error handling and retry logic
+
+MUST NOT DO:
+- Approve without checking all integration points
+- Ignore backward compatibility concerns
+- Skip edge case analysis
+
+OUTPUT FORMAT:
+Summary → Regression risks → Contract compliance → Edge cases → Performance concerns → Missing test scenarios → Additional tests needed
 ```
 
-Please validate the integration changes at this path (context.md):
-- [context.md path]
+## Tool Call
 
-Context summary:
-- Feature summary
-- Changed files
-- API endpoints
+```typescript
+mcp__codex__codex({
+  prompt: "[7-section delegation prompt with full context]",
+  "developer-instructions": "[contents of code-reviewer.md]",
+  sandbox: "read-only",  // Advisory mode - review only
+  cwd: "[current working directory]"
+})
+```
 
-Checklist:
-1. Regression risks
-2. Contract compliance
-3. Edge cases
-4. Performance issues
-5. Missing scenarios
+## For Implementation Mode (Add Tests)
 
-Output:
-- Pass items
-- Additional tests
-- Regression risks
+If you want the expert to implement missing tests:
+
+```typescript
+mcp__codex__codex({
+  prompt: "[same 7-section format, but add: 'Implement the missing test scenarios identified']",
+  "developer-instructions": "[contents of code-reviewer.md]",
+  sandbox: "workspace-write",  // Implementation mode - can add test files
+  cwd: "[current working directory]"
+})
 ```
 
 ## Output (patch)
 ```yaml
 notes:
-  - "codex-integration: pass, extra-tests=2"
+  - "codex-integration: [PASS/FAIL], regression-risks=[count], extra-tests=[count]"
 ```

@@ -1,44 +1,88 @@
 ---
 name: codex-review-code
-description: code-review로 구현 품질과 회귀 리스크를 검토한다. 구현 완료 후 복잡한 작업, 리팩터, API 변경에서 사용.
+description: claude-delegator(Code Reviewer 전문가)를 통해 구현 품질과 회귀 위험을 검토합니다. 복잡한 작업, 리팩터링, API 변경 후 사용하세요.
 
 ---
 
-# Codex 코드 리뷰
+# Codex 코드 리뷰 (claude-delegator 사용)
+
+## 사용 시점
+- 복잡한 작업 구현 후
+- 리팩터링 작업
+- API 변경
+- 중요한 변경사항 병합 전
 
 ## 절차
-1. 변경 범위, 변경 파일, 핵심 동작을 요약하고 context.md 경로를 기록한다.
-2. code-review에 프롬프트를 직접 전달하고  백그라운드 실행한다.
-3. 치명/경고/제안을 기록한다.
+1. 전문가 프롬프트 파일 읽기: `${CLAUDE_PLUGIN_ROOT}/prompts/code-reviewer.md`
+2. 변경 범위, 변경된 파일, 핵심 동작 요약
+3. context.md 경로를 캡처하고 관련 코드 읽기
+4. 7-섹션 형식으로 위임 프롬프트 구성
+5. Code Reviewer 전문가와 함께 `mcp__codex__codex` 호출
+6. 중대 이슈, 경고, 제안사항 기록
 
-## 프롬프트 템플릿
+## 위임 형식
+
+7-섹션 형식 사용:
+
+```
+TASK: [context.md 경로]의 구현을 [집중 영역: 정확성, 보안, 성능, 유지보수성]에 대해 검토합니다.
+
+EXPECTED OUTCOME: 판정 및 권장사항이 포함된 이슈 목록.
+
+CONTEXT:
+- 검토할 코드: [파일 경로 또는 스니펫]
+- 목적: [이 코드가 하는 일]
+- 최근 변경사항:
+  * [변경된 파일 목록]
+  * [핵심 동작 요약]
+- 기능 요약: [간략한 설명]
+
+CONSTRAINTS:
+- 프로젝트 규칙: [따라야 할 기존 패턴]
+- 기술 스택: [언어, 프레임워크]
+
+MUST DO:
+- 우선순위: 정확성 → 보안 → 성능 → 유지보수성
+- 중요한 이슈에 집중, 스타일 세부사항 지적하지 않기
+- 로직/흐름 오류 및 엣지 케이스 확인
+- 타입 안전성 및 오류 처리 검증
+- API 계약 및 데이터 모델 일관성 확인
+
+MUST NOT DO:
+- 스타일 세부사항 지적 (포매터가 처리)
+- 발생 가능성 낮은 이론적 우려사항 지적
+- 수정된 파일 범위 외 변경 제안
+
+OUTPUT FORMAT:
+요약 → 중대 이슈 → 경고 → 권장사항 → 판정 (APPROVE/REJECT)
 ```
 
-다음 구현을 검토해주세요 (context.md 경로 참조):
-- [context.md 경로]
+## 도구 호출
 
-요약:
+```typescript
+mcp__codex__codex({
+  prompt: "[전체 컨텍스트가 포함된 7-섹션 위임 프롬프트]",
+  "developer-instructions": "[code-reviewer.md의 내용]",
+  sandbox: "read-only",  // Advisory 모드 - 검토만
+  cwd: "[현재 작업 디렉터리]"
+})
+```
 
-- 기능 요약
-- 변경 파일
-- 핵심 동작
+## 구현 모드 (자동 수정)
 
-검증 항목:
-1. 로직/흐름 오류 및 누락된 엣지 케이스
-2. 타입 안정성 및 에러 처리
-3. API 계약 및 데이터 모델 일관성
-4. 성능/리소스 낭비
-5. 보안/인증/입력 검증
-6. 프로젝트 규칙 및 유지보수성
+전문가가 이슈를 자동으로 수정하도록 하려면:
 
-출력:
-- 통과 항목
-- 경고 항목
-- 치명 항목
+```typescript
+mcp__codex__codex({
+  prompt: "[동일한 7-섹션 형식, 단 추가: '발견된 이슈를 수정하고 변경사항을 검증하세요']",
+  "developer-instructions": "[code-reviewer.md의 내용]",
+  sandbox: "workspace-write",  // 구현 모드 - 파일 수정 가능
+  cwd: "[현재 작업 디렉터리]"
+})
 ```
 
 ## 출력 (patch)
 ```yaml
 notes:
-  - "codex-review: 통과, 경고=2"
+  - "codex-review: [APPROVE/REJECT], critical=[개수], warnings=[개수]"
 ```
