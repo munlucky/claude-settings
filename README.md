@@ -41,6 +41,7 @@ claude-settings/
 │   │   ├── implementation-runner/
 │   │   ├── codex-validate-plan/
 │   │   ├── codex-test-integration/
+│   │   ├── codex-review-code/
 │   │   ├── claude-codex-guardrail-loop/
 │   │   ├── doc-sync/
 │   │   ├── efficiency-tracker/
@@ -93,7 +94,7 @@ claude-settings/
 ### 스킬 라이브러리
 
 - Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
-- 실행/검증: `implementation-runner`, `codex-validate-plan`, `codex-test-integration`, `claude-codex-guardrail-loop`
+- 실행/검증: `implementation-runner`, `codex-validate-plan`, `codex-test-integration`, `codex-review-code`, `claude-codex-guardrail-loop`
 - 문서/세션: `doc-sync`, `session-logger`, `efficiency-tracker`, `receiving-code-review`
 - 보조 도구: `pre-flight-check`, `design-asset-parser`, `project-md-refresh`
 
