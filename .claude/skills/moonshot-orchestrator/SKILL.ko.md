@@ -50,7 +50,7 @@ decisions:
   skillChain: []
   parallelGroups: []
 artifacts:
-  contextDocPath: .claude/context.md
+  contextDocPath: .claude/docs/tasks/{feature-name}/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
 notes: []
 ```
@@ -91,6 +91,12 @@ notes: []
 `Skill` 도구를 사용하여 `/moonshot-decide-sequence` 실행
 - 반환된 patch를 analysisContext에 병합
 - `phase`, `decisions.skillChain`, `decisions.parallelGroups` 설정
+
+#### 2.6 계획 크기 관리 (계획/리뷰 반복 시)
+`context.md`가 계획 -> 리뷰 -> 개선 반복으로 과도하게 커질 경우:
+1. `context.md`에는 최신 계획만 유지 (전체 리뷰 로그를 붙이지 말고 섹션 교체).
+2. 이전 버전/리뷰 로그는 `.claude/docs/tasks/{feature-name}/archives/`로 이동.
+3. `context.md`에 짧은 변경 이력과 아카이브 링크만 남김.
 
 ### 3. 에이전트 체인 실행
 

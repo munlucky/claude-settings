@@ -50,7 +50,7 @@ decisions:
   skillChain: []
   parallelGroups: []
 artifacts:
-  contextDocPath: .claude/context.md
+  contextDocPath: .claude/docs/tasks/{feature-name}/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
 notes: []
 ```
@@ -91,6 +91,12 @@ If `missingInfo` is empty, proceed.
 Run `/moonshot-decide-sequence` using the Skill tool.
 - Merge returned patch into analysisContext
 - Set `phase`, `decisions.skillChain`, `decisions.parallelGroups`
+
+#### 2.6 Plan size guard (when iterating plan/review)
+If `context.md` grows too large during plan -> review -> revise loops:
+1. Keep only the current plan in `context.md` (replace sections, do not append full reviews).
+2. Move prior versions or full review logs into `.claude/docs/tasks/{feature-name}/archives/`.
+3. Keep a short changelog in `context.md` pointing to the archived files.
 
 ### 3. Execute the agent chain
 
