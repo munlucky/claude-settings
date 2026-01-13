@@ -17,9 +17,16 @@ description: Validate integration impact and regression risks via claude-delegat
 2. Summarize change scope, endpoints, and integration points
 3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
 4. Build delegation prompt using 7-section format (integration-focused)
-5. Call `mcp__codex__codex` with Code Reviewer expert
-6. Record regression risks and additional test scenarios
-7. If a saved report is needed, store the full review in `{tasksRoot}/{feature-name}/archives/` and keep only a short summary in `context.md`
+5. **Try Codex first**:
+   - Call `mcp__codex__codex` with Code Reviewer expert
+   - If successful, proceed to step 7
+6. **Fallback to Claude** (if Codex unavailable):
+   - Error conditions: "quota exceeded", "rate limit", "API error", "unavailable"
+   - Claude directly performs the integration review using the same 7-section prompt
+   - Apply the code-reviewer.md expert instructions as Claude's own guidelines
+   - Add note: `"codex-fallback: Claude performed integration review directly"`
+7. Record regression risks and additional test scenarios
+8. If a saved report is needed, store the full review in `{tasksRoot}/{feature-name}/archives/` and keep only a short summary in `context.md`
 
 ## Delegation Format
 

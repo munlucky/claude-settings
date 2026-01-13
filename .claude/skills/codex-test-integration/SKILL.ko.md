@@ -17,9 +17,16 @@ description: claude-delegator(Code Reviewer 전문가)를 통해 통합 영향 �
 2. 변경 범위, 엔드포인트, 통합 지점 요약
 3. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
 4. 7-섹션 형식으로 위임 프롬프트 구성 (통합 중심)
-5. Code Reviewer 전문가와 함께 `mcp__codex__codex` 호출
-6. 회귀 위험 및 추가 테스트 시나리오 기록
-7. 결과를 저장해야 한다면 전체 리뷰는 `{tasksRoot}/{feature-name}/archives/`에 보관하고 `context.md`에는 짧은 요약만 남김
+5. **Codex 먼저 시도**:
+   - Code Reviewer 전문가와 함께 `mcp__codex__codex` 호출
+   - 성공 시 7단계로 진행
+6. **Claude로 폴백** (Codex 사용 불가 시):
+   - 에러 조건: "quota exceeded", "rate limit", "API error", "unavailable"
+   - Claude가 동일한 7-섹션 프롬프트를 사용하여 직접 통합 리뷰 수행
+   - code-reviewer.md 전문가 지침을 Claude 자체 가이드라인으로 적용
+   - 노트 추가: `"codex-fallback: Claude가 직접 통합 리뷰 수행"`
+7. 회귀 위험 및 추가 테스트 시나리오 기록
+8. 결과를 저장해야 한다면 전체 리뷰는 `{tasksRoot}/{feature-name}/archives/`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## 위임 형식
 

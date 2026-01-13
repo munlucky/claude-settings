@@ -17,9 +17,16 @@ description: Review implementation quality and regression risks via claude-deleg
 2. Summarize change scope, changed files, and key behaviors
 3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
 4. Build delegation prompt using 7-section format
-5. Call `mcp__codex__codex` with Code Reviewer expert
-6. Record critical issues, warnings, and suggestions
-7. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
+5. **Try Codex first**:
+   - Call `mcp__codex__codex` with Code Reviewer expert
+   - If successful, proceed to step 7
+6. **Fallback to Claude** (if Codex unavailable):
+   - Error conditions: "quota exceeded", "rate limit", "API error", "unavailable"
+   - Claude directly performs the code review using the same 7-section prompt
+   - Apply the code-reviewer.md expert instructions as Claude's own guidelines
+   - Add note: `"codex-fallback: Claude performed review directly"`
+7. Record critical issues, warnings, and suggestions
+8. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 
