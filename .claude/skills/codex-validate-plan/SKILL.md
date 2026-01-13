@@ -15,9 +15,16 @@ description: Validate architecture/plan quality via claude-delegator (Plan Revie
 1. Read the expert prompt file: `${CLAUDE_PLUGIN_ROOT}/prompts/plan-reviewer.md`
 2. Collect the path to context.md (default: `{tasksRoot}/{feature-name}/context.md`) and read its content
 3. Build delegation prompt using 7-section format
-4. Call `mcp__codex__codex` with Plan Reviewer expert
-5. Summarize critical/warning/suggestion items and decide pass/fail
-6. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
+4. **Try Codex first**:
+   - Call `mcp__codex__codex` with Plan Reviewer expert
+   - If successful, proceed to step 6
+5. **Fallback to Claude** (if Codex unavailable):
+   - Error conditions: "quota exceeded", "rate limit", "API error", "unavailable"
+   - Claude directly performs the plan review using the same 7-section prompt
+   - Apply the plan-reviewer.md expert instructions as Claude's own guidelines
+   - Add note: `"codex-fallback: Claude performed review directly"`
+6. Summarize critical/warning/suggestion items and decide pass/fail
+7. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 
