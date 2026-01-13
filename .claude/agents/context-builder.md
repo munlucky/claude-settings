@@ -40,8 +40,10 @@ outputFile: ".claude/features/xxx/context.md"
 - Each step must be actionable (clear file paths/ownership).
 - Record any missing dependencies/questions.
 - Refer to `.claude/PROJECT.md` for project-specific rules.
+- **Token limit**: Keep context.md under 8000 tokens. Archive previous versions per document-memory-policy.md.
 ## References
 - `.claude/PROJECT.md`
 - `.claude/AGENT.md`
 - `.claude/CLAUDE.md`
 - `.claude/agents/context-builder/templates/context-template.md`
+- `.claude/docs/guidelines/document-memory-policy.md`

@@ -17,7 +17,7 @@ description: Validate architecture/plan quality via claude-delegator (Plan Revie
 3. Build delegation prompt using 7-section format
 4. Call `mcp__codex__codex` with Plan Reviewer expert
 5. Summarize critical/warning/suggestion items and decide pass/fail
-6. If a saved report is needed, store the full review in `.claude/docs/tasks/{feature-name}/archives/` and keep only a short summary in `context.md`
+6. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 

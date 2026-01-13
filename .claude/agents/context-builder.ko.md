@@ -40,8 +40,10 @@ outputFile: ".claude/features/xxx/context.md"
 - 단계별 작업이 실행 가능해야 합니다(파일 경로/책임 명확).
 - 누락된 의존성/질문은 반드시 기록합니다.
 - 프로젝트 세부 규칙은 `.claude/PROJECT.md`를 참조합니다.
+- **토큰 한도**: context.md는 8000 토큰 이하로 유지. 이전 버전은 document-memory-policy.md에 따라 아카이빙.
 ## References
 - `.claude/PROJECT.md`
 - `.claude/AGENT.md`
 - `.claude/CLAUDE.md`
 - `.claude/agents/context-builder/templates/context-template.md`
+- `.claude/docs/guidelines/document-memory-policy.md`

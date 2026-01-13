@@ -33,3 +33,7 @@ description: Tracks workflow status and generates a flow report.
 - 커밋/파일: {commitRefs}
 출력: flow-report.md 업데이트
 ```
+
+## 토큰 한도
+- **`.claude/docs/guidelines/document-memory-policy.md` 참조**: flow-report.md는 4000 토큰 이하로 유지
+- 한도 초과 시 오래된 항목 아카이빙

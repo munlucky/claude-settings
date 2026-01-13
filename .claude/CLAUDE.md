@@ -24,6 +24,22 @@
 - State records (plan/progress/verification/notes) follow the document path rules in `.claude/PROJECT.md`.
 - Because context can refresh, always record key decisions/risks/verification results.
 
+## Document Memory Policy
+
+> **Critical**: Follow `.claude/docs/guidelines/document-memory-policy.md` to prevent 64k token limit errors.
+
+**Token limits (must enforce):**
+| Document | Max Tokens | Action on Exceed |
+|----------|-----------|------------------|
+| context.md | 8,000 | Archive previous version |
+| specification.md | 2,000 | Summarize, move full to archives/ |
+| Review outputs | 4,000 | Store full in archives/, summary only in context.md |
+
+**Triggers:**
+- Spec > 2,000 words → Summarize + archive original
+- Independent features > 5 → Split into subtasks
+- Plan/review loop → Replace sections, don't append
+
 ## Quality/Verification
 
 - When possible, run tests/typecheck/build to verify.
