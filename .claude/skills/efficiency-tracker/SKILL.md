@@ -33,3 +33,7 @@ Update the workflow report.
 - Commits/files: {commitRefs}
 Output: flow-report.md update
 ```
+
+## Token limit
+- **Per `.claude/docs/guidelines/document-memory-policy.md`**: Keep flow-report.md under 4000 tokens
+- Archive older entries if exceeding limit

@@ -46,3 +46,4 @@ outputFile: ".claude/features/xxx/verification-result.md"
 - `.claude/AGENT.md`
 - `.claude/CLAUDE.md`
 - `.claude/agents/verification/verify-changes.sh`
+- `.claude/docs/guidelines/document-memory-policy.md`

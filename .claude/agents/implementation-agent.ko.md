@@ -50,3 +50,4 @@ patterns:
 - `.claude/CLAUDE.md`
 - `.claude/agents/implementation/patterns/entity-request-separation.md`
 - `.claude/agents/implementation/patterns/api-proxy-pattern.md`
+- `.claude/docs/guidelines/document-memory-policy.md`

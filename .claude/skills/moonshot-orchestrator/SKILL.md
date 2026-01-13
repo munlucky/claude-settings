@@ -52,10 +52,48 @@ decisions:
 artifacts:
   contextDocPath: .claude/docs/tasks/{feature-name}/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
+tokenBudget:
+  specSummaryTrigger: 2000     # words
+  splitTrigger: 5              # independent features
+  contextMaxTokens: 8000
+  warningThreshold: 0.8
 notes: []
 ```
 
 ### 2. Run PM skills sequentially
+
+#### 2.0 Large specification handling
+
+If the initial task specification (`request.userMessage`) is very long, it can cause the final plan or context document to exceed the output token limits. To prevent this, follow `.claude/docs/guidelines/document-memory-policy.md`:
+
+**2.0.1 Check specification size**
+- Count words in `userMessage`
+- If > `tokenBudget.specSummaryTrigger` (2000 words): trigger summarization
+- If independent features > `tokenBudget.splitTrigger` (5): trigger task splitting
+
+**2.0.2 Summarize the specification**
+1. Save the full original specification to `.claude/docs/tasks/{feature-name}/archives/specification-full.md`
+2. Extract only:
+   - Key requirements (max 5 items)
+   - Constraints
+   - Acceptance criteria
+3. Write summarized version to `.claude/docs/tasks/{feature-name}/specification.md`
+4. Reference the original in the summary
+
+**2.0.3 Split into sub-tasks**
+When a single specification covers multiple independent areas:
+1. Create `subtasks/` directory
+2. For each sub-task, create `subtasks/subtask-NN/` with its own `context.md`
+3. Each sub-task runs this workflow independently with its own `analysisContext`
+4. Master `context.md` contains only:
+   - Sub-task list with links
+   - Integration points
+   - Shared constraints
+
+**2.0.4 Limit context.md size**
+- Only include summarized specification
+- Keep current plan only (no history)
+- Archive previous versions per document-memory-policy.md
 
 #### 2.1 Task classification
 Run `/moonshot-classify-task` using the Skill tool.
@@ -93,10 +131,29 @@ Run `/moonshot-decide-sequence` using the Skill tool.
 - Set `phase`, `decisions.skillChain`, `decisions.parallelGroups`
 
 #### 2.6 Plan size guard (when iterating plan/review)
-If `context.md` grows too large during plan -> review -> revise loops:
-1. Keep only the current plan in `context.md` (replace sections, do not append full reviews).
-2. Move prior versions or full review logs into `.claude/docs/tasks/{feature-name}/archives/`.
-3. Keep a short changelog in `context.md` pointing to the archived files.
+During plan→review→revise loops the `context.md` file can grow rapidly. Follow `.claude/docs/guidelines/document-memory-policy.md`:
+
+1. **Before each plan update**: Check current token usage
+2. **At 80% threshold**: Log warning to `notes`, consider summarizing
+3. **At 100% threshold**:
+   - Archive current version to `archives/context-v{n}.md`
+   - Replace with summarized version
+   - Update archive index in context.md
+
+4. **Review output handling**:
+   - Full review → `archives/review-v{n}.md`
+   - Summary only → append to `context.md`
+
+5. **Token limit approaching**: Further break down into smaller sub-plans
+
+**Archive Index Format** (at bottom of context.md):
+```markdown
+## 아카이브 참조
+
+| 버전 | 파일 | 핵심 내용 | 생성일 |
+|------|------|----------|--------|
+| v1 | [context-v1.md](archives/context-v1.md) | 초기 설계 | YYYY-MM-DD |
+```
 
 ### 3. Execute the agent chain
 
@@ -121,6 +178,7 @@ Run `decisions.skillChain` in order:
 4. Use `Bash` tool for scripts
 5. If a parallel group exists, parallelize only within that group
 6. If an undefined step appears, ask the user and stop
+7. **All agents/skills must follow** `.claude/docs/guidelines/document-memory-policy.md`
 
 **Agent mapping:**
 - `requirements-analyzer` -> `subagent_type: "general-purpose"` + prompt
@@ -158,9 +216,14 @@ Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
 1. **Skill execution failure**: record error logs in notes and report to the user
 2. **Undefined step**: ask the user for confirmation
 3. **Question loop**: limit to 3 rounds, then proceed with defaults
+4. **Token limit warning**: archive and summarize before continuing
 
 ## Contract
 - This skill orchestrates other PM skills and does not analyze directly
 - All analysis logic is delegated to individual PM skills
 - Patch merging is a shallow object merge (no deep merge)
 - User questions use the AskUserQuestion tool
+- **Document memory policy**: Follow `.claude/docs/guidelines/document-memory-policy.md`
+
+## References
+- `.claude/docs/guidelines/document-memory-policy.md`

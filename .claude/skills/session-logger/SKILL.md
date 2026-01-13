@@ -392,6 +392,11 @@ session-logger start: implement batch management
 - Resume from the last timeline entry
 - Resolve pending-questions first
 
+### 5. Token limit awareness
+- **Per `.claude/docs/guidelines/document-memory-policy.md`**: Keep daily logs under 5000 tokens
+- If exceeding limit, start a new day file early
+- Archive old session logs if needed
+
 ---
 
 ## Expected impact

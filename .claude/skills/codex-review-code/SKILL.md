@@ -19,7 +19,7 @@ description: Review implementation quality and regression risks via claude-deleg
 4. Build delegation prompt using 7-section format
 5. Call `mcp__codex__codex` with Code Reviewer expert
 6. Record critical issues, warnings, and suggestions
-7. If a saved report is needed, store the full review in `.claude/docs/tasks/{feature-name}/archives/` and keep only a short summary in `context.md`
+7. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 

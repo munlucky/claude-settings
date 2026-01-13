@@ -392,6 +392,11 @@ session-logger 시작: 배치 관리 기능 구현
 - 마지막 타임라인부터 재개
 - pending-questions 우선 처리
 
+### 5. 토큰 한도 인식
+- **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 일별 로그는 5000 토큰 이하로 유지
+- 한도 초과 시 새 날짜 파일로 조기 분할
+- 필요시 오래된 세션 로그 아카이빙
+
 ---
 
 ## 🎯 기대 효과
