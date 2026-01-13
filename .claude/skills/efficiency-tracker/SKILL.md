@@ -17,7 +17,7 @@ description: Tracks workflow status and generates a flow report.
 2. Add blocking intervals (e.g., waiting for UI spec, waiting for API spec) as notes.
 3. Record verification commands (typecheck/build/lint) and results.
 4. Record changed files/commit links and author notes.
-5. Append to or create `.claude/docs/tasks/{feature-name}/flow-report.md`.
+5. Append to or create `{tasksRoot}/{feature-name}/flow-report.md`.
 
 ## Outputs
 - flow-report.md update log

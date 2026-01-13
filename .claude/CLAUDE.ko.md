@@ -28,6 +28,15 @@
 
 > **필수**: 64k 토큰 한도 초과 방지를 위해 `.claude/docs/guidelines/document-memory-policy.md` 준수.
 
+**기본 문서 경로** (필요시 PROJECT.md에서 오버라이드):
+```yaml
+documentPaths:
+  tasksRoot: ".claude/docs/tasks"       # 기본값 (종종 gitignore됨)
+  # tasksRoot: "docs/claude-tasks"      # git 추적 프로젝트에서 사용
+  agreementsRoot: ".claude/docs/agreements"
+  guidelinesRoot: ".claude/docs/guidelines"
+```
+
 **토큰 한도 (필수 적용):**
 | 문서 | 최대 토큰 | 초과 시 조치 |
 |------|----------|------------|

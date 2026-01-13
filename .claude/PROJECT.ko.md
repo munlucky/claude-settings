@@ -58,14 +58,30 @@ API 호출 및 데이터 통신 관련 패턴을 설명합니다.
 - **권한 체계**: [권한 관리 방식]
 - **미들웨어**: [인증/권한 처리 미들웨어 위치]
 
-## 문서 경로
-프로젝트 문서 파일들의 경로 규칙입니다.
+## 문서 경로 (오버라이드)
 
-- 사전 합의서: `.claude/docs/agreements/{feature-name}-agreement.md`
-- 구현 계획: `.claude/docs/tasks/{feature-name}/context.md`
-- 디자인 스펙: `.claude/docs/tasks/{feature-name}/design-spec.md`
-- 미해결 질문: `.claude/docs/tasks/{feature-name}/pending-questions.md`
-- 세션 로그: `.claude/docs/tasks/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
+필요 시 `CLAUDE.md`의 기본 경로를 오버라이드합니다. **git 추적 프로젝트에서는 `tasksRoot`를 `.claude/` 외부 경로로 설정하세요.**
+
+### 설정 (필요 시 주석 해제 후 수정)
+
+```yaml
+# 문서 경로 오버라이드 (기본값은 CLAUDE.md)
+# documentPaths:
+#   tasksRoot: "docs/claude-tasks"      # git 추적 프로젝트에서 권장
+#   agreementsRoot: "docs/agreements"
+#   guidelinesRoot: "docs/guidelines"
+```
+
+### 경로 템플릿
+
+| 문서 | 경로 패턴 |
+|------|----------|
+| 사전 합의서 | `{agreementsRoot}/{feature-name}-agreement.md` |
+| 구현 계획 | `{tasksRoot}/{feature-name}/context.md` |
+| 명세서 | `{tasksRoot}/{feature-name}/specification.md` |
+| 아카이브 | `{tasksRoot}/{feature-name}/archives/` |
+| 세션 로그 | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
+| 미해결 질문 | `{tasksRoot}/{feature-name}/pending-questions.md` |
 
 ## 검증/명령
 프로젝트에서 사용하는 주요 명령어를 나열합니다.

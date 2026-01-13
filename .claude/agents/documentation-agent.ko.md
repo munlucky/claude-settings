@@ -32,8 +32,8 @@ commitHashes:  # git log로 직접 확인 가능하지만, 빠른 참조용
 - mode가 "finalize"인 경우만 효율성 리포트 생성
 - 커밋 해시는 참조용 (실제 내용은 git show로 확인)
 ## Outputs
-- 구현 계획 업데이트: `.claude/docs/tasks/{feature-name}/context.md`
-- 세션 로그: `.claude/docs/tasks/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
+- 구현 계획 업데이트: `{tasksRoot}/{feature-name}/context.md`
+- 세션 로그: `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
 ## Workflow
 1. context.md에 완료 체크/검증 결과를 반영합니다.
 2. 세션 로그를 템플릿에 맞춰 기록합니다.

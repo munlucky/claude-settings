@@ -7,7 +7,7 @@ description: Logs development sessions in real-time to track decisions and issue
 
 > **Purpose**: Record development sessions in real time to track decisions and trial/error
 > **When to log**: work start, agent switch, decisions, issues, work completion
-> **Output**: `.claude/docs/tasks/{feature-name}/session-logs/day-YYYY-MM-DD.md`
+> **Output**: `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`
 
 ---
 
@@ -183,7 +183,7 @@ description: Logs development sessions in real-time to track decisions and issue
 session-logger start: implement batch management
 ```
 
--> `.claude/docs/tasks/batch-management/session-logs/day-2025-12-20.md` created
+-> `{tasksRoot}/batch-management/session-logs/day-2025-12-20.md` created
 
 ### Auto triggers (system)
 
@@ -227,7 +227,7 @@ session-logger start: implement batch management
 - Next: Context Builder
 
 ### [09:20] Context Builder complete
-- context.md created: .claude/docs/tasks/batch-management-context.md
+- context.md created: {tasksRoot}/batch-management-context.md
 - Target files: 8 new, 2 modified
 - Estimated time: 2.5 hours
 
@@ -362,8 +362,8 @@ session-logger start: implement batch management
 ## File structure
 
 ```
-.claude/docs/tasks/
-|-- {feature-name}/
+{tasksRoot}/
+└── {feature-name}/
     `-- session-logs/
         |-- day-2025-12-20.md  # Day 1
         |-- day-2025-12-21.md  # Day 2

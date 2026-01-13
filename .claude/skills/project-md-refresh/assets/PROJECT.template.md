@@ -36,11 +36,13 @@
 - **Middleware**: [auth middleware locations]
 
 ## Documentation Paths
-- `.claude/docs/agreements/{feature-name}-agreement.md`
-- `.claude/docs/tasks/{feature-name}/context.md`
-- `.claude/docs/tasks/{feature-name}/design-spec.md`
-- `.claude/docs/tasks/{feature-name}/pending-questions.md`
-- `.claude/docs/tasks/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
+> Configure `tasksRoot` in CLAUDE.md. Default: `.claude/docs/tasks`
+
+- `{agreementsRoot}/{feature-name}-agreement.md`
+- `{tasksRoot}/{feature-name}/context.md`
+- `{tasksRoot}/{feature-name}/design-spec.md`
+- `{tasksRoot}/{feature-name}/pending-questions.md`
+- `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
 
 ## Commands
 - **Dev**: `[command]`

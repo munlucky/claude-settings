@@ -50,7 +50,8 @@ decisions:
   skillChain: []
   parallelGroups: []
 artifacts:
-  contextDocPath: .claude/docs/tasks/{feature-name}/context.md
+  tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"  # 기본값: .claude/docs/tasks
+  contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
 tokenBudget:
   specSummaryTrigger: 2000     # 단어 수
@@ -72,12 +73,12 @@ notes: []
 - 독립 기능 수 > `tokenBudget.splitTrigger` (5개): 작업 분할 트리거
 
 **2.0.2 명세서 요약**
-1. 원본 명세서를 `.claude/docs/tasks/{feature-name}/archives/specification-full.md`에 저장
+1. 원본 명세서를 `{tasksRoot}/{feature-name}/archives/specification-full.md`에 저장
 2. 핵심 요소만 추출:
    - 핵심 요구사항 (최대 5개)
    - 제약조건
    - 수용기준
-3. 요약본을 `.claude/docs/tasks/{feature-name}/specification.md`에 작성
+3. 요약본을 `{tasksRoot}/{feature-name}/specification.md`에 작성
 4. 요약에 원본 링크 포함
 
 **2.0.3 서브태스크 분할**

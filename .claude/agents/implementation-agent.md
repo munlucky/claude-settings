@@ -9,7 +9,7 @@ description: Implements code changes based on the plan (context.md), following p
 ## When to use
 - Implementation phase (after planning is complete)
 ## Inputs
-- Implementation plan: `.claude/docs/tasks/{feature-name}/context.md`
+- Implementation plan: `{tasksRoot}/{feature-name}/context.md`
 - Preliminary agreement
 - Similar feature code
 - Project rules (`.claude/PROJECT.md`)

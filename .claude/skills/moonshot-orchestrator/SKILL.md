@@ -50,7 +50,8 @@ decisions:
   skillChain: []
   parallelGroups: []
 artifacts:
-  contextDocPath: .claude/docs/tasks/{feature-name}/context.md
+  tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"  # default: .claude/docs/tasks
+  contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
 tokenBudget:
   specSummaryTrigger: 2000     # words
@@ -72,12 +73,12 @@ If the initial task specification (`request.userMessage`) is very long, it can c
 - If independent features > `tokenBudget.splitTrigger` (5): trigger task splitting
 
 **2.0.2 Summarize the specification**
-1. Save the full original specification to `.claude/docs/tasks/{feature-name}/archives/specification-full.md`
+1. Save the full original specification to `{tasksRoot}/{feature-name}/archives/specification-full.md`
 2. Extract only:
    - Key requirements (max 5 items)
    - Constraints
    - Acceptance criteria
-3. Write summarized version to `.claude/docs/tasks/{feature-name}/specification.md`
+3. Write summarized version to `{tasksRoot}/{feature-name}/specification.md`
 4. Reference the original in the summary
 
 **2.0.3 Split into sub-tasks**

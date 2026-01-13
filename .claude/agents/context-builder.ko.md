@@ -29,7 +29,7 @@ outputFile: ".claude/features/xxx/context.md"
 - 필요한 파일만 선택적으로 Read
 - 프로젝트 규칙 문서도 필요한 섹션만 읽음
 ## Outputs
-- 구현 계획 문서: `.claude/docs/tasks/{feature-name}/context.md`
+- 구현 계획 문서: `{tasksRoot}/{feature-name}/context.md`
 ## Workflow
 1. 사전 합의서와 유사 기능을 읽고 변경 범위를 확정합니다.
 2. 신규/수정 파일을 구분해 목록화합니다.

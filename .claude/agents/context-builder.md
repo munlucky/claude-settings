@@ -29,7 +29,7 @@ outputFile: ".claude/features/xxx/context.md"
 - Read only the necessary files selectively
 - Read only the required sections of the project rules
 ## Outputs
-- Implementation plan document: `.claude/docs/tasks/{feature-name}/context.md`
+- Implementation plan document: `{tasksRoot}/{feature-name}/context.md`
 ## Workflow
 1. Read the agreement and similar features, then confirm the change scope.
 2. List new vs modified files separately.

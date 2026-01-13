@@ -58,14 +58,30 @@ Document auth and authorization details.
 - **Authorization model**: [permission management approach]
 - **Middleware**: [auth/authorization middleware locations]
 
-## Document Paths
-Path rules for project documentation files.
+## Document Paths (Override)
 
-- Agreement: `.claude/docs/agreements/{feature-name}-agreement.md`
-- Implementation plan: `.claude/docs/tasks/{feature-name}/context.md`
-- Design spec: `.claude/docs/tasks/{feature-name}/design-spec.md`
-- Pending questions: `.claude/docs/tasks/{feature-name}/pending-questions.md`
-- Session logs: `.claude/docs/tasks/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
+Override the default paths from `CLAUDE.md` if needed. **For git-tracked projects, set `tasksRoot` to a path outside `.claude/`.**
+
+### Configuration (uncomment and modify as needed)
+
+```yaml
+# Document path overrides (defaults in CLAUDE.md)
+# documentPaths:
+#   tasksRoot: "docs/claude-tasks"      # RECOMMENDED for git-tracked projects
+#   agreementsRoot: "docs/agreements"
+#   guidelinesRoot: "docs/guidelines"
+```
+
+### Path Templates
+
+| Document | Path Pattern |
+|----------|-------------|
+| Agreement | `{agreementsRoot}/{feature-name}-agreement.md` |
+| Implementation plan | `{tasksRoot}/{feature-name}/context.md` |
+| Specification | `{tasksRoot}/{feature-name}/specification.md` |
+| Archives | `{tasksRoot}/{feature-name}/archives/` |
+| Session logs | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
+| Pending questions | `{tasksRoot}/{feature-name}/pending-questions.md` |
 
 ## Verification/Commands
 List the main commands used in the project.

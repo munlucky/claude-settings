@@ -351,7 +351,7 @@ outputFiles:
 ```
 ---
 ### Step 8: design-spec.md 생성/업데이트 (5분)
-**파일 경로**: `.claude/docs/tasks/{feature-name}/design-spec.md`
+**파일 경로**: `{tasksRoot}/{feature-name}/design-spec.md`
 **작업**:
 1. 기존 파일 존재 확인
    - 존재하면 Read 후 병합
@@ -366,7 +366,7 @@ outputFiles:
 3. 파일 저장 (Write 도구)
 ---
 ### Step 9: pending-questions.md 업데이트 (3분)
-**파일 경로**: `.claude/docs/tasks/{feature-name}/pending-questions.md`
+**파일 경로**: `{tasksRoot}/{feature-name}/pending-questions.md`
 **작업**:
 1. 기존 파일 존재 확인
    - 존재하면 Read 후 추가
@@ -485,9 +485,9 @@ outputFiles:
 7. 미해결/질문 정리 중...
    - HIGH 2개, MEDIUM 2개, LOW 1개
 8. design-spec.md 생성 중...
-   - ✅ .claude/docs/tasks/batch-management/design-spec.md
-9. pending-questions.md 업데이트 중...
-   - ✅ .claude/docs/tasks/batch-management/pending-questions.md
+   - ✅ {tasksRoot}/batch-management/design-spec.md
+   - ✅ {tasksRoot}/batch-management/verification-rules.md
+   - ✅ {tasksRoot}/batch-management/pending-questions.md
 ✅ Design Spec Extractor Agent 완료
 ## 다음 단계
 1. [HIGH] pending-questions.md의 HIGH 우선순위 질문 2개 해결

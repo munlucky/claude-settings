@@ -17,7 +17,7 @@ description: Tracks workflow status and generates a flow report.
 2. 블로킹 구간(예: 화면 정의서 확인 대기, API 스펙 대기)을 메모로 추가.
 3. 실행한 검증 명령(typecheck/build/lint 등)과 결과를 기록.
 4. 변경 파일/커밋 링크와 작성자 메모를 남김.
-5. `.claude/docs/tasks/{feature-name}/flow-report.md`에 append 또는 생성.
+5. `{tasksRoot}/{feature-name}/flow-report.md`에 append 또는 생성.
 
 ## 출력
 - flow-report.md 업데이트 로그

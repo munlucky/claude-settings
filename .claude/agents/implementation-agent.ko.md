@@ -9,7 +9,7 @@ description: Implements code changes based on the plan (context.md), following p
 ## When to use
 - 구현 단계(Planning 완료 후)
 ## Inputs
-- 구현 계획: `.claude/docs/tasks/{feature-name}/context.md`
+- 구현 계획: `{tasksRoot}/{feature-name}/context.md`
 - 사전 합의서
 - 유사 기능 코드
 - 프로젝트 규칙 (`.claude/PROJECT.md`)

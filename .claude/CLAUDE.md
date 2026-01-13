@@ -28,6 +28,15 @@
 
 > **Critical**: Follow `.claude/docs/guidelines/document-memory-policy.md` to prevent 64k token limit errors.
 
+**Default document paths** (override in PROJECT.md if needed):
+```yaml
+documentPaths:
+  tasksRoot: ".claude/docs/tasks"       # DEFAULT (often gitignored)
+  # tasksRoot: "docs/claude-tasks"      # Use this for git-tracked projects
+  agreementsRoot: ".claude/docs/agreements"
+  guidelinesRoot: ".claude/docs/guidelines"
+```
+
 **Token limits (must enforce):**
 | Document | Max Tokens | Action on Exceed |
 |----------|-----------|------------------|

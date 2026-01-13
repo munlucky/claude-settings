@@ -32,8 +32,8 @@ commitHashes:  # quick references, even though git log is available
 - Generate efficiency reports only when mode is "finalize"
 - Commit hashes are for reference (verify details with git show)
 ## Outputs
-- Implementation plan updates: `.claude/docs/tasks/{feature-name}/context.md`
-- Session log: `.claude/docs/tasks/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
+- Implementation plan updates: `{tasksRoot}/{feature-name}/context.md`
+- Session log: `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
 ## Workflow
 1. Update context.md with completion checks and verification results.
 2. Record the session log using the template.

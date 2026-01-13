@@ -60,7 +60,7 @@ description: Use after planning or implementing non-trivial tasks - runs Codex M
 - 반드시 Plan → Implementation → Review 순서로 답변한다.
 
 ## Codex-Claude Loop 절차
-1. **계획(Claude)**: 상세 계획을 수립하고 `.claude/docs/tasks/context.md`에 기록한다.
+1. **계획(Claude)**: 상세 계획을 수립하고 `{tasksRoot}/context.md`에 기록한다.
 2. **계획 검증(Codex)** *(옵션)*: 사용자 요청/합의가 있을 때 MCP 도구로 백그라운드 검증을 요청한다.
    - `mcp__codex__spawn_agent` 도구 사용
    - 프롬프트 예시:
