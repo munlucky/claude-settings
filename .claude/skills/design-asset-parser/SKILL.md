@@ -6,7 +6,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 # Design Asset Parser Skill
 
 > **Purpose**: Parse design deliverables (Figma export images/CSS/HTML, screen-spec PDF) to produce a draft dev spec
-> **Outputs**: `.claude/docs/tasks/{feature-name}/design-spec.md`, `pending-questions.md`
+> **Outputs**: `{tasksRoot}/{feature-name}/design-spec.md`, `pending-questions.md`
 > **When to use**: Before implementing a new feature when design assets are provided
 
 ---
@@ -84,7 +84,7 @@ Input file list:
 ```
 
 ### Step 4: Draft spec (5-10m)
-**Output file**: `.claude/docs/tasks/{feature-name}/design-spec.md`
+**Output file**: `{tasksRoot}/{feature-name}/design-spec.md`
 
 Base structure:
 ```markdown
@@ -124,7 +124,7 @@ Base structure:
 ```
 
 ### Step 5: Record open questions (1-2m)
-**Output file**: `.claude/docs/tasks/{feature-name}/pending-questions.md`
+**Output file**: `{tasksRoot}/{feature-name}/pending-questions.md`
 
 ```markdown
 # Pending Questions
@@ -174,8 +174,8 @@ Read design assets and structure a dev spec.
 6. Organize open questions
 
 ## Output
-- `.claude/docs/tasks/{feature-name}/design-spec.md`: structured dev spec
-- `.claude/docs/tasks/{feature-name}/pending-questions.md`: open questions list
+- `{tasksRoot}/{feature-name}/design-spec.md`: structured dev spec
+- `{tasksRoot}/{feature-name}/pending-questions.md`: open questions list
 
 ## Quality bar
 - UI elements in table format
@@ -201,8 +201,8 @@ Design Asset Parser Skill ->
 4. Create pending-questions.md (unclear parts)
 
 Outputs:
-- .claude/docs/tasks/batch-management/design-spec.md
-- .claude/docs/tasks/batch-management/pending-questions.md
+- {tasksRoot}/batch-management/design-spec.md
+- {tasksRoot}/batch-management/pending-questions.md
 ```
 
 ### Example 2: Parse Figma CSS export

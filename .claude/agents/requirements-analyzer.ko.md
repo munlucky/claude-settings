@@ -36,7 +36,7 @@ similarFeaturePaths:  # 있는 경우
 - 패턴은 키워드만 (상세 설명 X)
 ## Outputs
 - 사전 합의서: `.claude/docs/agreements/{feature-name}-agreement.md`
-- 미해결 질문(필요 시): `.claude/docs/tasks/{feature-name}/pending-questions.md`
+- 미해결 질문(필요 시): `{tasksRoot}/{feature-name}/pending-questions.md`
 ## Workflow
 1. 요청을 기능/수정/버그로 분류합니다.
 2. 화면 정의서, API 스펙, 메뉴/권한 등 불확실 항목을 추출합니다.

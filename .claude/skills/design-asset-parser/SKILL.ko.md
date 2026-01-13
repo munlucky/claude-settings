@@ -6,7 +6,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 # Design Asset Parser Skill
 
 > **목적**: 디자인 산출물(Figma export 이미지/CSS/HTML, 화면정의서 PDF)을 파싱하여 개발 스펙 초안 생성
-> **출력**: `.claude/docs/tasks/{feature-name}/design-spec.md`, `pending-questions.md`
+> **출력**: `{tasksRoot}/{feature-name}/design-spec.md`, `pending-questions.md`
 > **사용 시점**: 신규 기능 구현 전, 디자인 산출물이 제공되었을 때
 
 ---
@@ -84,7 +84,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 ```
 
 ### 4단계: 스펙 초안 작성 (5-10분)
-**출력 파일**: `.claude/docs/tasks/{feature-name}/design-spec.md`
+**출력 파일**: `{tasksRoot}/{feature-name}/design-spec.md`
 
 기본 구조:
 ```markdown
@@ -124,7 +124,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 ```
 
 ### 5단계: 미해결 질문 기록 (1-2분)
-**출력 파일**: `.claude/docs/tasks/{feature-name}/pending-questions.md`
+**출력 파일**: `{tasksRoot}/{feature-name}/pending-questions.md`
 
 ```markdown
 # 미해결 질문 (Pending Questions)
@@ -174,8 +174,8 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 6. 미해결/질문 정리
 
 ## 출력
-- `.claude/docs/tasks/{feature-name}/design-spec.md`: 구조화된 개발 스펙
-- `.claude/docs/tasks/{feature-name}/pending-questions.md`: 미해결 질문 목록
+- `{tasksRoot}/{feature-name}/design-spec.md`: 구조화된 개발 스펙
+- `{tasksRoot}/{feature-name}/pending-questions.md`: 미해결 질문 목록
 
 ## 품질 기준
 - UI 요소는 테이블 형식으로 정리
@@ -201,8 +201,8 @@ Design Asset Parser Skill 실행 →
 4. pending-questions.md 생성 (불명확한 부분)
 
 산출물:
-- .claude/docs/tasks/batch-management/design-spec.md
-- .claude/docs/tasks/batch-management/pending-questions.md
+- {tasksRoot}/batch-management/design-spec.md
+- {tasksRoot}/batch-management/pending-questions.md
 ```
 
 ### 예시 2: Figma CSS export 파싱

@@ -7,7 +7,7 @@ description: Synchronizes documentation across agents to reflect planning change
 
 > **목적**: 에이전트 간 문서 동기화를 자동화하여 계획 변경사항, 진행 상황, 미해결 질문을 실시간 반영
 > **사용 시점**: Codex Validator 완료 후, Requirements Completion Check 후, Documentation Finalize 전
-> **출력**: `.claude/docs/tasks/{feature-name}/context.md`, `pending-questions.md`, `flow-report.md`
+> **출력**: `{tasksRoot}/{feature-name}/context.md`, `pending-questions.md`, `flow-report.md`
 
 ---
 
@@ -269,7 +269,7 @@ timestamp: "2025-12-20 09:25"
 
 ### 문서 경로
 ```
-.claude/docs/tasks/{feature-name}/
+{tasksRoot}/{feature-name}/
 ├── context.md              # 구현 계획 (실시간 업데이트)
 ├── pending-questions.md    # 미해결 질문 (실시간 업데이트)
 └── flow-report.md         # Phase별 진행 상황 (실시간 업데이트)
@@ -277,7 +277,7 @@ timestamp: "2025-12-20 09:25"
 
 ### 아카이브 (선택적)
 ```
-.claude/docs/tasks/{feature-name}/archives/
+{tasksRoot}/{feature-name}/archives/
 ├── context-v1.md          # Validator 피드백 전
 ├── context-v2.md          # Validator 피드백 후
 └── pending-questions-resolved.md  # 해결된 질문들

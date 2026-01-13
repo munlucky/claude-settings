@@ -36,11 +36,13 @@
 - **미들웨어**: [인증 미들웨어 위치]
 
 ## 문서 경로
-- `.claude/docs/agreements/{feature-name}-agreement.md`
-- `.claude/docs/tasks/{feature-name}/context.md`
-- `.claude/docs/tasks/{feature-name}/design-spec.md`
-- `.claude/docs/tasks/{feature-name}/pending-questions.md`
-- `.claude/docs/tasks/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
+> `tasksRoot`는 CLAUDE.md에서 설정. 기본값: `.claude/docs/tasks`
+
+- `{agreementsRoot}/{feature-name}-agreement.md`
+- `{tasksRoot}/{feature-name}/context.md`
+- `{tasksRoot}/{feature-name}/design-spec.md`
+- `{tasksRoot}/{feature-name}/pending-questions.md`
+- `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
 
 ## 명령어
 - **Dev**: `[command]`

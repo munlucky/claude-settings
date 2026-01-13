@@ -18,14 +18,18 @@ applies-to:
 > **Purpose**: 모든 에이전트/스킬이 공유하는 문서 메모리 전략으로, 토큰 제한 오류를 방지합니다.
 > **Required by**: moonshot-orchestrator, context-builder, requirements-analyzer, implementation-agent, verification-agent, session-logger, efficiency-tracker, codex-* skills
 
+**Path Configuration**: 문서 경로는 `.claude/PROJECT.md`의 `documentPaths.tasksRoot` 설정을 따릅니다.
+- 기본값: `.claude/docs/tasks`
+- 권장값 (git 추적 시): `docs/claude-tasks`
+
 ---
 
 ## 1. 디렉토리 구조 (작업 단위)
 
-모든 작업은 다음 구조를 따릅니다:
+모든 작업은 다음 구조를 따릅니다 (`{tasksRoot}` = PROJECT.md의 `documentPaths.tasksRoot`):
 
 ```
-.claude/docs/tasks/{feature-name}/
+{tasksRoot}/{feature-name}/
 ├── context.md              # 현재 계획 (최대 8000 토큰)
 ├── specification.md        # 요약된 명세서 (2000 토큰 이하)
 ├── pending-questions.md    # 미해결 질문
@@ -201,7 +205,8 @@ applies-to:
 
 각 스킬 실행 시 확인:
 
-- [ ] 현재 작업 디렉토리 존재 확인 (`.claude/docs/tasks/{feature-name}/`)
+- [ ] PROJECT.md에서 `documentPaths.tasksRoot` 확인
+- [ ] 현재 작업 디렉토리 존재 확인 (`{tasksRoot}/{feature-name}/`)
 - [ ] context.md 토큰 사용량 확인
 - [ ] 아카이브 인덱스 최신화 확인
 - [ ] 대형 명세서 여부 확인 (2000단어 초과?)

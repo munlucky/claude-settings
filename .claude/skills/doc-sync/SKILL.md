@@ -7,7 +7,7 @@ description: Synchronizes documentation across agents to reflect planning change
 
 > **Purpose**: Automate document sync across agents so plan changes, progress, and open questions update in real time
 > **When to use**: After Codex Validator completes, after Requirements Completion Check, before Documentation Finalize
-> **Outputs**: `.claude/docs/tasks/{feature-name}/context.md`, `pending-questions.md`, `flow-report.md`
+> **Outputs**: `{tasksRoot}/{feature-name}/context.md`, `pending-questions.md`, `flow-report.md`
 
 ---
 
@@ -269,7 +269,7 @@ ERROR Doc Sync failed
 
 ### Document paths
 ```
-.claude/docs/tasks/{feature-name}/
+{tasksRoot}/{feature-name}/
 |-- context.md              # implementation plan (real-time updates)
 |-- pending-questions.md    # open questions (real-time updates)
 `-- flow-report.md          # per-phase progress (real-time updates)
@@ -277,7 +277,7 @@ ERROR Doc Sync failed
 
 ### Archive (optional)
 ```
-.claude/docs/tasks/{feature-name}/archives/
+{tasksRoot}/{feature-name}/archives/
 |-- context-v1.md              # before Validator feedback
 |-- context-v2.md              # after Validator feedback
 `-- pending-questions-resolved.md  # resolved questions

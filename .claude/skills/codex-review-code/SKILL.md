@@ -15,7 +15,7 @@ description: Review implementation quality and regression risks via claude-deleg
 ## Procedure
 1. Read the expert prompt file: `${CLAUDE_PLUGIN_ROOT}/prompts/code-reviewer.md`
 2. Summarize change scope, changed files, and key behaviors
-3. Capture the context.md path (default: `.claude/docs/tasks/{feature-name}/context.md`) and read relevant code
+3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
 4. Build delegation prompt using 7-section format
 5. Call `mcp__codex__codex` with Code Reviewer expert
 6. Record critical issues, warnings, and suggestions

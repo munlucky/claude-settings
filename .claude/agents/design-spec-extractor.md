@@ -351,7 +351,7 @@ outputFiles:
 ```
 ---
 ### Step 8: Create/update design-spec.md (5m)
-**File path**: `.claude/docs/tasks/{feature-name}/design-spec.md`
+**File path**: `{tasksRoot}/{feature-name}/design-spec.md`
 **Work**:
 1. Check if file exists
    - If yes, read and merge
@@ -366,7 +366,7 @@ outputFiles:
 3. Save file (Write tool)
 ---
 ### Step 9: Update pending-questions.md (3m)
-**File path**: `.claude/docs/tasks/{feature-name}/pending-questions.md`
+**File path**: `{tasksRoot}/{feature-name}/pending-questions.md`
 **Work**:
 1. Check if file exists
    - If yes, read and append
@@ -485,9 +485,9 @@ OK Design Spec Extractor Agent started
 7. Organizing open questions...
    - HIGH 2, MEDIUM 2, LOW 1
 8. Creating design-spec.md...
-   - OK .claude/docs/tasks/batch-management/design-spec.md
-9. Updating pending-questions.md...
-   - OK .claude/docs/tasks/batch-management/pending-questions.md
+   - OK {tasksRoot}/batch-management/design-spec.md
+   - OK {tasksRoot}/batch-management/verification-rules.md
+   - OK {tasksRoot}/batch-management/pending-questions.md
 OK Design Spec Extractor Agent complete
 ## Next steps
 1. Resolve HIGH priority questions (2 items)

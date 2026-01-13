@@ -60,7 +60,7 @@ description: Use after planning or implementing non-trivial tasks - runs Codex M
 - Always respond in Plan -> Implementation -> Review order.
 
 ## Codex-Claude Loop Procedure
-1. **Plan (Claude)**: build a detailed plan and record it in `.claude/docs/tasks/context.md`.
+1. **Plan (Claude)**: build a detailed plan and record it in `{tasksRoot}/context.md`.
 2. **Plan validation (Codex)** *(optional)*: when requested/approved, ask MCP to validate in background.
    - Use `mcp__codex__spawn_agent`
    - Prompt example:

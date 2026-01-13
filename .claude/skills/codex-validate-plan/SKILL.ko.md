@@ -13,7 +13,7 @@ description: claude-delegator(Plan Reviewer 전문가)를 통해 아키텍처/�
 
 ## 절차
 1. 전문가 프롬프트 파일 읽기: `${CLAUDE_PLUGIN_ROOT}/prompts/plan-reviewer.md`
-2. context.md 경로를 수집하고 내용 읽기 (기본: `.claude/docs/tasks/{feature-name}/context.md`)
+2. context.md 경로를 수집하고 내용 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
 3. 7-섹션 형식으로 위임 프롬프트 구성
 4. Plan Reviewer 전문가와 함께 `mcp__codex__codex` 호출
 5. 중대/경고/제안 항목을 요약하고 통과/실패 결정

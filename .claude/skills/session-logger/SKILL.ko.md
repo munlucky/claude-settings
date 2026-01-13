@@ -7,7 +7,7 @@ description: Logs development sessions in real-time to track decisions and issue
 
 > **목적**: 개발 작업 세션을 실시간으로 기록하여 의사결정 과정과 시행착오를 추적
 > **사용 시점**: 작업 시작, 에이전트 전환, 의사결정, 이슈 발생, 작업 완료
-> **출력**: `.claude/docs/tasks/{feature-name}/session-logs/day-YYYY-MM-DD.md`
+> **출력**: `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`
 
 ---
 
@@ -183,7 +183,7 @@ description: Logs development sessions in real-time to track decisions and issue
 session-logger 시작: 배치 관리 기능 구현
 ```
 
-→ `.claude/docs/tasks/batch-management/session-logs/day-2025-12-20.md` 생성
+→ `{tasksRoot}/batch-management/session-logs/day-2025-12-20.md` 생성
 
 ### 자동 트리거 (시스템이 자동 호출)
 
@@ -227,7 +227,7 @@ session-logger 시작: 배치 관리 기능 구현
 - 다음 단계: Context Builder
 
 ### [09:20] Context Builder 완료
-- context.md 생성: .claude/docs/tasks/batch-management-context.md
+- context.md 생성: {tasksRoot}/batch-management-context.md
 - 변경 대상 파일: 8개 신규, 2개 수정
 - 예상 작업 시간: 2.5시간
 
@@ -362,7 +362,7 @@ session-logger 시작: 배치 관리 기능 구현
 ## 📦 파일 구조
 
 ```
-.claude/docs/tasks/
+{tasksRoot}/
 └── {feature-name}/
     └── session-logs/
         ├── day-2025-12-20.md  # Day 1

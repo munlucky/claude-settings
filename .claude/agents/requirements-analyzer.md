@@ -36,7 +36,7 @@ similarFeaturePaths:  # if present
 - Receive only pattern keywords (no detailed descriptions)
 ## Outputs
 - Preliminary agreement: `.claude/docs/agreements/{feature-name}-agreement.md`
-- Pending questions (if needed): `.claude/docs/tasks/{feature-name}/pending-questions.md`
+- Pending questions (if needed): `{tasksRoot}/{feature-name}/pending-questions.md`
 ## Workflow
 1. Classify the request as feature/modification/bug.
 2. Extract uncertainties such as UI spec, API spec, menu/permissions.
