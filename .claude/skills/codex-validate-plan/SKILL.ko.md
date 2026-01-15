@@ -12,19 +12,17 @@ context: fork
 - `context.md`가 존재하거나 업데이트된 경우
 
 ## 절차
-1. 전문가 프롬프트 파일 읽기: `${CLAUDE_PLUGIN_ROOT}/prompts/plan-reviewer.md`
-2. context.md 경로를 수집하고 내용 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
-3. 7-섹션 형식으로 위임 프롬프트 구성
-4. **Codex 먼저 시도**:
-   - Plan Reviewer 전문가와 함께 `mcp__codex__codex` 호출
-   - 성공 시 6단계로 진행
-5. **Claude로 폴백** (Codex 사용 불가 시):
+1. context.md 경로를 수집하고 내용 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
+2. 아래 7-섹션 형식으로 위임 프롬프트 구성
+3. **Codex 먼저 시도**:
+   - `mcp__codex__codex` 호출 (developer-instructions에 Plan Reviewer 지침 포함)
+   - 성공 시 5단계로 진행
+4. **Claude로 폴백** (Codex 사용 불가 시):
    - 에러 조건: "quota exceeded", "rate limit", "API error", "unavailable"
-   - Claude가 동일한 7-섹션 프롬프트를 사용하여 직접 계획 검토 수행
-   - plan-reviewer.md 전문가 지침을 Claude 자체 가이드라인으로 적용
+   - Claude가 아래 Plan Reviewer 지침에 따라 직접 계획 검토 수행
    - 노트 추가: `"codex-fallback: Claude가 직접 검토 수행"`
-6. 중대/경고/제안 항목을 요약하고 통과/실패 결정
-7. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
+5. 중대/경고/제안 항목을 요약하고 통과/실패 결정
+6. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## 위임 형식
 

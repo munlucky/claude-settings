@@ -13,20 +13,18 @@ context: fork
 - Multi-component changes
 
 ## Procedure
-1. Read the expert prompt file: `${CLAUDE_PLUGIN_ROOT}/prompts/code-reviewer.md`
-2. Summarize change scope, endpoints, and integration points
-3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
-4. Build delegation prompt using 7-section format (integration-focused)
-5. **Try Codex first**:
-   - Call `mcp__codex__codex` with Code Reviewer expert
-   - If successful, proceed to step 7
-6. **Fallback to Claude** (if Codex unavailable):
+1. Summarize change scope, endpoints, and integration points
+2. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
+3. Build delegation prompt using the 7-section format below (integration-focused)
+4. **Try Codex first**:
+   - Call `mcp__codex__codex` (include Integration Reviewer instructions in developer-instructions)
+   - If successful, proceed to step 6
+5. **Fallback to Claude** (if Codex unavailable):
    - Error conditions: "quota exceeded", "rate limit", "API error", "unavailable"
-   - Claude directly performs the integration review using the same 7-section prompt
-   - Apply the code-reviewer.md expert instructions as Claude's own guidelines
+   - Claude directly performs integration review following the guidelines below
    - Add note: `"codex-fallback: Claude performed integration review directly"`
-7. Record regression risks and additional test scenarios
-8. If a saved report is needed, store the full review in `{tasksRoot}/{feature-name}/archives/` and keep only a short summary in `context.md`
+6. Record regression risks and additional test scenarios
+7. If a saved report is needed, store the full review in `{tasksRoot}/{feature-name}/archives/` and keep only a short summary in `context.md`
 
 ## Delegation Format
 
