@@ -1,7 +1,7 @@
 ---
 name: codex-validate-plan
 description: claude-delegator(Plan Reviewer 전문가)를 통해 아키텍처/계획 품질을 검증합니다. 복잡한 기능/리팩터링 작업의 context.md 작성 후 사용하세요.
-
+context: fork
 ---
 
 # Codex 계획 검증 (claude-delegator 사용)

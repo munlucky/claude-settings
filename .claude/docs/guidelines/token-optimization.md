@@ -1,11 +1,48 @@
 # Token Optimization Guidelines
 
 ## Goal
-Minimize token waste when passing context between agents, and remove duplicate cost especially in parallel execution with ``.
+Minimize token waste when passing context between agents, and remove duplicate cost especially in parallel execution.
 
 ---
 
-## Five Core Principles
+## Six Core Principles
+
+### 0. Skill Fork Context (`context: fork`)
+**Problem**: When PM skills execute sequentially, intermediate analysis (file reads, codebase exploration) accumulates in the main session, bloating context
+
+**Solution**:
+- Apply `context: fork` option to analysis/review skills
+- Skill runs in **separate sub-agent session**, only **results return to main session**
+- ~90% token reduction in main session (analysis phase)
+
+**Criteria**:
+- ✅ **Analysis/review skills**: Read many files but don't write
+- ❌ **Execution/write skills**: Require file modifications
+
+**Apply to**:
+```yaml
+# Add to SKILL.md frontmatter
+---
+name: moonshot-classify-task
+description: ...
+context: fork   # ← Add this line
+---
+```
+
+| Fork O | Fork X |
+|--------|--------|
+| moonshot-classify-task | implementation-runner |
+| moonshot-evaluate-complexity | efficiency-tracker |
+| moonshot-detect-uncertainty | session-logger |
+| moonshot-decide-sequence | doc-sync |
+| pre-flight-check | |
+| codex-validate-plan | |
+| codex-review-code | |
+| codex-test-integration | |
+
+**Caution**:
+- Fork session cannot reference main context → pass needed info as arguments
+- Current skills use `analysisContext` argument structure → compatible
 
 ### 1. Minimal Context Transfer
 **Problem**: Passing full context to sub-agents doubles token usage

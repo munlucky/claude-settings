@@ -1,7 +1,7 @@
 ---
 name: codex-review-code
 description: Review implementation quality and regression risks via claude-delegator (Code Reviewer expert). Use after implementation for complex tasks, refactors, or API changes.
-
+context: fork
 ---
 
 # Codex Code Review (via claude-delegator)

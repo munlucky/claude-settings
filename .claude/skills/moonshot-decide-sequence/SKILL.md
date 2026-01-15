@@ -1,6 +1,7 @@
 ---
 name: moonshot-decide-sequence
 description: Determines phase and execution chain based on analysisContext (task type, complexity, signals). Use after uncertainty detection.
+context: fork
 ---
 
 # PM Sequence Decision

@@ -1,11 +1,48 @@
 # 토큰 효율화 가이드라인 (Token Optimization Guidelines)
 
 ## 📌 목표
-에이전트 간 컨텍스트 전달 시 토큰 낭비를 최소화하고, 특히 ``를 사용한 병렬 실행에서 중복 비용을 제거합니다.
+에이전트 간 컨텍스트 전달 시 토큰 낭비를 최소화하고, 특히 병렬 실행에서 중복 비용을 제거합니다.
 
 ---
 
-## 🎯 5대 핵심 원칙
+## 🎯 6대 핵심 원칙
+
+### 0. 스킬 Fork 컨텍스트 (`context: fork`)
+**문제**: PM 스킬들이 순차 실행될 때 중간 분석 과정(파일 읽기, 코드베이스 탐색)이 메인 세션에 누적되어 컨텍스트 비대화
+
+**해결**:
+- 분석/검토 중심 스킬에 `context: fork` 옵션 적용
+- 스킬이 **별도 sub-agent 세션**에서 실행되고, **결과만 메인 세션에 반환**
+- 메인 세션 토큰 ~90% 절감 (분석 단계 기준)
+
+**적용 기준**:
+- ✅ **분석/검토 스킬**: 파일을 많이 읽지만 쓰지 않는 스킬
+- ❌ **실행/쓰기 스킬**: 파일 수정이 필요한 스킬
+
+**적용 대상**:
+```yaml
+# SKILL.md frontmatter에 추가
+---
+name: moonshot-classify-task
+description: ...
+context: fork   # ← 이 한 줄 추가
+---
+```
+
+| 적용 O (fork) | 적용 X |
+|--------------|--------|
+| moonshot-classify-task | implementation-runner |
+| moonshot-evaluate-complexity | efficiency-tracker |
+| moonshot-detect-uncertainty | session-logger |
+| moonshot-decide-sequence | doc-sync |
+| pre-flight-check | |
+| codex-validate-plan | |
+| codex-review-code | |
+| codex-test-integration | |
+
+**주의사항**:
+- Fork 세션은 메인 컨텍스트를 참조할 수 없음 → 필요한 정보를 인수로 전달해야 함
+- 현재 스킬들은 `analysisContext`를 인수로 받는 구조여서 호환됨
 
 ### 1. 최소 정보 전달 (Minimal Context Transfer)
 **문제**: 전체 컨텍스트를 sub-agent에게 전달하면 토큰이 2배로 소비됨

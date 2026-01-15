@@ -1,7 +1,7 @@
 ---
 name: codex-test-integration
 description: Validate integration impact and regression risks via claude-delegator (Code Reviewer expert). Use for complex tasks or API integration.
-
+context: fork
 ---
 
 # Codex Integration Validation (via claude-delegator)

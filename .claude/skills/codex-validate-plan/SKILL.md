@@ -1,7 +1,7 @@
 ---
 name: codex-validate-plan
 description: Validate architecture/plan quality via claude-delegator (Plan Reviewer expert). Use after writing context.md for complex feature/refactor work.
-
+context: fork
 ---
 
 # Codex Plan Validation (via claude-delegator)
