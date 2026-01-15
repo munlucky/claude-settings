@@ -1,7 +1,7 @@
 ---
 name: codex-review-code
 description: claude-delegator(Code Reviewer 전문가)를 통해 구현 품질과 회귀 위험을 검토합니다. 복잡한 작업, 리팩터링, API 변경 후 사용하세요.
-
+context: fork
 ---
 
 # Codex 코드 리뷰 (claude-delegator 사용)

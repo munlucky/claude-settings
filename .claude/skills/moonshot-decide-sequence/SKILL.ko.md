@@ -1,6 +1,7 @@
 ﻿---
 name: moonshot-decide-sequence
 description: `analysisContext`(작업 유형, 복잡도, 시그널)를 기준으로 단계(`phase`)와 실행 체인을 결정한다. 불확실성 검출 후 체인 구성 시 사용.
+context: fork
 ---
 
 # PM 시퀀스 결정

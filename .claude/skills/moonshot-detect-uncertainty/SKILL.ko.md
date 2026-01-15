@@ -1,6 +1,7 @@
 ﻿---
 name: moonshot-detect-uncertainty
 description: 요구사항 누락을 감지하고 명확화 질문을 생성한다. 분류/복잡도 이후, 사용자 입력 필요 여부 판단에 사용.
+context: fork
 ---
 
 # PM 불확실성 검출

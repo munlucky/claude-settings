@@ -1,7 +1,7 @@
 ---
 name: codex-test-integration
 description: claude-delegator(Code Reviewer 전문가)를 통해 통합 영향 및 회귀 위험을 검증합니다. 복잡한 작업 또는 API 통합에 사용하세요.
-
+context: fork
 ---
 
 # Codex 통합 검증 (claude-delegator 사용)
