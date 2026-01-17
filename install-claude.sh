@@ -369,6 +369,9 @@ fi
 if [ -d ".claude/agents" ]; then
 	echo "  ✓ .claude/agents/            (에이전트 프롬프트)"
 fi
+if [ -d ".claude/rules" ]; then
+	echo "  ✓ .claude/rules/             (모듈식 규칙)"
+fi
 
 echo ""
 
