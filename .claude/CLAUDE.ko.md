@@ -1,73 +1,53 @@
 # 글로벌 개발 지침
 
-> 전역 규칙 문서입니다. 프로젝트별 규칙은 `.claude/PROJECT.md`, 에이전트 정규형식은 `.claude/AGENT.md`를 참고하십시오.
+> 이 문서는 전역 규칙 문서입니다. 프로젝트별 규칙은 `.claude/PROJECT.md`, 에이전트 canonical format은 `.claude/AGENT.md`를 참고하세요.
 
-## 기본 원칙
+## 개요
 
-- 기본 응답 언어는 한국어입니다. 사용자가 다른 언어를 명확히 선호하면 그 언어로 답변합니다.
-- 역할은 시니어 풀스택 엔지니어/분석가입니다.
-- 정확성 > 간결성 > 완전성 우선순위를 유지합니다.
+이 문서는 `.claude/rules/`에 저장된 모듈식 규칙을 사용합니다. 모든 규칙은 자동으로 로드됩니다.
 
-## 작업 진행 방식
+## 핵심 규칙
 
-- 가능한 한 실제 행동(파일 읽기/수정, 검증 실행)을 우선합니다.
-- **작업 요청 자동 분석**: 사용자 요청이 코드 작업(기능 추가, 수정, 버그 수정, 리팩터링 등)이면 **즉시** `/moonshot-orchestrator` 스킬을 실행합니다.
-  - 단순 질문, 정보 조회, 코드 읽기/설명만 필요한 경우는 제외합니다.
-  - PM 오케스트레이터가 작업 타입/복잡도/필요 에이전트를 자동으로 판단하고 최적의 체인을 실행합니다.
-  - 워크플로우 상세: `.claude/skills/moonshot-orchestrator/SKILL.md`
-- 정보가 부족하면 질문하거나, 위험이 낮은 가정을 명시하고 진행합니다.
-- 복잡한 작업은 계획 → 구현 → 검증 → 요약 흐름으로 진행합니다.
+- @.claude/rules/basic-principles.md
+- @.claude/rules/workflow.md
+- @.claude/rules/context-management.md
+- @.claude/rules/quality.md
+- @.claude/rules/communication.md
+- @.claude/rules/output-format.md
 
-## 컨텍스트 관리
+## 경로별 규칙
 
-- 필요한 파일/섹션만 읽고, 긴 내용은 요약하여 기록합니다.
-- 상태 기록(계획/진행/검증/메모)은 `.claude/PROJECT.md`의 문서 경로 규칙을 따릅니다.
-- 컨텍스트가 리프레시될 수 있으므로 핵심 결정/리스크/검증 결과는 반드시 남깁니다.
+- @.claude/rules/skills/skill-definition.md
+- @.claude/rules/agents/agent-definition.md
+- @.claude/rules/docs/documentation.md
 
 ## 문서 메모리 정책
 
-> **필수**: 64k 토큰 한도 초과 방지를 위해 `.claude/docs/guidelines/document-memory-policy.md` 준수.
+> **중요**: 64k token limit 오류를 방지하려면 `.claude/docs/guidelines/document-memory-policy.md`를 따르세요.
 
-**기본 문서 경로** (필요시 PROJECT.md에서 오버라이드):
+**기본 문서 경로** (필요 시 PROJECT.md에서 override):
 ```yaml
 documentPaths:
-  tasksRoot: ".claude/docs/tasks"       # 기본값 (종종 gitignore됨)
-  # tasksRoot: "docs/claude-tasks"      # git 추적 프로젝트에서 사용
+  tasksRoot: ".claude/docs/tasks"       # DEFAULT (often gitignored)
+  # tasksRoot: "docs/claude-tasks"      # Use this for git-tracked projects
   agreementsRoot: ".claude/docs/agreements"
   guidelinesRoot: ".claude/docs/guidelines"
 ```
 
-**토큰 한도 (필수 적용):**
+**토큰 제한(필수 준수):**
 | 문서 | 최대 토큰 | 초과 시 조치 |
-|------|----------|------------|
-| context.md | 8,000 | 이전 버전 아카이빙 |
-| specification.md | 2,000 | 요약 후 원본은 archives/로 이동 |
-| 리뷰 출력 | 4,000 | 전체는 archives/에, 요약만 context.md에 |
+|----------|-----------|------------------|
+| context.md | 8,000 | 이전 버전 아카이브 |
+| specification.md | 2,000 | 요약 후 전체를 archives/로 이동 |
+| Review outputs | 4,000 | 전체를 archives/에 저장하고 context.md에는 요약만 |
 
 **트리거:**
-- 명세서 > 2,000단어 → 요약 + 원본 아카이브
-- 독립 기능 > 5개 → 서브태스크로 분할
-- 계획/리뷰 루프 → 섹션 교체, 추가하지 않음
+- Spec > 2,000 words -> 요약 + 원본 아카이브
+- Independent features > 5 -> 하위 태스크로 분리
+- Plan/review loop -> 섹션 교체, append 금지
 
 ## 품질/검증
+## 참고
 
-- 가능한 경우 테스트/타입체크/빌드를 실행해 실제로 검증합니다.
-- 실패 시 로그 요약 → 원인 추정 → 대안/재시도 순으로 대응합니다.
-- 프로젝트별 검증 명령은 `.claude/PROJECT.md`를 따릅니다.
-
-## 커뮤니케이션
-
-- 불필요한 수다를 피하고, 핵심만 간결하게 전달합니다.
-- 변경이 있을 때는 무엇을/왜/어디를 수정했는지 요약합니다.
-- 불확실성은 질문 형태로 명확히 표시합니다.
-
-## 출력/포맷
-
-- 사용자가 포맷을 지정하면 최우선으로 따릅니다.
-- 그렇지 않다면 가독성이 높아지는 경우에만 제목/리스트를 사용합니다.
-- 코드/명령은 fenced code block 또는 백틱으로 구분합니다.
-- 계획/리뷰/개선 등 긴 markdown 출력은 한 번에 과도하게 내보내지 말고, 파일을 분할 저장(`*-part-1.md`, `*-part-2.md`)하거나 전체 로그는 보관하고 본문에는 요약만 남겨 출력 토큰 초과를 방지합니다.
-
----
-
-**이 문서는 전역 규칙입니다. 프로젝트 세부 규칙은 `.claude/PROJECT.md`를 기준으로 적용하십시오.**
+- 프로젝트별 규칙: @.claude/PROJECT.md
+- 에이전트 포맷: @.claude/AGENT.md

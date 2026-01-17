@@ -1,15 +1,72 @@
-﻿# Moonshot 워크플로우 가이드
+# Moonshot Workflow Guide
 
-> 이 문서는 현재 저장소의 Moonshot 워크플로우 구성요소를 설명합니다. 프로젝트별 규칙은 `.claude/PROJECT.md`를 참고하세요.
+> This document describes the Moonshot workflow components in this repository. For project-specific rules, see `.claude/PROJECT.md`.
 
-## 진입점
+## Entry Points
 
-- 전역 규칙: `.claude/CLAUDE.md`
-- 프로젝트 규칙: `.claude/PROJECT.md`
-- 에이전트 포맷: `.claude/AGENT.md`
-- 오케스트레이터 스킬: `.claude/skills/moonshot-orchestrator/SKILL.md`
+- Global rules: `.claude/CLAUDE.md` (use `@` imports when needed)
+- Modular rules: `.claude/rules/`
+- Project rules: `.claude/PROJECT.md`
+- Agent format: `.claude/AGENT.md`
+- Orchestrator skill: `.claude/skills/moonshot-orchestrator/SKILL.md`
 
-## 에이전트
+## Memory Model and Priority
+
+Claude Code loads memories in the following order (higher is more general, lower is more specific).
+
+| Memory Type | Location | Purpose | Shared With |
+| --- | --- | --- | --- |
+| Enterprise policy | macOS: `/Library/Application Support/ClaudeCode/CLAUDE.md`<br />Linux: `/etc/claude-code/CLAUDE.md`<br />Windows: `C:\Program Files\ClaudeCode\CLAUDE.md` | Organization-wide rules | Entire organization |
+| Project memory | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Project-wide rules | Team via source control |
+| Project rules | `./.claude/rules/*.md` | Modular project rules | Team via source control |
+| User memory | `~/.claude/CLAUDE.md` | Personal defaults | Personal |
+| Project memory (local) | `./CLAUDE.local.md` | Personal project preferences | Personal |
+
+- `CLAUDE.local.md` is automatically added to `.gitignore`.
+
+## Memory Loading and Editing
+
+- At launch, Claude Code walks up from the cwd and loads any `CLAUDE.md` or `CLAUDE.local.md` files it finds.
+- Nested `CLAUDE.md` files under the current working directory are loaded only when files in those subtrees are accessed.
+- Use `/memory` to inspect or edit loaded memories, and `/init` to bootstrap a `CLAUDE.md`.
+
+## CLAUDE.md imports
+
+You can import additional files using the `@path/to/import` syntax.
+
+```
+See @README for project overview and @package.json for npm commands.
+
+# Additional Instructions
+- git workflow @docs/git-instructions.md
+```
+
+- Both relative and absolute paths are supported (example: `@~/.claude/my-project-instructions.md`).
+- Imports are not evaluated inside code spans or code blocks.
+- Import depth is limited to 5 hops.
+
+## Modular Rules (rules/)
+
+All `.md` files under `.claude/rules/` are loaded automatically (recursive).
+
+- User rules in `~/.claude/rules/` load first.
+- You can share rules via symlinks when needed.
+
+- `basic-principles.md`: core principles
+- `workflow.md`: work execution
+- `context-management.md`: context management
+- `quality.md`: verification and quality
+- `communication.md`: communication
+- `output-format.md`: output format
+
+### Path-specific rules
+
+- `rules/skills/skill-definition.md`: skill definition rules (`.claude/skills/**/*.md`)
+- `rules/agents/agent-definition.md`: agent definition rules (`.claude/agents/**/*.md`)
+- `rules/docs/documentation.md`: documentation rules (`.claude/docs/**/*.md`)
+- `paths` supports standard glob patterns and multiple entries.
+
+## Agents
 
 - Requirements Analyzer: `.claude/agents/requirements-analyzer.md`
 - Context Builder: `.claude/agents/context-builder.md`
@@ -17,17 +74,17 @@
 - Verification Agent: `.claude/agents/verification-agent.md`
 - Documentation Agent: `.claude/agents/documentation-agent.md`
 - Design Spec Extractor: `.claude/agents/design-spec-extractor.md`
-- 검증 스크립트: `.claude/agents/verification/verify-changes.sh`
+- Verification script: `.claude/agents/verification/verify-changes.sh`
 
-## 스킬
+## Skills
 
-### Moonshot 분석
+### Moonshot Analysis
 - `moonshot-classify-task`
 - `moonshot-evaluate-complexity`
 - `moonshot-detect-uncertainty`
 - `moonshot-decide-sequence`
 
-### 실행 및 검증
+### Execution and Verification
 - `pre-flight-check`
 - `implementation-runner`
 - `codex-validate-plan`
@@ -35,30 +92,30 @@
 - `claude-codex-guardrail-loop`
 - `receiving-code-review`
 
-### 문서 및 로깅
+### Documentation and Logging
 - `doc-sync`
 - `session-logger`
 - `efficiency-tracker`
 
-### 유틸리티
+### Utilities
 - `design-asset-parser`
 - `project-md-refresh`
 
-## 일반 흐름 (예시)
+## Typical Flow (Example)
 
-1. `moonshot-orchestrator`가 요청을 분석하고 체인을 구성합니다.
-2. `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
-3. 복잡한 작업은 `codex-validate-plan`과 `implementation-runner`를 병렬로 실행합니다.
-4. `verification-agent`와 `verify-changes.sh`로 품질을 확인합니다.
-5. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
+1. `moonshot-orchestrator` analyzes the request and builds the chain.
+2. `requirements-analyzer` and `context-builder` outline the plan.
+3. For complex tasks, validate the plan with `codex-validate-plan` before running `implementation-runner`.
+4. Use `verification-agent` and `verify-changes.sh` to check quality.
+5. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
 
-## 문서와 템플릿
+## Docs and Templates
 
-- 작업 문서는 `.claude/docs` 하위에 두며 경로 규칙은 `.claude/PROJECT.md`를 따릅니다.
-- 출력 템플릿: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
+- Keep task docs under `.claude/docs` following `.claude/PROJECT.md` path rules.
+- Output templates: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 
-## 유지보수 노트 (이 저장소)
+## Maintenance Notes (This Repo)
 
-- 영문 `.md`는 ASCII만 사용하고 동일한 `.ko.md`를 함께 유지합니다.
-- 이름이나 경로를 바꾸면 이 문서와 `install-claude.sh`를 함께 갱신합니다.
-- 대상 프로젝트에 `PROJECT.md`가 없다면 `project-md-refresh` 스킬을 실행합니다.
+- Keep English `.md` in ASCII and maintain matching `.ko.md` pairs.
+- If you change names or paths, update this document and `install-claude.sh`.
+- If the target project is missing `PROJECT.md`, run `project-md-refresh`.
