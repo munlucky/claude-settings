@@ -392,10 +392,129 @@ session-logger start: implement batch management
 - Resume from the last timeline entry
 - Resolve pending-questions first
 
-### 5. Token limit awareness
+### 5. Token limit awareness and session handoff
 - **Per `.claude/docs/guidelines/document-memory-policy.md`**: Keep daily logs under 5000 tokens
 - If exceeding limit, start a new day file early
 - Archive old session logs if needed
+- **Long session handling**: When context grows too large, create `HANDOFF.md` → `/clear` for new session (see section below)
+
+---
+
+## 🔄 Session Handoff (HANDOFF.md)
+
+### When to use?
+- When conversation context window is over 80% full
+- When complex work spans multiple stages
+- When response quality degrades due to token limits
+- When work needs to be handed off to the next agent (or new session)
+
+### Trigger prompt example
+
+```
+"Summarize the current work state into HANDOFF.md. Explain what you tried, 
+what worked, what didn't work, so that the next agent with fresh context 
+can just load that file and continue the work."
+```
+
+### HANDOFF.md template
+
+```markdown
+# {Task Name} - Handoff Document
+
+## Goal
+{Final goal and specific current objectives}
+
+Example:
+- Reduce Claude Code's system prompt by ~45% (currently at 11%, need ~34% more)
+
+## Current Progress
+
+### What's Been Done
+- {Completed work 1}
+- {Completed work 2}
+- {Completed work 3}
+
+### What Worked
+- {Effective approach 1}
+- {Effective approach 2}
+
+### What Didn't Work
+- {Failed approach 1} (reason: {why it failed})
+- {Failed approach 2} (reason: {why it failed})
+
+## Next Steps
+1. {Next task 1}
+2. {Next task 2}
+3. {Next task 3}
+
+## Important Context
+- Related files: {key file paths}
+- Branch: {current branch}
+- Last commit: {commit hash}
+- Notes: {important things the new session should know}
+```
+
+### Real HANDOFF.md example
+
+```markdown
+# System Prompt Slimming - Handoff Document
+
+## Goal
+Reduce Claude Code's system prompt by ~45% (currently at 11%, need ~34% more).
+
+## Current Progress
+
+### What's Been Done
+- Removed verbose examples from tool descriptions
+- Shortened permission explanations
+- Consolidated redundant instructions
+
+### What Worked
+- Regex-based pattern matching for finding repetitive text
+- Testing each change individually before committing
+
+### What Didn't Work
+- Removing safety warnings (caused unexpected behavior)
+- Over-aggressive minification (broke JSON parsing)
+
+## Next Steps
+1. Target the MCP server descriptions (estimated 2k tokens)
+2. Simplify the hooks documentation
+3. Test thoroughly after each change
+```
+
+### Handoff workflow
+
+```
+1. Detect session is getting long
+   ↓
+2. Request HANDOFF.md creation
+   ↓
+3. Save to {tasksRoot}/{feature-name}/HANDOFF.md
+   ↓
+4. Run /clear to reset session
+   ↓
+5. Load HANDOFF.md in new session
+   ↓
+6. Continue the work
+```
+
+### New session start prompt example
+
+```
+"Read {tasksRoot}/{feature-name}/HANDOFF.md and continue the work."
+```
+
+### File location
+
+```
+{tasksRoot}/
+└── {feature-name}/
+    ├── HANDOFF.md           # Session handoff document
+    └── session-logs/
+        ├── day-2025-12-20.md
+        └── day-2025-12-21.md
+```
 
 ---
 
