@@ -392,10 +392,129 @@ session-logger 시작: 배치 관리 기능 구현
 - 마지막 타임라인부터 재개
 - pending-questions 우선 처리
 
-### 5. 토큰 한도 인식
+### 5. 토큰 한도 인식 및 세션 핸드오프
 - **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 일별 로그는 5000 토큰 이하로 유지
 - 한도 초과 시 새 날짜 파일로 조기 분할
 - 필요시 오래된 세션 로그 아카이빙
+- **긴 세션 대응**: 컨텍스트가 너무 커지면 `HANDOFF.md` 생성 → `/clear`로 새 세션 시작 (아래 섹션 참조)
+
+---
+
+## 🔄 세션 핸드오프 (HANDOFF.md)
+
+### 언제 사용하는가?
+- 대화가 길어져 컨텍스트 윈도우가 80% 이상 찬 경우
+- 복잡한 작업이 여러 단계에 걸쳐 진행 중인 경우
+- 토큰 한도로 인해 응답 품질이 저하되기 시작할 때
+- 작업을 다음 에이전트(또는 새 세션)에 인계해야 할 때
+
+### 트리거 프롬프트 예시
+
+```
+"현재 작업 상태를 HANDOFF.md로 정리해줘. 시도한 것, 효과적이었던 것, 
+효과적이지 않았던 것을 설명해서 새 세션에서 이 파일만 로드하면 
+바로 작업을 이어갈 수 있도록 해줘."
+```
+
+### HANDOFF.md 템플릿
+
+```markdown
+# {작업명} - 핸드오프 문서
+
+## 목표
+{최종 목표와 현재 달성해야 할 구체적 목표}
+
+예시:
+- Claude Code의 시스템 프롬프트를 ~45% 줄이기 (현재 11%, 추가로 ~34% 필요)
+
+## 현재 진행 상황
+
+### 완료된 작업
+- {완료된 작업 1}
+- {완료된 작업 2}
+- {완료된 작업 3}
+
+### 효과적이었던 것
+- {잘 작동한 접근법 1}
+- {잘 작동한 접근법 2}
+
+### 효과적이지 않았던 것
+- {실패한 접근법 1} (이유: {왜 실패했는지})
+- {실패한 접근법 2} (이유: {왜 실패했는지})
+
+## 다음 단계
+1. {다음에 해야 할 작업 1}
+2. {다음에 해야 할 작업 2}
+3. {다음에 해야 할 작업 3}
+
+## 중요 컨텍스트
+- 관련 파일: {주요 파일 경로들}
+- 브랜치: {현재 브랜치}
+- 마지막 커밋: {커밋 해시}
+- 주의사항: {새 세션에서 알아야 할 중요한 점}
+```
+
+### 실제 HANDOFF.md 예시
+
+```markdown
+# System Prompt Slimming - Handoff Document
+
+## Goal
+Reduce Claude Code's system prompt by ~45% (currently at 11%, need ~34% more).
+
+## Current Progress
+
+### What's Been Done
+- Removed verbose examples from tool descriptions
+- Shortened permission explanations
+- Consolidated redundant instructions
+
+### What Worked
+- Regex-based pattern matching for finding repetitive text
+- Testing each change individually before committing
+
+### What Didn't Work
+- Removing safety warnings (caused unexpected behavior)
+- Over-aggressive minification (broke JSON parsing)
+
+## Next Steps
+1. Target the MCP server descriptions (estimated 2k tokens)
+2. Simplify the hooks documentation
+3. Test thoroughly after each change
+```
+
+### 핸드오프 워크플로우
+
+```
+1. 세션이 길어짐을 감지
+   ↓
+2. HANDOFF.md 생성 요청
+   ↓
+3. {tasksRoot}/{feature-name}/HANDOFF.md 저장
+   ↓
+4. /clear 명령으로 세션 초기화
+   ↓
+5. 새 세션에서 HANDOFF.md 로드
+   ↓
+6. 작업 이어서 진행
+```
+
+### 새 세션 시작 프롬프트 예시
+
+```
+"{tasksRoot}/{feature-name}/HANDOFF.md를 읽고 작업을 이어서 진행해줘."
+```
+
+### 파일 위치
+
+```
+{tasksRoot}/
+└── {feature-name}/
+    ├── HANDOFF.md           # 세션 인계 문서
+    └── session-logs/
+        ├── day-2025-12-20.md
+        └── day-2025-12-21.md
+```
 
 ---
 
