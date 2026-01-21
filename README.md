@@ -94,9 +94,9 @@ claude-settings/
 ### 스킬 라이브러리
 
 - Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
-- 실행/검증: `implementation-runner`, `codex-validate-plan`, `codex-test-integration`, `codex-review-code`, `claude-codex-guardrail-loop`
-- 문서/세션: `doc-sync`, `session-logger`, `efficiency-tracker`, `receiving-code-review`
-- 보조 도구: `pre-flight-check`, `design-asset-parser`, `project-md-refresh`
+- 실행/검증: `implementation-runner`, `codex-validate-plan`, `codex-review-code`, `completion-verifier`
+- 문서/세션: `session-logger`, `efficiency-tracker`
+- 보조 도구: `pre-flight-check`, `design-asset-parser`, `project-md-refresh`, `security-reviewer`, `build-error-resolver`
 
 ### 문서와 템플릿
 
@@ -228,9 +228,7 @@ Codex MCP 활용:
       "Bash(npm run build:*)",
       "Bash(git add:*)",
       "Bash(git checkout:*)",
-      "Skill(codex-claude-loop)",
       "mcp__codex__spawn_agent",
-      "Skill(claude-codex-guardrail-loop)",
       "Bash(awk:*)",
       "Bash(xargs:*)",
       "Bash(find:*)",

@@ -87,19 +87,19 @@ See @README for project overview and @package.json for npm commands.
 ### 실행 및 검증
 - `pre-flight-check`
 - `implementation-runner`
+- `completion-verifier` (신규)
 - `codex-validate-plan`
-- `codex-test-integration`
-- `claude-codex-guardrail-loop`
-- `receiving-code-review`
+- `codex-review-code`
 
 ### 문서 및 로깅
-- `doc-sync`
 - `session-logger`
 - `efficiency-tracker`
 
 ### 유틸리티
 - `design-asset-parser`
 - `project-md-refresh`
+- `security-reviewer`
+- `build-error-resolver`
 
 ## 일반 흐름 (예시)
 
