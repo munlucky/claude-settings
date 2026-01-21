@@ -534,3 +534,38 @@ Reduce Claude Code's system prompt by ~45% (currently at 11%, need ~34% more).
 ---
 
 **Enabling this skill records all work automatically.**
+
+---
+
+## 🧠 Memory Integration (Optional)
+
+> This section is only active when MCP Memory is configured in `settings.local.json`.
+
+### When to Save
+
+| Event | Key Pattern | Example |
+|-------|-------------|---------|
+| Major decision | `decision:{feature}:{topic}` | API pattern, architecture choice |
+| Work completed | `progress:{feature}` | "Phase 1 complete, Mock ready" |
+| Issue resolved | `solution:{issue-type}` | snake_case conversion method |
+
+### Save Format
+
+```typescript
+mcp__memory__save({
+  key: "decision:{feature-name}:api-pattern",
+  value: JSON.stringify({
+    decision: "Use proxy pattern",
+    reason: "Security and auth token handling",
+    date: "YYYY-MM-DD",
+    relatedFiles: ["src/api/routes.ts"]
+  })
+})
+```
+
+### When to Load
+
+- At session start via pre-flight-check
+- When working on related feature
+- After `/clear` to restore context
+

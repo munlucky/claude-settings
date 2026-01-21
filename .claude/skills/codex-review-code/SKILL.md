@@ -109,3 +109,46 @@ mcp__codex__codex({
 notes:
   - "codex-review: [APPROVE/REJECT], critical=[count], warnings=[count]"
 ```
+
+## Review-Fix Loop (Auto-Fix Mode)
+
+### Workflow
+
+1. **Run codex-review-code**
+2. **Analyze result:**
+   - `APPROVE` → Proceed to next step
+   - `REJECT (CRITICAL/HIGH issues)` → Enter Auto-Fix Loop
+3. **Auto-Fix Loop:**
+   - Re-invoke with `sandbox: "workspace-write"`
+   - Include fix instructions in prompt
+   - Run verification after fix
+4. **Loop limit:** Max 2 retries
+5. **After 2 failures:** Request user confirmation
+
+### Configuration
+
+```yaml
+reviewFixLoop:
+  enabled: true
+  maxRetries: 2
+  fixableIssues:
+    - console.log statements
+    - missing error handling
+    - type errors
+    - simple security issues (hardcoded strings)
+  nonFixableIssues:
+    - architectural changes
+    - breaking API changes
+    - complex security vulnerabilities
+```
+
+### Auto-Fix Prompt Addition
+
+When entering fix mode, add to prompt:
+```
+Fix the following issues and verify the changes:
+1. [Issue description from review]
+2. [Issue description from review]
+
+After fixing, run verification to confirm the issues are resolved.
+```

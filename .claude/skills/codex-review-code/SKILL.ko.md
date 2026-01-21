@@ -109,3 +109,46 @@ mcp__codex__codex({
 notes:
   - "codex-review: [APPROVE/REJECT], critical=[개수], warnings=[개수]"
 ```
+
+## Review-Fix Loop (자동 수정 모드)
+
+### 워크플로우
+
+1. **codex-review-code 실행**
+2. **결과 분석:**
+   - `APPROVE` → 다음 단계로
+   - `REJECT (CRITICAL/HIGH 이슈)` → Auto-Fix Loop 진입
+3. **Auto-Fix Loop:**
+   - `sandbox: "workspace-write"`로 재호출
+   - 수정 지시 포함
+   - 수정 후 검증 실행
+4. **반복 제한:** 최대 2회
+5. **2회 실패 후:** 사용자 확인 요청
+
+### 설정
+
+```yaml
+reviewFixLoop:
+  enabled: true
+  maxRetries: 2
+  fixableIssues:
+    - console.log 문
+    - 누락된 에러 처리
+    - 타입 에러
+    - 단순 보안 이슈 (하드코딩된 문자열)
+  nonFixableIssues:
+    - 아키텍처 변경
+    - 브레이킹 API 변경
+    - 복잡한 보안 취약점
+```
+
+### Auto-Fix 프롬프트 추가
+
+수정 모드 진입 시 프롬프트에 추가:
+```
+다음 이슈를 수정하고 변경사항을 검증하세요:
+1. [리뷰에서 발견된 이슈 설명]
+2. [리뷰에서 발견된 이슈 설명]
+
+수정 후 검증을 실행하여 이슈가 해결되었는지 확인하세요.
+```

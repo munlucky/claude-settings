@@ -188,6 +188,38 @@ Run `decisions.skillChain` in order:
 - `context-builder` -> `subagent_type: "context-builder"`
 - `implementation-runner` -> `subagent_type: "implementation-agent"`
 
+### 3.1 Dynamic Skill Injection
+
+During skillChain execution, dynamically inject skills when signals detected:
+
+| Signal | Condition | Inject Skill | Insert Position |
+|--------|-----------|--------------|-----------------|
+| `buildFailed` | Bash exit code ≠ 0 | build-error-resolver | Before retry current step |
+| `securityConcern` | Changed files contain `.env`, `auth`, `password`, `token` | security-reviewer | After codex-review-code |
+| `coverageLow` | Coverage < 80% from codex-test-integration output | (request additional tests) | After codex-test-integration |
+
+**Signal Detection:**
+```yaml
+buildFailed:
+  trigger: Bash tool returns non-zero exit code
+  action: Insert build-error-resolver, then retry failed step (max 2)
+
+securityConcern:
+  trigger: |
+    changedFiles.any(f => 
+      f.includes('.env') || 
+      f.includes('auth') || 
+      f.includes('password') || 
+      f.includes('token') ||
+      f.includes('secret')
+    )
+  action: Add security-reviewer after codex-review-code
+
+coverageLow:
+  trigger: codex-test-integration reports coverage < 80%
+  action: Log warning, request additional tests from user
+```
+
 ### 4. Record results
 Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
 
