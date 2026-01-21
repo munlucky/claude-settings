@@ -36,14 +36,33 @@ patterns:
 - 구현된 코드 변경 사항
 - 단계별 커밋 메시지(필요 시)
 ## Workflow
-1. context.md의 변경 대상/단계를 그대로 따릅니다.
-2. Phase 1(Mock/UI) → Phase 2(API) → Verification 순으로 진행합니다.
-3. 패턴 문서(`patterns/`)를 참조해 구현 일관성을 유지합니다.
-4. 검증 스크립트를 실행하고 결과를 기록합니다.
+
+### Phase 0: 테스트 작성 (RED)
+1. context.md에서 Acceptance Tests 읽기
+2. 각 테스트 ID에 해당하는 테스트 파일 생성
+3. 테스트 실행 → 모두 FAIL 확인 (RED 상태)
+4. context.md 상태 업데이트: 🔴 PENDING → 🔴 RED
+
+### Phase 1: Mock 구현 (GREEN for unit tests)
+1. Unit 테스트 통과하도록 구현
+2. 테스트 실행 → Unit 테스트 PASS 확인
+3. context.md 업데이트: Unit 테스트 → 🟢 PASS
+
+### Phase 2: API 연동 (GREEN for integration tests)
+1. Integration 테스트 통과하도록 구현
+2. 테스트 실행 → Integration 테스트 PASS 확인
+3. context.md 업데이트: Integration 테스트 → 🟢 PASS
+
+### Phase 3: 최종 검증
+1. 모든 테스트 재실행
+2. 모든 🟢 PASS → 완료
+3. 하나라도 🔴 FAIL → 실패한 Phase로 돌아가 구현 수정
+
 ## Quality bar
 - 프로젝트 규칙(`.claude/PROJECT.md`)을 위반하지 않습니다.
 - 기존 코드 스타일/패턴을 우선 재사용합니다.
 - 각 단계가 독립적으로 커밋 가능해야 합니다.
+- **FAIL 시 테스트 재작성 금지, 구현만 수정**
 ## References
 - `.claude/PROJECT.md`
 - `.claude/AGENT.md`

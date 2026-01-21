@@ -36,14 +36,33 @@ patterns:
 - Implemented code changes
 - Step-by-step commit messages (if needed)
 ## Workflow
-1. Follow the targets and phases from context.md.
-2. Proceed in order: Phase 1 (Mock/UI) -> Phase 2 (API) -> Verification.
-3. Use pattern docs (`patterns/`) to keep implementation consistent.
-4. Run verification scripts and record results.
+
+### Phase 0: 테스트 작성 (RED)
+1. Read Acceptance Tests from context.md
+2. Create test files for each test ID
+3. Run tests → Confirm all FAIL (RED state)
+4. Update context.md status: 🔴 PENDING → 🔴 RED
+
+### Phase 1: Mock 구현 (GREEN for unit tests)
+1. Implement to pass Unit tests
+2. Run tests → Confirm Unit tests PASS
+3. Update context.md: Unit tests → 🟢 PASS
+
+### Phase 2: API 연동 (GREEN for integration tests)
+1. Implement to pass Integration tests
+2. Run tests → Confirm Integration tests PASS
+3. Update context.md: Integration tests → 🟢 PASS
+
+### Phase 3: 최종 검증
+1. Run all tests
+2. All 🟢 PASS → Complete
+3. Any 🔴 FAIL → Go back to failed Phase and fix implementation
+
 ## Quality bar
 - Do not violate project rules (`.claude/PROJECT.md`).
 - Reuse existing code style/patterns first.
 - Each phase should be independently committable.
+- **FAIL 시 테스트 재작성 금지, 구현만 수정**
 ## References
 - `.claude/PROJECT.md`
 - `.claude/AGENT.md`
