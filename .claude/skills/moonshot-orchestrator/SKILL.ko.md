@@ -166,9 +166,8 @@ notes: []
 - `context-builder`: 컨텍스트 구축 에이전트 (Task tool)
 - `codex-validate-plan`: Codex 계획 검증 스킬
 - `implementation-runner`: 구현 에이전트 (Task tool)
-- `completion-verifier`: 테스트 기반 완료 검증 스킬 (NEW)
+- `completion-verifier`: 테스트 기반 완료 검증 스킬
 - `codex-review-code`: Codex 코드 리뷰 스킬
-- `codex-test-integration`: Codex 통합 테스트 스킬
 - `security-reviewer`: 보안 취약점 검토 스킬
 - `build-error-resolver`: 빌드/컴파일 에러 해결 스킬
 - `verify-changes.sh`: 검증 스크립트 (Bash tool)
