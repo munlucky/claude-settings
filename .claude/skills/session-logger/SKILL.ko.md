@@ -534,3 +534,37 @@ Reduce Claude Code's system prompt by ~45% (currently at 11%, need ~34% more).
 ---
 
 **이 스킬을 활성화하면 모든 작업이 자동으로 기록됩니다!**
+
+---
+
+## 🧠 Memory 연동 (선택적)
+
+> 이 섹션은 `settings.local.json`에 MCP Memory가 설정된 경우에만 활성화됩니다.
+
+### 저장 시점
+
+| 이벤트 | 키 패턴 | 예시 |
+|--------|---------|------|
+| 주요 결정 | `decision:{feature}:{topic}` | API 패턴, 아키텍처 선택 |
+| 작업 완료 | `progress:{feature}` | "Phase 1 완료, Mock 준비" |
+| 이슈 해결 | `solution:{issue-type}` | snake_case 변환 방법 |
+
+### 저장 형식
+
+```typescript
+mcp__memory__save({
+  key: "decision:{feature-name}:api-pattern",
+  value: JSON.stringify({
+    decision: "프록시 패턴 사용",
+    reason: "보안 및 인증 토큰 처리",
+    date: "YYYY-MM-DD",
+    relatedFiles: ["src/api/routes.ts"]
+  })
+})
+```
+
+### 불러오기 시점
+
+- pre-flight-check 실행 시 세션 시작
+- 관련 기능 작업 시
+- `/clear` 후 컨텍스트 복원 시

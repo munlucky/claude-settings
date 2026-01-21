@@ -188,6 +188,38 @@ notes: []
 - `context-builder` → `subagent_type: "context-builder"`
 - `implementation-runner` → `subagent_type: "implementation-agent"`
 
+### 3.1 동적 스킬 삽입 (Dynamic Skill Injection)
+
+skillChain 실행 중 시그널 감지 시 스킬 동적 삽입:
+
+| 시그널 | 조건 | 삽입 스킬 | 삽입 위치 |
+|--------|------|----------|----------|
+| `buildFailed` | Bash exit code ≠ 0 | build-error-resolver | 현재 단계 재시도 전 |
+| `securityConcern` | 변경 파일에 `.env`, `auth`, `password`, `token` 포함 | security-reviewer | codex-review-code 후 |
+| `coverageLow` | codex-test-integration 출력에서 커버리지 < 80% | (추가 테스트 요청) | codex-test-integration 후 |
+
+**시그널 감지:**
+```yaml
+buildFailed:
+  trigger: Bash 도구가 0이 아닌 exit code 반환
+  action: build-error-resolver 삽입, 실패한 단계 재시도 (최대 2회)
+
+securityConcern:
+  trigger: |
+    changedFiles.any(f => 
+      f.includes('.env') || 
+      f.includes('auth') || 
+      f.includes('password') || 
+      f.includes('token') ||
+      f.includes('secret')
+    )
+  action: codex-review-code 후 security-reviewer 추가
+
+coverageLow:
+  trigger: codex-test-integration에서 커버리지 < 80% 보고
+  action: 경고 로깅, 사용자에게 추가 테스트 요청
+```
+
 ### 4. 결과 기록
 최종 analysisContext를 `.claude/docs/moonshot-analysis.yaml`에 저장.
 
