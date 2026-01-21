@@ -166,6 +166,7 @@ Run `decisions.skillChain` in order:
 - `context-builder`: context-building agent (Task tool)
 - `codex-validate-plan`: Codex plan validation skill
 - `implementation-runner`: implementation agent (Task tool)
+- `completion-verifier`: test-based completion verification skill (NEW)
 - `codex-review-code`: Codex code review skill
 - `codex-test-integration`: Codex integration test skill
 - `security-reviewer`: security vulnerability review skill
@@ -218,6 +219,38 @@ securityConcern:
 coverageLow:
   trigger: codex-test-integration reports coverage < 80%
   action: Log warning, request additional tests from user
+```
+
+### 3.2 Completion Verification Loop
+
+After implementation-runner completes:
+
+1. Call `completion-verifier`
+2. If `allPassed: true`:
+   - Mark `implementationComplete: true`
+   - Proceed to next step (codex-review-code)
+3. If `allPassed: false`:
+   - Identify failed phase (Unit → Phase 1, Integration → Phase 2)
+   - If retryCount < 2:
+     - **Go back to failed Phase (not test writing)**
+     - Pass `failedTests` to implementation-agent
+     - Implementation-agent fixes code only
+     - Increment retryCount
+   - Else:
+     - Ask user for intervention
+     - Provide failed test details
+
+**Signals Update:**
+```yaml
+signals:
+  implementationComplete: false  # existing
+  
+  # New fields
+  acceptanceTestsGenerated: false
+  testsPassed: 0
+  testsFailed: 0
+  completionRetryCount: 0
+  currentPhase: "Phase 0"  # 0=Tests, 1=Mock, 2=API, 3=Verify
 ```
 
 ### 4. Record results

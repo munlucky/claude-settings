@@ -31,6 +31,27 @@ Testing may be skipped when:
 | Integration | API endpoints | Supertest |
 | E2E | Critical user flows | Playwright, Cypress |
 
+## Acceptance Tests (완료 기준)
+
+Define in context.md during planning:
+
+### Naming Convention
+- File: `{Component}.test.ts(x)` or `{feature}.integration.test.ts`
+- Test ID: `T{N}` (for tracking in context.md)
+
+### Minimum Coverage
+| Type | Minimum Count |
+|------|---------------|
+| Unit (component) | 1 per feature |
+| Unit (util/type) | 1 per function |
+| Integration (API) | 1 per endpoint |
+
+### Status Indicators
+- 🔴 PENDING: Test not written
+- 🔴 RED: Test written, FAIL
+- 🟢 PASS: Test passed
+- ⚪ SKIP: Skip Conditions apply
+
 ## Test Naming Convention
 
 ```typescript

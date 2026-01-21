@@ -31,6 +31,27 @@
 | Integration | API 엔드포인트 | Supertest |
 | E2E | 핵심 사용자 흐름 | Playwright, Cypress |
 
+## Acceptance Tests (완료 기준)
+
+계획 단계에서 context.md에 정의:
+
+### 명명 규칙
+- 파일: `{Component}.test.ts(x)` 또는 `{feature}.integration.test.ts`
+- 테스트 ID: `T{N}` (context.md에서 추적용)
+
+### 최소 커버리지
+| 유형 | 최소 개수 |
+|------|----------|
+| Unit (컴포넌트) | 기능당 1개 |
+| Unit (유틸/타입) | 함수당 1개 |
+| Integration (API) | 엔드포인트당 1개 |
+
+### 상태 표기
+- 🔴 PENDING: 테스트 미작성
+- 🔴 RED: 테스트 작성됨, FAIL
+- 🟢 PASS: 테스트 통과
+- ⚪ SKIP: Skip Conditions 적용
+
 ## 테스트 네이밍 컨벤션
 
 ```typescript
