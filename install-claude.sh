@@ -255,6 +255,8 @@ if command -v python3 &>/dev/null; then
 	PYTHON_CMD="python3"
 elif command -v python &>/dev/null; then
 	PYTHON_CMD="python"
+elif command -v py &>/dev/null; then
+	PYTHON_CMD="py"
 fi
 
 if [ "$HAS_UNZIP" = false ] && [ -z "$PYTHON_CMD" ]; then
