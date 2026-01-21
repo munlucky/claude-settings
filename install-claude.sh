@@ -212,7 +212,10 @@ if [ -d ".claude" ]; then
 				# 중복 체크 (Bash 3.2 호환)
 				if [[ ! "$SEEN_FILES_LIST" =~ "|$rel_file|" ]]; then
 					USER_FILES+=("$rel_file")
-					EXCLUDE_PATTERNS+=("$rel_file")
+					# settings.local.json은 병합을 위해 제외 목록에서 뺌 (새 버전 유지)
+					if [ "$rel_file" != "settings.local.json" ]; then
+						EXCLUDE_PATTERNS+=("$rel_file")
+					fi
 					SEEN_FILES_LIST="$SEEN_FILES_LIST|$rel_file|"
 				fi
 			fi
