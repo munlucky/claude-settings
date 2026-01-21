@@ -54,13 +54,13 @@ notes: []
 skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함한다(moonshot-* 스킬은 포함하지 않음).
 
 - simple: implementation-runner -> verify-changes.sh
-- medium: requirements-analyzer -> implementation-runner -> codex-review-code -> efficiency-tracker
-- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> implementation-runner -> codex-review-code -> codex-test-integration -> efficiency-tracker -> session-logger
+- medium: requirements-analyzer -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker
+- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
 
-complex는 항상 Codex 3단계 검증을 포함한다.
+complex는 항상 테스트 기반 완료 검증을 포함한다.
 
 **테스팅 연동** (참조: `.claude/rules/testing.md`):
-- complex 체인은 항상 `codex-test-integration` 포함
+- medium/complex 체인은 구현 후 `completion-verifier` 포함
 - 커버리지 < 80% 시 추가 테스트 요청
 - API 변경 시 통합 테스트 필수
 

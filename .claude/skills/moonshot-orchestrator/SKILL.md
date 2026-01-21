@@ -166,9 +166,8 @@ Run `decisions.skillChain` in order:
 - `context-builder`: context-building agent (Task tool)
 - `codex-validate-plan`: Codex plan validation skill
 - `implementation-runner`: implementation agent (Task tool)
-- `completion-verifier`: test-based completion verification skill (NEW)
+- `completion-verifier`: test-based completion verification skill
 - `codex-review-code`: Codex code review skill
-- `codex-test-integration`: Codex integration test skill
 - `security-reviewer`: security vulnerability review skill
 - `build-error-resolver`: build/compile error resolution skill
 - `verify-changes.sh`: verification script (Bash tool)

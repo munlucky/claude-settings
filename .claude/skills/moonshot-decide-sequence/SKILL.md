@@ -54,13 +54,13 @@ notes: []
 Include only stages to run **after moonshot-decide-sequence** (do not include moonshot-* skills).
 
 - simple: implementation-runner -> verify-changes.sh
-- medium: requirements-analyzer -> implementation-runner -> codex-review-code -> efficiency-tracker
-- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> implementation-runner -> codex-review-code -> codex-test-integration -> efficiency-tracker -> session-logger
+- medium: requirements-analyzer -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker
+- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
 
-Complex always includes the Codex three-step validation.
+Complex always includes test-based completion verification.
 
 **Testing Integration** (ref: `.claude/rules/testing.md`):
-- Complex chain always includes `codex-test-integration`
+- medium/complex chains include `completion-verifier` after implementation
 - Request additional tests if coverage < 80%
 - API changes require integration tests
 
