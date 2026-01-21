@@ -64,6 +64,45 @@ PY
 	exit 1
 }
 
+# JSON 병합 함수 (settings.local.json 처리를 위해)
+merge_json() {
+	local base_file=$1    # 새로 설치될 파일 (Base)
+	local user_file=$2    # 기존 사용자 파일 (Permissions 유지 대상)
+	local output_file=$3  # 결과 파일
+
+	if [ -n "$PYTHON_CMD" ]; then
+		"$PYTHON_CMD" - "$base_file" "$user_file" "$output_file" <<'PY'
+import sys
+import json
+
+base_path = sys.argv[1]
+user_path = sys.argv[2]
+output_path = sys.argv[3]
+
+try:
+    with open(base_path, 'r', encoding='utf-8') as f:
+        base_data = json.load(f)
+    
+    with open(user_path, 'r', encoding='utf-8') as f:
+        user_data = json.load(f)
+
+    # Base 데이터를 기준으로 시작 (새로운 설정들)
+    merged_data = base_data.copy()
+    
+    # 사용자 파일의 permissions가 있으면 덮어쓰기 (기존 권한 유지)
+    if 'permissions' in user_data:
+        merged_data['permissions'] = user_data['permissions']
+        
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(merged_data, f, indent=2, ensure_ascii=False)
+except Exception as e:
+    sys.exit(1)
+PY
+		return $?
+	fi
+	return 1
+}
+
 # 사용법 출력
 usage() {
 	cat <<EOF
@@ -332,14 +371,28 @@ cp -r "$TEMP_DIR/claude-settings-$BRANCH/.claude/." .claude/
 print_info "✓ 설치 완료"
 # 7.5. Restore protected user files into new .claude
 if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
-	print_info "Restoring protected user files..."
+	print_info "사용자 파일 복원 중..."
 	for file in "${USER_FILES[@]}"; do
 		item="${file%/}"
 		src="$USER_STASH_DIR/$item"
 		dest=".claude/$item"
+		
+		# settings.local.json 파일이고, 새 파일도 존재하면 병합 시도
+		if [ "$item" == "settings.local.json" ] && [ -f "$dest" ]; then
+			print_info "  Merging settings.local.json..."
+			if merge_json "$dest" "$src" "$dest.merged"; then
+				mv "$dest.merged" "$dest"
+				print_info "  ✓ $item (Merged permissions)"
+				continue
+			else
+				print_warn "  병합 실패, 기존 파일로 복원합니다."
+			fi
+		fi
+
 		if [ -e "$src" ]; then
 			mkdir -p "$(dirname "$dest")"
 			cp -r "$src" "$dest"
+			print_info "  ✓ $item (Restored)"
 		fi
 	done
 fi
