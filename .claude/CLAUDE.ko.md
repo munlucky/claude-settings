@@ -14,11 +14,15 @@
 - @.claude/rules/quality.md
 - @.claude/rules/communication.md
 - @.claude/rules/output-format.md
+- @.claude/rules/security.md
+- @.claude/rules/coding-style.md
+- @.claude/rules/testing.md
 
 ## 경로별 규칙
 
 - @.claude/rules/skills/skill-definition.md
 - @.claude/rules/agents/agent-definition.md
+- @.claude/rules/agents/agent-delegation.md
 - @.claude/rules/docs/documentation.md
 
 ## 문서 메모리 정책

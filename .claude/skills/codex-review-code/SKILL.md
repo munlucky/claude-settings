@@ -49,6 +49,17 @@ CONSTRAINTS:
 
 MUST DO:
 - Prioritize: Correctness → Security → Performance → Maintainability
+- **Security Checks (CRITICAL)**:
+  * Hardcoded credentials (API keys, passwords, tokens)
+  * SQL injection risks (string concatenation in queries)
+  * XSS vulnerabilities (unescaped user input)
+  * Missing input validation
+- **Code Quality (HIGH)**:
+  * Long functions (>50 lines)
+  * Long files (>800 lines)
+  * Deep nesting (>4 levels)
+  * Missing error handling (try/catch)
+  * console.log statements
 - Focus on issues that matter, not style nitpicks
 - Check logic/flow errors and edge cases
 - Validate type safety and error handling
@@ -61,6 +72,12 @@ MUST NOT DO:
 
 OUTPUT FORMAT:
 Summary → Critical issues → Warnings → Recommendations → Verdict (APPROVE/REJECT)
+
+## Approval Criteria
+
+- ✅ **APPROVE**: No CRITICAL/HIGH issues
+- ⚠️ **WARNING**: MEDIUM issues only (can merge with caution)
+- ❌ **REJECT**: CRITICAL/HIGH issues found
 ```
 
 ## Tool Call

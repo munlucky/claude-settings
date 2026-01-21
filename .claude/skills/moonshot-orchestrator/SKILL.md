@@ -168,6 +168,8 @@ Run `decisions.skillChain` in order:
 - `implementation-runner`: implementation agent (Task tool)
 - `codex-review-code`: Codex code review skill
 - `codex-test-integration`: Codex integration test skill
+- `security-reviewer`: security vulnerability review skill
+- `build-error-resolver`: build/compile error resolution skill
 - `verify-changes.sh`: verification script (Bash tool)
 - `efficiency-tracker`: efficiency tracking skill
 - `session-logger`: session logging skill

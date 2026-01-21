@@ -14,11 +14,15 @@ This document uses modular rules stored in `.claude/rules/`. All rules are autom
 - @.claude/rules/quality.md
 - @.claude/rules/communication.md
 - @.claude/rules/output-format.md
+- @.claude/rules/security.md
+- @.claude/rules/coding-style.md
+- @.claude/rules/testing.md
 
 ## Path-Specific Rules
 
 - @.claude/rules/skills/skill-definition.md
 - @.claude/rules/agents/agent-definition.md
+- @.claude/rules/agents/agent-delegation.md
 - @.claude/rules/docs/documentation.md
 
 ## Document Memory Policy
