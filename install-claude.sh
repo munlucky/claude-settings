@@ -146,7 +146,7 @@ fi
 
 # 사용자 파일 자동 보호 (기존 .claude가 있을 경우)
 USER_FILES=()
-declare -A SEEN_FILES # 중복 방지
+SEEN_FILES_LIST="" # 중복 방지를 위한 문자열 목록
 
 if [ -d ".claude" ]; then
 	# 보호할 파일 패턴 정의
@@ -170,11 +170,11 @@ if [ -d ".claude" ]; then
 				rel_file="${file#./}"
 				rel_file="${rel_file#.claude/}"
 
-				# 중복 체크
-				if [ -z "${SEEN_FILES[$rel_file]}" ]; then
+				# 중복 체크 (Bash 3.2 호환)
+				if [[ ! "$SEEN_FILES_LIST" =~ "|$rel_file|" ]]; then
 					USER_FILES+=("$rel_file")
 					EXCLUDE_PATTERNS+=("$rel_file")
-					SEEN_FILES[$rel_file]=1
+					SEEN_FILES_LIST="$SEEN_FILES_LIST|$rel_file|"
 				fi
 			fi
 		done < <(find .claude -type f -name "$pattern" 2>/dev/null)
@@ -187,10 +187,10 @@ if [ -d ".claude" ]; then
 				rel_dir="${dir#./}"
 				rel_dir="${rel_dir#.claude/}"
 
-				if [ -z "${SEEN_FILES[$rel_dir]}" ]; then
+				if [[ ! "$SEEN_FILES_LIST" =~ "|$rel_dir|" ]]; then
 					USER_FILES+=("$rel_dir/")
 					EXCLUDE_PATTERNS+=("$rel_dir")
-					SEEN_FILES[$rel_dir]=1
+					SEEN_FILES_LIST="$SEEN_FILES_LIST|$rel_dir|"
 				fi
 			fi
 		done < <(find .claude -type d -name "$dir_pattern" 2>/dev/null)
@@ -449,7 +449,6 @@ if [ ! -d ".codex" ]; then
 Codex MCP를 통해 다음 기능을 사용할 수 있습니다:
 - 계획 검증 (codex-validate-plan)
 - 코드 리뷰 (codex-review-code)
-- 통합 테스트 검증 (codex-test-integration)
 
 자세한 내용은 `.claude/skills/codex-*` 스킬을 참고하세요.
 CODEX_EOF

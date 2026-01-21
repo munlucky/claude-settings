@@ -87,19 +87,19 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 ### Execution and Verification
 - `pre-flight-check`
 - `implementation-runner`
+- `completion-verifier` (NEW)
 - `codex-validate-plan`
-- `codex-test-integration`
-- `claude-codex-guardrail-loop`
-- `receiving-code-review`
+- `codex-review-code`
 
 ### Documentation and Logging
-- `doc-sync`
 - `session-logger`
 - `efficiency-tracker`
 
 ### Utilities
 - `design-asset-parser`
 - `project-md-refresh`
+- `security-reviewer`
+- `build-error-resolver`
 
 ## Typical Flow (Example)
 
