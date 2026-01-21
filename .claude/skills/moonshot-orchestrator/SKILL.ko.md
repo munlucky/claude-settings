@@ -168,6 +168,8 @@ notes: []
 - `implementation-runner`: 구현 에이전트 (Task tool)
 - `codex-review-code`: Codex 코드 리뷰 스킬
 - `codex-test-integration`: Codex 통합 테스트 스킬
+- `security-reviewer`: 보안 취약점 검토 스킬
+- `build-error-resolver`: 빌드/컴파일 에러 해결 스킬
 - `verify-changes.sh`: 검증 스크립트 (Bash tool)
 - `efficiency-tracker`: 효율성 추적 스킬
 - `session-logger`: 세션 로깅 스킬

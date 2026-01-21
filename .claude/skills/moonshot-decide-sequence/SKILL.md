@@ -59,6 +59,15 @@ Include only stages to run **after moonshot-decide-sequence** (do not include mo
 
 Complex always includes the Codex three-step validation.
 
+**Testing Integration** (ref: `.claude/rules/testing.md`):
+- Complex chain always includes `codex-test-integration`
+- Request additional tests if coverage < 80%
+- API changes require integration tests
+
+**Security & Build Error Integration**:
+- `security-reviewer`: Triggered when security concern detected (auth changes, env file modified, new dependencies)
+- `build-error-resolver`: Triggered when `tsc`/`build` fails, inserted before next implementation step
+
 ## Parallel execution guide
 Only run dependency-free steps in parallel. If results affect the next stage, do not parallelize.
 
