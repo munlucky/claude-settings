@@ -32,3 +32,10 @@ If security issue found:
 2. Fix CRITICAL issues before continuing
 3. Rotate any exposed secrets
 4. Review entire codebase for similar issues
+
+## Memory MCP Security
+
+When using Memory MCP:
+- **No sensitive data**: Never store passwords, API keys, or personal information in memory
+- **Git management**: Add `.claude/memory.json` to `.gitignore`
+- **Size management**: Store only essential context, not large data
