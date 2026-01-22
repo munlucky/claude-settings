@@ -431,8 +431,8 @@ try:
             print(f"  ⚠ {name}: command가 없어 건너뜁니다")
             continue
         
-        # claude mcp add 명령어 구성
-        cmd = ["claude", "mcp", "add", "-s", "user", name, command]
+        # claude mcp add 명령어 구성 (프로젝트별 설정)
+        cmd = ["claude", "mcp", "add", "-s", "project", name, command]
         cmd.extend(args)
         
         # 환경변수 추가
