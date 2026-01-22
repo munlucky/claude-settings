@@ -402,10 +402,75 @@ if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 	done
 fi
 
-# 8. 정리
+# 8. MCP 서버 전역 설정에 추가
+if [ -f ".claude/.mcp.json" ] && [ -n "$PYTHON_CMD" ]; then
+	echo ""
+	print_info "MCP 서버를 전역 설정에 추가하는 중..."
+	
+	# claude 명령어 확인
+	if command -v claude &>/dev/null; then
+		$PYTHON_CMD - ".claude/.mcp.json" <<'PY'
+import json
+import sys
+import subprocess
+
+mcp_file = sys.argv[1]
+
+try:
+    with open(mcp_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    servers = data.get("mcpServers", {})
+    
+    for name, config in servers.items():
+        command = config.get("command", "")
+        args = config.get("args", [])
+        env = config.get("env", {})
+        
+        if not command:
+            print(f"  ⚠ {name}: command가 없어 건너뜁니다")
+            continue
+        
+        # claude mcp add 명령어 구성
+        cmd = ["claude", "mcp", "add", "-s", "user", name, command]
+        cmd.extend(args)
+        
+        # 환경변수 추가
+        for key, value in env.items():
+            cmd.insert(4, f"{key}={value}")
+            cmd.insert(4, "-e")
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                print(f"  ✓ {name}: 추가 완료")
+            elif "already exists" in result.stderr.lower():
+                print(f"  ✓ {name}: 이미 존재함")
+            else:
+                print(f"  ⚠ {name}: {result.stderr.strip() or '추가 실패'}")
+        except subprocess.TimeoutExpired:
+            print(f"  ⚠ {name}: 타임아웃")
+        except Exception as e:
+            print(f"  ⚠ {name}: {str(e)}")
+
+except json.JSONDecodeError as e:
+    print(f"  ✗ JSON 파싱 오류: {e}")
+except Exception as e:
+    print(f"  ✗ 오류: {e}")
+PY
+		print_info "✓ MCP 서버 설정 완료"
+	else
+		print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
+		print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요."
+	fi
+elif [ -f ".claude/.mcp.json" ]; then
+	print_warn "Python이 없어 MCP 자동 설정을 건너뜁니다."
+fi
+
+# 9. 정리
 rm -rf "$TEMP_DIR"
 
-# 9. 성공 메시지
+# 10. 성공 메시지
 echo ""
 echo -e "${GREEN}=========================================${NC}"
 echo -e "${GREEN}  설치 완료!${NC}"
@@ -469,7 +534,7 @@ if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
 	done
 fi
 
-# 10. .codex 설정 여부 확인
+# 11. .codex 설정 여부 확인
 echo ""
 if [ ! -d ".codex" ]; then
 	echo ""
