@@ -38,6 +38,7 @@ signals:
   implementationComplete: false
   hasMockImplementation: false
   apiSpecConfirmed: false
+  reactProject: false  # React/Next.js project detected
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -197,6 +198,7 @@ During skillChain execution, dynamically inject skills when signals detected:
 | `buildFailed` | Bash exit code ≠ 0 | build-error-resolver | Before retry current step |
 | `securityConcern` | Changed files contain `.env`, `auth`, `password`, `token` | security-reviewer | After codex-review-code |
 | `coverageLow` | Coverage < 80% from codex-test-integration output | (request additional tests) | After codex-test-integration |
+| `reactProject` | `.tsx`/`.jsx` files or React keywords | (codex-review-code extended) | Within codex-review-code |
 
 **Signal Detection:**
 ```yaml
@@ -218,6 +220,26 @@ securityConcern:
 coverageLow:
   trigger: codex-test-integration reports coverage < 80%
   action: Log warning, request additional tests from user
+
+reactProject:
+  trigger: |
+    changedFiles.any(f =>
+      f.endsWith('.tsx') || f.endsWith('.jsx') ||
+      f.includes('/pages/') || f.includes('/app/') ||
+      f.includes('/components/')
+    ) ||
+    request.keywords.any(k =>
+      ['react', 'next', 'next.js', 'nextjs', 'jsx', 'tsx', 'useState', 'useEffect'].includes(k.toLowerCase())
+    )
+  action: |
+    - Set signals.reactProject = true
+    - Extend codex-review-code MUST DO with React performance rules:
+      * Waterfall pattern (sequential await → Promise.all)
+      * Barrel file imports (direct import recommended)
+      * Missing dynamic imports for heavy components
+      * RSC serialization: passing entire objects instead of needed fields
+      * Missing Suspense boundaries for async components
+    - Reference: `.claude/skills/vercel-react-best-practices/SKILL.md`
 ```
 
 ### 3.2 Completion Verification Loop

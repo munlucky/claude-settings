@@ -38,6 +38,7 @@ signals:
   implementationComplete: false
   hasMockImplementation: false
   apiSpecConfirmed: false
+  reactProject: false  # React/Next.js 프로젝트 감지
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -197,6 +198,7 @@ skillChain 실행 중 시그널 감지 시 스킬 동적 삽입:
 | `buildFailed` | Bash exit code ≠ 0 | build-error-resolver | 현재 단계 재시도 전 |
 | `securityConcern` | 변경 파일에 `.env`, `auth`, `password`, `token` 포함 | security-reviewer | codex-review-code 후 |
 | `coverageLow` | codex-test-integration 출력에서 커버리지 < 80% | (추가 테스트 요청) | codex-test-integration 후 |
+| `reactProject` | `.tsx`/`.jsx` 파일 또는 React 키워드 | (codex-review-code 확장) | codex-review-code 내부 |
 
 **시그널 감지:**
 ```yaml
@@ -218,6 +220,26 @@ securityConcern:
 coverageLow:
   trigger: codex-test-integration에서 커버리지 < 80% 보고
   action: 경고 로깅, 사용자에게 추가 테스트 요청
+
+reactProject:
+  trigger: |
+    changedFiles.any(f =>
+      f.endsWith('.tsx') || f.endsWith('.jsx') ||
+      f.includes('/pages/') || f.includes('/app/') ||
+      f.includes('/components/')
+    ) ||
+    request.keywords.any(k =>
+      ['react', 'next', 'next.js', 'nextjs', 'jsx', 'tsx', 'useState', 'useEffect'].includes(k.toLowerCase())
+    )
+  action: |
+    - signals.reactProject = true 설정
+    - codex-review-code MUST DO에 React 성능 규칙 추가:
+      * 워터폴 패턴 (순차 await → Promise.all)
+      * 배럴 파일 import (직접 import 권장)
+      * 무거운 컴포넌트의 dynamic import 누락
+      * RSC 직렬화: 필요한 필드 대신 전체 객체 전달
+      * async 컴포넌트의 Suspense 경계 누락
+    - 참고: `.claude/skills/vercel-react-best-practices/SKILL.md`
 ```
 
 ### 3.2 Completion Verification Loop

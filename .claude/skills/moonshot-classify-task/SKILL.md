@@ -20,12 +20,21 @@ context: fork
 - bugfix: "bug", "error", "broken", "fails"
 - refactor: "refactor", "clean up", "restructure", "remove duplication"
 
+## Technology Stack Detection
+
+React/Next.js 키워드 감지 시 시그널 설정:
+- Keywords: "react", "next", "next.js", "nextjs", "jsx", "tsx", "useState", "useEffect"
+- Output: `signals.reactProject: true`
+
 ## Output (patch)
 ```yaml
 request.taskType: feature
 request.keywords:
   - implement
-  - batch
+  - react
+signals:
+  reactProject: true  # Set when React/Next.js keywords detected
 notes:
   - "taskType=feature, confidence=high"
+  - "tech-stack: react/next.js detected"  # Add when reactProject=true
 ```
