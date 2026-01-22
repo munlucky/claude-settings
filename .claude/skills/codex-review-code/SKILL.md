@@ -60,6 +60,13 @@ MUST DO:
   * Deep nesting (>4 levels)
   * Missing error handling (try/catch)
   * console.log statements
+- **React/Next.js Performance (CRITICAL)** [if signals.reactProject]:
+  * Sequential await instead of Promise.all() (waterfall pattern)
+  * Barrel file imports (`import { X } from 'lib'` → direct import)
+  * Missing dynamic imports for heavy components
+  * RSC serialization: passing entire objects instead of needed fields
+  * Missing Suspense boundaries for async components
+  Reference: `.claude/skills/vercel-react-best-practices/SKILL.md`
 - Focus on issues that matter, not style nitpicks
 - Check logic/flow errors and edge cases
 - Validate type safety and error handling

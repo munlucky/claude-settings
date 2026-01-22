@@ -26,6 +26,7 @@ signals:
   implementationComplete: false
   hasMockImplementation: false
   apiSpecConfirmed: false
+  reactProject: false
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
