@@ -432,13 +432,18 @@ try:
             continue
         
         # claude mcp add 명령어 구성 (프로젝트별 설정)
-        cmd = ["claude", "mcp", "add", "-s", "project", name, command]
-        cmd.extend(args)
+        cmd = ["claude", "mcp", "add", "-s", "project"]
         
-        # 환경변수 추가
+        # 환경변수 추가 (-s project 뒤에 위치)
         for key, value in env.items():
-            cmd.insert(4, f"{key}={value}")
-            cmd.insert(4, "-e")
+            cmd.extend(["-e", f"{key}={value}"])
+
+        cmd.extend([name, command])
+
+        # 인자에 -로 시작하는 값이 있으면 옵션으로 해석되는 것을 방지
+        if args:
+            cmd.append("--")
+            cmd.extend(args)
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
