@@ -113,6 +113,7 @@ usage() {
   --dry-run              실제 변경 없이 미리보기만
   --force                (deprecated, 자동 백업 후 설치)
   --include-project      PROJECT.md 포함 (기본값: 제외)
+  --debug                MCP 추가 명령 디버그 출력
   --exclude PATTERN      추가로 특정 파일/디렉토리 제외
   -h, --help             도움말 출력
 
@@ -144,6 +145,7 @@ DO_BACKUP=true
 DRY_RUN=false
 FORCE=false
 INCLUDE_PROJECT=false
+DEBUG_MCP=false
 EXCLUDE_PATTERNS=()
 
 while [[ $# -gt 0 ]]; do
@@ -162,6 +164,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--include-project)
 		INCLUDE_PROJECT=true
+		shift
+		;;
+	--debug)
+		DEBUG_MCP=true
 		shift
 		;;
 	--exclude)
@@ -409,8 +415,9 @@ if [ -f ".claude/.mcp.json" ] && [ -n "$PYTHON_CMD" ]; then
 	
 	# claude 명령어 확인
 	if command -v claude &>/dev/null; then
-		$PYTHON_CMD - ".claude/.mcp.json" <<'PY'
+		MCP_DEBUG="$DEBUG_MCP" $PYTHON_CMD - ".claude/.mcp.json" <<'PY'
 import json
+import os
 import sys
 import subprocess
 import shlex
@@ -423,6 +430,8 @@ try:
     
     servers = data.get("mcpServers", {})
     
+    debug = os.environ.get("MCP_DEBUG", "").lower() in ("1", "true", "yes")
+
     for name, config in servers.items():
         command = config.get("command", "")
         args = config.get("args", [])
@@ -446,7 +455,8 @@ try:
         if args:
             cmd.extend(args)
 
-        print(f"  [DEBUG] {name}: " + " ".join(shlex.quote(part) for part in cmd))
+        if debug:
+            print(f"  [DEBUG] {name}: " + " ".join(shlex.quote(part) for part in cmd))
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
