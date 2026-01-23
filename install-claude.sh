@@ -413,6 +413,7 @@ if [ -f ".claude/.mcp.json" ] && [ -n "$PYTHON_CMD" ]; then
 import json
 import sys
 import subprocess
+import shlex
 
 mcp_file = sys.argv[1]
 
@@ -438,12 +439,14 @@ try:
         for key, value in env.items():
             cmd.extend(["-e", f"{key}={value}"])
 
+        # 옵션 파싱 종료: -e가 name을 흡수하거나 -로 시작하는 인자를 옵션으로 해석하는 것을 방지
+        cmd.append("--")
         cmd.extend([name, command])
 
-        # 인자에 -로 시작하는 값이 있으면 옵션으로 해석되는 것을 방지
         if args:
-            cmd.append("--")
             cmd.extend(args)
+
+        print(f"  [DEBUG] {name}: " + " ".join(shlex.quote(part) for part in cmd))
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
