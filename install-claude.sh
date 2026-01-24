@@ -445,6 +445,11 @@ try:
         args = config.get("args", [])
         env = config.get("env", {})
 
+        # 0. 메모리 서버 전용 환경변수 강제 설정 (프로젝트 격리)
+        if name == "memory" and "MEMORY_FILE_PATH" not in env:
+            env["MEMORY_FILE_PATH"] = ".claude/memory.json"
+
+
         # 1. NPM 패키지 설치 확인 및 실행
         if name in npm_packages:
             pkg = npm_packages[name]
