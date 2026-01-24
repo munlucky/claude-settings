@@ -438,31 +438,65 @@ try:
         "memory": "@modelcontextprotocol/server-memory"
     }
 
+    mcp_support_dir = os.path.join(".claude", "mcp-support")
+
     for name, config in servers.items():
+        command = config.get("command", "")
+        args = config.get("args", [])
+        env = config.get("env", {})
+
         # 1. NPM 패키지 설치 확인 및 실행
         if name in npm_packages:
             pkg = npm_packages[name]
             if shutil.which("npm"):
                 print(f"  [INFO] {name}: NPM 패키지 설치 확인 중 ({pkg})...")
                 try:
-                    # -g 모드로 설치 (이미 최신이면 npm이 알아서 처리하거나 빠르게 넘어감)
-                    npm_cmd = ["npm", "install", "-g", pkg]
+                    # 로컬 디렉토리(.claude/mcp-support)에 설치
+                    os.makedirs(mcp_support_dir, exist_ok=True)
+                    
+                    # --prefix 옵션으로 로컬 설치
+                    npm_cmd = ["npm", "install", "--prefix", mcp_support_dir, pkg]
                     if debug:
                         print(f"    [DEBUG] Running: {' '.join(npm_cmd)}")
                     
-                    # stdio를 devnull로 보내거나 capture하여 지저분한 로그 방지 (오류만 출력)
-                    subprocess.run(npm_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                    print(f"  ✓ {name}: NPM 패키지 설치 완료")
+                    subprocess.run(npm_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=True)
+                    print(f"  ✓ {name}: NPM 패키지 로컬 설치 완료")
+
+                    # 설치된 패키지 경로 찾기 및 명령어 재구성
+                    pkg_path = os.path.join(mcp_support_dir, "node_modules", pkg)
+                    pkg_json_path = os.path.join(pkg_path, "package.json")
+                    
+                    if os.path.exists(pkg_json_path):
+                        with open(pkg_json_path, 'r', encoding='utf-8') as f:
+                            pkg_data = json.load(f)
+                        
+                        bin_entry = pkg_data.get("bin")
+                        script_rel = ""
+                        if isinstance(bin_entry, str):
+                            script_rel = bin_entry
+                        elif isinstance(bin_entry, dict) and bin_entry:
+                            # 첫 번째 bin 항목 사용
+                            script_rel = list(bin_entry.values())[0]
+                        
+                        if script_rel:
+                            script_abs = os.path.abspath(os.path.join(pkg_path, script_rel))
+                            # 원래 명령어를 node + 절대경로로 교체
+                            command = "node"
+                            args = [script_abs] + args
+                            print(f"    └ 실행 경로: {script_abs}")
+                        else:
+                             print(f"  ⚠ {name}: package.json에 bin 항목이 없습니다.")
+                    else:
+                        print(f"  ⚠ {name}: package.json을 찾을 수 없습니다 ({pkg_path})")
+
                 except subprocess.CalledProcessError as e:
                     print(f"  ⚠ {name}: NPM 설치 실패 - {e.stderr.decode().strip()}")
                 except Exception as e:
-                    print(f"  ⚠ {name}: NPM 실행 중 오류 - {str(e)}")
+                    print(f"  ⚠ {name}: NPM 실행/설정 중 오류 - {str(e)}")
             else:
                 print(f"  ⚠ {name}: npm을 찾을 수 없어 패키지 설치를 건너뜁니다.")
 
-        command = config.get("command", "")
-        args = config.get("args", [])
-        env = config.get("env", {})
+
         
         if not command:
             print(f"  ⚠ {name}: command가 없어 건너뜁니다")
