@@ -49,7 +49,9 @@
       "WebSearch",
       "Bash(claude mcp list:*)",
       "Bash(npx:*)",
-      "mcp__memory__create_entities"
+      "mcp__memory__create_entities",
+      "Skill(commit)",
+      "Skill(commit:*)"
     ],
     "deny": [],
     "ask": []
