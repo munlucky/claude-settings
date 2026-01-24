@@ -5,8 +5,8 @@
       "args": ["codex-as-mcp@latest"]
     },
     "memory": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "command": "node",
+      "args": [],
       "env": {
         "MEMORY_FILE_PATH": ".claude/memory.json"
       }
