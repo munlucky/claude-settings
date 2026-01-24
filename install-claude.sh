@@ -421,6 +421,7 @@ import os
 import sys
 import subprocess
 import shlex
+import shutil
 
 mcp_file = sys.argv[1]
 
@@ -432,7 +433,33 @@ try:
     
     debug = os.environ.get("MCP_DEBUG", "").lower() in ("1", "true", "yes")
 
+    # NPM 설치가 필요한 MCP 서버 목록
+    npm_packages = {
+        "memory": "@modelcontextprotocol/server-memory"
+    }
+
     for name, config in servers.items():
+        # 1. NPM 패키지 설치 확인 및 실행
+        if name in npm_packages:
+            pkg = npm_packages[name]
+            if shutil.which("npm"):
+                print(f"  [INFO] {name}: NPM 패키지 설치 확인 중 ({pkg})...")
+                try:
+                    # -g 모드로 설치 (이미 최신이면 npm이 알아서 처리하거나 빠르게 넘어감)
+                    npm_cmd = ["npm", "install", "-g", pkg]
+                    if debug:
+                        print(f"    [DEBUG] Running: {' '.join(npm_cmd)}")
+                    
+                    # stdio를 devnull로 보내거나 capture하여 지저분한 로그 방지 (오류만 출력)
+                    subprocess.run(npm_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                    print(f"  ✓ {name}: NPM 패키지 설치 완료")
+                except subprocess.CalledProcessError as e:
+                    print(f"  ⚠ {name}: NPM 설치 실패 - {e.stderr.decode().strip()}")
+                except Exception as e:
+                    print(f"  ⚠ {name}: NPM 실행 중 오류 - {str(e)}")
+            else:
+                print(f"  ⚠ {name}: npm을 찾을 수 없어 패키지 설치를 건너뜁니다.")
+
         command = config.get("command", "")
         args = config.get("args", [])
         env = config.get("env", {})
