@@ -169,6 +169,7 @@ Run `decisions.skillChain` in order:
 - `implementation-runner`: implementation agent (Task tool)
 - `completion-verifier`: test-based completion verification skill
 - `codex-review-code`: Codex code review skill
+- `vercel-react-best-practices`: React/Next.js performance optimization review skill
 - `security-reviewer`: security vulnerability review skill
 - `build-error-resolver`: build/compile error resolution skill
 - `verify-changes.sh`: verification script (Bash tool)
@@ -183,6 +184,14 @@ Run `decisions.skillChain` in order:
 5. If a parallel group exists, parallelize only within that group
 6. If an undefined step appears, ask the user and stop
 7. **All agents/skills must follow** `.claude/docs/guidelines/document-memory-policy.md`
+
+**Skill-specific execution:**
+
+For `vercel-react-best-practices`:
+- Triggered when `signals.reactProject = true`
+- Execute using: `Skill tool` with `skill: "vercel-react-best-practices"`
+- The skill will analyze changed files for React/Next.js performance issues
+- Merge findings into `analysisContext.notes`
 
 **Agent mapping:**
 - `requirements-analyzer` -> `subagent_type: "general-purpose"` + prompt
@@ -233,13 +242,8 @@ reactProject:
     )
   action: |
     - Set signals.reactProject = true
-    - Extend codex-review-code MUST DO with React performance rules:
-      * Waterfall pattern (sequential await → Promise.all)
-      * Barrel file imports (direct import recommended)
-      * Missing dynamic imports for heavy components
-      * RSC serialization: passing entire objects instead of needed fields
-      * Missing Suspense boundaries for async components
-    - Reference: `.claude/skills/vercel-react-best-practices/SKILL.md`
+    - Inject vercel-react-best-practices after codex-review-code in skillChain
+    - When executing: Use Skill tool with skill="vercel-react-best-practices"
 ```
 
 ### 3.2 Completion Verification Loop
