@@ -59,11 +59,11 @@
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \".claude/scripts/check-mcp.sh\"",
-            "timeout": 10
+            "command": "bash \".claude/scripts/check-mcp.sh\""
           }
         ]
       }
