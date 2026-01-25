@@ -169,6 +169,7 @@ notes: []
 - `implementation-runner`: 구현 에이전트 (Task tool)
 - `completion-verifier`: 테스트 기반 완료 검증 스킬
 - `codex-review-code`: Codex 코드 리뷰 스킬
+- `vercel-react-best-practices`: React/Next.js 성능 최적화 리뷰 스킬
 - `security-reviewer`: 보안 취약점 검토 스킬
 - `build-error-resolver`: 빌드/컴파일 에러 해결 스킬
 - `verify-changes.sh`: 검증 스크립트 (Bash tool)
@@ -183,6 +184,14 @@ notes: []
 5. 병렬 그룹이 있으면 해당 그룹 내에서만 병렬 실행
 6. 정의되지 않은 단계 발견 시 사용자에게 확인 요청 후 중단
 7. **모든 에이전트/스킬은** `.claude/docs/guidelines/document-memory-policy.md` 준수
+
+**스킬별 실행 방법:**
+
+`vercel-react-best-practices`의 경우:
+- `signals.reactProject = true`일 때 트리거
+- `Skill 도구`로 `skill: "vercel-react-best-practices"` 사용하여 실행
+- 변경된 파일을 분석하여 React/Next.js 성능 이슈 확인
+- 분석 결과를 `analysisContext.notes`에 병합
 
 **에이전트 매핑:**
 - `requirements-analyzer` → `subagent_type: "general-purpose"` + 프롬프트
@@ -233,13 +242,8 @@ reactProject:
     )
   action: |
     - signals.reactProject = true 설정
-    - codex-review-code MUST DO에 React 성능 규칙 추가:
-      * 워터폴 패턴 (순차 await → Promise.all)
-      * 배럴 파일 import (직접 import 권장)
-      * 무거운 컴포넌트의 dynamic import 누락
-      * RSC 직렬화: 필요한 필드 대신 전체 객체 전달
-      * async 컴포넌트의 Suspense 경계 누락
-    - 참고: `.claude/skills/vercel-react-best-practices/SKILL.md`
+    - codex-review-code 이후 skillChain에 vercel-react-best-practices 삽입
+    - 실행 시: Skill 도구로 skill="vercel-react-best-practices" 사용
 ```
 
 ### 3.2 Completion Verification Loop
