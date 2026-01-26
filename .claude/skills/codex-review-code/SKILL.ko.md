@@ -13,18 +13,47 @@ context: fork
 - 중요한 변경사항 병합 전
 
 ## 절차
-1. 변경 범위, 변경된 파일, 핵심 동작 요약
-2. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
-3. 아래 7-섹션 형식으로 위임 프롬프트 구성
-4. **Codex 먼저 시도**:
+
+### 1단계: MCP 가용성 확인 (필수 - 최우선 수행)
+리뷰 작업 전, Codex MCP 사용 가능 여부를 먼저 확인합니다:
+
+```typescript
+// 간단한 MCP 호출로 가용성 확인
+try {
+  mcp__codex__codex({
+    prompt: "ping",
+    sandbox: "read-only",
+    cwd: process.cwd()
+  })
+  // 성공하면 MCP 사용 가능
+} catch (error) {
+  // MCP 사용 불가 - Claude 폴백으로 진행
+}
+```
+
+**MCP 사용 불가 조건:**
+- 도구를 찾을 수 없음 / 등록되지 않음
+- "quota exceeded", "rate limit", "API error", "unavailable"
+- 연결 타임아웃
+- 모든 에러 응답
+
+### 2-8단계: 리뷰 프로세스
+
+2. 변경 범위, 변경된 파일, 핵심 동작 요약
+3. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
+4. 아래 7-섹션 형식으로 위임 프롬프트 구성
+
+5. **MCP 사용 가능한 경우 (1단계에서 확인)**:
    - `mcp__codex__codex` 호출 (developer-instructions에 Code Reviewer 지침 포함)
-   - 성공 시 6단계로 진행
-5. **Claude로 폴백** (Codex 사용 불가 시):
-   - 에러 조건: "quota exceeded", "rate limit", "API error", "unavailable"
+   - 성공 시 7단계로 진행
+
+6. **MCP 사용 불가한 경우 (1단계에서 확인)**:
    - Claude가 아래 Code Reviewer 지침에 따라 직접 코드 리뷰 수행
-   - 노트 추가: `"codex-fallback: Claude가 직접 리뷰 수행"`
-6. 중대 이슈, 경고, 제안사항 기록
-7. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
+   - 노트 추가: `"codex-fallback: Claude가 직접 리뷰 수행 (MCP 사용 불가)"`
+   - 동일한 MUST DO / MUST NOT DO 기준 따르기
+
+7. 중대 이슈, 경고, 제안사항 기록
+8. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## 위임 형식
 
@@ -87,7 +116,7 @@ OUTPUT FORMAT:
 - ❌ **REJECT**: CRITICAL/HIGH 이슈 발견
 ```
 
-## 도구 호출
+## 도구 호출 (MCP 사용 가능 시)
 
 ```typescript
 mcp__codex__codex({
@@ -97,6 +126,15 @@ mcp__codex__codex({
   cwd: "[현재 작업 디렉터리]"
 })
 ```
+
+## Claude 폴백 (MCP 사용 불가 시)
+
+MCP를 사용할 수 없을 때, Claude가 직접 리뷰를 수행합니다:
+
+1. 동일한 7-섹션 형식을 자체 리뷰 체크리스트로 적용
+2. 모든 MUST DO / MUST NOT DO 기준 준수
+3. 동일한 형식으로 출력: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
+4. 폴백 모드 사용 표시 노트 추가
 
 ## 구현 모드 (자동 수정)
 
@@ -115,6 +153,8 @@ mcp__codex__codex({
 ```yaml
 notes:
   - "codex-review: [APPROVE/REJECT], critical=[개수], warnings=[개수]"
+  # 폴백 사용 시:
+  - "codex-fallback: Claude가 직접 리뷰 수행 (MCP 사용 불가)"
 ```
 
 ## Review-Fix Loop (자동 수정 모드)

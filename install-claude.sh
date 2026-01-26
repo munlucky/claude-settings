@@ -189,6 +189,9 @@ if [ "$INCLUDE_PROJECT" = false ]; then
 	EXCLUDE_PATTERNS+=("PROJECT.md")
 fi
 
+# .mcp.json은 전역 설치 후 불필요하므로 항상 제외
+EXCLUDE_PATTERNS+=(".mcp.json")
+
 # 사용자 파일 자동 보호 (기존 .claude가 있을 경우)
 USER_FILES=()
 SEEN_FILES_LIST="" # 중복 방지를 위한 문자열 목록
@@ -408,14 +411,15 @@ if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 	done
 fi
 
-# 8. MCP 서버 전역 설정에 추가
-if [ -f ".claude/.mcp.json" ] && [ -n "$PYTHON_CMD" ]; then
+# 8. MCP 서버 전역 설정에 추가 (TEMP_DIR에서 직접 읽음 - 프로젝트에는 복사하지 않음)
+MCP_SOURCE_FILE="$TEMP_DIR/claude-settings-$BRANCH/.claude/.mcp.json"
+if [ -f "$MCP_SOURCE_FILE" ] && [ -n "$PYTHON_CMD" ]; then
 	echo ""
 	print_info "MCP 서버를 전역 설정에 추가하는 중..."
 	
 	# claude 명령어 확인
 	if command -v claude &>/dev/null; then
-		MCP_DEBUG="$DEBUG_MCP" $PYTHON_CMD - ".claude/.mcp.json" <<'PY'
+		MCP_DEBUG="$DEBUG_MCP" $PYTHON_CMD - "$MCP_SOURCE_FILE" <<'PY'
 import json
 import os
 import sys
@@ -507,8 +511,9 @@ try:
             print(f"  ⚠ {name}: command가 없어 건너뜁니다")
             continue
         
-        # claude mcp add 명령어 구성 (프로젝트별 설정)
-        cmd = ["claude", "mcp", "add", "-s", "project"]
+        # claude mcp add 명령어 구성 (전역 설정)
+        cmd = ["claude", "mcp", "add", "-s", "user", name, command]
+        cmd.extend(args)
         
         # 환경변수 추가 (-s project 뒤에 위치)
         for key, value in env.items():
@@ -542,13 +547,68 @@ except json.JSONDecodeError as e:
 except Exception as e:
     print(f"  ✗ 오류: {e}")
 PY
-		print_info "✓ MCP 서버 설정 완료"
+		print_info "✓ MCP 서버 전역 설정 완료"
 	else
 		print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
 		print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요."
 	fi
-elif [ -f ".claude/.mcp.json" ]; then
+elif [ -f "$MCP_SOURCE_FILE" ]; then
 	print_warn "Python이 없어 MCP 자동 설정을 건너뜁니다."
+fi
+
+# 8.5. claude-delegator 플러그인 설치 안내
+echo ""
+print_info "claude-delegator 플러그인 설정 확인 중..."
+
+# Codex CLI 설치 여부 확인
+CODEX_INSTALLED=false
+if command -v codex &>/dev/null; then
+	CODEX_INSTALLED=true
+	print_info "✓ Codex CLI가 이미 설치되어 있습니다."
+else
+	print_warn "Codex CLI가 설치되어 있지 않습니다."
+	echo ""
+	read -p "Codex CLI를 설치하시겠습니까? (y/N): " -n 1 -r
+	echo
+	if [[ $REPLY =~ ^[Yy]$ ]]; then
+		print_info "Codex CLI 설치 중..."
+		if npm install -g @openai/codex; then
+			CODEX_INSTALLED=true
+			print_info "✓ Codex CLI 설치 완료"
+			echo ""
+			print_warn "Codex 인증이 필요합니다. 다음 명령어를 실행하세요:"
+			echo "  codex login"
+		else
+			print_error "Codex CLI 설치 실패"
+		fi
+	else
+		print_info "Codex CLI 설치를 건너뜁니다."
+	fi
+fi
+
+# claude-delegator 플러그인 설치 안내
+echo ""
+echo -e "${YELLOW}=========================================${NC}"
+echo -e "${YELLOW}  claude-delegator 플러그인 설치 안내${NC}"
+echo -e "${YELLOW}=========================================${NC}"
+echo ""
+echo "Claude Code에서 다음 명령어를 순서대로 실행하세요:"
+echo ""
+echo "  1. 마켓플레이스 추가:"
+echo -e "     ${GREEN}/plugin marketplace add jarrodwatts/claude-delegator${NC}"
+echo ""
+echo "  2. 플러그인 설치:"
+echo -e "     ${GREEN}/plugin install claude-delegator${NC}"
+echo ""
+echo "  3. 설정 실행:"
+echo -e "     ${GREEN}/claude-delegator:setup${NC}"
+echo ""
+
+if [ "$CODEX_INSTALLED" = false ]; then
+	print_warn "주의: claude-delegator를 사용하려면 Codex CLI가 필요합니다."
+	echo "  npm install -g @openai/codex"
+	echo "  codex login"
+	echo ""
 fi
 
 # 9. 정리

@@ -13,18 +13,47 @@ context: fork
 - Before merging significant changes
 
 ## Procedure
-1. Summarize change scope, changed files, and key behaviors
-2. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
-3. Build delegation prompt using the 7-section format below
-4. **Try Codex first**:
+
+### Step 1: Check MCP Availability (CRITICAL - Do This First)
+Before any review work, verify Codex MCP is available:
+
+```typescript
+// Try a simple MCP call to check availability
+try {
+  mcp__codex__codex({
+    prompt: "ping",
+    sandbox: "read-only",
+    cwd: process.cwd()
+  })
+  // If successful, MCP is available
+} catch (error) {
+  // MCP not available - proceed with Claude fallback
+}
+```
+
+**MCP Unavailable Conditions:**
+- Tool not found / not registered
+- "quota exceeded", "rate limit", "API error", "unavailable"
+- Connection timeout
+- Any error response
+
+### Step 2-7: Review Process
+
+2. Summarize change scope, changed files, and key behaviors
+3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
+4. Build delegation prompt using the 7-section format below
+
+5. **If MCP is available (from Step 1)**:
    - Call `mcp__codex__codex` (include Code Reviewer instructions in developer-instructions)
-   - If successful, proceed to step 6
-5. **Fallback to Claude** (if Codex unavailable):
-   - Error conditions: "quota exceeded", "rate limit", "API error", "unavailable"
+   - If successful, proceed to step 7
+
+6. **If MCP is unavailable (from Step 1)**:
    - Claude directly performs code review following the Code Reviewer guidelines below
-   - Add note: `"codex-fallback: Claude performed review directly"`
-6. Record critical issues, warnings, and suggestions
-7. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
+   - Add note: `"codex-fallback: Claude performed review directly (MCP unavailable)"`
+   - Follow the same MUST DO / MUST NOT DO criteria
+
+7. Record critical issues, warnings, and suggestions
+8. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 
@@ -87,7 +116,7 @@ Summary → Critical issues → Warnings → Recommendations → Verdict (APPROV
 - ❌ **REJECT**: CRITICAL/HIGH issues found
 ```
 
-## Tool Call
+## Tool Call (When MCP Available)
 
 ```typescript
 mcp__codex__codex({
@@ -97,6 +126,15 @@ mcp__codex__codex({
   cwd: "[current working directory]"
 })
 ```
+
+## Claude Fallback (When MCP Unavailable)
+
+When MCP is not available, Claude performs the review directly:
+
+1. Apply the same 7-section format as a self-review checklist
+2. Follow all MUST DO / MUST NOT DO criteria
+3. Output in the same format: Summary → Critical issues → Warnings → Recommendations → Verdict
+4. Add note indicating fallback mode was used
 
 ## For Implementation Mode (Auto-fix)
 
@@ -115,6 +153,8 @@ mcp__codex__codex({
 ```yaml
 notes:
   - "codex-review: [APPROVE/REJECT], critical=[count], warnings=[count]"
+  # If fallback was used:
+  - "codex-fallback: Claude performed review directly (MCP unavailable)"
 ```
 
 ## Review-Fix Loop (Auto-Fix Mode)
