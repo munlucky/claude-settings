@@ -55,8 +55,10 @@ notes: []
 skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함한다(moonshot-* 스킬은 포함하지 않음).
 
 - simple: implementation-runner -> verify-changes.sh
-- medium: requirements-analyzer -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker
-- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
+- medium: requirements-analyzer -> project-memory-check -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker
+- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
+
+**참고**: `project-memory-check`는 계획 완료 후, 구현 시작 전에 실행되어 경계 준수 여부를 확인한다.
 
 complex는 항상 테스트 기반 완료 검증을 포함한다.
 
