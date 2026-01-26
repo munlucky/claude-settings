@@ -59,6 +59,15 @@ tokenBudget:
   splitTrigger: 5              # 독립 기능 수
   contextMaxTokens: 8000
   warningThreshold: 0.8
+projectMemory:
+  projectId: null
+  boundaryStatus: "not_checked"  # not_checked|ok|violation|needs_approval|not_initialized
+  boundary:
+    violations: []
+    needsApproval: []
+    reminders: []
+  relatedConventions: []
+  lastChecked: null
 notes: []
 ```
 
@@ -166,6 +175,7 @@ notes: []
 - `requirements-analyzer`: 요구사항 분석 에이전트 (Task tool)
 - `context-builder`: 컨텍스트 구축 에이전트 (Task tool)
 - `codex-validate-plan`: Codex 계획 검증 스킬
+- `project-memory-check`: 프로젝트 메모리 경계/규약 확인 스킬
 - `implementation-runner`: 구현 에이전트 (Task tool)
 - `completion-verifier`: 테스트 기반 완료 검증 스킬
 - `codex-review-code`: Codex 코드 리뷰 스킬

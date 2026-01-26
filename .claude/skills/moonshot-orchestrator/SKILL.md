@@ -59,6 +59,15 @@ tokenBudget:
   splitTrigger: 5              # independent features
   contextMaxTokens: 8000
   warningThreshold: 0.8
+projectMemory:
+  projectId: null
+  boundaryStatus: "not_checked"  # not_checked|ok|violation|needs_approval|not_initialized
+  boundary:
+    violations: []
+    needsApproval: []
+    reminders: []
+  relatedConventions: []
+  lastChecked: null
 notes: []
 ```
 
@@ -166,6 +175,7 @@ Run `decisions.skillChain` in order:
 - `requirements-analyzer`: requirements analysis agent (Task tool)
 - `context-builder`: context-building agent (Task tool)
 - `codex-validate-plan`: Codex plan validation skill
+- `project-memory-check`: project memory boundary/convention check skill
 - `implementation-runner`: implementation agent (Task tool)
 - `completion-verifier`: test-based completion verification skill
 - `codex-review-code`: Codex code review skill
