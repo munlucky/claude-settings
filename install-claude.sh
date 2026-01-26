@@ -442,16 +442,27 @@ try:
         "memory": "@modelcontextprotocol/server-memory"
     }
 
-    mcp_support_dir = os.path.join(".claude", "mcp-support")
+    # 기본 로컬 경로
+    local_mcp_support_dir = os.path.join(".claude", "mcp-support")
+    # 전역 경로 (사용자 홈 디렉토리 하위)
+    global_mcp_support_dir = os.path.join(os.path.expanduser("~"), ".claude", "global-mcp-support")
 
     for name, config in servers.items():
         command = config.get("command", "")
         args = config.get("args", [])
         env = config.get("env", {})
 
-        # 0. 메모리 서버 전용 환경변수 강제 설정 (프로젝트 격리)
+        # 타겟 디렉토리 결정 (memory 패키지는 전역 설치)
+        is_global = (name == "memory")
+        mcp_support_dir = global_mcp_support_dir if is_global else local_mcp_support_dir
+
+        # 0. 메모리 서버 전용 환경변수 강제 설정
         if name == "memory" and "MEMORY_FILE_PATH" not in env:
-            env["MEMORY_FILE_PATH"] = ".claude/memory.json"
+            if is_global:
+                # 전역 설치 시: ~/.claude/memory.json 사용 (안정적인 절대 경로)
+                env["MEMORY_FILE_PATH"] = os.path.join(os.path.expanduser("~"), ".claude", "memory.json")
+            else:
+                env["MEMORY_FILE_PATH"] = ".claude/memory.json"
 
 
         # 1. NPM 패키지 설치 확인 및 실행
@@ -511,15 +522,37 @@ try:
             print(f"  ⚠ {name}: command가 없어 건너뜁니다")
             continue
         
-        # claude mcp add 명령어 구성 (전역 설정)
-        cmd = ["claude", "mcp", "add", "-s", "user", name, command]
+        # 스코프 및 메모리 파일 경로 설정
+        scope = "user" # 기본값: 전역 설정
+        
+        if name == "memory":
+            scope = "project" # 메모리는 프로젝트별 설정
+            
+            # 프로젝트 내 memory.json 경로 (현재 디렉토리 기준)
+            project_memory_file = os.path.abspath(os.path.join(".claude", "memory.json"))
+            
+            # memory.json 파일이 없으면 초기화
+            if not os.path.exists(project_memory_file):
+                try:
+                    with open(project_memory_file, 'w', encoding='utf-8') as f:
+                        json.dump({"entities": [], "relations": []}, f, indent=2)
+                    print(f"    └ 메모리 파일 생성됨: {project_memory_file}")
+                except Exception as e:
+                    print(f"    ⚠ 메모리 파일 생성 실패: {e}")
+
+            # 환경변수 설정 (프로젝트 절대 경로 사용)
+            env["MEMORY_FILE_PATH"] = project_memory_file
+            print(f"    └ 메모리 데이터 경로: {project_memory_file} (프로젝트별)")
+
+        # claude mcp add 명령어 구성
+        cmd = ["claude", "mcp", "add", "-s", scope, name, command]
         cmd.extend(args)
         
-        # 환경변수 추가 (-s project 뒤에 위치)
+        # 환경변수 추가
         for key, value in env.items():
             cmd.extend(["-e", f"{key}={value}"])
 
-        # 옵션 파싱 종료: -e가 name을 흡수하거나 -로 시작하는 인자를 옵션으로 해석하는 것을 방지
+        # 옵션 파싱 종료
         cmd.append("--")
         cmd.extend([name, command])
 
@@ -527,14 +560,14 @@ try:
             cmd.extend(args)
 
         if debug:
-            print(f"  [DEBUG] {name}: " + " ".join(shlex.quote(part) for part in cmd))
+            print(f"  [DEBUG] {name} (scope={scope}): " + " ".join(shlex.quote(part) for part in cmd))
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
-                print(f"  ✓ {name}: 추가 완료")
+                print(f"  ✓ {name}: 추가 완료 ({scope})")
             elif "already exists" in result.stderr.lower():
-                print(f"  ✓ {name}: 이미 존재함")
+                print(f"  ✓ {name}: 이미 존재함 ({scope})")
             else:
                 print(f"  ⚠ {name}: {result.stderr.strip() or '추가 실패'}")
         except subprocess.TimeoutExpired:
