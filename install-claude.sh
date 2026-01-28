@@ -277,6 +277,14 @@ if [ "$HAS_UNZIP" = false ] && [ -z "$PYTHON_CMD" ]; then
 fi
 print_info "필수 도구 확인 완료"
 
+# 1.5. 추가 도구 확인 (MCP용)
+if command -v uv &>/dev/null; then
+	print_info "✓ uv 설치 확인됨 (Codex MCP용)"
+else
+	print_warn "uv가 설치되어 있지 않습니다. Codex MCP 사용을 위해 설치를 권장합니다."
+	echo "  설치 방법: pip install uv  또는  curl -LsSf https://astral.sh/uv/install.sh | sh"
+fi
+
 # 2. 기존 AI 설정 디렉토리 확인 및 자동 백업
 BACKUP_DIRS=()
 HAS_EXISTING=false
@@ -577,7 +585,20 @@ else
 		fi
 	else
 		print_info "Codex CLI 설치를 건너뜁니다."
+		else
+		print_info "Codex CLI 설치를 건너뜁니다."
 	fi
+fi
+
+if [ "$CODEX_INSTALLED" = true ]; then
+	print_info "Codex 로그인 상태 확인 중..."
+	if codex login status | grep -q "Logged in"; then
+		print_info "✓ Codex 로그인 확인됨"
+	else
+		print_warn "Codex에 로그인되어 있지 않습니다. MCP가 정상 작동하지 않을 수 있습니다."
+		echo -e "  ${YELLOW}codex login${NC} 명령어를 실행하여 로그인해주세요."
+	fi
+fi
 fi
 
 # claude-delegator 플러그인 설치 안내
