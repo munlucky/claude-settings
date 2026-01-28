@@ -597,7 +597,7 @@ if [ "$CODEX_INSTALLED" = true ]; then
 		echo -e "  ${YELLOW}codex login${NC} 명령어를 실행하여 로그인해주세요."
 	fi
 fi
-fi
+
 
 # claude-delegator 플러그인 설치 안내
 # claude-delegator 플러그인 자동 설치
