@@ -473,7 +473,8 @@ try:
         if name in npm_packages:
             pkg = npm_packages[name]
             command = "npx"
-            args = ["-y", pkg] + args
+            # 기존 args(파일 경로 등)는 npx 실행 시 불필요하므로 무시하고 새로 설정
+            args = ["-y", pkg]
             print(f"  ✓ {name}: npx로 실행 설정 (npx -y {pkg})")
 
 
