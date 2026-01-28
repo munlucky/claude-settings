@@ -585,8 +585,6 @@ else
 		fi
 	else
 		print_info "Codex CLI 설치를 건너뜁니다."
-		else
-		print_info "Codex CLI 설치를 건너뜁니다."
 	fi
 fi
 
