@@ -513,18 +513,17 @@ try:
             env["MEMORY_FILE_PATH"] = project_memory_file
             print(f"    └ 메모리 데이터 경로: {project_memory_file} (프로젝트별)")
 
-        # claude mcp add 명령어 구성
-        cmd = ["claude", "mcp", "add", "-s", scope, name, command]
-        cmd.extend(args)
+        # claude mcp add 명령어 구성 (options -> name -> command -> args)
+        cmd = ["claude", "mcp", "add", "-s", scope]
         
-        # 환경변수 추가
+        # 환경변수 추가 (옵션은 명령어/이름 앞에 와야 함)
         for key, value in env.items():
             cmd.extend(["-e", f"{key}={value}"])
 
-        # 옵션 파싱 종료
-        cmd.append("--")
+        # 이름 및 명령어 추가
         cmd.extend([name, command])
 
+        # 명령어 인자 추가
         if args:
             cmd.extend(args)
 
