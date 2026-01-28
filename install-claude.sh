@@ -417,7 +417,8 @@ print_info "Memory MCP 전역 설치 확인 중..."
 
 if command -v npm &>/dev/null; then
 	# 전역 설치 여부 확인
-	if npm list -g @modelcontextprotocol/server-memory --depth=0 2>/dev/null | grep -q "@modelcontextprotocol/server-memory"; then
+	# 전역 설치 여부 확인
+	if npm list -g @modelcontextprotocol/server-memory --depth=0 >/dev/null 2>&1; then
 		print_info "✓ Memory MCP 전역 설치 확인됨"
 	else
 		print_info "Memory MCP 전역 설치 중..."
