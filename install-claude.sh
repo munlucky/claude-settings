@@ -602,22 +602,47 @@ fi
 fi
 
 # claude-delegator 플러그인 설치 안내
+# claude-delegator 플러그인 자동 설치
 echo ""
-echo -e "${YELLOW}=========================================${NC}"
-echo -e "${YELLOW}  claude-delegator 플러그인 설치 안내${NC}"
-echo -e "${YELLOW}=========================================${NC}"
-echo ""
-echo "Claude Code에서 다음 명령어를 순서대로 실행하세요:"
-echo ""
-echo "  1. 마켓플레이스 추가:"
-echo -e "     ${GREEN}/plugin marketplace add jarrodwatts/claude-delegator${NC}"
-echo ""
-echo "  2. 플러그인 설치:"
-echo -e "     ${GREEN}/plugin install claude-delegator${NC}"
-echo ""
-echo "  3. 설정 실행:"
-echo -e "     ${GREEN}/claude-delegator:setup${NC}"
-echo ""
+if command -v claude &>/dev/null; then
+	print_info "Claude CLI를 사용하여 claude-delegator 플러그인 자동 설치 중..."
+
+	# 1. Marketplace 추가
+	if output=$(claude plugin marketplace add jarrodwatts/claude-delegator 2>&1); then
+		print_info "  ✓ Marketplace 추가 성공"
+	else
+		# 이미 존재할 경우 등 에러 메시지 출력 (정보성)
+		print_info "  Marketplace 처리: $output"
+	fi
+
+	# 2. Plugin 설치
+	if output=$(claude plugin install claude-delegator 2>&1); then
+		print_info "  ✓ claude-delegator 플러그인 설치 성공"
+	else
+		print_info "  Plugin 설치 처리: $output"
+	fi
+
+	echo ""
+	echo -e "${YELLOW}=========================================${NC}"
+	echo -e "${YELLOW}  설정 마무리 안내${NC}"
+	echo -e "${YELLOW}=========================================${NC}"
+	echo ""
+	echo "플러그인 설정을 위해 Claude Code에서 다음 명령어를 실행해주세요:"
+	echo ""
+	echo -e "     ${GREEN}/claude-delegator:setup${NC}"
+	echo ""
+else
+	# claude 명령어가 없을 경우 수동 안내
+	echo -e "${YELLOW}=========================================${NC}"
+	echo -e "${YELLOW}  claude-delegator 플러그인 설치 안내${NC}"
+	echo -e "${YELLOW}=========================================${NC}"
+	echo "Claude CLI를 찾을 수 없습니다. 다음 명령어를 직접 실행하세요:"
+	echo ""
+	echo "  1. 마켓플레이스 추가: /plugin marketplace add jarrodwatts/claude-delegator"
+	echo "  2. 플러그인 설치: /plugin install claude-delegator"
+	echo "  3. 설정 실행: /claude-delegator:setup"
+	echo ""
+fi
 
 if [ "$CODEX_INSTALLED" = false ]; then
 	print_warn "주의: claude-delegator를 사용하려면 Codex CLI가 필요합니다."
