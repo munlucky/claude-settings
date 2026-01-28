@@ -411,7 +411,28 @@ if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 	done
 fi
 
-# 8. MCP 서버 전역 설정에 추가 (TEMP_DIR에서 직접 읽음 - 프로젝트에는 복사하지 않음)
+# 8. Memory MCP 전역 설치 확인 및 설치
+echo ""
+print_info "Memory MCP 전역 설치 확인 중..."
+
+if command -v npm &>/dev/null; then
+	# 전역 설치 여부 확인
+	if npm list -g @modelcontextprotocol/server-memory --depth=0 2>/dev/null | grep -q "@modelcontextprotocol/server-memory"; then
+		print_info "✓ Memory MCP 전역 설치 확인됨"
+	else
+		print_info "Memory MCP 전역 설치 중..."
+		if npm install -g @modelcontextprotocol/server-memory; then
+			print_info "✓ Memory MCP 전역 설치 완료"
+		else
+			print_warn "Memory MCP 설치 실패. 수동으로 설치해주세요:"
+			echo "  sudo npm install -g @modelcontextprotocol/server-memory"
+		fi
+	fi
+else
+	print_warn "npm이 설치되어 있지 않습니다. Memory MCP를 설치할 수 없습니다."
+fi
+
+# 9. MCP 서버 전역 설정에 추가 (TEMP_DIR에서 직접 읽음 - 프로젝트에는 복사하지 않음)
 MCP_SOURCE_FILE="$TEMP_DIR/claude-settings-$BRANCH/.claude/.mcp.json"
 if [ -f "$MCP_SOURCE_FILE" ] && [ -n "$PYTHON_CMD" ]; then
 	echo ""
@@ -437,7 +458,7 @@ try:
     
     debug = os.environ.get("MCP_DEBUG", "").lower() in ("1", "true", "yes")
 
-    # NPM 설치가 필요한 MCP 서버 목록
+    # NPM 패키지 목록 (이미 bash에서 전역 설치됨)
     npm_packages = {
         "memory": "@modelcontextprotocol/server-memory"
     }
@@ -447,53 +468,12 @@ try:
         args = config.get("args", [])
         env = config.get("env", {})
 
-        # 1. NPM 패키지 전역 설치 (-g) 확인 및 실행
+        # NPM 패키지는 npx로 실행 (이미 bash에서 전역 설치됨)
         if name in npm_packages:
             pkg = npm_packages[name]
-            
-            # 전역 설치 여부 확인 (npm list -g로 체크)
-            already_installed = False
-            if shutil.which("npm"):
-                try:
-                    result = subprocess.run(
-                        ["npm", "list", "-g", pkg, "--depth=0"],
-                        capture_output=True, text=True, timeout=10
-                    )
-                    if result.returncode == 0 and pkg in result.stdout:
-                        already_installed = True
-                        print(f"  ✓ {name}: 전역 설치 확인됨 (npm -g)")
-                except:
-                    pass
-            
-            if not already_installed:
-                if shutil.which("npm"):
-                    print(f"  [INFO] {name}: NPM 패키지 전역 설치 중 ({pkg})...")
-                    try:
-                        npm_cmd = ["npm", "install", "-g", pkg]
-                        if debug:
-                            print(f"    [DEBUG] Running: {' '.join(npm_cmd)}")
-                        
-                        result = subprocess.run(npm_cmd, capture_output=True, text=True, timeout=60)
-                        if result.returncode == 0:
-                            print(f"  ✓ {name}: NPM 패키지 전역 설치 완료")
-                        else:
-                            print(f"  ⚠ {name}: NPM 설치 실패 - {result.stderr.strip()}")
-                            print(f"    → sudo npm install -g {pkg} 로 수동 설치해주세요")
-                            continue
-                    except subprocess.TimeoutExpired:
-                        print(f"  ⚠ {name}: NPM 설치 타임아웃")
-                        continue
-                    except Exception as e:
-                        print(f"  ⚠ {name}: NPM 실행 중 오류 - {str(e)}")
-                        continue
-                else:
-                    print(f"  ⚠ {name}: npm을 찾을 수 없어 패키지 설치를 건너뜁니다.")
-                    continue
-            
-            # 전역 설치된 패키지는 npx로 실행
             command = "npx"
             args = ["-y", pkg] + args
-            print(f"    └ 실행 명령: npx -y {pkg}")
+            print(f"  ✓ {name}: npx로 실행 설정 (npx -y {pkg})")
 
 
         
