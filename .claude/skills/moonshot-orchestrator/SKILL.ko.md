@@ -106,6 +106,43 @@ notes: []
 - 현재 계획만 유지 (히스토리 없음)
 - 이전 버전은 document-memory-policy.md에 따라 아카이빙
 
+#### 2.0.5 프로젝트 메모리 로드 (Fork)
+**중요**: 컨텍스트 오염 방지를 위해 `project-memory-agent`를 **fork 서브에이전트**로 실행.
+
+1. **프로젝트 ID 결정**:
+   - 우선순위: `package.json` name → 디렉토리명 → git remote
+
+2. **fork 실행**:
+   ```
+   Task 도구: project-memory-agent (subagent_type: general-purpose)
+   Input: { projectId, changedFiles, taskType, userRequest }
+   ```
+
+3. **요약된 컨텍스트 수신**:
+   fork 에이전트가 프로젝트 메모리(`[ProjectID]::*`)를 검색하고 요약만 반환:
+   ```yaml
+   projectMemoryContext:
+     projectId: "my-app"
+     loaded: true
+     boundaries:
+       alwaysDo: [...]
+       askFirst: [...]
+       neverDo: [...]
+     relevantRules: [...]
+   ```
+
+4. **analysisContext에 병합**:
+   ```yaml
+   projectMemory:
+     ...projectMemoryContext
+     lastChecked: "{timestamp}"
+     boundaryStatus: "ok"
+   ```
+
+5. **에러 처리**:
+   - 메모리 없음: `boundaryStatus: "not_initialized"`, 계속 진행
+   - MCP 불가: `boundaryStatus: "not_checked"`, 경고와 함께 진행
+
 #### 2.1 작업 분류
 `Skill` 도구를 사용하여 `/moonshot-classify-task` 실행
 - 반환된 patch를 analysisContext에 병합
@@ -172,13 +209,14 @@ notes: []
 
 **허용된 단계:**
 - `pre-flight-check`: 사전 점검 스킬
+- `project-memory-agent`: 프로젝트 메모리 로드 에이전트 (Task tool, fork)
 - `requirements-analyzer`: 요구사항 분석 에이전트 (Task tool)
 - `context-builder`: 컨텍스트 구축 에이전트 (Task tool)
 - `codex-validate-plan`: Codex 계획 검증 스킬
-- `project-memory-check`: 프로젝트 메모리 경계/규약 확인 스킬
 - `implementation-runner`: 구현 에이전트 (Task tool)
 - `completion-verifier`: 테스트 기반 완료 검증 스킬
 - `codex-review-code`: Codex 코드 리뷰 스킬
+- `project-memory-reviewer`: 프로젝트 메모리 규칙/스펙 위반 검증 에이전트 (Task tool, fork)
 - `vercel-react-best-practices`: React/Next.js 성능 최적화 리뷰 스킬
 - `security-reviewer`: 보안 취약점 검토 스킬
 - `build-error-resolver`: 빌드/컴파일 에러 해결 스킬
@@ -195,6 +233,12 @@ notes: []
 6. 정의되지 않은 단계 발견 시 사용자에게 확인 요청 후 중단
 7. **모든 에이전트/스킬은** `.claude/docs/guidelines/document-memory-policy.md` 준수
 
+**Fork 기반 에이전트:**
+- `project-memory-agent`와 `project-memory-reviewer`는 **fork 서브에이전트**로 실행
+- 프로젝트 메모리(`[ProjectID]::*`)를 격리된 환경에서 로드/검증
+- 요약된 컨텍스트/위반 사항만 메인 세션에 반환
+- 원본 메모리 데이터로 인한 컨텍스트 오염 방지
+
 **스킬별 실행 방법:**
 
 `vercel-react-best-practices`의 경우:
@@ -204,9 +248,11 @@ notes: []
 - 분석 결과를 `analysisContext.notes`에 병합
 
 **에이전트 매핑:**
+- `project-memory-agent` → `subagent_type: "general-purpose"` + 프롬프트 (fork, 2.1 전 실행)
 - `requirements-analyzer` → `subagent_type: "general-purpose"` + 프롬프트
 - `context-builder` → `subagent_type: "context-builder"`
 - `implementation-runner` → `subagent_type: "implementation-agent"`
+- `project-memory-reviewer` → `subagent_type: "general-purpose"` + 프롬프트 (fork, codex-review-code 후 실행)
 
 ### 3.1 동적 스킬 삽입 (Dynamic Skill Injection)
 
@@ -256,7 +302,38 @@ reactProject:
     - 실행 시: Skill 도구로 skill="vercel-react-best-practices" 사용
 ```
 
-### 3.2 Completion Verification Loop
+### 3.2 프로젝트 메모리 리뷰 (Fork)
+**중요**: `codex-review-code` 이후, `project-memory-reviewer`를 **fork 서브에이전트**로 실행.
+
+1. **fork 실행**:
+   ```
+   Task 도구: project-memory-reviewer (subagent_type: general-purpose)
+   Input: { projectId, changedFiles, projectMemoryContext, diff }
+   ```
+
+2. **위반 보고서 수신**:
+   ```yaml
+   memoryReviewResult:
+     status: "passed" | "failed" | "needs_approval"
+     violations: [...]     # NeverDo 위반
+     needsApproval: [...]  # AskFirst 항목
+     warnings: [...]       # 규약/스펙 경고
+     reminders: [...]      # AlwaysDo 리마인더
+   ```
+
+3. **결과 처리**:
+   - `status: "failed"`: 실행 **중단**, 위반 사항 사용자에게 보고
+   - `status: "needs_approval"`: 진행 전 사용자 승인 요청
+   - `status: "passed"`: 다음 단계로 진행
+
+4. **analysisContext에 병합**:
+   ```yaml
+   projectMemory:
+     ...existing
+     reviewResult: { ...memoryReviewResult }
+   ```
+
+### 3.3 Completion Verification Loop
 
 implementation-runner 완료 후:
 

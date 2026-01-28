@@ -106,6 +106,43 @@ When a single specification covers multiple independent areas:
 - Keep current plan only (no history)
 - Archive previous versions per document-memory-policy.md
 
+#### 2.0.5 Load Project Memory (Fork)
+**CRITICAL**: Run `project-memory-agent` as a **forked subagent** to prevent context pollution.
+
+1. **Determine Project ID**:
+   - Priority: `package.json` name → directory name → git remote
+
+2. **Execute fork**:
+   ```
+   Task tool: project-memory-agent (subagent_type: general-purpose)
+   Input: { projectId, changedFiles, taskType, userRequest }
+   ```
+
+3. **Receive summarized context**:
+   The forked agent searches project memory (`[ProjectID]::*` from global Memory) and returns only:
+   ```yaml
+   projectMemoryContext:
+     projectId: "my-app"
+     loaded: true
+     boundaries:
+       alwaysDo: [...]
+       askFirst: [...]
+       neverDo: [...]
+     relevantRules: [...]
+   ```
+
+4. **Merge into analysisContext**:
+   ```yaml
+   projectMemory:
+     ...projectMemoryContext
+     lastChecked: "{timestamp}"
+     boundaryStatus: "ok"
+   ```
+
+5. **Handle errors**:
+   - No memory found: `boundaryStatus: "not_initialized"`, proceed
+   - MCP unavailable: `boundaryStatus: "not_checked"`, proceed with warning
+
 #### 2.1 Task classification
 Run `/moonshot-classify-task` using the Skill tool.
 - Merge returned patch into analysisContext
@@ -172,13 +209,14 @@ Run `decisions.skillChain` in order:
 
 **Allowed steps:**
 - `pre-flight-check`: pre-flight skill
+- `project-memory-agent`: project memory loading agent (Task tool, fork)
 - `requirements-analyzer`: requirements analysis agent (Task tool)
 - `context-builder`: context-building agent (Task tool)
 - `codex-validate-plan`: Codex plan validation skill
-- `project-memory-check`: project memory boundary/convention check skill
 - `implementation-runner`: implementation agent (Task tool)
 - `completion-verifier`: test-based completion verification skill
 - `codex-review-code`: Codex code review skill
+- `project-memory-reviewer`: project memory rule/spec violation check agent (Task tool, fork)
 - `vercel-react-best-practices`: React/Next.js performance optimization review skill
 - `security-reviewer`: security vulnerability review skill
 - `build-error-resolver`: build/compile error resolution skill
@@ -195,6 +233,12 @@ Run `decisions.skillChain` in order:
 6. If an undefined step appears, ask the user and stop
 7. **All agents/skills must follow** `.claude/docs/guidelines/document-memory-policy.md`
 
+**Fork-based agents:**
+- `project-memory-agent` and `project-memory-reviewer` run as **forked subagents**
+- They load/check project memory ([ProjectID]::* from global Memory) in isolation
+- Only summarized context/violations are returned to main session
+- This prevents context pollution from raw memory data
+
 **Skill-specific execution:**
 
 For `vercel-react-best-practices`:
@@ -204,9 +248,11 @@ For `vercel-react-best-practices`:
 - Merge findings into `analysisContext.notes`
 
 **Agent mapping:**
+- `project-memory-agent` -> `subagent_type: "general-purpose"` + prompt (fork, runs before 2.1)
 - `requirements-analyzer` -> `subagent_type: "general-purpose"` + prompt
 - `context-builder` -> `subagent_type: "context-builder"`
 - `implementation-runner` -> `subagent_type: "implementation-agent"`
+- `project-memory-reviewer` -> `subagent_type: "general-purpose"` + prompt (fork, runs after codex-review-code)
 
 ### 3.1 Dynamic Skill Injection
 
@@ -256,7 +302,38 @@ reactProject:
     - When executing: Use Skill tool with skill="vercel-react-best-practices"
 ```
 
-### 3.2 Completion Verification Loop
+### 3.2 Project Memory Review (Fork)
+**CRITICAL**: After `codex-review-code`, run `project-memory-reviewer` as a **forked subagent**.
+
+1. **Execute fork**:
+   ```
+   Task tool: project-memory-reviewer (subagent_type: general-purpose)
+   Input: { projectId, changedFiles, projectMemoryContext, diff }
+   ```
+
+2. **Receive violation report**:
+   ```yaml
+   memoryReviewResult:
+     status: "passed" | "failed" | "needs_approval"
+     violations: [...]     # NeverDo violations
+     needsApproval: [...]  # AskFirst items
+     warnings: [...]       # Convention/spec warnings
+     reminders: [...]      # AlwaysDo reminders
+   ```
+
+3. **Handle result**:
+   - `status: "failed"`: **HALT** execution, report violations to user
+   - `status: "needs_approval"`: Ask user for approval before proceeding
+   - `status: "passed"`: Proceed to next step
+
+4. **Merge into analysisContext**:
+   ```yaml
+   projectMemory:
+     ...existing
+     reviewResult: { ...memoryReviewResult }
+   ```
+
+### 3.3 Completion Verification Loop
 
 After implementation-runner completes:
 
