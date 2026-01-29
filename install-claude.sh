@@ -419,28 +419,6 @@ if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 	done
 fi
 
-# 8. Memory MCP 전역 설치 확인 및 설치
-echo ""
-print_info "Memory MCP 전역 설치 확인 중..."
-
-if command -v npm &>/dev/null; then
-	# 전역 설치 여부 확인
-	# 전역 설치 여부 확인
-	if npm list -g @modelcontextprotocol/server-memory --depth=0 >/dev/null 2>&1; then
-		print_info "✓ Memory MCP 전역 설치 확인됨"
-	else
-		print_info "Memory MCP 전역 설치 중..."
-		if npm install -g @modelcontextprotocol/server-memory; then
-			print_info "✓ Memory MCP 전역 설치 완료"
-		else
-			print_warn "Memory MCP 설치 실패. 수동으로 설치해주세요:"
-			echo "  sudo npm install -g @modelcontextprotocol/server-memory"
-		fi
-	fi
-else
-	print_warn "npm이 설치되어 있지 않습니다. Memory MCP를 설치할 수 없습니다."
-fi
-
 # 9. Memory MCP 프로젝트 설정 (기본값으로 항상 설정)
 echo ""
 print_info "Memory MCP 프로젝트 설정 중..."
