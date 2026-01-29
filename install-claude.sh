@@ -447,8 +447,15 @@ if command -v claude &>/dev/null; then
 	fi
 	
 	if [ -f "$GLOBAL_WRAPPER" ]; then
+		# Windows Git Bash 환경에서는 Windows 형식 경로로 변환
+		MCP_WRAPPER_PATH="$GLOBAL_WRAPPER"
+		if command -v cygpath &>/dev/null; then
+			MCP_WRAPPER_PATH=$(cygpath -w "$GLOBAL_WRAPPER")
+			print_info "  └ Windows 경로 변환: $MCP_WRAPPER_PATH"
+		fi
+		
 		# Memory MCP를 user scope로 추가 (글로벌 wrapper 스크립트 사용)
-		if claude mcp add memory -s user -- node "$GLOBAL_WRAPPER" 2>&1 | grep -qi "already exists"; then
+		if claude mcp add memory -s user -- node "$MCP_WRAPPER_PATH" 2>&1 | grep -qi "already exists"; then
 			print_info "  ✓ memory: 이미 존재함 (user)"
 		else
 			print_info "  ✓ memory: 추가 완료 (user)"
