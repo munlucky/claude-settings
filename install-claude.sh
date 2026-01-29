@@ -419,33 +419,52 @@ if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 	done
 fi
 
-# 9. Memory MCP 프로젝트 설정 (기본값으로 항상 설정)
+# 9. Memory MCP 전역 설정 (wrapper 스크립트로 동적 경로 지원)
 echo ""
-print_info "Memory MCP 프로젝트 설정 중..."
+print_info "Memory MCP 전역 설정 중..."
 
 if command -v claude &>/dev/null; then
 	# memory.json 파일 초기화 (프로젝트별)
 	MEMORY_FILE_ABS="$(pwd)/.claude/memory.json"
-	# MCP 환경변수용 경로 (상대경로 - 실행 시 프로젝트 기준)
-	MEMORY_FILE_REL=".claude/memory.json"
 	
 	if [ ! -f "$MEMORY_FILE_ABS" ]; then
 		echo '{"entities": [], "relations": []}' > "$MEMORY_FILE_ABS"
 		print_info "  └ 메모리 파일 생성됨: $MEMORY_FILE_ABS"
 	fi
 	
-	# Memory MCP를 user scope로 추가 (전역 설정, 상대경로로 프로젝트별 메모리 사용)
-	if claude mcp add memory -s user -e "MEMORY_FILE_PATH=$MEMORY_FILE_REL" -- npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists"; then
-		print_info "  ✓ memory: 이미 존재함 (user)"
-	else
-		print_info "  ✓ memory: 추가 완료 (user)"
+	# Wrapper 스크립트를 사용자 홈 디렉토리에 설치 (전역)
+	GLOBAL_WRAPPER_DIR="$HOME/.claude/scripts"
+	GLOBAL_WRAPPER="$GLOBAL_WRAPPER_DIR/memory-mcp-wrapper.js"
+	LOCAL_WRAPPER="$(pwd)/.claude/scripts/memory-mcp-wrapper.js"
+	
+	# 글로벌 디렉토리 생성
+	mkdir -p "$GLOBAL_WRAPPER_DIR"
+	
+	# wrapper 스크립트 복사 (항상 최신 버전으로 업데이트)
+	if [ -f "$LOCAL_WRAPPER" ]; then
+		cp "$LOCAL_WRAPPER" "$GLOBAL_WRAPPER"
+		print_info "  └ Wrapper 스크립트 설치됨: $GLOBAL_WRAPPER"
 	fi
-	print_info "  └ 메모리 데이터: 각 프로젝트의 .claude/memory.json 사용"
-	print_info "✓ Memory MCP 전역 설정 완료"
+	
+	if [ -f "$GLOBAL_WRAPPER" ]; then
+		# Memory MCP를 user scope로 추가 (글로벌 wrapper 스크립트 사용)
+		if claude mcp add memory -s user -- node "$GLOBAL_WRAPPER" 2>&1 | grep -qi "already exists"; then
+			print_info "  ✓ memory: 이미 존재함 (user)"
+		else
+			print_info "  ✓ memory: 추가 완료 (user)"
+		fi
+		print_info "  └ 각 프로젝트의 .claude/memory.json을 자동 사용 (동적 경로)"
+		print_info "✓ Memory MCP 전역 설정 완료"
+	else
+		print_warn "wrapper 스크립트를 찾을 수 없습니다"
+		print_info "Fallback: 프로젝트 스코프로 설정합니다."
+		claude mcp add memory -s project -e "MEMORY_FILE_PATH=$MEMORY_FILE_ABS" -- npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists" && \
+			print_info "  ✓ memory: 이미 존재함 (project)" || \
+			print_info "  ✓ memory: 추가 완료 (project)"
+	fi
 else
 	print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
-	print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요:"
-	echo "  claude mcp add -s project memory -- npx -y @modelcontextprotocol/server-memory"
+	print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요."
 fi
 
 # 8.5. claude-delegator 플러그인 설치 안내
