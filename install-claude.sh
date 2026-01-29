@@ -441,120 +441,32 @@ else
 	print_warn "npm이 설치되어 있지 않습니다. Memory MCP를 설치할 수 없습니다."
 fi
 
-# 9. MCP 서버 전역 설정에 추가 (TEMP_DIR에서 직접 읽음 - 프로젝트에는 복사하지 않음)
-MCP_SOURCE_FILE="$TEMP_DIR/claude-settings-$BRANCH/.claude/.mcp.json"
-if [ -f "$MCP_SOURCE_FILE" ] && [ -n "$PYTHON_CMD" ]; then
-	echo ""
-	print_info "MCP 서버를 전역 설정에 추가하는 중..."
+# 9. Memory MCP 프로젝트 설정 (기본값으로 항상 설정)
+echo ""
+print_info "Memory MCP 프로젝트 설정 중..."
+
+if command -v claude &>/dev/null; then
+	# 프로젝트별 memory.json 경로 설정
+	MEMORY_FILE_PATH="$(pwd)/.claude/memory.json"
 	
-	# claude 명령어 확인
-	if command -v claude &>/dev/null; then
-		MCP_DEBUG="$DEBUG_MCP" $PYTHON_CMD - "$MCP_SOURCE_FILE" <<'PY'
-import json
-import os
-import sys
-import subprocess
-import shlex
-import shutil
-
-mcp_file = sys.argv[1]
-
-try:
-    with open(mcp_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    servers = data.get("mcpServers", {})
-    
-    debug = os.environ.get("MCP_DEBUG", "").lower() in ("1", "true", "yes")
-
-    # NPM 패키지 목록 (이미 bash에서 전역 설치됨)
-    npm_packages = {
-        "memory": "@modelcontextprotocol/server-memory"
-    }
-
-    for name, config in servers.items():
-        command = config.get("command", "")
-        args = config.get("args", [])
-        env = config.get("env", {})
-
-        # NPM 패키지는 npx로 실행 (이미 bash에서 전역 설치됨)
-        if name in npm_packages:
-            pkg = npm_packages[name]
-            command = "npx"
-            # 기존 args(파일 경로 등)는 npx 실행 시 불필요하므로 무시하고 새로 설정
-            args = ["-y", pkg]
-            print(f"  ✓ {name}: npx로 실행 설정 (npx -y {pkg})")
-
-
-        
-        if not command:
-            print(f"  ⚠ {name}: command가 없어 건너뜁니다")
-            continue
-        
-        # 스코프 및 메모리 파일 경로 설정
-        scope = "user" # 기본값: 전역 설정
-        
-        if name == "memory":
-            scope = "project" # 메모리는 프로젝트별 설정
-            
-            # 프로젝트 내 memory.json 경로 (현재 디렉토리 기준)
-            project_memory_file = os.path.abspath(os.path.join(".claude", "memory.json"))
-            
-            # memory.json 파일이 없으면 초기화
-            if not os.path.exists(project_memory_file):
-                try:
-                    with open(project_memory_file, 'w', encoding='utf-8') as f:
-                        json.dump({"entities": [], "relations": []}, f, indent=2)
-                    print(f"    └ 메모리 파일 생성됨: {project_memory_file}")
-                except Exception as e:
-                    print(f"    ⚠ 메모리 파일 생성 실패: {e}")
-
-            # 환경변수 설정 (프로젝트 절대 경로 사용)
-            env["MEMORY_FILE_PATH"] = project_memory_file
-            print(f"    └ 메모리 데이터 경로: {project_memory_file} (프로젝트별)")
-
-        # claude mcp add 명령어 구성 (options -> name -> command -> args)
-        cmd = ["claude", "mcp", "add", "-s", scope]
-        
-        # 환경변수 추가 (옵션은 명령어/이름 앞에 와야 함)
-        for key, value in env.items():
-            cmd.extend(["-e", f"{key}={value}"])
-
-        # 이름 및 명령어 추가
-        cmd.extend([name, command])
-
-        # 명령어 인자 추가
-        if args:
-            cmd.extend(args)
-
-        if debug:
-            print(f"  [DEBUG] {name} (scope={scope}): " + " ".join(shlex.quote(part) for part in cmd))
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                print(f"  ✓ {name}: 추가 완료 ({scope})")
-            elif "already exists" in result.stderr.lower():
-                print(f"  ✓ {name}: 이미 존재함 ({scope})")
-            else:
-                print(f"  ⚠ {name}: {result.stderr.strip() or '추가 실패'}")
-        except subprocess.TimeoutExpired:
-            print(f"  ⚠ {name}: 타임아웃")
-        except Exception as e:
-            print(f"  ⚠ {name}: {str(e)}")
-
-except json.JSONDecodeError as e:
-    print(f"  ✗ JSON 파싱 오류: {e}")
-except Exception as e:
-    print(f"  ✗ 오류: {e}")
-PY
-		print_info "✓ MCP 서버 전역 설정 완료"
-	else
-		print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
-		print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요."
+	# memory.json 파일이 없으면 초기화
+	if [ ! -f "$MEMORY_FILE_PATH" ]; then
+		echo '{"entities": [], "relations": []}' > "$MEMORY_FILE_PATH"
+		print_info "  └ 메모리 파일 생성됨: $MEMORY_FILE_PATH"
 	fi
-elif [ -f "$MCP_SOURCE_FILE" ]; then
-	print_warn "Python이 없어 MCP 자동 설정을 건너뜁니다."
+	
+	# Memory MCP를 프로젝트 스코프로 추가
+	if claude mcp add -s project -e "MEMORY_FILE_PATH=$MEMORY_FILE_PATH" memory npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists"; then
+		print_info "  ✓ memory: 이미 존재함 (project)"
+	else
+		print_info "  ✓ memory: 추가 완료 (project)"
+	fi
+	print_info "  └ 메모리 데이터 경로: $MEMORY_FILE_PATH (프로젝트별)"
+	print_info "✓ Memory MCP 프로젝트 설정 완료"
+else
+	print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
+	print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요:"
+	echo "  claude mcp add -s project memory npx -y @modelcontextprotocol/server-memory"
 fi
 
 # 8.5. claude-delegator 플러그인 설치 안내
