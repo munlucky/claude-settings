@@ -33,11 +33,11 @@ process.env.MEMORY_FILE_PATH = memoryFilePath;
 
 // npx로 memory server 실행
 const isWindows = process.platform === 'win32';
-const npxCmd = isWindows ? 'npx.cmd' : 'npx';
 
-const child = spawn(npxCmd, ['-y', '@modelcontextprotocol/server-memory'], {
+const child = spawn('npx', ['-y', '@modelcontextprotocol/server-memory'], {
   stdio: 'inherit',
-  env: process.env
+  env: process.env,
+  shell: isWindows  // Windows에서는 shell을 통해 실행해야 함
 });
 
 child.on('error', (err) => {
