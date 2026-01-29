@@ -508,6 +508,14 @@ if [ "$CODEX_INSTALLED" = true ]; then
 	print_info "Codex 로그인 상태 확인 중..."
 	if codex login status 2>&1 | grep -qi "logged in"; then
 		print_info "✓ Codex 로그인 확인됨"
+		
+		# Codex MCP를 user scope로 추가 (전역 설정)
+		print_info "Codex MCP 전역 설정 중..."
+		if claude mcp add codex -s user -- codex mcp-server 2>&1 | grep -qi "already exists"; then
+			print_info "  ✓ codex: 이미 존재함 (user)"
+		else
+			print_info "  ✓ codex: 추가 완료 (user)"
+		fi
 	else
 		print_warn "Codex에 로그인되어 있지 않습니다. MCP가 정상 작동하지 않을 수 있습니다."
 		echo -e "  ${YELLOW}codex login${NC} 명령어를 실행하여 로그인해주세요."
