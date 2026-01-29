@@ -117,9 +117,11 @@ create_relations([{
 ## 8. 커밋 생성
 
 ```bash
-git add [files]
+git add [files] .claude/memory.json
 git commit -m "[간결한 한글 커밋 메시지]"
 ```
+
+> **📌 중요: `.claude/memory.json` 파일을 반드시 커밋에 포함시키세요.** Memory MCP의 현행화 내용이 저장된 파일입니다.
 
 **커밋 메시지 규칙:**
 - 이모지, 특수문자 제외
