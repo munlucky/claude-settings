@@ -424,25 +424,24 @@ echo ""
 print_info "Memory MCP 프로젝트 설정 중..."
 
 if command -v claude &>/dev/null; then
-	# 프로젝트별 memory.json 파일 경로 (파일 생성용 - 절대경로)
+	# memory.json 파일 초기화 (프로젝트별)
 	MEMORY_FILE_ABS="$(pwd)/.claude/memory.json"
-	# MCP 환경변수용 경로 (cross-platform - 상대경로)
+	# MCP 환경변수용 경로 (상대경로 - 실행 시 프로젝트 기준)
 	MEMORY_FILE_REL=".claude/memory.json"
 	
-	# memory.json 파일이 없으면 초기화
 	if [ ! -f "$MEMORY_FILE_ABS" ]; then
 		echo '{"entities": [], "relations": []}' > "$MEMORY_FILE_ABS"
 		print_info "  └ 메모리 파일 생성됨: $MEMORY_FILE_ABS"
 	fi
 	
-	# Memory MCP를 프로젝트 스코프로 추가 (상대경로 사용 - Windows/Mac/Linux 호환)
-	if claude mcp add -s project -e "MEMORY_FILE_PATH=$MEMORY_FILE_REL" memory -- npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists"; then
-		print_info "  ✓ memory: 이미 존재함 (project)"
+	# Memory MCP를 user scope로 추가 (전역 설정, 상대경로로 프로젝트별 메모리 사용)
+	if claude mcp add -s user -e "MEMORY_FILE_PATH=$MEMORY_FILE_REL" memory -- npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists"; then
+		print_info "  ✓ memory: 이미 존재함 (user)"
 	else
-		print_info "  ✓ memory: 추가 완료 (project)"
+		print_info "  ✓ memory: 추가 완료 (user)"
 	fi
-	print_info "  └ 메모리 데이터 경로: $MEMORY_FILE_REL (프로젝트별)"
-	print_info "✓ Memory MCP 프로젝트 설정 완료"
+	print_info "  └ 메모리 데이터: 각 프로젝트의 .claude/memory.json 사용"
+	print_info "✓ Memory MCP 전역 설정 완료"
 else
 	print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
 	print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요:"
