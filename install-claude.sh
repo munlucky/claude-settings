@@ -435,7 +435,7 @@ if command -v claude &>/dev/null; then
 	fi
 	
 	# Memory MCP를 user scope로 추가 (전역 설정, 상대경로로 프로젝트별 메모리 사용)
-	if claude mcp add -s user -e "MEMORY_FILE_PATH=$MEMORY_FILE_REL" memory -- npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists"; then
+	if claude mcp add memory -s user -e "MEMORY_FILE_PATH=$MEMORY_FILE_REL" -- npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists"; then
 		print_info "  ✓ memory: 이미 존재함 (user)"
 	else
 		print_info "  ✓ memory: 추가 완료 (user)"
