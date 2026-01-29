@@ -479,7 +479,7 @@ fi
 
 if [ "$CODEX_INSTALLED" = true ]; then
 	print_info "Codex 로그인 상태 확인 중..."
-	if codex login status | grep -q "Logged in"; then
+	if codex login status 2>&1 | grep -qi "logged in"; then
 		print_info "✓ Codex 로그인 확인됨"
 	else
 		print_warn "Codex에 로그인되어 있지 않습니다. MCP가 정상 작동하지 않을 수 있습니다."
