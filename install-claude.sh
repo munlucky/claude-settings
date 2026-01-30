@@ -391,6 +391,14 @@ print_info ".claude 디렉토리 설치 중..."
 mkdir -p .claude
 cp -r "$TEMP_DIR/claude-settings-$BRANCH/.claude/." .claude/
 print_info "✓ 설치 완료"
+
+# 7.1. rules/ 디렉토리의 .ko.md 파일 제거 (토큰 최적화)
+# Claude Code는 rules/ 내 모든 .md를 컨텍스트에 로드하므로 한글 파일 제거
+ko_count=$(find .claude/rules -name "*.ko.md" -type f 2>/dev/null | wc -l | tr -d ' ')
+if [ "$ko_count" -gt 0 ]; then
+	find .claude/rules -name "*.ko.md" -type f -delete
+	print_info "✓ rules/ 내 .ko.md 파일 ${ko_count}개 제거 (토큰 최적화)"
+fi
 # 7.5. Restore protected user files into new .claude
 if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 	print_info "사용자 파일 복원 중..."
