@@ -6,8 +6,24 @@
 This section captures basic project information.
 
 - **Service**: [service/product name and short description]
-- **Stack**: [main tech stack: frameworks, languages, libraries, etc.]
+- **Stack**: [tech stack - see guide below]
 - **Response Language**: [default response language]
+
+### Tech Stack Specification Guide
+
+> **Important**: Vague specs lead to vague code. Be specific about versions and core dependencies.
+
+| ❌ Vague | ✅ Specific |
+|----------|------------|
+| "React project" | "React 18.2 + TypeScript 5.3 + Vite 5.0" |
+| "Node.js backend" | "Node.js 20 LTS + Express 4.18 + Prisma 5.0" |
+| "Mobile app" | "React Native 0.73 + Expo SDK 50" |
+
+**Required specifications:**
+- [ ] Language/runtime version
+- [ ] Framework version
+- [ ] Build tool
+- [ ] Core libraries (state management, routing, ORM, etc.)
 
 ## Core Rules (Required)
 List the important rules that must be followed in this project.
@@ -18,6 +34,55 @@ Example:
 3. **Data transformation rules**: [notes for data processing]
 4. **File upload rules**: [file upload considerations]
 5. **Logging/activity**: [logging rules]
+
+## Testing Rules
+
+> Information needed for AI agents to run and write tests correctly.
+
+- **Test framework**: [Jest / Vitest / Playwright / etc.]
+- **Test file location**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
+- **Coverage expectation**: [80%+ / core logic only / etc.]
+- **Commands**:
+  - All tests: `npm test`
+  - Specific file: `npm test -- --testPathPattern="filename"`
+  - Coverage: `npm test -- --coverage`
+
+### Test Writing Rules
+- [ ] New features require unit tests
+- [ ] API endpoints require integration tests
+- [ ] Never delete existing tests (NeverDo)
+
+## Git Workflow
+
+> Specify branch naming, commit messages, and PR rules so agents follow them exactly.
+
+### Branch Naming Convention
+```
+feature/{feature-name}   # New features
+fix/{issue-number}       # Bug fixes
+refactor/{target}        # Refactoring
+chore/{task}             # Config, dependencies, etc.
+```
+
+### Commit Message Format
+```
+[type]: concise description
+
+Examples:
+feat: add batch execution API
+fix: resolve date format conversion error
+refactor: extract user query logic
+```
+
+**Rules:**
+- No emojis or special characters
+- Consistent language (Korean or English)
+- 50 characters or less recommended
+
+### PR Requirements
+- [ ] CI must pass
+- [ ] At least 1 reviewer (optional)
+- [ ] Link related issues
 
 ## Directory/Structure
 Describe the project folder structure.
