@@ -535,21 +535,40 @@ fi
 # claude-delegator 플러그인 자동 설치
 echo ""
 if command -v claude &>/dev/null; then
-	print_info "Claude CLI를 사용하여 claude-delegator 플러그인 자동 설치 중..."
+	print_info "Claude CLI를 사용하여 플러그인 자동 설치 중..."
 
-	# 1. Marketplace 추가
+	# 1. jarrodwatts/claude-delegator 설치
+	print_info "  [1/3] claude-delegator 설치..."
 	if output=$(claude plugin marketplace add jarrodwatts/claude-delegator 2>&1); then
-		print_info "  ✓ Marketplace 추가 성공"
+		print_info "    ✓ Marketplace 추가 성공"
 	else
-		# 이미 존재할 경우 등 에러 메시지 출력 (정보성)
-		print_info "  Marketplace 처리: $output"
+		print_info "    Marketplace 처리: $output"
+	fi
+	if output=$(claude plugin install claude-delegator 2>&1); then
+		print_info "    ✓ claude-delegator 플러그인 설치 성공"
+	else
+		print_info "    Plugin 설치 처리: $output"
 	fi
 
-	# 2. Plugin 설치
-	if output=$(claude plugin install claude-delegator 2>&1); then
-		print_info "  ✓ claude-delegator 플러그인 설치 성공"
+	# 2. claude-plugins-official/code-simplifier 설치
+	print_info "  [2/3] code-simplifier 설치..."
+	if output=$(claude plugin marketplace add claude-plugins-official 2>&1); then
+		print_info "    ✓ claude-plugins-official Marketplace 추가"
 	else
-		print_info "  Plugin 설치 처리: $output"
+		print_info "    Marketplace 처리: $output"
+	fi
+	if output=$(claude plugin install code-simplifier 2>&1); then
+		print_info "    ✓ code-simplifier 플러그인 설치 성공"
+	else
+		print_info "    Plugin 설치 처리: $output"
+	fi
+
+	# 3. claude-plugins-official/typescript-lsp 설치
+	print_info "  [3/3] typescript-lsp 설치..."
+	if output=$(claude plugin install typescript-lsp 2>&1); then
+		print_info "    ✓ typescript-lsp 플러그인 설치 성공"
+	else
+		print_info "    Plugin 설치 처리: $output"
 	fi
 
 	echo ""
