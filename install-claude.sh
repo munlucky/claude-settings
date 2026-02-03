@@ -550,22 +550,17 @@ if command -v claude &>/dev/null; then
 		print_info "    Plugin 설치 처리: $output"
 	fi
 
-	# 2. claude-plugins-official/code-simplifier 설치
+	# 2. code-simplifier@claude-plugins-official 설치
 	print_info "  [2/3] code-simplifier 설치..."
-	if output=$(claude plugin marketplace add claude-plugins-official 2>&1); then
-		print_info "    ✓ claude-plugins-official Marketplace 추가"
-	else
-		print_info "    Marketplace 처리: $output"
-	fi
-	if output=$(claude plugin install code-simplifier 2>&1); then
+	if output=$(claude plugin install code-simplifier@claude-plugins-official 2>&1); then
 		print_info "    ✓ code-simplifier 플러그인 설치 성공"
 	else
 		print_info "    Plugin 설치 처리: $output"
 	fi
 
-	# 3. claude-plugins-official/typescript-lsp 설치
+	# 3. typescript-lsp@claude-plugins-official 설치
 	print_info "  [3/3] typescript-lsp 설치..."
-	if output=$(claude plugin install typescript-lsp 2>&1); then
+	if output=$(claude plugin install typescript-lsp@claude-plugins-official 2>&1); then
 		print_info "    ✓ typescript-lsp 플러그인 설치 성공"
 	else
 		print_info "    Plugin 설치 처리: $output"
