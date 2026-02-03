@@ -463,7 +463,8 @@ if command -v claude &>/dev/null; then
 		fi
 		
 		# Memory MCP를 user scope로 추가 (글로벌 wrapper 스크립트 사용)
-		if claude mcp add memory -s user -- node "$MCP_WRAPPER_PATH" 2>&1 | grep -qi "already exists"; then
+		memory_result=$(claude mcp add memory -s user -- node "$MCP_WRAPPER_PATH" 2>&1 || true)
+		if echo "$memory_result" | grep -qi "already exists"; then
 			print_info "  ✓ memory: 이미 존재함 (user)"
 		else
 			print_info "  ✓ memory: 추가 완료 (user)"
@@ -473,9 +474,12 @@ if command -v claude &>/dev/null; then
 	else
 		print_warn "wrapper 스크립트를 찾을 수 없습니다"
 		print_info "Fallback: 프로젝트 스코프로 설정합니다."
-		claude mcp add memory -s project -e "MEMORY_FILE_PATH=$MEMORY_FILE_ABS" -- npx -y @modelcontextprotocol/server-memory 2>&1 | grep -qi "already exists" && \
-			print_info "  ✓ memory: 이미 존재함 (project)" || \
+		fallback_result=$(claude mcp add memory -s project -e "MEMORY_FILE_PATH=$MEMORY_FILE_ABS" -- npx -y @modelcontextprotocol/server-memory 2>&1 || true)
+		if echo "$fallback_result" | grep -qi "already exists"; then
+			print_info "  ✓ memory: 이미 존재함 (project)"
+		else
 			print_info "  ✓ memory: 추가 완료 (project)"
+		fi
 	fi
 else
 	print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
@@ -514,12 +518,14 @@ fi
 
 if [ "$CODEX_INSTALLED" = true ]; then
 	print_info "Codex 로그인 상태 확인 중..."
-	if codex login status 2>&1 | grep -qi "logged in"; then
+	codex_status=$(codex login status 2>&1 || true)
+	if echo "$codex_status" | grep -qi "logged in"; then
 		print_info "✓ Codex 로그인 확인됨"
 		
 		# Codex MCP를 user scope로 추가 (전역 설정)
 		print_info "Codex MCP 전역 설정 중..."
-		if claude mcp add codex -s user -- codex mcp-server 2>&1 | grep -qi "already exists"; then
+		mcp_result=$(claude mcp add codex -s user -- codex mcp-server 2>&1 || true)
+		if echo "$mcp_result" | grep -qi "already exists"; then
 			print_info "  ✓ codex: 이미 존재함 (user)"
 		else
 			print_info "  ✓ codex: 추가 완료 (user)"
