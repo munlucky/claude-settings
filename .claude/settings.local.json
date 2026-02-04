@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "curl -s -X POST -H 'Content-Type: text/plain; charset=utf-8' -d \"$(basename \"$CLAUDE_PROJECT_DIR\") 입력 필요\" https://ntfy.sh/moonshot-claude-alert"
+            "command": "node .claude/scripts/notify.js"
           }
         ]
       }
