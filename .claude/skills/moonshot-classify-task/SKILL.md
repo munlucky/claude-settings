@@ -8,6 +8,7 @@ context: fork
 
 ## Inputs
 - `analysisContext.request.userMessage`
+- `context.md` (path: `analysisContext.artifacts.contextDocPath`, if exists)
 
 ## Procedure
 1. Identify intent keywords from the user message.

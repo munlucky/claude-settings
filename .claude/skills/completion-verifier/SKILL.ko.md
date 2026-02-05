@@ -14,7 +14,8 @@ context: fork
 
 ## 입력
 
-- context.md 경로 (Acceptance Tests 섹션 포함)
+- `analysisContext.*` (구조화된 상태)
+- `context.md` (경로: `analysisContext.artifacts.contextDocPath`, Acceptance Tests 섹션 포함)
 - 테스트 프레임워크 (PROJECT.md에서: jest/vitest/playwright)
 
 ## 절차

@@ -11,6 +11,7 @@ context: fork
 - `analysisContext.estimates.estimatedLines`
 - `analysisContext.estimates.estimatedTime`
 - `analysisContext.request.taskType`
+- `context.md` (path: `analysisContext.artifacts.contextDocPath`, if exists)
 
 ## Criteria
 - `simple`: 1-2 files, <= 100 lines, <= 1 hour

@@ -12,7 +12,9 @@ context: fork
 - API 변경
 - 중요한 변경사항 병합 전
 
-## 절차
+## 입력
+- `analysisContext.*` (구조화된 상태)
+- `context.md` (경로: `analysisContext.artifacts.contextDocPath`)
 
 ### 1단계: MCP 가용성 확인 (필수 - 최우선 수행)
 리뷰 작업 전, Codex MCP 사용 가능 여부를 먼저 확인합니다:
