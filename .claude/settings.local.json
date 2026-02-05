@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/scripts/notify.js"
+            "command": "node .claude/scripts/notify.cjs"
           }
         ]
       }
