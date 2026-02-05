@@ -11,6 +11,7 @@ context: fork
 - `analysisContext.request.keywords`
 - `analysisContext.request.taskType`
 - `analysisContext.signals.hasContextMd`
+- `context.md` (path: `analysisContext.artifacts.contextDocPath`, if exists)
 
 ## Triggers and questions
 - UI/version: if UI/screen keywords exist, confirm design spec version

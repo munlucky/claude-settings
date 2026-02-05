@@ -9,6 +9,7 @@ context: fork
 **Role**: Check essential info and project status before starting work to reduce omissions.
 
 ## Inputs
+- `analysisContext.*` (structured state, if exists)
 - Feature name/branch name (optional)
 - Required doc paths: CLAUDE.md, context.md, etc.
 

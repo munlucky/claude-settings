@@ -12,6 +12,10 @@ context: fork
 - API changes
 - Before merging significant changes
 
+## Inputs
+- `analysisContext.*` (structured state)
+- `context.md` (path: `analysisContext.artifacts.contextDocPath`)
+
 ## Procedure
 
 ### Step 1: Check MCP Availability (CRITICAL - Do This First)

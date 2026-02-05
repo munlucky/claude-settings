@@ -11,6 +11,10 @@ context: fork
 - `taskType`: `feature` or `refactor`
 - `context.md` exists or was updated
 
+## Inputs
+- `analysisContext.*` (structured state)
+- `context.md` (path: `analysisContext.artifacts.contextDocPath`)
+
 ## Procedure
 
 ### Step 1: Check MCP Availability (CRITICAL - Do This First)

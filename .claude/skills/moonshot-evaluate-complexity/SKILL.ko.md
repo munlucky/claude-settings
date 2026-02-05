@@ -11,6 +11,7 @@ context: fork
 - `analysisContext.estimates.estimatedLines`
 - `analysisContext.estimates.estimatedTime`
 - `analysisContext.request.taskType`
+- `context.md` (경로: `analysisContext.artifacts.contextDocPath`, 있으면 참조)
 
 ## 기준
 - `simple`: 1-2개 파일, 100줄 이하, 1시간 이내

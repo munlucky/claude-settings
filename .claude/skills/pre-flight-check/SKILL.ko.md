@@ -9,6 +9,7 @@ context: fork
 **역할**: 작업 시작 전에 필수 정보와 프로젝트 상태를 점검해 누락을 줄입니다.
 
 ## 입력
+- `analysisContext.*` (구조화된 상태, 있으면 참조)
 - 기능명/브랜치명 (선택)
 - 필수 문서 경로: CLAUDE.md, context.md 등
 

@@ -8,6 +8,7 @@ context: fork
 
 ## 입력
 - `analysisContext.request.userMessage`
+- `context.md` (경로: `analysisContext.artifacts.contextDocPath`, 있으면 참조)
 
 ## 절차
 1. 사용자 메시지에서 의도 키워드를 식별한다.

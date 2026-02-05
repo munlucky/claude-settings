@@ -11,6 +11,7 @@ context: fork
 - `analysisContext.request.keywords`
 - `analysisContext.request.taskType`
 - `analysisContext.signals.hasContextMd`
+- `context.md` (경로: `analysisContext.artifacts.contextDocPath`, 있으면 참조)
 
 ## 트리거 및 질문
 - UI/버전: `UI`/화면 키워드가 있을 때 디자인 스펙 버전 확인

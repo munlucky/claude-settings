@@ -11,7 +11,9 @@ context: fork
 - `taskType`: `feature` 또는 `refactor`
 - `context.md`가 존재하거나 업데이트된 경우
 
-## 절차
+## 입력
+- `analysisContext.*` (구조화된 상태)
+- `context.md` (경로: `analysisContext.artifacts.contextDocPath`)
 
 ### 1단계: MCP 가용성 확인 (필수 - 최우선 수행)
 검증 작업 전, Codex MCP 사용 가능 여부를 먼저 확인합니다:

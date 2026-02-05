@@ -14,7 +14,8 @@ context: fork
 
 ## Inputs
 
-- context.md path (contains Acceptance Tests section)
+- `analysisContext.*` (structured state)
+- `context.md` (path: `analysisContext.artifacts.contextDocPath`, contains Acceptance Tests)
 - Test framework (from PROJECT.md: jest/vitest/playwright)
 
 ## Procedure
