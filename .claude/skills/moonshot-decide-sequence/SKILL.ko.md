@@ -58,6 +58,11 @@ skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함�
 - medium: requirements-analyzer -> project-memory-check -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
 
+**리팩토링 전용 규칙** (taskType == refactor):
+- `implementation-runner` 후 항상 `build-error-resolver` 포함하여 자동 빌드 검증
+- 복잡한 리팩토링: implementation-runner가 단계별 모드로 실행되며 단계 간 빌드 체크 수행
+- 참조: `.claude/rules/scope-confirmation.md`, `.claude/rules/refactoring-guidelines.md`
+
 **참고**: `project-memory-check`는 계획 완료 후, 구현 시작 전에 실행되어 경계 준수 여부를 확인한다.
 
 complex는 항상 테스트 기반 완료 검증을 포함한다.
