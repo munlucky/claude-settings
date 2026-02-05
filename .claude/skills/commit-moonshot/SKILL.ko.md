@@ -1,8 +1,9 @@
 ---
-description: Changes를 확인하고 Memory를 현행화한 후 커밋을 수행합니다.
-argument-hint: [context]
-allowed-tools: Bash(git status:*), Bash(git add:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(jq:*), Bash(basename:*), mcp__memory__create_entities, mcp__memory__add_observations, mcp__memory__create_relations, mcp__memory__search_nodes, mcp__memory__open_nodes
----
+name: commit-moonshot
+description: 변경사항 분석 및 프로젝트 메모리 현행화 후 커밋
+triggers:
+  - "commit"
+  - "커밋"
 
 # 프로젝트 메모리 현행화 및 커밋
 

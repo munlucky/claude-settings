@@ -223,6 +223,8 @@ notes: []
 - `verify-changes.sh`: 검증 스크립트 (Bash tool)
 - `efficiency-tracker`: 효율성 추적 스킬
 - `session-logger`: 세션 로깅 스킬
+- `moonshot-phase-runner`: 마스터 플랜 기반 페이즈별 구현 스킬
+- `commit-moonshot`: 프로젝트 메모리 현행화 및 커밋 스킬
 
 **실행 규칙:**
 1. 각 단계를 순차적으로 실행
