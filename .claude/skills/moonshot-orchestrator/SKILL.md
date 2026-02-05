@@ -223,6 +223,8 @@ Run `decisions.skillChain` in order:
 - `verify-changes.sh`: verification script (Bash tool)
 - `efficiency-tracker`: efficiency tracking skill
 - `session-logger`: session logging skill
+- `moonshot-phase-runner`: master plan based phase-by-phase implementation skill
+- `commit-moonshot`: project memory update and git commit skill
 
 **Execution rules:**
 1. Run steps sequentially
