@@ -58,6 +58,11 @@ Include only stages to run **after moonshot-decide-sequence** (do not include mo
 - medium: requirements-analyzer -> project-memory-check -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
 
+**Refactor-specific rules** (taskType == refactor):
+- Always include `build-error-resolver` after `implementation-runner` for automatic build verification
+- For complex refactors: implementation-runner executes in phased mode with build checks between phases
+- Reference: `.claude/rules/scope-confirmation.md`, `.claude/rules/refactoring-guidelines.md`
+
 **Note**: `project-memory-check` runs after planning and before implementation to verify boundary compliance.
 
 Complex always includes test-based completion verification.

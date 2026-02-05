@@ -8,22 +8,7 @@
 
 ## 핵심 규칙
 
-- @.claude/rules/basic-principles.md
-- @.claude/rules/workflow.md
-- @.claude/rules/context-management.md
-- @.claude/rules/quality.md
-- @.claude/rules/communication.md
-- @.claude/rules/output-format.md
-- @.claude/rules/security.md
-- @.claude/rules/coding-style.md
-- @.claude/rules/testing.md
-
-## 경로별 규칙
-
-- @.claude/rules/skills/skill-definition.md
-- @.claude/rules/agents/agent-definition.md
-- @.claude/rules/agents/agent-delegation.md
-- @.claude/rules/docs/documentation.md
+> `.claude/rules/` 폴더의 규칙들은 자동 로드됩니다. 활성 규칙은 해당 폴더를 참고하세요.
 
 ## 문서 메모리 정책
 
