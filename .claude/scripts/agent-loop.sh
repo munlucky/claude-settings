@@ -139,12 +139,10 @@ mkdir -p "$LOG_DIR"
 get_next_phase() {
     if [[ -f "$STATUS_FILE" ]]; then
         # Find first non-completed phase
-        grep -A2 "status:" "$STATUS_FILE" 2>/dev/null | \
-            grep -B1 "pending\|in_progress" | \
-            grep "number:" | \
-            head -1 | \
-            sed 's/.*number: //' | \
-            tr -d ' '
+        awk '
+            $1=="-" && $2=="number:" {n=$3}
+            $1=="status:" && ($2=="pending" || $2=="in_progress") {print n; exit}
+        ' "$STATUS_FILE"
     else
         echo "1"
     fi
@@ -152,7 +150,9 @@ get_next_phase() {
 
 get_phase_title() {
     local phase_num=$1
-    local phase_doc=$(find "$PLAN_DIR" -name "${phase_num:0:2}*" -o -name "*phase*${phase_num}*" 2>/dev/null | head -1)
+    local phase_prefix
+    printf -v phase_prefix '%02d' "$phase_num"
+    local phase_doc=$(find "$PLAN_DIR" -maxdepth 1 \( -name "${phase_prefix}-*.md" -o -name "*phase*${phase_num}*" \) 2>/dev/null | head -1)
     if [[ -n "$phase_doc" ]]; then
         head -5 "$phase_doc" | grep -E "^#" | head -1 | sed 's/^#* //'
     else
@@ -162,6 +162,44 @@ get_phase_title() {
 
 count_total_phases() {
     find "$PLAN_DIR" -maxdepth 1 -name "*.md" ! -name "*master*" ! -name "*00-*" 2>/dev/null | wc -l | tr -d ' '
+}
+
+# Update phase status in phase-status.yaml (best-effort)
+update_phase_status() {
+    local phase_num="$1"
+    local new_status="$2"
+    local timestamp="$3"
+
+    if [[ ! -f "$STATUS_FILE" ]]; then
+        return
+    fi
+
+    local tmp_file="${STATUS_FILE}.tmp"
+    awk -v num="$phase_num" -v status="$new_status" -v ts="$timestamp" '
+        $1=="-" && $2=="number:" {
+            if (in_block && status=="completed" && !has_completedAt && ts!="") {
+                print "    completedAt: \"" ts "\""
+            }
+            in_block = ($3==num)
+            has_completedAt=0
+        }
+        in_block && $1=="status:" { print "    status: " status; next }
+        in_block && $1=="completedAt:" {
+            has_completedAt=1
+            if (status=="completed" && ts!="") {
+                print "    completedAt: \"" ts "\""
+            } else {
+                print
+            }
+            next
+        }
+        { print }
+        END {
+            if (in_block && status=="completed" && !has_completedAt && ts!="") {
+                print "    completedAt: \"" ts "\""
+            }
+        }
+    ' "$STATUS_FILE" > "$tmp_file" && mv "$tmp_file" "$STATUS_FILE"
 }
 
 # -----------------------------------------------------------------------------
@@ -216,13 +254,28 @@ while true; do
     START_TIME=$(date +%s)
     
     if claude --dangerously-skip-permissions \
-        -p "Phase $NEXT_PHASE 를 구현해주세요. 계획 문서: $PLAN_DIR" \
+        -p "/moonshot-orchestrator Phase $NEXT_PHASE 를 구현해주세요. 계획 문서: $PLAN_DIR" \
         2>&1 | tee "$LOGFILE"; then
         
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - START_TIME))
         log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
+        update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
         completed=$((completed + 1))
+
+        # Run commit skill after successful phase
+        log_info "Running commit-moonshot for Phase $NEXT_PHASE"
+        if ! claude --dangerously-skip-permissions \
+            -c -p "/commit-moonshot Phase $NEXT_PHASE 완료. 해당 페이즈 변경사항을 커밋해주세요." \
+            2>&1 | tee -a "$LOGFILE"; then
+            log_error "commit-moonshot failed"
+            echo ""
+            log_warn "Continue to next phase? (y/n)"
+            read -r response
+            if [[ "$response" != "y" ]]; then
+                break
+            fi
+        fi
     else
         log_error "Phase $NEXT_PHASE failed"
         failed=$((failed + 1))
