@@ -427,6 +427,28 @@ if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 	done
 fi
 
+# 7.6. settings.local.json이 없는 경우에만 복사 (있으면 7.5에서 병합됨)
+if [ ! -f ".claude/settings.local.json" ]; then
+	DOWNLOADED_SETTINGS="$TEMP_DIR/claude-settings-$BRANCH/.claude/settings.local.json"
+	if [ -f "$DOWNLOADED_SETTINGS" ]; then
+		cp "$DOWNLOADED_SETTINGS" ".claude/settings.local.json"
+		print_info "✓ settings.local.json 생성 (새 설치)"
+	fi
+fi
+
+# 7.7. scripts/ 디렉토리 파일 복사 (항상 최신 버전으로 덮어쓰기)
+DOWNLOADED_SCRIPTS="$TEMP_DIR/claude-settings-$BRANCH/.claude/scripts"
+if [ -d "$DOWNLOADED_SCRIPTS" ]; then
+	mkdir -p ".claude/scripts"
+	for script in "$DOWNLOADED_SCRIPTS"/*; do
+		if [ -f "$script" ]; then
+			script_name=$(basename "$script")
+			cp "$script" ".claude/scripts/$script_name"
+			print_info "✓ scripts/$script_name 설치"
+		fi
+	done
+fi
+
 # 9. Memory MCP 전역 설정 (wrapper 스크립트로 동적 경로 지원)
 echo ""
 print_info "Memory MCP 전역 설정 중..."
