@@ -1,63 +1,67 @@
 #!/bin/bash
 # =============================================================================
-# Agent Loop - Autonomous Claude Code Execution
+# Agent Loop - Phase-based Autonomous Execution
 # =============================================================================
-# Based on: https://www.anthropic.com/engineering/building-c-compiler
+# Runs moonshot-phase-runner in a loop, each iteration as a separate session.
+# Called from within Claude Code main session.
 #
 # Usage:
-#   ./agent-loop.sh [options]
+#   ./agent-loop.sh <plan-dir> [options]
+#
+# Arguments:
+#   plan-dir          Directory containing master plan and phase documents
 #
 # Options:
-#   --iterations N    Maximum iterations (default: unlimited)
-#   --delay N         Delay between iterations in seconds (default: 5)
+#   --status-file     Path to phase-status.yaml (default: .claude/docs/phase-status.yaml)
+#   --max-phases N    Maximum phases to run (default: all)
+#   --delay N         Delay between phases in seconds (default: 3)
 #   --dry-run         Print what would be executed without running
-#   --help            Show this help message
-#
-# Prerequisites:
-#   - Claude Code CLI installed and authenticated
-#   - AGENT_PROMPT.md in the same directory
 # =============================================================================
 
 set -e
 
-# Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_DIR="${SCRIPT_DIR}/agent_logs"
-PROMPT_FILE="${SCRIPT_DIR}/AGENT_PROMPT.md"
-LOCK_DIR="${SCRIPT_DIR}/.claude/current_tasks"
-MAX_ITERATIONS=0  # 0 = unlimited
-DELAY_SECONDS=5
-DRY_RUN=false
-
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Configuration
+PLAN_DIR=""
+STATUS_FILE=".claude/docs/phase-status.yaml"
+MAX_PHASES=0
+DELAY_SECONDS=3
+DRY_RUN=false
+LOG_DIR=".claude/logs/agent-loop"
 
 # -----------------------------------------------------------------------------
 # Helper Functions
 # -----------------------------------------------------------------------------
 
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+log_phase() {
+    echo -e "${CYAN}📦${NC} $1"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${GREEN}✅${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo -e "${RED}❌${NC} $1"
+}
+
+log_info() {
+    echo -e "${BLUE}ℹ️${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}⚠️${NC} $1"
 }
 
 show_help() {
-    head -25 "$0" | tail -20
+    head -20 "$0" | tail -15
     exit 0
 }
 
@@ -65,10 +69,20 @@ show_help() {
 # Parse Arguments
 # -----------------------------------------------------------------------------
 
+# First positional argument is plan directory
+if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+    PLAN_DIR="$1"
+    shift
+fi
+
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --iterations)
-            MAX_ITERATIONS="$2"
+        --status-file)
+            STATUS_FILE="$2"
+            shift 2
+            ;;
+        --max-phases)
+            MAX_PHASES="$2"
             shift 2
             ;;
         --delay)
@@ -93,122 +107,152 @@ done
 # Validation
 # -----------------------------------------------------------------------------
 
-if [[ ! -f "$PROMPT_FILE" ]]; then
-    log_error "AGENT_PROMPT.md not found at: $PROMPT_FILE"
-    log_info "Please create AGENT_PROMPT.md with your agent instructions."
+if [[ -z "$PLAN_DIR" ]]; then
+    log_error "Plan directory not specified"
+    echo "Usage: ./agent-loop.sh <plan-dir> [options]"
+    exit 1
+fi
+
+if [[ ! -d "$PLAN_DIR" ]]; then
+    log_error "Plan directory not found: $PLAN_DIR"
+    exit 1
+fi
+
+MASTER_PLAN=$(find "$PLAN_DIR" -name "*master*" -o -name "*00-*" 2>/dev/null | head -1)
+if [[ -z "$MASTER_PLAN" ]]; then
+    log_error "Master plan not found in: $PLAN_DIR"
     exit 1
 fi
 
 if ! command -v claude &> /dev/null; then
-    log_error "Claude CLI not found. Please install it first."
+    log_error "Claude CLI not found"
     exit 1
 fi
 
-# Create directories
+# Create log directory
 mkdir -p "$LOG_DIR"
-mkdir -p "$LOCK_DIR"
 
 # -----------------------------------------------------------------------------
-# Lock Management (flock-based for same-directory agents)
+# Get Next Phase
 # -----------------------------------------------------------------------------
 
-acquire_lock() {
-    local task_name="$1"
-    local lock_file="${LOCK_DIR}/${task_name}.lock"
-    
-    exec 200>"$lock_file"
-    if flock -n 200; then
-        echo "$$" > "$lock_file"
-        log_info "Lock acquired: $task_name"
-        return 0
+get_next_phase() {
+    if [[ -f "$STATUS_FILE" ]]; then
+        # Find first non-completed phase
+        grep -A2 "status:" "$STATUS_FILE" 2>/dev/null | \
+            grep -B1 "pending\|in_progress" | \
+            grep "number:" | \
+            head -1 | \
+            sed 's/.*number: //' | \
+            tr -d ' '
     else
-        log_warn "Task already locked: $task_name"
-        return 1
+        echo "1"
     fi
 }
 
-release_lock() {
-    local task_name="$1"
-    local lock_file="${LOCK_DIR}/${task_name}.lock"
-    
-    if [[ -f "$lock_file" ]]; then
-        rm -f "$lock_file"
-        log_info "Lock released: $task_name"
+get_phase_title() {
+    local phase_num=$1
+    local phase_doc=$(find "$PLAN_DIR" -name "${phase_num:0:2}*" -o -name "*phase*${phase_num}*" 2>/dev/null | head -1)
+    if [[ -n "$phase_doc" ]]; then
+        head -5 "$phase_doc" | grep -E "^#" | head -1 | sed 's/^#* //'
+    else
+        echo "Phase $phase_num"
     fi
 }
 
-# Cleanup on exit
-cleanup() {
-    log_info "Cleaning up locks..."
-    rm -f "${LOCK_DIR}"/*.lock 2>/dev/null || true
-    log_info "Agent loop terminated."
+count_total_phases() {
+    find "$PLAN_DIR" -maxdepth 1 -name "*.md" ! -name "*master*" ! -name "*00-*" 2>/dev/null | wc -l | tr -d ' '
 }
-trap cleanup EXIT
 
 # -----------------------------------------------------------------------------
 # Main Loop
 # -----------------------------------------------------------------------------
 
-log_info "=== Agent Loop Started ==="
-log_info "Prompt file: $PROMPT_FILE"
-log_info "Log directory: $LOG_DIR"
-log_info "Max iterations: ${MAX_ITERATIONS:-unlimited}"
-log_info "Delay between iterations: ${DELAY_SECONDS}s"
+echo ""
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${CYAN}  Agent Loop Started${NC}"
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo ""
+log_info "Plan directory: $PLAN_DIR"
+log_info "Master plan: $MASTER_PLAN"
+log_info "Status file: $STATUS_FILE"
 
-iteration=0
+TOTAL_PHASES=$(count_total_phases)
+log_info "Total phases: $TOTAL_PHASES"
+echo ""
+
+completed=0
+failed=0
 
 while true; do
-    iteration=$((iteration + 1))
+    NEXT_PHASE=$(get_next_phase)
     
-    # Check iteration limit
-    if [[ $MAX_ITERATIONS -gt 0 && $iteration -gt $MAX_ITERATIONS ]]; then
-        log_info "Reached maximum iterations ($MAX_ITERATIONS). Exiting."
+    # Check if all done
+    if [[ -z "$NEXT_PHASE" || "$NEXT_PHASE" == "" ]]; then
         break
     fi
     
-    # Generate unique identifiers
-    COMMIT=$(git rev-parse --short=6 HEAD 2>/dev/null || echo "nocommit")
-    TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-    LOGFILE="${LOG_DIR}/agent_${TIMESTAMP}_${COMMIT}.log"
+    # Check max phases limit
+    if [[ $MAX_PHASES -gt 0 && $completed -ge $MAX_PHASES ]]; then
+        log_info "Reached max phases limit ($MAX_PHASES)"
+        break
+    fi
     
-    log_info "=== Iteration $iteration ==="
-    log_info "Current commit: $COMMIT"
-    log_info "Log file: $LOGFILE"
+    PHASE_TITLE=$(get_phase_title "$NEXT_PHASE")
+    TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+    LOGFILE="${LOG_DIR}/phase-${NEXT_PHASE}_${TIMESTAMP}.log"
+    
+    echo -e "${CYAN}───────────────────────────────────────────────────────────────${NC}"
+    log_phase "Phase $NEXT_PHASE: $PHASE_TITLE"
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_warn "[DRY-RUN] Would execute: claude -p \"\$(cat $PROMPT_FILE)\""
-        sleep "$DELAY_SECONDS"
+        log_warn "[DRY-RUN] Would execute phase $NEXT_PHASE"
+        completed=$((completed + 1))
+        sleep 1
         continue
     fi
     
-    # Execute Claude session
-    log_info "Starting Claude session..."
+    # Execute worker session
+    START_TIME=$(date +%s)
     
     if claude --dangerously-skip-permissions \
-        -p "$(cat "$PROMPT_FILE")" \
-        &> "$LOGFILE"; then
-        log_success "Claude session completed successfully."
-    else
-        exit_code=$?
-        log_warn "Claude session exited with code: $exit_code"
+        -p "Phase $NEXT_PHASE 를 구현해주세요. 계획 문서: $PLAN_DIR" \
+        2>&1 | tee "$LOGFILE"; then
         
-        # Check if it was a self-termination (pkill -9 bash scenario)
-        if [[ $exit_code -eq 137 || $exit_code -eq 143 ]]; then
-            log_error "Session was killed. Stopping loop."
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
+        completed=$((completed + 1))
+    else
+        log_error "Phase $NEXT_PHASE failed"
+        failed=$((failed + 1))
+        
+        # Ask whether to continue
+        echo ""
+        log_warn "Continue to next phase? (y/n)"
+        read -r response
+        if [[ "$response" != "y" ]]; then
             break
         fi
     fi
     
-    # Log summary
-    if [[ -f "$LOGFILE" ]]; then
-        lines=$(wc -l < "$LOGFILE")
-        log_info "Session log: $lines lines written"
+    # Delay between phases
+    if [[ $DELAY_SECONDS -gt 0 ]]; then
+        sleep "$DELAY_SECONDS"
     fi
-    
-    # Delay before next iteration
-    log_info "Waiting ${DELAY_SECONDS}s before next iteration..."
-    sleep "$DELAY_SECONDS"
 done
 
-log_info "=== Agent Loop Completed ==="
-log_info "Total iterations: $iteration"
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+
+echo ""
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${CYAN}  Agent Loop Completed${NC}"
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo ""
+log_info "Phases completed: $completed"
+if [[ $failed -gt 0 ]]; then
+    log_error "Phases failed: $failed"
+fi
+echo ""
