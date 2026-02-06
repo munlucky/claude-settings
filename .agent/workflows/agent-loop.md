@@ -6,36 +6,34 @@ description: 무감독 에이전트 루프 실행 및 병렬 에이전트 조정
 
 자율 실행 에이전트 루프를 시작하고 관리하는 방법입니다.
 
-## Prerequisites
+## 사용법
 
-1. Claude Code CLI 설치 및 인증 완료
-2. `.claude/scripts/agent-loop.sh` 실행 권한 부여
+### 스킬 기반 실행 (권장)
 
 ```bash
+# 다음 태스크 1개 실행
+/moonshot-agent-loop
+
+# 5개 태스크 연속 실행
+/moonshot-agent-loop --iterations 5
+
+# 막힐 때까지 계속 실행
+/moonshot-agent-loop --until-blocked
+
+# 현재 상태만 확인
+/moonshot-agent-loop --status
+```
+
+### Bash 스크립트 실행 (고급 - 완전 무감독)
+
+외부에서 Claude를 무한 루프로 실행할 때 사용:
+
+```bash
+# 실행 권한 부여
 chmod +x .claude/scripts/agent-loop.sh
-```
 
-## Usage
-
-### 기본 실행 (무한 루프)
-
-```bash
-# // turbo
-cd /path/to/project
-./.claude/scripts/agent-loop.sh
-```
-
-### 제한된 반복 횟수
-
-```bash
-# 10회 반복 후 종료
+# 실행
 ./.claude/scripts/agent-loop.sh --iterations 10
-```
-
-### Dry Run (실제 실행 없이 확인)
-
-```bash
-./.claude/scripts/agent-loop.sh --dry-run
 ```
 
 ## Parallel Agents (같은 프로젝트에서)
