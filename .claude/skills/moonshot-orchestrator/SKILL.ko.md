@@ -19,6 +19,17 @@ PM 분석 스킬들을 순차적으로 실행하고 최종 에이전트 체인�
 
 # 특정 팀 지정
 /moonshot-orchestrator <사용자-요청> --use-teams=review-team
+/moonshot-orchestrator <사용자-요청> --use-teams=research-team
+/moonshot-orchestrator <사용자-요청> --use-teams=verify-team
+/moonshot-orchestrator <사용자-요청> --use-teams=planning-team
+/moonshot-orchestrator <사용자-요청> --use-teams=quality-team
+/moonshot-orchestrator <사용자-요청> --use-teams=analysis-team
+/moonshot-orchestrator <사용자-요청> --use-teams=fix-team
+
+# 🆕 구현 단계 팀
+/moonshot-orchestrator <사용자-요청> --use-teams=impl-team
+/moonshot-orchestrator <사용자-요청> --use-teams=cross-layer-team
+/moonshot-orchestrator <사용자-요청> --use-teams=debug-team
 ```
 
 ## 입력
@@ -245,15 +256,41 @@ notes: []
 
 `--use-teams` 플래그 지정 시:
 1. `signals.useAgentTeams = true` 설정
-2. `implementation-runner` 이후, 순차 리뷰 대신 병렬 팀으로 대체:
-   - `--use-teams` 또는 `--use-teams=review-team`: `moonshot-teams-runner review-team` 사용
-   - `--use-teams=research-team`: `moonshot-teams-runner research-team` 사용
-   - `--use-teams=verify-team`: `moonshot-teams-runner verify-team` 사용
+2. 플래그에 따라 순차 실행을 병렬 팀으로 대체:
+
+   **리뷰/분석 팀** (`implementation-runner` 이후):
+   - `--use-teams` 또는 `--use-teams=review-team`: `moonshot-teams-runner review-team`
+   - `--use-teams=research-team`: `moonshot-teams-runner research-team`
+   - `--use-teams=verify-team`: `moonshot-teams-runner verify-team`
+   - `--use-teams=quality-team`: `moonshot-teams-runner quality-team`
+   - `--use-teams=analysis-team`: `moonshot-teams-runner analysis-team`
+   
+   **계획 팀** (`moonshot-plan-writer` 이후):
+   - `--use-teams=planning-team`: `moonshot-teams-runner planning-team`
+   
+   **구현 팀** (`implementation-runner` 대체) 🆕:
+   - `--use-teams=impl-team`: `moonshot-teams-runner impl-team`
+     - `requirePlanApproval` 활성화: 팀원이 계획 작성 → 리더 승인 → 구현
+     - `fileOwnership: exclusive` 활성화: 파일 충돌 방지
+   - `--use-teams=cross-layer-team`: `moonshot-teams-runner cross-layer-team`
+     - 프론트엔드/백엔드/테스트 병렬 구현
+     - 각 팀원이 특정 경로 소유 (components/, api/, tests/)
+   
+   **디버그 팀** (디버그 요청 시) 🆕:
+   - `--use-teams=debug-team`: `moonshot-teams-runner debug-team`
+     - 경쟁 가설 조사
+     - 조사자들이 서로의 가설에 도전하고 반박
+   
+   **수정 팀** (빌드 실패 시):
+   - `--use-teams=fix-team`: `moonshot-teams-runner fix-team`
+
 3. 팀 결과는 취합되어 `analysisContext.notes`에 병합
 
 > [!CAUTION]
-> Agent Teams는 토큰을 많이 소모합니다 (2명 팀 기준 ~13,000 토큰).
-> 중요한 리뷰나 복잡한 분석에만 사용하세요.
+> Agent Teams는 토큰을 많이 소모합니다:
+> - 2명 팀: ~13,000 토큰 (전체 용량의 29%)
+> - 3명 팀: ~20,000 토큰
+> 중요한 리뷰나 복잡한 구현에만 사용하세요.
 
 **실행 규칙:**
 1. 각 단계를 순차적으로 실행
