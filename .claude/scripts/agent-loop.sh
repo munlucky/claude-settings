@@ -35,11 +35,19 @@ MAX_PHASES=0
 DELAY_SECONDS=3
 DRY_RUN=false
 LOG_DIR=".claude/logs/agent-loop"
+DECISION_LOG=".claude/logs/agent-loop/decisions.md"
+SUMMARY_REPORT=".claude/logs/agent-loop/summary.md"
 WATCHDOG_CHECK_SECONDS=60
 WATCHDOG_MAX_SECONDS=$((2 * 60 * 60))
 WATCHDOG_AUTO_RESTART=true
 # 0 = unlimited restarts
 WATCHDOG_MAX_RESTARTS=0
+
+# Autonomous Mode (default: true)
+# When enabled, Claude will make autonomous decisions without user confirmation
+AUTONOMOUS_MODE=true
+# Max auto-fix attempts before moving to next phase
+MAX_AUTO_FIX_ATTEMPTS=3
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -136,6 +144,14 @@ fi
 
 # Create log directory
 mkdir -p "$LOG_DIR"
+
+# Initialize decision log
+if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+    echo "# Autonomous Decision Log" > "$DECISION_LOG"
+    echo "" >> "$DECISION_LOG"
+    echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')" >> "$DECISION_LOG"
+    echo "" >> "$DECISION_LOG"
+fi
 
 # -----------------------------------------------------------------------------
 # Get Next Phase
@@ -292,59 +308,138 @@ while true; do
         continue
     fi
     
+    # Build autonomous prompt
+    if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+        AUTONOMOUS_INSTRUCTIONS="
+## 자율 실행 모드
+- 사용자 확인 없이 최선의 판단으로 자율적으로 진행하세요
+- 불확실한 경우 보수적이고 안전한 선택을 하세요
+- 모든 결정사항은 간략히 기록해주세요
+- 실패 시 대안을 시도한 후 진행하세요
+- 절대로 사용자에게 질문하거나 확인을 요청하지 마세요"
+    else
+        AUTONOMOUS_INSTRUCTIONS=""
+    fi
+    
+    PHASE_PROMPT="/moonshot-orchestrator Phase $NEXT_PHASE 를 구현해주세요.
+계획 문서: $PLAN_DIR
+$AUTONOMOUS_INSTRUCTIONS"
+    
     # Execute worker session
     START_TIME=$(date +%s)
     restart_count=0
+    auto_fix_count=0
+    
     while true; do
         if run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
-            -p "/moonshot-orchestrator Phase $NEXT_PHASE 를 구현해주세요. 계획 문서: $PLAN_DIR"; then
+            -p "$PHASE_PROMPT"; then
             
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
             log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
             update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
             completed=$((completed + 1))
+            
+            # Log decision
+            if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                echo "## Phase $NEXT_PHASE" >> "$DECISION_LOG"
+                echo "- Status: ✅ Completed" >> "$DECISION_LOG"
+                echo "- Duration: ${DURATION}s" >> "$DECISION_LOG"
+                echo "" >> "$DECISION_LOG"
+            fi
 
             # Run commit skill after successful phase
             log_info "Running commit-moonshot for Phase $NEXT_PHASE"
-            if ! run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
-                -c -p "/commit-moonshot Phase $NEXT_PHASE 완료. 해당 페이즈 변경사항을 커밋해주세요."; then
-                log_error "commit-moonshot failed"
-                echo ""
-                log_warn "Continue to next phase? (y/n)"
-                read -r response
-                if [[ "$response" != "y" ]]; then
-                    break
-                fi
-            fi
+            run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
+                -c -p "/commit-moonshot Phase $NEXT_PHASE 완료. 해당 페이즈 변경사항을 커밋해주세요." || true
             break
         else
             exit_code=$?
+            
+            # Handle timeout with auto-restart
             if [[ $exit_code -eq 124 && "$WATCHDOG_AUTO_RESTART" == "true" ]]; then
                 restart_count=$((restart_count + 1))
-                log_warn "Phase $NEXT_PHASE timed out after ${WATCHDOG_MAX_SECONDS}s. Restarting... (attempt ${restart_count})"
-                if [[ $WATCHDOG_MAX_RESTARTS -gt 0 && $restart_count -ge $WATCHDOG_MAX_RESTARTS ]]; then
-                    log_error "Phase $NEXT_PHASE exceeded watchdog restart limit"
-                    failed=$((failed + 1))
-                    echo ""
-                    log_warn "Continue to next phase? (y/n)"
-                    read -r response
-                    if [[ "$response" != "y" ]]; then
-                        break
-                    fi
-                else
-                    continue
-                fi
-            else
-                log_error "Phase $NEXT_PHASE failed"
-                failed=$((failed + 1))
+                log_warn "Phase $NEXT_PHASE timed out. Restarting... (attempt ${restart_count})"
                 
-                # Ask whether to continue
+                if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                    echo "## Phase $NEXT_PHASE - Timeout Restart #${restart_count}" >> "$DECISION_LOG"
+                fi
+                
+                if [[ $WATCHDOG_MAX_RESTARTS -gt 0 && $restart_count -ge $WATCHDOG_MAX_RESTARTS ]]; then
+                    log_error "Phase $NEXT_PHASE exceeded restart limit"
+                    failed=$((failed + 1))
+                    
+                    if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                        echo "- Status: ❌ Failed (restart limit exceeded)" >> "$DECISION_LOG"
+                        echo "" >> "$DECISION_LOG"
+                        log_warn "Autonomous mode: Moving to next phase"
+                    else
+                        echo ""
+                        log_warn "Continue to next phase? (y/n)"
+                        read -r response
+                        if [[ "$response" != "y" ]]; then
+                            break 2
+                        fi
+                    fi
+                    break
+                fi
+                continue
+            fi
+            
+            # Handle failure with auto-fix attempts
+            auto_fix_count=$((auto_fix_count + 1))
+            log_error "Phase $NEXT_PHASE failed (attempt ${auto_fix_count}/${MAX_AUTO_FIX_ATTEMPTS})"
+            
+            if [[ "$AUTONOMOUS_MODE" == "true" && $auto_fix_count -lt $MAX_AUTO_FIX_ATTEMPTS ]]; then
+                log_info "Attempting auto-fix..."
+                
+                # Log the fix attempt
+                echo "## Phase $NEXT_PHASE - Auto-fix #${auto_fix_count}" >> "$DECISION_LOG"
+                
+                # Run auto-fix: analyze log and retry
+                FIX_PROMPT="이전 Phase $NEXT_PHASE 실행이 실패했습니다.
+로그 파일: $LOGFILE
+
+1. 로그를 분석하여 실패 원인을 파악하세요
+2. 문제를 수정하세요
+3. Phase $NEXT_PHASE 를 다시 완료하세요
+
+$AUTONOMOUS_INSTRUCTIONS"
+                
+                if run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
+                    -p "$FIX_PROMPT"; then
+                    
+                    END_TIME=$(date +%s)
+                    DURATION=$((END_TIME - START_TIME))
+                    log_success "Phase $NEXT_PHASE completed after auto-fix (${DURATION}s)"
+                    update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+                    completed=$((completed + 1))
+                    
+                    echo "- Status: ✅ Completed (after auto-fix)" >> "$DECISION_LOG"
+                    echo "- Duration: ${DURATION}s" >> "$DECISION_LOG"
+                    echo "" >> "$DECISION_LOG"
+                    
+                    # Commit after fix
+                    run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
+                        -c -p "/commit-moonshot Phase $NEXT_PHASE 완료 (auto-fix). 변경사항을 커밋해주세요." || true
+                    break
+                fi
+                continue
+            fi
+            
+            # Max attempts reached or not in autonomous mode
+            failed=$((failed + 1))
+            
+            if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                echo "- Status: ❌ Failed (max attempts reached)" >> "$DECISION_LOG"
+                echo "" >> "$DECISION_LOG"
+                log_warn "Autonomous mode: Moving to next phase after ${MAX_AUTO_FIX_ATTEMPTS} failed attempts"
+            else
                 echo ""
                 log_warn "Continue to next phase? (y/n)"
                 read -r response
                 if [[ "$response" != "y" ]]; then
-                    break
+                    break 2
                 fi
             fi
             break
@@ -358,8 +453,10 @@ while true; do
 done
 
 # -----------------------------------------------------------------------------
-# Summary
+# Summary Report
 # -----------------------------------------------------------------------------
+
+END_TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
@@ -371,3 +468,30 @@ if [[ $failed -gt 0 ]]; then
     log_error "Phases failed: $failed"
 fi
 echo ""
+
+# Generate summary report
+if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+    cat > "$SUMMARY_REPORT" << EOF
+# Agent Loop Summary Report
+
+## Execution Info
+- **Plan Directory**: $PLAN_DIR
+- **Total Phases**: $TOTAL_PHASES
+- **Completed**: $completed
+- **Failed**: $failed
+- **Completed At**: $END_TIMESTAMP
+
+## Mode
+- Autonomous Mode: ✅ Enabled
+- Auto-fix Attempts: $MAX_AUTO_FIX_ATTEMPTS
+- Watchdog Timeout: ${WATCHDOG_MAX_SECONDS}s
+
+## Decision Log
+See: $DECISION_LOG
+
+## Logs
+See: $LOG_DIR
+EOF
+    log_info "Summary report: $SUMMARY_REPORT"
+    log_info "Decision log: $DECISION_LOG"
+fi
