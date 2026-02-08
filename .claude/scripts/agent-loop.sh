@@ -35,6 +35,11 @@ MAX_PHASES=0
 DELAY_SECONDS=3
 DRY_RUN=false
 LOG_DIR=".claude/logs/agent-loop"
+WATCHDOG_CHECK_SECONDS=60
+WATCHDOG_MAX_SECONDS=$((2 * 60 * 60))
+WATCHDOG_AUTO_RESTART=true
+# 0 = unlimited restarts
+WATCHDOG_MAX_RESTARTS=0
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -164,6 +169,43 @@ count_total_phases() {
     find "$PLAN_DIR" -maxdepth 1 -name "*.md" ! -name "*master*" ! -name "*00-*" 2>/dev/null | wc -l | tr -d ' '
 }
 
+# Run a command with watchdog (no periodic output)
+run_with_watchdog() {
+    local log_file="$1"
+    shift
+
+    local start_time
+    start_time=$(date +%s)
+    local timed_out=false
+
+    set +e
+    "$@" >> "$log_file" 2>&1 &
+    local pid=$!
+
+    while kill -0 "$pid" 2>/dev/null; do
+        local now
+        now=$(date +%s)
+        local elapsed=$((now - start_time))
+        if [[ $WATCHDOG_MAX_SECONDS -gt 0 && $elapsed -ge $WATCHDOG_MAX_SECONDS ]]; then
+            timed_out=true
+            kill "$pid" 2>/dev/null
+            sleep 5
+            kill -9 "$pid" 2>/dev/null
+            break
+        fi
+        sleep "$WATCHDOG_CHECK_SECONDS"
+    done
+
+    wait "$pid"
+    local exit_code=$?
+    set -e
+
+    if [[ "$timed_out" == "true" ]]; then
+        return 124
+    fi
+    return "$exit_code"
+}
+
 # Update phase status in phase-status.yaml (best-effort)
 update_phase_status() {
     local phase_num="$1"
@@ -252,42 +294,62 @@ while true; do
     
     # Execute worker session
     START_TIME=$(date +%s)
-    
-    if claude --dangerously-skip-permissions \
-        -p "/moonshot-orchestrator Phase $NEXT_PHASE 를 구현해주세요. 계획 문서: $PLAN_DIR" \
-        2>&1 | tee "$LOGFILE"; then
-        
-        END_TIME=$(date +%s)
-        DURATION=$((END_TIME - START_TIME))
-        log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
-        update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-        completed=$((completed + 1))
+    restart_count=0
+    while true; do
+        if run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
+            -p "/moonshot-orchestrator Phase $NEXT_PHASE 를 구현해주세요. 계획 문서: $PLAN_DIR"; then
+            
+            END_TIME=$(date +%s)
+            DURATION=$((END_TIME - START_TIME))
+            log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
+            update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            completed=$((completed + 1))
 
-        # Run commit skill after successful phase
-        log_info "Running commit-moonshot for Phase $NEXT_PHASE"
-        if ! claude --dangerously-skip-permissions \
-            -c -p "/commit-moonshot Phase $NEXT_PHASE 완료. 해당 페이즈 변경사항을 커밋해주세요." \
-            2>&1 | tee -a "$LOGFILE"; then
-            log_error "commit-moonshot failed"
-            echo ""
-            log_warn "Continue to next phase? (y/n)"
-            read -r response
-            if [[ "$response" != "y" ]]; then
-                break
+            # Run commit skill after successful phase
+            log_info "Running commit-moonshot for Phase $NEXT_PHASE"
+            if ! run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
+                -c -p "/commit-moonshot Phase $NEXT_PHASE 완료. 해당 페이즈 변경사항을 커밋해주세요."; then
+                log_error "commit-moonshot failed"
+                echo ""
+                log_warn "Continue to next phase? (y/n)"
+                read -r response
+                if [[ "$response" != "y" ]]; then
+                    break
+                fi
             fi
-        fi
-    else
-        log_error "Phase $NEXT_PHASE failed"
-        failed=$((failed + 1))
-        
-        # Ask whether to continue
-        echo ""
-        log_warn "Continue to next phase? (y/n)"
-        read -r response
-        if [[ "$response" != "y" ]]; then
+            break
+        else
+            exit_code=$?
+            if [[ $exit_code -eq 124 && "$WATCHDOG_AUTO_RESTART" == "true" ]]; then
+                restart_count=$((restart_count + 1))
+                log_warn "Phase $NEXT_PHASE timed out after ${WATCHDOG_MAX_SECONDS}s. Restarting... (attempt ${restart_count})"
+                if [[ $WATCHDOG_MAX_RESTARTS -gt 0 && $restart_count -ge $WATCHDOG_MAX_RESTARTS ]]; then
+                    log_error "Phase $NEXT_PHASE exceeded watchdog restart limit"
+                    failed=$((failed + 1))
+                    echo ""
+                    log_warn "Continue to next phase? (y/n)"
+                    read -r response
+                    if [[ "$response" != "y" ]]; then
+                        break
+                    fi
+                else
+                    continue
+                fi
+            else
+                log_error "Phase $NEXT_PHASE failed"
+                failed=$((failed + 1))
+                
+                # Ask whether to continue
+                echo ""
+                log_warn "Continue to next phase? (y/n)"
+                read -r response
+                if [[ "$response" != "y" ]]; then
+                    break
+                fi
+            fi
             break
         fi
-    fi
+    done
     
     # Delay between phases
     if [[ $DELAY_SECONDS -gt 0 ]]; then
