@@ -361,6 +361,56 @@ parallelGroups:
 3. **파일 충돌 피하기**: 각 팀원이 다른 파일 소유하도록 분해
 4. **연구/검토로 시작**: Agent Teams 처음이면 코드 작성 없는 작업부터
 
+## Progress Status Output Rules
+
+Output clear progress status during team execution.
+
+### Team Initialization
+```
+🚀 Agent Teams Starting: {team-name}
+═══════════════════════════════════════════════════════════════
+  Members: {member-count}
+  Timeout: {timeout}s
+  Mode: {delegationMode ? 'Delegation' : 'Direct'}
+═══════════════════════════════════════════════════════════════
+```
+
+### Member Progress Status
+```
+👥 Team Member Progress
+├─ [feature-dev-1] 🔄 Implementing... (plan approved)
+├─ [feature-dev-2] ⏳ Awaiting plan approval
+├─ [test-writer]   ✅ Done (12 tests written)
+└─ Overall: 33% (1/3)
+```
+
+### Status Icons
+- ✅ Completed
+- 🔄 Running
+- ⏳ Pending
+- 📝 Writing plan
+- ✔️ Plan approved
+- ❌ Failed
+- ⏱️ Timeout
+
+### Plan Approval Phase (when requirePlanApproval enabled)
+```
+📋 Plan Approval Status
+├─ [feature-dev-1] ✔️ Approved ─ UserProfile impl
+├─ [feature-dev-2] 📝 Under review ─ ProfileSettings impl
+└─ [test-writer]   ⏳ Pending
+```
+
+### Team Completion
+```
+═══════════════════════════════════════════════════════════════
+  ✅ {team-name} Complete
+═══════════════════════════════════════════════════════════════
+  Duration: {duration}s
+  Success: {success-count} / Failed: {fail-count}
+───────────────────────────────────────────────────────────────
+```
+
 ## Limitations
 
 - 세션당 하나의 팀만 가능
