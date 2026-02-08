@@ -459,6 +459,48 @@ Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
 {Add questions section if missingInfo exists}
 ```
 
+## Progress Status Output Rules
+
+Output clear progress status after each step completes.
+
+### Analysis Phase
+```
+📊 PM Analysis Progress
+├─ [1/5] ✅ Task classification done (taskType: {taskType})
+├─ [2/5] ✅ Complexity evaluation done (complexity: {complexity})
+├─ [3/5] 🔄 Uncertainty detection in progress...
+├─ [4/5] ⏳ Sequence decision pending
+└─ [5/5] ⏳ Chain configuration pending
+```
+
+### After Sequence Decision (Chain Execution Phase)
+```
+🔗 Execution Chain Progress ({phase})
+├─ [1/N] ✅ pre-flight-check done
+├─ [2/N] 🔄 requirements-analyzer running...
+├─ [3/N] ⏳ context-builder pending
+└─ [.../N] ⏳ remaining steps pending
+```
+
+### Status Icons
+- ✅ Completed
+- 🔄 In Progress
+- ⏳ Pending
+- ❌ Failed
+- ⚠️ Warning/Skipped
+
+### Analysis to Implementation Transition
+```
+═══════════════════════════════════════════════════════════════
+  📋 Analysis Complete → Starting Development
+═══════════════════════════════════════════════════════════════
+  Task Type: {taskType}
+  Complexity: {complexity}
+  Estimated Files: {estimatedFiles}
+  Estimated Time: {estimatedTime}
+───────────────────────────────────────────────────────────────
+```
+
 ## Error handling
 
 1. **Skill execution failure**: record error logs in notes and report to the user
