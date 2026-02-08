@@ -8,6 +8,19 @@ description: PM workflow orchestrator. Analyzes user requests and automatically 
 ## Role
 Runs PM analysis skills in sequence and builds the final agent chain.
 
+## Usage
+
+```bash
+# Basic usage
+/moonshot-orchestrator <user-request>
+
+# With Agent Teams enabled (parallel review)
+/moonshot-orchestrator <user-request> --use-teams
+
+# With specific team
+/moonshot-orchestrator <user-request> --use-teams=review-team
+```
+
 ## Inputs
 Automatically collect:
 - `userMessage`: user request
@@ -39,6 +52,7 @@ signals:
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false  # React/Next.js project detected
+  useAgentTeams: false  # Agent Teams parallel execution enabled
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -224,7 +238,22 @@ Run `decisions.skillChain` in order:
 - `efficiency-tracker`: efficiency tracking skill
 - `session-logger`: session logging skill
 - `moonshot-phase-runner`: master plan based phase-by-phase implementation skill
+- `moonshot-teams-runner`: Agent Teams based parallel team execution skill
 - `commit-moonshot`: project memory update and git commit skill
+
+**Agent Teams Integration:**
+
+When `--use-teams` flag is provided:
+1. Set `signals.useAgentTeams = true`
+2. After `implementation-runner`, replace sequential review with parallel team:
+   - If `--use-teams` or `--use-teams=review-team`: use `moonshot-teams-runner review-team`
+   - If `--use-teams=research-team`: use `moonshot-teams-runner research-team`
+   - If `--use-teams=verify-team`: use `moonshot-teams-runner verify-team`
+3. Team results are aggregated and merged into `analysisContext.notes`
+
+> [!CAUTION]
+> Agent Teams consume significantly more tokens (~13,000 tokens for 2 members).
+> Use only for critical reviews or complex analysis.
 
 **Execution rules:**
 1. Run steps sequentially

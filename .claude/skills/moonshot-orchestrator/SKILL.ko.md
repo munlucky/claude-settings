@@ -8,6 +8,19 @@ description: PM 워크플로우 오케스트레이터. 사용자 요청을 분�
 ## 역할
 PM 분석 스킬들을 순차적으로 실행하고 최종 에이전트 체인을 구성하는 오케스트레이터.
 
+## 사용법
+
+```bash
+# 기본 사용
+/moonshot-orchestrator <사용자-요청>
+
+# Agent Teams 활성화 (병렬 리뷰)
+/moonshot-orchestrator <사용자-요청> --use-teams
+
+# 특정 팀 지정
+/moonshot-orchestrator <사용자-요청> --use-teams=review-team
+```
+
 ## 입력
 다음 정보를 자동으로 수집:
 - `userMessage`: 사용자 요청
@@ -39,6 +52,7 @@ signals:
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false  # React/Next.js 프로젝트 감지
+  useAgentTeams: false  # Agent Teams 병렬 실행 활성화
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -224,7 +238,22 @@ notes: []
 - `efficiency-tracker`: 효율성 추적 스킬
 - `session-logger`: 세션 로깅 스킬
 - `moonshot-phase-runner`: 마스터 플랜 기반 페이즈별 구현 스킬
+- `moonshot-teams-runner`: Agent Teams 기반 병렬 팀 실행 스킬
 - `commit-moonshot`: 프로젝트 메모리 현행화 및 커밋 스킬
+
+**Agent Teams 연동:**
+
+`--use-teams` 플래그 지정 시:
+1. `signals.useAgentTeams = true` 설정
+2. `implementation-runner` 이후, 순차 리뷰 대신 병렬 팀으로 대체:
+   - `--use-teams` 또는 `--use-teams=review-team`: `moonshot-teams-runner review-team` 사용
+   - `--use-teams=research-team`: `moonshot-teams-runner research-team` 사용
+   - `--use-teams=verify-team`: `moonshot-teams-runner verify-team` 사용
+3. 팀 결과는 취합되어 `analysisContext.notes`에 병합
+
+> [!CAUTION]
+> Agent Teams는 토큰을 많이 소모합니다 (2명 팀 기준 ~13,000 토큰).
+> 중요한 리뷰나 복잡한 분석에만 사용하세요.
 
 **실행 규칙:**
 1. 각 단계를 순차적으로 실행
