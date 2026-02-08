@@ -4,7 +4,7 @@
 # Each team defines a group of parallel workers that can be spawned
 # using Claude Code's Agent Teams feature.
 
-schemaVersion: "1.0"
+schemaVersion: "1.1"
 
 # Prerequisites
 prerequisites:
@@ -22,6 +22,7 @@ teams:
     leader:
       role: "orchestrator"
       skill: "moonshot-orchestrator"
+      delegationMode: true  # 리더는 조율만, 직접 리뷰 안함
     members:
       - name: "code-reviewer"
         skill: "codex-review-code"
@@ -33,6 +34,8 @@ teams:
         skill: "vercel-react-best-practices"
         condition: "signals.reactProject == true"
         focus: "React 성능, 훅 사용, 렌더링 최적화"
+    communication:
+      enabled: true  # 리뷰어간 발견사항 공유
     aggregation:
       strategy: "merge"
       outputPath: ".claude/docs/team-reports/review-report.md"
@@ -46,6 +49,7 @@ teams:
     leader:
       role: "orchestrator"
       skill: "moonshot-orchestrator"
+      delegationMode: true
     members:
       - name: "requirements-analyst"
         agent: "requirements-analyzer"
@@ -53,6 +57,8 @@ teams:
       - name: "context-builder"
         agent: "context-builder"
         focus: "기존 코드 분석, 관련 파일 파악"
+    communication:
+      enabled: true
     aggregation:
       strategy: "merge"
       outputPath: ".claude/docs/team-reports/research-report.md"
@@ -66,6 +72,7 @@ teams:
     leader:
       role: "resolver"
       prompt: "양측 의견을 종합하여 최종 권고사항 작성"
+      delegationMode: true
     members:
       - name: "implementer"
         prompt: "구현 내용을 설명하고 설계 결정의 이유를 제시"
@@ -87,6 +94,7 @@ teams:
     leader:
       role: "orchestrator"
       skill: "moonshot-orchestrator"
+      delegationMode: true
     members:
       - name: "requirements-analyzer"
         agent: "requirements-analyzer"
@@ -97,6 +105,8 @@ teams:
       - name: "plan-validator"
         skill: "codex-validate-plan"
         focus: "계획 논리 검증, 의존성 체크"
+    communication:
+      enabled: true
     aggregation:
       strategy: "merge"
       outputPath: ".claude/docs/team-reports/planning-report.md"
@@ -110,6 +120,7 @@ teams:
     leader:
       role: "orchestrator"
       skill: "moonshot-orchestrator"
+      delegationMode: true
     members:
       - name: "completion-verifier"
         skill: "completion-verifier"
@@ -120,6 +131,8 @@ teams:
       - name: "build-checker"
         skill: "build-error-resolver"
         focus: "빌드 오류 사전 탐지"
+    communication:
+      enabled: true
     aggregation:
       strategy: "merge"
       outputPath: ".claude/docs/team-reports/quality-report.md"
@@ -133,6 +146,7 @@ teams:
     leader:
       role: "orchestrator"
       skill: "moonshot-orchestrator"
+      delegationMode: true
     members:
       - name: "classifier"
         skill: "moonshot-classify-task"
@@ -143,6 +157,8 @@ teams:
       - name: "uncertainty-detector"
         skill: "moonshot-detect-uncertainty"
         focus: "불확실성 검출, 질문 도출"
+    communication:
+      enabled: true
     aggregation:
       strategy: "merge"
       outputPath: ".claude/docs/team-reports/analysis-report.md"
@@ -156,6 +172,7 @@ teams:
     leader:
       role: "orchestrator"
       skill: "moonshot-orchestrator"
+      delegationMode: true
     members:
       - name: "build-resolver"
         skill: "build-error-resolver"
@@ -164,14 +181,129 @@ teams:
         skill: "security-reviewer"
         focus: "보안 취약점 수정"
     condition: "signals.buildFailed == true || signals.securityConcern == true"
+    communication:
+      enabled: true
     aggregation:
       strategy: "merge"
       outputPath: ".claude/docs/team-reports/fix-report.md"
 
+  # ─────────────────────────────────────────────────────────────────
+  # 🆕 Implementation Team - Parallel Feature Implementation
+  # ─────────────────────────────────────────────────────────────────
+  impl-team:
+    description: "병렬 구현 팀 - 새 모듈/기능 개발"
+    timeout: 600
+    requirePlanApproval: true  # 계획 승인 후 구현
+    leader:
+      role: "coordinator"
+      skill: "moonshot-orchestrator"
+      delegationMode: true  # 리더는 조율만, 직접 구현 안함
+      approvalCriteria:
+        - "테스트 커버리지 계획 포함"
+        - "기존 패턴과 일관성"
+        - "파일 소유권 충돌 없음"
+    members:
+      - name: "feature-dev-1"
+        prompt: "할당된 모듈/기능 구현. 다른 팀원 파일 수정 금지."
+        focus: "주요 기능 구현"
+      - name: "feature-dev-2"
+        prompt: "할당된 모듈/기능 구현. 다른 팀원 파일 수정 금지."
+        focus: "보조 기능 구현"
+        condition: "analysisContext.estimates.estimatedFiles > 5"
+      - name: "test-writer"
+        prompt: "구현된 기능에 대한 테스트 작성"
+        focus: "테스트 코드 작성"
+        ownedPaths: ["tests/", "**/*.test.ts", "**/*.spec.ts"]
+    communication:
+      enabled: true  # 팀원간 API 스펙 논의 등
+    fileOwnership:
+      enabled: true  # 파일 충돌 방지
+      strategy: "exclusive"
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/impl-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # 🆕 Cross-Layer Team - Frontend/Backend/Test Coordination
+  # ─────────────────────────────────────────────────────────────────
+  cross-layer-team:
+    description: "교차 계층 조율 팀 - 프론트엔드/백엔드/테스트"
+    timeout: 600
+    requirePlanApproval: true
+    leader:
+      role: "coordinator"
+      skill: "moonshot-orchestrator"
+      delegationMode: true
+      approvalCriteria:
+        - "API 계약 명확"
+        - "각 레이어 책임 분리"
+    members:
+      - name: "frontend-dev"
+        prompt: "프론트엔드 컴포넌트 및 UI 구현. API 호출부 작성."
+        focus: "프론트엔드 구현"
+        ownedPaths: 
+          - "src/components/"
+          - "src/pages/"
+          - "src/app/"
+          - "src/hooks/"
+      - name: "backend-dev"
+        prompt: "API 엔드포인트 및 백엔드 로직 구현."
+        focus: "백엔드 구현"
+        ownedPaths:
+          - "src/api/"
+          - "src/services/"
+          - "src/lib/"
+          - "server/"
+      - name: "test-dev"
+        prompt: "유닛 테스트 및 통합 테스트 작성."
+        focus: "테스트 구현"
+        ownedPaths:
+          - "tests/"
+          - "**/*.test.ts"
+          - "**/*.spec.ts"
+          - "__tests__/"
+    communication:
+      enabled: true
+      # 프론트엔드가 백엔드에 API 스펙 문의 가능
+    fileOwnership:
+      enabled: true
+      strategy: "exclusive"  # 각 팀원은 자기 경로만 수정
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/cross-layer-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # 🆕 Debug Team - Competing Hypothesis Investigation
+  # ─────────────────────────────────────────────────────────────────
+  debug-team:
+    description: "디버깅 팀 - 경쟁 가설 조사"
+    timeout: 300
+    leader:
+      role: "resolver"
+      prompt: "각 조사자의 가설을 평가하고 가장 유력한 원인 결정"
+      delegationMode: true
+    members:
+      - name: "investigator-1"
+        prompt: "첫 번째 가설 조사. 다른 조사자의 가설에 도전하고 반박."
+        focus: "가설 1 조사"
+      - name: "investigator-2"
+        prompt: "두 번째 가설 조사. 다른 조사자의 가설에 도전하고 반박."
+        focus: "가설 2 조사"
+      - name: "investigator-3"
+        prompt: "세 번째 가설 조사. 다른 조사자의 가설에 도전하고 반박."
+        focus: "가설 3 조사"
+        condition: "analysisContext.complexity in ['high', 'critical']"
+    communication:
+      enabled: true
+      debateRounds: 3  # 과학적 논쟁처럼 서로 반박
+    aggregation:
+      strategy: "debate-resolution"
+      outputPath: ".claude/docs/team-reports/debug-report.md"
+
 # Orchestrator Integration
 orchestratorHooks:
-  # When to auto-trigger teams
   triggers:
+    # 기존 트리거
     - team: "review-team"
       after: "implementation-runner"
       condition: "analysisContext.complexity in ['high', 'critical']"
@@ -190,10 +322,21 @@ orchestratorHooks:
     - team: "fix-team"
       after: "build-error-resolver"
       condition: "signals.buildFailed == true"
+    # 🆕 새 트리거
+    - team: "impl-team"
+      after: "moonshot-plan-writer"
+      condition: "signals.useParallelImpl == true && analysisContext.estimates.estimatedFiles > 3"
+    - team: "cross-layer-team"
+      after: "moonshot-plan-writer"
+      condition: "signals.crossLayerChange == true"
+    - team: "debug-team"
+      on: "debug-request"
+      condition: "signals.debugMode == true"
 
 # Global Settings
 settings:
   logDirectory: ".claude/logs/teams/"
-  maxConcurrentTeams: 1  # 동시 팀 실행 제한
+  maxConcurrentTeams: 1  # 동시 팀 실행 제한 (세션당 하나)
   defaultTimeout: 300
-
+  defaultDelegationMode: true  # 모든 리더에 기본 적용
+  defaultCommunication: true   # 모든 팀에 통신 기본 활성화

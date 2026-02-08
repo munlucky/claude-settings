@@ -19,6 +19,17 @@ Runs PM analysis skills in sequence and builds the final agent chain.
 
 # With specific team
 /moonshot-orchestrator <user-request> --use-teams=review-team
+/moonshot-orchestrator <user-request> --use-teams=research-team
+/moonshot-orchestrator <user-request> --use-teams=verify-team
+/moonshot-orchestrator <user-request> --use-teams=planning-team
+/moonshot-orchestrator <user-request> --use-teams=quality-team
+/moonshot-orchestrator <user-request> --use-teams=analysis-team
+/moonshot-orchestrator <user-request> --use-teams=fix-team
+
+# 🆕 Implementation phase teams
+/moonshot-orchestrator <user-request> --use-teams=impl-team
+/moonshot-orchestrator <user-request> --use-teams=cross-layer-team
+/moonshot-orchestrator <user-request> --use-teams=debug-team
 ```
 
 ## Inputs
@@ -245,15 +256,41 @@ Run `decisions.skillChain` in order:
 
 When `--use-teams` flag is provided:
 1. Set `signals.useAgentTeams = true`
-2. After `implementation-runner`, replace sequential review with parallel team:
-   - If `--use-teams` or `--use-teams=review-team`: use `moonshot-teams-runner review-team`
-   - If `--use-teams=research-team`: use `moonshot-teams-runner research-team`
-   - If `--use-teams=verify-team`: use `moonshot-teams-runner verify-team`
+2. Replace sequential execution with parallel team based on flag:
+
+   **Review/Analysis Teams** (after `implementation-runner`):
+   - `--use-teams` or `--use-teams=review-team`: `moonshot-teams-runner review-team`
+   - `--use-teams=research-team`: `moonshot-teams-runner research-team`
+   - `--use-teams=verify-team`: `moonshot-teams-runner verify-team`
+   - `--use-teams=quality-team`: `moonshot-teams-runner quality-team`
+   - `--use-teams=analysis-team`: `moonshot-teams-runner analysis-team`
+   
+   **Planning Teams** (after `moonshot-plan-writer`):
+   - `--use-teams=planning-team`: `moonshot-teams-runner planning-team`
+   
+   **Implementation Teams** (replaces `implementation-runner`) 🆕:
+   - `--use-teams=impl-team`: `moonshot-teams-runner impl-team`
+     - Enables `requirePlanApproval`: teammates create plan → leader approves → implement
+     - Enables `fileOwnership: exclusive`: prevents file conflicts
+   - `--use-teams=cross-layer-team`: `moonshot-teams-runner cross-layer-team`
+     - Frontend/Backend/Test parallel implementation
+     - Each teammate owns specific paths (components/, api/, tests/)
+   
+   **Debug Teams** (on debug request) 🆕:
+   - `--use-teams=debug-team`: `moonshot-teams-runner debug-team`
+     - Competing hypothesis investigation
+     - Investigators challenge each other's theories
+   
+   **Fix Teams** (when build fails):
+   - `--use-teams=fix-team`: `moonshot-teams-runner fix-team`
+
 3. Team results are aggregated and merged into `analysisContext.notes`
 
 > [!CAUTION]
-> Agent Teams consume significantly more tokens (~13,000 tokens for 2 members).
-> Use only for critical reviews or complex analysis.
+> Agent Teams consume significantly more tokens:
+> - 2-member team: ~13,000 tokens (29% of capacity)
+> - 3-member team: ~20,000 tokens
+> Use only for critical reviews or complex implementations.
 
 **Execution rules:**
 1. Run steps sequentially
