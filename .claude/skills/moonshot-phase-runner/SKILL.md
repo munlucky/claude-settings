@@ -1,6 +1,6 @@
 ---
 name: moonshot-phase-runner
-description: Master plan based phase-by-phase implementation automation with agent loop
+description: Master plan based phase-by-phase implementation automation
 triggers:
   - "phase runner"
   - "run phase"
@@ -8,116 +8,117 @@ triggers:
   - "agent loop"
 ---
 
-# Phase Workflow Runner
+# Moonshot Phase Runner
 
 ## Role
 
-Automates phase-by-phase implementation based on master plan documents.
-Integrates plan review (Q&A) and autonomous execution loop.
+Prepares phase-by-phase implementation based on master plan documents.
+Handles plan validation, uncertainty resolution (Q&A), and **execution preparation**.
+
+> **Note**: Actual execution is done by running `agent-loop.sh` in a separate terminal.
 
 ## Usage
 
 ```bash
-# Specify plan directory and run
+# Specify plan directory
 /moonshot-phase-runner docs/implementation/
 
-# Without argument (will ask for directory)
-/moonshot-phase-runner
+# Autonomous mode (skip Q&A)
+/moonshot-phase-runner docs/implementation/ --autonomous
 ```
 
 ## Workflow
 
 ```
-/moonshot-phase-runner <plan-dir>
+/moonshot-phase-runner <plan-dir> [--autonomous]
     │
     ├─ 1. Plan Directory Validation
     │      └─ Verify master plan + phase docs exist
     │
-    ├─ 2. Plan Review (Q&A)
-    │      └─ Each phase: detect uncertainties → ask user → confirm
+    ├─ 2. Create/Update phase-status.yaml
+    │      └─ Initialize each phase status
     │
-    └─ 3. Loop Execution
-           └─ agent-loop.sh runs each phase as worker session
-           └─ Status displayed in real-time
+    ├─ 3. Plan Review (unless --autonomous)
+    │      └─ Detect uncertainties → Q&A → planConfirmed: true
+    │
+    └─ 4. Output Execution Command
+           └─ User copies and runs in separate terminal
 ```
 
-## Step 1: Plan Directory
+## Step 1: Plan Directory Validation
 
 ```yaml
-input:
-  provided: Use provided path
-  not_provided: Ask user
-
 validation:
   - Check directory exists
   - Find master plan (00-master-plan.md or *master*.md)
   - Count phase documents
 
 output:
-  success: "Found {N} phases in {plan-dir}"
-  failure: "Master plan not found"
+  success: "✅ Found {N} phases in {plan-dir}"
+  failure: "❌ Master plan not found"
 ```
 
-## Step 2: Plan Review
+## Step 2: Create phase-status.yaml
 
-For each phase:
+Creates `.claude/docs/phase-status.yaml`:
+
+```yaml
+schemaVersion: "1.0"
+masterPlan: "docs/implementation/00-master-plan.md"
+autonomousMode: true
+phases:
+  - number: 1
+    title: "Project Setup"
+    status: pending
+    planConfirmed: false
+  - number: 2
+    title: "Core Implementation"
+    status: pending
+    planConfirmed: false
+```
+
+## Step 3: Plan Review (Optional)
+
+When `--autonomous` flag is **NOT** specified:
 
 ```yaml
 actions:
-  1. Load phase document
+  1. Load each phase document
   2. Run /moonshot-detect-uncertainty
   3. If uncertainties found:
-     - Display questions to user
-     - Wait for answers
-     - Update phase document with answers
-  4. Mark phase as planConfirmed: true in phase-status.yaml
+     - Display questions
+     - Wait for user answers
+     - Update phase document
+  4. Set planConfirmed: true
 ```
 
-**Output:**
-```markdown
-## Phase 1 Review
+When `--autonomous` flag **IS** specified:
+- Skip Q&A
+- Set all phases to planConfirmed: true
+- Proceed with autonomous decision mode
 
-✅ No uncertainties - confirmed
+## Step 4: Output Execution Command
 
-## Phase 2 Review
+**Final output format:**
 
-⚠️ Uncertainties found:
-1. API response format: { data: [] } or { items: [] }?
-
-> Waiting for answer...
-```
-
-## Step 3: Loop Execution
-
-When all phases are confirmed:
-
-```bash
-# Execute agent-loop.sh in foreground
-.claude/scripts/agent-loop.sh "$PLAN_DIR"
-```
-
-**Real-time output:**
 ```
 ═══════════════════════════════════════════════════════════════
-  Agent Loop Started
+  ✅ Ready
 ═══════════════════════════════════════════════════════════════
 
-ℹ️ Plan directory: docs/implementation/
-ℹ️ Total phases: 5
+📋 Plan: docs/implementation/00-master-plan.md
+📦 Phases: 5
+🤖 Mode: Autonomous
 
 ───────────────────────────────────────────────────────────────
-📦 Phase 1: Project Setup
-✅ Phase 1 completed (45s)
+  Run the following command in a separate terminal:
+───────────────────────────────────────────────────────────────
+
+  .claude/scripts/agent-loop.sh docs/implementation/
 
 ───────────────────────────────────────────────────────────────
-📦 Phase 2: Core UI
-✅ Phase 2 completed (120s)
 
-───────────────────────────────────────────────────────────────
-📦 Phase 3: File & Git Integration
-❌ Phase 3 failed
-
-⚠️ Continue to next phase? (y/n)
+💡 Tip: Logs available at .claude/logs/agent-loop/
 ```
 
 ## Status File
@@ -127,34 +128,21 @@ When all phases are confirmed:
 ```yaml
 schemaVersion: "1.0"
 masterPlan: "docs/implementation/00-master-plan.md"
+autonomousMode: true
+preparedAt: "2026-02-08T15:00:00Z"
 phases:
   - number: 1
     title: "Project Setup"
-    status: completed
+    status: pending
     planConfirmed: true
-    completedAt: "2026-02-06T14:00:00Z"
   - number: 2
     title: "Core UI"
-    status: in_progress
+    status: pending
     planConfirmed: true
-```
-
-## Error Handling
-
-```yaml
-buildFailed:
-  action: Display error, ask to continue or stop
-
-phaseDocMissing:
-  action: Skip with warning
-
-userCancel:
-  action: Stop loop gracefully
 ```
 
 ## References
 
 - `/moonshot-orchestrator`: Phase implementation delegation
 - `/moonshot-detect-uncertainty`: Pre-execution uncertainty detection
-- `/commit-moonshot`: Project memory + git commit automation
-- `.claude/scripts/agent-loop.sh`: Worker session spawner
+- `.claude/scripts/agent-loop.sh`: Autonomous execution loop (run by user separately)
