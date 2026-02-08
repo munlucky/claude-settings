@@ -1,0 +1,199 @@
+# Agent Teams Configuration
+# Used by /moonshot-teams-runner skill
+#
+# Each team defines a group of parallel workers that can be spawned
+# using Claude Code's Agent Teams feature.
+
+schemaVersion: "1.0"
+
+# Prerequisites
+prerequisites:
+  claudeVersion: "2.1.32"
+  envFlag: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+
+# Team Definitions
+teams:
+  # ─────────────────────────────────────────────────────────────────
+  # Review Team - Parallel Code Reviews
+  # ─────────────────────────────────────────────────────────────────
+  review-team:
+    description: "병렬 코드 리뷰 팀"
+    timeout: 300
+    leader:
+      role: "orchestrator"
+      skill: "moonshot-orchestrator"
+    members:
+      - name: "code-reviewer"
+        skill: "codex-review-code"
+        focus: "코드 품질, 구조, 가독성"
+      - name: "security-reviewer"
+        skill: "security-reviewer"
+        focus: "보안 취약점, 인증/인가, 민감 데이터"
+      - name: "react-reviewer"
+        skill: "vercel-react-best-practices"
+        condition: "signals.reactProject == true"
+        focus: "React 성능, 훅 사용, 렌더링 최적화"
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/review-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Research Team - Parallel Analysis
+  # ─────────────────────────────────────────────────────────────────
+  research-team:
+    description: "병렬 분석 팀"
+    timeout: 180
+    leader:
+      role: "orchestrator"
+      skill: "moonshot-orchestrator"
+    members:
+      - name: "requirements-analyst"
+        agent: "requirements-analyzer"
+        focus: "요구사항 분석, 스코프 정의"
+      - name: "context-builder"
+        agent: "context-builder"
+        focus: "기존 코드 분석, 관련 파일 파악"
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/research-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Verify Team - Adversarial Verification
+  # ─────────────────────────────────────────────────────────────────
+  verify-team:
+    description: "이의 제기 검증 팀"
+    timeout: 240
+    leader:
+      role: "resolver"
+      prompt: "양측 의견을 종합하여 최종 권고사항 작성"
+    members:
+      - name: "implementer"
+        prompt: "구현 내용을 설명하고 설계 결정의 이유를 제시"
+      - name: "critic"
+        prompt: "잠재적 문제점, 엣지 케이스, 개선점을 지적"
+    communication:
+      enabled: true  # 팀원간 소통 허용
+      debateRounds: 2
+    aggregation:
+      strategy: "debate-resolution"
+      outputPath: ".claude/docs/team-reports/verify-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Planning Team - Parallel Plan Validation
+  # ─────────────────────────────────────────────────────────────────
+  planning-team:
+    description: "계획 단계 병렬 검증 팀"
+    timeout: 240
+    leader:
+      role: "orchestrator"
+      skill: "moonshot-orchestrator"
+    members:
+      - name: "requirements-analyzer"
+        agent: "requirements-analyzer"
+        focus: "요구사항 추출 및 검증"
+      - name: "context-builder"
+        agent: "context-builder"
+        focus: "기존 코드베이스 분석"
+      - name: "plan-validator"
+        skill: "codex-validate-plan"
+        focus: "계획 논리 검증, 의존성 체크"
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/planning-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Quality Team - Post-Implementation Quality Check
+  # ─────────────────────────────────────────────────────────────────
+  quality-team:
+    description: "품질 검증 팀"
+    timeout: 300
+    leader:
+      role: "orchestrator"
+      skill: "moonshot-orchestrator"
+    members:
+      - name: "completion-verifier"
+        skill: "completion-verifier"
+        focus: "테스트 기반 완료 검증"
+      - name: "memory-reviewer"
+        agent: "project-memory-reviewer"
+        focus: "프로젝트 규칙/스펙 위반 검증"
+      - name: "build-checker"
+        skill: "build-error-resolver"
+        focus: "빌드 오류 사전 탐지"
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/quality-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Analysis Team - Parallel PM Analysis
+  # ─────────────────────────────────────────────────────────────────
+  analysis-team:
+    description: "PM 분석 병렬화 팀"
+    timeout: 180
+    leader:
+      role: "orchestrator"
+      skill: "moonshot-orchestrator"
+    members:
+      - name: "classifier"
+        skill: "moonshot-classify-task"
+        focus: "작업 유형 분류"
+      - name: "complexity-analyzer"
+        skill: "moonshot-evaluate-complexity"
+        focus: "복잡도 평가, 예상 작업량"
+      - name: "uncertainty-detector"
+        skill: "moonshot-detect-uncertainty"
+        focus: "불확실성 검출, 질문 도출"
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/analysis-report.md"
+
+  # ─────────────────────────────────────────────────────────────────
+  # Fix Team - Error Resolution
+  # ─────────────────────────────────────────────────────────────────
+  fix-team:
+    description: "문제 해결 팀"
+    timeout: 300
+    leader:
+      role: "orchestrator"
+      skill: "moonshot-orchestrator"
+    members:
+      - name: "build-resolver"
+        skill: "build-error-resolver"
+        focus: "빌드/컴파일 에러 해결"
+      - name: "security-fixer"
+        skill: "security-reviewer"
+        focus: "보안 취약점 수정"
+    condition: "signals.buildFailed == true || signals.securityConcern == true"
+    aggregation:
+      strategy: "merge"
+      outputPath: ".claude/docs/team-reports/fix-report.md"
+
+# Orchestrator Integration
+orchestratorHooks:
+  # When to auto-trigger teams
+  triggers:
+    - team: "review-team"
+      after: "implementation-runner"
+      condition: "analysisContext.complexity in ['high', 'critical']"
+    - team: "research-team"
+      before: "context-builder"
+      condition: "analysisContext.estimates.estimatedFiles > 10"
+    - team: "planning-team"
+      after: "moonshot-plan-writer"
+      condition: "analysisContext.complexity in ['high', 'critical']"
+    - team: "quality-team"
+      after: "completion-verifier"
+      condition: "signals.useAgentTeams == true"
+    - team: "analysis-team"
+      before: "moonshot-classify-task"
+      condition: "signals.useAgentTeams == true"
+    - team: "fix-team"
+      after: "build-error-resolver"
+      condition: "signals.buildFailed == true"
+
+# Global Settings
+settings:
+  logDirectory: ".claude/logs/teams/"
+  maxConcurrentTeams: 1  # 동시 팀 실행 제한
+  defaultTimeout: 300
+
