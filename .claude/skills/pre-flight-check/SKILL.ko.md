@@ -1,7 +1,6 @@
 ---
 name: pre-flight-check
 description: Checks essential information and project status before starting a task.
-context: fork
 ---
 
 # Pre-Flight Check Skill
