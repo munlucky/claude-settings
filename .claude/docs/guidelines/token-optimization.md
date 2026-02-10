@@ -38,7 +38,7 @@ context: fork   # ← Add this line
 | pre-flight-check | |
 | codex-validate-plan | |
 | codex-review-code | |
-| codex-test-integration | |
+| completion-verifier | |
 
 **Caution**:
 - Fork session cannot reference main context → pass needed info as arguments

@@ -7,6 +7,31 @@
 3. **Implement minimal code** (GREEN)
 4. **Refactor** (REFACTOR)
 
+## Test Environment Detection
+
+> Before applying any testing rules, first detect if the project has a test environment.
+
+### Detection Checklist
+
+| Check | How |
+|-------|-----|
+| Config file | `jest.config.*`, `vitest.config.*`, `playwright.config.*`, `pytest.ini`, etc. |
+| Package.json | `scripts.test` exists and is not the default `echo "Error..."` |
+| Existing tests | `**/*.test.*`, `**/*.spec.*`, `__tests__/`, `tests/` |
+| PROJECT.md | Testing Rules section has framework specified |
+
+### When NOT Detected
+
+```yaml
+action:
+  - Set signals.testEnvironmentDetected = false
+  - Log: "⚠️ No test environment detected"
+  - Skip test writing/running (but still do Self-Audit)
+  - Note reason in commit message
+```
+
+> Do NOT fail or block implementation when test environment is absent.
+
 ## Coverage Requirements
 
 - Minimum 80% coverage
@@ -28,7 +53,7 @@ Testing may be skipped when:
 | Type | Target | Tools |
 |------|--------|-------|
 | Unit | Utilities, pure functions | Jest, Vitest |
-| Integration | API endpoints | Supertest |
+| Integration | API endpoints, user flows | Supertest |
 | E2E | Critical user flows | Playwright, Cypress |
 
 ## Acceptance Tests (완료 기준)
@@ -50,7 +75,7 @@ Define in context.md during planning:
 - 🔴 PENDING: Test not written
 - 🔴 RED: Test written, FAIL
 - 🟢 PASS: Test passed
-- ⚪ SKIP: Skip Conditions apply
+- ⚪ SKIP: Skip Conditions apply (including no test env)
 
 ## Test Naming Convention
 
@@ -66,14 +91,26 @@ describe('UserService', () => {
 
 Testing integrates into moonshot-orchestrator workflow:
 
+### Implementation Phase (`implementation-runner`)
+- Detect test environment (Step 0)
+- Write tests alongside code (Step 5, only when test env exists)
+
+### Verification Phase (`completion-verifier`)
+- Detect test environment (Step 0)
+- Run acceptance tests (Step 1, only when test env exists)
+- Self-Audit against requirements (Step 2, always runs)
+- Retry loop: add unit test → fix → re-verify
+
+### Chain Rules
 - **simple**: `implementation-runner` → `verify-changes.sh`
-- **medium**: ... → `codex-review-code` (includes test verification)
-- **complex**: ... → `codex-review-code` → `codex-test-integration` (full test verification)
+- **medium**: ... → `completion-verifier` → `codex-review-code` → `efficiency-tracker`
+- **complex**: ... → `completion-verifier` → `codex-review-code` → `efficiency-tracker` → `session-logger`
 
 ### Auto-trigger Conditions
 
-| Condition | Skill Executed |
-|-----------|----------------|
-| complexity == complex | codex-test-integration |
-| API changes included | codex-test-integration |
+| Condition | Action |
+|-----------|--------|
+| Test env detected + complexity ≥ medium | `completion-verifier` runs full test suite |
+| Test env NOT detected | `completion-verifier` runs Self-Audit only |
 | Coverage < 80% | Request additional tests |
+| API changes included | Require integration tests |

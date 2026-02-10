@@ -64,6 +64,9 @@ signals:
   apiSpecConfirmed: false
   reactProject: false  # React/Next.js project detected
   useAgentTeams: false  # Agent Teams parallel execution enabled
+  testEnvironmentDetected: false  # Test framework detected in project
+  testFramework: null    # jest | vitest | playwright | etc.
+  testsWritten: false    # Tests written during implementation
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -337,7 +340,7 @@ During skillChain execution, dynamically inject skills when signals detected:
 |--------|-----------|--------------|-----------------|
 | `buildFailed` | Bash exit code ≠ 0 | build-error-resolver | Before retry current step |
 | `securityConcern` | Changed files contain `.env`, `auth`, `password`, `token` | security-reviewer | After codex-review-code |
-| `coverageLow` | Coverage < 80% from codex-test-integration output | (request additional tests) | After codex-test-integration |
+| `coverageLow` | Coverage < 80% from completion-verifier output | (request additional tests) | After completion-verifier |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | (codex-review-code extended) | Within codex-review-code |
 
 **Signal Detection:**
@@ -358,7 +361,7 @@ securityConcern:
   action: Add security-reviewer after codex-review-code
 
 coverageLow:
-  trigger: codex-test-integration reports coverage < 80%
+  trigger: completion-verifier reports coverage < 80%
   action: Log warning, request additional tests from user
 
 reactProject:
@@ -438,6 +441,8 @@ signals:
   testsFailed: 0
   completionRetryCount: 0
   currentPhase: "Phase 0"  # 0=Tests, 1=Mock, 2=API, 3=Verify
+  testEnvironmentDetected: false  # Detected by implementation-runner Step 0
+  testsWritten: false             # Set by implementation-runner Step 5
 ```
 
 ### 4. Record results

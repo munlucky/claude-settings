@@ -14,11 +14,37 @@ description: Performs implementation in the chain and records completion state a
 
 ## Procedure
 
+### Step 0: Test Environment Detection
+
+Before starting implementation, check if the target project has a test environment:
+
+```yaml
+testEnvironmentCheck:
+  # Check for test config files
+  configFiles:
+    - "jest.config.*"
+    - "vitest.config.*"
+    - "playwright.config.*"
+    - "pytest.ini"
+    - "pyproject.toml [tool.pytest]"
+  # Check package.json scripts.test
+  packageJson: "scripts.test != default error message"
+  # Check for existing test files
+  testFiles: "**/*.test.* | **/*.spec.* | __tests__/ | tests/"
+
+result:
+  signals.testEnvironmentDetected: true | false
+  signals.testFramework: "{detected}" | null
+```
+
+> When `testEnvironmentDetected = false`, skip test co-creation (Step 5) with warning.
+
 ### For All Tasks
 1. Check requirements and context.
 2. Define change scope and implement.
 3. Record changed files and key change summary.
 4. Update implementation completion in `analysisContext`.
+5. **Write tests** (if `testEnvironmentDetected = true`, see Step 5).
 
 ### For Refactor Tasks (taskType == refactor)
 > Reference: `.claude/rules/scope-confirmation.md`, `.claude/rules/refactoring-guidelines.md`
@@ -73,16 +99,55 @@ if (still failing after maxRetries):
 
 This enables autonomous error resolution without user intervention for common issues.
 
+### Step 5: Test Co-Creation
+
+> **Only when `signals.testEnvironmentDetected = true`**
+
+When implementing features, **write tests alongside code changes**:
+
+```yaml
+testCoCreation:
+  # 1. Unit tests for new/changed functions
+  unitTests:
+    scope: "Each new or significantly modified function"
+    naming: "{Component}.test.ts(x) or {module}.test.ts"
+    minimum: 1 per feature
+
+  # 2. Integration tests for user-facing flows
+  integrationTests:
+    scope: "Each new API endpoint or user flow"
+    naming: "{feature}.integration.test.ts"
+    minimum: 1 per flow (when applicable)
+    
+  # 3. Bug fix reproduction tests
+  bugfixTests:
+    scope: "Each bug being fixed"
+    naming: "Include 'regression' or bug ID in test name"
+    requirement: "Write reproduction test BEFORE fixing"
+```
+
+**When test env NOT detected:**
+```yaml
+action:
+  - Log: "⚠️ No test environment. Skipping test co-creation."
+  - Set signals.testsWritten = false
+  - Continue to output
+```
+
 ## Output (patch)
 ```yaml
 signals.implementationComplete: true
+signals.testEnvironmentDetected: true | false
+signals.testsWritten: true | false
 signals.selfHealingAttempts: 2  # Number of auto-fix attempts
 repo.changedFiles:
   - src/...
+  - src/__tests__/...  # Test files included
 notes:
-  - "implementation: complete, changed_files=3"
+  - "implementation: complete, changed_files=3, tests_written=2"
   - "refactor: scope_confirmed=true, phases=3, build_status=pass"
   - "self-healing: attempts=1, fixed=TS2339"  # For auto-fixed errors
+  - "test-env: detected=true, framework=vitest"  # Or "test-env: not_detected"
 ```
 
 ## Rules
@@ -90,4 +155,5 @@ notes:
 - If failed or deferred, record the reason in `notes`.
 - For refactor tasks: always confirm scope before starting.
 - Self-healing: max 2 retry attempts per phase before asking user.
+- **Test co-creation**: When test environment exists, implementation without tests is incomplete.
 

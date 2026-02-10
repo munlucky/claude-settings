@@ -14,11 +14,37 @@ description: 체인에서 실제 구현을 수행하고 완료 상태와 변경 
 
 ## 절차
 
+### Step 0: 테스트 환경 감지
+
+구현 시작 전, 대상 프로젝트에 테스트 환경이 있는지 확인:
+
+```yaml
+testEnvironmentCheck:
+  # 테스트 설정 파일 확인
+  configFiles:
+    - "jest.config.*"
+    - "vitest.config.*"
+    - "playwright.config.*"
+    - "pytest.ini"
+    - "pyproject.toml [tool.pytest]"
+  # package.json scripts.test 확인
+  packageJson: "scripts.test != 기본 에러 메시지"
+  # 기존 테스트 파일 확인
+  testFiles: "**/*.test.* | **/*.spec.* | __tests__/ | tests/"
+
+result:
+  signals.testEnvironmentDetected: true | false
+  signals.testFramework: "{감지됨}" | null
+```
+
+> `testEnvironmentDetected = false` 시, 테스트 동시 작성(Step 5)을 경고와 함께 건너뜁니다.
+
 ### 모든 작업
 1. 요구사항과 컨텍스트를 확인한다.
 2. 변경 범위를 정리하고 실제 구현을 수행한다.
 3. 변경 파일 목록과 핵심 변경 요약을 기록한다.
 4. 구현 완료 상태를 `analysisContext`에 반영한다.
+5. **테스트 작성** (`testEnvironmentDetected = true` 시, Step 5 참조).
 
 ### 리팩토링 작업 (taskType == refactor)
 > 참조: `.claude/rules/scope-confirmation.md`, `.claude/rules/refactoring-guidelines.md`
@@ -73,16 +99,55 @@ if (maxRetries 후에도 실패):
 
 이를 통해 일반적인 문제에 대해 사용자 개입 없이 자율적 오류 해결이 가능합니다.
 
+### Step 5: 테스트 동시 작성
+
+> **`signals.testEnvironmentDetected = true` 일 때만**
+
+기능 구현 시, **코드 변경과 함께 테스트를 작성**합니다:
+
+```yaml
+testCoCreation:
+  # 1. 새로/변경된 함수의 단위 테스트
+  unitTests:
+    scope: "새로 추가 또는 크게 수정된 함수"
+    naming: "{Component}.test.ts(x) or {module}.test.ts"
+    minimum: 기능당 1개
+
+  # 2. 사용자 관점 흐름의 통합 테스트
+  integrationTests:
+    scope: "새 API 엔드포인트 또는 사용자 흐름"
+    naming: "{feature}.integration.test.ts"
+    minimum: 흐름당 1개 (해당 시)
+    
+  # 3. 버그 수정 재현 테스트
+  bugfixTests:
+    scope: "수정 중인 각 버그"
+    naming: "테스트 이름에 'regression' 또는 버그 ID 포함"
+    requirement: "수정 전에 재현 테스트 먼저 작성"
+```
+
+**테스트 환경 미감지 시:**
+```yaml
+action:
+  - 로그: "⚠️ 테스트 환경 없음. 테스트 동시 작성을 건너뜁니다."
+  - signals.testsWritten = false 설정
+  - 출력으로 진행
+```
+
 ## 출력 (patch)
 ```yaml
 signals.implementationComplete: true
+signals.testEnvironmentDetected: true | false
+signals.testsWritten: true | false
 signals.selfHealingAttempts: 2  # 자동 수정 시도 횟수
 repo.changedFiles:
   - src/...
+  - src/__tests__/...  # 테스트 파일 포함
 notes:
-  - "구현: 완료, 변경 파일=3"
+  - "구현: 완료, 변경 파일=3, 테스트 작성=2"
   - "리팩토링: scope_confirmed=true, phases=3, build_status=pass"
   - "self-healing: attempts=1, fixed=TS2339"  # 자동 수정된 에러용
+  - "test-env: detected=true, framework=vitest"  # 또는 "test-env: not_detected"
 ```
 
 ## 규칙
@@ -90,4 +155,4 @@ notes:
 - 실패하거나 보류할 경우 `notes`에 사유를 기록한다.
 - 리팩토링 작업: 시작 전 항상 스코프를 확인한다.
 - Self-healing: 사용자에게 묻기 전 단계당 최대 2회 재시도.
-
+- **테스트 동시 작성**: 테스트 환경이 있으면 테스트 없는 구현은 미완료 상태.
