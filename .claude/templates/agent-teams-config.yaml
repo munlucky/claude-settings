@@ -21,7 +21,8 @@ teams:
     timeout: 300
     leader:
       role: "orchestrator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true  # 별도 컨텍스트에서 실행 (메인 세션 오염 방지)
       delegationMode: true  # 리더는 조율만, 직접 리뷰 안함
     members:
       - name: "code-reviewer"
@@ -48,7 +49,8 @@ teams:
     timeout: 180
     leader:
       role: "orchestrator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true
       delegationMode: true
     members:
       - name: "requirements-analyst"
@@ -71,6 +73,8 @@ teams:
     timeout: 240
     leader:
       role: "resolver"
+      agent: "team-leader-agent"
+      fork: true
       prompt: "양측 의견을 종합하여 최종 권고사항 작성"
       delegationMode: true
     members:
@@ -93,7 +97,8 @@ teams:
     timeout: 240
     leader:
       role: "orchestrator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true
       delegationMode: true
     members:
       - name: "requirements-analyzer"
@@ -119,7 +124,8 @@ teams:
     timeout: 300
     leader:
       role: "orchestrator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true
       delegationMode: true
     members:
       - name: "completion-verifier"
@@ -145,7 +151,8 @@ teams:
     timeout: 180
     leader:
       role: "orchestrator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true
       delegationMode: true
     members:
       - name: "classifier"
@@ -171,7 +178,8 @@ teams:
     timeout: 300
     leader:
       role: "orchestrator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true
       delegationMode: true
     members:
       - name: "build-resolver"
@@ -196,7 +204,8 @@ teams:
     requirePlanApproval: true  # 계획 승인 후 구현
     leader:
       role: "coordinator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true
       delegationMode: true  # 리더는 조율만, 직접 구현 안함
       approvalCriteria:
         - "테스트 커버리지 계획 포함"
@@ -232,7 +241,8 @@ teams:
     requirePlanApproval: true
     leader:
       role: "coordinator"
-      skill: "moonshot-orchestrator"
+      agent: "team-leader-agent"
+      fork: true
       delegationMode: true
       approvalCriteria:
         - "API 계약 명확"
@@ -280,6 +290,8 @@ teams:
     timeout: 300
     leader:
       role: "resolver"
+      agent: "team-leader-agent"
+      fork: true
       prompt: "각 조사자의 가설을 평가하고 가장 유력한 원인 결정"
       delegationMode: true
     members:

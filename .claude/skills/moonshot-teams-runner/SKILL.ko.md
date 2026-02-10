@@ -270,22 +270,49 @@ communication: enabled (debateRounds: 3)
 ```
 /moonshot-teams-runner <team-name>
     │
-    ├─ 1. 팀 설정 검증
-    │      └─ 팀 존재 여부 및 사전 요구사항 확인
+    ├─ 1. 팀 컨텍스트 준비
+    │      ├─ 팀 설정 검증
+    │      └─ 리더에 전달할 최소 컨텍스트 추출
     │
-    ├─ 2. 팀원 생성
-    │      └─ 각 팀원이 병렬로 실행 (Tmux/In-process)
+    ├─ 2. 팀 리더 Fork
+    │      └─ Task 도구 (fork) → team-leader-agent
+    │         (리더가 팀원 생성/조율/결과 취합)
     │
-    ├─ 3. [계획 승인 필요시]
-    │      ├─ 팀원이 계획 작성
-    │      └─ 리더가 계획 승인/거부
-    │
-    ├─ 4. 진행 상황 모니터링
-    │      └─ 모든 팀원 완료 또는 타임아웃 대기
-    │
-    └─ 5. 결과 통합
-           └─ 발견 사항을 통합 리포트로 병합
+    └─ 3. 결과 병합
+           └─ 리더가 반환한 teamReport → analysisContext.notes에 병합
 ```
+
+## 리더 실행 (Fork 패턴)
+
+> **중요**: 팀 리더는 메인 오케스트레이터 세션의 컨텍스트 오염을
+> 방지하기 위해 **fork 세션** (Task 도구)에서 실행됩니다.
+
+`project-memory-agent`와 동일한 패턴을 따릅니다:
+
+```yaml
+# 메인 세션이 최소 입력을 전달:
+teamInput:
+  teamName: "{team-name}"
+  teamConfig: { ... }      # agent-teams-config.yaml에서 추출
+  taskContext:
+    taskSummary: "..."     # 작업 요약
+    taskType: "..."        # feature/bugfix/refactor
+    changedFiles: [...]    # 관련 파일
+    signals: { ... }       # 필요한 시그널만
+
+# fork된 리더가 요약 결과를 반환:
+teamReport:
+  teamName: "{team-name}"
+  status: "completed"      # completed | partial | failed
+  duration: 180
+  memberResults: [...]     # 팀원별 발견사항 요약
+  aggregatedFindings: [...] # 높은 우선순위 항목
+  actionItems: [...]       # 필요 조치사항
+```
+
+**에이전트 매핑:**
+- `team-leader-agent` → `subagent_type: "general-purpose"` + 프롬프트 **(fork)**
+- 참조: `.claude/agents/team-leader-agent.ko.md`
 
 ## 출력
 
@@ -416,9 +443,11 @@ parallelGroups:
 - 세션당 하나의 팀만 가능
 - 중첩된 팀 불가 (팀원이 팀 생성 불가)
 - 분할 창에는 tmux 또는 iTerm2 필요
+- 팀 리더는 fork 세션에서 실행되므로 메인 세션 컨텍스트에 직접 접근 불가 (teamInput으로 전달 필요)
 
 ## 참조
 
 - `/moonshot-orchestrator`: 오케스트레이터 통합
+- `.claude/agents/team-leader-agent.ko.md`: 팀 리더 fork 에이전트 정의
 - `.claude/templates/agent-teams-config.yaml`: 팀 설정 템플릿
 - [Claude Code Agent Teams 공식 문서](https://code.claude.com/docs/ko/agent-teams)

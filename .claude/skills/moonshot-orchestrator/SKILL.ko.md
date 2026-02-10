@@ -250,47 +250,52 @@ notes: []
 - `session-logger`: 세션 로깅 스킬
 - `moonshot-phase-runner`: 마스터 플랜 기반 페이즈별 구현 스킬
 - `moonshot-teams-runner`: Agent Teams 기반 병렬 팀 실행 스킬
+- `team-leader-agent`: 팀 리더 fork 에이전트 (Task tool, fork)
 - `commit-moonshot`: 프로젝트 메모리 현행화 및 커밋 스킬
 
 **Agent Teams 연동:**
 
 `--use-teams` 플래그 지정 시:
 1. `signals.useAgentTeams = true` 설정
-2. 플래그에 따라 순차 실행을 병렬 팀으로 대체:
+2. **fork** (Task 도구 → `team-leader-agent`)로 팀 실행:
+   a. `analysisContext`에서 최소 컨텍스트를 `teamInput`으로 추출
+   b. `team-leader-agent`를 fork 서브에이전트로 실행 (별도 컨텍스트)
+   c. 리더로부터 `teamReport` 수신 후 `analysisContext.notes`에 병합
 
    **리뷰/분석 팀** (`implementation-runner` 이후):
-   - `--use-teams` 또는 `--use-teams=review-team`: `moonshot-teams-runner review-team`
-   - `--use-teams=research-team`: `moonshot-teams-runner research-team`
-   - `--use-teams=verify-team`: `moonshot-teams-runner verify-team`
-   - `--use-teams=quality-team`: `moonshot-teams-runner quality-team`
-   - `--use-teams=analysis-team`: `moonshot-teams-runner analysis-team`
+   - `--use-teams` 또는 `--use-teams=review-team`: fork → `team-leader-agent` + `review-team` 설정
+   - `--use-teams=research-team`: fork → `team-leader-agent` + `research-team` 설정
+   - `--use-teams=verify-team`: fork → `team-leader-agent` + `verify-team` 설정
+   - `--use-teams=quality-team`: fork → `team-leader-agent` + `quality-team` 설정
+   - `--use-teams=analysis-team`: fork → `team-leader-agent` + `analysis-team` 설정
    
    **계획 팀** (`moonshot-plan-writer` 이후):
-   - `--use-teams=planning-team`: `moonshot-teams-runner planning-team`
+   - `--use-teams=planning-team`: fork → `team-leader-agent` + `planning-team` 설정
    
    **구현 팀** (`implementation-runner` 대체) 🆕:
-   - `--use-teams=impl-team`: `moonshot-teams-runner impl-team`
+   - `--use-teams=impl-team`: fork → `team-leader-agent` + `impl-team` 설정
      - `requirePlanApproval` 활성화: 팀원이 계획 작성 → 리더 승인 → 구현
      - `fileOwnership: exclusive` 활성화: 파일 충돌 방지
-   - `--use-teams=cross-layer-team`: `moonshot-teams-runner cross-layer-team`
+   - `--use-teams=cross-layer-team`: fork → `team-leader-agent` + `cross-layer-team` 설정
      - 프론트엔드/백엔드/테스트 병렬 구현
      - 각 팀원이 특정 경로 소유 (components/, api/, tests/)
    
    **디버그 팀** (디버그 요청 시) 🆕:
-   - `--use-teams=debug-team`: `moonshot-teams-runner debug-team`
+   - `--use-teams=debug-team`: fork → `team-leader-agent` + `debug-team` 설정
      - 경쟁 가설 조사
      - 조사자들이 서로의 가설에 도전하고 반박
    
    **수정 팀** (빌드 실패 시):
-   - `--use-teams=fix-team`: `moonshot-teams-runner fix-team`
+   - `--use-teams=fix-team`: fork → `team-leader-agent` + `fix-team` 설정
 
-3. 팀 결과는 취합되어 `analysisContext.notes`에 병합
+3. 팀 결과(요약된 `teamReport`)는 `analysisContext.notes`에 병합
 
 > [!CAUTION]
 > Agent Teams는 토큰을 많이 소모합니다:
 > - 2명 팀: ~13,000 토큰 (전체 용량의 29%)
 > - 3명 팀: ~20,000 토큰
 > 중요한 리뷰나 복잡한 구현에만 사용하세요.
+> 팀 리더는 이제 fork 세션에서 실행되어 메인 세션 컨텍스트 오버플로를 방지합니다.
 
 **실행 규칙:**
 1. 각 단계를 순차적으로 실행
@@ -303,9 +308,10 @@ notes: []
 
 **Fork 기반 에이전트:**
 - `project-memory-agent`와 `project-memory-reviewer`는 **fork 서브에이전트**로 실행
-- 프로젝트 메모리(`[ProjectID]::*`)를 격리된 환경에서 로드/검증
-- 요약된 컨텍스트/위반 사항만 메인 세션에 반환
-- 원본 메모리 데이터로 인한 컨텍스트 오염 방지
+- `team-leader-agent`도 **fork 서브에이전트**로 실행 (팀 작업을 메인 세션에서 분리)
+- 프로젝트 메모리 또는 팀 조율을 격리된 환경에서 수행
+- 요약된 컨텍스트/리포트만 메인 세션에 반환
+- 원본 데이터나 팀 작업으로 인한 컨텍스트 오염 방지
 
 **스킬별 실행 방법:**
 
@@ -321,6 +327,7 @@ notes: []
 - `context-builder` → `subagent_type: "context-builder"`
 - `implementation-runner` → `subagent_type: "implementation-agent"`
 - `project-memory-reviewer` → `subagent_type: "general-purpose"` + 프롬프트 (fork, codex-review-code 후 실행)
+- `team-leader-agent` → `subagent_type: "general-purpose"` + 프롬프트 (fork, --use-teams 시 실행)
 
 ### 3.1 동적 스킬 삽입 (Dynamic Skill Injection)
 
