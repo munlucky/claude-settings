@@ -249,48 +249,53 @@ Run `decisions.skillChain` in order:
 - `efficiency-tracker`: efficiency tracking skill
 - `session-logger`: session logging skill
 - `moonshot-phase-runner`: master plan based phase-by-phase implementation skill
-- `moonshot-teams-runner`: Agent Teams based parallel team execution skill
+- `moonshot-teams-runner`: Agent Teams 기반 병렬 팀 실행 스킬
+- `team-leader-agent`: 팀 리더 fork 에이전트 (Task tool, fork)
 - `commit-moonshot`: project memory update and git commit skill
 
 **Agent Teams Integration:**
 
 When `--use-teams` flag is provided:
 1. Set `signals.useAgentTeams = true`
-2. Replace sequential execution with parallel team based on flag:
+2. Execute team via **fork** (Task tool → `team-leader-agent`):
+   a. Extract minimal context from `analysisContext` as `teamInput`
+   b. Run `team-leader-agent` as fork subagent (separate context)
+   c. Receive `teamReport` from leader and merge into `analysisContext.notes`
 
    **Review/Analysis Teams** (after `implementation-runner`):
-   - `--use-teams` or `--use-teams=review-team`: `moonshot-teams-runner review-team`
-   - `--use-teams=research-team`: `moonshot-teams-runner research-team`
-   - `--use-teams=verify-team`: `moonshot-teams-runner verify-team`
-   - `--use-teams=quality-team`: `moonshot-teams-runner quality-team`
-   - `--use-teams=analysis-team`: `moonshot-teams-runner analysis-team`
+   - `--use-teams` or `--use-teams=review-team`: fork → `team-leader-agent` with `review-team` config
+   - `--use-teams=research-team`: fork → `team-leader-agent` with `research-team` config
+   - `--use-teams=verify-team`: fork → `team-leader-agent` with `verify-team` config
+   - `--use-teams=quality-team`: fork → `team-leader-agent` with `quality-team` config
+   - `--use-teams=analysis-team`: fork → `team-leader-agent` with `analysis-team` config
    
    **Planning Teams** (after `moonshot-plan-writer`):
-   - `--use-teams=planning-team`: `moonshot-teams-runner planning-team`
+   - `--use-teams=planning-team`: fork → `team-leader-agent` with `planning-team` config
    
    **Implementation Teams** (replaces `implementation-runner`) 🆕:
-   - `--use-teams=impl-team`: `moonshot-teams-runner impl-team`
+   - `--use-teams=impl-team`: fork → `team-leader-agent` with `impl-team` config
      - Enables `requirePlanApproval`: teammates create plan → leader approves → implement
      - Enables `fileOwnership: exclusive`: prevents file conflicts
-   - `--use-teams=cross-layer-team`: `moonshot-teams-runner cross-layer-team`
+   - `--use-teams=cross-layer-team`: fork → `team-leader-agent` with `cross-layer-team` config
      - Frontend/Backend/Test parallel implementation
      - Each teammate owns specific paths (components/, api/, tests/)
    
    **Debug Teams** (on debug request) 🆕:
-   - `--use-teams=debug-team`: `moonshot-teams-runner debug-team`
+   - `--use-teams=debug-team`: fork → `team-leader-agent` with `debug-team` config
      - Competing hypothesis investigation
      - Investigators challenge each other's theories
    
    **Fix Teams** (when build fails):
-   - `--use-teams=fix-team`: `moonshot-teams-runner fix-team`
+   - `--use-teams=fix-team`: fork → `team-leader-agent` with `fix-team` config
 
-3. Team results are aggregated and merged into `analysisContext.notes`
+3. Team results (summarized `teamReport`) are merged into `analysisContext.notes`
 
 > [!CAUTION]
 > Agent Teams consume significantly more tokens:
 > - 2-member team: ~13,000 tokens (29% of capacity)
 > - 3-member team: ~20,000 tokens
 > Use only for critical reviews or complex implementations.
+> Team leaders now run in fork sessions to prevent main session context overflow.
 
 **Execution rules:**
 1. Run steps sequentially
@@ -303,9 +308,10 @@ When `--use-teams` flag is provided:
 
 **Fork-based agents:**
 - `project-memory-agent` and `project-memory-reviewer` run as **forked subagents**
-- They load/check project memory ([ProjectID]::* from global Memory) in isolation
-- Only summarized context/violations are returned to main session
-- This prevents context pollution from raw memory data
+- `team-leader-agent` runs as **forked subagent** (separates team work from main session)
+- They load/check project memory or coordinate teams in isolation
+- Only summarized context/reports are returned to main session
+- This prevents context pollution from raw data or team operations
 
 **Skill-specific execution:**
 
@@ -321,6 +327,7 @@ For `vercel-react-best-practices`:
 - `context-builder` -> `subagent_type: "context-builder"`
 - `implementation-runner` -> `subagent_type: "implementation-agent"`
 - `project-memory-reviewer` -> `subagent_type: "general-purpose"` + prompt (fork, runs after codex-review-code)
+- `team-leader-agent` -> `subagent_type: "general-purpose"` + prompt (fork, runs for --use-teams)
 
 ### 3.1 Dynamic Skill Injection
 

@@ -270,22 +270,49 @@ communication: enabled (debateRounds: 3)
 ```
 /moonshot-teams-runner <team-name>
     │
-    ├─ 1. Validate Team Configuration
-    │      └─ Check team exists and prerequisites met
+    ├─ 1. Prepare Team Context
+    │      ├─ Validate team configuration
+    │      └─ Extract minimal context for team leader
     │
-    ├─ 2. Spawn Team Members
-    │      └─ Each member runs in parallel (Tmux/In-process)
+    ├─ 2. Fork Team Leader
+    │      └─ Task tool (fork) → team-leader-agent
+    │         (Leader spawns members, coordinates, aggregates)
     │
-    ├─ 3. [If requirePlanApproval]
-    │      ├─ Members create plans
-    │      └─ Leader approves/rejects plans
-    │
-    ├─ 4. Monitor Progress
-    │      └─ Wait for all members or timeout
-    │
-    └─ 5. Aggregate Results
-           └─ Merge findings into unified report
+    └─ 3. Merge Results
+           └─ Read teamReport from leader → merge into analysisContext.notes
 ```
+
+## Leader Execution (Fork Pattern)
+
+> **CRITICAL**: The team leader runs in a **forked session** (Task tool) to prevent
+> context pollution of the main orchestrator session.
+
+This follows the same pattern as `project-memory-agent`:
+
+```yaml
+# Main session sends minimal input:
+teamInput:
+  teamName: "{team-name}"
+  teamConfig: { ... }      # from agent-teams-config.yaml
+  taskContext:
+    taskSummary: "..."     # brief summary
+    taskType: "..."        # feature/bugfix/refactor
+    changedFiles: [...]    # relevant files
+    signals: { ... }       # needed signals only
+
+# Forked leader returns summarized output:
+teamReport:
+  teamName: "{team-name}"
+  status: "completed"      # completed | partial | failed
+  duration: 180
+  memberResults: [...]     # per-member findings summary
+  aggregatedFindings: [...] # high priority items
+  actionItems: [...]       # required actions
+```
+
+**Agent mapping:**
+- `team-leader-agent` → `subagent_type: "general-purpose"` + prompt **(fork)**
+- See: `.claude/agents/team-leader-agent.md`
 
 ## Output
 
@@ -416,9 +443,11 @@ Output clear progress status during team execution.
 - 세션당 하나의 팀만 가능
 - 중첩된 팀 불가 (팀원이 팀 생성 불가)
 - 분할 창에는 tmux 또는 iTerm2 필요
+- 팀 리더는 fork 세션에서 실행되므로 메인 세션 컨텍스트에 직접 접근 불가 (teamInput으로 전달 필요)
 
 ## References
 
 - `/moonshot-orchestrator`: 오케스트레이터 통합
+- `.claude/agents/team-leader-agent.md`: 팀 리더 fork 에이전트 정의
 - `.claude/templates/agent-teams-config.yaml`: 팀 설정 템플릿
 - [Claude Code Agent Teams 공식 문서](https://code.claude.com/docs/ko/agent-teams)
