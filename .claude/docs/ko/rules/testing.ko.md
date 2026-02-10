@@ -68,12 +68,12 @@ describe('UserService', () => {
 
 - **simple**: `implementation-runner` → `verify-changes.sh`
 - **medium**: ... → `codex-review-code` (테스트 검증 포함)
-- **complex**: ... → `codex-review-code` → `codex-test-integration` (전체 테스트 검증)
+- **complex**: ... → `codex-review-code` → `completion-verifier` (전체 테스트 검증)
 
 ### 자동 트리거 조건
 
 | 조건 | 실행 스킬 |
 |------|----------|
-| complexity == complex | codex-test-integration |
-| API 변경 포함 | codex-test-integration |
+| complexity == complex | completion-verifier |
+| API 변경 포함 | completion-verifier |
 | 커버리지 < 80% | 추가 테스트 요청 |

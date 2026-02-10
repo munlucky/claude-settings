@@ -14,7 +14,7 @@ paths:
 | 요구사항 불명확 | requirements-analyzer | PLANNING |
 | 컨텍스트 구축 필요 | context-builder | PLANNING |
 | 코드 변경 후 | codex-review-code | VERIFICATION |
-| 테스트 필요 (complex) | codex-test-integration | VERIFICATION |
+| 테스트 필요 (complex) | completion-verifier | VERIFICATION |
 | 보안 우려 감지 | security-reviewer | VERIFICATION |
 | 빌드 에러 발생 | build-error-resolver | EXECUTION |
 | 문서 업데이트 필요 | documentation-agent | EXECUTION |

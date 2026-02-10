@@ -38,7 +38,7 @@ context: fork   # ← 이 한 줄 추가
 | pre-flight-check | |
 | codex-validate-plan | |
 | codex-review-code | |
-| codex-test-integration | |
+| completion-verifier | |
 
 **주의사항**:
 - Fork 세션은 메인 컨텍스트를 참조할 수 없음 → 필요한 정보를 인수로 전달해야 함

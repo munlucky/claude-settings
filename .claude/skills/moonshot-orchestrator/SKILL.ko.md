@@ -64,6 +64,9 @@ signals:
   apiSpecConfirmed: false
   reactProject: false  # React/Next.js 프로젝트 감지
   useAgentTeams: false  # Agent Teams 병렬 실행 활성화
+  testEnvironmentDetected: false  # 프로젝트 내 테스트 프레임워크 감지 여부
+  testFramework: null    # jest | vitest | playwright | etc.
+  testsWritten: false    # 구현 시 테스트 작성 여부
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -337,7 +340,7 @@ skillChain 실행 중 시그널 감지 시 스킬 동적 삽입:
 |--------|------|----------|----------|
 | `buildFailed` | Bash exit code ≠ 0 | build-error-resolver | 현재 단계 재시도 전 |
 | `securityConcern` | 변경 파일에 `.env`, `auth`, `password`, `token` 포함 | security-reviewer | codex-review-code 후 |
-| `coverageLow` | codex-test-integration 출력에서 커버리지 < 80% | (추가 테스트 요청) | codex-test-integration 후 |
+| `coverageLow` | completion-verifier 출력에서 커버리지 < 80% | (추가 테스트 요청) | completion-verifier 후 |
 | `reactProject` | `.tsx`/`.jsx` 파일 또는 React 키워드 | (codex-review-code 확장) | codex-review-code 내부 |
 
 **시그널 감지:**
@@ -358,7 +361,7 @@ securityConcern:
   action: codex-review-code 후 security-reviewer 추가
 
 coverageLow:
-  trigger: codex-test-integration에서 커버리지 < 80% 보고
+  trigger: completion-verifier에서 커버리지 < 80% 보고
   action: 경고 로깅, 사용자에게 추가 테스트 요청
 
 reactProject:
@@ -438,6 +441,8 @@ signals:
   testsFailed: 0
   completionRetryCount: 0
   currentPhase: "Phase 0"  # 0=Tests, 1=Mock, 2=API, 3=Verify
+  testEnvironmentDetected: false  # implementation-runner Step 0에서 감지
+  testsWritten: false             # implementation-runner Step 5에서 설정
 ```
 
 ### 4. 결과 기록

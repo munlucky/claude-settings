@@ -14,7 +14,7 @@ paths:
 | Unclear requirements | requirements-analyzer | PLANNING |
 | Context building needed | context-builder | PLANNING |
 | After code changes | codex-review-code | VERIFICATION |
-| Testing needed (complex) | codex-test-integration | VERIFICATION |
+| Testing needed (complex) | completion-verifier | VERIFICATION |
 | Security concern detected | security-reviewer | VERIFICATION |
 | Build error occurred | build-error-resolver | EXECUTION |
 | Documentation update needed | documentation-agent | EXECUTION |

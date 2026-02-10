@@ -18,7 +18,7 @@ steps:
     - verify-changes.sh
   then:
     - security-reviewer (if hasSecurityChanges)
-    - codex-test-integration (if complexity == complex)
+    - completion-verifier (if complexity == complex)
 ```
 
 ### implementation-with-recovery
