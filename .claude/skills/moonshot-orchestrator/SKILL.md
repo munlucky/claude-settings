@@ -11,49 +11,35 @@ Runs PM analysis skills in sequence and builds the final agent chain.
 ## Usage
 
 ```bash
-# Basic usage
 /moonshot-orchestrator <user-request>
-
-# With Agent Teams enabled (parallel review)
 /moonshot-orchestrator <user-request> --use-teams
-
-# With specific team
 /moonshot-orchestrator <user-request> --use-teams=review-team
-/moonshot-orchestrator <user-request> --use-teams=research-team
-/moonshot-orchestrator <user-request> --use-teams=verify-team
-/moonshot-orchestrator <user-request> --use-teams=planning-team
-/moonshot-orchestrator <user-request> --use-teams=quality-team
-/moonshot-orchestrator <user-request> --use-teams=analysis-team
-/moonshot-orchestrator <user-request> --use-teams=fix-team
-
-# 🆕 Implementation phase teams
-/moonshot-orchestrator <user-request> --use-teams=impl-team
-/moonshot-orchestrator <user-request> --use-teams=cross-layer-team
-/moonshot-orchestrator <user-request> --use-teams=debug-team
 ```
 
+> Available teams: review-team, research-team, verify-team, planning-team, quality-team, analysis-team, fix-team, impl-team, cross-layer-team, debug-team. Details in `moonshot-teams-runner/SKILL.md`.
+
 ## Inputs
-Automatically collect:
-- `userMessage`: user request
-- `gitBranch`: current branch
-- `gitStatus`: Git status (clean/dirty)
-- `recentCommits`: recent commit list
-- `openFiles`: open file list
+Automatically collected:
+- `userMessage`, `gitBranch`, `gitStatus`, `recentCommits`, `openFiles`
+
+## Context Budget Rule
+
+> **CRITICAL**: Protect main session context from pollution.
+
+1. **No file content inlining**: Record paths only in analysisContext, never paste file contents
+2. **Sub-skill results**: Merge only summarized output into notes (max 5 lines per result)
+3. **Notes cap**: When notes array exceeds 10 items, archive oldest items
+4. **Review results**: Extract key issues only from codex-review-code output
+5. **Fork returns**: Accept only structured summaries from fork agents, never raw data
 
 ## Workflow
 
 ### 1. Initialize analysisContext
+
 ```yaml
 schemaVersion: "1.0"
-request:
-  userMessage: "{userMessage}"
-  taskType: unknown
-  keywords: []
-repo:
-  gitBranch: "{gitBranch}"
-  gitStatus: "{gitStatus}"
-  openFiles: []
-  changedFiles: []
+request: { userMessage, taskType: unknown, keywords: [] }
+repo: { gitBranch, gitStatus, openFiles: [], changedFiles: [] }
 signals:
   hasContextMd: false
   hasPendingQuestions: false
@@ -62,470 +48,165 @@ signals:
   implementationComplete: false
   hasMockImplementation: false
   apiSpecConfirmed: false
-  reactProject: false  # React/Next.js project detected
-  useAgentTeams: false  # Agent Teams parallel execution enabled
-  testEnvironmentDetected: false  # Test framework detected in project
-  testFramework: null    # jest | vitest | playwright | etc.
-  testsWritten: false    # Tests written during implementation
-estimates:
-  estimatedFiles: 0
-  estimatedLines: 0
-  estimatedTime: unknown
+  reactProject: false
+  useAgentTeams: false
+  testEnvironmentDetected: false
+  testFramework: null
+  testsWritten: false
+estimates: { estimatedFiles: 0, estimatedLines: 0, estimatedTime: unknown }
 phase: unknown
 complexity: unknown
 missingInfo: []
-decisions:
-  recommendedAgents: []
-  skillChain: []
-  parallelGroups: []
+decisions: { recommendedAgents: [], skillChain: [], parallelGroups: [] }
 artifacts:
-  tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"  # default: .claude/docs/tasks
+  tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
-tokenBudget:
-  specSummaryTrigger: 2000     # words
-  splitTrigger: 5              # independent features
-  contextMaxTokens: 8000
-  warningThreshold: 0.8
-projectMemory:
-  projectId: null
-  boundaryStatus: "not_checked"  # not_checked|ok|violation|needs_approval|not_initialized
-  boundary:
-    violations: []
-    needsApproval: []
-    reminders: []
-  relatedConventions: []
-  lastChecked: null
+tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
+projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
 notes: []
 ```
 
 ### 2. Run PM skills sequentially
 
 #### 2.0 Large specification handling
-
-If the initial task specification (`request.userMessage`) is very long, it can cause the final plan or context document to exceed the output token limits. To prevent this, follow `.claude/docs/guidelines/document-memory-policy.md`:
-
-**2.0.1 Check specification size**
-- Count words in `userMessage`
-- If > `tokenBudget.specSummaryTrigger` (2000 words): trigger summarization
-- If independent features > `tokenBudget.splitTrigger` (5): trigger task splitting
-
-**2.0.2 Summarize the specification**
-1. Save the full original specification to `{tasksRoot}/{feature-name}/archives/specification-full.md`
-2. Extract only:
-   - Key requirements (max 5 items)
-   - Constraints
-   - Acceptance criteria
-3. Write summarized version to `{tasksRoot}/{feature-name}/specification.md`
-4. Reference the original in the summary
-
-**2.0.3 Split into sub-tasks**
-When a single specification covers multiple independent areas:
-1. Create `subtasks/` directory
-2. For each sub-task, create `subtasks/subtask-NN/` with its own `context.md`
-3. Each sub-task runs this workflow independently with its own `analysisContext`
-4. Master `context.md` contains only:
-   - Sub-task list with links
-   - Integration points
-   - Shared constraints
-
-**2.0.4 Limit context.md size**
-- Only include summarized specification
-- Keep current plan only (no history)
-- Archive previous versions per document-memory-policy.md
+Follow `.claude/docs/guidelines/document-memory-policy.md`:
+- `userMessage` > 2000 words → summarize to `specification.md`, archive original
+- Independent features > 5 → split into `subtasks/subtask-NN/` with independent `context.md`
+- Keep `context.md` under `tokenBudget.contextMaxTokens`
 
 #### 2.0.5 Load Project Memory (Fork)
-**CRITICAL**: Run `project-memory-agent` as a **forked subagent** to prevent context pollution.
 
-1. **Determine Project ID**:
-   - Priority: `package.json` name → directory name → git remote
+> Run `project-memory-agent` as **fork subagent** to prevent context pollution.
 
-2. **Execute fork**:
-   ```
-   Task tool: project-memory-agent (subagent_type: general-purpose)
-   Input: { projectId, changedFiles, taskType, userRequest }
-   ```
-
-3. **Receive summarized context**:
-   The forked agent searches project memory (`[ProjectID]::*` from global Memory) and returns only:
-   ```yaml
-   projectMemoryContext:
-     projectId: "my-app"
-     loaded: true
-     boundaries:
-       alwaysDo: [...]
-       askFirst: [...]
-       neverDo: [...]
-     relevantRules: [...]
-   ```
-
-4. **Merge into analysisContext**:
-   ```yaml
-   projectMemory:
-     ...projectMemoryContext
-     lastChecked: "{timestamp}"
-     boundaryStatus: "ok"
-   ```
-
-5. **Handle errors**:
-   - No memory found: `boundaryStatus: "not_initialized"`, proceed
-   - MCP unavailable: `boundaryStatus: "not_checked"`, proceed with warning
+```
+Task tool: project-memory-agent (subagent_type: general-purpose)
+Input: { projectId, changedFiles, taskType, userRequest }
+Returns: { projectId, loaded, boundaries, relevantRules } → merge into projectMemory
+```
+- No memory: `boundaryStatus: "not_initialized"`, continue
+- MCP unavailable: `boundaryStatus: "not_checked"`, warn and continue
 
 #### 2.1 Task classification
-Run `/moonshot-classify-task` using the Skill tool.
-- Merge returned patch into analysisContext
-- Example: add `request.taskType`, `request.keywords`, `notes`
+Run `/moonshot-classify-task` → merge patch (taskType, keywords, signals)
 
 #### 2.2 Complexity evaluation
-Run `/moonshot-evaluate-complexity` using the Skill tool.
-- Merge returned patch into analysisContext
-- Example: update `complexity`, `estimates.*`
+Run `/moonshot-evaluate-complexity` → merge patch (complexity, estimates)
 
 #### 2.3 Uncertainty detection
-Run `/moonshot-detect-uncertainty` using the Skill tool.
-- Merge returned patch into analysisContext
-- Check `missingInfo` array
+Run `/moonshot-detect-uncertainty` → merge patch (missingInfo)
 
 #### 2.4 Uncertainty handling
-If `missingInfo` is not empty:
-1. Create questions using the `AskUserQuestion` tool
-   - Convert each item in `missingInfo` into a question
-   - Prioritize HIGH items
-2. Wait for user answers
-3. Apply answers to analysisContext:
-   - API answers -> `signals.apiSpecConfirmed = true`
-   - Design spec answers -> store design file paths
-   - Other answers -> record in `notes`
-4. Set `signals.hasPendingQuestions = false`
-5. Re-run `/moonshot-detect-uncertainty` if needed
-
-If `missingInfo` is empty, proceed.
+If `missingInfo` not empty:
+1. Generate questions via `AskUserQuestion` (priority HIGH first)
+2. Merge answers into analysisContext
+3. Set `signals.hasPendingQuestions = false`
+4. Re-run detection if needed
 
 #### 2.5 Sequence decision
-Run `/moonshot-decide-sequence` using the Skill tool.
-- Merge returned patch into analysisContext
-- Set `phase`, `decisions.skillChain`, `decisions.parallelGroups`
+Run `/moonshot-decide-sequence` → merge patch (phase, skillChain, parallelGroups)
 
-#### 2.6 Plan size guard (when iterating plan/review)
-During plan→review→revise loops the `context.md` file can grow rapidly. Follow `.claude/docs/guidelines/document-memory-policy.md`:
-
-1. **Before each plan update**: Check current token usage
-2. **At 80% threshold**: Log warning to `notes`, consider summarizing
-3. **At 100% threshold**:
-   - Archive current version to `archives/context-v{n}.md`
-   - Replace with summarized version
-   - Update archive index in context.md
-
-4. **Review output handling**:
-   - Full review → `archives/review-v{n}.md`
-   - Summary only → append to `context.md`
-
-5. **Token limit approaching**: Further break down into smaller sub-plans
-
-**Archive Index Format** (at bottom of context.md):
-```markdown
-## 아카이브 참조
-
-| 버전 | 파일 | 핵심 내용 | 생성일 |
-|------|------|----------|--------|
-| v1 | [context-v1.md](archives/context-v1.md) | 초기 설계 | YYYY-MM-DD |
-```
+#### 2.6 Plan size management
+Follow `document-memory-policy.md`: archive at 80% threshold, summarize at 100%.
 
 ### 3. Execute the agent chain
 
-Run `decisions.skillChain` in order:
+Run `decisions.skillChain` in order.
 
 **Allowed steps:**
-- `pre-flight-check`: pre-flight skill
-- `project-memory-agent`: project memory loading agent (Task tool, fork)
-- `requirements-analyzer`: requirements analysis agent (Task tool)
-- `context-builder`: context-building agent (Task tool)
-- `codex-validate-plan`: Codex plan validation skill
-- `implementation-runner`: implementation agent (Task tool)
-- `completion-verifier`: test-based completion verification skill
-- `codex-review-code`: Codex code review skill
-- `project-memory-reviewer`: project memory rule/spec violation check agent (Task tool, fork)
-- `vercel-react-best-practices`: React/Next.js performance optimization review skill
-- `security-reviewer`: security vulnerability review skill
-- `build-error-resolver`: build/compile error resolution skill
-- `verify-changes.sh`: verification script (Bash tool)
-- `efficiency-tracker`: efficiency tracking skill
-- `session-logger`: session logging skill
-- `moonshot-phase-runner`: master plan based phase-by-phase implementation skill
-- `moonshot-teams-runner`: Agent Teams 기반 병렬 팀 실행 스킬
-- `team-leader-agent`: 팀 리더 fork 에이전트 (Task tool, fork)
-- `commit-moonshot`: project memory update and git commit skill
 
-**Agent Teams Integration:**
-
-When `--use-teams` flag is provided:
-1. Set `signals.useAgentTeams = true`
-2. Execute team via **fork** (Task tool → `team-leader-agent`):
-   a. Extract minimal context from `analysisContext` as `teamInput`
-   b. Run `team-leader-agent` as fork subagent (separate context)
-   c. Receive `teamReport` from leader and merge into `analysisContext.notes`
-
-   **Review/Analysis Teams** (after `implementation-runner`):
-   - `--use-teams` or `--use-teams=review-team`: fork → `team-leader-agent` with `review-team` config
-   - `--use-teams=research-team`: fork → `team-leader-agent` with `research-team` config
-   - `--use-teams=verify-team`: fork → `team-leader-agent` with `verify-team` config
-   - `--use-teams=quality-team`: fork → `team-leader-agent` with `quality-team` config
-   - `--use-teams=analysis-team`: fork → `team-leader-agent` with `analysis-team` config
-   
-   **Planning Teams** (after `moonshot-plan-writer`):
-   - `--use-teams=planning-team`: fork → `team-leader-agent` with `planning-team` config
-   
-   **Implementation Teams** (replaces `implementation-runner`) 🆕:
-   - `--use-teams=impl-team`: fork → `team-leader-agent` with `impl-team` config
-     - Enables `requirePlanApproval`: teammates create plan → leader approves → implement
-     - Enables `fileOwnership: exclusive`: prevents file conflicts
-   - `--use-teams=cross-layer-team`: fork → `team-leader-agent` with `cross-layer-team` config
-     - Frontend/Backend/Test parallel implementation
-     - Each teammate owns specific paths (components/, api/, tests/)
-   
-   **Debug Teams** (on debug request) 🆕:
-   - `--use-teams=debug-team`: fork → `team-leader-agent` with `debug-team` config
-     - Competing hypothesis investigation
-     - Investigators challenge each other's theories
-   
-   **Fix Teams** (when build fails):
-   - `--use-teams=fix-team`: fork → `team-leader-agent` with `fix-team` config
-
-3. Team results (summarized `teamReport`) are merged into `analysisContext.notes`
-
-> [!CAUTION]
-> Agent Teams consume significantly more tokens:
-> - 2-member team: ~13,000 tokens (29% of capacity)
-> - 3-member team: ~20,000 tokens
-> Use only for critical reviews or complex implementations.
-> Team leaders now run in fork sessions to prevent main session context overflow.
-
-**Execution rules:**
-1. Run steps sequentially
-2. Use `Skill` tool for skill steps
-3. Use `Task` tool for agent steps (map subagent_type)
-4. Use `Bash` tool for scripts
-5. If a parallel group exists, parallelize only within that group
-6. If an undefined step appears, ask the user and stop
-7. **All agents/skills must follow** `.claude/docs/guidelines/document-memory-policy.md`
-
-**Fork-based agents:**
-- `project-memory-agent` and `project-memory-reviewer` run as **forked subagents**
-- `team-leader-agent` runs as **forked subagent** (separates team work from main session)
-- They load/check project memory or coordinate teams in isolation
-- Only summarized context/reports are returned to main session
-- This prevents context pollution from raw data or team operations
-
-**Skill-specific execution:**
-
-For `vercel-react-best-practices`:
-- Triggered when `signals.reactProject = true`
-- Execute using: `Skill tool` with `skill: "vercel-react-best-practices"`
-- The skill will analyze changed files for React/Next.js performance issues
-- Merge findings into `analysisContext.notes`
+| Step | Type | Notes |
+|------|------|-------|
+| `pre-flight-check` | Skill | |
+| `project-memory-agent` | Task (fork) | Context isolation |
+| `requirements-analyzer` | Task | |
+| `context-builder` | Task | |
+| `codex-validate-plan` | Skill | |
+| `implementation-runner` | Task | |
+| `completion-verifier` | Skill (fork) | Test environment auto-detect |
+| `codex-review-code` | Skill | |
+| `project-memory-reviewer` | Task (fork) | Context isolation |
+| `vercel-react-best-practices` | Skill | When reactProject=true |
+| `security-reviewer` | Skill | |
+| `build-error-resolver` | Skill | |
+| `verify-changes.sh` | Bash | |
+| `efficiency-tracker` | Skill | |
+| `session-logger` | Skill | |
+| `moonshot-phase-runner` | Skill | |
+| `moonshot-teams-runner` | Skill | |
+| `team-leader-agent` | Task (fork) | Teams coordination |
+| `commit-moonshot` | Skill | |
 
 **Agent mapping:**
-- `project-memory-agent` -> `subagent_type: "general-purpose"` + prompt (fork, runs before 2.1)
-- `requirements-analyzer` -> `subagent_type: "general-purpose"` + prompt
-- `context-builder` -> `subagent_type: "context-builder"`
-- `implementation-runner` -> `subagent_type: "implementation-agent"`
-- `project-memory-reviewer` -> `subagent_type: "general-purpose"` + prompt (fork, runs after codex-review-code)
-- `team-leader-agent` -> `subagent_type: "general-purpose"` + prompt (fork, runs for --use-teams)
+
+| Agent | subagent_type | Notes |
+|-------|---------------|-------|
+| `project-memory-agent` | general-purpose | fork, before 2.1 |
+| `requirements-analyzer` | general-purpose | |
+| `context-builder` | context-builder | |
+| `implementation-runner` | implementation-agent | |
+| `project-memory-reviewer` | general-purpose | fork, after codex-review-code |
+| `team-leader-agent` | general-purpose | fork, --use-teams |
+
+**Execution rules:**
+1. Run steps sequentially (parallelize only within `parallelGroups`)
+2. Skill → `Skill` tool, Agent → `Task` tool, Script → `Bash` tool
+3. Undefined step → ask user and stop
+4. All steps must follow `document-memory-policy.md`
+
+**Agent Teams Integration (--use-teams):**
+1. Set `signals.useAgentTeams = true`
+2. Fork `team-leader-agent` with team config (see `moonshot-teams-runner/SKILL.md` for team details)
+3. Merge summarized `teamReport` into `analysisContext.notes`
+
+> [!CAUTION]
+> Agent Teams: ~13K tokens (2-member) / ~20K tokens (3-member). Use for critical reviews or complex implementations only.
+
+**Fork-based agents** (`project-memory-agent`, `project-memory-reviewer`, `team-leader-agent`):
+- Run in separate context sessions
+- Return only summarized results → prevents main session context pollution
 
 ### 3.1 Dynamic Skill Injection
 
-During skillChain execution, dynamically inject skills when signals detected:
-
-| Signal | Condition | Inject Skill | Insert Position |
-|--------|-----------|--------------|-----------------|
-| `buildFailed` | Bash exit code ≠ 0 | build-error-resolver | Before retry current step |
-| `securityConcern` | Changed files contain `.env`, `auth`, `password`, `token` | security-reviewer | After codex-review-code |
-| `coverageLow` | Coverage < 80% from completion-verifier output | (request additional tests) | After completion-verifier |
-| `reactProject` | `.tsx`/`.jsx` files or React keywords | (codex-review-code extended) | Within codex-review-code |
-
-**Signal Detection:**
-```yaml
-buildFailed:
-  trigger: Bash tool returns non-zero exit code
-  action: Insert build-error-resolver, then retry failed step (max 2)
-
-securityConcern:
-  trigger: |
-    changedFiles.any(f => 
-      f.includes('.env') || 
-      f.includes('auth') || 
-      f.includes('password') || 
-      f.includes('token') ||
-      f.includes('secret')
-    )
-  action: Add security-reviewer after codex-review-code
-
-coverageLow:
-  trigger: completion-verifier reports coverage < 80%
-  action: Log warning, request additional tests from user
-
-reactProject:
-  trigger: |
-    changedFiles.any(f =>
-      f.endsWith('.tsx') || f.endsWith('.jsx') ||
-      f.includes('/pages/') || f.includes('/app/') ||
-      f.includes('/components/')
-    ) ||
-    request.keywords.any(k =>
-      ['react', 'next', 'next.js', 'nextjs', 'jsx', 'tsx', 'useState', 'useEffect'].includes(k.toLowerCase())
-    )
-  action: |
-    - Set signals.reactProject = true
-    - Inject vercel-react-best-practices after codex-review-code in skillChain
-    - When executing: Use Skill tool with skill="vercel-react-best-practices"
-```
+| Signal | Trigger | Action |
+|--------|---------|--------|
+| `buildFailed` | Bash exit code ≠ 0 | Insert `build-error-resolver`, retry (max 2) |
+| `securityConcern` | Changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after codex-review-code |
+| `coverageLow` | completion-verifier: coverage < 80% | Log warning, request additional tests |
+| `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after codex-review-code |
 
 ### 3.2 Project Memory Review (Fork)
-**CRITICAL**: After `codex-review-code`, run `project-memory-reviewer` as a **forked subagent**.
 
-1. **Execute fork**:
-   ```
-   Task tool: project-memory-reviewer (subagent_type: general-purpose)
-   Input: { projectId, changedFiles, projectMemoryContext, diff }
-   ```
-
-2. **Receive violation report**:
-   ```yaml
-   memoryReviewResult:
-     status: "passed" | "failed" | "needs_approval"
-     violations: [...]     # NeverDo violations
-     needsApproval: [...]  # AskFirst items
-     warnings: [...]       # Convention/spec warnings
-     reminders: [...]      # AlwaysDo reminders
-   ```
-
-3. **Handle result**:
-   - `status: "failed"`: **HALT** execution, report violations to user
-   - `status: "needs_approval"`: Ask user for approval before proceeding
-   - `status: "passed"`: Proceed to next step
-
-4. **Merge into analysisContext**:
-   ```yaml
-   projectMemory:
-     ...existing
-     reviewResult: { ...memoryReviewResult }
-   ```
+After `codex-review-code`:
+```
+Task tool: project-memory-reviewer (subagent_type: general-purpose)
+Input: { projectId, changedFiles, projectMemoryContext, diff }
+Returns: { status, violations, needsApproval, warnings, reminders }
+```
+- `status: "failed"` → **HALT**, report violations
+- `status: "needs_approval"` → ask user
+- `status: "passed"` → proceed
 
 ### 3.3 Completion Verification Loop
 
-After implementation-runner completes:
-
+After `implementation-runner`:
 1. Call `completion-verifier`
-2. If `allPassed: true`:
-   - Mark `implementationComplete: true`
-   - Proceed to next step (codex-review-code)
-3. If `allPassed: false`:
-   - Identify failed phase (Unit → Phase 1, Integration → Phase 2)
-   - If retryCount < 2:
-     - **Go back to failed Phase (not test writing)**
-     - Pass `failedTests` to implementation-agent
-     - Implementation-agent fixes code only
-     - Increment retryCount
-   - Else:
-     - Ask user for intervention
-     - Provide failed test details
-
-**Signals Update:**
-```yaml
-signals:
-  implementationComplete: false  # existing
-  
-  # New fields
-  acceptanceTestsGenerated: false
-  testsPassed: 0
-  testsFailed: 0
-  completionRetryCount: 0
-  currentPhase: "Phase 0"  # 0=Tests, 1=Mock, 2=API, 3=Verify
-  testEnvironmentDetected: false  # Detected by implementation-runner Step 0
-  testsWritten: false             # Set by implementation-runner Step 5
-```
+2. `allPassed: true` → mark `implementationComplete: true`, proceed
+3. `allPassed: false` + retryCount < 2 → go back to failed phase, fix code only, retry
+4. `allPassed: false` + retryCount ≥ 2 → ask user for intervention
 
 ### 4. Record results
 Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
 
-## Output format
-
-### Summary for the user (Markdown)
-```markdown
-## PM Analysis Result
-
-**Task type**: {taskType}
-**Complexity**: {complexity}
-**Phase**: {phase}
-
-### Execution chain
-1. {step1}
-2. {step2}
-...
-
-### Estimates
-- File count: {estimatedFiles}
-- Line count: {estimatedLines}
-- Estimated time: {estimatedTime}
-
-{Add questions section if missingInfo exists}
-```
-
-## Progress Status Output Rules
-
-Output clear progress status after each step completes.
-
-### Analysis Phase
-```
-📊 PM Analysis Progress
-├─ [1/5] ✅ Task classification done (taskType: {taskType})
-├─ [2/5] ✅ Complexity evaluation done (complexity: {complexity})
-├─ [3/5] 🔄 Uncertainty detection in progress...
-├─ [4/5] ⏳ Sequence decision pending
-└─ [5/5] ⏳ Chain configuration pending
-```
-
-### After Sequence Decision (Chain Execution Phase)
-```
-🔗 Execution Chain Progress ({phase})
-├─ [1/N] ✅ pre-flight-check done
-├─ [2/N] 🔄 requirements-analyzer running...
-├─ [3/N] ⏳ context-builder pending
-└─ [.../N] ⏳ remaining steps pending
-```
-
-### Status Icons
-- ✅ Completed
-- 🔄 In Progress
-- ⏳ Pending
-- ❌ Failed
-- ⚠️ Warning/Skipped
-
-### Analysis to Implementation Transition
-```
-═══════════════════════════════════════════════════════════════
-  📋 Analysis Complete → Starting Development
-═══════════════════════════════════════════════════════════════
-  Task Type: {taskType}
-  Complexity: {complexity}
-  Estimated Files: {estimatedFiles}
-  Estimated Time: {estimatedTime}
-───────────────────────────────────────────────────────────────
-```
-
 ## Error handling
 
-1. **Skill execution failure**: record error logs in notes and report to the user
-2. **Undefined step**: ask the user for confirmation
-3. **Question loop**: limit to 3 rounds, then proceed with defaults
-4. **Token limit warning**: archive and summarize before continuing
+1. **Skill failure**: record in notes, report to user
+2. **Undefined step**: ask user, stop
+3. **Question loop**: max 3 rounds, then proceed with defaults
+4. **Token limit**: archive and summarize before continuing
 
 ## Contract
-- This skill orchestrates other PM skills and does not analyze directly
-- All analysis logic is delegated to individual PM skills
-- Patch merging is a shallow object merge (no deep merge)
-- User questions use the AskUserQuestion tool
-- **Document memory policy**: Follow `.claude/docs/guidelines/document-memory-policy.md`
-
-## References
-- `.claude/docs/guidelines/document-memory-policy.md`
+- Orchestrates only, does not analyze directly
+- Patch merging: shallow object merge
+- User questions: `AskUserQuestion` tool
+- Follow `document-memory-policy.md`
