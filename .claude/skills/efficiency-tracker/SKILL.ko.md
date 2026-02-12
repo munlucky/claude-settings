@@ -11,13 +11,19 @@ description: Tracks workflow status and generates a flow report.
 - 기능명: `{feature-name}`
 - Phase/브랜치 정보(선택)
 - 검증 명령 결과 로그(선택)
+- **개선 메트릭** (from failure-analyzer/workflow-self-improver):
+  - `failureReport` (통계)
+  - `selfImprovementResult` (적용된 변경사항)
 
 ## 동작
 1. 시작/종료 타임스탬프, 활성 Phase를 기록.
 2. 블로킹 구간(예: 화면 정의서 확인 대기, API 스펙 대기)을 메모로 추가.
 3. 실행한 검증 명령(typecheck/build/lint 등)과 결과를 기록.
 4. 변경 파일/커밋 링크와 작성자 메모를 남김.
-5. `{tasksRoot}/{feature-name}/flow-report.md`에 append 또는 생성.
+5. **메타 시스템 이벤트 기록**:
+   - 실패 카테고리 및 빈도 기록.
+   - 적용된 시스템 개선사항 기록 (예: "PROJECT.md 규칙 업데이트됨").
+6. `{tasksRoot}/{feature-name}/flow-report.md`에 append 또는 생성.
 
 ## 출력
 - flow-report.md 업데이트 로그

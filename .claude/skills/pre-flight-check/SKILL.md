@@ -22,6 +22,9 @@ description: Checks essential information and project status before starting a t
   - context.md token usage (warn if > 6,000 tokens, ~80% of limit)
   - specification.md exists and is summarized (if large spec)
   - archives/ directory structure in place
+- **Doc Freshness Check**:
+  - Check `ARCHITECTURE.md` last modified vs code change
+  - Check `docs/generated/*` vs related source code
 
 ## Output (example)
 ```markdown
@@ -45,6 +48,10 @@ WARN context.md: missing (needs creation)
 OK context.md tokens: ~3,200 (under 8,000 limit)
 OK specification.md: summarized (full in archives/)
 OK archives/ directory: exists
+
+## Doc Freshness
+OK ARCHITECTURE.md: fresh (modified 2 days ago)
+WARN docs/generated/api-reference.md: stale (code changed yesterday) -> triggers `docStale` signal
 
 ## Recommended Actions
 1. [HIGH] Create context.md (ContextBuilder Agent)

@@ -111,13 +111,14 @@ MUST NOT DO:
 - Suggest changes outside the scope of modified files
 
 OUTPUT FORMAT:
-Summary → Critical issues → Warnings → Recommendations → Verdict (APPROVE/REJECT)
+Summary → Critical issues → Warnings → Recommendations → Verdict
 
-## Approval Criteria
+## Approval Criteria (Fix Forward Policy)
 
-- ✅ **APPROVE**: No CRITICAL/HIGH issues
-- ⚠️ **WARNING**: MEDIUM issues only (can merge with caution)
-- ❌ **REJECT**: CRITICAL/HIGH issues found
+- ✅ **APPROVE**: No issues
+- ⚠️ **FIX-FORWARD**: HIGH issues → merge allowed + follow-up task 생성
+- ⚠️ **MERGE-NOTE**: MEDIUM issues → merge allowed + notes 기록
+- ❌ **REJECT**: CRITICAL issues only (보안/데이터 무결성)
 ```
 
 ## Tool Call (When MCP Available)
@@ -156,9 +157,18 @@ mcp__codex__codex({
 ## Output (patch)
 ```yaml
 notes:
-  - "codex-review: [APPROVE/REJECT], critical=[count], warnings=[count]"
+  - "codex-review: [APPROVE/FIX-FORWARD/MERGE-NOTE/REJECT], critical=[count], high=[count], warnings=[count]"
   # If fallback was used:
   - "codex-fallback: Claude performed review directly (MCP unavailable)"
+
+# Fix Forward Tasks (HIGH issues that allow merge with follow-up)
+fixForward:
+  tasks:
+    - issue: "Long function in paymentService.ts (62 lines)"
+      severity: HIGH
+      file: "src/services/paymentService.ts"
+      suggestion: "Extract coupon validation to separate function"
+    # empty if no HIGH issues
 ```
 
 ## Review-Fix Loop (Auto-Fix Mode)
@@ -168,8 +178,10 @@ notes:
 1. **Run codex-review-code**
 2. **Analyze result:**
    - `APPROVE` → Proceed to next step
-   - `REJECT (CRITICAL/HIGH issues)` → Enter Auto-Fix Loop
-3. **Auto-Fix Loop:**
+   - `FIX-FORWARD (HIGH issues)` → Merge allowed, create follow-up tasks in `fixForward.tasks[]`
+   - `MERGE-NOTE (MEDIUM issues)` → Merge allowed, record in notes
+   - `REJECT (CRITICAL issues)` → Enter Auto-Fix Loop
+3. **Auto-Fix Loop (CRITICAL only):**
    - Re-invoke with `sandbox: "workspace-write"`
    - Include fix instructions in prompt
    - Run verification after fix

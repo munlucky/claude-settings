@@ -33,6 +33,14 @@ estimates:
 phase: planning|implementation|integration|verification|unknown
 complexity: simple|medium|complex|unknown
 missingInfo: []
+fixForward:
+  enabled: true
+  policy:
+    critical: block           # 보안/데이터 무결성 → 머지 차단
+    high: fix-forward-task    # 커밋 후 follow-up 태스크 자동 생성
+    medium: merge-with-note   # 경고 기록 후 머지 허용
+    low: auto-approve         # 자동 승인
+  tasks: []                   # codex-review-code에서 생성된 follow-up 태스크
 decisions:
   recommendedAgents: []
   skillChain: []
@@ -54,8 +62,8 @@ notes: []
 skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함한다(moonshot-* 스킬은 포함하지 않음).
 
 - simple: implementation-runner -> verify-changes.sh
-- medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> codex-review-code -> efficiency-tracker
-- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
+- medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
+- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
 
 **리팩토링 전용 규칙** (taskType == refactor):
 - `implementation-runner` 후 항상 `build-error-resolver` 포함하여 자동 빌드 검증
@@ -74,6 +82,13 @@ complex는 항상 테스트 기반 완료 검증을 포함한다.
 **보안 및 빌드 에러 연동**:
 - `security-reviewer`: 보안 우려 감지 시 트리거 (인증 변경, env 파일 수정, 새 의존성)
 - `build-error-resolver`: `tsc`/`build` 실패 시 트리거, 다음 구현 단계 전에 삽입
+
+**Fix Forward 리뷰 후 분기**:
+- `codex-review-code` 이후 리뷰 판정에 따라 `fixForward.policy` 적용:
+  - `CRITICAL` → **중단** (머지하지 않고 구현 재진입)
+  - `HIGH` → **머지 + fix-forward 태스크 생성** → `fixForward.tasks[]`에 추가
+  - `MEDIUM` → **머지 + 노트 추가** → `notes[]`에 기록
+  - `LOW` / 이슈 없음 → **정상 머지**
 
 ## 병렬 실행 가이드
 의존성이 없는 단계만 병렬로 실행한다. 결과가 다음 단계에 영향을 주면 병렬 금지.

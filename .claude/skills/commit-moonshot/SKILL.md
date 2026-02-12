@@ -116,6 +116,14 @@ After update completion, summarize changes:
 - AlwaysDo: +1 item
 ```
 
+- AlwaysDo: +1 item
+
+## 7.5 Ensure Docs Staged
+Ensure all documentation files (including auto-generated ones) are staged:
+```bash
+git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
+```
+
 ## 8. Create Commit
 
 ```bash

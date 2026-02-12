@@ -58,6 +58,10 @@ phase: unknown
 complexity: unknown
 missingInfo: []
 decisions: { recommendedAgents: [], skillChain: [], parallelGroups: [] }
+fixForward:
+  enabled: true
+  policy: { critical: block, high: fix-forward-task, medium: merge-with-note, low: auto-approve }
+  tasks: []
 artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
@@ -125,6 +129,7 @@ Run `decisions.skillChain` in order.
 | `implementation-runner` | Task | |
 | `code-simplifier` | Plugin | Post-implementation simplification |
 | `completion-verifier` | Skill (fork) | Test environment auto-detect |
+| `doc-auto-sync` | Skill | Auto-docs update & bootstrap |
 | `codex-review-code` | Skill | |
 | `project-memory-reviewer` | Task (fork) | Context isolation |
 | `vercel-react-best-practices` | Skill | When reactProject=true |
@@ -136,6 +141,8 @@ Run `decisions.skillChain` in order.
 | `moonshot-phase-runner` | Skill | |
 | `moonshot-teams-runner` | Skill | |
 | `team-leader-agent` | Task (fork) | Teams coordination |
+| `failure-analyzer` | Skill (fork) | System failure analysis |
+| `workflow-self-improver` | Skill (fork) | Meta-system auto-improvement |
 | `commit-moonshot` | Skill | |
 
 **Agent mapping:**
@@ -176,6 +183,9 @@ Run `decisions.skillChain` in order.
 | `coverageLow` | completion-verifier: coverage < 80% | Log warning, request additional tests |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after codex-review-code |
 | `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before completion-verifier |
+| `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |
+| `newProject` | missing ARCHITECTURE.md + complex task | Insert `doc-auto-sync --init` at start of chain |
+| `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
 
 ### 3.2 Project Memory Review (Fork)
 
@@ -196,6 +206,18 @@ After `implementation-runner`:
 2. `allPassed: true` → mark `implementationComplete: true`, proceed
 3. `allPassed: false` + retryCount < 2 → go back to failed phase, fix code only, retry
 4. `allPassed: false` + retryCount ≥ 2 → ask user for intervention
+
+### 3.4 Fix Forward Post-Review
+
+After `codex-review-code`, apply fix-forward policy:
+1. **REJECT (CRITICAL)** → Re-enter implementation, do NOT merge
+2. **FIX-FORWARD (HIGH)** → Merge allowed. Append tasks to `fixForward.tasks[]`.
+   - Log each task in session-logger
+   - Include in commit message: `[fix-forward: N tasks]`
+3. **MERGE-NOTE (MEDIUM)** → Merge allowed with warning in notes
+4. **APPROVE** → Merge normally
+
+Fix-forward tasks carry over to next session via `session-logger` HANDOFF.md.
 
 ### 4. Record results
 Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.

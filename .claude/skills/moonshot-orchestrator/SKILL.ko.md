@@ -58,6 +58,10 @@ phase: unknown
 complexity: unknown
 missingInfo: []
 decisions: { recommendedAgents: [], skillChain: [], parallelGroups: [] }
+fixForward:
+  enabled: true
+  policy: { critical: block, high: fix-forward-task, medium: merge-with-note, low: auto-approve }
+  tasks: []
 artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
@@ -125,6 +129,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `implementation-runner` | Task | |
 | `code-simplifier` | Plugin | 구현 후 코드 간소화 |
 | `completion-verifier` | Skill (fork) | 테스트 환경 자동 감지 |
+| `doc-auto-sync` | Skill | 문서 자동 동기화 및 부트스트랩 |
 | `codex-review-code` | Skill | |
 | `project-memory-reviewer` | Task (fork) | 컨텍스트 격리 |
 | `vercel-react-best-practices` | Skill | reactProject=true 시 |
@@ -136,6 +141,8 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `moonshot-phase-runner` | Skill | |
 | `moonshot-teams-runner` | Skill | |
 | `team-leader-agent` | Task (fork) | 팀 조율 |
+| `failure-analyzer` | Skill (fork) | 시스템 실패 분석 |
+| `workflow-self-improver` | Skill (fork) | 메타 시스템 자동 개선 |
 | `commit-moonshot` | Skill | |
 
 **에이전트 매핑:**
@@ -176,6 +183,9 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `coverageLow` | completion-verifier: 커버리지 < 80% | 경고 로깅, 추가 테스트 요청 |
 | `reactProject` | `.tsx`/`.jsx` 파일 또는 React 키워드 | codex-review-code 후 `vercel-react-best-practices` 삽입 |
 | `implementationComplete` | implementation-runner 완료 | completion-verifier 전 `code-simplifier` 삽입 |
+| `docStale` | pre-flight-check에서 stale 문서 감지 | 체인 시작 부분에 `doc-auto-sync` 삽입 |
+| `newProject` | ARCHITECTURE.md 없음 + 복잡한 태스크 | 체인 시작 부분에 `doc-auto-sync --init` 삽입 |
+| `multipleFailures` | notes에 에러/실패 2건 이상 | 체인 끝에 `failure-analyzer` + `workflow-self-improver` 추가 |
 
 ### 3.2 프로젝트 메모리 리뷰 (Fork)
 
@@ -196,6 +206,18 @@ Returns: { status, violations, needsApproval, warnings, reminders }
 2. `allPassed: true` → `implementationComplete: true` 설정, 진행
 3. `allPassed: false` + retryCount < 2 → 실패 Phase로 돌아가 코드만 수정, 재시도
 4. `allPassed: false` + retryCount ≥ 2 → 사용자에게 개입 요청
+
+### 3.4 Fix Forward 사후 리뷰
+
+`codex-review-code` 이후 fix-forward 정책 적용:
+1. **REJECT (CRITICAL)** → 구현 재진입, 머지 금지
+2. **FIX-FORWARD (HIGH)** → 머지 허용. `fixForward.tasks[]`에 태스크 추가.
+   - session-logger에 각 태스크 기록
+   - 커밋 메시지에 포함: `[fix-forward: N tasks]`
+3. **MERGE-NOTE (MEDIUM)** → 경고와 함께 머지 허용
+4. **APPROVE** → 정상 머지
+
+Fix-forward 태스크는 `session-logger` HANDOFF.md를 통해 다음 세션으로 인계.
 
 ### 4. 결과 기록
 최종 analysisContext를 `.claude/docs/moonshot-analysis.yaml`에 저장.
