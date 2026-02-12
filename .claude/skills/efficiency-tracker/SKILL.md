@@ -11,13 +11,19 @@ description: Tracks workflow status and generates a flow report.
 - Feature name: `{feature-name}`
 - Phase/branch info (optional)
 - Verification command results (optional)
+- **Improvement Metrics** (from failure-analyzer/workflow-self-improver):
+  - `failureReport` (stats)
+  - `selfImprovementResult` (applied changes)
 
 ## Behavior
 1. Record start/end timestamps and active phase.
 2. Add blocking intervals (e.g., waiting for UI spec, waiting for API spec) as notes.
 3. Record verification commands (typecheck/build/lint) and results.
 4. Record changed files/commit links and author notes.
-5. Append to or create `{tasksRoot}/{feature-name}/flow-report.md`.
+5. **Log Meta-System Events**:
+   - Record failure categories and counts.
+   - Record system improvements applied (e.g., "Updated PROJECT.md rule").
+6. Append to or create `{tasksRoot}/{feature-name}/flow-report.md`.
 
 ## Outputs
 - flow-report.md update log

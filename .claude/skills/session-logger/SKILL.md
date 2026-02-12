@@ -45,6 +45,11 @@ description: Logs development sessions in real-time to track decisions and issue
 ### Issue #N: {title}
 - Problem / Cause / Fix / Prevention
 
+## Fix Forward Tasks
+| Issue | Severity | File | Suggestion | Status |
+|-------|----------|------|------------|--------|
+| {from codex-review-code fixForward.tasks[]} | HIGH | {file} | {suggestion} | ⏳ Pending |
+
 ## Retrospective
 - What went well / What to improve / Lessons
 ```
@@ -71,8 +76,14 @@ When context window is over 80% full:
 - Worked: ...
 - Failed: ... (reason)
 
+## Fix Forward Tasks (Carry Over)
+| Issue | Severity | File | Suggestion |
+|-------|----------|------|------------|
+| {pending fix-forward tasks from this session} |
+
 ## Next Steps
-1. ...
+1. Resolve fix-forward tasks above (if any)
+2. ...
 
 ## Context
 - Files: {paths}

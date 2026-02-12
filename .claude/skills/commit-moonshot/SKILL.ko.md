@@ -115,6 +115,14 @@ create_relations([{
 - AlwaysDo: +1 항목
 ```
 
+- AlwaysDo: +1 항목
+
+## 7.5 문서 스테이징 확인
+모든 문서 파일(자동 생성본 포함)이 스테이징되었는지 확인:
+```bash
+git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
+```
+
 ## 8. 커밋 생성
 
 ```bash

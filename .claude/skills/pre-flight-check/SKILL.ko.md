@@ -21,7 +21,10 @@ description: Checks essential information and project status before starting a t
 - **문서 메모리 정책 체크**:
   - context.md 토큰 사용량 (~80%인 6,000토큰 초과 시 경고)
   - specification.md 존재 및 요약 여부 (대형 명세서인 경우)
-  - archives/ 디렉토리 구조 존재 여부
+  - archives/ 디렉토리 구조 확인
+- **문서 신선도 체크**:
+  - `ARCHITECTURE.md` 최종 수정일 vs 코드 변경일
+  - `docs/generated/*` vs 관련 소스 코드
 
 ## 출력 (예시)
 ```markdown
@@ -44,7 +47,11 @@ description: Checks essential information and project status before starting a t
 ## 문서 메모리 정책
 ✅ context.md 토큰: ~3,200 (8,000 한도 이내)
 ✅ specification.md: 요약됨 (원본은 archives/에)
-✅ archives/ 디렉토리: 존재
+✅ archives/ 디렉토리: 존재함
+
+## 문서 신선도
+OK ARCHITECTURE.md: 최신 (2일 전 수정)
+WARN docs/generated/api-reference.md: 오래됨 (어제 코드 변경됨) -> `docStale` 시그널 트리거
 
 ## 권장 액션
 1. [HIGH] context.md 생성 (ContextBuilder Agent)

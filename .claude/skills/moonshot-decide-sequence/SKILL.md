@@ -33,6 +33,14 @@ estimates:
 phase: planning|implementation|integration|verification|unknown
 complexity: simple|medium|complex|unknown
 missingInfo: []
+fixForward:
+  enabled: true
+  policy:
+    critical: block           # 보안/데이터 무결성 → 머지 차단
+    high: fix-forward-task    # 커밋 후 follow-up 태스크 자동 생성
+    medium: merge-with-note   # 경고 기록 후 머지 허용
+    low: auto-approve         # 자동 승인
+  tasks: []                   # codex-review-code에서 생성된 follow-up 태스크
 decisions:
   recommendedAgents: []
   skillChain: []
@@ -54,8 +62,8 @@ notes: []
 Include only stages to run **after moonshot-decide-sequence** (do not include moonshot-* skills).
 
 - simple: implementation-runner -> verify-changes.sh
-- medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> codex-review-code -> efficiency-tracker
-- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> codex-review-code -> efficiency-tracker -> session-logger
+- medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
+- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
 
 **Refactor-specific rules** (taskType == refactor):
 - Always include `build-error-resolver` after `implementation-runner` for automatic build verification
@@ -74,6 +82,13 @@ Complex always includes test-based completion verification.
 **Security & Build Error Integration**:
 - `security-reviewer`: Triggered when security concern detected (auth changes, env file modified, new dependencies)
 - `build-error-resolver`: Triggered when `tsc`/`build` fails, inserted before next implementation step
+
+**Fix Forward Post-Review Branching**:
+- After `codex-review-code`, check review verdict and apply `fixForward.policy`:
+  - `CRITICAL` → **HALT** (do not merge, re-enter implementation)
+  - `HIGH` → **MERGE + create fix-forward task** → append to `fixForward.tasks[]`
+  - `MEDIUM` → **MERGE + add note** to `notes[]`
+  - `LOW` / No issues → **MERGE** normally
 
 ## Parallel execution guide
 Only run dependency-free steps in parallel. If results affect the next stage, do not parallelize.

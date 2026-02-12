@@ -109,13 +109,14 @@ MUST NOT DO:
 - 수정된 파일 범위 외 변경 제안
 
 OUTPUT FORMAT:
-요약 → 중대 이슈 → 경고 → 권장사항 → 판정 (APPROVE/REJECT)
+요약 → 중대 이슈 → 경고 → 권장사항 → 판정
 
-## 승인 기준
+## 승인 기준 (Fix Forward 정책)
 
-- ✅ **APPROVE**: CRITICAL/HIGH 이슈 없음
-- ⚠️ **WARNING**: MEDIUM 이슈만 (주의하며 머지 가능)
-- ❌ **REJECT**: CRITICAL/HIGH 이슈 발견
+- ✅ **APPROVE**: 이슈 없음
+- ⚠️ **FIX-FORWARD**: HIGH 이슈 → 머지 허용 + follow-up 태스크 생성
+- ⚠️ **MERGE-NOTE**: MEDIUM 이슈 → 머지 허용 + notes 기록
+- ❌ **REJECT**: CRITICAL 이슈만 (보안/데이터 무결성)
 ```
 
 ## 도구 호출 (MCP 사용 가능 시)
@@ -154,9 +155,18 @@ mcp__codex__codex({
 ## 출력 (patch)
 ```yaml
 notes:
-  - "codex-review: [APPROVE/REJECT], critical=[개수], warnings=[개수]"
+  - "codex-review: [APPROVE/FIX-FORWARD/MERGE-NOTE/REJECT], critical=[개수], high=[개수], warnings=[개수]"
   # 폴백 사용 시:
   - "codex-fallback: Claude가 직접 리뷰 수행 (MCP 사용 불가)"
+
+# Fix Forward Tasks (머지를 허용하면서 follow-up이 필요한 HIGH 이슈)
+fixForward:
+  tasks:
+    - issue: "paymentService.ts의 긴 함수 (62줄)"
+      severity: HIGH
+      file: "src/services/paymentService.ts"
+      suggestion: "쿠폰 검증 로직을 별도 함수로 추출"
+    # HIGH 이슈 없으면 비어있음
 ```
 
 ## Review-Fix Loop (자동 수정 모드)
@@ -166,8 +176,10 @@ notes:
 1. **codex-review-code 실행**
 2. **결과 분석:**
    - `APPROVE` → 다음 단계로
-   - `REJECT (CRITICAL/HIGH 이슈)` → Auto-Fix Loop 진입
-3. **Auto-Fix Loop:**
+   - `FIX-FORWARD (HIGH 이슈)` → 머지 허용, `fixForward.tasks[]`에 follow-up 태스크 생성
+   - `MERGE-NOTE (MEDIUM 이슈)` → 머지 허용, notes에 기록
+   - `REJECT (CRITICAL 이슈)` → Auto-Fix Loop 진입
+3. **Auto-Fix Loop (CRITICAL만):**
    - `sandbox: "workspace-write"`로 재호출
    - 수정 지시 포함
    - 수정 후 검증 실행
