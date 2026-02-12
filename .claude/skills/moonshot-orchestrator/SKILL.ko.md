@@ -123,6 +123,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
 | `implementation-runner` | Task | |
+| `code-simplifier` | Plugin | 구현 후 코드 간소화 |
 | `completion-verifier` | Skill (fork) | 테스트 환경 자동 감지 |
 | `codex-review-code` | Skill | |
 | `project-memory-reviewer` | Task (fork) | 컨텍스트 격리 |
@@ -150,7 +151,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 
 **실행 규칙:**
 1. 순차 실행 (`parallelGroups` 내에서만 병렬)
-2. Skill → `Skill` 도구, Agent → `Task` 도구, Script → `Bash` 도구
+2. Skill → `Skill` 도구, Agent → `Task` 도구, Plugin → `Plugin` 도구, Script → `Bash` 도구
 3. 미정의 단계 → 사용자에게 확인 후 중단
 4. 모든 단계는 `document-memory-policy.md` 준수
 
@@ -174,6 +175,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `securityConcern` | `.env`/`auth`/`token`/`secret` 파일 변경 | codex-review-code 후 `security-reviewer` 추가 |
 | `coverageLow` | completion-verifier: 커버리지 < 80% | 경고 로깅, 추가 테스트 요청 |
 | `reactProject` | `.tsx`/`.jsx` 파일 또는 React 키워드 | codex-review-code 후 `vercel-react-best-practices` 삽입 |
+| `implementationComplete` | implementation-runner 완료 | completion-verifier 전 `code-simplifier` 삽입 |
 
 ### 3.2 프로젝트 메모리 리뷰 (Fork)
 

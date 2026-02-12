@@ -123,6 +123,7 @@ Run `decisions.skillChain` in order.
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
 | `implementation-runner` | Task | |
+| `code-simplifier` | Plugin | Post-implementation simplification |
 | `completion-verifier` | Skill (fork) | Test environment auto-detect |
 | `codex-review-code` | Skill | |
 | `project-memory-reviewer` | Task (fork) | Context isolation |
@@ -150,7 +151,7 @@ Run `decisions.skillChain` in order.
 
 **Execution rules:**
 1. Run steps sequentially (parallelize only within `parallelGroups`)
-2. Skill → `Skill` tool, Agent → `Task` tool, Script → `Bash` tool
+2. Skill → `Skill` tool, Agent → `Task` tool, Plugin → `Plugin` tool, Script → `Bash` tool
 3. Undefined step → ask user and stop
 4. All steps must follow `document-memory-policy.md`
 
@@ -174,6 +175,7 @@ Run `decisions.skillChain` in order.
 | `securityConcern` | Changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after codex-review-code |
 | `coverageLow` | completion-verifier: coverage < 80% | Log warning, request additional tests |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after codex-review-code |
+| `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before completion-verifier |
 
 ### 3.2 Project Memory Review (Fork)
 
