@@ -223,6 +223,10 @@ teams:
         prompt: "구현된 기능에 대한 테스트 작성"
         focus: "테스트 코드 작성"
         ownedPaths: ["tests/", "**/*.test.ts", "**/*.spec.ts"]
+      - name: "code-simplifier"
+        plugin: "code-simplifier"
+        focus: "구현 완료된 코드의 복잡성 감소, 가독성 개선"
+        condition: "signals.implementationComplete == true"
     communication:
       enabled: true  # 팀원간 API 스펙 논의 등
     fileOwnership:
@@ -272,6 +276,10 @@ teams:
           - "**/*.test.ts"
           - "**/*.spec.ts"
           - "__tests__/"
+      - name: "code-simplifier"
+        plugin: "code-simplifier"
+        focus: "각 레이어 구현 코드의 복잡성 감소"
+        condition: "signals.implementationComplete == true"
     communication:
       enabled: true
       # 프론트엔드가 백엔드에 API 스펙 문의 가능
