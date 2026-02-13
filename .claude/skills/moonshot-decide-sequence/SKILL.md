@@ -74,6 +74,10 @@ Include only stages to run **after moonshot-decide-sequence** (do not include mo
 - Keep `project-memory-check` as a distinct stage from `project-memory-agent`.
 - `project-memory-check` is check-only (boundary validation), while `project-memory-agent` handles memory load/update.
 
+**Phase runner handoff rule**:
+- If master-plan/phase docs are detected for multi-phase execution, insert `moonshot-phase-runner` before `implementation-runner`.
+- Treat `moonshot-phase-runner` as preparation-only. Completion gates run after external phase execution updates `.claude/docs/phase-status.yaml`.
+
 **Refactor-specific rules** (taskType == refactor):
 - Always include `build-error-resolver` after `implementation-runner` for automatic build verification
 - For complex refactors: implementation-runner executes in phased mode with build checks between phases
@@ -97,6 +101,7 @@ Complex always includes test-based completion verification.
 - `verify-changes.sh` `exit 2`: Test failure → re-enter `implementation-runner` with test-first remediation (add/fix tests) before rerunning verification.
 - `verify-runtime.sh` `exit 1`: Runtime unavailable (server/env issue) → fix runtime readiness and rerun `browser-verifier`.
 - `verify-runtime.sh` `exit 2`: E2E failure → apply the same policy as test failure (`verify-changes.sh` exit 2).
+- `completion-verifier` `verificationState: indeterminate` (usually `allPassed: null`): run fallback gate (`verify-changes.sh` + optional `browser-verifier`) before final completion decision.
 
 **Fix Forward Post-Review Branching**:
 - After `codex-review-code`, check review verdict and apply `fixForward.policy`:

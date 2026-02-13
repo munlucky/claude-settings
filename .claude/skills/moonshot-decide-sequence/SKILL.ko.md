@@ -74,6 +74,10 @@ skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함�
 - `project-memory-check`는 `project-memory-agent`와 분리된 독립 단계로 유지한다.
 - `project-memory-check`는 경계 검증 전용(check-only)이며, 메모리 로드/업데이트는 `project-memory-agent`가 담당한다.
 
+**Phase runner 핸드오프 규칙**:
+- 다단계 실행용 master-plan/phase 문서가 감지되면 `implementation-runner` 전에 `moonshot-phase-runner`를 삽입한다.
+- `moonshot-phase-runner`는 준비 단계로만 취급하며, 최종 완료 게이트는 외부 phase 실행 후 `.claude/docs/phase-status.yaml` 업데이트를 기준으로 수행한다.
+
 **리팩토링 전용 규칙** (taskType == refactor):
 - `implementation-runner` 후 항상 `build-error-resolver` 포함하여 자동 빌드 검증
 - 복잡한 리팩토링: implementation-runner가 단계별 모드로 실행되며 단계 간 빌드 체크 수행
@@ -97,6 +101,7 @@ complex는 항상 테스트 기반 완료 검증을 포함한다.
 - `verify-changes.sh` `exit 2`: 테스트 실패 → 테스트 우선 보정(테스트 추가/수정)으로 `implementation-runner` 재진입 후 검증 재실행
 - `verify-runtime.sh` `exit 1`: 런타임 미가용(서버/환경 문제) → 런타임 준비 상태 복구 후 `browser-verifier` 재실행
 - `verify-runtime.sh` `exit 2`: E2E 실패 → `verify-changes.sh`의 테스트 실패(`exit 2`)와 동일 정책 적용
+- `completion-verifier` `verificationState: indeterminate`(일반적으로 `allPassed: null`)이면 최종 완료 판단 전에 fallback 게이트(`verify-changes.sh` + 필요 시 `browser-verifier`)를 수행한다.
 
 **Fix Forward 리뷰 후 분기**:
 - `codex-review-code` 이후 리뷰 판정에 따라 `fixForward.policy` 적용:

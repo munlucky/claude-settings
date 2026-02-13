@@ -78,6 +78,7 @@ action:
      completionStatus:
        testEnvironment: false
        selfAuditOnly: true
+       verificationState: indeterminate
        allPassed: null  # Cannot determine
        recommendation: "Consider setting up a test framework for automated verification"
 ```
@@ -172,6 +173,7 @@ selfAuditResult:
 completionStatus:
   testEnvironment: true | false
   selfAuditOnly: false
+  verificationState: passed | failed | indeterminate
   total: 5
   passed: 4
   failed: 1
@@ -185,9 +187,16 @@ completionStatus:
   recommendation: "Fix ErrorHandler.tsx, then re-run Phase 1"
 ```
 
+### verificationState contract
+
+- `passed`: tests ran and gate passed (`allPassed: true`)
+- `failed`: tests ran and failed (`allPassed: false`)
+- `indeterminate`: no executable test environment (typically `allPassed: null`, Self-Audit only)
+- Orchestrator must handle `indeterminate` with fallback gate logic instead of treating it as pass/fail.
+
 ## Retry Logic
 
-When `allPassed: false` AND `testEnvironment: true`:
+When `verificationState: failed` AND `testEnvironment: true`:
 
 1. **Identify failed phase** based on test type:
    - Unit FAIL → Phase 1 (Mock implementation)

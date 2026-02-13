@@ -154,7 +154,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | 에이전트 | subagent_type | 비고 |
 |----------|---------------|------|
 | `project-memory-agent` | general-purpose | fork, 2.1 전 |
-| `project-memory-check` | general-purpose | fork, 구현 전 check-only 모드 |
+| `project-memory-check` | general-purpose | fork, 구현 전 check-only 모드 (`.claude/agents/project-memory-check.md`) |
 | `requirements-analyzer` | general-purpose | |
 | `context-builder` | context-builder | |
 | `implementation-runner` | implementation-agent | |
@@ -169,7 +169,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 
 **메모리 단계 분리 계약**:
 - `project-memory-agent`: 2.0.5 단계에서 프로젝트 메모리 로드/업데이트
-- `project-memory-check`: 구현 전 경계 준수 검사 전용 단계 (메모리 변경 없음)
+- `project-memory-check`: 구현 전 경계 준수 검사 전용 단계 (메모리 변경 없음, `.claude/agents/project-memory-check.md` 사용)
 - `project-memory-reviewer`: 리뷰 이후 경계 준수 재검증
 
 **Agent Teams 연동 (--use-teams):**
@@ -199,6 +199,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `docStale` | pre-flight-check에서 stale 문서 감지 | 체인 시작 부분에 `doc-auto-sync` 삽입 |
 | `newProject` | ARCHITECTURE.md 없음 + 복잡한 태스크 | 체인 시작 부분에 `doc-auto-sync --init` 삽입 |
 | `webRuntimeCheck` | `reactProject == true` | `verify-changes.sh` 앞에 `browser-verifier` 삽입 (`verify-changes.sh`가 없으면 `completion-verifier` 직후) |
+| `phasePlanDetected` | master plan + phase 문서 감지 | `implementation-runner` 전에 `moonshot-phase-runner`를 삽입해 phase-status 준비/핸드오프 수행 |
 | `multipleFailures` | notes에 에러/실패 2건 이상 | 체인 끝에 `failure-analyzer` + `workflow-self-improver` 추가 |
 
 ### 3.2 프로젝트 메모리 리뷰 (Fork)
@@ -218,11 +219,25 @@ Returns: { status, violations, needsApproval, warnings, reminders }
 `implementation-runner` 완료 후:
 1. `decisions.skillChain`에 `completion-verifier`가 있으면 호출합니다.
 2. `completion-verifier`가 없는 simple 흐름은 `verify-changes.sh`(웹 프로젝트는 `browser-verifier` 포함)를 완료 게이트로 사용합니다.
-3. `allPassed: true`(또는 동등한 게이트 통과)면 `implementationComplete: true` 설정 후 진행합니다.
-4. 실패 + retryCount < 2이면 실패 원인별 종료 코드 전략(`exit 1` 빌드 우선 수정, `exit 2` 테스트 우선 수정)으로 복구 후 재시도합니다.
-5. 실패 + retryCount ≥ 2이면 사용자 개입을 요청합니다.
+3. `completionStatus.verificationState == passed`(또는 동등한 게이트 통과)면 `implementationComplete: true` 설정 후 진행합니다.
+4. `completionStatus.verificationState == indeterminate`(일반적으로 `allPassed: null`)이면:
+   - 가능할 경우 fallback 게이트로 `verify-changes.sh`(웹은 `browser-verifier` 포함)를 실행합니다.
+   - fallback 통과 + Self-Audit blocker 없음이면 경고 노트를 남기고 `implementationComplete: true`로 진행합니다.
+   - fallback 불가 또는 실패 시 사용자 명시적 판단/개입을 요청합니다.
+5. 실패(`verificationState == failed` 또는 fallback 실패) + retryCount < 2이면 실패 원인별 종료 코드 전략(`exit 1` 빌드 우선 수정, `exit 2` 테스트 우선 수정)으로 복구 후 재시도합니다.
+6. 실패 + retryCount ≥ 2이면 사용자 개입을 요청합니다.
 
-### 3.4 Fix Forward 사후 리뷰
+### 3.4 Phase Runner 핸드오프 계약
+
+체인에 `moonshot-phase-runner`가 포함된 경우:
+1. 이를 구현 완료가 아닌 **실행 준비 단계**로 취급합니다.
+2. `.claude/docs/phase-status.yaml` 생성을 필수로 하고, 아래 요약 필드를 `notes`에 병합합니다.
+   - `masterPlan`, `autonomousMode`, `preparedAt`, `pendingPhases`
+3. phase-runner 출력의 외부 실행 명령을 핸드오프로 기록합니다.
+   - `.claude/scripts/agent-loop.sh <plan-dir>`
+4. `phase-status.yaml`에 실제 실행 업데이트가 반영된 뒤에만 메인 오케스트레이터 검증 루프를 재개합니다.
+
+### 3.5 Fix Forward 사후 리뷰
 
 `codex-review-code` 이후 fix-forward 정책 적용:
 1. **REJECT (CRITICAL)** → 구현 재진입, 머지 금지
