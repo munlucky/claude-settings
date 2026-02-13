@@ -48,6 +48,7 @@ decisions:
 artifacts:
   contextDocPath: {tasksRoot}/{feature-name}/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
+  runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 notes: []
 ```
 
@@ -64,6 +65,14 @@ skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함�
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**웹 런타임 검증 규칙**:
+- `signals.reactProject == true`이면 `verify-changes.sh` 이전에 `browser-verifier`를 삽입한다.
+- `browser-verifier`는 `.claude/agents/verification/verify-runtime.sh`를 사용해 URL/E2E 런타임 검증을 수행한다.
+
+**프로젝트 메모리 체크 의미**:
+- `project-memory-check`는 `project-memory-agent`와 분리된 독립 단계로 유지한다.
+- `project-memory-check`는 경계 검증 전용(check-only)이며, 메모리 로드/업데이트는 `project-memory-agent`가 담당한다.
 
 **리팩토링 전용 규칙** (taskType == refactor):
 - `implementation-runner` 후 항상 `build-error-resolver` 포함하여 자동 빌드 검증
@@ -83,6 +92,12 @@ complex는 항상 테스트 기반 완료 검증을 포함한다.
 - `security-reviewer`: 보안 우려 감지 시 트리거 (인증 변경, env 파일 수정, 새 의존성)
 - `build-error-resolver`: `tsc`/`build` 실패 시 트리거, 다음 구현 단계 전에 삽입
 
+**검증 종료 코드 전략**:
+- `verify-changes.sh` `exit 1`: 빌드/타입체크/일반 검증 실패 → `build-error-resolver` 호출 후 구현 수정 재시도
+- `verify-changes.sh` `exit 2`: 테스트 실패 → 테스트 우선 보정(테스트 추가/수정)으로 `implementation-runner` 재진입 후 검증 재실행
+- `verify-runtime.sh` `exit 1`: 런타임 미가용(서버/환경 문제) → 런타임 준비 상태 복구 후 `browser-verifier` 재실행
+- `verify-runtime.sh` `exit 2`: E2E 실패 → `verify-changes.sh`의 테스트 실패(`exit 2`)와 동일 정책 적용
+
 **Fix Forward 리뷰 후 분기**:
 - `codex-review-code` 이후 리뷰 판정에 따라 `fixForward.policy` 적용:
   - `CRITICAL` → **중단** (머지하지 않고 구현 재진입)
@@ -96,6 +111,7 @@ complex는 항상 테스트 기반 완료 검증을 포함한다.
 **가능한 병렬 조합 예시**:
 - `/moonshot-classify-task` 이후: `/moonshot-evaluate-complexity` + `/moonshot-detect-uncertainty`
 - 구현 완료 후: `codex-review-code` + `verify-changes.sh` (리뷰 수정 시 `verify-changes.sh` 재실행)
+- 웹 프로젝트 런타임 체크: `codex-review-code` + `browser-verifier` (코드 수정 후 런타임 재검증)
 - 로깅: `efficiency-tracker` + `session-logger`
 
 **병렬 금지 예시**:
