@@ -14,6 +14,7 @@ triggers:
 
 Prepares phase-by-phase implementation based on master plan documents.
 Handles plan validation, uncertainty resolution (Q&A), and **execution preparation**.
+Emits handoff metadata so `/moonshot-orchestrator` can resume with consistent state.
 
 > **Note**: Actual execution is done by running `agent-loop.sh` in a separate terminal.
 
@@ -41,8 +42,11 @@ Handles plan validation, uncertainty resolution (Q&A), and **execution preparati
     ├─ 3. Plan Review (unless --autonomous)
     │      └─ Detect uncertainties → Q&A → planConfirmed: true
     │
-    └─ 4. Output Execution Command
+    ├─ 4. Output Execution Command
            └─ User copies and runs in separate terminal
+    
+    └─ 5. Emit Handoff Summary
+           └─ Orchestrator-readable phaseRunnerResult
 ```
 
 ## Step 1: Plan Directory Validation
@@ -121,6 +125,23 @@ When `--autonomous` flag **IS** specified:
 💡 Tip: Logs available at .claude/logs/agent-loop/
 ```
 
+## Step 5: Emit Handoff Summary
+
+Return a structured summary for orchestrator:
+
+```yaml
+phaseRunnerResult:
+  prepared: true
+  executionMode: delegated-terminal
+  planDir: "docs/implementation/"
+  masterPlan: "docs/implementation/00-master-plan.md"
+  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  executionCommand: ".claude/scripts/agent-loop.sh docs/implementation/"
+  pendingPhases: 5
+```
+
+`executionMode: delegated-terminal` means this skill does not execute phase work directly.
+
 ## Status File
 
 `.claude/docs/phase-status.yaml`:
@@ -146,3 +167,11 @@ phases:
 - `/moonshot-orchestrator`: Phase implementation delegation
 - `/moonshot-detect-uncertainty`: Pre-execution uncertainty detection
 - `.claude/scripts/agent-loop.sh`: Autonomous execution loop (run by user separately)
+
+## Orchestrator Integration Contract
+
+When called by `/moonshot-orchestrator`:
+1. Prepare plan state and write `.claude/docs/phase-status.yaml`.
+2. Return `phaseRunnerResult` summary (do not inline full phase docs).
+3. Do not mark implementation complete here.
+4. Orchestrator resumes completion verification only after external phase execution updates `phase-status.yaml`.

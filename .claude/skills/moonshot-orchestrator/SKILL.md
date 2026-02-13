@@ -154,7 +154,7 @@ Run `decisions.skillChain` in order.
 | Agent | subagent_type | Notes |
 |-------|---------------|-------|
 | `project-memory-agent` | general-purpose | fork, before 2.1 |
-| `project-memory-check` | general-purpose | fork, check-only mode before implementation |
+| `project-memory-check` | general-purpose | fork, check-only mode before implementation (`.claude/agents/project-memory-check.md`) |
 | `requirements-analyzer` | general-purpose | |
 | `context-builder` | context-builder | |
 | `implementation-runner` | implementation-agent | |
@@ -169,7 +169,7 @@ Run `decisions.skillChain` in order.
 
 **Memory-step separation contract**:
 - `project-memory-agent`: load/update project memory context at phase 2.0.5
-- `project-memory-check`: pre-implementation boundary check (check-only, no memory mutation)
+- `project-memory-check`: pre-implementation boundary check (check-only, no memory mutation, use `.claude/agents/project-memory-check.md`)
 - `project-memory-reviewer`: post-review boundary compliance verification
 
 **Agent Teams Integration (--use-teams):**
@@ -199,6 +199,7 @@ Run `decisions.skillChain` in order.
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |
 | `newProject` | missing ARCHITECTURE.md + complex task | Insert `doc-auto-sync --init` at start of chain |
 | `webRuntimeCheck` | `reactProject == true` | Insert `browser-verifier` before `verify-changes.sh` (or right after `completion-verifier` if `verify-changes.sh` is absent) |
+| `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` for phase-status preparation/handoff |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
 
 ### 3.2 Project Memory Review (Fork)
@@ -218,11 +219,25 @@ Returns: { status, violations, needsApproval, warnings, reminders }
 After `implementation-runner`:
 1. If `completion-verifier` exists in `decisions.skillChain`, call it.
 2. If `completion-verifier` is absent (simple flow), use `verify-changes.sh` (and `browser-verifier` for web projects) as completion gate.
-3. `allPassed: true` (or equivalent gate pass) → mark `implementationComplete: true`, proceed.
-4. Failure + retryCount < 2 → return to failed phase and apply exit-code strategy (`exit 1` build-first fix, `exit 2` test-first fix), then retry.
-5. Failure + retryCount ≥ 2 → ask user for intervention.
+3. If `completionStatus.verificationState == passed` (or equivalent gate pass) → mark `implementationComplete: true`, proceed.
+4. If `completionStatus.verificationState == indeterminate` (typically `allPassed: null`):
+   - Run fallback gate: `verify-changes.sh` (and `browser-verifier` for web projects) when available.
+   - If fallback gate passes and Self-Audit has no blockers → proceed with `implementationComplete: true` and add warning note.
+   - If fallback gate is unavailable or fails → ask user for explicit decision/intervention.
+5. Failure (`verificationState == failed` or fallback gate fail) + retryCount < 2 → return to failed phase and apply exit-code strategy (`exit 1` build-first fix, `exit 2` test-first fix), then retry.
+6. Failure + retryCount ≥ 2 → ask user for intervention.
 
-### 3.4 Fix Forward Post-Review
+### 3.4 Phase Runner Handoff Contract
+
+When `moonshot-phase-runner` is used in chain:
+1. Treat it as **execution preparation**, not implementation completion.
+2. Require `.claude/docs/phase-status.yaml` output and merge summary fields into `notes`:
+   - `masterPlan`, `autonomousMode`, `preparedAt`, `pendingPhases`
+3. Record external execution handoff command from phase-runner output:
+   - `.claude/scripts/agent-loop.sh <plan-dir>`
+4. Resume main orchestrator verification only after phase execution updates are reflected in `phase-status.yaml`.
+
+### 3.5 Fix Forward Post-Review
 
 After `codex-review-code`, apply fix-forward policy:
 1. **REJECT (CRITICAL)** → Re-enter implementation, do NOT merge

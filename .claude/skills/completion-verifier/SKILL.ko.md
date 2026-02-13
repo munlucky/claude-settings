@@ -76,6 +76,7 @@ action:
      completionStatus:
        testEnvironment: false
        selfAuditOnly: true
+       verificationState: indeterminate
        allPassed: null  # 판단 불가
        recommendation: "자동 검증을 위해 테스트 프레임워크 설정을 권장합니다"
 ```
@@ -167,6 +168,7 @@ selfAuditResult:
 completionStatus:
   testEnvironment: true | false
   selfAuditOnly: false
+  verificationState: passed | failed | indeterminate
   total: 5
   passed: 4
   failed: 1
@@ -180,9 +182,16 @@ completionStatus:
   recommendation: "ErrorHandler.tsx 수정 후 Phase 1 재실행"
 ```
 
+### verificationState 계약
+
+- `passed`: 테스트 실행 + 게이트 통과 (`allPassed: true`)
+- `failed`: 테스트 실행 + 게이트 실패 (`allPassed: false`)
+- `indeterminate`: 실행 가능한 테스트 환경 없음 (일반적으로 `allPassed: null`, Self-Audit 전용)
+- 오케스트레이터는 `indeterminate`를 성공/실패로 단정하지 말고 fallback 게이트 정책으로 처리해야 합니다.
+
 ## 재시도 로직
 
-`allPassed: false` AND `testEnvironment: true` 시:
+`verificationState: failed` AND `testEnvironment: true` 시:
 
 1. **실패 Phase 식별** (테스트 유형 기반):
    - Unit FAIL → Phase 1 (Mock 구현)

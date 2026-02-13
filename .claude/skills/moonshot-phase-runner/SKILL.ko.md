@@ -14,6 +14,7 @@ triggers:
 
 Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 계획 검증, 불확실성 해소(Q&A), 그리고 **실행 준비**를 담당합니다.
+또한 `/moonshot-orchestrator`가 재개할 수 있도록 핸드오프 메타데이터를 반환합니다.
 
 > **Note**: 실제 실행은 사용자가 별도 터미널에서 `agent-loop.sh`를 실행합니다.
 
@@ -41,8 +42,11 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
     ├─ 3. Plan Review (--autonomous 미지정 시)
     │      └─ 불확실성 감지 → Q&A → planConfirmed: true
     │
-    └─ 4. 실행 명령어 출력
+    ├─ 4. 실행 명령어 출력
            └─ 사용자가 복사해서 실행
+    
+    └─ 5. 핸드오프 요약 반환
+           └─ 오케스트레이터가 읽을 수 있는 phaseRunnerResult 반환
 ```
 
 ## Step 1: 계획 디렉토리 검증
@@ -121,6 +125,23 @@ actions:
 💡 Tip: 실행 후 로그는 .claude/logs/agent-loop/ 에서 확인
 ```
 
+## Step 5: 핸드오프 요약 반환
+
+오케스트레이터용 구조화 요약을 반환:
+
+```yaml
+phaseRunnerResult:
+  prepared: true
+  executionMode: delegated-terminal
+  planDir: "docs/implementation/"
+  masterPlan: "docs/implementation/00-master-plan.md"
+  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  executionCommand: ".claude/scripts/agent-loop.sh docs/implementation/"
+  pendingPhases: 5
+```
+
+`executionMode: delegated-terminal`은 이 스킬이 실제 phase 구현을 직접 수행하지 않음을 의미합니다.
+
 ## Status File
 
 `.claude/docs/phase-status.yaml`:
@@ -146,3 +167,11 @@ phases:
 - `/moonshot-orchestrator`: Phase 구현 위임
 - `/moonshot-detect-uncertainty`: 사전 불확실성 감지
 - `.claude/scripts/agent-loop.sh`: 자율 실행 루프 (사용자가 별도 실행)
+
+## 오케스트레이터 연동 계약
+
+`/moonshot-orchestrator`에서 호출될 때:
+1. 계획 상태를 준비하고 `.claude/docs/phase-status.yaml`을 작성합니다.
+2. `phaseRunnerResult` 요약만 반환합니다(phase 문서 본문 인라인 금지).
+3. 여기서 구현 완료로 처리하지 않습니다.
+4. 외부 phase 실행 결과가 `phase-status.yaml`에 반영된 뒤에만 오케스트레이터가 완료 검증을 재개합니다.
