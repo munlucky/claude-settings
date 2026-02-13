@@ -21,7 +21,7 @@ claude-settings/
 ├── .claude/
 │   ├── CLAUDE.md / CLAUDE.ko.md
 │   ├── PROJECT.md / PROJECT.ko.md
-│   ├── AGENT.md / AGENT.ko.md
+│   ├── AGENTS.md / AGENT.ko.md
 │   ├── README.md / README.ko.md
 │   ├── settings.local.json
 │   ├── agents/
@@ -73,7 +73,7 @@ claude-settings/
 
 - `CLAUDE.md`: 전역 규칙과 기본 작업 방식
 - `PROJECT.md`: 프로젝트별 규칙 템플릿
-- `AGENT.md`: 에이전트 프롬프트 규격
+- `AGENTS.md`: 에이전트 프롬프트 규격
 
 ### Moonshot 워크플로우
 

@@ -1,6 +1,6 @@
 # Global Development Guidelines
 
-> This is the global rules document. For project-specific rules see `.claude/PROJECT.md`, and for agent canonical format see `.claude/AGENT.md`.
+> This is the global rules document. For project-specific rules see `.claude/PROJECT.md`, and for agent canonical format see `.claude/rules/agents/agent-definition.md`.
 
 ## Overview
 
@@ -39,4 +39,4 @@ documentPaths:
 ## References
 
 - Project-specific rules: @.claude/PROJECT.md
-- Agent format: @.claude/AGENT.md
+- Agent format: @.claude/CLAUDE.md
