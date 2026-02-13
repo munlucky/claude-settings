@@ -48,8 +48,5 @@ similarFeaturePaths:  # if present
 - Refer to `.claude/PROJECT.md` for project rules.
 - **Large specs**: If input spec > 2000 words, create summary per document-memory-policy.md.
 ## References
-- `.claude/PROJECT.md`
-- `.claude/AGENT.md`
-- `.claude/CLAUDE.md`
 - `.claude/agents/requirements-analyzer/templates/agreement-template.md`
 - `.claude/docs/guidelines/document-memory-policy.md`

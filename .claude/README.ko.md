@@ -7,7 +7,7 @@
 - 전역 규칙: `.claude/CLAUDE.md` (필요 시 `@` import로 추가 규칙 로드)
 - 모듈식 규칙: `.claude/rules/`
 - 프로젝트 규칙: `.claude/PROJECT.md`
-- 에이전트 포맷: `.claude/AGENT.md`
+- 에이전트 포맷: `.claude/CLAUDE.md`
 - 오케스트레이터 스킬: `.claude/skills/moonshot-orchestrator/SKILL.md`
 
 ## 메모리 구조와 우선순위

@@ -25,7 +25,7 @@ context: fork
 | **tool_missing** | Required tool/script missing | New skill/script proposal |
 | **skill_logic_error** | Skill logic fails in scenario | `SKILL.md` logic update |
 | **guardrail_missing** | Repeated violation of patterns | `rules/quality.md`, boundaries |
-| **prompt_gap** | System prompt misses scenario | `CLAUDE.md`, `AGENT.md` |
+| **prompt_gap** | System prompt misses scenario | `CLAUDE.md`, `AGENTS.md` |
 | **retry_exhausted** | Self-healing loop maxed out | `build-error-resolver` DB |
 
 ## Analysis Workflow

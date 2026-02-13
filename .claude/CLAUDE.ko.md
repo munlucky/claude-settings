@@ -1,6 +1,6 @@
 # 글로벌 개발 지침
 
-> 이 문서는 전역 규칙 문서입니다. 프로젝트별 규칙은 `.claude/PROJECT.md`, 에이전트 canonical format은 `.claude/AGENT.md`를 참고하세요.
+> 이 문서는 전역 규칙 문서입니다. 프로젝트별 규칙은 `.claude/PROJECT.md`, 에이전트 canonical format은 `.claude/rules/agents/agent-definition.md`를 참고하세요.
 
 ## 개요
 
@@ -39,4 +39,4 @@ documentPaths:
 ## 참고
 
 - 프로젝트별 규칙: @.claude/PROJECT.md
-- 에이전트 포맷: @.claude/AGENT.md
+- 에이전트 포맷: @.claude/CLAUDE.md

@@ -48,8 +48,5 @@ similarFeaturePaths:  # 있는 경우
 - 프로젝트 규칙은 `.claude/PROJECT.md`를 참조합니다.
 - **대형 명세서**: 입력 명세서가 2000단어 초과 시 document-memory-policy.md에 따라 요약 생성.
 ## References
-- `.claude/PROJECT.md`
-- `.claude/AGENT.md`
-- `.claude/CLAUDE.md`
 - `.claude/agents/requirements-analyzer/templates/agreement-template.md`
 - `.claude/docs/guidelines/document-memory-policy.md`

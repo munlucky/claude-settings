@@ -188,8 +188,5 @@ commitHashes:  # git log로 직접 확인 가능하지만, 빠른 참조용
 ```
 ---
 ## References
-- `.claude/PROJECT.md`
-- `.claude/AGENT.md`
-- `.claude/CLAUDE.md`
 - `.claude/agents/documentation/templates/session-log-template.md`
 - `.claude/skills/doc-sync/skill.md` (Finalize 시 최종 동기화)

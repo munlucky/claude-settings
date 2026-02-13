@@ -188,8 +188,5 @@ Expected effect: save 30m per task
 ```
 ---
 ## References
-- `.claude/PROJECT.md`
-- `.claude/AGENT.md`
-- `.claude/CLAUDE.md`
 - `.claude/agents/documentation/templates/session-log-template.md`
 - `.claude/skills/doc-sync/skill.md` (final sync in finalize mode)

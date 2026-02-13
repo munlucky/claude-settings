@@ -42,8 +42,5 @@ outputFile: ".claude/features/xxx/verification-result.md"
 - typecheck/build/lint 결과를 명확히 기록합니다.
 - 활동 로그 헤더 누락 가능성을 보고합니다.
 ## References
-- `.claude/PROJECT.md`
-- `.claude/AGENT.md`
-- `.claude/CLAUDE.md`
 - `.claude/agents/verification/verify-changes.sh`
 - `.claude/docs/guidelines/document-memory-policy.md`

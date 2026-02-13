@@ -25,7 +25,7 @@ context: fork
 | **tool_missing** | 도구/스크립트 부재 | 새 스킬/스크립트 제안 |
 | **skill_logic_error** | 스킬 로직 오류 | `SKILL.md` 로직 수정 |
 | **guardrail_missing** | 금지 패턴 반복 위반 | `rules/quality.md`, 경계설정 |
-| **prompt_gap** | 프롬프트 시나리오 누락 | `CLAUDE.md`, `AGENT.md` |
+| **prompt_gap** | 프롬프트 시나리오 누락 | `CLAUDE.md`, `AGENTS.md` |
 | **retry_exhausted** | 재시도 횟수 초과 | `build-error-resolver` DB |
 
 ## 분석 워크플로우

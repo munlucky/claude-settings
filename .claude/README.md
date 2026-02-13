@@ -7,7 +7,7 @@
 - Global rules: `.claude/CLAUDE.md` (use `@` imports when needed)
 - Modular rules: `.claude/rules/`
 - Project rules: `.claude/PROJECT.md`
-- Agent format: `.claude/AGENT.md`
+- Agent format: `.claude/CLAUDE.md`
 - Orchestrator skill: `.claude/skills/moonshot-orchestrator/SKILL.md`
 
 ## Memory Model and Priority
