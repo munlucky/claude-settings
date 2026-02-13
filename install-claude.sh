@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Claude Code 설정 동기화 스크립트
-# GitHub에서 최신 .claude 디렉토리를 다운로드하여 현재 프로젝트에 적용합니다.
+# Claude/Codex 설정 동기화 스크립트
+# GitHub에서 최신 .claude를 다운로드하고, .agents/AGENTS.md 브리지를 함께 구성합니다.
 
 set -e
 
@@ -118,7 +118,7 @@ usage() {
   -h, --help             도움말 출력
 
 기본 동작:
-  - .claude, .codex, .gemini 중 하나라도 존재하면 자동 백업 후 설치
+  - .claude, .agents, AGENTS.md 중 존재 항목 자동 백업 후 설치
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
@@ -287,9 +287,10 @@ fi
 
 # 2. 기존 AI 설정 디렉토리 확인 및 자동 백업
 BACKUP_DIRS=()
+BACKUP_FILES=()
 HAS_EXISTING=false
 
-for dir in ".claude" ".codex" ".gemini"; do
+for dir in ".claude" ".agents"; do
 	if [ -d "$dir" ]; then
 		HAS_EXISTING=true
 		if [ "$DO_BACKUP" = true ]; then
@@ -298,9 +299,22 @@ for dir in ".claude" ".codex" ".gemini"; do
 	fi
 done
 
+if [ -e "AGENTS.md" ]; then
+	HAS_EXISTING=true
+	if [ "$DO_BACKUP" = true ]; then
+		BACKUP_FILES+=("AGENTS.md")
+	fi
+fi
+
 if [ "$HAS_EXISTING" = true ]; then
-	if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
-		print_info "기존 AI 설정 디렉토리 발견: ${BACKUP_DIRS[*]}"
+	if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
+		print_info "기존 AI 설정 항목 발견"
+		if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
+			echo "  - 디렉토리: ${BACKUP_DIRS[*]}"
+		fi
+		if [ ${#BACKUP_FILES[@]} -gt 0 ]; then
+			echo "  - 파일: ${BACKUP_FILES[*]}"
+		fi
 
 		# 백업 실행
 		if [ "$DRY_RUN" = false ]; then
@@ -309,21 +323,30 @@ if [ "$HAS_EXISTING" = true ]; then
 				print_info "백업 중: $dir → $BACKUP_DIR"
 				cp -r "$dir" "$BACKUP_DIR"
 			done
-			print_info "✓ 백업 완료 (${#BACKUP_DIRS[@]}개 디렉토리)"
+			for file in "${BACKUP_FILES[@]}"; do
+				BACKUP_FILE="${file}${BACKUP_SUFFIX}"
+				print_info "백업 중: $file → $BACKUP_FILE"
+				cp -RP "$file" "$BACKUP_FILE"
+			done
+			total_backup_count=$((${#BACKUP_DIRS[@]} + ${#BACKUP_FILES[@]}))
+			print_info "✓ 백업 완료 (${total_backup_count}개 항목)"
 		fi
 	else
-		print_warn "기존 디렉토리가 존재하지만 --no-backup 옵션으로 백업하지 않습니다."
+		print_warn "기존 항목이 존재하지만 --no-backup 옵션으로 백업하지 않습니다."
 	fi
 fi
 
 # 3. Dry-run 모드
 if [ "$DRY_RUN" = true ]; then
 	print_info "[DRY-RUN] 다음 작업이 수행됩니다:"
-	if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
+	if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
 		echo "  - 백업할 디렉토리: ${BACKUP_DIRS[*]}"
+		echo "  - 백업할 파일: ${BACKUP_FILES[*]}"
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
+	echo "  - .agents/skills 심볼릭 링크 구성"
+	echo "  - AGENTS.md 심볼릭 링크 구성"
 	if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
 		echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
 	fi
@@ -449,41 +472,48 @@ if [ -d "$DOWNLOADED_SCRIPTS" ]; then
 	done
 fi
 
+# 7.8. .agents/skills + AGENTS.md 브리지 구성
+print_info ".agents/skills 및 AGENTS.md 동기화 중..."
+mkdir -p ".agents"
+rm -rf ".agents/skills"
+ln -s "../.claude/skills" ".agents/skills"
+
+rm -f "AGENTS.md"
+ln -s ".claude/CLAUDE.md" "AGENTS.md"
+print_info "✓ .agents/skills 생성 (→ ../.claude/skills)"
+print_info "✓ AGENTS.md 생성 (→ .claude/CLAUDE.md)"
+
 # 9. Memory MCP 전역 설정 (wrapper 스크립트로 동적 경로 지원)
 echo ""
 print_info "Memory MCP 전역 설정 중..."
 
+# memory.json 파일 초기화 (프로젝트별)
+MEMORY_FILE_ABS="$(pwd)/.claude/memory.json"
+if [ ! -f "$MEMORY_FILE_ABS" ]; then
+	echo '{"entities": [], "relations": []}' > "$MEMORY_FILE_ABS"
+	print_info "  └ 메모리 파일 생성됨: $MEMORY_FILE_ABS"
+fi
+
+# Wrapper 스크립트를 사용자 홈 디렉토리에 설치 (전역)
+GLOBAL_WRAPPER_DIR="$HOME/.claude/scripts"
+GLOBAL_WRAPPER="$GLOBAL_WRAPPER_DIR/memory-mcp-wrapper.js"
+LOCAL_WRAPPER="$(pwd)/.claude/scripts/memory-mcp-wrapper.js"
+
+mkdir -p "$GLOBAL_WRAPPER_DIR"
+if [ -f "$LOCAL_WRAPPER" ]; then
+	cp "$LOCAL_WRAPPER" "$GLOBAL_WRAPPER"
+	print_info "  └ Wrapper 스크립트 설치됨: $GLOBAL_WRAPPER"
+fi
+
+# Windows Git Bash 환경에서는 Windows 형식 경로로 변환
+MCP_WRAPPER_PATH="$GLOBAL_WRAPPER"
+if [ -f "$GLOBAL_WRAPPER" ] && command -v cygpath &>/dev/null; then
+	MCP_WRAPPER_PATH=$(cygpath -w "$GLOBAL_WRAPPER")
+	print_info "  └ Windows 경로 변환: $MCP_WRAPPER_PATH"
+fi
+
 if command -v claude &>/dev/null; then
-	# memory.json 파일 초기화 (프로젝트별)
-	MEMORY_FILE_ABS="$(pwd)/.claude/memory.json"
-	
-	if [ ! -f "$MEMORY_FILE_ABS" ]; then
-		echo '{"entities": [], "relations": []}' > "$MEMORY_FILE_ABS"
-		print_info "  └ 메모리 파일 생성됨: $MEMORY_FILE_ABS"
-	fi
-	
-	# Wrapper 스크립트를 사용자 홈 디렉토리에 설치 (전역)
-	GLOBAL_WRAPPER_DIR="$HOME/.claude/scripts"
-	GLOBAL_WRAPPER="$GLOBAL_WRAPPER_DIR/memory-mcp-wrapper.js"
-	LOCAL_WRAPPER="$(pwd)/.claude/scripts/memory-mcp-wrapper.js"
-	
-	# 글로벌 디렉토리 생성
-	mkdir -p "$GLOBAL_WRAPPER_DIR"
-	
-	# wrapper 스크립트 복사 (항상 최신 버전으로 업데이트)
-	if [ -f "$LOCAL_WRAPPER" ]; then
-		cp "$LOCAL_WRAPPER" "$GLOBAL_WRAPPER"
-		print_info "  └ Wrapper 스크립트 설치됨: $GLOBAL_WRAPPER"
-	fi
-	
 	if [ -f "$GLOBAL_WRAPPER" ]; then
-		# Windows Git Bash 환경에서는 Windows 형식 경로로 변환
-		MCP_WRAPPER_PATH="$GLOBAL_WRAPPER"
-		if command -v cygpath &>/dev/null; then
-			MCP_WRAPPER_PATH=$(cygpath -w "$GLOBAL_WRAPPER")
-			print_info "  └ Windows 경로 변환: $MCP_WRAPPER_PATH"
-		fi
-		
 		# Memory MCP를 user scope로 추가 (글로벌 wrapper 스크립트 사용)
 		memory_result=$(claude mcp add memory -s user -- node "$MCP_WRAPPER_PATH" 2>&1 || true)
 		if echo "$memory_result" | grep -qi "already exists"; then
@@ -539,6 +569,21 @@ else
 fi
 
 if [ "$CODEX_INSTALLED" = true ]; then
+	if [ -f "$GLOBAL_WRAPPER" ]; then
+		print_info "Codex Memory MCP 전역 설정 중..."
+		codex_memory_result=$(codex mcp add memory -- node "$MCP_WRAPPER_PATH" 2>&1 || true)
+		if echo "$codex_memory_result" | grep -qi "already exists"; then
+			print_info "  ✓ codex memory: 이미 존재함"
+		elif echo "$codex_memory_result" | grep -qi "Added"; then
+			print_info "  ✓ codex memory: 추가 완료"
+		else
+			print_warn "  codex memory 등록 결과를 확인해주세요:"
+			echo "    $codex_memory_result"
+		fi
+	else
+		print_warn "memory wrapper가 없어 Codex memory MCP 설정을 건너뜁니다."
+	fi
+
 	print_info "Codex 로그인 상태 확인 중..."
 	codex_status=$(codex login status 2>&1 || true)
 	if echo "$codex_status" | grep -qi "logged in"; then
@@ -651,6 +696,12 @@ fi
 if [ -d ".claude/rules" ]; then
 	echo "  ✓ .claude/rules/             (모듈식 규칙)"
 fi
+if [ -L ".agents/skills" ]; then
+	echo "  ✓ .agents/skills             (→ .claude/skills)"
+fi
+if [ -L "AGENTS.md" ]; then
+	echo "  ✓ AGENTS.md                  (→ .claude/CLAUDE.md)"
+fi
 
 echo ""
 
@@ -675,12 +726,12 @@ fi
 
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
-echo "  2. Git에 커밋: git add .claude && git commit -m 'Add Claude Code settings'"
+echo "  2. Git에 커밋: git add .claude .agents AGENTS.md && git commit -m 'Add Claude settings'"
 echo "  3. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
-if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
+if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
 	echo ""
-	print_info "백업된 디렉토리:"
+	print_info "백업된 항목:"
 	for dir in "${BACKUP_DIRS[@]}"; do
 		BACKUP_DIR="${dir}${BACKUP_SUFFIX}"
 		if [ -d "$BACKUP_DIR" ]; then
@@ -688,59 +739,11 @@ if [ ${#BACKUP_DIRS[@]} -gt 0 ]; then
 			echo "    복원: mv $BACKUP_DIR $dir"
 		fi
 	done
-fi
-
-# 11. .codex 설정 여부 확인
-echo ""
-if [ ! -d ".codex" ]; then
-	echo ""
-	print_warn "추가 설정"
-	read -p ".codex 폴더도 설정하시겠습니까? (y/N): " -n 1 -r
-	echo
-	if [[ $REPLY =~ ^[Yy]$ ]]; then
-		print_info ".codex 디렉토리 생성 중..."
-		mkdir -p .codex
-
-		# .claude의 주요 파일을 .codex에 심볼릭 링크
-		if [ -f ".claude/CLAUDE.md" ]; then
-			ln -sf "../.claude/CLAUDE.md" ".codex/CODEX.md"
-			print_info "✓ .codex/CODEX.md 생성 (→ .claude/CLAUDE.md)"
+	for file in "${BACKUP_FILES[@]}"; do
+		BACKUP_FILE="${file}${BACKUP_SUFFIX}"
+		if [ -e "$BACKUP_FILE" ]; then
+			echo "  ✓ $BACKUP_FILE"
+			echo "    복원: mv $BACKUP_FILE $file"
 		fi
-
-		if [ -f ".claude/PROJECT.md" ]; then
-			cp ".claude/PROJECT.md" ".codex/PROJECT.md"
-			print_info "✓ .codex/PROJECT.md 생성 (복사본)"
-		fi
-
-		# .codex용 간단한 README 생성
-		cat >.codex/README.md <<'CODEX_EOF'
-# Codex MCP 설정
-
-이 디렉토리는 Codex MCP 서버 설정을 위한 공간입니다.
-
-## 기본 설정
-
-- `CODEX.md`: 글로벌 규칙 (심볼릭 링크 → .claude/CLAUDE.md)
-- `PROJECT.md`: 프로젝트별 규칙 (수정 가능)
-
-## Codex MCP 활용
-
-Codex MCP를 통해 다음 기능을 사용할 수 있습니다:
-- 계획 검증 (codex-validate-plan)
-- 코드 리뷰 (codex-review-code)
-
-자세한 내용은 `.claude/skills/codex-*` 스킬을 참고하세요.
-CODEX_EOF
-		print_info "✓ .codex/README.md 생성"
-
-		echo ""
-		print_info ".codex 설정 완료!"
-		echo "  - .codex/CODEX.md (심볼릭 링크)"
-		echo "  - .codex/PROJECT.md"
-		echo "  - .codex/README.md"
-	else
-		print_info ".codex 설정을 건너뜁니다."
-	fi
+	done
 fi
-
-echo ""
