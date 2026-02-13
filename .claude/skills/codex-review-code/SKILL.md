@@ -1,10 +1,10 @@
 ---
 name: codex-review-code
-description: Review implementation quality and regression risks via claude-delegator (Code Reviewer expert). Use after implementation for complex tasks, refactors, or API changes.
+description: Runtime-adaptive code review for implementation quality and regression risks (Code Reviewer rubric). Use after implementation for complex tasks, refactors, or API changes.
 context: fork
 ---
 
-# Codex Code Review (via claude-delegator)
+# Codex Code Review (Runtime-adaptive)
 
 ## When to use
 - After implementation for complex tasks
@@ -16,10 +16,20 @@ context: fork
 - `analysisContext.*` (structured state)
 - `context.md` (path: `analysisContext.artifacts.contextDocPath`)
 
+## Runtime Adapter Policy
+
+`executionRuntime` must be resolved before running this skill.
+
+- `claude-code`: use `mcp__codex__codex` when available, then Claude fallback if needed.
+- `codex`: run the same review rubric directly in the current Codex session (native path), without `mcp__codex__codex` dependency.
+
 ## Procedure
 
-### Step 1: Check MCP Availability (CRITICAL - Do This First)
-Before any review work, verify Codex MCP is available:
+### Step 1: Resolve Runtime Execution Path (CRITICAL - Do This First)
+Determine runtime and select execution path:
+
+- If runtime is `codex` -> skip MCP availability check and use Codex native path.
+- If runtime is `claude-code` -> verify Codex MCP availability:
 
 ```typescript
 // Try a simple MCP call to check availability
@@ -41,7 +51,7 @@ try {
 - Connection timeout
 - Any error response
 
-### Step 2-7: Review Process
+### Step 2-9: Review Process
 
 2. Summarize change scope, changed files, and key behaviors
 3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
@@ -56,8 +66,12 @@ try {
    - Add note: `"codex-fallback: Claude performed review directly (MCP unavailable)"`
    - Follow the same MUST DO / MUST NOT DO criteria
 
-7. Record critical issues, warnings, and suggestions
-8. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
+7. **If runtime is `codex`**:
+   - Run the review directly in the current Codex session using the same 7-section format and criteria
+   - Add note: `"codex-native: review executed in Codex runtime"`
+
+8. Record critical issues, warnings, and suggestions
+9. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 
@@ -121,7 +135,7 @@ Summary → Critical issues → Warnings → Recommendations → Verdict
 - ❌ **REJECT**: CRITICAL issues only (보안/데이터 무결성)
 ```
 
-## Tool Call (When MCP Available)
+## Tool Call (Claude Code + MCP Available)
 
 ```typescript
 mcp__codex__codex({
@@ -132,7 +146,7 @@ mcp__codex__codex({
 })
 ```
 
-## Claude Fallback (When MCP Unavailable)
+## Claude Fallback (Claude Code + MCP Unavailable)
 
 When MCP is not available, Claude performs the review directly:
 
@@ -140,6 +154,15 @@ When MCP is not available, Claude performs the review directly:
 2. Follow all MUST DO / MUST NOT DO criteria
 3. Output in the same format: Summary → Critical issues → Warnings → Recommendations → Verdict
 4. Add note indicating fallback mode was used
+
+## Codex Native Path (When runtime=codex)
+
+When running in Codex runtime, execute review directly:
+
+1. Apply the same 7-section format as the review checklist
+2. Follow all MUST DO / MUST NOT DO criteria
+3. Output in the same format: Summary -> Critical issues -> Warnings -> Recommendations -> Verdict
+4. Add note: `"codex-native: review executed in Codex runtime"`
 
 ## For Implementation Mode (Auto-fix)
 
@@ -154,12 +177,16 @@ mcp__codex__codex({
 })
 ```
 
+For `runtime=codex`, run the same fix instructions directly in the current session with workspace-write permissions and the same verification requirements.
+
 ## Output (patch)
 ```yaml
 notes:
   - "codex-review: [APPROVE/FIX-FORWARD/MERGE-NOTE/REJECT], critical=[count], high=[count], warnings=[count]"
   # If fallback was used:
   - "codex-fallback: Claude performed review directly (MCP unavailable)"
+  # If Codex runtime native path was used:
+  - "codex-native: review executed in Codex runtime"
 
 # Fix Forward Tasks (HIGH issues that allow merge with follow-up)
 fixForward:

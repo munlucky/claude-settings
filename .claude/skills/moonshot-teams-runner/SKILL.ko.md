@@ -11,11 +11,17 @@ triggers:
 
 ## 역할
 
-Claude Code의 Agent Teams 기능을 활용하여 독립적인 작업들을 병렬 팀으로 실행합니다.
+런타임 적응형 조율 방식으로 독립 작업을 병렬 팀으로 실행합니다.
+Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 Codex 네이티브 조율 경로를 사용합니다.
 
-> **사전 요구사항**:
-> - Claude Code v2.1.32+
-> - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 설정 필요
+## 런타임 실행 모드
+
+- `claude-code` 모드:
+  - fork 기반 `team-leader-agent` + Claude Code Agent Teams 사용
+  - Claude Code v2.1.32+ 및 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 필요
+- `codex` 모드:
+  - 현재 Codex 세션에서 동일 팀 토폴로지를 네이티브 조율 경로로 실행
+  - Claude Agent Teams 플래그나 `mcp__codex__codex` 의존 없음
 
 ## Team Leader Agent 정책 (Bias for Action)
 
@@ -283,20 +289,22 @@ communication: enabled (debateRounds: 3)
     │      ├─ 팀 설정 검증
     │      └─ 리더에 전달할 최소 컨텍스트 추출
     │
-    ├─ 2. 팀 리더 Fork
-    │      └─ Task 도구 (fork) → team-leader-agent
-    │         (리더가 팀원 생성/조율/결과 취합)
+    ├─ 2. 팀 조율 실행
+    │      ├─ Claude 런타임: Task 도구 (fork) → team-leader-agent
+    │      │   (리더가 팀원 생성/조율/결과 취합)
+    │      └─ Codex 런타임: 현재 세션에서 네이티브 조율 경로 실행
+    │          (동일 팀 설정, 동일 보고 스키마)
     │
     └─ 3. 결과 병합
            └─ 리더가 반환한 teamReport → analysisContext.notes에 병합
 ```
 
-## 리더 실행 (Fork 패턴)
+## 리더/코디네이터 실행 (런타임 적응형 패턴)
 
-> **중요**: 팀 리더는 메인 오케스트레이터 세션의 컨텍스트 오염을
-> 방지하기 위해 **fork 세션** (Task 도구)에서 실행됩니다.
+> **중요**: 런타임과 무관하게 메인 세션 컨텍스트 오염을 방지해야 합니다.
 
-`project-memory-agent`와 동일한 패턴을 따릅니다:
+Claude 런타임은 `project-memory-agent`와 같은 fork 패턴을 따릅니다.
+Codex 런타임도 같은 격리 계약(최소 입력, 요약 출력만)을 유지해야 합니다:
 
 ```yaml
 # 메인 세션이 최소 입력을 전달:
@@ -319,8 +327,9 @@ teamReport:
   actionItems: [...]       # 필요 조치사항
 ```
 
-**에이전트 매핑:**
-- `team-leader-agent` → `subagent_type: "general-purpose"` + 프롬프트 **(fork)**
+**런타임 매핑:**
+- `claude-code`: `team-leader-agent` → `subagent_type: "general-purpose"` + 프롬프트 **(fork)**
+- `codex`: 세션 내 동등 코디네이터 플로우 실행 + 동일 `teamReport` 계약 반환
 - 참조: `.claude/agents/team-leader-agent.ko.md`
 
 ## 출력
@@ -386,10 +395,12 @@ notes:
 ## 토큰 사용량 주의
 
 > [!CAUTION]
-> Agent Teams는 각 팀원이 별도의 Claude 인스턴스를 사용합니다.
-> - 2명 팀: ~13,000 토큰 (전체 용량의 ~29%)
-> - 3명 팀: ~20,000 토큰
-> - 중요한 상황에서만 사용 권장
+> 토큰 프로파일은 런타임에 따라 다릅니다.
+> - `claude-code`: 팀원이 별도 Claude 인스턴스로 실행됩니다.
+>   - 2명 팀: ~13,000 토큰 (전체 용량의 ~29%)
+>   - 3명 팀: ~20,000 토큰
+> - `codex`: 단일 Codex 세션에서 실행되지만 병렬 워크스트림 요약으로 컨텍스트 사용량은 증가합니다.
+> - 중요한 상황에서만 사용 권장.
 
 ## 모범 사례
 
@@ -452,12 +463,12 @@ notes:
 
 - 세션당 하나의 팀만 가능
 - 중첩된 팀 불가 (팀원이 팀 생성 불가)
-- 분할 창에는 tmux 또는 iTerm2 필요
-- 팀 리더는 fork 세션에서 실행되므로 메인 세션 컨텍스트에 직접 접근 불가 (teamInput으로 전달 필요)
+- Claude 런타임 분할 창에는 tmux 또는 iTerm2가 필요할 수 있음
+- Claude 런타임은 fork 리더 세션을 사용하며, Codex 런타임도 동일한 `teamInput`/`teamReport` 격리 계약을 유지해야 함
 
 ## 참조
 
 - `/moonshot-orchestrator`: 오케스트레이터 통합
 - `.claude/agents/team-leader-agent.ko.md`: 팀 리더 fork 에이전트 정의
 - `.claude/templates/agent-teams-config.yaml`: 팀 설정 템플릿
-- [Claude Code Agent Teams 공식 문서](https://code.claude.com/docs/ko/agent-teams)
+- [Claude Code Agent Teams 공식 문서](https://code.claude.com/docs/ko/agent-teams) (Claude 런타임)

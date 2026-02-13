@@ -22,6 +22,16 @@ PM 분석 스킬들을 순차적으로 실행하고 최종 에이전트 체인�
 자동 수집:
 - `userMessage`, `gitBranch`, `gitStatus`, `recentCommits`, `openFiles`
 
+## 런타임 어댑터 정책
+
+오케스트레이션 시작 전에 `executionRuntime`을 먼저 결정합니다.
+
+- `claude-code`: Claude 도구 라우팅(`Skill`, `Task`, `Plugin`, `Bash`, `AskUserQuestion`) 사용
+- `codex`: 현재 Codex 세션에서 동일 체인을 네이티브 도구로 실행
+  - 문서상 `Task (fork)` 단계는 최소 입력 전달 + 요약 결과 병합 규칙으로 동일한 격리 계약을 유지
+  - 불확실성/질문 처리는 `codex-validate-plan`(계획 단계), `codex-review-code`(구현 후 단계) 결과를 우선 사용
+  - 해당 결과에서도 차단 이슈가 남을 때만 사용자 질문 수행
+
 ## 컨텍스트 예산 규칙
 
 > **중요**: 메인 세션 컨텍스트 오염 방지.
@@ -89,6 +99,7 @@ Task 도구: project-memory-agent (subagent_type: general-purpose)
 Input: { projectId, changedFiles, taskType, userRequest }
 Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 병합
 ```
+- Codex 런타임: 동일 입출력 계약의 격리 서브태스크로 동등 실행
 - 메모리 없음: `boundaryStatus: "not_initialized"`, 계속 진행
 - MCP 불가: `boundaryStatus: "not_checked"`, 경고 후 진행
 
@@ -103,7 +114,9 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 
 #### 2.4 불확실성 처리
 `missingInfo`가 비어있지 않으면:
-1. `AskUserQuestion`으로 질문 생성 (priority HIGH 우선)
+1. 불확실성 질문 처리:
+   - `claude-code`: `AskUserQuestion`으로 질문 생성 (priority HIGH 우선)
+   - `codex`: `codex-validate-plan`을 먼저 실행해 블로킹 질문을 도출하고, 미해결 차단 항목이 남을 때만 사용자 질문
 2. 답변을 analysisContext에 반영
 3. `signals.hasPendingQuestions = false` 설정
 4. 필요 시 재검출
@@ -163,9 +176,12 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 
 **실행 규칙:**
 1. 순차 실행 (`parallelGroups` 내에서만 병렬)
-2. Skill → `Skill` 도구, Agent → `Task` 도구, Plugin → `Plugin` 도구, Script → `Bash` 도구
-3. 미정의 단계 → 사용자에게 확인 후 중단
-4. 모든 단계는 `document-memory-policy.md` 준수
+2. 런타임 라우팅:
+   - `claude-code`: Skill → `Skill` 도구, Agent → `Task` 도구, Plugin → `Plugin` 도구, Script → `Bash` 도구
+   - `codex`: 동일 단계 계약을 유지하며 세션 내 네이티브 도구/셸로 동등 실행
+3. `Task (fork)` 의미를 갖는 단계는 런타임과 무관하게 컨텍스트 격리(최소 입력, 요약 반환만) 유지
+4. 미정의 단계 → 사용자에게 확인 후 중단
+5. 모든 단계는 `document-memory-policy.md` 준수
 
 **메모리 단계 분리 계약**:
 - `project-memory-agent`: 2.0.5 단계에서 프로젝트 메모리 로드/업데이트
@@ -262,5 +278,5 @@ Fix-forward 태스크는 `session-logger` HANDOFF.md를 통해 다음 세션으�
 ## 계약
 - 오케스트레이션만 수행, 직접 분석 안 함
 - Patch 병합: 얕은 오브젝트 머지
-- 사용자 질문: `AskUserQuestion` 도구
+- 사용자 질문: Claude 런타임은 `AskUserQuestion`, Codex 런타임은 `codex-validate-plan`/`codex-review-code` 결과를 우선 반영 후 미해결 차단 항목만 질문
 - `document-memory-policy.md` 준수

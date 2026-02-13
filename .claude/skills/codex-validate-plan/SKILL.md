@@ -1,10 +1,10 @@
 ---
 name: codex-validate-plan
-description: Validate architecture/plan quality via claude-delegator (Plan Reviewer expert). Use after writing context.md for complex feature/refactor work.
+description: Runtime-adaptive plan validation skill (Plan Reviewer rubric). Use after writing context.md for complex feature/refactor work.
 context: fork
 ---
 
-# Codex Plan Validation (via claude-delegator)
+# Codex Plan Validation (Runtime-adaptive)
 
 ## When to use
 - `complexity`: `complex`
@@ -15,10 +15,20 @@ context: fork
 - `analysisContext.*` (structured state)
 - `context.md` (path: `analysisContext.artifacts.contextDocPath`)
 
+## Runtime Adapter Policy
+
+`executionRuntime` must be resolved before running this skill.
+
+- `claude-code`: use `mcp__codex__codex` when available, then Claude fallback if needed.
+- `codex`: run the same plan validation rubric directly in the current Codex session (native path), without `mcp__codex__codex` dependency.
+
 ## Procedure
 
-### Step 1: Check MCP Availability (CRITICAL - Do This First)
-Before any validation work, verify Codex MCP is available:
+### Step 1: Resolve Runtime Execution Path (CRITICAL - Do This First)
+Determine runtime and select execution path:
+
+- If runtime is `codex` -> skip MCP availability check and use Codex native path.
+- If runtime is `claude-code` -> verify Codex MCP availability:
 
 ```typescript
 // Try a simple MCP call to check availability
@@ -40,7 +50,7 @@ try {
 - Connection timeout
 - Any error response
 
-### Step 2-6: Validation Process
+### Step 2-8: Validation Process
 
 2. Collect the path to context.md (default: `{tasksRoot}/{feature-name}/context.md`) and read its content
 3. Build delegation prompt using the 7-section format below
@@ -54,8 +64,12 @@ try {
    - Add note: `"codex-fallback: Claude performed review directly (MCP unavailable)"`
    - Follow the same MUST DO / MUST NOT DO criteria
 
-6. Summarize critical/warning/suggestion items and decide pass/fail
-7. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
+6. **If runtime is `codex`**:
+   - Run plan validation directly in the current Codex session using the same 7-section format and criteria
+   - Add note: `"codex-native: plan validation executed in Codex runtime"`
+
+7. Summarize critical/warning/suggestion items and decide pass/fail
+8. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 
@@ -88,7 +102,7 @@ Summary: [4-criteria assessment]
 [If REJECT: Top 3-5 improvements needed]
 ```
 
-## Tool Call (When MCP Available)
+## Tool Call (Claude Code + MCP Available)
 
 ```typescript
 mcp__codex__codex({
@@ -99,7 +113,7 @@ mcp__codex__codex({
 })
 ```
 
-## Claude Fallback (When MCP Unavailable)
+## Claude Fallback (Claude Code + MCP Unavailable)
 
 When MCP is not available, Claude performs the validation directly:
 
@@ -112,10 +126,21 @@ When MCP is not available, Claude performs the validation directly:
 3. Output in the same format: APPROVE/REJECT with justification
 4. Add note indicating fallback mode was used
 
+## Codex Native Path (When runtime=codex)
+
+When running in Codex runtime, execute plan validation directly:
+
+1. Apply the same 7-section format as the validation checklist
+2. Evaluate all 4 criteria (Clarity, Verifiability, Completeness, Big Picture)
+3. Output in the same format: APPROVE/REJECT with justification
+4. Add note: `"codex-native: plan validation executed in Codex runtime"`
+
 ## Output (patch)
 ```yaml
 notes:
   - "codex-plan: [APPROVE/REJECT], warnings=[count]"
   # If fallback was used:
   - "codex-fallback: Claude performed review directly (MCP unavailable)"
+  # If Codex runtime native path was used:
+  - "codex-native: plan validation executed in Codex runtime"
 ```

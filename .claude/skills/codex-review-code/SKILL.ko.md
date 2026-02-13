@@ -1,10 +1,10 @@
 ---
 name: codex-review-code
-description: claude-delegator(Code Reviewer 전문가)를 통해 구현 품질과 회귀 위험을 검토합니다. 복잡한 작업, 리팩터링, API 변경 후 사용하세요.
+description: 런타임 적응형 코드 리뷰 스킬(Code Reviewer 기준)로 구현 품질과 회귀 위험을 검토합니다. 복잡한 작업, 리팩터링, API 변경 후 사용하세요.
 context: fork
 ---
 
-# Codex 코드 리뷰 (claude-delegator 사용)
+# Codex 코드 리뷰 (런타임 적응형)
 
 ## 사용 시점
 - 복잡한 작업 구현 후
@@ -16,8 +16,18 @@ context: fork
 - `analysisContext.*` (구조화된 상태)
 - `context.md` (경로: `analysisContext.artifacts.contextDocPath`)
 
-### 1단계: MCP 가용성 확인 (필수 - 최우선 수행)
-리뷰 작업 전, Codex MCP 사용 가능 여부를 먼저 확인합니다:
+## 런타임 어댑터 정책
+
+이 스킬은 실행 전에 `executionRuntime`을 먼저 결정해야 합니다.
+
+- `claude-code`: `mcp__codex__codex` 우선 사용, 실패 시 Claude 폴백 사용
+- `codex`: `mcp__codex__codex` 의존 없이 현재 Codex 세션에서 동일 기준으로 네이티브 리뷰 수행
+
+### 1단계: 런타임 실행 경로 결정 (필수 - 최우선 수행)
+먼저 런타임을 결정한 뒤 실행 경로를 선택합니다.
+
+- 런타임이 `codex`이면 MCP 가용성 확인을 생략하고 Codex 네이티브 경로로 진행
+- 런타임이 `claude-code`이면 Codex MCP 가용성을 확인:
 
 ```typescript
 // 간단한 MCP 호출로 가용성 확인
@@ -39,7 +49,7 @@ try {
 - 연결 타임아웃
 - 모든 에러 응답
 
-### 2-8단계: 리뷰 프로세스
+### 2-9단계: 리뷰 프로세스
 
 2. 변경 범위, 변경된 파일, 핵심 동작 요약
 3. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
@@ -54,8 +64,12 @@ try {
    - 노트 추가: `"codex-fallback: Claude가 직접 리뷰 수행 (MCP 사용 불가)"`
    - 동일한 MUST DO / MUST NOT DO 기준 따르기
 
-7. 중대 이슈, 경고, 제안사항 기록
-8. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
+7. **런타임이 `codex`인 경우**:
+   - 동일한 7-섹션 형식/기준으로 현재 Codex 세션에서 직접 리뷰 수행
+   - 노트 추가: `"codex-native: review executed in Codex runtime"`
+
+8. 중대 이슈, 경고, 제안사항 기록
+9. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## 위임 형식
 
@@ -119,7 +133,7 @@ OUTPUT FORMAT:
 - ❌ **REJECT**: CRITICAL 이슈만 (보안/데이터 무결성)
 ```
 
-## 도구 호출 (MCP 사용 가능 시)
+## 도구 호출 (Claude Code + MCP 사용 가능 시)
 
 ```typescript
 mcp__codex__codex({
@@ -130,7 +144,7 @@ mcp__codex__codex({
 })
 ```
 
-## Claude 폴백 (MCP 사용 불가 시)
+## Claude 폴백 (Claude Code + MCP 사용 불가 시)
 
 MCP를 사용할 수 없을 때, Claude가 직접 리뷰를 수행합니다:
 
@@ -138,6 +152,15 @@ MCP를 사용할 수 없을 때, Claude가 직접 리뷰를 수행합니다:
 2. 모든 MUST DO / MUST NOT DO 기준 준수
 3. 동일한 형식으로 출력: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
 4. 폴백 모드 사용 표시 노트 추가
+
+## Codex 네이티브 경로 (runtime=codex)
+
+Codex 런타임에서는 다음과 같이 직접 리뷰를 수행합니다:
+
+1. 동일한 7-섹션 형식을 리뷰 체크리스트로 적용
+2. 모든 MUST DO / MUST NOT DO 기준 준수
+3. 동일한 형식으로 출력: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
+4. 노트 추가: `"codex-native: review executed in Codex runtime"`
 
 ## 구현 모드 (자동 수정)
 
@@ -152,12 +175,16 @@ mcp__codex__codex({
 })
 ```
 
+`runtime=codex`에서는 동일한 수정 지시/검증 기준을 현재 세션에서 workspace-write 권한으로 직접 수행합니다.
+
 ## 출력 (patch)
 ```yaml
 notes:
   - "codex-review: [APPROVE/FIX-FORWARD/MERGE-NOTE/REJECT], critical=[개수], high=[개수], warnings=[개수]"
   # 폴백 사용 시:
   - "codex-fallback: Claude가 직접 리뷰 수행 (MCP 사용 불가)"
+  # Codex 네이티브 경로 사용 시:
+  - "codex-native: review executed in Codex runtime"
 
 # Fix Forward Tasks (머지를 허용하면서 follow-up이 필요한 HIGH 이슈)
 fixForward:
