@@ -23,9 +23,15 @@ Validate that a web app is reachable and working at runtime after implementation
 /browser-verifier --url=https://staging.example.com --e2e="npm run test:e2e"
 ```
 
+## Runtime Adapter Policy
+
+- `claude-code`: execute runtime checks through Claude tool routing.
+- `codex`: execute the same runtime checks directly in the current Codex session.
+- In both runtimes, use `.claude/agents/verification/verify-runtime.sh` as the canonical verifier.
+
 ## Execution
 1. Resolve target URL from `--url` or `APP_BASE_URL` (default: `http://localhost:3000`).
-2. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional E2E command.
+2. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional E2E command (tool-routed in Claude runtime, direct shell in Codex runtime).
 3. If runtime check fails, stop and report environment readiness issue.
 4. If E2E fails, return failure details and failing command.
 

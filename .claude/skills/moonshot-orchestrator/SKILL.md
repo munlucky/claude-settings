@@ -22,6 +22,16 @@ Runs PM analysis skills in sequence and builds the final agent chain.
 Automatically collected:
 - `userMessage`, `gitBranch`, `gitStatus`, `recentCommits`, `openFiles`
 
+## Runtime Adapter Policy
+
+Resolve `executionRuntime` before orchestration:
+
+- `claude-code`: use Claude tool routing (`Skill`, `Task`, `Plugin`, `Bash`, `AskUserQuestion`).
+- `codex`: execute the same chain in the current Codex session with native tools.
+  - Steps documented as `Task (fork)` must preserve isolation by passing minimal input and merging summarized output only.
+  - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
+  - Ask user only when those outputs still indicate unresolved blocking items.
+
 ## Context Budget Rule
 
 > **CRITICAL**: Protect main session context from pollution.
@@ -89,6 +99,7 @@ Task tool: project-memory-agent (subagent_type: general-purpose)
 Input: { projectId, changedFiles, taskType, userRequest }
 Returns: { projectId, loaded, boundaries, relevantRules } → merge into projectMemory
 ```
+- Codex runtime: execute equivalent isolated subtask with the same I/O contract.
 - No memory: `boundaryStatus: "not_initialized"`, continue
 - MCP unavailable: `boundaryStatus: "not_checked"`, warn and continue
 
@@ -103,7 +114,9 @@ Run `/moonshot-detect-uncertainty` → merge patch (missingInfo)
 
 #### 2.4 Uncertainty handling
 If `missingInfo` not empty:
-1. Generate questions via `AskUserQuestion` (priority HIGH first)
+1. Resolve uncertainty questions:
+   - `claude-code`: generate questions via `AskUserQuestion` (priority HIGH first)
+   - `codex`: run `codex-validate-plan` first to derive blocking questions; defer user questioning until unresolved blockers remain
 2. Merge answers into analysisContext
 3. Set `signals.hasPendingQuestions = false`
 4. Re-run detection if needed
@@ -163,9 +176,12 @@ Run `decisions.skillChain` in order.
 
 **Execution rules:**
 1. Run steps sequentially (parallelize only within `parallelGroups`)
-2. Skill → `Skill` tool, Agent → `Task` tool, Plugin → `Plugin` tool, Script → `Bash` tool
-3. Undefined step → ask user and stop
-4. All steps must follow `document-memory-policy.md`
+2. Runtime routing:
+   - `claude-code`: Skill → `Skill` tool, Agent → `Task` tool, Plugin → `Plugin` tool, Script → `Bash` tool
+   - `codex`: run equivalent logic in-session with native tools/shell while preserving step contracts
+3. For `Task (fork)` semantics, keep context isolation (minimal input, summarized return only) in both runtimes
+4. Undefined step → ask user and stop
+5. All steps must follow `document-memory-policy.md`
 
 **Memory-step separation contract**:
 - `project-memory-agent`: load/update project memory context at phase 2.0.5
@@ -262,5 +278,5 @@ Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
 ## Contract
 - Orchestrates only, does not analyze directly
 - Patch merging: shallow object merge
-- User questions: `AskUserQuestion` tool
+- User questions: `AskUserQuestion` on Claude runtime; on Codex runtime, prioritize `codex-validate-plan`/`codex-review-code` outputs and ask user only for unresolved blockers
 - Follow `document-memory-policy.md`

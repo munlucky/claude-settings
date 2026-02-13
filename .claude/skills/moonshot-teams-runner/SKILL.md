@@ -11,11 +11,17 @@ triggers:
 
 ## Role
 
-Run independent workstreams in parallel teams using Claude Code Agent Teams.
+Run independent workstreams in parallel teams using runtime-adaptive coordination.
+Use Claude Code Agent Teams in Claude runtime, and Codex-native coordination in Codex runtime.
 
-> **Prerequisites**:
-> - Claude Code v2.1.32+
-> - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in settings.local.json
+## Runtime Execution Modes
+
+- `claude-code` mode:
+  - Uses Claude Code Agent Teams with forked `team-leader-agent`
+  - Requires Claude Code v2.1.32+ and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
+- `codex` mode:
+  - Runs equivalent team topology in the current Codex session (native coordinator path)
+  - Does not require Claude Agent Teams flags or `mcp__codex__codex`
 
 ## Team Leader Agent Policy (Bias for Action)
 
@@ -283,20 +289,22 @@ Prevent file conflicts in implementation teams:
     │      ├─ Validate team configuration
     │      └─ Extract minimal context for team leader
     │
-    ├─ 2. Fork Team Leader
-    │      └─ Task tool (fork) → team-leader-agent
-    │         (Leader spawns members, coordinates, aggregates)
+    ├─ 2. Execute Team Coordination
+    │      ├─ Claude runtime: Task tool (fork) → team-leader-agent
+    │      │   (Leader spawns members, coordinates, aggregates)
+    │      └─ Codex runtime: native coordinator path in current session
+    │          (same team config, same report schema)
     │
     └─ 3. Merge Results
            └─ Read teamReport from leader → merge into analysisContext.notes
 ```
 
-## Leader Execution (Fork Pattern)
+## Leader/Coordinator Execution (Runtime-adaptive Pattern)
 
-> **CRITICAL**: The team leader runs in a **forked session** (Task tool) to prevent
-> context pollution of the main orchestrator session.
+> **CRITICAL**: Keep main-session context clean in both runtimes.
 
-This follows the same pattern as `project-memory-agent`:
+Claude runtime follows the same fork pattern as `project-memory-agent`.
+Codex runtime must emulate the same isolation contract (minimal input, summarized output only):
 
 ```yaml
 # Main session sends minimal input:
@@ -319,8 +327,9 @@ teamReport:
   actionItems: [...]       # required actions
 ```
 
-**Agent mapping:**
-- `team-leader-agent` → `subagent_type: "general-purpose"` + prompt **(fork)**
+**Runtime mapping:**
+- `claude-code`: `team-leader-agent` → `subagent_type: "general-purpose"` + prompt **(fork)**
+- `codex`: execute an equivalent coordinator flow in-session and produce the same `teamReport` contract
 - See: `.claude/agents/team-leader-agent.md`
 
 ## Output
@@ -386,10 +395,12 @@ Team trigger guide (aligned with orchestrator schema):
 ## Token Usage Warning
 
 > [!CAUTION]
-> Each team member runs as a separate Claude instance.
-> - 2-member team: ~13,000 tokens (~29% of typical context budget)
-> - 3-member team: ~20,000 tokens
-> - Recommended only for important/complex scenarios
+> Token profile depends on runtime.
+> - `claude-code`: each member runs as a separate Claude instance.
+>   - 2-member team: ~13,000 tokens (~29% of typical context budget)
+>   - 3-member team: ~20,000 tokens
+> - `codex`: runs in one Codex session, but parallel workstream summaries still increase context usage.
+> - Recommended only for important/complex scenarios.
 
 ## Best Practices
 
@@ -452,12 +463,12 @@ Output clear progress status during team execution.
 
 - One team per session only
 - No nested teams (members cannot spawn sub-teams)
-- Split panes require `tmux` or `iTerm2`
-- Team leader runs in a forked session, so main-session context must be passed via `teamInput`
+- Claude runtime split panes may require `tmux` or `iTerm2`
+- Claude runtime uses forked leader session; Codex runtime must still preserve the same `teamInput`/`teamReport` isolation contract
 
 ## References
 
 - `/moonshot-orchestrator`: orchestrator integration
 - `.claude/agents/team-leader-agent.md`: forked team-leader agent definition
 - `.claude/templates/agent-teams-config.yaml`: team configuration template
-- [Claude Code Agent Teams docs](https://code.claude.com/docs/ko/agent-teams)
+- [Claude Code Agent Teams docs](https://code.claude.com/docs/ko/agent-teams) (Claude runtime)

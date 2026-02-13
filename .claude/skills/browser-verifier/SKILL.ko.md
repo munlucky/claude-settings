@@ -23,9 +23,15 @@ triggers:
 /browser-verifier --url=https://staging.example.com --e2e="npm run test:e2e"
 ```
 
+## 런타임 어댑터 정책
+
+- `claude-code`: Claude 도구 라우팅을 통해 런타임 검증 실행
+- `codex`: 현재 Codex 세션에서 동일 검증을 직접 실행
+- 두 런타임 모두 표준 검증 스크립트로 `.claude/agents/verification/verify-runtime.sh`를 사용
+
 ## 실행
 1. `--url` 또는 `APP_BASE_URL`에서 대상 URL을 결정합니다. (기본값: `http://localhost:3000`)
-2. URL 및 선택적 E2E 명령으로 `.claude/agents/verification/verify-runtime.sh`를 실행합니다.
+2. URL 및 선택적 E2E 명령으로 `.claude/agents/verification/verify-runtime.sh`를 실행합니다. (Claude 런타임은 도구 라우팅, Codex 런타임은 직접 셸 실행)
 3. 런타임 체크 실패 시 즉시 중단하고 환경 준비 상태 문제를 보고합니다.
 4. E2E 실패 시 실패한 명령과 상세 결과를 반환합니다.
 
