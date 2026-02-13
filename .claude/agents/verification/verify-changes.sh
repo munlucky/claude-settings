@@ -1,10 +1,14 @@
 #!/bin/bash
 
 # Verification Script for Readlog CMS v3
-# 목적: 코드 변경사항 자동 검증 (tsc, build, lint, 활동 로그 헤더)
+# 목적: 코드 변경사항 자동 검증 (tsc, build, test, lint, 활동 로그 헤더)
 # 사용: ./verify-changes.sh [feature-name]
+# 종료 코드:
+#   0: 모든 검증 통과
+#   1: 빌드/타입체크 등 기본 검증 실패
+#   2: 테스트 실패
 
-set -e  # 에러 발생 시 즉시 중단
+set -eo pipefail  # 파이프 포함 에러 발생 시 즉시 중단
 
 # 색상 정의
 RED='\033[0;31m'
@@ -44,6 +48,8 @@ echo ""
 
 # 결과 누적
 VERIFICATION_PASSED=true
+BUILD_FAILED=false
+TEST_FAILED=false
 RESULTS_FILE=".claude/verification-results-$(date +%Y%m%d-%H%M%S).txt"
 
 # 결과 파일 헤더
@@ -55,13 +61,14 @@ echo "" >> "$RESULTS_FILE"
 # ====================================
 # 1. TypeScript 타입 체크
 # ====================================
-log_info "1/6 TypeScript 타입 체크 실행 중..."
+log_info "1/7 TypeScript 타입 체크 실행 중..."
 if npx tsc --noEmit 2>&1 | tee -a "$RESULTS_FILE"; then
   log_success "TypeScript 타입 체크 통과"
   echo "TypeScript: ✅ PASSED" >> "$RESULTS_FILE"
 else
   log_error "TypeScript 타입 에러 발생"
   echo "TypeScript: ❌ FAILED" >> "$RESULTS_FILE"
+  BUILD_FAILED=true
   VERIFICATION_PASSED=false
 fi
 echo ""
@@ -69,21 +76,42 @@ echo ""
 # ====================================
 # 2. 프로덕션 빌드
 # ====================================
-log_info "2/6 프로덕션 빌드 실행 중..."
+log_info "2/7 프로덕션 빌드 실행 중..."
 if npm run build 2>&1 | tee -a "$RESULTS_FILE"; then
   log_success "프로덕션 빌드 성공"
   echo "Build: ✅ PASSED" >> "$RESULTS_FILE"
 else
   log_error "빌드 실패"
   echo "Build: ❌ FAILED" >> "$RESULTS_FILE"
+  BUILD_FAILED=true
   VERIFICATION_PASSED=false
 fi
 echo ""
 
 # ====================================
-# 3. ESLint 검사
+# 3. 테스트 실행 (선택)
 # ====================================
-log_info "3/6 ESLint 검사 실행 중..."
+log_info "3/7 테스트 실행 중..."
+if [ -f "package.json" ] && node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("package.json","utf8")); process.exit(p.scripts && p.scripts.test ? 0 : 1);' >/dev/null 2>&1; then
+  if CI=1 npm test 2>&1 | tee -a "$RESULTS_FILE"; then
+    log_success "테스트 통과"
+    echo "Test: ✅ PASSED" >> "$RESULTS_FILE"
+  else
+    log_error "테스트 실패"
+    echo "Test: ❌ FAILED" >> "$RESULTS_FILE"
+    TEST_FAILED=true
+    VERIFICATION_PASSED=false
+  fi
+else
+  log_info "test 스크립트가 없어 테스트를 생략합니다"
+  echo "Test: ⏭️  SKIPPED (no test script)" >> "$RESULTS_FILE"
+fi
+echo ""
+
+# ====================================
+# 4. ESLint 검사
+# ====================================
+log_info "4/7 ESLint 검사 실행 중..."
 if npm run lint 2>&1 | tee -a "$RESULTS_FILE"; then
   log_success "ESLint 검사 통과"
   echo "Lint: ✅ PASSED" >> "$RESULTS_FILE"
@@ -94,9 +122,9 @@ fi
 echo ""
 
 # ====================================
-# 4. 활동 로그 헤더 확인
+# 5. 활동 로그 헤더 확인
 # ====================================
-log_info "4/6 활동 로그 헤더 확인 중..."
+log_info "5/7 활동 로그 헤더 확인 중..."
 echo "" >> "$RESULTS_FILE"
 echo "## Activity Log Headers" >> "$RESULTS_FILE"
 echo "" >> "$RESULTS_FILE"
@@ -142,9 +170,9 @@ fi
 echo ""
 
 # ====================================
-# 5. Git 상태 확인
+# 6. Git 상태 확인
 # ====================================
-log_info "5/6 Git 상태 확인 중..."
+log_info "6/7 Git 상태 확인 중..."
 echo "" >> "$RESULTS_FILE"
 echo "## Git Status" >> "$RESULTS_FILE"
 echo "" >> "$RESULTS_FILE"
@@ -164,9 +192,9 @@ fi
 echo ""
 
 # ====================================
-# 6. Entity-Request 분리 패턴 확인 (선택적)
+# 7. Entity-Request 분리 패턴 확인 (선택적)
 # ====================================
-log_info "6/6 (선택) Entity-Request 분리 패턴 확인 중..."
+log_info "7/7 (선택) Entity-Request 분리 패턴 확인 중..."
 echo "" >> "$RESULTS_FILE"
 echo "## Entity-Request Separation" >> "$RESULTS_FILE"
 echo "" >> "$RESULTS_FILE"
@@ -224,10 +252,26 @@ else
   echo "" >> "$RESULTS_FILE"
   echo "Overall: ❌ FAILED" >> "$RESULTS_FILE"
 
+  if [ "$BUILD_FAILED" = true ]; then
+    echo "ExitCode: 1 (build/typecheck failure)" >> "$RESULTS_FILE"
+  elif [ "$TEST_FAILED" = true ]; then
+    echo "ExitCode: 2 (test failure)" >> "$RESULTS_FILE"
+  else
+    echo "ExitCode: 1 (general verification failure)" >> "$RESULTS_FILE"
+  fi
+
   echo ""
   log_info "에러 수정 후 다시 실행:"
   echo "  ./verify-changes.sh $FEATURE_NAME"
   echo ""
+
+  if [ "$BUILD_FAILED" = true ]; then
+    exit 1
+  fi
+
+  if [ "$TEST_FAILED" = true ]; then
+    exit 2
+  fi
 
   exit 1
 fi

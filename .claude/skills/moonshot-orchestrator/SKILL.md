@@ -66,6 +66,7 @@ artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
+  runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
 projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
 notes: []
@@ -123,6 +124,7 @@ Run `decisions.skillChain` in order.
 |------|------|-------|
 | `pre-flight-check` | Skill | |
 | `project-memory-agent` | Task (fork) | Context isolation |
+| `project-memory-check` | Task (fork) | Pre-implementation boundary check |
 | `requirements-analyzer` | Task | |
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
@@ -135,6 +137,8 @@ Run `decisions.skillChain` in order.
 | `vercel-react-best-practices` | Skill | When reactProject=true |
 | `security-reviewer` | Skill | |
 | `build-error-resolver` | Skill | |
+| `browser-verifier` | Skill | Runtime check for web projects |
+| `verify-runtime.sh` | Bash | Runtime URL/E2E verifier |
 | `verify-changes.sh` | Bash | |
 | `efficiency-tracker` | Skill | |
 | `session-logger` | Skill | |
@@ -150,6 +154,7 @@ Run `decisions.skillChain` in order.
 | Agent | subagent_type | Notes |
 |-------|---------------|-------|
 | `project-memory-agent` | general-purpose | fork, before 2.1 |
+| `project-memory-check` | general-purpose | fork, check-only mode before implementation |
 | `requirements-analyzer` | general-purpose | |
 | `context-builder` | context-builder | |
 | `implementation-runner` | implementation-agent | |
@@ -162,6 +167,11 @@ Run `decisions.skillChain` in order.
 3. Undefined step → ask user and stop
 4. All steps must follow `document-memory-policy.md`
 
+**Memory-step separation contract**:
+- `project-memory-agent`: load/update project memory context at phase 2.0.5
+- `project-memory-check`: pre-implementation boundary check (check-only, no memory mutation)
+- `project-memory-reviewer`: post-review boundary compliance verification
+
 **Agent Teams Integration (--use-teams):**
 1. Set `signals.useAgentTeams = true`
 2. Fork `team-leader-agent` with team config (see `moonshot-teams-runner/SKILL.md` for team details)
@@ -170,7 +180,7 @@ Run `decisions.skillChain` in order.
 > [!CAUTION]
 > Agent Teams: ~13K tokens (2-member) / ~20K tokens (3-member). Use for critical reviews or complex implementations only.
 
-**Fork-based agents** (`project-memory-agent`, `project-memory-reviewer`, `team-leader-agent`):
+**Fork-based agents** (`project-memory-agent`, `project-memory-check`, `project-memory-reviewer`, `team-leader-agent`):
 - Run in separate context sessions
 - Return only summarized results → prevents main session context pollution
 
@@ -178,13 +188,17 @@ Run `decisions.skillChain` in order.
 
 | Signal | Trigger | Action |
 |--------|---------|--------|
-| `buildFailed` | Bash exit code ≠ 0 | Insert `build-error-resolver`, retry (max 2) |
+| `buildFailed` | `verify-changes.sh` exit `1` | Insert `build-error-resolver`, retry (max 2) |
+| `testFailed` | `verify-changes.sh` exit `2` | Re-enter `implementation-runner` with test-first remediation, then rerun verification |
+| `runtimeUnavailable` | `verify-runtime.sh` exit `1` | Request server/runtime readiness fix, rerun `browser-verifier` (max 1) |
+| `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` (test-first remediation + rerun runtime verification) |
 | `securityConcern` | Changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after codex-review-code |
 | `coverageLow` | completion-verifier: coverage < 80% | Log warning, request additional tests |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after codex-review-code |
 | `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before completion-verifier |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |
 | `newProject` | missing ARCHITECTURE.md + complex task | Insert `doc-auto-sync --init` at start of chain |
+| `webRuntimeCheck` | `reactProject == true` | Insert `browser-verifier` before `verify-changes.sh` (or right after `completion-verifier` if `verify-changes.sh` is absent) |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
 
 ### 3.2 Project Memory Review (Fork)
@@ -202,10 +216,11 @@ Returns: { status, violations, needsApproval, warnings, reminders }
 ### 3.3 Completion Verification Loop
 
 After `implementation-runner`:
-1. Call `completion-verifier`
-2. `allPassed: true` → mark `implementationComplete: true`, proceed
-3. `allPassed: false` + retryCount < 2 → go back to failed phase, fix code only, retry
-4. `allPassed: false` + retryCount ≥ 2 → ask user for intervention
+1. If `completion-verifier` exists in `decisions.skillChain`, call it.
+2. If `completion-verifier` is absent (simple flow), use `verify-changes.sh` (and `browser-verifier` for web projects) as completion gate.
+3. `allPassed: true` (or equivalent gate pass) → mark `implementationComplete: true`, proceed.
+4. Failure + retryCount < 2 → return to failed phase and apply exit-code strategy (`exit 1` build-first fix, `exit 2` test-first fix), then retry.
+5. Failure + retryCount ≥ 2 → ask user for intervention.
 
 ### 3.4 Fix Forward Post-Review
 

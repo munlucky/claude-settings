@@ -17,6 +17,15 @@ Claude Code의 Agent Teams 기능을 활용하여 독립적인 작업들을 병�
 > - Claude Code v2.1.32+
 > - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 설정 필요
 
+## Team Leader Agent 정책 (Bias for Action)
+
+`team-leader-agent` 프롬프트에는 아래 지침을 항상 포함합니다.
+
+1. **계획 후 즉시 실행**: 실행 가능한 최소 계획이 나오면 즉시 구현/검증을 시작합니다.
+2. **계획 루프 제한**: 계획 재작성은 최대 1회까지만 허용합니다. 2회차부터는 실행 단계로 강제 전환합니다.
+3. **블로킹 처리**: 실제 차단 이슈에서만 사용자 질문 1회로 정리하고, 그 외에는 합리적 기본값으로 진행합니다.
+4. **실행 단위 명확화**: 팀원 할당마다 파일 범위, 실행 명령, 검증 명령을 명시합니다.
+
 ## 사용법
 
 ```bash
@@ -116,7 +125,7 @@ delegationMode: true
 communication: enabled
 ```
 
-**활용 시점**: `/moonshot-plan-writer` 실행 후
+**활용 시점**: `/moonshot-plan-writer` 실행 후 또는 오케스트레이터 planning 단계에서 계획 검증이 필요할 때
 
 ### 5. quality-team (품질 검증)
 
@@ -355,23 +364,24 @@ teamReport:
 
 ## 오케스트레이터 통합
 
-`moonshot-orchestrator`에서 자동 호출:
+`moonshot-orchestrator`에서 자동으로 호출됩니다:
 
 ```yaml
+# analysisContext.signals
+useAgentTeams: true          # --use-teams로 활성화
+
 # analysisContext.decisions
-parallelGroups:
-  - group: "impl-team"
-    mode: "agent-teams"
-    trigger: "after:moonshot-plan-writer"
-    condition: "signals.useParallelImpl && estimatedFiles > 3"
-  - group: "cross-layer-team"
-    mode: "agent-teams"
-    trigger: "after:moonshot-plan-writer"
-    condition: "signals.crossLayerChange"
-  - group: "review-team"
-    mode: "agent-teams"
-    trigger: "after:implementation-runner"
+skillChain:
+  - ...                      # moonshot-decide-sequence 결과
+  - team-leader-agent        # 팀 모드 활성화 시 fork 실행
+notes:
+  - "team=review-team, trigger=after:implementation-runner"
 ```
+
+팀 트리거 가이드(오케스트레이터 스키마 정렬):
+1. `analysis-team`/`research-team`/`planning-team`: PM 분석 단계(2.1~2.5)에서 사용합니다.
+2. `impl-team`/`cross-layer-team`: 복잡한 구현 단계에서 사용합니다.
+3. `review-team`/`quality-team`/`verify-team`/`fix-team`: 구현 이후 또는 실패 이벤트 발생 시 사용합니다.
 
 ## 토큰 사용량 주의
 

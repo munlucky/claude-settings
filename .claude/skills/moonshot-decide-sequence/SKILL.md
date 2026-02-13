@@ -36,11 +36,11 @@ missingInfo: []
 fixForward:
   enabled: true
   policy:
-    critical: block           # 보안/데이터 무결성 → 머지 차단
-    high: fix-forward-task    # 커밋 후 follow-up 태스크 자동 생성
-    medium: merge-with-note   # 경고 기록 후 머지 허용
-    low: auto-approve         # 자동 승인
-  tasks: []                   # codex-review-code에서 생성된 follow-up 태스크
+    critical: block           # security/data integrity issue -> block merge
+    high: fix-forward-task    # auto-create follow-up task after merge
+    medium: merge-with-note   # allow merge with warning note
+    low: auto-approve         # auto-approve
+  tasks: []                   # follow-up tasks created by codex-review-code
 decisions:
   recommendedAgents: []
   skillChain: []
@@ -48,6 +48,7 @@ decisions:
 artifacts:
   contextDocPath: {tasksRoot}/{feature-name}/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
+  runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 notes: []
 ```
 
@@ -64,6 +65,14 @@ Include only stages to run **after moonshot-decide-sequence** (do not include mo
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**Web runtime verification**:
+- If `signals.reactProject == true`, insert `browser-verifier` before `verify-changes.sh`.
+- `browser-verifier` runs `.claude/agents/verification/verify-runtime.sh` for URL/E2E checks.
+
+**Project memory check semantics**:
+- Keep `project-memory-check` as a distinct stage from `project-memory-agent`.
+- `project-memory-check` is check-only (boundary validation), while `project-memory-agent` handles memory load/update.
 
 **Refactor-specific rules** (taskType == refactor):
 - Always include `build-error-resolver` after `implementation-runner` for automatic build verification
@@ -83,6 +92,12 @@ Complex always includes test-based completion verification.
 - `security-reviewer`: Triggered when security concern detected (auth changes, env file modified, new dependencies)
 - `build-error-resolver`: Triggered when `tsc`/`build` fails, inserted before next implementation step
 
+**Verification exit code strategy**:
+- `verify-changes.sh` `exit 1`: Build/typecheck/general verification failure → invoke `build-error-resolver` and retry implementation fix.
+- `verify-changes.sh` `exit 2`: Test failure → re-enter `implementation-runner` with test-first remediation (add/fix tests) before rerunning verification.
+- `verify-runtime.sh` `exit 1`: Runtime unavailable (server/env issue) → fix runtime readiness and rerun `browser-verifier`.
+- `verify-runtime.sh` `exit 2`: E2E failure → apply the same policy as test failure (`verify-changes.sh` exit 2).
+
 **Fix Forward Post-Review Branching**:
 - After `codex-review-code`, check review verdict and apply `fixForward.policy`:
   - `CRITICAL` → **HALT** (do not merge, re-enter implementation)
@@ -96,6 +111,7 @@ Only run dependency-free steps in parallel. If results affect the next stage, do
 **Possible parallel examples**:
 - After `/moonshot-classify-task`: `/moonshot-evaluate-complexity` + `/moonshot-detect-uncertainty`
 - After implementation: `codex-review-code` + `verify-changes.sh` (re-run verify if review changes)
+- Web project runtime check: `codex-review-code` + `browser-verifier` (re-run runtime verify after code fixes)
 - Logging: `efficiency-tracker` + `session-logger`
 
 **Not allowed in parallel**:

@@ -1,6 +1,6 @@
 ---
 name: moonshot-teams-runner
-description: "Agent Teams 기반 병렬 팀 실행. 리뷰, 연구, 검증, 구현 등의 독립적인 작업을 병렬로 수행합니다."
+description: "Runs parallel Agent Teams for review, research, verification, and implementation workflows."
 triggers:
   - "teams run"
   - "parallel team"
@@ -11,194 +11,203 @@ triggers:
 
 ## Role
 
-Claude Code의 Agent Teams 기능을 활용하여 독립적인 작업들을 병렬 팀으로 실행합니다.
+Run independent workstreams in parallel teams using Claude Code Agent Teams.
 
 > **Prerequisites**:
 > - Claude Code v2.1.32+
 > - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in settings.local.json
 
+## Team Leader Agent Policy (Bias for Action)
+
+Always include the following instructions when prompting `team-leader-agent`.
+
+1. **Execute right after planning**: once a minimally viable plan exists, start implementation/verification immediately.
+2. **Limit planning loops**: allow at most one plan rewrite; force execution from the second round.
+3. **Handle blocking strictly**: ask the user only once for truly blocking issues; otherwise proceed with reasonable defaults.
+4. **Make work units explicit**: each member assignment must include file scope, execution command, and verification command.
+
 ## Usage
 
 ```bash
-# 리뷰 팀 실행
+# Run review team
 /moonshot-teams-runner review-team
 
-# 연구 팀 실행
+# Run research team
 /moonshot-teams-runner research-team
 
-# 검증 팀 실행
+# Run verification team
 /moonshot-teams-runner verify-team
 
-# 계획 검증 팀 실행
+# Run planning validation team
 /moonshot-teams-runner planning-team
 
-# 품질 검증 팀 실행
+# Run quality validation team
 /moonshot-teams-runner quality-team
 
-# PM 분석 병렬화 팀 실행
+# Run PM analysis team
 /moonshot-teams-runner analysis-team
 
-# 문제 해결 팀 실행
+# Run fix team
 /moonshot-teams-runner fix-team
 
-# 🆕 병렬 구현 팀 실행
+# Run parallel implementation team
 /moonshot-teams-runner impl-team
 
-# 🆕 교차 계층 팀 실행
+# Run cross-layer team
 /moonshot-teams-runner cross-layer-team
 
-# 🆕 디버깅 팀 실행
+# Run debugging team
 /moonshot-teams-runner debug-team
 
-# 사용 가능한 팀 목록
+# List available teams
 /moonshot-teams-runner --list
 ```
 
 ## Available Teams
 
-### 1. review-team (병렬 리뷰)
+### 1. review-team (parallel review)
 
-병렬로 코드 리뷰 수행:
+Run parallel code review:
 
 ```yaml
 members:
-  - code-reviewer: 코드 품질 및 구조 리뷰
-  - security-reviewer: 보안 취약점 검토
-  - react-reviewer: React/Next.js 최적화 (조건부)
+  - code-reviewer: code quality and architecture review
+  - security-reviewer: security risk review
+  - react-reviewer: React/Next.js optimization (conditional)
 timeout: 300s
 delegationMode: true
 communication: enabled
 ```
 
-**활용 시점**: 구현 완료 후 코드 리뷰 단계
+**When to use**: after implementation, during review.
 
-### 2. research-team (병렬 연구)
+### 2. research-team (parallel research)
 
-병렬로 분석 및 연구 수행:
+Run parallel analysis and research:
 
 ```yaml
 members:
-  - requirements-analyst: 요구사항 분석
-  - context-builder: 기존 코드베이스 분석
+  - requirements-analyst: requirement analysis
+  - context-builder: existing codebase analysis
 timeout: 180s
 delegationMode: true
 communication: enabled
 ```
 
-**활용 시점**: 복잡한 기능 구현 전 분석 단계
+**When to use**: before implementing complex features.
 
-### 3. verify-team (이의 제기 검증)
+### 3. verify-team (challenge-based verification)
 
-구현 결과를 다각도로 검증:
+Verify implementation from multiple perspectives:
 
 ```yaml
 members:
-  - implementer: 구현 내용 설명
-  - critic: 잠재적 문제점 지적 (이의 제기)
-  - resolver: 의견 종합 및 해결책 제시
+  - implementer: explain implementation
+  - critic: challenge potential issues
+  - resolver: synthesize and propose fixes
 timeout: 240s
 communication: enabled (debateRounds: 2)
 ```
 
-**활용 시점**: 중요 기능 완료 후 품질 검증
+**When to use**: after critical feature completion.
 
-### 4. planning-team (계획 검증)
+### 4. planning-team (plan validation)
 
-계획 단계에서 병렬 검증:
+Run parallel validation during planning:
 
 ```yaml
 members:
-  - requirements-analyzer: 요구사항 추출 및 검증
-  - context-builder: 기존 코드베이스 분석
-  - plan-validator: 계획 논리 검증, 의존성 체크
+  - requirements-analyzer: extract and validate requirements
+  - context-builder: analyze existing codebase
+  - plan-validator: validate plan logic and dependencies
 timeout: 240s
 delegationMode: true
 communication: enabled
 ```
 
-**활용 시점**: `/moonshot-plan-writer` 실행 후
+**When to use**: after `/moonshot-plan-writer` or when planning validation is required in orchestrator planning phase.
 
-### 5. quality-team (품질 검증)
+### 5. quality-team (quality validation)
 
-구현 후 품질 검증:
+Validate quality after implementation:
 
 ```yaml
 members:
-  - completion-verifier: 테스트 기반 완료 검증
-  - memory-reviewer: 프로젝트 규칙/스펙 위반 검증
-  - build-checker: 빌드 오류 사전 탐지
+  - completion-verifier: test-based completion verification
+  - memory-reviewer: project rule/spec compliance verification
+  - build-checker: pre-detect build failures
 timeout: 300s
 delegationMode: true
 communication: enabled
 ```
 
-**활용 시점**: 테스트 완료 후
+**When to use**: after tests finish.
 
-### 6. analysis-team (PM 분석 병렬화)
+### 6. analysis-team (PM analysis parallelization)
 
-오케스트레이터 초기 분석 병렬화:
+Parallelize early orchestrator analysis:
 
 ```yaml
 members:
-  - classifier: 작업 유형 분류
-  - complexity-analyzer: 복잡도 평가, 예상 작업량
-  - uncertainty-detector: 불확실성 검출, 질문 도출
+  - classifier: classify task type
+  - complexity-analyzer: evaluate complexity and workload
+  - uncertainty-detector: detect uncertainties and derive questions
 timeout: 180s
 delegationMode: true
 communication: enabled
 ```
 
-**활용 시점**: 오케스트레이터 2.1~2.3 단계
+**When to use**: orchestrator stages 2.1~2.3.
 
-### 7. fix-team (문제 해결)
+### 7. fix-team (issue remediation)
 
-에러 발생 시 병렬 해결:
+Resolve failures in parallel:
 
 ```yaml
 members:
-  - build-resolver: 빌드/컴파일 에러 해결
-  - security-fixer: 보안 취약점 수정
+  - build-resolver: resolve build/compile errors
+  - security-fixer: patch security issues
 timeout: 300s
 condition: buildFailed || securityConcern
 delegationMode: true
 communication: enabled
 ```
 
-**활용 시점**: 빌드 실패 또는 보안 문제 발생 시
+**When to use**: build failures or security concerns.
 
-### 8. impl-team (병렬 구현) 🆕
+### 8. impl-team (parallel implementation) 🆕
 
-새 모듈/기능을 병렬로 구현:
+Implement new modules/features in parallel:
 
 ```yaml
 members:
-  - feature-dev-1: 주요 기능 구현
-  - feature-dev-2: 보조 기능 구현 (파일 5개 이상시)
-  - test-writer: 테스트 코드 작성
+  - feature-dev-1: primary feature development
+  - feature-dev-2: secondary feature development (when 5+ files)
+  - test-writer: test implementation
 timeout: 600s
-requirePlanApproval: true  # 계획 승인 후 구현
+requirePlanApproval: true  # implement after plan approval
 delegationMode: true
-fileOwnership: exclusive   # 파일 충돌 방지
+fileOwnership: exclusive   # prevent file conflicts
 communication: enabled
 ```
 
-**활용 시점**: 복잡한 기능 구현시 작업 분할 필요할 때
+**When to use**: complex implementations requiring work split.
 
-**핵심 기능**:
-- `requirePlanApproval`: 팀원이 계획 작성 → 리더 승인 → 구현
-- `fileOwnership`: 각 팀원이 다른 파일 소유, 충돌 방지
+**Key points**:
+- `requirePlanApproval`: members propose plans, leader approves, then implementation starts.
+- `fileOwnership`: members own different files to avoid conflicts.
 
-### 9. cross-layer-team (교차 계층) 🆕
+### 9. cross-layer-team (cross-layer) 🆕
 
-프론트엔드/백엔드/테스트 병렬 구현:
+Parallel implementation across frontend/backend/test:
 
 ```yaml
 members:
-  - frontend-dev: UI 컴포넌트, 페이지 구현
+  - frontend-dev: UI components and pages
     ownedPaths: [src/components/, src/pages/, src/app/]
-  - backend-dev: API, 서비스 로직 구현
+  - backend-dev: API and service logic
     ownedPaths: [src/api/, src/services/, server/]
-  - test-dev: 유닛/통합 테스트 작성
+  - test-dev: unit/integration tests
     ownedPaths: [tests/, **/*.test.ts]
 timeout: 600s
 requirePlanApproval: true
@@ -207,63 +216,63 @@ fileOwnership: exclusive
 communication: enabled
 ```
 
-**활용 시점**: 전체 스택에 걸친 기능 구현시
+**When to use**: full-stack feature implementation.
 
-**핵심 기능**:
-- 각 팀원이 레이어별 파일 소유
-- 팀원간 API 스펙 논의 가능
+**Key points**:
+- Each member owns files by layer.
+- Members can coordinate API contracts directly.
 
-### 10. debug-team (디버깅) 🆕
+### 10. debug-team (debugging) 🆕
 
-경쟁 가설로 버그 조사:
+Investigate bugs with competing hypotheses:
 
 ```yaml
 members:
-  - investigator-1: 첫 번째 가설 조사
-  - investigator-2: 두 번째 가설 조사
-  - investigator-3: 세 번째 가설 조사 (복잡도 high 이상)
+  - investigator-1: investigate hypothesis A
+  - investigator-2: investigate hypothesis B
+  - investigator-3: investigate hypothesis C (for high+ complexity)
 timeout: 300s
 delegationMode: true
 communication: enabled (debateRounds: 3)
 ```
 
-**활용 시점**: 근본 원인 불명확한 버그 디버깅시
+**When to use**: bugs with unclear root cause.
 
-**핵심 기능**:
-- 조사자들이 서로의 가설에 도전하고 반박
-- 과학적 토론처럼 가장 유력한 가설 도출
+**Key points**:
+- Investigators challenge and rebut each other's hypotheses.
+- Derive the most plausible root cause through structured debate.
 
 ## Key Features
 
-### 🎯 계획 승인 (requirePlanApproval)
+### 🎯 Plan Approval (requirePlanApproval)
 
-복잡한 작업에서 팀원이 바로 구현하지 않고 계획을 먼저 작성:
+For complex tasks, members write plans before coding:
 
 ```
-1. 팀원이 읽기 전용 계획 모드에서 시작
-2. 계획 작성 후 리더에게 승인 요청
-3. 리더가 기준에 따라 승인/거부
-4. 승인시 팀원이 구현 시작
+1. Members start in read-only planning mode.
+2. Members request leader approval after drafting plans.
+3. Leader approves or rejects based on criteria.
+4. Implementation starts only after approval.
 ```
 
-### 🎭 위임 모드 (delegationMode)
+### 🎭 Delegation Mode (delegationMode)
 
-리더가 직접 구현하지 않고 조율에만 집중:
-- 팀원 생성/메시징/종료
-- 작업 관리 및 할당
-- 결과 종합
+Leader focuses on coordination instead of direct implementation:
+- spawn/message/terminate members
+- task management and assignment
+- aggregate outcomes
 
-### 💬 팀원 통신 (communication)
+### 💬 Member Communication (communication)
 
-팀원간 직접 메시지 교환:
-- `message`: 특정 팀원에게 메시지
-- `broadcast`: 모든 팀원에게 동시 전송
+Direct messaging between members:
+- `message`: send to a specific member
+- `broadcast`: send to all members
 
-### 📁 파일 소유권 (fileOwnership)
+### 📁 File Ownership (fileOwnership)
 
-구현 팀에서 파일 충돌 방지:
-- `exclusive`: 각 팀원이 지정된 경로만 수정
-- `ownedPaths`: 팀원별 소유 경로 지정
+Prevent file conflicts in implementation teams:
+- `exclusive`: each member edits only owned paths
+- `ownedPaths`: per-member path ownership
 
 ## Workflow
 
@@ -316,7 +325,7 @@ teamReport:
 
 ## Output
 
-팀 실행 완료 후 생성되는 리포트:
+Report generated after team execution:
 
 ```markdown
 # Team Report: impl-team
@@ -355,38 +364,39 @@ teamReport:
 
 ## Integration with Orchestrator
 
-`moonshot-orchestrator`에서 자동 호출:
+Automatically invoked by `moonshot-orchestrator`:
 
 ```yaml
+# analysisContext.signals
+useAgentTeams: true          # enabled by --use-teams
+
 # analysisContext.decisions
-parallelGroups:
-  - group: "impl-team"
-    mode: "agent-teams"
-    trigger: "after:moonshot-plan-writer"
-    condition: "signals.useParallelImpl && estimatedFiles > 3"
-  - group: "cross-layer-team"
-    mode: "agent-teams"
-    trigger: "after:moonshot-plan-writer"
-    condition: "signals.crossLayerChange"
-  - group: "review-team"
-    mode: "agent-teams"
-    trigger: "after:implementation-runner"
+skillChain:
+  - ...                      # from moonshot-decide-sequence
+  - team-leader-agent        # fork execution when team mode is enabled
+notes:
+  - "team=review-team, trigger=after:implementation-runner"
 ```
+
+Team trigger guide (aligned with orchestrator schema):
+1. `analysis-team`/`research-team`/`planning-team`: use in PM analysis stages (2.1~2.5).
+2. `impl-team`/`cross-layer-team`: use for complex implementation stages.
+3. `review-team`/`quality-team`/`verify-team`/`fix-team`: use after implementation or on failure events.
 
 ## Token Usage Warning
 
 > [!CAUTION]
-> Agent Teams는 각 팀원이 별도의 Claude 인스턴스를 사용합니다.
-> - 2명 팀: ~13,000 토큰 (전체 용량의 ~29%)
-> - 3명 팀: ~20,000 토큰
-> - 리뷰 팀 등 중요한 상황에서만 사용 권장
+> Each team member runs as a separate Claude instance.
+> - 2-member team: ~13,000 tokens (~29% of typical context budget)
+> - 3-member team: ~20,000 tokens
+> - Recommended only for important/complex scenarios
 
 ## Best Practices
 
-1. **팀원에게 충분한 컨텍스트 제공**: 생성 프롬프트에 작업 세부사항 포함
-2. **작업 크기 적절히 조정**: 너무 작으면 오버헤드, 너무 크면 낭비 위험
-3. **파일 충돌 피하기**: 각 팀원이 다른 파일 소유하도록 분해
-4. **연구/검토로 시작**: Agent Teams 처음이면 코드 작성 없는 작업부터
+1. **Provide enough context**: include concrete task details in member prompts.
+2. **Right-size the workload**: too small causes overhead, too large increases waste.
+3. **Avoid file conflicts**: split ownership so members edit different files.
+4. **Start with analysis/review**: begin with non-coding team tasks when first adopting Agent Teams.
 
 ## Progress Status Output Rules
 
@@ -440,14 +450,14 @@ Output clear progress status during team execution.
 
 ## Limitations
 
-- 세션당 하나의 팀만 가능
-- 중첩된 팀 불가 (팀원이 팀 생성 불가)
-- 분할 창에는 tmux 또는 iTerm2 필요
-- 팀 리더는 fork 세션에서 실행되므로 메인 세션 컨텍스트에 직접 접근 불가 (teamInput으로 전달 필요)
+- One team per session only
+- No nested teams (members cannot spawn sub-teams)
+- Split panes require `tmux` or `iTerm2`
+- Team leader runs in a forked session, so main-session context must be passed via `teamInput`
 
 ## References
 
-- `/moonshot-orchestrator`: 오케스트레이터 통합
-- `.claude/agents/team-leader-agent.md`: 팀 리더 fork 에이전트 정의
-- `.claude/templates/agent-teams-config.yaml`: 팀 설정 템플릿
-- [Claude Code Agent Teams 공식 문서](https://code.claude.com/docs/ko/agent-teams)
+- `/moonshot-orchestrator`: orchestrator integration
+- `.claude/agents/team-leader-agent.md`: forked team-leader agent definition
+- `.claude/templates/agent-teams-config.yaml`: team configuration template
+- [Claude Code Agent Teams docs](https://code.claude.com/docs/ko/agent-teams)

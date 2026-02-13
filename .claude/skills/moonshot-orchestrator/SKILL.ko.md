@@ -66,6 +66,7 @@ artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
+  runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
 projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
 notes: []
@@ -123,6 +124,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 |------|------|------|
 | `pre-flight-check` | Skill | |
 | `project-memory-agent` | Task (fork) | 컨텍스트 격리 |
+| `project-memory-check` | Task (fork) | 구현 전 경계 체크(검사 전용) |
 | `requirements-analyzer` | Task | |
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
@@ -135,6 +137,8 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `vercel-react-best-practices` | Skill | reactProject=true 시 |
 | `security-reviewer` | Skill | |
 | `build-error-resolver` | Skill | |
+| `browser-verifier` | Skill | 웹 프로젝트 런타임 검증 |
+| `verify-runtime.sh` | Bash | 런타임 URL/E2E 검증 |
 | `verify-changes.sh` | Bash | |
 | `efficiency-tracker` | Skill | |
 | `session-logger` | Skill | |
@@ -150,6 +154,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | 에이전트 | subagent_type | 비고 |
 |----------|---------------|------|
 | `project-memory-agent` | general-purpose | fork, 2.1 전 |
+| `project-memory-check` | general-purpose | fork, 구현 전 check-only 모드 |
 | `requirements-analyzer` | general-purpose | |
 | `context-builder` | context-builder | |
 | `implementation-runner` | implementation-agent | |
@@ -162,6 +167,11 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 3. 미정의 단계 → 사용자에게 확인 후 중단
 4. 모든 단계는 `document-memory-policy.md` 준수
 
+**메모리 단계 분리 계약**:
+- `project-memory-agent`: 2.0.5 단계에서 프로젝트 메모리 로드/업데이트
+- `project-memory-check`: 구현 전 경계 준수 검사 전용 단계 (메모리 변경 없음)
+- `project-memory-reviewer`: 리뷰 이후 경계 준수 재검증
+
 **Agent Teams 연동 (--use-teams):**
 1. `signals.useAgentTeams = true` 설정
 2. `team-leader-agent`를 팀 설정과 함께 fork (팀 상세는 `moonshot-teams-runner/SKILL.md` 참조)
@@ -170,7 +180,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 > [!CAUTION]
 > Agent Teams: ~13K 토큰 (2명) / ~20K 토큰 (3명). 중요한 리뷰나 복잡한 구현에만 사용.
 
-**Fork 기반 에이전트** (`project-memory-agent`, `project-memory-reviewer`, `team-leader-agent`):
+**Fork 기반 에이전트** (`project-memory-agent`, `project-memory-check`, `project-memory-reviewer`, `team-leader-agent`):
 - 별도 컨텍스트 세션에서 실행
 - 요약된 결과만 반환 → 메인 세션 컨텍스트 오염 방지
 
@@ -178,13 +188,17 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 
 | 시그널 | 트리거 | 액션 |
 |--------|--------|------|
-| `buildFailed` | Bash exit code ≠ 0 | `build-error-resolver` 삽입 후 재시도 (최대 2회) |
+| `buildFailed` | `verify-changes.sh` exit `1` | `build-error-resolver` 삽입 후 재시도 (최대 2회) |
+| `testFailed` | `verify-changes.sh` exit `2` | 테스트 우선 보정으로 `implementation-runner` 재진입 후 검증 재실행 |
+| `runtimeUnavailable` | `verify-runtime.sh` exit `1` | 서버/런타임 준비 상태 수정 요청 후 `browser-verifier` 재실행 (최대 1회) |
+| `e2eFailed` | `verify-runtime.sh` exit `2` | `testFailed`와 동일 정책 적용 (테스트 우선 보정 + 런타임 재검증) |
 | `securityConcern` | `.env`/`auth`/`token`/`secret` 파일 변경 | codex-review-code 후 `security-reviewer` 추가 |
 | `coverageLow` | completion-verifier: 커버리지 < 80% | 경고 로깅, 추가 테스트 요청 |
 | `reactProject` | `.tsx`/`.jsx` 파일 또는 React 키워드 | codex-review-code 후 `vercel-react-best-practices` 삽입 |
 | `implementationComplete` | implementation-runner 완료 | completion-verifier 전 `code-simplifier` 삽입 |
 | `docStale` | pre-flight-check에서 stale 문서 감지 | 체인 시작 부분에 `doc-auto-sync` 삽입 |
 | `newProject` | ARCHITECTURE.md 없음 + 복잡한 태스크 | 체인 시작 부분에 `doc-auto-sync --init` 삽입 |
+| `webRuntimeCheck` | `reactProject == true` | `verify-changes.sh` 앞에 `browser-verifier` 삽입 (`verify-changes.sh`가 없으면 `completion-verifier` 직후) |
 | `multipleFailures` | notes에 에러/실패 2건 이상 | 체인 끝에 `failure-analyzer` + `workflow-self-improver` 추가 |
 
 ### 3.2 프로젝트 메모리 리뷰 (Fork)
@@ -202,10 +216,11 @@ Returns: { status, violations, needsApproval, warnings, reminders }
 ### 3.3 완료 검증 루프
 
 `implementation-runner` 완료 후:
-1. `completion-verifier` 호출
-2. `allPassed: true` → `implementationComplete: true` 설정, 진행
-3. `allPassed: false` + retryCount < 2 → 실패 Phase로 돌아가 코드만 수정, 재시도
-4. `allPassed: false` + retryCount ≥ 2 → 사용자에게 개입 요청
+1. `decisions.skillChain`에 `completion-verifier`가 있으면 호출합니다.
+2. `completion-verifier`가 없는 simple 흐름은 `verify-changes.sh`(웹 프로젝트는 `browser-verifier` 포함)를 완료 게이트로 사용합니다.
+3. `allPassed: true`(또는 동등한 게이트 통과)면 `implementationComplete: true` 설정 후 진행합니다.
+4. 실패 + retryCount < 2이면 실패 원인별 종료 코드 전략(`exit 1` 빌드 우선 수정, `exit 2` 테스트 우선 수정)으로 복구 후 재시도합니다.
+5. 실패 + retryCount ≥ 2이면 사용자 개입을 요청합니다.
 
 ### 3.4 Fix Forward 사후 리뷰
 
