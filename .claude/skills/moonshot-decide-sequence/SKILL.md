@@ -63,8 +63,13 @@ notes: []
 Include only stages to run **after moonshot-decide-sequence** (do not include moonshot-* skills).
 
 - simple: implementation-runner -> verify-changes.sh
-- medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
-- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+- medium: requirements-analyzer -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
+- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**Execution discipline gate (Karpathy loop)**:
+- For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
+- Gate focus: think before coding, simplicity first, surgical changes, goal-driven execution.
+- If the gate reports blockers, return to planning before code edits.
 
 **Web runtime verification**:
 - If `signals.reactProject == true`, insert `browser-verifier` before `verify-changes.sh`.

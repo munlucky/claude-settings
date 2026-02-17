@@ -1,108 +1,56 @@
 # Parallel Execution Guidelines
 
+## Core Rule
+- Do not run plan validation and implementation in parallel.
+- `codex-validate-plan` must finish before `implementation-runner`.
+
 ## Trigger Conditions
-- After Context Builder completes.
-- Only when complexity: complex.
-- Final step of the Planning phase.
+- Planning artifacts are finalized (`agreement.md`, `context.md`).
+- If `karpathy-execution-gate` is in the chain, it is passed.
+- Task has independent post-implementation stages.
 
-## Strategy
-Run **Codex Validator** (plan review) and **Implementation Agent** (coding) in parallel.
-- Validator reviews edge cases, etc.
-- Implementation starts coding immediately.
-- Sync occurs after Validator completes.
+## Parallelization Strategy
+Only parallelize independent stages that do not define implementation scope.
 
-### Token Duplication Avoidance Strategy
-**Problem**: Running Validator and Implementation in parallel loads the same context twice
-**Solution**:
-1. **Prepare one shared snapshot**:
-   - Moonshot Agent prepares a single JSON snapshot before parallel execution
-   - Both agents reference the same snapshot
-2. **Add only role-specific minimums**:
-   - Validator: `"mode": "readonly"` + review file paths only
-   - Implementation: `"mode": "write"` + target file paths only
-3. **Do not include file contents**:
-   - Snapshot includes only file paths (`src/pages/xxx/*.tsx`)
-   - Each agent reads files as needed
-4. **Pass only previous output paths**:
-   - Provide only `agreement.md`, `context.md` paths
-   - Agents read file contents when needed
+Allowed examples:
+- `codex-review-code` + `efficiency-tracker`
+- `codex-review-code` + `session-logger`
+- `codex-review-code` + `browser-verifier` (rerun runtime checks if review changes code)
 
-**Example - shared snapshot (YAML)**:
-```yaml
-featureName: "batch management"
-agreementFile: ".claude/features/batch/agreement.md"
-contextFile: ".claude/features/batch/context.md"
-patterns:
-  entityRequest: "separate entity and request types"
-  apiProxy: "axios wrapper pattern"
-relevantFilePaths:
-  - "src/pages/batch/*.tsx"
-  - "src/api/batch.ts"
-  - "src/types/batch/*.ts"
-```
+Not allowed:
+- `codex-validate-plan` + `implementation-runner`
+- `requirements-analyzer` + `context-builder`
 
-**Example - Validator extra info (YAML)**:
-```yaml
-mode: "readonly"
-reviewFocus:
-  - "edge cases"
-  - "type safety"
-  - "error handling"
-```
-
-**Example - Implementation extra info (YAML)**:
-```yaml
-mode: "write"
-targetFiles:
-  - "src/pages/batch/BatchListPage.tsx"
-  - "src/api/batch.ts"
-```
-
-**Token savings effect**:
-- Remove duplicate shared info: ~50% saved
-- Deferred file content loading: ~30% saved
-- Role-specific minimums only: ~20% saved
-- YAML (vs JSON): ~20-30% saved
-- **Total expected savings**: ~50-70% tokens in parallel
+## Token Duplication Avoidance
+1. Prepare one shared snapshot (paths and minimal metadata only).
+2. Pass role-specific inputs only.
+3. Do not inline file content in orchestration notes.
+4. Return summarized outputs, then re-run required gates if code changed.
 
 ## Execution Script Logic
 ```bash
-# After Context Builder completes
-echo "Context Builder complete"
-echo "Parallel start: Codex Validator || Implementation Agent"
+# 1) Planning gate (sequential)
+codex-validate-plan --feature {feature_name}
+karpathy-execution-gate --feature {feature_name}
 
-# Parallel calls
-codex-validator-agent --feature {feature_name} &
-VALIDATOR_PID=$!
+# 2) Implementation (sequential)
+implementation-runner --feature {feature_name}
 
-implementation-agent --feature {feature_name} &
-IMPL_PID=$!
+# 3) Independent post-implementation checks (optional parallel)
+codex-review-code --feature {feature_name} &
+REVIEW_PID=$!
 
-# Wait for Validator (read-only, usually faster)
-wait $VALIDATOR_PID
-echo "Codex Validator complete"
+efficiency-tracker --feature {feature_name} &
+TRACK_PID=$!
 
-# Sync Validator feedback into context
-doc-sync-skill   --feature {feature_name}   --updates validator-output.json
-echo "Doc Sync complete: context.md updated"
-
-# Wait for Implementation
-wait $IMPL_PID
-echo "Implementation Agent complete"
-
-# Check if plan changed during implementation
-if [[ context.md updated after implementation start ]]; then
-  echo "Validator updated the plan."
-  echo "Checking whether Implementation reflected the changes..."
-  # If critical changes are missing, schedule a patch in the next phase
-fi
+wait $REVIEW_PID
+wait $TRACK_PID
 ```
 
 ## Synchronization Points
 | Timing | Event | Action |
 |---|---|---|
-| Context Builder complete | Start parallel execution | Start Validator and Implementation together |
-| Validator complete | Doc Sync | Update `context.md` with feedback |
-| Implementation complete | Context check | Verify Validator feedback was applied |
-| Both complete | Start Type Safety | Proceed to next sequential stage |
-
+| Planning complete | Start implementation | Run sequentially after validation gate |
+| Implementation complete | Start optional parallel checks | Run only independent stages together |
+| Review changed code | Re-run gates | Re-run affected verify/runtime checks |
+| Checks complete | Merge decision | Continue fix-forward policy |

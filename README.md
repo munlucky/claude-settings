@@ -38,6 +38,7 @@ claude-settings/
 │   │   ├── moonshot-detect-uncertainty/
 │   │   ├── moonshot-decide-sequence/
 │   │   ├── pre-flight-check/
+│   │   ├── karpathy-execution-gate/
 │   │   ├── implementation-runner/
 │   │   ├── codex-validate-plan/
 │   │   ├── codex-test-integration/
@@ -79,6 +80,7 @@ claude-settings/
 
 - `moonshot-orchestrator` 스킬이 요청을 분석하고 최적의 에이전트 체인을 구성합니다.
 - 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence` 스킬로 구성됩니다.
+- medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
 
 ### 에이전트
 
@@ -94,7 +96,7 @@ claude-settings/
 ### 스킬 라이브러리
 
 - Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
-- 실행/검증: `implementation-runner`, `codex-validate-plan`, `codex-review-code`, `completion-verifier`
+- 실행/검증: `karpathy-execution-gate`, `implementation-runner`, `codex-validate-plan`, `codex-review-code`, `completion-verifier`
 - 문서/세션: `session-logger`, `efficiency-tracker`
 - 보조 도구: `pre-flight-check`, `design-asset-parser`, `project-md-refresh`, `security-reviewer`, `build-error-resolver`
 
@@ -202,7 +204,8 @@ Codex MCP 활용:
 
 ## Moonshot 워크플로우 v2 요약
 
-- 병렬 실행: 계획 검증과 구현을 동시에 진행
+- 병렬 실행: 독립 단계만 병렬화(리뷰/로깅/일부 검증), 계획 검증과 구현은 순차 진행
+- Karpathy Gate: 구현 직전 실행 규율 점검으로 과설계/스코프 이탈 방지
 - Doc Sync: 문서 자동 동기화로 피드백 루프 유지
 - Completion Check: 요구사항 누락 방지
 

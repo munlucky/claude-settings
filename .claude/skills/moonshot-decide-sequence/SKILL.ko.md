@@ -63,8 +63,13 @@ notes: []
 skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함한다(moonshot-* 스킬은 포함하지 않음).
 
 - simple: implementation-runner -> verify-changes.sh
-- medium: requirements-analyzer -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
-- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+- medium: requirements-analyzer -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
+- complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**실행 규율 게이트 (Karpathy loop)**:
+- medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 실행한다.
+- 게이트 핵심: 코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행.
+- 게이트에서 차단 이슈가 나오면 코드 수정 전에 planning 단계로 복귀한다.
 
 **웹 런타임 검증 규칙**:
 - `signals.reactProject == true`이면 `verify-changes.sh` 이전에 `browser-verifier`를 삽입한다.
