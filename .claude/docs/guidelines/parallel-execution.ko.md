@@ -1,111 +1,56 @@
 # 병렬 실행 가이드라인 (Parallel Execution Guidelines)
 
-## 트리거 조건 (Trigger Conditions)
-- **Context Builder** 완료 후.
-- **complexity: complex**일 때만.
-- **Planning Phase**의 마지막 단계.
+## 핵심 원칙
+- 계획 검증과 구현은 병렬 실행하지 않는다.
+- `codex-validate-plan` 완료 후에만 `implementation-runner`를 실행한다.
 
-## 전략 (Strategy)
-**Codex Validator** (계획 검증)와 **Implementation Agent** (코딩)를 병렬로 실행합니다.
-- Validator는 엣지 케이스 등 계획을 검토합니다.
-- Implementation은 즉시 코딩을 시작합니다.
-- 동기화(Sync)는 Validator가 완료된 후 수행됩니다.
+## 트리거 조건
+- 계획 산출물(`agreement.md`, `context.md`)이 확정된 상태
+- `karpathy-execution-gate`가 체인에 포함된 경우 통과 상태
+- 구현 이후 독립 단계가 존재할 때
 
-### 🎯 토큰 중복 방지 전략
-**문제**: Validator와 Implementation을 병렬로 실행하면 같은 컨텍스트가 2번 로드됨
-**해결**:
-1. **공통 스냅샷 1회 준비**:
-   - Moonshot Agent가 병렬 실행 전 단일 JSON 스냅샷 생성
-   - 두 에이전트 모두 이 스냅샷을 참조
-2. **역할별 최소 정보만 추가**:
-   - Validator: `"mode": "readonly"` + 검토 대상 파일 경로만
-   - Implementation: `"mode": "write"` + 구현 대상 파일 경로만
-3. **파일 내용은 포함 안 함**:
-   - 스냅샷에는 파일 경로만 (`src/pages/xxx/*.tsx`)
-   - 각 에이전트가 필요시 직접 Read 호출
-4. **이전 단계 출력 파일 경로만 전달**:
-   - `agreement.md`, `context.md` 경로만 제공
-   - 파일 내용은 에이전트가 필요시 읽음
+## 병렬화 전략
+구현 범위를 결정하지 않는 독립 단계만 병렬화한다.
 
-**예시 - 공통 스냅샷 (YAML)**:
-```yaml
-featureName: "배치 관리"
-agreementFile: ".claude/features/batch/agreement.md"
-contextFile: ".claude/features/batch/context.md"
-patterns:
-  entityRequest: "entity와 request 타입 분리"
-  apiProxy: "axios 래퍼 패턴"
-relevantFilePaths:
-  - "src/pages/batch/*.tsx"
-  - "src/api/batch.ts"
-  - "src/types/batch/*.ts"
-```
+허용 예시:
+- `codex-review-code` + `efficiency-tracker`
+- `codex-review-code` + `session-logger`
+- `codex-review-code` + `browser-verifier` (리뷰로 코드 변경 시 런타임 검증 재실행)
 
-**예시 - Validator 추가 정보 (YAML)**:
-```yaml
-mode: "readonly"
-reviewFocus:
-  - "엣지 케이스"
-  - "타입 안정성"
-  - "에러 처리"
-```
+금지 예시:
+- `codex-validate-plan` + `implementation-runner`
+- `requirements-analyzer` + `context-builder`
 
-**예시 - Implementation 추가 정보 (YAML)**:
-```yaml
-mode: "write"
-targetFiles:
-  - "src/pages/batch/BatchListPage.tsx"
-  - "src/api/batch.ts"
-```
+## 토큰 중복 방지
+1. 공통 스냅샷은 파일 경로와 최소 메타데이터만 포함한다.
+2. 역할별 입력만 추가한다.
+3. 오케스트레이션 노트에 파일 본문을 인라인하지 않는다.
+4. 병렬 단계 결과는 요약만 병합하고, 코드 변경 시 필수 게이트를 재실행한다.
 
-**토큰 절약 효과**:
-- 공통 정보 중복 제거: ~50% 절약
-- 파일 내용 지연 로드: ~30% 절약
-- 역할별 필요 정보만: ~20% 절약
-- YAML 사용 (vs JSON): ~20-30% 절약
-- **총 예상 절약**: 병렬 실행 시 ~50-70% 토큰 절감
-
-## 실행 스크립트 로직 (Execution Script Logic)
+## 실행 스크립트 로직
 ```bash
-# Context Builder 완료 후
-echo "✅ Context Builder 완료"
-echo "🔀 병렬 실행 시작: Codex Validator || Implementation Agent"
+# 1) 계획 게이트 (순차)
+codex-validate-plan --feature {feature_name}
+karpathy-execution-gate --feature {feature_name}
 
-# 병렬 호출
-codex-validator-agent --feature {feature_name} &
-VALIDATOR_PID=$!
+# 2) 구현 (순차)
+implementation-runner --feature {feature_name}
 
-implementation-agent --feature {feature_name} &
-IMPL_PID=$!
+# 3) 구현 후 독립 점검 (선택적 병렬)
+codex-review-code --feature {feature_name} &
+REVIEW_PID=$!
 
-# Validator 대기 (읽기 전용이라 빠름)
-wait $VALIDATOR_PID
-echo "✅ Codex Validator 완료"
+efficiency-tracker --feature {feature_name} &
+TRACK_PID=$!
 
-# Validator 피드백을 Context에 동기화
-doc-sync-skill \
-  --feature {feature_name} \
-  --updates validator-output.json
-echo "✅ Doc Sync 완료: context.md 업데이트됨"
-
-# Implementation 대기
-wait $IMPL_PID
-echo "✅ Implementation Agent 완료"
-
-# 구현 중 계획 변경 여부 확인
-if [[ context.md updated after implementation start ]]; then
-  echo "⚠️ Validator가 계획을 수정했습니다."
-  echo "📝 Implementation Agent가 변경사항을 반영했는지 확인 중..."
-  # 중요한 변경사항이 누락되었다면 다음 페이즈에서 패치 스케줄링
-fi
+wait $REVIEW_PID
+wait $TRACK_PID
 ```
 
-## 동기화 지점 (Synchronization Points)
+## 동기화 지점
 | 시점 | 이벤트 | 액션 |
 |---|---|---|
-| Context Builder 완료 | 병렬 실행 시작 | Validator와 Implementation 동시 시작 |
-| Validator 완료 | Doc Sync | `context.md`에 피드백 업데이트 |
-| Implementation 완료 | Context 확인 | Validator의 피드백 반영 여부 검증 |
-| 둘 다 완료 | Type Safety 시작 | 다음 순차 단계로 진행 |
-
-```
+| 계획 완료 | 구현 시작 | 검증 게이트 이후 순차 실행 |
+| 구현 완료 | 선택적 병렬 점검 시작 | 독립 단계만 함께 실행 |
+| 리뷰로 코드 변경 발생 | 게이트 재실행 | 영향받는 verify/runtime 체크 재실행 |
+| 점검 완료 | 머지 결정 | fix-forward 정책으로 진행 |

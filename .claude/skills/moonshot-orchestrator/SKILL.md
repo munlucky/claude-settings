@@ -141,6 +141,7 @@ Run `decisions.skillChain` in order.
 | `requirements-analyzer` | Task | |
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
+| `karpathy-execution-gate` | Skill | Pre-implementation discipline gate |
 | `implementation-runner` | Task | |
 | `code-simplifier` | Plugin | Post-implementation simplification |
 | `completion-verifier` | Skill (fork) | Test environment auto-detect |
@@ -216,6 +217,7 @@ Run `decisions.skillChain` in order.
 | `newProject` | missing ARCHITECTURE.md + complex task | Insert `doc-auto-sync --init` at start of chain |
 | `webRuntimeCheck` | `reactProject == true` | Insert `browser-verifier` before `verify-changes.sh` (or right after `completion-verifier` if `verify-changes.sh` is absent) |
 | `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` for phase-status preparation/handoff |
+| `executionDisciplineMissing` | medium/complex chain has `implementation-runner` but no `karpathy-execution-gate` | Insert `karpathy-execution-gate` right before the first `implementation-runner` |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
 
 ### 3.2 Project Memory Review (Fork)

@@ -86,6 +86,7 @@ See @README for project overview and @package.json for npm commands.
 
 ### 실행 및 검증
 - `pre-flight-check`
+- `karpathy-execution-gate` (신규)
 - `implementation-runner`
 - `completion-verifier` (신규)
 - `codex-validate-plan`
@@ -105,7 +106,7 @@ See @README for project overview and @package.json for npm commands.
 
 1. `moonshot-orchestrator`가 요청을 분석하고 체인을 구성합니다.
 2. `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
-3. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증한 뒤 `implementation-runner`를 실행합니다.
+3. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
 4. `verification-agent`와 `verify-changes.sh`로 품질을 확인합니다.
 5. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
 

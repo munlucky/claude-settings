@@ -86,6 +86,7 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 
 ### Execution and Verification
 - `pre-flight-check`
+- `karpathy-execution-gate` (NEW)
 - `implementation-runner`
 - `completion-verifier` (NEW)
 - `codex-validate-plan`
@@ -105,7 +106,7 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 
 1. `moonshot-orchestrator` analyzes the request and builds the chain.
 2. `requirements-analyzer` and `context-builder` outline the plan.
-3. For complex tasks, validate the plan with `codex-validate-plan` before running `implementation-runner`.
+3. For complex tasks, validate the plan with `codex-validate-plan`, then run `karpathy-execution-gate` before `implementation-runner`.
 4. Use `verification-agent` and `verify-changes.sh` to check quality.
 5. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
 

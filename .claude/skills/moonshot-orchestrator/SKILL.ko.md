@@ -141,6 +141,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `requirements-analyzer` | Task | |
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
+| `karpathy-execution-gate` | Skill | 구현 전 실행 규율 게이트 |
 | `implementation-runner` | Task | |
 | `code-simplifier` | Plugin | 구현 후 코드 간소화 |
 | `completion-verifier` | Skill (fork) | 테스트 환경 자동 감지 |
@@ -216,6 +217,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `newProject` | ARCHITECTURE.md 없음 + 복잡한 태스크 | 체인 시작 부분에 `doc-auto-sync --init` 삽입 |
 | `webRuntimeCheck` | `reactProject == true` | `verify-changes.sh` 앞에 `browser-verifier` 삽입 (`verify-changes.sh`가 없으면 `completion-verifier` 직후) |
 | `phasePlanDetected` | master plan + phase 문서 감지 | `implementation-runner` 전에 `moonshot-phase-runner`를 삽입해 phase-status 준비/핸드오프 수행 |
+| `executionDisciplineMissing` | medium/complex 체인에 `implementation-runner`는 있으나 `karpathy-execution-gate`가 없음 | 첫 `implementation-runner` 직전에 `karpathy-execution-gate` 삽입 |
 | `multipleFailures` | notes에 에러/실패 2건 이상 | 체인 끝에 `failure-analyzer` + `workflow-self-improver` 추가 |
 
 ### 3.2 프로젝트 메모리 리뷰 (Fork)
