@@ -29,7 +29,12 @@
 |------|------|------|
 | Unit | 유틸리티, 순수 함수 | Jest, Vitest |
 | Integration | API 엔드포인트 | Supertest |
-| E2E | 핵심 사용자 흐름 | Playwright, Cypress |
+| E2E | 핵심 사용자 흐름 | Agent Browser, Playwright, Cypress |
+
+## E2E 워크플로우 권장안
+
+- 기능 흐름/런타임 검증은 `Agent Browser`를 우선 사용합니다.
+- CI에서 재현성이 중요한 핵심 회귀 검증은 `Playwright`를 유지합니다.
 
 ## Acceptance Tests (완료 기준)
 

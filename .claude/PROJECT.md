@@ -39,7 +39,7 @@ Example:
 
 > Information needed for AI agents to run and write tests correctly.
 
-- **Test framework**: [Jest / Vitest / Playwright / etc.]
+- **Test framework**: [Jest / Vitest / Agent Browser / Playwright / etc.]
 - **Test file location**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
 - **Coverage expectation**: [80%+ / core logic only / etc.]
 - **Commands**:

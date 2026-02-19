@@ -16,7 +16,7 @@ context: fork
 
 - `analysisContext.*` (structured state)
 - `context.md` (path: `analysisContext.artifacts.contextDocPath`, contains Acceptance Tests)
-- Test framework (from PROJECT.md: jest/vitest/playwright)
+- Test framework (from PROJECT.md: jest/vitest/agent-browser/playwright)
 
 ## Step 0: Test Environment Detection
 
@@ -27,7 +27,7 @@ context: fork
 ```yaml
 testEnvironment:
   detected: false
-  framework: null      # jest | vitest | playwright | cypress | mocha | pytest | go-test | bats | null
+  framework: null      # jest | vitest | agent-browser | playwright | cypress | mocha | pytest | go-test | bats | null
   configFile: null
   testCommand: null
   reason: null

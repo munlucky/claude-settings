@@ -17,6 +17,7 @@
 |-------|-----|
 | Config file | `jest.config.*`, `vitest.config.*`, `playwright.config.*`, `pytest.ini`, etc. |
 | Package.json | `scripts.test` exists and is not the default `echo "Error..."` |
+| E2E script | `scripts["test:e2e:agent-browser"]` or `scripts["test:e2e"]` |
 | Existing tests | `**/*.test.*`, `**/*.spec.*`, `__tests__/`, `tests/` |
 | PROJECT.md | Testing Rules section has framework specified |
 
@@ -54,7 +55,12 @@ Testing may be skipped when:
 |------|--------|-------|
 | Unit | Utilities, pure functions | Jest, Vitest |
 | Integration | API endpoints, user flows | Supertest |
-| E2E | Critical user flows | Playwright, Cypress |
+| E2E | Critical user flows | Agent Browser, Playwright, Cypress |
+
+## E2E Workflow Recommendation
+
+- Use `Agent Browser` for feature-flow/runtime validation (fast scenario checks).
+- Keep deterministic regression gates in `Playwright` when strict reproducibility is required in CI.
 
 ## Acceptance Tests (완료 기준)
 
