@@ -17,6 +17,14 @@ context: fork
 - `analysisContext.*` (structured state)
 - `context.md` (path: `analysisContext.artifacts.contextDocPath`, contains Acceptance Tests)
 - Test framework (from PROJECT.md: jest/vitest/agent-browser/playwright)
+- `analysisContext.signals.allowIndeterminate` (boolean override, default: `true`)
+
+## Harness Gate Policy
+
+- `verificationState: indeterminate` caused by missing test environment is handled as `pass_with_warning` by default.
+- In strict mode (`allowIndeterminate: false`), indeterminate is blocking.
+- `allowIndeterminate: true`:
+  - Default operating mode; proceed with warning and follow-up actions.
 
 ## Step 0: Test Environment Detection
 
@@ -80,6 +88,10 @@ action:
        selfAuditOnly: true
        verificationState: indeterminate
        allPassed: null  # Cannot determine
+       gateDecision: pass_with_warning | failed
+       # decision rule:
+       # - allowIndeterminate=true  -> pass_with_warning
+       # - allowIndeterminate=false -> failed
        recommendation: "Consider setting up a test framework for automated verification"
 ```
 
@@ -173,7 +185,9 @@ selfAuditResult:
 completionStatus:
   testEnvironment: true | false
   selfAuditOnly: false
+  allowIndeterminate: true | false
   verificationState: passed | failed | indeterminate
+  gateDecision: pass | failed | pass_with_warning
   total: 5
   passed: 4
   failed: 1
@@ -185,6 +199,8 @@ completionStatus:
       error: "Expected error message not shown"
   failedPhase: "Phase 1"  # Determines where to retry
   recommendation: "Fix ErrorHandler.tsx, then re-run Phase 1"
+  verdictArtifact:
+    path: "{tasksRoot}/{feature-name}/verification-result.json"
 ```
 
 ### verificationState contract
@@ -192,7 +208,8 @@ completionStatus:
 - `passed`: tests ran and gate passed (`allPassed: true`)
 - `failed`: tests ran and failed (`allPassed: false`)
 - `indeterminate`: no executable test environment (typically `allPassed: null`, Self-Audit only)
-- Orchestrator must handle `indeterminate` with fallback gate logic instead of treating it as pass/fail.
+- With `allowIndeterminate=true` (default), continue as `pass_with_warning`.
+- With `allowIndeterminate=false`, treat indeterminate as blocking.
 
 ## Retry Logic
 

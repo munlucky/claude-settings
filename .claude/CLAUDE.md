@@ -2,9 +2,24 @@
 
 > This is the global rules document. For project-specific rules see `.claude/PROJECT.md`, and for agent canonical format see `.claude/rules/agents/agent-definition.md`.
 
+Last-Reviewed: 2026-02-19
+
 ## Overview
 
 This document uses modular rules stored in `.claude/rules/`. All rules are automatically loaded.
+
+## Knowledge Repository
+
+`AGENTS.md` and this file are entry maps (TOC), not the full source of truth.
+
+- Source of truth:
+  - `.claude/rules/` for enforceable rules
+  - `.claude/PROJECT.md` for project-specific contract
+  - `.claude/docs/guidelines/` for operational procedures
+  - `{tasksRoot}` for per-task working memory
+- Update rule: change source-of-truth docs first, then update links in this TOC.
+- Audit command: `.claude/scripts/knowledge-repo-audit.sh`
+- Detailed operations: `.claude/docs/guidelines/knowledge-repository-ops.md`
 
 ## Core Rules
 

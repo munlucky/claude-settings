@@ -2,9 +2,24 @@
 
 > 이 문서는 전역 규칙 문서입니다. 프로젝트별 규칙은 `.claude/PROJECT.md`, 에이전트 canonical format은 `.claude/rules/agents/agent-definition.md`를 참고하세요.
 
+Last-Reviewed: 2026-02-19
+
 ## 개요
 
 이 문서는 `.claude/rules/`에 저장된 모듈식 규칙을 사용합니다. 모든 규칙은 자동으로 로드됩니다.
+
+## 지식 저장소 운영 모델
+
+`AGENTS.md`와 이 문서는 엔트리 맵(TOC)이며, 전체 소스 오브 트루스 문서는 아닙니다.
+
+- 소스 오브 트루스 위치:
+  - `.claude/rules/`: 강제 규칙
+  - `.claude/PROJECT.md`: 프로젝트별 계약
+  - `.claude/docs/guidelines/`: 운영 절차
+  - `{tasksRoot}`: 작업 단위 메모리
+- 업데이트 규칙: TOC를 먼저 고치지 말고, 소스 오브 트루스 문서를 먼저 수정한 뒤 링크를 갱신합니다.
+- 감사 명령: `.claude/scripts/knowledge-repo-audit.sh`
+- 상세 운영 지침: `.claude/docs/guidelines/knowledge-repository-ops.ko.md`
 
 ## 핵심 규칙
 

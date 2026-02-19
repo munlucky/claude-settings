@@ -63,6 +63,8 @@ signals:
   testEnvironmentDetected: false
   testFramework: null
   testsWritten: false
+  allowIndeterminate: true
+  harnessVerdictRequired: true
 estimates: { estimatedFiles: 0, estimatedLines: 0, estimatedTime: unknown }
 phase: unknown
 complexity: unknown
@@ -77,6 +79,7 @@ artifacts:
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
+  verificationResultPath: "{tasksRoot}/{feature-name}/verification-result.json"
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
 projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
 notes: []
@@ -89,6 +92,11 @@ Follow `.claude/docs/guidelines/document-memory-policy.md`:
 - `userMessage` > 2000 words → summarize to `specification.md`, archive original
 - Independent features > 5 → split into `subtasks/subtask-NN/` with independent `context.md`
 - Keep `context.md` under `tokenBudget.contextMaxTokens`
+
+#### 2.0.1 Harness gate defaults
+- Default `signals.allowIndeterminate` to `true`.
+- When test environment is missing (`indeterminate`), continue by recording `pass_with_warning` by default.
+- In strict mode (`allowIndeterminate=false`), treat indeterminate as blocking.
 
 #### 2.0.5 Load Project Memory (Fork)
 
@@ -239,9 +247,10 @@ After `implementation-runner`:
 2. If `completion-verifier` is absent (simple flow), use `verify-changes.sh` (and `browser-verifier` for web projects) as completion gate.
 3. If `completionStatus.verificationState == passed` (or equivalent gate pass) → mark `implementationComplete: true`, proceed.
 4. If `completionStatus.verificationState == indeterminate` (typically `allPassed: null`):
-   - Run fallback gate: `verify-changes.sh` (and `browser-verifier` for web projects) when available.
-   - If fallback gate passes and Self-Audit has no blockers → proceed with `implementationComplete: true` and add warning note.
-   - If fallback gate is unavailable or fails → ask user for explicit decision/intervention.
+   - `allowIndeterminate == true`:
+     - record as `pass_with_warning` (including missing-test-environment warning) and proceed.
+   - `allowIndeterminate == false`:
+     - treat as failure (do not mark complete), request remediation and retry.
 5. Failure (`verificationState == failed` or fallback gate fail) + retryCount < 2 → return to failed phase and apply exit-code strategy (`exit 1` build-first fix, `exit 2` test-first fix), then retry.
 6. Failure + retryCount ≥ 2 → ask user for intervention.
 

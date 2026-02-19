@@ -63,6 +63,8 @@ signals:
   testEnvironmentDetected: false
   testFramework: null
   testsWritten: false
+  allowIndeterminate: true
+  harnessVerdictRequired: true
 estimates: { estimatedFiles: 0, estimatedLines: 0, estimatedTime: unknown }
 phase: unknown
 complexity: unknown
@@ -77,6 +79,7 @@ artifacts:
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
+  verificationResultPath: "{tasksRoot}/{feature-name}/verification-result.json"
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
 projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
 notes: []
@@ -89,6 +92,11 @@ notes: []
 - `userMessage` > 2000단어 → `specification.md`로 요약, 원본 아카이빙
 - 독립 기능 > 5개 → `subtasks/subtask-NN/`으로 분할 (독립 `context.md`)
 - `context.md`를 `tokenBudget.contextMaxTokens` 이하로 유지
+
+#### 2.0.1 Harness 게이트 기본값
+- `signals.allowIndeterminate` 기본값은 `true`입니다.
+- 테스트 환경 미감지(`indeterminate`) 시 기본적으로 `pass_with_warning`으로 기록하고 진행합니다.
+- 엄격 모드(`allowIndeterminate=false`)에서는 indeterminate를 차단합니다.
 
 #### 2.0.5 프로젝트 메모리 로드 (Fork)
 
@@ -239,9 +247,10 @@ Returns: { status, violations, needsApproval, warnings, reminders }
 2. `completion-verifier`가 없는 simple 흐름은 `verify-changes.sh`(웹 프로젝트는 `browser-verifier` 포함)를 완료 게이트로 사용합니다.
 3. `completionStatus.verificationState == passed`(또는 동등한 게이트 통과)면 `implementationComplete: true` 설정 후 진행합니다.
 4. `completionStatus.verificationState == indeterminate`(일반적으로 `allPassed: null`)이면:
-   - 가능할 경우 fallback 게이트로 `verify-changes.sh`(웹은 `browser-verifier` 포함)를 실행합니다.
-   - fallback 통과 + Self-Audit blocker 없음이면 경고 노트를 남기고 `implementationComplete: true`로 진행합니다.
-   - fallback 불가 또는 실패 시 사용자 명시적 판단/개입을 요청합니다.
+   - `allowIndeterminate == true`:
+     - `pass_with_warning`으로 기록하고(테스트 환경 미감지 경고 포함) 진행합니다.
+   - `allowIndeterminate == false`:
+     - 실패로 간주하고(완료 처리 금지) 보정/재시도를 수행합니다.
 5. 실패(`verificationState == failed` 또는 fallback 실패) + retryCount < 2이면 실패 원인별 종료 코드 전략(`exit 1` 빌드 우선 수정, `exit 2` 테스트 우선 수정)으로 복구 후 재시도합니다.
 6. 실패 + retryCount ≥ 2이면 사용자 개입을 요청합니다.
 
