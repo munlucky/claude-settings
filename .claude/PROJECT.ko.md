@@ -39,7 +39,7 @@
 
 > AI 에이전트가 테스트를 올바르게 실행하고 작성하기 위해 필요한 정보입니다.
 
-- **테스트 프레임워크**: [Jest / Vitest / Playwright / etc.]
+- **테스트 프레임워크**: [Jest / Vitest / Agent Browser / Playwright / etc.]
 - **테스트 파일 위치**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
 - **커버리지 기대치**: [80% 이상 / 핵심 로직만 / etc.]
 - **실행 명령**:

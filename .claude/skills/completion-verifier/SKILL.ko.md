@@ -16,7 +16,7 @@ context: fork
 
 - `analysisContext.*` (구조화된 상태)
 - `context.md` (경로: `analysisContext.artifacts.contextDocPath`, Acceptance Tests 섹션 포함)
-- 테스트 프레임워크 (PROJECT.md에서: jest/vitest/playwright)
+- 테스트 프레임워크 (PROJECT.md에서: jest/vitest/agent-browser/playwright)
 
 ## Step 0: 테스트 환경 감지
 
@@ -27,7 +27,7 @@ context: fork
 ```yaml
 testEnvironment:
   detected: false
-  framework: null      # jest | vitest | playwright | cypress | mocha | pytest | go-test | bats | null
+  framework: null      # jest | vitest | agent-browser | playwright | cypress | mocha | pytest | go-test | bats | null
   configFile: null
   testCommand: null
 

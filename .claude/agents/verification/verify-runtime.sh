@@ -34,17 +34,36 @@ log_error() {
 usage() {
   cat <<'EOF'
 Usage:
-  verify-runtime.sh [--url <target-url>] [--e2e "<command>"] [--timeout <seconds>]
+  verify-runtime.sh [--url <target-url>] [--e2e "<command>"] [--timeout <seconds>] [--no-auto-e2e]
 
 Examples:
   verify-runtime.sh --url http://localhost:3000
+  verify-runtime.sh --url http://localhost:3000                  # Auto-detect E2E command
+  verify-runtime.sh --url https://staging.example.com --e2e "npm run test:e2e:agent-browser"
   verify-runtime.sh --url https://staging.example.com --e2e "npm run test:e2e"
 EOF
 }
 
 URL="${APP_BASE_URL:-http://localhost:3000}"
-E2E_CMD=""
+E2E_CMD="${RUNTIME_E2E_CMD:-}"
+E2E_SOURCE=""
 TIMEOUT=10
+AUTO_E2E=true
+
+has_npm_script() {
+  local script_name="$1"
+
+  if [ ! -f "package.json" ] || ! command -v node >/dev/null 2>&1; then
+    return 1
+  fi
+
+  node -e '
+    const fs = require("fs");
+    const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    const key = process.argv[1];
+    process.exit(pkg.scripts && pkg.scripts[key] ? 0 : 1);
+  ' "$script_name" >/dev/null 2>&1
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -68,10 +87,12 @@ while [ $# -gt 0 ]; do
         exit 64
       fi
       E2E_CMD="$2"
+      E2E_SOURCE="cli"
       shift 2
       ;;
     --e2e=*)
       E2E_CMD="${1#*=}"
+      E2E_SOURCE="cli"
       shift
       ;;
     --timeout)
@@ -85,6 +106,10 @@ while [ $# -gt 0 ]; do
       ;;
     --timeout=*)
       TIMEOUT="${1#*=}"
+      shift
+      ;;
+    --no-auto-e2e)
+      AUTO_E2E=false
       shift
       ;;
     -h|--help)
@@ -101,6 +126,20 @@ done
 
 RUNTIME_FAILED=false
 E2E_FAILED=false
+
+if [ -n "$E2E_CMD" ] && [ -z "$E2E_SOURCE" ]; then
+  E2E_SOURCE="env:RUNTIME_E2E_CMD"
+fi
+
+if [ -z "$E2E_CMD" ] && [ "$AUTO_E2E" = true ]; then
+  if has_npm_script "test:e2e:agent-browser"; then
+    E2E_CMD="npm run test:e2e:agent-browser"
+    E2E_SOURCE="auto:test:e2e:agent-browser"
+  elif has_npm_script "test:e2e"; then
+    E2E_CMD="npm run test:e2e"
+    E2E_SOURCE="auto:test:e2e"
+  fi
+fi
 
 echo ""
 echo "======================================"
@@ -127,6 +166,9 @@ echo ""
 
 log_info "2/2 Optional E2E check"
 if [ -n "$E2E_CMD" ]; then
+  if [ -n "$E2E_SOURCE" ]; then
+    log_info "E2E source: ${E2E_SOURCE}"
+  fi
   log_info "Running: ${E2E_CMD}"
   if bash -lc "$E2E_CMD"; then
     log_success "E2E command passed"
@@ -135,7 +177,8 @@ if [ -n "$E2E_CMD" ]; then
     E2E_FAILED=true
   fi
 else
-  log_warning "No E2E command provided, skipping"
+  log_warning "No E2E command resolved, skipping"
+  log_info "Hint: set RUNTIME_E2E_CMD or add npm script test:e2e:agent-browser / test:e2e"
 fi
 echo ""
 
