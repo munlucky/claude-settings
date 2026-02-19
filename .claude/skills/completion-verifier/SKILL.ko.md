@@ -17,6 +17,14 @@ context: fork
 - `analysisContext.*` (구조화된 상태)
 - `context.md` (경로: `analysisContext.artifacts.contextDocPath`, Acceptance Tests 섹션 포함)
 - 테스트 프레임워크 (PROJECT.md에서: jest/vitest/agent-browser/playwright)
+- `analysisContext.signals.allowIndeterminate` (예외 허용 여부, 기본값: `true`)
+
+## Harness 게이트 정책
+
+- 테스트 환경 미감지로 인한 `verificationState: indeterminate`는 기본적으로 `pass_with_warning`으로 처리합니다.
+- `allowIndeterminate: false`인 엄격 모드에서는 indeterminate를 차단 상태로 처리합니다.
+- `allowIndeterminate: true`:
+  - 기본 운영 모드이며, 경고와 후속 조치를 남기고 진행합니다.
 
 ## Step 0: 테스트 환경 감지
 
@@ -78,6 +86,10 @@ action:
        selfAuditOnly: true
        verificationState: indeterminate
        allPassed: null  # 판단 불가
+       gateDecision: pass_with_warning | failed
+       # 결정 규칙:
+       # - allowIndeterminate=true  -> pass_with_warning
+       # - allowIndeterminate=false -> failed
        recommendation: "자동 검증을 위해 테스트 프레임워크 설정을 권장합니다"
 ```
 
@@ -168,7 +180,9 @@ selfAuditResult:
 completionStatus:
   testEnvironment: true | false
   selfAuditOnly: false
+  allowIndeterminate: true | false
   verificationState: passed | failed | indeterminate
+  gateDecision: pass | failed | pass_with_warning
   total: 5
   passed: 4
   failed: 1
@@ -180,6 +194,8 @@ completionStatus:
       error: "Expected error message not shown"
   failedPhase: "Phase 1"
   recommendation: "ErrorHandler.tsx 수정 후 Phase 1 재실행"
+  verdictArtifact:
+    path: "{tasksRoot}/{feature-name}/verification-result.json"
 ```
 
 ### verificationState 계약
@@ -187,7 +203,8 @@ completionStatus:
 - `passed`: 테스트 실행 + 게이트 통과 (`allPassed: true`)
 - `failed`: 테스트 실행 + 게이트 실패 (`allPassed: false`)
 - `indeterminate`: 실행 가능한 테스트 환경 없음 (일반적으로 `allPassed: null`, Self-Audit 전용)
-- 오케스트레이터는 `indeterminate`를 성공/실패로 단정하지 말고 fallback 게이트 정책으로 처리해야 합니다.
+- `allowIndeterminate=true`(기본)면 `pass_with_warning`으로 진행합니다.
+- `allowIndeterminate=false`면 차단 상태로 처리합니다.
 
 ## 재시도 로직
 
