@@ -3,9 +3,7 @@
 ## Source Mapping
 | Req ID | Source Section | Requirement Summary | This Phase Handling |
 |--------|----------------|---------------------|---------------------|
-| PRD-<n> | PRD-v2 <section> | <summary> | <task linkage> |
-| SPEC-<n> | SPEC-v2 <section> | <summary> | <task linkage> |
-| GDD-<n> | GDD <section> | <summary> | <task linkage> |
+| SRC-<n> | <source-name> <section> | <summary> | <task linkage> |
 
 ## Goal
 - <phase goal>

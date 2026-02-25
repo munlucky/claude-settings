@@ -3,9 +3,9 @@
 > This document is the plan of all plans.
 
 ## Source Baseline
-- `docs/PRD-v2.md`
-- `docs/SPEC-v2.md`
-- `docs/GDD.md`
+- `<source-doc-1.md>` (role: scope/priority)
+- `<source-doc-2.md>` (role: technical contract)
+- `<source-doc-3.md>` (role: experience/interaction)
 
 ## Objective
 - <overall objective>
@@ -21,9 +21,7 @@
 ## Source Traceability Matrix
 | Req ID | Source | Requirement Summary | Phase | Plan File | Status |
 |--------|--------|---------------------|-------|-----------|--------|
-| PRD-<n> | PRD-v2 | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
-| SPEC-<n> | SPEC-v2 | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
-| GDD-<n> | GDD | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
+| SRC-<n> | <source-name> | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
 
 ## Unmapped Source Requirements
 - <none or explicit gap list with reason>
