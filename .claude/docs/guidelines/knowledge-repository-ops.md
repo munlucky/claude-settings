@@ -5,7 +5,7 @@ applies-to:
   - moonshot-orchestrator
   - pre-flight-check
   - doc-auto-sync
-lastReviewed: 2026-02-19
+lastReviewed: 2026-03-05
 ---
 
 # Knowledge Repository Operations
@@ -60,7 +60,21 @@ Keep agent knowledge usable at runtime by separating:
 - Broken local links are blocking issues.
 - Missing review date is a warning until backfilled.
 
-## 6. Audit Command
+## 6. Always-Loaded Context Budget
+
+- `.claude/rules/**/*.md` must stay under line budget (default: `250`).
+- `.claude/CLAUDE.md` + rules combined must stay under total line budget (default: `320`).
+- Always-loaded estimated token budget is enforced (default: `2200`, char-based estimate).
+- Rule files should include constraints, not generic style examples.
+
+## 7. PROJECT Placeholder Policy
+
+- Template repositories may keep placeholders in `PROJECT.md` and `PROJECT.ko.md`.
+- Enforce filled PROJECT files only when needed:
+  - `KNOWLEDGE_REQUIRE_PROJECT_FILLED=true`
+- When not enforced, placeholder hits are reported in metrics only.
+
+## 8. Audit Command
 
 ```bash
 .claude/scripts/knowledge-repo-audit.sh
@@ -71,3 +85,11 @@ Output:
 - Console summary
 - JSON artifact: `.claude/knowledge-repo-audit-<runId>.json`
 
+Supported environment overrides:
+
+- `KNOWLEDGE_REVIEW_MAX_DAYS`
+- `KNOWLEDGE_ALWAYS_LOADED_RULE_LINE_MAX`
+- `KNOWLEDGE_ALWAYS_LOADED_TOTAL_LINE_MAX`
+- `KNOWLEDGE_ALWAYS_LOADED_TOKEN_MAX`
+- `KNOWLEDGE_REQUIRE_PROJECT_FILLED`
+- `HARNESS_KNOWLEDGE_AUDIT_FILE`
