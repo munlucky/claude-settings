@@ -5,7 +5,7 @@ applies-to:
   - moonshot-orchestrator
   - pre-flight-check
   - doc-auto-sync
-lastReviewed: 2026-02-19
+lastReviewed: 2026-03-05
 ---
 
 # Knowledge Repository 운영 지침
@@ -60,7 +60,21 @@ lastReviewed: 2026-02-19
 - 로컬 링크 깨짐은 차단 이슈로 처리
 - 리뷰 날짜 누락은 백필 전까지 경고로 처리
 
-## 6. 감사 명령
+## 6. 항상 로드되는 컨텍스트 예산
+
+- `.claude/rules/**/*.md` 라인 수는 예산(기본 `250`) 이하로 유지
+- `.claude/CLAUDE.md` + rules 총 라인 수는 예산(기본 `320`) 이하로 유지
+- 항상 로드되는 문서의 추정 토큰 예산(기본 `2200`)을 넘지 않도록 유지
+- rules 문서는 일반 예시보다 제약 조건 중심으로 유지
+
+## 7. PROJECT 플레이스홀더 정책
+
+- 템플릿 저장소에서는 `PROJECT.md`, `PROJECT.ko.md` 플레이스홀더를 유지할 수 있습니다.
+- 실제 프로젝트에서 채움 강제를 원할 때만 아래 옵션을 사용합니다.
+  - `KNOWLEDGE_REQUIRE_PROJECT_FILLED=true`
+- 강제를 끄면 플레이스홀더는 메트릭에만 기록됩니다.
+
+## 8. 감사 명령
 
 ```bash
 .claude/scripts/knowledge-repo-audit.sh
@@ -71,3 +85,11 @@ lastReviewed: 2026-02-19
 - 콘솔 요약
 - JSON 아티팩트: `.claude/knowledge-repo-audit-<runId>.json`
 
+환경 변수 오버라이드:
+
+- `KNOWLEDGE_REVIEW_MAX_DAYS`
+- `KNOWLEDGE_ALWAYS_LOADED_RULE_LINE_MAX`
+- `KNOWLEDGE_ALWAYS_LOADED_TOTAL_LINE_MAX`
+- `KNOWLEDGE_ALWAYS_LOADED_TOKEN_MAX`
+- `KNOWLEDGE_REQUIRE_PROJECT_FILLED`
+- `HARNESS_KNOWLEDGE_AUDIT_FILE`

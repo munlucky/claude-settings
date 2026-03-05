@@ -6,28 +6,21 @@ paths:
 
 # Agent Delegation Rules
 
-## Auto-delegation Conditions
+## Delegate When Needed
 
-| Situation | Target | Mode |
-|-----------|--------|------|
-| Complex feature request | moonshot-orchestrator | PLANNING |
-| Unclear requirements | requirements-analyzer | PLANNING |
-| Context building needed | context-builder | PLANNING |
-| After code changes | codex-review-code | VERIFICATION |
-| Testing needed (complex) | completion-verifier | VERIFICATION |
-| Security concern detected | security-reviewer | VERIFICATION |
-| Build error occurred | build-error-resolver | EXECUTION |
-| Documentation update needed | documentation-agent | EXECUTION |
-| Pre-work check | pre-flight-check | PLANNING |
+- Complex feature/refactor -> `moonshot-orchestrator` first.
+- Unclear requirements -> `requirements-analyzer`.
+- Build/test failures -> `build-error-resolver` or `completion-verifier`.
+- Security concerns -> `security-reviewer`.
+- Documentation alignment -> `documentation-agent`.
 
-## Do NOT Delegate
+## Do Not Delegate
 
-- Simple questions/info lookup
-- Read/describe file only tasks
-- Clear and simple modifications (1-2 files)
+- Simple read-only Q&A.
+- Small direct edits with clear scope.
 
-## Delegation Principles
+## Delegation Quality Bar
 
-1. **Scope clarity**: Provide clear scope and expected outcomes
-2. **Context transfer**: Include sufficient background information
-3. **Result verification**: Always review delegation results
+- Pass clear scope, expected output, and constraints.
+- Pass minimal context (paths/summaries, not full history).
+- Verify delegate output before finalizing.

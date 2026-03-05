@@ -1,57 +1,40 @@
 # Global Development Guidelines
 
-> This is the global rules document. For project-specific rules see `.claude/PROJECT.md`, and for agent canonical format see `.claude/rules/agents/agent-definition.md`.
+> Entry map for always-loaded instructions. Keep this file short.
 
-Last-Reviewed: 2026-02-19
+Last-Reviewed: 2026-03-05
 
 ## Overview
 
-This document uses modular rules stored in `.claude/rules/`. All rules are automatically loaded.
+Rules in `.claude/rules/` are always loaded recursively. This file defines only Tier-1 constraints.
 
-## Knowledge Repository
+## Tier-1 Constraints
 
-`AGENTS.md` and this file are entry maps (TOC), not the full source of truth.
+1. `AGENTS.md` and this file are TOCs, not full policy dumps.
+2. Store durable policy in source-of-truth docs:
+   - `.claude/PROJECT.md` (project contract)
+   - `.claude/rules/` (enforceable rules)
+   - `.claude/docs/guidelines/` (operational procedures)
+3. Keep always-loaded context minimal:
+   - `.claude/rules/**/*.md` should stay within line/token budget
+   - Keep only constraints AI cannot infer from code structure
+4. Update source docs first, then refresh links in TOC docs.
+5. Run `.claude/scripts/knowledge-repo-audit.sh` after structural doc changes.
 
-- Source of truth:
-  - `.claude/rules/` for enforceable rules
-  - `.claude/PROJECT.md` for project-specific contract
-  - `.claude/docs/guidelines/` for operational procedures
-  - `{tasksRoot}` for per-task working memory
-- Update rule: change source-of-truth docs first, then update links in this TOC.
-- Audit command: `.claude/scripts/knowledge-repo-audit.sh`
-- Detailed operations: `.claude/docs/guidelines/knowledge-repository-ops.md`
+## Default Document Paths
 
-## Core Rules
-
-> Rules in `.claude/rules/` are auto-loaded. See that folder for all active rules.
-
-## Document Memory Policy
-
-> **Critical**: Follow `.claude/docs/guidelines/document-memory-policy.md` to prevent 64k token limit errors.
-
-**Default document paths** (override in PROJECT.md if needed):
 ```yaml
 documentPaths:
-  tasksRoot: ".claude/docs/tasks"       # DEFAULT (often gitignored)
-  # tasksRoot: "docs/claude-tasks"      # Use this for git-tracked projects
+  tasksRoot: ".claude/docs/tasks"
   agreementsRoot: ".claude/docs/agreements"
   guidelinesRoot: ".claude/docs/guidelines"
 ```
 
-**Token limits (must enforce):**
-| Document | Max Tokens | Action on Exceed |
-|----------|-----------|------------------|
-| context.md | 8,000 | Archive previous version |
-| specification.md | 2,000 | Summarize, move full to archives/ |
-| Review outputs | 4,000 | Store full in archives/, summary only in context.md |
+For detailed token and archive policy, see `.claude/docs/guidelines/document-memory-policy.md`.
 
-**Triggers:**
-- Spec > 2,000 words → Summarize + archive original
-- Independent features > 5 → Split into subtasks
-- Plan/review loop → Replace sections, don't append
-
-## Quality/Verification
 ## References
 
-- Project-specific rules: @.claude/PROJECT.md
-- Agent format: @.claude/CLAUDE.md
+- Project contract: `@.claude/PROJECT.md`
+- Knowledge repository ops: `@.claude/docs/guidelines/knowledge-repository-ops.md`
+- Token optimization: `@.claude/docs/guidelines/token-optimization.md`
+- Agent definition rule: `@.claude/rules/agents/agent-definition.md`
