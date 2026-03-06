@@ -31,6 +31,9 @@ PM 분석 스킬들을 순차적으로 실행하고 최종 에이전트 체인�
   - 문서상 `Task (fork)` 단계는 최소 입력 전달 + 요약 결과 병합 규칙으로 동일한 격리 계약을 유지
   - 불확실성/질문 처리는 `codex-validate-plan`(계획 단계), `codex-review-code`(구현 후 단계) 결과를 우선 사용
   - 해당 결과에서도 차단 이슈가 남을 때만 사용자 질문 수행
+- 크로스 런타임 정책 소스:
+  - 워크플로우 정책은 skills/orchestrator 상태에 유지합니다.
+  - `commands`/hooks는 선택적 어댑터이며 스킬 라우팅만 수행해야 합니다.
 
 ## 컨텍스트 예산 규칙
 
@@ -63,6 +66,10 @@ signals:
   testEnvironmentDetected: false
   testFramework: null
   testsWritten: false
+  workflowProfile: standard
+  designApproved: false
+  isolatedWorkspaceReady: false
+  evidenceGateRequired: true
   allowIndeterminate: true
   harnessVerdictRequired: true
 estimates: { estimatedFiles: 0, estimatedLines: 0, estimatedTime: unknown }
@@ -97,6 +104,17 @@ notes: []
 - `signals.allowIndeterminate` 기본값은 `true`입니다.
 - 테스트 환경 미감지(`indeterminate`) 시 기본적으로 `pass_with_warning`으로 기록하고 진행합니다.
 - 엄격 모드(`allowIndeterminate=false`)에서는 indeterminate를 차단합니다.
+
+#### 2.0.2 워크플로우 프로필 해석 (standard vs strict)
+- `signals.workflowProfile` 기본값은 `standard`입니다.
+- 아래 조건 중 하나라도 만족하면 `strict`로 승격합니다.
+  - 사용자가 strict/no-warning/hard-gate 동작을 명시적으로 요청
+  - 현재 작업의 프로젝트 정책이 엄격 검증 규율을 요구
+- `workflowProfile == strict`일 때:
+  - `signals.allowIndeterminate = false`
+  - 구현 전 설계 승인 게이트 필수(`design-approval-gate`)
+  - 첫 구현 단계 전 격리 작업공간 게이트 필수(`workspace-isolation-gate`)
+  - 완료 주장 전 증거 게이트 필수(`verification-evidence-gate`)
 
 #### 2.0.5 프로젝트 메모리 로드 (Fork)
 
@@ -149,10 +167,13 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `requirements-analyzer` | Task | |
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
+| `design-approval-gate` | Skill | strict 프로필 설계 승인 게이트 |
+| `workspace-isolation-gate` | Skill | strict 프로필 브랜치/작업공간 격리 게이트 |
 | `karpathy-execution-gate` | Skill | 구현 전 실행 규율 게이트 |
 | `implementation-runner` | Task | |
 | `code-simplifier` | Plugin | 구현 후 코드 간소화 |
 | `completion-verifier` | Skill (fork) | 테스트 환경 자동 감지 |
+| `verification-evidence-gate` | Skill | strict 프로필 완료 전 증거 게이트 |
 | `doc-auto-sync` | Skill | 문서 자동 동기화 및 부트스트랩 |
 | `codex-review-code` | Skill | |
 | `project-memory-reviewer` | Task (fork) | 컨텍스트 격리 |
@@ -226,6 +247,9 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | `webRuntimeCheck` | `reactProject == true` | `verify-changes.sh` 앞에 `browser-verifier` 삽입 (`verify-changes.sh`가 없으면 `completion-verifier` 직후) |
 | `phasePlanDetected` | master plan + phase 문서 감지 | `implementation-runner` 전에 `moonshot-phase-runner`를 삽입해 phase-status 준비/핸드오프 수행 |
 | `executionDisciplineMissing` | medium/complex 체인에 `implementation-runner`는 있으나 `karpathy-execution-gate`가 없음 | 첫 `implementation-runner` 직전에 `karpathy-execution-gate` 삽입 |
+| `strictProfile` | `workflowProfile == strict`이고 설계 승인 단계가 없음 | planning→implementation 전환 전에 `design-approval-gate` 삽입 |
+| `strictProfile` | `workflowProfile == strict`이고 격리 단계가 없음 | 첫 `implementation-runner` 직전에 `workspace-isolation-gate` 삽입 |
+| `strictProfile` | `workflowProfile == strict`이고 증거 단계가 없음 | `completion-verifier`(또는 verify fallback) 직후 `verification-evidence-gate` 삽입 |
 | `multipleFailures` | notes에 에러/실패 2건 이상 | 체인 끝에 `failure-analyzer` + `workflow-self-improver` 추가 |
 
 ### 3.2 프로젝트 메모리 리뷰 (Fork)
@@ -247,12 +271,13 @@ Returns: { status, violations, needsApproval, warnings, reminders }
 2. `completion-verifier`가 없는 simple 흐름은 `verify-changes.sh`(웹 프로젝트는 `browser-verifier` 포함)를 완료 게이트로 사용합니다.
 3. `completionStatus.verificationState == passed`(또는 동등한 게이트 통과)면 `implementationComplete: true` 설정 후 진행합니다.
 4. `completionStatus.verificationState == indeterminate`(일반적으로 `allPassed: null`)이면:
+   - `workflowProfile == strict` 또는 `allowIndeterminate == false`:
+     - 실패로 간주하고(완료 처리 금지) 보정/재시도를 수행합니다.
    - `allowIndeterminate == true`:
      - `pass_with_warning`으로 기록하고(테스트 환경 미감지 경고 포함) 진행합니다.
-   - `allowIndeterminate == false`:
-     - 실패로 간주하고(완료 처리 금지) 보정/재시도를 수행합니다.
-5. 실패(`verificationState == failed` 또는 fallback 실패) + retryCount < 2이면 실패 원인별 종료 코드 전략(`exit 1` 빌드 우선 수정, `exit 2` 테스트 우선 수정)으로 복구 후 재시도합니다.
-6. 실패 + retryCount ≥ 2이면 사용자 개입을 요청합니다.
+5. `workflowProfile == strict`이면 완료 상태를 말하기 전에 `verification-evidence-gate`를 반드시 실행합니다.
+6. 실패(`verificationState == failed` 또는 fallback 실패) + retryCount < 2이면 실패 원인별 종료 코드 전략(`exit 1` 빌드 우선 수정, `exit 2` 테스트 우선 수정)으로 복구 후 재시도합니다.
+7. 실패 + retryCount ≥ 2이면 사용자 개입을 요청합니다.
 
 ### 3.4 Phase Runner 핸드오프 계약
 

@@ -26,6 +26,10 @@ signals:
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false
+  workflowProfile: standard
+  designApproved: false
+  isolatedWorkspaceReady: false
+  evidenceGateRequired: true
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -65,6 +69,16 @@ skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함�
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**프로필 오버레이 (크로스 런타임 정책)**:
+- `workflowProfile == standard`:
+  - 복잡도 기반 기본 체인을 그대로 사용한다.
+- `workflowProfile == strict`:
+  - `allowIndeterminate=false`로 설정한다.
+  - `feature|modification` 작업의 planning→implementation 전환 전에 `design-approval-gate`를 삽입한다.
+  - 첫 `implementation-runner` 직전에 `workspace-isolation-gate`를 삽입한다.
+  - `completion-verifier` 직후(또는 simple 흐름에서는 `verify-changes.sh` 직후) `verification-evidence-gate`를 삽입한다.
+  - strict 게이트 중 하나라도 실패하면 `planning` 단계로 유지(또는 복귀)하고 보정을 요구한다.
 
 **실행 규율 게이트 (Karpathy loop)**:
 - medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 실행한다.
@@ -127,6 +141,9 @@ complex는 항상 테스트 기반 완료 검증을 포함한다.
 **병렬 금지 예시**:
 - `requirements-analyzer` ↔ `context-builder` (요구사항 선행 필요)
 - `codex-validate-plan` ↔ `implementation-runner` (계획 검증 후 구현)
+- `design-approval-gate` ↔ `implementation-runner` (승인 선행 필요)
+- `workspace-isolation-gate` ↔ `implementation-runner` (격리 선행 필요)
+- `verification-evidence-gate` ↔ 완료 보고/선언 (증거 체크 선행 필요)
 
 ## 출력 (patch)
 ```yaml
