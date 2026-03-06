@@ -31,6 +31,9 @@ Resolve `executionRuntime` before orchestration:
   - Steps documented as `Task (fork)` must preserve isolation by passing minimal input and merging summarized output only.
   - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
   - Ask user only when those outputs still indicate unresolved blocking items.
+- Cross-runtime policy source of truth:
+  - Keep workflow policy in skills/orchestrator state.
+  - `commands`/hooks are optional adapters and must only route to skills.
 
 ## Context Budget Rule
 
@@ -63,6 +66,10 @@ signals:
   testEnvironmentDetected: false
   testFramework: null
   testsWritten: false
+  workflowProfile: standard
+  designApproved: false
+  isolatedWorkspaceReady: false
+  evidenceGateRequired: true
   allowIndeterminate: true
   harnessVerdictRequired: true
 estimates: { estimatedFiles: 0, estimatedLines: 0, estimatedTime: unknown }
@@ -97,6 +104,17 @@ Follow `.claude/docs/guidelines/document-memory-policy.md`:
 - Default `signals.allowIndeterminate` to `true`.
 - When test environment is missing (`indeterminate`), continue by recording `pass_with_warning` by default.
 - In strict mode (`allowIndeterminate=false`), treat indeterminate as blocking.
+
+#### 2.0.2 Workflow profile resolution (standard vs strict)
+- Default `signals.workflowProfile` to `standard`.
+- Promote to `strict` if one of the following is true:
+  - User explicitly asks for strict/no-warning/hard-gate behavior.
+  - Project policy for the current task requires strict verification discipline.
+- When `workflowProfile == strict`:
+  - Set `signals.allowIndeterminate = false`.
+  - Require design approval gate before implementation (`design-approval-gate`).
+  - Require isolated workspace gate before first implementation (`workspace-isolation-gate`).
+  - Require evidence gate before any completion claim (`verification-evidence-gate`).
 
 #### 2.0.5 Load Project Memory (Fork)
 
@@ -149,10 +167,13 @@ Run `decisions.skillChain` in order.
 | `requirements-analyzer` | Task | |
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
+| `design-approval-gate` | Skill | Strict profile design approval gate |
+| `workspace-isolation-gate` | Skill | Strict profile branch/workspace isolation gate |
 | `karpathy-execution-gate` | Skill | Pre-implementation discipline gate |
 | `implementation-runner` | Task | |
 | `code-simplifier` | Plugin | Post-implementation simplification |
 | `completion-verifier` | Skill (fork) | Test environment auto-detect |
+| `verification-evidence-gate` | Skill | Strict profile evidence-before-completion gate |
 | `doc-auto-sync` | Skill | Auto-docs update & bootstrap |
 | `codex-review-code` | Skill | |
 | `project-memory-reviewer` | Task (fork) | Context isolation |
@@ -226,6 +247,9 @@ Run `decisions.skillChain` in order.
 | `webRuntimeCheck` | `reactProject == true` | Insert `browser-verifier` before `verify-changes.sh` (or right after `completion-verifier` if `verify-changes.sh` is absent) |
 | `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` for phase-status preparation/handoff |
 | `executionDisciplineMissing` | medium/complex chain has `implementation-runner` but no `karpathy-execution-gate` | Insert `karpathy-execution-gate` right before the first `implementation-runner` |
+| `strictProfile` | `workflowProfile == strict` and no design approval step | Insert `design-approval-gate` before planning-to-implementation transition |
+| `strictProfile` | `workflowProfile == strict` and no isolation step | Insert `workspace-isolation-gate` right before the first `implementation-runner` |
+| `strictProfile` | `workflowProfile == strict` and no evidence step | Insert `verification-evidence-gate` after completion-verifier (or after verify-changes fallback) |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
 
 ### 3.2 Project Memory Review (Fork)
@@ -247,12 +271,13 @@ After `implementation-runner`:
 2. If `completion-verifier` is absent (simple flow), use `verify-changes.sh` (and `browser-verifier` for web projects) as completion gate.
 3. If `completionStatus.verificationState == passed` (or equivalent gate pass) → mark `implementationComplete: true`, proceed.
 4. If `completionStatus.verificationState == indeterminate` (typically `allPassed: null`):
+   - `workflowProfile == strict` OR `allowIndeterminate == false`:
+     - treat as failure (do not mark complete), request remediation and retry.
    - `allowIndeterminate == true`:
      - record as `pass_with_warning` (including missing-test-environment warning) and proceed.
-   - `allowIndeterminate == false`:
-     - treat as failure (do not mark complete), request remediation and retry.
-5. Failure (`verificationState == failed` or fallback gate fail) + retryCount < 2 → return to failed phase and apply exit-code strategy (`exit 1` build-first fix, `exit 2` test-first fix), then retry.
-6. Failure + retryCount ≥ 2 → ask user for intervention.
+5. If `workflowProfile == strict`, run `verification-evidence-gate` before any completion statement.
+6. Failure (`verificationState == failed` or fallback gate fail) + retryCount < 2 → return to failed phase and apply exit-code strategy (`exit 1` build-first fix, `exit 2` test-first fix), then retry.
+7. Failure + retryCount ≥ 2 → ask user for intervention.
 
 ### 3.4 Phase Runner Handoff Contract
 

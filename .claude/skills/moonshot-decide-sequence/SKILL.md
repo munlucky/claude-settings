@@ -26,6 +26,10 @@ signals:
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false
+  workflowProfile: standard
+  designApproved: false
+  isolatedWorkspaceReady: false
+  evidenceGateRequired: true
 estimates:
   estimatedFiles: 0
   estimatedLines: 0
@@ -65,6 +69,16 @@ Include only stages to run **after moonshot-decide-sequence** (do not include mo
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**Profile overlays (cross-runtime policy):**
+- `workflowProfile == standard`:
+  - Use base chain by complexity.
+- `workflowProfile == strict`:
+  - Set `allowIndeterminate=false`.
+  - Insert `design-approval-gate` before planning-to-implementation transition for `feature|modification` tasks.
+  - Insert `workspace-isolation-gate` immediately before the first `implementation-runner`.
+  - Insert `verification-evidence-gate` after `completion-verifier` (or after `verify-changes.sh` in simple flow).
+  - If any strict gate fails, keep phase as `planning` (or return from implementation to planning) and require remediation.
 
 **Execution discipline gate (Karpathy loop)**:
 - For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
@@ -127,6 +141,9 @@ Only run dependency-free steps in parallel. If results affect the next stage, do
 **Not allowed in parallel**:
 - `requirements-analyzer` <-> `context-builder` (requirements must precede)
 - `codex-validate-plan` <-> `implementation-runner` (plan validation before implementation)
+- `design-approval-gate` <-> `implementation-runner` (approval must happen first)
+- `workspace-isolation-gate` <-> `implementation-runner` (isolation must happen first)
+- `verification-evidence-gate` <-> completion claim/report (evidence check must happen first)
 
 ## Output (patch)
 ```yaml

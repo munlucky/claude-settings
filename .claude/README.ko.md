@@ -86,9 +86,12 @@ See @README for project overview and @package.json for npm commands.
 
 ### 실행 및 검증
 - `pre-flight-check`
+- `design-approval-gate` (신규, strict 프로필)
+- `workspace-isolation-gate` (신규, strict 프로필)
 - `karpathy-execution-gate` (신규)
 - `implementation-runner`
 - `completion-verifier` (신규)
+- `verification-evidence-gate` (신규, strict 프로필)
 - `codex-validate-plan`
 - `codex-review-code`
 
