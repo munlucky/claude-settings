@@ -1,5 +1,15 @@
 # PM Analysis Guidelines
 
+## 0. Diagnosis Order
+
+When the workflow misbehaves, inspect layers in this order:
+
+1. **Execution plane**: was the task correctly classified as `read_only`, `product_project`, or `meta_harness`?
+2. **Readiness**: did `pre-flight-check` correctly emit `projectContractReady`, `contextReady`, and `verificationContractReady`?
+3. **Contract**: is a downstream verification contract present and aligned with the task?
+4. **Verification**: did completion/evidence gates consume fresh verdict artifacts?
+5. **Review/Fix-forward**: were remaining issues categorized correctly?
+
 ## 1. Task Type Classification
 ### feature (new feature)
 **Keywords**: "new", "add", "implement", "create", "build"

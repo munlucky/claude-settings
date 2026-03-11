@@ -30,6 +30,8 @@ Apply approved changes directly:
 | `.claude/PROJECT.md` | Update Section | Append new content to section (DO NOT OVERWRITE existing) |
 | `.claude/rules/*.md` | Append Rule | Add new rule to existing file |
 | `.claude/CLAUDE.md` | Update Guideline | Modify global guideline |
+| `.claude/docs/guidelines/*.md` | Update Guideline | Refresh contract and readiness guidance |
+| `.claude/skills/*-gate/SKILL.md` | Proposal only | Gate logic changes require manual review |
 
 ### 3. Request (Manual)
 For complex changes (skill logic, new files), create a task/request:
@@ -42,6 +44,7 @@ For complex changes (skill logic, new files), create a task/request:
 2. **Backup**: Backup target file before modification (in memory or temp file).
 3. **Validation**: Check YAML validity after modification if applicable.
 4. **Skill Logic Lock**: Changes to `SKILL.md` files **ALWAYS** require `autoApplicable: false` (manual review).
+5. **Gate Logic Lock**: New gate skill definitions and orchestrator routing changes are proposal-only.
 
 ## Output (patch)
 
