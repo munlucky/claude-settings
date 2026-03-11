@@ -1,104 +1,48 @@
 ---
 name: pre-flight-check
-description: Checks essential information and project status before starting a task.
+description: 작업 시작 전에 필수 정보와 상태를 점검하고 readiness 시그널을 출력한다.
 ---
 
-# Pre-Flight Check Skill
+# Pre-Flight Check 스킬
 
-**역할**: 작업 시작 전에 필수 정보와 프로젝트 상태를 점검해 누락을 줄입니다.
+## 역할
+누락을 줄이기 위해 사전 상태를 점검하고, 오케스트레이터가 바로 분기할 수 있는 구조화된 readiness 시그널을 만든다.
 
 ## 입력
-- `analysisContext.*` (구조화된 상태, 있으면 참조)
+- `analysisContext.*`
 - 기능명/브랜치명 (선택)
-- 필수 문서 경로: CLAUDE.md, context.md 등
+- `CLAUDE.md`, `PROJECT.md`, `context.md`, verification contract 등 관련 문서 경로
 
 ## 체크 항목
-- 화면 정의서 버전/디자인 산출물 존재 여부
-- API 스펙 확보 여부
-- 유사 기능 참조 여부
+- `executionPlane`
+- 프로젝트 계약서(`PROJECT.md`) 준비 상태
+- task context(`context.md`) 준비 상태
+- verification contract 준비 상태
 - git 상태/브랜치, 빌드 상태
-- context.md 최신 여부, pending-questions.md 미해결 항목
-- **문서 메모리 정책 체크**:
-  - context.md 토큰 사용량 (~80%인 6,000토큰 초과 시 경고)
-  - specification.md 존재 및 요약 여부 (대형 명세서인 경우)
-  - archives/ 디렉토리 구조 확인
-- **문서 신선도 체크**:
-  - `ARCHITECTURE.md` 최종 수정일 vs 코드 변경일
-  - `docs/generated/*` vs 관련 소스 코드
+- 문서 메모리 정책과 문서 신선도
 
-## 출력 (예시)
-```markdown
-# 사전 체크 결과
+## 구조화된 출력 계약
 
-## 필수 정보
-✅ 화면 정의서: v3 (YYYY-MM-DD)
-✅ API 스펙: 초안 확보
-⚠️  유사 기능 참조: 찾지 못함
-
-## 프로젝트 상태
-✅ git 상태: clean
-✅ 브랜치: feature/{feature-name}
-✅ 빌드 상태: 성공
-
-## 문서
-✅ CLAUDE.md: 최신
-⚠️  context.md: 없음 (생성 필요)
-
-## 문서 메모리 정책
-✅ context.md 토큰: ~3,200 (8,000 한도 이내)
-✅ specification.md: 요약됨 (원본은 archives/에)
-✅ archives/ 디렉토리: 존재함
-
-## 문서 신선도
-OK ARCHITECTURE.md: 최신 (2일 전 수정)
-WARN docs/generated/api-reference.md: 오래됨 (어제 코드 변경됨) -> `docStale` 시그널 트리거
-
-## 권장 액션
-1. [HIGH] context.md 생성 (ContextBuilder Agent)
-2. [MEDIUM] 디자인 산출물 확인 (design-spec-extractor 호출)
+```yaml
+signals:
+  executionPlane: product_project
+  projectContractReady: false
+  contextReady: false
+  verificationContractReady: false
+  shouldEscalateStrict: true
+notes:
+  - "pre-flight: executionPlane=product_project"
+recommendedActions:
+  - "run project-contract-gate"
+  - "run context-readiness-gate"
 ```
 
----
-
-## 안티패턴 체크
-
-> "AI 에이전트를 위한 좋은 스펙 작성법" 가이드에 따른 흔한 실수 감지
-
-### 체크 항목
-
-| 안티패턴 | 감지 방법 | 상태 |
-|----------|----------|------|
-| **모호한 프롬프트** | "멋진 걸 만들어줘", "더 잘 작동하게" 같은 불명확 요청 | ⚠️ |
-| **요약 없는 대용량 컨텍스트** | specification.md > 3,000 토큰 + 요약 없음 | ⚠️ |
-| **6가지 핵심 영역 누락** | PROJECT.md에 명령어/테스트/구조/스타일/Git/경계 중 미정의 | ⚠️ |
-| **바이브 코딩 ↔ 프로덕션 혼동** | 테스트 없이 프로덕션 배포 시도 | ⚠️ |
-| **치명적인 삼위일체 무시** | 속도/비결정성/비용 중 검증 없이 진행 | ⚠️ |
-
-### 감지 시 권장 액션
-
-| 감지된 안티패턴 | 권장 액션 |
-|----------------|----------|
-| 모호한 요청 | `requirements-analyzer` 호출하여 명확화 |
-| 대용량 문서 | `document-memory-policy.md` 따라 요약 |
-| 영역 누락 | PROJECT.md 점검 권고, 템플릿 섹션 참조 |
-| 테스트 없음 | `completion-verifier` 호출 전 테스트 작성 권고 |
-
-### 출력 예시
-
-```markdown
-## 안티패턴 체크 결과
-
-| 항목 | 상태 | 액션 |
-|------|------|------|
-| 명확한 요청 | ✅ | - |
-| 컨텍스트 크기 | ✅ | ~2,500 토큰 |
-| 6가지 영역 | ⚠️ | Git 워크플로우 미정의 |
-| 테스트 정의 | ✅ | - |
-
-**권장 액션:**
-1. [MEDIUM] PROJECT.md에 Git 워크플로우 섹션 추가
-```
+## 안티패턴 대응
+- 모호한 요청 -> `requirements-analyzer`
+- PROJECT.md 핵심 섹션 부족 -> `project-contract-gate`
+- context 최소 섹션 부족 -> `context-readiness-gate`
+- 검증 계약 없음 -> `verification-contract-gate`
 
 ## 참조
-- `.claude/docs/guidelines/document-memory-policy.md`
-
+- `.claude/docs/guidelines/context-readiness-schema.ko.md`
+- `.claude/docs/guidelines/verification-contract.ko.md`

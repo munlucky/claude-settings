@@ -10,6 +10,10 @@
 - 에이전트 포맷: `.claude/CLAUDE.md`
 - 오케스트레이터 스킬: `.claude/skills/moonshot-orchestrator/SKILL.md`
 
+기본 원칙:
+- 일반적인 코드 작업은 `moonshot-orchestrator`를 기본 진입점으로 사용합니다.
+- read-only 요청, 명시적 direct-skill 호출, self-host 워크플로우 수정은 우회가 허용됩니다.
+
 ## 메모리 구조와 우선순위
 
 Claude Code는 아래 순서로 메모리를 로드합니다(상위가 기본 규칙, 하위가 더 구체적인 규칙).
@@ -86,6 +90,9 @@ See @README for project overview and @package.json for npm commands.
 
 ### 실행 및 검증
 - `pre-flight-check`
+- `project-contract-gate`
+- `context-readiness-gate`
+- `verification-contract-gate`
 - `design-approval-gate` (신규, strict 프로필)
 - `workspace-isolation-gate` (신규, strict 프로필)
 - `karpathy-execution-gate` (신규)
@@ -105,13 +112,24 @@ See @README for project overview and @package.json for npm commands.
 - `security-reviewer`
 - `build-error-resolver`
 
+## executionPlane
+
+오케스트레이터는 요청을 먼저 아래 세 가지 plane 중 하나로 분류합니다.
+
+- `read_only`: 설명, 요약, 조사, review-only
+- `product_project`: downstream 프로젝트 구현/검증
+- `meta_harness`: `.claude/skills`, `.claude/rules`, `.claude/agents`, 설치/배포 로직 같은 self-host 작업
+
+`product_project`에서는 구현 전에 readiness gate를 통과해야 합니다.
+
 ## 일반 흐름 (예시)
 
-1. `moonshot-orchestrator`가 요청을 분석하고 체인을 구성합니다.
-2. `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
-3. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
-4. `verification-agent`와 `verify-changes.sh`로 품질을 확인합니다.
-5. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
+1. `moonshot-orchestrator`가 요청을 분석하고 `executionPlane`을 분류합니다.
+2. `product_project`이면 `pre-flight-check`와 readiness gate(`project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`)가 최소 계약을 확인합니다.
+3. `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
+4. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
+5. `completion-verifier`, `verification-evidence-gate`, `verify-changes.sh`/`verify-runtime.sh`가 계약 기반 검증을 수행합니다.
+6. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
 
 ## 문서와 템플릿
 
@@ -123,3 +141,4 @@ See @README for project overview and @package.json for npm commands.
 - 영문 `.md`는 ASCII만 사용하고 동일한 `.ko.md`를 함께 유지합니다.
 - 이름이나 경로를 바꾸면 이 문서와 `install-claude.sh`를 함께 갱신합니다.
 - 대상 프로젝트에 `PROJECT.md`가 없다면 `project-md-refresh` 스킬을 실행합니다.
+- 대상 프로젝트 검증은 `.claude/verification.contract.yaml` 같은 계약 문서로 선언하는 방식을 우선합니다.

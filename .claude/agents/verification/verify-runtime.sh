@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 
-# Runtime verification script
-# 목적: 웹 런타임(URL) 헬스체크 + 선택적 E2E 실행
-# 종료 코드:
-#   0: 성공
-#   1: 런타임(URL) 검증 실패
-#   2: E2E 테스트 실패
-#
-# Harness outputs:
-#   - json verdict: .claude/runtime-verdict-<runId>.json
+# Generic runtime verification harness.
+# Purpose:
+#   - verify runtime reachability
+#   - optionally run E2E commands
+#   - emit a JSON verdict artifact compatible with the verification contract
 
 set -u
 
@@ -42,12 +38,6 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   verify-runtime.sh [--url <target-url>] [--e2e "<command>"] [--timeout <seconds>] [--no-auto-e2e]
-
-Examples:
-  verify-runtime.sh --url http://localhost:3000
-  verify-runtime.sh --url http://localhost:3000                  # Auto-detect E2E command
-  verify-runtime.sh --url https://staging.example.com --e2e "npm run test:e2e:agent-browser"
-  verify-runtime.sh --url https://staging.example.com --e2e "npm run test:e2e"
 EOF_USAGE
 }
 
@@ -61,11 +51,13 @@ write_verdict_json() {
   local cmd_escaped
   local source_escaped
   local mode_escaped
+  local contract_file_escaped
 
   url_escaped="$(json_escape "$URL")"
   cmd_escaped="$(json_escape "$E2E_CMD")"
   source_escaped="$(json_escape "$E2E_SOURCE")"
   mode_escaped="$(json_escape "$OPERATING_MODE")"
+  contract_file_escaped="$(json_escape "$CONTRACT_FILE")"
 
   cat > "$VERDICT_FILE" <<JSON
 {
@@ -77,6 +69,10 @@ write_verdict_json() {
   "durationMs": ${duration_ms},
   "verdict": "${verdict}",
   "exitCode": ${exit_code},
+  "contract": {
+    "path": "${contract_file_escaped}",
+    "detected": ${CONTRACT_DETECTED}
+  },
   "checks": {
     "url": "${url_escaped}",
     "timeoutSec": ${TIMEOUT},
@@ -110,26 +106,6 @@ finalize_and_exit() {
   exit "$code"
 }
 
-URL="${APP_BASE_URL:-http://localhost:3000}"
-E2E_CMD="${RUNTIME_E2E_CMD:-}"
-E2E_SOURCE=""
-TIMEOUT=10
-AUTO_E2E=true
-
-RUN_ID="${HARNESS_RUN_ID:-verify-runtime-$(date +%Y%m%d-%H%M%S)}"
-OPERATING_MODE="${HARNESS_OPERATING_MODE:-target_project}"
-START_EPOCH="$(date +%s)"
-STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-
-mkdir -p .claude
-VERDICT_FILE="${HARNESS_VERDICT_FILE:-.claude/runtime-verdict-${RUN_ID}.json}"
-
-RUNTIME_FAILED=false
-E2E_FAILED=false
-HTTP_CODE="000"
-RUNTIME_STATUS="not_run"
-E2E_STATUS="not_run"
-
 has_npm_script() {
   local script_name="$1"
 
@@ -145,14 +121,35 @@ has_npm_script() {
   ' "$script_name" >/dev/null 2>&1
 }
 
+URL="${APP_BASE_URL:-http://localhost:3000}"
+E2E_CMD="${RUNTIME_E2E_CMD:-}"
+E2E_SOURCE=""
+TIMEOUT=10
+AUTO_E2E=true
+
+RUN_ID="${HARNESS_RUN_ID:-verify-runtime-$(date +%Y%m%d-%H%M%S)}"
+OPERATING_MODE="${HARNESS_OPERATING_MODE:-target_project}"
+START_EPOCH="$(date +%s)"
+STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+CONTRACT_FILE="${VERIFICATION_CONTRACT_FILE:-.claude/verification.contract.yaml}"
+CONTRACT_DETECTED=false
+if [ -f "$CONTRACT_FILE" ]; then
+  CONTRACT_DETECTED=true
+fi
+
+mkdir -p .claude
+VERDICT_FILE="${HARNESS_VERDICT_FILE:-.claude/runtime-verdict-${RUN_ID}.json}"
+
+RUNTIME_FAILED=false
+E2E_FAILED=false
+HTTP_CODE="000"
+RUNTIME_STATUS="not_run"
+E2E_STATUS="not_run"
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --url)
-      if [ $# -lt 2 ]; then
-        log_error "--url requires a value"
-        usage
-        finalize_and_exit 64 "failed"
-      fi
       URL="$2"
       shift 2
       ;;
@@ -161,11 +158,6 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --e2e)
-      if [ $# -lt 2 ]; then
-        log_error "--e2e requires a value"
-        usage
-        finalize_and_exit 64 "failed"
-      fi
       E2E_CMD="$2"
       E2E_SOURCE="cli"
       shift 2
@@ -176,11 +168,6 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --timeout)
-      if [ $# -lt 2 ]; then
-        log_error "--timeout requires a value"
-        usage
-        finalize_and_exit 64 "failed"
-      fi
       TIMEOUT="$2"
       shift 2
       ;;
@@ -220,20 +207,18 @@ fi
 
 echo ""
 echo "======================================"
-echo "  Runtime Verification"
+echo "  Runtime Verification Harness"
 echo "======================================"
 echo ""
 
 log_info "Run ID: ${RUN_ID}"
 log_info "Target URL: ${URL}"
 log_info "Timeout: ${TIMEOUT}s"
+log_info "Verification contract: ${CONTRACT_FILE}"
 echo ""
 
-log_info "1/2 URL health check"
+log_info "URL health check"
 HTTP_CODE="$(curl -L -sS -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$URL" 2>/dev/null || true)"
-if [ -z "$HTTP_CODE" ]; then
-  HTTP_CODE="000"
-fi
 if [[ "$HTTP_CODE" =~ ^[23][0-9][0-9]$ ]]; then
   log_success "URL reachable (HTTP ${HTTP_CODE})"
   RUNTIME_STATUS="passed"
@@ -244,11 +229,8 @@ else
 fi
 echo ""
 
-log_info "2/2 Optional E2E check"
+log_info "Optional E2E check"
 if [ -n "$E2E_CMD" ]; then
-  if [ -n "$E2E_SOURCE" ]; then
-    log_info "E2E source: ${E2E_SOURCE}"
-  fi
   log_info "Running: ${E2E_CMD}"
   if bash -lc "$E2E_CMD"; then
     log_success "E2E command passed"
@@ -260,7 +242,6 @@ if [ -n "$E2E_CMD" ]; then
   fi
 else
   log_warning "No E2E command resolved, skipping"
-  log_info "Hint: set RUNTIME_E2E_CMD or add npm script test:e2e:agent-browser / test:e2e"
   E2E_STATUS="skipped"
 fi
 echo ""

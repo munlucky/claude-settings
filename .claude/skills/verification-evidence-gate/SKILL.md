@@ -17,12 +17,13 @@ Enforce evidence-before-completion in strict profile execution.
 - `analysisContext.signals.allowIndeterminate`
 - `completionStatus.*` (if present)
 - `analysisContext.notes`
+- `analysisContext.artifacts.verificationContractPath`
 
 ## Gate logic
 1. If `workflowProfile != strict`: return pass with note.
 2. For `strict`, require fresh evidence:
    - Preferred: `completionStatus.verificationState == passed`.
-   - Fallback: notes contain explicit success evidence for verification command outputs.
+   - Fallback: notes contain explicit success evidence for contract-defined verification command outputs.
 3. Hard block conditions:
    - `verificationState == failed`
    - `verificationState == indeterminate`
@@ -54,3 +55,4 @@ missingInfo:
 - Do not claim success when this gate is blocked.
 - Do not accept stale or inferred verification.
 - This gate is policy-only and does not edit source code.
+- Prefer contract-defined artifact paths and verdict files when available.

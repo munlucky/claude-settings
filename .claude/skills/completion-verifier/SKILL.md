@@ -1,182 +1,96 @@
 ---
 name: completion-verifier
-description: Verifies implementation completion by running acceptance tests and triggers retry loop on failure.
+description: Verifies implementation completion by running acceptance tests and triggering retry loops when verification fails.
 context: fork
 ---
 
 # Completion Verifier Skill
 
 ## When to Use
-
 - After each implementation phase
 - Before marking task as complete
 - When retry loop is triggered
 
 ## Inputs
-
 - `analysisContext.*` (structured state)
 - `context.md` (path: `analysisContext.artifacts.contextDocPath`, contains Acceptance Tests)
-- Test framework (from PROJECT.md: jest/vitest/agent-browser/playwright)
+- `analysisContext.artifacts.verificationContractPath`
+- Test framework and commands from `PROJECT.md` or verification contract
 - `analysisContext.signals.allowIndeterminate` (boolean override, default: `true`)
+
+## Contract-first policy
+
+Prefer explicit verification contract data when available.
+
+Order of precedence:
+1. `.claude/verification.contract.yaml`
+2. `PROJECT.md` Testing Rules
+3. Filesystem/test-script auto-detection fallback
 
 ## Harness Gate Policy
 
-- `verificationState: indeterminate` caused by missing test environment is handled as `pass_with_warning` by default.
+- `verificationState: indeterminate` caused by missing executable verification remains `pass_with_warning` by default.
 - In strict mode (`allowIndeterminate: false`), indeterminate is blocking.
-- `allowIndeterminate: true`:
-  - Default operating mode; proceed with warning and follow-up actions.
+- Missing verification contract:
+  - standard profile -> continue with warning and fallback detection
+  - strict profile -> expect `verification-contract-gate` to block earlier
 
-## Step 0: Test Environment Detection
+## Step 0: Verification Environment Detection
 
-> **CRITICAL**: Before running any tests, detect whether the target project has a test environment.
-
-### Detection Logic
+Determine executable verification from the contract first.
 
 ```yaml
-testEnvironment:
+verificationEnvironment:
+  contractDetected: true | false
   detected: false
-  framework: null      # jest | vitest | agent-browser | playwright | cypress | mocha | pytest | go-test | bats | null
-  configFile: null
+  framework: null
   testCommand: null
+  lintCommand: null
+  buildCommand: null
   reason: null
-
-detection:
-  # 1. Check PROJECT.md for explicit test config
-  - source: "PROJECT.md → Testing Rules"
-    check: "Test framework field is filled in"
-    
-  # 2. Check for test config files
-  - source: "filesystem"
-    patterns:
-      - "jest.config.*"
-      - "vitest.config.*"
-      - "playwright.config.*"
-      - "cypress.config.*"
-      - ".mocharc.*"
-      - "pytest.ini"
-      - "setup.cfg [tool:pytest]"
-      - "pyproject.toml [tool.pytest]"
-      - "*_test.go"
-      
-  # 3. Check package.json for test script
-  - source: "package.json"
-    check: "scripts.test exists AND scripts.test != 'echo \"Error: no test specified\" && exit 1'"
-
-  # 4. Check for existing test files
-  - source: "filesystem"
-    patterns:
-      - "**/*.test.ts"
-      - "**/*.test.tsx"
-      - "**/*.test.js"
-      - "**/*.spec.ts"
-      - "**/*.spec.js"
-      - "__tests__/**"
-      - "tests/**"
-      - "test/**"
 ```
 
-### When Test Environment NOT Detected
+Detection order:
+- contract-defined commands
+- `PROJECT.md` Testing Rules / commands
+- config files and package scripts
+
+## When Verification Environment is NOT Detected
 
 ```yaml
-action:
-  1. Set signals.testEnvironmentDetected = false
-  2. Log warning: "⚠️ No test environment detected. Skipping automated test verification."
-  3. Fall through to Self-Audit only (Step 2)
-  4. Return:
-     completionStatus:
-       testEnvironment: false
-       selfAuditOnly: true
-       verificationState: indeterminate
-       allPassed: null  # Cannot determine
-       gateDecision: pass_with_warning | failed
-       # decision rule:
-       # - allowIndeterminate=true  -> pass_with_warning
-       # - allowIndeterminate=false -> failed
-       recommendation: "Consider setting up a test framework for automated verification"
-```
-
-### When Test Environment IS Detected
-
-```yaml
-action:
-  1. Set signals.testEnvironmentDetected = true
-  2. Set signals.testFramework = "{detected framework}"
-  3. Set signals.testCommand = "{detected command}"
-  4. Proceed to Step 1 (full test verification)
+completionStatus:
+  testEnvironment: false
+  selfAuditOnly: true
+  verificationState: indeterminate
+  allPassed: null
+  gateDecision: pass_with_warning | failed
+  recommendation: "Add or refresh `.claude/verification.contract.yaml` for deterministic verification"
 ```
 
 ## Step 1: Run Acceptance Tests
 
-> Only executes when `testEnvironmentDetected = true`
+Only when executable verification exists.
 
-1. Parse Acceptance Tests section from context.md
+1. Parse Acceptance Tests section from `context.md`
 2. Extract test IDs and file paths
-3. Run tests using detected command:
-   ```bash
-   # Default (npm-based)
-   npm test -- --testPathPattern="{test files}"
-   
-   # Or use PROJECT.md configured command
-   {testCommand}
-   ```
-4. Parse results (PASS/FAIL per test)
-5. Update context.md status column
-
-### Integration Test Verification
-
-After unit tests pass, verify user-facing flows:
-
-```yaml
-integrationVerification:
-  # 1. Identify user flows from context.md
-  flows:
-    - name: "{flow description from requirements}"
-      type: integration | e2e
-      testFiles: ["{related test files}"]
-  
-  # 2. Run integration tests if they exist
-  command: |
-    npm test -- --testPathPattern="integration|e2e"
-    
-  # 3. If no integration tests exist but should
-  missingIntegrationTests:
-    action: "Report as incomplete, recommend writing integration tests"
-    severity: "WARN"  # Not blocking, but noted
-```
+3. Run tests using the contract-defined or detected command
+4. Parse PASS/FAIL per test
+5. Update `context.md` status column when appropriate
 
 ## Step 2: Self-Audit (Always Runs)
 
-> Runs regardless of test environment availability.
-
-After implementation, compare results against context.md requirements:
-
-> "After implementation, compare your results against the requirements in context.md 
-> and verify each item is fulfilled. 
-> If any requirements are not met, list them."
-
-### Self-Audit Output Format
+Compare results against `context.md` requirements even when automated verification is partial.
 
 ```yaml
 selfAuditResult:
-  # Requirements fulfillment
-  requirementsMet:
-    - "[REQ-1] User query API ✅"
-    - "[REQ-2] Error handling ✅"
-  requirementsNotMet:
-    - "[REQ-3] Pagination ❌ (not implemented)"
-  
-  # 3-tier boundary check
+  requirementsMet: []
+  requirementsNotMet: []
   boundaryCheck:
-    neverDoViolations: []          # Critical violations (halt if any)
-    askFirstItems: []              # Items needing approval
-    alwaysDoCompleted:             # Required actions
-      - "lint executed"
-      - "tests passed"
-  
-  # Overall judgment
+    neverDoViolations: []
+    askFirstItems: []
+    alwaysDoCompleted: []
   readyForTest: true | false
-  blockers:                        # Blocking reasons if false
-    - "REQ-3 not implemented"
+  blockers: []
 ```
 
 ## Output
@@ -184,6 +98,7 @@ selfAuditResult:
 ```yaml
 completionStatus:
   testEnvironment: true | false
+  contractDetected: true | false
   selfAuditOnly: false
   allowIndeterminate: true | false
   verificationState: passed | failed | indeterminate
@@ -192,92 +107,30 @@ completionStatus:
   passed: 4
   failed: 1
   allPassed: false
-  failedTests:
-    - id: T2
-      type: Unit  # or Integration
-      file: ErrorHandler.test.tsx
-      error: "Expected error message not shown"
-  failedPhase: "Phase 1"  # Determines where to retry
-  recommendation: "Fix ErrorHandler.tsx, then re-run Phase 1"
+  failedTests: []
+  failedPhase: "Phase 1"
+  recommendation: "Fix code or add explicit verification contract, then re-run"
   verdictArtifact:
     path: "{tasksRoot}/{feature-name}/verification-result.json"
 ```
 
-### verificationState contract
-
-- `passed`: tests ran and gate passed (`allPassed: true`)
-- `failed`: tests ran and failed (`allPassed: false`)
-- `indeterminate`: no executable test environment (typically `allPassed: null`, Self-Audit only)
-- With `allowIndeterminate=true` (default), continue as `pass_with_warning`.
-- With `allowIndeterminate=false`, treat indeterminate as blocking.
-
 ## Retry Logic
 
-When `verificationState: failed` AND `testEnvironment: true`:
-
-1. **Identify failed phase** based on test type:
-   - Unit FAIL → Phase 1 (Mock implementation)
-   - Integration FAIL → Phase 2 (API integration)
-
-2. **Add unit test for the failure** (if not already exists):
-   - Create a focused reproduction test for the specific failure
-   - This ensures the bug is captured as a regression test
-   
-3. **Return to failed phase** (NOT test rewriting):
-   - Pass `failedTests` info to implementation-agent
-   - Implementation-agent fixes code only (no existing test rewrite)
-   
-4. **Re-run verification**:
-   - Run the new unit test to confirm the fix
-   - Run full test suite to verify no regressions
-
-5. **Retry limits**:
-   - Max 2 retries per phase
-   - After 2 failures → Ask user for intervention
+When `verificationState: failed` and executable verification exists:
+1. Identify failed phase
+2. Add focused reproduction tests when practical
+3. Return to implementation with failure details
+4. Re-run verification
+5. Retry max 2 times
 
 ## Skip Conditions
 
-- No test framework configured → **Self-Audit only** (not full skip)
-- No Acceptance Tests in context.md → Self-Audit only
-- Skip Conditions from testing.md apply (legacy, prototype, etc.)
+- No test framework configured -> self-audit only
+- No Acceptance Tests in `context.md` -> self-audit only
+- Missing verification contract in standard profile -> fallback detection allowed
 
-## Workflow
+## Notes
 
-```
-Implementation Phase Complete
-        ↓
-[Step 0] Test Environment Detection
-        ↓
-    detected?
-     ↓         ↓
-   true      false
-     ↓         ↓
-[Step 1]   [Step 2 only]
-Run tests    Self-Audit
-     ↓         ↓
-[Step 2]   Return status
-Self-Audit   (selfAuditOnly: true)
-     ↓
-  allPassed?
-   ↓      ↓
-  true   false
-   ↓      ↓
- Done   Add unit test → Fix → Retry
-```
-
-## Tool Call Example
-
-```bash
-# Run specific tests
-npm test -- --testPathPattern="batch.test|ErrorHandler.test"
-
-# Check coverage (optional)
-npm test -- --coverage --testPathPattern="..."
-```
-
-### Notes
-
-- Self-Audit is a **supplementary check**, not a replacement for actual tests
-- Requirement fulfillment involves subjective judgment; tests provide final verification
-- If `neverDoViolations` exist, halt immediately and report to user
-- When test env is missing, Self-Audit provides minimum viable verification
+- Self-Audit supplements tests; it does not replace them.
+- Requirement fulfillment involves judgment; verdict artifacts provide deterministic evidence.
+- If `neverDoViolations` exist, halt immediately and report to user.
