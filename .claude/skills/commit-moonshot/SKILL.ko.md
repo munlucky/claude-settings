@@ -123,14 +123,32 @@ create_relations([{
 git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
+## 7.6 `.claude/memory.json` 포함 여부 확인
+메모리 파일을 스테이징하기 전에 이번 커밋에 `.claude/memory.json`을 포함할지 사용자에게 먼저 물어보세요.
+
+권장 질문:
+```text
+커밋 과정에서 `.claude/memory.json`이 업데이트되었습니다. 이번 커밋에 함께 포함할까요?
+```
+
+규칙:
+- 사용자 확인 없이 `.claude/memory.json`을 자동으로 스테이징하지 마세요.
+- 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
+- 사용자가 제외하자고 하면 `.claude/memory.json`은 unstaged 상태로 두고 나머지만 커밋하세요.
+- 최종 커밋 요약에 사용자의 선택을 명시하세요.
+
 ## 8. 커밋 생성
 
 ```bash
+# 사용자가 메모리 파일 포함을 승인한 경우:
 git add [files] .claude/memory.json
+
+# 사용자가 제외를 선택한 경우:
+git add [files]
 git commit -m "[간결한 한글 커밋 메시지]"
 ```
 
-> **📌 중요: `.claude/memory.json` 파일을 반드시 커밋에 포함시키세요.** Memory MCP의 현행화 내용이 저장된 파일입니다.
+> **📌 중요: `.claude/memory.json` 파일 포함 여부는 사용자 명시 선택을 따르세요.** 이 파일에는 Memory MCP 현행화 내용이 저장됩니다.
 
 **커밋 메시지 규칙:**
 - 이모지, 특수문자 제외
