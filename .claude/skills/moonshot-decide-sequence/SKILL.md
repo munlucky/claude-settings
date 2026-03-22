@@ -23,6 +23,13 @@ signals:
   requirementsClear: false
   implementationReady: false
   implementationComplete: false
+  productDefinitionRequest: false
+  hasProductIntent: false
+  hasPrd: false
+  hasSolution: false
+  hasSpec: false
+  hasExecutionPlan: false
+  productPackageReady: false
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false
@@ -47,24 +54,49 @@ decisions:
   parallelGroups: []
 artifacts:
   contextDocPath: {tasksRoot}/{feature-name}/context.md
+  productDir: {tasksRoot}/{feature-name}/product
+  productIntentPath: {productDir}/PRODUCT_INTENT.md
+  prdPath: {productDir}/PRD.md
+  solutionPath: {productDir}/SOLUTION.md
+  specPath: {productDir}/SPEC.md
+  planPath: {productDir}/PLAN.md
+  assumptionsPath: {productDir}/ASSUMPTIONS.md
+  blockersPath: {productDir}/BLOCKERS.md
+  taskSliceGlob: {productDir}/tasks/*.md
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 notes: []
 ```
 
 ## Phase rules
-1. hasPendingQuestions == true -> planning
-2. implementationComplete == true && (complexity == complex or (apiSpecConfirmed && hasMockImplementation)) -> integration
-3. implementationComplete == true -> verification
-4. requirementsClear && hasContextMd && implementationReady -> implementation
-5. otherwise -> planning
+1. productDefinitionRequest == true && productPackageReady == false -> planning (upstream redirect)
+2. hasPendingQuestions == true -> planning
+3. implementationComplete == true && (complexity == complex or (apiSpecConfirmed && hasMockImplementation)) -> integration
+4. implementationComplete == true -> verification
+5. productPackageReady == true && hasExecutionPlan == true -> implementation
+6. requirementsClear && hasContextMd && implementationReady -> implementation
+7. otherwise -> planning
 
 ## Chain rules
 Include only stages to run **after moonshot-decide-sequence** (do not include moonshot-* skills).
 
+- If `signals.productDefinitionRequest == true` and `signals.productPackageReady == false`:
+  - route to `product-orchestrator`
+  - do not continue into build planning or implementation
+- If `signals.productPackageReady == true`:
+  - treat `PLAN.md` and `tasks/*.md` as the planning baseline
+  - skip `requirements-analyzer` and `context-builder`
+  - validate the handoff package, then proceed to implementation
+
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**Product-package-aware overrides**:
+- simple + productPackageReady: implementation-runner -> verify-changes.sh
+- medium + productPackageReady: codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
+- complex + productPackageReady: pre-flight-check -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+- any complexity + productDefinitionRequest && !productPackageReady: product-orchestrator
 
 **Execution discipline gate (Karpathy loop)**:
 - For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
@@ -132,15 +164,12 @@ Only run dependency-free steps in parallel. If results affect the next stage, do
 ```yaml
 phase: planning
 decisions.skillChain:
-  - pre-flight-check
-  - requirements-analyzer
-  - context-builder
+  - product-orchestrator
 decisions.parallelGroups:
   - - moonshot-evaluate-complexity
     - moonshot-detect-uncertainty
 decisions.recommendedAgents:
-  - requirements-analyzer
-  - context-builder
+  - product-orchestrator
 notes:
-  - "phase=planning, chain=complex"
+  - "phase=planning, chain=product-upstream"
 ```

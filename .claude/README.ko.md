@@ -78,6 +78,12 @@ See @README for project overview and @package.json for npm commands.
 
 ## 스킬
 
+### Product Definition
+- `product-orchestrator`
+- `product-gate-reviewer`
+- `task-slicer`
+- `assumption-ledger`
+
 ### Moonshot 분석
 - `moonshot-classify-task`
 - `moonshot-evaluate-complexity`
@@ -104,16 +110,20 @@ See @README for project overview and @package.json for npm commands.
 
 ## 일반 흐름 (예시)
 
-1. `moonshot-orchestrator`가 요청을 분석하고 체인을 구성합니다.
-2. `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
-3. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
-4. `verification-agent`와 `verify-changes.sh`로 품질을 확인합니다.
-5. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
+1. `product-orchestrator`가 아이디어를 `PRODUCT_INTENT -> PRD -> SOLUTION -> SPEC -> PLAN`으로 변환합니다.
+2. `product-gate-reviewer`가 각 단계마다 `pass`, `conditional_pass`, `fail`을 판정합니다.
+3. `task-slicer`가 `PLAN.md`를 독립 실행 가능한 `tasks/*.md`로 분해합니다.
+4. `moonshot-orchestrator`가 제품 패키지를 받아 구현 체인을 구성합니다.
+5. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
+6. `verification-agent`와 `verify-changes.sh`로 품질을 확인합니다.
+7. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
 
 ## 문서와 템플릿
 
 - 작업 문서는 `.claude/docs` 하위에 두며 경로 규칙은 `.claude/PROJECT.md`를 따릅니다.
 - 출력 템플릿: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
+- 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
+- 제품 정의 템플릿: `.claude/templates/product-definition/`
 
 ## 유지보수 노트 (이 저장소)
 

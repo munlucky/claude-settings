@@ -8,6 +8,15 @@ description: PM workflow orchestrator. Analyzes user requests and automatically 
 ## Role
 Runs PM analysis skills in sequence and builds the final agent chain.
 
+This orchestrator is the **build control plane**.
+
+Use it directly when:
+- the request is already implementation-oriented
+- a product package already exists under `{tasksRoot}/{feature-name}/product/`
+
+Do not treat it as the primary entry point for raw idea shaping.
+If the request is still in product-definition mode and no product package exists, redirect upstream to `product-orchestrator`.
+
 ## Usage
 
 ```bash
@@ -56,6 +65,13 @@ signals:
   requirementsClear: false
   implementationReady: false
   implementationComplete: false
+  productDefinitionRequest: false
+  hasProductIntent: false
+  hasPrd: false
+  hasSolution: false
+  hasSpec: false
+  hasExecutionPlan: false
+  productPackageReady: false
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false
@@ -75,6 +91,15 @@ fixForward:
 artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
+  productDir: "{tasksRoot}/{feature-name}/product"
+  productIntentPath: "{productDir}/PRODUCT_INTENT.md"
+  prdPath: "{productDir}/PRD.md"
+  solutionPath: "{productDir}/SOLUTION.md"
+  specPath: "{productDir}/SPEC.md"
+  planPath: "{productDir}/PLAN.md"
+  assumptionsPath: "{productDir}/ASSUMPTIONS.md"
+  blockersPath: "{productDir}/BLOCKERS.md"
+  taskSliceGlob: "{productDir}/tasks/*.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
@@ -102,6 +127,30 @@ Returns: { projectId, loaded, boundaries, relevantRules } → merge into project
 - Codex runtime: execute equivalent isolated subtask with the same I/O contract.
 - No memory: `boundaryStatus: "not_initialized"`, continue
 - MCP unavailable: `boundaryStatus: "not_checked"`, warn and continue
+
+#### 2.0.6 Product package detection
+Before normal build planning, detect whether upstream product-definition artifacts already exist.
+
+Detection targets:
+- `PRODUCT_INTENT.md`
+- `PRD.md`
+- `SOLUTION.md`
+- `SPEC.md`
+- `PLAN.md`
+- `tasks/*.md`
+
+Merge signals:
+- `hasProductIntent`
+- `hasPrd`
+- `hasSolution`
+- `hasSpec`
+- `hasExecutionPlan`
+- `productPackageReady`
+- `implementationReady`
+
+Routing rule:
+- If `productDefinitionRequest == true` and `productPackageReady == false`, hand off to `product-orchestrator`
+- If `productPackageReady == true`, skip upstream planning stages and use the handoff package as the implementation baseline
 
 #### 2.1 Task classification
 Run `/moonshot-classify-task` → merge patch (taskType, keywords, signals)
@@ -136,6 +185,7 @@ Run `decisions.skillChain` in order.
 | Step | Type | Notes |
 |------|------|-------|
 | `pre-flight-check` | Skill | |
+| `product-orchestrator` | Skill | Upstream redirect only |
 | `project-memory-agent` | Task (fork) | Context isolation |
 | `project-memory-check` | Task (fork) | Pre-implementation boundary check |
 | `requirements-analyzer` | Task | |
@@ -183,6 +233,7 @@ Run `decisions.skillChain` in order.
 3. For `Task (fork)` semantics, keep context isolation (minimal input, summarized return only) in both runtimes
 4. Undefined step → ask user and stop
 5. All steps must follow `document-memory-policy.md`
+6. If `product-orchestrator` is selected, treat it as a redirect/handoff boundary and do not continue the build chain in the same pass unless a product package is returned
 
 **Memory-step separation contract**:
 - `project-memory-agent`: load/update project memory context at phase 2.0.5
@@ -281,4 +332,6 @@ Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
 - Orchestrates only, does not analyze directly
 - Patch merging: shallow object merge
 - User questions: `AskUserQuestion` on Claude runtime; on Codex runtime, prioritize `codex-validate-plan`/`codex-review-code` outputs and ask user only for unresolved blockers
+- Build-only boundary: if upstream product-definition work is still missing, route to `product-orchestrator` instead of inventing product artifacts inside the build chain
+- Product-package handoff: when `PLAN.md` + `tasks/*.md` exist, treat them as the planning source of truth and skip `requirements-analyzer` / `context-builder`
 - Follow `document-memory-policy.md`
