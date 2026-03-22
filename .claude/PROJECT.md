@@ -142,6 +142,15 @@ Override the default paths from `CLAUDE.md` if needed. **For git-tracked project
 | Document | Path Pattern |
 |----------|-------------|
 | Agreement | `{agreementsRoot}/{feature-name}-agreement.md` |
+| Product intent | `{tasksRoot}/{feature-name}/product/PRODUCT_INTENT.md` |
+| Product requirements | `{tasksRoot}/{feature-name}/product/PRD.md` |
+| Product behavior model | `{tasksRoot}/{feature-name}/product/SOLUTION.md` |
+| Architecture spec | `{tasksRoot}/{feature-name}/product/SPEC.md` |
+| Architecture decisions | `{tasksRoot}/{feature-name}/product/ADR/*.md` |
+| Execution plan | `{tasksRoot}/{feature-name}/product/PLAN.md` |
+| Execution tasks | `{tasksRoot}/{feature-name}/product/tasks/*.md` |
+| Assumptions ledger | `{tasksRoot}/{feature-name}/product/ASSUMPTIONS.md` |
+| Hard blockers | `{tasksRoot}/{feature-name}/product/BLOCKERS.md` |
 | Implementation plan | `{tasksRoot}/{feature-name}/context.md` |
 | Specification | `{tasksRoot}/{feature-name}/specification.md` |
 | Archives | `{tasksRoot}/{feature-name}/archives/` |

@@ -23,6 +23,13 @@ signals:
   requirementsClear: false
   implementationReady: false
   implementationComplete: false
+  productDefinitionRequest: false
+  hasProductIntent: false
+  hasPrd: false
+  hasSolution: false
+  hasSpec: false
+  hasExecutionPlan: false
+  productPackageReady: false
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false
@@ -47,24 +54,49 @@ decisions:
   parallelGroups: []
 artifacts:
   contextDocPath: {tasksRoot}/{feature-name}/context.md
+  productDir: {tasksRoot}/{feature-name}/product
+  productIntentPath: {productDir}/PRODUCT_INTENT.md
+  prdPath: {productDir}/PRD.md
+  solutionPath: {productDir}/SOLUTION.md
+  specPath: {productDir}/SPEC.md
+  planPath: {productDir}/PLAN.md
+  assumptionsPath: {productDir}/ASSUMPTIONS.md
+  blockersPath: {productDir}/BLOCKERS.md
+  taskSliceGlob: {productDir}/tasks/*.md
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 notes: []
 ```
 
 ## 단계(Phase) 규칙
-1. hasPendingQuestions == true -> planning
-2. implementationComplete == true && (complexity == complex 또는 (apiSpecConfirmed && hasMockImplementation)) -> integration
-3. implementationComplete == true -> verification
-4. requirementsClear && hasContextMd && implementationReady -> implementation
-5. 그 외 -> planning
+1. productDefinitionRequest == true && productPackageReady == false -> planning (upstream redirect)
+2. hasPendingQuestions == true -> planning
+3. implementationComplete == true && (complexity == complex 또는 (apiSpecConfirmed && hasMockImplementation)) -> integration
+4. implementationComplete == true -> verification
+5. productPackageReady == true && hasExecutionPlan == true -> implementation
+6. requirementsClear && hasContextMd && implementationReady -> implementation
+7. 그 외 -> planning
 
 ## 체인 규칙
 skillChain에는 **moonshot-decide-sequence 이후** 실행할 단계만 포함한다(moonshot-* 스킬은 포함하지 않음).
 
+- `signals.productDefinitionRequest == true` 이고 `signals.productPackageReady == false` 이면:
+  - `product-orchestrator`로 라우팅
+  - build planning이나 implementation 체인으로 계속 진행하지 않음
+- `signals.productPackageReady == true` 이면:
+  - `PLAN.md`와 `tasks/*.md`를 planning baseline으로 사용
+  - `requirements-analyzer`, `context-builder`를 생략
+  - handoff package를 검증한 뒤 구현 체인으로 진행
+
 - simple: implementation-runner -> verify-changes.sh
 - medium: requirements-analyzer -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
 - complex: pre-flight-check -> requirements-analyzer -> context-builder -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+
+**product package 인지 override**:
+- simple + productPackageReady: implementation-runner -> verify-changes.sh
+- medium + productPackageReady: codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker
+- complex + productPackageReady: pre-flight-check -> codex-validate-plan -> project-memory-check -> karpathy-execution-gate -> implementation-runner -> code-simplifier -> completion-verifier -> doc-auto-sync -> codex-review-code -> efficiency-tracker -> session-logger
+- 어떤 complexity이든 productDefinitionRequest && !productPackageReady: product-orchestrator
 
 **실행 규율 게이트 (Karpathy loop)**:
 - medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 실행한다.
@@ -132,15 +164,12 @@ complex는 항상 테스트 기반 완료 검증을 포함한다.
 ```yaml
 phase: planning
 decisions.skillChain:
-  - pre-flight-check
-  - requirements-analyzer
-  - context-builder
+  - product-orchestrator
 decisions.parallelGroups:
   - - moonshot-evaluate-complexity
     - moonshot-detect-uncertainty
 decisions.recommendedAgents:
-  - requirements-analyzer
-  - context-builder
+  - product-orchestrator
 notes:
-  - "phase=planning, chain=complex"
+  - "phase=planning, chain=product-upstream"
 ```

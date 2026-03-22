@@ -12,13 +12,27 @@ description: Classifies a user request into task types (feature, modification, b
 ## Procedure
 1. Identify intent keywords from the user message.
 2. Select one taskType: `feature | modification | bugfix | refactor`.
-3. Set confidence: `high | medium | low`.
+3. Detect whether the request is still in product-definition mode.
+4. Set confidence: `high | medium | low`.
 
 ## Heuristics
 - feature: "new", "add", "implement", "create", "build"
 - modification: "change", "modify", "improve", "adjust", "remove"
 - bugfix: "bug", "error", "broken", "fails"
 - refactor: "refactor", "clean up", "restructure", "remove duplication"
+
+## Product Definition Detection
+
+Set `signals.productDefinitionRequest: true` when the request is primarily about:
+- idea shaping
+- product intent
+- PRD
+- solution modeling
+- architecture definition before implementation
+- execution planning before code changes
+
+Example keywords:
+- "idea", "intent", "prd", "solution", "spec", "scope", "out of scope", "plan", "task slice"
 
 ## Technology Stack Detection
 
@@ -33,8 +47,10 @@ request.keywords:
   - implement
   - react
 signals:
+  productDefinitionRequest: false
   reactProject: true  # Set when React/Next.js keywords detected
 notes:
   - "taskType=feature, confidence=high"
+  - "product-definition-request=false"
   - "tech-stack: react/next.js detected"  # Add when reactProject=true
 ```

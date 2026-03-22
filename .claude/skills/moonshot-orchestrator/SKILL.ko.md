@@ -8,6 +8,15 @@ description: PM 워크플로우 오케스트레이터. 사용자 요청을 분�
 ## 역할
 PM 분석 스킬들을 순차적으로 실행하고 최종 에이전트 체인을 구성하는 오케스트레이터.
 
+이 오케스트레이터는 **build control plane**입니다.
+
+직접 사용해도 되는 경우:
+- 요청이 이미 구현 중심인 경우
+- `{tasksRoot}/{feature-name}/product/` 아래에 product package가 이미 있는 경우
+
+raw idea 정리의 주 진입점으로 쓰지 않습니다.
+요청이 아직 제품 정의 단계이고 product package가 없으면 upstream의 `product-orchestrator`로 리다이렉트합니다.
+
 ## 사용법
 
 ```bash
@@ -56,6 +65,13 @@ signals:
   requirementsClear: false
   implementationReady: false
   implementationComplete: false
+  productDefinitionRequest: false
+  hasProductIntent: false
+  hasPrd: false
+  hasSolution: false
+  hasSpec: false
+  hasExecutionPlan: false
+  productPackageReady: false
   hasMockImplementation: false
   apiSpecConfirmed: false
   reactProject: false
@@ -75,6 +91,15 @@ fixForward:
 artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
+  productDir: "{tasksRoot}/{feature-name}/product"
+  productIntentPath: "{productDir}/PRODUCT_INTENT.md"
+  prdPath: "{productDir}/PRD.md"
+  solutionPath: "{productDir}/SOLUTION.md"
+  specPath: "{productDir}/SPEC.md"
+  planPath: "{productDir}/PLAN.md"
+  assumptionsPath: "{productDir}/ASSUMPTIONS.md"
+  blockersPath: "{productDir}/BLOCKERS.md"
+  taskSliceGlob: "{productDir}/tasks/*.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
@@ -102,6 +127,30 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 - Codex 런타임: 동일 입출력 계약의 격리 서브태스크로 동등 실행
 - 메모리 없음: `boundaryStatus: "not_initialized"`, 계속 진행
 - MCP 불가: `boundaryStatus: "not_checked"`, 경고 후 진행
+
+#### 2.0.6 Product package 감지
+일반 build planning 전에 upstream 제품 정의 산출물이 이미 있는지 감지합니다.
+
+감지 대상:
+- `PRODUCT_INTENT.md`
+- `PRD.md`
+- `SOLUTION.md`
+- `SPEC.md`
+- `PLAN.md`
+- `tasks/*.md`
+
+병합할 시그널:
+- `hasProductIntent`
+- `hasPrd`
+- `hasSolution`
+- `hasSpec`
+- `hasExecutionPlan`
+- `productPackageReady`
+- `implementationReady`
+
+라우팅 규칙:
+- `productDefinitionRequest == true` 이고 `productPackageReady == false` 이면 `product-orchestrator`로 핸드오프
+- `productPackageReady == true` 이면 upstream planning 단계를 건너뛰고 handoff package를 구현 기준선으로 사용
 
 #### 2.1 작업 분류
 `/moonshot-classify-task` 실행 → patch 병합 (taskType, keywords, signals)
@@ -136,6 +185,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 | 단계 | 유형 | 비고 |
 |------|------|------|
 | `pre-flight-check` | Skill | |
+| `product-orchestrator` | Skill | upstream redirect 전용 |
 | `project-memory-agent` | Task (fork) | 컨텍스트 격리 |
 | `project-memory-check` | Task (fork) | 구현 전 경계 체크(검사 전용) |
 | `requirements-analyzer` | Task | |
@@ -183,6 +233,7 @@ Returns: { projectId, loaded, boundaries, relevantRules } → projectMemory에 �
 3. `Task (fork)` 의미를 갖는 단계는 런타임과 무관하게 컨텍스트 격리(최소 입력, 요약 반환만) 유지
 4. 미정의 단계 → 사용자에게 확인 후 중단
 5. 모든 단계는 `document-memory-policy.md` 준수
+6. `product-orchestrator`가 선택되면 redirect/handoff 경계로 취급하고, 같은 패스 안에서 product package가 반환되지 않는 한 build 체인을 계속 진행하지 않음
 
 **메모리 단계 분리 계약**:
 - `project-memory-agent`: 2.0.5 단계에서 프로젝트 메모리 로드/업데이트
@@ -281,4 +332,6 @@ Fix-forward 태스크는 `session-logger` HANDOFF.md를 통해 다음 세션으�
 - 오케스트레이션만 수행, 직접 분석 안 함
 - Patch 병합: 얕은 오브젝트 머지
 - 사용자 질문: Claude 런타임은 `AskUserQuestion`, Codex 런타임은 `codex-validate-plan`/`codex-review-code` 결과를 우선 반영 후 미해결 차단 항목만 질문
+- Build-only boundary: upstream 제품 정의가 없으면 build 체인 안에서 제품 산출물을 임의 생성하지 말고 `product-orchestrator`로 라우팅
+- Product-package handoff: `PLAN.md` + `tasks/*.md`가 있으면 이를 planning source of truth로 보고 `requirements-analyzer` / `context-builder`를 생략
 - `document-memory-policy.md` 준수

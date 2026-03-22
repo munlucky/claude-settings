@@ -11,6 +11,7 @@
 - `.claude/`에 규칙, 에이전트, 스킬, 문서, 템플릿을 집중 관리
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
 - `install-claude.sh`로 다른 프로젝트에 빠르게 설치
+- 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 
 ## 디렉터리 구조
 
@@ -32,6 +33,10 @@ claude-settings/
 │   │   ├── documentation-agent.md
 │   │   └── design-spec-extractor.md
 │   ├── skills/
+│   │   ├── product-orchestrator/
+│   │   ├── product-gate-reviewer/
+│   │   ├── task-slicer/
+│   │   ├── assumption-ledger/
 │   │   ├── moonshot-orchestrator/
 │   │   ├── moonshot-classify-task/
 │   │   ├── moonshot-evaluate-complexity/
@@ -52,6 +57,7 @@ claude-settings/
 │   │   └── project-md-refresh/
 │   ├── docs/
 │   │   ├── guidelines/
+│   │   │   ├── product-definition-workflow.md
 │   │   │   ├── analysis-guide.md
 │   │   │   ├── parallel-execution.md
 │   │   │   ├── question-templates.md
@@ -62,6 +68,7 @@ claude-settings/
 │   │   └── tasks/
 │   │       └── context.md
 │   └── templates/
+│       ├── product-definition/
 │       ├── moonshot-output.md
 │       ├── moonshot-output.ko.md
 │       └── moonshot-output.yaml
@@ -82,6 +89,13 @@ claude-settings/
 - 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence` 스킬로 구성됩니다.
 - medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
 
+### Product Definition 레이어
+
+- `product-orchestrator`가 아이디어를 `PRODUCT_INTENT -> PRD -> SOLUTION -> SPEC -> PLAN` 체인으로 정리합니다.
+- `product-gate-reviewer`는 문서 품질 자체보다 다음 단계로 넘길 수 있는지를 `pass / conditional_pass / fail`로 판정합니다.
+- `task-slicer`는 `PLAN.md`를 vertical slice 기반 `tasks/*.md`로 분해합니다.
+- `assumption-ledger`는 질문이 필요한 모호함을 `ASSUMPTIONS.md` 또는 `BLOCKERS.md`로 적재해 workflow 정지를 줄입니다.
+
 ### 에이전트
 
 | 에이전트 | 역할 | 주요 작업 |
@@ -95,6 +109,7 @@ claude-settings/
 
 ### 스킬 라이브러리
 
+- Product Definition: `product-orchestrator`, `product-gate-reviewer`, `task-slicer`, `assumption-ledger`
 - Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
 - 실행/검증: `karpathy-execution-gate`, `implementation-runner`, `codex-validate-plan`, `codex-review-code`, `completion-verifier`
 - 문서/세션: `session-logger`, `efficiency-tracker`
@@ -103,8 +118,10 @@ claude-settings/
 ### 문서와 템플릿
 
 - 가이드라인: `docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화)
+- 제품 정의 가이드: `docs/guidelines/product-definition-workflow.md`
 - 예시: `docs/examples/token-optimization-example.md`
 - 작업 템플릿: `docs/tasks/context.md`
+- 제품 정의 템플릿: `templates/product-definition/*.md`
 - 출력 템플릿: `templates/moonshot-output.*`
 
 ## 빠른 시작
@@ -208,6 +225,7 @@ Codex MCP 활용:
 - Karpathy Gate: 구현 직전 실행 규율 점검으로 과설계/스코프 이탈 방지
 - Doc Sync: 문서 자동 동기화로 피드백 루프 유지
 - Completion Check: 요구사항 누락 방지
+- Product Definition Layer: 제품 정의 산출물을 먼저 고정한 뒤 기존 구현 체인으로 핸드오프
 
 자세한 내용은 `.claude/README.md`를 참고하세요.
 

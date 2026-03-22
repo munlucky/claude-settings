@@ -142,6 +142,15 @@ API 호출 및 데이터 통신 관련 패턴을 설명합니다.
 | 문서 | 경로 패턴 |
 |------|----------|
 | 사전 합의서 | `{agreementsRoot}/{feature-name}-agreement.md` |
+| 제품 의도서 | `{tasksRoot}/{feature-name}/product/PRODUCT_INTENT.md` |
+| 제품 요구사항 | `{tasksRoot}/{feature-name}/product/PRD.md` |
+| 제품 동작 모델 | `{tasksRoot}/{feature-name}/product/SOLUTION.md` |
+| 아키텍처 명세 | `{tasksRoot}/{feature-name}/product/SPEC.md` |
+| 아키텍처 결정 기록 | `{tasksRoot}/{feature-name}/product/ADR/*.md` |
+| 실행 계획 | `{tasksRoot}/{feature-name}/product/PLAN.md` |
+| 실행 task | `{tasksRoot}/{feature-name}/product/tasks/*.md` |
+| 가정 원장 | `{tasksRoot}/{feature-name}/product/ASSUMPTIONS.md` |
+| 하드 blocker | `{tasksRoot}/{feature-name}/product/BLOCKERS.md` |
 | 구현 계획 | `{tasksRoot}/{feature-name}/context.md` |
 | 명세서 | `{tasksRoot}/{feature-name}/specification.md` |
 | 아카이브 | `{tasksRoot}/{feature-name}/archives/` |

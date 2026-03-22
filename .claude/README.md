@@ -78,6 +78,12 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 
 ## Skills
 
+### Product Definition
+- `product-orchestrator`
+- `product-gate-reviewer`
+- `task-slicer`
+- `assumption-ledger`
+
 ### Moonshot Analysis
 - `moonshot-classify-task`
 - `moonshot-evaluate-complexity`
@@ -104,16 +110,20 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 
 ## Typical Flow (Example)
 
-1. `moonshot-orchestrator` analyzes the request and builds the chain.
-2. `requirements-analyzer` and `context-builder` outline the plan.
-3. For complex tasks, validate the plan with `codex-validate-plan`, then run `karpathy-execution-gate` before `implementation-runner`.
-4. Use `verification-agent` and `verify-changes.sh` to check quality.
-5. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
+1. `product-orchestrator` converts an idea into `PRODUCT_INTENT -> PRD -> SOLUTION -> SPEC -> PLAN`.
+2. `product-gate-reviewer` decides `pass`, `conditional_pass`, or `fail` at each stage.
+3. `task-slicer` decomposes `PLAN.md` into independently executable `tasks/*.md`.
+4. `moonshot-orchestrator` receives the product package and builds the implementation chain.
+5. For complex tasks, validate the plan with `codex-validate-plan`, then run `karpathy-execution-gate` before `implementation-runner`.
+6. Use `verification-agent` and `verify-changes.sh` to check quality.
+7. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
 
 ## Docs and Templates
 
 - Keep task docs under `.claude/docs` following `.claude/PROJECT.md` path rules.
 - Output templates: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
+- Product-definition guide: `.claude/docs/guidelines/product-definition-workflow.md`.
+- Product-definition templates: `.claude/templates/product-definition/`.
 
 ## Maintenance Notes (This Repo)
 
