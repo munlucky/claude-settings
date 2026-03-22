@@ -2,6 +2,8 @@
 
 > 프로젝트별 규칙/구성 문서입니다. 이 파일을 각 프로젝트에 맞게 작성하십시오.
 
+Last-Reviewed: 2026-02-19
+
 ## 프로젝트 개요
 이 섹션에는 프로젝트의 기본 정보를 작성합니다.
 
@@ -39,7 +41,7 @@
 
 > AI 에이전트가 테스트를 올바르게 실행하고 작성하기 위해 필요한 정보입니다.
 
-- **테스트 프레임워크**: [Jest / Vitest / Playwright / etc.]
+- **테스트 프레임워크**: [Jest / Vitest / Agent Browser / Playwright / etc.]
 - **테스트 파일 위치**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
 - **커버리지 기대치**: [80% 이상 / 핵심 로직만 / etc.]
 - **실행 명령**:
@@ -156,6 +158,18 @@ API 호출 및 데이터 통신 관련 패턴을 설명합니다.
 | 아카이브 | `{tasksRoot}/{feature-name}/archives/` |
 | 세션 로그 | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
 | 미해결 질문 | `{tasksRoot}/{feature-name}/pending-questions.md` |
+
+## 지식 저장소 (Agent-First)
+
+이 템플릿을 실제 작업 프로젝트에 설치했을 때 사용하는 운영 원칙입니다.
+
+- 루트 `AGENTS.md`는 짧은 맵으로 유지합니다. 전체 정책 문서를 붙여넣는 용도로 쓰지 않습니다.
+- 지속 정책은 소스 오브 트루스 경로에 저장합니다.
+  - `PROJECT.md` (프로젝트 계약)
+  - `docs/guidelines/` 또는 `.claude/docs/guidelines/` (운영 가이드)
+  - `.claude/rules/` (강제 규칙)
+- 핵심 맵/계약 문서에는 `Last-Reviewed: YYYY-MM-DD`를 기록하고 주기적으로 갱신합니다.
+- 구조 변경 후 `.claude/scripts/knowledge-repo-audit.sh`를 실행해 링크/신선도를 점검합니다.
 
 ## 검증/명령
 프로젝트에서 사용하는 주요 명령어를 나열합니다.

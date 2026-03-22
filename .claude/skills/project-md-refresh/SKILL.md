@@ -8,6 +8,8 @@ description: Analyze the current repository and create or refresh .claude/PROJEC
 ## Goal
 Create or update `.claude/PROJECT.md` with accurate, evidence-based project details.
 
+> This skill is a bootstrap generator, not a gate by itself. Gate logic belongs in `project-contract-gate`.
+
 ## Workflow
 1. Locate the base file.
    - If `.claude/PROJECT.md` exists, use it as the base; preserve custom rules and update facts.
@@ -32,6 +34,13 @@ Create or update `.claude/PROJECT.md` with accurate, evidence-based project deta
 4. Output.
    - Save `.claude/PROJECT.md`.
    - Provide a short summary and list any gaps/questions.
+   - Report whether the minimum contract sections are now ready for orchestration:
+     - overview
+     - commands
+     - testing rules
+     - structure/patterns
+     - git workflow
+     - core rules / boundaries
 
 ## Guardrails
 - Do not invent details; base every statement on files found.

@@ -6,7 +6,7 @@ description: PM workflow orchestrator. Analyzes user requests and automatically 
 # PM Orchestrator
 
 ## Role
-Runs PM analysis skills in sequence and builds the final agent chain.
+Run PM analysis skills in sequence, resolve execution plane and workflow profile, then build the final agent chain.
 
 This orchestrator is the **build control plane**.
 
@@ -27,6 +27,15 @@ If the request is still in product-definition mode and no product package exists
 
 > Available teams: review-team, research-team, verify-team, planning-team, quality-team, analysis-team, fix-team, impl-team, cross-layer-team, debug-team. Details in `moonshot-teams-runner/SKILL.md`.
 
+## Entry Policy
+
+- Use this skill by default for code work.
+- Allow bypass when:
+  - the user explicitly invokes a specific skill
+  - the task is read-only / answer-only
+  - the task is self-host work on the orchestrator or meta-workflow
+- If bypassed, still prefer a lightweight `pre-flight-check` when the direct skill may edit files.
+
 ## Inputs
 Automatically collected:
 - `userMessage`, `gitBranch`, `gitStatus`, `recentCommits`, `openFiles`
@@ -40,26 +49,30 @@ Resolve `executionRuntime` before orchestration:
   - Steps documented as `Task (fork)` must preserve isolation by passing minimal input and merging summarized output only.
   - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
   - Ask user only when those outputs still indicate unresolved blocking items.
+- Cross-runtime policy source of truth:
+  - Keep workflow policy in skills/orchestrator state.
+  - `commands`/hooks are optional adapters and must only route to skills.
 
 ## Context Budget Rule
 
 > **CRITICAL**: Protect main session context from pollution.
 
-1. **No file content inlining**: Record paths only in analysisContext, never paste file contents
-2. **Sub-skill results**: Merge only summarized output into notes (max 5 lines per result)
-3. **Notes cap**: When notes array exceeds 10 items, archive oldest items
-4. **Review results**: Extract key issues only from codex-review-code output
-5. **Fork returns**: Accept only structured summaries from fork agents, never raw data
+1. **No file content inlining**: Record paths only in `analysisContext`, never paste file contents.
+2. **Sub-skill results**: Merge only summarized output into notes (max 5 lines per result).
+3. **Notes cap**: When notes array exceeds 10 items, archive oldest items.
+4. **Review results**: Extract key issues only from `codex-review-code` output.
+5. **Fork returns**: Accept only structured summaries from fork agents, never raw data.
 
 ## Workflow
 
 ### 1. Initialize analysisContext
 
 ```yaml
-schemaVersion: "1.0"
+schemaVersion: "1.1"
 request: { userMessage, taskType: unknown, keywords: [] }
 repo: { gitBranch, gitStatus, openFiles: [], changedFiles: [] }
 signals:
+  executionPlane: unknown
   hasContextMd: false
   hasPendingQuestions: false
   requirementsClear: false
@@ -79,11 +92,20 @@ signals:
   testEnvironmentDetected: false
   testFramework: null
   testsWritten: false
+  workflowProfile: standard
+  projectContractReady: false
+  contextReady: false
+  verificationContractReady: false
+  designApproved: false
+  isolatedWorkspaceReady: false
+  evidenceGateRequired: true
+  allowIndeterminate: true
+  harnessVerdictRequired: true
 estimates: { estimatedFiles: 0, estimatedLines: 0, estimatedTime: unknown }
 phase: unknown
 complexity: unknown
 missingInfo: []
-decisions: { recommendedAgents: [], skillChain: [], parallelGroups: [] }
+decisions: { recommendedAgents: [], bundleChain: [], skillChain: [], parallelGroups: [] }
 fixForward:
   enabled: true
   policy: { critical: block, high: fix-forward-task, medium: merge-with-note, low: auto-approve }
@@ -100,8 +122,10 @@ artifacts:
   assumptionsPath: "{productDir}/ASSUMPTIONS.md"
   blockersPath: "{productDir}/BLOCKERS.md"
   taskSliceGlob: "{productDir}/tasks/*.md"
+  verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
+  verificationResultPath: "{tasksRoot}/{feature-name}/verification-result.json"
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
 projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
 notes: []
@@ -111,22 +135,47 @@ notes: []
 
 #### 2.0 Large specification handling
 Follow `.claude/docs/guidelines/document-memory-policy.md`:
-- `userMessage` > 2000 words → summarize to `specification.md`, archive original
-- Independent features > 5 → split into `subtasks/subtask-NN/` with independent `context.md`
+- `userMessage` > 2000 words -> summarize to `specification.md`, archive original
+- Independent features > 5 -> split into `subtasks/subtask-NN/` with independent `context.md`
 - Keep `context.md` under `tokenBudget.contextMaxTokens`
 
-#### 2.0.5 Load Project Memory (Fork)
+#### 2.0.1 Resolve execution plane
+
+Set `signals.executionPlane` before task classification:
+
+- `read_only`
+  - summarization, explanation, lookups, review-only requests
+- `product_project`
+  - downstream application/service implementation work
+- `meta_harness`
+  - changes to `.claude/skills`, `.claude/rules`, `.claude/agents`, installer/distribution logic, or harness scripts
+
+#### 2.0.2 Harness gate defaults
+- Default `signals.allowIndeterminate` to `true`.
+- When test environment is missing (`indeterminate`), continue by recording `pass_with_warning` by default.
+- In strict mode (`allowIndeterminate=false`), treat indeterminate as blocking.
+
+#### 2.0.3 Workflow profile resolution (standard vs strict)
+- Default `signals.workflowProfile` to `standard`.
+- Promote to `strict` if one of the following is true:
+  - User explicitly asks for strict/no-warning/hard-gate behavior.
+  - Project policy for the current task requires strict verification discipline.
+  - `executionPlane == meta_harness` and the task edits core workflow files.
+- When `workflowProfile == strict`:
+  - Set `signals.allowIndeterminate = false`.
+  - Require design approval gate before implementation (`design-approval-gate`) for downstream product changes.
+  - Require isolated workspace gate before first implementation (`workspace-isolation-gate`).
+  - Require evidence gate before any completion claim (`verification-evidence-gate`).
+
+#### 2.0.4 Load Project Memory (Fork)
 
 > Run `project-memory-agent` as **fork subagent** to prevent context pollution.
 
 ```
 Task tool: project-memory-agent (subagent_type: general-purpose)
 Input: { projectId, changedFiles, taskType, userRequest }
-Returns: { projectId, loaded, boundaries, relevantRules } → merge into projectMemory
+Returns: { projectId, loaded, boundaries, relevantRules } -> merge into projectMemory
 ```
-- Codex runtime: execute equivalent isolated subtask with the same I/O contract.
-- No memory: `boundaryStatus: "not_initialized"`, continue
-- MCP unavailable: `boundaryStatus: "not_checked"`, warn and continue
 
 #### 2.0.6 Product package detection
 Before normal build planning, detect whether upstream product-definition artifacts already exist.
@@ -153,28 +202,31 @@ Routing rule:
 - If `productPackageReady == true`, skip upstream planning stages and use the handoff package as the implementation baseline
 
 #### 2.1 Task classification
-Run `/moonshot-classify-task` → merge patch (taskType, keywords, signals)
+Run `/moonshot-classify-task` -> merge patch (`taskType`, `keywords`, `signals`)
 
 #### 2.2 Complexity evaluation
-Run `/moonshot-evaluate-complexity` → merge patch (complexity, estimates)
+Run `/moonshot-evaluate-complexity` -> merge patch (`complexity`, `estimates`)
 
-#### 2.3 Uncertainty detection
-Run `/moonshot-detect-uncertainty` → merge patch (missingInfo)
+#### 2.3 Readiness scan
+Run `pre-flight-check` when the task may edit files.
+- The scan should set:
+  - `signals.projectContractReady`
+  - `signals.contextReady`
+  - `signals.verificationContractReady`
+  - `signals.executionPlane` when the initial heuristic was weak
+  - `signals.shouldEscalateStrict`
 
-#### 2.4 Uncertainty handling
-If `missingInfo` not empty:
-1. Resolve uncertainty questions:
-   - `claude-code`: generate questions via `AskUserQuestion` (priority HIGH first)
-   - `codex`: run `codex-validate-plan` first to derive blocking questions; defer user questioning until unresolved blockers remain
-2. Merge answers into analysisContext
-3. Set `signals.hasPendingQuestions = false`
-4. Re-run detection if needed
+#### 2.4 Uncertainty detection
+Run `/moonshot-detect-uncertainty` -> merge patch (`missingInfo`)
 
-#### 2.5 Sequence decision
-Run `/moonshot-decide-sequence` → merge patch (phase, skillChain, parallelGroups)
+#### 2.5 Uncertainty handling
+If `missingInfo` is not empty:
+1. Resolve blocking questions.
+2. Merge answers into `analysisContext`.
+3. Re-run detection if needed.
 
-#### 2.6 Plan size management
-Follow `document-memory-policy.md`: archive at 80% threshold, summarize at 100%.
+#### 2.6 Sequence decision
+Run `/moonshot-decide-sequence` -> merge patch (`phase`, `bundleChain`, `skillChain`, `parallelGroups`)
 
 ### 3. Execute the agent chain
 
@@ -184,33 +236,39 @@ Run `decisions.skillChain` in order.
 
 | Step | Type | Notes |
 |------|------|-------|
-| `pre-flight-check` | Skill | |
-| `product-orchestrator` | Skill | Upstream redirect only |
-| `project-memory-agent` | Task (fork) | Context isolation |
-| `project-memory-check` | Task (fork) | Pre-implementation boundary check |
+| `pre-flight-check` | Skill | emits readiness signals |
+| `product-orchestrator` | Skill | upstream redirect only |
+| `project-contract-gate` | Skill | downstream bootstrap gate |
+| `context-readiness-gate` | Skill | downstream task-context gate |
+| `verification-contract-gate` | Skill | downstream verification gate |
+| `project-memory-agent` | Task (fork) | context isolation |
+| `project-memory-check` | Task (fork) | pre-implementation boundary check |
 | `requirements-analyzer` | Task | |
 | `context-builder` | Task | |
 | `codex-validate-plan` | Skill | |
-| `karpathy-execution-gate` | Skill | Pre-implementation discipline gate |
+| `design-approval-gate` | Skill | strict profile design approval gate |
+| `workspace-isolation-gate` | Skill | strict profile branch/workspace isolation gate |
+| `karpathy-execution-gate` | Skill | pre-implementation discipline gate |
 | `implementation-runner` | Task | |
-| `code-simplifier` | Plugin | Post-implementation simplification |
-| `completion-verifier` | Skill (fork) | Test environment auto-detect |
-| `doc-auto-sync` | Skill | Auto-docs update & bootstrap |
+| `code-simplifier` | Plugin | post-implementation simplification |
+| `completion-verifier` | Skill (fork) | contract-aware verification |
+| `verification-evidence-gate` | Skill | strict profile evidence-before-completion gate |
+| `doc-auto-sync` | Skill | auto-docs update & bootstrap |
 | `codex-review-code` | Skill | |
-| `project-memory-reviewer` | Task (fork) | Context isolation |
-| `vercel-react-best-practices` | Skill | When reactProject=true |
+| `project-memory-reviewer` | Task (fork) | context isolation |
+| `vercel-react-best-practices` | Skill | when reactProject=true |
 | `security-reviewer` | Skill | |
 | `build-error-resolver` | Skill | |
-| `browser-verifier` | Skill | Runtime check for web projects |
-| `verify-runtime.sh` | Bash | Runtime URL/E2E verifier |
-| `verify-changes.sh` | Bash | |
+| `browser-verifier` | Skill | runtime check for web projects |
+| `verify-runtime.sh` | Bash | runtime URL/E2E verifier |
+| `verify-changes.sh` | Bash | verdict-emitting project verifier |
 | `efficiency-tracker` | Skill | |
 | `session-logger` | Skill | |
 | `moonshot-phase-runner` | Skill | |
 | `moonshot-teams-runner` | Skill | |
-| `team-leader-agent` | Task (fork) | Teams coordination |
-| `failure-analyzer` | Skill (fork) | System failure analysis |
-| `workflow-self-improver` | Skill (fork) | Meta-system auto-improvement |
+| `team-leader-agent` | Task (fork) | teams coordination |
+| `failure-analyzer` | Skill (fork) | system failure analysis |
+| `workflow-self-improver` | Skill (fork) | meta-system auto-improvement |
 | `commit-moonshot` | Skill | |
 
 **Agent mapping:**
@@ -251,82 +309,51 @@ Run `decisions.skillChain` in order.
 **Fork-based agents** (`project-memory-agent`, `project-memory-check`, `project-memory-reviewer`, `team-leader-agent`):
 - Run in separate context sessions
 - Return only summarized results → prevents main session context pollution
-
 ### 3.1 Dynamic Skill Injection
 
 | Signal | Trigger | Action |
 |--------|---------|--------|
+| `projectContractReady=false` | `executionPlane == product_project` | Insert `project-contract-gate` before planning |
+| `contextReady=false` | `executionPlane == product_project` | Insert `context-readiness-gate` before implementation |
+| `verificationContractReady=false` | `executionPlane == product_project` | Insert `verification-contract-gate` before verification |
 | `buildFailed` | `verify-changes.sh` exit `1` | Insert `build-error-resolver`, retry (max 2) |
 | `testFailed` | `verify-changes.sh` exit `2` | Re-enter `implementation-runner` with test-first remediation, then rerun verification |
 | `runtimeUnavailable` | `verify-runtime.sh` exit `1` | Request server/runtime readiness fix, rerun `browser-verifier` (max 1) |
-| `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` (test-first remediation + rerun runtime verification) |
-| `securityConcern` | Changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after codex-review-code |
-| `coverageLow` | completion-verifier: coverage < 80% | Log warning, request additional tests |
-| `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after codex-review-code |
-| `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before completion-verifier |
+| `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` |
+| `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
+| `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
+| `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after `codex-review-code` |
+| `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before `completion-verifier` |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |
-| `newProject` | missing ARCHITECTURE.md + complex task | Insert `doc-auto-sync --init` at start of chain |
-| `webRuntimeCheck` | `reactProject == true` | Insert `browser-verifier` before `verify-changes.sh` (or right after `completion-verifier` if `verify-changes.sh` is absent) |
-| `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` for phase-status preparation/handoff |
-| `executionDisciplineMissing` | medium/complex chain has `implementation-runner` but no `karpathy-execution-gate` | Insert `karpathy-execution-gate` right before the first `implementation-runner` |
+| `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` |
+| `strictProfile` | `workflowProfile == strict` and no evidence step | Insert `verification-evidence-gate` after `completion-verifier` or `verify-changes.sh` |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
 
-### 3.2 Project Memory Review (Fork)
+### 3.2 Execution-plane rules
 
-After `codex-review-code`:
-```
-Task tool: project-memory-reviewer (subagent_type: general-purpose)
-Input: { projectId, changedFiles, projectMemoryContext, diff }
-Returns: { status, violations, needsApproval, warnings, reminders }
-```
-- `status: "failed"` → **HALT**, report violations
-- `status: "needs_approval"` → ask user
-- `status: "passed"` → proceed
+- `read_only`
+  - do not inject readiness gates
+  - do not run implementation or completion verification
+- `product_project`
+  - use readiness gates and downstream bootstrap skills
+- `meta_harness`
+  - skip downstream bootstrap gates
+  - prefer strict profile for changes to core workflow contracts
 
 ### 3.3 Completion Verification Loop
 
 After `implementation-runner`:
 1. If `completion-verifier` exists in `decisions.skillChain`, call it.
 2. If `completion-verifier` is absent (simple flow), use `verify-changes.sh` (and `browser-verifier` for web projects) as completion gate.
-3. If `completionStatus.verificationState == passed` (or equivalent gate pass) → mark `implementationComplete: true`, proceed.
-4. If `completionStatus.verificationState == indeterminate` (typically `allPassed: null`):
-   - Run fallback gate: `verify-changes.sh` (and `browser-verifier` for web projects) when available.
-   - If fallback gate passes and Self-Audit has no blockers → proceed with `implementationComplete: true` and add warning note.
-   - If fallback gate is unavailable or fails → ask user for explicit decision/intervention.
-5. Failure (`verificationState == failed` or fallback gate fail) + retryCount < 2 → return to failed phase and apply exit-code strategy (`exit 1` build-first fix, `exit 2` test-first fix), then retry.
-6. Failure + retryCount ≥ 2 → ask user for intervention.
-
-### 3.4 Phase Runner Handoff Contract
-
-When `moonshot-phase-runner` is used in chain:
-1. Treat it as **execution preparation**, not implementation completion.
-2. Require `.claude/docs/phase-status.yaml` output and merge summary fields into `notes`:
-   - `masterPlan`, `autonomousMode`, `preparedAt`, `pendingPhases`
-3. Record external execution handoff command from phase-runner output:
-   - `.claude/scripts/agent-loop.sh <plan-dir>`
-4. Resume main orchestrator verification only after phase execution updates are reflected in `phase-status.yaml`.
-
-### 3.5 Fix Forward Post-Review
-
-After `codex-review-code`, apply fix-forward policy:
-1. **REJECT (CRITICAL)** → Re-enter implementation, do NOT merge
-2. **FIX-FORWARD (HIGH)** → Merge allowed. Append tasks to `fixForward.tasks[]`.
-   - Log each task in session-logger
-   - Include in commit message: `[fix-forward: N tasks]`
-3. **MERGE-NOTE (MEDIUM)** → Merge allowed with warning in notes
-4. **APPROVE** → Merge normally
-
-Fix-forward tasks carry over to next session via `session-logger` HANDOFF.md.
+3. If `completionStatus.verificationState == passed`, proceed.
+4. If `completionStatus.verificationState == indeterminate`:
+   - strict -> treat as failure
+   - standard -> record `pass_with_warning`
+5. If strict, run `verification-evidence-gate` before any completion statement.
+6. On failure, retry using exit-code strategy until retry cap is reached.
 
 ### 4. Record results
-Save final analysisContext to `.claude/docs/moonshot-analysis.yaml`.
-
-## Error handling
-
-1. **Skill failure**: record in notes, report to user
-2. **Undefined step**: ask user, stop
-3. **Question loop**: max 3 rounds, then proceed with defaults
-4. **Token limit**: archive and summarize before continuing
+Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
 
 ## Contract
 - Orchestrates only, does not analyze directly

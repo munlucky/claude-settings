@@ -12,6 +12,7 @@
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
 - `install-claude.sh`로 다른 프로젝트에 빠르게 설치
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
+- `docs/implementation/`에 메타 워크플로우 개선 계획 문서를 보관
 
 ## 디렉터리 구조
 
@@ -85,9 +86,12 @@ claude-settings/
 
 ### Moonshot 워크플로우
 
-- `moonshot-orchestrator` 스킬이 요청을 분석하고 최적의 에이전트 체인을 구성합니다.
+- `moonshot-orchestrator` 스킬이 요청을 분석하고 기본 진입점으로 동작합니다.
+- 오케스트레이터는 먼저 `executionPlane`을 `read_only`, `product_project`, `meta_harness`로 분류합니다.
+- downstream 프로젝트 작업에서는 `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`가 최소 맥락과 검증 계약을 확인합니다.
 - 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence` 스킬로 구성됩니다.
 - medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
+- 사용자가 특정 스킬을 직접 지정한 경우나 read-only 요청, 오케스트레이터 자체 수정 작업에서는 direct invocation bypass가 허용됩니다.
 
 ### Product Definition 레이어
 
@@ -113,7 +117,7 @@ claude-settings/
 - Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
 - 실행/검증: `karpathy-execution-gate`, `implementation-runner`, `codex-validate-plan`, `codex-review-code`, `completion-verifier`
 - 문서/세션: `session-logger`, `efficiency-tracker`
-- 보조 도구: `pre-flight-check`, `design-asset-parser`, `project-md-refresh`, `security-reviewer`, `build-error-resolver`
+- 보조 도구: `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `design-asset-parser`, `project-md-refresh`, `security-reviewer`, `build-error-resolver`
 
 ### 문서와 템플릿
 
@@ -171,6 +175,12 @@ custom/
 
 설치 후 `.claude/PROJECT.md`가 없다면 `project-md-refresh` 스킬을 실행해 프로젝트 분석 기반으로 생성하거나 갱신할 수 있습니다.
 
+추가로 downstream 프로젝트 구현 전에 다음 readiness gate를 통과하는 구성을 권장합니다.
+
+- `project-contract-gate`: `.claude/PROJECT.md` 최소 계약 확인
+- `context-readiness-gate`: `context.md` 최소 섹션 확인
+- `verification-contract-gate`: `.claude/verification.contract.yaml` 또는 동등한 검증 정책 확인
+
 예시:
 - Claude Code에 이 저장소에서 `project-md-refresh`를 실행해달라고 요청
 
@@ -218,6 +228,10 @@ Codex MCP 활용:
 1. `.claude/PROJECT.md`를 프로젝트에 맞게 수정
 2. Git에 커밋: `git add .claude && git commit -m "Add Claude Code settings"`
 3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
+
+직접 스킬을 지정해서 실행하는 경우:
+- review-only, read-only, meta-harness 수정은 direct invocation이 가능
+- 일반적인 코드 작업은 `moonshot-orchestrator`를 기본 진입점으로 두는 편이 안전
 
 ## Moonshot 워크플로우 v2 요약
 

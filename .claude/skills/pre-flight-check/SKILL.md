@@ -1,23 +1,26 @@
 ---
 name: pre-flight-check
-description: Checks essential information and project status before starting a task.
+description: Checks essential information and project status before starting work and emits readiness signals for orchestration.
 ---
 
 # Pre-Flight Check Skill
 
-**Role**: Check essential info and project status before starting work to reduce omissions.
+**Role**: Check essential info and project status before starting work to reduce omissions and emit machine-readable readiness signals.
 
 ## Inputs
 - `analysisContext.*` (structured state, if exists)
 - Feature name/branch name (optional)
-- Required doc paths: CLAUDE.md, context.md, etc.
+- Required doc paths: `CLAUDE.md`, `PROJECT.md`, `context.md`, verification contract, etc.
 
 ## Checklist
+- execution plane (`read_only`, `product_project`, `meta_harness`)
 - UI spec version/design assets availability
 - API spec availability
 - Similar feature references
 - git status/branch, build status
 - context.md freshness, unresolved items in pending-questions.md
+- downstream project contract readiness (`PROJECT.md`)
+- downstream verification contract readiness (`.claude/verification.contract.yaml` or equivalent policy)
 - **Document Memory Policy check**:
   - context.md token usage (warn if > 6,000 tokens, ~80% of limit)
   - specification.md exists and is summarized (if large spec)
@@ -26,39 +29,44 @@ description: Checks essential information and project status before starting a t
   - Check `ARCHITECTURE.md` last modified vs code change
   - Check `docs/generated/*` vs related source code
 
-## Output (example)
+## Structured Output Contract
+
+Return machine-readable readiness signals first, then optional human summary.
+
+```yaml
+signals:
+  executionPlane: product_project
+  projectContractReady: false
+  contextReady: false
+  verificationContractReady: false
+  shouldEscalateStrict: true
+  docStale: false
+notes:
+  - "pre-flight: executionPlane=product_project"
+  - "pre-flight: project contract missing required command/test sections"
+recommendedActions:
+  - "run project-contract-gate"
+  - "run context-readiness-gate"
+```
+
+Optional human-readable example:
+
 ```markdown
 # Pre-flight Check Results
 
-## Required Info
-OK UI spec: v3 (YYYY-MM-DD)
-OK API spec: draft available
-WARN similar feature reference: not found
+## Plane
+product_project
 
-## Project Status
-OK git status: clean
-OK branch: feature/{feature-name}
-OK build status: success
-
-## Docs
-OK CLAUDE.md: latest
-WARN context.md: missing (needs creation)
-
-## Document Memory Policy
-OK context.md tokens: ~3,200 (under 8,000 limit)
-OK specification.md: summarized (full in archives/)
-OK archives/ directory: exists
-
-## Doc Freshness
-OK ARCHITECTURE.md: fresh (modified 2 days ago)
-WARN docs/generated/api-reference.md: stale (code changed yesterday) -> triggers `docStale` signal
+## Readiness
+WARN PROJECT.md incomplete
+WARN context.md missing minimum sections
+WARN verification contract missing
 
 ## Recommended Actions
-1. [HIGH] Create context.md (ContextBuilder Agent)
-2. [MEDIUM] Verify design assets (invoke design-spec-extractor)
+1. [HIGH] Run `project-contract-gate`
+2. [HIGH] Run `context-readiness-gate`
+3. [MEDIUM] Add `.claude/verification.contract.yaml`
 ```
-
----
 
 ## Anti-Pattern Check
 
@@ -80,25 +88,10 @@ WARN docs/generated/api-reference.md: stale (code changed yesterday) -> triggers
 |----------------------|-------------------|
 | Vague request | Invoke `requirements-analyzer` to clarify |
 | Large document | Follow `document-memory-policy.md` to summarize |
-| Missing areas | Recommend PROJECT.md review, reference template sections |
+| Missing areas | Set `projectContractReady=false`, recommend `project-contract-gate` |
 | No tests | Recommend writing tests before `completion-verifier` |
-
-### Output Example
-
-```markdown
-## Anti-Pattern Check Results
-
-| Item | Status | Action |
-|------|--------|--------|
-| Clear request | ✅ | - |
-| Context size | ✅ | ~2,500 tokens |
-| 6 core areas | ⚠️ | Git workflow undefined |
-| Test defined | ✅ | - |
-
-**Recommended Actions:**
-1. [MEDIUM] Add Git Workflow section to PROJECT.md
-```
 
 ## References
 - `.claude/docs/guidelines/document-memory-policy.md`
-
+- `.claude/docs/guidelines/context-readiness-schema.md`
+- `.claude/docs/guidelines/verification-contract.md`

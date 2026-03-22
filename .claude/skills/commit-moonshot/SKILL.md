@@ -124,14 +124,32 @@ Ensure all documentation files (including auto-generated ones) are staged:
 git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
+## 7.6 Ask About `.claude/memory.json`
+Before staging the memory file, ask the user whether to include `.claude/memory.json` in this commit.
+
+Suggested prompt:
+```text
+`.claude/memory.json` was updated during the commit flow. Do you want to include it in this commit?
+```
+
+Rules:
+- Do not auto-stage `.claude/memory.json` without user confirmation.
+- If the user says yes, stage and commit it with the code/docs changes.
+- If the user says no, leave `.claude/memory.json` unstaged and proceed with the rest of the commit.
+- Mention the user's choice in the final commit summary.
+
 ## 8. Create Commit
 
 ```bash
+# If user approved including memory:
 git add [files] .claude/memory.json
+
+# If user declined:
+git add [files]
 git commit -m "[concise commit message]"
 ```
 
-> **📌 Important: Always include `.claude/memory.json` in the commit.** This file stores Memory MCP update content.
+> **📌 Important: `.claude/memory.json` is optional per commit and must follow the user's explicit choice.** This file stores Memory MCP update content.
 
 **Commit message rules:**
 - No emoji or special characters

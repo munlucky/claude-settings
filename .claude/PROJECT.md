@@ -2,6 +2,8 @@
 
 > This document defines project-specific rules and structure. Write this file for each project.
 
+Last-Reviewed: 2026-02-19
+
 ## Project Overview
 This section captures basic project information.
 
@@ -39,7 +41,7 @@ Example:
 
 > Information needed for AI agents to run and write tests correctly.
 
-- **Test framework**: [Jest / Vitest / Playwright / etc.]
+- **Test framework**: [Jest / Vitest / Agent Browser / Playwright / etc.]
 - **Test file location**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
 - **Coverage expectation**: [80%+ / core logic only / etc.]
 - **Commands**:
@@ -156,6 +158,18 @@ Override the default paths from `CLAUDE.md` if needed. **For git-tracked project
 | Archives | `{tasksRoot}/{feature-name}/archives/` |
 | Session logs | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
 | Pending questions | `{tasksRoot}/{feature-name}/pending-questions.md` |
+
+## Knowledge Repository (Agent-First)
+
+Use this section when the template is installed into a real working project.
+
+- Keep top-level `AGENTS.md` short. It should act as a map, not a full policy dump.
+- Store durable policy in source-of-truth paths:
+  - `PROJECT.md` (project contract)
+  - `docs/guidelines/` or `.claude/docs/guidelines/` (operational guides)
+  - `.claude/rules/` (enforceable global/local rules)
+- Add `Last-Reviewed: YYYY-MM-DD` to core map/contract docs and refresh it during doc maintenance.
+- Run `.claude/scripts/knowledge-repo-audit.sh` after structural doc updates.
 
 ## Verification/Commands
 List the main commands used in the project.

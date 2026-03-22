@@ -277,12 +277,22 @@ if [ "$HAS_UNZIP" = false ] && [ -z "$PYTHON_CMD" ]; then
 fi
 print_info "필수 도구 확인 완료"
 
-# 1.5. 추가 도구 확인 (MCP용)
+# 1.5. 추가 도구 확인 (MCP / Browser Automation)
 if command -v uv &>/dev/null; then
-	print_info "✓ uv 설치 확인됨 (Codex MCP용)"
+	print_info "✓ uv 설치 확인됨 (Codex MCP/Agent Browser 실행 기반)"
 else
-	print_warn "uv가 설치되어 있지 않습니다. Codex MCP 사용을 위해 설치를 권장합니다."
+	print_warn "uv가 설치되어 있지 않습니다. Codex MCP/Agent Browser 사용을 위해 설치를 권장합니다."
 	echo "  설치 방법: pip install uv  또는  curl -LsSf https://astral.sh/uv/install.sh | sh"
+fi
+
+if command -v agent-browser &>/dev/null; then
+	print_info "✓ agent-browser 설치 확인됨 (기능 흐름 E2E 검증 가능)"
+elif command -v uvx &>/dev/null; then
+	print_info "✓ uvx 사용 가능: agent-browser를 전역 설치 없이 실행할 수 있습니다."
+	echo "  예시: uvx agent-browser --help"
+else
+	print_warn "agent-browser 실행 환경을 찾지 못했습니다."
+	echo "  권장: uv 설치 후 'uvx agent-browser --help' 로 실행 가능 여부를 확인하세요."
 fi
 
 # 2. 기존 AI 설정 디렉토리 확인 및 자동 백업
