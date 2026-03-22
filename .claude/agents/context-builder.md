@@ -31,6 +31,7 @@ outputFile: ".claude/features/xxx/context.md"
 ## Outputs
 - Implementation plan document: `{tasksRoot}/{feature-name}/context.md`
 - **Acceptance Tests spec** (included in context.md)
+- Minimum context readiness sections required by `context-readiness-gate`
 
 ## Workflow
 1. Read the agreement and similar features, then confirm the change scope.
@@ -41,6 +42,21 @@ outputFile: ".claude/features/xxx/context.md"
 4. Write the plan in phases: Tests → Mock → API → Verification.
 5. Document risks, dependencies, checkpoints, and verification items.
 6. Write the document following `context-template.md`.
+
+## Minimum Context Schema
+
+Every generated `context.md` must include at least:
+
+```markdown
+## Goal
+## Constraints
+## Acceptance Criteria
+## Out of Scope
+## Target Files
+## Verification Plan
+```
+
+These sections are the minimum contract checked by `context-readiness-gate`.
 
 ## Acceptance Tests Template
 
@@ -65,3 +81,4 @@ Include in context.md:
 ## References
 - `.claude/agents/context-builder/templates/context-template.md`
 - `.claude/docs/guidelines/document-memory-policy.md`
+- `.claude/docs/guidelines/context-readiness-schema.md`

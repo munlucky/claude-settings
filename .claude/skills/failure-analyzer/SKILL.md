@@ -27,6 +27,9 @@ context: fork
 | **guardrail_missing** | Repeated violation of patterns | `rules/quality.md`, boundaries |
 | **prompt_gap** | System prompt misses scenario | `CLAUDE.md`, `AGENTS.md` |
 | **retry_exhausted** | Self-healing loop maxed out | `build-error-resolver` DB |
+| **execution_plane_mismatch** | Downstream flow treated as meta-harness or vice versa | `moonshot-orchestrator`, `workflow.md` |
+| **readiness_gate_missing** | Implementation started without project/context readiness | gate skills, `pre-flight-check` |
+| **verification_contract_missing** | Completion evidence unclear because contract was absent | verification contract docs, evidence gate |
 
 ## Analysis Workflow
 
@@ -87,5 +90,10 @@ systemImprovements:
 ### Skill Level (`.claude/skills/*.md`)
 - **Logic**: Flow corrections, condition updates
 - **Prompts**: Instruction clarifications
+
+### Workflow Architecture Level
+- **Routing**: execution plane detection and bypass policy
+- **Readiness**: project/context/verification gate coverage
+- **Contracts**: explicit verification and context schemas
 
 ---

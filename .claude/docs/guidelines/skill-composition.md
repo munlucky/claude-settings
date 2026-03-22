@@ -1,6 +1,6 @@
-# Skill Composition Guide (Reference Only)
+# Skill Composition Guide
 
-> This document is for future reference. Currently not enforced.
+> Use composition bundles to keep sequence logic short and readable.
 
 ## When to Consider Skill Composition
 
@@ -8,7 +8,35 @@
 - Total skill count exceeds 30
 - Onboarding new team members becomes difficult
 
-## Conceptual Patterns
+## Active Composition Bundles
+
+The orchestrator and sequence planner should prefer bundle selection over long flat step lists.
+
+### planning-bundle
+```yaml
+steps:
+  - requirements-analyzer
+  - context-builder
+  - codex-validate-plan
+```
+
+### readiness-bundle
+```yaml
+steps:
+  - pre-flight-check
+  - project-contract-gate
+  - context-readiness-gate
+  - verification-contract-gate
+```
+
+### implementation-bundle
+```yaml
+steps:
+  - project-memory-check
+  - karpathy-execution-gate
+  - implementation-runner
+  - code-simplifier
+```
 
 ### verification-suite
 ```yaml
@@ -30,11 +58,24 @@ steps:
       - retry: implementation-runner (max: 2)
 ```
 
-## Current Status
+### meta-harness-bundle
+```yaml
+steps:
+  - pre-flight-check
+  - project-memory-check
+  - karpathy-execution-gate
+  - implementation-runner
+  - completion-verifier
+```
 
-**Not implemented yet.** The existing complexity-based chain rules in `moonshot-decide-sequence` provide sufficient abstraction for current scale (~20 skills).
+## Rules
+
+- `product_project` work may use `readiness-bundle`.
+- `meta_harness` work must skip downstream bootstrap gates.
+- Strict profile overlays are applied after bundle expansion, not inside individual bundles.
+- When a bundle expands to no-op for the current plane, record that explicitly in notes.
 
 ## References
 
-- [moonshot-decide-sequence](file://.claude/skills/moonshot-decide-sequence/SKILL.md)
-- [moonshot-orchestrator](file://.claude/skills/moonshot-orchestrator/SKILL.md)
+- `.claude/skills/moonshot-decide-sequence/SKILL.md`
+- `.claude/skills/moonshot-orchestrator/SKILL.md`

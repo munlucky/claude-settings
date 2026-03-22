@@ -15,11 +15,17 @@ Validate that a web app is reachable and working at runtime after implementation
 
 ## Prerequisites
 - Running local dev server or staging URL
-- Optional E2E command configured in project (for example `npm run test:e2e`)
+- Optional E2E command configured in project
+- Recommended npm scripts:
+  - `test:e2e:agent-browser` (preferred for feature-flow checks)
+  - `test:e2e` (fallback / existing runner)
 
 ## Usage
 ```bash
 /browser-verifier --url=http://localhost:3000
+/browser-verifier --url=http://localhost:3000                         # auto-detect E2E script
+/browser-verifier --url=http://localhost:3000 --no-auto-e2e           # URL only
+/browser-verifier --url=https://staging.example.com --e2e="npm run test:e2e:agent-browser"
 /browser-verifier --url=https://staging.example.com --e2e="npm run test:e2e"
 ```
 
@@ -32,8 +38,11 @@ Validate that a web app is reachable and working at runtime after implementation
 ## Execution
 1. Resolve target URL from `--url` or `APP_BASE_URL` (default: `http://localhost:3000`).
 2. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional E2E command (tool-routed in Claude runtime, direct shell in Codex runtime).
-3. If runtime check fails, stop and report environment readiness issue.
-4. If E2E fails, return failure details and failing command.
+3. If `--e2e` is omitted, the script auto-detects npm scripts in this order:
+   - `test:e2e:agent-browser`
+   - `test:e2e`
+4. If runtime check fails, stop and report environment readiness issue.
+5. If E2E fails, return failure details and failing command.
 
 ## Output Contract
 - pass/fail status
@@ -43,5 +52,5 @@ Validate that a web app is reachable and working at runtime after implementation
 
 ## Script
 ```bash
-.claude/agents/verification/verify-runtime.sh --url=<url> [--e2e="<command>"]
+.claude/agents/verification/verify-runtime.sh --url=<url> [--e2e="<command>"] [--no-auto-e2e]
 ```

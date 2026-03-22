@@ -92,9 +92,12 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 
 ### Execution and Verification
 - `pre-flight-check`
+- `design-approval-gate` (NEW, strict profile)
+- `workspace-isolation-gate` (NEW, strict profile)
 - `karpathy-execution-gate` (NEW)
 - `implementation-runner`
 - `completion-verifier` (NEW)
+- `verification-evidence-gate` (NEW, strict profile)
 - `codex-validate-plan`
 - `codex-review-code`
 

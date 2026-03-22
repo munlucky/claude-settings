@@ -15,11 +15,17 @@ triggers:
 
 ## 사전 조건
 - 실행 중인 로컬 개발 서버 또는 스테이징 URL
-- 선택적 E2E 명령(예: `npm run test:e2e`)이 프로젝트에 구성되어 있을 것
+- 선택적 E2E 명령이 프로젝트에 구성되어 있을 것
+- 권장 npm 스크립트:
+  - `test:e2e:agent-browser` (기능 흐름 검증 우선)
+  - `test:e2e` (기존 러너/폴백)
 
 ## 사용법
 ```bash
 /browser-verifier --url=http://localhost:3000
+/browser-verifier --url=http://localhost:3000                         # E2E 스크립트 자동 탐지
+/browser-verifier --url=http://localhost:3000 --no-auto-e2e           # URL만 검증
+/browser-verifier --url=https://staging.example.com --e2e="npm run test:e2e:agent-browser"
 /browser-verifier --url=https://staging.example.com --e2e="npm run test:e2e"
 ```
 
@@ -32,8 +38,11 @@ triggers:
 ## 실행
 1. `--url` 또는 `APP_BASE_URL`에서 대상 URL을 결정합니다. (기본값: `http://localhost:3000`)
 2. URL 및 선택적 E2E 명령으로 `.claude/agents/verification/verify-runtime.sh`를 실행합니다. (Claude 런타임은 도구 라우팅, Codex 런타임은 직접 셸 실행)
-3. 런타임 체크 실패 시 즉시 중단하고 환경 준비 상태 문제를 보고합니다.
-4. E2E 실패 시 실패한 명령과 상세 결과를 반환합니다.
+3. `--e2e`가 없으면 다음 순서로 npm 스크립트를 자동 탐지합니다:
+   - `test:e2e:agent-browser`
+   - `test:e2e`
+4. 런타임 체크 실패 시 즉시 중단하고 환경 준비 상태 문제를 보고합니다.
+5. E2E 실패 시 실패한 명령과 상세 결과를 반환합니다.
 
 ## 출력 계약
 - pass/fail 상태
@@ -43,5 +52,5 @@ triggers:
 
 ## 스크립트
 ```bash
-.claude/agents/verification/verify-runtime.sh --url=<url> [--e2e="<command>"]
+.claude/agents/verification/verify-runtime.sh --url=<url> [--e2e="<command>"] [--no-auto-e2e]
 ```
