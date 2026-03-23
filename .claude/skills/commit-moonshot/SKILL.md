@@ -146,13 +146,14 @@ git add [files] .claude/memory.json
 
 # If user declined:
 git add [files]
-git commit -m "[concise commit message]"
+git commit -m "[concise Korean commit message]"
 ```
 
 > **📌 Important: `.claude/memory.json` is optional per commit and must follow the user's explicit choice.** This file stores Memory MCP update content.
 
 **Commit message rules:**
 - No emoji or special characters
+- Write the commit message in Korean
 - Concise and clear
 - Focus on change purpose
 
