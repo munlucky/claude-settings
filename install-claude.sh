@@ -36,6 +36,75 @@ print_header() {
 	echo ""
 }
 
+setup_browser_runtime() {
+	local runtime_install_script=".claude/scripts/install-browser-runtime.sh"
+	local runtime_dir=".claude/tools/browserd"
+
+	echo ""
+	print_info "브라우저 런타임 기본 환경 설정 중..."
+
+	if [ ! -d "$runtime_dir" ]; then
+		print_warn "브라우저 런타임 디렉토리를 찾지 못했습니다: $runtime_dir"
+		return
+	fi
+
+	chmod +x ".claude/bin/browserctl" "$runtime_install_script" 2>/dev/null || true
+
+	if [ -x "$runtime_install_script" ]; then
+		if "$runtime_install_script" --force; then
+			print_info "✓ browserctl 전역 링크 및 PATH helper 설치 완료"
+		else
+			print_warn "browserctl 전역 설치 중 경고가 발생했습니다."
+		fi
+	else
+		print_warn "browserctl 설치 스크립트를 찾지 못했습니다: $runtime_install_script"
+	fi
+
+	if ! command -v node &>/dev/null; then
+		if command -v bun &>/dev/null; then
+			print_warn "bun은 확인됐지만 현재 브라우저 런타임 의존성 설치는 Node/npm 기준입니다."
+		else
+			print_warn "node가 없어 Playwright 런타임 의존성 설치를 건너뜁니다."
+		fi
+		echo "  설치 후 다시 실행: cd $runtime_dir && npm install && npx playwright install chromium"
+		return
+	fi
+
+	if ! command -v npm &>/dev/null; then
+		print_warn "npm이 없어 Playwright 런타임 의존성 설치를 건너뜁니다."
+		echo "  설치 후 다시 실행: cd $runtime_dir && npm install && npx playwright install chromium"
+		return
+	fi
+
+	if ! command -v npx &>/dev/null; then
+		print_warn "npx가 없어 Chromium 브라우저 설치를 건너뜁니다."
+		echo "  설치 후 다시 실행: cd $runtime_dir && npx playwright install chromium"
+		return
+	fi
+
+	print_info "  └ Playwright 의존성 확인 및 설치 중..."
+	if (cd "$runtime_dir" && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install); then
+		print_info "  ✓ Playwright 의존성 설치 완료"
+	else
+		print_warn "  Playwright 의존성 설치 실패"
+		return
+	fi
+
+	print_info "  └ Chromium 브라우저 확인 및 설치 중..."
+	if (cd "$runtime_dir" && PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium); then
+		print_info "  ✓ Chromium 브라우저 설치 완료"
+	else
+		print_warn "  Chromium 브라우저 설치 실패"
+		return
+	fi
+
+	if command -v browserctl &>/dev/null; then
+		print_info "✓ browserctl 사용 가능: $(command -v browserctl)"
+	else
+		print_warn "browserctl PATH 확인이 필요합니다. 새 로그인 셸에서 다시 확인하세요."
+	fi
+}
+
 # 압축 해제 함수 (unzip 또는 python 사용)
 extract_zip() {
 	local zip_file=$1
@@ -357,6 +426,7 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - .claude 디렉토리 설치"
 	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
+	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
 	if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
 		echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
 	fi
@@ -492,6 +562,9 @@ rm -f "AGENTS.md"
 ln -s ".claude/CLAUDE.md" "AGENTS.md"
 print_info "✓ .agents/skills 생성 (→ ../.claude/skills)"
 print_info "✓ AGENTS.md 생성 (→ .claude/CLAUDE.md)"
+
+# 7.9. Browser runtime bootstrap
+setup_browser_runtime
 
 # 9. Memory MCP 전역 설정 (wrapper 스크립트로 동적 경로 지원)
 echo ""
@@ -711,6 +784,12 @@ if [ -L ".agents/skills" ]; then
 fi
 if [ -L "AGENTS.md" ]; then
 	echo "  ✓ AGENTS.md                  (→ .claude/CLAUDE.md)"
+fi
+if [ -x ".claude/bin/browserctl" ]; then
+	echo "  ✓ .claude/bin/browserctl     (브라우저 런타임 전역 진입점)"
+fi
+if [ -d ".claude/tools/browserd" ]; then
+	echo "  ✓ .claude/tools/browserd/    (Playwright 브라우저 런타임)"
 fi
 
 echo ""
