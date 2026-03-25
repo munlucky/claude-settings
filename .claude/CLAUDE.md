@@ -6,7 +6,7 @@ Last-Reviewed: 2026-03-05
 
 ## Overview
 
-Rules in `.claude/rules/` are always loaded recursively. This file defines only Tier-1 constraints.
+Rules in `.claude/rules/` are always loaded recursively. This file holds Tier-1 constraints only.
 
 ## Tier-1 Constraints
 
@@ -30,7 +30,7 @@ documentPaths:
   guidelinesRoot: ".claude/docs/guidelines"
 ```
 
-For detailed token and archive policy, see `.claude/docs/guidelines/document-memory-policy.md`.
+For token and archive policy, see `.claude/docs/guidelines/document-memory-policy.md`.
 
 ## References
 

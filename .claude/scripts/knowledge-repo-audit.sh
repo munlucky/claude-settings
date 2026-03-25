@@ -9,7 +9,32 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+resolve_root_dir() {
+  local script_root=""
+  local git_root=""
+
+  if [ -n "${HARNESS_ROOT_DIR:-}" ] && [ -d "${HARNESS_ROOT_DIR}" ]; then
+    printf '%s\n' "${HARNESS_ROOT_DIR}"
+    return 0
+  fi
+
+  if [ -f "./.claude/CLAUDE.md" ] || [ -f "./AGENTS.md" ]; then
+    pwd
+    return 0
+  fi
+
+  if git_root="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$git_root" ]; then
+    if [ -f "$git_root/.claude/CLAUDE.md" ] || [ -f "$git_root/AGENTS.md" ]; then
+      printf '%s\n' "$git_root"
+      return 0
+    fi
+  fi
+
+  script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  printf '%s\n' "$script_root"
+}
+
+ROOT_DIR="$(resolve_root_dir)"
 RUN_ID="knowledge-audit-$(date +%Y%m%d-%H%M%S)"
 OUT_FILE="${HARNESS_KNOWLEDGE_AUDIT_FILE:-$ROOT_DIR/.claude/knowledge-repo-audit-${RUN_ID}.json}"
 REVIEW_MAX_DAYS="${KNOWLEDGE_REVIEW_MAX_DAYS:-45}"

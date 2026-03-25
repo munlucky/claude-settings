@@ -6,7 +6,7 @@ Last-Reviewed: 2026-03-05
 
 ## 개요
 
-`.claude/rules/`의 규칙은 재귀적으로 자동 로드됩니다. 이 문서에는 Tier-1 제약만 유지합니다.
+`.claude/rules/` 규칙은 재귀적으로 자동 로드됩니다. 이 문서는 Tier-1 제약만 담습니다.
 
 ## Tier-1 제약
 
@@ -30,7 +30,7 @@ documentPaths:
   guidelinesRoot: ".claude/docs/guidelines"
 ```
 
-상세 토큰/아카이브 정책은 `.claude/docs/guidelines/document-memory-policy.md`를 참고합니다.
+토큰/아카이브 정책은 `.claude/docs/guidelines/document-memory-policy.md`를 참고합니다.
 
 ## 참고
 
