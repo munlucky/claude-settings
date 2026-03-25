@@ -31,6 +31,7 @@
       "Bash(jq:*)",
       "Bash(python3:*)",
       "Bash(chmod:*)",
+      "Bash(bash .claude/scripts/moonshot-phase-dispatch.sh:*)",
       "Bash(echo:*)",
       "Bash(codex -m gpt-5.2-codex mcp-server:*)",
       "Bash(codex --version:*)",

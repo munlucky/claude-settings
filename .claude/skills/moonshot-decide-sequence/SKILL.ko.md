@@ -32,6 +32,7 @@ signals:
   sprintContractReady: false
   qaReportReady: false
   handoffRequired: false
+  phaseAttemptMode: false
   designApproved: false
   isolatedWorkspaceReady: false
   evidenceGateRequired: true
@@ -53,6 +54,7 @@ artifacts:
   taskSliceGlob: {productDir}/tasks/*.md
   executionRoot: {tasksRoot}/{feature-name}/execution
   activeSliceDir: {executionRoot}/{active-slice}
+  activePhaseDocPath: null
   sprintContractPath: {activeSliceDir}/SPRINT_CONTRACT.md
   qaReportPath: {activeSliceDir}/QA_REPORT.md
   handoffPath: {activeSliceDir}/HANDOFF.md
@@ -201,7 +203,8 @@ medium/complex `product_project` 실행에서는 아래 execution bridge를 기�
 
 - `signals.reactProject == true`이면 첫 `implementation-runner` 직전에 `frontend-design`을 삽입한다.
 - `signals.reactProject == true`이면 `browser-verifier`를 `verify-changes.sh` 이전 또는 `completion-verifier` 이후에 삽입한다.
-- master-plan/phase 문서가 있으면 `moonshot-phase-runner`를 `implementation-runner` 전에 삽입한다.
+- master-plan/phase 문서가 있으면 `moonshot-phase-runner`를 `implementation-runner` 전에 삽입한다. 단, `signals.phaseAttemptMode == true`이면 예외다.
+- `signals.phaseAttemptMode == true`이면 이번 round는 `artifacts.activePhaseDocPath`와 기존 execution artifact만 planning baseline으로 사용한다.
 - 리팩토링 작업은 실패한 검증 뒤에 `build-error-resolver`를 삽입하고 단계별 빌드 체크를 유지한다.
 - medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 거친다.
 - medium/complex `product_project`는 `HANDOFF.md` 출력을 위해 `logging-bundle`을 유지한다.

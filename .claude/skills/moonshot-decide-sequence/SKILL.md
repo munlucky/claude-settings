@@ -32,6 +32,7 @@ signals:
   sprintContractReady: false
   qaReportReady: false
   handoffRequired: false
+  phaseAttemptMode: false
   designApproved: false
   isolatedWorkspaceReady: false
   evidenceGateRequired: true
@@ -53,6 +54,7 @@ artifacts:
   taskSliceGlob: {productDir}/tasks/*.md
   executionRoot: {tasksRoot}/{feature-name}/execution
   activeSliceDir: {executionRoot}/{active-slice}
+  activePhaseDocPath: null
   sprintContractPath: {activeSliceDir}/SPRINT_CONTRACT.md
   qaReportPath: {activeSliceDir}/QA_REPORT.md
   handoffPath: {activeSliceDir}/HANDOFF.md
@@ -205,7 +207,8 @@ Execution-bridge expectation for medium/complex `product_project` runs:
 
 - If `signals.reactProject == true`, insert `frontend-design` immediately before the first `implementation-runner`.
 - If `signals.reactProject == true`, insert `browser-verifier` before `verify-changes.sh` or after `completion-verifier`.
-- If master-plan/phase docs are detected, insert `moonshot-phase-runner` before `implementation-runner`.
+- If master-plan/phase docs are detected, insert `moonshot-phase-runner` before `implementation-runner`, unless `signals.phaseAttemptMode == true`.
+- If `signals.phaseAttemptMode == true`, treat `artifacts.activePhaseDocPath` and existing execution artifacts as the only planning baseline for this round.
 - For refactor tasks, insert `build-error-resolver` after failed verification and keep phased build checks.
 - For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
 - For medium/complex `product_project` work, ensure `logging-bundle` is present so `HANDOFF.md` can be emitted when needed.

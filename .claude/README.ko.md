@@ -108,6 +108,7 @@ See @README for project overview and @package.json for npm commands.
 - `verification-evidence-gate` (신규, strict 프로필)
 - `codex-validate-plan`
 - `codex-review-code`
+- `moonshot-in-session-coordinator` (신규)
 
 ### 문서 및 로깅
 - `session-logger`
@@ -146,6 +147,16 @@ See @README for project overview and @package.json for npm commands.
 9. `completion-verifier`, `browser-verifier`, `verify-changes.sh`, `verify-runtime.sh` 같은 별도 evaluator 경로로 검증하고 결과를 `QA_REPORT.md`에 남깁니다.
 10. 세션이 길어지거나 중단되면 `HANDOFF.md`로 재개 상태를 남깁니다.
 11. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
+
+통합 phase 실행 경계:
+- 사용자 진입점은 `/moonshot-phase-runner <plan-dir>`입니다.
+- skill-level 실행 어댑터는 `moonshot-phase-executor`입니다.
+- 내부 command adapter는 여전히 `.claude/scripts/moonshot-phase-dispatch.sh`를 사용할 수 있습니다.
+- runtime 선택은 `auto|claude|codex`를 유지합니다.
+
+phase runner 기본 동작:
+- `/moonshot-phase-runner <plan-dir>`는 이제 artifact 준비 후 `moonshot-phase-executor`를 즉시 실행합니다.
+- 준비만 하고 멈추고 싶을 때만 `--prepare-only`를 사용합니다.
 
 ## 문서와 템플릿
 

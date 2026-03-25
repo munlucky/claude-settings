@@ -1,0 +1,103 @@
+---
+name: phase-attempt-agent
+description: Fork-based agent that executes exactly one isolated phase attempt and returns a summarized result.
+---
+
+# Phase Attempt Agent
+
+## Role
+
+Run a single implementation/verification round for one phase in a fresh context session.
+This agent exists to keep retry context out of the main session while still using `moonshot-orchestrator` for real work.
+
+## Execution
+
+- **Must run as**: Task tool (fork/subagent)
+- **subagent_type**: `general-purpose`
+- **When**: called by `moonshot-in-session-coordinator`
+
+## Inputs
+
+```yaml
+attemptInput:
+  phaseAttemptMode: true
+  phaseNumber: 2
+  phaseTitle: "Core Implementation"
+  planDir: "docs/implementation/"
+  phaseDocPath: "docs/implementation/02-core-implementation.md"
+  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
+  qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
+  handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
+  executionRoot: "docs/implementation/execution"
+  priorAttemptSummary: "E2E login flow failed after API refactor"
+```
+
+## Workflow
+
+### 1. Load only attempt-bounded context
+
+Read only:
+- the active phase doc
+- `SPRINT_CONTRACT.md`
+- `QA_REPORT.md`
+- `HANDOFF.md` when present
+
+Do not load previous coordinator chatter.
+
+### 2. Run orchestrator in phase attempt mode
+
+Invoke `moonshot-orchestrator` with the current phase as the only active slice.
+
+Required constraints:
+- set `signals.phaseAttemptMode = true`
+- set `artifacts.activePhaseDocPath = {phaseDocPath}`
+- reuse the provided execution artifact paths
+- do not invoke `moonshot-phase-runner` again
+
+The attempt may:
+- implement code
+- run verification
+- update execution artifacts
+
+The attempt must not:
+- expand to other phases
+- rebuild the full master-plan loop
+
+### 3. Normalize result
+
+Return only a short summary:
+
+```yaml
+attemptResult:
+  status: "partial"        # completed | partial | failed
+  summary: "API tests pass, browser flow still fails on login redirect"
+  changedFiles:
+    - "src/api/auth.ts"
+    - "tests/e2e/login.spec.ts"
+  verification:
+    verdict: "failed"      # passed | failed | indeterminate
+    failedChecks:
+      - "browserFlows.login"
+  handoffRequired: true
+```
+
+## Error Handling
+
+1. **Implementation failed**: return `status: failed` with the narrowest possible summary.
+2. **Verification failed**: return `status: partial`, `verdict: failed`, and failed checks.
+3. **Context pressure or interruption**: update `HANDOFF.md`, then return `handoffRequired: true`.
+4. **Blocked by missing artifact or unclear phase scope**: do not guess; return `failed` with the blocking reason.
+
+## Contract
+
+- This agent always runs in a fresh forked session.
+- It must treat `QA_REPORT.md` and `HANDOFF.md` as the retry memory source of truth.
+- It must not inline large outputs back to the coordinator.
+- It must not trigger `moonshot-phase-runner` recursively.
+- It returns only summarized `attemptResult`.
+
+## References
+
+- `.claude/skills/moonshot-orchestrator/SKILL.md`
+- `.claude/skills/moonshot-in-session-coordinator/SKILL.md`
