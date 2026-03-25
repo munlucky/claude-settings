@@ -60,7 +60,7 @@ description: 개발 세션을 실시간으로 기록하여 결정 사항과 이�
 
 컨텍스트 윈도우가 80% 초과 시:
 
-1. `{tasksRoot}/{feature-name}/HANDOFF.md` 생성
+1. `analysisContext.artifacts.handoffPath`가 있으면 그 경로를, 없으면 `{tasksRoot}/{feature-name}/HANDOFF.md`를 사용
 2. `/clear` 실행
 3. 새 세션에서 HANDOFF.md 로드
 
@@ -101,6 +101,15 @@ description: 개발 세션을 실시간으로 기록하여 결정 사항과 이�
 └── session-logs/
     ├── day-YYYY-MM-DD.md
     └── ...
+```
+
+execution bridge 사용 시:
+
+```
+{tasksRoot}/{feature-name}/execution/{slice-name}/
+├── SPRINT_CONTRACT.md
+├── QA_REPORT.md
+└── HANDOFF.md
 ```
 
 ---

@@ -14,6 +14,9 @@ context: fork
 ## Inputs
 - `analysisContext.*` (structured state)
 - `context.md` (path: `analysisContext.artifacts.contextDocPath`, contains Acceptance Tests)
+- `analysisContext.artifacts.sprintContractPath`
+- `analysisContext.artifacts.qaReportPath`
+- `analysisContext.artifacts.handoffPath`
 - `analysisContext.artifacts.verificationContractPath`
 - Test framework and commands from `PROJECT.md` or verification contract
 - `analysisContext.signals.allowIndeterminate` (boolean override, default: `true`)
@@ -71,7 +74,7 @@ completionStatus:
 
 Only when executable verification exists.
 
-1. Parse Acceptance Tests section from `context.md`
+1. Parse Acceptance Tests from `context.md` and done checks from `SPRINT_CONTRACT.md` when present
 2. Extract test IDs and file paths
 3. Run tests using the contract-defined or detected command
 4. Parse PASS/FAIL per test
@@ -79,7 +82,7 @@ Only when executable verification exists.
 
 ## Step 2: Self-Audit (Always Runs)
 
-Compare results against `context.md` requirements even when automated verification is partial.
+Compare results against `context.md` requirements and `SPRINT_CONTRACT.md` even when automated verification is partial.
 
 ```yaml
 selfAuditResult:
@@ -112,6 +115,9 @@ completionStatus:
   recommendation: "Fix code or add explicit verification contract, then re-run"
   verdictArtifact:
     path: "{tasksRoot}/{feature-name}/verification-result.json"
+qaReport:
+  path: "{activeSliceDir}/QA_REPORT.md"
+  updated: true | false
 ```
 
 ## Retry Logic
@@ -119,9 +125,10 @@ completionStatus:
 When `verificationState: failed` and executable verification exists:
 1. Identify failed phase
 2. Add focused reproduction tests when practical
-3. Return to implementation with failure details
-4. Re-run verification
-5. Retry max 2 times
+3. Update `QA_REPORT.md` with failed criteria, reproduction notes, and next-round input
+4. Return to implementation with failure details
+5. Re-run verification
+6. Retry max 2 times
 
 ## Skip Conditions
 
@@ -133,4 +140,6 @@ When `verificationState: failed` and executable verification exists:
 
 - Self-Audit supplements tests; it does not replace them.
 - Requirement fulfillment involves judgment; verdict artifacts provide deterministic evidence.
+- Each verifier run should refresh `QA_REPORT.md` when `qaReportPath` is available.
+- If verification fails or the run pauses before clean completion, mark `handoffPath` for update.
 - If `neverDoViolations` exist, halt immediately and report to user.

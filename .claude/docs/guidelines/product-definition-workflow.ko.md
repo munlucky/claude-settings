@@ -13,6 +13,7 @@
 3. 제품 동작 모델이 정리된다.
 4. 아키텍처가 정의된다.
 5. 작업이 독립 실행 가능한 단위로 분해된다.
+6. downstream 구현이 `PLAN.md`를 추측으로 해석하지 않고 테스트 가능한 `Sprint Contract`로 바로 연결될 수 있다.
 
 ## 단계 공통 계약
 
@@ -112,9 +113,11 @@
 - 완료 조건
 - 검증 전략
 - 롤백 또는 영향 범위
+- downstream 구현용 contract seed
 
 게이트:
 - 각 task가 숨은 맥락 없이 구현 워크플로우로 바로 넘어갈 수 있어야 함
+- 각 task만 읽어도 downstream 에이전트가 제품 동작을 새로 상상하지 않고 `SPRINT_CONTRACT.md`를 작성할 수 있어야 함
 
 ### 6. BUILD
 
@@ -145,6 +148,7 @@ PLAN 통과 후에는 기존 Moonshot 실행 워크플로우를 사용합니다.
 - 선행 의존성
 - 병렬 가능 여부
 - 검증 방법
+- evaluator가 특히 봐야 할 포인트
 
 레이어 단위보다 vertical slice를 우선합니다.
 
@@ -155,6 +159,20 @@ PLAN 통과 후에는 기존 Moonshot 실행 워크플로우를 사용합니다.
 - "DTO 작성"
 - "repository layer 추가"
 - "UI shell만 구현"
+
+## Execution Bridge 아티팩트
+
+제품 정의 워크플로우는 코드 작성 전에 멈추지만, downstream build는 `PLAN.md`에서 바로 코드로 점프하지 말고 브리지 문서부터 작성해야 합니다.
+
+slice별 권장 아티팩트:
+- `SPRINT_CONTRACT.md`: 이번 라운드 목표, non-goal, done check, 검증 방법
+- `QA_REPORT.md`: evaluator 판정, 실패 기준, 재현 메모, 다음 라운드 피드백
+- `HANDOFF.md`: 장시간 작업이나 중단된 세션의 재개 상태
+
+권장 위치:
+- `{tasksRoot}/{feature-name}/execution/{slice-name}/`
+
+medium/complex 작업에서는 `PLAN.md`와 각 task 문서가 이 브리지 문서를 무리 없이 시작할 수 있을 정도로 구체적이어야 합니다.
 
 ## Moonshot 핸드오프 계약
 
@@ -185,3 +203,8 @@ Moonshot에는 문서 전체 본문이 아니라 경로와 요약만 넘깁니�
 - `task.template.md`
 - `ASSUMPTIONS.template.md`
 - `BLOCKERS.template.md`
+
+downstream 실행 아티팩트는 아래 템플릿도 함께 사용합니다.
+- `.claude/templates/execution/SPRINT_CONTRACT.template.md`
+- `.claude/templates/execution/QA_REPORT.template.md`
+- `.claude/templates/execution/HANDOFF.template.md`

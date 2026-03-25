@@ -29,6 +29,9 @@ signals:
   projectContractReady: false
   contextReady: false
   verificationContractReady: false
+  sprintContractReady: false
+  qaReportReady: false
+  handoffRequired: false
   designApproved: false
   isolatedWorkspaceReady: false
   evidenceGateRequired: true
@@ -48,6 +51,11 @@ artifacts:
   assumptionsPath: {productDir}/ASSUMPTIONS.md
   blockersPath: {productDir}/BLOCKERS.md
   taskSliceGlob: {productDir}/tasks/*.md
+  executionRoot: {tasksRoot}/{feature-name}/execution
+  activeSliceDir: {executionRoot}/{active-slice}
+  sprintContractPath: {activeSliceDir}/SPRINT_CONTRACT.md
+  qaReportPath: {activeSliceDir}/QA_REPORT.md
+  handoffPath: {activeSliceDir}/HANDOFF.md
   verificationContractPath: .claude/verification.contract.yaml
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
@@ -74,6 +82,7 @@ Build the chain from bundles first, then expand into `skillChain`.
   - treat `PLAN.md` and `tasks/*.md` as the planning baseline
   - skip `requirements-analyzer` and `context-builder`
   - validate the handoff package, then proceed to implementation
+  - for medium/complex work, require execution bridge artifacts for the active slice
 ### `read_only`
 - default: no implementation bundles
 - if review requested: `review-bundle`
@@ -91,6 +100,7 @@ Build the chain from bundles first, then expand into `skillChain`.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
+    - `logging-bundle`
   - complex:
     - `readiness-bundle`
     - `implementation-bundle`
@@ -107,6 +117,7 @@ Build the chain from bundles first, then expand into `skillChain`.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
+    - `logging-bundle`
   - complex:
     - `readiness-bundle`
     - `planning-bundle`
@@ -169,6 +180,11 @@ meta-harness-bundle:
   - completion-verifier
 ```
 
+Execution-bridge expectation for medium/complex `product_project` runs:
+- `implementation-runner` must create or refresh `artifacts.sprintContractPath` before code edits
+- verification steps must update `artifacts.qaReportPath`
+- retries, pauses, or context-boundary exits must update `artifacts.handoffPath`
+
 ## Overlay rules
 
 - `workflowProfile == standard`
@@ -192,6 +208,7 @@ meta-harness-bundle:
 - If master-plan/phase docs are detected, insert `moonshot-phase-runner` before `implementation-runner`.
 - For refactor tasks, insert `build-error-resolver` after failed verification and keep phased build checks.
 - For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
+- For medium/complex `product_project` work, ensure `logging-bundle` is present so `HANDOFF.md` can be emitted when needed.
 - If the gate reports blockers, return to planning before code edits.
 
 ## Parallel execution guide

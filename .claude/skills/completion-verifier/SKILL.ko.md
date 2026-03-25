@@ -14,6 +14,9 @@ context: fork
 ## 입력
 - `analysisContext.*`
 - `context.md`
+- `analysisContext.artifacts.sprintContractPath`
+- `analysisContext.artifacts.qaReportPath`
+- `analysisContext.artifacts.handoffPath`
 - `analysisContext.artifacts.verificationContractPath`
 - `PROJECT.md` 또는 verification contract의 테스트/검증 명령
 - `analysisContext.signals.allowIndeterminate`
@@ -28,6 +31,8 @@ context: fork
 - verification contract가 있으면 그 명령과 artifact를 우선 사용한다.
 - contract가 없고 standard면 fallback 탐지를 허용한다.
 - contract가 없고 strict면 앞단의 `verification-contract-gate`가 차단해야 한다.
+- `SPRINT_CONTRACT.md`가 있으면 그 done check도 함께 검증한다.
+- verifier는 실행할 때마다 `QA_REPORT.md`를 갱신해야 한다.
 - `verificationState: indeterminate`
   - standard -> `pass_with_warning`
   - strict -> `failed`
@@ -43,8 +48,12 @@ completionStatus:
   gateDecision: pass | failed | pass_with_warning
   verdictArtifact:
     path: "{tasksRoot}/{feature-name}/verification-result.json"
+qaReport:
+  path: "{activeSliceDir}/QA_REPORT.md"
+  updated: true | false
 ```
 
 ## 메모
 - Self-Audit는 테스트를 보완하는 용도이지 대체물이 아니다.
 - verdict artifact가 최종 검증 증거가 된다.
+- 검증 실패나 중단 시에는 다음 라운드를 위해 `HANDOFF.md` 갱신이 필요하다.

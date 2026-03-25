@@ -121,18 +121,22 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 1. `product-orchestrator` converts an idea into `PRODUCT_INTENT -> PRD -> SOLUTION -> SPEC -> PLAN`.
 2. `product-gate-reviewer` decides `pass`, `conditional_pass`, or `fail` at each stage.
 3. `task-slicer` decomposes `PLAN.md` into independently executable `tasks/*.md`.
-4. `moonshot-orchestrator` receives the product package and builds the implementation chain.
-5. For complex tasks, validate the plan with `codex-validate-plan`, then run `karpathy-execution-gate` before `implementation-runner`.
-6. For React/web UI implementation, `frontend-design` can be injected before `implementation-runner`; if design context is missing, run `teach-impeccable` first.
-7. Use `verification-agent` and `verify-changes.sh` to check quality.
-8. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
+4. Before medium/complex implementation starts, create a slice-level `SPRINT_CONTRACT.md` so the build round has explicit done checks and non-goals.
+5. `moonshot-orchestrator` receives the product package and builds the implementation chain.
+6. For complex tasks, validate the plan with `codex-validate-plan`, then run `karpathy-execution-gate` before `implementation-runner`.
+7. For React/web UI implementation, `frontend-design` can be injected before `implementation-runner`; if design context is missing, run `teach-impeccable` first.
+8. Use a separate evaluator path such as `completion-verifier`, `browser-verifier`, `verify-changes.sh`, or `verify-runtime.sh` and record the result in `QA_REPORT.md`.
+9. If the work spans multiple sessions, leave a resumable `HANDOFF.md`.
+10. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
 
 ## Docs and Templates
 
 - Keep task docs under `.claude/docs` following `.claude/PROJECT.md` path rules.
 - Output templates: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 - Product-definition guide: `.claude/docs/guidelines/product-definition-workflow.md`.
+- Long-running harness guide: `.claude/docs/guidelines/long-running-harness.md`.
 - Product-definition templates: `.claude/templates/product-definition/`.
+- Execution artifact templates: `.claude/templates/execution/`.
 
 ## Maintenance Notes (This Repo)
 

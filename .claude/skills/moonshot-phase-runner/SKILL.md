@@ -39,13 +39,17 @@ Emits handoff metadata so `/moonshot-orchestrator` can resume with consistent st
     ├─ 2. Create/Update phase-status.yaml
     │      └─ Initialize each phase status
     │
-    ├─ 3. Plan Review (unless --autonomous)
+    ├─ 3. Seed execution bridge artifacts
+    │      └─ Prepare `execution/<phase>/SPRINT_CONTRACT.md`
+    │         and placeholders for `QA_REPORT.md`, `HANDOFF.md`
+    │
+    ├─ 4. Plan Review (unless --autonomous)
     │      └─ Detect uncertainties → Q&A → planConfirmed: true
     │
-    ├─ 4. Output Execution Command
+    ├─ 5. Output Execution Command
            └─ User copies and runs in separate terminal
     
-    └─ 5. Emit Handoff Summary
+    └─ 6. Emit Handoff Summary
            └─ Orchestrator-readable phaseRunnerResult
 ```
 
@@ -70,18 +74,34 @@ Creates `.claude/docs/phase-status.yaml`:
 schemaVersion: "1.0"
 masterPlan: "docs/implementation/00-master-plan.md"
 autonomousMode: true
+executionRoot: "docs/implementation/execution"
 phases:
   - number: 1
     title: "Project Setup"
     status: pending
     planConfirmed: false
+    sprintContract: "docs/implementation/execution/01-project-setup/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/execution/01-project-setup/QA_REPORT.md"
+    handoff: "docs/implementation/execution/01-project-setup/HANDOFF.md"
   - number: 2
     title: "Core Implementation"
     status: pending
     planConfirmed: false
 ```
 
-## Step 3: Plan Review (Optional)
+## Step 3: Seed Execution Bridge Artifacts
+
+For each detected phase, prepare:
+- `<plan-dir>/execution/<phase>/SPRINT_CONTRACT.md`
+- `<plan-dir>/execution/<phase>/QA_REPORT.md`
+- `<plan-dir>/execution/<phase>/HANDOFF.md`
+
+Rules:
+- `SPRINT_CONTRACT.md` is seeded from the phase title and document path
+- `QA_REPORT.md` and `HANDOFF.md` start as placeholders and are updated during execution
+- do not overwrite an existing artifact that already contains work
+
+## Step 4: Plan Review (Optional)
 
 When `--autonomous` flag is **NOT** specified:
 
@@ -101,7 +121,7 @@ When `--autonomous` flag **IS** specified:
 - Set all phases to planConfirmed: true
 - Proceed with autonomous decision mode
 
-## Step 4: Output Execution Command
+## Step 5: Output Execution Command
 
 **Final output format:**
 
@@ -118,14 +138,14 @@ When `--autonomous` flag **IS** specified:
   Run the following command in a separate terminal:
 ───────────────────────────────────────────────────────────────
 
-  .claude/scripts/agent-loop.sh docs/implementation/
+  .claude/scripts/agent-loop.sh docs/implementation/ --execution-root docs/implementation/execution
 
 ───────────────────────────────────────────────────────────────
 
 💡 Tip: Logs available at .claude/logs/agent-loop/
 ```
 
-## Step 5: Emit Handoff Summary
+## Step 6: Emit Handoff Summary
 
 Return a structured summary for orchestrator:
 
@@ -136,7 +156,8 @@ phaseRunnerResult:
   planDir: "docs/implementation/"
   masterPlan: "docs/implementation/00-master-plan.md"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
-  executionCommand: ".claude/scripts/agent-loop.sh docs/implementation/"
+  executionRoot: "docs/implementation/execution"
+  executionCommand: ".claude/scripts/agent-loop.sh docs/implementation/ --execution-root docs/implementation/execution"
   pendingPhases: 5
 ```
 
@@ -150,12 +171,16 @@ phaseRunnerResult:
 schemaVersion: "1.0"
 masterPlan: "docs/implementation/00-master-plan.md"
 autonomousMode: true
+executionRoot: "docs/implementation/execution"
 preparedAt: "2026-02-08T15:00:00Z"
 phases:
   - number: 1
     title: "Project Setup"
     status: pending
     planConfirmed: true
+    sprintContract: "docs/implementation/execution/01-project-setup/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/execution/01-project-setup/QA_REPORT.md"
+    handoff: "docs/implementation/execution/01-project-setup/HANDOFF.md"
   - number: 2
     title: "Core UI"
     status: pending
@@ -172,6 +197,7 @@ phases:
 
 When called by `/moonshot-orchestrator`:
 1. Prepare plan state and write `.claude/docs/phase-status.yaml`.
-2. Return `phaseRunnerResult` summary (do not inline full phase docs).
-3. Do not mark implementation complete here.
-4. Orchestrator resumes completion verification only after external phase execution updates `phase-status.yaml`.
+2. Seed execution-bridge artifacts for each phase when missing.
+3. Return `phaseRunnerResult` summary (do not inline full phase docs).
+4. Do not mark implementation complete here.
+5. Orchestrator resumes completion verification only after external phase execution updates `phase-status.yaml` and execution artifacts.

@@ -11,10 +11,38 @@ description: Performs implementation in the chain and records completion state a
 - `analysisContext.decisions.skillChain`
 - `analysisContext.repo.openFiles`
 - `analysisContext.artifacts.contextDocPath` (if present)
+- `analysisContext.artifacts.planPath` / `taskSliceGlob` (if present)
+- `analysisContext.artifacts.sprintContractPath` (when execution bridge is required)
 
 ## Procedure
 
-### Step 0: Test Environment Detection
+### Step 0: Execution Bridge Setup
+
+Before code edits, determine whether the current run requires a slice-level sprint contract.
+
+Require contract setup when:
+- `executionPlane == product_project`
+- and `complexity != simple` or `artifacts.sprintContractPath` is already populated
+
+If required:
+1. Resolve the active slice from `PLAN.md`, `tasks/*.md`, or current notes
+2. Create or refresh `SPRINT_CONTRACT.md`
+3. Record:
+   - round goal
+   - explicit non-goals
+   - done checks
+   - evaluator focus
+   - expected evidence
+4. If a safe contract cannot be derived, stop and return planning notes instead of guessing in code
+
+Result:
+```yaml
+signals.sprintContractReady: true | false
+notes:
+  - "sprint-contract: ready, path=..."
+```
+
+### Step 1: Test Environment Detection
 
 Before starting implementation, check if the target project has a test environment:
 
@@ -40,8 +68,8 @@ result:
 > When `testEnvironmentDetected = false`, skip test co-creation (Step 5) with warning.
 
 ### For All Tasks
-1. Check requirements and context.
-2. Define change scope and implement.
+1. Check requirements, context, and `SPRINT_CONTRACT.md` when present.
+2. Define change scope from the active slice and implement.
 3. Record changed files and key change summary.
 4. Update implementation completion in `analysisContext`.
 5. **Write tests** (if `testEnvironmentDetected = true`, see Step 5).
@@ -139,11 +167,13 @@ action:
 signals.implementationComplete: true
 signals.testEnvironmentDetected: true | false
 signals.testsWritten: true | false
+signals.sprintContractReady: true | false
 signals.selfHealingAttempts: 2  # Number of auto-fix attempts
 repo.changedFiles:
   - src/...
   - src/__tests__/...  # Test files included
 notes:
+  - "sprint-contract: ready, path=..."
   - "implementation: complete, changed_files=3, tests_written=2"
   - "refactor: scope_confirmed=true, phases=3, build_status=pass"
   - "self-healing: attempts=1, fixed=TS2339"  # For auto-fixed errors
@@ -153,6 +183,7 @@ notes:
 ## Rules
 - Do not call other skills/subagents.
 - If failed or deferred, record the reason in `notes`.
+- When execution bridge is required, do not skip `SPRINT_CONTRACT.md`.
 - For refactor tasks: always confirm scope before starting.
 - Self-healing: max 2 retry attempts per phase before asking user.
 - **Test co-creation**: When test environment exists, implementation without tests is incomplete.

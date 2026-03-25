@@ -13,6 +13,7 @@
 #
 # Options:
 #   --status-file     Path to phase-status.yaml (default: .claude/docs/phase-status.yaml)
+#   --execution-root  Directory for execution bridge artifacts (default: <plan-dir>/execution)
 #   --max-phases N    Maximum phases to run (default: all)
 #   --delay N         Delay between phases in seconds (default: 3)
 #   --dry-run         Print what would be executed without running
@@ -31,6 +32,7 @@ NC='\033[0m'
 # Configuration
 PLAN_DIR=""
 STATUS_FILE=".claude/docs/phase-status.yaml"
+EXECUTION_ROOT=""
 MAX_PHASES=0
 DELAY_SECONDS=3
 DRY_RUN=false
@@ -74,7 +76,7 @@ log_warn() {
 }
 
 show_help() {
-    head -20 "$0" | tail -15
+    head -22 "$0" | tail -17
     exit 0
 }
 
@@ -92,6 +94,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --status-file)
             STATUS_FILE="$2"
+            shift 2
+            ;;
+        --execution-root)
+            EXECUTION_ROOT="$2"
             shift 2
             ;;
         --max-phases)
@@ -131,6 +137,10 @@ if [[ ! -d "$PLAN_DIR" ]]; then
     exit 1
 fi
 
+if [[ -z "$EXECUTION_ROOT" ]]; then
+    EXECUTION_ROOT="${PLAN_DIR%/}/execution"
+fi
+
 MASTER_PLAN=$(find "$PLAN_DIR" -name "*master*" -o -name "*00-*" 2>/dev/null | head -1)
 if [[ -z "$MASTER_PLAN" ]]; then
     log_error "Master plan not found in: $PLAN_DIR"
@@ -144,6 +154,7 @@ fi
 
 # Create log directory
 mkdir -p "$LOG_DIR"
+mkdir -p "$EXECUTION_ROOT"
 
 # Initialize decision log
 if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
@@ -173,7 +184,8 @@ get_phase_title() {
     local phase_num=$1
     local phase_prefix
     printf -v phase_prefix '%02d' "$phase_num"
-    local phase_doc=$(find "$PLAN_DIR" -maxdepth 1 \( -name "${phase_prefix}-*.md" -o -name "*phase*${phase_num}*" \) 2>/dev/null | head -1)
+    local phase_doc
+    phase_doc=$(get_phase_doc "$phase_num")
     if [[ -n "$phase_doc" ]]; then
         head -5 "$phase_doc" | grep -E "^#" | head -1 | sed 's/^#* //'
     else
@@ -181,8 +193,163 @@ get_phase_title() {
     fi
 }
 
+get_phase_doc() {
+    local phase_num=$1
+    local phase_prefix
+    printf -v phase_prefix '%02d' "$phase_num"
+    find "$PLAN_DIR" -maxdepth 1 \( -name "${phase_prefix}-*.md" -o -name "*phase*${phase_num}*" \) 2>/dev/null | head -1
+}
+
+sanitize_slug() {
+    echo "$1" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
 count_total_phases() {
     find "$PLAN_DIR" -maxdepth 1 -name "*.md" ! -name "*master*" ! -name "*00-*" 2>/dev/null | wc -l | tr -d ' '
+}
+
+ensure_execution_artifacts() {
+    local phase_num="$1"
+    local phase_title="$2"
+    local phase_doc="$3"
+    local phase_prefix
+    local phase_slug
+
+    printf -v phase_prefix '%02d' "$phase_num"
+    phase_slug=$(sanitize_slug "$phase_title")
+    if [[ -z "$phase_slug" ]]; then
+        phase_slug="phase-${phase_prefix}"
+    fi
+
+    PHASE_EXECUTION_DIR="${EXECUTION_ROOT}/${phase_prefix}-${phase_slug}"
+    PHASE_SPRINT_CONTRACT="${PHASE_EXECUTION_DIR}/SPRINT_CONTRACT.md"
+    PHASE_QA_REPORT="${PHASE_EXECUTION_DIR}/QA_REPORT.md"
+    PHASE_HANDOFF="${PHASE_EXECUTION_DIR}/HANDOFF.md"
+
+    mkdir -p "$PHASE_EXECUTION_DIR"
+
+    if [[ ! -f "$PHASE_SPRINT_CONTRACT" ]]; then
+        cat > "$PHASE_SPRINT_CONTRACT" <<EOF
+# Phase ${phase_prefix} Sprint Contract
+
+> Seeded automatically by \`agent-loop.sh\`. Refresh before code changes.
+
+## Slice
+- Phase: ${phase_num}
+- Title: ${phase_title}
+- Source plan: ${MASTER_PLAN}
+- Source phase doc: ${phase_doc}
+
+## Round Goal
+- Fill before code changes.
+
+## Non-Goals
+- Fill before code changes.
+
+## Planned Changes
+- Files/modules:
+- Interfaces/contracts:
+
+## Done Checks
+| Check | Type | Pass Condition |
+|-------|------|----------------|
+|  | UI/API/Test |  |
+
+## Evaluator Focus
+- Core flow:
+- Edge cases:
+- Stub-only behavior to reject:
+
+## Evidence
+- Commands:
+- Runtime flow:
+- Artifacts:
+
+## Notes
+- Generated at: $(date '+%Y-%m-%d %H:%M:%S')
+EOF
+    fi
+
+    if [[ ! -f "$PHASE_QA_REPORT" ]]; then
+        cat > "$PHASE_QA_REPORT" <<EOF
+# Phase ${phase_prefix} QA Report
+
+> Updated by verifier/runtime steps. Seeded automatically by \`agent-loop.sh\`.
+
+## Slice
+- Phase: ${phase_num}
+- Title: ${phase_title}
+- Contract: ${PHASE_SPRINT_CONTRACT}
+
+## Verdict
+- Status: pending
+- Summary: Awaiting implementation and verification.
+
+## Criteria Review
+| Criterion | Result | Notes |
+|-----------|--------|-------|
+|  | pending |  |
+
+## Findings
+| Severity | Area | Reproduction | Expected | Actual |
+|----------|------|--------------|----------|--------|
+|  |  |  |  |  |
+
+## Runtime Updates
+- Seeded at: $(date '+%Y-%m-%d %H:%M:%S')
+EOF
+    fi
+
+    if [[ ! -f "$PHASE_HANDOFF" ]]; then
+        cat > "$PHASE_HANDOFF" <<EOF
+# Phase ${phase_prefix} Handoff
+
+> Update when the phase stops without clean completion.
+
+## Goal
+- ${phase_title}
+
+## Current State
+- Completed:
+- In progress:
+- Blocked:
+
+## Next Steps
+1. Review ${PHASE_SPRINT_CONTRACT}
+2. Continue implementation or remediation
+3. Re-run verification and update ${PHASE_QA_REPORT}
+
+## Evidence Paths
+- Sprint contract: ${PHASE_SPRINT_CONTRACT}
+- QA report: ${PHASE_QA_REPORT}
+- Phase doc: ${phase_doc}
+EOF
+    fi
+}
+
+append_qa_runtime_update() {
+    local status="$1"
+    local log_file="$2"
+    {
+        echo ""
+        echo "### $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "- Runtime status: ${status}"
+        echo "- Log: ${log_file}"
+    } >> "$PHASE_QA_REPORT"
+}
+
+append_handoff_update() {
+    local reason="$1"
+    local log_file="$2"
+    {
+        echo ""
+        echo "## Runtime Update ($(date '+%Y-%m-%d %H:%M:%S'))"
+        echo "- Reason: ${reason}"
+        echo "- Log: ${log_file}"
+        echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, update \`${PHASE_QA_REPORT}\`, then resume implementation."
+    } >> "$PHASE_HANDOFF"
 }
 
 # Run a command with watchdog (no periodic output)
@@ -272,6 +439,7 @@ echo ""
 log_info "Plan directory: $PLAN_DIR"
 log_info "Master plan: $MASTER_PLAN"
 log_info "Status file: $STATUS_FILE"
+log_info "Execution root: $EXECUTION_ROOT"
 
 TOTAL_PHASES=$(count_total_phases)
 log_info "Total phases: $TOTAL_PHASES"
@@ -295,11 +463,16 @@ while true; do
     fi
     
     PHASE_TITLE=$(get_phase_title "$NEXT_PHASE")
+    PHASE_DOC=$(get_phase_doc "$NEXT_PHASE")
     TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
     LOGFILE="${LOG_DIR}/phase-${NEXT_PHASE}_${TIMESTAMP}.log"
+    ensure_execution_artifacts "$NEXT_PHASE" "$PHASE_TITLE" "$PHASE_DOC"
     
     echo -e "${CYAN}───────────────────────────────────────────────────────────────${NC}"
     log_phase "Phase $NEXT_PHASE: $PHASE_TITLE"
+    log_info "Sprint contract: $PHASE_SPRINT_CONTRACT"
+    log_info "QA report: $PHASE_QA_REPORT"
+    log_info "Handoff: $PHASE_HANDOFF"
     
     if [[ "$DRY_RUN" == "true" ]]; then
         log_warn "[DRY-RUN] Would execute phase $NEXT_PHASE"
@@ -323,6 +496,17 @@ while true; do
     
     PHASE_PROMPT="/moonshot-orchestrator Phase $NEXT_PHASE 를 구현해주세요.
 계획 문서: $PLAN_DIR
+활성 phase 문서: $PHASE_DOC
+실행 아티팩트:
+- SPRINT_CONTRACT: $PHASE_SPRINT_CONTRACT
+- QA_REPORT: $PHASE_QA_REPORT
+- HANDOFF: $PHASE_HANDOFF
+
+작업 규칙:
+- 코드 수정 전에 반드시 SPRINT_CONTRACT.md를 현재 phase 기준으로 보강하세요.
+- 검증이 실행되면 QA_REPORT.md를 갱신하세요.
+- 완료되지 않은 상태로 멈추면 HANDOFF.md를 갱신하세요.
+
 $AUTONOMOUS_INSTRUCTIONS"
     
     # Execute worker session
@@ -337,6 +521,7 @@ $AUTONOMOUS_INSTRUCTIONS"
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
             log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
+            append_qa_runtime_update "phase-command-succeeded" "$LOGFILE"
             update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
             completed=$((completed + 1))
             
@@ -367,6 +552,8 @@ $AUTONOMOUS_INSTRUCTIONS"
                 
                 if [[ $WATCHDOG_MAX_RESTARTS -gt 0 && $restart_count -ge $WATCHDOG_MAX_RESTARTS ]]; then
                     log_error "Phase $NEXT_PHASE exceeded restart limit"
+                    append_qa_runtime_update "timeout-restart-limit-exceeded" "$LOGFILE"
+                    append_handoff_update "timeout-restart-limit-exceeded" "$LOGFILE"
                     failed=$((failed + 1))
                     
                     if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
@@ -389,6 +576,7 @@ $AUTONOMOUS_INSTRUCTIONS"
             # Handle failure with auto-fix attempts
             auto_fix_count=$((auto_fix_count + 1))
             log_error "Phase $NEXT_PHASE failed (attempt ${auto_fix_count}/${MAX_AUTO_FIX_ATTEMPTS})"
+            append_qa_runtime_update "phase-command-failed-attempt-${auto_fix_count}" "$LOGFILE"
             
             if [[ "$AUTONOMOUS_MODE" == "true" && $auto_fix_count -lt $MAX_AUTO_FIX_ATTEMPTS ]]; then
                 log_info "Attempting auto-fix..."
@@ -399,10 +587,17 @@ $AUTONOMOUS_INSTRUCTIONS"
                 # Run auto-fix: analyze log and retry
                 FIX_PROMPT="이전 Phase $NEXT_PHASE 실행이 실패했습니다.
 로그 파일: $LOGFILE
+활성 phase 문서: $PHASE_DOC
+실행 아티팩트:
+- SPRINT_CONTRACT: $PHASE_SPRINT_CONTRACT
+- QA_REPORT: $PHASE_QA_REPORT
+- HANDOFF: $PHASE_HANDOFF
 
 1. 로그를 분석하여 실패 원인을 파악하세요
 2. 문제를 수정하세요
-3. Phase $NEXT_PHASE 를 다시 완료하세요
+3. QA_REPORT.md에 실패 원인과 수정 결과를 반영하세요
+4. 완료되지 않으면 HANDOFF.md를 갱신하세요
+5. Phase $NEXT_PHASE 를 다시 완료하세요
 
 $AUTONOMOUS_INSTRUCTIONS"
                 
@@ -412,6 +607,7 @@ $AUTONOMOUS_INSTRUCTIONS"
                     END_TIME=$(date +%s)
                     DURATION=$((END_TIME - START_TIME))
                     log_success "Phase $NEXT_PHASE completed after auto-fix (${DURATION}s)"
+                    append_qa_runtime_update "phase-completed-after-auto-fix" "$LOGFILE"
                     update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
                     completed=$((completed + 1))
                     
@@ -428,6 +624,7 @@ $AUTONOMOUS_INSTRUCTIONS"
             fi
             
             # Max attempts reached or not in autonomous mode
+            append_handoff_update "phase-failed-max-attempts" "$LOGFILE"
             failed=$((failed + 1))
             
             if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
