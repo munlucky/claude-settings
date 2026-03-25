@@ -137,6 +137,8 @@ Unified phase execution boundary:
 - Runtime selection remains `auto|claude|codex`.
 
 Phase runner default behavior:
+- `/moonshot-phase-runner` without arguments first tries to reuse an existing safe plan dir.
+- If no safe plan dir exists, it bootstraps `docs/implementation` through `moonshot-plan-writer`.
 - `/moonshot-phase-runner <plan-dir>` now prepares artifacts and immediately starts `moonshot-phase-executor`.
 - Use `--prepare-only` only when you explicitly want to stop after preparation.
 

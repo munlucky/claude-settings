@@ -155,6 +155,8 @@ See @README for project overview and @package.json for npm commands.
 - runtime 선택은 `auto|claude|codex`를 유지합니다.
 
 phase runner 기본 동작:
+- `/moonshot-phase-runner`를 인자 없이 호출하면 먼저 안전한 기존 plan dir를 재사용하려고 시도합니다.
+- 안전한 plan dir가 없으면 `moonshot-plan-writer`로 `docs/implementation`을 bootstrap합니다.
 - `/moonshot-phase-runner <plan-dir>`는 이제 artifact 준비 후 `moonshot-phase-executor`를 즉시 실행합니다.
 - 준비만 하고 멈추고 싶을 때만 `--prepare-only`를 사용합니다.
 

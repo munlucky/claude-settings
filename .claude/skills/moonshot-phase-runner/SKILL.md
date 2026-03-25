@@ -27,6 +27,9 @@ Execution start policy:
 ## Usage
 
 ```bash
+# Auto-resolve an existing plan or create one at docs/implementation
+/moonshot-phase-runner
+
 # Specify plan directory
 /moonshot-phase-runner docs/implementation/
 
@@ -43,34 +46,60 @@ Execution start policy:
 ## Workflow
 
 ```
-/moonshot-phase-runner <plan-dir> [--autonomous] [--execution-mode <mode>] [--prepare-only]
+/moonshot-phase-runner [<plan-dir>] [--autonomous] [--execution-mode <mode>] [--prepare-only]
     │
-    ├─ 1. Plan Directory Validation
+    ├─ 1. Plan Directory Resolution
+    │      ├─ Reuse explicit `<plan-dir>` when provided
+    │      ├─ Else reuse existing active plan directory if exactly one safe candidate exists
+    │      └─ Else run `moonshot-plan-writer` to create `docs/implementation`
+    │
+    ├─ 2. Plan Directory Validation
     │      └─ Verify master plan + phase docs exist
     │
-    ├─ 2. Create/Update phase-status.yaml
+    ├─ 3. Create/Update phase-status.yaml
     │      └─ Initialize each phase status
     │
-    ├─ 3. Seed execution bridge artifacts
+    ├─ 4. Seed execution bridge artifacts
     │      └─ Prepare `execution/<phase>/SPRINT_CONTRACT.md`
     │         and placeholders for `QA_REPORT.md`, `HANDOFF.md`
     │
-    ├─ 4. Plan Review (unless --autonomous)
+    ├─ 5. Plan Review (unless --autonomous)
     │      └─ Detect uncertainties → Q&A → planConfirmed: true
     │
-    ├─ 5. Resolve Execution Mode
+    ├─ 6. Resolve Execution Mode
     │      ├─ delegated-terminal -> build dispatcher command
     │      └─ in-session-coordinator -> build fresh-attempt command
     │
-    ├─ 6. Auto-Start Execution Skill (default)
+    ├─ 7. Auto-Start Execution Skill (default)
     │      └─ Execute `moonshot-phase-executor` in the current session
     │         unless `--prepare-only` was requested
     │
-    └─ 7. Emit Handoff Summary
+    └─ 8. Emit Handoff Summary
            └─ Orchestrator-readable phaseRunnerResult
 ```
 
-## Step 1: Plan Directory Validation
+## Step 1: Plan Directory Resolution
+
+When `<plan-dir>` is omitted, resolve it in this order:
+
+1. Reuse the active plan from `.claude/docs/phase-status.yaml` if it points to an existing master plan.
+2. Reuse `docs/implementation` if it already contains exactly one valid master plan and phase files.
+3. Reuse another single valid implementation-plan directory only if exactly one safe candidate exists.
+4. Otherwise run `/moonshot-plan-writer` and create or refresh `docs/implementation`.
+
+Safety rule:
+- If multiple candidate plan directories exist and there is no clear active one, stop and ask the user instead of guessing.
+
+Resolution output:
+
+```yaml
+planResolution:
+  source: "phase-status"   # explicit | phase-status | discovered | plan-writer
+  planDir: "docs/implementation"
+  masterPlan: "docs/implementation/00-master-plan-v1.md"
+```
+
+## Step 2: Plan Directory Validation
 
 ```yaml
 validation:
@@ -83,7 +112,7 @@ output:
   failure: "❌ Master plan not found"
 ```
 
-## Step 2: Create phase-status.yaml
+## Step 3: Create phase-status.yaml
 
 Creates `.claude/docs/phase-status.yaml`:
 
@@ -110,7 +139,7 @@ phases:
     planConfirmed: false
 ```
 
-## Step 3: Seed Execution Bridge Artifacts
+## Step 4: Seed Execution Bridge Artifacts
 
 For each detected phase, prepare:
 - `<plan-dir>/execution/<phase>/SPRINT_CONTRACT.md`
@@ -122,7 +151,7 @@ Rules:
 - `QA_REPORT.md` and `HANDOFF.md` start as placeholders and are updated during execution
 - do not overwrite an existing artifact that already contains work
 
-## Step 4: Plan Review (Optional)
+## Step 5: Plan Review (Optional)
 
 When `--autonomous` flag is **NOT** specified:
 
@@ -142,7 +171,7 @@ When `--autonomous` flag **IS** specified:
 - Set all phases to planConfirmed: true
 - Proceed with autonomous decision mode
 
-## Step 5: Resolve Execution Mode
+## Step 6: Resolve Execution Mode
 
 Supported values:
 - `delegated-terminal` (default): external loop via `agent-loop.sh`
@@ -211,7 +240,7 @@ attemptResult:
 
 The coordinator can loop in the current session only if the actual implementation/verifier work happens inside these fresh attempts.
 
-## Step 6: Auto-Start Execution Skill (Default)
+## Step 7: Auto-Start Execution Skill (Default)
 
 Unless `--prepare-only` is set:
 - execute `moonshot-phase-executor` immediately in the current session
@@ -222,7 +251,7 @@ When `--prepare-only` is set:
 - stop after writing artifacts and `phase-status.yaml`
 - surface prepared execution metadata for manual or downstream use
 
-## Step 7: Emit Handoff Summary
+## Step 8: Emit Handoff Summary
 
 Return a structured summary for orchestrator:
 
@@ -230,6 +259,7 @@ Return a structured summary for orchestrator:
 phaseRunnerResult:
   prepared: true
   executionMode: in-session-coordinator
+  planResolutionSource: "plan-writer"
   planDir: "docs/implementation/"
   masterPlan: "docs/implementation/00-master-plan.md"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
@@ -281,6 +311,7 @@ phases:
 ## References
 
 - `/moonshot-orchestrator`: Phase implementation delegation
+- `/moonshot-plan-writer`: Fallback plan creation when no safe plan dir exists
 - `/moonshot-detect-uncertainty`: Pre-execution uncertainty detection
 - `.claude/scripts/moonshot-phase-dispatch.sh`: command-layer dispatcher for both execution modes
 - `.claude/scripts/agent-loop.sh`: autonomous execution loop behind `delegated-terminal`
@@ -289,11 +320,12 @@ phases:
 ## Orchestrator Integration Contract
 
 When called by `/moonshot-orchestrator`:
-1. Prepare plan state and write `.claude/docs/phase-status.yaml`.
-2. Seed execution-bridge artifacts for each phase when missing.
-3. Return `phaseRunnerResult` summary with `executionMode`, `executionRoot`, and artifact paths (do not inline full phase docs).
-4. Do not mark implementation complete here.
-5. If `prepareOnly != true`, execute `phaseRunnerResult.executionSkill` immediately and pass `phaseRunnerResult` as input.
-6. If `prepareOnly == true`, stop after returning the prepared execution metadata.
-7. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
-8. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
+1. Resolve `<plan-dir>` first; if no safe plan exists, run `/moonshot-plan-writer` for `docs/implementation`.
+2. Prepare plan state and write `.claude/docs/phase-status.yaml`.
+3. Seed execution-bridge artifacts for each phase when missing.
+4. Return `phaseRunnerResult` summary with `executionMode`, `executionRoot`, and artifact paths (do not inline full phase docs).
+5. Do not mark implementation complete here.
+6. If `prepareOnly != true`, execute `phaseRunnerResult.executionSkill` immediately and pass `phaseRunnerResult` as input.
+7. If `prepareOnly == true`, stop after returning the prepared execution metadata.
+8. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
+9. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.

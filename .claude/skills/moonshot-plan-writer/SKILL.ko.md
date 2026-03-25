@@ -8,6 +8,8 @@ description: "이 저장소의 docs/implementation 작업계획 문서를 생성
 ## 목표
 `docs/implementation`에 master/phase 구조가 일관된 작업계획 문서를 만든다.
 
+이 스킬은 안전하게 재사용할 `<plan-dir>`가 없을 때 `moonshot-phase-runner`의 기본 bootstrap 역할을 한다.
+
 ## 필수 입력
 - 하나 이상의 요구사항 소스 문서(고정 파일명 아님):
   - 존재 시 우선: `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md`
@@ -107,3 +109,10 @@ while (master 체크리스트에 [ ] 존재) OR (미매핑 기준 요구사항 �
 - 기존 문서의 사용자 제약/결정 사항은 보존한다.
 - 선택된 기준 문서의 요구사항을 근거 없이 누락하지 않는다. 제외 시 사유를 문서에 남긴다.
 - 파일명/페이즈 번호/체크리스트 상태를 모든 문서에서 일관되게 유지한다.
+
+## Phase Runner 연동
+
+`moonshot-phase-runner`의 fallback으로 호출될 때:
+- 기본 출력 디렉토리는 `docs/implementation`
+- 결정된 master plan 경로와 plan directory를 반환한다
+- 병렬 duplicate를 새로 만들기보다 기존 미완성 plan package를 우선 갱신한다
