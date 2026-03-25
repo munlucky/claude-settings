@@ -29,6 +29,9 @@ signals:
   projectContractReady: false
   contextReady: false
   verificationContractReady: false
+  sprintContractReady: false
+  qaReportReady: false
+  handoffRequired: false
   designApproved: false
   isolatedWorkspaceReady: false
   evidenceGateRequired: true
@@ -48,6 +51,11 @@ artifacts:
   assumptionsPath: {productDir}/ASSUMPTIONS.md
   blockersPath: {productDir}/BLOCKERS.md
   taskSliceGlob: {productDir}/tasks/*.md
+  executionRoot: {tasksRoot}/{feature-name}/execution
+  activeSliceDir: {executionRoot}/{active-slice}
+  sprintContractPath: {activeSliceDir}/SPRINT_CONTRACT.md
+  qaReportPath: {activeSliceDir}/QA_REPORT.md
+  handoffPath: {activeSliceDir}/HANDOFF.md
   verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
@@ -87,6 +95,7 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
+    - `logging-bundle`
   - complex:
     - `readiness-bundle`
     - `implementation-bundle`
@@ -103,6 +112,7 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
+    - `logging-bundle`
   - complex:
     - `readiness-bundle`
     - `planning-bundle`
@@ -166,6 +176,11 @@ meta-harness-bundle:
   - completion-verifier
 ```
 
+medium/complex `product_project` 실행에서는 아래 execution bridge를 기본으로 요구한다.
+- `implementation-runner`가 코드 변경 전 `artifacts.sprintContractPath`를 작성/갱신
+- verifier가 `artifacts.qaReportPath`를 갱신
+- 재시도, 일시중지, 컨텍스트 경계 종료 시 `artifacts.handoffPath`를 갱신
+
 ## 오버레이 규칙
 
 - `workflowProfile == standard`
@@ -189,6 +204,7 @@ meta-harness-bundle:
 - master-plan/phase 문서가 있으면 `moonshot-phase-runner`를 `implementation-runner` 전에 삽입한다.
 - 리팩토링 작업은 실패한 검증 뒤에 `build-error-resolver`를 삽입하고 단계별 빌드 체크를 유지한다.
 - medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 거친다.
+- medium/complex `product_project`는 `HANDOFF.md` 출력을 위해 `logging-bundle`을 유지한다.
 - 게이트에서 blocker가 나오면 planning 단계로 되돌린다.
 
 ## 병렬 실행 가이드

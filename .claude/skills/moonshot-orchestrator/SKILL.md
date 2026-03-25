@@ -92,6 +92,9 @@ signals:
   testEnvironmentDetected: false
   testFramework: null
   testsWritten: false
+  sprintContractReady: false
+  qaReportReady: false
+  handoffRequired: false
   workflowProfile: standard
   projectContractReady: false
   contextReady: false
@@ -122,6 +125,11 @@ artifacts:
   assumptionsPath: "{productDir}/ASSUMPTIONS.md"
   blockersPath: "{productDir}/BLOCKERS.md"
   taskSliceGlob: "{productDir}/tasks/*.md"
+  executionRoot: "{tasksRoot}/{feature-name}/execution"
+  activeSliceDir: "{executionRoot}/{active-slice}"
+  sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
+  qaReportPath: "{activeSliceDir}/QA_REPORT.md"
+  handoffPath: "{activeSliceDir}/HANDOFF.md"
   verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
@@ -200,6 +208,18 @@ Merge signals:
 Routing rule:
 - If `productDefinitionRequest == true` and `productPackageReady == false`, hand off to `product-orchestrator`
 - If `productPackageReady == true`, skip upstream planning stages and use the handoff package as the implementation baseline
+
+#### 2.0.7 Execution bridge defaults
+
+For `product_project` work, treat execution artifacts as first-class state:
+- `SPRINT_CONTRACT.md` defines the current slice goal, non-goals, done checks, and evaluator focus
+- `QA_REPORT.md` records verifier findings and feeds the next remediation round
+- `HANDOFF.md` captures resumable state when the run is interrupted, retried, or context pressure is high
+
+Policy:
+- medium/complex product work must not enter code changes without a slice-level sprint contract
+- verification steps must update `QA_REPORT.md` whenever they run
+- failed verification, retry loops, or interrupted runs should mark `signals.handoffRequired = true`
 
 #### 2.1 Task classification
 Run `/moonshot-classify-task` -> merge patch (`taskType`, `keywords`, `signals`)
@@ -298,6 +318,12 @@ Run `decisions.skillChain` in order.
 5. All steps must follow `document-memory-policy.md`
 6. If `product-orchestrator` is selected, treat it as a redirect/handoff boundary and do not continue the build chain in the same pass unless a product package is returned
 
+**Execution bridge contract**:
+- Before the first `implementation-runner` in medium/complex `product_project` work, materialize `artifacts.sprintContractPath`
+- `implementation-runner` must treat `SPRINT_CONTRACT.md` as the round-level source of truth for code edits
+- `completion-verifier`, `verify-runtime.sh`, and `verify-changes.sh` should update `artifacts.qaReportPath`
+- If verification fails, retries begin, or the session cannot finish cleanly, write/update `artifacts.handoffPath`
+
 **Memory-step separation contract**:
 - `project-memory-agent`: load/update project memory context at phase 2.0.5
 - `project-memory-check`: pre-implementation boundary check (check-only, no memory mutation, use `.claude/agents/project-memory-check.md`)
@@ -321,11 +347,13 @@ Run `decisions.skillChain` in order.
 | `projectContractReady=false` | `executionPlane == product_project` | Insert `project-contract-gate` before planning |
 | `contextReady=false` | `executionPlane == product_project` | Insert `context-readiness-gate` before implementation |
 | `verificationContractReady=false` | `executionPlane == product_project` | Insert `verification-contract-gate` before verification |
+| `executionBridgeNeeded` | `executionPlane == product_project && complexity != simple` | Ensure `session-logger` is present and require `SPRINT_CONTRACT.md` before first code edit |
 | `buildFailed` | `verify-changes.sh` exit `1` | Insert `build-error-resolver`, retry (max 2) |
 | `testFailed` | `verify-changes.sh` exit `2` | Re-enter `implementation-runner` with test-first remediation, then rerun verification |
 | `runtimeUnavailable` | `verify-runtime.sh` exit `1` | Request server/runtime readiness fix, rerun `browser-verifier` (max 1) |
 | `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` |
 | `browserFlowFailed` | `verify-runtime.sh` exit `3` | Re-enter runtime/browser remediation path, then rerun `browser-verifier` |
+| `verificationFailed` | `completion-verifier` or runtime verifier fails | Update `QA_REPORT.md`, re-enter implementation with contract-linked findings |
 | `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
 | `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `frontend-design` before `implementation-runner` |
@@ -333,6 +361,7 @@ Run `decisions.skillChain` in order.
 | `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before `completion-verifier` |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |
 | `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` |
+| `handoffRequired` | retry loop, interruption, or context budget warning | Update `HANDOFF.md` through `session-logger` before pausing |
 | `strictProfile` | `workflowProfile == strict` and no evidence step | Insert `verification-evidence-gate` after `completion-verifier` or `verify-changes.sh` |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
 
@@ -356,8 +385,10 @@ After `implementation-runner`:
 4. If `completionStatus.verificationState == indeterminate`:
    - strict -> treat as failure
    - standard -> record `pass_with_warning`
-5. If strict, run `verification-evidence-gate` before any completion statement.
-6. On failure, retry using exit-code strategy until retry cap is reached.
+5. Update `artifacts.qaReportPath` with verdict, failed criteria, and next-round input.
+6. If strict, run `verification-evidence-gate` before any completion statement.
+7. On failure, retry using exit-code strategy until retry cap is reached.
+8. If the run stops before clean completion, write `artifacts.handoffPath`.
 
 ### 4. Record results
 Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
@@ -368,4 +399,5 @@ Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
 - User questions: `AskUserQuestion` on Claude runtime; on Codex runtime, prioritize `codex-validate-plan`/`codex-review-code` outputs and ask user only for unresolved blockers
 - Build-only boundary: if upstream product-definition work is still missing, route to `product-orchestrator` instead of inventing product artifacts inside the build chain
 - Product-package handoff: when `PLAN.md` + `tasks/*.md` exist, treat them as the planning source of truth and skip `requirements-analyzer` / `context-builder`
+- Execution bridge: medium/complex `product_project` work must keep `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF` artifacts synchronized with the active slice
 - Follow `document-memory-policy.md`

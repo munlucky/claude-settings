@@ -21,9 +21,19 @@
 ## Verification Strategy
 - Unit/integration/runtime checks by slice
 
+## Sprint Contract Seed
+| Slice | Build Goal | Non-Goals | Evaluator Focus |
+|-------|------------|-----------|-----------------|
+| VS-01 |  |  |  |
+
 ## Rollback / Blast Radius
 - What can fail
 - How to revert or isolate the change
 
 ## Task Files
 - Link each slice to `tasks/*.md`
+
+## Execution Artifacts
+- `execution/<slice>/SPRINT_CONTRACT.md`
+- `execution/<slice>/QA_REPORT.md`
+- `execution/<slice>/HANDOFF.md`

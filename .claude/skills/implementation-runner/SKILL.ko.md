@@ -11,10 +11,38 @@ description: 체인에서 실제 구현을 수행하고 완료 상태와 변경 
 - `analysisContext.decisions.skillChain`
 - `analysisContext.repo.openFiles`
 - `analysisContext.artifacts.contextDocPath` (존재 시)
+- `analysisContext.artifacts.planPath` / `taskSliceGlob` (존재 시)
+- `analysisContext.artifacts.sprintContractPath` (execution bridge 적용 시)
 
 ## 절차
 
-### Step 0: 테스트 환경 감지
+### Step 0: Execution Bridge 설정
+
+코드 수정 전에 현재 라운드가 slice 단위 `SPRINT_CONTRACT.md`를 요구하는지 먼저 판정합니다.
+
+아래면 계약 문서를 먼저 만듭니다.
+- `executionPlane == product_project`
+- 그리고 `complexity != simple` 이거나 `artifacts.sprintContractPath`가 이미 채워져 있음
+
+필요 시:
+1. `PLAN.md`, `tasks/*.md`, notes에서 active slice를 식별
+2. `SPRINT_CONTRACT.md` 작성 또는 갱신
+3. 아래를 기록
+   - round goal
+   - 명시적 non-goal
+   - done check
+   - evaluator focus
+   - 기대 evidence
+4. 안전한 계약을 못 만들면 코드로 추측하지 말고 planning notes로 되돌림
+
+결과:
+```yaml
+signals.sprintContractReady: true | false
+notes:
+  - "sprint-contract: ready, path=..."
+```
+
+### Step 1: 테스트 환경 감지
 
 구현 시작 전, 대상 프로젝트에 테스트 환경이 있는지 확인:
 
@@ -40,8 +68,8 @@ result:
 > `testEnvironmentDetected = false` 시, 테스트 동시 작성(Step 5)을 경고와 함께 건너뜁니다.
 
 ### 모든 작업
-1. 요구사항과 컨텍스트를 확인한다.
-2. 변경 범위를 정리하고 실제 구현을 수행한다.
+1. 요구사항, 컨텍스트, `SPRINT_CONTRACT.md`가 있으면 그 계약까지 확인한다.
+2. active slice 기준으로 변경 범위를 정리하고 실제 구현을 수행한다.
 3. 변경 파일 목록과 핵심 변경 요약을 기록한다.
 4. 구현 완료 상태를 `analysisContext`에 반영한다.
 5. **테스트 작성** (`testEnvironmentDetected = true` 시, Step 5 참조).
@@ -139,11 +167,13 @@ action:
 signals.implementationComplete: true
 signals.testEnvironmentDetected: true | false
 signals.testsWritten: true | false
+signals.sprintContractReady: true | false
 signals.selfHealingAttempts: 2  # 자동 수정 시도 횟수
 repo.changedFiles:
   - src/...
   - src/__tests__/...  # 테스트 파일 포함
 notes:
+  - "sprint-contract: ready, path=..."
   - "구현: 완료, 변경 파일=3, 테스트 작성=2"
   - "리팩토링: scope_confirmed=true, phases=3, build_status=pass"
   - "self-healing: attempts=1, fixed=TS2339"  # 자동 수정된 에러용
@@ -153,6 +183,7 @@ notes:
 ## 규칙
 - 다른 스킬/서브에이전트를 호출하지 않는다.
 - 실패하거나 보류할 경우 `notes`에 사유를 기록한다.
+- execution bridge가 요구되면 `SPRINT_CONTRACT.md`를 생략하지 않는다.
 - 리팩토링 작업: 시작 전 항상 스코프를 확인한다.
 - Self-healing: 사용자에게 묻기 전 단계당 최대 2회 재시도.
 - **테스트 동시 작성**: 테스트 환경이 있으면 테스트 없는 구현은 미완료 상태.

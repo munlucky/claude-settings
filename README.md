@@ -12,6 +12,7 @@
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
 - `install-claude.sh`로 다른 프로젝트에 빠르게 설치
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
+- 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
 - `docs/implementation/`에 메타 워크플로우 개선 계획 문서를 보관
 
 ## 디렉터리 구조
@@ -100,6 +101,7 @@ claude-settings/
 - `product-gate-reviewer`는 문서 품질 자체보다 다음 단계로 넘길 수 있는지를 `pass / conditional_pass / fail`로 판정합니다.
 - `task-slicer`는 `PLAN.md`를 vertical slice 기반 `tasks/*.md`로 분해합니다.
 - `assumption-ledger`는 질문이 필요한 모호함을 `ASSUMPTIONS.md` 또는 `BLOCKERS.md`로 적재해 workflow 정지를 줄입니다.
+- medium/complex 구현은 slice별 `SPRINT_CONTRACT.md`를 먼저 만들고, 검증 결과는 `QA_REPORT.md`, 장시간 세션 상태는 `HANDOFF.md`로 남기는 것을 권장합니다.
 
 ### 에이전트
 
@@ -125,9 +127,11 @@ claude-settings/
 
 - 가이드라인: `docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화)
 - 제품 정의 가이드: `docs/guidelines/product-definition-workflow.md`
+- 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
 - 예시: `docs/examples/token-optimization-example.md`
 - 작업 템플릿: `docs/tasks/context.md`
 - 제품 정의 템플릿: `templates/product-definition/*.md`
+- 실행 브리지 템플릿: `.claude/templates/execution/*.md`
 - 출력 템플릿: `templates/moonshot-output.*`
 
 ## 빠른 시작

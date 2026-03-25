@@ -137,20 +137,24 @@ See @README for project overview and @package.json for npm commands.
 
 1. 아이디어 단계면 `product-orchestrator`가 `PRODUCT_INTENT -> PRD -> SOLUTION -> SPEC -> PLAN`으로 변환합니다.
 2. `product-gate-reviewer`와 `task-slicer`가 게이트 판정과 `tasks/*.md` 분해를 수행합니다.
-3. `moonshot-orchestrator`가 요청을 분석하고 `executionPlane`을 분류합니다.
-4. `product_project`이면 `pre-flight-check`와 readiness gate(`project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`)가 최소 계약을 확인합니다.
-5. product package가 있으면 이를 planning source of truth로 사용하고, 없으면 `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
-6. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
-7. React/웹 UI 구현에서는 `frontend-design`을 `implementation-runner` 직전에 주입할 수 있으며, 디자인 컨텍스트가 없으면 먼저 `teach-impeccable`를 실행합니다.
-8. `completion-verifier`, `verification-evidence-gate`, `verify-changes.sh`/`verify-runtime.sh`가 계약 기반 검증을 수행합니다.
-9. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
+3. medium/complex 구현은 코드 작성 전에 slice별 `SPRINT_CONTRACT.md`를 만들어 이번 라운드의 done check와 non-goal을 먼저 고정합니다.
+4. `moonshot-orchestrator`가 요청을 분석하고 `executionPlane`을 분류합니다.
+5. `product_project`이면 `pre-flight-check`와 readiness gate(`project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`)가 최소 계약을 확인합니다.
+6. product package가 있으면 이를 planning source of truth로 사용하고, 없으면 `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
+7. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
+8. React/웹 UI 구현에서는 `frontend-design`을 `implementation-runner` 직전에 주입할 수 있으며, 디자인 컨텍스트가 없으면 먼저 `teach-impeccable`를 실행합니다.
+9. `completion-verifier`, `browser-verifier`, `verify-changes.sh`, `verify-runtime.sh` 같은 별도 evaluator 경로로 검증하고 결과를 `QA_REPORT.md`에 남깁니다.
+10. 세션이 길어지거나 중단되면 `HANDOFF.md`로 재개 상태를 남깁니다.
+11. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
 
 ## 문서와 템플릿
 
 - 작업 문서는 `.claude/docs` 하위에 두며 경로 규칙은 `.claude/PROJECT.md`를 따릅니다.
 - 출력 템플릿: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 - 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
+- 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
 - 제품 정의 템플릿: `.claude/templates/product-definition/`
+- 실행 아티팩트 템플릿: `.claude/templates/execution/`
 
 ## 유지보수 노트 (이 저장소)
 

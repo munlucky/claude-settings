@@ -71,6 +71,9 @@ signals:
   testEnvironmentDetected: false
   testFramework: null
   testsWritten: false
+  sprintContractReady: false
+  qaReportReady: false
+  handoffRequired: false
 decisions:
   recommendedAgents: []
   bundleChain: []
@@ -88,6 +91,11 @@ artifacts:
   assumptionsPath: "{productDir}/ASSUMPTIONS.md"
   blockersPath: "{productDir}/BLOCKERS.md"
   taskSliceGlob: "{productDir}/tasks/*.md"
+  executionRoot: "{tasksRoot}/{feature-name}/execution"
+  activeSliceDir: "{executionRoot}/{active-slice}"
+  sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
+  qaReportPath: "{activeSliceDir}/QA_REPORT.md"
+  handoffPath: "{activeSliceDir}/HANDOFF.md"
   verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
@@ -108,6 +116,11 @@ notes: []
 5. upstream product package 존재 여부 감지
 6. `moonshot-decide-sequence`로 bundle/skill 체인 결정
 7. 동적 게이트/검증 스텝 주입 후 순차 실행
+
+medium/complex `product_project`는 아래 execution bridge를 기본 전제로 둔다.
+- `SPRINT_CONTRACT.md`: 이번 slice 목표, non-goal, done check
+- `QA_REPORT.md`: verifier 결과와 다음 수정 입력
+- `HANDOFF.md`: 재시도/중단/장시간 세션 인계 상태
 
 ## 허용 단계
 
@@ -136,6 +149,8 @@ notes: []
 - `codex-review-code`
 - `verify-changes.sh`
 - `verify-runtime.sh`
+- `efficiency-tracker`
+- `session-logger`
 - `failure-analyzer`
 - `workflow-self-improver`
 
@@ -144,7 +159,10 @@ notes: []
 - `projectContractReady=false` + `product_project` -> `project-contract-gate`
 - `contextReady=false` + `product_project` -> `context-readiness-gate`
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
+- `executionPlane == product_project && complexity != simple` -> `session-logger` 보장 + 첫 코드 변경 전 `SPRINT_CONTRACT.md` 요구
 - `reactProject=true` -> 첫 `implementation-runner` 앞에 `frontend-design` 삽입
+- 검증 실패 -> `QA_REPORT.md` 갱신 후 구현 단계 재진입
+- 재시도/중단/컨텍스트 경고 -> `HANDOFF.md` 갱신
 - strict인데 evidence gate가 없으면 `verification-evidence-gate` 삽입
 - 다중 실패가 쌓이면 `failure-analyzer` + `workflow-self-improver` 추가
 
@@ -198,6 +216,8 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - `verificationState == indeterminate`
   - strict -> 실패
   - standard -> `pass_with_warning`
+- verifier는 실행할 때마다 `QA_REPORT.md`를 갱신해야 한다.
+- clean completion 전에 멈추면 `HANDOFF.md`를 남긴다.
 - strict에서는 완료 선언 직전에 `verification-evidence-gate`를 반드시 통과해야 한다.
 
 ## 계약
@@ -206,4 +226,5 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - 컨텍스트 오염 방지를 위해 fork 에이전트는 최소 입력 + 요약 반환만 허용한다.
 - upstream 제품 정의가 아직 없으면 build 체인 안에서 제품 산출물을 임의 생성하지 말고 `product-orchestrator`로 라우팅한다.
 - `PLAN.md`와 `tasks/*.md`가 있으면 이를 planning source of truth로 보고 `requirements-analyzer`, `context-builder`를 생략한다.
+- medium/complex `product_project`는 active slice 기준으로 `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF`를 유지한다.
 - `document-memory-policy.md`를 준수한다.

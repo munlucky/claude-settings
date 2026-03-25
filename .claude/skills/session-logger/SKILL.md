@@ -60,7 +60,7 @@ description: Logs development sessions in real-time to track decisions and issue
 
 When context window is over 80% full:
 
-1. Create `{tasksRoot}/{feature-name}/HANDOFF.md`
+1. If `analysisContext.artifacts.handoffPath` exists, use that path; otherwise create `{tasksRoot}/{feature-name}/HANDOFF.md`
 2. Run `/clear`
 3. Load HANDOFF.md in new session
 
@@ -101,6 +101,15 @@ When context window is over 80% full:
 └── session-logs/
     ├── day-YYYY-MM-DD.md
     └── ...
+```
+
+Execution-bridge variant:
+
+```
+{tasksRoot}/{feature-name}/execution/{slice-name}/
+├── SPRINT_CONTRACT.md
+├── QA_REPORT.md
+└── HANDOFF.md
 ```
 
 ---

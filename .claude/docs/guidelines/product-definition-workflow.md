@@ -13,6 +13,7 @@ The workflow stops at "ready to build":
 3. Product behavior is modeled.
 4. Architecture is defined.
 5. Work is sliced into independently executable units.
+6. Downstream implementation has enough structure to negotiate a testable sprint contract instead of guessing from the plan.
 
 ## Stage Contract
 
@@ -112,9 +113,11 @@ Required sections:
 - Done criteria
 - Verification strategy
 - Rollback or blast radius notes
+- Contract seed for downstream implementation
 
 Gate:
 - Each task can be handed directly to the implementation workflow with no hidden context.
+- Each task is specific enough that a downstream agent can write `SPRINT_CONTRACT.md` without inventing missing product behavior.
 
 ### 6. BUILD
 
@@ -145,6 +148,7 @@ Every task in `product/tasks/*.md` must include:
 - Upstream dependency
 - Parallelizable or not
 - Verification method
+- Proposed evaluator focus
 
 Prefer vertical slices over layer-only tasks.
 
@@ -155,6 +159,20 @@ Avoid:
 - "Build DTOs"
 - "Add repository layer"
 - "Implement UI shell only"
+
+## Execution Bridge Artifacts
+
+The product-definition workflow still stops before code changes, but downstream build work should start from explicit bridge artifacts rather than jumping straight from `PLAN.md` into implementation.
+
+Recommended downstream artifacts per slice:
+- `SPRINT_CONTRACT.md`: what this round will build, non-goals, done checks, and verification method
+- `QA_REPORT.md`: evaluator verdict, failed criteria, reproduction notes, and next-round feedback
+- `HANDOFF.md`: resume state for long-running or interrupted work
+
+Recommended location:
+- `{tasksRoot}/{feature-name}/execution/{slice-name}/`
+
+For medium or complex work, `PLAN.md` and each task file should give enough detail to seed these artifacts without adding speculative scope.
 
 ## Handoff Contract to Moonshot
 
@@ -185,3 +203,8 @@ Use templates in `.claude/templates/product-definition/`:
 - `task.template.md`
 - `ASSUMPTIONS.template.md`
 - `BLOCKERS.template.md`
+
+For downstream execution artifacts, also use:
+- `.claude/templates/execution/SPRINT_CONTRACT.template.md`
+- `.claude/templates/execution/QA_REPORT.template.md`
+- `.claude/templates/execution/HANDOFF.template.md`

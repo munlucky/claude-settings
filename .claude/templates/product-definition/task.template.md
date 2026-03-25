@@ -29,6 +29,16 @@
 ## Verification
 - Required tests or checks
 
+## Contract Seed
+- Round goal
+- Explicit non-goals
+- Hard fail conditions
+- Evaluator focus
+- Expected evidence
+
+## Handoff Notes
+- Resume point if the slice spans multiple sessions
+
 ## Rollback / Risk
 - Blast radius
 - Safe fallback
