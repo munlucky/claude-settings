@@ -101,6 +101,7 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 - `verification-evidence-gate` (NEW, strict profile)
 - `codex-validate-plan`
 - `codex-review-code`
+- `moonshot-in-session-coordinator` (NEW)
 
 ### Documentation and Logging
 - `session-logger`
@@ -128,6 +129,16 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 8. Use a separate evaluator path such as `completion-verifier`, `browser-verifier`, `verify-changes.sh`, or `verify-runtime.sh` and record the result in `QA_REPORT.md`.
 9. If the work spans multiple sessions, leave a resumable `HANDOFF.md`.
 10. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
+
+Unified phase execution boundary:
+- `/moonshot-phase-runner <plan-dir>` is the user-facing entrypoint.
+- `moonshot-phase-executor` is the skill-level execution adapter.
+- Internal command adapters may still use `.claude/scripts/moonshot-phase-dispatch.sh`.
+- Runtime selection remains `auto|claude|codex`.
+
+Phase runner default behavior:
+- `/moonshot-phase-runner <plan-dir>` now prepares artifacts and immediately starts `moonshot-phase-executor`.
+- Use `--prepare-only` only when you explicitly want to stop after preparation.
 
 ## Docs and Templates
 

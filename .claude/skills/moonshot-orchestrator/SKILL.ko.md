@@ -74,6 +74,8 @@ signals:
   sprintContractReady: false
   qaReportReady: false
   handoffRequired: false
+  phaseLoopInSession: false
+  phaseAttemptMode: false
 decisions:
   recommendedAgents: []
   bundleChain: []
@@ -93,9 +95,11 @@ artifacts:
   taskSliceGlob: "{productDir}/tasks/*.md"
   executionRoot: "{tasksRoot}/{feature-name}/execution"
   activeSliceDir: "{executionRoot}/{active-slice}"
+  activePhaseDocPath: null
   sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
   qaReportPath: "{activeSliceDir}/QA_REPORT.md"
   handoffPath: "{activeSliceDir}/HANDOFF.md"
+  phaseStatusFile: ".claude/docs/phase-status.yaml"
   verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
@@ -121,6 +125,16 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `SPRINT_CONTRACT.md`: 이번 slice 목표, non-goal, done check
 - `QA_REPORT.md`: verifier 결과와 다음 수정 입력
 - `HANDOFF.md`: 재시도/중단/장시간 세션 인계 상태
+
+`moonshot-phase-runner`가 `in-session-coordinator` 모드를 반환하면:
+- 메인 세션은 coordinator로만 남는다.
+- 각 구현/검증 round는 fresh fork/sub-agent attempt로 실행한다.
+- 메인 세션에는 요약 결과만 병합한다.
+- 실제 루프 실행은 `moonshot-in-session-coordinator`가 맡는다.
+
+`moonshot-phase-runner`가 `autoStartExecution=true`를 반환하면:
+- `executionSkill`을 즉시 실행한다.
+- `prepareOnly=true`가 아닌 한 사용자에게 다시 수동 실행을 요구하지 않는다.
 
 ## 허용 단계
 
@@ -161,6 +175,8 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
 - `executionPlane == product_project && complexity != simple` -> `session-logger` 보장 + 첫 코드 변경 전 `SPRINT_CONTRACT.md` 요구
 - `reactProject=true` -> 첫 `implementation-runner` 앞에 `frontend-design` 삽입
+- `phaseRunnerResult.autoStartExecution == true` -> `executionSkill`을 즉시 실행하고 `phaseRunnerResult`를 입력으로 전달
+- `phaseRunnerResult.executionMode == in-session-coordinator` -> `moonshot-in-session-coordinator` 삽입 + 메인 세션 coordinator 유지 + 각 round는 fresh fork/sub-agent attempt로 실행
 - 검증 실패 -> `QA_REPORT.md` 갱신 후 구현 단계 재진입
 - 재시도/중단/컨텍스트 경고 -> `HANDOFF.md` 갱신
 - strict인데 evidence gate가 없으면 `verification-evidence-gate` 삽입
@@ -219,6 +235,7 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - verifier는 실행할 때마다 `QA_REPORT.md`를 갱신해야 한다.
 - clean completion 전에 멈추면 `HANDOFF.md`를 남긴다.
 - strict에서는 완료 선언 직전에 `verification-evidence-gate`를 반드시 통과해야 한다.
+- `phaseLoopInSession=true`이면 재시도는 메인 세션 직접 구현이 아니라 새 fresh attempt로 다시 들어가야 한다.
 
 ## 계약
 
@@ -227,4 +244,6 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - upstream 제품 정의가 아직 없으면 build 체인 안에서 제품 산출물을 임의 생성하지 말고 `product-orchestrator`로 라우팅한다.
 - `PLAN.md`와 `tasks/*.md`가 있으면 이를 planning source of truth로 보고 `requirements-analyzer`, `context-builder`를 생략한다.
 - medium/complex `product_project`는 active slice 기준으로 `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF`를 유지한다.
+- in-session phase loop는 fresh isolated attempt를 전제로만 허용하며, coordinator 세션은 round 사이에 summary-only 상태를 유지한다.
+- fresh attempt가 `moonshot-orchestrator`를 실행할 때는 `phaseAttemptMode=true`로 두고 `moonshot-phase-runner`를 재귀적으로 다시 넣지 않는다.
 - `document-memory-policy.md`를 준수한다.

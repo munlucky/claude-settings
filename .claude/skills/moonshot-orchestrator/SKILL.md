@@ -95,6 +95,8 @@ signals:
   sprintContractReady: false
   qaReportReady: false
   handoffRequired: false
+  phaseLoopInSession: false
+  phaseAttemptMode: false
   workflowProfile: standard
   projectContractReady: false
   contextReady: false
@@ -127,9 +129,11 @@ artifacts:
   taskSliceGlob: "{productDir}/tasks/*.md"
   executionRoot: "{tasksRoot}/{feature-name}/execution"
   activeSliceDir: "{executionRoot}/{active-slice}"
+  activePhaseDocPath: null
   sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
   qaReportPath: "{activeSliceDir}/QA_REPORT.md"
   handoffPath: "{activeSliceDir}/HANDOFF.md"
+  phaseStatusFile: ".claude/docs/phase-status.yaml"
   verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
@@ -290,6 +294,8 @@ Run `decisions.skillChain` in order.
 | `efficiency-tracker` | Skill | |
 | `session-logger` | Skill | |
 | `moonshot-phase-runner` | Skill | |
+| `moonshot-phase-executor` | Skill | |
+| `moonshot-in-session-coordinator` | Skill | |
 | `moonshot-teams-runner` | Skill | |
 | `team-leader-agent` | Task (fork) | teams coordination |
 | `failure-analyzer` | Skill (fork) | system failure analysis |
@@ -305,6 +311,7 @@ Run `decisions.skillChain` in order.
 | `requirements-analyzer` | general-purpose | |
 | `context-builder` | context-builder | |
 | `implementation-runner` | implementation-agent | |
+| `phase-attempt-agent` | general-purpose | fork, single phase attempt via coordinator |
 | `project-memory-reviewer` | general-purpose | fork, after codex-review-code |
 | `team-leader-agent` | general-purpose | fork, --use-teams |
 
@@ -317,12 +324,24 @@ Run `decisions.skillChain` in order.
 4. Undefined step → ask user and stop
 5. All steps must follow `document-memory-policy.md`
 6. If `product-orchestrator` is selected, treat it as a redirect/handoff boundary and do not continue the build chain in the same pass unless a product package is returned
+7. If `signals.phaseLoopInSession == true`, keep the main session as a thin coordinator and do not perform direct multi-round implementation work in that session.
 
 **Execution bridge contract**:
 - Before the first `implementation-runner` in medium/complex `product_project` work, materialize `artifacts.sprintContractPath`
 - `implementation-runner` must treat `SPRINT_CONTRACT.md` as the round-level source of truth for code edits
 - `completion-verifier`, `verify-runtime.sh`, and `verify-changes.sh` should update `artifacts.qaReportPath`
 - If verification fails, retries begin, or the session cannot finish cleanly, write/update `artifacts.handoffPath`
+
+**Phase-runner execution-mode contract**:
+- If `moonshot-phase-runner` returns `phaseRunnerResult.prepareOnly == true`, stop after surfacing prepared execution metadata.
+- If `moonshot-phase-runner` returns `phaseRunnerResult.autoStartExecution == true`, execute `phaseRunnerResult.executionSkill` immediately and pass through `phaseRunnerResult`.
+- If `moonshot-phase-runner` returns `phaseRunnerResult.executionMode == in-session-coordinator`:
+  - set `signals.phaseLoopInSession = true`
+  - keep the main session in coordinator mode only
+  - insert `moonshot-in-session-coordinator` as the phase execution boundary
+  - run each implementation round as a fresh fork/sub-agent attempt
+  - pass only artifact-backed input (`phaseDoc`, `SPRINT_CONTRACT.md`, latest `QA_REPORT.md`, optional `HANDOFF.md`)
+  - merge back summarized `attemptResult` only
 
 **Memory-step separation contract**:
 - `project-memory-agent`: load/update project memory context at phase 2.0.5
@@ -361,6 +380,8 @@ Run `decisions.skillChain` in order.
 | `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before `completion-verifier` |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |
 | `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` |
+| `phaseAutoStart` | `phaseRunnerResult.autoStartExecution == true` | Execute `phaseRunnerResult.executionSkill` immediately with `phaseRunnerResult` as input |
+| `phaseLoopInSession` | `phaseRunnerResult.executionMode == in-session-coordinator` | Insert `moonshot-in-session-coordinator` and keep each round in a fresh fork/sub-agent attempt |
 | `handoffRequired` | retry loop, interruption, or context budget warning | Update `HANDOFF.md` through `session-logger` before pausing |
 | `strictProfile` | `workflowProfile == strict` and no evidence step | Insert `verification-evidence-gate` after `completion-verifier` or `verify-changes.sh` |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
@@ -400,4 +421,6 @@ Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
 - Build-only boundary: if upstream product-definition work is still missing, route to `product-orchestrator` instead of inventing product artifacts inside the build chain
 - Product-package handoff: when `PLAN.md` + `tasks/*.md` exist, treat them as the planning source of truth and skip `requirements-analyzer` / `context-builder`
 - Execution bridge: medium/complex `product_project` work must keep `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF` artifacts synchronized with the active slice
+- In-session phase loops: allowed only when retries run through fresh isolated attempts; the coordinator session must stay summary-only between rounds
+- Phase attempt mode: when a fresh attempt runs `moonshot-orchestrator`, set `signals.phaseAttemptMode = true` and skip recursive `moonshot-phase-runner` insertion
 - Follow `document-memory-policy.md`

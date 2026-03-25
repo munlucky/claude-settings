@@ -14,6 +14,7 @@
 # Options:
 #   --status-file     Path to phase-status.yaml (default: .claude/docs/phase-status.yaml)
 #   --execution-root  Directory for execution bridge artifacts (default: <plan-dir>/execution)
+#   --runtime         Runner CLI: auto|claude|codex (default: auto)
 #   --max-phases N    Maximum phases to run (default: all)
 #   --delay N         Delay between phases in seconds (default: 3)
 #   --dry-run         Print what would be executed without running
@@ -33,6 +34,7 @@ NC='\033[0m'
 PLAN_DIR=""
 STATUS_FILE=".claude/docs/phase-status.yaml"
 EXECUTION_ROOT=""
+RUNNER_RUNTIME="auto"
 MAX_PHASES=0
 DELAY_SECONDS=3
 DRY_RUN=false
@@ -100,6 +102,10 @@ while [[ $# -gt 0 ]]; do
             EXECUTION_ROOT="$2"
             shift 2
             ;;
+        --runtime)
+            RUNNER_RUNTIME="$2"
+            shift 2
+            ;;
         --max-phases)
             MAX_PHASES="$2"
             shift 2
@@ -147,10 +153,62 @@ if [[ -z "$MASTER_PLAN" ]]; then
     exit 1
 fi
 
-if ! command -v claude &> /dev/null; then
-    log_error "Claude CLI not found"
+resolve_runner_runtime() {
+    if [[ "$RUNNER_RUNTIME" == "claude" || "$RUNNER_RUNTIME" == "codex" ]]; then
+        echo "$RUNNER_RUNTIME"
+        return
+    fi
+
+    if command -v codex >/dev/null 2>&1; then
+        echo "codex"
+        return
+    fi
+
+    if command -v claude >/dev/null 2>&1; then
+        echo "claude"
+        return
+    fi
+
+    log_error "Neither Codex CLI nor Claude CLI was found"
     exit 1
-fi
+}
+
+run_worker_prompt() {
+    local log_file="$1"
+    local prompt="$2"
+
+    case "$RUNNER_RUNTIME" in
+        claude)
+            run_with_watchdog "$log_file" claude --dangerously-skip-permissions -p "$prompt"
+            ;;
+        codex)
+            run_with_watchdog "$log_file" codex exec --full-auto -C "$PWD" "$prompt"
+            ;;
+        *)
+            log_error "Unsupported runtime: $RUNNER_RUNTIME"
+            return 1
+            ;;
+    esac
+}
+
+run_commit_prompt() {
+    local log_file="$1"
+    local prompt="$2"
+
+    case "$RUNNER_RUNTIME" in
+        claude)
+            run_with_watchdog "$log_file" claude --dangerously-skip-permissions -c -p "$prompt" || true
+            ;;
+        codex)
+            run_with_watchdog "$log_file" codex exec --full-auto -C "$PWD" "$prompt" || true
+            ;;
+        *)
+            log_warn "Skipping commit prompt due to unsupported runtime: $RUNNER_RUNTIME"
+            ;;
+    esac
+}
+
+RUNNER_RUNTIME="$(resolve_runner_runtime)"
 
 # Create log directory
 mkdir -p "$LOG_DIR"
@@ -440,6 +498,7 @@ log_info "Plan directory: $PLAN_DIR"
 log_info "Master plan: $MASTER_PLAN"
 log_info "Status file: $STATUS_FILE"
 log_info "Execution root: $EXECUTION_ROOT"
+log_info "Runtime: $RUNNER_RUNTIME"
 
 TOTAL_PHASES=$(count_total_phases)
 log_info "Total phases: $TOTAL_PHASES"
@@ -515,8 +574,7 @@ $AUTONOMOUS_INSTRUCTIONS"
     auto_fix_count=0
     
     while true; do
-        if run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
-            -p "$PHASE_PROMPT"; then
+        if run_worker_prompt "$LOGFILE" "$PHASE_PROMPT"; then
             
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
@@ -535,8 +593,7 @@ $AUTONOMOUS_INSTRUCTIONS"
 
             # Run commit skill after successful phase
             log_info "Running commit-moonshot for Phase $NEXT_PHASE"
-            run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
-                -c -p "/commit-moonshot Phase $NEXT_PHASE 완료. 해당 페이즈 변경사항을 커밋해주세요." || true
+            run_commit_prompt "$LOGFILE" "/commit-moonshot Phase $NEXT_PHASE 완료. 해당 페이즈 변경사항을 커밋해주세요."
             break
         else
             exit_code=$?
@@ -601,8 +658,7 @@ $AUTONOMOUS_INSTRUCTIONS"
 
 $AUTONOMOUS_INSTRUCTIONS"
                 
-                if run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
-                    -p "$FIX_PROMPT"; then
+                if run_worker_prompt "$LOGFILE" "$FIX_PROMPT"; then
                     
                     END_TIME=$(date +%s)
                     DURATION=$((END_TIME - START_TIME))
@@ -616,8 +672,7 @@ $AUTONOMOUS_INSTRUCTIONS"
                     echo "" >> "$DECISION_LOG"
                     
                     # Commit after fix
-                    run_with_watchdog "$LOGFILE" claude --dangerously-skip-permissions \
-                        -c -p "/commit-moonshot Phase $NEXT_PHASE 완료 (auto-fix). 변경사항을 커밋해주세요." || true
+                    run_commit_prompt "$LOGFILE" "/commit-moonshot Phase $NEXT_PHASE 완료 (auto-fix). 변경사항을 커밋해주세요."
                     break
                 fi
                 continue

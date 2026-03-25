@@ -16,7 +16,13 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 계획 검증, 불확실성 해소(Q&A), 그리고 **실행 준비**를 담당합니다.
 또한 `/moonshot-orchestrator`가 재개할 수 있도록 핸드오프 메타데이터를 반환합니다.
 
-> **Note**: 실제 실행은 사용자가 별도 터미널에서 `agent-loop.sh`를 실행합니다.
+실행 모드:
+- `delegated-terminal`: `agent-loop.sh` 기반의 격리 루프 실행 사용
+- `in-session-coordinator`: 현재 세션이 루프를 조율하되, 각 시도는 fresh fork/sub-agent round로 실행
+
+실행 시작 정책:
+- 기본값: 준비가 끝나면 즉시 실행까지 자동 시작
+- `--prepare-only`: 상태만 준비하고 실행 메타데이터만 반환
 
 ## Usage
 
@@ -26,12 +32,18 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 
 # 자율 모드 (Q&A 스킵)
 /moonshot-phase-runner docs/implementation/ --autonomous
+
+# 현재 세션에서 조율만 유지
+/moonshot-phase-runner docs/implementation/ --execution-mode in-session-coordinator
+
+# 준비만 하고 자동 실행은 하지 않음
+/moonshot-phase-runner docs/implementation/ --prepare-only
 ```
 
 ## Workflow
 
 ```
-/moonshot-phase-runner <plan-dir> [--autonomous]
+/moonshot-phase-runner <plan-dir> [--autonomous] [--execution-mode <mode>] [--prepare-only]
     │
     ├─ 1. Plan Directory 검증
     │      └─ Master plan + phase 문서 확인
@@ -46,10 +58,15 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
     ├─ 4. Plan Review (--autonomous 미지정 시)
     │      └─ 불확실성 감지 → Q&A → planConfirmed: true
     │
-    ├─ 5. 실행 명령어 출력
-           └─ 사용자가 복사해서 실행
-    
-    └─ 6. 핸드오프 요약 반환
+    ├─ 5. 실행 모드 결정
+    │      ├─ delegated-terminal -> dispatcher 명령 구성
+    │      └─ in-session-coordinator -> fresh attempt 명령 구성
+    │
+    ├─ 6. 실행 스킬 자동 시작 (기본값)
+    │      └─ `--prepare-only`가 아니면 현재 세션에서
+    │         `moonshot-phase-executor`를 즉시 실행
+    │
+    └─ 7. 핸드오프 요약 반환
            └─ 오케스트레이터가 읽을 수 있는 phaseRunnerResult 반환
 ```
 
@@ -74,12 +91,16 @@ output:
 schemaVersion: "1.0"
 masterPlan: "docs/implementation/00-master-plan.md"
 autonomousMode: true
+executionMode: "in-session-coordinator"
 executionRoot: "docs/implementation/execution"
 phases:
   - number: 1
     title: "Project Setup"
     status: pending
     planConfirmed: false
+    attempts:
+      total: 0
+      lastOutcome: pending
     sprintContract: "docs/implementation/execution/01-project-setup/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/execution/01-project-setup/QA_REPORT.md"
     handoff: "docs/implementation/execution/01-project-setup/HANDOFF.md"
@@ -121,9 +142,15 @@ actions:
 - 모든 phase를 planConfirmed: true로 설정
 - 자율 판단 모드로 진행
 
-## Step 5: 실행 명령어 출력
+## Step 5: 실행 모드 결정
 
-**최종 출력 형식:**
+지원 값:
+- `delegated-terminal` (기본값): `agent-loop.sh` 외부 루프 사용
+- `in-session-coordinator`: 현재 세션이 재시도를 조율하되, 각 시도는 격리 실행
+
+### Mode A: delegated-terminal
+
+**내부 adapter 명령:**
 
 ```
 ═══════════════════════════════════════════════════════════════
@@ -135,33 +162,92 @@ actions:
 🤖 Mode: Autonomous
 
 ───────────────────────────────────────────────────────────────
-  다음 명령어를 별도 터미널에서 실행하세요:
+  내부 adapter:
 ───────────────────────────────────────────────────────────────
 
-  .claude/scripts/agent-loop.sh docs/implementation/ --execution-root docs/implementation/execution
+  .claude/scripts/moonshot-phase-dispatch.sh docs/implementation/ --execution-mode delegated-terminal --execution-root docs/implementation/execution --runtime auto
 
 ───────────────────────────────────────────────────────────────
 
 💡 Tip: 실행 후 로그는 .claude/logs/agent-loop/ 에서 확인
 ```
 
-## Step 6: 핸드오프 요약 반환
+### Mode B: in-session-coordinator
+
+이 모드는 오케스트레이션은 현재 세션에 남기고, 각 시도는 fresh attempt로 분리합니다.
+
+Coordinator 규칙:
+- 메인 세션은 다음 시도를 결정할 수 있지만, 구현 중간 대화를 계속 누적하면 안 됩니다.
+- 각 시도는 아래 아티팩트 상태만 입력으로 시작합니다.
+  - phase 문서
+  - `SPRINT_CONTRACT.md`
+  - 최신 `QA_REPORT.md`
+  - 있으면 최신 `HANDOFF.md`
+- 각 시도는 fresh fork/sub-agent round로 실행해야 합니다.
+- 메인 세션으로는 verdict, changed files, failed checks, next action 같은 요약만 병합합니다.
+- 시도가 clean completion 없이 끝나면 다음 시도 전에 `QA_REPORT.md`와 `HANDOFF.md`를 갱신합니다.
+
+Attempt 계약:
+
+```yaml
+attemptInput:
+  phaseNumber: 1
+  phaseTitle: "Project Setup"
+  phaseDoc: "docs/implementation/01-project-setup.md"
+  sprintContractPath: "docs/implementation/execution/01-project-setup/SPRINT_CONTRACT.md"
+  qaReportPath: "docs/implementation/execution/01-project-setup/QA_REPORT.md"
+  handoffPath: "docs/implementation/execution/01-project-setup/HANDOFF.md"
+  priorAttemptSummary: "Build failed on migration ordering; retry with DB init fix"
+
+attemptResult:
+  status: "partial"
+  summary: "Backend boots, but login flow still fails under E2E"
+  changedFiles: ["src/api/auth.ts", "tests/e2e/login.spec.ts"]
+  verification:
+    verdict: "failed"
+    failedChecks: ["browserFlows.login"]
+  handoffRequired: true
+```
+
+즉 메인 세션에서 루프를 돌릴 수는 있지만, 실제 구현/검증은 반드시 이런 fresh attempt 안에서 일어나야 합니다.
+
+## Step 6: 실행 스킬 자동 시작 (기본값)
+
+`--prepare-only`가 아니면:
+- `moonshot-phase-executor`를 현재 세션에서 즉시 실행합니다.
+- `phaseRunnerResult`를 그대로 handoff payload로 넘깁니다.
+- command adapter는 skill 경계 뒤에 숨깁니다.
+
+`--prepare-only`인 경우:
+- artifact와 `phase-status.yaml`만 준비하고 멈춥니다.
+- 이후 수동 또는 downstream용 실행 메타데이터만 반환합니다.
+
+## Step 7: 핸드오프 요약 반환
 
 오케스트레이터용 구조화 요약을 반환:
 
 ```yaml
 phaseRunnerResult:
   prepared: true
-  executionMode: delegated-terminal
+  executionMode: in-session-coordinator
   planDir: "docs/implementation/"
   masterPlan: "docs/implementation/00-master-plan.md"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
-  executionCommand: ".claude/scripts/agent-loop.sh docs/implementation/ --execution-root docs/implementation/execution"
+  executionRuntime: "auto"
+  executionSkill: "moonshot-phase-executor"
+  executionCommand: ".claude/scripts/moonshot-phase-dispatch.sh docs/implementation/ --execution-mode in-session-coordinator --execution-root docs/implementation/execution --runtime auto"
+  executionAdapterCommand: ".claude/scripts/moonshot-phase-dispatch.sh docs/implementation/ --execution-mode in-session-coordinator --execution-root docs/implementation/execution --runtime auto"
+  executionCoordinatorSkill: "moonshot-in-session-coordinator"
+  coordinatorPolicy: "fresh-fork-per-attempt"
+  autoStartExecution: true
+  prepareOnly: false
   pendingPhases: 5
 ```
 
-`executionMode: delegated-terminal`은 이 스킬이 실제 phase 구현을 직접 수행하지 않음을 의미합니다.
+모드 의미:
+- `delegated-terminal`: command-layer adapter 명령을 출력
+- `in-session-coordinator`: 상태만 준비하고, 현재 런타임/오케스트레이터가 각 시도를 fresh fork로 실행
 
 ## Status File
 
@@ -171,6 +257,7 @@ phaseRunnerResult:
 schemaVersion: "1.0"
 masterPlan: "docs/implementation/00-master-plan.md"
 autonomousMode: true
+executionMode: "delegated-terminal"
 executionRoot: "docs/implementation/execution"
 preparedAt: "2026-02-08T15:00:00Z"
 phases:
@@ -178,6 +265,10 @@ phases:
     title: "Project Setup"
     status: pending
     planConfirmed: true
+    attempts:
+      total: 1
+      lastOutcome: failed
+      lastUpdatedAt: "2026-02-08T15:30:00Z"
     sprintContract: "docs/implementation/execution/01-project-setup/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/execution/01-project-setup/QA_REPORT.md"
     handoff: "docs/implementation/execution/01-project-setup/HANDOFF.md"
@@ -191,13 +282,18 @@ phases:
 
 - `/moonshot-orchestrator`: Phase 구현 위임
 - `/moonshot-detect-uncertainty`: 사전 불확실성 감지
-- `.claude/scripts/agent-loop.sh`: 자율 실행 루프 (사용자가 별도 실행)
+- `.claude/scripts/moonshot-phase-dispatch.sh`: 두 execution mode를 라우팅하는 command-layer dispatcher
+- `.claude/scripts/agent-loop.sh`: `delegated-terminal` 내부 자율 실행 루프
+- `/moonshot-in-session-coordinator`: `in-session-coordinator`용 fresh attempt coordinator
 
 ## 오케스트레이터 연동 계약
 
 `/moonshot-orchestrator`에서 호출될 때:
 1. 계획 상태를 준비하고 `.claude/docs/phase-status.yaml`을 작성합니다.
 2. phase별 execution bridge 아티팩트를 없으면 생성합니다.
-3. `phaseRunnerResult` 요약만 반환합니다(phase 문서 본문 인라인 금지).
+3. `executionMode`, `executionRoot`, artifact 경로를 포함한 `phaseRunnerResult` 요약만 반환합니다(phase 문서 본문 인라인 금지).
 4. 여기서 구현 완료로 처리하지 않습니다.
-5. 외부 phase 실행 결과가 `phase-status.yaml`과 execution bridge 아티팩트에 반영된 뒤에만 오케스트레이터가 완료 검증을 재개합니다.
+5. `prepareOnly != true`이면 `phaseRunnerResult.executionSkill`을 즉시 실행하고 `phaseRunnerResult`를 입력으로 넘깁니다.
+6. `prepareOnly == true`이면 준비된 실행 메타데이터만 반환하고 멈춥니다.
+7. `executionMode == in-session-coordinator`이면 메인 세션을 얇게 유지하고 각 구현 round를 fresh fork/sub-agent attempt로 실행해야 합니다.
+8. active attempt가 `phase-status.yaml`과 execution bridge 아티팩트를 갱신한 뒤에만 완료 검증을 재개합니다.
