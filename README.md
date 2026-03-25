@@ -91,6 +91,7 @@ claude-settings/
 - downstream 프로젝트 작업에서는 `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`가 최소 맥락과 검증 계약을 확인합니다.
 - 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence` 스킬로 구성됩니다.
 - medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
+- React/UI 구현 작업에서는 `frontend-design`을 구현 직전에 주입해 시각 방향과 안티패턴을 먼저 정리할 수 있습니다. 프로젝트별 디자인 컨텍스트가 없으면 `teach-impeccable`를 먼저 실행합니다.
 - 사용자가 특정 스킬을 직접 지정한 경우나 read-only 요청, 오케스트레이터 자체 수정 작업에서는 direct invocation bypass가 허용됩니다.
 
 ### Product Definition 레이어
@@ -116,6 +117,7 @@ claude-settings/
 - Product Definition: `product-orchestrator`, `product-gate-reviewer`, `task-slicer`, `assumption-ledger`
 - Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
 - 실행/검증: `karpathy-execution-gate`, `implementation-runner`, `codex-validate-plan`, `codex-review-code`, `completion-verifier`
+- UI 디자인: `frontend-design`, `teach-impeccable`, `audit`, `normalize`, `polish`
 - 문서/세션: `session-logger`, `efficiency-tracker`
 - 보조 도구: `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `design-asset-parser`, `project-md-refresh`, `security-reviewer`, `build-error-resolver`
 
@@ -232,6 +234,7 @@ Codex MCP 활용:
 직접 스킬을 지정해서 실행하는 경우:
 - review-only, read-only, meta-harness 수정은 direct invocation이 가능
 - 일반적인 코드 작업은 `moonshot-orchestrator`를 기본 진입점으로 두는 편이 안전
+- UI 리디자인/감리 작업은 `/audit`, `/normalize`, `/polish` 같은 직접 스킬 호출도 자연스럽습니다.
 
 ## Moonshot 워크플로우 v2 요약
 

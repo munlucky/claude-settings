@@ -237,6 +237,11 @@ Run `decisions.skillChain` in order.
 | Step | Type | Notes |
 |------|------|-------|
 | `pre-flight-check` | Skill | emits readiness signals |
+| `teach-impeccable` | Skill | design-context bootstrap for UI work |
+| `frontend-design` | Skill | visual direction and anti-pattern guard for UI implementation |
+| `audit` | Skill | review-only UI quality audit |
+| `normalize` | Skill | align UI work to existing design system |
+| `polish` | Skill | final UI finishing pass |
 | `product-orchestrator` | Skill | upstream redirect only |
 | `project-contract-gate` | Skill | downstream bootstrap gate |
 | `context-readiness-gate` | Skill | downstream task-context gate |
@@ -323,6 +328,7 @@ Run `decisions.skillChain` in order.
 | `browserFlowFailed` | `verify-runtime.sh` exit `3` | Re-enter runtime/browser remediation path, then rerun `browser-verifier` |
 | `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
 | `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
+| `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `frontend-design` before `implementation-runner` |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after `codex-review-code` |
 | `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before `completion-verifier` |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |

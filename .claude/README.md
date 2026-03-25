@@ -91,6 +91,7 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 - `moonshot-decide-sequence`
 
 ### Execution and Verification
+- `frontend-design`
 - `pre-flight-check`
 - `design-approval-gate` (NEW, strict profile)
 - `workspace-isolation-gate` (NEW, strict profile)
@@ -106,6 +107,10 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 - `efficiency-tracker`
 
 ### Utilities
+- `teach-impeccable`
+- `audit`
+- `normalize`
+- `polish`
 - `design-asset-parser`
 - `project-md-refresh`
 - `security-reviewer`
@@ -118,8 +123,9 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 3. `task-slicer` decomposes `PLAN.md` into independently executable `tasks/*.md`.
 4. `moonshot-orchestrator` receives the product package and builds the implementation chain.
 5. For complex tasks, validate the plan with `codex-validate-plan`, then run `karpathy-execution-gate` before `implementation-runner`.
-6. Use `verification-agent` and `verify-changes.sh` to check quality.
-7. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
+6. For React/web UI implementation, `frontend-design` can be injected before `implementation-runner`; if design context is missing, run `teach-impeccable` first.
+7. Use `verification-agent` and `verify-changes.sh` to check quality.
+8. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
 
 ## Docs and Templates
 

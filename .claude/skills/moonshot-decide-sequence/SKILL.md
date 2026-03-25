@@ -187,6 +187,7 @@ meta-harness-bundle:
 
 ## Additional rules
 
+- If `signals.reactProject == true`, insert `frontend-design` immediately before the first `implementation-runner`.
 - If `signals.reactProject == true`, insert `browser-verifier` before `verify-changes.sh` or after `completion-verifier`.
 - If master-plan/phase docs are detected, insert `moonshot-phase-runner` before `implementation-runner`.
 - For refactor tasks, insert `build-error-resolver` after failed verification and keep phased build checks.
