@@ -27,6 +27,9 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 ## Usage
 
 ```bash
+# 기존 계획을 자동 탐색하거나 docs/implementation을 자동 생성
+/moonshot-phase-runner
+
 # 계획 디렉토리 지정
 /moonshot-phase-runner docs/implementation/
 
@@ -43,34 +46,60 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 ## Workflow
 
 ```
-/moonshot-phase-runner <plan-dir> [--autonomous] [--execution-mode <mode>] [--prepare-only]
+/moonshot-phase-runner [<plan-dir>] [--autonomous] [--execution-mode <mode>] [--prepare-only]
     │
-    ├─ 1. Plan Directory 검증
+    ├─ 1. Plan Directory 결정
+    │      ├─ `<plan-dir>`가 있으면 그대로 사용
+    │      ├─ 없으면 안전한 기존 plan dir를 자동 재사용
+    │      └─ 없으면 `moonshot-plan-writer`로 `docs/implementation` 생성
+    │
+    ├─ 2. Plan Directory 검증
     │      └─ Master plan + phase 문서 확인
     │
-    ├─ 2. phase-status.yaml 생성/업데이트
+    ├─ 3. phase-status.yaml 생성/업데이트
     │      └─ 각 phase 상태 초기화
     │
-    ├─ 3. execution bridge 아티팩트 시드
+    ├─ 4. execution bridge 아티팩트 시드
     │      └─ `execution/<phase>/SPRINT_CONTRACT.md`
     │         와 `QA_REPORT.md`, `HANDOFF.md` placeholder 준비
     │
-    ├─ 4. Plan Review (--autonomous 미지정 시)
+    ├─ 5. Plan Review (--autonomous 미지정 시)
     │      └─ 불확실성 감지 → Q&A → planConfirmed: true
     │
-    ├─ 5. 실행 모드 결정
+    ├─ 6. 실행 모드 결정
     │      ├─ delegated-terminal -> dispatcher 명령 구성
     │      └─ in-session-coordinator -> fresh attempt 명령 구성
     │
-    ├─ 6. 실행 스킬 자동 시작 (기본값)
+    ├─ 7. 실행 스킬 자동 시작 (기본값)
     │      └─ `--prepare-only`가 아니면 현재 세션에서
     │         `moonshot-phase-executor`를 즉시 실행
     │
-    └─ 7. 핸드오프 요약 반환
+    └─ 8. 핸드오프 요약 반환
            └─ 오케스트레이터가 읽을 수 있는 phaseRunnerResult 반환
 ```
 
-## Step 1: 계획 디렉토리 검증
+## Step 1: 계획 디렉토리 결정
+
+`<plan-dir>`가 없으면 아래 순서로 결정합니다.
+
+1. `.claude/docs/phase-status.yaml`의 active plan이 유효하면 재사용
+2. `docs/implementation`에 유효한 master plan과 phase 문서가 있으면 재사용
+3. 다른 implementation-plan 후보가 정확히 1개만 안전하게 발견되면 재사용
+4. 그 외에는 `/moonshot-plan-writer`를 실행해 `docs/implementation`을 생성/갱신
+
+안전 규칙:
+- 후보가 여러 개이고 active plan이 명확하지 않으면 추측하지 말고 사용자에게 물어야 합니다.
+
+결정 결과:
+
+```yaml
+planResolution:
+  source: "phase-status"   # explicit | phase-status | discovered | plan-writer
+  planDir: "docs/implementation"
+  masterPlan: "docs/implementation/00-master-plan-v1.md"
+```
+
+## Step 2: 계획 디렉토리 검증
 
 ```yaml
 validation:
@@ -83,7 +112,7 @@ output:
   failure: "❌ Master plan을 찾을 수 없음"
 ```
 
-## Step 2: phase-status.yaml 생성
+## Step 3: phase-status.yaml 생성
 
 `.claude/docs/phase-status.yaml` 파일 생성:
 
@@ -110,7 +139,7 @@ phases:
     planConfirmed: false
 ```
 
-## Step 3: Execution Bridge 아티팩트 시드
+## Step 4: Execution Bridge 아티팩트 시드
 
 각 phase마다 아래를 준비합니다.
 - `<plan-dir>/execution/<phase>/SPRINT_CONTRACT.md`
@@ -122,7 +151,7 @@ phases:
 - `QA_REPORT.md`, `HANDOFF.md`는 실행 중 갱신될 placeholder로 시작
 - 이미 작업 내용이 있는 파일은 덮어쓰지 않음
 
-## Step 4: Plan Review (선택적)
+## Step 5: Plan Review (선택적)
 
 `--autonomous` 플래그가 **없을 때**만 실행:
 
@@ -142,7 +171,7 @@ actions:
 - 모든 phase를 planConfirmed: true로 설정
 - 자율 판단 모드로 진행
 
-## Step 5: 실행 모드 결정
+## Step 6: 실행 모드 결정
 
 지원 값:
 - `delegated-terminal` (기본값): `agent-loop.sh` 외부 루프 사용
@@ -211,7 +240,7 @@ attemptResult:
 
 즉 메인 세션에서 루프를 돌릴 수는 있지만, 실제 구현/검증은 반드시 이런 fresh attempt 안에서 일어나야 합니다.
 
-## Step 6: 실행 스킬 자동 시작 (기본값)
+## Step 7: 실행 스킬 자동 시작 (기본값)
 
 `--prepare-only`가 아니면:
 - `moonshot-phase-executor`를 현재 세션에서 즉시 실행합니다.
@@ -222,7 +251,7 @@ attemptResult:
 - artifact와 `phase-status.yaml`만 준비하고 멈춥니다.
 - 이후 수동 또는 downstream용 실행 메타데이터만 반환합니다.
 
-## Step 7: 핸드오프 요약 반환
+## Step 8: 핸드오프 요약 반환
 
 오케스트레이터용 구조화 요약을 반환:
 
@@ -230,6 +259,7 @@ attemptResult:
 phaseRunnerResult:
   prepared: true
   executionMode: in-session-coordinator
+  planResolutionSource: "plan-writer"
   planDir: "docs/implementation/"
   masterPlan: "docs/implementation/00-master-plan.md"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
@@ -281,6 +311,7 @@ phases:
 ## References
 
 - `/moonshot-orchestrator`: Phase 구현 위임
+- `/moonshot-plan-writer`: 안전한 plan dir가 없을 때 fallback 생성
 - `/moonshot-detect-uncertainty`: 사전 불확실성 감지
 - `.claude/scripts/moonshot-phase-dispatch.sh`: 두 execution mode를 라우팅하는 command-layer dispatcher
 - `.claude/scripts/agent-loop.sh`: `delegated-terminal` 내부 자율 실행 루프
@@ -289,11 +320,12 @@ phases:
 ## 오케스트레이터 연동 계약
 
 `/moonshot-orchestrator`에서 호출될 때:
-1. 계획 상태를 준비하고 `.claude/docs/phase-status.yaml`을 작성합니다.
-2. phase별 execution bridge 아티팩트를 없으면 생성합니다.
-3. `executionMode`, `executionRoot`, artifact 경로를 포함한 `phaseRunnerResult` 요약만 반환합니다(phase 문서 본문 인라인 금지).
-4. 여기서 구현 완료로 처리하지 않습니다.
-5. `prepareOnly != true`이면 `phaseRunnerResult.executionSkill`을 즉시 실행하고 `phaseRunnerResult`를 입력으로 넘깁니다.
-6. `prepareOnly == true`이면 준비된 실행 메타데이터만 반환하고 멈춥니다.
-7. `executionMode == in-session-coordinator`이면 메인 세션을 얇게 유지하고 각 구현 round를 fresh fork/sub-agent attempt로 실행해야 합니다.
-8. active attempt가 `phase-status.yaml`과 execution bridge 아티팩트를 갱신한 뒤에만 완료 검증을 재개합니다.
+1. 먼저 `<plan-dir>`를 결정하고, 안전한 plan이 없으면 `/moonshot-plan-writer`로 `docs/implementation`을 생성합니다.
+2. 계획 상태를 준비하고 `.claude/docs/phase-status.yaml`을 작성합니다.
+3. phase별 execution bridge 아티팩트를 없으면 생성합니다.
+4. `executionMode`, `executionRoot`, artifact 경로를 포함한 `phaseRunnerResult` 요약만 반환합니다(phase 문서 본문 인라인 금지).
+5. 여기서 구현 완료로 처리하지 않습니다.
+6. `prepareOnly != true`이면 `phaseRunnerResult.executionSkill`을 즉시 실행하고 `phaseRunnerResult`를 입력으로 넘깁니다.
+7. `prepareOnly == true`이면 준비된 실행 메타데이터만 반환하고 멈춥니다.
+8. `executionMode == in-session-coordinator`이면 메인 세션을 얇게 유지하고 각 구현 round를 fresh fork/sub-agent attempt로 실행해야 합니다.
+9. active attempt가 `phase-status.yaml`과 execution bridge 아티팩트를 갱신한 뒤에만 완료 검증을 재개합니다.

@@ -103,6 +103,7 @@ claude-settings/
 - `assumption-ledger`는 질문이 필요한 모호함을 `ASSUMPTIONS.md` 또는 `BLOCKERS.md`로 적재해 workflow 정지를 줄입니다.
 - medium/complex 구현은 slice별 `SPRINT_CONTRACT.md`를 먼저 만들고, 검증 결과는 `QA_REPORT.md`, 장시간 세션 상태는 `HANDOFF.md`로 남기는 것을 권장합니다.
 - phase 기반 장시간 실행의 기본 진입점은 `/moonshot-phase-runner <plan-dir>`이며, 내부적으로 `moonshot-phase-executor`가 `delegated-terminal`과 `in-session-coordinator`를 skill 경계 뒤에서 분기합니다.
+- `<plan-dir>`를 생략하면 기존 안전한 plan dir를 재사용하고, 없으면 `moonshot-plan-writer`로 `docs/implementation`을 자동 생성한 뒤 이어서 실행합니다.
 - 기본적으로 `/moonshot-phase-runner <plan-dir>` 한 번이면 준비 후 실행까지 이어지고, 수동 중단이 필요할 때만 `--prepare-only`를 사용합니다.
 
 ### 에이전트

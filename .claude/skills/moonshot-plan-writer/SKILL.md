@@ -8,6 +8,8 @@ description: "Create or refresh docs/implementation planning documents for this 
 ## Goal
 Produce reliable planning docs in `docs/implementation` with strict master/phase structure.
 
+This skill is the default plan bootstrap for `moonshot-phase-runner` when no safe `<plan-dir>` can be reused.
+
 ## Required Inputs
 - One or more available requirement sources (not fixed filenames):
   - Preferred when present: `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md`
@@ -107,3 +109,10 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Preserve user-authored constraints already present in plan docs.
 - Do not drop a source requirement from the selected baseline sources without documenting why it is excluded.
 - Keep numbering, filenames, and checklist states consistent across all plan files.
+
+## Phase Runner Integration
+
+When called as a fallback by `moonshot-phase-runner`:
+- default output directory is `docs/implementation`
+- return the resolved master plan path and plan directory
+- prefer refreshing an incomplete plan package over creating a parallel duplicate
