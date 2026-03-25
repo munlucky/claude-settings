@@ -320,6 +320,7 @@ Run `decisions.skillChain` in order.
 | `testFailed` | `verify-changes.sh` exit `2` | Re-enter `implementation-runner` with test-first remediation, then rerun verification |
 | `runtimeUnavailable` | `verify-runtime.sh` exit `1` | Request server/runtime readiness fix, rerun `browser-verifier` (max 1) |
 | `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` |
+| `browserFlowFailed` | `verify-runtime.sh` exit `3` | Re-enter runtime/browser remediation path, then rerun `browser-verifier` |
 | `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
 | `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after `codex-review-code` |

@@ -37,7 +37,7 @@ json_escape() {
 usage() {
   cat <<'EOF_USAGE'
 Usage:
-  verify-runtime.sh [--url <target-url>] [--e2e "<command>"] [--timeout <seconds>] [--no-auto-e2e]
+  verify-runtime.sh [--url <target-url>] [--browser-flow <name>] [--browser-only] [--browserctl <path>] [--e2e "<command>"] [--timeout <seconds>] [--no-auto-e2e]
 EOF_USAGE
 }
 
@@ -52,12 +52,16 @@ write_verdict_json() {
   local source_escaped
   local mode_escaped
   local contract_file_escaped
+  local browser_flow_escaped
+  local browserctl_escaped
 
   url_escaped="$(json_escape "$URL")"
   cmd_escaped="$(json_escape "$E2E_CMD")"
   source_escaped="$(json_escape "$E2E_SOURCE")"
   mode_escaped="$(json_escape "$OPERATING_MODE")"
   contract_file_escaped="$(json_escape "$CONTRACT_FILE")"
+  browser_flow_escaped="$(json_escape "$BROWSER_FLOW")"
+  browserctl_escaped="$(json_escape "$BROWSERCTL")"
 
   cat > "$VERDICT_FILE" <<JSON
 {
@@ -78,6 +82,10 @@ write_verdict_json() {
     "timeoutSec": ${TIMEOUT},
     "httpCode": "${HTTP_CODE}",
     "runtimeStatus": "${RUNTIME_STATUS}",
+    "browserFlow": "${browser_flow_escaped}",
+    "browserFlowStatus": "${BROWSER_FLOW_STATUS}",
+    "browserOnly": ${BROWSER_ONLY},
+    "browserctlPath": "${browserctl_escaped}",
     "e2eStatus": "${E2E_STATUS}",
     "e2eCommand": "${cmd_escaped}",
     "e2eSource": "${source_escaped}"
@@ -121,9 +129,85 @@ has_npm_script() {
   ' "$script_name" >/dev/null 2>&1
 }
 
+resolve_default_browserctl() {
+  if command -v browserctl >/dev/null 2>&1; then
+    command -v browserctl
+  else
+    printf '%s\n' ".claude/bin/browserctl"
+  fi
+}
+
+run_browser_flow() {
+  local start_rc
+  local goto_rc
+
+  echo ""
+  log_info "Optional browser flow check"
+
+  if [ -z "$BROWSER_FLOW" ]; then
+    log_warning "No browser flow requested, skipping"
+    BROWSER_FLOW_STATUS="skipped"
+    return 0
+  fi
+
+  log_info "Browser flow: ${BROWSER_FLOW}"
+
+  if [ ! -x "$BROWSERCTL" ]; then
+    log_warning "browserctl not available at ${BROWSERCTL}"
+    BROWSER_FLOW_STATUS="setup_gap"
+    if [ "$BROWSER_ONLY" = true ]; then
+      return 1
+    fi
+    return 0
+  fi
+
+  if "$BROWSERCTL" start >/dev/null 2>&1; then
+    :
+  else
+    start_rc=$?
+    if [ "$start_rc" -eq 64 ]; then
+      log_warning "browserctl reported scaffold/setup gap on start"
+      BROWSER_FLOW_STATUS="setup_gap"
+      if [ "$BROWSER_ONLY" = true ]; then
+        return 1
+      fi
+      return 0
+    fi
+
+    log_error "browserctl start failed"
+    BROWSER_FLOW_STATUS="failed"
+    return 1
+  fi
+
+  if "$BROWSERCTL" goto "$URL" >/dev/null 2>&1; then
+    log_success "Browser flow bootstrap passed"
+    BROWSER_FLOW_STATUS="passed"
+    return 0
+  fi
+
+  goto_rc=$?
+  if [ "$goto_rc" -eq 64 ]; then
+    log_warning "browserctl reported scaffold/setup gap on goto"
+    BROWSER_FLOW_STATUS="setup_gap"
+    if [ "$BROWSER_ONLY" = true ]; then
+      return 1
+    fi
+    return 0
+  fi
+
+  log_error "Browser flow failed during navigation bootstrap"
+  BROWSER_FLOW_STATUS="failed"
+  return 1
+}
+
 URL="${APP_BASE_URL:-http://localhost:3000}"
 E2E_CMD="${RUNTIME_E2E_CMD:-}"
 E2E_SOURCE=""
+BROWSER_FLOW="${RUNTIME_BROWSER_FLOW:-}"
+BROWSER_FLOW_SOURCE="explicit"
+BROWSER_ONLY=false
+BROWSERCTL="${BROWSERCTL_PATH:-$(resolve_default_browserctl)}"
+BROWSER_DEFAULT_FLOW="${RUNTIME_DEFAULT_BROWSER_FLOW:-smoke}"
 TIMEOUT=10
 AUTO_E2E=true
 
@@ -142,9 +226,11 @@ mkdir -p .claude
 VERDICT_FILE="${HARNESS_VERDICT_FILE:-.claude/runtime-verdict-${RUN_ID}.json}"
 
 RUNTIME_FAILED=false
+FLOW_FAILED=false
 E2E_FAILED=false
 HTTP_CODE="000"
 RUNTIME_STATUS="not_run"
+BROWSER_FLOW_STATUS="not_run"
 E2E_STATUS="not_run"
 
 while [ $# -gt 0 ]; do
@@ -165,6 +251,26 @@ while [ $# -gt 0 ]; do
     --e2e=*)
       E2E_CMD="${1#*=}"
       E2E_SOURCE="cli"
+      shift
+      ;;
+    --browser-flow)
+      BROWSER_FLOW="$2"
+      shift 2
+      ;;
+    --browser-flow=*)
+      BROWSER_FLOW="${1#*=}"
+      shift
+      ;;
+    --browser-only)
+      BROWSER_ONLY=true
+      shift
+      ;;
+    --browserctl)
+      BROWSERCTL="$2"
+      shift 2
+      ;;
+    --browserctl=*)
+      BROWSERCTL="${1#*=}"
       shift
       ;;
     --timeout)
@@ -191,6 +297,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ "$BROWSER_ONLY" = true ] && [ -z "$BROWSER_FLOW" ]; then
+  BROWSER_FLOW="basic"
+  BROWSER_FLOW_SOURCE="browser_only_default"
+fi
+
+if [ "$BROWSER_ONLY" = true ]; then
+  AUTO_E2E=false
+  E2E_CMD=""
+  E2E_SOURCE="browser-only"
+fi
+
 if [ -n "$E2E_CMD" ] && [ -z "$E2E_SOURCE" ]; then
   E2E_SOURCE="env:RUNTIME_E2E_CMD"
 fi
@@ -205,6 +322,13 @@ if [ -z "$E2E_CMD" ] && [ "$AUTO_E2E" = true ]; then
   fi
 fi
 
+if [ -z "$BROWSER_FLOW" ] && [ "$BROWSER_ONLY" = false ] && [ -x "$BROWSERCTL" ]; then
+  if [ -n "$E2E_CMD" ] || [ "$AUTO_E2E" = true ]; then
+    BROWSER_FLOW="$BROWSER_DEFAULT_FLOW"
+    BROWSER_FLOW_SOURCE="auto:default"
+  fi
+fi
+
 echo ""
 echo "======================================"
 echo "  Runtime Verification Harness"
@@ -215,6 +339,12 @@ log_info "Run ID: ${RUN_ID}"
 log_info "Target URL: ${URL}"
 log_info "Timeout: ${TIMEOUT}s"
 log_info "Verification contract: ${CONTRACT_FILE}"
+if [ -n "$BROWSER_FLOW" ]; then
+  log_info "Browser flow: ${BROWSER_FLOW}"
+  log_info "Browser flow source: ${BROWSER_FLOW_SOURCE}"
+  log_info "Browser only mode: ${BROWSER_ONLY}"
+  log_info "browserctl path: ${BROWSERCTL}"
+fi
 echo ""
 
 log_info "URL health check"
@@ -229,8 +359,18 @@ else
 fi
 echo ""
 
+if run_browser_flow; then
+  :
+else
+  FLOW_FAILED=true
+fi
+echo ""
+
 log_info "Optional E2E check"
-if [ -n "$E2E_CMD" ]; then
+if [ "$BROWSER_ONLY" = true ]; then
+  log_warning "Browser-only mode enabled, skipping E2E command"
+  E2E_STATUS="skipped"
+elif [ -n "$E2E_CMD" ]; then
   log_info "Running: ${E2E_CMD}"
   if bash -lc "$E2E_CMD"; then
     log_success "E2E command passed"
@@ -248,6 +388,10 @@ echo ""
 
 if [ "$RUNTIME_FAILED" = true ]; then
   finalize_and_exit 1 "failed"
+fi
+
+if [ "$FLOW_FAILED" = true ]; then
+  finalize_and_exit 3 "failed"
 fi
 
 if [ "$E2E_FAILED" = true ]; then
