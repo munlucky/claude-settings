@@ -1,3 +1,8 @@
 .history/
 .vscode/
 .mcp.json
+.claude/browser-runtime/
+.claude/runtime-verdict-*.json
+.claude/knowledge-repo-audit-*.json
+.claude/tools/browserd/node_modules/
+.claude/tools/browserd/.claude/
