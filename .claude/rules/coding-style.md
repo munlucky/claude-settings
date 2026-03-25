@@ -20,3 +20,4 @@ Keep always-loaded style rules short. Include only constraints that are hard to 
 ## Framework-Specific Note
 
 - For React/Next.js performance reviews, use `.claude/skills/vercel-react-best-practices/SKILL.md`.
+- For React/web UI implementation or redesign, use `.claude/skills/frontend-design/SKILL.md` before code generation when visual direction matters.

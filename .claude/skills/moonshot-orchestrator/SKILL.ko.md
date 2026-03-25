@@ -112,6 +112,11 @@ notes: []
 ## 허용 단계
 
 - `pre-flight-check`
+- `teach-impeccable`
+- `frontend-design`
+- `audit`
+- `normalize`
+- `polish`
 - `product-orchestrator`
 - `project-contract-gate`
 - `context-readiness-gate`
@@ -139,6 +144,7 @@ notes: []
 - `projectContractReady=false` + `product_project` -> `project-contract-gate`
 - `contextReady=false` + `product_project` -> `context-readiness-gate`
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
+- `reactProject=true` -> 첫 `implementation-runner` 앞에 `frontend-design` 삽입
 - strict인데 evidence gate가 없으면 `verification-evidence-gate` 삽입
 - 다중 실패가 쌓이면 `failure-analyzer` + `workflow-self-improver` 추가
 

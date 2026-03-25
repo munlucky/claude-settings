@@ -95,6 +95,7 @@ See @README for project overview and @package.json for npm commands.
 - `moonshot-decide-sequence`
 
 ### 실행 및 검증
+- `frontend-design`
 - `pre-flight-check`
 - `project-contract-gate`
 - `context-readiness-gate`
@@ -113,6 +114,10 @@ See @README for project overview and @package.json for npm commands.
 - `efficiency-tracker`
 
 ### 유틸리티
+- `teach-impeccable`
+- `audit`
+- `normalize`
+- `polish`
 - `design-asset-parser`
 - `project-md-refresh`
 - `security-reviewer`
@@ -136,8 +141,9 @@ See @README for project overview and @package.json for npm commands.
 4. `product_project`이면 `pre-flight-check`와 readiness gate(`project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`)가 최소 계약을 확인합니다.
 5. product package가 있으면 이를 planning source of truth로 사용하고, 없으면 `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
 6. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
-7. `completion-verifier`, `verification-evidence-gate`, `verify-changes.sh`/`verify-runtime.sh`가 계약 기반 검증을 수행합니다.
-8. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
+7. React/웹 UI 구현에서는 `frontend-design`을 `implementation-runner` 직전에 주입할 수 있으며, 디자인 컨텍스트가 없으면 먼저 `teach-impeccable`를 실행합니다.
+8. `completion-verifier`, `verification-evidence-gate`, `verify-changes.sh`/`verify-runtime.sh`가 계약 기반 검증을 수행합니다.
+9. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
 
 ## 문서와 템플릿
 

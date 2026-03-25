@@ -20,3 +20,4 @@
 ## 프레임워크 특화 참고
 
 - React/Next.js 성능 리뷰는 `.claude/skills/vercel-react-best-practices/SKILL.md` 사용
+- React/웹 UI 구현 또는 리디자인에서 시각 방향이 중요하면 코드 생성 전에 `.claude/skills/frontend-design/SKILL.md` 사용

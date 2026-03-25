@@ -184,6 +184,7 @@ meta-harness-bundle:
 
 ## 추가 규칙
 
+- `signals.reactProject == true`이면 첫 `implementation-runner` 직전에 `frontend-design`을 삽입한다.
 - `signals.reactProject == true`이면 `browser-verifier`를 `verify-changes.sh` 이전 또는 `completion-verifier` 이후에 삽입한다.
 - master-plan/phase 문서가 있으면 `moonshot-phase-runner`를 `implementation-runner` 전에 삽입한다.
 - 리팩토링 작업은 실패한 검증 뒤에 `build-error-resolver`를 삽입하고 단계별 빌드 체크를 유지한다.
