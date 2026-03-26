@@ -10,6 +10,11 @@ triggers:
 
 # Browser Verifier
 
+## Visibility
+
+This is a verification helper for runtime and browser checks.
+Prefer running it behind the verification flow unless the user explicitly requests browser verification.
+
 ## Role
 Validate that a web app is reachable and working at runtime after implementation, with optional browser-flow checks layered on top of the existing URL/E2E harness.
 

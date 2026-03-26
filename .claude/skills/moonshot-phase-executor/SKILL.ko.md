@@ -15,6 +15,9 @@ triggers:
 - `delegated-terminal`이면 내부 adapter로 `agent-loop.sh`
 - `in-session-coordinator`이면 `/moonshot-in-session-coordinator`
 
+이 스킬은 기본 공개 진입점이 아니라 내부 execution handoff입니다.
+사용자는 보통 이 스킬이 아니라 `moonshot-phase-runner`에서 시작해야 합니다.
+
 ## 입력
 
 ```yaml
@@ -75,7 +78,7 @@ phaseExecutionResult:
 
 ## 계약
 
-- 이 스킬이 사용자 관점의 phase 실행 handoff입니다.
+- 이 스킬은 `moonshot-phase-runner` 뒤에 숨는 내부 phase 실행 handoff입니다.
 - 스크립트는 구현용 내부 adapter일 뿐이며 이 스킬 뒤에 숨어야 합니다.
 - `moonshot-phase-runner`는 기본적으로 `prepareOnly != true`일 때 이 스킬을 자동 시작해야 합니다.
 - 기본 경로에서 사용자에게 `moonshot-phase-dispatch.sh` 수동 실행을 요구하지 않습니다.

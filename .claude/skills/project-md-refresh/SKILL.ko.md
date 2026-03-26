@@ -9,6 +9,7 @@ description: 현재 저장소를 분석해 `.claude/PROJECT.md`를 생성/갱신
 근거 기반으로 `.claude/PROJECT.md`를 생성하거나 갱신한다.
 
 > 이 스킬은 생성기이며, 게이트 역할은 `project-contract-gate`가 담당한다.
+> 이 스킬은 유지보수 유틸리티이며, 기본 구현 체인에는 포함하지 않는다.
 
 ## 워크플로우
 1. 기준 파일을 찾는다.

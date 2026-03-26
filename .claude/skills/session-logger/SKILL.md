@@ -5,6 +5,11 @@ description: Logs development sessions in real-time to track decisions and issue
 
 # Session Logger Skill
 
+## Visibility
+
+This is a doc-ops helper and a supported public utility entrypoint.
+It may run behind the doc-ops bundle or be invoked directly when the user wants explicit session or handoff logging.
+
 > **Purpose**: Record development sessions in real time to track decisions and trial/error
 > **When to log**: work start, agent switch, decisions, issues, work completion
 > **Output**: `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`

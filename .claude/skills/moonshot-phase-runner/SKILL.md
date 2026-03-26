@@ -16,6 +16,8 @@ Prepares phase-by-phase implementation based on master plan documents.
 Handles plan validation, uncertainty resolution (Q&A), and **execution preparation**.
 Emits handoff metadata so `/moonshot-orchestrator` can resume with consistent state.
 
+This is the default public entrypoint for large, phase-based, or long-running implementation work.
+
 Execution modes:
 - `delegated-terminal`: use isolated loop execution backed by `agent-loop.sh`
 - `in-session-coordinator`: the current session coordinates the loop, but each attempt must run as a fresh fork/sub-agent round

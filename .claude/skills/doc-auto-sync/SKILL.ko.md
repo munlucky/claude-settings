@@ -5,6 +5,11 @@ description: 코드 변경을 감지하여 관련 문서(PROJECT.md, README, CHA
 
 # Doc Auto-Sync 스킬
 
+## 공개 범위
+
+이 스킬은 doc-ops helper입니다.
+보통은 구현/검증 뒤에서 doc-ops bundle을 통해 실행하는 편이 맞습니다.
+
 > **목적**: 코드 변경 감지 → 영향 문서 식별 → 업데이트 또는 부트스트랩
 > **시점**: implementation-runner 이후, codex-review-code 이전
 

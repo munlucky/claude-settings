@@ -6,6 +6,11 @@ context: fork
 
 # 보안 리뷰어 스킬
 
+## 공개 범위
+
+이 스킬은 review 하위 스킬입니다.
+기본 workflow entrypoint가 아니라 review 또는 verification composition 뒤에서 호출하는 편이 맞습니다.
+
 ## 사용 시점
 
 - 코드 리뷰 중 보안 우려 감지

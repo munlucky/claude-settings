@@ -6,6 +6,11 @@ description: Documents task results, updates context/session logs, and finalizes
 # Documentation Agent
 ## Role
 - 작업 결과를 문서화하고 context/session 로그를 업데이트합니다.
+
+## 공개 범위
+
+이 에이전트는 doc-ops cluster 소속입니다.
+기본 진입점으로 직접 호출하기보다 orchestrator 흐름이나 doc-ops bundle 뒤에서 쓰는 편이 맞습니다.
 ## When to use
 - 구현/검증 완료 후
 - 중간 체크포인트 기록이 필요한 경우

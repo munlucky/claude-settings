@@ -114,6 +114,24 @@ resolve_master_plan() {
     find "$PLAN_DIR" -maxdepth 1 \( -name "*master*" -o -name "*00-*" \) 2>/dev/null | head -1
 }
 
+record_dispatch_evidence() {
+    local resolved_mode="$1"
+    local resolved_root="$2"
+    local master_plan="$3"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        return
+    fi
+
+    bash "$SCRIPT_DIR/workflow-enforcement.sh" record-dispatch \
+        --plan-dir "$PLAN_DIR" \
+        --execution-mode "$resolved_mode" \
+        --execution-root "$resolved_root" \
+        --runtime "$RUNTIME" \
+        --status-file "$STATUS_FILE" \
+        --master-plan "$master_plan" >/dev/null
+}
+
 ensure_claude() {
     if ! command -v claude >/dev/null 2>&1; then
         log_error "Claude CLI not found"
@@ -290,6 +308,7 @@ log_info "Plan directory: $PLAN_DIR"
 log_info "Execution mode: $RESOLVED_MODE"
 log_info "Execution root: $RESOLVED_ROOT"
 log_info "Runtime: $RUNTIME"
+record_dispatch_evidence "$RESOLVED_MODE" "$RESOLVED_ROOT" "$MASTER_PLAN"
 if [[ "$AUTONOMOUS" == "true" ]]; then
     log_info "Autonomous flag acknowledged (delegated terminal is autonomous by default)"
 fi

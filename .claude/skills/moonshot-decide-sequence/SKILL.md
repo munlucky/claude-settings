@@ -5,6 +5,11 @@ description: Determines phase and execution chain based on analysisContext (task
 
 # PM Sequence Decision
 
+## Visibility
+
+This is an internal analysis and routing micro-skill.
+Public entry should remain at `product-orchestrator`, `moonshot-phase-runner`, or `moonshot-orchestrator`.
+
 ## Shared schema (analysisContext.v1.1)
 
 ```yaml
@@ -77,6 +82,8 @@ notes: []
 
 Build the chain from bundles first, then expand into `skillChain`.
 
+Analysis micro-skills are orchestrator-internal and should not be presented as standalone workflow entrypoints.
+
 - If `signals.productDefinitionRequest == true` and `signals.productPackageReady == false`:
   - route to `product-orchestrator`
   - do not continue into build planning or implementation
@@ -103,13 +110,13 @@ Build the chain from bundles first, then expand into `skillChain`.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
   - complex:
     - `readiness-bundle`
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
 - If no product package is present and the request is implementation-oriented:
   - simple:
     - `readiness-bundle`
@@ -122,14 +129,14 @@ Build the chain from bundles first, then expand into `skillChain`.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
   - complex:
     - `readiness-bundle`
     - `planning-bundle`
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
 
 ### `meta_harness`
 - simple:
@@ -138,7 +145,7 @@ Build the chain from bundles first, then expand into `skillChain`.
 - medium/complex:
   - `meta-harness-bundle`
   - `review-bundle`
-  - `logging-bundle`
+  - `doc-ops-bundle`
 
 ## Bundle expansion
 
@@ -167,14 +174,19 @@ verification-lite-bundle:
   - verify-changes.sh
 
 verification-bundle:
+  - verification-agent
   - completion-verifier
-  - doc-auto-sync
 
 review-bundle:
   - codex-review-code
+  - security-reviewer
+
+doc-ops-bundle:
+  - doc-auto-sync
+  - session-logger
+  - documentation-agent
 
 logging-bundle:
-  - efficiency-tracker
   - session-logger
 
 meta-harness-bundle:
@@ -209,12 +221,14 @@ Execution-bridge expectation for medium/complex `product_project` runs:
 ## Additional rules
 
 - If `signals.reactProject == true`, insert `frontend-design` immediately before the first `implementation-runner`.
-- If `signals.reactProject == true`, insert `browser-verifier` before `verify-changes.sh` or after `completion-verifier`.
+- If non-trivial code was changed, insert `code-simplifier` after `implementation-runner` and before final verification.
+- If `signals.reactProject == true`, layer `browser-verifier` into the verification path before `verify-changes.sh` or after `completion-verifier`.
+- `qa-flow` is a manual or explicit follow-up verifier, not part of the default verification chain.
 - If master-plan/phase docs are detected, insert `moonshot-phase-runner` before `implementation-runner`, unless `signals.phaseAttemptMode == true`.
 - If `signals.phaseAttemptMode == true`, treat `artifacts.activePhaseDocPath` and existing execution artifacts as the only planning baseline for this round.
 - For refactor tasks, insert `build-error-resolver` after failed verification and keep phased build checks.
 - For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
-- For medium/complex `product_project` work, ensure `logging-bundle` is present so `HANDOFF.md` can be emitted when needed.
+- For medium/complex `product_project` work, ensure `doc-ops-bundle` is present so `HANDOFF.md` and session artifacts can be emitted when needed.
 - If the gate reports blockers, return to planning before code edits.
 
 ## Parallel execution guide
@@ -222,8 +236,8 @@ Execution-bridge expectation for medium/complex `product_project` runs:
 Only run dependency-free steps in parallel.
 
 - After classification: `moonshot-evaluate-complexity` + `moonshot-detect-uncertainty`
-- After implementation: `codex-review-code` + `verify-changes.sh`
-- Logging: `efficiency-tracker` + `session-logger`
+- After implementation: `verification-agent` + `codex-review-code`
+- Documentation: `doc-auto-sync` + `session-logger` when file ownership does not overlap
 
 Do not parallelize:
 - `codex-validate-plan` and `implementation-runner`

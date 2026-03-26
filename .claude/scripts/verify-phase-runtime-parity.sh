@@ -92,6 +92,7 @@ import sys
 before_path, after_path = sys.argv[1:]
 allowed_prefixes = (
     ".claude/logs/agent-loop/",
+    ".claude/logs/workflow-enforcement/",
     ".claude/memory.json",
     ".claude/verification-results-",
     ".claude/verification-verdict-",
@@ -366,11 +367,11 @@ EOF
 ## Required Steps
 1. Read \`SPRINT_CONTRACT.md\` and keep the policy anchors intact.
 2. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
-3. Record the runtime/mode in \`QA_REPORT.md\`.
+3. Record the runtime/mode in \`QA_REPORT.md\` and keep the \`## Workflow Execution\` section current.
 4. Run the verification command exactly once for fresh evidence.
 5. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
 6. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
-7. If verification fails, update \`HANDOFF.md\` and stop without touching repository source files.
+7. If verification fails, update \`HANDOFF.md\`, keep the \`session-logger\` note intact, and stop without touching repository source files.
 
 ## Completion
 - \`QA_REPORT.md\` changed during the run
@@ -449,6 +450,11 @@ EOF
 ## Verdict
 - Status: pending
 - Summary: awaiting runtime execution
+
+## Workflow Execution
+- Selected bundles: analysis-bundle, readiness-bundle, implementation-bundle, verification-suite, doc-ops-bundle
+- Applied skills: implementation-runner, completion-verifier
+- Skipped skills: code-simplifier (not evaluated yet), session-logger (clean completion path)
 EOF
 
   cat > "$handoff" <<EOF
@@ -461,6 +467,9 @@ EOF
 - Completed:
 - In progress:
 - Blocked:
+
+## Workflow Logging
+- session-logger: required on incomplete stop
 EOF
 
   cat > "$status_file" <<EOF
@@ -567,12 +576,12 @@ run_actual_flow() {
       MOONSHOT_CODEX_REASONING_EFFORT=low \
         AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
         AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 AGENT_LOOP_WATCHDOG_MAX_SECONDS=90 \
-        bash .claude/scripts/agent-loop.sh "$plan_dir" \
+        bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
+          --execution-mode delegated-terminal \
           --execution-root "$execution_root" \
           --status-file "$status_file" \
           --runtime "$runtime" \
-          --max-phases 1 \
-          --delay 0 > "$log_file" 2>&1
+          > "$log_file" 2>&1
     ); then
       tail -80 "$log_file" >&2 || true
       if grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then

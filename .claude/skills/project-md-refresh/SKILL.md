@@ -9,6 +9,7 @@ description: Analyze the current repository and create or refresh .claude/PROJEC
 Create or update `.claude/PROJECT.md` with accurate, evidence-based project details.
 
 > This skill is a bootstrap generator, not a gate by itself. Gate logic belongs in `project-contract-gate`.
+> This is a maintenance utility, not part of the default implementation chain.
 
 ## Workflow
 1. Locate the base file.

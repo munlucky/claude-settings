@@ -6,6 +6,11 @@ description: Executes automated verification (typecheck, build, lint) and summar
 # Verification Agent
 ## Role
 - 변경 사항에 대한 자동 검증을 실행하고 결과를 요약합니다.
+
+## 공개 범위
+
+이 에이전트는 verification cluster 소속입니다.
+공개 workflow entrypoint가 아니라 verification composition 뒤에서 실행하는 편이 맞습니다.
 ## When to use
 - 구현 단계 종료 후
 - 커밋 전 최종 확인

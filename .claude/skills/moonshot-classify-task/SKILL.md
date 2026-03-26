@@ -5,6 +5,11 @@ description: Classifies a user request into task types (feature, modification, b
 
 # PM Task Classification
 
+## Visibility
+
+This is an internal analysis micro-skill.
+Prefer invoking `moonshot-orchestrator` or `moonshot-phase-runner`, not this skill directly.
+
 ## Inputs
 - `analysisContext.request.userMessage`
 - `context.md` (path: `analysisContext.artifacts.contextDocPath`, if exists)

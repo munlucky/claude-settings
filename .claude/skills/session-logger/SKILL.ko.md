@@ -5,6 +5,11 @@ description: 개발 세션을 실시간으로 기록하여 결정 사항과 이�
 
 # Session Logger 스킬
 
+## 공개 범위
+
+이 스킬은 doc-ops helper이면서 지원되는 공개 유틸리티 진입점입니다.
+doc-ops bundle 뒤에서 실행할 수도 있고, 사용자가 세션/HANDOFF 기록을 원하면 직접 호출할 수도 있습니다.
+
 > **목적**: 개발 세션을 실시간 기록하여 결정 과정과 시행착오 추적
 > **기록 시점**: 작업 시작, 에이전트 전환, 결정, 이슈, 작업 완료
 > **출력**: `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`

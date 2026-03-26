@@ -15,6 +15,9 @@ Users should not need to run command adapters directly. This skill consumes `pha
 - `agent-loop.sh` as an internal adapter for `delegated-terminal`
 - `moonshot-in-session-coordinator` for `in-session-coordinator`
 
+This is an internal execution handoff, not a primary public workflow entrypoint.
+Users should normally start from `moonshot-phase-runner`, not this skill.
+
 ## Inputs
 
 ```yaml
@@ -75,7 +78,7 @@ phaseExecutionResult:
 
 ## Contract
 
-- This skill is the user-facing phase execution handoff.
+- This skill is the internal phase execution handoff behind `moonshot-phase-runner`.
 - Scripts are implementation adapters only and must stay behind this skill.
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.
 - Do not ask the user to manually run `moonshot-phase-dispatch.sh` in the default path.

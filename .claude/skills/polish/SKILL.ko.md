@@ -11,6 +11,11 @@ argument-hint: "[target]"
 
 # Polish
 
+## 공개 범위
+
+이 스킬은 마감용 frontend helper입니다.
+더 넓은 UI 방향 정리가 필요하면 `frontend-design`을 상위 진입점으로 사용합니다.
+
 기능이 이미 동작하는 상태에서 마지막 품질 보정을 할 때 사용합니다.
 
 ## 준비

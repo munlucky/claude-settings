@@ -5,6 +5,11 @@ description: 예상 파일 수/라인 수/시간을 기준으로 복잡도(`simp
 
 # PM 복잡도 평가
 
+## 공개 범위
+
+이 스킬은 내부 분석 마이크로스킬입니다.
+직접 호출하기보다 `moonshot-orchestrator` 또는 `moonshot-phase-runner`를 우선합니다.
+
 ## 입력
 - `analysisContext.estimates.estimatedFiles`
 - `analysisContext.estimates.estimatedLines`

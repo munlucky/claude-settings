@@ -5,6 +5,11 @@ description: Evaluates complexity (simple, medium, complex) based on estimated f
 
 # PM Complexity Evaluation
 
+## Visibility
+
+This is an internal analysis micro-skill.
+Prefer invoking `moonshot-orchestrator` or `moonshot-phase-runner`, not this skill directly.
+
 ## Inputs
 - `analysisContext.estimates.estimatedFiles`
 - `analysisContext.estimates.estimatedLines`

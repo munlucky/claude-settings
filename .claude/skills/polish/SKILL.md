@@ -11,6 +11,11 @@ argument-hint: "[target]"
 
 # Polish
 
+## Visibility
+
+This is a finishing frontend helper.
+Use `frontend-design` as the umbrella entrypoint when the task still needs broader UI direction.
+
 Use at the end of a UI task when the feature is already functionally complete.
 
 ## Preparation
