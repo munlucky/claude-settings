@@ -52,6 +52,28 @@ decisions:
 artifacts:
   contextDocPath: .claude/docs/tasks/claude-memory-docs/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
+workflowEvidence:
+  mode: bounded-direct
+  selectedBundles:
+    - analysis-bundle
+    - implementation-bundle
+    - verification-suite
+    - doc-ops-bundle
+  requiredSkills:
+    - implementation-runner
+    - code-simplifier
+    - completion-verifier
+    - session-logger
+  appliedSkills:
+    - implementation-runner
+    - code-simplifier
+    - completion-verifier
+  skippedSkills:
+    - session-logger (clean completion path)
+  evidenceFiles:
+    analysisContext: .claude/docs/moonshot-analysis.yaml
+    qaReport: null
+    handoff: null
 notes:
   - "taskType=modification, confidence=medium"
   - "complexity=simple, estimated=heuristic"

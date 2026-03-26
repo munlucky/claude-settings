@@ -6,6 +6,11 @@ context: fork
 
 # Security Reviewer Skill
 
+## Visibility
+
+This is a review sub-skill.
+Prefer invoking it from review or verification composition, not as a primary workflow entrypoint.
+
 ## When to Use
 
 - Security concerns detected during code review

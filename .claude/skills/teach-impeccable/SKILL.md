@@ -10,6 +10,11 @@ user-invocable: true
 
 # Teach Impeccable
 
+## Visibility
+
+This is a bootstrap helper for durable design context.
+Treat `frontend-design` as the day-to-day entrypoint for UI work.
+
 Run this once per project when UI work needs durable design context.
 
 ## Goal

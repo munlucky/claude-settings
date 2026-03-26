@@ -11,6 +11,11 @@ argument-hint: "[feature]"
 
 # Normalize
 
+## Visibility
+
+This is a focused frontend helper.
+Use `frontend-design` as the umbrella entrypoint when overall UI direction is still unsettled.
+
 Use when the UI has drifted from the design system or when a feature needs to be brought back into the repository's established patterns.
 
 ## Preparation

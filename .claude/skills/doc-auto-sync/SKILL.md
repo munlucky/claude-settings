@@ -5,6 +5,11 @@ description: Detects code changes, auto-updates related docs (PROJECT.md, README
 
 # Doc Auto-Sync Skill
 
+## Visibility
+
+This is a doc-ops helper.
+It should normally run behind a doc-ops bundle after implementation or verification.
+
 > **Purpose**: Auto-detect code changes → identify affected docs → update or bootstrap them.
 > **When**: After implementation-runner, before codex-review-code.
 

@@ -2,10 +2,17 @@
 name: commit-moonshot
 description: 변경사항 분석 및 프로젝트 메모리 현행화 후 커밋
 triggers:
-  - "commit"
-  - "커밋"
+  - "commit-moonshot"
+  - "moonshot commit"
+  - "memory commit"
+---
 
 # 프로젝트 메모리 현행화 및 커밋
+
+## 상태
+
+지원되는 공개 유틸리티 진입점입니다.
+기본 구현 체인에는 포함하지 않지만, 사용자가 프로젝트 메모리 현행화와 커밋을 함께 원할 때 직접 호출 가능해야 합니다.
 
 ## 개요
 이 명령어는 메인 세션에서 실행되며, 변경사항을 분석하고 전역 Memory MCP에 프로젝트 메모리(`[ProjectID]::*`)를 현행화합니다.

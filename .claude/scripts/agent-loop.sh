@@ -45,6 +45,7 @@ DRY_RUN=false
 LOG_DIR=".claude/logs/agent-loop"
 DECISION_LOG=".claude/logs/agent-loop/decisions.md"
 SUMMARY_REPORT=".claude/logs/agent-loop/summary.md"
+WORKFLOW_LOG_DIR=".claude/logs/workflow-enforcement"
 WATCHDOG_CHECK_SECONDS=60
 WATCHDOG_MAX_SECONDS=$((2 * 60 * 60))
 WATCHDOG_AUTO_RESTART=true
@@ -501,6 +502,11 @@ ensure_execution_artifacts() {
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
 - Round policy summary: Keep this run isolated to phase ${phase_prefix}, refresh QA/HANDOFF artifacts when state changes, and require fresh verification evidence before completion.
 
+## Workflow Plan
+- Selected bundles: analysis-bundle, readiness-bundle, implementation-bundle, verification-suite, doc-ops-bundle
+- Required skills: implementation-runner, code-simplifier, completion-verifier
+- Incomplete stop logging: session-logger
+
 ## Done Checks
 | Check | Type | Pass Condition |
 |-------|------|----------------|
@@ -554,6 +560,12 @@ EOF
 
 ## Runtime Updates
 - Seeded at: $(date '+%Y-%m-%d %H:%M:%S')
+
+## Workflow Execution
+- Selected bundles: analysis-bundle, readiness-bundle, implementation-bundle, verification-suite, doc-ops-bundle
+- Applied skills: implementation-runner, completion-verifier
+- Skipped skills: code-simplifier (not evaluated yet), session-logger (clean completion path)
+- Enforcement note: replace defaults when actual execution diverges
 EOF
     fi
 
@@ -580,6 +592,10 @@ EOF
 - Sprint contract: ${PHASE_SPRINT_CONTRACT}
 - QA report: ${PHASE_QA_REPORT}
 - Phase doc: ${phase_doc}
+
+## Workflow Logging
+- session-logger: required
+- Update this file when the phase pauses or stops without clean completion
 EOF
     fi
 }
@@ -596,6 +612,9 @@ append_qa_runtime_update() {
         if [[ -n "$detail" ]]; then
             echo "- Detail: ${detail}"
         fi
+        if [[ -f "${WORKFLOW_LOG_DIR}/latest-dispatch.json" ]]; then
+            echo "- Workflow evidence: ${WORKFLOW_LOG_DIR}/latest-dispatch.json"
+        fi
     } >> "$PHASE_QA_REPORT"
 }
 
@@ -611,6 +630,7 @@ append_handoff_update() {
         if [[ -n "$detail" ]]; then
             echo "- Detail: ${detail}"
         fi
+        echo "- session-logger: recorded via agent-loop handoff update"
         echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, update \`${PHASE_QA_REPORT}\`, then resume implementation."
     } >> "$PHASE_HANDOFF"
 }
@@ -660,7 +680,9 @@ Single isolated phase-attempt rules:
 - Read the Policy Anchors section in SPRINT_CONTRACT.md first.
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
 - When verification runs, update QA_REPORT.md.
-- If the run stops without clean completion, update HANDOFF.md.
+- Refresh the default values in the "Workflow Execution" section of QA_REPORT.md when actual execution diverges.
+- If meaningful code changed, record \`code-simplifier\` in Applied skills or Skipped skills with a reason.
+- If the run stops without clean completion, update HANDOFF.md and include \`session-logger\` evidence.
 
 Runtime compatibility fallback:
 - If /moonshot-orchestrator is unavailable in this runtime, execute the equivalent phase-attempt workflow directly instead of searching for missing slash skills.
@@ -680,7 +702,7 @@ evaluate_phase_completion_gate() {
     local phase_start_epoch="$1"
     local eval_output
 
-    eval_output="$(PHASE_START_EPOCH="$phase_start_epoch" python3 - <<'PY'
+    eval_output="$(PHASE_START_EPOCH="$phase_start_epoch" PHASE_QA_REPORT_PATH="$PHASE_QA_REPORT" python3 - <<'PY'
 import glob
 import json
 import os
@@ -691,6 +713,7 @@ patterns = [
     ".claude/verification-verdict-*.json",
     ".claude/runtime-verdict-*.json",
 ]
+qa_report_path = os.environ.get("PHASE_QA_REPORT_PATH", "")
 
 latest_by_script = {}
 for pattern in patterns:
@@ -713,6 +736,7 @@ for pattern in patterns:
 
 failures = []
 passed_paths = []
+code_change_detected = False
 for script in sorted(latest_by_script):
     _mtime, path, payload = latest_by_script[script]
     verdict = payload.get("verdict")
@@ -731,10 +755,61 @@ for script in sorted(latest_by_script):
     if (contract_applicable or verification_mode == "contract") and missing_required:
         failures.append(f"{script}:missingRequiredChecks")
         continue
+    for changed_path in payload.get("changedFiles") or []:
+        suffix = os.path.splitext(changed_path)[1].lower()
+        if suffix in {
+            ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs",
+            ".java", ".kt", ".kts", ".cs", ".php", ".swift", ".scala", ".sh", ".bash",
+            ".zsh", ".ps1", ".psm1", ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp",
+            ".hxx",
+        }:
+            code_change_detected = True
     passed_paths.append(path)
 
-allowed = bool(passed_paths) and not failures
-reason = "ok" if allowed else (failures[0] if failures else "no-fresh-verification-artifact")
+workflow_reason = "ok"
+if qa_report_path:
+    try:
+        qa_lines = open(qa_report_path, "r", encoding="utf-8").read().splitlines()
+    except OSError:
+        qa_lines = []
+
+    section = {}
+    in_workflow = False
+    for line in qa_lines:
+        if line.strip() == "## Workflow Execution":
+            in_workflow = True
+            continue
+        if in_workflow and line.startswith("## "):
+            break
+        if not in_workflow:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("- Selected bundles:"):
+            section["selected"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("- Applied skills:"):
+            section["applied"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("- Skipped skills:"):
+            section["skipped"] = stripped.split(":", 1)[1].strip()
+
+    if not section:
+        workflow_reason = "workflow-section-missing"
+    elif not section.get("selected"):
+        workflow_reason = "workflow-selected-bundles-missing"
+    elif not section.get("applied"):
+        workflow_reason = "workflow-applied-skills-missing"
+    elif not section.get("skipped"):
+        workflow_reason = "workflow-skipped-skills-missing"
+    elif code_change_detected and (
+        "code-simplifier" not in section.get("applied", "")
+        and (
+            "code-simplifier" not in section.get("skipped", "")
+            or "not evaluated yet" in section.get("skipped", "").lower()
+        )
+    ):
+        workflow_reason = "workflow-code-simplifier-missing"
+
+allowed = bool(passed_paths) and not failures and workflow_reason == "ok"
+reason = "ok" if allowed else (failures[0] if failures else workflow_reason if workflow_reason != "ok" else "no-fresh-verification-artifact")
 
 print(f"PHASE_COMPLETION_ALLOWED={'true' if allowed else 'false'}")
 print(f"PHASE_COMPLETION_REASON={shlex.quote(reason)}")

@@ -2,11 +2,17 @@
 name: commit-moonshot
 description: Analyze changes, update project memory, and commit
 triggers:
-  - "commit"
-  - "git commit"
+  - "commit-moonshot"
+  - "moonshot commit"
+  - "memory commit"
 ---
 
 # Project Memory Update & Commit
+
+## Status
+
+Supported public utility entrypoint.
+It is not part of the default implementation chain, but it should remain directly invocable when the user explicitly wants memory update plus commit.
 
 ## Overview
 This skill runs in the main session, analyzes changes, and updates project memory (`[ProjectID]::*`) in the global Memory MCP.

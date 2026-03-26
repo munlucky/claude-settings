@@ -16,6 +16,8 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 계획 검증, 불확실성 해소(Q&A), 그리고 **실행 준비**를 담당합니다.
 또한 `/moonshot-orchestrator`가 재개할 수 있도록 핸드오프 메타데이터를 반환합니다.
 
+이 스킬은 large, phase 기반, long-running 구현 작업의 기본 공개 진입점입니다.
+
 실행 모드:
 - `delegated-terminal`: `agent-loop.sh` 기반의 격리 루프 실행 사용
 - `in-session-coordinator`: 현재 세션이 루프를 조율하되, 각 시도는 fresh fork/sub-agent round로 실행

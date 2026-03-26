@@ -5,6 +5,11 @@ description: 요구사항 누락을 감지하고 명확화 질문을 생성한�
 
 # PM 불확실성 검출
 
+## 공개 범위
+
+이 스킬은 내부 분석 마이크로스킬입니다.
+직접 호출하기보다 `moonshot-orchestrator` 또는 `moonshot-phase-runner`를 우선합니다.
+
 ## 입력
 - `analysisContext.request.userMessage`
 - `analysisContext.request.keywords`

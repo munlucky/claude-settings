@@ -13,9 +13,11 @@ This orchestrator is the **build control plane**.
 Use it directly when:
 - the request is already implementation-oriented
 - a product package already exists under `{tasksRoot}/{feature-name}/product/`
+- the work is bounded enough that it does not need the phase harness
 
 Do not treat it as the primary entry point for raw idea shaping.
 If the request is still in product-definition mode and no product package exists, redirect upstream to `product-orchestrator`.
+If the work is large, long-running, or organized around phase documents, redirect upstream to `moonshot-phase-runner`.
 
 ## Usage
 
@@ -29,7 +31,8 @@ If the request is still in product-definition mode and no product package exists
 
 ## Entry Policy
 
-- Use this skill by default for code work.
+- Use this skill by default for bounded code work.
+- Do not use this as the default entrypoint for large phase-based work; prefer `moonshot-phase-runner`.
 - Allow bypass when:
   - the user explicitly invokes a specific skill
   - the task is read-only / answer-only
@@ -139,8 +142,19 @@ artifacts:
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
   verificationResultPath: "{tasksRoot}/{feature-name}/verification-result.json"
+  workflowEvidencePath: ".claude/logs/workflow-enforcement/latest-bounded.json"
 tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
 projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
+workflowEvidence:
+  mode: bounded-direct
+  selectedBundles: []
+  requiredSkills: []
+  appliedSkills: []
+  skippedSkills: []
+  evidenceFiles:
+    analysisContext: ".claude/docs/moonshot-analysis.yaml"
+    qaReport: null
+    handoff: null
 notes: []
 ```
 
@@ -226,6 +240,9 @@ Policy:
 - strict or `meta_harness` phase work must keep policy anchors and required verification commands current in the active sprint contract
 - verification steps must update `QA_REPORT.md` whenever they run
 - failed verification, retry loops, or interrupted runs should mark `signals.handoffRequired = true`
+- bounded direct work that stays outside the phase harness must still keep `workflowEvidence` current in `.claude/docs/moonshot-analysis.yaml`
+- bounded direct code changes must record whether `code-simplifier` was applied or explicitly skipped with a reason
+- bounded direct interrupted runs must record `session-logger` evidence before completion is claimed
 
 #### 2.1 Task classification
 Run `/moonshot-classify-task` -> merge patch (`taskType`, `keywords`, `signals`)
@@ -281,7 +298,7 @@ Run `decisions.skillChain` in order.
 | `workspace-isolation-gate` | Skill | strict profile branch/workspace isolation gate |
 | `karpathy-execution-gate` | Skill | pre-implementation discipline gate |
 | `implementation-runner` | Task | |
-| `code-simplifier` | Plugin | post-implementation simplification |
+| `code-simplifier` | Skill | post-implementation simplification pass |
 | `completion-verifier` | Skill (fork) | contract-aware verification |
 | `verification-evidence-gate` | Skill | strict profile evidence-before-completion gate |
 | `doc-auto-sync` | Skill | auto-docs update & bootstrap |
@@ -380,7 +397,7 @@ Run `decisions.skillChain` in order.
 | `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `frontend-design` before `implementation-runner` |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after `codex-review-code` |
-| `implementationComplete` | implementation-runner completed | Insert `code-simplifier` before `completion-verifier` |
+| `implementationComplete` | implementation-runner completed with meaningful code changes | Insert `code-simplifier` before `completion-verifier` |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain |
 | `phasePlanDetected` | master plan + phase docs found | Insert `moonshot-phase-runner` before `implementation-runner` |
 | `phaseAutoStart` | `phaseRunnerResult.autoStartExecution == true` | Execute `phaseRunnerResult.executionSkill` immediately with `phaseRunnerResult` as input |
@@ -431,6 +448,7 @@ After `implementation-runner`:
 
 ### 4. Record results
 Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
+When the run is bounded-direct and edits code, update `workflowEvidence` in that file and record the same boundary through `bash .claude/scripts/workflow-enforcement.sh record-bounded --analysis-path .claude/docs/moonshot-analysis.yaml`.
 
 ## Contract
 - Orchestrates only, does not analyze directly

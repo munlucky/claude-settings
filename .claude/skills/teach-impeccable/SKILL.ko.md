@@ -10,6 +10,11 @@ user-invocable: true
 
 # Teach Impeccable
 
+## 공개 범위
+
+이 스킬은 지속 가능한 디자인 컨텍스트를 만드는 bootstrap helper입니다.
+일상적인 UI 작업 진입점은 `frontend-design`으로 두는 편이 맞습니다.
+
 UI 작업에 지속적인 디자인 컨텍스트가 필요할 때 프로젝트당 한 번 실행합니다.
 
 ## 목표

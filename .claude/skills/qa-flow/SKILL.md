@@ -17,6 +17,7 @@ Verify a user-facing flow in a real browser session and return a compact pass/fa
 ## Status
 
 This skill is currently a scaffold. It prepares the interface for integrating persistent browser flows into the existing verification harness.
+It is not part of the default verification chain yet.
 
 ## Inputs
 

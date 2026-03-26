@@ -23,6 +23,29 @@ missingInfo:
 recommendations:
   - "Recommendation 1"
 
+workflowEvidence:
+  mode: "bounded-direct"
+  selectedBundles:
+    - "analysis-bundle"
+    - "implementation-bundle"
+    - "verification-suite"
+    - "doc-ops-bundle"
+  requiredSkills:
+    - "implementation-runner"
+    - "code-simplifier"
+    - "completion-verifier"
+    - "session-logger"
+  appliedSkills:
+    - "implementation-runner"
+    - "completion-verifier"
+  skippedSkills:
+    - "code-simplifier (not evaluated yet)"
+    - "session-logger (clean completion path)"
+  evidenceFiles:
+    analysisContext: ".claude/docs/moonshot-analysis.yaml"
+    qaReport: "{optional}"
+    handoff: "{optional}"
+
 # 🎯 토큰 효율화: 각 에이전트별 최소 페이로드
 agentPayloads:
   RequirementsAnalyzer:

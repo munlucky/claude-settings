@@ -5,6 +5,11 @@ description: `analysisContext`를 바탕으로 phase와 bundle/skill 체인을 �
 
 # PM 시퀀스 결정
 
+## 공개 범위
+
+이 스킬은 내부 분석/라우팅 마이크로스킬입니다.
+공개 진입은 `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator`에 둡니다.
+
 ## 공유 스키마 (analysisContext.v1.1)
 
 ```yaml
@@ -78,6 +83,8 @@ notes: []
 
 bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
 
+분석 마이크로스킬은 orchestrator 내부 구성요소이며, 독립 workflow entrypoint로 제시하지 않는다.
+
 ### `read_only`
 
 - 기본적으로 구현 bundle 없음
@@ -98,13 +105,13 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
   - complex:
     - `readiness-bundle`
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
 - product package가 없고 구현 요청이면:
   - simple:
     - `readiness-bundle`
@@ -117,14 +124,14 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
   - complex:
     - `readiness-bundle`
     - `planning-bundle`
     - `implementation-bundle`
     - `verification-bundle`
     - `review-bundle`
-    - `logging-bundle`
+    - `doc-ops-bundle`
 
 ### `meta_harness`
 
@@ -134,7 +141,7 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
 - medium/complex:
   - `meta-harness-bundle`
   - `review-bundle`
-  - `logging-bundle`
+  - `doc-ops-bundle`
 
 ## bundle 확장
 
@@ -163,14 +170,19 @@ verification-lite-bundle:
   - verify-changes.sh
 
 verification-bundle:
+  - verification-agent
   - completion-verifier
-  - doc-auto-sync
 
 review-bundle:
   - codex-review-code
+  - security-reviewer
+
+doc-ops-bundle:
+  - doc-auto-sync
+  - session-logger
+  - documentation-agent
 
 logging-bundle:
-  - efficiency-tracker
   - session-logger
 
 meta-harness-bundle:
@@ -205,19 +217,21 @@ medium/complex `product_project` 실행에서는 아래 execution bridge를 기�
 ## 추가 규칙
 
 - `signals.reactProject == true`이면 첫 `implementation-runner` 직전에 `frontend-design`을 삽입한다.
-- `signals.reactProject == true`이면 `browser-verifier`를 `verify-changes.sh` 이전 또는 `completion-verifier` 이후에 삽입한다.
+- 의미 있는 코드 변경이 있으면 `implementation-runner` 뒤, 최종 검증 전에 `code-simplifier`를 삽입한다.
+- `signals.reactProject == true`이면 `browser-verifier`를 검증 경로에 계층화해 `verify-changes.sh` 이전 또는 `completion-verifier` 이후에 삽입한다.
+- `qa-flow`는 기본 검증 체인 구성요소가 아니라 수동 또는 명시적 후속 verifier다.
 - master-plan/phase 문서가 있으면 `moonshot-phase-runner`를 `implementation-runner` 전에 삽입한다. 단, `signals.phaseAttemptMode == true`이면 예외다.
 - `signals.phaseAttemptMode == true`이면 이번 round는 `artifacts.activePhaseDocPath`와 기존 execution artifact만 planning baseline으로 사용한다.
 - 리팩토링 작업은 실패한 검증 뒤에 `build-error-resolver`를 삽입하고 단계별 빌드 체크를 유지한다.
 - medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 거친다.
-- medium/complex `product_project`는 `HANDOFF.md` 출력을 위해 `logging-bundle`을 유지한다.
+- medium/complex `product_project`는 `HANDOFF.md`와 세션 아티팩트를 위해 `doc-ops-bundle`을 유지한다.
 - 게이트에서 blocker가 나오면 planning 단계로 되돌린다.
 
 ## 병렬 실행 가이드
 
 - 분류 직후: `moonshot-evaluate-complexity` + `moonshot-detect-uncertainty`
-- 구현 후: `codex-review-code` + `verify-changes.sh`
-- 로깅: `efficiency-tracker` + `session-logger`
+- 구현 후: `verification-agent` + `codex-review-code`
+- 문서화: 파일 소유권이 겹치지 않을 때 `doc-auto-sync` + `session-logger`
 
 병렬 금지:
 - `codex-validate-plan` 과 `implementation-runner`

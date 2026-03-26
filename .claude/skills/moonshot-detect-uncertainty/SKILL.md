@@ -5,6 +5,11 @@ description: Detects missing requirements and generates clarification questions.
 
 # PM Uncertainty Detection
 
+## Visibility
+
+This is an internal analysis micro-skill.
+Prefer invoking `moonshot-orchestrator` or `moonshot-phase-runner`, not this skill directly.
+
 ## Inputs
 - `analysisContext.request.userMessage`
 - `analysisContext.request.keywords`

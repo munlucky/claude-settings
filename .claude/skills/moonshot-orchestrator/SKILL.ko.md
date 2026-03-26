@@ -14,9 +14,11 @@ PM 분석 스킬을 순차 실행하고, `executionPlane`과 `workflowProfile`�
 직접 사용해도 되는 경우:
 - 요청이 이미 구현 중심인 경우
 - `{tasksRoot}/{feature-name}/product/` 아래에 product package가 이미 있는 경우
+- 작업 범위가 phase harness 없이 처리 가능한 bounded implementation인 경우
 
 raw idea 정리의 주 진입점으로 쓰지 않는다.
 요청이 아직 제품 정의 단계이고 product package가 없으면 upstream의 `product-orchestrator`로 리다이렉트한다.
+작업이 크거나, 장시간 지속되거나, phase 문서 중심이면 upstream의 `moonshot-phase-runner`로 리다이렉트한다.
 
 ## 사용법
 
@@ -30,7 +32,8 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
 
 ## 진입 정책
 
-- 일반적인 코드 작업은 이 스킬을 기본 진입점으로 사용한다.
+- bounded code work는 이 스킬을 기본 진입점으로 사용한다.
+- large phase 기반 작업의 기본 진입점으로는 이 스킬을 사용하지 않고 `moonshot-phase-runner`를 우선한다.
 - 다음 경우는 우회 가능하다:
   - 사용자가 특정 스킬을 직접 지정한 경우
   - read-only / answer-only 작업
@@ -104,6 +107,17 @@ artifacts:
   verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
   runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
+  workflowEvidencePath: ".claude/logs/workflow-enforcement/latest-bounded.json"
+workflowEvidence:
+  mode: bounded-direct
+  selectedBundles: []
+  requiredSkills: []
+  appliedSkills: []
+  skippedSkills: []
+  evidenceFiles:
+    analysisContext: ".claude/docs/moonshot-analysis.yaml"
+    qaReport: null
+    handoff: null
 notes: []
 ```
 
@@ -127,6 +141,9 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `QA_REPORT.md`: verifier 결과와 다음 수정 입력
 - `HANDOFF.md`: 재시도/중단/장시간 세션 인계 상태
 - strict 또는 `meta_harness` phase 작업은 active `SPRINT_CONTRACT.md` 에 policy anchors 와 필수 검증 명령을 유지해야 한다.
+- phase harness를 쓰지 않는 bounded direct 작업도 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 최신 상태로 유지해야 한다.
+- bounded direct 코드 변경은 `code-simplifier` 적용 여부를, 건너뛴 경우에는 이유와 함께 기록해야 한다.
+- bounded direct 실행이 중단되면 clean completion 전에 `session-logger` 증적을 남겨야 한다.
 
 `moonshot-phase-runner`가 `in-session-coordinator` 모드를 반환하면:
 - 메인 세션은 coordinator로만 남는다.
@@ -166,6 +183,7 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `workspace-isolation-gate`
 - `karpathy-execution-gate`
 - `implementation-runner`
+- `code-simplifier`
 - `completion-verifier`
 - `verification-evidence-gate`
 - `doc-auto-sync`
@@ -184,6 +202,7 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
 - `executionPlane == product_project && complexity != simple` -> `session-logger` 보장 + 첫 코드 변경 전 `SPRINT_CONTRACT.md` 요구
 - `reactProject=true` -> 첫 `implementation-runner` 앞에 `frontend-design` 삽입
+- `implementationComplete=true` + 의미 있는 코드 변경 -> `completion-verifier` 전에 `code-simplifier` 삽입
 - `phaseRunnerResult.autoStartExecution == true` -> `executionSkill`을 즉시 실행하고 `phaseRunnerResult`를 입력으로 전달
 - `phaseRunnerResult.executionMode == in-session-coordinator` -> `moonshot-in-session-coordinator` 삽입 + 메인 세션 coordinator 유지 + 각 round는 fresh fork/sub-agent attempt로 실행
 - 검증 실패 -> `QA_REPORT.md` 갱신 후 구현 단계 재진입
@@ -262,6 +281,7 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - upstream 제품 정의가 아직 없으면 build 체인 안에서 제품 산출물을 임의 생성하지 말고 `product-orchestrator`로 라우팅한다.
 - `PLAN.md`와 `tasks/*.md`가 있으면 이를 planning source of truth로 보고 `requirements-analyzer`, `context-builder`를 생략한다.
 - medium/complex `product_project`는 active slice 기준으로 `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF`를 유지한다.
+- bounded direct 경로에서 코드가 수정되면 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 갱신하고 `bash .claude/scripts/workflow-enforcement.sh record-bounded --analysis-path .claude/docs/moonshot-analysis.yaml`로 동일한 경계를 기록한다.
 - in-session phase loop는 fresh isolated attempt를 전제로만 허용하며, coordinator 세션은 round 사이에 summary-only 상태를 유지한다.
 - phase attempt 요약을 완료 선언으로 바꾸려면 해당 시도의 verifier evidence 가 최신이고 contract 기준 required check 가 모두 충족되어야 한다.
 - fresh attempt가 `moonshot-orchestrator`를 실행할 때는 `phaseAttemptMode=true`로 두고 `moonshot-phase-runner`를 재귀적으로 다시 넣지 않는다.

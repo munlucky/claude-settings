@@ -5,6 +5,11 @@ description: 사용자 요청을 작업 유형(`feature`, `modification`, `bugfi
 
 # PM 작업 분류
 
+## 공개 범위
+
+이 스킬은 내부 분석 마이크로스킬입니다.
+직접 호출하기보다 `moonshot-orchestrator` 또는 `moonshot-phase-runner`를 우선합니다.
+
 ## 입력
 - `analysisContext.request.userMessage`
 - `context.md` (경로: `analysisContext.artifacts.contextDocPath`, 있으면 참조)

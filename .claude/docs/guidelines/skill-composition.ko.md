@@ -10,6 +10,44 @@
 
 ## 활성 bundle
 
+## 공개 진입점
+
+기본 공개 workflow entrypoint:
+
+- `product-orchestrator`: raw idea를 bounded product package로 바꾸는 진입점
+- `moonshot-phase-runner`: large, phase-based, long-running 구현 작업의 진입점
+- `moonshot-orchestrator`: phase harness 바깥의 bounded implementation 진입점
+
+보조 공개 유틸리티 진입점:
+
+- `session-logger`: 세션 또는 HANDOFF 기록을 사용자가 직접 남기고 싶을 때
+- `commit-moonshot`: 프로젝트 메모리 현행화와 커밋을 함께 명시적으로 실행할 때
+
+아래는 기본 사용자 진입점으로 제시하지 않습니다.
+
+- `moonshot-phase-executor`
+- 분석 마이크로스킬
+- readiness gate
+- 문서 운영 보조 스킬
+
+## 조합 소유권
+
+- 분석 마이크로스킬은 orchestrator를 보조하기 위한 것이며, 직접 호출 표면을 넓히기 위한 것이 아닙니다.
+- verification helper는 verification 또는 review bundle 뒤에서 실행합니다.
+- 문서화와 세션 기록 helper는 doc-ops bundle 뒤에서 실행합니다.
+- 스택 특화 UI helper는 `frontend-design` 아래에 둡니다.
+- `session-logger`는 필요 시 공개 유틸리티로 직접 호출할 수 있습니다.
+- `commit-moonshot`도 필요 시 공개 유틸리티로 직접 호출할 수 있습니다.
+
+### analysis-bundle
+```yaml
+steps:
+  - moonshot-classify-task
+  - moonshot-evaluate-complexity
+  - moonshot-detect-uncertainty
+  - moonshot-decide-sequence
+```
+
 ### planning-bundle
 ```yaml
 steps:
@@ -40,12 +78,29 @@ steps:
 ```yaml
 steps:
   parallel:
+    - verification-agent
     - codex-review-code
-    - verify-changes.sh
   then:
     - security-reviewer (if hasSecurityChanges)
-    - completion-verifier (if complexity == complex)
+    - browser-verifier (if webRuntimeCheckNeeded)
+    - completion-verifier
 ```
+
+### doc-ops-bundle
+```yaml
+steps:
+  - doc-auto-sync
+  - session-logger
+  - documentation-agent
+```
+
+### logging-bundle
+```yaml
+steps:
+  - session-logger
+```
+
+`logging-bundle`은 이행 안전성을 위해 남겨 둔 legacy alias입니다.
 
 ### implementation-with-recovery
 ```yaml
@@ -68,7 +123,10 @@ steps:
 
 ## 규칙
 
+- Tier 1 진입점이 bundle을 선택해야 하며, bundle이 공개 호출 표면을 넓히면 안 됩니다.
 - `product_project`는 `readiness-bundle`을 사용할 수 있습니다.
+- large 또는 phase 기반 작업은 `moonshot-orchestrator`가 아니라 `moonshot-phase-runner`로 진입합니다.
+- 문서/세션 작업은 `doc-ops-bundle`을 우선하고, `logging-bundle`은 호환성 alias로만 유지합니다.
 - `meta_harness`는 downstream bootstrap gate를 건너뜁니다.
 - strict 오버레이는 bundle 내부가 아니라 bundle 확장 후 적용합니다.
 - 현재 plane에서 no-op이 된 bundle은 notes에 명시합니다.

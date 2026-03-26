@@ -11,6 +11,11 @@ argument-hint: "[feature]"
 
 # Normalize
 
+## 공개 범위
+
+이 스킬은 세부 frontend helper입니다.
+전체 UI 방향이 아직 불안정하면 우선 `frontend-design`을 상위 진입점으로 사용합니다.
+
 UI가 디자인 시스템에서 이탈했거나 특정 기능을 저장소의 기존 패턴으로 되돌려야 할 때 사용합니다.
 
 ## 준비

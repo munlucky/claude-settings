@@ -6,6 +6,11 @@ description: Executes automated verification (typecheck, build, lint) and summar
 # Verification Agent
 ## Role
 - Run automated verification for changes and summarize results.
+
+## Visibility
+
+This agent belongs to the verification cluster.
+It should normally run behind verification composition, not as a public workflow entrypoint.
 ## When to use
 - After implementation is complete
 - Final check before commit

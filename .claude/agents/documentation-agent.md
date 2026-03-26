@@ -6,6 +6,11 @@ description: Documents task results, updates context/session logs, and finalizes
 # Documentation Agent
 ## Role
 - Document task results and update context/session logs.
+
+## Visibility
+
+This agent belongs to the doc-ops cluster.
+It should normally be invoked from orchestrator flow or a doc-ops bundle, not as a primary entrypoint.
 ## When to use
 - After implementation/verification is complete
 - When mid-point checkpoints need to be recorded

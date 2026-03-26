@@ -87,12 +87,18 @@ claude-settings/
 
 ### Moonshot 워크플로우
 
-- `moonshot-orchestrator` 스킬이 요청을 분석하고 기본 진입점으로 동작합니다.
+- 기본 공개 workflow 진입점은 `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` 3개입니다.
+- 보조 공개 유틸리티 진입점으로 `session-logger`, `commit-moonshot`를 직접 호출할 수 있습니다.
+- `moonshot-orchestrator`는 bounded code work의 기본 진입점으로 동작합니다.
+- large, phase 기반, long-running 작업은 `moonshot-phase-runner`를 기본 진입점으로 사용합니다.
 - 오케스트레이터는 먼저 `executionPlane`을 `read_only`, `product_project`, `meta_harness`로 분류합니다.
 - downstream 프로젝트 작업에서는 `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`가 최소 맥락과 검증 계약을 확인합니다.
-- 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence` 스킬로 구성됩니다.
+- 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`로 구성되지만, 이들은 공개 진입점이 아니라 orchestrator 내부 마이크로스킬입니다.
 - medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
+- 구현 뒤에는 `code-simplifier`를 넣어 최근 수정 코드의 가독성과 구조를 정리한 뒤 검증/리뷰로 넘깁니다.
 - React/UI 구현 작업에서는 `frontend-design`을 구현 직전에 주입해 시각 방향과 안티패턴을 먼저 정리할 수 있습니다. 프로젝트별 디자인 컨텍스트가 없으면 `teach-impeccable`를 먼저 실행합니다.
+- 검증 계층은 `verification-agent`, `completion-verifier`, `browser-verifier`, `codex-review-code`, `security-reviewer`로 조합하며, 필요 시 `qa-flow`를 명시적으로 후속 실행합니다.
+- 문서 계층은 `doc-auto-sync`, `session-logger`, `documentation-agent`를 doc-ops bundle로 묶어 취급합니다.
 - 사용자가 특정 스킬을 직접 지정한 경우나 read-only 요청, 오케스트레이터 자체 수정 작업에서는 direct invocation bypass가 허용됩니다.
 
 ### Product Definition 레이어
@@ -102,7 +108,7 @@ claude-settings/
 - `task-slicer`는 `PLAN.md`를 vertical slice 기반 `tasks/*.md`로 분해합니다.
 - `assumption-ledger`는 질문이 필요한 모호함을 `ASSUMPTIONS.md` 또는 `BLOCKERS.md`로 적재해 workflow 정지를 줄입니다.
 - medium/complex 구현은 slice별 `SPRINT_CONTRACT.md`를 먼저 만들고, 검증 결과는 `QA_REPORT.md`, 장시간 세션 상태는 `HANDOFF.md`로 남기는 것을 권장합니다.
-- phase 기반 장시간 실행의 기본 진입점은 `/moonshot-phase-runner <plan-dir>`이며, 내부적으로 `moonshot-phase-executor`가 `delegated-terminal`과 `in-session-coordinator`를 skill 경계 뒤에서 분기합니다.
+- phase 기반 장시간 실행의 기본 진입점은 `/moonshot-phase-runner <plan-dir>`이며, 내부적으로 `moonshot-phase-executor`가 `delegated-terminal`과 `in-session-coordinator`를 내부 skill 경계 뒤에서 분기합니다.
 - `<plan-dir>`를 생략하면 기존 안전한 plan dir를 재사용하고, 없으면 `moonshot-plan-writer`로 `docs/implementation`을 자동 생성한 뒤 이어서 실행합니다.
 - 기본적으로 `/moonshot-phase-runner <plan-dir>` 한 번이면 준비 후 실행까지 이어지고, 수동 중단이 필요할 때만 `--prepare-only`를 사용합니다.
 
@@ -120,11 +126,14 @@ claude-settings/
 ### 스킬 라이브러리
 
 - Product Definition: `product-orchestrator`, `product-gate-reviewer`, `task-slicer`, `assumption-ledger`
-- Moonshot 분석: `moonshot-orchestrator`, `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
-- 실행/검증: `karpathy-execution-gate`, `implementation-runner`, `codex-validate-plan`, `codex-review-code`, `completion-verifier`
-- UI 디자인: `frontend-design`, `teach-impeccable`, `audit`, `normalize`, `polish`
-- 문서/세션: `session-logger`, `efficiency-tracker`
-- 보조 도구: `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `design-asset-parser`, `project-md-refresh`, `security-reviewer`, `build-error-resolver`
+- 공개 진입점: `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator`
+- 보조 공개 유틸리티: `session-logger`, `commit-moonshot`
+- 내부 분석 cluster: `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
+- 실행/검증 cluster: `karpathy-execution-gate`, `implementation-runner`, `code-simplifier`, `verification-agent`, `completion-verifier`, `browser-verifier`, `codex-review-code`, `security-reviewer`, `qa-flow`
+- UI 디자인 cluster: `frontend-design`, `teach-impeccable`, `audit`, `normalize`, `polish`
+- 문서/doc-ops cluster: `doc-auto-sync`, `session-logger`, `documentation-agent`
+- 보조 도구: `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `design-asset-parser`, `project-md-refresh`, `build-error-resolver`
+- non-default / deprecated 후보: `efficiency-tracker`, `workflow-self-improver`
 
 ### 문서와 템플릿
 
@@ -241,7 +250,8 @@ Codex MCP 활용:
 
 직접 스킬을 지정해서 실행하는 경우:
 - review-only, read-only, meta-harness 수정은 direct invocation이 가능
-- 일반적인 코드 작업은 `moonshot-orchestrator`를 기본 진입점으로 두는 편이 안전
+- 일반적인 bounded code work는 `moonshot-orchestrator`를 기본 진입점으로 두는 편이 안전
+- large 또는 phase 기반 작업은 `moonshot-phase-runner`를 먼저 타는 편이 안전
 - UI 리디자인/감리 작업은 `/audit`, `/normalize`, `/polish` 같은 직접 스킬 호출도 자연스럽습니다.
 
 ## Moonshot 워크플로우 v2 요약
