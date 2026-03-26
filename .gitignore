@@ -10,3 +10,4 @@
 .claude/verification-verdict-verify-changes-*.json
 .claude/memory.json
 .claude/logs
+.tmp/
