@@ -14,6 +14,7 @@ commands:
   build: "npm run build"
   test: "npm test"
   lint: "npm run lint"
+  workflowParity: "bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation"
 scope:
   executionPlanes:
     - product_project
@@ -53,6 +54,7 @@ policy:
     - typecheck
     - build
     - lint
+    - workflowParity
   optionalChecks:
     - test
     - runtime
@@ -96,6 +98,8 @@ hooks:
 - 구현 시작 전 `SPRINT_CONTRACT.md`로 라운드 완료 기준을 먼저 고정합니다.
 - 검증 실패 시 `QA_REPORT.md`를 다음 수정 라운드의 입력으로 사용합니다.
 - contract 기반 성공 판정은 현재 scope에 적용되는 모든 required check에 대해 최신 증거가 있을 때만 가능합니다.
+- Claude/Codex 두 런타임을 모두 지원하는 harness라면, runtime parity를 QA 메모로만 두지 말고 두 adapter 경로를 실제로 실행하는 parity command를 contract에 넣어야 합니다.
+- 어떤 required check가 또 다른 verifier 내부에서 실행된다면, 중첩 검증이 자기 자신을 다시 호출하지 않도록 `VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity` 같은 명시적 skip 장치를 둬야 합니다.
 - 계약이 없으면:
   - standard 프로필은 경고와 함께 진행할 수 있습니다.
   - strict 프로필은 완료 판정을 차단해야 합니다.

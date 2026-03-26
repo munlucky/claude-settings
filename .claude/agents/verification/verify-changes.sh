@@ -70,6 +70,20 @@ ${check_name}=${status}"
   fi
 }
 
+check_is_skipped() {
+  local check_name="$1"
+  local raw_list="${VERIFY_CHANGES_SKIP_CHECKS:-}"
+  local item
+
+  raw_list="${raw_list//,/ }"
+  for item in $raw_list; do
+    if [ "$item" = "$check_name" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 run_if_command_exists() {
   local cmd="$1"
   if bash -lc "command -v ${cmd%% *}" >/dev/null 2>&1; then
@@ -289,6 +303,18 @@ run_contract_check() {
   local check_name="$1"
   local required_flag="$2"
   local command_string
+
+  if check_is_skipped "$check_name"; then
+    log_warning "Skipping contract check by env: ${check_name}"
+    echo "ContractCheck(${check_name}): skipped via VERIFY_CHANGES_SKIP_CHECKS" >> "$RESULTS_FILE"
+    append_check_result "$check_name" "skipped-by-parent"
+    if [ "$required_flag" = true ]; then
+      REQUIRED_CHECKS_EXECUTED+=("$check_name")
+    else
+      OPTIONAL_CHECKS_EXECUTED+=("$check_name")
+    fi
+    return 0
+  fi
 
   command_string="$(get_contract_command "$check_name")"
   if [ -z "$command_string" ]; then

@@ -95,6 +95,7 @@ Build the chain from bundles first, then expand into `skillChain`.
   - route directly to `product-orchestrator`
 - If `productPackageReady == true`:
   - simple:
+    - `readiness-bundle`
     - `implementation-lite-bundle`
     - `verification-lite-bundle`
   - medium:
@@ -111,6 +112,8 @@ Build the chain from bundles first, then expand into `skillChain`.
     - `logging-bundle`
 - If no product package is present and the request is implementation-oriented:
   - simple:
+    - `readiness-bundle`
+    - `planning-bundle`
     - `implementation-lite-bundle`
     - `verification-lite-bundle`
   - medium:

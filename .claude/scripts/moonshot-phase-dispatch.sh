@@ -32,6 +32,7 @@ MAX_ATTEMPTS=3
 STOP_ON_FAILURE=true
 AUTONOMOUS=false
 DRY_RUN=false
+CODEX_REASONING_EFFORT="${PHASE_DISPATCH_CODEX_REASONING_EFFORT:-${MOONSHOT_CODEX_REASONING_EFFORT:-medium}}"
 
 show_help() {
     head -24 "$0" | tail -19
@@ -159,6 +160,9 @@ phaseRunnerResult:
 options:
   maxAttemptsPerPhase: $MAX_ATTEMPTS
 $stop_line
+
+runtimeCompatibility:
+  fallback: "If /moonshot-in-session-coordinator is unavailable in this runtime, execute the equivalent coordinator contract directly without searching for missing slash skills."
 EOF
 )
 
@@ -175,11 +179,15 @@ EOF
     case "$RUNTIME" in
         claude)
             ensure_claude
-            cmd=(claude --dangerously-skip-permissions -p "$prompt")
+            cmd=(claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
             ;;
         codex)
             ensure_codex
-            cmd=(codex exec --full-auto -C "$PWD" "$prompt")
+            cmd=(codex exec --full-auto -C "$PWD")
+            if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
+                cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
+            fi
+            cmd+=("$prompt")
             ;;
         *)
             log_error "Unsupported runtime for in-session coordinator: $RUNTIME"
