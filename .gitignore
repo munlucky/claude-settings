@@ -6,3 +6,7 @@
 .claude/knowledge-repo-audit-*.json
 .claude/tools/browserd/node_modules/
 .claude/tools/browserd/.claude/
+.claude/verification-results-*.txt
+.claude/verification-verdict-verify-changes-*.json
+.claude/memory.json
+.claude/logs

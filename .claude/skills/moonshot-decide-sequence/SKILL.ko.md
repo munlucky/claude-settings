@@ -90,6 +90,7 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
   - `product-orchestrator`로 직접 라우팅한다
 - `productPackageReady == true` 이면:
   - simple:
+    - `readiness-bundle`
     - `implementation-lite-bundle`
     - `verification-lite-bundle`
   - medium:
@@ -106,6 +107,8 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
     - `logging-bundle`
 - product package가 없고 구현 요청이면:
   - simple:
+    - `readiness-bundle`
+    - `planning-bundle`
     - `implementation-lite-bundle`
     - `verification-lite-bundle`
   - medium:

@@ -46,12 +46,17 @@ WATCHDOG_MAX_SECONDS=$((2 * 60 * 60))
 WATCHDOG_AUTO_RESTART=true
 # 0 = unlimited restarts
 WATCHDOG_MAX_RESTARTS=0
+VERIFICATION_CONTRACT_FILE=".claude/verification.contract.yaml"
 
 # Autonomous Mode (default: true)
 # When enabled, Claude will make autonomous decisions without user confirmation
 AUTONOMOUS_MODE=true
 # Max auto-fix attempts before moving to next phase
-MAX_AUTO_FIX_ATTEMPTS=3
+MAX_AUTO_FIX_ATTEMPTS="${AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS:-3}"
+SKIP_COMMIT_PROMPT="${AGENT_LOOP_SKIP_COMMIT_PROMPT:-false}"
+WATCHDOG_CHECK_SECONDS="${AGENT_LOOP_WATCHDOG_CHECK_SECONDS:-$WATCHDOG_CHECK_SECONDS}"
+WATCHDOG_MAX_SECONDS="${AGENT_LOOP_WATCHDOG_MAX_SECONDS:-$WATCHDOG_MAX_SECONDS}"
+CODEX_REASONING_EFFORT="${AGENT_LOOP_CODEX_REASONING_EFFORT:-${MOONSHOT_CODEX_REASONING_EFFORT:-medium}}"
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -75,6 +80,27 @@ log_info() {
 
 log_warn() {
     echo -e "${YELLOW}⚠️${NC} $1"
+}
+
+file_checksum_or_empty() {
+    local path="$1"
+    if [[ ! -f "$path" ]]; then
+        echo ""
+        return
+    fi
+
+    if command -v shasum >/dev/null 2>&1; then
+        shasum "$path" | awk '{print $1}'
+        return
+    fi
+
+    python3 - "$path" <<'PY'
+import hashlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    print(hashlib.sha1(handle.read()).hexdigest())
+PY
 }
 
 show_help() {
@@ -176,31 +202,50 @@ resolve_runner_runtime() {
 run_worker_prompt() {
     local log_file="$1"
     local prompt="$2"
+    local phase_start_epoch="$3"
+    local qa_checksum_before="$4"
+    local -a cmd=()
 
     case "$RUNNER_RUNTIME" in
         claude)
-            run_with_watchdog "$log_file" claude --dangerously-skip-permissions -p "$prompt"
+            cmd=(claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
             ;;
         codex)
-            run_with_watchdog "$log_file" codex exec --full-auto -C "$PWD" "$prompt"
+            cmd=(codex exec --full-auto -C "$PWD")
+            if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
+                cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
+            fi
+            cmd+=("$prompt")
             ;;
         *)
             log_error "Unsupported runtime: $RUNNER_RUNTIME"
             return 1
             ;;
     esac
+
+    run_worker_prompt_with_completion_gate "$log_file" "$phase_start_epoch" "$qa_checksum_before" "${cmd[@]}"
 }
 
 run_commit_prompt() {
     local log_file="$1"
     local prompt="$2"
 
+    if [[ "$SKIP_COMMIT_PROMPT" == "true" ]]; then
+        log_info "Skipping commit prompt (AGENT_LOOP_SKIP_COMMIT_PROMPT=true)"
+        return 0
+    fi
+
     case "$RUNNER_RUNTIME" in
         claude)
-            run_with_watchdog "$log_file" claude --dangerously-skip-permissions -c -p "$prompt" || true
+            run_with_watchdog "$log_file" claude --dangerously-skip-permissions --no-session-persistence -c -p "$prompt" || true
             ;;
         codex)
-            run_with_watchdog "$log_file" codex exec --full-auto -C "$PWD" "$prompt" || true
+            local -a cmd=(codex exec --full-auto -C "$PWD")
+            if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
+                cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
+            fi
+            cmd+=("$prompt")
+            run_with_watchdog "$log_file" "${cmd[@]}" || true
             ;;
         *)
             log_warn "Skipping commit prompt due to unsupported runtime: $RUNNER_RUNTIME"
@@ -228,11 +273,44 @@ fi
 
 get_next_phase() {
     if [[ -f "$STATUS_FILE" ]]; then
-        # Find first non-completed phase
-        awk '
-            $1=="-" && $2=="number:" {n=$3}
-            $1=="status:" && ($2=="pending" || $2=="in_progress") {print n; exit}
-        ' "$STATUS_FILE"
+        python3 - "$STATUS_FILE" <<'PY'
+import re
+import sys
+
+status_file = sys.argv[1]
+with open(status_file, "r", encoding="utf-8") as handle:
+    lines = handle.readlines()
+
+blocks = []
+current = None
+for raw_line in lines:
+    if re.match(r"^\s*-\s+number:\s*", raw_line):
+        if current is not None:
+            blocks.append(current)
+        current = {"number": None, "status": None, "planConfirmed": None}
+        match = re.search(r"number:\s*([0-9]+)", raw_line)
+        if match:
+            current["number"] = match.group(1)
+        continue
+    if current is None:
+        continue
+    stripped = raw_line.strip()
+    if stripped.startswith("status:"):
+        current["status"] = stripped.split(":", 1)[1].strip()
+    elif stripped.startswith("planConfirmed:"):
+        current["planConfirmed"] = stripped.split(":", 1)[1].strip().lower()
+
+if current is not None:
+    blocks.append(current)
+
+for block in blocks:
+    status = block.get("status")
+    plan_confirmed = block.get("planConfirmed")
+    if status in {"pending", "in_progress"} and plan_confirmed != "false":
+        if block.get("number") is not None:
+            print(block["number"])
+            break
+PY
     else
         echo "1"
     fi
@@ -268,12 +346,113 @@ count_total_phases() {
     find "$PLAN_DIR" -maxdepth 1 -name "*.md" ! -name "*master*" ! -name "*00-*" 2>/dev/null | wc -l | tr -d ' '
 }
 
+render_required_verification_commands() {
+    if [[ ! -f "$VERIFICATION_CONTRACT_FILE" ]] || ! command -v python3 >/dev/null 2>&1; then
+        printf '%s\n' "- Populate from the active verification contract before claiming completion."
+        return
+    fi
+
+    python3 - "$VERIFICATION_CONTRACT_FILE" <<'PY'
+import sys
+
+
+def parse_scalar(value):
+    value = value.strip()
+    if value in ("true", "false"):
+        return value == "true"
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+
+def next_meaningful(lines, start_index):
+    for idx in range(start_index + 1, len(lines)):
+        stripped = lines[idx].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(lines[idx]) - len(lines[idx].lstrip(" "))
+        return indent, stripped
+    return None, None
+
+
+def parse_simple_yaml(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+
+    root = {}
+    stack = [(-1, root)]
+
+    for index, raw_line in enumerate(lines):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+
+        container = stack[-1][1]
+
+        if stripped.startswith("- "):
+            if isinstance(container, list):
+                container.append(parse_scalar(stripped[2:]))
+            continue
+
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if value == "":
+            next_indent, next_stripped = next_meaningful(lines, index)
+            nested = [] if next_indent is not None and next_indent > indent and next_stripped.startswith("- ") else {}
+            if isinstance(container, dict):
+                container[key] = nested
+                stack.append((indent, nested))
+            continue
+
+        if isinstance(container, dict):
+            container[key] = parse_scalar(value)
+
+    return root
+
+
+def as_list(value):
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, (str, int, float, bool))]
+    if value in (None, ""):
+        return []
+    return [value]
+
+
+contract = parse_simple_yaml(sys.argv[1])
+commands = contract.get("commands", {}) if isinstance(contract.get("commands"), dict) else {}
+policy = contract.get("policy", {}) if isinstance(contract.get("policy"), dict) else {}
+required = [str(item) for item in as_list(policy.get("requiredChecks"))]
+
+lines = []
+for check_name in required:
+    command = commands.get(check_name)
+    if command:
+        lines.append(f"- {check_name}: `{command}`")
+    else:
+        lines.append(f"- {check_name}: declare the command in {sys.argv[1]}")
+
+if not lines:
+    lines.append("- Populate from the active verification contract before claiming completion.")
+
+print("\n".join(lines))
+PY
+}
+
 ensure_execution_artifacts() {
     local phase_num="$1"
     local phase_title="$2"
     local phase_doc="$3"
     local phase_prefix
     local phase_slug
+    local required_commands
 
     printf -v phase_prefix '%02d' "$phase_num"
     phase_slug=$(sanitize_slug "$phase_title")
@@ -285,6 +464,7 @@ ensure_execution_artifacts() {
     PHASE_SPRINT_CONTRACT="${PHASE_EXECUTION_DIR}/SPRINT_CONTRACT.md"
     PHASE_QA_REPORT="${PHASE_EXECUTION_DIR}/QA_REPORT.md"
     PHASE_HANDOFF="${PHASE_EXECUTION_DIR}/HANDOFF.md"
+    required_commands="$(render_required_verification_commands)"
 
     mkdir -p "$PHASE_EXECUTION_DIR"
 
@@ -310,6 +490,13 @@ ensure_execution_artifacts() {
 - Files/modules:
 - Interfaces/contracts:
 
+## Policy Anchors
+- Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
+- Active workspace contract: .claude/PROJECT.md
+- Verification contract: ${VERIFICATION_CONTRACT_FILE}
+- Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
+- Round policy summary: Keep this run isolated to phase ${phase_prefix}, refresh QA/HANDOFF artifacts when state changes, and require fresh verification evidence before completion.
+
 ## Done Checks
 | Check | Type | Pass Condition |
 |-------|------|----------------|
@@ -321,9 +508,15 @@ ensure_execution_artifacts() {
 - Stub-only behavior to reject:
 
 ## Evidence
-- Commands:
-- Runtime flow:
-- Artifacts:
+### Required Verification Commands
+${required_commands}
+
+### Runtime Flow
+- Fill before runtime verification.
+
+### Artifacts
+- QA report: ${PHASE_QA_REPORT}
+- Handoff: ${PHASE_HANDOFF}
 
 ## Notes
 - Generated at: $(date '+%Y-%m-%d %H:%M:%S')
@@ -416,6 +609,67 @@ append_handoff_update() {
         fi
         echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, update \`${PHASE_QA_REPORT}\`, then resume implementation."
     } >> "$PHASE_HANDOFF"
+}
+
+build_phase_prompt() {
+    local extra_instructions="${1:-}"
+    local prompt_header="/moonshot-orchestrator"
+    local codex_direct_steps=""
+
+    if [[ "$RUNNER_RUNTIME" == "codex" ]]; then
+        prompt_header="Moonshot orchestrator phase-attempt fallback for Codex
+Treat this prompt as the direct equivalent of a /moonshot-orchestrator phase attempt."
+        codex_direct_steps="
+Codex direct execution checklist:
+1. Read only the active phase doc and SPRINT_CONTRACT.md first.
+2. Refresh SPRINT_CONTRACT.md for this attempt without broad repo inspection.
+3. Update QA_REPORT.md with runtime/mode and planned verification.
+4. Run the exact verification command once.
+5. Read the newest verification verdict file and record its path and verdict in QA_REPORT.md.
+6. If verification passed, stop immediately. If verification failed, update HANDOFF.md and stop.
+
+Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 4.
+Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates."
+    fi
+
+    cat <<EOF
+$prompt_header
+phaseAttemptMode: true
+phaseNumber: "$NEXT_PHASE"
+phaseTitle: "$PHASE_TITLE"
+planDir: "$PLAN_DIR"
+activePhaseDocPath: "$PHASE_DOC"
+phaseStatusFile: "$STATUS_FILE"
+executionRoot: "$EXECUTION_ROOT"
+executionArtifacts:
+  sprintContractPath: "$PHASE_SPRINT_CONTRACT"
+  qaReportPath: "$PHASE_QA_REPORT"
+  handoffPath: "$PHASE_HANDOFF"
+
+Single isolated phase-attempt rules:
+- Treat this run as one isolated phase attempt only.
+- Set signals.phaseAttemptMode = true.
+- Set artifacts.activePhaseDocPath = "$PHASE_DOC".
+- Reuse the provided execution artifact paths.
+- Do not invoke moonshot-phase-runner again.
+- Do not expand to other phases.
+- Read the Policy Anchors section in SPRINT_CONTRACT.md first.
+- Before code edits, refresh SPRINT_CONTRACT.md for this phase.
+- When verification runs, update QA_REPORT.md.
+- If the run stops without clean completion, update HANDOFF.md.
+
+Runtime compatibility fallback:
+- If /moonshot-orchestrator is unavailable in this runtime, execute the equivalent phase-attempt workflow directly instead of searching for missing slash skills.
+- In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, .claude/PROJECT.md, .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
+- Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
+- Once fresh verification evidence exists and the execution artifacts reflect the outcome, stop immediately and return control to the caller.
+$codex_direct_steps
+
+Additional instructions:
+${extra_instructions}
+
+$AUTONOMOUS_INSTRUCTIONS
+EOF
 }
 
 evaluate_phase_completion_gate() {
@@ -525,47 +779,204 @@ run_with_watchdog() {
     set -e
 
     if [[ "$timed_out" == "true" ]]; then
+        echo "WATCHDOG_TIMEOUT after ${WATCHDOG_MAX_SECONDS}s" >> "$log_file"
         return 124
     fi
     return "$exit_code"
 }
 
+run_worker_prompt_with_completion_gate() {
+    local log_file="$1"
+    local phase_start_epoch="$2"
+    local qa_checksum_before="$3"
+    shift 3
+
+    local start_time
+    start_time=$(date +%s)
+    local timed_out=false
+    local completed_early=false
+
+    set +e
+    "$@" >> "$log_file" 2>&1 &
+    local pid=$!
+
+    while kill -0 "$pid" 2>/dev/null; do
+        local now
+        now=$(date +%s)
+        local elapsed=$((now - start_time))
+
+        if [[ -n "$qa_checksum_before" ]]; then
+            local qa_checksum_now
+            qa_checksum_now="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
+            if [[ "$qa_checksum_now" != "$qa_checksum_before" ]]; then
+                evaluate_phase_completion_gate "$phase_start_epoch"
+                if [[ "$PHASE_COMPLETION_ALLOWED" == "true" ]]; then
+                    completed_early=true
+                    kill "$pid" 2>/dev/null
+                    sleep 2
+                    kill -9 "$pid" 2>/dev/null
+                    break
+                fi
+            fi
+        fi
+
+        if [[ $WATCHDOG_MAX_SECONDS -gt 0 && $elapsed -ge $WATCHDOG_MAX_SECONDS ]]; then
+            timed_out=true
+            kill "$pid" 2>/dev/null
+            sleep 5
+            kill -9 "$pid" 2>/dev/null
+            break
+        fi
+
+        sleep "$WATCHDOG_CHECK_SECONDS"
+    done
+
+    wait "$pid"
+    local exit_code=$?
+    set -e
+
+    if [[ "$completed_early" == "true" ]]; then
+        echo "EARLY_COMPLETION_GATE satisfied; worker terminated after fresh verification evidence." >> "$log_file"
+        return 0
+    fi
+
+    if [[ "$timed_out" == "true" ]]; then
+        echo "WATCHDOG_TIMEOUT after ${WATCHDOG_MAX_SECONDS}s" >> "$log_file"
+        return 124
+    fi
+
+    return "$exit_code"
+}
+
 # Update phase status in phase-status.yaml (best-effort)
-update_phase_status() {
+update_phase_state() {
     local phase_num="$1"
     local new_status="$2"
     local timestamp="$3"
+    local last_outcome="${4:-}"
+    local increment_attempt="${5:-false}"
 
-    if [[ ! -f "$STATUS_FILE" ]]; then
+    if [[ ! -f "$STATUS_FILE" ]] || ! command -v python3 >/dev/null 2>&1; then
         return
     fi
 
-    local tmp_file="${STATUS_FILE}.tmp"
-    awk -v num="$phase_num" -v status="$new_status" -v ts="$timestamp" '
-        $1=="-" && $2=="number:" {
-            if (in_block && status=="completed" && !has_completedAt && ts!="") {
-                print "    completedAt: \"" ts "\""
-            }
-            in_block = ($3==num)
-            has_completedAt=0
-        }
-        in_block && $1=="status:" { print "    status: " status; next }
-        in_block && $1=="completedAt:" {
-            has_completedAt=1
-            if (status=="completed" && ts!="") {
-                print "    completedAt: \"" ts "\""
-            } else {
-                print
-            }
-            next
-        }
-        { print }
-        END {
-            if (in_block && status=="completed" && !has_completedAt && ts!="") {
-                print "    completedAt: \"" ts "\""
-            }
-        }
-    ' "$STATUS_FILE" > "$tmp_file" && mv "$tmp_file" "$STATUS_FILE"
+    python3 - "$STATUS_FILE" "$phase_num" "$new_status" "$timestamp" "$last_outcome" "$increment_attempt" <<'PY'
+import re
+import sys
+
+status_file, target_num, new_status, timestamp, last_outcome, increment_attempt = sys.argv[1:]
+
+with open(status_file, "r", encoding="utf-8") as handle:
+    lines = handle.read().splitlines()
+
+block_ranges = []
+current_start = None
+for idx, line in enumerate(lines):
+    if re.match(r"^\s*-\s+number:\s*", line):
+        if current_start is not None:
+            block_ranges.append((current_start, idx))
+        current_start = idx
+if current_start is not None:
+    block_ranges.append((current_start, len(lines)))
+
+target_range = None
+for start, end in block_ranges:
+    match = re.search(r"number:\s*([0-9]+)", lines[start])
+    if match and match.group(1) == target_num:
+        target_range = (start, end)
+        break
+
+if target_range is None:
+    raise SystemExit(0)
+
+start, end = target_range
+block = lines[start:end]
+item_indent = len(block[0]) - len(block[0].lstrip(" "))
+top_indent = " " * (item_indent + 2)
+attempt_value_indent = " " * (item_indent + 4)
+
+
+def set_top_level(key, value):
+    prefix = f"{top_indent}{key}:"
+    for idx, line in enumerate(block):
+        if line.startswith(prefix):
+            block[idx] = f"{prefix} {value}"
+            return
+    insert_at = len(block)
+    for idx in range(1, len(block)):
+        stripped = block[idx].lstrip(" ")
+        indent = len(block[idx]) - len(stripped)
+        if indent <= item_indent:
+            insert_at = idx
+            break
+    block.insert(insert_at, f"{prefix} {value}")
+
+
+def ensure_attempts_block():
+    prefix = f"{top_indent}attempts:"
+    for idx, line in enumerate(block):
+        if line.startswith(prefix):
+            end_idx = len(block)
+            for probe in range(idx + 1, len(block)):
+                stripped = block[probe].lstrip(" ")
+                indent = len(block[probe]) - len(stripped)
+                if indent <= len(top_indent):
+                    end_idx = probe
+                    break
+            return idx, end_idx
+
+    insert_at = len(block)
+    for idx in range(1, len(block)):
+        stripped = block[idx].lstrip(" ")
+        indent = len(block[idx]) - len(stripped)
+        if indent <= item_indent:
+            insert_at = idx
+            break
+    block[insert_at:insert_at] = [
+        f"{top_indent}attempts:",
+        f"{attempt_value_indent}total: 0",
+        f"{attempt_value_indent}lastOutcome: pending",
+        f'{attempt_value_indent}lastUpdatedAt: "{timestamp}"',
+    ]
+    return insert_at, insert_at + 4
+
+
+def get_attempt_value(name, default="0"):
+    start_idx, end_idx = ensure_attempts_block()
+    prefix = f"{attempt_value_indent}{name}:"
+    for idx in range(start_idx + 1, end_idx):
+        if block[idx].startswith(prefix):
+            return idx, block[idx].split(":", 1)[1].strip().strip('"')
+    block.insert(end_idx, f"{prefix} {default}")
+    return end_idx, default
+
+
+set_top_level("status", new_status)
+set_top_level("planConfirmed", "true")
+
+if new_status == "completed":
+    set_top_level("completedAt", f'"{timestamp}"')
+
+if increment_attempt.lower() == "true" or last_outcome:
+    total_idx, total_value = get_attempt_value("total", "0")
+    if increment_attempt.lower() == "true":
+        try:
+            total_number = int(total_value)
+        except ValueError:
+            total_number = 0
+        block[total_idx] = f"{attempt_value_indent}total: {total_number + 1}"
+
+    if last_outcome:
+        outcome_idx, _ = get_attempt_value("lastOutcome", "pending")
+        block[outcome_idx] = f"{attempt_value_indent}lastOutcome: {last_outcome}"
+
+    updated_idx, _ = get_attempt_value("lastUpdatedAt", f'"{timestamp}"')
+    block[updated_idx] = f'{attempt_value_indent}lastUpdatedAt: "{timestamp}"'
+
+lines[start:end] = block
+with open(status_file, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(lines) + "\n")
+PY
 }
 
 # -----------------------------------------------------------------------------
@@ -616,13 +1027,6 @@ while true; do
     log_info "QA report: $PHASE_QA_REPORT"
     log_info "Handoff: $PHASE_HANDOFF"
     
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_warn "[DRY-RUN] Would execute phase $NEXT_PHASE"
-        completed=$((completed + 1))
-        sleep 1
-        continue
-    fi
-    
     # Build autonomous prompt
     if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
         AUTONOMOUS_INSTRUCTIONS="
@@ -635,29 +1039,36 @@ while true; do
     else
         AUTONOMOUS_INSTRUCTIONS=""
     fi
-    
-    PHASE_PROMPT="/moonshot-orchestrator Phase $NEXT_PHASE 를 구현해주세요.
-계획 문서: $PLAN_DIR
-활성 phase 문서: $PHASE_DOC
-실행 아티팩트:
-- SPRINT_CONTRACT: $PHASE_SPRINT_CONTRACT
-- QA_REPORT: $PHASE_QA_REPORT
-- HANDOFF: $PHASE_HANDOFF
 
-작업 규칙:
-- 코드 수정 전에 반드시 SPRINT_CONTRACT.md를 현재 phase 기준으로 보강하세요.
-- 검증이 실행되면 QA_REPORT.md를 갱신하세요.
-- 완료되지 않은 상태로 멈추면 HANDOFF.md를 갱신하세요.
+    PHASE_PROMPT="$(build_phase_prompt "Implement phase $NEXT_PHASE using the active phase doc as the only planning baseline.
 
-$AUTONOMOUS_INSTRUCTIONS"
+Primary objective:
+- Complete the scoped work for phase $NEXT_PHASE.
+- Keep changes bounded to the active phase.
+- Do not move to other phases in this run.
+- If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
+- Once fresh verification evidence exists and the execution artifacts are updated, stop immediately and return control to the caller.")"
     
     # Execute worker session
     START_TIME=$(date +%s)
     restart_count=0
     auto_fix_count=0
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_warn "[DRY-RUN] Would execute phase $NEXT_PHASE"
+        echo ""
+        echo "----- Phase Attempt Prompt -----"
+        printf '%s\n' "$PHASE_PROMPT"
+        echo "----- End Prompt -----"
+        completed=$((completed + 1))
+        sleep 1
+        continue
+    fi
     
     while true; do
-        if run_worker_prompt "$LOGFILE" "$PHASE_PROMPT"; then
+        update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true"
+        PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
+        if run_worker_prompt "$LOGFILE" "$PHASE_PROMPT" "$START_TIME" "$PHASE_QA_CHECKSUM_BEFORE"; then
             
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
@@ -673,32 +1084,29 @@ $AUTONOMOUS_INSTRUCTIONS"
                     log_info "Attempting verification remediation..."
                     echo "## Phase $NEXT_PHASE - Verification Remediation #${auto_fix_count}" >> "$DECISION_LOG"
 
-                    FIX_PROMPT="이전 Phase $NEXT_PHASE 실행은 종료 코드 기준으로는 성공했지만, 완료 판정에 필요한 fresh verification evidence가 없습니다.
-로그 파일: $LOGFILE
-활성 phase 문서: $PHASE_DOC
-실행 아티팩트:
-- SPRINT_CONTRACT: $PHASE_SPRINT_CONTRACT
-- QA_REPORT: $PHASE_QA_REPORT
-- HANDOFF: $PHASE_HANDOFF
+                    FIX_PROMPT="$(build_phase_prompt "The previous phase attempt exited cleanly, but completion evidence is still missing.
 
-차단 사유: $PHASE_COMPLETION_REASON
+Failure context:
+- Log file: $LOGFILE
+- Gate reason: $PHASE_COMPLETION_REASON
 
-1. 최신 verification/runtime verdict artifact를 생성하거나 갱신하세요
-2. contract 기반 검증이면 evidenceFresh=true 와 requiredChecks.missing=[] 를 만족시키세요
-3. QA_REPORT.md에 어떤 evidence를 갱신했는지 기록하세요
-4. 완료되지 않으면 HANDOFF.md를 갱신하세요
-5. Phase $NEXT_PHASE 를 다시 완료하세요
+Remediation steps:
+1. Refresh or generate the latest verification/runtime verdict artifact for this phase.
+2. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[].
+3. Record the refreshed evidence in QA_REPORT.md.
+4. If the phase is still incomplete, update HANDOFF.md.
+5. Re-run only the active phase and finish with fresh evidence.")"
 
-$AUTONOMOUS_INSTRUCTIONS"
-
-                    if run_worker_prompt "$LOGFILE" "$FIX_PROMPT"; then
+                    update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true"
+                    PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
+                    if run_worker_prompt "$LOGFILE" "$FIX_PROMPT" "$START_TIME" "$PHASE_QA_CHECKSUM_BEFORE"; then
                         END_TIME=$(date +%s)
                         DURATION=$((END_TIME - START_TIME))
                         evaluate_phase_completion_gate "$START_TIME"
                         if [[ "$PHASE_COMPLETION_ALLOWED" == "true" ]]; then
                             log_success "Phase $NEXT_PHASE completed after verification remediation (${DURATION}s)"
                             append_qa_runtime_update "phase-completed-after-verification-remediation" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
-                            update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+                            update_phase_state "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "completed" "false"
                             completed=$((completed + 1))
                             echo "- Status: ✅ Completed (after verification remediation)" >> "$DECISION_LOG"
                             echo "- Duration: ${DURATION}s" >> "$DECISION_LOG"
@@ -716,6 +1124,7 @@ $AUTONOMOUS_INSTRUCTIONS"
                 fi
 
                 failed=$((failed + 1))
+                update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false"
                 if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                     echo "- Status: ❌ Failed (missing fresh verification evidence)" >> "$DECISION_LOG"
                     echo "" >> "$DECISION_LOG"
@@ -733,7 +1142,7 @@ $AUTONOMOUS_INSTRUCTIONS"
 
             log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
             append_qa_runtime_update "phase-command-succeeded" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
-            update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            update_phase_state "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "completed" "false"
             completed=$((completed + 1))
             
             # Log decision
@@ -765,6 +1174,7 @@ $AUTONOMOUS_INSTRUCTIONS"
                     append_qa_runtime_update "timeout-restart-limit-exceeded" "$LOGFILE"
                     append_handoff_update "timeout-restart-limit-exceeded" "$LOGFILE"
                     failed=$((failed + 1))
+                    update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false"
                     
                     if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                         echo "- Status: ❌ Failed (restart limit exceeded)" >> "$DECISION_LOG"
@@ -795,23 +1205,21 @@ $AUTONOMOUS_INSTRUCTIONS"
                 echo "## Phase $NEXT_PHASE - Auto-fix #${auto_fix_count}" >> "$DECISION_LOG"
                 
                 # Run auto-fix: analyze log and retry
-                FIX_PROMPT="이전 Phase $NEXT_PHASE 실행이 실패했습니다.
-로그 파일: $LOGFILE
-활성 phase 문서: $PHASE_DOC
-실행 아티팩트:
-- SPRINT_CONTRACT: $PHASE_SPRINT_CONTRACT
-- QA_REPORT: $PHASE_QA_REPORT
-- HANDOFF: $PHASE_HANDOFF
+                FIX_PROMPT="$(build_phase_prompt "The previous phase attempt failed.
 
-1. 로그를 분석하여 실패 원인을 파악하세요
-2. 문제를 수정하세요
-3. QA_REPORT.md에 실패 원인과 수정 결과를 반영하세요
-4. 완료되지 않으면 HANDOFF.md를 갱신하세요
-5. Phase $NEXT_PHASE 를 다시 완료하세요
+Failure context:
+- Log file: $LOGFILE
 
-$AUTONOMOUS_INSTRUCTIONS"
+Remediation steps:
+1. Analyze the failure from the log and current execution artifacts.
+2. Fix only the active-phase issue.
+3. Update QA_REPORT.md with the failure cause and remediation result.
+4. If the phase is still incomplete, update HANDOFF.md with the next action.
+5. Re-run the phase work and verification for phase $NEXT_PHASE.")"
                 
-                if run_worker_prompt "$LOGFILE" "$FIX_PROMPT"; then
+                update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true"
+                PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
+                if run_worker_prompt "$LOGFILE" "$FIX_PROMPT" "$START_TIME" "$PHASE_QA_CHECKSUM_BEFORE"; then
                     
                     END_TIME=$(date +%s)
                     DURATION=$((END_TIME - START_TIME))
@@ -824,7 +1232,7 @@ $AUTONOMOUS_INSTRUCTIONS"
                     fi
                     log_success "Phase $NEXT_PHASE completed after auto-fix (${DURATION}s)"
                     append_qa_runtime_update "phase-completed-after-auto-fix" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
-                    update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+                    update_phase_state "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "completed" "false"
                     completed=$((completed + 1))
                     
                     echo "- Status: ✅ Completed (after auto-fix)" >> "$DECISION_LOG"
@@ -841,6 +1249,7 @@ $AUTONOMOUS_INSTRUCTIONS"
             # Max attempts reached or not in autonomous mode
             append_handoff_update "phase-failed-max-attempts" "$LOGFILE"
             failed=$((failed + 1))
+            update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false"
             
             if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                 echo "- Status: ❌ Failed (max attempts reached)" >> "$DECISION_LOG"

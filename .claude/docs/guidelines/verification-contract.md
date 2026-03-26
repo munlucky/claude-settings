@@ -14,6 +14,7 @@ commands:
   build: "npm run build"
   test: "npm test"
   lint: "npm run lint"
+  workflowParity: "bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation"
 scope:
   executionPlanes:
     - product_project
@@ -53,6 +54,7 @@ policy:
     - typecheck
     - build
     - lint
+    - workflowParity
   optionalChecks:
     - test
     - runtime
@@ -96,6 +98,8 @@ hooks:
 - `SPRINT_CONTRACT.md` should define the round-level done criteria before implementation starts.
 - `QA_REPORT.md` should become the next remediation input when verification fails.
 - A contract-backed success verdict should require fresh evidence for every required check that applies to the current scope.
+- For dual-runtime harnesses, add an explicit parity command that exercises both Claude and Codex adapter paths instead of leaving runtime parity as a QA note only.
+- If a required check triggers a verifier that runs inside another required check, add an explicit skip mechanism (for example `VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity`) so nested verification does not recurse into itself.
 - If the contract is missing:
   - standard profile may continue with warning
   - strict profile should block completion claims

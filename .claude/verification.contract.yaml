@@ -1,6 +1,7 @@
 commands:
   knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
-  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
+  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
+  phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation"
 scope:
   executionPlanes:
     - meta_harness
@@ -18,6 +19,7 @@ scope:
   fallbackOutsideScope: true
 artifacts:
   verdict: ".claude/verification-verdict-<runId>.json"
+  runtimeVerdict: ".claude/runtime-verdict-<runId>.json"
   sprintContract: "{tasksRoot}/{feature-name}/execution/<slice>/SPRINT_CONTRACT.md"
   qaReport: "{tasksRoot}/{feature-name}/execution/<slice>/QA_REPORT.md"
   handoff: "{tasksRoot}/{feature-name}/execution/<slice>/HANDOFF.md"
@@ -34,8 +36,8 @@ policy:
   allowIndeterminate: false
   requiredChecks:
     - knowledgeAudit
-  optionalChecks:
     - shellSyntax
+    - phaseRuntimeParity
 qa:
   evaluatorMode: "separate"
   hardFailOn:
