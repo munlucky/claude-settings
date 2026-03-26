@@ -23,10 +23,14 @@ Enforce evidence-before-completion in strict profile execution.
 1. If `workflowProfile != strict`: return pass with note.
 2. For `strict`, require fresh evidence:
    - Preferred: `completionStatus.verificationState == passed`.
-   - Fallback: notes contain explicit success evidence for contract-defined verification command outputs.
+   - Also require `completionStatus.evidenceFresh == true` when present.
+   - Fallback: notes contain explicit current-run success evidence for contract-defined verification command outputs.
 3. Hard block conditions:
    - `verificationState == failed`
    - `verificationState == indeterminate`
+   - `contractApplicable == true` and `requiredChecks.missing` is not empty
+   - `verificationMode == contract` and `requiredChecks.missing` is not empty
+   - `evidenceFresh == false` when a contract-backed verdict is expected
    - No evidence of a fresh verification run
 4. If blocked, prevent completion claims and return remediation instructions.
 
@@ -56,3 +60,4 @@ missingInfo:
 - Do not accept stale or inferred verification.
 - This gate is policy-only and does not edit source code.
 - Prefer contract-defined artifact paths and verdict files when available.
+- For contract-backed verification, a passing state without fresh evidence is still blocked.

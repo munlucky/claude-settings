@@ -14,6 +14,13 @@ commands:
   build: "npm run build"
   test: "npm test"
   lint: "npm run lint"
+scope:
+  executionPlanes:
+    - product_project
+  paths:
+    - "src/**"
+    - "tests/**"
+  fallbackOutsideScope: true
 runtime:
   url: "http://localhost:3000"
   e2eCommand: "npm run test:e2e"
@@ -82,11 +89,13 @@ hooks:
 ## Rules
 - The harness owns verdict semantics, not project-specific framework logic.
 - Projects declare commands and evidence through the contract.
+- Contracts may declare `scope` so required checks apply only to matching planes/paths; outside that scope, fallback to the active workspace contract or detection rules.
 - Completion criteria should be phrased as checks that can fail reproducibly, not vague quality claims.
 - For runtime-heavy or UI-heavy work, prefer a separate evaluator path over generator self-approval.
 - Browser/runtime checks should exercise real interactions, not only page-load screenshots.
 - `SPRINT_CONTRACT.md` should define the round-level done criteria before implementation starts.
 - `QA_REPORT.md` should become the next remediation input when verification fails.
+- A contract-backed success verdict should require fresh evidence for every required check that applies to the current scope.
 - If the contract is missing:
   - standard profile may continue with warning
   - strict profile should block completion claims

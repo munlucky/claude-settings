@@ -43,6 +43,9 @@ attemptInput:
 - `QA_REPORT.md`
 - 있으면 `HANDOFF.md`
 
+가장 먼저 `SPRINT_CONTRACT.md` 의 `Policy Anchors` 섹션을 확인합니다.
+strict 또는 `meta_harness` 작업에서 policy anchors 나 필수 검증 명령이 비어 있으면, 코드 수정보다 먼저 sprint contract 를 보강하거나 blocker 로 반환해야 합니다.
+
 이전 coordinator 대화는 다시 로드하지 않습니다.
 
 ### 2. phase attempt 모드로 orchestrator 실행
@@ -77,10 +80,30 @@ attemptResult:
     - "tests/e2e/login.spec.ts"
   verification:
     verdict: "failed"      # passed | failed | indeterminate
+    evidenceFresh: false
+    contractApplicable: false
+    mode: "fallback"       # contract | workspace | fallback
+    requiredChecks:
+      declared: []
+      executed: []
+      missing: []
     failedChecks:
       - "browserFlows.login"
   handoffRequired: true
 ```
+
+완료 정규화 규칙:
+- 이번 시도의 verifier 결과가 contract 기반 required check에 대한 최신 증거를 포함할 때만 `status: completed` 를 반환합니다.
+- 검증이 없거나, 오래됐거나, indeterminate 이거나, 일부만 통과한 상태면 완료 표현 대신 `partial` 또는 `failed` 를 반환합니다.
+
+## 상태 전이 표
+
+| Attempt status | 최소 verifier 조건 | 의미 |
+|---|---|---|
+| `completed` | `verdict=passed` 이고 `evidenceFresh=true` 이고 `requiredChecks.missing=[]` | phase 완료 후보 |
+| `partial` | 구현/검증 진전은 있지만 완료 조건이 아직 미충족 | 재시도 또는 후속 조치 필요 |
+| `failed` | 검증 실패, 스코프 차단, 또는 재시도 중단 필요 | 다음 phase로 진행 금지 |
+| `blocked` | 입력/계약 부족 등 로컬 분류로 사용 가능; 반환 시에는 `failed`로 정규화 | 계약/범위 보강 후 재시도 |
 
 ## 오류 처리
 
@@ -96,6 +119,9 @@ attemptResult:
 - 큰 출력은 coordinator로 되돌리지 않습니다.
 - `moonshot-phase-runner`를 재귀적으로 다시 호출하면 안 됩니다.
 - 반환은 요약된 `attemptResult`만 허용됩니다.
+- 최신 검증 증거가 없으면 완료된 시도로 요약하면 안 됩니다.
+- downstream 상태 전이에 필요한 최소 verifier 메타데이터(`verdict`, `evidenceFresh`, `requiredChecks.missing`)는 반드시 포함해야 합니다.
+- 판정 출처를 위한 `contractApplicable`, `mode` 도 함께 포함해야 합니다.
 
 ## References
 

@@ -390,24 +390,107 @@ EOF
 append_qa_runtime_update() {
     local status="$1"
     local log_file="$2"
+    local detail="${3:-}"
     {
         echo ""
         echo "### $(date '+%Y-%m-%d %H:%M:%S')"
         echo "- Runtime status: ${status}"
         echo "- Log: ${log_file}"
+        if [[ -n "$detail" ]]; then
+            echo "- Detail: ${detail}"
+        fi
     } >> "$PHASE_QA_REPORT"
 }
 
 append_handoff_update() {
     local reason="$1"
     local log_file="$2"
+    local detail="${3:-}"
     {
         echo ""
         echo "## Runtime Update ($(date '+%Y-%m-%d %H:%M:%S'))"
         echo "- Reason: ${reason}"
         echo "- Log: ${log_file}"
+        if [[ -n "$detail" ]]; then
+            echo "- Detail: ${detail}"
+        fi
         echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, update \`${PHASE_QA_REPORT}\`, then resume implementation."
     } >> "$PHASE_HANDOFF"
+}
+
+evaluate_phase_completion_gate() {
+    local phase_start_epoch="$1"
+    local eval_output
+
+    eval_output="$(PHASE_START_EPOCH="$phase_start_epoch" python3 - <<'PY'
+import glob
+import json
+import os
+import shlex
+
+start_epoch = float(os.environ["PHASE_START_EPOCH"])
+patterns = [
+    ".claude/verification-verdict-*.json",
+    ".claude/runtime-verdict-*.json",
+]
+
+latest_by_script = {}
+for pattern in patterns:
+    for path in glob.glob(pattern):
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime + 1 < start_epoch:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except Exception:
+            continue
+        script = payload.get("script") or os.path.basename(path)
+        previous = latest_by_script.get(script)
+        if previous is None or mtime > previous[0]:
+            latest_by_script[script] = (mtime, path, payload)
+
+failures = []
+passed_paths = []
+for script in sorted(latest_by_script):
+    _mtime, path, payload = latest_by_script[script]
+    verdict = payload.get("verdict")
+    evidence_fresh = payload.get("evidenceFresh") is True
+    contract = payload.get("contract") or {}
+    verification_mode = payload.get("verificationMode") or contract.get("verificationMode") or ""
+    contract_applicable = bool(contract.get("applicable"))
+    missing_required = ((payload.get("requiredChecks") or {}).get("missing") or [])
+
+    if verdict != "passed":
+        failures.append(f"{script}:verdict={verdict}")
+        continue
+    if not evidence_fresh:
+        failures.append(f"{script}:evidenceFresh=false")
+        continue
+    if (contract_applicable or verification_mode == "contract") and missing_required:
+        failures.append(f"{script}:missingRequiredChecks")
+        continue
+    passed_paths.append(path)
+
+allowed = bool(passed_paths) and not failures
+reason = "ok" if allowed else (failures[0] if failures else "no-fresh-verification-artifact")
+
+print(f"PHASE_COMPLETION_ALLOWED={'true' if allowed else 'false'}")
+print(f"PHASE_COMPLETION_REASON={shlex.quote(reason)}")
+print(f"PHASE_COMPLETION_ARTIFACTS={shlex.quote(chr(10).join(passed_paths))}")
+PY
+)"
+
+    if [[ -n "$eval_output" ]]; then
+        eval "$eval_output"
+    else
+        PHASE_COMPLETION_ALLOWED=false
+        PHASE_COMPLETION_REASON="no-verification-evaluation"
+        PHASE_COMPLETION_ARTIFACTS=""
+    fi
 }
 
 # Run a command with watchdog (no periodic output)
@@ -578,8 +661,78 @@ $AUTONOMOUS_INSTRUCTIONS"
             
             END_TIME=$(date +%s)
             DURATION=$((END_TIME - START_TIME))
+            evaluate_phase_completion_gate "$START_TIME"
+
+            if [[ "$PHASE_COMPLETION_ALLOWED" != "true" ]]; then
+                auto_fix_count=$((auto_fix_count + 1))
+                log_error "Phase $NEXT_PHASE produced no valid completion evidence (${PHASE_COMPLETION_REASON})"
+                append_qa_runtime_update "phase-command-missing-fresh-verification-attempt-${auto_fix_count}" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                append_handoff_update "missing-fresh-verification-evidence" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+
+                if [[ "$AUTONOMOUS_MODE" == "true" && $auto_fix_count -lt $MAX_AUTO_FIX_ATTEMPTS ]]; then
+                    log_info "Attempting verification remediation..."
+                    echo "## Phase $NEXT_PHASE - Verification Remediation #${auto_fix_count}" >> "$DECISION_LOG"
+
+                    FIX_PROMPT="이전 Phase $NEXT_PHASE 실행은 종료 코드 기준으로는 성공했지만, 완료 판정에 필요한 fresh verification evidence가 없습니다.
+로그 파일: $LOGFILE
+활성 phase 문서: $PHASE_DOC
+실행 아티팩트:
+- SPRINT_CONTRACT: $PHASE_SPRINT_CONTRACT
+- QA_REPORT: $PHASE_QA_REPORT
+- HANDOFF: $PHASE_HANDOFF
+
+차단 사유: $PHASE_COMPLETION_REASON
+
+1. 최신 verification/runtime verdict artifact를 생성하거나 갱신하세요
+2. contract 기반 검증이면 evidenceFresh=true 와 requiredChecks.missing=[] 를 만족시키세요
+3. QA_REPORT.md에 어떤 evidence를 갱신했는지 기록하세요
+4. 완료되지 않으면 HANDOFF.md를 갱신하세요
+5. Phase $NEXT_PHASE 를 다시 완료하세요
+
+$AUTONOMOUS_INSTRUCTIONS"
+
+                    if run_worker_prompt "$LOGFILE" "$FIX_PROMPT"; then
+                        END_TIME=$(date +%s)
+                        DURATION=$((END_TIME - START_TIME))
+                        evaluate_phase_completion_gate "$START_TIME"
+                        if [[ "$PHASE_COMPLETION_ALLOWED" == "true" ]]; then
+                            log_success "Phase $NEXT_PHASE completed after verification remediation (${DURATION}s)"
+                            append_qa_runtime_update "phase-completed-after-verification-remediation" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
+                            update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+                            completed=$((completed + 1))
+                            echo "- Status: ✅ Completed (after verification remediation)" >> "$DECISION_LOG"
+                            echo "- Duration: ${DURATION}s" >> "$DECISION_LOG"
+                            echo "" >> "$DECISION_LOG"
+                            run_commit_prompt "$LOGFILE" "/commit-moonshot Phase $NEXT_PHASE 완료 (verification remediation). 변경사항을 커밋해주세요."
+                            break
+                        fi
+
+                        log_error "Phase $NEXT_PHASE still lacks valid completion evidence (${PHASE_COMPLETION_REASON})"
+                        append_qa_runtime_update "verification-remediation-incomplete" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                        append_handoff_update "verification-remediation-incomplete" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                    fi
+
+                    continue
+                fi
+
+                failed=$((failed + 1))
+                if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                    echo "- Status: ❌ Failed (missing fresh verification evidence)" >> "$DECISION_LOG"
+                    echo "" >> "$DECISION_LOG"
+                    log_warn "Autonomous mode: Moving to next phase without marking completion"
+                else
+                    echo ""
+                    log_warn "Continue to next phase? (y/n)"
+                    read -r response
+                    if [[ "$response" != "y" ]]; then
+                        break 2
+                    fi
+                fi
+                break
+            fi
+
             log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
-            append_qa_runtime_update "phase-command-succeeded" "$LOGFILE"
+            append_qa_runtime_update "phase-command-succeeded" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
             update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
             completed=$((completed + 1))
             
@@ -662,8 +815,15 @@ $AUTONOMOUS_INSTRUCTIONS"
                     
                     END_TIME=$(date +%s)
                     DURATION=$((END_TIME - START_TIME))
+                    evaluate_phase_completion_gate "$START_TIME"
+                    if [[ "$PHASE_COMPLETION_ALLOWED" != "true" ]]; then
+                        log_error "Phase $NEXT_PHASE still lacks valid completion evidence (${PHASE_COMPLETION_REASON})"
+                        append_qa_runtime_update "auto-fix-succeeded-without-fresh-verification" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                        append_handoff_update "missing-fresh-verification-evidence" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                        continue
+                    fi
                     log_success "Phase $NEXT_PHASE completed after auto-fix (${DURATION}s)"
-                    append_qa_runtime_update "phase-completed-after-auto-fix" "$LOGFILE"
+                    append_qa_runtime_update "phase-completed-after-auto-fix" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
                     update_phase_status "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
                     completed=$((completed + 1))
                     

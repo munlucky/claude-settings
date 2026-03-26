@@ -33,6 +33,7 @@ If required:
    - done checks
    - evaluator focus
    - expected evidence
+   - policy anchors (always-loaded rules, active workspace contract, verification contract, round-specific guides)
 4. If a safe contract cannot be derived, stop and return planning notes instead of guessing in code
 
 Result:
@@ -187,4 +188,3 @@ notes:
 - For refactor tasks: always confirm scope before starting.
 - Self-healing: max 2 retry attempts per phase before asking user.
 - **Test co-creation**: When test environment exists, implementation without tests is incomplete.
-

@@ -148,6 +148,7 @@ For each detected phase, prepare:
 
 Rules:
 - `SPRINT_CONTRACT.md` is seeded from the phase title and document path
+- `SPRINT_CONTRACT.md` must carry `Policy Anchors` for always-loaded rules, the active workspace contract, the verification contract, and any phase-specific guides required for the round
 - `QA_REPORT.md` and `HANDOFF.md` start as placeholders and are updated during execution
 - do not overwrite an existing artifact that already contains work
 
@@ -212,6 +213,7 @@ Coordinator rules:
   - `SPRINT_CONTRACT.md`
   - latest `QA_REPORT.md`
   - latest `HANDOFF.md` when present
+- Treat `SPRINT_CONTRACT.md` policy anchors as required round input, not optional notes
 - Each round must execute as a fresh fork/sub-agent attempt.
 - Merge back summaries only: verdict, changed files, failed checks, next action.
 - If the round does not finish cleanly, update `QA_REPORT.md` and `HANDOFF.md` before the next attempt.

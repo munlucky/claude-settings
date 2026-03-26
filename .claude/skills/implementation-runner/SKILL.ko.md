@@ -33,6 +33,7 @@ description: 체인에서 실제 구현을 수행하고 완료 상태와 변경 
    - done check
    - evaluator focus
    - 기대 evidence
+   - policy anchors (항상 로드 규칙, 활성 워크스페이스 계약, verification contract, round별 추가 가이드)
 4. 안전한 계약을 못 만들면 코드로 추측하지 말고 planning notes로 되돌림
 
 결과:

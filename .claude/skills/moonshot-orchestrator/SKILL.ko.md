@@ -36,6 +36,7 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
   - read-only / answer-only 작업
   - 오케스트레이터나 메타 워크플로우 자체를 수정하는 self-host 작업
 - direct-skill 경로라도 파일 수정이 예상되면 가벼운 `pre-flight-check`를 먼저 태우는 편이 좋다.
+- Claude Code 와 Codex 모두에서 phase/adapter 경로는 채팅 기억이 아니라 `SPRINT_CONTRACT.md` 의 policy anchors 를 통해 정책을 이어받아야 한다.
 
 ## 입력
 
@@ -125,6 +126,7 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `SPRINT_CONTRACT.md`: 이번 slice 목표, non-goal, done check
 - `QA_REPORT.md`: verifier 결과와 다음 수정 입력
 - `HANDOFF.md`: 재시도/중단/장시간 세션 인계 상태
+- strict 또는 `meta_harness` phase 작업은 active `SPRINT_CONTRACT.md` 에 policy anchors 와 필수 검증 명령을 유지해야 한다.
 
 `moonshot-phase-runner`가 `in-session-coordinator` 모드를 반환하면:
 - 메인 세션은 coordinator로만 남는다.
@@ -135,6 +137,13 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 `moonshot-phase-runner`가 `autoStartExecution=true`를 반환하면:
 - `executionSkill`을 즉시 실행한다.
 - `prepareOnly=true`가 아닌 한 사용자에게 다시 수동 실행을 요구하지 않는다.
+
+## 검증 판정 규칙
+
+- contract 기반 검증은 `contractApplicable == true` 또는 `verificationMode == contract` 로 해석합니다.
+- `verificationState == passed` 라도 최신 증거가 없거나 required check가 비어 있지 않으면 완료로 올리지 않습니다.
+- contract 기반 run이면 `verificationFailed`로 재분류해 `QA_REPORT.md`를 갱신하고 수정/재시도 경로로 되돌립니다.
+- contract 밖의 workspace/fallback run이면 profile에 따라 경고 또는 보수적 remediation 상태로 유지합니다.
 
 ## 허용 단계
 
@@ -187,6 +196,15 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `read_only`: 구현/검증 체인을 실행하지 않는다.
 - `product_project`: readiness gate와 downstream bootstrap을 사용한다.
 - `meta_harness`: downstream bootstrap gate를 건너뛰고, 핵심 워크플로우 변경이면 strict를 선호한다.
+
+## 상태 전이 표
+
+| Verifier 상태 | 전이 |
+|---|---|
+| `passed` + 최신 증거 + required check 완료 | 완료 후보 |
+| `passed` 이지만 최신 증거 없음 또는 required check 미완료 | remediation/retry로 재분류, 완료 금지 |
+| `indeterminate` | strict=`failed`, standard=`pass_with_warning` |
+| `failed` | 재시도 또는 실패 |
 
 ## 프로젝트 메모리 로드
 
@@ -245,5 +263,15 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - `PLAN.md`와 `tasks/*.md`가 있으면 이를 planning source of truth로 보고 `requirements-analyzer`, `context-builder`를 생략한다.
 - medium/complex `product_project`는 active slice 기준으로 `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF`를 유지한다.
 - in-session phase loop는 fresh isolated attempt를 전제로만 허용하며, coordinator 세션은 round 사이에 summary-only 상태를 유지한다.
+- phase attempt 요약을 완료 선언으로 바꾸려면 해당 시도의 verifier evidence 가 최신이고 contract 기준 required check 가 모두 충족되어야 한다.
 - fresh attempt가 `moonshot-orchestrator`를 실행할 때는 `phaseAttemptMode=true`로 두고 `moonshot-phase-runner`를 재귀적으로 다시 넣지 않는다.
 - `document-memory-policy.md`를 준수한다.
+
+## 상태 전이 표
+
+| Verifier 상태 | 전이 |
+|---|---|
+| `passed` + 최신 증거 + required check 완료 | 완료 후보 |
+| `passed` 이지만 최신 증거 없음 | 완료 불가 |
+| `indeterminate` | strict=`failed`, standard=`pass_with_warning` |
+| `failed` | 재시도 또는 실패 |

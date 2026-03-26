@@ -2,7 +2,7 @@
 
 > 항상 로드되는 엔트리 맵 문서입니다. 본문 정책을 길게 넣지 않습니다.
 
-Last-Reviewed: 2026-03-05
+Last-Reviewed: 2026-03-26
 
 ## 개요
 
@@ -32,9 +32,16 @@ documentPaths:
 
 토큰/아카이브 정책은 `.claude/docs/guidelines/document-memory-policy.md`를 참고합니다.
 
+## Runtime Note
+
+- 실제 제품 작업에서는 활성 워크스페이스의 `PROJECT.md` 와 `.claude/verification.contract.yaml` 을 런타임 계약으로 사용합니다.
+- 이 저장소의 `.claude/PROJECT.md` 는 설치 대상 프로젝트용 템플릿/참고 문서로 유지합니다.
+- Claude Code 와 Codex 모두에서 코드 작업의 정책 경계는 `moonshot-orchestrator` 이며, phase runner 와 shell adapter 는 준비/라우팅만 담당합니다.
+
 ## 참고
 
 - 프로젝트 계약: `@.claude/PROJECT.md`
+- 검증 계약: `@.claude/verification.contract.yaml`
 - 지식 저장소 운영: `@.claude/docs/guidelines/knowledge-repository-ops.ko.md`
 - 토큰 최적화: `@.claude/docs/guidelines/token-optimization.ko.md`
 - 에이전트 정의 규칙: `@.claude/rules/agents/agent-definition.md`

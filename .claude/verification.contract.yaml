@@ -1,0 +1,56 @@
+commands:
+  knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
+  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
+scope:
+  executionPlanes:
+    - meta_harness
+  paths:
+    - "AGENTS.md"
+    - ".claude/CLAUDE.md"
+    - ".claude/rules/**"
+    - ".claude/skills/**"
+    - ".claude/agents/**"
+    - ".claude/docs/guidelines/**"
+    - ".claude/docs/ko/rules/**"
+    - ".claude/templates/execution/**"
+    - ".claude/scripts/**"
+    - ".claude/verification.contract.yaml"
+  fallbackOutsideScope: true
+artifacts:
+  verdict: ".claude/verification-verdict-<runId>.json"
+  sprintContract: "{tasksRoot}/{feature-name}/execution/<slice>/SPRINT_CONTRACT.md"
+  qaReport: "{tasksRoot}/{feature-name}/execution/<slice>/QA_REPORT.md"
+  handoff: "{tasksRoot}/{feature-name}/execution/<slice>/HANDOFF.md"
+strict:
+  required: true
+  triggers:
+    - "meta_harness"
+    - "workflow-core"
+    - "phase-runner"
+    - "rules"
+    - "skills"
+    - "agents"
+policy:
+  allowIndeterminate: false
+  requiredChecks:
+    - knowledgeAudit
+  optionalChecks:
+    - shellSyntax
+qa:
+  evaluatorMode: "separate"
+  hardFailOn:
+    - "knowledge_repo_audit_failed"
+    - "missing_policy_anchor"
+    - "verification_evidence_missing"
+  criteria:
+    policyPropagation:
+      threshold: "pass"
+      focus:
+        - "phase attempts inherit policy anchors through SPRINT_CONTRACT"
+        - "core workflow edits stay on the strict path"
+    crossRuntimeParity:
+      threshold: "pass"
+      focus:
+        - "Codex and Claude Code use the same orchestrator boundary"
+hooks:
+  extraChecksCommand: ""
