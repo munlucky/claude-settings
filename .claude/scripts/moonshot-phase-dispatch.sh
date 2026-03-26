@@ -23,6 +23,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/runtime-cli.sh"
+runtime_cli_prepare_environment
+
 PLAN_DIR=""
 EXECUTION_MODE="auto"
 STATUS_FILE=".claude/docs/phase-status.yaml"

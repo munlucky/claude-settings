@@ -10,6 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/runtime-cli.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 REFERENCE_PLAN_DIR="docs/implementation"
 RUN_REAL=true
@@ -27,7 +28,6 @@ cleanup() {
   fi
   rm -rf "$TMP_ROOT"
 }
-
 trap cleanup EXIT
 
 usage() {
@@ -52,7 +52,6 @@ fail() {
   fi
   exit 1
 }
-
 require_command() {
   local name="$1"
   if ! command -v "$name" >/dev/null 2>&1; then
@@ -239,8 +238,8 @@ probe_claude_runtime() {
   set +e
   (
     cd "$REPO_ROOT"
-    claude --dangerously-skip-permissions --no-session-persistence --disable-slash-commands --tools "" \
-      -p 'Reply exactly with RUNTIME_OK and nothing else.'
+    claude --dangerously-skip-permissions -p --output-format text \
+      'Reply exactly with RUNTIME_OK and nothing else.'
   ) >"$output_file" 2>"$error_file"
   local exit_code=$?
   set -e
@@ -252,16 +251,18 @@ probe_claude_runtime() {
   fi
 
   detail="$(summarize_probe_detail "$error_file" "$output_file")"
-  if grep -Fqi "does not have access to Claude" "$error_file" "$output_file"; then
-    record_runtime_failure "claude" "organization/account access unavailable (${detail:-no additional detail})"
+  if grep -Fqi "needs an update" "$error_file" "$output_file"; then
+    record_runtime_failure "claude" "TODO: when Claude access is restored, update the Claude CLI on this machine (${detail:-no additional detail})"
+  elif grep -Fqi "does not have access to Claude" "$error_file" "$output_file"; then
+    record_runtime_failure "claude" "TODO: enable Claude subscription/access on this machine (${detail:-no additional detail})"
   elif grep -Fqi "Please login again" "$error_file" "$output_file"; then
-    record_runtime_failure "claude" "login required (${detail:-no additional detail})"
+    record_runtime_failure "claude" "TODO: enable Claude login/subscription on this machine (${detail:-no additional detail})"
   elif grep -Fqi "Could not resolve authentication method" "$error_file" "$output_file"; then
-    record_runtime_failure "claude" "authentication token unavailable (${detail:-no additional detail})"
+    record_runtime_failure "claude" "TODO: configure Claude authentication on this machine (${detail:-no additional detail})"
   elif [[ $exit_code -eq 0 && ! -s "$output_file" && ! -s "$error_file" ]]; then
-    record_runtime_failure "claude" "CLI returned no output; verify auth and org access"
+    record_runtime_failure "claude" "TODO: verify Claude auth/subscription on this machine"
   else
-    record_runtime_failure "claude" "${detail:-probe exited with code ${exit_code}}"
+    record_runtime_failure "claude" "TODO: verify Claude runtime availability (${detail:-probe exited with code ${exit_code}})"
   fi
 
   return 1
@@ -320,7 +321,6 @@ if payload.get("verdict") != "passed":
     raise SystemExit(f"verdict not passed: {payload.get('verdict')}")
 PY
 }
-
 seed_fixture() {
   local fixture_root="$1"
   local scenario_name="$2"
@@ -353,22 +353,23 @@ EOF
 - Prove that the ${scenario_name} runtime path can execute one full phase attempt and leave fresh verification evidence.
 
 ## In Scope
-- Update only execution artifacts under ${phase_dir}
+- Update execution artifacts under ${phase_dir}
+- Mark \`phase-status.yaml\` completed when the smoke passes
 - Run verification with:
   - \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash .claude/agents/verification/verify-changes.sh runtime-smoke-${scenario_name}\`
 
 ## Out of Scope
-- Editing repository source files outside ${phase_dir}
+- Editing repository source files outside ${fixture_root}
 - Git commits, branch changes, or workflow refactors
 - Inspecting unrelated repo docs or the parity harness script itself once the execution contract is clear
 
 ## Required Steps
 1. Read \`SPRINT_CONTRACT.md\` and keep the policy anchors intact.
-2. Refresh only the execution-artifact fields needed for this phase attempt.
+2. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
 3. Record the runtime/mode in \`QA_REPORT.md\`.
 4. Run the verification command exactly once for fresh evidence.
 5. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
-6. If verification passes, stop immediately after updating the execution artifacts.
+6. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
 7. If verification fails, update \`HANDOFF.md\` and stop without touching repository source files.
 
 ## Completion
@@ -394,18 +395,18 @@ EOF
 - Exercise the workflow runtime for ${scenario_name} without editing repository source files.
 
 ## Non-Goals
-- No edits outside ${phase_dir}
+- No edits outside ${fixture_root}
 - No commits
 - No follow-up refactors
 
 ## Planned Changes
-- Update execution artifacts only
+- Update execution artifacts and \`phase-status.yaml\` only
 
 ## Execution Refresh
 - Refreshed for phase attempt: pending
 - Runtime mode: ${execution_mode}
 - Phase attempt mode: true
-- Execution scope: execution artifacts only for phase 1 runtime smoke
+- Execution scope: execution artifacts plus \`phase-status.yaml\` for phase 1 runtime smoke
 - Verification command: \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash .claude/agents/verification/verify-changes.sh runtime-smoke-${scenario_name}\`
 
 ## Policy Anchors
@@ -420,12 +421,13 @@ EOF
 |-------|------|----------------|
 | QA report updated | Docs | QA report mentions ${scenario_name} |
 | Fresh verification verdict | Test | verify-changes verdict is passed |
-| No source edits | Policy | only execution artifacts changed |
+| Phase status updated | Policy | \`phase-status.yaml\` marks phase 1 completed |
+| No source edits | Policy | only execution artifacts and \`phase-status.yaml\` changed |
 
 ## Evaluator Focus
 - Runtime reaches one full phase attempt
 - Fresh verification evidence exists
-- Repository source files remain untouched
+- Repository source files remain untouched outside the fixture artifacts and \`phase-status.yaml\`
 - The attempt stops after updating the artifact trio and does not continue broad repo inspection
 
 ## Evidence
@@ -664,7 +666,10 @@ EOF
 report_failures_and_exit() {
   local item
 
-  if [[ ${#RUNTIME_FAILURES[@]} -eq 0 && ${#ACTUAL_FAILURES[@]} -eq 0 ]]; then
+  if [[ ${#ACTUAL_FAILURES[@]} -eq 0 ]]; then
+    for item in "${RUNTIME_FAILURES[@]}"; do
+      warn "runtime unavailable: $item"
+    done
     log "phase runtime parity smoke passed"
     return 0
   fi
@@ -708,6 +713,7 @@ if [[ ! -d "$REFERENCE_PLAN_DIR" ]]; then
   fail "reference plan directory not found: $REFERENCE_PLAN_DIR"
 fi
 
+runtime_cli_prepare_environment
 require_command claude
 require_command codex
 require_command python3

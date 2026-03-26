@@ -1,6 +1,7 @@
 commands:
   knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
-  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
+  codePolicy: "bash .claude/scripts/verify-code-policy.sh"
+  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
   phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation"
 scope:
   executionPlanes:
@@ -36,12 +37,14 @@ policy:
   allowIndeterminate: false
   requiredChecks:
     - knowledgeAudit
+    - codePolicy
     - shellSyntax
     - phaseRuntimeParity
 qa:
   evaluatorMode: "separate"
   hardFailOn:
     - "knowledge_repo_audit_failed"
+    - "code_policy_failed"
     - "missing_policy_anchor"
     - "verification_evidence_missing"
   criteria:
