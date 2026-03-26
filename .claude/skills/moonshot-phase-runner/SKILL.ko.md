@@ -148,6 +148,7 @@ phases:
 
 규칙:
 - `SPRINT_CONTRACT.md`는 phase 제목과 문서 경로를 바탕으로 초기 생성
+- `SPRINT_CONTRACT.md`에는 항상 로드 규칙, 활성 워크스페이스 계약, verification contract, round별 추가 가이드를 담는 `Policy Anchors` 섹션이 있어야 함
 - `QA_REPORT.md`, `HANDOFF.md`는 실행 중 갱신될 placeholder로 시작
 - 이미 작업 내용이 있는 파일은 덮어쓰지 않음
 
@@ -212,6 +213,7 @@ Coordinator 규칙:
   - `SPRINT_CONTRACT.md`
   - 최신 `QA_REPORT.md`
   - 있으면 최신 `HANDOFF.md`
+- `SPRINT_CONTRACT.md` 의 policy anchors 는 선택 메모가 아니라 필수 round 입력으로 취급합니다.
 - 각 시도는 fresh fork/sub-agent round로 실행해야 합니다.
 - 메인 세션으로는 verdict, changed files, failed checks, next action 같은 요약만 병합합니다.
 - 시도가 clean completion 없이 끝나면 다음 시도 전에 `QA_REPORT.md`와 `HANDOFF.md`를 갱신합니다.

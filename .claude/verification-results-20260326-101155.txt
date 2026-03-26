@@ -1,0 +1,23 @@
+# Verification Results
+Date: 2026-03-26 10:11:55
+Feature: workflow-harness
+Run ID: smoke-verify-changes
+Contract: .claude/verification.contract.yaml (detected=true, applicable=true, mode=contract, scopeReason=execution_plane)
+
+ContractCheck(knowledgeAudit): bash .claude/scripts/knowledge-repo-audit.sh
+
+Knowledge Repo Audit
+Run ID: knowledge-audit-20260326-101155
+Verdict: passed
+Errors: 0 / Warnings: 0
+Always-loaded lines (rules/total): 198/239
+Always-loaded estimated tokens: 2196
+Artifact: /Users/dev/claude-settings/.claude/knowledge-repo-audit-knowledge-audit-20260326-101155.json
+
+
+ContractCheck(shellSyntax): bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh
+
+
+## Git Status
+
+No staged files

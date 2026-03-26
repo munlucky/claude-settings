@@ -2,11 +2,11 @@
 
 > Entry map for always-loaded instructions. Keep this file short.
 
-Last-Reviewed: 2026-03-05
+Last-Reviewed: 2026-03-26
 
 ## Overview
 
-Rules in `.claude/rules/` are always loaded recursively. This file holds Tier-1 constraints only.
+`.claude/rules/` loads recursively. This file is Tier-1 only.
 
 ## Tier-1 Constraints
 
@@ -20,6 +20,7 @@ Rules in `.claude/rules/` are always loaded recursively. This file holds Tier-1 
    - Keep only constraints AI cannot infer from code structure
 4. Update source docs first, then refresh links in TOC docs.
 5. Run `.claude/scripts/knowledge-repo-audit.sh` after structural doc changes.
+6. For runtime, use the active workspace `PROJECT.md` and `.claude/verification.contract.yaml`; this repo's `.claude/PROJECT.md` is template/reference only.
 
 ## Default Document Paths
 
@@ -35,6 +36,6 @@ For token and archive policy, see `.claude/docs/guidelines/document-memory-polic
 ## References
 
 - Project contract: `@.claude/PROJECT.md`
-- Knowledge repository ops: `@.claude/docs/guidelines/knowledge-repository-ops.md`
-- Token optimization: `@.claude/docs/guidelines/token-optimization.md`
-- Agent definition rule: `@.claude/rules/agents/agent-definition.md`
+- Verification contract: `@.claude/verification.contract.yaml`
+- Knowledge repo ops: `@.claude/docs/guidelines/knowledge-repository-ops.md`
+- Agent rule: `@.claude/rules/agents/agent-definition.md`

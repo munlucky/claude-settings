@@ -15,6 +15,13 @@
 - Main implementation areas
 - Expected files or modules
 
+## Policy Anchors
+- Always-loaded rules:
+- Active workspace contract:
+- Verification contract:
+- Phase-specific guides:
+- Round policy summary:
+
 ## Done Checks
 | Check | Type | Pass Condition |
 |-------|------|----------------|

@@ -88,6 +88,7 @@ Rules:
 - Do not inline long phase documents into the main session.
 - Do not pass previous implementation chatter.
 - Use `QA_REPORT.md` and `HANDOFF.md` as the only retry memory.
+- Treat `SPRINT_CONTRACT.md` policy anchors and required verification commands as mandatory attempt input.
 
 ### 3. Spawn fresh attempt
 
@@ -113,6 +114,9 @@ attemptResult:
   status: "completed"  # completed | partial | failed
   verification:
     verdict: "passed"  # passed | failed | indeterminate
+    evidenceFresh: true
+    requiredChecks:
+      missing: []
     failedChecks: []
   changedFiles:
     - "src/api/auth.ts"
@@ -121,8 +125,15 @@ attemptResult:
 ```
 
 Main-session merge rule:
-- keep only `status`, `summary`, `failedChecks`, `changedFiles`, `handoffRequired`
+- keep `status`, `summary`, `changedFiles`, `handoffRequired`, and the minimum verifier metadata needed for state transitions:
+  - `verification.verdict`
+  - `verification.evidenceFresh`
+  - `verification.contractApplicable`
+  - `verification.mode`
+  - `verification.requiredChecks.missing`
+  - `verification.failedChecks`
 - never merge raw logs or full verifier output
+- Treat `status: completed` as valid only when the underlying verifier result also had `evidenceFresh == true` and no missing required checks.
 
 ### 5. Update phase-status.yaml
 
@@ -131,7 +142,7 @@ After each attempt:
 - update `attempts.lastOutcome`
 - update `attempts.lastUpdatedAt`
 - set phase `status`
-  - `completed` when verification passed
+  - `completed` only when verification passed with `evidenceFresh == true` and no missing required checks
   - `failed` when retry cap reached
   - `in_progress` when another retry is allowed
 
@@ -148,9 +159,20 @@ phases:
       lastUpdatedAt: "2026-03-25T13:15:00Z"
 ```
 
+### State Transition Table
+
+| Attempt result | Coordinator action |
+|---|---|
+| `completed` + fresh evidence + no missing required checks | mark phase `completed` |
+| `partial` | keep phase `in_progress` |
+| `failed` with retries remaining | keep phase `in_progress` and retry |
+| `failed` with no retries remaining | mark phase `failed` |
+| nominal `completed` without fresh evidence | downgrade to `in_progress` or `failed` |
+
 ### 6. Loop or stop
 
 - If the phase passed, advance to the next actionable phase.
+- Do not advance on a nominal pass if fresh evidence is missing; keep the phase in `in_progress` or `failed`.
 - If the phase failed but retries remain, spawn a brand-new `phase-attempt-agent`.
 - If the phase failed and retries are exhausted:
   - stop when `stopOnFailure == true`
@@ -180,6 +202,8 @@ coordinatorResult:
 - The coordinator session remains summary-only between rounds.
 - Retries must be driven by `QA_REPORT.md` / `HANDOFF.md`, not by accumulated chat context.
 - Attempt agents must run `moonshot-orchestrator` in `phaseAttemptMode=true` to avoid recursive `moonshot-phase-runner` insertion.
+- Do not spawn a new attempt for strict/meta-harness work until the active `SPRINT_CONTRACT.md` contains policy anchors.
+- Do not translate `attemptResult.status=completed` into a completed phase unless the verifier evidence for that attempt is fresh and contract-complete.
 
 ## References
 

@@ -88,6 +88,7 @@ attemptInput:
 - 긴 phase 문서를 메인 세션에 인라인하지 않습니다.
 - 이전 구현 대화를 다시 넘기지 않습니다.
 - 재시도 메모리는 `QA_REPORT.md`, `HANDOFF.md`만 사용합니다.
+- `SPRINT_CONTRACT.md` 의 policy anchors 와 필수 검증 명령은 attempt 입력의 필수 항목으로 취급합니다.
 
 ### 3. fresh attempt 생성
 
@@ -113,6 +114,9 @@ attemptResult:
   status: "completed"  # completed | partial | failed
   verification:
     verdict: "passed"  # passed | failed | indeterminate
+    evidenceFresh: true
+    requiredChecks:
+      missing: []
     failedChecks: []
   changedFiles:
     - "src/api/auth.ts"
@@ -121,8 +125,15 @@ attemptResult:
 ```
 
 메인 세션 병합 규칙:
-- `status`, `summary`, `failedChecks`, `changedFiles`, `handoffRequired`만 유지
+- `status`, `summary`, `changedFiles`, `handoffRequired` 와 상태 전이에 필요한 최소 verifier 메타데이터만 유지합니다:
+  - `verification.verdict`
+  - `verification.evidenceFresh`
+  - `verification.contractApplicable`
+  - `verification.mode`
+  - `verification.requiredChecks.missing`
+  - `verification.failedChecks`
 - raw log나 전체 verifier 출력은 병합 금지
+- 다만 `status: completed` 는 verifier 결과에 `evidenceFresh == true` 이고 required check 누락이 없을 때만 유효한 완료로 취급합니다.
 
 ### 5. phase-status.yaml 갱신
 
@@ -131,7 +142,7 @@ attemptResult:
 - `attempts.lastOutcome` 갱신
 - `attempts.lastUpdatedAt` 갱신
 - phase `status` 갱신
-  - verification passed면 `completed`
+  - verification passed + `evidenceFresh == true` + required check 누락 없음일 때만 `completed`
   - retry cap 도달 시 `failed`
   - 재시도 가능하면 `in_progress`
 
@@ -148,9 +159,20 @@ phases:
       lastUpdatedAt: "2026-03-25T13:15:00Z"
 ```
 
+### 상태 전이 표
+
+| Attempt result | Coordinator 동작 |
+|---|---|
+| `completed` + 최신 증거 + required check 누락 없음 | phase를 `completed`로 변경 |
+| `partial` | phase를 `in_progress`로 유지 |
+| `failed` + 재시도 가능 | phase를 `in_progress`로 유지하고 재시도 |
+| `failed` + 재시도 불가 | phase를 `failed`로 변경 |
+| 형식상 `completed` 이지만 최신 증거 없음 | `in_progress` 또는 `failed`로 강등 |
+
 ### 6. 반복 또는 중단
 
 - phase가 통과하면 다음 actionable phase로 진행합니다.
+- 형식상 pass처럼 보여도 최신 증거가 없으면 다음 phase로 넘기지 않고 `in_progress` 또는 `failed`로 유지합니다.
 - 실패했지만 재시도 여유가 있으면 새 `phase-attempt-agent`를 다시 생성합니다.
 - 실패했고 재시도도 소진했으면:
   - `stopOnFailure == true`면 중단
@@ -180,6 +202,8 @@ coordinatorResult:
 - coordinator 세션은 round 사이에 summary-only 상태를 유지합니다.
 - 재시도 근거는 누적 채팅 컨텍스트가 아니라 `QA_REPORT.md` / `HANDOFF.md`여야 합니다.
 - attempt agent는 재귀적 `moonshot-phase-runner` 삽입을 피하기 위해 반드시 `phaseAttemptMode=true`로 `moonshot-orchestrator`를 실행해야 합니다.
+- strict/meta-harness 작업에서는 active `SPRINT_CONTRACT.md` 에 policy anchors 가 없으면 새 attempt 를 시작하지 않습니다.
+- `attemptResult.status=completed` 라도 해당 시도의 verifier evidence 가 최신이고 contract 기준으로 완전할 때만 phase 완료로 반영합니다.
 
 ## References
 

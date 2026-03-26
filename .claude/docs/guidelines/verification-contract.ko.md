@@ -14,6 +14,13 @@ commands:
   build: "npm run build"
   test: "npm test"
   lint: "npm run lint"
+scope:
+  executionPlanes:
+    - product_project
+  paths:
+    - "src/**"
+    - "tests/**"
+  fallbackOutsideScope: true
 runtime:
   url: "http://localhost:3000"
   e2eCommand: "npm run test:e2e"
@@ -82,11 +89,13 @@ hooks:
 ## 규칙
 - harness는 verdict 의미를 책임지고, 프로젝트별 프레임워크 로직은 계약으로 선언합니다.
 - 프로젝트는 명령어와 evidence를 이 계약으로 제공합니다.
+- 계약은 `scope` 를 선언해 required check 적용 범위를 plane/path 단위로 제한할 수 있으며, 범위 밖에서는 활성 워크스페이스 계약이나 fallback 감지를 사용합니다.
 - 완료 기준은 모호한 품질 표현이 아니라 재현 가능한 실패 체크로 작성해야 합니다.
 - 런타임 비중이 크거나 UI 비중이 큰 작업은 generator 자기승인보다 별도 evaluator 경로를 우선합니다.
 - 브라우저/런타임 검증은 단순 첫 화면 확인이 아니라 실제 상호작용을 포함해야 합니다.
 - 구현 시작 전 `SPRINT_CONTRACT.md`로 라운드 완료 기준을 먼저 고정합니다.
 - 검증 실패 시 `QA_REPORT.md`를 다음 수정 라운드의 입력으로 사용합니다.
+- contract 기반 성공 판정은 현재 scope에 적용되는 모든 required check에 대해 최신 증거가 있을 때만 가능합니다.
 - 계약이 없으면:
   - standard 프로필은 경고와 함께 진행할 수 있습니다.
   - strict 프로필은 완료 판정을 차단해야 합니다.

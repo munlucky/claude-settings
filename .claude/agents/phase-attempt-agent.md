@@ -43,6 +43,9 @@ Read only:
 - `QA_REPORT.md`
 - `HANDOFF.md` when present
 
+Read the `Policy Anchors` section in `SPRINT_CONTRACT.md` first.
+For strict or `meta_harness` work, if policy anchors or required verification commands are missing, refresh the sprint contract before edits or return blocked instead of guessing.
+
 Do not load previous coordinator chatter.
 
 ### 2. Run orchestrator in phase attempt mode
@@ -77,10 +80,30 @@ attemptResult:
     - "tests/e2e/login.spec.ts"
   verification:
     verdict: "failed"      # passed | failed | indeterminate
+    evidenceFresh: false
+    contractApplicable: false
+    mode: "fallback"       # contract | workspace | fallback
+    requiredChecks:
+      declared: []
+      executed: []
+      missing: []
     failedChecks:
       - "browserFlows.login"
   handoffRequired: true
 ```
+
+Completion normalization rule:
+- Return `status: completed` only when the verifier result for this attempt is contract-backed and includes fresh evidence for the required checks.
+- If verification is missing, stale, indeterminate, or partial, return `partial` or `failed` instead of wording the attempt as complete.
+
+## State Transition Table
+
+| Attempt status | Minimum verifier conditions | Meaning |
+|---|---|---|
+| `completed` | `verdict=passed` and `evidenceFresh=true` and `requiredChecks.missing=[]` | Round is eligible for phase completion |
+| `partial` | Some implementation or verification progress exists, but completion conditions are not fully met | Retry or follow-up needed |
+| `failed` | Verification failed, scope was blocked, or retry should stop | Do not advance |
+| `blocked` | Optional local classification when inputs/contracts are missing; normalize to `failed` when returned | Stop and remediate contract/scope |
 
 ## Error Handling
 
@@ -96,6 +119,9 @@ attemptResult:
 - It must not inline large outputs back to the coordinator.
 - It must not trigger `moonshot-phase-runner` recursively.
 - It returns only summarized `attemptResult`.
+- It must not summarize the round as completed without fresh verification evidence.
+- It must include the minimum verifier metadata needed for downstream state transitions: `verdict`, `evidenceFresh`, and `requiredChecks.missing`.
+- It must also include provenance for the verdict: `contractApplicable` and `mode`.
 
 ## References
 

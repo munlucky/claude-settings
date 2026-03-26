@@ -49,6 +49,7 @@ Resolve `executionRuntime` before orchestration:
   - Steps documented as `Task (fork)` must preserve isolation by passing minimal input and merging summarized output only.
   - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
   - Ask user only when those outputs still indicate unresolved blocking items.
+- In both runtimes, phase/adaptor paths must preserve policy through `SPRINT_CONTRACT.md` policy anchors rather than assuming chat memory survives across rounds.
 - Cross-runtime policy source of truth:
   - Keep workflow policy in skills/orchestrator state.
   - `commands`/hooks are optional adapters and must only route to skills.
@@ -222,6 +223,7 @@ For `product_project` work, treat execution artifacts as first-class state:
 
 Policy:
 - medium/complex product work must not enter code changes without a slice-level sprint contract
+- strict or `meta_harness` phase work must keep policy anchors and required verification commands current in the active sprint contract
 - verification steps must update `QA_REPORT.md` whenever they run
 - failed verification, retry loops, or interrupted runs should mark `signals.handoffRequired = true`
 
@@ -342,6 +344,7 @@ Run `decisions.skillChain` in order.
   - run each implementation round as a fresh fork/sub-agent attempt
   - pass only artifact-backed input (`phaseDoc`, `SPRINT_CONTRACT.md`, latest `QA_REPORT.md`, optional `HANDOFF.md`)
   - merge back summarized `attemptResult` only
+  - treat `attemptResult.status == completed` as valid only when the underlying verifier state is `passed`, `evidenceFresh == true`, and required checks are complete
 
 **Memory-step separation contract**:
 - `project-memory-agent`: load/update project memory context at phase 2.0.5
@@ -402,14 +405,29 @@ Run `decisions.skillChain` in order.
 After `implementation-runner`:
 1. If `completion-verifier` exists in `decisions.skillChain`, call it.
 2. If `completion-verifier` is absent (simple flow), use `verify-changes.sh` (and `browser-verifier` for web projects) as completion gate.
-3. If `completionStatus.verificationState == passed`, proceed.
+3. Proceed only when:
+   - `completionStatus.verificationState == passed`
+   - and `completionStatus.evidenceFresh == true` when a contract-backed verdict is expected
+   - and `completionStatus.requiredChecks.missing` is empty when required checks apply
 4. If `completionStatus.verificationState == indeterminate`:
    - strict -> treat as failure
    - standard -> record `pass_with_warning`
+5. If `completionStatus.verificationState == passed` but fresh evidence is missing or required checks are incomplete:
+   - contract-backed run -> reclassify as `verificationFailed`, update `QA_REPORT.md`, and re-enter remediation/retry flow
+   - non-contract fallback/workspace run -> do not claim completion; keep the run in warning/remediation state according to profile
 5. Update `artifacts.qaReportPath` with verdict, failed criteria, and next-round input.
 6. If strict, run `verification-evidence-gate` before any completion statement.
 7. On failure, retry using exit-code strategy until retry cap is reached.
 8. If the run stops before clean completion, write `artifacts.handoffPath`.
+
+### 3.4 State Transition Table
+
+| Verifier state | Transition |
+|---|---|
+| `passed` + fresh evidence + required checks complete | eligible for completion |
+| `passed` without fresh evidence or with missing required checks | reclassify to remediation/retry; no completion claim |
+| `indeterminate` | strict=`failed`, standard=`pass_with_warning` |
+| `failed` | retry or fail |
 
 ### 4. Record results
 Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
@@ -422,5 +440,6 @@ Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
 - Product-package handoff: when `PLAN.md` + `tasks/*.md` exist, treat them as the planning source of truth and skip `requirements-analyzer` / `context-builder`
 - Execution bridge: medium/complex `product_project` work must keep `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF` artifacts synchronized with the active slice
 - In-session phase loops: allowed only when retries run through fresh isolated attempts; the coordinator session must stay summary-only between rounds
+- Do not convert a phase-attempt summary into a completion claim unless the verifier evidence for that attempt is fresh and contract-complete
 - Phase attempt mode: when a fresh attempt runs `moonshot-orchestrator`, set `signals.phaseAttemptMode = true` and skip recursive `moonshot-phase-runner` insertion
 - Follow `document-memory-policy.md`

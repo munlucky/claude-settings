@@ -34,6 +34,200 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+join_lines() {
+  printf '%s\n' "$@" | sed '/^$/d'
+}
+
+collect_changed_files() {
+  local status_file
+
+  CHANGED_FILES=()
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  status_file="$(mktemp)"
+  git status --short 2>/dev/null > "$status_file" || true
+
+  while IFS= read -r line; do
+    local path
+    path="${line#?? }"
+    path="${path##* -> }"
+    [ -n "$path" ] || continue
+    CHANGED_FILES+=("$path")
+  done < "$status_file"
+
+  rm -f "$status_file"
+}
+
+load_contract_context() {
+  local eval_output
+  local changed_files_text
+
+  CONTRACT_DETECTED=false
+  CONTRACT_APPLICABLE=false
+  CONTRACT_SCOPE_MATCHED=false
+  CONTRACT_FALLBACK_OUTSIDE_SCOPE=true
+  VERIFICATION_MODE="fallback"
+  CONTRACT_SCOPE_REASON="no_contract"
+  CONTRACT_RUNTIME_URL=""
+  CONTRACT_RUNTIME_E2E=""
+  CONTRACT_REQUIRED_CHECKS=()
+  CONTRACT_OPTIONAL_CHECKS=()
+
+  if [ ! -f "$CONTRACT_FILE" ]; then
+    return 0
+  fi
+
+  CONTRACT_DETECTED=true
+  changed_files_text="$(join_lines "${CHANGED_FILES[@]}")"
+
+  eval_output="$(CHANGED_FILES_TEXT="$changed_files_text" python3 - "$CONTRACT_FILE" "$OPERATING_MODE" <<'PY'
+import fnmatch
+import os
+import shlex
+import sys
+
+
+def parse_scalar(value):
+    value = value.strip()
+    if value in ("true", "false"):
+        return value == "true"
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+
+def next_meaningful(lines, start_index):
+    for idx in range(start_index + 1, len(lines)):
+        stripped = lines[idx].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(lines[idx]) - len(lines[idx].lstrip(" "))
+        return indent, stripped
+    return None, None
+
+
+def parse_simple_yaml(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+
+    root = {}
+    stack = [(-1, root)]
+
+    for index, raw_line in enumerate(lines):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+
+        container = stack[-1][1]
+
+        if stripped.startswith("- "):
+            if not isinstance(container, list):
+                continue
+            container.append(parse_scalar(stripped[2:]))
+            continue
+
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if value == "":
+          next_indent, next_stripped = next_meaningful(lines, index)
+          if next_indent is not None and next_indent > indent and next_stripped.startswith("- "):
+              nested = []
+          else:
+              nested = {}
+          if isinstance(container, dict):
+              container[key] = nested
+              stack.append((indent, nested))
+          continue
+
+        if isinstance(container, dict):
+            container[key] = parse_scalar(value)
+
+    return root
+
+
+def as_list(value):
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, (str, int, float, bool))]
+    if value in (None, ""):
+        return []
+    return [value]
+
+
+def emit(name, value):
+    print(f"{name}={shlex.quote(value)}")
+
+
+contract_path = sys.argv[1]
+operating_mode = sys.argv[2]
+changed_files = [line for line in os.environ.get("CHANGED_FILES_TEXT", "").splitlines() if line]
+
+contract = parse_simple_yaml(contract_path)
+scope = contract.get("scope", {}) if isinstance(contract.get("scope"), dict) else {}
+policy = contract.get("policy", {}) if isinstance(contract.get("policy"), dict) else {}
+runtime = contract.get("runtime", {}) if isinstance(contract.get("runtime"), dict) else {}
+
+execution_planes = [str(item) for item in as_list(scope.get("executionPlanes"))]
+path_patterns = [str(item) for item in as_list(scope.get("paths"))]
+required_checks = [str(item) for item in as_list(policy.get("requiredChecks"))]
+optional_checks = [str(item) for item in as_list(policy.get("optionalChecks"))]
+fallback_outside_scope = bool(scope.get("fallbackOutsideScope", True))
+
+scope_defined = bool(execution_planes or path_patterns)
+plane_matched = operating_mode in execution_planes if execution_planes else False
+path_matched = False
+if path_patterns and changed_files:
+    for changed_path in changed_files:
+        if any(fnmatch.fnmatch(changed_path, pattern) for pattern in path_patterns):
+            path_matched = True
+            break
+
+scope_matched = True if not scope_defined else (plane_matched or path_matched)
+runtime_url = str(runtime.get("url", "")) if runtime.get("url") is not None else ""
+runtime_e2e = str(runtime.get("e2eCommand", "")) if runtime.get("e2eCommand") is not None else ""
+runtime_relevant = bool(runtime_url or runtime_e2e or "runtime" in required_checks or "runtime" in optional_checks)
+applicable = scope_matched and runtime_relevant
+
+mode = "contract" if applicable else ("workspace" if fallback_outside_scope else "fallback")
+if not scope_matched:
+    reason = "scope_mismatch"
+elif not runtime_relevant:
+    reason = "no_runtime_contract"
+elif not scope_defined:
+    reason = "no_scope"
+elif plane_matched:
+    reason = "execution_plane"
+elif path_matched:
+    reason = "changed_paths"
+else:
+    reason = "scope_match"
+
+emit("CONTRACT_APPLICABLE", "true" if applicable else "false")
+emit("CONTRACT_SCOPE_MATCHED", "true" if scope_matched else "false")
+emit("CONTRACT_FALLBACK_OUTSIDE_SCOPE", "true" if fallback_outside_scope else "false")
+emit("VERIFICATION_MODE", mode)
+emit("CONTRACT_SCOPE_REASON", reason)
+emit("CONTRACT_RUNTIME_URL", runtime_url)
+emit("CONTRACT_RUNTIME_E2E", runtime_e2e)
+print("CONTRACT_REQUIRED_CHECKS=(" + " ".join(shlex.quote(item) for item in required_checks) + ")")
+print("CONTRACT_OPTIONAL_CHECKS=(" + " ".join(shlex.quote(item) for item in optional_checks) + ")")
+PY
+)"
+
+  if [ -n "$eval_output" ]; then
+    eval "$eval_output"
+  fi
+}
+
 usage() {
   cat <<'EOF_USAGE'
 Usage:
@@ -54,47 +248,107 @@ write_verdict_json() {
   local contract_file_escaped
   local browser_flow_escaped
   local browserctl_escaped
+  RUN_ID="$RUN_ID" \
+  OPERATING_MODE="$OPERATING_MODE" \
+  STARTED_AT="$STARTED_AT" \
+  FINISHED_AT="$finished_at" \
+  DURATION_MS="$duration_ms" \
+  VERDICT="$verdict" \
+  EXIT_CODE="$exit_code" \
+  CONTRACT_FILE_PATH="$CONTRACT_FILE" \
+  CONTRACT_DETECTED_VALUE="$CONTRACT_DETECTED" \
+  CONTRACT_APPLICABLE_VALUE="$CONTRACT_APPLICABLE" \
+  CONTRACT_SCOPE_MATCHED_VALUE="$CONTRACT_SCOPE_MATCHED" \
+  CONTRACT_SCOPE_REASON_VALUE="$CONTRACT_SCOPE_REASON" \
+  CONTRACT_FALLBACK_OUTSIDE_SCOPE_VALUE="$CONTRACT_FALLBACK_OUTSIDE_SCOPE" \
+  VERIFICATION_MODE_VALUE="$VERIFICATION_MODE" \
+  URL_VALUE="$URL" \
+  TIMEOUT_VALUE="$TIMEOUT" \
+  HTTP_CODE_VALUE="$HTTP_CODE" \
+  RUNTIME_STATUS_VALUE="$RUNTIME_STATUS" \
+  BROWSER_FLOW_VALUE="$BROWSER_FLOW" \
+  BROWSER_FLOW_STATUS_VALUE="$BROWSER_FLOW_STATUS" \
+  BROWSER_ONLY_VALUE="$BROWSER_ONLY" \
+  BROWSERCTL_VALUE="$BROWSERCTL" \
+  E2E_STATUS_VALUE="$E2E_STATUS" \
+  E2E_CMD_VALUE="$E2E_CMD" \
+  E2E_SOURCE_VALUE="$E2E_SOURCE" \
+  VERDICT_FILE_PATH="$VERDICT_FILE" \
+  EVIDENCE_FRESH_VALUE="$EVIDENCE_FRESH" \
+  REQUIRED_DECLARED_LINES="$(join_lines "${REQUIRED_CHECKS_DECLARED[@]}")" \
+  REQUIRED_EXECUTED_LINES="$(join_lines "${REQUIRED_CHECKS_EXECUTED[@]}")" \
+  REQUIRED_MISSING_LINES="$(join_lines "${REQUIRED_CHECKS_MISSING[@]}")" \
+  OPTIONAL_DECLARED_LINES="$(join_lines "${OPTIONAL_CHECKS_DECLARED[@]}")" \
+  OPTIONAL_EXECUTED_LINES="$(join_lines "${OPTIONAL_CHECKS_EXECUTED[@]}")" \
+  CHANGED_FILES_LINES="$(join_lines "${CHANGED_FILES[@]}")" \
+  python3 - <<'PY' > "$VERDICT_FILE"
+import json
+import os
+import sys
 
-  url_escaped="$(json_escape "$URL")"
-  cmd_escaped="$(json_escape "$E2E_CMD")"
-  source_escaped="$(json_escape "$E2E_SOURCE")"
-  mode_escaped="$(json_escape "$OPERATING_MODE")"
-  contract_file_escaped="$(json_escape "$CONTRACT_FILE")"
-  browser_flow_escaped="$(json_escape "$BROWSER_FLOW")"
-  browserctl_escaped="$(json_escape "$BROWSERCTL")"
 
-  cat > "$VERDICT_FILE" <<JSON
-{
-  "runId": "${RUN_ID}",
-  "script": "verify-runtime.sh",
-  "operatingMode": "${mode_escaped}",
-  "startedAt": "${STARTED_AT}",
-  "finishedAt": "${finished_at}",
-  "durationMs": ${duration_ms},
-  "verdict": "${verdict}",
-  "exitCode": ${exit_code},
-  "contract": {
-    "path": "${contract_file_escaped}",
-    "detected": ${CONTRACT_DETECTED}
-  },
-  "checks": {
-    "url": "${url_escaped}",
-    "timeoutSec": ${TIMEOUT},
-    "httpCode": "${HTTP_CODE}",
-    "runtimeStatus": "${RUNTIME_STATUS}",
-    "browserFlow": "${browser_flow_escaped}",
-    "browserFlowStatus": "${BROWSER_FLOW_STATUS}",
-    "browserOnly": ${BROWSER_ONLY},
-    "browserctlPath": "${browserctl_escaped}",
-    "e2eStatus": "${E2E_STATUS}",
-    "e2eCommand": "${cmd_escaped}",
-    "e2eSource": "${source_escaped}"
-  },
-  "artifacts": {
-    "verdictFile": "${VERDICT_FILE}"
-  }
+def to_bool(value):
+    return str(value).lower() == "true"
+
+
+def split_lines(name):
+    value = os.environ.get(name, "")
+    return [line for line in value.splitlines() if line]
+
+
+payload = {
+    "runId": os.environ["RUN_ID"],
+    "script": "verify-runtime.sh",
+    "operatingMode": os.environ["OPERATING_MODE"],
+    "startedAt": os.environ["STARTED_AT"],
+    "finishedAt": os.environ["FINISHED_AT"],
+    "durationMs": int(os.environ["DURATION_MS"]),
+    "verdict": os.environ["VERDICT"],
+    "exitCode": int(os.environ["EXIT_CODE"]),
+    "verificationMode": os.environ["VERIFICATION_MODE_VALUE"],
+    "evidenceFresh": to_bool(os.environ["EVIDENCE_FRESH_VALUE"]),
+    "changedFiles": split_lines("CHANGED_FILES_LINES"),
+    "requiredChecks": {
+        "declared": split_lines("REQUIRED_DECLARED_LINES"),
+        "executed": split_lines("REQUIRED_EXECUTED_LINES"),
+        "missing": split_lines("REQUIRED_MISSING_LINES"),
+    },
+    "optionalChecks": {
+        "declared": split_lines("OPTIONAL_DECLARED_LINES"),
+        "executed": split_lines("OPTIONAL_EXECUTED_LINES"),
+        "failed": [],
+    },
+    "contract": {
+        "path": os.environ["CONTRACT_FILE_PATH"],
+        "detected": to_bool(os.environ["CONTRACT_DETECTED_VALUE"]),
+        "applicable": to_bool(os.environ["CONTRACT_APPLICABLE_VALUE"]),
+        "scopeMatched": to_bool(os.environ["CONTRACT_SCOPE_MATCHED_VALUE"]),
+        "scopeReason": os.environ["CONTRACT_SCOPE_REASON_VALUE"],
+        "verificationMode": os.environ["VERIFICATION_MODE_VALUE"],
+        "fallbackOutsideScope": to_bool(os.environ["CONTRACT_FALLBACK_OUTSIDE_SCOPE_VALUE"]),
+    },
+    "checks": {
+        "url": os.environ["URL_VALUE"],
+        "timeoutSec": int(os.environ["TIMEOUT_VALUE"]),
+        "httpCode": os.environ["HTTP_CODE_VALUE"],
+        "runtimeStatus": os.environ["RUNTIME_STATUS_VALUE"],
+        "browserFlow": os.environ["BROWSER_FLOW_VALUE"],
+        "browserFlowStatus": os.environ["BROWSER_FLOW_STATUS_VALUE"],
+        "browserOnly": to_bool(os.environ["BROWSER_ONLY_VALUE"]),
+        "browserctlPath": os.environ["BROWSERCTL_VALUE"],
+        "e2eStatus": os.environ["E2E_STATUS_VALUE"],
+        "e2eCommand": os.environ["E2E_CMD_VALUE"],
+        "e2eSource": os.environ["E2E_SOURCE_VALUE"],
+    },
+    "artifacts": {
+        "verdictFile": os.environ["VERDICT_FILE_PATH"],
+        "fresh": True,
+    },
 }
-JSON
+
+json.dump(payload, sys.stdout, indent=2)
+sys.stdout.write("\n")
+PY
 }
 
 finalize_and_exit() {
@@ -203,6 +457,7 @@ run_browser_flow() {
 URL="${APP_BASE_URL:-http://localhost:3000}"
 E2E_CMD="${RUNTIME_E2E_CMD:-}"
 E2E_SOURCE=""
+E2E_SOURCE="${E2E_SOURCE:-}"
 BROWSER_FLOW="${RUNTIME_BROWSER_FLOW:-}"
 BROWSER_FLOW_SOURCE="explicit"
 BROWSER_ONLY=false
@@ -218,9 +473,15 @@ STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 CONTRACT_FILE="${VERIFICATION_CONTRACT_FILE:-.claude/verification.contract.yaml}"
 CONTRACT_DETECTED=false
-if [ -f "$CONTRACT_FILE" ]; then
-  CONTRACT_DETECTED=true
-fi
+CONTRACT_APPLICABLE=false
+CONTRACT_SCOPE_MATCHED=false
+CONTRACT_SCOPE_REASON="no_contract"
+CONTRACT_FALLBACK_OUTSIDE_SCOPE=true
+VERIFICATION_MODE="fallback"
+CONTRACT_RUNTIME_URL=""
+CONTRACT_RUNTIME_E2E=""
+CONTRACT_REQUIRED_CHECKS=()
+CONTRACT_OPTIONAL_CHECKS=()
 
 mkdir -p .claude
 VERDICT_FILE="${HARNESS_VERDICT_FILE:-.claude/runtime-verdict-${RUN_ID}.json}"
@@ -232,6 +493,16 @@ HTTP_CODE="000"
 RUNTIME_STATUS="not_run"
 BROWSER_FLOW_STATUS="not_run"
 E2E_STATUS="not_run"
+EVIDENCE_FRESH=false
+REQUIRED_CHECKS_DECLARED=()
+REQUIRED_CHECKS_EXECUTED=()
+REQUIRED_CHECKS_MISSING=()
+OPTIONAL_CHECKS_DECLARED=()
+OPTIONAL_CHECKS_EXECUTED=()
+CHANGED_FILES=()
+
+collect_changed_files
+load_contract_context
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -294,8 +565,17 @@ while [ $# -gt 0 ]; do
       usage
       finalize_and_exit 64 "failed"
       ;;
-  esac
+    esac
 done
+
+if [ -z "${APP_BASE_URL:-}" ] && [ "$URL" = "http://localhost:3000" ] && [ -n "$CONTRACT_RUNTIME_URL" ]; then
+  URL="$CONTRACT_RUNTIME_URL"
+fi
+
+if [ -z "$E2E_CMD" ] && [ -n "$CONTRACT_RUNTIME_E2E" ]; then
+  E2E_CMD="$CONTRACT_RUNTIME_E2E"
+  E2E_SOURCE="contract:runtime.e2eCommand"
+fi
 
 if [ "$BROWSER_ONLY" = true ] && [ -z "$BROWSER_FLOW" ]; then
   BROWSER_FLOW="basic"
@@ -329,6 +609,15 @@ if [ -z "$BROWSER_FLOW" ] && [ "$BROWSER_ONLY" = false ] && [ -x "$BROWSERCTL" ]
   fi
 fi
 
+if [ "$CONTRACT_APPLICABLE" = true ]; then
+  case " ${CONTRACT_REQUIRED_CHECKS[*]} " in
+    *" runtime "*) REQUIRED_CHECKS_DECLARED+=("runtime") ;;
+  esac
+  case " ${CONTRACT_OPTIONAL_CHECKS[*]} " in
+    *" runtime "*) OPTIONAL_CHECKS_DECLARED+=("runtime") ;;
+  esac
+fi
+
 echo ""
 echo "======================================"
 echo "  Runtime Verification Harness"
@@ -339,6 +628,7 @@ log_info "Run ID: ${RUN_ID}"
 log_info "Target URL: ${URL}"
 log_info "Timeout: ${TIMEOUT}s"
 log_info "Verification contract: ${CONTRACT_FILE}"
+log_info "Verification mode: ${VERIFICATION_MODE}"
 if [ -n "$BROWSER_FLOW" ]; then
   log_info "Browser flow: ${BROWSER_FLOW}"
   log_info "Browser flow source: ${BROWSER_FLOW_SOURCE}"
@@ -386,6 +676,14 @@ else
 fi
 echo ""
 
+if [ "$RUNTIME_STATUS" != "not_run" ] || [ "$BROWSER_FLOW_STATUS" != "not_run" ] || [ "$E2E_STATUS" != "not_run" ]; then
+  if [ ${#REQUIRED_CHECKS_DECLARED[@]} -gt 0 ]; then
+    REQUIRED_CHECKS_EXECUTED+=("runtime")
+  elif [ ${#OPTIONAL_CHECKS_DECLARED[@]} -gt 0 ]; then
+    OPTIONAL_CHECKS_EXECUTED+=("runtime")
+  fi
+fi
+
 if [ "$RUNTIME_FAILED" = true ]; then
   finalize_and_exit 1 "failed"
 fi
@@ -396,6 +694,14 @@ fi
 
 if [ "$E2E_FAILED" = true ]; then
   finalize_and_exit 2 "failed"
+fi
+
+if [ "$VERIFICATION_MODE" = "contract" ] && [ ${#REQUIRED_CHECKS_DECLARED[@]} -gt 0 ] && [ ${#REQUIRED_CHECKS_EXECUTED[@]} -eq 0 ]; then
+  REQUIRED_CHECKS_MISSING+=("runtime")
+fi
+
+if [ ${#REQUIRED_CHECKS_MISSING[@]} -eq 0 ] && [ "$RUNTIME_STATUS" = "passed" ]; then
+  EVIDENCE_FRESH=true
 fi
 
 log_success "Runtime verification passed"
