@@ -454,6 +454,44 @@ run_browser_flow() {
   return 1
 }
 
+run_url_health_check() {
+  log_info "URL health check"
+
+  case "$URL" in
+    file://*)
+      local target_path
+      target_path="${URL#file://}"
+      if [ -f "$target_path" ]; then
+        HTTP_CODE="LOCAL_FILE"
+        log_success "Local file reachable (${target_path})"
+        RUNTIME_STATUS="passed"
+      else
+        HTTP_CODE="LOCAL_FILE_MISSING"
+        log_error "Local file check failed (${target_path})"
+        RUNTIME_FAILED=true
+        RUNTIME_STATUS="failed"
+      fi
+      return
+      ;;
+    data:*)
+      HTTP_CODE="LOCAL_DATA"
+      log_success "Data URL accepted for local self-test"
+      RUNTIME_STATUS="passed"
+      return
+      ;;
+  esac
+
+  HTTP_CODE="$(curl -L -sS -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$URL" 2>/dev/null || true)"
+  if [[ "$HTTP_CODE" =~ ^[23][0-9][0-9]$ ]]; then
+    log_success "URL reachable (HTTP ${HTTP_CODE})"
+    RUNTIME_STATUS="passed"
+  else
+    log_error "URL check failed (HTTP ${HTTP_CODE})"
+    RUNTIME_FAILED=true
+    RUNTIME_STATUS="failed"
+  fi
+}
+
 URL="${APP_BASE_URL:-http://localhost:3000}"
 E2E_CMD="${RUNTIME_E2E_CMD:-}"
 E2E_SOURCE=""
@@ -637,16 +675,7 @@ if [ -n "$BROWSER_FLOW" ]; then
 fi
 echo ""
 
-log_info "URL health check"
-HTTP_CODE="$(curl -L -sS -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$URL" 2>/dev/null || true)"
-if [[ "$HTTP_CODE" =~ ^[23][0-9][0-9]$ ]]; then
-  log_success "URL reachable (HTTP ${HTTP_CODE})"
-  RUNTIME_STATUS="passed"
-else
-  log_error "URL check failed (HTTP ${HTTP_CODE})"
-  RUNTIME_FAILED=true
-  RUNTIME_STATUS="failed"
-fi
+run_url_health_check
 echo ""
 
 if run_browser_flow; then
