@@ -1,0 +1,5 @@
+# Existing debt accepted temporarily until refactored.
+# Format: <rule>|<path>
+
+file-length|.claude/scripts/agent-loop.sh
+file-length|install-claude.sh

@@ -23,6 +23,12 @@ context: fork
 - `claude-code`: use `mcp__codex__codex` when available, then Claude fallback if needed.
 - `codex`: run the same review rubric directly in the current Codex session (native path), without `mcp__codex__codex` dependency.
 
+## Policy Boundary
+
+- Treat `.claude/scripts/verify-code-policy.sh` as the hard gate for machine-checkable code policy violations.
+- Use this review for semantic and architectural risk assessment, not as a substitute for deterministic checks.
+- Repeat code-policy findings only when they expose a broader design or maintainability problem.
+
 ## Procedure
 
 ### Step 1: Resolve Runtime Execution Path (CRITICAL - Do This First)
@@ -103,10 +109,9 @@ MUST DO:
   * Missing input validation
 - **Code Quality (HIGH)**:
   * Long functions (>50 lines)
-  * Long files (>800 lines)
   * Deep nesting (>4 levels)
   * Missing error handling (try/catch)
-  * console.log statements
+  * Repeated or systemic policy violations that indicate weak module boundaries
 - **React/Next.js Performance (CRITICAL)** [if signals.reactProject]:
   * Sequential await instead of Promise.all() (waterfall pattern)
   * Barrel file imports (`import { X } from 'lib'` → direct import)

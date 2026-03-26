@@ -1,5 +1,5 @@
 # Context Management
 
-- Read only necessary files/sections; summarize long content.
-- State records (plan/progress/verification/notes) follow the document path rules in `.claude/PROJECT.md`.
-- Because context can refresh, always record key decisions/risks/verification results.
+- Read only needed files/sections; summarize long content.
+- Store plan/progress/verification/notes per `.claude/PROJECT.md`.
+- Record key decisions, risks, and verification because context can refresh.
