@@ -44,6 +44,9 @@ Required outputs:
 - `tasks/*.md`
 - `ASSUMPTIONS.md`
 - `BLOCKERS.md`
+- `execution/REQUIREMENTS_TRACEABILITY.md` when document-trace completion is required
+- `execution/SCENARIO_MATRIX.md` when user-visible flows matter
+- `execution/UAT_CHECKLIST.md` when the target is UAT-ready handoff
 
 ## Workflow
 
@@ -89,6 +92,7 @@ Escalation rules:
 - Define scenarios and acceptance
 - Keep the document product-facing
 - Do not introduce architecture
+- Assign stable `REQ-*` and `SCN-*` identifiers for downstream traceability
 
 ### SOLUTION
 - Model flows, state, entities, and exceptions
@@ -103,6 +107,7 @@ Escalation rules:
 - Convert architecture into vertical slices
 - Make every task independently executable
 - Prepare for direct Moonshot handoff
+- Preserve `REQ-*` and `SCN-*` mappings so completion can be blocked on uncovered items
 
 ## Handoff Contract
 

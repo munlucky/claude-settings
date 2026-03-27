@@ -25,6 +25,9 @@ artifacts:
   sprintContract: "{tasksRoot}/{feature-name}/execution/<slice>/SPRINT_CONTRACT.md"
   qaReport: "{tasksRoot}/{feature-name}/execution/<slice>/QA_REPORT.md"
   handoff: "{tasksRoot}/{feature-name}/execution/<slice>/HANDOFF.md"
+  requirementsTraceability: "{tasksRoot}/{feature-name}/execution/REQUIREMENTS_TRACEABILITY.md"
+  scenarioMatrix: "{tasksRoot}/{feature-name}/execution/SCENARIO_MATRIX.md"
+  uatChecklist: "{tasksRoot}/{feature-name}/execution/UAT_CHECKLIST.md"
 strict:
   required: true
   triggers:
@@ -49,6 +52,8 @@ qa:
     - "code_policy_failed"
     - "missing_policy_anchor"
     - "verification_evidence_missing"
+    - "requirements_traceability_missing"
+    - "critical_scenario_evidence_missing"
   criteria:
     policyPropagation:
       threshold: "pass"
@@ -59,5 +64,20 @@ qa:
       threshold: "pass"
       focus:
         - "Codex and Claude Code use the same orchestrator boundary"
+    requirementsCoverage:
+      threshold: "pass"
+      focus:
+        - "every in-scope REQ has implementation and verification evidence"
+        - "document completeness is tracked explicitly, not inferred"
+    scenarioCoverage:
+      threshold: "pass"
+      focus:
+        - "every critical SCN has fresh runtime or E2E evidence"
+        - "user-visible flows are not closed by static review alone"
+    uatReadiness:
+      threshold: "warn"
+      focus:
+        - "automation distinguishes uat_ready from uat_complete"
+        - "manual sign-off is explicit when required"
 hooks:
   extraChecksCommand: ""

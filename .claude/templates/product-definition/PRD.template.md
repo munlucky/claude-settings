@@ -7,12 +7,12 @@
 ## User Scenarios
 | ID | Actor | Scenario | Expected Outcome |
 |----|-------|----------|------------------|
-| US-01 |  |  |  |
+| SCN-001 |  |  |  |
 
 ## Core Features
-| ID | Feature | Description | Priority |
-|----|---------|-------------|----------|
-| F-01 |  |  | Must |
+| ID | Requirement | Description | Priority |
+|----|-------------|-------------|----------|
+| REQ-001 |  |  | Must |
 
 ## Product Non-Functional Requirements
 - Usability
@@ -27,3 +27,7 @@
 | ID | Condition | Evidence |
 |----|-----------|----------|
 | AC-01 |  |  |
+
+## Traceability Notes
+- Keep `REQ-*` IDs stable through planning, implementation, and verification
+- Map user-visible `REQ-*` rows to one or more `SCN-*` rows

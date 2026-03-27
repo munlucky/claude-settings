@@ -17,6 +17,7 @@ This is an execution decomposition pass.
 - `PLAN.md`
 - `SPEC.md`
 - `SOLUTION.md`
+- `PRD.md`
 - Relevant assumptions and blockers
 
 ## Output
@@ -29,6 +30,8 @@ Each task must follow `task.template.md`.
 ## Required Fields Per Task
 
 - Goal
+- Requirement IDs (`REQ-*`)
+- Scenario IDs (`SCN-*`)
 - Input
 - Output
 - Scope
@@ -44,6 +47,7 @@ Prefer:
 - user-visible end-to-end increments
 - thin slices that exercise multiple layers only when needed
 - tasks that can be owned and verified independently
+- slices whose `REQ-*` and `SCN-*` coverage can be verified without guesswork
 
 Avoid:
 - pure layer splits with no user outcome
@@ -66,6 +70,7 @@ A good task file allows an implementation agent to start work with:
 - no extra planning
 - no scope invention
 - a clear completion test
+- explicit traceability targets for completion gating
 
 ## References
 

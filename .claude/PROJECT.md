@@ -1,8 +1,8 @@
 # PROJECT.md
 
-> This document defines project-specific rules and structure. Write this file for each project.
+> Project-specific rules and structure template.
 
-Last-Reviewed: 2026-02-19
+Last-Reviewed: 2026-03-27
 
 ## Project Overview
 This section captures basic project information.
@@ -13,7 +13,7 @@ This section captures basic project information.
 
 ### Tech Stack Specification Guide
 
-> **Important**: Vague specs lead to vague code. Be specific about versions and core dependencies.
+> **Important**: Be specific about versions and core dependencies.
 
 | ❌ Vague | ✅ Specific |
 |----------|------------|
@@ -39,7 +39,7 @@ Example:
 
 ## Testing Rules
 
-> Information needed for AI agents to run and write tests correctly.
+> Info agents need to run and write tests correctly.
 
 - **Test framework**: [Jest / Vitest / Agent Browser / Playwright / etc.]
 - **Test file location**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
@@ -56,7 +56,7 @@ Example:
 
 ## Git Workflow
 
-> Specify branch naming, commit messages, and PR rules so agents follow them exactly.
+> Specify branch naming, commits, and PR rules.
 
 ### Branch Naming Convention
 ```
@@ -127,7 +127,7 @@ Document auth and authorization details.
 
 ## Document Paths (Override)
 
-Override the default paths from `CLAUDE.md` if needed. **For git-tracked projects, set `tasksRoot` to a path outside `.claude/`.**
+Override `CLAUDE.md` defaults if needed. **For git-tracked projects, set `tasksRoot` outside `.claude/`.**
 
 ### Configuration (uncomment and modify as needed)
 
@@ -158,6 +158,7 @@ Override the default paths from `CLAUDE.md` if needed. **For git-tracked project
 | Archives | `{tasksRoot}/{feature-name}/archives/` |
 | Session logs | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
 | Pending questions | `{tasksRoot}/{feature-name}/pending-questions.md` |
+| Traceability artifacts | `{tasksRoot}/{feature-name}/execution/{REQUIREMENTS_TRACEABILITY,SCENARIO_MATRIX,UAT_CHECKLIST}.md` |
 
 ### Project Reference Documents
 
@@ -170,11 +171,9 @@ Generate and maintain these project-specific source-of-truth documents in the do
 - `TEST_GUIDE.md` — human-readable testing guide that complements `.claude/verification.contract.yaml`
 - `docs/analysis/README.md` — conventions for impact analysis, architecture notes, and deep-dive investigation docs
 
-These documents should be generated or refreshed together with `PROJECT.md` when bootstrapping a real project.
-
 ## Knowledge Repository (Agent-First)
 
-Use this section when the template is installed into a real working project.
+Use this section in a real project.
 
 - Keep top-level `AGENTS.md` short. It should act as a map, not a full policy dump.
 - Store durable policy in source-of-truth paths:

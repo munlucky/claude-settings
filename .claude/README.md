@@ -102,6 +102,7 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 - `codex-validate-plan`
 - `codex-review-code`
 - `moonshot-in-session-coordinator` (NEW)
+- document-trace completion uses `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, and `UAT_CHECKLIST.md` as closeout artifacts for downstream projects
 
 ### Documentation and Logging
 - `session-logger`
@@ -179,6 +180,7 @@ Phase runner default behavior:
 - Output templates: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 - Product-definition guide: `.claude/docs/guidelines/product-definition-workflow.md`.
 - Long-running harness guide: `.claude/docs/guidelines/long-running-harness.md`.
+- Document-trace harness guide: `.claude/docs/guidelines/requirements-traceability-harness.md`.
 - Product-definition templates: `.claude/templates/product-definition/`.
 - Execution artifact templates: `.claude/templates/execution/`.
 
