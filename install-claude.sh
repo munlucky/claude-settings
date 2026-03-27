@@ -1,13 +1,16 @@
 #!/bin/bash
 
 # Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude를 다운로드하고, .agents/AGENTS.md 브리지를 함께 구성합니다.
+# GitHub에서 최신 .claude를 다운로드하고, AGENTS.md 및 Codex 전역 skills 링크를 구성합니다.
 
 set -e
 
 REPO_URL="https://github.com/munlucky/claude-settings"
 BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
+CODEX_SKILLS_DIR=""
+CODEX_SKILL_LINKS=()
+CODEX_BACKUP_PATHS=()
 
 # 색상 정의
 RED='\033[0;31m'
@@ -34,6 +37,65 @@ print_header() {
 	echo "  Claude Code Settings Installer"
 	echo "========================================="
 	echo ""
+}
+
+setup_codex_skills() {
+	local source_skills_dir=".claude/skills"
+	local codex_home="${CODEX_HOME:-$HOME/.codex}"
+	local linked_count=0
+	local source_root=""
+
+	echo ""
+	print_info "Codex 전역 skills 동기화 중..."
+
+	if [ ! -d "$source_skills_dir" ]; then
+		print_warn "스킬 디렉토리를 찾지 못했습니다: $source_skills_dir"
+		return
+	fi
+
+	CODEX_SKILLS_DIR="$codex_home/skills"
+	mkdir -p "$CODEX_SKILLS_DIR"
+	source_root="$(cd "$source_skills_dir" && pwd -P)"
+
+	for skill_path in "$source_root"/*; do
+		local skill_name=""
+		local codex_skill_path=""
+		local existing_target=""
+
+		if [ ! -d "$skill_path" ]; then
+			continue
+		fi
+
+		skill_name="$(basename "$skill_path")"
+		codex_skill_path="$CODEX_SKILLS_DIR/$skill_name"
+
+		if [ -L "$codex_skill_path" ]; then
+			existing_target="$(readlink "$codex_skill_path" 2>/dev/null || true)"
+			if [ "$existing_target" = "$skill_path" ]; then
+				CODEX_SKILL_LINKS+=("$codex_skill_path")
+				linked_count=$((linked_count + 1))
+				continue
+			fi
+		fi
+
+		if [ -e "$codex_skill_path" ] || [ -L "$codex_skill_path" ]; then
+			if [ "$DO_BACKUP" = true ]; then
+				local backup_path="${codex_skill_path}${BACKUP_SUFFIX}"
+				print_info "Codex skill 백업 중: $codex_skill_path → $backup_path"
+				mv "$codex_skill_path" "$backup_path"
+				CODEX_BACKUP_PATHS+=("$backup_path")
+			else
+				print_warn "기존 Codex skill을 덮어씁니다: $codex_skill_path"
+				rm -rf "$codex_skill_path"
+			fi
+		fi
+
+		ln -s "$skill_path" "$codex_skill_path"
+		CODEX_SKILL_LINKS+=("$codex_skill_path")
+		linked_count=$((linked_count + 1))
+	done
+
+	print_info "✓ Codex skills ${linked_count}개 연결 완료 (${CODEX_SKILLS_DIR})"
 }
 
 setup_browser_runtime() {
@@ -190,6 +252,7 @@ usage() {
   - .claude, .agents, AGENTS.md 중 존재 항목 자동 백업 후 설치
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
+  - .claude/skills/* 를 Codex 전역 skills(${CODEX_HOME:-~/.codex}/skills/*)에 심볼릭 링크
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 보호되는 파일 패턴:
@@ -424,8 +487,8 @@ if [ "$DRY_RUN" = true ]; then
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
-	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
+	echo "  - Codex 전역 skills 심볼릭 링크 구성"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
 	if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
 		echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
@@ -552,18 +615,24 @@ if [ -d "$DOWNLOADED_SCRIPTS" ]; then
 	done
 fi
 
-# 7.8. .agents/skills + AGENTS.md 브리지 구성
-print_info ".agents/skills 및 AGENTS.md 동기화 중..."
-mkdir -p ".agents"
-rm -rf ".agents/skills"
-ln -s "../.claude/skills" ".agents/skills"
-
+# 7.8. AGENTS.md 브리지 구성 및 기존 .agents 정리
+print_info "AGENTS.md 동기화 및 기존 .agents 정리 중..."
+if [ -e ".agents/skills" ] || [ -L ".agents/skills" ]; then
+	rm -rf ".agents/skills"
+	print_info "✓ 기존 .agents/skills 제거"
+fi
+if [ -d ".agents" ] && [ -z "$(find ".agents" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
+	rmdir ".agents"
+	print_info "✓ 빈 .agents 디렉토리 제거"
+fi
 rm -f "AGENTS.md"
 ln -s ".claude/CLAUDE.md" "AGENTS.md"
-print_info "✓ .agents/skills 생성 (→ ../.claude/skills)"
 print_info "✓ AGENTS.md 생성 (→ .claude/CLAUDE.md)"
 
-# 7.9. Browser runtime bootstrap
+# 7.9. Codex 전역 skill 링크 구성
+setup_codex_skills
+
+# 7.10. Browser runtime bootstrap
 setup_browser_runtime
 
 # 9. Memory MCP 전역 설정 (wrapper 스크립트로 동적 경로 지원)
@@ -779,11 +848,11 @@ fi
 if [ -d ".claude/rules" ]; then
 	echo "  ✓ .claude/rules/             (모듈식 규칙)"
 fi
-if [ -L ".agents/skills" ]; then
-	echo "  ✓ .agents/skills             (→ .claude/skills)"
-fi
 if [ -L "AGENTS.md" ]; then
 	echo "  ✓ AGENTS.md                  (→ .claude/CLAUDE.md)"
+fi
+if [ ${#CODEX_SKILL_LINKS[@]} -gt 0 ]; then
+	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (→ .claude/skills/*)"
 fi
 if [ -x ".claude/bin/browserctl" ]; then
 	echo "  ✓ .claude/bin/browserctl     (브라우저 런타임 전역 진입점)"
@@ -815,10 +884,11 @@ fi
 
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
-echo "  2. Git에 커밋: git add .claude .agents AGENTS.md && git commit -m 'Add Claude settings'"
-echo "  3. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
+echo "  2. Git에 커밋: git add .claude AGENTS.md && git commit -m 'Add Claude settings'"
+echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-~/.codex}/skills} 를 다시 로드하세요"
+echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
-if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
+if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ] || [ ${#CODEX_BACKUP_PATHS[@]} -gt 0 ]; then
 	echo ""
 	print_info "백업된 항목:"
 	for dir in "${BACKUP_DIRS[@]}"; do
@@ -833,6 +903,12 @@ if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
 		if [ -e "$BACKUP_FILE" ]; then
 			echo "  ✓ $BACKUP_FILE"
 			echo "    복원: mv $BACKUP_FILE $file"
+		fi
+	done
+	for path in "${CODEX_BACKUP_PATHS[@]}"; do
+		if [ -e "$path" ] || [ -L "$path" ]; then
+			echo "  ✓ $path"
+			echo "    복원: mv $path ${path%"$BACKUP_SUFFIX"}"
 		fi
 	done
 fi

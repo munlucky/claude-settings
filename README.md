@@ -174,8 +174,9 @@ chmod +x install-claude.sh
 ```
 
 기본 동작:
-- `.claude`, `.codex`, `.gemini` 중 하나라도 존재하면 자동 백업 후 설치
+- `.claude`, `.agents`, `AGENTS.md` 중 존재 항목은 자동 백업 후 설치
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
+- `.claude/skills/*`를 Codex 전역 스킬 경로 `${CODEX_HOME:-~/.codex}/skills/*`에 심볼릭 링크
 
 보호되는 사용자 파일 패턴:
 ```
@@ -233,21 +234,18 @@ cp -r claude-settings/.claude /your-project/
 cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude/skills/
 ```
 
-### .codex 설정 (선택)
+### Codex 스킬 동기화
 
-설치 마지막에 `.codex` 폴더 설정을 묻는 프롬프트가 표시됩니다. `y`를 선택하면 다음 구조가 생성됩니다.
+설치 스크립트는 프로젝트 내부 `.agents/skills` 브리지를 만들지 않습니다. 대신 `.claude/skills/*`를 Codex가 실제로 읽는 전역 스킬 경로 `${CODEX_HOME:-~/.codex}/skills/*`에 심볼릭 링크합니다.
 
-```
-.codex/
-├── CODEX.md         # 심볼릭 링크 → .claude/CLAUDE.md
-├── PROJECT.md       # 복사본 (수정 가능)
-└── README.md        # Codex MCP 활용 가이드
-```
-
-Codex MCP 활용:
+Codex에서 바로 활용할 수 있는 스킬 예시:
 - 계획 검증: `codex-validate-plan`
 - 코드 리뷰: `codex-review-code`
 - 통합 테스트 검증: `codex-test-integration`
+
+주의:
+- 같은 이름의 기존 전역 스킬이 있으면 백업 후 교체됩니다.
+- 설치 직후 Codex에 스킬이 보이지 않으면 새 세션을 열어 전역 스킬 디렉토리를 다시 로드하세요.
 
 ### 다음 단계
 
