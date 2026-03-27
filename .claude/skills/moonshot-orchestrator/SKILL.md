@@ -1,6 +1,6 @@
 ---
 name: moonshot-orchestrator
-description: PM workflow orchestrator. Analyzes user requests and automatically runs the optimal agent chain.
+description: Use for bounded implementation work that already has enough context and does not need the phase harness.
 ---
 
 # PM Orchestrator
@@ -157,6 +157,7 @@ workflowEvidence:
   mode: bounded-direct
   selectedBundles: []
   requiredSkills: []
+  stageOrder: []
   appliedSkills: []
   skippedSkills: []
   evidenceFiles:
@@ -250,6 +251,8 @@ Policy:
 - successful or partially successful implementation rounds must run doc-ops finalization before completion is claimed
 - failed verification, retry loops, or interrupted runs should mark `signals.handoffRequired = true`
 - bounded direct work that stays outside the phase harness must still keep `workflowEvidence` current in `.claude/docs/moonshot-analysis.yaml`
+- bounded direct `workflowEvidence` must include `selectedBundles`, `requiredSkills`, and `stageOrder`
+- bounded direct code changes must record `codex-review-code` evidence before final verification is treated as stable
 - bounded direct code changes must record whether `code-simplifier` was applied or explicitly skipped with a reason
 - bounded direct code changes must record `doc-auto-sync` evidence before completion is claimed
 - bounded direct interrupted runs must record `session-logger` evidence before completion is claimed
@@ -295,6 +298,22 @@ If `missingInfo` is not empty:
 
 #### 2.6 Sequence decision
 Run `/moonshot-decide-sequence` -> merge patch (`phase`, `bundleChain`, `skillChain`, `parallelGroups`)
+
+#### 2.7 Stage-chain normalization
+
+Normalize the selected chain against the repo stage model:
+
+- `read_only`:
+  - stop before implementation stages
+- bounded `product_project`, simple:
+  - `plan -> ready/isolate -> execute -> review -> verify -> finish/handoff`
+- bounded `product_project`, medium/complex:
+  - `plan -> ready/isolate -> execute -> review -> verify -> finish/handoff`
+  - require explicit execution bridge artifacts
+- phase-based work:
+  - hand off to `moonshot-phase-runner`, then preserve the same downstream stage order inside each phase
+
+Never collapse `review -> verify -> finish` into a single undifferentiated closeout step when code changed meaningfully.
 
 ### 3. Execute the agent chain
 
@@ -377,6 +396,25 @@ Run `decisions.skillChain` in order.
 - after verification or review, `doc-auto-sync` must run before completion is claimed
 - If verification fails, retries begin, or the session cannot finish cleanly, write/update `artifacts.handoffPath`
 
+**Review cadence contract**:
+- simple bounded changes: one post-implementation review is usually enough
+- medium changes: review after the first meaningful implementation batch and again after code-changing remediation
+- complex/long-running changes: review the plan, then each meaningful implementation batch, then each remediation batch that changes behavior or contracts
+- when review is skipped, record why in notes or workflow evidence
+
+**Finish / handoff contract**:
+- `finish-bundle` is entered only after the active review/verify verdict is stable
+- clean finish:
+  - verification passed with fresh evidence
+  - run `doc-auto-sync`
+  - run `session-logger` when resumable state or decision history matters
+- resume-later handoff:
+  - update `QA_REPORT.md`
+  - update `HANDOFF.md`
+  - do not claim completion
+- explicit commit path:
+  - only run `commit-moonshot` when the user asked for memory update plus commit
+
 **Phase-runner execution-mode contract**:
 - If `moonshot-phase-runner` returns `phaseRunnerResult.prepareOnly == true`, stop after surfacing prepared execution metadata.
 - If `moonshot-phase-runner` returns `phaseRunnerResult.autoStartExecution == true`, execute `phaseRunnerResult.executionSkill` immediately and pass through `phaseRunnerResult`.
@@ -419,7 +457,9 @@ Run `decisions.skillChain` in order.
 | `runtimeUnavailable` | `verify-runtime.sh` exit `1` | Request server/runtime readiness fix, rerun `browser-verifier` (max 1) |
 | `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` |
 | `browserFlowFailed` | `verify-runtime.sh` exit `3` | Re-enter runtime/browser remediation path, then rerun `browser-verifier` |
+| `reviewRequired` | meaningful code changes or medium+ complexity | Insert `codex-review-code` before final verification |
 | `verificationFailed` | `completion-verifier` or runtime verifier fails | Update `QA_REPORT.md`, re-enter implementation with contract-linked findings |
+| `finishRequired` | meaningful file edits with stable verifier state | Insert `doc-auto-sync` and `session-logger` before final completion statement |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain, but still keep final doc-ops after implementation |
 | `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
 | `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
@@ -462,8 +502,9 @@ After `implementation-runner`:
    - non-contract fallback/workspace run -> do not claim completion; keep the run in warning/remediation state according to profile
 5. Update `artifacts.qaReportPath` with verdict, failed criteria, and next-round input.
 6. If strict, run `verification-evidence-gate` before any completion statement.
-7. On failure, retry using exit-code strategy until retry cap is reached.
-8. If the run stops before clean completion, write `artifacts.handoffPath`.
+7. If review changed code after verification started, rerun affected verification steps before closeout.
+8. On failure, retry using exit-code strategy until retry cap is reached.
+9. If the run stops before clean completion, write `artifacts.handoffPath`.
 
 ### 3.4 State Transition Table
 
@@ -476,7 +517,8 @@ After `implementation-runner`:
 
 ### 4. Record results
 Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
-When the run is bounded-direct and edits code, update `workflowEvidence` in that file and record the same boundary through `bash .claude/scripts/workflow-enforcement.sh record-bounded --analysis-path .claude/docs/moonshot-analysis.yaml`.
+When the run is bounded-direct and edits code, keep `QA_REPORT.md` workflow evidence current, then record the boundary through `bash .claude/scripts/workflow-enforcement.sh record-bounded --analysis-path .claude/docs/moonshot-analysis.yaml`.
+`record-bounded` normalizes `workflowEvidence` in the analysis file, fills canonical bundles/required skills/stage order, and syncs applied/skipped evidence from `QA_REPORT.md` when that artifact is provided.
 
 ## Contract
 - Orchestrates only, does not analyze directly

@@ -1,6 +1,6 @@
 ---
 name: moonshot-phase-runner
-description: Master plan based phase-by-phase implementation automation
+description: Use for large, phase-based, or long-running implementation work that should run from a prepared plan package.
 triggers:
   - "phase runner"
   - "run phase"
@@ -17,6 +17,7 @@ Handles plan validation, uncertainty resolution (Q&A), and **execution preparati
 Emits handoff metadata so `/moonshot-orchestrator` can resume with consistent state.
 
 This is the default public entrypoint for large, phase-based, or long-running implementation work.
+It owns the Intake-to-Plan transition for phase-driven execution.
 
 Execution modes:
 - `delegated-terminal`: use isolated loop execution backed by `agent-loop.sh`
@@ -150,8 +151,12 @@ For each detected phase, prepare:
 
 Rules:
 - `SPRINT_CONTRACT.md` is seeded from the phase title and document path
+- seed artifacts from the execution templates under `.claude/templates/execution/`
 - `SPRINT_CONTRACT.md` must carry `Policy Anchors` for always-loaded rules, the active workspace contract, the verification contract, and any phase-specific guides required for the round
+- `SPRINT_CONTRACT.md` should also declare the expected downstream stage order, review cadence, and finish/handoff exit rule for the round
 - `QA_REPORT.md` and `HANDOFF.md` start as placeholders and are updated during execution
+- `QA_REPORT.md` should make the next path explicit: clean finish, retry loop, or resume-later handoff
+- `HANDOFF.md` should record which review/verification checks must be rerun before closeout
 - do not overwrite an existing artifact that already contains work
 
 ## Step 5: Plan Review (Optional)
@@ -216,8 +221,10 @@ Coordinator rules:
   - latest `QA_REPORT.md`
   - latest `HANDOFF.md` when present
 - Treat `SPRINT_CONTRACT.md` policy anchors as required round input, not optional notes
+- Keep the downstream stage order visible inside each round: `ready/isolate -> execute -> review -> verify -> finish/handoff`
 - Each round must execute as a fresh fork/sub-agent attempt.
 - Merge back summaries only: verdict, changed files, failed checks, next action.
+- Do not treat a phase as cleanly complete until review, verification, and finish-stage closeout are all satisfied.
 - If the round does not finish cleanly, update `QA_REPORT.md` and `HANDOFF.md` before the next attempt.
 
 Attempt contract:
@@ -333,3 +340,4 @@ When called by `/moonshot-orchestrator`:
 7. If `prepareOnly == true`, stop after returning the prepared execution metadata.
 8. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
 9. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
+10. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.

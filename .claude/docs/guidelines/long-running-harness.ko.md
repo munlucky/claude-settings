@@ -118,6 +118,28 @@ compaction은 도움이 되지만, 장시간 작업의 표류를 항상 막아�
 - 정적 리뷰로 놓치기 쉬운 실패 모드가 있음
 - 유사 작업에서 모델이 stub 또는 반쯤 동작하는 기능을 자주 냈음
 
+### 작업 크기별 review cadence
+
+review는 마지막 의식이 아니라 반복 stage로 다룹니다.
+
+Simple work:
+- 구현 후 한 번의 집중 리뷰로 충분한 경우가 많다
+- 변경 범위가 아주 국소적이고 결정적일 때만 생략 가능하다
+
+Medium work:
+- 첫 의미 있는 구현 배치 뒤에 한 번 리뷰한다
+- 리뷰 피드백으로 코드가 바뀌면 fix-forward 뒤에 다시 집중 리뷰한다
+
+Complex 또는 long-running work:
+- 구현 시작 전 plan을 리뷰한다
+- verifier 상태를 올리기 전에 의미 있는 구현 배치마다 리뷰한다
+- remediation round가 동작, 계약, 사용자 흐름을 바꿨으면 리뷰를 다시 돈다
+
+실무상 기본 review owner:
+- `codex-review-code`: 기본 의미/회귀 리뷰
+- `security-reviewer`: 보안 민감 파일 또는 흐름 변경 시
+- `audit`, `web-design-guidelines`: UI/UX 품질이 완료 기준일 때
+
 ### HANDOFF가 필요한 경우
 
 아래 경우는 `HANDOFF.md`를 남깁니다.
@@ -125,6 +147,28 @@ compaction은 도움이 되지만, 장시간 작업의 표류를 항상 막아�
 - 다음 세션에서 이어서 작업할 예정
 - 실패 기준이 아직 열려 있음
 - 여러 에이전트/리뷰어가 동일 상태를 공유해야 함
+
+### Finish / handoff 결정 흐름
+
+검증 뒤에는 아래 셋 중 하나만 선택합니다.
+
+1. Clean finish
+   - 최신 증거와 함께 verification이 통과함
+   - 문서/세션 마감 단계를 실행함
+   - 사용자가 원하지 않는 한 `HANDOFF.md`는 필수가 아님
+2. Resume-later handoff
+   - verification이 미완료, 차단, 또는 의도적으로 보류됨
+   - `QA_REPORT.md`를 갱신함
+   - `HANDOFF.md`를 남김
+3. Retry loop
+   - verification이 수정 가능한 실패를 반환함
+   - `QA_REPORT.md`를 갱신함
+   - contract에 연결된 remediation 입력으로 구현 단계로 되돌아감
+
+기본 finish-stage 책임:
+- 의미 있는 문서 drift가 있으면 `doc-auto-sync`
+- 재개 가능 상태나 의사결정 이력이 필요하면 `session-logger`
+- `commit-moonshot`은 사용자가 메모리 현행화와 커밋을 함께 원할 때만 실행
 
 ## 피해야 할 안티패턴
 

@@ -117,18 +117,49 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 - `security-reviewer`
 - `build-error-resolver`
 
-## Typical Flow (Example)
+## Workflow Stage Map
 
-1. `product-orchestrator` converts an idea into `PRODUCT_INTENT -> PRD -> SOLUTION -> SPEC -> PLAN`.
-2. `product-gate-reviewer` decides `pass`, `conditional_pass`, or `fail` at each stage.
-3. `task-slicer` decomposes `PLAN.md` into independently executable `tasks/*.md`.
-4. Before medium/complex implementation starts, create a slice-level `SPRINT_CONTRACT.md` so the build round has explicit done checks and non-goals.
-5. `moonshot-orchestrator` receives the product package and builds the implementation chain.
-6. For complex tasks, validate the plan with `codex-validate-plan`, then run `karpathy-execution-gate` before `implementation-runner`.
-7. For React/web UI implementation, `frontend-design` can be injected before `implementation-runner`; if design context is missing, run `teach-impeccable` first.
-8. Use a separate evaluator path such as `completion-verifier`, `browser-verifier`, `verify-changes.sh`, or `verify-runtime.sh` and record the result in `QA_REPORT.md`.
-9. If the work spans multiple sessions, leave a resumable `HANDOFF.md`.
-10. `documentation-agent` finalizes docs and calls `doc-sync` when needed.
+Use one visible stage model across the repo:
+
+| Stage | Default owners | Purpose |
+| --- | --- | --- |
+| Intake | `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` | Choose the correct public entrypoint from the request shape. |
+| Plan | `product-orchestrator`, `moonshot-plan-writer`, `task-slicer`, `codex-validate-plan` | Produce executable plans and slice them before implementation. |
+| Ready / Isolate | `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `workspace-isolation-gate` | Confirm readiness, contract coverage, and isolated execution setup. |
+| Execute | `implementation-runner`, `build-error-resolver`, `moonshot-phase-executor`, `moonshot-in-session-coordinator`, `moonshot-teams-runner` | Perform the implementation work and recover from build failures when needed. |
+| Review | `codex-review-code`, `security-reviewer`, `audit`, `web-design-guidelines` | Run focused review before completion claims, especially for non-trivial changes. |
+| Verify | `browser-verifier`, `qa-flow`, `completion-verifier`, `verification-evidence-gate` | Produce fresh runtime/test evidence and block unsupported completion claims. |
+| Finish / Handoff | `doc-auto-sync`, `session-logger`, `commit-moonshot` | Finalize docs, log the session, and optionally commit when explicitly requested. |
+
+For medium, complex, or phase-based work, treat these stages as the default path.
+Bounded low-risk work may compress stages, but should not skip review or verification when the change profile still warrants them.
+
+## Typical Flow (Stage-Oriented Example)
+
+1. Intake:
+   - Use `product-orchestrator` when the request is still idea-to-plan.
+   - Use `moonshot-phase-runner` for large or phase-driven implementation work.
+   - Use `moonshot-orchestrator` for bounded implementation work that already has enough context.
+2. Plan:
+   - Create or refresh the plan package with `moonshot-plan-writer` and `task-slicer` as needed.
+   - Run `codex-validate-plan` before implementation for complex or high-risk work.
+3. Ready / Isolate:
+   - Run readiness gates before implementation starts.
+   - In strict runs, do not begin implementation until `workspace-isolation-gate` has enough isolation evidence.
+4. Execute:
+   - Run `karpathy-execution-gate` before `implementation-runner`.
+   - Use `build-error-resolver` only as a recovery path, not as a default entrypoint.
+   - Inject stack-specific helpers such as `frontend-design` when the work requires them.
+5. Review:
+   - Treat review as a first-class stage, not a postscript.
+   - Use `codex-review-code` for non-trivial code changes and add targeted review helpers when needed.
+6. Verify:
+   - Use `browser-verifier`, `verify-changes.sh`, `verify-runtime.sh`, or `completion-verifier` as applicable.
+   - In strict runs, `verification-evidence-gate` must pass before any completion claim.
+7. Finish / Handoff:
+   - Record the outcome in `QA_REPORT.md` and leave `HANDOFF.md` when the work spans sessions.
+   - Finalize docs and session logs.
+   - Use `commit-moonshot` only when the user explicitly wants memory update plus commit.
 
 Unified phase execution boundary:
 - `/moonshot-phase-runner <plan-dir>` is the user-facing entrypoint.

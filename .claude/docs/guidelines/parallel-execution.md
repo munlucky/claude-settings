@@ -16,10 +16,21 @@ Allowed examples:
 - `codex-review-code` + `efficiency-tracker`
 - `codex-review-code` + `session-logger`
 - `codex-review-code` + `browser-verifier` (rerun runtime checks if review changes code)
+- `security-reviewer` + `browser-verifier` after implementation when inputs are disjoint
+- finish-stage logging in parallel with review only when it does not finalize completion state
 
 Not allowed:
 - `codex-validate-plan` + `implementation-runner`
 - `requirements-analyzer` + `context-builder`
+- `completion-verifier` + code-changing remediation
+- final finish-stage closeout before review/verify verdicts settle
+
+## Review / Verify Coordination
+
+- Treat `review-bundle` as the first post-implementation stage for non-trivial code changes.
+- `verification-bundle` may start in parallel only for checks that do not depend on review findings remaining unchanged.
+- If review causes code changes, rerun affected verify/runtime steps before any finish-stage action.
+- `finish-bundle` begins only after the active review/verify verdict is stable enough to support closeout.
 
 ## Token Duplication Avoidance
 1. Prepare one shared snapshot (paths and minimal metadata only).

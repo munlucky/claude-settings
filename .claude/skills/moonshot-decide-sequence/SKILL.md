@@ -102,50 +102,57 @@ Analysis micro-skills are orchestrator-internal and should not be presented as s
   - route directly to `product-orchestrator`
 - If `productPackageReady == true`:
   - simple:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `implementation-lite-bundle`
+    - `review-bundle`
     - `verification-lite-bundle`
+    - `finish-bundle`
   - medium:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
   - complex:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
 - If no product package is present and the request is implementation-oriented:
   - simple:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `planning-bundle`
     - `implementation-lite-bundle`
+    - `review-bundle`
     - `verification-lite-bundle`
+    - `finish-bundle`
   - medium:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `planning-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
   - complex:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `planning-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
 
 ### `meta_harness`
 - simple:
   - `implementation-lite-bundle`
-  - `verification-bundle`
+  - `review-bundle`
+  - `verification-lite-bundle`
+  - `finish-bundle`
 - medium/complex:
   - `meta-harness-bundle`
   - `review-bundle`
-  - `doc-ops-bundle`
+  - `verification-bundle`
+  - `finish-bundle`
 
 ## Bundle expansion
 
@@ -153,7 +160,7 @@ Analysis micro-skills are orchestrator-internal and should not be presented as s
 implementation-lite-bundle:
   - implementation-runner
 
-readiness-bundle:
+ready-isolate-bundle:
   - pre-flight-check
   - project-contract-gate
   - context-readiness-gate
@@ -174,17 +181,18 @@ verification-lite-bundle:
   - verify-changes.sh
 
 verification-bundle:
-  - verification-agent
+  - browser-verifier (if runtime or web verification is needed)
   - completion-verifier
 
 review-bundle:
   - codex-review-code
-  - security-reviewer
+  - security-reviewer (if security-sensitive changes exist)
+  - audit (if explicit UI quality audit is requested)
+  - web-design-guidelines (if explicit UI/UX review is requested)
 
-doc-ops-bundle:
+finish-bundle:
   - doc-auto-sync
   - session-logger
-  - documentation-agent
 
 logging-bundle:
   - session-logger
@@ -194,7 +202,6 @@ meta-harness-bundle:
   - project-memory-check
   - karpathy-execution-gate
   - implementation-runner
-  - completion-verifier
 ```
 
 Execution-bridge expectation for medium/complex `product_project` runs:
@@ -212,6 +219,10 @@ Execution-bridge expectation for medium/complex `product_project` runs:
   - insert `workspace-isolation-gate` immediately before the first `implementation-runner`
   - insert `verification-evidence-gate` after `completion-verifier` (or after `verify-changes.sh` in simple flow)
 
+Stage-order rule:
+- when code changes meaningfully, preserve `review-bundle -> verification-bundle|verification-lite-bundle -> finish-bundle`
+- do not move `finish-bundle` ahead of the active review/verification verdict
+
 ## Plane-specific rules
 
 - `project-contract-gate`, `context-readiness-gate`, and `verification-contract-gate` apply only to `product_project`.
@@ -228,8 +239,9 @@ Execution-bridge expectation for medium/complex `product_project` runs:
 - If `signals.phaseAttemptMode == true`, treat `artifacts.activePhaseDocPath` and existing execution artifacts as the only planning baseline for this round.
 - For refactor tasks, insert `build-error-resolver` after failed verification and keep phased build checks.
 - For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
-- For medium/complex `product_project` work, ensure `doc-ops-bundle` is present so `HANDOFF.md` and session artifacts can be emitted when needed.
-- For any `product_project` work with meaningful file edits, keep `doc-ops-bundle` at the end of the chain so `doc-auto-sync` runs before completion.
+- For medium/complex `product_project` work, ensure `review-bundle`, `verification-bundle`, and `finish-bundle` are all present.
+- For any `product_project` work with meaningful file edits, keep `finish-bundle` at the end of the chain so `doc-auto-sync` and `session-logger` run before completion.
+- If review is intentionally skipped for a simple bounded change, record the reason in notes.
 - If the gate reports blockers, return to planning before code edits.
 
 ## Parallel execution guide
@@ -237,13 +249,14 @@ Execution-bridge expectation for medium/complex `product_project` runs:
 Only run dependency-free steps in parallel.
 
 - After classification: `moonshot-evaluate-complexity` + `moonshot-detect-uncertainty`
-- After implementation: `verification-agent` + `codex-review-code`
-- Documentation: `doc-auto-sync` + `session-logger` when file ownership does not overlap
+- After implementation: `codex-review-code` + `browser-verifier` when inputs are independent
+- Finish-stage logging: `doc-auto-sync` + `session-logger` only when neither step finalizes completion state on its own
 
 Do not parallelize:
 - `codex-validate-plan` and `implementation-runner`
 - any strict gate and the step it guards
 - `verification-evidence-gate` and completion claims
+- `completion-verifier` and code-changing remediation
 
 ## Output (patch)
 
@@ -268,7 +281,7 @@ Alternate implementation-ready example:
 phase: planning
 decisions:
   bundleChain:
-    - readiness-bundle
+    - ready-isolate-bundle
     - planning-bundle
   skillChain:
     - pre-flight-check

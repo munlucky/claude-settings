@@ -1,6 +1,6 @@
 ---
 name: moonshot-plan-writer
-description: "이 저장소의 docs/implementation 작업계획 문서를 생성/갱신한다. 구현 계획 문서 작성 또는 업데이트 요청 시 사용한다. 작성 전 반드시 루트 *.md와 docs/implementation/*.md를 먼저 확인하고, (1) 페이즈 완료 체크리스트를 가진 master-plan(00-master-plan-v*.md)과 (2) 독립 세션에서 바로 실행 가능한 상세 페이즈 계획 문서를 유지한다. master 체크리스트가 전부 완료될 때까지 반복을 종료하지 않는다."
+description: phase 기반 작업을 위해 `docs/implementation`의 master plan과 phase plan을 생성하거나 갱신할 때 사용합니다.
 ---
 
 # Implementation Plan Writer
@@ -9,6 +9,7 @@ description: "이 저장소의 docs/implementation 작업계획 문서를 생성
 `docs/implementation`에 master/phase 구조가 일관된 작업계획 문서를 만든다.
 
 이 스킬은 안전하게 재사용할 `<plan-dir>`가 없을 때 `moonshot-phase-runner`의 기본 bootstrap 역할을 한다.
+phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
 
 ## 필수 입력
 - 하나 이상의 요구사항 소스 문서(고정 파일명 아님):

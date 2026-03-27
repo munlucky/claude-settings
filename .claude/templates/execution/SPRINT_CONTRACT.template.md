@@ -4,12 +4,20 @@
 - Name:
 - Owner:
 - Source task:
+- Phase document:
 
 ## Round Goal
 - What this round must deliver in user-visible terms
 
 ## Non-Goals
 - What this round will not attempt
+
+## Stage Order
+- Ready / Isolate
+- Execute
+- Review
+- Verify
+- Finish / Handoff
 
 ## Planned Changes
 - Main implementation areas
@@ -21,6 +29,11 @@
 - Verification contract:
 - Phase-specific guides:
 - Round policy summary:
+
+## Review Cadence
+- First review checkpoint:
+- Re-review trigger:
+- Review owners:
 
 ## Done Checks
 | Check | Type | Pass Condition |
@@ -36,6 +49,11 @@
 - Required commands:
 - Runtime flow:
 - Screenshots/logs:
+
+## Finish Rule
+- Clean finish requires:
+- Resume-later handoff trigger:
+- Retry-loop trigger:
 
 ## Risks
 - Known uncertainty

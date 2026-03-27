@@ -356,6 +356,153 @@ run_contract_check() {
   return 1
 }
 
+load_workflow_evidence_context() {
+  local analysis_file="${ANALYSIS_CONTEXT_FILE:-.claude/docs/moonshot-analysis.yaml}"
+  local eval_output
+
+  WORKFLOW_EVIDENCE_PATH="$analysis_file"
+  WORKFLOW_EVIDENCE_DETECTED=false
+  WORKFLOW_EVIDENCE_MODE=""
+  WORKFLOW_SELECTED_BUNDLES_LINES=""
+  WORKFLOW_REQUIRED_SKILLS_LINES=""
+  WORKFLOW_STAGE_ORDER_LINES=""
+  WORKFLOW_APPLIED_SKILLS_LINES=""
+  WORKFLOW_SKIPPED_SKILLS_LINES=""
+  WORKFLOW_EVIDENCE_WARNINGS_LINES=""
+
+  if [ ! -f "$analysis_file" ]; then
+    return 0
+  fi
+
+  eval_output="$(ANALYSIS_FILE_PATH="$analysis_file" CHANGED_FILES_LINES="$(join_lines "${CHANGED_FILES[@]}")" python3 - <<'PY'
+import os
+import shlex
+
+
+def parse_scalar(value):
+    value = value.strip()
+    if value in ("true", "false"):
+        return value == "true"
+    if value == "null":
+        return None
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+
+def next_meaningful(lines, start_index):
+    for idx in range(start_index + 1, len(lines)):
+        stripped = lines[idx].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(lines[idx]) - len(lines[idx].lstrip(" "))
+        return indent, stripped
+    return None, None
+
+
+def parse_simple_yaml(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+
+    root = {}
+    stack = [(-1, root)]
+
+    for index, raw_line in enumerate(lines):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+
+        container = stack[-1][1]
+
+        if stripped.startswith("- "):
+            if isinstance(container, list):
+                container.append(parse_scalar(stripped[2:]))
+            continue
+
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if value == "":
+            next_indent, next_stripped = next_meaningful(lines, index)
+            nested = [] if next_indent is not None and next_indent > indent and next_stripped.startswith("- ") else {}
+            if isinstance(container, dict):
+                container[key] = nested
+                stack.append((indent, nested))
+            continue
+
+        if isinstance(container, dict):
+            container[key] = parse_scalar(value)
+
+    return root
+
+
+def as_list(value):
+    if isinstance(value, list):
+        return [str(item) for item in value if item not in (None, "")]
+    if value in (None, ""):
+        return []
+    return [str(value)]
+
+
+def emit(name, value):
+    print(f"{name}={shlex.quote(value)}")
+
+
+data = parse_simple_yaml(os.environ["ANALYSIS_FILE_PATH"])
+workflow = data.get("workflowEvidence") if isinstance(data.get("workflowEvidence"), dict) else {}
+
+selected = as_list(workflow.get("selectedBundles"))
+required = as_list(workflow.get("requiredSkills"))
+stage_order = as_list(workflow.get("stageOrder"))
+applied = as_list(workflow.get("appliedSkills"))
+skipped = as_list(workflow.get("skippedSkills"))
+changed_files = [line for line in os.environ.get("CHANGED_FILES_LINES", "").splitlines() if line]
+code_suffixes = {
+    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs",
+    ".java", ".kt", ".kts", ".cs", ".php", ".swift", ".scala", ".sh", ".bash",
+    ".zsh", ".ps1", ".psm1", ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp",
+    ".hxx",
+}
+code_change_detected = any(os.path.splitext(path)[1].lower() in code_suffixes for path in changed_files)
+warnings = []
+
+if code_change_detected:
+    if "review-bundle" not in selected:
+        warnings.append("workflowEvidence missing review-bundle for code changes")
+    if "finish-bundle" not in selected:
+        warnings.append("workflowEvidence missing finish-bundle for code changes")
+    skipped_text = " | ".join(skipped).lower()
+    applied_set = set(applied)
+    if "codex-review-code" not in applied_set and ("codex-review-code" not in skipped_text or "not evaluated yet" in skipped_text):
+        warnings.append("workflowEvidence missing codex-review-code evidence for code changes")
+    if "doc-auto-sync" not in applied_set and ("doc-auto-sync" not in skipped_text or "not evaluated yet" in skipped_text):
+        warnings.append("workflowEvidence missing doc-auto-sync evidence for code changes")
+    if "code-simplifier" not in applied_set and ("code-simplifier" not in skipped_text or "not evaluated yet" in skipped_text):
+        warnings.append("workflowEvidence missing code-simplifier evidence for code changes")
+
+emit("WORKFLOW_EVIDENCE_DETECTED", "true" if workflow else "false")
+emit("WORKFLOW_EVIDENCE_MODE", str(workflow.get("mode", "")))
+print("WORKFLOW_SELECTED_BUNDLES=(" + " ".join(shlex.quote(item) for item in selected) + ")")
+print("WORKFLOW_REQUIRED_SKILLS=(" + " ".join(shlex.quote(item) for item in required) + ")")
+print("WORKFLOW_STAGE_ORDER=(" + " ".join(shlex.quote(item) for item in stage_order) + ")")
+print("WORKFLOW_APPLIED_SKILLS=(" + " ".join(shlex.quote(item) for item in applied) + ")")
+print("WORKFLOW_SKIPPED_SKILLS=(" + " ".join(shlex.quote(item) for item in skipped) + ")")
+print("WORKFLOW_EVIDENCE_WARNINGS=(" + " ".join(shlex.quote(item) for item in warnings) + ")")
+PY
+)"
+
+  if [ -n "$eval_output" ]; then
+    eval "$eval_output"
+  fi
+}
+
 write_verdict_json() {
   local verdict="$1"
   local exit_code="$2"
@@ -395,6 +542,15 @@ write_verdict_json() {
   OPTIONAL_FAILED_LINES="$(join_lines "${OPTIONAL_CHECKS_FAILED[@]}")" \
   CONTRACT_CHECK_RESULTS_VALUE="$CONTRACT_CHECK_RESULTS_LINES" \
   CHANGED_FILES_LINES="$(join_lines "${CHANGED_FILES[@]}")" \
+  ANALYSIS_CONTEXT_FILE_VALUE="$WORKFLOW_EVIDENCE_PATH" \
+  WORKFLOW_EVIDENCE_DETECTED_VALUE="$WORKFLOW_EVIDENCE_DETECTED" \
+  WORKFLOW_EVIDENCE_MODE_VALUE="$WORKFLOW_EVIDENCE_MODE" \
+  WORKFLOW_SELECTED_BUNDLES_LINES="$(join_lines "${WORKFLOW_SELECTED_BUNDLES[@]}")" \
+  WORKFLOW_REQUIRED_SKILLS_LINES="$(join_lines "${WORKFLOW_REQUIRED_SKILLS[@]}")" \
+  WORKFLOW_STAGE_ORDER_LINES="$(join_lines "${WORKFLOW_STAGE_ORDER[@]}")" \
+  WORKFLOW_APPLIED_SKILLS_LINES="$(join_lines "${WORKFLOW_APPLIED_SKILLS[@]}")" \
+  WORKFLOW_SKIPPED_SKILLS_LINES="$(join_lines "${WORKFLOW_SKIPPED_SKILLS[@]}")" \
+  WORKFLOW_EVIDENCE_WARNINGS_VALUE="$(join_lines "${WORKFLOW_EVIDENCE_WARNINGS[@]}")" \
   python3 - <<'PY' > "$VERDICT_FILE"
 import json
 import os
@@ -466,6 +622,17 @@ payload = {
         "verdictFile": os.environ["VERDICT_FILE_PATH"],
         "fresh": True,
     },
+    "workflowEvidence": {
+        "path": os.environ["ANALYSIS_CONTEXT_FILE_VALUE"],
+        "detected": to_bool(os.environ["WORKFLOW_EVIDENCE_DETECTED_VALUE"]),
+        "mode": os.environ["WORKFLOW_EVIDENCE_MODE_VALUE"],
+        "selectedBundles": split_lines("WORKFLOW_SELECTED_BUNDLES_LINES"),
+        "requiredSkills": split_lines("WORKFLOW_REQUIRED_SKILLS_LINES"),
+        "stageOrder": split_lines("WORKFLOW_STAGE_ORDER_LINES"),
+        "appliedSkills": split_lines("WORKFLOW_APPLIED_SKILLS_LINES"),
+        "skippedSkills": split_lines("WORKFLOW_SKIPPED_SKILLS_LINES"),
+        "warnings": split_lines("WORKFLOW_EVIDENCE_WARNINGS_VALUE"),
+    },
 }
 
 json.dump(payload, sys.stdout, indent=2)
@@ -528,9 +695,30 @@ REQUIRED_CHECKS_EXECUTED=()
 REQUIRED_CHECKS_MISSING=()
 OPTIONAL_CHECKS_EXECUTED=()
 OPTIONAL_CHECKS_FAILED=()
+WORKFLOW_EVIDENCE_PATH=".claude/docs/moonshot-analysis.yaml"
+WORKFLOW_EVIDENCE_DETECTED=false
+WORKFLOW_EVIDENCE_MODE=""
+WORKFLOW_SELECTED_BUNDLES=()
+WORKFLOW_REQUIRED_SKILLS=()
+WORKFLOW_STAGE_ORDER=()
+WORKFLOW_APPLIED_SKILLS=()
+WORKFLOW_SKIPPED_SKILLS=()
+WORKFLOW_EVIDENCE_WARNINGS=()
 
 collect_changed_files
 load_contract_context
+load_workflow_evidence_context
+
+if [ "$WORKFLOW_EVIDENCE_DETECTED" = true ]; then
+  log_info "Workflow evidence detected: $WORKFLOW_EVIDENCE_PATH"
+  echo "WorkflowEvidence: path=$WORKFLOW_EVIDENCE_PATH mode=$WORKFLOW_EVIDENCE_MODE" >> "$RESULTS_FILE"
+  if [ ${#WORKFLOW_EVIDENCE_WARNINGS[@]} -gt 0 ]; then
+    for warning in "${WORKFLOW_EVIDENCE_WARNINGS[@]}"; do
+      log_warning "$warning"
+      echo "WorkflowEvidenceWarning: $warning" >> "$RESULTS_FILE"
+    done
+  fi
+fi
 
 if [ -z "$EXTRA_CHECKS_CMD" ] && [ "$CONTRACT_APPLICABLE" = true ] && [ -n "$CONTRACT_HOOK_EXTRA_CHECKS" ]; then
   EXTRA_CHECKS_CMD="$CONTRACT_HOOK_EXTRA_CHECKS"

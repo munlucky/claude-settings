@@ -1,6 +1,6 @@
 ---
 name: session-logger
-description: 개발 세션을 실시간으로 기록하여 결정 사항과 이슈를 추적합니다.
+description: 작업 중이나 종료 시점에 결정, 이슈, handoff 메모를 기록할 때 사용합니다.
 ---
 
 # Session Logger 스킬
@@ -9,6 +9,7 @@ description: 개발 세션을 실시간으로 기록하여 결정 사항과 이�
 
 이 스킬은 doc-ops helper이면서 지원되는 공개 유틸리티 진입점입니다.
 doc-ops bundle 뒤에서 실행할 수도 있고, 사용자가 세션/HANDOFF 기록을 원하면 직접 호출할 수도 있습니다.
+Finish / Handoff stage의 기본 helper이기도 합니다.
 
 > **목적**: 개발 세션을 실시간 기록하여 결정 과정과 시행착오 추적
 > **기록 시점**: 작업 시작, 에이전트 전환, 결정, 이슈, 작업 완료

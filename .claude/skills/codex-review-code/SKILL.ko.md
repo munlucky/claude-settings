@@ -1,10 +1,12 @@
 ---
 name: codex-review-code
-description: 런타임 적응형 코드 리뷰 스킬(Code Reviewer 기준)로 구현 품질과 회귀 위험을 검토합니다. 복잡한 작업, 리팩터링, API 변경 후 사용하세요.
+description: 비사소한 구현 변경을 완료 선언이나 병합 전에 품질과 회귀 위험 관점에서 리뷰할 때 사용합니다.
 context: fork
 ---
 
 # Codex 코드 리뷰 (런타임 적응형)
+
+비사소한 코드 변경에 대한 기본 Review stage 소유자입니다.
 
 ## 사용 시점
 - 복잡한 작업 구현 후

@@ -2,6 +2,7 @@
 
 ## Goal
 - Current objective
+- Current stage:
 
 ## Current State
 - Completed:
@@ -15,6 +16,15 @@
 ## Open Risks
 - Risk:
 - Impact:
+
+## Resume Trigger
+- Why this handoff exists:
+- Condition to resume:
+
+## Checks To Rerun
+- Review:
+- Verification:
+- Runtime flow:
 
 ## Next Steps
 1. First action

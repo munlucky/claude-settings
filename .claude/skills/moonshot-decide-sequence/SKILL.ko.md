@@ -97,51 +97,58 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
   - `product-orchestrator`로 직접 라우팅한다
 - `productPackageReady == true` 이면:
   - simple:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `implementation-lite-bundle`
+    - `review-bundle`
     - `verification-lite-bundle`
+    - `finish-bundle`
   - medium:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
   - complex:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
 - product package가 없고 구현 요청이면:
   - simple:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `planning-bundle`
     - `implementation-lite-bundle`
+    - `review-bundle`
     - `verification-lite-bundle`
+    - `finish-bundle`
   - medium:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `planning-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
   - complex:
-    - `readiness-bundle`
+    - `ready-isolate-bundle`
     - `planning-bundle`
     - `implementation-bundle`
-    - `verification-bundle`
     - `review-bundle`
-    - `doc-ops-bundle`
+    - `verification-bundle`
+    - `finish-bundle`
 
 ### `meta_harness`
 
 - simple:
   - `implementation-lite-bundle`
-  - `verification-bundle`
+  - `review-bundle`
+  - `verification-lite-bundle`
+  - `finish-bundle`
 - medium/complex:
   - `meta-harness-bundle`
   - `review-bundle`
-  - `doc-ops-bundle`
+  - `verification-bundle`
+  - `finish-bundle`
 
 ## bundle 확장
 
@@ -149,7 +156,7 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
 implementation-lite-bundle:
   - implementation-runner
 
-readiness-bundle:
+ready-isolate-bundle:
   - pre-flight-check
   - project-contract-gate
   - context-readiness-gate
@@ -170,17 +177,18 @@ verification-lite-bundle:
   - verify-changes.sh
 
 verification-bundle:
-  - verification-agent
+  - browser-verifier (if runtime or web verification is needed)
   - completion-verifier
 
 review-bundle:
   - codex-review-code
-  - security-reviewer
+  - security-reviewer (if security-sensitive changes exist)
+  - audit (if explicit UI quality audit is requested)
+  - web-design-guidelines (if explicit UI/UX review is requested)
 
-doc-ops-bundle:
+finish-bundle:
   - doc-auto-sync
   - session-logger
-  - documentation-agent
 
 logging-bundle:
   - session-logger
@@ -190,7 +198,6 @@ meta-harness-bundle:
   - project-memory-check
   - karpathy-execution-gate
   - implementation-runner
-  - completion-verifier
 ```
 
 medium/complex `product_project` 실행에서는 아래 execution bridge를 기본으로 요구한다.
@@ -208,6 +215,10 @@ medium/complex `product_project` 실행에서는 아래 execution bridge를 기�
   - 첫 `implementation-runner` 직전에 `workspace-isolation-gate` 삽입
   - `completion-verifier` 뒤 또는 simple 흐름의 `verify-changes.sh` 뒤에 `verification-evidence-gate` 삽입
 
+단계 순서 규칙:
+- 의미 있는 코드 변경이 있으면 `review-bundle -> verification-bundle|verification-lite-bundle -> finish-bundle` 순서를 유지한다
+- active review/verification 판정 전에 `finish-bundle`을 앞당기지 않는다
+
 ## plane별 추가 규칙
 
 - `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`는 `product_project`에만 적용한다.
@@ -224,20 +235,22 @@ medium/complex `product_project` 실행에서는 아래 execution bridge를 기�
 - `signals.phaseAttemptMode == true`이면 이번 round는 `artifacts.activePhaseDocPath`와 기존 execution artifact만 planning baseline으로 사용한다.
 - 리팩토링 작업은 실패한 검증 뒤에 `build-error-resolver`를 삽입하고 단계별 빌드 체크를 유지한다.
 - medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 거친다.
-- medium/complex `product_project`는 `HANDOFF.md`와 세션 아티팩트를 위해 `doc-ops-bundle`을 유지한다.
-- 의미 있는 파일 수정이 있는 모든 `product_project` 작업은 완료 전에 `doc-auto-sync`가 실행되도록 체인 마지막에 `doc-ops-bundle`을 유지한다.
+- medium/complex `product_project`는 `review-bundle`, `verification-bundle`, `finish-bundle`을 모두 유지한다.
+- 의미 있는 파일 수정이 있는 모든 `product_project` 작업은 완료 전에 `doc-auto-sync`, `session-logger`가 실행되도록 체인 마지막에 `finish-bundle`을 유지한다.
+- simple bounded change에서 review를 의도적으로 생략하면 notes에 이유를 남긴다.
 - 게이트에서 blocker가 나오면 planning 단계로 되돌린다.
 
 ## 병렬 실행 가이드
 
 - 분류 직후: `moonshot-evaluate-complexity` + `moonshot-detect-uncertainty`
-- 구현 후: `verification-agent` + `codex-review-code`
-- 문서화: 파일 소유권이 겹치지 않을 때 `doc-auto-sync` + `session-logger`
+- 구현 후: 입력이 독립적일 때 `codex-review-code` + `browser-verifier`
+- finish-stage 로깅: 어느 쪽도 단독으로 완료 상태를 확정하지 않을 때 `doc-auto-sync` + `session-logger`
 
 병렬 금지:
 - `codex-validate-plan` 과 `implementation-runner`
 - strict gate와 그 gate가 보호하는 단계
 - `verification-evidence-gate`와 완료 선언
+- `completion-verifier`와 코드 수정 remediation
 
 ## 출력 예시
 
@@ -264,7 +277,7 @@ implementation-ready 예시:
 phase: planning
 decisions:
   bundleChain:
-    - readiness-bundle
+    - ready-isolate-bundle
     - planning-bundle
   skillChain:
     - pre-flight-check

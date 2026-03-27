@@ -16,10 +16,21 @@
 - `codex-review-code` + `efficiency-tracker`
 - `codex-review-code` + `session-logger`
 - `codex-review-code` + `browser-verifier` (리뷰로 코드 변경 시 런타임 검증 재실행)
+- 입력이 분리되어 있으면 구현 후 `security-reviewer` + `browser-verifier`
+- 완료 판정을 확정하지 않는 범위에서는 review와 finish-stage 로깅 일부 병렬 가능
 
 금지 예시:
 - `codex-validate-plan` + `implementation-runner`
 - `requirements-analyzer` + `context-builder`
+- `completion-verifier` + 코드 수정 remediation
+- review/verify 판정이 확정되기 전 final finish-stage closeout
+
+## Review / Verify 조율
+
+- 비사소한 코드 변경의 구현 직후 첫 post-implementation stage는 `review-bundle`로 본다.
+- `verification-bundle`은 review 결과에 영향을 받지 않는 점검만 제한적으로 병렬 시작할 수 있다.
+- review 때문에 코드가 바뀌면 영향받는 verify/runtime 체크를 다시 돌린다.
+- `finish-bundle`은 review/verify 판정이 closeout 가능한 수준으로 안정된 뒤에만 시작한다.
 
 ## 토큰 중복 방지
 1. 공통 스냅샷은 파일 경로와 최소 메타데이터만 포함한다.

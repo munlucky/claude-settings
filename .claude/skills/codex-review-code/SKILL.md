@@ -1,10 +1,12 @@
 ---
 name: codex-review-code
-description: Runtime-adaptive code review for implementation quality and regression risks (Code Reviewer rubric). Use after implementation for complex tasks, refactors, or API changes.
+description: Review non-trivial implementation changes for quality and regression risk before completion or merge.
 context: fork
 ---
 
 # Codex Code Review (Runtime-adaptive)
+
+This is the default Review-stage owner for non-trivial code changes.
 
 ## When to use
 - After implementation for complex tasks

@@ -1,10 +1,12 @@
 ---
 name: completion-verifier
-description: Verifies implementation completion by running acceptance tests and triggering retry loops when verification fails.
+description: Run required checks and decide whether implementation has enough evidence to be treated as complete.
 context: fork
 ---
 
 # Completion Verifier Skill
+
+This is the default Verify-stage owner before finish or handoff.
 
 ## When to Use
 - After each implementation phase
@@ -18,10 +20,12 @@ context: fork
 - `analysisContext.artifacts.qaReportPath`
 - `analysisContext.artifacts.handoffPath`
 - `analysisContext.artifacts.verificationContractPath`
+- `analysisContext.artifacts.workflowEvidencePath` (if present)
 - `analysisContext.artifacts.testGuidePath`
 - `analysisContext.artifacts.analysisIndexPath` / `analysisRoot`
 - Test framework and commands from `TEST_GUIDE.md`, `PROJECT.md`, or verification contract
 - `analysisContext.signals.allowIndeterminate` (boolean override, default: `true`)
+- Latest verifier verdict artifact, especially `verdict.workflowEvidence.*` from `verify-changes.sh`
 
 ## Contract-first policy
 
@@ -45,6 +49,7 @@ Applicability rule:
   - standard profile -> continue with warning and fallback detection
   - strict profile -> expect `verification-contract-gate` to block earlier
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
+- When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
 
 ## Step 0: Verification Environment Detection
 
@@ -95,6 +100,22 @@ Only when executable verification exists.
 4. Parse PASS/FAIL per check and record which commands actually ran
 5. Mark evidence fresh only when the current run produced contract-aligned success evidence or verdict artifacts
 6. Update `context.md` status column when appropriate
+7. Read the latest verifier verdict artifact and capture `workflowEvidence.selectedBundles`, `workflowEvidence.stageOrder`, and `workflowEvidence.warnings` when present
+
+## Step 1.5: Workflow Evidence Reconciliation
+
+Use verifier artifact workflow evidence as the structured source of truth for review/finish closeout.
+
+- Prefer `verdictArtifact.workflowEvidence` from `verify-changes.sh` when available.
+- For code-changing bounded-direct or phase-closeout work, expect:
+  - `review-bundle` in `selectedBundles`
+  - `finish-bundle` in `selectedBundles`
+  - `codex-review-code` in applied or explicitly skipped evidence
+  - `doc-auto-sync` evidence before clean completion
+- If `workflowEvidence.warnings` is not empty:
+  - strict profile -> do not return `gateDecision: pass`
+  - standard profile -> degrade to remediation or `pass_with_warning`, and surface the warnings in `QA_REPORT.md`
+- Treat missing `stageOrder` or missing workflow evidence on code-changing closeout as a signal that finish/handoff evidence is incomplete.
 
 ## Step 2: Self-Audit (Always Runs)
 
@@ -139,6 +160,9 @@ completionStatus:
   verdictArtifact:
     path: "{tasksRoot}/{feature-name}/verification-result.json"
     fresh: true | false
+    workflowEvidence:
+      detected: true | false
+      warnings: []
 qaReport:
   path: "{activeSliceDir}/QA_REPORT.md"
   updated: true | false
@@ -149,6 +173,7 @@ Passing rule:
   - `verificationState == passed`
   - `evidenceFresh == true`
   - `requiredChecks.missing` is empty
+  - `verdictArtifact.workflowEvidence.warnings` is empty for code-changing closeout work
 - Otherwise degrade to `failed` or `pass_with_warning`; never infer a full pass from self-audit alone.
 
 ## Retry Logic
@@ -174,6 +199,7 @@ When `verificationState: failed` and executable verification exists:
 - Self-Audit supplements tests; it does not replace them.
 - Requirement fulfillment involves judgment; verdict artifacts provide deterministic evidence.
 - A fresh verifier artifact or equivalent current-run command evidence is required before a contract-backed success verdict.
+- When available, `verdictArtifact.workflowEvidence` is the canonical structured hint for whether review/finish-stage evidence is complete enough to close the run.
 - Each verifier run should refresh `QA_REPORT.md` when `qaReportPath` is available.
 - If verification fails or the run pauses before clean completion, mark `handoffPath` for update.
 - If `neverDoViolations` exist, halt immediately and report to user.

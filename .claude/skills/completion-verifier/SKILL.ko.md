@@ -1,10 +1,12 @@
 ---
 name: completion-verifier
-description: Acceptance 테스트와 자체 점검으로 구현 완료를 검증하고 실패 시 재시도 루프를 유도한다.
+description: 필수 검증을 실행하고, 구현을 완료로 볼 수 있을 만큼 증거가 충분한지 판단할 때 사용합니다.
 context: fork
 ---
 
 # Completion Verifier 스킬
+
+finish 또는 handoff 전에 실행하는 기본 Verify stage 소유자입니다.
 
 ## 사용 시점
 - 각 구현 phase 완료 후
@@ -18,10 +20,12 @@ context: fork
 - `analysisContext.artifacts.qaReportPath`
 - `analysisContext.artifacts.handoffPath`
 - `analysisContext.artifacts.verificationContractPath`
+- `analysisContext.artifacts.workflowEvidencePath` (있으면 사용)
 - `analysisContext.artifacts.testGuidePath`
 - `analysisContext.artifacts.analysisIndexPath` / `analysisRoot`
 - `TEST_GUIDE.md`, `PROJECT.md` 또는 verification contract의 테스트/검증 명령
 - `analysisContext.signals.allowIndeterminate`
+- 최신 verifier verdict artifact, 특히 `verify-changes.sh`가 기록한 `verdict.workflowEvidence.*`
 
 ## contract-first 정책
 검증 명령 해석 우선순위:
@@ -50,9 +54,22 @@ verificationEnvironment:
 - `SPRINT_CONTRACT.md`가 있으면 그 done check도 함께 검증한다.
 - verifier는 실행할 때마다 `QA_REPORT.md`를 갱신해야 한다.
 - verification contract가 있으면 contract의 required check에 대한 최신 증거 없이는 성공 판정을 반환하지 않는다.
+- verifier artifact에 `workflowEvidence.warnings`가 있으면 이를 stage closeout 누락 신호로 취급한다.
 - `verificationState: indeterminate`
   - standard -> `pass_with_warning`
   - strict -> `failed`
+
+## Workflow evidence 정합 규칙
+- 가능하면 `verify-changes.sh` verdict의 `workflowEvidence`를 review/finish closeout의 구조화된 기준으로 사용한다.
+- 코드 변경이 있는 bounded direct 또는 phase closeout에서는 아래를 기대한다.
+  - `selectedBundles`에 `review-bundle`
+  - `selectedBundles`에 `finish-bundle`
+  - applied 또는 명시적 skipped evidence에 `codex-review-code`
+  - clean completion 전 `doc-auto-sync` evidence
+- `workflowEvidence.warnings`가 비어 있지 않으면:
+  - strict -> `gateDecision: pass` 금지
+  - standard -> remediation 또는 `pass_with_warning`로 내리고 경고를 `QA_REPORT.md`에 남긴다.
+- 코드 변경 마감인데 `stageOrder` 또는 `workflowEvidence` 자체가 비어 있으면 finish/handoff 증거가 불완전하다고 본다.
 
 ## 출력 예시
 
@@ -73,6 +90,9 @@ completionStatus:
   verdictArtifact:
     path: "{tasksRoot}/{feature-name}/verification-result.json"
     fresh: true | false
+    workflowEvidence:
+      detected: true | false
+      warnings: []
 qaReport:
   path: "{activeSliceDir}/QA_REPORT.md"
   updated: true | false
@@ -83,6 +103,7 @@ qaReport:
   - `verificationState == passed`
   - `evidenceFresh == true`
   - `requiredChecks.missing` 이 비어 있음
+  - 코드 변경 마감이면 `verdictArtifact.workflowEvidence.warnings` 가 비어 있음
 - 그 외에는 self-audit 만으로 완료 성공을 추론하지 않는다.
 
 추가 규칙:
@@ -93,4 +114,5 @@ qaReport:
 - Self-Audit는 테스트를 보완하는 용도이지 대체물이 아니다.
 - verdict artifact가 최종 검증 증거가 된다.
 - contract 기반 성공 판정에는 이번 실행에서 생성된 최신 verifier artifact 또는 동등한 명령 증거가 필요하다.
+- 있으면 `verdictArtifact.workflowEvidence`를 review/finish 단계 증거의 canonical structured hint로 사용한다.
 - 검증 실패나 중단 시에는 다음 라운드를 위해 `HANDOFF.md` 갱신이 필요하다.
