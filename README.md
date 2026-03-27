@@ -65,8 +65,6 @@ claude-settings/
 │   │   │   ├── question-templates.md
 │   │   │   ├── requirements-check.md
 │   │   │   └── token-optimization.md
-│   │   ├── examples/
-│   │   │   └── token-optimization-example.md
 │   │   └── tasks/
 │   │       └── context.md
 │   └── templates/
@@ -140,7 +138,6 @@ claude-settings/
 - 가이드라인: `docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화)
 - 제품 정의 가이드: `docs/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
-- 예시: `docs/examples/token-optimization-example.md`
 - 작업 템플릿: `docs/tasks/context.md`
 - 제품 정의 템플릿: `templates/product-definition/*.md`
 - 실행 브리지 템플릿: `.claude/templates/execution/*.md`
