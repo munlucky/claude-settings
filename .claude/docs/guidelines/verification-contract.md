@@ -42,6 +42,9 @@ artifacts:
   sprintContract: ".claude/execution/<slice>/SPRINT_CONTRACT.md"
   qaReport: ".claude/execution/<slice>/QA_REPORT.md"
   handoff: ".claude/execution/<slice>/HANDOFF.md"
+  requirementsTraceability: ".claude/execution/REQUIREMENTS_TRACEABILITY.md"
+  scenarioMatrix: ".claude/execution/SCENARIO_MATRIX.md"
+  uatChecklist: ".claude/execution/UAT_CHECKLIST.md"
 strict:
   required: false
   triggers:
@@ -70,6 +73,21 @@ qa:
       focus:
         - "critical user flow"
         - "state change persists"
+    requirementsCoverage:
+      threshold: "pass"
+      focus:
+        - "every in-scope REQ has verification evidence"
+        - "no requirement is closed without traceability"
+    scenarioCoverage:
+      threshold: "pass"
+      focus:
+        - "every critical SCN has runtime or E2E evidence"
+        - "browser flows are mapped to user-visible scenarios"
+    uatReadiness:
+      threshold: "warn"
+      focus:
+        - "uat_ready is explicit"
+        - "uat_complete is not inferred from automation"
     productDepth:
       threshold: "warn"
       focus:
@@ -96,8 +114,13 @@ hooks:
 - For runtime-heavy or UI-heavy work, prefer a separate evaluator path over generator self-approval.
 - Browser/runtime checks should exercise real interactions, not only page-load screenshots.
 - `SPRINT_CONTRACT.md` should define the round-level done criteria before implementation starts.
+- In document-trace downstream runs, treat `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, and `UAT_CHECKLIST.md` as first-class execution artifacts.
 - `QA_REPORT.md` should become the next remediation input when verification fails.
 - A contract-backed success verdict should require fresh evidence for every required check that applies to the current scope.
+- A document-trace completion claim should additionally require:
+  - all in-scope `REQ-*` rows to have implementation plus verification evidence
+  - all critical `SCN-*` rows to have fresh runtime or E2E evidence
+  - explicit distinction between `uat_ready` and `uat_complete`
 - For dual-runtime harnesses, add an explicit parity command that exercises both Claude and Codex adapter paths instead of leaving runtime parity as a QA note only.
 - If a required check triggers a verifier that runs inside another required check, add an explicit skip mechanism (for example `VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity`) so nested verification does not recurse into itself.
 - If the contract is missing:

@@ -2,7 +2,7 @@
 
 > 프로젝트별 규칙/구성 문서입니다. 이 파일을 각 프로젝트에 맞게 작성하십시오.
 
-Last-Reviewed: 2026-02-19
+Last-Reviewed: 2026-03-27
 
 ## 프로젝트 개요
 이 섹션에는 프로젝트의 기본 정보를 작성합니다.
@@ -158,6 +158,7 @@ API 호출 및 데이터 통신 관련 패턴을 설명합니다.
 | 아카이브 | `{tasksRoot}/{feature-name}/archives/` |
 | 세션 로그 | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
 | 미해결 질문 | `{tasksRoot}/{feature-name}/pending-questions.md` |
+| 추적/UAT 아티팩트 | `{tasksRoot}/{feature-name}/execution/{REQUIREMENTS_TRACEABILITY,SCENARIO_MATRIX,UAT_CHECKLIST}.md` |
 
 ### 프로젝트 기준 문서
 

@@ -19,6 +19,9 @@ This is the default Verify-stage owner before finish or handoff.
 - `analysisContext.artifacts.sprintContractPath`
 - `analysisContext.artifacts.qaReportPath`
 - `analysisContext.artifacts.handoffPath`
+- `analysisContext.artifacts.requirementsTraceabilityPath`
+- `analysisContext.artifacts.scenarioMatrixPath`
+- `analysisContext.artifacts.uatChecklistPath`
 - `analysisContext.artifacts.verificationContractPath`
 - `analysisContext.artifacts.workflowEvidencePath` (if present)
 - `analysisContext.artifacts.testGuidePath`
@@ -50,6 +53,7 @@ Applicability rule:
   - strict profile -> expect `verification-contract-gate` to block earlier
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
+- In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
 
 ## Step 0: Verification Environment Detection
 
@@ -102,6 +106,17 @@ Only when executable verification exists.
 6. Update `context.md` status column when appropriate
 7. Read the latest verifier verdict artifact and capture `workflowEvidence.selectedBundles`, `workflowEvidence.stageOrder`, and `workflowEvidence.warnings` when present
 
+## Step 1.25: Traceability Reconciliation
+
+When traceability artifacts exist, reconcile them before any completion claim.
+
+1. Read `REQUIREMENTS_TRACEABILITY.md` and collect in-scope `REQ-*` rows
+2. Confirm each in-scope requirement has implementation status, verification path, and evidence or blocker state
+3. Read `SCENARIO_MATRIX.md` and collect `SCN-*` rows for user-visible flows
+4. Require every critical `SCN-*` to have fresh runtime, browser, or E2E evidence before clean finish
+5. Read `UAT_CHECKLIST.md` when present and distinguish `uatReady` from `uatComplete`
+6. Never infer `uatComplete` from automation alone
+
 ## Step 1.5: Workflow Evidence Reconciliation
 
 Use verifier artifact workflow evidence as the structured source of truth for review/finish closeout.
@@ -125,6 +140,14 @@ Compare results against `context.md` requirements and `SPRINT_CONTRACT.md` even 
 selfAuditResult:
   requirementsMet: []
   requirementsNotMet: []
+  traceability:
+    inScopeRequirements: []
+    uncoveredRequirements: []
+    blockedRequirements: []
+    criticalScenarios: []
+    scenariosMissingEvidence: []
+    uatReady: true | false
+    uatComplete: true | false
   boundaryCheck:
     neverDoViolations: []
     askFirstItems: []
@@ -149,6 +172,17 @@ completionStatus:
     declared: []
     executed: []
     missing: []
+  traceability:
+    requirementsMatrixDetected: true | false
+    scenarioMatrixDetected: true | false
+    uatChecklistDetected: true | false
+    inScopeRequirements: []
+    uncoveredRequirements: []
+    blockedRequirements: []
+    criticalScenarios: []
+    scenariosMissingEvidence: []
+    uatReady: true | false
+    uatComplete: true | false
   gateDecision: pass | failed | pass_with_warning
   total: 5
   passed: 4
@@ -174,6 +208,9 @@ Passing rule:
   - `evidenceFresh == true`
   - `requiredChecks.missing` is empty
   - `verdictArtifact.workflowEvidence.warnings` is empty for code-changing closeout work
+  - `traceability.uncoveredRequirements` is empty for in-scope `REQ-*`
+  - `traceability.scenariosMissingEvidence` is empty for critical `SCN-*`
+  - `traceability.uatReady == true` for user-facing finish claims
 - Otherwise degrade to `failed` or `pass_with_warning`; never infer a full pass from self-audit alone.
 
 ## Retry Logic
@@ -193,6 +230,8 @@ When `verificationState: failed` and executable verification exists:
 - Missing verification contract in standard profile -> fallback detection allowed
 - Contract present but out of scope -> use workspace/fallback mode instead of contract mode
 - Contract applicable but required checks not executed -> not eligible for `gateDecision: pass`
+- Missing traceability artifacts in standard profile -> continue, but do not claim document-complete coverage
+- Missing traceability artifacts in strict document-trace runs -> not eligible for `gateDecision: pass`
 
 ## Notes
 
@@ -200,6 +239,7 @@ When `verificationState: failed` and executable verification exists:
 - Requirement fulfillment involves judgment; verdict artifacts provide deterministic evidence.
 - A fresh verifier artifact or equivalent current-run command evidence is required before a contract-backed success verdict.
 - When available, `verdictArtifact.workflowEvidence` is the canonical structured hint for whether review/finish-stage evidence is complete enough to close the run.
+- `uatReady` and `uatComplete` are different states. Automation may establish only `uatReady`.
 - Each verifier run should refresh `QA_REPORT.md` when `qaReportPath` is available.
 - If verification fails or the run pauses before clean completion, mark `handoffPath` for update.
 - If `neverDoViolations` exist, halt immediately and report to user.

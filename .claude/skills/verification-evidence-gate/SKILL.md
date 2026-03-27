@@ -35,6 +35,9 @@ This closes the Verify stage in strict runs before Finish / Handoff can begin.
    - `contractApplicable == true` and `requiredChecks.missing` is not empty
    - `verificationMode == contract` and `requiredChecks.missing` is not empty
    - `evidenceFresh == false` when a contract-backed verdict is expected
+   - `completionStatus.traceability.uncoveredRequirements` is not empty for in-scope `REQ-*`
+   - `completionStatus.traceability.scenariosMissingEvidence` is not empty for critical `SCN-*`
+   - `completionStatus.traceability.uatReady == false` for user-facing finish claims
    - `verdict.workflowEvidence.warnings` is not empty for code-changing closeout work
    - verifier artifact says `workflowEvidence.detected == false` for bounded-direct closeout that claims review/finish completion
    - No evidence of a fresh verification run
@@ -69,3 +72,4 @@ missingInfo:
 - Prefer structured `verdict.workflowEvidence` warnings over manual interpretation when they exist.
 - For contract-backed verification, a passing state without fresh evidence is still blocked.
 - For code-changing closeout, missing review/finish workflow evidence is treated as missing verification evidence, not as optional metadata.
+- In document-trace runs, missing requirement or critical-scenario evidence is also missing verification evidence.

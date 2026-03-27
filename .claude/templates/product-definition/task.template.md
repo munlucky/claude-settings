@@ -3,6 +3,8 @@
 ## Summary
 - Slice name
 - Goal
+- Requirement IDs (`REQ-*`)
+- Scenario IDs (`SCN-*`)
 
 ## Input
 - Source documents
@@ -25,9 +27,11 @@
 
 ## Done Criteria
 - Objective completion conditions
+- Traceability coverage required before closeout
 
 ## Verification
 - Required tests or checks
+- Evidence paths or artifacts to refresh
 
 ## Contract Seed
 - Round goal

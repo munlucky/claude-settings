@@ -8,6 +8,7 @@
 - Completed:
 - In progress:
 - Blocked:
+- Open `REQ-*` / `SCN-*`:
 
 ## Decisions
 - Decision:
@@ -25,6 +26,7 @@
 - Review:
 - Verification:
 - Runtime flow:
+- Traceability artifacts:
 
 ## Next Steps
 1. First action
@@ -34,5 +36,8 @@
 ## Evidence Paths
 - Sprint contract:
 - QA report:
+- Requirements traceability:
+- Scenario matrix:
+- UAT checklist:
 - Key files:
 - Branch / commit:

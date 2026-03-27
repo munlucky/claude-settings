@@ -109,6 +109,7 @@ See @README for project overview and @package.json for npm commands.
 - `codex-validate-plan`
 - `codex-review-code`
 - `moonshot-in-session-coordinator` (신규)
+- downstream 프로젝트의 문서 기준 완료는 `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, `UAT_CHECKLIST.md`를 종료 아티팩트로 사용합니다
 
 ### 문서 및 로깅
 - `session-logger`
@@ -166,6 +167,7 @@ phase runner 기본 동작:
 - 출력 템플릿: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 - 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
+- 문서 추적 완료 하네스 가이드: `.claude/docs/guidelines/requirements-traceability-harness.ko.md`
 - 제품 정의 템플릿: `.claude/templates/product-definition/`
 - 실행 아티팩트 템플릿: `.claude/templates/execution/`
 
