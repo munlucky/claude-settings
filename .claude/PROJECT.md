@@ -159,6 +159,19 @@ Override the default paths from `CLAUDE.md` if needed. **For git-tracked project
 | Session logs | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
 | Pending questions | `{tasksRoot}/{feature-name}/pending-questions.md` |
 
+### Project Reference Documents
+
+Generate and maintain these project-specific source-of-truth documents in the downstream project workspace:
+
+- `workflow/README.md` — official development process, runtime roles, entry commands, and branch/worktree policy
+- `docs/design/README.md` — shared design rules, component/token guidance, and the exception process for new UI types
+- `docs/glossary/README.md` — canonical product/domain terms for screens, APIs, features, and architecture concepts
+- `docs/daily/README.md` — daily logging rules and the expected structure under `docs/daily/YYYY-MM-DD/`
+- `TEST_GUIDE.md` — human-readable testing guide that complements `.claude/verification.contract.yaml`
+- `docs/analysis/README.md` — conventions for impact analysis, architecture notes, and deep-dive investigation docs
+
+These documents should be generated or refreshed together with `PROJECT.md` when bootstrapping a real project.
+
 ## Knowledge Repository (Agent-First)
 
 Use this section when the template is installed into a real working project.

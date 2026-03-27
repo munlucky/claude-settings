@@ -12,7 +12,7 @@ It may run behind the doc-ops bundle or be invoked directly when the user wants 
 
 > **Purpose**: Record development sessions in real time to track decisions and trial/error
 > **When to log**: work start, agent switch, decisions, issues, work completion
-> **Output**: `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`
+> **Output**: Prefer `docs/daily/YYYY-MM-DD/{runtime}.md` when the project uses `docs/daily/README.md`; otherwise fall back to `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`
 
 ---
 
@@ -99,6 +99,18 @@ When context window is over 80% full:
 ---
 
 ## File Structure
+
+Preferred shared daily log structure:
+
+```
+docs/daily/
+└── YYYY-MM-DD/
+    ├── codex.md
+    ├── claude.md
+    └── kimi.md
+```
+
+Task-local fallback structure:
 
 ```
 {tasksRoot}/{feature-name}/

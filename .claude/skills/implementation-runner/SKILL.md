@@ -10,13 +10,33 @@ description: Performs implementation in the chain and records completion state a
 - `analysisContext.request.taskType`
 - `analysisContext.decisions.skillChain`
 - `analysisContext.repo.openFiles`
+- `analysisContext.artifacts.workflowGuidePath`
+- `analysisContext.artifacts.designGuidePath`
+- `analysisContext.artifacts.glossaryGuidePath`
+- `analysisContext.artifacts.dailyGuidePath`
+- `analysisContext.artifacts.testGuidePath`
+- `analysisContext.artifacts.analysisIndexPath` / `analysisRoot`
 - `analysisContext.artifacts.contextDocPath` (if present)
 - `analysisContext.artifacts.planPath` / `taskSliceGlob` (if present)
 - `analysisContext.artifacts.sprintContractPath` (when execution bridge is required)
 
 ## Procedure
 
-### Step 0: Execution Bridge Setup
+### Step 0: Project Reference Docs
+
+Before code edits, load the applicable project reference docs when they exist:
+- `workflow/README.md` for branch/worktree/process rules
+- `docs/design/README.md` for shared UI and pattern rules
+- `docs/glossary/README.md` for canonical naming
+- `docs/daily/README.md` for logging expectations
+- `TEST_GUIDE.md` for verification scope expectations
+- relevant `docs/analysis/*.md` when the target area already has prior analysis
+
+Rules:
+- Prefer these docs over ad-hoc assumptions for naming, structure, testing, and workflow behavior.
+- If a relevant doc is missing, record the absence in notes and continue with the best available contract instead of inventing policy.
+
+### Step 0.1: Execution Bridge Setup
 
 Before code edits, determine whether the current run requires a slice-level sprint contract.
 
@@ -70,10 +90,11 @@ result:
 
 ### For All Tasks
 1. Check requirements, context, and `SPRINT_CONTRACT.md` when present.
-2. Define change scope from the active slice and implement.
-3. Record changed files and key change summary.
-4. Update implementation completion in `analysisContext`.
-5. **Write tests** (if `testEnvironmentDetected = true`, see Step 5).
+2. Check project reference docs relevant to the change when present.
+3. Define change scope from the active slice and implement.
+4. Record changed files and key change summary.
+5. Update implementation completion in `analysisContext`.
+6. **Write tests** (if `testEnvironmentDetected = true`, see Step 5).
 
 ### For Refactor Tasks (taskType == refactor)
 > Reference: `.claude/rules/scope-confirmation.md`, `.claude/rules/refactoring-guidelines.md`

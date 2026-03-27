@@ -134,6 +134,7 @@ payload = {
         "implementation-runner",
         "code-simplifier",
         "completion-verifier",
+        "doc-auto-sync",
         "session-logger",
     ],
     "notes": [
@@ -162,7 +163,7 @@ updates = {
     "lastDispatchAt": f'"{os.environ["TIMESTAMP_VALUE"]}"',
     "workflowEvidenceFile": f'"{os.environ["LATEST_FILE_VALUE"]}"',
     "workflowSelectedBundles": '"analysis-bundle,readiness-bundle,implementation-bundle,verification-suite,doc-ops-bundle"',
-    'workflowRequiredSkills': '"moonshot-phase-runner,moonshot-phase-executor,implementation-runner,code-simplifier,completion-verifier,session-logger"',
+    'workflowRequiredSkills': '"moonshot-phase-runner,moonshot-phase-executor,implementation-runner,code-simplifier,completion-verifier,doc-auto-sync,session-logger"',
 }
 
 insert_at = len(lines)
@@ -256,6 +257,7 @@ payload = {
         "implementation-runner",
         "code-simplifier",
         "completion-verifier",
+        "doc-auto-sync",
         "session-logger",
     ],
 }
@@ -442,6 +444,11 @@ if requires_phase_trace:
             and ("code-simplifier" not in skipped or "not evaluated yet" in skipped.lower())
         ):
             violations.append(f"{qa_report.as_posix()}: code changes require code-simplifier evidence in applied or skipped skills")
+        if code_change_detected and (
+            "doc-auto-sync" not in applied
+            and ("doc-auto-sync" not in skipped or "not evaluated yet" in skipped.lower())
+        ):
+            violations.append(f"{qa_report.as_posix()}: code changes require doc-auto-sync evidence in applied or skipped skills")
 
     for handoff in handoffs:
         if not handoff.exists():
@@ -485,6 +492,11 @@ if requires_bounded_trace:
             and ("code-simplifier" not in skipped_text or "not evaluated yet" in skipped_text.lower())
         ):
             violations.append(f"{analysis_file.as_posix()}: bounded direct code changes require code-simplifier evidence")
+        if code_change_detected and (
+            "doc-auto-sync" not in applied_text
+            and ("doc-auto-sync" not in skipped_text or "not evaluated yet" in skipped_text.lower())
+        ):
+            violations.append(f"{analysis_file.as_posix()}: bounded direct code changes require doc-auto-sync evidence")
         if payload.get("signals", {}).get("handoffRequired") is True and "session-logger" not in applied_text and "session-logger" not in skipped_text:
             violations.append(f"{analysis_file.as_posix()}: handoffRequired=true requires session-logger evidence")
 

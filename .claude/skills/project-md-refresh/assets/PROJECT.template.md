@@ -44,6 +44,14 @@
 - `{tasksRoot}/{feature-name}/pending-questions.md`
 - `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md`
 
+## Project Reference Docs
+- `workflow/README.md`
+- `docs/design/README.md`
+- `docs/glossary/README.md`
+- `docs/daily/README.md`
+- `TEST_GUIDE.md`
+- `docs/analysis/README.md`
+
 ## Commands
 - **Dev**: `[command]`
 - **Build**: `[command]`

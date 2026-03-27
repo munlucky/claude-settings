@@ -18,14 +18,17 @@ context: fork
 - `analysisContext.artifacts.qaReportPath`
 - `analysisContext.artifacts.handoffPath`
 - `analysisContext.artifacts.verificationContractPath`
-- `PROJECT.md` 또는 verification contract의 테스트/검증 명령
+- `analysisContext.artifacts.testGuidePath`
+- `analysisContext.artifacts.analysisIndexPath` / `analysisRoot`
+- `TEST_GUIDE.md`, `PROJECT.md` 또는 verification contract의 테스트/검증 명령
 - `analysisContext.signals.allowIndeterminate`
 
 ## contract-first 정책
 검증 명령 해석 우선순위:
 1. `.claude/verification.contract.yaml`
-2. `PROJECT.md` Testing Rules
-3. 파일시스템/스크립트 자동 감지 fallback
+2. `TEST_GUIDE.md`
+3. `PROJECT.md` Testing Rules
+4. 파일시스템/스크립트 자동 감지 fallback
 
 적용 범위 규칙:
 - contract가 `scope` 를 선언하면 현재 execution plane 또는 변경 경로가 그 범위에 맞을 때만 required check를 적용합니다.

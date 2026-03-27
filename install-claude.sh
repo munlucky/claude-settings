@@ -804,11 +804,11 @@ if [ ${#USER_FILES[@]} -gt 0 ]; then
 
 fi
 
-# Suggest generating PROJECT.md when missing
+# Suggest generating project bootstrap docs when missing
 
 if [ ! -f ".claude/PROJECT.md" ]; then
 	print_warn "PROJECT.md가 없습니다."
-	echo "  - 'project-md-refresh' 스킬을 실행해 생성/갱신하세요."
+	echo "  - 'project-md-refresh' 스킬을 실행해 PROJECT.md와 프로젝트 기준 문서 세트를 생성/갱신하세요."
 	echo "  - 예: Claude Code에 이 저장소에서 project-md-refresh를 실행해달라고 요청"
 	echo ""
 fi

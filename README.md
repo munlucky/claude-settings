@@ -189,7 +189,16 @@ custom/
 
 ### PROJECT.md 자동 생성/갱신
 
-설치 후 `.claude/PROJECT.md`가 없다면 `project-md-refresh` 스킬을 실행해 프로젝트 분석 기반으로 생성하거나 갱신할 수 있습니다.
+설치 후 프로젝트 부트스트랩 문서 세트가 비어 있다면 `project-md-refresh` 스킬을 실행해 프로젝트 분석 기반으로 생성하거나 갱신할 수 있습니다.
+
+기본 대상 문서:
+- `.claude/PROJECT.md`
+- `workflow/README.md`
+- `docs/design/README.md`
+- `docs/glossary/README.md`
+- `docs/daily/README.md`
+- `TEST_GUIDE.md`
+- `docs/analysis/README.md`
 
 추가로 downstream 프로젝트 구현 전에 다음 readiness gate를 통과하는 구성을 권장합니다.
 
@@ -206,8 +215,8 @@ custom/
 # 1. .claude 폴더 복사
 cp -r claude-settings/.claude /your-project/
 
-# 2. PROJECT.md 커스터마이징
-# 프로젝트 개요, 스택, 규칙 등을 프로젝트에 맞게 수정
+# 2. 부트스트랩 문서 커스터마이징
+# PROJECT.md와 workflow/design/glossary/daily/test/analysis 문서를 프로젝트에 맞게 수정
 ```
 
 ### 부분 적용

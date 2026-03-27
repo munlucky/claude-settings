@@ -155,4 +155,5 @@ Phase runner default behavior:
 
 - Keep English `.md` in ASCII and maintain matching `.ko.md` pairs.
 - If you change names or paths, update this document and `install-claude.sh`.
-- If the target project is missing `PROJECT.md`, run `project-md-refresh`.
+- If the target project is missing its bootstrap docs, run `project-md-refresh`.
+- `project-md-refresh` should refresh `.claude/PROJECT.md` together with `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, and `docs/analysis/README.md`.

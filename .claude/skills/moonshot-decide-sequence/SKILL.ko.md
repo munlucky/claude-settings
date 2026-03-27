@@ -225,6 +225,7 @@ medium/complex `product_project` 실행에서는 아래 execution bridge를 기�
 - 리팩토링 작업은 실패한 검증 뒤에 `build-error-resolver`를 삽입하고 단계별 빌드 체크를 유지한다.
 - medium/complex 작업은 첫 `implementation-runner` 직전에 `karpathy-execution-gate`를 반드시 거친다.
 - medium/complex `product_project`는 `HANDOFF.md`와 세션 아티팩트를 위해 `doc-ops-bundle`을 유지한다.
+- 의미 있는 파일 수정이 있는 모든 `product_project` 작업은 완료 전에 `doc-auto-sync`가 실행되도록 체인 마지막에 `doc-ops-bundle`을 유지한다.
 - 게이트에서 blocker가 나오면 planning 단계로 되돌린다.
 
 ## 병렬 실행 가이드

@@ -159,6 +159,19 @@ API 호출 및 데이터 통신 관련 패턴을 설명합니다.
 | 세션 로그 | `{tasksRoot}/{feature-name}/session-logs/day-{YYYY-MM-DD}.md` |
 | 미해결 질문 | `{tasksRoot}/{feature-name}/pending-questions.md` |
 
+### 프로젝트 기준 문서
+
+downstream 프로젝트 워크스페이스에는 아래 기준 문서를 함께 생성하고 유지합니다.
+
+- `workflow/README.md` — 공식 개발 프로세스, 런타임 역할, 진입 명령, 브랜치/worktree 정책
+- `docs/design/README.md` — 공통 디자인 규칙, 컴포넌트/토큰 기준, 새 UI 유형 예외 처리 절차
+- `docs/glossary/README.md` — 화면/API/기능/아키텍처 개념의 표준 용어
+- `docs/daily/README.md` — `docs/daily/YYYY-MM-DD/` 구조와 일일 기록 규칙
+- `TEST_GUIDE.md` — `.claude/verification.contract.yaml`을 보완하는 사람이 읽는 테스트 가이드
+- `docs/analysis/README.md` — 영향 분석, 구조 메모, 심층 조사 문서 규칙
+
+실제 프로젝트를 부트스트랩할 때는 `PROJECT.md`와 함께 이 문서들도 생성하거나 갱신해야 합니다.
+
 ## 지식 저장소 (Agent-First)
 
 이 템플릿을 실제 작업 프로젝트에 설치했을 때 사용하는 운영 원칙입니다.

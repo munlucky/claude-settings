@@ -19,6 +19,7 @@ It should normally run behind a doc-ops bundle after implementation or verificat
 - `analysisContext.repo.changedFiles` — list of changed files
 - `analysisContext.request.taskType` — feature/bugfix/refactor
 - `analysisContext.artifacts.tasksRoot` — task document root
+- project reference docs: `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, `docs/analysis/README.md`
 
 ## Workflow
 
@@ -32,19 +33,28 @@ docMapping:
     - "docs/generated/api-reference.md"
     - "README.md#api"
     - ".claude/PROJECT.md#api-data-patterns"
+    - "docs/glossary/README.md#api-terms"
   "src/components/**":
     - "ARCHITECTURE.md#components"
+    - "docs/design/README.md#component-rules"
   "prisma/schema.prisma|drizzle/*":
     - "docs/generated/db-schema.md"
     - ".claude/PROJECT.md#type-domain-patterns"
+    - "docs/glossary/README.md#term-table"
   "package.json":
     - "README.md#installation"
     - ".claude/PROJECT.md#stack"
+    - "TEST_GUIDE.md#command-matrix"
   ".env*":
     - "README.md#configuration"
     - ".claude/PROJECT.md#environment-variables"
   "*.config.*":
     - ".claude/PROJECT.md#verification-commands"
+    - "TEST_GUIDE.md#command-matrix"
+  ".claude/scripts/**|workflow/**":
+    - "workflow/README.md#standard-entry-points"
+  "src/**|apps/**|packages/**":
+    - "docs/analysis/README.md"
 ```
 
 ### 2. PROJECT.md Auto-Sync
@@ -77,6 +87,12 @@ If key documents are missing, recommend creation:
 bootstrapRules:
   always:
     - CHANGELOG.md
+    - workflow/README.md
+    - docs/design/README.md
+    - docs/glossary/README.md
+    - docs/daily/README.md
+    - TEST_GUIDE.md
+    - docs/analysis/README.md
   ifMissing:
     - condition: "estimatedLOC > 5000"
       create: "ARCHITECTURE.md (skeleton)"
@@ -101,6 +117,10 @@ freshnessCheck:
     - "ARCHITECTURE.md vs project structure"
     - "docs/generated/* vs source code"
     - ".claude/PROJECT.md vs actual project state"
+    - "workflow/README.md vs actual workflow scripts and branch policy"
+    - "docs/design/README.md vs UI/component system"
+    - "docs/glossary/README.md vs active domain terms"
+    - "TEST_GUIDE.md vs executable verification commands"
 ```
 
 Stale docs → add to output `staleDocs[]` for pre-flight-check to surface.

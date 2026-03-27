@@ -11,6 +11,7 @@ description: Checks essential information and project status before starting wor
 - `analysisContext.*` (structured state, if exists)
 - Feature name/branch name (optional)
 - Required doc paths: `CLAUDE.md`, `PROJECT.md`, `context.md`, verification contract, etc.
+- Project reference docs when present: `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, `docs/analysis/README.md`
 
 ## Checklist
 - execution plane (`read_only`, `product_project`, `meta_harness`)
@@ -20,6 +21,7 @@ description: Checks essential information and project status before starting wor
 - git status/branch, build status
 - context.md freshness, unresolved items in pending-questions.md
 - downstream project contract readiness (`PROJECT.md`)
+- project reference docs readiness (workflow/design/glossary/daily/test/analysis)
 - downstream verification contract readiness (`.claude/verification.contract.yaml` or equivalent policy)
 - **Document Memory Policy check**:
   - context.md token usage (warn if > 6,000 tokens, ~80% of limit)
@@ -44,6 +46,7 @@ signals:
 notes:
   - "pre-flight: executionPlane=product_project"
   - "pre-flight: project contract missing required command/test sections"
+  - "pre-flight: project reference docs missing workflow/design/test guidance"
 recommendedActions:
   - "run project-contract-gate"
   - "run context-readiness-gate"
@@ -88,7 +91,7 @@ WARN verification contract missing
 |----------------------|-------------------|
 | Vague request | Invoke `requirements-analyzer` to clarify |
 | Large document | Follow `document-memory-policy.md` to summarize |
-| Missing areas | Set `projectContractReady=false`, recommend `project-contract-gate` |
+| Missing areas | Set `projectContractReady=false`, recommend `project-contract-gate` or `project-md-refresh` |
 | No tests | Recommend writing tests before `completion-verifier` |
 
 ## References

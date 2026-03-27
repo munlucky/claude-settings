@@ -19,6 +19,7 @@ description: 코드 변경을 감지하여 관련 문서(PROJECT.md, README, CHA
 - `analysisContext.repo.changedFiles` — 변경된 파일 목록
 - `analysisContext.request.taskType` — feature/bugfix/refactor
 - `analysisContext.artifacts.tasksRoot` — 태스크 문서 루트
+- 프로젝트 기준 문서: `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, `docs/analysis/README.md`
 
 ## 워크플로우
 
@@ -32,19 +33,28 @@ docMapping:
     - "docs/generated/api-reference.md"
     - "README.md#api"
     - ".claude/PROJECT.md#api-data-patterns"
+    - "docs/glossary/README.md#api-terms"
   "src/components/**":
     - "ARCHITECTURE.md#components"
+    - "docs/design/README.md#component-rules"
   "prisma/schema.prisma|drizzle/*":
     - "docs/generated/db-schema.md"
     - ".claude/PROJECT.md#type-domain-patterns"
+    - "docs/glossary/README.md#term-table"
   "package.json":
     - "README.md#installation"
     - ".claude/PROJECT.md#stack"
+    - "TEST_GUIDE.md#command-matrix"
   ".env*":
     - "README.md#configuration"
     - ".claude/PROJECT.md#environment-variables"
   "*.config.*":
     - ".claude/PROJECT.md#verification-commands"
+    - "TEST_GUIDE.md#command-matrix"
+  ".claude/scripts/**|workflow/**":
+    - "workflow/README.md#standard-entry-points"
+  "src/**|apps/**|packages/**":
+    - "docs/analysis/README.md"
 ```
 
 ### 2. PROJECT.md 자동 동기화
@@ -77,6 +87,12 @@ docMapping:
 bootstrapRules:
   always:
     - CHANGELOG.md
+    - workflow/README.md
+    - docs/design/README.md
+    - docs/glossary/README.md
+    - docs/daily/README.md
+    - TEST_GUIDE.md
+    - docs/analysis/README.md
   ifMissing:
     - condition: "estimatedLOC > 5000"
       create: "ARCHITECTURE.md (골격)"
@@ -101,6 +117,10 @@ freshnessCheck:
     - "ARCHITECTURE.md vs 프로젝트 구조"
     - "docs/generated/* vs 소스 코드"
     - ".claude/PROJECT.md vs 실제 프로젝트 상태"
+    - "workflow/README.md vs 실제 워크플로우 스크립트/브랜치 정책"
+    - "docs/design/README.md vs UI/컴포넌트 시스템"
+    - "docs/glossary/README.md vs 현재 도메인 용어"
+    - "TEST_GUIDE.md vs 실제 검증 명령"
 ```
 
 오래된 문서 → `staleDocs[]`에 추가하여 pre-flight-check에서 표면화.
