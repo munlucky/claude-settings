@@ -229,6 +229,7 @@ Execution-bridge expectation for medium/complex `product_project` runs:
 - For refactor tasks, insert `build-error-resolver` after failed verification and keep phased build checks.
 - For medium/complex tasks, run `karpathy-execution-gate` immediately before the first `implementation-runner`.
 - For medium/complex `product_project` work, ensure `doc-ops-bundle` is present so `HANDOFF.md` and session artifacts can be emitted when needed.
+- For any `product_project` work with meaningful file edits, keep `doc-ops-bundle` at the end of the chain so `doc-auto-sync` runs before completion.
 - If the gate reports blockers, return to planning before code edits.
 
 ## Parallel execution guide

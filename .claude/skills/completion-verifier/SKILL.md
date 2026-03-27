@@ -18,7 +18,9 @@ context: fork
 - `analysisContext.artifacts.qaReportPath`
 - `analysisContext.artifacts.handoffPath`
 - `analysisContext.artifacts.verificationContractPath`
-- Test framework and commands from `PROJECT.md` or verification contract
+- `analysisContext.artifacts.testGuidePath`
+- `analysisContext.artifacts.analysisIndexPath` / `analysisRoot`
+- Test framework and commands from `TEST_GUIDE.md`, `PROJECT.md`, or verification contract
 - `analysisContext.signals.allowIndeterminate` (boolean override, default: `true`)
 
 ## Contract-first policy
@@ -27,8 +29,9 @@ Prefer explicit verification contract data when available.
 
 Order of precedence:
 1. `.claude/verification.contract.yaml`
-2. `PROJECT.md` Testing Rules
-3. Filesystem/test-script auto-detection fallback
+2. `TEST_GUIDE.md`
+3. `PROJECT.md` Testing Rules
+4. Filesystem/test-script auto-detection fallback
 
 Applicability rule:
 - If the contract declares `scope`, apply required checks only when the current execution plane or changed paths match that scope.
@@ -62,6 +65,7 @@ verificationEnvironment:
 
 Detection order:
 - contract-defined commands
+- `TEST_GUIDE.md` command matrix and scope rules
 - `PROJECT.md` Testing Rules / commands
 - config files and package scripts
 

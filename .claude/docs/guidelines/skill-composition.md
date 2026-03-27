@@ -96,6 +96,8 @@ steps:
   - documentation-agent
 ```
 
+Use `doc-ops-bundle` as a required finalization stage for implementation runs that changed meaningful files.
+
 ### logging-bundle
 ```yaml
 steps:

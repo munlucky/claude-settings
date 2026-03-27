@@ -94,6 +94,8 @@ steps:
   - documentation-agent
 ```
 
+의미 있는 파일 수정이 있는 구현 run에서는 `doc-ops-bundle`을 필수 마감 단계로 사용합니다.
+
 ### logging-bundle
 ```yaml
 steps:

@@ -12,7 +12,7 @@ doc-ops bundle 뒤에서 실행할 수도 있고, 사용자가 세션/HANDOFF �
 
 > **목적**: 개발 세션을 실시간 기록하여 결정 과정과 시행착오 추적
 > **기록 시점**: 작업 시작, 에이전트 전환, 결정, 이슈, 작업 완료
-> **출력**: `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`
+> **출력**: 프로젝트가 `docs/daily/README.md`를 사용하면 `docs/daily/YYYY-MM-DD/{runtime}.md`를 우선하고, 아니면 `{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md`를 fallback으로 사용
 
 ---
 
@@ -99,6 +99,18 @@ doc-ops bundle 뒤에서 실행할 수도 있고, 사용자가 세션/HANDOFF �
 ---
 
 ## 파일 구조
+
+우선 사용하는 공용 일일 로그 구조:
+
+```
+docs/daily/
+└── YYYY-MM-DD/
+    ├── codex.md
+    ├── claude.md
+    └── kimi.md
+```
+
+태스크 로컬 fallback 구조:
 
 ```
 {tasksRoot}/{feature-name}/

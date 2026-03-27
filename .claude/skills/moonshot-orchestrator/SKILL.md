@@ -121,6 +121,14 @@ fixForward:
   tasks: []
 artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
+  workflowGuidePath: "workflow/README.md"
+  designGuidePath: "docs/design/README.md"
+  glossaryGuidePath: "docs/glossary/README.md"
+  dailyGuidePath: "docs/daily/README.md"
+  dailyLogDir: "docs/daily"
+  testGuidePath: "TEST_GUIDE.md"
+  analysisRoot: "docs/analysis"
+  analysisIndexPath: "docs/analysis/README.md"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   productDir: "{tasksRoot}/{feature-name}/product"
   productIntentPath: "{productDir}/PRODUCT_INTENT.md"
@@ -239,10 +247,27 @@ Policy:
 - medium/complex product work must not enter code changes without a slice-level sprint contract
 - strict or `meta_harness` phase work must keep policy anchors and required verification commands current in the active sprint contract
 - verification steps must update `QA_REPORT.md` whenever they run
+- successful or partially successful implementation rounds must run doc-ops finalization before completion is claimed
 - failed verification, retry loops, or interrupted runs should mark `signals.handoffRequired = true`
 - bounded direct work that stays outside the phase harness must still keep `workflowEvidence` current in `.claude/docs/moonshot-analysis.yaml`
 - bounded direct code changes must record whether `code-simplifier` was applied or explicitly skipped with a reason
+- bounded direct code changes must record `doc-auto-sync` evidence before completion is claimed
 - bounded direct interrupted runs must record `session-logger` evidence before completion is claimed
+
+#### 2.0.8 Project reference docs
+
+For `product_project` work, treat these project docs as first-class references when present:
+- `workflow/README.md`
+- `docs/design/README.md`
+- `docs/glossary/README.md`
+- `docs/daily/README.md`
+- `TEST_GUIDE.md`
+- `docs/analysis/README.md` and relevant `docs/analysis/*.md`
+
+Policy:
+- do not block solely because one of these files is missing
+- if the project doc set is missing or stale, surface it through `pre-flight-check` and prefer `project-md-refresh`
+- implementation, verification, naming, and logging steps should prefer these docs over ad-hoc guesses when they exist
 
 #### 2.1 Task classification
 Run `/moonshot-classify-task` -> merge patch (`taskType`, `keywords`, `signals`)
@@ -349,6 +374,7 @@ Run `decisions.skillChain` in order.
 - Before the first `implementation-runner` in medium/complex `product_project` work, materialize `artifacts.sprintContractPath`
 - `implementation-runner` must treat `SPRINT_CONTRACT.md` as the round-level source of truth for code edits
 - `completion-verifier`, `verify-runtime.sh`, and `verify-changes.sh` should update `artifacts.qaReportPath`
+- after verification or review, `doc-auto-sync` must run before completion is claimed
 - If verification fails, retries begin, or the session cannot finish cleanly, write/update `artifacts.handoffPath`
 
 **Phase-runner execution-mode contract**:
@@ -387,12 +413,14 @@ Run `decisions.skillChain` in order.
 | `contextReady=false` | `executionPlane == product_project` | Insert `context-readiness-gate` before implementation |
 | `verificationContractReady=false` | `executionPlane == product_project` | Insert `verification-contract-gate` before verification |
 | `executionBridgeNeeded` | `executionPlane == product_project && complexity != simple` | Ensure `session-logger` is present and require `SPRINT_CONTRACT.md` before first code edit |
+| `implementationComplete=true` | meaningful file edits detected | Ensure `doc-auto-sync` is present after verification and before completion |
 | `buildFailed` | `verify-changes.sh` exit `1` | Insert `build-error-resolver`, retry (max 2) |
 | `testFailed` | `verify-changes.sh` exit `2` | Re-enter `implementation-runner` with test-first remediation, then rerun verification |
 | `runtimeUnavailable` | `verify-runtime.sh` exit `1` | Request server/runtime readiness fix, rerun `browser-verifier` (max 1) |
 | `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` |
 | `browserFlowFailed` | `verify-runtime.sh` exit `3` | Re-enter runtime/browser remediation path, then rerun `browser-verifier` |
 | `verificationFailed` | `completion-verifier` or runtime verifier fails | Update `QA_REPORT.md`, re-enter implementation with contract-linked findings |
+| `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain, but still keep final doc-ops after implementation |
 | `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
 | `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `frontend-design` before `implementation-runner` |

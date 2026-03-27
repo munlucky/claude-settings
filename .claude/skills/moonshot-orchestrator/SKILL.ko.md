@@ -87,6 +87,14 @@ decisions:
   parallelGroups: []
 artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
+  workflowGuidePath: "workflow/README.md"
+  designGuidePath: "docs/design/README.md"
+  glossaryGuidePath: "docs/glossary/README.md"
+  dailyGuidePath: "docs/daily/README.md"
+  dailyLogDir: "docs/daily"
+  testGuidePath: "TEST_GUIDE.md"
+  analysisRoot: "docs/analysis"
+  analysisIndexPath: "docs/analysis/README.md"
   contextDocPath: "{tasksRoot}/{feature-name}/context.md"
   productDir: "{tasksRoot}/{feature-name}/product"
   productIntentPath: "{productDir}/PRODUCT_INTENT.md"
@@ -143,7 +151,22 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - strict 또는 `meta_harness` phase 작업은 active `SPRINT_CONTRACT.md` 에 policy anchors 와 필수 검증 명령을 유지해야 한다.
 - phase harness를 쓰지 않는 bounded direct 작업도 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 최신 상태로 유지해야 한다.
 - bounded direct 코드 변경은 `code-simplifier` 적용 여부를, 건너뛴 경우에는 이유와 함께 기록해야 한다.
+- 구현이 성공했거나 일부 성공 상태라도 완료 선언 전에는 문서 마감 단계가 실행되어야 한다.
+- bounded direct 경로에서 의미 있는 파일 수정이 있으면 완료 전 `doc-auto-sync` 증적을 반드시 남긴다.
 - bounded direct 실행이 중단되면 clean completion 전에 `session-logger` 증적을 남겨야 한다.
+
+프로젝트 기준 문서가 있으면 `product_project` 작업의 1급 참조로 취급한다.
+- `workflow/README.md`
+- `docs/design/README.md`
+- `docs/glossary/README.md`
+- `docs/daily/README.md`
+- `TEST_GUIDE.md`
+- `docs/analysis/README.md` 및 관련 `docs/analysis/*.md`
+
+정책:
+- 이 문서들 중 일부가 없어도 그 사실만으로 바로 차단하지 않는다.
+- 기준 문서 세트가 비어 있거나 오래됐으면 `pre-flight-check`에서 표면화하고 가능하면 `project-md-refresh`를 우선한다.
+- 구현, 검증, 명명, 로깅 단계는 이 문서가 있을 때 임의 추측보다 문서 기준을 우선한다.
 
 `moonshot-phase-runner`가 `in-session-coordinator` 모드를 반환하면:
 - 메인 세션은 coordinator로만 남는다.
@@ -201,11 +224,13 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `contextReady=false` + `product_project` -> `context-readiness-gate`
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
 - `executionPlane == product_project && complexity != simple` -> `session-logger` 보장 + 첫 코드 변경 전 `SPRINT_CONTRACT.md` 요구
+- `implementationComplete=true` + 의미 있는 파일 수정 -> 검증 뒤, 완료 전 `doc-auto-sync` 보장
 - `reactProject=true` -> 첫 `implementation-runner` 앞에 `frontend-design` 삽입
 - `implementationComplete=true` + 의미 있는 코드 변경 -> `completion-verifier` 전에 `code-simplifier` 삽입
 - `phaseRunnerResult.autoStartExecution == true` -> `executionSkill`을 즉시 실행하고 `phaseRunnerResult`를 입력으로 전달
 - `phaseRunnerResult.executionMode == in-session-coordinator` -> `moonshot-in-session-coordinator` 삽입 + 메인 세션 coordinator 유지 + 각 round는 fresh fork/sub-agent attempt로 실행
 - 검증 실패 -> `QA_REPORT.md` 갱신 후 구현 단계 재진입
+- `docStale=true` -> 체인 시작에 `doc-auto-sync` 삽입, 구현 후 최종 doc-ops 단계는 그대로 유지
 - 재시도/중단/컨텍스트 경고 -> `HANDOFF.md` 갱신
 - strict인데 evidence gate가 없으면 `verification-evidence-gate` 삽입
 - 다중 실패가 쌓이면 `failure-analyzer` + `workflow-self-improver` 추가

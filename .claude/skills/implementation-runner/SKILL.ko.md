@@ -10,13 +10,33 @@ description: 체인에서 실제 구현을 수행하고 완료 상태와 변경 
 - `analysisContext.request.taskType`
 - `analysisContext.decisions.skillChain`
 - `analysisContext.repo.openFiles`
+- `analysisContext.artifacts.workflowGuidePath`
+- `analysisContext.artifacts.designGuidePath`
+- `analysisContext.artifacts.glossaryGuidePath`
+- `analysisContext.artifacts.dailyGuidePath`
+- `analysisContext.artifacts.testGuidePath`
+- `analysisContext.artifacts.analysisIndexPath` / `analysisRoot`
 - `analysisContext.artifacts.contextDocPath` (존재 시)
 - `analysisContext.artifacts.planPath` / `taskSliceGlob` (존재 시)
 - `analysisContext.artifacts.sprintContractPath` (execution bridge 적용 시)
 
 ## 절차
 
-### Step 0: Execution Bridge 설정
+### Step 0: 프로젝트 기준 문서 확인
+
+코드 수정 전에 관련 프로젝트 기준 문서가 있으면 먼저 확인합니다.
+- `workflow/README.md`: 브랜치/worktree/공식 프로세스 규칙
+- `docs/design/README.md`: 공통 UI/패턴 규칙
+- `docs/glossary/README.md`: 표준 명명
+- `docs/daily/README.md`: 기록 규칙
+- `TEST_GUIDE.md`: 검증 범위와 최소 실행 규칙
+- 관련 `docs/analysis/*.md`: 대상 영역의 기존 분석
+
+규칙:
+- 명명, 구조, 테스트, 워크플로우 판단은 가능하면 이 문서 기준을 우선합니다.
+- 관련 문서가 없으면 그 사실을 notes에 남기고, 정책을 지어내지 말고 기존 계약/컨텍스트 기준으로 진행합니다.
+
+### Step 0.1: Execution Bridge 설정
 
 코드 수정 전에 현재 라운드가 slice 단위 `SPRINT_CONTRACT.md`를 요구하는지 먼저 판정합니다.
 
@@ -70,10 +90,11 @@ result:
 
 ### 모든 작업
 1. 요구사항, 컨텍스트, `SPRINT_CONTRACT.md`가 있으면 그 계약까지 확인한다.
-2. active slice 기준으로 변경 범위를 정리하고 실제 구현을 수행한다.
-3. 변경 파일 목록과 핵심 변경 요약을 기록한다.
-4. 구현 완료 상태를 `analysisContext`에 반영한다.
-5. **테스트 작성** (`testEnvironmentDetected = true` 시, Step 5 참조).
+2. 관련 프로젝트 기준 문서가 있으면 함께 확인한다.
+3. active slice 기준으로 변경 범위를 정리하고 실제 구현을 수행한다.
+4. 변경 파일 목록과 핵심 변경 요약을 기록한다.
+5. 구현 완료 상태를 `analysisContext`에 반영한다.
+6. **테스트 작성** (`testEnvironmentDetected = true` 시, Step 5 참조).
 
 ### 리팩토링 작업 (taskType == refactor)
 > 참조: `.claude/rules/scope-confirmation.md`, `.claude/rules/refactoring-guidelines.md`
