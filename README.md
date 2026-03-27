@@ -14,6 +14,7 @@
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
 - `docs/implementation/`에 메타 워크플로우 개선 계획 문서를 보관
+- `.claude/verification-results-*`, `.claude/verification-verdict-*`, `.claude/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리 대상이 아님
 
 ## 디렉터리 구조
 

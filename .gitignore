@@ -7,7 +7,8 @@
 .claude/tools/browserd/node_modules/
 .claude/tools/browserd/.claude/
 .claude/verification-results-*.txt
-.claude/verification-verdict-verify-changes-*.json
+.claude/verification-verdict-*.json
+.claude/docs/moonshot-analysis.yaml
 .claude/memory.json
 .claude/logs
 .tmp/
