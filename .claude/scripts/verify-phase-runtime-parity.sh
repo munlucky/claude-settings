@@ -391,6 +391,7 @@ EOF
 - Name: Runtime Smoke
 - Owner: Runtime parity verifier
 - Source task: ${phase_doc}
+- Phase document: ${phase_doc}
 
 ## Round Goal
 - Exercise the workflow runtime for ${scenario_name} without editing repository source files.
@@ -400,15 +401,15 @@ EOF
 - No commits
 - No follow-up refactors
 
+## Stage Order
+- Ready / Isolate
+- Execute
+- Review
+- Verify
+- Finish / Handoff
+
 ## Planned Changes
 - Update execution artifacts and \`phase-status.yaml\` only
-
-## Execution Refresh
-- Refreshed for phase attempt: pending
-- Runtime mode: ${execution_mode}
-- Phase attempt mode: true
-- Execution scope: execution artifacts plus \`phase-status.yaml\` for phase 1 runtime smoke
-- Verification command: \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash .claude/agents/verification/verify-changes.sh runtime-smoke-${scenario_name}\`
 
 ## Policy Anchors
 - Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
@@ -416,6 +417,11 @@ EOF
 - Verification contract: .claude/verification.contract.yaml
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
 - Round policy summary: runtime smoke only, no repository source edits, fresh verification evidence required
+
+## Review Cadence
+- First review checkpoint: after the active phase implementation batch
+- Re-review trigger: if remediation changes behavior or evidence collection
+- Review owners: codex-review-code
 
 ## Done Checks
 | Check | Type | Pass Condition |
@@ -439,6 +445,11 @@ EOF
 - Screenshots/logs:
   - runtime smoke logs only
 
+## Finish Rule
+- Clean finish requires: fresh verification evidence, review marked complete, and finish-stage closeout recorded
+- Resume-later handoff trigger: runtime interruption or incomplete evidence
+- Retry-loop trigger: verification failure with actionable remediation
+
 ## Risks
 - CLI authentication/runtime issues
 - Unexpected source edits should fail the smoke
@@ -447,14 +458,46 @@ EOF
   cat > "$qa_report" <<EOF
 # QA REPORT
 
+## Slice
+- Name: Runtime Smoke
+- Contract: ${sprint_contract}
+- Evaluator: verify-phase-runtime-parity
+
 ## Verdict
 - Status: pending
 - Summary: awaiting runtime execution
+- Next path: retry_loop
+
+## Review Checkpoint
+- Review completed: no
+- Review owners: codex-review-code
+- Review-driven code changes:
+
+## Criteria Review
+| Criterion | Result | Notes |
+|-----------|--------|-------|
+| Runtime smoke verdict | pending | awaiting execution |
+
+## Findings
+| Severity | Area | Reproduction | Expected | Actual |
+|----------|------|--------------|----------|--------|
+|  |  |  |  |  |
+
+## Evidence
+- Commands run:
+- Runtime flow exercised:
+- Logs/screenshots/artifacts:
 
 ## Workflow Execution
-- Selected bundles: analysis-bundle, readiness-bundle, implementation-bundle, verification-suite, doc-ops-bundle
+- Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, completion-verifier
 - Skipped skills: code-simplifier (not evaluated yet), session-logger (clean completion path)
+- Enforcement note: replace defaults when actual execution diverges
+
+## Finish Readiness
+- Fresh evidence confirmed: no
+- Remaining blockers before closeout:
+- Checks to rerun if code changes again:
 EOF
 
   cat > "$handoff" <<EOF
@@ -462,11 +505,21 @@ EOF
 
 ## Goal
 - Runtime parity smoke
+- Current stage: Ready / Isolate
 
 ## Current State
 - Completed:
 - In progress:
 - Blocked:
+
+## Resume Trigger
+- Why this handoff exists: seeded placeholder until the smoke pauses or fails
+- Condition to resume: review the latest contract and QA evidence, then rerun only the active phase smoke
+
+## Checks To Rerun
+- Review:
+- Verification:
+- Runtime flow:
 
 ## Workflow Logging
 - session-logger: required on incomplete stop
@@ -523,6 +576,8 @@ run_render_matrix() {
   local execution_root="${fixture_lines[1]}"
   local status_file="${fixture_lines[2]}"
   local sprint_contract="${fixture_lines[3]}"
+  local qa_report="${fixture_lines[4]}"
+  local handoff="${fixture_lines[5]}"
 
   (
     cd "$REPO_ROOT"
@@ -539,7 +594,167 @@ run_render_matrix() {
   assert_contains "$agent_loop_out" "activePhaseDocPath:" "active phase doc path"
   assert_contains "$agent_loop_out" "Do not invoke moonshot-phase-runner again." "anti-recursion rule"
   assert_contains "$sprint_contract" "## Policy Anchors" "policy anchors section"
+  assert_contains "$sprint_contract" "## Stage Order" "stage order section"
+  assert_contains "$sprint_contract" "## Review Cadence" "review cadence section"
   assert_contains "$sprint_contract" "Verification contract:" "verification contract anchor"
+  assert_contains "$qa_report" "## Finish Readiness" "finish readiness section"
+  assert_contains "$handoff" "## Checks To Rerun" "handoff rerun section"
+}
+
+run_workflow_enforcement_sync_smoke() {
+  local fixture_root="$TMP_ROOT/workflow-enforcement-sync"
+  local analysis_file="$fixture_root/moonshot-analysis.yaml"
+  local sprint_contract="$fixture_root/execution/SPRINT_CONTRACT.md"
+  local qa_report="$fixture_root/execution/QA_REPORT.md"
+  local handoff="$fixture_root/execution/HANDOFF.md"
+  local code_file="$fixture_root/example.ts"
+  local verify_log="$TMP_ROOT/workflow-enforcement-sync-verify.log"
+
+  mkdir -p "$fixture_root/execution"
+
+  cat > "$analysis_file" <<'EOF'
+schemaVersion: "1.0"
+signals:
+  handoffRequired: false
+workflowEvidence:
+  mode: bounded-direct
+  selectedBundles:
+    - analysis-bundle
+    - implementation-bundle
+  requiredSkills:
+    - implementation-runner
+  appliedSkills:
+    - implementation-runner
+  skippedSkills:
+    - session-logger (clean completion path)
+notes:
+  - legacy sync fixture
+EOF
+
+  cat > "$sprint_contract" <<'EOF'
+# SPRINT CONTRACT
+
+## Stage Order
+- Plan
+- Ready / Isolate
+- Execute
+- Review
+- Verify
+- Finish / Handoff
+
+## Review Cadence
+- simple bounded review once after implementation
+
+## Finish Rule
+- finish starts only after review and verification are stable
+EOF
+
+  cat > "$qa_report" <<'EOF'
+# QA REPORT
+
+## Review Checkpoint
+- Review completed: yes
+- Review owners: codex-review-code
+
+## Workflow Execution
+- Selected bundles: analysis-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier, doc-auto-sync
+- Skipped skills: session-logger (clean completion path)
+
+## Finish Readiness
+- Fresh evidence confirmed: yes
+EOF
+
+  cat > "$handoff" <<'EOF'
+# HANDOFF
+
+## Resume Trigger
+- Resume if verification becomes stale
+
+## Checks To Rerun
+- completion-verifier
+
+## Workflow Logging
+- session-logger: required on incomplete stop
+EOF
+
+  cat > "$code_file" <<'EOF'
+export const workflowEnforcementSync = true;
+EOF
+
+  WORKFLOW_ENFORCEMENT_LOG_DIR="$fixture_root/logs" \
+    bash "$REPO_ROOT/.claude/scripts/workflow-enforcement.sh" record-bounded \
+      --analysis-path "$analysis_file" \
+      --qa-report-path "$qa_report" \
+      --handoff-path "$handoff"
+
+  assert_contains "$analysis_file" "stageOrder:" "workflow evidence stage order"
+  assert_contains "$analysis_file" "\"review-bundle\"" "workflow evidence review bundle"
+  assert_contains "$analysis_file" "\"codex-review-code\"" "workflow evidence codex review evidence"
+  assert_contains "$analysis_file" "qaReport:" "workflow evidence QA report path"
+
+  WORKFLOW_ENFORCEMENT_LOG_DIR="$fixture_root/logs" \
+    bash "$REPO_ROOT/.claude/scripts/workflow-enforcement.sh" record-dispatch \
+      --plan-dir "$fixture_root/plan" \
+      --execution-mode delegated-terminal \
+      --execution-root "$fixture_root/execution" \
+      --runtime codex \
+      --status-file "$fixture_root/phase-status.yaml" \
+      --master-plan "$fixture_root/plan/README.md"
+
+  if ! WORKFLOW_ENFORCEMENT_LOG_DIR="$fixture_root/logs" \
+      bash "$REPO_ROOT/.claude/scripts/workflow-enforcement.sh" verify \
+        "$code_file" \
+        "$sprint_contract" \
+        "$qa_report" \
+        "$handoff" \
+        "$analysis_file" > "$verify_log" 2>&1; then
+    cat "$verify_log" >&2 || true
+    fail "workflow-enforcement sync smoke failed"
+  fi
+
+  assert_contains "$verify_log" "Violations: 0" "workflow enforcement sync success"
+}
+
+run_verify_changes_workflow_verdict_smoke() {
+  local workspace_root="$TMP_ROOT/verify-changes-workflow/workspace"
+  local log_file="$TMP_ROOT/verify-changes-workflow.log"
+  local verdict_file="$workspace_root/.claude/verification-verdict-workflow-evidence-smoke.json"
+
+  prepare_workspace_copy "$workspace_root"
+  initialize_workspace_git "$workspace_root"
+
+  mkdir -p "$workspace_root/src"
+  cat > "$workspace_root/src/workflowEvidenceSmoke.ts" <<'EOF'
+export const workflowEvidenceSmoke = true;
+EOF
+
+  (
+    cd "$workspace_root"
+    VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity \
+      HARNESS_RUN_ID=workflow-evidence-smoke \
+      HARNESS_OPERATING_MODE=meta_harness \
+      bash .claude/agents/verification/verify-changes.sh workflow-evidence-smoke > "$log_file" 2>&1
+  )
+
+  python3 - "$verdict_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+workflow = payload.get("workflowEvidence") if isinstance(payload.get("workflowEvidence"), dict) else {}
+if workflow.get("detected") is not True:
+    raise SystemExit("workflow evidence not detected in verdict payload")
+for bundle in ("review-bundle", "finish-bundle"):
+    if bundle not in workflow.get("selectedBundles", []):
+        raise SystemExit(f"workflow evidence missing bundle: {bundle}")
+if "codex-review-code" not in workflow.get("requiredSkills", []):
+    raise SystemExit("workflow evidence missing codex-review-code in requiredSkills")
+if workflow.get("warnings"):
+    raise SystemExit(f"unexpected workflow evidence warnings: {workflow.get('warnings')}")
+PY
 }
 
 run_actual_flow() {
@@ -624,6 +839,14 @@ run_actual_flow() {
 
   if ! grep -Fq "## Policy Anchors" "$sprint_contract"; then
     record_actual_failure "$scenario_name" "policy anchors missing from sprint contract"
+    return 1
+  fi
+  if ! grep -Fq "## Stage Order" "$sprint_contract"; then
+    record_actual_failure "$scenario_name" "stage order missing from sprint contract"
+    return 1
+  fi
+  if ! grep -Fq "## Finish Readiness" "$qa_report"; then
+    record_actual_failure "$scenario_name" "finish readiness missing from QA report"
     return 1
   fi
 
@@ -729,6 +952,8 @@ require_command python3
 require_command shasum
 
 run_render_matrix
+run_workflow_enforcement_sync_smoke
+run_verify_changes_workflow_verdict_smoke
 
 if [[ "$RUN_REAL" == "true" ]]; then
   run_runtime_probes

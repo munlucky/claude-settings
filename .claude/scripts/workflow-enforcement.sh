@@ -122,24 +122,33 @@ payload = {
     "executionRoot": os.environ["EXECUTION_ROOT_VALUE"],
     "runtime": os.environ["RUNTIME_VALUE"],
     "selectedBundles": [
-        "analysis-bundle",
-        "readiness-bundle",
+        "ready-isolate-bundle",
         "implementation-bundle",
-        "verification-suite",
-        "doc-ops-bundle",
+        "review-bundle",
+        "verification-bundle",
+        "finish-bundle",
     ],
     "requiredSkills": [
         "moonshot-phase-runner",
         "moonshot-phase-executor",
         "implementation-runner",
+        "codex-review-code",
         "code-simplifier",
         "completion-verifier",
         "doc-auto-sync",
         "session-logger",
     ],
+    "stageOrder": [
+        "ready/isolate",
+        "execute",
+        "review",
+        "verify",
+        "finish/handoff",
+    ],
     "notes": [
         "Large or phase-based work must enter through moonshot-phase-runner.",
-        "Meaningful code changes require code-simplifier evidence before completion.",
+        "Meaningful code changes require review evidence before verification and completion.",
+        "Finish or handoff can only begin after review and verification reach a stable state.",
         "Incomplete phase stops require session-logger evidence in handoff artifacts.",
     ],
 }
@@ -162,8 +171,8 @@ lines = status_file.read_text(encoding="utf-8").splitlines()
 updates = {
     "lastDispatchAt": f'"{os.environ["TIMESTAMP_VALUE"]}"',
     "workflowEvidenceFile": f'"{os.environ["LATEST_FILE_VALUE"]}"',
-    "workflowSelectedBundles": '"analysis-bundle,readiness-bundle,implementation-bundle,verification-suite,doc-ops-bundle"',
-    'workflowRequiredSkills': '"moonshot-phase-runner,moonshot-phase-executor,implementation-runner,code-simplifier,completion-verifier,doc-auto-sync,session-logger"',
+    "workflowSelectedBundles": '"ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"',
+    'workflowRequiredSkills': '"moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"',
 }
 
 insert_at = len(lines)
@@ -239,27 +248,217 @@ import json
 import os
 from pathlib import Path
 
+analysis_path = Path(os.environ["ANALYSIS_PATH_VALUE"])
+qa_report_value = os.environ["QA_REPORT_PATH_VALUE"].strip()
+handoff_value = os.environ["HANDOFF_PATH_VALUE"].strip()
+qa_report_path = Path(qa_report_value) if qa_report_value else None
+
+selected_bundles = [
+    "analysis-bundle",
+    "ready-isolate-bundle",
+    "implementation-bundle",
+    "review-bundle",
+    "verification-bundle",
+    "finish-bundle",
+]
+required_skills = [
+    "implementation-runner",
+    "codex-review-code",
+    "code-simplifier",
+    "completion-verifier",
+    "doc-auto-sync",
+    "session-logger",
+]
+stage_order = [
+    "plan",
+    "ready/isolate",
+    "execute",
+    "review",
+    "verify",
+    "finish/handoff",
+]
+
+def yaml_scalar(value):
+    if value is None or value == "":
+        return "null"
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+def extract_workflow_section(text: str):
+    lines = text.splitlines()
+    start = None
+    for idx, line in enumerate(lines):
+        if line.strip() == "## Workflow Execution":
+            start = idx + 1
+            break
+    if start is None:
+        return {}
+    section = {}
+    for line in lines[start:]:
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.startswith("- Selected bundles:"):
+            section["selected"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("- Applied skills:"):
+            section["applied"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("- Skipped skills:"):
+            section["skipped"] = stripped.split(":", 1)[1].strip()
+    return section
+
+def parse_list_string(value: str):
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+def parse_simple_yaml(text: str):
+    result = {}
+    stack = [(-1, result)]
+    lines = text.splitlines()
+
+    def parse_scalar(value: str):
+        raw = value.strip()
+        if raw in {"true", "false"}:
+            return raw == "true"
+        if raw == "null":
+            return None
+        if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+            return raw[1:-1]
+        return raw
+
+    def next_meaningful(start_index: int):
+        for idx in range(start_index + 1, len(lines)):
+            stripped = lines[idx].strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            indent = len(lines[idx]) - len(lines[idx].lstrip(" "))
+            return indent, stripped
+        return None, None
+
+    for index, raw_line in enumerate(lines):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        while len(stack) > 1 and indent <= stack[-1][0]:
+            stack.pop()
+        container = stack[-1][1]
+
+        if stripped.startswith("- "):
+            if isinstance(container, list):
+                container.append(parse_scalar(stripped[2:]))
+            continue
+
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if value == "":
+            next_indent, next_stripped = next_meaningful(index)
+            nested = [] if next_indent is not None and next_indent > indent and next_stripped.startswith("- ") else {}
+            if isinstance(container, dict):
+                container[key] = nested
+                stack.append((indent, nested))
+            continue
+
+        if isinstance(container, dict):
+            container[key] = parse_scalar(value)
+
+    return result
+
+existing_workflow = {}
+if analysis_path.exists():
+    parsed = parse_simple_yaml(analysis_path.read_text(encoding="utf-8", errors="ignore"))
+    if isinstance(parsed.get("workflowEvidence"), dict):
+        existing_workflow = parsed["workflowEvidence"]
+
+applied_skills = existing_workflow.get("appliedSkills") if isinstance(existing_workflow.get("appliedSkills"), list) else [
+    "implementation-runner",
+    "completion-verifier",
+]
+skipped_skills = existing_workflow.get("skippedSkills") if isinstance(existing_workflow.get("skippedSkills"), list) else [
+    "codex-review-code (not evaluated yet)",
+    "code-simplifier (not evaluated yet)",
+    "doc-auto-sync (not evaluated yet)",
+    "session-logger (clean completion path)",
+]
+
+if qa_report_path and qa_report_path.exists():
+    section = extract_workflow_section(qa_report_path.read_text(encoding="utf-8", errors="ignore"))
+    if section.get("selected"):
+        selected_bundles = parse_list_string(section["selected"])
+    if section.get("applied"):
+        applied_skills = parse_list_string(section["applied"])
+    if section.get("skipped"):
+        skipped_skills = parse_list_string(section["skipped"])
+
+workflow_block = [
+    "workflowEvidence:",
+    f"  mode: {yaml_scalar('bounded-direct')}",
+    "  selectedBundles:",
+]
+workflow_block.extend(f"    - {yaml_scalar(item)}" for item in selected_bundles)
+workflow_block.append("  requiredSkills:")
+workflow_block.extend(f"    - {yaml_scalar(item)}" for item in required_skills)
+workflow_block.append("  stageOrder:")
+workflow_block.extend(f"    - {yaml_scalar(item)}" for item in stage_order)
+workflow_block.append("  appliedSkills:")
+workflow_block.extend(f"    - {yaml_scalar(item)}" for item in applied_skills)
+workflow_block.append("  skippedSkills:")
+workflow_block.extend(f"    - {yaml_scalar(item)}" for item in skipped_skills)
+workflow_block.extend([
+    "  evidenceFiles:",
+    f"    analysisContext: {yaml_scalar(os.environ['ANALYSIS_PATH_VALUE'])}",
+    f"    qaReport: {yaml_scalar(qa_report_value)}",
+    f"    handoff: {yaml_scalar(handoff_value)}",
+])
+
+if analysis_path.exists():
+    lines = analysis_path.read_text(encoding="utf-8").splitlines()
+else:
+    analysis_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ['schemaVersion: "1.0"']
+
+start = None
+end = len(lines)
+for idx, line in enumerate(lines):
+    if line.startswith("workflowEvidence:"):
+        start = idx
+        end = len(lines)
+        for next_idx in range(idx + 1, len(lines)):
+            candidate = lines[next_idx]
+            if candidate and not candidate.startswith(" ") and not candidate.startswith("\t"):
+                end = next_idx
+                break
+        break
+
+if start is None:
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.extend(workflow_block)
+else:
+    lines = lines[:start] + workflow_block + lines[end:]
+
+analysis_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 payload = {
     "evidenceVersion": "1.0",
     "recordedAt": os.environ["TIMESTAMP_VALUE"],
     "source": "moonshot-orchestrator",
     "mode": "bounded-direct",
     "analysisPath": os.environ["ANALYSIS_PATH_VALUE"],
-    "qaReportPath": os.environ["QA_REPORT_PATH_VALUE"],
-    "handoffPath": os.environ["HANDOFF_PATH_VALUE"],
-    "selectedBundles": [
-        "analysis-bundle",
-        "implementation-bundle",
-        "verification-suite",
-        "doc-ops-bundle",
-    ],
-    "requiredSkills": [
-        "implementation-runner",
-        "code-simplifier",
-        "completion-verifier",
-        "doc-auto-sync",
-        "session-logger",
-    ],
+    "qaReportPath": qa_report_value,
+    "handoffPath": handoff_value,
+    "selectedBundles": selected_bundles,
+    "requiredSkills": required_skills,
+    "stageOrder": stage_order,
+    "appliedSkills": applied_skills,
+    "skippedSkills": skipped_skills,
+    "evidenceFiles": {
+        "analysisContext": os.environ["ANALYSIS_PATH_VALUE"],
+        "qaReport": qa_report_value or None,
+        "handoff": handoff_value or None,
+    },
 }
 
 target = Path(os.environ["LOG_FILE_VALUE"])
@@ -329,8 +528,15 @@ if not requires_trace:
 
 violations = []
 code_change_detected = any(Path(path).suffix.lower() in code_suffixes for path in files)
+def path_matches(path: str, suffix: str) -> bool:
+    return path.endswith(suffix) or path.endswith(suffix.replace("/", "\\"))
+
+sprint_contracts = [Path(path) for path in files if path_matches(path, "/SPRINT_CONTRACT.md")]
 qa_reports = [Path(path) for path in files if path.endswith("/QA_REPORT.md") or path.endswith("\\QA_REPORT.md")]
 handoffs = [Path(path) for path in files if path.endswith("/HANDOFF.md") or path.endswith("\\HANDOFF.md")]
+
+def section_exists(text: str, heading: str) -> bool:
+    return any(line.strip() == heading for line in text.splitlines())
 
 def extract_workflow_section(text: str):
     lines = text.splitlines()
@@ -417,19 +623,36 @@ if requires_phase_trace:
         for key in ("planDir", "executionMode", "executionRoot", "runtime"):
             if not payload.get(key):
                 violations.append(f"dispatch evidence missing '{key}'")
-        for key in ("selectedBundles", "requiredSkills"):
+        for key in ("selectedBundles", "requiredSkills", "stageOrder"):
             value = payload.get(key)
             if not isinstance(value, list) or not value:
                 violations.append(f"dispatch evidence missing non-empty '{key}'")
+        selected_bundles = payload.get("selectedBundles") if isinstance(payload.get("selectedBundles"), list) else []
+        for bundle in ("review-bundle", "verification-bundle", "finish-bundle"):
+            if bundle not in selected_bundles:
+                violations.append(f"dispatch evidence must include '{bundle}' in selectedBundles")
 
     if not qa_reports:
         violations.append("workflow trace required but no QA_REPORT.md change detected")
+
+    for sprint_contract in sprint_contracts:
+        if not sprint_contract.exists():
+            violations.append(f"missing sprint contract: {sprint_contract.as_posix()}")
+            continue
+        text = sprint_contract.read_text(encoding="utf-8", errors="ignore")
+        for heading in ("## Stage Order", "## Review Cadence", "## Finish Rule"):
+            if not section_exists(text, heading):
+                violations.append(f"{sprint_contract.as_posix()}: missing '{heading}' section")
 
     for qa_report in qa_reports:
         if not qa_report.exists():
             violations.append(f"missing QA report: {qa_report.as_posix()}")
             continue
-        section = extract_workflow_section(qa_report.read_text(encoding="utf-8", errors="ignore"))
+        text = qa_report.read_text(encoding="utf-8", errors="ignore")
+        for heading in ("## Review Checkpoint", "## Finish Readiness"):
+            if not section_exists(text, heading):
+                violations.append(f"{qa_report.as_posix()}: missing '{heading}' section")
+        section = extract_workflow_section(text)
         if not section:
             violations.append(f"{qa_report.as_posix()}: missing '## Workflow Execution' section")
             continue
@@ -439,6 +662,16 @@ if requires_phase_trace:
                 violations.append(f"{qa_report.as_posix()}: '{label}' must be filled with evidence, not placeholder text")
         applied = section.get("applied", "")
         skipped = section.get("skipped", "")
+        selected = section.get("selected", "")
+        if "review-bundle" not in selected:
+            violations.append(f"{qa_report.as_posix()}: workflow execution must mention review-bundle")
+        if "finish-bundle" not in selected:
+            violations.append(f"{qa_report.as_posix()}: workflow execution must mention finish-bundle")
+        if code_change_detected and (
+            "codex-review-code" not in applied
+            and ("codex-review-code" not in skipped or "not evaluated yet" in skipped.lower())
+        ):
+            violations.append(f"{qa_report.as_posix()}: code changes require codex-review-code evidence in applied or skipped skills")
         if code_change_detected and (
             "code-simplifier" not in applied
             and ("code-simplifier" not in skipped or "not evaluated yet" in skipped.lower())
@@ -455,6 +688,9 @@ if requires_phase_trace:
             violations.append(f"missing handoff: {handoff.as_posix()}")
             continue
         text = handoff.read_text(encoding="utf-8", errors="ignore")
+        for heading in ("## Resume Trigger", "## Checks To Rerun"):
+            if not section_exists(text, heading):
+                violations.append(f"{handoff.as_posix()}: missing '{heading}' section")
         if "session-logger" not in text:
             violations.append(f"{handoff.as_posix()}: incomplete stop evidence must mention session-logger")
 
@@ -463,6 +699,10 @@ if requires_bounded_trace:
         payload = json.loads(latest_bounded.read_text(encoding="utf-8"))
         if payload.get("mode") != "bounded-direct":
             violations.append("bounded evidence must declare mode=bounded-direct")
+        for key in ("selectedBundles", "requiredSkills", "stageOrder"):
+            value = payload.get(key)
+            if not isinstance(value, list) or not value:
+                violations.append(f"bounded evidence missing non-empty '{key}'")
     analysis_checked = 0
     for analysis_file in analysis_files:
         if not analysis_file.exists():
@@ -477,16 +717,31 @@ if requires_bounded_trace:
         if workflow.get("mode") != "bounded-direct":
             violations.append(f"{analysis_file.as_posix()}: workflowEvidence.mode must be bounded-direct")
         selected = workflow.get("selectedBundles") if isinstance(workflow.get("selectedBundles"), list) else []
+        required = workflow.get("requiredSkills") if isinstance(workflow.get("requiredSkills"), list) else []
+        stage_order = workflow.get("stageOrder") if isinstance(workflow.get("stageOrder"), list) else []
         applied = workflow.get("appliedSkills") if isinstance(workflow.get("appliedSkills"), list) else []
         skipped = workflow.get("skippedSkills") if isinstance(workflow.get("skippedSkills"), list) else []
         if not selected:
             violations.append(f"{analysis_file.as_posix()}: workflowEvidence.selectedBundles must be non-empty")
+        if not required:
+            violations.append(f"{analysis_file.as_posix()}: workflowEvidence.requiredSkills must be non-empty")
+        if not stage_order:
+            violations.append(f"{analysis_file.as_posix()}: workflowEvidence.stageOrder must be non-empty")
         if not applied:
             violations.append(f"{analysis_file.as_posix()}: workflowEvidence.appliedSkills must be non-empty")
         if not skipped:
             violations.append(f"{analysis_file.as_posix()}: workflowEvidence.skippedSkills must be non-empty")
         skipped_text = " | ".join(str(item) for item in skipped)
         applied_text = " | ".join(str(item) for item in applied)
+        if code_change_detected and "review-bundle" not in selected:
+            violations.append(f"{analysis_file.as_posix()}: bounded direct code changes must select review-bundle")
+        if code_change_detected and "finish-bundle" not in selected:
+            violations.append(f"{analysis_file.as_posix()}: bounded direct code changes must select finish-bundle")
+        if code_change_detected and (
+            "codex-review-code" not in applied_text
+            and ("codex-review-code" not in skipped_text or "not evaluated yet" in skipped_text.lower())
+        ):
+            violations.append(f"{analysis_file.as_posix()}: bounded direct code changes require codex-review-code evidence")
         if code_change_detected and (
             "code-simplifier" not in applied_text
             and ("code-simplifier" not in skipped_text or "not evaluated yet" in skipped_text.lower())
@@ -504,6 +759,7 @@ print("Workflow Enforcement Check")
 print(f"Applicable: {'yes' if requires_trace else 'no'}")
 print(f"Phase dispatch evidence: {latest_dispatch.as_posix() if latest_dispatch.exists() else 'missing'}")
 print(f"Bounded evidence: {latest_bounded.as_posix() if latest_bounded.exists() else 'missing'}")
+print(f"Sprint contracts checked: {len(sprint_contracts)}")
 print(f"QA reports checked: {len(qa_reports)}")
 print(f"Handoffs checked: {len(handoffs)}")
 print(f"Analysis files checked: {len(analysis_files)}")

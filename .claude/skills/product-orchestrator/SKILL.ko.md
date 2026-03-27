@@ -1,6 +1,6 @@
 ---
 name: product-orchestrator
-description: 아이디어를 경계가 있는 제품 산출물과 실행 준비 계획으로 변환하는 구현 전 제품 정의 체인을 구성합니다.
+description: 요청이 아직 idea-to-plan 단계일 때, 구현 전에 경계가 있는 product-definition 산출물을 만들기 위해 사용합니다.
 triggers:
   - "product orchestrator"
   - "product definition"
@@ -13,6 +13,8 @@ triggers:
 ## 역할
 
 코드 중심 Moonshot 실행 전에 제품 정의 워크플로우를 수행합니다.
+
+요청이 아직 제품 범위를 잡는 단계라면 이 스킬이 Intake stage의 기본 공개 진입점입니다.
 
 이 스킬은 아래 목적에 사용합니다.
 - 아이디어를 제품 의도로 구조화

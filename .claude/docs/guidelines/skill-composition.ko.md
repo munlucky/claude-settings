@@ -10,6 +10,22 @@
 
 ## 활성 bundle
 
+## 단계 모델
+
+비사소한 구현 작업은 아래 단계 순서를 기준으로 본다.
+
+1. Intake
+2. Plan
+3. Ready / Isolate
+4. Execute
+5. Review
+6. Verify
+7. Finish / Handoff
+
+기본 원칙:
+- medium, complex, phase 기반 작업은 이 단계를 눈에 보이게 통과해야 한다
+- 작은 bounded work는 단계를 압축할 수 있지만, 위험도가 남아 있으면 review/verification 규율을 유지해야 한다
+
 ## 공개 진입점
 
 기본 공개 workflow entrypoint:
@@ -33,8 +49,10 @@
 ## 조합 소유권
 
 - 분석 마이크로스킬은 orchestrator를 보조하기 위한 것이며, 직접 호출 표면을 넓히기 위한 것이 아닙니다.
-- verification helper는 verification 또는 review bundle 뒤에서 실행합니다.
-- 문서화와 세션 기록 helper는 doc-ops bundle 뒤에서 실행합니다.
+- ready/isolate helper는 숨겨진 gate가 아니라 명시적 사전 단계로 취급합니다.
+- review helper는 전용 review stage 뒤에서 실행합니다.
+- verification helper는 전용 verify stage 뒤에서 실행합니다.
+- 문서화와 세션 기록 helper는 finish-stage bundle 뒤에서 실행합니다.
 - 스택 특화 UI helper는 `frontend-design` 아래에 둡니다.
 - `session-logger`는 필요 시 공개 유틸리티로 직접 호출할 수 있습니다.
 - `commit-moonshot`도 필요 시 공개 유틸리티로 직접 호출할 수 있습니다.
@@ -53,16 +71,19 @@ steps:
 steps:
   - requirements-analyzer
   - context-builder
+  - moonshot-plan-writer (if no safe phase plan exists)
+  - task-slicer (if plan output must be decomposed into slices)
   - codex-validate-plan
 ```
 
-### readiness-bundle
+### ready-isolate-bundle
 ```yaml
 steps:
   - pre-flight-check
   - project-contract-gate
   - context-readiness-gate
   - verification-contract-gate
+  - workspace-isolation-gate (if strict or implementation is about to start)
 ```
 
 ### implementation-bundle
@@ -74,17 +95,40 @@ steps:
   - code-simplifier
 ```
 
+### review-bundle
+```yaml
+steps:
+  - codex-review-code
+  - security-reviewer (if hasSecurityChanges)
+  - audit (if uiQualityAuditRequested)
+  - web-design-guidelines (if explicit UI/UX review is requested)
+```
+
+### verification-bundle
+```yaml
+steps:
+  - browser-verifier (if webRuntimeCheckNeeded)
+  - qa-flow (if guided runtime QA is requested)
+  - completion-verifier
+  - verification-evidence-gate (if strict)
+```
+
+### finish-bundle
+```yaml
+steps:
+  - doc-auto-sync
+  - session-logger
+  - commit-moonshot (if the user explicitly requests memory update plus commit)
+```
+
 ### verification-suite
 ```yaml
 steps:
-  parallel:
-    - verification-agent
-    - codex-review-code
-  then:
-    - security-reviewer (if hasSecurityChanges)
-    - browser-verifier (if webRuntimeCheckNeeded)
-    - completion-verifier
+  - review-bundle
+  - verification-bundle
 ```
+
+`verification-suite`는 review와 verify를 한 블록으로 다루던 이전 조합을 위한 compatibility alias입니다.
 
 ### doc-ops-bundle
 ```yaml
@@ -94,7 +138,8 @@ steps:
   - documentation-agent
 ```
 
-의미 있는 파일 수정이 있는 구현 run에서는 `doc-ops-bundle`을 필수 마감 단계로 사용합니다.
+의미 있는 파일 수정이 있는 구현 run에서는 `finish-bundle`을 기본 마감 단계로 사용합니다.
+문서/세션 정리가 중심인 작업에는 `doc-ops-bundle`을 사용합니다.
 
 ### logging-bundle
 ```yaml
@@ -126,9 +171,12 @@ steps:
 ## 규칙
 
 - Tier 1 진입점이 bundle을 선택해야 하며, bundle이 공개 호출 표면을 넓히면 안 됩니다.
-- `product_project`는 `readiness-bundle`을 사용할 수 있습니다.
+- `product_project`는 `ready-isolate-bundle`을 사용할 수 있습니다.
 - large 또는 phase 기반 작업은 `moonshot-orchestrator`가 아니라 `moonshot-phase-runner`로 진입합니다.
-- 문서/세션 작업은 `doc-ops-bundle`을 우선하고, `logging-bundle`은 호환성 alias로만 유지합니다.
+- medium/complex 구현은 `ready-isolate-bundle -> implementation-bundle -> review-bundle -> verification-bundle -> finish-bundle`을 기본 경로로 삼습니다.
+- 비사소한 코드 변경은 `review-bundle` 뒤에 `verification-bundle`을 둡니다.
+- 구현 마감에는 `finish-bundle`, 문서/세션 전용 작업에는 `doc-ops-bundle`을 우선합니다.
+- `commit-moonshot`은 자동 단계가 아니라 사용자가 명시적으로 요구할 때만 실행하는 유틸리티입니다.
 - `meta_harness`는 downstream bootstrap gate를 건너뜁니다.
 - strict 오버레이는 bundle 내부가 아니라 bundle 확장 후 적용합니다.
 - 현재 plane에서 no-op이 된 bundle은 notes에 명시합니다.

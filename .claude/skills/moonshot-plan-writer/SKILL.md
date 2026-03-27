@@ -1,6 +1,6 @@
 ---
 name: moonshot-plan-writer
-description: "Create or refresh docs/implementation planning documents for this repository. Use when asked to generate or update implementation plan markdown files. Always inspect root-level *.md files and docs/implementation/*.md first, then maintain two outputs: (1) a master plan (00-master-plan-v*.md) as a plan-of-plans with phase completion checklist, and (2) phase plan files with standalone, session-executable detailed plans. Enforce checklist sync and repeat until every master checklist item is checked."
+description: Create or refresh `docs/implementation` master and phase plans for phase-based work.
 ---
 
 # Implementation Plan Writer
@@ -9,6 +9,7 @@ description: "Create or refresh docs/implementation planning documents for this 
 Produce reliable planning docs in `docs/implementation` with strict master/phase structure.
 
 This skill is the default plan bootstrap for `moonshot-phase-runner` when no safe `<plan-dir>` can be reused.
+It is the main Plan-stage owner for phase documents.
 
 ## Required Inputs
 - One or more available requirement sources (not fixed filenames):

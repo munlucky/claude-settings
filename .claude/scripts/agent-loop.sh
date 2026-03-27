@@ -491,6 +491,13 @@ ensure_execution_artifacts() {
 ## Non-Goals
 - Fill before code changes.
 
+## Stage Order
+- Ready / Isolate
+- Execute
+- Review
+- Verify
+- Finish / Handoff
+
 ## Planned Changes
 - Files/modules:
 - Interfaces/contracts:
@@ -502,10 +509,10 @@ ensure_execution_artifacts() {
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
 - Round policy summary: Keep this run isolated to phase ${phase_prefix}, refresh QA/HANDOFF artifacts when state changes, and require fresh verification evidence before completion.
 
-## Workflow Plan
-- Selected bundles: analysis-bundle, readiness-bundle, implementation-bundle, verification-suite, doc-ops-bundle
-- Required skills: implementation-runner, code-simplifier, completion-verifier
-- Incomplete stop logging: session-logger
+## Review Cadence
+- First review checkpoint: After the first meaningful implementation batch for this phase.
+- Re-review trigger: Any remediation round that changes behavior, contracts, or user-visible flows.
+- Review owners: codex-review-code, plus targeted reviewers when needed.
 
 ## Done Checks
 | Check | Type | Pass Condition |
@@ -528,6 +535,15 @@ ${required_commands}
 - QA report: ${PHASE_QA_REPORT}
 - Handoff: ${PHASE_HANDOFF}
 
+## Finish Rule
+- Clean finish requires: fresh verification evidence, review complete, and finish-stage closeout recorded.
+- Resume-later handoff trigger: blocked criteria, interruption, or intentionally deferred verification.
+- Retry-loop trigger: verification or review returns actionable failures for this phase.
+
+## Risks
+- Known uncertainty:
+- Rollback or safe fallback:
+
 ## Notes
 - Generated at: $(date '+%Y-%m-%d %H:%M:%S')
 EOF
@@ -547,6 +563,12 @@ EOF
 ## Verdict
 - Status: pending
 - Summary: Awaiting implementation and verification.
+- Next path: retry_loop
+
+## Review Checkpoint
+- Review completed: no
+- Review owners: codex-review-code
+- Review-driven code changes:
 
 ## Criteria Review
 | Criterion | Result | Notes |
@@ -562,10 +584,15 @@ EOF
 - Seeded at: $(date '+%Y-%m-%d %H:%M:%S')
 
 ## Workflow Execution
-- Selected bundles: analysis-bundle, readiness-bundle, implementation-bundle, verification-suite, doc-ops-bundle
+- Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, completion-verifier
 - Skipped skills: code-simplifier (not evaluated yet), session-logger (clean completion path)
 - Enforcement note: replace defaults when actual execution diverges
+
+## Finish Readiness
+- Fresh evidence confirmed: no
+- Remaining blockers before closeout:
+- Checks to rerun if code changes again:
 EOF
     fi
 
@@ -577,11 +604,21 @@ EOF
 
 ## Goal
 - ${phase_title}
+- Current stage: Ready / Isolate
 
 ## Current State
 - Completed:
 - In progress:
 - Blocked:
+
+## Resume Trigger
+- Why this handoff exists: Seeded placeholder until the phase pauses or fails.
+- Condition to resume: Review the latest contract and QA evidence, then continue only the active phase.
+
+## Checks To Rerun
+- Review:
+- Verification:
+- Runtime flow:
 
 ## Next Steps
 1. Review ${PHASE_SPRINT_CONTRACT}
@@ -631,7 +668,7 @@ append_handoff_update() {
             echo "- Detail: ${detail}"
         fi
         echo "- session-logger: recorded via agent-loop handoff update"
-        echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, update \`${PHASE_QA_REPORT}\`, then resume implementation."
+        echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, rerun the required review/verification checks, update \`${PHASE_QA_REPORT}\`, then resume the active phase only."
     } >> "$PHASE_HANDOFF"
 }
 
@@ -647,10 +684,11 @@ Treat this prompt as the direct equivalent of a /moonshot-orchestrator phase att
 Codex direct execution checklist:
 1. Read only the active phase doc and SPRINT_CONTRACT.md first.
 2. Refresh SPRINT_CONTRACT.md for this attempt without broad repo inspection.
-3. Update QA_REPORT.md with runtime/mode and planned verification.
-4. Run the exact verification command once.
-5. Read the newest verification verdict file and record its path and verdict in QA_REPORT.md.
-6. If verification passed, stop immediately. If verification failed, update HANDOFF.md and stop.
+3. Execute only the active phase work.
+4. Run review and verification in the phase contract order.
+5. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
+6. Read the newest verification verdict file and record its path and verdict in QA_REPORT.md.
+7. If verification passed and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 4.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates."
@@ -678,11 +716,13 @@ Single isolated phase-attempt rules:
 - Do not invoke moonshot-phase-runner again.
 - Do not expand to other phases.
 - Read the Policy Anchors section in SPRINT_CONTRACT.md first.
+- Preserve the stage order \`ready/isolate -> execute -> review -> verify -> finish/handoff\`.
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
+- Record review completion before claiming the verifier state is final.
 - When verification runs, update QA_REPORT.md.
 - Refresh the default values in the "Workflow Execution" section of QA_REPORT.md when actual execution diverges.
 - If meaningful code changed, record \`code-simplifier\` in Applied skills or Skipped skills with a reason.
-- If the run stops without clean completion, update HANDOFF.md and include \`session-logger\` evidence.
+- If the run stops without clean completion, update HANDOFF.md, include \`session-logger\` evidence, and list the checks to rerun.
 
 Runtime compatibility fallback:
 - If /moonshot-orchestrator is unavailable in this runtime, execute the equivalent phase-attempt workflow directly instead of searching for missing slash skills.

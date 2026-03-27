@@ -56,18 +56,31 @@ workflowEvidence:
   mode: bounded-direct
   selectedBundles:
     - analysis-bundle
+    - ready-isolate-bundle
     - implementation-bundle
-    - verification-suite
-    - doc-ops-bundle
+    - review-bundle
+    - verification-bundle
+    - finish-bundle
   requiredSkills:
     - implementation-runner
+    - codex-review-code
     - code-simplifier
     - completion-verifier
+    - doc-auto-sync
     - session-logger
+  stageOrder:
+    - plan
+    - ready/isolate
+    - execute
+    - review
+    - verify
+    - finish/handoff
   appliedSkills:
     - implementation-runner
+    - codex-review-code
     - code-simplifier
     - completion-verifier
+    - doc-auto-sync
   skippedSkills:
     - session-logger (clean completion path)
   evidenceFiles:

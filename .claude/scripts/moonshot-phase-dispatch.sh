@@ -185,6 +185,18 @@ $stop_line
 
 runtimeCompatibility:
   fallback: "If /moonshot-in-session-coordinator is unavailable in this runtime, execute the equivalent coordinator contract directly without searching for missing slash skills."
+
+stageContract:
+  defaultOrder:
+    - ready/isolate
+    - execute
+    - review
+    - verify
+    - finish/handoff
+  rules:
+    - "Do not skip review for meaningful code changes without recording why."
+    - "Do not enter finish/handoff until the active review and verification verdict is stable."
+    - "Use the seeded execution artifacts as the source of truth for review cadence and closeout state."
 EOF
 )
 

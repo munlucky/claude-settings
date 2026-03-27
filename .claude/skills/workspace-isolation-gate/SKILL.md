@@ -1,12 +1,14 @@
 ---
 name: workspace-isolation-gate
-description: Strict workflow gate that ensures implementation runs in an isolated branch/workspace with a verified baseline.
+description: Use before implementation in strict runs to confirm isolated workspace setup and baseline evidence.
 ---
 
 # Workspace Isolation Gate
 
 ## Role
 Enforce branch/workspace isolation before implementation in strict mode.
+
+This is the default Ready / Isolate stage gate for strict implementation runs.
 
 ## When to use
 - Right before the first `implementation-runner`.

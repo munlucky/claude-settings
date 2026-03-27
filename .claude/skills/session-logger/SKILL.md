@@ -1,6 +1,6 @@
 ---
 name: session-logger
-description: Logs development sessions in real-time to track decisions and issues.
+description: Record decisions, issues, and handoff notes during or after work.
 ---
 
 # Session Logger Skill
@@ -9,6 +9,7 @@ description: Logs development sessions in real-time to track decisions and issue
 
 This is a doc-ops helper and a supported public utility entrypoint.
 It may run behind the doc-ops bundle or be invoked directly when the user wants explicit session or handoff logging.
+It is also a default Finish / Handoff stage helper.
 
 > **Purpose**: Record development sessions in real time to track decisions and trial/error
 > **When to log**: work start, agent switch, decisions, issues, work completion

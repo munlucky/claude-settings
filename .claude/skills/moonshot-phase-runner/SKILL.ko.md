@@ -1,6 +1,6 @@
 ---
 name: moonshot-phase-runner
-description: Master plan 기반 phase별 구현 자동화 - 계획 검증 및 실행 준비
+description: 준비된 plan package를 기준으로 large, phase 기반, long-running 구현 작업을 실행할 때 사용합니다.
 triggers:
   - "phase runner"
   - "run phase"
@@ -17,6 +17,7 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 또한 `/moonshot-orchestrator`가 재개할 수 있도록 핸드오프 메타데이터를 반환합니다.
 
 이 스킬은 large, phase 기반, long-running 구현 작업의 기본 공개 진입점입니다.
+phase 중심 실행에서는 Intake에서 Plan으로 넘어가는 기본 소유자입니다.
 
 실행 모드:
 - `delegated-terminal`: `agent-loop.sh` 기반의 격리 루프 실행 사용
@@ -150,8 +151,12 @@ phases:
 
 규칙:
 - `SPRINT_CONTRACT.md`는 phase 제목과 문서 경로를 바탕으로 초기 생성
+- execution 아티팩트는 `.claude/templates/execution/` 아래 템플릿을 기준으로 시드한다
 - `SPRINT_CONTRACT.md`에는 항상 로드 규칙, 활성 워크스페이스 계약, verification contract, round별 추가 가이드를 담는 `Policy Anchors` 섹션이 있어야 함
+- `SPRINT_CONTRACT.md`에는 round의 downstream stage 순서, review cadence, finish/handoff 종료 규칙도 드러나야 함
 - `QA_REPORT.md`, `HANDOFF.md`는 실행 중 갱신될 placeholder로 시작
+- `QA_REPORT.md`는 다음 경로가 clean finish, retry loop, resume-later handoff 중 무엇인지 분명히 남겨야 함
+- `HANDOFF.md`는 closeout 전에 어떤 review/verification 체크를 다시 돌려야 하는지 남겨야 함
 - 이미 작업 내용이 있는 파일은 덮어쓰지 않음
 
 ## Step 5: Plan Review (선택적)
@@ -216,8 +221,10 @@ Coordinator 규칙:
   - 최신 `QA_REPORT.md`
   - 있으면 최신 `HANDOFF.md`
 - `SPRINT_CONTRACT.md` 의 policy anchors 는 선택 메모가 아니라 필수 round 입력으로 취급합니다.
+- 각 round 안에서도 `ready/isolate -> execute -> review -> verify -> finish/handoff` 순서를 눈에 보이게 유지합니다.
 - 각 시도는 fresh fork/sub-agent round로 실행해야 합니다.
 - 메인 세션으로는 verdict, changed files, failed checks, next action 같은 요약만 병합합니다.
+- review, verification, finish-stage closeout이 모두 충족되기 전에는 phase를 clean completion으로 취급하지 않습니다.
 - 시도가 clean completion 없이 끝나면 다음 시도 전에 `QA_REPORT.md`와 `HANDOFF.md`를 갱신합니다.
 
 Attempt 계약:
@@ -333,3 +340,4 @@ phases:
 7. `prepareOnly == true`이면 준비된 실행 메타데이터만 반환하고 멈춥니다.
 8. `executionMode == in-session-coordinator`이면 메인 세션을 얇게 유지하고 각 구현 round를 fresh fork/sub-agent attempt로 실행해야 합니다.
 9. active attempt가 `phase-status.yaml`과 execution bridge 아티팩트를 갱신한 뒤에만 완료 검증을 재개합니다.
+10. 각 phase 내부에서는 기본적으로 `ready/isolate -> execute -> review -> verify -> finish/handoff` 순서를 유지해야 합니다.

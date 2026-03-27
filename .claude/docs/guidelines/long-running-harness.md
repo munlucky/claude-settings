@@ -116,6 +116,28 @@ Require a separate evaluator when:
 - the change has hidden failure modes that static review will miss
 - the model has previously shipped stubs or half-working flows in similar tasks
 
+### Review cadence by work size
+
+Use review as a recurring stage, not a one-time ritual.
+
+Simple work:
+- one focused review after implementation is usually enough
+- skip only when the change is tightly local and deterministic
+
+Medium work:
+- run one review after the first meaningful implementation batch
+- rerun focused review after fix-forward changes if review feedback changed code
+
+Complex or long-running work:
+- review the plan before implementation begins
+- review each meaningful implementation batch before advancing the verifier state
+- rerun review after any remediation round that changes behavior, contracts, or user-visible flows
+
+Practical review owners:
+- `codex-review-code` for default semantic/regression review
+- `security-reviewer` when security-sensitive files or flows changed
+- `audit` or `web-design-guidelines` when UI/UX quality is part of the acceptance bar
+
 ### When to use handoff artifacts
 
 Write `HANDOFF.md` when:
@@ -123,6 +145,28 @@ Write `HANDOFF.md` when:
 - the work will continue in another session
 - there are unresolved failures or blocked criteria
 - multiple agents or reviewers need the same state summary
+
+### Finish / handoff decision flow
+
+After verification, choose exactly one closeout path:
+
+1. Clean finish
+   - verification passed with fresh evidence
+   - run doc/session closeout
+   - no `HANDOFF.md` required unless the user explicitly wants one
+2. Resume-later handoff
+   - verification is incomplete, blocked, or intentionally deferred
+   - update `QA_REPORT.md`
+   - write `HANDOFF.md`
+3. Retry loop
+   - verification failed with actionable findings
+   - update `QA_REPORT.md`
+   - return to implementation with contract-linked remediation input
+
+Default finish-stage responsibilities:
+- `doc-auto-sync` for meaningful documentation drift
+- `session-logger` for resumable state or decision history
+- `commit-moonshot` only when the user explicitly wants memory update plus commit
 
 ## Anti-Patterns
 

@@ -1,12 +1,14 @@
 ---
 name: workspace-isolation-gate
-description: strict 워크플로우에서 구현 전에 격리 브랜치/작업공간과 베이스라인 검증 증거를 확인한다.
+description: strict 구현 실행 전에 격리 작업공간 설정과 베이스라인 증거를 확인할 때 사용합니다.
 ---
 
 # 작업공간 격리 게이트
 
 ## 역할
 strict 모드에서 구현 전에 브랜치/작업공간 격리를 강제합니다.
+
+strict 구현 흐름에서 Ready / Isolate stage의 기본 게이트입니다.
 
 ## 사용 시점
 - 첫 `implementation-runner` 직전.

@@ -1,6 +1,6 @@
 ---
 name: product-orchestrator
-description: Build a pre-implementation product-definition chain that converts an idea into bounded product artifacts and an execution-ready plan.
+description: Use when work is still at the idea-to-plan stage and needs bounded product-definition artifacts before implementation.
 triggers:
   - "product orchestrator"
   - "product definition"
@@ -13,6 +13,8 @@ triggers:
 ## Role
 
 Run the product-definition workflow before code-oriented Moonshot execution.
+
+This is the default public entrypoint for the Intake stage when the request is still shaping product scope.
 
 This skill is explicitly for:
 - idea to product intent

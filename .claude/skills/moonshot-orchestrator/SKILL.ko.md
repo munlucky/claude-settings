@@ -1,6 +1,6 @@
 ---
 name: moonshot-orchestrator
-description: PM 워크플로우 오케스트레이터. 사용자 요청을 분석하고 최적의 에이전트 체인을 자동 구성한다.
+description: 이미 충분한 문맥이 있고 phase harness가 필요 없는 bounded implementation 작업에 사용합니다.
 ---
 
 # PM 오케스트레이터
@@ -120,6 +120,7 @@ workflowEvidence:
   mode: bounded-direct
   selectedBundles: []
   requiredSkills: []
+  stageOrder: []
   appliedSkills: []
   skippedSkills: []
   evidenceFiles:
@@ -144,16 +145,53 @@ notes: []
 6. `moonshot-decide-sequence`로 bundle/skill 체인 결정
 7. 동적 게이트/검증 스텝 주입 후 순차 실행
 
+### Stage-chain 정규화
+
+선택된 체인은 저장소의 stage 모델에 맞춰 다시 정규화한다.
+
+- `read_only`:
+  - 구현 단계 이전에서 멈춘다
+- bounded `product_project`, simple:
+  - `plan -> ready/isolate -> execute -> review -> verify -> finish/handoff`
+- bounded `product_project`, medium/complex:
+  - `plan -> ready/isolate -> execute -> review -> verify -> finish/handoff`
+  - execution bridge artifact를 명시적으로 요구한다
+- phase 기반 작업:
+  - `moonshot-phase-runner`로 핸드오프한 뒤, 각 phase 내부에서도 같은 downstream stage 순서를 유지한다
+
+의미 있는 코드 변경이 있었다면 `review -> verify -> finish`를 하나의 뭉툭한 마감 단계로 합치지 않는다.
+
 medium/complex `product_project`는 아래 execution bridge를 기본 전제로 둔다.
 - `SPRINT_CONTRACT.md`: 이번 slice 목표, non-goal, done check
 - `QA_REPORT.md`: verifier 결과와 다음 수정 입력
 - `HANDOFF.md`: 재시도/중단/장시간 세션 인계 상태
 - strict 또는 `meta_harness` phase 작업은 active `SPRINT_CONTRACT.md` 에 policy anchors 와 필수 검증 명령을 유지해야 한다.
 - phase harness를 쓰지 않는 bounded direct 작업도 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 최신 상태로 유지해야 한다.
+- bounded direct `workflowEvidence`에는 `selectedBundles`, `requiredSkills`, `stageOrder`가 모두 있어야 한다.
+- bounded direct 코드 변경은 최종 verification 안정 판정 전에 `codex-review-code` 증적을 남겨야 한다.
 - bounded direct 코드 변경은 `code-simplifier` 적용 여부를, 건너뛴 경우에는 이유와 함께 기록해야 한다.
 - 구현이 성공했거나 일부 성공 상태라도 완료 선언 전에는 문서 마감 단계가 실행되어야 한다.
 - bounded direct 경로에서 의미 있는 파일 수정이 있으면 완료 전 `doc-auto-sync` 증적을 반드시 남긴다.
 - bounded direct 실행이 중단되면 clean completion 전에 `session-logger` 증적을 남겨야 한다.
+
+review cadence 계약:
+- simple bounded change: 구현 후 한 번의 post-implementation review로 충분한 경우가 많다
+- medium change: 첫 의미 있는 구현 배치 뒤에 리뷰하고, 코드 수정 remediation 뒤에 다시 리뷰한다
+- complex/long-running change: plan 리뷰, 의미 있는 구현 배치 리뷰, 동작/계약 변경 remediation 리뷰를 모두 수행한다
+- review를 생략했다면 notes 또는 workflow evidence에 이유를 남긴다
+
+finish / handoff 계약:
+- `finish-bundle`은 active review/verify 판정이 안정된 뒤에만 들어간다
+- clean finish:
+  - 최신 증거와 함께 verification 통과
+  - `doc-auto-sync` 실행
+  - 재개 가능 상태나 의사결정 이력이 중요하면 `session-logger` 실행
+- resume-later handoff:
+  - `QA_REPORT.md` 갱신
+  - `HANDOFF.md` 갱신
+  - 완료 선언 금지
+- explicit commit path:
+  - 사용자가 메모리 현행화와 커밋을 함께 원할 때만 `commit-moonshot` 실행
 
 프로젝트 기준 문서가 있으면 `product_project` 작업의 1급 참조로 취급한다.
 - `workflow/README.md`
@@ -224,7 +262,9 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `contextReady=false` + `product_project` -> `context-readiness-gate`
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
 - `executionPlane == product_project && complexity != simple` -> `session-logger` 보장 + 첫 코드 변경 전 `SPRINT_CONTRACT.md` 요구
+- 의미 있는 코드 변경 또는 medium+ complexity -> 최종 verification 전에 `codex-review-code` 보장
 - `implementationComplete=true` + 의미 있는 파일 수정 -> 검증 뒤, 완료 전 `doc-auto-sync` 보장
+- 의미 있는 파일 수정 + 안정된 verifier 상태 -> 최종 완료 선언 전 `session-logger` 보장
 - `reactProject=true` -> 첫 `implementation-runner` 앞에 `frontend-design` 삽입
 - `implementationComplete=true` + 의미 있는 코드 변경 -> `completion-verifier` 전에 `code-simplifier` 삽입
 - `phaseRunnerResult.autoStartExecution == true` -> `executionSkill`을 즉시 실행하고 `phaseRunnerResult`를 입력으로 전달
@@ -306,7 +346,8 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - upstream 제품 정의가 아직 없으면 build 체인 안에서 제품 산출물을 임의 생성하지 말고 `product-orchestrator`로 라우팅한다.
 - `PLAN.md`와 `tasks/*.md`가 있으면 이를 planning source of truth로 보고 `requirements-analyzer`, `context-builder`를 생략한다.
 - medium/complex `product_project`는 active slice 기준으로 `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF`를 유지한다.
-- bounded direct 경로에서 코드가 수정되면 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 갱신하고 `bash .claude/scripts/workflow-enforcement.sh record-bounded --analysis-path .claude/docs/moonshot-analysis.yaml`로 동일한 경계를 기록한다.
+- bounded direct 경로에서 코드가 수정되면 먼저 `QA_REPORT.md`의 workflow evidence를 최신 상태로 유지한 뒤 `bash .claude/scripts/workflow-enforcement.sh record-bounded --analysis-path .claude/docs/moonshot-analysis.yaml`로 동일한 경계를 기록한다.
+- `record-bounded`는 analysis 파일의 `workflowEvidence`를 정규화하고 canonical bundle/required skill/stage order를 채우며, `QA_REPORT.md`가 제공되면 applied/skipped evidence도 거기서 동기화한다.
 - in-session phase loop는 fresh isolated attempt를 전제로만 허용하며, coordinator 세션은 round 사이에 summary-only 상태를 유지한다.
 - phase attempt 요약을 완료 선언으로 바꾸려면 해당 시도의 verifier evidence 가 최신이고 contract 기준 required check 가 모두 충족되어야 한다.
 - fresh attempt가 `moonshot-orchestrator`를 실행할 때는 `phaseAttemptMode=true`로 두고 `moonshot-phase-runner`를 재귀적으로 다시 넣지 않는다.
