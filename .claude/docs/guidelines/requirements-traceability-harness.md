@@ -20,9 +20,12 @@ For medium/complex `product_project` work, treat these as default execution arti
 - `SPRINT_CONTRACT.md`
 - `QA_REPORT.md`
 - `HANDOFF.md`
+- `SCORECARD.md`
 - `REQUIREMENTS_TRACEABILITY.md`
 - `SCENARIO_MATRIX.md`
 - `UAT_CHECKLIST.md`
+- choose a scorecard preset that matches the work shape: `generic`, `saas`, `api-backend`, `frontend`, or `platform`
+- when both traceability artifacts exist, rebalance only the combined `REQ + SCN` budget from detected `REQ-*` / `SCN-*` counts
 
 ## Identity Model
 
@@ -53,8 +56,10 @@ Recommended mapping:
    - run contract-defined checks
    - refresh runtime or E2E evidence for changed critical scenarios
    - update `QA_REPORT.md` with any uncovered `REQ-*` or missing `SCN-*` evidence
+   - update `SCORECARD.md` with objective score, unmet checklist count, and verdict
+   - keep `VER` / `CLOSE` weights stable unless project policy explicitly overrides them
 5. Finish or Handoff
-   - finish only when `uat_ready == true`
+   - finish only when `uat_ready == true` and `SCORECARD.md` says `done`
    - use `HANDOFF.md` when any requirement or scenario remains open
 
 ## Completion Rules
@@ -65,6 +70,7 @@ Recommended mapping:
 - every critical `SCN-*` has fresh runtime or E2E evidence
 - required contract checks passed with fresh evidence
 - `UAT_CHECKLIST.md` says `UAT Ready: yes`
+- `SCORECARD.md` has `Current score >= Target score`, `Unmet checklist items = 0`, `Blocking defects = 0`, and `Verdict: done`
 
 `uat_complete` requires additional human sign-off:
 - do not infer it from Playwright, browser-verifier, or static review

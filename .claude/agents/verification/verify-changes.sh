@@ -1,19 +1,8 @@
 #!/usr/bin/env bash
 
 # Generic repository verification harness.
-# Purpose:
-#   - run common repository checks
-#   - emit a text log and JSON verdict artifact
-#   - allow project-specific checks through opt-in hooks instead of hardcoded domain logic
-#
-# Exit codes:
-#   0: all required checks passed
-#   1: typecheck/build/lint/hook/general verification failure
-#   2: test failure
-#
-# Harness outputs:
-#   - text log: .claude/verification-results-<timestamp>.txt
-#   - json verdict: .claude/verification-verdict-<runId>.json
+# Exit codes: 0=pass, 1=build/lint/hook/general fail, 2=test fail
+# Outputs: .claude/verification-results-<timestamp>.txt, .claude/verification-verdict-<runId>.json
 
 set -eo pipefail
 
@@ -38,26 +27,21 @@ log_warning() {
 log_error() {
   echo -e "${RED}❌ $1${NC}"
 }
-
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
-
 join_lines() {
   printf '%s\n' "$@" | sed '/^$/d'
 }
-
 safe_var_name() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9_' '_'
 }
-
 get_contract_command() {
   local check_name="$1"
   local safe_name
   safe_name="$(safe_var_name "$check_name")"
   eval "printf '%s' \"\${CONTRACT_COMMAND__${safe_name}:-}\""
 }
-
 append_check_result() {
   local check_name="$1"
   local status="$2"
@@ -69,7 +53,6 @@ ${check_name}=${status}"
     CONTRACT_CHECK_RESULTS_LINES="${check_name}=${status}"
   fi
 }
-
 check_is_skipped() {
   local check_name="$1"
   local raw_list="${VERIFY_CHANGES_SKIP_CHECKS:-}"
@@ -83,7 +66,6 @@ check_is_skipped() {
   done
   return 1
 }
-
 run_if_command_exists() {
   local cmd="$1"
   if bash -lc "command -v ${cmd%% *}" >/dev/null 2>&1; then
@@ -91,7 +73,6 @@ run_if_command_exists() {
   fi
   return 1
 }
-
 has_npm_script() {
   local script_name="$1"
   if [ ! -f "package.json" ] || ! command -v node >/dev/null 2>&1; then
@@ -105,7 +86,6 @@ has_npm_script() {
     process.exit(pkg.scripts && pkg.scripts[key] ? 0 : 1);
   ' "$script_name" >/dev/null 2>&1
 }
-
 collect_changed_files() {
   local status_file
 
@@ -508,6 +488,9 @@ write_verdict_json() {
   local exit_code="$2"
   local finished_at="$3"
   local duration_ms="$4"
+  local helper_script
+
+  helper_script="$(dirname "$0")/build-verdict-json.py"
 
   RUN_ID="$RUN_ID" \
   FEATURE_NAME="$FEATURE_NAME" \
@@ -551,93 +534,7 @@ write_verdict_json() {
   WORKFLOW_APPLIED_SKILLS_LINES="$(join_lines "${WORKFLOW_APPLIED_SKILLS[@]}")" \
   WORKFLOW_SKIPPED_SKILLS_LINES="$(join_lines "${WORKFLOW_SKIPPED_SKILLS[@]}")" \
   WORKFLOW_EVIDENCE_WARNINGS_VALUE="$(join_lines "${WORKFLOW_EVIDENCE_WARNINGS[@]}")" \
-  python3 - <<'PY' > "$VERDICT_FILE"
-import json
-import os
-import sys
-
-
-def to_bool(value):
-    return str(value).lower() == "true"
-
-
-def split_lines(name):
-    value = os.environ.get(name, "")
-    return [line for line in value.splitlines() if line]
-
-
-def parse_status_lines(name):
-    result = {}
-    for line in split_lines(name):
-        key, _, value = line.partition("=")
-        if key:
-            result[key] = value
-    return result
-
-
-payload = {
-    "runId": os.environ["RUN_ID"],
-    "script": "verify-changes.sh",
-    "feature": os.environ["FEATURE_NAME"],
-    "operatingMode": os.environ["OPERATING_MODE"],
-    "startedAt": os.environ["STARTED_AT"],
-    "finishedAt": os.environ["FINISHED_AT"],
-    "durationMs": int(os.environ["DURATION_MS"]),
-    "verdict": os.environ["VERDICT"],
-    "exitCode": int(os.environ["EXIT_CODE"]),
-    "verificationMode": os.environ["VERIFICATION_MODE_VALUE"],
-    "evidenceFresh": to_bool(os.environ["EVIDENCE_FRESH_VALUE"]),
-    "changedFiles": split_lines("CHANGED_FILES_LINES"),
-    "checks": {
-        "typecheck": os.environ["TS_STATUS_VALUE"],
-        "build": os.environ["BUILD_STATUS_VALUE"],
-        "test": os.environ["TEST_STATUS_VALUE"],
-        "lint": os.environ["LINT_STATUS_VALUE"],
-        "extraChecks": os.environ["EXTRA_STATUS_VALUE"],
-        "testEnvironmentDetected": to_bool(os.environ["TEST_ENV_DETECTED_VALUE"]),
-        "contractChecks": parse_status_lines("CONTRACT_CHECK_RESULTS_VALUE"),
-    },
-    "requiredChecks": {
-        "declared": split_lines("REQUIRED_DECLARED_LINES"),
-        "executed": split_lines("REQUIRED_EXECUTED_LINES"),
-        "missing": split_lines("REQUIRED_MISSING_LINES"),
-    },
-    "optionalChecks": {
-        "declared": split_lines("OPTIONAL_DECLARED_LINES"),
-        "executed": split_lines("OPTIONAL_EXECUTED_LINES"),
-        "failed": split_lines("OPTIONAL_FAILED_LINES"),
-    },
-    "contract": {
-        "path": os.environ["CONTRACT_FILE_PATH"],
-        "detected": to_bool(os.environ["CONTRACT_DETECTED_VALUE"]),
-        "applicable": to_bool(os.environ["CONTRACT_APPLICABLE_VALUE"]),
-        "scopeMatched": to_bool(os.environ["CONTRACT_SCOPE_MATCHED_VALUE"]),
-        "scopeReason": os.environ["CONTRACT_SCOPE_REASON_VALUE"],
-        "verificationMode": os.environ["VERIFICATION_MODE_VALUE"],
-        "fallbackOutsideScope": to_bool(os.environ["CONTRACT_FALLBACK_OUTSIDE_SCOPE_VALUE"]),
-        "extraChecksCommand": os.environ["EXTRA_HOOK_VALUE"],
-    },
-    "artifacts": {
-        "resultsFile": os.environ["RESULTS_FILE_PATH"],
-        "verdictFile": os.environ["VERDICT_FILE_PATH"],
-        "fresh": True,
-    },
-    "workflowEvidence": {
-        "path": os.environ["ANALYSIS_CONTEXT_FILE_VALUE"],
-        "detected": to_bool(os.environ["WORKFLOW_EVIDENCE_DETECTED_VALUE"]),
-        "mode": os.environ["WORKFLOW_EVIDENCE_MODE_VALUE"],
-        "selectedBundles": split_lines("WORKFLOW_SELECTED_BUNDLES_LINES"),
-        "requiredSkills": split_lines("WORKFLOW_REQUIRED_SKILLS_LINES"),
-        "stageOrder": split_lines("WORKFLOW_STAGE_ORDER_LINES"),
-        "appliedSkills": split_lines("WORKFLOW_APPLIED_SKILLS_LINES"),
-        "skippedSkills": split_lines("WORKFLOW_SKIPPED_SKILLS_LINES"),
-        "warnings": split_lines("WORKFLOW_EVIDENCE_WARNINGS_VALUE"),
-    },
-}
-
-json.dump(payload, sys.stdout, indent=2)
-sys.stdout.write("\n")
-PY
+  python3 "$helper_script" > "$VERDICT_FILE"
 }
 
 finalize_and_exit() {

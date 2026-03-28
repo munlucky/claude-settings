@@ -42,6 +42,7 @@ artifacts:
   sprintContract: ".claude/execution/<slice>/SPRINT_CONTRACT.md"
   qaReport: ".claude/execution/<slice>/QA_REPORT.md"
   handoff: ".claude/execution/<slice>/HANDOFF.md"
+  scorecard: ".claude/execution/<slice>/SCORECARD.md"
   requirementsTraceability: ".claude/execution/REQUIREMENTS_TRACEABILITY.md"
   scenarioMatrix: ".claude/execution/SCENARIO_MATRIX.md"
   uatChecklist: ".claude/execution/UAT_CHECKLIST.md"
@@ -104,6 +105,12 @@ qa:
         - "no route shadowing"
 hooks:
   extraChecksCommand: ""
+loop:
+  mode: "score_based"
+  stopOnFailure: true
+  scorecardRequired: true
+  scorecardProfile: "auto"
+  targetCompletionScore: 100
 ```
 
 ## Rules
@@ -116,6 +123,9 @@ hooks:
 - `SPRINT_CONTRACT.md` should define the round-level done criteria before implementation starts.
 - In document-trace downstream runs, treat `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, and `UAT_CHECKLIST.md` as first-class execution artifacts.
 - `QA_REPORT.md` should become the next remediation input when verification fails.
+- In score-based loops, `SCORECARD.md` should be the objective completion artifact for the active slice.
+- `scorecardProfile` may be set explicitly to `generic`, `saas`, `api-backend`, `frontend`, or `platform`; `auto` is the default.
+- `auto` should infer the scorecard profile from task intent or phase language and may rebalance only the combined `REQ + SCN` budget from detected `REQ-*` / `SCN-*` counts.
 - A contract-backed success verdict should require fresh evidence for every required check that applies to the current scope.
 - A document-trace completion claim should additionally require:
   - all in-scope `REQ-*` rows to have implementation plus verification evidence
@@ -127,3 +137,7 @@ hooks:
   - standard profile may continue with warning
   - strict profile should block completion claims
 - Project-specific domain checks should be opt-in hooks, not baked into shared verifier scripts.
+- If the harness uses score-based looping:
+  - `retry` should remain the default score verdict
+  - the loop should stop on failed phases by default instead of silently advancing
+  - completion should require both passing verification evidence and a score verdict of `done`

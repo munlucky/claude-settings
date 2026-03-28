@@ -35,6 +35,10 @@ This closes the Verify stage in strict runs before Finish / Handoff can begin.
    - `contractApplicable == true` and `requiredChecks.missing` is not empty
    - `verificationMode == contract` and `requiredChecks.missing` is not empty
    - `evidenceFresh == false` when a contract-backed verdict is expected
+   - `completionStatus.score.verdict != done`
+   - `completionStatus.score.current < completionStatus.score.target`
+   - `completionStatus.score.unmetChecklistItems > 0`
+   - `completionStatus.score.blockingDefects > 0`
    - `completionStatus.traceability.uncoveredRequirements` is not empty for in-scope `REQ-*`
    - `completionStatus.traceability.scenariosMissingEvidence` is not empty for critical `SCN-*`
    - `completionStatus.traceability.uatReady == false` for user-facing finish claims
@@ -73,3 +77,4 @@ missingInfo:
 - For contract-backed verification, a passing state without fresh evidence is still blocked.
 - For code-changing closeout, missing review/finish workflow evidence is treated as missing verification evidence, not as optional metadata.
 - In document-trace runs, missing requirement or critical-scenario evidence is also missing verification evidence.
+- In score-based loops, an unfinished score verdict is also missing verification evidence.

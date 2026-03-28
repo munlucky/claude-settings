@@ -32,7 +32,7 @@ Do not use this for:
   - update `phase-status.yaml`
 - Attempt responsibility:
   - run `moonshot-orchestrator` in `phaseAttemptMode`
-  - update `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `HANDOFF.md`
+  - update `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`
   - return summarized `attemptResult`
 
 ## Inputs
@@ -80,6 +80,7 @@ attemptInput:
   sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
+  scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
 ```
@@ -88,6 +89,7 @@ Rules:
 - Do not inline long phase documents into the main session.
 - Do not pass previous implementation chatter.
 - Use `QA_REPORT.md` and `HANDOFF.md` as the only retry memory.
+- Use `SCORECARD.md` as the objective completion state for the phase.
 - Treat `SPRINT_CONTRACT.md` policy anchors and required verification commands as mandatory attempt input.
 
 ### 3. Spawn fresh attempt
@@ -118,6 +120,12 @@ attemptResult:
     requiredChecks:
       missing: []
     failedChecks: []
+  score:
+    current: 100
+    target: 100
+    unmetChecklistItems: 0
+    blockingDefects: 0
+    verdict: "done"     # done | retry | blocked
   changedFiles:
     - "src/api/auth.ts"
   summary: "Phase goal met and verification passed"
@@ -132,8 +140,14 @@ Main-session merge rule:
   - `verification.mode`
   - `verification.requiredChecks.missing`
   - `verification.failedChecks`
+  - `score.current`
+  - `score.target`
+  - `score.unmetChecklistItems`
+  - `score.blockingDefects`
+  - `score.verdict`
 - never merge raw logs or full verifier output
 - Treat `status: completed` as valid only when the underlying verifier result also had `evidenceFresh == true` and no missing required checks.
+- Treat `status: completed` as valid only when the score verdict is also `done`.
 
 ### 5. Update phase-status.yaml
 
@@ -142,7 +156,7 @@ After each attempt:
 - update `attempts.lastOutcome`
 - update `attempts.lastUpdatedAt`
 - set phase `status`
-  - `completed` only when verification passed with `evidenceFresh == true` and no missing required checks
+  - `completed` only when verification passed with `evidenceFresh == true`, no missing required checks, and score verdict `done`
   - `failed` when retry cap reached
   - `in_progress` when another retry is allowed
 
@@ -163,16 +177,16 @@ phases:
 
 | Attempt result | Coordinator action |
 |---|---|
-| `completed` + fresh evidence + no missing required checks | mark phase `completed` |
+| `completed` + fresh evidence + no missing required checks + `score.verdict=done` | mark phase `completed` |
 | `partial` | keep phase `in_progress` |
 | `failed` with retries remaining | keep phase `in_progress` and retry |
 | `failed` with no retries remaining | mark phase `failed` |
-| nominal `completed` without fresh evidence | downgrade to `in_progress` or `failed` |
+| nominal `completed` without fresh evidence or without score `done` | downgrade to `in_progress` or `failed` |
 
 ### 6. Loop or stop
 
 - If the phase passed, advance to the next actionable phase.
-- Do not advance on a nominal pass if fresh evidence is missing; keep the phase in `in_progress` or `failed`.
+- Do not advance on a nominal pass if fresh evidence is missing or score verdict is not `done`; keep the phase in `in_progress` or `failed`.
 - If the phase failed but retries remain, spawn a brand-new `phase-attempt-agent`.
 - If the phase failed and retries are exhausted:
   - stop when `stopOnFailure == true`
@@ -201,9 +215,10 @@ coordinatorResult:
 - Every retry must use a fresh `phase-attempt-agent`.
 - The coordinator session remains summary-only between rounds.
 - Retries must be driven by `QA_REPORT.md` / `HANDOFF.md`, not by accumulated chat context.
+- Retries must also respect `SCORECARD.md`; `retry` and `blocked` keep the phase open.
 - Attempt agents must run `moonshot-orchestrator` in `phaseAttemptMode=true` to avoid recursive `moonshot-phase-runner` insertion.
 - Do not spawn a new attempt for strict/meta-harness work until the active `SPRINT_CONTRACT.md` contains policy anchors.
-- Do not translate `attemptResult.status=completed` into a completed phase unless the verifier evidence for that attempt is fresh and contract-complete.
+- Do not translate `attemptResult.status=completed` into a completed phase unless the verifier evidence for that attempt is fresh, contract-complete, and score-complete.
 
 ## References
 

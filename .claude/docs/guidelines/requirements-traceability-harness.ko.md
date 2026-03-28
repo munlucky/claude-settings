@@ -20,9 +20,12 @@ medium/complex `product_project` 작업에서는 아래를 기본 실행 아티�
 - `SPRINT_CONTRACT.md`
 - `QA_REPORT.md`
 - `HANDOFF.md`
+- `SCORECARD.md`
 - `REQUIREMENTS_TRACEABILITY.md`
 - `SCENARIO_MATRIX.md`
 - `UAT_CHECKLIST.md`
+- 작업 성격에 맞는 scorecard preset을 선택합니다: `generic`, `saas`, `api-backend`, `frontend`, `platform`
+- traceability artifact 두 개가 모두 있으면 감지된 `REQ-*`, `SCN-*` 개수로 `REQ + SCN` 예산만 재배분합니다.
 
 ## 식별자 체계
 
@@ -53,8 +56,10 @@ medium/complex `product_project` 작업에서는 아래를 기본 실행 아티�
    - contract 정의 검증 실행
    - 변경된 critical scenario 는 runtime/E2E 증거 갱신
    - 누락 `REQ-*`, 증거 없는 `SCN-*` 는 `QA_REPORT.md` 에 남김
+   - `SCORECARD.md` 에 객관 점수, 미충족 체크 수, verdict 갱신
+   - 프로젝트 정책이 명시적으로 요구하지 않는 한 `VER` / `CLOSE` 가중치는 고정 유지
 5. Finish 또는 Handoff
-   - `uat_ready == true` 일 때만 finish
+   - `uat_ready == true` 이고 `SCORECARD.md` 가 `done` 일 때만 finish
    - 열려 있는 요구사항/시나리오가 있으면 `HANDOFF.md` 로 넘김
 
 ## 완료 규칙
@@ -65,6 +70,7 @@ medium/complex `product_project` 작업에서는 아래를 기본 실행 아티�
 - 모든 critical `SCN-*` 에 fresh runtime 또는 E2E 증거가 있음
 - contract required check 가 최신 증거와 함께 통과함
 - `UAT_CHECKLIST.md` 에 `UAT Ready: yes` 가 기록됨
+- `SCORECARD.md` 에 `Current score >= Target score`, `Unmet checklist items = 0`, `Blocking defects = 0`, `Verdict: done` 이 기록됨
 
 `uat_complete` 는 사람 sign-off 가 추가로 필요합니다.
 - Playwright, browser-verifier, 정적 review 만으로 추론하지 않습니다

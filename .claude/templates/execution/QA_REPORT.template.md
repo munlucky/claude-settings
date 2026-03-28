@@ -42,9 +42,17 @@
 - Commands run:
 - Runtime flow exercised:
 - Logs/screenshots/artifacts:
+- Scorecard artifact:
 - Requirements traceability artifact:
 - Scenario matrix artifact:
 - UAT checklist artifact:
+
+## Score Summary
+- Current score:
+- Target score:
+- Unmet checklist items:
+- Blocking defects:
+- Score verdict: retry | blocked | done
 
 ## Finish Readiness
 - Fresh evidence confirmed:

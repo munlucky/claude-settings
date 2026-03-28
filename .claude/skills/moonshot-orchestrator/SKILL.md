@@ -145,6 +145,7 @@ artifacts:
   sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
   qaReportPath: "{activeSliceDir}/QA_REPORT.md"
   handoffPath: "{activeSliceDir}/HANDOFF.md"
+  scorecardPath: "{activeSliceDir}/SCORECARD.md"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   verificationContractPath: ".claude/verification.contract.yaml"
   verificationScript: .claude/agents/verification/verify-changes.sh
@@ -243,11 +244,15 @@ For `product_project` work, treat execution artifacts as first-class state:
 - `SPRINT_CONTRACT.md` defines the current slice goal, non-goals, done checks, and evaluator focus
 - `QA_REPORT.md` records verifier findings and feeds the next remediation round
 - `HANDOFF.md` captures resumable state when the run is interrupted, retried, or context pressure is high
+- `SCORECARD.md` is the objective completion scoreboard for the active slice
+- prefer an explicit scorecard profile when project policy already knows the workload type; otherwise auto-select from `generic`, `saas`, `api-backend`, `frontend`, or `platform`
+- when `REQUIREMENTS_TRACEABILITY.md` and `SCENARIO_MATRIX.md` exist, rebalance only the combined `REQ + SCN` score budget from detected `REQ-*` / `SCN-*` counts; keep `VER` / `CLOSE` at the preset baseline
 
 Policy:
 - medium/complex product work must not enter code changes without a slice-level sprint contract
 - strict or `meta_harness` phase work must keep policy anchors and required verification commands current in the active sprint contract
 - verification steps must update `QA_REPORT.md` whenever they run
+- meaningful implementation or verification rounds must update `SCORECARD.md` with objective checklist status, current score, unmet items, and verdict
 - successful or partially successful implementation rounds must run doc-ops finalization before completion is claimed
 - failed verification, retry loops, or interrupted runs should mark `signals.handoffRequired = true`
 - bounded direct work that stays outside the phase harness must still keep `workflowEvidence` current in `.claude/docs/moonshot-analysis.yaml`
@@ -391,8 +396,11 @@ Run `decisions.skillChain` in order.
 
 **Execution bridge contract**:
 - Before the first `implementation-runner` in medium/complex `product_project` work, materialize `artifacts.sprintContractPath`
+- Before the first `implementation-runner` in medium/complex `product_project` work, materialize `artifacts.scorecardPath`
 - `implementation-runner` must treat `SPRINT_CONTRACT.md` as the round-level source of truth for code edits
+- `implementation-runner` and subsequent remediation rounds must keep `SCORECARD.md` current
 - `completion-verifier`, `verify-runtime.sh`, and `verify-changes.sh` should update `artifacts.qaReportPath`
+- `verify-changes.sh` score output is the preferred completion score source when available
 - after verification or review, `doc-auto-sync` must run before completion is claimed
 - If verification fails, retries begin, or the session cannot finish cleanly, write/update `artifacts.handoffPath`
 
@@ -406,6 +414,7 @@ Run `decisions.skillChain` in order.
 - `finish-bundle` is entered only after the active review/verify verdict is stable
 - clean finish:
   - verification passed with fresh evidence
+  - score verdict is `done`
   - run `doc-auto-sync`
   - run `session-logger` when resumable state or decision history matters
 - resume-later handoff:

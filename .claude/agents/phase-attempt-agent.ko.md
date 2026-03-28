@@ -29,6 +29,7 @@ attemptInput:
   sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
+  scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
 ```
@@ -42,6 +43,7 @@ attemptInput:
 - `SPRINT_CONTRACT.md`
 - `QA_REPORT.md`
 - 있으면 `HANDOFF.md`
+- `SCORECARD.md`
 
 가장 먼저 `SPRINT_CONTRACT.md` 의 `Policy Anchors` 섹션을 확인합니다.
 strict 또는 `meta_harness` 작업에서 policy anchors 나 필수 검증 명령이 비어 있으면, 코드 수정보다 먼저 sprint contract 를 보강하거나 blocker 로 반환해야 합니다.
@@ -89,11 +91,18 @@ attemptResult:
       missing: []
     failedChecks:
       - "browserFlows.login"
+  score:
+    current: 70
+    target: 100
+    unmetChecklistItems: 2
+    blockingDefects: 1
+    verdict: "retry"       # done | retry | blocked
   handoffRequired: true
 ```
 
 완료 정규화 규칙:
 - 이번 시도의 verifier 결과가 contract 기반 required check에 대한 최신 증거를 포함할 때만 `status: completed` 를 반환합니다.
+- 점수 verdict 가 `done` 이고 target score 를 충족하며 unmet checklist / blocking defect 가 0일 때만 `status: completed` 를 반환합니다.
 - 검증이 없거나, 오래됐거나, indeterminate 이거나, 일부만 통과한 상태면 완료 표현 대신 `partial` 또는 `failed` 를 반환합니다.
 
 ## 상태 전이 표

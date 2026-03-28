@@ -25,6 +25,7 @@ artifacts:
   sprintContract: "{tasksRoot}/{feature-name}/execution/<slice>/SPRINT_CONTRACT.md"
   qaReport: "{tasksRoot}/{feature-name}/execution/<slice>/QA_REPORT.md"
   handoff: "{tasksRoot}/{feature-name}/execution/<slice>/HANDOFF.md"
+  scorecard: "{tasksRoot}/{feature-name}/execution/<slice>/SCORECARD.md"
   requirementsTraceability: "{tasksRoot}/{feature-name}/execution/REQUIREMENTS_TRACEABILITY.md"
   scenarioMatrix: "{tasksRoot}/{feature-name}/execution/SCENARIO_MATRIX.md"
   uatChecklist: "{tasksRoot}/{feature-name}/execution/UAT_CHECKLIST.md"
@@ -81,3 +82,9 @@ qa:
         - "manual sign-off is explicit when required"
 hooks:
   extraChecksCommand: ""
+loop:
+  mode: "score_based"
+  stopOnFailure: true
+  scorecardRequired: true
+  scorecardProfile: "auto"
+  targetCompletionScore: 100
