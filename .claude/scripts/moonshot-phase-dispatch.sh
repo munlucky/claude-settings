@@ -5,6 +5,7 @@
 # Unified command-layer adapter for phase execution.
 # - delegated-terminal      -> agent-loop.sh
 # - in-session-coordinator  -> moonshot-in-session-coordinator via Claude or Codex CLI
+#   (Codex defaults to delegated-terminal fallback for uninterrupted autonomous runs)
 #
 # Usage:
 #   ./moonshot-phase-dispatch.sh <plan-dir> [options]
@@ -18,6 +19,8 @@
 #   --stop-on-failure         Stop when retry cap is reached (default)
 #   --continue-on-failure     Keep going after failure
 #   --autonomous              Reserved for compatibility (agent-loop is autonomous by default)
+#   --allow-interactive-in-session
+#                             Keep in-session-coordinator on Codex instead of falling back
 #   --dry-run                 Print resolved command without executing
 # =============================================================================
 
@@ -37,6 +40,7 @@ STOP_ON_FAILURE=true
 AUTONOMOUS=false
 DRY_RUN=false
 CODEX_REASONING_EFFORT="${PHASE_DISPATCH_CODEX_REASONING_EFFORT:-${MOONSHOT_CODEX_REASONING_EFFORT:-medium}}"
+ALLOW_INTERACTIVE_IN_SESSION="${PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION:-false}"
 
 show_help() {
     head -24 "$0" | tail -19
@@ -108,6 +112,19 @@ resolve_execution_root() {
     else
         echo "${PLAN_DIR%/}/execution"
     fi
+}
+
+resolve_runtime() {
+    if [[ "$RUNTIME" == "auto" ]]; then
+        if command -v codex >/dev/null 2>&1; then
+            echo "codex"
+        else
+            echo "claude"
+        fi
+        return
+    fi
+
+    echo "$RUNTIME"
 }
 
 resolve_master_plan() {
@@ -276,6 +293,10 @@ while [[ $# -gt 0 ]]; do
             AUTONOMOUS=true
             shift
             ;;
+        --allow-interactive-in-session)
+            ALLOW_INTERACTIVE_IN_SESSION=true
+            shift
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -308,10 +329,17 @@ fi
 RESOLVED_MODE="$(resolve_execution_mode)"
 RESOLVED_ROOT="$(resolve_execution_root)"
 MASTER_PLAN="$(resolve_master_plan)"
+EFFECTIVE_RUNTIME="$(resolve_runtime)"
 
 if [[ -z "$MASTER_PLAN" ]]; then
     log_error "Master plan not found in: $PLAN_DIR"
     exit 1
+fi
+
+if [[ "$RESOLVED_MODE" == "in-session-coordinator" && "$EFFECTIVE_RUNTIME" == "codex" && "$ALLOW_INTERACTIVE_IN_SESSION" != "true" ]]; then
+    log_warn "Codex in-session-coordinator is prompt-driven and can stop at handoff boundaries. Falling back to delegated-terminal for uninterrupted autonomous execution."
+    log_warn "Set PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION=true or pass --allow-interactive-in-session to keep interactive coordinator mode."
+    RESOLVED_MODE="delegated-terminal"
 fi
 
 mkdir -p "$RESOLVED_ROOT"

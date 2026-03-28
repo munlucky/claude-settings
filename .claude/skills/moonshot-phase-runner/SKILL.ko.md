@@ -20,8 +20,8 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 phase 중심 실행에서는 Intake에서 Plan으로 넘어가는 기본 소유자입니다.
 
 실행 모드:
-- `delegated-terminal`: `agent-loop.sh` 기반의 격리 루프 실행 사용
-- `in-session-coordinator`: 현재 세션이 루프를 조율하되, 각 시도는 fresh fork/sub-agent round로 실행
+- `delegated-terminal`: `agent-loop.sh` 기반의 실제 자율 루프를 사용하며, 중단 없이 끝까지 밀어야 하는 실행에 우선 사용
+- `in-session-coordinator`: 현재 세션이 루프를 조율하되, 각 시도는 fresh fork/sub-agent round로 실행하며, 기본 자율 실행보다는 얇은 interactive coordinator 모드로 취급
 
 실행 시작 정책:
 - 기본값: 준비가 끝나면 즉시 실행까지 자동 시작
@@ -212,6 +212,7 @@ actions:
 ### Mode B: in-session-coordinator
 
 이 모드는 오케스트레이션은 현재 세션에 남기고, 각 시도는 fresh attempt로 분리합니다.
+fresh-attempt 루프를 런타임이 직접 강제하지 못하면, 이 모드는 무중단 자율 실행보다 대화형/핸드오프 중심 동작에 가깝습니다.
 
 Coordinator 규칙:
 - 메인 세션은 다음 시도를 결정할 수 있지만, 구현 중간 대화를 계속 누적하면 안 됩니다.
@@ -226,6 +227,10 @@ Coordinator 규칙:
 - 메인 세션으로는 verdict, changed files, failed checks, next action 같은 요약만 병합합니다.
 - review, verification, finish-stage closeout이 모두 충족되기 전에는 phase를 clean completion으로 취급하지 않습니다.
 - 시도가 clean completion 없이 끝나면 다음 시도 전에 `QA_REPORT.md`와 `HANDOFF.md`를 갱신합니다.
+
+런타임 메모:
+- `delegated-terminal`은 `agent-loop.sh`라는 구체적인 셸 루프를 가지므로, 사용자가 "알아서 끝까지 계속"을 기대할 때 우선 선택해야 합니다.
+- `in-session-coordinator`는 현재 런타임이 coordinator 계약을 제대로 수행해야 이어서 진행되며, 그렇지 않으면 resumable handoff를 남기고 멈춘 것처럼 보일 수 있습니다.
 
 Attempt 계약:
 

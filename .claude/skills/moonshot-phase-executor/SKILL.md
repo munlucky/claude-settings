@@ -52,6 +52,7 @@ If `executionMode == delegated-terminal`:
 If `executionMode == in-session-coordinator`:
 - invoke `/moonshot-in-session-coordinator`
 - pass through `phaseRunnerResult`
+- when the active runtime cannot reliably keep spawning fresh attempts, prefer a runtime-side fallback to `delegated-terminal` instead of pretending the run is fully autonomous
 
 ### 3. Runtime handling
 
