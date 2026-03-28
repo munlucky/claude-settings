@@ -3,6 +3,7 @@
 # Runtime parity smoke for Moonshot phase execution.
 # Coverage:
 #   - render matrix for delegated-terminal and in-session-coordinator across Claude/Codex
+#     (Codex coordinator path is exercised with interactive mode explicitly enabled)
 #   - runtime availability probes for Claude/Codex
 #   - actual delegated-terminal + in-session-coordinator runs for each available runtime
 #   - artifact/status/verdict assertions after each actual run
@@ -559,7 +560,7 @@ run_render_matrix() {
     bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime claude --dry-run > "$claude_delegated_out"
     bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime codex --dry-run > "$codex_delegated_out"
     bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime claude --dry-run > "$claude_coord_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime codex --dry-run > "$codex_coord_out"
+    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
   )
 
   assert_contains "$claude_delegated_out" "agent-loop.sh" "delegated-terminal adapter command"
@@ -720,14 +721,42 @@ run_verify_changes_workflow_verdict_smoke() {
   local workspace_root="$TMP_ROOT/verify-changes-workflow/workspace"
   local log_file="$TMP_ROOT/verify-changes-workflow.log"
   local verdict_file="$workspace_root/.claude/verification-verdict-workflow-evidence-smoke.json"
+  local analysis_file="$workspace_root/.claude/docs/moonshot-analysis.yaml"
+  local qa_report="$workspace_root/.claude/docs/workflow-evidence-smoke/QA_REPORT.md"
+  local handoff="$workspace_root/.claude/docs/workflow-evidence-smoke/HANDOFF.md"
 
   prepare_workspace_copy "$workspace_root"
   initialize_workspace_git "$workspace_root"
 
   mkdir -p "$workspace_root/src"
+  mkdir -p "$(dirname "$analysis_file")" "$(dirname "$qa_report")"
   cat > "$workspace_root/src/workflowEvidenceSmoke.ts" <<'EOF'
 export const workflowEvidenceSmoke = true;
 EOF
+
+  cat > "$qa_report" <<'EOF'
+# QA REPORT
+
+## Workflow Execution
+- Selected bundles: analysis-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier, doc-auto-sync
+- Skipped skills: session-logger (clean completion path)
+EOF
+
+  cat > "$handoff" <<'EOF'
+# HANDOFF
+
+## Workflow Logging
+- session-logger: required on incomplete stop
+EOF
+
+  (
+    cd "$workspace_root"
+    bash .claude/scripts/workflow-enforcement.sh record-bounded \
+      --analysis-path .claude/docs/moonshot-analysis.yaml \
+      --qa-report-path .claude/docs/workflow-evidence-smoke/QA_REPORT.md \
+      --handoff-path .claude/docs/workflow-evidence-smoke/HANDOFF.md >/dev/null
+  )
 
   (
     cd "$workspace_root"
@@ -768,6 +797,7 @@ run_actual_flow() {
   local log_file="$TMP_ROOT/$scenario_name.log"
   local sentinel="$TMP_ROOT/$scenario_name.sentinel"
   local fixture_lines
+  local -a dispatch_args=()
 
   prepare_workspace_copy "$workspace_root"
   mapfile -t fixture_lines < <(seed_fixture "$fixture_root" "$scenario_name" "$execution_mode")
@@ -785,17 +815,23 @@ run_actual_flow() {
   snapshot_git_status "$workspace_root" "$before_git"
   touch "$sentinel"
 
+  if [[ "$runtime" == "codex" && "$execution_mode" == "in-session-coordinator" ]]; then
+    dispatch_args+=(--allow-interactive-in-session)
+  fi
+
   if [[ "$execution_mode" == "delegated-terminal" ]]; then
     if ! (
       cd "$workspace_root"
       MOONSHOT_CODEX_REASONING_EFFORT=low \
         AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
-        AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 AGENT_LOOP_WATCHDOG_MAX_SECONDS=90 \
+        AGENT_LOOP_SCORECARD_REQUIRED=false \
+        AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 AGENT_LOOP_WATCHDOG_MAX_SECONDS=180 \
         bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
           --execution-mode delegated-terminal \
           --execution-root "$execution_root" \
           --status-file "$status_file" \
           --runtime "$runtime" \
+          "${dispatch_args[@]}" \
           > "$log_file" 2>&1
     ); then
       tail -80 "$log_file" >&2 || true
@@ -815,6 +851,7 @@ run_actual_flow() {
         --status-file "$status_file" \
         --execution-root "$execution_root" \
         --runtime "$runtime" \
+        "${dispatch_args[@]}" \
         --max-attempts 1 \
         --stop-on-failure > "$log_file" 2>&1
     ); then
