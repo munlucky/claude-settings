@@ -20,8 +20,8 @@ This is the default public entrypoint for large, phase-based, or long-running im
 It owns the Intake-to-Plan transition for phase-driven execution.
 
 Execution modes:
-- `delegated-terminal`: use isolated loop execution backed by `agent-loop.sh`
-- `in-session-coordinator`: the current session coordinates the loop, but each attempt must run as a fresh fork/sub-agent round
+- `delegated-terminal`: use the concrete autonomous loop backed by `agent-loop.sh`; prefer this when the user expects uninterrupted end-to-end execution
+- `in-session-coordinator`: the current session coordinates the loop, but each attempt must run as a fresh fork/sub-agent round; treat this as an interactive thin-coordinator mode, not the default autonomous runtime
 
 Execution start policy:
 - default: auto-start execution immediately after preparation
@@ -212,6 +212,7 @@ Supported values:
 ### Mode B: in-session-coordinator
 
 This mode keeps orchestration in the current session while preserving fresh-attempt isolation.
+It is not the strongest choice for uninterrupted autonomous runs in runtimes that cannot enforce the fresh-attempt loop programmatically.
 
 Coordinator rules:
 - The main session may decide the next attempt, but must not carry implementation chatter across rounds.
@@ -226,6 +227,10 @@ Coordinator rules:
 - Merge back summaries only: verdict, changed files, failed checks, next action.
 - Do not treat a phase as cleanly complete until review, verification, and finish-stage closeout are all satisfied.
 - If the round does not finish cleanly, update `QA_REPORT.md` and `HANDOFF.md` before the next attempt.
+
+Runtime note:
+- `delegated-terminal` has a concrete shell loop (`agent-loop.sh`) and is the preferred mode when the run should keep going without conversational re-entry.
+- `in-session-coordinator` depends on the active runtime honoring the coordinator contract and may surface a resumable handoff instead of autonomously continuing.
 
 Attempt contract:
 
