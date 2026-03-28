@@ -19,6 +19,7 @@ This is the default Verify-stage owner before finish or handoff.
 - `analysisContext.artifacts.sprintContractPath`
 - `analysisContext.artifacts.qaReportPath`
 - `analysisContext.artifacts.handoffPath`
+- `analysisContext.artifacts.scorecardPath`
 - `analysisContext.artifacts.requirementsTraceabilityPath`
 - `analysisContext.artifacts.scenarioMatrixPath`
 - `analysisContext.artifacts.uatChecklistPath`
@@ -29,6 +30,7 @@ This is the default Verify-stage owner before finish or handoff.
 - Test framework and commands from `TEST_GUIDE.md`, `PROJECT.md`, or verification contract
 - `analysisContext.signals.allowIndeterminate` (boolean override, default: `true`)
 - Latest verifier verdict artifact, especially `verdict.workflowEvidence.*` from `verify-changes.sh`
+- Latest verifier verdict artifact score payload, especially `verdict.score.*` from `verify-changes.sh`
 
 ## Contract-first policy
 
@@ -54,6 +56,7 @@ Applicability rule:
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
+- In score-based loops, do not return a passing completion verdict unless the score verdict is `done`.
 
 ## Step 0: Verification Environment Detection
 
@@ -106,6 +109,19 @@ Only when executable verification exists.
 6. Update `context.md` status column when appropriate
 7. Read the latest verifier verdict artifact and capture `workflowEvidence.selectedBundles`, `workflowEvidence.stageOrder`, and `workflowEvidence.warnings` when present
 
+## Step 1.1: Score Reconciliation
+
+Prefer score data from the latest verifier artifact when available.
+
+1. Read `verdictArtifact.score.*` from `verify-changes.sh`
+2. If no verifier score exists, read `SCORECARD.md`
+3. Treat verifier-computed score as authoritative over markdown summaries
+4. Require:
+   - `score.current >= score.target`
+   - `score.unmetChecklistItems == 0`
+   - `score.blockingDefects == 0`
+   - `score.verdict == done`
+
 ## Step 1.25: Traceability Reconciliation
 
 When traceability artifacts exist, reconcile them before any completion claim.
@@ -140,6 +156,14 @@ Compare results against `context.md` requirements and `SPRINT_CONTRACT.md` even 
 selfAuditResult:
   requirementsMet: []
   requirementsNotMet: []
+  score:
+    detected: true | false
+    source: verifier_artifact | scorecard | none
+    current: 0
+    target: 100
+    unmetChecklistItems: 0
+    blockingDefects: 0
+    verdict: done | retry | blocked | missing
   traceability:
     inScopeRequirements: []
     uncoveredRequirements: []
@@ -172,6 +196,14 @@ completionStatus:
     declared: []
     executed: []
     missing: []
+  score:
+    detected: true | false
+    source: verifier_artifact | scorecard | none
+    current: 0
+    target: 100
+    unmetChecklistItems: 0
+    blockingDefects: 0
+    verdict: done | retry | blocked | missing
   traceability:
     requirementsMatrixDetected: true | false
     scenarioMatrixDetected: true | false
@@ -208,6 +240,10 @@ Passing rule:
   - `evidenceFresh == true`
   - `requiredChecks.missing` is empty
   - `verdictArtifact.workflowEvidence.warnings` is empty for code-changing closeout work
+  - `score.verdict == done`
+  - `score.current >= score.target`
+  - `score.unmetChecklistItems == 0`
+  - `score.blockingDefects == 0`
   - `traceability.uncoveredRequirements` is empty for in-scope `REQ-*`
   - `traceability.scenariosMissingEvidence` is empty for critical `SCN-*`
   - `traceability.uatReady == true` for user-facing finish claims
@@ -230,6 +266,7 @@ When `verificationState: failed` and executable verification exists:
 - Missing verification contract in standard profile -> fallback detection allowed
 - Contract present but out of scope -> use workspace/fallback mode instead of contract mode
 - Contract applicable but required checks not executed -> not eligible for `gateDecision: pass`
+- Missing score artifact in score-based runs -> not eligible for `gateDecision: pass`
 - Missing traceability artifacts in standard profile -> continue, but do not claim document-complete coverage
 - Missing traceability artifacts in strict document-trace runs -> not eligible for `gateDecision: pass`
 

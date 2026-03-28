@@ -165,6 +165,9 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - `SPRINT_CONTRACT.md`: 이번 slice 목표, non-goal, done check
 - `QA_REPORT.md`: verifier 결과와 다음 수정 입력
 - `HANDOFF.md`: 재시도/중단/장시간 세션 인계 상태
+- `SCORECARD.md`: active slice의 객관적인 완료 점수판
+- 프로젝트 정책이 workload 유형을 이미 알고 있으면 명시적 scorecard profile을 우선하고, 아니면 `generic`, `saas`, `api-backend`, `frontend`, `platform` 중 하나를 task intent와 phase 문맥에서 자동 선택한다.
+- `REQUIREMENTS_TRACEABILITY.md`와 `SCENARIO_MATRIX.md`가 있으면 감지된 `REQ-*` / `SCN-*` 개수로 `REQ + SCN` 예산만 재배분하고 `VER` / `CLOSE`는 preset 기본값을 유지한다.
 - strict 또는 `meta_harness` phase 작업은 active `SPRINT_CONTRACT.md` 에 policy anchors 와 필수 검증 명령을 유지해야 한다.
 - phase harness를 쓰지 않는 bounded direct 작업도 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 최신 상태로 유지해야 한다.
 - bounded direct `workflowEvidence`에는 `selectedBundles`, `requiredSkills`, `stageOrder`가 모두 있어야 한다.

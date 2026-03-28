@@ -29,6 +29,7 @@ attemptInput:
   sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
+  scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
 ```
@@ -42,6 +43,7 @@ Read only:
 - `SPRINT_CONTRACT.md`
 - `QA_REPORT.md`
 - `HANDOFF.md` when present
+- `SCORECARD.md`
 
 Read the `Policy Anchors` section in `SPRINT_CONTRACT.md` first.
 For strict or `meta_harness` work, if policy anchors or required verification commands are missing, refresh the sprint contract before edits or return blocked instead of guessing.
@@ -89,11 +91,18 @@ attemptResult:
       missing: []
     failedChecks:
       - "browserFlows.login"
+  score:
+    current: 70
+    target: 100
+    unmetChecklistItems: 2
+    blockingDefects: 1
+    verdict: "retry"       # done | retry | blocked
   handoffRequired: true
 ```
 
 Completion normalization rule:
 - Return `status: completed` only when the verifier result for this attempt is contract-backed and includes fresh evidence for the required checks.
+- Return `status: completed` only when the score verdict is `done` and the target score has been reached with no unmet checklist items or blocking defects.
 - If verification is missing, stale, indeterminate, or partial, return `partial` or `failed` instead of wording the attempt as complete.
 
 ## State Transition Table

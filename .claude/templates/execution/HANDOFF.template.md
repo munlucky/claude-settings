@@ -36,6 +36,7 @@
 ## Evidence Paths
 - Sprint contract:
 - QA report:
+- Scorecard:
 - Requirements traceability:
 - Scenario matrix:
 - UAT checklist:

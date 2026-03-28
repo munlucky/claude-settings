@@ -64,7 +64,7 @@ Execution start policy:
     │
     ├─ 4. Seed execution bridge artifacts
     │      └─ Prepare `execution/<phase>/SPRINT_CONTRACT.md`
-    │         and placeholders for `QA_REPORT.md`, `HANDOFF.md`
+    │         and placeholders for `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`
     │
     ├─ 5. Plan Review (unless --autonomous)
     │      └─ Detect uncertainties → Q&A → planConfirmed: true
@@ -148,6 +148,7 @@ For each detected phase, prepare:
 - `<plan-dir>/execution/<phase>/SPRINT_CONTRACT.md`
 - `<plan-dir>/execution/<phase>/QA_REPORT.md`
 - `<plan-dir>/execution/<phase>/HANDOFF.md`
+- `<plan-dir>/execution/<phase>/SCORECARD.md`
 
 Rules:
 - `SPRINT_CONTRACT.md` is seeded from the phase title and document path
@@ -155,8 +156,12 @@ Rules:
 - `SPRINT_CONTRACT.md` must carry `Policy Anchors` for always-loaded rules, the active workspace contract, the verification contract, and any phase-specific guides required for the round
 - `SPRINT_CONTRACT.md` should also declare the expected downstream stage order, review cadence, and finish/handoff exit rule for the round
 - `QA_REPORT.md` and `HANDOFF.md` start as placeholders and are updated during execution
+- `SCORECARD.md` starts with objective weighted checks and controls whether the loop may declare the phase done
+- `SCORECARD.md` should be seeded from a scorecard profile: `generic`, `saas`, `api-backend`, `frontend`, or `platform`
+- when traceability artifacts already exist, rebalance only the combined `REQ + SCN` budget from detected `REQ-*` / `SCN-*` counts before the first attempt
 - `QA_REPORT.md` should make the next path explicit: clean finish, retry loop, or resume-later handoff
 - `HANDOFF.md` should record which review/verification checks must be rerun before closeout
+- `SCORECARD.md` should keep `retry` as the default verdict until the objective target score is met
 - do not overwrite an existing artifact that already contains work
 
 ## Step 5: Plan Review (Optional)
@@ -242,6 +247,7 @@ attemptInput:
   sprintContractPath: "docs/implementation/execution/01-project-setup/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/01-project-setup/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/01-project-setup/HANDOFF.md"
+  scorecardPath: "docs/implementation/execution/01-project-setup/SCORECARD.md"
   priorAttemptSummary: "Build failed on migration ordering; retry with DB init fix"
 
 attemptResult:
@@ -251,6 +257,12 @@ attemptResult:
   verification:
     verdict: "failed"
     failedChecks: ["browserFlows.login"]
+  score:
+    current: 70
+    target: 100
+    unmetChecklistItems: 2
+    blockingDefects: 1
+    verdict: "retry"
   handoffRequired: true
 ```
 

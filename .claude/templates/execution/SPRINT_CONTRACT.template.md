@@ -67,6 +67,7 @@
 - Clean finish requires:
 - Resume-later handoff trigger:
 - Retry-loop trigger:
+- Target completion score:
 
 ## Risks
 - Known uncertainty

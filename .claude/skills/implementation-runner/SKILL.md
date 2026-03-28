@@ -19,6 +19,7 @@ description: Performs implementation in the chain and records completion state a
 - `analysisContext.artifacts.contextDocPath` (if present)
 - `analysisContext.artifacts.planPath` / `taskSliceGlob` (if present)
 - `analysisContext.artifacts.sprintContractPath` (when execution bridge is required)
+- `analysisContext.artifacts.scorecardPath` (when execution bridge is required)
 
 ## Procedure
 
@@ -54,6 +55,7 @@ If required:
    - evaluator focus
    - expected evidence
    - policy anchors (always-loaded rules, active workspace contract, verification contract, round-specific guides)
+   - objective score checklist and target
 4. If a safe contract cannot be derived, stop and return planning notes instead of guessing in code
 
 Result:
@@ -61,6 +63,7 @@ Result:
 signals.sprintContractReady: true | false
 notes:
   - "sprint-contract: ready, path=..."
+  - "scorecard: ready, path=..."
 ```
 
 ### Step 1: Test Environment Detection
@@ -196,6 +199,7 @@ repo.changedFiles:
   - src/__tests__/...  # Test files included
 notes:
   - "sprint-contract: ready, path=..."
+  - "scorecard: ready, path=..."
   - "implementation: complete, changed_files=3, tests_written=2"
   - "refactor: scope_confirmed=true, phases=3, build_status=pass"
   - "self-healing: attempts=1, fixed=TS2339"  # For auto-fixed errors
@@ -206,6 +210,7 @@ notes:
 - Do not call other skills/subagents.
 - If failed or deferred, record the reason in `notes`.
 - When execution bridge is required, do not skip `SPRINT_CONTRACT.md`.
+- When execution bridge is required, do not skip `SCORECARD.md`.
 - For refactor tasks: always confirm scope before starting.
 - Self-healing: max 2 retry attempts per phase before asking user.
 - **Test co-creation**: When test environment exists, implementation without tests is incomplete.

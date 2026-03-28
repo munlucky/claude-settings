@@ -62,6 +62,10 @@ SKIP_COMMIT_PROMPT="${AGENT_LOOP_SKIP_COMMIT_PROMPT:-false}"
 WATCHDOG_CHECK_SECONDS="${AGENT_LOOP_WATCHDOG_CHECK_SECONDS:-$WATCHDOG_CHECK_SECONDS}"
 WATCHDOG_MAX_SECONDS="${AGENT_LOOP_WATCHDOG_MAX_SECONDS:-$WATCHDOG_MAX_SECONDS}"
 CODEX_REASONING_EFFORT="${AGENT_LOOP_CODEX_REASONING_EFFORT:-${MOONSHOT_CODEX_REASONING_EFFORT:-medium}}"
+ADVANCE_ON_FAILURE="${AGENT_LOOP_ADVANCE_ON_FAILURE:-false}"
+SCORECARD_REQUIRED="${AGENT_LOOP_SCORECARD_REQUIRED:-true}"
+TARGET_COMPLETION_SCORE="${AGENT_LOOP_TARGET_COMPLETION_SCORE:-100}"
+SCORECARD_PROFILE="${AGENT_LOOP_SCORECARD_PROFILE:-auto}"
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -210,13 +214,26 @@ run_worker_prompt() {
     local phase_start_epoch="$3"
     local qa_checksum_before="$4"
     local -a cmd=()
+    local -a phase_env=()
+
+    if [[ -n "${PHASE_SCORECARD:-}" ]]; then
+        phase_env+=("HARNESS_SCORECARD_FILE=$PHASE_SCORECARD")
+    fi
+    if [[ -n "${PHASE_QA_REPORT:-}" ]]; then
+        phase_env+=("HARNESS_QA_REPORT_FILE=$PHASE_QA_REPORT")
+    fi
+    if [[ -n "${EXECUTION_ROOT:-}" ]]; then
+        phase_env+=("HARNESS_REQUIREMENTS_TRACEABILITY_FILE=${EXECUTION_ROOT}/REQUIREMENTS_TRACEABILITY.md")
+        phase_env+=("HARNESS_SCENARIO_MATRIX_FILE=${EXECUTION_ROOT}/SCENARIO_MATRIX.md")
+        phase_env+=("HARNESS_UAT_CHECKLIST_FILE=${EXECUTION_ROOT}/UAT_CHECKLIST.md")
+    fi
 
     case "$RUNNER_RUNTIME" in
         claude)
-            cmd=(claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
+            cmd=(env "${phase_env[@]}" claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
             ;;
         codex)
-            cmd=(codex exec --full-auto -C "$PWD")
+            cmd=(env "${phase_env[@]}" codex exec --full-auto -C "$PWD")
             if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
                 cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
             fi
@@ -469,6 +486,7 @@ ensure_execution_artifacts() {
     PHASE_SPRINT_CONTRACT="${PHASE_EXECUTION_DIR}/SPRINT_CONTRACT.md"
     PHASE_QA_REPORT="${PHASE_EXECUTION_DIR}/QA_REPORT.md"
     PHASE_HANDOFF="${PHASE_EXECUTION_DIR}/HANDOFF.md"
+    PHASE_SCORECARD="${PHASE_EXECUTION_DIR}/SCORECARD.md"
     required_commands="$(render_required_verification_commands)"
 
     mkdir -p "$PHASE_EXECUTION_DIR"
@@ -534,11 +552,13 @@ ${required_commands}
 ### Artifacts
 - QA report: ${PHASE_QA_REPORT}
 - Handoff: ${PHASE_HANDOFF}
+- Scorecard: ${PHASE_SCORECARD}
 
 ## Finish Rule
 - Clean finish requires: fresh verification evidence, review complete, and finish-stage closeout recorded.
 - Resume-later handoff trigger: blocked criteria, interruption, or intentionally deferred verification.
 - Retry-loop trigger: verification or review returns actionable failures for this phase.
+- Score target: ${TARGET_COMPLETION_SCORE}
 
 ## Risks
 - Known uncertainty:
@@ -589,6 +609,13 @@ EOF
 - Skipped skills: code-simplifier (not evaluated yet), session-logger (clean completion path)
 - Enforcement note: replace defaults when actual execution diverges
 
+## Score Summary
+- Current score: 0
+- Target score: ${TARGET_COMPLETION_SCORE}
+- Unmet checklist items: 1
+- Blocking defects: 0
+- Verdict: retry
+
 ## Finish Readiness
 - Fresh evidence confirmed: no
 - Remaining blockers before closeout:
@@ -635,6 +662,52 @@ EOF
 - Update this file when the phase pauses or stops without clean completion
 EOF
     fi
+
+    if [[ ! -f "$PHASE_SCORECARD" ]]; then
+        if command -v python3 >/dev/null 2>&1 && [[ -f ".claude/scripts/render-scorecard.py" ]]; then
+            python3 .claude/scripts/render-scorecard.py \
+                --phase-prefix "$phase_prefix" \
+                --phase-title "$phase_title" \
+                --target-score "$TARGET_COMPLETION_SCORE" \
+                --qa-report "$PHASE_QA_REPORT" \
+                --profile "$SCORECARD_PROFILE" \
+                --phase-doc "$phase_doc" \
+                --requirements-file "${EXECUTION_ROOT}/REQUIREMENTS_TRACEABILITY.md" \
+                --scenario-file "${EXECUTION_ROOT}/SCENARIO_MATRIX.md" \
+                > "$PHASE_SCORECARD"
+        else
+            cat > "$PHASE_SCORECARD" <<EOF
+# Phase ${phase_prefix} Scorecard
+
+> Objective completion score for phase ${phase_prefix}. Update after every meaningful implementation or verification round.
+> Preset profile: generic (fallback)
+> Profile selection: fallback:no-renderer
+> Coverage rebalance: counts:absent
+
+## Objective Checklist
+| ID | Category | Weight | Status | Evidence | Notes |
+|----|----------|--------|--------|----------|-------|
+| OBJ-REQ | In-scope requirements covered | 40 | pending | ${PHASE_QA_REPORT} | REQ-* coverage |
+| OBJ-SCN | Critical scenarios evidenced | 30 | pending | ${PHASE_QA_REPORT} | SCN-* runtime or E2E evidence |
+| OBJ-VER | Required verification commands passed | 20 | pending | ${PHASE_QA_REPORT} | Fresh contract-backed evidence |
+| OBJ-CLOSE | Review and finish closeout recorded | 10 | pending | ${PHASE_QA_REPORT} | Review + finish evidence present |
+
+## Score Summary
+- Current score: 0
+- Target score: ${TARGET_COMPLETION_SCORE}
+- Unmet checklist items: 4
+- Blocking defects: 0
+- Verdict: retry
+
+## Loop Policy
+- \`done\` requires Current score >= Target score
+- \`done\` requires Unmet checklist items = 0
+- \`done\` requires Blocking defects = 0
+- \`blocked\` means environment, contract, or dependency prevents progress
+- \`retry\` means continue the active phase only
+EOF
+        fi
+    fi
 }
 
 append_qa_runtime_update() {
@@ -652,6 +725,9 @@ append_qa_runtime_update() {
         if [[ -f "${WORKFLOW_LOG_DIR}/latest-dispatch.json" ]]; then
             echo "- Workflow evidence: ${WORKFLOW_LOG_DIR}/latest-dispatch.json"
         fi
+        if [[ -f "$PHASE_SCORECARD" ]]; then
+            echo "- Scorecard: ${PHASE_SCORECARD}"
+        fi
     } >> "$PHASE_QA_REPORT"
 }
 
@@ -668,6 +744,7 @@ append_handoff_update() {
             echo "- Detail: ${detail}"
         fi
         echo "- session-logger: recorded via agent-loop handoff update"
+        echo "- Scorecard: ${PHASE_SCORECARD}"
         echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, rerun the required review/verification checks, update \`${PHASE_QA_REPORT}\`, then resume the active phase only."
     } >> "$PHASE_HANDOFF"
 }
@@ -688,7 +765,8 @@ Codex direct execution checklist:
 4. Run review and verification in the phase contract order.
 5. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 6. Read the newest verification verdict file and record its path and verdict in QA_REPORT.md.
-7. If verification passed and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
+7. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
+8. If verification passed, SCORECARD.md says \`Verdict: done\`, and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 4.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates."
@@ -707,6 +785,7 @@ executionArtifacts:
   sprintContractPath: "$PHASE_SPRINT_CONTRACT"
   qaReportPath: "$PHASE_QA_REPORT"
   handoffPath: "$PHASE_HANDOFF"
+  scorecardPath: "$PHASE_SCORECARD"
 
 Single isolated phase-attempt rules:
 - Treat this run as one isolated phase attempt only.
@@ -720,15 +799,18 @@ Single isolated phase-attempt rules:
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
 - Record review completion before claiming the verifier state is final.
 - When verification runs, update QA_REPORT.md.
+- Update SCORECARD.md on every meaningful round using objective checklist status, current score, unmet items, and verdict.
 - Refresh the default values in the "Workflow Execution" section of QA_REPORT.md when actual execution diverges.
 - If meaningful code changed, record \`code-simplifier\` in Applied skills or Skipped skills with a reason.
 - If the run stops without clean completion, update HANDOFF.md, include \`session-logger\` evidence, and list the checks to rerun.
+- Do not mark the phase done while SCORECARD.md says \`Verdict: retry\` or \`blocked\`.
+- Do not mark the phase done while Current score is below ${TARGET_COMPLETION_SCORE}, Unmet checklist items > 0, or Blocking defects > 0.
 
 Runtime compatibility fallback:
 - If /moonshot-orchestrator is unavailable in this runtime, execute the equivalent phase-attempt workflow directly instead of searching for missing slash skills.
-- In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, .claude/PROJECT.md, .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
+- In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, .claude/PROJECT.md, .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
-- Once fresh verification evidence exists and the execution artifacts reflect the outcome, stop immediately and return control to the caller.
+- Once fresh verification evidence exists, the execution artifacts reflect the outcome, and SCORECARD.md says \`Verdict: done\`, stop immediately and return control to the caller.
 $codex_direct_steps
 
 Additional instructions:
@@ -742,11 +824,12 @@ evaluate_phase_completion_gate() {
     local phase_start_epoch="$1"
     local eval_output
 
-    eval_output="$(PHASE_START_EPOCH="$phase_start_epoch" PHASE_QA_REPORT_PATH="$PHASE_QA_REPORT" python3 - <<'PY'
+    eval_output="$(PHASE_START_EPOCH="$phase_start_epoch" PHASE_QA_REPORT_PATH="$PHASE_QA_REPORT" PHASE_SCORECARD_PATH="$PHASE_SCORECARD" PHASE_SCORECARD_REQUIRED="$SCORECARD_REQUIRED" PHASE_TARGET_COMPLETION_SCORE="$TARGET_COMPLETION_SCORE" python3 - <<'PY'
 import glob
 import json
 import os
 import shlex
+import re
 
 start_epoch = float(os.environ["PHASE_START_EPOCH"])
 patterns = [
@@ -754,6 +837,9 @@ patterns = [
     ".claude/runtime-verdict-*.json",
 ]
 qa_report_path = os.environ.get("PHASE_QA_REPORT_PATH", "")
+scorecard_path = os.environ.get("PHASE_SCORECARD_PATH", "")
+scorecard_required = os.environ.get("PHASE_SCORECARD_REQUIRED", "true").lower() == "true"
+target_score_default = int(os.environ.get("PHASE_TARGET_COMPLETION_SCORE", "100"))
 
 latest_by_script = {}
 for pattern in patterns:
@@ -848,12 +934,90 @@ if qa_report_path:
     ):
         workflow_reason = "workflow-code-simplifier-missing"
 
-allowed = bool(passed_paths) and not failures and workflow_reason == "ok"
-reason = "ok" if allowed else (failures[0] if failures else workflow_reason if workflow_reason != "ok" else "no-fresh-verification-artifact")
+score_reason = "ok"
+current_score = 0
+target_score = target_score_default
+unmet_items = 0
+blocking_defects = 0
+score_verdict = "missing"
+score_source = "none"
+
+latest_score_payload = None
+for script in sorted(latest_by_script):
+    _mtime, _path, payload = latest_by_script[script]
+    score = payload.get("score")
+    if isinstance(score, dict) and score.get("detected") is True:
+        latest_score_payload = score
+
+if latest_score_payload is not None:
+    current_score = int(latest_score_payload.get("current", 0))
+    target_score = int(latest_score_payload.get("target", target_score_default))
+    unmet_items = int(latest_score_payload.get("unmetChecklistItems", 0))
+    blocking_defects = int(latest_score_payload.get("blockingDefects", 0))
+    score_verdict = str(latest_score_payload.get("verdict", "missing")).strip().lower().replace(" ", "_")
+    score_source = "verifier-artifact"
+elif scorecard_required:
+    if not scorecard_path or not os.path.exists(scorecard_path):
+        score_reason = "scorecard-missing"
+    else:
+        try:
+            score_lines = open(scorecard_path, "r", encoding="utf-8").read().splitlines()
+        except OSError:
+            score_lines = []
+
+        for line in score_lines:
+            stripped = line.strip()
+            match = re.match(r"^- Current score:\s*([0-9]+)\s*$", stripped)
+            if match:
+                current_score = int(match.group(1))
+                continue
+            match = re.match(r"^- Target score:\s*([0-9]+)\s*$", stripped)
+            if match:
+                target_score = int(match.group(1))
+                continue
+            match = re.match(r"^- Unmet checklist items:\s*([0-9]+)\s*$", stripped)
+            if match:
+                unmet_items = int(match.group(1))
+                continue
+            match = re.match(r"^- Blocking defects:\s*([0-9]+)\s*$", stripped)
+            if match:
+                blocking_defects = int(match.group(1))
+                continue
+            match = re.match(r"^- Verdict:\s*([A-Za-z_ -]+)\s*$", stripped)
+            if match:
+                score_verdict = match.group(1).strip().lower().replace(" ", "_")
+        score_source = "scorecard-markdown"
+
+if scorecard_required:
+    if score_verdict != "done":
+        score_reason = f"scorecard-verdict={score_verdict}"
+    elif current_score < target_score:
+        score_reason = "scorecard-score-below-target"
+    elif unmet_items > 0:
+        score_reason = "scorecard-unmet-items"
+    elif blocking_defects > 0:
+        score_reason = "scorecard-blocking-defects"
+
+allowed = bool(passed_paths) and not failures and workflow_reason == "ok" and score_reason == "ok"
+reason = "ok" if allowed else (
+    failures[0]
+    if failures
+    else workflow_reason
+    if workflow_reason != "ok"
+    else score_reason
+    if score_reason != "ok"
+    else "no-fresh-verification-artifact"
+)
 
 print(f"PHASE_COMPLETION_ALLOWED={'true' if allowed else 'false'}")
 print(f"PHASE_COMPLETION_REASON={shlex.quote(reason)}")
 print(f"PHASE_COMPLETION_ARTIFACTS={shlex.quote(chr(10).join(passed_paths))}")
+print(f"PHASE_COMPLETION_SCORE={current_score}")
+print(f"PHASE_COMPLETION_TARGET={target_score}")
+print(f"PHASE_COMPLETION_UNMET={unmet_items}")
+print(f"PHASE_COMPLETION_BLOCKERS={blocking_defects}")
+print(f"PHASE_COMPLETION_SCORE_VERDICT={shlex.quote(score_verdict)}")
+print(f"PHASE_COMPLETION_SCORE_SOURCE={shlex.quote(score_source)}")
 PY
 )"
 
@@ -1145,6 +1309,7 @@ while true; do
     log_info "Sprint contract: $PHASE_SPRINT_CONTRACT"
     log_info "QA report: $PHASE_QA_REPORT"
     log_info "Handoff: $PHASE_HANDOFF"
+    log_info "Scorecard: $PHASE_SCORECARD"
     
     # Build autonomous prompt
     if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
@@ -1214,7 +1379,8 @@ Remediation steps:
 2. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[].
 3. Record the refreshed evidence in QA_REPORT.md.
 4. If the phase is still incomplete, update HANDOFF.md.
-5. Re-run only the active phase and finish with fresh evidence.")"
+5. Re-run only the active phase and finish with fresh evidence.
+6. Keep SCORECARD.md authoritative: use \`retry\` until the target score is met with no unmet checklist items or blocking defects.")"
 
                     update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true"
                     PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
@@ -1247,7 +1413,12 @@ Remediation steps:
                 if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                     echo "- Status: ❌ Failed (missing fresh verification evidence)" >> "$DECISION_LOG"
                     echo "" >> "$DECISION_LOG"
-                    log_warn "Autonomous mode: Moving to next phase without marking completion"
+                    if [[ "$ADVANCE_ON_FAILURE" == "true" ]]; then
+                        log_warn "Autonomous mode: Moving to next phase without marking completion"
+                    else
+                        log_error "Autonomous mode: Stopping loop on failed phase (AGENT_LOOP_ADVANCE_ON_FAILURE=false)"
+                        break 2
+                    fi
                 else
                     echo ""
                     log_warn "Continue to next phase? (y/n)"
@@ -1298,7 +1469,12 @@ Remediation steps:
                     if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                         echo "- Status: ❌ Failed (restart limit exceeded)" >> "$DECISION_LOG"
                         echo "" >> "$DECISION_LOG"
-                        log_warn "Autonomous mode: Moving to next phase"
+                        if [[ "$ADVANCE_ON_FAILURE" == "true" ]]; then
+                            log_warn "Autonomous mode: Moving to next phase"
+                        else
+                            log_error "Autonomous mode: Stopping loop on failed phase (AGENT_LOOP_ADVANCE_ON_FAILURE=false)"
+                            break 2
+                        fi
                     else
                         echo ""
                         log_warn "Continue to next phase? (y/n)"
@@ -1334,7 +1510,8 @@ Remediation steps:
 2. Fix only the active-phase issue.
 3. Update QA_REPORT.md with the failure cause and remediation result.
 4. If the phase is still incomplete, update HANDOFF.md with the next action.
-5. Re-run the phase work and verification for phase $NEXT_PHASE.")"
+5. Re-run the phase work and verification for phase $NEXT_PHASE.
+6. Update SCORECARD.md and keep the verdict at \`retry\` unless the phase objectively meets the target score.")"
                 
                 update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true"
                 PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
@@ -1373,7 +1550,12 @@ Remediation steps:
             if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                 echo "- Status: ❌ Failed (max attempts reached)" >> "$DECISION_LOG"
                 echo "" >> "$DECISION_LOG"
-                log_warn "Autonomous mode: Moving to next phase after ${MAX_AUTO_FIX_ATTEMPTS} failed attempts"
+                if [[ "$ADVANCE_ON_FAILURE" == "true" ]]; then
+                    log_warn "Autonomous mode: Moving to next phase after ${MAX_AUTO_FIX_ATTEMPTS} failed attempts"
+                else
+                    log_error "Autonomous mode: Stopping loop on failed phase (AGENT_LOOP_ADVANCE_ON_FAILURE=false)"
+                    break 2
+                fi
             else
                 echo ""
                 log_warn "Continue to next phase? (y/n)"
@@ -1425,6 +1607,9 @@ if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
 - Autonomous Mode: ✅ Enabled
 - Auto-fix Attempts: $MAX_AUTO_FIX_ATTEMPTS
 - Watchdog Timeout: ${WATCHDOG_MAX_SECONDS}s
+- Advance On Failure: $ADVANCE_ON_FAILURE
+- Scorecard Required: $SCORECARD_REQUIRED
+- Target Completion Score: $TARGET_COMPLETION_SCORE
 
 ## Decision Log
 See: $DECISION_LOG
