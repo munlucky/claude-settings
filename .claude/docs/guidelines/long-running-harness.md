@@ -148,20 +148,32 @@ Write `HANDOFF.md` when:
 
 ### Finish / handoff decision flow
 
+Before choosing a closeout path, ask one gate question:
+
+- Does any in-scope requirement, scenario, or planned downstream phase still remain, and can the run continue safely in this session?
+- If yes, continue execution. Do not stop just because a checkpoint produced good evidence or the docs are up to date.
+
 After verification, choose exactly one closeout path:
 
 1. Clean finish
    - verification passed with fresh evidence
+   - in-scope work for the requested run is complete
    - run doc/session closeout
    - no `HANDOFF.md` required unless the user explicitly wants one
 2. Resume-later handoff
-   - verification is incomplete, blocked, or intentionally deferred
+   - verification is incomplete, blocked, intentionally deferred, or the session is interrupted by context/runtime/user pause
    - update `QA_REPORT.md`
    - write `HANDOFF.md`
 3. Retry loop
    - verification failed with actionable findings
    - update `QA_REPORT.md`
    - return to implementation with contract-linked remediation input
+
+Invalid handoff reasons:
+- "checkpoint reached"
+- "docs updated"
+- "QA recorded"
+- any equivalent milestone-only phrasing without a real stop condition
 
 Default finish-stage responsibilities:
 - `doc-auto-sync` for meaningful documentation drift

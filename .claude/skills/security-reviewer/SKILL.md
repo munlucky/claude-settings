@@ -18,6 +18,13 @@ Prefer invoking it from review or verification composition, not as a primary wor
 - Before deploying authentication/authorization changes
 - When handling user input or external data
 
+## Codex Rule References
+
+Codex-native security review should explicitly apply:
+- `.claude/rules/security.md`
+- `.claude/rules/quality.md`
+- `.claude/rules/communication.md`
+
 ## Procedure
 
 1. Scan changed files for security patterns

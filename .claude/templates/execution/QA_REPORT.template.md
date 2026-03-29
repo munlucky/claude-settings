@@ -8,7 +8,9 @@
 ## Verdict
 - Status: pass | pass_with_warning | fail
 - Summary:
+- Scope status: complete | partial
 - Next path: clean_finish | retry_loop | resume_later_handoff
+- Closeout reason: scope_complete | verification_failed | blocked | interrupted | context_limit | user_pause | deferred_verification
 - Release state: not_ready | uat_ready | uat_complete
 
 ## Review Checkpoint
@@ -58,6 +60,8 @@
 - Fresh evidence confirmed:
 - Traceability evidence confirmed:
 - Human UAT sign-off present:
+- Why this round may stop now:
+- Remaining in-scope work:
 - Remaining blockers before closeout:
 - Checks to rerun if code changes again:
 

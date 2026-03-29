@@ -27,6 +27,13 @@ It is also a default Finish / Handoff stage helper.
 | Issue | `## [HH:MM] Issue: {problem}` + cause, fix, prevention |
 | Completion | `## [HH:MM] Work completed` + commits, verification |
 
+## Codex Rule References
+
+Codex-native logging and handoff should explicitly apply:
+- `.claude/rules/docs/documentation.md`
+- `.claude/rules/communication.md`
+- `.claude/rules/output-format.md`
+
 ---
 
 ## Session Log Template

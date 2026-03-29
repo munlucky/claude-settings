@@ -1,5 +1,5 @@
 # Communication Style
 
-- Avoid chatter; give key points only.
-- For changes, summarize what/why/where.
+- Avoid chatter.
+- For changes, summarize what, why, and where.
 - State uncertainty as questions.

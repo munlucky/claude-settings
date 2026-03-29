@@ -19,6 +19,19 @@ Emits handoff metadata so `/moonshot-orchestrator` can resume with consistent st
 This is the default public entrypoint for large, phase-based, or long-running implementation work.
 It owns the Intake-to-Plan transition for phase-driven execution.
 
+## Codex Rule References
+
+When the active runtime is Codex, phase preparation must not rely on automatic `.claude/rules/**` loading.
+
+Carry these rule files through `SPRINT_CONTRACT.md` policy anchors and phase-attempt inputs:
+- `.claude/rules/basic-principles.md`
+- `.claude/rules/workflow.md`
+- `.claude/rules/context-management.md`
+- `.claude/rules/communication.md`
+- `.claude/rules/output-format.md`
+- `.claude/rules/agents/agent-definition.md`
+- `.claude/rules/agents/agent-delegation.md`
+
 Execution modes:
 - `delegated-terminal`: use the concrete autonomous loop backed by `agent-loop.sh`; prefer this when the user expects uninterrupted end-to-end execution
 - `in-session-coordinator`: the current session coordinates the loop, but each attempt must run as a fresh fork/sub-agent round; treat this as an interactive thin-coordinator mode, not the default autonomous runtime
@@ -231,6 +244,7 @@ Coordinator rules:
 - Each round must execute as a fresh fork/sub-agent attempt.
 - Merge back summaries only: verdict, changed files, failed checks, next action.
 - Do not treat a phase as cleanly complete until review, verification, and finish-stage closeout are all satisfied.
+- Do not stop a round only because a checkpoint produced evidence or docs were refreshed; if in-scope work remains and no real stop condition exists, continue execution.
 - If the round does not finish cleanly, update `QA_REPORT.md` and `HANDOFF.md` before the next attempt.
 
 Runtime note:

@@ -57,6 +57,22 @@ Resolve `executionRuntime` before orchestration:
   - Keep workflow policy in skills/orchestrator state.
   - `commands`/hooks are optional adapters and must only route to skills.
 
+### Codex Rule References
+
+When `executionRuntime == codex`, do not assume `.claude/rules/**` is preloaded.
+
+Apply these rule files explicitly through the orchestrator and downstream artifact contracts:
+- `.claude/rules/basic-principles.md`
+- `.claude/rules/workflow.md`
+- `.claude/rules/context-management.md`
+- `.claude/rules/communication.md`
+- `.claude/rules/output-format.md`
+
+For `meta_harness` work, also apply:
+- `.claude/rules/skills/skill-definition.md` when touching `.claude/skills/**`
+- `.claude/rules/agents/agent-definition.md` and `.claude/rules/agents/agent-delegation.md` when touching `.claude/agents/**`
+- `.claude/rules/docs/documentation.md` when touching `.claude/docs/**`
+
 ## Context Budget Rule
 
 > **CRITICAL**: Protect main session context from pollution.
@@ -412,12 +428,15 @@ Run `decisions.skillChain` in order.
 
 **Finish / handoff contract**:
 - `finish-bundle` is entered only after the active review/verify verdict is stable
+- if in-scope work still remains and no real stop condition exists, continue execution; a validated checkpoint or refreshed docs are not sufficient reasons to stop
 - clean finish:
   - verification passed with fresh evidence
+  - in-scope work for the requested run is complete
   - score verdict is `done`
   - run `doc-auto-sync`
   - run `session-logger` when resumable state or decision history matters
 - resume-later handoff:
+  - allowed only for `blocked`, `interrupted`, `context_limit`, `user_pause`, or `deferred_verification`
   - update `QA_REPORT.md`
   - update `HANDOFF.md`
   - do not claim completion

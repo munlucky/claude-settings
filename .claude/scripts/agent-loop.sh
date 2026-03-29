@@ -556,6 +556,7 @@ ${required_commands}
 
 ## Finish Rule
 - Clean finish requires: fresh verification evidence, review complete, and finish-stage closeout recorded.
+- Continue-now rule: if in-scope work remains and there is no blocker, interruption, user pause, or intentionally deferred verification, continue execution; checkpoint evidence alone is not a stop reason.
 - Resume-later handoff trigger: blocked criteria, interruption, or intentionally deferred verification.
 - Retry-loop trigger: verification or review returns actionable failures for this phase.
 - Score target: ${TARGET_COMPLETION_SCORE}
@@ -583,7 +584,9 @@ EOF
 ## Verdict
 - Status: pending
 - Summary: Awaiting implementation and verification.
+- Scope status: partial
 - Next path: retry_loop
+- Closeout reason: verification_failed
 
 ## Review Checkpoint
 - Review completed: no
@@ -618,6 +621,8 @@ EOF
 
 ## Finish Readiness
 - Fresh evidence confirmed: no
+- Why this round may stop now:
+- Remaining in-scope work:
 - Remaining blockers before closeout:
 - Checks to rerun if code changes again:
 EOF
@@ -640,6 +645,8 @@ EOF
 
 ## Resume Trigger
 - Why this handoff exists: Seeded placeholder until the phase pauses or fails.
+- Stop reason:
+- Why this cannot continue in the current round:
 - Condition to resume: Review the latest contract and QA evidence, then continue only the active phase.
 
 ## Checks To Rerun
@@ -651,6 +658,10 @@ EOF
 1. Review ${PHASE_SPRINT_CONTRACT}
 2. Continue implementation or remediation
 3. Re-run verification and update ${PHASE_QA_REPORT}
+
+## Remaining Scope
+- Remaining in-scope work:
+- Next planned phase or slice:
 
 ## Evidence Paths
 - Sprint contract: ${PHASE_SPRINT_CONTRACT}
@@ -745,6 +756,7 @@ append_handoff_update() {
         fi
         echo "- session-logger: recorded via agent-loop handoff update"
         echo "- Scorecard: ${PHASE_SCORECARD}"
+        echo "- Why this cannot continue in the current round: runtime stop recorded by agent-loop; resume only after reviewing the active blockers, interruption, or deferred verification state."
         echo "- Next action: review \`${PHASE_SPRINT_CONTRACT}\`, rerun the required review/verification checks, update \`${PHASE_QA_REPORT}\`, then resume the active phase only."
     } >> "$PHASE_HANDOFF"
 }

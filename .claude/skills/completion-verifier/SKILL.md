@@ -58,6 +58,16 @@ Applicability rule:
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
 - In score-based loops, do not return a passing completion verdict unless the score verdict is `done`.
 
+## Codex Rule References
+
+When the verifier runs in Codex-native flow, explicitly apply:
+- `.claude/rules/workflow.md`
+- `.claude/rules/quality.md`
+- `.claude/rules/testing.md`
+- `.claude/rules/security.md`
+- `.claude/rules/communication.md`
+- `.claude/rules/output-format.md`
+
 ## Step 0: Verification Environment Detection
 
 Determine executable verification from the contract first.
