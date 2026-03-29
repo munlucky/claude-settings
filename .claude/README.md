@@ -66,6 +66,19 @@ All `.md` files under `.claude/rules/` are loaded automatically (recursive).
 - `rules/docs/documentation.md`: documentation rules (`.claude/docs/**/*.md`)
 - `paths` supports standard glob patterns and multiple entries.
 
+## Codex Rule Propagation
+
+Do not assume Codex runtime auto-loads `.claude/rules/**` the way Claude Code does.
+
+Codex-native paths must consume rule files through:
+- the active skill or agent instructions
+- `SPRINT_CONTRACT.md` policy anchors for phase work
+- explicit project-doc loads when a skill says to read them
+
+Repository policy:
+- Claude Code may rely on recursive `.claude/rules/**` loading.
+- Codex must treat rule usage as explicit propagation, not ambient memory.
+
 ## Agents
 
 - Requirements Analyzer: `.claude/agents/requirements-analyzer.md`

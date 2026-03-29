@@ -65,6 +65,7 @@
 
 ## Finish Rule
 - Clean finish requires:
+- Continue-now rule: if in-scope work remains and no real stop condition exists, do not stop on checkpoint evidence alone
 - Resume-later handoff trigger:
 - Retry-loop trigger:
 - Target completion score:

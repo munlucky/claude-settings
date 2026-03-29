@@ -150,20 +150,32 @@ Complex 또는 long-running work:
 
 ### Finish / handoff 결정 흐름
 
+종료 경로를 고르기 전에 먼저 하나를 확인합니다.
+
+- 남아 있는 in-scope 요구사항, 시나리오, 다음 phase 가 있고 현재 세션에서 안전하게 계속 밀 수 있는가?
+- 그렇다면 계속 진행합니다. checkpoint 증거가 확보됐거나 문서가 정리됐다는 이유만으로 멈추지 않습니다.
+
 검증 뒤에는 아래 셋 중 하나만 선택합니다.
 
 1. Clean finish
    - 최신 증거와 함께 verification이 통과함
+   - 이번 요청 범위의 in-scope 작업이 실제로 끝남
    - 문서/세션 마감 단계를 실행함
    - 사용자가 원하지 않는 한 `HANDOFF.md`는 필수가 아님
 2. Resume-later handoff
-   - verification이 미완료, 차단, 또는 의도적으로 보류됨
+   - verification이 미완료, 차단, 의도적 보류 상태이거나 컨텍스트/런타임/사용자 pause로 세션이 중단됨
    - `QA_REPORT.md`를 갱신함
    - `HANDOFF.md`를 남김
 3. Retry loop
    - verification이 수정 가능한 실패를 반환함
    - `QA_REPORT.md`를 갱신함
    - contract에 연결된 remediation 입력으로 구현 단계로 되돌아감
+
+유효하지 않은 handoff 사유:
+- "checkpoint까지 왔음"
+- "문서 정리 완료"
+- "QA 반영 완료"
+- 실제 중단 조건 없이 마일스톤만 언급하는 표현 전부
 
 기본 finish-stage 책임:
 - 의미 있는 문서 drift가 있으면 `doc-auto-sync`

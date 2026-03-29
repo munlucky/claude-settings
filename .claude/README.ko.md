@@ -70,6 +70,19 @@ See @README for project overview and @package.json for npm commands.
 - `rules/docs/documentation.md`: 문서 규칙 (`.claude/docs/**/*.md`)
 - `paths`는 표준 glob 패턴을 지원하며 여러 패턴을 지정할 수 있습니다.
 
+## Codex Rule Propagation
+
+Codex 런타임은 Claude Code처럼 `.claude/rules/**`가 자동 로드된다고 가정하지 않습니다.
+
+Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소비해야 합니다.
+- 현재 실행 중인 skill/agent 지침
+- phase 작업의 `SPRINT_CONTRACT.md` policy anchors
+- skill이 읽으라고 지정한 프로젝트 문서
+
+저장소 정책:
+- Claude Code는 재귀 `.claude/rules/**` 로딩을 활용할 수 있습니다.
+- Codex는 ambient memory가 아니라 explicit propagation으로 rule을 적용해야 합니다.
+
 ## 에이전트
 
 - Requirements Analyzer: `.claude/agents/requirements-analyzer.md`

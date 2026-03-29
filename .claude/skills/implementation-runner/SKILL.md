@@ -37,6 +37,18 @@ Rules:
 - Prefer these docs over ad-hoc assumptions for naming, structure, testing, and workflow behavior.
 - If a relevant doc is missing, record the absence in notes and continue with the best available contract instead of inventing policy.
 
+### Step 0.0: Codex Rule References
+
+When the active runtime is Codex, read and apply the relevant rule files explicitly instead of assuming recursive rule loading:
+- `.claude/rules/coding-style.md`
+- `.claude/rules/scope-confirmation.md`
+- `.claude/rules/refactoring-guidelines.md`
+- `.claude/rules/testing.md`
+- `.claude/rules/security.md`
+- `.claude/rules/quality.md`
+- `.claude/rules/communication.md`
+- `.claude/rules/output-format.md`
+
 ### Step 0.1: Execution Bridge Setup
 
 Before code edits, determine whether the current run requires a slice-level sprint contract.

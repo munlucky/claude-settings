@@ -31,6 +31,16 @@ This is the default Review-stage owner for non-trivial code changes.
 - Use this review for semantic and architectural risk assessment, not as a substitute for deterministic checks.
 - Repeat code-policy findings only when they expose a broader design or maintainability problem.
 
+## Codex Rule References
+
+Codex-native review should explicitly apply:
+- `.claude/rules/quality.md`
+- `.claude/rules/security.md`
+- `.claude/rules/coding-style.md`
+- `.claude/rules/refactoring-guidelines.md`
+- `.claude/rules/communication.md`
+- `.claude/rules/output-format.md`
+
 ## Procedure
 
 ### Step 1: Resolve Runtime Execution Path (CRITICAL - Do This First)

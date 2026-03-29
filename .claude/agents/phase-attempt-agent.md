@@ -48,6 +48,15 @@ Read only:
 Read the `Policy Anchors` section in `SPRINT_CONTRACT.md` first.
 For strict or `meta_harness` work, if policy anchors or required verification commands are missing, refresh the sprint contract before edits or return blocked instead of guessing.
 
+Codex rule references for this attempt:
+- `.claude/rules/basic-principles.md`
+- `.claude/rules/workflow.md`
+- `.claude/rules/context-management.md`
+- `.claude/rules/communication.md`
+- `.claude/rules/output-format.md`
+- `.claude/rules/agents/agent-definition.md`
+- `.claude/rules/agents/agent-delegation.md`
+
 Do not load previous coordinator chatter.
 
 ### 2. Run orchestrator in phase attempt mode
