@@ -194,4 +194,4 @@ commitHashes:  # git log로 직접 확인 가능하지만, 빠른 참조용
 ---
 ## References
 - `.claude/agents/documentation/templates/session-log-template.md`
-- `.claude/skills/doc-sync/skill.md` (Finalize 시 최종 동기화)
+- `.claude/skills/doc-auto-sync/SKILL.md` (Finalize 시 최종 동기화)

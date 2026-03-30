@@ -1,6 +1,8 @@
 .history/
 .vscode/
 .mcp.json
+__pycache__/
+*.pyc
 .claude/browser-runtime/
 .claude/runtime-verdict-*.json
 .claude/knowledge-repo-audit-*.json

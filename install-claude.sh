@@ -234,6 +234,41 @@ PY
 	return 1
 }
 
+# 줄 기반 정책 파일 병합 (.claudeignore 등)
+merge_line_file() {
+	local base_file=$1
+	local user_file=$2
+	local output_file=$3
+
+	if [ -n "$PYTHON_CMD" ]; then
+		"$PYTHON_CMD" - "$base_file" "$user_file" "$output_file" <<'PY'
+import sys
+
+base_path = sys.argv[1]
+user_path = sys.argv[2]
+output_path = sys.argv[3]
+
+seen = set()
+merged = []
+
+for path in (base_path, user_path):
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.rstrip("\n")
+            if line in seen:
+                continue
+            seen.add(line)
+            merged.append(line)
+
+with open(output_path, "w", encoding="utf-8") as handle:
+    handle.write("\n".join(merged) + "\n")
+PY
+		return $?
+	fi
+
+	cat "$base_file" "$user_file" | awk '!seen[$0]++' > "$output_file"
+}
+
 # 사용법 출력
 usage() {
 	cat <<EOF
@@ -249,9 +284,10 @@ usage() {
   -h, --help             도움말 출력
 
 기본 동작:
-  - .claude, .agents, AGENTS.md 중 존재 항목 자동 백업 후 설치
+  - .claude, .agents, AGENTS.md, .claudeignore 중 존재 항목 자동 백업 후 설치
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
+  - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
   - .claude/skills/* 를 Codex 전역 skills(${CODEX_HOME:-~/.codex}/skills/*)에 심볼릭 링크
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
@@ -448,6 +484,13 @@ if [ -e "AGENTS.md" ]; then
 	fi
 fi
 
+if [ -e ".claudeignore" ]; then
+	HAS_EXISTING=true
+	if [ "$DO_BACKUP" = true ]; then
+		BACKUP_FILES+=(".claudeignore")
+	fi
+fi
+
 if [ "$HAS_EXISTING" = true ]; then
 	if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
 		print_info "기존 AI 설정 항목 발견"
@@ -487,6 +530,7 @@ if [ "$DRY_RUN" = true ]; then
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
+	echo "  - .claudeignore 설치/병합"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
 	echo "  - Codex 전역 skills 심볼릭 링크 구성"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
@@ -548,8 +592,14 @@ if [ ${#USER_FILES[@]} -gt 0 ]; then
 		if [ -e "$src" ]; then
 			mkdir -p "$(dirname "$dest")"
 			cp -r "$src" "$dest"
-		fi
-	done
+	fi
+done
+fi
+
+CLAUDEIGNORE_STASH=""
+if [ -f ".claudeignore" ]; then
+	CLAUDEIGNORE_STASH="$TEMP_DIR/root-claudeignore"
+	cp -P ".claudeignore" "$CLAUDEIGNORE_STASH"
 fi
 
 # 7. .claude 디렉토리 복사
@@ -557,6 +607,22 @@ print_info ".claude 디렉토리 설치 중..."
 mkdir -p .claude
 cp -r "$TEMP_DIR/claude-settings-$BRANCH/.claude/." .claude/
 print_info "✓ 설치 완료"
+
+DOWNLOADED_CLAUDEIGNORE="$TEMP_DIR/claude-settings-$BRANCH/.claudeignore"
+if [ -f "$DOWNLOADED_CLAUDEIGNORE" ]; then
+	if [ -n "$CLAUDEIGNORE_STASH" ] && [ -f "$CLAUDEIGNORE_STASH" ]; then
+		if merge_line_file "$DOWNLOADED_CLAUDEIGNORE" "$CLAUDEIGNORE_STASH" ".claudeignore.merged"; then
+			mv ".claudeignore.merged" ".claudeignore"
+			print_info "✓ .claudeignore 병합 완료"
+		else
+			print_warn ".claudeignore 병합 실패, 기본 파일로 설치합니다."
+			cp "$DOWNLOADED_CLAUDEIGNORE" ".claudeignore"
+		fi
+	else
+		cp "$DOWNLOADED_CLAUDEIGNORE" ".claudeignore"
+		print_info "✓ .claudeignore 설치 완료"
+	fi
+fi
 
 # 7.1. rules/ 디렉토리의 .ko.md 파일 제거 (토큰 최적화)
 # Claude Code는 rules/ 내 모든 .md를 컨텍스트에 로드하므로 한글 파일 제거
@@ -837,7 +903,10 @@ if [ -f ".claude/CLAUDE.md" ]; then
 	echo "  ✓ .claude/CLAUDE.md          (글로벌 개발 지침)"
 fi
 if [ -f ".claude/PROJECT.md" ]; then
-	echo "  ✓ .claude/PROJECT.md         (프로젝트별 규칙 템플릿)"
+	echo "  ✓ .claude/PROJECT.md         (워크스페이스 계약 문서)"
+fi
+if [ -f ".claudeignore" ]; then
+	echo "  ✓ .claudeignore             (기본 ignore/denylist 정책)"
 fi
 if [ -d ".claude/skills/moonshot-orchestrator" ]; then
 	echo "  ✓ .claude/skills/moonshot-*        (PM 워크플로우 스킬)"
@@ -884,7 +953,7 @@ fi
 
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
-echo "  2. Git에 커밋: git add .claude AGENTS.md && git commit -m 'Add Claude settings'"
+echo "  2. Git에 커밋: git add .claude .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
 echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-~/.codex}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 

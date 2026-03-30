@@ -45,7 +45,7 @@ Last-Reviewed: 2026-03-30
   - Code policy: `bash .claude/scripts/verify-code-policy.sh`
   - Workflow enforcement: `bash .claude/scripts/workflow-enforcement.sh verify`
   - Shell syntax: `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
-  - Runtime parity: `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
+  - Runtime parity: `bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
 
 ### Test Writing Rules
 
@@ -95,12 +95,12 @@ chore: refresh harness project contract
 |   |-- skills/
 |   |-- agents/
 |   |-- docs/guidelines/
+|   |-- docs/reference-downstream/
+|   |-- docs/runtime-parity-reference-plan/
 |   |-- scripts/
 |   |-- templates/
 |   `-- verification.contract.yaml
-|-- docs/
-|   |-- implementation/
-|   `-- reference-downstream/
+|-- .claudeignore
 `-- AGENTS.md
 ```
 
@@ -111,8 +111,8 @@ chore: refresh harness project contract
 .claude/skills/*/SKILL*.md         # Skill contracts
 .claude/agents/**/*.md             # Agent contracts
 .claude/scripts/*.sh               # Mechanical checks and orchestration helpers
-docs/implementation/*.md           # Plan and execution review docs
-docs/reference-downstream/**       # Copyable downstream bootstrap reference
+.claude/docs/reference-downstream/** # Installed downstream bootstrap reference
+.claude/docs/runtime-parity-reference-plan/** # Stable fixture for parity verification
 ```
 
 ## API/Data Communication Patterns
@@ -176,7 +176,7 @@ For installed downstream projects, bootstrap and maintain:
 - `TEST_GUIDE.md`
 - `docs/analysis/README.md`
 
-See `docs/reference-downstream/README.md` for a concrete reference package.
+See `.claude/docs/reference-downstream/README.md` for a concrete reference package.
 
 ## Knowledge Repository (Agent-First)
 
@@ -193,7 +193,7 @@ See `docs/reference-downstream/README.md` for a concrete reference package.
 - `bash .claude/scripts/knowledge-repo-audit.sh`
 - `bash .claude/scripts/verify-code-policy.sh`
 - `bash .claude/scripts/workflow-enforcement.sh verify`
-- `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
+- `bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
 - `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
 
 ## Environment Variables

@@ -45,7 +45,7 @@ Last-Reviewed: 2026-03-30
   - Code policy: `bash .claude/scripts/verify-code-policy.sh`
   - Workflow enforcement: `bash .claude/scripts/workflow-enforcement.sh verify`
   - Shell syntax: `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
-  - Runtime parity: `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
+  - Runtime parity: `bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
 
 ### 테스트 작성 규칙
 
@@ -95,12 +95,12 @@ chore: refresh harness project contract
 |   |-- skills/
 |   |-- agents/
 |   |-- docs/guidelines/
+|   |-- docs/reference-downstream/
+|   |-- docs/runtime-parity-reference-plan/
 |   |-- scripts/
 |   |-- templates/
 |   `-- verification.contract.yaml
-|-- docs/
-|   |-- implementation/
-|   `-- reference-downstream/
+|-- .claudeignore
 `-- AGENTS.md
 ```
 
@@ -111,8 +111,8 @@ chore: refresh harness project contract
 .claude/skills/*/SKILL*.md         # 스킬 계약
 .claude/agents/**/*.md             # 에이전트 계약
 .claude/scripts/*.sh               # 기계 검증과 오케스트레이션 보조 스크립트
-docs/implementation/*.md           # 계획/실행 검토 문서
-docs/reference-downstream/**       # copy 가능한 downstream bootstrap reference
+.claude/docs/reference-downstream/** # 설치되는 downstream bootstrap reference
+.claude/docs/runtime-parity-reference-plan/** # parity 검증용 고정 fixture
 ```
 
 ## API/데이터 통신 패턴
@@ -176,7 +176,7 @@ documentPaths:
 - `TEST_GUIDE.md`
 - `docs/analysis/README.md`
 
-구체적인 예시는 `docs/reference-downstream/README.md`를 참고합니다.
+구체적인 예시는 `.claude/docs/reference-downstream/README.md`를 참고합니다.
 
 ## 지식 저장소 (Agent-First)
 
@@ -193,7 +193,7 @@ documentPaths:
 - `bash .claude/scripts/knowledge-repo-audit.sh`
 - `bash .claude/scripts/verify-code-policy.sh`
 - `bash .claude/scripts/workflow-enforcement.sh verify`
-- `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
+- `bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
 - `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
 
 ## 환경 변수
