@@ -53,6 +53,7 @@ Resolve `executionRuntime` before orchestration:
   - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
   - Ask user only when those outputs still indicate unresolved blocking items.
 - In both runtimes, phase/adaptor paths must preserve policy through `SPRINT_CONTRACT.md` policy anchors rather than assuming chat memory survives across rounds.
+- Human approval belongs to planning closeout only; once execution starts, do not insert approval checkpoints into implementation -> review -> verify -> retry loops unless a true blocker or external dependency requires user input.
 - Cross-runtime policy source of truth:
   - Keep workflow policy in skills/orchestrator state.
   - `commands`/hooks are optional adapters and must only route to skills.
@@ -271,6 +272,7 @@ Policy:
 - meaningful implementation or verification rounds must update `SCORECARD.md` with objective checklist status, current score, unmet items, and verdict
 - successful or partially successful implementation rounds must run doc-ops finalization before completion is claimed
 - failed verification, retry loops, or interrupted runs should mark `signals.handoffRequired = true`
+- retry and verification loops should remain autonomous; do not treat human approval as a normal stage between execute/review/verify rounds
 - bounded direct work that stays outside the phase harness must still keep `workflowEvidence` current in `.claude/docs/moonshot-analysis.yaml`
 - bounded direct `workflowEvidence` must include `selectedBundles`, `requiredSkills`, and `stageOrder`
 - bounded direct code changes must record `codex-review-code` evidence before final verification is treated as stable

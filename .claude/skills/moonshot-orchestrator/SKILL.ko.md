@@ -40,6 +40,7 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
   - 오케스트레이터나 메타 워크플로우 자체를 수정하는 self-host 작업
 - direct-skill 경로라도 파일 수정이 예상되면 가벼운 `pre-flight-check`를 먼저 태우는 편이 좋다.
 - Claude Code 와 Codex 모두에서 phase/adapter 경로는 채팅 기억이 아니라 `SPRINT_CONTRACT.md` 의 policy anchors 를 통해 정책을 이어받아야 한다.
+- human approval 은 planning closeout 에만 둔다. execution 이 시작된 뒤에는 true blocker 나 외부 의존성이 없는 한 implementation -> review -> verify -> retry loop 안에 승인 checkpoint 를 넣지 않는다.
 
 ## 입력
 
@@ -176,6 +177,7 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - 구현이 성공했거나 일부 성공 상태라도 완료 선언 전에는 문서 마감 단계가 실행되어야 한다.
 - bounded direct 경로에서 의미 있는 파일 수정이 있으면 완료 전 `doc-auto-sync` 증적을 반드시 남긴다.
 - bounded direct 실행이 중단되면 clean completion 전에 `session-logger` 증적을 남겨야 한다.
+- retry 와 verification loop 는 자율적으로 유지하고, human approval 을 execute/review/verify 사이의 일반 단계로 취급하지 않는다.
 
 review cadence 계약:
 - simple bounded change: 구현 후 한 번의 post-implementation review로 충분한 경우가 많다

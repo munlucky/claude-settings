@@ -45,6 +45,11 @@ triggers:
 - `ASSUMPTIONS.md`
 - `BLOCKERS.md`
 
+계획 문서에는 아래 가치 판단 정보도 남긴다.
+- 명시적 non-goal
+- 요청 범위가 크면 scope reduction 또는 hold scope 메모
+- `PRODUCT_INTENT`, `PRD`, `PLAN` 단계의 짧은 cost/benefit 근거
+
 ## 워크플로우
 
 1. `PRODUCT_INTENT.md` 생성 또는 갱신
@@ -64,6 +69,7 @@ triggers:
 - 모호함 때문에 멈추기 전에 `assumption-ledger`를 먼저 사용
 - 진짜 blocker가 아니면 멈추지 않음
 - 초안 이후 최대 2회만 재작성
+- 가치가 약하거나 불명확하면 추측성 확장보다 scope reduction 을 우선함
 
 ## 게이트 정책
 
@@ -76,6 +82,22 @@ triggers:
 - 같은 지적이 두 번 반복되면 `conditional_pass`
 - 중요하지만 치명적이지 않은 누락은 `ASSUMPTIONS.md`로 이동
 - 필수 의존성 부재는 `BLOCKERS.md`로 이동
+- 가치가 약하거나 cost/benefit 가 방어되지 않으면 scope reduction, hold scope, 또는 fail 처리
+
+## 가치 판단 정책
+
+completeness 만으로 충분하다고 보지 않는다.
+
+execution 으로 넘기기 전 planning package 는 아래에 답해야 한다.
+- 왜 지금 중요한가
+- 무엇을 만들지 않을 것인가
+- 예상 구현 비용 대비 효익이 충분한가
+- execution 전에 scope 를 줄여야 하는가
+
+권장 액션:
+- `scope_reduction`
+- `hold_scope`
+- `fail`
 
 ## 단계 요약
 
@@ -84,11 +106,13 @@ triggers:
 - 사용자 명시
 - 핵심 가치 정의
 - non-goal 고정
+- 왜 지금 필요한지 기록
 
 ### PRD
 - 시나리오와 acceptance 정의
 - 문서를 제품 관점으로 유지
 - 아키텍처 논의 금지
+- 기능을 가치 순서대로 우선순위화
 
 ### SOLUTION
 - 플로우, 상태, 엔티티, 예외 모델링
@@ -103,6 +127,12 @@ triggers:
 - 아키텍처를 vertical slice로 변환
 - 각 task를 독립 실행 가능하게 정리
 - Moonshot direct handoff 준비
+- 가치 대비 비용이 약한 slice 는 축소하거나 거절
+
+## 승인 경계
+
+- human approval 은 execution 시작 전 planning package 승인에만 사용할 수 있다.
+- execution 이 시작된 뒤에는 true blocker 나 외부 의존성이 없는 한 implementation -> review -> verify -> retry loop 에 human checkpoint 를 추가하지 않는다.
 
 ## 핸드오프 계약
 

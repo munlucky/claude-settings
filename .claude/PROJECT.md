@@ -1,142 +1,147 @@
 # PROJECT.md
 
-> Project-specific rules and structure template.
+> Operating contract for the Claude Settings meta-harness repository. Keep downstream template guidance explicit, but do not treat this file as an unfilled template inside this repo.
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-03-30
 
 ## Project Overview
-This section captures basic project information.
 
-- **Service**: [service/product name and short description]
-- **Stack**: [tech stack - see guide below]
-- **Response Language**: [default response language]
+- **Service**: Claude Settings meta-harness repository for reusable rules, skills, agents, scripts, templates, and workflow documentation
+- **Stack**: Markdown + YAML + Bash + Python 3 + Node.js helper tooling under `.claude/tools/browserd`
+- **Response Language**: Match the user request; default to Korean for collaboration in this repository
 
-### Tech Stack Specification Guide
+### Tech Stack Details
 
-> **Important**: Be specific about versions and core dependencies.
+- **Runtime**: Bash, Python 3, Node.js, Git
+- **Primary assets**: `.md`, `.yaml`, `.sh`, `.py`, `.cjs`, `.mjs`
+- **Build model**: no compiled application build; verification is script- and document-driven
+- **Core libraries/tools**:
+  - shell verification scripts in `.claude/scripts/`
+  - verifier scripts in `.claude/agents/verification/`
+  - browser helper tooling in `.claude/tools/browserd/`
 
-| ❌ Vague | ✅ Specific |
-|----------|------------|
-| "React project" | "React 18.2 + TypeScript 5.3 + Vite 5.0" |
-| "Node.js backend" | "Node.js 20 LTS + Express 4.18 + Prisma 5.0" |
-| "Mobile app" | "React Native 0.73 + Expo SDK 50" |
+## Core Rules
 
-**Required specifications:**
-- [ ] Language/runtime version
-- [ ] Framework version
-- [ ] Build tool
-- [ ] Core libraries (state management, routing, ORM, etc.)
-
-## Core Rules (Required)
-List the important rules that must be followed in this project.
-
-Example:
-1. **API call rules**: [backend call patterns, proxy usage, etc.]
-2. **Error handling pattern**: [error handling approach]
-3. **Data transformation rules**: [notes for data processing]
-4. **File upload rules**: [file upload considerations]
-5. **Logging/activity**: [logging rules]
+1. **Planning boundary**: Human approval may be used at planning closeout only. After execution starts, implementation, review, verification, and retry loops should remain autonomous unless a true blocker or external dependency appears.
+2. **Source of truth**: Durable policy belongs in `.claude/rules/`, `.claude/docs/guidelines/`, and this file, not in `AGENTS.md` or `.claude/CLAUDE.md`.
+3. **Doc parity**: Maintain matching `.ko.md` documents when changing English `.md` files that already have Korean pairs.
+4. **Security boundary**: Respect `.claudeignore`, protected paths, and the deny-by-default stance for new tool or directory access.
+5. **Verification discipline**: Do not close meaningful changes on “checkpoint reached”. Use the required verification commands and evidence artifacts.
+6. **Scope discipline**: Prefer scope reduction over speculative expansion when planning value is weak or unclear.
 
 ## Testing Rules
 
-> Info agents need to run and write tests correctly.
-
-- **Test framework**: [Jest / Vitest / Agent Browser / Playwright / etc.]
-- **Test file location**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
-- **Coverage expectation**: [80%+ / core logic only / etc.]
+- **Test framework**: repository-local script verification, shell syntax checks, knowledge audit, workflow enforcement, and verifier contracts
+- **Test file location**:
+  - `.claude/scripts/*.sh`
+  - `.claude/agents/verification/*.sh`
+  - supporting docs in `.claude/docs/guidelines/`
+- **Coverage expectation**:
+  - doc-only changes: audit and link/freshness integrity
+  - local policy changes: audit plus relevant syntax/policy checks
+  - behavior-changing harness logic: deterministic verifier evidence when the environment supports it
 - **Commands**:
-  - All tests: `npm test`
-  - Specific file: `npm test -- --testPathPattern="filename"`
-  - Coverage: `npm test -- --coverage`
+  - Knowledge audit: `bash .claude/scripts/knowledge-repo-audit.sh`
+  - Code policy: `bash .claude/scripts/verify-code-policy.sh`
+  - Workflow enforcement: `bash .claude/scripts/workflow-enforcement.sh verify`
+  - Shell syntax: `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
+  - Runtime parity: `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
 
 ### Test Writing Rules
-- [ ] New features require unit tests
-- [ ] API endpoints require integration tests
-- [ ] Never delete existing tests (NeverDo)
+
+- New behavior-changing logic should add or strengthen deterministic verification when practical.
+- Bug fixes should include a regression test or equivalent verifier evidence.
+- Never delete existing checks or tests without an explicit reason and replacement path.
 
 ## Git Workflow
 
-> Specify branch naming, commits, and PR rules.
-
 ### Branch Naming Convention
-```
-feature/{feature-name}   # New features
-fix/{issue-number}       # Bug fixes
-refactor/{target}        # Refactoring
-chore/{task}             # Config, dependencies, etc.
+
+```text
+codex/{task}            # Default Codex work branch
+feature/{feature-name}  # New reusable workflow capability
+fix/{issue-number}      # Bug fixes
+chore/{task}            # Docs, policy, maintenance
 ```
 
 ### Commit Message Format
-```
+
+```text
 [type]: concise description
 
 Examples:
-feat: add batch execution API
-fix: resolve date format conversion error
-refactor: extract user query logic
+feat: add planning value rubric
+fix: tighten workflow enforcement wording
+chore: refresh harness project contract
 ```
 
 **Rules:**
 - No emojis or special characters
-- Consistent language (Korean or English)
-- 50 characters or less recommended
+- Keep one language per commit message
+- Prefer concise messages under 50 characters when possible
 
 ### PR Requirements
-- [ ] CI must pass
-- [ ] At least 1 reviewer (optional)
-- [ ] Link related issues
+
+- CI or required local checks must pass
+- Review is required for logic changes to shared skills or rules
+- Link the relevant task package or implementation doc when one exists
 
 ## Directory/Structure
-Describe the project folder structure.
 
-```
+```text
 [project root]/
-|-- [main folder1]/
-|   |-- [subfolder]/
-|   |-- [subfolder]/
-|-- [main folder2]/
-`-- [main folder3]/
+|-- .claude/
+|   |-- rules/
+|   |-- skills/
+|   |-- agents/
+|   |-- docs/guidelines/
+|   |-- scripts/
+|   |-- templates/
+|   `-- verification.contract.yaml
+|-- docs/
+|   |-- implementation/
+|   `-- reference-downstream/
+`-- AGENTS.md
 ```
 
 ### Key Patterns
-Describe commonly used file/folder patterns.
 
-```
-[feature folder pattern example]
+```text
+.claude/rules/*.md                 # Always-loaded or path-scoped policy
+.claude/skills/*/SKILL*.md         # Skill contracts
+.claude/agents/**/*.md             # Agent contracts
+.claude/scripts/*.sh               # Mechanical checks and orchestration helpers
+docs/implementation/*.md           # Plan and execution review docs
+docs/reference-downstream/**       # Copyable downstream bootstrap reference
 ```
 
 ## API/Data Communication Patterns
-Describe API calls and data communication patterns.
 
-- **API endpoints**: [API routing rules]
-- **Helper functions**: [commonly used utilities]
-- **Client calls**: [how clients call APIs]
+- **API endpoints**: none; this repository is not an application service
+- **Helper functions**: shell scripts and Python helpers under `.claude/scripts/` and `.claude/agents/verification/`
+- **Contract exchange**: structured state is passed through Markdown, YAML, and JSON artifacts such as `PROJECT.md`, `context.md`, `SPRINT_CONTRACT.md`, verdict JSON, and scorecards
 
 ## Type/Domain Patterns
-Describe type definitions and domain model management.
 
-- **Type definition location**: [type file locations and naming rules]
-- **Domain models**: [Entity, DTO, Request/Response structures]
+- **Type definition location**: no central TS domain model; structured contracts live in Markdown/YAML/JSON
+- **Domain models**:
+  - execution planes: `read_only`, `product_project`, `meta_harness`
+  - workflow profiles: `standard`, `strict`
+  - execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`
 
 ## Auth/Authorization
-Document auth and authorization details.
 
-- **Auth method**: [JWT, session, etc.]
-- **Authorization model**: [permission management approach]
-- **Middleware**: [auth/authorization middleware locations]
+- **Auth method**: none inside the repository itself
+- **Authorization model**: inherited from the active runtime, local filesystem permissions, and tool approval policies
+- **Sensitive-path policy**: use `.claudeignore`, `.gitignore`, and security rules to keep protected paths out of routine agent context
 
-## Document Paths (Override)
-
-Override `CLAUDE.md` defaults if needed. **For git-tracked projects, set `tasksRoot` outside `.claude/`.**
-
-### Configuration (uncomment and modify as needed)
+## Document Paths
 
 ```yaml
-# Document path overrides (defaults in CLAUDE.md)
-# documentPaths:
-#   tasksRoot: "docs/claude-tasks"      # RECOMMENDED for git-tracked projects
-#   agreementsRoot: "docs/agreements"
-#   guidelinesRoot: "docs/guidelines"
+documentPaths:
+  tasksRoot: ".claude/docs/tasks"
+  agreementsRoot: ".claude/docs/agreements"
+  guidelinesRoot: ".claude/docs/guidelines"
 ```
 
 ### Path Templates
@@ -160,45 +165,47 @@ Override `CLAUDE.md` defaults if needed. **For git-tracked projects, set `tasksR
 | Pending questions | `{tasksRoot}/{feature-name}/pending-questions.md` |
 | Traceability artifacts | `{tasksRoot}/{feature-name}/execution/{REQUIREMENTS_TRACEABILITY,SCENARIO_MATRIX,UAT_CHECKLIST}.md` |
 
-### Project Reference Documents
+### Downstream Reference Documents
 
-Generate and maintain these project-specific source-of-truth documents in the downstream project workspace:
+For installed downstream projects, bootstrap and maintain:
 
-- `workflow/README.md` — official development process, runtime roles, entry commands, and branch/worktree policy
-- `docs/design/README.md` — shared design rules, component/token guidance, and the exception process for new UI types
-- `docs/glossary/README.md` — canonical product/domain terms for screens, APIs, features, and architecture concepts
-- `docs/daily/README.md` — daily logging rules and the expected structure under `docs/daily/YYYY-MM-DD/`
-- `TEST_GUIDE.md` — human-readable testing guide that complements `.claude/verification.contract.yaml`
-- `docs/analysis/README.md` — conventions for impact analysis, architecture notes, and deep-dive investigation docs
+- `workflow/README.md`
+- `docs/design/README.md`
+- `docs/glossary/README.md`
+- `docs/daily/README.md`
+- `TEST_GUIDE.md`
+- `docs/analysis/README.md`
+
+See `docs/reference-downstream/README.md` for a concrete reference package.
 
 ## Knowledge Repository (Agent-First)
 
-Use this section in a real project.
-
-- Keep top-level `AGENTS.md` short. It should act as a map, not a full policy dump.
+- Keep top-level `AGENTS.md` short and map-like.
 - Store durable policy in source-of-truth paths:
-  - `PROJECT.md` (project contract)
-  - `docs/guidelines/` or `.claude/docs/guidelines/` (operational guides)
-  - `.claude/rules/` (enforceable global/local rules)
+  - `PROJECT.md`
+  - `docs/guidelines/` or `.claude/docs/guidelines/`
+  - `.claude/rules/`
 - Add `Last-Reviewed: YYYY-MM-DD` to core map/contract docs and refresh it during doc maintenance.
 - Run `.claude/scripts/knowledge-repo-audit.sh` after structural doc updates.
 
 ## Verification/Commands
-List the main commands used in the project.
 
-- `[dev server command]`
-- `[build command]`
-- `[lint command]`
-- `[typecheck command]`
-- `[test command]`
+- `bash .claude/scripts/knowledge-repo-audit.sh`
+- `bash .claude/scripts/verify-code-policy.sh`
+- `bash .claude/scripts/workflow-enforcement.sh verify`
+- `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
+- `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
 
 ## Environment Variables
-List environment variables used in the project.
 
+```text
+KNOWLEDGE_REVIEW_MAX_DAYS="Override review freshness window for knowledge audit"
+KNOWLEDGE_REQUIRE_PROJECT_FILLED="Require filled PROJECT docs during audit"
+KNOWLEDGE_ALWAYS_LOADED_RULE_LINE_MAX="Override rules line-budget threshold"
+KNOWLEDGE_ALWAYS_LOADED_TOTAL_LINE_MAX="Override total always-loaded line budget"
+KNOWLEDGE_ALWAYS_LOADED_TOKEN_MAX="Override always-loaded token budget"
+HARNESS_KNOWLEDGE_AUDIT_FILE="Explicit output path for knowledge-audit JSON"
+VERIFY_CODE_POLICY_MAX_FILE_LINES="Per-file line limit for code-policy check"
+VERIFY_CODE_POLICY_BASELINE_FILE="Baseline exceptions for code-policy check"
+PHASE_RUNTIME_PARITY_KEEP_TMP="Keep temp workspace for runtime parity debugging"
 ```
-[ENV_NAME]="[description or example value]"
-```
-
----
-
-**This file is a per-project template. Update each section to match the project.**

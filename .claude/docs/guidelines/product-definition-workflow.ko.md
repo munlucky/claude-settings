@@ -29,6 +29,23 @@
 - 안전한 진행이 불가능한 blocker가 아니면 사용자 질문으로 멈추지 않음
 - 같은 지적이 2회 반복되면 `conditional_pass`
 - 수정은 추측성 스코프 추가가 아니라 누락 제거 방향이어야 함
+- 가치가 불명확하면 추측성 확장보다 scope reduction 을 우선함
+
+## 가치 판단 루브릭
+
+`PRODUCT_INTENT`, `PRD`, `PLAN` 단계에서는 아래 축을 함께 평가한다.
+
+필수 판단 축:
+- user value
+- urgency
+- scope fit
+- non-goal clarity
+- cost/benefit
+
+권장 판정:
+- `pass`: 문서가 충분히 완결되고 가치 근거도 방어 가능함
+- `conditional_pass`: assumptions 기록 또는 scope reduction 이후에만 진행 가능
+- `fail`: 가치가 약하거나, 스코프가 불안정하거나, cost/benefit 가 방어되지 않음
 
 ## 단계
 
@@ -47,6 +64,7 @@
 
 게이트:
 - "무엇을 만들지"뿐 아니라 "무엇을 만들지 않을지"까지 명확해야 함
+- 왜 지금 필요한지도 설명할 수 있어야 함
 
 ### 2. PRD
 
@@ -62,6 +80,7 @@
 
 게이트:
 - PM이 읽어도 이해되고, 개발자 질문이 크게 남지 않아야 함
+- 기능 목록이 요청사항 나열이 아니라 가치 우선순위로 정리되어야 함
 
 ### 3. SOLUTION
 
@@ -118,12 +137,18 @@
 게이트:
 - 각 task가 숨은 맥락 없이 구현 워크플로우로 바로 넘어갈 수 있어야 함
 - 각 task만 읽어도 downstream 에이전트가 제품 동작을 새로 상상하지 않고 `SPRINT_CONTRACT.md`를 작성할 수 있어야 함
+- 가치가 전체 범위를 정당화하지 못하면 실행 전 scope 를 줄일 수 있어야 함
 
 ### 6. BUILD
 
 이 단계는 downstream handoff만 담당합니다.
 
 PLAN 통과 후에는 기존 Moonshot 실행 워크플로우를 사용합니다.
+
+## 승인 경계
+
+- human approval 은 execution 시작 전 최종 planning package 승인에만 사용할 수 있습니다.
+- execution 이 시작된 뒤에는 true blocker 나 외부 의존성이 없는 한 implementation -> verification -> retry loop 에 human checkpoint 를 추가하지 않습니다.
 
 ## Assumptions와 Blockers
 

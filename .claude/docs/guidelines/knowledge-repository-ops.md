@@ -38,6 +38,7 @@ Keep agent knowledge usable at runtime by separating:
 
 - Core docs live under `.claude/`
 - Task memory default: `.claude/docs/tasks`
+- Keep a tracked `.claudeignore` or equivalent documented ignore policy for sensitive/noisy paths.
 
 ### Installed target project
 
@@ -45,6 +46,7 @@ Keep agent knowledge usable at runtime by separating:
   - `documentPaths.tasksRoot: docs/claude-tasks`
   - `documentPaths.guidelinesRoot: docs/guidelines`
 - Keep `.claude/` for reusable rules/skills/scripts
+- Prefer a concrete bootstrap reference package for adopters instead of relying on templates only.
 
 ## 4. Change Workflow
 
@@ -52,6 +54,7 @@ Keep agent knowledge usable at runtime by separating:
 2. Add or refresh links in `AGENTS.md` / `.claude/CLAUDE.md`.
 3. Set or update `Last-Reviewed: YYYY-MM-DD` on map/contract docs.
 4. Run `.claude/scripts/knowledge-repo-audit.sh`.
+5. Refresh any linked downstream reference package when the contract shape changes.
 
 ## 5. Freshness Policy
 

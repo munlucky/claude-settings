@@ -52,8 +52,31 @@ strict:
     - "auth"
     - "payment"
     - "deployment"
+policySets:
+  knowledge:
+    description: "지식 저장소 신선도 및 구조 체크"
+    checks:
+      - docsAudit
+  workflow:
+    description: "워크플로우 규율 및 실행 경계 체크"
+    checks:
+      - workflowParity
+  verification:
+    description: "실행 가능한 검증 명령"
+    checks:
+      - typecheck
+      - build
+      - lint
+  security:
+    description: "기계적으로 검사 가능한 보안/코드 정책"
+    checks:
+      - securityScan
 policy:
   allowIndeterminate: true
+  requiredPolicySets:
+    - knowledge
+    - workflow
+    - verification
   requiredChecks:
     - typecheck
     - build
@@ -116,6 +139,7 @@ loop:
 ## 규칙
 - harness는 verdict 의미를 책임지고, 프로젝트별 프레임워크 로직은 계약으로 선언합니다.
 - 프로젝트는 명령어와 evidence를 이 계약으로 제공합니다.
+- 계약은 로컬 `policySets` 로 체크를 묶어둘 수 있으며, 이는 향후 외부 정책 엔진에 매핑하기 전까지 저장소 내부의 거버넌스 단위로 사용합니다.
 - 계약은 `scope` 를 선언해 required check 적용 범위를 plane/path 단위로 제한할 수 있으며, 범위 밖에서는 활성 워크스페이스 계약이나 fallback 감지를 사용합니다.
 - 완료 기준은 모호한 품질 표현이 아니라 재현 가능한 실패 체크로 작성해야 합니다.
 - 런타임 비중이 크거나 UI 비중이 큰 작업은 generator 자기승인보다 별도 evaluator 경로를 우선합니다.
@@ -127,6 +151,7 @@ loop:
 - `scorecardProfile`은 `generic`, `saas`, `api-backend`, `frontend`, `platform` 중 하나로 명시할 수 있고 기본값은 `auto`입니다.
 - `auto`는 task intent나 phase 문맥에서 profile을 추론하고, 감지된 `REQ-*` / `SCN-*` 개수로 `REQ + SCN` 예산만 재배분할 수 있습니다.
 - contract 기반 성공 판정은 현재 scope에 적용되는 모든 required check에 대해 최신 증거가 있을 때만 가능합니다.
+- 로컬 `policySets` 는 저장소 내부 추상화이며, OPA/Policy-as-Code 같은 외부 엔진 연계는 향후 단계로 남겨둡니다.
 - document-trace completion을 주장하려면 추가로 아래가 필요합니다.
   - in-scope `REQ-*` 전부에 구현 및 검증 증거가 있어야 함
   - critical `SCN-*` 전부에 fresh runtime 또는 E2E 증거가 있어야 함

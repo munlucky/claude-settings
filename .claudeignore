@@ -1,0 +1,12 @@
+# Sensitive or noisy paths should stay out of default agent context.
+.history/
+.tmp/
+.claude/logs/
+.claude/memory.json
+.claude/browser-runtime/
+.claude/tools/browserd/node_modules/
+.env
+.env.*
+*.pem
+*.key
+*.p12

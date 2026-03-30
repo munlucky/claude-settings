@@ -54,6 +54,9 @@ verificationEnvironment:
 - verification contract가 있으면 그 명령과 artifact를 우선 사용합니다.
 - contract가 없고 standard면 fallback 탐지를 허용합니다.
 - contract가 없고 strict면 앞단의 `verification-contract-gate`가 차단해야 합니다.
+- 변경 유형은 보수적으로 해석합니다.
+  - `docs_only`, 대부분의 `local_policy` 작업은 audit + syntax evidence 로 닫을 수 있습니다.
+  - `behavior_change` 작업은 환경이 허용되면 deterministic test 또는 verifier evidence 없이 강한 완료 판정을 내리지 않습니다.
 - `SPRINT_CONTRACT.md`가 있으면 그 done check도 함께 검증합니다.
 - verifier는 실행할 때마다 `QA_REPORT.md`를 갱신해야 합니다.
 - verification contract가 있으면 contract의 required check에 대한 최신 증거 없이는 성공 판정을 반환하지 않습니다.

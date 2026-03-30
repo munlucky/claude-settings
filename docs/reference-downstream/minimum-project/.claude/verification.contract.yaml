@@ -1,0 +1,35 @@
+commands:
+  typecheck: "npm run typecheck"
+  lint: "npm run lint"
+  test: "npm test"
+  e2e: "npm run test:e2e"
+scope:
+  executionPlanes:
+    - product_project
+  paths:
+    - "src/**"
+    - "tests/**"
+  fallbackOutsideScope: true
+policySets:
+  workflow:
+    description: "Workflow and handoff checks"
+    checks:
+      - typecheck
+      - lint
+  verification:
+    description: "Executable tests"
+    checks:
+      - test
+      - e2e
+policy:
+  allowIndeterminate: false
+  requiredPolicySets:
+    - workflow
+    - verification
+  requiredChecks:
+    - typecheck
+    - lint
+    - test
+artifacts:
+  verdict: ".claude/verification-verdict-<runId>.json"
+  runtimeVerdict: ".claude/runtime-verdict-<runId>.json"

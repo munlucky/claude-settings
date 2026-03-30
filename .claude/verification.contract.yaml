@@ -38,8 +38,31 @@ strict:
     - "rules"
     - "skills"
     - "agents"
+policySets:
+  knowledge:
+    description: "Knowledge repository freshness, structure, and source-of-truth integrity"
+    checks:
+      - knowledgeAudit
+  workflow:
+    description: "Workflow routing, bounded evidence, and execution discipline"
+    checks:
+      - workflowEnforcement
+      - phaseRuntimeParity
+  verification:
+    description: "Executable verifier and syntax integrity"
+    checks:
+      - shellSyntax
+  security:
+    description: "Machine-checkable policy boundaries for changed code and scripts"
+    checks:
+      - codePolicy
 policy:
   allowIndeterminate: false
+  requiredPolicySets:
+    - knowledge
+    - workflow
+    - verification
+    - security
   requiredChecks:
     - knowledgeAudit
     - codePolicy

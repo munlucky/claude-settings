@@ -29,6 +29,23 @@ Guardrails:
 - Do not ask the user unless the blocker prevents safe progression
 - Repeated feedback twice on the same point becomes `conditional_pass`
 - Revisions must remove omissions, not add speculative scope
+- Prefer scope reduction to speculative expansion when value is unclear
+
+## Value Judgment Rubric
+
+Use this rubric at `PRODUCT_INTENT`, `PRD`, and `PLAN`.
+
+Required dimensions:
+- user value
+- urgency
+- scope fit
+- non-goal clarity
+- cost/benefit
+
+Recommended outcomes:
+- `pass`: complete and value is defensible
+- `conditional_pass`: proceed only after assumptions or scope reduction
+- `fail`: value is weak, scope is unstable, or cost/benefit is not defensible
 
 ## Stages
 
@@ -47,6 +64,7 @@ Required sections:
 
 Gate:
 - The team can state what will not be built, not only what will be built.
+- The artifact should explain why this work matters now.
 
 ### 2. PRD
 
@@ -62,6 +80,7 @@ Required sections:
 
 Gate:
 - A PM can read it end-to-end, and implementation questions are limited.
+- The feature list is prioritized by value instead of preserving every request.
 
 ### 3. SOLUTION
 
@@ -118,12 +137,18 @@ Required sections:
 Gate:
 - Each task can be handed directly to the implementation workflow with no hidden context.
 - Each task is specific enough that a downstream agent can write `SPRINT_CONTRACT.md` without inventing missing product behavior.
+- The slice set can narrow work before execution when value does not justify full scope.
 
 ### 6. BUILD
 
 Downstream handoff only.
 
 Use the existing Moonshot execution workflow after the plan is accepted.
+
+## Approval Boundary
+
+- Human approval may be used to accept the final planning package before execution begins.
+- After execution begins, do not insert additional human checkpoints into implementation -> verification -> retry loops unless a true blocker or external dependency prevents safe continuation.
 
 ## Assumptions and Blockers
 
