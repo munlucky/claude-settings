@@ -13,67 +13,32 @@
 - `install-claude.sh`로 다른 프로젝트에 빠르게 설치
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
-- `docs/implementation/`에 메타 워크플로우 개선 계획 문서를 보관
+- phase 기반 작업이 필요할 때 `docs/implementation/`를 런타임에 생성해 사용
 - `.claude/verification-results-*`, `.claude/verification-verdict-*`, `.claude/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리 대상이 아님
 
 ## 디렉터리 구조
 
-```
+```text
 claude-settings/
 ├── install-claude.sh
 ├── README.md
+├── .claudeignore
 ├── .claude/
 │   ├── CLAUDE.md / CLAUDE.ko.md
 │   ├── PROJECT.md / PROJECT.ko.md
-│   ├── AGENTS.md / AGENT.ko.md
 │   ├── README.md / README.ko.md
-│   ├── settings.local.json
-│   ├── agents/
-│   │   ├── requirements-analyzer.md
-│   │   ├── context-builder.md
-│   │   ├── implementation-agent.md
-│   │   ├── verification-agent.md
-│   │   ├── documentation-agent.md
-│   │   └── design-spec-extractor.md
+│   ├── verification.contract.yaml
+│   ├── rules/
 │   ├── skills/
-│   │   ├── product-orchestrator/
-│   │   ├── product-gate-reviewer/
-│   │   ├── task-slicer/
-│   │   ├── assumption-ledger/
-│   │   ├── moonshot-orchestrator/
-│   │   ├── moonshot-classify-task/
-│   │   ├── moonshot-evaluate-complexity/
-│   │   ├── moonshot-detect-uncertainty/
-│   │   ├── moonshot-decide-sequence/
-│   │   ├── pre-flight-check/
-│   │   ├── karpathy-execution-gate/
-│   │   ├── implementation-runner/
-│   │   ├── codex-validate-plan/
-│   │   ├── codex-test-integration/
-│   │   ├── codex-review-code/
-│   │   ├── claude-codex-guardrail-loop/
-│   │   ├── doc-sync/
-│   │   ├── efficiency-tracker/
-│   │   ├── session-logger/
-│   │   ├── design-asset-parser/
-│   │   ├── receiving-code-review/
-│   │   └── project-md-refresh/
-│   ├── docs/
-│   │   ├── guidelines/
-│   │   │   ├── product-definition-workflow.md
-│   │   │   ├── analysis-guide.md
-│   │   │   ├── parallel-execution.md
-│   │   │   ├── question-templates.md
-│   │   │   ├── requirements-check.md
-│   │   │   └── token-optimization.md
-│   │   └── tasks/
-│   │       └── context.md
-│   └── templates/
-│       ├── product-definition/
-│       ├── moonshot-output.md
-│       ├── moonshot-output.ko.md
-│       └── moonshot-output.yaml
-└── .history/
+│   ├── agents/
+│   ├── scripts/
+│   ├── templates/
+│   └── docs/
+│       ├── guidelines/
+│       ├── reference-downstream/
+│       ├── runtime-parity-reference-plan/
+│       └── tasks/
+└── AGENTS.md -> .claude/CLAUDE.md
 ```
 
 ## 핵심 구성 요소
@@ -81,8 +46,8 @@ claude-settings/
 ### 규칙 문서
 
 - `CLAUDE.md`: 전역 규칙과 기본 작업 방식
-- `PROJECT.md`: 프로젝트별 규칙 템플릿
-- `AGENTS.md`: 에이전트 프롬프트 규격
+- `PROJECT.md`: 현재 워크스페이스의 운영 계약 문서
+- `AGENTS.md`: 최상위 TOC 겸 브리지 엔트리
 
 ### Moonshot 워크플로우
 
@@ -136,14 +101,16 @@ claude-settings/
 
 ### 문서와 템플릿
 
-- 가이드라인: `docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화)
-- 제품 정의 가이드: `docs/guidelines/product-definition-workflow.md`
+- 가이드라인: `.claude/docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화 등)
+- 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
 - 작업 문서 루트: `.claude/docs/tasks/`
-- 제품 정의 템플릿: `templates/product-definition/*.md`
+- downstream reference package: `.claude/docs/reference-downstream/`
+- runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`
+- 제품 정의 템플릿: `.claude/templates/product-definition/*.md`
 - 실행 브리지 템플릿: `.claude/templates/execution/*.md`
 - phase internal adapter: `.claude/scripts/moonshot-phase-dispatch.sh`
-- 출력 템플릿: `templates/moonshot-output.*`
+- 출력 템플릿: `.claude/templates/moonshot-output.*`
 
 ## 빠른 시작
 
@@ -175,6 +142,7 @@ chmod +x install-claude.sh
 
 기본 동작:
 - `.claude`, `.agents`, `AGENTS.md` 중 존재 항목은 자동 백업 후 설치
+- `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
 - `.claude/skills/*`를 Codex 전역 스킬 경로 `${CODEX_HOME:-~/.codex}/skills/*`에 심볼릭 링크
 
@@ -214,10 +182,14 @@ custom/
 ### 수동 설치
 
 ```bash
-# 1. .claude 폴더 복사
+# 1. .claude 폴더와 ignore 정책 복사
 cp -r claude-settings/.claude /your-project/
+cp claude-settings/.claudeignore /your-project/
 
-# 2. 부트스트랩 문서 커스터마이징
+# 2. AGENTS 브리지 구성
+ln -s .claude/CLAUDE.md /your-project/AGENTS.md
+
+# 3. 부트스트랩 문서 커스터마이징
 # PROJECT.md와 workflow/design/glossary/daily/test/analysis 문서를 프로젝트에 맞게 수정
 ```
 
@@ -241,7 +213,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 Codex에서 바로 활용할 수 있는 스킬 예시:
 - 계획 검증: `codex-validate-plan`
 - 코드 리뷰: `codex-review-code`
-- 통합 테스트 검증: `codex-test-integration`
+- 완료 검증: `completion-verifier`
 
 주의:
 - 같은 이름의 기존 전역 스킬이 있으면 백업 후 교체됩니다.

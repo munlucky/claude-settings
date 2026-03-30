@@ -13,7 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/runtime-cli.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-REFERENCE_PLAN_DIR="docs/implementation"
+REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
 RUN_REAL=true
 TMP_ROOT="$(mktemp -d)"
 KEEP_TMP="${PHASE_RUNTIME_PARITY_KEEP_TMP:-false}"

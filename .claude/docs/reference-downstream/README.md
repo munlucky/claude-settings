@@ -8,7 +8,7 @@ Show the minimum document set and example values needed to bootstrap a downstrea
 
 ## Package
 
-Use [`minimum-project/`](/Users/dev/claude-settings/docs/reference-downstream/minimum-project) as the reference baseline.
+Use [`minimum-project/`](/Users/dev/claude-settings/.claude/docs/reference-downstream/minimum-project) as the reference baseline.
 
 Included documents:
 - `.claude/PROJECT.md`

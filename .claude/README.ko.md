@@ -183,7 +183,7 @@ phase runner 기본 동작:
 - 문서 추적 완료 하네스 가이드: `.claude/docs/guidelines/requirements-traceability-harness.ko.md`
 - 제품 정의 템플릿: `.claude/templates/product-definition/`
 - 실행 아티팩트 템플릿: `.claude/templates/execution/`
-- downstream bootstrap reference package: `docs/reference-downstream/README.md`
+- downstream bootstrap reference package: `.claude/docs/reference-downstream/README.md`
 
 ## 유지보수 노트 (이 저장소)
 

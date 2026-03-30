@@ -14,7 +14,7 @@ commands:
   build: "npm run build"
   test: "npm test"
   lint: "npm run lint"
-  workflowParity: "bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation"
+  workflowParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
 scope:
   executionPlanes:
     - product_project

@@ -3,7 +3,7 @@ commands:
   codePolicy: "bash .claude/scripts/verify-code-policy.sh"
   workflowEnforcement: "bash .claude/scripts/workflow-enforcement.sh verify"
   shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
-  phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation"
+  phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
 scope:
   executionPlanes:
     - meta_harness
@@ -13,11 +13,21 @@ scope:
     - ".claude/rules/**"
     - ".claude/skills/**"
     - ".claude/agents/**"
+    - ".claude/PROJECT.md"
+    - ".claude/PROJECT.ko.md"
+    - ".claude/README.md"
+    - ".claude/README.ko.md"
     - ".claude/docs/guidelines/**"
+    - ".claude/docs/reference-downstream/**"
+    - ".claude/docs/runtime-parity-reference-plan/**"
     - ".claude/docs/ko/rules/**"
     - ".claude/templates/execution/**"
     - ".claude/scripts/**"
     - ".claude/verification.contract.yaml"
+    - ".claudeignore"
+    - ".gitignore"
+    - "README.md"
+    - "install-claude.sh"
   fallbackOutsideScope: true
 artifacts:
   verdict: ".claude/verification-verdict-<runId>.json"

@@ -194,4 +194,4 @@ Expected effect: save 30m per task
 ---
 ## References
 - `.claude/agents/documentation/templates/session-log-template.md`
-- `.claude/skills/doc-sync/skill.md` (final sync in finalize mode)
+- `.claude/skills/doc-auto-sync/SKILL.md` (final sync in finalize mode)
