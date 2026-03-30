@@ -27,6 +27,7 @@ Last-Reviewed: 2026-03-30
   - `bash .claude/scripts/verify-code-policy.sh`
   - `bash .claude/scripts/workflow-enforcement.sh verify`
   - `bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
+  - `python3 .claude/scripts/normalize-harness-quality.py --input-glob ".tmp/harness-runs/**/harness-quality-run.json" --output ".tmp/harness-runs/harness-quality/latest.json"`
 
 ## 디렉터리/구조
 
@@ -77,6 +78,7 @@ HARNESS_CANDIDATE_BASE_BRANCH
 HARNESS_PROMOTION_PATHS_FILE
 HARNESS_PROMOTION_SKIP_CHECKS
 HARNESS_KNOWLEDGE_AUDIT_FILE
+HARNESS_QUALITY_MIN_SAMPLES
 VERIFY_CODE_POLICY_FILES
 WORKFLOW_ENFORCEMENT_FILES
 ```
