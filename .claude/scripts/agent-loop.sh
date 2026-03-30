@@ -355,7 +355,16 @@ get_phase_doc() {
     local phase_num=$1
     local phase_prefix
     printf -v phase_prefix '%02d' "$phase_num"
-    find "$PLAN_DIR" -maxdepth 1 \( -name "${phase_prefix}-*.md" -o -name "*phase*${phase_num}*" \) 2>/dev/null | head -1
+    local phase_doc
+    phase_doc=$(find "$PLAN_DIR" -maxdepth 1 \( -name "${phase_prefix}-*.md" -o -name "*phase*${phase_num}*" \) 2>/dev/null | sort | head -1)
+    if [[ -n "$phase_doc" ]]; then
+        echo "$phase_doc"
+        return
+    fi
+
+    if [[ -d "${PLAN_DIR%/}/close" ]]; then
+        find "${PLAN_DIR%/}/close" -maxdepth 1 \( -name "${phase_prefix}-*.md" -o -name "*phase*${phase_num}*" \) 2>/dev/null | sort | head -1
+    fi
 }
 
 sanitize_slug() {
@@ -365,7 +374,47 @@ sanitize_slug() {
 }
 
 count_total_phases() {
+    if [[ -f "$STATUS_FILE" ]] && command -v python3 >/dev/null 2>&1; then
+        python3 - "$STATUS_FILE" <<'PY'
+import re
+import sys
+
+count = 0
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    for line in handle:
+        if re.match(r"^\s*-\s+number:\s*", line):
+            count += 1
+
+print(count)
+PY
+        return
+    fi
+
     find "$PLAN_DIR" -maxdepth 1 -name "*.md" ! -name "*master*" ! -name "*00-*" 2>/dev/null | wc -l | tr -d ' '
+}
+
+sync_completed_phase_archive() {
+    local phase_num="${1:-}"
+
+    if [[ ! -f "$STATUS_FILE" ]] || [[ ! -d "$PLAN_DIR" ]] || [[ ! -f "$SCRIPT_DIR/sync-phase-archive.py" ]] || ! command -v python3 >/dev/null 2>&1; then
+        return
+    fi
+
+    local cmd=(python3 "$SCRIPT_DIR/sync-phase-archive.py" --status-file "$STATUS_FILE" --plan-dir "$PLAN_DIR")
+    if [[ -n "$phase_num" ]]; then
+        cmd+=(--phase-number "$phase_num")
+    fi
+
+    local sync_output
+    if ! sync_output="$("${cmd[@]}" 2>/dev/null)"; then
+        return
+    fi
+
+    if [[ -n "$sync_output" ]]; then
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && log_info "$line"
+        done <<< "$sync_output"
+    fi
 }
 
 render_required_verification_commands() {
@@ -1288,6 +1337,7 @@ log_info "Master plan: $MASTER_PLAN"
 log_info "Status file: $STATUS_FILE"
 log_info "Execution root: $EXECUTION_ROOT"
 log_info "Runtime: $RUNNER_RUNTIME"
+sync_completed_phase_archive
 
 TOTAL_PHASES=$(count_total_phases)
 log_info "Total phases: $TOTAL_PHASES"
@@ -1404,6 +1454,7 @@ Remediation steps:
                             log_success "Phase $NEXT_PHASE completed after verification remediation (${DURATION}s)"
                             append_qa_runtime_update "phase-completed-after-verification-remediation" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
                             update_phase_state "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "completed" "false"
+                            sync_completed_phase_archive "$NEXT_PHASE"
                             completed=$((completed + 1))
                             echo "- Status: ✅ Completed (after verification remediation)" >> "$DECISION_LOG"
                             echo "- Duration: ${DURATION}s" >> "$DECISION_LOG"
@@ -1445,6 +1496,7 @@ Remediation steps:
             log_success "Phase $NEXT_PHASE completed (${DURATION}s)"
             append_qa_runtime_update "phase-command-succeeded" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
             update_phase_state "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "completed" "false"
+            sync_completed_phase_archive "$NEXT_PHASE"
             completed=$((completed + 1))
             
             # Log decision
@@ -1541,6 +1593,7 @@ Remediation steps:
                     log_success "Phase $NEXT_PHASE completed after auto-fix (${DURATION}s)"
                     append_qa_runtime_update "phase-completed-after-auto-fix" "$LOGFILE" "$PHASE_COMPLETION_ARTIFACTS"
                     update_phase_state "$NEXT_PHASE" "completed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "completed" "false"
+                    sync_completed_phase_archive "$NEXT_PHASE"
                     completed=$((completed + 1))
                     
                     echo "- Status: ✅ Completed (after auto-fix)" >> "$DECISION_LOG"
