@@ -196,6 +196,7 @@ Phase runner default behavior:
 - Document-trace harness guide: `.claude/docs/guidelines/requirements-traceability-harness.md`.
 - Product-definition templates: `.claude/templates/product-definition/`.
 - Execution artifact templates: `.claude/templates/execution/`.
+- Downstream bootstrap reference package: `docs/reference-downstream/README.md`.
 
 ## Maintenance Notes (This Repo)
 

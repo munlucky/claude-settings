@@ -52,8 +52,31 @@ strict:
     - "auth"
     - "payment"
     - "deployment"
+policySets:
+  knowledge:
+    description: "Knowledge-repo freshness and structural checks"
+    checks:
+      - docsAudit
+  workflow:
+    description: "Workflow discipline and execution-boundary checks"
+    checks:
+      - workflowParity
+  verification:
+    description: "Executable verification commands"
+    checks:
+      - typecheck
+      - build
+      - lint
+  security:
+    description: "Machine-checkable security or code-policy rules"
+    checks:
+      - securityScan
 policy:
   allowIndeterminate: true
+  requiredPolicySets:
+    - knowledge
+    - workflow
+    - verification
   requiredChecks:
     - typecheck
     - build
@@ -116,6 +139,7 @@ loop:
 ## Rules
 - The harness owns verdict semantics, not project-specific framework logic.
 - Projects declare commands and evidence through the contract.
+- Contracts may group checks into local `policySets` so the repository can enforce named governance bundles before any future enterprise policy-engine mapping exists.
 - Contracts may declare `scope` so required checks apply only to matching planes/paths; outside that scope, fallback to the active workspace contract or detection rules.
 - Completion criteria should be phrased as checks that can fail reproducibly, not vague quality claims.
 - For runtime-heavy or UI-heavy work, prefer a separate evaluator path over generator self-approval.
@@ -127,6 +151,7 @@ loop:
 - `scorecardProfile` may be set explicitly to `generic`, `saas`, `api-backend`, `frontend`, or `platform`; `auto` is the default.
 - `auto` should infer the scorecard profile from task intent or phase language and may rebalance only the combined `REQ + SCN` budget from detected `REQ-*` / `SCN-*` counts.
 - A contract-backed success verdict should require fresh evidence for every required check that applies to the current scope.
+- Local `policySets` are repository-owned abstractions; mapping them to OPA, Policy-as-Code, or hosted policy sets is a later integration step, not a current requirement.
 - A document-trace completion claim should additionally require:
   - all in-scope `REQ-*` rows to have implementation plus verification evidence
   - all critical `SCN-*` rows to have fresh runtime or E2E evidence

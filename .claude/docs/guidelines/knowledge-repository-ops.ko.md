@@ -38,6 +38,7 @@ lastReviewed: 2026-03-05
 
 - 핵심 문서는 `.claude/` 아래에 둡니다.
 - 작업 메모리 기본값: `.claude/docs/tasks`
+- 민감하거나 노이즈가 큰 경로는 추적된 `.claudeignore` 또는 동등한 문서 정책으로 관리합니다.
 
 ### 설치 대상 프로젝트
 
@@ -45,6 +46,7 @@ lastReviewed: 2026-03-05
   - `documentPaths.tasksRoot: docs/claude-tasks`
   - `documentPaths.guidelinesRoot: docs/guidelines`
 - `.claude/`는 재사용 가능한 규칙/스킬/스크립트 중심으로 유지합니다.
+- 템플릿만 나열하지 말고, 가능하면 concrete bootstrap reference package 를 함께 제공합니다.
 
 ## 4. 변경 워크플로우
 
@@ -52,6 +54,7 @@ lastReviewed: 2026-03-05
 2. `AGENTS.md` / `.claude/CLAUDE.md`의 링크를 갱신합니다.
 3. 핵심 맵/계약 문서의 `Last-Reviewed: YYYY-MM-DD`를 갱신합니다.
 4. `.claude/scripts/knowledge-repo-audit.sh`를 실행합니다.
+5. 계약 형태가 바뀌면 연결된 downstream reference package 도 함께 갱신합니다.
 
 ## 5. 신선도 정책
 

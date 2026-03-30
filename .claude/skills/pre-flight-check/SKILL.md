@@ -23,6 +23,7 @@ description: Checks essential information and project status before starting wor
 - downstream project contract readiness (`PROJECT.md`)
 - project reference docs readiness (workflow/design/glossary/daily/test/analysis)
 - downstream verification contract readiness (`.claude/verification.contract.yaml` or equivalent policy)
+- local policy-set and ignore strategy readiness (`policySets`, `.claudeignore`, or documented equivalent)
 - **Document Memory Policy check**:
   - context.md token usage (warn if > 6,000 tokens, ~80% of limit)
   - specification.md exists and is summarized (if large spec)
@@ -47,9 +48,11 @@ notes:
   - "pre-flight: executionPlane=product_project"
   - "pre-flight: project contract missing required command/test sections"
   - "pre-flight: project reference docs missing workflow/design/test guidance"
+  - "pre-flight: ignore or protected-path policy missing"
 recommendedActions:
   - "run project-contract-gate"
   - "run context-readiness-gate"
+  - "refresh security and ignore policy docs"
 ```
 
 Optional human-readable example:
@@ -93,6 +96,7 @@ WARN verification contract missing
 | Large document | Follow `document-memory-policy.md` to summarize |
 | Missing areas | Set `projectContractReady=false`, recommend `project-contract-gate` or `project-md-refresh` |
 | No tests | Recommend writing tests before `completion-verifier` |
+| No ignore/protected-path policy | Refresh security docs and add `.claudeignore` or equivalent |
 
 ## References
 - `.claude/docs/guidelines/document-memory-policy.md`

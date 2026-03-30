@@ -1,24 +1,13 @@
 # Testing Guidelines
 
-## Runtime Rule
-
 Detect test environment before writing or running tests.
-
-## When Environment Exists
-
+- Classify changes as `docs_only`, `local_policy`, or `behavior_change`.
 - Run the smallest relevant test scope first, then expand if needed.
-- Bug fixes should include a regression test when practical.
+- `behavior_change` work should start from a failing test or deterministic proof when practical.
+- Bug fixes should include a regression test or equivalent verifier evidence.
 - Do not delete existing tests without an explicit reason.
-
-## When Environment Does Not Exist
-
-- Do not block implementation.
-- Run self-audit/manual verification and report why tests were skipped.
-- For this repository, prioritize:
-  - `.claude/scripts/knowledge-repo-audit.sh`
-  - `bash -n` checks for changed shell scripts
-
-## Workflow Integration
-
-- `implementation-runner`: writes tests only when environment exists.
-- `completion-verifier`: runs tests when available; otherwise performs self-audit.
+- `docs_only` and most `local_policy` work may finish with audit plus syntax/evidence checks.
+- `behavior_change` work must report missing executable verification and stay conservative.
+- For this repository, prioritize knowledge audit and `bash -n` for changed shell scripts.
+- `implementation-runner` should flag behavior-changing work with no test or verifier plan.
+- `completion-verifier` stays conservative when executable verification is missing.

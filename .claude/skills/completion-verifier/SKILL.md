@@ -53,6 +53,9 @@ Applicability rule:
 - Missing verification contract:
   - standard profile -> continue with warning and fallback detection
   - strict profile -> expect `verification-contract-gate` to block earlier
+- Interpret change class conservatively:
+  - `docs_only` and most `local_policy` work may complete with audit plus syntax evidence
+  - `behavior_change` work should not receive a strong completion verdict without deterministic test or verifier evidence when the environment supports it
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.

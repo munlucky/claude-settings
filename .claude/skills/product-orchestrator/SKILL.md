@@ -48,6 +48,11 @@ Required outputs:
 - `execution/SCENARIO_MATRIX.md` when user-visible flows matter
 - `execution/UAT_CHECKLIST.md` when the target is UAT-ready handoff
 
+Planning artifacts should also record:
+- explicit non-goals
+- scope reduction or scope hold notes when requests are too large
+- a short cost/benefit rationale at `PRODUCT_INTENT`, `PRD`, and `PLAN`
+
 ## Workflow
 
 1. Create or refresh `PRODUCT_INTENT.md`
@@ -67,6 +72,7 @@ At every stage:
 - use `assumption-ledger` before stopping for ambiguity
 - stop only for true blockers
 - use max 2 rewrite retries after the first draft
+- prefer scope reduction over speculative expansion when value is weak or unclear
 
 ## Gate Policy
 
@@ -79,6 +85,22 @@ Escalation rules:
 - Same issue repeated twice -> `conditional_pass`
 - Missing but non-critical detail -> add to `ASSUMPTIONS.md`
 - Hard dependency missing -> add to `BLOCKERS.md`
+- Weak value or poor cost/benefit -> reduce scope, hold scope, or fail the stage
+
+## Value Judgment Policy
+
+Do not treat completeness as sufficient.
+
+Before execution handoff, the planning package should answer:
+- why the work matters now
+- what will not be built
+- whether the benefit is large enough for the likely implementation cost
+- whether the current scope should be reduced before execution
+
+Preferred actions:
+- `scope_reduction`
+- `hold_scope`
+- `fail`
 
 ## Stage Summary
 
@@ -87,12 +109,14 @@ Escalation rules:
 - Name the user
 - State the core value
 - Freeze non-goals
+- Record why now
 
 ### PRD
 - Define scenarios and acceptance
 - Keep the document product-facing
 - Do not introduce architecture
 - Assign stable `REQ-*` and `SCN-*` identifiers for downstream traceability
+- Prioritize features by value
 
 ### SOLUTION
 - Model flows, state, entities, and exceptions
@@ -108,6 +132,12 @@ Escalation rules:
 - Make every task independently executable
 - Prepare for direct Moonshot handoff
 - Preserve `REQ-*` and `SCN-*` mappings so completion can be blocked on uncovered items
+- Narrow or reject slices whose cost is not justified by value
+
+## Approval Boundary
+
+- Human approval may be used to accept the planning package before execution begins.
+- After execution begins, implementation -> review -> verify -> retry loops should continue without additional human checkpoints unless a true blocker or external dependency appears.
 
 ## Handoff Contract
 

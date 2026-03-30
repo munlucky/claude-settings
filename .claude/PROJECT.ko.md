@@ -1,142 +1,147 @@
 # PROJECT.md
 
-> 프로젝트별 규칙/구성 문서입니다. 이 파일을 각 프로젝트에 맞게 작성하십시오.
+> Claude Settings 메타 하네스 저장소의 운영 계약서입니다. downstream 템플릿 안내는 유지하되, 이 저장소 안에서는 비어 있는 템플릿으로 취급하지 않습니다.
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-03-30
 
 ## 프로젝트 개요
-이 섹션에는 프로젝트의 기본 정보를 작성합니다.
 
-- **서비스**: [서비스/제품 이름 및 간단한 설명]
-- **스택**: [기술 스택 - 아래 가이드 참고]
-- **응답 언어**: [기본 응답 언어 지정]
+- **서비스**: 재사용 가능한 rules, skills, agents, scripts, templates, workflow 문서를 보관하는 Claude Settings 메타 하네스 저장소
+- **스택**: Markdown + YAML + Bash + Python 3 + `.claude/tools/browserd` 아래의 Node.js 보조 툴링
+- **응답 언어**: 사용자 요청 언어를 따르며, 이 저장소 협업에서는 한국어를 기본값으로 둠
 
-### 기술 스택 명시 가이드
+### 기술 스택 상세
 
-> **중요**: 모호한 스펙은 모호한 코드를 낳습니다. 버전과 핵심 의존성을 구체적으로 명시하세요.
+- **런타임**: Bash, Python 3, Node.js, Git
+- **주요 자산**: `.md`, `.yaml`, `.sh`, `.py`, `.cjs`, `.mjs`
+- **빌드 모델**: 컴파일 애플리케이션 빌드 없음, 스크립트와 문서 중심 검증
+- **핵심 도구**:
+  - `.claude/scripts/` 의 셸 검증 스크립트
+  - `.claude/agents/verification/` 의 verifier 스크립트
+  - `.claude/tools/browserd/` 의 브라우저 보조 툴링
 
-| ❌ 모호함 | ✅ 구체적 |
-|----------|----------|
-| "리액트 프로젝트" | "React 18.2 + TypeScript 5.3 + Vite 5.0" |
-| "Node.js 백엔드" | "Node.js 20 LTS + Express 4.18 + Prisma 5.0" |
-| "모바일 앱" | "React Native 0.73 + Expo SDK 50" |
+## 핵심 규칙
 
-**필수 명시 항목:**
-- [ ] 언어/런타임 버전
-- [ ] 프레임워크 버전
-- [ ] 빌드 도구
-- [ ] 핵심 라이브러리 (상태관리, 라우팅, ORM 등)
-
-## 핵심 규칙 (필수)
-프로젝트에서 반드시 준수해야 할 중요한 규칙을 나열합니다.
-
-예시:
-1. **API 호출 규칙**: [백엔드 호출 방식, 프록시 사용 여부 등]
-2. **에러 처리 패턴**: [에러 핸들링 방식]
-3. **데이터 변환 규칙**: [데이터 처리 시 주의사항]
-4. **파일 업로드 규칙**: [파일 업로드 시 주의사항]
-5. **로깅/활동 기록**: [로그 기록 규칙]
+1. **계획 경계**: human approval 은 planning closeout 에서만 사용할 수 있습니다. execution 시작 후에는 true blocker 나 외부 의존성이 없는 한 implementation, review, verification, retry loop 를 자율적으로 유지합니다.
+2. **소스 오브 트루스**: 지속 정책은 `AGENTS.md` 나 `.claude/CLAUDE.md`가 아니라 `.claude/rules/`, `.claude/docs/guidelines/`, 이 문서에 둡니다.
+3. **문서 페어링**: 한국어 짝 문서가 있는 영문 `.md`를 바꾸면 대응 `.ko.md`도 함께 유지합니다.
+4. **보안 경계**: `.claudeignore`, protected path, deny-by-default 도구/경로 접근 원칙을 지킵니다.
+5. **검증 규율**: 의미 있는 변경은 “checkpoint reached”로 닫지 말고 필수 검증 명령과 evidence artifact를 사용합니다.
+6. **스코프 규율**: 계획 가치가 약하거나 불명확하면 추측성 확장보다 scope reduction 을 우선합니다.
 
 ## 테스트 규칙
 
-> AI 에이전트가 테스트를 올바르게 실행하고 작성하기 위해 필요한 정보입니다.
-
-- **테스트 프레임워크**: [Jest / Vitest / Agent Browser / Playwright / etc.]
-- **테스트 파일 위치**: [`__tests__/` / `*.test.ts` / `*.spec.ts`]
-- **커버리지 기대치**: [80% 이상 / 핵심 로직만 / etc.]
+- **테스트 프레임워크**: 저장소 로컬 스크립트 검증, shell syntax check, knowledge audit, workflow enforcement, verifier contract
+- **테스트 파일 위치**:
+  - `.claude/scripts/*.sh`
+  - `.claude/agents/verification/*.sh`
+  - `.claude/docs/guidelines/` 의 관련 계약 문서
+- **커버리지 기대치**:
+  - doc-only 변경: audit 와 링크/신선도 무결성
+  - local policy 변경: audit + 관련 syntax/policy check
+  - behavior-changing harness logic: 환경이 허용되면 deterministic verifier evidence
 - **실행 명령**:
-  - 전체 테스트: `npm test`
-  - 특정 파일: `npm test -- --testPathPattern="파일명"`
-  - 커버리지: `npm test -- --coverage`
+  - Knowledge audit: `bash .claude/scripts/knowledge-repo-audit.sh`
+  - Code policy: `bash .claude/scripts/verify-code-policy.sh`
+  - Workflow enforcement: `bash .claude/scripts/workflow-enforcement.sh verify`
+  - Shell syntax: `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
+  - Runtime parity: `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
 
 ### 테스트 작성 규칙
-- [ ] 새 기능에는 단위 테스트 필수
-- [ ] API 엔드포인트는 통합 테스트 필수
-- [ ] 기존 테스트 삭제 금지 (NeverDo)
+
+- behavior-changing logic 는 가능하면 deterministic verification 을 추가하거나 강화해야 합니다.
+- 버그 수정에는 regression test 또는 동등한 verifier evidence 가 필요합니다.
+- 기존 체크/테스트를 삭제할 때는 명시적 이유와 대체 경로가 있어야 합니다.
 
 ## Git 워크플로우
 
-> 브랜치 명명, 커밋 메시지, PR 규칙을 명시하면 에이전트가 그대로 따릅니다.
-
 ### 브랜치 명명 규칙
-```
-feature/{기능명}     # 새 기능
-fix/{이슈번호}       # 버그 수정
-refactor/{대상}      # 리팩토링
-chore/{작업}         # 설정, 의존성 등
+
+```text
+codex/{task}            # Codex 기본 작업 브랜치
+feature/{feature-name}  # 새 워크플로우 기능
+fix/{issue-number}      # 버그 수정
+chore/{task}            # 문서, 정책, 유지보수
 ```
 
 ### 커밋 메시지 형식
-```
-[타입]: 간결한 설명
+
+```text
+[type]: concise description
 
 예시:
-feat: 배치 실행 API 추가
-fix: 날짜 포맷 변환 오류 수정
-refactor: 사용자 조회 로직 분리
+feat: add planning value rubric
+fix: tighten workflow enforcement wording
+chore: refresh harness project contract
 ```
 
 **규칙:**
-- 이모지, 특수문자 제외
-- 한글 또는 영문 통일
-- 50자 이내 권장
+- 이모지, 특수문자 사용 금지
+- 커밋 메시지 언어는 한 가지로 통일
+- 가능하면 50자 내외의 간결한 메시지를 우선
 
 ### PR 요구사항
-- [ ] CI 통과 필수
-- [ ] 최소 1인 리뷰 (선택)
-- [ ] 관련 이슈 링크
+
+- CI 또는 필수 로컬 체크 통과
+- 공용 skill/rule 로직 변경은 리뷰 필요
+- task package 또는 implementation 문서가 있으면 연결
 
 ## 디렉터리/구조
-프로젝트의 폴더 구조를 설명합니다.
 
-```
-[프로젝트 루트]/
-├── [주요 폴더1]/
-│   ├── [하위 폴더]/
-│   └── [하위 폴더]/
-├── [주요 폴더2]/
-└── [주요 폴더3]/
+```text
+[project root]/
+|-- .claude/
+|   |-- rules/
+|   |-- skills/
+|   |-- agents/
+|   |-- docs/guidelines/
+|   |-- scripts/
+|   |-- templates/
+|   `-- verification.contract.yaml
+|-- docs/
+|   |-- implementation/
+|   `-- reference-downstream/
+`-- AGENTS.md
 ```
 
 ### 주요 패턴
-프로젝트에서 자주 사용하는 파일/폴더 패턴을 설명합니다.
 
-```
-[기능 폴더 패턴 예시]
+```text
+.claude/rules/*.md                 # 항상 로드되거나 path-scoped 된 정책
+.claude/skills/*/SKILL*.md         # 스킬 계약
+.claude/agents/**/*.md             # 에이전트 계약
+.claude/scripts/*.sh               # 기계 검증과 오케스트레이션 보조 스크립트
+docs/implementation/*.md           # 계획/실행 검토 문서
+docs/reference-downstream/**       # copy 가능한 downstream bootstrap reference
 ```
 
 ## API/데이터 통신 패턴
-API 호출 및 데이터 통신 관련 패턴을 설명합니다.
 
-- **API 엔드포인트**: [API 라우트 규칙]
-- **헬퍼 함수**: [자주 사용하는 유틸리티 함수]
-- **클라이언트 호출**: [클라이언트에서 API 호출 방식]
+- **API 엔드포인트**: 없음. 이 저장소는 애플리케이션 서비스가 아닙니다.
+- **헬퍼 함수**: `.claude/scripts/` 와 `.claude/agents/verification/` 의 shell/Python helper
+- **계약 교환 방식**: `PROJECT.md`, `context.md`, `SPRINT_CONTRACT.md`, verdict JSON, scorecard 같은 Markdown/YAML/JSON artifact 중심
 
 ## 타입/도메인 패턴
-타입 정의 및 도메인 모델 관리 방식을 설명합니다.
 
-- **타입 정의 위치**: [타입 파일 위치 및 명명 규칙]
-- **도메인 모델**: [Entity, DTO, Request/Response 구조]
+- **타입 정의 위치**: 중앙 TS 도메인 모델 없음, 구조화 계약은 Markdown/YAML/JSON 에 둠
+- **도메인 모델**:
+  - execution plane: `read_only`, `product_project`, `meta_harness`
+  - workflow profile: `standard`, `strict`
+  - execution artifact: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`
 
 ## 권한/인증
-권한 관리 및 인증 관련 정보를 작성합니다.
 
-- **인증 방식**: [JWT, Session 등]
-- **권한 체계**: [권한 관리 방식]
-- **미들웨어**: [인증/권한 처리 미들웨어 위치]
+- **인증 방식**: 저장소 내부 자체 인증 없음
+- **권한 체계**: 활성 런타임, 로컬 파일시스템 권한, tool approval 정책을 따름
+- **민감 경로 정책**: `.claudeignore`, `.gitignore`, security 규칙으로 protected path 를 기본 컨텍스트에서 제외
 
-## 문서 경로 (오버라이드)
-
-필요 시 `CLAUDE.md`의 기본 경로를 오버라이드합니다. **git 추적 프로젝트에서는 `tasksRoot`를 `.claude/` 외부 경로로 설정하세요.**
-
-### 설정 (필요 시 주석 해제 후 수정)
+## 문서 경로
 
 ```yaml
-# 문서 경로 오버라이드 (기본값은 CLAUDE.md)
-# documentPaths:
-#   tasksRoot: "docs/claude-tasks"      # git 추적 프로젝트에서 권장
-#   agreementsRoot: "docs/agreements"
-#   guidelinesRoot: "docs/guidelines"
+documentPaths:
+  tasksRoot: ".claude/docs/tasks"
+  agreementsRoot: ".claude/docs/agreements"
+  guidelinesRoot: ".claude/docs/guidelines"
 ```
 
 ### 경로 템플릿
@@ -160,47 +165,47 @@ API 호출 및 데이터 통신 관련 패턴을 설명합니다.
 | 미해결 질문 | `{tasksRoot}/{feature-name}/pending-questions.md` |
 | 추적/UAT 아티팩트 | `{tasksRoot}/{feature-name}/execution/{REQUIREMENTS_TRACEABILITY,SCENARIO_MATRIX,UAT_CHECKLIST}.md` |
 
-### 프로젝트 기준 문서
+### Downstream 기준 문서
 
-downstream 프로젝트 워크스페이스에는 아래 기준 문서를 함께 생성하고 유지합니다.
+설치 대상 downstream 프로젝트에는 아래 문서를 부트스트랩하고 유지합니다.
 
-- `workflow/README.md` — 공식 개발 프로세스, 런타임 역할, 진입 명령, 브랜치/worktree 정책
-- `docs/design/README.md` — 공통 디자인 규칙, 컴포넌트/토큰 기준, 새 UI 유형 예외 처리 절차
-- `docs/glossary/README.md` — 화면/API/기능/아키텍처 개념의 표준 용어
-- `docs/daily/README.md` — `docs/daily/YYYY-MM-DD/` 구조와 일일 기록 규칙
-- `TEST_GUIDE.md` — `.claude/verification.contract.yaml`을 보완하는 사람이 읽는 테스트 가이드
-- `docs/analysis/README.md` — 영향 분석, 구조 메모, 심층 조사 문서 규칙
+- `workflow/README.md`
+- `docs/design/README.md`
+- `docs/glossary/README.md`
+- `docs/daily/README.md`
+- `TEST_GUIDE.md`
+- `docs/analysis/README.md`
 
-실제 프로젝트를 부트스트랩할 때는 `PROJECT.md`와 함께 이 문서들도 생성하거나 갱신해야 합니다.
+구체적인 예시는 `docs/reference-downstream/README.md`를 참고합니다.
 
 ## 지식 저장소 (Agent-First)
 
-이 템플릿을 실제 작업 프로젝트에 설치했을 때 사용하는 운영 원칙입니다.
-
-- 루트 `AGENTS.md`는 짧은 맵으로 유지합니다. 전체 정책 문서를 붙여넣는 용도로 쓰지 않습니다.
-- 지속 정책은 소스 오브 트루스 경로에 저장합니다.
-  - `PROJECT.md` (프로젝트 계약)
-  - `docs/guidelines/` 또는 `.claude/docs/guidelines/` (운영 가이드)
-  - `.claude/rules/` (강제 규칙)
-- 핵심 맵/계약 문서에는 `Last-Reviewed: YYYY-MM-DD`를 기록하고 주기적으로 갱신합니다.
-- 구조 변경 후 `.claude/scripts/knowledge-repo-audit.sh`를 실행해 링크/신선도를 점검합니다.
+- 루트 `AGENTS.md`는 짧은 맵으로 유지합니다.
+- 지속 정책은 아래 소스 오브 트루스 경로에 저장합니다.
+  - `PROJECT.md`
+  - `docs/guidelines/` 또는 `.claude/docs/guidelines/`
+  - `.claude/rules/`
+- 핵심 맵/계약 문서에는 `Last-Reviewed: YYYY-MM-DD`를 기록합니다.
+- 구조 변경 후 `.claude/scripts/knowledge-repo-audit.sh`를 실행합니다.
 
 ## 검증/명령
-프로젝트에서 사용하는 주요 명령어를 나열합니다.
 
-- `[개발 서버 실행 명령]`
-- `[빌드 명령]`
-- `[린트 명령]`
-- `[타입 체크 명령]`
-- `[테스트 실행 명령]`
+- `bash .claude/scripts/knowledge-repo-audit.sh`
+- `bash .claude/scripts/verify-code-policy.sh`
+- `bash .claude/scripts/workflow-enforcement.sh verify`
+- `bash .claude/scripts/verify-phase-runtime-parity.sh docs/implementation`
+- `bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh`
 
 ## 환경 변수
-프로젝트에서 사용하는 환경 변수 목록과 설명을 작성합니다.
 
+```text
+KNOWLEDGE_REVIEW_MAX_DAYS="knowledge audit 의 review freshness window override"
+KNOWLEDGE_REQUIRE_PROJECT_FILLED="audit 시 PROJECT 문서 채움 강제"
+KNOWLEDGE_ALWAYS_LOADED_RULE_LINE_MAX="rules 라인 예산 override"
+KNOWLEDGE_ALWAYS_LOADED_TOTAL_LINE_MAX="always-loaded 총 라인 예산 override"
+KNOWLEDGE_ALWAYS_LOADED_TOKEN_MAX="always-loaded 토큰 예산 override"
+HARNESS_KNOWLEDGE_AUDIT_FILE="knowledge-audit JSON 출력 경로"
+VERIFY_CODE_POLICY_MAX_FILE_LINES="code-policy 파일 길이 제한"
+VERIFY_CODE_POLICY_BASELINE_FILE="code-policy 예외 baseline 파일"
+PHASE_RUNTIME_PARITY_KEEP_TMP="runtime parity 디버깅용 임시 워크스페이스 유지"
 ```
-[환경 변수명]="[설명 또는 예시 값]"
-```
-
----
-
-**이 파일은 프로젝트별로 작성해야 하는 템플릿입니다. 각 섹션을 프로젝트 특성에 맞게 수정하십시오.**
