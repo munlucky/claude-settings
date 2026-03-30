@@ -1,50 +1,100 @@
 #!/usr/bin/env node
 
 /**
- * Memory MCP Wrapper
- * 현재 작업 디렉토리 기준으로 memory.json 경로를 동적으로 설정하고
- * @modelcontextprotocol/server-memory를 실행합니다.
- * 
- * Mac/Windows/Linux 모두 호환
+ * Memory MCP wrapper.
+ * - Resolves a per-project memory file from the current working directory
+ * - Repairs missing or malformed memory.json before launch
+ * - Starts server-memory with OS-safe command resolution
+ *
+ * Works in Node ESM projects on macOS, Linux, and Windows.
  */
 
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
-// 현재 작업 디렉토리 기준 memory.json 경로
 const cwd = process.cwd();
-const memoryFilePath = path.join(cwd, '.claude', 'memory.json');
-
-// .claude 디렉토리가 없으면 생성
-const claudeDir = path.join(cwd, '.claude');
-if (!fs.existsSync(claudeDir)) {
-  fs.mkdirSync(claudeDir, { recursive: true });
-}
-
-// memory.json 파일이 없으면 초기화
-if (!fs.existsSync(memoryFilePath)) {
-  fs.writeFileSync(memoryFilePath, JSON.stringify({ entities: [], relations: [] }, null, 2));
-  console.error(`Created: ${memoryFilePath}`);
-}
-
-// 환경변수 설정
-process.env.MEMORY_FILE_PATH = memoryFilePath;
-
-// npx로 memory server 실행
-const isWindows = process.platform === 'win32';
-
-const child = spawn('npx', ['-y', '@modelcontextprotocol/server-memory'], {
-  stdio: 'inherit',
-  env: process.env,
-  shell: isWindows  // Windows에서는 shell을 통해 실행해야 함
+const claudeDir = path.resolve(cwd, '.claude');
+const memoryFilePath = path.resolve(claudeDir, 'memory.json');
+const emptyGraph = () => ({
+  entities: [],
+  relations: [],
 });
 
-child.on('error', (err) => {
-  console.error('Failed to start memory server:', err);
+function writeMemoryFile(filePath, graph) {
+  fs.writeFileSync(filePath, `${JSON.stringify(graph, null, 2)}\n`, 'utf8');
+}
+
+function ensureMemoryFile(filePath) {
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  }
+
+  if (!fs.existsSync(filePath)) {
+    writeMemoryFile(filePath, emptyGraph());
+    console.error(`[memory-mcp] created ${filePath}`);
+    return;
+  }
+
+  const raw = fs.readFileSync(filePath, 'utf8').trim();
+  if (!raw) {
+    writeMemoryFile(filePath, emptyGraph());
+    console.error(`[memory-mcp] initialized empty ${filePath}`);
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      !Array.isArray(parsed.entities) ||
+      !Array.isArray(parsed.relations)
+    ) {
+      throw new Error('memory.json must contain { entities: [], relations: [] }');
+    }
+  } catch (error) {
+    const backupPath = `${filePath}.broken-${Date.now()}.bak`;
+    fs.copyFileSync(filePath, backupPath);
+    writeMemoryFile(filePath, emptyGraph());
+    console.error(
+      `[memory-mcp] repaired malformed memory file and backed it up to ${backupPath}`,
+    );
+    console.error(`[memory-mcp] original parse error: ${error.message}`);
+  }
+}
+
+ensureMemoryFile(memoryFilePath);
+
+const env = {
+  ...process.env,
+  MEMORY_FILE_PATH: memoryFilePath,
+};
+
+const isWindows = process.platform === 'win32';
+const command = isWindows ? 'cmd.exe' : 'npx';
+const args = isWindows
+  ? ['/d', '/s', '/c', 'npx', '-y', '@modelcontextprotocol/server-memory']
+  : ['-y', '@modelcontextprotocol/server-memory'];
+
+const child = spawn(command, args, {
+  stdio: 'inherit',
+  env,
+  shell: false,
+});
+
+child.on('error', (error) => {
+  console.error('[memory-mcp] failed to start server-memory');
+  console.error('[memory-mcp] command:', command, args.join(' '));
+  console.error('[memory-mcp] detail:', error.message);
   process.exit(1);
 });
 
-child.on('exit', (code) => {
-  process.exit(code || 0);
+child.on('exit', (code, signal) => {
+  if (signal) {
+    process.kill(process.pid, signal);
+    return;
+  }
+
+  process.exit(code ?? 0);
 });
