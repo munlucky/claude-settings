@@ -5,7 +5,7 @@ applies-to:
   - moonshot-orchestrator
   - pre-flight-check
   - doc-auto-sync
-lastReviewed: 2026-03-05
+lastReviewed: 2026-03-30
 ---
 
 # Knowledge Repository Operations
@@ -16,7 +16,7 @@ Keep agent knowledge usable at runtime by separating:
 
 - Entry map (fast discovery)
 - Source of truth (durable policy/procedure)
-- Mechanical checks (freshness/link integrity)
+- Mechanical checks (freshness/link integrity/localization parity)
 
 ## 2. Operating Model
 
@@ -62,6 +62,7 @@ Keep agent knowledge usable at runtime by separating:
 - Operational guides: review every 90 days.
 - Broken local links are blocking issues.
 - Missing review date is a warning until backfilled.
+- Rule documents with Korean counterparts must keep structural/content parity, not just file presence.
 
 ## 6. Always-Loaded Context Budget
 
@@ -87,6 +88,7 @@ Output:
 
 - Console summary
 - JSON artifact: `.claude/knowledge-repo-audit-<runId>.json`
+- Rule localization parity results for `.claude/rules/**` <-> `.claude/docs/ko/rules/**`
 
 Supported environment overrides:
 

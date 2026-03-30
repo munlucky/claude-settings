@@ -6,6 +6,7 @@
 # - always-loaded context budget is within limits
 # - PROJECT placeholders can be optionally enforced
 # - duplicated rule lines are flagged
+# - localized rule pairs stay structurally/content synchronized
 
 set -euo pipefail
 
@@ -51,6 +52,8 @@ declare -a MISSING_REVIEW_DATE=()
 declare -a CONTEXT_BUDGET_VIOLATIONS=()
 declare -a PROJECT_PLACEHOLDER_HITS=()
 declare -a DUPLICATE_RULE_LINES=()
+declare -a LOCALIZED_RULE_MISSING_PAIRS=()
+declare -a LOCALIZED_RULE_PARITY_ISSUES=()
 declare -a RULE_FILES=()
 
 ALWAYS_LOADED_RULE_LINES=0
@@ -373,6 +376,155 @@ check_duplicate_rule_lines() {
   fi
 }
 
+check_localized_rule_parity() {
+  local en_root="$ROOT_DIR/.claude/rules"
+  local ko_root="$ROOT_DIR/.claude/docs/ko/rules"
+  local en_file
+  local ko_file
+  local rel
+  local ko_rel
+  local en_rel
+  local output
+
+  if [ ! -d "$en_root" ]; then
+    return 0
+  fi
+
+  if [ ! -d "$ko_root" ]; then
+    ERRORS+=("Missing localized rules directory: .claude/docs/ko/rules")
+    return 0
+  fi
+
+  while IFS= read -r en_file; do
+    rel="${en_file#$en_root/}"
+    ko_rel="${rel%.md}.ko.md"
+    ko_file="$ko_root/$ko_rel"
+
+    if [ ! -f "$ko_file" ]; then
+      LOCALIZED_RULE_MISSING_PAIRS+=(".claude/rules/$rel -> missing .claude/docs/ko/rules/$ko_rel")
+      continue
+    fi
+
+    output="$(
+      python3 - "$en_file" "$ko_file" "$rel" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+en_file, ko_file, rel = sys.argv[1:4]
+
+def strip_frontmatter(text: str) -> str:
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                return "\n".join(lines[i + 1 :])
+    return text
+
+def normalize(text: str):
+    text = strip_frontmatter(text)
+    headings = []
+    bullet_count = 0
+    numbered_count = 0
+    code_fence_count = 0
+    anchors = set()
+
+    for line in text.splitlines():
+        if line.startswith("```"):
+            code_fence_count += 1
+
+        heading_match = re.match(r"^(#{1,6})\s+", line)
+        if heading_match:
+            headings.append(len(heading_match.group(1)))
+
+        if re.match(r"^\s*[-*]\s+", line):
+            bullet_count += 1
+
+        if re.match(r"^\s*\d+\.\s+", line):
+            numbered_count += 1
+
+        for token in re.findall(r"`([^`]+)`", line):
+            token = " ".join(token.strip().split())
+            if token:
+                anchors.add(token)
+
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", line):
+            target = target.split("#", 1)[0].strip()
+            if not target:
+                continue
+            if re.match(r"^(https?://|mailto:|#)", target):
+                continue
+            anchors.add(target)
+
+        for token in re.findall(r"(?:(?:\./)?\.claude/[A-Za-z0-9_./-]+\.(?:md|yaml|sh)|[A-Z][A-Z0-9_]+\.md)", line):
+            anchors.add(token)
+
+    return {
+        "headings": headings,
+        "bullet_count": bullet_count,
+        "numbered_count": numbered_count,
+        "code_fence_count": code_fence_count,
+        "anchors": anchors,
+    }
+
+en = normalize(Path(en_file).read_text(encoding="utf-8"))
+ko = normalize(Path(ko_file).read_text(encoding="utf-8"))
+issues = []
+
+if en["headings"] != ko["headings"]:
+    issues.append(f"heading levels {en['headings']} != {ko['headings']}")
+
+if en["bullet_count"] != ko["bullet_count"]:
+    issues.append(f"bullet count {en['bullet_count']} != {ko['bullet_count']}")
+
+if en["numbered_count"] != ko["numbered_count"]:
+    issues.append(f"numbered count {en['numbered_count']} != {ko['numbered_count']}")
+
+if en["code_fence_count"] != ko["code_fence_count"]:
+    issues.append(f"code fence count {en['code_fence_count']} != {ko['code_fence_count']}")
+
+missing_anchors = sorted(en["anchors"] - ko["anchors"])
+extra_anchors = sorted(ko["anchors"] - en["anchors"])
+if missing_anchors:
+    sample = ", ".join(missing_anchors[:6])
+    if len(missing_anchors) > 6:
+        sample += ", ..."
+    issues.append(f"missing anchors [{sample}]")
+
+if extra_anchors:
+    sample = ", ".join(extra_anchors[:6])
+    if len(extra_anchors) > 6:
+        sample += ", ..."
+    issues.append(f"extra anchors [{sample}]")
+
+if issues:
+    print(f".claude/rules/{rel} :: " + "; ".join(issues))
+PY
+    )"
+
+    if [ -n "$output" ]; then
+      LOCALIZED_RULE_PARITY_ISSUES+=("$output")
+    fi
+  done < <(find "$en_root" -type f -name '*.md' | sort)
+
+  while IFS= read -r ko_file; do
+    rel="${ko_file#$ko_root/}"
+    en_rel="${rel%.ko.md}.md"
+    en_file="$en_root/$en_rel"
+    if [ ! -f "$en_file" ]; then
+      LOCALIZED_RULE_MISSING_PAIRS+=(".claude/docs/ko/rules/$rel -> missing .claude/rules/$en_rel")
+    fi
+  done < <(find "$ko_root" -type f -name '*.ko.md' | sort)
+
+  if [ "${#LOCALIZED_RULE_MISSING_PAIRS[@]}" -gt 0 ]; then
+    ERRORS+=("Localized rule file pairs missing: ${#LOCALIZED_RULE_MISSING_PAIRS[@]}")
+  fi
+
+  if [ "${#LOCALIZED_RULE_PARITY_ISSUES[@]}" -gt 0 ]; then
+    ERRORS+=("Localized rule content parity failed: ${#LOCALIZED_RULE_PARITY_ISSUES[@]}")
+  fi
+}
+
 main() {
   mkdir -p "$ROOT_DIR/.claude"
   load_rule_files
@@ -421,6 +573,7 @@ main() {
   check_always_loaded_budget
   check_project_placeholders
   check_duplicate_rule_lines
+  check_localized_rule_parity
 
   if [ "${#MISSING_REVIEW_DATE[@]}" -gt 0 ]; then
     WARNINGS+=("Missing Last-Reviewed metadata in ${#MISSING_REVIEW_DATE[@]} file(s)")
@@ -468,7 +621,9 @@ main() {
     printf '    "missingReviewDate": %s,\n' "${#MISSING_REVIEW_DATE[@]}"
     printf '    "contextBudgetViolations": %s,\n' "${#CONTEXT_BUDGET_VIOLATIONS[@]}"
     printf '    "projectPlaceholderHits": %s,\n' "${#PROJECT_PLACEHOLDER_HITS[@]}"
-    printf '    "duplicateRuleLines": %s\n' "${#DUPLICATE_RULE_LINES[@]}"
+    printf '    "duplicateRuleLines": %s,\n' "${#DUPLICATE_RULE_LINES[@]}"
+    printf '    "localizedRuleMissingPairs": %s,\n' "${#LOCALIZED_RULE_MISSING_PAIRS[@]}"
+    printf '    "localizedRuleParityIssues": %s\n' "${#LOCALIZED_RULE_PARITY_ISSUES[@]}"
     printf '  },\n'
     printf '  "details": {\n'
     printf '    "errors": ['; append_json_array ERRORS; printf '],\n'
@@ -478,7 +633,9 @@ main() {
     printf '    "missingReviewDate": ['; append_json_array MISSING_REVIEW_DATE; printf '],\n'
     printf '    "contextBudgetViolations": ['; append_json_array CONTEXT_BUDGET_VIOLATIONS; printf '],\n'
     printf '    "projectPlaceholderHits": ['; append_json_array PROJECT_PLACEHOLDER_HITS; printf '],\n'
-    printf '    "duplicateRuleLines": ['; append_json_array DUPLICATE_RULE_LINES; printf ']\n'
+    printf '    "duplicateRuleLines": ['; append_json_array DUPLICATE_RULE_LINES; printf '],\n'
+    printf '    "localizedRuleMissingPairs": ['; append_json_array LOCALIZED_RULE_MISSING_PAIRS; printf '],\n'
+    printf '    "localizedRuleParityIssues": ['; append_json_array LOCALIZED_RULE_PARITY_ISSUES; printf ']\n'
     printf '  }\n'
     printf '}\n'
   } > "$OUT_FILE"
