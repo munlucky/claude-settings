@@ -37,6 +37,7 @@ Ignored:
 - temporary worktrees
 - generated repos or copied fixtures
 - logs, verdict JSON, score snapshots, and other run outputs
+- harness quality run summaries under `.tmp/harness-runs/**/harness-quality-run.json`
 - any artifact that exists only to test the harness rather than define it
 
 The promotion source of truth is `.claude/harness-promotion-paths.txt`.
@@ -98,6 +99,7 @@ That step is intentionally explicit because it will modify the `main` worktree.
 4. Run the promotion script to refresh the isolated candidate worktree.
 5. Review and commit on the candidate branch.
 6. Update `main` only in a deliberate release step.
+7. Normalize harness quality from accumulated real run summaries before claiming the harness is ready.
 
 ## Hard Rules
 
