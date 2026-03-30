@@ -38,6 +38,9 @@ Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 Codex 네이�
 # 리뷰 팀 실행
 /moonshot-teams-runner review-team
 
+# 또는 pattern 기준으로 먼저 선택
+/moonshot-teams-runner --pattern fanout-fanin
+
 # 연구 팀 실행
 /moonshot-teams-runner research-team
 
@@ -69,9 +72,14 @@ Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 Codex 네이�
 /moonshot-teams-runner --list
 ```
 
+오케스트레이션된 실행에서는 pattern-first selection을 우선합니다.
+직접 팀 이름을 주는 방식은 수동 override나 디버깅 용도로 유지합니다.
+
 ## 사용 가능한 팀
 
 ### 1. review-team (병렬 리뷰)
+
+Pattern: `fanout-fanin`
 
 병렬로 코드 리뷰 수행:
 
@@ -89,6 +97,8 @@ communication: enabled
 
 ### 2. research-team (병렬 연구)
 
+Pattern: `fanout-fanin`
+
 병렬로 분석 및 연구 수행:
 
 ```yaml
@@ -104,6 +114,8 @@ communication: enabled
 
 ### 3. verify-team (이의 제기 검증)
 
+Pattern: `producer-reviewer`
+
 구현 결과를 다각도로 검증:
 
 ```yaml
@@ -118,6 +130,8 @@ communication: enabled (debateRounds: 2)
 **활용 시점**: 중요 기능 완료 후 품질 검증
 
 ### 4. planning-team (계획 검증)
+
+Pattern: `fanout-fanin`
 
 계획 단계에서 병렬 검증:
 
@@ -135,6 +149,8 @@ communication: enabled
 
 ### 5. quality-team (품질 검증)
 
+Pattern: `fanout-fanin`
+
 구현 후 품질 검증:
 
 ```yaml
@@ -150,6 +166,8 @@ communication: enabled
 **활용 시점**: 테스트 완료 후
 
 ### 6. analysis-team (PM 분석 병렬화)
+
+Pattern: `fanout-fanin`
 
 오케스트레이터 초기 분석 병렬화:
 
@@ -167,6 +185,8 @@ communication: enabled
 
 ### 7. fix-team (문제 해결)
 
+Pattern: `supervisor`
+
 에러 발생 시 병렬 해결:
 
 ```yaml
@@ -182,6 +202,8 @@ communication: enabled
 **활용 시점**: 빌드 실패 또는 보안 문제 발생 시
 
 ### 8. impl-team (병렬 구현) 🆕
+
+Pattern: `hierarchical-delegation`
 
 새 모듈/기능을 병렬로 구현:
 
@@ -204,6 +226,8 @@ communication: enabled
 - `fileOwnership`: 각 팀원이 다른 파일 소유, 충돌 방지
 
 ### 9. cross-layer-team (교차 계층) 🆕
+
+Pattern: `hierarchical-delegation`
 
 프론트엔드/백엔드/테스트 병렬 구현:
 
@@ -229,6 +253,8 @@ communication: enabled
 - 팀원간 API 스펙 논의 가능
 
 ### 10. debug-team (디버깅) 🆕
+
+Pattern: `producer-reviewer`
 
 경쟁 가설로 버그 조사:
 
@@ -384,13 +410,20 @@ skillChain:
   - ...                      # moonshot-decide-sequence 결과
   - team-leader-agent        # 팀 모드 활성화 시 fork 실행
 notes:
-  - "team=review-team, trigger=after:implementation-runner"
+  - "pattern=fanout-fanin, team=review-team, trigger=after:implementation-runner"
 ```
 
 팀 트리거 가이드(오케스트레이터 스키마 정렬):
 1. `analysis-team`/`research-team`/`planning-team`: PM 분석 단계(2.1~2.5)에서 사용합니다.
 2. `impl-team`/`cross-layer-team`: 복잡한 구현 단계에서 사용합니다.
 3. `review-team`/`quality-team`/`verify-team`/`fix-team`: 구현 이후 또는 실패 이벤트 발생 시 사용합니다.
+
+패턴 선택 가이드:
+1. 병렬 분석, 리뷰, 검증에는 `fanout-fanin`
+2. 이의 제기 검증이나 경쟁 가설 디버깅에는 `producer-reviewer`
+3. 실패 복구 조율에는 `supervisor`
+4. 소유권이 분리된 병렬 구현에는 `hierarchical-delegation`
+5. 구체 팀 이름을 직접 받으면 수동 override로 취급하되, 해당 팀의 추론된 pattern도 함께 기록합니다.
 
 ## 토큰 사용량 주의
 

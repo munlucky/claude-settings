@@ -1,6 +1,19 @@
 ---
 name: product-orchestrator
 description: 요청이 아직 idea-to-plan 단계일 때, 구현 전에 경계가 있는 product-definition 산출물을 만들기 위해 사용합니다.
+layer: orchestrator
+loads:
+  - product-definition-artifacts
+  - verdict-summaries
+deepReferences:
+  - .claude/docs/guidelines/product-definition-workflow.md
+  - .claude/docs/guidelines/requirements-traceability-harness.md
+outputArtifacts:
+  - PRODUCT_INTENT.md
+  - PRD.md
+  - SOLUTION.md
+  - SPEC.md
+  - PLAN.md
 triggers:
   - "product orchestrator"
   - "product definition"
@@ -54,16 +67,21 @@ triggers:
 
 1. `PRODUCT_INTENT.md` 생성 또는 갱신
 2. `PRODUCT_INTENT`에 대해 `product-gate-reviewer` 실행
-3. `PRD.md` 생성 또는 갱신
-4. `PRD`에 대해 `product-gate-reviewer` 실행
-5. `SOLUTION.md` 생성 또는 갱신
-6. `SOLUTION`에 대해 `product-gate-reviewer` 실행
-7. `SPEC.md`와 필요한 `ADR/*.md` 생성 또는 갱신
-8. `SPEC`에 대해 `product-gate-reviewer` 실행
-9. `PLAN.md` 생성 또는 갱신
-10. `task-slicer`로 `tasks/*.md` 생성
-11. `PLAN`에 대해 `product-gate-reviewer` 실행
-12. 결과 패키지를 `moonshot-orchestrator`로 핸드오프
+3. `PRODUCT_INTENT`에 대해 `plan-ceo-review` 실행
+4. `PRD.md` 생성 또는 갱신
+5. `PRD`에 대해 `product-gate-reviewer` 실행
+6. `PRD`에 대해 `plan-ceo-review` 실행
+7. `SOLUTION.md` 생성 또는 갱신
+8. `SOLUTION`에 대해 `product-gate-reviewer` 실행
+9. `SPEC.md`와 필요한 `ADR/*.md` 생성 또는 갱신
+10. `SPEC`에 대해 `product-gate-reviewer` 실행
+11. `SPEC`에 대해 `plan-eng-review` 실행
+12. `PLAN.md` 생성 또는 갱신
+13. `task-slicer`로 `tasks/*.md` 생성
+14. `PLAN`에 대해 `product-gate-reviewer` 실행
+15. `PLAN`에 대해 `plan-ceo-review` 실행
+16. `PLAN`에 대해 `plan-eng-review` 실행
+17. 결과 패키지를 `moonshot-orchestrator`로 핸드오프
 
 모든 단계에서:
 - 모호함 때문에 멈추기 전에 `assumption-ledger`를 먼저 사용
@@ -149,6 +167,8 @@ PLAN이 통과되면:
 - `.claude/docs/guidelines/product-definition-workflow.md`
 - `.claude/templates/product-definition/`
 - `.claude/skills/product-gate-reviewer/SKILL.md`
+- `.claude/skills/plan-ceo-review/SKILL.md`
+- `.claude/skills/plan-eng-review/SKILL.md`
 - `.claude/skills/task-slicer/SKILL.md`
 - `.claude/skills/assumption-ledger/SKILL.md`
 - `.claude/skills/moonshot-orchestrator/SKILL.md`

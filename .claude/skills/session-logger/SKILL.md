@@ -1,6 +1,16 @@
 ---
 name: session-logger
 description: Record decisions, issues, and handoff notes during or after work.
+layer: agent_extending
+loads:
+  - session-state
+  - handoff-artifacts
+deepReferences:
+  - .claude/docs/solutions/README.md
+outputArtifacts:
+  - HANDOFF.md
+  - session-log
+  - solution-asset
 ---
 
 # Session Logger Skill
@@ -157,3 +167,17 @@ Execution-bridge variant:
 | Decision | `decision:{feature}:{topic}` | API pattern choice |
 | Progress | `progress:{feature}` | Phase 1 complete |
 | Solution | `solution:{issue-type}` | snake_case fix |
+
+## Solution Promotion
+
+When a session captures a reusable remediation pattern:
+
+1. identify whether the lesson meets the promotion rules in `.claude/docs/solutions/README.md`
+2. create or update a solution asset under `.claude/docs/solutions/`
+3. record the source artifacts that justified the promotion
+
+Promote when:
+
+- retries exposed a reusable fix pattern
+- the verification recipe should be reused later
+- the lesson changes future plan or guardrail decisions

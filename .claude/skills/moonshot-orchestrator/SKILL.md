@@ -25,9 +25,12 @@ If the work is large, long-running, or organized around phase documents, redirec
 /moonshot-orchestrator <user-request>
 /moonshot-orchestrator <user-request> --use-teams
 /moonshot-orchestrator <user-request> --use-teams=review-team
+/moonshot-orchestrator <user-request> --use-teams --team-pattern=fanout-fanin
 ```
 
 > Available teams: review-team, research-team, verify-team, planning-team, quality-team, analysis-team, fix-team, impl-team, cross-layer-team, debug-team. Details in `moonshot-teams-runner/SKILL.md`.
+
+When team mode is enabled, prefer choosing a collaboration `pattern` first, then the concrete team preset.
 
 ## Entry Policy
 
@@ -132,6 +135,11 @@ phase: unknown
 complexity: unknown
 missingInfo: []
 decisions: { recommendedAgents: [], bundleChain: [], skillChain: [], parallelGroups: [] }
+teamSelection:
+  requestedPattern: null
+  selectedPattern: null
+  selectedTeam: null
+  selectionReason: null
 fixForward:
   enabled: true
   policy: { critical: block, high: fix-forward-task, medium: merge-with-note, low: auto-approve }
@@ -254,6 +262,31 @@ Merge signals:
 Routing rule:
 - If `productDefinitionRequest == true` and `productPackageReady == false`, hand off to `product-orchestrator`
 - If `productPackageReady == true`, skip upstream planning stages and use the handoff package as the implementation baseline
+
+#### 2.0.6a Team pattern selection
+
+When `signals.useAgentTeams == true`, resolve the collaboration pattern before selecting a concrete team preset.
+
+Pattern-first routing order:
+
+1. infer the dominant work shape
+2. choose one of:
+   - `fanout-fanin`
+   - `producer-reviewer`
+   - `supervisor`
+   - `hierarchical-delegation`
+   - `pipeline`
+3. select the matching team from `.claude/templates/agent-teams-config.yaml`
+4. record the decision in `teamSelection`
+5. append a summarized note and workflow evidence entry
+
+Default mapping:
+
+- early analysis/research/review => `fanout-fanin`
+- adversarial verification or competing hypotheses => `producer-reviewer`
+- recovery routing after failures => `supervisor`
+- multi-owner implementation or cross-layer work => `hierarchical-delegation`
+- reserve `pipeline` for future sequential stage teams; do not force-fit an existing parallel team into this pattern
 
 #### 2.0.7 Execution bridge defaults
 
@@ -464,8 +497,10 @@ Run `decisions.skillChain` in order.
 
 **Agent Teams Integration (--use-teams):**
 1. Set `signals.useAgentTeams = true`
-2. Fork `team-leader-agent` with team config (see `moonshot-teams-runner/SKILL.md` for team details)
-3. Merge summarized `teamReport` into `analysisContext.notes`
+2. Resolve `teamSelection.selectedPattern` before choosing `teamSelection.selectedTeam`
+3. Fork `team-leader-agent` with the selected team config (see `moonshot-teams-runner/SKILL.md` for team details)
+4. Merge summarized `teamReport` into `analysisContext.notes`
+5. Record `selectedPattern`, `selectedTeam`, and `selectionReason` in notes or workflow evidence
 
 > [!CAUTION]
 > Agent Teams: ~13K tokens (2-member) / ~20K tokens (3-member). Use for critical reviews or complex implementations only.

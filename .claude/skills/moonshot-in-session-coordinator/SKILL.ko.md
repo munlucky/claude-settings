@@ -81,6 +81,7 @@ attemptInput:
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
   scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
+  worksetPath: "docs/implementation/execution/02-core-implementation/WORKSET.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
 ```
@@ -91,6 +92,7 @@ attemptInput:
 - 재시도 메모리는 `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`만 사용합니다.
 - `SPRINT_CONTRACT.md`의 policy anchors와 필수 검증 명령은 attempt 입력의 필수 항목으로 취급합니다.
 - `SCORECARD.md`를 phase의 객관적인 완료 상태로 사용합니다.
+- `WORKSET.md`에는 현재 목표, 필수 읽기 문서, 생성 아티팩트, 미해결 리스크를 계속 유지합니다.
 
 ### 3. fresh attempt 생성
 
@@ -198,7 +200,7 @@ coordinatorResult:
 - 이 스킬은 coordinator 전용이며, 직접 구현 worker가 되면 안 됩니다.
 - 모든 재시도는 fresh `phase-attempt-agent`로 실행해야 합니다.
 - coordinator 세션은 round 사이에 summary-only 상태를 유지합니다.
-- 재시도 근거는 누적 채팅 컨텍스트가 아니라 `QA_REPORT.md` / `HANDOFF.md` / `SCORECARD.md`여야 합니다.
+- 재시도 근거는 누적 채팅 컨텍스트가 아니라 `QA_REPORT.md` / `HANDOFF.md` / `SCORECARD.md` / `WORKSET.md`여야 합니다.
 - attempt agent는 재귀적 `moonshot-phase-runner` 삽입을 피하기 위해 반드시 `phaseAttemptMode=true`로 `moonshot-orchestrator`를 실행해야 합니다.
 - strict/meta-harness 작업에서는 active `SPRINT_CONTRACT.md`에 policy anchors가 없으면 새 attempt를 시작하지 않습니다.
 - `attemptResult.status=completed`라도 해당 시도의 verifier evidence가 최신이고 contract 기준으로 완전하며 score도 완료일 때만 phase 완료로 반영합니다.

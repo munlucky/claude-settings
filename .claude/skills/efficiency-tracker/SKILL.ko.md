@@ -57,6 +57,15 @@ triggers:
   - 워크플로우 개선 권고
   - 다음 실행 실험 계획 (최대 3개)
 - 필요 시 session-log/day-...에 타임라인 항목 추가
+- 필요 시 `.claude/team-metrics-<runId>.json` 산출:
+  - `selectedPattern`
+  - `selectedTeam`
+  - `selectionReason`
+  - `retryCount`
+  - `handoffCount`
+  - `indeterminateRatio`
+  - `verifierFailureCategories`
+  - `completionLeadTimeSeconds`
 
 ## 실행 스니펫
 ```

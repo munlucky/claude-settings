@@ -27,6 +27,7 @@ phaseRunnerResult:
   planDir: "docs/implementation/"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
+  worksetTemplate: ".claude/templates/execution/WORKSET.template.md"
   executionRuntime: "auto"            # auto | claude | codex
   prepareOnly: false
   autoStartExecution: true
@@ -53,6 +54,7 @@ phaseRunnerResult:
 - `/moonshot-in-session-coordinator`를 호출합니다.
 - `phaseRunnerResult`를 그대로 전달합니다.
 - 현재 런타임이 fresh attempt를 안정적으로 계속 생성하지 못하면, 완전 자율 실행인 척하지 말고 런타임 측에서 `delegated-terminal`로 폴백하는 편이 안전합니다.
+- active slice가 있으면 `.claude/templates/execution/WORKSET.template.md`로 `WORKSET.md` 초기화를 보장합니다.
 
 ### 3. runtime 처리
 
@@ -90,3 +92,4 @@ phaseExecutionResult:
 - `/moonshot-in-session-coordinator`
 - `.claude/scripts/agent-loop.sh`
 - `.claude/scripts/moonshot-phase-dispatch.sh`
+- `.claude/templates/execution/WORKSET.template.md`

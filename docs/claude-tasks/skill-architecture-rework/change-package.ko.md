@@ -14,7 +14,7 @@ Last-Reviewed: 2026-03-27
 
 대상 파일:
 - `.claude/docs/guidelines/skill-composition.md`
-- `.claude/docs/tasks/skill-architecture-rework/*`
+- `docs/claude-tasks/skill-architecture-rework/*`
 - entrypoint 문서 정렬이 필요할 때만 `README.md`
 - 공개/내부 상태 선언이 필요한 일부 `SKILL.md`
 

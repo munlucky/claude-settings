@@ -27,6 +27,7 @@ phaseRunnerResult:
   planDir: "docs/implementation/"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
+  worksetTemplate: ".claude/templates/execution/WORKSET.template.md"
   executionRuntime: "auto"            # auto | claude | codex
   prepareOnly: false
   autoStartExecution: true
@@ -53,6 +54,7 @@ If `executionMode == in-session-coordinator`:
 - invoke `/moonshot-in-session-coordinator`
 - pass through `phaseRunnerResult`
 - when the active runtime cannot reliably keep spawning fresh attempts, prefer a runtime-side fallback to `delegated-terminal` instead of pretending the run is fully autonomous
+- ensure each active slice can initialize `WORKSET.md` from `.claude/templates/execution/WORKSET.template.md`
 
 ### 3. Runtime handling
 
@@ -90,3 +92,4 @@ phaseExecutionResult:
 - `/moonshot-in-session-coordinator`
 - `.claude/scripts/agent-loop.sh`
 - `.claude/scripts/moonshot-phase-dispatch.sh`
+- `.claude/templates/execution/WORKSET.template.md`
