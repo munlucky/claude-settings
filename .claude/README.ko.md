@@ -176,11 +176,12 @@ phase runner 기본 동작:
 
 ## 문서와 템플릿
 
-- 작업 문서는 `.claude/docs` 하위에 두며 경로 규칙은 `.claude/PROJECT.md`를 따릅니다.
+- 작업 문서는 `.claude/PROJECT.md`의 `documentPaths.tasksRoot` 아래에 두며, 현재 저장소는 `docs/claude-tasks`를 사용합니다.
 - 출력 템플릿: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 - 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
 - 문서 추적 완료 하네스 가이드: `.claude/docs/guidelines/requirements-traceability-harness.ko.md`
+- 재귀 개선 운영 가이드: `.claude/docs/guidelines/meta-harness-recursive-improvement.ko.md`
 - 제품 정의 템플릿: `.claude/templates/product-definition/`
 - 실행 아티팩트 템플릿: `.claude/templates/execution/`
 - downstream bootstrap reference package: `.claude/docs/reference-downstream/README.md`
@@ -190,5 +191,6 @@ phase runner 기본 동작:
 - 영문 `.md`는 ASCII만 사용하고 동일한 `.ko.md`를 함께 유지합니다.
 - 이름이나 경로를 바꾸면 이 문서와 `install-claude.sh`를 함께 갱신합니다.
 - 대상 프로젝트의 부트스트랩 문서 세트가 비어 있으면 `project-md-refresh` 스킬을 실행합니다.
+- self-host 재귀 개선은 `bash .claude/scripts/harness-prepare-recursive-worktree.sh`로 시작하고 `bash .claude/scripts/harness-promote.sh`로 candidate worktree 를 갱신한 뒤, `main` 반영은 명시적 release 단계에서만 수행합니다.
 - `project-md-refresh`는 `.claude/PROJECT.md`와 함께 `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, `docs/analysis/README.md`를 갱신해야 합니다.
 - 대상 프로젝트 검증은 `.claude/verification.contract.yaml` 같은 계약 문서로 선언하는 방식을 우선합니다.

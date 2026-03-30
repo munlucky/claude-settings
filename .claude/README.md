@@ -191,11 +191,12 @@ Phase runner default behavior:
 
 ## Docs and Templates
 
-- Keep task docs under `.claude/docs` following `.claude/PROJECT.md` path rules.
+- Keep task docs under the `documentPaths.tasksRoot` defined in `.claude/PROJECT.md` (this repo uses `docs/claude-tasks`).
 - Output templates: `.claude/templates/moonshot-output.md`, `.claude/templates/moonshot-output.ko.md`, `.claude/templates/moonshot-output.yaml`.
 - Product-definition guide: `.claude/docs/guidelines/product-definition-workflow.md`.
 - Long-running harness guide: `.claude/docs/guidelines/long-running-harness.md`.
 - Document-trace harness guide: `.claude/docs/guidelines/requirements-traceability-harness.md`.
+- Recursive improvement guide: `.claude/docs/guidelines/meta-harness-recursive-improvement.md`.
 - Product-definition templates: `.claude/templates/product-definition/`.
 - Execution artifact templates: `.claude/templates/execution/`.
 - Solution memory: `.claude/docs/solutions/README.md`.
@@ -206,4 +207,5 @@ Phase runner default behavior:
 - Keep English `.md` in ASCII and maintain matching `.ko.md` pairs.
 - If you change names or paths, update this document and `install-claude.sh`.
 - If the target project is missing its bootstrap docs, run `project-md-refresh`.
+- Recursive self-host improvements should start from `bash .claude/scripts/harness-prepare-recursive-worktree.sh`, refresh the candidate worktree through `bash .claude/scripts/harness-promote.sh`, and update `main` only in an explicit release step.
 - `project-md-refresh` should refresh `.claude/PROJECT.md` together with `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, and `docs/analysis/README.md`.

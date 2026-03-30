@@ -1,5 +1,9 @@
 # Sensitive or noisy paths should stay out of default agent context.
 .history/
+# Recursive harness experimentation state
+.tmp/harness-worktrees/
+.tmp/harness-runs/
+.tmp/harness-workspaces/
 .tmp/
 .claude/logs/
 .claude/memory.json

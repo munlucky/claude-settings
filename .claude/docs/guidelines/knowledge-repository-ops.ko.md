@@ -37,8 +37,9 @@ lastReviewed: 2026-03-30
 ### 템플릿 저장소 (현재 저장소)
 
 - 핵심 문서는 `.claude/` 아래에 둡니다.
-- 작업 메모리 기본값: `.claude/docs/tasks`
+- 작업 메모리 기본값: `docs/claude-tasks`
 - 민감하거나 노이즈가 큰 경로는 추적된 `.claudeignore` 또는 동등한 문서 정책으로 관리합니다.
+- 재귀 개선 중 생기는 상태는 `.tmp/harness-worktrees/`, `.tmp/harness-runs/`, `.claude/logs/` 같은 ignore 경로에 유지합니다.
 
 ### 설치 대상 프로젝트
 

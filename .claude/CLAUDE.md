@@ -1,12 +1,12 @@
 # Global Development Guidelines
 
-> TOC for always-loaded instructions. Keep it short.
+> TOC only. Keep it short.
 
-Last-Reviewed: 2026-03-26
+Last-Reviewed: 2026-03-30
 
 ## Overview
 
-`.claude/rules/` loads recursively. This file is Tier 1 only.
+`.claude/rules/` loads recursively. Tier 1 only.
 
 ## Tier-1 Constraints
 
@@ -26,7 +26,7 @@ Last-Reviewed: 2026-03-26
 
 ```yaml
 documentPaths:
-  tasksRoot: ".claude/docs/tasks"
+  tasksRoot: "docs/claude-tasks"
   agreementsRoot: ".claude/docs/agreements"
   guidelinesRoot: ".claude/docs/guidelines"
 ```
@@ -38,4 +38,5 @@ For token/archive policy, see `document-memory-policy.md`.
 - `@.claude/PROJECT.md`
 - `@.claude/verification.contract.yaml`
 - `@.claude/docs/guidelines/knowledge-repository-ops.md`
+- `@.claude/docs/guidelines/meta-harness-recursive-improvement.md`
 - `@.claude/rules/agents/agent-definition.md`

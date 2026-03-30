@@ -37,8 +37,9 @@ Keep agent knowledge usable at runtime by separating:
 ### Template repository (this repo)
 
 - Core docs live under `.claude/`
-- Task memory default: `.claude/docs/tasks`
+- Task memory default: `docs/claude-tasks`
 - Keep a tracked `.claudeignore` or equivalent documented ignore policy for sensitive/noisy paths.
+- Keep recursive-improvement state under ignored paths such as `.tmp/harness-worktrees/`, `.tmp/harness-runs/`, and `.claude/logs/`.
 
 ### Installed target project
 
