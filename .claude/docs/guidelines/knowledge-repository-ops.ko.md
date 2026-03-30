@@ -5,7 +5,7 @@ applies-to:
   - moonshot-orchestrator
   - pre-flight-check
   - doc-auto-sync
-lastReviewed: 2026-03-05
+lastReviewed: 2026-03-30
 ---
 
 # Knowledge Repository 운영 지침
@@ -16,7 +16,7 @@ lastReviewed: 2026-03-05
 
 - 엔트리 맵(빠른 탐색)
 - 소스 오브 트루스(지속 정책/절차)
-- 기계 점검(신선도/링크 무결성)
+- 기계 점검(신선도/링크 무결성/로컬라이제이션 parity)
 
 ## 2. 운영 모델
 
@@ -62,6 +62,7 @@ lastReviewed: 2026-03-05
 - 운영 가이드: 90일 주기 검토
 - 로컬 링크 깨짐은 차단 이슈로 처리
 - 리뷰 날짜 누락은 백필 전까지 경고로 처리
+- 한국어 쌍이 있는 rule 문서는 파일 존재뿐 아니라 구조/내용 parity 도 유지해야 합니다.
 
 ## 6. 항상 로드되는 컨텍스트 예산
 
@@ -87,6 +88,7 @@ lastReviewed: 2026-03-05
 
 - 콘솔 요약
 - JSON 아티팩트: `.claude/knowledge-repo-audit-<runId>.json`
+- `.claude/rules/**` <-> `.claude/docs/ko/rules/**` 규칙 로컬라이제이션 parity 결과
 
 환경 변수 오버라이드:
 

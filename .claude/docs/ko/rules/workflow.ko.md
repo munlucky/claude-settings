@@ -1,15 +1,16 @@
 # 작업 실행 방법
 
-- 가능하면 실제 액션(파일 읽기/편집, 검증 실행)을 선호합니다.
-- **자동 태스크 분석**: Claude Code 와 Codex 모두에서 사용자 요청이 코드 작업(기능 추가/변경, 버그 수정, 리팩토링 등)인 경우 `/moonshot-orchestrator` 를 정책 경계로 사용합니다.
-  - 단순 질문, 정보 조회, 읽기/설명만 하는 작업은 제외.
-  - 워크플로우 상세: `.claude/skills/moonshot-orchestrator/SKILL.md`
-- `moonshot-phase-runner`, `moonshot-phase-executor`, shell adapter 는 준비/라우팅만 담당하며, 실제 작업은 `moonshot-orchestrator` 또는 이를 실행하는 phase attempt 로 이어져야 합니다.
-- **크로스 런타임 정책 소스**: 정책은 `skills`/오케스트레이터에 두고 `commands`/hooks/scripts는 어댑터로만 사용합니다.
-- **워크플로우 프로필**: `workflowProfile`(`standard|strict`)을 사용하고 strict에서는 경고 기반 완료를 허용하지 않습니다.
-- `AGENTS.md`, `.claude/CLAUDE.md`, `.claude/rules/**`, `.claude/skills/**`, `.claude/agents/**`, `.claude/templates/execution/**`, `.claude/verification.contract.yaml`, `.claude/scripts/**` 를 수정하는 `meta_harness` 작업은 `strict` 로 실행하고 fresh verification evidence 없이 완료로 처리하지 않습니다.
-- phase 기반 실행에서는 `SPRINT_CONTRACT.md` 에 정책 앵커와 round별 필수 검증 명령을 유지합니다.
-- **스코프 확인**: 구현/리팩토링 작업의 경우 시작 전 IN/OUT 스코프 경계를 확인. `.claude/rules/scope-confirmation.md` 참고.
-- **스킬 우선순위**: 해당 작업 유형의 커스텀 스킬이나 오케스트레이터 워크플로우가 있으면 탐색적 파일 읽기 대신 즉시 사용.
-- 정보가 부족하면 질문하거나 명시적으로 저위험 가정을 언급하며 진행.
-- 복잡한 작업은 계획 -> 구현 -> 검증 -> 요약 순서로 진행.
+- 대화보다 실행을 우선합니다.
+- 먼저 `workflowProfile` 과 `executionPlane` 을 결정합니다.
+- `product_project` 는 구현 전에 project/context/verification gate 를 통과해야 합니다.
+- 사람 승인 지점은 planning closeout 뿐이며, 실행이 시작된 뒤의 루프는 blocker 나 사용자 일시중지가 없으면 자율적으로 계속됩니다.
+- 기본 흐름은 `intake -> plan -> ready/isolate -> execute -> review -> verify -> finish/handoff` 입니다.
+- 완료 전에는 반드시 review 를 거칩니다. `meta_harness` 는 `strict` 를 사용하며, strict run 은 구현 전 `workspace-isolation-gate`, 완료 전 `verification-evidence-gate` 를 통과해야 합니다.
+- 중간 이상 규모 작업이나 phase 작업은 `SPRINT_CONTRACT`, `QA_REPORT`, `HANDOFF` 를 유지해야 합니다.
+- 체크포인트, 부분 성공, 환경 구성 완료, 마일스톤, 산출물 갱신, 진행 보고는 중단이나 완료 사유가 아닙니다.
+- 명시된 완료 조건이 있으면 그 조건이 충족될 때까지 계속하고, 없으면 in-scope 작업이 남아 있고 실제 중단 사유가 없는 한 계속합니다.
+- 중단은 실제 blocker, 필요한 사용자 결정, 파괴적 변경 확인, 명시적 사용자 중단/방향 전환일 때만 허용합니다.
+- 비정상 중단 전에는 사용자 없이 가능한 다음 독립적 저위험 단계를 먼저 수행합니다.
+- 비정상 중단 시 `QA_REPORT.md` 와 `HANDOFF.md` 에 중단 사유, 시도 내용, 자율 해결 실패 이유, 해소 후 즉시 다음 단계를 기록합니다.
+- 시작 전에 IN/OUT scope 를 확인합니다. `.claude/rules/scope-confirmation.md` 참고.
+- 정보가 부족하면 질문하거나 저위험 가정으로 진행합니다.

@@ -1,17 +1,16 @@
 # How to Execute Work
 
-- Prefer actions over discussion.
-- Resolve `workflowProfile` and `executionPlane` before selection.
+- Prefer action over discussion.
+- Resolve `workflowProfile` and `executionPlane` first.
 - `product_project` must pass project/context/verification gates before implementation.
-- Human approval is planning-closeout only.
-- Medium/complex flow: `intake -> plan -> ready/isolate -> execute -> review -> verify -> finish/handoff`.
-- Review before completion.
-- `meta_harness` edits use `strict` plus fresh evidence.
-- In strict runs, pass `workspace-isolation-gate` before implementation and `verification-evidence-gate` before completion.
+- Human approval is planning-closeout only; after execution starts, loops stay autonomous unless blocked or user-paused.
+- Default flow: `intake -> plan -> ready/isolate -> execute -> review -> verify -> finish/handoff`.
+- Review before completion. `meta_harness` uses `strict`; strict runs pass `workspace-isolation-gate` before implementation and `verification-evidence-gate` before completion.
 - Medium/complex or phase work must keep `SPRINT_CONTRACT`, `QA_REPORT`, and `HANDOFF`.
-- Checkpoints, artifact refreshes, and doc/QA updates never justify stopping.
-- If in-scope work remains and there is no real stop condition, continue.
-- Any non-clean stop must record a real reason in `QA_REPORT.md` and `HANDOFF.md`.
+- Checkpoints, partial success, setup completion, milestones, refreshes, and progress reports never justify stopping or completion.
+- Continue until done criteria are met, or if none exist, while in-scope work remains and no real stop condition exists.
+- Stop only for a true blocker, a required user decision, destructive-risk confirmation, or an explicit user pause/redirect.
+- Before any non-clean stop, take the next independent low-risk step.
+- Non-clean stops must record in `QA_REPORT.md` and `HANDOFF.md`: stop reason, attempts, why autonomy failed, and next step after unblocking.
 - Confirm IN/OUT scope. See `.claude/rules/scope-confirmation.md`.
 - If info is missing, ask or use low-risk assumptions.
-- After execution starts, `execute -> review -> verify -> retry` runs autonomously unless blocked or paused by the user.
