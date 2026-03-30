@@ -1,0 +1,23 @@
+# Paths allowed to move from the recursive-improvement branch into main.
+# Keep generated task outputs and runtime artifacts out of this list.
+
+.claude/CLAUDE.md
+.claude/CLAUDE.ko.md
+.claude/PROJECT.md
+.claude/PROJECT.ko.md
+.claude/README.md
+.claude/README.ko.md
+.claude/rules
+.claude/skills
+.claude/agents
+.claude/scripts
+.claude/templates
+.claude/docs/guidelines
+.claude/docs/ko/rules
+.claude/docs/reference-downstream
+.claude/docs/runtime-parity-reference-plan
+.claude/verification.contract.yaml
+.claude/code-policy-baseline.txt
+.claude/harness-promotion-paths.txt
+.claudeignore
+.gitignore

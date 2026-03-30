@@ -3,6 +3,10 @@
 .mcp.json
 __pycache__/
 *.pyc
+# Recursive harness experimentation worktrees and run outputs
+.tmp/harness-worktrees/
+.tmp/harness-runs/
+.tmp/harness-workspaces/
 .claude/browser-runtime/
 .claude/runtime-verdict-*.json
 .claude/knowledge-repo-audit-*.json

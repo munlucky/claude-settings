@@ -1,8 +1,8 @@
 # 글로벌 개발 지침
 
-> 항상 로드되는 TOC 문서입니다. 짧게 유지합니다.
+> TOC 문서입니다. 짧게 유지합니다.
 
-Last-Reviewed: 2026-03-26
+Last-Reviewed: 2026-03-30
 
 ## 개요
 
@@ -25,7 +25,7 @@ Last-Reviewed: 2026-03-26
 
 ```yaml
 documentPaths:
-  tasksRoot: ".claude/docs/tasks"
+  tasksRoot: "docs/claude-tasks"
   agreementsRoot: ".claude/docs/agreements"
   guidelinesRoot: ".claude/docs/guidelines"
 ```
@@ -43,4 +43,5 @@ documentPaths:
 - 프로젝트 계약: `@.claude/PROJECT.md`
 - 검증 계약: `@.claude/verification.contract.yaml`
 - 지식 저장소 운영: `@.claude/docs/guidelines/knowledge-repository-ops.ko.md`
+- 하네스 재귀 개선 운영: `@.claude/docs/guidelines/meta-harness-recursive-improvement.ko.md`
 - 에이전트 정의 규칙: `@.claude/rules/agents/agent-definition.md`

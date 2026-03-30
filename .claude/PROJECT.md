@@ -1,63 +1,66 @@
 # PROJECT.md
 
-> This file is a per-project template. Fill it with facts about the installed project.
+> Contract for the Harness Project repository that stores reusable Claude/Codex workflow settings and verification tooling.
 
 Last-Reviewed: 2026-03-30
 
 ## Project Overview
 
-- **Service**: [service/product name and short description]
-- **Stack**: [tech stack - see guide below]
-- **Response Language**: [default response language]
+- **Service**: Harness Project - self-hosted repository for `.claude` rules, skills, agents, scripts, templates, and verification contracts
+- **Stack**: Bash, Python 3, Markdown, YAML, Git worktrees
+- **Response Language**: Korean by default unless the request explicitly asks for another language
 
 ## Core Rules
 
-1. Human approval ends at planning closeout; execution loops continue autonomously unless blocked.
-2. New API or workflow behavior must define verification evidence before implementation starts.
-3. Keep durable policy in `PROJECT.md`, `docs/guidelines/`, and `.claude/rules/`.
+1. `main` receives only reusable harness source files; generated test outputs, temporary worktrees, and run artifacts stay ignored.
+2. Recursive harness improvement runs happen on isolated branches/worktrees, and the default promotion target is a separate candidate branch/worktree rather than `main`.
+3. Updating `main` is an explicit release step that is limited to the approved harness whitelist and must pass the strict `meta_harness` verification checks.
 
 ## Testing Rules
 
-- **Test framework**: [test command]
+- **Test framework**: Contract-backed shell verification plus isolated worktree smoke flows
 - **Commands**:
-  - [dev server command]
-  - [build command]
-  - [lint command]
-  - [typecheck command]
-  - [test command]
+  - `bash .claude/scripts/harness-prepare-recursive-worktree.sh`
+  - `bash .claude/scripts/harness-promote.sh --source codex/harness-recursive`
+  - `bash .claude/scripts/harness-promote.sh --source codex/harness-main-candidate --target main --target-base main --allow-main-target`
+  - `bash .claude/scripts/knowledge-repo-audit.sh`
+  - `bash .claude/scripts/verify-code-policy.sh`
+  - `bash .claude/scripts/workflow-enforcement.sh verify`
+  - `bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
 
 ## Directory/Structure
 
 ```text
 [project root]/
-|-- [main folder1]/
-|-- [main folder2]/
-|-- [main folder3]/
-`-- .claude/
+|-- .claude/
+|-- docs/
+|-- .tmp/
+|-- install-claude.sh
+`-- README.md
 ```
 
 ## API/Data Communication Patterns
 
-- **API endpoints**: [API routing rules]
-- **Helper functions**: [commonly used utilities]
-- **Contract exchange**: [how clients call APIs]
+- **API endpoints**: No persistent network API; repository behavior is exposed through local shell scripts and Git workflows
+- **Helper functions**: `.claude/scripts/*.sh`, `.claude/scripts/*.py`, and verification helpers under `.claude/agents/verification/`
+- **Contract exchange**: Policy lives in `.claude/verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and promotion scope is defined by `.claude/harness-promotion-paths.txt` across recursive and candidate worktrees
 
 ## Type/Domain Patterns
 
-- **Type definition location**: [type file locations and naming rules]
-- **Domain models**: [Entity, DTO, Request/Response structures]
+- **Type definition location**: YAML contracts in `.claude/verification.contract.yaml`; operational schemas and checklists in `.claude/docs/guidelines/`
+- **Domain models**: `REQ-*`, `SCN-*`, `UAT-*`, `policySets`, scorecard objectives, and harness promotion whitelist entries
 
 ## Auth/Authorization
 
-- **Auth method**: [JWT, session, etc.]
-- **Authorization model**: [permission management approach]
-- **Sensitive-path policy**: [auth/authorization middleware locations]
+- **Auth method**: Local filesystem permissions and Git branch/worktree isolation
+- **Authorization model**: Destructive or out-of-sandbox actions require explicit approval; `main` updates require an explicit release step from the candidate branch
+- **Sensitive-path policy**: `.gitignore`, `.claudeignore`, ignored `.tmp/harness-*` directories, and strict `meta_harness` verification prevent runtime artifacts from being committed
 
 ## Document Paths
 
 ```yaml
 documentPaths:
-  tasksRoot: ".claude/docs/tasks"
+  tasksRoot: "docs/claude-tasks"
   agreementsRoot: ".claude/docs/agreements"
   guidelinesRoot: ".claude/docs/guidelines"
 ```
@@ -65,5 +68,15 @@ documentPaths:
 ## Environment Variables
 
 ```text
-[ENV_NAME]
+HARNESS_RECURSIVE_BRANCH
+HARNESS_RECURSIVE_WORKTREE
+HARNESS_RECURSIVE_BASE_BRANCH
+HARNESS_CANDIDATE_BRANCH
+HARNESS_CANDIDATE_WORKTREE
+HARNESS_CANDIDATE_BASE_BRANCH
+HARNESS_PROMOTION_PATHS_FILE
+HARNESS_PROMOTION_SKIP_CHECKS
+HARNESS_KNOWLEDGE_AUDIT_FILE
+VERIFY_CODE_POLICY_FILES
+WORKFLOW_ENFORCEMENT_FILES
 ```
