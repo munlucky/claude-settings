@@ -11,6 +11,19 @@ prerequisites:
   claudeVersion: "2.1.32"
   envFlag: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
 
+# Pattern Definitions
+patterns:
+  pipeline:
+    description: "순차 단계 산출물이 다음 단계 입력이 되는 패턴"
+  fanout-fanin:
+    description: "독립 작업을 병렬로 수행한 뒤 결과를 병합하는 패턴"
+  producer-reviewer:
+    description: "생산자 산출물을 별도 검토자가 평가하고 수정 피드백을 주는 패턴"
+  supervisor:
+    description: "중앙 조율자가 작업을 분배하고 결과를 종합하는 패턴"
+  hierarchical-delegation:
+    description: "상위 조율자가 하위 책임 단위로 재귀 분해하는 패턴"
+
 # Team Definitions
 teams:
   # ─────────────────────────────────────────────────────────────────
@@ -18,7 +31,22 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   review-team:
     description: "병렬 코드 리뷰 팀"
+    pattern: "fanout-fanin"
+    intent: "구현 결과를 병렬 관점에서 평가하고 리뷰 결과를 병합"
     timeout: 300
+    inputContract:
+      required:
+        - "taskSummary"
+        - "changedFiles"
+        - "reviewScope"
+      optional:
+        - "securityFocus"
+        - "reactProject"
+    outputContract:
+      teamReport:
+        summary: "핵심 리뷰 결과 요약"
+        findings: "우선순위가 높은 리뷰 항목"
+        mergeStrategy: "severity-first merge"
     leader:
       role: "orchestrator"
       agent: "team-leader-agent"
@@ -46,7 +74,21 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   research-team:
     description: "병렬 분석 팀"
+    pattern: "fanout-fanin"
+    intent: "요구사항과 코드 문맥을 병렬로 조사한 뒤 통합"
     timeout: 180
+    inputContract:
+      required:
+        - "taskSummary"
+        - "targetArea"
+      optional:
+        - "relatedDocs"
+        - "changedFiles"
+    outputContract:
+      teamReport:
+        summary: "요구사항/문맥 통합 요약"
+        findings: "구현 전 확인해야 할 사실"
+        mergeStrategy: "source-aware merge"
     leader:
       role: "orchestrator"
       agent: "team-leader-agent"
@@ -70,7 +112,21 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   verify-team:
     description: "이의 제기 검증 팀"
+    pattern: "producer-reviewer"
+    intent: "구현 설명과 비판을 교차 검증해 최종 권고를 생성"
     timeout: 240
+    inputContract:
+      required:
+        - "implementationSummary"
+        - "verificationFocus"
+      optional:
+        - "qaReport"
+        - "runtimeEvidence"
+    outputContract:
+      teamReport:
+        summary: "구현 대 비판 토론 결과"
+        findings: "재검증 또는 수정이 필요한 항목"
+        mergeStrategy: "debate resolution"
     leader:
       role: "resolver"
       agent: "team-leader-agent"
@@ -94,7 +150,21 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   planning-team:
     description: "계획 단계 병렬 검증 팀"
+    pattern: "fanout-fanin"
+    intent: "요구사항, 코드 문맥, 계획 타당성을 병렬 검토"
     timeout: 240
+    inputContract:
+      required:
+        - "planSummary"
+        - "taskSummary"
+      optional:
+        - "productArtifacts"
+        - "existingConstraints"
+    outputContract:
+      teamReport:
+        summary: "계획 검증 종합 의견"
+        findings: "빠진 요구사항, 의존성, 위험"
+        mergeStrategy: "constraint merge"
     leader:
       role: "orchestrator"
       agent: "team-leader-agent"
@@ -121,7 +191,21 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   quality-team:
     description: "품질 검증 팀"
+    pattern: "fanout-fanin"
+    intent: "완료 검증, 규칙 준수, 빌드 안정성을 병렬 확인"
     timeout: 300
+    inputContract:
+      required:
+        - "changedFiles"
+        - "verificationScope"
+      optional:
+        - "qaReport"
+        - "projectMemoryBoundaries"
+    outputContract:
+      teamReport:
+        summary: "품질 검증 결과"
+        findings: "완료를 막는 품질 이슈"
+        mergeStrategy: "blocking-first merge"
     leader:
       role: "orchestrator"
       agent: "team-leader-agent"
@@ -148,7 +232,20 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   analysis-team:
     description: "PM 분석 병렬화 팀"
+    pattern: "fanout-fanin"
+    intent: "작업 분류, 복잡도, 불확실성을 병렬 평가"
     timeout: 180
+    inputContract:
+      required:
+        - "userMessage"
+      optional:
+        - "repoSignals"
+        - "openFiles"
+    outputContract:
+      teamReport:
+        summary: "분석 결과 요약"
+        findings: "분류, 복잡도, 불확실성 판단"
+        mergeStrategy: "analysis merge"
     leader:
       role: "orchestrator"
       agent: "team-leader-agent"
@@ -175,7 +272,21 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   fix-team:
     description: "문제 해결 팀"
+    pattern: "supervisor"
+    intent: "실패 유형별 복구 경로를 조율해 해결안을 제시"
     timeout: 300
+    inputContract:
+      required:
+        - "failureSummary"
+        - "changedFiles"
+      optional:
+        - "buildLog"
+        - "securityFindings"
+    outputContract:
+      teamReport:
+        summary: "복구 경로와 권장 조치"
+        findings: "우선 처리할 복구 항목"
+        mergeStrategy: "recovery merge"
     leader:
       role: "orchestrator"
       agent: "team-leader-agent"
@@ -200,8 +311,23 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   impl-team:
     description: "병렬 구현 팀 - 새 모듈/기능 개발"
+    pattern: "hierarchical-delegation"
+    intent: "파일 소유권을 분리해 구현을 병렬 위임"
     timeout: 600
     requirePlanApproval: true  # 계획 승인 후 구현
+    inputContract:
+      required:
+        - "planSummary"
+        - "fileOwnershipPlan"
+        - "verificationCommands"
+      optional:
+        - "apiContracts"
+        - "testScope"
+    outputContract:
+      teamReport:
+        summary: "병렬 구현 결과와 남은 통합 이슈"
+        findings: "충돌 위험, 미완료 영역"
+        mergeStrategy: "ownership-aware merge"
     leader:
       role: "coordinator"
       agent: "team-leader-agent"
@@ -241,8 +367,23 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   cross-layer-team:
     description: "교차 계층 조율 팀 - 프론트엔드/백엔드/테스트"
+    pattern: "hierarchical-delegation"
+    intent: "레이어별 책임을 분리하고 API 계약을 중심으로 통합"
     timeout: 600
     requirePlanApproval: true
+    inputContract:
+      required:
+        - "planSummary"
+        - "layerBoundaries"
+        - "apiContracts"
+      optional:
+        - "testStrategy"
+        - "integrationRisks"
+    outputContract:
+      teamReport:
+        summary: "교차 계층 구현 결과"
+        findings: "계층 간 계약 위반 또는 통합 리스크"
+        mergeStrategy: "contract-aware merge"
     leader:
       role: "coordinator"
       agent: "team-leader-agent"
@@ -295,7 +436,21 @@ teams:
   # ─────────────────────────────────────────────────────────────────
   debug-team:
     description: "디버깅 팀 - 경쟁 가설 조사"
+    pattern: "producer-reviewer"
+    intent: "경쟁 가설을 토론시켜 가장 가능성 높은 원인을 도출"
     timeout: 300
+    inputContract:
+      required:
+        - "bugSummary"
+        - "observedSymptoms"
+      optional:
+        - "logs"
+        - "reproSteps"
+    outputContract:
+      teamReport:
+        summary: "가장 가능성 높은 원인과 재현 경로"
+        findings: "추가 실험 또는 수정 후보"
+        mergeStrategy: "hypothesis resolution"
     leader:
       role: "resolver"
       agent: "team-leader-agent"
@@ -322,6 +477,37 @@ teams:
 
 # Orchestrator Integration
 orchestratorHooks:
+  patternRouting:
+    - pattern: "fanout-fanin"
+      useFor:
+        - "parallel analysis"
+        - "parallel review"
+        - "multi-angle validation"
+      preferredTeams:
+        - "analysis-team"
+        - "research-team"
+        - "planning-team"
+        - "review-team"
+        - "quality-team"
+    - pattern: "producer-reviewer"
+      useFor:
+        - "adversarial verification"
+        - "debugging by competing hypotheses"
+      preferredTeams:
+        - "verify-team"
+        - "debug-team"
+    - pattern: "hierarchical-delegation"
+      useFor:
+        - "multi-owner implementation"
+        - "cross-layer feature delivery"
+      preferredTeams:
+        - "impl-team"
+        - "cross-layer-team"
+    - pattern: "supervisor"
+      useFor:
+        - "failure recovery"
+      preferredTeams:
+        - "fix-team"
   triggers:
     # 기존 트리거
     - team: "review-team"
@@ -360,3 +546,8 @@ settings:
   defaultTimeout: 300
   defaultDelegationMode: true  # 모든 리더에 기본 적용
   defaultCommunication: true   # 모든 팀에 통신 기본 활성화
+  notesContract:
+    requiredFields:
+      - "selectedPattern"
+      - "selectedTeam"
+      - "selectionReason"

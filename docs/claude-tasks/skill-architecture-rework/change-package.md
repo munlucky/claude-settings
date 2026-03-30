@@ -14,7 +14,7 @@ Goal:
 
 File targets:
 - `.claude/docs/guidelines/skill-composition.md`
-- `.claude/docs/tasks/skill-architecture-rework/*`
+- `docs/claude-tasks/skill-architecture-rework/*`
 - `README.md` only if entrypoint documentation must be aligned
 - selected `SKILL.md` files where entrypoint visibility or internal-only status needs to be declared
 

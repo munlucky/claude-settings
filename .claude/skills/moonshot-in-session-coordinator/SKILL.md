@@ -81,6 +81,7 @@ attemptInput:
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
   scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
+  worksetPath: "docs/implementation/execution/02-core-implementation/WORKSET.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
 ```
@@ -91,6 +92,7 @@ Rules:
 - Use `QA_REPORT.md` and `HANDOFF.md` as the only retry memory.
 - Use `SCORECARD.md` as the objective completion state for the phase.
 - Treat `SPRINT_CONTRACT.md` policy anchors and required verification commands as mandatory attempt input.
+- Keep `WORKSET.md` updated with current goal, required reads, produced artifacts, and unresolved risks.
 
 ### 3. Spawn fresh attempt
 

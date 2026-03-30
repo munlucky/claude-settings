@@ -57,6 +57,15 @@ Record workflow status and generate:
   - workflow improvement recommendations
   - next-run experiment plan (max 3 actions)
 - Optionally add timeline entries to session-log/day-...
+- Optionally emit `.claude/team-metrics-<runId>.json` with:
+  - `selectedPattern`
+  - `selectedTeam`
+  - `selectionReason`
+  - `retryCount`
+  - `handoffCount`
+  - `indeterminateRatio`
+  - `verifierFailureCategories`
+  - `completionLeadTimeSeconds`
 
 ## Execution snippet
 ```

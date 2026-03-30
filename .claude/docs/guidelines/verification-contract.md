@@ -43,9 +43,11 @@ artifacts:
   qaReport: ".claude/execution/<slice>/QA_REPORT.md"
   handoff: ".claude/execution/<slice>/HANDOFF.md"
   scorecard: ".claude/execution/<slice>/SCORECARD.md"
+  workset: ".claude/execution/<slice>/WORKSET.md"
   requirementsTraceability: ".claude/execution/REQUIREMENTS_TRACEABILITY.md"
   scenarioMatrix: ".claude/execution/SCENARIO_MATRIX.md"
   uatChecklist: ".claude/execution/UAT_CHECKLIST.md"
+  teamMetrics: ".claude/team-metrics-<runId>.json"
 strict:
   required: false
   triggers:
@@ -148,6 +150,7 @@ loop:
 - In document-trace downstream runs, treat `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, and `UAT_CHECKLIST.md` as first-class execution artifacts.
 - `QA_REPORT.md` should become the next remediation input when verification fails.
 - In score-based loops, `SCORECARD.md` should be the objective completion artifact for the active slice.
+- `WORKSET.md` may be used as the round-level handoff manifest between retries or fresh attempts.
 - `scorecardProfile` may be set explicitly to `generic`, `saas`, `api-backend`, `frontend`, or `platform`; `auto` is the default.
 - `auto` should infer the scorecard profile from task intent or phase language and may rebalance only the combined `REQ + SCN` budget from detected `REQ-*` / `SCN-*` counts.
 - A contract-backed success verdict should require fresh evidence for every required check that applies to the current scope.
@@ -166,3 +169,9 @@ loop:
   - `retry` should remain the default score verdict
   - the loop should stop on failed phases by default instead of silently advancing
   - completion should require both passing verification evidence and a score verdict of `done`
+- Team-based runs should record enough observability to compare topology decisions over time:
+  - `selectedPattern`
+  - `selectedTeam`
+  - `selectionReason`
+  - `retryCount`
+  - `handoffCount`

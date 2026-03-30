@@ -1,6 +1,17 @@
 ---
 name: moonshot-orchestrator
 description: 이미 충분한 문맥이 있고 phase harness가 필요 없는 bounded implementation 작업에 사용합니다.
+layer: orchestrator
+loads:
+  - workflow-state
+  - summarized-subskill-results
+deepReferences:
+  - .claude/docs/guidelines/skill-composition.md
+  - .claude/docs/guidelines/verification-contract.md
+outputArtifacts:
+  - SPRINT_CONTRACT.md
+  - QA_REPORT.md
+  - HANDOFF.md
 ---
 
 # PM 오케스트레이터
@@ -26,9 +37,12 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
 /moonshot-orchestrator <사용자-요청>
 /moonshot-orchestrator <사용자-요청> --use-teams
 /moonshot-orchestrator <사용자-요청> --use-teams=review-team
+/moonshot-orchestrator <사용자-요청> --use-teams --team-pattern=fanout-fanin
 ```
 
 > 사용 가능 팀: review-team, research-team, verify-team, planning-team, quality-team, analysis-team, fix-team, impl-team, cross-layer-team, debug-team. 상세 내용은 `moonshot-teams-runner/SKILL.md` 참조.
+
+팀 모드를 켤 때는 가능하면 구체 팀 이름보다 협업 `pattern`을 먼저 고르고, 그다음에 팀 프리셋을 선택합니다.
 
 ## 진입 정책
 
@@ -86,6 +100,11 @@ decisions:
   bundleChain: []
   skillChain: []
   parallelGroups: []
+teamSelection:
+  requestedPattern: null
+  selectedPattern: null
+  selectedTeam: null
+  selectionReason: null
 artifacts:
   tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
   workflowGuidePath: "workflow/README.md"
@@ -332,6 +351,31 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - `productDefinitionRequest == true` 이고 `productPackageReady == false` 이면 `product-orchestrator`로 핸드오프
 - `productPackageReady == true` 이면 upstream planning 단계를 건너뛰고 handoff package를 구현 기준선으로 사용
 
+## 팀 패턴 선택
+
+`signals.useAgentTeams == true`이면 구체 팀 프리셋보다 먼저 협업 패턴을 해석합니다.
+
+패턴 우선 순서:
+
+1. 작업 형태를 요약한다.
+2. 아래 중 하나를 고른다.
+   - `fanout-fanin`
+   - `producer-reviewer`
+   - `supervisor`
+   - `hierarchical-delegation`
+   - `pipeline`
+3. 선택한 패턴에 맞는 팀을 `.claude/templates/agent-teams-config.yaml`에서 고른다.
+4. `teamSelection`에 `selectedPattern`, `selectedTeam`, `selectionReason`을 기록한다.
+5. notes 또는 workflow evidence에도 요약 흔적을 남긴다.
+
+기본 매핑:
+
+- 초기 분석, 연구, 병렬 리뷰 => `fanout-fanin`
+- 이의 제기 검증, 경쟁 가설 디버깅 => `producer-reviewer`
+- 실패 복구 라우팅 => `supervisor`
+- 다중 소유자 구현, 교차 계층 구현 => `hierarchical-delegation`
+- `pipeline`은 순차 stage 팀이 생길 때를 위한 예약 패턴으로 두고, 현재 병렬 팀에 억지로 맞추지 않습니다.
+
 ## 완료 검증 규칙
 
 - `completion-verifier`가 있으면 우선 사용한다.
@@ -343,6 +387,7 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - clean completion 전에 멈추면 `HANDOFF.md`를 남긴다.
 - strict에서는 완료 선언 직전에 `verification-evidence-gate`를 반드시 통과해야 한다.
 - `phaseLoopInSession=true`이면 재시도는 메인 세션 직접 구현이 아니라 새 fresh attempt로 다시 들어가야 한다.
+- `signals.useAgentTeams=true`이면 `teamSelection.selectedPattern -> teamSelection.selectedTeam` 순서를 먼저 확정해야 한다.
 
 ## 계약
 
@@ -351,6 +396,7 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - upstream 제품 정의가 아직 없으면 build 체인 안에서 제품 산출물을 임의 생성하지 말고 `product-orchestrator`로 라우팅한다.
 - `PLAN.md`와 `tasks/*.md`가 있으면 이를 planning source of truth로 보고 `requirements-analyzer`, `context-builder`를 생략한다.
 - medium/complex `product_project`는 active slice 기준으로 `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF`를 유지한다.
+- 팀 실행을 쓸 때는 `selectedPattern`, `selectedTeam`, `selectionReason`을 notes 또는 workflow evidence에 함께 남긴다.
 - bounded direct 경로에서 코드가 수정되면 먼저 `QA_REPORT.md`의 workflow evidence를 최신 상태로 유지한 뒤 `bash .claude/scripts/workflow-enforcement.sh record-bounded --analysis-path .claude/docs/moonshot-analysis.yaml`로 동일한 경계를 기록한다.
 - `record-bounded`는 analysis 파일의 `workflowEvidence`를 정규화하고 canonical bundle/required skill/stage order를 채우며, `QA_REPORT.md`가 제공되면 applied/skipped evidence도 거기서 동기화한다.
 - in-session phase loop는 fresh isolated attempt를 전제로만 허용하며, coordinator 세션은 round 사이에 summary-only 상태를 유지한다.

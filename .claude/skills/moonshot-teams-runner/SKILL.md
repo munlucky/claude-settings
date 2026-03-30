@@ -38,6 +38,9 @@ Always include the following instructions when prompting `team-leader-agent`.
 # Run review team
 /moonshot-teams-runner review-team
 
+# Or let the orchestrator select by pattern first
+/moonshot-teams-runner --pattern fanout-fanin
+
 # Run research team
 /moonshot-teams-runner research-team
 
@@ -69,9 +72,14 @@ Always include the following instructions when prompting `team-leader-agent`.
 /moonshot-teams-runner --list
 ```
 
+Pattern-first selection is preferred for orchestrated runs.
+Direct team names remain available for manual override and debugging.
+
 ## Available Teams
 
 ### 1. review-team (parallel review)
+
+Pattern: `fanout-fanin`
 
 Run parallel code review:
 
@@ -89,6 +97,8 @@ communication: enabled
 
 ### 2. research-team (parallel research)
 
+Pattern: `fanout-fanin`
+
 Run parallel analysis and research:
 
 ```yaml
@@ -104,6 +114,8 @@ communication: enabled
 
 ### 3. verify-team (challenge-based verification)
 
+Pattern: `producer-reviewer`
+
 Verify implementation from multiple perspectives:
 
 ```yaml
@@ -118,6 +130,8 @@ communication: enabled (debateRounds: 2)
 **When to use**: after critical feature completion.
 
 ### 4. planning-team (plan validation)
+
+Pattern: `fanout-fanin`
 
 Run parallel validation during planning:
 
@@ -135,6 +149,8 @@ communication: enabled
 
 ### 5. quality-team (quality validation)
 
+Pattern: `fanout-fanin`
+
 Validate quality after implementation:
 
 ```yaml
@@ -150,6 +166,8 @@ communication: enabled
 **When to use**: after tests finish.
 
 ### 6. analysis-team (PM analysis parallelization)
+
+Pattern: `fanout-fanin`
 
 Parallelize early orchestrator analysis:
 
@@ -167,6 +185,8 @@ communication: enabled
 
 ### 7. fix-team (issue remediation)
 
+Pattern: `supervisor`
+
 Resolve failures in parallel:
 
 ```yaml
@@ -182,6 +202,8 @@ communication: enabled
 **When to use**: build failures or security concerns.
 
 ### 8. impl-team (parallel implementation) 🆕
+
+Pattern: `hierarchical-delegation`
 
 Implement new modules/features in parallel:
 
@@ -204,6 +226,8 @@ communication: enabled
 - `fileOwnership`: members own different files to avoid conflicts.
 
 ### 9. cross-layer-team (cross-layer) 🆕
+
+Pattern: `hierarchical-delegation`
 
 Parallel implementation across frontend/backend/test:
 
@@ -229,6 +253,8 @@ communication: enabled
 - Members can coordinate API contracts directly.
 
 ### 10. debug-team (debugging) 🆕
+
+Pattern: `producer-reviewer`
 
 Investigate bugs with competing hypotheses:
 
@@ -384,13 +410,20 @@ skillChain:
   - ...                      # from moonshot-decide-sequence
   - team-leader-agent        # fork execution when team mode is enabled
 notes:
-  - "team=review-team, trigger=after:implementation-runner"
+  - "pattern=fanout-fanin, team=review-team, trigger=after:implementation-runner"
 ```
 
 Team trigger guide (aligned with orchestrator schema):
 1. `analysis-team`/`research-team`/`planning-team`: use in PM analysis stages (2.1~2.5).
 2. `impl-team`/`cross-layer-team`: use for complex implementation stages.
 3. `review-team`/`quality-team`/`verify-team`/`fix-team`: use after implementation or on failure events.
+
+Pattern selection guide:
+1. choose `fanout-fanin` for parallel analysis, review, and validation
+2. choose `producer-reviewer` for adversarial verification and competing-hypothesis debugging
+3. choose `supervisor` for recovery orchestration after failures
+4. choose `hierarchical-delegation` for parallel implementation with clear ownership boundaries
+5. if a concrete team is explicitly passed, treat that as a manual override and still record its inferred pattern
 
 ## Token Usage Warning
 

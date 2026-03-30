@@ -1,6 +1,19 @@
 ---
 name: product-orchestrator
 description: Use when work is still at the idea-to-plan stage and needs bounded product-definition artifacts before implementation.
+layer: orchestrator
+loads:
+  - product-definition-artifacts
+  - verdict-summaries
+deepReferences:
+  - .claude/docs/guidelines/product-definition-workflow.md
+  - .claude/docs/guidelines/requirements-traceability-harness.md
+outputArtifacts:
+  - PRODUCT_INTENT.md
+  - PRD.md
+  - SOLUTION.md
+  - SPEC.md
+  - PLAN.md
 triggers:
   - "product orchestrator"
   - "product definition"
@@ -57,16 +70,21 @@ Planning artifacts should also record:
 
 1. Create or refresh `PRODUCT_INTENT.md`
 2. Run `product-gate-reviewer` for `PRODUCT_INTENT`
-3. Create or refresh `PRD.md`
-4. Run `product-gate-reviewer` for `PRD`
-5. Create or refresh `SOLUTION.md`
-6. Run `product-gate-reviewer` for `SOLUTION`
-7. Create or refresh `SPEC.md` and any needed `ADR/*.md`
-8. Run `product-gate-reviewer` for `SPEC`
-9. Create or refresh `PLAN.md`
-10. Run `task-slicer` to generate `tasks/*.md`
-11. Run `product-gate-reviewer` for `PLAN`
-12. Hand off the plan package to `moonshot-orchestrator`
+3. Run `plan-ceo-review` for `PRODUCT_INTENT`
+4. Create or refresh `PRD.md`
+5. Run `product-gate-reviewer` for `PRD`
+6. Run `plan-ceo-review` for `PRD`
+7. Create or refresh `SOLUTION.md`
+8. Run `product-gate-reviewer` for `SOLUTION`
+9. Create or refresh `SPEC.md` and any needed `ADR/*.md`
+10. Run `product-gate-reviewer` for `SPEC`
+11. Run `plan-eng-review` for `SPEC`
+12. Create or refresh `PLAN.md`
+13. Run `task-slicer` to generate `tasks/*.md`
+14. Run `product-gate-reviewer` for `PLAN`
+15. Run `plan-ceo-review` for `PLAN`
+16. Run `plan-eng-review` for `PLAN`
+17. Hand off the plan package to `moonshot-orchestrator`
 
 At every stage:
 - use `assumption-ledger` before stopping for ambiguity
@@ -154,6 +172,8 @@ Recommended next step:
 - `.claude/docs/guidelines/product-definition-workflow.md`
 - `.claude/templates/product-definition/`
 - `.claude/skills/product-gate-reviewer/SKILL.md`
+- `.claude/skills/plan-ceo-review/SKILL.md`
+- `.claude/skills/plan-eng-review/SKILL.md`
 - `.claude/skills/task-slicer/SKILL.md`
 - `.claude/skills/assumption-ledger/SKILL.md`
 - `.claude/skills/moonshot-orchestrator/SKILL.md`

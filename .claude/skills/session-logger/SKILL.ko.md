@@ -1,6 +1,16 @@
 ---
 name: session-logger
 description: 작업 중이나 종료 시점에 결정, 이슈, handoff 메모를 기록할 때 사용합니다.
+layer: agent_extending
+loads:
+  - session-state
+  - handoff-artifacts
+deepReferences:
+  - .claude/docs/solutions/README.md
+outputArtifacts:
+  - HANDOFF.md
+  - session-log
+  - solution-asset
 ---
 
 # Session Logger 스킬
@@ -150,3 +160,17 @@ execution bridge 사용 시:
 | 결정 | `decision:{feature}:{topic}` | API 패턴 선택 |
 | 진행 | `progress:{feature}` | Phase 1 완료 |
 | 해결 | `solution:{issue-type}` | snake_case 수정 |
+
+## Solution 승격
+
+세션에서 재사용 가능한 remediation 패턴이 드러나면:
+
+1. `.claude/docs/solutions/README.md`의 promotion rule에 맞는지 확인합니다.
+2. `.claude/docs/solutions/` 아래에 solution asset을 생성하거나 갱신합니다.
+3. 어떤 source artifact를 근거로 승격했는지 함께 기록합니다.
+
+승격하는 경우:
+
+- 재시도 과정에서 재사용 가능한 fix pattern이 드러났을 때
+- 검증 레시피를 다음에도 재사용해야 할 때
+- 다음 planning이나 guardrail 판단을 바꾸는 교훈일 때

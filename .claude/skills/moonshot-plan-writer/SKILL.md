@@ -45,10 +45,12 @@ It is the main Plan-stage owner for phase documents.
    - Include phase index and dependency/order summary.
    - Include source traceability matrix (`discovered source requirements -> Phase`).
    - Include phase completion checklist that maps 1:1 to phase documents.
+   - Run `plan-ceo-review` on the master plan when scope or cost appears broad.
 5. Build or update each phase plan document.
    - Keep each phase document independently executable in a separate session.
    - Include enough context so the phase can be executed without hidden assumptions.
    - Include source mapping section with referenced trace IDs.
+   - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
 6. Synchronize completion state.
    - When a phase is completed, immediately mark its master checklist item as checked.
    - Record evidence links used to justify checked state.
@@ -110,6 +112,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Preserve user-authored constraints already present in plan docs.
 - Do not drop a source requirement from the selected baseline sources without documenting why it is excluded.
 - Keep numbering, filenames, and checklist states consistent across all plan files.
+- Do not declare a phase ready when verification commands or ownership boundaries are still implicit.
 
 ## Phase Runner Integration
 

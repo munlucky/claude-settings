@@ -59,6 +59,36 @@ Do not present the following as primary user entrypoints:
 - `session-logger` may still be invoked directly as a public utility
 - `commit-moonshot` may still be invoked directly as a public utility
 
+## Skill Layer Taxonomy
+
+Use these three layers to keep skill growth manageable:
+
+- `orchestrator`
+  - chooses sequence, verdict routing, or team topology
+- `agent_extending`
+  - adds domain knowledge or reusable behavior to an execution path
+- `external_interface`
+  - connects the workflow to external tools, runtime checks, or services
+
+Recommended frontmatter fields for new or refreshed skills:
+
+```yaml
+layer: orchestrator|agent_extending|external_interface
+loads:
+  - short context label
+deepReferences:
+  - path/to/reference.md
+outputArtifacts:
+  - artifact-name
+```
+
+Preferred body order:
+
+1. summary
+2. routing rules
+3. execution contract
+4. deep references
+
 ### analysis-bundle
 ```yaml
 steps:
@@ -74,6 +104,8 @@ steps:
   - requirements-analyzer
   - context-builder
   - moonshot-plan-writer (if no safe phase plan exists)
+  - plan-ceo-review (for value/scope review on PLAN-like artifacts)
+  - plan-eng-review (for architecture/readiness review on SPEC/PLAN-like artifacts)
   - task-slicer (if plan output must be decomposed into slices)
   - codex-validate-plan
 ```
@@ -187,3 +219,4 @@ steps:
 
 - `.claude/skills/moonshot-decide-sequence/SKILL.md`
 - `.claude/skills/moonshot-orchestrator/SKILL.md`
+- `.claude/docs/guidelines/team-observability.md`
