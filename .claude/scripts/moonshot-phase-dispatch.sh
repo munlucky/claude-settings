@@ -131,6 +131,23 @@ resolve_master_plan() {
     find "$PLAN_DIR" -maxdepth 1 \( -name "*master*" -o -name "*00-*" \) 2>/dev/null | head -1
 }
 
+sync_completed_phase_archive() {
+    if [[ ! -f "$STATUS_FILE" ]] || [[ ! -d "$PLAN_DIR" ]] || [[ ! -f "$SCRIPT_DIR/sync-phase-archive.py" ]] || ! command -v python3 >/dev/null 2>&1; then
+        return
+    fi
+
+    local sync_output
+    if ! sync_output="$(python3 "$SCRIPT_DIR/sync-phase-archive.py" --status-file "$STATUS_FILE" --plan-dir "$PLAN_DIR" 2>/dev/null)"; then
+        return
+    fi
+
+    if [[ -n "$sync_output" ]]; then
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && log_info "$line"
+        done <<< "$sync_output"
+    fi
+}
+
 record_dispatch_evidence() {
     local resolved_mode="$1"
     local resolved_root="$2"
@@ -326,6 +343,7 @@ if [[ "$RUNTIME" != "auto" && "$RUNTIME" != "claude" && "$RUNTIME" != "codex" ]]
     RUNTIME="auto"
 fi
 
+sync_completed_phase_archive
 RESOLVED_MODE="$(resolve_execution_mode)"
 RESOLVED_ROOT="$(resolve_execution_root)"
 MASTER_PLAN="$(resolve_master_plan)"

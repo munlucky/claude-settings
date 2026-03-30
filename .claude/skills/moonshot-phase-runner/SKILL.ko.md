@@ -49,6 +49,7 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 4. 그 외에는 `/moonshot-plan-writer`를 실행해 `docs/implementation`을 생성/갱신
 
 후보가 여러 개이고 active plan이 명확하지 않으면 추측하지 말고 사용자에게 물어야 합니다.
+`<plan-dir>/close/` 아래의 archived phase 문서는 이력이며 active phase 후보로 세지지 않습니다.
 
 ## Step 2: 계획 디렉토리 검증
 
@@ -59,6 +60,7 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 ## Step 3: phase-status.yaml 생성
 
 각 phase 상태를 `pending`으로 초기화하고, execution artifact 경로를 기록합니다.
+phase가 `completed`가 되면 해당 phase 문서는 `<plan-dir>/close/`로 이관하고, `phase-status.yaml`에는 `archivedPhaseDoc`를 남겨 active phase 탐색을 오염시키지 않습니다.
 
 ## Step 4: Execution Bridge 아티팩트 시드
 
@@ -115,6 +117,14 @@ phaseRunnerResult:
   masterPlan: "docs/implementation/00-master-plan.md"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
+```
+
+closeout 메타데이터 예시:
+
+```yaml
+  - number: 1
+    status: completed
+    archivedPhaseDoc: "docs/implementation/close/01-project-setup.md"
 ```
 
 attempt 계약 예시:

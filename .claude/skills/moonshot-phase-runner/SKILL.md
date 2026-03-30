@@ -103,6 +103,8 @@ When `<plan-dir>` is omitted, resolve it in this order:
 3. Reuse another single valid implementation-plan directory only if exactly one safe candidate exists.
 4. Otherwise run `/moonshot-plan-writer` and create or refresh `docs/implementation`.
 
+Archived phase docs under `<plan-dir>/close/` are history, not active phase candidates.
+
 Safety rule:
 - If multiple candidate plan directories exist and there is no clear active one, stop and ask the user instead of guessing.
 
@@ -154,6 +156,8 @@ phases:
     status: pending
     planConfirmed: false
 ```
+
+When a phase reaches `completed`, move its phase doc into `<plan-dir>/close/` and record `archivedPhaseDoc` in `phase-status.yaml` so active discovery stays clean.
 
 ## Step 4: Seed Execution Bridge Artifacts
 
@@ -348,6 +352,12 @@ phases:
     title: "Core UI"
     status: pending
     planConfirmed: true
+```
+
+Optional closeout metadata:
+
+```yaml
+    archivedPhaseDoc: "docs/implementation/close/01-project-setup.md"
 ```
 
 ## References
