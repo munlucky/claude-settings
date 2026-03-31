@@ -14,6 +14,8 @@ The normalization layer should answer:
 - how much evidence exists across distinct runs
 - whether the current score is still provisional
 
+Before a run can count, define the document pack in `.claude/docs/guidelines/implementation-test-document-pack.md`.
+
 ## Storage Model
 
 Keep generated quality evidence outside the tracked repository:

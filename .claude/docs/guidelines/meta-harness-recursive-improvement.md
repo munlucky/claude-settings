@@ -94,12 +94,13 @@ That step is intentionally explicit because it will modify the `main` worktree.
 ## Daily Operating Loop
 
 1. Prepare the recursive worktree.
-2. Run fixture generation, scoring, and harness experiments only inside ignored paths.
-3. Convert successful lessons into reusable `.claude` assets on the recursive branch.
-4. Run the promotion script to refresh the isolated candidate worktree.
-5. Review and commit on the candidate branch.
-6. Update `main` only in a deliberate release step.
-7. Normalize harness quality from accumulated real run summaries before claiming the harness is ready.
+2. Write `IMPLEMENTATION_TEST_BRIEF.md` and `RUN_MANIFEST.md` for each real implementation test before touching code.
+3. Run fixture generation, scoring, and harness experiments only inside ignored paths.
+4. Convert successful lessons into reusable `.claude` assets on the recursive branch.
+5. Run the promotion script to refresh the isolated candidate worktree.
+6. Review and commit on the candidate branch.
+7. Update `main` only in a deliberate release step.
+8. Normalize harness quality from accumulated real run summaries before claiming the harness is ready.
 
 ## Hard Rules
 
