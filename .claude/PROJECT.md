@@ -15,6 +15,7 @@ Last-Reviewed: 2026-03-30
 1. `main` receives only reusable harness source files; generated test outputs, temporary worktrees, and run artifacts stay ignored.
 2. Recursive harness improvement runs happen on isolated branches/worktrees, and the default promotion target is a separate candidate branch/worktree rather than `main`.
 3. Updating `main` is an explicit release step that is limited to the approved harness whitelist and must pass the strict `meta_harness` verification checks.
+4. Real implementation tests must define `IMPLEMENTATION_TEST_BRIEF.md` and `RUN_MANIFEST.md` before implementation begins if the run will count toward harness quality normalization.
 
 ## Testing Rules
 

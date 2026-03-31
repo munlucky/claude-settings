@@ -15,6 +15,7 @@ Last-Reviewed: 2026-03-30
 1. `main`에는 재사용 가능한 하네스 소스만 반영하고, 생성된 테스트 결과물과 임시 worktree 및 실행 산출물은 ignore 상태로 유지합니다.
 2. 하네스 재귀 개선은 분리된 브랜치/worktree에서 수행하고, 기본 promotion 대상은 `main`이 아니라 별도 candidate 브랜치/worktree입니다.
 3. `main` 갱신은 승인된 하네스 화이트리스트 범위로 제한된 명시적 release 단계이며 strict `meta_harness` 검증을 통과해야 합니다.
+4. 하네스 품질 정규화에 포함할 실제 구현 테스트는 구현을 시작하기 전에 `IMPLEMENTATION_TEST_BRIEF.md` 와 `RUN_MANIFEST.md` 를 먼저 작성해야 합니다.
 
 ## 테스트 규칙
 
