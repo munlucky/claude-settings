@@ -15,6 +15,7 @@ The normalization layer should answer:
 - whether the current score is still provisional
 
 Before a run can count, define the document pack in `.claude/docs/guidelines/implementation-test-document-pack.md`.
+For large web release evidence, use `.claude/docs/guidelines/one-prompt-recursive-benchmark.md`.
 
 ## Storage Model
 
@@ -40,6 +41,11 @@ Each real usage test should record:
 - `checks`
 - `counters`
 
+For `one_prompt_recursive` runs, also record:
+
+- `benchmarkMode`
+- `benchmark`
+
 Suggested shape:
 
 ```json
@@ -53,6 +59,7 @@ Suggested shape:
   "complexity": "small",
   "taskId": "slug-mode-cli",
   "taskOutcomePassed": true,
+  "benchmarkMode": "standard",
   "checks": {
     "requiredChecksPassed": true,
     "knowledgeAuditPassed": true,
@@ -67,6 +74,21 @@ Suggested shape:
   "counters": {
     "retryCount": 1,
     "handoffCount": 0
+  }
+}
+```
+
+Suggested `one_prompt_recursive` extension:
+
+```json
+{
+  "benchmarkMode": "one_prompt_recursive",
+  "benchmark": {
+    "baselineScore": 48,
+    "finalScore": 83,
+    "deltaScore": 35,
+    "hardFailRecovered": true,
+    "recursiveRoundsUsed": 3
   }
 }
 ```
@@ -96,6 +118,13 @@ The aggregate report should combine:
 - diversity across execution planes, project types, and complexity levels
 
 This prevents one excellent run from masquerading as a mature harness.
+
+For large web release review, inspect these separate aggregates before trusting a single combined score:
+
+- baseline average
+- final average
+- delta average
+- hard-fail recovery rate
 
 ## Status Levels
 
@@ -132,3 +161,4 @@ After every real usage test:
 3. read the aggregate status before deciding whether the harness is ready for release
 
 If the score is strong but still `provisional`, keep testing instead of releasing on confidence alone.
+If the run used `one_prompt_recursive`, also review whether the delta was positive and whether critical hard fails were cleared.

@@ -24,6 +24,11 @@ Every real implementation test should define these artifacts in order:
 3. downstream execution artifacts
 4. `harness-quality-run.json`
 
+When the run mode is `one_prompt_recursive`, also require:
+
+- `ONE_PROMPT_BASELINE.md`
+- `RECURSIVE_IMPROVEMENT_REPORT.md`
+
 Do not treat a run as normalization evidence unless all required artifacts exist.
 
 ## Artifact Roles
@@ -89,6 +94,14 @@ This is the normalization input and should summarize:
 - isolation discipline
 - retry and handoff counts
 
+For `one_prompt_recursive` runs, it should also summarize:
+
+- `baselineScore`
+- `finalScore`
+- `deltaScore`
+- hard-fail recovery outcome
+- benchmark mode
+
 ## Directory Layout
 
 Recommended structure:
@@ -117,6 +130,8 @@ Do not count the run toward normalized harness quality until:
 - `QA_REPORT.md` exists
 - `SCORECARD.md` exists when score-based completion is used
 - `harness-quality-run.json` exists
+- `ONE_PROMPT_BASELINE.md` exists for `one_prompt_recursive` runs
+- `RECURSIVE_IMPROVEMENT_REPORT.md` exists for `one_prompt_recursive` runs
 
 ## Test Item Selection Rule
 
@@ -138,10 +153,12 @@ Normalized quality should only be used for release readiness when:
 - ignored artifact discipline was preserved
 - `main` stayed clean
 - sample threshold for release has been met
+- at least one counted large-web run used the `one_prompt_recursive` benchmark design
 
 ## Templates
 
 - `.claude/templates/execution/IMPLEMENTATION_TEST_BRIEF.template.md`
 - `.claude/templates/execution/RUN_MANIFEST.template.md`
 - `.claude/templates/execution/HARNESS_QUALITY_RUN.template.json`
-
+- `.claude/templates/execution/ONE_PROMPT_BASELINE.template.md`
+- `.claude/templates/execution/RECURSIVE_IMPROVEMENT_REPORT.template.md`
