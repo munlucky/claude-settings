@@ -159,7 +159,7 @@ After verification, choose exactly one closeout path:
    - verification passed with fresh evidence
    - in-scope work for the requested run is complete
    - run doc/session closeout
-   - no `HANDOFF.md` required unless the user explicitly wants one
+   - no resumable handoff is required; if a `HANDOFF.md` file exists, it should be rewritten as a clean-finish marker instead of a resume artifact
 2. Resume-later handoff
    - verification is incomplete, blocked, intentionally deferred, or the session is interrupted by context/runtime/user pause
    - update `QA_REPORT.md`
@@ -178,7 +178,11 @@ Invalid handoff reasons:
 Default finish-stage responsibilities:
 - `doc-auto-sync` for meaningful documentation drift
 - `session-logger` for resumable state or decision history
+- `.claude/scripts/write-verification-verdict.py` for structured repository-root `.claude/verification-verdict-*.json` output instead of handwritten verdict JSON
+  Record the exact verdict file path in `QA_REPORT.md` so the completion gate can verify the same artifact.
 - `commit-moonshot` only when the user explicitly wants memory update plus commit
+  Use `AGENT_LOOP_RUN_COMMIT_PROMPT=true` only for that explicit opt-in path.
+  Closeout logs should say commit prompting is disabled by policy unless that opt-in is active.
 
 ## Anti-Patterns
 
