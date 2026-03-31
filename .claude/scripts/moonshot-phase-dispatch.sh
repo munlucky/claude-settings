@@ -246,11 +246,9 @@ EOF
 
     case "$RUNTIME" in
         claude)
-            ensure_claude
             cmd=(claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
             ;;
         codex)
-            ensure_codex
             cmd=(codex exec --full-auto -C "$PWD")
             if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
                 cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
@@ -267,6 +265,15 @@ EOF
         printf '%s\n' "${cmd[*]}"
         return
     fi
+
+    case "$RUNTIME" in
+        claude)
+            ensure_claude
+            ;;
+        codex)
+            ensure_codex
+            ;;
+    esac
 
     exec "${cmd[@]}"
 }
