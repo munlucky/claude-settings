@@ -69,6 +69,29 @@ assert_contains() {
   fi
 }
 
+read_fixture_lines() {
+  local fixture_root="$1"
+  local scenario_name="$2"
+  local execution_mode="$3"
+  local __resultvar="$4"
+  local line
+  local -a lines=()
+
+  while IFS= read -r line; do
+    lines+=("$line")
+  done < <(seed_fixture "$fixture_root" "$scenario_name" "$execution_mode")
+
+  eval "$__resultvar=(\"\${lines[@]}\")"
+}
+
+array_length() {
+  local array_name="$1"
+  local length=0
+
+  eval 'if [[ ${'"$array_name"'[@]+_} ]]; then length=${#'"$array_name"'[@]}; fi'
+  printf '%s\n' "$length"
+}
+
 checksum_file() {
   shasum "$1" | awk '{print $1}'
 }
@@ -237,6 +260,11 @@ probe_claude_runtime() {
   local error_file="$TMP_ROOT/claude-probe.err"
   local detail
 
+  if ! command -v claude >/dev/null 2>&1; then
+    record_runtime_failure "claude" "CLI not installed on this machine"
+    return 1
+  fi
+
   set +e
   (
     cd "$REPO_ROOT"
@@ -275,6 +303,11 @@ probe_codex_runtime() {
   local stdout_file="$TMP_ROOT/codex-probe.stdout"
   local error_file="$TMP_ROOT/codex-probe.err"
   local detail
+
+  if ! command -v codex >/dev/null 2>&1; then
+    record_runtime_failure "codex" "CLI not installed on this machine"
+    return 1
+  fi
 
   set +e
   (
@@ -571,8 +604,8 @@ run_render_matrix() {
   assert_contains "$codex_coord_out" "codex exec --full-auto" "Codex coordinator adapter"
   assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
 
-  local fixture_lines
-  mapfile -t fixture_lines < <(seed_fixture "$TMP_ROOT/render-fixture" "render" "delegated-terminal")
+  local -a fixture_lines=()
+  read_fixture_lines "$TMP_ROOT/render-fixture" "render" "delegated-terminal" fixture_lines
   local plan_dir="${fixture_lines[0]}"
   local execution_root="${fixture_lines[1]}"
   local status_file="${fixture_lines[2]}"
@@ -796,11 +829,11 @@ run_actual_flow() {
   local after_git="$TMP_ROOT/$scenario_name-after-git.txt"
   local log_file="$TMP_ROOT/$scenario_name.log"
   local sentinel="$TMP_ROOT/$scenario_name.sentinel"
-  local fixture_lines
+  local -a fixture_lines=()
   local -a dispatch_args=()
 
   prepare_workspace_copy "$workspace_root"
-  mapfile -t fixture_lines < <(seed_fixture "$fixture_root" "$scenario_name" "$execution_mode")
+  read_fixture_lines "$fixture_root" "$scenario_name" "$execution_mode" fixture_lines
   local plan_dir="${fixture_lines[0]}"
   local execution_root="${fixture_lines[1]}"
   local status_file="${fixture_lines[2]}"
@@ -831,7 +864,7 @@ run_actual_flow() {
           --execution-root "$execution_root" \
           --status-file "$status_file" \
           --runtime "$runtime" \
-          "${dispatch_args[@]}" \
+          ${dispatch_args[@]+"${dispatch_args[@]}"} \
           > "$log_file" 2>&1
     ); then
       tail -80 "$log_file" >&2 || true
@@ -851,7 +884,7 @@ run_actual_flow() {
         --status-file "$status_file" \
         --execution-root "$execution_root" \
         --runtime "$runtime" \
-        "${dispatch_args[@]}" \
+        ${dispatch_args[@]+"${dispatch_args[@]}"} \
         --max-attempts 1 \
         --stop-on-failure > "$log_file" 2>&1
     ); then
@@ -934,19 +967,28 @@ EOF
 
 report_failures_and_exit() {
   local item
+  local actual_failure_count
+  local runtime_failure_count
 
-  if [[ ${#ACTUAL_FAILURES[@]} -eq 0 ]]; then
-    for item in "${RUNTIME_FAILURES[@]}"; do
-      warn "runtime unavailable: $item"
-    done
+  actual_failure_count="$(array_length ACTUAL_FAILURES)"
+  runtime_failure_count="$(array_length RUNTIME_FAILURES)"
+
+  if [[ "$actual_failure_count" -eq 0 ]]; then
+    if [[ "$runtime_failure_count" -gt 0 ]]; then
+      for item in "${RUNTIME_FAILURES[@]}"; do
+        warn "runtime unavailable: $item"
+      done
+    fi
     log "phase runtime parity smoke passed"
     return 0
   fi
 
   log "phase runtime parity smoke failed"
-  for item in "${RUNTIME_FAILURES[@]}"; do
-    log "- runtime: $item"
-  done
+  if [[ "$runtime_failure_count" -gt 0 ]]; then
+    for item in "${RUNTIME_FAILURES[@]}"; do
+      log "- runtime: $item"
+    done
+  fi
   for item in "${ACTUAL_FAILURES[@]}"; do
     log "- actual: $item"
   done
@@ -983,8 +1025,6 @@ if [[ ! -d "$REFERENCE_PLAN_DIR" ]]; then
 fi
 
 runtime_cli_prepare_environment
-require_command claude
-require_command codex
 require_command python3
 require_command shasum
 
