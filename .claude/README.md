@@ -207,5 +207,5 @@ Phase runner default behavior:
 - Keep English `.md` in ASCII and maintain matching `.ko.md` pairs.
 - If you change names or paths, update this document and `install-claude.sh`.
 - If the target project is missing its bootstrap docs, run `project-md-refresh`.
-- Recursive self-host improvements should start from `bash .claude/scripts/harness-prepare-recursive-worktree.sh`, refresh the candidate worktree through `bash .claude/scripts/harness-promote.sh`, and update `main` only in an explicit release step.
+- Recursive self-host improvements should start from `bash .claude/scripts/harness-prepare-recursive-worktree.sh`, keep daily work on the recursive worktree, and use a temporary release-candidate worktree only when isolated release review is useful.
 - `project-md-refresh` should refresh `.claude/PROJECT.md` together with `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, and `docs/analysis/README.md`.

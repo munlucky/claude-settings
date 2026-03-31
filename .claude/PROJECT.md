@@ -13,8 +13,8 @@ Last-Reviewed: 2026-03-30
 ## Core Rules
 
 1. `main` receives only reusable harness source files; generated test outputs, temporary worktrees, and run artifacts stay ignored.
-2. Recursive harness improvement runs happen on isolated branches/worktrees, and the default promotion target is a separate candidate branch/worktree rather than `main`.
-3. Updating `main` is an explicit release step that is limited to the approved harness whitelist and must pass the strict `meta_harness` verification checks.
+2. Recursive harness improvement runs happen on an isolated recursive branch/worktree, and `main` stays clean until an explicit selective release step.
+3. Updating `main` is an explicit release step limited to the approved harness whitelist and strict `meta_harness` verification checks; a temporary release-candidate worktree is optional, not part of the daily default.
 4. Real implementation tests must define `IMPLEMENTATION_TEST_BRIEF.md` and `RUN_MANIFEST.md` before implementation begins if the run will count toward harness quality normalization.
 5. Release-readiness evidence should prioritize `large` full-stack web benchmark runs that separate `one-prompt baseline` from `recursive improvement delta`.
 6. A large-web benchmark that only proves contract fit is not enough to validate the harness execution engine; release evidence should also include a `phase_runner_execution` run.
@@ -24,8 +24,7 @@ Last-Reviewed: 2026-03-30
 - **Test framework**: Contract-backed shell verification plus isolated worktree smoke flows
 - **Commands**:
   - `bash .claude/scripts/harness-prepare-recursive-worktree.sh`
-  - `bash .claude/scripts/harness-promote.sh --source codex/harness-recursive`
-  - `bash .claude/scripts/harness-promote.sh --source codex/harness-main-candidate --target main --target-base main --allow-main-target`
+  - `bash .claude/scripts/harness-promote.sh --source codex/harness-recursive --target codex/harness-release-candidate --target-base main --target-worktree .tmp/harness-worktrees/harness-release-candidate`
   - `bash .claude/scripts/knowledge-repo-audit.sh`
   - `bash .claude/scripts/verify-code-policy.sh`
   - `bash .claude/scripts/workflow-enforcement.sh verify`
@@ -47,7 +46,7 @@ Last-Reviewed: 2026-03-30
 
 - **API endpoints**: No persistent network API; repository behavior is exposed through local shell scripts and Git workflows
 - **Helper functions**: `.claude/scripts/*.sh`, `.claude/scripts/*.py`, and verification helpers under `.claude/agents/verification/`
-- **Contract exchange**: Policy lives in `.claude/verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and promotion scope is defined by `.claude/harness-promotion-paths.txt` across recursive and candidate worktrees
+- **Contract exchange**: Policy lives in `.claude/verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and promotion scope is defined by `.claude/harness-promotion-paths.txt`; daily work happens on the recursive worktree and any release-candidate worktree is temporary
 
 ## Type/Domain Patterns
 
@@ -57,7 +56,7 @@ Last-Reviewed: 2026-03-30
 ## Auth/Authorization
 
 - **Auth method**: Local filesystem permissions and Git branch/worktree isolation
-- **Authorization model**: Destructive or out-of-sandbox actions require explicit approval; `main` updates require an explicit release step from the candidate branch
+- **Authorization model**: Destructive or out-of-sandbox actions require explicit approval; `main` updates require an explicit selective release step from the recursive branch or an optional temporary release-candidate worktree
 - **Sensitive-path policy**: `.gitignore`, `.claudeignore`, ignored `.tmp/harness-*` directories, and strict `meta_harness` verification prevent runtime artifacts from being committed
 
 ## Document Paths
@@ -75,9 +74,9 @@ documentPaths:
 HARNESS_RECURSIVE_BRANCH
 HARNESS_RECURSIVE_WORKTREE
 HARNESS_RECURSIVE_BASE_BRANCH
-HARNESS_CANDIDATE_BRANCH
-HARNESS_CANDIDATE_WORKTREE
-HARNESS_CANDIDATE_BASE_BRANCH
+HARNESS_PROMOTION_TARGET_BRANCH
+HARNESS_PROMOTION_TARGET_WORKTREE
+HARNESS_PROMOTION_TARGET_BASE_BRANCH
 HARNESS_PROMOTION_PATHS_FILE
 HARNESS_PROMOTION_SKIP_CHECKS
 HARNESS_KNOWLEDGE_AUDIT_FILE

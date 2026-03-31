@@ -191,6 +191,6 @@ phase runner 기본 동작:
 - 영문 `.md`는 ASCII만 사용하고 동일한 `.ko.md`를 함께 유지합니다.
 - 이름이나 경로를 바꾸면 이 문서와 `install-claude.sh`를 함께 갱신합니다.
 - 대상 프로젝트의 부트스트랩 문서 세트가 비어 있으면 `project-md-refresh` 스킬을 실행합니다.
-- self-host 재귀 개선은 `bash .claude/scripts/harness-prepare-recursive-worktree.sh`로 시작하고 `bash .claude/scripts/harness-promote.sh`로 candidate worktree 를 갱신한 뒤, `main` 반영은 명시적 release 단계에서만 수행합니다.
+- self-host 재귀 개선은 `bash .claude/scripts/harness-prepare-recursive-worktree.sh`로 시작하고, 일상 작업은 recursive worktree 에서만 진행하며, 격리된 release review 가 필요할 때만 임시 release-candidate worktree 를 사용합니다.
 - `project-md-refresh`는 `.claude/PROJECT.md`와 함께 `workflow/README.md`, `docs/design/README.md`, `docs/glossary/README.md`, `docs/daily/README.md`, `TEST_GUIDE.md`, `docs/analysis/README.md`를 갱신해야 합니다.
 - 대상 프로젝트 검증은 `.claude/verification.contract.yaml` 같은 계약 문서로 선언하는 방식을 우선합니다.

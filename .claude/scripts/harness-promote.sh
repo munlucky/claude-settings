@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF_USAGE'
 Usage:
-  harness-promote.sh [--source <branch>] [--target <branch>] [--target-base <branch>] [--paths-file <file>] [--target-worktree <path>] [--skip-checks] [--allow-main-target]
+  harness-promote.sh [--source <branch>] --target <branch> [--target-base <branch>] [--paths-file <file>] [--target-worktree <path>] [--skip-checks] [--allow-main-target]
 EOF_USAGE
 }
 
@@ -137,10 +137,10 @@ run_required_checks() {
 WORKSPACE_ROOT="$(resolve_root_dir)"
 COMMON_ROOT="$(resolve_common_root_dir)"
 SOURCE_BRANCH="${HARNESS_RECURSIVE_BRANCH:-codex/harness-recursive}"
-TARGET_BRANCH="${HARNESS_CANDIDATE_BRANCH:-codex/harness-main-candidate}"
-TARGET_BASE_BRANCH="${HARNESS_CANDIDATE_BASE_BRANCH:-main}"
+TARGET_BRANCH="${HARNESS_PROMOTION_TARGET_BRANCH:-${HARNESS_CANDIDATE_BRANCH:-}}"
+TARGET_BASE_BRANCH="${HARNESS_PROMOTION_TARGET_BASE_BRANCH:-${HARNESS_CANDIDATE_BASE_BRANCH:-main}}"
 PATHS_FILE="${HARNESS_PROMOTION_PATHS_FILE:-$WORKSPACE_ROOT/.claude/harness-promotion-paths.txt}"
-TARGET_WORKTREE="${HARNESS_CANDIDATE_WORKTREE:-$COMMON_ROOT/.tmp/harness-worktrees/harness-main-candidate}"
+TARGET_WORKTREE="${HARNESS_PROMOTION_TARGET_WORKTREE:-${HARNESS_CANDIDATE_WORKTREE:-}}"
 SKIP_CHECKS="${HARNESS_PROMOTION_SKIP_CHECKS:-false}"
 ALLOW_MAIN_TARGET="false"
 
@@ -191,10 +191,12 @@ case "$PATHS_FILE" in
   *) PATHS_FILE="$WORKSPACE_ROOT/$PATHS_FILE" ;;
 esac
 
-case "$TARGET_WORKTREE" in
-  /*) ;;
-  *) TARGET_WORKTREE="$COMMON_ROOT/$TARGET_WORKTREE" ;;
-esac
+if [ -n "$TARGET_WORKTREE" ]; then
+  case "$TARGET_WORKTREE" in
+    /*) ;;
+    *) TARGET_WORKTREE="$COMMON_ROOT/$TARGET_WORKTREE" ;;
+  esac
+fi
 
 if ! git -C "$COMMON_ROOT" rev-parse --verify "$SOURCE_BRANCH^{commit}" >/dev/null 2>&1; then
   printf 'ERROR: source branch not found: %s\n' "$SOURCE_BRANCH" >&2
@@ -211,6 +213,11 @@ if [ ! -f "$PATHS_FILE" ]; then
   exit 1
 fi
 
+if [ -z "$TARGET_BRANCH" ]; then
+  printf 'ERROR: target branch is required. Use --target <branch>.\n' >&2
+  exit 1
+fi
+
 if [ "$TARGET_BRANCH" = "main" ] && [ "$ALLOW_MAIN_TARGET" != "true" ]; then
   printf 'ERROR: refusing to target main without --allow-main-target\n' >&2
   exit 1
@@ -219,6 +226,9 @@ fi
 if target_from_branch="$(find_worktree_for_branch "$COMMON_ROOT" "$TARGET_BRANCH")"; then
   TARGET_WORKTREE="$target_from_branch"
 else
+  if [ -z "$TARGET_WORKTREE" ]; then
+    TARGET_WORKTREE="$COMMON_ROOT/.tmp/harness-worktrees/${TARGET_BRANCH##*/}"
+  fi
   TARGET_WORKTREE="$(ensure_target_worktree "$COMMON_ROOT" "$TARGET_BRANCH" "$TARGET_BASE_BRANCH" "$TARGET_WORKTREE")"
 fi
 
@@ -256,8 +266,10 @@ if [ "$SKIP_CHECKS" != "true" ]; then
   run_required_checks "$TARGET_WORKTREE"
 fi
 
-printf 'Promotion candidate prepared\n'
+printf 'Promotion target prepared\n'
 printf 'Source branch: %s\n' "$SOURCE_BRANCH"
+printf 'Target branch: %s\n' "$TARGET_BRANCH"
+printf 'Target worktree: %s\n' "$TARGET_WORKTREE"
 printf 'Target branch: %s\n' "$TARGET_BRANCH"
 printf 'Target base: %s\n' "$TARGET_BASE_BRANCH"
 printf 'Target worktree: %s\n' "$TARGET_WORKTREE"

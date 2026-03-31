@@ -6,10 +6,10 @@ Last-Reviewed: 2026-03-30
 
 ## 목표
 
-저장소 상태를 두 층으로 분리합니다.
+저장소의 일상 상태를 두 층으로 분리합니다.
 
 - `main`에는 재사용 가능한 안정 하네스 자산만 유지
-- 전용 브랜치/worktree에서는 재귀 개선 실험을 격리 실행
+- 전용 recursive 브랜치/worktree에서는 재귀 개선 실험을 격리 실행
 
 실험 브랜치에서는 fixture, 로그, scorecard, 임시 저장소를 만들어도 되지만, 이런 산출물은 모두 ignore 상태로 남아야 하며 promotion 대상이 되면 안 됩니다.
 
@@ -18,10 +18,9 @@ Last-Reviewed: 2026-03-30
 - 안정 `main` worktree: 저장소 루트
 - 재귀 개선 브랜치: `codex/harness-recursive`
 - 재귀 개선 worktree: `.tmp/harness-worktrees/harness-recursive`
-- candidate 브랜치: `codex/harness-main-candidate`
-- candidate worktree: `.tmp/harness-worktrees/harness-main-candidate`
 - 일회성 실행 산출물: `.tmp/harness-runs/<run-id>/`
 - 선택적 generated repo: `.tmp/harness-workspaces/<run-id>/`
+- 선택적 임시 release candidate: 분리된 release review sandbox 가 필요할 때만 생성
 
 ## 추적 대상과 ignore 대상
 
@@ -61,48 +60,43 @@ bash .claude/scripts/harness-prepare-recursive-worktree.sh
 - `HARNESS_RECURSIVE_WORKTREE`
 - `HARNESS_RECURSIVE_BASE_BRANCH`
 
-## Candidate Promotion 흐름
+## 선택적 임시 Release Candidate
 
-재귀 개선 브랜치의 재사용 가능한 하네스 변경을 분리된 candidate worktree 로 반입하려면 다음을 실행합니다.
+`main` worktree 를 건드리지 않고 분리된 release review sandbox 가 필요할 때만 target 을 명시적으로 만듭니다.
 
 ```bash
-bash .claude/scripts/harness-promote.sh --source codex/harness-recursive
+bash .claude/scripts/harness-promote.sh --source codex/harness-recursive --target codex/harness-release-candidate --target-base main --target-worktree .tmp/harness-worktrees/harness-release-candidate
 ```
 
 promotion 스크립트는 다음을 수행합니다.
 
-1. 기본 대상 브랜치를 `codex/harness-main-candidate`로 사용합니다.
-2. `.tmp/harness-worktrees/harness-main-candidate`를 생성하거나 재사용합니다.
-3. candidate worktree 의 whitelist 경로를 먼저 `main` 기준 상태로 되돌립니다.
-4. 현재 source worktree 상태에서 whitelist 경로만 candidate worktree 로 복사합니다.
-5. candidate worktree 에서 strict `meta_harness` 검증 명령을 실행합니다.
-6. review/commit 가능한 candidate 반입 후보를 남깁니다.
+1. 명시적 target branch 가 있어야만 동작합니다.
+2. 요청한 target worktree 를 필요할 때만 생성하거나 재사용합니다.
+3. 그 target worktree 의 whitelist 경로를 `main` 기준 상태로 되돌립니다.
+4. 현재 source worktree 상태에서 whitelist 경로만 복사합니다.
+5. target worktree 에서 strict `meta_harness` 검증 명령을 실행합니다.
 
-이 스크립트는 `--allow-main-target` 없이는 `main`을 건드리지 않습니다.
+이 temporary candidate 는 선택 사항이며, 기본 daily loop 의 일부가 아닙니다.
 
 ## 명시적 Main 반영
 
-candidate 브랜치를 검토한 뒤 정말로 `main`을 갱신하려면 candidate worktree 에서 다음을 실행합니다.
+일상 운영에서는 `main` 과 recursive worktree 만 열어둡니다.
 
-```bash
-bash .claude/scripts/harness-promote.sh --source codex/harness-main-candidate --target main --target-base main --allow-main-target
-```
-
-이 단계는 `main` worktree 를 수정하기 때문에 의도적으로 명시적이어야 합니다.
+정말 `main` 으로 release 할 때만 recursive branch 또는 임시 release-candidate worktree 에서 selective path update 를 사용합니다. recursive branch 를 `main` 에 직접 merge 하면 안 됩니다.
 
 ## 일상 운영 루프
 
 1. 재귀 개선 worktree 를 준비합니다.
 2. fixture 생성, 점수 계산, 하네스 실험은 ignore 경로 안에서만 수행합니다.
 3. 성공한 실험의 교훈을 재사용 가능한 `.claude` 자산으로 정리합니다.
-4. promotion 스크립트로 candidate worktree 를 갱신합니다.
-5. candidate 브랜치에서 review 와 commit 을 진행합니다.
-6. `main` 반영은 별도의 release 단계에서만 수행합니다.
+4. recursive 브랜치에서 review 와 commit 을 진행합니다.
+5. 필요할 때만 임시 release-candidate worktree 를 만들어 분리 검토합니다.
+6. `main` 반영은 별도의 selective release 단계에서만 수행합니다.
 
 ## 강제 규칙
 
 - 재귀 개선 브랜치를 `main`에 직접 merge 하지 않습니다.
 - 생성 산출물이나 로그를 `.claude/harness-promotion-paths.txt`에 추가하지 않습니다.
-- release 의도가 없는 한 `main`을 대상으로 promotion 하지 않습니다.
+- recursive 변경을 release 할 의도가 없는 한 `main`을 대상으로 promotion 하지 않습니다.
 - dirty 상태의 target worktree 로 promotion 하지 않습니다.
 - 안정 브랜치에는 재사용 가능한 하네스 정의만 들어가도록 유지합니다.

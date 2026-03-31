@@ -6,10 +6,10 @@ Last-Reviewed: 2026-03-30
 
 ## Goal
 
-Keep the repository split into two states:
+Keep the repository split into two daily states:
 
 - stable reusable harness assets on `main`
-- isolated recursive-improvement experiments on a dedicated branch/worktree
+- isolated recursive-improvement experiments on a dedicated recursive branch/worktree
 
 The branch is allowed to generate fixtures, logs, scorecards, and temporary repositories, but those outputs must stay ignored and never become part of the promotion set.
 
@@ -18,10 +18,9 @@ The branch is allowed to generate fixtures, logs, scorecards, and temporary repo
 - Stable `main` worktree: repository root
 - Recursive branch: `codex/harness-recursive`
 - Recursive worktree: `.tmp/harness-worktrees/harness-recursive`
-- Candidate branch: `codex/harness-main-candidate`
-- Candidate worktree: `.tmp/harness-worktrees/harness-main-candidate`
 - Ephemeral run outputs: `.tmp/harness-runs/<run-id>/`
 - Optional generated repos: `.tmp/harness-workspaces/<run-id>/`
+- Optional temporary release candidate: create only when a separate release-review sandbox is useful
 
 ## Tracked vs Ignored
 
@@ -62,34 +61,29 @@ Environment overrides:
 - `HARNESS_RECURSIVE_WORKTREE`
 - `HARNESS_RECURSIVE_BASE_BRANCH`
 
-## Candidate Promotion Flow
+## Optional Temporary Release Candidate
 
-Promote reusable harness changes from the recursive branch into the isolated candidate worktree with:
+When you want an isolated release-review sandbox without touching the `main` worktree, create a temporary target explicitly:
 
 ```bash
-bash .claude/scripts/harness-promote.sh --source codex/harness-recursive
+bash .claude/scripts/harness-promote.sh --source codex/harness-recursive --target codex/harness-release-candidate --target-base main --target-worktree .tmp/harness-worktrees/harness-release-candidate
 ```
 
 The promotion script:
 
-1. Targets `codex/harness-main-candidate` by default.
-2. Creates or reuses `.tmp/harness-worktrees/harness-main-candidate`.
-3. Resets the whitelisted paths in the candidate worktree back to `main`.
-4. Copies only the whitelisted paths from the current source worktree state into the candidate worktree.
-5. Runs the strict `meta_harness` verification commands in the candidate worktree.
-6. Leaves the verified promotion candidate ready for review and commit on the candidate branch.
+1. Requires an explicit target branch.
+2. Creates or reuses the requested target worktree only when you ask for it.
+3. Resets the whitelisted paths in that target worktree back to `main`.
+4. Copies only the whitelisted paths from the current source worktree state.
+5. Runs the strict `meta_harness` verification commands in the target worktree.
 
-The script does not touch `main` unless you explicitly opt in with `--allow-main-target`.
+This temporary candidate is optional. It is not part of the default daily loop.
 
 ## Explicit Main Update
 
-When the candidate branch has been reviewed and you intentionally want to update `main`, run from the candidate worktree:
+For normal day-to-day operation, keep only `main` and the recursive worktree open.
 
-```bash
-bash .claude/scripts/harness-promote.sh --source codex/harness-main-candidate --target main --target-base main --allow-main-target
-```
-
-That step is intentionally explicit because it will modify the `main` worktree.
+When you intentionally release to `main`, use a selective path update from the recursive branch or from a temporary release-candidate worktree. Do not merge the recursive branch directly into `main`.
 
 ## Daily Operating Loop
 
@@ -97,15 +91,15 @@ That step is intentionally explicit because it will modify the `main` worktree.
 2. Write `IMPLEMENTATION_TEST_BRIEF.md` and `RUN_MANIFEST.md` for each real implementation test before touching code.
 3. Run fixture generation, scoring, and harness experiments only inside ignored paths.
 4. Convert successful lessons into reusable `.claude` assets on the recursive branch.
-5. Run the promotion script to refresh the isolated candidate worktree.
-6. Review and commit on the candidate branch.
-7. Update `main` only in a deliberate release step.
+5. Review and commit on the recursive branch.
+6. Only when needed, create a temporary release-candidate worktree for isolated release review.
+7. Update `main` only in a deliberate selective release step.
 8. Normalize harness quality from accumulated real run summaries before claiming the harness is ready.
 
 ## Hard Rules
 
 - Do not merge the recursive branch directly into `main`.
 - Do not add generated task outputs or logs to `.claude/harness-promotion-paths.txt`.
-- Do not target `main` unless you are intentionally releasing candidate changes.
+- Do not target `main` unless you are intentionally releasing recursive changes.
 - Do not run promotion into a dirty target worktree.
 - Keep the stable branch reviewable by promoting only reusable harness definitions.
