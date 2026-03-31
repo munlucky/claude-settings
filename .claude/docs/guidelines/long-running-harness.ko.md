@@ -161,7 +161,7 @@ Complex 또는 long-running work:
    - 최신 증거와 함께 verification이 통과함
    - 이번 요청 범위의 in-scope 작업이 실제로 끝남
    - 문서/세션 마감 단계를 실행함
-   - 사용자가 원하지 않는 한 `HANDOFF.md`는 필수가 아님
+   - resumable handoff는 필요하지 않으며, `HANDOFF.md`가 있더라도 재개용 문서가 아니라 clean-finish marker로 정리되어야 함
 2. Resume-later handoff
    - verification이 미완료, 차단, 의도적 보류 상태이거나 컨텍스트/런타임/사용자 pause로 세션이 중단됨
    - `QA_REPORT.md`를 갱신함
@@ -180,7 +180,11 @@ Complex 또는 long-running work:
 기본 finish-stage 책임:
 - 의미 있는 문서 drift가 있으면 `doc-auto-sync`
 - 재개 가능 상태나 의사결정 이력이 필요하면 `session-logger`
+- handwritten verdict JSON 대신 `.claude/scripts/write-verification-verdict.py`로 저장소 루트 `.claude/verification-verdict-*.json`을 구조화해서 생성
+  completion gate가 같은 산출물을 검증할 수 있도록 정확한 verdict 파일 경로를 `QA_REPORT.md`에 함께 기록
 - `commit-moonshot`은 사용자가 메모리 현행화와 커밋을 함께 원할 때만 실행
+  이 명시적 opt-in 경로에서만 `AGENT_LOOP_RUN_COMMIT_PROMPT=true`를 사용
+  이 opt-in이 없으면 closeout 로그도 정책상 비활성화로 표시되어야 함
 
 ## 피해야 할 안티패턴
 
