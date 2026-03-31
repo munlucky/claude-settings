@@ -17,6 +17,7 @@ Last-Reviewed: 2026-03-30
 3. Updating `main` is an explicit release step that is limited to the approved harness whitelist and must pass the strict `meta_harness` verification checks.
 4. Real implementation tests must define `IMPLEMENTATION_TEST_BRIEF.md` and `RUN_MANIFEST.md` before implementation begins if the run will count toward harness quality normalization.
 5. Release-readiness evidence should prioritize `large` full-stack web benchmark runs that separate `one-prompt baseline` from `recursive improvement delta`.
+6. A large-web benchmark that only proves contract fit is not enough to validate the harness execution engine; release evidence should also include a `phase_runner_execution` run.
 
 ## Testing Rules
 

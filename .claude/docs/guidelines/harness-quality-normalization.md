@@ -46,6 +46,11 @@ For `one_prompt_recursive` runs, also record:
 - `benchmarkMode`
 - `benchmark`
 
+For `phase_runner_execution` runs, also record:
+
+- `benchmarkMode`
+- `engine`
+
 Suggested shape:
 
 ```json
@@ -93,6 +98,21 @@ Suggested `one_prompt_recursive` extension:
 }
 ```
 
+Suggested `phase_runner_execution` extension:
+
+```json
+{
+  "benchmarkMode": "phase_runner_execution",
+  "engine": {
+    "evidenceLevel": "L3",
+    "dispatchValid": true,
+    "artifactDriven": true,
+    "phaseCompletionFidelity": true,
+    "manualRescueRequired": true
+  }
+}
+```
+
 ## Scoring Model
 
 The normalizer computes:
@@ -125,6 +145,7 @@ For large web release review, inspect these separate aggregates before trusting 
 - final average
 - delta average
 - hard-fail recovery rate
+- execution-engine evidence level and fidelity for `phase_runner_execution` runs
 
 ## Status Levels
 
@@ -162,3 +183,4 @@ After every real usage test:
 
 If the score is strong but still `provisional`, keep testing instead of releasing on confidence alone.
 If the run used `one_prompt_recursive`, also review whether the delta was positive and whether critical hard fails were cleared.
+If the run used `phase_runner_execution`, also review whether the engine evidence level is high enough to prove the harness actually drove the loop.

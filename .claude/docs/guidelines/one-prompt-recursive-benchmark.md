@@ -12,6 +12,7 @@ Measure two different abilities without conflating them:
 2. `recursive improvement`: how much the harness improves the same project after reading failures, updating the execution loop, and retrying under the same benchmark contract
 
 This benchmark is the preferred release-readiness benchmark for the Harness Project.
+It does not, by itself, prove that the phase runner execution engine drove the downstream implementation loop.
 
 ## Why This Exists
 
@@ -195,3 +196,4 @@ Good large-web benchmark families:
 - `.claude/templates/execution/ONE_PROMPT_BASELINE.template.md`
 - `.claude/templates/execution/RECURSIVE_IMPROVEMENT_REPORT.template.md`
 
+For execution-engine validation, pair this benchmark with `.claude/docs/guidelines/phase-runner-execution-benchmark.md`.
