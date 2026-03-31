@@ -29,6 +29,10 @@ When the run mode is `one_prompt_recursive`, also require:
 - `ONE_PROMPT_BASELINE.md`
 - `RECURSIVE_IMPROVEMENT_REPORT.md`
 
+When the run mode is `phase_runner_execution`, also require:
+
+- `PHASE_RUNNER_EXECUTION_REPORT.md`
+
 Do not treat a run as normalization evidence unless all required artifacts exist.
 
 ## Artifact Roles
@@ -132,6 +136,7 @@ Do not count the run toward normalized harness quality until:
 - `harness-quality-run.json` exists
 - `ONE_PROMPT_BASELINE.md` exists for `one_prompt_recursive` runs
 - `RECURSIVE_IMPROVEMENT_REPORT.md` exists for `one_prompt_recursive` runs
+- `PHASE_RUNNER_EXECUTION_REPORT.md` exists for `phase_runner_execution` runs
 
 ## Test Item Selection Rule
 
@@ -162,3 +167,4 @@ Normalized quality should only be used for release readiness when:
 - `.claude/templates/execution/HARNESS_QUALITY_RUN.template.json`
 - `.claude/templates/execution/ONE_PROMPT_BASELINE.template.md`
 - `.claude/templates/execution/RECURSIVE_IMPROVEMENT_REPORT.template.md`
+- `.claude/templates/execution/PHASE_RUNNER_EXECUTION_REPORT.template.md`

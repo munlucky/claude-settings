@@ -17,6 +17,7 @@ Last-Reviewed: 2026-03-30
 3. `main` 갱신은 승인된 하네스 화이트리스트 범위로 제한된 명시적 release 단계이며 strict `meta_harness` 검증을 통과해야 합니다.
 4. 하네스 품질 정규화에 포함할 실제 구현 테스트는 구현을 시작하기 전에 `IMPLEMENTATION_TEST_BRIEF.md` 와 `RUN_MANIFEST.md` 를 먼저 작성해야 합니다.
 5. release 준비도 판단은 `one-prompt baseline` 과 `recursive improvement delta` 를 분리해서 측정하는 `large` 풀스택 웹 벤치마크를 우선 기준으로 삼아야 합니다.
+6. 문서 계약만 맞춘 large-web run은 실행 엔진 검증으로 충분하지 않으며, release 증거에는 별도의 `phase_runner_execution` run이 포함되어야 합니다.
 
 ## 테스트 규칙
 
