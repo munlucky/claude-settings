@@ -16,6 +16,7 @@ Last-Reviewed: 2026-03-30
 2. Recursive harness improvement runs happen on isolated branches/worktrees, and the default promotion target is a separate candidate branch/worktree rather than `main`.
 3. Updating `main` is an explicit release step that is limited to the approved harness whitelist and must pass the strict `meta_harness` verification checks.
 4. Real implementation tests must define `IMPLEMENTATION_TEST_BRIEF.md` and `RUN_MANIFEST.md` before implementation begins if the run will count toward harness quality normalization.
+5. Release-readiness evidence should prioritize `large` full-stack web benchmark runs that separate `one-prompt baseline` from `recursive improvement delta`.
 
 ## Testing Rules
 

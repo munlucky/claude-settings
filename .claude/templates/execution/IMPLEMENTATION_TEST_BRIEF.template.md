@@ -5,6 +5,7 @@
 - Run ID:
 - Date:
 - Owner:
+- Benchmark mode:
 
 ## Test Item
 
@@ -13,6 +14,8 @@
 - Project type:
 - Complexity:
 - Why this item was selected:
+- Benchmark contract or rubric path:
+- Total rubric items:
 
 ## Baseline
 
@@ -42,4 +45,3 @@
 
 - Which evidence gap this run closes:
 - Whether this run increases diversity:
-

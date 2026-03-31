@@ -8,6 +8,7 @@
   "complexity": "small",
   "taskId": "example-task",
   "taskOutcomePassed": true,
+  "benchmarkMode": "standard",
   "checks": {
     "requiredChecksPassed": true,
     "knowledgeAuditPassed": true,
@@ -22,5 +23,12 @@
   "counters": {
     "retryCount": 0,
     "handoffCount": 0
+  },
+  "benchmark": {
+    "baselineScore": null,
+    "finalScore": null,
+    "deltaScore": null,
+    "hardFailRecovered": null,
+    "recursiveRoundsUsed": null
   }
 }
