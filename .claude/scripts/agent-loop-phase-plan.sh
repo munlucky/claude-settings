@@ -50,7 +50,7 @@ get_phase_title() {
     local phase_doc
     phase_doc=$(get_phase_doc "$phase_num")
     if [[ -n "$phase_doc" ]]; then
-        head -5 "$phase_doc" | grep -E "^#" | head -1 | sed 's/^#* //'
+        head -5 "$phase_doc" | grep -E "^#" | head -1 | sed 's/^#* //' | tr -d '\r'
     else
         echo "Phase $phase_num"
     fi
@@ -65,6 +65,7 @@ get_phase_doc() {
 
 sanitize_slug() {
     echo "$1" \
+        | tr -d '\r' \
         | tr '[:upper:]' '[:lower:]' \
         | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
 }
@@ -181,17 +182,7 @@ ensure_execution_artifacts() {
     local phase_slug
     local required_commands
 
-    printf -v phase_prefix '%02d' "$phase_num"
-    phase_slug=$(sanitize_slug "$phase_title")
-    if [[ -z "$phase_slug" ]]; then
-        phase_slug="phase-${phase_prefix}"
-    fi
-
-    PHASE_EXECUTION_DIR="${EXECUTION_ROOT}/${phase_prefix}-${phase_slug}"
-    PHASE_SPRINT_CONTRACT="${PHASE_EXECUTION_DIR}/SPRINT_CONTRACT.md"
-    PHASE_QA_REPORT="${PHASE_EXECUTION_DIR}/QA_REPORT.md"
-    PHASE_HANDOFF="${PHASE_EXECUTION_DIR}/HANDOFF.md"
-    PHASE_SCORECARD="${PHASE_EXECUTION_DIR}/SCORECARD.md"
+    assign_execution_artifact_paths "$phase_num" "$phase_title"
     required_commands="$(render_required_verification_commands)"
 
     mkdir -p "$PHASE_EXECUTION_DIR"
@@ -378,6 +369,25 @@ EOF
 EOF
         fi
     fi
+}
+
+assign_execution_artifact_paths() {
+    local phase_num="$1"
+    local phase_title="$2"
+    local phase_prefix
+    local phase_slug
+
+    printf -v phase_prefix '%02d' "$phase_num"
+    phase_slug=$(sanitize_slug "$phase_title")
+    if [[ -z "$phase_slug" ]]; then
+        phase_slug="phase-${phase_prefix}"
+    fi
+
+    PHASE_EXECUTION_DIR="${EXECUTION_ROOT}/${phase_prefix}-${phase_slug}"
+    PHASE_SPRINT_CONTRACT="${PHASE_EXECUTION_DIR}/SPRINT_CONTRACT.md"
+    PHASE_QA_REPORT="${PHASE_EXECUTION_DIR}/QA_REPORT.md"
+    PHASE_HANDOFF="${PHASE_EXECUTION_DIR}/HANDOFF.md"
+    PHASE_SCORECARD="${PHASE_EXECUTION_DIR}/SCORECARD.md"
 }
 
 build_phase_prompt() {
