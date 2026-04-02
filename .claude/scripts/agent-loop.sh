@@ -49,8 +49,7 @@ WORKFLOW_LOG_DIR=".claude/logs/workflow-enforcement"
 WATCHDOG_CHECK_SECONDS=60
 WATCHDOG_MAX_SECONDS=$((2 * 60 * 60))
 WATCHDOG_AUTO_RESTART=true
-# 0 = unlimited restarts
-WATCHDOG_MAX_RESTARTS=0
+WATCHDOG_MAX_RESTARTS=2
 VERIFICATION_CONTRACT_FILE=".claude/verification.contract.yaml"
 
 # Autonomous Mode (default: true)
@@ -62,11 +61,19 @@ RUN_COMMIT_PROMPT="${AGENT_LOOP_RUN_COMMIT_PROMPT:-false}"
 SKIP_COMMIT_PROMPT="${AGENT_LOOP_SKIP_COMMIT_PROMPT:-false}"
 WATCHDOG_CHECK_SECONDS="${AGENT_LOOP_WATCHDOG_CHECK_SECONDS:-$WATCHDOG_CHECK_SECONDS}"
 WATCHDOG_MAX_SECONDS="${AGENT_LOOP_WATCHDOG_MAX_SECONDS:-$WATCHDOG_MAX_SECONDS}"
+WATCHDOG_MAX_RESTARTS="${AGENT_LOOP_WATCHDOG_MAX_RESTARTS:-$WATCHDOG_MAX_RESTARTS}"
 CODEX_REASONING_EFFORT="${AGENT_LOOP_CODEX_REASONING_EFFORT:-${MOONSHOT_CODEX_REASONING_EFFORT:-medium}}"
 ADVANCE_ON_FAILURE="${AGENT_LOOP_ADVANCE_ON_FAILURE:-false}"
 SCORECARD_REQUIRED="${AGENT_LOOP_SCORECARD_REQUIRED:-true}"
 TARGET_COMPLETION_SCORE="${AGENT_LOOP_TARGET_COMPLETION_SCORE:-100}"
 SCORECARD_PROFILE="${AGENT_LOOP_SCORECARD_PROFILE:-auto}"
+TIMEOUT_RUNTIME_FALLBACK="${AGENT_LOOP_TIMEOUT_RUNTIME_FALLBACK:-true}"
+
+LOOP_STOPPED_EARLY=false
+LOOP_STOP_REASON=""
+LOOP_STOP_DETAIL=""
+LOOP_STOP_PHASE=""
+LOOP_STOP_LOG=""
 
 log_phase() {
     echo -e "${CYAN}📦${NC} $1"
@@ -86,6 +93,139 @@ log_info() {
 
 log_warn() {
     echo -e "${YELLOW}⚠️${NC} $1"
+}
+
+describe_stop_reason() {
+    local reason="$1"
+    local runtime="$2"
+    local detail="${3:-}"
+
+    case "$reason" in
+        timeout-auth)
+            printf '런타임 인증 또는 권한 문제로 %s 실행이 watchdog 제한 시간 안에 완료되지 않았습니다' "$runtime"
+            ;;
+        timeout-network)
+            printf '네트워크 또는 외부 요청 문제로 %s 실행이 watchdog 제한 시간 안에 완료되지 않았습니다' "$runtime"
+            ;;
+        timeout-browser)
+            printf '브라우저 또는 앱 런타임 smoke가 제한 시간 안에 준비되지 않았습니다'
+            ;;
+        timeout-verification)
+            printf '검증 산출물이 제시간에 생성되지 않아 phase 완료 판정을 내릴 수 없었습니다'
+            ;;
+        timeout-restart-limit)
+            printf '같은 phase가 반복 timeout 되었고 재시도 한도에 도달했습니다'
+            ;;
+        missing-verification-evidence)
+            printf '필수 검증 증거가 없어 완료 판정을 내릴 수 없었습니다'
+            ;;
+        phase-max-attempts)
+            printf '자동 수정 재시도 한도에 도달했지만 phase를 안정적으로 완료하지 못했습니다'
+            ;;
+        phase-failed)
+            printf 'phase 실행이 실패했고 자동 복구가 끝나지 않았습니다'
+            ;;
+        *)
+            printf '%s' "${detail:-루프가 중단되었습니다}"
+            ;;
+    esac
+}
+
+classify_timeout_reason() {
+    local log_file="$1"
+
+    if [[ -f "$log_file" ]]; then
+        if grep -Eqi 'does not have access to Claude|Please login again|Could not resolve authentication method|login required|subscription|authentication' "$log_file"; then
+            echo "timeout-auth"
+            return
+        fi
+        if grep -Eqi 'error sending request for url|network error|ENOTFOUND|ECONNREFUSED|connection refused|temporary failure' "$log_file"; then
+            echo "timeout-network"
+            return
+        fi
+        if grep -Eqi 'browserctl|Browser flow failed|URL check failed|setup gap|http=000|LOCAL_FILE_MISSING' "$log_file"; then
+            echo "timeout-browser"
+            return
+        fi
+        if grep -Eqi 'verification|scorecard|evidenceFresh|requiredChecks|QA_REPORT|HANDOFF' "$log_file"; then
+            echo "timeout-verification"
+            return
+        fi
+    fi
+
+    echo "timeout-restart-limit"
+}
+
+resolve_timeout_fallback_runtime() {
+    local current_runtime="$1"
+
+    case "$current_runtime" in
+        claude)
+            if command -v codex >/dev/null 2>&1; then
+                echo "codex"
+            fi
+            ;;
+        codex)
+            if command -v claude >/dev/null 2>&1; then
+                echo "claude"
+            fi
+            ;;
+    esac
+}
+
+record_loop_stop() {
+    local phase="$1"
+    local reason="$2"
+    local detail="$3"
+    local log_file="${4:-}"
+
+    LOOP_STOPPED_EARLY=true
+    LOOP_STOP_PHASE="$phase"
+    LOOP_STOP_REASON="$reason"
+    LOOP_STOP_DETAIL="$detail"
+    LOOP_STOP_LOG="$log_file"
+
+    echo ""
+    echo -e "${RED}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${RED}  Agent Loop Stopped Early${NC}"
+    echo -e "${RED}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    log_error "Phase ${phase} 중단 사유: ${detail}"
+    if [[ -n "$log_file" ]]; then
+        log_error "확인할 로그: ${log_file}"
+    fi
+    echo ""
+
+    if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+        {
+            echo "## Phase ${phase} - Stopped Early"
+            echo "- Reason: ${reason}"
+            echo "- Detail: ${detail}"
+            if [[ -n "$log_file" ]]; then
+                echo "- Log: ${log_file}"
+            fi
+            echo ""
+        } >> "$DECISION_LOG"
+    fi
+}
+
+record_runtime_timeout() {
+    local phase="$1"
+    local log_file="$2"
+    local runtime="$3"
+    local restart_count="$4"
+
+    local reason
+    local detail
+
+    reason="$(classify_timeout_reason "$log_file")"
+    detail="$(describe_stop_reason "$reason" "$runtime")"
+
+    append_qa_runtime_update "phase-timeout-attempt-${restart_count}" "$log_file" "$detail"
+    append_handoff_update "phase-timeout-attempt-${restart_count}" "$log_file" "$detail"
+
+    TIMEOUT_REASON="$reason"
+    TIMEOUT_DETAIL="$detail"
 }
 
 file_checksum_or_empty() {
@@ -185,7 +325,6 @@ fi
 RUNNER_RUNTIME="$(resolve_runner_runtime)"
 
 mkdir -p "$LOG_DIR"
-mkdir -p "$EXECUTION_ROOT"
 
 if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
     echo "# Autonomous Decision Log" > "$DECISION_LOG"
@@ -228,7 +367,7 @@ while true; do
     PHASE_DOC=$(get_phase_doc "$NEXT_PHASE")
     TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
     LOGFILE="${LOG_DIR}/phase-${NEXT_PHASE}_${TIMESTAMP}.log"
-    ensure_execution_artifacts "$NEXT_PHASE" "$PHASE_TITLE" "$PHASE_DOC"
+    assign_execution_artifact_paths "$NEXT_PHASE" "$PHASE_TITLE"
 
     echo -e "${CYAN}───────────────────────────────────────────────────────────────${NC}"
     log_phase "Phase $NEXT_PHASE: $PHASE_TITLE"
@@ -249,18 +388,19 @@ while true; do
         AUTONOMOUS_INSTRUCTIONS=""
     fi
 
-    PHASE_PROMPT="$(build_phase_prompt "Implement phase $NEXT_PHASE using the active phase doc as the only planning baseline.
+    PRIMARY_PHASE_PROMPT_INSTRUCTIONS="Implement phase $NEXT_PHASE using the active phase doc as the only planning baseline.
 
 Primary objective:
 - Complete the scoped work for phase $NEXT_PHASE.
 - Keep changes bounded to the active phase.
 - Do not move to other phases in this run.
 - If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
-- Once fresh verification evidence exists and the execution artifacts are updated, stop immediately and return control to the caller.")"
-
+- Once fresh verification evidence exists and the execution artifacts are updated, stop immediately and return control to the caller."
+    PHASE_PROMPT="$(build_phase_prompt "$PRIMARY_PHASE_PROMPT_INSTRUCTIONS")"
     START_TIME=$(date +%s)
     restart_count=0
     auto_fix_count=0
+    timeout_fallback_used=false
 
     if [[ "$DRY_RUN" == "true" ]]; then
         log_warn "[DRY-RUN] Would execute phase $NEXT_PHASE"
@@ -272,6 +412,13 @@ Primary objective:
         sleep 1
         continue
     fi
+
+    mkdir -p "$EXECUTION_ROOT"
+    ensure_execution_artifacts "$NEXT_PHASE" "$PHASE_TITLE" "$PHASE_DOC"
+    log_info "Sprint contract: $PHASE_SPRINT_CONTRACT"
+    log_info "QA report: $PHASE_QA_REPORT"
+    log_info "Handoff: $PHASE_HANDOFF"
+    log_info "Scorecard: $PHASE_SCORECARD"
 
     while true; do
         update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
@@ -341,7 +488,7 @@ Remediation steps:
                     if [[ "$ADVANCE_ON_FAILURE" == "true" ]]; then
                         log_warn "Autonomous mode: Moving to next phase without marking completion"
                     else
-                        log_error "Autonomous mode: Stopping loop on failed phase (AGENT_LOOP_ADVANCE_ON_FAILURE=false)"
+                        record_loop_stop "$NEXT_PHASE" "missing-verification-evidence" "$(describe_stop_reason "missing-verification-evidence" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")" "$LOGFILE"
                         break 2
                     fi
                 else
@@ -376,26 +523,47 @@ Remediation steps:
 
             if [[ $exit_code -eq 124 && "$WATCHDOG_AUTO_RESTART" == "true" ]]; then
                 restart_count=$((restart_count + 1))
+                record_runtime_timeout "$NEXT_PHASE" "$LOGFILE" "$RUNNER_RUNTIME" "$restart_count"
                 log_warn "Phase $NEXT_PHASE timed out. Restarting... (attempt ${restart_count})"
 
                 if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                     echo "## Phase $NEXT_PHASE - Timeout Restart #${restart_count}" >> "$DECISION_LOG"
+                    echo "- Runtime: ${RUNNER_RUNTIME}" >> "$DECISION_LOG"
+                    echo "- Detail: ${TIMEOUT_DETAIL}" >> "$DECISION_LOG"
+                    echo "" >> "$DECISION_LOG"
+                fi
+
+                if [[ "$TIMEOUT_RUNTIME_FALLBACK" == "true" && "$timeout_fallback_used" != "true" ]]; then
+                    fallback_runtime="$(resolve_timeout_fallback_runtime "$RUNNER_RUNTIME")"
+                    if [[ -n "$fallback_runtime" && "$fallback_runtime" != "$RUNNER_RUNTIME" ]]; then
+                        previous_runtime="$RUNNER_RUNTIME"
+                        RUNNER_RUNTIME="$fallback_runtime"
+                        timeout_fallback_used=true
+                        PHASE_PROMPT="$(build_phase_prompt "$PRIMARY_PHASE_PROMPT_INSTRUCTIONS")"
+                        fallback_detail="${TIMEOUT_DETAIL}. 동일 phase를 ${previous_runtime}에서 ${fallback_runtime}로 전환해 1회 더 시도합니다."
+                        log_warn "Timeout fallback: switching runtime from ${previous_runtime} to ${fallback_runtime}"
+                        append_qa_runtime_update "timeout-runtime-fallback" "$LOGFILE" "$fallback_detail"
+                        append_handoff_update "timeout-runtime-fallback" "$LOGFILE" "$fallback_detail"
+                        continue
+                    fi
                 fi
 
                 if [[ $WATCHDOG_MAX_RESTARTS -gt 0 && $restart_count -ge $WATCHDOG_MAX_RESTARTS ]]; then
+                    stop_detail="$(describe_stop_reason "timeout-restart-limit" "$RUNNER_RUNTIME" "$TIMEOUT_DETAIL")"
                     log_error "Phase $NEXT_PHASE exceeded restart limit"
-                    append_qa_runtime_update "timeout-restart-limit-exceeded" "$LOGFILE"
-                    append_handoff_update "timeout-restart-limit-exceeded" "$LOGFILE"
+                    append_qa_runtime_update "timeout-restart-limit-exceeded" "$LOGFILE" "$stop_detail"
+                    append_handoff_update "timeout-restart-limit-exceeded" "$LOGFILE" "$stop_detail"
                     failed=$((failed + 1))
                     update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
 
                     if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
                         echo "- Status: ❌ Failed (restart limit exceeded)" >> "$DECISION_LOG"
+                        echo "- Detail: ${stop_detail}" >> "$DECISION_LOG"
                         echo "" >> "$DECISION_LOG"
                         if [[ "$ADVANCE_ON_FAILURE" == "true" ]]; then
                             log_warn "Autonomous mode: Moving to next phase"
                         else
-                            log_error "Autonomous mode: Stopping loop on failed phase (AGENT_LOOP_ADVANCE_ON_FAILURE=false)"
+                            record_loop_stop "$NEXT_PHASE" "timeout-restart-limit" "$stop_detail" "$LOGFILE"
                             break 2
                         fi
                     else
@@ -471,7 +639,7 @@ Remediation steps:
                 if [[ "$ADVANCE_ON_FAILURE" == "true" ]]; then
                     log_warn "Autonomous mode: Moving to next phase after ${MAX_AUTO_FIX_ATTEMPTS} failed attempts"
                 else
-                    log_error "Autonomous mode: Stopping loop on failed phase (AGENT_LOOP_ADVANCE_ON_FAILURE=false)"
+                    record_loop_stop "$NEXT_PHASE" "phase-max-attempts" "$(describe_stop_reason "phase-max-attempts" "$RUNNER_RUNTIME")" "$LOGFILE"
                     break 2
                 fi
             else
@@ -519,9 +687,17 @@ if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
 - Autonomous Mode: ✅ Enabled
 - Auto-fix Attempts: $MAX_AUTO_FIX_ATTEMPTS
 - Watchdog Timeout: ${WATCHDOG_MAX_SECONDS}s
+- Watchdog Max Restarts: ${WATCHDOG_MAX_RESTARTS}
 - Advance On Failure: $ADVANCE_ON_FAILURE
 - Scorecard Required: $SCORECARD_REQUIRED
 - Target Completion Score: $TARGET_COMPLETION_SCORE
+
+## Loop Stop
+- Stopped Early: $LOOP_STOPPED_EARLY
+- Phase: ${LOOP_STOP_PHASE:-n/a}
+- Reason: ${LOOP_STOP_REASON:-n/a}
+- Detail: ${LOOP_STOP_DETAIL:-n/a}
+- Log: ${LOOP_STOP_LOG:-n/a}
 
 ## Decision Log
 See: $DECISION_LOG
