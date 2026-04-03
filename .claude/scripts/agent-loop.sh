@@ -101,6 +101,9 @@ describe_stop_reason() {
     local detail="${3:-}"
 
     case "$reason" in
+        verification-command-missing)
+            printf '필수 verification 진입점 경로를 찾지 못해 phase를 진행할 수 없습니다 (block)'
+            ;;
         timeout-auth)
             printf '런타임 인증 또는 권한 문제로 %s 실행이 watchdog 제한 시간 안에 완료되지 않았습니다' "$runtime"
             ;;
@@ -129,6 +132,28 @@ describe_stop_reason() {
             printf '%s' "${detail:-루프가 중단되었습니다}"
             ;;
     esac
+}
+
+detect_verification_command_missing() {
+    local log_file="$1"
+
+    if [[ ! -f "$log_file" ]]; then
+        return 1
+    fi
+
+    if grep -Fq "VERIFICATION_COMMAND_MISSING" "$log_file"; then
+        return 0
+    fi
+
+    if grep -Eqi "No such file or directory|command not found|No such file|is not found" "$log_file" \
+        && (
+            grep -Fq ".claude/agents/verification/verify-changes.sh" "$log_file" \
+            || grep -Fq ".claude/agents/verification/run-verify-changes.sh" "$log_file"
+        ); then
+        return 0
+    fi
+
+    return 1
 }
 
 classify_timeout_reason() {
@@ -435,6 +460,20 @@ Primary objective:
                 append_qa_runtime_update "phase-command-missing-fresh-verification-attempt-${auto_fix_count}" "$LOGFILE" "$PHASE_COMPLETION_REASON"
                 append_handoff_update "missing-fresh-verification-evidence" "$LOGFILE" "$PHASE_COMPLETION_REASON"
 
+                final_stop_reason="missing-verification-evidence"
+                if detect_verification_command_missing "$LOGFILE"; then
+                    final_stop_reason="verification-command-missing"
+                fi
+
+                if [[ "$final_stop_reason" == "verification-command-missing" && "$AUTONOMOUS_MODE" == "true" && "$ADVANCE_ON_FAILURE" == "false" ]]; then
+                    failed=$((failed + 1))
+                    update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+                    echo "- Status: ❌ Failed (verification command missing)" >> "$DECISION_LOG"
+                    echo "" >> "$DECISION_LOG"
+                    record_loop_stop "$NEXT_PHASE" "$final_stop_reason" "$(describe_stop_reason "$final_stop_reason" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")" "$LOGFILE"
+                    break 2
+                fi
+
                 if [[ "$AUTONOMOUS_MODE" == "true" && $auto_fix_count -lt $MAX_AUTO_FIX_ATTEMPTS ]]; then
                     log_info "Attempting verification remediation..."
                     echo "## Phase $NEXT_PHASE - Verification Remediation #${auto_fix_count}" >> "$DECISION_LOG"
@@ -490,7 +529,7 @@ Remediation steps:
                     if [[ "$ADVANCE_ON_FAILURE" == "true" ]]; then
                         log_warn "Autonomous mode: Moving to next phase without marking completion"
                     else
-                        record_loop_stop "$NEXT_PHASE" "missing-verification-evidence" "$(describe_stop_reason "missing-verification-evidence" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")" "$LOGFILE"
+                        record_loop_stop "$NEXT_PHASE" "$final_stop_reason" "$(describe_stop_reason "$final_stop_reason" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")" "$LOGFILE"
                         break 2
                     fi
                 else
@@ -584,6 +623,20 @@ Remediation steps:
             auto_fix_count=$((auto_fix_count + 1))
             log_error "Phase $NEXT_PHASE failed (attempt ${auto_fix_count}/${MAX_AUTO_FIX_ATTEMPTS})"
             append_qa_runtime_update "phase-command-failed-attempt-${auto_fix_count}" "$LOGFILE"
+
+            final_stop_reason="phase-failed"
+            if detect_verification_command_missing "$LOGFILE"; then
+                final_stop_reason="verification-command-missing"
+            fi
+
+            if [[ "$final_stop_reason" == "verification-command-missing" && "$AUTONOMOUS_MODE" == "true" && "$ADVANCE_ON_FAILURE" == "false" ]]; then
+                failed=$((failed + 1))
+                update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+                echo "- Status: ❌ Failed (verification command missing)" >> "$DECISION_LOG"
+                echo "" >> "$DECISION_LOG"
+                record_loop_stop "$NEXT_PHASE" "$final_stop_reason" "$(describe_stop_reason "$final_stop_reason" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")" "$LOGFILE"
+                break 2
+            fi
 
             if [[ "$AUTONOMOUS_MODE" == "true" && $auto_fix_count -lt $MAX_AUTO_FIX_ATTEMPTS ]]; then
                 log_info "Attempting auto-fix..."

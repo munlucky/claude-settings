@@ -410,7 +410,7 @@ EOF
 - Update execution artifacts under ${phase_dir}
 - Mark \`phase-status.yaml\` completed when the smoke passes
 - Run verification with:
-  - \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash .claude/agents/verification/verify-changes.sh runtime-smoke-${scenario_name}\`
+  - \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}\`
 
 ## Out of Scope
 - Editing repository source files outside ${fixture_root}
@@ -494,7 +494,7 @@ EOF
 
 ## Evidence
 - Required commands:
-  - HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash .claude/agents/verification/verify-changes.sh runtime-smoke-${scenario_name}
+  - HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}
 - Runtime flow:
   - execute the active phase once
 - Screenshots/logs:
@@ -817,7 +817,7 @@ EOF
     VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity \
       HARNESS_RUN_ID=workflow-evidence-smoke \
       HARNESS_OPERATING_MODE=meta_harness \
-      bash .claude/agents/verification/verify-changes.sh workflow-evidence-smoke > "$log_file" 2>&1
+      bash .claude/agents/verification/run-verify-changes.sh workflow-evidence-smoke > "$log_file" 2>&1
   )
 
   python3 - "$verdict_file" <<'PY'
@@ -896,7 +896,8 @@ run_actual_flow() {
         AGENT_LOOP_SCORECARD_REQUIRED=false \
         AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 \
         AGENT_LOOP_WATCHDOG_MAX_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS:-600}" \
-        bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
+      WORKSPACE_ROOT="$REPO_ROOT" \
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
           --execution-mode delegated-terminal \
           --execution-root "$execution_root" \
           --status-file "$status_file" \
@@ -918,6 +919,7 @@ run_actual_flow() {
     if ! (
       cd "$workspace_root"
       MOONSHOT_CODEX_REASONING_EFFORT=low \
+        WORKSPACE_ROOT="$REPO_ROOT" \
         bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
         --execution-mode "$execution_mode" \
         --status-file "$status_file" \

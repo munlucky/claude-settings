@@ -32,6 +32,7 @@ run_worker_prompt() {
     if [[ -n "${PHASE_QA_REPORT:-}" ]]; then
         phase_env+=("HARNESS_QA_REPORT_FILE=$PHASE_QA_REPORT")
     fi
+    phase_env+=("WORKSPACE_ROOT=${WORKSPACE_ROOT:-$PWD}")
     if [[ -n "${EXECUTION_ROOT:-}" ]]; then
         phase_env+=("HARNESS_REQUIREMENTS_TRACEABILITY_FILE=${EXECUTION_ROOT}/REQUIREMENTS_TRACEABILITY.md")
         phase_env+=("HARNESS_SCENARIO_MATRIX_FILE=${EXECUTION_ROOT}/SCENARIO_MATRIX.md")
