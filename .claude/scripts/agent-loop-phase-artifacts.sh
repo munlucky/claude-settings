@@ -230,7 +230,6 @@ if qa_report_path.exists():
     )
 
     qa_report_path.write_text("\n".join(qa_lines) + "\n", encoding="utf-8")
-    normalize_qa_report_workflow_fields "$PHASE_QA_REPORT"
 
 if scorecard_path.exists():
     score_lines = scorecard_path.read_text(encoding="utf-8").splitlines()
@@ -251,6 +250,7 @@ if scorecard_path.exists():
     updated = replace_or_append_section(updated, "## Progress Checkpoints", checkpoint_lines)
     scorecard_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
 PY
+    normalize_qa_report_workflow_fields "$PHASE_QA_REPORT"
 }
 
 sync_clean_finish_artifacts() {
@@ -443,7 +443,6 @@ if qa_report_path.exists():
         ],
     )
     qa_report_path.write_text("\n".join(qa_lines) + "\n", encoding="utf-8")
-    normalize_qa_report_workflow_fields "$PHASE_QA_REPORT"
 
 if scorecard_path.exists():
     score_lines = scorecard_path.read_text(encoding="utf-8").splitlines()
@@ -467,6 +466,7 @@ if scorecard_path.exists():
         updated_lines.append(line)
     scorecard_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
 PY
+    normalize_qa_report_workflow_fields "$PHASE_QA_REPORT"
 }
 
 append_handoff_update() {
