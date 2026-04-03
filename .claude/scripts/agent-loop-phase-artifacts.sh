@@ -1,3 +1,119 @@
+normalize_qa_report_workflow_fields() {
+    local qa_report_path="$1"
+
+    if [[ ! -f "$qa_report_path" ]] || ! command -v python3 >/dev/null 2>&1; then
+        return
+    fi
+
+    QA_REPORT_PATH="$qa_report_path" \
+    python3 - <<'PY'
+import os
+from pathlib import Path
+
+qa_report_path = Path(os.environ.get("QA_REPORT_PATH", ""))
+if not qa_report_path.exists():
+    raise SystemExit(0)
+
+
+def find_section(lines, heading):
+    start = None
+    end = len(lines)
+    for idx, line in enumerate(lines):
+        if line.strip() == heading:
+            start = idx
+            for probe in range(idx + 1, len(lines)):
+                if lines[probe].startswith("## "):
+                    end = probe
+                    break
+            break
+    return start, end
+
+
+def replace_or_append_section(lines, heading, body_lines):
+    start, end = find_section(lines, heading)
+    replacement = [heading, *body_lines]
+    if start is None:
+        if lines and lines[-1] != "":
+            lines = [*lines, ""]
+        return [*lines, *replacement]
+    return [*lines[:start], *replacement, *lines[end:]]
+
+
+def ensure_finish_bundle(lines):
+    heading = "## Workflow Execution"
+    start, end = find_section(lines, heading)
+    if start is None:
+        return lines
+
+    for idx in range(start + 1, end):
+        if lines[idx].startswith("- Selected bundles:"):
+            selected = lines[idx].split(":", 1)[1].strip()
+            bundles = [item.strip() for item in selected.split(",") if item.strip()]
+            if "finish-bundle" not in bundles:
+                bundles.append("finish-bundle")
+            lines[idx] = f"- Selected bundles: {', '.join(bundles)}"
+            return lines
+
+    lines[start + 1:start + 1] = [
+        "- Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle"
+    ]
+    return lines
+
+
+def enforce_verdict_rules(lines):
+    heading = "## Verdict"
+    start, end = find_section(lines, heading)
+    if start is None:
+        return lines
+
+    next_path = "retry_loop"
+    closeout_reason = "verification_failed"
+    next_idx = closeout_idx = -1
+    for idx in range(start + 1, end):
+        if lines[idx].startswith("- Next path:"):
+            next_path = lines[idx].split(":", 1)[1].strip().lower()
+            next_idx = idx
+        elif lines[idx].startswith("- Closeout reason:"):
+            closeout_reason = lines[idx].split(":", 1)[1].strip().lower()
+            closeout_idx = idx
+
+    allowed_next = {"clean_finish", "retry_loop", "resume_later_handoff"}
+    allowed_closeout = {"scope_complete", "verification_failed", "blocked", "interrupted", "context_limit", "user_pause", "deferred_verification"}
+
+    if next_path not in allowed_next:
+        next_path = "retry_loop"
+
+    if next_path == "retry_loop":
+        closeout_reason = "verification_failed"
+    elif next_path == "clean_finish":
+        if closeout_reason != "scope_complete":
+            closeout_reason = "scope_complete"
+    elif next_path == "resume_later_handoff":
+        if closeout_reason not in {"blocked", "interrupted", "context_limit", "user_pause", "deferred_verification"}:
+            closeout_reason = "blocked"
+
+    if closeout_reason not in allowed_closeout:
+        closeout_reason = "verification_failed"
+
+    if next_idx == -1:
+        lines[start + 1:start + 1] = [f"- Next path: {next_path}", f"- Closeout reason: {closeout_reason}"]
+        return lines
+
+    lines[next_idx] = f"- Next path: {next_path}"
+    if closeout_idx == -1:
+        lines[next_idx + 1:next_idx + 1] = [f"- Closeout reason: {closeout_reason}"]
+    else:
+        lines[closeout_idx] = f"- Closeout reason: {closeout_reason}"
+    return lines
+
+
+qa_lines = qa_report_path.read_text(encoding="utf-8").splitlines()
+qa_lines = ensure_finish_bundle(qa_lines)
+qa_lines = enforce_verdict_rules(qa_lines)
+qa_report_path.write_text("\n".join(qa_lines) + "\n", encoding="utf-8")
+PY
+}
+
 append_qa_runtime_update() {
     local status="$1"
     local log_file="$2"
@@ -114,6 +230,7 @@ if qa_report_path.exists():
     )
 
     qa_report_path.write_text("\n".join(qa_lines) + "\n", encoding="utf-8")
+    normalize_qa_report_workflow_fields "$PHASE_QA_REPORT"
 
 if scorecard_path.exists():
     score_lines = scorecard_path.read_text(encoding="utf-8").splitlines()
@@ -326,6 +443,7 @@ if qa_report_path.exists():
         ],
     )
     qa_report_path.write_text("\n".join(qa_lines) + "\n", encoding="utf-8")
+    normalize_qa_report_workflow_fields "$PHASE_QA_REPORT"
 
 if scorecard_path.exists():
     score_lines = scorecard_path.read_text(encoding="utf-8").splitlines()
@@ -360,6 +478,9 @@ append_handoff_update() {
     case "$reason" in
         blocked|context_limit|user_pause|deferred_verification|interrupted)
             normalized_reason="$reason"
+            ;;
+        verification-command-missing)
+            normalized_reason="blocked"
             ;;
         timeout-*|phase-timeout-*|timeout-runtime-fallback|timeout-restart-limit-exceeded)
             normalized_reason="interrupted"
