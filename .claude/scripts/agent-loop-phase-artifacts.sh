@@ -19,6 +19,123 @@ append_qa_runtime_update() {
     } >> "$PHASE_QA_REPORT"
 }
 
+record_phase_progress_checkpoint() {
+    local stage="$1"
+    local status="$2"
+    local log_file="${3:-}"
+    local detail="${4:-}"
+
+    if [[ ! -f "$PHASE_QA_REPORT" ]] && [[ ! -f "$PHASE_SCORECARD" ]]; then
+        return
+    fi
+
+    PHASE_QA_REPORT_PATH="$PHASE_QA_REPORT" \
+    PHASE_SCORECARD_PATH="$PHASE_SCORECARD" \
+    PHASE_STAGE_NAME="$stage" \
+    PHASE_PROGRESS_STATUS="$status" \
+    PHASE_PROGRESS_LOG_FILE="$log_file" \
+    PHASE_PROGRESS_DETAIL="$detail" \
+    PHASE_RUNTIME_NAME="$RUNNER_RUNTIME" \
+    python3 - <<'PY'
+import os
+from pathlib import Path
+
+qa_report_path = Path(os.environ.get("PHASE_QA_REPORT_PATH", ""))
+scorecard_path = Path(os.environ.get("PHASE_SCORECARD_PATH", ""))
+stage = os.environ.get("PHASE_STAGE_NAME", "").strip() or "execute"
+status = os.environ.get("PHASE_PROGRESS_STATUS", "").strip() or "in_progress"
+log_file = os.environ.get("PHASE_PROGRESS_LOG_FILE", "").strip()
+detail = os.environ.get("PHASE_PROGRESS_DETAIL", "").strip()
+runtime_name = os.environ.get("PHASE_RUNTIME_NAME", "").strip()
+timestamp = os.popen("date '+%Y-%m-%d %H:%M:%S'").read().strip()
+
+
+def replace_or_append_section(lines, heading, body_lines):
+    start = None
+    end = len(lines)
+    for idx, line in enumerate(lines):
+        if line.strip() == heading:
+            start = idx
+            for probe in range(idx + 1, len(lines)):
+                if lines[probe].startswith("## "):
+                    end = probe
+                    break
+            break
+    replacement = [heading, *body_lines]
+    if start is None:
+        if lines and lines[-1] != "":
+            lines = [*lines, ""]
+        return [*lines, *replacement]
+    return [*lines[:start], *replacement, *lines[end:]]
+
+
+if qa_report_path.exists():
+    qa_lines = qa_report_path.read_text(encoding="utf-8").splitlines()
+
+    qa_lines = replace_or_append_section(
+        qa_lines,
+        "## Verdict",
+        [
+            "- Status: in_progress",
+            f"- Summary: Active phase attempt is running at stage `{stage}`; final verification is still pending.",
+            "- Scope status: partial",
+            "- Next path: retry_loop",
+            "- Closeout reason: verification_failed",
+            "",
+        ],
+    )
+
+    runtime_updates = []
+    runtime_updates.append(f"- {timestamp} | Stage: {stage} | Status: {status} | Runtime: {runtime_name or 'unknown'}")
+    if log_file:
+        runtime_updates.append(f"- Log: {log_file}")
+    if detail:
+        runtime_updates.append(f"- Detail: {detail}")
+    runtime_updates.append("- Verification verdict: pending")
+    runtime_updates.append("")
+
+    qa_lines = replace_or_append_section(
+        qa_lines,
+        "## Runtime Updates",
+        runtime_updates,
+    )
+
+    qa_lines = replace_or_append_section(
+        qa_lines,
+        "## Finish Readiness",
+        [
+            "- Fresh evidence confirmed: no",
+            f"- Why this round may stop now: the phase is still in progress at stage `{stage}`.",
+            "- Remaining in-scope work: execute the active phase and record fresh verification evidence.",
+            "- Remaining blockers before closeout: verification has not completed yet.",
+            "- Checks to rerun if code changes again: use the active phase sprint contract.",
+            "",
+        ],
+    )
+
+    qa_report_path.write_text("\n".join(qa_lines) + "\n", encoding="utf-8")
+
+if scorecard_path.exists():
+    score_lines = scorecard_path.read_text(encoding="utf-8").splitlines()
+    checkpoint_lines = [
+        f"- {timestamp} | Stage: {stage} | Status: {status}",
+    ]
+    if detail:
+        checkpoint_lines.append(f"- Detail: {detail}")
+    checkpoint_lines.append("")
+
+    updated = []
+    for line in score_lines:
+        stripped = line.strip()
+        if stripped.startswith("- Verdict:") and "done" not in stripped.lower():
+            line = "- Verdict: retry"
+        updated.append(line)
+
+    updated = replace_or_append_section(updated, "## Progress Checkpoints", checkpoint_lines)
+    scorecard_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+}
+
 sync_clean_finish_artifacts() {
     local completion_artifacts="${1:-}"
 
@@ -238,6 +355,23 @@ append_handoff_update() {
     local reason="$1"
     local log_file="$2"
     local detail="${3:-}"
+    local normalized_reason
+
+    case "$reason" in
+        blocked|context_limit|user_pause|deferred_verification|interrupted)
+            normalized_reason="$reason"
+            ;;
+        timeout-*|phase-timeout-*|timeout-runtime-fallback|timeout-restart-limit-exceeded)
+            normalized_reason="interrupted"
+            ;;
+        missing-fresh-verification-evidence|verification-remediation-incomplete|auto-fix-succeeded-without-fresh-verification)
+            normalized_reason="deferred_verification"
+            ;;
+        *)
+            normalized_reason="blocked"
+            ;;
+    esac
+
     cat > "$PHASE_HANDOFF" <<EOF
 # Phase $(printf '%02d' "$NEXT_PHASE") Handoff
 
@@ -258,7 +392,7 @@ append_handoff_update() {
 
 ## Resume Trigger
 - Why this handoff exists: the current attempt did not reach clean finish
-- Stop reason: ${reason}
+- Stop reason: ${normalized_reason}
 - Why this cannot continue in the current round: runtime stop recorded by agent-loop; resume only after reviewing the active blockers, interruption, or deferred verification state.
 - Condition to resume: review the latest contract and QA evidence, then continue only the active phase.
 

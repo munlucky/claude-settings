@@ -21,6 +21,7 @@ CLAUDE_AVAILABLE=false
 CODEX_AVAILABLE=false
 RUNTIME_FAILURES=()
 ACTUAL_FAILURES=()
+ACTUAL_TIMINGS=()
 
 cleanup() {
   if [[ "$KEEP_TMP" == "true" ]]; then
@@ -90,6 +91,24 @@ array_length() {
 
   eval 'if [[ ${'"$array_name"'[@]+_} ]]; then length=${#'"$array_name"'[@]}; fi'
   printf '%s\n' "$length"
+}
+
+format_duration() {
+  local total_seconds="$1"
+  local minutes=$((total_seconds / 60))
+  local seconds=$((total_seconds % 60))
+
+  if [[ "$minutes" -gt 0 ]]; then
+    printf '%sm %02ds' "$minutes" "$seconds"
+  else
+    printf '%ss' "$seconds"
+  fi
+}
+
+record_actual_timing() {
+  local scenario_name="$1"
+  local elapsed_seconds="$2"
+  ACTUAL_TIMINGS+=("${scenario_name}|${elapsed_seconds}")
 }
 
 checksum_file() {
@@ -268,7 +287,7 @@ probe_claude_runtime() {
   set +e
   (
     cd "$REPO_ROOT"
-    claude --dangerously-skip-permissions -p --output-format text \
+    claude --dangerously-skip-permissions --no-session-persistence -p --output-format text \
       'Reply exactly with RUNTIME_OK and nothing else.'
   ) >"$output_file" 2>"$error_file"
   local exit_code=$?
@@ -400,12 +419,14 @@ EOF
 
 ## Required Steps
 1. Read \`SPRINT_CONTRACT.md\` and keep the policy anchors intact.
-2. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
-3. Record the runtime/mode in \`QA_REPORT.md\` and keep the \`## Workflow Execution\` section current.
-4. Run the verification command exactly once for fresh evidence.
-5. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
-6. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
-7. If verification fails, update \`HANDOFF.md\`, keep the \`session-logger\` note intact, and stop without touching repository source files.
+2. Write an attempt-started checkpoint to \`QA_REPORT.md\` before broader inspection or long-running commands.
+3. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
+4. Record the runtime/mode in \`QA_REPORT.md\` and keep the \`## Workflow Execution\` section current.
+5. Run the verification command exactly once for fresh evidence.
+6. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
+7. Refresh \`SCORECARD.md\` and \`QA_REPORT.md\` again after verification instead of batching every artifact update at the end.
+8. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
+9. If verification fails, update \`HANDOFF.md\`, keep the \`session-logger\` note intact, and stop without touching repository source files.
 
 ## Completion
 - \`QA_REPORT.md\` changed during the run
@@ -823,8 +844,11 @@ run_actual_flow() {
   local runtime="$1"
   local execution_mode="$2"
   local scenario_name="$3"
+  local started_at
+  started_at="$(date +%s)"
   local workspace_root="$TMP_ROOT/$scenario_name/workspace"
   local fixture_root="$workspace_root/runtime-parity-fixtures/$scenario_name"
+  local default_status_file="$workspace_root/.claude/docs/phase-status.yaml"
   local before_git="$TMP_ROOT/$scenario_name-before-git.txt"
   local after_git="$TMP_ROOT/$scenario_name-after-git.txt"
   local log_file="$TMP_ROOT/$scenario_name.log"
@@ -840,7 +864,19 @@ run_actual_flow() {
   local sprint_contract="${fixture_lines[3]}"
   local qa_report="${fixture_lines[4]}"
 
+  log "actual runtime smoke starting: ${scenario_name} (runtime=${runtime}, mode=${execution_mode})"
+
   initialize_workspace_git "$workspace_root"
+
+  # In-session coordinator skills default to .claude/docs/phase-status.yaml examples.
+  # Point that default location at the fixture status file so the smoke stays bounded.
+  if [[ "$execution_mode" == "in-session-coordinator" ]]; then
+    mkdir -p "$(dirname "$default_status_file")"
+    rm -f "$default_status_file"
+    if ! ln -s "$status_file" "$default_status_file" 2>/dev/null; then
+      cp "$status_file" "$default_status_file"
+    fi
+  fi
 
   local qa_checksum_before
   qa_checksum_before="$(checksum_file "$qa_report")"
@@ -858,7 +894,8 @@ run_actual_flow() {
       MOONSHOT_CODEX_REASONING_EFFORT=low \
         AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
         AGENT_LOOP_SCORECARD_REQUIRED=false \
-        AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 AGENT_LOOP_WATCHDOG_MAX_SECONDS=180 \
+        AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 \
+        AGENT_LOOP_WATCHDOG_MAX_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS:-600}" \
         bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
           --execution-mode delegated-terminal \
           --execution-root "$execution_root" \
@@ -868,10 +905,12 @@ run_actual_flow() {
           > "$log_file" 2>&1
     ); then
       tail -80 "$log_file" >&2 || true
+      local elapsed_seconds
+      elapsed_seconds=$(( $(date +%s) - started_at ))
       if grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then
-        record_actual_failure "$scenario_name" "delegated-terminal command timed out"
+        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
       else
-        record_actual_failure "$scenario_name" "delegated-terminal command failed"
+        record_actual_failure "$scenario_name" "delegated-terminal command failed after $(format_duration "$elapsed_seconds")"
       fi
       return 1
     fi
@@ -889,7 +928,9 @@ run_actual_flow() {
         --stop-on-failure > "$log_file" 2>&1
     ); then
       tail -80 "$log_file" >&2 || true
-      record_actual_failure "$scenario_name" "in-session-coordinator command failed"
+      local elapsed_seconds
+      elapsed_seconds=$(( $(date +%s) - started_at ))
+      record_actual_failure "$scenario_name" "in-session-coordinator command failed after $(format_duration "$elapsed_seconds")"
       return 1
     fi
   fi
@@ -897,26 +938,36 @@ run_actual_flow() {
   snapshot_git_status "$workspace_root" "$after_git"
   if ! assert_allowed_git_changes "$before_git" "$after_git"; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "unexpected git changes detected"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "unexpected git changes detected after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
   if ! grep -Fq "status: completed" "$status_file"; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "phase did not reach completed status"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "phase did not reach completed status after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
   if ! grep -Fq "## Policy Anchors" "$sprint_contract"; then
-    record_actual_failure "$scenario_name" "policy anchors missing from sprint contract"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "policy anchors missing from sprint contract after $(format_duration "$elapsed_seconds")"
     return 1
   fi
   if ! grep -Fq "## Stage Order" "$sprint_contract"; then
-    record_actual_failure "$scenario_name" "stage order missing from sprint contract"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "stage order missing from sprint contract after $(format_duration "$elapsed_seconds")"
     return 1
   fi
   if ! grep -Fq "## Finish Readiness" "$qa_report"; then
-    record_actual_failure "$scenario_name" "finish readiness missing from QA report"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "finish readiness missing from QA report after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
@@ -924,7 +975,9 @@ run_actual_flow() {
   qa_checksum_after="$(checksum_file "$qa_report")"
   if [[ "$qa_checksum_before" == "$qa_checksum_after" ]]; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "QA report was not updated"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "QA report was not updated after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
@@ -932,15 +985,22 @@ run_actual_flow() {
   verdict_file="$(latest_new_file "$workspace_root" 'verification-verdict-*.json' "$sentinel")"
   if [[ -z "$verdict_file" ]]; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "no fresh verification verdict"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "no fresh verification verdict after $(format_duration "$elapsed_seconds")"
     return 1
   fi
   if ! assert_passed_verdict "$verdict_file"; then
-    record_actual_failure "$scenario_name" "verification verdict was not passed"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "verification verdict was not passed after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
-  log "actual runtime smoke passed: ${scenario_name}"
+  local elapsed_seconds
+  elapsed_seconds=$(( $(date +%s) - started_at ))
+  record_actual_timing "$scenario_name" "$elapsed_seconds"
+  log "actual runtime smoke passed: ${scenario_name} ($(format_duration "$elapsed_seconds"))"
   return 0
 }
 
@@ -967,11 +1027,24 @@ EOF
 
 report_failures_and_exit() {
   local item
+  local timing_entry
+  local scenario_name
+  local elapsed_seconds
   local actual_failure_count
   local runtime_failure_count
 
   actual_failure_count="$(array_length ACTUAL_FAILURES)"
   runtime_failure_count="$(array_length RUNTIME_FAILURES)"
+
+  if [[ "$(array_length ACTUAL_TIMINGS)" -gt 0 ]]; then
+    log "actual runtime timings:"
+    for timing_entry in "${ACTUAL_TIMINGS[@]}"; do
+      IFS='|' read -r scenario_name elapsed_seconds <<EOF
+$timing_entry
+EOF
+      log "- ${scenario_name}: $(format_duration "$elapsed_seconds")"
+    done
+  fi
 
   if [[ "$actual_failure_count" -eq 0 ]]; then
     if [[ "$runtime_failure_count" -gt 0 ]]; then

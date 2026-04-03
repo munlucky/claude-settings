@@ -422,6 +422,7 @@ Primary objective:
 
     while true; do
         update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+        record_phase_progress_checkpoint "ready/isolate" "phase-attempt-started" "$LOGFILE" "Phase state moved to in_progress before the worker prompt."
         PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
         if run_worker_prompt "$LOGFILE" "$PHASE_PROMPT" "$START_TIME" "$PHASE_QA_CHECKSUM_BEFORE"; then
             END_TIME=$(date +%s)
@@ -453,6 +454,7 @@ Remediation steps:
 6. Keep SCORECARD.md authoritative: use \`retry\` until the target score is met with no unmet checklist items or blocking defects.")"
 
                     update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+                    record_phase_progress_checkpoint "verify" "verification-remediation-started" "$LOGFILE" "$PHASE_COMPLETION_REASON"
                     PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
                     if run_worker_prompt "$LOGFILE" "$FIX_PROMPT" "$START_TIME" "$PHASE_QA_CHECKSUM_BEFORE"; then
                         END_TIME=$(date +%s)
@@ -601,6 +603,7 @@ Remediation steps:
 6. Update SCORECARD.md and keep the verdict at \`retry\` unless the phase objectively meets the target score.")"
 
                 update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+                record_phase_progress_checkpoint "execute" "auto-fix-started" "$LOGFILE" "Retrying the active phase after a failed attempt."
                 PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
                 if run_worker_prompt "$LOGFILE" "$FIX_PROMPT" "$START_TIME" "$PHASE_QA_CHECKSUM_BEFORE"; then
                     END_TIME=$(date +%s)
