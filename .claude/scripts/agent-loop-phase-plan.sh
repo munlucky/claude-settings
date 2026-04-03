@@ -401,16 +401,17 @@ Treat this prompt as the direct equivalent of a /moonshot-orchestrator phase att
         codex_direct_steps="
 Codex direct execution checklist:
 1. Read only the active phase doc and SPRINT_CONTRACT.md first.
-2. Refresh SPRINT_CONTRACT.md for this attempt without broad repo inspection.
-3. Execute only the active phase work.
-4. Run review and verification in the phase contract order.
-5. Use \`.claude/scripts/write-verification-verdict.py\` for structured \`.claude/verification-verdict-*.json\` output in the repository root instead of hand-authoring verdict JSON.
-6. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
-7. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
-8. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
-9. If verification passed, SCORECARD.md says \`Verdict: done\`, and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
+2. Immediately write an attempt-started checkpoint to QA_REPORT.md and SCORECARD.md before broader inspection or long-running commands.
+3. Refresh SPRINT_CONTRACT.md for this attempt without broad repo inspection.
+4. Execute only the active phase work.
+5. Run review and verification in the phase contract order.
+6. Use \`.claude/scripts/write-verification-verdict.py\` for structured \`.claude/verification-verdict-*.json\` output in the repository root instead of hand-authoring verdict JSON.
+7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
+8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
+9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
+10. If verification passed, SCORECARD.md says \`Verdict: done\`, and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
 
-Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 4.
+Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 5.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates."
     fi
 
@@ -439,13 +440,19 @@ Single isolated phase-attempt rules:
 - Do not expand to other phases.
 - Read the Policy Anchors section in SPRINT_CONTRACT.md first.
 - Preserve the stage order \`ready/isolate -> execute -> review -> verify -> finish/handoff\`.
+- Immediately after reading the active phase doc and SPRINT_CONTRACT.md, write an in-progress checkpoint to QA_REPORT.md and SCORECARD.md before broader inspection or long-running commands.
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
 - Record review completion before claiming the verifier state is final.
 - Generate fresh structured verification verdicts with \`.claude/scripts/write-verification-verdict.py\` and write them under \`.claude/verification-verdict-*.json\`; do not hand-author verdict JSON.
 - Record the exact repository-root verdict path in QA_REPORT.md so the completion gate can confirm the same file.
+- Refresh QA_REPORT.md at stage transitions instead of batching every artifact update at the end.
 - When verification runs, update QA_REPORT.md.
 - Update SCORECARD.md on every meaningful round using objective checklist status, current score, unmet items, and verdict.
+- Refresh SCORECARD.md again after verification or any remediation so progress is visible while the phase is still running.
 - Refresh the default values in the "Workflow Execution" section of QA_REPORT.md when actual execution diverges.
+- In QA_REPORT.md, use only these closeout reason codes: \`scope_complete\`, \`verification_failed\`, \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
+- If QA_REPORT.md uses \`Next path: retry_loop\`, it must also use \`Closeout reason: verification_failed\`.
+- In HANDOFF.md, use only these stop reason codes: \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
 - If meaningful code changed, record \`code-simplifier\` in Applied skills or Skipped skills with a reason.
 - If the run stops without clean completion, update HANDOFF.md, include \`session-logger\` evidence, and list the checks to rerun.
 - Do not mark the phase done while SCORECARD.md says \`Verdict: retry\` or \`blocked\`.
