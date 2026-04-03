@@ -153,7 +153,7 @@ git add [files] .claude/memory.json
 
 # If user declined:
 git add [files]
-git commit -m "[concise Korean commit message]"
+git commit -m "[concise Korean commit title]" -m "[summary of what changed, why, and impact]"
 ```
 
 > **📌 Important: `.claude/memory.json` is optional per commit and must follow the user's explicit choice.** This file stores Memory MCP update content.
@@ -163,6 +163,11 @@ git commit -m "[concise Korean commit message]"
 - Write the commit message in Korean
 - Concise and clear
 - Focus on change purpose
+- 제목 한 줄(예: 핵심 작업 요약) + 본문 2~3줄 형식 권장
+- 본문은 최소 2줄 이상 작성:
+  - `무엇을` 변경했는지
+  - `왜` 변경했는지
+  - 필요 시 `기대 효과`나 `영향 범위`
 
 ---
 
