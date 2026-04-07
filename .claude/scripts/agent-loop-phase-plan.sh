@@ -3,29 +3,70 @@ get_next_phase() {
         python3 - "$STATUS_FILE" <<'PY'
 import re
 import sys
+import time
+from datetime import datetime, timezone
+import os
+
+STALE_SECONDS = float(os.environ.get("AGENT_LOOP_STALE_PHASE_SECONDS", "1800"))
 
 status_file = sys.argv[1]
 with open(status_file, "r", encoding="utf-8") as handle:
     lines = handle.readlines()
 
+now = time.time()
+
+def parse_timestamp(value):
+    if not value:
+        return None
+    value = value.strip().strip('"')
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
 blocks = []
 current = None
+current_indent = None
+in_attempts = False
 for raw_line in lines:
     if re.match(r"^\s*-\s+number:\s*", raw_line):
         if current is not None:
             blocks.append(current)
-        current = {"number": None, "status": None, "planConfirmed": None}
+        current = {"number": None, "status": None, "planConfirmed": None, "lastOutcome": None, "lastUpdatedAt": None}
+        current_indent = len(raw_line) - len(raw_line.lstrip(" "))
+        in_attempts = False
         match = re.search(r"number:\s*([0-9]+)", raw_line)
         if match:
             current["number"] = match.group(1)
         continue
     if current is None:
         continue
+
+    indent = len(raw_line) - len(raw_line.lstrip(" "))
     stripped = raw_line.strip()
+    if not stripped:
+        continue
+
+    if in_attempts and indent <= current_indent + 2:
+        in_attempts = False
+
     if stripped.startswith("status:"):
         current["status"] = stripped.split(":", 1)[1].strip()
     elif stripped.startswith("planConfirmed:"):
         current["planConfirmed"] = stripped.split(":", 1)[1].strip().lower()
+    elif stripped.startswith("attempts:") and indent > current_indent:
+        in_attempts = True
+        continue
+    elif in_attempts:
+        if stripped.startswith("lastOutcome:"):
+            current["lastOutcome"] = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("lastUpdatedAt:"):
+            current["lastUpdatedAt"] = stripped.split(":", 1)[1].strip().strip('"')
 
 if current is not None:
     blocks.append(current)
@@ -33,6 +74,12 @@ if current is not None:
 for block in blocks:
     status = block.get("status")
     plan_confirmed = block.get("planConfirmed")
+    last_outcome = block.get("lastOutcome")
+    last_updated_at = block.get("lastUpdatedAt")
+    if status == "in_progress" and last_outcome == "running" and last_updated_at:
+        updated_ts = parse_timestamp(last_updated_at)
+        if updated_ts is not None and now - updated_ts >= STALE_SECONDS:
+            continue
     if status in {"pending", "in_progress"} and plan_confirmed != "false":
         if block.get("number") is not None:
             print(block["number"])

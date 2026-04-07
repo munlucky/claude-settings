@@ -68,14 +68,28 @@ SCORECARD_REQUIRED="${AGENT_LOOP_SCORECARD_REQUIRED:-true}"
 TARGET_COMPLETION_SCORE="${AGENT_LOOP_TARGET_COMPLETION_SCORE:-100}"
 SCORECARD_PROFILE="${AGENT_LOOP_SCORECARD_PROFILE:-auto}"
 TIMEOUT_RUNTIME_FALLBACK="${AGENT_LOOP_TIMEOUT_RUNTIME_FALLBACK:-true}"
+AGENT_LOOP_STALE_PHASE_SECONDS="${AGENT_LOOP_STALE_PHASE_SECONDS:-1800}"
 SKILL_RETRY_LOOP_LOAD_GUARD="${AGENT_LOOP_SKILL_RETRY_LOOP_LOAD_GUARD:-8}"
 SKILL_RETRY_LOOP_VALIDATION_GUARD="${AGENT_LOOP_SKILL_RETRY_LOOP_VALIDATION_GUARD:-3}"
+TOOL_SCHEMA_ERROR_GUARD="${AGENT_LOOP_TOOL_SCHEMA_ERROR_GUARD:-2}"
 
 LOOP_STOPPED_EARLY=false
 LOOP_STOP_REASON=""
 LOOP_STOP_DETAIL=""
 LOOP_STOP_PHASE=""
 LOOP_STOP_LOG=""
+
+to_int() {
+    local value="${1-0}"
+    value="${value//[[:space:]]/}"
+
+    if [[ "$value" =~ ^-?[0-9]+$ ]]; then
+        echo "$value"
+        return
+    fi
+
+    echo 0
+}
 
 log_phase() {
     echo -e "${CYAN}📦${NC} $1"
@@ -126,6 +140,9 @@ describe_stop_reason() {
             ;;
         permission-probe-loop)
             printf '권한/파라미터 진단 실패 루프가 반복되어 phase 실행을 중단했습니다. 환경 권한과 .claude 경로 접근권한을 점검한 뒤 재실행하세요'
+            ;;
+        tool-schema-error-loop)
+            printf 'mcp__claude-in-chrome__와 같은 MCP 도구 스키마 위반이 반복되어 phase 실행을 중단했습니다. 브릿지 실행과 무관한 MCP 환경 설정을 점검하세요.'
             ;;
         missing-verification-evidence)
             printf '필수 검증 증거가 없어 완료 판정을 내릴 수 없었습니다'
@@ -179,13 +196,13 @@ detect_skill_recursion_loop() {
     validation_error_count=$(grep -Fc "InputValidationError: Read failed due to the following issue" "$log_file" 2>/dev/null || echo 0)
     file_path_error_count=$(grep -Fc "required parameter file_path is missing" "$log_file" 2>/dev/null || echo 0)
 
-    if [[ "$skill_load_count" -ge "$SKILL_RETRY_LOOP_LOAD_GUARD" ]]; then
+    if (( $(to_int "$skill_load_count") >= $(to_int "$SKILL_RETRY_LOOP_LOAD_GUARD") )); then
         return 0
     fi
-    if [[ "$validation_error_count" -ge "$SKILL_RETRY_LOOP_VALIDATION_GUARD" ]]; then
+    if (( $(to_int "$validation_error_count") >= $(to_int "$SKILL_RETRY_LOOP_VALIDATION_GUARD") )); then
         return 0
     fi
-    if [[ "$validation_error_count" -ge 2 && "$file_path_error_count" -ge 1 ]]; then
+    if (( $(to_int "$validation_error_count") >= 2 && $(to_int "$file_path_error_count") >= 1 )); then
         return 0
     fi
 
@@ -210,6 +227,29 @@ detect_permission_probe_loop() {
     return 1
 }
 
+detect_tool_schema_error_loop() {
+    local log_file="$1"
+
+    if [[ ! -f "$log_file" ]]; then
+        return 1
+    fi
+
+    local schema_error_count
+    local chrome_tool_count
+
+    schema_error_count=$(grep -Eic "API Error: 400|additionalProperties=false|input_schema" "$log_file" 2>/dev/null || echo 0)
+    chrome_tool_count=$(grep -Eci "mcp__claude-in-chrome__|claude-in-chrome" "$log_file" 2>/dev/null || echo 0)
+
+    if (( $(to_int "$schema_error_count") >= $(to_int "$TOOL_SCHEMA_ERROR_GUARD") && $(to_int "$chrome_tool_count") >= 1 )); then
+        return 0
+    fi
+    if (( $(to_int "$schema_error_count") >= 1 && $(to_int "$chrome_tool_count") >= 3 )); then
+        return 0
+    fi
+
+    return 1
+}
+
 classify_worker_failure_reason() {
     local log_file="$1"
     local fallback="$2"
@@ -223,6 +263,12 @@ classify_worker_failure_reason() {
     if detect_permission_probe_loop "$log_file"; then
         log_warn "Detected permission probe loop signature in $log_file"
         echo "permission-probe-loop"
+        return
+    fi
+
+    if detect_tool_schema_error_loop "$log_file"; then
+        log_warn "Detected MCP tool schema error signature in $log_file"
+        echo "tool-schema-error-loop"
         return
     fi
 
@@ -450,13 +496,29 @@ completed=0
 failed=0
 
 while true; do
+    STALE_PHASES="$(list_stale_in_progress_phases "$AGENT_LOOP_STALE_PHASE_SECONDS")"
+    if [[ -n "$STALE_PHASES" ]]; then
+        log_warn "Stale in-progress phases detected, forcing failed state before reroute: ${STALE_PHASES//$'\n'/, }"
+        while IFS= read -r stale_phase_num; do
+            [[ -z "$stale_phase_num" ]] && continue
+            update_phase_state "$stale_phase_num" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "stale-running-timeout" "false"
+            if [[ -n "$DECISION_LOG" ]]; then
+                {
+                    echo "## Phase ${stale_phase_num} - Stale In-Progress Guard"
+                    echo "- Reason: skipped stale in-progress state for > ${AGENT_LOOP_STALE_PHASE_SECONDS}s"
+                    echo ""
+                } >> "$DECISION_LOG"
+            fi
+        done <<< "$STALE_PHASES"
+    fi
+
     NEXT_PHASE=$(get_next_phase)
 
     if [[ -z "$NEXT_PHASE" || "$NEXT_PHASE" == "" ]]; then
         break
     fi
 
-    if [[ $MAX_PHASES -gt 0 && $completed -ge $MAX_PHASES ]]; then
+    if (( $(to_int "$MAX_PHASES") > 0 && $(to_int "$completed") >= $(to_int "$MAX_PHASES") )); then
         log_info "Reached max phases limit ($MAX_PHASES)"
         break
     fi
@@ -547,7 +609,7 @@ Primary objective:
                     break 2
                 fi
 
-                if [[ "$AUTONOMOUS_MODE" == "true" && $auto_fix_count -lt $MAX_AUTO_FIX_ATTEMPTS ]]; then
+                if [[ "$AUTONOMOUS_MODE" == "true" && $(to_int "$auto_fix_count") -lt $(to_int "$MAX_AUTO_FIX_ATTEMPTS") ]]; then
                     log_info "Attempting verification remediation..."
                     echo "## Phase $NEXT_PHASE - Verification Remediation #${auto_fix_count}" >> "$DECISION_LOG"
 
@@ -690,7 +752,7 @@ Remediation steps:
                     fi
                 fi
 
-                if [[ $WATCHDOG_MAX_RESTARTS -gt 0 && $restart_count -ge $WATCHDOG_MAX_RESTARTS ]]; then
+                if (( $(to_int "$WATCHDOG_MAX_RESTARTS") > 0 && $(to_int "$restart_count") >= $(to_int "$WATCHDOG_MAX_RESTARTS") )); then
                     stop_detail="$(describe_stop_reason "timeout-restart-limit" "$RUNNER_RUNTIME" "$TIMEOUT_DETAIL")"
                     log_error "Phase $NEXT_PHASE exceeded restart limit"
                     append_qa_runtime_update "timeout-restart-limit-exceeded" "$LOGFILE" "$stop_detail"
@@ -739,7 +801,7 @@ Remediation steps:
                 break 2
             fi
 
-            if [[ "$AUTONOMOUS_MODE" == "true" && $auto_fix_count -lt $MAX_AUTO_FIX_ATTEMPTS ]]; then
+            if [[ "$AUTONOMOUS_MODE" == "true" && $(to_int "$auto_fix_count") -lt $(to_int "$MAX_AUTO_FIX_ATTEMPTS") ]]; then
                 log_info "Attempting auto-fix..."
                 echo "## Phase $NEXT_PHASE - Auto-fix #${auto_fix_count}" >> "$DECISION_LOG"
 
@@ -825,7 +887,7 @@ Remediation steps:
         fi
     done
 
-    if [[ $DELAY_SECONDS -gt 0 ]]; then
+    if (( $(to_int "$DELAY_SECONDS") > 0 )); then
         sleep "$DELAY_SECONDS"
     fi
 done
@@ -838,7 +900,7 @@ echo -e "${CYAN}  Agent Loop Completed${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 log_info "Phases completed: $completed"
-if [[ $failed -gt 0 ]]; then
+if (( $(to_int "$failed") > 0 )); then
     log_error "Phases failed: $failed"
 fi
 echo ""
