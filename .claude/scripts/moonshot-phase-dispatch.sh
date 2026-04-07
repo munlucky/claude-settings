@@ -41,6 +41,7 @@ AUTONOMOUS=false
 DRY_RUN=false
 CODEX_REASONING_EFFORT="${PHASE_DISPATCH_CODEX_REASONING_EFFORT:-${MOONSHOT_CODEX_REASONING_EFFORT:-medium}}"
 ALLOW_INTERACTIVE_IN_SESSION="${PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION:-false}"
+PHASE_DISPATCH_KILL_STALE="${PHASE_DISPATCH_KILL_STALE:-true}"
 
 show_help() {
     head -24 "$0" | tail -19
@@ -180,8 +181,43 @@ ensure_codex() {
     fi
 }
 
+terminate_stale_workers() {
+    if [[ "$PHASE_DISPATCH_KILL_STALE" != "true" ]]; then
+        return 0
+    fi
+
+    local current_pid=$$
+    local -a patterns=(
+      "[b]ash .claude/scripts/agent-loop.sh"
+      "[c]laude --dangerously-skip-permissions --no-session-persistence -p /moonshot-in-session-coordinator"
+      "[c]odex exec --full-auto -C"
+      "[b]ash .claude/scripts/moonshot-phase-dispatch.sh"
+    )
+    local pattern
+    local pid
+    local command_line
+
+    for pattern in "${patterns[@]}"; do
+        while IFS= read -r pid; do
+            if [[ -z "$pid" || "$pid" == "$current_pid" ]]; then
+                continue
+            fi
+            command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+            if [[ -z "$command_line" ]]; then
+                continue
+            fi
+            kill -0 "$pid" 2>/dev/null || continue
+            log_warn "terminating stale phase worker (pid=$pid): $command_line"
+            kill "$pid" 2>/dev/null || true
+            sleep 1
+            kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+        done < <(ps -ax -o pid= -o command= | awk -v p="$pattern" '$0 ~ p {print $1}')
+    done
+}
+
 run_delegated_terminal() {
     local resolved_root="$1"
+    terminate_stale_workers
     local cmd=(bash ".claude/scripts/agent-loop.sh" "$PLAN_DIR" "--status-file" "$STATUS_FILE" "--execution-root" "$resolved_root" "--runtime" "$RUNTIME")
 
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -196,6 +232,7 @@ run_in_session_coordinator() {
     local resolved_root="$1"
     local master_plan="$2"
     local stop_line="  stopOnFailure: true"
+    terminate_stale_workers
 
     if [[ "$STOP_ON_FAILURE" != "true" ]]; then
         stop_line="  stopOnFailure: false"
@@ -244,7 +281,6 @@ stageContract:
     - "Refresh QA_REPORT.md and SCORECARD.md at stage transitions instead of batching all artifact updates until the very end."
     - "In QA_REPORT.md, use only these closeout reason codes: scope_complete, verification_failed, blocked, interrupted, context_limit, user_pause, deferred_verification. If Next path is retry_loop, Closeout reason must be verification_failed."
     - "In HANDOFF.md, use only these stop reason codes: blocked, interrupted, context_limit, user_pause, deferred_verification."
-    - "If the phase worker repeatedly fails with skill bootstrap/permission probe loops (or returns phase-worker-loop-guard), immediately stop and request a manual retry after environment/skill-path remediation."
 EOF
 )
 

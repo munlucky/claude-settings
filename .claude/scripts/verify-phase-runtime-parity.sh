@@ -17,6 +17,11 @@ REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
 RUN_REAL=true
 TMP_ROOT="$(mktemp -d)"
 KEEP_TMP="${PHASE_RUNTIME_PARITY_KEEP_TMP:-false}"
+PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS:-600}"
+PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS:-5}"
+PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS:-0}"
+PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS="${PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS:-300000}"
+PHASE_RUNTIME_PARITY_KILL_STALE="${PHASE_RUNTIME_PARITY_KILL_STALE:-true}"
 CLAUDE_AVAILABLE=false
 CODEX_AVAILABLE=false
 RUNTIME_FAILURES=()
@@ -60,6 +65,43 @@ require_command() {
     fail "missing command: $name"
   fi
 }
+
+terminate_stale_verify_workers() {
+  if [[ "$PHASE_RUNTIME_PARITY_KILL_STALE" != "true" ]]; then
+    return 0
+  fi
+
+  local current_pid
+  current_pid=$$
+  local -a patterns=(
+    "[b]ash .claude/scripts/verify-phase-runtime-parity.sh"
+    "[b]ash .claude/scripts/moonshot-phase-dispatch.sh"
+    "[c]laude --dangerously-skip-permissions --no-session-persistence -p /moonshot-in-session-coordinator"
+  )
+  local pattern
+  local pid
+  local command_line
+
+  for pattern in "${patterns[@]}"; do
+    while IFS= read -r pid; do
+      if [[ -z "$pid" || "$pid" == "$current_pid" ]]; then
+        continue
+      fi
+      command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      if [[ -z "$command_line" ]]; then
+        continue
+      fi
+      if kill -0 "$pid" 2>/dev/null; then
+        warn "stale worker found (pid=$pid): $command_line"
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+      fi
+    done < <(ps -ax -o pid= -o command= | awk -v p="$pattern" '$0 ~ p {print $1}')
+  done
+}
+
+terminate_stale_verify_workers
 
 assert_contains() {
   local file="$1"
@@ -360,6 +402,35 @@ probe_codex_runtime() {
 run_runtime_probes() {
   probe_claude_runtime || warn "runtime probe failed: claude"
   probe_codex_runtime || warn "runtime probe failed: codex"
+}
+
+run_with_runtime_timeout() {
+  local timeout_seconds="$1"
+  shift
+  local -a cmd=("$@")
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$timeout_seconds" "${cmd[@]}"
+    return $?
+  fi
+
+  local pid
+  local exit_code=0
+  "${cmd[@]}" &
+  pid=$!
+  (
+    sleep "$timeout_seconds"
+    kill -0 "$pid" >/dev/null 2>&1 && kill -TERM "$pid" >/dev/null 2>&1
+  ) &
+  local killer_pid=$!
+  wait "$pid"
+  exit_code=$?
+  kill "$killer_pid" >/dev/null 2>&1 || true
+  wait "$killer_pid" >/dev/null 2>&1 || true
+
+  if [[ $exit_code -eq 143 ]]; then
+    return 124
+  fi
+  return "$exit_code"
 }
 
 assert_passed_verdict() {
@@ -888,53 +959,88 @@ run_actual_flow() {
     dispatch_args+=(--allow-interactive-in-session)
   fi
 
+  local dispatch_exit=0
   if [[ "$execution_mode" == "delegated-terminal" ]]; then
-    if ! (
+    set +e
+    (
       cd "$workspace_root"
-      MOONSHOT_CODEX_REASONING_EFFORT=low \
-        AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
-        AGENT_LOOP_SCORECARD_REQUIRED=false \
-        AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 \
-        AGENT_LOOP_WATCHDOG_MAX_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS:-600}" \
-      WORKSPACE_ROOT="$REPO_ROOT" \
-      bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
-          --execution-mode delegated-terminal \
-          --execution-root "$execution_root" \
-          --status-file "$status_file" \
-          --runtime "$runtime" \
-          ${dispatch_args[@]+"${dispatch_args[@]}"} \
-          > "$log_file" 2>&1
-    ); then
-      tail -80 "$log_file" >&2 || true
-      local elapsed_seconds
-      elapsed_seconds=$(( $(date +%s) - started_at ))
-      if grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then
-        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
-      else
-        record_actual_failure "$scenario_name" "delegated-terminal command failed after $(format_duration "$elapsed_seconds")"
-      fi
-      return 1
-    fi
-  else
-    if ! (
-      cd "$workspace_root"
-      MOONSHOT_CODEX_REASONING_EFFORT=low \
+      run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+        MOONSHOT_CODEX_REASONING_EFFORT=low \
+        OLLAMA_REQUEST_TIMEOUT_MS="$PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS" \
+          AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
+          AGENT_LOOP_SCORECARD_REQUIRED=false \
+          AGENT_LOOP_WATCHDOG_CHECK_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_RESTARTS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS" \
         WORKSPACE_ROOT="$REPO_ROOT" \
         bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
-        --execution-mode "$execution_mode" \
-        --status-file "$status_file" \
-        --execution-root "$execution_root" \
-        --runtime "$runtime" \
-        ${dispatch_args[@]+"${dispatch_args[@]}"} \
-        --max-attempts 1 \
-        --stop-on-failure > "$log_file" 2>&1
-    ); then
-      tail -80 "$log_file" >&2 || true
-      local elapsed_seconds
-      elapsed_seconds=$(( $(date +%s) - started_at ))
-      record_actual_failure "$scenario_name" "in-session-coordinator command failed after $(format_duration "$elapsed_seconds")"
-      return 1
+            --execution-mode delegated-terminal \
+            --execution-root "$execution_root" \
+            --status-file "$status_file" \
+          --runtime "$runtime" \
+          ${dispatch_args[@]+"${dispatch_args[@]}"} \
+            > "$log_file" 2>&1
+    )
+    dispatch_exit=$?
+    set -e
+  else
+    set +e
+    (
+      cd "$workspace_root"
+      run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+        MOONSHOT_CODEX_REASONING_EFFORT=low \
+        OLLAMA_REQUEST_TIMEOUT_MS="$PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS" \
+        WORKSPACE_ROOT="$REPO_ROOT" \
+          AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
+          AGENT_LOOP_SCORECARD_REQUIRED=false \
+          AGENT_LOOP_WATCHDOG_CHECK_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_RESTARTS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS" \
+        bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
+          --execution-mode "$execution_mode" \
+          --status-file "$status_file" \
+          --execution-root "$execution_root" \
+          --runtime "$runtime" \
+          ${dispatch_args[@]+"${dispatch_args[@]}"} \
+          --max-attempts 1 \
+          --stop-on-failure > "$log_file" 2>&1
+    )
+    dispatch_exit=$?
+    set -e
+  fi
+
+  if [[ "$dispatch_exit" -ne 0 ]]; then
+    tail -80 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    if [[ "$dispatch_exit" -eq 124 ]]; then
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+      fi
+    elif grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+      fi
+    else
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "delegated-terminal command failed after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "in-session-coordinator command failed after $(format_duration "$elapsed_seconds")"
+      fi
     fi
+    return 1
+  fi
+
+  if ! grep -Fq "verification-verdict" "$log_file" && grep -Fq "필수 verification 진입점 경로를 찾지 못해 phase를 진행할 수 없습니다" "$log_file"; then
+    tail -40 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "verification entrypoint was not found after $(format_duration "$elapsed_seconds")"
+    return 1
   fi
 
   snapshot_git_status "$workspace_root" "$after_git"
