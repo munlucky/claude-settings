@@ -514,3 +514,85 @@ with open(status_file, "w", encoding="utf-8") as handle:
     handle.write("\n".join(lines) + "\n")
 PY
 }
+
+list_stale_in_progress_phases() {
+    local stale_seconds="${1:-1800}"
+
+    if [[ ! -f "$STATUS_FILE" ]] || ! command -v python3 >/dev/null 2>&1; then
+        return
+    fi
+
+    if ! python3 - "$STATUS_FILE" "$stale_seconds" <<'PY'
+import sys
+import datetime
+import time
+import re
+
+status_file = sys.argv[1]
+stale_seconds = float(sys.argv[2])
+now = time.time()
+
+
+def parse_timestamp(value):
+    if not value:
+        return None
+    value = value.strip().strip('"')
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed.timestamp()
+
+
+with open(status_file, "r", encoding="utf-8") as handle:
+    lines = handle.read().splitlines()
+
+blocks = []
+current = None
+current_indent = None
+for raw_line in lines:
+    if re.match(r"^\s*-\s+number:\s*", raw_line):
+        if current is not None:
+            blocks.append(current)
+        match = re.search(r"number:\s*([0-9]+)", raw_line)
+        current = {"number": match.group(1) if match else None, "status": None, "planConfirmed": None, "lastOutcome": None, "lastUpdatedAt": None}
+        current_indent = len(raw_line) - len(raw_line.lstrip())
+        continue
+    if current is None:
+        continue
+    stripped = raw_line.strip()
+    if stripped.startswith("status:"):
+        current["status"] = stripped.split(":", 1)[1].strip()
+    elif stripped.startswith("planConfirmed:"):
+        current["planConfirmed"] = stripped.split(":", 1)[1].strip().lower()
+    elif stripped.startswith("lastOutcome:"):
+        current["lastOutcome"] = stripped.split(":", 1)[1].strip()
+    elif stripped.startswith("lastUpdatedAt:"):
+        current["lastUpdatedAt"] = stripped.split(":", 1)[1].strip()
+
+if current is not None:
+    blocks.append(current)
+
+for block in blocks:
+    status = block.get("status", "")
+    plan_confirmed = block.get("planConfirmed")
+    if status != "in_progress" or plan_confirmed == "false":
+        continue
+    if block.get("lastOutcome") != "running":
+        continue
+    updated_at = parse_timestamp(block.get("lastUpdatedAt", ""))
+    if updated_at is None:
+        continue
+    if (now - updated_at) >= stale_seconds:
+        number = block.get("number")
+        if number is not None:
+            print(number)
+PY
+    then
+    :
+fi
+}
