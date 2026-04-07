@@ -68,6 +68,8 @@ SCORECARD_REQUIRED="${AGENT_LOOP_SCORECARD_REQUIRED:-true}"
 TARGET_COMPLETION_SCORE="${AGENT_LOOP_TARGET_COMPLETION_SCORE:-100}"
 SCORECARD_PROFILE="${AGENT_LOOP_SCORECARD_PROFILE:-auto}"
 TIMEOUT_RUNTIME_FALLBACK="${AGENT_LOOP_TIMEOUT_RUNTIME_FALLBACK:-true}"
+SKILL_RETRY_LOOP_LOAD_GUARD="${AGENT_LOOP_SKILL_RETRY_LOOP_LOAD_GUARD:-8}"
+SKILL_RETRY_LOOP_VALIDATION_GUARD="${AGENT_LOOP_SKILL_RETRY_LOOP_VALIDATION_GUARD:-3}"
 
 LOOP_STOPPED_EARLY=false
 LOOP_STOP_REASON=""
@@ -119,6 +121,12 @@ describe_stop_reason() {
         timeout-restart-limit)
             printf '같은 phase가 반복 timeout 되었고 재시도 한도에 도달했습니다'
             ;;
+        skill-recursion-loop)
+            printf '슬래시 스킬 진입/로드 루프가 감지되어 phase 실행을 중단했습니다. 로그의 증상 분석 후 아티팩트를 갱신하고 다시 시도하세요'
+            ;;
+        permission-probe-loop)
+            printf '권한/파라미터 진단 실패 루프가 반복되어 phase 실행을 중단했습니다. 환경 권한과 .claude 경로 접근권한을 점검한 뒤 재실행하세요'
+            ;;
         missing-verification-evidence)
             printf '필수 검증 증거가 없어 완료 판정을 내릴 수 없었습니다'
             ;;
@@ -154,6 +162,71 @@ detect_verification_command_missing() {
     fi
 
     return 1
+}
+
+detect_skill_recursion_loop() {
+    local log_file="$1"
+
+    if [[ ! -f "$log_file" ]]; then
+        return 1
+    fi
+
+    local skill_load_count
+    local validation_error_count
+    local file_path_error_count
+
+    skill_load_count=$(grep -Fc "Skill(moonshot-phase-runner)" "$log_file" 2>/dev/null || echo 0)
+    validation_error_count=$(grep -Fc "InputValidationError: Read failed due to the following issue" "$log_file" 2>/dev/null || echo 0)
+    file_path_error_count=$(grep -Fc "required parameter file_path is missing" "$log_file" 2>/dev/null || echo 0)
+
+    if [[ "$skill_load_count" -ge "$SKILL_RETRY_LOOP_LOAD_GUARD" ]]; then
+        return 0
+    fi
+    if [[ "$validation_error_count" -ge "$SKILL_RETRY_LOOP_VALIDATION_GUARD" ]]; then
+        return 0
+    fi
+    if [[ "$validation_error_count" -ge 2 && "$file_path_error_count" -ge 1 ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+detect_permission_probe_loop() {
+    local log_file="$1"
+
+    if [[ ! -f "$log_file" ]]; then
+        return 1
+    fi
+
+    if grep -Fq "InputValidationError: Read failed due to the following issue" "$log_file" && \
+       grep -Fq "permission denied" "$log_file"; then
+        return 0
+    fi
+    if grep -Eqi 'does not have access to Claude|Please login again|Could not resolve authentication method|login required|subscription|authentication' "$log_file"; then
+        return 0
+    fi
+
+    return 1
+}
+
+classify_worker_failure_reason() {
+    local log_file="$1"
+    local fallback="$2"
+
+    if detect_skill_recursion_loop "$log_file"; then
+        log_warn "Detected repeated skill bootstrap/validation loop signature in $log_file"
+        echo "skill-recursion-loop"
+        return
+    fi
+
+    if detect_permission_probe_loop "$log_file"; then
+        log_warn "Detected permission probe loop signature in $log_file"
+        echo "permission-probe-loop"
+        return
+    fi
+
+    echo "$fallback"
 }
 
 classify_timeout_reason() {
@@ -516,6 +589,21 @@ Remediation steps:
                         log_error "Phase $NEXT_PHASE still lacks valid completion evidence (${PHASE_COMPLETION_REASON})"
                         append_qa_runtime_update "verification-remediation-incomplete" "$LOGFILE" "$PHASE_COMPLETION_REASON"
                         append_handoff_update "verification-remediation-incomplete" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                    else
+                        final_stop_reason="$(classify_worker_failure_reason "$LOGFILE" "phase-failed")"
+                        if [[ "$final_stop_reason" != "phase-failed" ]]; then
+                            stop_detail="$(describe_stop_reason "$final_stop_reason" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")"
+                            log_error "Verification remediation failed with repeated worker-loop pattern (${final_stop_reason})"
+                            append_qa_runtime_update "phase-worker-loop-guard" "$LOGFILE" "$final_stop_reason"
+                            append_handoff_update "phase-worker-loop-guard" "$LOGFILE" "$final_stop_reason"
+                            failed=$((failed + 1))
+                            update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+                            if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                                record_loop_stop "$NEXT_PHASE" "$final_stop_reason" "$stop_detail" "$LOGFILE"
+                            fi
+                            break 2
+                        fi
+                        continue
                     fi
 
                     continue
@@ -561,6 +649,19 @@ Remediation steps:
             break
         else
             exit_code=$?
+            final_stop_reason="$(classify_worker_failure_reason "$LOGFILE" "phase-failed")"
+            if [[ "$final_stop_reason" != "phase-failed" ]]; then
+                stop_detail="$(describe_stop_reason "$final_stop_reason" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")"
+                log_error "Phase $NEXT_PHASE failed with repeated worker-loop pattern (${final_stop_reason})"
+                append_qa_runtime_update "phase-worker-loop-guard" "$LOGFILE" "$final_stop_reason"
+                append_handoff_update "phase-worker-loop-guard" "$LOGFILE" "$final_stop_reason"
+                failed=$((failed + 1))
+                update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+                if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                    record_loop_stop "$NEXT_PHASE" "$final_stop_reason" "$stop_detail" "$LOGFILE"
+                fi
+                break 2
+            fi
 
             if [[ $exit_code -eq 124 && "$WATCHDOG_AUTO_RESTART" == "true" ]]; then
                 restart_count=$((restart_count + 1))
@@ -681,6 +782,20 @@ Remediation steps:
 
                     run_commit_prompt "$LOGFILE" "/commit-moonshot Phase $NEXT_PHASE 완료 (auto-fix). 변경사항을 커밋해주세요."
                     break
+                else
+                    final_stop_reason="$(classify_worker_failure_reason "$LOGFILE" "phase-failed")"
+                    if [[ "$final_stop_reason" != "phase-failed" ]]; then
+                        stop_detail="$(describe_stop_reason "$final_stop_reason" "$RUNNER_RUNTIME" "$PHASE_COMPLETION_REASON")"
+                        log_error "Auto-fix failed with repeated worker-loop pattern (${final_stop_reason})"
+                        append_qa_runtime_update "phase-worker-loop-guard" "$LOGFILE" "$final_stop_reason"
+                        append_handoff_update "phase-worker-loop-guard" "$LOGFILE" "$final_stop_reason"
+                        failed=$((failed + 1))
+                        update_phase_state "$NEXT_PHASE" "failed" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "failed" "false" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
+                        if [[ "$AUTONOMOUS_MODE" == "true" ]]; then
+                            record_loop_stop "$NEXT_PHASE" "$final_stop_reason" "$stop_detail" "$LOGFILE"
+                        fi
+                        break 2
+                    fi
                 fi
                 continue
             fi

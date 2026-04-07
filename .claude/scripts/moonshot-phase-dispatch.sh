@@ -244,6 +244,7 @@ stageContract:
     - "Refresh QA_REPORT.md and SCORECARD.md at stage transitions instead of batching all artifact updates until the very end."
     - "In QA_REPORT.md, use only these closeout reason codes: scope_complete, verification_failed, blocked, interrupted, context_limit, user_pause, deferred_verification. If Next path is retry_loop, Closeout reason must be verification_failed."
     - "In HANDOFF.md, use only these stop reason codes: blocked, interrupted, context_limit, user_pause, deferred_verification."
+    - "If the phase worker repeatedly fails with skill bootstrap/permission probe loops (or returns phase-worker-loop-guard), immediately stop and request a manual retry after environment/skill-path remediation."
 EOF
 )
 
