@@ -100,6 +100,10 @@ phase가 `completed`가 되면 해당 phase 문서는 `<plan-dir>/close/`로 이
 ### delegated-terminal
 - `.claude/scripts/moonshot-phase-dispatch.sh`를 통해 `agent-loop.sh`를 사용합니다.
 - 자율 루프, 재시도, phase score gating이 필요한 실행의 기본 경로입니다.
+- 가드 조건: 하나의 phase 시도 로그에서 반복적인 슬래시 스킬 로드/검증 실패 패턴(예: `Skill(moonshot-phase-runner)` 반복 로드, `required parameter file_path is missing`, `permission denied`)이 감지되면 `phase-worker-loop-guard`로 중단하고, 환경/권한 상태를 정리한 뒤 다시 시작하세요.
+- 가드 재시도 임계값(환경변수):
+  - `AGENT_LOOP_SKILL_RETRY_LOOP_LOAD_GUARD` (기본 `8`)
+  - `AGENT_LOOP_SKILL_RETRY_LOOP_VALIDATION_GUARD` (기본 `3`)
 
 ### in-session-coordinator
 - 메인 세션은 얇은 coordinator로 남고, 각 시도는 fresh attempt로 실행합니다.
