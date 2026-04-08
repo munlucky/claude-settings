@@ -15,6 +15,7 @@ with open(status_file, "r", encoding="utf-8") as handle:
 
 now = time.time()
 
+
 def parse_timestamp(value):
     if not value:
         return None
@@ -37,7 +38,13 @@ for raw_line in lines:
     if re.match(r"^\s*-\s+number:\s*", raw_line):
         if current is not None:
             blocks.append(current)
-        current = {"number": None, "status": None, "planConfirmed": None, "lastOutcome": None, "lastUpdatedAt": None}
+        current = {
+            "number": None,
+            "status": None,
+            "planConfirmed": None,
+            "lastOutcome": None,
+            "lastUpdatedAt": None,
+        }
         current_indent = len(raw_line) - len(raw_line.lstrip(" "))
         in_attempts = False
         match = re.search(r"number:\s*([0-9]+)", raw_line)
@@ -55,6 +62,7 @@ for raw_line in lines:
     if in_attempts and indent <= current_indent + 2:
         in_attempts = False
 
+    stripped = raw_line.strip()
     if stripped.startswith("status:"):
         current["status"] = stripped.split(":", 1)[1].strip()
     elif stripped.startswith("planConfirmed:"):
@@ -265,7 +273,7 @@ ensure_execution_artifacts() {
 
 ## Policy Anchors
 - Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
-- Active workspace contract: .claude/PROJECT.md
+- Active workspace contract: $(runtime_cli_active_workspace_contract)
 - Verification contract: ${VERIFICATION_CONTRACT_FILE}
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
 - Round policy summary: Keep this run isolated to phase ${phase_prefix}, refresh QA/HANDOFF artifacts when state changes, and require fresh verification evidence before completion.
@@ -453,6 +461,8 @@ Codex direct execution checklist:
 4. Execute only the active phase work.
 5. Run review and verification in the phase contract order.
 6. Use \`.claude/scripts/write-verification-verdict.py\` for structured \`.claude/verification-verdict-*.json\` output in the repository root instead of hand-authoring verdict JSON.
+   기본 인자만 넣어도 동작합니다.
+   예: `python3 .claude/scripts/write-verification-verdict.py --output .claude/verification-verdict-phase02-final.json --run-id phase02-final --phase-number 2`
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
 8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
@@ -491,6 +501,7 @@ Single isolated phase-attempt rules:
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
 - Record review completion before claiming the verifier state is final.
 - Generate fresh structured verification verdicts with \`.claude/scripts/write-verification-verdict.py\` and write them under \`.claude/verification-verdict-*.json\`; do not hand-author verdict JSON.
+  기본 인자만 넣어도 동작하도록 스키마를 완화했습니다.
 - Record the exact repository-root verdict path in QA_REPORT.md so the completion gate can confirm the same file.
 - Refresh QA_REPORT.md at stage transitions instead of batching every artifact update at the end.
 - When verification runs, update QA_REPORT.md.
@@ -507,7 +518,7 @@ Single isolated phase-attempt rules:
 
 Runtime compatibility fallback:
 - If /moonshot-orchestrator is unavailable in this runtime, execute the equivalent phase-attempt workflow directly instead of searching for missing slash skills.
-- In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, .claude/PROJECT.md, .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
+- In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, $(runtime_cli_active_workspace_contract), .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
 - Once fresh verification evidence exists, the execution artifacts reflect the outcome, and SCORECARD.md says \`Verdict: done\`, stop immediately and return control to the caller.
 $codex_direct_steps

@@ -63,3 +63,61 @@ runtime_cli_sync_wsl_codex_auth() {
 runtime_cli_prepare_environment() {
   runtime_cli_sync_wsl_codex_auth
 }
+
+runtime_cli_active_workspace_contract() {
+  if [[ -f ".claude/CLAUDE.md" ]]; then
+    printf '%s\n' ".claude/CLAUDE.md"
+    return 0
+  fi
+
+  if [[ -f "CLAUDE.md" ]]; then
+    printf '%s\n' "CLAUDE.md"
+    return 0
+  fi
+
+  printf '%s\n' ".claude/CLAUDE.md"
+}
+
+runtime_cli_find_pids_by_pattern() {
+  local pattern="$1"
+  local ps_output=""
+
+  if ! ps_output="$(ps -ax -o pid= -o command= 2>/dev/null)"; then
+    return 0
+  fi
+
+  awk -v p="$pattern" '$0 ~ p {print $1}' <<< "$ps_output"
+}
+
+runtime_cli_append_codex_base_args() {
+  local array_name="$1"
+  local cwd="$2"
+  local use_oss="${CODEX_USE_OSS_PROVIDER:-auto}"
+  local local_provider="${CODEX_LOCAL_PROVIDER:-}"
+  local use_ephemeral="${CODEX_EXEC_EPHEMERAL:-true}"
+  local cwd_q
+  local provider_q
+
+  printf -v cwd_q '%q' "$cwd"
+  eval "$array_name+=(codex exec --full-auto -C $cwd_q)"
+
+  if [[ "$use_ephemeral" == "true" ]]; then
+    eval "$array_name+=(--ephemeral)"
+  fi
+
+  if [[ "$use_oss" == "auto" ]]; then
+    if [[ -n "$local_provider" ]]; then
+      use_oss="true"
+    else
+      use_oss="false"
+    fi
+  fi
+
+  if [[ "$use_oss" == "true" ]]; then
+    if [[ -z "$local_provider" ]]; then
+      local_provider="ollama"
+    fi
+    printf -v provider_q '%q' "$local_provider"
+    eval "$array_name+=(--oss --local-provider $provider_q)"
+  fi
+}

@@ -231,13 +231,6 @@ Supported values:
 💡 Tip: Logs available at .claude/logs/agent-loop/
 ```
 
-Failure guard:
-- If a phase loop emits repeated slash-skill bootstrap or permission-related validation errors in the same phase attempt log (for example: repeated `Skill(moonshot-phase-runner)` loads, `InputValidationError ... required parameter file_path is missing`, `permission denied`), stop the loop as a guard condition and report `phase-worker-loop-guard` with the detected detail.
-- Remediation should focus on runtime/permission hygiene and retrying with a clean environment (project ACL, `.claude` access, skill path availability).
-- Guard thresholds can be tuned using:
-  - `AGENT_LOOP_SKILL_RETRY_LOOP_LOAD_GUARD` (default `8`)
-  - `AGENT_LOOP_SKILL_RETRY_LOOP_VALIDATION_GUARD` (default `3`)
-
 ### Mode B: in-session-coordinator
 
 This mode keeps orchestration in the current session while preserving fresh-attempt isolation.

@@ -18,81 +18,6 @@ resolve_runner_runtime() {
     exit 1
 }
 
-AGENT_LOOP_PHASE_RUNTIME_CHILD_PIDS=()
-
-agent_loop_phase_runtime_cleanup_child_pid() {
-  local pid="$1"
-  if [[ -z "$pid" ]]; then
-    return
-  fi
-
-  if ! kill -0 "$pid" >/dev/null 2>&1; then
-    return
-  fi
-
-  local pgid
-  pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
-
-  if [[ -n "$pgid" ]]; then
-    kill -TERM -- "-$pgid" 2>/dev/null || true
-  else
-    kill -TERM -- "$pid" 2>/dev/null || true
-  fi
-
-  local timeout_seconds=5
-  local elapsed=0
-  while [[ $elapsed -lt $timeout_seconds ]] && kill -0 "$pid" >/dev/null 2>&1; do
-    sleep 0.5
-    elapsed=$((elapsed + 1))
-  done
-
-  if kill -0 "$pid" >/dev/null 2>&1; then
-    if [[ -n "$pgid" ]]; then
-      kill -KILL -- "-$pgid" 2>/dev/null || true
-    else
-      kill -KILL -- "$pid" 2>/dev/null || true
-    fi
-  fi
-}
-
-agent_loop_phase_runtime_untrack_pid() {
-  local pid="$1"
-  local remaining=()
-  local existing
-
-  for existing in "${AGENT_LOOP_PHASE_RUNTIME_CHILD_PIDS[@]}"; do
-    if [[ "$existing" != "$pid" ]]; then
-      remaining+=("$existing")
-    fi
-  done
-  AGENT_LOOP_PHASE_RUNTIME_CHILD_PIDS=("${remaining[@]:-}")
-}
-
-agent_loop_phase_runtime_on_exit() {
-  local pid
-  for pid in "${AGENT_LOOP_PHASE_RUNTIME_CHILD_PIDS[@]}"; do
-    agent_loop_phase_runtime_cleanup_child_pid "$pid"
-  done
-}
-
-agent_loop_phase_runtime_start_worker() {
-  local log_file="$1"
-  shift
-  local -a cmd=("$@")
-
-  if command -v setsid >/dev/null 2>&1; then
-    setsid "${cmd[@]}" >> "$log_file" 2>&1 &
-  else
-    "${cmd[@]}" >> "$log_file" 2>&1 &
-  fi
-
-  local pid=$!
-  AGENT_LOOP_PHASE_RUNTIME_CHILD_PIDS+=("$pid")
-  printf '%s\n' "$pid"
-}
-
-trap agent_loop_phase_runtime_on_exit EXIT INT TERM HUP
-
 run_worker_prompt() {
     local log_file="$1"
     local prompt="$2"
@@ -119,7 +44,8 @@ run_worker_prompt() {
             cmd=(env "${phase_env[@]}" claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
             ;;
         codex)
-            cmd=(env "${phase_env[@]}" codex exec --full-auto -C "$PWD")
+            cmd=(env "${phase_env[@]}")
+            runtime_cli_append_codex_base_args cmd "$PWD"
             if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
                 cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
             fi
@@ -154,7 +80,8 @@ run_commit_prompt() {
             run_with_watchdog "$log_file" claude --dangerously-skip-permissions --no-session-persistence -c -p "$prompt" || true
             ;;
         codex)
-            local -a cmd=(codex exec --full-auto -C "$PWD")
+            local -a cmd=()
+            runtime_cli_append_codex_base_args cmd "$PWD"
             if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
                 cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
             fi
@@ -175,10 +102,10 @@ run_with_watchdog() {
     local start_time
     start_time=$(date +%s)
     local timed_out=false
-    local pid
 
     set +e
-    pid="$(agent_loop_phase_runtime_start_worker "$log_file" "$@")"
+    "$@" >> "$log_file" 2>&1 &
+    local pid=$!
 
     while kill -0 "$pid" 2>/dev/null; do
         local now
@@ -186,7 +113,9 @@ run_with_watchdog() {
         local elapsed=$((now - start_time))
         if [[ $WATCHDOG_MAX_SECONDS -gt 0 && $elapsed -ge $WATCHDOG_MAX_SECONDS ]]; then
             timed_out=true
-            agent_loop_phase_runtime_cleanup_child_pid "$pid"
+            kill "$pid" 2>/dev/null
+            sleep 5
+            kill -9 "$pid" 2>/dev/null
             break
         fi
         sleep "$WATCHDOG_CHECK_SECONDS"
@@ -194,7 +123,6 @@ run_with_watchdog() {
 
     wait "$pid"
     local exit_code=$?
-    agent_loop_phase_runtime_untrack_pid "$pid"
     set -e
 
     if [[ "$timed_out" == "true" ]]; then
@@ -214,10 +142,10 @@ run_worker_prompt_with_completion_gate() {
     start_time=$(date +%s)
     local timed_out=false
     local completed_early=false
-    local pid
 
     set +e
-    pid="$(agent_loop_phase_runtime_start_worker "$log_file" "$@")"
+    "$@" >> "$log_file" 2>&1 &
+    local pid=$!
 
     while kill -0 "$pid" 2>/dev/null; do
         local now
@@ -231,7 +159,9 @@ run_worker_prompt_with_completion_gate() {
                 evaluate_phase_completion_gate "$phase_start_epoch"
                 if [[ "$PHASE_COMPLETION_ALLOWED" == "true" ]]; then
                     completed_early=true
-                    agent_loop_phase_runtime_cleanup_child_pid "$pid"
+                    kill "$pid" 2>/dev/null
+                    sleep 2
+                    kill -9 "$pid" 2>/dev/null
                     break
                 fi
             fi
@@ -239,7 +169,9 @@ run_worker_prompt_with_completion_gate() {
 
         if [[ $WATCHDOG_MAX_SECONDS -gt 0 && $elapsed -ge $WATCHDOG_MAX_SECONDS ]]; then
             timed_out=true
-            agent_loop_phase_runtime_cleanup_child_pid "$pid"
+            kill "$pid" 2>/dev/null
+            sleep 5
+            kill -9 "$pid" 2>/dev/null
             break
         fi
 
@@ -248,7 +180,6 @@ run_worker_prompt_with_completion_gate() {
 
     wait "$pid"
     local exit_code=$?
-    agent_loop_phase_runtime_untrack_pid "$pid"
     set -e
 
     if [[ "$completed_early" == "true" ]]; then
