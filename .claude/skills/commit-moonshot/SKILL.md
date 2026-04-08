@@ -16,7 +16,7 @@ It is not part of the default implementation chain, but it should remain directl
 Treat it as an explicit Finish-stage utility, not an automatic step.
 
 ## Overview
-This skill runs in the main session, analyzes changes, and updates project memory (`[ProjectID]::*`) in the global Memory MCP.
+This skill runs in the main session, analyzes changes, and always refreshes project memory (`[ProjectID]::*`) in the global Memory MCP to the latest state.
 
 > **⚠️ Important: Complete memory update (steps 1-7) before committing (step 8).**
 
@@ -132,7 +132,7 @@ git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
 ## 7.6 Ask About `.claude/memory.json`
-Before staging the memory file, ask the user whether to include `.claude/memory.json` in this commit.
+Always perform the project memory refresh. The only confirmation needed is whether the refreshed `.claude/memory.json` should be included in this commit.
 
 Suggested prompt:
 ```text
@@ -140,6 +140,7 @@ Suggested prompt:
 ```
 
 Rules:
+- Refresh project memory first regardless of whether `.claude/memory.json` will be committed.
 - Do not auto-stage `.claude/memory.json` without user confirmation.
 - If the user says yes, stage and commit it with the code/docs changes.
 - If the user says no, leave `.claude/memory.json` unstaged and proceed with the rest of the commit.

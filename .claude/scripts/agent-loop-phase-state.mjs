@@ -84,6 +84,18 @@ function listStaleInProgressPhases(statusFile, staleSeconds) {
   return results;
 }
 
+function getPhaseSummary(statusFile, phaseNum) {
+  const blocks = readStatusBlocks(statusFile);
+  const target = blocks.find((block) => String(block.number) === String(phaseNum));
+  return target || {
+    number: String(phaseNum),
+    status: '',
+    planConfirmed: '',
+    lastOutcome: '',
+    lastUpdatedAt: '',
+  };
+}
+
 function shellQuote(value) {
   if (value === undefined || value === null) {
     return "''";
@@ -587,6 +599,7 @@ function printUsage() {
   console.error([
     'Usage:',
     '  agent-loop-phase-state.mjs list-stale-in-progress-phases <status-file> [stale-seconds]',
+    '  agent-loop-phase-state.mjs get-phase-summary <status-file> <phase-num>',
     '  agent-loop-phase-state.mjs evaluate-phase-completion-gate <phase-start-epoch> <qa-report-path> <scorecard-path> <phase-execution-dir> <scorecard-required> <target-completion-score>',
     '  agent-loop-phase-state.mjs update-phase-state <status-file> <phase-num> <new-status> <timestamp> <last-outcome> <increment-attempt> <active-phase-doc> <sprint-contract> <qa-report> <handoff> <scorecard>',
   ].join('\n'));
@@ -616,6 +629,18 @@ switch (command) {
       scorecardRequired: args[4],
       targetCompletionScore: args[5],
     });
+    for (const [key, value] of Object.entries(result)) {
+      console.log(`${key}=${shellQuote(value)}`);
+    }
+    break;
+  }
+  case 'get-phase-summary': {
+    const [statusFile, phaseNum] = args;
+    if (!statusFile || !phaseNum) {
+      printUsage();
+      process.exit(64);
+    }
+    const result = getPhaseSummary(statusFile, phaseNum);
     for (const [key, value] of Object.entries(result)) {
       console.log(`${key}=${shellQuote(value)}`);
     }

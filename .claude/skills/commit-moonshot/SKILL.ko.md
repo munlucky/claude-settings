@@ -16,7 +16,7 @@ triggers:
 자동 단계가 아니라 명시적 Finish-stage 유틸리티로 취급합니다.
 
 ## 개요
-이 명령어는 메인 세션에서 실행되며, 변경사항을 분석하고 전역 Memory MCP에 프로젝트 메모리(`[ProjectID]::*`)를 현행화합니다.
+이 명령어는 메인 세션에서 실행되며, 변경사항을 분석하고 전역 Memory MCP에 프로젝트 메모리(`[ProjectID]::*`)를 항상 최신 상태로 현행화합니다.
 
 > **⚠️ 중요: 반드시 Memory 현행화(1~7단계)를 먼저 완료한 후 커밋(8단계)을 수행하세요.**
 
@@ -132,7 +132,7 @@ git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
 ## 7.6 `.claude/memory.json` 포함 여부 확인
-메모리 파일을 스테이징하기 전에 이번 커밋에 `.claude/memory.json`을 포함할지 사용자에게 먼저 물어보세요.
+프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 `.claude/memory.json`을 이번 커밋에 포함할지 여부뿐입니다.
 
 권장 질문:
 ```text
@@ -140,6 +140,7 @@ git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
 규칙:
+- `.claude/memory.json` 포함 여부와 무관하게 프로젝트 메모리 현행화 자체는 항상 먼저 완료하세요.
 - 사용자 확인 없이 `.claude/memory.json`을 자동으로 스테이징하지 마세요.
 - 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
 - 사용자가 제외하자고 하면 `.claude/memory.json`은 unstaged 상태로 두고 나머지만 커밋하세요.
