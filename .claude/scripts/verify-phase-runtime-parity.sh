@@ -4,8 +4,8 @@
 # Coverage:
 #   - render matrix for delegated-terminal and in-session-coordinator across Claude/Codex
 #     (Codex coordinator path is exercised with interactive mode explicitly enabled)
-#   - runtime availability probes for Claude/Codex
-#   - actual delegated-terminal + in-session-coordinator runs for each available runtime
+#   - runtime availability probes for the selected runtime target(s)
+#   - actual delegated-terminal + in-session-coordinator runs for the selected runtime target(s)
 #   - artifact/status/verdict assertions after each actual run
 
 set -euo pipefail
@@ -22,11 +22,13 @@ PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_CHE
 PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS:-0}"
 PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS="${PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS:-300000}"
 PHASE_RUNTIME_PARITY_KILL_STALE="${PHASE_RUNTIME_PARITY_KILL_STALE:-true}"
+PHASE_RUNTIME_PARITY_TARGET_RUNTIMES="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-auto}"
 CLAUDE_AVAILABLE=false
 CODEX_AVAILABLE=false
 RUNTIME_FAILURES=()
 ACTUAL_FAILURES=()
 ACTUAL_TIMINGS=()
+TARGET_RUNTIME_SET=()
 
 cleanup() {
   if [[ "$KEEP_TMP" == "true" ]]; then
@@ -41,6 +43,9 @@ usage() {
   cat <<'EOF_USAGE'
 Usage:
   verify-phase-runtime-parity.sh [reference-plan-dir] [--render-only]
+
+Environment:
+  PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=auto|current|claude|codex|both
 EOF_USAGE
 }
 
@@ -97,7 +102,7 @@ terminate_stale_verify_workers() {
         sleep 1
         kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
       fi
-    done < <(ps -ax -o pid= -o command= | awk -v p="$pattern" '$0 ~ p {print $1}')
+    done < <(runtime_cli_find_pids_by_pattern "$pattern")
   done
 }
 
@@ -254,6 +259,72 @@ runtime_is_available() {
   esac
 }
 
+resolve_current_runtime() {
+  if [[ -n "${CODEX_THREAD_ID:-}" || -n "${CODEX_CI:-}" ]]; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  if [[ -n "${CLAUDE_PROJECT_DIR:-}" || -n "${CLAUDECODE:-}" || -n "${CLAUDE_CODE:-}" ]]; then
+    printf '%s\n' "claude"
+    return 0
+  fi
+
+  if command -v codex >/dev/null 2>&1 && ! command -v claude >/dev/null 2>&1; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  if command -v claude >/dev/null 2>&1 && ! command -v codex >/dev/null 2>&1; then
+    printf '%s\n' "claude"
+    return 0
+  fi
+
+  if command -v codex >/dev/null 2>&1; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  printf '%s\n' "claude"
+}
+
+resolve_target_runtime_set() {
+  local target="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-auto}"
+  local current_runtime
+
+  case "$target" in
+    auto|current)
+      current_runtime="$(resolve_current_runtime)"
+      TARGET_RUNTIME_SET=("$current_runtime")
+      ;;
+    claude)
+      TARGET_RUNTIME_SET=("claude")
+      ;;
+    codex)
+      TARGET_RUNTIME_SET=("codex")
+      ;;
+    both)
+      TARGET_RUNTIME_SET=("claude" "codex")
+      ;;
+    *)
+      fail "unknown PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: $target"
+      ;;
+  esac
+}
+
+target_runtime_selected() {
+  local runtime="$1"
+  local selected
+
+  for selected in "${TARGET_RUNTIME_SET[@]}"; do
+    if [[ "$selected" == "$runtime" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 summarize_probe_detail() {
   local primary_file="$1"
   local secondary_file="${2:-}"
@@ -373,8 +444,10 @@ probe_codex_runtime() {
   set +e
   (
     cd "$REPO_ROOT"
-    codex exec --full-auto -C "$REPO_ROOT" -o "$output_file" \
-      'Reply exactly with RUNTIME_OK and nothing else.'
+    local -a cmd=()
+    runtime_cli_append_codex_base_args cmd "$REPO_ROOT"
+    cmd+=(-o "$output_file" 'Reply exactly with RUNTIME_OK and nothing else.')
+    "${cmd[@]}"
   ) >"$stdout_file" 2>"$error_file"
   local exit_code=$?
   set -e
@@ -400,8 +473,13 @@ probe_codex_runtime() {
 }
 
 run_runtime_probes() {
-  probe_claude_runtime || warn "runtime probe failed: claude"
-  probe_codex_runtime || warn "runtime probe failed: codex"
+  if target_runtime_selected "claude"; then
+    probe_claude_runtime || warn "runtime probe failed: claude"
+  fi
+
+  if target_runtime_selected "codex"; then
+    probe_codex_runtime || warn "runtime probe failed: codex"
+  fi
 }
 
 run_with_runtime_timeout() {
@@ -539,7 +617,7 @@ EOF
 
 ## Policy Anchors
 - Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
-- Active workspace contract: .claude/PROJECT.md
+- Active workspace contract: $(runtime_cli_active_workspace_contract)
 - Verification contract: .claude/verification.contract.yaml
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
 - Round policy summary: runtime smoke only, no repository source edits, fresh verification evidence required
@@ -853,10 +931,11 @@ run_verify_changes_workflow_verdict_smoke() {
   prepare_workspace_copy "$workspace_root"
   initialize_workspace_git "$workspace_root"
 
-  mkdir -p "$workspace_root/src"
+  mkdir -p "$workspace_root/.claude/scripts"
   mkdir -p "$(dirname "$analysis_file")" "$(dirname "$qa_report")"
-  cat > "$workspace_root/src/workflowEvidenceSmoke.ts" <<'EOF'
-export const workflowEvidenceSmoke = true;
+  cat > "$workspace_root/.claude/scripts/workflowEvidenceSmoke.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'workflow evidence smoke\n'
 EOF
 
   cat > "$qa_report" <<'EOF'
@@ -1125,6 +1204,9 @@ run_actual_matrix() {
     IFS='|' read -r runtime mode scenario_name <<EOF
 $entry
 EOF
+    if ! target_runtime_selected "$runtime"; then
+      continue
+    fi
     if ! runtime_is_available "$runtime"; then
       warn "skipping ${scenario_name}: runtime unavailable"
       continue
@@ -1208,6 +1290,7 @@ fi
 runtime_cli_prepare_environment
 require_command python3
 require_command shasum
+resolve_target_runtime_set
 
 run_render_matrix
 run_workflow_enforcement_sync_smoke

@@ -211,7 +211,7 @@ terminate_stale_workers() {
             kill "$pid" 2>/dev/null || true
             sleep 1
             kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
-        done < <(ps -ax -o pid= -o command= | awk -v p="$pattern" '$0 ~ p {print $1}')
+        done < <(runtime_cli_find_pids_by_pattern "$pattern")
     done
 }
 
@@ -299,7 +299,7 @@ EOF
             cmd=(claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
             ;;
         codex)
-            cmd=(codex exec --full-auto -C "$PWD")
+            runtime_cli_append_codex_base_args cmd "$PWD"
             if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
                 cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
             fi

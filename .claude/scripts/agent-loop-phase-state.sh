@@ -341,8 +341,8 @@ import sys
     scorecard_path,
 ) = sys.argv[1:]
 
-with open(status_file, "r", encoding="utf-8") as handle:
-    lines = handle.read().splitlines()
+    with open(status_file, "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
 
 block_ranges = []
 current_start = None
@@ -510,8 +510,8 @@ else:
     remove_root_key("signals")
     remove_root_key("artifacts")
 
-with open(status_file, "w", encoding="utf-8") as handle:
-    handle.write("\n".join(lines) + "\n")
+    with open(status_file, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
 PY
 }
 
@@ -532,7 +532,6 @@ status_file = sys.argv[1]
 stale_seconds = float(sys.argv[2])
 now = time.time()
 
-
 def parse_timestamp(value):
     if not value:
         return None
@@ -546,7 +545,6 @@ def parse_timestamp(value):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=datetime.timezone.utc)
     return parsed.timestamp()
-
 
 with open(status_file, "r", encoding="utf-8") as handle:
     lines = handle.read().splitlines()
