@@ -159,6 +159,26 @@ function phaseState(command, ...args) {
   return result.stdout.trim();
 }
 
+function phaseSummary(phaseNum) {
+  const output = phaseState('get-phase-summary', state.statusFile, String(phaseNum));
+  const values = {};
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    const key = line.slice(0, separator);
+    let value = line.slice(separator + 1);
+    value = value.replace(/^'/, '').replace(/'$/, '').replace(/'\\''/g, "'");
+    values[key] = value;
+  }
+  return values;
+}
+
 function resolveMasterPlan(planDir) {
   const files = fs.readdirSync(planDir, { withFileTypes: true })
     .filter((entry) => entry.isFile())
@@ -412,6 +432,21 @@ async function runNodeManagedLoop() {
     }
 
     if (updatedNextPhase === nextPhase) {
+      const currentPhase = phaseSummary(nextPhase);
+      if (currentPhase.status === 'in_progress' && currentPhase.lastOutcome === 'partial') {
+        appendDecisionLog([
+          `## Phase ${nextPhase} - Partial Attempt`,
+          '- Status: partial',
+          '- Decision: keep the phase in progress and continue with a fresh attempt',
+          '',
+        ]);
+        logInfo(`Phase ${nextPhase} remains in progress after a partial attempt; continuing with a fresh attempt`);
+        if (state.delaySeconds > 0) {
+          await sleep(state.delaySeconds * 1000);
+        }
+        continue;
+      }
+
       failedPhases += 1;
       stoppedEarly = true;
       stopPhase = nextPhase;
