@@ -39,9 +39,35 @@ print_header() {
 	echo ""
 }
 
+ensure_supported_shell() {
+	local uname_s=""
+
+	uname_s="$(uname -s 2>/dev/null || true)"
+
+	case "$uname_s" in
+	Darwin)
+		print_info "지원 셸 확인됨: macOS bash"
+		;;
+	MINGW* | MSYS* | CYGWIN*)
+		if [ -z "${MSYSTEM:-}" ]; then
+			print_error "Windows에서는 Git Bash에서 실행해야 합니다."
+			echo "  예: bash ./install-claude.sh"
+			exit 1
+		fi
+		print_info "지원 셸 확인됨: Windows Git Bash (${MSYSTEM})"
+		;;
+	*)
+		print_error "지원되지 않는 셸 환경입니다: ${uname_s:-unknown}"
+		echo "  지원 환경: macOS bash, Windows Git Bash"
+		exit 1
+		;;
+	esac
+}
+
 setup_codex_skills() {
 	local source_skills_dir=".claude/skills"
-	local codex_home="${CODEX_HOME:-$HOME/.codex}"
+	local project_root=""
+	local codex_home=""
 	local linked_count=0
 	local source_root=""
 
@@ -52,6 +78,9 @@ setup_codex_skills() {
 		print_warn "스킬 디렉토리를 찾지 못했습니다: $source_skills_dir"
 		return
 	fi
+
+	project_root="$(pwd -P)"
+	codex_home="${CODEX_HOME:-$project_root/.codex}"
 
 	CODEX_SKILLS_DIR="$codex_home/skills"
 	mkdir -p "$CODEX_SKILLS_DIR"
@@ -302,7 +331,7 @@ usage() {
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
-  - .claude/skills/* 를 Codex 전역 skills(${CODEX_HOME:-~/.codex}/skills/*)에 심볼릭 링크
+  - .claude/skills/* 를 Codex skills(${CODEX_HOME:-./.codex}/skills/*)에 심볼릭 링크
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 보호되는 파일 패턴:
@@ -431,6 +460,7 @@ if [ -d ".claude" ]; then
 fi
 
 print_header
+ensure_supported_shell
 
 # 1. 필수 도구 확인
 print_info "필수 도구 확인 중..."
@@ -961,7 +991,7 @@ fi
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
 echo "  2. Git에 커밋: git add .claude .agents .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
-echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-~/.codex}/skills} 를 다시 로드하세요"
+echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-./.codex}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
 if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ] || [ ${#CODEX_BACKUP_PATHS[@]} -gt 0 ]; then
