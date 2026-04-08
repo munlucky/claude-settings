@@ -1,98 +1,10 @@
+if [[ -z "${SCRIPT_DIR:-}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
 get_next_phase() {
     if [[ -f "$STATUS_FILE" ]]; then
-        python3 - "$STATUS_FILE" <<'PY'
-import re
-import sys
-import time
-from datetime import datetime, timezone
-import os
-
-STALE_SECONDS = float(os.environ.get("AGENT_LOOP_STALE_PHASE_SECONDS", "1800"))
-
-status_file = sys.argv[1]
-with open(status_file, "r", encoding="utf-8") as handle:
-    lines = handle.readlines()
-
-now = time.time()
-
-
-def parse_timestamp(value):
-    if not value:
-        return None
-    value = value.strip().strip('"')
-    if value.endswith("Z"):
-        value = value[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.timestamp()
-
-blocks = []
-current = None
-current_indent = None
-in_attempts = False
-for raw_line in lines:
-    if re.match(r"^\s*-\s+number:\s*", raw_line):
-        if current is not None:
-            blocks.append(current)
-        current = {
-            "number": None,
-            "status": None,
-            "planConfirmed": None,
-            "lastOutcome": None,
-            "lastUpdatedAt": None,
-        }
-        current_indent = len(raw_line) - len(raw_line.lstrip(" "))
-        in_attempts = False
-        match = re.search(r"number:\s*([0-9]+)", raw_line)
-        if match:
-            current["number"] = match.group(1)
-        continue
-    if current is None:
-        continue
-
-    indent = len(raw_line) - len(raw_line.lstrip(" "))
-    stripped = raw_line.strip()
-    if not stripped:
-        continue
-
-    if in_attempts and indent <= current_indent + 2:
-        in_attempts = False
-
-    stripped = raw_line.strip()
-    if stripped.startswith("status:"):
-        current["status"] = stripped.split(":", 1)[1].strip()
-    elif stripped.startswith("planConfirmed:"):
-        current["planConfirmed"] = stripped.split(":", 1)[1].strip().lower()
-    elif stripped.startswith("attempts:") and indent > current_indent:
-        in_attempts = True
-        continue
-    elif in_attempts:
-        if stripped.startswith("lastOutcome:"):
-            current["lastOutcome"] = stripped.split(":", 1)[1].strip()
-        elif stripped.startswith("lastUpdatedAt:"):
-            current["lastUpdatedAt"] = stripped.split(":", 1)[1].strip().strip('"')
-
-if current is not None:
-    blocks.append(current)
-
-for block in blocks:
-    status = block.get("status")
-    plan_confirmed = block.get("planConfirmed")
-    last_outcome = block.get("lastOutcome")
-    last_updated_at = block.get("lastUpdatedAt")
-    if status == "in_progress" and last_outcome == "running" and last_updated_at:
-        updated_ts = parse_timestamp(last_updated_at)
-        if updated_ts is not None and now - updated_ts >= STALE_SECONDS:
-            continue
-    if status in {"pending", "in_progress"} and plan_confirmed != "false":
-        if block.get("number") is not None:
-            print(block["number"])
-            break
-PY
+        node "$SCRIPT_DIR/agent-loop-phase-plan.mjs" get-next-phase "$STATUS_FILE"
     else
         echo "1"
     fi
@@ -105,7 +17,7 @@ get_phase_title() {
     local phase_doc
     phase_doc=$(get_phase_doc "$phase_num")
     if [[ -n "$phase_doc" ]]; then
-        head -5 "$phase_doc" | grep -E "^#" | head -1 | sed 's/^#* //' | tr -d '\r'
+        node "$SCRIPT_DIR/agent-loop-phase-plan.mjs" get-phase-title "$PLAN_DIR" "$phase_num"
     else
         echo "Phase $phase_num"
     fi
@@ -115,7 +27,7 @@ get_phase_doc() {
     local phase_num=$1
     local phase_prefix
     printf -v phase_prefix '%02d' "$phase_num"
-    find "$PLAN_DIR" -maxdepth 1 \( -name "${phase_prefix}-*.md" -o -name "*phase*${phase_num}*" \) 2>/dev/null | head -1
+    node "$SCRIPT_DIR/agent-loop-phase-plan.mjs" get-phase-doc "$PLAN_DIR" "$phase_num"
 }
 
 sanitize_slug() {
@@ -126,107 +38,16 @@ sanitize_slug() {
 }
 
 count_total_phases() {
-    find "$PLAN_DIR" -maxdepth 1 -name "*.md" ! -name "*master*" ! -name "*00-*" 2>/dev/null | wc -l | tr -d ' '
+    node "$SCRIPT_DIR/agent-loop-phase-plan.mjs" count-total-phases "$PLAN_DIR"
 }
 
 render_required_verification_commands() {
-    if [[ ! -f "$VERIFICATION_CONTRACT_FILE" ]] || ! command -v python3 >/dev/null 2>&1; then
+    if [[ ! -f "$VERIFICATION_CONTRACT_FILE" ]]; then
         printf '%s\n' "- Populate from the active verification contract before claiming completion."
         return
     fi
 
-    python3 - "$VERIFICATION_CONTRACT_FILE" <<'PY'
-import sys
-
-
-def parse_scalar(value):
-    value = value.strip()
-    if value in ("true", "false"):
-        return value == "true"
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-        return value[1:-1]
-    return value
-
-
-def next_meaningful(lines, start_index):
-    for idx in range(start_index + 1, len(lines)):
-        stripped = lines[idx].strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        indent = len(lines[idx]) - len(lines[idx].lstrip(" "))
-        return indent, stripped
-    return None, None
-
-
-def parse_simple_yaml(path):
-    with open(path, "r", encoding="utf-8") as handle:
-        lines = handle.read().splitlines()
-
-    root = {}
-    stack = [(-1, root)]
-
-    for index, raw_line in enumerate(lines):
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-        while len(stack) > 1 and indent <= stack[-1][0]:
-            stack.pop()
-
-        container = stack[-1][1]
-
-        if stripped.startswith("- "):
-            if isinstance(container, list):
-                container.append(parse_scalar(stripped[2:]))
-            continue
-
-        key, _, value = stripped.partition(":")
-        key = key.strip()
-        value = value.strip()
-        if not key:
-            continue
-
-        if value == "":
-            next_indent, next_stripped = next_meaningful(lines, index)
-            nested = [] if next_indent is not None and next_indent > indent and next_stripped.startswith("- ") else {}
-            if isinstance(container, dict):
-                container[key] = nested
-                stack.append((indent, nested))
-            continue
-
-        if isinstance(container, dict):
-            container[key] = parse_scalar(value)
-
-    return root
-
-
-def as_list(value):
-    if isinstance(value, list):
-        return [item for item in value if isinstance(item, (str, int, float, bool))]
-    if value in (None, ""):
-        return []
-    return [value]
-
-
-contract = parse_simple_yaml(sys.argv[1])
-commands = contract.get("commands", {}) if isinstance(contract.get("commands"), dict) else {}
-policy = contract.get("policy", {}) if isinstance(contract.get("policy"), dict) else {}
-required = [str(item) for item in as_list(policy.get("requiredChecks"))]
-
-lines = []
-for check_name in required:
-    command = commands.get(check_name)
-    if command:
-        lines.append(f"- {check_name}: `{command}`")
-    else:
-        lines.append(f"- {check_name}: declare the command in {sys.argv[1]}")
-
-if not lines:
-    lines.append("- Populate from the active verification contract before claiming completion.")
-
-print("\n".join(lines))
-PY
+    node "$SCRIPT_DIR/agent-loop-phase-plan.mjs" render-required-verification-commands "$VERIFICATION_CONTRACT_FILE"
 }
 
 ensure_execution_artifacts() {

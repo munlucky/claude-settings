@@ -1,7 +1,114 @@
 #!/usr/bin/env bash
+
+# Runtime parity smoke for Moonshot phase execution.
+# Coverage:
+#   - render matrix for delegated-terminal and in-session-coordinator across Claude/Codex
+#     (Codex coordinator path is exercised with interactive mode explicitly enabled)
+#   - runtime availability probes for the selected runtime target(s)
+#   - actual delegated-terminal + in-session-coordinator runs for the selected runtime target(s)
+#   - artifact/status/verdict assertions after each actual run
+
 set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec node "$SCRIPT_DIR/verify-phase-runtime-parity.mjs" "$@"
+source "$SCRIPT_DIR/runtime-cli.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
+RUN_REAL=true
+TMP_ROOT="$(mktemp -d)"
+KEEP_TMP="${PHASE_RUNTIME_PARITY_KEEP_TMP:-false}"
+PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS:-600}"
+PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS:-5}"
+PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS:-0}"
+PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS="${PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS:-300000}"
+PHASE_RUNTIME_PARITY_KILL_STALE="${PHASE_RUNTIME_PARITY_KILL_STALE:-true}"
+PHASE_RUNTIME_PARITY_TARGET_RUNTIMES="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-auto}"
+CLAUDE_AVAILABLE=false
+CODEX_AVAILABLE=false
+RUNTIME_FAILURES=()
+ACTUAL_FAILURES=()
+ACTUAL_TIMINGS=()
+TARGET_RUNTIME_SET=()
+
+cleanup() {
+  if [[ "$KEEP_TMP" == "true" ]]; then
+    log "keeping temp artifacts: $TMP_ROOT"
+    return
+  fi
+  rm -rf "$TMP_ROOT"
+}
+trap cleanup EXIT
+
+usage() {
+  cat <<'EOF_USAGE'
+Usage:
+  verify-phase-runtime-parity.sh [reference-plan-dir] [--render-only]
+
+Environment:
+  PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=auto|current|claude|codex|both
+EOF_USAGE
+}
+
+log() {
+  printf '%s\n' "$1"
+}
+
+warn() {
+  printf 'WARN: %s\n' "$1"
+}
+
+fail() {
+  log "$1"
+  if [[ "$KEEP_TMP" == "true" ]]; then
+    log "debug temp root: $TMP_ROOT"
+  fi
+  exit 1
+}
+require_command() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    fail "missing command: $name"
+  fi
+}
+
+terminate_stale_verify_workers() {
+  if [[ "$PHASE_RUNTIME_PARITY_KILL_STALE" != "true" ]]; then
+    return 0
+  fi
+
+  local current_pid
+  current_pid=$$
+  local -a patterns=(
+    "[b]ash .claude/scripts/verify-phase-runtime-parity.sh"
+    "[b]ash .claude/scripts/verify-phase-runtime-parity-shell-core.sh"
+    "[n]ode .claude/scripts/verify-phase-runtime-parity.mjs"
+    "[b]ash .claude/scripts/moonshot-phase-dispatch.sh"
+    "[c]laude --dangerously-skip-permissions --no-session-persistence -p /moonshot-in-session-coordinator"
+  )
+  local pattern
+  local pid
+  local command_line
+
+  for pattern in "${patterns[@]}"; do
+    while IFS= read -r pid; do
+      if [[ -z "$pid" || "$pid" == "$current_pid" ]]; then
+        continue
+      fi
+      command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      if [[ -z "$command_line" ]]; then
+        continue
+      fi
+      if kill -0 "$pid" 2>/dev/null; then
+        warn "stale worker found (pid=$pid): $command_line"
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+      fi
+    done < <(runtime_cli_find_pids_by_pattern "$pattern")
+  done
+}
+
+terminate_stale_verify_workers
 
 assert_contains() {
   local file="$1"
@@ -661,7 +768,9 @@ run_render_matrix() {
     bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
   )
 
-  assert_contains "$claude_delegated_out" "agent-loop.sh" "delegated-terminal adapter command"
+  if ! grep -Fq -- "agent-loop.sh" "$claude_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$claude_delegated_out"; then
+    fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
+  fi
   assert_contains "$claude_delegated_out" "--runtime claude" "Claude delegated runtime flag"
   assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
   assert_contains "$claude_coord_out" "claude --dangerously-skip-permissions" "Claude coordinator adapter"
@@ -859,10 +968,12 @@ EOF
 
   (
     cd "$workspace_root"
+    set +e
     VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity \
       HARNESS_RUN_ID=workflow-evidence-smoke \
       HARNESS_OPERATING_MODE=meta_harness \
       bash .claude/agents/verification/run-verify-changes.sh workflow-evidence-smoke > "$log_file" 2>&1
+    exit 0
   )
 
   python3 - "$verdict_file" <<'PY'
