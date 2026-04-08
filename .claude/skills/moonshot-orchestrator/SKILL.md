@@ -481,6 +481,9 @@ Run `decisions.skillChain` in order.
 **Phase-runner execution-mode contract**:
 - If `moonshot-phase-runner` returns `phaseRunnerResult.prepareOnly == true`, stop after surfacing prepared execution metadata.
 - If `moonshot-phase-runner` returns `phaseRunnerResult.autoStartExecution == true`, execute `phaseRunnerResult.executionSkill` immediately and pass through `phaseRunnerResult`.
+- If `phaseRunnerResult.executionMode == delegated-terminal`, the execution path must launch `phaseRunnerResult.executionCommand` and remain attached to the dispatcher/agent loop until that loop exits.
+- Do not downgrade delegated-terminal into a single conversational implementation round just because artifacts or checkpoints were updated.
+- Do not treat a completed phase as a return boundary while the active plan directory still contains `pending`, `in_progress`, or retryable `failed` phases.
 - If `moonshot-phase-runner` returns `phaseRunnerResult.executionMode == in-session-coordinator`:
   - set `signals.phaseLoopInSession = true`
   - keep the main session in coordinator mode only
