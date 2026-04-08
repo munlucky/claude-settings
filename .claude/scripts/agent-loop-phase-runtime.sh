@@ -1,21 +1,33 @@
+if [[ -z "${SCRIPT_DIR:-}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
 resolve_runner_runtime() {
-    if [[ "$RUNNER_RUNTIME" == "claude" || "$RUNNER_RUNTIME" == "codex" ]]; then
-        echo "$RUNNER_RUNTIME"
-        return
-    fi
+    node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" resolve-runner-runtime "${RUNNER_RUNTIME:-auto}"
+}
 
-    if command -v codex >/dev/null 2>&1; then
-        echo "codex"
-        return
-    fi
+describe_stop_reason() {
+    node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" describe-stop-reason "$1" "${2:-}" "${3:-}"
+}
 
-    if command -v claude >/dev/null 2>&1; then
-        echo "claude"
-        return
-    fi
+detect_verification_command_missing() {
+    local reason
+    reason="$(node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" detect-final-stop-reason "${1:-}" "phase-failed" "${TOOL_SCHEMA_ERROR_GUARD:-2}")"
+    [[ "$reason" == "verification-command-missing" ]]
+}
 
-    log_error "Neither Codex CLI nor Claude CLI was found"
-    exit 1
+detect_tool_schema_error_loop() {
+    local reason
+    reason="$(node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" detect-final-stop-reason "${1:-}" "phase-failed" "${TOOL_SCHEMA_ERROR_GUARD:-2}")"
+    [[ "$reason" == "tool-schema-error-loop" ]]
+}
+
+classify_timeout_reason() {
+    node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" classify-timeout-reason "${1:-}"
+}
+
+resolve_timeout_fallback_runtime() {
+    node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" resolve-timeout-fallback-runtime "${1:-}"
 }
 
 run_worker_prompt() {
@@ -98,38 +110,11 @@ run_commit_prompt() {
 run_with_watchdog() {
     local log_file="$1"
     shift
-
-    local start_time
-    start_time=$(date +%s)
-    local timed_out=false
-
-    set +e
-    "$@" >> "$log_file" 2>&1 &
-    local pid=$!
-
-    while kill -0 "$pid" 2>/dev/null; do
-        local now
-        now=$(date +%s)
-        local elapsed=$((now - start_time))
-        if [[ $WATCHDOG_MAX_SECONDS -gt 0 && $elapsed -ge $WATCHDOG_MAX_SECONDS ]]; then
-            timed_out=true
-            kill "$pid" 2>/dev/null
-            sleep 5
-            kill -9 "$pid" 2>/dev/null
-            break
-        fi
-        sleep "$WATCHDOG_CHECK_SECONDS"
-    done
-
-    wait "$pid"
-    local exit_code=$?
-    set -e
-
-    if [[ "$timed_out" == "true" ]]; then
-        echo "WATCHDOG_TIMEOUT after ${WATCHDOG_MAX_SECONDS}s" >> "$log_file"
-        return 124
-    fi
-    return "$exit_code"
+    node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" run-with-watchdog \
+        --log-file "$log_file" \
+        --max-seconds "${WATCHDOG_MAX_SECONDS:-0}" \
+        --check-seconds "${WATCHDOG_CHECK_SECONDS:-5}" \
+        -- "$@"
 }
 
 run_worker_prompt_with_completion_gate() {
@@ -137,60 +122,16 @@ run_worker_prompt_with_completion_gate() {
     local phase_start_epoch="$2"
     local qa_checksum_before="$3"
     shift 3
-
-    local start_time
-    start_time=$(date +%s)
-    local timed_out=false
-    local completed_early=false
-
-    set +e
-    "$@" >> "$log_file" 2>&1 &
-    local pid=$!
-
-    while kill -0 "$pid" 2>/dev/null; do
-        local now
-        now=$(date +%s)
-        local elapsed=$((now - start_time))
-
-        if [[ -n "$qa_checksum_before" ]]; then
-            local qa_checksum_now
-            qa_checksum_now="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
-            if [[ "$qa_checksum_now" != "$qa_checksum_before" ]]; then
-                evaluate_phase_completion_gate "$phase_start_epoch"
-                if [[ "$PHASE_COMPLETION_ALLOWED" == "true" ]]; then
-                    completed_early=true
-                    kill "$pid" 2>/dev/null
-                    sleep 2
-                    kill -9 "$pid" 2>/dev/null
-                    break
-                fi
-            fi
-        fi
-
-        if [[ $WATCHDOG_MAX_SECONDS -gt 0 && $elapsed -ge $WATCHDOG_MAX_SECONDS ]]; then
-            timed_out=true
-            kill "$pid" 2>/dev/null
-            sleep 5
-            kill -9 "$pid" 2>/dev/null
-            break
-        fi
-
-        sleep "$WATCHDOG_CHECK_SECONDS"
-    done
-
-    wait "$pid"
-    local exit_code=$?
-    set -e
-
-    if [[ "$completed_early" == "true" ]]; then
-        echo "EARLY_COMPLETION_GATE satisfied; worker terminated after fresh verification evidence." >> "$log_file"
-        return 0
-    fi
-
-    if [[ "$timed_out" == "true" ]]; then
-        echo "WATCHDOG_TIMEOUT after ${WATCHDOG_MAX_SECONDS}s" >> "$log_file"
-        return 124
-    fi
-
-    return "$exit_code"
+    node "$SCRIPT_DIR/agent-loop-phase-runtime.mjs" run-worker-prompt-with-completion-gate \
+        --log-file "$log_file" \
+        --phase-start-epoch "$phase_start_epoch" \
+        --qa-checksum-before "$qa_checksum_before" \
+        --phase-qa-report "${PHASE_QA_REPORT:-}" \
+        --phase-scorecard "${PHASE_SCORECARD:-}" \
+        --phase-execution-dir "${PHASE_EXECUTION_DIR:-}" \
+        --scorecard-required "${SCORECARD_REQUIRED:-true}" \
+        --target-completion-score "${TARGET_COMPLETION_SCORE:-100}" \
+        --watchdog-max-seconds "${WATCHDOG_MAX_SECONDS:-0}" \
+        --watchdog-check-seconds "${WATCHDOG_CHECK_SECONDS:-5}" \
+        -- "$@"
 }

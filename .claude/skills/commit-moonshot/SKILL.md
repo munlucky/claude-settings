@@ -153,21 +153,29 @@ git add [files] .claude/memory.json
 
 # If user declined:
 git add [files]
-git commit -m "[concise Korean commit title]" -m "[summary of what changed, why, and impact]"
+git commit -m "[concise Korean commit title]" -m $'- 기능: [feature/area] - [key change]\n- 기능: [feature/area] - [key change]\n- 이유: [why this changed]\n- 영향: [user impact or expected effect]'
 ```
 
 > **📌 Important: `.claude/memory.json` is optional per commit and must follow the user's explicit choice.** This file stores Memory MCP update content.
 
 **Commit message rules:**
 - No emoji or special characters
-- Write the commit message in Korean
+- Always write both the commit title and body in Korean
 - Concise and clear
 - Focus on change purpose
-- 제목 한 줄(예: 핵심 작업 요약) + 본문 2~3줄 형식 권장
-- 본문은 최소 2줄 이상 작성:
-  - `무엇을` 변경했는지
-  - `왜` 변경했는지
-  - 필요 시 `기대 효과`나 `영향 범위`
+- Use `one-line title + bullet-list body` as the default format
+- Start the body by listing changes grouped by feature area
+- If multiple features changed, use one bullet per feature
+- Use the format `- 기능: [기능/영역명] - [핵심 변경]` for each feature bullet
+- After the feature bullets, add the minimum needed context:
+  - `- 이유: [왜 변경했는지]`
+  - `- 영향: [사용자 영향, 운영 영향, 기대 효과 중 필요한 내용]`
+- Even cross-cutting changes should be grouped under the closest feature or area
+
+**Final user-facing summary rules:**
+- Always write the pre/post-commit change summary in Korean
+- Use the same feature-grouped bullet list structure as the commit body
+- Prefer feature/domain grouping over raw file lists
 
 ---
 
