@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude를 다운로드하고, AGENTS.md 및 Codex 전역 skills 링크를 구성합니다.
+# GitHub에서 최신 .claude를 다운로드하고, .agents/AGENTS.md 브리지와 Codex 전역 skills 링크를 구성합니다.
 
 set -e
 
@@ -96,6 +96,20 @@ setup_codex_skills() {
 	done
 
 	print_info "✓ Codex skills ${linked_count}개 연결 완료 (${CODEX_SKILLS_DIR})"
+}
+
+setup_agents_bridge() {
+	echo ""
+	print_info ".agents/skills 및 AGENTS.md 동기화 중..."
+
+	mkdir -p ".agents"
+	rm -rf ".agents/skills"
+	ln -s "../.claude/skills" ".agents/skills"
+	print_info "✓ .agents/skills 생성 (→ ../.claude/skills)"
+
+	rm -f "AGENTS.md"
+	ln -s ".claude/CLAUDE.md" "AGENTS.md"
+	print_info "✓ AGENTS.md 생성 (→ .claude/CLAUDE.md)"
 }
 
 setup_browser_runtime() {
@@ -531,6 +545,7 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
 	echo "  - .claudeignore 설치/병합"
+	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
 	echo "  - Codex 전역 skills 심볼릭 링크 구성"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
@@ -681,19 +696,8 @@ if [ -d "$DOWNLOADED_SCRIPTS" ]; then
 	done
 fi
 
-# 7.8. AGENTS.md 브리지 구성 및 기존 .agents 정리
-print_info "AGENTS.md 동기화 및 기존 .agents 정리 중..."
-if [ -e ".agents/skills" ] || [ -L ".agents/skills" ]; then
-	rm -rf ".agents/skills"
-	print_info "✓ 기존 .agents/skills 제거"
-fi
-if [ -d ".agents" ] && [ -z "$(find ".agents" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
-	rmdir ".agents"
-	print_info "✓ 빈 .agents 디렉토리 제거"
-fi
-rm -f "AGENTS.md"
-ln -s ".claude/CLAUDE.md" "AGENTS.md"
-print_info "✓ AGENTS.md 생성 (→ .claude/CLAUDE.md)"
+# 7.8. .agents/skills + AGENTS.md 브리지 구성
+setup_agents_bridge
 
 # 7.9. Codex 전역 skill 링크 구성
 setup_codex_skills
@@ -920,6 +924,9 @@ fi
 if [ -L "AGENTS.md" ]; then
 	echo "  ✓ AGENTS.md                  (→ .claude/CLAUDE.md)"
 fi
+if [ -L ".agents/skills" ]; then
+	echo "  ✓ .agents/skills             (→ .claude/skills)"
+fi
 if [ ${#CODEX_SKILL_LINKS[@]} -gt 0 ]; then
 	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (→ .claude/skills/*)"
 fi
@@ -953,7 +960,7 @@ fi
 
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
-echo "  2. Git에 커밋: git add .claude .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
+echo "  2. Git에 커밋: git add .claude .agents .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
 echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-~/.codex}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
