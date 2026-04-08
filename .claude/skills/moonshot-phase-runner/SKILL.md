@@ -45,6 +45,13 @@ Plan-directory completion rule:
 - If any phase in `phase-status.yaml` remains `pending`, `in_progress`, or retryable `failed`, the run must keep going through the delegated-terminal loop or the in-session coordinator loop.
 - A completed phase boundary is never a valid stop boundary by itself.
 
+Review and finish gate rule:
+- The phase package may not be treated as complete until the required review and finish-closeout steps have actually run.
+- For code-changing phases, `codex-review-code` must appear in applied workflow evidence before `clean_finish` is allowed.
+- `QA_REPORT.md` may not claim `Next path: clean_finish` while `Review completed` is still `no`.
+- `HANDOFF.md` and closeout fields may not remain seeded or placeholder-shaped when the phase is being closed.
+- If review or closeout evidence is missing, the run must stay inside the active plan-directory loop and remediate the missing steps instead of returning a summary.
+
 ## Usage
 
 ```bash
@@ -95,8 +102,12 @@ Plan-directory completion rule:
     │      └─ Execute `moonshot-phase-executor` in the current session
     │         unless `--prepare-only` was requested
     │
-    └─ 8. Emit Handoff Summary
-           └─ Orchestrator-readable phaseRunnerResult
+    ├─ 8. Enforce Review / Finish Gates
+    │      └─ A phase may advance only after review evidence, completion evidence,
+    │         and finish-closeout artifacts are consistent
+    │
+    └─ 9. Emit Handoff Summary
+           └─ Orchestrator-readable phaseRunnerResult after the active plan directory is actually done
 ```
 
 ## Step 1: Plan Directory Resolution

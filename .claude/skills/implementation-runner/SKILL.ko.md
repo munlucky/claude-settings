@@ -67,6 +67,14 @@ notes:
   - "scorecard: ready, path=..."
 ```
 
+### Step 0.2: Review / Closeout 선행조건
+
+현재 실행이 phase execution bridge에 연결되어 있다면:
+- 코드 변경 slice에서는 code review를 선택적 polish가 아니라 필수 workflow 단계로 취급합니다.
+- slice가 `clean_finish`를 주장하려는 상태라면 `QA_REPORT.md`에 `Review completed: no`를 남기면 안 됩니다.
+- closing slice의 `HANDOFF.md`, review checkpoint 필드, finish-closeout bullet은 placeholder 상태로 남기면 안 됩니다.
+- review 또는 finish evidence가 비어 있으면 그 gap을 기록하고, 구현 완료인 척하지 말고 retry/remediation 흐름을 유지해야 합니다.
+
 ### Step 1: 테스트 환경 감지
 
 구현 시작 전, 대상 프로젝트에 테스트 환경이 있는지 확인합니다.

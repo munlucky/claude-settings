@@ -53,6 +53,7 @@ If `executionMode == delegated-terminal`:
 - do not substitute a single implementation attempt, partial checkpoint, or conversational summary for the real loop
 - if the loop leaves the current phase `in_progress` with `lastOutcome=partial` or `score.verdict=retry`, keep following the delegated-terminal path instead of returning early
 - if the loop marks one phase `completed` but the active plan directory still has any actionable phase, keep the same delegated-terminal execution boundary and continue
+- if completion gates report missing review evidence or incomplete finish-closeout, do not return success; stay in the loop and remediate those missing steps first
 
 If `executionMode == in-session-coordinator`:
 - invoke `/moonshot-in-session-coordinator`
@@ -60,6 +61,7 @@ If `executionMode == in-session-coordinator`:
 - when the active runtime cannot reliably keep spawning fresh attempts, prefer a runtime-side fallback to `delegated-terminal` instead of pretending the run is fully autonomous
 - ensure each active slice can initialize `WORKSET.md` from `.claude/templates/execution/WORKSET.template.md`
 - do not stop after a completed phase while the active plan directory still has another actionable phase
+- do not treat a review-pending or finish-pending slice as complete; force another attempt until the artifacts reflect a real review and clean closeout
 
 ### 3. Runtime handling
 
@@ -92,6 +94,7 @@ phaseExecutionResult:
 - Do not ask the user to manually run `moonshot-phase-dispatch.sh` in the default path.
 - For `delegated-terminal`, the valid execution boundary is the actual dispatcher/agent-loop process, not a one-round summary.
 - `partial`, `retry`, updated QA artifacts, or a resumable handoff are not valid stop reasons for delegated-terminal by themselves.
+- `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, or placeholder closeout artifacts are not valid completion states.
 - The valid success boundary is plan-directory completion: every actionable phase completed or an explicit loop stop condition recorded.
 
 ## References

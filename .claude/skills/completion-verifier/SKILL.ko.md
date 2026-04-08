@@ -72,8 +72,11 @@ verificationEnvironment:
 - 코드 변경이 있는 bounded direct 또는 phase closeout에서는 아래를 기대합니다.
   - `selectedBundles`에 `review-bundle`
   - `selectedBundles`에 `finish-bundle`
-  - applied 또는 명시적 skipped evidence에 `codex-review-code`
+  - clean completion 전에는 applied evidence에 `codex-review-code`
   - clean completion 전 `doc-auto-sync` evidence
+  - `QA_REPORT.md`에 `Review completed: yes`
+  - `QA_REPORT.md`의 finish-closeout 필드가 placeholder가 아닌 실제 closeout 내용으로 채워짐
+  - phase가 실제로 닫힐 때 seeded placeholder 대신 clean-finish `HANDOFF.md` marker가 기록됨
 - `workflowEvidence.warnings`가 비어 있지 않으면:
   - strict -> `gateDecision: pass` 금지
   - standard -> remediation 또는 `pass_with_warning`로 내리고 경고를 `QA_REPORT.md`에 남깁니다.
@@ -136,6 +139,7 @@ qaReport:
   - `evidenceFresh == true`
   - `requiredChecks.missing`이 비어 있음
   - 코드 변경 마감이면 `verdictArtifact.workflowEvidence.warnings`가 비어 있음
+  - 코드 변경 마감이면 `QA_REPORT.md`에 `Review completed: yes`
   - `score.verdict == done`
   - `score.current >= score.target`
   - `score.unmetChecklistItems == 0`
@@ -152,4 +156,5 @@ qaReport:
 - verdict artifact가 최종 검증 증거가 됩니다.
 - contract 기반 성공 판정에는 이번 실행에서 생성된 최신 verifier artifact 또는 동등한 명령 증거가 필요합니다.
 - 있으면 `verdictArtifact.workflowEvidence`를 review/finish 단계 증거의 canonical structured hint로 사용합니다.
+- phase closeout에서는 passing verifier artifact만으로 충분하지 않습니다. `QA_REPORT.md`에 review 미완료가 남아 있거나 finish/handoff가 placeholder 품질이면 완료로 올리지 않습니다.
 - 검증 실패나 중단 시에는 다음 라운드를 위해 `HANDOFF.md` 갱신이 필요합니다.

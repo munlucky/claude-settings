@@ -111,6 +111,8 @@ function buildVerificationRemediationPrompt(config) {
   const phaseNum = String(config.phaseNum || '');
   const logFile = String(config.logFile || '');
   const phaseCompletionReason = String(config.phaseCompletionReason || '');
+  const reviewFocused = phaseCompletionReason === 'review-incomplete' || phaseCompletionReason === 'workflow-review-skill-missing' || phaseCompletionReason === 'workflow-review-bundle-missing';
+  const closeoutFocused = phaseCompletionReason === 'finish-closeout-incomplete' || phaseCompletionReason === 'workflow-finish-bundle-missing' || phaseCompletionReason === 'workflow-evidence-warnings';
 
   return `The previous phase attempt exited cleanly, but completion evidence is still missing.
 
@@ -119,12 +121,24 @@ Failure context:
 - Gate reason: ${phaseCompletionReason}
 
 Remediation steps:
-1. Refresh or generate the latest verification/runtime verdict artifact for this phase.
-2. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[].
-3. Record the refreshed evidence in QA_REPORT.md.
-4. If the phase is still incomplete, update HANDOFF.md.
-5. Re-run only the active phase and finish with fresh evidence.
-6. Keep SCORECARD.md authoritative: use \`retry\` until the target score is met with no unmet checklist items or blocking defects.`;
+1. Refresh the active phase artifacts instead of starting a new phase.
+2. If the gate reason is review-related, run the required review pass now and record it in QA_REPORT.md:
+   - set \`Review completed: yes\` only after the review actually ran
+   - ensure \`codex-review-code\` appears in applied workflow evidence
+   - capture review-driven changes or explicitly record that no blocking findings remained
+3. If the gate reason is finish-closeout-related, complete finish-stage closeout now:
+   - fill Why this round may stop now
+   - fill Remaining in-scope work
+   - fill Remaining blockers before closeout
+   - remove placeholder or seed text from HANDOFF.md / QA_REPORT.md closeout sections
+4. Refresh or generate the latest verification/runtime verdict artifact for this phase.
+5. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[].
+6. Re-run only the active phase and finish with fresh evidence.
+7. Keep SCORECARD.md authoritative: use \`retry\` until the target score is met with no unmet checklist items or blocking defects.
+
+Priority notes:
+- Review focused: ${reviewFocused ? 'yes' : 'no'}
+- Finish closeout focused: ${closeoutFocused ? 'yes' : 'no'}`;
 }
 
 function buildAutoFixPrompt(config) {
