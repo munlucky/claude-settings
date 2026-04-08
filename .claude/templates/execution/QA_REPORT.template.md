@@ -14,7 +14,7 @@
 - Release state: not_ready | uat_ready | uat_complete
 
 ## Review Checkpoint
-- Review completed:
+- Review completed: yes | no
 - Review owners:
 - Review-driven code changes:
 
@@ -60,9 +60,9 @@
 - Fresh evidence confirmed:
 - Traceability evidence confirmed:
 - Human UAT sign-off present:
-- Why this round may stop now:
-- Remaining in-scope work:
-- Remaining blockers before closeout:
+- Why this round may stop now: concrete closeout reason only, never placeholder text
+- Remaining in-scope work: use `none` only when the phase truly closes
+- Remaining blockers before closeout: use `none` only when closeout is actually clean
 - Checks to rerun if code changes again:
 
 ## Next Round Input

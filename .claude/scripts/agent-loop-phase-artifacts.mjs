@@ -54,6 +54,56 @@ function findVerdictArtifactPath(completionArtifacts, qaReportPath) {
   return '';
 }
 
+function extractWorkflowSection(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const result = {};
+  let inSection = false;
+  for (const line of lines) {
+    const stripped = line.trim();
+    if (stripped === '## Workflow Execution') {
+      inSection = true;
+      continue;
+    }
+    if (inSection && line.startsWith('## ')) {
+      break;
+    }
+    if (!inSection) {
+      continue;
+    }
+    if (stripped.startsWith('- Selected bundles:')) {
+      result.selected = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Applied skills:')) {
+      result.applied = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Skipped skills:')) {
+      result.skipped = stripped.split(':', 2)[1]?.trim() ?? '';
+    }
+  }
+  return result;
+}
+
+function parseListString(value) {
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function extractBulletValue(text, heading, label) {
+  const lines = String(text || '').split(/\r?\n/);
+  let inSection = false;
+  const prefix = `- ${label}:`;
+  for (const line of lines) {
+    if (line.trim() === heading) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && line.startsWith('## ')) {
+      break;
+    }
+    if (inSection && line.trim().startsWith(prefix)) {
+      return line.trim().split(':', 2)[1]?.trim() ?? '';
+    }
+  }
+  return '';
+}
+
 function ensureFinishBundle(lines) {
   const { start, end } = findSection(lines, '## Workflow Execution');
   if (start === null) {
@@ -282,10 +332,15 @@ function syncCleanFinishArtifacts({
   const verdictRelPath = verdictPath ? path.relative(process.cwd(), verdictPath).replace(/\\/g, '/') : '';
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
-    let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
+    const qaText = fs.readFileSync(qaReportPath, 'utf8');
+    let qaLines = qaText.split(/\r?\n/);
     if (qaLines.length > 0 && qaLines.at(-1) === '') {
       qaLines = qaLines.slice(0, -1);
     }
+    const workflowSection = extractWorkflowSection(qaText);
+    const appliedSkills = parseListString(workflowSection.applied);
+    const reviewApplied = appliedSkills.includes('codex-review-code');
+    const reviewDrivenChanges = extractBulletValue(qaText, '## Review Checkpoint', 'Review-driven code changes') || 'none recorded in clean-finish sync';
 
     qaLines = replaceOrAppendSection(qaLines, '## Verdict', [
       '- Status: passed',
@@ -293,6 +348,13 @@ function syncCleanFinishArtifacts({
       '- Scope status: complete',
       '- Next path: clean_finish',
       '- Closeout reason: scope_complete',
+      '',
+    ]);
+
+    qaLines = replaceOrAppendSection(qaLines, '## Review Checkpoint', [
+      `- Review completed: ${reviewApplied ? 'yes' : 'no'}`,
+      '- Review owners: codex-review-code',
+      `- Review-driven code changes: ${reviewDrivenChanges}`,
       '',
     ]);
 
@@ -332,10 +394,10 @@ function syncCleanFinishArtifacts({
       qaLines = [...qaLines.slice(0, runtimeSection.start), '## Runtime Updates', ...body, ...qaLines.slice(runtimeSection.end)];
     }
 
-    const workflowSection = findSection(qaLines, '## Workflow Execution');
-    if (workflowSection.start !== null) {
+    const workflowSectionRange = findSection(qaLines, '## Workflow Execution');
+    if (workflowSectionRange.start !== null) {
       const body = [];
-      for (let index = workflowSection.start + 1; index < workflowSection.end; index += 1) {
+      for (let index = workflowSectionRange.start + 1; index < workflowSectionRange.end; index += 1) {
         const line = qaLines[index];
         const stripped = line.trim();
         if (stripped.startsWith('- Applied skills:')) {
@@ -360,7 +422,7 @@ function syncCleanFinishArtifacts({
           body.push(line);
         }
       }
-      qaLines = [...qaLines.slice(0, workflowSection.start), '## Workflow Execution', ...body, ...qaLines.slice(workflowSection.end)];
+      qaLines = [...qaLines.slice(0, workflowSectionRange.start), '## Workflow Execution', ...body, ...qaLines.slice(workflowSectionRange.end)];
     }
 
     qaLines = replaceOrAppendSection(qaLines, '## Score Summary', [

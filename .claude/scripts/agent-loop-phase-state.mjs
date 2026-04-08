@@ -103,6 +103,61 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+function extractWorkflowSection(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const result = {};
+  let inSection = false;
+  for (const line of lines) {
+    const stripped = line.trim();
+    if (stripped === '## Workflow Execution') {
+      inSection = true;
+      continue;
+    }
+    if (inSection && line.startsWith('## ')) {
+      break;
+    }
+    if (!inSection) {
+      continue;
+    }
+    if (stripped.startsWith('- Selected bundles:')) {
+      result.selected = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Applied skills:')) {
+      result.applied = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Skipped skills:')) {
+      result.skipped = stripped.split(':', 2)[1]?.trim() ?? '';
+    }
+  }
+  return result;
+}
+
+function extractBulletValue(text, heading, label) {
+  const lines = String(text || '').split(/\r?\n/);
+  let inSection = false;
+  const prefix = `- ${label}:`;
+  for (const line of lines) {
+    if (line.trim() === heading) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && line.startsWith('## ')) {
+      break;
+    }
+    if (inSection && line.trim().startsWith(prefix)) {
+      return line.trim().split(':', 2)[1]?.trim() ?? '';
+    }
+  }
+  return '';
+}
+
+function parseListString(value) {
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function containsPendingMarker(value) {
+  const lowered = String(value || '').toLowerCase();
+  return lowered.includes('not evaluated yet') || lowered.includes('review pending') || lowered.includes('pending until');
+}
+
 function resolveCandidatePath(rawPath, qaReportDir) {
   const normalized = String(rawPath || '').trim().replace(/^['"]|['"]$/g, '');
   if (!normalized) {
@@ -172,36 +227,25 @@ function evaluatePhaseCompletionGate(config) {
   const qaVerificationLines = [];
   const qaVerdictPaths = [];
   let workflowSection = {};
+  let reviewCompleted = false;
+  let finishStopWhy = '';
+  let finishRemainingScope = '';
+  let finishRemainingBlockers = '';
+  let latestWorkflowWarnings = [];
+  let latestWorkflowSelected = [];
+  let latestWorkflowApplied = [];
+  let latestWorkflowSkipped = [];
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
-    const qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
-    let inWorkflow = false;
-    let currentHeading = '';
-    for (const line of qaLines) {
-      const stripped = line.trim();
-      if (stripped.startsWith('## ')) {
-        currentHeading = stripped;
-      }
-      if (stripped === '## Workflow Execution') {
-        inWorkflow = true;
-        continue;
-      }
-      if (inWorkflow && line.startsWith('## ')) {
-        break;
-      }
-      if (!inWorkflow) {
-        continue;
-      }
-      if (stripped.startsWith('- Selected bundles:')) {
-        workflowSection.selected = stripped.split(':', 2)[1]?.trim() || '';
-      } else if (stripped.startsWith('- Applied skills:')) {
-        workflowSection.applied = stripped.split(':', 2)[1]?.trim() || '';
-      } else if (stripped.startsWith('- Skipped skills:')) {
-        workflowSection.skipped = stripped.split(':', 2)[1]?.trim() || '';
-      }
-    }
+    const qaText = fs.readFileSync(qaReportPath, 'utf8');
+    const qaLines = qaText.split(/\r?\n/);
+    workflowSection = extractWorkflowSection(qaText);
+    reviewCompleted = extractBulletValue(qaText, '## Review Checkpoint', 'Review completed').toLowerCase().startsWith('yes');
+    finishStopWhy = extractBulletValue(qaText, '## Finish Readiness', 'Why this round may stop now');
+    finishRemainingScope = extractBulletValue(qaText, '## Finish Readiness', 'Remaining in-scope work');
+    finishRemainingBlockers = extractBulletValue(qaText, '## Finish Readiness', 'Remaining blockers before closeout');
 
-    currentHeading = '';
+    let currentHeading = '';
     let inVerificationEvidence = false;
     for (const line of qaLines) {
       const stripped = line.trim();
@@ -209,7 +253,8 @@ function evaluatePhaseCompletionGate(config) {
         currentHeading = stripped;
       }
       if (currentHeading === '## Verdict' && stripped.startsWith('- Status:')) {
-        qaVerdictPassed = stripped.split(':', 2)[1]?.trim().toLowerCase() === 'passed';
+        const status = stripped.split(':', 2)[1]?.trim().toLowerCase();
+        qaVerdictPassed = status === 'passed' || status === 'pass';
       } else if (currentHeading === '## Finish Readiness' && stripped.startsWith('- Fresh evidence confirmed:')) {
         qaFreshEvidence = (stripped.split(':', 2)[1] || '').trim().toLowerCase().startsWith('yes');
       } else if (currentHeading === '## Runtime Updates' && stripped.startsWith('- Verification verdict file:')) {
@@ -277,6 +322,14 @@ function evaluatePhaseCompletionGate(config) {
     const verificationMode = payload.verificationMode || contract.verificationMode || '';
     const contractApplicable = Boolean(contract.applicable);
     const missingRequired = payload.requiredChecks?.missing || [];
+    const workflowEvidence = payload.workflowEvidence && typeof payload.workflowEvidence === 'object' ? payload.workflowEvidence : {};
+    const workflowWarnings = Array.isArray(workflowEvidence.warnings) ? workflowEvidence.warnings : [];
+    if (workflowWarnings.length > 0) {
+      latestWorkflowWarnings = workflowWarnings;
+    }
+    if (Array.isArray(workflowEvidence.selectedBundles) && workflowEvidence.selectedBundles.length > 0) {
+      latestWorkflowSelected = workflowEvidence.selectedBundles.map((item) => String(item).trim()).filter(Boolean);
+    }
 
     if (verdict !== 'passed') {
       failures.push(`${script}:verdict=${verdict}`);
@@ -388,14 +441,43 @@ function evaluatePhaseCompletionGate(config) {
     passedPaths.push(qaReportPath || 'qa-report-fallback');
   }
 
+  const selectedBundles = latestWorkflowSelected.length > 0 ? latestWorkflowSelected : parseListString(workflowSection.selected);
+  const appliedSkills = latestWorkflowApplied.length > 0 ? latestWorkflowApplied : parseListString(workflowSection.applied);
+  const skippedSkills = latestWorkflowSkipped.length > 0 ? latestWorkflowSkipped : parseListString(workflowSection.skipped);
+
   const allowed = passedPaths.length > 0 && failures.length === 0 && workflowReason === 'ok' && scoreReason === 'ok';
   const reason = allowed
     ? 'ok'
     : failures[0] || (workflowReason !== 'ok' ? workflowReason : (scoreReason !== 'ok' ? scoreReason : 'no-fresh-verification-artifact'));
 
+  if (workflowReason === 'ok') {
+    if (latestWorkflowWarnings.length > 0) {
+      workflowReason = 'workflow-evidence-warnings';
+    } else if (codeChangeDetected && !selectedBundles.includes('review-bundle')) {
+      workflowReason = 'workflow-review-bundle-missing';
+    } else if (!selectedBundles.includes('finish-bundle')) {
+      workflowReason = 'workflow-finish-bundle-missing';
+    } else if (codeChangeDetected && !reviewCompleted) {
+      workflowReason = 'review-incomplete';
+    } else if (codeChangeDetected && !appliedSkills.includes('codex-review-code')) {
+      workflowReason = 'workflow-review-skill-missing';
+    } else if (containsPendingMarker(workflowSection.skipped) && workflowSection.skipped.includes('codex-review-code')) {
+      workflowReason = 'review-incomplete';
+    } else if (!finishStopWhy || !finishRemainingScope || !finishRemainingBlockers) {
+      workflowReason = 'finish-closeout-incomplete';
+    } else if (finishStopWhy.toLowerCase().includes('checkpoint') || finishStopWhy.toLowerCase().includes('milestone')) {
+      workflowReason = 'finish-closeout-incomplete';
+    }
+  }
+
+  const finalAllowed = passedPaths.length > 0 && failures.length === 0 && workflowReason === 'ok' && scoreReason === 'ok';
+  const finalReason = finalAllowed
+    ? 'ok'
+    : failures[0] || (workflowReason !== 'ok' ? workflowReason : (scoreReason !== 'ok' ? scoreReason : 'no-fresh-verification-artifact'));
+
   return {
-    PHASE_COMPLETION_ALLOWED: allowed ? 'true' : 'false',
-    PHASE_COMPLETION_REASON: reason,
+    PHASE_COMPLETION_ALLOWED: finalAllowed ? 'true' : 'false',
+    PHASE_COMPLETION_REASON: finalReason,
     PHASE_COMPLETION_ARTIFACTS: passedPaths.join('\n'),
     PHASE_COMPLETION_SCORE: String(currentScore),
     PHASE_COMPLETION_TARGET: String(targetScore),

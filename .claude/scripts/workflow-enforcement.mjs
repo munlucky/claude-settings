@@ -200,6 +200,17 @@ function extractBulletValue(text, heading, label) {
   return '';
 }
 
+function containsPlaceholderText(value) {
+  const lowered = String(value || '').toLowerCase();
+  return lowered.includes('placeholder') || lowered.includes('fill before') || lowered.includes('first action') || lowered.includes('second action');
+}
+
+function isCleanFinishHandoff(text) {
+  const stopReason = extractBulletValue(text, '## Resume Trigger', 'Stop reason');
+  const required = extractBulletValue(text, '## Status', 'Required');
+  return stopReason === 'clean_finish' || required.toLowerCase() === 'no';
+}
+
 function isWorkflowArtifact(filePath) {
   const normalized = filePath.replace(/\\/g, '/');
   if (normalized === '.claude/docs/phase-status.yaml') return true;
@@ -528,6 +539,7 @@ function verifyEnforcement(argv) {
       const applied = section.applied || '';
       const skipped = section.skipped || '';
       const selected = section.selected || '';
+      const reviewCompleted = extractBulletValue(text, '## Review Checkpoint', 'Review completed').toLowerCase();
       if (!selected.includes('review-bundle')) violations.push(`${qaReport}: workflow execution must mention review-bundle`);
       if (!selected.includes('finish-bundle')) violations.push(`${qaReport}: workflow execution must mention finish-bundle`);
       if (codeChangeDetected && !applied.includes('codex-review-code') && (!skipped.includes('codex-review-code') || skipped.toLowerCase().includes('not evaluated yet'))) {
@@ -565,6 +577,13 @@ function verifyEnforcement(argv) {
         if (nextPath === 'clean_finish') {
           if (scopeStatus !== 'complete') violations.push(`${qaReport}: clean_finish requires Scope status = complete`);
           if (closeoutReason !== 'scope_complete') violations.push(`${qaReport}: clean_finish requires Closeout reason = scope_complete`);
+          if (reviewCompleted !== 'yes') violations.push(`${qaReport}: clean_finish requires Review completed = yes`);
+          if (codeChangeDetected && !applied.includes('codex-review-code')) {
+            violations.push(`${qaReport}: clean_finish on code-changing work requires codex-review-code in Applied skills`);
+          }
+          if (!extractBulletValue(text, '## Finish Readiness', 'Remaining blockers before closeout')) {
+            violations.push(`${qaReport}: clean_finish requires 'Remaining blockers before closeout' to be filled`);
+          }
         } else if (nextPath === 'retry_loop') {
           if (closeoutReason !== 'verification_failed') violations.push(`${qaReport}: retry_loop requires Closeout reason = verification_failed`);
         } else if (nextPath === 'resume_later_handoff' && !['blocked', 'interrupted', 'context_limit', 'user_pause', 'deferred_verification'].includes(closeoutReason)) {
@@ -584,23 +603,33 @@ function verifyEnforcement(argv) {
           violations.push(`${handoff}: missing '${heading}' section`);
         }
       }
-      if (!text.includes('session-logger')) {
-        violations.push(`${handoff}: incomplete stop evidence must mention session-logger`);
-      }
       const stopReason = extractBulletValue(text, '## Resume Trigger', 'Stop reason');
       const stopWhy = extractBulletValue(text, '## Resume Trigger', 'Why this cannot continue in the current round');
       const remainingScope = extractBulletValue(text, '## Remaining Scope', 'Remaining in-scope work');
       const handoffFieldsPresent = Boolean(stopReason || stopWhy || remainingScope) || sectionExists(text, '## Remaining Scope');
       if (handoffFieldsPresent) {
         if (!sectionExists(text, '## Remaining Scope')) violations.push(`${handoff}: missing '## Remaining Scope' section`);
-        if (!['blocked', 'interrupted', 'context_limit', 'user_pause', 'deferred_verification'].includes(stopReason)) {
-          violations.push(`${handoff}: 'Stop reason' must use an allowed handoff reason code`);
-        }
-        if (!stopWhy) violations.push(`${handoff}: 'Why this cannot continue in the current round' must be filled`);
-        if (!remainingScope) violations.push(`${handoff}: 'Remaining in-scope work' must be filled`);
-        const lowered = stopWhy.toLowerCase();
-        if (lowered.includes('checkpoint') || lowered.includes('milestone')) {
-          violations.push(`${handoff}: milestone-only handoff reasons are invalid`);
+        if (isCleanFinishHandoff(text)) {
+          const required = extractBulletValue(text, '## Status', 'Required').toLowerCase();
+          const reason = extractBulletValue(text, '## Status', 'Reason');
+          if (required !== 'no') violations.push(`${handoff}: clean finish marker requires 'Required: no'`);
+          if (!reason) violations.push(`${handoff}: clean finish marker requires a closeout reason`);
+          if (!stopWhy) violations.push(`${handoff}: clean finish marker requires 'Why this cannot continue in the current round'`);
+          if (!remainingScope) violations.push(`${handoff}: clean finish marker requires 'Remaining in-scope work'`);
+          if (containsPlaceholderText(text)) violations.push(`${handoff}: clean finish marker must not retain placeholder text`);
+        } else {
+          if (!text.includes('session-logger')) {
+            violations.push(`${handoff}: incomplete stop evidence must mention session-logger`);
+          }
+          if (!['blocked', 'interrupted', 'context_limit', 'user_pause', 'deferred_verification'].includes(stopReason)) {
+            violations.push(`${handoff}: 'Stop reason' must use an allowed handoff reason code`);
+          }
+          if (!stopWhy) violations.push(`${handoff}: 'Why this cannot continue in the current round' must be filled`);
+          if (!remainingScope) violations.push(`${handoff}: 'Remaining in-scope work' must be filled`);
+          const lowered = stopWhy.toLowerCase();
+          if (lowered.includes('checkpoint') || lowered.includes('milestone')) {
+            violations.push(`${handoff}: milestone-only handoff reasons are invalid`);
+          }
         }
       }
     }

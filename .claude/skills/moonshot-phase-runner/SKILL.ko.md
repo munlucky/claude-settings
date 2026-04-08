@@ -32,6 +32,13 @@ plan-directory 완료 규칙:
 - `phase-status.yaml`에 `pending`, `in_progress`, 또는 재시도 가능한 `failed` phase가 하나라도 남아 있으면 delegated-terminal 또는 in-session coordinator 루프를 계속 유지해야 합니다.
 - phase 하나가 완료됐다는 사실만으로는 반환 경계가 되지 않습니다.
 
+review / finish gate 규칙:
+- 필수 review와 finish-closeout 단계가 실제로 실행되기 전에는 phase package를 완료로 취급하면 안 됩니다.
+- 코드 변경 phase는 `codex-review-code`가 applied workflow evidence에 기록되기 전까지 `clean_finish`를 허용하면 안 됩니다.
+- `QA_REPORT.md`에서 `Review completed: no` 인 상태로 `Next path: clean_finish`를 선언하면 안 됩니다.
+- phase closeout 시 `HANDOFF.md`와 closeout 필드는 seeded/placeholder 상태로 남아 있으면 안 됩니다.
+- review 또는 closeout evidence가 비어 있으면 요약을 반환하지 말고, active plan-directory loop 안에서 빠진 단계를 보완해야 합니다.
+
 ## Workflow
 
 ```text
@@ -43,7 +50,8 @@ plan-directory 완료 규칙:
   5. Plan Review
   6. 실행 모드 결정
   7. 실행 스킬 자동 시작
-  8. phaseRunnerResult 반환
+  8. review / finish gate 강제
+  9. phaseRunnerResult 반환
 ```
 
 ## Step 1: 계획 디렉토리 결정
