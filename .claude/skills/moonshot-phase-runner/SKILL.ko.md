@@ -25,6 +25,12 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 실행 시작 정책:
 - 기본값: 준비가 끝나면 즉시 실행까지 자동 시작
 - `--prepare-only`: 상태만 준비하고 실행 메타데이터만 반환
+- `delegated-terminal`에서는 준비 직후 실제 dispatch/agent-loop를 현재 세션에서 실행하고, loop가 끝나기 전에는 단발 요약으로 반환하지 않습니다.
+
+plan-directory 완료 규칙:
+- 기본 auto-start 실행의 경계는 현재 phase 하나가 아니라 active plan directory 전체입니다.
+- `phase-status.yaml`에 `pending`, `in_progress`, 또는 재시도 가능한 `failed` phase가 하나라도 남아 있으면 delegated-terminal 또는 in-session coordinator 루프를 계속 유지해야 합니다.
+- phase 하나가 완료됐다는 사실만으로는 반환 경계가 되지 않습니다.
 
 ## Workflow
 
@@ -100,6 +106,9 @@ phase가 `completed`가 되면 해당 phase 문서는 `<plan-dir>/close/`로 이
 ### delegated-terminal
 - `.claude/scripts/moonshot-phase-dispatch.sh`를 통해 `agent-loop.sh`를 사용합니다.
 - 자율 루프, 재시도, phase score gating이 필요한 실행의 기본 경로입니다.
+- `partial`, `retry`, 체크포인트 문서 갱신, handoff 작성만으로는 멈추지 않습니다.
+- 이 모드에서는 실제 loop exit가 생길 때만 반환합니다: 전체 완료, retry cap 도달, 명시적 사용자 중지, 또는 루프가 기록한 실제 blocker.
+- 어떤 phase가 `completed`가 되더라도 같은 plan directory에 actionable phase가 남아 있으면 즉시 다음 phase로 이어가야 합니다.
 
 ### in-session-coordinator
 - 메인 세션은 얇은 coordinator로 남고, 각 시도는 fresh attempt로 실행합니다.
@@ -161,5 +170,7 @@ attemptResult:
 - phase 기반 작업은 bounded direct path보다 이 스킬을 우선합니다.
 - long-running execution에서는 `delegated-terminal`을 기본 경로로 봅니다.
 - execution bridge가 준비되지 않았으면 phase 실행을 시작하지 않습니다.
+- `prepareOnly != true` 이고 `executionMode == delegated-terminal`이면 `moonshot-phase-executor`는 실제 dispatch command를 즉시 실행해야 하며, 한 번의 conversational 구현 라운드로 대체하면 안 됩니다.
+- active plan directory에 남은 phase가 있으면 completed phase 경계에서 사용자 진행 보고만 하고 반환하면 안 됩니다.
 - phase 완료는 검증 통과만으로 충분하지 않습니다.
 - phase 완료는 score verdict가 `done`이고 target score를 충족하며 checklist 미충족과 blocking defect가 0일 때만 가능합니다.

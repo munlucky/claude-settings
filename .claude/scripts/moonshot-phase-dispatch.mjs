@@ -24,6 +24,8 @@ const state = {
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
 };
 
+const MAX_DELEGATED_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS ?? '32', 10) || 32;
+
 function showHelp() {
   console.log(`Usage:
   ./moonshot-phase-dispatch.sh <plan-dir> [options]
@@ -76,6 +78,22 @@ function runtimeCli(args) {
   }
 
   return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function actionablePhaseExists() {
+  const result = spawnSync('node', [path.join(SCRIPT_DIR, 'agent-loop-phase-plan.mjs'), 'get-next-phase', state.statusFile], {
+    encoding: 'utf8',
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if ((result.status ?? 0) !== 0) {
+    return false;
+  }
+
+  return Boolean((result.stdout ?? '').trim());
 }
 
 function resolveStatusValue(key) {
@@ -243,14 +261,44 @@ function runDelegatedTerminal(resolvedRoot) {
     return;
   }
 
-  const child = spawn(cmd[0], cmd.slice(1), { stdio: 'inherit' });
-  child.on('exit', (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 0);
-  });
+  let restartCount = 0;
+
+  const launch = () => {
+    const child = spawn(cmd[0], cmd.slice(1), { stdio: 'inherit' });
+    child.on('exit', (code, signal) => {
+      if (signal) {
+        process.kill(process.pid, signal);
+        return;
+      }
+
+      const exitCode = code ?? 0;
+      if (exitCode === 0) {
+        let actionable = false;
+        try {
+          actionable = actionablePhaseExists();
+        } catch (error) {
+          logWarn(`Unable to inspect remaining phases after delegated-terminal exit: ${error.message}`);
+        }
+
+        if (actionable) {
+          restartCount += 1;
+          if (restartCount > MAX_DELEGATED_RESTARTS) {
+            logError(`Delegated-terminal exited cleanly ${MAX_DELEGATED_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
+            process.exit(1);
+            return;
+          }
+
+          logWarn(`Delegated-terminal exited before the active plan directory was complete. Restarting autonomous loop (${restartCount}/${MAX_DELEGATED_RESTARTS}).`);
+          launch();
+          return;
+        }
+      }
+
+      process.exit(exitCode);
+    });
+  };
+
+  launch();
 }
 
 function runInSessionCoordinator(resolvedRoot, masterPlan) {

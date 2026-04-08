@@ -240,6 +240,12 @@ finish / handoff 계약:
 - `executionSkill`을 즉시 실행한다.
 - `prepareOnly=true`가 아닌 한 사용자에게 다시 수동 실행을 요구하지 않는다.
 
+`moonshot-phase-runner`가 `executionMode == delegated-terminal`을 반환하면:
+- 실제 `executionCommand`를 즉시 실행한다.
+- dispatcher/agent-loop가 종료될 때까지 현재 실행 경계를 유지한다.
+- artifact 갱신이나 partial 요약만으로 단발 conversational round로 축소하면 안 된다.
+- active plan directory에 `pending`, `in_progress`, 재시도 가능한 `failed` phase가 남아 있으면 completed phase 경계에서 반환하면 안 된다.
+
 ## 검증 판정 규칙
 
 - contract 기반 검증은 `contractApplicable == true` 또는 `verificationMode == contract` 로 해석합니다.
