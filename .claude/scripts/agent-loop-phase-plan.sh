@@ -177,6 +177,8 @@ EOF
 
 ## Runtime Updates
 - Seeded at: $(date '+%Y-%m-%d %H:%M:%S')
+- Verification verdict file: .claude/verification-verdict-phase${phase_prefix}-final.json
+- Verification verdict: pending
 
 ## Workflow Execution
 - Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
@@ -341,7 +343,8 @@ Runtime compatibility fallback:
 - If /moonshot-orchestrator is unavailable in this runtime, execute the equivalent phase-attempt workflow directly instead of searching for missing slash skills.
 - In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, $(runtime_cli_active_workspace_contract), .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
-- Once fresh verification evidence exists, the execution artifacts reflect the outcome, and SCORECARD.md says \`Verdict: done\`, stop immediately and return control to the caller.
+- Do not stop at implementation-complete or verification-complete checkpoints alone.
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md says \`Verdict: done\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.
 $codex_direct_steps
 
 Additional instructions:

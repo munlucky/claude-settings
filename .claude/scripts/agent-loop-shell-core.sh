@@ -113,6 +113,73 @@ log_warn() {
     echo -e "${YELLOW}⚠️${NC} $1"
 }
 
+gate_reason_needs_closeout() {
+    case "${1:-}" in
+        review-incomplete|workflow-review-skill-missing|workflow-review-bundle-missing|finish-closeout-incomplete|workflow-finish-bundle-missing|workflow-evidence-warnings)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+remediation_stage_for_gate_reason() {
+    case "${1:-}" in
+        review-incomplete|workflow-review-skill-missing|workflow-review-bundle-missing)
+            printf 'review'
+            ;;
+        finish-closeout-incomplete|workflow-finish-bundle-missing|workflow-evidence-warnings)
+            printf 'finish/handoff'
+            ;;
+        *)
+            printf 'verify'
+            ;;
+    esac
+}
+
+remediation_status_label() {
+    case "$(remediation_stage_for_gate_reason "${1:-}")" in
+        review)
+            printf 'closeout-remediation-review-started'
+            ;;
+        finish/handoff)
+            printf 'closeout-remediation-finish-started'
+            ;;
+        *)
+            printf 'verification-remediation-started'
+            ;;
+    esac
+}
+
+missing_evidence_runtime_status() {
+    local gate_reason="${1:-}"
+    local attempt_count="${2:-1}"
+    if gate_reason_needs_closeout "$gate_reason"; then
+        printf 'phase-command-missing-closeout-evidence-attempt-%s' "$attempt_count"
+        return
+    fi
+    printf 'phase-command-missing-fresh-verification-attempt-%s' "$attempt_count"
+}
+
+incomplete_remediation_status() {
+    local gate_reason="${1:-}"
+    if gate_reason_needs_closeout "$gate_reason"; then
+        printf 'closeout-remediation-incomplete'
+        return
+    fi
+    printf 'verification-remediation-incomplete'
+}
+
+handoff_stop_reason() {
+    local gate_reason="${1:-}"
+    if gate_reason_needs_closeout "$gate_reason"; then
+        printf 'deferred_verification'
+        return
+    fi
+    printf 'missing-fresh-verification-evidence'
+}
+
 record_loop_stop() {
     local phase="$1"
     local reason="$2"
@@ -381,7 +448,8 @@ Primary objective:
 - Keep changes bounded to the active phase.
 - Do not move to other phases in this run.
 - If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
-- Once fresh verification evidence exists and the execution artifacts are updated, stop immediately and return control to the caller."
+- Do not stop at implementation-complete or verification-complete checkpoints alone.
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md says \`Verdict: done\`."
     PHASE_PROMPT="$(build_phase_prompt "$PRIMARY_PHASE_PROMPT_INSTRUCTIONS")"
     START_TIME=$(date +%s)
     restart_count=0
@@ -418,8 +486,8 @@ Primary objective:
             if [[ "$PHASE_COMPLETION_ALLOWED" != "true" ]]; then
                 auto_fix_count=$((auto_fix_count + 1))
                 log_error "Phase $NEXT_PHASE produced no valid completion evidence (${PHASE_COMPLETION_REASON})"
-                append_qa_runtime_update "phase-command-missing-fresh-verification-attempt-${auto_fix_count}" "$LOGFILE" "$PHASE_COMPLETION_REASON"
-                append_handoff_update "missing-fresh-verification-evidence" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                append_qa_runtime_update "$(missing_evidence_runtime_status "$PHASE_COMPLETION_REASON" "$auto_fix_count")" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                append_handoff_update "$(handoff_stop_reason "$PHASE_COMPLETION_REASON")" "$LOGFILE" "$PHASE_COMPLETION_REASON"
 
                 final_stop_reason="missing-verification-evidence"
                 if detect_tool_schema_error_loop "$LOGFILE"; then
@@ -453,13 +521,18 @@ Primary objective:
                 fi
 
                 if [[ "$ACTION" == "verification-remediation" ]]; then
-                    log_info "Attempting verification remediation..."
-                    echo "## Phase $NEXT_PHASE - Verification Remediation #${auto_fix_count}" >> "$DECISION_LOG"
+                    remediation_stage="$(remediation_stage_for_gate_reason "$PHASE_COMPLETION_REASON")"
+                    remediation_label="Verification Remediation"
+                    if [[ "$remediation_stage" != "verify" ]]; then
+                        remediation_label="Closeout Remediation"
+                    fi
+                    log_info "Attempting ${remediation_label,,}..."
+                    echo "## Phase $NEXT_PHASE - ${remediation_label} #${auto_fix_count}" >> "$DECISION_LOG"
 
                     FIX_PROMPT="$(build_phase_prompt "$(build_verification_remediation_prompt "$NEXT_PHASE" "$LOGFILE" "$PHASE_COMPLETION_REASON")")"
 
                     update_phase_state "$NEXT_PHASE" "in_progress" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "running" "true" "$PHASE_DOC" "$PHASE_SPRINT_CONTRACT" "$PHASE_QA_REPORT" "$PHASE_HANDOFF" "$PHASE_SCORECARD"
-                    record_phase_progress_checkpoint "verify" "verification-remediation-started" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                    record_phase_progress_checkpoint "$remediation_stage" "$(remediation_status_label "$PHASE_COMPLETION_REASON")" "$LOGFILE" "$PHASE_COMPLETION_REASON"
                     PHASE_QA_CHECKSUM_BEFORE="$(file_checksum_or_empty "$PHASE_QA_REPORT")"
                     if run_worker_prompt "$LOGFILE" "$FIX_PROMPT" "$START_TIME" "$PHASE_QA_CHECKSUM_BEFORE"; then
                         END_TIME=$(date +%s)
@@ -480,8 +553,8 @@ Primary objective:
                         fi
 
                         log_error "Phase $NEXT_PHASE still lacks valid completion evidence (${PHASE_COMPLETION_REASON})"
-                        append_qa_runtime_update "verification-remediation-incomplete" "$LOGFILE" "$PHASE_COMPLETION_REASON"
-                        append_handoff_update "verification-remediation-incomplete" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                        append_qa_runtime_update "$(incomplete_remediation_status "$PHASE_COMPLETION_REASON")" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                        append_handoff_update "$(handoff_stop_reason "$PHASE_COMPLETION_REASON")" "$LOGFILE" "$PHASE_COMPLETION_REASON"
                     fi
 
                     continue
@@ -649,7 +722,7 @@ Primary objective:
                     if [[ "$PHASE_COMPLETION_ALLOWED" != "true" ]]; then
                         log_error "Phase $NEXT_PHASE still lacks valid completion evidence (${PHASE_COMPLETION_REASON})"
                         append_qa_runtime_update "auto-fix-succeeded-without-fresh-verification" "$LOGFILE" "$PHASE_COMPLETION_REASON"
-                        append_handoff_update "missing-fresh-verification-evidence" "$LOGFILE" "$PHASE_COMPLETION_REASON"
+                        append_handoff_update "$(handoff_stop_reason "$PHASE_COMPLETION_REASON")" "$LOGFILE" "$PHASE_COMPLETION_REASON"
                         continue
                     fi
                     log_success "Phase $NEXT_PHASE completed after auto-fix (${DURATION}s)"

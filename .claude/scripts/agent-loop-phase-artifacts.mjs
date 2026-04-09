@@ -205,6 +205,18 @@ function normalizeQaReportWorkflowFields(qaReportPath) {
   fs.writeFileSync(qaReportPath, `${lines.join('\n')}\n`, 'utf8');
 }
 
+function inferPhaseVerdictPath(qaReportPath) {
+  const segments = String(qaReportPath || '').split(/[\\/]/).filter(Boolean);
+  const phaseDir = [...segments].reverse().find((segment) => /^[0-9]{2}-/.test(segment));
+  if (!phaseDir) {
+    return '.claude/verification-verdict-phase-final.json';
+  }
+
+  const match = phaseDir.match(/^([0-9]{2})-/);
+  const phasePrefix = match ? match[1] : 'phase';
+  return `.claude/verification-verdict-phase${phasePrefix}-final.json`;
+}
+
 function appendQaRuntimeUpdate(status, logFile, detail, workflowLogDir, phaseQaReport, phaseScorecard) {
   const lines = [
     '',
@@ -259,6 +271,7 @@ function recordPhaseProgressCheckpoint({
     if (detail) {
       runtimeUpdates.push(`- Detail: ${detail}`);
     }
+    runtimeUpdates.push(`- Verification verdict file: ${inferPhaseVerdictPath(qaReportPath)}`);
     runtimeUpdates.push('- Verification verdict: pending', '');
     qaLines = replaceOrAppendSection(qaLines, '## Runtime Updates', runtimeUpdates);
 

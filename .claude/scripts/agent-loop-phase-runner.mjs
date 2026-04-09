@@ -400,6 +400,61 @@ function decideMissingEvidenceAction(autoFixCount, finalStopReason) {
   );
 }
 
+const REVIEW_ONLY_GATE_REASONS = new Set([
+  'review-incomplete',
+  'workflow-review-skill-missing',
+  'workflow-review-bundle-missing',
+]);
+
+const CLOSEOUT_GATE_REASONS = new Set([
+  ...REVIEW_ONLY_GATE_REASONS,
+  'finish-closeout-incomplete',
+  'workflow-finish-bundle-missing',
+  'workflow-evidence-warnings',
+]);
+
+function gateReasonNeedsCloseout(reason) {
+  return CLOSEOUT_GATE_REASONS.has(String(reason || '').trim());
+}
+
+function remediationStageForGateReason(reason) {
+  const normalized = String(reason || '').trim();
+  if (REVIEW_ONLY_GATE_REASONS.has(normalized)) {
+    return 'review';
+  }
+  if (gateReasonNeedsCloseout(normalized)) {
+    return 'finish/handoff';
+  }
+  return 'verify';
+}
+
+function remediationStatusLabel(reason) {
+  const stage = remediationStageForGateReason(reason);
+  if (stage === 'review') {
+    return 'closeout-remediation-review-started';
+  }
+  if (stage === 'finish/handoff') {
+    return 'closeout-remediation-finish-started';
+  }
+  return 'verification-remediation-started';
+}
+
+function missingEvidenceRuntimeStatus(reason, autoFixCount) {
+  return gateReasonNeedsCloseout(reason)
+    ? `phase-command-missing-closeout-evidence-attempt-${autoFixCount}`
+    : `phase-command-missing-fresh-verification-attempt-${autoFixCount}`;
+}
+
+function incompleteRemediationStatus(reason) {
+  return gateReasonNeedsCloseout(reason)
+    ? 'closeout-remediation-incomplete'
+    : 'verification-remediation-incomplete';
+}
+
+function handoffStopReason(reason) {
+  return gateReasonNeedsCloseout(reason) ? 'deferred_verification' : 'missing-fresh-verification-evidence';
+}
+
 function decideFailureAction(autoFixCount, finalStopReason) {
   return nodeAssignments(
     attemptPath,
@@ -458,7 +513,8 @@ Primary objective:
 - Keep changes bounded to the active phase.
 - Do not move to other phases in this run.
 - If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
-- Once fresh verification evidence exists and the execution artifacts are updated, stop immediately and return control to the caller.`;
+- Do not stop at implementation-complete or verification-complete checkpoints alone.
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md says \`Verdict: done\`.`;
 }
 
 function autonomousInstructions() {
@@ -581,8 +637,8 @@ function runPhaseAttempt() {
 
       autoFixCount += 1;
       logError(`Phase ${state.phaseNum} produced no valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
-      appendQaRuntimeUpdate(`phase-command-missing-fresh-verification-attempt-${autoFixCount}`, logFile, gate.PHASE_COMPLETION_REASON, paths);
-      appendHandoffUpdate('missing-fresh-verification-evidence', logFile, gate.PHASE_COMPLETION_REASON, paths);
+      appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount), logFile, gate.PHASE_COMPLETION_REASON, paths);
+      appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON), logFile, gate.PHASE_COMPLETION_REASON, paths);
 
       const finalStopReason = detectFinalStopReason(logFile, 'missing-verification-evidence');
       const decision = decideMissingEvidenceAction(autoFixCount, finalStopReason);
@@ -593,8 +649,10 @@ function runPhaseAttempt() {
       }
 
       if (decision.ACTION === 'verification-remediation') {
-        logInfo('Attempting verification remediation...');
-        appendDecisionLog([`## Phase ${state.phaseNum} - Verification Remediation #${autoFixCount}`, '']);
+        const remediationStage = remediationStageForGateReason(gate.PHASE_COMPLETION_REASON);
+        const remediationLabel = remediationStage === 'verify' ? 'Verification Remediation' : 'Closeout Remediation';
+        logInfo(`Attempting ${remediationLabel.toLowerCase()}...`);
+        appendDecisionLog([`## Phase ${state.phaseNum} - ${remediationLabel} #${autoFixCount}`, '']);
         const fixPrompt = buildPhasePrompt({
           nextPhase: state.phaseNum,
           phaseTitle: state.phaseTitle,
@@ -610,7 +668,7 @@ function runPhaseAttempt() {
           workspaceRoot: process.cwd(),
         });
         updatePhaseState(state.phaseNum, 'in_progress', 'running', false, state.phaseDoc, paths);
-        recordPhaseProgressCheckpoint('verify', 'verification-remediation-started', logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
+        recordPhaseProgressCheckpoint(remediationStage, remediationStatusLabel(gate.PHASE_COMPLETION_REASON), logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
         const remediationExit = runWorkerPrompt(logFile, fixPrompt, startEpoch, sha1FileOrEmpty(paths.phaseQaReport), paths, activeRuntime);
         if (remediationExit === 0) {
           const remediationGate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
@@ -627,8 +685,8 @@ function runPhaseAttempt() {
             return 0;
           }
           logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${remediationGate.PHASE_COMPLETION_REASON})`);
-          appendQaRuntimeUpdate('verification-remediation-incomplete', logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
-          appendHandoffUpdate('verification-remediation-incomplete', logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
+          appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
+          appendHandoffUpdate(handoffStopReason(remediationGate.PHASE_COMPLETION_REASON), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
         }
         continue;
       }
@@ -754,7 +812,7 @@ function runPhaseAttempt() {
         }
         logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
         appendQaRuntimeUpdate('auto-fix-succeeded-without-fresh-verification', logFile, gate.PHASE_COMPLETION_REASON, paths);
-        appendHandoffUpdate('missing-fresh-verification-evidence', logFile, gate.PHASE_COMPLETION_REASON, paths);
+        appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON), logFile, gate.PHASE_COMPLETION_REASON, paths);
       }
       continue;
     }

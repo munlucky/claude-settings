@@ -16,6 +16,36 @@ function toInt(value, fallback = 0) {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+const REVIEW_CLOSEOUT_REASONS = new Set([
+  'review-incomplete',
+  'workflow-review-skill-missing',
+  'workflow-review-bundle-missing',
+  'finish-closeout-incomplete',
+  'workflow-finish-bundle-missing',
+  'workflow-evidence-warnings',
+]);
+
+const REVIEW_ONLY_REASONS = new Set([
+  'review-incomplete',
+  'workflow-review-skill-missing',
+  'workflow-review-bundle-missing',
+]);
+
+function requiresCloseoutRemediation(reason) {
+  return REVIEW_CLOSEOUT_REASONS.has(String(reason || '').trim());
+}
+
+function remediationStage(reason) {
+  const normalized = String(reason || '').trim();
+  if (REVIEW_ONLY_REASONS.has(normalized)) {
+    return 'review';
+  }
+  if (requiresCloseoutRemediation(normalized)) {
+    return 'finish/handoff';
+  }
+  return 'verify';
+}
+
 function printAssignments(values) {
   for (const [key, value] of Object.entries(values)) {
     console.log(`${key}=${shellQuote(value)}`);
@@ -111,8 +141,9 @@ function buildVerificationRemediationPrompt(config) {
   const phaseNum = String(config.phaseNum || '');
   const logFile = String(config.logFile || '');
   const phaseCompletionReason = String(config.phaseCompletionReason || '');
-  const reviewFocused = phaseCompletionReason === 'review-incomplete' || phaseCompletionReason === 'workflow-review-skill-missing' || phaseCompletionReason === 'workflow-review-bundle-missing';
-  const closeoutFocused = phaseCompletionReason === 'finish-closeout-incomplete' || phaseCompletionReason === 'workflow-finish-bundle-missing' || phaseCompletionReason === 'workflow-evidence-warnings';
+  const reviewFocused = REVIEW_ONLY_REASONS.has(phaseCompletionReason);
+  const closeoutFocused = requiresCloseoutRemediation(phaseCompletionReason) && !reviewFocused;
+  const nextStage = remediationStage(phaseCompletionReason);
 
   return `The previous phase attempt exited cleanly, but completion evidence is still missing.
 
@@ -121,24 +152,27 @@ Failure context:
 - Gate reason: ${phaseCompletionReason}
 
 Remediation steps:
-1. Refresh the active phase artifacts instead of starting a new phase.
-2. If the gate reason is review-related, run the required review pass now and record it in QA_REPORT.md:
+1. Refresh the active phase artifacts instead of starting a new phase or switching to another phase.
+2. Treat the missing completion evidence as an active closeout task for this same phase, not as a valid stop boundary.
+3. If the gate reason is review-related, run the required review pass now and record it in QA_REPORT.md:
    - set \`Review completed: yes\` only after the review actually ran
    - ensure \`codex-review-code\` appears in applied workflow evidence
    - capture review-driven changes or explicitly record that no blocking findings remained
-3. If the gate reason is finish-closeout-related, complete finish-stage closeout now:
+4. If the gate reason is finish-closeout-related, complete finish-stage closeout now:
    - fill Why this round may stop now
    - fill Remaining in-scope work
    - fill Remaining blockers before closeout
    - remove placeholder or seed text from HANDOFF.md / QA_REPORT.md closeout sections
-4. Refresh or generate the latest verification/runtime verdict artifact for this phase.
-5. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[].
-6. Re-run only the active phase and finish with fresh evidence.
-7. Keep SCORECARD.md authoritative: use \`retry\` until the target score is met with no unmet checklist items or blocking defects.
+5. If verification evidence is already fresh and the remaining gap is only review or closeout bookkeeping, do not restart broad implementation work. Update only the missing review/finish artifacts and SCORECARD.md.
+6. If a repository-global verifier still fails for a clearly pre-existing reason that this phase did not worsen, record that as carried-forward warning context in QA_REPORT.md/HANDOFF.md instead of leaving the phase in a placeholder closeout state.
+7. Refresh or generate the latest verification/runtime verdict artifact for this phase when the active evidence is stale.
+8. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[] unless the evidence is already fresh and the gate reason is review/finish-closeout only.
+9. Do not return control just because implementation is complete or a verifier ran once. Return only after review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md reaches \`Verdict: done\`; otherwise keep the phase in retry with an explicit next action.
 
 Priority notes:
 - Review focused: ${reviewFocused ? 'yes' : 'no'}
-- Finish closeout focused: ${closeoutFocused ? 'yes' : 'no'}`;
+- Finish closeout focused: ${closeoutFocused ? 'yes' : 'no'}
+- Resume at stage: ${nextStage}`;
 }
 
 function buildAutoFixPrompt(config) {

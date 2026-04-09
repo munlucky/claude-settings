@@ -62,6 +62,7 @@ description: 체인에서 실제 구현을 수행하고 완료 상태와 변경 
 결과:
 ```yaml
 signals.sprintContractReady: true | false
+readiness.executionReady: true | false
 notes:
   - "sprint-contract: ready, path=..."
   - "scorecard: ready, path=..."

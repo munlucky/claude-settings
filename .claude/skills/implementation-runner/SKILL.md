@@ -73,6 +73,7 @@ If required:
 Result:
 ```yaml
 signals.sprintContractReady: true | false
+readiness.executionReady: true | false
 notes:
   - "sprint-contract: ready, path=..."
   - "scorecard: ready, path=..."

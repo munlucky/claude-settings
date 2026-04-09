@@ -692,12 +692,23 @@ run_render_matrix() {
   assert_contains "$agent_loop_out" "phaseAttemptMode: true" "phase attempt mode hint"
   assert_contains "$agent_loop_out" "activePhaseDocPath:" "active phase doc path"
   assert_contains "$agent_loop_out" "Do not invoke moonshot-phase-runner again." "anti-recursion rule"
+  assert_contains "$agent_loop_out" "Do not stop at implementation-complete or verification-complete checkpoints alone." "no early stop checkpoint rule"
+  assert_contains "$agent_loop_out" "review evidence is recorded, finish-closeout fields are concrete" "review and closeout stop gate"
   assert_contains "$sprint_contract" "## Policy Anchors" "policy anchors section"
   assert_contains "$sprint_contract" "## Stage Order" "stage order section"
   assert_contains "$sprint_contract" "## Review Cadence" "review cadence section"
   assert_contains "$sprint_contract" "Verification contract:" "verification contract anchor"
   assert_contains "$qa_report" "## Finish Readiness" "finish readiness section"
   assert_contains "$handoff" "## Checks To Rerun" "handoff rerun section"
+
+  local closeout_prompt="$TMP_ROOT/closeout-remediation.txt"
+  (
+    cd "$REPO_ROOT"
+    node .claude/scripts/agent-loop-phase-attempt.mjs build-verification-remediation-prompt 1 mock.log review-incomplete > "$closeout_prompt"
+  )
+  assert_contains "$closeout_prompt" "Treat the missing completion evidence as an active closeout task for this same phase" "closeout remediation stays on current phase"
+  assert_contains "$closeout_prompt" "Resume at stage: review" "review-stage remediation hint"
+  assert_contains "$closeout_prompt" "Do not return control just because implementation is complete or a verifier ran once." "closeout remediation no early return"
 }
 
 run_workflow_enforcement_sync_smoke() {

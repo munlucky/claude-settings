@@ -62,93 +62,27 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
 
 ## analysisContext 초기값
 
-```yaml
-schemaVersion: "1.1"
-signals:
-  executionPlane: unknown
-  hasContextMd: false
-  hasPendingQuestions: false
-  requirementsClear: false
-  implementationReady: false
-  implementationComplete: false
-  productDefinitionRequest: false
-  hasProductIntent: false
-  hasPrd: false
-  hasSolution: false
-  hasSpec: false
-  hasExecutionPlan: false
-  productPackageReady: false
-  hasMockImplementation: false
-  apiSpecConfirmed: false
-  reactProject: false
-  workflowProfile: standard
-  projectContractReady: false
-  contextReady: false
-  verificationContractReady: false
-  allowIndeterminate: true
-  useAgentTeams: false
-  testEnvironmentDetected: false
-  testFramework: null
-  testsWritten: false
-  sprintContractReady: false
-  qaReportReady: false
-  handoffRequired: false
-  phaseLoopInSession: false
-  phaseAttemptMode: false
-decisions:
-  recommendedAgents: []
-  bundleChain: []
-  skillChain: []
-  parallelGroups: []
-teamSelection:
-  requestedPattern: null
-  selectedPattern: null
-  selectedTeam: null
-  selectionReason: null
-artifacts:
-  tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
-  workflowGuidePath: "workflow/README.md"
-  designGuidePath: "docs/design/README.md"
-  glossaryGuidePath: "docs/glossary/README.md"
-  dailyGuidePath: "docs/daily/README.md"
-  dailyLogDir: "docs/daily"
-  testGuidePath: "TEST_GUIDE.md"
-  analysisRoot: "docs/analysis"
-  analysisIndexPath: "docs/analysis/README.md"
-  contextDocPath: "{tasksRoot}/{feature-name}/context.md"
-  productDir: "{tasksRoot}/{feature-name}/product"
-  productIntentPath: "{productDir}/PRODUCT_INTENT.md"
-  prdPath: "{productDir}/PRD.md"
-  solutionPath: "{productDir}/SOLUTION.md"
-  specPath: "{productDir}/SPEC.md"
-  planPath: "{productDir}/PLAN.md"
-  assumptionsPath: "{productDir}/ASSUMPTIONS.md"
-  blockersPath: "{productDir}/BLOCKERS.md"
-  taskSliceGlob: "{productDir}/tasks/*.md"
-  executionRoot: "{tasksRoot}/{feature-name}/execution"
-  activeSliceDir: "{executionRoot}/{active-slice}"
-  activePhaseDocPath: null
-  sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
-  qaReportPath: "{activeSliceDir}/QA_REPORT.md"
-  handoffPath: "{activeSliceDir}/HANDOFF.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
-  verificationContractPath: ".claude/verification.contract.yaml"
-  verificationScript: .claude/agents/verification/verify-changes.sh
-  runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
-  workflowEvidencePath: ".claude/logs/workflow-enforcement/latest-bounded.json"
-workflowEvidence:
-  mode: bounded-direct
-  selectedBundles: []
-  requiredSkills: []
-  stageOrder: []
-  appliedSkills: []
-  skippedSkills: []
-  evidenceFiles:
-    analysisContext: ".claude/docs/moonshot-analysis.yaml"
-    qaReport: null
-    handoff: null
-notes: []
-```
+정규 계약은 아래 canonical 파일에서 초기화합니다.
+- `.claude/schemas/analysis-context.schema.yaml`
+
+bundle 선택 전에 최소로 확정해야 할 필드:
+- `request.userMessage`
+- `signals.executionPlane`
+- `signals.workflowProfile`
+- `phase`
+- `complexity`
+- `decisions.bundleChain`
+- `decisions.skillChain`
+- `artifacts.tasksRoot`
+- `artifacts.executionRoot`
+- `workflowEvidence.selectedBundles`
+- `workflowEvidence.requiredSkills`
+- `workflowEvidence.stageOrder`
+
+계약 규칙:
+- 필드 레이아웃과 기본값의 source-of-truth 는 `.claude/schemas/analysis-context.schema.yaml` 입니다.
+- downstream skill이나 adapter에 전체 계약을 다시 인라인하지 않습니다.
+- 최종 `analysisContext` 는 `.claude/docs/moonshot-analysis.yaml` 에 저장합니다.
 
 ## 핵심 흐름
 
@@ -352,10 +286,14 @@ Returns: { projectId, loaded, boundaries, relevantRules }
 - `hasExecutionPlan`
 - `productPackageReady`
 - `implementationReady`
+- `planningReady`
+- `executionReady`
 
 라우팅 규칙:
 - `productDefinitionRequest == true` 이고 `productPackageReady == false` 이면 `product-orchestrator`로 핸드오프
 - `productPackageReady == true` 이면 upstream planning 단계를 건너뛰고 handoff package를 구현 기준선으로 사용
+- package가 route 가능하다는 canonical signal로는 `readiness.planningReady`를 우선 사용
+- active slice가 바로 실행 가능하다는 canonical signal로는 `readiness.executionReady`를 우선 사용
 
 ## 팀 패턴 선택
 
