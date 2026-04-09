@@ -196,7 +196,8 @@ Primary objective:
 - Keep changes bounded to the active phase.
 - Do not move to other phases in this run.
 - If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
-- Once fresh verification evidence exists and the execution artifacts are updated, stop immediately and return control to the caller.`;
+- Do not stop at implementation-complete or verification-complete checkpoints alone.
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md says \`Verdict: done\`.`;
   const paths = assignExecutionArtifactPaths(nextPhase, phaseTitle, state.executionRoot);
   return buildPhasePrompt({
     nextPhase,

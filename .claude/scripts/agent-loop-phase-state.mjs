@@ -3,6 +3,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
+const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
+
 function parseIsoTimestamp(value) {
   if (!value) {
     return Number.NaN;
@@ -195,6 +198,98 @@ function gatherCandidatePaths(patterns) {
   return candidates;
 }
 
+function readCurrentWorkflowState() {
+  if (!fs.existsSync(CURRENT_RUN_FILE)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(CURRENT_RUN_FILE, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractPhaseNumberHint(qaReportPath, phaseExecutionDir) {
+  const candidates = [phaseExecutionDir, qaReportPath]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const segments = candidate.split(path.sep).filter(Boolean).reverse();
+    for (const segment of segments) {
+      const match = segment.match(/^([0-9]{1,2})-/);
+      if (match) {
+        return Number.parseInt(match[1], 10);
+      }
+    }
+  }
+
+  return null;
+}
+
+function artifactExplicitlyReferenced(candidatePath, explicitVerdictPaths) {
+  if (explicitVerdictPaths.size === 0) {
+    return false;
+  }
+  return explicitVerdictPaths.has(path.resolve(candidatePath));
+}
+
+function artifactMatchesPhase(payload, activePhaseNumber) {
+  if (!Number.isInteger(activePhaseNumber)) {
+    return null;
+  }
+
+  const payloadPhaseNumber = Number.parseInt(String(payload?.phase?.number ?? ''), 10);
+  if (!Number.isNaN(payloadPhaseNumber)) {
+    return payloadPhaseNumber === activePhaseNumber;
+  }
+
+  const runId = String(payload?.runId || '');
+  if (new RegExp(`(^|[^0-9])0?${activePhaseNumber}([^0-9]|$)`, 'i').test(runId) && /phase/i.test(runId)) {
+    return true;
+  }
+
+  return null;
+}
+
+function isArtifactRelevantToActivePhase({
+  candidatePath,
+  payload,
+  qaReportPath,
+  phaseExecutionDir,
+  explicitVerdictPaths,
+  activePhaseNumber,
+}) {
+  const resolvedCandidatePath = path.resolve(candidatePath);
+  const resolvedExecutionDir = phaseExecutionDir ? path.resolve(phaseExecutionDir) : '';
+
+  if (artifactExplicitlyReferenced(candidatePath, explicitVerdictPaths)) {
+    return true;
+  }
+
+  if (resolvedExecutionDir && resolvedCandidatePath.startsWith(`${resolvedExecutionDir}${path.sep}`)) {
+    return true;
+  }
+
+  const phaseMatch = artifactMatchesPhase(payload, activePhaseNumber);
+  if (phaseMatch !== null) {
+    return phaseMatch;
+  }
+
+  if (qaReportPath || phaseExecutionDir) {
+    const verificationMode = String(payload?.verificationMode || payload?.contract?.verificationMode || '').trim().toLowerCase();
+    const contractApplicable = payload?.contractApplicable === true || payload?.contract?.applicable === true;
+    const script = String(payload?.script || '').trim();
+
+    if (script === 'verify-changes.sh' && verificationMode === 'workspace' && !contractApplicable) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function evaluatePhaseCompletionGate(config) {
   const startEpoch = Number.parseFloat(config.phaseStartEpoch);
   const qaReportPath = config.qaReportPath || '';
@@ -203,6 +298,7 @@ function evaluatePhaseCompletionGate(config) {
   const scorecardRequired = (config.scorecardRequired || 'true').toLowerCase() === 'true';
   const targetScoreDefault = Number.parseInt(config.targetCompletionScore || '100', 10);
   const qaReportDir = qaReportPath ? path.dirname(qaReportPath) : '';
+  const activePhaseNumber = extractPhaseNumberHint(qaReportPath, phaseExecutionDir);
 
   const patterns = [
     '.claude/verification-verdict-*.json',
@@ -235,6 +331,9 @@ function evaluatePhaseCompletionGate(config) {
   let latestWorkflowSelected = [];
   let latestWorkflowApplied = [];
   let latestWorkflowSkipped = [];
+  let latestWorkflowStageOrder = [];
+  const currentWorkflowState = readCurrentWorkflowState();
+  const explicitVerdictPaths = new Set();
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     const qaText = fs.readFileSync(qaReportPath, 'utf8');
@@ -284,6 +383,7 @@ function evaluatePhaseCompletionGate(config) {
       const resolved = resolveCandidatePath(verdictPath, qaReportDir);
       if (resolved) {
         candidatePaths.add(resolved);
+        explicitVerdictPaths.add(path.resolve(resolved));
       }
     }
   }
@@ -303,6 +403,17 @@ function evaluatePhaseCompletionGate(config) {
     try {
       payload = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
     } catch {
+      continue;
+    }
+
+    if (!isArtifactRelevantToActivePhase({
+      candidatePath,
+      payload,
+      qaReportPath,
+      phaseExecutionDir,
+      explicitVerdictPaths,
+      activePhaseNumber,
+    })) {
       continue;
     }
 
@@ -329,6 +440,15 @@ function evaluatePhaseCompletionGate(config) {
     }
     if (Array.isArray(workflowEvidence.selectedBundles) && workflowEvidence.selectedBundles.length > 0) {
       latestWorkflowSelected = workflowEvidence.selectedBundles.map((item) => String(item).trim()).filter(Boolean);
+    }
+    if (Array.isArray(workflowEvidence.appliedSkills) && workflowEvidence.appliedSkills.length > 0) {
+      latestWorkflowApplied = workflowEvidence.appliedSkills.map((item) => String(item).trim()).filter(Boolean);
+    }
+    if (Array.isArray(workflowEvidence.skippedSkills) && workflowEvidence.skippedSkills.length > 0) {
+      latestWorkflowSkipped = workflowEvidence.skippedSkills.map((item) => String(item).trim()).filter(Boolean);
+    }
+    if (Array.isArray(workflowEvidence.stageOrder) && workflowEvidence.stageOrder.length > 0) {
+      latestWorkflowStageOrder = workflowEvidence.stageOrder.map((item) => String(item).trim()).filter(Boolean);
     }
 
     if (verdict !== 'passed') {
@@ -441,9 +561,32 @@ function evaluatePhaseCompletionGate(config) {
     passedPaths.push(qaReportPath || 'qa-report-fallback');
   }
 
-  const selectedBundles = latestWorkflowSelected.length > 0 ? latestWorkflowSelected : parseListString(workflowSection.selected);
-  const appliedSkills = latestWorkflowApplied.length > 0 ? latestWorkflowApplied : parseListString(workflowSection.applied);
-  const skippedSkills = latestWorkflowSkipped.length > 0 ? latestWorkflowSkipped : parseListString(workflowSection.skipped);
+  const selectedBundles = latestWorkflowSelected.length > 0
+    ? latestWorkflowSelected
+    : Array.isArray(currentWorkflowState?.selectedBundles) && currentWorkflowState.selectedBundles.length > 0
+      ? currentWorkflowState.selectedBundles.map((item) => String(item).trim()).filter(Boolean)
+      : parseListString(workflowSection.selected);
+  const appliedSkills = latestWorkflowApplied.length > 0
+    ? latestWorkflowApplied
+    : Array.isArray(currentWorkflowState?.appliedSkills) && currentWorkflowState.appliedSkills.length > 0
+      ? currentWorkflowState.appliedSkills.map((item) => String(item).trim()).filter(Boolean)
+      : parseListString(workflowSection.applied);
+  const skippedSkills = latestWorkflowSkipped.length > 0
+    ? latestWorkflowSkipped
+    : Array.isArray(currentWorkflowState?.skippedSkills) && currentWorkflowState.skippedSkills.length > 0
+      ? currentWorkflowState.skippedSkills.map((item) => String(item).trim()).filter(Boolean)
+      : parseListString(workflowSection.skipped);
+  const effectiveStageOrder = latestWorkflowStageOrder.length > 0
+    ? latestWorkflowStageOrder
+    : Array.isArray(currentWorkflowState?.stageOrder) && currentWorkflowState.stageOrder.length > 0
+      ? currentWorkflowState.stageOrder.map((item) => String(item).trim()).filter(Boolean)
+      : [];
+  const planningReady = currentWorkflowState?.readiness?.planningReady === true;
+  const executionReady = currentWorkflowState?.readiness?.executionReady === true;
+  const closeoutStatus = String(currentWorkflowState?.completion?.closeoutStatus || '');
+  const completionBlockers = Array.isArray(currentWorkflowState?.completion?.blockers)
+    ? currentWorkflowState.completion.blockers.map((item) => String(item).trim()).filter(Boolean)
+    : [];
 
   const allowed = passedPaths.length > 0 && failures.length === 0 && workflowReason === 'ok' && scoreReason === 'ok';
   const reason = allowed
@@ -451,7 +594,11 @@ function evaluatePhaseCompletionGate(config) {
     : failures[0] || (workflowReason !== 'ok' ? workflowReason : (scoreReason !== 'ok' ? scoreReason : 'no-fresh-verification-artifact'));
 
   if (workflowReason === 'ok') {
-    if (latestWorkflowWarnings.length > 0) {
+    if (completionBlockers.includes('review_incomplete')) {
+      workflowReason = 'review-incomplete';
+    } else if (completionBlockers.includes('fresh_evidence_missing')) {
+      workflowReason = 'no-fresh-verification-artifact';
+    } else if (latestWorkflowWarnings.length > 0) {
       workflowReason = 'workflow-evidence-warnings';
     } else if (codeChangeDetected && !selectedBundles.includes('review-bundle')) {
       workflowReason = 'workflow-review-bundle-missing';
@@ -485,6 +632,12 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_COMPLETION_BLOCKERS: String(blockingDefects),
     PHASE_COMPLETION_SCORE_VERDICT: scoreVerdict,
     PHASE_COMPLETION_SCORE_SOURCE: scoreSource,
+    PHASE_COMPLETION_STATUS: String(currentWorkflowState?.completionStatus || ''),
+    PHASE_COMPLETION_STAGE_ORDER: effectiveStageOrder.join(','),
+    PHASE_PLANNING_READY: planningReady ? 'true' : 'false',
+    PHASE_EXECUTION_READY: executionReady ? 'true' : 'false',
+    PHASE_CLOSEOUT_STATUS: closeoutStatus,
+    PHASE_COMPLETION_BLOCKER_CODES: completionBlockers.join('\n'),
   };
 }
 

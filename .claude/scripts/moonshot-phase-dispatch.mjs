@@ -8,6 +8,7 @@ import { runCommand } from './lib/process-utils.mjs';
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
+const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
 
 const state = {
   planDir: '',
@@ -151,6 +152,72 @@ function resolveMasterPlan() {
     .sort((a, b) => a.localeCompare(b))
     .find((name) => name.includes('master') || name.includes('00-'));
   return match ? path.join(state.planDir, match) : '';
+}
+
+function resolveActivePhaseArtifacts() {
+  if (!fs.existsSync(state.statusFile)) {
+    return {
+      sprintContract: '',
+      qaReport: '',
+      handoff: '',
+      scorecard: '',
+    };
+  }
+
+  const lines = fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/);
+  const phases = [];
+  let current = null;
+
+  for (const rawLine of lines) {
+    if (/^\s*-\s+number:\s*/.test(rawLine)) {
+      if (current) phases.push(current);
+      current = {
+        status: '',
+        planConfirmed: '',
+        sprintContract: '',
+        qaReport: '',
+        handoff: '',
+        scorecard: '',
+      };
+      continue;
+    }
+
+    if (!current) continue;
+
+    const stripped = rawLine.trim();
+    if (stripped.startsWith('status:')) {
+      current.status = stripped.split(':', 2)[1].trim();
+    } else if (stripped.startsWith('planConfirmed:')) {
+      current.planConfirmed = stripped.split(':', 2)[1].trim().toLowerCase();
+    } else if (stripped.startsWith('sprintContract:')) {
+      current.sprintContract = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('qaReport:')) {
+      current.qaReport = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('handoff:')) {
+      current.handoff = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('scorecard:')) {
+      current.scorecard = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
+    }
+  }
+  if (current) phases.push(current);
+
+  return phases.find((phase) => (phase.status === 'pending' || phase.status === 'in_progress') && phase.planConfirmed !== 'false') || {
+    sprintContract: '',
+    qaReport: '',
+    handoff: '',
+    scorecard: '',
+  };
+}
+
+function renderPhaseCoordinatorContract(values) {
+  if (!fs.existsSync(PHASE_COORDINATOR_CONTRACT_TEMPLATE)) {
+    return '';
+  }
+  let template = fs.readFileSync(PHASE_COORDINATOR_CONTRACT_TEMPLATE, 'utf8');
+  for (const [key, value] of Object.entries(values)) {
+    template = template.replaceAll(`{{${key}}}`, String(value ?? ''));
+  }
+  return template.trimEnd();
 }
 
 function syncCompletedPhaseArchive() {
@@ -304,6 +371,16 @@ function runDelegatedTerminal(resolvedRoot) {
 function runInSessionCoordinator(resolvedRoot, masterPlan) {
   terminateStaleWorkers();
   const stopLine = state.stopOnFailure ? '  stopOnFailure: true' : '  stopOnFailure: false';
+  const activeArtifacts = resolveActivePhaseArtifacts();
+  const coordinatorContract = renderPhaseCoordinatorContract({
+    PHASE_STATUS_FILE: state.statusFile,
+    PLAN_DIR: state.planDir,
+    EXECUTION_ROOT: resolvedRoot,
+    ACTIVE_SPRINT_CONTRACT: activeArtifacts.sprintContract || 'not-yet-resolved',
+    ACTIVE_QA_REPORT: activeArtifacts.qaReport || 'not-yet-resolved',
+    ACTIVE_HANDOFF: activeArtifacts.handoff || 'not-yet-resolved',
+    ACTIVE_SCORECARD: activeArtifacts.scorecard || 'not-yet-resolved',
+  });
 
   const prompt = `/moonshot-in-session-coordinator
 phaseRunnerResult:
@@ -318,34 +395,7 @@ phaseRunnerResult:
 options:
   maxAttemptsPerPhase: ${state.maxAttempts}
 ${stopLine}
-
-runtimeCompatibility:
-  fallback: "If /moonshot-in-session-coordinator is unavailable in this runtime, execute the equivalent coordinator contract directly without searching for missing slash skills."
-
-pathAuthority:
-  phaseStatusFile: "${state.statusFile}"
-  planDir: "${state.planDir}"
-  executionRoot: "${resolvedRoot}"
-  rules:
-    - "Treat the supplied phaseStatusFile, planDir, executionRoot, and referenced execution artifact paths as authoritative for this run."
-    - "Do not read or reuse .claude/docs/phase-status.yaml, docs/implementation/**, or any other default phase-plan paths unless they exactly match the supplied paths."
-    - "If examples in skill docs conflict with the supplied paths, ignore the examples and follow the supplied paths."
-
-stageContract:
-  defaultOrder:
-    - ready/isolate
-    - execute
-    - review
-    - verify
-    - finish/handoff
-  rules:
-    - "Before broad repo inspection or long-running work, write an attempt-started checkpoint to the active phase QA_REPORT.md and SCORECARD.md and mark the supplied phaseStatusFile in progress for the active phase."
-    - "Do not skip review for meaningful code changes without recording why."
-    - "Do not enter finish/handoff until the active review and verification verdict is stable."
-    - "Use the seeded execution artifacts as the source of truth for review cadence and closeout state."
-    - "Refresh QA_REPORT.md and SCORECARD.md at stage transitions instead of batching all artifact updates until the very end."
-    - "In QA_REPORT.md, use only these closeout reason codes: scope_complete, verification_failed, blocked, interrupted, context_limit, user_pause, deferred_verification. If Next path is retry_loop, Closeout reason must be verification_failed."
-    - "In HANDOFF.md, use only these stop reason codes: blocked, interrupted, context_limit, user_pause, deferred_verification."`;
+${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
 
   const effectiveRuntime = state.runtime === 'auto' ? resolveRuntime() : state.runtime;
   let cmd;

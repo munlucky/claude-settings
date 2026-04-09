@@ -40,6 +40,10 @@
 |----------|------|--------------|----------|--------|
 |  |  |  |  |  |
 
+## Runtime Updates
+- Verification verdict file: .claude/verification-verdict-phaseNN-final.json
+- Verification verdict: pending
+
 ## Evidence
 - Commands run:
 - Runtime flow exercised:

@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const STATUS_FILE_DEFAULT = '.claude/docs/phase-status.yaml';
+const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
 
 function usage() {
   console.log(`Usage:
@@ -177,6 +178,127 @@ function parseListString(value) {
   return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function upsertTopLevelYamlBlock(lines, key, blockLines) {
+  let start = lines.findIndex((line) => line.startsWith(`${key}:`));
+  let end = lines.length;
+  if (start >= 0) {
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (lines[index] && !lines[index].startsWith(' ') && !lines[index].startsWith('\t')) {
+        end = index;
+        break;
+      }
+    }
+    return [...lines.slice(0, start), ...blockLines, ...lines.slice(end)];
+  }
+  const nextLines = [...lines];
+  if (nextLines.length > 0 && nextLines.at(-1)?.trim()) {
+    nextLines.push('');
+  }
+  nextLines.push(...blockLines);
+  return nextLines;
+}
+
+function writeCurrentRunState(payload) {
+  fs.mkdirSync(WORKFLOW_LOG_DIR, { recursive: true });
+  const state = {
+    stateVersion: '1.0',
+    updatedAt: utcTimestamp(),
+    ...payload,
+  };
+  fs.writeFileSync(CURRENT_RUN_FILE, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  return state;
+}
+
+function deriveCompletionStatusFromQaReport(qaReportPath) {
+  if (!qaReportPath || !fs.existsSync(qaReportPath)) {
+    return 'verification_pending';
+  }
+  const text = fs.readFileSync(qaReportPath, 'utf8');
+  const nextPath = extractBulletValue(text, '## Verdict', 'Next path');
+  const scopeStatus = extractBulletValue(text, '## Verdict', 'Scope status');
+  const reviewCompleted = extractBulletValue(text, '## Review Checkpoint', 'Review completed').toLowerCase();
+  if (nextPath === 'clean_finish' && scopeStatus === 'complete' && reviewCompleted === 'yes') {
+    return 'complete';
+  }
+  if (nextPath === 'retry_loop') {
+    return 'retry_required';
+  }
+  if (nextPath === 'resume_later_handoff') {
+    return 'handoff_ready';
+  }
+  return 'verification_pending';
+}
+
+function deriveCloseoutStatusFromCompletionStatus(completionStatus) {
+  switch (completionStatus) {
+    case 'complete':
+      return 'clean_finish';
+    case 'retry_required':
+      return 'retry_loop';
+    case 'handoff_ready':
+      return 'resume_later_handoff';
+    default:
+      return 'active';
+  }
+}
+
+function deriveCompletionBlockersFromQaReport(qaReportPath) {
+  if (!qaReportPath || !fs.existsSync(qaReportPath)) {
+    return ['qa_report_missing'];
+  }
+  const text = fs.readFileSync(qaReportPath, 'utf8');
+  const blockers = [];
+  const reviewCompleted = extractBulletValue(text, '## Review Checkpoint', 'Review completed').toLowerCase();
+  const freshEvidence = extractBulletValue(text, '## Finish Readiness', 'Fresh evidence confirmed').toLowerCase();
+  const traceabilityEvidence = extractBulletValue(text, '## Finish Readiness', 'Traceability evidence confirmed').toLowerCase();
+  const remainingScope = extractBulletValue(text, '## Finish Readiness', 'Remaining in-scope work').toLowerCase();
+  const remainingBlockers = extractBulletValue(text, '## Finish Readiness', 'Remaining blockers before closeout').toLowerCase();
+  const nextPath = extractBulletValue(text, '## Verdict', 'Next path').toLowerCase();
+
+  if (reviewCompleted !== 'yes') blockers.push('review_incomplete');
+  if (freshEvidence && freshEvidence !== 'yes') blockers.push('fresh_evidence_missing');
+  if (traceabilityEvidence && traceabilityEvidence !== 'yes') blockers.push('traceability_incomplete');
+  if (remainingScope && remainingScope !== 'none') blockers.push('remaining_scope');
+  if (remainingBlockers && remainingBlockers !== 'none') blockers.push('remaining_blockers');
+  if (nextPath === 'retry_loop') blockers.push('retry_loop_active');
+  if (nextPath === 'resume_later_handoff') blockers.push('handoff_required');
+
+  return blockers;
+}
+
+function deriveReadinessState({
+  planDir,
+  statusFile,
+  masterPlan,
+  executionRoot,
+  selectedBundles,
+  requiredSkills,
+  stageOrder,
+  sprintContractPath,
+  qaReportPath,
+  handoffPath,
+}) {
+  const planningReady = Boolean(
+    (planDir || selectedBundles?.length || requiredSkills?.length || stageOrder?.length)
+      && (masterPlan || selectedBundles?.length > 0)
+  );
+  const executionReady = Boolean(
+    statusFile
+      ? (statusFile && executionRoot && masterPlan)
+      : (sprintContractPath && fs.existsSync(sprintContractPath) && qaReportPath && handoffPath)
+  );
+
+  return {
+    planningReady,
+    executionReady,
+    planningBasis: planningReady ? (planDir ? 'phase-package' : 'workflow-selection') : 'missing-planning-basis',
+    executionBasis: executionReady
+      ? (statusFile ? 'phase-runner-dispatch' : 'bounded-artifacts-resolved')
+      : (statusFile ? 'dispatch-paths-incomplete' : 'bounded-artifacts-incomplete'),
+    phaseAttemptOverride: false,
+  };
+}
+
 function sectionExists(text, heading) {
   return text.split(/\r?\n/).some((line) => line.trim() === heading);
 }
@@ -294,6 +416,42 @@ function recordDispatch(argv) {
     fs.writeFileSync(target, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   }
 
+  writeCurrentRunState({
+    source: 'workflow-enforcement.record-dispatch',
+    workflowKind: 'phase-dispatch',
+    completionStatus: 'prepared',
+    currentStage: 'ready/isolate',
+    planDir: options.planDir,
+    statusFile: options.statusFile || STATUS_FILE_DEFAULT,
+    masterPlan: options.masterPlan || '',
+    executionMode: options.executionMode,
+    executionRoot: options.executionRoot,
+    runtime: options.runtime,
+    selectedBundles: payload.selectedBundles,
+    requiredSkills: payload.requiredSkills,
+    stageOrder: payload.stageOrder,
+    appliedSkills: [],
+    skippedSkills: [],
+    readiness: deriveReadinessState({
+      planDir: options.planDir,
+      statusFile: options.statusFile || STATUS_FILE_DEFAULT,
+      masterPlan: options.masterPlan || '',
+      executionRoot: options.executionRoot,
+      selectedBundles: payload.selectedBundles,
+      requiredSkills: payload.requiredSkills,
+      stageOrder: payload.stageOrder,
+    }),
+    completion: {
+      state: 'prepared',
+      closeoutStatus: 'active',
+      blockers: [],
+    },
+    evidenceFiles: {
+      dispatch: latestFile,
+      bounded: null,
+    },
+  });
+
   const statusFile = options.statusFile || STATUS_FILE_DEFAULT;
   if (fs.existsSync(statusFile)) {
     const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/);
@@ -328,6 +486,7 @@ function recordBounded(argv) {
     '--analysis-path': { key: 'analysisPath' },
     '--qa-report-path': { key: 'qaReportPath' },
     '--handoff-path': { key: 'handoffPath' },
+    '--sprint-contract-path': { key: 'sprintContractPath' },
   });
   if (!options.analysisPath) {
     throw new Error('record-bounded requires --analysis-path');
@@ -337,6 +496,7 @@ function recordBounded(argv) {
   const analysisPath = options.analysisPath;
   const qaReportPath = options.qaReportPath || '';
   const handoffPath = options.handoffPath || '';
+  const sprintContractPath = options.sprintContractPath || '';
   let selectedBundles = [
     'analysis-bundle',
     'ready-isolate-bundle',
@@ -388,6 +548,18 @@ function recordBounded(argv) {
     if (section.skipped) skippedSkills = parseListString(section.skipped);
   }
 
+  const completionState = deriveCompletionStatusFromQaReport(qaReportPath);
+  const completionBlockers = deriveCompletionBlockersFromQaReport(qaReportPath);
+  const closeoutStatus = deriveCloseoutStatusFromCompletionStatus(completionState);
+  const readiness = deriveReadinessState({
+    selectedBundles,
+    requiredSkills,
+    stageOrder,
+    sprintContractPath,
+    qaReportPath,
+    handoffPath,
+  });
+
   const workflowBlock = [
     'workflowEvidence:',
     `  mode: ${yamlScalar('bounded-direct')}`,
@@ -403,8 +575,28 @@ function recordBounded(argv) {
     ...skippedSkills.map((item) => `    - ${yamlScalar(item)}`),
     '  evidenceFiles:',
     `    analysisContext: ${yamlScalar(analysisPath)}`,
+    `    sprintContract: ${yamlScalar(sprintContractPath)}`,
     `    qaReport: ${yamlScalar(qaReportPath)}`,
     `    handoff: ${yamlScalar(handoffPath)}`,
+  ];
+
+  const readinessBlock = [
+    'readiness:',
+    `  planningReady: ${readiness.planningReady ? 'true' : 'false'}`,
+    `  executionReady: ${readiness.executionReady ? 'true' : 'false'}`,
+    `  planningBasis: ${yamlScalar(readiness.planningBasis)}`,
+    `  executionBasis: ${yamlScalar(readiness.executionBasis)}`,
+    `  phaseAttemptOverride: ${readiness.phaseAttemptOverride ? 'true' : 'false'}`,
+  ];
+
+  const completionBlock = [
+    'completionModel:',
+    `  state: ${yamlScalar(completionState)}`,
+    `  closeoutStatus: ${yamlScalar(closeoutStatus)}`,
+    `  currentStage: ${yamlScalar(stageOrder.at(-1) || 'finish/handoff')}`,
+    ...(completionBlockers.length > 0
+      ? ['  blockers:', ...completionBlockers.map((item) => `    - ${yamlScalar(item)}`)]
+      : ['  blockers: []']),
   ];
 
   let lines = fs.existsSync(analysisPath)
@@ -413,22 +605,9 @@ function recordBounded(argv) {
   if (!fs.existsSync(analysisPath)) {
     fs.mkdirSync(path.dirname(analysisPath), { recursive: true });
   }
-  let start = lines.findIndex((line) => line.startsWith('workflowEvidence:'));
-  let end = lines.length;
-  if (start >= 0) {
-    for (let index = start + 1; index < lines.length; index += 1) {
-      if (lines[index] && !lines[index].startsWith(' ') && !lines[index].startsWith('\t')) {
-        end = index;
-        break;
-      }
-    }
-    lines = [...lines.slice(0, start), ...workflowBlock, ...lines.slice(end)];
-  } else {
-    if (lines.length > 0 && lines.at(-1)?.trim()) {
-      lines.push('');
-    }
-    lines.push(...workflowBlock);
-  }
+  lines = upsertTopLevelYamlBlock(lines, 'workflowEvidence', workflowBlock);
+  lines = upsertTopLevelYamlBlock(lines, 'readiness', readinessBlock);
+  lines = upsertTopLevelYamlBlock(lines, 'completionModel', completionBlock);
   fs.writeFileSync(analysisPath, `${lines.join('\n')}\n`, 'utf8');
 
   const payload = {
@@ -437,6 +616,7 @@ function recordBounded(argv) {
     source: 'moonshot-orchestrator',
     mode: 'bounded-direct',
     analysisPath,
+    sprintContractPath,
     qaReportPath,
     handoffPath,
     selectedBundles,
@@ -444,14 +624,53 @@ function recordBounded(argv) {
     stageOrder,
     appliedSkills,
     skippedSkills,
+    readiness,
+    completion: {
+      state: completionState,
+      closeoutStatus,
+      blockers: completionBlockers,
+    },
     evidenceFiles: {
       analysisContext: analysisPath,
+      sprintContract: sprintContractPath || null,
       qaReport: qaReportPath || null,
       handoff: handoffPath || null,
     },
   };
   const logFile = path.join(WORKFLOW_LOG_DIR, 'latest-bounded.json');
   fs.writeFileSync(logFile, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+
+  writeCurrentRunState({
+    source: 'workflow-enforcement.record-bounded',
+    workflowKind: 'bounded-direct',
+    completionStatus: completionState,
+    currentStage: stageOrder.at(-1) || 'finish/handoff',
+    planDir: null,
+    statusFile: null,
+    masterPlan: null,
+    executionMode: null,
+    executionRoot: null,
+    runtime: null,
+    selectedBundles,
+    requiredSkills,
+    stageOrder,
+    appliedSkills,
+    skippedSkills,
+    readiness,
+    completion: {
+      state: completionState,
+      closeoutStatus,
+      blockers: completionBlockers,
+    },
+    evidenceFiles: {
+      dispatch: fs.existsSync(path.join(WORKFLOW_LOG_DIR, 'latest-dispatch.json')) ? path.join(WORKFLOW_LOG_DIR, 'latest-dispatch.json') : null,
+      bounded: logFile,
+      analysisContext: analysisPath,
+      sprintContract: sprintContractPath || null,
+      qaReport: qaReportPath || null,
+      handoff: handoffPath || null,
+    },
+  });
   console.log(`Workflow enforcement bounded evidence recorded: ${logFile}`);
 }
 

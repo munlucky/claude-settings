@@ -1,0 +1,100 @@
+version: "1.0"
+purpose: "Canonical bundle routing registry for Moonshot orchestration and enforcement."
+
+bundleSelection:
+  read_only:
+    default:
+      bundleChain: []
+    reviewRequested:
+      bundleChain:
+        - review-bundle
+  product_project:
+    productDefinitionUpstream:
+      when:
+        productDefinitionRequest: true
+        productPackageReady: false
+      routeTo: product-orchestrator
+      bundleChain: []
+    withProductPackage:
+      simple:
+        bundleChain: [ready-isolate-bundle, implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
+      medium:
+        bundleChain: [ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+      complex:
+        bundleChain: [ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+    withoutProductPackage:
+      simple:
+        bundleChain: [ready-isolate-bundle, planning-bundle, implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
+      medium:
+        bundleChain: [ready-isolate-bundle, planning-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+      complex:
+        bundleChain: [ready-isolate-bundle, planning-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+  meta_harness:
+    simple:
+      bundleChain: [implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
+    medium:
+      bundleChain: [meta-harness-bundle, review-bundle, verification-bundle, finish-bundle]
+    complex:
+      bundleChain: [meta-harness-bundle, review-bundle, verification-bundle, finish-bundle]
+
+bundleExpansion:
+  implementation-lite-bundle: [implementation-runner]
+  ready-isolate-bundle: [pre-flight-check, project-contract-gate, context-readiness-gate, verification-contract-gate]
+  planning-bundle: [requirements-analyzer, context-builder, codex-validate-plan]
+  implementation-bundle: [project-memory-check, karpathy-execution-gate, implementation-runner, code-simplifier]
+  verification-lite-bundle: [verify-changes.sh]
+  verification-bundle: [browser-verifier, completion-verifier]
+  review-bundle: [codex-review-code, security-reviewer, audit, web-design-guidelines]
+  finish-bundle: [doc-auto-sync, session-logger]
+  logging-bundle: [session-logger]
+  meta-harness-bundle: [pre-flight-check, project-memory-check, karpathy-execution-gate, implementation-runner]
+
+overlays:
+  strict:
+    mutate:
+      allowIndeterminate: false
+    insertBeforeImplementation: [design-approval-gate, workspace-isolation-gate]
+    insertAfterVerification: [verification-evidence-gate]
+  standard:
+    mutate: {}
+
+stageOrder:
+  default: [ready/isolate, execute, review, verify, finish/handoff]
+  rules:
+    - "Do not move finish-bundle ahead of the active review or verification verdict."
+    - "Meaningful code changes must preserve review -> verify -> finish ordering."
+
+planeSpecificRules:
+  read_only:
+    - "Must not run implementation or verification bundles."
+  product_project:
+    - "project-contract-gate, context-readiness-gate, and verification-contract-gate apply only here."
+    - "Meaningful file edits keep finish-bundle at the end of the chain."
+  meta_harness:
+    - "Skip downstream bootstrap gates."
+    - "Medium and complex work uses meta-harness-bundle."
+
+additionalRules:
+  - when: reactProject
+    action: "Insert frontend-design immediately before the first implementation-runner."
+  - when: nonTrivialCodeChanged
+    action: "Insert code-simplifier after implementation-runner and before final verification."
+  - when: reactProject
+    action: "Layer browser-verifier into the verification path."
+  - when: phaseDocsDetected
+    action: "Insert moonshot-phase-runner before implementation-runner unless phaseAttemptMode is true."
+  - when: phaseAttemptMode
+    action: "Treat activePhaseDocPath and existing execution artifacts as the only planning baseline."
+  - when: refactorVerificationFailed
+    action: "Insert build-error-resolver after failed verification."
+
+parallelExecution:
+  allowed:
+    - afterClassification: [moonshot-evaluate-complexity, moonshot-detect-uncertainty]
+    - afterImplementation: [codex-review-code, browser-verifier]
+    - finishStageLogging: [doc-auto-sync, session-logger]
+  forbidden:
+    - "codex-validate-plan + implementation-runner"
+    - "strict gate + guarded step"
+    - "verification-evidence-gate + completion claims"
+    - "completion-verifier + code-changing remediation"
