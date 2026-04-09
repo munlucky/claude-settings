@@ -146,6 +146,8 @@ Write `HANDOFF.md` when:
 - there are unresolved failures or blocked criteria
 - multiple agents or reviewers need the same state summary
 
+When repeated resume or retry cost becomes material, add the runtime contract from `resumable-session-layer.md` instead of expanding `HANDOFF.md` into an ad-hoc state log.
+
 ### Finish / handoff decision flow
 
 Before choosing a closeout path, ask one gate question:
@@ -178,6 +180,7 @@ Invalid handoff reasons:
 Default finish-stage responsibilities:
 - `doc-auto-sync` for meaningful documentation drift
 - `session-logger` for resumable state or decision history
+- `resumable-session-layer.md` when the harness needs interruption-safe runtime state plus bounded improvement telemetry
 - `.claude/scripts/write-verification-verdict.py` for structured repository-root `.claude/verification-verdict-*.json` output instead of handwritten verdict JSON
   Record the exact verdict file path in `QA_REPORT.md` so the completion gate can verify the same artifact.
 - `commit-moonshot` only when the user explicitly wants memory update plus commit
