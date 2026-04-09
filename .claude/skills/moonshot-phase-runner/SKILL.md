@@ -40,6 +40,11 @@ Execution start policy:
 - default: auto-start execution immediately after preparation
 - `--prepare-only`: stop after seeding state and return prepared execution metadata without executing it
 
+Intent interpretation:
+- Treat requests such as "continue", "proceed with the improvement work", "go ahead", "execute the phase", or equivalent user wording as execution intent, not packaging intent.
+- Unless the user explicitly asks for planning/package-only behavior or passes `--prepare-only`, the runner must set `prepareOnly: false` and `autoStartExecution: true`.
+- For Codex or other runtimes where uninterrupted completion is the goal, prefer `delegated-terminal` unless the user explicitly wants interactive coordination or the runtime can only satisfy the request through `in-session-coordinator`.
+
 Plan-directory completion rule:
 - In default auto-start runs, the execution boundary is the entire active plan directory, not the current phase.
 - If any phase in `phase-status.yaml` remains `pending`, `in_progress`, or retryable `failed`, the run must keep going through the delegated-terminal loop or the in-session coordinator loop.
@@ -405,3 +410,4 @@ When called by `/moonshot-orchestrator`:
 11. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
 12. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
 13. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.
+14. If the user's latest message expressed execution intent and `prepareOnly == true` was not explicitly requested, treat that result as a contract mismatch and continue through the auto-start execution path instead of returning a prepared-only summary.

@@ -487,7 +487,15 @@ run_runtime_probes() {
 run_with_runtime_timeout() {
   local timeout_seconds="$1"
   shift
+  local -a env_assignments=()
+  while [[ $# -gt 0 && "$1" == *=* ]]; do
+    env_assignments+=("$1")
+    shift
+  done
   local -a cmd=("$@")
+  if [[ ${#env_assignments[@]} -gt 0 ]]; then
+    cmd=(env "${env_assignments[@]}" "${cmd[@]}")
+  fi
   if command -v timeout >/dev/null 2>&1; then
     timeout "$timeout_seconds" "${cmd[@]}"
     return $?
