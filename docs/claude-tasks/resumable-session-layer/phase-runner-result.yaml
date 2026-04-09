@@ -1,0 +1,31 @@
+phaseRunnerResult:
+  prepared: true
+  executionMode: "manual-closeout"
+  planResolutionSource: "explicit"
+  planDir: ".claude/docs/tasks/resumable-session-layer/implementation"
+  masterPlan: ".claude/docs/tasks/resumable-session-layer/implementation/00-master-plan-v1.md"
+  phaseStatusFile: ".claude/docs/tasks/resumable-session-layer/phase-status.yaml"
+  executionRoot: ".claude/docs/tasks/resumable-session-layer/execution"
+  executionRuntime: "auto"
+  executionSkill: "moonshot-phase-executor"
+  executionCommand: ".claude/scripts/moonshot-phase-dispatch.sh .claude/docs/tasks/resumable-session-layer/implementation --execution-mode delegated-terminal --execution-root .claude/docs/tasks/resumable-session-layer/execution --status-file .claude/docs/tasks/resumable-session-layer/phase-status.yaml --runtime auto"
+  executionAdapterCommand: ".claude/scripts/moonshot-phase-dispatch.sh .claude/docs/tasks/resumable-session-layer/implementation --execution-mode delegated-terminal --execution-root .claude/docs/tasks/resumable-session-layer/execution --status-file .claude/docs/tasks/resumable-session-layer/phase-status.yaml --runtime auto"
+  executionCoordinatorSkill: "moonshot-in-session-coordinator"
+  coordinatorPolicy: "fresh-fork-per-attempt"
+  autoStartExecution: true
+  prepareOnly: false
+  pendingPhases: 0
+  initiativeStatus: "completed"
+  activePhase: null
+  activePhaseTitle: null
+  completedAt: "2026-04-09T15:09:00+0900"
+  finalPhaseNumber: 3
+  finalPhaseTitle: "Harness Integration And Recovery Proof"
+  finalQaReport: ".claude/docs/tasks/resumable-session-layer/execution/03-harness-integration-and-recovery-proof/QA_REPORT.md"
+  finalHandoff: ".claude/docs/tasks/resumable-session-layer/execution/03-harness-integration-and-recovery-proof/HANDOFF.md"
+  finalScorecard: ".claude/docs/tasks/resumable-session-layer/execution/03-harness-integration-and-recovery-proof/SCORECARD.md"
+  closeoutSummary: ".claude/docs/tasks/resumable-session-layer/INITIATIVE_CLOSEOUT.md"
+  assumptionsFile: ".claude/docs/tasks/resumable-session-layer/ASSUMPTIONS.md"
+  residualRisks:
+    - "A separate SPEC contract is intentionally deferred until multiple code consumers exist."
+    - "Repository-level code-policy file-length warnings and phase runtime parity shell-path warnings remain outside this docs-only initiative."
