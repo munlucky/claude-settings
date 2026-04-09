@@ -27,6 +27,11 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 - `--prepare-only`: 상태만 준비하고 실행 메타데이터만 반환
 - `delegated-terminal`에서는 준비 직후 실제 dispatch/agent-loop를 현재 세션에서 실행하고, loop가 끝나기 전에는 단발 요약으로 반환하지 않습니다.
 
+의도 해석 규칙:
+- "계속 진행", "개선작업 진행", "바로 실행", "phase 실행" 같은 표현은 package 준비 의도가 아니라 실행 의도로 해석합니다.
+- 사용자가 명시적으로 planning/package-only 동작을 요청하거나 `--prepare-only`를 준 경우가 아니면 `prepareOnly: false`, `autoStartExecution: true`로 처리해야 합니다.
+- Codex처럼 끝까지 끊김 없이 밀어야 하는 런타임에서는, 사용자가 interactive coordination을 원하거나 런타임 제약이 있는 경우가 아니면 `in-session-coordinator`보다 `delegated-terminal`을 우선합니다.
+
 plan-directory 완료 규칙:
 - 기본 auto-start 실행의 경계는 현재 phase 하나가 아니라 active plan directory 전체입니다.
 - `phase-status.yaml`에 `pending`, `in_progress`, 또는 재시도 가능한 `failed` phase가 하나라도 남아 있으면 delegated-terminal 또는 in-session coordinator 루프를 계속 유지해야 합니다.
@@ -182,3 +187,4 @@ attemptResult:
 - active plan directory에 남은 phase가 있으면 completed phase 경계에서 사용자 진행 보고만 하고 반환하면 안 됩니다.
 - phase 완료는 검증 통과만으로 충분하지 않습니다.
 - phase 완료는 score verdict가 `done`이고 target score를 충족하며 checklist 미충족과 blocking defect가 0일 때만 가능합니다.
+- 사용자의 최신 요청이 실행 의도였는데도 `prepareOnly: true`로 반환됐다면 계약 위반으로 보고, prepared-only 요약을 반환하지 말고 auto-start 실행 경로로 바로 교정해야 합니다.
