@@ -2,7 +2,7 @@
 
 > TOC for always-loaded instructions. Keep it short.
 
-Last-Reviewed: 2026-03-26
+Last-Reviewed: 2026-04-09
 
 ## Overview
 
@@ -18,10 +18,10 @@ Last-Reviewed: 2026-03-26
    - `.claude/docs/guidelines/`
 3. Keep always-loaded context minimal:
    - `.claude/rules/**/*.md` must stay within budget
-   - Keep only constraints AI cannot infer from code
+   - Keep only non-inferable constraints
 4. Update source docs first, then refresh links in TOC docs.
 5. Run `.claude/scripts/knowledge-repo-audit.sh` after structural doc changes.
-6. At runtime, use `.claude/CLAUDE.md` and `.claude/verification.contract.yaml` as the workspace contract in this repository.
+6. At runtime, use `.claude/CLAUDE.md` and `.claude/verification.contract.yaml` as the workspace contract.
 
 ## Default Document Paths
 
@@ -39,4 +39,5 @@ For token/archive policy, see `document-memory-policy.md`.
 - `@.claude/CLAUDE.md`
 - `@.claude/verification.contract.yaml`
 - `@.claude/docs/guidelines/knowledge-repository-ops.md`
+- `@.claude/docs/guidelines/resumable-session-layer.md`
 - `@.claude/rules/agents/agent-definition.md`

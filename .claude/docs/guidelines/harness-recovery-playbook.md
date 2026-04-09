@@ -28,6 +28,18 @@ Recovery target:
 - bounded evidence refresh
 - completion gate inputs
 
+### resumable-state-repair
+
+Use when:
+- a resumed run cannot identify the next action from existing artifacts
+- retry history exists, but current state and append-only history disagree
+- `HANDOFF.md` is being misused as an unstructured runtime log
+
+Recovery target:
+- `task_state.json` snapshot correctness
+- event and decision id continuity
+- runtime-state ownership between controller, verifier, and hooks
+
 ### knowledge-budget-trim
 
 Use when:
