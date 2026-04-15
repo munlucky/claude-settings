@@ -419,8 +419,36 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
     return;
   }
 
-  const child = spawn(cmd[0], cmd.slice(1), { stdio: 'inherit' });
+  const forkUnavailablePattern = /collab spawn failed|parent thread rollout unavailable for fork/i;
+  let fallbackToDelegated = false;
+  let fallbackNoticeEmitted = false;
+  const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
+
+  const handleCoordinatorOutput = (chunk, targetStream) => {
+    const text = String(chunk);
+    targetStream.write(text);
+    if (effectiveRuntime !== 'codex' || fallbackToDelegated) {
+      return;
+    }
+    if (!forkUnavailablePattern.test(text)) {
+      return;
+    }
+    fallbackToDelegated = true;
+    if (!fallbackNoticeEmitted) {
+      fallbackNoticeEmitted = true;
+      logWarn('Codex in-session-coordinator could not fork a fresh attempt from this rollout. Falling back to delegated-terminal for uninterrupted execution.');
+    }
+    terminatePid(child.pid);
+  };
+
+  child.stdout.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stdout));
+  child.stderr.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stderr));
   child.on('exit', (code, signal) => {
+    if (fallbackToDelegated) {
+      recordDispatchEvidence('delegated-terminal', resolvedRoot, masterPlan);
+      runDelegatedTerminal(resolvedRoot);
+      return;
+    }
     if (signal) {
       process.kill(process.pid, signal);
       return;
