@@ -148,6 +148,8 @@ Complex 또는 long-running work:
 - 실패 기준이 아직 열려 있음
 - 여러 에이전트/리뷰어가 동일 상태를 공유해야 함
 
+재개나 재시도 비용이 반복해서 커지기 시작하면, `HANDOFF.md`를 임시 상태 로그처럼 키우지 말고 `resumable-session-layer.md`의 런타임 계약을 추가합니다.
+
 ### Finish / handoff 결정 흐름
 
 종료 경로를 고르기 전에 먼저 하나를 확인합니다.
@@ -180,6 +182,7 @@ Complex 또는 long-running work:
 기본 finish-stage 책임:
 - 의미 있는 문서 drift가 있으면 `doc-auto-sync`
 - 재개 가능 상태나 의사결정 이력이 필요하면 `session-logger`
+- 중단 안전한 런타임 상태와 bounded improvement telemetry가 필요하면 `resumable-session-layer.md`
 - handwritten verdict JSON 대신 `.claude/scripts/write-verification-verdict.py`로 저장소 루트 `.claude/verification-verdict-*.json`을 구조화해서 생성
   completion gate가 같은 산출물을 검증할 수 있도록 정확한 verdict 파일 경로를 `QA_REPORT.md`에 함께 기록
 - `commit-moonshot`은 사용자가 메모리 현행화와 커밋을 함께 원할 때만 실행

@@ -73,10 +73,19 @@ If required:
 Result:
 ```yaml
 signals.sprintContractReady: true | false
+readiness.executionReady: true | false
 notes:
   - "sprint-contract: ready, path=..."
   - "scorecard: ready, path=..."
 ```
+
+### Step 0.2: Review / Closeout Preconditions
+
+When the run is attached to a phase execution bridge:
+- treat code review as a required workflow step for code-changing slices, not as optional polish
+- do not leave `QA_REPORT.md` with `Review completed: no` if the slice is about to claim `clean_finish`
+- do not leave `HANDOFF.md`, review checkpoint fields, or finish-closeout bullets in placeholder form for a closing slice
+- if review or finish evidence is missing, record the gap and keep the slice in retry/remediation flow instead of pretending implementation is done
 
 ### Step 1: Test Environment Detection
 

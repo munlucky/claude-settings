@@ -40,6 +40,23 @@ Execution start policy:
 - default: auto-start execution immediately after preparation
 - `--prepare-only`: stop after seeding state and return prepared execution metadata without executing it
 
+Intent interpretation:
+- Treat requests such as "continue", "proceed with the improvement work", "go ahead", "execute the phase", or equivalent user wording as execution intent, not packaging intent.
+- Unless the user explicitly asks for planning/package-only behavior or passes `--prepare-only`, the runner must set `prepareOnly: false` and `autoStartExecution: true`.
+- For Codex or other runtimes where uninterrupted completion is the goal, prefer `delegated-terminal` unless the user explicitly wants interactive coordination or the runtime can only satisfy the request through `in-session-coordinator`.
+
+Plan-directory completion rule:
+- In default auto-start runs, the execution boundary is the entire active plan directory, not the current phase.
+- If any phase in `phase-status.yaml` remains `pending`, `in_progress`, or retryable `failed`, the run must keep going through the delegated-terminal loop or the in-session coordinator loop.
+- A completed phase boundary is never a valid stop boundary by itself.
+
+Review and finish gate rule:
+- The phase package may not be treated as complete until the required review and finish-closeout steps have actually run.
+- For code-changing phases, `codex-review-code` must appear in applied workflow evidence before `clean_finish` is allowed.
+- `QA_REPORT.md` may not claim `Next path: clean_finish` while `Review completed` is still `no`.
+- `HANDOFF.md` and closeout fields may not remain seeded or placeholder-shaped when the phase is being closed.
+- If review or closeout evidence is missing, the run must stay inside the active plan-directory loop and remediate the missing steps instead of returning a summary.
+
 ## Usage
 
 ```bash
@@ -90,8 +107,12 @@ Execution start policy:
     │      └─ Execute `moonshot-phase-executor` in the current session
     │         unless `--prepare-only` was requested
     │
-    └─ 8. Emit Handoff Summary
-           └─ Orchestrator-readable phaseRunnerResult
+    ├─ 8. Enforce Review / Finish Gates
+    │      └─ A phase may advance only after review evidence, completion evidence,
+    │         and finish-closeout artifacts are consistent
+    │
+    └─ 9. Emit Handoff Summary
+           └─ Orchestrator-readable phaseRunnerResult after the active plan directory is actually done
 ```
 
 ## Step 1: Plan Directory Resolution
@@ -102,6 +123,8 @@ When `<plan-dir>` is omitted, resolve it in this order:
 2. Reuse `docs/implementation` if it already contains exactly one valid master plan and phase files.
 3. Reuse another single valid implementation-plan directory only if exactly one safe candidate exists.
 4. Otherwise run `/moonshot-plan-writer` and create or refresh `docs/implementation`.
+
+Archived phase docs under `<plan-dir>/close/` are history, not active phase candidates.
 
 Safety rule:
 - If multiple candidate plan directories exist and there is no clear active one, stop and ask the user instead of guessing.
@@ -154,6 +177,8 @@ phases:
     status: pending
     planConfirmed: false
 ```
+
+When a phase reaches `completed`, move its phase doc into `<plan-dir>/close/` and record `archivedPhaseDoc` in `phase-status.yaml` so active discovery stays clean.
 
 ## Step 4: Seed Execution Bridge Artifacts
 
@@ -288,6 +313,10 @@ Unless `--prepare-only` is set:
 - execute `moonshot-phase-executor` immediately in the current session
 - pass `phaseRunnerResult` as the handoff payload
 - keep command adapters behind the skill boundary
+- when `executionMode == delegated-terminal`, actually launch `phaseRunnerResult.executionCommand` / `executionAdapterCommand` in the current session and stay attached until that loop exits
+- do not replace delegated-terminal execution with a single conversational implementation round, partial checkpoint, or one-attempt summary
+- for delegated-terminal runs, the first valid return boundary is loop exit only: all phases completed, retry cap reached, explicit user pause, or a real blocking failure recorded by the loop
+- after any phase is marked `completed`, immediately continue to the next actionable phase in the same active plan directory instead of returning a progress summary
 
 When `--prepare-only` is set:
 - stop after writing artifacts and `phase-status.yaml`
@@ -318,7 +347,7 @@ phaseRunnerResult:
 ```
 
 Mode meanings:
-- `delegated-terminal`: this skill prepares state and outputs a command-layer adapter invocation
+- `delegated-terminal`: this skill prepares state and then immediately executes the command-layer adapter invocation for the real autonomous loop
 - `in-session-coordinator`: this skill prepares state and expects the orchestrator/current runtime to execute each attempt as a fresh fork
 
 ## Status File
@@ -350,6 +379,12 @@ phases:
     planConfirmed: true
 ```
 
+Optional closeout metadata:
+
+```yaml
+    archivedPhaseDoc: "docs/implementation/close/01-project-setup.md"
+```
+
 ## References
 
 - `/moonshot-orchestrator`: Phase implementation delegation
@@ -368,7 +403,11 @@ When called by `/moonshot-orchestrator`:
 4. Return `phaseRunnerResult` summary with `executionMode`, `executionRoot`, and artifact paths (do not inline full phase docs).
 5. Do not mark implementation complete here.
 6. If `prepareOnly != true`, execute `phaseRunnerResult.executionSkill` immediately and pass `phaseRunnerResult` as input.
-7. If `prepareOnly == true`, stop after returning the prepared execution metadata.
-8. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
-9. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
-10. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.
+7. If `executionMode == delegated-terminal`, the execution path must launch the dispatcher/agent loop directly and must not stop after a single partial attempt summary.
+8. `partial`, `retry`, refreshed artifacts, or newly written handoff/checkpoint docs are not valid delegated-terminal stop reasons by themselves.
+9. A single completed phase is not a stop reason while the active plan directory still has actionable phases.
+10. If `prepareOnly == true`, stop after returning the prepared execution metadata.
+11. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
+12. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
+13. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.
+14. If the user's latest message expressed execution intent and `prepareOnly == true` was not explicitly requested, treat that result as a contract mismatch and continue through the auto-start execution path instead of returning a prepared-only summary.

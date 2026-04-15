@@ -154,8 +154,11 @@ Use verifier artifact workflow evidence as the structured source of truth for re
 - For code-changing bounded-direct or phase-closeout work, expect:
   - `review-bundle` in `selectedBundles`
   - `finish-bundle` in `selectedBundles`
-  - `codex-review-code` in applied or explicitly skipped evidence
+  - `codex-review-code` in applied evidence before clean completion
   - `doc-auto-sync` evidence before clean completion
+  - `QA_REPORT.md` to say `Review completed: yes`
+  - finish-closeout fields in `QA_REPORT.md` to be filled with concrete closeout content, not placeholders
+  - clean-finish `HANDOFF.md` marker to replace any seeded placeholder when the phase actually closes
 - If `workflowEvidence.warnings` is not empty:
   - strict profile -> do not return `gateDecision: pass`
   - standard profile -> degrade to remediation or `pass_with_warning`, and surface the warnings in `QA_REPORT.md`
@@ -253,6 +256,7 @@ Passing rule:
   - `evidenceFresh == true`
   - `requiredChecks.missing` is empty
   - `verdictArtifact.workflowEvidence.warnings` is empty for code-changing closeout work
+  - `QA_REPORT.md` says `Review completed: yes` for code-changing closeout work
   - `score.verdict == done`
   - `score.current >= score.target`
   - `score.unmetChecklistItems == 0`
@@ -289,6 +293,7 @@ When `verificationState: failed` and executable verification exists:
 - Requirement fulfillment involves judgment; verdict artifacts provide deterministic evidence.
 - A fresh verifier artifact or equivalent current-run command evidence is required before a contract-backed success verdict.
 - When available, `verdictArtifact.workflowEvidence` is the canonical structured hint for whether review/finish-stage evidence is complete enough to close the run.
+- For phase closeout work, a passing verifier artifact is still insufficient if `QA_REPORT.md` shows review incomplete or finish/handoff closeout remains placeholder-quality.
 - `uatReady` and `uatComplete` are different states. Automation may establish only `uatReady`.
 - Each verifier run should refresh `QA_REPORT.md` when `qaReportPath` is available.
 - If verification fails or the run pauses before clean completion, mark `handoffPath` for update.

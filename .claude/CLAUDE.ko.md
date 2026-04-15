@@ -12,6 +12,7 @@ Last-Reviewed: 2026-03-30
 
 1. `AGENTS.md`와 이 문서는 TOC이며, 전체 정책 저장소가 아닙니다.
 2. 지속 정책은 아래 소스 오브 트루스에 둡니다.
+   - `.claude/CLAUDE.md` (현재 워크스페이스 계약)
    - `.claude/PROJECT.md` (프로젝트 계약)
    - `.claude/rules/` (강제 규칙)
    - `.claude/docs/guidelines/` (절차)
@@ -34,13 +35,13 @@ documentPaths:
 
 ## Runtime Note
 
-- 실제 제품 작업은 활성 워크스페이스의 `PROJECT.md` 와 `.claude/verification.contract.yaml`을 런타임 계약으로 사용합니다.
+- 실제 제품 작업은 이 저장소의 `.claude/CLAUDE.md` 와 `.claude/verification.contract.yaml`을 런타임 계약으로 사용합니다.
 - 이 저장소의 `.claude/PROJECT.md`는 설치 대상 프로젝트용 템플릿입니다.
 - Claude Code 와 Codex 모두에서 코드 작업의 정책 경계는 `moonshot-orchestrator`입니다.
 
 ## 참고
 
-- 프로젝트 계약: `@.claude/PROJECT.md`
+- 프로젝트 계약: `@.claude/CLAUDE.md`
 - 검증 계약: `@.claude/verification.contract.yaml`
 - 지식 저장소 운영: `@.claude/docs/guidelines/knowledge-repository-ops.ko.md`
 - 하네스 재귀 개선 운영: `@.claude/docs/guidelines/meta-harness-recursive-improvement.ko.md`

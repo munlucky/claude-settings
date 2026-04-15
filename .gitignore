@@ -18,3 +18,4 @@ __pycache__/
 .claude/memory.json
 .claude/logs
 .tmp/
+.DS_Store

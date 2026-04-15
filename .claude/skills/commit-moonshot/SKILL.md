@@ -16,7 +16,7 @@ It is not part of the default implementation chain, but it should remain directl
 Treat it as an explicit Finish-stage utility, not an automatic step.
 
 ## Overview
-This skill runs in the main session, analyzes changes, and updates project memory (`[ProjectID]::*`) in the global Memory MCP.
+This skill runs in the main session, analyzes changes, and always refreshes project memory (`[ProjectID]::*`) in the global Memory MCP to the latest state.
 
 > **⚠️ Important: Complete memory update (steps 1-7) before committing (step 8).**
 
@@ -132,7 +132,7 @@ git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
 ## 7.6 Ask About `.claude/memory.json`
-Before staging the memory file, ask the user whether to include `.claude/memory.json` in this commit.
+Always perform the project memory refresh. The only confirmation needed is whether the refreshed `.claude/memory.json` should be included in this commit.
 
 Suggested prompt:
 ```text
@@ -140,6 +140,7 @@ Suggested prompt:
 ```
 
 Rules:
+- Refresh project memory first regardless of whether `.claude/memory.json` will be committed.
 - Do not auto-stage `.claude/memory.json` without user confirmation.
 - If the user says yes, stage and commit it with the code/docs changes.
 - If the user says no, leave `.claude/memory.json` unstaged and proceed with the rest of the commit.
@@ -153,16 +154,29 @@ git add [files] .claude/memory.json
 
 # If user declined:
 git add [files]
-git commit -m "[concise Korean commit message]"
+git commit -m "[concise Korean commit title]" -m $'- 기능: [feature/area] - [key change]\n- 기능: [feature/area] - [key change]\n- 이유: [why this changed]\n- 영향: [user impact or expected effect]'
 ```
 
 > **📌 Important: `.claude/memory.json` is optional per commit and must follow the user's explicit choice.** This file stores Memory MCP update content.
 
 **Commit message rules:**
 - No emoji or special characters
-- Write the commit message in Korean
+- Always write both the commit title and body in Korean
 - Concise and clear
 - Focus on change purpose
+- Use `one-line title + bullet-list body` as the default format
+- Start the body by listing changes grouped by feature area
+- If multiple features changed, use one bullet per feature
+- Use the format `- 기능: [기능/영역명] - [핵심 변경]` for each feature bullet
+- After the feature bullets, add the minimum needed context:
+  - `- 이유: [왜 변경했는지]`
+  - `- 영향: [사용자 영향, 운영 영향, 기대 효과 중 필요한 내용]`
+- Even cross-cutting changes should be grouped under the closest feature or area
+
+**Final user-facing summary rules:**
+- Always write the pre/post-commit change summary in Korean
+- Use the same feature-grouped bullet list structure as the commit body
+- Prefer feature/domain grouping over raw file lists
 
 ---
 

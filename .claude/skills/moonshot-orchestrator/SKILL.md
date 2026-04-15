@@ -91,107 +91,27 @@ For `meta_harness` work, also apply:
 
 ### 1. Initialize analysisContext
 
-```yaml
-schemaVersion: "1.1"
-request: { userMessage, taskType: unknown, keywords: [] }
-repo: { gitBranch, gitStatus, openFiles: [], changedFiles: [] }
-signals:
-  executionPlane: unknown
-  hasContextMd: false
-  hasPendingQuestions: false
-  requirementsClear: false
-  implementationReady: false
-  implementationComplete: false
-  productDefinitionRequest: false
-  hasProductIntent: false
-  hasPrd: false
-  hasSolution: false
-  hasSpec: false
-  hasExecutionPlan: false
-  productPackageReady: false
-  hasMockImplementation: false
-  apiSpecConfirmed: false
-  reactProject: false
-  useAgentTeams: false
-  testEnvironmentDetected: false
-  testFramework: null
-  testsWritten: false
-  sprintContractReady: false
-  qaReportReady: false
-  handoffRequired: false
-  phaseLoopInSession: false
-  phaseAttemptMode: false
-  workflowProfile: standard
-  projectContractReady: false
-  contextReady: false
-  verificationContractReady: false
-  designApproved: false
-  isolatedWorkspaceReady: false
-  evidenceGateRequired: true
-  allowIndeterminate: true
-  harnessVerdictRequired: true
-estimates: { estimatedFiles: 0, estimatedLines: 0, estimatedTime: unknown }
-phase: unknown
-complexity: unknown
-missingInfo: []
-decisions: { recommendedAgents: [], bundleChain: [], skillChain: [], parallelGroups: [] }
-teamSelection:
-  requestedPattern: null
-  selectedPattern: null
-  selectedTeam: null
-  selectionReason: null
-fixForward:
-  enabled: true
-  policy: { critical: block, high: fix-forward-task, medium: merge-with-note, low: auto-approve }
-  tasks: []
-artifacts:
-  tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
-  workflowGuidePath: "workflow/README.md"
-  designGuidePath: "docs/design/README.md"
-  glossaryGuidePath: "docs/glossary/README.md"
-  dailyGuidePath: "docs/daily/README.md"
-  dailyLogDir: "docs/daily"
-  testGuidePath: "TEST_GUIDE.md"
-  analysisRoot: "docs/analysis"
-  analysisIndexPath: "docs/analysis/README.md"
-  contextDocPath: "{tasksRoot}/{feature-name}/context.md"
-  productDir: "{tasksRoot}/{feature-name}/product"
-  productIntentPath: "{productDir}/PRODUCT_INTENT.md"
-  prdPath: "{productDir}/PRD.md"
-  solutionPath: "{productDir}/SOLUTION.md"
-  specPath: "{productDir}/SPEC.md"
-  planPath: "{productDir}/PLAN.md"
-  assumptionsPath: "{productDir}/ASSUMPTIONS.md"
-  blockersPath: "{productDir}/BLOCKERS.md"
-  taskSliceGlob: "{productDir}/tasks/*.md"
-  executionRoot: "{tasksRoot}/{feature-name}/execution"
-  activeSliceDir: "{executionRoot}/{active-slice}"
-  activePhaseDocPath: null
-  sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
-  qaReportPath: "{activeSliceDir}/QA_REPORT.md"
-  handoffPath: "{activeSliceDir}/HANDOFF.md"
-  scorecardPath: "{activeSliceDir}/SCORECARD.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
-  verificationContractPath: ".claude/verification.contract.yaml"
-  verificationScript: .claude/agents/verification/verify-changes.sh
-  runtimeVerificationScript: .claude/agents/verification/verify-runtime.sh
-  verificationResultPath: "{tasksRoot}/{feature-name}/verification-result.json"
-  workflowEvidencePath: ".claude/logs/workflow-enforcement/latest-bounded.json"
-tokenBudget: { specSummaryTrigger: 2000, splitTrigger: 5, contextMaxTokens: 8000, warningThreshold: 0.8 }
-projectMemory: { projectId: null, boundaryStatus: "not_checked", boundary: { violations: [], needsApproval: [], reminders: [] }, relatedConventions: [], lastChecked: null }
-workflowEvidence:
-  mode: bounded-direct
-  selectedBundles: []
-  requiredSkills: []
-  stageOrder: []
-  appliedSkills: []
-  skippedSkills: []
-  evidenceFiles:
-    analysisContext: ".claude/docs/moonshot-analysis.yaml"
-    qaReport: null
-    handoff: null
-notes: []
-```
+Initialize from the canonical contract:
+- `.claude/schemas/analysis-context.schema.yaml`
+
+Resolve these fields before bundle selection:
+- `request.userMessage`
+- `signals.executionPlane`
+- `signals.workflowProfile`
+- `phase`
+- `complexity`
+- `decisions.bundleChain`
+- `decisions.skillChain`
+- `artifacts.tasksRoot`
+- `artifacts.executionRoot`
+- `workflowEvidence.selectedBundles`
+- `workflowEvidence.requiredSkills`
+- `workflowEvidence.stageOrder`
+
+Contract rules:
+- Treat `.claude/schemas/analysis-context.schema.yaml` as the single source of truth for field layout and defaults.
+- Do not re-embed the full contract into downstream skills or adapters.
+- Save final `analysisContext` to `.claude/docs/moonshot-analysis.yaml`.
 
 ### 2. Run PM skills sequentially
 
@@ -258,10 +178,14 @@ Merge signals:
 - `hasExecutionPlan`
 - `productPackageReady`
 - `implementationReady`
+- `planningReady`
+- `executionReady`
 
 Routing rule:
 - If `productDefinitionRequest == true` and `productPackageReady == false`, hand off to `product-orchestrator`
 - If `productPackageReady == true`, skip upstream planning stages and use the handoff package as the implementation baseline
+- Prefer `readiness.planningReady` as the canonical "package is routable" signal
+- Prefer `readiness.executionReady` as the canonical "active slice may execute now" signal
 
 #### 2.0.6a Team pattern selection
 
@@ -481,6 +405,9 @@ Run `decisions.skillChain` in order.
 **Phase-runner execution-mode contract**:
 - If `moonshot-phase-runner` returns `phaseRunnerResult.prepareOnly == true`, stop after surfacing prepared execution metadata.
 - If `moonshot-phase-runner` returns `phaseRunnerResult.autoStartExecution == true`, execute `phaseRunnerResult.executionSkill` immediately and pass through `phaseRunnerResult`.
+- If `phaseRunnerResult.executionMode == delegated-terminal`, the execution path must launch `phaseRunnerResult.executionCommand` and remain attached to the dispatcher/agent loop until that loop exits.
+- Do not downgrade delegated-terminal into a single conversational implementation round just because artifacts or checkpoints were updated.
+- Do not treat a completed phase as a return boundary while the active plan directory still contains `pending`, `in_progress`, or retryable `failed` phases.
 - If `moonshot-phase-runner` returns `phaseRunnerResult.executionMode == in-session-coordinator`:
   - set `signals.phaseLoopInSession = true`
   - keep the main session in coordinator mode only

@@ -188,6 +188,8 @@ Phase runner default behavior:
 - If no safe plan dir exists, it bootstraps `docs/implementation` through `moonshot-plan-writer`.
 - `/moonshot-phase-runner <plan-dir>` now prepares artifacts and immediately starts `moonshot-phase-executor`.
 - Use `--prepare-only` only when you explicitly want to stop after preparation.
+- In `delegated-terminal`, the executor is expected to stay on the dispatcher/agent-loop path until the loop exits; a single partial round is not a valid substitute.
+- Phase boundaries are not return boundaries in default auto-start runs; the active plan directory should keep advancing until no actionable phases remain.
 
 ## Docs and Templates
 

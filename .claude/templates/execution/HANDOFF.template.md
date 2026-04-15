@@ -20,7 +20,7 @@
 
 ## Resume Trigger
 - Why this handoff exists:
-- Stop reason: blocked | interrupted | context_limit | user_pause | deferred_verification
+- Stop reason: blocked | interrupted | context_limit | user_pause | deferred_verification | clean_finish
 - Why this cannot continue in the current round:
 - Condition to resume:
 
@@ -36,7 +36,7 @@
 3. Verification to rerun
 
 ## Remaining Scope
-- Remaining in-scope work:
+- Remaining in-scope work: use `none` only for clean-finish marker handoffs
 - Next planned phase or slice:
 
 ## Evidence Paths

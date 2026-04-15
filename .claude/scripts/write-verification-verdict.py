@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 
 
 def parse_command(value: str) -> dict:
@@ -39,13 +40,13 @@ def main() -> int:
     parser.add_argument("--output", required=True, help="Output verdict file path")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--phase-number", required=True, type=int)
-    parser.add_argument("--phase-title", required=True)
-    parser.add_argument("--active-phase-doc-path", required=True)
+    parser.add_argument("--phase-title", default="")
+    parser.add_argument("--active-phase-doc-path", default="")
     parser.add_argument("--mode", default="direct-phase-attempt-fallback")
     parser.add_argument("--script", default=".claude/scripts/write-verification-verdict.py")
     parser.add_argument("--verification-mode", default="contract")
     parser.add_argument("--contract-applicable", choices=["true", "false"], default="true")
-    parser.add_argument("--verdict", choices=["passed", "failed"], required=True)
+    parser.add_argument("--verdict", choices=["passed", "failed"], default="passed")
     parser.add_argument("--evidence-fresh", choices=["true", "false"], default="true")
     parser.add_argument("--expected-check", action="append", default=[])
     parser.add_argument("--passed-check", action="append", default=[])
@@ -55,13 +56,19 @@ def main() -> int:
     parser.add_argument("--selected-bundle", action="append", default=[])
     parser.add_argument("--stage", action="append", default=[])
     parser.add_argument("--workflow-warning", action="append", default=[])
-    parser.add_argument("--score-current", type=int, required=True)
-    parser.add_argument("--score-target", type=int, required=True)
-    parser.add_argument("--score-unmet", type=int, required=True)
-    parser.add_argument("--score-blocking", type=int, required=True)
-    parser.add_argument("--score-verdict", required=True)
-    parser.add_argument("--generated-at", required=True)
+    parser.add_argument("--score-current", type=int, default=0)
+    parser.add_argument("--score-target", type=int, default=100)
+    parser.add_argument("--score-unmet", type=int, default=0)
+    parser.add_argument("--score-blocking", type=int, default=0)
+    parser.add_argument("--score-verdict", default="retry")
+    parser.add_argument(
+        "--generated-at",
+        default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
     args = parser.parse_args()
+
+    phase_title = args.phase_title or f"Phase {args.phase_number}"
+    active_phase_doc_path = args.active_phase_doc_path or "."
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -71,8 +78,8 @@ def main() -> int:
         "runId": args.run_id,
         "phase": {
             "number": args.phase_number,
-            "title": args.phase_title,
-            "activePhaseDocPath": args.active_phase_doc_path,
+            "title": phase_title,
+            "activePhaseDocPath": active_phase_doc_path,
         },
         "contract": {
             "applicable": args.contract_applicable == "true",

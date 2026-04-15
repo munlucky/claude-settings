@@ -12,7 +12,7 @@ triggers:
 
 Serve as the skill-first execution boundary after `moonshot-phase-runner`.
 Users should not need to run command adapters directly. This skill consumes `phaseRunnerResult`, then routes execution to:
-- `agent-loop.sh` as an internal adapter for `delegated-terminal`
+- `moonshot-phase-dispatch.sh` / `agent-loop.mjs` as the internal adapter path for `delegated-terminal`
 - `moonshot-in-session-coordinator` for `in-session-coordinator`
 
 This is an internal execution handoff, not a primary public workflow entrypoint.
@@ -46,15 +46,22 @@ If `prepareOnly == true`:
 ### 2. Route by execution mode
 
 If `executionMode == delegated-terminal`:
-- call the internal adapter `agent-loop.sh`
+- call `phaseRunnerResult.executionCommand` immediately in the current session
 - forward runtime selection (`auto|claude|codex`)
 - keep this hidden behind the skill boundary
+- stay attached to the delegated-terminal process until it exits
+- do not substitute a single implementation attempt, partial checkpoint, or conversational summary for the real loop
+- if the loop leaves the current phase `in_progress` with `lastOutcome=partial` or `score.verdict=retry`, keep following the delegated-terminal path instead of returning early
+- if the loop marks one phase `completed` but the active plan directory still has any actionable phase, keep the same delegated-terminal execution boundary and continue
+- if completion gates report missing review evidence or incomplete finish-closeout, do not return success; stay in the loop and remediate those missing steps first
 
 If `executionMode == in-session-coordinator`:
 - invoke `/moonshot-in-session-coordinator`
 - pass through `phaseRunnerResult`
 - when the active runtime cannot reliably keep spawning fresh attempts, prefer a runtime-side fallback to `delegated-terminal` instead of pretending the run is fully autonomous
 - ensure each active slice can initialize `WORKSET.md` from `.claude/templates/execution/WORKSET.template.md`
+- do not stop after a completed phase while the active plan directory still has another actionable phase
+- do not treat a review-pending or finish-pending slice as complete; force another attempt until the artifacts reflect a real review and clean closeout
 
 ### 3. Runtime handling
 
@@ -85,6 +92,10 @@ phaseExecutionResult:
 - Scripts are implementation adapters only and must stay behind this skill.
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.
 - Do not ask the user to manually run `moonshot-phase-dispatch.sh` in the default path.
+- For `delegated-terminal`, the valid execution boundary is the actual dispatcher/agent-loop process, not a one-round summary.
+- `partial`, `retry`, updated QA artifacts, or a resumable handoff are not valid stop reasons for delegated-terminal by themselves.
+- `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, or placeholder closeout artifacts are not valid completion states.
+- The valid success boundary is plan-directory completion: every actionable phase completed or an explicit loop stop condition recorded.
 
 ## References
 

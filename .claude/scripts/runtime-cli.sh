@@ -1,65 +1,63 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
+RUNTIME_CLI_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_CLI_NODE_MODULE="${RUNTIME_CLI_SCRIPT_DIR}/runtime-cli.mjs"
+
+runtime_cli_run_node() {
+  node "$RUNTIME_CLI_NODE_MODULE" "$@"
+}
+
+runtime_cli_append_lines_to_array() {
+  local array_name="$1"
+  shift
+  local -a lines=("$@")
+  local line
+  local escaped=""
+
+  for line in "${lines[@]}"; do
+    printf -v escaped '%s %q' "$escaped" "$line"
+  done
+
+  if [[ -n "$escaped" ]]; then
+    eval "$array_name+=($escaped)"
+  fi
+}
+
 runtime_cli_is_wsl() {
-  grep -qi microsoft /proc/version 2>/dev/null || grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null
+  runtime_cli_run_node is-wsl
 }
 
 runtime_cli_find_windows_codex_auth() {
-  local candidate=""
-  local user_hint="${WIN_USERNAME:-${USERNAME:-${USER:-}}}"
-  local -a candidates=()
-
-  if [[ -n "$user_hint" ]]; then
-    candidates+=("/mnt/c/Users/${user_hint}/.codex/auth.json")
-  fi
-
-  candidates+=(
-    "/mnt/c/Users/moon/.codex/auth.json"
-    "/mnt/c/Users/${USER}/.codex/auth.json"
-  )
-
-  for candidate in "${candidates[@]}"; do
-    if [[ -s "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-
-  while IFS= read -r candidate; do
-    if [[ -s "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done < <(compgen -G '/mnt/c/Users/*/.codex/auth.json' || true)
-
-  return 1
+  runtime_cli_run_node find-windows-codex-auth
 }
 
 runtime_cli_sync_wsl_codex_auth() {
-  local local_codex_dir="${HOME}/.codex"
-  local local_auth="${local_codex_dir}/auth.json"
-  local windows_auth=""
-
-  if ! runtime_cli_is_wsl; then
-    return 0
-  fi
-
-  if [[ -s "$local_auth" ]]; then
-    return 0
-  fi
-
-  if ! windows_auth="$(runtime_cli_find_windows_codex_auth)"; then
-    return 0
-  fi
-
-  mkdir -p "$local_codex_dir"
-  rm -f "$local_auth"
-
-  if ! ln -s "$windows_auth" "$local_auth" 2>/dev/null; then
-    cp "$windows_auth" "$local_auth"
-  fi
+  runtime_cli_run_node sync-wsl-codex-auth >/dev/null
 }
 
 runtime_cli_prepare_environment() {
   runtime_cli_sync_wsl_codex_auth
+}
+
+runtime_cli_active_workspace_contract() {
+  runtime_cli_run_node active-workspace-contract "${1:-$PWD}"
+}
+
+runtime_cli_find_pids_by_pattern() {
+  runtime_cli_run_node find-pids-by-pattern "$1"
+}
+
+runtime_cli_append_codex_base_args() {
+  local array_name="$1"
+  local cwd="$2"
+  local -a resolved_args=()
+  local line
+
+  while IFS= read -r line; do
+    resolved_args+=("$line")
+  done < <(runtime_cli_run_node codex-base-args "$cwd")
+
+  runtime_cli_append_lines_to_array "$array_name" "${resolved_args[@]}"
 }

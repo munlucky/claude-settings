@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = ROOT_DIR / "browser-runtime"
 STATE_PATH = RUNTIME_DIR / "state.json"
-DEFAULT_TIMEOUT = 10
+DEFAULT_TIMEOUT = int(os.environ.get("BROWSERCTL_DEFAULT_TIMEOUT_SECONDS", "20"))
 
 
 def now_iso() -> str:

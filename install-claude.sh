@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude를 다운로드하고, AGENTS.md 및 Codex 전역 skills 링크를 구성합니다.
+# GitHub에서 최신 .claude를 다운로드하고, .agents/AGENTS.md 브리지와 Codex 전역 skills 링크를 구성합니다.
 
 set -e
 
@@ -39,9 +39,35 @@ print_header() {
 	echo ""
 }
 
+ensure_supported_shell() {
+	local uname_s=""
+
+	uname_s="$(uname -s 2>/dev/null || true)"
+
+	case "$uname_s" in
+	Darwin)
+		print_info "지원 셸 확인됨: macOS bash"
+		;;
+	MINGW* | MSYS* | CYGWIN*)
+		if [ -z "${MSYSTEM:-}" ]; then
+			print_error "Windows에서는 Git Bash에서 실행해야 합니다."
+			echo "  예: bash ./install-claude.sh"
+			exit 1
+		fi
+		print_info "지원 셸 확인됨: Windows Git Bash (${MSYSTEM})"
+		;;
+	*)
+		print_error "지원되지 않는 셸 환경입니다: ${uname_s:-unknown}"
+		echo "  지원 환경: macOS bash, Windows Git Bash"
+		exit 1
+		;;
+	esac
+}
+
 setup_codex_skills() {
 	local source_skills_dir=".claude/skills"
-	local codex_home="${CODEX_HOME:-$HOME/.codex}"
+	local project_root=""
+	local codex_home=""
 	local linked_count=0
 	local source_root=""
 
@@ -52,6 +78,9 @@ setup_codex_skills() {
 		print_warn "스킬 디렉토리를 찾지 못했습니다: $source_skills_dir"
 		return
 	fi
+
+	project_root="$(pwd -P)"
+	codex_home="${CODEX_HOME:-$project_root/.codex}"
 
 	CODEX_SKILLS_DIR="$codex_home/skills"
 	mkdir -p "$CODEX_SKILLS_DIR"
@@ -96,6 +125,20 @@ setup_codex_skills() {
 	done
 
 	print_info "✓ Codex skills ${linked_count}개 연결 완료 (${CODEX_SKILLS_DIR})"
+}
+
+setup_agents_bridge() {
+	echo ""
+	print_info ".agents/skills 및 AGENTS.md 동기화 중..."
+
+	mkdir -p ".agents"
+	rm -rf ".agents/skills"
+	ln -s "../.claude/skills" ".agents/skills"
+	print_info "✓ .agents/skills 생성 (→ ../.claude/skills)"
+
+	rm -f "AGENTS.md"
+	ln -s ".claude/CLAUDE.md" "AGENTS.md"
+	print_info "✓ AGENTS.md 생성 (→ .claude/CLAUDE.md)"
 }
 
 setup_browser_runtime() {
@@ -288,7 +331,7 @@ usage() {
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
-  - .claude/skills/* 를 Codex 전역 skills(${CODEX_HOME:-~/.codex}/skills/*)에 심볼릭 링크
+  - .claude/skills/* 를 Codex skills(${CODEX_HOME:-./.codex}/skills/*)에 심볼릭 링크
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 보호되는 파일 패턴:
@@ -417,6 +460,7 @@ if [ -d ".claude" ]; then
 fi
 
 print_header
+ensure_supported_shell
 
 # 1. 필수 도구 확인
 print_info "필수 도구 확인 중..."
@@ -531,6 +575,7 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
 	echo "  - .claudeignore 설치/병합"
+	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
 	echo "  - Codex 전역 skills 심볼릭 링크 구성"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
@@ -681,19 +726,8 @@ if [ -d "$DOWNLOADED_SCRIPTS" ]; then
 	done
 fi
 
-# 7.8. AGENTS.md 브리지 구성 및 기존 .agents 정리
-print_info "AGENTS.md 동기화 및 기존 .agents 정리 중..."
-if [ -e ".agents/skills" ] || [ -L ".agents/skills" ]; then
-	rm -rf ".agents/skills"
-	print_info "✓ 기존 .agents/skills 제거"
-fi
-if [ -d ".agents" ] && [ -z "$(find ".agents" -mindepth 1 -maxdepth 1 2>/dev/null)" ]; then
-	rmdir ".agents"
-	print_info "✓ 빈 .agents 디렉토리 제거"
-fi
-rm -f "AGENTS.md"
-ln -s ".claude/CLAUDE.md" "AGENTS.md"
-print_info "✓ AGENTS.md 생성 (→ .claude/CLAUDE.md)"
+# 7.8. .agents/skills + AGENTS.md 브리지 구성
+setup_agents_bridge
 
 # 7.9. Codex 전역 skill 링크 구성
 setup_codex_skills
@@ -920,6 +954,9 @@ fi
 if [ -L "AGENTS.md" ]; then
 	echo "  ✓ AGENTS.md                  (→ .claude/CLAUDE.md)"
 fi
+if [ -L ".agents/skills" ]; then
+	echo "  ✓ .agents/skills             (→ .claude/skills)"
+fi
 if [ ${#CODEX_SKILL_LINKS[@]} -gt 0 ]; then
 	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (→ .claude/skills/*)"
 fi
@@ -953,8 +990,8 @@ fi
 
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
-echo "  2. Git에 커밋: git add .claude .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
-echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-~/.codex}/skills} 를 다시 로드하세요"
+echo "  2. Git에 커밋: git add .claude .agents .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
+echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-./.codex}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
 if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ] || [ ${#CODEX_BACKUP_PATHS[@]} -gt 0 ]; then

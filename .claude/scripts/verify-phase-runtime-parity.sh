@@ -1,64 +1,7 @@
 #!/usr/bin/env bash
-
-# Runtime parity smoke for Moonshot phase execution.
-# Coverage:
-#   - render matrix for delegated-terminal and in-session-coordinator across Claude/Codex
-#     (Codex coordinator path is exercised with interactive mode explicitly enabled)
-#   - runtime availability probes for Claude/Codex
-#   - actual delegated-terminal + in-session-coordinator runs for each available runtime
-#   - artifact/status/verdict assertions after each actual run
-
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/runtime-cli.sh"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
-RUN_REAL=true
-TMP_ROOT="$(mktemp -d)"
-KEEP_TMP="${PHASE_RUNTIME_PARITY_KEEP_TMP:-false}"
-CLAUDE_AVAILABLE=false
-CODEX_AVAILABLE=false
-RUNTIME_FAILURES=()
-ACTUAL_FAILURES=()
-
-cleanup() {
-  if [[ "$KEEP_TMP" == "true" ]]; then
-    log "keeping temp artifacts: $TMP_ROOT"
-    return
-  fi
-  rm -rf "$TMP_ROOT"
-}
-trap cleanup EXIT
-
-usage() {
-  cat <<'EOF_USAGE'
-Usage:
-  verify-phase-runtime-parity.sh [reference-plan-dir] [--render-only]
-EOF_USAGE
-}
-
-log() {
-  printf '%s\n' "$1"
-}
-
-warn() {
-  printf 'WARN: %s\n' "$1"
-}
-
-fail() {
-  log "$1"
-  if [[ "$KEEP_TMP" == "true" ]]; then
-    log "debug temp root: $TMP_ROOT"
-  fi
-  exit 1
-}
-require_command() {
-  local name="$1"
-  if ! command -v "$name" >/dev/null 2>&1; then
-    fail "missing command: $name"
-  fi
-}
+exec node "$SCRIPT_DIR/verify-phase-runtime-parity.mjs" "$@"
 
 assert_contains() {
   local file="$1"
@@ -90,6 +33,24 @@ array_length() {
 
   eval 'if [[ ${'"$array_name"'[@]+_} ]]; then length=${#'"$array_name"'[@]}; fi'
   printf '%s\n' "$length"
+}
+
+format_duration() {
+  local total_seconds="$1"
+  local minutes=$((total_seconds / 60))
+  local seconds=$((total_seconds % 60))
+
+  if [[ "$minutes" -gt 0 ]]; then
+    printf '%sm %02ds' "$minutes" "$seconds"
+  else
+    printf '%ss' "$seconds"
+  fi
+}
+
+record_actual_timing() {
+  local scenario_name="$1"
+  local elapsed_seconds="$2"
+  ACTUAL_TIMINGS+=("${scenario_name}|${elapsed_seconds}")
 }
 
 checksum_file() {
@@ -193,6 +154,72 @@ runtime_is_available() {
   esac
 }
 
+resolve_current_runtime() {
+  if [[ -n "${CODEX_THREAD_ID:-}" || -n "${CODEX_CI:-}" ]]; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  if [[ -n "${CLAUDE_PROJECT_DIR:-}" || -n "${CLAUDECODE:-}" || -n "${CLAUDE_CODE:-}" ]]; then
+    printf '%s\n' "claude"
+    return 0
+  fi
+
+  if command -v codex >/dev/null 2>&1 && ! command -v claude >/dev/null 2>&1; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  if command -v claude >/dev/null 2>&1 && ! command -v codex >/dev/null 2>&1; then
+    printf '%s\n' "claude"
+    return 0
+  fi
+
+  if command -v codex >/dev/null 2>&1; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  printf '%s\n' "claude"
+}
+
+resolve_target_runtime_set() {
+  local target="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-auto}"
+  local current_runtime
+
+  case "$target" in
+    auto|current)
+      current_runtime="$(resolve_current_runtime)"
+      TARGET_RUNTIME_SET=("$current_runtime")
+      ;;
+    claude)
+      TARGET_RUNTIME_SET=("claude")
+      ;;
+    codex)
+      TARGET_RUNTIME_SET=("codex")
+      ;;
+    both)
+      TARGET_RUNTIME_SET=("claude" "codex")
+      ;;
+    *)
+      fail "unknown PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: $target"
+      ;;
+  esac
+}
+
+target_runtime_selected() {
+  local runtime="$1"
+  local selected
+
+  for selected in "${TARGET_RUNTIME_SET[@]}"; do
+    if [[ "$selected" == "$runtime" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 summarize_probe_detail() {
   local primary_file="$1"
   local secondary_file="${2:-}"
@@ -268,7 +295,7 @@ probe_claude_runtime() {
   set +e
   (
     cd "$REPO_ROOT"
-    claude --dangerously-skip-permissions -p --output-format text \
+    claude --dangerously-skip-permissions --no-session-persistence -p --output-format text \
       'Reply exactly with RUNTIME_OK and nothing else.'
   ) >"$output_file" 2>"$error_file"
   local exit_code=$?
@@ -312,8 +339,10 @@ probe_codex_runtime() {
   set +e
   (
     cd "$REPO_ROOT"
-    codex exec --full-auto -C "$REPO_ROOT" -o "$output_file" \
-      'Reply exactly with RUNTIME_OK and nothing else.'
+    local -a cmd=()
+    runtime_cli_append_codex_base_args cmd "$REPO_ROOT"
+    cmd+=(-o "$output_file" 'Reply exactly with RUNTIME_OK and nothing else.')
+    "${cmd[@]}"
   ) >"$stdout_file" 2>"$error_file"
   local exit_code=$?
   set -e
@@ -339,8 +368,50 @@ probe_codex_runtime() {
 }
 
 run_runtime_probes() {
-  probe_claude_runtime || warn "runtime probe failed: claude"
-  probe_codex_runtime || warn "runtime probe failed: codex"
+  if target_runtime_selected "claude"; then
+    probe_claude_runtime || warn "runtime probe failed: claude"
+  fi
+
+  if target_runtime_selected "codex"; then
+    probe_codex_runtime || warn "runtime probe failed: codex"
+  fi
+}
+
+run_with_runtime_timeout() {
+  local timeout_seconds="$1"
+  shift
+  local -a env_assignments=()
+  while [[ $# -gt 0 && "$1" == *=* ]]; do
+    env_assignments+=("$1")
+    shift
+  done
+  local -a cmd=("$@")
+  if [[ ${#env_assignments[@]} -gt 0 ]]; then
+    cmd=(env "${env_assignments[@]}" "${cmd[@]}")
+  fi
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$timeout_seconds" "${cmd[@]}"
+    return $?
+  fi
+
+  local pid
+  local exit_code=0
+  "${cmd[@]}" &
+  pid=$!
+  (
+    sleep "$timeout_seconds"
+    kill -0 "$pid" >/dev/null 2>&1 && kill -TERM "$pid" >/dev/null 2>&1
+  ) &
+  local killer_pid=$!
+  wait "$pid"
+  exit_code=$?
+  kill "$killer_pid" >/dev/null 2>&1 || true
+  wait "$killer_pid" >/dev/null 2>&1 || true
+
+  if [[ $exit_code -eq 143 ]]; then
+    return 124
+  fi
+  return "$exit_code"
 }
 
 assert_passed_verdict() {
@@ -391,7 +462,7 @@ EOF
 - Update execution artifacts under ${phase_dir}
 - Mark \`phase-status.yaml\` completed when the smoke passes
 - Run verification with:
-  - \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash .claude/agents/verification/verify-changes.sh runtime-smoke-${scenario_name}\`
+  - \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}\`
 
 ## Out of Scope
 - Editing repository source files outside ${fixture_root}
@@ -400,12 +471,14 @@ EOF
 
 ## Required Steps
 1. Read \`SPRINT_CONTRACT.md\` and keep the policy anchors intact.
-2. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
-3. Record the runtime/mode in \`QA_REPORT.md\` and keep the \`## Workflow Execution\` section current.
-4. Run the verification command exactly once for fresh evidence.
-5. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
-6. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
-7. If verification fails, update \`HANDOFF.md\`, keep the \`session-logger\` note intact, and stop without touching repository source files.
+2. Write an attempt-started checkpoint to \`QA_REPORT.md\` before broader inspection or long-running commands.
+3. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
+4. Record the runtime/mode in \`QA_REPORT.md\` and keep the \`## Workflow Execution\` section current.
+5. Run the verification command exactly once for fresh evidence.
+6. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
+7. Refresh \`SCORECARD.md\` and \`QA_REPORT.md\` again after verification instead of batching every artifact update at the end.
+8. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
+9. If verification fails, update \`HANDOFF.md\`, keep the \`session-logger\` note intact, and stop without touching repository source files.
 
 ## Completion
 - \`QA_REPORT.md\` changed during the run
@@ -447,7 +520,7 @@ EOF
 
 ## Policy Anchors
 - Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
-- Active workspace contract: .claude/PROJECT.md
+- Active workspace contract: $(runtime_cli_active_workspace_contract)
 - Verification contract: .claude/verification.contract.yaml
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
 - Round policy summary: runtime smoke only, no repository source edits, fresh verification evidence required
@@ -473,7 +546,7 @@ EOF
 
 ## Evidence
 - Required commands:
-  - HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash .claude/agents/verification/verify-changes.sh runtime-smoke-${scenario_name}
+  - HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}
 - Runtime flow:
   - execute the active phase once
 - Screenshots/logs:
@@ -627,12 +700,23 @@ run_render_matrix() {
   assert_contains "$agent_loop_out" "phaseAttemptMode: true" "phase attempt mode hint"
   assert_contains "$agent_loop_out" "activePhaseDocPath:" "active phase doc path"
   assert_contains "$agent_loop_out" "Do not invoke moonshot-phase-runner again." "anti-recursion rule"
+  assert_contains "$agent_loop_out" "Do not stop at implementation-complete or verification-complete checkpoints alone." "no early stop checkpoint rule"
+  assert_contains "$agent_loop_out" "review evidence is recorded, finish-closeout fields are concrete" "review and closeout stop gate"
   assert_contains "$sprint_contract" "## Policy Anchors" "policy anchors section"
   assert_contains "$sprint_contract" "## Stage Order" "stage order section"
   assert_contains "$sprint_contract" "## Review Cadence" "review cadence section"
   assert_contains "$sprint_contract" "Verification contract:" "verification contract anchor"
   assert_contains "$qa_report" "## Finish Readiness" "finish readiness section"
   assert_contains "$handoff" "## Checks To Rerun" "handoff rerun section"
+
+  local closeout_prompt="$TMP_ROOT/closeout-remediation.txt"
+  (
+    cd "$REPO_ROOT"
+    node .claude/scripts/agent-loop-phase-attempt.mjs build-verification-remediation-prompt 1 mock.log review-incomplete > "$closeout_prompt"
+  )
+  assert_contains "$closeout_prompt" "Treat the missing completion evidence as an active closeout task for this same phase" "closeout remediation stays on current phase"
+  assert_contains "$closeout_prompt" "Resume at stage: review" "review-stage remediation hint"
+  assert_contains "$closeout_prompt" "Do not return control just because implementation is complete or a verifier ran once." "closeout remediation no early return"
 }
 
 run_workflow_enforcement_sync_smoke() {
@@ -761,10 +845,11 @@ run_verify_changes_workflow_verdict_smoke() {
   prepare_workspace_copy "$workspace_root"
   initialize_workspace_git "$workspace_root"
 
-  mkdir -p "$workspace_root/src"
+  mkdir -p "$workspace_root/.claude/scripts"
   mkdir -p "$(dirname "$analysis_file")" "$(dirname "$qa_report")"
-  cat > "$workspace_root/src/workflowEvidenceSmoke.ts" <<'EOF'
-export const workflowEvidenceSmoke = true;
+  cat > "$workspace_root/.claude/scripts/workflowEvidenceSmoke.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'workflow evidence smoke\n'
 EOF
 
   cat > "$qa_report" <<'EOF'
@@ -796,7 +881,7 @@ EOF
     VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity \
       HARNESS_RUN_ID=workflow-evidence-smoke \
       HARNESS_OPERATING_MODE=meta_harness \
-      bash .claude/agents/verification/verify-changes.sh workflow-evidence-smoke > "$log_file" 2>&1
+      bash .claude/agents/verification/run-verify-changes.sh workflow-evidence-smoke > "$log_file" 2>&1
   )
 
   python3 - "$verdict_file" <<'PY'
@@ -823,8 +908,11 @@ run_actual_flow() {
   local runtime="$1"
   local execution_mode="$2"
   local scenario_name="$3"
+  local started_at
+  started_at="$(date +%s)"
   local workspace_root="$TMP_ROOT/$scenario_name/workspace"
   local fixture_root="$workspace_root/runtime-parity-fixtures/$scenario_name"
+  local default_status_file="$workspace_root/.claude/docs/phase-status.yaml"
   local before_git="$TMP_ROOT/$scenario_name-before-git.txt"
   local after_git="$TMP_ROOT/$scenario_name-after-git.txt"
   local log_file="$TMP_ROOT/$scenario_name.log"
@@ -840,7 +928,19 @@ run_actual_flow() {
   local sprint_contract="${fixture_lines[3]}"
   local qa_report="${fixture_lines[4]}"
 
+  log "actual runtime smoke starting: ${scenario_name} (runtime=${runtime}, mode=${execution_mode})"
+
   initialize_workspace_git "$workspace_root"
+
+  # In-session coordinator skills default to .claude/docs/phase-status.yaml examples.
+  # Point that default location at the fixture status file so the smoke stays bounded.
+  if [[ "$execution_mode" == "in-session-coordinator" ]]; then
+    mkdir -p "$(dirname "$default_status_file")"
+    rm -f "$default_status_file"
+    if ! ln -s "$status_file" "$default_status_file" 2>/dev/null; then
+      cp "$status_file" "$default_status_file"
+    fi
+  fi
 
   local qa_checksum_before
   qa_checksum_before="$(checksum_file "$qa_report")"
@@ -852,71 +952,123 @@ run_actual_flow() {
     dispatch_args+=(--allow-interactive-in-session)
   fi
 
+  local dispatch_exit=0
   if [[ "$execution_mode" == "delegated-terminal" ]]; then
-    if ! (
+    set +e
+    (
       cd "$workspace_root"
-      MOONSHOT_CODEX_REASONING_EFFORT=low \
-        AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
-        AGENT_LOOP_SCORECARD_REQUIRED=false \
-        AGENT_LOOP_WATCHDOG_CHECK_SECONDS=5 AGENT_LOOP_WATCHDOG_MAX_SECONDS=180 \
+      run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+        MOONSHOT_CODEX_REASONING_EFFORT=low \
+        OLLAMA_REQUEST_TIMEOUT_MS="$PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS" \
+          AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
+          AGENT_LOOP_SCORECARD_REQUIRED=false \
+          AGENT_LOOP_WATCHDOG_CHECK_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_RESTARTS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS" \
+        WORKSPACE_ROOT="$REPO_ROOT" \
         bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
-          --execution-mode delegated-terminal \
-          --execution-root "$execution_root" \
-          --status-file "$status_file" \
+            --execution-mode delegated-terminal \
+            --execution-root "$execution_root" \
+            --status-file "$status_file" \
           --runtime "$runtime" \
           ${dispatch_args[@]+"${dispatch_args[@]}"} \
-          > "$log_file" 2>&1
-    ); then
-      tail -80 "$log_file" >&2 || true
-      if grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then
-        record_actual_failure "$scenario_name" "delegated-terminal command timed out"
-      else
-        record_actual_failure "$scenario_name" "delegated-terminal command failed"
-      fi
-      return 1
-    fi
+            > "$log_file" 2>&1
+    )
+    dispatch_exit=$?
+    set -e
   else
-    if ! (
+    set +e
+    (
       cd "$workspace_root"
-      MOONSHOT_CODEX_REASONING_EFFORT=low \
+      run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+        MOONSHOT_CODEX_REASONING_EFFORT=low \
+        OLLAMA_REQUEST_TIMEOUT_MS="$PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS" \
+        WORKSPACE_ROOT="$REPO_ROOT" \
+          AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
+          AGENT_LOOP_SCORECARD_REQUIRED=false \
+          AGENT_LOOP_WATCHDOG_CHECK_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_RESTARTS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS" \
         bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
-        --execution-mode "$execution_mode" \
-        --status-file "$status_file" \
-        --execution-root "$execution_root" \
-        --runtime "$runtime" \
-        ${dispatch_args[@]+"${dispatch_args[@]}"} \
-        --max-attempts 1 \
-        --stop-on-failure > "$log_file" 2>&1
-    ); then
-      tail -80 "$log_file" >&2 || true
-      record_actual_failure "$scenario_name" "in-session-coordinator command failed"
-      return 1
+          --execution-mode "$execution_mode" \
+          --status-file "$status_file" \
+          --execution-root "$execution_root" \
+          --runtime "$runtime" \
+          ${dispatch_args[@]+"${dispatch_args[@]}"} \
+          --max-attempts 1 \
+          --stop-on-failure > "$log_file" 2>&1
+    )
+    dispatch_exit=$?
+    set -e
+  fi
+
+  if [[ "$dispatch_exit" -ne 0 ]]; then
+    tail -80 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    if [[ "$dispatch_exit" -eq 124 ]]; then
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+      fi
+    elif grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+      fi
+    else
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "delegated-terminal command failed after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "in-session-coordinator command failed after $(format_duration "$elapsed_seconds")"
+      fi
     fi
+    return 1
+  fi
+
+  if ! grep -Fq "verification-verdict" "$log_file" && grep -Fq "필수 verification 진입점 경로를 찾지 못해 phase를 진행할 수 없습니다" "$log_file"; then
+    tail -40 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "verification entrypoint was not found after $(format_duration "$elapsed_seconds")"
+    return 1
   fi
 
   snapshot_git_status "$workspace_root" "$after_git"
   if ! assert_allowed_git_changes "$before_git" "$after_git"; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "unexpected git changes detected"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "unexpected git changes detected after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
   if ! grep -Fq "status: completed" "$status_file"; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "phase did not reach completed status"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "phase did not reach completed status after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
   if ! grep -Fq "## Policy Anchors" "$sprint_contract"; then
-    record_actual_failure "$scenario_name" "policy anchors missing from sprint contract"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "policy anchors missing from sprint contract after $(format_duration "$elapsed_seconds")"
     return 1
   fi
   if ! grep -Fq "## Stage Order" "$sprint_contract"; then
-    record_actual_failure "$scenario_name" "stage order missing from sprint contract"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "stage order missing from sprint contract after $(format_duration "$elapsed_seconds")"
     return 1
   fi
   if ! grep -Fq "## Finish Readiness" "$qa_report"; then
-    record_actual_failure "$scenario_name" "finish readiness missing from QA report"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "finish readiness missing from QA report after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
@@ -924,7 +1076,9 @@ run_actual_flow() {
   qa_checksum_after="$(checksum_file "$qa_report")"
   if [[ "$qa_checksum_before" == "$qa_checksum_after" ]]; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "QA report was not updated"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "QA report was not updated after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
@@ -932,15 +1086,22 @@ run_actual_flow() {
   verdict_file="$(latest_new_file "$workspace_root" 'verification-verdict-*.json' "$sentinel")"
   if [[ -z "$verdict_file" ]]; then
     tail -80 "$log_file" >&2 || true
-    record_actual_failure "$scenario_name" "no fresh verification verdict"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "no fresh verification verdict after $(format_duration "$elapsed_seconds")"
     return 1
   fi
   if ! assert_passed_verdict "$verdict_file"; then
-    record_actual_failure "$scenario_name" "verification verdict was not passed"
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "verification verdict was not passed after $(format_duration "$elapsed_seconds")"
     return 1
   fi
 
-  log "actual runtime smoke passed: ${scenario_name}"
+  local elapsed_seconds
+  elapsed_seconds=$(( $(date +%s) - started_at ))
+  record_actual_timing "$scenario_name" "$elapsed_seconds"
+  log "actual runtime smoke passed: ${scenario_name} ($(format_duration "$elapsed_seconds"))"
   return 0
 }
 
@@ -957,6 +1118,9 @@ run_actual_matrix() {
     IFS='|' read -r runtime mode scenario_name <<EOF
 $entry
 EOF
+    if ! target_runtime_selected "$runtime"; then
+      continue
+    fi
     if ! runtime_is_available "$runtime"; then
       warn "skipping ${scenario_name}: runtime unavailable"
       continue
@@ -967,11 +1131,24 @@ EOF
 
 report_failures_and_exit() {
   local item
+  local timing_entry
+  local scenario_name
+  local elapsed_seconds
   local actual_failure_count
   local runtime_failure_count
 
   actual_failure_count="$(array_length ACTUAL_FAILURES)"
   runtime_failure_count="$(array_length RUNTIME_FAILURES)"
+
+  if [[ "$(array_length ACTUAL_TIMINGS)" -gt 0 ]]; then
+    log "actual runtime timings:"
+    for timing_entry in "${ACTUAL_TIMINGS[@]}"; do
+      IFS='|' read -r scenario_name elapsed_seconds <<EOF
+$timing_entry
+EOF
+      log "- ${scenario_name}: $(format_duration "$elapsed_seconds")"
+    done
+  fi
 
   if [[ "$actual_failure_count" -eq 0 ]]; then
     if [[ "$runtime_failure_count" -gt 0 ]]; then
@@ -1027,6 +1204,7 @@ fi
 runtime_cli_prepare_environment
 require_command python3
 require_command shasum
+resolve_target_runtime_set
 
 run_render_matrix
 run_workflow_enforcement_sync_smoke

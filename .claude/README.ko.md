@@ -173,6 +173,8 @@ phase runner 기본 동작:
 - 안전한 plan dir가 없으면 `moonshot-plan-writer`로 `docs/implementation`을 bootstrap합니다.
 - `/moonshot-phase-runner <plan-dir>`는 이제 artifact 준비 후 `moonshot-phase-executor`를 즉시 실행합니다.
 - 준비만 하고 멈추고 싶을 때만 `--prepare-only`를 사용합니다.
+- `delegated-terminal`에서는 executor가 dispatch/agent-loop 경로에 계속 붙어 있어야 하며, partial 1회 요약으로 대체하면 안 됩니다.
+- 기본 auto-start 실행에서는 phase 경계가 반환 경계가 아니며, active plan directory에 남은 actionable phase가 없어질 때까지 계속 진행해야 합니다.
 
 ## 문서와 템플릿
 

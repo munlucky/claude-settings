@@ -127,6 +127,10 @@ curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/insta
 curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/install-claude.sh -o install-claude.sh
 chmod +x install-claude.sh
 
+# Windows는 PowerShell이 아니라 Git Bash에서 실행
+# Git Bash 예시:
+# bash ./install-claude.sh
+
 # 기본 실행 (PROJECT.md는 자동으로 제외됨)
 ./install-claude.sh
 
@@ -144,7 +148,7 @@ chmod +x install-claude.sh
 - `.claude`, `.agents`, `AGENTS.md` 중 존재 항목은 자동 백업 후 설치
 - `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
-- `.claude/skills/*`를 Codex 전역 스킬 경로 `${CODEX_HOME:-~/.codex}/skills/*`에 심볼릭 링크
+- `.claude/skills/*`를 Codex 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에 심볼릭 링크
 
 보호되는 사용자 파일 패턴:
 ```
@@ -186,7 +190,9 @@ custom/
 cp -r claude-settings/.claude /your-project/
 cp claude-settings/.claudeignore /your-project/
 
-# 2. AGENTS 브리지 구성
+# 2. agents/AGENTS 브리지 구성
+mkdir -p /your-project/.agents
+ln -s ../.claude/skills /your-project/.agents/skills
 ln -s .claude/CLAUDE.md /your-project/AGENTS.md
 
 # 3. 부트스트랩 문서 커스터마이징
@@ -208,7 +214,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 
 ### Codex 스킬 동기화
 
-설치 스크립트는 프로젝트 내부 `.agents/skills` 브리지를 만들지 않습니다. 대신 `.claude/skills/*`를 Codex가 실제로 읽는 전역 스킬 경로 `${CODEX_HOME:-~/.codex}/skills/*`에 심볼릭 링크합니다.
+설치 스크립트는 프로젝트 내부 `.agents/skills` 브리지를 다시 구성하면서, 동시에 `.claude/skills/*`를 Codex가 읽는 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에도 심볼릭 링크합니다. `CODEX_HOME`을 지정하지 않으면 현재 프로젝트 루트의 `.codex`를 사용합니다.
 
 Codex에서 바로 활용할 수 있는 스킬 예시:
 - 계획 검증: `codex-validate-plan`
@@ -222,7 +228,7 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 ### 다음 단계
 
 1. `.claude/PROJECT.md`를 프로젝트에 맞게 수정
-2. Git에 커밋: `git add .claude && git commit -m "Add Claude Code settings"`
+2. Git에 커밋: `git add .claude .agents .claudeignore AGENTS.md && git commit -m "Add Claude Code settings"`
 3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
 
 직접 스킬을 지정해서 실행하는 경우:

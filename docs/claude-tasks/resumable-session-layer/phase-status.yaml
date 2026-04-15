@@ -1,0 +1,56 @@
+schemaVersion: "1.0"
+masterPlan: ".claude/docs/tasks/resumable-session-layer/implementation/00-master-plan-v1.md"
+autonomousMode: true
+executionMode: "manual-closeout"
+executionRoot: ".claude/docs/tasks/resumable-session-layer/execution"
+preparedAt: "2026-04-09T14:21:36+09:00"
+initiativeStatus: completed
+pendingPhases: 0
+phaseRunnerResultFile: ".claude/docs/tasks/resumable-session-layer/phase-runner-result.yaml"
+lastDispatchAt: "2026-04-09T05:40:20Z"
+workflowEvidenceFile: ".claude/logs/workflow-enforcement/latest-dispatch.json"
+workflowSelectedBundles: "ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"
+workflowRequiredSkills: "moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"
+phases:
+  - number: 1
+    title: "Resume Contract And State Model"
+    status: completed
+    planConfirmed: true
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-04-09T14:44:09+0900"
+    sprintContract: ".claude/docs/tasks/resumable-session-layer/execution/01-phase-01-resume-contract-and-state-model-v1/SPRINT_CONTRACT.md"
+    qaReport: ".claude/docs/tasks/resumable-session-layer/execution/01-phase-01-resume-contract-and-state-model-v1/QA_REPORT.md"
+    handoff: ".claude/docs/tasks/resumable-session-layer/execution/01-phase-01-resume-contract-and-state-model-v1/HANDOFF.md"
+    scorecard: ".claude/docs/tasks/resumable-session-layer/execution/01-phase-01-resume-contract-and-state-model-v1/SCORECARD.md"
+  - number: 2
+    title: "Event Telemetry And Artifact Linkage"
+    status: completed
+    planConfirmed: true
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-04-09T15:08:00+0900"
+    sprintContract: ".claude/docs/tasks/resumable-session-layer/execution/02-event-telemetry-and-artifact-linkage/SPRINT_CONTRACT.md"
+    qaReport: ".claude/docs/tasks/resumable-session-layer/execution/02-event-telemetry-and-artifact-linkage/QA_REPORT.md"
+    handoff: ".claude/docs/tasks/resumable-session-layer/execution/02-event-telemetry-and-artifact-linkage/HANDOFF.md"
+    scorecard: ".claude/docs/tasks/resumable-session-layer/execution/02-event-telemetry-and-artifact-linkage/SCORECARD.md"
+  - number: 3
+    title: "Harness Integration And Recovery Proof"
+    status: completed
+    planConfirmed: true
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-04-09T15:09:00+0900"
+    sprintContract: ".claude/docs/tasks/resumable-session-layer/execution/03-harness-integration-and-recovery-proof/SPRINT_CONTRACT.md"
+    qaReport: ".claude/docs/tasks/resumable-session-layer/execution/03-harness-integration-and-recovery-proof/QA_REPORT.md"
+    handoff: ".claude/docs/tasks/resumable-session-layer/execution/03-harness-integration-and-recovery-proof/HANDOFF.md"
+    scorecard: ".claude/docs/tasks/resumable-session-layer/execution/03-harness-integration-and-recovery-proof/SCORECARD.md"
+
+signals:
+  phaseAttemptMode: true
+completedAt: "2026-04-09T15:09:00+0900"
+artifacts:
+  activePhaseDocPath: null

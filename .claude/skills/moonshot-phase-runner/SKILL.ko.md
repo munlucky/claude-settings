@@ -25,6 +25,24 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 실행 시작 정책:
 - 기본값: 준비가 끝나면 즉시 실행까지 자동 시작
 - `--prepare-only`: 상태만 준비하고 실행 메타데이터만 반환
+- `delegated-terminal`에서는 준비 직후 실제 dispatch/agent-loop를 현재 세션에서 실행하고, loop가 끝나기 전에는 단발 요약으로 반환하지 않습니다.
+
+의도 해석 규칙:
+- "계속 진행", "개선작업 진행", "바로 실행", "phase 실행" 같은 표현은 package 준비 의도가 아니라 실행 의도로 해석합니다.
+- 사용자가 명시적으로 planning/package-only 동작을 요청하거나 `--prepare-only`를 준 경우가 아니면 `prepareOnly: false`, `autoStartExecution: true`로 처리해야 합니다.
+- Codex처럼 끝까지 끊김 없이 밀어야 하는 런타임에서는, 사용자가 interactive coordination을 원하거나 런타임 제약이 있는 경우가 아니면 `in-session-coordinator`보다 `delegated-terminal`을 우선합니다.
+
+plan-directory 완료 규칙:
+- 기본 auto-start 실행의 경계는 현재 phase 하나가 아니라 active plan directory 전체입니다.
+- `phase-status.yaml`에 `pending`, `in_progress`, 또는 재시도 가능한 `failed` phase가 하나라도 남아 있으면 delegated-terminal 또는 in-session coordinator 루프를 계속 유지해야 합니다.
+- phase 하나가 완료됐다는 사실만으로는 반환 경계가 되지 않습니다.
+
+review / finish gate 규칙:
+- 필수 review와 finish-closeout 단계가 실제로 실행되기 전에는 phase package를 완료로 취급하면 안 됩니다.
+- 코드 변경 phase는 `codex-review-code`가 applied workflow evidence에 기록되기 전까지 `clean_finish`를 허용하면 안 됩니다.
+- `QA_REPORT.md`에서 `Review completed: no` 인 상태로 `Next path: clean_finish`를 선언하면 안 됩니다.
+- phase closeout 시 `HANDOFF.md`와 closeout 필드는 seeded/placeholder 상태로 남아 있으면 안 됩니다.
+- review 또는 closeout evidence가 비어 있으면 요약을 반환하지 말고, active plan-directory loop 안에서 빠진 단계를 보완해야 합니다.
 
 ## Workflow
 
@@ -37,7 +55,8 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
   5. Plan Review
   6. 실행 모드 결정
   7. 실행 스킬 자동 시작
-  8. phaseRunnerResult 반환
+  8. review / finish gate 강제
+  9. phaseRunnerResult 반환
 ```
 
 ## Step 1: 계획 디렉토리 결정
@@ -49,6 +68,7 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 4. 그 외에는 `/moonshot-plan-writer`를 실행해 `docs/implementation`을 생성/갱신
 
 후보가 여러 개이고 active plan이 명확하지 않으면 추측하지 말고 사용자에게 물어야 합니다.
+`<plan-dir>/close/` 아래의 archived phase 문서는 이력이며 active phase 후보로 세지지 않습니다.
 
 ## Step 2: 계획 디렉토리 검증
 
@@ -59,6 +79,7 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 ## Step 3: phase-status.yaml 생성
 
 각 phase 상태를 `pending`으로 초기화하고, execution artifact 경로를 기록합니다.
+phase가 `completed`가 되면 해당 phase 문서는 `<plan-dir>/close/`로 이관하고, `phase-status.yaml`에는 `archivedPhaseDoc`를 남겨 active phase 탐색을 오염시키지 않습니다.
 
 ## Step 4: Execution Bridge 아티팩트 시드
 
@@ -98,6 +119,9 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 ### delegated-terminal
 - `.claude/scripts/moonshot-phase-dispatch.sh`를 통해 `agent-loop.sh`를 사용합니다.
 - 자율 루프, 재시도, phase score gating이 필요한 실행의 기본 경로입니다.
+- `partial`, `retry`, 체크포인트 문서 갱신, handoff 작성만으로는 멈추지 않습니다.
+- 이 모드에서는 실제 loop exit가 생길 때만 반환합니다: 전체 완료, retry cap 도달, 명시적 사용자 중지, 또는 루프가 기록한 실제 blocker.
+- 어떤 phase가 `completed`가 되더라도 같은 plan directory에 actionable phase가 남아 있으면 즉시 다음 phase로 이어가야 합니다.
 
 ### in-session-coordinator
 - 메인 세션은 얇은 coordinator로 남고, 각 시도는 fresh attempt로 실행합니다.
@@ -115,6 +139,14 @@ phaseRunnerResult:
   masterPlan: "docs/implementation/00-master-plan.md"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
+```
+
+closeout 메타데이터 예시:
+
+```yaml
+  - number: 1
+    status: completed
+    archivedPhaseDoc: "docs/implementation/close/01-project-setup.md"
 ```
 
 attempt 계약 예시:
@@ -151,5 +183,8 @@ attemptResult:
 - phase 기반 작업은 bounded direct path보다 이 스킬을 우선합니다.
 - long-running execution에서는 `delegated-terminal`을 기본 경로로 봅니다.
 - execution bridge가 준비되지 않았으면 phase 실행을 시작하지 않습니다.
+- `prepareOnly != true` 이고 `executionMode == delegated-terminal`이면 `moonshot-phase-executor`는 실제 dispatch command를 즉시 실행해야 하며, 한 번의 conversational 구현 라운드로 대체하면 안 됩니다.
+- active plan directory에 남은 phase가 있으면 completed phase 경계에서 사용자 진행 보고만 하고 반환하면 안 됩니다.
 - phase 완료는 검증 통과만으로 충분하지 않습니다.
 - phase 완료는 score verdict가 `done`이고 target score를 충족하며 checklist 미충족과 blocking defect가 0일 때만 가능합니다.
+- 사용자의 최신 요청이 실행 의도였는데도 `prepareOnly: true`로 반환됐다면 계약 위반으로 보고, prepared-only 요약을 반환하지 말고 auto-start 실행 경로로 바로 교정해야 합니다.
