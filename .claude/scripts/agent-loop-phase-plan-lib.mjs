@@ -343,7 +343,7 @@ Codex direct execution checklist:
    기본 인자만 넣어도 동작합니다.
    예: \`python3 .claude/scripts/write-verification-verdict.py --output .claude/verification-verdict-phase02-final.json --run-id phase02-final --phase-number 2\`
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
-8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
+8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence. Keep \`Selected bundles\` as canonical bundle ids and keep \`Next path\` within the allowed values only.
 9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
 10. Stop only when verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, and SCORECARD.md says \`Verdict: done\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
 
@@ -386,6 +386,8 @@ Single isolated phase-attempt rules:
 - Update SCORECARD.md on every meaningful round using objective checklist status, current score, unmet items, and verdict.
 - Refresh SCORECARD.md again after verification or any remediation so progress is visible while the phase is still running.
 - Refresh the default values in the "Workflow Execution" section of QA_REPORT.md when actual execution diverges.
+- In QA_REPORT.md, keep \`Selected bundles\` as comma-separated bundle ids such as \`ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle\`; do not replace that field with stage-order prose.
+- In QA_REPORT.md, \`Next path\` may only be \`clean_finish\`, \`retry_loop\`, or \`resume_later_handoff\`. While the phase is still active and verification is not done, keep \`Next path: retry_loop\`.
 - In QA_REPORT.md, use only these closeout reason codes: \`scope_complete\`, \`verification_failed\`, \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
 - If QA_REPORT.md uses \`Next path: retry_loop\`, it must also use \`Closeout reason: verification_failed\`.
 - In HANDOFF.md, use only these stop reason codes: \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.

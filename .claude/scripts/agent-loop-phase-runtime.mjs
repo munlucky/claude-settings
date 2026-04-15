@@ -118,9 +118,12 @@ function detectVerificationCommandMissing(logFile) {
   if (text.includes('VERIFICATION_COMMAND_MISSING')) {
     return true;
   }
-  const missingBinary = /No such file or directory|command not found|No such file|is not found/i.test(text);
-  const mentionsVerifier = text.includes('.claude/agents/verification/verify-changes.sh') || text.includes('.claude/agents/verification/run-verify-changes.sh');
-  return missingBinary && mentionsVerifier;
+  return [
+    /unable to locate \.claude\/agents\/verification\/verify-changes\.sh/i,
+    /(?:bash|zsh): .*\.claude\/agents\/verification\/(?:run-verify-changes|verify-changes)\.sh: No such file or directory/i,
+    /(?:bash|zsh): .*\.claude\/agents\/verification\/(?:run-verify-changes|verify-changes)\.sh: command not found/i,
+    /cannot execute: .*\.claude\/agents\/verification\/(?:run-verify-changes|verify-changes)\.sh/i,
+  ].some((pattern) => pattern.test(text));
 }
 
 function detectToolSchemaErrorLoop(logFile, guardRaw = '2') {

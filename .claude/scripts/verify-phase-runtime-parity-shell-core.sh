@@ -548,6 +548,7 @@ seed_fixture() {
   local sprint_contract="$phase_dir/SPRINT_CONTRACT.md"
   local qa_report="$phase_dir/QA_REPORT.md"
   local handoff="$phase_dir/HANDOFF.md"
+  local scorecard="$phase_dir/SCORECARD.md"
   local status_file="$fixture_root/phase-status.yaml"
 
   mkdir -p "$phase_dir"
@@ -581,6 +582,8 @@ EOF
 2. Write an attempt-started checkpoint to \`QA_REPORT.md\` before broader inspection or long-running commands.
 3. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
 4. Record the runtime/mode in \`QA_REPORT.md\` and keep the \`## Workflow Execution\` section current.
+   - Keep \`Selected bundles\` as canonical bundle ids, not stage-order prose.
+   - While the phase is still active, keep \`Next path: retry_loop\` until clean finish is actually earned.
 5. Run the verification command exactly once for fresh evidence.
 6. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
 7. Refresh \`SCORECARD.md\` and \`QA_REPORT.md\` again after verification instead of batching every artifact update at the end.
@@ -680,7 +683,9 @@ EOF
 ## Verdict
 - Status: pending
 - Summary: awaiting runtime execution
+- Scope status: partial
 - Next path: retry_loop
+- Closeout reason: verification_failed
 
 ## Review Checkpoint
 - Review completed: no
@@ -710,8 +715,13 @@ EOF
 
 ## Finish Readiness
 - Fresh evidence confirmed: no
+- Why this round may stop now: the phase is still waiting for its first execution attempt and verification run.
+- Remaining in-scope work: execute the active phase, run the exact verification command once, and refresh closeout artifacts.
 - Remaining blockers before closeout:
+  - execution has not started yet
+  - fresh verification evidence is not recorded yet
 - Checks to rerun if code changes again:
+  - rerun the exact verification command from the sprint contract
 EOF
 
   cat > "$handoff" <<EOF
@@ -739,6 +749,37 @@ EOF
 - session-logger: required on incomplete stop
 EOF
 
+  cat > "$scorecard" <<EOF
+# Phase 01 Scorecard
+
+> Objective completion score for phase 01. Update after every meaningful implementation or verification round.
+> Preset profile: platform (Platform / infra / refactor)
+> Profile selection: auto:keywords:platform
+> Coverage rebalance: counts:absent
+
+## Objective Checklist
+| ID | Category | Weight | Status | Evidence | Notes |
+|----|----------|--------|--------|----------|-------|
+| OBJ-REQ | In-scope platform or infrastructure changes covered | 25 | pending | ${qa_report} | REQ-* coverage; detected=0 |
+| OBJ-SCN | Critical rollout, rollback, and failure scenarios evidenced | 10 | pending | ${qa_report} | SCN-* coverage; detected=0 |
+| OBJ-VER | Required verification and operational checks passed | 45 | pending | ${qa_report} | Fresh contract-backed evidence |
+| OBJ-CLOSE | Runbook, risk notes, and handoff recorded | 20 | pending | ${qa_report} | Review + finish evidence present |
+
+## Score Summary
+- Current score: 0
+- Target score: 100
+- Unmet checklist items: 4
+- Blocking defects: 0
+- Verdict: retry
+
+## Loop Policy
+- \`done\` requires Current score >= Target score
+- \`done\` requires Unmet checklist items = 0
+- \`done\` requires Blocking defects = 0
+- \`blocked\` means environment, contract, or dependency prevents progress
+- \`retry\` means continue the active phase only
+EOF
+
   cat > "$status_file" <<EOF
 schemaVersion: "1.0"
 masterPlan: "${master_plan}"
@@ -756,9 +797,10 @@ phases:
     sprintContract: "${sprint_contract}"
     qaReport: "${qa_report}"
     handoff: "${handoff}"
+    scorecard: "${scorecard}"
 EOF
 
-  printf '%s\n' "$plan_dir" "$execution_root" "$status_file" "$sprint_contract" "$qa_report" "$handoff"
+  printf '%s\n' "$plan_dir" "$execution_root" "$status_file" "$sprint_contract" "$qa_report" "$handoff" "$scorecard"
 }
 
 run_render_matrix() {
@@ -794,6 +836,7 @@ run_render_matrix() {
   local sprint_contract="${fixture_lines[3]}"
   local qa_report="${fixture_lines[4]}"
   local handoff="${fixture_lines[5]}"
+  local scorecard="${fixture_lines[6]}"
 
   (
     cd "$REPO_ROOT"
@@ -817,6 +860,7 @@ run_render_matrix() {
   assert_contains "$sprint_contract" "Verification contract:" "verification contract anchor"
   assert_contains "$qa_report" "## Finish Readiness" "finish readiness section"
   assert_contains "$handoff" "## Checks To Rerun" "handoff rerun section"
+  assert_contains "$scorecard" "## Score Summary" "scorecard summary section"
 
   local closeout_prompt="$TMP_ROOT/closeout-remediation.txt"
   (

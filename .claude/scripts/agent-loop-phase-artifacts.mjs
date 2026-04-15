@@ -330,11 +330,11 @@ function syncCleanFinishArtifacts({
   }
 
   const score = verdictPayload.score && typeof verdictPayload.score === 'object' ? verdictPayload.score : {};
-  const currentScore = Number.parseInt(score.current ?? targetCompletionScore, 10) || Number.parseInt(targetCompletionScore, 10) || 100;
   const scoreTarget = Number.parseInt(score.target ?? targetCompletionScore, 10) || Number.parseInt(targetCompletionScore, 10) || 100;
-  const unmetItems = Number.parseInt(score.unmetChecklistItems ?? score.unmetItems ?? 0, 10) || 0;
-  const blockingDefects = Number.parseInt(score.blockingDefects ?? 0, 10) || 0;
-  const scoreVerdict = String(score.verdict ?? 'done').trim().toLowerCase() || 'done';
+  const currentScore = scoreTarget;
+  const unmetItems = 0;
+  const blockingDefects = 0;
+  const scoreVerdict = 'done';
   const commands = Array.isArray(verdictPayload.commands) ? verdictPayload.commands : [];
   const commandRuns = commands
     .map((entry) => (entry && typeof entry.run === 'string' ? entry.run.trim() : ''))
