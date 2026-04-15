@@ -175,6 +175,8 @@ Invalid handoff reasons:
 - "checkpoint reached"
 - "docs updated"
 - "QA recorded"
+- "one phase completed"
+- "time to send a mid-run progress report"
 - any equivalent milestone-only phrasing without a real stop condition
 
 Default finish-stage responsibilities:

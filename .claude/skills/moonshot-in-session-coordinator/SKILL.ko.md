@@ -179,6 +179,12 @@ attemptResult:
   - `HANDOFF.md`는 최신 상태로 남깁니다.
 - 모든 phase가 끝나면 성공 요약을 반환합니다.
 
+반환 직전 self-check:
+- 성공 요약이나 진행 요약을 반환하기 전에 `phase-status.yaml`을 다시 읽어 actionable phase가 남아 있는지 확인합니다.
+- actionable phase가 남아 있으면 방금 끝낸 phase 보고를 반환 경계로 쓰지 말고 즉시 다음 phase 루프로 이어갑니다.
+- phase 하나 완료, checkpoint 문서 갱신, 중간 진행 보고는 유효한 stop boundary가 아닙니다.
+- coordinator가 이 규칙을 어기고 0으로 조기 종료하더라도 dispatcher가 재시작하도록 설계되어야 하며, 그 상황 자체를 계약 위반으로 봅니다.
+
 ## 출력
 
 ```yaml
@@ -204,6 +210,7 @@ coordinatorResult:
 - attempt agent는 재귀적 `moonshot-phase-runner` 삽입을 피하기 위해 반드시 `phaseAttemptMode=true`로 `moonshot-orchestrator`를 실행해야 합니다.
 - strict/meta-harness 작업에서는 active `SPRINT_CONTRACT.md`에 policy anchors가 없으면 새 attempt를 시작하지 않습니다.
 - `attemptResult.status=completed`라도 해당 시도의 verifier evidence가 최신이고 contract 기준으로 완전하며 score도 완료일 때만 phase 완료로 반영합니다.
+- clean success 반환 경계는 active plan directory 완료뿐입니다. actionable phase가 남아 있으면 진행 보고 대신 계속 실행합니다.
 
 ## References
 

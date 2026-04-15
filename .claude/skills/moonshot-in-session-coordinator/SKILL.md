@@ -195,6 +195,12 @@ phases:
   - leave `HANDOFF.md` updated
 - If all phases complete, return success summary.
 
+Pre-return self-check:
+- Before returning any success or progress summary, re-read `phase-status.yaml` and confirm that no actionable phase remains.
+- If another actionable phase exists, do not use the just-completed phase as a return boundary; continue directly into the next phase loop.
+- One completed phase, refreshed checkpoint artifacts, or a mid-run progress report are not valid stop boundaries.
+- If the coordinator still exits 0 early, the dispatcher should restart it while actionable phases remain; treat that early exit as a contract violation.
+
 ## Output
 
 ```yaml
@@ -221,6 +227,7 @@ coordinatorResult:
 - Attempt agents must run `moonshot-orchestrator` in `phaseAttemptMode=true` to avoid recursive `moonshot-phase-runner` insertion.
 - Do not spawn a new attempt for strict/meta-harness work until the active `SPRINT_CONTRACT.md` contains policy anchors.
 - Do not translate `attemptResult.status=completed` into a completed phase unless the verifier evidence for that attempt is fresh, contract-complete, and score-complete.
+- The only clean success boundary is active plan-directory completion. If any actionable phase remains, continue execution instead of returning a progress summary.
 
 ## References
 

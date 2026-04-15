@@ -30,3 +30,9 @@ stageContract:
     - "Refresh QA_REPORT.md and SCORECARD.md at stage transitions instead of batching all artifact updates until the very end."
     - "In QA_REPORT.md, use only these closeout reason codes: scope_complete, verification_failed, blocked, interrupted, context_limit, user_pause, deferred_verification. If Next path is retry_loop, Closeout reason must be verification_failed."
     - "In HANDOFF.md, use only these stop reason codes: blocked, interrupted, context_limit, user_pause, deferred_verification."
+
+completionBoundary:
+  rules:
+    - "The only clean success boundary is active plan-directory completion: no actionable phase remains in the supplied phaseStatusFile."
+    - "A completed active phase, refreshed checkpoint artifacts, or a progress summary are not valid return boundaries by themselves while another actionable phase remains."
+    - "Before returning success or a final summary, re-read the supplied phaseStatusFile and continue into the next actionable phase when one exists."

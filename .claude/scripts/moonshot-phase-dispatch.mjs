@@ -25,10 +25,15 @@ const state = {
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
 };
 
-const MAX_DELEGATED_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS ?? '32', 10) || 32;
+const MAX_PLAN_COMPLETION_RESTARTS = Number.parseInt(
+  process.env.PHASE_DISPATCH_MAX_PLAN_COMPLETION_RESTARTS
+    ?? process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS
+    ?? '32',
+  10,
+) || 32;
 
 function showHelp() {
-  console.log(`Usage:
+  process.stdout.write(`Usage:
   ./moonshot-phase-dispatch.sh <plan-dir> [options]
 
 Options:
@@ -42,15 +47,15 @@ Options:
   --autonomous              Reserved for compatibility (agent-loop is autonomous by default)
   --allow-interactive-in-session
                             Keep in-session-coordinator on Codex instead of falling back
-  --dry-run                 Print resolved command without executing`);
+  --dry-run                 Print resolved command without executing\n`);
 }
 
 function logInfo(message) {
-  console.log(`INFO: ${message}`);
+  process.stdout.write(`INFO: ${message}\n`);
 }
 
 function logWarn(message) {
-  console.log(`WARN: ${message}`);
+  process.stdout.write(`WARN: ${message}\n`);
 }
 
 function logError(message) {
@@ -324,7 +329,7 @@ function runDelegatedTerminal(resolvedRoot) {
   const cmd = ['node', '.claude/scripts/agent-loop.mjs', state.planDir, '--status-file', state.statusFile, '--execution-root', resolvedRoot, '--runtime', state.runtime];
 
   if (state.dryRun) {
-    console.log(cmd.join(' '));
+    process.stdout.write(`${cmd.join(' ')}\n`);
     return;
   }
 
@@ -349,13 +354,13 @@ function runDelegatedTerminal(resolvedRoot) {
 
         if (actionable) {
           restartCount += 1;
-          if (restartCount > MAX_DELEGATED_RESTARTS) {
-            logError(`Delegated-terminal exited cleanly ${MAX_DELEGATED_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
+          if (restartCount > MAX_PLAN_COMPLETION_RESTARTS) {
+            logError(`Delegated-terminal exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
             process.exit(1);
             return;
           }
 
-          logWarn(`Delegated-terminal exited before the active plan directory was complete. Restarting autonomous loop (${restartCount}/${MAX_DELEGATED_RESTARTS}).`);
+          logWarn(`Delegated-terminal exited before the active plan directory was complete. Restarting autonomous loop (${restartCount}/${MAX_PLAN_COMPLETION_RESTARTS}).`);
           launch();
           return;
         }
@@ -415,46 +420,76 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
   }
 
   if (state.dryRun) {
-    console.log(cmd.join(' '));
+    process.stdout.write(`${cmd.join(' ')}\n`);
     return;
   }
 
   const forkUnavailablePattern = /collab spawn failed|parent thread rollout unavailable for fork/i;
-  let fallbackToDelegated = false;
+  let restartCount = 0;
   let fallbackNoticeEmitted = false;
-  const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
 
-  const handleCoordinatorOutput = (chunk, targetStream) => {
-    const text = String(chunk);
-    targetStream.write(text);
-    if (effectiveRuntime !== 'codex' || fallbackToDelegated) {
-      return;
-    }
-    if (!forkUnavailablePattern.test(text)) {
-      return;
-    }
-    fallbackToDelegated = true;
-    if (!fallbackNoticeEmitted) {
-      fallbackNoticeEmitted = true;
-      logWarn('Codex in-session-coordinator could not fork a fresh attempt from this rollout. Falling back to delegated-terminal for uninterrupted execution.');
-    }
-    terminatePid(child.pid);
+  const launch = () => {
+    let fallbackToDelegated = false;
+    const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const handleCoordinatorOutput = (chunk, targetStream) => {
+      const text = String(chunk);
+      targetStream.write(text);
+      if (effectiveRuntime !== 'codex' || fallbackToDelegated) {
+        return;
+      }
+      if (!forkUnavailablePattern.test(text)) {
+        return;
+      }
+      fallbackToDelegated = true;
+      if (!fallbackNoticeEmitted) {
+        fallbackNoticeEmitted = true;
+        logWarn('Codex in-session-coordinator could not fork a fresh attempt from this rollout. Falling back to delegated-terminal for uninterrupted execution.');
+      }
+      terminatePid(child.pid);
+    };
+
+    child.stdout.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stdout));
+    child.stderr.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stderr));
+    child.on('exit', (code, signal) => {
+      if (fallbackToDelegated) {
+        recordDispatchEvidence('delegated-terminal', resolvedRoot, masterPlan);
+        runDelegatedTerminal(resolvedRoot);
+        return;
+      }
+      if (signal) {
+        process.kill(process.pid, signal);
+        return;
+      }
+
+      const exitCode = code ?? 0;
+      if (exitCode === 0) {
+        let actionable = false;
+        try {
+          actionable = actionablePhaseExists();
+        } catch (error) {
+          logWarn(`Unable to inspect remaining phases after in-session-coordinator exit: ${error.message}`);
+        }
+
+        if (actionable) {
+          restartCount += 1;
+          if (restartCount > MAX_PLAN_COMPLETION_RESTARTS) {
+            logError(`In-session-coordinator exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
+            process.exit(1);
+            return;
+          }
+
+          logWarn(`In-session-coordinator exited before the active plan directory was complete. Restarting coordinator (${restartCount}/${MAX_PLAN_COMPLETION_RESTARTS}).`);
+          launch();
+          return;
+        }
+      }
+
+      process.exit(exitCode);
+    });
   };
 
-  child.stdout.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stdout));
-  child.stderr.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stderr));
-  child.on('exit', (code, signal) => {
-    if (fallbackToDelegated) {
-      recordDispatchEvidence('delegated-terminal', resolvedRoot, masterPlan);
-      runDelegatedTerminal(resolvedRoot);
-      return;
-    }
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 0);
-  });
+  launch();
 }
 
 function parseArgs(argv) {

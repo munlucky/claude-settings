@@ -177,6 +177,8 @@ Complex 또는 long-running work:
 - "checkpoint까지 왔음"
 - "문서 정리 완료"
 - "QA 반영 완료"
+- "phase 하나 끝났음"
+- "중간 진행 보고를 보낼 타이밍"
 - 실제 중단 조건 없이 마일스톤만 언급하는 표현 전부
 
 기본 finish-stage 책임:
