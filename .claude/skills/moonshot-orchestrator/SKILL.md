@@ -408,6 +408,7 @@ Run `decisions.skillChain` in order.
 - If `phaseRunnerResult.executionMode == delegated-terminal`, the execution path must launch `phaseRunnerResult.executionCommand` and remain attached to the dispatcher/agent loop until that loop exits.
 - Do not downgrade delegated-terminal into a single conversational implementation round just because artifacts or checkpoints were updated.
 - Do not treat a completed phase as a return boundary while the active plan directory still contains `pending`, `in_progress`, or retryable `failed` phases.
+- In auto-start execution, keep a live `phase-run-lease` attached to the run and require `assert-return-allowed` to pass before any success summary can escape the dispatcher boundary.
 - If `moonshot-phase-runner` returns `phaseRunnerResult.executionMode == in-session-coordinator`:
   - set `signals.phaseLoopInSession = true`
   - keep the main session in coordinator mode only

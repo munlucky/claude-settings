@@ -2,7 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt } from './agent-loop-phase-plan-lib.mjs';
 
@@ -11,9 +11,11 @@ const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
 const phasePlanPath = path.join(scriptDir, 'agent-loop-phase-plan.mjs');
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const phaseRunnerPath = path.join(scriptDir, 'agent-loop-phase-runner.mjs');
+const phaseRunLeasePath = path.join(scriptDir, 'phase-run-lease.mjs');
 const logDir = '.claude/logs/agent-loop';
 const decisionLog = path.join(logDir, 'decisions.md');
 const summaryReport = path.join(logDir, 'summary.md');
+const LEASE_HEARTBEAT_INTERVAL_MS = Number.parseInt(process.env.PHASE_RUN_LEASE_HEARTBEAT_MS ?? '60000', 10) || 60000;
 
 const state = {
   planDir: '',
@@ -23,6 +25,7 @@ const state = {
   maxPhases: 0,
   delaySeconds: 3,
   dryRun: false,
+  runLeaseId: '',
 };
 
 function runNodeScript(scriptPath, args, options = {}) {
@@ -42,12 +45,74 @@ function runNodeScript(scriptPath, args, options = {}) {
   };
 }
 
+function writeStdout(line = '') {
+  process.stdout.write(`${line}\n`);
+}
+
+function shellUnquote(value) {
+  if (!value) {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed;
+  }
+  return trimmed.slice(1, -1).replace(/'\\''/g, "'");
+}
+
+function parseAssignments(output) {
+  const assignments = {};
+  for (const rawLine of (output ?? '').split(/\r?\n/)) {
+    const separator = rawLine.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    assignments[rawLine.slice(0, separator)] = shellUnquote(rawLine.slice(separator + 1));
+  }
+  return assignments;
+}
+
+function runLeaseScript(command, args, { allowFailure = false } = {}) {
+  const result = spawnSync('node', [phaseRunLeasePath, command, ...args], {
+    encoding: 'utf8',
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if ((result.status ?? 0) !== 0 && !allowFailure) {
+    throw new Error(result.stderr || `phase-run-lease command failed: ${command}`);
+  }
+
+  return parseAssignments(result.stdout);
+}
+
+function heartbeatRunLease(currentStage, phaseNum = '', phaseTitle = '', completionStatus = 'running') {
+  if (state.dryRun || !state.runLeaseId) {
+    return;
+  }
+
+  try {
+    runLeaseScript('heartbeat', [
+      state.statusFile,
+      state.runLeaseId,
+      currentStage,
+      String(phaseNum ?? ''),
+      phaseTitle ?? '',
+      completionStatus,
+    ], { allowFailure: true });
+  } catch (error) {
+    logWarn(`Unable to heartbeat phase run lease: ${error.message}`);
+  }
+}
+
 function syncRuntimeEnvironment() {
   runNodeScript(runtimeCliPath, ['sync-wsl-codex-auth'], { stdio: 'ignore' });
 }
 
 function showHelp() {
-  console.log(`# Called from within Claude Code main session.
+  writeStdout(`# Called from within Claude Code main session.
 #
 # Usage:
 #   ./agent-loop.sh <plan-dir> [options]
@@ -59,6 +124,7 @@ function showHelp() {
 #   --status-file     Path to phase-status.yaml (default: .claude/docs/phase-status.yaml)
 #   --execution-root  Directory for execution bridge artifacts (default: <plan-dir>/execution)
 #   --runtime         Runner CLI: auto|claude|codex (default: auto)
+#   --run-lease-id    Lease id propagated from the dispatcher
 #   --max-phases N    Maximum phases to run (default: all)
 #   --delay N         Delay between phases in seconds (default: 3)
 #   --dry-run         Print what would be executed without running
@@ -91,6 +157,9 @@ function parseArgs(argv) {
         break;
       case '--dry-run':
         state.dryRun = true;
+        break;
+      case '--run-lease-id':
+        state.runLeaseId = args.shift() ?? '';
         break;
       case '--help':
       case '-h':
@@ -220,17 +289,32 @@ Primary objective:
   });
 }
 
-function runPhaseRunnerOnce(argv) {
-  const result = spawnSync('node', [phaseRunnerPath, ...argv], {
-    stdio: 'inherit',
+function runPhaseRunnerOnce(argv, { nextPhase, phaseTitle }) {
+  return new Promise((resolve) => {
+    const child = spawn('node', [phaseRunnerPath, ...argv], {
+      stdio: 'inherit',
+    });
+    const heartbeatTimer = state.runLeaseId
+      ? setInterval(() => {
+        heartbeatRunLease('execute', nextPhase, phaseTitle, 'running');
+      }, LEASE_HEARTBEAT_INTERVAL_MS)
+      : null;
+
+    child.on('error', (error) => {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+      }
+      console.error(`ERROR: failed to start agent-loop phase runner: ${error.message}`);
+      resolve(1);
+    });
+
+    child.on('exit', (code) => {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+      }
+      resolve(code ?? 0);
+    });
   });
-
-  if (result.error) {
-    console.error(`ERROR: failed to start agent-loop phase runner: ${result.error.message}`);
-    process.exit(1);
-  }
-
-  return result.status ?? 0;
 }
 
 function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc }) {
@@ -257,11 +341,11 @@ function sleep(milliseconds) {
 }
 
 function logInfo(message) {
-  console.log(`\u001b[0;34mℹ️\u001b[0m ${message}`);
+  writeStdout(`\u001b[0;34mℹ️\u001b[0m ${message}`);
 }
 
 function logWarn(message) {
-  console.log(`\u001b[1;33m⚠️\u001b[0m ${message}`);
+  writeStdout(`\u001b[1;33m⚠️\u001b[0m ${message}`);
 }
 
 function logError(message) {
@@ -357,31 +441,31 @@ function handleStaleInProgressPhases() {
 }
 
 function printLoopHeader({ masterPlan, runtime, totalPhases }) {
-  console.log('');
-  console.log('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
-  console.log('\u001b[0;36m  Agent Loop Started\u001b[0m');
-  console.log('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
-  console.log('');
+  writeStdout('');
+  writeStdout('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+  writeStdout('\u001b[0;36m  Agent Loop Started\u001b[0m');
+  writeStdout('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+  writeStdout('');
   logInfo(`Plan directory: ${state.planDir}`);
   logInfo(`Master plan: ${masterPlan}`);
   logInfo(`Status file: ${state.statusFile}`);
   logInfo(`Execution root: ${state.executionRoot}`);
   logInfo(`Runtime: ${runtime}`);
   logInfo(`Total phases: ${totalPhases}`);
-  console.log('');
+  writeStdout('');
 }
 
 function printLoopFooter({ completed, failed }) {
-  console.log('');
-  console.log('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
-  console.log('\u001b[0;36m  Agent Loop Completed\u001b[0m');
-  console.log('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
-  console.log('');
+  writeStdout('');
+  writeStdout('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+  writeStdout('\u001b[0;36m  Agent Loop Completed\u001b[0m');
+  writeStdout('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+  writeStdout('');
   logInfo(`Phases completed: ${completed}`);
   if (failed > 0) {
     logError(`Phases failed: ${failed}`);
   }
-  console.log('');
+  writeStdout('');
   logInfo(`Summary report: ${summaryReport}`);
   logInfo(`Decision log: ${decisionLog}`);
 }
@@ -396,6 +480,7 @@ async function runNodeManagedLoop() {
   const runtime = resolveRunnerRuntime();
   const totalPhases = phasePlan('count-total-phases', state.planDir);
   ensureLoopLogs({ reset: true });
+  heartbeatRunLease('ready/isolate', '', '', 'running');
   printLoopHeader({ masterPlan, runtime, totalPhases });
 
   let executedPhases = 0;
@@ -420,10 +505,12 @@ async function runNodeManagedLoop() {
 
     const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase);
     const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase);
-    const exitCode = runPhaseRunnerOnce(buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc }));
+    heartbeatRunLease('ready/isolate', nextPhase, phaseTitle, 'running');
+    const exitCode = await runPhaseRunnerOnce(buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc }), { nextPhase, phaseTitle });
     const updatedNextPhase = phasePlan('get-next-phase', state.statusFile) || '';
 
     if (exitCode !== 0) {
+      heartbeatRunLease('finish/handoff', nextPhase, phaseTitle, 'failed');
       failedPhases += 1;
       stoppedEarly = true;
       stopPhase = nextPhase;
@@ -435,6 +522,7 @@ async function runNodeManagedLoop() {
     if (updatedNextPhase === nextPhase) {
       const currentPhase = phaseSummary(nextPhase);
       if (currentPhase.status === 'in_progress' && currentPhase.lastOutcome === 'partial') {
+        heartbeatRunLease('review', nextPhase, phaseTitle, 'running');
         appendDecisionLog([
           `## Phase ${nextPhase} - Partial Attempt`,
           '- Status: partial',
@@ -448,6 +536,7 @@ async function runNodeManagedLoop() {
         continue;
       }
 
+      heartbeatRunLease('finish/handoff', nextPhase, phaseTitle, 'failed');
       failedPhases += 1;
       stoppedEarly = true;
       stopPhase = nextPhase;
@@ -457,6 +546,7 @@ async function runNodeManagedLoop() {
     }
 
     executedPhases += 1;
+    heartbeatRunLease('finish/handoff', nextPhase, phaseTitle, 'running');
 
     if (state.delaySeconds > 0) {
       await sleep(state.delaySeconds * 1000);
@@ -473,6 +563,7 @@ async function runNodeManagedLoop() {
     stopReason,
     stopDetail,
   });
+  heartbeatRunLease(stoppedEarly ? 'loop/stopped' : 'loop/complete', stopPhase, '', stoppedEarly ? 'failed' : 'completed');
   printLoopFooter({ completed: executedPhases, failed: failedPhases });
   return stoppedEarly ? 1 : 0;
 }
@@ -498,28 +589,28 @@ if (!state.dryRun) {
   const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase);
   const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase);
 
-  console.log('');
-  console.log('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
-  console.log('\u001b[0;36m  Agent Loop Started\u001b[0m');
-  console.log('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
-  console.log('');
-  console.log(`\u001b[0;34mℹ️\u001b[0m Plan directory: ${state.planDir}`);
-  console.log(`\u001b[0;34mℹ️\u001b[0m Master plan: ${masterPlan}`);
-  console.log(`\u001b[0;34mℹ️\u001b[0m Status file: ${state.statusFile}`);
-  console.log(`\u001b[0;34mℹ️\u001b[0m Execution root: ${state.executionRoot}`);
-  console.log(`\u001b[0;34mℹ️\u001b[0m Runtime: ${runtime}`);
-  console.log(`\u001b[0;34mℹ️\u001b[0m Total phases: ${totalPhases}`);
-  console.log('');
-  console.log('\u001b[0;36m───────────────────────────────────────────────────────────────\u001b[0m');
-  console.log(`\u001b[0;36m📦\u001b[0m Phase ${nextPhase}: ${phaseTitle}`);
-  console.log(`\u001b[1;33m⚠️\u001b[0m [DRY-RUN] Would execute phase ${nextPhase}`);
-  console.log('');
-  console.log('----- Phase Attempt Prompt -----');
+  writeStdout('');
+  writeStdout('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+  writeStdout('\u001b[0;36m  Agent Loop Started\u001b[0m');
+  writeStdout('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+  writeStdout('');
+  writeStdout(`\u001b[0;34mℹ️\u001b[0m Plan directory: ${state.planDir}`);
+  writeStdout(`\u001b[0;34mℹ️\u001b[0m Master plan: ${masterPlan}`);
+  writeStdout(`\u001b[0;34mℹ️\u001b[0m Status file: ${state.statusFile}`);
+  writeStdout(`\u001b[0;34mℹ️\u001b[0m Execution root: ${state.executionRoot}`);
+  writeStdout(`\u001b[0;34mℹ️\u001b[0m Runtime: ${runtime}`);
+  writeStdout(`\u001b[0;34mℹ️\u001b[0m Total phases: ${totalPhases}`);
+  writeStdout('');
+  writeStdout('\u001b[0;36m───────────────────────────────────────────────────────────────\u001b[0m');
+  writeStdout(`\u001b[0;36m📦\u001b[0m Phase ${nextPhase}: ${phaseTitle}`);
+  writeStdout(`\u001b[1;33m⚠️\u001b[0m [DRY-RUN] Would execute phase ${nextPhase}`);
+  writeStdout('');
+  writeStdout('----- Phase Attempt Prompt -----');
   const prompt = renderDryRunPrompt({ nextPhase, phaseTitle, phaseDoc, runtime });
   if (prompt) {
-    console.log(prompt);
+    writeStdout(prompt);
   } else {
-    console.log(`Implement phase ${nextPhase} using the active phase doc at ${phaseDoc}.`);
+    writeStdout(`Implement phase ${nextPhase} using the active phase doc at ${phaseDoc}.`);
   }
-  console.log('----- End Prompt -----');
+  writeStdout('----- End Prompt -----');
 }
