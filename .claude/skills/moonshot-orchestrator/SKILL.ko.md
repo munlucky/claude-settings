@@ -179,6 +179,7 @@ finish / handoff 계약:
 - dispatcher/agent-loop가 종료될 때까지 현재 실행 경계를 유지한다.
 - artifact 갱신이나 partial 요약만으로 단발 conversational round로 축소하면 안 된다.
 - active plan directory에 `pending`, `in_progress`, 재시도 가능한 `failed` phase가 남아 있으면 completed phase 경계에서 반환하면 안 된다.
+- auto-start execution 경로에서는 `phase-run-lease`의 active lease와 heartbeat가 살아 있어야 하며, `assert-return-allowed`가 거부되면 요약 반환 대신 dispatch 경계로 복귀하거나 계약 위반으로 실패 처리해야 한다.
 
 ## 검증 판정 규칙
 

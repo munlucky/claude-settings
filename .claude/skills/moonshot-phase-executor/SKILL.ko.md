@@ -96,6 +96,7 @@ phaseExecutionResult:
 - `partial`, `retry`, QA artifact 갱신, resumable handoff만으로는 delegated-terminal 중단 사유가 되지 않습니다.
 - `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, placeholder closeout artifact는 완료 상태가 아닙니다.
 - 유효한 성공 반환 경계는 plan-directory 완료입니다. 즉 actionable phase가 모두 완료되었거나, 명시적인 loop stop 조건이 기록되어야 합니다.
+- auto-start 실행에서는 성공 반환 직전에 `node .claude/scripts/phase-run-lease.mjs assert-return-allowed <status-file> <runLeaseId> true false`가 허용되어야 합니다. 거부되면 요약을 반환하지 말고 loop를 계속 유지하거나 계약 위반으로 실패시켜야 합니다.
 
 ## References
 

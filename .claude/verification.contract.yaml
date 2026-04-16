@@ -2,8 +2,9 @@ commands:
   knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
   codePolicy: "bash .claude/scripts/verify-code-policy.sh"
   workflowEnforcement: "bash .claude/scripts/workflow-enforcement.sh verify"
-  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
+  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/scripts/verify-phase-runner-boundary.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
   phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
+  phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
 scope:
   executionPlanes:
     - meta_harness
@@ -62,6 +63,7 @@ policySets:
     checks:
       - workflowEnforcement
       - phaseRuntimeParity
+      - phaseRunnerBoundary
   verification:
     description: "Executable verifier and syntax integrity"
     checks:
@@ -83,6 +85,7 @@ policy:
     - workflowEnforcement
     - shellSyntax
     - phaseRuntimeParity
+    - phaseRunnerBoundary
 qa:
   evaluatorMode: "separate"
   hardFailOn:

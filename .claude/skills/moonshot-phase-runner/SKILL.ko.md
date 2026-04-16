@@ -188,3 +188,4 @@ attemptResult:
 - phase 완료는 검증 통과만으로 충분하지 않습니다.
 - phase 완료는 score verdict가 `done`이고 target score를 충족하며 checklist 미충족과 blocking defect가 0일 때만 가능합니다.
 - 사용자의 최신 요청이 실행 의도였는데도 `prepareOnly: true`로 반환됐다면 계약 위반으로 보고, prepared-only 요약을 반환하지 말고 auto-start 실행 경로로 바로 교정해야 합니다.
+- auto-start 실행에서는 live `phase-run-lease`를 시작하고 heartbeat를 유지해야 하며, 성공 반환 전에 `node .claude/scripts/phase-run-lease.mjs assert-return-allowed <status-file> <runLeaseId> true false`가 통과해야 합니다.

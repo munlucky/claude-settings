@@ -406,8 +406,9 @@ When called by `/moonshot-orchestrator`:
 7. If `executionMode == delegated-terminal`, the execution path must launch the dispatcher/agent loop directly and must not stop after a single partial attempt summary.
 8. `partial`, `retry`, refreshed artifacts, or newly written handoff/checkpoint docs are not valid delegated-terminal stop reasons by themselves.
 9. A single completed phase is not a stop reason while the active plan directory still has actionable phases.
-10. If `prepareOnly == true`, stop after returning the prepared execution metadata.
-11. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
-12. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
-13. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.
-14. If the user's latest message expressed execution intent and `prepareOnly == true` was not explicitly requested, treat that result as a contract mismatch and continue through the auto-start execution path instead of returning a prepared-only summary.
+10. In auto-start execution, keep a live `phase-run-lease` attached to the dispatcher boundary and require `node .claude/scripts/phase-run-lease.mjs assert-return-allowed <status-file> <runLeaseId> true false` to pass before any success return.
+11. If `prepareOnly == true`, stop after returning the prepared execution metadata.
+12. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
+13. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
+14. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.
+15. If the user's latest message expressed execution intent and `prepareOnly == true` was not explicitly requested, treat that result as a contract mismatch and continue through the auto-start execution path instead of returning a prepared-only summary.
