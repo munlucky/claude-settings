@@ -289,7 +289,8 @@ Codex direct execution checklist:
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
 8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
-10. If verification passed, SCORECARD.md says \`Verdict: done\`, and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
+10. While the active execution is still running, treat all user-facing updates as progress/commentary only. Do not emit a final answer, closeout claim, or "session ended" wording just because one phase reached a checkpoint.
+11. If verification passed, SCORECARD.md says \`Verdict: done\`, and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 5.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates."
@@ -320,6 +321,9 @@ Single isolated phase-attempt rules:
 - Do not expand to other phases.
 - Read the Policy Anchors section in SPRINT_CONTRACT.md first.
 - Preserve the stage order \`ready/isolate -> execute -> review -> verify -> finish/handoff\`.
+- While \`phaseStatusFile\` still reflects an active execution boundary, keep any user-facing update in progress/commentary form; do not send a final answer or any wording that implies the run has ended.
+- A completed phase, refreshed artifacts, or a successful checkpoint inside the active plan directory is not a valid final-response boundary by itself.
+- Before any completion-style summary, re-read \`phaseStatusFile\`. If \`activeExecutionStatus\` is \`active\` or \`activeActionablePhasesRemaining > 0\`, do not close the session as finished.
 - Immediately after reading the active phase doc and SPRINT_CONTRACT.md, write an in-progress checkpoint to QA_REPORT.md and SCORECARD.md before broader inspection or long-running commands.
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
 - Record review completion before claiming the verifier state is final.

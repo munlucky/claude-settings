@@ -37,6 +37,11 @@ plan-directory 완료 규칙:
 - `phase-status.yaml`에 `pending`, `in_progress`, 또는 재시도 가능한 `failed` phase가 하나라도 남아 있으면 delegated-terminal 또는 in-session coordinator 루프를 계속 유지해야 합니다.
 - phase 하나가 완료됐다는 사실만으로는 반환 경계가 되지 않습니다.
 
+채널 / 반환 경계 규칙:
+- `phase-status.yaml`에 `activeExecutionStatus: active`가 잡혀 있는 동안의 사용자 업데이트는 진행 보고/commentary 형태여야 합니다.
+- `assert-return-allowed`가 통과하거나 명시적 중단 사유가 기록되기 전에는 `final` 응답, closeout 문구, 세션 종료처럼 들리는 표현을 쓰면 안 됩니다.
+- phase 마일스톤, execution artifact 갱신, 다음 phase 진입은 종료형 응답 경계가 아닙니다.
+
 review / finish gate 규칙:
 - 필수 review와 finish-closeout 단계가 실제로 실행되기 전에는 phase package를 완료로 취급하면 안 됩니다.
 - 코드 변경 phase는 `codex-review-code`가 applied workflow evidence에 기록되기 전까지 `clean_finish`를 허용하면 안 됩니다.

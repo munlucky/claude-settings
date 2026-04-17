@@ -50,6 +50,11 @@ Plan-directory completion rule:
 - If any phase in `phase-status.yaml` remains `pending`, `in_progress`, or retryable `failed`, the run must keep going through the delegated-terminal loop or the in-session coordinator loop.
 - A completed phase boundary is never a valid stop boundary by itself.
 
+Channel / return-boundary rule:
+- While `phase-status.yaml` reports `activeExecutionStatus: active`, user-facing updates must stay in progress/commentary form.
+- Do not emit a `final` answer, closeout phrasing, or any wording that implies the run/session ended until `assert-return-allowed` passes or an explicit stop condition is recorded.
+- A phase milestone, refreshed execution artifacts, or a just-started next phase is not a valid terminal-response boundary.
+
 Review and finish gate rule:
 - The phase package may not be treated as complete until the required review and finish-closeout steps have actually run.
 - For code-changing phases, `codex-review-code` must appear in applied workflow evidence before `clean_finish` is allowed.

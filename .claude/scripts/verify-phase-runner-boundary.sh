@@ -134,4 +134,31 @@ ALLOWED_OUTPUT="$(node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-re
 assert_text_contains "$ALLOWED_OUTPUT" "RETURN_ALLOWED='true'" "plan completion return allow"
 assert_text_contains "$ALLOWED_OUTPUT" "RETURN_REASON='plan_directory_complete'" "plan completion allow reason"
 
+PROMPT_OUTPUT="$(PLAN_DIR="$PLAN_DIR" EXECUTION_ROOT="$EXECUTION_ROOT" node --input-type=module <<'EOF'
+import { assignExecutionArtifactPaths, buildPhasePrompt } from './.claude/scripts/agent-loop-phase-plan-lib.mjs';
+
+const planDir = process.env.PLAN_DIR;
+const executionRoot = process.env.EXECUTION_ROOT;
+const paths = assignExecutionArtifactPaths(2, 'Smoke Phase', executionRoot);
+
+console.log(buildPhasePrompt({
+  nextPhase: 2,
+  phaseTitle: 'Smoke Phase',
+  planDir,
+  phaseDoc: `${planDir}/02-smoke-phase.md`,
+  statusFile: `${planDir}/../phase-status.yaml`,
+  executionRoot,
+  paths,
+  runtime: 'codex',
+  targetCompletionScore: '100',
+  extraInstructions: 'Boundary smoke prompt.',
+  autonomousInstructions: 'Autonomous mode.',
+  workspaceRoot: planDir,
+}));
+EOF
+)"
+assert_text_contains "$PROMPT_OUTPUT" "do not send a final answer" "prompt final-answer guard"
+assert_text_contains "$PROMPT_OUTPUT" "activeExecutionStatus" "prompt status-file re-read guard"
+assert_text_contains "$PROMPT_OUTPUT" "A completed phase, refreshed artifacts, or a successful checkpoint inside the active plan directory is not a valid final-response boundary by itself." "prompt boundary guard"
+
 echo "PASS: verify-phase-runner-boundary"

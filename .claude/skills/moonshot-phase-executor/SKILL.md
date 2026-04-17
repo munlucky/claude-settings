@@ -96,6 +96,7 @@ phaseExecutionResult:
 - `partial`, `retry`, updated QA artifacts, or a resumable handoff are not valid stop reasons for delegated-terminal by themselves.
 - `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, or placeholder closeout artifacts are not valid completion states.
 - The valid success boundary is plan-directory completion: every actionable phase completed or an explicit loop stop condition recorded.
+- While the dispatcher lease is still active, progress reports must remain commentary-style; do not emit a `final` answer or session-ended wording from a mid-run checkpoint.
 - In auto-start execution, a success return is valid only if `node .claude/scripts/phase-run-lease.mjs assert-return-allowed <status-file> <runLeaseId> true false` allows it. If the guard denies, keep the loop alive or fail as a contract violation instead of returning a summary.
 
 ## References
