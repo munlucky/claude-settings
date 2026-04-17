@@ -1,11 +1,44 @@
 #!/usr/bin/env node
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
-const ACTIVE_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'active-phase-run.json');
-const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
+const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
+const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
+const CURRENT_RUN_BASENAME = 'current-run.json';
+
+function resolveStatusFile(statusFile) {
+  if (!statusFile) {
+    return DEFAULT_STATUS_FILE;
+  }
+  return path.resolve(statusFile);
+}
+
+function statusFileHash(statusFile) {
+  return crypto.createHash('sha1').update(resolveStatusFile(statusFile)).digest('hex').slice(0, 12);
+}
+
+function resolveLeaseFiles(statusFile) {
+  const resolvedStatusFile = resolveStatusFile(statusFile);
+  const defaultLeaseFiles = {
+    activeRunFile: path.join(WORKFLOW_LOG_DIR, ACTIVE_RUN_BASENAME),
+    currentRunFile: path.join(WORKFLOW_LOG_DIR, CURRENT_RUN_BASENAME),
+    mirrorGlobalCurrentRun: true,
+  };
+
+  if (resolvedStatusFile === DEFAULT_STATUS_FILE) {
+    return defaultLeaseFiles;
+  }
+
+  const suffix = statusFileHash(resolvedStatusFile);
+  return {
+    activeRunFile: path.join(WORKFLOW_LOG_DIR, `active-phase-run-${suffix}.json`),
+    currentRunFile: path.join(WORKFLOW_LOG_DIR, `current-run-${suffix}.json`),
+    mirrorGlobalCurrentRun: false,
+  };
+}
 
 function utcTimestamp() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -151,28 +184,40 @@ function updateStatusLease(statusFile, fields) {
   fs.writeFileSync(statusFile, `${nextLines.join('\n')}\n`, 'utf8');
 }
 
-function mirrorToCurrentRun(leasePayload) {
-  const existing = readJson(CURRENT_RUN_FILE) || {};
+function mirrorToCurrentRun(statusFile, leasePayload) {
+  const leaseFiles = resolveLeaseFiles(statusFile);
+  const existing = readJson(leaseFiles.currentRunFile) || {};
   const next = {
     ...existing,
     updatedAt: utcTimestamp(),
     phaseRunLease: leasePayload,
   };
-  writeJson(CURRENT_RUN_FILE, next);
+  writeJson(leaseFiles.currentRunFile, next);
+
+  if (!leaseFiles.mirrorGlobalCurrentRun) {
+    return;
+  }
+
+  const globalCurrentRunFile = path.join(WORKFLOW_LOG_DIR, CURRENT_RUN_BASENAME);
+  if (globalCurrentRunFile === leaseFiles.currentRunFile) {
+    return;
+  }
+  writeJson(globalCurrentRunFile, next);
 }
 
-function readActiveLease() {
-  return readJson(ACTIVE_RUN_FILE);
+function readActiveLease(statusFile) {
+  return readJson(resolveLeaseFiles(statusFile).activeRunFile);
 }
 
-function writeActiveLease(payload) {
-  writeJson(ACTIVE_RUN_FILE, payload);
-  mirrorToCurrentRun(payload);
+function writeActiveLease(statusFile, payload) {
+  writeJson(resolveLeaseFiles(statusFile).activeRunFile, payload);
+  mirrorToCurrentRun(statusFile, payload);
 }
 
 function startLease(config) {
   const now = utcTimestamp();
-  const actionable = countActionablePhases(config.statusFile);
+  const statusFile = resolveStatusFile(config.statusFile);
+  const actionable = countActionablePhases(statusFile);
   const payload = {
     stateVersion: '1.0',
     runLeaseId: config.runLeaseId,
@@ -198,8 +243,8 @@ function startLease(config) {
     stopReasonDetail: '',
   };
 
-  writeActiveLease(payload);
-  updateStatusLease(config.statusFile, {
+  writeActiveLease(statusFile, payload);
+  updateStatusLease(statusFile, {
     activeRunLeaseId: config.runLeaseId,
     activeExecutionBoundary: config.executionBoundary,
     activeExecutionAttachedAt: now,
@@ -218,13 +263,14 @@ function startLease(config) {
 }
 
 function heartbeatLease(config) {
-  const existing = readActiveLease();
+  const statusFile = resolveStatusFile(config.statusFile);
+  const existing = readActiveLease(statusFile);
   if (!existing || existing.runLeaseId !== config.runLeaseId) {
     return null;
   }
 
   const now = utcTimestamp();
-  const actionable = countActionablePhases(config.statusFile || existing.statusFile);
+  const actionable = countActionablePhases(statusFile || existing.statusFile);
   const payload = {
     ...existing,
     lastHeartbeatAt: now,
@@ -237,8 +283,8 @@ function heartbeatLease(config) {
     completionStatus: config.completionStatus || existing.completionStatus || '',
   };
 
-  writeActiveLease(payload);
-  updateStatusLease(config.statusFile || existing.statusFile, {
+  writeActiveLease(statusFile, payload);
+  updateStatusLease(statusFile || existing.statusFile, {
     activeRunLeaseId: payload.runLeaseId,
     activeExecutionBoundary: payload.executionBoundary,
     activeExecutionAttachedAt: payload.attachedAt,
@@ -254,7 +300,8 @@ function heartbeatLease(config) {
 }
 
 function finishLease(config) {
-  const existing = readActiveLease();
+  const statusFile = resolveStatusFile(config.statusFile);
+  const existing = readActiveLease(statusFile);
   if (!existing || existing.runLeaseId !== config.runLeaseId) {
     return null;
   }
@@ -273,8 +320,8 @@ function finishLease(config) {
     stopReasonDetail: config.stopReasonDetail || '',
   };
 
-  writeActiveLease(payload);
-  updateStatusLease(config.statusFile || existing.statusFile, {
+  writeActiveLease(statusFile, payload);
+  updateStatusLease(statusFile || existing.statusFile, {
     activeRunLeaseId: payload.runLeaseId,
     activeExecutionBoundary: payload.executionBoundary,
     activeExecutionAttachedAt: payload.attachedAt,
@@ -293,7 +340,8 @@ function finishLease(config) {
 }
 
 function assertReturnAllowed(config) {
-  const actionable = countActionablePhases(config.statusFile);
+  const statusFile = resolveStatusFile(config.statusFile);
+  const actionable = countActionablePhases(statusFile);
   const executionIntent = String(config.executionIntent || '').toLowerCase() === 'true';
   const prepareOnly = String(config.prepareOnly || '').toLowerCase() === 'true';
 
@@ -313,7 +361,7 @@ function assertReturnAllowed(config) {
     };
   }
 
-  const existing = readActiveLease();
+  const existing = readActiveLease(statusFile);
   if (!existing || existing.runLeaseId !== config.runLeaseId) {
     return {
       RETURN_ALLOWED: 'false',

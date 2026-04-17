@@ -11,8 +11,10 @@ STATUS_FILE="$TMP_ROOT/phase-status.yaml"
 LOG_DIR="$TMP_ROOT/logs"
 FAKE_BIN="$TMP_ROOT/bin"
 DISPATCH_OUT="$TMP_ROOT/dispatch.out"
+NOENV_WORKSPACE="$TMP_ROOT/noenv-workspace"
+NOENV_STATUS_FILE="$TMP_ROOT/noenv-phase-status.yaml"
 
-mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$FAKE_BIN"
+mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
 
 cat > "$PLAN_DIR/00-master-plan-v1.md" <<'EOF'
 # Boundary Smoke Plan
@@ -102,6 +104,7 @@ fi
 assert_contains "$DISPATCH_OUT" "Restarting coordinator (1/1)" "coordinator restart guard"
 assert_contains "$DISPATCH_OUT" "Stopping to avoid an infinite restart loop." "restart cap failure"
 
+WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
   "$STATUS_FILE" \
   lease-smoke \
@@ -112,10 +115,11 @@ node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
   "$PLAN_DIR/00-master-plan-v1.md" \
   "$$" >/dev/null
 
-DENIED_OUTPUT="$(node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
+DENIED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$DENIED_OUTPUT" "RETURN_ALLOWED='false'" "active lease return denial"
 assert_text_contains "$DENIED_OUTPUT" "RETURN_REASON='actionable-phases-remaining'" "active lease denial reason"
 
+WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
   "$STATUS_FILE" \
   lease-smoke \
@@ -124,15 +128,59 @@ node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
   completed-phase-only \
   failed >/dev/null
 
-INACTIVE_OUTPUT="$(node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
+INACTIVE_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_ALLOWED='false'" "finished lease return denial"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_REASON='inactive-run-lease-with-actionable-phases'" "inactive lease denial reason"
 
 write_completed_status
 
-ALLOWED_OUTPUT="$(node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
+ALLOWED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$ALLOWED_OUTPUT" "RETURN_ALLOWED='true'" "plan completion return allow"
 assert_text_contains "$ALLOWED_OUTPUT" "RETURN_REASON='plan_directory_complete'" "plan completion allow reason"
+
+cat > "$NOENV_STATUS_FILE" <<EOF
+planDir: "$PLAN_DIR"
+executionMode: delegated-terminal
+executionRoot: "$EXECUTION_ROOT"
+phases:
+  - number: 2
+    title: "No Env Smoke"
+    status: pending
+    planConfirmed: true
+EOF
+
+(
+  cd "$NOENV_WORKSPACE"
+  node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
+    "$NOENV_STATUS_FILE" \
+    lease-noenv \
+    delegated-terminal \
+    "$PLAN_DIR" \
+    "$EXECUTION_ROOT" \
+    claude \
+    "$PLAN_DIR/00-master-plan-v1.md" \
+    "$$" >/dev/null
+)
+
+if [[ -f "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/active-phase-run.json" ]]; then
+  echo "FAIL: non-default status file wrote shared active-phase-run.json" >&2
+  exit 1
+fi
+
+if [[ -f "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/current-run.json" ]]; then
+  echo "FAIL: non-default status file wrote shared current-run.json" >&2
+  exit 1
+fi
+
+if ! compgen -G "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/active-phase-run-*.json" >/dev/null; then
+  echo "FAIL: non-default status file did not create namespaced active lease file" >&2
+  exit 1
+fi
+
+if ! compgen -G "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/current-run-*.json" >/dev/null; then
+  echo "FAIL: non-default status file did not create namespaced current-run file" >&2
+  exit 1
+fi
 
 PROMPT_OUTPUT="$(PLAN_DIR="$PLAN_DIR" EXECUTION_ROOT="$EXECUTION_ROOT" node --input-type=module <<'EOF'
 import { assignExecutionArtifactPaths, buildPhasePrompt } from './.claude/scripts/agent-loop-phase-plan-lib.mjs';

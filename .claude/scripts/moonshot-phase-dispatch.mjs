@@ -29,6 +29,11 @@ const state = {
   runLeaseId: '',
 };
 
+const runtimeState = {
+  finalized: false,
+  leaseSyncIssue: '',
+};
+
 const MAX_PLAN_COMPLETION_RESTARTS = Number.parseInt(
   process.env.PHASE_DISPATCH_MAX_PLAN_COMPLETION_RESTARTS
     ?? process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS
@@ -129,6 +134,140 @@ function runPhaseRunLease(command, args, { allowFailure = false } = {}) {
   return parseAssignments(result.stdout);
 }
 
+function utcTimestamp() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function countActionablePhasesInStatus() {
+  if (!fs.existsSync(state.statusFile)) {
+    return 0;
+  }
+
+  const lines = fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/);
+  const phases = [];
+  let current = null;
+
+  for (const rawLine of lines) {
+    if (/^\s*-\s+number:\s*/.test(rawLine)) {
+      if (current) {
+        phases.push(current);
+      }
+      current = {
+        status: '',
+        planConfirmed: '',
+      };
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    const stripped = rawLine.trim();
+    if (stripped.startsWith('status:')) {
+      current.status = stripped.split(':', 2)[1].trim();
+    } else if (stripped.startsWith('planConfirmed:')) {
+      current.planConfirmed = stripped.split(':', 2)[1].trim().toLowerCase();
+    }
+  }
+
+  if (current) {
+    phases.push(current);
+  }
+
+  return phases.filter((phase) => {
+    if (phase.planConfirmed === 'false') {
+      return false;
+    }
+    return phase.status === 'pending' || phase.status === 'in_progress' || phase.status === 'failed';
+  }).length;
+}
+
+function upsertStatusRootKey(lines, key, value) {
+  const prefix = `${key}:`;
+  const rendered = `${prefix} ${value}`;
+  const index = lines.findIndex((line) => line.startsWith(prefix));
+  if (index >= 0) {
+    lines[index] = rendered;
+    return;
+  }
+  const insertAt = lines.findIndex((line) => line.startsWith('phases:'));
+  if (insertAt >= 0) {
+    lines.splice(insertAt, 0, rendered);
+    return;
+  }
+  lines.push(rendered);
+}
+
+function noteLeaseSyncIssue(operation, detail) {
+  const message = `${operation}: ${detail}`;
+  if (runtimeState.leaseSyncIssue === message) {
+    return;
+  }
+  runtimeState.leaseSyncIssue = message;
+  logWarn(`Phase run lease sync issue detected (${message})`);
+}
+
+function writeLeaseStatusFallback(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = 'failed') {
+  if (!state.statusFile || !fs.existsSync(state.statusFile)) {
+    return;
+  }
+
+  const now = utcTimestamp();
+  const lines = fs.readFileSync(state.statusFile, 'utf8')
+    .split(/\r?\n/)
+    .filter((line, index, array) => !(index === array.length - 1 && line === ''));
+  const actionable = countActionablePhasesInStatus();
+
+  upsertStatusRootKey(lines, 'activeExecutionHeartbeatAt', `"${now}"`);
+  upsertStatusRootKey(lines, 'activeExecutionStatus', '"finished"');
+  upsertStatusRootKey(lines, 'activeCurrentStage', '"finish/handoff"');
+  upsertStatusRootKey(lines, 'activeActionablePhasesRemaining', String(actionable));
+  upsertStatusRootKey(lines, 'lastReturnBoundary', returnBoundary ? `"${returnBoundary}"` : 'null');
+  upsertStatusRootKey(lines, 'lastStopReasonCode', stopReasonCode ? `"${stopReasonCode}"` : 'null');
+  upsertStatusRootKey(lines, 'lastStopReasonDetail', stopReasonDetail ? `"${stopReasonDetail}"` : 'null');
+  upsertStatusRootKey(lines, 'activeCompletionStatus', completionStatus ? `"${completionStatus}"` : 'null');
+
+  fs.writeFileSync(state.statusFile, `${lines.join('\n')}\n`, 'utf8');
+}
+
+function finalizeDispatchLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = 'failed') {
+  runtimeState.finalized = true;
+  const payload = finishRunLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus);
+  if (!payload) {
+    writeLeaseStatusFallback(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus);
+  }
+  return payload;
+}
+
+function installCrashGuards() {
+  process.on('uncaughtException', (error) => {
+    const detail = error?.stack || error?.message || String(error);
+    logError(`Unhandled exception in moonshot-phase-dispatch: ${detail}`);
+    finalizeDispatchLease('dispatch_crash', 'dispatch-uncaught-exception', detail, 'failed');
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
+    logError(`Unhandled rejection in moonshot-phase-dispatch: ${detail}`);
+    finalizeDispatchLease('dispatch_crash', 'dispatch-unhandled-rejection', detail, 'failed');
+    process.exit(1);
+  });
+
+  process.on('exit', (code) => {
+    if (runtimeState.finalized || code === 0 || state.dryRun) {
+      return;
+    }
+    writeLeaseStatusFallback(
+      'dispatch_exit',
+      'dispatch-exit-before-finish',
+      `moonshot-phase-dispatch exited with code ${code} before lease closeout`,
+      'failed',
+    );
+  });
+}
+
 function ensureRunLeaseId() {
   if (!state.runLeaseId) {
     state.runLeaseId = crypto.randomUUID();
@@ -138,10 +277,10 @@ function ensureRunLeaseId() {
 
 function startRunLease(executionBoundary, resolvedRoot, masterPlan, runtime) {
   if (state.dryRun) {
-    return;
+    return null;
   }
   try {
-    runPhaseRunLease('start', [
+    const payload = runPhaseRunLease('start', [
       state.statusFile,
       ensureRunLeaseId(),
       executionBoundary,
@@ -151,17 +290,24 @@ function startRunLease(executionBoundary, resolvedRoot, masterPlan, runtime) {
       masterPlan,
       String(process.pid),
     ]);
+    if (Object.keys(payload).length === 0) {
+      noteLeaseSyncIssue('start', 'phase-run-lease returned no payload');
+      return null;
+    }
+    return payload;
   } catch (error) {
     logWarn(`Unable to start phase run lease: ${error.message}`);
+    noteLeaseSyncIssue('start', error.message);
+    return null;
   }
 }
 
 function heartbeatRunLease(currentStage, phaseNum = '', phaseTitle = '', completionStatus = 'running') {
   if (state.dryRun || !state.runLeaseId) {
-    return;
+    return null;
   }
   try {
-    runPhaseRunLease('heartbeat', [
+    const payload = runPhaseRunLease('heartbeat', [
       state.statusFile,
       state.runLeaseId,
       currentStage,
@@ -169,17 +315,24 @@ function heartbeatRunLease(currentStage, phaseNum = '', phaseTitle = '', complet
       phaseTitle ?? '',
       completionStatus,
     ], { allowFailure: true });
+    if (Object.keys(payload).length === 0) {
+      noteLeaseSyncIssue('heartbeat', `no payload for runLeaseId=${state.runLeaseId}`);
+      return null;
+    }
+    return payload;
   } catch (error) {
     logWarn(`Unable to heartbeat phase run lease: ${error.message}`);
+    noteLeaseSyncIssue('heartbeat', error.message);
+    return null;
   }
 }
 
 function finishRunLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = '') {
   if (state.dryRun || !state.runLeaseId) {
-    return;
+    return null;
   }
   try {
-    runPhaseRunLease('finish', [
+    const payload = runPhaseRunLease('finish', [
       state.statusFile,
       state.runLeaseId,
       returnBoundary,
@@ -187,8 +340,15 @@ function finishRunLease(returnBoundary, stopReasonCode, stopReasonDetail, comple
       stopReasonDetail,
       completionStatus,
     ], { allowFailure: true });
+    if (Object.keys(payload).length === 0) {
+      noteLeaseSyncIssue('finish', `no payload for runLeaseId=${state.runLeaseId}`);
+      return null;
+    }
+    return payload;
   } catch (error) {
     logWarn(`Unable to finish phase run lease: ${error.message}`);
+    noteLeaseSyncIssue('finish', error.message);
+    return null;
   }
 }
 
@@ -486,7 +646,7 @@ function runDelegatedTerminal(resolvedRoot, masterPlan, runtime) {
     child.on('exit', (code, signal) => {
       clearInterval(heartbeatTimer);
       if (signal) {
-        finishRunLease('user_pause', `signal-${signal}`, `delegated-terminal received signal ${signal}`, 'interrupted');
+        finalizeDispatchLease('user_pause', `signal-${signal}`, `delegated-terminal received signal ${signal}`, 'interrupted');
         process.kill(process.pid, signal);
         return;
       }
@@ -503,7 +663,7 @@ function runDelegatedTerminal(resolvedRoot, masterPlan, runtime) {
         if (actionable) {
           restartCount += 1;
           if (restartCount > MAX_PLAN_COMPLETION_RESTARTS) {
-            finishRunLease(
+            finalizeDispatchLease(
               'contract_violation',
               'restart-cap-exceeded',
               `delegated-terminal exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained`,
@@ -520,7 +680,7 @@ function runDelegatedTerminal(resolvedRoot, masterPlan, runtime) {
           return;
         }
 
-        finishRunLease('loop_exit', 'plan-directory-complete', 'delegated-terminal loop exited after plan directory completion', 'completed');
+        finalizeDispatchLease('loop_exit', 'plan-directory-complete', 'delegated-terminal loop exited after plan directory completion', 'completed');
         const returnGuard = assertReturnAllowed();
         if (returnGuard.RETURN_ALLOWED !== 'true') {
           logError(`Delegated-terminal tried to return before allowed boundary: ${returnGuard.RETURN_REASON}`);
@@ -530,7 +690,7 @@ function runDelegatedTerminal(resolvedRoot, masterPlan, runtime) {
       }
 
       if (exitCode !== 0) {
-        finishRunLease('loop_exit', 'child-nonzero-exit', `delegated-terminal exited with code ${exitCode}`, 'failed');
+        finalizeDispatchLease('loop_exit', 'child-nonzero-exit', `delegated-terminal exited with code ${exitCode}`, 'failed');
       }
       process.exit(exitCode);
     });
@@ -630,7 +790,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
         return;
       }
       if (signal) {
-        finishRunLease('user_pause', `signal-${signal}`, `in-session-coordinator received signal ${signal}`, 'interrupted');
+        finalizeDispatchLease('user_pause', `signal-${signal}`, `in-session-coordinator received signal ${signal}`, 'interrupted');
         process.kill(process.pid, signal);
         return;
       }
@@ -647,7 +807,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
         if (actionable) {
           restartCount += 1;
           if (restartCount > MAX_PLAN_COMPLETION_RESTARTS) {
-            finishRunLease(
+            finalizeDispatchLease(
               'contract_violation',
               'restart-cap-exceeded',
               `in-session-coordinator exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained`,
@@ -664,7 +824,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
           return;
         }
 
-        finishRunLease('loop_exit', 'plan-directory-complete', 'in-session-coordinator exited after plan directory completion', 'completed');
+        finalizeDispatchLease('loop_exit', 'plan-directory-complete', 'in-session-coordinator exited after plan directory completion', 'completed');
         const returnGuard = assertReturnAllowed();
         if (returnGuard.RETURN_ALLOWED !== 'true') {
           logError(`In-session-coordinator tried to return before allowed boundary: ${returnGuard.RETURN_REASON}`);
@@ -674,7 +834,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
       }
 
       if (exitCode !== 0) {
-        finishRunLease('loop_exit', 'child-nonzero-exit', `in-session-coordinator exited with code ${exitCode}`, 'failed');
+        finalizeDispatchLease('loop_exit', 'child-nonzero-exit', `in-session-coordinator exited with code ${exitCode}`, 'failed');
       }
       process.exit(exitCode);
     });
@@ -738,6 +898,7 @@ function parseArgs(argv) {
 }
 
 parseArgs(process.argv.slice(2));
+installCrashGuards();
 runtimeCli(['sync-wsl-codex-auth']);
 
 if (!state.planDir) {
