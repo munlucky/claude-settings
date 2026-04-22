@@ -1,6 +1,7 @@
 ---
 name: plan-ceo-review
 description: Review planning artifacts for product value, timing, and scope control before execution.
+context: fork
 layer: orchestrator
 loads:
   - product-artifacts
@@ -25,6 +26,7 @@ triggers:
 ## Role
 
 Review a planning artifact for product value and scope discipline before execution begins.
+Run this as an isolated plan-review boundary and merge back only the verdict summary and required changes.
 
 This skill does not rewrite the whole plan by default.
 It produces a decision verdict that upstream planning stages must respect.

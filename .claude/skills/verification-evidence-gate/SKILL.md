@@ -35,6 +35,7 @@ This closes the Verify stage in strict runs before Finish / Handoff can begin.
    - `contractApplicable == true` and `requiredChecks.missing` is not empty
    - `verificationMode == contract` and `requiredChecks.missing` is not empty
    - `evidenceFresh == false` when a contract-backed verdict is expected
+   - completion claims rely on optimism-only wording such as `should pass`, `looks good`, `likely fixed`, `seems resolved`, or `done pending verification`
    - `completionStatus.score.verdict != done`
    - `completionStatus.score.current < completionStatus.score.target`
    - `completionStatus.score.unmetChecklistItems > 0`
@@ -75,6 +76,8 @@ missingInfo:
 - Prefer contract-defined artifact paths and verdict files when available.
 - Prefer structured `verdict.workflowEvidence` warnings over manual interpretation when they exist.
 - For contract-backed verification, a passing state without fresh evidence is still blocked.
+- Do not soften missing evidence with optimistic language; the absence of fresh evidence remains a hard block.
 - For code-changing closeout, missing review/finish workflow evidence is treated as missing verification evidence, not as optional metadata.
 - In document-trace runs, missing requirement or critical-scenario evidence is also missing verification evidence.
 - In score-based loops, an unfinished score verdict is also missing verification evidence.
+- If review findings exist, do not treat the remediation loop as closed until `QA_REPORT.md` records each meaningful item as `accepted`, `challenged`, `deferred`, or `needs_clarification`.

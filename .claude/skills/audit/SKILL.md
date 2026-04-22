@@ -1,6 +1,7 @@
 ---
 name: audit
 description: Run a technical UI quality audit across accessibility, performance, responsive behavior, theming, and design anti-patterns.
+context: fork
 license: Apache 2.0. Adapted from pbakaus/impeccable.
 metadata:
   author: pbakaus
@@ -12,6 +13,7 @@ argument-hint: "[area]"
 # Audit
 
 Use for review-only UI quality checks. Do not make edits in this skill unless the user explicitly asks for fixes after the report.
+Because this is a read-only review skill, prefer a forked review session and return scored findings plus next steps only.
 
 ## Preparation
 

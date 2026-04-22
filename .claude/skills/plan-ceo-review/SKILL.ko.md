@@ -1,6 +1,7 @@
 ---
 name: plan-ceo-review
 description: 실행 전에 planning artifact를 제품 가치, 타이밍, 범위 통제 관점에서 검토합니다.
+context: fork
 layer: orchestrator
 loads:
   - product-artifacts
@@ -25,6 +26,7 @@ triggers:
 ## 역할
 
 실행에 들어가기 전에 planning artifact를 제품 가치와 범위 통제 관점에서 검토합니다.
+격리된 plan-review 경계에서 실행하고, verdict 요약과 required changes만 병합하는 것을 기본으로 합니다.
 
 이 스킬은 기본적으로 계획 전체를 다시 쓰지 않습니다.
 대신 upstream planning 단계가 따라야 하는 결정 verdict를 남깁니다.

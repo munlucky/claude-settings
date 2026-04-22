@@ -1,6 +1,7 @@
 ---
 name: web-design-guidelines
 description: Web Interface Guidelines 기준으로 UI 코드를 리뷰합니다. "UI 리뷰", "접근성 점검", "디자인 감사", "UX 리뷰", "베스트 프랙티스 점검" 요청 시 사용합니다.
+context: fork
 metadata:
   author: vercel
   version: "1.0.0"
@@ -10,6 +11,7 @@ metadata:
 # Web Interface Guidelines
 
 Web Interface Guidelines 준수 여부를 기준으로 파일을 리뷰합니다.
+읽기 전용 review owner로 취급하며, fork된 리뷰 세션을 우선하고 findings만 반환합니다.
 
 ## 동작 방식
 

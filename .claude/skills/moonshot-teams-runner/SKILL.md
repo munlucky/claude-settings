@@ -12,7 +12,7 @@ triggers:
 ## Role
 
 Run independent workstreams in parallel teams using runtime-adaptive coordination.
-Use Claude Code Agent Teams in Claude runtime, and Codex-native coordination in Codex runtime.
+Use Claude Code Agent Teams in Claude runtime, and preserve equivalent isolated coordination semantics in Codex runtime.
 
 ## Runtime Execution Modes
 
@@ -20,7 +20,9 @@ Use Claude Code Agent Teams in Claude runtime, and Codex-native coordination in 
   - Uses Claude Code Agent Teams with forked `team-leader-agent`
   - Requires Claude Code v2.1.32+ and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
 - `codex` mode:
-  - Runs equivalent team topology in the current Codex session (native coordinator path)
+  - Prefer fresh forked `team-leader-agent` and isolated member attempts, especially for read-only review and verification work
+  - Keep the current Codex session as coordinator only and merge back structured summaries
+  - If a member cannot preserve isolation, degrade explicitly and record the degraded path in notes or workflow evidence
   - Does not require Claude Agent Teams flags or `mcp__codex__codex`
 
 ## Team Leader Agent Policy (Bias for Action)
@@ -31,6 +33,7 @@ Always include the following instructions when prompting `team-leader-agent`.
 2. **Limit planning loops**: allow at most one plan rewrite; force execution from the second round.
 3. **Handle blocking strictly**: ask the user only once for truly blocking issues; otherwise proceed with reasonable defaults.
 4. **Make work units explicit**: each member assignment must include file scope, execution command, and verification command.
+5. **Keep reviewer context clean**: review and verification assignments should use artifact-backed inputs, not full session history.
 
 ## Usage
 

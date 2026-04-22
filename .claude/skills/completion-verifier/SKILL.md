@@ -60,6 +60,7 @@ Applicability rule:
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
 - In score-based loops, do not return a passing completion verdict unless the score verdict is `done`.
+- Do not use success-by-implication language without fresh evidence. Forbidden examples include: `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification`.
 
 ## Codex Rule References
 
@@ -121,6 +122,10 @@ Only when executable verification exists.
 5. Mark evidence fresh only when the current run produced contract-aligned success evidence or verdict artifacts
 6. Update `context.md` status column when appropriate
 7. Read the latest verifier verdict artifact and capture `workflowEvidence.selectedBundles`, `workflowEvidence.stageOrder`, and `workflowEvidence.warnings` when present
+8. Capture evidence provenance for every completion-relevant claim:
+   - command or verifier name
+   - artifact path
+   - whether it was produced in the current run
 
 ## Step 1.1: Score Reconciliation
 
@@ -245,9 +250,17 @@ completionStatus:
     workflowEvidence:
       detected: true | false
       warnings: []
+  evidenceProvenance:
+    - source: "verify-changes.sh"
+      artifact: ".claude/verification-verdict-<runId>.json"
+      fresh: true
 qaReport:
   path: "{activeSliceDir}/QA_REPORT.md"
   updated: true | false
+  reviewFindingDecisions:
+    - finding: "Route shadowing on reorder endpoint"
+      decision: accepted | challenged | deferred | needs_clarification
+      rationale: "Accepted after reproducing 422 and confirming route order bug."
 ```
 
 Passing rule:
@@ -257,6 +270,7 @@ Passing rule:
   - `requiredChecks.missing` is empty
   - `verdictArtifact.workflowEvidence.warnings` is empty for code-changing closeout work
   - `QA_REPORT.md` says `Review completed: yes` for code-changing closeout work
+  - `evidenceProvenance` is populated for the completion-relevant claims
   - `score.verdict == done`
   - `score.current >= score.target`
   - `score.unmetChecklistItems == 0`
@@ -294,6 +308,7 @@ When `verificationState: failed` and executable verification exists:
 - A fresh verifier artifact or equivalent current-run command evidence is required before a contract-backed success verdict.
 - When available, `verdictArtifact.workflowEvidence` is the canonical structured hint for whether review/finish-stage evidence is complete enough to close the run.
 - For phase closeout work, a passing verifier artifact is still insufficient if `QA_REPORT.md` shows review incomplete or finish/handoff closeout remains placeholder-quality.
+- If review findings are used as remediation input, `QA_REPORT.md` must track each meaningful item as `accepted`, `challenged`, `deferred`, or `needs_clarification` before the loop can be treated as closed.
 - `uatReady` and `uatComplete` are different states. Automation may establish only `uatReady`.
 - Each verifier run should refresh `QA_REPORT.md` when `qaReportPath` is available.
 - If verification fails or the run pauses before clean completion, mark `handoffPath` for update.

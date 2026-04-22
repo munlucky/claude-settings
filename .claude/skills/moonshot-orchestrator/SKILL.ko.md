@@ -60,6 +60,15 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
 
 - `userMessage`, `gitBranch`, `gitStatus`, `recentCommits`, `openFiles`
 
+## 런타임 어댑터 정책
+
+- `claude-code`: Claude 도구 라우팅을 사용합니다.
+- `codex`: 네이티브 도구를 쓰더라도 메인 세션은 coordinator로 유지합니다.
+  - 읽기 전용 review/verification owner는 기본적으로 fork 의미를 유지해야 합니다. fresh isolated review/verifier attempt를 띄우고, 최소 artifact 기반 입력만 넘기며, 구조화된 summary만 병합합니다.
+  - `Task (fork)`로 문서화된 단계는 최소 입력과 요약 반환만 허용합니다.
+  - 읽기 전용 review/verification owner의 fork 의미를 유지할 수 없으면 current-session 실행은 degraded fallback이며 workflow evidence에 기록해야 합니다.
+- planning 질문/불확실성 정리는 `codex-validate-plan`, post-implementation 평가는 `codex-review-code` 출력을 우선합니다.
+
 ## analysisContext 초기값
 
 정규 계약은 아래 canonical 파일에서 초기화합니다.
@@ -193,7 +202,7 @@ finish / handoff 계약:
 - `pre-flight-check`
 - `teach-impeccable`
 - `frontend-design`
-- `audit`
+- `audit` (fork)
 - `normalize`
 - `polish`
 - `product-orchestrator`
@@ -210,16 +219,23 @@ finish / handoff 계약:
 - `karpathy-execution-gate`
 - `implementation-runner`
 - `code-simplifier`
-- `completion-verifier`
+- `completion-verifier` (fork)
 - `verification-evidence-gate`
 - `doc-auto-sync`
-- `codex-review-code`
+- `codex-review-code` (fork)
+- `security-reviewer` (fork)
+- `browser-verifier` (fork)
+- `web-design-guidelines` (fork)
 - `verify-changes.sh`
 - `verify-runtime.sh`
 - `efficiency-tracker`
 - `session-logger`
 - `failure-analyzer`
 - `workflow-self-improver`
+
+실행 규칙:
+- `Task (fork)`로 표기된 단계와 `context: fork`를 가진 읽기 전용 review/verification 스킬은 두 런타임 모두에서 최소 입력, 요약 반환, 메인 세션 coordinator 유지 원칙을 따른다.
+- read-only review/verification owner에는 전체 세션 이력을 넘기지 않고 artifact, changed file list, concise summary만 전달한다.
 
 ## 동적 삽입 규칙
 

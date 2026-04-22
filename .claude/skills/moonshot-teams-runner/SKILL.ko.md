@@ -12,7 +12,7 @@ triggers:
 ## 역할
 
 런타임 적응형 조율 방식으로 독립 작업을 병렬 팀으로 실행합니다.
-Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 Codex 네이티브 조율 경로를 사용합니다.
+Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 동등한 격리 조율 의미를 유지하는 경로를 사용합니다.
 
 ## 런타임 실행 모드
 
@@ -20,8 +20,10 @@ Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 Codex 네이�
   - fork 기반 `team-leader-agent` + Claude Code Agent Teams 사용
   - Claude Code v2.1.32+ 및 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 필요
 - `codex` 모드:
-  - 현재 Codex 세션에서 동일 팀 토폴로지를 네이티브 조율 경로로 실행
-  - Claude Agent Teams 플래그나 `mcp__codex__codex` 의존 없음
+  - 특히 읽기 전용 review/verification 작업에서는 fresh forked `team-leader-agent`와 격리된 member attempt를 우선합니다.
+  - 현재 Codex 세션은 coordinator로만 유지하고 구조화된 summary만 병합합니다.
+  - 어떤 member가 격리를 유지할 수 없으면 degraded path를 notes 또는 workflow evidence에 명시적으로 남깁니다.
+  - Claude Agent Teams 플래그나 `mcp__codex__codex` 의존은 없습니다.
 
 ## Team Leader Agent 정책 (Bias for Action)
 
@@ -31,6 +33,7 @@ Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 Codex 네이�
 2. **계획 루프 제한**: 계획 재작성은 최대 1회까지만 허용합니다. 2회차부터는 실행 단계로 강제 전환합니다.
 3. **블로킹 처리**: 실제 차단 이슈에서만 사용자 질문 1회로 정리하고, 그 외에는 합리적 기본값으로 진행합니다.
 4. **실행 단위 명확화**: 팀원 할당마다 파일 범위, 실행 명령, 검증 명령을 명시합니다.
+5. **리뷰어 문맥 정리**: review/verification 할당은 전체 세션 이력이 아니라 artifact 기반 입력만 사용합니다.
 
 ## 사용법
 
