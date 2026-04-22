@@ -156,6 +156,14 @@ function classifyTimeoutReason(logFile) {
   return 'timeout-restart-limit';
 }
 
+function writeSupervisorEvent(logStream, event, payload = {}) {
+  logStream.write(`SUPERVISOR_EVENT ${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event,
+    ...payload,
+  })}\n`);
+}
+
 function resolveTimeoutFallbackRuntime(currentRuntime) {
   if (currentRuntime === 'claude' && commandExists('codex')) {
     return 'codex';
@@ -249,13 +257,33 @@ async function runWithWatchdog(args) {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
   });
+  writeSupervisorEvent(logStream, 'spawn', {
+    pid: child.pid ?? null,
+    command,
+    mode: 'watchdog',
+  });
 
   child.stdout.pipe(logStream, { end: false });
   child.stderr.pipe(logStream, { end: false });
 
   const exitCodePromise = new Promise((resolve, reject) => {
-    child.on('error', reject);
-    child.on('exit', (code) => resolve(code ?? 0));
+    child.on('error', (error) => {
+      writeSupervisorEvent(logStream, 'error', {
+        pid: child.pid ?? null,
+        mode: 'watchdog',
+        message: error.message,
+      });
+      reject(error);
+    });
+    child.on('exit', (code, signal) => {
+      writeSupervisorEvent(logStream, 'exit', {
+        pid: child.pid ?? null,
+        mode: 'watchdog',
+        code: code ?? 0,
+        signal: signal ?? '',
+      });
+      resolve(code ?? 0);
+    });
   });
 
   let timedOut = false;
@@ -375,13 +403,33 @@ async function runWorkerPromptWithCompletionGate(args) {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
   });
+  writeSupervisorEvent(logStream, 'spawn', {
+    pid: child.pid ?? null,
+    command,
+    mode: 'completion-gate',
+  });
 
   child.stdout.pipe(logStream, { end: false });
   child.stderr.pipe(logStream, { end: false });
 
   const exitCodePromise = new Promise((resolve, reject) => {
-    child.on('error', reject);
-    child.on('exit', (code) => resolve(code ?? 0));
+    child.on('error', (error) => {
+      writeSupervisorEvent(logStream, 'error', {
+        pid: child.pid ?? null,
+        mode: 'completion-gate',
+        message: error.message,
+      });
+      reject(error);
+    });
+    child.on('exit', (code, signal) => {
+      writeSupervisorEvent(logStream, 'exit', {
+        pid: child.pid ?? null,
+        mode: 'completion-gate',
+        code: code ?? 0,
+        signal: signal ?? '',
+      });
+      resolve(code ?? 0);
+    });
   });
 
   const startTime = Date.now();
@@ -454,7 +502,7 @@ function printUsage() {
   ].join('\n'));
 }
 
-function writeStdoutLine(value) {
+function writeStdoutLine(value = '') {
   process.stdout.write(`${String(value)}\n`);
 }
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -9,9 +8,8 @@ import { runCommand } from './lib/process-utils.mjs';
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
-const phaseRunLeasePath = path.join(SCRIPT_DIR, 'phase-run-lease.mjs');
 const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
-const DISPATCH_HEARTBEAT_INTERVAL_MS = Number.parseInt(process.env.PHASE_RUN_LEASE_HEARTBEAT_MS ?? '60000', 10) || 60000;
+const debugLog = path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl');
 
 const state = {
   planDir: '',
@@ -26,23 +24,22 @@ const state = {
   codexReasoningEffort: process.env.PHASE_DISPATCH_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT ?? 'medium',
   allowInteractiveInSession: (process.env.PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION ?? 'false') === 'true',
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
-  runLeaseId: '',
 };
 
-const runtimeState = {
-  finalized: false,
-  leaseSyncIssue: '',
-};
-
-const MAX_PLAN_COMPLETION_RESTARTS = Number.parseInt(
+const MAX_DELEGATED_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS ?? '32', 10) || 32;
+const MAX_COORDINATOR_RESTARTS = Number.parseInt(
   process.env.PHASE_DISPATCH_MAX_PLAN_COMPLETION_RESTARTS
     ?? process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS
     ?? '32',
   10,
 ) || 32;
 
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
+
 function showHelp() {
-  process.stdout.write(`Usage:
+  writeStdoutLine(`Usage:
   ./moonshot-phase-dispatch.sh <plan-dir> [options]
 
 Options:
@@ -50,26 +47,35 @@ Options:
   --status-file <path>      Default: .claude/docs/phase-status.yaml
   --execution-root <path>   Default: <plan-dir>/execution
   --runtime <runtime>       auto|claude|codex
-  --run-lease-id <id>       Optional existing phase-run lease id
   --max-attempts <n>        Default: 3 (coordinator mode)
   --stop-on-failure         Stop when retry cap is reached (default)
   --continue-on-failure     Keep going after failure
   --autonomous              Reserved for compatibility (agent-loop is autonomous by default)
   --allow-interactive-in-session
                             Keep in-session-coordinator on Codex instead of falling back
-  --dry-run                 Print resolved command without executing\n`);
+  --dry-run                 Print resolved command without executing`);
 }
 
 function logInfo(message) {
-  process.stdout.write(`INFO: ${message}\n`);
+  writeStdoutLine(`INFO: ${message}`);
 }
 
 function logWarn(message) {
-  process.stdout.write(`WARN: ${message}\n`);
+  writeStdoutLine(`WARN: ${message}`);
 }
 
 function logError(message) {
   console.error(`ERROR: ${message}`);
+}
+
+function appendDebugLog(event, details = {}) {
+  fs.mkdirSync(path.dirname(debugLog), { recursive: true });
+  fs.appendFileSync(debugLog, `${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    source: 'moonshot-phase-dispatch',
+    event,
+    ...details,
+  })}\n`, 'utf8');
 }
 
 function ensureCommand(name, errorMessage) {
@@ -94,286 +100,6 @@ function runtimeCli(args) {
   }
 
   return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-}
-
-function shellUnquote(value) {
-  if (!value) {
-    return '';
-  }
-  const trimmed = value.trim();
-  if (!(trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    return trimmed;
-  }
-  return trimmed.slice(1, -1).replace(/'\\''/g, "'");
-}
-
-function parseAssignments(output) {
-  const assignments = {};
-  for (const rawLine of (output ?? '').split(/\r?\n/)) {
-    const separator = rawLine.indexOf('=');
-    if (separator <= 0) {
-      continue;
-    }
-    const key = rawLine.slice(0, separator);
-    const value = rawLine.slice(separator + 1);
-    assignments[key] = shellUnquote(value);
-  }
-  return assignments;
-}
-
-function runPhaseRunLease(command, args, { allowFailure = false } = {}) {
-  const result = spawnSync('node', [phaseRunLeasePath, command, ...args], {
-    encoding: 'utf8',
-  });
-  if (result.error) {
-    throw result.error;
-  }
-  if ((result.status ?? 0) !== 0 && !allowFailure) {
-    throw new Error(result.stderr || `phase-run-lease command failed: ${command}`);
-  }
-  return parseAssignments(result.stdout);
-}
-
-function utcTimestamp() {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
-
-function countActionablePhasesInStatus() {
-  if (!fs.existsSync(state.statusFile)) {
-    return 0;
-  }
-
-  const lines = fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/);
-  const phases = [];
-  let current = null;
-
-  for (const rawLine of lines) {
-    if (/^\s*-\s+number:\s*/.test(rawLine)) {
-      if (current) {
-        phases.push(current);
-      }
-      current = {
-        status: '',
-        planConfirmed: '',
-      };
-      continue;
-    }
-
-    if (!current) {
-      continue;
-    }
-
-    const stripped = rawLine.trim();
-    if (stripped.startsWith('status:')) {
-      current.status = stripped.split(':', 2)[1].trim();
-    } else if (stripped.startsWith('planConfirmed:')) {
-      current.planConfirmed = stripped.split(':', 2)[1].trim().toLowerCase();
-    }
-  }
-
-  if (current) {
-    phases.push(current);
-  }
-
-  return phases.filter((phase) => {
-    if (phase.planConfirmed === 'false') {
-      return false;
-    }
-    return phase.status === 'pending' || phase.status === 'in_progress' || phase.status === 'failed';
-  }).length;
-}
-
-function upsertStatusRootKey(lines, key, value) {
-  const prefix = `${key}:`;
-  const rendered = `${prefix} ${value}`;
-  const index = lines.findIndex((line) => line.startsWith(prefix));
-  if (index >= 0) {
-    lines[index] = rendered;
-    return;
-  }
-  const insertAt = lines.findIndex((line) => line.startsWith('phases:'));
-  if (insertAt >= 0) {
-    lines.splice(insertAt, 0, rendered);
-    return;
-  }
-  lines.push(rendered);
-}
-
-function noteLeaseSyncIssue(operation, detail) {
-  const message = `${operation}: ${detail}`;
-  if (runtimeState.leaseSyncIssue === message) {
-    return;
-  }
-  runtimeState.leaseSyncIssue = message;
-  logWarn(`Phase run lease sync issue detected (${message})`);
-}
-
-function writeLeaseStatusFallback(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = 'failed') {
-  if (!state.statusFile || !fs.existsSync(state.statusFile)) {
-    return;
-  }
-
-  const now = utcTimestamp();
-  const lines = fs.readFileSync(state.statusFile, 'utf8')
-    .split(/\r?\n/)
-    .filter((line, index, array) => !(index === array.length - 1 && line === ''));
-  const actionable = countActionablePhasesInStatus();
-
-  upsertStatusRootKey(lines, 'activeExecutionHeartbeatAt', `"${now}"`);
-  upsertStatusRootKey(lines, 'activeExecutionStatus', '"finished"');
-  upsertStatusRootKey(lines, 'activeCurrentStage', '"finish/handoff"');
-  upsertStatusRootKey(lines, 'activeActionablePhasesRemaining', String(actionable));
-  upsertStatusRootKey(lines, 'lastReturnBoundary', returnBoundary ? `"${returnBoundary}"` : 'null');
-  upsertStatusRootKey(lines, 'lastStopReasonCode', stopReasonCode ? `"${stopReasonCode}"` : 'null');
-  upsertStatusRootKey(lines, 'lastStopReasonDetail', stopReasonDetail ? `"${stopReasonDetail}"` : 'null');
-  upsertStatusRootKey(lines, 'activeCompletionStatus', completionStatus ? `"${completionStatus}"` : 'null');
-
-  fs.writeFileSync(state.statusFile, `${lines.join('\n')}\n`, 'utf8');
-}
-
-function finalizeDispatchLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = 'failed') {
-  runtimeState.finalized = true;
-  const payload = finishRunLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus);
-  if (!payload) {
-    writeLeaseStatusFallback(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus);
-  }
-  return payload;
-}
-
-function installCrashGuards() {
-  process.on('uncaughtException', (error) => {
-    const detail = error?.stack || error?.message || String(error);
-    logError(`Unhandled exception in moonshot-phase-dispatch: ${detail}`);
-    finalizeDispatchLease('dispatch_crash', 'dispatch-uncaught-exception', detail, 'failed');
-    process.exit(1);
-  });
-
-  process.on('unhandledRejection', (reason) => {
-    const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
-    logError(`Unhandled rejection in moonshot-phase-dispatch: ${detail}`);
-    finalizeDispatchLease('dispatch_crash', 'dispatch-unhandled-rejection', detail, 'failed');
-    process.exit(1);
-  });
-
-  process.on('exit', (code) => {
-    if (runtimeState.finalized || code === 0 || state.dryRun) {
-      return;
-    }
-    writeLeaseStatusFallback(
-      'dispatch_exit',
-      'dispatch-exit-before-finish',
-      `moonshot-phase-dispatch exited with code ${code} before lease closeout`,
-      'failed',
-    );
-  });
-}
-
-function ensureRunLeaseId() {
-  if (!state.runLeaseId) {
-    state.runLeaseId = crypto.randomUUID();
-  }
-  return state.runLeaseId;
-}
-
-function startRunLease(executionBoundary, resolvedRoot, masterPlan, runtime) {
-  if (state.dryRun) {
-    return null;
-  }
-  try {
-    const payload = runPhaseRunLease('start', [
-      state.statusFile,
-      ensureRunLeaseId(),
-      executionBoundary,
-      state.planDir,
-      resolvedRoot,
-      runtime,
-      masterPlan,
-      String(process.pid),
-    ]);
-    if (Object.keys(payload).length === 0) {
-      noteLeaseSyncIssue('start', 'phase-run-lease returned no payload');
-      return null;
-    }
-    return payload;
-  } catch (error) {
-    logWarn(`Unable to start phase run lease: ${error.message}`);
-    noteLeaseSyncIssue('start', error.message);
-    return null;
-  }
-}
-
-function heartbeatRunLease(currentStage, phaseNum = '', phaseTitle = '', completionStatus = 'running') {
-  if (state.dryRun || !state.runLeaseId) {
-    return null;
-  }
-  try {
-    const payload = runPhaseRunLease('heartbeat', [
-      state.statusFile,
-      state.runLeaseId,
-      currentStage,
-      String(phaseNum ?? ''),
-      phaseTitle ?? '',
-      completionStatus,
-    ], { allowFailure: true });
-    if (Object.keys(payload).length === 0) {
-      noteLeaseSyncIssue('heartbeat', `no payload for runLeaseId=${state.runLeaseId}`);
-      return null;
-    }
-    return payload;
-  } catch (error) {
-    logWarn(`Unable to heartbeat phase run lease: ${error.message}`);
-    noteLeaseSyncIssue('heartbeat', error.message);
-    return null;
-  }
-}
-
-function finishRunLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = '') {
-  if (state.dryRun || !state.runLeaseId) {
-    return null;
-  }
-  try {
-    const payload = runPhaseRunLease('finish', [
-      state.statusFile,
-      state.runLeaseId,
-      returnBoundary,
-      stopReasonCode,
-      stopReasonDetail,
-      completionStatus,
-    ], { allowFailure: true });
-    if (Object.keys(payload).length === 0) {
-      noteLeaseSyncIssue('finish', `no payload for runLeaseId=${state.runLeaseId}`);
-      return null;
-    }
-    return payload;
-  } catch (error) {
-    logWarn(`Unable to finish phase run lease: ${error.message}`);
-    noteLeaseSyncIssue('finish', error.message);
-    return null;
-  }
-}
-
-function assertReturnAllowed() {
-  if (state.dryRun) {
-    return {
-      RETURN_ALLOWED: 'true',
-      RETURN_REASON: 'dry_run',
-      ACTIONABLE_PHASES_REMAINING: '0',
-    };
-  }
-  try {
-    return runPhaseRunLease('assert-return-allowed', [
-      state.statusFile,
-      state.runLeaseId,
-      'true',
-      'false',
-    ], { allowFailure: true });
-  } catch (error) {
-    return {
-      RETURN_ALLOWED: 'false',
-      RETURN_REASON: `assert-return-allowed-error:${error.message}`,
-      ACTIONABLE_PHASES_REMAINING: '',
-    };
-  }
 }
 
 function actionablePhaseExists() {
@@ -600,6 +326,10 @@ function terminateStaleWorkers() {
         continue;
       }
       logWarn(`terminating stale phase worker (pid=${pid})`);
+      appendDebugLog('terminate-stale-worker', {
+        pid,
+        pattern,
+      });
       terminatePid(pid);
     }
   }
@@ -614,39 +344,32 @@ function buildCodexCommand(prompt) {
   return args;
 }
 
-function runDelegatedTerminal(resolvedRoot, masterPlan, runtime) {
+function runDelegatedTerminal(resolvedRoot) {
   terminateStaleWorkers();
-  const cmd = [
-    'node',
-    '.claude/scripts/agent-loop.mjs',
-    state.planDir,
-    '--status-file',
-    state.statusFile,
-    '--execution-root',
-    resolvedRoot,
-    '--runtime',
-    state.runtime,
-    '--run-lease-id',
-    ensureRunLeaseId(),
-  ];
+  const cmd = ['node', '.claude/scripts/agent-loop.mjs', state.planDir, '--status-file', state.statusFile, '--execution-root', resolvedRoot, '--runtime', state.runtime];
 
   if (state.dryRun) {
-    process.stdout.write(`${cmd.join(' ')}\n`);
+    writeStdoutLine(cmd.join(' '));
     return;
   }
 
   let restartCount = 0;
 
   const launch = () => {
-    heartbeatRunLease('dispatch/delegated-terminal-launch', '', '', 'running');
     const child = spawn(cmd[0], cmd.slice(1), { stdio: 'inherit' });
-    const heartbeatTimer = setInterval(() => {
-      heartbeatRunLease('dispatch/delegated-terminal-running', '', '', 'running');
-    }, DISPATCH_HEARTBEAT_INTERVAL_MS);
+    appendDebugLog('delegated-terminal-launch', {
+      pid: child.pid ?? null,
+      command: cmd,
+      planDir: state.planDir,
+      executionRoot: resolvedRoot,
+    });
     child.on('exit', (code, signal) => {
-      clearInterval(heartbeatTimer);
+      appendDebugLog('delegated-terminal-exit', {
+        pid: child.pid ?? null,
+        code: code ?? 0,
+        signal: signal ?? '',
+      });
       if (signal) {
-        finalizeDispatchLease('user_pause', `signal-${signal}`, `delegated-terminal received signal ${signal}`, 'interrupted');
         process.kill(process.pid, signal);
         return;
       }
@@ -658,40 +381,30 @@ function runDelegatedTerminal(resolvedRoot, masterPlan, runtime) {
           actionable = actionablePhaseExists();
         } catch (error) {
           logWarn(`Unable to inspect remaining phases after delegated-terminal exit: ${error.message}`);
+          appendDebugLog('delegated-terminal-actionable-check-failed', {
+            message: error.message,
+            stack: error.stack || '',
+          });
         }
 
         if (actionable) {
           restartCount += 1;
-          if (restartCount > MAX_PLAN_COMPLETION_RESTARTS) {
-            finalizeDispatchLease(
-              'contract_violation',
-              'restart-cap-exceeded',
-              `delegated-terminal exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained`,
-              'failed',
-            );
-            logError(`Delegated-terminal exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
+          if (restartCount > MAX_DELEGATED_RESTARTS) {
+            logError(`Delegated-terminal exited cleanly ${MAX_DELEGATED_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
             process.exit(1);
             return;
           }
 
-          heartbeatRunLease('dispatch/restart-pending', '', '', 'running');
-          logWarn(`Delegated-terminal exited before the active plan directory was complete. Restarting autonomous loop (${restartCount}/${MAX_PLAN_COMPLETION_RESTARTS}).`);
+          logWarn(`Delegated-terminal exited before the active plan directory was complete. Restarting autonomous loop (${restartCount}/${MAX_DELEGATED_RESTARTS}).`);
+          appendDebugLog('delegated-terminal-restart', {
+            restartCount,
+            maxRestarts: MAX_DELEGATED_RESTARTS,
+          });
           launch();
           return;
         }
-
-        finalizeDispatchLease('loop_exit', 'plan-directory-complete', 'delegated-terminal loop exited after plan directory completion', 'completed');
-        const returnGuard = assertReturnAllowed();
-        if (returnGuard.RETURN_ALLOWED !== 'true') {
-          logError(`Delegated-terminal tried to return before allowed boundary: ${returnGuard.RETURN_REASON}`);
-          process.exit(1);
-          return;
-        }
       }
 
-      if (exitCode !== 0) {
-        finalizeDispatchLease('loop_exit', 'child-nonzero-exit', `delegated-terminal exited with code ${exitCode}`, 'failed');
-      }
       process.exit(exitCode);
     });
   };
@@ -699,7 +412,7 @@ function runDelegatedTerminal(resolvedRoot, masterPlan, runtime) {
   launch();
 }
 
-function runInSessionCoordinator(resolvedRoot, masterPlan, runtime) {
+function runInSessionCoordinator(resolvedRoot, masterPlan) {
   terminateStaleWorkers();
   const stopLine = state.stopOnFailure ? '  stopOnFailure: true' : '  stopOnFailure: false';
   const activeArtifacts = resolveActivePhaseArtifacts();
@@ -746,7 +459,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
   }
 
   if (state.dryRun) {
-    process.stdout.write(`${cmd.join(' ')}\n`);
+    writeStdoutLine(cmd.join(' '));
     return;
   }
 
@@ -756,11 +469,13 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
 
   const launch = () => {
     let fallbackToDelegated = false;
-    heartbeatRunLease('dispatch/in-session-coordinator-launch', '', '', 'running');
     const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
-    const heartbeatTimer = setInterval(() => {
-      heartbeatRunLease('dispatch/in-session-coordinator-running', '', '', 'running');
-    }, DISPATCH_HEARTBEAT_INTERVAL_MS);
+    appendDebugLog('in-session-coordinator-launch', {
+      pid: child.pid ?? null,
+      command: cmd,
+      planDir: state.planDir,
+      executionRoot: resolvedRoot,
+    });
 
     const handleCoordinatorOutput = (chunk, targetStream) => {
       const text = String(chunk);
@@ -782,15 +497,18 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
     child.stdout.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stdout));
     child.stderr.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stderr));
     child.on('exit', (code, signal) => {
-      clearInterval(heartbeatTimer);
+      appendDebugLog('in-session-coordinator-exit', {
+        pid: child.pid ?? null,
+        code: code ?? 0,
+        signal: signal ?? '',
+        fallbackToDelegated,
+      });
       if (fallbackToDelegated) {
         recordDispatchEvidence('delegated-terminal', resolvedRoot, masterPlan);
-        startRunLease('delegated-terminal', resolvedRoot, masterPlan, runtime);
-        runDelegatedTerminal(resolvedRoot, masterPlan, runtime);
+        runDelegatedTerminal(resolvedRoot);
         return;
       }
       if (signal) {
-        finalizeDispatchLease('user_pause', `signal-${signal}`, `in-session-coordinator received signal ${signal}`, 'interrupted');
         process.kill(process.pid, signal);
         return;
       }
@@ -802,40 +520,30 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
           actionable = actionablePhaseExists();
         } catch (error) {
           logWarn(`Unable to inspect remaining phases after in-session-coordinator exit: ${error.message}`);
+          appendDebugLog('in-session-coordinator-actionable-check-failed', {
+            message: error.message,
+            stack: error.stack || '',
+          });
         }
 
         if (actionable) {
           restartCount += 1;
-          if (restartCount > MAX_PLAN_COMPLETION_RESTARTS) {
-            finalizeDispatchLease(
-              'contract_violation',
-              'restart-cap-exceeded',
-              `in-session-coordinator exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained`,
-              'failed',
-            );
-            logError(`In-session-coordinator exited cleanly ${MAX_PLAN_COMPLETION_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
+          if (restartCount > MAX_COORDINATOR_RESTARTS) {
+            logError(`In-session-coordinator exited cleanly ${MAX_COORDINATOR_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
             process.exit(1);
             return;
           }
 
-          heartbeatRunLease('dispatch/restart-pending', '', '', 'running');
-          logWarn(`In-session-coordinator exited before the active plan directory was complete. Restarting coordinator (${restartCount}/${MAX_PLAN_COMPLETION_RESTARTS}).`);
+          logWarn(`In-session-coordinator exited before the active plan directory was complete. Restarting coordinator (${restartCount}/${MAX_COORDINATOR_RESTARTS}).`);
+          appendDebugLog('in-session-coordinator-restart', {
+            restartCount,
+            maxRestarts: MAX_COORDINATOR_RESTARTS,
+          });
           launch();
           return;
         }
-
-        finalizeDispatchLease('loop_exit', 'plan-directory-complete', 'in-session-coordinator exited after plan directory completion', 'completed');
-        const returnGuard = assertReturnAllowed();
-        if (returnGuard.RETURN_ALLOWED !== 'true') {
-          logError(`In-session-coordinator tried to return before allowed boundary: ${returnGuard.RETURN_REASON}`);
-          process.exit(1);
-          return;
-        }
       }
 
-      if (exitCode !== 0) {
-        finalizeDispatchLease('loop_exit', 'child-nonzero-exit', `in-session-coordinator exited with code ${exitCode}`, 'failed');
-      }
       process.exit(exitCode);
     });
   };
@@ -882,9 +590,6 @@ function parseArgs(argv) {
       case '--dry-run':
         state.dryRun = true;
         break;
-      case '--run-lease-id':
-        state.runLeaseId = args.shift() ?? '';
-        break;
       case '--help':
       case '-h':
         showHelp();
@@ -898,7 +603,6 @@ function parseArgs(argv) {
 }
 
 parseArgs(process.argv.slice(2));
-installCrashGuards();
 runtimeCli(['sync-wsl-codex-auth']);
 
 if (!state.planDir) {
@@ -941,17 +645,16 @@ logInfo(`Execution mode: ${resolvedMode}`);
 logInfo(`Execution root: ${resolvedRoot}`);
 logInfo(`Runtime: ${state.runtime}`);
 recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan);
-startRunLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
 if (state.autonomous) {
   logInfo('Autonomous flag acknowledged (delegated terminal is autonomous by default)');
 }
 
 switch (resolvedMode) {
   case 'delegated-terminal':
-    runDelegatedTerminal(resolvedRoot, masterPlan, effectiveRuntime);
+    runDelegatedTerminal(resolvedRoot);
     break;
   case 'in-session-coordinator':
-    runInSessionCoordinator(resolvedRoot, masterPlan, effectiveRuntime);
+    runInSessionCoordinator(resolvedRoot, masterPlan);
     break;
   default:
     logError(`Unsupported execution mode: ${resolvedMode}`);

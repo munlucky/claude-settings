@@ -6,6 +6,21 @@ import path from 'node:path';
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
 
+function writeFileAtomic(filePath, content) {
+  const directory = path.dirname(filePath);
+  const tempPath = path.join(
+    directory,
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+
+  fs.writeFileSync(tempPath, content, 'utf8');
+  fs.renameSync(tempPath, filePath);
+}
+
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
+
 function parseIsoTimestamp(value) {
   if (!value) {
     return Number.NaN;
@@ -827,7 +842,7 @@ function updatePhaseState(config) {
     removeRootKey('artifacts');
   }
 
-  fs.writeFileSync(statusFile, `${lines.join('\n')}\n`, 'utf8');
+  writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }
 
 function printUsage() {
@@ -851,7 +866,7 @@ switch (command) {
     }
     const staleSeconds = Number.parseFloat(staleSecondsRaw);
     for (const phase of listStaleInProgressPhases(statusFile, staleSeconds)) {
-      console.log(phase);
+      writeStdoutLine(phase);
     }
     break;
   }
@@ -865,7 +880,7 @@ switch (command) {
       targetCompletionScore: args[5],
     });
     for (const [key, value] of Object.entries(result)) {
-      console.log(`${key}=${shellQuote(value)}`);
+      writeStdoutLine(`${key}=${shellQuote(value)}`);
     }
     break;
   }
@@ -877,7 +892,7 @@ switch (command) {
     }
     const result = getPhaseSummary(statusFile, phaseNum);
     for (const [key, value] of Object.entries(result)) {
-      console.log(`${key}=${shellQuote(value)}`);
+      writeStdoutLine(`${key}=${shellQuote(value)}`);
     }
     break;
   }
