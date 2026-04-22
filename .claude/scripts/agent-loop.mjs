@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -11,6 +12,7 @@ const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
 const phasePlanPath = path.join(scriptDir, 'agent-loop-phase-plan.mjs');
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const phaseRunnerPath = path.join(scriptDir, 'agent-loop-phase-runner.mjs');
+const artifactsPath = path.join(scriptDir, 'agent-loop-phase-artifacts.mjs');
 const logDir = '.claude/logs/agent-loop';
 const decisionLog = path.join(logDir, 'decisions.md');
 const summaryReport = path.join(logDir, 'summary.md');
@@ -162,6 +164,37 @@ function phaseState(command, ...args) {
     throw new Error(result.stderr || `phase-state command failed: ${command}`);
   }
   return result.stdout.trim();
+}
+
+function artifactsCommand(command, ...args) {
+  const result = runNodeScript(artifactsPath, [command, ...args]);
+  if (result.status !== 0) {
+    throw new Error(result.stderr || `phase-artifacts command failed: ${command}`);
+  }
+  return result.stdout.trim();
+}
+
+function parseAssignments(text) {
+  const values = {};
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    const key = line.slice(0, separator);
+    let value = line.slice(separator + 1);
+    value = value.replace(/^'/, '').replace(/'$/, '').replace(/'\\''/g, "'");
+    values[key] = value;
+  }
+  return values;
+}
+
+function activePhaseContext() {
+  return parseAssignments(phaseState('get-active-phase-context', state.statusFile));
 }
 
 function phaseSummary(phaseNum) {
@@ -371,6 +404,124 @@ function handleStaleInProgressPhases() {
   }
 }
 
+function reconcileCompletedPhasesFromArtifacts() {
+  const reconciled = phaseState('reconcile-completed-phases', state.statusFile)
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [phaseNum = '', fromStatus = '', reason = '', timestamp = ''] = line.split('|');
+      return { phaseNum, fromStatus, reason, timestamp };
+    });
+
+  if (reconciled.length === 0) {
+    return [];
+  }
+
+  appendDebugLog('phase-status-reconciled-from-artifacts', {
+    reconciled,
+    statusFile: state.statusFile,
+  });
+  appendDecisionLog([
+    '## Phase State Reconciliation',
+    ...reconciled.map((entry) => `- Phase ${entry.phaseNum}: ${entry.fromStatus} -> completed (${entry.reason})`),
+    '',
+  ]);
+  logInfo(`Reconciled completed phases from clean-finish artifacts: ${reconciled.map((entry) => entry.phaseNum).join(', ')}`);
+  return reconciled;
+}
+
+let loopSignalCloseoutHandled = false;
+
+function closeoutActivePhaseForSignal(signalName, origin = 'agent-loop-signal') {
+  if (loopSignalCloseoutHandled) {
+    return;
+  }
+  loopSignalCloseoutHandled = true;
+
+  try {
+    const context = activePhaseContext();
+    if (!context.number || context.status !== 'in_progress' || context.lastOutcome === 'partial') {
+      appendDebugLog('agent-loop-signal-no-active-phase', {
+        signalName,
+        origin,
+        context,
+      });
+      return;
+    }
+
+    const phaseNum = context.number;
+    const phaseDoc = context.activePhaseDoc || phasePlan('get-phase-doc', state.planDir, phaseNum) || '';
+    const phaseTitle = phasePlan('get-phase-title', state.planDir, phaseNum) || `Phase ${phaseNum}`;
+    const detail = `${origin}: received ${signalName} while phase ${phaseNum} was still in progress`;
+
+    appendDebugLog('agent-loop-signal-closeout', {
+      signalName,
+      origin,
+      phaseNum,
+      phaseDoc,
+      context,
+    });
+
+    if (context.qaReport) {
+      artifactsCommand(
+        'append-qa-runtime-update',
+        'agent-loop-interrupted',
+        '',
+        detail,
+        '.claude/logs/workflow-enforcement',
+        context.qaReport,
+        context.scorecard || '',
+      );
+    }
+
+    if (context.handoff) {
+      artifactsCommand(
+        'append-handoff-update',
+        'interrupted',
+        '',
+        detail,
+        String(phaseNum),
+        phaseTitle,
+        context.sprintContract || '',
+        context.qaReport || '',
+        phaseDoc,
+        context.scorecard || '',
+        context.handoff,
+      );
+    }
+
+    phaseState(
+      'update-phase-state',
+      state.statusFile,
+      String(phaseNum),
+      'in_progress',
+      utcTimestamp(),
+      'partial',
+      'false',
+      phaseDoc,
+      context.sprintContract || '',
+      context.qaReport || '',
+      context.handoff || '',
+      context.scorecard || '',
+    );
+
+    appendDecisionLog([
+      `## Phase ${phaseNum} - Interrupted`,
+      `- Reason: ${signalName}`,
+      `- Detail: ${detail}`,
+      '',
+    ]);
+  } catch (error) {
+    appendDebugLog('agent-loop-signal-closeout-failed', {
+      signalName,
+      origin,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack || '' : '',
+    });
+  }
+}
+
 function printLoopHeader({ masterPlan, runtime, totalPhases }) {
   writeStdoutLine('');
   writeStdoutLine('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
@@ -428,6 +579,7 @@ async function runNodeManagedLoop() {
     printLoopHeader({ masterPlan, runtime, totalPhases });
 
     while (true) {
+      reconcileCompletedPhasesFromArtifacts();
       handleStaleInProgressPhases();
 
       const nextPhase = phasePlan('get-next-phase', state.statusFile) || '';
@@ -460,16 +612,27 @@ async function runNodeManagedLoop() {
       });
 
       if (exitCode !== 0) {
-        failedPhases += 1;
-        stoppedEarly = true;
-        stopPhase = nextPhase;
-        stopReason = 'phase-shell-core-failed';
-        stopDetail = `single-phase shell core exited with code ${exitCode}`;
-        break;
+        reconcileCompletedPhasesFromArtifacts();
+        const phaseAfterFailure = phaseSummary(nextPhase);
+        if (phaseAfterFailure.status !== 'completed') {
+          failedPhases += 1;
+          stoppedEarly = true;
+          stopPhase = nextPhase;
+          stopReason = 'phase-shell-core-failed';
+          stopDetail = `single-phase shell core exited with code ${exitCode}`;
+          break;
+        }
+
+        appendDebugLog('phase-runner-nonzero-exit-reconciled', {
+          nextPhase,
+          exitCode,
+          phaseAfterFailure,
+        });
       }
 
       let updatedNextPhase = '';
       try {
+        reconcileCompletedPhasesFromArtifacts();
         updatedNextPhase = phasePlan('get-next-phase', state.statusFile) || '';
       } catch (error) {
         failedPhases += 1;
@@ -561,6 +724,19 @@ async function runNodeManagedLoop() {
 parseArgs(process.argv.slice(2));
 syncRuntimeEnvironment();
 assertEnvironment();
+
+for (const signalName of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+  process.on(signalName, () => {
+    appendDebugLog('agent-loop-signal', {
+      signalName,
+      statusFile: state.statusFile,
+      planDir: state.planDir,
+    });
+    closeoutActivePhaseForSignal(signalName, 'agent-loop-signal');
+    const signalNumber = os.constants.signals?.[signalName] ?? 1;
+    process.exit(128 + signalNumber);
+  });
+}
 
 if (!state.dryRun) {
   runNodeManagedLoop().then((code) => {

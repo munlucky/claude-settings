@@ -8,6 +8,8 @@ import { runCommand } from './lib/process-utils.mjs';
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
+const phaseStatePath = path.join(SCRIPT_DIR, 'agent-loop-phase-state.mjs');
+const phaseArtifactsPath = path.join(SCRIPT_DIR, 'agent-loop-phase-artifacts.mjs');
 const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
 const debugLog = path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl');
 
@@ -33,6 +35,8 @@ const MAX_COORDINATOR_RESTARTS = Number.parseInt(
     ?? '32',
   10,
 ) || 32;
+const MAX_SIGNAL_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_SIGNAL_RESTARTS ?? '4', 10) || 4;
+const SIGNAL_LIKE_EXIT_CODES = new Set([129, 130, 131, 143]);
 
 function writeStdoutLine(value = '') {
   process.stdout.write(`${String(value)}\n`);
@@ -100,6 +104,58 @@ function runtimeCli(args) {
   }
 
   return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function runNodeScript(scriptPath, args) {
+  const result = spawnSync('node', [scriptPath, ...args], {
+    encoding: 'utf8',
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  return result;
+}
+
+function parseAssignments(text) {
+  const values = {};
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    const key = line.slice(0, separator);
+    let value = line.slice(separator + 1);
+    value = value.replace(/^'/, '').replace(/'$/, '').replace(/'\\''/g, "'");
+    values[key] = value;
+  }
+  return values;
+}
+
+function activePhaseContext() {
+  const result = runNodeScript(phaseStatePath, ['get-active-phase-context', state.statusFile]);
+  if ((result.status ?? 0) !== 0) {
+    return {};
+  }
+  return parseAssignments(result.stdout);
+}
+
+function appendPhaseArtifact(command, args) {
+  const result = runNodeScript(phaseArtifactsPath, [command, ...args]);
+  if ((result.status ?? 0) !== 0) {
+    throw new Error(result.stderr || `phase-artifacts failed: ${command}`);
+  }
+}
+
+function utcTimestamp() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function isSignalLikeExit(code, signal) {
+  return Boolean(signal) || SIGNAL_LIKE_EXIT_CODES.has(code ?? 0);
 }
 
 function actionablePhaseExists() {
@@ -289,7 +345,9 @@ function terminatePid(pid) {
   }
 
   try {
-    process.kill(pid, 'SIGTERM');
+    const [pgid] = runtimeCli(['get-process-group-id', String(pid)]);
+    const target = pgid && pgid === String(pid) ? -Math.abs(pid) : pid;
+    process.kill(target, 'SIGTERM');
   } catch {
     return;
   }
@@ -297,7 +355,9 @@ function terminatePid(pid) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
 
   try {
-    process.kill(pid, 'SIGKILL');
+    const [pgid] = runtimeCli(['get-process-group-id', String(pid)]);
+    const target = pgid && pgid === String(pid) ? -Math.abs(pid) : pid;
+    process.kill(target, 'SIGKILL');
   } catch {
     // Ignore processes that already exited.
   }
@@ -335,6 +395,73 @@ function terminateStaleWorkers() {
   }
 }
 
+function closeoutActivePhaseForSignal(signalName, exitCode = 0) {
+  const context = activePhaseContext();
+  if (!context.number || context.status !== 'in_progress' || context.lastOutcome === 'partial') {
+    appendDebugLog('delegated-terminal-signal-no-closeout', {
+      signalName,
+      exitCode,
+      context,
+    });
+    return false;
+  }
+
+  const phaseNum = context.number;
+  const phaseDoc = context.activePhaseDoc || phasePlan('get-phase-doc', state.planDir, phaseNum) || '';
+  const phaseTitle = phasePlan('get-phase-title', state.planDir, phaseNum) || `Phase ${phaseNum}`;
+  const detail = `delegated-terminal child exited unexpectedly (${signalName || `exit=${exitCode}`}); dispatch marked the active phase as partial and will retry`;
+
+  appendDebugLog('delegated-terminal-signal-closeout', {
+    signalName,
+    exitCode,
+    phaseNum,
+    phaseDoc,
+    context,
+  });
+
+  if (context.qaReport) {
+    appendPhaseArtifact('append-qa-runtime-update', [
+      'dispatch-interrupted-restart',
+      '',
+      detail,
+      '.claude/logs/workflow-enforcement',
+      context.qaReport,
+      context.scorecard || '',
+    ]);
+  }
+
+  if (context.handoff) {
+    appendPhaseArtifact('append-handoff-update', [
+      'interrupted',
+      '',
+      detail,
+      String(phaseNum),
+      phaseTitle,
+      context.sprintContract || '',
+      context.qaReport || '',
+      phaseDoc,
+      context.scorecard || '',
+      context.handoff,
+    ]);
+  }
+
+  runNodeScript(phaseStatePath, [
+    'update-phase-state',
+    state.statusFile,
+    String(phaseNum),
+    'in_progress',
+    utcTimestamp(),
+    'partial',
+    'false',
+    phaseDoc,
+    context.sprintContract || '',
+    context.qaReport || '',
+    context.handoff || '',
+    context.scorecard || '',
+  ]);
+  return true;
+}
+
 function buildCodexCommand(prompt) {
   const args = runtimeCli(['codex-base-args', process.cwd()]);
   if (state.codexReasoningEffort) {
@@ -354,6 +481,7 @@ function runDelegatedTerminal(resolvedRoot) {
   }
 
   let restartCount = 0;
+  let signalRestartCount = 0;
 
   const launch = () => {
     const child = spawn(cmd[0], cmd.slice(1), { stdio: 'inherit' });
@@ -369,8 +497,50 @@ function runDelegatedTerminal(resolvedRoot) {
         code: code ?? 0,
         signal: signal ?? '',
       });
-      if (signal) {
-        process.kill(process.pid, signal);
+      if (isSignalLikeExit(code ?? 0, signal ?? '')) {
+        let closeoutApplied = false;
+        try {
+          closeoutApplied = closeoutActivePhaseForSignal(signal ?? '', code ?? 0);
+        } catch (error) {
+          appendDebugLog('delegated-terminal-signal-closeout-failed', {
+            signal: signal ?? '',
+            code: code ?? 0,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack || '' : '',
+          });
+        }
+
+        let actionable = false;
+        try {
+          actionable = actionablePhaseExists();
+        } catch (error) {
+          logWarn(`Unable to inspect remaining phases after signal-like delegated-terminal exit: ${error.message}`);
+          appendDebugLog('delegated-terminal-signal-actionable-check-failed', {
+            message: error.message,
+            stack: error.stack || '',
+          });
+        }
+
+        if (actionable) {
+          signalRestartCount += 1;
+          if (signalRestartCount > MAX_SIGNAL_RESTARTS) {
+            logError(`Delegated-terminal exited with signal-like termination ${MAX_SIGNAL_RESTARTS} times while actionable phases remained. Stopping.`);
+            process.exit(1);
+            return;
+          }
+          logWarn(`Delegated-terminal exited with signal-like termination. Restarting autonomous loop (${signalRestartCount}/${MAX_SIGNAL_RESTARTS}).`);
+          appendDebugLog('delegated-terminal-signal-restart', {
+            signal: signal ?? '',
+            code: code ?? 0,
+            signalRestartCount,
+            maxSignalRestarts: MAX_SIGNAL_RESTARTS,
+            closeoutApplied,
+          });
+          launch();
+          return;
+        }
+
+        process.exit(code ?? 1);
         return;
       }
 

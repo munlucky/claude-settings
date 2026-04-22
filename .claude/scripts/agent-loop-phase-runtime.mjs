@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 
 const scriptDir = path.dirname(new URL(import.meta.url).pathname);
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
+const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
 
 function commandExists(command) {
   const checker = process.platform === 'win32' ? 'where' : 'which';
@@ -43,6 +44,24 @@ function parseShellAssignments(text) {
   return result;
 }
 
+function shellQuote(value) {
+  if (value === undefined || value === null) {
+    return "''";
+  }
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function runtimeCli(args) {
+  const result = spawnSync('node', [runtimeCliPath, ...args], {
+    encoding: 'utf8',
+    env: process.env,
+  });
+  if (result.error || (result.status ?? 0) !== 0) {
+    return [];
+  }
+  return (result.stdout ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
 function evaluatePhaseCompletionAllowed(config) {
   const result = spawnSync('node', [
     phaseStatePath,
@@ -53,6 +72,7 @@ function evaluatePhaseCompletionAllowed(config) {
     config.phaseExecutionDir ?? '',
     config.scorecardRequired ?? 'true',
     config.targetCompletionScore ?? '100',
+    config.phaseHandoff ?? '',
   ], {
     encoding: 'utf8',
     env: process.env,
@@ -66,12 +86,42 @@ function evaluatePhaseCompletionAllowed(config) {
   return values.PHASE_COMPLETION_ALLOWED === 'true';
 }
 
+function resolveCrossRuntimeFallbackPolicy() {
+  const explicit = String(process.env.AGENT_LOOP_ALLOW_CROSS_RUNTIME_FALLBACK ?? 'auto').trim().toLowerCase();
+  if (explicit === 'true') {
+    return {
+      allow: true,
+      reason: 'env-override-true',
+    };
+  }
+  if (explicit === 'false') {
+    return {
+      allow: false,
+      reason: 'env-override-false',
+    };
+  }
+
+  const originator = String(process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE || '').trim().toLowerCase();
+  const isCodexDesktop = originator.includes('codex desktop') || Boolean(process.env.CODEX_THREAD_ID);
+  if (isCodexDesktop) {
+    return {
+      allow: false,
+      reason: 'same-runtime-only-codex-desktop',
+    };
+  }
+
+  return {
+    allow: true,
+    reason: 'auto-allow',
+  };
+}
+
 function resolveRunnerRuntime(requestedRuntime) {
   if (requestedRuntime === 'claude' || requestedRuntime === 'codex') {
     return requestedRuntime;
   }
 
-  if (commandExists('codex')) {
+  if (runtimeCli(['resolve-codex-command']).length > 0) {
     return 'codex';
   }
 
@@ -165,7 +215,11 @@ function writeSupervisorEvent(logStream, event, payload = {}) {
 }
 
 function resolveTimeoutFallbackRuntime(currentRuntime) {
-  if (currentRuntime === 'claude' && commandExists('codex')) {
+  const fallbackPolicy = resolveCrossRuntimeFallbackPolicy();
+  if (!fallbackPolicy.allow) {
+    return '';
+  }
+  if (currentRuntime === 'claude' && runtimeCli(['resolve-codex-command']).length > 0) {
     return 'codex';
   }
   if (currentRuntime === 'codex' && commandExists('claude')) {
@@ -188,7 +242,21 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function terminateProcess(pid) {
+function utcTimestamp() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function buildProcessKillTarget(pid, useProcessGroup = false) {
+  if (!Number.isFinite(pid)) {
+    return null;
+  }
+  if (useProcessGroup && process.platform !== 'win32') {
+    return -Math.abs(pid);
+  }
+  return pid;
+}
+
+function terminateProcess(pid, useProcessGroup = false) {
   if (!Number.isFinite(pid)) {
     return;
   }
@@ -199,22 +267,149 @@ function terminateProcess(pid) {
   }
 
   try {
-    process.kill(pid, 'SIGTERM');
+    const target = buildProcessKillTarget(pid, useProcessGroup);
+    if (target === null) {
+      return;
+    }
+    process.kill(target, 'SIGTERM');
   } catch {
     return;
   }
 }
 
-function killProcessHard(pid) {
+function killProcessHard(pid, useProcessGroup = false) {
   if (!Number.isFinite(pid) || process.platform === 'win32') {
     return;
   }
 
   try {
-    process.kill(pid, 'SIGKILL');
+    const target = buildProcessKillTarget(pid, useProcessGroup);
+    if (target === null) {
+      return;
+    }
+    process.kill(target, 'SIGKILL');
   } catch {
     // Ignore processes that already exited.
   }
+}
+
+function updatePhaseHeartbeat({
+  statusFile,
+  phaseNum,
+  activePhaseDoc,
+  sprintContractPath,
+  qaReportPath,
+  handoffPath,
+  scorecardPath,
+}) {
+  if (!statusFile || !phaseNum) {
+    return false;
+  }
+
+  const result = spawnSync('node', [
+    phaseStatePath,
+    'update-phase-state',
+    statusFile,
+    String(phaseNum),
+    'in_progress',
+    utcTimestamp(),
+    'running',
+    'false',
+    activePhaseDoc ?? '',
+    sprintContractPath ?? '',
+    qaReportPath ?? '',
+    handoffPath ?? '',
+    scorecardPath ?? '',
+  ], {
+    encoding: 'utf8',
+    env: process.env,
+  });
+
+  return !result.error && (result.status ?? 0) === 0;
+}
+
+function parseRecentRuntimeIssues(logDir, pattern, recentWindowMs, maxFiles) {
+  if (!logDir || !fs.existsSync(logDir)) {
+    return [];
+  }
+
+  const now = Date.now();
+  return fs.readdirSync(logDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^phase-.*\.log$/.test(entry.name))
+    .map((entry) => {
+      const fullPath = path.join(logDir, entry.name);
+      const stats = fs.statSync(fullPath);
+      return {
+        path: fullPath,
+        mtimeMs: stats.mtimeMs,
+      };
+    })
+    .filter((entry) => now - entry.mtimeMs <= recentWindowMs)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, maxFiles)
+    .flatMap((entry) => {
+      try {
+        const text = fs.readFileSync(entry.path, 'utf8');
+        return pattern.test(text) ? [entry.path] : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
+  const normalizedRuntime = String(runtime || '').trim();
+  const fallbackPolicy = resolveCrossRuntimeFallbackPolicy();
+  if (!normalizedRuntime || normalizedRuntime === 'claude' || normalizedRuntime === 'auto') {
+    return {
+      HEALTHY: 'true',
+      RUNTIME: normalizedRuntime || 'claude',
+      REASON: 'ok',
+      DETAIL: '',
+      FALLBACK_RUNTIME: '',
+      FALLBACK_POLICY: fallbackPolicy.reason,
+    };
+  }
+
+  if (normalizedRuntime !== 'codex') {
+    return {
+      HEALTHY: 'true',
+      RUNTIME: normalizedRuntime,
+      REASON: 'ok',
+      DETAIL: '',
+      FALLBACK_RUNTIME: '',
+      FALLBACK_POLICY: fallbackPolicy.reason,
+    };
+  }
+
+  const logDir = path.join(workspaceRoot, '.claude', 'logs', 'agent-loop');
+  const issuePattern = /migration \d+ was previously applied but is missing|state db discrepancy|Failed to kill MCP process group/i;
+  const matchingLogs = parseRecentRuntimeIssues(
+    logDir,
+    issuePattern,
+    Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_WINDOW_MS ?? String(2 * 60 * 60 * 1000), 10) || (2 * 60 * 60 * 1000),
+    Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_MAX_LOGS ?? '5', 10) || 5,
+  );
+
+  if (matchingLogs.length === 0) {
+    return {
+      HEALTHY: 'true',
+      RUNTIME: normalizedRuntime,
+      REASON: 'ok',
+      DETAIL: '',
+      FALLBACK_RUNTIME: '',
+      FALLBACK_POLICY: fallbackPolicy.reason,
+    };
+  }
+
+  return {
+    HEALTHY: 'false',
+    RUNTIME: normalizedRuntime,
+    REASON: 'runtime-log-health-check-failed',
+    DETAIL: `Recent runtime warnings detected in ${matchingLogs.join(', ')}`,
+    FALLBACK_RUNTIME: fallbackPolicy.allow && commandExists('claude') ? 'claude' : '',
+    FALLBACK_POLICY: fallbackPolicy.reason,
+  };
 }
 
 async function runWithWatchdog(args) {
@@ -256,6 +451,7 @@ async function runWithWatchdog(args) {
   const child = spawn(command[0], command.slice(1), {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
+    detached: process.platform !== 'win32',
   });
   writeSupervisorEvent(logStream, 'spawn', {
     pid: child.pid ?? null,
@@ -293,9 +489,9 @@ async function runWithWatchdog(args) {
     const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
     if (maxSeconds > 0 && elapsedSeconds >= maxSeconds) {
       timedOut = true;
-      terminateProcess(child.pid);
+      terminateProcess(child.pid, process.platform !== 'win32');
       await sleep(5000);
-      killProcessHard(child.pid);
+      killProcessHard(child.pid, process.platform !== 'win32');
       break;
     }
     await sleep(Math.max(checkSeconds, 1) * 1000);
@@ -324,6 +520,12 @@ async function runWorkerPromptWithCompletionGate(args) {
   let targetCompletionScore = '100';
   let watchdogMaxSeconds = 0;
   let watchdogCheckSeconds = 5;
+  let statusFile = '';
+  let phaseNum = '';
+  let activePhaseDoc = '';
+  let phaseSprintContract = '';
+  let phaseHandoff = '';
+  let heartbeatSeconds = 20;
   let separatorIndex = -1;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -373,6 +575,30 @@ async function runWorkerPromptWithCompletionGate(args) {
         watchdogCheckSeconds = Number.parseInt(args[index + 1] ?? '5', 10) || 5;
         index += 1;
         break;
+      case '--status-file':
+        statusFile = args[index + 1] ?? '';
+        index += 1;
+        break;
+      case '--phase-num':
+        phaseNum = args[index + 1] ?? '';
+        index += 1;
+        break;
+      case '--active-phase-doc':
+        activePhaseDoc = args[index + 1] ?? '';
+        index += 1;
+        break;
+      case '--phase-sprint-contract':
+        phaseSprintContract = args[index + 1] ?? '';
+        index += 1;
+        break;
+      case '--phase-handoff':
+        phaseHandoff = args[index + 1] ?? '';
+        index += 1;
+        break;
+      case '--heartbeat-seconds':
+        heartbeatSeconds = Number.parseInt(args[index + 1] ?? '20', 10) || 20;
+        index += 1;
+        break;
       default:
         break;
     }
@@ -393,6 +619,12 @@ async function runWorkerPromptWithCompletionGate(args) {
       '    --target-completion-score <n>',
       '    --watchdog-max-seconds <n>',
       '    --watchdog-check-seconds <n>',
+      '    --status-file <path>',
+      '    --phase-num <n>',
+      '    --active-phase-doc <path>',
+      '    --phase-sprint-contract <path>',
+      '    --phase-handoff <path>',
+      '    --heartbeat-seconds <n>',
       '    -- <command...>',
     ].join('\n'));
     process.exit(64);
@@ -402,6 +634,7 @@ async function runWorkerPromptWithCompletionGate(args) {
   const child = spawn(command[0], command.slice(1), {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
+    detached: process.platform !== 'win32',
   });
   writeSupervisorEvent(logStream, 'spawn', {
     pid: child.pid ?? null,
@@ -435,9 +668,30 @@ async function runWorkerPromptWithCompletionGate(args) {
   const startTime = Date.now();
   let timedOut = false;
   let completedEarly = false;
+  let lastHeartbeatAt = 0;
 
   while (child.exitCode === null && child.signalCode === null) {
     const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+    if (heartbeatSeconds > 0 && Date.now() - lastHeartbeatAt >= heartbeatSeconds * 1000) {
+      const heartbeatOk = updatePhaseHeartbeat({
+        statusFile,
+        phaseNum,
+        activePhaseDoc,
+        sprintContractPath: phaseSprintContract,
+        qaReportPath: phaseQaReport,
+        handoffPath: phaseHandoff,
+        scorecardPath: phaseScorecard,
+      });
+      writeSupervisorEvent(logStream, 'heartbeat', {
+        pid: child.pid ?? null,
+        mode: 'completion-gate',
+        ok: heartbeatOk,
+        phaseNum,
+        statusFile,
+      });
+      lastHeartbeatAt = Date.now();
+    }
 
     if (qaChecksumBefore) {
       const qaChecksumNow = sha1FileOrEmpty(phaseQaReport);
@@ -446,15 +700,21 @@ async function runWorkerPromptWithCompletionGate(args) {
           phaseStartEpoch,
           phaseQaReport,
           phaseScorecard,
+          phaseHandoff,
           phaseExecutionDir,
           scorecardRequired,
           targetCompletionScore,
         });
         if (allowed) {
           completedEarly = true;
-          terminateProcess(child.pid);
+          writeSupervisorEvent(logStream, 'completion-gate-satisfied', {
+            pid: child.pid ?? null,
+            mode: 'completion-gate',
+            phaseNum,
+          });
+          terminateProcess(child.pid, process.platform !== 'win32');
           await sleep(2000);
-          killProcessHard(child.pid);
+          killProcessHard(child.pid, process.platform !== 'win32');
           break;
         }
       }
@@ -462,9 +722,9 @@ async function runWorkerPromptWithCompletionGate(args) {
 
     if (watchdogMaxSeconds > 0 && elapsedSeconds >= watchdogMaxSeconds) {
       timedOut = true;
-      terminateProcess(child.pid);
+      terminateProcess(child.pid, process.platform !== 'win32');
       await sleep(5000);
-      killProcessHard(child.pid);
+      killProcessHard(child.pid, process.platform !== 'win32');
       break;
     }
 
@@ -498,6 +758,7 @@ function printUsage() {
     '  agent-loop-phase-runtime.mjs detect-final-stop-reason <log-file> [default-reason] [tool-schema-guard]',
     '  agent-loop-phase-runtime.mjs classify-timeout-reason <log-file>',
     '  agent-loop-phase-runtime.mjs resolve-timeout-fallback-runtime <current-runtime>',
+    '  agent-loop-phase-runtime.mjs assess-runtime-health <runtime> [workspace-root]',
     '  agent-loop-phase-runtime.mjs run-worker-prompt-with-completion-gate ...',
   ].join('\n'));
 }
@@ -525,6 +786,13 @@ async function main() {
     case 'resolve-timeout-fallback-runtime':
       writeStdoutLine(resolveTimeoutFallbackRuntime(args[0] ?? ''));
       return 0;
+    case 'assess-runtime-health': {
+      const values = assessRuntimeHealth(args[0] ?? '', args[1] ?? process.cwd());
+      for (const [key, value] of Object.entries(values)) {
+        writeStdoutLine(`${key}=${shellQuote(value)}`);
+      }
+      return 0;
+    }
     case 'run-with-watchdog':
       return runWithWatchdog(args);
     case 'run-worker-prompt-with-completion-gate':
