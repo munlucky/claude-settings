@@ -56,11 +56,11 @@ def main() -> int:
     parser.add_argument("--selected-bundle", action="append", default=[])
     parser.add_argument("--stage", action="append", default=[])
     parser.add_argument("--workflow-warning", action="append", default=[])
-    parser.add_argument("--score-current", type=int, default=0)
-    parser.add_argument("--score-target", type=int, default=100)
-    parser.add_argument("--score-unmet", type=int, default=0)
-    parser.add_argument("--score-blocking", type=int, default=0)
-    parser.add_argument("--score-verdict", default="retry")
+    parser.add_argument("--score-current", type=int)
+    parser.add_argument("--score-target", type=int)
+    parser.add_argument("--score-unmet", type=int)
+    parser.add_argument("--score-blocking", type=int)
+    parser.add_argument("--score-verdict")
     parser.add_argument(
         "--generated-at",
         default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -72,6 +72,39 @@ def main() -> int:
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    score_inputs = (
+        args.score_current,
+        args.score_target,
+        args.score_unmet,
+        args.score_blocking,
+        args.score_verdict,
+    )
+    score_provided = any(value is not None for value in score_inputs)
+
+    score_payload = {"detected": False}
+    if score_provided:
+        inferred_score_verdict = args.score_verdict or (
+            "done"
+            if args.verdict == "passed"
+            and args.evidence_fresh == "true"
+            and len(args.missing_check) == 0
+            else "retry"
+        )
+        target_score = args.score_target if args.score_target is not None else 100
+        current_score = args.score_current
+        if current_score is None:
+            current_score = target_score if inferred_score_verdict == "done" else 0
+
+        score_payload = {
+            "detected": True,
+            "current": current_score,
+            "target": target_score,
+            "unmetChecklistItems": args.score_unmet if args.score_unmet is not None else 0,
+            "unmetItems": args.score_unmet if args.score_unmet is not None else 0,
+            "blockingDefects": args.score_blocking if args.score_blocking is not None else 0,
+            "verdict": inferred_score_verdict,
+        }
 
     payload = {
         "script": args.script,
@@ -102,15 +135,7 @@ def main() -> int:
             "stageOrder": args.stage,
             "warnings": args.workflow_warning,
         },
-        "score": {
-            "detected": True,
-            "current": args.score_current,
-            "target": args.score_target,
-            "unmetChecklistItems": args.score_unmet,
-            "unmetItems": args.score_unmet,
-            "blockingDefects": args.score_blocking,
-            "verdict": args.score_verdict,
-        },
+        "score": score_payload,
         "generatedAt": args.generated_at,
     }
 

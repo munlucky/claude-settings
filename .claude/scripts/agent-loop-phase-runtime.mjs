@@ -118,12 +118,13 @@ function detectVerificationCommandMissing(logFile) {
   if (text.includes('VERIFICATION_COMMAND_MISSING')) {
     return true;
   }
-  return [
-    /unable to locate \.claude\/agents\/verification\/verify-changes\.sh/i,
-    /(?:bash|zsh): .*\.claude\/agents\/verification\/(?:run-verify-changes|verify-changes)\.sh: No such file or directory/i,
-    /(?:bash|zsh): .*\.claude\/agents\/verification\/(?:run-verify-changes|verify-changes)\.sh: command not found/i,
-    /cannot execute: .*\.claude\/agents\/verification\/(?:run-verify-changes|verify-changes)\.sh/i,
-  ].some((pattern) => pattern.test(text));
+  const verifierLinePatterns = [
+    /(?:^|\n)[^\n]*\.claude\/agents\/verification\/verify-changes\.sh[^\n]*(?:No such file or directory|command not found|No such file|is not found)[^\n]*(?:\n|$)/i,
+    /(?:^|\n)[^\n]*\.claude\/agents\/verification\/run-verify-changes\.sh[^\n]*(?:No such file or directory|command not found|No such file|is not found)[^\n]*(?:\n|$)/i,
+    /(?:^|\n)[^\n]*(?:No such file or directory|command not found|No such file|is not found)[^\n]*\.claude\/agents\/verification\/verify-changes\.sh[^\n]*(?:\n|$)/i,
+    /(?:^|\n)[^\n]*(?:No such file or directory|command not found|No such file|is not found)[^\n]*\.claude\/agents\/verification\/run-verify-changes\.sh[^\n]*(?:\n|$)/i,
+  ];
+  return verifierLinePatterns.some((pattern) => pattern.test(text));
 }
 
 function detectToolSchemaErrorLoop(logFile, guardRaw = '2') {
@@ -453,24 +454,28 @@ function printUsage() {
   ].join('\n'));
 }
 
+function writeStdoutLine(value) {
+  process.stdout.write(`${String(value)}\n`);
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
 
   switch (command) {
     case 'resolve-runner-runtime':
-      console.log(resolveRunnerRuntime(args[0] ?? 'auto'));
+      writeStdoutLine(resolveRunnerRuntime(args[0] ?? 'auto'));
       return 0;
     case 'describe-stop-reason':
-      console.log(describeStopReason(args[0] ?? '', args[1] ?? '', args[2] ?? ''));
+      writeStdoutLine(describeStopReason(args[0] ?? '', args[1] ?? '', args[2] ?? ''));
       return 0;
     case 'detect-final-stop-reason':
-      console.log(detectFinalStopReason(args[0] ?? '', args[1] ?? 'phase-failed', args[2] ?? '2'));
+      writeStdoutLine(detectFinalStopReason(args[0] ?? '', args[1] ?? 'phase-failed', args[2] ?? '2'));
       return 0;
     case 'classify-timeout-reason':
-      console.log(classifyTimeoutReason(args[0] ?? ''));
+      writeStdoutLine(classifyTimeoutReason(args[0] ?? ''));
       return 0;
     case 'resolve-timeout-fallback-runtime':
-      console.log(resolveTimeoutFallbackRuntime(args[0] ?? ''));
+      writeStdoutLine(resolveTimeoutFallbackRuntime(args[0] ?? ''));
       return 0;
     case 'run-with-watchdog':
       return runWithWatchdog(args);
