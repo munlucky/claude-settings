@@ -12,7 +12,8 @@ evaluate_phase_completion_gate() {
         "${PHASE_SCORECARD:-}" \
         "${PHASE_EXECUTION_DIR:-}" \
         "${SCORECARD_REQUIRED:-true}" \
-        "${TARGET_COMPLETION_SCORE:-100}")"
+        "${TARGET_COMPLETION_SCORE:-100}" \
+        "${PHASE_HANDOFF:-}")"
 
     if [[ -n "$eval_output" ]]; then
         eval "$eval_output"

@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -209,6 +210,7 @@ function evaluatePhaseCompletionGateWithRetry(startEpoch, paths) {
       paths.phaseExecutionDir,
       process.env.AGENT_LOOP_SCORECARD_REQUIRED ?? 'true',
       process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+      paths.phaseHandoff,
     );
     if (values.PHASE_COMPLETION_ALLOWED === 'true' || values.PHASE_COMPLETION_REASON !== 'no-fresh-verification-artifact' || attempt === retries) {
       return values;
@@ -357,6 +359,12 @@ function runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, r
     '--target-completion-score', process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
     '--watchdog-max-seconds', process.env.AGENT_LOOP_WATCHDOG_MAX_SECONDS ?? String(2 * 60 * 60),
     '--watchdog-check-seconds', process.env.AGENT_LOOP_WATCHDOG_CHECK_SECONDS ?? '60',
+    '--status-file', state.statusFile,
+    '--phase-num', String(state.phaseNum),
+    '--active-phase-doc', state.phaseDoc,
+    '--phase-sprint-contract', paths.phaseSprintContract,
+    '--phase-handoff', paths.phaseHandoff,
+    '--heartbeat-seconds', process.env.AGENT_LOOP_HEARTBEAT_SECONDS ?? '20',
     '--',
     ...command,
   ], { env: phaseEnv(paths), stdio: 'inherit' });
@@ -406,6 +414,10 @@ function sha1FileOrEmpty(filePath) {
 
 function resolveRunnerRuntime(requestedRuntime) {
   return runtimeCommand('resolve-runner-runtime', requestedRuntime).stdout.trim();
+}
+
+function assessRuntimeHealth(runtime) {
+  return nodeAssignments(runtimePath, 'assess-runtime-health', runtime, process.cwd());
 }
 
 function decideMissingEvidenceAction(autoFixCount, finalStopReason) {
@@ -649,6 +661,43 @@ function handleFatalPhaseRunnerError(error, origin = 'phase-runner-exception') {
   }
 }
 
+function closeoutInterruptedAttempt(signalName, origin = 'phase-runner-signal') {
+  if (!activeAttemptContext?.paths || fatalPhaseRunnerHandled) {
+    return;
+  }
+
+  const detail = `${origin}: received ${signalName} while the active phase attempt was still running`;
+  appendDebugLog('phase-runner-signal-closeout', {
+    signalName,
+    origin,
+    activeAttemptContext,
+  });
+
+  try {
+    appendQaRuntimeUpdate('phase-runner-interrupted', activeAttemptContext.logFile ?? '', detail, activeAttemptContext.paths);
+  } catch (error) {
+    appendDebugLog('phase-runner-signal-qa-update-failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  try {
+    appendHandoffUpdate('interrupted', activeAttemptContext.logFile ?? '', detail, activeAttemptContext.paths);
+  } catch (error) {
+    appendDebugLog('phase-runner-signal-handoff-update-failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  try {
+    updatePhaseState(state.phaseNum, 'in_progress', 'partial', false, state.phaseDoc, activeAttemptContext.paths);
+  } catch (error) {
+    appendDebugLog('phase-runner-signal-state-update-failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function runPhaseAttempt() {
   fs.mkdirSync(logDir, { recursive: true });
   appendDebugLog('phase-attempt-bootstrap', {
@@ -713,6 +762,48 @@ function runPhaseAttempt() {
     runtime,
     startEpoch,
   };
+
+  const runtimeHealth = assessRuntimeHealth(activeRuntime);
+  appendDebugLog('runtime-health-assessment', runtimeHealth);
+  if (runtimeHealth.HEALTHY !== 'true') {
+    if (runtimeHealth.FALLBACK_RUNTIME) {
+      const previousRuntime = activeRuntime;
+      activeRuntime = runtimeHealth.FALLBACK_RUNTIME;
+      activeAttemptContext.runtime = activeRuntime;
+      appendQaRuntimeUpdate('runtime-health-fallback', logFile, runtimeHealth.DETAIL || runtimeHealth.REASON, paths);
+      appendHandoffUpdate('runtime-health-fallback', logFile, `${previousRuntime} -> ${activeRuntime}: ${runtimeHealth.DETAIL || runtimeHealth.REASON}`, paths);
+      prompt = buildPhasePrompt({
+        nextPhase: state.phaseNum,
+        phaseTitle: state.phaseTitle,
+        planDir: state.planDir,
+        phaseDoc: state.phaseDoc,
+        statusFile: state.statusFile,
+        executionRoot: state.executionRoot,
+        paths,
+        runtime: activeRuntime,
+        targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+        extraInstructions: primaryInstructions(state.phaseNum),
+        autonomousInstructions: autonomousInstructions(),
+        workspaceRoot: process.cwd(),
+      });
+      logWarn(`Runtime health gate switched ${previousRuntime} -> ${activeRuntime}`);
+    } else {
+      const runtimeHealthDetail = [
+        runtimeHealth.DETAIL || runtimeHealth.REASON,
+        runtimeHealth.FALLBACK_POLICY ? `fallback-policy=${runtimeHealth.FALLBACK_POLICY}` : '',
+      ].filter(Boolean).join(' | ');
+      appendQaRuntimeUpdate('runtime-health-blocked', logFile, runtimeHealthDetail, paths);
+      appendHandoffUpdate('blocked', logFile, runtimeHealthDetail, paths);
+      updatePhaseState(state.phaseNum, 'failed', 'runtime_unhealthy', false, state.phaseDoc, paths);
+      recordLoopStop(
+        state.phaseNum,
+        runtimeHealth.REASON || 'runtime-health-check-failed',
+        runtimeHealthDetail || 'runtime health gate failed',
+        logFile,
+      );
+      return 2;
+    }
+  }
 
   while (true) {
     updatePhaseState(state.phaseNum, 'in_progress', 'running', true, state.phaseDoc, paths);
@@ -984,6 +1075,14 @@ process.on('unhandledRejection', (reason) => {
   console.error(error.stack || error.message);
   process.exit(1);
 });
+
+for (const signalName of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+  process.on(signalName, () => {
+    closeoutInterruptedAttempt(signalName, 'phase-runner-signal');
+    const signalNumber = os.constants.signals?.[signalName] ?? 1;
+    process.exit(128 + signalNumber);
+  });
+}
 
 try {
   process.exit(runPhaseAttempt());

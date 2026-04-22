@@ -39,8 +39,14 @@ function readStatusBlocks(statusFile) {
   const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/);
   const blocks = [];
   let current = null;
+  let currentIndent = 0;
+  let inAttempts = false;
 
-  for (const rawLine of lines) {
+  const rootSignals = {};
+  const rootArtifacts = {};
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index];
     if (/^\s*-\s+number:\s*/.test(rawLine)) {
       if (current) {
         blocks.push(current);
@@ -52,28 +58,72 @@ function readStatusBlocks(statusFile) {
         planConfirmed: null,
         lastOutcome: null,
         lastUpdatedAt: null,
+        sprintContract: '',
+        qaReport: '',
+        handoff: '',
+        scorecard: '',
       };
+      currentIndent = rawLine.length - rawLine.trimStart().length;
+      inAttempts = false;
       continue;
     }
 
     if (!current) {
+      const stripped = rawLine.trim();
+      if (stripped === 'signals:' || stripped === 'artifacts:') {
+        const target = stripped === 'signals:' ? rootSignals : rootArtifacts;
+        const targetIndent = rawLine.length - rawLine.trimStart().length;
+        for (let probe = index + 1; probe < lines.length; probe += 1) {
+          const candidate = lines[probe];
+          const candidateStripped = candidate.trim();
+          if (!candidateStripped) {
+            continue;
+          }
+          const candidateIndent = candidate.length - candidate.trimStart().length;
+          if (candidateIndent <= targetIndent) {
+            break;
+          }
+          const separator = candidateStripped.indexOf(':');
+          if (separator <= 0) {
+            continue;
+          }
+          target[candidateStripped.slice(0, separator).trim()] = candidateStripped.slice(separator + 1).trim().replace(/^"|"$/g, '');
+        }
+      }
       continue;
     }
 
     const stripped = rawLine.trim();
     if (stripped.startsWith('status:')) {
-      current.status = stripped.split(':', 2)[1].trim();
+      current.status = stripped.slice('status:'.length).trim();
     } else if (stripped.startsWith('planConfirmed:')) {
-      current.planConfirmed = stripped.split(':', 2)[1].trim().toLowerCase();
-    } else if (stripped.startsWith('lastOutcome:')) {
-      current.lastOutcome = stripped.split(':', 2)[1].trim();
-    } else if (stripped.startsWith('lastUpdatedAt:')) {
-      current.lastUpdatedAt = stripped.split(':', 2)[1].trim();
+      current.planConfirmed = stripped.slice('planConfirmed:'.length).trim().toLowerCase();
+    } else if (stripped.startsWith('attempts:') && (rawLine.length - rawLine.trimStart().length) > currentIndent) {
+      inAttempts = true;
+    } else if (inAttempts && (rawLine.length - rawLine.trimStart().length) <= currentIndent + 2) {
+      inAttempts = false;
+    } else if (inAttempts && stripped.startsWith('lastOutcome:')) {
+      current.lastOutcome = stripped.slice('lastOutcome:'.length).trim();
+    } else if (inAttempts && stripped.startsWith('lastUpdatedAt:')) {
+      current.lastUpdatedAt = stripped.slice('lastUpdatedAt:'.length).trim();
+    } else if (stripped.startsWith('sprintContract:')) {
+      current.sprintContract = stripped.slice('sprintContract:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('qaReport:')) {
+      current.qaReport = stripped.slice('qaReport:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('handoff:')) {
+      current.handoff = stripped.slice('handoff:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('scorecard:')) {
+      current.scorecard = stripped.slice('scorecard:'.length).trim().replace(/^"|"$/g, '');
     }
   }
 
   if (current) {
     blocks.push(current);
+  }
+
+  for (const block of blocks) {
+    block.phaseAttemptMode = rootSignals.phaseAttemptMode || '';
+    block.activePhaseDoc = rootArtifacts.activePhaseDocPath || '';
   }
 
   return blocks;
@@ -111,6 +161,29 @@ function getPhaseSummary(statusFile, phaseNum) {
     planConfirmed: '',
     lastOutcome: '',
     lastUpdatedAt: '',
+    sprintContract: '',
+    qaReport: '',
+    handoff: '',
+    scorecard: '',
+    phaseAttemptMode: '',
+    activePhaseDoc: '',
+  };
+}
+
+function getActivePhaseContext(statusFile) {
+  const active = readStatusBlocks(statusFile).find((block) => block.status === 'in_progress' && block.planConfirmed !== 'false');
+  return active || {
+    number: '',
+    status: '',
+    planConfirmed: '',
+    lastOutcome: '',
+    lastUpdatedAt: '',
+    sprintContract: '',
+    qaReport: '',
+    handoff: '',
+    scorecard: '',
+    phaseAttemptMode: '',
+    activePhaseDoc: '',
   };
 }
 
@@ -171,9 +244,162 @@ function parseListString(value) {
   return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function normalizeLower(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isNoneLikeValue(value) {
+  const normalized = normalizeLower(value).replace(/[.`]/g, '').trim();
+  return normalized === 'none' || normalized === '없음';
+}
+
 function containsPendingMarker(value) {
   const lowered = String(value || '').toLowerCase();
   return lowered.includes('not evaluated yet') || lowered.includes('review pending') || lowered.includes('pending until');
+}
+
+function listIncludesToken(items, token) {
+  const normalizedToken = normalizeLower(token);
+  return (items || []).some((item) => {
+    const normalizedItem = normalizeLower(item);
+    return normalizedItem === normalizedToken
+      || normalizedItem.startsWith(`${normalizedToken} `)
+      || normalizedItem.startsWith(`${normalizedToken}(`)
+      || normalizedItem.includes(`${normalizedToken} (`)
+      || normalizedItem.includes(`${normalizedToken}:`);
+  });
+}
+
+function parseScorecardSummary(scorecardPath) {
+  const summary = {
+    exists: false,
+    current: 0,
+    target: 100,
+    unmetItems: 0,
+    blockingDefects: 0,
+    verdict: 'missing',
+    done: false,
+  };
+
+  if (!scorecardPath || !fs.existsSync(scorecardPath)) {
+    return summary;
+  }
+
+  summary.exists = true;
+  const lines = fs.readFileSync(scorecardPath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const stripped = line.trim();
+    let match = stripped.match(/^- Current score:\s*([0-9]+)\s*$/);
+    if (match) {
+      summary.current = Number.parseInt(match[1], 10);
+      continue;
+    }
+    match = stripped.match(/^- Target score:\s*([0-9]+)\s*$/);
+    if (match) {
+      summary.target = Number.parseInt(match[1], 10);
+      continue;
+    }
+    match = stripped.match(/^- Unmet checklist items:\s*([0-9]+)\s*$/);
+    if (match) {
+      summary.unmetItems = Number.parseInt(match[1], 10);
+      continue;
+    }
+    match = stripped.match(/^- Blocking defects:\s*([0-9]+)\s*$/);
+    if (match) {
+      summary.blockingDefects = Number.parseInt(match[1], 10);
+      continue;
+    }
+    match = stripped.match(/^- Verdict:\s*([A-Za-z_ -]+)\s*$/);
+    if (match) {
+      summary.verdict = match[1].trim().toLowerCase().replace(/ /g, '_');
+    }
+  }
+
+  summary.done = summary.verdict === 'done'
+    && summary.current >= summary.target
+    && summary.unmetItems === 0
+    && summary.blockingDefects === 0;
+
+  return summary;
+}
+
+function parseHandoffSummary(handoffPath) {
+  const summary = {
+    exists: false,
+    required: '',
+    stopReason: '',
+    cleanFinish: false,
+  };
+
+  if (!handoffPath || !fs.existsSync(handoffPath)) {
+    return summary;
+  }
+
+  summary.exists = true;
+  const text = fs.readFileSync(handoffPath, 'utf8');
+  summary.required = extractBulletValue(text, '## Status', 'Required');
+  summary.stopReason = extractBulletValue(text, '## Resume Trigger', 'Stop reason');
+  summary.cleanFinish = normalizeLower(summary.stopReason) === 'clean_finish'
+    || normalizeLower(summary.required) === 'no';
+  return summary;
+}
+
+function fileLatestTimestamp(paths) {
+  let latest = 0;
+  for (const candidate of paths) {
+    if (!candidate || !fs.existsSync(candidate)) {
+      continue;
+    }
+    latest = Math.max(latest, fs.statSync(candidate).mtimeMs);
+  }
+  return latest > 0
+    ? new Date(latest).toISOString().replace(/\.\d{3}Z$/, 'Z')
+    : new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function evaluateCleanFinishArtifacts({ qaReportPath, scorecardPath, handoffPath }) {
+  const scorecard = parseScorecardSummary(scorecardPath);
+  const handoff = parseHandoffSummary(handoffPath);
+
+  if (!qaReportPath || !fs.existsSync(qaReportPath)) {
+    return {
+      cleanFinish: false,
+      scorecard,
+      handoff,
+      timestamp: fileLatestTimestamp([scorecardPath, handoffPath]),
+    };
+  }
+
+  const qaText = fs.readFileSync(qaReportPath, 'utf8');
+  const qaStatus = normalizeLower(extractBulletValue(qaText, '## Verdict', 'Status'));
+  const qaNextPath = normalizeLower(extractBulletValue(qaText, '## Verdict', 'Next path'));
+  const qaCloseoutReason = normalizeLower(extractBulletValue(qaText, '## Verdict', 'Closeout reason'));
+  const qaReviewCompleted = normalizeLower(extractBulletValue(qaText, '## Review Checkpoint', 'Review completed')).startsWith('yes');
+  const workflow = extractWorkflowSection(qaText);
+  const finishStopWhy = extractBulletValue(qaText, '## Finish Readiness', 'Why this round may stop now');
+  const finishRemainingScope = extractBulletValue(qaText, '## Finish Readiness', 'Remaining in-scope work');
+  const finishRemainingBlockers = extractBulletValue(qaText, '## Finish Readiness', 'Remaining blockers before closeout');
+
+  const cleanFinish = (qaStatus === 'pass' || qaStatus === 'passed')
+    && qaNextPath === 'clean_finish'
+    && qaCloseoutReason === 'scope_complete'
+    && qaReviewCompleted
+    && Boolean(workflow.selected && workflow.applied && workflow.skipped)
+    && Boolean(finishStopWhy)
+    && isNoneLikeValue(finishRemainingScope)
+    && isNoneLikeValue(finishRemainingBlockers)
+    && scorecard.done
+    && (handoff.cleanFinish || !handoff.exists || (qaNextPath === 'clean_finish' && qaCloseoutReason === 'scope_complete'));
+
+  return {
+    cleanFinish,
+    scorecard,
+    handoff,
+    qaStatus,
+    qaNextPath,
+    qaCloseoutReason,
+    timestamp: fileLatestTimestamp([qaReportPath, scorecardPath, handoffPath]),
+  };
 }
 
 function resolveCandidatePath(rawPath, qaReportDir) {
@@ -268,6 +494,24 @@ function artifactMatchesPhase(payload, activePhaseNumber) {
   return null;
 }
 
+function pathMatchesPhase(candidatePath, activePhaseNumber) {
+  if (!Number.isInteger(activePhaseNumber)) {
+    return null;
+  }
+
+  const normalizedPath = String(candidatePath || '').replace(/\\/g, '/');
+  if (!normalizedPath) {
+    return null;
+  }
+
+  const phasePattern = new RegExp(`(^|[^0-9])0?${activePhaseNumber}([^0-9]|$)`, 'i');
+  if (phasePattern.test(path.basename(normalizedPath)) && /phase/i.test(normalizedPath)) {
+    return true;
+  }
+
+  return null;
+}
+
 function isArtifactRelevantToActivePhase({
   candidatePath,
   payload,
@@ -292,6 +536,11 @@ function isArtifactRelevantToActivePhase({
     return phaseMatch;
   }
 
+  const pathPhaseMatch = pathMatchesPhase(candidatePath, activePhaseNumber);
+  if (pathPhaseMatch !== null) {
+    return pathPhaseMatch;
+  }
+
   if (qaReportPath || phaseExecutionDir) {
     const verificationMode = String(payload?.verificationMode || payload?.contract?.verificationMode || '').trim().toLowerCase();
     const contractApplicable = payload?.contractApplicable === true || payload?.contract?.applicable === true;
@@ -302,6 +551,10 @@ function isArtifactRelevantToActivePhase({
     }
   }
 
+  if (Number.isInteger(activePhaseNumber)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -310,10 +563,17 @@ function evaluatePhaseCompletionGate(config) {
   const qaReportPath = config.qaReportPath || '';
   const scorecardPath = config.scorecardPath || '';
   const phaseExecutionDir = config.phaseExecutionDir || '';
+  const handoffPath = config.handoffPath || '';
   const scorecardRequired = (config.scorecardRequired || 'true').toLowerCase() === 'true';
   const targetScoreDefault = Number.parseInt(config.targetCompletionScore || '100', 10);
   const qaReportDir = qaReportPath ? path.dirname(qaReportPath) : '';
   const activePhaseNumber = extractPhaseNumberHint(qaReportPath, phaseExecutionDir);
+  const markdownScore = parseScorecardSummary(scorecardPath);
+  const cleanFinishArtifacts = evaluateCleanFinishArtifacts({
+    qaReportPath,
+    scorecardPath,
+    handoffPath,
+  });
 
   const patterns = [
     '.claude/verification-verdict-*.json',
@@ -497,8 +757,8 @@ function evaluatePhaseCompletionGate(config) {
       workflowReason = 'workflow-skipped-skills-missing';
     } else if (
       codeChangeDetected &&
-      !workflowSection.applied.includes('code-simplifier') &&
-      (!workflowSection.skipped.includes('code-simplifier') || workflowSection.skipped.toLowerCase().includes('not evaluated yet'))
+      !normalizeLower(workflowSection.applied).includes('code-simplifier') &&
+      (!normalizeLower(workflowSection.skipped).includes('code-simplifier') || workflowSection.skipped.toLowerCase().includes('not evaluated yet'))
     ) {
       workflowReason = 'workflow-code-simplifier-missing';
     }
@@ -524,38 +784,28 @@ function evaluatePhaseCompletionGate(config) {
     blockingDefects = Number.parseInt(latestScorePayload.blockingDefects ?? 0, 10);
     scoreVerdict = String(latestScorePayload.verdict ?? 'missing').trim().toLowerCase().replace(/ /g, '_');
     scoreSource = 'verifier-artifact';
+
+    if (
+      cleanFinishArtifacts.cleanFinish
+      && markdownScore.done
+      && scoreVerdict !== 'done'
+    ) {
+      currentScore = markdownScore.current;
+      targetScore = markdownScore.target;
+      unmetItems = markdownScore.unmetItems;
+      blockingDefects = markdownScore.blockingDefects;
+      scoreVerdict = markdownScore.verdict;
+      scoreSource = 'scorecard-markdown-reconciled';
+    }
   } else if (scorecardRequired) {
-    if (!scorecardPath || !fs.existsSync(scorecardPath)) {
+    if (!markdownScore.exists) {
       scoreReason = 'scorecard-missing';
     } else {
-      const scoreLines = fs.readFileSync(scorecardPath, 'utf8').split(/\r?\n/);
-      for (const line of scoreLines) {
-        const stripped = line.trim();
-        let match = stripped.match(/^- Current score:\s*([0-9]+)\s*$/);
-        if (match) {
-          currentScore = Number.parseInt(match[1], 10);
-          continue;
-        }
-        match = stripped.match(/^- Target score:\s*([0-9]+)\s*$/);
-        if (match) {
-          targetScore = Number.parseInt(match[1], 10);
-          continue;
-        }
-        match = stripped.match(/^- Unmet checklist items:\s*([0-9]+)\s*$/);
-        if (match) {
-          unmetItems = Number.parseInt(match[1], 10);
-          continue;
-        }
-        match = stripped.match(/^- Blocking defects:\s*([0-9]+)\s*$/);
-        if (match) {
-          blockingDefects = Number.parseInt(match[1], 10);
-          continue;
-        }
-        match = stripped.match(/^- Verdict:\s*([A-Za-z_ -]+)\s*$/);
-        if (match) {
-          scoreVerdict = match[1].trim().toLowerCase().replace(/ /g, '_');
-        }
-      }
+      currentScore = markdownScore.current;
+      targetScore = markdownScore.target;
+      unmetItems = markdownScore.unmetItems;
+      blockingDefects = markdownScore.blockingDefects;
+      scoreVerdict = markdownScore.verdict;
       scoreSource = 'scorecard-markdown';
     }
   }
@@ -621,9 +871,9 @@ function evaluatePhaseCompletionGate(config) {
       workflowReason = 'workflow-finish-bundle-missing';
     } else if (codeChangeDetected && !reviewCompleted) {
       workflowReason = 'review-incomplete';
-    } else if (codeChangeDetected && !appliedSkills.includes('codex-review-code')) {
+    } else if (codeChangeDetected && !listIncludesToken(appliedSkills, 'codex-review-code')) {
       workflowReason = 'workflow-review-skill-missing';
-    } else if (containsPendingMarker(workflowSection.skipped) && workflowSection.skipped.includes('codex-review-code')) {
+    } else if (containsPendingMarker(workflowSection.skipped) && normalizeLower(workflowSection.skipped).includes('codex-review-code')) {
       workflowReason = 'review-incomplete';
     } else if (!finishStopWhy || !finishRemainingScope || !finishRemainingBlockers) {
       workflowReason = 'finish-closeout-incomplete';
@@ -845,12 +1095,60 @@ function updatePhaseState(config) {
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }
 
+function reconcileCompletedPhases(statusFile) {
+  if (!fs.existsSync(statusFile)) {
+    return [];
+  }
+
+  const reconciled = [];
+  for (const block of readStatusBlocks(statusFile)) {
+    if (!block.number || block.status === 'completed') {
+      continue;
+    }
+
+    const artifactState = evaluateCleanFinishArtifacts({
+      qaReportPath: block.qaReport,
+      scorecardPath: block.scorecard,
+      handoffPath: block.handoff,
+    });
+
+    if (!artifactState.cleanFinish) {
+      continue;
+    }
+
+    updatePhaseState({
+      statusFile,
+      phaseNum: String(block.number),
+      newStatus: 'completed',
+      timestamp: artifactState.timestamp,
+      lastOutcome: 'completed',
+      incrementAttempt: 'false',
+      activePhaseDoc: '',
+      sprintContractPath: block.sprintContract,
+      qaReportPath: block.qaReport,
+      handoffPath: block.handoff,
+      scorecardPath: block.scorecard,
+    });
+
+    reconciled.push({
+      phaseNum: String(block.number),
+      fromStatus: block.status || '',
+      reason: 'clean-finish-artifacts',
+      timestamp: artifactState.timestamp,
+    });
+  }
+
+  return reconciled;
+}
+
 function printUsage() {
   console.error([
     'Usage:',
     '  agent-loop-phase-state.mjs list-stale-in-progress-phases <status-file> [stale-seconds]',
     '  agent-loop-phase-state.mjs get-phase-summary <status-file> <phase-num>',
-    '  agent-loop-phase-state.mjs evaluate-phase-completion-gate <phase-start-epoch> <qa-report-path> <scorecard-path> <phase-execution-dir> <scorecard-required> <target-completion-score>',
+    '  agent-loop-phase-state.mjs get-active-phase-context <status-file>',
+    '  agent-loop-phase-state.mjs evaluate-phase-completion-gate <phase-start-epoch> <qa-report-path> <scorecard-path> <phase-execution-dir> <scorecard-required> <target-completion-score> [handoff-path]',
+    '  agent-loop-phase-state.mjs reconcile-completed-phases <status-file>',
     '  agent-loop-phase-state.mjs update-phase-state <status-file> <phase-num> <new-status> <timestamp> <last-outcome> <increment-attempt> <active-phase-doc> <sprint-contract> <qa-report> <handoff> <scorecard>',
   ].join('\n'));
 }
@@ -878,6 +1176,7 @@ switch (command) {
       phaseExecutionDir: args[3],
       scorecardRequired: args[4],
       targetCompletionScore: args[5],
+      handoffPath: args[6],
     });
     for (const [key, value] of Object.entries(result)) {
       writeStdoutLine(`${key}=${shellQuote(value)}`);
@@ -893,6 +1192,30 @@ switch (command) {
     const result = getPhaseSummary(statusFile, phaseNum);
     for (const [key, value] of Object.entries(result)) {
       writeStdoutLine(`${key}=${shellQuote(value)}`);
+    }
+    break;
+  }
+  case 'get-active-phase-context': {
+    const [statusFile] = args;
+    if (!statusFile) {
+      printUsage();
+      process.exit(64);
+    }
+    const result = getActivePhaseContext(statusFile);
+    for (const [key, value] of Object.entries(result)) {
+      writeStdoutLine(`${key}=${shellQuote(value)}`);
+    }
+    break;
+  }
+  case 'reconcile-completed-phases': {
+    const [statusFile] = args;
+    if (!statusFile) {
+      printUsage();
+      process.exit(64);
+    }
+    const reconciled = reconcileCompletedPhases(statusFile);
+    for (const entry of reconciled) {
+      writeStdoutLine(`${entry.phaseNum}|${entry.fromStatus}|${entry.reason}|${entry.timestamp}`);
     }
     break;
   }

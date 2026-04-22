@@ -117,12 +117,108 @@ function findPidsByPattern(pattern) {
     .map((line) => line.split(/\s+/, 1)[0]);
 }
 
+function resolveCommandFromPath(command) {
+  const checker = process.platform === 'win32' ? 'where' : 'which';
+  const result = runCommand(checker, [command]);
+  if (result.status !== 0 || result.error) {
+    return '';
+  }
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || '';
+}
+
+function isCodexDesktopContext() {
+  const originator = String(process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE || '').trim().toLowerCase();
+  return originator.includes('codex desktop') || Boolean(process.env.CODEX_THREAD_ID);
+}
+
+function codexBinaryCandidates() {
+  const homeDir = os.homedir();
+  const localAppData = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
+  const programFiles = [
+    process.env.ProgramFiles || '',
+    process.env['ProgramFiles(x86)'] || '',
+  ].filter(Boolean);
+
+  const candidates = [
+    process.env.AGENT_LOOP_CODEX_BINARY || '',
+    process.env.CODEX_BINARY_PATH || '',
+    process.env.CODEX_CLI_PATH || '',
+  ];
+
+  if (process.platform === 'darwin') {
+    candidates.push(
+      '/Applications/Codex.app/Contents/Resources/codex',
+      path.join(homeDir, 'Applications', 'Codex.app', 'Contents', 'Resources', 'codex'),
+    );
+  }
+
+  if (process.platform === 'win32') {
+    if (localAppData) {
+      candidates.push(
+        path.join(localAppData, 'Programs', 'Codex', 'resources', 'codex.exe'),
+        path.join(localAppData, 'Programs', 'Codex', 'Codex.exe'),
+        path.join(localAppData, 'Codex', 'resources', 'codex.exe'),
+        path.join(localAppData, 'Codex', 'Codex.exe'),
+      );
+    }
+    for (const base of programFiles) {
+      candidates.push(
+        path.join(base, 'Codex', 'resources', 'codex.exe'),
+        path.join(base, 'Codex', 'Codex.exe'),
+      );
+    }
+  }
+
+  const pathResolved = resolveCommandFromPath('codex');
+  if (isCodexDesktopContext()) {
+    candidates.push(pathResolved);
+  } else {
+    candidates.unshift(pathResolved);
+  }
+
+  return [...new Set(candidates.map((entry) => String(entry || '').trim()).filter(Boolean))];
+}
+
+function resolveCodexCommand() {
+  for (const candidate of codexBinaryCandidates()) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // Ignore candidate resolution failures.
+    }
+  }
+  return '';
+}
+
+function getProcessGroupId(pid) {
+  if (!pid) {
+    return '';
+  }
+
+  if (process.platform === 'win32') {
+    return String(pid);
+  }
+
+  const result = runCommand('ps', ['-o', 'pgid=', '-p', String(pid)]);
+  if (result.status !== 0 || result.error) {
+    return '';
+  }
+
+  return result.stdout.trim().split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+}
+
 function codexBaseArgs(cwd) {
   let useOss = process.env.CODEX_USE_OSS_PROVIDER ?? 'auto';
   let localProvider = process.env.CODEX_LOCAL_PROVIDER ?? '';
   const useEphemeral = process.env.CODEX_EXEC_EPHEMERAL ?? 'true';
 
-  const args = ['codex', 'exec', '--full-auto', '-C', cwd];
+  const codexCommand = resolveCodexCommand() || 'codex';
+  const args = [codexCommand, 'exec', '--full-auto', '-C', cwd];
 
   if (useEphemeral === 'true') {
     args.push('--ephemeral');
@@ -153,8 +249,14 @@ function printUsage() {
     '  sync-wsl-codex-auth',
     '  active-workspace-contract [cwd]',
     '  find-pids-by-pattern <pattern>',
+    '  get-process-group-id <pid>',
+    '  resolve-codex-command',
     '  codex-base-args <cwd>',
   ].join('\n'));
+}
+
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
 }
 
 function main() {
@@ -167,7 +269,7 @@ function main() {
     case 'find-windows-codex-auth': {
       const authPath = findWindowsCodexAuth();
       if (authPath) {
-        console.log(authPath);
+        writeStdoutLine(authPath);
         process.exit(0);
       }
       process.exit(1);
@@ -176,14 +278,14 @@ function main() {
     case 'sync-wsl-codex-auth': {
       const authPath = syncWslCodexAuth();
       if (authPath) {
-        console.log(authPath);
+        writeStdoutLine(authPath);
       }
       process.exit(0);
       break;
     }
     case 'active-workspace-contract': {
       const cwd = args[0] || process.cwd();
-      console.log(activeWorkspaceContract(cwd));
+      writeStdoutLine(activeWorkspaceContract(cwd));
       process.exit(0);
       break;
     }
@@ -194,15 +296,37 @@ function main() {
         process.exit(64);
       }
       for (const pid of findPidsByPattern(pattern)) {
-        console.log(pid);
+        writeStdoutLine(pid);
       }
       process.exit(0);
+      break;
+    }
+    case 'get-process-group-id': {
+      const pid = args[0];
+      if (!pid) {
+        printUsage();
+        process.exit(64);
+      }
+      const pgid = getProcessGroupId(pid);
+      if (pgid) {
+        writeStdoutLine(pgid);
+      }
+      process.exit(pgid ? 0 : 1);
+      break;
+    }
+    case 'resolve-codex-command': {
+      const codexCommand = resolveCodexCommand();
+      if (codexCommand) {
+        writeStdoutLine(codexCommand);
+        process.exit(0);
+      }
+      process.exit(1);
       break;
     }
     case 'codex-base-args': {
       const cwd = args[0] || process.cwd();
       for (const arg of codexBaseArgs(cwd)) {
-        console.log(arg);
+        writeStdoutLine(arg);
       }
       process.exit(0);
       break;
