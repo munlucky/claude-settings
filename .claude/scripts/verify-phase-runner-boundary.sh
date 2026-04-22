@@ -183,13 +183,24 @@ if ! compgen -G "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/current-run-
 fi
 
 PROMPT_OUTPUT="$(PLAN_DIR="$PLAN_DIR" EXECUTION_ROOT="$EXECUTION_ROOT" node --input-type=module <<'EOF'
-import { assignExecutionArtifactPaths, buildPhasePrompt } from './.claude/scripts/agent-loop-phase-plan-lib.mjs';
+import fs from 'node:fs';
+import { ensureExecutionArtifacts, buildPhasePrompt } from './.claude/scripts/agent-loop-phase-plan-lib.mjs';
 
 const planDir = process.env.PLAN_DIR;
 const executionRoot = process.env.EXECUTION_ROOT;
-const paths = assignExecutionArtifactPaths(2, 'Smoke Phase', executionRoot);
+const paths = ensureExecutionArtifacts({
+  phaseNum: 2,
+  phaseTitle: 'Smoke Phase',
+  phaseDoc: `${planDir}/02-smoke-phase.md`,
+  masterPlan: `${planDir}/00-master-plan-v1.md`,
+  executionRoot,
+  verificationContractFile: '.claude/verification.contract.yaml',
+  targetCompletionScore: '100',
+  scorecardProfile: 'auto',
+  workspaceRoot: planDir,
+});
 
-console.log(buildPhasePrompt({
+process.stdout.write(buildPhasePrompt({
   nextPhase: 2,
   phaseTitle: 'Smoke Phase',
   planDir,
@@ -203,10 +214,14 @@ console.log(buildPhasePrompt({
   autonomousInstructions: 'Autonomous mode.',
   workspaceRoot: planDir,
 }));
+process.stdout.write('\n---HANDOFF---\n');
+process.stdout.write(fs.readFileSync(paths.phaseHandoff, 'utf8'));
 EOF
 )"
-assert_text_contains "$PROMPT_OUTPUT" "do not send a final answer" "prompt final-answer guard"
-assert_text_contains "$PROMPT_OUTPUT" "activeExecutionStatus" "prompt status-file re-read guard"
-assert_text_contains "$PROMPT_OUTPUT" "A completed phase, refreshed artifacts, or a successful checkpoint inside the active plan directory is not a valid final-response boundary by itself." "prompt boundary guard"
+assert_text_contains "$PROMPT_OUTPUT" "Do not stop at implementation-complete or verification-complete checkpoints alone." "prompt checkpoint boundary guard"
+assert_text_contains "$PROMPT_OUTPUT" "Return control only after fresh-or-still-valid verification evidence exists" "prompt completion gate guard"
+assert_text_contains "$PROMPT_OUTPUT" "---HANDOFF---" "prompt handoff separator"
+assert_text_contains "$PROMPT_OUTPUT" "Current stage: Finish / Handoff" "seeded handoff stage"
+assert_text_contains "$PROMPT_OUTPUT" "placeholder handoff seeded before the first stop or clean-finish update" "seeded handoff placeholder reason"
 
 echo "PASS: verify-phase-runner-boundary"
