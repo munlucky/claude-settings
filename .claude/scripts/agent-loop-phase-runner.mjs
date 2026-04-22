@@ -15,6 +15,7 @@ const artifactsPath = path.join(scriptDir, 'agent-loop-phase-artifacts.mjs');
 const attemptPath = path.join(scriptDir, 'agent-loop-phase-attempt.mjs');
 const logDir = '.claude/logs/agent-loop';
 const decisionLog = path.join(logDir, 'decisions.md');
+const debugLog = path.join(logDir, 'debug.jsonl');
 
 const state = {
   planDir: '',
@@ -25,6 +26,9 @@ const state = {
   phaseTitle: '',
   phaseDoc: '',
 };
+
+let activeAttemptContext = null;
+let fatalPhaseRunnerHandled = false;
 
 function runNodeScript(scriptPath, args, options = {}) {
   const result = spawnSync('node', [scriptPath, ...args], {
@@ -115,12 +119,28 @@ function appendDecisionLog(lines) {
   fs.appendFileSync(decisionLog, `${lines.join('\n')}\n`, 'utf8');
 }
 
+function appendDebugLog(event, details = {}) {
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.appendFileSync(debugLog, `${JSON.stringify({
+    timestamp: new Date().toISOString(),
+    source: 'agent-loop-phase-runner',
+    phaseNum: state.phaseNum || '',
+    phaseTitle: state.phaseTitle || '',
+    event,
+    ...details,
+  })}\n`, 'utf8');
+}
+
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
+
 function logInfo(message) {
-  console.log(`\u001b[0;34mℹ️\u001b[0m ${message}`);
+  writeStdoutLine(`\u001b[0;34mℹ️\u001b[0m ${message}`);
 }
 
 function logWarn(message) {
-  console.log(`\u001b[1;33m⚠️\u001b[0m ${message}`);
+  writeStdoutLine(`\u001b[1;33m⚠️\u001b[0m ${message}`);
 }
 
 function logError(message) {
@@ -128,7 +148,7 @@ function logError(message) {
 }
 
 function logSuccess(message) {
-  console.log(`\u001b[0;32m✅\u001b[0m ${message}`);
+  writeStdoutLine(`\u001b[0;32m✅\u001b[0m ${message}`);
 }
 
 function phaseState(...args) {
@@ -527,6 +547,11 @@ function autonomousInstructions() {
 }
 
 function recordLoopStop(phaseNum, reason, detail, logFile) {
+  appendDebugLog('phase-stop', {
+    reason,
+    detail,
+    logFile,
+  });
   appendDecisionLog([
     `## Phase ${phaseNum} - Stopped Early`,
     `- Reason: ${reason}`,
@@ -541,6 +566,13 @@ function recordLoopStop(phaseNum, reason, detail, logFile) {
 }
 
 function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths, runtime, completionLabel, commitPrompt) {
+  appendDebugLog('phase-completion', {
+    logFile,
+    durationSeconds,
+    runtime,
+    completionLabel,
+    completionArtifacts,
+  });
   logSuccess(`Phase ${state.phaseNum} completed${completionLabel} (${durationSeconds}s)`);
   appendQaRuntimeUpdate(
     completionLabel === '' ? 'phase-command-succeeded' : `phase-completed${completionLabel}`,
@@ -560,8 +592,71 @@ function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths
   runCommitPrompt(logFile, commitPrompt, runtime);
 }
 
+function handleFatalPhaseRunnerError(error, origin = 'phase-runner-exception') {
+  if (fatalPhaseRunnerHandled) {
+    return;
+  }
+  fatalPhaseRunnerHandled = true;
+
+  const normalizedError = error instanceof Error ? error : new Error(String(error));
+  const detail = `${origin}: ${normalizedError.message}`;
+
+  appendDebugLog('phase-runner-fatal', {
+    origin,
+    message: normalizedError.message,
+    stack: normalizedError.stack || '',
+    activeAttemptContext,
+  });
+
+  if (!activeAttemptContext?.paths) {
+    return;
+  }
+
+  try {
+    appendQaRuntimeUpdate('phase-runner-crash', activeAttemptContext.logFile ?? '', detail, activeAttemptContext.paths);
+  } catch (qaError) {
+    appendDebugLog('phase-runner-fatal-qa-update-failed', {
+      message: qaError instanceof Error ? qaError.message : String(qaError),
+    });
+  }
+
+  try {
+    appendHandoffUpdate('blocked', activeAttemptContext.logFile ?? '', detail, activeAttemptContext.paths);
+  } catch (handoffError) {
+    appendDebugLog('phase-runner-fatal-handoff-update-failed', {
+      message: handoffError instanceof Error ? handoffError.message : String(handoffError),
+    });
+  }
+
+  try {
+    updatePhaseState(state.phaseNum, 'failed', 'runner_exception', false, state.phaseDoc, activeAttemptContext.paths);
+  } catch (stateError) {
+    appendDebugLog('phase-runner-fatal-state-update-failed', {
+      message: stateError instanceof Error ? stateError.message : String(stateError),
+    });
+  }
+
+  try {
+    appendDecisionLog([
+      `## Phase ${state.phaseNum} - Fatal Runner Error`,
+      `- Origin: ${origin}`,
+      `- Detail: ${normalizedError.message}`,
+      ...(activeAttemptContext.logFile ? [`- Log: ${activeAttemptContext.logFile}`] : []),
+      '',
+    ]);
+  } catch {
+    // Ignore debug-only append failures.
+  }
+}
+
 function runPhaseAttempt() {
   fs.mkdirSync(logDir, { recursive: true });
+  appendDebugLog('phase-attempt-bootstrap', {
+    planDir: state.planDir,
+    executionRoot: state.executionRoot,
+    requestedRuntime: state.runtime,
+    phaseDoc: state.phaseDoc,
+  });
 
   if (!state.executionRoot) {
     state.executionRoot = `${state.planDir.replace(/\/$/, '')}/execution`;
@@ -584,8 +679,8 @@ function runPhaseAttempt() {
     workspaceRoot: process.cwd(),
   });
 
-  console.log('\u001b[0;36m───────────────────────────────────────────────────────────────\u001b[0m');
-  console.log(`\u001b[0;36m📦\u001b[0m Phase ${state.phaseNum}: ${state.phaseTitle}`);
+  writeStdoutLine('\u001b[0;36m───────────────────────────────────────────────────────────────\u001b[0m');
+  writeStdoutLine(`\u001b[0;36m📦\u001b[0m Phase ${state.phaseNum}: ${state.phaseTitle}`);
   logInfo(`Sprint contract: ${paths.phaseSprintContract}`);
   logInfo(`QA report: ${paths.phaseQaReport}`);
   logInfo(`Handoff: ${paths.phaseHandoff}`);
@@ -612,16 +707,45 @@ function runPhaseAttempt() {
   let restartCount = 0;
   let autoFixCount = 0;
   let timeoutFallbackUsed = false;
+  activeAttemptContext = {
+    logFile,
+    paths,
+    runtime,
+    startEpoch,
+  };
 
   while (true) {
     updatePhaseState(state.phaseNum, 'in_progress', 'running', true, state.phaseDoc, paths);
     recordPhaseProgressCheckpoint('ready/isolate', 'phase-attempt-started', logFile, 'Phase state moved to in_progress before the worker prompt.', activeRuntime, paths);
     const qaChecksumBefore = sha1FileOrEmpty(paths.phaseQaReport);
+    appendDebugLog('worker-prompt-start', {
+      logFile,
+      runtime: activeRuntime,
+      qaChecksumBefore,
+      autoFixCount,
+      restartCount,
+    });
     const exitCode = runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, activeRuntime);
+    appendDebugLog('worker-prompt-exit', {
+      logFile,
+      runtime: activeRuntime,
+      exitCode,
+      autoFixCount,
+      restartCount,
+    });
 
     if (exitCode === 0) {
       const duration = Math.floor(Date.now() / 1000) - startEpoch;
       const gate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
+      appendDebugLog('completion-gate-result', {
+        logFile,
+        runtime: activeRuntime,
+        allowed: gate.PHASE_COMPLETION_ALLOWED,
+        reason: gate.PHASE_COMPLETION_REASON,
+        score: gate.PHASE_COMPLETION_SCORE,
+        scoreVerdict: gate.PHASE_COMPLETION_SCORE_VERDICT,
+        scoreSource: gate.PHASE_COMPLETION_SCORE_SOURCE,
+      });
       if (gate.PHASE_COMPLETION_ALLOWED === 'true') {
         finalizeCompletion(
           logFile,
@@ -705,6 +829,13 @@ function runPhaseAttempt() {
       restartCount += 1;
       const timeoutReason = classifyTimeoutReason(logFile);
       const timeoutDetail = describeStopReason(timeoutReason, activeRuntime);
+      appendDebugLog('worker-timeout', {
+        logFile,
+        runtime: activeRuntime,
+        restartCount,
+        timeoutReason,
+        timeoutDetail,
+      });
       appendQaRuntimeUpdate(`phase-timeout-attempt-${restartCount}`, logFile, timeoutDetail, paths);
       appendHandoffUpdate(`phase-timeout-attempt-${restartCount}`, logFile, timeoutDetail, paths);
       logWarn(`Phase ${state.phaseNum} timed out. Restarting... (attempt ${restartCount})`);
@@ -755,6 +886,12 @@ function runPhaseAttempt() {
     }
 
     autoFixCount += 1;
+    appendDebugLog('worker-nonzero-exit', {
+      logFile,
+      runtime: activeRuntime,
+      exitCode,
+      autoFixCount,
+    });
     logError(`Phase ${state.phaseNum} failed (attempt ${autoFixCount}/${process.env.AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS ?? '3'})`);
     appendQaRuntimeUpdate(`phase-command-failed-attempt-${autoFixCount}`, logFile, '', paths);
 
@@ -835,4 +972,24 @@ if (!state.planDir || !state.phaseNum || !state.phaseTitle || !state.phaseDoc) {
   process.exit(64);
 }
 
-process.exit(runPhaseAttempt());
+process.on('uncaughtException', (error) => {
+  handleFatalPhaseRunnerError(error, 'uncaughtException');
+  console.error(error.stack || error.message);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  handleFatalPhaseRunnerError(error, 'unhandledRejection');
+  console.error(error.stack || error.message);
+  process.exit(1);
+});
+
+try {
+  process.exit(runPhaseAttempt());
+} catch (error) {
+  handleFatalPhaseRunnerError(error, 'top-level-catch');
+  const normalizedError = error instanceof Error ? error : new Error(String(error));
+  console.error(normalizedError.stack || normalizedError.message);
+  process.exit(1);
+}

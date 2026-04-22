@@ -46,9 +46,13 @@ function remediationStage(reason) {
   return 'verify';
 }
 
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
+
 function printAssignments(values) {
   for (const [key, value] of Object.entries(values)) {
-    console.log(`${key}=${shellQuote(value)}`);
+    writeStdoutLine(`${key}=${shellQuote(value)}`);
   }
 }
 
@@ -67,7 +71,7 @@ function decideMissingEvidenceAction(config) {
     return { ACTION: 'stop-loop', SUMMARY: 'verification-command-missing' };
   }
 
-  if (autonomousMode && autoFixCount < maxAutoFixAttempts) {
+  if (autonomousMode && autoFixCount <= maxAutoFixAttempts) {
     return { ACTION: 'verification-remediation', SUMMARY: 'retry-with-verification-remediation' };
   }
 
@@ -126,7 +130,7 @@ function decideFailureAction(config) {
     return { ACTION: 'stop-loop', SUMMARY: 'verification-command-missing' };
   }
 
-  if (autonomousMode && autoFixCount < maxAutoFixAttempts) {
+  if (autonomousMode && autoFixCount <= maxAutoFixAttempts) {
     return { ACTION: 'auto-fix', SUMMARY: 'retry-with-auto-fix' };
   }
 
