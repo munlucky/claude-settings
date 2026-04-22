@@ -22,13 +22,21 @@ context: fork
 
 이 스킬은 실행 전에 `executionRuntime`을 먼저 결정해야 합니다.
 
-- `claude-code`: `mcp__codex__codex` 우선 사용, 실패 시 Claude 폴백 사용
-- `codex`: `mcp__codex__codex` 의존 없이 현재 Codex 세션에서 동일 기준으로 네이티브 리뷰 수행
+- `claude-code`: 가능하면 `mcp__codex__codex` 또는 동등한 격리 review 경로를 사용하고, 호출자 세션은 coordinator로만 둡니다.
+- `codex`: fresh forked review session 또는 동등한 격리 attempt를 우선하고, 메인 세션은 coordinator로 유지하면서 구조화된 review summary만 병합합니다.
+- 격리된 review 실행이 불가능하면 current-session review는 degraded fallback으로만 허용하고 출력에 명시적으로 남깁니다.
+
+## 정책 경계
+
+- 기계적으로 판정 가능한 코드 정책 위반은 `.claude/scripts/verify-code-policy.sh`를 하드 게이트로 취급합니다.
+- 이 리뷰는 deterministic check의 대체물이 아니라 의미적/아키텍처적 위험 평가에 사용합니다.
+- 코드 정책 위반은 더 넓은 설계 문제나 유지보수성 문제를 드러낼 때만 반복 언급합니다.
+- 리뷰 피드백은 사회적으로 수용하지 말고 기술적으로 처리합니다. 불명확한 finding은 명확화하고, 틀린 finding은 증거로 반박하며, 각 의미 있는 항목에 명시적 disposition이 생기기 전까지 remediation loop를 닫지 않습니다.
 
 ### 1단계: 런타임 실행 경로 결정 (필수 - 최우선 수행)
 먼저 런타임을 결정한 뒤 실행 경로를 선택합니다.
 
-- 런타임이 `codex`이면 MCP 가용성 확인을 생략하고 Codex 네이티브 경로로 진행
+- 런타임이 `codex`이면 먼저 forked review 경로를 시도하고, 격리를 유지할 수 없을 때만 current-session review로 낮춥니다.
 - 런타임이 `claude-code`이면 Codex MCP 가용성을 확인:
 
 ```typescript
@@ -57,21 +65,33 @@ try {
 3. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
 4. 아래 7-섹션 형식으로 위임 프롬프트 구성
 
-5. **MCP 사용 가능한 경우 (1단계에서 확인)**:
-   - `mcp__codex__codex` 호출 (developer-instructions에 Code Reviewer 지침 포함)
-   - 성공 시 7단계로 진행
+5. **격리된 review 경로를 사용할 수 있는 경우 (1단계에서 확인)**:
+   - 최소 artifact 기반 문맥과 함께 isolated reviewer를 호출합니다.
+   - 성공 시 8단계로 진행
 
 6. **MCP 사용 불가한 경우 (1단계에서 확인)**:
-   - Claude가 아래 Code Reviewer 지침에 따라 직접 코드 리뷰 수행
-   - 노트 추가: `"codex-fallback: Claude가 직접 리뷰 수행 (MCP 사용 불가)"`
+   - review boundary 내부에서 Claude가 아래 Code Reviewer 지침에 따라 직접 코드 리뷰를 수행합니다.
+   - 노트 추가: `"codex-fallback: Claude가 직접 리뷰 수행 (격리 reviewer 사용 불가)"`
    - 동일한 MUST DO / MUST NOT DO 기준 따르기
 
 7. **런타임이 `codex`인 경우**:
-   - 동일한 7-섹션 형식/기준으로 현재 Codex 세션에서 직접 리뷰 수행
-   - 노트 추가: `"codex-native: review executed in Codex runtime"`
+   - 동일한 7-섹션 형식/기준으로 fresh forked review session 또는 동등한 격리 attempt에서 리뷰를 수행합니다.
+   - 노트 추가: `"codex-fork-review: isolated review executed in Codex runtime"`
+
+7a. **런타임이 `codex`이고 격리를 유지할 수 없는 경우**:
+   - current Codex session에서 degraded fallback으로만 리뷰를 수행합니다.
+   - 노트 추가: `"codex-fallback-in-session: review isolation unavailable"`
 
 8. 중대 이슈, 경고, 제안사항 기록
 9. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
+
+## Review Feedback 처리 프로토콜
+
+1. 각 의미 있는 finding을 `accepted`, `challenged`, `deferred`, `needs_clarification` 중 하나로 분류합니다.
+2. 연결된 finding이 아직 불명확하면 부분 remediation을 시작하지 않습니다.
+3. finding을 `challenged`로 두면 기술적 이유와 근거 증거를 함께 남깁니다.
+4. finding을 `deferred`로 두면 현재 경계에서 왜 defer가 안전한지 적습니다.
+5. 각 의미 있는 finding의 disposition이 `QA_REPORT.md`에 기록되기 전까지 review loop를 닫지 않습니다.
 
 ## 위임 형식
 
@@ -155,14 +175,17 @@ MCP를 사용할 수 없을 때, Claude가 직접 리뷰를 수행합니다:
 3. 동일한 형식으로 출력: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
 4. 폴백 모드 사용 표시 노트 추가
 
-## Codex 네이티브 경로 (runtime=codex)
+## Codex 격리 경로 (runtime=codex, 기본 경로)
 
-Codex 런타임에서는 다음과 같이 직접 리뷰를 수행합니다:
+Codex 런타임에서는 fresh isolated review boundary에서 리뷰를 실행하는 것을 기본으로 합니다:
 
-1. 동일한 7-섹션 형식을 리뷰 체크리스트로 적용
-2. 모든 MUST DO / MUST NOT DO 기준 준수
-3. 동일한 형식으로 출력: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
-4. 노트 추가: `"codex-native: review executed in Codex runtime"`
+1. 전체 세션 이력이 아니라 최소 artifact 기반 입력만 전달합니다.
+2. 동일한 7-섹션 형식을 리뷰 체크리스트로 적용합니다.
+3. 모든 MUST DO / MUST NOT DO 기준을 준수합니다.
+4. 동일한 형식으로 출력합니다: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
+5. 노트 추가: `"codex-fork-review: isolated review executed in Codex runtime"`
+
+격리를 유지할 수 없을 때만 current session으로 degrade합니다.
 
 ## 구현 모드 (자동 수정)
 
@@ -177,16 +200,18 @@ mcp__codex__codex({
 })
 ```
 
-`runtime=codex`에서는 동일한 수정 지시/검증 기준을 현재 세션에서 workspace-write 권한으로 직접 수행합니다.
+`runtime=codex`일 때도 가능하면 fresh isolated implementation boundary를 우선합니다. current session은 명시적 fallback일 때만 사용하고 동일한 verification 요구사항을 유지합니다.
 
 ## 출력 (patch)
 ```yaml
 notes:
   - "codex-review: [APPROVE/FIX-FORWARD/MERGE-NOTE/REJECT], critical=[개수], high=[개수], warnings=[개수]"
   # 폴백 사용 시:
-  - "codex-fallback: Claude가 직접 리뷰 수행 (MCP 사용 불가)"
-  # Codex 네이티브 경로 사용 시:
-  - "codex-native: review executed in Codex runtime"
+  - "codex-fallback: Claude가 직접 리뷰 수행 (격리 reviewer 사용 불가)"
+  # Codex 격리 경로 사용 시:
+  - "codex-fork-review: isolated review executed in Codex runtime"
+  # 격리가 current session으로 저하된 경우:
+  - "codex-fallback-in-session: review isolation unavailable"
 
 # Fix Forward Tasks (머지를 허용하면서 follow-up이 필요한 HIGH 이슈)
 fixForward:
@@ -196,6 +221,11 @@ fixForward:
       file: "src/services/paymentService.ts"
       suggestion: "쿠폰 검증 로직을 별도 함수로 추출"
     # HIGH 이슈 없으면 비어있음
+qaReport:
+  reviewFindingDecisions:
+    - finding: "재주문 엔드포인트의 route shadowing"
+      decision: accepted | challenged | deferred | needs_clarification
+      rationale: "이번 실행에서 422를 재현했고 route order 버그로 확인했습니다."
 ```
 
 ## Review-Fix Loop (자동 수정 모드)

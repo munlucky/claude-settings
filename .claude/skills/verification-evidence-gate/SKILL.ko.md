@@ -31,6 +31,7 @@ strict 실행에서는 Finish / Handoff로 넘어가기 전에 Verify stage를 �
    - `contractApplicable == true`이고 `requiredChecks.missing`이 비어 있지 않음
    - `verificationMode == contract`이고 `requiredChecks.missing`이 비어 있지 않음
    - contract 기반 판정인데 `evidenceFresh == false`
+   - 완료 주장이 `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification` 같은 낙관 표현에만 기대고 있음
    - 코드 변경 마감인데 `verdict.workflowEvidence.warnings`가 비어 있지 않음
    - bounded-direct 마감인데 verifier artifact의 `workflowEvidence.detected == false`
    - `completionStatus.score.verdict != done`
@@ -45,5 +46,7 @@ strict 실행에서는 Finish / Handoff로 넘어가기 전에 Verify stage를 �
 - 가능하면 contract에 정의된 artifact 경로를 우선 신뢰합니다.
 - 구조화된 `verdict.workflowEvidence` 경고가 있으면 수동 해석보다 그것을 우선 신뢰합니다.
 - contract 기반 검증에서 최신 증거 없는 pass 상태는 여전히 차단합니다.
+- 최신 증거 부족을 낙관적 표현으로 완화하지 않습니다. 증거가 없으면 그대로 차단입니다.
 - 코드 변경 마감에서 review/finish workflow evidence가 없으면 이를 선택적 메타데이터가 아니라 차단 사유로 봅니다.
 - score 기반 루프에서는 미완료 score verdict도 최신 검증 증거 부족으로 취급합니다.
+- review finding이 있으면 `QA_REPORT.md`에 각 의미 있는 항목의 결정이 `accepted`, `challenged`, `deferred`, `needs_clarification` 중 하나로 기록되기 전까지 remediation loop를 닫지 않습니다.

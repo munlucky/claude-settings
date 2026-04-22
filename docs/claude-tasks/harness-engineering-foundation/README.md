@@ -18,6 +18,8 @@ Last-Reviewed: 2026-03-30
    - 실제 개선 workstream, 상태, 대상 파일, 완료 조건을 추적할 때 읽는다.
 5. `docset-improvement-plan.md`
    - 이 문서군 자체를 어떻게 정리하고 유지할지 볼 때 읽는다.
+6. `anthropic-article-application-plan.md`
+   - Anthropic의 2026-03-24 long-running harness 글을 현재 저장소 기준으로 다시 적용할 때, 이미 반영된 항목을 제외하고 남은 적용 계획만 볼 때 읽는다.
 
 ## 문서 역할
 
@@ -28,6 +30,7 @@ Last-Reviewed: 2026-03-30
 | `harness-application-ideas.md` | 적용 아이디어 카탈로그 | canonical proposal catalog |
 | `implementation-backlog.md` | 실제 실행 항목과 상태 추적 | canonical execution backlog |
 | `docset-improvement-plan.md` | 문서군 구조 개선 계획 | canonical docset maintenance plan |
+| `anthropic-article-application-plan.md` | Anthropic 글 기준의 현재 시점 적용 계획 | targeted application plan |
 
 ## 상태 규약
 
@@ -61,3 +64,4 @@ Last-Reviewed: 2026-03-30
 - `docs/claude-tasks/harness-engineering-foundation/harness-application-ideas.md`
 - `docs/claude-tasks/harness-engineering-foundation/implementation-backlog.md`
 - `docs/claude-tasks/harness-engineering-foundation/docset-improvement-plan.md`
+- `docs/claude-tasks/harness-engineering-foundation/anthropic-article-application-plan.md`

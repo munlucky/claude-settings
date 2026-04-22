@@ -1,6 +1,7 @@
 ---
 name: plan-eng-review
 description: 실행 전에 planning artifact를 아키텍처 무결성, 의존성 구조, 실행 준비성 관점에서 검토합니다.
+context: fork
 layer: orchestrator
 loads:
   - plan-artifacts
@@ -24,6 +25,7 @@ triggers:
 ## 역할
 
 구현에 들어가기 전에 planning artifact를 기술적 일관성 관점에서 검토합니다.
+격리된 plan-review 경계에서 실행하고, verdict 요약, required changes, blockers만 병합하는 것을 기본으로 합니다.
 
 이 스킬은 계획이 숨겨진 아키텍처 공백 없이 실행 가능한지 확인합니다.
 

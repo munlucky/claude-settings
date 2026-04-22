@@ -63,6 +63,7 @@ verificationEnvironment:
 - verifier artifact에 `workflowEvidence.warnings`가 있으면 이를 stage closeout 누락 신호로 취급합니다.
 - score 기반 루프에서는 `SCORECARD.md` 또는 verifier가 계산한 score가 없으면 `gateDecision: pass`를 반환하지 않습니다.
 - score 기반 루프에서는 `score.verdict == done`이 아니면 완료 통과를 반환하지 않습니다.
+- 최신 증거 없이 성공을 암시하는 표현을 쓰지 않습니다. 금지 예시는 `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification` 입니다.
 - `verificationState: indeterminate`
   - standard -> `pass_with_warning`
   - strict -> `failed`
@@ -98,6 +99,12 @@ score 완료 규칙:
 
 위 조건 중 하나라도 깨지면 verify stage는 clean completion으로 닫을 수 없습니다.
 
+추가 규칙:
+- completion 관련 주장마다 evidence provenance 를 남깁니다.
+  - command 또는 verifier 이름
+  - artifact 경로
+  - 이번 실행에서 생성된 증거인지 여부
+
 ## 출력 예시
 
 ```yaml
@@ -128,9 +135,17 @@ completionStatus:
     workflowEvidence:
       detected: true | false
       warnings: []
+  evidenceProvenance:
+    - source: "verify-changes.sh"
+      artifact: ".claude/verification-verdict-<runId>.json"
+      fresh: true
 qaReport:
   path: "{activeSliceDir}/QA_REPORT.md"
   updated: true | false
+  reviewFindingDecisions:
+    - finding: "Route shadowing on reorder endpoint"
+      decision: accepted | challenged | deferred | needs_clarification
+      rationale: "422를 재현하고 route order 버그로 확인해 accepted 처리."
 ```
 
 ## 통과 규칙
@@ -140,6 +155,7 @@ qaReport:
   - `requiredChecks.missing`이 비어 있음
   - 코드 변경 마감이면 `verdictArtifact.workflowEvidence.warnings`가 비어 있음
   - 코드 변경 마감이면 `QA_REPORT.md`에 `Review completed: yes`
+  - completion 관련 주장에 대한 `evidenceProvenance`가 채워져 있음
   - `score.verdict == done`
   - `score.current >= score.target`
   - `score.unmetChecklistItems == 0`
@@ -157,4 +173,5 @@ qaReport:
 - contract 기반 성공 판정에는 이번 실행에서 생성된 최신 verifier artifact 또는 동등한 명령 증거가 필요합니다.
 - 있으면 `verdictArtifact.workflowEvidence`를 review/finish 단계 증거의 canonical structured hint로 사용합니다.
 - phase closeout에서는 passing verifier artifact만으로 충분하지 않습니다. `QA_REPORT.md`에 review 미완료가 남아 있거나 finish/handoff가 placeholder 품질이면 완료로 올리지 않습니다.
+- review finding을 remediation 입력으로 사용하는 경우 `QA_REPORT.md`는 각 의미 있는 항목을 `accepted`, `challenged`, `deferred`, `needs_clarification` 중 하나로 추적해야 하며, 그렇지 않으면 루프를 닫지 않습니다.
 - 검증 실패나 중단 시에는 다음 라운드를 위해 `HANDOFF.md` 갱신이 필요합니다.

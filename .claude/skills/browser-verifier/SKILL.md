@@ -1,6 +1,7 @@
 ---
 name: browser-verifier
 description: Runs runtime/browser verification for web projects using URL health checks and optional E2E commands.
+context: fork
 triggers:
   - "browser verify"
   - "runtime verify"
@@ -14,6 +15,7 @@ triggers:
 
 This is a verification helper for runtime and browser checks.
 Prefer running it behind the verification flow unless the user explicitly requests browser verification.
+When used as a read-only verifier, prefer a forked verification session and return only the structured verdict needed by the caller.
 
 ## Role
 Validate that a web app is reachable and working at runtime after implementation, with optional browser-flow checks layered on top of the existing URL/E2E harness.
@@ -38,15 +40,16 @@ Validate that a web app is reachable and working at runtime after implementation
 
 ## Runtime Adapter Policy
 
-- `claude-code`: execute runtime checks through Claude tool routing.
-- `codex`: execute the same runtime checks directly in the current Codex session.
+- `claude-code`: execute runtime checks through Claude tool routing while preserving forked verifier semantics.
+- `codex`: prefer a fresh forked verification session or equivalent isolated attempt; keep the main session as coordinator and merge back summary results only.
+- If the active runtime cannot preserve isolated verifier execution, degrade explicitly to current-session execution and record that isolation was degraded.
 - In both runtimes, use `.claude/agents/verification/verify-runtime.sh` as the canonical verifier.
 
 ## Execution
 1. Resolve target URL from `--url` or `APP_BASE_URL` (default: `http://localhost:3000`).
 2. If `--browser-flow` is set, ask the harness to attempt a browser-based flow using `browserctl` on `PATH` or `.claude/bin/browserctl`.
 3. If browser runtime is available and the caller did not explicitly choose another flow, treat `smoke` as the default browser-flow for the standard verification path.
-4. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional browser-flow/E2E arguments (tool-routed in Claude runtime, direct shell in Codex runtime).
+4. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional browser-flow/E2E arguments from the isolated verifier boundary when available.
 5. If `--e2e` is omitted, the script auto-detects npm scripts in this order:
    - `test:e2e:agent-browser`
    - `test:e2e`
@@ -60,6 +63,7 @@ Validate that a web app is reachable and working at runtime after implementation
 - optional browser-flow status
 - optional E2E result
 - next actions (restart server, fix route, rerun tests)
+- structured summary suitable for merge-back into the caller session
 
 ## Script
 ```bash

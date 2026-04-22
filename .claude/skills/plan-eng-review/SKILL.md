@@ -1,6 +1,7 @@
 ---
 name: plan-eng-review
 description: Review planning artifacts for architecture integrity, dependency shape, and execution readiness.
+context: fork
 layer: orchestrator
 loads:
   - plan-artifacts
@@ -24,6 +25,7 @@ triggers:
 ## Role
 
 Review a planning artifact for technical coherence before implementation begins.
+Run this as an isolated plan-review boundary and merge back only the verdict summary, required changes, and blockers.
 
 This skill checks whether the plan can be executed without hidden architectural gaps.
 

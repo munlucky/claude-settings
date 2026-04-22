@@ -1,6 +1,7 @@
 ---
 name: audit
 description: 접근성, 성능, 반응형, 테마/토큰 사용, 디자인 안티패턴 관점에서 UI 기술 품질을 점검하는 스킬입니다.
+context: fork
 license: Apache 2.0. pbakaus/impeccable 기반으로 조정됨.
 metadata:
   author: pbakaus
@@ -12,6 +13,7 @@ argument-hint: "[area]"
 # Audit
 
 UI 품질을 읽기 전용으로 점검할 때 사용합니다. 사용자가 수정을 명시적으로 요청하기 전에는 이 스킬 안에서 코드를 바꾸지 않습니다.
+읽기 전용 review 스킬이므로 fork된 리뷰 세션을 우선하고, 점수화된 findings와 다음 단계만 반환하는 것을 기본으로 합니다.
 
 ## 준비
 

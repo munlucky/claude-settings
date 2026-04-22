@@ -151,6 +151,13 @@ loop:
 - `scorecardProfile`은 `generic`, `saas`, `api-backend`, `frontend`, `platform` 중 하나로 명시할 수 있고 기본값은 `auto`입니다.
 - `auto`는 task intent나 phase 문맥에서 profile을 추론하고, 감지된 `REQ-*` / `SCN-*` 개수로 `REQ + SCN` 예산만 재배분할 수 있습니다.
 - contract 기반 성공 판정은 현재 scope에 적용되는 모든 required check에 대해 최신 증거가 있을 때만 가능합니다.
+- 완료 가능 summary 는 completion 관련 주장마다 아래 provenance 를 남겨야 합니다.
+  - command 또는 verifier 이름
+  - artifact 경로
+  - 이번 실행에서 생성된 증거인지 여부
+- remediation loop 를 닫기 전에 `QA_REPORT.md` 는 review finding 을 `accepted`, `challenged`, `deferred`, `needs_clarification` 중 하나로 분류해야 합니다.
+- `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification` 같은 표현으로 증거 부족을 긍정 판정으로 바꾸지 않습니다.
+- review 항목이 불명확하면 연결된 remediation 경로를 계속하기 전에 먼저 명확화합니다.
 - 로컬 `policySets` 는 저장소 내부 추상화이며, OPA/Policy-as-Code 같은 외부 엔진 연계는 향후 단계로 남겨둡니다.
 - document-trace completion을 주장하려면 추가로 아래가 필요합니다.
   - in-scope `REQ-*` 전부에 구현 및 검증 증거가 있어야 함

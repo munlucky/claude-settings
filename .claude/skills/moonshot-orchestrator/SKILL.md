@@ -51,8 +51,10 @@ Automatically collected:
 Resolve `executionRuntime` before orchestration:
 
 - `claude-code`: use Claude tool routing (`Skill`, `Task`, `Plugin`, `Bash`, `AskUserQuestion`).
-- `codex`: execute the same chain in the current Codex session with native tools.
+- `codex`: execute the same chain with native tools while keeping the current Codex session as the coordinator boundary.
+  - Read-only review and verification owners must preserve fork semantics by default: launch fresh isolated review/verifier attempts, pass minimal artifact-backed input, and merge back structured summaries only.
   - Steps documented as `Task (fork)` must preserve isolation by passing minimal input and merging summarized output only.
+  - If the active runtime cannot preserve fork semantics for a read-only review or verification owner, current-session execution is a degraded fallback and must be recorded in workflow evidence.
   - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
   - Ask user only when those outputs still indicate unresolved blocking items.
 - In both runtimes, phase/adaptor paths must preserve policy through `SPRINT_CONTRACT.md` policy anchors rather than assuming chat memory survives across rounds.
@@ -86,6 +88,7 @@ For `meta_harness` work, also apply:
 3. **Notes cap**: When notes array exceeds 10 items, archive oldest items.
 4. **Review results**: Extract key issues only from `codex-review-code` output.
 5. **Fork returns**: Accept only structured summaries from fork agents, never raw data.
+6. **Read-only review/verify inputs**: pass artifacts, changed-file lists, and concise summaries, never full session history.
 
 ## Workflow
 
@@ -306,7 +309,7 @@ Run `decisions.skillChain` in order.
 | `pre-flight-check` | Skill | emits readiness signals |
 | `teach-impeccable` | Skill | design-context bootstrap for UI work |
 | `frontend-design` | Skill | visual direction and anti-pattern guard for UI implementation |
-| `audit` | Skill | review-only UI quality audit |
+| `audit` | Skill (fork) | review-only UI quality audit |
 | `normalize` | Skill | align UI work to existing design system |
 | `polish` | Skill | final UI finishing pass |
 | `product-orchestrator` | Skill | upstream redirect only |
@@ -326,12 +329,13 @@ Run `decisions.skillChain` in order.
 | `completion-verifier` | Skill (fork) | contract-aware verification |
 | `verification-evidence-gate` | Skill | strict profile evidence-before-completion gate |
 | `doc-auto-sync` | Skill | auto-docs update & bootstrap |
-| `codex-review-code` | Skill | |
+| `codex-review-code` | Skill (fork) | |
 | `project-memory-reviewer` | Task (fork) | context isolation |
 | `vercel-react-best-practices` | Skill | when reactProject=true |
-| `security-reviewer` | Skill | |
+| `security-reviewer` | Skill (fork) | |
 | `build-error-resolver` | Skill | |
-| `browser-verifier` | Skill | runtime check for web projects |
+| `browser-verifier` | Skill (fork) | runtime check for web projects |
+| `web-design-guidelines` | Skill (fork) | guideline-based UI review |
 | `verify-runtime.sh` | Bash | runtime URL/E2E verifier |
 | `verify-changes.sh` | Bash | verdict-emitting project verifier |
 | `efficiency-tracker` | Skill | |
@@ -363,7 +367,7 @@ Run `decisions.skillChain` in order.
 2. Runtime routing:
    - `claude-code`: Skill → `Skill` tool, Agent → `Task` tool, Plugin → `Plugin` tool, Script → `Bash` tool
    - `codex`: run equivalent logic in-session with native tools/shell while preserving step contracts
-3. For `Task (fork)` semantics, keep context isolation (minimal input, summarized return only) in both runtimes
+3. For `Task (fork)` semantics and read-only review/verification skills with `context: fork`, keep context isolation (minimal input, summarized return only) in both runtimes
 4. Undefined step → ask user and stop
 5. All steps must follow `document-memory-policy.md`
 6. If `product-orchestrator` is selected, treat it as a redirect/handoff boundary and do not continue the build chain in the same pass unless a product package is returned
