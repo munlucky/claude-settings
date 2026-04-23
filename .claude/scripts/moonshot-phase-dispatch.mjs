@@ -318,9 +318,9 @@ function heartbeatDispatchLease(context = {}) {
     'heartbeat',
     state.statusFile,
     runtimeState.runLeaseId,
-    mapLeaseStage(context),
+    context.currentStage || mapLeaseStage(context),
     context.number || '',
-    context.activePhaseTitle || context.phaseTitle || '',
+    context.activePhaseTitle || context.phaseTitle || context.title || '',
     leaseCompletionStatus(context, actionable),
   );
   appendDebugLog('phase-run-lease-heartbeat', {
@@ -383,21 +383,19 @@ function startTrackingBridge(label) {
     return () => {};
   }
   const intervalMs = (Number.parseInt(process.env.PHASE_DISPATCH_TRACKING_SECONDS ?? '45', 10) || 45) * 1000;
-  let lastSummary = '';
   const timer = setInterval(() => {
     try {
       const context = activePhaseContext();
       heartbeatDispatchLease(context);
-      const summary = [
+      const summaryParts = [
         label,
         `phase=${context.number || 'none'}`,
+        `title=${context.title || context.activePhaseTitle || 'n/a'}`,
+        `stage=${context.currentStage || mapLeaseStage(context)}`,
         `status=${context.status || 'idle'}`,
         `outcome=${context.lastOutcome || 'pending'}`,
-      ].join(' ');
-      if (summary !== lastSummary) {
-        lastSummary = summary;
-        logInfo(`Tracking heartbeat: ${summary}`);
-      }
+      ];
+      logInfo(`Tracking heartbeat: ${summaryParts.join(' ')}`);
     } catch (error) {
       appendDebugLog('tracking-bridge-heartbeat-failed', {
         label,

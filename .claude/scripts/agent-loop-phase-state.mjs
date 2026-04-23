@@ -54,6 +54,7 @@ function readStatusBlocks(statusFile) {
       const match = rawLine.match(/number:\s*([0-9]+)/);
       current = {
         number: match ? match[1] : null,
+        title: null,
         status: null,
         planConfirmed: null,
         lastOutcome: null,
@@ -94,7 +95,9 @@ function readStatusBlocks(statusFile) {
     }
 
     const stripped = rawLine.trim();
-    if (stripped.startsWith('status:')) {
+    if (stripped.startsWith('title:')) {
+      current.title = stripped.slice('title:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('status:')) {
       current.status = stripped.slice('status:'.length).trim();
     } else if (stripped.startsWith('planConfirmed:')) {
       current.planConfirmed = stripped.slice('planConfirmed:'.length).trim().toLowerCase();
@@ -157,6 +160,7 @@ function getPhaseSummary(statusFile, phaseNum) {
   const target = blocks.find((block) => String(block.number) === String(phaseNum));
   return target || {
     number: String(phaseNum),
+    title: '',
     status: '',
     planConfirmed: '',
     lastOutcome: '',
@@ -174,6 +178,7 @@ function getActivePhaseContext(statusFile) {
   const active = readStatusBlocks(statusFile).find((block) => block.status === 'in_progress' && block.planConfirmed !== 'false');
   return active || {
     number: '',
+    title: '',
     status: '',
     planConfirmed: '',
     lastOutcome: '',
