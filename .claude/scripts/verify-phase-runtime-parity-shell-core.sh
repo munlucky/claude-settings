@@ -234,10 +234,61 @@ latest_new_file() {
   find "$repo_root/.claude" -maxdepth 1 -name "$pattern" -newer "$sentinel" -print | sort | tail -1
 }
 
+format_runtime_failure() {
+  local runtime="$1"
+  local code="$2"
+  local detail="$3"
+
+  if [[ -n "$code" && "$code" != "unknown" ]]; then
+    printf '%s [%s]: %s\n' "$runtime" "$code" "$detail"
+    return
+  fi
+
+  printf '%s: %s\n' "$runtime" "$detail"
+}
+
 record_runtime_failure() {
   local runtime="$1"
-  local detail="$2"
-  RUNTIME_FAILURES+=("${runtime}: ${detail}")
+  local code="$2"
+  local detail="$3"
+  RUNTIME_FAILURES+=("$(format_runtime_failure "$runtime" "$code" "$detail")")
+}
+
+classify_codex_probe_failure() {
+  local primary_file="$1"
+  local secondary_file="$2"
+
+  if grep -Fqi "state db discrepancy" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "state_db_inconsistent"
+    return 0
+  fi
+
+  if grep -Fqi "Failed to check rollout age for snapshot" "$primary_file" "$secondary_file" || grep -Fqi "shell_snapshot" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "shell_snapshot_inconsistent"
+    return 0
+  fi
+
+  if grep -Fqi ".codex/sessions" "$primary_file" "$secondary_file" && grep -Fqi "permission denied" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "session_storage_permission_denied"
+    return 0
+  fi
+
+  if grep -Fqi "session storage is not writable" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "session_storage_unwritable"
+    return 0
+  fi
+
+  if grep -Fqi "error sending request for url" "$primary_file" "$secondary_file" || grep -Fqi "network error" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "network_unavailable"
+    return 0
+  fi
+
+  if grep -Fqi "login" "$primary_file" "$secondary_file" && grep -Fqi "codex" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "login_required"
+    return 0
+  fi
+
+  printf '%s\n' "probe_unknown"
 }
 
 record_actual_failure() {
@@ -395,7 +446,7 @@ probe_claude_runtime() {
   local detail
 
   if ! command -v claude >/dev/null 2>&1; then
-    record_runtime_failure "claude" "CLI not installed on this machine"
+    record_runtime_failure "claude" "cli_missing" "CLI not installed on this machine"
     return 1
   fi
 
@@ -416,17 +467,17 @@ probe_claude_runtime() {
 
   detail="$(summarize_probe_detail "$error_file" "$output_file")"
   if grep -Fqi "needs an update" "$error_file" "$output_file"; then
-    record_runtime_failure "claude" "TODO: when Claude access is restored, update the Claude CLI on this machine (${detail:-no additional detail})"
+    record_runtime_failure "claude" "needs_update" "TODO: when Claude access is restored, update the Claude CLI on this machine (${detail:-no additional detail})"
   elif grep -Fqi "does not have access to Claude" "$error_file" "$output_file"; then
-    record_runtime_failure "claude" "TODO: enable Claude subscription/access on this machine (${detail:-no additional detail})"
+    record_runtime_failure "claude" "access_unavailable" "TODO: enable Claude subscription/access on this machine (${detail:-no additional detail})"
   elif grep -Fqi "Please login again" "$error_file" "$output_file"; then
-    record_runtime_failure "claude" "TODO: enable Claude login/subscription on this machine (${detail:-no additional detail})"
+    record_runtime_failure "claude" "login_required" "TODO: enable Claude login/subscription on this machine (${detail:-no additional detail})"
   elif grep -Fqi "Could not resolve authentication method" "$error_file" "$output_file"; then
-    record_runtime_failure "claude" "TODO: configure Claude authentication on this machine (${detail:-no additional detail})"
+    record_runtime_failure "claude" "auth_unconfigured" "TODO: configure Claude authentication on this machine (${detail:-no additional detail})"
   elif [[ $exit_code -eq 0 && ! -s "$output_file" && ! -s "$error_file" ]]; then
-    record_runtime_failure "claude" "TODO: verify Claude auth/subscription on this machine"
+    record_runtime_failure "claude" "probe_no_output" "TODO: verify Claude auth/subscription on this machine"
   else
-    record_runtime_failure "claude" "TODO: verify Claude runtime availability (${detail:-probe exited with code ${exit_code}})"
+    record_runtime_failure "claude" "probe_unknown" "TODO: verify Claude runtime availability (${detail:-probe exited with code ${exit_code}})"
   fi
 
   return 1
@@ -437,16 +488,21 @@ probe_codex_runtime() {
   local stdout_file="$TMP_ROOT/codex-probe.stdout"
   local error_file="$TMP_ROOT/codex-probe.err"
   local detail
+  local failure_code
+  local probe_home="$TMP_ROOT/codex-probe-home"
+  local -a probe_env=()
 
   if ! command -v codex >/dev/null 2>&1; then
-    record_runtime_failure "codex" "CLI not installed on this machine"
+    record_runtime_failure "codex" "cli_missing" "CLI not installed on this machine"
     return 1
   fi
+
+  runtime_cli_append_codex_probe_env probe_env "$probe_home"
 
   set +e
   (
     cd "$REPO_ROOT"
-    local -a cmd=()
+    local -a cmd=(env "${probe_env[@]}")
     runtime_cli_append_codex_base_args cmd "$REPO_ROOT"
     cmd+=(-o "$output_file" 'Reply exactly with RUNTIME_OK and nothing else.')
     "${cmd[@]}"
@@ -461,15 +517,30 @@ probe_codex_runtime() {
   fi
 
   detail="$(summarize_probe_detail "$error_file" "$stdout_file")"
-  if grep -Fqi ".codex/sessions" "$error_file" "$stdout_file" && grep -Fqi "permission denied" "$error_file" "$stdout_file"; then
-    record_runtime_failure "codex" "session storage is not writable (${detail:-no additional detail})"
-  elif grep -Fqi "error sending request for url" "$error_file" "$stdout_file" || grep -Fqi "network error" "$error_file" "$stdout_file"; then
-    record_runtime_failure "codex" "network access unavailable (${detail:-no additional detail})"
-  elif grep -Fqi "login" "$error_file" "$stdout_file" && grep -Fqi "codex" "$error_file" "$stdout_file"; then
-    record_runtime_failure "codex" "login required (${detail:-no additional detail})"
-  else
-    record_runtime_failure "codex" "${detail:-probe exited with code ${exit_code}}"
-  fi
+  failure_code="$(classify_codex_probe_failure "$error_file" "$stdout_file")"
+  case "$failure_code" in
+    state_db_inconsistent)
+      record_runtime_failure "codex" "$failure_code" "isolated probe reported rollout/session state DB inconsistency (${detail:-no additional detail})"
+      ;;
+    shell_snapshot_inconsistent)
+      record_runtime_failure "codex" "$failure_code" "isolated probe reported shell snapshot state inconsistency (${detail:-no additional detail})"
+      ;;
+    session_storage_permission_denied)
+      record_runtime_failure "codex" "$failure_code" "session storage permission denied (${detail:-no additional detail})"
+      ;;
+    session_storage_unwritable)
+      record_runtime_failure "codex" "$failure_code" "session storage is not writable (${detail:-no additional detail})"
+      ;;
+    network_unavailable)
+      record_runtime_failure "codex" "$failure_code" "network access unavailable (${detail:-no additional detail})"
+      ;;
+    login_required)
+      record_runtime_failure "codex" "$failure_code" "login required (${detail:-no additional detail})"
+      ;;
+    *)
+      record_runtime_failure "codex" "$failure_code" "${detail:-probe exited with code ${exit_code}}"
+      ;;
+  esac
 
   return 1
 }

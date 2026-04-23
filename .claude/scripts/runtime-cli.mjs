@@ -212,6 +212,48 @@ function getProcessGroupId(pid) {
   return result.stdout.trim().split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
 }
 
+function copyIfPresent(sourcePath, targetPath) {
+  try {
+    if (!fs.existsSync(sourcePath)) {
+      return false;
+    }
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function prepareCodexProbeHome(rootPath) {
+  if (isWsl()) {
+    syncWslCodexAuth();
+  }
+
+  const probeHome = path.resolve(rootPath || path.join(os.tmpdir(), 'codex-probe-home'));
+  const codexHome = path.join(probeHome, '.codex');
+  const xdgConfigHome = path.join(probeHome, '.config');
+  const xdgCacheHome = path.join(probeHome, '.cache');
+  const xdgStateHome = path.join(probeHome, '.local', 'state');
+
+  for (const directory of [probeHome, codexHome, xdgConfigHome, xdgCacheHome, xdgStateHome]) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  const sourceCodexHome = path.join(os.homedir(), '.codex');
+  for (const relativePath of ['auth.json', 'config.json', 'config.toml']) {
+    copyIfPresent(path.join(sourceCodexHome, relativePath), path.join(codexHome, relativePath));
+  }
+
+  return {
+    HOME: probeHome,
+    CODEX_HOME: codexHome,
+    XDG_CONFIG_HOME: xdgConfigHome,
+    XDG_CACHE_HOME: xdgCacheHome,
+    XDG_STATE_HOME: xdgStateHome,
+  };
+}
+
 function codexBaseArgs(cwd) {
   let useOss = process.env.CODEX_USE_OSS_PROVIDER ?? 'auto';
   let localProvider = process.env.CODEX_LOCAL_PROVIDER ?? '';
@@ -252,6 +294,7 @@ function printUsage() {
     '  get-process-group-id <pid>',
     '  resolve-codex-command',
     '  codex-base-args <cwd>',
+    '  codex-probe-env <probe-root>',
   ].join('\n'));
 }
 
@@ -327,6 +370,19 @@ function main() {
       const cwd = args[0] || process.cwd();
       for (const arg of codexBaseArgs(cwd)) {
         writeStdoutLine(arg);
+      }
+      process.exit(0);
+      break;
+    }
+    case 'codex-probe-env': {
+      const probeRoot = args[0];
+      if (!probeRoot) {
+        printUsage();
+        process.exit(64);
+      }
+      const envAssignments = prepareCodexProbeHome(probeRoot);
+      for (const [key, value] of Object.entries(envAssignments)) {
+        writeStdoutLine(`${key}=${value}`);
       }
       process.exit(0);
       break;
