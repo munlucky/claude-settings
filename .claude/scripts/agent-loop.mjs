@@ -16,7 +16,9 @@ const artifactsPath = path.join(scriptDir, 'agent-loop-phase-artifacts.mjs');
 const logDir = '.claude/logs/agent-loop';
 const decisionLog = path.join(logDir, 'decisions.md');
 const summaryReport = path.join(logDir, 'summary.md');
+const liveSummaryReport = path.join(logDir, 'summary.current.md');
 const debugLog = path.join(logDir, 'debug.jsonl');
+const currentRunState = '.claude/logs/workflow-enforcement/current-run.json';
 
 const state = {
   planDir: '',
@@ -206,6 +208,37 @@ function activePhaseContext() {
   return parseAssignments(phaseState('get-active-phase-context', state.statusFile));
 }
 
+function gateAssignmentsIndicateStrongCompletion(gate) {
+  if (!gate || typeof gate !== 'object') {
+    return false;
+  }
+  const blockerCodes = String(gate.PHASE_COMPLETION_BLOCKER_CODES || '').trim();
+  const scoreVerdict = String(gate.PHASE_COMPLETION_SCORE_VERDICT || '').trim().toLowerCase();
+  const closeoutStatus = String(gate.PHASE_CLOSEOUT_STATUS || '').trim().toLowerCase();
+  const cleanFinish = String(gate.PHASE_COMPLETION_CLEAN_FINISH || '').trim().toLowerCase() === 'true';
+  return scoreVerdict === 'done'
+    && cleanFinish
+    && blockerCodes === ''
+    && (closeoutStatus === 'complete' || closeoutStatus === 'clean_finish' || String(gate.PHASE_COMPLETION_ALLOWED || '') === 'true');
+}
+
+function completionGateForSignalContext(context) {
+  if (!context?.qaReport) {
+    return null;
+  }
+  const phaseExecutionDir = path.dirname(context.qaReport);
+  return parseAssignments(phaseState(
+    'evaluate-phase-completion-gate',
+    '0',
+    context.qaReport || '',
+    context.scorecard || '',
+    phaseExecutionDir,
+    'true',
+    process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+    context.handoff || '',
+  ));
+}
+
 function phaseSummary(phaseNum) {
   const output = phaseState('get-phase-summary', state.statusFile, String(phaseNum));
   const values = {};
@@ -371,9 +404,37 @@ function writeSummaryReport({ planDir, totalPhases, completed, failed, stoppedEa
     '',
     '## Logs',
     `See: ${logDir}`,
+    `Live state: ${currentRunState}`,
     '',
   ].join('\n');
   fs.writeFileSync(summaryReport, body, 'utf8');
+}
+
+function writeLiveSummaryReport({ planDir, totalPhases, completed, failed, currentPhase = '', currentPhaseTitle = '', loopState = 'running', stopReason = '', stopDetail = '' }) {
+  ensureLoopLogs();
+  const body = [
+    '# Agent Loop Live Summary',
+    '',
+    '## Status',
+    `- State: ${loopState}`,
+    `- Current phase: ${currentPhase || 'n/a'}`,
+    `- Current title: ${currentPhaseTitle || 'n/a'}`,
+    `- Completed: ${completed}`,
+    `- Failed: ${failed}`,
+    `- Updated At: ${localTimestamp()}`,
+    '',
+    '## Context',
+    `- Plan Directory: ${planDir}`,
+    `- Total Phases: ${totalPhases}`,
+    `- Current Run State: ${currentRunState}`,
+    `- Historical Summary: ${summaryReport}`,
+    '',
+    '## Stop Signals',
+    `- Reason: ${stopReason || 'n/a'}`,
+    `- Detail: ${stopDetail || 'n/a'}`,
+    '',
+  ].join('\n');
+  fs.writeFileSync(liveSummaryReport, body, 'utf8');
 }
 
 function stalePhaseSeconds() {
@@ -457,6 +518,52 @@ function closeoutActivePhaseForSignal(signalName, origin = 'agent-loop-signal') 
         origin,
         context,
       });
+      return;
+    }
+
+    let protectedGate = null;
+    try {
+      protectedGate = completionGateForSignalContext(context);
+    } catch (error) {
+      appendDebugLog('agent-loop-signal-completion-gate-failed', {
+        signalName,
+        origin,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (protectedGate && (protectedGate.PHASE_COMPLETION_ALLOWED === 'true' || gateAssignmentsIndicateStrongCompletion(protectedGate))) {
+      const detail = `${origin}: received ${signalName} after clean-finish completion bookkeeping was already recorded`;
+      appendDebugLog('agent-loop-signal-preserve-completed', {
+        signalName,
+        origin,
+        context,
+        gate: protectedGate,
+      });
+      if (context.qaReport) {
+        artifactsCommand(
+          'append-qa-runtime-update',
+          'agent-loop-interrupted-after-completion',
+          '',
+          detail,
+          '.claude/logs/workflow-enforcement',
+          context.qaReport,
+          context.scorecard || '',
+        );
+      }
+      phaseState(
+        'update-phase-state',
+        state.statusFile,
+        String(context.number),
+        'completed',
+        utcTimestamp(),
+        'completed',
+        'false',
+        context.activePhaseDoc || '',
+        context.sprintContract || '',
+        context.qaReport || '',
+        context.handoff || '',
+        context.scorecard || '',
+      );
       return;
     }
 
@@ -586,6 +693,13 @@ async function runNodeManagedLoop() {
     runtime = resolveRunnerRuntime();
     totalPhases = phasePlan('count-total-phases', state.planDir);
     ensureLoopLogs({ reset: true });
+    writeLiveSummaryReport({
+      planDir: state.planDir,
+      totalPhases,
+      completed: executedPhases,
+      failed: failedPhases,
+      loopState: 'running',
+    });
     printLoopHeader({ masterPlan, runtime, totalPhases });
 
     while (true) {
@@ -598,6 +712,13 @@ async function runNodeManagedLoop() {
         statusFile: state.statusFile,
       });
       if (!nextPhase) {
+        writeLiveSummaryReport({
+          planDir: state.planDir,
+          totalPhases,
+          completed: executedPhases,
+          failed: failedPhases,
+          loopState: 'idle',
+        });
         break;
       }
 
@@ -608,6 +729,15 @@ async function runNodeManagedLoop() {
 
       const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase);
       const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase);
+      writeLiveSummaryReport({
+        planDir: state.planDir,
+        totalPhases,
+        completed: executedPhases,
+        failed: failedPhases,
+        currentPhase: nextPhase,
+        currentPhaseTitle: phaseTitle,
+        loopState: 'running',
+      });
       const runnerArgs = buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc });
       appendDebugLog('phase-runner-invoke', {
         nextPhase,
@@ -677,6 +807,15 @@ async function runNodeManagedLoop() {
             '',
           ]);
           logInfo(`Phase ${nextPhase} remains in progress after a partial attempt; continuing with a fresh attempt`);
+          writeLiveSummaryReport({
+            planDir: state.planDir,
+            totalPhases,
+            completed: executedPhases,
+            failed: failedPhases,
+            currentPhase: nextPhase,
+            currentPhaseTitle: phaseTitle,
+            loopState: 'partial-retry',
+          });
           if (state.delaySeconds > 0) {
             await sleep(state.delaySeconds * 1000);
           }
@@ -712,6 +851,16 @@ async function runNodeManagedLoop() {
       failed: failedPhases,
       stoppedEarly,
       stopPhase,
+      stopReason,
+      stopDetail,
+    });
+    writeLiveSummaryReport({
+      planDir: state.planDir,
+      totalPhases,
+      completed: executedPhases,
+      failed: failedPhases,
+      currentPhase: stopPhase,
+      loopState: stoppedEarly ? 'stopped' : 'completed',
       stopReason,
       stopDetail,
     });

@@ -865,19 +865,32 @@ function evaluatePhaseCompletionGate(config) {
   const completionBlockers = Array.isArray(currentWorkflowState?.completion?.blockers)
     ? currentWorkflowState.completion.blockers.map((item) => String(item).trim()).filter(Boolean)
     : [];
-
-  const allowed = passedPaths.length > 0 && failures.length === 0 && workflowReason === 'ok' && scoreReason === 'ok';
-  const reason = allowed
-    ? 'ok'
-    : failures[0] || (workflowReason !== 'ok' ? workflowReason : (scoreReason !== 'ok' ? scoreReason : 'no-fresh-verification-artifact'));
+  const closeoutConcrete = cleanFinishArtifacts.cleanFinish
+    || (
+      qaVerdictPassed
+      && reviewCompleted
+      && Boolean(workflowSection.selected && workflowSection.applied && workflowSection.skipped)
+      && Boolean(finishStopWhy && finishRemainingScope && finishRemainingBlockers)
+      && !finishStopWhy.toLowerCase().includes('checkpoint')
+      && !finishStopWhy.toLowerCase().includes('milestone')
+      && isNoneLikeValue(finishRemainingScope)
+      && isNoneLikeValue(finishRemainingBlockers)
+      && (closeoutStatus === 'complete' || closeoutStatus === 'clean_finish')
+    );
+  const structuredVerdictReady = passedPaths.length > 0
+    && failures.length === 0
+    && scoreReason === 'ok'
+    && scoreVerdict === 'done';
+  const informationalWorkflowWarnings = latestWorkflowWarnings.length > 0
+    && structuredVerdictReady
+    && closeoutConcrete
+    && completionBlockers.length === 0;
 
   if (workflowReason === 'ok') {
     if (completionBlockers.includes('review_incomplete')) {
       workflowReason = 'review-incomplete';
     } else if (completionBlockers.includes('fresh_evidence_missing')) {
       workflowReason = 'no-fresh-verification-artifact';
-    } else if (latestWorkflowWarnings.length > 0) {
-      workflowReason = 'workflow-evidence-warnings';
     } else if (codeChangeDetected && !selectedBundles.includes('review-bundle')) {
       workflowReason = 'workflow-review-bundle-missing';
     } else if (!selectedBundles.includes('finish-bundle')) {
@@ -892,6 +905,8 @@ function evaluatePhaseCompletionGate(config) {
       workflowReason = 'finish-closeout-incomplete';
     } else if (finishStopWhy.toLowerCase().includes('checkpoint') || finishStopWhy.toLowerCase().includes('milestone')) {
       workflowReason = 'finish-closeout-incomplete';
+    } else if (latestWorkflowWarnings.length > 0 && !informationalWorkflowWarnings) {
+      workflowReason = 'workflow-evidence-warnings';
     }
   }
 
@@ -916,6 +931,9 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_EXECUTION_READY: executionReady ? 'true' : 'false',
     PHASE_CLOSEOUT_STATUS: closeoutStatus,
     PHASE_COMPLETION_BLOCKER_CODES: completionBlockers.join('\n'),
+    PHASE_COMPLETION_CLEAN_FINISH: closeoutConcrete ? 'true' : 'false',
+    PHASE_COMPLETION_WARNING_COUNT: String(latestWorkflowWarnings.length),
+    PHASE_COMPLETION_WARNING_NOTES: informationalWorkflowWarnings ? latestWorkflowWarnings.join('\n') : '',
   };
 }
 
