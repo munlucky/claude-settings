@@ -12,7 +12,7 @@ triggers:
 
 Serve as the skill-first execution boundary after `moonshot-phase-runner`.
 Users should not need to run command adapters directly. This skill consumes `phaseRunnerResult`, then routes execution to:
-- `moonshot-phase-dispatch.sh` / `agent-loop.mjs` as the internal adapter path for `delegated-terminal`
+- `moonshot-phase-dispatch.mjs` / `agent-loop.mjs` as the primary internal adapter path for `delegated-terminal`
 - `moonshot-in-session-coordinator` for `in-session-coordinator`
 
 This is an internal execution handoff, not a primary public workflow entrypoint.
@@ -31,8 +31,8 @@ phaseRunnerResult:
   executionRuntime: "auto"            # auto | claude | codex
   prepareOnly: false
   autoStartExecution: true
-  executionCommand: ".claude/scripts/moonshot-phase-dispatch.sh ..."
-  executionAdapterCommand: "bash .claude/scripts/agent-loop.sh ..."
+  executionCommand: "node .claude/scripts/moonshot-phase-dispatch.mjs ..."
+  executionAdapterCommand: "node .claude/scripts/agent-loop.mjs ..."
 ```
 
 ## Workflow
@@ -91,7 +91,7 @@ phaseExecutionResult:
 - This skill is the internal phase execution handoff behind `moonshot-phase-runner`.
 - Scripts are implementation adapters only and must stay behind this skill.
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.
-- Do not ask the user to manually run `moonshot-phase-dispatch.sh` in the default path.
+- Do not ask the user to manually run `moonshot-phase-dispatch.mjs` in the default path.
 - For `delegated-terminal`, the valid execution boundary is the actual dispatcher/agent-loop process, not a one-round summary.
 - `partial`, `retry`, updated QA artifacts, or a resumable handoff are not valid stop reasons for delegated-terminal by themselves.
 - `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, or placeholder closeout artifacts are not valid completion states.
@@ -103,6 +103,7 @@ phaseExecutionResult:
 
 - `/moonshot-phase-runner`
 - `/moonshot-in-session-coordinator`
-- `.claude/scripts/agent-loop.sh`
-- `.claude/scripts/moonshot-phase-dispatch.sh`
+- `.claude/scripts/agent-loop.mjs`
+- `.claude/scripts/moonshot-phase-dispatch.mjs`
+- `.claude/scripts/agent-loop.sh` / `.claude/scripts/moonshot-phase-dispatch.sh` as compatibility wrappers
 - `.claude/templates/execution/WORKSET.template.md`

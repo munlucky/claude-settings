@@ -2,6 +2,7 @@
 .history/
 .tmp/
 .claude/logs/
+.claude/cache/
 .claude/memory.json
 .claude/browser-runtime/
 .claude/tools/browserd/node_modules/

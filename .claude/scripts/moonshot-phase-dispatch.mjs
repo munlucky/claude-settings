@@ -44,7 +44,10 @@ function writeStdoutLine(value = '') {
 
 function showHelp() {
   writeStdoutLine(`Usage:
-  ./moonshot-phase-dispatch.sh <plan-dir> [options]
+  node .claude/scripts/moonshot-phase-dispatch.mjs <plan-dir> [options]
+
+Compatibility wrapper:
+  ./.claude/scripts/moonshot-phase-dispatch.sh <plan-dir> [options]
 
 Options:
   --execution-mode <mode>   auto|delegated-terminal|in-session-coordinator

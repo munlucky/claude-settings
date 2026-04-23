@@ -1,0 +1,44 @@
+{
+  "generatedAt": "2026-04-22T00:00:00+09:00",
+  "mode": "baseline",
+  "workspace": "/Users/dev/claude-settings/.tmp/harness-worktrees/harness-recursive",
+  "trackedFiles": {
+    ".claude/CLAUDE.md": {
+      "lines": 43,
+      "bytes": 1302
+    },
+    ".claude/docs/guidelines/document-memory-policy.md": {
+      "lines": 261,
+      "bytes": 7490
+    },
+    ".claude/docs/guidelines/token-optimization.md": {
+      "lines": 224,
+      "bytes": 6481
+    },
+    ".claude/skills/session-logger/SKILL.md": {
+      "lines": 183,
+      "bytes": 4384
+    },
+    ".claude/skills/commit-moonshot/SKILL.md": {
+      "lines": 183,
+      "bytes": 6013
+    },
+    ".claude/docs/guidelines/document-memory-policy.ko.md": {
+      "lines": 261,
+      "bytes": null
+    },
+    ".claude/docs/guidelines/token-optimization.ko.md": {
+      "lines": 224,
+      "bytes": null
+    }
+  },
+  "commandOutputLines": {
+    "knowledgeAuditDefaultLines": 8,
+    "verifyPhaseRunnerBoundaryLines": 1,
+    "parityRenderLines": 3
+  },
+  "notes": [
+    "Baseline command counts were measured before token-optimization edits.",
+    "Korean guideline byte counts were not captured in the initial baseline snapshot."
+  ]
+}

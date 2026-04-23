@@ -180,7 +180,8 @@ Bounded low-risk work may compress stages, but should not skip review or verific
 Unified phase execution boundary:
 - `/moonshot-phase-runner <plan-dir>` is the user-facing entrypoint.
 - `moonshot-phase-executor` is the skill-level execution adapter.
-- Internal command adapters may still use `.claude/scripts/moonshot-phase-dispatch.sh`.
+- Internal command adapters should prefer `node .claude/scripts/moonshot-phase-dispatch.mjs`.
+- `.claude/scripts/moonshot-phase-dispatch.sh` remains a compatibility wrapper.
 - Runtime selection remains `auto|claude|codex`.
 
 Phase runner default behavior:
