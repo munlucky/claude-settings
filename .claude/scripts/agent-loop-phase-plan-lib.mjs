@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
+import { loadVerificationContractContext } from './lib/verification-contract.mjs';
 
 export function sanitizeSlug(value) {
   return String(value || '')
@@ -33,51 +34,20 @@ export function assignExecutionArtifactPaths(phaseNum, phaseTitle, executionRoot
   };
 }
 
-export function renderRequiredVerificationCommands(verificationContractFile) {
+export function renderRequiredVerificationCommands(verificationContractFile, options = {}) {
   if (!verificationContractFile || !fs.existsSync(verificationContractFile)) {
     return '- Populate from the active verification contract before claiming completion.';
   }
 
-  const lines = fs.readFileSync(verificationContractFile, 'utf8').split(/\r?\n/);
-  const commands = {};
-  const requiredChecks = [];
-  let section = '';
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) {
-      continue;
-    }
-    if (/^[A-Za-z0-9_-]+:$/.test(line)) {
-      section = line.slice(0, -1);
-      continue;
-    }
-    if (section === 'commands') {
-      const match = line.match(/^([A-Za-z0-9_.-]+):\s*(.+)$/);
-      if (match) {
-        commands[match[1]] = match[2].replace(/^['"]|['"]$/g, '');
-      }
-    }
-    if (section === 'policy' && line.startsWith('requiredChecks:')) {
-      continue;
-    }
-    if (section === 'policy') {
-      const match = line.match(/^-\s+(.+)$/);
-      if (match) {
-        requiredChecks.push(match[1].trim().replace(/^['"]|['"]$/g, ''));
-      }
-    }
-  }
-
-  if (requiredChecks.length === 0) {
+  const context = loadVerificationContractContext(verificationContractFile, options);
+  if (context.requiredChecks.length === 0) {
     return '- Populate from the active verification contract before claiming completion.';
   }
 
-  return requiredChecks.map((checkName) => {
-    const command = commands[checkName];
-    return command
-      ? `- ${checkName}: \`${command}\``
-      : `- ${checkName}: declare the command in ${verificationContractFile}`;
+  return context.requiredChecks.map((check) => {
+    return check.command
+      ? `- ${check.name}: \`${check.command}\``
+      : `- ${check.name}: declare the command in ${verificationContractFile}`;
   }).join('\n');
 }
 
@@ -150,9 +120,16 @@ export function ensureExecutionArtifacts(config) {
     targetCompletionScore,
     scorecardProfile,
     workspaceRoot = process.cwd(),
+    requestedRuntime = 'auto',
+    verificationRuntimes = 'auto',
+    currentRuntime = '',
   } = config;
   const paths = assignExecutionArtifactPaths(phaseNum, phaseTitle, executionRoot);
-  const requiredCommands = renderRequiredVerificationCommands(verificationContractFile);
+  const requiredCommands = renderRequiredVerificationCommands(verificationContractFile, {
+    requestedRuntime,
+    verificationRuntimes,
+    currentRuntime,
+  });
 
   fs.mkdirSync(paths.phaseExecutionDir, { recursive: true });
 
@@ -190,6 +167,8 @@ export function ensureExecutionArtifacts(config) {
 - Verification contract: ${verificationContractFile}
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
 - Round policy summary: Keep this run isolated to phase ${paths.phasePrefix}, refresh QA/HANDOFF artifacts when state changes, and require fresh verification evidence before completion.
+- Work runtime: ${currentRuntime || requestedRuntime || 'auto'}
+- Verification runtime target: ${verificationRuntimes || 'auto'}
 
 ## Review Cadence
 - First review checkpoint: After the first meaningful implementation batch for this phase.
@@ -365,6 +344,7 @@ export function buildPhasePrompt(config) {
     extraInstructions = '',
     autonomousInstructions = '',
     workspaceRoot = process.cwd(),
+    verificationRuntimes = 'auto',
   } = config;
 
   let promptHeader = '/moonshot-orchestrator';
@@ -421,6 +401,8 @@ Single isolated phase-attempt rules:
 - Record review completion before claiming the verifier state is final.
 - Generate fresh structured verification verdicts with \`.claude/scripts/write-verification-verdict.py\` and write them under \`.claude/verification-verdict-*.json\`; do not hand-author verdict JSON.
   기본 인자만 넣어도 동작하도록 스키마를 완화했습니다.
+- If a required verifier is blocked by runtime/tool availability, write a blocked verification verdict instead of keeping the phase in blind retry.
+- Respect the active verification runtime target: ${verificationRuntimes}.
 - Record the exact repository-root verdict path in QA_REPORT.md so the completion gate can confirm the same file.
 - Refresh QA_REPORT.md at stage transitions instead of batching every artifact update at the end.
 - When verification runs, update QA_REPORT.md.

@@ -56,6 +56,12 @@ def main() -> int:
     parser.add_argument("--selected-bundle", action="append", default=[])
     parser.add_argument("--stage", action="append", default=[])
     parser.add_argument("--workflow-warning", action="append", default=[])
+    parser.add_argument("--requested-runtime", default="")
+    parser.add_argument("--effective-runtime", default="")
+    parser.add_argument("--verification-runtime-targets", default="")
+    parser.add_argument("--failure-class", choices=["", "implementation", "verification", "environment", "contract"], default="")
+    parser.add_argument("--blocking", choices=["true", "false"], default="false")
+    parser.add_argument("--blocking-reason-code", default="")
     parser.add_argument("--score-current", type=int)
     parser.add_argument("--score-target", type=int)
     parser.add_argument("--score-unmet", type=int)
@@ -135,6 +141,14 @@ def main() -> int:
             "stageOrder": args.stage,
             "warnings": args.workflow_warning,
         },
+        "runtimeContext": {
+            "requestedRuntime": args.requested_runtime,
+            "effectiveRuntime": args.effective_runtime,
+            "verificationRuntimeTargets": args.verification_runtime_targets,
+        },
+        "failureClass": args.failure_class or "",
+        "blocking": args.blocking == "true",
+        "blockingReasonCode": args.blocking_reason_code or "",
         "score": score_payload,
         "generatedAt": args.generated_at,
     }

@@ -5,6 +5,18 @@ commands:
   shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/scripts/verify-phase-runner-boundary.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
   phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
   phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
+checkPolicies:
+  phaseRuntimeParity:
+    runtimeSelectionAware: true
+    defaultVerificationRuntimes:
+      auto: current
+      current: current
+      claude: claude
+      codex: codex
+      both: both
+    commandEnv:
+      PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: "{verificationTarget}"
+    preflightBlockOnUnavailable: true
 scope:
   executionPlanes:
     - meta_harness

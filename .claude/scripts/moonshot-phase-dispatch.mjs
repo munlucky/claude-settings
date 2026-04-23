@@ -19,6 +19,7 @@ const state = {
   statusFile: '.claude/docs/phase-status.yaml',
   executionRoot: '',
   runtime: 'auto',
+  verificationRuntimes: 'auto',
   maxAttempts: 3,
   stopOnFailure: true,
   autonomous: false,
@@ -54,6 +55,8 @@ Options:
   --status-file <path>      Default: .claude/docs/phase-status.yaml
   --execution-root <path>   Default: <plan-dir>/execution
   --runtime <runtime>       auto|claude|codex
+  --verification-runtimes <target>
+                            auto|current|claude|codex|both
   --max-attempts <n>        Default: 3 (coordinator mode)
   --stop-on-failure         Stop when retry cap is reached (default)
   --continue-on-failure     Keep going after failure
@@ -476,7 +479,14 @@ function buildCodexCommand(prompt) {
 
 function runDelegatedTerminal(resolvedRoot) {
   terminateStaleWorkers();
-  const cmd = ['node', '.claude/scripts/agent-loop.mjs', state.planDir, '--status-file', state.statusFile, '--execution-root', resolvedRoot, '--runtime', state.runtime];
+  const cmd = [
+    'node', '.claude/scripts/agent-loop.mjs',
+    state.planDir,
+    '--status-file', state.statusFile,
+    '--execution-root', resolvedRoot,
+    '--runtime', state.runtime,
+    '--verification-runtimes', state.verificationRuntimes,
+  ];
 
   if (state.dryRun) {
     writeStdoutLine(cmd.join(' '));
@@ -611,6 +621,7 @@ phaseRunnerResult:
 
 options:
   maxAttemptsPerPhase: ${state.maxAttempts}
+  verificationRuntimes: "${state.verificationRuntimes}"
 ${stopLine}
 ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
 
@@ -745,6 +756,9 @@ function parseArgs(argv) {
       case '--runtime':
         state.runtime = args.shift() ?? '';
         break;
+      case '--verification-runtimes':
+        state.verificationRuntimes = args.shift() ?? '';
+        break;
       case '--max-attempts':
         state.maxAttempts = Number.parseInt(args.shift() ?? '3', 10);
         break;
@@ -794,6 +808,11 @@ if (!['auto', 'claude', 'codex'].includes(state.runtime)) {
   state.runtime = 'auto';
 }
 
+if (!['auto', 'current', 'claude', 'codex', 'both'].includes(state.verificationRuntimes)) {
+  logWarn(`Unsupported verification runtime target '${state.verificationRuntimes}'. Falling back to 'auto'.`);
+  state.verificationRuntimes = 'auto';
+}
+
 syncCompletedPhaseArchive();
 let resolvedMode = resolveExecutionMode();
 const resolvedRoot = resolveExecutionRoot();
@@ -817,6 +836,7 @@ logInfo(`Plan directory: ${state.planDir}`);
 logInfo(`Execution mode: ${resolvedMode}`);
 logInfo(`Execution root: ${resolvedRoot}`);
 logInfo(`Runtime: ${state.runtime}`);
+logInfo(`Verification runtimes: ${state.verificationRuntimes}`);
 recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan);
 if (state.autonomous) {
   logInfo('Autonomous flag acknowledged (delegated terminal is autonomous by default)');
