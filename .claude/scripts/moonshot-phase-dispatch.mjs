@@ -10,6 +10,7 @@ const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
 const phaseStatePath = path.join(SCRIPT_DIR, 'agent-loop-phase-state.mjs');
 const phaseArtifactsPath = path.join(SCRIPT_DIR, 'agent-loop-phase-artifacts.mjs');
+const phaseRunLeasePath = path.join(SCRIPT_DIR, 'phase-run-lease.mjs');
 const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
 const debugLog = path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl');
 
@@ -27,6 +28,13 @@ const state = {
   codexReasoningEffort: process.env.PHASE_DISPATCH_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT ?? 'medium',
   allowInteractiveInSession: (process.env.PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION ?? 'false') === 'true',
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
+};
+
+const runtimeState = {
+  runLeaseId: '',
+  leaseActive: false,
+  childPid: null,
+  childExitHandled: false,
 };
 
 const MAX_DELEGATED_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS ?? '32', 10) || 32;
@@ -141,6 +149,18 @@ function parseAssignments(text) {
   return values;
 }
 
+function generateRunLeaseId() {
+  return `dispatch-${Date.now()}-${process.pid}`;
+}
+
+function leaseAssignments(command, ...args) {
+  const result = runNodeScript(phaseRunLeasePath, [command, ...args]);
+  if ((result.status ?? 0) !== 0) {
+    throw new Error(result.stderr || `phase-run-lease failed: ${command}`);
+  }
+  return parseAssignments(result.stdout);
+}
+
 function activePhaseContext() {
   const result = runNodeScript(phaseStatePath, ['get-active-phase-context', state.statusFile]);
   if ((result.status ?? 0) !== 0) {
@@ -235,6 +255,225 @@ function resolveMasterPlan() {
     .sort((a, b) => a.localeCompare(b))
     .find((name) => name.includes('master') || name.includes('00-'));
   return match ? path.join(state.planDir, match) : '';
+}
+
+function mapLeaseStage(context = {}) {
+  const status = String(context.status || '').trim().toLowerCase();
+  const outcome = String(context.lastOutcome || '').trim().toLowerCase();
+  if (status === 'in_progress') {
+    if (outcome === 'partial') {
+      return 'finish/handoff';
+    }
+    return 'execute';
+  }
+  if (status === 'failed' || status === 'completed') {
+    return 'finish/handoff';
+  }
+  return 'ready/isolate';
+}
+
+function leaseCompletionStatus(context = {}, actionable) {
+  if (!actionable) {
+    return 'completed';
+  }
+  const outcome = String(context.lastOutcome || '').trim().toLowerCase();
+  if (outcome === 'partial') {
+    return 'partial';
+  }
+  if (String(context.status || '').trim().toLowerCase() === 'failed') {
+    return 'failed';
+  }
+  return 'running';
+}
+
+function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime) {
+  runtimeState.runLeaseId = generateRunLeaseId();
+  const values = leaseAssignments(
+    'start',
+    state.statusFile,
+    runtimeState.runLeaseId,
+    resolvedMode,
+    state.planDir,
+    resolvedRoot,
+    effectiveRuntime,
+    masterPlan,
+    String(process.pid),
+  );
+  runtimeState.leaseActive = true;
+  appendDebugLog('phase-run-lease-start', {
+    runLeaseId: runtimeState.runLeaseId,
+    values,
+    executionMode: resolvedMode,
+    runtime: effectiveRuntime,
+  });
+  return values;
+}
+
+function heartbeatDispatchLease(context = {}) {
+  if (!runtimeState.leaseActive || !runtimeState.runLeaseId) {
+    return null;
+  }
+  const actionable = actionablePhaseExists();
+  const values = leaseAssignments(
+    'heartbeat',
+    state.statusFile,
+    runtimeState.runLeaseId,
+    mapLeaseStage(context),
+    context.number || '',
+    context.activePhaseTitle || context.phaseTitle || '',
+    leaseCompletionStatus(context, actionable),
+  );
+  appendDebugLog('phase-run-lease-heartbeat', {
+    runLeaseId: runtimeState.runLeaseId,
+    actionable,
+    context,
+    values,
+  });
+  return values;
+}
+
+function finishDispatchLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = 'completed') {
+  if (!runtimeState.leaseActive || !runtimeState.runLeaseId) {
+    return null;
+  }
+  const values = leaseAssignments(
+    'finish',
+    state.statusFile,
+    runtimeState.runLeaseId,
+    returnBoundary,
+    stopReasonCode,
+    stopReasonDetail,
+    completionStatus,
+  );
+  runtimeState.leaseActive = false;
+  appendDebugLog('phase-run-lease-finish', {
+    runLeaseId: runtimeState.runLeaseId,
+    returnBoundary,
+    stopReasonCode,
+    stopReasonDetail,
+    completionStatus,
+    values,
+  });
+  return values;
+}
+
+function assertReturnAllowedOrThrow() {
+  if (!runtimeState.runLeaseId) {
+    throw new Error('missing run lease id before success return');
+  }
+  const values = leaseAssignments(
+    'assert-return-allowed',
+    state.statusFile,
+    runtimeState.runLeaseId,
+    'true',
+    'false',
+  );
+  appendDebugLog('phase-run-lease-assert-return-allowed', {
+    runLeaseId: runtimeState.runLeaseId,
+    values,
+  });
+  if (values.RETURN_ALLOWED !== 'true') {
+    throw new Error(`phase-run lease denied success return (${values.RETURN_REASON || 'unknown'})`);
+  }
+  return values;
+}
+
+function startTrackingBridge(label) {
+  if (state.dryRun) {
+    return () => {};
+  }
+  const intervalMs = (Number.parseInt(process.env.PHASE_DISPATCH_TRACKING_SECONDS ?? '45', 10) || 45) * 1000;
+  let lastSummary = '';
+  const timer = setInterval(() => {
+    try {
+      const context = activePhaseContext();
+      heartbeatDispatchLease(context);
+      const summary = [
+        label,
+        `phase=${context.number || 'none'}`,
+        `status=${context.status || 'idle'}`,
+        `outcome=${context.lastOutcome || 'pending'}`,
+      ].join(' ');
+      if (summary !== lastSummary) {
+        lastSummary = summary;
+        logInfo(`Tracking heartbeat: ${summary}`);
+      }
+    } catch (error) {
+      appendDebugLog('tracking-bridge-heartbeat-failed', {
+        label,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, intervalMs);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  return () => clearInterval(timer);
+}
+
+function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false, returnBoundary = '', stopReasonCode = '', completionStatus = '' } = {}) {
+  if (runtimeState.childExitHandled) {
+    return;
+  }
+  runtimeState.childExitHandled = true;
+
+  try {
+    if (exitCode === 0 && requireSuccessBoundary) {
+      assertReturnAllowedOrThrow();
+      finishDispatchLease(returnBoundary || 'success-return', stopReasonCode || 'plan-directory-complete', detail, completionStatus || 'completed');
+      process.exit(0);
+      return;
+    }
+
+    finishDispatchLease(
+      returnBoundary || 'dispatch-stop',
+      stopReasonCode || `exit-${exitCode}`,
+      detail,
+      completionStatus || (exitCode === 0 ? 'completed' : 'failed'),
+    );
+  } catch (error) {
+    logError(error instanceof Error ? error.message : String(error));
+    appendDebugLog('dispatch-finalize-error', {
+      exitCode,
+      detail,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
+    return;
+  }
+
+  process.exit(exitCode);
+}
+
+function installDispatchSignalHandlers() {
+  const handleSignal = (signalName) => {
+    appendDebugLog('dispatch-signal', {
+      signal: signalName,
+      childPid: runtimeState.childPid,
+      leaseActive: runtimeState.leaseActive,
+      runLeaseId: runtimeState.runLeaseId,
+    });
+    if (runtimeState.childPid) {
+      try {
+        terminatePid(runtimeState.childPid);
+      } catch (error) {
+        appendDebugLog('dispatch-signal-terminate-failed', {
+          signal: signalName,
+          childPid: runtimeState.childPid,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    finalizeDispatchExit(1, `dispatcher interrupted by ${signalName}`, {
+      returnBoundary: 'dispatch-interrupted',
+      stopReasonCode: 'dispatcher-interrupted',
+      completionStatus: 'failed',
+    });
+  };
+
+  for (const signalName of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(signalName, () => handleSignal(signalName));
+  }
 }
 
 function resolveActivePhaseArtifacts() {
@@ -495,9 +734,17 @@ function runDelegatedTerminal(resolvedRoot) {
 
   let restartCount = 0;
   let signalRestartCount = 0;
+  const stopTracking = startTrackingBridge('delegated-terminal');
 
   const launch = () => {
-    const child = spawn(cmd[0], cmd.slice(1), { stdio: 'inherit' });
+    const child = spawn(cmd[0], cmd.slice(1), {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        PHASE_RUN_LEASE_ID: runtimeState.runLeaseId,
+      },
+    });
+    runtimeState.childPid = child.pid ?? null;
     appendDebugLog('delegated-terminal-launch', {
       pid: child.pid ?? null,
       command: cmd,
@@ -505,6 +752,7 @@ function runDelegatedTerminal(resolvedRoot) {
       executionRoot: resolvedRoot,
     });
     child.on('exit', (code, signal) => {
+      runtimeState.childPid = null;
       appendDebugLog('delegated-terminal-exit', {
         pid: child.pid ?? null,
         code: code ?? 0,
@@ -538,7 +786,12 @@ function runDelegatedTerminal(resolvedRoot) {
           signalRestartCount += 1;
           if (signalRestartCount > MAX_SIGNAL_RESTARTS) {
             logError(`Delegated-terminal exited with signal-like termination ${MAX_SIGNAL_RESTARTS} times while actionable phases remained. Stopping.`);
-            process.exit(1);
+            stopTracking();
+            finalizeDispatchExit(1, `delegated-terminal exceeded signal-like restart cap with actionable phases remaining (${MAX_SIGNAL_RESTARTS})`, {
+              returnBoundary: 'dispatch-stop',
+              stopReasonCode: 'delegated-terminal-signal-restart-cap',
+              completionStatus: 'failed',
+            });
             return;
           }
           logWarn(`Delegated-terminal exited with signal-like termination. Restarting autonomous loop (${signalRestartCount}/${MAX_SIGNAL_RESTARTS}).`);
@@ -553,7 +806,12 @@ function runDelegatedTerminal(resolvedRoot) {
           return;
         }
 
-        process.exit(code ?? 1);
+        stopTracking();
+        finalizeDispatchExit(code ?? 1, `delegated-terminal signal-like exit (${signal || code || 'unknown'})`, {
+          returnBoundary: 'signal-exit',
+          stopReasonCode: 'signal-like-exit',
+          completionStatus: 'failed',
+        });
         return;
       }
 
@@ -574,7 +832,12 @@ function runDelegatedTerminal(resolvedRoot) {
           restartCount += 1;
           if (restartCount > MAX_DELEGATED_RESTARTS) {
             logError(`Delegated-terminal exited cleanly ${MAX_DELEGATED_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
-            process.exit(1);
+            stopTracking();
+            finalizeDispatchExit(1, `delegated-terminal exceeded restart cap with actionable phases remaining (${MAX_DELEGATED_RESTARTS})`, {
+              returnBoundary: 'dispatch-stop',
+              stopReasonCode: 'delegated-terminal-restart-cap',
+              completionStatus: 'failed',
+            });
             return;
           }
 
@@ -586,9 +849,23 @@ function runDelegatedTerminal(resolvedRoot) {
           launch();
           return;
         }
+
+        stopTracking();
+        finalizeDispatchExit(0, 'delegated-terminal completed with no actionable phases remaining', {
+          requireSuccessBoundary: true,
+          returnBoundary: 'success-return',
+          stopReasonCode: 'plan-directory-complete',
+          completionStatus: 'completed',
+        });
+        return;
       }
 
-      process.exit(exitCode);
+      stopTracking();
+      finalizeDispatchExit(exitCode, `delegated-terminal exited with code ${exitCode}`, {
+        returnBoundary: 'dispatch-stop',
+        stopReasonCode: `delegated-terminal-exit-${exitCode}`,
+        completionStatus: 'failed',
+      });
     });
   };
 
@@ -639,7 +916,12 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
       break;
     default:
       logError(`Unsupported runtime for in-session coordinator: ${effectiveRuntime}`);
-      process.exit(1);
+      finalizeDispatchExit(1, `unsupported runtime for in-session coordinator: ${effectiveRuntime}`, {
+        returnBoundary: 'dispatch-stop',
+        stopReasonCode: 'unsupported-in-session-runtime',
+        completionStatus: 'failed',
+      });
+      return;
   }
 
   if (state.dryRun) {
@@ -650,10 +932,18 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
   const forkUnavailablePattern = /collab spawn failed|parent thread rollout unavailable for fork/i;
   let restartCount = 0;
   let fallbackNoticeEmitted = false;
+  const stopTracking = startTrackingBridge('in-session-coordinator');
 
   const launch = () => {
     let fallbackToDelegated = false;
-    const child = spawn(cmd[0], cmd.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(cmd[0], cmd.slice(1), {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        PHASE_RUN_LEASE_ID: runtimeState.runLeaseId,
+      },
+    });
+    runtimeState.childPid = child.pid ?? null;
     appendDebugLog('in-session-coordinator-launch', {
       pid: child.pid ?? null,
       command: cmd,
@@ -681,6 +971,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
     child.stdout.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stdout));
     child.stderr.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stderr));
     child.on('exit', (code, signal) => {
+      runtimeState.childPid = null;
       appendDebugLog('in-session-coordinator-exit', {
         pid: child.pid ?? null,
         code: code ?? 0,
@@ -689,11 +980,17 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
       });
       if (fallbackToDelegated) {
         recordDispatchEvidence('delegated-terminal', resolvedRoot, masterPlan);
+        stopTracking();
         runDelegatedTerminal(resolvedRoot);
         return;
       }
       if (signal) {
-        process.kill(process.pid, signal);
+        stopTracking();
+        finalizeDispatchExit(1, `in-session-coordinator terminated by signal ${signal}`, {
+          returnBoundary: 'signal-exit',
+          stopReasonCode: 'signal-like-exit',
+          completionStatus: 'failed',
+        });
         return;
       }
 
@@ -714,7 +1011,12 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
           restartCount += 1;
           if (restartCount > MAX_COORDINATOR_RESTARTS) {
             logError(`In-session-coordinator exited cleanly ${MAX_COORDINATOR_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
-            process.exit(1);
+            stopTracking();
+            finalizeDispatchExit(1, `in-session-coordinator exceeded restart cap with actionable phases remaining (${MAX_COORDINATOR_RESTARTS})`, {
+              returnBoundary: 'dispatch-stop',
+              stopReasonCode: 'in-session-coordinator-restart-cap',
+              completionStatus: 'failed',
+            });
             return;
           }
 
@@ -726,9 +1028,23 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
           launch();
           return;
         }
+
+        stopTracking();
+        finalizeDispatchExit(0, 'in-session-coordinator completed with no actionable phases remaining', {
+          requireSuccessBoundary: true,
+          returnBoundary: 'success-return',
+          stopReasonCode: 'plan-directory-complete',
+          completionStatus: 'completed',
+        });
+        return;
       }
 
-      process.exit(exitCode);
+      stopTracking();
+      finalizeDispatchExit(exitCode, `in-session-coordinator exited with code ${exitCode}`, {
+        returnBoundary: 'dispatch-stop',
+        stopReasonCode: `in-session-coordinator-exit-${exitCode}`,
+        completionStatus: 'failed',
+      });
     });
   };
 
@@ -838,6 +1154,10 @@ logInfo(`Execution root: ${resolvedRoot}`);
 logInfo(`Runtime: ${state.runtime}`);
 logInfo(`Verification runtimes: ${state.verificationRuntimes}`);
 recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan);
+if (!state.dryRun) {
+  startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
+  installDispatchSignalHandlers();
+}
 if (state.autonomous) {
   logInfo('Autonomous flag acknowledged (delegated terminal is autonomous by default)');
 }
