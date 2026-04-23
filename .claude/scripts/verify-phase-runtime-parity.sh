@@ -663,19 +663,27 @@ run_render_matrix() {
 
   (
     cd "$REPO_ROOT"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime claude --dry-run > "$claude_delegated_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime codex --dry-run > "$codex_delegated_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime claude --dry-run > "$claude_coord_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
+    if target_runtime_selected "claude"; then
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime claude --dry-run > "$claude_delegated_out"
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime claude --dry-run > "$claude_coord_out"
+    fi
+    if target_runtime_selected "codex"; then
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime codex --dry-run > "$codex_delegated_out"
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
+    fi
   )
 
-  assert_contains "$claude_delegated_out" "agent-loop.sh" "delegated-terminal adapter command"
-  assert_contains "$claude_delegated_out" "--runtime claude" "Claude delegated runtime flag"
-  assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
-  assert_contains "$claude_coord_out" "claude --dangerously-skip-permissions" "Claude coordinator adapter"
-  assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
-  assert_contains "$codex_coord_out" "codex exec --full-auto" "Codex coordinator adapter"
-  assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
+  if target_runtime_selected "claude"; then
+    assert_contains "$claude_delegated_out" "agent-loop.sh" "delegated-terminal adapter command"
+    assert_contains "$claude_delegated_out" "--runtime claude" "Claude delegated runtime flag"
+    assert_contains "$claude_coord_out" "claude --dangerously-skip-permissions" "Claude coordinator adapter"
+    assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
+  fi
+  if target_runtime_selected "codex"; then
+    assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
+    assert_contains "$codex_coord_out" "codex exec --full-auto" "Codex coordinator adapter"
+    assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
+  fi
 
   local -a fixture_lines=()
   read_fixture_lines "$TMP_ROOT/render-fixture" "render" "delegated-terminal" fixture_lines

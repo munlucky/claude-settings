@@ -907,11 +907,9 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
 
   switch (effectiveRuntime) {
     case 'claude':
-      ensureCommand('claude', 'Claude CLI not found');
       cmd = ['claude', '--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt];
       break;
     case 'codex':
-      ensureCommand('codex', 'Codex CLI not found');
       cmd = buildCodexCommand(prompt);
       break;
     default:
@@ -927,6 +925,17 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
   if (state.dryRun) {
     writeStdoutLine(cmd.join(' '));
     return;
+  }
+
+  switch (effectiveRuntime) {
+    case 'claude':
+      ensureCommand('claude', 'Claude CLI not found');
+      break;
+    case 'codex':
+      ensureCommand('codex', 'Codex CLI not found');
+      break;
+    default:
+      break;
   }
 
   const forkUnavailablePattern = /collab spawn failed|parent thread rollout unavailable for fork/i;
