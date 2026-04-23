@@ -57,7 +57,10 @@ function showHelp() {
   writeStdoutLine(`# Called from within Claude Code main session.
 #
 # Usage:
-#   ./agent-loop.sh <plan-dir> [options]
+#   node .claude/scripts/agent-loop.mjs <plan-dir> [options]
+#
+# Compatibility wrapper:
+#   ./.claude/scripts/agent-loop.sh <plan-dir> [options]
 #
 # Arguments:
 #   plan-dir          Directory containing master plan and phase documents
@@ -114,7 +117,7 @@ function parseArgs(argv) {
 function assertEnvironment() {
   if (!state.planDir) {
     console.error('ERROR: Plan directory not specified');
-    console.error('Usage: ./agent-loop.sh <plan-dir> [options]');
+    console.error('Usage: node .claude/scripts/agent-loop.mjs <plan-dir> [options]');
     process.exit(1);
   }
 

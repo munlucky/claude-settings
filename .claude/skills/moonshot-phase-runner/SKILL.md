@@ -33,7 +33,7 @@ Carry these rule files through `SPRINT_CONTRACT.md` policy anchors and phase-att
 - `.claude/rules/agents/agent-delegation.md`
 
 Execution modes:
-- `delegated-terminal`: use the concrete autonomous loop backed by `agent-loop.sh`; prefer this when the user expects uninterrupted end-to-end execution
+- `delegated-terminal`: use the concrete autonomous loop backed by `agent-loop.mjs`; prefer this when the user expects uninterrupted end-to-end execution
 - `in-session-coordinator`: the current session coordinates the loop, but each attempt must run as a fresh fork/sub-agent round; treat this as an interactive thin-coordinator mode, not the default autonomous runtime
 
 Execution start policy:
@@ -225,7 +225,7 @@ When `--autonomous` flag **IS** specified:
 ## Step 6: Resolve Execution Mode
 
 Supported values:
-- `delegated-terminal` (default): external loop via `agent-loop.sh`
+- `delegated-terminal` (default): external loop via `agent-loop.mjs`
 - `in-session-coordinator`: current session coordinates retries, but each attempt must be isolated
 
 ### Mode A: delegated-terminal
@@ -245,7 +245,7 @@ Supported values:
   Internal adapter:
 ───────────────────────────────────────────────────────────────
 
-  .claude/scripts/moonshot-phase-dispatch.sh docs/implementation/ --execution-mode delegated-terminal --execution-root docs/implementation/execution --runtime auto
+  node .claude/scripts/moonshot-phase-dispatch.mjs docs/implementation/ --execution-mode delegated-terminal --execution-root docs/implementation/execution --runtime auto
 
 ───────────────────────────────────────────────────────────────
 
@@ -273,7 +273,8 @@ Coordinator rules:
 - If the round does not finish cleanly, update `QA_REPORT.md` and `HANDOFF.md` before the next attempt.
 
 Runtime note:
-- `delegated-terminal` has a concrete shell loop (`agent-loop.sh`) and is the preferred mode when the run should keep going without conversational re-entry.
+- `delegated-terminal` has a concrete Node loop (`agent-loop.mjs`) and is the preferred mode when the run should keep going without conversational re-entry.
+- `.sh` wrappers remain available as compatibility entrypoints.
 - `in-session-coordinator` depends on the active runtime honoring the coordinator contract and may surface a resumable handoff instead of autonomously continuing.
 
 Attempt contract:
@@ -337,8 +338,8 @@ phaseRunnerResult:
   executionRoot: "docs/implementation/execution"
   executionRuntime: "auto"
   executionSkill: "moonshot-phase-executor"
-  executionCommand: ".claude/scripts/moonshot-phase-dispatch.sh docs/implementation/ --execution-mode in-session-coordinator --execution-root docs/implementation/execution --runtime auto"
-  executionAdapterCommand: ".claude/scripts/moonshot-phase-dispatch.sh docs/implementation/ --execution-mode in-session-coordinator --execution-root docs/implementation/execution --runtime auto"
+  executionCommand: "node .claude/scripts/moonshot-phase-dispatch.mjs docs/implementation/ --execution-mode in-session-coordinator --execution-root docs/implementation/execution --runtime auto"
+  executionAdapterCommand: "node .claude/scripts/moonshot-phase-dispatch.mjs docs/implementation/ --execution-mode in-session-coordinator --execution-root docs/implementation/execution --runtime auto"
   executionCoordinatorSkill: "moonshot-in-session-coordinator"
   coordinatorPolicy: "fresh-fork-per-attempt"
   autoStartExecution: true
@@ -390,8 +391,9 @@ Optional closeout metadata:
 - `/moonshot-orchestrator`: Phase implementation delegation
 - `/moonshot-plan-writer`: Fallback plan creation when no safe plan dir exists
 - `/moonshot-detect-uncertainty`: Pre-execution uncertainty detection
-- `.claude/scripts/moonshot-phase-dispatch.sh`: command-layer dispatcher for both execution modes
-- `.claude/scripts/agent-loop.sh`: autonomous execution loop behind `delegated-terminal`
+- `.claude/scripts/moonshot-phase-dispatch.mjs`: primary command-layer dispatcher for both execution modes
+- `.claude/scripts/agent-loop.mjs`: primary autonomous execution loop behind `delegated-terminal`
+- `.claude/scripts/moonshot-phase-dispatch.sh` / `.claude/scripts/agent-loop.sh`: compatibility wrappers
 - `/moonshot-in-session-coordinator`: Fresh-attempt coordinator for `in-session-coordinator`
 
 ## Orchestrator Integration Contract

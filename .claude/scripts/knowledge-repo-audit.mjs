@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+const COMPACT_OUTPUT = process.argv.includes('--compact') || String(process.env.TOKEN_OUTPUT_MODE || '').toLowerCase() === 'compact';
+
 function commandStdout(command, args) {
   const result = spawnSync(command, args, { encoding: 'utf8' });
   if (result.error || (result.status ?? 1) !== 0) {
@@ -547,6 +549,11 @@ function main() {
 
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+
+  if (COMPACT_OUTPUT) {
+    console.log(`knowledge-audit verdict=${verdict} errors=${errors.length} warnings=${warnings.length} rules=${alwaysLoadedRuleLines}/${alwaysLoadedTotalLines} tokens=${alwaysLoadedEstimatedTokens} artifact=${outFile}`);
+    process.exit(verdict === 'passed' ? 0 : 1);
+  }
 
   console.log('');
   console.log('Knowledge Repo Audit');

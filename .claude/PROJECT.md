@@ -25,10 +25,10 @@ Last-Reviewed: 2026-03-30
 - **Commands**:
   - `bash .claude/scripts/harness-prepare-recursive-worktree.sh`
   - `bash .claude/scripts/harness-promote.sh --source codex/harness-recursive --target codex/harness-release-candidate --target-base main --target-worktree .tmp/harness-worktrees/harness-release-candidate`
-  - `bash .claude/scripts/knowledge-repo-audit.sh`
+  - `node .claude/scripts/knowledge-repo-audit.mjs`
   - `bash .claude/scripts/verify-code-policy.sh`
   - `bash .claude/scripts/workflow-enforcement.sh verify`
-  - `bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
+  - `node .claude/scripts/verify-phase-runtime-parity.mjs .claude/docs/runtime-parity-reference-plan`
   - `python3 .claude/scripts/normalize-harness-quality.py --input-glob ".tmp/harness-runs/**/harness-quality-run.json" --output ".tmp/harness-runs/harness-quality/latest.json"`
 
 ## Directory/Structure

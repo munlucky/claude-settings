@@ -19,7 +19,7 @@ Master plan 문서를 기반으로 phase별 구현을 준비합니다.
 이 스킬은 large, phase 기반, long-running 구현 작업의 기본 공개 진입점입니다.
 
 실행 모드:
-- `delegated-terminal`: `agent-loop.sh` 기반의 실제 자율 루프를 사용하며, 중단 없이 끝까지 밀어야 하는 실행에 우선 사용
+- `delegated-terminal`: `agent-loop.mjs` 기반의 실제 자율 루프를 사용하며, 중단 없이 끝까지 밀어야 하는 실행에 우선 사용
 - `in-session-coordinator`: 현재 세션이 루프를 조율하되, 각 시도는 fresh fork/sub-agent round로 실행
 
 실행 시작 정책:
@@ -117,11 +117,12 @@ phase가 `completed`가 되면 해당 phase 문서는 `<plan-dir>/close/`로 이
 - `in-session-coordinator`
 
 ### delegated-terminal
-- `.claude/scripts/moonshot-phase-dispatch.sh`를 통해 `agent-loop.sh`를 사용합니다.
+- `node .claude/scripts/moonshot-phase-dispatch.mjs`를 통해 `agent-loop.mjs`를 사용합니다.
 - 자율 루프, 재시도, phase score gating이 필요한 실행의 기본 경로입니다.
 - `partial`, `retry`, 체크포인트 문서 갱신, handoff 작성만으로는 멈추지 않습니다.
 - 이 모드에서는 실제 loop exit가 생길 때만 반환합니다: 전체 완료, retry cap 도달, 명시적 사용자 중지, 또는 루프가 기록한 실제 blocker.
 - 어떤 phase가 `completed`가 되더라도 같은 plan directory에 actionable phase가 남아 있으면 즉시 다음 phase로 이어가야 합니다.
+- `.sh` wrapper는 compatibility 용도로 유지됩니다.
 
 ### in-session-coordinator
 - 메인 세션은 얇은 coordinator로 남고, 각 시도는 fresh attempt로 실행합니다.

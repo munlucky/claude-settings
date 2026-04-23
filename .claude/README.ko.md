@@ -165,7 +165,8 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 통합 phase 실행 경계:
 - 사용자 진입점은 `/moonshot-phase-runner <plan-dir>`입니다.
 - skill-level 실행 어댑터는 `moonshot-phase-executor`입니다.
-- 내부 command adapter는 여전히 `.claude/scripts/moonshot-phase-dispatch.sh`를 사용할 수 있습니다.
+- 내부 command adapter는 `node .claude/scripts/moonshot-phase-dispatch.mjs`를 우선 사용합니다.
+- `.claude/scripts/moonshot-phase-dispatch.sh`는 compatibility wrapper로 유지됩니다.
 - runtime 선택은 `auto|claude|codex`를 유지합니다.
 
 phase runner 기본 동작:

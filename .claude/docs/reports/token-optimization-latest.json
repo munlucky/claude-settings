@@ -1,0 +1,52 @@
+{
+  "generatedAt": "2026-04-22T07:17:27.117Z",
+  "docs": [
+    {
+      "path": ".claude/CLAUDE.md",
+      "lines": 44,
+      "bytes": 1302
+    },
+    {
+      "path": ".claude/docs/guidelines/document-memory-policy.md",
+      "lines": 55,
+      "bytes": 2048
+    },
+    {
+      "path": ".claude/docs/guidelines/token-optimization.md",
+      "lines": 49,
+      "bytes": 2091
+    },
+    {
+      "path": ".claude/skills/session-logger/SKILL.md",
+      "lines": 54,
+      "bytes": 2011
+    },
+    {
+      "path": ".claude/skills/commit-moonshot/SKILL.md",
+      "lines": 46,
+      "bytes": 1367
+    }
+  ],
+  "commandOutputs": {
+    "knowledgeAuditDefaultLines": 8,
+    "knowledgeAuditCompactLines": 1,
+    "verifyPhaseRunnerBoundaryLines": 1,
+    "parityRenderCompactLines": 1
+  },
+  "audit": {
+    "errors": 0,
+    "warnings": 0,
+    "alwaysLoadedRuleLines": 194,
+    "alwaysLoadedTotalLines": 238,
+    "alwaysLoadedEstimatedTokens": 2197
+  },
+  "contextGraph": {
+    "nodeCount": 400,
+    "edgeCount": 438,
+    "reachableSamples": {
+      "sessionLogger": 66,
+      "commitMoonshot": 66,
+      "phaseRuntimeParity": 9
+    }
+  }
+}
