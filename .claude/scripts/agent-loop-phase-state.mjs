@@ -708,6 +708,9 @@ function evaluatePhaseCompletionGate(config) {
     const verificationMode = payload.verificationMode || contract.verificationMode || '';
     const contractApplicable = Boolean(contract.applicable);
     const missingRequired = payload.requiredChecks?.missing || [];
+    const blocking = payload.blocking === true;
+    const failureClass = String(payload.failureClass || '').trim().toLowerCase();
+    const blockingReasonCode = String(payload.blockingReasonCode || '').trim().toLowerCase();
     const workflowEvidence = payload.workflowEvidence && typeof payload.workflowEvidence === 'object' ? payload.workflowEvidence : {};
     const workflowWarnings = Array.isArray(workflowEvidence.warnings) ? workflowEvidence.warnings : [];
     if (workflowWarnings.length > 0) {
@@ -724,6 +727,11 @@ function evaluatePhaseCompletionGate(config) {
     }
     if (Array.isArray(workflowEvidence.stageOrder) && workflowEvidence.stageOrder.length > 0) {
       latestWorkflowStageOrder = workflowEvidence.stageOrder.map((item) => String(item).trim()).filter(Boolean);
+    }
+
+    if (blocking && (failureClass === 'environment' || failureClass === 'contract')) {
+      failures.push(`blocked:${blockingReasonCode || script}`);
+      continue;
     }
 
     if (verdict !== 'passed') {

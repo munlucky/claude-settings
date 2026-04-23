@@ -23,6 +23,7 @@ const state = {
   statusFile: '.claude/docs/phase-status.yaml',
   executionRoot: '',
   runtime: 'auto',
+  verificationRuntimes: 'auto',
   maxPhases: 0,
   delaySeconds: 3,
   dryRun: false,
@@ -69,6 +70,8 @@ function showHelp() {
 #   --status-file     Path to phase-status.yaml (default: .claude/docs/phase-status.yaml)
 #   --execution-root  Directory for execution bridge artifacts (default: <plan-dir>/execution)
 #   --runtime         Runner CLI: auto|claude|codex (default: auto)
+#   --verification-runtimes
+#                    Verification runtime target: auto|current|claude|codex|both (default: auto)
 #   --max-phases N    Maximum phases to run (default: all)
 #   --delay N         Delay between phases in seconds (default: 3)
 #   --dry-run         Print what would be executed without running
@@ -92,6 +95,9 @@ function parseArgs(argv) {
         break;
       case '--runtime':
         state.runtime = args.shift() ?? '';
+        break;
+      case '--verification-runtimes':
+        state.verificationRuntimes = args.shift() ?? '';
         break;
       case '--max-phases':
         state.maxPhases = Number.parseInt(args.shift() ?? '0', 10) || 0;
@@ -280,6 +286,7 @@ function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc }) {
     '--status-file', state.statusFile,
     '--execution-root', state.executionRoot,
     '--runtime', state.runtime,
+    '--verification-runtimes', state.verificationRuntimes,
     '--phase-num', String(nextPhase),
     '--phase-title', phaseTitle,
     '--phase-doc', phaseDoc,

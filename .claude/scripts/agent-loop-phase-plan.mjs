@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
+import { loadVerificationContractContext } from './lib/verification-contract.mjs';
 
 function parseIsoTimestamp(value) {
   if (!value) {
@@ -227,25 +228,22 @@ function parseSimpleYaml(filePath) {
   return root;
 }
 
-function renderRequiredVerificationCommands(contractFile) {
+function renderRequiredVerificationCommands(contractFile, requestedRuntime = 'auto', verificationRuntimes = 'auto', currentRuntime = '') {
   if (!fs.existsSync(contractFile)) {
     return '- Populate from the active verification contract before claiming completion.';
   }
 
-  const contract = parseSimpleYaml(contractFile);
-  const commands = typeof contract.commands === 'object' && contract.commands ? contract.commands : {};
-  const policy = typeof contract.policy === 'object' && contract.policy ? contract.policy : {};
-  const requiredChecks = Array.isArray(policy.requiredChecks)
-    ? policy.requiredChecks
-    : policy.requiredChecks
-      ? [policy.requiredChecks]
-      : [];
+  const context = loadVerificationContractContext(contractFile, {
+    requestedRuntime,
+    verificationRuntimes,
+    currentRuntime,
+  });
 
-  const lines = requiredChecks.map((checkName) => {
-    const command = commands[checkName];
+  const lines = context.requiredChecks.map((check) => {
+    const command = check.command;
     return command
-      ? `- ${checkName}: \`${command}\``
-      : `- ${checkName}: declare the command in ${contractFile}`;
+      ? `- ${check.name}: \`${command}\``
+      : `- ${check.name}: declare the command in ${contractFile}`;
   });
 
   if (lines.length === 0) {
@@ -265,7 +263,7 @@ function printUsage() {
     '  get-phase-doc <plan-dir> <phase-num>',
     '  get-phase-title <plan-dir> <phase-num>',
     '  count-total-phases <plan-dir>',
-    '  render-required-verification-commands <verification-contract-file>',
+    '  render-required-verification-commands <verification-contract-file> [requested-runtime] [verification-runtimes] [current-runtime]',
     '  active-workspace-contract [cwd]',
   ].join('\n'));
 }
@@ -286,7 +284,7 @@ switch (command) {
     console.log(countTotalPhases(args[0]));
     break;
   case 'render-required-verification-commands':
-    console.log(renderRequiredVerificationCommands(args[0]));
+    console.log(renderRequiredVerificationCommands(args[0], args[1], args[2], args[3]));
     break;
   case 'active-workspace-contract':
     console.log(activeWorkspaceContract(args[0] || process.cwd()));

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifacts } from './agent-loop-phase-plan-lib.mjs';
+import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
 
 const scriptDir = path.dirname(new URL(import.meta.url).pathname);
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -23,6 +24,7 @@ const state = {
   statusFile: '.claude/docs/phase-status.yaml',
   executionRoot: '',
   runtime: 'auto',
+  verificationRuntimes: 'auto',
   phaseNum: '',
   phaseTitle: '',
   phaseDoc: '',
@@ -90,6 +92,9 @@ function parseArgs(argv) {
         break;
       case '--runtime':
         state.runtime = args.shift() ?? '';
+        break;
+      case '--verification-runtimes':
+        state.verificationRuntimes = args.shift() ?? '';
         break;
       case '--phase-num':
         state.phaseNum = args.shift() ?? '';
@@ -313,9 +318,18 @@ function codexBaseArgs(cwd) {
 }
 
 function phaseEnv(paths) {
+  const currentRuntime = activeAttemptContext?.runtime || '';
+  const verificationContext = loadVerificationContractContext('.claude/verification.contract.yaml', {
+    requestedRuntime: state.runtime,
+    verificationRuntimes: state.verificationRuntimes,
+    currentRuntime,
+  });
   const env = {
     ...process.env,
     WORKSPACE_ROOT: process.cwd(),
+    PHASE_WORK_RUNTIME: currentRuntime || state.runtime || 'auto',
+    PHASE_VERIFICATION_TARGET_RUNTIMES: verificationContext.effectiveSelection,
+    PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: verificationContext.effectiveSelection,
     HARNESS_REQUIREMENTS_TRACEABILITY_FILE: `${state.executionRoot}/REQUIREMENTS_TRACEABILITY.md`,
     HARNESS_SCENARIO_MATRIX_FILE: `${state.executionRoot}/SCENARIO_MATRIX.md`,
     HARNESS_UAT_CHECKLIST_FILE: `${state.executionRoot}/UAT_CHECKLIST.md`,
@@ -414,6 +428,22 @@ function sha1FileOrEmpty(filePath) {
 
 function resolveRunnerRuntime(requestedRuntime) {
   return runtimeCommand('resolve-runner-runtime', requestedRuntime).stdout.trim();
+}
+
+function isBlockedCompletionReason(reason) {
+  const normalized = String(reason || '').trim().toLowerCase();
+  return normalized.startsWith('blocked:')
+    || normalized === 'scorecard-verdict=blocked'
+    || normalized === 'verification-preflight-blocked';
+}
+
+function stopBlockedPhase(paths, logFile, detail, stopReason = 'verification-preflight-blocked') {
+  appendQaRuntimeUpdate(stopReason, logFile, detail, paths);
+  appendHandoffUpdate('blocked', logFile, detail, paths);
+  updatePhaseState(state.phaseNum, 'failed', 'blocked', false, state.phaseDoc, paths);
+  appendDecisionLog([`## Phase ${state.phaseNum}`, '- Status: ⛔ Blocked', `- Detail: ${detail}`, '']);
+  recordLoopStop(state.phaseNum, stopReason, detail, logFile);
+  return 2;
 }
 
 function assessRuntimeHealth(runtime) {
@@ -726,6 +756,9 @@ function runPhaseAttempt() {
     targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
     scorecardProfile: process.env.AGENT_LOOP_SCORECARD_PROFILE ?? 'auto',
     workspaceRoot: process.cwd(),
+    requestedRuntime: state.runtime,
+    verificationRuntimes: state.verificationRuntimes,
+    currentRuntime: runtime,
   });
 
   writeStdoutLine('\u001b[0;36m───────────────────────────────────────────────────────────────\u001b[0m');
@@ -736,6 +769,27 @@ function runPhaseAttempt() {
   logInfo(`Scorecard: ${paths.phaseScorecard}`);
 
   let activeRuntime = runtime;
+  const logFile = `${logDir}/phase-${state.phaseNum}_${localFileTimestamp()}.log`;
+  const verificationPreflight = collectVerificationPreflightBlockers('.claude/verification.contract.yaml', {
+    requestedRuntime: state.runtime,
+    verificationRuntimes: state.verificationRuntimes,
+    currentRuntime: activeRuntime,
+  });
+  if (verificationPreflight.blockers.length > 0) {
+    const detail = [
+      `verification runtime target=${verificationPreflight.effectiveSelection}`,
+      `available=${verificationPreflight.availableRuntimes.join(',') || 'none'}`,
+      ...verificationPreflight.blockers.map((blocker) => blocker.detail),
+    ].join(' | ');
+    appendDebugLog('verification-preflight-blocked', {
+      requestedRuntime: state.runtime,
+      verificationRuntimes: state.verificationRuntimes,
+      currentRuntime: activeRuntime,
+      blockers: verificationPreflight.blockers,
+      availableRuntimes: verificationPreflight.availableRuntimes,
+    });
+    return stopBlockedPhase(paths, logFile, detail);
+  }
   let prompt = buildPhasePrompt({
     nextPhase: state.phaseNum,
     phaseTitle: state.phaseTitle,
@@ -749,9 +803,8 @@ function runPhaseAttempt() {
     extraInstructions: primaryInstructions(state.phaseNum),
     autonomousInstructions: autonomousInstructions(),
     workspaceRoot: process.cwd(),
+    verificationRuntimes: verificationPreflight.effectiveSelection,
   });
-
-  const logFile = `${logDir}/phase-${state.phaseNum}_${localFileTimestamp()}.log`;
   const startEpoch = Math.floor(Date.now() / 1000);
   let restartCount = 0;
   let autoFixCount = 0;
@@ -785,6 +838,7 @@ function runPhaseAttempt() {
         extraInstructions: primaryInstructions(state.phaseNum),
         autonomousInstructions: autonomousInstructions(),
         workspaceRoot: process.cwd(),
+        verificationRuntimes: verificationPreflight.effectiveSelection,
       });
       logWarn(`Runtime health gate switched ${previousRuntime} -> ${activeRuntime}`);
     } else {
@@ -850,6 +904,10 @@ function runPhaseAttempt() {
         return 0;
       }
 
+      if (isBlockedCompletionReason(gate.PHASE_COMPLETION_REASON)) {
+        return stopBlockedPhase(paths, logFile, `completion gate blocked: ${gate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
+      }
+
       autoFixCount += 1;
       logError(`Phase ${state.phaseNum} produced no valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
       appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount), logFile, gate.PHASE_COMPLETION_REASON, paths);
@@ -881,6 +939,7 @@ function runPhaseAttempt() {
           extraInstructions: buildVerificationRemediationPrompt(state.phaseNum, logFile, gate.PHASE_COMPLETION_REASON),
           autonomousInstructions: autonomousInstructions(),
           workspaceRoot: process.cwd(),
+          verificationRuntimes: verificationPreflight.effectiveSelection,
         });
         updatePhaseState(state.phaseNum, 'in_progress', 'running', false, state.phaseDoc, paths);
         recordPhaseProgressCheckpoint(remediationStage, remediationStatusLabel(gate.PHASE_COMPLETION_REASON), logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
@@ -898,6 +957,9 @@ function runPhaseAttempt() {
               `/commit-moonshot Phase ${state.phaseNum} 완료 (verification remediation). 변경사항을 커밋해주세요.`,
             );
             return 0;
+          }
+          if (isBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
+            return stopBlockedPhase(paths, logFile, `completion gate blocked after remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
           }
           logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${remediationGate.PHASE_COMPLETION_REASON})`);
           appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
@@ -951,6 +1013,7 @@ function runPhaseAttempt() {
           extraInstructions: primaryInstructions(state.phaseNum),
           autonomousInstructions: autonomousInstructions(),
           workspaceRoot: process.cwd(),
+          verificationRuntimes: verificationPreflight.effectiveSelection,
         });
         const fallbackDetail = `${timeoutDetail}. 동일 phase를 ${previousRuntime}에서 ${activeRuntime}로 전환해 1회 더 시도합니다.`;
         logWarn(`Timeout fallback: switching runtime from ${previousRuntime} to ${activeRuntime}`);
@@ -1020,6 +1083,7 @@ function runPhaseAttempt() {
         extraInstructions: buildAutoFixPrompt(state.phaseNum, logFile),
         autonomousInstructions: autonomousInstructions(),
         workspaceRoot: process.cwd(),
+        verificationRuntimes: verificationPreflight.effectiveSelection,
       });
       updatePhaseState(state.phaseNum, 'in_progress', 'running', false, state.phaseDoc, paths);
       recordPhaseProgressCheckpoint('execute', 'auto-fix-started', logFile, 'Retrying the active phase after a failed attempt.', activeRuntime, paths);
@@ -1059,7 +1123,7 @@ function runPhaseAttempt() {
 
 parseArgs(process.argv.slice(2));
 if (!state.planDir || !state.phaseNum || !state.phaseTitle || !state.phaseDoc) {
-  console.error('Usage: agent-loop-phase-runner.mjs <plan-dir> --status-file <path> --execution-root <dir> --runtime <runtime> --phase-num <n> --phase-title <title> --phase-doc <path>');
+  console.error('Usage: agent-loop-phase-runner.mjs <plan-dir> --status-file <path> --execution-root <dir> --runtime <runtime> --verification-runtimes <target> --phase-num <n> --phase-title <title> --phase-doc <path>');
   process.exit(64);
 }
 
