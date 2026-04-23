@@ -103,6 +103,21 @@ fi
 
 assert_contains "$DISPATCH_OUT" "Restarting coordinator (1/1)" "coordinator restart guard"
 assert_contains "$DISPATCH_OUT" "Stopping to avoid an infinite restart loop." "restart cap failure"
+DISPATCH_ACTIVE_LEASE="$(compgen -G "$LOG_DIR/active-phase-run-*.json" | head -n 1 || true)"
+DISPATCH_CURRENT_RUN="$(compgen -G "$LOG_DIR/current-run-*.json" | head -n 1 || true)"
+if [[ -z "$DISPATCH_ACTIVE_LEASE" ]]; then
+  echo "FAIL: production dispatch did not create namespaced active-phase-run lease" >&2
+  exit 1
+fi
+if [[ -z "$DISPATCH_CURRENT_RUN" ]]; then
+  echo "FAIL: production dispatch did not create namespaced current-run mirror" >&2
+  exit 1
+fi
+assert_contains "$DISPATCH_ACTIVE_LEASE" "\"runLeaseId\": \"dispatch-" "dispatch lease id"
+assert_contains "$DISPATCH_ACTIVE_LEASE" "\"executionBoundary\": \"in-session-coordinator\"" "dispatch lease execution boundary"
+assert_contains "$DISPATCH_ACTIVE_LEASE" "\"status\": \"finished\"" "dispatch lease finish state"
+assert_contains "$DISPATCH_CURRENT_RUN" "\"phaseRunLease\"" "current-run phase lease mirror"
+assert_contains "$DISPATCH_CURRENT_RUN" "\"stopReasonCode\": \"in-session-coordinator-restart-cap\"" "current-run stop reason"
 
 WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
