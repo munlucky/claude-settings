@@ -475,23 +475,41 @@ const CLOSEOUT_GATE_REASONS = new Set([
   'workflow-evidence-warnings',
 ]);
 
-function gateReasonNeedsCloseout(reason) {
-  return CLOSEOUT_GATE_REASONS.has(String(reason || '').trim());
+function gateIndicatesStrongCompletion(gate) {
+  if (!gate || typeof gate !== 'object') {
+    return false;
+  }
+  const blockerCodes = String(gate.PHASE_COMPLETION_BLOCKER_CODES || '').trim();
+  const scoreVerdict = String(gate.PHASE_COMPLETION_SCORE_VERDICT || '').trim().toLowerCase();
+  const closeoutStatus = String(gate.PHASE_CLOSEOUT_STATUS || '').trim().toLowerCase();
+  const cleanFinish = String(gate.PHASE_COMPLETION_CLEAN_FINISH || '').trim().toLowerCase() === 'true';
+  return scoreVerdict === 'done'
+    && cleanFinish
+    && blockerCodes === ''
+    && (closeoutStatus === 'complete' || closeoutStatus === 'clean_finish' || String(gate.PHASE_COMPLETION_ALLOWED || '') === 'true');
 }
 
-function remediationStageForGateReason(reason) {
+function gateReasonNeedsCloseout(reason, gate = null) {
+  const normalized = String(reason || '').trim();
+  if (normalized === 'workflow-evidence-warnings' && gateIndicatesStrongCompletion(gate)) {
+    return false;
+  }
+  return CLOSEOUT_GATE_REASONS.has(normalized);
+}
+
+function remediationStageForGateReason(reason, gate = null) {
   const normalized = String(reason || '').trim();
   if (REVIEW_ONLY_GATE_REASONS.has(normalized)) {
     return 'review';
   }
-  if (gateReasonNeedsCloseout(normalized)) {
+  if (gateReasonNeedsCloseout(normalized, gate)) {
     return 'finish/handoff';
   }
   return 'verify';
 }
 
-function remediationStatusLabel(reason) {
-  const stage = remediationStageForGateReason(reason);
+function remediationStatusLabel(reason, gate = null) {
+  const stage = remediationStageForGateReason(reason, gate);
   if (stage === 'review') {
     return 'closeout-remediation-review-started';
   }
@@ -501,20 +519,20 @@ function remediationStatusLabel(reason) {
   return 'verification-remediation-started';
 }
 
-function missingEvidenceRuntimeStatus(reason, autoFixCount) {
-  return gateReasonNeedsCloseout(reason)
+function missingEvidenceRuntimeStatus(reason, autoFixCount, gate = null) {
+  return gateReasonNeedsCloseout(reason, gate)
     ? `phase-command-missing-closeout-evidence-attempt-${autoFixCount}`
     : `phase-command-missing-fresh-verification-attempt-${autoFixCount}`;
 }
 
-function incompleteRemediationStatus(reason) {
-  return gateReasonNeedsCloseout(reason)
+function incompleteRemediationStatus(reason, gate = null) {
+  return gateReasonNeedsCloseout(reason, gate)
     ? 'closeout-remediation-incomplete'
     : 'verification-remediation-incomplete';
 }
 
-function handoffStopReason(reason) {
-  return gateReasonNeedsCloseout(reason) ? 'deferred_verification' : 'missing-fresh-verification-evidence';
+function handoffStopReason(reason, gate = null) {
+  return gateReasonNeedsCloseout(reason, gate) ? 'deferred_verification' : 'missing-fresh-verification-evidence';
 }
 
 function decideFailureAction(autoFixCount, finalStopReason) {
@@ -693,6 +711,40 @@ function handleFatalPhaseRunnerError(error, origin = 'phase-runner-exception') {
 
 function closeoutInterruptedAttempt(signalName, origin = 'phase-runner-signal') {
   if (!activeAttemptContext?.paths || fatalPhaseRunnerHandled) {
+    return;
+  }
+
+  let protectedGate = null;
+  try {
+    protectedGate = evaluatePhaseCompletionGateWithRetry(activeAttemptContext.startEpoch ?? 0, activeAttemptContext.paths);
+  } catch (error) {
+    appendDebugLog('phase-runner-signal-completion-gate-failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  if (protectedGate && (protectedGate.PHASE_COMPLETION_ALLOWED === 'true' || gateIndicatesStrongCompletion(protectedGate))) {
+    const detail = `${origin}: received ${signalName} after clean-finish completion bookkeeping was already recorded`;
+    appendDebugLog('phase-runner-signal-preserve-completed', {
+      signalName,
+      origin,
+      gate: protectedGate,
+      activeAttemptContext,
+    });
+    try {
+      appendQaRuntimeUpdate('phase-runner-interrupted-after-completion', activeAttemptContext.logFile ?? '', detail, activeAttemptContext.paths);
+    } catch (error) {
+      appendDebugLog('phase-runner-signal-preserve-qa-update-failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    try {
+      updatePhaseState(state.phaseNum, 'completed', 'completed', false, state.phaseDoc, activeAttemptContext.paths);
+    } catch (error) {
+      appendDebugLog('phase-runner-signal-preserve-state-update-failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
     return;
   }
 
@@ -910,8 +962,8 @@ function runPhaseAttempt() {
 
       autoFixCount += 1;
       logError(`Phase ${state.phaseNum} produced no valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
-      appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount), logFile, gate.PHASE_COMPLETION_REASON, paths);
-      appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON), logFile, gate.PHASE_COMPLETION_REASON, paths);
+      appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
+      appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
 
       const finalStopReason = detectFinalStopReason(logFile, 'missing-verification-evidence');
       const decision = decideMissingEvidenceAction(autoFixCount, finalStopReason);
@@ -922,7 +974,7 @@ function runPhaseAttempt() {
       }
 
       if (decision.ACTION === 'verification-remediation') {
-        const remediationStage = remediationStageForGateReason(gate.PHASE_COMPLETION_REASON);
+        const remediationStage = remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate);
         const remediationLabel = remediationStage === 'verify' ? 'Verification Remediation' : 'Closeout Remediation';
         logInfo(`Attempting ${remediationLabel.toLowerCase()}...`);
         appendDecisionLog([`## Phase ${state.phaseNum} - ${remediationLabel} #${autoFixCount}`, '']);
@@ -942,7 +994,7 @@ function runPhaseAttempt() {
           verificationRuntimes: verificationPreflight.effectiveSelection,
         });
         updatePhaseState(state.phaseNum, 'in_progress', 'running', false, state.phaseDoc, paths);
-        recordPhaseProgressCheckpoint(remediationStage, remediationStatusLabel(gate.PHASE_COMPLETION_REASON), logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
+        recordPhaseProgressCheckpoint(remediationStage, remediationStatusLabel(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
         const remediationExit = runWorkerPrompt(logFile, fixPrompt, startEpoch, sha1FileOrEmpty(paths.phaseQaReport), paths, activeRuntime);
         if (remediationExit === 0) {
           const remediationGate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
@@ -962,8 +1014,8 @@ function runPhaseAttempt() {
             return stopBlockedPhase(paths, logFile, `completion gate blocked after remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
           }
           logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${remediationGate.PHASE_COMPLETION_REASON})`);
-          appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
-          appendHandoffUpdate(handoffStopReason(remediationGate.PHASE_COMPLETION_REASON), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
+          appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
+          appendHandoffUpdate(handoffStopReason(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
         }
         continue;
       }
@@ -1104,7 +1156,7 @@ function runPhaseAttempt() {
         }
         logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
         appendQaRuntimeUpdate('auto-fix-succeeded-without-fresh-verification', logFile, gate.PHASE_COMPLETION_REASON, paths);
-        appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON), logFile, gate.PHASE_COMPLETION_REASON, paths);
+        appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
       }
       continue;
     }
