@@ -350,11 +350,111 @@ function parseRecentRuntimeIssues(logDir, pattern, recentWindowMs, maxFiles) {
     .flatMap((entry) => {
       try {
         const text = fs.readFileSync(entry.path, 'utf8');
-        return pattern.test(text) ? [entry.path] : [];
+        return pattern.test(text) ? [entry] : [];
       } catch {
         return [];
       }
     });
+}
+
+function parseRecentVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles) {
+  const verdictDir = path.join(workspaceRoot, '.claude');
+  if (!fs.existsSync(verdictDir)) {
+    return [];
+  }
+
+  const now = Date.now();
+  return fs.readdirSync(verdictDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^verification-verdict-.*\.json$/.test(entry.name))
+    .map((entry) => {
+      const fullPath = path.join(verdictDir, entry.name);
+      const stats = fs.statSync(fullPath);
+      return {
+        path: fullPath,
+        mtimeMs: stats.mtimeMs,
+      };
+    })
+    .filter((entry) => now - entry.mtimeMs <= recentWindowMs)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, maxFiles)
+    .flatMap((entry) => {
+      try {
+        const payload = JSON.parse(fs.readFileSync(entry.path, 'utf8'));
+        return [{ ...entry, payload }];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function verdictTargetsRuntime(payload, runtime) {
+  const runtimeContext = payload?.runtimeContext && typeof payload.runtimeContext === 'object'
+    ? payload.runtimeContext
+    : {};
+  const targets = new Set();
+
+  for (const value of [
+    runtimeContext.requestedRuntime,
+    runtimeContext.effectiveRuntime,
+  ]) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized) {
+      targets.add(normalized);
+    }
+  }
+
+  for (const part of String(runtimeContext.verificationRuntimeTargets || '').split(/[,\s]+/)) {
+    const normalized = String(part || '').trim().toLowerCase();
+    if (normalized) {
+      targets.add(normalized);
+    }
+  }
+
+  if (targets.size === 0) {
+    return true;
+  }
+
+  return targets.has(runtime) || targets.has('both') || targets.has('auto');
+}
+
+function assessRuntimeHealthFromVerdicts(runtime, workspaceRoot, recentWindowMs, maxFiles) {
+  const verdicts = parseRecentVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles)
+    .filter((entry) => verdictTargetsRuntime(entry.payload, runtime));
+
+  if (verdicts.length === 0) {
+    return null;
+  }
+
+  for (const entry of verdicts) {
+    const payload = entry.payload || {};
+    const verdict = String(payload.verdict || '').trim().toLowerCase();
+    const failureClass = String(payload.failureClass || '').trim().toLowerCase();
+    const blockingReasonCode = String(payload.blockingReasonCode || '').trim().toLowerCase();
+    const blocking = payload.blocking === true;
+    const verdictLabel = path.basename(entry.path);
+
+    if (blocking || (verdict === 'failed' && (failureClass === 'environment' || failureClass === 'contract'))) {
+      return {
+        HEALTHY: 'false',
+        RUNTIME: runtime,
+        REASON: 'runtime-structured-verdict-blocked',
+        DETAIL: `Latest structured verification verdict ${verdictLabel} is blocking (${blockingReasonCode || failureClass || verdict})`,
+        VERDICT_PATH: entry.path,
+      };
+    }
+
+    if (verdict === 'passed' && !blocking) {
+      return {
+        HEALTHY: 'true',
+        RUNTIME: runtime,
+        REASON: 'runtime-structured-verdict-passed',
+        DETAIL: `Latest structured verification verdict ${verdictLabel} marked the runtime non-blocking`,
+        VERDICT_PATH: entry.path,
+      };
+    }
+  }
+
+  return null;
 }
 
 function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
@@ -384,12 +484,29 @@ function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
 
   const logDir = path.join(workspaceRoot, '.claude', 'logs', 'agent-loop');
   const issuePattern = /migration \d+ was previously applied but is missing|state db discrepancy|Failed to kill MCP process group/i;
+  const recentWindowMs = Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_WINDOW_MS ?? String(2 * 60 * 60 * 1000), 10) || (2 * 60 * 60 * 1000);
+  const maxLogs = Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_MAX_LOGS ?? '5', 10) || 5;
   const matchingLogs = parseRecentRuntimeIssues(
     logDir,
     issuePattern,
-    Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_WINDOW_MS ?? String(2 * 60 * 60 * 1000), 10) || (2 * 60 * 60 * 1000),
-    Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_MAX_LOGS ?? '5', 10) || 5,
+    recentWindowMs,
+    maxLogs,
   );
+  const latestIssueTimeMs = matchingLogs[0]?.mtimeMs ?? 0;
+  const structuredVerdictAssessment = assessRuntimeHealthFromVerdicts(
+    normalizedRuntime,
+    workspaceRoot,
+    recentWindowMs,
+    maxLogs,
+  );
+
+  if (structuredVerdictAssessment) {
+    return {
+      ...structuredVerdictAssessment,
+      FALLBACK_RUNTIME: '',
+      FALLBACK_POLICY: fallbackPolicy.reason,
+    };
+  }
 
   if (matchingLogs.length === 0) {
     return {
@@ -406,7 +523,7 @@ function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
     HEALTHY: 'false',
     RUNTIME: normalizedRuntime,
     REASON: 'runtime-log-health-check-failed',
-    DETAIL: `Recent runtime warnings detected in ${matchingLogs.join(', ')}`,
+    DETAIL: `Recent runtime warnings detected in ${matchingLogs.map((entry) => entry.path).join(', ')}`,
     FALLBACK_RUNTIME: fallbackPolicy.allow && commandExists('claude') ? 'claude' : '',
     FALLBACK_POLICY: fallbackPolicy.reason,
   };

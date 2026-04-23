@@ -61,3 +61,16 @@ runtime_cli_append_codex_base_args() {
 
   runtime_cli_append_lines_to_array "$array_name" "${resolved_args[@]}"
 }
+
+runtime_cli_append_codex_probe_env() {
+  local array_name="$1"
+  local probe_root="$2"
+  local -a resolved_env=()
+  local line
+
+  while IFS= read -r line; do
+    resolved_env+=("$line")
+  done < <(runtime_cli_run_node codex-probe-env "$probe_root")
+
+  runtime_cli_append_lines_to_array "$array_name" "${resolved_env[@]}"
+}
