@@ -145,11 +145,13 @@ steps:
 ### implementation-bundle
 흡수한 외부 패턴: `executing-plans`의 로컬 대응입니다.
 구현 전에 active plan을 비판적으로 읽고, blocker가 있으면 멈춘 뒤 명시적인 task를 실행합니다.
+동작 변경 작업은 production code 변경 전에 `test-driven-development`를 사용합니다.
 
 ```yaml
 steps:
   - project-memory-check
   - karpathy-execution-gate
+  - test-driven-development (if behaviorChanging)
   - implementation-runner
   - code-simplifier
 ```
@@ -224,9 +226,15 @@ steps:
 steps:
   - implementation-runner
   - on_error:
+      - failure-analyzer (root cause first)
       - build-error-resolver
       - retry: implementation-runner (max: 2)
 ```
+
+Recovery rule:
+- root-cause evidence 없이 patch하지 않습니다.
+- 같은 `failureClass`가 두 번 나오면 retry 전에 tactic을 바꿉니다.
+- 세 번 실패하면 blind fix를 계속하지 말고 design/contract review로 승격합니다.
 
 ### meta-harness-bundle
 ```yaml

@@ -28,6 +28,17 @@
 |----|------|-------|---------------|
 | P<NN>-1 | <task> | 1) <step> 2) <step> | <objective condition> |
 
+## Exact Execution Targets
+| ID | Files To Create | Files To Modify | Files To Test | Commands | Expected Fail/Pass Signals |
+|----|-----------------|-----------------|---------------|----------|----------------------------|
+| P<NN>-1 | <paths or none> | <paths> | <paths> | `<command>` | <expected output / exit code> |
+
+## Blockers And Review
+- Blocker condition:
+- First review checkpoint:
+- Re-review trigger:
+- Verification evidence path:
+
 ## Validation Plan
 - [ ] Build/type checks: <command>
 - [ ] Behavior checks: <what to verify>

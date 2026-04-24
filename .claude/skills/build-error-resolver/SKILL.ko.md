@@ -2,6 +2,7 @@
 name: build-error-resolver
 description: 빌드 및 컴파일 에러를 해결합니다. 빌드 실패 또는 타입 에러 발생 시 사용하세요.
 context: fork
+surfaceStatus: internal_stage_owner
 ---
 
 # 빌드 에러 해결 스킬
@@ -17,9 +18,17 @@ context: fork
 
 1. 빌드 에러 출력 캡처
 2. 에러 유형 분류
-3. 영향받는 파일과 라인 위치 파악
-4. 적절한 수정 적용
-5. 빌드 통과 확인
+3. 수정 전 root-cause evidence 확인
+4. 영향받는 파일과 라인 위치 파악
+5. 가장 작은 수정 적용
+6. 빌드 통과 확인
+
+## Systematic Debugging 계약
+
+- upstream 근거가 없으면 첫 visible error만 보고 patch하지 않습니다.
+- `failureClass`, root-cause evidence, attempted fixes를 기록합니다.
+- 같은 failure class가 두 번 반복되면 retry 전에 tactic을 바꿉니다.
+- 세 번 실패하면 local patch를 멈추고 design/contract review로 승격합니다.
 
 ## 에러 분류
 
@@ -89,10 +98,12 @@ CONTEXT:
 MUST DO:
 - 모든 TypeScript 에러 수정
 - 기존 기능 유지
+- 수정 전 root cause 확인
 - 각 수정 후 검증 실행
 
 MUST NOT DO:
 - 꼭 필요한 경우 외 @ts-ignore 추가 금지
 - 관련 없는 코드 변경 금지
 - 검증 단계 생략 금지
+- 같은 failure class가 두 번 나온 뒤 같은 실패 tactic 반복 금지
 ```

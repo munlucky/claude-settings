@@ -29,6 +29,9 @@ Run a short discipline gate right before implementation to reduce over-engineeri
 4. **Goal-Driven Execution**
    - Create a short milestone order: implement -> verify -> review.
    - Map each milestone to a concrete command or check.
+5. **TDD Handoff**
+   - If the work changes observable behavior, hand off to `test-driven-development` before production code changes.
+   - If test-first is infeasible, record the reason and alternate verification path.
 
 ## Blocking conditions
 - Acceptance criteria cannot be stated clearly.

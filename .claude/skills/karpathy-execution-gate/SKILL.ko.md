@@ -29,6 +29,9 @@ description: 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 �
 4. **목표 중심 실행 (Goal-Driven Execution)**
    - 구현 -> 검증 -> 리뷰 순서의 짧은 마일스톤 정의
    - 각 마일스톤을 실행 커맨드/체크와 매핑
+5. **TDD Handoff**
+   - 관찰 가능한 동작이 바뀌는 작업이면 production code 변경 전에 `test-driven-development`로 넘깁니다.
+   - test-first가 불가능하면 이유와 대체 verification path를 기록합니다.
 
 ## 차단 조건
 - 완료 기준을 명확히 기술할 수 없음

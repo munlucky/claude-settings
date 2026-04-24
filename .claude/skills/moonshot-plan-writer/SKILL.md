@@ -50,6 +50,7 @@ It is the main Plan-stage owner for phase documents.
    - Keep each phase document independently executable in a separate session.
    - Include enough context so the phase can be executed without hidden assumptions.
    - Include source mapping section with referenced trace IDs.
+   - Include exact files to create/modify/test, exact commands, expected fail/pass signals, blocker conditions, review checkpoints, and verification evidence paths.
    - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
 6. Synchronize completion state.
    - When a phase is completed, immediately mark its master checklist item as checked.
@@ -86,6 +87,13 @@ It is the main Plan-stage owner for phase documents.
   - Deliverables.
   - Phase completion checklist with objective criteria.
 - Keep tasks actionable and verifiable (avoid vague "implement X" only).
+- Each task must name:
+  - exact files or modules to create, modify, and test
+  - exact commands to run
+  - expected failing and passing signals
+  - blocker condition that stops execution
+  - review checkpoint
+  - verification evidence path
 
 ## Completion Loop (Critical)
 Use this loop whenever generating or refreshing plans:
@@ -113,6 +121,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Do not drop a source requirement from the selected baseline sources without documenting why it is excluded.
 - Keep numbering, filenames, and checklist states consistent across all plan files.
 - Do not declare a phase ready when verification commands or ownership boundaries are still implicit.
+- Do not declare a phase ready when files, commands, expected signals, blocker conditions, or evidence paths are still implicit.
 
 ## Phase Runner Integration
 

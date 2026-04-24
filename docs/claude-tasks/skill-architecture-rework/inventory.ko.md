@@ -67,6 +67,7 @@ Last-Reviewed: 2026-04-24
 | `security-reviewer` | Tier 3 | `keep` | 독립 보안 관점은 유지 가치가 높다. |
 | `session-logger` | Tier 3 | `keep` | doc-ops helper이면서 직접 호출 가능한 공개 유틸리티로 유지한다. |
 | `task-slicer` | Tier 3 | `keep` | product -> execution 브리지 역할이 강하다. |
+| `test-driven-development` | Tier 3 | `keep` | 동작 변경 작업의 TDD-first evidence를 담당하는 내부 Execute-stage owner. |
 | `teach-impeccable` | Tier 3 | `merge_candidate` | frontend/design guidance 스택으로 흡수 후보. |
 | `vercel-react-best-practices` | Tier 3 | `keep` | 스택 특화 룰 팩으로 가치가 분명하다. |
 | `verification-contract-gate` | Tier 3 | `keep` | 강한 정책 경계. |
@@ -114,7 +115,7 @@ Last-Reviewed: 2026-04-24
 |---|---|
 | `public_entrypoint` | `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` |
 | `public_utility` | `session-logger`, `commit-moonshot` |
-| `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, 분석 마이크로스킬, readiness gate, 실행 helper, review/verification gate |
+| `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, 분석 마이크로스킬, readiness gate, `test-driven-development`, 실행 helper, review/verification gate |
 | `optional_bundle_member` | `doc-auto-sync`, `browser-verifier`, `qa-flow`, `web-design-guidelines`, `normalize`, `polish`, `teach-impeccable`, 일부 UI/browser/doc helper |
 | `deprecated` | `efficiency-tracker`, `workflow-self-improver` |
 
@@ -135,7 +136,7 @@ Last-Reviewed: 2026-04-24
 ## 결정 요약
 
 개수:
-- `keep`: 31
+- `keep`: 32
 - `improve`: 9
 - `merge_candidate`: 9
 - `retire_candidate`: 2
@@ -160,3 +161,20 @@ Last-Reviewed: 2026-04-24
 - deprecated skill installer filtering
 - 공개 표면 drift에 대한 verification-contract 자동 enforcement
 - deprecated skill directory의 물리적 archive/removal
+
+## 2026-04-24 Wave 2 메모
+
+Wave 2는 runtime core를 교체하지 않고 약한 운영 절차를 보강했다.
+
+수행:
+- 로컬 `test-driven-development` skill을 내부 Execute-stage owner로 추가
+- sprint, task, QA template에 TDD evidence 필드 추가
+- `failure-analyzer`와 `build-error-resolver`에 root-cause-first debugging rule 추가
+- `workspace-isolation-gate`에 구체적인 prepare/baseline evidence 요구사항 추가
+- plan validation과 plan template에 exact files, commands, fail/pass signals, blockers, review checkpoints, evidence paths 요구사항 추가
+- scorecard template과 renderer에 task-level `FULL / PARTIAL / NO` 상태 어휘 추가
+- `external-harness-adoption` pilot registry와 review template 추가
+
+계속 보류:
+- 외부 benchmark runtime 통합
+- 외부 skill production 설치

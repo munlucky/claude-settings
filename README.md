@@ -59,6 +59,7 @@ claude-settings/
 - downstream 프로젝트 작업에서는 `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`가 최소 맥락과 검증 계약을 확인합니다.
 - 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`로 구성되지만, 이들은 공개 진입점이 아니라 orchestrator 내부 마이크로스킬입니다.
 - medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
+- 동작 변경 작업은 내부 `test-driven-development` 스킬로 red/green/refactor evidence를 남깁니다.
 - 구현 뒤에는 `code-simplifier`를 넣어 최근 수정 코드의 가독성과 구조를 정리한 뒤 검증/리뷰로 넘깁니다.
 - React/UI 구현 작업에서는 `frontend-design`을 UI bundle의 umbrella로 사용합니다. `teach-impeccable`, `audit`, `normalize`, `polish`는 기본 진입점이 아니라 UI/design bundle 내부 또는 명시적 UI 품질 작업에서만 사용합니다.
 - 검증 계층은 `completion-verifier`를 중심으로 `verification-agent`, `browser-verifier`, `codex-review-code`, `security-reviewer`, `qa-flow`를 stage 내부 구성요소로 조합합니다. 완료 주장은 항상 fresh evidence 이후에만 가능합니다.
@@ -93,7 +94,7 @@ claude-settings/
 - 공개 진입점: `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator`
 - 보조 공개 유틸리티: `session-logger`, `commit-moonshot`
 - 내부 분석 cluster: `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
-- 실행/검증 cluster: `karpathy-execution-gate`, `implementation-runner`, `code-simplifier`, `verification-agent`, `completion-verifier`, `browser-verifier`, `codex-review-code`, `security-reviewer`, `qa-flow`
+- 실행/검증 cluster: `karpathy-execution-gate`, `test-driven-development`, `implementation-runner`, `code-simplifier`, `verification-agent`, `completion-verifier`, `browser-verifier`, `codex-review-code`, `security-reviewer`, `qa-flow`
 - UI/design optional bundle: `frontend-design` 아래 `teach-impeccable`, `audit`, `normalize`, `polish`, `web-design-guidelines`
 - 문서/doc-ops optional bundle: `doc-auto-sync`, `session-logger`, `documentation-agent`, `project-md-refresh`
 - 보조 도구: `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `design-asset-parser`, `project-md-refresh`, `build-error-resolver`
@@ -111,6 +112,7 @@ claude-settings/
 - 가이드라인: `.claude/docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화 등)
 - 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
+- 외부 하네스 도입 준비: `docs/claude-tasks/external-harness-adoption/`
 - 작업 문서 루트: `.claude/docs/tasks/`
 - downstream reference package: `.claude/docs/reference-downstream/`
 - runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`

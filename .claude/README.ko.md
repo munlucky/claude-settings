@@ -119,6 +119,7 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 - `design-approval-gate` (신규, strict 프로필)
 - `workspace-isolation-gate` (신규, strict 프로필)
 - `karpathy-execution-gate` (신규)
+- `test-driven-development`
 - `implementation-runner`
 - `completion-verifier` (신규)
 - `verification-evidence-gate` (신규, strict 프로필)
@@ -172,10 +173,11 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 5. `product_project`이면 `pre-flight-check`와 readiness gate(`project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`)가 최소 계약을 확인합니다.
 6. product package가 있으면 이를 planning source of truth로 사용하고, 없으면 `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
 7. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
-8. React/웹 UI 구현에서는 `frontend-design`을 UI bundle의 umbrella로 주입하고, `teach-impeccable`는 디자인 컨텍스트 bootstrap이 필요한 경우에만 선택적으로 실행합니다.
-9. `completion-verifier`, `browser-verifier`, `verify-changes.sh`, `verify-runtime.sh` 같은 별도 evaluator 경로로 검증하고 결과를 `QA_REPORT.md`에 남깁니다.
-10. 세션이 길어지거나 중단되면 `HANDOFF.md`로 재개 상태를 남깁니다.
-11. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
+8. 동작 변경 작업은 production code 변경 전에 `test-driven-development`로 red/green/refactor evidence를 남깁니다.
+9. React/웹 UI 구현에서는 `frontend-design`을 UI bundle의 umbrella로 주입하고, `teach-impeccable`는 디자인 컨텍스트 bootstrap이 필요한 경우에만 선택적으로 실행합니다.
+10. `completion-verifier`, `browser-verifier`, `verify-changes.sh`, `verify-runtime.sh` 같은 별도 evaluator 경로로 검증하고 결과를 `QA_REPORT.md`에 남깁니다.
+11. 세션이 길어지거나 중단되면 `HANDOFF.md`로 재개 상태를 남깁니다.
+12. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.
 
 통합 phase 실행 경계:
 - 사용자 진입점은 `/moonshot-phase-runner <plan-dir>`입니다.
@@ -199,6 +201,7 @@ phase runner 기본 동작:
 - 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
 - 문서 추적 완료 하네스 가이드: `.claude/docs/guidelines/requirements-traceability-harness.ko.md`
+- 외부 하네스 도입 준비 패키지: `docs/claude-tasks/external-harness-adoption/`
 - 제품 정의 템플릿: `.claude/templates/product-definition/`
 - 실행 아티팩트 템플릿: `.claude/templates/execution/`
 - downstream bootstrap reference package: `.claude/docs/reference-downstream/README.md`

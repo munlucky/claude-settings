@@ -87,6 +87,7 @@ CONTEXT:
 
 MUST DO:
 - Evaluate all 4 criteria (Clarity, Verifiability, Completeness, Big Picture)
+- Reject plans that omit exact files, exact commands, expected fail/pass signals, blocker conditions, review checkpoints, or verification evidence paths
 - Simulate actually doing the work to find gaps
 - Provide specific improvements if rejecting
 
@@ -120,8 +121,8 @@ When MCP is not available, Claude performs the validation directly:
 1. Apply the same 7-section format as a self-review checklist
 2. Evaluate all 4 criteria:
    - **Clarity**: Are the goals and steps clearly defined?
-   - **Verifiability**: Can success be measured objectively?
-   - **Completeness**: Are all necessary steps included?
+   - **Verifiability**: Can success be measured objectively with exact commands and evidence paths?
+   - **Completeness**: Are exact files, expected signals, blockers, review checkpoints, and evidence paths included?
    - **Big Picture**: Does it align with overall architecture?
 3. Output in the same format: APPROVE/REJECT with justification
 4. Add note indicating fallback mode was used
@@ -132,6 +133,7 @@ When running in Codex runtime, execute plan validation directly:
 
 1. Apply the same 7-section format as the validation checklist
 2. Evaluate all 4 criteria (Clarity, Verifiability, Completeness, Big Picture)
+   - Reject if exact files, commands, fail/pass signals, blocker conditions, review checkpoints, or evidence paths are missing.
 3. Output in the same format: APPROVE/REJECT with justification
 4. Add note: `"codex-native: plan validation executed in Codex runtime"`
 

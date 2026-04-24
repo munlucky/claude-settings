@@ -28,6 +28,25 @@
 - Main implementation areas
 - Expected files or modules
 
+## Exact Execution Targets
+- Files to create:
+- Files to modify:
+- Files to test:
+- Commands to run:
+- Expected fail/pass signals:
+- Blocker condition:
+- Review checkpoint:
+- Verification evidence path:
+
+## TDD Contract
+- Applies: yes | no
+- Failing test command:
+- Expected failure:
+- Passing test command:
+- Refactor boundary:
+- Bypass reason if test-first is infeasible:
+- Alternate verification path:
+
 ## Policy Anchors
 - Always-loaded rules:
 - Active workspace contract:
@@ -73,3 +92,11 @@
 ## Risks
 - Known uncertainty
 - Rollback or safe fallback
+
+## Workspace Prepare / Baseline
+- Branch or worktree:
+- Worktree ignore checked:
+- Setup command:
+- Baseline verification command:
+- Baseline exit code:
+- Baseline artifact:

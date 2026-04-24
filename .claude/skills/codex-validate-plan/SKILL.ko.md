@@ -85,6 +85,7 @@ CONTEXT:
 
 MUST DO:
 - 4가지 기준(명확성, 검증가능성, 완전성, 전체 그림) 모두 평가
+- 정확한 파일, 명령, 예상 fail/pass signal, blocker condition, review checkpoint, verification evidence path가 빠진 plan은 reject
 - 실제 작업을 시뮬레이션하여 누락된 부분 찾기
 - 거부 시 구체적인 개선사항 제공
 
@@ -118,8 +119,8 @@ MCP를 사용할 수 없을 때, Claude가 직접 검증을 수행합니다:
 1. 동일한 7-섹션 형식을 자체 리뷰 체크리스트로 적용
 2. 4가지 기준 모두 평가:
    - **명확성**: 목표와 단계가 명확하게 정의되었는가?
-   - **검증가능성**: 성공을 객관적으로 측정할 수 있는가?
-   - **완전성**: 필요한 모든 단계가 포함되었는가?
+   - **검증가능성**: 정확한 명령과 evidence path로 성공을 객관적으로 측정할 수 있는가?
+   - **완전성**: 정확한 파일, 예상 signal, blocker, review checkpoint, evidence path가 포함되었는가?
    - **전체 그림**: 전체 아키텍처와 일치하는가?
 3. 동일한 형식으로 출력: 정당화가 포함된 APPROVE/REJECT
 4. 폴백 모드 사용 표시 노트 추가
@@ -130,6 +131,7 @@ Codex 런타임에서는 다음과 같이 직접 계획 검증을 수행합니�
 
 1. 동일한 7-섹션 형식을 검증 체크리스트로 적용
 2. 4가지 기준(명확성, 검증가능성, 완전성, 전체 그림) 모두 평가
+   - 정확한 파일, 명령, fail/pass signal, blocker condition, review checkpoint, evidence path가 빠져 있으면 reject합니다.
 3. 동일한 형식으로 출력: 정당화가 포함된 APPROVE/REJECT
 4. 노트 추가: `"codex-native: plan validation executed in Codex runtime"`
 

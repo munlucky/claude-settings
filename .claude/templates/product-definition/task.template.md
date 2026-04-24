@@ -17,6 +17,14 @@
 - Impacted user flow
 - Impacted systems or modules
 
+## Exact Execution Targets
+- Files to create:
+- Files to modify:
+- Files to test:
+- Commands to run:
+- Expected fail/pass signals:
+- Verification evidence path:
+
 ## Dependencies
 - Upstream prerequisites
 - Blocking conditions
@@ -32,6 +40,14 @@
 ## Verification
 - Required tests or checks
 - Evidence paths or artifacts to refresh
+
+## TDD Evidence
+- Mode: red-green-refactor | bypassed
+- Failing test command:
+- Expected failure:
+- Passing test command:
+- Refactor boundary:
+- Bypass reason and alternate verification, if any:
 
 ## Contract Seed
 - Round goal

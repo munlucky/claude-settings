@@ -147,11 +147,13 @@ steps:
 ### implementation-bundle
 Adapted pattern: this is the local equivalent of `executing-plans`.
 Before implementation, the owner should critique the active plan, stop on blockers, and then execute explicit tasks.
+For behavior-changing work, use `test-driven-development` before production code changes.
 
 ```yaml
 steps:
   - project-memory-check
   - karpathy-execution-gate
+  - test-driven-development (if behaviorChanging)
   - implementation-runner
   - code-simplifier
 ```
@@ -226,9 +228,15 @@ steps:
 steps:
   - implementation-runner
   - on_error:
+      - failure-analyzer (root cause first)
       - build-error-resolver
       - retry: implementation-runner (max: 2)
 ```
+
+Recovery rule:
+- do not patch before root-cause evidence exists
+- if the same `failureClass` appears twice, change tactic before retry
+- after three failed attempts, escalate to design/contract review instead of continuing blind fixes
 
 ### meta-harness-bundle
 ```yaml

@@ -51,6 +51,7 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
    - 각 문서는 독립 세션에서 바로 실행 가능한 상세 계획이어야 한다.
    - 숨은 전제 없이 단독 실행 가능한 정보를 포함한다.
    - 기준 문서 추적 ID를 포함한 소스 매핑 섹션을 포함한다.
+   - 생성/수정/테스트할 정확한 파일, 실행할 정확한 명령, 예상 fail/pass signal, blocker 조건, review checkpoint, verification evidence path를 포함한다.
    - 의존성, 소유권, 검증 경로가 비사소하면 `plan-eng-review`를 실행한다.
 6. 완료 상태를 동기화한다.
    - 페이즈 완료 시 즉시 master 체크리스트를 `[x]`로 갱신한다.
@@ -87,6 +88,13 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
   - 산출물
   - 객관식 완료 기준 체크리스트
 - "구현한다" 수준의 모호한 문장만 쓰지 말고, 실행/검증 가능한 단위로 작성한다.
+- 각 task는 아래를 명시해야 한다.
+  - 생성/수정/테스트할 정확한 파일 또는 모듈
+  - 실행할 정확한 명령
+  - 예상 failing/passing signal
+  - 실행을 멈출 blocker condition
+  - review checkpoint
+  - verification evidence path
 
 ## 완료 루프 (핵심)
 계획 생성/갱신 시 아래 루프를 강제한다.
@@ -113,6 +121,7 @@ while (master 체크리스트에 [ ] 존재) OR (미매핑 기준 요구사항 �
 - 선택된 기준 문서의 요구사항을 근거 없이 누락하지 않는다. 제외 시 사유를 문서에 남긴다.
 - 파일명/페이즈 번호/체크리스트 상태를 모든 문서에서 일관되게 유지한다.
 - 검증 명령이나 소유권 경계가 암묵적이면 페이즈를 ready 상태로 선언하지 않는다.
+- files, commands, expected signals, blocker condition, evidence path가 암묵적이면 페이즈를 ready 상태로 선언하지 않는다.
 
 ## Phase Runner 연동
 

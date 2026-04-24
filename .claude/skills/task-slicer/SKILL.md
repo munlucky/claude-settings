@@ -40,6 +40,12 @@ Each task must follow `task.template.md`.
 - Done criteria
 - Verification
 - Rollback or risk
+- Exact files to create/modify/test
+- Exact commands to run
+- Expected fail/pass signals
+- Blocker condition
+- Review checkpoint
+- Verification evidence path
 
 ## Slicing Rules
 
@@ -71,6 +77,8 @@ A good task file allows an implementation agent to start work with:
 - no scope invention
 - a clear completion test
 - explicit traceability targets for completion gating
+- exact file and command targets
+- explicit fail/pass evidence expectations
 
 ## References
 

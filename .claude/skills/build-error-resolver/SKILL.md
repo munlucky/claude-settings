@@ -2,6 +2,7 @@
 name: build-error-resolver
 description: Resolves build and compilation errors. Use when build fails or type errors occur.
 context: fork
+surfaceStatus: internal_stage_owner
 ---
 
 # Build Error Resolver Skill
@@ -17,9 +18,17 @@ context: fork
 
 1. Capture build error output
 2. Categorize error type
-3. Locate affected files and lines
-4. Apply appropriate fix
-5. Verify build passes
+3. Identify root-cause evidence before patching
+4. Locate affected files and lines
+5. Apply the smallest appropriate fix
+6. Verify build passes
+
+## Systematic Debugging Contract
+
+- Do not patch based only on the first visible error if upstream evidence is missing.
+- Record `failureClass`, root-cause evidence, and attempted fixes.
+- If the same failure class repeats twice, change tactic before retry.
+- If three attempts fail, stop local patching and escalate to design/contract review.
 
 ## Error Categories
 
@@ -89,10 +98,12 @@ CONTEXT:
 MUST DO:
 - Fix all TypeScript errors
 - Preserve existing functionality
+- Identify root cause before patching
 - Run verification after each fix
 
 MUST NOT DO:
 - Add @ts-ignore unless absolutely necessary
 - Change unrelated code
 - Skip verification step
+- Repeat the same failed tactic after the same failure class appears twice
 ```

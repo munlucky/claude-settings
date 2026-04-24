@@ -110,6 +110,15 @@ Wave 1 is successful when:
 - Bulk `skills.sh` installation is rejected for the default flow; pilot/sandbox review remains allowed.
 - External evaluation frameworks are deferred as regression-plane candidates, not runtime dependencies.
 
+## Wave 2 Outcome
+
+- TDD-first execution is represented by the local `test-driven-development` skill and execution templates.
+- Systematic debugging is represented through root-cause-first failure reporting and recovery rules.
+- Ready / Isolate now requires concrete workspace prepare and baseline evidence for strict or phase work.
+- Plans and task slices now require exact files, commands, fail/pass signals, blockers, review checkpoints, and evidence paths.
+- Scorecards now expose task-level `FULL / PARTIAL / NO` status vocabulary without importing external scoring runtimes.
+- The external adoption pilot package lives at `docs/claude-tasks/external-harness-adoption/`.
+
 ## Pilot Policy
 
 If an external skill or harness is tested later:
@@ -122,10 +131,9 @@ If an external skill or harness is tested later:
 
 Possible Wave 2 work, only if Wave 1 reveals it is necessary:
 
-- add a dedicated workflow-stage guideline if the existing docs become overloaded
-- define an explicit local review cadence contract by work size
-- define a structured finish/handoff decision flow
-- revisit whether any internal helper should become a wrapper instead of a raw micro-skill
+- decide whether worktree prepare should become an automated script after pilot evidence
+- define stricter work-size review cadence if current bundle guidance proves too loose
+- run external benchmark pilots once a local task corpus exists
 
 ## Rollback Boundary
 

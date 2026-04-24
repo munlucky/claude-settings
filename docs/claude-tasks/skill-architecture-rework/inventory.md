@@ -67,6 +67,7 @@ Internal-only tiers:
 | `security-reviewer` | Tier 3 | `keep` | Independent security perspective remains useful. |
 | `session-logger` | Tier 3 | `keep` | Doc-ops helper that also remains directly invocable as a public utility. |
 | `task-slicer` | Tier 3 | `keep` | Strong product-to-execution bridge skill. |
+| `test-driven-development` | Tier 3 | `keep` | Internal Execute-stage owner for TDD-first evidence on behavior-changing work. |
 | `teach-impeccable` | Tier 3 | `merge_candidate` | Candidate to fold into frontend or design guidance stack. |
 | `vercel-react-best-practices` | Tier 3 | `keep` | Stack-specific rule pack with clear value. |
 | `verification-contract-gate` | Tier 3 | `keep` | Strong policy boundary. |
@@ -114,7 +115,7 @@ Current assignments:
 |---|---|
 | `public_entrypoint` | `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` |
 | `public_utility` | `session-logger`, `commit-moonshot` |
-| `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, analysis micro-skills, readiness gates, execution helpers, review/verification gates |
+| `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, analysis micro-skills, readiness gates, `test-driven-development`, execution helpers, review/verification gates |
 | `optional_bundle_member` | `doc-auto-sync`, `browser-verifier`, `qa-flow`, `web-design-guidelines`, `normalize`, `polish`, `teach-impeccable`, selected UI/browser/doc helpers |
 | `deprecated` | `efficiency-tracker`, `workflow-self-improver` |
 
@@ -134,7 +135,7 @@ Avoid direct user invocation of:
 ## Decision Summary
 
 Counts:
-- `keep`: 31
+- `keep`: 32
 - `improve`: 9
 - `merge_candidate`: 9
 - `retire_candidate`: 2
@@ -159,3 +160,20 @@ Deferred:
 - installer filtering for deprecated skills
 - automated verification-contract enforcement of surface-status drift
 - physical archival/removal of deprecated skill directories
+
+## 2026-04-24 Wave 2 Notes
+
+Wave 2 strengthened weak operating procedures without replacing the runtime core.
+
+Actions taken:
+- added local `test-driven-development` skill as an internal Execute-stage owner
+- added TDD evidence fields to sprint, task, and QA templates
+- strengthened `failure-analyzer` and `build-error-resolver` with root-cause-first debugging rules
+- strengthened `workspace-isolation-gate` with concrete prepare/baseline evidence requirements
+- strengthened plan validation and plan templates with exact files, commands, fail/pass signals, blockers, review checkpoints, and evidence paths
+- added task-level `FULL / PARTIAL / NO` vocabulary to scorecard templates and renderer
+- added `external-harness-adoption` pilot registry and review template
+
+Still deferred:
+- external benchmark runtime integration
+- production installation of external skills

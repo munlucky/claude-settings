@@ -28,6 +28,17 @@
 |----|------|------|-----------|
 | P<NN>-1 | <task> | 1) <step> 2) <step> | <objective condition> |
 
+## 정확한 실행 대상
+| ID | 생성 파일 | 수정 파일 | 테스트 파일 | 명령 | 예상 Fail/Pass Signal |
+|----|-----------|-----------|-------------|------|------------------------|
+| P<NN>-1 | <paths or none> | <paths> | <paths> | `<command>` | <expected output / exit code> |
+
+## Blockers And Review
+- Blocker condition:
+- First review checkpoint:
+- Re-review trigger:
+- Verification evidence path:
+
 ## 검증 계획
 - [ ] 빌드/타입 체크: <command>
 - [ ] 동작 확인: <what to verify>

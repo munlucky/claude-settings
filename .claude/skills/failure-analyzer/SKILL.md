@@ -2,6 +2,7 @@
 name: failure-analyzer
 description: Analyzes agent failures and suggests system improvements (context/skills/agents/rules).
 context: fork
+surfaceStatus: internal_stage_owner
 ---
 
 # Failure Analyzer Skill
@@ -31,18 +32,34 @@ context: fork
 | **readiness_gate_missing** | Implementation started without project/context readiness | gate skills, `pre-flight-check` |
 | **verification_contract_missing** | Completion evidence unclear because contract was absent | verification contract docs, evidence gate |
 
+## Systematic Debugging Rules
+
+- Do not propose a fix before recording root-cause evidence.
+- Treat repeated symptoms as the same `failureClass` until evidence proves otherwise.
+- If the same `failureClass` appears twice, change tactic before the next retry.
+- If three attempts fail, escalate to design/contract review instead of continuing local fixes.
+
 ## Analysis Workflow
 
 1. **Scan Logs**: Read `notes` for error signals (`error`, `failed`, `violation`, `timeout`).
-2. **Pattern Match**: Match against failure categories.
-3. **Map to Target**: Identify which file/rule needs improvement.
-4. **Formulate Suggestion**: Create concrete improvement proposal.
+2. **Pattern Match**: Match against failure categories and assign `failureClass`.
+3. **Root Cause Evidence**: Identify the strongest concrete evidence, not just the visible symptom.
+4. **Attempt History**: Count prior attempted fixes for the same `failureClass`.
+5. **Map to Target**: Identify which file/rule/contract needs improvement.
+6. **Next Tactic**: Propose a changed tactic when the same class repeats.
 
 ## Output (patch)
 
 ```yaml
 failureReport:
   totalFailures: 3
+  failureClass: "verification_contract_missing"
+  rootCauseEvidence:
+    - "No verification command was recorded before completion claim"
+  attemptedFixes:
+    - "Re-ran implementation without changing verification contract"
+  sameFailureClassCount: 2
+  nextTactic: "Return to contract definition before retrying implementation"
   categorized:
     - type: "context_missing"
       description: "Agent consistently formatted API response wrong"

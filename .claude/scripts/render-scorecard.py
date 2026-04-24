@@ -12,7 +12,7 @@ PRESETS = {
             "REQ": "In-scope requirements covered",
             "SCN": "Critical scenarios evidenced",
             "VER": "Required verification commands passed",
-            "CLOSE": "Review and finish closeout recorded",
+            "CLOSE": "Review, finish closeout, and workflow-surface consistency recorded",
         },
     },
     "saas": {
@@ -22,7 +22,7 @@ PRESETS = {
             "REQ": "In-scope product requirements covered",
             "SCN": "Critical user journeys evidenced",
             "VER": "Required verification commands passed",
-            "CLOSE": "Review and finish closeout recorded",
+            "CLOSE": "Review, finish closeout, and workflow-surface consistency recorded",
         },
     },
     "api-backend": {
@@ -214,6 +214,21 @@ def build_markdown(args):
             "- Blocking defects: 0",
             "- Verdict: retry",
             "",
+            "## Task-Level Status Adapter",
+            "- Status: FULL | PARTIAL | NO",
+            "- Current task status: NO",
+            f"- Partial threshold: {args.partial_threshold}",
+            "",
+            "| Status | Rule |",
+            "|--------|------|",
+            "| FULL | Target score met, unmet checklist items = 0, blocking defects = 0, and required verification evidence exists |",
+            "| PARTIAL | Core build/verification is preserved, but some REQ/SCN/UAT coverage remains incomplete |",
+            "| NO | Blocking defect, verification hard gate failure, critical regression, or score below partial threshold |",
+            "",
+            "Mapping note:",
+            "- This borrows SWE-bench's fail-to-pass / pass-to-pass completion vocabulary conceptually.",
+            "- It does not import SWE-bench runtime code.",
+            "",
             "## Loop Policy",
             "- `done` requires Current score >= Target score",
             "- `done` requires Unmet checklist items = 0",
@@ -235,6 +250,7 @@ def main():
     parser.add_argument("--phase-doc", default="")
     parser.add_argument("--requirements-file", default="")
     parser.add_argument("--scenario-file", default="")
+    parser.add_argument("--partial-threshold", type=int, default=60)
     args = parser.parse_args()
     print(build_markdown(args), end="")
 

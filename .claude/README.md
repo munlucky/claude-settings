@@ -114,6 +114,7 @@ Do not present them as user-facing workflow entrypoints.
 - `design-approval-gate` (NEW, strict profile)
 - `workspace-isolation-gate` (NEW, strict profile)
 - `karpathy-execution-gate` (NEW)
+- `test-driven-development`
 - `implementation-runner`
 - `completion-verifier` (NEW)
 - `verification-evidence-gate` (NEW, strict profile)
@@ -157,7 +158,7 @@ Use one visible stage model across the repo:
 | Intake | `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` | Choose the correct public entrypoint from the request shape. |
 | Plan | `product-orchestrator`, `moonshot-plan-writer`, `task-slicer`, `codex-validate-plan` | Produce executable plans and slice them before implementation. |
 | Ready / Isolate | `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `workspace-isolation-gate` | Confirm readiness, contract coverage, and isolated execution setup. |
-| Execute | `implementation-runner`, `build-error-resolver`, `moonshot-phase-executor`, `moonshot-teams-runner`; `moonshot-in-session-coordinator` only as advanced fallback | Perform the implementation work and recover from build failures when needed. |
+| Execute | `test-driven-development`, `implementation-runner`, `build-error-resolver`, `moonshot-phase-executor`, `moonshot-teams-runner`; `moonshot-in-session-coordinator` only as advanced fallback | Perform the implementation work and recover from build failures when needed. |
 | Review | `codex-review-code`, `security-reviewer`, `audit`, `web-design-guidelines` | Run focused review before completion claims, especially for non-trivial changes. |
 | Verify | `browser-verifier`, `qa-flow`, `completion-verifier`, `verification-evidence-gate` | Produce fresh runtime/test evidence and block unsupported completion claims. |
 | Finish / Handoff | `doc-auto-sync`, `session-logger`, `commit-moonshot` | Finalize docs, log the session, and optionally commit when explicitly requested. |
@@ -179,6 +180,7 @@ Bounded low-risk work may compress stages, but should not skip review or verific
    - In strict runs, do not begin implementation until `workspace-isolation-gate` has enough isolation evidence.
 4. Execute:
    - Run `karpathy-execution-gate` before `implementation-runner`.
+   - For behavior-changing work, run `test-driven-development` before production code changes.
    - Use `build-error-resolver` only as a recovery path, not as a default entrypoint.
    - Inject stack-specific helpers such as `frontend-design` when the work requires them.
 5. Review:
@@ -214,6 +216,7 @@ Phase runner default behavior:
 - Product-definition guide: `.claude/docs/guidelines/product-definition-workflow.md`.
 - Long-running harness guide: `.claude/docs/guidelines/long-running-harness.md`.
 - Document-trace harness guide: `.claude/docs/guidelines/requirements-traceability-harness.md`.
+- External harness adoption package: `docs/claude-tasks/external-harness-adoption/`.
 - Product-definition templates: `.claude/templates/product-definition/`.
 - Execution artifact templates: `.claude/templates/execution/`.
 - Solution memory: `.claude/docs/solutions/README.md`.

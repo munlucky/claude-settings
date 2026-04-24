@@ -37,6 +37,12 @@ description: 실행 계획을 독립 실행 가능한 vertical-slice task 문서
 - Done criteria
 - Verification
 - Rollback 또는 risk
+- 생성/수정/테스트할 정확한 파일
+- 실행할 정확한 명령
+- 예상 fail/pass signal
+- Blocker condition
+- Review checkpoint
+- Verification evidence path
 
 ## 분해 규칙
 
@@ -66,6 +72,8 @@ description: 실행 계획을 독립 실행 가능한 vertical-slice task 문서
 - 추가 계획 수립이 필요 없음
 - 스코프를 임의로 만들 필요 없음
 - 완료 판정 기준이 명확함
+- 정확한 file/command target이 있음
+- 명시적인 fail/pass evidence expectation이 있음
 
 ## 참고
 

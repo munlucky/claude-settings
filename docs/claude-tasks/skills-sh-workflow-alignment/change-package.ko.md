@@ -110,6 +110,15 @@ Wave 1은 아래 조건이 충족되면 성공이다.
 - 기본 flow에서 `skills.sh` 대량 설치는 reject하고, pilot/sandbox 검토는 허용한다.
 - 외부 평가 프레임워크는 runtime dependency가 아니라 regression-plane 후보로 보류한다.
 
+## Wave 2 결과
+
+- TDD-first 실행은 로컬 `test-driven-development` skill과 실행 template에 반영됐다.
+- Systematic debugging은 root-cause-first failure reporting과 recovery rule로 반영됐다.
+- Ready / Isolate는 strict 또는 phase 작업에서 구체적인 workspace prepare/baseline evidence를 요구한다.
+- Plan과 task slice는 exact files, commands, fail/pass signals, blockers, review checkpoints, evidence paths를 요구한다.
+- Scorecard는 외부 scoring runtime 없이 task-level `FULL / PARTIAL / NO` 상태 어휘를 노출한다.
+- 외부 도입 pilot package는 `docs/claude-tasks/external-harness-adoption/`에 둔다.
+
 ## Pilot Policy
 
 나중에 외부 skill 또는 harness를 테스트한다면:
@@ -122,10 +131,9 @@ Wave 1은 아래 조건이 충족되면 성공이다.
 
 Wave 1 결과가 필요성을 보여줄 때만 고려할 Wave 2 후보:
 
-- 기존 문서가 과밀해지면 dedicated workflow-stage guideline 추가
-- work size별 local review cadence 계약 정의
-- 구조화된 finish/handoff decision flow 정의
-- 일부 internal helper를 raw micro-skill 대신 wrapper로 둘지 재검토
+- pilot evidence가 쌓인 뒤 worktree prepare를 자동 script로 만들지 판단
+- 현재 bundle guidance가 느슨하면 work size별 review cadence 강화
+- 로컬 task corpus가 쌓인 뒤 외부 benchmark pilot 실행
 
 ## 롤백 경계
 

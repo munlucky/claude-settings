@@ -18,6 +18,23 @@
 - Review owners:
 - Review-driven code changes:
 
+## TDD Evidence
+- Mode: red-green-refactor | bypassed | not_applicable
+- Failing test command:
+- Failing test evidence:
+- Passing test command:
+- Passing test evidence:
+- Refactor boundary observed:
+- Bypass reason and alternate verification:
+
+## Failure Loop
+- Failure class:
+- Root-cause evidence:
+- Attempted fixes:
+- Same failure class count:
+- Next tactic:
+- Escalation needed: yes | no
+
 ## Criteria Review
 | Criterion | Result | Notes |
 |-----------|--------|-------|
@@ -69,6 +86,7 @@ Use when the task changes harness, workflow docs, skill metadata, or public entr
 - Unmet checklist items:
 - Blocking defects:
 - Score verdict: retry | blocked | done
+- Task-level status: FULL | PARTIAL | NO
 
 ## Finish Readiness
 - Fresh evidence confirmed:
