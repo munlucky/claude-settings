@@ -13,11 +13,11 @@
 Only parallelize independent stages that do not define implementation scope.
 
 Allowed examples:
-- `codex-review-code` + `efficiency-tracker`
 - `codex-review-code` + `session-logger`
 - `codex-review-code` + `browser-verifier` (rerun runtime checks if review changes code)
 - `security-reviewer` + `browser-verifier` after implementation when inputs are disjoint
 - finish-stage logging in parallel with review only when it does not finalize completion state
+- `efficiency-tracker` only for explicit deprecated/historical reporting, never as a default parallel stage
 
 Not allowed:
 - `codex-validate-plan` + `implementation-runner`
@@ -51,11 +51,11 @@ implementation-runner --feature {feature_name}
 codex-review-code --feature {feature_name} &
 REVIEW_PID=$!
 
-efficiency-tracker --feature {feature_name} &
-TRACK_PID=$!
+session-logger --feature {feature_name} &
+LOG_PID=$!
 
 wait $REVIEW_PID
-wait $TRACK_PID
+wait $LOG_PID
 ```
 
 ## Synchronization Points

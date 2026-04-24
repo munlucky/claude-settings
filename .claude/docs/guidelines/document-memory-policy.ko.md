@@ -44,7 +44,7 @@ description: 활성 문서 크기, 아카이빙, 재개 상태를 위한 짧은 
 - `session-logger`: 활성 로그는 짧게 유지하고 긴 타임라인은 archive로 이동
 - `codex-review-code`: 활성 문서에는 findings 요약만 남기고 raw review는 archive
 - `commit-moonshot`: 메모리 갱신 결과는 장문 대신 짧은 bullet로 정리
-- `efficiency-tracker`: 현재 리포트는 얇게 유지하고 이전 상세는 archive
+- `efficiency-tracker`: deprecated; 명시적인 과거 리포팅에 사용할 때만 현재 리포트는 얇게 유지하고 이전 상세는 archive
 
 ## 참고 문서
 

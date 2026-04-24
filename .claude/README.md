@@ -105,6 +105,9 @@ Repository policy:
 - `moonshot-detect-uncertainty`
 - `moonshot-decide-sequence`
 
+These are orchestrator-internal analysis micro-skills.
+Do not present them as user-facing workflow entrypoints.
+
 ### Execution and Verification
 - `frontend-design`
 - `pre-flight-check`
@@ -116,22 +119,34 @@ Repository policy:
 - `verification-evidence-gate` (NEW, strict profile)
 - `codex-validate-plan`
 - `codex-review-code`
-- `moonshot-in-session-coordinator` (NEW)
+- `moonshot-in-session-coordinator` (advanced fallback, not the default public route)
 - document-trace completion uses `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, and `UAT_CHECKLIST.md` as closeout artifacts for downstream projects
 
 ### Documentation and Logging
 - `session-logger`
-- `efficiency-tracker`
+- `efficiency-tracker` (deprecated, explicit historical/reporting use only)
 
 ### Utilities
-- `teach-impeccable`
+- `teach-impeccable` (optional UI/design bundle member)
 - `audit`
-- `normalize`
-- `polish`
+- `normalize` (optional UI/design bundle member)
+- `polish` (optional UI/design bundle member)
 - `design-asset-parser`
 - `project-md-refresh`
 - `security-reviewer`
 - `build-error-resolver`
+
+### Surface Status Policy
+
+Use `.claude/docs/guidelines/skill-composition.md` as the source of truth for public surface status.
+
+| Status | Meaning |
+| --- | --- |
+| `public_entrypoint` | User may choose it as the workflow start. |
+| `public_utility` | User may invoke it directly for its narrow utility. |
+| `internal_stage_owner` | Stage or orchestrator owned; do not advertise as a workflow entrypoint. |
+| `optional_bundle_member` | Loaded only when the task profile needs that bundle. |
+| `deprecated` | Kept for compatibility/history; not part of default flow. |
 
 ## Workflow Stage Map
 
@@ -142,7 +157,7 @@ Use one visible stage model across the repo:
 | Intake | `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` | Choose the correct public entrypoint from the request shape. |
 | Plan | `product-orchestrator`, `moonshot-plan-writer`, `task-slicer`, `codex-validate-plan` | Produce executable plans and slice them before implementation. |
 | Ready / Isolate | `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `workspace-isolation-gate` | Confirm readiness, contract coverage, and isolated execution setup. |
-| Execute | `implementation-runner`, `build-error-resolver`, `moonshot-phase-executor`, `moonshot-in-session-coordinator`, `moonshot-teams-runner` | Perform the implementation work and recover from build failures when needed. |
+| Execute | `implementation-runner`, `build-error-resolver`, `moonshot-phase-executor`, `moonshot-teams-runner`; `moonshot-in-session-coordinator` only as advanced fallback | Perform the implementation work and recover from build failures when needed. |
 | Review | `codex-review-code`, `security-reviewer`, `audit`, `web-design-guidelines` | Run focused review before completion claims, especially for non-trivial changes. |
 | Verify | `browser-verifier`, `qa-flow`, `completion-verifier`, `verification-evidence-gate` | Produce fresh runtime/test evidence and block unsupported completion claims. |
 | Finish / Handoff | `doc-auto-sync`, `session-logger`, `commit-moonshot` | Finalize docs, log the session, and optionally commit when explicitly requested. |

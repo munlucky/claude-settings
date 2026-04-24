@@ -1,6 +1,7 @@
 ---
 name: doc-auto-sync
 description: 코드 변경을 감지하여 관련 문서(PROJECT.md, README, CHANGELOG, 생성 문서)를 자동 업데이트하고, 프로젝트 문서 구조를 부트스트랩합니다.
+surfaceStatus: optional_bundle_member
 ---
 
 # Doc Auto-Sync 스킬
@@ -8,7 +9,8 @@ description: 코드 변경을 감지하여 관련 문서(PROJECT.md, README, CHA
 ## 공개 범위
 
 이 스킬은 doc-ops helper입니다.
-보통은 구현/검증 뒤에서 doc-ops bundle을 통해 실행하는 편이 맞습니다.
+보통은 구현/검증 뒤에서 doc-ops 또는 finish bundle을 통해 실행하는 편이 맞습니다.
+기본 workflow 진입점으로 제시하지 않습니다.
 
 > **목적**: 코드 변경 감지 → 영향 문서 식별 → 업데이트 또는 부트스트랩
 > **시점**: implementation-runner 이후, codex-review-code 이전

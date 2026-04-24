@@ -1,6 +1,6 @@
 # Skill Architecture Rework Inventory
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## Purpose
 
@@ -92,8 +92,31 @@ Internal-only tiers:
 
 ## Known Drift
 
-- Public entrypoint policy is declared in `skill-composition.md` and `README.md`, but legacy docs are not fully mirrored yet.
-- Documentation and verification helpers are split across multiple adjacent skills and agents.
+- Public entrypoint policy is now declared in `skill-composition.md`, `README.md`, `.claude/README.md`, and `.claude/README.ko.md`.
+- Documentation and verification helpers remain split across multiple adjacent skills and agents, but they are now positioned behind stage bundles rather than advertised as standalone workflow entrypoints.
+- Deprecated assets still exist on disk for compatibility, but `efficiency-tracker` and `workflow-self-improver` are explicitly excluded from the default flow.
+
+## Surface Status Model
+
+The current diet pass uses the following public-surface statuses:
+
+| Status | Intended Use |
+|---|---|
+| `public_entrypoint` | User-selectable workflow start. |
+| `public_utility` | Directly callable utility with a narrow purpose. |
+| `internal_stage_owner` | Stage or orchestrator owned; not a user entrypoint. |
+| `optional_bundle_member` | Loaded only when a task profile requires the bundle. |
+| `deprecated` | Retained for compatibility/history, excluded from default flow. |
+
+Current assignments:
+
+| Status | Assets |
+|---|---|
+| `public_entrypoint` | `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` |
+| `public_utility` | `session-logger`, `commit-moonshot` |
+| `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, analysis micro-skills, readiness gates, execution helpers, review/verification gates |
+| `optional_bundle_member` | `doc-auto-sync`, `browser-verifier`, `qa-flow`, `web-design-guidelines`, `normalize`, `polish`, `teach-impeccable`, selected UI/browser/doc helpers |
+| `deprecated` | `efficiency-tracker`, `workflow-self-improver` |
 
 ## Invocation Policy Draft
 
@@ -120,3 +143,19 @@ Pre-implementation conclusion:
 - the repo has enough good structure to preserve
 - the main need is entrypoint hardening and composition cleanup
 - the first implementation pass should target metadata, documentation, and bundle reconciliation before deeper behavioral changes
+
+## 2026-04-24 Diet Pass Notes
+
+This pass intentionally did not delete skills, rename files, or rewrite runtime dispatch.
+
+Actions taken:
+- added `surfaceStatus` metadata to targeted internal, optional, and deprecated skills
+- clarified that analysis micro-skills are orchestrator-internal
+- demoted `moonshot-in-session-coordinator` to an advanced fallback path rather than a default public route
+- positioned UI/design, doc-ops, browser, and guided QA helpers as optional bundle members
+- retained deprecated assets only for explicit reporting, historical analysis, or maintenance review
+
+Deferred:
+- installer filtering for deprecated skills
+- automated verification-contract enforcement of surface-status drift
+- physical archival/removal of deprecated skill directories

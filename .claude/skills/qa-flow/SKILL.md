@@ -1,6 +1,7 @@
 ---
 name: qa-flow
 description: Run a guided browser-based QA flow against a local or staging URL using the persistent browser runtime when available.
+surfaceStatus: optional_bundle_member
 triggers:
   - "qa flow"
   - "browser qa"
@@ -18,6 +19,7 @@ Verify a user-facing flow in a real browser session and return a compact pass/fa
 
 This skill is currently a scaffold. It prepares the interface for integrating persistent browser flows into the existing verification harness.
 It is not part of the default verification chain yet.
+Run it only as an optional verification-bundle member when guided browser QA is explicitly needed.
 
 ## Inputs
 

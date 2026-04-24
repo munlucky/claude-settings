@@ -20,7 +20,18 @@
 | OBJ-REQ | In-scope requirements covered | 40 | pending/pass/fail |  |  |
 | OBJ-SCN | Critical scenarios evidenced | 30 | pending/pass/fail |  |  |
 | OBJ-VER | Required verification commands passed | 20 | pending/pass/fail |  |  |
-| OBJ-CLOSE | Review and finish closeout recorded | 10 | pending/pass/fail |  |  |
+| OBJ-CLOSE | Review, finish closeout, and workflow-surface consistency recorded | 10 | pending/pass/fail |  |  |
+
+## Workflow Surface Consistency
+
+Use this section for harness, workflow, skill, or documentation changes.
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| Public entrypoints remain limited to the approved workflow surface | pending/pass/fail |  |
+| Deprecated skills are not presented as default stage owners | pending/pass/fail |  |
+| Bundle references point to existing assets or documented aliases | pending/pass/fail |  |
+| Stage map still covers Intake, Plan, Ready / Isolate, Execute, Review, Verify, Finish / Handoff | pending/pass/fail |  |
 
 ## Score Summary
 - Current score: 0

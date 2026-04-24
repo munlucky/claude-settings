@@ -44,7 +44,7 @@ Use this file as the short policy layer. Detailed examples belong in reference d
 - `session-logger`: keep active log compact, push long timelines to archive
 - `codex-review-code`: keep findings summary in active docs, archive raw review
 - `commit-moonshot`: summarize memory refresh in bullets, not long prose
-- `efficiency-tracker`: keep current report thin, archive prior detail
+- `efficiency-tracker`: deprecated; if explicitly used for historical reporting, keep current report thin and archive prior detail
 
 ## References
 

@@ -1,11 +1,12 @@
 ---
 name: teach-impeccable
 description: 프로젝트의 디자인 컨텍스트를 수집해 `.impeccable.md`에 저장하고 이후 UI 작업에서 재사용하도록 만드는 스킬입니다.
+surfaceStatus: optional_bundle_member
 license: Apache 2.0. pbakaus/impeccable 기반으로 조정됨.
 metadata:
   author: pbakaus
   source: https://github.com/pbakaus/impeccable
-user-invocable: true
+user-invocable: false
 ---
 
 # Teach Impeccable
@@ -14,6 +15,7 @@ user-invocable: true
 
 이 스킬은 지속 가능한 디자인 컨텍스트를 만드는 bootstrap helper입니다.
 일상적인 UI 작업 진입점은 `frontend-design`으로 두는 편이 맞습니다.
+디자인 컨텍스트가 없을 때만 선택 UI/design bundle 구성요소로 사용합니다.
 
 UI 작업에 지속적인 디자인 컨텍스트가 필요할 때 프로젝트당 한 번 실행합니다.
 

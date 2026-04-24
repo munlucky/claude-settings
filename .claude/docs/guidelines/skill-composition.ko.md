@@ -46,6 +46,25 @@
 - readiness gate
 - 문서 운영 보조 스킬
 
+## 공개 표면 상태
+
+스킬 metadata나 workflow 문서를 갱신할 때 아래 visibility 값을 사용합니다.
+
+```yaml
+surfaceStatus:
+  public_entrypoint: "사용자가 workflow 진입점으로 직접 선택할 수 있음"
+  public_utility: "명시적인 유틸리티 작업에 한해 직접 호출할 수 있음"
+  internal_stage_owner: "stage 또는 orchestrator가 소유하며 사용자 진입점으로 제시하지 않음"
+  optional_bundle_member: "현재 task profile이 해당 bundle을 필요로 할 때만 로드"
+  deprecated: "호환성 또는 이력 참고용으로만 보존하며 기본 흐름에는 포함하지 않음"
+```
+
+기본 routing:
+- 사용자는 `public_entrypoint` 스킬로 진입합니다.
+- orchestrator와 bundle은 `internal_stage_owner` 스킬을 호출할 수 있습니다.
+- task profile은 필요한 경우 `optional_bundle_member` 스킬을 추가합니다.
+- `deprecated` 스킬은 명시적인 유지보수나 이력 분석 의도가 있을 때만 사용합니다.
+
 ## 조합 소유권
 
 - 분석 마이크로스킬은 orchestrator를 보조하기 위한 것이며, 직접 호출 표면을 넓히기 위한 것이 아닙니다.
@@ -88,6 +107,8 @@ outputArtifacts:
 4. deep references
 
 ### analysis-bundle
+내부 전용입니다. 이 bundle은 orchestrator 분석을 보조하며 공개 호출 표면을 넓히면 안 됩니다.
+
 ```yaml
 steps:
   - moonshot-classify-task
@@ -109,6 +130,9 @@ steps:
 ```
 
 ### ready-isolate-bundle
+흡수한 외부 패턴: `using-git-worktrees`의 로컬 대응입니다.
+숨겨진 guardrail이 아니라 구현 전 명시적인 준비 단계로 취급합니다.
+
 ```yaml
 steps:
   - pre-flight-check
@@ -119,6 +143,9 @@ steps:
 ```
 
 ### implementation-bundle
+흡수한 외부 패턴: `executing-plans`의 로컬 대응입니다.
+구현 전에 active plan을 비판적으로 읽고, blocker가 있으면 멈춘 뒤 명시적인 task를 실행합니다.
+
 ```yaml
 steps:
   - project-memory-check
@@ -128,6 +155,9 @@ steps:
 ```
 
 ### review-bundle
+흡수한 외부 패턴: `requesting-code-review`의 로컬 대응입니다.
+medium/complex 또는 batch 작업에서는 마지막 한 번이 아니라 task/batch 경계마다 반복 review를 수행합니다.
+
 ```yaml
 steps:
   - codex-review-code
@@ -137,6 +167,9 @@ steps:
 ```
 
 ### verification-bundle
+흡수한 외부 패턴: `verification-before-completion`의 로컬 대응입니다.
+완료 주장은 항상 fresh verification evidence 이후에만 가능합니다.
+
 ```yaml
 steps:
   - browser-verifier (if webRuntimeCheckNeeded)
@@ -146,6 +179,9 @@ steps:
 ```
 
 ### finish-bundle
+흡수한 외부 패턴: `finishing-a-development-branch`의 로컬 대응입니다.
+Finish는 느슨한 logging이 아니라 evidence, handoff state, optional commit intent를 정리하는 결정 단계입니다.
+
 ```yaml
 steps:
   - doc-auto-sync
@@ -163,6 +199,8 @@ steps:
 `verification-suite`는 review와 verify를 한 블록으로 다루던 이전 조합을 위한 compatibility alias입니다.
 
 ### doc-ops-bundle
+선택 bundle입니다. 구현 기본 진입점이 아니라 문서/세션 유지보수 작업에 사용합니다.
+
 ```yaml
 steps:
   - doc-auto-sync
@@ -203,12 +241,28 @@ steps:
 ## 규칙
 
 - Tier 1 진입점이 bundle을 선택해야 하며, bundle이 공개 호출 표면을 넓히면 안 됩니다.
+- 이 문서와 skill inventory를 갱신하지 않고 새 기본 공개 진입점을 추가하지 않습니다.
 - `product_project`는 `ready-isolate-bundle`을 사용할 수 있습니다.
 - large 또는 phase 기반 작업은 `moonshot-orchestrator`가 아니라 `moonshot-phase-runner`로 진입합니다.
 - medium/complex 구현은 `ready-isolate-bundle -> implementation-bundle -> review-bundle -> verification-bundle -> finish-bundle`을 기본 경로로 삼습니다.
+- 작은 bounded work는 단계를 압축할 수 있지만, 파일 변경이 있으면 완료 evidence를 생략하지 않습니다.
 - 비사소한 코드 변경은 `review-bundle` 뒤에 `verification-bundle`을 둡니다.
 - 구현 마감에는 `finish-bundle`, 문서/세션 전용 작업에는 `doc-ops-bundle`을 우선합니다.
 - `commit-moonshot`은 자동 단계가 아니라 사용자가 명시적으로 요구할 때만 실행하는 유틸리티입니다.
 - `meta_harness`는 downstream bootstrap gate를 건너뜁니다.
 - strict 오버레이는 bundle 내부가 아니라 bundle 확장 후 적용합니다.
 - 현재 plane에서 no-op이 된 bundle은 notes에 명시합니다.
+
+## 문서 정합성 체크
+
+workflow 문서나 skill metadata를 바꾼 뒤 아래를 확인합니다.
+
+```bash
+rg -n "efficiency-tracker|workflow-self-improver" README.md .claude/README.md .claude/docs/guidelines
+rg -n "public entrypoint|Primary public workflow entrypoints|Workflow Stage Map" README.md .claude/README.md .claude/docs/guidelines
+find .claude/skills -maxdepth 2 -name SKILL.md -print
+.claude/scripts/knowledge-repo-audit.sh
+```
+
+첫 번째 명령은 deprecated skill을 deprecated/non-default 자산으로 언급하는 경우에만 허용합니다.
+공개 진입점 목록은 `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator`로 제한합니다.

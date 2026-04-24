@@ -1,6 +1,7 @@
 ---
 name: moonshot-in-session-coordinator
 description: Coordinates phase-by-phase execution inside the current session while delegating each round to a fresh forked attempt agent.
+surfaceStatus: internal_stage_owner
 triggers:
   - "in-session coordinator"
   - "phase coordinator"
@@ -21,6 +22,7 @@ Use this only when:
 Do not use this for:
 - simple one-shot implementation
 - delegated terminal runs that already use `agent-loop.sh`
+- default user-facing phase execution; prefer `moonshot-phase-runner` and the delegated-terminal path when available
 
 ## Execution
 

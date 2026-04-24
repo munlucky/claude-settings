@@ -1,11 +1,12 @@
 ---
 name: normalize
 description: UI를 저장소의 디자인 시스템, 토큰, 간격 체계, 기존 컴포넌트 패턴에 다시 맞추는 스킬입니다.
+surfaceStatus: optional_bundle_member
 license: Apache 2.0. pbakaus/impeccable 기반으로 조정됨.
 metadata:
   author: pbakaus
   source: https://github.com/pbakaus/impeccable
-user-invocable: true
+user-invocable: false
 argument-hint: "[feature]"
 ---
 
@@ -15,6 +16,7 @@ argument-hint: "[feature]"
 
 이 스킬은 세부 frontend helper입니다.
 전체 UI 방향이 아직 불안정하면 우선 `frontend-design`을 상위 진입점으로 사용합니다.
+기본 공개 workflow 진입점이 아니라 선택 UI/design bundle 구성요소로 취급합니다.
 
 UI가 디자인 시스템에서 이탈했거나 특정 기능을 저장소의 기존 패턴으로 되돌려야 할 때 사용합니다.
 

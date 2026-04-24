@@ -2,6 +2,7 @@
 name: efficiency-tracker
 description: Tracks workflow execution and generates flow reports with actionable insights.
 status: deprecated
+surfaceStatus: deprecated
 triggers:
   - "workflow report"
   - "workflow diagnostics"
@@ -14,6 +15,7 @@ triggers:
 
 Deprecated as a default workflow component.
 Keep only for explicit reporting or historical analysis until doc-ops/reporting is consolidated elsewhere.
+Do not include this in default stage bundles or public entrypoint lists.
 
 ## Role
 Record workflow status and generate:

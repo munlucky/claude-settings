@@ -1,6 +1,7 @@
 ---
 name: web-design-guidelines
 description: Review UI code for Web Interface Guidelines compliance. Use when asked to "review my UI", "check accessibility", "audit design", "review UX", or "check my site against best practices".
+surfaceStatus: optional_bundle_member
 context: fork
 metadata:
   author: vercel
@@ -12,6 +13,7 @@ metadata:
 
 Review files for compliance with Web Interface Guidelines.
 Treat this as a read-only review owner: prefer a forked review session and return findings only, not broad conversational analysis.
+Use it as a UI review-bundle helper under `frontend-design`, not as a default workflow entrypoint.
 
 ## How It Works
 

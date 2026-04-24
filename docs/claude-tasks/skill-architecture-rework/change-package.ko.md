@@ -1,11 +1,11 @@
 # 스킬 아키텍처 재정비 변경 패키지
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## 상태
 
-문서와 스킬 메타데이터 기준의 정리 패스는 완료됐다.
-스크립트나 런타임 디스패치 재작성은 필요하지 않았다.
+하네스 다이어트 문서와 targeted skill metadata pass가 완료됐다.
+script, installer, runtime dispatch rewrite는 필요하지 않았다.
 
 ## 첫 구현 패스
 
@@ -100,3 +100,23 @@ Last-Reviewed: 2026-03-27
 - Pass 1: entrypoint 정책과 bundle drift 정리
 - Pass 2: analysis/doc-ops/verification cluster 정렬
 - Pass 3: deprecated/non-default 표기와 trigger 정리
+- 2026-04-24 pass: surface-status taxonomy 추가, targeted skill을 `internal_stage_owner` / `optional_bundle_member` / `deprecated`로 표시, production skill 대량 설치 없이 외부 workflow 패턴을 로컬 stage model에 흡수
+
+## Migration Notes
+
+| Cluster | 결정 | 목적지 |
+|---|---|---|
+| 분석 마이크로스킬 | 유지, 내부화 | 공개 orchestrator 뒤의 `analysis-bundle` |
+| Phase executor/coordinator | 유지, 내부화 | `moonshot-phase-runner` 실행 경계, 가능하면 delegated-terminal 기본 |
+| UI/design helper | 선택 bundle 구성요소로 유지 | `frontend-design` umbrella와 명시적 UI review 시 `review-bundle` |
+| Browser/guided QA helper | 선택 bundle 구성요소로 유지 | runtime/browser evidence가 필요할 때만 `verification-bundle` |
+| Doc-ops helper | 선택 bundle 구성요소로 유지 | `finish-bundle` 또는 `doc-ops-bundle`, `session-logger`는 public utility 유지 |
+| Deprecated workflow reflection | 유지하되 기본 제외 | `efficiency-tracker`, `workflow-self-improver`는 명시적 이력/유지보수 검토용 |
+
+## Validation Additions
+
+이번 pass의 수동 정합성 체크:
+- deprecated skill은 문서에서 deprecated 또는 non-default 자산으로만 언급한다
+- primary public entrypoint는 `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator`로 제한한다
+- bundle membership이 새 public entrypoint처럼 보이면 안 된다
+- `.claude/scripts/**`와 installer behavior는 변경하지 않는다

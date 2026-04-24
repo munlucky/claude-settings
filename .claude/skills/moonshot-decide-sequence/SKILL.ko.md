@@ -1,6 +1,7 @@
 ---
 name: moonshot-decide-sequence
 description: `analysisContext`를 바탕으로 phase와 bundle/skill 체인을 결정한다.
+surfaceStatus: internal_stage_owner
 ---
 
 # PM 시퀀스 결정

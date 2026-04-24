@@ -1,13 +1,13 @@
 # skills.sh 워크플로우 정렬 변경 패키지
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## 상태
 
-준비 단계 전용이다.
+Wave 1 문서와 metadata pass가 완료됐다.
 
 이 패키지는 runtime behavior를 바꾸지 않는다.
-`skills.sh`를 참고한 stage-based workflow 정리를 준비한다.
+production skill 대량 설치 없이 선택한 `skills.sh` 운영 패턴을 로컬 stage model에 적용한다.
 
 ## Wave 1 목표
 
@@ -100,6 +100,23 @@ Wave 1은 아래 조건이 충족되면 성공이다.
 4. 대상 스킬의 description이 더 trigger-oriented하고 discoverable해진다.
 5. verification/evidence 요구사항은 계속 명시적이고 선택 불가다.
 6. 문서 패스를 수용하기 위해 runtime behavior 변경이 필요하지 않다.
+
+## 2026-04-24 결과
+
+- Stage model은 `.claude/README.md`, `.claude/README.ko.md`, `skill-composition` 문서에 보인다.
+- 공개 진입점은 primary workflow skill 3개와 public utility 2개로 유지된다.
+- Ready / Isolate, Review, Verify, Finish / Handoff는 흡수한 외부 운영 패턴을 명시한다.
+- targeted skill은 internal, optional, deprecated 표면에 대해 `surfaceStatus` metadata를 가진다.
+- 기본 flow에서 `skills.sh` 대량 설치는 reject하고, pilot/sandbox 검토는 허용한다.
+- 외부 평가 프레임워크는 runtime dependency가 아니라 regression-plane 후보로 보류한다.
+
+## Pilot Policy
+
+나중에 외부 skill 또는 harness를 테스트한다면:
+- production `.claude/skills` 밖에서 실행한다
+- 결과를 `adopt`, `adapt`, `reject`, `defer` 중 하나로 기록한다
+- skill이 안전하고 중복이 없다는 점이 검증되기 전에는 전략/checklist만 로컬로 이식한다
+- `skill-composition`과 skill architecture inventory를 갱신하지 않고 새 public entrypoint를 추가하지 않는다
 
 ## Wave 1 이후 가능성
 

@@ -1,11 +1,12 @@
 ---
 name: teach-impeccable
 description: Gather persistent design context for a project and save it to .impeccable.md so future UI work has real product context.
+surfaceStatus: optional_bundle_member
 license: Apache 2.0. Adapted from pbakaus/impeccable.
 metadata:
   author: pbakaus
   source: https://github.com/pbakaus/impeccable
-user-invocable: true
+user-invocable: false
 ---
 
 # Teach Impeccable
@@ -14,6 +15,7 @@ user-invocable: true
 
 This is a bootstrap helper for durable design context.
 Treat `frontend-design` as the day-to-day entrypoint for UI work.
+Use this as an optional UI/design bundle member when durable design context is missing.
 
 Run this once per project when UI work needs durable design context.
 

@@ -1,6 +1,7 @@
 ---
 name: moonshot-in-session-coordinator
 description: 현재 세션에서 phase 루프를 조율하되 각 round는 fresh fork attempt agent로 실행한다.
+surfaceStatus: internal_stage_owner
 triggers:
   - "in-session coordinator"
   - "phase coordinator"
@@ -21,6 +22,7 @@ triggers:
 사용하지 말아야 하는 경우:
 - 단발성 simple 구현
 - 이미 `agent-loop.sh`를 쓰는 delegated terminal 실행
+- 기본 사용자-facing phase 실행. 가능하면 `moonshot-phase-runner`와 delegated-terminal 경로를 우선합니다.
 
 ## 실행 책임
 

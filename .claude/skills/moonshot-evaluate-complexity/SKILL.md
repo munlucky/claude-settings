@@ -1,6 +1,7 @@
 ---
 name: moonshot-evaluate-complexity
 description: Evaluates complexity (simple, medium, complex) based on estimated files/lines/time. Use after task classification.
+surfaceStatus: internal_stage_owner
 ---
 
 # PM Complexity Evaluation

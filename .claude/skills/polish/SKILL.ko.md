@@ -1,11 +1,12 @@
 ---
 name: polish
 description: 출시 전 UI의 간격, 정렬, 상태, 모션, 문구, 시각적 일관성을 마지막으로 다듬는 스킬입니다.
+surfaceStatus: optional_bundle_member
 license: Apache 2.0. pbakaus/impeccable 기반으로 조정됨.
 metadata:
   author: pbakaus
   source: https://github.com/pbakaus/impeccable
-user-invocable: true
+user-invocable: false
 argument-hint: "[target]"
 ---
 
@@ -15,6 +16,7 @@ argument-hint: "[target]"
 
 이 스킬은 마감용 frontend helper입니다.
 더 넓은 UI 방향 정리가 필요하면 `frontend-design`을 상위 진입점으로 사용합니다.
+기본 공개 workflow 진입점이 아니라 선택 UI/design bundle 구성요소로 취급합니다.
 
 기능이 이미 동작하는 상태에서 마지막 품질 보정을 할 때 사용합니다.
 

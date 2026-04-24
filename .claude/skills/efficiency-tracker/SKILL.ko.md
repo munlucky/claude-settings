@@ -2,6 +2,7 @@
 name: efficiency-tracker
 description: Tracks workflow execution and generates flow reports with actionable insights.
 status: deprecated
+surfaceStatus: deprecated
 triggers:
   - "workflow report"
   - "workflow diagnostics"
@@ -14,6 +15,7 @@ triggers:
 
 기본 워크플로우 구성요소로는 deprecated 처리합니다.
 향후 doc-ops/reporting 정리가 끝날 때까지는 명시적 리포트 생성이나 과거 분석 용도로만 유지합니다.
+기본 stage bundle이나 공개 진입점 목록에 포함하지 않습니다.
 
 ## 역할
 작업 흐름 상태를 기록하고 아래 산출물을 생성합니다.

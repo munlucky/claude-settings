@@ -48,6 +48,25 @@ Do not present the following as primary user entrypoints:
 - readiness gates
 - document operation helpers
 
+## Surface Status
+
+Use these visibility values when refreshing skill metadata or workflow docs:
+
+```yaml
+surfaceStatus:
+  public_entrypoint: "May be selected directly as a workflow entrypoint."
+  public_utility: "May be invoked directly only for its explicit utility task."
+  internal_stage_owner: "Owned by a stage or orchestrator; do not present as a user entrypoint."
+  optional_bundle_member: "Loaded only when the current task profile needs the bundle."
+  deprecated: "Retained for compatibility or historical reference; not part of default flow."
+```
+
+Default routing:
+- users enter through `public_entrypoint` skills
+- orchestrators and bundles may call `internal_stage_owner` skills
+- task profiles may add `optional_bundle_member` skills
+- `deprecated` skills require explicit maintenance or historical-analysis intent
+
 ## Composition Ownership
 
 - analysis micro-skills exist to support orchestrators, not to widen direct user invocation
@@ -90,6 +109,8 @@ Preferred body order:
 4. deep references
 
 ### analysis-bundle
+Internal only. This bundle supports orchestrator analysis and must not widen the public invocation surface.
+
 ```yaml
 steps:
   - moonshot-classify-task
@@ -111,6 +132,9 @@ steps:
 ```
 
 ### ready-isolate-bundle
+Adapted pattern: this is the local equivalent of `using-git-worktrees`.
+Treat it as a visible preparation stage before implementation, not only as a hidden guardrail.
+
 ```yaml
 steps:
   - pre-flight-check
@@ -121,6 +145,9 @@ steps:
 ```
 
 ### implementation-bundle
+Adapted pattern: this is the local equivalent of `executing-plans`.
+Before implementation, the owner should critique the active plan, stop on blockers, and then execute explicit tasks.
+
 ```yaml
 steps:
   - project-memory-check
@@ -130,6 +157,9 @@ steps:
 ```
 
 ### review-bundle
+Adapted pattern: this is the local equivalent of `requesting-code-review`.
+For medium, complex, or batch work, run review repeatedly at task or batch boundaries instead of only at the end.
+
 ```yaml
 steps:
   - codex-review-code
@@ -139,6 +169,9 @@ steps:
 ```
 
 ### verification-bundle
+Adapted pattern: this is the local equivalent of `verification-before-completion`.
+Fresh verification evidence is mandatory before any completion claim.
+
 ```yaml
 steps:
   - browser-verifier (if webRuntimeCheckNeeded)
@@ -148,6 +181,9 @@ steps:
 ```
 
 ### finish-bundle
+Adapted pattern: this is the local equivalent of `finishing-a-development-branch`.
+Finish is a decision stage: record evidence, handoff state, and optional commit intent; do not treat it as loose logging.
+
 ```yaml
 steps:
   - doc-auto-sync
@@ -165,6 +201,8 @@ steps:
 `verification-suite` is a compatibility alias for older compositions that still think in review-plus-verify as one block.
 
 ### doc-ops-bundle
+Optional bundle. Use this for documentation/session maintenance work, not as a default implementation entrypoint.
+
 ```yaml
 steps:
   - doc-auto-sync
@@ -205,15 +243,31 @@ steps:
 ## Rules
 
 - Tier 1 entrypoints choose bundles; bundles should not widen the public invocation surface.
+- Do not add new default public entrypoints without updating this document and the skill inventory.
 - `product_project` work may use `ready-isolate-bundle`.
 - Large or phase-based work should enter through `moonshot-phase-runner`, not `moonshot-orchestrator`.
 - Medium/complex implementation should pass through `ready-isolate-bundle -> implementation-bundle -> review-bundle -> verification-bundle -> finish-bundle`.
+- Small bounded work may compress stages, but it must not skip evidence before completion when files changed.
 - Use `review-bundle` before `verification-bundle` for non-trivial code changes.
 - Prefer `finish-bundle` for implementation closeout and `doc-ops-bundle` for documentation/session-only work.
 - `commit-moonshot` remains an explicit user-triggered utility and should not be assumed automatically.
 - `meta_harness` work must skip downstream bootstrap gates.
 - Strict profile overlays are applied after bundle expansion, not inside individual bundles.
 - When a bundle expands to no-op for the current plane, record that explicitly in notes.
+
+## Documentation Consistency Checks
+
+Use these checks after changing workflow docs or skill metadata:
+
+```bash
+rg -n "efficiency-tracker|workflow-self-improver" README.md .claude/README.md .claude/docs/guidelines
+rg -n "public entrypoint|Primary public workflow entrypoints|Workflow Stage Map" README.md .claude/README.md .claude/docs/guidelines
+find .claude/skills -maxdepth 2 -name SKILL.md -print
+.claude/scripts/knowledge-repo-audit.sh
+```
+
+The first command may mention deprecated skills only as deprecated/non-default assets.
+The public entrypoint list must remain limited to `product-orchestrator`, `moonshot-phase-runner`, and `moonshot-orchestrator`.
 
 ## References
 

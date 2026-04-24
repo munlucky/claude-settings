@@ -1,6 +1,7 @@
 ---
 name: moonshot-phase-executor
 description: Skill-level phase execution adapter that routes prepared phase work to delegated-terminal or in-session coordinator execution.
+surfaceStatus: internal_stage_owner
 triggers:
   - "phase executor"
   - "phase execution adapter"

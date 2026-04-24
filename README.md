@@ -60,9 +60,9 @@ claude-settings/
 - 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`로 구성되지만, 이들은 공개 진입점이 아니라 orchestrator 내부 마이크로스킬입니다.
 - medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
 - 구현 뒤에는 `code-simplifier`를 넣어 최근 수정 코드의 가독성과 구조를 정리한 뒤 검증/리뷰로 넘깁니다.
-- React/UI 구현 작업에서는 `frontend-design`을 구현 직전에 주입해 시각 방향과 안티패턴을 먼저 정리할 수 있습니다. 프로젝트별 디자인 컨텍스트가 없으면 `teach-impeccable`를 먼저 실행합니다.
-- 검증 계층은 `verification-agent`, `completion-verifier`, `browser-verifier`, `codex-review-code`, `security-reviewer`로 조합하며, 필요 시 `qa-flow`를 명시적으로 후속 실행합니다.
-- 문서 계층은 `doc-auto-sync`, `session-logger`, `documentation-agent`를 doc-ops bundle로 묶어 취급합니다.
+- React/UI 구현 작업에서는 `frontend-design`을 UI bundle의 umbrella로 사용합니다. `teach-impeccable`, `audit`, `normalize`, `polish`는 기본 진입점이 아니라 UI/design bundle 내부 또는 명시적 UI 품질 작업에서만 사용합니다.
+- 검증 계층은 `completion-verifier`를 중심으로 `verification-agent`, `browser-verifier`, `codex-review-code`, `security-reviewer`, `qa-flow`를 stage 내부 구성요소로 조합합니다. 완료 주장은 항상 fresh evidence 이후에만 가능합니다.
+- 문서 계층은 `session-logger`를 공개 유틸리티로 유지하고, `doc-auto-sync`, `documentation-agent`, `project-md-refresh`는 doc-ops/finish bundle 뒤에 둡니다.
 - 사용자가 특정 스킬을 직접 지정한 경우나 read-only 요청, 오케스트레이터 자체 수정 작업에서는 direct invocation bypass가 허용됩니다.
 
 ### Product Definition 레이어
@@ -87,17 +87,24 @@ claude-settings/
 | **Documentation Agent** | 문서화 | 세션 로그, 최종 문서화 |
 | **Design Spec Extractor** | 디자인 분석 | 디자인 스펙 추출, 입력 데이터 정리 |
 
-### 스킬 라이브러리
+### 스킬 라이브러리와 공개 표면
 
 - Product Definition: `product-orchestrator`, `product-gate-reviewer`, `task-slicer`, `assumption-ledger`
 - 공개 진입점: `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator`
 - 보조 공개 유틸리티: `session-logger`, `commit-moonshot`
 - 내부 분석 cluster: `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`
 - 실행/검증 cluster: `karpathy-execution-gate`, `implementation-runner`, `code-simplifier`, `verification-agent`, `completion-verifier`, `browser-verifier`, `codex-review-code`, `security-reviewer`, `qa-flow`
-- UI 디자인 cluster: `frontend-design`, `teach-impeccable`, `audit`, `normalize`, `polish`
-- 문서/doc-ops cluster: `doc-auto-sync`, `session-logger`, `documentation-agent`
+- UI/design optional bundle: `frontend-design` 아래 `teach-impeccable`, `audit`, `normalize`, `polish`, `web-design-guidelines`
+- 문서/doc-ops optional bundle: `doc-auto-sync`, `session-logger`, `documentation-agent`, `project-md-refresh`
 - 보조 도구: `pre-flight-check`, `project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`, `design-asset-parser`, `project-md-refresh`, `build-error-resolver`
-- non-default / deprecated 후보: `efficiency-tracker`, `workflow-self-improver`
+- deprecated / non-default: `efficiency-tracker`, `workflow-self-improver`
+
+공개 표면 상태:
+- `public_entrypoint`: 사용자가 workflow 시작점으로 직접 선택하는 스킬
+- `public_utility`: 특정 유틸리티 목적에 한해 직접 호출하는 스킬
+- `internal_stage_owner`: orchestrator 또는 stage bundle이 호출하는 내부 스킬
+- `optional_bundle_member`: UI/browser/doc/verification 같은 task profile에서만 추가되는 스킬
+- `deprecated`: 기본 실행 경로에서 제외하고 이력/명시적 유지보수 용도로만 남기는 스킬
 
 ### 문서와 템플릿
 
@@ -235,7 +242,7 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 - review-only, read-only, meta-harness 수정은 direct invocation이 가능
 - 일반적인 bounded code work는 `moonshot-orchestrator`를 기본 진입점으로 두는 편이 안전
 - large 또는 phase 기반 작업은 `moonshot-phase-runner`를 먼저 타는 편이 안전
-- UI 리디자인/감리 작업은 `/audit`, `/normalize`, `/polish` 같은 직접 스킬 호출도 자연스럽습니다.
+- UI 리디자인/감리 작업은 먼저 `frontend-design`을 기준으로 잡고, `/audit`, `/normalize`, `/polish`는 명시적인 UI 품질 세부 작업일 때만 optional helper로 호출합니다.
 
 ## Moonshot 워크플로우 v2 요약
 

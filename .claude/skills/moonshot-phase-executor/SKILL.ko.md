@@ -1,6 +1,7 @@
 ---
 name: moonshot-phase-executor
 description: 준비된 phase 작업을 delegated-terminal 또는 in-session coordinator로 라우팅하는 skill-level 실행 어댑터.
+surfaceStatus: internal_stage_owner
 triggers:
   - "phase executor"
   - "phase execution adapter"

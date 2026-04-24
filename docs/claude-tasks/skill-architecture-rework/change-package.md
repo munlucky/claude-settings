@@ -1,11 +1,11 @@
 # Skill Architecture Rework Change Package
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## Status
 
-Documentation and skill-metadata passes completed.
-No script or runtime dispatch rewrite was required.
+Harness diet documentation and targeted skill-metadata pass completed.
+No script, installer, or runtime dispatch rewrite was required.
 
 ## First Implementation Pass
 
@@ -100,3 +100,23 @@ Pass 1 succeeds when:
 - Pass 1: entrypoint policy and bundle drift cleanup
 - Pass 2: analysis/doc-ops/verification cluster alignment
 - Pass 3: deprecated/non-default marking and trigger tightening
+- 2026-04-24 pass: surface-status taxonomy added, targeted skills marked `internal_stage_owner` / `optional_bundle_member` / `deprecated`, and open-source workflow patterns routed into the local stage model without production skill installation.
+
+## Migration Notes
+
+| Cluster | Decision | Destination |
+|---|---|---|
+| Analysis micro-skills | Keep, internalize | `analysis-bundle` behind public orchestrators |
+| Phase executor/coordinator | Keep, internalize | `moonshot-phase-runner` execution boundary; delegated-terminal remains default when available |
+| UI/design helpers | Keep as optional bundle members | `frontend-design` umbrella and `review-bundle` when UI review is explicitly needed |
+| Browser/guided QA helpers | Keep as optional bundle members | `verification-bundle` only when runtime/browser evidence is required |
+| Doc-ops helpers | Keep as optional bundle members | `finish-bundle` or `doc-ops-bundle`, with `session-logger` remaining a public utility |
+| Deprecated workflow reflection | Retain, exclude from defaults | `efficiency-tracker` and `workflow-self-improver` only for explicit historical/maintenance review |
+
+## Validation Additions
+
+Manual consistency checks for this pass:
+- deprecated skills may appear in docs only as deprecated or non-default assets
+- primary public entrypoints remain limited to `product-orchestrator`, `moonshot-phase-runner`, and `moonshot-orchestrator`
+- bundle membership must not imply a new public entrypoint
+- `.claude/scripts/**` and installer behavior remain unchanged

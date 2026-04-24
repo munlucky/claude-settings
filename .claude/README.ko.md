@@ -107,6 +107,9 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 - `moonshot-detect-uncertainty`
 - `moonshot-decide-sequence`
 
+이 스킬들은 orchestrator 내부 분석 마이크로스킬입니다.
+사용자-facing workflow 진입점으로 제시하지 않습니다.
+
 ### 실행 및 검증
 - `frontend-design`
 - `pre-flight-check`
@@ -121,22 +124,34 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 - `verification-evidence-gate` (신규, strict 프로필)
 - `codex-validate-plan`
 - `codex-review-code`
-- `moonshot-in-session-coordinator` (신규)
+- `moonshot-in-session-coordinator` (고급 fallback, 기본 공개 경로 아님)
 - downstream 프로젝트의 문서 기준 완료는 `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, `UAT_CHECKLIST.md`를 종료 아티팩트로 사용합니다
 
 ### 문서 및 로깅
 - `session-logger`
-- `efficiency-tracker`
+- `efficiency-tracker` (deprecated, 명시적 이력/리포팅 용도만)
 
 ### 유틸리티
-- `teach-impeccable`
+- `teach-impeccable` (선택 UI/design bundle 구성요소)
 - `audit`
-- `normalize`
-- `polish`
+- `normalize` (선택 UI/design bundle 구성요소)
+- `polish` (선택 UI/design bundle 구성요소)
 - `design-asset-parser`
 - `project-md-refresh`
 - `security-reviewer`
 - `build-error-resolver`
+
+### 공개 표면 정책
+
+공개 표면 상태의 source of truth는 `.claude/docs/guidelines/skill-composition.ko.md`입니다.
+
+| 상태 | 의미 |
+| --- | --- |
+| `public_entrypoint` | 사용자가 workflow 시작점으로 직접 선택할 수 있음 |
+| `public_utility` | 좁은 유틸리티 목적에 한해 직접 호출할 수 있음 |
+| `internal_stage_owner` | stage 또는 orchestrator 소유이며 workflow 진입점으로 광고하지 않음 |
+| `optional_bundle_member` | task profile이 해당 bundle을 필요로 할 때만 로드 |
+| `deprecated` | 호환성/이력 용도로만 유지하며 기본 흐름에는 포함하지 않음 |
 
 ## executionPlane
 
@@ -157,7 +172,7 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 5. `product_project`이면 `pre-flight-check`와 readiness gate(`project-contract-gate`, `context-readiness-gate`, `verification-contract-gate`)가 최소 계약을 확인합니다.
 6. product package가 있으면 이를 planning source of truth로 사용하고, 없으면 `requirements-analyzer`와 `context-builder`가 계획을 정리합니다.
 7. 복잡한 작업은 `codex-validate-plan`으로 계획을 검증하고, `karpathy-execution-gate`를 거친 뒤 `implementation-runner`를 실행합니다.
-8. React/웹 UI 구현에서는 `frontend-design`을 `implementation-runner` 직전에 주입할 수 있으며, 디자인 컨텍스트가 없으면 먼저 `teach-impeccable`를 실행합니다.
+8. React/웹 UI 구현에서는 `frontend-design`을 UI bundle의 umbrella로 주입하고, `teach-impeccable`는 디자인 컨텍스트 bootstrap이 필요한 경우에만 선택적으로 실행합니다.
 9. `completion-verifier`, `browser-verifier`, `verify-changes.sh`, `verify-runtime.sh` 같은 별도 evaluator 경로로 검증하고 결과를 `QA_REPORT.md`에 남깁니다.
 10. 세션이 길어지거나 중단되면 `HANDOFF.md`로 재개 상태를 남깁니다.
 11. `documentation-agent`가 문서화를 마무리하고 필요 시 `doc-sync`를 호출합니다.

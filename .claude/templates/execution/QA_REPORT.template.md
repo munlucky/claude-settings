@@ -30,6 +30,16 @@
 | Critical `SCN-*` evidenced | pass/fail/warn |  |
 | UAT prerequisites complete | pass/fail/warn |  |
 
+## Workflow Surface Coverage
+Use when the task changes harness, workflow docs, skill metadata, or public entrypoint guidance.
+
+| Item | Result | Notes |
+|------|--------|-------|
+| Public entrypoint policy preserved | pass/fail/warn |  |
+| Deprecated assets remain non-default | pass/fail/warn |  |
+| Internal and optional bundle members are not advertised as default workflow entrypoints | pass/fail/warn |  |
+| Stage map remains complete | pass/fail/warn |  |
+
 ## Uncovered Items
 | ID | Type | Gap | Next Action |
 |----|------|-----|-------------|

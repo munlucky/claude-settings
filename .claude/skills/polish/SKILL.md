@@ -1,11 +1,12 @@
 ---
 name: polish
 description: Perform a final UI quality pass for spacing, alignment, states, motion, copy, and visual consistency before shipping.
+surfaceStatus: optional_bundle_member
 license: Apache 2.0. Adapted from pbakaus/impeccable.
 metadata:
   author: pbakaus
   source: https://github.com/pbakaus/impeccable
-user-invocable: true
+user-invocable: false
 argument-hint: "[target]"
 ---
 
@@ -15,6 +16,7 @@ argument-hint: "[target]"
 
 This is a finishing frontend helper.
 Use `frontend-design` as the umbrella entrypoint when the task still needs broader UI direction.
+Treat this as an optional UI/design bundle member, not a default public workflow entrypoint.
 
 Use at the end of a UI task when the feature is already functionally complete.
 

@@ -1,13 +1,13 @@
 # Skills.sh Workflow Alignment Change Package
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## Status
 
-Preparation only.
+Wave 1 documentation and metadata pass completed.
 
 This package does not change runtime behavior.
-It prepares a stage-based workflow cleanup informed by `skills.sh`.
+It applies selected `skills.sh` operating patterns to the local stage model without bulk-installing production skills.
 
 ## Wave 1 Goal
 
@@ -100,6 +100,23 @@ Wave 1 is successful when:
 4. Selected skill descriptions are more trigger-oriented and easier to discover.
 5. Verification and evidence requirements remain explicit and non-optional.
 6. No runtime behavior changes are required to accept the documentation pass.
+
+## 2026-04-24 Outcome
+
+- Stage model is visible in `.claude/README.md`, `.claude/README.ko.md`, and `skill-composition` docs.
+- Public entrypoints remain limited to the three primary workflow skills plus two public utilities.
+- Ready / Isolate, Review, Verify, and Finish / Handoff now explicitly mention the external operating patterns they adapt.
+- Targeted skills carry `surfaceStatus` metadata for internal, optional, and deprecated surfaces.
+- Bulk `skills.sh` installation is rejected for the default flow; pilot/sandbox review remains allowed.
+- External evaluation frameworks are deferred as regression-plane candidates, not runtime dependencies.
+
+## Pilot Policy
+
+If an external skill or harness is tested later:
+- run it outside production `.claude/skills`
+- record whether the outcome is `adopt`, `adapt`, `reject`, or `defer`
+- port only the local strategy or checklist unless the skill is proven safe and non-overlapping
+- do not add a new public entrypoint without updating `skill-composition` and the skill architecture inventory
 
 ## Likely Follow-Up After Wave 1
 

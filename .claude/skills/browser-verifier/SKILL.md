@@ -1,6 +1,7 @@
 ---
 name: browser-verifier
 description: Runs runtime/browser verification for web projects using URL health checks and optional E2E commands.
+surfaceStatus: optional_bundle_member
 context: fork
 triggers:
   - "browser verify"

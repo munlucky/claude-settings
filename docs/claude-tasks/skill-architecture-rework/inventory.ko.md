@@ -1,6 +1,6 @@
 # 스킬 아키텍처 재정비 인벤토리
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## 목적
 
@@ -92,8 +92,31 @@ Last-Reviewed: 2026-03-27
 
 ## 확인된 드리프트
 
-- 공개 진입점 정책은 `skill-composition.md`와 `README.md`에 반영됐지만, 레거시 문서 전체에 아직 완전히 반영되지는 않았다.
-- 문서/검증 보조 계층이 여러 스킬과 에이전트로 분산돼 있다.
+- 공개 진입점 정책은 이제 `skill-composition.md`, `README.md`, `.claude/README.md`, `.claude/README.ko.md`에 반영되어 있다.
+- 문서/검증 보조 계층은 여전히 여러 스킬과 에이전트로 분산돼 있지만, standalone workflow entrypoint가 아니라 stage bundle 뒤에 배치한다.
+- deprecated 자산은 호환성을 위해 디스크에 남아 있지만, `efficiency-tracker`와 `workflow-self-improver`는 기본 flow에서 제외한다.
+
+## 공개 표면 상태 모델
+
+이번 다이어트 pass는 아래 public-surface status를 사용한다.
+
+| 상태 | 사용 의도 |
+|---|---|
+| `public_entrypoint` | 사용자가 workflow 시작점으로 선택할 수 있음 |
+| `public_utility` | 좁은 목적의 직접 호출 유틸리티 |
+| `internal_stage_owner` | stage 또는 orchestrator 소유, 사용자 진입점 아님 |
+| `optional_bundle_member` | task profile이 bundle을 필요로 할 때만 로드 |
+| `deprecated` | 호환성/이력 용도로만 유지, 기본 flow에서 제외 |
+
+현재 배치:
+
+| 상태 | 자산 |
+|---|---|
+| `public_entrypoint` | `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator` |
+| `public_utility` | `session-logger`, `commit-moonshot` |
+| `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, 분석 마이크로스킬, readiness gate, 실행 helper, review/verification gate |
+| `optional_bundle_member` | `doc-auto-sync`, `browser-verifier`, `qa-flow`, `web-design-guidelines`, `normalize`, `polish`, `teach-impeccable`, 일부 UI/browser/doc helper |
+| `deprecated` | `efficiency-tracker`, `workflow-self-improver` |
 
 ## Invocation Policy 초안
 
@@ -121,3 +144,19 @@ Last-Reviewed: 2026-03-27
 - 현재 repo는 보존할 구조가 충분하다
 - 우선순위는 entrypoint 강화와 composition 정리다
 - 첫 구현 패스는 동작 변경보다 metadata, documentation, bundle 정합화에 집중해야 한다
+
+## 2026-04-24 다이어트 Pass 메모
+
+이번 pass에서는 skill 삭제, 파일 rename, runtime dispatch 재작성은 하지 않았다.
+
+수행:
+- targeted internal/optional/deprecated skill에 `surfaceStatus` metadata 추가
+- 분석 마이크로스킬은 orchestrator-internal임을 명확화
+- `moonshot-in-session-coordinator`를 기본 공개 경로가 아니라 advanced fallback으로 낮춤
+- UI/design, doc-ops, browser, guided QA helper를 optional bundle member로 배치
+- deprecated asset은 명시적 리포팅, 이력 분석, 유지보수 검토 용도로만 유지
+
+보류:
+- deprecated skill installer filtering
+- 공개 표면 drift에 대한 verification-contract 자동 enforcement
+- deprecated skill directory의 물리적 archive/removal

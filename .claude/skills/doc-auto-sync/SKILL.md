@@ -1,6 +1,7 @@
 ---
 name: doc-auto-sync
 description: Detects code changes, auto-updates related docs (PROJECT.md, README, CHANGELOG, generated docs), and bootstraps project documentation structure.
+surfaceStatus: optional_bundle_member
 ---
 
 # Doc Auto-Sync Skill
@@ -8,7 +9,8 @@ description: Detects code changes, auto-updates related docs (PROJECT.md, README
 ## Visibility
 
 This is a doc-ops helper.
-It should normally run behind a doc-ops bundle after implementation or verification.
+It should normally run behind a doc-ops or finish bundle after implementation or verification.
+Do not present it as a default workflow entrypoint.
 
 > **Purpose**: Auto-detect code changes → identify affected docs → update or bootstrap them.
 > **When**: After implementation-runner, before codex-review-code.

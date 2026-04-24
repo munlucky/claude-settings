@@ -1,6 +1,6 @@
 # Skills.sh Workflow Alignment Benchmark
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## Purpose
 
@@ -48,6 +48,22 @@ The benchmark repeatedly emphasizes the same operating model:
 | `finishing-a-development-branch` | `commit-moonshot`, `doc-auto-sync`, `session-logger` | Weak | Local closeout utilities exist, but the finish stage is not presented as a standard decision flow with explicit next actions. |
 | `writing-skills` | `rules/skills/skill-definition.md`, current `SKILL.md` structure | Partial | Frontmatter is already simple, but descriptions still vary in trigger quality and sometimes summarize process rather than just when to use the skill. |
 
+## Adoption Decisions
+
+This repository adapts operating patterns rather than bulk-installing production skills.
+
+| External Pattern | Decision | Local Application |
+|---|---|---|
+| `writing-plans` | Adapt | Strengthen zero-context plan expectations through `moonshot-plan-writer`, `task-slicer`, and `codex-validate-plan`. |
+| `using-git-worktrees` | Adapt | Promote Ready / Isolate as a visible stage through `workspace-isolation-gate`; do not add a new worktree runtime in this pass. |
+| `executing-plans` | Adapt | Document "critique plan, stop on blocker, execute explicit tasks" in the implementation bundle. |
+| `requesting-code-review` | Adapt | Treat review as a recurring stage through `review-bundle`, with task/batch cadence for non-trivial work. |
+| `verification-before-completion` | Adopt | Make fresh evidence before completion a non-optional public workflow rule. |
+| `finishing-a-development-branch` | Adapt | Convert finish from loose utilities into `finish-bundle` decision flow. |
+| SWE-bench `FULL / PARTIAL / NO` | Defer conceptually | Keep current scorecard/verdict runtime; borrow the idea for later status vocabulary only. |
+| Terminal-Bench / OpenAI Evals / Inspect | Defer | Treat as future external regression plane candidates, not day-1 runtime dependencies. |
+| Bulk `skills.sh` installation | Reject for default flow | Use sandbox/pilot review only; production `.claude/skills` should absorb selected strategies into local skills. |
+
 ## Main Benchmark Takeaways
 
 ### 1. The missing upgrade is stage visibility
@@ -81,8 +97,8 @@ That makes metadata cleanup part of workflow cleanup, not cosmetic polish.
 
 ## Gap Summary
 
-- A single stage-oriented workflow map is still missing from the public docs.
-- Isolation is guarded but under-explained.
-- Review cadence is distributed across multiple skills and guides.
-- Finish/handoff is utility-driven rather than stage-driven.
-- Skill descriptions should be tightened to be more trigger-oriented and search-friendly.
+- Stage-oriented workflow map exists in public docs; ongoing work is consistency and drift control.
+- Isolation is now promoted as Ready / Isolate, but concrete worktree setup automation remains deferred.
+- Review cadence is represented through `review-bundle`; stricter work-size policy can be added later.
+- Finish/handoff is represented through `finish-bundle`; deeper branch automation remains deferred.
+- Skill descriptions and `surfaceStatus` metadata are now part of workflow cleanup, not cosmetic polish.

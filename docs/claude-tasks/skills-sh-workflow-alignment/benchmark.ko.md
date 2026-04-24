@@ -1,6 +1,6 @@
 # skills.sh 워크플로우 정렬 벤치마크
 
-Last-Reviewed: 2026-03-27
+Last-Reviewed: 2026-04-24
 
 ## 목적
 
@@ -48,6 +48,22 @@ Last-Reviewed: 2026-03-27
 | `finishing-a-development-branch` | `commit-moonshot`, `doc-auto-sync`, `session-logger` | Weak | 마감 유틸리티는 있지만, 표준 finish stage와 명시적 다음 행동 흐름으로 제시되지는 않는다. |
 | `writing-skills` | `rules/skills/skill-definition.md`, 현재 `SKILL.md` 구조 | Partial | frontmatter는 이미 단순하지만, description 품질이 들쭉날쭉하고 언제 사용할지보다 process를 요약하는 경우가 남아 있다. |
 
+## 도입 결정
+
+이 저장소는 production skill을 대량 설치하지 않고 운영 패턴을 흡수한다.
+
+| 외부 패턴 | 결정 | 로컬 적용 |
+|---|---|---|
+| `writing-plans` | Adapt | `moonshot-plan-writer`, `task-slicer`, `codex-validate-plan`을 통해 zero-context plan 기대치를 강화 |
+| `using-git-worktrees` | Adapt | `workspace-isolation-gate`를 통해 Ready / Isolate를 보이는 stage로 승격하되, 이번 pass에서 새 worktree runtime은 추가하지 않음 |
+| `executing-plans` | Adapt | implementation bundle에 "plan critique, blocker면 중단, 명시 task 실행" 규칙 반영 |
+| `requesting-code-review` | Adapt | `review-bundle`을 통해 review를 반복 stage로 취급하고, 비사소한 작업은 task/batch cadence를 적용 |
+| `verification-before-completion` | Adopt | fresh evidence 전 완료 금지를 공개 workflow의 선택 불가 규칙으로 승격 |
+| `finishing-a-development-branch` | Adapt | finish를 흩어진 유틸리티가 아니라 `finish-bundle` decision flow로 전환 |
+| SWE-bench `FULL / PARTIAL / NO` | Defer conceptually | 현재 scorecard/verdict runtime은 유지하고, 상태 어휘 아이디어만 후속 후보로 둠 |
+| Terminal-Bench / OpenAI Evals / Inspect | Defer | day-1 runtime dependency가 아니라 future external regression plane 후보로 둠 |
+| `skills.sh` 대량 설치 | Reject for default flow | sandbox/pilot 검토만 허용하고, production `.claude/skills`에는 선택 전략만 로컬 skill에 흡수 |
+
 ## 핵심 시사점
 
 ### 1. 필요한 업그레이드는 stage visibility다
@@ -82,8 +98,8 @@ description이 process를 요약하면 모델이 본문을 안 읽고 거기서 
 
 ## 갭 요약
 
-- 공개 문서에 stage-oriented workflow map이 없다.
-- isolation은 지켜지고 있지만 설명과 절차가 약하다.
-- review cadence가 여러 스킬과 가이드에 분산되어 있다.
-- finish/handoff는 stage-driven이 아니라 utility-driven에 가깝다.
-- skill description을 더 trigger-oriented, search-friendly하게 정리할 필요가 있다.
+- 공개 문서에 stage-oriented workflow map은 존재하며, 남은 과제는 consistency와 drift control이다.
+- isolation은 Ready / Isolate로 승격했지만, 구체적인 worktree setup automation은 보류한다.
+- review cadence는 `review-bundle`로 표현되며, 더 엄격한 work-size 정책은 후속으로 추가할 수 있다.
+- finish/handoff는 `finish-bundle`로 표현되며, branch automation은 보류한다.
+- skill description과 `surfaceStatus` metadata는 cosmetic polish가 아니라 workflow cleanup의 일부다.

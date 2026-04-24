@@ -3,6 +3,7 @@ name: workflow-self-improver
 description: Applies improvements suggested by failure-analyzer to system prompts (CLAUDE.md/rules), project settings (PROJECT.md), or skill definitions.
 context: fork
 status: deprecated
+surfaceStatus: deprecated
 ---
 
 # Workflow Self-Improver Skill
@@ -11,6 +12,7 @@ status: deprecated
 
 Deprecated from the default execution path.
 Use only as an explicit maintenance review tool because meta-workflow edits need human scrutiny.
+Do not include this in default stage bundles or public entrypoint lists.
 
 > **Purpose**: Automatically apply improvements to the "Meta-System" (prompts, rules, skills).
 > **When**: After `failure-analyzer` produces `systemImprovements`.

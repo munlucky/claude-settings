@@ -13,11 +13,11 @@
 구현 범위를 결정하지 않는 독립 단계만 병렬화한다.
 
 허용 예시:
-- `codex-review-code` + `efficiency-tracker`
 - `codex-review-code` + `session-logger`
 - `codex-review-code` + `browser-verifier` (리뷰로 코드 변경 시 런타임 검증 재실행)
 - 입력이 분리되어 있으면 구현 후 `security-reviewer` + `browser-verifier`
 - 완료 판정을 확정하지 않는 범위에서는 review와 finish-stage 로깅 일부 병렬 가능
+- `efficiency-tracker`는 명시적인 deprecated/과거 리포팅 용도에만 사용하고 기본 병렬 단계로 쓰지 않음
 
 금지 예시:
 - `codex-validate-plan` + `implementation-runner`
@@ -51,11 +51,11 @@ implementation-runner --feature {feature_name}
 codex-review-code --feature {feature_name} &
 REVIEW_PID=$!
 
-efficiency-tracker --feature {feature_name} &
-TRACK_PID=$!
+session-logger --feature {feature_name} &
+LOG_PID=$!
 
 wait $REVIEW_PID
-wait $TRACK_PID
+wait $LOG_PID
 ```
 
 ## 동기화 지점
