@@ -96,6 +96,12 @@
 ## Workspace Prepare / Baseline
 - Branch or worktree:
 - Worktree ignore checked:
+- Worktree path ignored:
+- Agent config source:
+- Ignored agent paths (`.claude/.agents/.codex`):
+- Hydrated agent config: yes | no | not needed
+- Prepare command:
+- Prepare artifact (`.claude/worktree-prepare.json`):
 - Setup command:
 - Baseline verification command:
 - Baseline exit code:

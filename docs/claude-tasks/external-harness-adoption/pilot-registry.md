@@ -12,7 +12,7 @@ Decision values:
 |---|---|---|---|---|---|
 | `test-driven-development` | skill pattern | adopt | `test-driven-development`, `SPRINT_CONTRACT`, `QA_REPORT` | local pattern implemented | Required for behavior-changing work unless explicitly bypassed. |
 | `systematic-debugging` | skill pattern | adopt | `failure-analyzer`, `build-error-resolver`, recovery bundle | local pattern implemented | Root-cause evidence before fix; same failure class forces tactic change. |
-| `using-git-worktrees` | skill pattern | adapt | `workspace-isolation-gate` | local contract strengthened | Concrete baseline evidence required; auto worktree creation deferred. |
+| `using-git-worktrees` | skill pattern | adapt | `workspace-isolation-gate`, `harness-prepare-worktree` | local runtime implemented | Concrete baseline evidence required; ignored `.claude/.agents/.codex` hydration supported. |
 | `writing-plans` | skill pattern | adapt | `moonshot-plan-writer`, `task-slicer` | local contract strengthened | Exact files/commands/signals required. |
 | `executing-plans` | skill pattern | adapt | `codex-validate-plan`, `implementation-bundle` | local contract strengthened | Reject abstract plans without exact execution targets. |
 | SWE-bench scoring model | harness concept | adapt | `SCORECARD`, `render-scorecard.py` | local vocabulary implemented | Use `FULL / PARTIAL / NO` conceptually; no SWE-bench runtime import. |

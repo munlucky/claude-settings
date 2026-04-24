@@ -131,7 +131,7 @@ If an external skill or harness is tested later:
 
 Possible Wave 2 work, only if Wave 1 reveals it is necessary:
 
-- decide whether worktree prepare should become an automated script after pilot evidence
+- add worktree prepare automation only if ignored downstream agent config can be hydrated safely
 - define stricter work-size review cadence if current bundle guidance proves too loose
 - run external benchmark pilots once a local task corpus exists
 
@@ -149,3 +149,5 @@ Wave 1 stops being rollback-safe if it expands into:
 - runtime dispatch changes
 - automatic worktree/bootstrap behavior
 - script-based orchestration changes
+
+Wave 3 intentionally crosses the worktree/bootstrap boundary only for a bounded helper script. It does not change phase runner dispatch.

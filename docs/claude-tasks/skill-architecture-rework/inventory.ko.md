@@ -178,3 +178,18 @@ Wave 2는 runtime core를 교체하지 않고 약한 운영 절차를 보강했�
 계속 보류:
 - 외부 benchmark runtime 통합
 - 외부 skill production 설치
+
+## 2026-04-24 Wave 3 메모
+
+Wave 3는 agent 설정 디렉터리를 ignore하는 downstream 저장소를 위해 project-local worktree prepare runtime을 추가했다.
+
+수행:
+- `git worktree add`와 선택적 agent-config hydration을 수행하는 `harness-prepare-worktree` 스크립트 추가
+- `.claude`, `.agents`, `.codex`를 downstream에서 ignore될 수 있는 overlay 경로로 취급
+- allowlist `.claude` 하네스 자산만 복사하고 logs, cache, memory, auth, runtime verdict state는 제외
+- `workspace-isolation-gate`와 sprint evidence를 `.claude/worktree-prepare.json`에 연결
+
+계속 보류:
+- 외부 benchmark runtime 통합
+- 외부 skill production 설치
+- deprecated skill directory archive/removal

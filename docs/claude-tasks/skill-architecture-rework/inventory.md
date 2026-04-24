@@ -177,3 +177,18 @@ Actions taken:
 Still deferred:
 - external benchmark runtime integration
 - production installation of external skills
+
+## 2026-04-24 Wave 3 Notes
+
+Wave 3 added a project-local worktree prepare runtime for downstream repositories that ignore agent configuration directories.
+
+Actions taken:
+- added `harness-prepare-worktree` scripts for `git worktree add` plus optional agent-config hydration
+- treated `.claude`, `.agents`, and `.codex` as possibly ignored downstream overlay paths
+- copied only allowlisted `.claude` harness assets and excluded logs, cache, memory, auth, and runtime verdict state
+- connected `workspace-isolation-gate` and sprint evidence to `.claude/worktree-prepare.json`
+
+Still deferred:
+- external benchmark runtime integration
+- production installation of external skills
+- deprecated skill directory archive/removal

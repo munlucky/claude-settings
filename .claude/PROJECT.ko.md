@@ -23,7 +23,7 @@ Last-Reviewed: 2026-03-30
 
 - **테스트 프레임워크**: 계약 기반 shell 검증과 분리 worktree smoke flow
 - **실행 명령**:
-  - `bash .claude/scripts/harness-prepare-recursive-worktree.sh`
+  - `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"`
   - `bash .claude/scripts/harness-promote.sh --source codex/harness-recursive --target codex/harness-release-candidate --target-base main --target-worktree .tmp/harness-worktrees/harness-release-candidate`
   - `node .claude/scripts/knowledge-repo-audit.mjs`
   - `bash .claude/scripts/verify-code-policy.sh`
@@ -46,7 +46,7 @@ Last-Reviewed: 2026-03-30
 
 - **API 엔드포인트**: 상시 네트워크 API는 없고, 저장소 동작은 로컬 shell 스크립트와 Git 워크플로우로 노출됩니다.
 - **헬퍼 함수**: `.claude/scripts/*.sh`, `.claude/scripts/*.py`, `.claude/agents/verification/` 하위 검증 헬퍼
-- **계약 교환 방식**: 정책은 `.claude/verification.contract.yaml`, 작업 메모리는 `documentPaths.tasksRoot`, 승격 범위는 `.claude/harness-promotion-paths.txt`로 관리하며 일상 작업은 recursive worktree 에서 수행하고 release-candidate worktree 는 필요할 때만 임시로 만듭니다.
+- **계약 교환 방식**: 정책은 `.claude/verification.contract.yaml`, 작업 메모리는 `documentPaths.tasksRoot`, worktree prepare evidence는 `.claude/worktree-prepare.json`에 기록하며 일상 작업은 격리 worktree 에서 수행하고 release-candidate worktree 는 필요할 때만 임시로 만듭니다.
 
 ## 타입/도메인 패턴
 
@@ -78,4 +78,5 @@ HARNESS_PROMOTION_TARGET_BRANCH
 HARNESS_PROMOTION_TARGET_WORKTREE
 HARNESS_PROMOTION_TARGET_BASE_BRANCH
 HARNESS_PROMOTION_PATHS_FILE
+HARNESS_AGENT_CONFIG_SOURCE
 ```

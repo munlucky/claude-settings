@@ -12,7 +12,7 @@ Decision 값:
 |---|---|---|---|---|---|
 | `test-driven-development` | skill pattern | adopt | `test-driven-development`, `SPRINT_CONTRACT`, `QA_REPORT` | local pattern implemented | 동작 변경 작업은 명시적 bypass 없이는 필수. |
 | `systematic-debugging` | skill pattern | adopt | `failure-analyzer`, `build-error-resolver`, recovery bundle | local pattern implemented | 수정 전 root-cause evidence 필요, 같은 failure class는 tactic 변경 요구. |
-| `using-git-worktrees` | skill pattern | adapt | `workspace-isolation-gate` | local contract strengthened | concrete baseline evidence 요구, 자동 worktree 생성은 보류. |
+| `using-git-worktrees` | skill pattern | adapt | `workspace-isolation-gate`, `harness-prepare-worktree` | local runtime implemented | concrete baseline evidence 요구, ignored `.claude/.agents/.codex` hydration 지원. |
 | `writing-plans` | skill pattern | adapt | `moonshot-plan-writer`, `task-slicer` | local contract strengthened | exact files/commands/signals 요구. |
 | `executing-plans` | skill pattern | adapt | `codex-validate-plan`, `implementation-bundle` | local contract strengthened | exact execution target 없는 추상 plan reject. |
 | SWE-bench scoring model | harness concept | adapt | `SCORECARD`, `render-scorecard.py` | local vocabulary implemented | `FULL / PARTIAL / NO` 개념만 차용, runtime import 없음. |

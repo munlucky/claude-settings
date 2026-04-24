@@ -60,6 +60,7 @@ claude-settings/
 - 분석 단계는 `moonshot-classify-task`, `moonshot-evaluate-complexity`, `moonshot-detect-uncertainty`, `moonshot-decide-sequence`로 구성되지만, 이들은 공개 진입점이 아니라 orchestrator 내부 마이크로스킬입니다.
 - medium/complex 체인에서는 `karpathy-execution-gate`로 구현 직전 4원칙(코딩 전 사고, 단순함 우선, 최소 변경, 목표 중심 실행)을 점검합니다.
 - 동작 변경 작업은 내부 `test-driven-development` 스킬로 red/green/refactor evidence를 남깁니다.
+- 실제 작업 프로젝트에서 `.claude`, `.agents`, `.codex`가 ignored인 경우 `harness-prepare-worktree`가 worktree 생성 후 필요한 agent config를 hydrate하고 baseline evidence를 남깁니다.
 - 구현 뒤에는 `code-simplifier`를 넣어 최근 수정 코드의 가독성과 구조를 정리한 뒤 검증/리뷰로 넘깁니다.
 - React/UI 구현 작업에서는 `frontend-design`을 UI bundle의 umbrella로 사용합니다. `teach-impeccable`, `audit`, `normalize`, `polish`는 기본 진입점이 아니라 UI/design bundle 내부 또는 명시적 UI 품질 작업에서만 사용합니다.
 - 검증 계층은 `completion-verifier`를 중심으로 `verification-agent`, `browser-verifier`, `codex-review-code`, `security-reviewer`, `qa-flow`를 stage 내부 구성요소로 조합합니다. 완료 주장은 항상 fresh evidence 이후에만 가능합니다.
@@ -119,6 +120,7 @@ claude-settings/
 - 제품 정의 템플릿: `.claude/templates/product-definition/*.md`
 - 실행 브리지 템플릿: `.claude/templates/execution/*.md`
 - phase internal adapter: `.claude/scripts/moonshot-phase-dispatch.sh`
+- worktree prepare adapter: `.claude/scripts/harness-prepare-worktree.sh`
 - 출력 템플릿: `.claude/templates/moonshot-output.*`
 
 ## 빠른 시작

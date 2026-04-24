@@ -42,6 +42,15 @@ Wave 2는 아래 패턴을 로컬로 흡수합니다.
 - plan의 exact files / commands / expected signals
 - task-level `FULL / PARTIAL / NO` 상태 어휘
 
+## Wave 3 초점
+
+Wave 3는 agent 설정 경로를 ignore하는 downstream 프로젝트를 위해 project-local worktree prepare runtime을 추가합니다.
+
+- 코드 격리는 계속 `git worktree add`를 사용합니다.
+- `harness-prepare-worktree`가 worktree 생성 후 ignored `.claude`, `.agents`, 최소 `.codex` scaffold를 hydrate합니다.
+- hydration은 allowlist 하네스 자산만 복사하고 logs, caches, memory, auth, verdict, browser runtime dependency는 제외합니다.
+- baseline verification은 hydration 이후 실행하며 `.claude/worktree-prepare.json`에 evidence를 남깁니다.
+
 ## 파일
 
 - `pilot-registry.md`: 후보 결정과 pilot 상태.
@@ -51,5 +60,5 @@ Wave 2는 아래 패턴을 로컬로 흡수합니다.
 
 - `skills.sh` 대량 설치 없음.
 - phase runner 교체 없음.
-- 기본 worktree 자동 생성 runtime 없음.
+- `.codex/auth.json`, `.claude/memory.json`, logs, caches, runtime verdict state를 worktree로 복사하지 않음.
 - 일상 harness 경로에 외부 benchmark dependency 추가 없음.

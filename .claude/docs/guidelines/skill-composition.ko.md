@@ -132,6 +132,7 @@ steps:
 ### ready-isolate-bundle
 흡수한 외부 패턴: `using-git-worktrees`의 로컬 대응입니다.
 숨겨진 guardrail이 아니라 구현 전 명시적인 준비 단계로 취급합니다.
+downstream 프로젝트가 `.claude`, `.agents`, `.codex`를 ignore하는 경우 이 gate를 통과하기 전에 `harness-prepare-worktree`로 hydrated worktree를 준비합니다.
 
 ```yaml
 steps:

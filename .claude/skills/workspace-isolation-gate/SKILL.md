@@ -6,7 +6,7 @@ description: Use before implementation in strict runs to confirm isolated worksp
 # Workspace Isolation Gate
 
 ## Role
-Enforce branch/workspace isolation and baseline evidence before implementation in strict or phase-based runs.
+Enforce branch/workspace isolation, agent-config hydration, and baseline evidence before implementation in strict or phase-based runs.
 
 This is the default Ready / Isolate stage gate for strict implementation runs.
 
@@ -20,7 +20,7 @@ This is the default Ready / Isolate stage gate for strict implementation runs.
 - `analysisContext.repo.gitStatus`
 - `analysisContext.signals.workflowProfile`
 - `analysisContext.notes`
-- baseline evidence notes or artifacts
+- worktree prepare evidence notes or artifacts
 
 ## Gate logic
 1. If `workflowProfile != strict` and the work is not phase-based: do not block; add note and return.
@@ -29,6 +29,9 @@ This is the default Ready / Isolate stage gate for strict implementation runs.
 3. Concrete isolation evidence check:
    - Require branch or worktree identifier.
    - Require `.worktrees` or project-local worktree ignore confirmation when a worktree is used.
+   - Require agent config source for downstream worktrees.
+   - Require `.claude`, `.agents`, and `.codex` ignore detection results when the target project ignores agent config.
+   - Require hydration status proving `.claude/CLAUDE.md`, `.claude/skills`, `.claude/scripts`, `.agents/skills`, and `AGENTS.md` are usable in the worktree.
    - Require dependency/setup command or explicit "setup not required" note.
    - Require baseline verification command.
    - Require baseline exit code.
@@ -45,10 +48,15 @@ notes:
 workspaceIsolation:
   branchOrWorktree: ""
   worktreeIgnoreChecked: true
+  worktreePathIgnored: true
+  agentConfigSource: ""
+  ignoredAgentPaths: []
+  hydratedAgentConfig: true
   setupCommand: ""
   baselineCommand: ""
   baselineExitCode: 0
   baselineArtifact: ""
+  prepareArtifact: ".claude/worktree-prepare.json"
 ```
 
 Blocked example:
@@ -59,8 +67,8 @@ signals:
 missingInfo:
   - category: workspace-isolation
     priority: HIGH
-    question: "Please record branch/worktree identity, ignore check, setup command, baseline command, exit code, and baseline artifact."
-    reason: "Strict or phase-based work requires concrete workspace prepare/baseline evidence before implementation."
+    question: "Please record branch/worktree identity, agent config source, ignore detection, hydration status, setup command, baseline command, exit code, and baseline artifact."
+    reason: "Strict or phase-based work requires a worktree where the agent harness is actually usable before implementation."
 notes:
   - "workspace-isolation-gate: blocked (missing isolation evidence)"
 ```
@@ -68,5 +76,7 @@ notes:
 ## Rules
 - Do not enforce specific directory paths.
 - Enforce isolation invariants and baseline evidence.
-- Do not auto-create worktrees in this gate; worktree creation remains a separate pilot candidate.
+- Prefer `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"` when a fresh worktree is required.
+- Do not copy `.claude/logs`, `.claude/cache`, `.claude/memory.json`, `.codex/auth.json`, or runtime verdict/cache state into a worktree.
+- Treat harness repo work and downstream product work differently: harness repo work may rely on tracked `.claude` source, while downstream work usually needs ignored agent-config hydration.
 - If blocked, stop implementation progression.

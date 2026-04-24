@@ -131,7 +131,7 @@ Wave 1은 아래 조건이 충족되면 성공이다.
 
 Wave 1 결과가 필요성을 보여줄 때만 고려할 Wave 2 후보:
 
-- pilot evidence가 쌓인 뒤 worktree prepare를 자동 script로 만들지 판단
+- ignored downstream agent config를 안전하게 hydrate할 수 있을 때만 worktree prepare 자동화 추가
 - 현재 bundle guidance가 느슨하면 work size별 review cadence 강화
 - 로컬 task corpus가 쌓인 뒤 외부 benchmark pilot 실행
 
@@ -149,3 +149,5 @@ Wave 1은 아래 범위에 머물면 rollback-safe하다.
 - runtime dispatch 변경
 - 자동 worktree/bootstrap 동작
 - script 기반 orchestration 변경
+
+Wave 3는 제한된 helper script 범위에서만 worktree/bootstrap 경계를 넘는다. phase runner dispatch는 변경하지 않는다.

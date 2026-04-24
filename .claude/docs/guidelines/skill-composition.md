@@ -134,6 +134,7 @@ steps:
 ### ready-isolate-bundle
 Adapted pattern: this is the local equivalent of `using-git-worktrees`.
 Treat it as a visible preparation stage before implementation, not only as a hidden guardrail.
+When downstream projects ignore `.claude`, `.agents`, or `.codex`, prepare a hydrated worktree with `harness-prepare-worktree` before passing this gate.
 
 ```yaml
 steps:

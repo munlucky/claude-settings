@@ -42,6 +42,15 @@ Wave 2 adapts these patterns locally:
 - exact files / commands / expected signals in plans
 - task-level `FULL / PARTIAL / NO` status vocabulary
 
+## Wave 3 Focus
+
+Wave 3 adds a project-local worktree prepare runtime for downstream projects that ignore agent configuration paths:
+
+- `git worktree add` remains the code isolation mechanism.
+- `harness-prepare-worktree` hydrates ignored `.claude`, `.agents`, and minimal `.codex` scaffold after worktree creation.
+- Hydration copies only allowlisted harness assets and excludes logs, caches, memory, auth, verdicts, and browser runtime dependencies.
+- Baseline verification runs after hydration and writes `.claude/worktree-prepare.json`.
+
 ## Files
 
 - `pilot-registry.md`: candidate decisions and pilot status.
@@ -51,5 +60,5 @@ Wave 2 adapts these patterns locally:
 
 - No bulk `skills.sh` installation.
 - No replacement of the phase runner.
-- No default worktree auto-creation runtime.
 - No external benchmark dependency in the day-to-day harness path.
+- No copying of `.codex/auth.json`, `.claude/memory.json`, logs, caches, or runtime verdict state into worktrees.

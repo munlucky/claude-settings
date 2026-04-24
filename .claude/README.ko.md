@@ -164,6 +164,8 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 
 `product_project`에서는 구현 전에 readiness gate를 통과해야 합니다.
 
+downstream 프로젝트가 `.claude`, `.agents`, `.codex`를 ignore하는 경우 `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"`로 worktree를 만들고 agent harness를 hydrate한 뒤 `.claude/worktree-prepare.json` evidence를 남깁니다.
+
 ## 일반 흐름 (예시)
 
 1. 아이디어 단계면 `product-orchestrator`가 `PRODUCT_INTENT -> PRD -> SOLUTION -> SPEC -> PLAN`으로 변환합니다.

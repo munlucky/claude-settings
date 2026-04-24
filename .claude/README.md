@@ -166,6 +166,8 @@ Use one visible stage model across the repo:
 For medium, complex, or phase-based work, treat these stages as the default path.
 Bounded low-risk work may compress stages, but should not skip review or verification when the change profile still warrants them.
 
+For downstream projects that ignore `.claude`, `.agents`, or `.codex`, use `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"` to create a worktree, hydrate the agent harness, and record `.claude/worktree-prepare.json` before implementation.
+
 ## Typical Flow (Stage-Oriented Example)
 
 1. Intake:

@@ -23,7 +23,7 @@ Last-Reviewed: 2026-03-30
 
 - **Test framework**: Contract-backed shell verification plus isolated worktree smoke flows
 - **Commands**:
-  - `bash .claude/scripts/harness-prepare-recursive-worktree.sh`
+  - `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"`
   - `bash .claude/scripts/harness-promote.sh --source codex/harness-recursive --target codex/harness-release-candidate --target-base main --target-worktree .tmp/harness-worktrees/harness-release-candidate`
   - `node .claude/scripts/knowledge-repo-audit.mjs`
   - `bash .claude/scripts/verify-code-policy.sh`
@@ -46,7 +46,7 @@ Last-Reviewed: 2026-03-30
 
 - **API endpoints**: No persistent network API; repository behavior is exposed through local shell scripts and Git workflows
 - **Helper functions**: `.claude/scripts/*.sh`, `.claude/scripts/*.py`, and verification helpers under `.claude/agents/verification/`
-- **Contract exchange**: Policy lives in `.claude/verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and promotion scope is defined by `.claude/harness-promotion-paths.txt`; daily work happens on the recursive worktree and any release-candidate worktree is temporary
+- **Contract exchange**: Policy lives in `.claude/verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and worktree prepare evidence is written to `.claude/worktree-prepare.json`; daily work happens on an isolated worktree and any release-candidate worktree is temporary
 
 ## Type/Domain Patterns
 
@@ -78,4 +78,5 @@ HARNESS_PROMOTION_TARGET_BRANCH
 HARNESS_PROMOTION_TARGET_WORKTREE
 HARNESS_PROMOTION_TARGET_BASE_BRANCH
 HARNESS_PROMOTION_PATHS_FILE
+HARNESS_AGENT_CONFIG_SOURCE
 ```
