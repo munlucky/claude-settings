@@ -95,7 +95,7 @@ Last-Reviewed: 2026-04-24
 
 - 공개 진입점 정책은 이제 `skill-composition.md`, `README.md`, `.claude/README.md`, `.claude/README.ko.md`에 반영되어 있다.
 - 문서/검증 보조 계층은 여전히 여러 스킬과 에이전트로 분산돼 있지만, standalone workflow entrypoint가 아니라 stage bundle 뒤에 배치한다.
-- deprecated 자산은 호환성을 위해 디스크에 남아 있지만, `efficiency-tracker`와 `workflow-self-improver`는 기본 flow에서 제외한다.
+- deprecated 자산은 호환성/이력 보존을 위해 `.claude/skills-archive/deprecated/` 아래로 archive되며, `efficiency-tracker`와 `workflow-self-improver`는 기본 flow와 Codex skill link에서 제외한다.
 
 ## 공개 표면 상태 모델
 
@@ -117,7 +117,7 @@ Last-Reviewed: 2026-04-24
 | `public_utility` | `session-logger`, `commit-moonshot` |
 | `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, 분석 마이크로스킬, readiness gate, `test-driven-development`, 실행 helper, review/verification gate |
 | `optional_bundle_member` | `doc-auto-sync`, `browser-verifier`, `qa-flow`, `web-design-guidelines`, `normalize`, `polish`, `teach-impeccable`, 일부 UI/browser/doc helper |
-| `deprecated` | `efficiency-tracker`, `workflow-self-improver` |
+| `deprecated` | `efficiency-tracker` (archived), `workflow-self-improver` (archived) |
 
 ## Invocation Policy 초안
 

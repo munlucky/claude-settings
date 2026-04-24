@@ -594,7 +594,7 @@ Primary objective:
 - Do not move to other phases in this run.
 - If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
-- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md says \`Verdict: done\`.`;
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`.`;
 }
 
 function autonomousInstructions() {

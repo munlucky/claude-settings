@@ -55,7 +55,9 @@ def parse_scorecard(path):
                         weight = int(weight_raw)
                     except ValueError:
                         weight = 0
-                    normalized_status = status.lower()
+                    normalized_status = status.lower().replace(" ", "_")
+                    pass_statuses = {"pass", "passed", "done", "full"}
+                    fail_statuses = {"fail", "failed", "blocked", "no"}
                     result["rows"].append(
                         {
                             "id": row_id,
@@ -66,11 +68,11 @@ def parse_scorecard(path):
                             "notes": notes,
                         }
                     )
-                    if normalized_status == "pass":
+                    if normalized_status in pass_statuses:
                         result["current"] += weight
                     else:
                         result["unmetChecklistItems"] += 1
-                        if normalized_status in {"fail", "blocked"}:
+                        if normalized_status in fail_statuses:
                             result["blockingDefects"] += 1
                 continue
 

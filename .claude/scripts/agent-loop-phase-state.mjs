@@ -283,6 +283,10 @@ function parseScorecardSummary(scorecardPath) {
     unmetItems: 0,
     blockingDefects: 0,
     verdict: 'missing',
+    taskStatus: 'missing',
+    taskStatusSource: 'missing',
+    taskStatusExplicit: false,
+    taskFull: false,
     done: false,
   };
 
@@ -317,6 +321,13 @@ function parseScorecardSummary(scorecardPath) {
     match = stripped.match(/^- Verdict:\s*([A-Za-z_ -]+)\s*$/);
     if (match) {
       summary.verdict = match[1].trim().toLowerCase().replace(/ /g, '_');
+      continue;
+    }
+    match = stripped.match(/^- Current task status:\s*([A-Za-z_ -]+)\s*$/);
+    if (match) {
+      summary.taskStatus = match[1].trim().toUpperCase().replace(/ /g, '_');
+      summary.taskStatusSource = 'scorecard-markdown';
+      summary.taskStatusExplicit = true;
     }
   }
 
@@ -324,6 +335,12 @@ function parseScorecardSummary(scorecardPath) {
     && summary.current >= summary.target
     && summary.unmetItems === 0
     && summary.blockingDefects === 0;
+
+  if (!summary.taskStatusExplicit) {
+    summary.taskStatus = summary.done ? 'FULL' : 'NO';
+    summary.taskStatusSource = summary.done ? 'legacy-inferred' : 'legacy-default';
+  }
+  summary.taskFull = summary.taskStatus === 'FULL';
 
   return summary;
 }
@@ -394,6 +411,7 @@ function evaluateCleanFinishArtifacts({ qaReportPath, scorecardPath, handoffPath
     && isNoneLikeValue(finishRemainingScope)
     && isNoneLikeValue(finishRemainingBlockers)
     && scorecard.done
+    && scorecard.taskFull
     && (handoff.cleanFinish || !handoff.exists || (qaNextPath === 'clean_finish' && qaCloseoutReason === 'scope_complete'));
 
   return {
@@ -789,6 +807,8 @@ function evaluatePhaseCompletionGate(config) {
   let blockingDefects = 0;
   let scoreVerdict = 'missing';
   let scoreSource = 'none';
+  let taskStatus = markdownScore.taskStatus;
+  let taskStatusSource = markdownScore.taskStatusSource;
 
   if (latestScorePayload) {
     currentScore = Number.parseInt(latestScorePayload.current ?? 0, 10);
@@ -809,6 +829,8 @@ function evaluatePhaseCompletionGate(config) {
       blockingDefects = markdownScore.blockingDefects;
       scoreVerdict = markdownScore.verdict;
       scoreSource = 'scorecard-markdown-reconciled';
+      taskStatus = markdownScore.taskStatus;
+      taskStatusSource = markdownScore.taskStatusSource;
     }
   } else if (scorecardRequired) {
     if (!markdownScore.exists) {
@@ -820,6 +842,8 @@ function evaluatePhaseCompletionGate(config) {
       blockingDefects = markdownScore.blockingDefects;
       scoreVerdict = markdownScore.verdict;
       scoreSource = 'scorecard-markdown';
+      taskStatus = markdownScore.taskStatus;
+      taskStatusSource = markdownScore.taskStatusSource;
     }
   }
 
@@ -832,6 +856,8 @@ function evaluatePhaseCompletionGate(config) {
       scoreReason = 'scorecard-unmet-items';
     } else if (blockingDefects > 0) {
       scoreReason = 'scorecard-blocking-defects';
+    } else if (taskStatus !== 'FULL') {
+      scoreReason = `scorecard-task-status=${taskStatus.toLowerCase()}`;
     }
   }
 
@@ -925,6 +951,8 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_COMPLETION_BLOCKERS: String(blockingDefects),
     PHASE_COMPLETION_SCORE_VERDICT: scoreVerdict,
     PHASE_COMPLETION_SCORE_SOURCE: scoreSource,
+    PHASE_COMPLETION_TASK_STATUS: taskStatus,
+    PHASE_COMPLETION_TASK_STATUS_SOURCE: taskStatusSource,
     PHASE_COMPLETION_STATUS: String(currentWorkflowState?.completionStatus || ''),
     PHASE_COMPLETION_STAGE_ORDER: effectiveStageOrder.join(','),
     PHASE_PLANNING_READY: planningReady ? 'true' : 'false',

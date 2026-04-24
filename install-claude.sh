@@ -98,6 +98,11 @@ setup_codex_skills() {
 		skill_name="$(basename "$skill_path")"
 		codex_skill_path="$CODEX_SKILLS_DIR/$skill_name"
 
+		if [ -f "$skill_path/SKILL.md" ] && grep -Eq '^(status|surfaceStatus):[[:space:]]*deprecated[[:space:]]*$' "$skill_path/SKILL.md"; then
+			print_info "deprecated Codex skill 제외: $skill_name"
+			continue
+		fi
+
 		if [ -L "$codex_skill_path" ]; then
 			existing_target="$(readlink "$codex_skill_path" 2>/dev/null || true)"
 			if [ "$existing_target" = "$skill_path" ]; then

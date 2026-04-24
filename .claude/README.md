@@ -125,7 +125,7 @@ Do not present them as user-facing workflow entrypoints.
 
 ### Documentation and Logging
 - `session-logger`
-- `efficiency-tracker` (deprecated, explicit historical/reporting use only)
+- `efficiency-tracker` (archived deprecated, explicit historical/reporting use only)
 
 ### Utilities
 - `teach-impeccable` (optional UI/design bundle member)

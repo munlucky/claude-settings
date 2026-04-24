@@ -228,6 +228,7 @@ def build_markdown(args):
             "Mapping note:",
             "- This borrows SWE-bench's fail-to-pass / pass-to-pass completion vocabulary conceptually.",
             "- It does not import SWE-bench runtime code.",
+            "- Completion gate requires `Current task status: FULL`; `PARTIAL` and `NO` block clean finish.",
             "",
             "## Loop Policy",
             "- `done` requires Current score >= Target score",

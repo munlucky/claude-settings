@@ -275,7 +275,7 @@ find .claude/skills -maxdepth 2 -name SKILL.md -print
 .claude/scripts/knowledge-repo-audit.sh
 ```
 
-The first command may mention deprecated skills only as deprecated/non-default assets.
+The first command may mention deprecated skills only as archived deprecated/non-default assets.
 The public entrypoint list must remain limited to `product-orchestrator`, `moonshot-phase-runner`, and `moonshot-orchestrator`.
 
 ## References

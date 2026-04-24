@@ -366,7 +366,7 @@ Codex direct execution checklist:
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
 8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
-10. Stop only when verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, and SCORECARD.md says \`Verdict: done\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
+10. Stop only when verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 5.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates.`;
@@ -412,6 +412,7 @@ Single isolated phase-attempt rules:
 - In QA_REPORT.md, use only these closeout reason codes: \`scope_complete\`, \`verification_failed\`, \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
 - If QA_REPORT.md uses \`Next path: retry_loop\`, it must also use \`Closeout reason: verification_failed\`.
 - In HANDOFF.md, use only these stop reason codes: \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
+- Never use \`verification_failed\` as a HANDOFF.md stop reason; keep \`verification_failed\` only in QA_REPORT.md Closeout reason and use \`blocked\` or \`deferred_verification\` for the handoff stop reason.
 - If meaningful code changed, record \`code-simplifier\` in Applied skills or Skipped skills with a reason.
 - If the run stops without clean completion, update HANDOFF.md, include \`session-logger\` evidence, and list the checks to rerun.
 - Do not mark the phase done while SCORECARD.md says \`Verdict: retry\` or \`blocked\`.
@@ -422,7 +423,7 @@ Runtime compatibility fallback:
 - In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, ${activeWorkspaceContract(workspaceRoot)}, .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
-- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md says \`Verdict: done\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.${codexDirectSteps}
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.${codexDirectSteps}
 
 Additional instructions:
 ${extraInstructions}

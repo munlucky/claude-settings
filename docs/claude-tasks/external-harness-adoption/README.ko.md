@@ -51,10 +51,22 @@ Wave 3는 agent 설정 경로를 ignore하는 downstream 프로젝트를 위해 
 - hydration은 allowlist 하네스 자산만 복사하고 logs, caches, memory, auth, verdict, browser runtime dependency는 제외합니다.
 - baseline verification은 hydration 이후 실행하며 `.claude/worktree-prepare.json`에 evidence를 남깁니다.
 
+## 남은 GAP 완료 초점
+
+확대 pilot wave는 아래를 추가합니다.
+
+- deprecated skill archive와 installer filtering
+- `FULL / PARTIAL / NO` completion gate 자동 차단
+- Tier A/B/C/D 전체 후보군의 `skills.sh` sandbox registry
+- Terminal-Bench/Harbor, OpenAI Evals, Inspect AI export adapter
+- production `.claude/skills` bulk install 없이 생성되는 pilot result artifact
+
 ## 파일
 
 - `pilot-registry.md`: 후보 결정과 pilot 상태.
 - `pilot-review-template.md`: 로컬 도입 전 후보 검토 체크리스트.
+- `pilot-results.md`: 생성된 sandbox pilot 결과 요약.
+- `eval-plane-integration.md`: 외부 benchmark/eval export 전략과 명령.
 
 ## 비목표
 

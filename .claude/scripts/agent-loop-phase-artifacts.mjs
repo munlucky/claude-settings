@@ -36,6 +36,51 @@ function replaceOrAppendSection(lines, heading, bodyLines) {
   return [...lines.slice(0, start), ...replacement, ...lines.slice(end)];
 }
 
+function ensureTaskLevelStatus(lines, status) {
+  const desiredLine = `- Current task status: ${status}`;
+  const { start, end } = findSection(lines, '## Task-Level Status Adapter');
+  if (start === null) {
+    const nextLines = [...lines];
+    if (nextLines.length > 0 && nextLines.at(-1) !== '') {
+      nextLines.push('');
+    }
+    return [
+      ...nextLines,
+      '## Task-Level Status Adapter',
+      '- Status: FULL | PARTIAL | NO',
+      desiredLine,
+      '- Partial threshold: 60',
+      '',
+      '| Status | Rule |',
+      '|--------|------|',
+      '| FULL | Target score met, unmet checklist items = 0, blocking defects = 0, and required verification evidence exists |',
+      '| PARTIAL | Core build/verification is preserved, but some REQ/SCN/UAT coverage remains incomplete |',
+      '| NO | Blocking defect, verification hard gate failure, critical regression, or score below partial threshold |',
+    ];
+  }
+
+  const nextLines = [...lines];
+  let currentStatusIndex = -1;
+  let statusLegendIndex = -1;
+  for (let index = start + 1; index < end; index += 1) {
+    if (nextLines[index].trim().startsWith('- Current task status:')) {
+      currentStatusIndex = index;
+      break;
+    }
+    if (nextLines[index].trim().startsWith('- Status:')) {
+      statusLegendIndex = index;
+    }
+  }
+
+  if (currentStatusIndex >= 0) {
+    nextLines[currentStatusIndex] = desiredLine;
+    return nextLines;
+  }
+
+  nextLines.splice(statusLegendIndex >= 0 ? statusLegendIndex + 1 : start + 1, 0, desiredLine);
+  return nextLines;
+}
+
 function findVerdictArtifactPath(completionArtifacts, qaReportPath) {
   const qaAbsolute = qaReportPath ? path.resolve(qaReportPath) : '';
   for (const rawLine of String(completionArtifacts || '').split(/\r?\n/)) {
@@ -490,6 +535,7 @@ function syncCleanFinishArtifacts({
       }
       return line;
     });
+    scoreLines = ensureTaskLevelStatus(scoreLines, 'FULL');
 
     fs.writeFileSync(scorecardPath, `${scoreLines.join('\n')}\n`, 'utf8');
   }

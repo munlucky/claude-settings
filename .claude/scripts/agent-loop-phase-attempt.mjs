@@ -171,7 +171,7 @@ Remediation steps:
 6. If a repository-global verifier still fails for a clearly pre-existing reason that this phase did not worsen, record that as carried-forward warning context in QA_REPORT.md/HANDOFF.md instead of leaving the phase in a placeholder closeout state.
 7. Refresh or generate the latest verification/runtime verdict artifact for this phase when the active evidence is stale.
 8. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[] unless the evidence is already fresh and the gate reason is review/finish-closeout only.
-9. Do not return control just because implementation is complete or a verifier ran once. Return only after review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md reaches \`Verdict: done\`; otherwise keep the phase in retry with an explicit next action.
+9. Do not return control just because implementation is complete or a verifier ran once. Return only after review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md reaches \`Verdict: done\`, and SCORECARD.md reaches \`Current task status: FULL\`; otherwise keep the phase in retry with an explicit next action.
 
 Priority notes:
 - Review focused: ${reviewFocused ? 'yes' : 'no'}

@@ -330,7 +330,7 @@ Codex direct execution checklist:
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
 8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
-10. If verification passed, SCORECARD.md says \`Verdict: done\`, and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
+10. If verification passed, SCORECARD.md says \`Verdict: done\`, SCORECARD.md says \`Current task status: FULL\`, and finish-stage conditions are satisfied, stop immediately. If not, update HANDOFF.md and stop.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 5.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates."
@@ -385,7 +385,7 @@ Runtime compatibility fallback:
 - In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, $(runtime_cli_active_workspace_contract), .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
-- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, and SCORECARD.md says \`Verdict: done\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.
 $codex_direct_steps
 
 Additional instructions:

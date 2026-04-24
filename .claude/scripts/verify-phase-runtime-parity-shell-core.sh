@@ -660,6 +660,7 @@ EOF
 7. Refresh \`SCORECARD.md\` and \`QA_REPORT.md\` again after verification instead of batching every artifact update at the end.
 8. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
 9. If verification fails, update \`HANDOFF.md\`, keep the \`session-logger\` note intact, and stop without touching repository source files.
+   - Keep \`verification_failed\` in \`QA_REPORT.md\` only; in \`HANDOFF.md\`, use \`Stop reason: blocked\` or \`Stop reason: deferred_verification\`.
 
 ## Completion
 - \`QA_REPORT.md\` changed during the run
@@ -737,6 +738,8 @@ EOF
 - Clean finish requires: fresh verification evidence, review marked complete, and finish-stage closeout recorded
 - Resume-later handoff trigger: runtime interruption or incomplete evidence
 - Retry-loop trigger: verification failure with actionable remediation
+- HANDOFF stop reason codes are limited to: blocked, interrupted, context_limit, user_pause, deferred_verification
+- Do not use verification_failed as a HANDOFF stop reason; it is a QA closeout reason only.
 
 ## Risks
 - CLI authentication/runtime issues
@@ -842,6 +845,17 @@ EOF
 - Unmet checklist items: 4
 - Blocking defects: 0
 - Verdict: retry
+
+## Task-Level Status Adapter
+- Status: FULL | PARTIAL | NO
+- Current task status: NO
+- Partial threshold: 60
+
+| Status | Rule |
+|--------|------|
+| FULL | Target score met, unmet checklist items = 0, blocking defects = 0, and required verification evidence exists |
+| PARTIAL | Core build/verification is preserved, but some REQ/SCN/UAT coverage remains incomplete |
+| NO | Blocking defect, verification hard gate failure, critical regression, or score below partial threshold |
 
 ## Loop Policy
 - \`done\` requires Current score >= Target score

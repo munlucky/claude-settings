@@ -111,7 +111,7 @@ Pass 1 succeeds when:
 | UI/design helpers | Keep as optional bundle members | `frontend-design` umbrella and `review-bundle` when UI review is explicitly needed |
 | Browser/guided QA helpers | Keep as optional bundle members | `verification-bundle` only when runtime/browser evidence is required |
 | Doc-ops helpers | Keep as optional bundle members | `finish-bundle` or `doc-ops-bundle`, with `session-logger` remaining a public utility |
-| Deprecated workflow reflection | Retain, exclude from defaults | `efficiency-tracker` and `workflow-self-improver` only for explicit historical/maintenance review |
+| Deprecated workflow reflection | Archive, exclude from defaults | `efficiency-tracker` and `workflow-self-improver` moved under `.claude/skills-archive/deprecated/` for explicit historical/maintenance review |
 
 ## Validation Additions
 

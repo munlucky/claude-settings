@@ -95,7 +95,7 @@ Internal-only tiers:
 
 - Public entrypoint policy is now declared in `skill-composition.md`, `README.md`, `.claude/README.md`, and `.claude/README.ko.md`.
 - Documentation and verification helpers remain split across multiple adjacent skills and agents, but they are now positioned behind stage bundles rather than advertised as standalone workflow entrypoints.
-- Deprecated assets still exist on disk for compatibility, but `efficiency-tracker` and `workflow-self-improver` are explicitly excluded from the default flow.
+- Deprecated assets are archived under `.claude/skills-archive/deprecated/` for compatibility/history, and `efficiency-tracker` plus `workflow-self-improver` are explicitly excluded from the default flow and Codex skill linking.
 
 ## Surface Status Model
 
@@ -117,7 +117,7 @@ Current assignments:
 | `public_utility` | `session-logger`, `commit-moonshot` |
 | `internal_stage_owner` | `moonshot-phase-executor`, `moonshot-in-session-coordinator`, analysis micro-skills, readiness gates, `test-driven-development`, execution helpers, review/verification gates |
 | `optional_bundle_member` | `doc-auto-sync`, `browser-verifier`, `qa-flow`, `web-design-guidelines`, `normalize`, `polish`, `teach-impeccable`, selected UI/browser/doc helpers |
-| `deprecated` | `efficiency-tracker`, `workflow-self-improver` |
+| `deprecated` | `efficiency-tracker` (archived), `workflow-self-improver` (archived) |
 
 ## Invocation Policy Draft
 

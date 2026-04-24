@@ -228,10 +228,10 @@ finish / handoff 계약:
 - `web-design-guidelines` (fork)
 - `verify-changes.sh`
 - `verify-runtime.sh`
-- `efficiency-tracker`
+- `efficiency-tracker` (archived deprecated, 기본 체인에서 제외)
 - `session-logger`
 - `failure-analyzer`
-- `workflow-self-improver`
+- `workflow-self-improver` (archived deprecated, 기본 체인에서 제외)
 
 실행 규칙:
 - `Task (fork)`로 표기된 단계와 `context: fork`를 가진 읽기 전용 review/verification 스킬은 두 런타임 모두에서 최소 입력, 요약 반환, 메인 세션 coordinator 유지 원칙을 따른다.
@@ -254,7 +254,7 @@ finish / handoff 계약:
 - `docStale=true` -> 체인 시작에 `doc-auto-sync` 삽입, 구현 후 최종 doc-ops 단계는 그대로 유지
 - 재시도/중단/컨텍스트 경고 -> `HANDOFF.md` 갱신
 - strict인데 evidence gate가 없으면 `verification-evidence-gate` 삽입
-- 다중 실패가 쌓이면 `failure-analyzer` + `workflow-self-improver` 추가
+- 다중 실패가 쌓이면 `failure-analyzer`를 추가하고 같은 failure class 반복 시 replan으로 승격
 
 ## plane별 규칙
 

@@ -25,6 +25,7 @@ scope:
     - ".claude/CLAUDE.md"
     - ".claude/rules/**"
     - ".claude/skills/**"
+    - ".claude/skills-archive/**"
     - ".claude/agents/**"
     - ".claude/PROJECT.md"
     - ".claude/PROJECT.ko.md"
@@ -40,6 +41,7 @@ scope:
     - ".claudeignore"
     - ".gitignore"
     - "README.md"
+    - "docs/claude-tasks/external-harness-adoption/**"
     - "install-claude.sh"
   fallbackOutsideScope: true
 artifacts:

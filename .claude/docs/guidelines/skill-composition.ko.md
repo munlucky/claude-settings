@@ -273,5 +273,5 @@ find .claude/skills -maxdepth 2 -name SKILL.md -print
 .claude/scripts/knowledge-repo-audit.sh
 ```
 
-첫 번째 명령은 deprecated skill을 deprecated/non-default 자산으로 언급하는 경우에만 허용합니다.
+첫 번째 명령은 deprecated skill을 archived deprecated/non-default 자산으로 언급하는 경우에만 허용합니다.
 공개 진입점 목록은 `product-orchestrator`, `moonshot-phase-runner`, `moonshot-orchestrator`로 제한합니다.

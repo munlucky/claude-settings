@@ -51,10 +51,22 @@ Wave 3 adds a project-local worktree prepare runtime for downstream projects tha
 - Hydration copies only allowlisted harness assets and excludes logs, caches, memory, auth, verdicts, and browser runtime dependencies.
 - Baseline verification runs after hydration and writes `.claude/worktree-prepare.json`.
 
+## Remaining GAP Completion Focus
+
+The expanded pilot wave adds:
+
+- archived deprecated skills plus installer filtering
+- automatic `FULL / PARTIAL / NO` completion gate enforcement
+- broader `skills.sh` sandbox registry across Tier A/B/C/D candidates
+- export adapters for Terminal-Bench/Harbor, OpenAI Evals, and Inspect AI
+- pilot result artifacts generated without production `.claude/skills` bulk install
+
 ## Files
 
 - `pilot-registry.md`: candidate decisions and pilot status.
 - `pilot-review-template.md`: checklist for reviewing a candidate before local adoption.
+- `pilot-results.md`: generated sandbox pilot result summary.
+- `eval-plane-integration.md`: external benchmark/eval export strategy and commands.
 
 ## Non-Goals
 

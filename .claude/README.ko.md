@@ -130,7 +130,7 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 
 ### 문서 및 로깅
 - `session-logger`
-- `efficiency-tracker` (deprecated, 명시적 이력/리포팅 용도만)
+- `efficiency-tracker` (archived deprecated, 명시적 이력/리포팅 용도만)
 
 ### 유틸리티
 - `teach-impeccable` (선택 UI/design bundle 구성요소)

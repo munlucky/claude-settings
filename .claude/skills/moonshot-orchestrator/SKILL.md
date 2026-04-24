@@ -338,7 +338,7 @@ Run `decisions.skillChain` in order.
 | `web-design-guidelines` | Skill (fork) | guideline-based UI review |
 | `verify-runtime.sh` | Bash | runtime URL/E2E verifier |
 | `verify-changes.sh` | Bash | verdict-emitting project verifier |
-| `efficiency-tracker` | Skill | |
+| `efficiency-tracker` | Archived deprecated skill | Historical reporting only; not loaded in default chains |
 | `session-logger` | Skill | |
 | `moonshot-phase-runner` | Skill | |
 | `moonshot-phase-executor` | Skill | |
@@ -346,7 +346,7 @@ Run `decisions.skillChain` in order.
 | `moonshot-teams-runner` | Skill | |
 | `team-leader-agent` | Task (fork) | teams coordination |
 | `failure-analyzer` | Skill (fork) | system failure analysis |
-| `workflow-self-improver` | Skill (fork) | meta-system auto-improvement |
+| `workflow-self-improver` | Archived deprecated skill | Historical workflow reflection only; not loaded in default chains |
 | `commit-moonshot` | Skill | |
 
 **Agent mapping:**
@@ -469,7 +469,7 @@ Run `decisions.skillChain` in order.
 | `phaseLoopInSession` | `phaseRunnerResult.executionMode == in-session-coordinator` | Insert `moonshot-in-session-coordinator` and keep each round in a fresh fork/sub-agent attempt |
 | `handoffRequired` | retry loop, interruption, or context budget warning | Update `HANDOFF.md` through `session-logger` before pausing |
 | `strictProfile` | `workflowProfile == strict` and no evidence step | Insert `verification-evidence-gate` after `completion-verifier` or `verify-changes.sh` |
-| `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer` + `workflow-self-improver` at end of chain |
+| `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer`; escalate to replan when the same failure class repeats |
 
 ### 3.2 Execution-plane rules
 

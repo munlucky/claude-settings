@@ -111,7 +111,7 @@ script, installer, runtime dispatch rewrite는 필요하지 않았다.
 | UI/design helper | 선택 bundle 구성요소로 유지 | `frontend-design` umbrella와 명시적 UI review 시 `review-bundle` |
 | Browser/guided QA helper | 선택 bundle 구성요소로 유지 | runtime/browser evidence가 필요할 때만 `verification-bundle` |
 | Doc-ops helper | 선택 bundle 구성요소로 유지 | `finish-bundle` 또는 `doc-ops-bundle`, `session-logger`는 public utility 유지 |
-| Deprecated workflow reflection | 유지하되 기본 제외 | `efficiency-tracker`, `workflow-self-improver`는 명시적 이력/유지보수 검토용 |
+| Deprecated workflow reflection | archive하고 기본 제외 | `efficiency-tracker`, `workflow-self-improver`는 `.claude/skills-archive/deprecated/` 아래에서 명시적 이력/유지보수 검토용으로만 보존 |
 
 ## Validation Additions
 
