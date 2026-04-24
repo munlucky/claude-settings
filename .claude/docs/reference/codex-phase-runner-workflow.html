@@ -159,10 +159,38 @@
     }
     .node strong { display: block; color: var(--green); }
     .small { color: var(--muted); font-size: 13px; }
+    .walk-step {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--green);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 14px 0;
+    }
+    .walk-step h3 {
+      margin-top: 0;
+    }
+    .walk-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .walk-box {
+      border: 1px solid #e0e6e2;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfb;
+      min-width: 0;
+    }
+    .walk-box strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--brown);
+    }
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
       nav { position: relative; top: auto; }
-      .cols-2, .cols-3, .flow-row { grid-template-columns: 1fr; }
+      .cols-2, .cols-3, .flow-row, .walk-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -185,20 +213,21 @@
     <nav>
       <strong>목차</strong>
       <a href="#summary">1. 핵심 요약</a>
-      <a href="#surface">2. 공개 진입점</a>
-      <a href="#sources">3. 실제 수행 파일</a>
-      <a href="#locations">4. 실제 작업 위치</a>
-      <a href="#stages">5. 7단계 Stage Model</a>
-      <a href="#workflow">6. 전체 실행 흐름</a>
-      <a href="#modes">7. 실행 모드</a>
-      <a href="#worktree">8. Worktree Hydration</a>
-      <a href="#context">9. 컨텍스트 엔지니어링</a>
-      <a href="#prompt">10. 프롬프트 구조</a>
-      <a href="#artifacts">11. 산출물 계약</a>
-      <a href="#gate">12. 완료 게이트</a>
-      <a href="#failure">13. 실패 루프</a>
-      <a href="#external">14. 외부 하네스/스킬</a>
-      <a href="#return">15. 반환 경계</a>
+      <a href="#user-flow">2. 사용자 관점 Flow</a>
+      <a href="#surface">3. 공개 진입점</a>
+      <a href="#sources">4. 실제 수행 파일</a>
+      <a href="#locations">5. 실제 작업 위치</a>
+      <a href="#stages">6. 7단계 Stage Model</a>
+      <a href="#workflow">7. 전체 실행 흐름</a>
+      <a href="#modes">8. 실행 모드</a>
+      <a href="#worktree">9. Worktree Hydration</a>
+      <a href="#context">10. 컨텍스트 엔지니어링</a>
+      <a href="#prompt">11. 프롬프트 구조</a>
+      <a href="#artifacts">12. 산출물 계약</a>
+      <a href="#gate">13. 완료 게이트</a>
+      <a href="#failure">14. 실패 루프</a>
+      <a href="#external">15. 외부 하네스/스킬</a>
+      <a href="#return">16. 반환 경계</a>
     </nav>
 
     <article>
@@ -217,8 +246,255 @@
         </ul>
       </section>
 
+      <section id="user-flow">
+        <h2>2. 사용자 관점 Flow</h2>
+        <p>처음 보는 개발자는 이 순서로 이해하면 됩니다. 사용자는 Codex 채팅창에 요청을 입력하지만, 실제 실행 상태는 채팅이 아니라 repository의 파일과 스크립트로 이어집니다.</p>
+        <pre class="diagram">Codex chat session
+  -> user asks for phase-based execution
+  -> Codex selects moonshot-phase-runner skill
+  -> runner reads workspace contract and plan documents
+  -> runner creates/updates phase-status.yaml
+  -> runner seeds SPRINT/QA/HANDOFF/SCORECARD files
+  -> executor starts dispatcher script
+  -> dispatcher starts delegated worker loop
+  -> worker receives one-phase prompt
+  -> worker edits code and artifact files
+  -> completion gate reads evidence files
+  -> retry, next phase, or final return</pre>
+
+        <h3>단계별 Walkthrough</h3>
+        <h3>먼저 기억할 3개 Lane</h3>
+        <table>
+          <thead><tr><th>Lane</th><th>의미</th><th>확인 위치</th></tr></thead>
+          <tbody>
+            <tr><td>Chat lane</td><td>사용자가 보는 Codex 대화와 진행 업데이트입니다.</td><td>현재 Codex chat session</td></tr>
+            <tr><td>Filesystem lane</td><td>다음 시도와 완료 판정을 위해 남기는 durable state입니다.</td><td><code>.claude/docs/phase-status.yaml</code>, <code>&lt;plan-dir&gt;/execution/&lt;phase&gt;/</code></td></tr>
+            <tr><td>Process lane</td><td>실제 loop, worker, verifier를 실행하는 script/process입니다.</td><td><code>moonshot-phase-dispatch.mjs</code>, <code>agent-loop.mjs</code>, <code>agent-loop-phase-runner.mjs</code></td></tr>
+          </tbody>
+        </table>
+        <div class="callout green">
+          <p>핵심은 chat lane이 아니라 filesystem lane이 진짜 기억이라는 점입니다. Codex가 중간에 멈추거나 context가 줄어도 다음 시도는 <code>QA_REPORT.md</code>, <code>HANDOFF.md</code>, <code>SCORECARD.md</code>, <code>phase-status.yaml</code>을 읽고 이어갑니다.</p>
+        </div>
+
+        <h3>역할 분담</h3>
+        <table>
+          <thead><tr><th>Actor</th><th>책임</th><th>소유하지 않는 것</th></tr></thead>
+          <tbody>
+            <tr><td>User</td><td>목표와 우선순위를 요청하고, 모호한 plan 후보를 선택합니다.</td><td>phase 내부 완료 판정</td></tr>
+            <tr><td>Current Codex session</td><td>entrypoint 선택, phase runner 시작, 진행 상황 전달, 최종 요약 반환을 맡습니다.</td><td>각 phase의 장기 구현 context</td></tr>
+            <tr><td><code>moonshot-phase-runner</code></td><td>plan directory 확인, phase state 생성, execution package 준비를 맡습니다.</td><td>직접 code edit</td></tr>
+            <tr><td>Dispatcher</td><td>lease 생성, runtime 선택, loop 실행, 반환 경계 감시를 맡습니다.</td><td>feature 구현 판단</td></tr>
+            <tr><td>Agent loop</td><td>다음 actionable phase 선택과 retry/next phase 반복을 맡습니다.</td><td>전체 요구사항 재정의</td></tr>
+            <tr><td>Worker attempt</td><td>한 phase의 구현, 테스트, artifact 업데이트를 맡습니다.</td><td>다른 phase 범위 구현</td></tr>
+            <tr><td>Completion gate</td><td>evidence, scorecard, handoff를 읽고 clean finish 여부를 판단합니다.</td><td>agent 말만 믿고 완료 처리</td></tr>
+          </tbody>
+        </table>
+
+        <h3>상태 전이</h3>
+        <pre class="diagram">pending
+  -> in_progress
+  -> ready/isolate checked
+  -> execute attempted
+  -> review recorded
+  -> verification recorded
+  -> scorecard evaluated
+  -> completed</pre>
+        <pre class="diagram">retry      # 같은 phase를 다시 시도한다. 단, 같은 failure class 반복 시 tactic을 바꾼다.
+blocked    # 환경, 계약, 의존성, 설계 문제로 더 진행할 수 없다.
+PARTIAL    # 핵심 흐름은 유지되지만 acceptance/coverage가 남았다.
+NO         # hard gate 실패, critical regression, blocking defect 등으로 완료 불가다.</pre>
+
+        <h3>현재 어디까지 왔는지 확인하는 순서</h3>
+        <div class="grid cols-2">
+          <div class="card"><h3>1. phase-status</h3><p><code>.claude/docs/phase-status.yaml</code>에서 active plan directory와 phase 상태를 확인합니다.</p></div>
+          <div class="card"><h3>2. sprint contract</h3><p><code>SPRINT_CONTRACT.md</code>에서 worker가 해야 할 exact files, commands, expected signals를 확인합니다.</p></div>
+          <div class="card"><h3>3. QA report</h3><p><code>QA_REPORT.md</code>에서 현재 stage, TDD evidence, failure cause, review, verification evidence를 확인합니다.</p></div>
+          <div class="card"><h3>4. scorecard</h3><p><code>SCORECARD.md</code>에서 <code>Verdict: done</code>, <code>Current task status: FULL</code>, unmet 0, blocking 0 여부를 확인합니다.</p></div>
+          <div class="card"><h3>5. handoff</h3><p><code>HANDOFF.md</code>에서 clean finish가 아닌 경우 멈춘 이유와 다음 시도 지시를 확인합니다.</p></div>
+        </div>
+
+        <h3>성공, 재시도, 중단 경로 차이</h3>
+        <table>
+          <thead><tr><th>Path</th><th>사용자가 볼 수 있는 것</th><th>Artifact 모양</th><th>다음 행동</th></tr></thead>
+          <tbody>
+            <tr><td>Success</td><td>phase 완료 후 다음 phase로 넘어가거나 최종 요약이 나옵니다.</td><td><code>SCORECARD.md</code> has <code>Verdict: done</code> and <code>Current task status: FULL</code>.</td><td>next phase or final return</td></tr>
+            <tr><td>Retry</td><td>Codex가 같은 phase를 다시 시도합니다.</td><td><code>QA_REPORT.md</code> records failure class, root cause evidence, next tactic.</td><td>same phase, changed tactic</td></tr>
+            <tr><td>Partial</td><td>핵심 실행은 되었지만 coverage나 acceptance gap이 남습니다.</td><td><code>SCORECARD.md</code> has <code>Current task status: PARTIAL</code>.</td><td>close gaps before clean finish</td></tr>
+            <tr><td>Blocked</td><td>환경/계약/설계 문제로 진행이 멈춥니다.</td><td><code>HANDOFF.md</code> has valid stop reason and resume instructions.</td><td>human decision or dependency fix</td></tr>
+            <tr><td>No</td><td>hard gate나 critical regression으로 완료 불가입니다.</td><td><code>SCORECARD.md</code> has <code>Current task status: NO</code>.</td><td>redesign, replan, or rollback</td></tr>
+          </tbody>
+        </table>
+
+        <h3>처음 보는 사람이 자주 헷갈리는 부분</h3>
+        <ul>
+          <li>Codex가 완료했다고 말해도 완료가 아닙니다. <code>SCORECARD.md</code>와 verdict JSON이 완료 조건입니다.</li>
+          <li>테스트를 실행했다는 말만으로는 evidence가 아닙니다. command, exit code, artifact path, freshness가 함께 있어야 합니다.</li>
+          <li>Phase 1 완료는 전체 작업 완료가 아닙니다. actionable phase가 남아 있으면 final response boundary가 아닙니다.</li>
+          <li>worktree가 있다는 것만으로 Ready / Isolate 통과가 아닙니다. ignored agent config hydration과 baseline evidence가 필요할 수 있습니다.</li>
+          <li>다시 시도했다는 것만으로 충분하지 않습니다. 같은 failure class가 반복되면 next tactic이 달라져야 합니다.</li>
+        </ul>
+
+        <div class="walk-step">
+          <h3>Step 1. Codex 채팅 세션에서 요청이 들어온다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>사용자가 보는 것</strong><code>docs/implementation phase plan을 끝까지 실행해줘.</code></div>
+            <div class="walk-box"><strong>AI 컨텍스트</strong>workspace root, user request, available skills, <code>AGENTS.md</code>, <code>.claude/CLAUDE.md</code>, verification contract.</div>
+            <div class="walk-box"><strong>실제 실행</strong>아직 script는 실행하지 않고, 요청이 bounded/product/phase 작업인지 판단합니다.</div>
+            <div class="walk-box"><strong>다음 조건</strong>large/phase/long-running 구현이면 <code>moonshot-phase-runner</code>를 선택합니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 2. <code>moonshot-phase-runner</code> skill이 선택된다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>사용자가 보는 것</strong>Codex가 phase runner로 진행한다는 짧은 진행 업데이트를 낼 수 있습니다.</div>
+            <div class="walk-box"><strong>AI 컨텍스트</strong><code>.claude/skills/moonshot-phase-runner/SKILL.md</code>, <code>.claude/docs/guidelines/skill-composition.md</code>, workspace contract.</div>
+            <div class="walk-box"><strong>실제 실행</strong>worker는 아직 시작하지 않고, runner가 plan directory를 찾을 준비를 합니다.</div>
+            <div class="walk-box"><strong>다음 조건</strong>명시된 plan dir이 있으면 우선 사용하고, 없으면 active status 또는 <code>docs/implementation/</code>을 찾습니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 3. Runner가 plan과 workspace contract를 읽는다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>읽는 파일</strong><code>.claude/CLAUDE.md</code>, <code>.claude/verification.contract.yaml</code>, <code>.claude/docs/phase-status.yaml</code>, <code>docs/implementation/00-master-plan*.md</code>, <code>docs/implementation/&lt;NN&gt;-*.md</code>.</div>
+            <div class="walk-box"><strong>AI 판단</strong>이미 진행 중인지, phase가 몇 개인지, Q&amp;A가 필요한지, autonomous 실행인지 판단합니다.</div>
+            <div class="walk-box"><strong>실제 실행</strong>plan directory resolution을 수행하고, 안전한 plan이 없으면 <code>moonshot-plan-writer</code>로 plan 생성을 유도합니다.</div>
+            <div class="walk-box"><strong>다음 조건</strong>후보가 여러 개면 추측하지 않고 사용자 확인이 필요합니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 4. <code>phase-status.yaml</code>과 execution package가 만들어진다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>생성/수정 파일</strong><code>.claude/docs/phase-status.yaml</code>, <code>SPRINT_CONTRACT.md</code>, <code>QA_REPORT.md</code>, <code>HANDOFF.md</code>, <code>SCORECARD.md</code>.</div>
+            <div class="walk-box"><strong>AI 컨텍스트</strong>phase number/title/status, execution mode, active stage, artifact path mapping, stage order.</div>
+            <div class="walk-box"><strong>실제 실행 파일</strong><code>agent-loop-phase-artifacts.mjs</code>, <code>.claude/templates/execution/*</code>.</div>
+            <div class="walk-box"><strong>다음 조건</strong><code>--prepare-only</code>면 준비 결과만 반환하고, 기본값이면 dispatcher로 넘어갑니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 5. Executor가 dispatcher command를 만든다</h3>
+          <pre><code>{
+  "planDir": "docs/implementation",       // 실행할 plan directory
+  "executionRoot": "docs/implementation/execution", // phase artifact root
+  "executionMode": "delegated-terminal",  // 기본 장기 실행 모드
+  "runtime": "codex",                     // active runtime
+  "prepareOnly": false,                   // 준비만 하고 멈출지 여부
+  "phaseStatus": ".claude/docs/phase-status.yaml" // canonical state file
+}</code></pre>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>실제 실행</strong><code>node .claude/scripts/moonshot-phase-dispatch.mjs docs/implementation --runtime codex</code></div>
+            <div class="walk-box"><strong>생성 파일</strong><code>active-phase-run.json</code>, <code>current-run.json</code>, <code>.claude/logs/agent-loop/</code></div>
+            <div class="walk-box"><strong>핵심 의미</strong>lease가 시작되면 “아직 최종 응답하면 안 된다”는 반환 경계가 생깁니다.</div>
+            <div class="walk-box"><strong>다음 조건</strong>dispatcher가 lease를 잡으면 agent loop가 시작됩니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 6. Agent loop가 다음 phase 하나를 고른다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>AI 컨텍스트</strong>active lease id, target runtime, retry cap, next actionable phase, artifact path.</div>
+            <div class="walk-box"><strong>실제 실행</strong><code>agent-loop.mjs</code>가 다음 phase를 고르고, <code>agent-loop-phase-runner.mjs --single-phase</code>가 한 phase를 실행합니다.</div>
+            <div class="walk-box"><strong>읽는 파일</strong><code>phase-status.yaml</code>, phase doc, SPRINT, QA, HANDOFF, SCORECARD.</div>
+            <div class="walk-box"><strong>다음 조건</strong>worker에게는 phase 하나만 넘기고, 다른 phase scope는 섞지 않습니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 7. Worker prompt가 만들어지고 Codex worker가 실행된다</h3>
+          <pre><code>이번 시도에서는 Phase 1만 수행한다.
+moonshot-phase-runner를 다시 호출하지 마라.
+phase doc과 SPRINT_CONTRACT.md를 먼저 읽어라.
+Ready / Isolate -> Execute -> Review -> Verify -> Finish / Handoff 순서를 유지하라.
+행동 변경이면 production code 전에 failing test를 작성하라.
+fresh verification evidence 없이 완료를 주장하지 마라.
+완료하려면 SCORECARD.md가 Verdict: done과 Current task status: FULL이어야 한다.</code></pre>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>runtime command</strong><code>codex exec --full-auto -C &lt;workspace&gt;</code></div>
+            <div class="walk-box"><strong>전달 경로</strong><code>phaseDoc</code>, <code>sprintContract</code>, <code>qaReport</code>, <code>handoff</code>, <code>scorecard</code>.</div>
+            <div class="walk-box"><strong>생성/수정</strong><code>WORKSET.md</code>, <code>QA_REPORT.md</code>, <code>SCORECARD.md</code> attempt checkpoint.</div>
+            <div class="walk-box"><strong>다음 조건</strong>worker는 artifact를 먼저 읽고 checkpoint를 남긴 뒤 구현합니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 8. Ready / Isolate evidence가 확인된다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>왜 필요한가</strong>작업 프로젝트에서는 <code>.claude</code>, <code>.agents</code>, <code>.codex</code>가 ignored일 수 있어 worktree에 agent harness가 빠질 수 있습니다.</div>
+            <div class="walk-box"><strong>실행 command</strong><code>bash .claude/scripts/harness-prepare-worktree.sh TASK-001 --hydrate-agent-config --baseline-command "npm test"</code></div>
+            <div class="walk-box"><strong>생성 evidence</strong><code>&lt;worktree&gt;/.claude/worktree-prepare.json</code>, baseline log, hydrated <code>.claude</code>/<code>.agents</code>/<code>.codex</code>.</div>
+            <div class="walk-box"><strong>다음 조건</strong>strict/phase 작업에서 evidence가 없거나 baseline이 실패하면 implementation으로 들어가지 않습니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 9. Worker가 구현과 테스트를 수행한다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>AI 컨텍스트</strong><code>SPRINT_CONTRACT.md</code>의 exact files, exact commands, expected signals, blockers, TDD rule.</div>
+            <div class="walk-box"><strong>실행 예</strong><code>pytest tests/test_feature.py -v</code>, <code>npm test</code>, <code>node --test</code>, <code>npm run build</code>.</div>
+            <div class="walk-box"><strong>수정 파일</strong>product source, tests, <code>QA_REPORT.md</code>, <code>SCORECARD.md</code>, 필요 시 <code>HANDOFF.md</code>.</div>
+            <div class="walk-box"><strong>다음 조건</strong>구현이 끝나도 review와 verification이 남아 있으므로 완료 선언은 아직 금지됩니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 10. Review와 verification evidence가 생성된다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>Review 컨텍스트</strong>code-changing work인지, review owner, findings, accepted/challenged/deferred decision.</div>
+            <div class="walk-box"><strong>Verification 컨텍스트</strong><code>.claude/verification.contract.yaml</code>, required checks, fresh evidence rule.</div>
+            <div class="walk-box"><strong>생성 파일</strong><code>.claude/verification-verdict-*.json</code>, <code>.claude/runtime-verdict-*.json</code>, updated <code>QA_REPORT.md</code>.</div>
+            <div class="walk-box"><strong>다음 조건</strong>fresh하고 relevant한 evidence가 있으면 scorecard를 갱신하고, 실패하면 failure class와 root cause를 기록합니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 11. Completion gate가 <code>done + FULL</code>을 판정한다</h3>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>읽는 파일</strong><code>QA_REPORT.md</code>, <code>SCORECARD.md</code>, <code>HANDOFF.md</code>, verification/runtime verdict JSON.</div>
+            <div class="walk-box"><strong>실제 평가</strong><code>agent-loop-phase-state.mjs</code>가 score, unmet, blocking, review, verification, task status를 평가합니다.</div>
+            <div class="walk-box"><strong>통과 조건</strong>fresh evidence, review evidence, target score, unmet 0, blocking 0, <code>Verdict: done</code>, <code>Current task status: FULL</code>.</div>
+            <div class="walk-box"><strong>실패 시</strong><code>retry</code>, <code>PARTIAL</code>, <code>NO</code>, <code>blocked</code> 이유를 기록하고 loop로 돌아갑니다.</div>
+          </div>
+        </div>
+
+        <div class="walk-step">
+          <h3>Step 12. 다음 phase로 넘어가거나 최종 반환한다</h3>
+          <pre><code>Phase 1 done + FULL
+  -> Phase 2 pending? yes
+  -> return to agent-loop
+  -> build Phase 2 one-phase prompt</code></pre>
+          <div class="walk-grid">
+            <div class="walk-box"><strong>최종 확인 command</strong><code>node .claude/scripts/phase-run-lease.mjs assert-return-allowed &lt;status-file&gt; &lt;runLeaseId&gt; true false</code></div>
+            <div class="walk-box"><strong>반환 허용 조건</strong>actionable phase 없음, active lease 유효, 마지막 phase clean finish, valid stop reason.</div>
+            <div class="walk-box"><strong>사용자 최종 응답</strong>완료 phase 요약, verification evidence, scorecard status, handoff가 있으면 이유.</div>
+            <div class="walk-box"><strong>핵심 규칙</strong>단일 phase 완료만으로는 final response가 허용되지 않습니다.</div>
+          </div>
+        </div>
+
+        <h3>압축 요약표</h3>
+        <table>
+          <thead><tr><th>Step</th><th>사용자 순간</th><th>핵심 컨텍스트</th><th>주요 실행/파일</th><th>결과</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Chat request</td><td>user request, workspace contract</td><td>entrypoint decision</td><td>selected workflow</td></tr>
+            <tr><td>2</td><td>Phase runner selected</td><td>skill + verification rules</td><td><code>moonshot-phase-runner/SKILL.md</code></td><td>plan lookup starts</td></tr>
+            <tr><td>3</td><td>Plan loaded</td><td>master plan, phase docs</td><td>plan resolution</td><td>active <code>&lt;plan-dir&gt;</code></td></tr>
+            <tr><td>4</td><td>Execution package prepared</td><td>phase list, stage order</td><td>artifact seeding</td><td>SPRINT/QA/HANDOFF/SCORECARD</td></tr>
+            <tr><td>5</td><td>Dispatcher starts</td><td><code>phaseRunnerResult</code></td><td><code>moonshot-phase-dispatch.mjs</code></td><td>active lease</td></tr>
+            <tr><td>6</td><td>Loop starts</td><td>next actionable phase</td><td><code>agent-loop.mjs</code></td><td>one phase selected</td></tr>
+            <tr><td>7</td><td>Worker runs</td><td>one-phase prompt</td><td><code>codex exec --full-auto</code></td><td>attempt checkpoint</td></tr>
+            <tr><td>8</td><td>Ready / Isolate</td><td>worktree/hydration evidence</td><td><code>harness-prepare-worktree.sh</code></td><td><code>worktree-prepare.json</code></td></tr>
+            <tr><td>9</td><td>Implementation</td><td>exact plan + TDD rule</td><td>test/build commands</td><td>code/tests/QA updates</td></tr>
+            <tr><td>10</td><td>Review/verify</td><td>review + verification contract</td><td>verdict writer/check runner</td><td>verdict JSON</td></tr>
+            <tr><td>11</td><td>Completion gate</td><td>QA + scorecard + handoff</td><td><code>agent-loop-phase-state.mjs</code></td><td>done+FULL or retry/block</td></tr>
+            <tr><td>12</td><td>Return boundary</td><td>lease + phase status</td><td><code>phase-run-lease.mjs</code></td><td>final response</td></tr>
+          </tbody>
+        </table>
+      </section>
+
       <section id="surface">
-        <h2>2. 공개 진입점</h2>
+        <h2>3. 공개 진입점</h2>
         <table>
           <thead><tr><th>분류</th><th>Skill</th><th>역할</th></tr></thead>
           <tbody>
@@ -233,7 +509,7 @@
       </section>
 
       <section id="sources">
-        <h2>3. 실제 수행 파일</h2>
+        <h2>4. 실제 수행 파일</h2>
         <table>
           <thead><tr><th>Layer</th><th>Path</th><th>역할</th></tr></thead>
           <tbody>
@@ -256,7 +532,7 @@
       </section>
 
       <section id="locations">
-        <h2>4. 실제 작업 위치</h2>
+        <h2>5. 실제 작업 위치</h2>
         <table>
           <thead><tr><th>분류</th><th>경로</th><th>역할</th></tr></thead>
           <tbody>
@@ -275,7 +551,7 @@
       </section>
 
       <section id="stages">
-        <h2>5. 7단계 Stage Model</h2>
+        <h2>6. 7단계 Stage Model</h2>
         <div class="flow">
           <div class="flow-row">
             <div class="node"><strong>1. Intake</strong><span class="small">요청 유형과 workflow profile을 판별합니다.</span></div>
@@ -291,7 +567,7 @@
       </section>
 
       <section id="workflow">
-        <h2>6. 전체 실행 흐름</h2>
+        <h2>7. 전체 실행 흐름</h2>
         <pre class="diagram">User
   -> Codex session
   -> moonshot-phase-runner
@@ -317,7 +593,7 @@
       </section>
 
       <section id="modes">
-        <h2>7. 실행 모드</h2>
+        <h2>8. 실행 모드</h2>
         <table>
           <thead><tr><th>Mode</th><th>실제 경로</th><th>사용 의도</th><th>컨텍스트 규칙</th></tr></thead>
           <tbody>
@@ -338,7 +614,7 @@
       </section>
 
       <section id="worktree">
-        <h2>8. Worktree Hydration</h2>
+        <h2>9. Worktree Hydration</h2>
         <p>실제 작업 프로젝트에서는 <code>.claude</code>, <code>.agents</code>, <code>.codex</code>가 <code>.gitignore</code>에 들어가는 경우가 많습니다. 그래서 <code>git worktree add</code>만으로는 agent 설정과 하네스가 따라가지 않습니다.</p>
         <pre><code>bash .claude/scripts/harness-prepare-worktree.sh TASK-001 \
   --hydrate-agent-config \
@@ -379,7 +655,7 @@
       </section>
 
       <section id="context">
-        <h2>9. 컨텍스트 엔지니어링</h2>
+        <h2>10. 컨텍스트 엔지니어링</h2>
         <pre class="diagram">전체 repo + 사용자 요청
   -> plan package
   -> master plan
@@ -403,7 +679,7 @@
       </section>
 
       <section id="prompt">
-        <h2>10. 프롬프트 구조</h2>
+        <h2>11. 프롬프트 구조</h2>
         <p>Codex worker에게 전달되는 영어 프롬프트의 의미를 한글로 풀면 다음과 같습니다.</p>
         <pre><code>당신은 이 phase 하나만 수행하는 worker입니다.
 moonshot-phase-runner를 다시 호출하지 마세요.
@@ -436,7 +712,7 @@ SCORECARD.md는 Verdict: done 및 Current task status: FULL이어야 clean finis
       </section>
 
       <section id="artifacts">
-        <h2>11. 산출물 계약</h2>
+        <h2>12. 산출물 계약</h2>
         <div class="grid cols-2">
           <div class="card">
             <h3>SPRINT_CONTRACT.md</h3>
@@ -501,7 +777,7 @@ SCORECARD.md는 Verdict: done 및 Current task status: FULL이어야 clean finis
       </section>
 
       <section id="gate">
-        <h2>12. 완료 게이트</h2>
+        <h2>13. 완료 게이트</h2>
         <p>구현 command가 exit 0이어도 phase는 완료되지 않습니다. clean finish는 다음 조건을 모두 봅니다.</p>
         <ul>
           <li><code>QA_REPORT.md</code>가 verifier pass와 fresh evidence를 기록합니다.</li>
@@ -518,7 +794,7 @@ SCORECARD.md는 Verdict: done 및 Current task status: FULL이어야 clean finis
       </section>
 
       <section id="failure">
-        <h2>13. 실패 루프</h2>
+        <h2>14. 실패 루프</h2>
         <p>실패 처리는 systematic debugging 규칙을 따릅니다. 원인 확인 전 수정 금지, 동일 failure class 2회 반복 시 tactic 변경, 3회 실패 시 설계/계약 문제로 승격이 기본 원칙입니다.</p>
         <pre><code>{
   "failureClass": "verification_contract", // 반복 감지용 실패 분류
@@ -530,7 +806,7 @@ SCORECARD.md는 Verdict: done 및 Current task status: FULL이어야 clean finis
       </section>
 
       <section id="external">
-        <h2>14. 외부 하네스/스킬</h2>
+        <h2>15. 외부 하네스/스킬</h2>
         <p>외부 도구는 production runtime을 대체하지 않습니다. sandbox pilot과 export/eval plane으로 연결하고, 검증된 패턴만 로컬 하네스에 흡수합니다.</p>
         <table>
           <thead><tr><th>후보</th><th>현재 처리</th><th>로컬 반영 대상</th></tr></thead>
@@ -554,7 +830,7 @@ node .claude/scripts/external-eval-adapter.mjs inspect --task-id TASK-001 --sour
       </section>
 
       <section id="return">
-        <h2>15. 반환 경계</h2>
+        <h2>16. 반환 경계</h2>
         <p>성공 반환 경계는 단일 phase가 아니라 active plan directory 전체입니다.</p>
         <pre><code>node .claude/scripts/phase-run-lease.mjs assert-return-allowed &lt;status-file&gt; &lt;runLeaseId&gt; true false</code></pre>
         <h3>반환 허용</h3>
