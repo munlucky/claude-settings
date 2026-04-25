@@ -9,8 +9,9 @@
  * Works in Node ESM projects on macOS, Linux, and Windows.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const cwd = process.cwd();
@@ -83,18 +84,59 @@ const child = spawn(command, args, {
   shell: false,
 });
 
+let exiting = false;
+
+function terminateChildTree() {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
+
+  try {
+    child.kill('SIGTERM');
+  } catch {
+    // Child already exited.
+  }
+}
+
+function exitWithChildStatus(code, signal) {
+  if (exiting) {
+    return;
+  }
+  exiting = true;
+
+  if (signal) {
+    try {
+      process.kill(process.pid, signal);
+      return;
+    } catch {
+      process.exit(1);
+      return;
+    }
+  }
+
+  process.exit(code ?? 0);
+}
+
+for (const signalName of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signalName, () => {
+    terminateChildTree();
+    exitWithChildStatus(128 + (os.constants.signals?.[signalName] ?? 1), null);
+  });
+}
+
 child.on('error', (error) => {
   console.error('[memory-mcp] failed to start server-memory');
   console.error('[memory-mcp] command:', command, args.join(' '));
   console.error('[memory-mcp] detail:', error.message);
+  terminateChildTree();
   process.exit(1);
 });
 
 child.on('exit', (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
-  }
-
-  process.exit(code ?? 0);
+  exitWithChildStatus(code, signal);
 });

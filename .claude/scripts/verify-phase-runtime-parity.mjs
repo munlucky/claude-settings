@@ -2,6 +2,7 @@
 
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import os from 'node:os';
 
 const scriptDir = path.dirname(new URL(import.meta.url).pathname);
 const shellCorePath = path.join(scriptDir, 'verify-phase-runtime-parity-shell-core.sh');
@@ -30,6 +31,33 @@ function main() {
     stdio: compactOutput ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     env: process.env,
   });
+  let exiting = false;
+
+  const terminateChildTree = () => {
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
+      return;
+    }
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      return;
+    }
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      // Child already exited.
+    }
+  };
+
+  for (const signalName of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(signalName, () => {
+      if (exiting) {
+        return;
+      }
+      exiting = true;
+      terminateChildTree();
+      process.exit(128 + (os.constants.signals?.[signalName] ?? 1));
+    });
+  }
 
   const bufferedLines = [];
   if (compactOutput) {
@@ -58,10 +86,15 @@ function main() {
 
   child.on('error', (error) => {
     console.error(`ERROR: failed to start verify-phase-runtime-parity shell core: ${error.message}`);
+    terminateChildTree();
     process.exit(1);
   });
 
   child.on('exit', (code, signal) => {
+    if (exiting) {
+      return;
+    }
+    exiting = true;
     if (signal) {
       process.kill(process.pid, signal);
       return;
