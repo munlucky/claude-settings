@@ -367,6 +367,7 @@ Codex direct execution checklist:
 8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
 10. Stop only when verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
+11. Even when this phase reaches clean completion, do not phrase the result as plan completion or session completion. Return control to the outer loop only.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 5.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates.`;
@@ -389,6 +390,7 @@ executionArtifacts:
 
 Single isolated phase-attempt rules:
 - Treat this run as one isolated phase attempt only.
+- This attempt may finish the active phase, but phase completion is never run completion or session completion.
 - Set signals.phaseAttemptMode = true.
 - Set artifacts.activePhaseDocPath = "${phaseDoc}".
 - Reuse the provided execution artifact paths.
@@ -417,6 +419,8 @@ Single isolated phase-attempt rules:
 - If the run stops without clean completion, update HANDOFF.md, include \`session-logger\` evidence, and list the checks to rerun.
 - Do not mark the phase done while SCORECARD.md says \`Verdict: retry\` or \`blocked\`.
 - Do not mark the phase done while Current score is below ${targetCompletionScore}, Unmet checklist items > 0, or Blocking defects > 0.
+- Do not emit final-answer wording, closeout phrasing, or "all done" style language from this attempt. Return only updated artifacts, verification state, and an attempt-scoped summary.
+- If this attempt reaches clean phase completion, return control to the outer loop with the phase marked complete and let the outer loop decide whether another actionable phase remains.
 
 Runtime compatibility fallback:
 - If /moonshot-orchestrator is unavailable in this runtime, execute the equivalent phase-attempt workflow directly instead of searching for missing slash skills.
@@ -424,6 +428,7 @@ Runtime compatibility fallback:
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
 - Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.${codexDirectSteps}
+- Treat "phase complete" as an attempt-local result only. Never use it as proof that the whole plan or user session may end; that decision belongs to the outer loop after re-reading ${statusFile}.
 
 Additional instructions:
 ${extraInstructions}

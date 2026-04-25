@@ -46,6 +46,23 @@ phases:
 EOF
 }
 
+write_completed_then_pending_status() {
+  cat > "$STATUS_FILE" <<EOF
+planDir: "$PLAN_DIR"
+executionMode: delegated-terminal
+executionRoot: "$EXECUTION_ROOT"
+phases:
+  - number: 1
+    title: "Repository Foundation"
+    status: completed
+    planConfirmed: true
+  - number: 2
+    title: "Schema and State Foundation"
+    status: pending
+    planConfirmed: true
+EOF
+}
+
 assert_contains() {
   local file="$1"
   local expected="$2"
@@ -147,6 +164,25 @@ INACTIVE_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.clau
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_ALLOWED='false'" "finished lease return denial"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_REASON='inactive-run-lease-with-actionable-phases'" "inactive lease denial reason"
 
+write_completed_then_pending_status
+
+WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
+node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
+  "$STATUS_FILE" \
+  lease-phase-boundary \
+  delegated-terminal \
+  "$PLAN_DIR" \
+  "$EXECUTION_ROOT" \
+  claude \
+  "$PLAN_DIR/00-master-plan-v1.md" \
+  "$$" >/dev/null
+
+assert_contains "$STATUS_FILE" "activeExecutionStatus: \"active\"" "active execution lease status"
+PHASE_BOUNDARY_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-phase-boundary true false)"
+assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "RETURN_ALLOWED='false'" "completed-then-pending return denial"
+assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "RETURN_REASON='actionable-phases-remaining'" "completed-then-pending denial reason"
+assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "ACTIONABLE_PHASES_REMAINING='1'" "completed-then-pending actionable count"
+
 write_completed_status
 
 ALLOWED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
@@ -235,8 +271,13 @@ EOF
 )"
 assert_text_contains "$PROMPT_OUTPUT" "Do not stop at implementation-complete or verification-complete checkpoints alone." "prompt checkpoint boundary guard"
 assert_text_contains "$PROMPT_OUTPUT" "Return control only after fresh-or-still-valid verification evidence exists" "prompt completion gate guard"
+assert_text_contains "$PROMPT_OUTPUT" "phase completion is never run completion or session completion" "prompt phase vs run boundary guard"
+assert_text_contains "$PROMPT_OUTPUT" "Do not emit final-answer wording" "prompt final wording guard"
 assert_text_contains "$PROMPT_OUTPUT" "---HANDOFF---" "prompt handoff separator"
 assert_text_contains "$PROMPT_OUTPUT" "Current stage: Finish / Handoff" "seeded handoff stage"
 assert_text_contains "$PROMPT_OUTPUT" "placeholder handoff seeded before the first stop or clean-finish update" "seeded handoff placeholder reason"
+
+assert_contains "$ROOT_DIR/.claude/templates/execution/PHASE_COORDINATOR_CONTRACT.md" "do not emit final, closeout, or session-ended wording" "coordinator contract final guard"
+assert_contains "$ROOT_DIR/.claude/templates/execution/PHASE_COORDINATOR_CONTRACT.md" "If Phase 01 just became completed but Phase 02+" "coordinator contract next phase guard"
 
 echo "PASS: verify-phase-runner-boundary"

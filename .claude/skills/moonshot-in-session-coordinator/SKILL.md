@@ -201,6 +201,8 @@ Pre-return self-check:
 - Before returning any success or progress summary, re-read `phase-status.yaml` and confirm that no actionable phase remains.
 - If another actionable phase exists, do not use the just-completed phase as a return boundary; continue directly into the next phase loop.
 - One completed phase, refreshed checkpoint artifacts, or a mid-run progress report are not valid stop boundaries.
+- While `phase-status.yaml` still reports `activeExecutionStatus: active`, keep user-facing updates commentary/progress-only and do not emit `final`, closeout, or session-ended wording.
+- If Phase 01 becomes `completed` while Phase 02 or later is still actionable, update the artifacts and phase state, then enter Phase 02 immediately instead of returning a terminal summary.
 - If the coordinator still exits 0 early, the dispatcher should restart it while actionable phases remain; treat that early exit as a contract violation.
 
 ## Output
@@ -230,6 +232,7 @@ coordinatorResult:
 - Do not spawn a new attempt for strict/meta-harness work until the active `SPRINT_CONTRACT.md` contains policy anchors.
 - Do not translate `attemptResult.status=completed` into a completed phase unless the verifier evidence for that attempt is fresh, contract-complete, and score-complete.
 - The only clean success boundary is active plan-directory completion. If any actionable phase remains, continue execution instead of returning a progress summary.
+- A completed phase milestone is never a valid `final` response boundary by itself. The coordinator must either continue into the next actionable phase or stop with an explicit blocker/user pause.
 
 ## References
 

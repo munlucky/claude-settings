@@ -113,6 +113,7 @@ Completion normalization rule:
 - Return `status: completed` only when the verifier result for this attempt is contract-backed and includes fresh evidence for the required checks.
 - Return `status: completed` only when the score verdict is `done` and the target score has been reached with no unmet checklist items or blocking defects.
 - If verification is missing, stale, indeterminate, or partial, return `partial` or `failed` instead of wording the attempt as complete.
+- `status: completed` means only that this single phase attempt is eligible for outer-loop completion handling. It never means the whole plan or session is complete.
 
 ## State Transition Table
 
@@ -138,6 +139,7 @@ Completion normalization rule:
 - It must not trigger `moonshot-phase-runner` recursively.
 - It returns only summarized `attemptResult`.
 - It must not summarize the round as completed without fresh verification evidence.
+- It must not use final-answer wording, closeout phrasing, or session-ended language; completion is attempt-scoped and the coordinator decides whether the run continues.
 - It must include the minimum verifier metadata needed for downstream state transitions: `verdict`, `evidenceFresh`, and `requiredChecks.missing`.
 - It must also include provenance for the verdict: `contractApplicable` and `mode`.
 

@@ -35,4 +35,6 @@ completionBoundary:
   rules:
     - "The only clean success boundary is active plan-directory completion: no actionable phase remains in the supplied phaseStatusFile."
     - "A completed active phase, refreshed checkpoint artifacts, or a progress summary are not valid return boundaries by themselves while another actionable phase remains."
+    - "While the supplied phaseStatusFile still reports activeExecutionStatus: active, keep user-facing updates in commentary/progress form; do not emit final, closeout, or session-ended wording."
     - "Before returning success or a final summary, re-read the supplied phaseStatusFile and continue into the next actionable phase when one exists."
+    - "If Phase 01 just became completed but Phase 02+ is still pending, in_progress, or retryable failed, treat that as a continue-now handoff: persist the updated artifacts, mark the completed phase, and immediately enter the next actionable phase instead of returning a terminal summary."

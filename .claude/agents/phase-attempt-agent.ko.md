@@ -104,6 +104,7 @@ attemptResult:
 - 이번 시도의 verifier 결과가 contract 기반 required check에 대한 최신 증거를 포함할 때만 `status: completed` 를 반환합니다.
 - 점수 verdict 가 `done` 이고 target score 를 충족하며 unmet checklist / blocking defect 가 0일 때만 `status: completed` 를 반환합니다.
 - 검증이 없거나, 오래됐거나, indeterminate 이거나, 일부만 통과한 상태면 완료 표현 대신 `partial` 또는 `failed` 를 반환합니다.
+- `status: completed` 는 이 단일 phase 시도가 외부 루프의 완료 판정 후보가 되었다는 뜻일 뿐이며, 전체 plan 완료나 세션 종료를 뜻하지 않습니다.
 
 ## 상태 전이 표
 
@@ -129,6 +130,7 @@ attemptResult:
 - `moonshot-phase-runner`를 재귀적으로 다시 호출하면 안 됩니다.
 - 반환은 요약된 `attemptResult`만 허용됩니다.
 - 최신 검증 증거가 없으면 완료된 시도로 요약하면 안 됩니다.
+- final 응답, closeout 문구, 세션 종료처럼 들리는 표현을 쓰면 안 됩니다. 완료 여부의 최종 판정과 다음 phase 진입 결정은 coordinator가 담당합니다.
 - downstream 상태 전이에 필요한 최소 verifier 메타데이터(`verdict`, `evidenceFresh`, `requiredChecks.missing`)는 반드시 포함해야 합니다.
 - 판정 출처를 위한 `contractApplicable`, `mode` 도 함께 포함해야 합니다.
 

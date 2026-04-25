@@ -185,6 +185,8 @@ attemptResult:
 - 성공 요약이나 진행 요약을 반환하기 전에 `phase-status.yaml`을 다시 읽어 actionable phase가 남아 있는지 확인합니다.
 - actionable phase가 남아 있으면 방금 끝낸 phase 보고를 반환 경계로 쓰지 말고 즉시 다음 phase 루프로 이어갑니다.
 - phase 하나 완료, checkpoint 문서 갱신, 중간 진행 보고는 유효한 stop boundary가 아닙니다.
+- `phase-status.yaml`에 `activeExecutionStatus: active`가 남아 있는 동안의 사용자 업데이트는 commentary/진행 보고 형태만 허용되며, `final`, closeout, 세션 종료처럼 들리는 표현을 쓰면 안 됩니다.
+- Phase 01이 `completed`가 되었더라도 Phase 02 이후에 actionable phase가 남아 있으면, 아티팩트와 상태만 반영한 뒤 바로 Phase 02로 진입해야 하며 종료형 요약을 반환하면 안 됩니다.
 - coordinator가 이 규칙을 어기고 0으로 조기 종료하더라도 dispatcher가 재시작하도록 설계되어야 하며, 그 상황 자체를 계약 위반으로 봅니다.
 
 ## 출력
@@ -213,6 +215,7 @@ coordinatorResult:
 - strict/meta-harness 작업에서는 active `SPRINT_CONTRACT.md`에 policy anchors가 없으면 새 attempt를 시작하지 않습니다.
 - `attemptResult.status=completed`라도 해당 시도의 verifier evidence가 최신이고 contract 기준으로 완전하며 score도 완료일 때만 phase 완료로 반영합니다.
 - clean success 반환 경계는 active plan directory 완료뿐입니다. actionable phase가 남아 있으면 진행 보고 대신 계속 실행합니다.
+- completed phase milestone 하나만으로 `final` 응답을 내면 안 됩니다. coordinator는 다음 actionable phase로 이어가거나, 명시적 blocker/user pause를 기록한 경우에만 멈출 수 있습니다.
 
 ## References
 
