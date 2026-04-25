@@ -7,8 +7,9 @@ from pathlib import Path
 PRESETS = {
     "generic": {
         "label": "Generic balanced",
-        "weights": {"REQ": 40, "SCN": 30, "VER": 20, "CLOSE": 10},
+        "weights": {"CONFORM": 20, "REQ": 25, "SCN": 25, "VER": 20, "CLOSE": 10},
         "descriptions": {
+            "CONFORM": "Source phase plan conformance verified",
             "REQ": "In-scope requirements covered",
             "SCN": "Critical scenarios evidenced",
             "VER": "Required verification commands passed",
@@ -17,8 +18,9 @@ PRESETS = {
     },
     "saas": {
         "label": "SaaS / product flow",
-        "weights": {"REQ": 35, "SCN": 35, "VER": 20, "CLOSE": 10},
+        "weights": {"CONFORM": 20, "REQ": 25, "SCN": 25, "VER": 20, "CLOSE": 10},
         "descriptions": {
+            "CONFORM": "Source product phase plan conformance verified",
             "REQ": "In-scope product requirements covered",
             "SCN": "Critical user journeys evidenced",
             "VER": "Required verification commands passed",
@@ -27,8 +29,9 @@ PRESETS = {
     },
     "api-backend": {
         "label": "API / backend",
-        "weights": {"REQ": 40, "SCN": 20, "VER": 30, "CLOSE": 10},
+        "weights": {"CONFORM": 20, "REQ": 25, "SCN": 15, "VER": 30, "CLOSE": 10},
         "descriptions": {
+            "CONFORM": "Source API/backend phase plan conformance verified",
             "REQ": "In-scope contracts and business rules covered",
             "SCN": "Critical request, response, and failure scenarios evidenced",
             "VER": "Required automated verification passed",
@@ -37,8 +40,9 @@ PRESETS = {
     },
     "frontend": {
         "label": "Frontend / UI",
-        "weights": {"REQ": 30, "SCN": 40, "VER": 20, "CLOSE": 10},
+        "weights": {"CONFORM": 20, "REQ": 20, "SCN": 30, "VER": 20, "CLOSE": 10},
         "descriptions": {
+            "CONFORM": "Source UI phase plan conformance verified",
             "REQ": "In-scope UI requirements covered",
             "SCN": "Critical user flows and states evidenced",
             "VER": "Required automated verification passed",
@@ -47,8 +51,9 @@ PRESETS = {
     },
     "platform": {
         "label": "Platform / infra / refactor",
-        "weights": {"REQ": 25, "SCN": 10, "VER": 45, "CLOSE": 20},
+        "weights": {"CONFORM": 20, "REQ": 15, "SCN": 10, "VER": 40, "CLOSE": 15},
         "descriptions": {
+            "CONFORM": "Source platform phase plan conformance verified",
             "REQ": "In-scope platform or infrastructure changes covered",
             "SCN": "Critical rollout, rollback, and failure scenarios evidenced",
             "VER": "Required verification and operational checks passed",
@@ -182,6 +187,7 @@ def build_markdown(args):
     )
 
     rows = [
+        ("OBJ-CONFORM", preset["descriptions"]["CONFORM"], preset["weights"]["CONFORM"], "pending", args.qa_report, "Source plan snapshot, exact targets, and approved deviations"),
         ("OBJ-REQ", preset["descriptions"]["REQ"], req_weight, "pending", args.qa_report, f"REQ-* coverage; detected={req_count}"),
         ("OBJ-SCN", preset["descriptions"]["SCN"], scn_weight, "pending", args.qa_report, f"SCN-* coverage; detected={scn_count}"),
         ("OBJ-VER", preset["descriptions"]["VER"], preset["weights"]["VER"], "pending", args.qa_report, "Fresh contract-backed evidence"),
@@ -232,6 +238,7 @@ def build_markdown(args):
             "",
             "## Loop Policy",
             "- `done` requires Current score >= Target score",
+            "- `done` requires OBJ-CONFORM = pass",
             "- `done` requires Unmet checklist items = 0",
             "- `done` requires Blocking defects = 0",
             "- `blocked` means environment, contract, or dependency prevents progress",

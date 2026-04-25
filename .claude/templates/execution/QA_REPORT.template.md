@@ -40,6 +40,13 @@
 |-----------|--------|-------|
 |  | pass/fail/warn |  |
 
+## Plan Conformance Review
+| Plan Item | Required | Actual | Result | Required Action |
+|-----------|----------|--------|--------|-----------------|
+| Source plan snapshot preserved | Source `Goal`, `Expected Outcome`, `Scope`, `Detailed Tasks`, and `Exact Execution Targets` remain binding |  | pass/fail/warn |  |
+| Exact execution targets satisfied | Required files, dependencies, and expected signals from the source phase doc are implemented or explicitly user-approved replan exists |  | pass/fail/warn |  |
+| Spec deviation ledger clean | No unapproved delete/substitute/defer decisions |  | pass/fail/warn |  |
+
 ## Traceability Coverage
 | Item | Result | Notes |
 |------|--------|-------|
@@ -91,6 +98,7 @@ Use when the task changes harness, workflow docs, skill metadata, or public entr
 ## Finish Readiness
 - Fresh evidence confirmed:
 - Traceability evidence confirmed:
+- Source plan conformance confirmed:
 - Human UAT sign-off present:
 - Why this round may stop now: concrete closeout reason only, never placeholder text
 - Remaining in-scope work: use `none` only when the phase truly closes

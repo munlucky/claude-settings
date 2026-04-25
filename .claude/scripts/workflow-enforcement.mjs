@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const STATUS_FILE_DEFAULT = '.claude/docs/phase-status.yaml';
@@ -359,7 +360,8 @@ function isWorkflowArtifact(filePath) {
   return normalized.includes('/execution/') && (
     normalized.endsWith('/SPRINT_CONTRACT.md') ||
     normalized.endsWith('/QA_REPORT.md') ||
-    normalized.endsWith('/HANDOFF.md')
+    normalized.endsWith('/HANDOFF.md') ||
+    normalized.endsWith('/SCORECARD.md')
   );
 }
 
@@ -758,7 +760,7 @@ function verifyEnforcement(argv) {
         continue;
       }
       const text = fs.readFileSync(sprintContract, 'utf8');
-      for (const heading of ['## Stage Order', '## Review Cadence', '## Finish Rule']) {
+      for (const heading of ['## Source Plan Requirements Snapshot', '## Spec Deviation Ledger', '## Stage Order', '## Review Cadence', '## Finish Rule']) {
         if (!sectionExists(text, heading)) {
           violations.push(`${sprintContract}: missing '${heading}' section`);
         }
@@ -775,6 +777,9 @@ function verifyEnforcement(argv) {
         if (!sectionExists(text, heading)) {
           violations.push(`${qaReport}: missing '${heading}' section`);
         }
+      }
+      if (!sectionExists(text, '## Plan Conformance Review')) {
+        violations.push(`${qaReport}: missing '## Plan Conformance Review' section`);
       }
       const section = extractWorkflowSection(text);
       if (Object.keys(section).length === 0) {
@@ -838,6 +843,25 @@ function verifyEnforcement(argv) {
           if (closeoutReason !== 'verification_failed') violations.push(`${qaReport}: retry_loop requires Closeout reason = verification_failed`);
         } else if (nextPath === 'resume_later_handoff' && !['blocked', 'interrupted', 'context_limit', 'user_pause', 'deferred_verification'].includes(closeoutReason)) {
           violations.push(`${qaReport}: resume_later_handoff requires a real stop reason, not scope_complete or verification_failed`);
+        }
+      }
+
+      const phaseExecutionDir = path.dirname(qaReport);
+      const scorecardPath = path.join(phaseExecutionDir, 'SCORECARD.md');
+      const handoffPath = path.join(phaseExecutionDir, 'HANDOFF.md');
+      const conformance = evaluatePlanConformance({
+        sprintContractPath: path.join(phaseExecutionDir, 'SPRINT_CONTRACT.md'),
+        qaReportPath: qaReport,
+        scorecardPath,
+        handoffPath,
+      });
+      const completionClaimed = conformance.completionClaim
+        || nextPath === 'clean_finish'
+        || scopeStatus === 'complete';
+      if (completionClaimed && !conformance.allowed) {
+        violations.push(`${qaReport}: source plan conformance failed (${conformance.reason}); completion claims must be retried or user-approved replan`);
+        for (const item of conformance.violations) {
+          violations.push(`${qaReport}: ${item.code}: ${item.message}`);
         }
       }
     }

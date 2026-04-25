@@ -9,6 +9,21 @@
 ## Round Goal
 - What this round must deliver in user-visible terms
 
+## Source Plan Requirements Snapshot
+- Source phase doc:
+- Goal:
+- Expected outcome:
+- Scope in:
+- Detailed tasks:
+- Exact execution targets:
+- Expected signals:
+- Rule: this snapshot is copied from the source phase plan and must not be weakened during execution.
+
+## Spec Deviation Ledger
+| Plan Item | Planned Requirement | Actual / Proposed Change | Approval | Completion Impact | Required Action |
+|-----------|---------------------|--------------------------|----------|-------------------|-----------------|
+| none | none | none | none | none | none |
+
 ## In-Scope Traceability
 - Requirement IDs (`REQ-*`):
 - Critical scenarios (`SCN-*`):
@@ -84,6 +99,7 @@
 
 ## Finish Rule
 - Clean finish requires:
+- Source plan conformance: required; unapproved deviations force `retry_loop`
 - Continue-now rule: if in-scope work remains and no real stop condition exists, do not stop on checkpoint evidence alone
 - Resume-later handoff trigger:
 - Retry-loop trigger:

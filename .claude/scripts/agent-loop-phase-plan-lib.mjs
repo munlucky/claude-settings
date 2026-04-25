@@ -34,6 +34,58 @@ export function assignExecutionArtifactPaths(phaseNum, phaseTitle, executionRoot
   };
 }
 
+function extractMarkdownSection(text, heading) {
+  const lines = String(text || '').split(/\r?\n/);
+  let start = -1;
+  let level = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (match && match[2].trim().toLowerCase() === heading.toLowerCase()) {
+      start = index + 1;
+      level = match[1].length;
+      break;
+    }
+  }
+  if (start < 0) {
+    return '- Not found in source phase doc.';
+  }
+  let end = lines.length;
+  for (let index = start; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{1,6})\s+/);
+    if (match && match[1].length <= level) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).map((line) => line.trimEnd()).join('\n').trim()
+    || '- Empty in source phase doc.';
+}
+
+function indentBlock(text) {
+  return String(text || '').split(/\r?\n/).map((line) => `  ${line}`).join('\n');
+}
+
+function renderSourcePlanSnapshot(phaseDoc) {
+  const sourceText = phaseDoc && fs.existsSync(phaseDoc) ? fs.readFileSync(phaseDoc, 'utf8') : '';
+  if (!sourceText) {
+    return `- Source phase doc: ${phaseDoc || 'missing'}
+- Snapshot status: missing source phase document; completion must remain blocked until this is resolved.`;
+  }
+
+  return `- Source phase doc: ${phaseDoc}
+- Goal:
+${indentBlock(extractMarkdownSection(sourceText, 'Goal'))}
+- Expected outcome:
+${indentBlock(extractMarkdownSection(sourceText, 'Expected Outcome'))}
+- Scope:
+${indentBlock(extractMarkdownSection(sourceText, 'Scope'))}
+- Detailed tasks:
+${indentBlock(extractMarkdownSection(sourceText, 'Detailed Tasks'))}
+- Exact execution targets:
+${indentBlock(extractMarkdownSection(sourceText, 'Exact Execution Targets'))}
+- Binding rule: these source requirements remain authoritative. Deleting, replacing, or deferring any item requires user-approved replan before this phase can close.`;
+}
+
 export function renderRequiredVerificationCommands(verificationContractFile, options = {}) {
   if (!verificationContractFile || !fs.existsSync(verificationContractFile)) {
     return '- Populate from the active verification contract before claiming completion.';
@@ -88,20 +140,22 @@ function renderScorecard({
 ## Objective Checklist
 | ID | Category | Weight | Status | Evidence | Notes |
 |----|----------|--------|--------|----------|-------|
-| OBJ-REQ | In-scope requirements covered | 40 | pending | ${phaseQaReport} | REQ-* coverage |
-| OBJ-SCN | Critical scenarios evidenced | 30 | pending | ${phaseQaReport} | SCN-* runtime or E2E evidence |
+| OBJ-CONFORM | Source phase plan conformance verified | 20 | pending | ${phaseQaReport} | Source snapshot, exact targets, and approved deviations |
+| OBJ-REQ | In-scope requirements covered | 25 | pending | ${phaseQaReport} | REQ-* coverage |
+| OBJ-SCN | Critical scenarios evidenced | 25 | pending | ${phaseQaReport} | SCN-* runtime or E2E evidence |
 | OBJ-VER | Required verification commands passed | 20 | pending | ${phaseQaReport} | Fresh contract-backed evidence |
 | OBJ-CLOSE | Review and finish closeout recorded | 10 | pending | ${phaseQaReport} | Review + finish evidence present |
 
 ## Score Summary
 - Current score: 0
 - Target score: ${targetCompletionScore}
-- Unmet checklist items: 4
+- Unmet checklist items: 5
 - Blocking defects: 0
 - Verdict: retry
 
 ## Loop Policy
 - \`done\` requires Current score >= Target score
+- \`done\` requires OBJ-CONFORM = pass
 - \`done\` requires Unmet checklist items = 0
 - \`done\` requires Blocking defects = 0
 - \`blocked\` means environment, contract, or dependency prevents progress
@@ -146,6 +200,14 @@ export function ensureExecutionArtifacts(config) {
 
 ## Round Goal
 - Fill before code changes.
+
+## Source Plan Requirements Snapshot
+${renderSourcePlanSnapshot(phaseDoc)}
+
+## Spec Deviation Ledger
+| Plan Item | Planned Requirement | Actual / Proposed Change | Approval | Completion Impact | Required Action |
+|-----------|---------------------|--------------------------|----------|-------------------|-----------------|
+| none | none | none | none | none | none |
 
 ## Non-Goals
 - Fill before code changes.
@@ -199,6 +261,7 @@ ${requiredCommands}
 
 ## Finish Rule
 - Clean finish requires: fresh verification evidence, review complete, and finish-stage closeout recorded.
+- Source plan conformance: required; run \`.claude/scripts/verify-plan-conformance.mjs\` before clean finish. Unapproved plan deviations force \`retry_loop\`.
 - Continue-now rule: if in-scope work remains and there is no blocker, interruption, user pause, or intentionally deferred verification, continue execution; checkpoint evidence alone is not a stop reason.
 - Resume-later handoff trigger: blocked criteria, interruption, or intentionally deferred verification.
 - Retry-loop trigger: verification or review returns actionable failures for this phase.
@@ -241,6 +304,13 @@ ${requiredCommands}
 |-----------|--------|-------|
 |  | pending |  |
 
+## Plan Conformance Review
+| Plan Item | Required | Actual | Result | Required Action |
+|-----------|----------|--------|--------|-----------------|
+| Source plan snapshot preserved | Source phase doc requirements remain authoritative in SPRINT_CONTRACT.md | pending | pending | Compare source phase doc before closeout |
+| Exact execution targets satisfied | Required files, dependencies, and expected signals are implemented or user-approved replan exists | pending | pending | Run \`.claude/scripts/verify-plan-conformance.mjs\` |
+| Spec deviation ledger clean | No unapproved delete/substitute/defer decisions | pending | pending | Record retry_loop or user-approved-replan |
+
 ## Findings
 | Severity | Area | Reproduction | Expected | Actual |
 |----------|------|--------------|----------|--------|
@@ -266,6 +336,7 @@ ${requiredCommands}
 
 ## Finish Readiness
 - Fresh evidence confirmed: no
+- Source plan conformance confirmed: no
 - Why this round may stop now:
 - Remaining in-scope work:
 - Remaining blockers before closeout:
@@ -366,7 +437,7 @@ Codex direct execution checklist:
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
 8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
-10. Stop only when verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
+10. Stop only when source plan conformance passes, verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
 11. Even when this phase reaches clean completion, do not phrase the result as plan completion or session completion. Return control to the outer loop only.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 5.
@@ -397,6 +468,7 @@ Single isolated phase-attempt rules:
 - Do not invoke moonshot-phase-runner again.
 - Do not expand to other phases.
 - Read the Policy Anchors section in SPRINT_CONTRACT.md first.
+- Treat the Source Plan Requirements Snapshot as binding; do not replace, narrow, or defer source phase requirements without a user-approved replan recorded in Spec Deviation Ledger.
 - Preserve the stage order \`ready/isolate -> execute -> review -> verify -> finish/handoff\`.
 - Immediately after reading the active phase doc and SPRINT_CONTRACT.md, write an in-progress checkpoint to QA_REPORT.md and SCORECARD.md before broader inspection or long-running commands.
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
@@ -411,6 +483,8 @@ Single isolated phase-attempt rules:
 - Update SCORECARD.md on every meaningful round using objective checklist status, current score, unmet items, and verdict.
 - Refresh SCORECARD.md again after verification or any remediation so progress is visible while the phase is still running.
 - Refresh the default values in the "Workflow Execution" section of QA_REPORT.md when actual execution diverges.
+- Before any clean-finish claim, run \`.claude/scripts/verify-plan-conformance.mjs\` against the active phase artifacts and record the result in QA_REPORT.md Plan Conformance Review and SCORECARD.md OBJ-CONFORM.
+- If implementation differs from the source phase plan, use \`retry_loop\` unless the user explicitly approved a replan and the phase doc or Spec Deviation Ledger records that approval.
 - In QA_REPORT.md, use only these closeout reason codes: \`scope_complete\`, \`verification_failed\`, \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
 - If QA_REPORT.md uses \`Next path: retry_loop\`, it must also use \`Closeout reason: verification_failed\`.
 - In HANDOFF.md, use only these stop reason codes: \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
@@ -418,6 +492,7 @@ Single isolated phase-attempt rules:
 - If meaningful code changed, record \`code-simplifier\` in Applied skills or Skipped skills with a reason.
 - If the run stops without clean completion, update HANDOFF.md, include \`session-logger\` evidence, and list the checks to rerun.
 - Do not mark the phase done while SCORECARD.md says \`Verdict: retry\` or \`blocked\`.
+- Do not mark the phase done while source plan conformance is failing, OBJ-CONFORM is not \`pass\`, or unapproved deviation/deferred scope remains.
 - Do not mark the phase done while Current score is below ${targetCompletionScore}, Unmet checklist items > 0, or Blocking defects > 0.
 - Do not emit final-answer wording, closeout phrasing, or "all done" style language from this attempt. Return only updated artifacts, verification state, and an attempt-scoped summary.
 - If this attempt reaches clean phase completion, return control to the outer loop with the phase marked complete and let the outer loop decide whether another actionable phase remains.
@@ -427,7 +502,7 @@ Runtime compatibility fallback:
 - In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, ${activeWorkspaceContract(workspaceRoot)}, .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
-- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.${codexDirectSteps}
+- Return control only after source plan conformance passes, fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.${codexDirectSteps}
 - Treat "phase complete" as an attempt-local result only. Never use it as proof that the whole plan or user session may end; that decision belongs to the outer loop after re-reading ${statusFile}.
 
 Additional instructions:

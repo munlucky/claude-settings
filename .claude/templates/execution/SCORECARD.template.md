@@ -8,7 +8,7 @@
 > - `platform`: verification and handoff heavy
 >
 > Dynamic weighting rule:
-> - keep `VER` and `CLOSE` at the preset baseline
+> - keep `CONFORM`, `VER`, and `CLOSE` at the preset baseline
 > - rebalance only the combined `REQ + SCN` budget
 > - if detected `REQ-*` count is much higher, move up to 10 points toward `REQ`
 > - if detected `SCN-*` count is much higher, move up to 10 points toward `SCN`
@@ -17,8 +17,9 @@
 ## Objective Checklist
 | ID | Category | Weight | Status | Evidence | Notes |
 |----|----------|--------|--------|----------|-------|
-| OBJ-REQ | In-scope requirements covered | 40 | pending/pass/fail |  |  |
-| OBJ-SCN | Critical scenarios evidenced | 30 | pending/pass/fail |  |  |
+| OBJ-CONFORM | Source phase plan conformance verified | 20 | pending/pass/fail |  | Source snapshot, exact targets, and approved deviations |
+| OBJ-REQ | In-scope requirements covered | 25 | pending/pass/fail |  |  |
+| OBJ-SCN | Critical scenarios evidenced | 25 | pending/pass/fail |  |  |
 | OBJ-VER | Required verification commands passed | 20 | pending/pass/fail |  |  |
 | OBJ-CLOSE | Review, finish closeout, and workflow-surface consistency recorded | 10 | pending/pass/fail |  |  |
 
@@ -36,7 +37,7 @@ Use this section for harness, workflow, skill, or documentation changes.
 ## Score Summary
 - Current score: 0
 - Target score: 100
-- Unmet checklist items: 4
+- Unmet checklist items: 5
 - Blocking defects: 0
 - Verdict: retry
 
@@ -58,6 +59,7 @@ Mapping note:
 
 ## Loop Policy
 - `done` requires Current score >= Target score
+- `done` requires OBJ-CONFORM = pass
 - `done` requires Unmet checklist items = 0
 - `done` requires Blocking defects = 0
 - `blocked` means environment, contract, or dependency prevents progress

@@ -13,6 +13,7 @@
 ## Decisions
 - Decision:
 - Reason:
+- Source plan conformance impact: none | retry_loop required | user-approved-replan recorded
 
 ## Open Risks
 - Risk:
@@ -27,6 +28,7 @@
 ## Checks To Rerun
 - Review:
 - Verification:
+- Plan conformance: `.claude/scripts/verify-plan-conformance.mjs`
 - Runtime flow:
 - Traceability artifacts:
 

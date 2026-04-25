@@ -316,12 +316,180 @@ assert_text_contains "$PROMPT_OUTPUT" "Do not stop at implementation-complete or
 assert_text_contains "$PROMPT_OUTPUT" "Return control only after fresh-or-still-valid verification evidence exists" "prompt completion gate guard"
 assert_text_contains "$PROMPT_OUTPUT" "phase completion is never run completion or session completion" "prompt phase vs run boundary guard"
 assert_text_contains "$PROMPT_OUTPUT" "Do not emit final-answer wording" "prompt final wording guard"
+assert_text_contains "$PROMPT_OUTPUT" "Source Plan Requirements Snapshot as binding" "prompt source plan conformance guard"
 assert_text_contains "$PROMPT_OUTPUT" "---HANDOFF---" "prompt handoff separator"
 assert_text_contains "$PROMPT_OUTPUT" "Current stage: Finish / Handoff" "seeded handoff stage"
 assert_text_contains "$PROMPT_OUTPUT" "placeholder handoff seeded before the first stop or clean-finish update" "seeded handoff placeholder reason"
 
+CONFORMANCE_WORKSPACE="$TMP_ROOT/conformance-workspace"
+CONFORMANCE_PHASE_DIR="$CONFORMANCE_WORKSPACE/docs/implementation/execution/22-ink-fullscreen-tui"
+mkdir -p "$CONFORMANCE_WORKSPACE/docs/implementation" "$CONFORMANCE_PHASE_DIR"
+
+cat > "$CONFORMANCE_WORKSPACE/docs/implementation/22-ink-fullscreen-tui-v1.md" <<'EOF'
+# Phase 22: Ink Fullscreen TUI (v1)
+
+## Goal
+Implement the first Ink fullscreen UI.
+
+## Expected Outcome
+`agent tui --fullscreen` opens an opt-in Ink UI.
+
+## Scope
+- Ink dependency and TUI runtime package wiring.
+
+## Detailed Tasks
+- P22-1 Add Ink runtime boundary.
+- P22-3 Implement fullscreen screens.
+
+## Exact Execution Targets
+| Task | Targets | Expected signal |
+|------|---------|-----------------|
+| P22-1 | creates `packages/tui/src/fullscreen-app.tsx`; modifies `packages/tui/package.json` | Ink app compiles |
+| P22-3 | creates `packages/tui/src/screens.tsx` | fullscreen snapshot stable |
+EOF
+
+cat > "$CONFORMANCE_PHASE_DIR/SPRINT_CONTRACT.md" <<EOF
+# Phase 22 Sprint Contract
+
+## Slice
+- Source phase doc: docs/implementation/22-ink-fullscreen-tui-v1.md
+
+## Source Plan Requirements Snapshot
+$(sed 's/^/  /' "$CONFORMANCE_WORKSPACE/docs/implementation/22-ink-fullscreen-tui-v1.md")
+
+## Spec Deviation Ledger
+| Plan Item | Planned Requirement | Actual / Proposed Change | Approval | Completion Impact | Required Action |
+|-----------|---------------------|--------------------------|----------|-------------------|-----------------|
+| none | none | none | none | none | none |
+
+## Stage Order
+- Ready / Isolate
+
+## Review Cadence
+- Review owners: codex-review-code
+
+## Finish Rule
+- Source plan conformance: required
+EOF
+
+cat > "$CONFORMANCE_PHASE_DIR/QA_REPORT.md" <<'EOF'
+# Phase 22 QA Report
+
+## Verdict
+- Status: pass
+- Summary: String runtime boundary completed without adding external Ink package.
+- Scope status: complete
+- Next path: clean_finish
+- Closeout reason: scope_complete
+
+## Review Checkpoint
+- Review completed: yes
+
+## Plan Conformance Review
+| Plan Item | Required | Actual | Result | Required Action |
+|-----------|----------|--------|--------|-----------------|
+| Ink package | ink/react package renderer | TypeScript string boundary | pass | none |
+
+## Workflow Execution
+- Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier
+- Skipped skills: doc-auto-sync (not needed), session-logger (clean completion path)
+
+## Finish Readiness
+- Fresh evidence confirmed: yes
+- Source plan conformance confirmed: yes
+- Why this round may stop now: clean-finish conditions are satisfied.
+- Remaining in-scope work: none
+- Remaining blockers before closeout: none
+EOF
+
+cat > "$CONFORMANCE_PHASE_DIR/SCORECARD.md" <<'EOF'
+# Phase 22 Scorecard
+
+## Objective Checklist
+| ID | Category | Weight | Status | Evidence | Notes |
+|----|----------|--------|--------|----------|-------|
+| OBJ-CONFORM | Source phase plan conformance verified | 20 | pass | QA_REPORT.md | claimed |
+
+## Score Summary
+- Current score: 100
+- Target score: 100
+- Unmet checklist items: 0
+- Blocking defects: 0
+- Verdict: done
+
+## Task-Level Status Adapter
+- Current task status: FULL
+EOF
+
+cat > "$CONFORMANCE_PHASE_DIR/HANDOFF.md" <<'EOF'
+# Phase 22 Handoff
+
+## Status
+- Required: no
+
+## Resume Trigger
+- Stop reason: phase_complete
+EOF
+
+set +e
+(
+  cd "$CONFORMANCE_WORKSPACE"
+  node "$ROOT_DIR/.claude/scripts/verify-plan-conformance.mjs" \
+    --phase-doc docs/implementation/22-ink-fullscreen-tui-v1.md \
+    --sprint-contract docs/implementation/execution/22-ink-fullscreen-tui/SPRINT_CONTRACT.md \
+    --qa-report docs/implementation/execution/22-ink-fullscreen-tui/QA_REPORT.md \
+    --scorecard docs/implementation/execution/22-ink-fullscreen-tui/SCORECARD.md \
+    --handoff docs/implementation/execution/22-ink-fullscreen-tui/HANDOFF.md > "$TMP_ROOT/conformance-fail.out" 2>&1
+)
+CONFORMANCE_STATUS=$?
+set -e
+
+if [[ "$CONFORMANCE_STATUS" -eq 0 ]]; then
+  echo "FAIL: source plan mismatch should fail plan conformance" >&2
+  cat "$TMP_ROOT/conformance-fail.out" >&2
+  exit 1
+fi
+assert_contains "$TMP_ROOT/conformance-fail.out" "required-package-missing" "missing ink/react package conformance failure"
+assert_contains "$TMP_ROOT/conformance-fail.out" "unapproved-deferred-scope" "unapproved deferred scope conformance failure"
+
+GATE_OUTPUT="$(
+  cd "$CONFORMANCE_WORKSPACE"
+  node "$ROOT_DIR/.claude/scripts/agent-loop-phase-state.mjs" evaluate-phase-completion-gate \
+    0 \
+    docs/implementation/execution/22-ink-fullscreen-tui/QA_REPORT.md \
+    docs/implementation/execution/22-ink-fullscreen-tui/SCORECARD.md \
+    docs/implementation/execution/22-ink-fullscreen-tui \
+    true \
+    100 \
+    docs/implementation/execution/22-ink-fullscreen-tui/HANDOFF.md
+)"
+assert_text_contains "$GATE_OUTPUT" "PHASE_PLAN_CONFORMANCE_ALLOWED='false'" "completion gate conformance denial"
+
+mkdir -p "$CONFORMANCE_WORKSPACE/packages/tui/src"
+cat > "$CONFORMANCE_WORKSPACE/packages/tui/package.json" <<'EOF'
+{"dependencies":{"ink":"latest","react":"latest"}}
+EOF
+touch "$CONFORMANCE_WORKSPACE/packages/tui/src/fullscreen-app.tsx" "$CONFORMANCE_WORKSPACE/packages/tui/src/screens.tsx"
+perl -0pi -e 's/String runtime boundary completed without adding external Ink package./Ink package renderer completed. Ink app compiles./; s/TypeScript string boundary/Ink app compiles/' "$CONFORMANCE_PHASE_DIR/QA_REPORT.md"
+perl -0pi -e 's/Stop reason: phase_complete/Stop reason: phase_local_closeout_marker/' "$CONFORMANCE_PHASE_DIR/HANDOFF.md"
+
+(
+  cd "$CONFORMANCE_WORKSPACE"
+  node "$ROOT_DIR/.claude/scripts/verify-plan-conformance.mjs" \
+    --phase-doc docs/implementation/22-ink-fullscreen-tui-v1.md \
+    --sprint-contract docs/implementation/execution/22-ink-fullscreen-tui/SPRINT_CONTRACT.md \
+    --qa-report docs/implementation/execution/22-ink-fullscreen-tui/QA_REPORT.md \
+    --scorecard docs/implementation/execution/22-ink-fullscreen-tui/SCORECARD.md \
+    --handoff docs/implementation/execution/22-ink-fullscreen-tui/HANDOFF.md > "$TMP_ROOT/conformance-pass.out"
+)
+assert_contains "$TMP_ROOT/conformance-pass.out" "Status: pass" "positive plan conformance pass"
+
 assert_contains "$ROOT_DIR/.claude/templates/execution/PHASE_COORDINATOR_CONTRACT.md" "do not emit final, closeout, or session-ended wording" "coordinator contract final guard"
 assert_contains "$ROOT_DIR/.claude/templates/execution/PHASE_COORDINATOR_CONTRACT.md" "If Phase 01 just became completed but Phase 02+" "coordinator contract next phase guard"
 assert_text_not_contains "$(cat "$ROOT_DIR/.claude/templates/execution/HANDOFF.template.md")" "clean_finish" "handoff template clean_finish stop reason"
+assert_contains "$ROOT_DIR/.claude/templates/execution/SPRINT_CONTRACT.template.md" "Source Plan Requirements Snapshot" "sprint template source snapshot"
+assert_contains "$ROOT_DIR/.claude/templates/execution/QA_REPORT.template.md" "Plan Conformance Review" "qa template plan conformance"
+assert_contains "$ROOT_DIR/.claude/templates/execution/SCORECARD.template.md" "OBJ-CONFORM" "scorecard conformance objective"
 
 echo "PASS: verify-phase-runner-boundary"

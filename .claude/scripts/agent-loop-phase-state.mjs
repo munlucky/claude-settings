@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
@@ -382,12 +383,18 @@ function fileLatestTimestamp(paths) {
 function evaluateCleanFinishArtifacts({ qaReportPath, scorecardPath, handoffPath }) {
   const scorecard = parseScorecardSummary(scorecardPath);
   const handoff = parseHandoffSummary(handoffPath);
+  const planConformance = evaluatePlanConformance({
+    qaReportPath,
+    scorecardPath,
+    handoffPath,
+  });
 
   if (!qaReportPath || !fs.existsSync(qaReportPath)) {
     return {
       cleanFinish: false,
       scorecard,
       handoff,
+      planConformance,
       timestamp: fileLatestTimestamp([scorecardPath, handoffPath]),
     };
   }
@@ -412,12 +419,14 @@ function evaluateCleanFinishArtifacts({ qaReportPath, scorecardPath, handoffPath
     && isNoneLikeValue(finishRemainingBlockers)
     && scorecard.done
     && scorecard.taskFull
+    && planConformance.allowed
     && (handoff.cleanFinish || !handoff.exists || (qaNextPath === 'clean_finish' && qaCloseoutReason === 'scope_complete'));
 
   return {
     cleanFinish,
     scorecard,
     handoff,
+    planConformance,
     qaStatus,
     qaNextPath,
     qaCloseoutReason,
@@ -596,6 +605,12 @@ function evaluatePhaseCompletionGate(config) {
     qaReportPath,
     scorecardPath,
     handoffPath,
+  });
+  const planConformance = cleanFinishArtifacts.planConformance || evaluatePlanConformance({
+    qaReportPath,
+    scorecardPath,
+    handoffPath,
+    sprintContractPath: phaseExecutionDir ? path.join(phaseExecutionDir, 'SPRINT_CONTRACT.md') : '',
   });
 
   const patterns = [
@@ -913,7 +928,9 @@ function evaluatePhaseCompletionGate(config) {
     && completionBlockers.length === 0;
 
   if (workflowReason === 'ok') {
-    if (completionBlockers.includes('review_incomplete')) {
+    if (!planConformance.allowed) {
+      workflowReason = `plan-conformance-${planConformance.reason}`;
+    } else if (completionBlockers.includes('review_incomplete')) {
       workflowReason = 'review-incomplete';
     } else if (completionBlockers.includes('fresh_evidence_missing')) {
       workflowReason = 'no-fresh-verification-artifact';
@@ -960,6 +977,9 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_CLOSEOUT_STATUS: closeoutStatus,
     PHASE_COMPLETION_BLOCKER_CODES: completionBlockers.join('\n'),
     PHASE_COMPLETION_CLEAN_FINISH: closeoutConcrete ? 'true' : 'false',
+    PHASE_PLAN_CONFORMANCE_ALLOWED: planConformance.allowed ? 'true' : 'false',
+    PHASE_PLAN_CONFORMANCE_REASON: planConformance.reason,
+    PHASE_PLAN_CONFORMANCE_VIOLATIONS: planConformance.violations.map((item) => `${item.code}: ${item.message}`).join('\n'),
     PHASE_COMPLETION_WARNING_COUNT: String(latestWorkflowWarnings.length),
     PHASE_COMPLETION_WARNING_NOTES: informationalWorkflowWarnings ? latestWorkflowWarnings.join('\n') : '',
   };

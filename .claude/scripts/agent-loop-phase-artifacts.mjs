@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
 function findSection(lines, heading) {
   let start = null;
@@ -363,6 +364,23 @@ function syncCleanFinishArtifacts({
   phaseTitle,
   targetCompletionScore,
 }) {
+  const planConformance = evaluatePlanConformance({
+    qaReportPath,
+    scorecardPath,
+    sprintContractPath: qaReportPath ? path.join(path.dirname(qaReportPath), 'SPRINT_CONTRACT.md') : '',
+    handoffPath: qaReportPath ? path.join(path.dirname(qaReportPath), 'HANDOFF.md') : '',
+  });
+  if (!planConformance.allowed) {
+    syncPlanConformanceFailureArtifacts({
+      qaReportPath,
+      scorecardPath,
+      phaseTitle,
+      targetCompletionScore,
+      planConformance,
+    });
+    return;
+  }
+
   const verdictPath = findVerdictArtifactPath(completionArtifacts, qaReportPath);
   let verdictPayload = {};
 
@@ -537,6 +555,90 @@ function syncCleanFinishArtifacts({
     });
     scoreLines = ensureTaskLevelStatus(scoreLines, 'FULL');
 
+    fs.writeFileSync(scorecardPath, `${scoreLines.join('\n')}\n`, 'utf8');
+  }
+}
+
+function syncPlanConformanceFailureArtifacts({
+  qaReportPath,
+  scorecardPath,
+  phaseTitle,
+  targetCompletionScore,
+  planConformance,
+}) {
+  const violationLines = planConformance.violations.length > 0
+    ? planConformance.violations.map((item) => `| ${item.code} | fail | ${item.message.replace(/\|/g, '/')} | retry_loop |`)
+    : ['| none | pass | Source plan conformance verified. | none |'];
+
+  if (qaReportPath && fs.existsSync(qaReportPath)) {
+    let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
+    if (qaLines.length > 0 && qaLines.at(-1) === '') {
+      qaLines = qaLines.slice(0, -1);
+    }
+    qaLines = replaceOrAppendSection(qaLines, '## Verdict', [
+      '- Status: fail',
+      `- Summary: ${phaseTitle || 'Active phase'} cannot close because source plan conformance failed.`,
+      '- Scope status: partial',
+      '- Next path: retry_loop',
+      '- Closeout reason: verification_failed',
+      '',
+    ]);
+    qaLines = replaceOrAppendSection(qaLines, '## Plan Conformance Review', [
+      '| Plan Item | Required | Actual | Result | Required Action |',
+      '|-----------|----------|--------|--------|-----------------|',
+      ...violationLines.map((line) => {
+        const parts = line.split('|').map((part) => part.trim());
+        return `| ${parts[1] || 'plan-conformance'} | Source phase plan | ${parts[3] || 'failed'} | fail | ${parts[4] || 'retry_loop'} |`;
+      }),
+      '',
+    ]);
+    qaLines = replaceOrAppendSection(qaLines, '## Finish Readiness', [
+      '- Fresh evidence confirmed: no',
+      '- Why this round may stop now: source plan conformance failed; retry is required.',
+      '- Remaining in-scope work: resolve source plan conformance violations or record a user-approved replan.',
+      '- Remaining blockers before closeout: plan conformance gate failed.',
+      '- Checks to rerun if code changes again: run `.claude/scripts/verify-plan-conformance.mjs` and required verification commands.',
+      '',
+    ]);
+    fs.writeFileSync(qaReportPath, `${qaLines.join('\n')}\n`, 'utf8');
+  }
+
+  if (scorecardPath && fs.existsSync(scorecardPath)) {
+    let scoreLines = fs.readFileSync(scorecardPath, 'utf8').split(/\r?\n/);
+    if (scoreLines.length > 0 && scoreLines.at(-1) === '') {
+      scoreLines = scoreLines.slice(0, -1);
+    }
+    let sawConform = false;
+    scoreLines = scoreLines.map((line) => {
+      if (line.startsWith('| OBJ-CONFORM |')) {
+        sawConform = true;
+        const parts = line.split('|');
+        if (parts.length >= 6) {
+          parts[4] = ' fail ';
+          parts[5] = ` ${planConformance.reason} `;
+          return parts.join('|');
+        }
+      }
+      if (line.trim().startsWith('- Current score:')) return '- Current score: 0';
+      if (line.trim().startsWith('- Target score:')) return `- Target score: ${targetCompletionScore || '100'}`;
+      if (line.trim().startsWith('- Unmet checklist items:')) return '- Unmet checklist items: 1';
+      if (line.trim().startsWith('- Blocking defects:')) return '- Blocking defects: 1';
+      if (line.trim().startsWith('- Verdict:')) return '- Verdict: retry';
+      return line;
+    });
+    if (!sawConform) {
+      const section = findSection(scoreLines, '## Objective Checklist');
+      if (section.start !== null) {
+        scoreLines.splice(section.end, 0, `| OBJ-CONFORM | Source phase plan conformance | 20 | fail | ${qaReportPath || ''} | ${planConformance.reason} |`);
+      }
+    }
+    scoreLines = ensureTaskLevelStatus(scoreLines, 'NO');
+    scoreLines = replaceOrAppendSection(scoreLines, '## Plan Conformance Gate', [
+      `- Status: fail`,
+      `- Reason: ${planConformance.reason}`,
+      `- Violations: ${planConformance.violations.length}`,
+      '',
+    ]);
     fs.writeFileSync(scorecardPath, `${scoreLines.join('\n')}\n`, 'utf8');
   }
 }
