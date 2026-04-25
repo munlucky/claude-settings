@@ -7,6 +7,13 @@ import { spawnSync } from 'node:child_process';
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const STATUS_FILE_DEFAULT = '.claude/docs/phase-status.yaml';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
+const PLAN_SUCCESS_STOP_REASON_CODES = new Set([
+  'plan-directory-complete',
+  'scope_complete',
+  'clean_finish',
+  'current-session-clean-finish',
+  'success-return',
+]);
 
 function usage() {
   console.log(`Usage:
@@ -145,6 +152,18 @@ function parseSimpleYaml(text) {
   }
 
   return result;
+}
+
+function parsePhaseStatusSummary(statusFile) {
+  if (!statusFile || !fs.existsSync(statusFile)) {
+    return null;
+  }
+  const payload = parseSimpleYaml(fs.readFileSync(statusFile, 'utf8'));
+  return {
+    activeExecutionStatus: String(payload.activeExecutionStatus || '').trim().toLowerCase(),
+    activeActionablePhasesRemaining: Number.parseInt(String(payload.activeActionablePhasesRemaining ?? ''), 10),
+    lastStopReasonCode: String(payload.lastStopReasonCode || '').trim().replace(/^"|"$/g, '').toLowerCase(),
+  };
 }
 
 function extractWorkflowSection(text) {
@@ -328,9 +347,8 @@ function containsPlaceholderText(value) {
 }
 
 function isCleanFinishHandoff(text) {
-  const stopReason = extractBulletValue(text, '## Resume Trigger', 'Stop reason');
   const required = extractBulletValue(text, '## Status', 'Required');
-  return stopReason === 'clean_finish' || required.toLowerCase() === 'no';
+  return required.toLowerCase() === 'no';
 }
 
 function isWorkflowArtifact(filePath) {
@@ -721,6 +739,19 @@ function verifyEnforcement(argv) {
       violations.push('workflow trace required but no QA_REPORT.md change detected');
     }
 
+    const statusSummary = parsePhaseStatusSummary(STATUS_FILE_DEFAULT);
+    if (statusSummary) {
+      const actionableRemaining = Number.isNaN(statusSummary.activeActionablePhasesRemaining)
+        ? -1
+        : statusSummary.activeActionablePhasesRemaining;
+      if (statusSummary.activeExecutionStatus === 'finished' && actionableRemaining > 0) {
+        violations.push(`${STATUS_FILE_DEFAULT}: activeExecutionStatus=finished is invalid while actionable phases remain (${actionableRemaining})`);
+      }
+      if (actionableRemaining > 0 && PLAN_SUCCESS_STOP_REASON_CODES.has(statusSummary.lastStopReasonCode)) {
+        violations.push(`${STATUS_FILE_DEFAULT}: plan-level success stop reason '${statusSummary.lastStopReasonCode}' is invalid while actionable phases remain`);
+      }
+    }
+
     for (const sprintContract of sprintContracts) {
       if (!fs.existsSync(sprintContract)) {
         violations.push(`missing sprint contract: ${sprintContract}`);
@@ -828,6 +859,9 @@ function verifyEnforcement(argv) {
       const handoffFieldsPresent = Boolean(stopReason || stopWhy || remainingScope) || sectionExists(text, '## Remaining Scope');
       if (handoffFieldsPresent) {
         if (!sectionExists(text, '## Remaining Scope')) violations.push(`${handoff}: missing '## Remaining Scope' section`);
+        if (stopReason === 'clean_finish') {
+          violations.push(`${handoff}: 'Stop reason: clean_finish' is invalid; clean finish must be represented by 'Required: no' without a plan-level stop reason`);
+        }
         if (isCleanFinishHandoff(text)) {
           const required = extractBulletValue(text, '## Status', 'Required').toLowerCase();
           const reason = extractBulletValue(text, '## Status', 'Reason');

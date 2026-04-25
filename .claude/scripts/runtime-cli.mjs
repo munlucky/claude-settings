@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { activeWorkspaceContract, isWsl } from './lib/runtime-platform.mjs';
+import {
+  activeWorkspaceContract,
+  isCodexDesktopContext,
+  isWsl,
+  resolveParentRuntimeContext,
+} from './lib/runtime-platform.mjs';
 import { runCommand } from './lib/process-utils.mjs';
 
 function windowsCodexAuthCandidates() {
@@ -129,11 +134,6 @@ function resolveCommandFromPath(command) {
     .find(Boolean) || '';
 }
 
-function isCodexDesktopContext() {
-  const originator = String(process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE || '').trim().toLowerCase();
-  return originator.includes('codex desktop') || Boolean(process.env.CODEX_THREAD_ID);
-}
-
 function codexBinaryCandidates() {
   const homeDir = os.homedir();
   const localAppData = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
@@ -182,7 +182,7 @@ function codexBinaryCandidates() {
   return [...new Set(candidates.map((entry) => String(entry || '').trim()).filter(Boolean))];
 }
 
-function resolveCodexCommand() {
+export function resolveCodexCommand() {
   for (const candidate of codexBinaryCandidates()) {
     try {
       if (fs.existsSync(candidate)) {
@@ -254,7 +254,7 @@ function prepareCodexProbeHome(rootPath) {
   };
 }
 
-function codexBaseArgs(cwd) {
+export function codexBaseArgs(cwd) {
   let useOss = process.env.CODEX_USE_OSS_PROVIDER ?? 'auto';
   let localProvider = process.env.CODEX_LOCAL_PROVIDER ?? '';
   const useEphemeral = process.env.CODEX_EXEC_EPHEMERAL ?? 'true';
@@ -293,6 +293,7 @@ function printUsage() {
     '  find-pids-by-pattern <pattern>',
     '  get-process-group-id <pid>',
     '  resolve-codex-command',
+    '  resolve-parent-runtime-context [requested-runtime] [verification-runtimes]',
     '  codex-base-args <cwd>',
     '  codex-probe-env <probe-root>',
   ].join('\n'));
@@ -364,6 +365,17 @@ function main() {
         process.exit(0);
       }
       process.exit(1);
+      break;
+    }
+    case 'resolve-parent-runtime-context': {
+      const context = resolveParentRuntimeContext({
+        requestedRuntime: args[0] ?? 'auto',
+        verificationRuntimes: args[1] ?? 'auto',
+      });
+      for (const [key, value] of Object.entries(context)) {
+        writeStdoutLine(`${key}=${String(value)}`);
+      }
+      process.exit(0);
       break;
     }
     case 'codex-base-args': {

@@ -659,8 +659,8 @@ function writeCleanFinishHandoff({
 
 ## Resume Trigger
 - Why this handoff exists: clean-finish marker only
-- Stop reason: clean_finish
-- Why this cannot continue in the current round: no additional in-scope work remains for this phase
+- Stop reason: phase_local_closeout_marker
+- Why this cannot continue in the current round: no additional in-scope work remains for this phase; this marker is phase-local and not a plan-level stop reason
 - Condition to resume: reopen only if a new change invalidates the current verification evidence
 
 ## Checks To Rerun

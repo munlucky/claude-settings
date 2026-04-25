@@ -5,6 +5,8 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
+import { resolveParentRuntimeContext } from './lib/runtime-platform.mjs';
+
 const scriptDir = path.dirname(new URL(import.meta.url).pathname);
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -62,6 +64,16 @@ function runtimeCli(args) {
   return (result.stdout ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
+function runtimeAvailable(runtime) {
+  if (runtime === 'codex') {
+    return runtimeCli(['resolve-codex-command']).length > 0;
+  }
+  if (runtime === 'claude') {
+    return commandExists('claude');
+  }
+  return false;
+}
+
 function evaluatePhaseCompletionAllowed(config) {
   const result = spawnSync('node', [
     phaseStatePath,
@@ -100,36 +112,47 @@ function resolveCrossRuntimeFallbackPolicy() {
       reason: 'env-override-false',
     };
   }
-
-  const originator = String(process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE || '').trim().toLowerCase();
-  const isCodexDesktop = originator.includes('codex desktop') || Boolean(process.env.CODEX_THREAD_ID);
-  if (isCodexDesktop) {
-    return {
-      allow: false,
-      reason: 'same-runtime-only-codex-desktop',
-    };
-  }
+  const context = resolveParentRuntimeContext();
 
   return {
-    allow: true,
-    reason: 'auto-allow',
+    allow: context.allowCrossRuntimeFallback,
+    reason: context.allowCrossRuntimeFallback
+      ? context.mixedRuntimeExplicit
+        ? 'explicit-mixed-runtime'
+        : 'auto-allow'
+      : context.parentRuntime === 'unknown'
+        ? 'same-runtime-only-default'
+        : `same-runtime-only-parent-${context.parentRuntime}`,
   };
 }
 
 function resolveRunnerRuntime(requestedRuntime) {
-  if (requestedRuntime === 'claude' || requestedRuntime === 'codex') {
-    return requestedRuntime;
+  const context = resolveParentRuntimeContext({ requestedRuntime });
+  if (context.explicitRuntime === 'claude' || context.explicitRuntime === 'codex') {
+    if (!runtimeAvailable(context.explicitRuntime)) {
+      console.error(`${context.explicitRuntime} runtime was requested explicitly but is not available`);
+      process.exit(1);
+    }
+    return context.explicitRuntime;
   }
 
-  if (runtimeCli(['resolve-codex-command']).length > 0) {
+  if (context.fixedRuntime) {
+    if (runtimeAvailable(context.fixedRuntime)) {
+      return context.fixedRuntime;
+    }
+    console.error(`${context.fixedRuntime} runtime required by parent runtime policy but not available`);
+    process.exit(1);
+  }
+
+  if (context.allowCodexChecks && runtimeAvailable('codex')) {
     return 'codex';
   }
 
-  if (commandExists('claude')) {
+  if (context.allowClaudeChecks && runtimeAvailable('claude')) {
     return 'claude';
   }
 
-  console.error('Neither Codex CLI nor Claude CLI was found');
+  console.error('No allowed runtime matched the current parent runtime policy');
   process.exit(1);
 }
 
@@ -219,10 +242,11 @@ function resolveTimeoutFallbackRuntime(currentRuntime) {
   if (!fallbackPolicy.allow) {
     return '';
   }
-  if (currentRuntime === 'claude' && runtimeCli(['resolve-codex-command']).length > 0) {
+  if (currentRuntime === 'claude' && runtimeAvailable('codex')) {
     return 'codex';
   }
-  if (currentRuntime === 'codex' && commandExists('claude')) {
+  const context = resolveParentRuntimeContext();
+  if (currentRuntime === 'codex' && context.allowClaudeChecks && runtimeAvailable('claude')) {
     return 'claude';
   }
   return '';
@@ -524,7 +548,7 @@ function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
     RUNTIME: normalizedRuntime,
     REASON: 'runtime-log-health-check-failed',
     DETAIL: `Recent runtime warnings detected in ${matchingLogs.map((entry) => entry.path).join(', ')}`,
-    FALLBACK_RUNTIME: fallbackPolicy.allow && commandExists('claude') ? 'claude' : '',
+    FALLBACK_RUNTIME: fallbackPolicy.allow && resolveParentRuntimeContext().allowClaudeChecks && runtimeAvailable('claude') ? 'claude' : '',
     FALLBACK_POLICY: fallbackPolicy.reason,
   };
 }

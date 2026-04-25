@@ -4,6 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+import {
+  normalizeRequestedRuntime,
+  normalizeVerificationRuntimeSelection,
+  resolveParentRuntimeContext,
+} from './runtime-platform.mjs';
+
 const scriptDir = path.dirname(new URL(import.meta.url).pathname);
 const runtimeCliPath = path.join(scriptDir, '..', 'runtime-cli.mjs');
 
@@ -90,16 +96,6 @@ function resolveCodexCommand() {
   return String(result.stdout || '').trim();
 }
 
-export function normalizeRequestedRuntime(value) {
-  const normalized = String(value || 'auto').trim().toLowerCase();
-  return normalized === 'claude' || normalized === 'codex' ? normalized : 'auto';
-}
-
-export function normalizeVerificationRuntimeSelection(value) {
-  const normalized = String(value || 'auto').trim().toLowerCase();
-  return ['auto', 'current', 'claude', 'codex', 'both'].includes(normalized) ? normalized : 'auto';
-}
-
 export function resolveVerificationRuntimeSelection({
   requestedRuntime = 'auto',
   verificationRuntimes = 'auto',
@@ -152,7 +148,7 @@ function expandVerificationTargets(selection, currentRuntime = '') {
   return [];
 }
 
-export function resolveAvailableRuntimes() {
+export function resolveAvailableRuntimes(options = {}) {
   const override = String(process.env.PHASE_VERIFICATION_AVAILABLE_RUNTIMES || '').trim();
   if (override) {
     return override
@@ -161,9 +157,15 @@ export function resolveAvailableRuntimes() {
       .filter((value) => value === 'claude' || value === 'codex');
   }
 
+  const parentRuntimeContext = resolveParentRuntimeContext(options);
+  const currentRuntime = normalizeRequestedRuntime(options.currentRuntime);
   const available = [];
-  if (commandExists('claude')) available.push('claude');
-  if (resolveCodexCommand()) available.push('codex');
+  if (commandExists('claude') && (parentRuntimeContext.allowClaudeChecks || currentRuntime === 'claude')) {
+    available.push('claude');
+  }
+  if (resolveCodexCommand() && (parentRuntimeContext.allowCodexChecks || currentRuntime === 'codex')) {
+    available.push('codex');
+  }
   return available;
 }
 
@@ -195,6 +197,7 @@ export function loadVerificationContractContext(contractFile, options = {}) {
   return {
     contract,
     commands,
+    parentRuntimeContext: resolveParentRuntimeContext(options),
     requestedSelection: selectionContext.requestedSelection,
     effectiveSelection: selectionContext.effectiveSelection,
     currentRuntime,
@@ -230,7 +233,7 @@ export function loadVerificationContractContext(contractFile, options = {}) {
 
 export function collectVerificationPreflightBlockers(contractFile, options = {}) {
   const context = loadVerificationContractContext(contractFile, options);
-  const availableRuntimes = new Set(resolveAvailableRuntimes());
+  const availableRuntimes = new Set(resolveAvailableRuntimes(options));
   const blockers = [];
 
   for (const check of context.requiredChecks) {

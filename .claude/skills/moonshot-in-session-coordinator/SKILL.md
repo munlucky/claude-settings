@@ -233,6 +233,7 @@ coordinatorResult:
 - Do not translate `attemptResult.status=completed` into a completed phase unless the verifier evidence for that attempt is fresh, contract-complete, and score-complete.
 - The only clean success boundary is active plan-directory completion. If any actionable phase remains, continue execution instead of returning a progress summary.
 - A completed phase milestone is never a valid `final` response boundary by itself. The coordinator must either continue into the next actionable phase or stop with an explicit blocker/user pause.
+- If actionable phases remain, plan-level execution may only stay `active` or move to `paused`. Do not record `finished`, and do not write `Stop reason: clean_finish` into `HANDOFF.md`.
 
 ## References
 

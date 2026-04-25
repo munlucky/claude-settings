@@ -313,12 +313,12 @@ function runPhaseRunnerOnce(argv) {
   return result.status ?? 0;
 }
 
-function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc }) {
+function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
   const args = [
     state.planDir,
     '--status-file', state.statusFile,
     '--execution-root', state.executionRoot,
-    '--runtime', state.runtime,
+    '--runtime', runtime || state.runtime,
     '--verification-runtimes', state.verificationRuntimes,
     '--phase-num', String(nextPhase),
     '--phase-title', phaseTitle,
@@ -738,7 +738,7 @@ async function runNodeManagedLoop() {
         currentPhaseTitle: phaseTitle,
         loopState: 'running',
       });
-      const runnerArgs = buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc });
+      const runnerArgs = buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime });
       appendDebugLog('phase-runner-invoke', {
         nextPhase,
         phaseTitle,

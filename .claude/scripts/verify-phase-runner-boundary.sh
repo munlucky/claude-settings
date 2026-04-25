@@ -86,6 +86,17 @@ assert_text_contains() {
   fi
 }
 
+assert_text_not_contains() {
+  local text="$1"
+  local unexpected="$2"
+  local label="$3"
+  if [[ "$text" == *"$unexpected"* ]]; then
+    echo "FAIL: unexpected ${label}: ${unexpected}" >&2
+    printf '%s\n' "$text" >&2
+    exit 1
+  fi
+}
+
 cat > "$FAKE_BIN/claude" <<'EOF'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "--help" ]]; then
@@ -97,6 +108,20 @@ EOF
 chmod +x "$FAKE_BIN/claude"
 
 write_pending_status
+
+RUNTIME_POLICY_OUTPUT="$(CODEX_THREAD_ID=thread-smoke AGENT_LOOP_RUNTIME_SCOPE=same PATH="$FAKE_BIN:$PATH" ROOT_DIR="$ROOT_DIR" node --input-type=module <<'EOF'
+const rootDir = process.env.ROOT_DIR;
+const mod = await import(`file://${rootDir}/.claude/scripts/lib/verification-contract.mjs`);
+const available = mod.resolveAvailableRuntimes({
+  requestedRuntime: 'auto',
+  verificationRuntimes: 'current',
+  currentRuntime: 'codex',
+});
+process.stdout.write(`available=${available.join(',')}\n`);
+EOF
+)"
+assert_text_contains "$RUNTIME_POLICY_OUTPUT" "available=" "runtime availability output"
+assert_text_not_contains "$RUNTIME_POLICY_OUTPUT" "claude" "claude runtime on codex parent same-scope preflight"
 
 set +e
 PATH="$FAKE_BIN:$PATH" \
@@ -132,9 +157,10 @@ if [[ -z "$DISPATCH_CURRENT_RUN" ]]; then
 fi
 assert_contains "$DISPATCH_ACTIVE_LEASE" "\"runLeaseId\": \"dispatch-" "dispatch lease id"
 assert_contains "$DISPATCH_ACTIVE_LEASE" "\"executionBoundary\": \"in-session-coordinator\"" "dispatch lease execution boundary"
-assert_contains "$DISPATCH_ACTIVE_LEASE" "\"status\": \"finished\"" "dispatch lease finish state"
+assert_contains "$DISPATCH_ACTIVE_LEASE" "\"status\": \"paused\"" "dispatch lease paused state"
 assert_contains "$DISPATCH_CURRENT_RUN" "\"phaseRunLease\"" "current-run phase lease mirror"
 assert_contains "$DISPATCH_CURRENT_RUN" "\"stopReasonCode\": \"in-session-coordinator-restart-cap\"" "current-run stop reason"
+assert_contains "$STATUS_FILE" "activeExecutionStatus: \"paused\"" "dispatch paused execution status"
 
 WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
@@ -162,7 +188,7 @@ node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
 
 INACTIVE_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_ALLOWED='false'" "finished lease return denial"
-assert_text_contains "$INACTIVE_OUTPUT" "RETURN_REASON='inactive-run-lease-with-actionable-phases'" "inactive lease denial reason"
+assert_text_contains "$INACTIVE_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease denial reason"
 
 write_completed_then_pending_status
 
@@ -182,6 +208,23 @@ PHASE_BOUNDARY_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR
 assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "RETURN_ALLOWED='false'" "completed-then-pending return denial"
 assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "RETURN_REASON='actionable-phases-remaining'" "completed-then-pending denial reason"
 assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "ACTIONABLE_PHASES_REMAINING='1'" "completed-then-pending actionable count"
+
+WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
+node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
+  "$STATUS_FILE" \
+  lease-phase-boundary \
+  success-return \
+  current-session-clean-finish \
+  "Phase 15 complete; continuation required" \
+  completed >/dev/null
+
+assert_contains "$STATUS_FILE" "activeExecutionStatus: \"paused\"" "current-session clean finish downgraded to paused"
+assert_contains "$STATUS_FILE" "lastStopReasonCode: \"actionable-phases-remaining\"" "current-session clean finish stop reason downgrade"
+assert_contains "$STATUS_FILE" "lastReturnBoundary: \"dispatch-paused\"" "current-session clean finish paused return boundary"
+
+PAUSED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-phase-boundary true false)"
+assert_text_contains "$PAUSED_OUTPUT" "RETURN_ALLOWED='false'" "paused lease return denial"
+assert_text_contains "$PAUSED_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease reason"
 
 write_completed_status
 
@@ -279,5 +322,6 @@ assert_text_contains "$PROMPT_OUTPUT" "placeholder handoff seeded before the fir
 
 assert_contains "$ROOT_DIR/.claude/templates/execution/PHASE_COORDINATOR_CONTRACT.md" "do not emit final, closeout, or session-ended wording" "coordinator contract final guard"
 assert_contains "$ROOT_DIR/.claude/templates/execution/PHASE_COORDINATOR_CONTRACT.md" "If Phase 01 just became completed but Phase 02+" "coordinator contract next phase guard"
+assert_text_not_contains "$(cat "$ROOT_DIR/.claude/templates/execution/HANDOFF.template.md")" "clean_finish" "handoff template clean_finish stop reason"
 
 echo "PASS: verify-phase-runner-boundary"

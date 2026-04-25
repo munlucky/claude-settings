@@ -216,6 +216,7 @@ coordinatorResult:
 - `attemptResult.status=completed`라도 해당 시도의 verifier evidence가 최신이고 contract 기준으로 완전하며 score도 완료일 때만 phase 완료로 반영합니다.
 - clean success 반환 경계는 active plan directory 완료뿐입니다. actionable phase가 남아 있으면 진행 보고 대신 계속 실행합니다.
 - completed phase milestone 하나만으로 `final` 응답을 내면 안 됩니다. coordinator는 다음 actionable phase로 이어가거나, 명시적 blocker/user pause를 기록한 경우에만 멈출 수 있습니다.
+- actionable phase가 남아 있으면 plan-level 실행 상태는 `active` 또는 `paused`만 허용됩니다. `finished`를 기록하면 안 되고, `HANDOFF.md`에 `Stop reason: clean_finish`를 쓰면 안 됩니다.
 
 ## References
 

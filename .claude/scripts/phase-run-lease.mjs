@@ -8,6 +8,14 @@ const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/lo
 const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
 const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
 const CURRENT_RUN_BASENAME = 'current-run.json';
+const SUCCESS_RETURN_BOUNDARIES = new Set(['success-return']);
+const SUCCESS_STOP_REASON_CODES = new Set([
+  'plan-directory-complete',
+  'success-return',
+  'scope_complete',
+  'clean_finish',
+  'current-session-clean-finish',
+]);
 
 function resolveStatusFile(statusFile) {
   if (!statusFile) {
@@ -132,6 +140,42 @@ function countActionablePhases(statusFile) {
     }
     return block.status === 'pending' || block.status === 'in_progress' || block.status === 'failed';
   }).length;
+}
+
+function isSuccessLikeStopReason(value) {
+  return SUCCESS_STOP_REASON_CODES.has(String(value || '').trim().toLowerCase());
+}
+
+function normalizeFinishOutcome({ actionable, returnBoundary, stopReasonCode, stopReasonDetail }) {
+  if (actionable === 0) {
+    return {
+      status: 'finished',
+      returnBoundary,
+      stopReasonCode,
+      stopReasonDetail,
+    };
+  }
+
+  const normalizedBoundary = String(returnBoundary || '').trim().toLowerCase();
+  const normalizedReason = String(stopReasonCode || '').trim().toLowerCase();
+  if (SUCCESS_RETURN_BOUNDARIES.has(normalizedBoundary) || isSuccessLikeStopReason(normalizedReason)) {
+    const detail = stopReasonDetail
+      ? `${stopReasonDetail} Next actionable phase continuation is still required.`
+      : 'Actionable phases remain; the dispatcher must continue or pause instead of finishing the plan.';
+    return {
+      status: 'paused',
+      returnBoundary: 'dispatch-paused',
+      stopReasonCode: 'actionable-phases-remaining',
+      stopReasonDetail: detail,
+    };
+  }
+
+  return {
+    status: 'paused',
+    returnBoundary: returnBoundary || 'dispatch-paused',
+    stopReasonCode: stopReasonCode || 'actionable-phases-remaining',
+    stopReasonDetail: stopReasonDetail || 'Actionable phases remain; execution paused before plan completion.',
+  };
 }
 
 function upsertRootKey(lines, key, value) {
@@ -308,16 +352,22 @@ function finishLease(config) {
 
   const now = utcTimestamp();
   const actionable = countActionablePhases(config.statusFile || existing.statusFile);
+  const finishOutcome = normalizeFinishOutcome({
+    actionable,
+    returnBoundary: config.returnBoundary || '',
+    stopReasonCode: config.stopReasonCode || '',
+    stopReasonDetail: config.stopReasonDetail || '',
+  });
   const payload = {
     ...existing,
-    status: 'finished',
+    status: finishOutcome.status,
     lastHeartbeatAt: now,
     finishedAt: now,
     actionablePhasesRemaining: actionable,
     completionStatus: config.completionStatus || existing.completionStatus || '',
-    returnBoundary: config.returnBoundary || '',
-    stopReasonCode: config.stopReasonCode || '',
-    stopReasonDetail: config.stopReasonDetail || '',
+    returnBoundary: finishOutcome.returnBoundary,
+    stopReasonCode: finishOutcome.stopReasonCode,
+    stopReasonDetail: finishOutcome.stopReasonDetail,
   };
 
   writeActiveLease(statusFile, payload);
@@ -326,7 +376,7 @@ function finishLease(config) {
     activeExecutionBoundary: payload.executionBoundary,
     activeExecutionAttachedAt: payload.attachedAt,
     activeExecutionHeartbeatAt: now,
-    activeExecutionStatus: 'finished',
+    activeExecutionStatus: payload.status,
     activeActionablePhasesRemaining: actionable,
     activeCurrentStage: payload.currentStage || 'finish/handoff',
     activePhaseNumber: payload.phase?.number || '',
@@ -371,6 +421,13 @@ function assertReturnAllowed(config) {
   }
 
   if (existing.status !== 'active') {
+    if (existing.status === 'paused') {
+      return {
+        RETURN_ALLOWED: 'false',
+        RETURN_REASON: 'paused-run-lease-with-actionable-phases',
+        ACTIONABLE_PHASES_REMAINING: String(actionable),
+      };
+    }
     return {
       RETURN_ALLOWED: 'false',
       RETURN_REASON: 'inactive-run-lease-with-actionable-phases',

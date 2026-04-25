@@ -235,16 +235,15 @@ function resolveExecutionRoot() {
 }
 
 function resolveRuntime() {
-  if (state.runtime !== 'auto') {
-    return state.runtime;
+  const result = runNodeScript(path.join(SCRIPT_DIR, 'agent-loop-phase-runtime.mjs'), [
+    'resolve-runner-runtime',
+    state.runtime,
+  ]);
+  if ((result.status ?? 0) !== 0) {
+    const message = (result.stderr || result.stdout || 'failed to resolve runtime').trim();
+    throw new Error(message);
   }
-
-  const codex = runCommand('codex', ['--help']);
-  if (!codex.error) {
-    return 'codex';
-  }
-
-  return 'claude';
+  return String(result.stdout || '').trim();
 }
 
 function resolveMasterPlan() {
@@ -556,7 +555,7 @@ function syncCompletedPhaseArchive() {
   }
 }
 
-function recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan) {
+function recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime) {
   if (state.dryRun) {
     return;
   }
@@ -571,7 +570,7 @@ function recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan) {
     '--execution-root',
     resolvedRoot,
     '--runtime',
-    state.runtime,
+    effectiveRuntime,
     '--status-file',
     state.statusFile,
     '--master-plan',
@@ -714,14 +713,14 @@ function buildCodexCommand(prompt) {
   return args;
 }
 
-function runDelegatedTerminal(resolvedRoot) {
+function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
   terminateStaleWorkers();
   const cmd = [
     'node', '.claude/scripts/agent-loop.mjs',
     state.planDir,
     '--status-file', state.statusFile,
     '--execution-root', resolvedRoot,
-    '--runtime', state.runtime,
+    '--runtime', effectiveRuntime,
     '--verification-runtimes', state.verificationRuntimes,
   ];
 
@@ -870,7 +869,7 @@ function runDelegatedTerminal(resolvedRoot) {
   launch();
 }
 
-function runInSessionCoordinator(resolvedRoot, masterPlan) {
+function runInSessionCoordinator(resolvedRoot, masterPlan, effectiveRuntime) {
   terminateStaleWorkers();
   const stopLine = state.stopOnFailure ? '  stopOnFailure: true' : '  stopOnFailure: false';
   const activeArtifacts = resolveActivePhaseArtifacts();
@@ -900,7 +899,6 @@ options:
 ${stopLine}
 ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
 
-  const effectiveRuntime = state.runtime === 'auto' ? resolveRuntime() : state.runtime;
   let cmd;
 
   switch (effectiveRuntime) {
@@ -986,9 +984,9 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
         fallbackToDelegated,
       });
       if (fallbackToDelegated) {
-        recordDispatchEvidence('delegated-terminal', resolvedRoot, masterPlan);
+        recordDispatchEvidence('delegated-terminal', resolvedRoot, masterPlan, effectiveRuntime);
         stopTracking();
-        runDelegatedTerminal(resolvedRoot);
+        runDelegatedTerminal(resolvedRoot, effectiveRuntime);
         return;
       }
       if (signal) {
@@ -1140,7 +1138,14 @@ syncCompletedPhaseArchive();
 let resolvedMode = resolveExecutionMode();
 const resolvedRoot = resolveExecutionRoot();
 const masterPlan = resolveMasterPlan();
-const effectiveRuntime = resolveRuntime();
+let effectiveRuntime = 'auto';
+try {
+  effectiveRuntime = resolveRuntime();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  logError(`Runtime resolution failed: ${message}`);
+  process.exit(1);
+}
 
 if (!masterPlan) {
   logError(`Master plan not found in: ${state.planDir}`);
@@ -1158,9 +1163,9 @@ fs.mkdirSync(resolvedRoot, { recursive: true });
 logInfo(`Plan directory: ${state.planDir}`);
 logInfo(`Execution mode: ${resolvedMode}`);
 logInfo(`Execution root: ${resolvedRoot}`);
-logInfo(`Runtime: ${state.runtime}`);
+logInfo(`Runtime: ${effectiveRuntime}`);
 logInfo(`Verification runtimes: ${state.verificationRuntimes}`);
-recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan);
+recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
 if (!state.dryRun) {
   startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
   installDispatchSignalHandlers();
@@ -1171,10 +1176,10 @@ if (state.autonomous) {
 
 switch (resolvedMode) {
   case 'delegated-terminal':
-    runDelegatedTerminal(resolvedRoot);
+    runDelegatedTerminal(resolvedRoot, effectiveRuntime);
     break;
   case 'in-session-coordinator':
-    runInSessionCoordinator(resolvedRoot, masterPlan);
+    runInSessionCoordinator(resolvedRoot, masterPlan, effectiveRuntime);
     break;
   default:
     logError(`Unsupported execution mode: ${resolvedMode}`);
