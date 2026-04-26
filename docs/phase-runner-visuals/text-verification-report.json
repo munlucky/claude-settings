@@ -1,0 +1,60 @@
+{
+  "generatedAt": "2026-04-26T12:20:38.635Z",
+  "slides": [
+    {
+      "file": "01-overview.svg",
+      "title": "Moonshot Phase Runner 메인 흐름",
+      "expectedTextCount": 9,
+      "missing": [],
+      "hasReplacementChar": false,
+      "hasMojibake": false,
+      "pass": true
+    },
+    {
+      "file": "02-start.svg",
+      "title": "시작: 사용자는 무엇을 입력하나",
+      "expectedTextCount": 8,
+      "missing": [],
+      "hasReplacementChar": false,
+      "hasMojibake": false,
+      "pass": true
+    },
+    {
+      "file": "03-artifacts.svg",
+      "title": "Phase Runner가 만드는 실행 아티팩트",
+      "expectedTextCount": 8,
+      "missing": [],
+      "hasReplacementChar": false,
+      "hasMojibake": false,
+      "pass": true
+    },
+    {
+      "file": "04-phase-loop.svg",
+      "title": "각 Phase 안에서 도는 루프",
+      "expectedTextCount": 8,
+      "missing": [],
+      "hasReplacementChar": false,
+      "hasMojibake": false,
+      "pass": true
+    },
+    {
+      "file": "05-exit-rules.svg",
+      "title": "언제 끝나고, 언제 계속하나",
+      "expectedTextCount": 7,
+      "missing": [],
+      "hasReplacementChar": false,
+      "hasMojibake": false,
+      "pass": true
+    },
+    {
+      "file": "06-status-board.svg",
+      "title": "사용자에게 보이는 상태판",
+      "expectedTextCount": 7,
+      "missing": [],
+      "hasReplacementChar": false,
+      "hasMojibake": false,
+      "pass": true
+    }
+  ],
+  "pass": true
+}
