@@ -73,18 +73,91 @@ const env = {
 };
 
 const isWindows = process.platform === 'win32';
-const command = isWindows ? 'cmd.exe' : 'npx';
-const args = isWindows
-  ? ['/d', '/s', '/c', 'npx', '-y', '@modelcontextprotocol/server-memory']
-  : ['-y', '@modelcontextprotocol/server-memory'];
+const idleTimeoutMs = Number.parseInt(process.env.MEMORY_MCP_IDLE_TIMEOUT_MS ?? '900000', 10);
 
-const child = spawn(command, args, {
-  stdio: 'inherit',
-  env,
-  shell: false,
-});
+function npmRootGlobal() {
+  const result = spawnSync('npm', ['root', '-g'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    shell: false,
+  });
+  return result.status === 0 ? result.stdout.trim() : '';
+}
+
+function fallbackServerMemoryCommand() {
+  return isWindows
+    ? {
+      command: 'cmd.exe',
+      args: ['/d', '/s', '/c', 'npx', '-y', '@modelcontextprotocol/server-memory'],
+    }
+    : {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-memory'],
+    };
+}
+
+function resolveServerMemoryCommand() {
+  const candidateRoots = [
+    process.env.APPDATA ? path.join(process.env.APPDATA, 'npm', 'node_modules') : '',
+    npmRootGlobal(),
+  ].filter(Boolean);
+
+  for (const root of candidateRoots) {
+    const entry = path.join(root, '@modelcontextprotocol', 'server-memory', 'dist', 'index.js');
+    if (fs.existsSync(entry)) {
+      return {
+        command: process.execPath,
+        args: [entry],
+      };
+    }
+  }
+
+  return fallbackServerMemoryCommand();
+}
+
+let { command, args } = resolveServerMemoryCommand();
+
+function spawnServerMemory(commandToRun, argsToRun) {
+  return spawn(commandToRun, argsToRun, {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env,
+    shell: false,
+  });
+}
+
+let child;
+try {
+  child = spawnServerMemory(command, args);
+} catch (error) {
+  const fallback = fallbackServerMemoryCommand();
+  if (command === fallback.command && args.join('\0') === fallback.args.join('\0')) {
+    throw error;
+  }
+  console.error(`[memory-mcp] direct server-memory launch failed; falling back to npx (${error.message})`);
+  command = fallback.command;
+  args = fallback.args;
+  child = spawnServerMemory(command, args);
+}
 
 let exiting = false;
+let idleTimer = null;
+
+function resetIdleTimer() {
+  if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs <= 0) {
+    return;
+  }
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+  }
+  idleTimer = setTimeout(() => {
+    console.error(`[memory-mcp] idle timeout after ${idleTimeoutMs}ms; terminating server-memory`);
+    terminateChildTree();
+    exitWithChildStatus(0, null);
+  }, idleTimeoutMs);
+  if (typeof idleTimer.unref === 'function') {
+    idleTimer.unref();
+  }
+}
 
 function terminateChildTree() {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) {
@@ -122,6 +195,33 @@ function exitWithChildStatus(code, signal) {
   process.exit(code ?? 0);
 }
 
+process.stdin.on('data', (chunk) => {
+  resetIdleTimer();
+  if (!child.stdin.destroyed) {
+    child.stdin.write(chunk);
+  }
+});
+
+process.stdin.on('end', () => {
+  if (!child.stdin.destroyed) {
+    child.stdin.end();
+  }
+});
+
+process.stdin.on('close', () => {
+  terminateChildTree();
+  exitWithChildStatus(0, null);
+});
+
+child.stdout.on('data', (chunk) => {
+  resetIdleTimer();
+  process.stdout.write(chunk);
+});
+
+child.stderr.on('data', (chunk) => {
+  process.stderr.write(chunk);
+});
+
 for (const signalName of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signalName, () => {
     terminateChildTree();
@@ -140,3 +240,5 @@ child.on('error', (error) => {
 child.on('exit', (code, signal) => {
   exitWithChildStatus(code, signal);
 });
+
+resetIdleTimer();
