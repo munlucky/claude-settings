@@ -50,6 +50,7 @@ It is the main Plan-stage owner for phase documents.
    - Keep each phase document independently executable in a separate session.
    - Include enough context so the phase can be executed without hidden assumptions.
    - Include source mapping section with referenced trace IDs.
+   - Map every user-facing requirement to at least one `SCN-*` row in `Critical Product Scenarios`.
    - Include exact files to create/modify/test, exact commands, expected fail/pass signals, blocker conditions, review checkpoints, and verification evidence paths.
    - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
 6. Synchronize completion state.
@@ -83,6 +84,7 @@ It is the main Plan-stage owner for phase documents.
   - Scope / out-of-scope.
   - Preconditions and required inputs.
   - Detailed task breakdown (ordered steps with IDs).
+  - Critical product scenarios (`SCN-*`) for user-visible behavior, rendered output, generated assets, and workflow results.
   - Validation/test plan.
   - Deliverables.
   - Phase completion checklist with objective criteria.
@@ -94,6 +96,11 @@ It is the main Plan-stage owner for phase documents.
   - blocker condition that stops execution
   - review checkpoint
   - verification evidence path
+- Each critical scenario must name:
+  - the user-visible expectation
+  - the command that proves it
+  - the expected pass signal
+  - the evidence path that will be cited in `QA_REPORT.md`
 
 ## Completion Loop (Critical)
 Use this loop whenever generating or refreshing plans:

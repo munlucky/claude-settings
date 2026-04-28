@@ -16,6 +16,7 @@ This skill is workflow-integrated, but it may also be invoked directly for an ex
 - preserve exact behavior
 - work primarily on recently modified code
 - prefer clarity over brevity
+- ask whether a non-trivial change has a simpler, more elegant shape before verification
 - reduce unnecessary complexity, nesting, and duplication
 - follow repository coding standards and established patterns
 - avoid clever rewrites that make debugging harder
@@ -30,6 +31,7 @@ This skill is workflow-integrated, but it may also be invoked directly for an ex
 - comments that restate obvious code
 - inconsistent structure inside recently touched modules
 - module locality when a small interface can hide repeated implementation complexity
+- hacky patches that can be replaced by a smaller change aligned with the existing design
 
 ## What Not To Do
 
@@ -39,6 +41,16 @@ This skill is workflow-integrated, but it may also be invoked directly for an ex
 - do not remove useful abstractions that improve module boundaries
 - do not introduce a new abstraction unless it improves locality, leverage, or testability
 - do not rename domain terms away from the project glossary without updating the glossary or surfacing the conflict
+- do not force an elegance pass for trivial one-line or obviously correct fixes; record the skip reason when the orchestrator requires evidence
+
+## Balanced Elegance Check
+
+For non-trivial behavior or architecture changes:
+
+1. Identify the smallest behavior-preserving cleanup that reduces future confusion.
+2. Prefer existing local patterns over new abstractions.
+3. Replace visibly hacky fixes when a clear elegant path is already known.
+4. Stop when further cleanup would widen scope or change behavior.
 
 ## Suggested Workflow Position
 

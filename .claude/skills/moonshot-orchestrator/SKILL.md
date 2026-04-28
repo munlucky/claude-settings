@@ -90,6 +90,7 @@ For `meta_harness` work, also apply:
 4. **Review results**: Extract key issues only from `codex-review-code` output.
 5. **Fork returns**: Accept only structured summaries from fork agents, never raw data.
 6. **Read-only review/verify inputs**: pass artifacts, changed-file lists, and concise summaries, never full session history.
+7. **Fork focus**: each forked agent should pursue one tactic or hypothesis; split unrelated research/review questions into separate fork inputs.
 
 ## Workflow
 
@@ -241,6 +242,7 @@ Policy:
 - bounded direct code changes must record `doc-auto-sync` evidence before completion is claimed
 - bounded direct interrupted runs must record `session-logger` evidence before completion is claimed
 - external skill patterns must be transferred into existing stage owners, references, templates, or deferred pilot entries before adding a new public skill
+- after a user correction that reveals a reusable workflow mistake, classify the correction through `failure-analyzer`; use `session-logger` only when session/handoff logging is already required or solution promotion is justified
 
 #### 2.0.8 Project reference docs
 
@@ -280,6 +282,15 @@ If `missingInfo` is not empty:
 1. Resolve blocking questions.
 2. Merge answers into `analysisContext`.
 3. Re-run detection if needed.
+
+#### 2.5a Sideways replan guard
+
+If implementation evidence, review findings, or verification output shows the selected plan is invalid:
+
+1. stop the current implementation tactic
+2. record the evidence in `analysisContext.notes` and `QA_REPORT.md` when present
+3. re-run uncertainty detection and sequence decision
+4. continue only after the updated plan, retry tactic, or user-approved replan is recorded
 
 #### 2.6 Sequence decision
 Run `/moonshot-decide-sequence` -> merge patch (`phase`, `bundleChain`, `skillChain`, `parallelGroups`)
@@ -458,6 +469,7 @@ Run `decisions.skillChain` in order.
 | `browserFlowFailed` | `verify-runtime.sh` exit `3` | Re-enter runtime/browser remediation path, then rerun `browser-verifier` |
 | `reviewRequired` | meaningful code changes or medium+ complexity | Insert `codex-review-code` before final verification |
 | `verificationFailed` | `completion-verifier` or runtime verifier fails | Update `QA_REPORT.md`, re-enter implementation with contract-linked findings |
+| `planInvalidated` | review, runtime evidence, or implementation findings contradict the selected plan | Stop the current tactic, update notes/QA evidence, and re-enter uncertainty handling plus sequence decision |
 | `finishRequired` | meaningful file edits with stable verifier state | Insert `doc-auto-sync` and `session-logger` before final completion statement |
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain, but still keep final doc-ops after implementation |
 | `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
@@ -472,6 +484,7 @@ Run `decisions.skillChain` in order.
 | `handoffRequired` | retry loop, interruption, or context budget warning | Update `HANDOFF.md` through `session-logger` before pausing |
 | `strictProfile` | `workflowProfile == strict` and no evidence step | Insert `verification-evidence-gate` after `completion-verifier` or `verify-changes.sh` |
 | `multipleFailures` | notes contain > 2 errors/failures | Append `failure-analyzer`; escalate to replan when the same failure class repeats |
+| `userCorrection` | user correction reveals a repeatable workflow or quality mistake | Append `failure-analyzer`; use `session-logger` only for active session/handoff logging or solution promotion |
 
 ### 3.2 Execution-plane rules
 

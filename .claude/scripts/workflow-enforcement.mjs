@@ -286,6 +286,37 @@ function deriveCompletionBlockersFromQaReport(qaReportPath) {
   return blockers;
 }
 
+function executionRootFromQaReport(qaReportPath) {
+  if (!qaReportPath) {
+    return '';
+  }
+  return path.dirname(path.dirname(qaReportPath));
+}
+
+function traceabilityArtifactValid(filePath, idPattern) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return false;
+  }
+  const text = fs.readFileSync(filePath, 'utf8');
+  return idPattern.test(text) && /\b(implemented|verified|pass|passed|done)\b/i.test(text);
+}
+
+function requireTraceabilityArtifacts({ qaReport, violations }) {
+  const executionRoot = executionRootFromQaReport(qaReport);
+  if (!executionRoot) {
+    violations.push(`${qaReport}: cannot resolve execution root for traceability artifacts`);
+    return;
+  }
+  const requirementsPath = path.join(executionRoot, 'REQUIREMENTS_TRACEABILITY.md');
+  const scenarioPath = path.join(executionRoot, 'SCENARIO_MATRIX.md');
+  if (!traceabilityArtifactValid(requirementsPath, /\bREQ-[A-Za-z0-9_.-]+\b/)) {
+    violations.push(`${qaReport}: requirements_traceability_missing: ${path.relative(process.cwd(), requirementsPath)} must exist with verified REQ-* coverage before clean_finish`);
+  }
+  if (!traceabilityArtifactValid(scenarioPath, /\bSCN-[A-Za-z0-9_.-]+\b/)) {
+    violations.push(`${qaReport}: scenario_matrix_missing: ${path.relative(process.cwd(), scenarioPath)} must exist with verified SCN-* coverage before clean_finish`);
+  }
+}
+
 function deriveReadinessState({
   planDir,
   statusFile,
@@ -833,6 +864,7 @@ function verifyEnforcement(argv) {
           if (scopeStatus !== 'complete') violations.push(`${qaReport}: clean_finish requires Scope status = complete`);
           if (closeoutReason !== 'scope_complete') violations.push(`${qaReport}: clean_finish requires Closeout reason = scope_complete`);
           if (reviewCompleted !== 'yes') violations.push(`${qaReport}: clean_finish requires Review completed = yes`);
+          requireTraceabilityArtifacts({ qaReport, violations });
           if (codeChangeDetected && !applied.includes('codex-review-code')) {
             violations.push(`${qaReport}: clean_finish on code-changing work requires codex-review-code in Applied skills`);
           }

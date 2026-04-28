@@ -34,6 +34,7 @@ Use this skill when the user explicitly wants session or handoff logging, or whe
 - work start: goal, branch, initial scope
 - decision: short reason and chosen path
 - issue: problem, fix, rerun signal
+- correction lesson: user correction, reusable pattern, affected guardrail, and whether a durable update was made or skipped
 - completion: verification result and next step
 
 ## Operating rules
@@ -43,6 +44,7 @@ Use this skill when the user explicitly wants session or handoff logging, or whe
 - keep `HANDOFF.md` summary-first and artifact-reference-first
 - if Memory MCP is configured, record only compact reusable facts
 - promote reusable remediation patterns to `.claude/docs/solutions/` when justified
+- append correction events instead of rewriting prior history
 
 ## References
 

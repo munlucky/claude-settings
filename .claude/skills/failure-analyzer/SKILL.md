@@ -31,6 +31,7 @@ surfaceStatus: internal_stage_owner
 | **execution_plane_mismatch** | Downstream flow treated as meta-harness or vice versa | `moonshot-orchestrator`, `workflow.md` |
 | **readiness_gate_missing** | Implementation started without project/context readiness | gate skills, `pre-flight-check` |
 | **verification_contract_missing** | Completion evidence unclear because contract was absent | verification contract docs, evidence gate |
+| **correction_lesson** | User correction reveals a reusable workflow or quality mistake | `analysisContext.notes`, optional `session-logger`, `.claude/docs/solutions/`, relevant skill/rule |
 
 ## Systematic Debugging Rules
 
@@ -40,6 +41,8 @@ surfaceStatus: internal_stage_owner
 - If three attempts fail, escalate to design/contract review instead of continuing local fixes.
 - For bug reports that leave the current run, draft the follow-up as behavior, reproduction steps, root cause, and RED-GREEN fix cycles.
 - Keep external issue drafts durable: avoid file paths and line numbers unless the user requests tactical implementation notes.
+- After a user correction, distinguish one-off preference from reusable workflow mistake before proposing durable rule or skill changes.
+- Record reusable correction lessons compactly; avoid turning every correction into a new rule.
 
 ## Analysis Workflow
 
@@ -49,6 +52,7 @@ surfaceStatus: internal_stage_owner
 4. **Attempt History**: Count prior attempted fixes for the same `failureClass`.
 5. **Map to Target**: Identify which file/rule/contract needs improvement.
 6. **Next Tactic**: Propose a changed tactic when the same class repeats.
+7. **Correction Lesson**: If the trigger was user correction, state whether it is reusable, where it should be logged, and whether a rule/skill change is justified.
 
 ## Output (patch)
 
@@ -70,6 +74,12 @@ failureReport:
     tddFixPlan:
       - red: ""
         green: ""
+  correctionLesson:
+    reusable: true
+    summary: "Completion was claimed before fresh verifier evidence existed."
+    logTarget: "analysisContext.notes"
+    durableTarget: ".claude/docs/solutions/"
+    ruleOrSkillChangeJustified: true
   categorized:
     - type: "context_missing"
       description: "Agent consistently formatted API response wrong"

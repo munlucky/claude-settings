@@ -6,5 +6,7 @@ file-length|.claude/scripts/moonshot-phase-dispatch.mjs
 file-length|.claude/scripts/agent-loop-phase-runner.mjs
 file-length|.claude/scripts/agent-loop-phase-runtime.mjs
 file-length|.claude/scripts/agent-loop-phase-state.mjs
+file-length|.claude/scripts/workflow-enforcement.mjs
 file-length|.claude/scripts/verify-phase-runtime-parity-shell-core.sh
 file-length|install-claude.sh
+console-log|.claude/scripts/workflow-enforcement.mjs

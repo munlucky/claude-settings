@@ -10,6 +10,8 @@ const DEFERRED_TERMS = [
   'without adding',
   'residual risk',
   'defer',
+  'alternative implementation',
+  'workaround',
   '보류',
   '미구현',
   '우회',
@@ -174,7 +176,7 @@ function extractPathTokens(text) {
   const regex = /(?:^|[\s`"'(])([A-Za-z0-9_@./\\-]+\.(?:tsx|jsx|ts|js|mjs|cjs|json|yaml|yml|md|sh|py))(?:$|[\s`"',):;])/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
-    const token = match[1].replace(/\\/g, '/').replace(/^[./]+/, '');
+    const token = match[1].replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
     if (!token.includes('..')) {
       result.add(token);
     }
@@ -258,6 +260,42 @@ function textHasDeferredTerm(text) {
   return DEFERRED_TERMS.some((term) => lowered.includes(term));
 }
 
+function parseCriticalScenarios(text) {
+  const section = sectionText(text, 'Critical Product Scenarios');
+  const scenarios = [];
+  const seen = new Set();
+  const regex = /\b(SCN-[A-Za-z0-9_.-]+)\b/g;
+  let match;
+  while ((match = regex.exec(section)) !== null) {
+    const id = match[1];
+    if (!seen.has(id)) {
+      seen.add(id);
+      scenarios.push(id);
+    }
+  }
+  return scenarios;
+}
+
+function scenarioEvidencePassed(scenarioId, evidenceText) {
+  const normalizedId = scenarioId.toLowerCase();
+  const lines = normalize(evidenceText).split('\n');
+  return lines.some((line) => {
+    const lowered = line.toLowerCase();
+    if (!lowered.includes(normalizedId)) {
+      return false;
+    }
+    if (/\b(fail|failed|blocked|missing|todo|pending|retry)\b/i.test(line)) {
+      return false;
+    }
+    return /\b(pass|passed|done|verified)\b/i.test(line);
+  });
+}
+
+function hasConcreteSourceTargets(sourceText) {
+  return extractPathTokens(sectionText(sourceText, 'Exact Execution Targets'))
+    .some((token) => !token.endsWith('.md') && !token.endsWith('package.json'));
+}
+
 function buildViolation(message, code = 'plan-conformance-failed') {
   return { code, message };
 }
@@ -308,6 +346,7 @@ export function evaluatePlanConformance(rawConfig = {}) {
   }
 
   if (phaseText) {
+    const criticalScenarios = parseCriticalScenarios(phaseText);
     const exactLines = exactTargetLines(phaseText);
     const snapshot = sectionText(sprintText, 'Source Plan Requirements Snapshot');
     for (const line of exactLines) {
@@ -347,6 +386,16 @@ export function evaluatePlanConformance(rawConfig = {}) {
     if (/Ink app compiles/i.test(exactTargetText) && completionClaim && !/Ink app compiles/i.test(combinedEvidence) && !approvedDeviation) {
       violations.push(buildViolation('Source phase expected signal "Ink app compiles" is not evidenced.', 'expected-signal-missing'));
     }
+
+    if (completionClaim && criticalScenarios.length === 0 && hasConcreteSourceTargets(phaseText) && !approvedDeviation) {
+      violations.push(buildViolation('Source phase has implementation targets but no Critical Product Scenarios evidence contract.', 'critical-product-scenarios-missing'));
+    }
+
+    for (const scenarioId of criticalScenarios) {
+      if (completionClaim && !scenarioEvidencePassed(scenarioId, combinedEvidence) && !approvedDeviation) {
+        violations.push(buildViolation(`Critical product scenario lacks passing evidence: ${scenarioId}`, 'critical-scenario-evidence-missing'));
+      }
+    }
   }
 
   if (completionClaim && textHasDeferredTerm(`${qaText}\n${scorecardText}\n${handoffText}`) && !approvedDeviation) {
@@ -375,36 +424,40 @@ export function evaluatePlanConformance(rawConfig = {}) {
 }
 
 function printHuman(result) {
-  console.log('Plan Conformance Check');
-  console.log(`Status: ${result.status}`);
-  console.log(`Reason: ${result.reason}`);
-  console.log(`Phase doc: ${result.phaseDocPath || 'missing'}`);
-  console.log(`Sprint contract: ${result.sprintContractPath || 'missing'}`);
-  console.log(`Completion claim: ${result.completionClaim ? 'yes' : 'no'}`);
-  console.log(`Approved deviation: ${result.approvedDeviation ? 'yes' : 'no'}`);
-  console.log(`Violations: ${result.violations.length}`);
+  printLine('Plan Conformance Check');
+  printLine(`Status: ${result.status}`);
+  printLine(`Reason: ${result.reason}`);
+  printLine(`Phase doc: ${result.phaseDocPath || 'missing'}`);
+  printLine(`Sprint contract: ${result.sprintContractPath || 'missing'}`);
+  printLine(`Completion claim: ${result.completionClaim ? 'yes' : 'no'}`);
+  printLine(`Approved deviation: ${result.approvedDeviation ? 'yes' : 'no'}`);
+  printLine(`Violations: ${result.violations.length}`);
   for (const violation of result.violations) {
-    console.log(`- ${violation.code}: ${violation.message}`);
+    printLine(`- ${violation.code}: ${violation.message}`);
   }
   if (result.warnings.length > 0) {
-    console.log(`Warnings: ${result.warnings.length}`);
+    printLine(`Warnings: ${result.warnings.length}`);
     for (const warning of result.warnings) {
-      console.log(`- ${warning}`);
+      printLine(`- ${warning}`);
     }
   }
 }
 
 function printEnv(result) {
-  console.log(`PLAN_CONFORMANCE_ALLOWED=${shellQuote(result.allowed ? 'true' : 'false')}`);
-  console.log(`PLAN_CONFORMANCE_REASON=${shellQuote(result.reason)}`);
-  console.log(`PLAN_CONFORMANCE_VIOLATIONS=${shellQuote(result.violations.map((item) => `${item.code}: ${item.message}`).join('\n'))}`);
+  printLine(`PLAN_CONFORMANCE_ALLOWED=${shellQuote(result.allowed ? 'true' : 'false')}`);
+  printLine(`PLAN_CONFORMANCE_REASON=${shellQuote(result.reason)}`);
+  printLine(`PLAN_CONFORMANCE_VIOLATIONS=${shellQuote(result.violations.map((item) => `${item.code}: ${item.message}`).join('\n'))}`);
+}
+
+function printLine(value) {
+  process.stdout.write(`${value}\n`);
 }
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const result = evaluatePlanConformance(options);
   if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
+    printLine(JSON.stringify(result, null, 2));
   } else if (options.env) {
     printEnv(result);
   } else {

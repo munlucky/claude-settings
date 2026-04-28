@@ -33,6 +33,8 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - always refresh memory before commit
 - never auto-stage `.claude/memory.json` by default
 - only stage `.claude/memory.json` when the user explicitly asks to include memory in the commit
+- warn before committing when product implementation changes are mixed with `.claude/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes
+- require `QA_REPORT.md` to contain a `Harness Change Ledger` entry when harness/tool changes were made during a product phase
 - keep the user-facing summary and commit body grouped by feature area
 - keep the summary compact; avoid long prose dumps
 

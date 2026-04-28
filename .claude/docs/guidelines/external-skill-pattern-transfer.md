@@ -54,6 +54,7 @@ New standalone skills are allowed only when all are true:
 | `zoom-out` | explorer/review prompts | ask for module/caller map before local edits in unfamiliar areas |
 | `caveman` | communication preference only | do not install as default policy |
 | `git-guardrails-claude-code` | security/workspace policy | borrow blocked-operation list only after hook review |
+| `Claude.md workflow orchestration prompt` | `moonshot-orchestrator`, `failure-analyzer`, `session-logger`, `code-simplifier` | transfer correction learning, sideways replan, balanced elegance, and autonomous bug-fix posture into existing stage owners |
 
 ## Interface-First Review
 
@@ -138,3 +139,28 @@ When exporting work to GitHub issues, prefer durable behavior descriptions:
 - deterministic scripts
 
 Long skills are acceptable only when they are public control planes whose rules must remain visible to the runtime.
+
+## Workflow Prompt Transfer
+
+When reviewing a compact system prompt or `Claude.md` workflow prompt, split patterns into accepted, already-covered, and rejected groups before editing the harness.
+
+Accept these patterns when missing:
+
+- **Sideways replan**: if implementation, review, or verification shows the plan is invalid, stop the current tactic and re-enter planning or sequence decision with evidence.
+- **Correction learning**: after a user correction or repeated agent mistake, classify the pattern through `failure-analyzer`; use `session-logger` only when the run already needs session/handoff logging or the lesson qualifies for `.claude/docs/solutions/` promotion.
+- **Balanced elegance**: for non-trivial changes, run a simplification/elegance pass after behavior works; skip and record the reason for simple obvious fixes.
+- **Autonomous bug fixing**: for bug reports with enough evidence, inspect logs/tests/errors and fix forward before asking for more context.
+
+Usually already covered locally:
+
+- plan-before-build discipline
+- fresh verification before completion
+- bounded subagent/fork context isolation
+- minimal-scope changes
+
+Reject or soften these patterns:
+
+- "use subagents liberally" without context-budget or fork-return limits
+- mandatory plan docs for trivial one-step fixes
+- writing durable lessons for every minor correction
+- generic "senior engineer" self-approval without executable evidence

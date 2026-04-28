@@ -35,6 +35,7 @@ Finish / Handoff stage의 기본 helper이기도 합니다.
 | 에이전트 전환 | `## [HH:MM] Agent A -> Agent B` + 출력물, 다음 단계 |
 | 결정 | `## [HH:MM] 결정: {주제}` + 이유, 대안 |
 | 이슈 | `## [HH:MM] 이슈: {문제}` + 원인, 수정, 예방 |
+| Correction lesson | `## [HH:MM] Correction lesson: {패턴}` + 사용자 correction, 재사용 가능성, guardrail 반영 여부 |
 | 완료 | `## [HH:MM] 작업 완료` + 커밋, 검증 |
 
 ---

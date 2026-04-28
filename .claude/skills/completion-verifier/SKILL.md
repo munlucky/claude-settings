@@ -59,6 +59,7 @@ Applicability rule:
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
+- In phase-plan runs, parse `## Critical Product Scenarios` from the source phase document and do not return a passing completion verdict while any `SCN-*` lacks passing evidence in `QA_REPORT.md`, linked evidence files, or verifier artifacts.
 - In score-based loops, do not return a passing completion verdict unless the score verdict is `done`.
 - Do not use success-by-implication language without fresh evidence. Forbidden examples include: `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification`.
 
@@ -71,6 +72,7 @@ When the verifier runs in Codex-native flow, explicitly apply:
 - `.claude/rules/security.md`
 - `.claude/rules/communication.md`
 - `.claude/rules/output-format.md`
+- `.claude/docs/guidelines/product-acceptance-gate.md`
 
 ## Step 0: Verification Environment Detection
 
@@ -147,9 +149,10 @@ When traceability artifacts exist, reconcile them before any completion claim.
 1. Read `REQUIREMENTS_TRACEABILITY.md` and collect in-scope `REQ-*` rows
 2. Confirm each in-scope requirement has implementation status, verification path, and evidence or blocker state
 3. Read `SCENARIO_MATRIX.md` and collect `SCN-*` rows for user-visible flows
-4. Require every critical `SCN-*` to have fresh runtime, browser, or E2E evidence before clean finish
-5. Read `UAT_CHECKLIST.md` when present and distinguish `uatReady` from `uatComplete`
-6. Never infer `uatComplete` from automation alone
+4. Also read `## Critical Product Scenarios` from the source phase document when present
+5. Require every critical `SCN-*` to have fresh runtime, browser, generated-artifact, or E2E evidence before clean finish
+6. Read `UAT_CHECKLIST.md` when present and distinguish `uatReady` from `uatComplete`
+7. Never infer `uatComplete` from automation alone
 
 ## Step 1.5: Workflow Evidence Reconciliation
 

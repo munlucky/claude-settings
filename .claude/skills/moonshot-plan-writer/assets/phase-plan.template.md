@@ -28,6 +28,11 @@
 |----|------|-------|---------------|
 | P<NN>-1 | <task> | 1) <step> 2) <step> | <objective condition> |
 
+## Critical Product Scenarios
+| ID | User-Visible Expectation | Verification Command | Expected Signal | Evidence Path |
+|----|--------------------------|----------------------|-----------------|---------------|
+| SCN-<NN>-1 | <observable behavior, rendered output, generated asset, or workflow result> | `<command>` | <pass signal that proves behavior, not only file existence> | `<path>` |
+
 ## Exact Execution Targets
 | ID | Files To Create | Files To Modify | Files To Test | Commands | Expected Fail/Pass Signals |
 |----|-----------------|-----------------|---------------|----------|----------------------------|

@@ -5,6 +5,7 @@ commands:
   shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/scripts/verify-phase-runner-boundary.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
   phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
   phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
+  phaseCloseout: "node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir docs/implementation --master-plan docs/implementation/00-master-plan-v1.md"
 checkPolicies:
   phaseRuntimeParity:
     runtimeSelectionAware: true
@@ -76,6 +77,10 @@ policySets:
       - workflowEnforcement
       - phaseRuntimeParity
       - phaseRunnerBoundary
+  acceptance:
+    description: "Product acceptance evidence and phase closeout synchronization"
+    checks:
+      - phaseCloseout
   verification:
     description: "Executable verifier and syntax integrity"
     checks:
@@ -89,6 +94,7 @@ policy:
   requiredPolicySets:
     - knowledge
     - workflow
+    - acceptance
     - verification
     - security
   requiredChecks:
@@ -98,6 +104,7 @@ policy:
     - shellSyntax
     - phaseRuntimeParity
     - phaseRunnerBoundary
+    - phaseCloseout
 qa:
   evaluatorMode: "separate"
   hardFailOn:

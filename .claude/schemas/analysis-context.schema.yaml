@@ -37,6 +37,8 @@ defaults:
     sprintContractReady: false
     qaReportReady: false
     handoffRequired: false
+    planInvalidated: false
+    userCorrection: false
     phaseLoopInSession: false
     phaseAttemptMode: false
     workflowProfile: standard

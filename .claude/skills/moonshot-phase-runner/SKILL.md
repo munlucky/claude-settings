@@ -31,6 +31,7 @@ Carry these rule files through `SPRINT_CONTRACT.md` policy anchors and phase-att
 - `.claude/rules/output-format.md`
 - `.claude/rules/agents/agent-definition.md`
 - `.claude/rules/agents/agent-delegation.md`
+- `.claude/docs/guidelines/product-acceptance-gate.md`
 
 Execution modes:
 - `delegated-terminal`: use the concrete autonomous loop backed by `agent-loop.mjs`; prefer this when the user expects uninterrupted end-to-end execution
@@ -60,6 +61,8 @@ Review and finish gate rule:
 - For code-changing phases, `codex-review-code` must appear in applied workflow evidence before `clean_finish` is allowed.
 - `QA_REPORT.md` may not claim `Next path: clean_finish` while `Review completed` is still `no`.
 - `HANDOFF.md` and closeout fields may not remain seeded or placeholder-shaped when the phase is being closed.
+- Before a plan-directory completion summary, run `node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir <plan-dir> --master-plan <master-plan>` and block return if it fails.
+- Phase closeout requires master checklist, `phase-status.yaml`, archived phase document paths, execution artifacts, verifier verdicts, scorecards, and critical `SCN-*` evidence to agree.
 - If review or closeout evidence is missing, the run must stay inside the active plan-directory loop and remediate the missing steps instead of returning a summary.
 
 ## Usage
@@ -114,7 +117,7 @@ Review and finish gate rule:
     │
     ├─ 8. Enforce Review / Finish Gates
     │      └─ A phase may advance only after review evidence, completion evidence,
-    │         and finish-closeout artifacts are consistent
+    │         acceptance evidence, and finish-closeout artifacts are consistent
     │
     └─ 9. Emit Handoff Summary
            └─ Orchestrator-readable phaseRunnerResult after the active plan directory is actually done

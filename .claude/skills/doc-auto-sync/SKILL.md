@@ -127,6 +127,17 @@ freshnessCheck:
 
 Stale docs → add to output `staleDocs[]` for pre-flight-check to surface.
 
+### 4.5 Phase Closeout Sync
+
+When a phase runner marks a phase complete, finish-bundle doc sync must reconcile:
+- master plan `Phase Completion Checklist`
+- `.claude/docs/phase-status.yaml` status and `archivedPhaseDoc`
+- execution artifact paths for `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `HANDOFF.md`, and `SCORECARD.md`
+- daily log final reconciliation when earlier entries record blocked or failed attempts
+- evidence links for every critical `SCN-*`
+
+Do not leave only mid-run blocker notes when final evidence supersedes them. Append a final reconciliation entry instead of deleting history.
+
 ### 5. CHANGELOG Entry
 
 Generate a changelog entry for commit-moonshot:

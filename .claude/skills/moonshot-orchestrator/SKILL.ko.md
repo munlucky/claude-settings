@@ -140,6 +140,7 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - bounded direct 경로에서 의미 있는 파일 수정이 있으면 완료 전 `doc-auto-sync` 증적을 반드시 남긴다.
 - bounded direct 실행이 중단되면 clean completion 전에 `session-logger` 증적을 남겨야 한다.
 - retry 와 verification loop 는 자율적으로 유지하고, human approval 을 execute/review/verify 사이의 일반 단계로 취급하지 않는다.
+- 사용자 correction이 재사용 가능한 워크플로우 실수를 드러내면 먼저 `failure-analyzer`로 분류한다. `session-logger`는 session/handoff logging이 이미 필요하거나 solution promotion이 정당화될 때만 사용한다.
 
 review cadence 계약:
 - simple bounded change: 구현 후 한 번의 post-implementation review로 충분한 경우가 많다
@@ -196,6 +197,7 @@ finish / handoff 계약:
 - `verificationState == passed` 라도 최신 증거가 없거나 required check가 비어 있지 않으면 완료로 올리지 않습니다.
 - contract 기반 run이면 `verificationFailed`로 재분류해 `QA_REPORT.md`를 갱신하고 수정/재시도 경로로 되돌립니다.
 - contract 밖의 workspace/fallback run이면 profile에 따라 경고 또는 보수적 remediation 상태로 유지합니다.
+- 구현/리뷰/검증 증거가 선택된 plan을 부정하면 현재 tactic을 멈추고 notes/`QA_REPORT.md`에 증거를 기록한 뒤 uncertainty handling과 sequence decision으로 되돌아갑니다.
 
 ## 허용 단계
 
@@ -236,6 +238,7 @@ finish / handoff 계약:
 실행 규칙:
 - `Task (fork)`로 표기된 단계와 `context: fork`를 가진 읽기 전용 review/verification 스킬은 두 런타임 모두에서 최소 입력, 요약 반환, 메인 세션 coordinator 유지 원칙을 따른다.
 - read-only review/verification owner에는 전체 세션 이력을 넘기지 않고 artifact, changed file list, concise summary만 전달한다.
+- 각 fork/sub-agent에는 하나의 tactic 또는 hypothesis만 맡기고, 서로 다른 research/review 질문은 분리된 입력으로 나눈다.
 
 ## 동적 삽입 규칙
 
@@ -244,6 +247,7 @@ finish / handoff 계약:
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
 - `executionPlane == product_project && complexity != simple` -> `session-logger` 보장 + 첫 코드 변경 전 `SPRINT_CONTRACT.md` 요구
 - 의미 있는 코드 변경 또는 medium+ complexity -> 최종 verification 전에 `codex-review-code` 보장
+- 리뷰, runtime 증거, 구현 중 발견 사항이 선택된 plan과 충돌 -> 현재 tactic 중단, notes/QA 증거 갱신, uncertainty handling과 sequence decision 재진입
 - `implementationComplete=true` + 의미 있는 파일 수정 -> 검증 뒤, 완료 전 `doc-auto-sync` 보장
 - 의미 있는 파일 수정 + 안정된 verifier 상태 -> 최종 완료 선언 전 `session-logger` 보장
 - `reactProject=true` -> 첫 `implementation-runner` 앞에 `frontend-design` 삽입
@@ -255,6 +259,7 @@ finish / handoff 계약:
 - 재시도/중단/컨텍스트 경고 -> `HANDOFF.md` 갱신
 - strict인데 evidence gate가 없으면 `verification-evidence-gate` 삽입
 - 다중 실패가 쌓이면 `failure-analyzer`를 추가하고 같은 failure class 반복 시 replan으로 승격
+- 사용자 correction이 반복 가능한 workflow/quality 실수를 드러내면 `failure-analyzer`를 추가하고, session/handoff logging 또는 solution promotion이 필요한 경우에만 `session-logger`를 사용
 
 ## plane별 규칙
 

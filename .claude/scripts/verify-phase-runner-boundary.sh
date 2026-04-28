@@ -341,6 +341,11 @@ Implement the first Ink fullscreen UI.
 - P22-1 Add Ink runtime boundary.
 - P22-3 Implement fullscreen screens.
 
+## Critical Product Scenarios
+| ID | User-Visible Expectation | Verification Command | Expected Signal | Evidence Path |
+|----|--------------------------|----------------------|-----------------|---------------|
+| SCN-22-1 | `agent tui --fullscreen` opens the Ink fullscreen screen | `npm test` | Ink app compiles and fullscreen snapshot stable | `docs/implementation/execution/22-ink-fullscreen-tui/QA_REPORT.md` |
+
 ## Exact Execution Targets
 | Task | Targets | Expected signal |
 |------|---------|-----------------|
@@ -389,6 +394,7 @@ cat > "$CONFORMANCE_PHASE_DIR/QA_REPORT.md" <<'EOF'
 | Plan Item | Required | Actual | Result | Required Action |
 |-----------|----------|--------|--------|-----------------|
 | Ink package | ink/react package renderer | TypeScript string boundary | pass | none |
+| SCN-22-1 | fullscreen screen behavior | Ink app compiles and fullscreen snapshot stable | pass | none |
 
 ## Workflow Execution
 - Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
