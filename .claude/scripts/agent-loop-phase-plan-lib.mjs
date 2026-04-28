@@ -502,6 +502,7 @@ Runtime compatibility fallback:
 - In fallback mode, use only the active phase doc, SPRINT_CONTRACT.md, QA_REPORT.md, HANDOFF.md, SCORECARD.md, ${activeWorkspaceContract(workspaceRoot)}, .claude/verification.contract.yaml, and .claude/docs/guidelines/long-running-harness.md unless the phase doc explicitly requires more.
 - Do not inspect unrelated repository files once the required verification command and artifact updates are clear.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`.
 - Return control only after source plan conformance passes, fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any completion gate is still open, keep the active phase in retry with explicit remediation evidence instead of handing off early.${codexDirectSteps}
 - Treat "phase complete" as an attempt-local result only. Never use it as proof that the whole plan or user session may end; that decision belongs to the outer loop after re-reading ${statusFile}.
 

@@ -33,6 +33,7 @@ Create or update the project bootstrap doc set with accurate, evidence-based pro
    - Note environment variable usage (search for `ENV`, `process.env`, `os.environ`, `dotenv`).
    - Identify shared design systems, token files, component libraries, or UI primitives.
    - Identify canonical domain terminology from product docs, route names, navigation labels, and schema names.
+   - Identify ambiguous or conflicting domain terms and choose canonical aliases only when evidence supports the choice.
    - Identify the real test entrypoints, CI checks, smoke/regression commands, and any manual QA flows.
    - Identify workflow expectations such as branch naming, worktree usage, required scripts, release flow, or PR rules from existing docs or scripts.
 
@@ -48,7 +49,9 @@ Create or update the project bootstrap doc set with accurate, evidence-based pro
    - `docs/design/README.md`
      - Record shared UI/system rules, component or token conventions, and how to handle new design patterns.
    - `docs/glossary/README.md`
-     - Record canonical terms, forbidden synonyms when applicable, and the update rule for new terms.
+     - Record canonical terms, definitions, aliases to avoid, relationships between terms, and the update rule for new terms.
+     - Keep terms domain-facing; skip class/function names unless they are also product language.
+     - Add TODOs instead of inventing definitions when the repository uses a term inconsistently.
    - `docs/daily/README.md`
      - Record daily log structure, required files, minimum required events, and escalation/handoff notes.
    - `TEST_GUIDE.md`
@@ -73,3 +76,4 @@ Create or update the project bootstrap doc set with accurate, evidence-based pro
 - If information is missing, add TODOs or ask for confirmation.
 - Keep content concise and project-specific.
 - Preserve user-written project docs; extend or refresh them instead of rewriting from scratch when possible.
+- Do not create ADRs during bootstrap unless a hard-to-reverse, surprising, trade-off decision is already documented by the project.

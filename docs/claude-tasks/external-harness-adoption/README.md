@@ -61,12 +61,25 @@ The expanded pilot wave adds:
 - export adapters for Terminal-Bench/Harbor, OpenAI Evals, and Inspect AI
 - pilot result artifacts generated without production `.claude/skills` bulk install
 
+## Matt Pocock Skills Transfer Focus
+
+Matt Pocock's `mattpocock/skills` repository is treated as a pattern source, not an install source.
+
+Adopted direction:
+
+- keep public entrypoints stable
+- transfer `design-an-interface`, `domain-model`, `ubiquitous-language`, `improve-codebase-architecture`, `tdd`, `to-issues`, `qa`, and `triage-issue` into existing local stage owners
+- record the mapping in `.claude/docs/guidelines/external-skill-pattern-transfer.md`
+- defer GitHub label-state automation until the GitHub connector path has explicit approval and security review
+- do not create micro-skills for communication modes, code maps, or skill authoring advice unless repeated direct invocation proves they need their own trigger surface
+
 ## Files
 
 - `pilot-registry.md`: candidate decisions and pilot status.
 - `pilot-review-template.md`: checklist for reviewing a candidate before local adoption.
 - `pilot-results.md`: generated sandbox pilot result summary.
 - `eval-plane-integration.md`: external benchmark/eval export strategy and commands.
+- `.claude/docs/guidelines/external-skill-pattern-transfer.md`: source-of-truth mapping for external skill pattern transfer.
 
 ## Non-Goals
 

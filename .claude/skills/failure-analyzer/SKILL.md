@@ -38,6 +38,8 @@ surfaceStatus: internal_stage_owner
 - Treat repeated symptoms as the same `failureClass` until evidence proves otherwise.
 - If the same `failureClass` appears twice, change tactic before the next retry.
 - If three attempts fail, escalate to design/contract review instead of continuing local fixes.
+- For bug reports that leave the current run, draft the follow-up as behavior, reproduction steps, root cause, and RED-GREEN fix cycles.
+- Keep external issue drafts durable: avoid file paths and line numbers unless the user requests tactical implementation notes.
 
 ## Analysis Workflow
 
@@ -60,6 +62,14 @@ failureReport:
     - "Re-ran implementation without changing verification contract"
   sameFailureClassCount: 2
   nextTactic: "Return to contract definition before retrying implementation"
+  issueDraft:
+    problem: ""
+    expectedBehavior: ""
+    reproductionSteps: []
+    rootCauseSummary: ""
+    tddFixPlan:
+      - red: ""
+        green: ""
   categorized:
     - type: "context_missing"
       description: "Agent consistently formatted API response wrong"

@@ -78,6 +78,7 @@ For `meta_harness` work, also apply:
 - `.claude/rules/skills/skill-definition.md` when touching `.claude/skills/**`
 - `.claude/rules/agents/agent-definition.md` and `.claude/rules/agents/agent-delegation.md` when touching `.claude/agents/**`
 - `.claude/rules/docs/documentation.md` when touching `.claude/docs/**`
+- `.claude/docs/guidelines/external-skill-pattern-transfer.md` when adopting or comparing external skills/harnesses
 
 ## Context Budget Rule
 
@@ -239,6 +240,7 @@ Policy:
 - bounded direct code changes must record whether `code-simplifier` was applied or explicitly skipped with a reason
 - bounded direct code changes must record `doc-auto-sync` evidence before completion is claimed
 - bounded direct interrupted runs must record `session-logger` evidence before completion is claimed
+- external skill patterns must be transferred into existing stage owners, references, templates, or deferred pilot entries before adding a new public skill
 
 #### 2.0.8 Project reference docs
 

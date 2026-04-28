@@ -60,6 +60,20 @@ Result artifacts:
 
 | Candidate | Source Type | Decision | Local Target | Pilot Status | Notes |
 |---|---|---|---|---|---|
+| `mattpocock/skills:design-an-interface` | skill pattern | adapt | `plan-eng-review`, `test-driven-development` | local transfer documented | Require multiple interface shapes for risky module/API contracts. |
+| `mattpocock/skills:domain-model` | skill pattern | adapt | `product-orchestrator`, `project-md-refresh`, `plan-eng-review` | local transfer documented | Challenge plans against domain language and ADRs without adding a public skill. |
+| `mattpocock/skills:ubiquitous-language` | skill pattern | adapt | `docs/glossary/README.md`, `.claude/PROJECT.md` | local transfer documented | Canonical terms and aliases-to-avoid belong in project docs. |
+| `mattpocock/skills:improve-codebase-architecture` | skill pattern | adapt | `plan-eng-review`, `code-simplifier`, `codex-review-code` | local transfer documented | Transfer deep-module, deletion-test, locality/leverage vocabulary. |
+| `mattpocock/skills:tdd` | skill pattern | adopt | `test-driven-development` | local transfer documented | Enforce one RED-GREEN tracer bullet at a time; reject horizontal test batches. |
+| `mattpocock/skills:to-issues` | skill pattern | adapt | `task-slicer`, optional GitHub export | local transfer documented | AFK/HITL vertical slices and dependency order. |
+| `mattpocock/skills:qa` | skill pattern | adapt | `qa-flow`, GitHub issue workflow | local transfer documented | Conversational QA should create durable behavior-focused issues. |
+| `mattpocock/skills:triage-issue` | skill pattern | adapt | `failure-analyzer`, `qa-flow` | local transfer documented | Root-cause investigation plus TDD fix-plan issue template. |
+| `mattpocock/skills:request-refactor-plan` | skill pattern | adapt | `task-slicer`, `plan-eng-review` | local transfer documented | Refactors should be split into tiny working steps with testing decisions. |
+| `mattpocock/skills:write-a-skill` | skill quality | adapt | skill authoring policy | local transfer documented | Keep `SKILL.md` concise and move details to references/templates/scripts. |
+| `mattpocock/skills:zoom-out` | prompt pattern | adapt | explorer/review prompts | local transfer documented | Use module/caller maps before editing unfamiliar areas. |
+| `mattpocock/skills:github-triage` | GitHub workflow | defer | future GitHub connector workflow | pending approval | Label state machine is useful but should not enter default runtime without security/workflow review. |
+| `mattpocock/skills:caveman` | communication mode | reject | none | rejected for default flow | User preference only; not durable harness policy. |
+| `mattpocock/skills:git-guardrails-claude-code` | hook behavior | defer | security/workspace policy | pending hook review | Borrow blocked-operation concepts only after hook/script review. |
 | `planning-with-files` | skill pattern | adapt | tasks/progress/findings pattern only | sandbox registered | Pattern already partially absorbed; hooks require review. |
 | `notedit/happy-skills:feature-dev` | broad skill | defer | feature-dev comparison only | sandbox registered | Too broad for default path; useful as comparison corpus. |
 | `open-horizon-labs/skills:review` | review pattern | defer | review rubric comparison only | sandbox registered | Compare with `codex-review-code`. |

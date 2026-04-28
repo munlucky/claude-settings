@@ -23,11 +23,13 @@ This skill is workflow-integrated, but it may also be invoked directly for an ex
 ## What To Improve
 
 - redundant branches, wrappers, and abstractions
+- shallow pass-through modules that fail the deletion test
 - overly dense expressions and nested ternaries
 - names that obscure intent
 - repeated logic that can be consolidated safely
 - comments that restate obvious code
 - inconsistent structure inside recently touched modules
+- module locality when a small interface can hide repeated implementation complexity
 
 ## What Not To Do
 
@@ -35,6 +37,8 @@ This skill is workflow-integrated, but it may also be invoked directly for an ex
 - do not change external behavior, data contracts, or side effects
 - do not compress code into dense one-liners
 - do not remove useful abstractions that improve module boundaries
+- do not introduce a new abstraction unless it improves locality, leverage, or testability
+- do not rename domain terms away from the project glossary without updating the glossary or surfacing the conflict
 
 ## Suggested Workflow Position
 

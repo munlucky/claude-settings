@@ -8,6 +8,7 @@ loads:
 deepReferences:
   - .claude/docs/guidelines/product-definition-workflow.md
   - .claude/docs/guidelines/requirements-traceability-harness.md
+  - .claude/docs/guidelines/external-skill-pattern-transfer.md
 outputArtifacts:
   - PRODUCT_INTENT.md
   - PRD.md
@@ -65,6 +66,8 @@ Planning artifacts should also record:
 - explicit non-goals
 - scope reduction or scope hold notes when requests are too large
 - a short cost/benefit rationale at `PRODUCT_INTENT`, `PRD`, and `PLAN`
+- canonical domain terms or glossary gaps when language is ambiguous
+- testing decisions focused on user-visible behavior, not implementation details
 
 ## Workflow
 
@@ -139,11 +142,14 @@ Preferred actions:
 ### SOLUTION
 - Model flows, state, entities, and exceptions
 - Do not discuss stack, classes, or modules
+- Use canonical project/domain terms and flag overloaded terms before downstream planning
 
 ### SPEC
 - Translate behavior into architecture
 - Capture interfaces, containers, dependencies, and NFRs
 - Record major choices in ADRs
+- Prefer deep modules: small interfaces that hide meaningful behavior and improve locality
+- For hard-to-change interfaces, consider multiple materially different shapes before choosing one
 
 ### EXECUTION_PLAN
 - Convert architecture into vertical slices
@@ -151,6 +157,8 @@ Preferred actions:
 - Prepare for direct Moonshot handoff
 - Preserve `REQ-*` and `SCN-*` mappings so completion can be blocked on uncovered items
 - Narrow or reject slices whose cost is not justified by value
+- Mark slices as AFK or HITL when they may become external issues or agent handoffs
+- Prefer tracer-bullet vertical slices over horizontal layer batches
 
 ## Approval Boundary
 

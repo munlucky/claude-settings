@@ -42,6 +42,7 @@ Codex-native review should explicitly apply:
 - `.claude/rules/refactoring-guidelines.md`
 - `.claude/rules/communication.md`
 - `.claude/rules/output-format.md`
+- `.claude/docs/guidelines/external-skill-pattern-transfer.md`
 
 ## Procedure
 
@@ -138,6 +139,9 @@ MUST DO:
   * Deep nesting (>4 levels)
   * Missing error handling (try/catch)
   * Repeated or systemic policy violations that indicate weak module boundaries
+  * Shallow pass-through modules that fail the deletion test
+  * Public interfaces that expose implementation complexity or are easy to misuse
+  * Domain/user-facing behavior described with inconsistent terminology
 - **React/Next.js Performance (CRITICAL)** [if signals.reactProject]:
   * Sequential await instead of Promise.all() (waterfall pattern)
   * Barrel file imports (`import { X } from 'lib'` → direct import)
@@ -149,11 +153,13 @@ MUST DO:
 - Check logic/flow errors and edge cases
 - Validate type safety and error handling
 - Verify API contract and data model consistency
+- For refactors, check that each step keeps the codebase working and that tests target behavior through public interfaces
 
 MUST NOT DO:
 - Nitpick style (let formatters handle this)
 - Flag theoretical concerns unlikely to matter
 - Suggest changes outside the scope of modified files
+- Require a new abstraction only because code moved; require evidence of better locality, leverage, or testability
 
 OUTPUT FORMAT:
 Summary → Critical issues → Warnings → Recommendations → Verdict

@@ -54,11 +54,15 @@ Prefer:
 - thin slices that exercise multiple layers only when needed
 - tasks that can be owned and verified independently
 - slices whose `REQ-*` and `SCN-*` coverage can be verified without guesswork
+- tracer-bullet slices that prove one complete behavior path at a time
+- AFK slices when implementation can proceed without human judgment
+- HITL slices only when a real decision, design review, or external approval is required
 
 Avoid:
 - pure layer splits with no user outcome
 - giant umbrella tasks
 - tasks that require hidden context from other slices
+- horizontal batches such as "all schema", "all API", then "all UI" when a vertical slice is possible
 
 ## Parallel Group Rules
 
@@ -70,6 +74,36 @@ Only group tasks in parallel when:
 - they do not depend on the same unfinished artifact
 - their verification can run independently
 
+## Optional GitHub Issue Export Contract
+
+When the workflow exports task slices to GitHub issues, keep issue bodies durable and behavior-focused:
+
+- create issues in dependency order
+- include `AFK` or `HITL`
+- include parent plan or source issue when available
+- describe what to build as end-to-end behavior, not layer-by-layer file edits
+- include acceptance criteria and verification commands
+- avoid file paths, line numbers, and implementation snippets unless the user explicitly asks for tactical tickets
+- use `Blocked by` with real issue numbers when available, otherwise plain dependency names
+
+Issue body shape:
+
+```markdown
+## What to build
+
+## Type
+
+AFK or HITL
+
+## Acceptance criteria
+
+- [ ] ...
+
+## Verification
+
+## Blocked by
+```
+
 ## Handoff Quality Bar
 
 A good task file allows an implementation agent to start work with:
@@ -79,6 +113,7 @@ A good task file allows an implementation agent to start work with:
 - explicit traceability targets for completion gating
 - exact file and command targets
 - explicit fail/pass evidence expectations
+- a clear AFK/HITL classification when the slice may leave local documents
 
 ## References
 

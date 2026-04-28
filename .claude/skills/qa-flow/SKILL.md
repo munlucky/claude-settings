@@ -17,15 +17,17 @@ Verify a user-facing flow in a real browser session and return a compact pass/fa
 
 ## Status
 
-This skill is currently a scaffold. It prepares the interface for integrating persistent browser flows into the existing verification harness.
-It is not part of the default verification chain yet.
-Run it only as an optional verification-bundle member when guided browser QA is explicitly needed.
+This skill is an optional verification-bundle member.
+It can run browser smoke checks when a target URL is available, or run a conversational QA triage path when the user reports issues.
+It is not part of the default verification chain unless a workflow explicitly selects guided browser QA.
 
 ## Inputs
 
 - target URL
 - optional flow name such as `smoke`, `auth`, `checkout`, or `dashboard`
 - optional auth/setup notes
+- optional user-reported issue or QA notes
+- optional GitHub issue export intent
 
 ## Intended Runtime Path
 
@@ -46,7 +48,7 @@ Fallback path:
 /qa-flow --url=http://localhost:3000 --flow=dashboard --notes="requires seeded admin user"
 ```
 
-## Planned Workflow
+## Workflow
 
 1. Validate the target URL.
 2. Start or reuse the persistent browser session.
@@ -54,6 +56,25 @@ Fallback path:
 4. Execute flow-specific steps.
 5. Capture failures with screenshots or log excerpts when possible.
 6. Return a pass/fail summary with concrete next actions.
+
+## Conversational QA Triage
+
+When the user is reporting bugs instead of asking for a browser smoke run:
+
+1. Ask at most 2-3 short clarification questions only if expected behavior, actual behavior, or reproduction steps are missing.
+2. Explore relevant project docs and domain terms in the background when available.
+3. Decide whether the report is one issue or several independently fixable issues.
+4. Produce durable issue drafts focused on user-visible behavior.
+5. If GitHub export is explicitly requested and the GitHub tool/CLI is available, create issues in dependency order and return URLs.
+
+Issue drafts must:
+
+- use project domain language
+- describe expected vs actual behavior
+- include reproduction steps
+- avoid file paths and line numbers unless the user asks for tactical implementation notes
+- include AFK/HITL classification when agent handoff is expected
+- include a TDD fix-plan outline for confirmed bugs
 
 ## Flow Contract
 
@@ -73,8 +94,11 @@ Each flow should eventually define:
 - pass/fail status
 - issues found
 - suggested fixes or follow-up checks
+- issue drafts or issue URLs when QA triage is requested
+- evidence paths such as screenshots, console excerpts, or QA report updates when available
 
 ## Failure Policy
 
 - If browser runtime is missing, report setup gap and recommend the current `browser-verifier` fallback.
 - If a flow is not yet implemented, report that explicitly instead of running partial checks silently.
+- If reproduction steps are missing, do not invent them; ask a targeted question or mark the issue draft as blocked on reproduction.

@@ -665,6 +665,10 @@ EOF
 ## Completion
 - \`QA_REPORT.md\` changed during the run
 - Fresh verification verdict exists after the run
+- \`QA_REPORT.md\` records review completed, \`Next path: clean_finish\`, and \`Closeout reason: scope_complete\`
+- \`QA_REPORT.md\` records source plan conformance as passed
+- \`SCORECARD.md\` records \`OBJ-CONFORM\` as pass
+- \`SCORECARD.md\` records \`Verdict: done\` and \`Current task status: FULL\`
 - \`phase-status.yaml\` marks phase 1 completed
 - The attempt stops after the artifact trio is updated
 
@@ -684,6 +688,18 @@ EOF
 
 ## Round Goal
 - Exercise the workflow runtime for ${scenario_name} without editing repository source files.
+
+## Source Plan Requirements Snapshot
+- Source phase doc: ${phase_doc}
+- Runtime path: ${scenario_name}
+- Required verification command: \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}\`
+- Required artifact updates: \`QA_REPORT.md\`, \`SCORECARD.md\`, \`HANDOFF.md\`, and \`phase-status.yaml\`
+- Completion requires fresh verification evidence, review completed, source plan conformance passed, \`OBJ-CONFORM\` passed, \`Verdict: done\`, \`Current task status: FULL\`, and phase 1 completed.
+
+## Spec Deviation Ledger
+| Plan Item | Planned Requirement | Actual / Proposed Change | Approval | Completion Impact | Required Action |
+|-----------|---------------------|--------------------------|----------|-------------------|-----------------|
+| none | none | none | none | none | none |
 
 ## Non-Goals
 - No edits outside ${fixture_root}
@@ -717,6 +733,9 @@ EOF
 |-------|------|----------------|
 | QA report updated | Docs | QA report mentions ${scenario_name} |
 | Fresh verification verdict | Test | verify-changes verdict is passed |
+| Review evidence | Review | \`QA_REPORT.md\` records review completed |
+| Plan conformance | Policy | \`QA_REPORT.md\` records source plan conformance pass and \`SCORECARD.md\` marks \`OBJ-CONFORM\` pass |
+| Scorecard closeout | Policy | \`SCORECARD.md\` records \`Verdict: done\` and \`Current task status: FULL\` |
 | Phase status updated | Policy | \`phase-status.yaml\` marks phase 1 completed |
 | No source edits | Policy | only execution artifacts and \`phase-status.yaml\` changed |
 
@@ -735,7 +754,7 @@ EOF
   - runtime smoke logs only
 
 ## Finish Rule
-- Clean finish requires: fresh verification evidence, review marked complete, and finish-stage closeout recorded
+- Clean finish requires: fresh verification evidence, review marked complete, source plan conformance passed, \`OBJ-CONFORM\` passed, \`SCORECARD.md\` \`Verdict: done\`, \`Current task status: FULL\`, and finish-stage closeout recorded
 - Resume-later handoff trigger: runtime interruption or incomplete evidence
 - Retry-loop trigger: verification failure with actionable remediation
 - HANDOFF stop reason codes are limited to: blocked, interrupted, context_limit, user_pause, deferred_verification
@@ -770,6 +789,13 @@ EOF
 | Criterion | Result | Notes |
 |-----------|--------|-------|
 | Runtime smoke verdict | pending | awaiting execution |
+
+## Plan Conformance Review
+| Plan Item | Required | Actual | Result | Required Action |
+|-----------|----------|--------|--------|-----------------|
+| Source plan snapshot preserved | Runtime smoke phase requirements remain authoritative in SPRINT_CONTRACT.md | pending | pending | Verify before clean finish |
+| Exact execution targets satisfied | Required verification command and artifact updates are completed | pending | pending | Run the required verification command once |
+| Spec deviation ledger clean | No unapproved scope changes | pending | pending | Keep ledger as none or record user-approved replan |
 
 ## Findings
 | Severity | Area | Reproduction | Expected | Actual |
@@ -834,15 +860,16 @@ EOF
 ## Objective Checklist
 | ID | Category | Weight | Status | Evidence | Notes |
 |----|----------|--------|--------|----------|-------|
-| OBJ-REQ | In-scope platform or infrastructure changes covered | 25 | pending | ${qa_report} | REQ-* coverage; detected=0 |
+| OBJ-CONFORM | Source phase plan conformance verified | 20 | pending | ${qa_report} | Source snapshot, exact targets, and approved deviations |
+| OBJ-REQ | In-scope platform or infrastructure changes covered | 20 | pending | ${qa_report} | REQ-* coverage; detected=0 |
 | OBJ-SCN | Critical rollout, rollback, and failure scenarios evidenced | 10 | pending | ${qa_report} | SCN-* coverage; detected=0 |
-| OBJ-VER | Required verification and operational checks passed | 45 | pending | ${qa_report} | Fresh contract-backed evidence |
-| OBJ-CLOSE | Runbook, risk notes, and handoff recorded | 20 | pending | ${qa_report} | Review + finish evidence present |
+| OBJ-VER | Required verification and operational checks passed | 35 | pending | ${qa_report} | Fresh contract-backed evidence |
+| OBJ-CLOSE | Runbook, risk notes, and handoff recorded | 15 | pending | ${qa_report} | Review + finish evidence present |
 
 ## Score Summary
 - Current score: 0
 - Target score: 100
-- Unmet checklist items: 4
+- Unmet checklist items: 5
 - Blocking defects: 0
 - Verdict: retry
 
@@ -859,6 +886,7 @@ EOF
 
 ## Loop Policy
 - \`done\` requires Current score >= Target score
+- \`done\` requires OBJ-CONFORM = pass
 - \`done\` requires Unmet checklist items = 0
 - \`done\` requires Blocking defects = 0
 - \`blocked\` means environment, contract, or dependency prevents progress
@@ -990,6 +1018,12 @@ EOF
   cat > "$sprint_contract" <<'EOF'
 # SPRINT CONTRACT
 
+## Source Plan Requirements Snapshot
+- Fixture source requirement: workflow enforcement sync smoke must preserve required phase contract sections.
+
+## Spec Deviation Ledger
+- None.
+
 ## Stage Order
 - Plan
 - Ready / Isolate
@@ -1007,6 +1041,10 @@ EOF
 
   cat > "$qa_report" <<'EOF'
 # QA REPORT
+
+## Plan Conformance Review
+- Source plan snapshot preserved: pass
+- Spec deviation ledger: none
 
 ## Review Checkpoint
 - Review completed: yes

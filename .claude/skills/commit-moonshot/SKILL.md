@@ -15,7 +15,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 
 - refresh project memory before commit
 - keep the memory summary short
-- ask only whether `.claude/memory.json` should be included
+- exclude `.claude/memory.json` from commits by default after refreshing it
 - create a Korean commit title and grouped bullet body
 
 ## Required flow
@@ -24,14 +24,15 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 2. derive `PROJECT_ID`
 3. refresh `[PROJECT_ID]::*` memory entities and relations
 4. summarize created or updated memory facts in a short bullet list
-5. ask whether `.claude/memory.json` should be staged
-6. stage docs and code
+5. keep `.claude/memory.json` unstaged unless the user explicitly asks to include it
+6. stage docs and code only
 7. create the commit in Korean
 
 ## Hard rules
 
 - always refresh memory before commit
-- never auto-stage `.claude/memory.json` without explicit confirmation
+- never auto-stage `.claude/memory.json` by default
+- only stage `.claude/memory.json` when the user explicitly asks to include memory in the commit
 - keep the user-facing summary and commit body grouped by feature area
 - keep the summary compact; avoid long prose dumps
 
