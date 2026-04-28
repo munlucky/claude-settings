@@ -3,8 +3,9 @@
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const shellCorePath = path.join(scriptDir, 'verify-phase-runtime-parity-shell-core.sh');
 const compactOutput = process.argv.includes('--compact') || String(process.env.TOKEN_OUTPUT_MODE || '').toLowerCase() === 'compact';
 
@@ -19,6 +20,18 @@ function resolveBashCommand() {
   return '';
 }
 
+function toBashPath(filePath) {
+  if (process.platform !== 'win32') {
+    return filePath;
+  }
+  const normalized = path.resolve(filePath).replace(/\\/g, '/');
+  const driveMatch = normalized.match(/^([A-Za-z]):\/(.*)$/);
+  if (!driveMatch) {
+    return normalized;
+  }
+  return `/mnt/${driveMatch[1].toLowerCase()}/${driveMatch[2]}`;
+}
+
 function main() {
   const bash = resolveBashCommand();
   if (!bash) {
@@ -27,7 +40,7 @@ function main() {
   }
 
   const passthroughArgs = process.argv.slice(2).filter((arg) => arg !== '--compact');
-  const child = spawn(bash, [shellCorePath, ...passthroughArgs], {
+  const child = spawn(bash, [toBashPath(shellCorePath), ...passthroughArgs], {
     stdio: compactOutput ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     env: process.env,
   });

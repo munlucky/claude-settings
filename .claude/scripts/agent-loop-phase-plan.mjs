@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
@@ -80,7 +81,7 @@ function readStatusBlocks(statusFile) {
   return blocks;
 }
 
-function getNextPhase(statusFile) {
+export function getNextPhase(statusFile) {
   if (!fs.existsSync(statusFile)) {
     return '1';
   }
@@ -88,7 +89,23 @@ function getNextPhase(statusFile) {
   const staleSeconds = Number.parseFloat(process.env.AGENT_LOOP_STALE_PHASE_SECONDS ?? '1800');
   const now = Date.now();
 
-  for (const block of readStatusBlocks(statusFile)) {
+  const blockedStatuses = ['verification_blocked', 'runtime_unhealthy', 'blocked'];
+  const blocks = readStatusBlocks(statusFile);
+
+  for (const block of blocks) {
+    if (block.status === 'pending_reverify' && block.planConfirmed !== 'false' && block.number !== null) {
+      return block.number;
+    }
+  }
+
+  const continueOnBlocked = (process.env.AGENT_LOOP_CONTINUE_ON_BLOCKED ?? 'false') === 'true';
+  for (const block of blocks) {
+    if (block.planConfirmed === 'false') {
+      continue;
+    }
+    if (blockedStatuses.includes(block.status)) {
+      return continueOnBlocked && block.number !== null ? block.number : '';
+    }
     if (
       block.status === 'in_progress' &&
       block.lastOutcome === 'running' &&
@@ -99,11 +116,8 @@ function getNextPhase(statusFile) {
         continue;
       }
     }
-
-    if ((block.status === 'pending' || block.status === 'in_progress') && block.planConfirmed !== 'false') {
-      if (block.number !== null) {
+    if ((block.status === 'pending' || block.status === 'in_progress') && block.number !== null) {
         return block.number;
-      }
     }
   }
 
@@ -268,28 +282,38 @@ function printUsage() {
   ].join('\n'));
 }
 
-const [command, ...args] = process.argv.slice(2);
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
 
-switch (command) {
-  case 'get-next-phase':
-    console.log(getNextPhase(args[0]));
-    break;
-  case 'get-phase-doc':
-    console.log(getPhaseDoc(args[0], args[1]));
-    break;
-  case 'get-phase-title':
-    console.log(getPhaseTitle(args[0], args[1]));
-    break;
-  case 'count-total-phases':
-    console.log(countTotalPhases(args[0]));
-    break;
-  case 'render-required-verification-commands':
-    console.log(renderRequiredVerificationCommands(args[0], args[1], args[2], args[3]));
-    break;
-  case 'active-workspace-contract':
-    console.log(activeWorkspaceContract(args[0] || process.cwd()));
-    break;
-  default:
-    printUsage();
-    process.exit(64);
+function main() {
+  const [command, ...args] = process.argv.slice(2);
+
+  switch (command) {
+    case 'get-next-phase':
+      writeStdoutLine(getNextPhase(args[0]));
+      break;
+    case 'get-phase-doc':
+      writeStdoutLine(getPhaseDoc(args[0], args[1]));
+      break;
+    case 'get-phase-title':
+      writeStdoutLine(getPhaseTitle(args[0], args[1]));
+      break;
+    case 'count-total-phases':
+      writeStdoutLine(countTotalPhases(args[0]));
+      break;
+    case 'render-required-verification-commands':
+      writeStdoutLine(renderRequiredVerificationCommands(args[0], args[1], args[2], args[3]));
+      break;
+    case 'active-workspace-contract':
+      writeStdoutLine(activeWorkspaceContract(args[0] || process.cwd()));
+      break;
+    default:
+      printUsage();
+      process.exit(64);
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main();
 }

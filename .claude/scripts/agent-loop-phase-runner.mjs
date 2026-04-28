@@ -5,16 +5,18 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifacts } from './agent-loop-phase-plan-lib.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
 
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
 const runtimePath = path.join(scriptDir, 'agent-loop-phase-runtime.mjs');
 const statePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const artifactsPath = path.join(scriptDir, 'agent-loop-phase-artifacts.mjs');
 const attemptPath = path.join(scriptDir, 'agent-loop-phase-attempt.mjs');
+const worktreeCoordinatorPath = path.join(scriptDir, 'phase-worktree-coordinator.mjs');
 const logDir = '.claude/logs/agent-loop';
 const decisionLog = path.join(logDir, 'decisions.md');
 const debugLog = path.join(logDir, 'debug.jsonl');
@@ -28,6 +30,9 @@ const state = {
   phaseNum: '',
   phaseTitle: '',
   phaseDoc: '',
+  parallelWorktrees: Number.parseInt(process.env.PHASE_PARALLEL_WORKTREES ?? '1', 10) || 1,
+  worktreeBase: process.env.PHASE_WORKTREE_BASE || 'HEAD',
+  worktreeRoot: process.env.PHASE_WORKTREE_ROOT || '.tmp/harness-worktrees/phase-runs',
 };
 
 let activeAttemptContext = null;
@@ -104,6 +109,15 @@ function parseArgs(argv) {
         break;
       case '--phase-doc':
         state.phaseDoc = args.shift() ?? '';
+        break;
+      case '--parallel-worktrees':
+        state.parallelWorktrees = Number.parseInt(args.shift() ?? '1', 10) || 1;
+        break;
+      case '--worktree-base':
+        state.worktreeBase = args.shift() ?? 'HEAD';
+        break;
+      case '--worktree-root':
+        state.worktreeRoot = args.shift() ?? '.tmp/harness-worktrees/phase-runs';
         break;
       default:
         break;
@@ -334,6 +348,9 @@ function phaseEnv(paths) {
     HARNESS_SCENARIO_MATRIX_FILE: `${state.executionRoot}/SCENARIO_MATRIX.md`,
     HARNESS_UAT_CHECKLIST_FILE: `${state.executionRoot}/UAT_CHECKLIST.md`,
   };
+  if (process.platform === 'win32' && !env.npm_config_prefix) {
+    env.npm_config_prefix = 'C:\\Program Files\\nodejs';
+  }
   if (paths.phaseScorecard) {
     env.HARNESS_SCORECARD_FILE = paths.phaseScorecard;
   }
@@ -353,10 +370,34 @@ function buildWorkerCommand(prompt, runtime) {
     if (effort) {
       args.push('-c', `model_reasoning_effort="${effort}"`);
     }
-    args.push(prompt);
+    appendCodexPromptArg(args, prompt);
     return args;
   }
   throw new Error(`Unsupported runtime: ${runtime}`);
+}
+
+function appendCodexPromptArg(args, prompt) {
+  if (process.platform === 'win32' && shouldUsePromptFileForCodex(args)) {
+    fs.mkdirSync(logDir, { recursive: true });
+    const promptDir = path.resolve(logDir, 'prompts');
+    fs.mkdirSync(promptDir, { recursive: true });
+    const promptFile = path.join(promptDir, `codex-prompt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.txt`);
+    fs.writeFileSync(promptFile, prompt, 'utf8');
+    args.push('--codex-prompt-file', promptFile);
+    return;
+  }
+  args.push(prompt);
+}
+
+function shouldUsePromptFileForCodex(args) {
+  if (!Array.isArray(args) || args.length === 0) {
+    return false;
+  }
+  const command = String(args[0] || '').toLowerCase();
+  if (command.endsWith('powershell.exe') || command.endsWith('pwsh.exe')) {
+    return true;
+  }
+  return args.some((arg) => String(arg || '').toLowerCase().endsWith('.ps1'));
 }
 
 function runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, runtime) {
@@ -385,6 +426,33 @@ function runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, r
   return result.status ?? 1;
 }
 
+function runWorktreeCoordinator(paths, runtime) {
+  if (state.parallelWorktrees < 2) {
+    return { status: 78, stdout: '', stderr: '' };
+  }
+  const result = runNodeScript(worktreeCoordinatorPath, [
+    paths.phaseExecutionDir,
+    '--plan-dir', state.planDir,
+    '--phase-num', String(state.phaseNum),
+    '--phase-title', state.phaseTitle,
+    '--phase-doc', state.phaseDoc,
+    '--runtime', runtime,
+    '--worksets-file', paths.phaseWorksets,
+    '--base', state.worktreeBase || 'HEAD',
+    '--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-runs',
+    '--parallel-worktrees', String(state.parallelWorktrees),
+    '--qa-report', paths.phaseQaReport,
+    '--handoff', paths.phaseHandoff,
+    '--scorecard', paths.phaseScorecard,
+  ], { stdio: 'pipe' });
+  appendDebugLog('phase-worktree-coordinator-exit', {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  });
+  return result;
+}
+
 function runCommitPrompt(logFile, prompt, runtime) {
   if ((process.env.AGENT_LOOP_RUN_COMMIT_PROMPT ?? 'false') !== 'true') {
     logInfo('Commit prompt disabled by policy (set AGENT_LOOP_RUN_COMMIT_PROMPT=true to opt in)');
@@ -403,7 +471,7 @@ function runCommitPrompt(logFile, prompt, runtime) {
       if (effort) {
         args.push('-c', `model_reasoning_effort="${effort}"`);
       }
-      args.push(prompt);
+      appendCodexPromptArg(args, prompt);
       return args;
     })();
 
@@ -440,7 +508,8 @@ function isBlockedCompletionReason(reason) {
 function stopBlockedPhase(paths, logFile, detail, stopReason = 'verification-preflight-blocked') {
   appendQaRuntimeUpdate(stopReason, logFile, detail, paths);
   appendHandoffUpdate('blocked', logFile, detail, paths);
-  updatePhaseState(state.phaseNum, 'failed', 'blocked', false, state.phaseDoc, paths);
+  const status = stopReason === 'verification-preflight-blocked' ? 'verification_blocked' : 'blocked';
+  updatePhaseState(state.phaseNum, status, 'blocked', false, state.phaseDoc, paths);
   appendDecisionLog([`## Phase ${state.phaseNum}`, '- Status: ⛔ Blocked', `- Detail: ${detail}`, '']);
   recordLoopStop(state.phaseNum, stopReason, detail, logFile);
   return 2;
@@ -819,6 +888,7 @@ function runPhaseAttempt() {
   logInfo(`QA report: ${paths.phaseQaReport}`);
   logInfo(`Handoff: ${paths.phaseHandoff}`);
   logInfo(`Scorecard: ${paths.phaseScorecard}`);
+  logInfo(`Worksets: ${paths.phaseWorksets}`);
 
   let activeRuntime = runtime;
   const logFile = `${logDir}/phase-${state.phaseNum}_${localFileTimestamp()}.log`;
@@ -870,6 +940,30 @@ function runPhaseAttempt() {
 
   const runtimeHealth = assessRuntimeHealth(activeRuntime);
   appendDebugLog('runtime-health-assessment', runtimeHealth);
+  if (runtimeHealth.HEALTHY === 'true' && runtimeHealth.REASON === 'phase-verification-blocker-stale') {
+    const detail = [
+      runtimeHealth.DETAIL || runtimeHealth.REASON,
+      runtimeHealth.VERDICT_PATH ? `verdict=${runtimeHealth.VERDICT_PATH}` : '',
+      runtimeHealth.BLOCKER_CLASS ? `blockerClass=${runtimeHealth.BLOCKER_CLASS}` : '',
+      'nextAction=reverify-phase',
+    ].filter(Boolean).join(' | ');
+    appendQaRuntimeUpdate('stale-blocker-cleared', logFile, detail, paths);
+    appendHandoffUpdate('pending_reverify', logFile, detail, paths);
+    updatePhaseState(state.phaseNum, 'pending_reverify', 'stale_blocker_cleared', false, state.phaseDoc, paths);
+    appendDecisionLog([
+      `## Phase ${state.phaseNum} - Stale Blocker Cleared`,
+      `- Verdict: ${runtimeHealth.VERDICT_PATH || 'n/a'}`,
+      `- Blocker class: ${runtimeHealth.BLOCKER_CLASS || 'n/a'}`,
+      '- Decision: continue with fresh phase re-verification',
+      '',
+    ]);
+  } else if (runtimeHealth.HEALTHY === 'true' && runtimeHealth.REASON === 'phase-verification-blocked-not-runtime') {
+    appendDebugLog('phase-verification-blocker-not-runtime', {
+      detail: runtimeHealth.DETAIL || '',
+      verdictPath: runtimeHealth.VERDICT_PATH || '',
+      blockerClass: runtimeHealth.BLOCKER_CLASS || '',
+    });
+  }
   if (runtimeHealth.HEALTHY !== 'true') {
     if (runtimeHealth.FALLBACK_RUNTIME) {
       const previousRuntime = activeRuntime;
@@ -900,7 +994,7 @@ function runPhaseAttempt() {
       ].filter(Boolean).join(' | ');
       appendQaRuntimeUpdate('runtime-health-blocked', logFile, runtimeHealthDetail, paths);
       appendHandoffUpdate('blocked', logFile, runtimeHealthDetail, paths);
-      updatePhaseState(state.phaseNum, 'failed', 'runtime_unhealthy', false, state.phaseDoc, paths);
+      updatePhaseState(state.phaseNum, 'runtime_unhealthy', 'runtime_unhealthy', false, state.phaseDoc, paths);
       recordLoopStop(
         state.phaseNum,
         runtimeHealth.REASON || 'runtime-health-check-failed',
@@ -909,6 +1003,25 @@ function runPhaseAttempt() {
       );
       return 2;
     }
+  }
+
+  const worktreeCoordinator = runWorktreeCoordinator(paths, activeRuntime);
+  if (worktreeCoordinator.status === 0) {
+    const detail = (worktreeCoordinator.stdout || '').trim() || 'phase worktree coordinator completed';
+    appendQaRuntimeUpdate('parallel-worktree-merged', logFile, detail, paths);
+    appendDecisionLog([
+      `## Phase ${state.phaseNum} - Parallel Worktree Worksets`,
+      '- Status: completed',
+      `- Detail: ${detail}`,
+      '',
+    ]);
+  } else if (worktreeCoordinator.status === 78) {
+    appendDebugLog('phase-worktree-coordinator-fallback', {
+      reason: (worktreeCoordinator.stdout || worktreeCoordinator.stderr || '').trim(),
+    });
+  } else if (state.parallelWorktrees > 1) {
+    const detail = (worktreeCoordinator.stderr || worktreeCoordinator.stdout || 'phase worktree coordinator failed').trim();
+    return stopBlockedPhase(paths, logFile, detail, 'parallel-worktree-blocked');
   }
 
   while (true) {

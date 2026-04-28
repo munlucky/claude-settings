@@ -8,7 +8,7 @@ export function isInsideGitWorkTree(cwd = process.cwd()) {
 }
 
 export function collectGitStatusPaths(cwd = process.cwd()) {
-  const result = runCommand('git', ['status', '--short'], { cwd });
+  const result = runCommand('git', ['-c', 'core.autocrlf=true', 'status', '--short'], { cwd });
   if (result.status !== 0) {
     return [];
   }

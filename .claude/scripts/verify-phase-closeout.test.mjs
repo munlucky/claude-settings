@@ -67,6 +67,15 @@ test('phase closeout passes when artifacts, verdict, score, archive, and scenari
   });
 });
 
+test('phase closeout fails when a structured verdict contradicts itself', () => {
+  withFixture({ inconsistentVerdict: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'verification-verdict-inconsistent'));
+  });
+});
+
 function config(root) {
   return {
     statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
@@ -96,6 +105,7 @@ function writeFixture(root, options = {}) {
     scenarioEvidence: true,
     traceability: true,
     qaExtra: '',
+    inconsistentVerdict: false,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -260,8 +270,8 @@ function writeFixture(root, options = {}) {
     JSON.stringify({
       verdict: 'passed',
       evidenceFresh: true,
-      blocking: false,
-      score: { verdict: 'done' },
+      blocking: settings.inconsistentVerdict,
+      score: { verdict: settings.inconsistentVerdict ? 'blocked' : 'done' },
     }, null, 2)
   );
 }

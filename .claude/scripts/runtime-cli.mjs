@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   activeWorkspaceContract,
@@ -195,6 +196,25 @@ export function resolveCodexCommand() {
   return '';
 }
 
+export function resolvePowerShellCommand() {
+  const pwshPath = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  if (process.platform === 'win32' && fs.existsSync(pwshPath)) {
+    return pwshPath;
+  }
+  return process.platform === 'win32' ? 'powershell.exe' : 'pwsh';
+}
+
+export function npmBaseArgs() {
+  if (process.platform === 'win32') {
+    const nodePath = 'C:\\Program Files\\nodejs\\node.exe';
+    const npmCliPath = 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js';
+    if (fs.existsSync(nodePath) && fs.existsSync(npmCliPath)) {
+      return [nodePath, npmCliPath];
+    }
+  }
+  return ['npm'];
+}
+
 function getProcessGroupId(pid) {
   if (!pid) {
     return '';
@@ -260,7 +280,11 @@ export function codexBaseArgs(cwd) {
   const useEphemeral = process.env.CODEX_EXEC_EPHEMERAL ?? 'true';
 
   const codexCommand = resolveCodexCommand() || 'codex';
-  const args = [codexCommand, 'exec', '--full-auto', '-C', cwd];
+  const windowsWrapper = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-exec-wrapper.ps1');
+  const powershellCommand = resolvePowerShellCommand();
+  const args = process.platform === 'win32'
+    ? [powershellCommand, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', windowsWrapper, 'exec', '--full-auto', '-C', cwd]
+    : [codexCommand, 'exec', '--full-auto', '-C', cwd];
 
   if (useEphemeral === 'true') {
     args.push('--ephemeral');
@@ -293,8 +317,11 @@ function printUsage() {
     '  find-pids-by-pattern <pattern>',
     '  get-process-group-id <pid>',
     '  resolve-codex-command',
+    '  resolve-powershell-command',
     '  resolve-parent-runtime-context [requested-runtime] [verification-runtimes]',
     '  codex-base-args <cwd>',
+    '  npm-base-args',
+    '  capability-preflight-command',
     '  codex-probe-env <probe-root>',
   ].join('\n'));
 }
@@ -367,6 +394,11 @@ function main() {
       process.exit(1);
       break;
     }
+    case 'resolve-powershell-command': {
+      writeStdoutLine(resolvePowerShellCommand());
+      process.exit(0);
+      break;
+    }
     case 'resolve-parent-runtime-context': {
       const context = resolveParentRuntimeContext({
         requestedRuntime: args[0] ?? 'auto',
@@ -383,6 +415,19 @@ function main() {
       for (const arg of codexBaseArgs(cwd)) {
         writeStdoutLine(arg);
       }
+      process.exit(0);
+      break;
+    }
+    case 'npm-base-args': {
+      for (const arg of npmBaseArgs()) {
+        writeStdoutLine(arg);
+      }
+      process.exit(0);
+      break;
+    }
+    case 'capability-preflight-command': {
+      writeStdoutLine('node');
+      writeStdoutLine(path.join(path.dirname(fileURLToPath(import.meta.url)), 'phase-capability-preflight.mjs'));
       process.exit(0);
       break;
     }
@@ -405,4 +450,6 @@ function main() {
   }
 }
 
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main();
+}

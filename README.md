@@ -157,6 +157,7 @@ chmod +x install-claude.sh
 
 기본 동작:
 - `.claude`, `.agents`, `AGENTS.md` 중 존재 항목은 자동 백업 후 설치
+- `.codex/config.toml`, `.codex/agents/` 중 존재 항목은 자동 백업 후 설치
 - `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
 - `.claude/skills/*`를 Codex 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에 심볼릭 링크
@@ -206,7 +207,10 @@ mkdir -p /your-project/.agents
 ln -s ../.claude/skills /your-project/.agents/skills
 ln -s .claude/CLAUDE.md /your-project/AGENTS.md
 
-# 3. 부트스트랩 문서 커스터마이징
+# 3. Codex 프로젝트 설정 복사
+cp -r claude-settings/.codex /your-project/
+
+# 4. 부트스트랩 문서 커스터마이징
 # PROJECT.md와 workflow/design/glossary/daily/test/analysis 문서를 프로젝트에 맞게 수정
 ```
 
@@ -223,9 +227,15 @@ ln -s .claude/CLAUDE.md /your-project/AGENTS.md
 cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude/skills/
 ```
 
-### Codex 스킬 동기화
+### Codex 설정 동기화
 
-설치 스크립트는 프로젝트 내부 `.agents/skills` 브리지를 다시 구성하면서, 동시에 `.claude/skills/*`를 Codex가 읽는 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에도 심볼릭 링크합니다. `CODEX_HOME`을 지정하지 않으면 현재 프로젝트 루트의 `.codex`를 사용합니다.
+설치 스크립트는 `.codex/config.toml`과 `.codex/agents/`를 설치하고, 동시에 `.claude/skills/*`를 Codex가 읽는 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에도 심볼릭 링크합니다. `CODEX_HOME`을 지정하지 않으면 현재 프로젝트 루트의 `.codex`를 사용합니다.
+
+Codex 프로젝트 설정에는 다음이 포함됩니다:
+- 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
+- MCP 서버 예시: GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking
+- 멀티에이전트 기본값: `[agents] max_threads = 6`, `max_depth = 1`
+- 커스텀 에이전트: `explorer`, `reviewer`, `docs_researcher`
 
 Codex에서 바로 활용할 수 있는 스킬 예시:
 - 계획 검증: `codex-validate-plan`
@@ -233,6 +243,7 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 - 완료 검증: `completion-verifier`
 
 주의:
+- `.codex/skills`는 재생성 가능한 링크 영역이고, `.codex/config.toml`과 `.codex/agents/`는 관리 대상 설정입니다.
 - 같은 이름의 기존 전역 스킬이 있으면 백업 후 교체됩니다.
 - 설치 직후 Codex에 스킬이 보이지 않으면 새 세션을 열어 전역 스킬 디렉토리를 다시 로드하세요.
 
@@ -251,6 +262,7 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 ## Moonshot 워크플로우 v2 요약
 
 - 병렬 실행: 독립 단계만 병렬화(리뷰/로깅/일부 검증), 계획 검증과 구현은 순차 진행
+- Phase 내부 병렬 구현은 opt-in입니다. `WORKSETS.yaml`에 겹치지 않는 `ownedPaths`를 정의하고 `--parallel-worktrees N`을 넘긴 경우에만 worktree별 병렬 worker를 실행한 뒤 diff 검증/병합 후 기존 phase 검증으로 돌아갑니다.
 - Karpathy Gate: 구현 직전 실행 규율 점검으로 과설계/스코프 이탈 방지
 - Doc Sync: 문서 자동 동기화로 피드백 루프 유지
 - Completion Check: 요구사항 누락 방지

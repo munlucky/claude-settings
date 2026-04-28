@@ -2,11 +2,17 @@ commands:
   knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
   codePolicy: "bash .claude/scripts/verify-code-policy.sh"
   workflowEnforcement: "bash .claude/scripts/workflow-enforcement.sh verify"
-  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/scripts/verify-phase-runner-boundary.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
+  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/phase-worktree-coordinator.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/scripts/verify-phase-runner-boundary.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
   phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
   phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
+  phaseWorktreeParallel: "node .claude/scripts/phase-worktree-coordinator.mjs self-test"
   phaseCloseout: "node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir docs/implementation --master-plan docs/implementation/00-master-plan-v1.md"
 checkPolicies:
+  searchEvidence:
+    preferred: rg
+    windowsFallback: Select-String
+    exactRequired: false
+    fallbackStatus: passed_with_equivalent_evidence
   phaseRuntimeParity:
     runtimeSelectionAware: true
     defaultVerificationRuntimes:
@@ -53,6 +59,7 @@ artifacts:
   handoff: "{tasksRoot}/{feature-name}/execution/<slice>/HANDOFF.md"
   scorecard: "{tasksRoot}/{feature-name}/execution/<slice>/SCORECARD.md"
   workset: "{tasksRoot}/{feature-name}/execution/<slice>/WORKSET.md"
+  worksets: "{tasksRoot}/{feature-name}/execution/<slice>/WORKSETS.yaml"
   requirementsTraceability: "{tasksRoot}/{feature-name}/execution/REQUIREMENTS_TRACEABILITY.md"
   scenarioMatrix: "{tasksRoot}/{feature-name}/execution/SCENARIO_MATRIX.md"
   uatChecklist: "{tasksRoot}/{feature-name}/execution/UAT_CHECKLIST.md"
@@ -77,6 +84,7 @@ policySets:
       - workflowEnforcement
       - phaseRuntimeParity
       - phaseRunnerBoundary
+      - phaseWorktreeParallel
   acceptance:
     description: "Product acceptance evidence and phase closeout synchronization"
     checks:
@@ -104,6 +112,7 @@ policy:
     - shellSyntax
     - phaseRuntimeParity
     - phaseRunnerBoundary
+    - phaseWorktreeParallel
     - phaseCloseout
 qa:
   evaluatorMode: "separate"

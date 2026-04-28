@@ -4,10 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt } from './agent-loop-phase-plan-lib.mjs';
 
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
 const phasePlanPath = path.join(scriptDir, 'agent-loop-phase-plan.mjs');
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
@@ -29,6 +30,9 @@ const state = {
   maxPhases: 0,
   delaySeconds: 3,
   dryRun: false,
+  parallelWorktrees: Number.parseInt(process.env.PHASE_PARALLEL_WORKTREES ?? '1', 10) || 1,
+  worktreeBase: process.env.PHASE_WORKTREE_BASE || 'HEAD',
+  worktreeRoot: process.env.PHASE_WORKTREE_ROOT || '.tmp/harness-worktrees/phase-runs',
 };
 
 function runNodeScript(scriptPath, args, options = {}) {
@@ -76,6 +80,12 @@ function showHelp() {
 #                    Verification runtime target: auto|current|claude|codex|both (default: auto)
 #   --max-phases N    Maximum phases to run (default: all)
 #   --delay N         Delay between phases in seconds (default: 3)
+#   --parallel-worktrees N
+#                    Opt-in phase-internal workset parallelism (default: 1)
+#   --worktree-base REF
+#                    Base ref for workset worktrees (default: HEAD)
+#   --worktree-root PATH
+#                    Root for temporary workset worktrees
 #   --dry-run         Print what would be executed without running
 # =============================================================================`);
 }
@@ -106,6 +116,15 @@ function parseArgs(argv) {
         break;
       case '--delay':
         state.delaySeconds = Number.parseInt(args.shift() ?? '3', 10) || 3;
+        break;
+      case '--parallel-worktrees':
+        state.parallelWorktrees = Number.parseInt(args.shift() ?? '1', 10) || 1;
+        break;
+      case '--worktree-base':
+        state.worktreeBase = args.shift() ?? 'HEAD';
+        break;
+      case '--worktree-root':
+        state.worktreeRoot = args.shift() ?? '.tmp/harness-worktrees/phase-runs';
         break;
       case '--dry-run':
         state.dryRun = true;
@@ -259,6 +278,31 @@ function phaseSummary(phaseNum) {
   return values;
 }
 
+function firstBlockedPhase() {
+  if (!fs.existsSync(state.statusFile)) {
+    return null;
+  }
+  const blockedStatuses = new Set(['verification_blocked', 'runtime_unhealthy', 'blocked']);
+  const lines = fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/);
+  const phases = [];
+  let current = null;
+  for (const rawLine of lines) {
+    if (/^\s*-\s+number:\s*/.test(rawLine)) {
+      if (current) phases.push(current);
+      const match = rawLine.match(/number:\s*([0-9]+)/);
+      current = { number: match ? match[1] : '', status: '', lastOutcome: '', title: '' };
+      continue;
+    }
+    if (!current) continue;
+    const stripped = rawLine.trim();
+    if (stripped.startsWith('title:')) current.title = stripped.slice('title:'.length).trim().replace(/^"|"$/g, '');
+    if (stripped.startsWith('status:')) current.status = stripped.slice('status:'.length).trim();
+    if (stripped.startsWith('lastOutcome:')) current.lastOutcome = stripped.slice('lastOutcome:'.length).trim();
+  }
+  if (current) phases.push(current);
+  return phases.find((phase) => blockedStatuses.has(phase.status)) || null;
+}
+
 function resolveMasterPlan(planDir) {
   const files = fs.readdirSync(planDir, { withFileTypes: true })
     .filter((entry) => entry.isFile())
@@ -327,6 +371,11 @@ function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
 
   if (state.delaySeconds !== 3) {
     args.push('--delay', String(state.delaySeconds));
+  }
+  if (state.parallelWorktrees > 1) {
+    args.push('--parallel-worktrees', String(state.parallelWorktrees));
+    args.push('--worktree-base', state.worktreeBase || 'HEAD');
+    args.push('--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-runs');
   }
 
   args.push('--max-phases', '1', '--single-phase');
@@ -712,6 +761,26 @@ async function runNodeManagedLoop() {
         statusFile: state.statusFile,
       });
       if (!nextPhase) {
+        const blockedPhase = firstBlockedPhase();
+        if (blockedPhase) {
+          failedPhases += 1;
+          stoppedEarly = true;
+          stopPhase = blockedPhase.number;
+          stopReason = blockedPhase.status;
+          stopDetail = `phase ${blockedPhase.number} is ${blockedPhase.status}; lastOutcome=${blockedPhase.lastOutcome || 'n/a'}`;
+          writeLiveSummaryReport({
+            planDir: state.planDir,
+            totalPhases,
+            completed: executedPhases,
+            failed: failedPhases,
+            currentPhase: blockedPhase.number,
+            currentPhaseTitle: blockedPhase.title,
+            loopState: 'blocked',
+            stopReason,
+            stopDetail,
+          });
+          break;
+        }
         writeLiveSummaryReport({
           planDir: state.planDir,
           totalPhases,

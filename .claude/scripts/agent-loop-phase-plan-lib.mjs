@@ -31,6 +31,7 @@ export function assignExecutionArtifactPaths(phaseNum, phaseTitle, executionRoot
     phaseQaReport: `${phaseExecutionDir}/QA_REPORT.md`,
     phaseHandoff: `${phaseExecutionDir}/HANDOFF.md`,
     phaseScorecard: `${phaseExecutionDir}/SCORECARD.md`,
+    phaseWorksets: `${phaseExecutionDir}/WORKSETS.yaml`,
   };
 }
 
@@ -258,6 +259,7 @@ ${requiredCommands}
 - QA report: ${paths.phaseQaReport}
 - Handoff: ${paths.phaseHandoff}
 - Scorecard: ${paths.phaseScorecard}
+- Worksets: ${paths.phaseWorksets}
 
 ## Finish Rule
 - Clean finish requires: fresh verification evidence, review complete, and finish-stage closeout recorded.
@@ -398,6 +400,14 @@ ${requiredCommands}
     }), 'utf8');
   }
 
+  if (!fs.existsSync(paths.phaseWorksets)) {
+    const worksets = `# Phase ${paths.phasePrefix} worksets for opt-in worktree parallel execution.
+# Default is disabled: leave worksets empty until the phase owner defines non-overlapping ownedPaths.
+worksets: []
+`;
+    fs.writeFileSync(paths.phaseWorksets, worksets, 'utf8');
+  }
+
   return paths;
 }
 
@@ -457,6 +467,7 @@ executionArtifacts:
   qaReportPath: "${paths.phaseQaReport}"
   handoffPath: "${paths.phaseHandoff}"
   scorecardPath: "${paths.phaseScorecard}"
+  worksetsPath: "${paths.phaseWorksets}"
   verificationVerdictGlob: ".claude/verification-verdict-*.json"
 
 Single isolated phase-attempt rules:

@@ -1,27 +1,15 @@
-# Global Development Guidelines
-
-> TOC for always-loaded instructions. Keep it short.
+# Global Guidelines
 
 Last-Reviewed: 2026-04-09
 
-## Overview
-
-`.claude/rules/` loads recursively. This file is Tier 1 only.
-
-## Tier-1 Constraints
+`.claude/rules/` loads recursively. Keep this Tier 1 file as a short TOC.
 
 1. `AGENTS.md` and this file are TOCs.
-2. Store durable policy in source-of-truth docs:
-   - `.claude/CLAUDE.md`
-   - `.claude/PROJECT.md` (template for installed target projects)
-   - `.claude/rules/`
-   - `.claude/docs/guidelines/`
-3. Keep always-loaded context minimal:
-   - `.claude/rules/**/*.md` must stay within budget
-   - Keep only non-inferable constraints
-4. Update source docs first, then refresh links in TOC docs.
+2. Store durable policy in `.claude/PROJECT.md`, `.claude/rules/`, and `.claude/docs/guidelines/`.
+3. Keep always-loaded context minimal and under budget.
+4. Update source docs first, then refresh TOC links.
 5. Run `.claude/scripts/knowledge-repo-audit.sh` after structural doc changes.
-6. At runtime, use `.claude/CLAUDE.md` and `.claude/verification.contract.yaml` as the workspace contract.
+6. Runtime contract: `.claude/CLAUDE.md` + `.claude/verification.contract.yaml`.
 
 ## Default Document Paths
 
@@ -31,8 +19,6 @@ documentPaths:
   agreementsRoot: ".claude/docs/agreements"
   guidelinesRoot: ".claude/docs/guidelines"
 ```
-
-For token/archive policy, see `document-memory-policy.md`.
 
 ## References
 

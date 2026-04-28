@@ -12,6 +12,8 @@
 ## 병렬화 전략
 구현 범위를 결정하지 않는 독립 단계만 병렬화한다.
 
+예외: phase 내부 구현은 `WORKSETS.yaml`에 겹치지 않는 `ownedPaths`가 정의되고 `--parallel-worktrees N`으로 명시적으로 opt-in 된 경우에만 Git worktree 단위로 병렬화할 수 있다. 병합 전에는 각 worktree의 diff가 소유 경로 안에 있는지, 같은 파일을 두 workset이 수정하지 않았는지 확인해야 한다.
+
 허용 예시:
 - `codex-review-code` + `session-logger`
 - `codex-review-code` + `browser-verifier` (리뷰로 코드 변경 시 런타임 검증 재실행)

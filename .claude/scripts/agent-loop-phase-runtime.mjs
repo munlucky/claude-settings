@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { resolveParentRuntimeContext } from './lib/runtime-platform.mjs';
+import { assessRuntimeHealthFromVerdictFiles } from './verification-verdict-state.mjs';
 
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
 
@@ -442,43 +444,7 @@ function verdictTargetsRuntime(payload, runtime) {
 }
 
 function assessRuntimeHealthFromVerdicts(runtime, workspaceRoot, recentWindowMs, maxFiles) {
-  const verdicts = parseRecentVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles)
-    .filter((entry) => verdictTargetsRuntime(entry.payload, runtime));
-
-  if (verdicts.length === 0) {
-    return null;
-  }
-
-  for (const entry of verdicts) {
-    const payload = entry.payload || {};
-    const verdict = String(payload.verdict || '').trim().toLowerCase();
-    const failureClass = String(payload.failureClass || '').trim().toLowerCase();
-    const blockingReasonCode = String(payload.blockingReasonCode || '').trim().toLowerCase();
-    const blocking = payload.blocking === true;
-    const verdictLabel = path.basename(entry.path);
-
-    if (blocking || (verdict === 'failed' && (failureClass === 'environment' || failureClass === 'contract'))) {
-      return {
-        HEALTHY: 'false',
-        RUNTIME: runtime,
-        REASON: 'runtime-structured-verdict-blocked',
-        DETAIL: `Latest structured verification verdict ${verdictLabel} is blocking (${blockingReasonCode || failureClass || verdict})`,
-        VERDICT_PATH: entry.path,
-      };
-    }
-
-    if (verdict === 'passed' && !blocking) {
-      return {
-        HEALTHY: 'true',
-        RUNTIME: runtime,
-        REASON: 'runtime-structured-verdict-passed',
-        DETAIL: `Latest structured verification verdict ${verdictLabel} marked the runtime non-blocking`,
-        VERDICT_PATH: entry.path,
-      };
-    }
-  }
-
-  return null;
+  return assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, recentWindowMs, maxFiles);
 }
 
 function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {

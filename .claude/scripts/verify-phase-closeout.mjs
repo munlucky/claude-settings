@@ -197,11 +197,33 @@ function verdictPassed(verdict) {
     return false;
   }
   const parsed = verdict.parsed || {};
+  if (!verdictInternallyConsistent(parsed)) {
+    return false;
+  }
   const scoreVerdict = parsed.score?.verdict;
   return parsed.verdict === 'passed'
     && parsed.evidenceFresh === true
     && parsed.blocking === false
     && (!scoreVerdict || scoreVerdict === 'done');
+}
+
+function verdictInternallyConsistent(parsed = {}) {
+  const verdict = String(parsed.verdict || '').trim().toLowerCase();
+  const scoreVerdict = String(parsed.score?.verdict || '').trim().toLowerCase();
+  const commands = Array.isArray(parsed.commands) ? parsed.commands : [];
+  const allCommandsPassed = commands.length > 0
+    && commands.every((command) => String(command.status || '').trim().toLowerCase() === 'passed');
+
+  if (parsed.blocking === true && verdict === 'passed') {
+    return false;
+  }
+  if (parsed.blocking === true && allCommandsPassed && scoreVerdict === 'done') {
+    return false;
+  }
+  if (verdict === 'passed' && ['blocked', 'retry', 'failed'].includes(scoreVerdict)) {
+    return false;
+  }
+  return true;
 }
 
 function unresolvedLocalBlocker(text) {
@@ -314,6 +336,9 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     }
 
     const verdict = readVerdictForPhase(phaseNumber);
+    if (verdict.exists && !verdict.parseError && !verdictInternallyConsistent(verdict.parsed || {})) {
+      addViolation(violations, 'verification-verdict-inconsistent', `Completed phase ${phaseNumber} has contradictory verdict fields at ${path.relative(process.cwd(), verdict.path)}.`, phaseNumber);
+    }
     if (!verdictPassed(verdict)) {
       addViolation(violations, 'verification-verdict-not-passed', `Completed phase ${phaseNumber} does not have a passing fresh verdict at ${path.relative(process.cwd(), verdict.path)}.`, phaseNumber);
     }

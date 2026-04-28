@@ -3,10 +3,11 @@
 import fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { runCommand } from './lib/process-utils.mjs';
 
-const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
 const phaseStatePath = path.join(SCRIPT_DIR, 'agent-loop-phase-state.mjs');
 const phaseArtifactsPath = path.join(SCRIPT_DIR, 'agent-loop-phase-artifacts.mjs');
@@ -28,6 +29,9 @@ const state = {
   codexReasoningEffort: process.env.PHASE_DISPATCH_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT ?? 'medium',
   allowInteractiveInSession: (process.env.PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION ?? 'false') === 'true',
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
+  parallelWorktrees: Number.parseInt(process.env.PHASE_PARALLEL_WORKTREES ?? '1', 10) || 1,
+  worktreeBase: process.env.PHASE_WORKTREE_BASE || 'HEAD',
+  worktreeRoot: process.env.PHASE_WORKTREE_ROOT || '.tmp/harness-worktrees/phase-runs',
 };
 
 const runtimeState = {
@@ -71,6 +75,9 @@ Options:
   --autonomous              Reserved for compatibility (agent-loop is autonomous by default)
   --allow-interactive-in-session
                             Keep in-session-coordinator on Codex instead of falling back
+  --parallel-worktrees <n>  Opt-in phase-internal workset parallelism (delegated-terminal only)
+  --worktree-base <ref>     Base ref for workset worktrees. Default: HEAD
+  --worktree-root <path>    Root for temporary workset worktrees
   --dry-run                 Print resolved command without executing`);
 }
 
@@ -709,8 +716,22 @@ function buildCodexCommand(prompt) {
   if (state.codexReasoningEffort) {
     args.push('-c', `model_reasoning_effort="${state.codexReasoningEffort}"`);
   }
-  args.push(prompt);
+  appendCodexPromptArg(args, prompt);
   return args;
+}
+
+function appendCodexPromptArg(args, prompt) {
+  if (process.platform === 'win32' && args.some((arg, index) => index === 0
+    ? /(?:powershell|pwsh)\.exe$/i.test(String(arg))
+    : /\.ps1$/i.test(String(arg)))) {
+    const promptDir = path.join('.claude', 'logs', 'agent-loop', 'prompts');
+    fs.mkdirSync(promptDir, { recursive: true });
+    const promptFile = path.resolve(promptDir, `dispatch-codex-prompt-${Date.now()}-${process.pid}.txt`);
+    fs.writeFileSync(promptFile, prompt, 'utf8');
+    args.push('--codex-prompt-file', promptFile);
+    return;
+  }
+  args.push(prompt);
 }
 
 function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
@@ -723,6 +744,11 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
     '--runtime', effectiveRuntime,
     '--verification-runtimes', state.verificationRuntimes,
   ];
+  if (state.parallelWorktrees > 1) {
+    cmd.push('--parallel-worktrees', String(state.parallelWorktrees));
+    cmd.push('--worktree-base', state.worktreeBase || 'HEAD');
+    cmd.push('--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-runs');
+  }
 
   if (state.dryRun) {
     writeStdoutLine(cmd.join(' '));
@@ -1095,6 +1121,15 @@ function parseArgs(argv) {
       case '--allow-interactive-in-session':
         state.allowInteractiveInSession = true;
         break;
+      case '--parallel-worktrees':
+        state.parallelWorktrees = Number.parseInt(args.shift() ?? '1', 10) || 1;
+        break;
+      case '--worktree-base':
+        state.worktreeBase = args.shift() ?? 'HEAD';
+        break;
+      case '--worktree-root':
+        state.worktreeRoot = args.shift() ?? '.tmp/harness-worktrees/phase-runs';
+        break;
       case '--dry-run':
         state.dryRun = true;
         break;
@@ -1165,6 +1200,7 @@ logInfo(`Execution mode: ${resolvedMode}`);
 logInfo(`Execution root: ${resolvedRoot}`);
 logInfo(`Runtime: ${effectiveRuntime}`);
 logInfo(`Verification runtimes: ${state.verificationRuntimes}`);
+logInfo(`Parallel worktrees: ${state.parallelWorktrees}`);
 recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
 if (!state.dryRun) {
   startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);

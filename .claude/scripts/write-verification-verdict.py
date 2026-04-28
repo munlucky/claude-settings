@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from datetime import datetime, timezone
@@ -33,6 +34,36 @@ def parse_command(value: str) -> dict:
     return {"name": name, "run": run, "status": status}
 
 
+def stable_fingerprint(value) -> str:
+    encoded = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def infer_blocker_class(reason_code: str, failure_class: str, blocking: bool, verdict: str) -> str:
+    reason = (reason_code or "").strip().lower()
+    failure = (failure_class or "").strip().lower()
+    if "runtime_verifier" in reason or "verifier_unavailable" in reason or "verification_runtime" in reason:
+        return "verifier_unavailable"
+    if any(token in reason for token in ["auth", "login", "credential", "worker_spawn", "spawn", "codex_exec", "runtime_health", "runtime_cli"]):
+        return "runtime_unavailable"
+    if failure == "contract":
+        return "contract_violation"
+    if failure == "environment":
+        return "verifier_unavailable"
+    if blocking or verdict == "failed":
+        return "verification_failed"
+    return ""
+
+
+def infer_verdict_scope(verdict_scope: str, blocker_class: str, reason_code: str) -> str:
+    if verdict_scope:
+        return verdict_scope
+    reason = (reason_code or "").strip().lower()
+    if blocker_class == "runtime_unavailable" and "runtime_verifier" not in reason and "verifier_unavailable" not in reason:
+        return "runtime"
+    return "phase_verification"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Write a structured verification verdict JSON for a phase attempt."
@@ -62,6 +93,20 @@ def main() -> int:
     parser.add_argument("--failure-class", choices=["", "implementation", "verification", "environment", "contract"], default="")
     parser.add_argument("--blocking", choices=["true", "false"], default="false")
     parser.add_argument("--blocking-reason-code", default="")
+    parser.add_argument("--schema-version", default="2")
+    parser.add_argument("--verdict-scope", choices=["", "runtime", "phase_verification", "phase_closeout"], default="")
+    parser.add_argument(
+        "--blocker-class",
+        choices=["", "runtime_unavailable", "verifier_unavailable", "verification_failed", "content_precondition", "contract_violation"],
+        default="",
+    )
+    parser.add_argument("--blocker-fingerprint", default="")
+    parser.add_argument("--environment-fingerprint", default="")
+    parser.add_argument("--artifact-fingerprint", default="")
+    parser.add_argument("--supersedes", action="append", default=[])
+    parser.add_argument("--superseded-by", default="")
+    parser.add_argument("--stale-when", action="append", default=[])
+    parser.add_argument("--stale", choices=["true", "false"], default="false")
     parser.add_argument("--score-current", type=int)
     parser.add_argument("--score-target", type=int)
     parser.add_argument("--score-unmet", type=int)
@@ -112,7 +157,42 @@ def main() -> int:
             "verdict": inferred_score_verdict,
         }
 
+    blocking = args.blocking == "true"
+    blocker_class = args.blocker_class or infer_blocker_class(
+        args.blocking_reason_code,
+        args.failure_class,
+        blocking,
+        args.verdict,
+    )
+    verdict_scope = infer_verdict_scope(args.verdict_scope, blocker_class, args.blocking_reason_code)
+    blocker_fingerprint = args.blocker_fingerprint or stable_fingerprint(
+        {
+            "phase": args.phase_number,
+            "scope": verdict_scope,
+            "blockerClass": blocker_class,
+            "reason": args.blocking_reason_code,
+            "missing": args.missing_check,
+        }
+    )
+    environment_fingerprint = args.environment_fingerprint or stable_fingerprint(
+        {
+            "requestedRuntime": args.requested_runtime,
+            "effectiveRuntime": args.effective_runtime,
+            "verificationRuntimeTargets": args.verification_runtime_targets,
+        }
+    )
+    artifact_fingerprint = args.artifact_fingerprint or stable_fingerprint(
+        {
+            "changedFiles": args.changed_file,
+            "commands": args.command,
+            "expected": args.expected_check,
+            "passed": args.passed_check,
+            "missing": args.missing_check,
+        }
+    )
+
     payload = {
+        "schemaVersion": args.schema_version,
         "script": args.script,
         "runId": args.run_id,
         "phase": {
@@ -146,8 +226,17 @@ def main() -> int:
             "effectiveRuntime": args.effective_runtime,
             "verificationRuntimeTargets": args.verification_runtime_targets,
         },
+        "verdictScope": verdict_scope,
+        "blockerClass": blocker_class,
+        "blockerFingerprint": blocker_fingerprint,
+        "environmentFingerprint": environment_fingerprint,
+        "artifactFingerprint": artifact_fingerprint,
+        "supersedes": args.supersedes,
+        "supersededBy": args.superseded_by,
+        "staleWhen": args.stale_when,
+        "stale": args.stale == "true",
         "failureClass": args.failure_class or "",
-        "blocking": args.blocking == "true",
+        "blocking": blocking,
         "blockingReasonCode": args.blocking_reason_code or "",
         "score": score_payload,
         "generatedAt": args.generated_at,

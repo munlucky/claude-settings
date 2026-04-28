@@ -12,6 +12,8 @@
 ## Parallelization Strategy
 Only parallelize independent stages that do not define implementation scope.
 
+Exception: phase-internal implementation may run in parallel only when `WORKSETS.yaml` defines non-overlapping `ownedPaths` and the run explicitly opts in with `--parallel-worktrees N`. Before merge, each worktree diff must stay inside owned paths and no two worksets may modify the same file.
+
 Allowed examples:
 - `codex-review-code` + `session-logger`
 - `codex-review-code` + `browser-verifier` (rerun runtime checks if review changes code)

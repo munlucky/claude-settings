@@ -48,7 +48,7 @@ function collectCandidateFiles(args) {
   if (inside.error || (inside.status ?? 1) !== 0) {
     return [];
   }
-  const status = spawnSync('git', ['status', '--short'], { encoding: 'utf8' });
+  const status = spawnSync('git', ['-c', 'core.autocrlf=true', 'status', '--short'], { encoding: 'utf8' });
   if (status.error || (status.status ?? 1) !== 0) {
     return [];
   }

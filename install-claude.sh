@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude를 다운로드하고, .agents/AGENTS.md 브리지와 Codex 전역 skills 링크를 구성합니다.
+# GitHub에서 최신 .claude/.codex를 다운로드하고, .agents/AGENTS.md 브리지와 Codex skills 링크를 구성합니다.
 
 set -e
 
@@ -10,6 +10,7 @@ BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
 CODEX_SKILLS_DIR=""
 CODEX_SKILL_LINKS=()
+CODEX_PROJECT_FILES=()
 CODEX_BACKUP_PATHS=()
 
 # 색상 정의
@@ -130,6 +131,61 @@ setup_codex_skills() {
 	done
 
 	print_info "✓ Codex skills ${linked_count}개 연결 완료 (${CODEX_SKILLS_DIR})"
+}
+
+setup_codex_project_config() {
+	local source_codex_dir="$1"
+	local project_root=""
+	local codex_home=""
+	local target_config=""
+	local target_agents=""
+
+	echo ""
+	print_info "Codex 프로젝트 설정 동기화 중..."
+
+	if [ ! -d "$source_codex_dir" ]; then
+		print_warn "Codex 설정 디렉토리를 찾지 못했습니다: $source_codex_dir"
+		return
+	fi
+
+	project_root="$(pwd -P)"
+	codex_home="${CODEX_HOME:-$project_root/.codex}"
+	mkdir -p "$codex_home"
+
+	if [ -f "$source_codex_dir/config.toml" ]; then
+		target_config="$codex_home/config.toml"
+		if [ -e "$target_config" ] || [ -L "$target_config" ]; then
+			if [ "$DO_BACKUP" = true ]; then
+				local backup_config="${target_config}${BACKUP_SUFFIX}"
+				print_info "Codex config 백업 중: $target_config → $backup_config"
+				cp -RP "$target_config" "$backup_config"
+				CODEX_BACKUP_PATHS+=("$backup_config")
+			else
+				print_warn "기존 Codex config를 덮어씁니다: $target_config"
+			fi
+		fi
+		cp "$source_codex_dir/config.toml" "$target_config"
+		CODEX_PROJECT_FILES+=("$target_config")
+		print_info "✓ Codex config 설치: $target_config"
+	fi
+
+	if [ -d "$source_codex_dir/agents" ]; then
+		target_agents="$codex_home/agents"
+		if [ -e "$target_agents" ] || [ -L "$target_agents" ]; then
+			if [ "$DO_BACKUP" = true ]; then
+				local backup_agents="${target_agents}${BACKUP_SUFFIX}"
+				print_info "Codex agents 백업 중: $target_agents → $backup_agents"
+				mv "$target_agents" "$backup_agents"
+				CODEX_BACKUP_PATHS+=("$backup_agents")
+			else
+				print_warn "기존 Codex agents를 덮어씁니다: $target_agents"
+				rm -rf "$target_agents"
+			fi
+		fi
+		cp -r "$source_codex_dir/agents" "$target_agents"
+		CODEX_PROJECT_FILES+=("$target_agents")
+		print_info "✓ Codex agents 설치: $target_agents"
+	fi
 }
 
 setup_agents_bridge() {
@@ -333,6 +389,7 @@ usage() {
 
 기본 동작:
   - .claude, .agents, AGENTS.md, .claudeignore 중 존재 항목 자동 백업 후 설치
+  - .codex/config.toml, .codex/agents/ 중 존재 항목 자동 백업 후 설치
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
@@ -579,6 +636,7 @@ if [ "$DRY_RUN" = true ]; then
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
+	echo "  - .codex/config.toml 및 .codex/agents 설치"
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
@@ -731,13 +789,16 @@ if [ -d "$DOWNLOADED_SCRIPTS" ]; then
 	done
 fi
 
-# 7.8. .agents/skills + AGENTS.md 브리지 구성
+# 7.8. Codex project config 구성
+setup_codex_project_config "$TEMP_DIR/claude-settings-$BRANCH/.codex"
+
+# 7.9. .agents/skills + AGENTS.md 브리지 구성
 setup_agents_bridge
 
-# 7.9. Codex 전역 skill 링크 구성
+# 7.10. Codex skill 링크 구성
 setup_codex_skills
 
-# 7.10. Browser runtime bootstrap
+# 7.11. Browser runtime bootstrap
 setup_browser_runtime
 
 # 9. Memory MCP 전역 설정 (wrapper 스크립트로 동적 경로 지원)
@@ -958,6 +1019,11 @@ if [ -d ".claude/rules" ]; then
 fi
 if [ -L "AGENTS.md" ]; then
 	echo "  ✓ AGENTS.md                  (→ .claude/CLAUDE.md)"
+fi
+if [ ${#CODEX_PROJECT_FILES[@]} -gt 0 ]; then
+	for path in "${CODEX_PROJECT_FILES[@]}"; do
+		echo "  ✓ $path"
+	done
 fi
 if [ -L ".agents/skills" ]; then
 	echo "  ✓ .agents/skills             (→ .claude/skills)"
