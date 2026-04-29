@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
 /**
+ * Deprecated compatibility wrapper.
+ *
+ * Default project memory now uses MemoryGraph via memorygraph-mcp-wrapper.js.
+ * Keep this file only for older projects that have not migrated yet.
+ *
  * Memory MCP wrapper.
  * - Resolves a per-project memory file from the current working directory
  * - Repairs missing or malformed memory.json before launch

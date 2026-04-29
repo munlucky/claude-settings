@@ -1,12 +1,12 @@
 ---
 name: project-memory-agent
-description: Loads project memory from global Memory MCP (filtered by ProjectID namespace) and composes context for the main session.
+description: Loads project-local MemoryGraph context and composes a compact memory summary for the main session.
 ---
 
 # Project Memory Agent
 
 ## Role
-Fork-based agent that loads project-specific memory from global Memory MCP and returns a summarized context to avoid polluting the main session.
+Fork-based agent that loads project-specific memory from project-local MemoryGraph and returns a summarized context to avoid polluting the main session.
 
 ## Execution
 - **Must run as**: Task tool (fork/subagent)
@@ -27,27 +27,51 @@ userRequest: "{summary}"       # brief task summary
 ```bash
 # Priority: package.json > directory name > git remote
 PROJECT_ID=$(cat package.json 2>/dev/null | jq -r '.name // empty' || basename $(pwd))
+PROJECT_PATH=$(pwd -P)
 ```
 
 ### 2. Search Project Memory
-Use `mcp__memory__search_nodes` to find all entities with `[ProjectID]::` prefix:
+Use MemoryGraph recall/search tools with project-local context:
 
 ```
-search_nodes("[ProjectID]::")
+recall_memories(
+  query="project boundaries conventions decisions ${PROJECT_ID}",
+  limit=20,
+  project_path="${PROJECT_PATH}"
+)
+
+search_memories(
+  tags=["project:${PROJECT_ID}", "source:moonshot"],
+  limit=20
+)
 ```
 
 ### 3. Load Boundary Entities
-Use `mcp__memory__open_nodes` to load:
-- `[ProjectID]::Boundary::AlwaysDo`
-- `[ProjectID]::Boundary::AskFirst`
-- `[ProjectID]::Boundary::NeverDo`
+Use `search_memories` to load boundary memories:
+- tags: `project:{projectId}`, `boundary`, `always-do`
+- tags: `project:{projectId}`, `boundary`, `ask-first`
+- tags: `project:{projectId}`, `boundary`, `never-do`
 
 ### 4. Load Related Conventions
 Based on `changedFiles`, search for related entities:
-- `[ProjectID]::Component::*` - component definitions
-- `[ProjectID]::Convention::*` - coding conventions
-- `[ProjectID]::API::*` - API specifications
-- `[ProjectID]::Domain::*` - domain rules
+- tags: `project:{projectId}`, `component:{component-name}`
+- tags: `project:{projectId}`, `convention`
+- tags: `project:{projectId}`, `api`
+- tags: `project:{projectId}`, `domain`
+
+### 4.5 Store Compact Lessons When Needed
+When the orchestrator asks for memory update, use `store_memory` only for compact reusable facts:
+
+```
+store_memory(
+  type="pattern" | "decision" | "boundary" | "fix",
+  title="{short searchable title}",
+  content="{compact reusable fact}",
+  tags=["project:{projectId}", "source:moonshot"],
+  importance=0.6,
+  context={ "project_path": "{projectPath}", "project_id": "{projectId}" }
+)
+```
 
 ### 5. Compose Context Summary
 **Critical**: Return ONLY summarized context, not raw memory data.
@@ -82,7 +106,7 @@ Return the `projectMemoryContext` object to be merged into `analysisContext.proj
 
 ## Error Handling
 1. **No project memory found**: Return empty context with `loaded: false`
-2. **Memory MCP unavailable**: Return empty context, log warning
+2. **MemoryGraph unavailable**: Return empty context, log warning
 3. **Partial load**: Return what was loaded, list missing in `warnings`
 
 ## Contract

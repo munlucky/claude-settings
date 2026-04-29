@@ -186,6 +186,7 @@ allowed_prefixes = (
     ".claude/logs/agent-loop/",
     ".claude/logs/workflow-enforcement/",
     ".claude/memory.json",
+    ".claude/memorygraph/",
     ".claude/verification-results-",
     ".claude/verification-verdict-",
     ".claude/runtime-verdict-",
@@ -417,6 +418,7 @@ prepare_workspace_copy() {
       --exclude='./.tmp' \
       --exclude='./.claude/logs' \
       --exclude='./.claude/memory.json' \
+      --exclude='./.claude/memorygraph' \
       --exclude='./.claude/verification-results-*' \
       --exclude='./.claude/verification-verdict-*' \
       --exclude='./.claude/runtime-verdict-*' \

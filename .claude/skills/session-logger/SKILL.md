@@ -42,7 +42,7 @@ Use this skill when the user explicitly wants session or handoff logging, or whe
 - keep active logs under the document memory ceilings
 - move long timelines and raw review detail to archive
 - keep `HANDOFF.md` summary-first and artifact-reference-first
-- if Memory MCP is configured, record only compact reusable facts
+- if MemoryGraph is configured, record only compact reusable facts with `project:<projectId>` and `source:moonshot` tags
 - promote reusable remediation patterns to `.claude/docs/solutions/` when justified
 - append correction events instead of rewriting prior history
 

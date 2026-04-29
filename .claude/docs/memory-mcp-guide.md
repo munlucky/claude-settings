@@ -1,120 +1,100 @@
-# Memory MCP Server 사용 가이드
+# MemoryGraph MCP 사용 가이드
 
-Memory MCP 서버는 Claude가 **세션 간에도 정보를 기억**할 수 있게 해주는 지식 그래프 기반 메모리 시스템입니다.
+이 저장소의 기본 메모리 backend는 MemoryGraph입니다. 기존 `@modelcontextprotocol/server-memory` 기반 `.claude/memory.json` 경로는 호환 참고용이며, 새 프로젝트 메모리는 프로젝트 로컬 `.claude/memorygraph/`에 저장합니다.
 
-## 📌 설치
+## 설치
 
-프로젝트가 Node `type: "module"` 환경이거나 Windows PowerShell/macOS zsh 셸 인용 차이가 있는 경우, `npx`와 JSON env를 직접 등록하지 말고 **래퍼 스크립트**를 등록하세요.
+MemoryGraph는 Python 3.10+와 `pipx` 설치를 권장합니다.
 
 ```bash
-claude mcp add -s project memory node .claude/scripts/memory-mcp-wrapper.js
+pipx install memorygraphMCP
+memorygraph --health
 ```
 
-또는 `.claude/.mcp.json`에 추가:
+`install-claude.sh`는 Python 버전을 확인하고 `pipx install memorygraphMCP`를 자동 시도합니다. 설치 실패는 전체 bootstrap을 중단하지 않으며, 실행 전 수동 설치가 필요하다는 warning을 남깁니다.
+
+## MCP 등록
+
+프로젝트 설정은 wrapper를 통해 등록합니다.
+
+```bash
+claude mcp add memory -s project -- node .claude/scripts/memorygraph-mcp-wrapper.js
+```
+
+`.claude/.mcp.json` 예시:
 
 ```json
 {
   "mcpServers": {
     "memory": {
       "command": "node",
-      "args": [".claude/scripts/memory-mcp-wrapper.js"]
+      "args": [".claude/scripts/memorygraph-mcp-wrapper.js"]
     }
   }
 }
 ```
 
-이 방식의 장점:
+Codex는 repo-managed `.codex/config.toml`의 `[mcp_servers.memory]` 설정을 사용합니다.
 
-1. `package.json`의 `"type": "module"` 여부와 무관하게 동작
-2. Windows에서는 `npx.cmd`, macOS/Linux에서는 `npx`를 자동 선택
-3. `MEMORY_FILE_PATH`를 셸별 JSON 인용 없이 안전하게 주입
-4. `.claude/memory.json`이 비어 있거나 깨졌으면 자동 복구
+## 데이터 위치
 
-## 🛠 사용 가능한 도구
-
-| 도구 | 설명 |
-|------|------|
-| `create_entities` | 새 엔티티(사람, 프로젝트, 개념 등) 생성 |
-| `create_relations` | 엔티티 간 관계 생성 |
-| `add_observations` | 엔티티에 관찰/정보 추가 |
-| `delete_entities` | 엔티티 삭제 |
-| `delete_observations` | 특정 관찰 삭제 |
-| `delete_relations` | 관계 삭제 |
-| `read_graph` | 전체 지식 그래프 조회 |
-| `search_nodes` | 쿼리로 엔티티 검색 |
-| `open_nodes` | 특정 엔티티 상세 조회 |
-
-## 💡 활용 예시
-
-Claude에게 다음과 같이 요청하면 됩니다:
-
-```
-"이 프로젝트가 React 18, TypeScript, Zustand를 사용한다고 기억해줘"
-
-"내 이름은 김철수이고, 백엔드 개발자라고 저장해줘"
-
-"지난번에 이야기한 API 구조 기억나?"
-
-"프로젝트의 주요 컴포넌트 구조를 정리해서 저장해줘"
-```
-
-## 📂 데이터 저장 위치
-
-### 프로젝트별 메모리 (권장)
-
-래퍼가 현재 작업 디렉토리 기준으로 자동 지정:
-
-```json
-".claude/memory.json"
-```
-
-### 전역 메모리
-
-전역 메모리가 필요하면 래퍼 대신 직접 설정할 수 있지만, 셸마다 JSON 인용 규칙이 달라서 CLI 등록 시 오류가 나기 쉽습니다. 특히 아래와 같은 잘못된 JSON 문자열을 넘기면:
+wrapper는 현재 프로젝트 기준으로 다음 경로를 자동 생성하고 `MEMORYGRAPH_DATA_DIR`에 주입합니다.
 
 ```text
-{foo:"bar"}
+.claude/memorygraph/
 ```
 
-다음 오류가 발생합니다:
+이 디렉터리는 `.gitignore`와 `.claudeignore`에 포함되어야 합니다. 민감정보, 토큰, 개인식별정보는 저장하지 마세요.
 
-```text
-Expected property name or '}' in JSON at position 1 (line 1 column 2)
+## 사용 도구
+
+| 도구 | 용도 |
+|---|---|
+| `store_memory` | 새 메모리 저장 |
+| `recall_memories` | 일반 조회. 대부분의 recall 작업에 우선 사용 |
+| `search_memories` | 태그/타입/중요도 기반 상세 검색 |
+| `get_memory` | 특정 memory id 상세 조회 |
+| `create_relationship` | 두 메모리 사이 관계 생성 |
+| `get_related_memories` | 관련 메모리 조회 |
+
+## 하네스 태그 규칙
+
+프로젝트 단위 격리를 위해 하네스는 다음 context와 tags를 사용합니다.
+
+```yaml
+context:
+  project_path: "{absolute-project-path}"
+  project_id: "{package-name-or-directory}"
+tags:
+  - "project:{projectId}"
+  - "source:moonshot"
 ```
 
-전역 메모리를 꼭 써야 한다면 `.mcp.json`에서 올바른 JSON으로 설정하세요:
+Boundary/규약/컴포넌트 메모리는 추가 태그를 붙입니다.
 
-```json
-"env": {
-  "MEMORY_FILE_PATH": "/Users/yourname/.claude-memory/global.json"
-}
+```yaml
+boundary:
+  - "boundary"
+  - "always-do" | "ask-first" | "never-do"
+convention:
+  - "convention"
+component:
+  - "component:{name}"
+api:
+  - "api"
+domain:
+  - "domain"
 ```
 
-Windows 예시:
+## 운영 원칙
 
-```json
-"env": {
-  "MEMORY_FILE_PATH": "C:/Users/yourname/.claude-memory/global.json"
-}
-```
+- MemoryGraph 저장 실패는 기록하되 commit/push 자체를 block하지 않습니다.
+- `project-memory-check`와 `project-memory-reviewer`는 읽기 전용으로 동작합니다.
+- `session-logger`와 `commit-moonshot`만 compact reusable fact를 저장합니다.
+- Claude Code plugin은 기본 도입 대상이 아닙니다. MCP server + wrapper + 하네스 지시문이 기본 운영 경로입니다.
 
-## ⚠️ 주의사항
+## 참고 자료
 
-1. **민감한 정보**: 비밀번호, API 키 등은 저장하지 마세요
-2. **Git 관리**: `.claude/memory.json`은 `.gitignore`에 추가 권장
-3. **용량**: 대용량 데이터보다는 핵심 컨텍스트 위주로 저장
-4. **권장 등록 방식**: macOS/Windows 공통으로 `node .claude/scripts/memory-mcp-wrapper.js` 사용
-
-## 🔍 메모리 확인
-
-현재 저장된 메모리 확인:
-
-```
-"저장된 메모리 전체를 보여줘"
-"프로젝트 관련 정보만 검색해줘"
-```
-
-## 📚 참고 자료
-
-- [MCP 공식 문서](https://modelcontextprotocol.io)
-- [server-memory npm](https://www.npmjs.com/package/@modelcontextprotocol/server-memory)
+- [MemoryGraph Installation](https://memorygraph.dev/docs/installation/)
+- [MemoryGraph Configuration](https://memorygraph.dev/docs/configuration/)
+- [MemoryGraph MCP Tools](https://memorygraph.dev/docs/tools/)

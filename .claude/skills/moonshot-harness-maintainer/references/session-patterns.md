@@ -29,6 +29,7 @@ Use this reference when recreating the harness maintenance flow from the April 2
 - `.claude/PROJECT.md`
 - `.claude/PROJECT.ko.md`
 - `.claude/memory.json`
+- `.claude/memorygraph/`
 - `.claude/settings.local.json`
 - `.claude/.mcp.json`
 - `.claude/logs/`
@@ -44,4 +45,4 @@ Use this reference when recreating the harness maintenance flow from the April 2
 
 ## Commit Policy Captured
 
-When using `commit-moonshot`, refresh project memory when policy asks for it, but exclude `.claude/memory.json` from commits by default. Stage it only when the user explicitly asks to include memory.
+When using `commit-moonshot`, refresh project memory when policy asks for it, but exclude `.claude/memory.json` and `.claude/memorygraph/` from commits by default. Stage memory artifacts only when the user explicitly asks to include memory.

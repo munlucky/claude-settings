@@ -15,6 +15,7 @@
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
 - phase 기반 작업이 필요할 때 `docs/implementation/`를 런타임에 생성해 사용
 - `.claude/verification-results-*`, `.claude/verification-verdict-*`, `.claude/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리 대상이 아님
+- 프로젝트 로컬 메모리는 MemoryGraph를 기본 backend로 사용하며 `.claude/memorygraph/`에 저장하고 버전 관리/기본 agent context에서 제외
 
 ## 디렉터리 구조
 
@@ -161,6 +162,7 @@ chmod +x install-claude.sh
 - `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
 - `.claude/skills/*`를 Codex 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에 심볼릭 링크
+- Python 3.10+ 환경에서 `pipx install memorygraphMCP`를 자동 시도하고 MemoryGraph MCP를 project scope로 등록
 
 보호되는 사용자 파일 패턴:
 ```
@@ -233,7 +235,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
-- MCP 서버 예시: GitHub, Context7, Exa, Memory, Playwright, Sequential Thinking
+- MCP 서버 예시: GitHub, Context7, Exa, MemoryGraph 기반 Memory, Playwright, Sequential Thinking
 - 멀티에이전트 기본값: `[agents] max_threads = 6`, `max_depth = 1`
 - 커스텀 에이전트: `explorer`, `reviewer`, `docs_researcher`
 
@@ -241,6 +243,11 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 - 계획 검증: `codex-validate-plan`
 - 코드 리뷰: `codex-review-code`
 - 완료 검증: `completion-verifier`
+
+Memory 설정:
+- 기본 memory MCP는 `node .claude/scripts/memorygraph-mcp-wrapper.js`입니다.
+- wrapper는 `.claude/memorygraph/`를 생성하고 `MEMORYGRAPH_DATA_DIR`로 주입합니다.
+- `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
 
 주의:
 - `.codex/skills`는 재생성 가능한 링크 영역이고, `.codex/config.toml`과 `.codex/agents/`는 관리 대상 설정입니다.

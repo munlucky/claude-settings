@@ -271,6 +271,108 @@ setup_browser_runtime() {
 	fi
 }
 
+run_pipx() {
+	if command -v pipx &>/dev/null; then
+		pipx "$@"
+		return $?
+	fi
+
+	if [ -n "$PYTHON_CMD" ]; then
+		"$PYTHON_CMD" -m pipx "$@"
+		return $?
+	fi
+
+	return 127
+}
+
+setup_memorygraph() {
+	local memorygraph_data_dir=".claude/memorygraph"
+	local wrapper_path=".claude/scripts/memorygraph-mcp-wrapper.js"
+	local python_version_ok=false
+	local mcp_wrapper_arg="$wrapper_path"
+
+	echo ""
+	print_info "MemoryGraph 프로젝트 로컬 메모리 설정 중..."
+
+	mkdir -p "$memorygraph_data_dir"
+	print_info "  └ 데이터 디렉토리 준비: $memorygraph_data_dir"
+
+	if [ -z "$PYTHON_CMD" ]; then
+		print_warn "Python을 찾지 못해 MemoryGraph 자동 설치를 건너뜁니다."
+		echo "  수동 설치: pipx install memorygraphMCP"
+		return
+	fi
+
+	if "$PYTHON_CMD" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+PY
+	then
+		python_version_ok=true
+	fi
+
+	if [ "$python_version_ok" != true ]; then
+		print_warn "MemoryGraph는 Python 3.10+가 필요합니다. 현재 Python: $("$PYTHON_CMD" --version 2>&1)"
+		echo "  Python 3.10+ 설치 후 실행: pipx install memorygraphMCP"
+		return
+	fi
+
+	if ! command -v pipx &>/dev/null; then
+		print_warn "pipx가 없어 자동 설치를 시도합니다."
+		if "$PYTHON_CMD" -m pip install --user pipx; then
+			"$PYTHON_CMD" -m pipx ensurepath >/dev/null 2>&1 || true
+			print_info "  ✓ pipx 설치 시도 완료"
+		else
+			print_warn "pipx 자동 설치 실패. MemoryGraph 설치를 건너뜁니다."
+			echo "  수동 설치: $PYTHON_CMD -m pip install --user pipx && $PYTHON_CMD -m pipx install memorygraphMCP"
+			return
+		fi
+	fi
+
+	if ! command -v memorygraph &>/dev/null; then
+		print_info "  └ memorygraphMCP 설치 중..."
+		if run_pipx install memorygraphMCP; then
+			print_info "  ✓ memorygraphMCP 설치 완료"
+		else
+			print_warn "memorygraphMCP 자동 설치 실패. MCP 등록은 유지하되 실행 전 수동 설치가 필요합니다."
+			echo "  수동 설치: pipx install memorygraphMCP"
+		fi
+	else
+		print_info "  ✓ memorygraph 실행 파일 확인됨: $(command -v memorygraph)"
+	fi
+
+	if command -v memorygraph &>/dev/null; then
+		if MEMORYGRAPH_DATA_DIR="$memorygraph_data_dir" memorygraph --health >/dev/null 2>&1; then
+			print_info "  ✓ MemoryGraph health check 통과"
+		else
+			print_warn "MemoryGraph health check가 실패했습니다. MCP 자체는 등록하지만 첫 실행 로그를 확인하세요."
+		fi
+	else
+		print_warn "memorygraph가 PATH에 아직 없습니다. 새 셸을 열거나 PATH에 pipx bin 경로를 추가하세요."
+	fi
+
+	if [ -f "$wrapper_path" ] && command -v claude &>/dev/null; then
+		if command -v cygpath &>/dev/null; then
+			mcp_wrapper_arg=$(cygpath -w "$wrapper_path")
+		fi
+
+		claude mcp remove memory -s project >/dev/null 2>&1 || true
+		memory_result=$(claude mcp add memory -s project -- node "$mcp_wrapper_arg" 2>&1 || true)
+		if echo "$memory_result" | grep -qi "Added\|added\|success"; then
+			print_info "  ✓ memory: MemoryGraph MCP project scope 등록 완료"
+		elif echo "$memory_result" | grep -qi "already exists"; then
+			print_info "  ✓ memory: 이미 존재함 (project)"
+		else
+			print_warn "  memory MCP 등록 결과를 확인해주세요:"
+			echo "    $memory_result"
+		fi
+	elif [ ! -f "$wrapper_path" ]; then
+		print_warn "MemoryGraph wrapper를 찾지 못했습니다: $wrapper_path"
+	else
+		print_warn "claude 명령어를 찾을 수 없어 MCP 등록을 건너뜁니다."
+	fi
+}
+
 # 압축 해제 함수 (unzip 또는 python 사용)
 extract_zip() {
 	local zip_file=$1
@@ -641,6 +743,7 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
 	echo "  - Codex 전역 skills 심볼릭 링크 구성"
+	echo "  - MemoryGraph 자동 설치 시도 및 프로젝트 로컬 MCP 등록"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
 	if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
 		echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
@@ -801,60 +904,8 @@ setup_codex_skills
 # 7.11. Browser runtime bootstrap
 setup_browser_runtime
 
-# 9. Memory MCP 전역 설정 (wrapper 스크립트로 동적 경로 지원)
-echo ""
-print_info "Memory MCP 전역 설정 중..."
-
-# memory.json 파일 초기화 (프로젝트별)
-MEMORY_FILE_ABS="$(pwd)/.claude/memory.json"
-if [ ! -f "$MEMORY_FILE_ABS" ]; then
-	echo '{"entities": [], "relations": []}' > "$MEMORY_FILE_ABS"
-	print_info "  └ 메모리 파일 생성됨: $MEMORY_FILE_ABS"
-fi
-
-# Wrapper 스크립트를 사용자 홈 디렉토리에 설치 (전역)
-GLOBAL_WRAPPER_DIR="$HOME/.claude/scripts"
-GLOBAL_WRAPPER="$GLOBAL_WRAPPER_DIR/memory-mcp-wrapper.js"
-LOCAL_WRAPPER="$(pwd)/.claude/scripts/memory-mcp-wrapper.js"
-
-mkdir -p "$GLOBAL_WRAPPER_DIR"
-if [ -f "$LOCAL_WRAPPER" ]; then
-	cp "$LOCAL_WRAPPER" "$GLOBAL_WRAPPER"
-	print_info "  └ Wrapper 스크립트 설치됨: $GLOBAL_WRAPPER"
-fi
-
-# Windows Git Bash 환경에서는 Windows 형식 경로로 변환
-MCP_WRAPPER_PATH="$GLOBAL_WRAPPER"
-if [ -f "$GLOBAL_WRAPPER" ] && command -v cygpath &>/dev/null; then
-	MCP_WRAPPER_PATH=$(cygpath -w "$GLOBAL_WRAPPER")
-	print_info "  └ Windows 경로 변환: $MCP_WRAPPER_PATH"
-fi
-
-if command -v claude &>/dev/null; then
-	if [ -f "$GLOBAL_WRAPPER" ]; then
-		# Memory MCP를 user scope로 추가 (글로벌 wrapper 스크립트 사용)
-		memory_result=$(claude mcp add memory -s user -- node "$MCP_WRAPPER_PATH" 2>&1 || true)
-		if echo "$memory_result" | grep -qi "already exists"; then
-			print_info "  ✓ memory: 이미 존재함 (user)"
-		else
-			print_info "  ✓ memory: 추가 완료 (user)"
-		fi
-		print_info "  └ 각 프로젝트의 .claude/memory.json을 자동 사용 (동적 경로)"
-		print_info "✓ Memory MCP 전역 설정 완료"
-	else
-		print_warn "wrapper 스크립트를 찾을 수 없습니다"
-		print_info "Fallback: 프로젝트 스코프로 설정합니다."
-		fallback_result=$(claude mcp add memory -s project -e "MEMORY_FILE_PATH=$MEMORY_FILE_ABS" -- npx -y @modelcontextprotocol/server-memory 2>&1 || true)
-		if echo "$fallback_result" | grep -qi "already exists"; then
-			print_info "  ✓ memory: 이미 존재함 (project)"
-		else
-			print_info "  ✓ memory: 추가 완료 (project)"
-		fi
-	fi
-else
-	print_warn "claude 명령어를 찾을 수 없습니다. MCP 설정을 건너뜁니다."
-	print_info "Claude Code 설치 후 수동으로 MCP 서버를 추가하세요."
-fi
+# 7.12. MemoryGraph project-local MCP bootstrap
+setup_memorygraph
 
 # 8.5. claude-delegator 플러그인 설치 안내
 echo ""
@@ -887,20 +938,7 @@ else
 fi
 
 if [ "$CODEX_INSTALLED" = true ]; then
-	if [ -f "$GLOBAL_WRAPPER" ]; then
-		print_info "Codex Memory MCP 전역 설정 중..."
-		codex_memory_result=$(codex mcp add memory -- node "$MCP_WRAPPER_PATH" 2>&1 || true)
-		if echo "$codex_memory_result" | grep -qi "already exists"; then
-			print_info "  ✓ codex memory: 이미 존재함"
-		elif echo "$codex_memory_result" | grep -qi "Added"; then
-			print_info "  ✓ codex memory: 추가 완료"
-		else
-			print_warn "  codex memory 등록 결과를 확인해주세요:"
-			echo "    $codex_memory_result"
-		fi
-	else
-		print_warn "memory wrapper가 없어 Codex memory MCP 설정을 건너뜁니다."
-	fi
+	print_info "Codex Memory MCP는 repo-managed .codex/config.toml의 MemoryGraph 설정을 사용합니다."
 
 	print_info "Codex 로그인 상태 확인 중..."
 	codex_status=$(codex login status 2>&1 || true)

@@ -3,8 +3,8 @@
 ## Mandatory
 
 - Never commit secrets, tokens, or personal data in docs/scripts/settings.
-- Keep memory artifacts (`.claude/memory.json`) free of sensitive data.
-- Treat `.env*`, key/cert files, `.history/`, `.tmp/`, `.claude/logs/`, and `.claude/memory.json` as protected paths.
+- Keep memory artifacts (`.claude/memory.json`, `.claude/memorygraph/`) free of sensitive data.
+- Treat `.env*`, key/cert files, `.history/`, `.tmp/`, `.claude/logs/`, `.claude/memory.json`, and `.claude/memorygraph/` as protected paths.
 - Use `.claudeignore` to exclude sensitive or noisy paths from default agent context.
 - Validate externally downloaded content before execution.
 - Avoid leaking sensitive paths/values in logs and error output.

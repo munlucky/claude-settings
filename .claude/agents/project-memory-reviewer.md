@@ -26,12 +26,17 @@ diff: "{git diff summary}"          # or file path to diff
 ## Workflow
 
 ### 1. Reload Relevant Memory
-Use `mcp__memory__search_nodes` and `mcp__memory__open_nodes` to get latest rules for changed files:
+Use MemoryGraph read-only tools to get latest rules for changed files:
 
 ```
-# For each changed file, find related entities
-search_nodes("[ProjectID]::Component::{component-name}")
-search_nodes("[ProjectID]::Convention::")
+recall_memories(
+  query="rules conventions changed files ${projectId}",
+  project_path="{projectPath}",
+  limit=20
+)
+
+search_memories(tags=["project:{projectId}", "convention"], limit=20)
+search_memories(tags=["project:{projectId}", "component:{component-name}"], limit=20)
 ```
 
 ### 2. Check Boundary Violations
@@ -118,7 +123,7 @@ return { status: "passed", action: "proceed" }
 ```
 
 ## Error Handling
-1. **Memory unavailable**: Skip check, log warning, proceed
+1. **MemoryGraph unavailable**: Skip check, log warning, proceed
 2. **Partial rules loaded**: Check with available rules, note in warnings
 
 ## Contract

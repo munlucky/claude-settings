@@ -16,7 +16,7 @@ triggers:
 자동 단계가 아니라 명시적 Finish-stage 유틸리티로 취급합니다.
 
 ## 개요
-이 명령어는 메인 세션에서 실행되며, 변경사항을 분석하고 전역 Memory MCP에 프로젝트 메모리(`[ProjectID]::*`)를 항상 최신 상태로 현행화합니다.
+이 명령어는 메인 세션에서 실행되며, 변경사항을 분석하고 프로젝트 로컬 MemoryGraph에 프로젝트 메모리를 항상 최신 상태로 현행화합니다.
 
 > **⚠️ 중요: 반드시 Memory 현행화(1~7단계)를 먼저 완료한 후 커밋(8단계)을 수행하세요.**
 
@@ -47,16 +47,14 @@ git diff --cached --name-only
 ## 4. 3단계 경계 현행화
 
 ### 기존 경계 확인
-`search_nodes`로 `[PROJECT_ID]::Boundary::*` 검색
+`recall_memories`와 `search_memories`로 `project:{PROJECT_ID}`, `boundary` 태그를 가진 메모리 검색
 
 ### 경계가 없는 경우 (첫 사용)
 기본 경계 생성:
 ```
-create_entities([
-  { name: "[PROJECT_ID]::Boundary::AlwaysDo", entityType: "boundary", observations: ["커밋 전 lint 실행", "테스트 통과 확인"] },
-  { name: "[PROJECT_ID]::Boundary::AskFirst", entityType: "boundary", observations: ["새 의존성 추가", "DB 스키마 변경"] },
-  { name: "[PROJECT_ID]::Boundary::NeverDo", entityType: "boundary", observations: [".env 파일 커밋", "기존 테스트 삭제"] }
-])
+store_memory(type="boundary", title="AlwaysDo", content="커밋 전 lint 실행; 테스트 통과 확인", tags=["project:{PROJECT_ID}", "boundary", "always-do", "source:moonshot"], context={ "project_path": "{PROJECT_PATH}", "project_id": "{PROJECT_ID}" })
+store_memory(type="boundary", title="AskFirst", content="새 의존성 추가; DB 스키마 변경", tags=["project:{PROJECT_ID}", "boundary", "ask-first", "source:moonshot"], context={ "project_path": "{PROJECT_PATH}", "project_id": "{PROJECT_ID}" })
+store_memory(type="boundary", title="NeverDo", content=".env 파일 커밋 금지; 기존 테스트 삭제 금지", tags=["project:{PROJECT_ID}", "boundary", "never-do", "source:moonshot"], context={ "project_path": "{PROJECT_PATH}", "project_id": "{PROJECT_ID}" })
 ```
 
 ### 새로운 경계 발견 시 추가
@@ -64,40 +62,36 @@ create_entities([
 
 | 발견 내용 | 추가 대상 |
 |----------|----------|
-| 필수 실행 명령어 | `[PROJECT_ID]::Boundary::AlwaysDo` |
-| 승인 필요 패턴 | `[PROJECT_ID]::Boundary::AskFirst` |
-| 금지 패턴 | `[PROJECT_ID]::Boundary::NeverDo` |
+| 필수 실행 명령어 | `boundary`, `always-do` 태그 |
+| 승인 필요 패턴 | `boundary`, `ask-first` 태그 |
+| 금지 패턴 | `boundary`, `never-do` 태그 |
 
 예시:
 ```
 # CI에서 반드시 실행해야 하는 명령어 발견 시
-add_observations("[my-app]::Boundary::AlwaysDo", ["npm run build 전 npm run lint 필수"])
+store_memory(type="boundary", title="Build requires lint", content="npm run build 전 npm run lint 필수", tags=["project:my-app", "boundary", "always-do", "source:moonshot"])
 ```
 
 ## 5. 도메인/컴포넌트 메모리 현행화
 
-### 엔티티 생성/업데이트 규칙
+### 메모리 생성/업데이트 규칙
 
 | 변경 유형 | 액션 |
 |----------|------|
-| 새 컴포넌트 파일 | `create_entities`로 `[PROJECT_ID]::Component::[Name]` 생성 |
-| 기존 컴포넌트 수정 | `add_observations`로 변경 내용 추가 |
-| API 엔드포인트 추가/변경 | `[PROJECT_ID]::API::[EndpointName]` 업데이트 |
-| 도메인 로직 변경 | `[PROJECT_ID]::Domain::[DomainName]` 업데이트 |
+| 새 컴포넌트 파일 | `store_memory` + `component:[Name]` 태그 |
+| 기존 컴포넌트 수정 | `store_memory`로 압축 변경 사실 추가 |
+| API 엔드포인트 추가/변경 | `api` 태그로 업데이트 |
+| 도메인 로직 변경 | `domain` 태그로 업데이트 |
 
 ### 관계 설정
 컴포넌트 간 의존관계 발견 시:
 ```
-create_relations([{
-  from: "[my-app]::Component::Button",
-  to: "[my-app]::Component::ThemeContext",
-  relationType: "uses"
-}])
+create_relationship(from_memory_id="{fromId}", to_memory_id="{toId}", relationship_type="USED_IN", context="Button uses ThemeContext")
 ```
 
 ## 6. 코딩 규약 현행화
 
-반복되는 패턴 발견 시 `[PROJECT_ID]::Convention::[Name]`으로 등록:
+반복되는 패턴 발견 시 `convention` 태그와 함께 등록:
 - 네이밍 규칙 (예: 컴포넌트는 PascalCase)
 - 파일 구조 패턴 (예: feature-based structure)
 - 에러 처리 패턴 (예: try-catch with logging)
@@ -131,33 +125,34 @@ create_relations([{
 git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
-## 7.6 `.claude/memory.json` 포함 여부 확인
-프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 `.claude/memory.json`을 이번 커밋에 포함할지 여부뿐입니다.
+## 7.6 메모리 산출물 포함 여부 확인
+프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 `.claude/memory.json` 또는 `.claude/memorygraph/`를 이번 커밋에 포함할지 여부뿐입니다.
 
 권장 질문:
 ```text
-커밋 과정에서 `.claude/memory.json`이 업데이트되었습니다. 이번 커밋에 함께 포함할까요?
+커밋 과정에서 프로젝트 메모리 산출물이 업데이트되었습니다. 이번 커밋에 함께 포함할까요?
 ```
 
 규칙:
 - `.claude/memory.json` 포함 여부와 무관하게 프로젝트 메모리 현행화 자체는 항상 먼저 완료하세요.
-- 사용자 확인 없이 `.claude/memory.json`을 자동으로 스테이징하지 마세요.
+- 사용자 확인 없이 `.claude/memory.json` 또는 `.claude/memorygraph/`를 자동으로 스테이징하지 마세요.
 - 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
-- 사용자가 제외하자고 하면 `.claude/memory.json`은 unstaged 상태로 두고 나머지만 커밋하세요.
+- 사용자가 제외하자고 하면 메모리 산출물은 unstaged 상태로 두고 나머지만 커밋하세요.
+- MemoryGraph 저장 실패는 기록하되, 사용자가 commit/push를 명시한 흐름에서는 Git closeout을 막지 마세요.
 - 최종 커밋 요약에 사용자의 선택을 명시하세요.
 
 ## 8. 커밋 생성
 
 ```bash
-# 사용자가 메모리 파일 포함을 승인한 경우:
-git add [files] .claude/memory.json
+# 사용자가 메모리 산출물 포함을 승인한 경우:
+git add [files] .claude/memory.json .claude/memorygraph
 
 # 사용자가 제외를 선택한 경우:
 git add [files]
 git commit -m "[간결한 한글 제목]" -m $'- 기능: [기능/영역명] - [핵심 변경]\n- 기능: [기능/영역명] - [핵심 변경]\n- 이유: [변경 이유]\n- 영향: [사용자 영향 또는 기대 효과]'
 ```
 
-> **📌 중요: `.claude/memory.json` 파일 포함 여부는 사용자 명시 선택을 따르세요.** 이 파일에는 Memory MCP 현행화 내용이 저장됩니다.
+> **📌 중요: 메모리 산출물 포함 여부는 사용자 명시 선택을 따르세요.** MemoryGraph 기본 저장소는 `.claude/memorygraph/`입니다.
 
 **커밋 메시지 규칙:**
 - 이모지, 특수문자 제외

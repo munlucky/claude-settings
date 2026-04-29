@@ -28,10 +28,14 @@ userRequest: "{summary}"
 ## 워크플로우
 
 ### 1. 최신 경계 규칙 로드 (읽기 전용)
-`mcp__memory__search_nodes` + `mcp__memory__open_nodes`로 다음 엔티티를 재확인:
-- `[ProjectID]::Boundary::AlwaysDo`
-- `[ProjectID]::Boundary::AskFirst`
-- `[ProjectID]::Boundary::NeverDo`
+MemoryGraph 읽기 전용 도구로 다음 boundary 메모리를 재확인:
+- `recall_memories(query="boundary rules ${projectId}", project_path="{projectPath}", limit=20)`
+- `search_memories(tags=["project:{projectId}", "boundary"], limit=20)`
+
+Boundary 범주는 태그로 표현합니다:
+- `always-do`
+- `ask-first`
+- `never-do`
 
 ### 2. 계획 범위 경계 점검
 
@@ -88,7 +92,7 @@ else:
 ```
 
 ## 에러 처리
-1. **메모리 불가**: `boundaryStatus: not_checked`와 경고 반환, 후속 정책은 오케스트레이터가 결정.
+1. **MemoryGraph 불가**: `boundaryStatus: not_checked`와 경고 반환, 후속 정책은 오케스트레이터가 결정.
 2. **프로젝트 메모리 미초기화**: `boundaryStatus: not_initialized` 반환, 일반 안전 규칙으로 진행.
 3. **부분 규칙 로드**: 가능한 규칙으로 점검하고 누락은 `warnings`에 기록.
 

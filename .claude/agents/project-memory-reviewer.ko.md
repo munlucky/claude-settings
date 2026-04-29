@@ -26,12 +26,17 @@ diff: "{git diff 요약}"              # 또는 diff 파일 경로
 ## 워크플로우
 
 ### 1. 관련 메모리 재로드
-`mcp__memory__search_nodes`와 `mcp__memory__open_nodes`로 변경 파일 관련 최신 규칙 확인:
+MemoryGraph 읽기 전용 도구로 변경 파일 관련 최신 규칙 확인:
 
 ```
-# 각 변경 파일에 대해 관련 엔티티 검색
-search_nodes("[ProjectID]::Component::{component-name}")
-search_nodes("[ProjectID]::Convention::")
+recall_memories(
+  query="rules conventions changed files ${projectId}",
+  project_path="{projectPath}",
+  limit=20
+)
+
+search_memories(tags=["project:{projectId}", "convention"], limit=20)
+search_memories(tags=["project:{projectId}", "component:{component-name}"], limit=20)
 ```
 
 ### 2. 경계 위반 검사
@@ -118,7 +123,7 @@ return { status: "passed", action: "proceed" }
 ```
 
 ## 에러 처리
-1. **메모리 불가**: 검사 건너뛰기, 경고 로깅, 계속 진행
+1. **MemoryGraph 불가**: 검사 건너뛰기, 경고 로깅, 계속 진행
 2. **부분 규칙 로드**: 가능한 규칙으로 검사, warnings에 기록
 
 ## 계약

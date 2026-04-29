@@ -137,6 +137,7 @@ const EXCLUDED_AGENT_PATHS = [
   'cache',
   'browser-runtime',
   'memory.json',
+  'memorygraph',
   'verification-results-*',
   'verification-verdict-*',
   'runtime-verdict-*',
@@ -375,9 +376,9 @@ function main() {
     console.error(`WARN: worktree path is not ignored by the source repository: ${relativeWorktreePath}`);
   }
 
-  console.log(`WORKTREE_PATH=${worktreePath}`);
-  console.log(`WORKTREE_BRANCH=${branch}`);
-  console.log(`WORKTREE_PREPARE_PATH=${path.relative(repoRoot, evidencePath)}`);
+  process.stdout.write(`WORKTREE_PATH=${worktreePath}\n`);
+  process.stdout.write(`WORKTREE_BRANCH=${branch}\n`);
+  process.stdout.write(`WORKTREE_PREPARE_PATH=${path.relative(repoRoot, evidencePath)}\n`);
 }
 
 try {

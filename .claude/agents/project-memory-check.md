@@ -28,10 +28,14 @@ userRequest: "{summary}"
 ## Workflow
 
 ### 1. Load latest boundary rules (read-only)
-Use `mcp__memory__search_nodes` + `mcp__memory__open_nodes` to refresh:
-- `[ProjectID]::Boundary::AlwaysDo`
-- `[ProjectID]::Boundary::AskFirst`
-- `[ProjectID]::Boundary::NeverDo`
+Use MemoryGraph read-only tools to refresh:
+- `recall_memories(query="boundary rules ${projectId}", project_path="{projectPath}", limit=20)`
+- `search_memories(tags=["project:{projectId}", "boundary"], limit=20)`
+
+Boundary categories are represented as tags:
+- `always-do`
+- `ask-first`
+- `never-do`
 
 ### 2. Validate planned scope against boundaries
 
@@ -88,7 +92,7 @@ else:
 ```
 
 ## Error Handling
-1. **Memory unavailable**: return `boundaryStatus: not_checked` with warning, continue by orchestrator policy.
+1. **MemoryGraph unavailable**: return `boundaryStatus: not_checked` with warning, continue by orchestrator policy.
 2. **No project memory initialized**: return `boundaryStatus: not_initialized`, continue with generic safeguards.
 3. **Partial rule load**: use available rules and list gaps in `warnings`.
 

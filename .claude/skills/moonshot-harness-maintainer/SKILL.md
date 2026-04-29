@@ -15,8 +15,8 @@ Apply reusable Moonshot harness improvements without expanding the public skill 
 - Keep `moonshot-orchestrator`, `product-orchestrator`, and `moonshot-phase-runner` as stable entrypoints.
 - Put detailed external-skill adoption criteria in `.claude/docs/guidelines/external-skill-pattern-transfer.md` and link it from orchestrator policy.
 - Keep completion gates strict. Fix stale fixtures, prompts, or artifacts before relaxing gate logic.
-- Treat `.claude/memory.json`, `PROJECT.md`, `.mcp.json`, `settings.local.json`, logs, runtime artifacts, and downstream task docs as project-local unless the user explicitly says otherwise.
-- For commit workflows, refresh memory when requested by the local policy, but keep `.claude/memory.json` unstaged unless the user explicitly asks to include it.
+- Treat `.claude/memory.json`, `.claude/memorygraph/`, `PROJECT.md`, `.mcp.json`, `settings.local.json`, logs, runtime artifacts, and downstream task docs as project-local unless the user explicitly says otherwise.
+- For commit workflows, refresh memory when requested by the local policy, but keep memory artifacts unstaged unless the user explicitly asks to include them.
 
 ## Workflow
 

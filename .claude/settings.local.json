@@ -51,7 +51,9 @@
       "WebSearch",
       "Bash(claude mcp list:*)",
       "Bash(npx:*)",
-      "mcp__memory__create_entities",
+      "mcp__memory__store_memory",
+      "mcp__memory__recall_memories",
+      "mcp__memory__search_memories",
       "Skill(commit)",
       "Skill(commit:*)"
     ],

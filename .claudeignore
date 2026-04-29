@@ -4,6 +4,7 @@
 .claude/logs/
 .claude/cache/
 .claude/memory.json
+.claude/memorygraph/
 .claude/browser-runtime/
 .claude/tools/browserd/node_modules/
 .env

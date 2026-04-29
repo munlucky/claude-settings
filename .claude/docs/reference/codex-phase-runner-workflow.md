@@ -862,6 +862,7 @@ Excluded sensitive/runtime entries:
 - `.claude/cache`
 - `.claude/browser-runtime`
 - `.claude/memory.json`
+- `.claude/memorygraph/`
 - `.claude/verification-results-*`
 - `.claude/verification-verdict-*`
 - `.claude/runtime-verdict-*`
@@ -882,7 +883,7 @@ Evidence written to `<worktree>/.claude/worktree-prepare.json`:
   "ignoredAgentPaths": [".claude"],      // ignored agent paths detected in the source project
   "hydratedPaths": [".claude/skills", ".agents/skills (symlink)", "AGENTS.md (symlink)"], // created bridge paths
   "missingRequiredPaths": [],            // non-empty blocks prepare
-  "excludedSensitivePaths": [".claude/logs", ".claude/memory.json"], // never copied paths
+  "excludedSensitivePaths": [".claude/logs", ".claude/memory.json", ".claude/memorygraph/"], // never copied paths
   "setupCommand": "",                    // optional setup command
   "setupExitCode": null,                 // null if no setup command
   "setupArtifact": "",                   // setup log path

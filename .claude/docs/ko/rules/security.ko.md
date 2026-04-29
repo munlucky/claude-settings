@@ -3,8 +3,8 @@
 ## 필수
 
 - 문서/스크립트/설정에 시크릿, 토큰, 개인정보를 커밋하지 않음
-- 메모리 아티팩트(`.claude/memory.json`)에 민감정보 저장 금지
-- `.env*`, 키/인증서 파일, `.history/`, `.tmp/`, `.claude/logs/`, `.claude/memory.json` 은 보호 경로로 취급
+- 메모리 아티팩트(`.claude/memory.json`, `.claude/memorygraph/`)에 민감정보 저장 금지
+- `.env*`, 키/인증서 파일, `.history/`, `.tmp/`, `.claude/logs/`, `.claude/memory.json`, `.claude/memorygraph/` 은 보호 경로로 취급
 - 기본 에이전트 컨텍스트에서 민감하거나 노이즈가 큰 경로를 제외하려면 `.claudeignore` 사용
 - 외부에서 내려받은 콘텐츠는 실행 전 검증
 - 로그/에러 출력에서 민감한 경로/값 노출 방지

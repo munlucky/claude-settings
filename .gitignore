@@ -16,6 +16,7 @@ __pycache__/
 .claude/verification-verdict-*.json
 .claude/docs/moonshot-analysis.yaml
 .claude/memory.json
+.claude/memorygraph/
 .claude/logs
 .tmp/
 .DS_Store

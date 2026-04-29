@@ -43,25 +43,17 @@ else
     ALL_OK=false
 fi
 
-# Check Memory server
-if [[ "$PLATFORM" == "windows" ]]; then
-    # Windows: Check for node processes with server-memory
-    MEMORY_CHECK=$(tasklist //FI "IMAGENAME eq node.exe" //FO CSV //NH 2>/dev/null | grep -i "server-memory" | head -1)
-    if [[ -n "$MEMORY_CHECK" ]]; then
-        echo "[OK] Memory MCP server running"
+# Check MemoryGraph server
+if command -v memorygraph &> /dev/null; then
+    if MEMORYGRAPH_DATA_DIR=".claude/memorygraph" memorygraph --health > /dev/null 2>&1; then
+        echo "[OK] MemoryGraph available"
     else
-        echo "[WARN] Memory MCP server status unknown (may lazy start)"
-        echo "  -> Will auto-start on first use"
+        echo "[WARN] MemoryGraph command found but health check failed"
+        echo "  -> Run 'MEMORYGRAPH_DATA_DIR=.claude/memorygraph memorygraph --health'"
     fi
 else
-    # macOS/Linux
-    if ps aux | grep -v grep | grep -q "@modelcontextprotocol/server-memory"; then
-        MEMORY_PID=$(ps aux | grep -v grep | grep "@modelcontextprotocol/server-memory" | awk '{print $2}' | head -1)
-        echo "[OK] Memory MCP server running (PID: $MEMORY_PID)"
-    else
-        echo "[WARN] Memory MCP server status unknown (may lazy start)"
-        echo "  -> Will auto-start on first use"
-    fi
+    echo "[WARN] memorygraph command not found in PATH"
+    echo "  -> Install with 'pipx install memorygraphMCP'"
 fi
 
 echo ""

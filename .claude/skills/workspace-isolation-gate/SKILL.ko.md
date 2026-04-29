@@ -77,6 +77,6 @@ notes:
 - 특정 디렉토리 경로를 강제하지 않습니다.
 - 격리 불변조건과 baseline evidence를 강제합니다.
 - 새 worktree가 필요하면 `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"`를 우선 사용합니다.
-- `.claude/logs`, `.claude/cache`, `.claude/memory.json`, `.codex/auth.json`, runtime verdict/cache state는 worktree로 복사하지 않습니다.
+- `.claude/logs`, `.claude/cache`, `.claude/memory.json`, `.claude/memorygraph/`, `.codex/auth.json`, runtime verdict/cache state는 worktree로 복사하지 않습니다.
 - 하네스 repo 작업과 downstream 제품 작업을 구분합니다. 하네스 repo 작업은 tracked `.claude` source를 기준으로 볼 수 있지만, downstream 작업은 보통 ignored agent-config hydration이 필요합니다.
 - 차단 시 구현 진행을 멈춥니다.

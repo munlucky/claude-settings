@@ -77,6 +77,6 @@ notes:
 - Do not enforce specific directory paths.
 - Enforce isolation invariants and baseline evidence.
 - Prefer `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"` when a fresh worktree is required.
-- Do not copy `.claude/logs`, `.claude/cache`, `.claude/memory.json`, `.codex/auth.json`, or runtime verdict/cache state into a worktree.
+- Do not copy `.claude/logs`, `.claude/cache`, `.claude/memory.json`, `.claude/memorygraph/`, `.codex/auth.json`, or runtime verdict/cache state into a worktree.
 - Treat harness repo work and downstream product work differently: harness repo work may rely on tracked `.claude` source, while downstream work usually needs ignored agent-config hydration.
 - If blocked, stop implementation progression.
