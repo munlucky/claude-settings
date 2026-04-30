@@ -67,6 +67,18 @@ defaults:
     selectedPattern: null
     selectedTeam: null
     selectionReason: null
+  modelEffort:
+    profile: standard
+    allowedProfiles:
+      - economy
+      - standard
+      - deep
+      - max
+    codexMapping:
+      economy: low
+      standard: medium
+      deep: high
+      max: xhigh
   fixForward:
     enabled: true
     policy:
@@ -204,6 +216,11 @@ defaults:
     stageOrder: []
     appliedSkills: []
     skippedSkills: []
+    selectedHarnessComponents: []
+    skippedHarnessComponents: []
+    selectionReason: null
+    runtimeIsolation: null
+    modelEffortProfile: standard
     evidenceFiles:
       analysisContext: ".claude/docs/moonshot-analysis.yaml"
       sprintContract: null
@@ -259,6 +276,6 @@ workflowRules:
     - "Treat phaseAttemptMode as an execution-baseline override."
   persistence:
     - "Save final analysisContext to .claude/docs/moonshot-analysis.yaml."
-    - "Keep workflowEvidence selectedBundles, requiredSkills, and stageOrder populated for code-changing bounded work."
+    - "Keep workflowEvidence selectedBundles, requiredSkills, stageOrder, selectedHarnessComponents, selectionReason, runtimeIsolation, and modelEffortProfile populated for code-changing bounded work."
     - "Keep readiness and completionModel aligned with the active execution artifacts."
     - "Track MemoryGraph stageCoverage and omit duplicated system/developer/AGENTS/rules content from projectMemory deltas."

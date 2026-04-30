@@ -443,6 +443,11 @@ function captureTrace(options) {
       appliedSkills: workflowState?.appliedSkills ?? analysis?.workflowEvidence?.appliedSkills ?? [],
       skippedSkills: workflowState?.skippedSkills ?? analysis?.workflowEvidence?.skippedSkills ?? [],
       stageOrder: workflowState?.stageOrder ?? analysis?.workflowEvidence?.stageOrder ?? [],
+      selectedHarnessComponents: workflowState?.selectedHarnessComponents ?? analysis?.workflowEvidence?.selectedHarnessComponents ?? [],
+      skippedHarnessComponents: workflowState?.skippedHarnessComponents ?? analysis?.workflowEvidence?.skippedHarnessComponents ?? [],
+      selectionReason: workflowState?.selectionReason ?? analysis?.workflowEvidence?.selectionReason ?? '',
+      runtimeIsolation: workflowState?.runtimeIsolation ?? analysis?.workflowEvidence?.runtimeIsolation ?? '',
+      modelEffortProfile: workflowState?.modelEffortProfile ?? analysis?.workflowEvidence?.modelEffortProfile ?? '',
     },
     sourceArtifacts,
     artifactDeltas: sourceArtifacts.filter((artifact) => artifact.exists).map(({ kind, path: filePath, sizeBytes, modifiedAt }) => ({
@@ -517,7 +522,7 @@ function captureTrace(options) {
   fs.writeFileSync(path.join(traceDir, 'diagnosis.json'), `${JSON.stringify(diagnosis, null, 2)}\n`, 'utf8');
   fs.writeFileSync(path.join(traceDir, 'diagnosis.md'), `${diagnosisMd.join('\n')}\n`, 'utf8');
 
-  console.log(`TRACE_DIR=${traceDir}`);
+  process.stdout.write(`TRACE_DIR=${traceDir}\n`);
 }
 
 const { command, options } = parseArgs(process.argv.slice(2));

@@ -66,6 +66,19 @@ compaction은 도움이 되지만, 장시간 작업의 표류를 항상 막아�
 - solo 품질 경계를 넘는 작업이면 evaluator는 계속 필요
 - 모델이 충분히 오래 일관성을 유지하면 per-sprint scaffolding은 줄일 수 있음
 
+### 7. 런타임별 프롬프트보다 공통 계약을 우선한다
+
+Claude Code와 Codex의 실행 옵션은 다를 수 있지만 하네스 계약은 하나여야 합니다.
+
+`workflowEvidence`에는 다음 필드를 공통으로 남깁니다.
+- `selectedHarnessComponents`
+- `skippedHarnessComponents`
+- `selectionReason`
+- `runtimeIsolation`
+- `modelEffortProfile`
+
+공개 effort profile은 `economy | standard | deep | max`를 사용합니다. Codex는 이를 `model_reasoning_effort`로 매핑하고, Claude Code는 같은 값을 `SPRINT_CONTRACT.md`와 attempt prompt에 기록합니다.
+
 ## Moonshot 적용 원칙
 
 ### 최소 하중 구조
@@ -90,10 +103,12 @@ compaction은 도움이 되지만, 장시간 작업의 표류를 항상 막아�
 - 이번 slice 목표를 테스트 가능한 언어로 고정
 - 이번 라운드 non-goal 명시
 - hard pass/fail 체크 정의
+- contract review, runtime evidence plan, 선택한 하네스 컴포넌트, runtime isolation, model effort profile 기록
 
 `QA_REPORT.md`
 - 실패한 기준, 재현 메모, 판정을 기록
 - 다음 구현 라운드의 입력이 됨
+- verification 실패 시 runtime evidence depth와 retry strategy 기록
 
 `HANDOFF.md`
 - 장시간 세션이나 context reset 시 상태를 안전하게 인계
@@ -140,6 +155,26 @@ Complex 또는 long-running work:
 - `security-reviewer`: 보안 민감 파일 또는 흐름 변경 시
 - `audit`, `web-design-guidelines`: UI/UX 품질이 완료 기준일 때
 
+### Contract review가 필요한 경우
+
+아래 중 하나라도 해당하면 구현 전에 evaluator가 `SPRINT_CONTRACT.md`의 done criteria와 evidence plan을 검토해야 합니다.
+- medium, complex, phase 기반, high-risk 작업
+- runtime/browser evidence가 완료 조건인 작업
+- 하네스, workflow, 보안, auth, 데이터 무결성, 사용자-visible 동작을 바꾸는 작업
+
+simple/local 작업은 생략할 수 있지만, 생략 사유를 `skippedHarnessComponents`에 남겨야 합니다.
+
+### Runtime-first QA 깊이
+
+critical `SCN-*`는 page-load나 smoke evidence만으로 clean finish할 수 없습니다.
+
+최소 clean-finish depth:
+- 대상 flow를 연다
+- 사용자-visible interaction을 수행한다
+- 관련 상태를 변경하거나 기대 상태를 확인한다
+- 결과가 지속되거나 durable effect가 관찰된다
+- 다시 진입하거나 recover해서 상태가 유지되는지 확인한다
+
 ### HANDOFF가 필요한 경우
 
 아래 경우는 `HANDOFF.md`를 남깁니다.
@@ -171,6 +206,8 @@ Complex 또는 long-running work:
 3. Retry loop
    - verification이 수정 가능한 실패를 반환함
    - `QA_REPORT.md`를 갱신함
+   - `retryStrategy`, `deltaHypothesis`, `repeatedFailurePolicy`를 기록함
+   - 같은 failure class가 두 번 반복되면 `partial_redesign` 또는 `stop_and_handoff`를 선택함
    - contract에 연결된 remediation 입력으로 구현 단계로 되돌아감
 
 유효하지 않은 handoff 사유:

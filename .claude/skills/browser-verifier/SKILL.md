@@ -54,15 +54,21 @@ Validate that a web app is reachable and working at runtime after implementation
 5. If `--e2e` is omitted, the script auto-detects npm scripts in this order:
    - `test:e2e:agent-browser`
    - `test:e2e`
-6. If browser runtime is unavailable and browser-only mode was not requested, return a setup-gap warning and continue through the existing URL/E2E path.
-7. If runtime check fails, stop and report environment readiness issue.
-8. If browser flow or E2E fails, return failure details and the failing mode.
+6. Classify runtime evidence depth:
+   - `smoke`: URL reachable, page loaded, or a shallow browser smoke check ran.
+   - `open-act-mutate-persist-recover`: a critical scenario opened the flow, acted, changed state, persisted it, and recovered/re-entered successfully.
+7. Treat smoke-only evidence for critical `SCN-*` as `warning`; it cannot support clean finish by itself.
+8. If browser runtime is unavailable and browser-only mode was not requested, return a setup-gap warning and continue through the existing URL/E2E path.
+9. If runtime check fails, stop and report environment readiness issue.
+10. If browser flow or E2E fails, return failure details and the failing mode.
 
 ## Output Contract
 - pass/fail status
 - target URL and HTTP response summary
 - optional browser-flow status
 - optional E2E result
+- runtime evidence depth: `smoke` or `open-act-mutate-persist-recover`
+- critical scenario smoke-only warnings
 - next actions (restart server, fix route, rerun tests)
 - structured summary suitable for merge-back into the caller session
 

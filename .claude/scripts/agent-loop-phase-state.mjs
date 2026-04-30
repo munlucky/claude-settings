@@ -222,6 +222,16 @@ function extractWorkflowSection(text) {
       result.applied = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Skipped skills:')) {
       result.skipped = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected harness components:')) {
+      result.selectedHarnessComponents = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Skipped harness components:')) {
+      result.skippedHarnessComponents = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selection reason:')) {
+      result.selectionReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Runtime isolation:')) {
+      result.runtimeIsolation = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Model effort profile:')) {
+      result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
     }
   }
   return result;
@@ -801,6 +811,10 @@ function evaluatePhaseCompletionGate(config) {
       workflowReason = 'workflow-applied-skills-missing';
     } else if (!workflowSection.skipped) {
       workflowReason = 'workflow-skipped-skills-missing';
+    } else if (!workflowSection.selectedHarnessComponents) {
+      workflowReason = 'workflow-selected-harness-components-missing';
+    } else if (!workflowSection.selectionReason || !workflowSection.runtimeIsolation || !workflowSection.modelEffortProfile) {
+      workflowReason = 'workflow-harness-decision-evidence-missing';
     } else if (
       codeChangeDetected &&
       !normalizeLower(workflowSection.applied).includes('code-simplifier') &&
@@ -910,7 +924,16 @@ function evaluatePhaseCompletionGate(config) {
     || (
       qaVerdictPassed
       && reviewCompleted
-      && Boolean(workflowSection.selected && workflowSection.applied && workflowSection.skipped)
+      && Boolean(
+        workflowSection.selected
+        && workflowSection.applied
+        && workflowSection.skipped
+        && workflowSection.selectedHarnessComponents
+        && workflowSection.skippedHarnessComponents
+        && workflowSection.selectionReason
+        && workflowSection.runtimeIsolation
+        && workflowSection.modelEffortProfile
+      )
       && Boolean(finishStopWhy && finishRemainingScope && finishRemainingBlockers)
       && !finishStopWhy.toLowerCase().includes('checkpoint')
       && !finishStopWhy.toLowerCase().includes('milestone')
@@ -972,6 +995,11 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_COMPLETION_TASK_STATUS_SOURCE: taskStatusSource,
     PHASE_COMPLETION_STATUS: String(currentWorkflowState?.completionStatus || ''),
     PHASE_COMPLETION_STAGE_ORDER: effectiveStageOrder.join(','),
+    PHASE_SELECTED_HARNESS_COMPONENTS: workflowSection.selectedHarnessComponents || '',
+    PHASE_SKIPPED_HARNESS_COMPONENTS: workflowSection.skippedHarnessComponents || '',
+    PHASE_HARNESS_SELECTION_REASON: workflowSection.selectionReason || '',
+    PHASE_RUNTIME_ISOLATION: workflowSection.runtimeIsolation || '',
+    PHASE_MODEL_EFFORT_PROFILE: workflowSection.modelEffortProfile || '',
     PHASE_PLANNING_READY: planningReady ? 'true' : 'false',
     PHASE_EXECUTION_READY: executionReady ? 'true' : 'false',
     PHASE_CLOSEOUT_STATUS: closeoutStatus,

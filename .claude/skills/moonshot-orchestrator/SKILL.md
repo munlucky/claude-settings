@@ -58,6 +58,12 @@ Resolve `executionRuntime` before orchestration:
   - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
   - Ask user only when those outputs still indicate unresolved blocking items.
 - In both runtimes, phase/adaptor paths must preserve policy through `SPRINT_CONTRACT.md` policy anchors rather than assuming chat memory survives across rounds.
+- Use runtime-neutral effort profiles:
+  - `economy`: parity smoke, narrow read-only checks, latency-sensitive work
+  - `standard`: simple/local bounded work
+  - `deep`: phase work, agentic coding, review, high-risk or user-visible changes
+  - `max`: exceptional long-horizon or ambiguous hard problems only
+- Codex maps these profiles to `model_reasoning_effort`; Claude Code records the same profile in `SPRINT_CONTRACT.md` and attempt prompts when no direct effort flag is available.
 - Human approval belongs to planning closeout only; once execution starts, do not insert approval checkpoints into implementation -> review -> verify -> retry loops unless a true blocker or external dependency requires user input.
 - Cross-runtime policy source of truth:
   - Keep workflow policy in skills/orchestrator state.
@@ -112,6 +118,11 @@ Resolve these fields before bundle selection:
 - `workflowEvidence.selectedBundles`
 - `workflowEvidence.requiredSkills`
 - `workflowEvidence.stageOrder`
+- `workflowEvidence.selectedHarnessComponents`
+- `workflowEvidence.skippedHarnessComponents`
+- `workflowEvidence.selectionReason`
+- `workflowEvidence.runtimeIsolation`
+- `workflowEvidence.modelEffortProfile`
 
 Contract rules:
 - Treat `.claude/schemas/analysis-context.schema.yaml` as the single source of truth for field layout and defaults.
@@ -231,6 +242,7 @@ Default mapping:
 
 For `product_project` work, treat execution artifacts as first-class state:
 - `SPRINT_CONTRACT.md` defines the current slice goal, non-goals, done checks, and evaluator focus
+- `SPRINT_CONTRACT.md` records contract review, selected harness components, runtime isolation, and model effort profile before implementation begins
 - `QA_REPORT.md` records verifier findings and feeds the next remediation round
 - `HANDOFF.md` captures resumable state when the run is interrupted, retried, or context pressure is high
 - `SCORECARD.md` is the objective completion scoreboard for the active slice
@@ -247,6 +259,7 @@ Policy:
 - retry and verification loops should remain autonomous; do not treat human approval as a normal stage between execute/review/verify rounds
 - bounded direct work that stays outside the phase harness must still keep `workflowEvidence` current in `.claude/docs/moonshot-analysis.yaml`
 - bounded direct `workflowEvidence` must include `selectedBundles`, `requiredSkills`, and `stageOrder`
+- bounded direct `workflowEvidence` must include `selectedHarnessComponents`, `skippedHarnessComponents`, `selectionReason`, `runtimeIsolation`, and `modelEffortProfile`
 - bounded direct code changes must record `codex-review-code` evidence before final verification is treated as stable
 - bounded direct code changes must record whether `code-simplifier` was applied or explicitly skipped with a reason
 - bounded direct code changes must record `doc-auto-sync` evidence before completion is claimed
@@ -456,6 +469,7 @@ Run `decisions.skillChain` in order.
 3. Fork `team-leader-agent` with the selected team config (see `moonshot-teams-runner/SKILL.md` for team details)
 4. Merge summarized `teamReport` into `analysisContext.notes`
 5. Record `selectedPattern`, `selectedTeam`, and `selectionReason` in notes or workflow evidence
+6. Record `selectedHarnessComponents`, `skippedHarnessComponents`, `runtimeIsolation`, and `modelEffortProfile` in the same evidence block
 
 > [!CAUTION]
 > Agent Teams: ~13K tokens (2-member) / ~20K tokens (3-member). Use for critical reviews or complex implementations only.
@@ -484,6 +498,9 @@ Run `decisions.skillChain` in order.
 | `docStale` | pre-flight-check detects stale doc | Insert `doc-auto-sync` at start of chain, but still keep final doc-ops after implementation |
 | `securityConcern` | changed files contain `.env`/`auth`/`token`/`secret` | Add `security-reviewer` after `codex-review-code` |
 | `coverageLow` | `completion-verifier: coverage < 80%` | Log warning, request additional tests |
+| `contractReviewMissing` | medium/complex/phase work has no evaluator contract review | Update `SPRINT_CONTRACT.md` and `QA_REPORT.md`; do not start implementation as a clean standard path |
+| `criticalScenarioSmokeOnly` | critical `SCN-*` has only smoke/page-load evidence | Warn or retry; block clean finish until `open -> act -> mutate -> persist -> recover` evidence exists |
+| `repeatedFailureClass` | same failure class appears twice | Choose `partial_redesign` or `stop_and_handoff`; continuing the same tactic requires explicit evidence |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `frontend-design` before `implementation-runner` |
 | `reactProject` | `.tsx`/`.jsx` files or React keywords | Insert `vercel-react-best-practices` after `codex-review-code` |
 | `implementationComplete` | implementation-runner completed with meaningful code changes | Insert `code-simplifier` before `completion-verifier` |

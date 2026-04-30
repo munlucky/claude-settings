@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifacts } from './agent-loop-phase-plan-lib.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
+import { resolveCodexReasoningEffort } from './lib/effort-profile.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -366,7 +367,11 @@ function buildWorkerCommand(prompt, runtime) {
   }
   if (runtime === 'codex') {
     const args = codexBaseArgs(process.cwd());
-    const effort = process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT ?? 'medium';
+    const effort = resolveCodexReasoningEffort({
+      explicitEffort: process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
+      profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+      defaultProfile: 'deep',
+    });
     if (effort) {
       args.push('-c', `model_reasoning_effort="${effort}"`);
     }
@@ -467,7 +472,11 @@ function runCommitPrompt(logFile, prompt, runtime) {
     ? ['claude', '--dangerously-skip-permissions', '--no-session-persistence', '-c', '-p', prompt]
     : (() => {
       const args = codexBaseArgs(process.cwd());
-      const effort = process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT ?? 'medium';
+      const effort = resolveCodexReasoningEffort({
+        explicitEffort: process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
+        profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+        defaultProfile: 'standard',
+      });
       if (effort) {
         args.push('-c', `model_reasoning_effort="${effort}"`);
       }

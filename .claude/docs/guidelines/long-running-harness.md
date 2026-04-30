@@ -64,6 +64,17 @@ Do not keep old complexity forever:
 - keep the evaluator when the task is still beyond reliable solo performance
 - remove per-sprint scaffolding when the model can stay coherent without it
 
+### 7. Runtime-neutral control beats runtime-specific prompts
+
+Claude Code and Codex may expose different knobs, but the harness should preserve one shared contract:
+- `selectedHarnessComponents`
+- `skippedHarnessComponents`
+- `selectionReason`
+- `runtimeIsolation`
+- `modelEffortProfile`
+
+Use `economy | standard | deep | max` as the public effort profile. Codex maps this to `model_reasoning_effort`; Claude Code records it in contracts and prompts when no equivalent flag is available.
+
 ## Recommended Moonshot Adoption
 
 ### Minimum load-bearing structure
@@ -88,10 +99,12 @@ Use the current workflow like this:
 - defines the slice goal in testable language
 - declares non-goals for the current round
 - lists hard pass/fail checks
+- records contract review, runtime evidence plan, selected harness components, runtime isolation, and model effort profile
 
 `QA_REPORT.md`
 - records failed criteria, reproduction notes, and verdict
 - feeds the next implementation round
+- records runtime evidence depth and retry strategy when verification fails
 
 `HANDOFF.md`
 - makes context reset safe when the session is long or interrupted
@@ -115,6 +128,26 @@ Require a separate evaluator when:
 - the task includes browser flows or visual quality
 - the change has hidden failure modes that static review will miss
 - the model has previously shipped stubs or half-working flows in similar tasks
+
+### When to require contract review
+
+Require evaluator review of `SPRINT_CONTRACT.md` before implementation when:
+- the task is medium, complex, phase-based, or high-risk
+- the done criteria require runtime/browser evidence
+- the task changes harness, workflow, security, auth, data integrity, or user-visible behavior
+
+Simple/local work may skip this only when `skippedHarnessComponents` records the skip reason.
+
+### Runtime-first QA depth
+
+For critical `SCN-*`, page-load or smoke evidence is not enough for clean finish.
+
+Minimum clean-finish depth:
+- open the target flow
+- act through the user-visible interaction
+- mutate or confirm the relevant state
+- persist the result or observe the expected durable effect
+- recover/re-enter and confirm the state still holds
 
 ### Review cadence by work size
 
@@ -169,6 +202,8 @@ After verification, choose exactly one closeout path:
 3. Retry loop
    - verification failed with actionable findings
    - update `QA_REPORT.md`
+   - record `retryStrategy`, `deltaHypothesis`, and `repeatedFailurePolicy`
+   - if the same failure class repeats twice, choose `partial_redesign` or `stop_and_handoff`
    - return to implementation with contract-linked remediation input
 
 Invalid handoff reasons:

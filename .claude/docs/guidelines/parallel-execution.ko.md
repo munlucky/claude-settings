@@ -40,6 +40,13 @@
 3. 오케스트레이션 노트에 파일 본문을 인라인하지 않는다.
 4. 병렬 단계 결과는 요약만 병합하고, 코드 변경 시 필수 게이트를 재실행한다.
 
+## Cross-Runtime Evidence
+
+- 병렬 결정은 `selectedHarnessComponents`, `skippedHarnessComponents`, `selectionReason`을 workflow evidence에 남긴다.
+- review/verify fork는 `runtimeIsolation`을 `isolated`, `degraded-current-session`, 또는 동등한 adapter별 표현으로 기록한다.
+- effort profile은 work unit 단위로 한 번 선택해 `modelEffortProfile`에 기록하고, workset이 명시적으로 override하지 않으면 병렬 worker가 이를 상속한다.
+- simple/local 작업에서 무거운 하네스 컴포넌트를 생략할 수 있지만, 생략 사유는 추론하지 말고 명시한다.
+
 ## 실행 스크립트 로직
 ```bash
 # 1) 계획 게이트 (순차)

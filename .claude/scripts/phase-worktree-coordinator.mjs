@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { resolveCodexReasoningEffort } from './lib/effort-profile.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const prepareWorktreeScript = path.join(SCRIPT_DIR, 'harness-prepare-worktree.mjs');
@@ -333,7 +334,11 @@ function buildRuntimeCommand(prompt, runtime, cwd) {
     return ['claude', '--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt];
   }
   const args = runtimeCli(['codex-base-args', cwd]);
-  const effort = process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT ?? 'medium';
+  const effort = resolveCodexReasoningEffort({
+    explicitEffort: process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
+    profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+    defaultProfile: 'deep',
+  });
   if (effort) {
     args.push('-c', `model_reasoning_effort="${effort}"`);
   }

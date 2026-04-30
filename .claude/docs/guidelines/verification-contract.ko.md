@@ -46,6 +46,12 @@ artifacts:
   requirementsTraceability: ".claude/execution/REQUIREMENTS_TRACEABILITY.md"
   scenarioMatrix: ".claude/execution/SCENARIO_MATRIX.md"
   uatChecklist: ".claude/execution/UAT_CHECKLIST.md"
+workflowEvidence:
+  selectedHarnessComponents: []
+  skippedHarnessComponents: []
+  selectionReason: ""
+  runtimeIsolation: ""
+  modelEffortProfile: "standard" # economy | standard | deep | max
 strict:
   required: false
   triggers:
@@ -142,9 +148,13 @@ loop:
 - 계약은 로컬 `policySets` 로 체크를 묶어둘 수 있으며, 이는 향후 외부 정책 엔진에 매핑하기 전까지 저장소 내부의 거버넌스 단위로 사용합니다.
 - 계약은 `scope` 를 선언해 required check 적용 범위를 plane/path 단위로 제한할 수 있으며, 범위 밖에서는 활성 워크스페이스 계약이나 fallback 감지를 사용합니다.
 - 완료 기준은 모호한 품질 표현이 아니라 재현 가능한 실패 체크로 작성해야 합니다.
+- cross-runtime 동작은 런타임별 프롬프트가 아니라 공통 계약 필드로 제어합니다.
+- `workflowEvidence`에는 선택/생략한 하네스 컴포넌트, 선택 이유, runtime isolation, model effort profile을 기록합니다.
+- runtime-neutral effort profile은 `economy`, `standard`, `deep`, `max`입니다. Codex는 이를 `model_reasoning_effort`로 매핑하고, Claude Code는 직접 effort flag가 없으면 같은 profile을 계약과 prompt에 기록합니다.
 - 런타임 비중이 크거나 UI 비중이 큰 작업은 generator 자기승인보다 별도 evaluator 경로를 우선합니다.
 - 브라우저/런타임 검증은 단순 첫 화면 확인이 아니라 실제 상호작용을 포함해야 합니다.
 - 구현 시작 전 `SPRINT_CONTRACT.md`로 라운드 완료 기준을 먼저 고정합니다.
+- medium, complex, phase, high-risk, runtime-heavy 작업은 구현 전에 evaluator contract review를 포함해야 합니다.
 - 문서 추적 중심 downstream 작업에서는 `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, `UAT_CHECKLIST.md`를 1급 실행 아티팩트로 취급합니다.
 - 검증 실패 시 `QA_REPORT.md`를 다음 수정 라운드의 입력으로 사용합니다.
 - score 기반 루프에서는 `SCORECARD.md`를 active slice의 객관적 완료 아티팩트로 사용합니다.
@@ -162,6 +172,7 @@ loop:
 - document-trace completion을 주장하려면 추가로 아래가 필요합니다.
   - in-scope `REQ-*` 전부에 구현 및 검증 증거가 있어야 함
   - critical `SCN-*` 전부에 fresh runtime 또는 E2E 증거가 있어야 함
+  - clean finish를 주장할 때 critical `SCN-*` runtime evidence가 smoke-only보다 깊어야 함
   - `uat_ready` 와 `uat_complete` 를 명시적으로 구분해야 함
 - Claude/Codex 두 런타임을 모두 지원하는 harness라면, runtime parity를 QA 메모로만 두지 말고 두 adapter 경로를 실제로 실행하는 parity command를 contract에 넣어야 합니다.
 - 어떤 required check가 또 다른 verifier 내부에서 실행된다면, 중첩 검증이 자기 자신을 다시 호출하지 않도록 `VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity` 같은 명시적 skip 장치를 둬야 합니다.
@@ -173,3 +184,4 @@ loop:
   - 기본 score verdict는 `retry`
   - 실패한 phase는 기본적으로 다음 phase로 자동 진행하지 않고 중단
   - 완료는 검증 통과와 `SCORECARD.md`의 `done`을 함께 요구
+- retry evidence에는 `retryStrategy`, `deltaHypothesis`, `repeatedFailurePolicy`를 기록해야 합니다. 같은 failure class가 두 번 반복되면 `partial_redesign` 또는 `stop_and_handoff`가 필요합니다.

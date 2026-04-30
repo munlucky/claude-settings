@@ -390,6 +390,17 @@ cat > "$CONFORMANCE_PHASE_DIR/QA_REPORT.md" <<'EOF'
 ## Review Checkpoint
 - Review completed: yes
 
+## Contract Review Evidence
+- Contract reviewed by evaluator: skipped_simple
+- Verification owner: completion-verifier
+- Runtime evidence plan: boundary fixture compiles and records clean finish evidence
+- Round fail conditions: failed verification or failed plan conformance
+- Contract revision required: no
+
+## Runtime Updates
+- Runtime evidence depth: open-act-mutate-persist-recover
+- Critical scenario smoke-only warnings: none
+
 ## Plan Conformance Review
 | Plan Item | Required | Actual | Result | Required Action |
 |-----------|----------|--------|--------|-----------------|
@@ -400,6 +411,11 @@ cat > "$CONFORMANCE_PHASE_DIR/QA_REPORT.md" <<'EOF'
 - Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier
 - Skipped skills: doc-auto-sync (not needed), session-logger (clean completion path)
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: phase runner boundary fixture uses the full phase harness
+- Runtime isolation: isolated boundary fixture
+- Model effort profile: economy
 
 ## Finish Readiness
 - Fresh evidence confirmed: yes

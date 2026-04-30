@@ -54,8 +54,9 @@ Fallback path:
 2. Start or reuse the persistent browser session.
 3. Navigate to the page and collect an initial snapshot.
 4. Execute flow-specific steps.
-5. Capture failures with screenshots or log excerpts when possible.
-6. Return a pass/fail summary with concrete next actions.
+5. For critical `SCN-*`, prefer the full depth path: open -> act -> mutate -> persist -> recover.
+6. Capture failures with screenshots or log excerpts when possible.
+7. Return a pass/fail/warn summary with concrete next actions.
 
 ## Conversational QA Triage
 
@@ -84,6 +85,7 @@ Each flow should eventually define:
 - prerequisite state
 - expected visible markers
 - critical interactions
+- runtime evidence depth: `smoke` or `open-act-mutate-persist-recover`
 - pass/fail conditions
 
 ## Output Contract
@@ -92,6 +94,8 @@ Each flow should eventually define:
 - target URL
 - runtime used
 - pass/fail status
+- runtime evidence depth
+- critical scenario smoke-only warnings
 - issues found
 - suggested fixes or follow-up checks
 - issue drafts or issue URLs when QA triage is requested
@@ -101,4 +105,5 @@ Each flow should eventually define:
 
 - If browser runtime is missing, report setup gap and recommend the current `browser-verifier` fallback.
 - If a flow is not yet implemented, report that explicitly instead of running partial checks silently.
+- If a critical scenario only has smoke/page-load evidence, return `warn` and block clean-finish wording until deep interaction evidence exists.
 - If reproduction steps are missing, do not invent them; ask a targeted question or mark the issue draft as blocked on reproduction.

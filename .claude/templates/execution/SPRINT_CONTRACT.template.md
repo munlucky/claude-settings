@@ -39,6 +39,13 @@
 - Verify
 - Finish / Handoff
 
+## Harness Selection
+- Selected harness components:
+- Skipped harness components:
+- Selection reason:
+- Runtime isolation:
+- Model effort profile: economy | standard | deep | max
+
 ## Planned Changes
 - Main implementation areas
 - Expected files or modules
@@ -61,6 +68,14 @@
 - Refactor boundary:
 - Bypass reason if test-first is infeasible:
 - Alternate verification path:
+
+## Contract Review
+- Contract reviewed by evaluator: yes | no | skipped_simple
+- Verification owner:
+- Runtime evidence plan:
+- Round fail conditions:
+- Contract revision required: yes | no
+- Review notes:
 
 ## Policy Anchors
 - Always-loaded rules:
@@ -92,6 +107,8 @@
 ## Evidence
 - Required commands:
 - Runtime flow:
+- Runtime evidence depth: smoke | open-act-mutate-persist-recover
+- Critical SCN runtime gate: smoke-only is warning; deep interaction is required for clean finish
 - Screenshots/logs:
 - Requirements traceability update:
 - Scenario matrix update:

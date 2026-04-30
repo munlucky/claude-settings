@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
+import { resolveEffortProfile } from './lib/effort-profile.mjs';
 
 export function sanitizeSlug(value) {
   return String(value || '')
@@ -185,6 +186,11 @@ export function ensureExecutionArtifacts(config) {
     verificationRuntimes,
     currentRuntime,
   });
+  const modelEffortProfile = resolveEffortProfile(
+    process.env.PHASE_DISPATCH_EFFORT_PROFILE,
+    process.env.MOONSHOT_EFFORT_PROFILE,
+    'deep',
+  );
 
   fs.mkdirSync(paths.phaseExecutionDir, { recursive: true });
 
@@ -220,9 +226,24 @@ ${renderSourcePlanSnapshot(phaseDoc)}
 - Verify
 - Finish / Handoff
 
+## Harness Selection
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: phase work uses the full cross-runtime harness by default.
+- Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract.
+- Model effort profile: ${modelEffortProfile}
+
 ## Planned Changes
 - Files/modules:
 - Interfaces/contracts:
+
+## Contract Review
+- Contract reviewed by evaluator: no
+- Verification owner: completion-verifier
+- Runtime evidence plan: Define before implementation. Critical SCN-* scenarios require open -> act -> mutate -> persist -> recover evidence.
+- Round fail conditions: Missing contract review, missing runtime evidence plan, smoke-only critical scenario evidence, repeated failure class without retry strategy, or stale verification.
+- Contract revision required: no
+- Review notes:
 
 ## Policy Anchors
 - Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
@@ -253,6 +274,8 @@ ${renderSourcePlanSnapshot(phaseDoc)}
 ${requiredCommands}
 
 ### Runtime Flow
+- Runtime evidence depth: pending
+- Critical SCN-* minimum: open -> act -> mutate -> persist -> recover
 - Fill before runtime verification.
 
 ### Artifacts
@@ -301,6 +324,18 @@ ${requiredCommands}
 - Review owners: codex-review-code
 - Review-driven code changes:
 
+## Contract Review Evidence
+- Contract reviewed by evaluator: no
+- Verification owner: completion-verifier
+- Runtime evidence plan: pending
+- Round fail conditions: missing contract review or runtime evidence plan keeps this phase in retry_loop
+- Contract revision required: no
+
+## Failure Loop
+- Retry strategy: same_direction_refine
+- Delta hypothesis: first attempt pending
+- Repeated failure policy: if the same failure class repeats twice, choose partial_redesign or stop_and_handoff before another attempt
+
 ## Criteria Review
 | Criterion | Result | Notes |
 |-----------|--------|-------|
@@ -322,11 +357,18 @@ ${requiredCommands}
 - Seeded at: ${new Date().toISOString().replace('T', ' ').slice(0, 19)}
 - Verification verdict file: .claude/verification-verdict-phase${paths.phasePrefix}-final.json
 - Verification verdict: pending
+- Runtime evidence depth: pending
+- Critical scenario smoke-only warnings: none
 
 ## Workflow Execution
 - Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, completion-verifier
 - Skipped skills: codex-review-code (review pending until the first meaningful implementation batch completes), code-simplifier (not evaluated yet), session-logger (clean completion path unless the phase stops without clean completion)
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: phase work uses the full cross-runtime harness by default
+- Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract
+- Model effort profile: ${modelEffortProfile}
 - Enforcement note: replace defaults when actual execution diverges
 
 ## Score Summary
@@ -493,7 +535,9 @@ Single isolated phase-attempt rules:
 - When verification runs, update QA_REPORT.md.
 - Update SCORECARD.md on every meaningful round using objective checklist status, current score, unmet items, and verdict.
 - Refresh SCORECARD.md again after verification or any remediation so progress is visible while the phase is still running.
-- Refresh the default values in the "Workflow Execution" section of QA_REPORT.md when actual execution diverges.
+- Refresh the default values in the "Workflow Execution", "Contract Review Evidence", and "Failure Loop" sections of QA_REPORT.md when actual execution diverges.
+- For critical SCN-* scenarios, smoke-only evidence is a warning and cannot justify clean finish; record open -> act -> mutate -> persist -> recover evidence or keep the phase open.
+- If the same failure class repeats twice, set Retry strategy to partial_redesign or stop_and_handoff before the next attempt.
 - Before any clean-finish claim, run \`.claude/scripts/verify-plan-conformance.mjs\` against the active phase artifacts and record the result in QA_REPORT.md Plan Conformance Review and SCORECARD.md OBJ-CONFORM.
 - If implementation differs from the source phase plan, use \`retry_loop\` unless the user explicitly approved a replan and the phase doc or Spec Deviation Ledger records that approval.
 - In QA_REPORT.md, use only these closeout reason codes: \`scope_complete\`, \`verification_failed\`, \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.

@@ -32,8 +32,18 @@
 - Root-cause evidence:
 - Attempted fixes:
 - Same failure class count:
+- Retry strategy: same_direction_refine | partial_redesign | stop_and_handoff
+- Delta hypothesis:
+- Repeated failure policy:
 - Next tactic:
 - Escalation needed: yes | no
+
+## Contract Review Evidence
+- Contract reviewed by evaluator: yes | no | skipped_simple
+- Verification owner:
+- Runtime evidence plan:
+- Round fail conditions:
+- Contract revision required: yes | no
 
 ## Criteria Review
 | Criterion | Result | Notes |
@@ -64,6 +74,16 @@ Use when the task changes harness, workflow docs, skill metadata, or public entr
 | Internal and optional bundle members are not advertised as default workflow entrypoints | pass/fail/warn |  |
 | Stage map remains complete | pass/fail/warn |  |
 
+## Workflow Execution
+- Selected bundles:
+- Applied skills:
+- Skipped skills:
+- Selected harness components:
+- Skipped harness components:
+- Selection reason:
+- Runtime isolation:
+- Model effort profile: economy | standard | deep | max
+
 ## Uncovered Items
 | ID | Type | Gap | Next Action |
 |----|------|-----|-------------|
@@ -81,6 +101,8 @@ Use when the task changes harness, workflow docs, skill metadata, or public entr
 ## Evidence
 - Commands run:
 - Runtime flow exercised:
+- Runtime evidence depth: smoke | open-act-mutate-persist-recover
+- Critical scenario smoke-only warning:
 - Logs/screenshots/artifacts:
 - Scorecard artifact:
 - Requirements traceability artifact:

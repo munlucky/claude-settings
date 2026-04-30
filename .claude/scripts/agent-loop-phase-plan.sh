@@ -57,9 +57,11 @@ ensure_execution_artifacts() {
     local phase_prefix
     local phase_slug
     local required_commands
+    local model_effort_profile
 
     assign_execution_artifact_paths "$phase_num" "$phase_title"
     required_commands="$(render_required_verification_commands)"
+    model_effort_profile="${PHASE_DISPATCH_EFFORT_PROFILE:-${MOONSHOT_EFFORT_PROFILE:-deep}}"
 
     mkdir -p "$PHASE_EXECUTION_DIR"
 
@@ -88,9 +90,24 @@ ensure_execution_artifacts() {
 - Verify
 - Finish / Handoff
 
+## Harness Selection
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: phase work uses the full cross-runtime harness by default.
+- Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract.
+- Model effort profile: ${model_effort_profile}
+
 ## Planned Changes
 - Files/modules:
 - Interfaces/contracts:
+
+## Contract Review
+- Contract reviewed by evaluator: no
+- Verification owner: completion-verifier
+- Runtime evidence plan: Define before implementation. Critical SCN-* scenarios require open -> act -> mutate -> persist -> recover evidence.
+- Round fail conditions: Missing contract review, missing runtime evidence plan, smoke-only critical scenario evidence, repeated failure class without retry strategy, or stale verification.
+- Contract revision required: no
+- Review notes:
 
 ## Policy Anchors
 - Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
@@ -119,6 +136,8 @@ ensure_execution_artifacts() {
 ${required_commands}
 
 ### Runtime Flow
+- Runtime evidence depth: pending
+- Critical SCN-* minimum: open -> act -> mutate -> persist -> recover
 - Fill before runtime verification.
 
 ### Artifacts
@@ -165,6 +184,18 @@ EOF
 - Review owners: codex-review-code
 - Review-driven code changes:
 
+## Contract Review Evidence
+- Contract reviewed by evaluator: no
+- Verification owner: completion-verifier
+- Runtime evidence plan: pending
+- Round fail conditions: missing contract review or runtime evidence plan keeps this phase in retry_loop
+- Contract revision required: no
+
+## Failure Loop
+- Retry strategy: same_direction_refine
+- Delta hypothesis: first attempt pending
+- Repeated failure policy: if the same failure class repeats twice, choose partial_redesign or stop_and_handoff before another attempt
+
 ## Criteria Review
 | Criterion | Result | Notes |
 |-----------|--------|-------|
@@ -179,11 +210,18 @@ EOF
 - Seeded at: $(date '+%Y-%m-%d %H:%M:%S')
 - Verification verdict file: .claude/verification-verdict-phase${phase_prefix}-final.json
 - Verification verdict: pending
+- Runtime evidence depth: pending
+- Critical scenario smoke-only warnings: none
 
 ## Workflow Execution
 - Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, completion-verifier
 - Skipped skills: codex-review-code (review pending until the first meaningful implementation batch completes), code-simplifier (not evaluated yet), session-logger (clean completion path unless the phase stops without clean completion)
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: phase work uses the full cross-runtime harness by default
+- Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract
+- Model effort profile: ${model_effort_profile}
 - Enforcement note: replace defaults when actual execution diverges
 
 ## Score Summary

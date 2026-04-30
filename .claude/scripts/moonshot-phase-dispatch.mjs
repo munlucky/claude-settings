@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runCommand } from './lib/process-utils.mjs';
+import { resolveCodexReasoningEffort, resolveEffortProfile } from './lib/effort-profile.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
@@ -26,7 +27,12 @@ const state = {
   stopOnFailure: true,
   autonomous: false,
   dryRun: false,
-  codexReasoningEffort: process.env.PHASE_DISPATCH_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT ?? 'medium',
+  effortProfile: resolveEffortProfile(process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE, 'deep'),
+  codexReasoningEffort: resolveCodexReasoningEffort({
+    explicitEffort: process.env.PHASE_DISPATCH_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
+    profile: process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+    defaultProfile: 'deep',
+  }),
   allowInteractiveInSession: (process.env.PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION ?? 'false') === 'true',
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
   parallelWorktrees: Number.parseInt(process.env.PHASE_PARALLEL_WORKTREES ?? '1', 10) || 1,

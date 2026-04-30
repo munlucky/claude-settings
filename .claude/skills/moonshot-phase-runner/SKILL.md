@@ -38,6 +38,13 @@ Execution modes:
 - `delegated-terminal`: use the concrete autonomous loop backed by `agent-loop.mjs`; prefer this when the user expects uninterrupted end-to-end execution
 - `in-session-coordinator`: the current session coordinates the loop, but each attempt must run as a fresh fork/sub-agent round; treat this as an interactive thin-coordinator mode, not the default autonomous runtime
 
+Effort profile policy:
+- Default phase, agentic, review, and high-risk work to `deep`.
+- Use `economy` only for parity smoke or narrow read-only checks.
+- Use `standard` for simple/local bounded work.
+- Use `max` only for exceptional hard long-horizon work.
+- Codex maps the profile to `model_reasoning_effort`; Claude Code records the profile in contracts and prompts when no runtime flag is available.
+
 Execution start policy:
 - default: auto-start execution immediately after preparation
 - `--prepare-only`: stop after seeding state and return prepared execution metadata without executing it
@@ -212,12 +219,14 @@ Rules:
 - `SPRINT_CONTRACT.md` is seeded from the phase title and document path
 - seed artifacts from the execution templates under `.claude/templates/execution/`
 - `SPRINT_CONTRACT.md` must carry `Policy Anchors` for always-loaded rules, the active workspace contract, the verification contract, and any phase-specific guides required for the round
+- `SPRINT_CONTRACT.md` must carry `Harness Selection` and `Contract Review` fields before implementation begins
 - `SPRINT_CONTRACT.md` should also declare the expected downstream stage order, review cadence, and finish/handoff exit rule for the round
 - `QA_REPORT.md` and `HANDOFF.md` start as placeholders and are updated during execution
 - `SCORECARD.md` starts with objective weighted checks and controls whether the loop may declare the phase done
 - `SCORECARD.md` should be seeded from a scorecard profile: `generic`, `saas`, `api-backend`, `frontend`, or `platform`
 - when traceability artifacts already exist, rebalance only the combined `REQ + SCN` budget from detected `REQ-*` / `SCN-*` counts before the first attempt
 - `QA_REPORT.md` should make the next path explicit: clean finish, retry loop, or resume-later handoff
+- `QA_REPORT.md` should record runtime evidence depth and retry strategy when verification fails
 - `HANDOFF.md` should record which review/verification checks must be rerun before closeout
 - `SCORECARD.md` should keep `retry` as the default verdict until the objective target score is met
 - do not overwrite an existing artifact that already contains work
@@ -289,6 +298,8 @@ Coordinator rules:
 - Each round must execute as a fresh fork/sub-agent attempt.
 - Merge back summaries only: verdict, changed files, failed checks, next action.
 - Do not treat a phase as cleanly complete until review, verification, and finish-stage closeout are all satisfied.
+- Do not treat a critical `SCN-*` as cleanly evidenced by smoke-only browser/runtime checks; clean finish requires `open -> act -> mutate -> persist -> recover` or equivalent runtime evidence.
+- If the same failure class repeats twice, the next attempt must choose `partial_redesign` or `stop_and_handoff`, not another unqualified same-direction retry.
 - Do not stop a round only because a checkpoint produced evidence or docs were refreshed; if in-scope work remains and no real stop condition exists, continue execution.
 - If the round does not finish cleanly, update `QA_REPORT.md` and `HANDOFF.md` before the next attempt.
 

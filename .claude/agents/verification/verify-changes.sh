@@ -348,6 +348,11 @@ load_workflow_evidence_context() {
   WORKFLOW_STAGE_ORDER_LINES=""
   WORKFLOW_APPLIED_SKILLS_LINES=""
   WORKFLOW_SKIPPED_SKILLS_LINES=""
+  WORKFLOW_SELECTED_HARNESS_COMPONENTS_LINES=""
+  WORKFLOW_SKIPPED_HARNESS_COMPONENTS_LINES=""
+  WORKFLOW_SELECTION_REASON=""
+  WORKFLOW_RUNTIME_ISOLATION=""
+  WORKFLOW_MODEL_EFFORT_PROFILE=""
   WORKFLOW_EVIDENCE_WARNINGS_LINES=""
 
   if [ ! -f "$analysis_file" ]; then
@@ -443,6 +448,11 @@ required = as_list(workflow.get("requiredSkills"))
 stage_order = as_list(workflow.get("stageOrder"))
 applied = as_list(workflow.get("appliedSkills"))
 skipped = as_list(workflow.get("skippedSkills"))
+selected_harness_components = as_list(workflow.get("selectedHarnessComponents"))
+skipped_harness_components = as_list(workflow.get("skippedHarnessComponents"))
+selection_reason = str(workflow.get("selectionReason", ""))
+runtime_isolation = str(workflow.get("runtimeIsolation", ""))
+model_effort_profile = str(workflow.get("modelEffortProfile", ""))
 changed_files = [line for line in os.environ.get("CHANGED_FILES_LINES", "").splitlines() if line]
 code_suffixes = {
     ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs",
@@ -474,6 +484,11 @@ print("WORKFLOW_REQUIRED_SKILLS=(" + " ".join(shlex.quote(item) for item in requ
 print("WORKFLOW_STAGE_ORDER=(" + " ".join(shlex.quote(item) for item in stage_order) + ")")
 print("WORKFLOW_APPLIED_SKILLS=(" + " ".join(shlex.quote(item) for item in applied) + ")")
 print("WORKFLOW_SKIPPED_SKILLS=(" + " ".join(shlex.quote(item) for item in skipped) + ")")
+print("WORKFLOW_SELECTED_HARNESS_COMPONENTS=(" + " ".join(shlex.quote(item) for item in selected_harness_components) + ")")
+print("WORKFLOW_SKIPPED_HARNESS_COMPONENTS=(" + " ".join(shlex.quote(item) for item in skipped_harness_components) + ")")
+emit("WORKFLOW_SELECTION_REASON", selection_reason)
+emit("WORKFLOW_RUNTIME_ISOLATION", runtime_isolation)
+emit("WORKFLOW_MODEL_EFFORT_PROFILE", model_effort_profile)
 print("WORKFLOW_EVIDENCE_WARNINGS=(" + " ".join(shlex.quote(item) for item in warnings) + ")")
 PY
 )"
@@ -533,6 +548,11 @@ write_verdict_json() {
   WORKFLOW_STAGE_ORDER_LINES="$(join_lines "${WORKFLOW_STAGE_ORDER[@]}")" \
   WORKFLOW_APPLIED_SKILLS_LINES="$(join_lines "${WORKFLOW_APPLIED_SKILLS[@]}")" \
   WORKFLOW_SKIPPED_SKILLS_LINES="$(join_lines "${WORKFLOW_SKIPPED_SKILLS[@]}")" \
+  WORKFLOW_SELECTED_HARNESS_COMPONENTS_LINES="$(join_lines "${WORKFLOW_SELECTED_HARNESS_COMPONENTS[@]}")" \
+  WORKFLOW_SKIPPED_HARNESS_COMPONENTS_LINES="$(join_lines "${WORKFLOW_SKIPPED_HARNESS_COMPONENTS[@]}")" \
+  WORKFLOW_SELECTION_REASON_VALUE="$WORKFLOW_SELECTION_REASON" \
+  WORKFLOW_RUNTIME_ISOLATION_VALUE="$WORKFLOW_RUNTIME_ISOLATION" \
+  WORKFLOW_MODEL_EFFORT_PROFILE_VALUE="$WORKFLOW_MODEL_EFFORT_PROFILE" \
   WORKFLOW_EVIDENCE_WARNINGS_VALUE="$(join_lines "${WORKFLOW_EVIDENCE_WARNINGS[@]}")" \
   python3 "$helper_script" > "$VERDICT_FILE"
 }
@@ -600,6 +620,11 @@ WORKFLOW_REQUIRED_SKILLS=()
 WORKFLOW_STAGE_ORDER=()
 WORKFLOW_APPLIED_SKILLS=()
 WORKFLOW_SKIPPED_SKILLS=()
+WORKFLOW_SELECTED_HARNESS_COMPONENTS=()
+WORKFLOW_SKIPPED_HARNESS_COMPONENTS=()
+WORKFLOW_SELECTION_REASON=""
+WORKFLOW_RUNTIME_ISOLATION=""
+WORKFLOW_MODEL_EFFORT_PROFILE=""
 WORKFLOW_EVIDENCE_WARNINGS=()
 
 collect_changed_files

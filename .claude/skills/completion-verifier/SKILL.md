@@ -58,8 +58,11 @@ Applicability rule:
   - `behavior_change` work should not receive a strong completion verdict without deterministic test or verifier evidence when the environment supports it
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
+- When `workflowEvidence` is present, require `selectedHarnessComponents`, `skippedHarnessComponents`, `selectionReason`, `runtimeIsolation`, and `modelEffortProfile` to be populated before a clean closeout claim.
+- For medium/complex/phase work, require contract review evidence (`contractReviewedByEvaluator: yes`) unless the task is explicitly simple/local and records the skip in `skippedHarnessComponents`.
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
 - In phase-plan runs, parse `## Critical Product Scenarios` from the source phase document and do not return a passing completion verdict while any `SCN-*` lacks passing evidence in `QA_REPORT.md`, linked evidence files, or verifier artifacts.
+- For critical `SCN-*`, smoke-only page-load evidence is a warning and does not support clean finish; require `open -> act -> mutate -> persist -> recover` or equivalent runtime/E2E evidence.
 - In score-based loops, do not return a passing completion verdict unless the score verdict is `done`.
 - Do not use success-by-implication language without fresh evidence. Forbidden examples include: `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification`.
 
@@ -124,7 +127,8 @@ Only when executable verification exists.
 5. Mark evidence fresh only when the current run produced contract-aligned success evidence or verdict artifacts
 6. Update `context.md` status column when appropriate
 7. Read the latest verifier verdict artifact and capture `workflowEvidence.selectedBundles`, `workflowEvidence.stageOrder`, and `workflowEvidence.warnings` when present
-8. Capture evidence provenance for every completion-relevant claim:
+8. Capture `workflowEvidence.selectedHarnessComponents`, `skippedHarnessComponents`, `selectionReason`, `runtimeIsolation`, and `modelEffortProfile` when present
+9. Capture evidence provenance for every completion-relevant claim:
    - command or verifier name
    - artifact path
    - whether it was produced in the current run
@@ -151,8 +155,9 @@ When traceability artifacts exist, reconcile them before any completion claim.
 3. Read `SCENARIO_MATRIX.md` and collect `SCN-*` rows for user-visible flows
 4. Also read `## Critical Product Scenarios` from the source phase document when present
 5. Require every critical `SCN-*` to have fresh runtime, browser, generated-artifact, or E2E evidence before clean finish
-6. Read `UAT_CHECKLIST.md` when present and distinguish `uatReady` from `uatComplete`
-7. Never infer `uatComplete` from automation alone
+6. Classify critical scenario runtime depth as `smoke` or `open-act-mutate-persist-recover`
+7. Read `UAT_CHECKLIST.md` when present and distinguish `uatReady` from `uatComplete`
+8. Never infer `uatComplete` from automation alone
 
 ## Step 1.5: Workflow Evidence Reconciliation
 
@@ -167,6 +172,8 @@ Use verifier artifact workflow evidence as the structured source of truth for re
   - `QA_REPORT.md` to say `Review completed: yes`
   - finish-closeout fields in `QA_REPORT.md` to be filled with concrete closeout content, not placeholders
   - clean-finish `HANDOFF.md` marker to replace any seeded placeholder when the phase actually closes
+  - contract review evidence to be present for medium/complex/phase work
+  - retry strategy evidence when the latest path was `retry_loop`
 - If `workflowEvidence.warnings` is not empty:
   - strict profile -> do not return `gateDecision: pass`
   - standard profile -> degrade to remediation or `pass_with_warning`, and surface the warnings in `QA_REPORT.md`
@@ -196,6 +203,13 @@ selfAuditResult:
     scenariosMissingEvidence: []
     uatReady: true | false
     uatComplete: true | false
+  runtimeEvidence:
+    criticalScenarioDepth: smoke | open-act-mutate-persist-recover | none
+    smokeOnlyCriticalScenarios: []
+  retryStrategy:
+    retryStrategy: same_direction_refine | partial_redesign | stop_and_handoff | none
+    deltaHypothesis: null
+    repeatedFailurePolicy: null
   boundaryCheck:
     neverDoViolations: []
     askFirstItems: []
@@ -239,6 +253,13 @@ completionStatus:
     scenariosMissingEvidence: []
     uatReady: true | false
     uatComplete: true | false
+  runtimeEvidence:
+    criticalScenarioDepth: smoke | open-act-mutate-persist-recover | none
+    smokeOnlyCriticalScenarios: []
+  retryStrategy:
+    retryStrategy: same_direction_refine | partial_redesign | stop_and_handoff | none
+    deltaHypothesis: null
+    repeatedFailurePolicy: null
   gateDecision: pass | failed | pass_with_warning
   total: 5
   passed: 4
@@ -280,6 +301,7 @@ Passing rule:
   - `score.blockingDefects == 0`
   - `traceability.uncoveredRequirements` is empty for in-scope `REQ-*`
   - `traceability.scenariosMissingEvidence` is empty for critical `SCN-*`
+  - `runtimeEvidence.smokeOnlyCriticalScenarios` is empty for critical `SCN-*`
   - `traceability.uatReady == true` for user-facing finish claims
 - Otherwise degrade to `failed` or `pass_with_warning`; never infer a full pass from self-audit alone.
 
@@ -289,9 +311,10 @@ When `verificationState: failed` and executable verification exists:
 1. Identify failed phase
 2. Add focused reproduction tests when practical
 3. Update `QA_REPORT.md` with failed criteria, reproduction notes, and next-round input
-4. Return to implementation with failure details
-5. Re-run verification
-6. Retry max 2 times
+4. Record `retryStrategy`, `deltaHypothesis`, and `repeatedFailurePolicy`; if the same failure class repeats twice, choose `partial_redesign` or `stop_and_handoff`
+5. Return to implementation with failure details
+6. Re-run verification
+7. Retry max 2 times
 
 ## Skip Conditions
 

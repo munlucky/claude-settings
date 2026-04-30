@@ -15,6 +15,7 @@ const PLAN_SUCCESS_STOP_REASON_CODES = new Set([
   'current-session-clean-finish',
   'success-return',
 ]);
+const RETRY_STRATEGIES = new Set(['same_direction_refine', 'partial_redesign', 'stop_and_handoff']);
 
 function usage() {
   console.log(`Usage:
@@ -189,6 +190,16 @@ function extractWorkflowSection(text) {
       result.applied = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Skipped skills:')) {
       result.skipped = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected harness components:')) {
+      result.selectedHarnessComponents = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Skipped harness components:')) {
+      result.skippedHarnessComponents = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selection reason:')) {
+      result.selectionReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Runtime isolation:')) {
+      result.runtimeIsolation = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Model effort profile:')) {
+      result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
     }
   }
   return result;
@@ -452,6 +463,20 @@ function recordDispatch(argv) {
       'verify',
       'finish/handoff',
     ],
+    selectedHarnessComponents: [
+      'phase-runner',
+      'contract',
+      'implementation',
+      'review',
+      'verification',
+      'finish',
+    ],
+    skippedHarnessComponents: [],
+    selectionReason: 'phase-based work uses the full cross-runtime harness by default',
+    runtimeIsolation: options.runtime === 'codex'
+      ? 'codex delegated-terminal; fresh review/verify attempts preferred'
+      : 'claude-code adapter; Task/fork review and verification preferred',
+    modelEffortProfile: process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'deep',
     notes: [
       'Large or phase-based work must enter through moonshot-phase-runner.',
       'Meaningful code changes require review evidence before verification and completion.',
@@ -483,6 +508,11 @@ function recordDispatch(argv) {
     stageOrder: payload.stageOrder,
     appliedSkills: [],
     skippedSkills: [],
+    selectedHarnessComponents: payload.selectedHarnessComponents,
+    skippedHarnessComponents: payload.skippedHarnessComponents,
+    selectionReason: payload.selectionReason,
+    runtimeIsolation: payload.runtimeIsolation,
+    modelEffortProfile: payload.modelEffortProfile,
     readiness: deriveReadinessState({
       planDir: options.planDir,
       statusFile: options.statusFile || STATUS_FILE_DEFAULT,
@@ -591,12 +621,36 @@ function recordBounded(argv) {
     'doc-auto-sync (not evaluated yet)',
     'session-logger (clean completion path)',
   ];
+  let selectedHarnessComponents = Array.isArray(existingWorkflow.selectedHarnessComponents) ? existingWorkflow.selectedHarnessComponents : [
+    'contract',
+    'implementation',
+    'review',
+    'verification',
+    'finish',
+  ];
+  let skippedHarnessComponents = Array.isArray(existingWorkflow.skippedHarnessComponents) ? existingWorkflow.skippedHarnessComponents : [
+    'phase-runner (bounded-direct path)',
+  ];
+  let selectionReason = typeof existingWorkflow.selectionReason === 'string' && existingWorkflow.selectionReason.trim()
+    ? existingWorkflow.selectionReason
+    : 'bounded-direct default requires contract, review, verification, and finish evidence';
+  let runtimeIsolation = typeof existingWorkflow.runtimeIsolation === 'string' && existingWorkflow.runtimeIsolation.trim()
+    ? existingWorkflow.runtimeIsolation
+    : 'runtime-adapter; isolated review/verify preferred, documented fallback allowed';
+  let modelEffortProfile = typeof existingWorkflow.modelEffortProfile === 'string' && existingWorkflow.modelEffortProfile.trim()
+    ? existingWorkflow.modelEffortProfile
+    : (process.env.WORKFLOW_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard');
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     const section = extractWorkflowSection(fs.readFileSync(qaReportPath, 'utf8'));
     if (section.selected) selectedBundles = parseListString(section.selected);
     if (section.applied) appliedSkills = parseListString(section.applied);
     if (section.skipped) skippedSkills = parseListString(section.skipped);
+    if (section.selectedHarnessComponents) selectedHarnessComponents = parseListString(section.selectedHarnessComponents);
+    if (section.skippedHarnessComponents) skippedHarnessComponents = parseListString(section.skippedHarnessComponents);
+    if (section.selectionReason) selectionReason = section.selectionReason;
+    if (section.runtimeIsolation) runtimeIsolation = section.runtimeIsolation;
+    if (section.modelEffortProfile) modelEffortProfile = section.modelEffortProfile;
   }
 
   const completionState = deriveCompletionStatusFromQaReport(qaReportPath);
@@ -624,6 +678,13 @@ function recordBounded(argv) {
     ...appliedSkills.map((item) => `    - ${yamlScalar(item)}`),
     '  skippedSkills:',
     ...skippedSkills.map((item) => `    - ${yamlScalar(item)}`),
+    '  selectedHarnessComponents:',
+    ...selectedHarnessComponents.map((item) => `    - ${yamlScalar(item)}`),
+    '  skippedHarnessComponents:',
+    ...skippedHarnessComponents.map((item) => `    - ${yamlScalar(item)}`),
+    `  selectionReason: ${yamlScalar(selectionReason)}`,
+    `  runtimeIsolation: ${yamlScalar(runtimeIsolation)}`,
+    `  modelEffortProfile: ${yamlScalar(modelEffortProfile)}`,
     '  evidenceFiles:',
     `    analysisContext: ${yamlScalar(analysisPath)}`,
     `    sprintContract: ${yamlScalar(sprintContractPath)}`,
@@ -675,6 +736,11 @@ function recordBounded(argv) {
     stageOrder,
     appliedSkills,
     skippedSkills,
+    selectedHarnessComponents,
+    skippedHarnessComponents,
+    selectionReason,
+    runtimeIsolation,
+    modelEffortProfile,
     readiness,
     completion: {
       state: completionState,
@@ -707,6 +773,11 @@ function recordBounded(argv) {
     stageOrder,
     appliedSkills,
     skippedSkills,
+    selectedHarnessComponents,
+    skippedHarnessComponents,
+    selectionReason,
+    runtimeIsolation,
+    modelEffortProfile,
     readiness,
     completion: {
       state: completionState,
@@ -756,9 +827,14 @@ function verifyEnforcement(argv) {
           violations.push(`dispatch evidence missing '${key}'`);
         }
       }
-      for (const key of ['selectedBundles', 'requiredSkills', 'stageOrder']) {
+      for (const key of ['selectedBundles', 'requiredSkills', 'stageOrder', 'selectedHarnessComponents']) {
         if (!Array.isArray(payload[key]) || payload[key].length === 0) {
           violations.push(`dispatch evidence missing non-empty '${key}'`);
+        }
+      }
+      for (const key of ['selectionReason', 'runtimeIsolation', 'modelEffortProfile']) {
+        if (typeof payload[key] !== 'string' || !payload[key].trim()) {
+          violations.push(`dispatch evidence missing '${key}'`);
         }
       }
       for (const bundle of ['review-bundle', 'verification-bundle', 'finish-bundle']) {
@@ -817,7 +893,16 @@ function verifyEnforcement(argv) {
         violations.push(`${qaReport}: missing '## Workflow Execution' section`);
         continue;
       }
-      for (const [key, label] of [['selected', 'Selected bundles'], ['applied', 'Applied skills'], ['skipped', 'Skipped skills']]) {
+      for (const [key, label] of [
+        ['selected', 'Selected bundles'],
+        ['applied', 'Applied skills'],
+        ['skipped', 'Skipped skills'],
+        ['selectedHarnessComponents', 'Selected harness components'],
+        ['skippedHarnessComponents', 'Skipped harness components'],
+        ['selectionReason', 'Selection reason'],
+        ['runtimeIsolation', 'Runtime isolation'],
+        ['modelEffortProfile', 'Model effort profile'],
+      ]) {
         if (!section[key]) {
           violations.push(`${qaReport}: '${label}' must be filled with evidence, not placeholder text`);
         }
@@ -843,6 +928,14 @@ function verifyEnforcement(argv) {
       const closeoutReason = extractBulletValue(text, '## Verdict', 'Closeout reason');
       const stopWhy = extractBulletValue(text, '## Finish Readiness', 'Why this round may stop now');
       const remainingScope = extractBulletValue(text, '## Finish Readiness', 'Remaining in-scope work');
+      const contractReviewed = extractBulletValue(text, '## Contract Review Evidence', 'Contract reviewed by evaluator').toLowerCase();
+      const runtimeEvidenceDepth = extractBulletValue(text, '## Runtime Updates', 'Runtime evidence depth').toLowerCase();
+      const smokeWarnings = extractBulletValue(text, '## Runtime Updates', 'Critical scenario smoke-only warnings').toLowerCase();
+      const retryStrategy = extractBulletValue(text, '## Failure Loop', 'Retry strategy');
+      const deltaHypothesis = extractBulletValue(text, '## Failure Loop', 'Delta hypothesis');
+      const repeatedFailurePolicy = extractBulletValue(text, '## Failure Loop', 'Repeated failure policy');
+      const hasCriticalScenario = /\bcritical\b/i.test(text) && /\bSCN-[A-Za-z0-9_.-]+\b/.test(text);
+      const hasRepeatedFailure = /same failure class.*\b2\b|\b2\b.*same failure class|repeats twice|반복.*2회/i.test(text);
       const closeoutFieldsPresent = Boolean(scopeStatus || nextPath || closeoutReason || stopWhy || remainingScope);
       if (closeoutFieldsPresent) {
         if (!['complete', 'partial'].includes(scopeStatus)) {
@@ -864,6 +957,15 @@ function verifyEnforcement(argv) {
           if (scopeStatus !== 'complete') violations.push(`${qaReport}: clean_finish requires Scope status = complete`);
           if (closeoutReason !== 'scope_complete') violations.push(`${qaReport}: clean_finish requires Closeout reason = scope_complete`);
           if (reviewCompleted !== 'yes') violations.push(`${qaReport}: clean_finish requires Review completed = yes`);
+          if (!['yes', 'skipped_simple'].includes(contractReviewed)) {
+            violations.push(`${qaReport}: clean_finish requires Contract Review Evidence with Contract reviewed by evaluator = yes or skipped_simple`);
+          }
+          if (hasCriticalScenario && runtimeEvidenceDepth !== 'open-act-mutate-persist-recover') {
+            violations.push(`${qaReport}: clean_finish for critical SCN-* requires Runtime evidence depth = open-act-mutate-persist-recover`);
+          }
+          if (hasCriticalScenario && smokeWarnings && !['none', 'no', 'n/a'].includes(smokeWarnings)) {
+            violations.push(`${qaReport}: clean_finish is blocked while critical scenario smoke-only warnings are present`);
+          }
           requireTraceabilityArtifacts({ qaReport, violations });
           if (codeChangeDetected && !applied.includes('codex-review-code')) {
             violations.push(`${qaReport}: clean_finish on code-changing work requires codex-review-code in Applied skills`);
@@ -873,6 +975,18 @@ function verifyEnforcement(argv) {
           }
         } else if (nextPath === 'retry_loop') {
           if (closeoutReason !== 'verification_failed') violations.push(`${qaReport}: retry_loop requires Closeout reason = verification_failed`);
+          if (!RETRY_STRATEGIES.has(retryStrategy)) {
+            violations.push(`${qaReport}: retry_loop requires Retry strategy = same_direction_refine, partial_redesign, or stop_and_handoff`);
+          }
+          if (!deltaHypothesis) {
+            violations.push(`${qaReport}: retry_loop requires Delta hypothesis to be filled`);
+          }
+          if (!repeatedFailurePolicy) {
+            violations.push(`${qaReport}: retry_loop requires Repeated failure policy to be filled`);
+          }
+          if (hasRepeatedFailure && retryStrategy === 'same_direction_refine') {
+            violations.push(`${qaReport}: repeated failure class requires Retry strategy = partial_redesign or stop_and_handoff`);
+          }
         } else if (nextPath === 'resume_later_handoff' && !['blocked', 'interrupted', 'context_limit', 'user_pause', 'deferred_verification'].includes(closeoutReason)) {
           violations.push(`${qaReport}: resume_later_handoff requires a real stop reason, not scope_complete or verification_failed`);
         }
@@ -978,11 +1092,19 @@ function verifyEnforcement(argv) {
       const stageOrder = Array.isArray(workflow.stageOrder) ? workflow.stageOrder : [];
       const applied = Array.isArray(workflow.appliedSkills) ? workflow.appliedSkills : [];
       const skipped = Array.isArray(workflow.skippedSkills) ? workflow.skippedSkills : [];
+      const selectedHarnessComponents = Array.isArray(workflow.selectedHarnessComponents) ? workflow.selectedHarnessComponents : [];
       if (selected.length === 0) violations.push(`${analysisFile}: workflowEvidence.selectedBundles must be non-empty`);
       if (required.length === 0) violations.push(`${analysisFile}: workflowEvidence.requiredSkills must be non-empty`);
       if (stageOrder.length === 0) violations.push(`${analysisFile}: workflowEvidence.stageOrder must be non-empty`);
       if (applied.length === 0) violations.push(`${analysisFile}: workflowEvidence.appliedSkills must be non-empty`);
       if (skipped.length === 0) violations.push(`${analysisFile}: workflowEvidence.skippedSkills must be non-empty`);
+      if (selectedHarnessComponents.length === 0) violations.push(`${analysisFile}: workflowEvidence.selectedHarnessComponents must be non-empty`);
+      if (!Array.isArray(workflow.skippedHarnessComponents)) violations.push(`${analysisFile}: workflowEvidence.skippedHarnessComponents must be present`);
+      for (const key of ['selectionReason', 'runtimeIsolation', 'modelEffortProfile']) {
+        if (typeof workflow[key] !== 'string' || !workflow[key].trim()) {
+          violations.push(`${analysisFile}: workflowEvidence.${key} must be filled`);
+        }
+      }
       const appliedText = applied.join(' | ');
       const skippedText = skipped.join(' | ');
       if (codeChangeDetected && !selected.includes('review-bundle')) violations.push(`${analysisFile}: bounded direct code changes must select review-bundle`);

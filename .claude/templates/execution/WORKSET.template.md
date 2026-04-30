@@ -20,9 +20,23 @@
 
 - command:
 
+## Harness Runtime
+
+- selectedHarnessComponents:
+- skippedHarnessComponents:
+- selectionReason:
+- runtimeIsolation:
+- modelEffortProfile: economy | standard | deep | max
+
 ## Unresolved Risks
 
 - risk:
+
+## Retry Strategy
+
+- retryStrategy: same_direction_refine | partial_redesign | stop_and_handoff
+- deltaHypothesis:
+- repeatedFailurePolicy:
 
 ## Next Attempt Input
 

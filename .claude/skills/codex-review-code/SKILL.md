@@ -76,7 +76,9 @@ try {
 
 2. Summarize change scope, changed files, and key behaviors
 3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
-4. Build delegation prompt using the 7-section format below
+4. Build delegation prompt using the 7-section format below with two review stages:
+   - Stage A `coverage_findings`: surface every plausible issue, including low-severity or low-confidence items, each with confidence and severity
+   - Stage B `ranking_decision`: rank/deduplicate findings and produce the merge decision
 
 5. **If an isolated review path is available (from Step 1)**:
    - Call the isolated reviewer with the Code Reviewer instructions and minimal artifact-backed context
@@ -95,7 +97,7 @@ try {
    - Run the review in the current Codex session only as a degraded fallback
    - Add note: `"codex-fallback-in-session: review isolation unavailable"`
 
-8. Record critical issues, warnings, and suggestions
+8. Record coverage findings, ranked issues, warnings, and suggestions
 9. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Review Feedback Handling Protocol
@@ -128,7 +130,14 @@ CONSTRAINTS:
 - Technical stack: [languages, frameworks]
 
 MUST DO:
-- Prioritize: Correctness → Security → Performance → Maintainability
+- Stage A coverage-first finding:
+  * Report every plausible correctness, security, performance, maintainability, test, or user-visible behavior issue.
+  * Include low-severity and uncertain findings instead of silently dropping them.
+  * Attach `confidence` (`low|medium|high`) and `estimatedSeverity` (`critical|high|medium|low`) to each finding.
+  * Do not filter for importance in Stage A; downstream ranking handles filtering.
+- Stage B ranking:
+  * Prioritize: Correctness -> Security -> Performance -> Maintainability.
+  * Deduplicate findings and produce the final verdict.
 - **Security Checks (CRITICAL)**:
   * Hardcoded credentials (API keys, passwords, tokens)
   * SQL injection risks (string concatenation in queries)
@@ -149,7 +158,7 @@ MUST DO:
   * RSC serialization: passing entire objects instead of needed fields
   * Missing Suspense boundaries for async components
   Reference: `.claude/skills/vercel-react-best-practices/SKILL.md`
-- Focus on issues that matter, not style nitpicks
+- In Stage B, focus on issues that matter, not style nitpicks
 - Check logic/flow errors and edge cases
 - Validate type safety and error handling
 - Verify API contract and data model consistency
@@ -157,12 +166,13 @@ MUST DO:
 
 MUST NOT DO:
 - Nitpick style (let formatters handle this)
-- Flag theoretical concerns unlikely to matter
+- Drop plausible findings during Stage A only because they are uncertain or low severity
+- Promote theoretical concerns unlikely to matter above concrete defects during Stage B
 - Suggest changes outside the scope of modified files
 - Require a new abstraction only because code moved; require evidence of better locality, leverage, or testability
 
 OUTPUT FORMAT:
-Summary → Critical issues → Warnings → Recommendations → Verdict
+Summary -> Coverage findings -> Ranked issues -> Warnings -> Recommendations -> Verdict
 
 ## Approval Criteria (Fix Forward Policy)
 
@@ -239,6 +249,10 @@ fixForward:
       suggestion: "Extract coupon validation to separate function"
     # empty if no HIGH issues
 qaReport:
+  coverageFindings:
+    - finding: "Potential route shadowing on reorder endpoint"
+      confidence: low | medium | high
+      estimatedSeverity: critical | high | medium | low
   reviewFindingDecisions:
     - finding: "Route shadowing on reorder endpoint"
       decision: accepted | challenged | deferred | needs_clarification

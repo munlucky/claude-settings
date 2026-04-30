@@ -601,6 +601,11 @@ EOF
 - Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, completion-verifier
 - Skipped skills: code-simplifier (not evaluated yet), session-logger (clean completion path)
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: runtime parity fixture uses the full phase harness
+- Runtime isolation: isolated runtime parity fixture
+- Model effort profile: economy
 - Enforcement note: replace defaults when actual execution diverges
 
 ## Finish Readiness
@@ -755,6 +760,15 @@ workflowEvidence:
     - implementation-runner
   skippedSkills:
     - session-logger (clean completion path)
+  selectedHarnessComponents:
+    - implementation
+    - review
+    - verification
+  skippedHarnessComponents:
+    - phase-runner (bounded-direct fixture)
+  selectionReason: workflow enforcement sync fixture
+  runtimeIsolation: isolated fixture
+  modelEffortProfile: economy
 notes:
   - legacy sync fixture
 EOF
@@ -788,6 +802,11 @@ EOF
 - Selected bundles: analysis-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier, doc-auto-sync
 - Skipped skills: session-logger (clean completion path)
+- Selected harness components: contract, implementation, review, verification, finish
+- Skipped harness components: phase-runner (bounded direct fixture)
+- Selection reason: verifier fixture exercises bounded closeout evidence
+- Runtime isolation: isolated verifier fixture
+- Model effort profile: economy
 
 ## Finish Readiness
 - Fresh evidence confirmed: yes
@@ -869,6 +888,11 @@ EOF
 - Selected bundles: analysis-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
 - Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier, doc-auto-sync
 - Skipped skills: session-logger (clean completion path)
+- Selected harness components: contract, implementation, review, verification, finish
+- Skipped harness components: phase-runner (bounded-direct smoke)
+- Selection reason: workflow evidence smoke uses bounded direct full closeout path
+- Runtime isolation: isolated verifier fixture
+- Model effort profile: economy
 EOF
 
   cat > "$handoff" <<'EOF'
@@ -909,6 +933,10 @@ for bundle in ("review-bundle", "finish-bundle"):
         raise SystemExit(f"workflow evidence missing bundle: {bundle}")
 if "codex-review-code" not in workflow.get("requiredSkills", []):
     raise SystemExit("workflow evidence missing codex-review-code in requiredSkills")
+if "review" not in workflow.get("selectedHarnessComponents", []):
+    raise SystemExit("workflow evidence missing review harness component")
+if not workflow.get("modelEffortProfile"):
+    raise SystemExit("workflow evidence missing modelEffortProfile")
 if workflow.get("warnings"):
     raise SystemExit(f"unexpected workflow evidence warnings: {workflow.get('warnings')}")
 PY

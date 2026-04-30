@@ -48,6 +48,12 @@ artifacts:
   scenarioMatrix: ".claude/execution/SCENARIO_MATRIX.md"
   uatChecklist: ".claude/execution/UAT_CHECKLIST.md"
   teamMetrics: ".claude/team-metrics-<runId>.json"
+workflowEvidence:
+  selectedHarnessComponents: []
+  skippedHarnessComponents: []
+  selectionReason: ""
+  runtimeIsolation: ""
+  modelEffortProfile: "standard" # economy | standard | deep | max
 strict:
   required: false
   triggers:
@@ -144,9 +150,13 @@ loop:
 - Contracts may group checks into local `policySets` so the repository can enforce named governance bundles before any future enterprise policy-engine mapping exists.
 - Contracts may declare `scope` so required checks apply only to matching planes/paths; outside that scope, fallback to the active workspace contract or detection rules.
 - Completion criteria should be phrased as checks that can fail reproducibly, not vague quality claims.
+- Cross-runtime behavior should be controlled through shared contract fields rather than runtime-specific wording in user-facing docs.
+- `workflowEvidence` should include selected/skipped harness components, the selection reason, runtime isolation mode, and model effort profile.
+- Runtime-neutral effort profiles are `economy`, `standard`, `deep`, and `max`; Codex maps them to `model_reasoning_effort`, while Claude Code records the same profile when no direct effort flag exists.
 - For runtime-heavy or UI-heavy work, prefer a separate evaluator path over generator self-approval.
 - Browser/runtime checks should exercise real interactions, not only page-load screenshots.
 - `SPRINT_CONTRACT.md` should define the round-level done criteria before implementation starts.
+- Medium, complex, phase, high-risk, or runtime-heavy work should include evaluator contract review before implementation starts.
 - In document-trace downstream runs, treat `REQUIREMENTS_TRACEABILITY.md`, `SCENARIO_MATRIX.md`, and `UAT_CHECKLIST.md` as first-class execution artifacts.
 - `QA_REPORT.md` should become the next remediation input when verification fails.
 - In score-based loops, `SCORECARD.md` should be the objective completion artifact for the active slice.
@@ -165,6 +175,7 @@ loop:
 - A document-trace completion claim should additionally require:
   - all in-scope `REQ-*` rows to have implementation plus verification evidence
   - all critical `SCN-*` rows to have fresh runtime or E2E evidence
+  - critical `SCN-*` runtime evidence to be deeper than smoke-only when claiming clean finish
   - explicit distinction between `uat_ready` and `uat_complete`
 - For dual-runtime harnesses, add an explicit parity command that exercises both Claude and Codex adapter paths instead of leaving runtime parity as a QA note only.
 - If a required check triggers a verifier that runs inside another required check, add an explicit skip mechanism (for example `VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity`) so nested verification does not recurse into itself.
@@ -176,9 +187,14 @@ loop:
   - `retry` should remain the default score verdict
   - the loop should stop on failed phases by default instead of silently advancing
   - completion should require both passing verification evidence and a score verdict of `done`
+- Retry evidence should record `retryStrategy`, `deltaHypothesis`, and `repeatedFailurePolicy`; after two repeats of the same failure class, require `partial_redesign` or `stop_and_handoff`.
 - Team-based runs should record enough observability to compare topology decisions over time:
   - `selectedPattern`
   - `selectedTeam`
   - `selectionReason`
+  - `selectedHarnessComponents`
+  - `skippedHarnessComponents`
+  - `runtimeIsolation`
+  - `modelEffortProfile`
   - `retryCount`
   - `handoffCount`

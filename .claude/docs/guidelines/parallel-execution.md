@@ -40,6 +40,13 @@ Not allowed:
 3. Do not inline file content in orchestration notes.
 4. Return summarized outputs, then re-run required gates if code changed.
 
+## Cross-Runtime Evidence
+
+- Parallel decisions must record `selectedHarnessComponents`, `skippedHarnessComponents`, and `selectionReason` in workflow evidence.
+- Review/verify forks should record `runtimeIsolation` as `isolated`, `degraded-current-session`, or an equivalent adapter-specific phrase.
+- Effort profile is selected once per work unit and recorded as `modelEffortProfile`; parallel workers inherit it unless a workset explicitly overrides it.
+- Simple/local work may skip heavy harness components, but the skip reason must be explicit instead of inferred.
+
 ## Execution Script Logic
 ```bash
 # 1) Planning gate (sequential)
