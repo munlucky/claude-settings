@@ -86,11 +86,17 @@ attemptInput:
   worksetPath: "docs/implementation/execution/02-core-implementation/WORKSET.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
+  projectMemoryContext:
+    stage: "execute"
+    loaded: true
+    deltas: {}
 ```
 
 Rules:
 - Do not inline long phase documents into the main session.
 - Do not pass previous implementation chatter.
+- Before each fresh attempt, run or refresh `project-memory-agent` with `stage=execute`, `memoryMode=read_only`, then pass only summarized `projectMemoryContext`.
+- Exclude `.claude/docs/ko/` and duplicated system/developer/AGENTS/rules policy from attempt input.
 - Use `QA_REPORT.md` and `HANDOFF.md` as the only retry memory.
 - Use `SCORECARD.md` as the objective completion state for the phase.
 - Treat `SPRINT_CONTRACT.md` policy anchors and required verification commands as mandatory attempt input.

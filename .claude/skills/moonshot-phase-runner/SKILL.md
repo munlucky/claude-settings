@@ -32,6 +32,7 @@ Carry these rule files through `SPRINT_CONTRACT.md` policy anchors and phase-att
 - `.claude/rules/agents/agent-definition.md`
 - `.claude/rules/agents/agent-delegation.md`
 - `.claude/docs/guidelines/product-acceptance-gate.md`
+- `.claude/docs/guidelines/memorygraph-workflow.md`
 
 Execution modes:
 - `delegated-terminal`: use the concrete autonomous loop backed by `agent-loop.mjs`; prefer this when the user expects uninterrupted end-to-end execution
@@ -65,6 +66,13 @@ Review and finish gate rule:
 - Phase closeout requires master checklist, `phase-status.yaml`, archived phase document paths, execution artifacts, verifier verdicts, scorecards, and critical `SCN-*` evidence to agree.
 - If review or closeout evidence is missing, the run must stay inside the active plan-directory loop and remediate the missing steps instead of returning a summary.
 
+MemoryGraph stage rule:
+- Apply `.claude/docs/guidelines/memorygraph-workflow.md` across the phase run.
+- The runner owns Intake and Plan recall before it delegates to plan writing, plan review, or execution.
+- Each execution attempt must receive summarized `projectMemoryContext`; do not inline raw MemoryGraph records into phase docs or attempt input.
+- Exclude `.claude/docs/ko/` and omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy.
+- MemoryGraph unavailable -> record `boundaryStatus: not_checked` and continue unless a strict memory gate explicitly fails.
+
 ## Usage
 
 ```bash
@@ -89,6 +97,10 @@ Review and finish gate rule:
 ```
 /moonshot-phase-runner [<plan-dir>] [--autonomous] [--execution-mode <mode>] [--prepare-only]
     │
+    ├─ 0. MemoryGraph Intake Recall
+    │      └─ Run `project-memory-agent` with stage=intake/read_only
+    │         and merge only summarized `projectMemoryContext`
+    │
     ├─ 1. Plan Directory Resolution
     │      ├─ Reuse explicit `<plan-dir>` when provided
     │      ├─ Else reuse existing active plan directory if exactly one safe candidate exists
@@ -105,18 +117,18 @@ Review and finish gate rule:
     │         and placeholders for `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`
     │
     ├─ 5. Plan Review (unless --autonomous)
-    │      └─ Detect uncertainties → Q&A → planConfirmed: true
+    │      └─ Refresh MemoryGraph with stage=plan/read_only, then detect uncertainties → Q&A → planConfirmed: true
     │
     ├─ 6. Resolve Execution Mode
     │      ├─ delegated-terminal -> build dispatcher command
     │      └─ in-session-coordinator -> build fresh-attempt command
     │
     ├─ 7. Auto-Start Execution Skill (default)
-    │      └─ Execute `moonshot-phase-executor` in the current session
+    │      └─ Refresh MemoryGraph with stage=execute/read_only, then execute `moonshot-phase-executor` in the current session
     │         unless `--prepare-only` was requested
     │
     ├─ 8. Enforce Review / Finish Gates
-    │      └─ A phase may advance only after review evidence, completion evidence,
+    │      └─ A phase may advance only after MemoryGraph review, review evidence, completion evidence,
     │         acceptance evidence, and finish-closeout artifacts are consistent
     │
     └─ 9. Emit Handoff Summary

@@ -154,7 +154,11 @@ execution bridge 사용 시:
 
 ## 메모리 연동 (선택)
 
-> MCP Memory 설정 시에만 활성화
+> MemoryGraph MCP 설정 시에만 활성화
+
+- Finish/Handoff 기록 전에 `project-memory-agent`를 `stage=finish`, `memoryMode=read_only`로 실행해 최신 context를 확인합니다.
+- 저장은 재사용 가능한 결정, correction, fix, 프로젝트별 convention에 한정하며 `memoryMode: write_requested`일 때만 수행합니다.
+- `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 소스로 사용하지 않습니다.
 
 | 이벤트 | 키 패턴 | 예시 |
 |--------|---------|------|

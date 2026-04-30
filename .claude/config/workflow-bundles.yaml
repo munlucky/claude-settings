@@ -4,9 +4,10 @@ purpose: "Canonical bundle routing registry for Moonshot orchestration and enfor
 bundleSelection:
   read_only:
     default:
-      bundleChain: []
+      bundleChain: [memory-intake-bundle]
     reviewRequested:
       bundleChain:
+        - memory-intake-bundle
         - review-bundle
   product_project:
     productDefinitionUpstream:
@@ -14,38 +15,39 @@ bundleSelection:
         productDefinitionRequest: true
         productPackageReady: false
       routeTo: product-orchestrator
-      bundleChain: []
+      bundleChain: [memory-intake-bundle]
     withProductPackage:
       simple:
-        bundleChain: [ready-isolate-bundle, implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
+        bundleChain: [memory-intake-bundle, ready-isolate-bundle, implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
       medium:
-        bundleChain: [ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+        bundleChain: [memory-intake-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
       complex:
-        bundleChain: [ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+        bundleChain: [memory-intake-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
     withoutProductPackage:
       simple:
-        bundleChain: [ready-isolate-bundle, planning-bundle, implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
+        bundleChain: [memory-intake-bundle, ready-isolate-bundle, planning-bundle, implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
       medium:
-        bundleChain: [ready-isolate-bundle, planning-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+        bundleChain: [memory-intake-bundle, ready-isolate-bundle, planning-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
       complex:
-        bundleChain: [ready-isolate-bundle, planning-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
+        bundleChain: [memory-intake-bundle, ready-isolate-bundle, planning-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle]
   meta_harness:
     simple:
-      bundleChain: [implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
+      bundleChain: [memory-intake-bundle, implementation-lite-bundle, review-bundle, verification-lite-bundle, finish-bundle]
     medium:
-      bundleChain: [meta-harness-bundle, review-bundle, verification-bundle, finish-bundle]
+      bundleChain: [memory-intake-bundle, meta-harness-bundle, review-bundle, verification-bundle, finish-bundle]
     complex:
-      bundleChain: [meta-harness-bundle, review-bundle, verification-bundle, finish-bundle]
+      bundleChain: [memory-intake-bundle, meta-harness-bundle, review-bundle, verification-bundle, finish-bundle]
 
 bundleExpansion:
+  memory-intake-bundle: [project-memory-agent]
   implementation-lite-bundle: [implementation-runner]
   ready-isolate-bundle: [pre-flight-check, project-contract-gate, context-readiness-gate, verification-contract-gate]
-  planning-bundle: [requirements-analyzer, context-builder, codex-validate-plan]
+  planning-bundle: [project-memory-agent, requirements-analyzer, context-builder, codex-validate-plan]
   implementation-bundle: [project-memory-check, karpathy-execution-gate, implementation-runner, code-simplifier]
-  verification-lite-bundle: [verify-changes.sh]
-  verification-bundle: [browser-verifier, completion-verifier]
-  review-bundle: [codex-review-code, security-reviewer, audit, web-design-guidelines]
-  finish-bundle: [doc-auto-sync, session-logger]
+  verification-lite-bundle: [project-memory-agent, verify-changes.sh]
+  verification-bundle: [project-memory-agent, browser-verifier, completion-verifier]
+  review-bundle: [codex-review-code, project-memory-reviewer, security-reviewer, audit, web-design-guidelines]
+  finish-bundle: [project-memory-agent, doc-auto-sync, session-logger]
   logging-bundle: [session-logger]
   meta-harness-bundle: [pre-flight-check, project-memory-check, karpathy-execution-gate, implementation-runner]
 
@@ -59,8 +61,9 @@ overlays:
     mutate: {}
 
 stageOrder:
-  default: [ready/isolate, execute, review, verify, finish/handoff]
+  default: [intake, plan, ready/isolate, execute, review, verify, finish/handoff]
   rules:
+    - "Run stage-scoped MemoryGraph recall before each non-trivial stage delegates work."
     - "Do not move finish-bundle ahead of the active review or verification verdict."
     - "Meaningful code changes must preserve review -> verify -> finish ordering."
 
@@ -98,3 +101,16 @@ parallelExecution:
     - "strict gate + guarded step"
     - "verification-evidence-gate + completion claims"
     - "completion-verifier + code-changing remediation"
+memoryGraph:
+  contract: ".claude/docs/guidelines/memorygraph-workflow.md"
+  defaultMode: read_only
+  writeAllowedOnlyIn:
+    - session-logger
+    - commit-moonshot
+  sourceExclusions:
+    - ".claude/docs/ko/"
+  dedupeAgainst:
+    - system
+    - developer
+    - AGENTS.md
+    - ".claude/rules/**"

@@ -16,9 +16,13 @@ Fork-based agent that loads project-specific memory from project-local MemoryGra
 Receive from orchestrator:
 ```yaml
 projectId: "{projectId}"       # from package.json name or directory
-changedFiles: []               # planned change files
+stage: "intake|plan|pre_implementation|implementation|review|verify|finish|commit"
+changedFiles: []               # planned or actual change files
+plannedActions: []             # optional summarized plan steps
 taskType: "{taskType}"         # feature/bugfix/refactor
 userRequest: "{summary}"       # brief task summary
+memoryMode: "read_only"        # read_only by default; write_requested only when explicitly routed
+dedupeAgainst: "system_harness_policy"
 ```
 
 ## Workflow
@@ -30,12 +34,18 @@ PROJECT_ID=$(cat package.json 2>/dev/null | jq -r '.name // empty' || basename $
 PROJECT_PATH=$(pwd -P)
 ```
 
-### 2. Search Project Memory
-Use MemoryGraph recall/search tools with project-local context:
+### 1.5 Source Boundaries
+- Use MemoryGraph records and canonical project policy/spec files as memory sources.
+- Do not read or summarize `.claude/docs/ko/` for MemoryGraph context. That directory is a human-facing Korean mirror, not an agent memory source.
+- Treat system, developer, `AGENTS.md`, `.claude/rules/**`, and workflow hard rules as higher-priority policy, not MemoryGraph content.
+- If a MemoryGraph result repeats higher-priority policy, omit it from `deltas` and report it under `omitted.duplicatedSystemRules`.
+
+### 2. Search Project Memory By Stage
+Use MemoryGraph recall/search tools with project-local context. Keep the query narrow to the current stage:
 
 ```
 recall_memories(
-  query="project boundaries conventions decisions ${PROJECT_ID}",
+  query="${stage} project boundaries conventions decisions ${PROJECT_ID}",
   limit=20,
   project_path="${PROJECT_PATH}"
 )
@@ -45,6 +55,13 @@ search_memories(
   limit=20
 )
 ```
+
+Stage focus:
+- `intake|plan`: domain terms, prior decisions, non-goals, architecture boundaries.
+- `pre_implementation|implementation`: boundary, convention, component, api, domain.
+- `review`: boundary, convention, changed-file component rules.
+- `verify|finish`: always-do, verification hints, release/closeout rules.
+- `commit`: boundary, commit rules, compact reusable facts from the current change.
 
 ### 3. Load Boundary Entities
 Use `search_memories` to load boundary memories:
@@ -61,6 +78,9 @@ Based on `changedFiles`, search for related entities:
 
 ### 4.5 Store Compact Lessons When Needed
 When the orchestrator asks for memory update, use `store_memory` only for compact reusable facts:
+- Do not store facts derived only from `.claude/docs/ko/`.
+- Do not store system prompt, developer instruction, `AGENTS.md`, or common harness rules as project memory.
+- In normal stage preflight, do not write memory. Only write when `memoryMode: write_requested`.
 
 ```
 store_memory(
@@ -79,26 +99,27 @@ store_memory(
 ```yaml
 projectMemoryContext:
   projectId: "{projectId}"
+  stage: "{stage}"
   loaded: true
-  
-  boundaries:
-    alwaysDo:
-      - "Run lint before commit"
-      - "Ensure tests pass"
-    askFirst:
-      - "Adding new dependencies"
-      - "DB schema changes"
-    neverDo:
-      - "Commit .env files"
-      - "Delete existing tests"
-  
-  relevantRules:
-    - entity: "[proj]::Component::Button"
-      summary: "variant prop required, onClick handler rules"
-    - entity: "[proj]::Convention::API"
-      summary: "unified error response format"
-  
-  warnings: []  # any issues found during loading
+  backend: "MemoryGraph"
+  memoryMode: "read_only"
+  coveredStages: ["{stage}"]
+  boundaryStatus: "checked"
+  context:
+    project_path: "{projectPath}"
+    project_id: "{projectId}"
+    tags: ["project:{projectId}", "source:moonshot"]
+  deltas:
+    boundaries: []
+    conventions: []
+    componentRules: []
+    priorDecisions: []
+    verificationHints: []
+  omitted:
+    duplicatedSystemRules: []
+    humanMirrorDocs: [".claude/docs/ko/"]
+    staleOrLowConfidence: []
+  warnings: []
 ```
 
 ## Output
@@ -112,4 +133,6 @@ Return the `projectMemoryContext` object to be merged into `analysisContext.proj
 ## Contract
 - This agent runs in a forked session to prevent context pollution
 - Returns ONLY summarized context (not full memory contents)
+- Returns only project-specific deltas that can change the current stage
+- Marks which workflow stage(s) the recall covers so adjacent compressed stages do not blindly reuse stale memory
 - Main session receives clean, minimal context

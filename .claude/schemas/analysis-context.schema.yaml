@@ -120,13 +120,44 @@ defaults:
     contextMaxTokens: 8000
     warningThreshold: 0.8
   projectMemory:
+    backend: MemoryGraph
+    contractVersion: "memorygraph-workflow-v1"
     projectId: null
+    stage: null
+    lastStage: null
+    loaded: false
     boundaryStatus: "not_checked"
+    memoryMode: "read_only"
+    stageCoverage:
+      intake: not_checked
+      plan: not_checked
+      ready: not_checked
+      execute: not_checked
+      review: not_checked
+      verify: not_checked
+      finish: not_checked
+      commit: not_checked
+    context:
+      project_path: null
+      project_id: null
+      tags: []
     boundary:
       violations: []
       needsApproval: []
       reminders: []
+    deltas:
+      boundaries: []
+      conventions: []
+      componentRules: []
+      priorDecisions: []
+      verificationHints: []
+    omitted:
+      duplicatedSystemRules: []
+      humanMirrorDocs:
+        - ".claude/docs/ko/"
+      staleOrLowConfidence: []
     relatedConventions: []
+    lastFingerprint: null
     lastChecked: null
   workflowEvidence:
     mode: bounded-direct
@@ -192,3 +223,4 @@ workflowRules:
     - "Save final analysisContext to .claude/docs/moonshot-analysis.yaml."
     - "Keep workflowEvidence selectedBundles, requiredSkills, and stageOrder populated for code-changing bounded work."
     - "Keep readiness and completionModel aligned with the active execution artifacts."
+    - "Track MemoryGraph stageCoverage and omit duplicated system/developer/AGENTS/rules content from projectMemory deltas."

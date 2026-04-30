@@ -46,6 +46,8 @@ If `prepareOnly == true`:
 
 ### 2. Route by execution mode
 
+Before routing, confirm `phaseRunnerResult.projectMemoryContext` or `analysisContext.projectMemory` exists. If missing, run a read-only `project-memory-agent` recall with `stage=execute` and pass only the summarized context to the execution path.
+
 If `executionMode == delegated-terminal`:
 - call `phaseRunnerResult.executionCommand` immediately in the current session
 - forward runtime selection (`auto|claude|codex`)
@@ -90,6 +92,8 @@ phaseExecutionResult:
 ## Contract
 
 - This skill is the internal phase execution handoff behind `moonshot-phase-runner`.
+- Apply `.claude/docs/guidelines/memorygraph-workflow.md` before dispatching execution.
+- Do not pass raw MemoryGraph records to dispatcher/agent-loop/coordinator inputs; pass summarized `projectMemoryContext` only.
 - Scripts are implementation adapters only and must stay behind this skill.
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.
 - Do not ask the user to manually run `moonshot-phase-dispatch.mjs` in the default path.

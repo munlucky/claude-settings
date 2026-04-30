@@ -8,6 +8,7 @@ loads:
 deepReferences:
   - .claude/docs/guidelines/product-definition-workflow.md
   - .claude/docs/guidelines/requirements-traceability-harness.md
+  - .claude/docs/guidelines/memorygraph-workflow.ko.md
 outputArtifacts:
   - PRODUCT_INTENT.md
   - PRD.md
@@ -65,23 +66,30 @@ triggers:
 
 ## 워크플로우
 
+0. `project-memory-agent`를 `stage=intake`, `memoryMode=read_only`로 실행하고 요약된 `projectMemoryContext`만 병합
 1. `PRODUCT_INTENT.md` 생성 또는 갱신
-2. `PRODUCT_INTENT`에 대해 `product-gate-reviewer` 실행
-3. `PRODUCT_INTENT`에 대해 `plan-ceo-review` 실행
-4. `PRD.md` 생성 또는 갱신
-5. `PRD`에 대해 `product-gate-reviewer` 실행
-6. `PRD`에 대해 `plan-ceo-review` 실행
-7. `SOLUTION.md` 생성 또는 갱신
-8. `SOLUTION`에 대해 `product-gate-reviewer` 실행
-9. `SPEC.md`와 필요한 `ADR/*.md` 생성 또는 갱신
-10. `SPEC`에 대해 `product-gate-reviewer` 실행
-11. `SPEC`에 대해 `plan-eng-review` 실행
-12. `PLAN.md` 생성 또는 갱신
-13. `task-slicer`로 `tasks/*.md` 생성
-14. `PLAN`에 대해 `product-gate-reviewer` 실행
-15. `PLAN`에 대해 `plan-ceo-review` 실행
-16. `PLAN`에 대해 `plan-eng-review` 실행
-17. 결과 패키지를 `moonshot-orchestrator`로 핸드오프
+2. 각 reviewer/planning task를 넘기기 전에 직전 산출물이 scope, 용어, architecture를 바꿨다면 `project-memory-agent`를 `stage=plan`으로 갱신
+3. `PRODUCT_INTENT`에 대해 `product-gate-reviewer` 실행
+4. `PRODUCT_INTENT`에 대해 `plan-ceo-review` 실행
+5. `PRD.md` 생성 또는 갱신
+6. `PRD`에 대해 `product-gate-reviewer` 실행
+7. `PRD`에 대해 `plan-ceo-review` 실행
+8. `SOLUTION.md` 생성 또는 갱신
+9. `SOLUTION`에 대해 `product-gate-reviewer` 실행
+10. `SPEC.md`와 필요한 `ADR/*.md` 생성 또는 갱신
+11. `SPEC`에 대해 `product-gate-reviewer` 실행
+12. `SPEC`에 대해 `plan-eng-review` 실행
+13. `PLAN.md` 생성 또는 갱신
+14. `task-slicer`로 `tasks/*.md` 생성
+15. `PLAN`에 대해 `product-gate-reviewer` 실행
+16. `PLAN`에 대해 `plan-ceo-review` 실행
+17. `PLAN`에 대해 `plan-eng-review` 실행
+18. `projectMemoryContext`와 함께 `moonshot-orchestrator`로 handoff
+
+모든 단계:
+- `.claude/docs/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
+- `.claude/docs/ko/`를 MemoryGraph 소스로 사용하지 않습니다.
+- system/developer/AGENTS/rules 정책과 중복되는 MemoryGraph 결과는 병합하지 않습니다.
 
 모든 단계에서:
 - 모호함 때문에 멈추기 전에 `assumption-ledger`를 먼저 사용

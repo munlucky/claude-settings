@@ -38,6 +38,10 @@ PROJECT_ID=$(cat package.json 2>/dev/null | jq -r '.name // empty' || basename $
 git diff --cached --name-only
 ```
 
+메모리 소스 경계:
+- `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다.
+- MemoryGraph 현행화 중 이 경로를 메모리 소스로 읽거나, 이 경로에서만 나온 내용을 저장하지 않습니다.
+
 변경 파일에서 다음 정보 추출:
 - 컴포넌트 이름 (from paths like `src/components/Button.tsx`)
 - 도메인 영역 (from paths like `src/domains/user/`)
@@ -45,6 +49,9 @@ git diff --cached --name-only
 - 코딩 패턴 (반복되는 구조)
 
 ## 4. 3단계 경계 현행화
+
+MemoryGraph 호출은 `stage=commit`, `memoryMode=write_requested`로 수행합니다.
+system/developer/AGENTS/rules/workflow hard rule과 중복되는 항목은 저장하지 말고 `projectMemory.omitted.duplicatedSystemRules`에 기록합니다.
 
 ### 기존 경계 확인
 `recall_memories`와 `search_memories`로 `project:{PROJECT_ID}`, `boundary` 태그를 가진 메모리 검색
@@ -105,10 +112,10 @@ create_relationship(from_memory_id="{fromId}", to_memory_id="{toId}", relationsh
 **프로젝트**: {PROJECT_ID}
 
 **생성된 엔티티:**
-- [proj]::Component::NewComponent
+- `project:{PROJECT_ID}` / `component:NewComponent`
 
 **업데이트된 엔티티:**
-- [proj]::Component::Button (새 prop 추가됨)
+- `project:{PROJECT_ID}` / `component:Button` (새 prop 추가됨)
 
 **새 관계:**
 - Button → ThemeContext (uses)

@@ -73,11 +73,21 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
 
 정규 계약은 아래 canonical 파일에서 초기화합니다.
 - `.claude/schemas/analysis-context.schema.yaml`
+- `.claude/docs/guidelines/memorygraph-workflow.ko.md`
 
 bundle 선택 전에 최소로 확정해야 할 필드:
 - `request.userMessage`
 - `signals.executionPlane`
 - `signals.workflowProfile`
+
+## MemoryGraph 단계 계약
+
+- `project-memory-agent`는 fork/subagent로 실행하고 기본 `memoryMode`는 `read_only`입니다.
+- stage별 조회를 작업 위임 전에 수행합니다: `intake`는 classification/bundle 선택 전, `plan`은 계획 검증 전, `execute`는 구현 위임 전, `verify`는 최종 검증 전, `finish`는 handoff/logging 전.
+- `project-memory-check`는 첫 구현 전 check-only boundary gate입니다.
+- `project-memory-reviewer`는 `codex-review-code` 뒤에 실행합니다.
+- `.claude/docs/ko/`는 MemoryGraph 소스로 사용하지 않습니다.
+- system/developer/AGENTS/rules/workflow hard rule과 중복되는 MemoryGraph 항목은 `projectMemory.omitted.duplicatedSystemRules`에 기록하고 `deltas`에는 병합하지 않습니다.
 - `phase`
 - `complexity`
 - `decisions.bundleChain`

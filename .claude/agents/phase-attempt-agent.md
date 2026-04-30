@@ -32,6 +32,10 @@ attemptInput:
   scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
+  projectMemoryContext:
+    stage: "execute"
+    loaded: true
+    deltas: {}
 ```
 
 ## Workflow
@@ -47,6 +51,7 @@ Read only:
 
 Read the `Policy Anchors` section in `SPRINT_CONTRACT.md` first.
 For strict or `meta_harness` work, if policy anchors or required verification commands are missing, refresh the sprint contract before edits or return blocked instead of guessing.
+Read `projectMemoryContext` as summarized MemoryGraph deltas only. If it is missing, run `project-memory-agent` in read-only `stage=execute` mode before invoking `moonshot-orchestrator`.
 
 Codex rule references for this attempt:
 - `.claude/rules/basic-principles.md`
@@ -58,6 +63,7 @@ Codex rule references for this attempt:
 - `.claude/rules/agents/agent-delegation.md`
 
 Do not load previous coordinator chatter.
+Do not read `.claude/docs/ko/` as MemoryGraph context and do not pass raw MemoryGraph records forward.
 
 ### 2. Run orchestrator in phase attempt mode
 
@@ -67,6 +73,7 @@ Required constraints:
 - set `signals.phaseAttemptMode = true`
 - set `artifacts.activePhaseDocPath = {phaseDocPath}`
 - reuse the provided execution artifact paths
+- reuse the provided `projectMemoryContext` and update `analysisContext.projectMemory.stageCoverage.execute`
 - do not invoke `moonshot-phase-runner` again
 
 The attempt may:

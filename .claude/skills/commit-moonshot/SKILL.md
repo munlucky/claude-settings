@@ -22,7 +22,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 
 1. inspect staged changes with compact git commands
 2. derive `PROJECT_ID`
-3. refresh MemoryGraph memories with `context.project_path`, `context.project_id`, `project:<projectId>`, and `source:moonshot`
+3. refresh MemoryGraph memories with `stage=commit`, `memoryMode=write_requested`, `context.project_path`, `context.project_id`, `project:<projectId>`, and `source:moonshot`
 4. summarize created or updated memory facts in a short bullet list
 5. keep `.claude/memory.json` and `.claude/memorygraph/` unstaged unless the user explicitly asks to include memory
 6. stage docs and code only
@@ -31,6 +31,9 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 ## Hard rules
 
 - always refresh memory before commit
+- do not read `.claude/docs/ko/` as a memory source; it is a human-facing Korean mirror
+- do not store facts derived only from `.claude/docs/ko/`
+- do not store system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules as project memory; record duplicates under `projectMemory.omitted.duplicatedSystemRules`
 - never auto-stage `.claude/memory.json` or `.claude/memorygraph/` by default
 - only stage memory artifacts when the user explicitly asks to include memory in the commit
 - if MemoryGraph is unavailable, record the failure and continue the Git closeout when the user explicitly requested commit/push

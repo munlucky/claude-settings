@@ -41,6 +41,29 @@ Supplemental public utility entrypoints:
 - `session-logger`: explicit session or handoff logging on demand
 - `commit-moonshot`: explicit project-memory update plus commit flow
 
+## MemoryGraph Stage Contract
+
+All public workflow entrypoints must apply `.claude/docs/guidelines/memorygraph-workflow.md`.
+
+Default behavior:
+- run `project-memory-agent` in read-only mode during Intake before delegating planning, review, execution, or logging work
+- refresh stage-scoped `projectMemoryContext` before Plan, Execute, Verify, and Finish stages when the workflow is non-trivial
+- run `project-memory-check` before the first implementation step
+- run `project-memory-reviewer` after `codex-review-code`
+- store compact reusable facts only through `session-logger`, `commit-moonshot`, or an explicit memory-refresh request
+- exclude `.claude/docs/ko/` from MemoryGraph load/store paths
+
+Dedupe rule:
+- If MemoryGraph repeats system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules, omit the duplicate from `deltas` and record it under `projectMemory.omitted.duplicatedSystemRules`.
+
+### memory-intake-bundle
+Required first bundle for public workflow entrypoints unless the request is clearly self-contained and read-only.
+
+```yaml
+steps:
+  - project-memory-agent (stage=intake, read_only)
+```
+
 Do not present the following as primary user entrypoints:
 
 - `moonshot-phase-executor`
@@ -166,6 +189,7 @@ For medium, complex, or batch work, run review repeatedly at task or batch bound
 ```yaml
 steps:
   - codex-review-code
+  - project-memory-reviewer
   - security-reviewer (if hasSecurityChanges)
   - audit (if uiQualityAuditRequested)
   - web-design-guidelines (if explicit UI/UX review is requested)
@@ -177,6 +201,7 @@ Fresh verification evidence is mandatory before any completion claim.
 
 ```yaml
 steps:
+  - project-memory-agent (stage=verify, read_only)
   - browser-verifier (if webRuntimeCheckNeeded)
   - qa-flow (if guided runtime QA is requested)
   - completion-verifier
@@ -189,6 +214,7 @@ Finish is a decision stage: record evidence, handoff state, and optional commit 
 
 ```yaml
 steps:
+  - project-memory-agent (stage=finish, read_only)
   - doc-auto-sync
   - session-logger
   - commit-moonshot (if the user explicitly requests memory update plus commit)
@@ -242,6 +268,7 @@ Recovery rule:
 ### meta-harness-bundle
 ```yaml
 steps:
+  - project-memory-agent (stage=intake, read_only)
   - pre-flight-check
   - project-memory-check
   - karpathy-execution-gate

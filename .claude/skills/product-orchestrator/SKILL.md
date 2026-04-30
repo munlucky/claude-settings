@@ -9,6 +9,7 @@ deepReferences:
   - .claude/docs/guidelines/product-definition-workflow.md
   - .claude/docs/guidelines/requirements-traceability-harness.md
   - .claude/docs/guidelines/external-skill-pattern-transfer.md
+  - .claude/docs/guidelines/memorygraph-workflow.md
 outputArtifacts:
   - PRODUCT_INTENT.md
   - PRD.md
@@ -71,26 +72,31 @@ Planning artifacts should also record:
 
 ## Workflow
 
+0. Run `project-memory-agent` with `stage=intake`, `memoryMode=read_only`, and merge only summarized `projectMemoryContext`
 1. Create or refresh `PRODUCT_INTENT.md`
-2. Run `product-gate-reviewer` for `PRODUCT_INTENT`
-3. Run `plan-ceo-review` for `PRODUCT_INTENT`
-4. Create or refresh `PRD.md`
-5. Run `product-gate-reviewer` for `PRD`
-6. Run `plan-ceo-review` for `PRD`
-7. Create or refresh `SOLUTION.md`
-8. Run `product-gate-reviewer` for `SOLUTION`
-9. Create or refresh `SPEC.md` and any needed `ADR/*.md`
-10. Run `product-gate-reviewer` for `SPEC`
-11. Run `plan-eng-review` for `SPEC`
-12. Create or refresh `PLAN.md`
-13. Run `task-slicer` to generate `tasks/*.md`
-14. Run `product-gate-reviewer` for `PLAN`
-15. Run `plan-ceo-review` for `PLAN`
-16. Run `plan-eng-review` for `PLAN`
-17. Hand off the plan package to `moonshot-orchestrator`
+2. Before each reviewer/planning task, refresh `project-memory-agent` with the current stage (`plan`) when the prior output changed scope, terms, or architecture
+3. Run `product-gate-reviewer` for `PRODUCT_INTENT`
+4. Run `plan-ceo-review` for `PRODUCT_INTENT`
+5. Create or refresh `PRD.md`
+6. Run `product-gate-reviewer` for `PRD`
+7. Run `plan-ceo-review` for `PRD`
+8. Create or refresh `SOLUTION.md`
+9. Run `product-gate-reviewer` for `SOLUTION`
+10. Create or refresh `SPEC.md` and any needed `ADR/*.md`
+11. Run `product-gate-reviewer` for `SPEC`
+12. Run `plan-eng-review` for `SPEC`
+13. Create or refresh `PLAN.md`
+14. Run `task-slicer` to generate `tasks/*.md`
+15. Run `product-gate-reviewer` for `PLAN`
+16. Run `plan-ceo-review` for `PLAN`
+17. Run `plan-eng-review` for `PLAN`
+18. Hand off the plan package to `moonshot-orchestrator` with `projectMemoryContext`
 
 At every stage:
 - use `assumption-ledger` before stopping for ambiguity
+- apply `.claude/docs/guidelines/memorygraph-workflow.md`
+- do not use `.claude/docs/ko/` as a MemoryGraph source
+- omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy
 - stop only for true blockers
 - use max 2 rewrite retries after the first draft
 - prefer scope reduction over speculative expansion when value is weak or unclear

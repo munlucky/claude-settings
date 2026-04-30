@@ -29,6 +29,10 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
 - 안전하게 해소할 수 없는 충돌은 계획 문서에 의사결정 필요 항목으로 명시한다.
 
 ## 워크플로우
+0. `project-memory-agent`를 `stage=plan`, `memoryMode=read_only`로 실행하고 요약된 `projectMemoryContext`만 병합한다.
+   - 이전 결정, 도메인 용어, non-goal, architecture boundary를 planning delta로 사용한다.
+   - `.claude/docs/ko/`는 MemoryGraph 소스로 사용하지 않는다.
+   - system/developer/AGENTS/rules 정책과 중복되는 MemoryGraph 항목은 제외한다.
 1. 가용 기준 문서를 탐색한 뒤 로드한다.
    - 우선 `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md` 존재 여부를 확인한다.
    - 누락 시 `docs/`와 루트 `*.md`에서 PRD/SPEC/GDD 계열 요구사항 문서를 탐색한다.

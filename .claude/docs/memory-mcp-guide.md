@@ -89,8 +89,12 @@ domain:
 ## 운영 원칙
 
 - MemoryGraph 저장 실패는 기록하되 commit/push 자체를 block하지 않습니다.
+- 모든 공개 워크플로우 진입점은 `.claude/docs/guidelines/memorygraph-workflow.md`의 단계별 조회 계약을 적용합니다.
+- 기본 단계 모드는 read-only이며, 저장은 `session-logger`, `commit-moonshot`, 또는 명시적인 memory refresh 요청에서만 수행합니다.
+- MemoryGraph 결과가 system/developer/AGENTS/rules/workflow hard rule과 중복되면 `projectMemory.omitted.duplicatedSystemRules`에 기록하고 `deltas`에는 병합하지 않습니다.
 - `project-memory-check`와 `project-memory-reviewer`는 읽기 전용으로 동작합니다.
 - `session-logger`와 `commit-moonshot`만 compact reusable fact를 저장합니다.
+- `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 로드/요약/저장 소스로 사용하지 않습니다.
 - Claude Code plugin은 기본 도입 대상이 아닙니다. MCP server + wrapper + 하네스 지시문이 기본 운영 경로입니다.
 
 ## 참고 자료

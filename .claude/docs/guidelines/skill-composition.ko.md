@@ -39,6 +39,29 @@
 - `session-logger`: 세션 또는 HANDOFF 기록을 사용자가 직접 남기고 싶을 때
 - `commit-moonshot`: 프로젝트 메모리 현행화와 커밋을 함께 명시적으로 실행할 때
 
+## MemoryGraph 단계 계약
+
+모든 공개 workflow 진입점은 `.claude/docs/guidelines/memorygraph-workflow.ko.md` 계약을 적용해야 합니다.
+
+기본 동작:
+- Intake에서 다른 planning/review/execution/logging 작업을 넘기기 전에 `project-memory-agent`를 read-only로 실행합니다.
+- 비사소한 workflow는 Plan, Execute, Verify, Finish 단계 전에 stage-scoped `projectMemoryContext`를 갱신합니다.
+- 첫 구현 단계 전에는 `project-memory-check`를 실행합니다.
+- `codex-review-code` 뒤에는 `project-memory-reviewer`를 실행합니다.
+- compact reusable fact 저장은 `session-logger`, `commit-moonshot`, 또는 명시적인 memory refresh 요청에서만 허용합니다.
+- `.claude/docs/ko/`는 MemoryGraph 조회/저장 소스에서 제외합니다.
+
+중복 제거 규칙:
+- MemoryGraph 결과가 system, developer, `AGENTS.md`, `.claude/rules/**`, workflow hard rule을 반복하면 `deltas`에 병합하지 말고 `projectMemory.omitted.duplicatedSystemRules`에 기록합니다.
+
+### memory-intake-bundle
+요청이 명확히 self-contained read-only가 아닌 한 공개 workflow 진입점의 첫 bundle입니다.
+
+```yaml
+steps:
+  - project-memory-agent (stage=intake, read_only)
+```
+
 아래는 기본 사용자 진입점으로 제시하지 않습니다.
 
 - `moonshot-phase-executor`
@@ -164,6 +187,7 @@ medium/complex 또는 batch 작업에서는 마지막 한 번이 아니라 task/
 ```yaml
 steps:
   - codex-review-code
+  - project-memory-reviewer
   - security-reviewer (if hasSecurityChanges)
   - audit (if uiQualityAuditRequested)
   - web-design-guidelines (if explicit UI/UX review is requested)
@@ -175,6 +199,7 @@ steps:
 
 ```yaml
 steps:
+  - project-memory-agent (stage=verify, read_only)
   - browser-verifier (if webRuntimeCheckNeeded)
   - qa-flow (if guided runtime QA is requested)
   - completion-verifier
@@ -187,6 +212,7 @@ Finish는 느슨한 logging이 아니라 evidence, handoff state, optional commi
 
 ```yaml
 steps:
+  - project-memory-agent (stage=finish, read_only)
   - doc-auto-sync
   - session-logger
   - commit-moonshot (if the user explicitly requests memory update plus commit)
@@ -240,6 +266,7 @@ Recovery rule:
 ### meta-harness-bundle
 ```yaml
 steps:
+  - project-memory-agent (stage=intake, read_only)
   - pre-flight-check
   - project-memory-check
   - karpathy-execution-gate

@@ -86,11 +86,17 @@ attemptInput:
   worksetPath: "docs/implementation/execution/02-core-implementation/WORKSET.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
+  projectMemoryContext:
+    stage: "execute"
+    loaded: true
+    deltas: {}
 ```
 
 규칙:
 - 긴 phase 문서를 메인 세션에 인라인하지 않습니다.
 - 이전 구현 대화를 다시 넘기지 않습니다.
+- 각 fresh attempt 전에 `project-memory-agent`를 `stage=execute`, `memoryMode=read_only`로 실행 또는 갱신하고, 요약된 `projectMemoryContext`만 넘깁니다.
+- `.claude/docs/ko/`와 system/developer/AGENTS/rules 정책 중복 항목은 attempt input에서 제외합니다.
 - 재시도 메모리는 `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`만 사용합니다.
 - `SPRINT_CONTRACT.md`의 policy anchors와 필수 검증 명령은 attempt 입력의 필수 항목으로 취급합니다.
 - `SCORECARD.md`를 phase의 객관적인 완료 상태로 사용합니다.

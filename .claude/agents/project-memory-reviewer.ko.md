@@ -18,12 +18,18 @@ Fork 기반 에이전트로, 코드 변경사항을 프로젝트 메모리 규�
 projectId: "{projectId}"
 changedFiles: []                    # 변경된 파일 목록
 projectMemoryContext:               # project-memory-agent에서 받은 컨텍스트
-  boundaries: { ... }
-  relevantRules: [ ... ]
+  deltas:
+    boundaries: []
+    conventions: []
+    componentRules: []
 diff: "{git diff 요약}"              # 또는 diff 파일 경로
 ```
 
 ## 워크플로우
+
+### 0. 소스 경계
+MemoryGraph 리뷰 컨텍스트를 만들기 위해 `.claude/docs/ko/`를 읽지 않습니다. 이 경로는 사용자 열람용 한국어 미러이며, 검증은 MemoryGraph와 canonical 프로젝트 정책/스펙 소스를 기준으로 수행합니다.
+system, developer, `AGENTS.md`, `.claude/rules/**`, workflow hard rule을 반복하는 MemoryGraph 항목은 무시합니다.
 
 ### 1. 관련 메모리 재로드
 MemoryGraph 읽기 전용 도구로 변경 파일 관련 최신 규칙 확인:
@@ -65,7 +71,7 @@ check:
 ```
 
 ### 3. 규약 위반 검사
-로드된 규약과 변경사항 비교:
+`projectMemoryContext.deltas.conventions`와 stage-scoped 최신 규약을 변경사항과 비교:
 - 네이밍 규칙
 - 파일 구조 패턴
 - 에러 처리 패턴
@@ -82,27 +88,28 @@ check:
 ```yaml
 memoryReviewResult:
   status: "passed" | "failed" | "needs_approval"
+  stage: "review"
   
   violations:   # NeverDo 위반 (치명적)
-    - rule: "[proj]::Boundary::NeverDo"
+    - rule: "project:{projectId}:boundary:never-do"
       item: "기존 테스트 삭제"
       file: "src/components/Button.test.tsx"
       action: "halt"
   
   needsApproval:  # AskFirst 항목
-    - rule: "[proj]::Boundary::AskFirst"
+    - rule: "project:{projectId}:boundary:ask-first"
       item: "새 의존성 추가"
       detail: "axios 패키지가 dependencies에 추가됨"
       action: "ask_user"
   
   warnings:     # 규약/스펙 경고
-    - rule: "[proj]::Convention::Naming"
+    - rule: "project:{projectId}:convention:naming"
       item: "컴포넌트는 PascalCase 사용해야 함"
       file: "src/components/myButton.tsx"
       action: "warn"
   
   reminders:    # AlwaysDo 리마인더
-    - rule: "[proj]::Boundary::AlwaysDo"
+    - rule: "project:{projectId}:boundary:always-do"
       item: "커밋 전 npm run lint 실행"
   
   passed: true | false
@@ -129,5 +136,7 @@ return { status: "passed", action: "proceed" }
 ## 계약
 - 컨텍스트 오염 방지를 위해 fork 세션에서 실행
 - 전체 규칙 내용이 아닌 위반 요약만 반환
+- raw memory가 아닌 project-specific delta memory만 사용
 - NeverDo 위반은 반드시 실행 중단
 - AskFirst 항목은 진행 전 반드시 사용자 승인 필요
+- `analysisContext.projectMemory.stageCoverage.review`를 `checked`, `not_checked`, `skipped` 중 하나로 갱신

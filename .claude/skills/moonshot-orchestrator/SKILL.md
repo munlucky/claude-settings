@@ -157,12 +157,22 @@ Set `signals.executionPlane` before task classification:
 #### 2.0.4 Load Project Memory (Fork)
 
 > Run `project-memory-agent` as **fork subagent** to prevent context pollution.
+> Apply `.claude/docs/guidelines/memorygraph-workflow.md`; default mode is read-only and `.claude/docs/ko/` is excluded.
 
 ```
 Task tool: project-memory-agent (subagent_type: general-purpose)
-Input: { projectId, changedFiles, taskType, userRequest }
-Returns: { projectId, loaded, boundaries, relevantRules } -> merge into projectMemory
+Input: { projectId, stage, changedFiles, taskType, userRequest, memoryMode: "read_only" }
+Returns: projectMemoryContext -> merge into analysisContext.projectMemory
 ```
+
+Run stage-scoped recalls before delegating work:
+- `stage=intake`: before classification/bundle selection.
+- `stage=plan`: before requirements/context/plan validation tasks.
+- `stage=execute`: before implementation delegation; pass summarized deltas only.
+- `stage=verify`: before final verification.
+- `stage=finish`: before handoff/logging.
+
+Do not merge MemoryGraph entries that duplicate system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules; record them in `projectMemory.omitted.duplicatedSystemRules`.
 
 #### 2.0.6 Product package detection
 Before normal build planning, detect whether upstream product-definition artifacts already exist.
@@ -436,7 +446,7 @@ Run `decisions.skillChain` in order.
   - treat `attemptResult.status == completed` as valid only when the underlying verifier state is `passed`, `evidenceFresh == true`, and required checks are complete
 
 **Memory-step separation contract**:
-- `project-memory-agent`: load/update project memory context at phase 2.0.5
+- `project-memory-agent`: read-only MemoryGraph recall at each stage boundary; write only when `memoryMode: write_requested`
 - `project-memory-check`: pre-implementation boundary check (check-only, no memory mutation, use `.claude/agents/project-memory-check.md`)
 - `project-memory-reviewer`: post-review boundary compliance verification
 

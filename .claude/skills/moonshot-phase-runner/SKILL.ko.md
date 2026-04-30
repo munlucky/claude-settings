@@ -49,18 +49,26 @@ review / finish gate 규칙:
 - phase closeout 시 `HANDOFF.md`와 closeout 필드는 seeded/placeholder 상태로 남아 있으면 안 됩니다.
 - review 또는 closeout evidence가 비어 있으면 요약을 반환하지 말고, active plan-directory loop 안에서 빠진 단계를 보완해야 합니다.
 
+MemoryGraph 단계 규칙:
+- phase run 전체에 `.claude/docs/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
+- runner는 plan writing, plan review, execution 위임 전에 Intake/Plan 조회를 담당합니다.
+- 각 실행 attempt에는 요약된 `projectMemoryContext`만 전달하고 raw MemoryGraph record를 phase 문서나 attempt input에 inline하지 않습니다.
+- `.claude/docs/ko/`는 제외하고, system/developer/AGENTS/rules 정책과 중복되는 MemoryGraph 항목은 병합하지 않습니다.
+- MemoryGraph를 사용할 수 없으면 `boundaryStatus: not_checked`로 기록하고, strict memory gate가 명시적으로 실패한 경우가 아니면 계속 진행합니다.
+
 ## Workflow
 
 ```text
 /moonshot-phase-runner [<plan-dir>] [--autonomous] [--execution-mode <mode>] [--prepare-only]
+  0. MemoryGraph Intake 조회: `project-memory-agent(stage=intake, read_only)`
   1. Plan Directory 결정
   2. Plan Directory 검증
   3. phase-status.yaml 생성/업데이트
   4. execution bridge 아티팩트 시드
-  5. Plan Review
+  5. MemoryGraph Plan 조회 후 Plan Review
   6. 실행 모드 결정
-  7. 실행 스킬 자동 시작
-  8. review / finish gate 강제
+  7. MemoryGraph Execute 조회 후 실행 스킬 자동 시작
+  8. MemoryGraph review / review / finish gate 강제
   9. phaseRunnerResult 반환
 ```
 

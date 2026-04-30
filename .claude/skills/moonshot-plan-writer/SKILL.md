@@ -28,6 +28,10 @@ It is the main Plan-stage owner for phase documents.
 - If a conflict cannot be resolved safely, note it explicitly in the plan as an open decision.
 
 ## Workflow
+0. Run `project-memory-agent` with `stage=plan`, `memoryMode=read_only`, and merge only summarized `projectMemoryContext`.
+   - Use prior decisions, domain terms, non-goals, and architecture boundaries as planning deltas.
+   - Do not use `.claude/docs/ko/` as a MemoryGraph source.
+   - Omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy.
 1. Discover and load available source documents first.
    - Check preferred files first: `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md`.
    - If any are missing, scan `docs/` and root-level `*.md` for PRD/SPEC/GDD-like requirement sources.

@@ -18,12 +18,18 @@ Receive from orchestrator:
 projectId: "{projectId}"
 changedFiles: []                    # list of changed files
 projectMemoryContext:               # from project-memory-agent
-  boundaries: { ... }
-  relevantRules: [ ... ]
+  deltas:
+    boundaries: []
+    conventions: []
+    componentRules: []
 diff: "{git diff summary}"          # or file path to diff
 ```
 
 ## Workflow
+
+### 0. Source Boundaries
+Do not read `.claude/docs/ko/` for MemoryGraph review context. Treat it as a human-facing Korean mirror and validate against MemoryGraph plus canonical project policy/spec sources.
+Ignore MemoryGraph entries that merely repeat system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules.
 
 ### 1. Reload Relevant Memory
 Use MemoryGraph read-only tools to get latest rules for changed files:
@@ -65,7 +71,7 @@ check:
 ```
 
 ### 3. Check Convention Violations
-Compare changes against loaded conventions:
+Compare changes against `projectMemoryContext.deltas.conventions` and refreshed stage-scoped conventions:
 - Naming conventions
 - File structure patterns
 - Error handling patterns
@@ -82,27 +88,28 @@ For changed components, verify:
 ```yaml
 memoryReviewResult:
   status: "passed" | "failed" | "needs_approval"
+  stage: "review"
   
   violations:   # NeverDo violations (critical)
-    - rule: "[proj]::Boundary::NeverDo"
+    - rule: "project:{projectId}:boundary:never-do"
       item: "Delete existing tests"
       file: "src/components/Button.test.tsx"
       action: "halt"
   
   needsApproval:  # AskFirst items
-    - rule: "[proj]::Boundary::AskFirst"
+    - rule: "project:{projectId}:boundary:ask-first"
       item: "New dependency added"
       detail: "axios package added to dependencies"
       action: "ask_user"
   
   warnings:     # Convention/spec warnings
-    - rule: "[proj]::Convention::Naming"
+    - rule: "project:{projectId}:convention:naming"
       item: "Component should use PascalCase"
       file: "src/components/myButton.tsx"
       action: "warn"
   
   reminders:    # AlwaysDo reminders
-    - rule: "[proj]::Boundary::AlwaysDo"
+    - rule: "project:{projectId}:boundary:always-do"
       item: "Run npm run lint before commit"
   
   passed: true | false
@@ -129,5 +136,7 @@ return { status: "passed", action: "proceed" }
 ## Contract
 - Runs in forked session to prevent context pollution
 - Returns only violation summary, not full rule contents
+- Consumes only project-specific delta memory, never raw memory contents
 - NeverDo violations MUST halt execution
 - AskFirst items MUST get user approval before proceeding
+- Must update `analysisContext.projectMemory.stageCoverage.review` to `checked`, `not_checked`, or `skipped`.

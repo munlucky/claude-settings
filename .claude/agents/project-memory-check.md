@@ -20,12 +20,18 @@ projectId: "{projectId}"
 changedFiles: []                    # planned/expected changed files
 plannedActions: []                  # summarized plan steps
 projectMemoryContext:               # loaded by project-memory-agent
-  boundaries: { ... }
-  relevantRules: [ ... ]
+  deltas:
+    boundaries: []
+    conventions: []
+    componentRules: []
 userRequest: "{summary}"
 ```
 
 ## Workflow
+
+### 0. Source Boundaries
+Do not read `.claude/docs/ko/` while checking MemoryGraph rules. Korean mirror docs are for the user; use MemoryGraph and canonical project policy/spec sources instead.
+Ignore MemoryGraph entries that duplicate system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules.
 
 ### 1. Load latest boundary rules (read-only)
 Use MemoryGraph read-only tools to refresh:
@@ -63,13 +69,14 @@ check:
 ```
 
 ### 3. Validate plan-rule alignment
-Compare `plannedActions` and `changedFiles` with `relevantRules` and flag likely convention/spec mismatches before implementation starts.
+Compare `plannedActions` and `changedFiles` with `projectMemoryContext.deltas` and flag likely convention/spec mismatches before implementation starts.
 
 ### 4. Return structured check result
 
 ```yaml
 projectMemoryCheckResult:
   status: "passed" | "failed" | "needs_approval"
+  stage: "ready"
   boundaryStatus: "checked" | "not_checked" | "not_initialized"
   violations: []      # NeverDo violations (halt)
   needsApproval: []   # AskFirst items (ask user)
@@ -99,5 +106,7 @@ else:
 ## Contract
 - Runs in forked session to prevent context pollution.
 - Returns only summarized check results.
+- Consumes only delta memory context, never raw memory contents.
 - **Must not** write/update memory entities in this stage.
 - **Must not** mutate source code or project files in this stage.
+- **Must** update `analysisContext.projectMemory.stageCoverage.ready` to `checked`, `not_checked`, or `skipped`.
