@@ -140,6 +140,23 @@ changelog:
 
 ---
 
+### 6. MemoryGraph Seed 동기화
+
+코드 분석을 바탕으로 문서를 현행화했다면, 이후 MemoryGraph write가 같은 코드/문서 이해를 사용할 수 있도록 프로젝트 지식그래프 seed도 갱신합니다.
+
+```bash
+node .claude/scripts/memorygraph-project-index.mjs
+```
+
+규칙:
+- doc sync 중에는 seed/cache 파일만 생성합니다. 사용자가 memory refresh를 명시하지 않았다면 MemoryGraph에 쓰지 않습니다.
+- `.claude/docs/ko/`는 seed source에서 제외합니다.
+- 운영 중인 기존 프로젝트도 기본 `--analysis-level code`로 코드 수준 사실을 포함합니다.
+- 승격 후보 개수는 보고하되, 명시 승인 없이 `claude-settings`에 승격하지 않습니다.
+- `.claude/cache/memorygraph/`는 기본 스테이징 대상에서 제외합니다.
+
+---
+
 ## 출력 (patch)
 ```yaml
 notes:
@@ -164,6 +181,12 @@ docSync:
   projectMdChanges:
     - section: "stack"
       diff: "+stripe@14.0.0"
+  memoryGraphSeed:
+    path: ".claude/cache/memorygraph/project-graph-seed.json"
+    promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+    nodeCount: 0
+    relationshipCount: 0
+    promotionCandidateCount: 0
 ```
 
 ---

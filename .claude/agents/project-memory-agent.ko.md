@@ -76,6 +76,19 @@ search_memories(
 - `project:{projectId}`, `api`
 - `project:{projectId}`, `domain`
 
+### 4.2 관계 이웃 확장 조회
+`recall_memories` 또는 `search_memories`가 memory id를 반환하면 요약 전에 프로젝트 로컬 graph 관계를 따라 조회합니다.
+
+```
+get_related_memories(
+  memory_id="{memoryId}",
+  max_depth=1,
+  relationship_types=["DEPENDS_ON", "APPLIES_TO", "REQUIRES", "VALIDATED_BY", "RELATED_TO", "OCCURS_IN"]
+)
+```
+
+depth 2는 첫 hop에서 현재 계획/리뷰와 직접 관련된 component, convention, verification rule이 나온 경우에만 사용합니다. raw graph를 반환하지 말고 현재 단계 판단에 필요한 delta만 요약에 병합합니다.
+
 ### 4.5 필요한 경우 압축 교훈 저장
 오케스트레이터가 메모리 업데이트를 요청한 경우에만 `store_memory`로 재사용 가능한 짧은 사실을 저장:
 - `.claude/docs/ko/`에서만 나온 내용은 MemoryGraph에 저장하지 않습니다.
@@ -115,6 +128,7 @@ projectMemoryContext:
     componentRules: []
     priorDecisions: []
     verificationHints: []
+    graphRelations: []
   omitted:
     duplicatedSystemRules: []
     humanMirrorDocs: [".claude/docs/ko/"]

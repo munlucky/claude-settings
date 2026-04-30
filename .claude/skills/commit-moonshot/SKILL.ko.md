@@ -51,6 +51,7 @@ git diff --cached --name-only
 ## 4. 3단계 경계 현행화
 
 MemoryGraph 호출은 `stage=commit`, `memoryMode=write_requested`로 수행합니다.
+프로젝트에 `.claude/scripts/memorygraph-project-index.mjs`가 있으면 먼저 실행해 운영 중인 코드베이스의 파일/import/symbol/API route 수준 seed를 생성한 뒤 `project-memory-refresh`로 반영합니다.
 system/developer/AGENTS/rules/workflow hard rule과 중복되는 항목은 저장하지 말고 `projectMemory.omitted.duplicatedSystemRules`에 기록합니다.
 
 ### 기존 경계 확인
@@ -133,7 +134,7 @@ git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 ```
 
 ## 7.6 메모리 산출물 포함 여부 확인
-프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 `.claude/memory.json` 또는 `.claude/memorygraph/`를 이번 커밋에 포함할지 여부뿐입니다.
+프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`를 이번 커밋에 포함할지 여부뿐입니다.
 
 권장 질문:
 ```text
@@ -142,10 +143,11 @@ git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
 
 규칙:
 - `.claude/memory.json` 포함 여부와 무관하게 프로젝트 메모리 현행화 자체는 항상 먼저 완료하세요.
-- 사용자 확인 없이 `.claude/memory.json` 또는 `.claude/memorygraph/`를 자동으로 스테이징하지 마세요.
+- 사용자 확인 없이 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`를 자동으로 스테이징하지 마세요.
 - 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
 - 사용자가 제외하자고 하면 메모리 산출물은 unstaged 상태로 두고 나머지만 커밋하세요.
 - MemoryGraph 저장 실패는 기록하되, 사용자가 commit/push를 명시한 흐름에서는 Git closeout을 막지 마세요.
+- 일반 프로젝트 커밋 중 승격 후보를 `claude-settings` graph에 자동 저장하지 마세요. 명시 승인 후 `harness-memory-promoter`를 사용하세요.
 - 최종 커밋 요약에 사용자의 선택을 명시하세요.
 
 ## 8. 커밋 생성

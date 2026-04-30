@@ -9,6 +9,8 @@ Use this contract for every public workflow entrypoint and every Moonshot stage 
 - Avoid duplicating system, developer, `AGENTS.md`, `.claude/rules/**`, and workflow hard rules in the main session.
 - Keep `.claude/docs/ko/` out of MemoryGraph load/store paths. It is a human-facing Korean mirror.
 - Treat MemoryGraph failure as non-blocking unless the stage itself is a strict memory validation stage.
+- Build and refresh project-local knowledge graphs only on explicit refresh, finish/session logging, or commit-memory flow.
+- Promote reusable cross-project knowledge into the harness graph only through an approval-based promotion path.
 
 ## Stage Coverage
 
@@ -22,6 +24,28 @@ Use this contract for every public workflow entrypoint and every Moonshot stage 
 | Verify | read-only recall for verification hints and release/closeout rules before final verification. | verification stage |
 | Finish / Handoff | `session-logger` may store compact reusable facts; `commit-moonshot` refreshes memory when explicitly invoked. | finish stage |
 
+## Project Graph Refresh
+
+Project graph data belongs to the active project, not to `claude-settings`.
+
+- Build seed: `node .claude/scripts/memorygraph-project-index.mjs`
+- Seed output: `.claude/cache/memorygraph/project-graph-seed.json`
+- Promotion candidates: `.claude/cache/memorygraph/promotion-candidates.json`
+- Write path: `project-memory-refresh` with `memoryMode: write_requested`
+- Data path: `<active-project>/.claude/memorygraph/`
+
+The indexer creates semantic nodes and relationships from existing project files, package metadata, harness workflow assets, local references, imports, exported symbols, classes, functions, types, and API/route surfaces. It excludes `.claude/docs/ko/`, `.claude/memorygraph/`, `.git`, dependencies, and build/cache outputs.
+
+## Harness Knowledge Promotion
+
+Reusable project knowledge can be promoted into the `claude-settings` graph, but never automatically.
+
+- Project refresh creates candidates only.
+- `harness-memory-promoter` must run from the `claude-settings` repository.
+- Promotion requires explicit approval.
+- Promoted tags include `project:claude-settings`, `promoted`, `from-project:<projectId>`, and `source:moonshot`.
+- Do not promote project domain/business logic, one-off implementation details, secrets, or facts derived only from `.claude/docs/ko/`.
+
 ## Dedupe Policy
 
 MemoryGraph output must be reduced before merging into the main session:
@@ -34,6 +58,7 @@ projectMemoryContext:
     componentRules: []
     priorDecisions: []
     verificationHints: []
+    graphRelations: []
   omitted:
     duplicatedSystemRules: []
     humanMirrorDocs:

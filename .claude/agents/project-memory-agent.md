@@ -76,6 +76,19 @@ Based on `changedFiles`, search for related entities:
 - tags: `project:{projectId}`, `api`
 - tags: `project:{projectId}`, `domain`
 
+### 4.2 Expand Relationship Neighborhood
+When `recall_memories` or `search_memories` returns memory ids, follow the project-local graph before summarizing:
+
+```
+get_related_memories(
+  memory_id="{memoryId}",
+  max_depth=1,
+  relationship_types=["DEPENDS_ON", "APPLIES_TO", "REQUIRES", "VALIDATED_BY", "RELATED_TO", "OCCURS_IN"]
+)
+```
+
+Use depth 2 only for planning or review when the first hop shows a directly relevant component, convention, or verification rule. Never return the raw graph; merge only stage-relevant deltas into the summary.
+
 ### 4.5 Store Compact Lessons When Needed
 When the orchestrator asks for memory update, use `store_memory` only for compact reusable facts:
 - Do not store facts derived only from `.claude/docs/ko/`.
@@ -115,6 +128,7 @@ projectMemoryContext:
     componentRules: []
     priorDecisions: []
     verificationHints: []
+    graphRelations: []
   omitted:
     duplicatedSystemRules: []
     humanMirrorDocs: [".claude/docs/ko/"]

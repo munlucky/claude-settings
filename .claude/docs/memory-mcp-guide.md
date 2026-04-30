@@ -91,11 +91,27 @@ domain:
 - MemoryGraph 저장 실패는 기록하되 commit/push 자체를 block하지 않습니다.
 - 모든 공개 워크플로우 진입점은 `.claude/docs/guidelines/memorygraph-workflow.md`의 단계별 조회 계약을 적용합니다.
 - 기본 단계 모드는 read-only이며, 저장은 `session-logger`, `commit-moonshot`, 또는 명시적인 memory refresh 요청에서만 수행합니다.
+- 프로젝트별 지식그래프는 대상 프로젝트의 `.claude/memorygraph/`에만 저장합니다. `claude-settings`는 하네스 자체 graph와 승격된 범용 지식만 저장합니다.
+- 프로젝트 graph seed는 `node .claude/scripts/memorygraph-project-index.mjs`로 만들며, `.claude/cache/memorygraph/project-graph-seed.json`과 `.claude/cache/memorygraph/promotion-candidates.json`을 생성합니다.
+- `project-memory-refresh`는 seed를 현재 프로젝트 MemoryGraph에 반영합니다. `harness-memory-promoter`는 승인된 범용 후보만 `claude-settings` graph에 승격합니다.
+- 승격은 자동 저장이 아니라 후보 생성 후 승인 방식입니다. source 프로젝트에서 하네스 graph에 직접 쓰지 않습니다.
 - MemoryGraph 결과가 system/developer/AGENTS/rules/workflow hard rule과 중복되면 `projectMemory.omitted.duplicatedSystemRules`에 기록하고 `deltas`에는 병합하지 않습니다.
 - `project-memory-check`와 `project-memory-reviewer`는 읽기 전용으로 동작합니다.
-- `session-logger`와 `commit-moonshot`만 compact reusable fact를 저장합니다.
+- `project-memory-refresh`, `session-logger`, `commit-moonshot`, `harness-memory-promoter`만 compact reusable fact를 저장합니다.
 - `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 로드/요약/저장 소스로 사용하지 않습니다.
 - Claude Code plugin은 기본 도입 대상이 아닙니다. MCP server + wrapper + 하네스 지시문이 기본 운영 경로입니다.
+
+## 프로젝트 Graph Seed
+
+인덱서는 MemoryGraph에 직접 쓰지 않고 seed 파일만 만듭니다. 기본 `--analysis-level code`는 이미 운영 중인 프로젝트의 import, export symbol, class, function, type, API/route surface까지 추출합니다.
+
+```bash
+node .claude/scripts/memorygraph-project-index.mjs
+node .claude/scripts/memorygraph-project-index.mjs --dry-run
+node .claude/scripts/memorygraph-project-index.mjs --analysis-level file
+```
+
+seed의 node는 `stable_key`, `type`, `title`, `content`, `tags`, `context`를 가지며, relationship은 `from_stable_key`, `to_stable_key`, `relationship_type`, `context`를 가집니다. 각 node에는 `key:<stableKeyHash>` 태그가 포함됩니다. refresh 에이전트가 이 key 태그로 중복을 확인한 뒤 `store_memory`와 `create_relationship`를 호출합니다.
 
 ## 참고 자료
 

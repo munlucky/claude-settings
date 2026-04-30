@@ -40,6 +40,8 @@ bundleSelection:
 
 bundleExpansion:
   memory-intake-bundle: [project-memory-agent]
+  memory-refresh-bundle: [project-memory-refresh]
+  harness-memory-promotion-bundle: [harness-memory-promoter]
   implementation-lite-bundle: [implementation-runner]
   ready-isolate-bundle: [pre-flight-check, project-contract-gate, context-readiness-gate, verification-contract-gate]
   planning-bundle: [project-memory-agent, requirements-analyzer, context-builder, codex-validate-plan]
@@ -104,9 +106,16 @@ parallelExecution:
 memoryGraph:
   contract: ".claude/docs/guidelines/memorygraph-workflow.md"
   defaultMode: read_only
+  refreshMode: explicit_or_finish_or_commit
+  projectGraphSeed: ".claude/cache/memorygraph/project-graph-seed.json"
+  promotionCandidates: ".claude/cache/memorygraph/promotion-candidates.json"
+  promotionMode: candidate_requires_approval
+  harnessProjectId: claude-settings
   writeAllowedOnlyIn:
+    - project-memory-refresh
     - session-logger
     - commit-moonshot
+    - harness-memory-promoter
   sourceExclusions:
     - ".claude/docs/ko/"
   dedupeAgainst:

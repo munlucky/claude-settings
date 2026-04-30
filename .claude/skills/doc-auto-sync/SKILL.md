@@ -151,6 +151,23 @@ changelog:
 
 ---
 
+### 6. MemoryGraph Seed Sync
+
+When docs are updated from code analysis, refresh the project knowledge graph seed so later MemoryGraph writes can use the same code/doc understanding:
+
+```bash
+node .claude/scripts/memorygraph-project-index.mjs
+```
+
+Rules:
+- Generate only seed/cache files during doc sync; do not write to MemoryGraph unless the user explicitly requested memory refresh.
+- Keep `.claude/docs/ko/` out of seed sources.
+- Include code-level facts from existing projects through the default `--analysis-level code`.
+- Report promotion candidate count, but do not promote into `claude-settings` without explicit approval.
+- Keep `.claude/cache/memorygraph/` unstaged by default.
+
+---
+
 ## Output (patch)
 ```yaml
 notes:
@@ -175,6 +192,12 @@ docSync:
   projectMdChanges:
     - section: "stack"
       diff: "+stripe@14.0.0"
+  memoryGraphSeed:
+    path: ".claude/cache/memorygraph/project-graph-seed.json"
+    promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+    nodeCount: 0
+    relationshipCount: 0
+    promotionCandidateCount: 0
 ```
 
 ---

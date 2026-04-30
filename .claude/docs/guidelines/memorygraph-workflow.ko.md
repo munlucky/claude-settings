@@ -9,6 +9,8 @@
 - system, developer, `AGENTS.md`, `.claude/rules/**`, workflow hard rule과 중복되는 내용을 메인 세션에 다시 싣지 않습니다.
 - `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 조회/저장 소스에서 제외합니다.
 - MemoryGraph 실패는 strict memory validation 단계가 아닌 한 workflow를 막지 않고 warning 또는 `not_checked`로 남깁니다.
+- 프로젝트 로컬 지식그래프 생성/갱신은 명시 refresh, finish/session logging, commit-memory 흐름에서만 수행합니다.
+- 여러 프로젝트에 재사용 가능한 지식은 승인 기반 승격 경로로만 하네스 graph에 저장합니다.
 
 ## 단계별 적용
 
@@ -22,6 +24,28 @@
 | Verify | 최종 검증 전 verification hint와 release/closeout rule을 read-only 조회 | verification 단계 |
 | Finish / Handoff | `session-logger`는 compact reusable fact만 저장 가능, `commit-moonshot`은 명시 호출 시 memory refresh 수행 | finish 단계 |
 
+## 프로젝트 Graph Refresh
+
+프로젝트 graph 데이터는 `claude-settings`가 아니라 활성 프로젝트에 속합니다.
+
+- seed 생성: `node .claude/scripts/memorygraph-project-index.mjs`
+- seed 출력: `.claude/cache/memorygraph/project-graph-seed.json`
+- 승격 후보: `.claude/cache/memorygraph/promotion-candidates.json`
+- write 경로: `project-memory-refresh`, `memoryMode: write_requested`
+- data 경로: `<active-project>/.claude/memorygraph/`
+
+인덱서는 운영 중인 프로젝트 파일, package metadata, 하네스 workflow asset, 로컬 참조, import, export symbol, class, function, type, API/route surface에서 semantic node와 relationship을 만듭니다. `.claude/docs/ko/`, `.claude/memorygraph/`, `.git`, dependency, build/cache 산출물은 제외합니다.
+
+## 하네스 지식 승격
+
+재사용 가능한 프로젝트 지식은 `claude-settings` graph로 승격할 수 있지만 자동으로 저장하지 않습니다.
+
+- 프로젝트 refresh는 후보만 생성합니다.
+- `harness-memory-promoter`는 반드시 `claude-settings` 저장소에서 실행합니다.
+- 승격에는 명시 승인이 필요합니다.
+- 승격 태그는 `project:claude-settings`, `promoted`, `from-project:<projectId>`, `source:moonshot`을 포함합니다.
+- 프로젝트 도메인/비즈니스 로직, 일회성 구현 세부사항, secrets, `.claude/docs/ko/`에서만 나온 사실은 승격하지 않습니다.
+
 ## 중복 제거 정책
 
 MemoryGraph 결과는 메인 세션에 병합하기 전에 아래 구조로 축약합니다.
@@ -34,6 +58,7 @@ projectMemoryContext:
     componentRules: []
     priorDecisions: []
     verificationHints: []
+    graphRelations: []
   omitted:
     duplicatedSystemRules: []
     humanMirrorDocs:

@@ -248,6 +248,8 @@ Memory 설정:
 - 기본 memory MCP는 `node .claude/scripts/memorygraph-mcp-wrapper.js`입니다.
 - wrapper는 `.claude/memorygraph/`를 생성하고 `MEMORYGRAPH_DATA_DIR`로 주입합니다.
 - `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
+- 프로젝트 지식그래프는 `node .claude/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.claude/memorygraph/`에 반영합니다.
+- 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `claude-settings` graph에 승격합니다.
 
 주의:
 - `.codex/skills`는 재생성 가능한 링크 영역이고, `.codex/config.toml`과 `.codex/agents/`는 관리 대상 설정입니다.

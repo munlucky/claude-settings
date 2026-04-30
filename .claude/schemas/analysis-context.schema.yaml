@@ -151,14 +151,52 @@ defaults:
       componentRules: []
       priorDecisions: []
       verificationHints: []
+      graphRelations: []
     omitted:
       duplicatedSystemRules: []
       humanMirrorDocs:
         - ".claude/docs/ko/"
       staleOrLowConfidence: []
     relatedConventions: []
+    graphIndex:
+      seedPath: ".claude/cache/memorygraph/project-graph-seed.json"
+      promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+      nodeCount: 0
+      relationshipCount: 0
+      promotionCandidateCount: 0
+      lastIndexed: null
+    refresh:
+      status: not_requested
+      nodesCreated: 0
+      nodesSkipped: 0
+      relationshipsCreated: 0
+      relationshipsSkipped: 0
+    promotion:
+      mode: candidate_requires_approval
+      targetProjectId: claude-settings
+      status: not_requested
+      accepted: 0
+      rejected: 0
+      skippedDuplicates: 0
     lastFingerprint: null
     lastChecked: null
+  harnessMemory:
+    backend: MemoryGraph
+    projectId: claude-settings
+    loaded: false
+    promotionMode: candidate_requires_approval
+    context:
+      project_id: claude-settings
+      tags:
+        - project:claude-settings
+        - source:moonshot
+        - promoted
+    deltas:
+      workflowPatterns: []
+      verificationRecipes: []
+      failureRecovery: []
+      syncAndCommitRules: []
+    warnings: []
   workflowEvidence:
     mode: bounded-direct
     selectedBundles: []

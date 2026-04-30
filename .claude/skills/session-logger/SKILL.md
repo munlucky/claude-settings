@@ -44,9 +44,11 @@ Use this skill when the user explicitly wants session or handoff logging, or whe
 - keep `HANDOFF.md` summary-first and artifact-reference-first
 - before finish/handoff logging, refresh `project-memory-agent` with `stage=finish`, `memoryMode=read_only`
 - if MemoryGraph is configured, record only compact reusable facts with `project:<projectId>` and `source:moonshot` tags
+- when the user explicitly asks for graph refresh, run `project-memory-refresh`; otherwise finish logging remains read-only except for compact reusable facts
 - use `memoryMode: write_requested` only for reusable decisions, corrections, fixes, or project-specific conventions
 - do not use `.claude/docs/ko/` as a MemoryGraph source; it is a human-facing Korean mirror
 - promote reusable remediation patterns to `.claude/docs/solutions/` when justified
+- create harness promotion candidates only; do not write promoted facts into `claude-settings` without explicit approval
 - append correction events instead of rewriting prior history
 
 ## References
