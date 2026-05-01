@@ -38,6 +38,14 @@ SYNC_DIRS = [
     "docs/solutions",
 ]
 
+CODEX_SYNC_FILES = [
+    "config.toml",
+]
+
+CODEX_SYNC_DIRS = [
+    "agents",
+]
+
 
 def as_claude_dir(path: Path) -> Path:
     if path.name == ".claude":
@@ -86,6 +94,17 @@ def sync_target(source: Path, target: Path, dry_run: bool) -> None:
         copy_file(source / rel, target_claude / rel, dry_run)
     for rel in SYNC_DIRS:
         sync_dir(source / rel, target_claude / rel, dry_run)
+
+    source_codex = source.parent / ".codex"
+    target_codex = target_claude.parent / ".codex"
+    if source_codex.is_dir():
+        log(dry_run, f"sync target {target_codex}")
+        if not dry_run:
+            target_codex.mkdir(parents=True, exist_ok=True)
+        for rel in CODEX_SYNC_FILES:
+            copy_file(source_codex / rel, target_codex / rel, dry_run)
+        for rel in CODEX_SYNC_DIRS:
+            sync_dir(source_codex / rel, target_codex / rel, dry_run)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:

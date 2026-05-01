@@ -236,6 +236,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
 - MCP 서버 예시: GitHub, Context7, Exa, MemoryGraph 기반 Memory, Playwright, Sequential Thinking
+- 로컬 stdio MCP는 `.claude/scripts/codex-mcp-singleton.mjs`를 경유해 같은 프로젝트의 이전 동일 MCP process tree를 새 기동 시 정리합니다.
 - 멀티에이전트 기본값: `[agents] max_threads = 6`, `max_depth = 1`
 - 커스텀 에이전트: `explorer`, `reviewer`, `docs_researcher`
 
@@ -245,7 +246,7 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 - 완료 검증: `completion-verifier`
 
 Memory 설정:
-- 기본 memory MCP는 `node .claude/scripts/memorygraph-mcp-wrapper.js`입니다.
+- 기본 memory MCP는 `node .claude/scripts/codex-mcp-singleton.mjs memory -- node .claude/scripts/memorygraph-mcp-wrapper.js`입니다.
 - wrapper는 `.claude/memorygraph/`를 생성하고 `MEMORYGRAPH_DATA_DIR`로 주입합니다.
 - `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
 - 프로젝트 지식그래프는 `node .claude/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.claude/memorygraph/`에 반영합니다.
