@@ -107,12 +107,15 @@ setup_codex_skills() {
 			continue
 		fi
 
-		if [ -L "$codex_skill_path" ]; then
-			if [ -d "$codex_skill_path" ]; then
-				existing_target="$(cd "$codex_skill_path" && pwd -P)"
-			else
-				existing_target="$(readlink "$codex_skill_path" 2>/dev/null || true)"
+		if [ -d "$codex_skill_path" ]; then
+			existing_target="$(cd "$codex_skill_path" && pwd -P)"
+			if [ "$existing_target" = "$skill_path" ]; then
+				CODEX_SKILL_LINKS+=("$codex_skill_path")
+				linked_count=$((linked_count + 1))
+				continue
 			fi
+		elif [ -L "$codex_skill_path" ]; then
+			existing_target="$(readlink "$codex_skill_path" 2>/dev/null || true)"
 			if [ "$existing_target" = "$skill_path" ]; then
 				CODEX_SKILL_LINKS+=("$codex_skill_path")
 				linked_count=$((linked_count + 1))
@@ -156,14 +159,19 @@ create_directory_symlink() {
 			return 0
 		fi
 
-		print_warn "Windows native symbolic link 생성 실패, Git Bash ln -s로 재시도합니다."
+		print_warn "Windows native symbolic link 생성 실패, directory junction으로 재시도합니다."
+		if powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'param([string]$Path,[string]$Target) New-Item -ItemType Junction -Path $Path -Target $Target | Out-Null' "$link_win" "$source_win"; then
+			return 0
+		fi
+
+		print_warn "Windows directory junction 생성 실패, Git Bash ln -s로 재시도합니다."
 	fi
 
 	ln -s "$source_path" "$link_path"
 	if [ ! -L "$link_path" ]; then
 		rm -rf "$link_path"
-		print_error "심볼릭 링크 생성 실패: $link_path → $source_path"
-		echo "  Windows에서는 Developer Mode 또는 심볼릭 링크 생성 권한이 필요할 수 있습니다."
+		print_error "디렉터리 링크 생성 실패: $link_path → $source_path"
+		echo "  Windows에서는 Developer Mode, 심볼릭 링크 생성 권한, 또는 junction 생성 권한이 필요할 수 있습니다."
 		return 1
 	fi
 }
@@ -617,7 +625,7 @@ usage() {
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
-  - .claude/skills/* 를 Codex 전역 skills(${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*)에 개별 심볼릭 링크
+  - .claude/skills/* 를 Codex 전역 skills(${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*)에 개별 디렉터리 링크
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 보호되는 파일 패턴:
