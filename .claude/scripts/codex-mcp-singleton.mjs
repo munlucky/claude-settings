@@ -120,11 +120,12 @@ function cleanupPrevious(lockFile, name) {
     return;
   }
 
-  if (isRunning(lock.pid)) {
-    console.error(`[codex-mcp-singleton] terminating previous ${name} MCP wrapper pid=${lock.pid}`);
-    killTree(lock.pid);
-    if (!waitForExit(lock.pid)) {
-      console.error(`[codex-mcp-singleton] previous ${name} MCP wrapper pid=${lock.pid} is still running after cleanup`);
+  const targetPid = isRunning(lock.pid) ? lock.pid : (isRunning(lock.childPid) ? lock.childPid : null);
+  if (targetPid) {
+    console.error(`[codex-mcp-singleton] terminating previous ${name} MCP tree pid=${targetPid}`);
+    killTree(targetPid);
+    if (!waitForExit(targetPid)) {
+      console.error(`[codex-mcp-singleton] previous ${name} MCP tree pid=${targetPid} is still running after cleanup`);
     }
   }
 }
