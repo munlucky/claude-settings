@@ -88,6 +88,19 @@ bundle 선택 전에 최소로 확정해야 할 필드:
 - `project-memory-reviewer`는 `codex-review-code` 뒤에 실행합니다.
 - `.claude/docs/ko/`는 MemoryGraph 소스로 사용하지 않습니다.
 - system/developer/AGENTS/rules/workflow hard rule과 중복되는 MemoryGraph 항목은 `projectMemory.omitted.duplicatedSystemRules`에 기록하고 `deltas`에는 병합하지 않습니다.
+
+## Code Review Graph 단계 게이트
+
+- `.claude/docs/guidelines/code-review-graph-workflow.md`를 코드 구조 분석 계약으로 적용합니다.
+- `executionPlane`이 `product_project` 또는 `meta_harness`이고 코드 읽기/수정/리뷰/영향도/architecture overview/large function 탐색이 필요하면 활성화합니다.
+- `read_only`에서는 사용자가 명시적으로 코드 분석, 리뷰 컨텍스트, 영향도, architecture overview를 요청한 경우에만 활성화합니다.
+- `plan`: 광범위한 파일 읽기 전에 graph status를 확인하고 minimal context 또는 architecture overview를 우선 사용합니다.
+- `execute`: 구현 전 target/impact summary로 대상 파일과 의존 범위를 좁힙니다.
+- `review`: 변경 파일 기준 detect changes, review context, impact radius를 기본 review context source로 사용합니다.
+- `verify`: 새 graph를 만들지 않고, 앞 stage에서 사용한 evidence/stale 여부만 기록합니다.
+- `finish`: raw graph 없이 summary-only evidence만 남깁니다.
+- 실패 시 `codeReviewGraph.graphStatus=unavailable`과 warning을 기록하고 일반 workflow는 계속합니다.
+- installer-time build, `watch`, `crg-daemon start`, raw graph의 MemoryGraph 복제는 항상 금지합니다.
 - `phase`
 - `complexity`
 - `decisions.bundleChain`
@@ -144,6 +157,7 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - strict 또는 `meta_harness` phase 작업은 active `SPRINT_CONTRACT.md` 에 policy anchors 와 필수 검증 명령을 유지해야 한다.
 - phase harness를 쓰지 않는 bounded direct 작업도 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 최신 상태로 유지해야 한다.
 - bounded direct `workflowEvidence`에는 `selectedBundles`, `requiredSkills`, `stageOrder`가 모두 있어야 한다.
+- bounded direct 코드 분석은 `.claude/docs/guidelines/code-review-graph-workflow.md`에 따라 `code-review-graph`를 selected 또는 skipped harness component로 기록해야 한다.
 - bounded direct 코드 변경은 최종 verification 안정 판정 전에 `codex-review-code` 증적을 남겨야 한다.
 - bounded direct 코드 변경은 `code-simplifier` 적용 여부를, 건너뛴 경우에는 이유와 함께 기록해야 한다.
 - 구현이 성공했거나 일부 성공 상태라도 완료 선언 전에는 문서 마감 단계가 실행되어야 한다.
@@ -256,6 +270,7 @@ finish / handoff 계약:
 - `contextReady=false` + `product_project` -> `context-readiness-gate`
 - `verificationContractReady=false` + `product_project` -> `verification-contract-gate`
 - `executionPlane == product_project && complexity != simple` -> `session-logger` 보장 + 첫 코드 변경 전 `SPRINT_CONTRACT.md` 요구
+- 코드 작업에 광범위한 파일 읽기, 영향도 분석, architecture overview, review context 축소가 필요함 -> Code Review Graph stage gate 적용 + selected/skipped component evidence 기록
 - 의미 있는 코드 변경 또는 medium+ complexity -> 최종 verification 전에 `codex-review-code` 보장
 - 리뷰, runtime 증거, 구현 중 발견 사항이 선택된 plan과 충돌 -> 현재 tactic 중단, notes/QA 증거 갱신, uncertainty handling과 sequence decision 재진입
 - `implementationComplete=true` + 의미 있는 파일 수정 -> 검증 뒤, 완료 전 `doc-auto-sync` 보장

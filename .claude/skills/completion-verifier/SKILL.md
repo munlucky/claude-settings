@@ -31,6 +31,7 @@ This is the default Verify-stage owner before finish or handoff.
 - `analysisContext.signals.allowIndeterminate` (boolean override, default: `true`)
 - Latest verifier verdict artifact, especially `verdict.workflowEvidence.*` from `verify-changes.sh`
 - Latest verifier verdict artifact score payload, especially `verdict.score.*` from `verify-changes.sh`
+- `analysisContext.codeReviewGraph` when code analysis/review/impact evidence was required earlier in the run
 
 ## Contract-first policy
 
@@ -59,6 +60,7 @@ Applicability rule:
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
 - When `workflowEvidence` is present, require `selectedHarnessComponents`, `skippedHarnessComponents`, `selectionReason`, `runtimeIsolation`, and `modelEffortProfile` to be populated before a clean closeout claim.
+- When code structure analysis was needed for plan/execute/review, require `code-review-graph` to appear in `selectedHarnessComponents` or `skippedHarnessComponents` with a concrete reason before a clean closeout claim.
 - For medium/complex/phase work, require contract review evidence (`contractReviewedByEvaluator: yes`) unless the task is explicitly simple/local and records the skip in `skippedHarnessComponents`.
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
 - In phase-plan runs, parse `## Critical Product Scenarios` from the source phase document and do not return a passing completion verdict while any `SCN-*` lacks passing evidence in `QA_REPORT.md`, linked evidence files, or verifier artifacts.
@@ -170,6 +172,7 @@ Use verifier artifact workflow evidence as the structured source of truth for re
   - `codex-review-code` in applied evidence before clean completion
   - `doc-auto-sync` evidence before clean completion
   - `QA_REPORT.md` to say `Review completed: yes`
+  - `code-review-graph` selected/skipped evidence when the work required code structure analysis or review context minimization
   - finish-closeout fields in `QA_REPORT.md` to be filled with concrete closeout content, not placeholders
   - clean-finish `HANDOFF.md` marker to replace any seeded placeholder when the phase actually closes
   - contract review evidence to be present for medium/complex/phase work
@@ -178,6 +181,7 @@ Use verifier artifact workflow evidence as the structured source of truth for re
   - strict profile -> do not return `gateDecision: pass`
   - standard profile -> degrade to remediation or `pass_with_warning`, and surface the warnings in `QA_REPORT.md`
 - Treat missing `stageOrder` or missing workflow evidence on code-changing closeout as a signal that finish/handoff evidence is incomplete.
+- Treat missing `analysisContext.codeReviewGraph.stageCoverage` for required CRG stages as a warning. Do not build a graph in verify stage; record the gap and continue according to profile.
 
 ## Step 2: Self-Audit (Always Runs)
 
@@ -214,6 +218,11 @@ selfAuditResult:
     neverDoViolations: []
     askFirstItems: []
     alwaysDoCompleted: []
+  codeReviewGraph:
+    required: true | false
+    selectedOrSkippedRecorded: true | false
+    missingStageCoverage: []
+    warnings: []
   readyForTest: true | false
   blockers: []
 ```
@@ -256,6 +265,12 @@ completionStatus:
   runtimeEvidence:
     criticalScenarioDepth: smoke | open-act-mutate-persist-recover | none
     smokeOnlyCriticalScenarios: []
+  codeReviewGraph:
+    required: true | false
+    graphStatus: unknown | not_built | stale | fresh | unavailable
+    selectedOrSkippedRecorded: true | false
+    missingStageCoverage: []
+    warnings: []
   retryStrategy:
     retryStrategy: same_direction_refine | partial_redesign | stop_and_handoff | none
     deltaHypothesis: null
@@ -303,6 +318,7 @@ Passing rule:
   - `traceability.scenariosMissingEvidence` is empty for critical `SCN-*`
   - `runtimeEvidence.smokeOnlyCriticalScenarios` is empty for critical `SCN-*`
   - `traceability.uatReady == true` for user-facing finish claims
+  - `codeReviewGraph.selectedOrSkippedRecorded == true` when code structure analysis was required
 - Otherwise degrade to `failed` or `pass_with_warning`; never infer a full pass from self-audit alone.
 
 ## Retry Logic

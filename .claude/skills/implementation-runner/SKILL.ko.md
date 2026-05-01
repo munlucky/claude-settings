@@ -10,6 +10,9 @@ description: 체인에서 실제 구현을 수행하고 완료 상태와 변경 
 - `analysisContext.request.taskType`
 - `analysisContext.decisions.skillChain`
 - `analysisContext.repo.openFiles`
+- `analysisContext.codeReviewGraph.contextSummary`
+- `analysisContext.codeReviewGraph.impactSummary`
+- `analysisContext.codeReviewGraph.warnings`
 - `analysisContext.artifacts.workflowGuidePath`
 - `analysisContext.artifacts.designGuidePath`
 - `analysisContext.artifacts.glossaryGuidePath`
@@ -75,6 +78,15 @@ notes:
 - slice가 `clean_finish`를 주장하려는 상태라면 `QA_REPORT.md`에 `Review completed: no`를 남기면 안 됩니다.
 - closing slice의 `HANDOFF.md`, review checkpoint 필드, finish-closeout bullet은 placeholder 상태로 남기면 안 됩니다.
 - review 또는 finish evidence가 비어 있으면 그 gap을 기록하고, 구현 완료인 척하지 말고 retry/remediation 흐름을 유지해야 합니다.
+
+### Step 0.3: Code Review Graph 대상 축소
+
+코드 수정 전에 구조 분석이 필요한 작업이면 `.claude/docs/guidelines/code-review-graph-workflow.md`를 적용합니다.
+- 넓은 파일 집합을 열기 전에 `analysisContext.codeReviewGraph.contextSummary`와 `impactSummary`를 먼저 읽습니다.
+- graph가 `not_built` 또는 `stale`이고 현재 stage에 구조 분석이 실제로 필요하면 요청 범위 안에서 MCP build/update 또는 CLI fallback을 사용합니다.
+- 요약 결과로 target files, likely dependencies, impact radius를 좁힙니다.
+- CRG를 사용할 수 없으면 warning을 기록하고 일반 bounded file inspection으로 진행합니다.
+- raw graph output이나 `.code-review-graph/` 내용은 구현 notes에 붙이지 않습니다.
 
 ### Step 1: 테스트 환경 감지
 

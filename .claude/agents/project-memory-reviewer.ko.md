@@ -22,6 +22,10 @@ projectMemoryContext:               # project-memory-agent에서 받은 컨텍�
     boundaries: []
     conventions: []
     componentRules: []
+codeReviewGraph:                    # 요약만 사용, raw graph output 금지
+  impactSummary: []
+  reviewContextSummary: []
+  warnings: []
 diff: "{git diff 요약}"              # 또는 diff 파일 경로
 ```
 
@@ -76,6 +80,8 @@ check:
 - 파일 구조 패턴
 - 에러 처리 패턴
 - API 응답 형식
+
+`codeReviewGraph.impactSummary`와 `reviewContextSummary`는 어떤 변경 컴포넌트, caller, importer, test를 경계 검토 대상으로 볼지 판단하는 보조 힌트로만 사용합니다. raw graph output은 소비하지 않고 code-review-graph 데이터를 MemoryGraph에 쓰지 않습니다.
 
 ### 4. 컴포넌트 스펙 위반 검사
 변경된 컴포넌트에 대해 확인:

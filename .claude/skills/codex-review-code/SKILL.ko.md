@@ -30,6 +30,9 @@ context: fork
 
 - 기계적으로 판정 가능한 코드 정책 위반은 `.claude/scripts/verify-code-policy.sh`를 하드 게이트로 취급합니다.
 - 이 리뷰는 deterministic check의 대체물이 아니라 의미적/아키텍처적 위험 평가에 사용합니다.
+- Review stage에서는 변경 파일 review context, impact radius, caller/importer/test 힌트의 기본 소스로 `code-review-graph`를 광범위한 파일 읽기보다 우선 사용합니다.
+- `.claude/docs/guidelines/code-review-graph-workflow.md`를 적용합니다: stage-gated, lazy update, summary-only evidence.
+- watch/daemon을 시작하거나 raw graph 출력을 MemoryGraph에 복제하지 않습니다.
 - 코드 정책 위반은 더 넓은 설계 문제나 유지보수성 문제를 드러낼 때만 반복 언급합니다.
 - 리뷰 피드백은 사회적으로 수용하지 말고 기술적으로 처리합니다. 불명확한 finding은 명확화하고, 틀린 finding은 증거로 반박하며, 각 의미 있는 항목에 명시적 disposition이 생기기 전까지 remediation loop를 닫지 않습니다.
 
@@ -62,7 +65,7 @@ try {
 ### 2-9단계: 리뷰 프로세스
 
 2. 변경 범위, 변경된 파일, 핵심 동작 요약
-3. context.md 경로를 캡처하고 관련 코드 읽기 (기본: `{tasksRoot}/{feature-name}/context.md`)
+3. context.md 경로를 캡처한 뒤, 가능하면 `code-review-graph`의 detect changes/review context/impact radius로 관련 코드 읽기 범위를 줄입니다. 기본 경로: `{tasksRoot}/{feature-name}/context.md`
 4. 아래 7-섹션 형식으로 위임 프롬프트 구성
 
 5. **격리된 review 경로를 사용할 수 있는 경우 (1단계에서 확인)**:

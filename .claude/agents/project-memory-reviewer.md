@@ -22,6 +22,10 @@ projectMemoryContext:               # from project-memory-agent
     boundaries: []
     conventions: []
     componentRules: []
+codeReviewGraph:                    # summary only; never raw graph output
+  impactSummary: []
+  reviewContextSummary: []
+  warnings: []
 diff: "{git diff summary}"          # or file path to diff
 ```
 
@@ -76,6 +80,8 @@ Compare changes against `projectMemoryContext.deltas.conventions` and refreshed 
 - File structure patterns
 - Error handling patterns
 - API response formats
+
+Use `codeReviewGraph.impactSummary` and `reviewContextSummary` only as auxiliary hints for which changed components, callers, importers, or tests deserve boundary scrutiny. Do not consume raw graph output and do not write code-review-graph data into MemoryGraph.
 
 ### 4. Check Component Spec Violations
 For changed components, verify:

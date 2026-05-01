@@ -192,6 +192,32 @@ defaults:
       skippedDuplicates: 0
     lastFingerprint: null
     lastChecked: null
+  codeReviewGraph:
+    backend: code-review-graph
+    contractVersion: "code-review-graph-workflow-v1"
+    mode: stage_gated
+    buildMode: lazy_update
+    graphStatus: unknown
+    activated: false
+    lastStage: null
+    stageCoverage:
+      plan: not_checked
+      execute: not_checked
+      review: not_checked
+      verify: not_checked
+      finish: not_checked
+    mcpServer: code-review-graph
+    dataPath: ".code-review-graph/"
+    toolsUsed: []
+    contextSummary: []
+    impactSummary: []
+    reviewContextSummary: []
+    warnings: []
+    forbidden:
+      - installer_time_build
+      - watch
+      - crg-daemon_start
+      - duplicate_raw_analysis_into_memorygraph
   harnessMemory:
     backend: MemoryGraph
     projectId: claude-settings
@@ -279,3 +305,4 @@ workflowRules:
     - "Keep workflowEvidence selectedBundles, requiredSkills, stageOrder, selectedHarnessComponents, selectionReason, runtimeIsolation, and modelEffortProfile populated for code-changing bounded work."
     - "Keep readiness and completionModel aligned with the active execution artifacts."
     - "Track MemoryGraph stageCoverage and omit duplicated system/developer/AGENTS/rules content from projectMemory deltas."
+    - "Track codeReviewGraph stageCoverage when code structure analysis is used, and keep raw graph output out of analysisContext and MemoryGraph."

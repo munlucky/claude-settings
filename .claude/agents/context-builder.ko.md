@@ -11,6 +11,7 @@ description: Creates implementation plans (context.md) based on preliminary agre
 ## Inputs
 - 사전 합의서 (`.claude/docs/agreements/{feature-name}-agreement.md`)
 - 유사 기능 코드 경로
+- 사용 가능한 경우 `analysisContext.codeReviewGraph` 요약
 - 프로젝트 규칙 (`.claude/PROJECT.md`)
 
 ### 🎯 토큰 효율적 입력 (Token-Efficient Input)
@@ -20,12 +21,18 @@ agreementFile: ".claude/features/xxx/agreement.md"
 relevantFilePaths:
   - "src/pages/similar/*.tsx"
   - "src/api/similar.ts"
+codeReviewGraph:
+  graphStatus: "fresh|stale|not_built|unavailable|unknown"
+  contextSummary:
+    - "관련 모듈/파일 요약"
+  warnings: []
 outputFile: ".claude/features/xxx/context.md"
 ```
 
 **원칙**:
 - agreement.md 경로만 받고, 내용은 직접 Read
 - 유사 기능 파일 목록만 받음 (내용 X)
+- 넓은 파일 glob을 펼치기 전에 `analysisContext.codeReviewGraph.contextSummary`를 우선 사용
 - 필요한 파일만 선택적으로 Read
 - 프로젝트 규칙 문서도 필요한 섹션만 읽음
 ## Outputs
@@ -33,7 +40,7 @@ outputFile: ".claude/features/xxx/context.md"
 - **Acceptance Tests 스펙** (context.md에 포함)
 
 ## Workflow
-1. 사전 합의서와 유사 기능을 읽고 변경 범위를 확정합니다.
+1. 사전 합의서를 읽고, 가능하면 `codeReviewGraph.contextSummary` 또는 architecture/minimal-context 결과로 유사 기능 경로를 좁힌 뒤 변경 범위를 확정합니다.
 2. 신규/수정 파일을 구분해 목록화합니다.
 3. **Acceptance Tests 스펙 생성** (NEW)
    - 컴포넌트/유틸리티별 Unit 테스트

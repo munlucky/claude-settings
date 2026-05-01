@@ -27,6 +27,11 @@ command = "node"
 args = [".claude/scripts/codex-mcp-singleton.mjs", "memory", "--", "node", ".claude/scripts/memorygraph-mcp-wrapper.js"]
 startup_timeout_sec = 30
 
+[mcp_servers.code-review-graph]
+command = "node"
+args = [".claude/scripts/codex-mcp-singleton.mjs", "code-review-graph", "--", "node", ".claude/scripts/code-review-graph-mcp-wrapper.js"]
+startup_timeout_sec = 30
+
 [mcp_servers.playwright]
 command = "node"
 args = [".claude/scripts/codex-mcp-singleton.mjs", "playwright", "--", "npx", "-y", "@playwright/mcp@latest", "--extension"]

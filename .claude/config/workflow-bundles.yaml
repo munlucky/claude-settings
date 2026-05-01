@@ -123,3 +123,40 @@ memoryGraph:
     - developer
     - AGENTS.md
     - ".claude/rules/**"
+
+codeReviewGraph:
+  mode: stage_gated
+  buildMode: lazy_update
+  backend: code-review-graph
+  watch: disabled
+  preferForExplicitCodeAnalysis: true
+  contract: ".claude/docs/guidelines/code-review-graph-workflow.md"
+  mcpServer: code-review-graph
+  dataPath: ".code-review-graph/"
+  stageCoverage: [plan, execute, review, verify, finish]
+  stageRules:
+    plan:
+      trigger: "Code work that would otherwise require broad file reads."
+      use: "Check graph status, then use minimal context or architecture overview before reading many files."
+      output: "Related module/file candidates, architecture risks, large-function candidates."
+    execute:
+      trigger: "Before implementation changes."
+      use: "Use target/impact summaries to narrow target files and likely dependencies."
+      output: "Target files, likely dependencies, impact radius."
+    review:
+      trigger: "After meaningful code changes."
+      use: "Use detect changes, review context, and impact radius for changed files."
+      output: "Changed files, impacted callers/importers/tests, review context summary."
+    verify:
+      trigger: "Only when codeReviewGraph was already used earlier in the run."
+      use: "Do not build a new graph; record whether evidence was used and whether graph state was stale."
+      output: "Evidence state and stale/unavailable warning only."
+    finish:
+      trigger: "When workflow evidence is finalized."
+      use: "Record summary-only evidence; never store raw graph output."
+      output: "Selected or skipped harness component evidence."
+  forbidden:
+    - installer_time_build
+    - watch
+    - crg-daemon_start
+    - duplicate_raw_analysis_into_memorygraph

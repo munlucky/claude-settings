@@ -2,6 +2,8 @@
 
 이 저장소의 기본 메모리 backend는 MemoryGraph입니다. 기존 `@modelcontextprotocol/server-memory` 기반 `.claude/memory.json` 경로는 호환 참고용이며, 새 프로젝트 메모리는 프로젝트 로컬 `.claude/memorygraph/`에 저장합니다.
 
+`code-review-graph`는 별도 코드 구조 분석 MCP입니다. MemoryGraph는 작업 기억/정책/결정, `code-review-graph`는 코드 구조/리뷰 영향도/분석 기능을 담당합니다. 하네스 stage별 적용 계약은 `.claude/docs/guidelines/code-review-graph-workflow.md`를 source of truth로 둡니다.
+
 ## 설치
 
 MemoryGraph는 Python 3.10+와 `pipx` 설치를 권장합니다.
@@ -12,6 +14,15 @@ memorygraph --health
 ```
 
 `install-claude.sh`는 Python 버전을 확인하고 `pipx install memorygraphMCP`를 자동 시도합니다. 설치 실패는 전체 bootstrap을 중단하지 않으며, 실행 전 수동 설치가 필요하다는 warning을 남깁니다.
+
+코드 구조 분석 기능은 다음 패키지를 사용합니다. 하네스 installer도 같은 spec을 best-effort로 설치합니다.
+
+```bash
+pipx install "code-review-graph[communities]"
+code-review-graph --version
+```
+
+`code-review-graph`는 설치 시 자동 `build`, `watch`, `daemon`을 실행하지 않습니다.
 
 ## MCP 등록
 
@@ -36,6 +47,14 @@ claude mcp add memory -s project -- node .claude/scripts/memorygraph-mcp-wrapper
 
 Codex는 repo-managed `.codex/config.toml`의 `[mcp_servers.memory]` 설정을 사용합니다.
 
+`code-review-graph` MCP는 별도 서버로 등록합니다.
+
+```bash
+claude mcp add code-review-graph -s project -- node .claude/scripts/code-review-graph-mcp-wrapper.js
+```
+
+Codex는 repo-managed `.codex/config.toml`의 `[mcp_servers.code-review-graph]` 설정을 사용하며, stale process cleanup을 위해 `codex-mcp-singleton.mjs`를 경유합니다.
+
 ## 데이터 위치
 
 wrapper는 현재 프로젝트 기준으로 다음 경로를 자동 생성하고 `MEMORYGRAPH_DATA_DIR`에 주입합니다.
@@ -44,7 +63,13 @@ wrapper는 현재 프로젝트 기준으로 다음 경로를 자동 생성하고
 .claude/memorygraph/
 ```
 
-이 디렉터리는 `.gitignore`와 `.claudeignore`에 포함되어야 합니다. 민감정보, 토큰, 개인식별정보는 저장하지 마세요.
+`code-review-graph`의 프로젝트별 분석 DB는 다음 경로를 사용합니다.
+
+```text
+.code-review-graph/
+```
+
+두 디렉터리는 `.gitignore`와 `.claudeignore`에 포함되어야 합니다. 민감정보, 토큰, 개인식별정보는 저장하지 마세요.
 
 ## 사용 도구
 
@@ -100,6 +125,15 @@ domain:
 - `project-memory-refresh`, `session-logger`, `commit-moonshot`, `harness-memory-promoter`만 compact reusable fact를 저장합니다.
 - `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 로드/요약/저장 소스로 사용하지 않습니다.
 - Claude Code plugin은 기본 도입 대상이 아닙니다. MCP server + wrapper + 하네스 지시문이 기본 운영 경로입니다.
+
+## code-review-graph 운영 원칙
+
+- 자동 background 호출은 하지 않습니다.
+- `code-review-graph 2.3.2`의 `serve`는 tool allowlist 인자를 제공하지 않으므로, tool 제한은 wrapper 인자가 아니라 `.claude/docs/guidelines/code-review-graph-workflow.md`의 stage contract로 적용합니다.
+- 코드 분석, 영향도, blast radius, 리뷰 컨텍스트 축소, architecture overview, large function 탐색이 필요한 stage에서는 broad file read보다 `code-review-graph` MCP를 우선 사용합니다.
+- graph가 없거나 stale이면 사용자 요청 범위 안에서만 `build_or_update_graph_tool` 또는 `code-review-graph build --repo .`를 실행합니다.
+- 변경 리뷰는 `detect_changes_tool` 또는 `get_review_context_tool`, 영향도는 `get_impact_radius_tool`, 구조 탐색은 `query_graph_tool`, `semantic_search_nodes_tool`, `get_architecture_overview_tool`, `find_large_functions_tool`을 우선 사용합니다.
+- installer-time build, `watch`, `crg-daemon start`, raw graph 전체를 MemoryGraph에 복제하는 행위는 금지합니다.
 
 ## 프로젝트 Graph Seed
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude/.codex를 다운로드하고, .agents/AGENTS.md 브리지와 Codex skills 링크를 구성합니다.
+# GitHub에서 최신 .claude/.codex를 다운로드하고, .agents/AGENTS.md 브리지와 Codex 전역 skills 링크 팜을 구성합니다.
 
 set -e
 
@@ -67,25 +67,28 @@ ensure_supported_shell() {
 
 setup_codex_skills() {
 	local source_skills_dir=".claude/skills"
-	local project_root=""
 	local codex_home=""
+	local backup_root=""
 	local linked_count=0
 	local source_root=""
 
 	echo ""
-	print_info "Codex 전역 skills 동기화 중..."
+	print_info "Codex 전역 skills 링크 구성 중..."
+
+	if [ -n "${CLAUDE_SETTINGS_SKILLS_DIR:-}" ]; then
+		source_skills_dir="$CLAUDE_SETTINGS_SKILLS_DIR"
+	fi
 
 	if [ ! -d "$source_skills_dir" ]; then
 		print_warn "스킬 디렉토리를 찾지 못했습니다: $source_skills_dir"
 		return
 	fi
 
-	project_root="$(pwd -P)"
-	codex_home="${CODEX_HOME:-$project_root/.codex}"
-
+	codex_home="${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}"
 	CODEX_SKILLS_DIR="$codex_home/skills"
 	mkdir -p "$CODEX_SKILLS_DIR"
 	source_root="$(cd "$source_skills_dir" && pwd -P)"
+	backup_root="$codex_home/backups/skills/${BACKUP_SUFFIX#.backup-}"
 
 	for skill_path in "$source_root"/*; do
 		local skill_name=""
@@ -105,7 +108,11 @@ setup_codex_skills() {
 		fi
 
 		if [ -L "$codex_skill_path" ]; then
-			existing_target="$(readlink "$codex_skill_path" 2>/dev/null || true)"
+			if [ -d "$codex_skill_path" ]; then
+				existing_target="$(cd "$codex_skill_path" && pwd -P)"
+			else
+				existing_target="$(readlink "$codex_skill_path" 2>/dev/null || true)"
+			fi
 			if [ "$existing_target" = "$skill_path" ]; then
 				CODEX_SKILL_LINKS+=("$codex_skill_path")
 				linked_count=$((linked_count + 1))
@@ -115,7 +122,8 @@ setup_codex_skills() {
 
 		if [ -e "$codex_skill_path" ] || [ -L "$codex_skill_path" ]; then
 			if [ "$DO_BACKUP" = true ]; then
-				local backup_path="${codex_skill_path}${BACKUP_SUFFIX}"
+				local backup_path="$backup_root/$skill_name"
+				mkdir -p "$backup_root"
 				print_info "Codex skill 백업 중: $codex_skill_path → $backup_path"
 				mv "$codex_skill_path" "$backup_path"
 				CODEX_BACKUP_PATHS+=("$backup_path")
@@ -125,12 +133,39 @@ setup_codex_skills() {
 			fi
 		fi
 
-		ln -s "$skill_path" "$codex_skill_path"
+		create_directory_symlink "$skill_path" "$codex_skill_path"
 		CODEX_SKILL_LINKS+=("$codex_skill_path")
 		linked_count=$((linked_count + 1))
 	done
 
-	print_info "✓ Codex skills ${linked_count}개 연결 완료 (${CODEX_SKILLS_DIR})"
+	print_info "✓ Codex skills ${linked_count}개 링크 완료 (${CODEX_SKILLS_DIR} → ${source_root}/*)"
+}
+
+create_directory_symlink() {
+	local source_path="$1"
+	local link_path="$2"
+
+	if [ -n "${MSYSTEM:-}" ] && command -v cygpath &>/dev/null && command -v powershell.exe &>/dev/null; then
+		local source_win=""
+		local link_win=""
+
+		source_win="$(cygpath -w "$source_path")"
+		link_win="$(cygpath -w "$link_path")"
+
+		if powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'param([string]$Path,[string]$Target) New-Item -ItemType SymbolicLink -Path $Path -Target $Target | Out-Null' "$link_win" "$source_win"; then
+			return 0
+		fi
+
+		print_warn "Windows native symbolic link 생성 실패, Git Bash ln -s로 재시도합니다."
+	fi
+
+	ln -s "$source_path" "$link_path"
+	if [ ! -L "$link_path" ]; then
+		rm -rf "$link_path"
+		print_error "심볼릭 링크 생성 실패: $link_path → $source_path"
+		echo "  Windows에서는 Developer Mode 또는 심볼릭 링크 생성 권한이 필요할 수 있습니다."
+		return 1
+	fi
 }
 
 setup_codex_project_config() {
@@ -373,6 +408,93 @@ PY
 	fi
 }
 
+setup_code_review_graph() {
+	local package_spec="code-review-graph[communities]"
+	local wrapper_path=".claude/scripts/code-review-graph-mcp-wrapper.js"
+	local python_version_ok=false
+	local mcp_wrapper_arg="$wrapper_path"
+
+	echo ""
+	print_info "code-review-graph 코드 분석 MCP 설정 중..."
+
+	if [ -z "$PYTHON_CMD" ]; then
+		print_warn "Python을 찾지 못해 code-review-graph 자동 설치를 건너뜁니다."
+		echo "  수동 설치: pipx install \"$package_spec\""
+		return
+	fi
+
+	if "$PYTHON_CMD" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+PY
+	then
+		python_version_ok=true
+	fi
+
+	if [ "$python_version_ok" != true ]; then
+		print_warn "code-review-graph는 Python 3.10+가 필요합니다. 현재 Python: $("$PYTHON_CMD" --version 2>&1)"
+		echo "  Python 3.10+ 설치 후 실행: pipx install \"$package_spec\""
+		return
+	fi
+
+	if ! command -v pipx &>/dev/null; then
+		print_warn "pipx가 없어 자동 설치를 시도합니다."
+		if "$PYTHON_CMD" -m pip install --user pipx; then
+			"$PYTHON_CMD" -m pipx ensurepath >/dev/null 2>&1 || true
+			print_info "  ✓ pipx 설치 시도 완료"
+		else
+			print_warn "pipx 자동 설치 실패. code-review-graph 설치를 건너뜁니다."
+			echo "  수동 설치: $PYTHON_CMD -m pip install --user pipx && $PYTHON_CMD -m pipx install \"$package_spec\""
+			return
+		fi
+	fi
+
+	if ! command -v code-review-graph &>/dev/null; then
+		print_info "  └ $package_spec 설치 중..."
+		if run_pipx install "$package_spec"; then
+			print_info "  ✓ code-review-graph 설치 완료"
+		else
+			print_warn "code-review-graph 자동 설치 실패. MCP 등록은 유지하되 실행 전 수동 설치가 필요합니다."
+			echo "  수동 설치: pipx install \"$package_spec\""
+		fi
+	else
+		print_info "  ✓ code-review-graph 실행 파일 확인됨: $(command -v code-review-graph)"
+	fi
+
+	if command -v code-review-graph &>/dev/null; then
+		if code-review-graph --version >/dev/null 2>&1; then
+			print_info "  ✓ code-review-graph version check 통과"
+		else
+			print_warn "code-review-graph version check가 실패했습니다. MCP 자체는 등록하지만 첫 실행 로그를 확인하세요."
+		fi
+	else
+		print_warn "code-review-graph가 PATH에 아직 없습니다. 새 셸을 열거나 PATH에 pipx bin 경로를 추가하세요."
+	fi
+
+	print_info "  └ 자동 build/watch/daemon은 실행하지 않습니다. 필요 시 온디맨드 MCP tool 또는 'code-review-graph build --repo .'를 사용하세요."
+
+	if [ -f "$wrapper_path" ] && command -v claude &>/dev/null; then
+		if command -v cygpath &>/dev/null; then
+			mcp_wrapper_arg=$(cygpath -w "$wrapper_path")
+		fi
+
+		claude mcp remove code-review-graph -s project >/dev/null 2>&1 || true
+		code_review_graph_result=$(claude mcp add code-review-graph -s project -- node "$mcp_wrapper_arg" 2>&1 || true)
+		if echo "$code_review_graph_result" | grep -qi "Added\|added\|success"; then
+			print_info "  ✓ code-review-graph: project scope MCP 등록 완료"
+		elif echo "$code_review_graph_result" | grep -qi "already exists"; then
+			print_info "  ✓ code-review-graph: 이미 존재함 (project)"
+		else
+			print_warn "  code-review-graph MCP 등록 결과를 확인해주세요:"
+			echo "    $code_review_graph_result"
+		fi
+	elif [ ! -f "$wrapper_path" ]; then
+		print_warn "code-review-graph wrapper를 찾지 못했습니다: $wrapper_path"
+	else
+		print_warn "claude 명령어를 찾을 수 없어 code-review-graph MCP 등록을 건너뜁니다."
+	fi
+}
+
 # 압축 해제 함수 (unzip 또는 python 사용)
 extract_zip() {
 	local zip_file=$1
@@ -495,7 +617,7 @@ usage() {
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
-  - .claude/skills/* 를 Codex skills(${CODEX_HOME:-./.codex}/skills/*)에 심볼릭 링크
+  - .claude/skills/* 를 Codex 전역 skills(${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*)에 개별 심볼릭 링크
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 보호되는 파일 패턴:
@@ -742,8 +864,9 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
-	echo "  - Codex 전역 skills 심볼릭 링크 구성"
+	echo "  - Codex 전역 skills 링크 팜 구성 (${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills)"
 	echo "  - MemoryGraph 자동 설치 시도 및 프로젝트 로컬 MCP 등록"
+	echo "  - code-review-graph[communities] 자동 설치 시도 및 코드 분석 MCP 등록 (build/watch/daemon 제외)"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
 	if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
 		echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
@@ -907,6 +1030,9 @@ setup_browser_runtime
 # 7.12. MemoryGraph project-local MCP bootstrap
 setup_memorygraph
 
+# 7.13. code-review-graph project-local code analysis MCP bootstrap
+setup_code_review_graph
+
 # 8.5. claude-delegator 플러그인 설치 안내
 echo ""
 print_info "claude-delegator 플러그인 설정 확인 중..."
@@ -1067,7 +1193,7 @@ if [ -L ".agents/skills" ]; then
 	echo "  ✓ .agents/skills             (→ .claude/skills)"
 fi
 if [ ${#CODEX_SKILL_LINKS[@]} -gt 0 ]; then
-	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (→ .claude/skills/*)"
+	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (→ $(pwd -P)/.claude/skills/*)"
 fi
 if [ -x ".claude/bin/browserctl" ]; then
 	echo "  ✓ .claude/bin/browserctl     (브라우저 런타임 전역 진입점)"
@@ -1100,7 +1226,7 @@ fi
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
 echo "  2. Git에 커밋: git add .claude .agents .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
-echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_HOME:-./.codex}/skills} 를 다시 로드하세요"
+echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_GLOBAL_HOME:-\${CODEX_HOME:-\$HOME/.codex}}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
 if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ] || [ ${#CODEX_BACKUP_PATHS[@]} -gt 0 ]; then

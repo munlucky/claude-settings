@@ -17,6 +17,7 @@ __pycache__/
 .claude/docs/moonshot-analysis.yaml
 .claude/memory.json
 .claude/memorygraph/
+.code-review-graph/
 .claude/logs
 .tmp/
 .DS_Store

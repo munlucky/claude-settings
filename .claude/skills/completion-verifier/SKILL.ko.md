@@ -29,6 +29,7 @@ finish 또는 handoff 전에 실행하는 기본 Verify stage 소유자입니다
 - 최신 verifier verdict artifact
   - 특히 `verify-changes.sh`가 기록한 `verdict.workflowEvidence.*`
   - 특히 `verify-changes.sh`가 기록한 `verdict.score.*`
+- 앞 stage에서 코드 분석/리뷰/영향도 증거가 필요했던 경우 `analysisContext.codeReviewGraph`
 
 ## contract-first 정책
 검증 명령 해석 우선순위:
@@ -61,6 +62,7 @@ verificationEnvironment:
 - verifier는 실행할 때마다 `QA_REPORT.md`를 갱신해야 합니다.
 - verification contract가 있으면 contract의 required check에 대한 최신 증거 없이는 성공 판정을 반환하지 않습니다.
 - verifier artifact에 `workflowEvidence.warnings`가 있으면 이를 stage closeout 누락 신호로 취급합니다.
+- plan/execute/review에서 코드 구조 분석이 필요했다면 clean closeout 전에 `code-review-graph`가 `selectedHarnessComponents` 또는 concrete reason이 있는 `skippedHarnessComponents`에 기록되어야 합니다.
 - score 기반 루프에서는 `SCORECARD.md` 또는 verifier가 계산한 score가 없으면 `gateDecision: pass`를 반환하지 않습니다.
 - score 기반 루프에서는 `score.verdict == done`이 아니면 완료 통과를 반환하지 않습니다.
 - 최신 증거 없이 성공을 암시하는 표현을 쓰지 않습니다. 금지 예시는 `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification` 입니다.
@@ -76,12 +78,14 @@ verificationEnvironment:
   - clean completion 전에는 applied evidence에 `codex-review-code`
   - clean completion 전 `doc-auto-sync` evidence
   - `QA_REPORT.md`에 `Review completed: yes`
+  - 코드 구조 분석 또는 review context 축소가 필요한 작업이면 `code-review-graph` selected/skipped evidence
   - `QA_REPORT.md`의 finish-closeout 필드가 placeholder가 아닌 실제 closeout 내용으로 채워짐
   - phase가 실제로 닫힐 때 seeded placeholder 대신 clean-finish `HANDOFF.md` marker가 기록됨
 - `workflowEvidence.warnings`가 비어 있지 않으면:
   - strict -> `gateDecision: pass` 금지
   - standard -> remediation 또는 `pass_with_warning`로 내리고 경고를 `QA_REPORT.md`에 남깁니다.
 - 코드 변경 마감인데 `stageOrder` 또는 `workflowEvidence` 자체가 비어 있으면 finish/handoff 증거가 불완전하다고 봅니다.
+- 필요한 CRG stage의 `analysisContext.codeReviewGraph.stageCoverage`가 비어 있으면 warning으로 처리합니다. Verify stage에서는 새 graph를 만들지 말고 gap만 기록합니다.
 
 ## Step 1.1: Score 정합
 
@@ -128,6 +132,12 @@ completionStatus:
     unmetChecklistItems: 0
     blockingDefects: 0
     verdict: done | retry | blocked | missing
+  codeReviewGraph:
+    required: true | false
+    graphStatus: unknown | not_built | stale | fresh | unavailable
+    selectedOrSkippedRecorded: true | false
+    missingStageCoverage: []
+    warnings: []
   gateDecision: pass | failed | pass_with_warning
   verdictArtifact:
     path: "{tasksRoot}/{feature-name}/verification-result.json"
@@ -160,6 +170,7 @@ qaReport:
   - `score.current >= score.target`
   - `score.unmetChecklistItems == 0`
   - `score.blockingDefects == 0`
+  - 코드 구조 분석이 필요했다면 `code-review-graph` selected/skipped evidence가 기록되어 있음
 - 그 외에는 self-audit만으로 완료 성공을 추론하지 않습니다.
 
 추가 규칙:

@@ -185,6 +185,29 @@ Run stage-scoped recalls before delegating work:
 
 Do not merge MemoryGraph entries that duplicate system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules; record them in `projectMemory.omitted.duplicatedSystemRules`.
 
+#### 2.0.5 Code Review Graph Stage Gate
+
+Apply `.claude/docs/guidelines/code-review-graph-workflow.md` when code structure analysis can reduce broad file reads or review context.
+
+Activate `analysisContext.codeReviewGraph` when:
+- `signals.executionPlane` is `product_project` or `meta_harness`
+- and the active stage needs code reading, code editing, review, impact analysis, architecture overview, large-function detection, or blast-radius reduction
+
+For `read_only`, activate only when the user explicitly asks for code analysis, review context, impact radius, architecture overview, or similar structure analysis.
+
+Stage behavior:
+- `plan`: before broad file reads, check graph status and use minimal context or architecture overview when available.
+- `execute`: before implementation, use target/impact summaries to narrow files and dependencies.
+- `review`: for changed files, use change detection, review context, and impact radius as the default review context source.
+- `verify`: do not build a new graph; if CRG was used earlier, record evidence presence and stale/unavailable warnings only.
+- `finish`: persist summary-only evidence and never store raw graph output.
+
+Failure policy:
+- If MCP or CLI status fails, set `codeReviewGraph.graphStatus=unavailable`, add a short warning, and continue the workflow unless another gate fails.
+- Always forbid installer-time build, `watch`, `crg-daemon start`, and raw graph duplication into MemoryGraph.
+- When used, record `code-review-graph` in `workflowEvidence.selectedHarnessComponents`.
+- When skipped, record `code-review-graph` in `workflowEvidence.skippedHarnessComponents` with a concrete reason.
+
 #### 2.0.6 Product package detection
 Before normal build planning, detect whether upstream product-definition artifacts already exist.
 
@@ -260,6 +283,7 @@ Policy:
 - bounded direct work that stays outside the phase harness must still keep `workflowEvidence` current in `.claude/docs/moonshot-analysis.yaml`
 - bounded direct `workflowEvidence` must include `selectedBundles`, `requiredSkills`, and `stageOrder`
 - bounded direct `workflowEvidence` must include `selectedHarnessComponents`, `skippedHarnessComponents`, `selectionReason`, `runtimeIsolation`, and `modelEffortProfile`
+- bounded direct code analysis must record `code-review-graph` as selected or skipped according to `.claude/docs/guidelines/code-review-graph-workflow.md`
 - bounded direct code changes must record `codex-review-code` evidence before final verification is treated as stable
 - bounded direct code changes must record whether `code-simplifier` was applied or explicitly skipped with a reason
 - bounded direct code changes must record `doc-auto-sync` evidence before completion is claimed
@@ -492,6 +516,7 @@ Run `decisions.skillChain` in order.
 | `e2eFailed` | `verify-runtime.sh` exit `2` | Apply same policy as `testFailed` |
 | `browserFlowFailed` | `verify-runtime.sh` exit `3` | Re-enter runtime/browser remediation path, then rerun `browser-verifier` |
 | `reviewRequired` | meaningful code changes or medium+ complexity | Insert `codex-review-code` before final verification |
+| `codeAnalysisNeeded` | code work needs broad file reads, impact analysis, architecture overview, or review context reduction | Apply the Code Review Graph stage gate and record selected/skipped component evidence |
 | `verificationFailed` | `completion-verifier` or runtime verifier fails | Update `QA_REPORT.md`, re-enter implementation with contract-linked findings |
 | `planInvalidated` | review, runtime evidence, or implementation findings contradict the selected plan | Stop the current tactic, update notes/QA evidence, and re-enter uncertainty handling plus sequence decision |
 | `finishRequired` | meaningful file edits with stable verifier state | Insert `doc-auto-sync` and `session-logger` before final completion statement |

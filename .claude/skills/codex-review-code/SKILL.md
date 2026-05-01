@@ -30,6 +30,9 @@ This is the default Review-stage owner for non-trivial code changes.
 
 - Treat `.claude/scripts/verify-code-policy.sh` as the hard gate for machine-checkable code policy violations.
 - Use this review for semantic and architectural risk assessment, not as a substitute for deterministic checks.
+- In review stage, prefer `code-review-graph` as the default source for changed-file review context, impact radius, and caller/importer/test hints before broad file reading.
+- Apply `.claude/docs/guidelines/code-review-graph-workflow.md`: stage-gated, lazy update, summary-only evidence.
+- Do not start watch/daemon or copy raw graph output into MemoryGraph.
 - Repeat code-policy findings only when they expose a broader design or maintainability problem.
 - Consume review feedback technically, not socially: clarify unclear findings, challenge incorrect findings with evidence, and do not close the remediation loop until each meaningful item has an explicit disposition.
 
@@ -75,7 +78,7 @@ try {
 ### Step 2-9: Review Process
 
 2. Summarize change scope, changed files, and key behaviors
-3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`) and read relevant code
+3. Capture the context.md path (default: `{tasksRoot}/{feature-name}/context.md`), then use `code-review-graph` detect changes/review context/impact radius when available to reduce relevant code reads
 4. Build delegation prompt using the 7-section format below with two review stages:
    - Stage A `coverage_findings`: surface every plausible issue, including low-severity or low-confidence items, each with confidence and severity
    - Stage B `ranking_decision`: rank/deduplicate findings and produce the merge decision

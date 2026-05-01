@@ -16,6 +16,7 @@
 - phase 기반 작업이 필요할 때 `docs/implementation/`를 런타임에 생성해 사용
 - `.claude/verification-results-*`, `.claude/verification-verdict-*`, `.claude/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리 대상이 아님
 - 프로젝트 로컬 메모리는 MemoryGraph를 기본 backend로 사용하며 `.claude/memorygraph/`에 저장하고 버전 관리/기본 agent context에서 제외
+- 코드 구조 분석은 `code-review-graph` MCP를 stage-gated + lazy update 방식으로 사용하며 `.code-review-graph/`에 저장하고 자동 build/watch 없이 실행
 
 ## 디렉터리 구조
 
@@ -161,7 +162,7 @@ chmod +x install-claude.sh
 - `.codex/config.toml`, `.codex/agents/` 중 존재 항목은 자동 백업 후 설치
 - `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
-- `.claude/skills/*`를 Codex 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에 심볼릭 링크
+- `.claude/skills/*`를 Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 개별 심볼릭 링크
 - Python 3.10+ 환경에서 `pipx install memorygraphMCP`를 자동 시도하고 MemoryGraph MCP를 project scope로 등록
 
 보호되는 사용자 파일 패턴:
@@ -231,7 +232,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 
 ### Codex 설정 동기화
 
-설치 스크립트는 `.codex/config.toml`과 `.codex/agents/`를 설치하고, 동시에 `.claude/skills/*`를 Codex가 읽는 스킬 경로 `${CODEX_HOME:-./.codex}/skills/*`에도 심볼릭 링크합니다. `CODEX_HOME`을 지정하지 않으면 현재 프로젝트 루트의 `.codex`를 사용합니다.
+설치 스크립트는 `.codex/config.toml`과 `.codex/agents/`를 프로젝트에 설치하고, 동시에 `.claude/skills/*`를 Codex가 읽는 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 개별 심볼릭 링크합니다. 전역 `skills` 디렉터리 자체는 유지하고, `claude-settings`가 소유한 스킬 이름만 링크로 교체합니다.
 
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
@@ -252,9 +253,16 @@ Memory 설정:
 - 프로젝트 지식그래프는 `node .claude/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.claude/memorygraph/`에 반영합니다.
 - 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `claude-settings` graph에 승격합니다.
 
+Code Review Graph 설정:
+- `code-review-graph`는 MemoryGraph를 대체하지 않습니다. MemoryGraph는 작업 기억/정책/결정, `code-review-graph`는 코드 구조/리뷰 영향도/분석 기능을 담당합니다.
+- Codex MCP는 `node .claude/scripts/codex-mcp-singleton.mjs code-review-graph -- node .claude/scripts/code-review-graph-mcp-wrapper.js`입니다.
+- `install-claude.sh`는 `pipx install "code-review-graph[communities]"`를 best-effort로 시도하고, 자동 `build`, `watch`, `daemon`은 실행하지 않습니다.
+- 하네스 stage별 사용 계약은 `.claude/docs/guidelines/code-review-graph-workflow.md`를 따릅니다. 코드 분석, 영향도, blast radius, architecture overview, large function 탐색, 리뷰 컨텍스트 축소가 필요한 stage에서는 broad file read보다 `code-review-graph` MCP를 우선 사용합니다.
+- 프로젝트 분석 DB는 `.code-review-graph/`에 저장하며 버전 관리와 기본 agent context에서 제외합니다.
+
 주의:
-- `.codex/skills`는 재생성 가능한 링크 영역이고, `.codex/config.toml`과 `.codex/agents/`는 관리 대상 설정입니다.
-- 같은 이름의 기존 전역 스킬이 있으면 백업 후 교체됩니다.
+- 프로젝트 `.codex/skills`는 truth source가 아닙니다. Codex Desktop이 읽는 전역 `skills`는 링크 팜이고, 원본은 `.claude/skills`입니다.
+- 같은 이름의 기존 전역 스킬이 있으면 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/backups/skills/` 아래로 백업 후 교체됩니다.
 - 설치 직후 Codex에 스킬이 보이지 않으면 새 세션을 열어 전역 스킬 디렉토리를 다시 로드하세요.
 
 ### 다음 단계

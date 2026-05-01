@@ -10,6 +10,9 @@ description: Performs implementation in the chain and records completion state a
 - `analysisContext.request.taskType`
 - `analysisContext.decisions.skillChain`
 - `analysisContext.repo.openFiles`
+- `analysisContext.codeReviewGraph.contextSummary`
+- `analysisContext.codeReviewGraph.impactSummary`
+- `analysisContext.codeReviewGraph.warnings`
 - `analysisContext.artifacts.workflowGuidePath`
 - `analysisContext.artifacts.designGuidePath`
 - `analysisContext.artifacts.glossaryGuidePath`
@@ -86,6 +89,15 @@ When the run is attached to a phase execution bridge:
 - do not leave `QA_REPORT.md` with `Review completed: no` if the slice is about to claim `clean_finish`
 - do not leave `HANDOFF.md`, review checkpoint fields, or finish-closeout bullets in placeholder form for a closing slice
 - if review or finish evidence is missing, record the gap and keep the slice in retry/remediation flow instead of pretending implementation is done
+
+### Step 0.3: Code Review Graph Target Narrowing
+
+Before code edits, apply `.claude/docs/guidelines/code-review-graph-workflow.md` when the task requires code structure analysis:
+- Read `analysisContext.codeReviewGraph.contextSummary` and `impactSummary` before opening broad file sets.
+- If the graph is `not_built` or `stale` and code structure analysis is needed for this stage, use the MCP build/update path or CLI fallback within the current request scope.
+- Use the summary to limit target files, likely dependencies, and impact radius.
+- If CRG is unavailable, record a warning and continue with normal bounded file inspection.
+- Do not paste raw graph output or `.code-review-graph/` contents into implementation notes.
 
 ### Step 1: Test Environment Detection
 

@@ -11,6 +11,7 @@ description: Creates implementation plans (context.md) based on preliminary agre
 ## Inputs
 - Preliminary agreement (`.claude/docs/agreements/{feature-name}-agreement.md`)
 - Similar feature code paths
+- `analysisContext.codeReviewGraph` summary when code structure analysis is available
 - Project rules (`.claude/PROJECT.md`)
 
 ### Token-Efficient Input
@@ -20,12 +21,18 @@ agreementFile: ".claude/features/xxx/agreement.md"
 relevantFilePaths:
   - "src/pages/similar/*.tsx"
   - "src/api/similar.ts"
+codeReviewGraph:
+  graphStatus: "fresh|stale|not_built|unavailable|unknown"
+  contextSummary:
+    - "related modules/files summary"
+  warnings: []
 outputFile: ".claude/features/xxx/context.md"
 ```
 
 **Principles**:
 - Receive only the agreement.md path and read its content directly
 - Receive only the list of similar feature files (no contents)
+- Prefer `analysisContext.codeReviewGraph.contextSummary` before expanding broad file globs
 - Read only the necessary files selectively
 - Read only the required sections of the project rules
 ## Outputs
@@ -34,7 +41,7 @@ outputFile: ".claude/features/xxx/context.md"
 - Minimum context readiness sections required by `context-readiness-gate`
 
 ## Workflow
-1. Read the agreement and similar features, then confirm the change scope.
+1. Read the agreement, then use `codeReviewGraph.contextSummary` or architecture/minimal-context output to narrow similar feature paths before broad file reads.
 2. List new vs modified files separately.
 3. **Generate Acceptance Tests spec** (NEW)
    - Unit tests for each component/utility
