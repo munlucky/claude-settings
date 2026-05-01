@@ -68,16 +68,22 @@ def copy_file(src: Path, dest: Path, dry_run: bool) -> None:
     shutil.copy2(src, dest)
 
 
+def ignore_runtime_noise(_directory: str, names: list[str]) -> set[str]:
+    return {
+        name
+        for name in names
+        if name == "__pycache__" or name.endswith(".pyc")
+    }
+
+
 def sync_dir(src: Path, dest: Path, dry_run: bool) -> None:
     if not src.exists():
         return
     log(dry_run, f"dir  {src} -> {dest}")
     if dry_run:
         return
-    if dest.exists():
-        shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dest)
+    shutil.copytree(src, dest, dirs_exist_ok=True, ignore=ignore_runtime_noise)
 
 
 def sync_target(source: Path, target: Path, dry_run: bool) -> None:
