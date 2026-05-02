@@ -39,11 +39,23 @@ Execution modes:
 - `in-session-coordinator`: the current session coordinates the loop, but each attempt must run as a fresh fork/sub-agent round; treat this as an interactive thin-coordinator mode, not the default autonomous runtime
 
 Effort profile policy:
-- Default phase, agentic, review, and high-risk work to `deep`.
+- Default phase, agentic, review, and high-risk work to `standard`.
 - Use `economy` only for parity smoke or narrow read-only checks.
 - Use `standard` for simple/local bounded work.
-- Use `max` only for exceptional hard long-horizon work.
-- Codex maps the profile to `model_reasoning_effort`; Claude Code records the profile in contracts and prompts when no runtime flag is available.
+- Use `deep` or `max` only when runtime/core/architecture/security risk, failed retry evidence, or hard long-horizon work justifies escalation.
+- Every `deep` or `max` run must record `Effort escalation reason` in `SPRINT_CONTRACT.md`, `QA_REPORT.md`, and workflow evidence.
+- Codex maps the profile to `model_reasoning_effort`; Claude Code records the same profile and escalation reason in contracts and prompts when no runtime flag is available.
+
+Retrieval and validation policy:
+- Default retrieval budget is one compact MemoryGraph/CodeReviewGraph recall per stage.
+- Repeat retrieval only for missing owner, date, path, API/schema, or failure fact.
+- Stop retrieving when the core stage decision is answerable with compact evidence.
+- Use `validationProfile` values from `.claude/verification.contract.yaml`: `prompt_only`, `docs_only`, `script_change`, `workflow_core`, or `runtime_adapter`.
+
+Phase replay policy:
+- For long-running or tool-heavy Responses-style integrations, preserve assistant-item `phase` values when replaying assistant history.
+- Use `commentary` for progress/preamble updates and `final_answer` only after return-boundary checks pass.
+- Do not add `phase` metadata to user messages.
 
 Execution start policy:
 - default: auto-start execution immediately after preparation

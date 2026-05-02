@@ -211,6 +211,12 @@ Pre-return self-check:
 - If Phase 01 becomes `completed` while Phase 02 or later is still actionable, update the artifacts and phase state, then enter Phase 02 immediately instead of returning a terminal summary.
 - If the coordinator still exits 0 early, the dispatcher should restart it while actionable phases remain; treat that early exit as a contract violation.
 
+Cross-runtime GPT-5.5 contract:
+- Start with `modelEffortProfile: standard`; use `deep` or `max` only with a recorded `Effort escalation reason`.
+- Keep the retrieval budget to one compact MemoryGraph/CodeReviewGraph recall per stage unless a required owner/date/path/API/schema/failure fact is missing.
+- Preserve assistant-item `phase` values when replaying assistant history: `commentary` for progress updates and `final_answer` only after return-boundary checks pass.
+- Never add `phase` metadata to user messages.
+
 ## Output
 
 ```yaml

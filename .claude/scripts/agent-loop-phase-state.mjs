@@ -261,6 +261,14 @@ function extractWorkflowSection(text) {
       result.runtimeIsolation = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Model effort profile:')) {
       result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Effort escalation reason:')) {
+      result.effortEscalationReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Retrieval budget:')) {
+      result.retrievalBudget = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Validation profile:')) {
+      result.validationProfile = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Phase replay policy:')) {
+      result.phaseReplayPolicy = stripped.split(':', 2)[1]?.trim() ?? '';
     }
   }
   return result;
@@ -842,8 +850,21 @@ function evaluatePhaseCompletionGate(config) {
       workflowReason = 'workflow-skipped-skills-missing';
     } else if (!workflowSection.selectedHarnessComponents) {
       workflowReason = 'workflow-selected-harness-components-missing';
-    } else if (!workflowSection.selectionReason || !workflowSection.runtimeIsolation || !workflowSection.modelEffortProfile) {
+    } else if (
+      !workflowSection.selectionReason ||
+      !workflowSection.runtimeIsolation ||
+      !workflowSection.modelEffortProfile ||
+      !workflowSection.effortEscalationReason ||
+      !workflowSection.retrievalBudget ||
+      !workflowSection.validationProfile ||
+      !workflowSection.phaseReplayPolicy
+    ) {
       workflowReason = 'workflow-harness-decision-evidence-missing';
+    } else if (
+      ['deep', 'max'].includes(workflowSection.modelEffortProfile) &&
+      ['', 'none'].includes(workflowSection.effortEscalationReason.toLowerCase())
+    ) {
+      workflowReason = 'workflow-effort-escalation-reason-missing';
     } else if (
       codeChangeDetected &&
       !normalizeLower(workflowSection.applied).includes('code-simplifier') &&
@@ -1029,6 +1050,10 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_HARNESS_SELECTION_REASON: workflowSection.selectionReason || '',
     PHASE_RUNTIME_ISOLATION: workflowSection.runtimeIsolation || '',
     PHASE_MODEL_EFFORT_PROFILE: workflowSection.modelEffortProfile || '',
+    PHASE_EFFORT_ESCALATION_REASON: workflowSection.effortEscalationReason || '',
+    PHASE_RETRIEVAL_BUDGET: workflowSection.retrievalBudget || '',
+    PHASE_VALIDATION_PROFILE: workflowSection.validationProfile || '',
+    PHASE_REPLAY_POLICY: workflowSection.phaseReplayPolicy || '',
     PHASE_PLANNING_READY: planningReady ? 'true' : 'false',
     PHASE_EXECUTION_READY: executionReady ? 'true' : 'false',
     PHASE_CLOSEOUT_STATUS: closeoutStatus,

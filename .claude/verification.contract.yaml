@@ -24,6 +24,28 @@ checkPolicies:
     commandEnv:
       PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: "{verificationTarget}"
     preflightBlockOnUnavailable: true
+  validationProfiles:
+    prompt_only:
+      checks: [knowledgeAudit, shellSyntax]
+      minimumEvidence: "static contract and knowledge audit"
+    docs_only:
+      checks: [knowledgeAudit, shellSyntax]
+      minimumEvidence: "documentation and template syntax integrity"
+    script_change:
+      checks: [shellSyntax, codePolicy]
+      minimumEvidence: "syntax plus targeted self-test when available"
+    workflow_core:
+      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel]
+      minimumEvidence: "cross-runtime workflow contract evidence"
+    runtime_adapter:
+      checks: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout]
+      minimumEvidence: "Codex and Claude runtime boundary parity"
+  crossRuntimePhaseReplay:
+    required: true
+    assistantItemPhaseValues:
+      - commentary
+      - final_answer
+    rule: "Preserve assistant phase values when replaying assistant items; never add phase to user messages."
 scope:
   executionPlanes:
     - meta_harness

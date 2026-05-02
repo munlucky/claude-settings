@@ -416,6 +416,10 @@ cat > "$CONFORMANCE_PHASE_DIR/QA_REPORT.md" <<'EOF'
 - Selection reason: phase runner boundary fixture uses the full phase harness
 - Runtime isolation: isolated boundary fixture
 - Model effort profile: economy
+- Effort escalation reason: none
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: workflow_core
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
 
 ## Finish Readiness
 - Fresh evidence confirmed: yes

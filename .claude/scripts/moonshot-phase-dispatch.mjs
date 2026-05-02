@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runCommand } from './lib/process-utils.mjs';
-import { resolveCodexReasoningEffort, resolveEffortProfile } from './lib/effort-profile.mjs';
+import { resolveCodexReasoningEffort, resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
@@ -28,11 +28,16 @@ const state = {
   stopOnFailure: true,
   autonomous: false,
   dryRun: false,
-  effortProfile: resolveEffortProfile(process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE, 'deep'),
+  effortProfile: resolveEffortProfile(process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE, 'standard'),
+  effortEscalationReason: resolveEffortEscalationReason({
+    profile: process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE ?? 'standard',
+    explicitReason: process.env.PHASE_DISPATCH_EFFORT_ESCALATION_REASON
+      ?? process.env.MOONSHOT_EFFORT_ESCALATION_REASON,
+  }),
   codexReasoningEffort: resolveCodexReasoningEffort({
     explicitEffort: process.env.PHASE_DISPATCH_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
     profile: process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
-    defaultProfile: 'deep',
+    defaultProfile: 'standard',
   }),
   allowInteractiveInSession: (process.env.PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION ?? 'false') === 'true',
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
@@ -649,6 +654,11 @@ function recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiv
     masterPlan,
   ], {
     stdio: 'ignore',
+    env: {
+      ...process.env,
+      PHASE_DISPATCH_EFFORT_PROFILE: state.effortProfile,
+      PHASE_DISPATCH_EFFORT_ESCALATION_REASON: state.effortEscalationReason,
+    },
   });
 }
 
@@ -829,6 +839,9 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
       stdio: 'inherit',
       env: {
         ...process.env,
+        AGENT_LOOP_EFFORT_PROFILE: state.effortProfile,
+        PHASE_DISPATCH_EFFORT_PROFILE: state.effortProfile,
+        PHASE_DISPATCH_EFFORT_ESCALATION_REASON: state.effortEscalationReason,
         PHASE_RUN_LEASE_ID: runtimeState.runLeaseId,
       },
     });
@@ -1046,6 +1059,9 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
+        AGENT_LOOP_EFFORT_PROFILE: state.effortProfile,
+        PHASE_DISPATCH_EFFORT_PROFILE: state.effortProfile,
+        PHASE_DISPATCH_EFFORT_ESCALATION_REASON: state.effortEscalationReason,
         PHASE_RUN_LEASE_ID: runtimeState.runLeaseId,
       },
     });

@@ -6,8 +6,23 @@
 - Source task:
 - Phase document:
 
-## Round Goal
-- What this round must deliver in user-visible terms
+## Goal
+- User-visible outcome this round must deliver
+
+## Success Criteria
+- In-scope `REQ-*` and critical `SCN-*` are implemented or explicitly blocked
+- Review, verification, scorecard, and handoff evidence agree before clean finish
+
+## Constraints
+- Preserve phase return boundaries, review-before-finish, verification evidence, security, and no raw MemoryGraph/CodeReviewGraph output
+
+## Output
+- Code/docs/artifacts changed this round
+- Evidence paths that prove completion
+
+## Stop Rules
+- Continue while actionable phases remain
+- Stop only on clean plan-directory completion, explicit blocker, user pause, or deferred verification handoff
 
 ## Source Plan Requirements Snapshot
 - Source phase doc:
@@ -44,7 +59,11 @@
 - Skipped harness components:
 - Selection reason:
 - Runtime isolation:
-- Model effort profile: economy | standard | deep | max
+- Model effort profile: economy | standard | deep | max (default: standard)
+- Effort escalation reason: none unless model effort profile is deep|max
+- Retrieval budget: stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: prompt_only | docs_only | script_change | workflow_core | runtime_adapter
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
 
 ## Planned Changes
 - Main implementation areas
@@ -83,6 +102,17 @@
 - Verification contract:
 - Phase-specific guides:
 - Round policy summary:
+
+## Retrieval Budget
+- MemoryGraph: one compact stage recall by default; pass only summarized `projectMemoryContext`
+- CodeReviewGraph: one status or impact summary per stage; record summary-only workflow evidence
+- Repeat retrieval only when an owner, date, path, API/schema, or failure fact is missing
+
+## Cross-Runtime Phase Replay
+- Applies to Codex and Claude Code adapters
+- Preserve assistant-item `phase` values when assistant history is replayed
+- Use `commentary` for progress/preamble updates and `final_answer` only after return-boundary checks pass
+- Do not add `phase` to user messages
 
 ## Review Cadence
 - First review checkpoint:

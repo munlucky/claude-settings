@@ -87,6 +87,10 @@ def main() -> int:
     parser.add_argument("--selected-bundle", action="append", default=[])
     parser.add_argument("--stage", action="append", default=[])
     parser.add_argument("--workflow-warning", action="append", default=[])
+    parser.add_argument("--effort-escalation-reason", default="")
+    parser.add_argument("--retrieval-budget", default="")
+    parser.add_argument("--validation-profile", default="")
+    parser.add_argument("--phase-replay-policy", default="")
     parser.add_argument("--requested-runtime", default="")
     parser.add_argument("--effective-runtime", default="")
     parser.add_argument("--verification-runtime-targets", default="")
@@ -219,6 +223,10 @@ def main() -> int:
         "workflowEvidence": {
             "selectedBundles": args.selected_bundle,
             "stageOrder": args.stage,
+            "effortEscalationReason": args.effort_escalation_reason,
+            "retrievalBudget": args.retrieval_budget,
+            "validationProfile": args.validation_profile,
+            "phaseReplayPolicy": args.phase_replay_policy,
             "warnings": args.workflow_warning,
         },
         "runtimeContext": {

@@ -370,7 +370,7 @@ function buildWorkerCommand(prompt, runtime) {
     const effort = resolveCodexReasoningEffort({
       explicitEffort: process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
       profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
-      defaultProfile: 'deep',
+      defaultProfile: 'standard',
     });
     if (effort) {
       args.push('-c', `model_reasoning_effort="${effort}"`);

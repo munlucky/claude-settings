@@ -94,6 +94,9 @@ phaseExecutionResult:
 - This skill is the internal phase execution handoff behind `moonshot-phase-runner`.
 - Apply `.claude/docs/guidelines/memorygraph-workflow.md` before dispatching execution.
 - Do not pass raw MemoryGraph records to dispatcher/agent-loop/coordinator inputs; pass summarized `projectMemoryContext` only.
+- Use one compact MemoryGraph/CodeReviewGraph recall per stage by default; repeat only for missing owner/date/path/API/schema/failure facts, then stop when answerable.
+- Default `modelEffortProfile` is `standard`; `deep` and `max` require a concrete `Effort escalation reason` in QA and workflow evidence.
+- Preserve assistant-item `phase` values when replaying assistant history (`commentary` for progress, `final_answer` only after completion); never add phase metadata to user messages.
 - Scripts are implementation adapters only and must stay behind this skill.
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.
 - Do not ask the user to manually run `moonshot-phase-dispatch.mjs` in the default path.

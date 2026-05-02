@@ -353,6 +353,10 @@ load_workflow_evidence_context() {
   WORKFLOW_SELECTION_REASON=""
   WORKFLOW_RUNTIME_ISOLATION=""
   WORKFLOW_MODEL_EFFORT_PROFILE=""
+  WORKFLOW_EFFORT_ESCALATION_REASON=""
+  WORKFLOW_RETRIEVAL_BUDGET=""
+  WORKFLOW_VALIDATION_PROFILE=""
+  WORKFLOW_PHASE_REPLAY_POLICY=""
   WORKFLOW_EVIDENCE_WARNINGS_LINES=""
 
   if [ ! -f "$analysis_file" ]; then
@@ -453,6 +457,10 @@ skipped_harness_components = as_list(workflow.get("skippedHarnessComponents"))
 selection_reason = str(workflow.get("selectionReason", ""))
 runtime_isolation = str(workflow.get("runtimeIsolation", ""))
 model_effort_profile = str(workflow.get("modelEffortProfile", ""))
+effort_escalation_reason = str(workflow.get("effortEscalationReason", ""))
+retrieval_budget = str(workflow.get("retrievalBudget", ""))
+validation_profile = str(workflow.get("validationProfile", ""))
+phase_replay_policy = str(workflow.get("phaseReplayPolicy", ""))
 changed_files = [line for line in os.environ.get("CHANGED_FILES_LINES", "").splitlines() if line]
 code_suffixes = {
     ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".py", ".rb", ".go", ".rs",
@@ -477,6 +485,9 @@ if code_change_detected:
     if "code-simplifier" not in applied_set and ("code-simplifier" not in skipped_text or "not evaluated yet" in skipped_text):
         warnings.append("workflowEvidence missing code-simplifier evidence for code changes")
 
+if model_effort_profile in ("deep", "max") and effort_escalation_reason.strip().lower() in ("", "none"):
+    warnings.append("workflowEvidence deep/max effort missing effortEscalationReason")
+
 emit("WORKFLOW_EVIDENCE_DETECTED", "true" if workflow else "false")
 emit("WORKFLOW_EVIDENCE_MODE", str(workflow.get("mode", "")))
 print("WORKFLOW_SELECTED_BUNDLES=(" + " ".join(shlex.quote(item) for item in selected) + ")")
@@ -489,6 +500,10 @@ print("WORKFLOW_SKIPPED_HARNESS_COMPONENTS=(" + " ".join(shlex.quote(item) for i
 emit("WORKFLOW_SELECTION_REASON", selection_reason)
 emit("WORKFLOW_RUNTIME_ISOLATION", runtime_isolation)
 emit("WORKFLOW_MODEL_EFFORT_PROFILE", model_effort_profile)
+emit("WORKFLOW_EFFORT_ESCALATION_REASON", effort_escalation_reason)
+emit("WORKFLOW_RETRIEVAL_BUDGET", retrieval_budget)
+emit("WORKFLOW_VALIDATION_PROFILE", validation_profile)
+emit("WORKFLOW_PHASE_REPLAY_POLICY", phase_replay_policy)
 print("WORKFLOW_EVIDENCE_WARNINGS=(" + " ".join(shlex.quote(item) for item in warnings) + ")")
 PY
 )"
@@ -553,6 +568,10 @@ write_verdict_json() {
   WORKFLOW_SELECTION_REASON_VALUE="$WORKFLOW_SELECTION_REASON" \
   WORKFLOW_RUNTIME_ISOLATION_VALUE="$WORKFLOW_RUNTIME_ISOLATION" \
   WORKFLOW_MODEL_EFFORT_PROFILE_VALUE="$WORKFLOW_MODEL_EFFORT_PROFILE" \
+  WORKFLOW_EFFORT_ESCALATION_REASON_VALUE="$WORKFLOW_EFFORT_ESCALATION_REASON" \
+  WORKFLOW_RETRIEVAL_BUDGET_VALUE="$WORKFLOW_RETRIEVAL_BUDGET" \
+  WORKFLOW_VALIDATION_PROFILE_VALUE="$WORKFLOW_VALIDATION_PROFILE" \
+  WORKFLOW_PHASE_REPLAY_POLICY_VALUE="$WORKFLOW_PHASE_REPLAY_POLICY" \
   WORKFLOW_EVIDENCE_WARNINGS_VALUE="$(join_lines "${WORKFLOW_EVIDENCE_WARNINGS[@]}")" \
   python3 "$helper_script" > "$VERDICT_FILE"
 }
@@ -625,6 +644,10 @@ WORKFLOW_SKIPPED_HARNESS_COMPONENTS=()
 WORKFLOW_SELECTION_REASON=""
 WORKFLOW_RUNTIME_ISOLATION=""
 WORKFLOW_MODEL_EFFORT_PROFILE=""
+WORKFLOW_EFFORT_ESCALATION_REASON=""
+WORKFLOW_RETRIEVAL_BUDGET=""
+WORKFLOW_VALIDATION_PROFILE=""
+WORKFLOW_PHASE_REPLAY_POLICY=""
 WORKFLOW_EVIDENCE_WARNINGS=()
 
 collect_changed_files

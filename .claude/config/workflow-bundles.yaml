@@ -69,6 +69,43 @@ stageOrder:
     - "Do not move finish-bundle ahead of the active review or verification verdict."
     - "Meaningful code changes must preserve review -> verify -> finish ordering."
 
+retrievalBudget:
+  default:
+    maxStageRecalls: 1
+    output: compact_summary
+    stopWhenAnswerable: true
+    repeatOnlyFor:
+      - missing_owner
+      - missing_date
+      - missing_path
+      - missing_api_or_schema
+      - missing_failure_fact
+    forbidden:
+      - raw_memorygraph_records_in_prompt
+      - raw_code_review_graph_output_in_memorygraph
+  memoryGraph:
+    budget: "stage=1 compact recall"
+    carrier: projectMemoryContext
+  codeReviewGraph:
+    budget: "one graph status or impact summary per stage"
+    carrier: summary_only_workflow_evidence
+
+validationProfiles:
+  prompt_only: [knowledgeAudit, shellSyntax]
+  docs_only: [knowledgeAudit, shellSyntax]
+  script_change: [shellSyntax, codePolicy]
+  workflow_core: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel]
+  runtime_adapter: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout]
+
+crossRuntimePhaseReplay:
+  appliesTo: [codex, claude]
+  assistantItemPhaseValues: [commentary, final_answer]
+  policy:
+    - "Preserve assistant phase values when replaying assistant history."
+    - "Use commentary for progress and preamble updates."
+    - "Use final_answer only for completed answers after return-boundary checks pass."
+    - "Do not add phase metadata to user messages."
+
 planeSpecificRules:
   read_only:
     - "Must not run implementation or verification bundles."

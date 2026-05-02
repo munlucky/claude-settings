@@ -61,7 +61,11 @@ ensure_execution_artifacts() {
 
     assign_execution_artifact_paths "$phase_num" "$phase_title"
     required_commands="$(render_required_verification_commands)"
-    model_effort_profile="${PHASE_DISPATCH_EFFORT_PROFILE:-${MOONSHOT_EFFORT_PROFILE:-deep}}"
+    model_effort_profile="${PHASE_DISPATCH_EFFORT_PROFILE:-${MOONSHOT_EFFORT_PROFILE:-standard}}"
+    effort_escalation_reason="${PHASE_DISPATCH_EFFORT_ESCALATION_REASON:-${MOONSHOT_EFFORT_ESCALATION_REASON:-none}}"
+    retrieval_budget="${PHASE_RETRIEVAL_BUDGET:-${MOONSHOT_RETRIEVAL_BUDGET:-stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output}}"
+    validation_profile="${PHASE_VALIDATION_PROFILE:-${MOONSHOT_VALIDATION_PROFILE:-workflow_core}}"
+    phase_replay_policy="${PHASE_REPLAY_POLICY:-${MOONSHOT_PHASE_REPLAY_POLICY:-preserve assistant phase commentary/final_answer when replaying; never add phase to user items}}"
 
     mkdir -p "$PHASE_EXECUTION_DIR"
 
@@ -77,8 +81,22 @@ ensure_execution_artifacts() {
 - Source plan: ${MASTER_PLAN}
 - Source phase doc: ${phase_doc}
 
-## Round Goal
-- Fill before code changes.
+## Goal
+- Fill before code changes with the user-visible outcome for this round.
+
+## Success Criteria
+- In-scope source-plan requirements are implemented or explicitly blocked.
+- Review, verification, scorecard, and handoff evidence agree before clean finish.
+
+## Constraints
+- Preserve phase return boundaries, review-before-finish, verification evidence, security, and no raw MemoryGraph/CodeReviewGraph output.
+
+## Output
+- Update code/docs only inside the active phase scope and record durable evidence in the active execution artifacts.
+
+## Stop Rules
+- Continue while actionable phases remain.
+- Stop only on clean plan-directory completion or a recorded blocker/user pause.
 
 ## Non-Goals
 - Fill before code changes.
@@ -96,6 +114,10 @@ ensure_execution_artifacts() {
 - Selection reason: phase work uses the full cross-runtime harness by default.
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract.
 - Model effort profile: ${model_effort_profile}
+- Effort escalation reason: ${effort_escalation_reason}
+- Retrieval budget: ${retrieval_budget}
+- Validation profile: ${validation_profile}
+- Phase replay policy: ${phase_replay_policy}
 
 ## Planned Changes
 - Files/modules:
@@ -222,6 +244,10 @@ EOF
 - Selection reason: phase work uses the full cross-runtime harness by default
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract
 - Model effort profile: ${model_effort_profile}
+- Effort escalation reason: ${effort_escalation_reason}
+- Retrieval budget: ${retrieval_budget}
+- Validation profile: ${validation_profile}
+- Phase replay policy: ${phase_replay_policy}
 - Enforcement note: replace defaults when actual execution diverges
 
 ## Score Summary

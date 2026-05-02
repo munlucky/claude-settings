@@ -606,6 +606,10 @@ EOF
 - Selection reason: runtime parity fixture uses the full phase harness
 - Runtime isolation: isolated runtime parity fixture
 - Model effort profile: economy
+- Effort escalation reason: none
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: runtime_adapter
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
 - Enforcement note: replace defaults when actual execution diverges
 
 ## Finish Readiness
@@ -769,6 +773,10 @@ workflowEvidence:
   selectionReason: workflow enforcement sync fixture
   runtimeIsolation: isolated fixture
   modelEffortProfile: economy
+  effortEscalationReason: none
+  retrievalBudget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+  validationProfile: workflow_core
+  phaseReplayPolicy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
 notes:
   - legacy sync fixture
 EOF
@@ -807,6 +815,10 @@ EOF
 - Selection reason: verifier fixture exercises bounded closeout evidence
 - Runtime isolation: isolated verifier fixture
 - Model effort profile: economy
+- Effort escalation reason: none
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: workflow_core
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
 
 ## Finish Readiness
 - Fresh evidence confirmed: yes
@@ -893,6 +905,10 @@ EOF
 - Selection reason: workflow evidence smoke uses bounded direct full closeout path
 - Runtime isolation: isolated verifier fixture
 - Model effort profile: economy
+- Effort escalation reason: none
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: workflow_core
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
 EOF
 
   cat > "$handoff" <<'EOF'
@@ -937,6 +953,14 @@ if "review" not in workflow.get("selectedHarnessComponents", []):
     raise SystemExit("workflow evidence missing review harness component")
 if not workflow.get("modelEffortProfile"):
     raise SystemExit("workflow evidence missing modelEffortProfile")
+if not workflow.get("effortEscalationReason"):
+    raise SystemExit("workflow evidence missing effortEscalationReason")
+if not workflow.get("retrievalBudget"):
+    raise SystemExit("workflow evidence missing retrievalBudget")
+if not workflow.get("validationProfile"):
+    raise SystemExit("workflow evidence missing validationProfile")
+if not workflow.get("phaseReplayPolicy"):
+    raise SystemExit("workflow evidence missing phaseReplayPolicy")
 if workflow.get("warnings"):
     raise SystemExit(f"unexpected workflow evidence warnings: {workflow.get('warnings')}")
 PY

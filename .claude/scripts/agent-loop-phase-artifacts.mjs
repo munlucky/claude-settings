@@ -4,6 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
+const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
+const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
+const DEFAULT_PHASE_REPLAY_POLICY = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
+
+function defaultEffortEscalationReason(profile) {
+  return ['deep', 'max'].includes(String(profile || '').trim()) ? '' : 'none';
+}
+
 function findSection(lines, heading) {
   let start = null;
   let end = lines.length;
@@ -132,6 +140,14 @@ function extractWorkflowSection(text) {
       result.runtimeIsolation = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Model effort profile:')) {
       result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Effort escalation reason:')) {
+      result.effortEscalationReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Retrieval budget:')) {
+      result.retrievalBudget = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Validation profile:')) {
+      result.validationProfile = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Phase replay policy:')) {
+      result.phaseReplayPolicy = stripped.split(':', 2)[1]?.trim() ?? '';
     }
   }
   return result;
@@ -511,6 +527,11 @@ function syncCleanFinishArtifacts({
       let sawSelectionReason = false;
       let sawRuntimeIsolation = false;
       let sawModelEffortProfile = false;
+      let sawEffortEscalationReason = false;
+      let sawRetrievalBudget = false;
+      let sawValidationProfile = false;
+      let sawPhaseReplayPolicy = false;
+      let modelEffortProfile = process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard';
       for (let index = workflowSectionRange.start + 1; index < workflowSectionRange.end; index += 1) {
         const line = qaLines[index];
         const stripped = line.trim();
@@ -546,6 +567,19 @@ function syncCleanFinishArtifacts({
           body.push(line);
         } else if (stripped.startsWith('- Model effort profile:')) {
           sawModelEffortProfile = true;
+          modelEffortProfile = stripped.split(':', 2)[1]?.trim() || modelEffortProfile;
+          body.push(line);
+        } else if (stripped.startsWith('- Effort escalation reason:')) {
+          sawEffortEscalationReason = true;
+          body.push(line);
+        } else if (stripped.startsWith('- Retrieval budget:')) {
+          sawRetrievalBudget = true;
+          body.push(line);
+        } else if (stripped.startsWith('- Validation profile:')) {
+          sawValidationProfile = true;
+          body.push(line);
+        } else if (stripped.startsWith('- Phase replay policy:')) {
+          sawPhaseReplayPolicy = true;
           body.push(line);
         } else {
           body.push(line);
@@ -564,7 +598,19 @@ function syncCleanFinishArtifacts({
         body.push('- Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract');
       }
       if (!sawModelEffortProfile) {
-        body.push(`- Model effort profile: ${process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'deep'}`);
+        body.push(`- Model effort profile: ${modelEffortProfile}`);
+      }
+      if (!sawEffortEscalationReason) {
+        body.push(`- Effort escalation reason: ${process.env.PHASE_DISPATCH_EFFORT_ESCALATION_REASON || process.env.MOONSHOT_EFFORT_ESCALATION_REASON || defaultEffortEscalationReason(modelEffortProfile)}`);
+      }
+      if (!sawRetrievalBudget) {
+        body.push(`- Retrieval budget: ${process.env.PHASE_RETRIEVAL_BUDGET || process.env.MOONSHOT_RETRIEVAL_BUDGET || DEFAULT_RETRIEVAL_BUDGET}`);
+      }
+      if (!sawValidationProfile) {
+        body.push(`- Validation profile: ${process.env.PHASE_VALIDATION_PROFILE || process.env.MOONSHOT_VALIDATION_PROFILE || DEFAULT_VALIDATION_PROFILE}`);
+      }
+      if (!sawPhaseReplayPolicy) {
+        body.push(`- Phase replay policy: ${process.env.PHASE_REPLAY_POLICY || process.env.MOONSHOT_PHASE_REPLAY_POLICY || DEFAULT_PHASE_REPLAY_POLICY}`);
       }
       qaLines = [...qaLines.slice(0, workflowSectionRange.start), '## Workflow Execution', ...body, ...qaLines.slice(workflowSectionRange.end)];
     }

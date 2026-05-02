@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
-import { resolveEffortProfile } from './lib/effort-profile.mjs';
+import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
 
 export function sanitizeSlug(value) {
   return String(value || '')
@@ -189,8 +189,16 @@ export function ensureExecutionArtifacts(config) {
   const modelEffortProfile = resolveEffortProfile(
     process.env.PHASE_DISPATCH_EFFORT_PROFILE,
     process.env.MOONSHOT_EFFORT_PROFILE,
-    'deep',
+    'standard',
   );
+  const effortEscalationReason = resolveEffortEscalationReason({
+    profile: modelEffortProfile,
+    explicitReason: process.env.PHASE_DISPATCH_EFFORT_ESCALATION_REASON
+      ?? process.env.MOONSHOT_EFFORT_ESCALATION_REASON,
+  });
+  const retrievalBudget = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
+  const validationProfile = 'workflow_core';
+  const phaseReplayPolicy = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
 
   fs.mkdirSync(paths.phaseExecutionDir, { recursive: true });
 
@@ -205,8 +213,22 @@ export function ensureExecutionArtifacts(config) {
 - Source plan: ${masterPlan}
 - Source phase doc: ${phaseDoc}
 
-## Round Goal
-- Fill before code changes.
+## Goal
+- Fill before code changes with the user-visible outcome for this round.
+
+## Success Criteria
+- In-scope source-plan requirements are implemented or explicitly blocked.
+- Review, verification, scorecard, and handoff evidence agree before clean finish.
+
+## Constraints
+- Preserve phase return boundaries, review-before-finish, verification evidence, security, and no raw MemoryGraph/CodeReviewGraph output.
+
+## Output
+- Update code/docs only inside the active phase scope and record durable evidence in the active execution artifacts.
+
+## Stop Rules
+- Continue while actionable phases remain.
+- Stop only on clean plan-directory completion or a recorded blocker/user pause.
 
 ## Source Plan Requirements Snapshot
 ${renderSourcePlanSnapshot(phaseDoc)}
@@ -232,6 +254,10 @@ ${renderSourcePlanSnapshot(phaseDoc)}
 - Selection reason: phase work uses the full cross-runtime harness by default.
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract.
 - Model effort profile: ${modelEffortProfile}
+- Effort escalation reason: ${effortEscalationReason}
+- Retrieval budget: ${retrievalBudget}
+- Validation profile: ${validationProfile}
+- Phase replay policy: ${phaseReplayPolicy}
 
 ## Planned Changes
 - Files/modules:
@@ -369,6 +395,10 @@ ${requiredCommands}
 - Selection reason: phase work uses the full cross-runtime harness by default
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract
 - Model effort profile: ${modelEffortProfile}
+- Effort escalation reason: ${effortEscalationReason}
+- Retrieval budget: ${retrievalBudget}
+- Validation profile: ${validationProfile}
+- Phase replay policy: ${phaseReplayPolicy}
 - Enforcement note: replace defaults when actual execution diverges
 
 ## Score Summary
@@ -536,6 +566,9 @@ Single isolated phase-attempt rules:
 - Update SCORECARD.md on every meaningful round using objective checklist status, current score, unmet items, and verdict.
 - Refresh SCORECARD.md again after verification or any remediation so progress is visible while the phase is still running.
 - Refresh the default values in the "Workflow Execution", "Contract Review Evidence", and "Failure Loop" sections of QA_REPORT.md when actual execution diverges.
+- Keep Effort escalation reason, Retrieval budget, Validation profile, and Phase replay policy current in QA_REPORT.md and analysis workflow evidence.
+- If Model effort profile is \`deep\` or \`max\`, record a concrete Effort escalation reason; \`none\` is allowed only for \`economy\` or \`standard\`.
+- Preserve assistant-item \`phase\` values when replaying assistant history: \`commentary\` for progress updates and \`final_answer\` only for completed answers. Never add phase metadata to user messages.
 - For critical SCN-* scenarios, smoke-only evidence is a warning and cannot justify clean finish; record open -> act -> mutate -> persist -> recover evidence or keep the phase open.
 - If the same failure class repeats twice, set Retry strategy to partial_redesign or stop_and_handoff before the next attempt.
 - Before any clean-finish claim, run \`.claude/scripts/verify-plan-conformance.mjs\` against the active phase artifacts and record the result in QA_REPORT.md Plan Conformance Review and SCORECARD.md OBJ-CONFORM.

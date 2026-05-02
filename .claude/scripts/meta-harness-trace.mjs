@@ -448,6 +448,10 @@ function captureTrace(options) {
       selectionReason: workflowState?.selectionReason ?? analysis?.workflowEvidence?.selectionReason ?? '',
       runtimeIsolation: workflowState?.runtimeIsolation ?? analysis?.workflowEvidence?.runtimeIsolation ?? '',
       modelEffortProfile: workflowState?.modelEffortProfile ?? analysis?.workflowEvidence?.modelEffortProfile ?? '',
+      effortEscalationReason: workflowState?.effortEscalationReason ?? analysis?.workflowEvidence?.effortEscalationReason ?? '',
+      retrievalBudget: workflowState?.retrievalBudget ?? analysis?.workflowEvidence?.retrievalBudget ?? '',
+      validationProfile: workflowState?.validationProfile ?? analysis?.workflowEvidence?.validationProfile ?? '',
+      phaseReplayPolicy: workflowState?.phaseReplayPolicy ?? analysis?.workflowEvidence?.phaseReplayPolicy ?? '',
     },
     sourceArtifacts,
     artifactDeltas: sourceArtifacts.filter((artifact) => artifact.exists).map(({ kind, path: filePath, sizeBytes, modifiedAt }) => ({

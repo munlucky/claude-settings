@@ -32,6 +32,36 @@ stageContract:
     - "In HANDOFF.md, use only these stop reason codes: blocked, interrupted, context_limit, user_pause, deferred_verification."
     - "Do not write `Stop reason: clean_finish` into HANDOFF.md. Clean phase completion is phase-local evidence only and must be represented via `Required: no`, not as a plan-level stop reason."
 
+crossRuntimeHarness:
+  effort:
+    defaultProfile: "standard"
+    allowedProfiles:
+      - economy
+      - standard
+      - deep
+      - max
+    rules:
+      - "Use deep or max only when a concrete Effort escalation reason is recorded in QA_REPORT.md and workflow evidence."
+      - "Codex maps the shared profile to model_reasoning_effort; Claude Code records the same profile in contracts and prompts."
+  retrievalBudget:
+    default: "stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output"
+    rules:
+      - "Pass summarized projectMemoryContext only."
+      - "Record summary-only CodeReviewGraph evidence; do not store raw graph output in MemoryGraph."
+  validationProfile:
+    default: "workflow_core"
+    options:
+      - prompt_only
+      - docs_only
+      - script_change
+      - workflow_core
+      - runtime_adapter
+  phaseReplayPolicy:
+    rules:
+      - "When replaying assistant history, preserve assistant-item phase values exactly."
+      - "Use commentary for progress/preamble updates and final_answer only for completed answers."
+      - "Do not add phase metadata to user messages."
+
 completionBoundary:
   rules:
     - "The only clean success boundary is active plan-directory completion: no actionable phase remains in the supplied phaseStatusFile."

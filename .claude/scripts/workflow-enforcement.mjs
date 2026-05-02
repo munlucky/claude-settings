@@ -16,6 +16,19 @@ const PLAN_SUCCESS_STOP_REASON_CODES = new Set([
   'success-return',
 ]);
 const RETRY_STRATEGIES = new Set(['same_direction_refine', 'partial_redesign', 'stop_and_handoff']);
+const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
+const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
+const DEFAULT_PHASE_REPLAY_POLICY = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
+
+function defaultEffortEscalationReason(profile) {
+  return ['deep', 'max'].includes(String(profile || '').trim()) ? '' : 'none';
+}
+
+function effortEscalationMissing(profile, reason) {
+  const normalizedProfile = String(profile || '').trim();
+  const normalizedReason = String(reason || '').trim().toLowerCase();
+  return ['deep', 'max'].includes(normalizedProfile) && (!normalizedReason || normalizedReason === 'none');
+}
 
 function usage() {
   console.log(`Usage:
@@ -200,6 +213,14 @@ function extractWorkflowSection(text) {
       result.runtimeIsolation = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Model effort profile:')) {
       result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Effort escalation reason:')) {
+      result.effortEscalationReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Retrieval budget:')) {
+      result.retrievalBudget = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Validation profile:')) {
+      result.validationProfile = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Phase replay policy:')) {
+      result.phaseReplayPolicy = stripped.split(':', 2)[1]?.trim() ?? '';
     }
   }
   return result;
@@ -476,7 +497,13 @@ function recordDispatch(argv) {
     runtimeIsolation: options.runtime === 'codex'
       ? 'codex delegated-terminal; fresh review/verify attempts preferred'
       : 'claude-code adapter; Task/fork review and verification preferred',
-    modelEffortProfile: process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'deep',
+    modelEffortProfile: process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard',
+    effortEscalationReason: process.env.PHASE_DISPATCH_EFFORT_ESCALATION_REASON
+      || process.env.MOONSHOT_EFFORT_ESCALATION_REASON
+      || defaultEffortEscalationReason(process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard'),
+    retrievalBudget: process.env.PHASE_RETRIEVAL_BUDGET || process.env.MOONSHOT_RETRIEVAL_BUDGET || DEFAULT_RETRIEVAL_BUDGET,
+    validationProfile: process.env.PHASE_VALIDATION_PROFILE || process.env.MOONSHOT_VALIDATION_PROFILE || DEFAULT_VALIDATION_PROFILE,
+    phaseReplayPolicy: process.env.PHASE_REPLAY_POLICY || process.env.MOONSHOT_PHASE_REPLAY_POLICY || DEFAULT_PHASE_REPLAY_POLICY,
     notes: [
       'Large or phase-based work must enter through moonshot-phase-runner.',
       'Meaningful code changes require review evidence before verification and completion.',
@@ -513,6 +540,10 @@ function recordDispatch(argv) {
     selectionReason: payload.selectionReason,
     runtimeIsolation: payload.runtimeIsolation,
     modelEffortProfile: payload.modelEffortProfile,
+    effortEscalationReason: payload.effortEscalationReason,
+    retrievalBudget: payload.retrievalBudget,
+    validationProfile: payload.validationProfile,
+    phaseReplayPolicy: payload.phaseReplayPolicy,
     readiness: deriveReadinessState({
       planDir: options.planDir,
       statusFile: options.statusFile || STATUS_FILE_DEFAULT,
@@ -640,6 +671,18 @@ function recordBounded(argv) {
   let modelEffortProfile = typeof existingWorkflow.modelEffortProfile === 'string' && existingWorkflow.modelEffortProfile.trim()
     ? existingWorkflow.modelEffortProfile
     : (process.env.WORKFLOW_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard');
+  let effortEscalationReason = typeof existingWorkflow.effortEscalationReason === 'string' && existingWorkflow.effortEscalationReason.trim()
+    ? existingWorkflow.effortEscalationReason
+    : (process.env.WORKFLOW_EFFORT_ESCALATION_REASON || process.env.MOONSHOT_EFFORT_ESCALATION_REASON || defaultEffortEscalationReason(modelEffortProfile));
+  let retrievalBudget = typeof existingWorkflow.retrievalBudget === 'string' && existingWorkflow.retrievalBudget.trim()
+    ? existingWorkflow.retrievalBudget
+    : (process.env.WORKFLOW_RETRIEVAL_BUDGET || process.env.MOONSHOT_RETRIEVAL_BUDGET || DEFAULT_RETRIEVAL_BUDGET);
+  let validationProfile = typeof existingWorkflow.validationProfile === 'string' && existingWorkflow.validationProfile.trim()
+    ? existingWorkflow.validationProfile
+    : (process.env.WORKFLOW_VALIDATION_PROFILE || process.env.MOONSHOT_VALIDATION_PROFILE || DEFAULT_VALIDATION_PROFILE);
+  let phaseReplayPolicy = typeof existingWorkflow.phaseReplayPolicy === 'string' && existingWorkflow.phaseReplayPolicy.trim()
+    ? existingWorkflow.phaseReplayPolicy
+    : (process.env.WORKFLOW_PHASE_REPLAY_POLICY || process.env.MOONSHOT_PHASE_REPLAY_POLICY || DEFAULT_PHASE_REPLAY_POLICY);
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     const section = extractWorkflowSection(fs.readFileSync(qaReportPath, 'utf8'));
@@ -651,6 +694,10 @@ function recordBounded(argv) {
     if (section.selectionReason) selectionReason = section.selectionReason;
     if (section.runtimeIsolation) runtimeIsolation = section.runtimeIsolation;
     if (section.modelEffortProfile) modelEffortProfile = section.modelEffortProfile;
+    if (section.effortEscalationReason) effortEscalationReason = section.effortEscalationReason;
+    if (section.retrievalBudget) retrievalBudget = section.retrievalBudget;
+    if (section.validationProfile) validationProfile = section.validationProfile;
+    if (section.phaseReplayPolicy) phaseReplayPolicy = section.phaseReplayPolicy;
   }
 
   const completionState = deriveCompletionStatusFromQaReport(qaReportPath);
@@ -685,6 +732,10 @@ function recordBounded(argv) {
     `  selectionReason: ${yamlScalar(selectionReason)}`,
     `  runtimeIsolation: ${yamlScalar(runtimeIsolation)}`,
     `  modelEffortProfile: ${yamlScalar(modelEffortProfile)}`,
+    `  effortEscalationReason: ${yamlScalar(effortEscalationReason)}`,
+    `  retrievalBudget: ${yamlScalar(retrievalBudget)}`,
+    `  validationProfile: ${yamlScalar(validationProfile)}`,
+    `  phaseReplayPolicy: ${yamlScalar(phaseReplayPolicy)}`,
     '  evidenceFiles:',
     `    analysisContext: ${yamlScalar(analysisPath)}`,
     `    sprintContract: ${yamlScalar(sprintContractPath)}`,
@@ -741,6 +792,10 @@ function recordBounded(argv) {
     selectionReason,
     runtimeIsolation,
     modelEffortProfile,
+    effortEscalationReason,
+    retrievalBudget,
+    validationProfile,
+    phaseReplayPolicy,
     readiness,
     completion: {
       state: completionState,
@@ -778,6 +833,10 @@ function recordBounded(argv) {
     selectionReason,
     runtimeIsolation,
     modelEffortProfile,
+    effortEscalationReason,
+    retrievalBudget,
+    validationProfile,
+    phaseReplayPolicy,
     readiness,
     completion: {
       state: completionState,
@@ -832,10 +891,21 @@ function verifyEnforcement(argv) {
           violations.push(`dispatch evidence missing non-empty '${key}'`);
         }
       }
-      for (const key of ['selectionReason', 'runtimeIsolation', 'modelEffortProfile']) {
+      for (const key of [
+        'selectionReason',
+        'runtimeIsolation',
+        'modelEffortProfile',
+        'effortEscalationReason',
+        'retrievalBudget',
+        'validationProfile',
+        'phaseReplayPolicy',
+      ]) {
         if (typeof payload[key] !== 'string' || !payload[key].trim()) {
           violations.push(`dispatch evidence missing '${key}'`);
         }
+      }
+      if (effortEscalationMissing(payload.modelEffortProfile, payload.effortEscalationReason)) {
+        violations.push('dispatch evidence must explain deep/max effort escalation');
       }
       for (const bundle of ['review-bundle', 'verification-bundle', 'finish-bundle']) {
         if (!payload.selectedBundles?.includes(bundle)) {
@@ -902,10 +972,17 @@ function verifyEnforcement(argv) {
         ['selectionReason', 'Selection reason'],
         ['runtimeIsolation', 'Runtime isolation'],
         ['modelEffortProfile', 'Model effort profile'],
+        ['effortEscalationReason', 'Effort escalation reason'],
+        ['retrievalBudget', 'Retrieval budget'],
+        ['validationProfile', 'Validation profile'],
+        ['phaseReplayPolicy', 'Phase replay policy'],
       ]) {
         if (!section[key]) {
           violations.push(`${qaReport}: '${label}' must be filled with evidence, not placeholder text`);
         }
+      }
+      if (effortEscalationMissing(section.modelEffortProfile, section.effortEscalationReason)) {
+        violations.push(`${qaReport}: deep/max effort requires a concrete Effort escalation reason`);
       }
       const applied = section.applied || '';
       const skipped = section.skipped || '';
@@ -1100,10 +1177,21 @@ function verifyEnforcement(argv) {
       if (skipped.length === 0) violations.push(`${analysisFile}: workflowEvidence.skippedSkills must be non-empty`);
       if (selectedHarnessComponents.length === 0) violations.push(`${analysisFile}: workflowEvidence.selectedHarnessComponents must be non-empty`);
       if (!Array.isArray(workflow.skippedHarnessComponents)) violations.push(`${analysisFile}: workflowEvidence.skippedHarnessComponents must be present`);
-      for (const key of ['selectionReason', 'runtimeIsolation', 'modelEffortProfile']) {
+      for (const key of [
+        'selectionReason',
+        'runtimeIsolation',
+        'modelEffortProfile',
+        'effortEscalationReason',
+        'retrievalBudget',
+        'validationProfile',
+        'phaseReplayPolicy',
+      ]) {
         if (typeof workflow[key] !== 'string' || !workflow[key].trim()) {
           violations.push(`${analysisFile}: workflowEvidence.${key} must be filled`);
         }
+      }
+      if (effortEscalationMissing(workflow.modelEffortProfile, workflow.effortEscalationReason)) {
+        violations.push(`${analysisFile}: workflowEvidence.deep/max effort requires effortEscalationReason`);
       }
       const appliedText = applied.join(' | ');
       const skippedText = skipped.join(' | ');
