@@ -2,10 +2,14 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const RUNTIME_STATE_PATH = path.join(SCRIPT_DIR, 'runtime-state.mjs');
 
 function writeFileAtomic(filePath, content) {
   const directory = path.dirname(filePath);
@@ -20,6 +24,31 @@ function writeFileAtomic(filePath, content) {
 
 function writeStdoutLine(value = '') {
   process.stdout.write(`${String(value)}\n`);
+}
+
+function shadowRuntimePhaseUpdate(config) {
+  const result = spawnSync(process.execPath, [
+    RUNTIME_STATE_PATH,
+    'update-phase',
+    config.statusFile,
+    config.phaseNum,
+    config.newStatus,
+    config.timestamp,
+    config.lastOutcome || '',
+    config.incrementAttempt || 'false',
+    config.activePhaseDoc || '',
+    config.sprintContractPath || '',
+    config.qaReportPath || '',
+    config.handoffPath || '',
+    config.scorecardPath || '',
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_NO_WARNINGS: process.env.NODE_NO_WARNINGS || '1',
+    },
+  });
+  return !result.error && (result.status ?? 0) === 0;
 }
 
 function parseIsoTimestamp(value) {
@@ -1200,6 +1229,7 @@ function updatePhaseState(config) {
   }
 
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
+  shadowRuntimePhaseUpdate(config);
 }
 
 function reconcileCompletedPhases(statusFile) {

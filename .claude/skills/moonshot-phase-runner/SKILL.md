@@ -59,6 +59,13 @@ Plan-directory completion rule:
 - If any phase in `phase-status.yaml` remains `pending`, `in_progress`, or retryable `failed`, the run must keep going through the delegated-terminal loop or the in-session coordinator loop.
 - A completed phase boundary is never a valid stop boundary by itself.
 
+Goal runtime state rule:
+- Runtime state is hybrid: SQLite owns machine state, Markdown/YAML artifacts own human/audit evidence.
+- SQLite path defaults to `.claude/runtime-state.sqlite` and is ignored by git. Override with `PHASE_RUNTIME_DB` only for tests or explicit alternate workspaces.
+- Store `goalRuntime`, lease, pause/resume/clear, budget/accounting, and event log state in SQLite; do not move `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, or verification reports into the DB.
+- The default long-running path remains `delegated-terminal`. Do not create a second public runner for goal mode; goal runtime is a control layer around the existing phase loop.
+- Use `node .claude/scripts/phase-goal-control.mjs status|pause|resume|clear <plan-dir>` to inspect or control the active goal. `pause` prevents the next continuation/attempt from starting; it does not delete artifacts.
+
 Channel / return-boundary rule:
 - While `phase-status.yaml` reports `activeExecutionStatus: active`, user-facing updates must stay in progress/commentary form.
 - Do not emit a `final` answer, closeout phrasing, or any wording that implies the run/session ended until `assert-return-allowed` passes or an explicit stop condition is recorded.

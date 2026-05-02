@@ -3,6 +3,15 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  assertReturnAllowed as assertRuntimeReturnAllowed,
+  exportStatusMirror,
+  finishLease as finishRuntimeLease,
+  heartbeatLease as heartbeatRuntimeLease,
+  phaseGoalObjective,
+  startLease as startRuntimeLease,
+  withDb,
+} from './runtime-state.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
@@ -71,6 +80,91 @@ function shellQuote(value) {
 function printAssignments(payload) {
   for (const [key, value] of Object.entries(payload)) {
     process.stdout.write(`${key}=${shellQuote(value)}\n`);
+  }
+}
+
+function parseAssignments(text) {
+  const values = {};
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const separator = line.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    const key = line.slice(0, separator);
+    let value = line.slice(separator + 1);
+    value = value.replace(/^'/, '').replace(/'$/, '').replace(/'\\''/g, "'");
+    values[key] = value;
+  }
+  return values;
+}
+
+async function runtimeStateAssignments(command, args) {
+  try {
+    switch (command) {
+      case 'start-lease': {
+        const [statusFile, leaseId, executionBoundary, planDir, executionRoot, runtime, masterPlan = '', dispatcherPid = '', timeBudgetSeconds = '', tokenBudget = ''] = args;
+        const result = await withDb((db) => {
+          const payload = startRuntimeLease(db, {
+            statusFile,
+            leaseId,
+            executionBoundary,
+            planDir,
+            executionRoot,
+            runtime,
+            masterPlan,
+            dispatcherPid,
+            timeBudgetSeconds,
+            tokenBudget,
+            objective: phaseGoalObjective(planDir, masterPlan),
+          });
+          exportStatusMirror(db, statusFile);
+          return payload;
+        });
+        return {
+          GOAL_ID: result.goal_id,
+          STATUS: result.status,
+          ACTIONABLE_PHASES_REMAINING: result.actionablePhasesRemaining,
+        };
+      }
+      case 'heartbeat-lease': {
+        const [statusFile, leaseId, currentStage = '', phaseNum = '', phaseTitle = '', completionStatus = ''] = args;
+        const result = await withDb((db) => {
+          const payload = heartbeatRuntimeLease(db, { statusFile, leaseId, currentStage, phaseNum, phaseTitle, completionStatus });
+          if (payload) exportStatusMirror(db, statusFile);
+          return payload;
+        });
+        return result ? {
+          LEASE_ID: result.lease_id,
+          STATUS: result.status,
+          ACTIONABLE_PHASES_REMAINING: result.actionable_phases_remaining,
+        } : null;
+      }
+      case 'finish-lease': {
+        const [statusFile, leaseId, returnBoundary = '', stopReasonCode = '', stopReasonDetail = '', completionStatus = ''] = args;
+        const result = await withDb((db) => {
+          const payload = finishRuntimeLease(db, { statusFile, leaseId, returnBoundary, stopReasonCode, stopReasonDetail, completionStatus });
+          if (payload) exportStatusMirror(db, statusFile);
+          return payload;
+        });
+        return result ? {
+          LEASE_ID: result.lease_id,
+          STATUS: result.status,
+          ACTIONABLE_PHASES_REMAINING: result.actionable_phases_remaining,
+        } : null;
+      }
+      case 'assert-return-allowed': {
+        const [statusFile, leaseId, executionIntent = '', prepareOnly = ''] = args;
+        return await withDb((db) => assertRuntimeReturnAllowed(db, { statusFile, leaseId, executionIntent, prepareOnly }));
+      }
+      default:
+        return null;
+    }
+  } catch {
+    return null;
   }
 }
 
@@ -302,7 +396,6 @@ function startLease(config) {
     lastStopReasonCode: '',
     lastStopReasonDetail: '',
   });
-
   return payload;
 }
 
@@ -339,7 +432,6 @@ function heartbeatLease(config) {
     activePhaseNumber: payload.phase.number,
     activePhaseTitle: payload.phase.title,
   });
-
   return payload;
 }
 
@@ -385,7 +477,6 @@ function finishLease(config) {
     lastStopReasonCode: payload.stopReasonCode,
     lastStopReasonDetail: payload.stopReasonDetail,
   });
-
   return payload;
 }
 
@@ -394,16 +485,52 @@ function assertReturnAllowed(config) {
   const actionable = countActionablePhases(statusFile);
   const executionIntent = String(config.executionIntent || '').toLowerCase() === 'true';
   const prepareOnly = String(config.prepareOnly || '').toLowerCase() === 'true';
+  return assertReturnAllowedFromFiles({
+    ...config,
+    statusFile,
+    actionable,
+    executionIntent,
+    prepareOnly,
+  });
+}
 
-  if (!executionIntent || prepareOnly) {
+async function assertReturnAllowedWithRuntime(config) {
+  const statusFile = resolveStatusFile(config.statusFile);
+  const actionable = countActionablePhases(statusFile);
+  const executionIntent = String(config.executionIntent || '').toLowerCase() === 'true';
+  const prepareOnly = String(config.prepareOnly || '').toLowerCase() === 'true';
+  const dbDecision = await runtimeStateAssignments('assert-return-allowed', [
+    statusFile,
+    config.runLeaseId,
+    String(executionIntent),
+    String(prepareOnly),
+  ]);
+  if (dbDecision && dbDecision.RETURN_ALLOWED === 'false') {
+    const reason = String(dbDecision.RETURN_REASON || '');
+    if (reason.startsWith('paused-goal') || reason.startsWith('budget-limited-goal')) {
+      return dbDecision;
+    }
+  }
+
+  return assertReturnAllowedFromFiles({
+    ...config,
+    statusFile,
+    actionable,
+    executionIntent,
+    prepareOnly,
+  });
+}
+
+function assertReturnAllowedFromFiles(config) {
+  if (!config.executionIntent || config.prepareOnly) {
     return {
       RETURN_ALLOWED: 'true',
       RETURN_REASON: 'non_execution_or_prepare_only',
-      ACTIONABLE_PHASES_REMAINING: String(actionable),
+      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
     };
   }
 
-  if (actionable === 0) {
+  if (config.actionable === 0) {
     return {
       RETURN_ALLOWED: 'true',
       RETURN_REASON: 'plan_directory_complete',
@@ -411,12 +538,12 @@ function assertReturnAllowed(config) {
     };
   }
 
-  const existing = readActiveLease(statusFile);
+  const existing = readActiveLease(config.statusFile);
   if (!existing || existing.runLeaseId !== config.runLeaseId) {
     return {
       RETURN_ALLOWED: 'false',
       RETURN_REASON: 'missing-active-run-lease',
-      ACTIONABLE_PHASES_REMAINING: String(actionable),
+      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
     };
   }
 
@@ -425,13 +552,13 @@ function assertReturnAllowed(config) {
       return {
         RETURN_ALLOWED: 'false',
         RETURN_REASON: 'paused-run-lease-with-actionable-phases',
-        ACTIONABLE_PHASES_REMAINING: String(actionable),
+        ACTIONABLE_PHASES_REMAINING: String(config.actionable),
       };
     }
     return {
       RETURN_ALLOWED: 'false',
       RETURN_REASON: 'inactive-run-lease-with-actionable-phases',
-      ACTIONABLE_PHASES_REMAINING: String(actionable),
+      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
     };
   }
 
@@ -441,14 +568,14 @@ function assertReturnAllowed(config) {
     return {
       RETURN_ALLOWED: 'false',
       RETURN_REASON: 'stale-run-lease',
-      ACTIONABLE_PHASES_REMAINING: String(actionable),
+      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
     };
   }
 
   return {
     RETURN_ALLOWED: 'false',
     RETURN_REASON: 'actionable-phases-remaining',
-    ACTIONABLE_PHASES_REMAINING: String(actionable),
+    ACTIONABLE_PHASES_REMAINING: String(config.actionable),
   };
 }
 
@@ -465,8 +592,8 @@ function usage() {
 const [command, ...args] = process.argv.slice(2);
 
 switch (command) {
-  case 'start':
-    printAssignments(startLease({
+  case 'start': {
+    const config = {
       statusFile: args[0],
       runLeaseId: args[1],
       executionBoundary: args[2],
@@ -475,30 +602,73 @@ switch (command) {
       runtime: args[5],
       masterPlan: args[6],
       dispatcherPid: args[7],
-    }) || {});
+      timeBudgetSeconds: args[8],
+      tokenBudget: args[9],
+    };
+    const payload = startLease(config) || {};
+    await runtimeStateAssignments('start-lease', [
+      resolveStatusFile(config.statusFile),
+      config.runLeaseId,
+      config.executionBoundary,
+      config.planDir,
+      config.executionRoot,
+      config.runtime,
+      config.masterPlan || '',
+      config.dispatcherPid || '',
+      config.timeBudgetSeconds || '',
+      config.tokenBudget || '',
+    ]);
+    printAssignments(payload);
     break;
-  case 'heartbeat':
-    printAssignments(heartbeatLease({
+  }
+  case 'heartbeat': {
+    const config = {
       statusFile: args[0],
       runLeaseId: args[1],
       currentStage: args[2],
       phaseNum: args[3],
       phaseTitle: args[4],
       completionStatus: args[5],
-    }) || {});
+    };
+    const payload = heartbeatLease(config) || {};
+    if (payload.runLeaseId) {
+      await runtimeStateAssignments('heartbeat-lease', [
+        resolveStatusFile(config.statusFile),
+        config.runLeaseId,
+        payload.currentStage || '',
+        payload.phase?.number || '',
+        payload.phase?.title || '',
+        payload.completionStatus || '',
+      ]);
+    }
+    printAssignments(payload);
     break;
-  case 'finish':
-    printAssignments(finishLease({
+  }
+  case 'finish': {
+    const config = {
       statusFile: args[0],
       runLeaseId: args[1],
       returnBoundary: args[2],
       stopReasonCode: args[3],
       stopReasonDetail: args[4],
       completionStatus: args[5],
-    }) || {});
+    };
+    const payload = finishLease(config) || {};
+    if (payload.runLeaseId) {
+      await runtimeStateAssignments('finish-lease', [
+        resolveStatusFile(config.statusFile),
+        config.runLeaseId,
+        payload.returnBoundary || '',
+        payload.stopReasonCode || '',
+        payload.stopReasonDetail || '',
+        payload.completionStatus || '',
+      ]);
+    }
+    printAssignments(payload);
     break;
+  }
   case 'assert-return-allowed':
-    printAssignments(assertReturnAllowed({
+    printAssignments(await assertReturnAllowedWithRuntime({
       statusFile: args[0],
       runLeaseId: args[1],
       executionIntent: args[2],

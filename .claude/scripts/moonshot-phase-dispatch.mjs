@@ -13,6 +13,7 @@ const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
 const phaseStatePath = path.join(SCRIPT_DIR, 'agent-loop-phase-state.mjs');
 const phaseArtifactsPath = path.join(SCRIPT_DIR, 'agent-loop-phase-artifacts.mjs');
 const phaseRunLeasePath = path.join(SCRIPT_DIR, 'phase-run-lease.mjs');
+const runtimeStatePath = path.join(SCRIPT_DIR, 'runtime-state.mjs');
 const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
 const debugLog = path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl');
 
@@ -38,6 +39,8 @@ const state = {
   parallelWorktrees: Number.parseInt(process.env.PHASE_PARALLEL_WORKTREES ?? '1', 10) || 1,
   worktreeBase: process.env.PHASE_WORKTREE_BASE || 'HEAD',
   worktreeRoot: process.env.PHASE_WORKTREE_ROOT || '.tmp/harness-worktrees/phase-runs',
+  goalTimeBudgetSeconds: process.env.PHASE_GOAL_TIME_BUDGET_SECONDS || '',
+  goalTokenBudget: process.env.PHASE_GOAL_TOKEN_BUDGET || '',
 };
 
 const runtimeState = {
@@ -84,6 +87,9 @@ Options:
   --parallel-worktrees <n>  Opt-in phase-internal workset parallelism (delegated-terminal only)
   --worktree-base <ref>     Base ref for workset worktrees. Default: HEAD
   --worktree-root <path>    Root for temporary workset worktrees
+  --goal-time-budget-seconds <n>
+                            Optional SQLite goal runtime time budget
+  --goal-token-budget <n>   Optional SQLite goal runtime token budget
   --dry-run                 Print resolved command without executing`);
 }
 
@@ -180,6 +186,55 @@ function activePhaseContext() {
     return {};
   }
   return parseAssignments(result.stdout);
+}
+
+function readGoalRuntimeStatus() {
+  try {
+    const result = spawnSync(process.execPath, [runtimeStatePath, 'goal-status', state.planDir], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: process.env.NODE_NO_WARNINGS || '1',
+      },
+    });
+    if (result.error || (result.status ?? 0) !== 0) {
+      return null;
+    }
+    const payload = JSON.parse(result.stdout || '{}');
+    return payload && payload.found ? payload : null;
+  } catch (error) {
+    appendDebugLog('goal-runtime-status-read-failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+function goalRuntimeControlledStop() {
+  const payload = readGoalRuntimeStatus();
+  const status = String(payload?.goal?.status || '').trim();
+  if (status === 'paused') {
+    return {
+      code: 'goal-paused',
+      detail: 'Goal runtime is paused; delegated loop must not restart while actionable phases remain.',
+      completionStatus: 'paused',
+    };
+  }
+  if (status === 'budget_limited') {
+    return {
+      code: 'goal-budget-limited',
+      detail: 'Goal runtime reached its configured budget; delegated loop must stop before starting new work.',
+      completionStatus: 'budget_limited',
+    };
+  }
+  if (payload?.goal?.continuation_suppressed) {
+    return {
+      code: 'goal-continuation-suppressed',
+      detail: 'Goal runtime suppressed automatic continuation after a no-effect turn.',
+      completionStatus: 'paused',
+    };
+  }
+  return null;
 }
 
 function appendPhaseArtifact(command, args) {
@@ -310,6 +365,8 @@ function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRun
     effectiveRuntime,
     masterPlan,
     String(process.pid),
+    state.goalTimeBudgetSeconds,
+    state.goalTokenBudget,
   );
   runtimeState.leaseActive = true;
   appendDebugLog('phase-run-lease-start', {
@@ -317,6 +374,8 @@ function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRun
     values,
     executionMode: resolvedMode,
     runtime: effectiveRuntime,
+    goalTimeBudgetSeconds: state.goalTimeBudgetSeconds,
+    goalTokenBudget: state.goalTokenBudget,
   });
   return values;
 }
@@ -858,6 +917,16 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
         }
 
         if (actionable) {
+          const controlledStop = goalRuntimeControlledStop();
+          if (controlledStop) {
+            stopTracking();
+            finalizeDispatchExit(0, controlledStop.detail, {
+              returnBoundary: 'dispatch-paused',
+              stopReasonCode: controlledStop.code,
+              completionStatus: controlledStop.completionStatus,
+            });
+            return;
+          }
           restartCount += 1;
           if (restartCount > MAX_DELEGATED_RESTARTS) {
             logError(`Delegated-terminal exited cleanly ${MAX_DELEGATED_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
@@ -1045,6 +1114,16 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
         }
 
         if (actionable) {
+          const controlledStop = goalRuntimeControlledStop();
+          if (controlledStop) {
+            stopTracking();
+            finalizeDispatchExit(0, controlledStop.detail, {
+              returnBoundary: 'dispatch-paused',
+              stopReasonCode: controlledStop.code,
+              completionStatus: controlledStop.completionStatus,
+            });
+            return;
+          }
           restartCount += 1;
           if (restartCount > MAX_COORDINATOR_RESTARTS) {
             logError(`In-session-coordinator exited cleanly ${MAX_COORDINATOR_RESTARTS} times while actionable phases remained. Stopping to avoid an infinite restart loop.`);
@@ -1135,6 +1214,12 @@ function parseArgs(argv) {
         break;
       case '--worktree-root':
         state.worktreeRoot = args.shift() ?? '.tmp/harness-worktrees/phase-runs';
+        break;
+      case '--goal-time-budget-seconds':
+        state.goalTimeBudgetSeconds = args.shift() ?? '';
+        break;
+      case '--goal-token-budget':
+        state.goalTokenBudget = args.shift() ?? '';
         break;
       case '--dry-run':
         state.dryRun = true;

@@ -20,6 +20,8 @@ Last-Reviewed: 2026-03-30
    - 이 문서군 자체를 어떻게 정리하고 유지할지 볼 때 읽는다.
 6. `anthropic-article-application-plan.md`
    - Anthropic의 2026-03-24 long-running harness 글을 현재 저장소 기준으로 다시 적용할 때, 이미 반영된 항목을 제외하고 남은 적용 계획만 볼 때 읽는다.
+7. `codex-goal-gap-analysis.md`
+   - Codex CLI `/goal`의 persisted continuation runtime을 현재 Moonshot phase runner와 비교하고, goal-state/accounting/control 갭을 볼 때 읽는다.
 
 ## 문서 역할
 
@@ -31,6 +33,7 @@ Last-Reviewed: 2026-03-30
 | `implementation-backlog.md` | 실제 실행 항목과 상태 추적 | canonical execution backlog |
 | `docset-improvement-plan.md` | 문서군 구조 개선 계획 | canonical docset maintenance plan |
 | `anthropic-article-application-plan.md` | Anthropic 글 기준의 현재 시점 적용 계획 | targeted application plan |
+| `codex-goal-gap-analysis.md` | Codex `/goal` 기준의 phase runner 갭 분석 | targeted external-pattern assessment |
 
 ## 상태 규약
 
@@ -65,3 +68,4 @@ Last-Reviewed: 2026-03-30
 - `docs/claude-tasks/harness-engineering-foundation/implementation-backlog.md`
 - `docs/claude-tasks/harness-engineering-foundation/docset-improvement-plan.md`
 - `docs/claude-tasks/harness-engineering-foundation/anthropic-article-application-plan.md`
+- `docs/claude-tasks/harness-engineering-foundation/codex-goal-gap-analysis.md`

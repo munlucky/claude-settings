@@ -6,6 +6,7 @@ __pycache__/
 .claude/browser-runtime/
 .claude/cache/
 .claude/runtime-verdict-*.json
+.claude/runtime-state.sqlite*
 .claude/worktree-prepare.json
 .claude/worktree-setup.log
 .claude/worktree-baseline.log

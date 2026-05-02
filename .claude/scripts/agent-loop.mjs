@@ -14,6 +14,7 @@ const phasePlanPath = path.join(scriptDir, 'agent-loop-phase-plan.mjs');
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const phaseRunnerPath = path.join(scriptDir, 'agent-loop-phase-runner.mjs');
 const artifactsPath = path.join(scriptDir, 'agent-loop-phase-artifacts.mjs');
+const runtimeStatePath = path.join(scriptDir, 'runtime-state.mjs');
 const logDir = '.claude/logs/agent-loop';
 const decisionLog = path.join(logDir, 'decisions.md');
 const summaryReport = path.join(logDir, 'summary.md');
@@ -221,6 +222,50 @@ function parseAssignments(text) {
     values[key] = value;
   }
   return values;
+}
+
+function readGoalRuntimeStatus() {
+  try {
+    const result = runNodeScript(runtimeStatePath, ['goal-status', state.planDir], {
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: process.env.NODE_NO_WARNINGS || '1',
+      },
+    });
+    if (result.status !== 0) {
+      return null;
+    }
+    const payload = JSON.parse(result.stdout || '{}');
+    return payload && payload.found ? payload : null;
+  } catch (error) {
+    appendDebugLog('goal-runtime-status-read-failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+function stopReasonForGoalRuntime(payload) {
+  const status = String(payload?.goal?.status || '').trim();
+  if (status === 'paused') {
+    return {
+      reason: 'goal-paused',
+      detail: 'Goal runtime is paused; resume with phase-goal-control resume <plan-dir>.',
+    };
+  }
+  if (status === 'budget_limited') {
+    return {
+      reason: 'goal-budget-limited',
+      detail: 'Goal runtime reached its budget limit; inspect status and resume only after raising/clearing the budget.',
+    };
+  }
+  if (payload?.goal?.continuation_suppressed) {
+    return {
+      reason: 'goal-continuation-suppressed',
+      detail: 'Goal runtime suppressed automatic continuation after a no-effect turn.',
+    };
+  }
+  return null;
 }
 
 function activePhaseContext() {
@@ -725,6 +770,7 @@ async function runNodeManagedLoop() {
   let executedPhases = 0;
   let failedPhases = 0;
   let stoppedEarly = false;
+  let controlledStop = false;
   let stopPhase = '';
   let stopReason = '';
   let stopDetail = '';
@@ -754,6 +800,35 @@ async function runNodeManagedLoop() {
     while (true) {
       reconcileCompletedPhasesFromArtifacts();
       handleStaleInProgressPhases();
+
+      const goalRuntimeStatus = readGoalRuntimeStatus();
+      const goalRuntimeStop = stopReasonForGoalRuntime(goalRuntimeStatus);
+      if (goalRuntimeStop) {
+        stoppedEarly = true;
+        controlledStop = true;
+        stopPhase = goalRuntimeStatus?.activePhase?.phase_number
+          ? String(goalRuntimeStatus.activePhase.phase_number)
+          : '';
+        stopReason = goalRuntimeStop.reason;
+        stopDetail = goalRuntimeStop.detail;
+        appendDebugLog('goal-runtime-controlled-stop', {
+          stopReason,
+          stopDetail,
+          goalId: goalRuntimeStatus?.goal?.goal_id || '',
+          goalStatus: goalRuntimeStatus?.goal?.status || '',
+        });
+        writeLiveSummaryReport({
+          planDir: state.planDir,
+          totalPhases,
+          completed: executedPhases,
+          failed: failedPhases,
+          currentPhase: stopPhase,
+          loopState: 'stopped',
+          stopReason,
+          stopDetail,
+        });
+        break;
+      }
 
       const nextPhase = phasePlan('get-next-phase', state.statusFile) || '';
       appendDebugLog('next-phase-resolved', {
@@ -946,7 +1021,7 @@ async function runNodeManagedLoop() {
     printLoopFooter({ completed: executedPhases, failed: failedPhases });
   }
 
-  return stoppedEarly ? 1 : 0;
+  return stoppedEarly && !controlledStop ? 1 : 0;
 }
 
 parseArgs(process.argv.slice(2));
