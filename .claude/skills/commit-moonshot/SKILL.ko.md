@@ -41,6 +41,7 @@ git diff --cached --name-only
 메모리 소스 경계:
 - `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다.
 - MemoryGraph 현행화 중 이 경로를 메모리 소스로 읽거나, 이 경로에서만 나온 내용을 저장하지 않습니다.
+- `.agents/`와 `.agents/skills`는 생성된 agent bridge입니다. 사용자가 명시적으로 추적하라고 하지 않는 한 `git add -- <paths>` 목록에 넣지 않습니다.
 
 변경 파일에서 다음 정보 추출:
 - 컴포넌트 이름 (from paths like `src/components/Button.tsx`)
