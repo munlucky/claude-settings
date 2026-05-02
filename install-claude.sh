@@ -197,15 +197,8 @@ setup_codex_project_config() {
 	if [ -d "$source_skills_dir" ]; then
 		target_skills="$codex_home/skills"
 		if [ -e "$target_skills" ] || [ -L "$target_skills" ]; then
-			if [ "$DO_BACKUP" = true ]; then
-				local backup_skills="${target_skills}${BACKUP_SUFFIX}"
-				print_info "Codex project skills 백업 중: $target_skills → $backup_skills"
-				mv "$target_skills" "$backup_skills"
-				CODEX_BACKUP_PATHS+=("$backup_skills")
-			else
-				print_warn "기존 Codex project skills를 덮어씁니다: $target_skills"
-				rm -rf "$target_skills"
-			fi
+			print_info "Codex project skills 최신화 중: $target_skills"
+			rm -rf "$target_skills"
 		fi
 		cp -R "$source_skills_dir" "$target_skills"
 		CODEX_PROJECT_FILES+=("$target_skills")
@@ -605,7 +598,8 @@ usage() {
 
 기본 동작:
   - .claude, .agents, AGENTS.md, .claudeignore 중 존재 항목 자동 백업 후 설치
-  - .codex/config.toml, .codex/agents/, .codex/skills/ 중 존재 항목 자동 백업 후 설치
+  - .codex/config.toml, .codex/agents/ 중 존재 항목 자동 백업 후 설치
+  - .codex/skills/ 는 백업 없이 최신 복사본으로 동기화
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
@@ -853,7 +847,8 @@ if [ "$DRY_RUN" = true ]; then
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
-	echo "  - .codex/config.toml, .codex/agents 및 .codex/skills 설치"
+	echo "  - .codex/config.toml, .codex/agents 설치"
+	echo "  - .codex/skills 백업 없이 최신 복사본으로 동기화"
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
