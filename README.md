@@ -276,6 +276,8 @@ Code Review Graph 설정:
 2. Git에 커밋: `git add .claude .codex .claudeignore .gitattributes AGENTS.md && git commit -m "Add Claude Code settings"`
 3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
 
+커밋 시 `.agents/skills`, `.mcp.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`는 generated/local runtime 경로이므로 explicit `git add -- <paths>` 목록에 넣지 않습니다.
+
 직접 스킬을 지정해서 실행하는 경우:
 - review-only, read-only, meta-harness 수정은 direct invocation이 가능
 - 일반적인 bounded code work는 `moonshot-orchestrator`를 기본 진입점으로 두는 편이 안전

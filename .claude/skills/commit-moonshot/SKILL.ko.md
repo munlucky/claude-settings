@@ -42,6 +42,10 @@ git diff --cached --name-only
 - `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다.
 - MemoryGraph 현행화 중 이 경로를 메모리 소스로 읽거나, 이 경로에서만 나온 내용을 저장하지 않습니다.
 - `.agents/`와 `.agents/skills`는 생성된 agent bridge입니다. 사용자가 명시적으로 추적하라고 하지 않는 한 `git add -- <paths>` 목록에 넣지 않습니다.
+- 이전 명령, 도구 출력, 사용자가 붙여넣은 후보 경로 목록에 `.agents` 또는 `.agents/skills`가 들어 있어도 그대로 실행하지 않습니다. 실행 전 후보 목록에서 반드시 제거합니다.
+- `git add -A -- .agents`, `git add -A -- .agents/skills`, 또는 `.agents/skills`가 포함된 긴 explicit path list는 금지입니다.
+- `git add -- <paths>` 실행 전 후보 목록에서 다음 deny 패턴을 제거합니다: `.agents`, `.agents/**`, `.mcp.json`, `.claude/memory.json`, `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`.
+- installer/harness 커밋은 가능하면 루트 단위로 staging합니다: `.claude`, `.codex`, `.claudeignore`, `.gitattributes`, `.gitignore`, `AGENTS.md`, 그리고 명시적으로 바뀐 제품 문서/코드. `.agents`는 포함하지 않습니다.
 
 변경 파일에서 다음 정보 추출:
 - 컴포넌트 이름 (from paths like `src/components/Button.tsx`)
@@ -132,6 +136,15 @@ create_relationship(from_memory_id="{fromId}", to_memory_id="{toId}", relationsh
 모든 문서 파일(자동 생성본 포함)이 스테이징되었는지 확인:
 ```bash
 git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
+```
+
+생성된 agent bridge와 로컬 런타임 파일은 스테이징 후보에서 제거:
+```bash
+# 금지 예시:
+git add -A -- .agents/skills ...
+
+# 권장 예시:
+git add -- .claude .codex .claudeignore .gitattributes .gitignore AGENTS.md README.md
 ```
 
 ## 7.6 메모리 산출물 포함 여부 확인

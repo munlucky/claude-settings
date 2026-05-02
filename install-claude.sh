@@ -1247,6 +1247,7 @@ fi
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
 echo "  2. Git에 커밋: git add .claude .codex .claudeignore .gitattributes AGENTS.md && git commit -m 'Add Claude settings'"
+echo "     주의: .agents/skills, .mcp.json, .claude/memorygraph, .claude/cache/memorygraph 는 커밋하지 않습니다."
 echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_GLOBAL_HOME:-\${CODEX_HOME:-\$HOME/.codex}}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 

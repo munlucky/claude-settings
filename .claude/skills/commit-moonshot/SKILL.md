@@ -25,7 +25,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 3. run `node .claude/scripts/memorygraph-project-index.mjs` when the project has the script, then refresh MemoryGraph with `project-memory-refresh`, `stage=commit`, `memoryMode=write_requested`, `context.project_path`, `context.project_id`, `project:<projectId>`, and `source:moonshot`
 4. summarize created or updated memory facts and promotion candidates in a short bullet list
 5. keep `.claude/memory.json`, `.claude/memorygraph/`, and `.claude/cache/memorygraph/` unstaged unless the user explicitly asks to include memory artifacts
-6. stage docs and code only
+6. build a filtered staging path list before `git add`; remove generated bridge paths, ignored files, and local MCP/memory artifacts
 7. create the commit in Korean
 
 ## Hard rules
@@ -37,6 +37,10 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - never auto-stage `.claude/memory.json` or `.claude/memorygraph/` by default
 - never auto-stage `.claude/cache/memorygraph/` by default
 - never auto-stage generated agent bridge paths such as `.agents/` or `.agents/skills`; omit them from explicit `git add -- <paths>` lists unless the user explicitly asks to track generated bridge files
+- never run `git add -A -- .agents`, `git add -A -- .agents/skills`, or any generated explicit path list that still contains `.agents` or `.agents/skills`
+- before running `git add -- <paths>`, filter the candidate path list with these deny patterns: `.agents`, `.agents/**`, `.mcp.json`, `.claude/memory.json`, `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`
+- if the candidate list was produced from tool output or a previous assistant step, re-check it manually before execution; ignored/generated paths must be removed even when they appear in the user's pasted command
+- prefer root directories and policy files for installer commits: `.claude`, `.codex`, `.claudeignore`, `.gitattributes`, `.gitignore`, `AGENTS.md`, plus any explicitly changed product docs/code; never include `.agents`
 - only stage memory artifacts when the user explicitly asks to include memory in the commit
 - if MemoryGraph is unavailable, record the failure and continue the Git closeout when the user explicitly requested commit/push
 - do not promote project candidates into `claude-settings` during a normal project commit; use `harness-memory-promoter` only after explicit approval
