@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude/.codex를 다운로드하고, .agents/AGENTS.md 브리지와 Codex 전역 skills 링크 팜을 구성합니다.
+# GitHub에서 최신 .claude/.codex를 다운로드하고, .agents/AGENTS.md 브리지와 Codex 전역 skills를 설치합니다.
 
 set -e
 
@@ -9,7 +9,7 @@ REPO_URL="https://github.com/munlucky/claude-settings"
 BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
 CODEX_SKILLS_DIR=""
-CODEX_SKILL_LINKS=()
+CODEX_SKILL_PATHS=()
 CODEX_PROJECT_FILES=()
 CODEX_BACKUP_PATHS=()
 
@@ -69,11 +69,11 @@ setup_codex_skills() {
 	local source_skills_dir=".claude/skills"
 	local codex_home=""
 	local backup_root=""
-	local linked_count=0
+	local installed_count=0
 	local source_root=""
 
 	echo ""
-	print_info "Codex 전역 skills 링크 구성 중..."
+	print_info "Codex 전역 skills 설치 중..."
 
 	if [ -n "${CLAUDE_SETTINGS_SKILLS_DIR:-}" ]; then
 		source_skills_dir="$CLAUDE_SETTINGS_SKILLS_DIR"
@@ -93,7 +93,6 @@ setup_codex_skills() {
 	for skill_path in "$source_root"/*; do
 		local skill_name=""
 		local codex_skill_path=""
-		local existing_target=""
 
 		if [ ! -d "$skill_path" ]; then
 			continue
@@ -105,22 +104,6 @@ setup_codex_skills() {
 		if [ -f "$skill_path/SKILL.md" ] && grep -Eq '^(status|surfaceStatus):[[:space:]]*deprecated[[:space:]]*$' "$skill_path/SKILL.md"; then
 			print_info "deprecated Codex skill 제외: $skill_name"
 			continue
-		fi
-
-		if [ -d "$codex_skill_path" ]; then
-			existing_target="$(cd "$codex_skill_path" && pwd -P)"
-			if [ "$existing_target" = "$skill_path" ]; then
-				CODEX_SKILL_LINKS+=("$codex_skill_path")
-				linked_count=$((linked_count + 1))
-				continue
-			fi
-		elif [ -L "$codex_skill_path" ]; then
-			existing_target="$(readlink "$codex_skill_path" 2>/dev/null || true)"
-			if [ "$existing_target" = "$skill_path" ]; then
-				CODEX_SKILL_LINKS+=("$codex_skill_path")
-				linked_count=$((linked_count + 1))
-				continue
-			fi
 		fi
 
 		if [ -e "$codex_skill_path" ] || [ -L "$codex_skill_path" ]; then
@@ -136,44 +119,12 @@ setup_codex_skills() {
 			fi
 		fi
 
-		create_directory_symlink "$skill_path" "$codex_skill_path"
-		CODEX_SKILL_LINKS+=("$codex_skill_path")
-		linked_count=$((linked_count + 1))
+		cp -R "$skill_path" "$codex_skill_path"
+		CODEX_SKILL_PATHS+=("$codex_skill_path")
+		installed_count=$((installed_count + 1))
 	done
 
-	print_info "✓ Codex skills ${linked_count}개 링크 완료 (${CODEX_SKILLS_DIR} → ${source_root}/*)"
-}
-
-create_directory_symlink() {
-	local source_path="$1"
-	local link_path="$2"
-
-	if [ -n "${MSYSTEM:-}" ] && command -v cygpath &>/dev/null && command -v powershell.exe &>/dev/null; then
-		local source_win=""
-		local link_win=""
-
-		source_win="$(cygpath -w "$source_path")"
-		link_win="$(cygpath -w "$link_path")"
-
-		if powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'param([string]$Path,[string]$Target) New-Item -ItemType SymbolicLink -Path $Path -Target $Target | Out-Null' "$link_win" "$source_win"; then
-			return 0
-		fi
-
-		print_warn "Windows native symbolic link 생성 실패, directory junction으로 재시도합니다."
-		if powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'param([string]$Path,[string]$Target) New-Item -ItemType Junction -Path $Path -Target $Target | Out-Null' "$link_win" "$source_win"; then
-			return 0
-		fi
-
-		print_warn "Windows directory junction 생성 실패, Git Bash ln -s로 재시도합니다."
-	fi
-
-	ln -s "$source_path" "$link_path"
-	if [ ! -L "$link_path" ]; then
-		rm -rf "$link_path"
-		print_error "디렉터리 링크 생성 실패: $link_path → $source_path"
-		echo "  Windows에서는 Developer Mode, 심볼릭 링크 생성 권한, 또는 junction 생성 권한이 필요할 수 있습니다."
-		return 1
-	fi
+	print_info "✓ Codex skills ${installed_count}개 설치 완료 (${CODEX_SKILLS_DIR})"
 }
 
 setup_codex_project_config() {
@@ -625,7 +576,7 @@ usage() {
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
-  - .claude/skills/* 를 Codex 전역 skills(${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*)에 개별 디렉터리 링크
+  - .claude/skills/* 를 Codex 전역 skills(${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*)에 디렉터리 복사 설치
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 보호되는 파일 패턴:
@@ -872,7 +823,7 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
-	echo "  - Codex 전역 skills 링크 팜 구성 (${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills)"
+	echo "  - Codex 전역 skills 복사 설치 (${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills)"
 	echo "  - MemoryGraph 자동 설치 시도 및 프로젝트 로컬 MCP 등록"
 	echo "  - code-review-graph[communities] 자동 설치 시도 및 코드 분석 MCP 등록 (build/watch/daemon 제외)"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
@@ -1029,7 +980,7 @@ setup_codex_project_config "$TEMP_DIR/claude-settings-$BRANCH/.codex"
 # 7.9. .agents/skills + AGENTS.md 브리지 구성
 setup_agents_bridge
 
-# 7.10. Codex skill 링크 구성
+# 7.10. Codex skill 설치
 setup_codex_skills
 
 # 7.11. Browser runtime bootstrap
@@ -1200,8 +1151,8 @@ fi
 if [ -L ".agents/skills" ]; then
 	echo "  ✓ .agents/skills             (→ .claude/skills)"
 fi
-if [ ${#CODEX_SKILL_LINKS[@]} -gt 0 ]; then
-	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (→ $(pwd -P)/.claude/skills/*)"
+if [ ${#CODEX_SKILL_PATHS[@]} -gt 0 ]; then
+	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (installed from $(pwd -P)/.claude/skills/*)"
 fi
 if [ -x ".claude/bin/browserctl" ]; then
 	echo "  ✓ .claude/bin/browserctl     (브라우저 런타임 전역 진입점)"
@@ -1233,7 +1184,7 @@ fi
 
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
-echo "  2. Git에 커밋: git add .claude .agents .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
+echo "  2. Git에 커밋: git add .claude .codex .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
 echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_GLOBAL_HOME:-\${CODEX_HOME:-\$HOME/.codex}}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 

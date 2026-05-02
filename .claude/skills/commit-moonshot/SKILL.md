@@ -36,6 +36,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - do not store system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules as project memory; record duplicates under `projectMemory.omitted.duplicatedSystemRules`
 - never auto-stage `.claude/memory.json` or `.claude/memorygraph/` by default
 - never auto-stage `.claude/cache/memorygraph/` by default
+- never auto-stage generated agent bridge paths such as `.agents/` or `.agents/skills`; omit them from explicit `git add -- <paths>` lists unless the user explicitly asks to track generated bridge files
 - only stage memory artifacts when the user explicitly asks to include memory in the commit
 - if MemoryGraph is unavailable, record the failure and continue the Git closeout when the user explicitly requested commit/push
 - do not promote project candidates into `claude-settings` during a normal project commit; use `harness-memory-promoter` only after explicit approval

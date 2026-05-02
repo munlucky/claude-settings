@@ -162,7 +162,7 @@ chmod +x install-claude.sh
 - `.codex/config.toml`, `.codex/agents/` 중 존재 항목은 자동 백업 후 설치
 - `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
-- `.claude/skills/*`를 Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 개별 디렉터리 링크
+- `.claude/skills/*`를 Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 디렉터리 복사 설치
 - Python 3.10+ 환경에서 `pipx install memorygraphMCP`를 자동 시도하고 MemoryGraph MCP를 project scope로 등록
 
 보호되는 사용자 파일 패턴:
@@ -232,7 +232,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 
 ### Codex 설정 동기화
 
-설치 스크립트는 `.codex/config.toml`과 `.codex/agents/`를 프로젝트에 설치하고, 동시에 `.claude/skills/*`를 Codex가 읽는 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 개별 디렉터리 링크합니다. 전역 `skills` 디렉터리 자체는 유지하고, `claude-settings`가 소유한 스킬 이름만 링크로 교체합니다. Windows에서 native symbolic link 권한이 없으면 directory junction으로 대체합니다.
+설치 스크립트는 `.codex/config.toml`과 `.codex/agents/`를 프로젝트에 설치하고, 동시에 `.claude/skills/*`를 Codex가 읽는 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 디렉터리로 복사 설치합니다. 전역 `skills` 디렉터리 자체는 유지하고, `claude-settings`가 소유한 스킬 이름만 백업 후 교체합니다.
 
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
@@ -261,14 +261,14 @@ Code Review Graph 설정:
 - 프로젝트 분석 DB는 `.code-review-graph/`에 저장하며 버전 관리와 기본 agent context에서 제외합니다.
 
 주의:
-- 프로젝트 `.codex/skills`는 truth source가 아닙니다. Codex Desktop이 읽는 전역 `skills`는 링크 팜이고, 원본은 `.claude/skills`입니다.
+- 프로젝트 `.codex/skills`는 truth source가 아닙니다. Codex Desktop이 읽는 전역 `skills`는 설치된 복사본이고, 원본은 `.claude/skills`입니다.
 - 같은 이름의 기존 전역 스킬이 있으면 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/backups/skills/` 아래로 백업 후 교체됩니다.
 - 설치 직후 Codex에 스킬이 보이지 않으면 새 세션을 열어 전역 스킬 디렉토리를 다시 로드하세요.
 
 ### 다음 단계
 
 1. `.claude/PROJECT.md`를 프로젝트에 맞게 수정
-2. Git에 커밋: `git add .claude .agents .claudeignore AGENTS.md && git commit -m "Add Claude Code settings"`
+2. Git에 커밋: `git add .claude .codex .claudeignore AGENTS.md && git commit -m "Add Claude Code settings"`
 3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
 
 직접 스킬을 지정해서 실행하는 경우:
