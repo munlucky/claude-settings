@@ -597,7 +597,7 @@ usage() {
   -h, --help             도움말 출력
 
 기본 동작:
-  - .claude, .agents, AGENTS.md, .claudeignore 중 존재 항목 자동 백업 후 설치
+  - .claude, .agents, AGENTS.md, .claudeignore, .gitattributes 중 존재 항목 자동 백업 후 설치
   - .codex/config.toml, .codex/agents/ 중 존재 항목 자동 백업 후 설치
   - .codex/skills/ 는 백업 없이 최신 복사본으로 동기화
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
@@ -808,6 +808,13 @@ if [ -e ".claudeignore" ]; then
 	fi
 fi
 
+if [ -e ".gitattributes" ]; then
+	HAS_EXISTING=true
+	if [ "$DO_BACKUP" = true ]; then
+		BACKUP_FILES+=(".gitattributes")
+	fi
+fi
+
 if [ "$HAS_EXISTING" = true ]; then
 	if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
 		print_info "기존 AI 설정 항목 발견"
@@ -850,6 +857,7 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - .codex/config.toml, .codex/agents 설치"
 	echo "  - .codex/skills 백업 없이 최신 복사본으로 동기화"
 	echo "  - .claudeignore 설치/병합"
+	echo "  - .gitattributes 설치/병합"
 	echo "  - .agents/skills 심볼릭 링크 구성"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
 	echo "  - .codex/skills에서 Codex 전역 skills 복사 동기화 (${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills)"
@@ -924,6 +932,12 @@ if [ -f ".claudeignore" ]; then
 	cp -P ".claudeignore" "$CLAUDEIGNORE_STASH"
 fi
 
+GITATTRIBUTES_STASH=""
+if [ -f ".gitattributes" ]; then
+	GITATTRIBUTES_STASH="$TEMP_DIR/root-gitattributes"
+	cp -P ".gitattributes" "$GITATTRIBUTES_STASH"
+fi
+
 # 7. .claude 디렉토리 복사
 print_info ".claude 디렉토리 설치 중..."
 mkdir -p .claude
@@ -943,6 +957,22 @@ if [ -f "$DOWNLOADED_CLAUDEIGNORE" ]; then
 	else
 		cp "$DOWNLOADED_CLAUDEIGNORE" ".claudeignore"
 		print_info "✓ .claudeignore 설치 완료"
+	fi
+fi
+
+DOWNLOADED_GITATTRIBUTES="$TEMP_DIR/claude-settings-$BRANCH/.gitattributes"
+if [ -f "$DOWNLOADED_GITATTRIBUTES" ]; then
+	if [ -n "$GITATTRIBUTES_STASH" ] && [ -f "$GITATTRIBUTES_STASH" ]; then
+		if merge_line_file "$DOWNLOADED_GITATTRIBUTES" "$GITATTRIBUTES_STASH" ".gitattributes.merged"; then
+			mv ".gitattributes.merged" ".gitattributes"
+			print_info "✓ .gitattributes 병합 완료"
+		else
+			print_warn ".gitattributes 병합 실패, 기본 파일로 설치합니다."
+			cp "$DOWNLOADED_GITATTRIBUTES" ".gitattributes"
+		fi
+	else
+		cp "$DOWNLOADED_GITATTRIBUTES" ".gitattributes"
+		print_info "✓ .gitattributes 설치 완료"
 	fi
 fi
 
@@ -1160,6 +1190,9 @@ fi
 if [ -f ".claudeignore" ]; then
 	echo "  ✓ .claudeignore             (기본 ignore/denylist 정책)"
 fi
+if [ -f ".gitattributes" ]; then
+	echo "  ✓ .gitattributes            (LF 줄바꿈 정책)"
+fi
 if [ -d ".claude/skills/moonshot-orchestrator" ]; then
 	echo "  ✓ .claude/skills/moonshot-*        (PM 워크플로우 스킬)"
 fi
@@ -1213,7 +1246,7 @@ fi
 
 print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
-echo "  2. Git에 커밋: git add .claude .codex .claudeignore AGENTS.md && git commit -m 'Add Claude settings'"
+echo "  2. Git에 커밋: git add .claude .codex .claudeignore .gitattributes AGENTS.md && git commit -m 'Add Claude settings'"
 echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_GLOBAL_HOME:-\${CODEX_HOME:-\$HOME/.codex}}/skills} 를 다시 로드하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 

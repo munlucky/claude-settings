@@ -162,6 +162,7 @@ chmod +x install-claude.sh
 - `.codex/config.toml`, `.codex/agents/` 중 존재 항목은 자동 백업 후 설치
 - `.codex/skills/`는 백업하지 않고 `.claude/skills/*`의 최신 복사본으로 교체
 - `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
+- `.gitattributes`는 LF 줄바꿈 정책을 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
 - `.claude/skills/*`를 프로젝트 `.codex/skills/*`에 디렉터리 복사 설치
 - `.codex/skills/*`를 Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 디렉터리 복사 동기화
@@ -272,7 +273,7 @@ Code Review Graph 설정:
 ### 다음 단계
 
 1. `.claude/PROJECT.md`를 프로젝트에 맞게 수정
-2. Git에 커밋: `git add .claude .codex .claudeignore AGENTS.md && git commit -m "Add Claude Code settings"`
+2. Git에 커밋: `git add .claude .codex .claudeignore .gitattributes AGENTS.md && git commit -m "Add Claude Code settings"`
 3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
 
 직접 스킬을 지정해서 실행하는 경우:
