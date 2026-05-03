@@ -59,6 +59,22 @@ MemoryGraph 호출은 `stage=commit`, `memoryMode=write_requested`로 수행합�
 프로젝트에 `.claude/scripts/memorygraph-project-index.mjs`가 있으면 먼저 실행해 운영 중인 코드베이스의 파일/import/symbol/API route 수준 seed를 생성한 뒤 `project-memory-refresh`로 반영합니다.
 system/developer/AGENTS/rules/workflow hard rule과 중복되는 항목은 저장하지 말고 `projectMemory.omitted.duplicatedSystemRules`에 기록합니다.
 
+### Codex MCP transport fallback
+Codex Desktop에 이미 붙어 있는 Memory MCP가 `Transport closed`로 실패하면 Codex 재시작을 요구하지 않습니다. 즉시 별도 MemoryGraph stdio child process를 띄우는 direct fallback을 사용합니다.
+
+```bash
+node .claude/scripts/memorygraph-direct.mjs health
+node .claude/scripts/memorygraph-project-index.mjs --max-files 500
+node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+```
+
+규칙:
+- `Transport closed`는 저장 payload 실패가 아니라 Codex app-server의 기존 MCP transport 실패로 간주합니다.
+- direct fallback이 성공하면 메모리 현행화는 완료로 취급하고, Codex 재시작을 사용자에게 요구하지 않습니다.
+- direct fallback도 실패한 경우에만 실패 원인을 기록하고 Git closeout을 계속 진행합니다.
+- Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다.
+- direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 사용합니다. `.claude/memorygraph/**`와 `.claude/cache/memorygraph/**`는 사용자가 명시적으로 포함하지 않는 한 커밋하지 않습니다.
+
 ### 기존 경계 확인
 `recall_memories`와 `search_memories`로 `project:{PROJECT_ID}`, `boundary` 태그를 가진 메모리 검색
 
@@ -160,7 +176,7 @@ git add -- .claude .codex .claudeignore .gitattributes .gitignore AGENTS.md READ
 - 사용자 확인 없이 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`를 자동으로 스테이징하지 마세요.
 - 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
 - 사용자가 제외하자고 하면 메모리 산출물은 unstaged 상태로 두고 나머지만 커밋하세요.
-- MemoryGraph 저장 실패는 기록하되, 사용자가 commit/push를 명시한 흐름에서는 Git closeout을 막지 마세요.
+- MemoryGraph 저장 실패는 direct fallback까지 시도한 뒤 기록하되, 사용자가 commit/push를 명시한 흐름에서는 Git closeout을 막지 마세요.
 - 일반 프로젝트 커밋 중 승격 후보를 `claude-settings` graph에 자동 저장하지 마세요. 명시 승인 후 `harness-memory-promoter`를 사용하세요.
 - 최종 커밋 요약에 사용자의 선택을 명시하세요.
 

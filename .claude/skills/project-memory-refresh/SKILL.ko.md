@@ -21,12 +21,23 @@ triggers:
 4. `project-memory-refresh`를 `memoryMode: write_requested`로 호출합니다.
 5. 생성/건너뜀 처리된 node와 relationship 수를 보고합니다.
 
+## Codex MCP transport fallback
+
+Codex Desktop의 기존 Memory MCP tool 호출이 `Transport closed`로 실패하면 Codex를 재시작하지 말고 direct fallback을 실행합니다.
+
+```bash
+node .claude/scripts/memorygraph-direct.mjs health
+node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+```
+
+Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다. direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 지정하므로 현재 프로젝트의 로컬 그래프에 씁니다.
+
 ## 경계
 
 - 현재 프로젝트의 `.claude/memorygraph/`에만 씁니다.
 - `.claude/docs/ko/`는 memory source로 읽지 않습니다.
 - `.claude/memorygraph/`와 `.claude/cache/memorygraph/`는 커밋하지 않습니다.
-- MemoryGraph가 불가하면 실패를 보고하되 일반 workflow는 막지 않습니다.
+- MemoryGraph가 불가하면 direct fallback까지 시도한 뒤 실패를 보고하되 일반 workflow는 막지 않습니다.
 
 ## 하네스 승격
 

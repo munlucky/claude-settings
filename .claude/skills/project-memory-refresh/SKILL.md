@@ -21,12 +21,23 @@ Use this skill only when the user explicitly asks to refresh, build, or update t
 4. Invoke `project-memory-refresh` with `memoryMode: write_requested`.
 5. Report created/skipped node and relationship counts.
 
+## Codex MCP Transport Fallback
+
+If the existing Memory MCP tool attached to Codex Desktop fails with `Transport closed`, do not ask for a Codex restart. Run the direct fallback instead:
+
+```bash
+node .claude/scripts/memorygraph-direct.mjs health
+node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+```
+
+On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell. The direct fallback sets `MEMORY_SQLITE_PATH` to `.claude/memorygraph/memory.db`, so writes stay in the current project's local graph.
+
 ## Boundaries
 
 - Write only to the current project's `.claude/memorygraph/`.
 - Do not read `.claude/docs/ko/` as a memory source.
 - Do not commit `.claude/memorygraph/` or `.claude/cache/memorygraph/`.
-- If MemoryGraph is unavailable, report the failure and leave the workflow unblocked.
+- If MemoryGraph is unavailable, try the direct fallback first, then report the failure and leave the workflow unblocked.
 
 ## Harness Promotion
 

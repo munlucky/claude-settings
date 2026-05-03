@@ -15,6 +15,7 @@ import path from 'node:path';
 const cwd = process.cwd();
 const claudeDir = path.resolve(cwd, '.claude');
 const dataDir = path.resolve(claudeDir, 'memorygraph');
+const sqlitePath = path.resolve(dataDir, 'memory.db');
 const isWindows = process.platform === 'win32';
 
 function ensureDataDir() {
@@ -77,6 +78,7 @@ const child = spawn(command, [], {
   shell: false,
   env: {
     ...process.env,
+    MEMORY_SQLITE_PATH: sqlitePath,
     MEMORYGRAPH_DATA_DIR: dataDir,
   },
 });
