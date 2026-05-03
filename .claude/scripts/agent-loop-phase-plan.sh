@@ -115,6 +115,10 @@ ensure_execution_artifacts() {
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract.
 - Model effort profile: ${model_effort_profile}
 - Effort escalation reason: ${effort_escalation_reason}
+- Selected model provider: ${MODEL_ROUTE_PROVIDER:-runtime-default}
+- Selected model: ${MODEL_ROUTE_MODEL:-runtime-default}
+- Selected model effort: ${MODEL_ROUTE_EFFORT:-runtime-default}
+- Model selection reason: shell compatibility route
 - Retrieval budget: ${retrieval_budget}
 - Validation profile: ${validation_profile}
 - Phase replay policy: ${phase_replay_policy}
@@ -245,6 +249,10 @@ EOF
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract
 - Model effort profile: ${model_effort_profile}
 - Effort escalation reason: ${effort_escalation_reason}
+- Selected model provider: ${MODEL_ROUTE_PROVIDER:-runtime-default}
+- Selected model: ${MODEL_ROUTE_MODEL:-runtime-default}
+- Selected model effort: ${MODEL_ROUTE_EFFORT:-runtime-default}
+- Model selection reason: shell compatibility route
 - Retrieval budget: ${retrieval_budget}
 - Validation profile: ${validation_profile}
 - Phase replay policy: ${phase_replay_policy}
@@ -389,6 +397,7 @@ Codex direct execution checklist:
 4. Execute only the active phase work.
 5. Run review and verification in the phase contract order.
 6. Use \`.claude/scripts/write-verification-verdict.py\` for structured \`.claude/verification-verdict-*.json\` output in the repository root instead of hand-authoring verdict JSON.
+   Include model routing args when available: \`--selected-model-provider\`, \`--selected-model\`, \`--selected-model-effort\`, \`--model-selection-reason\`.
    기본 인자만 넣어도 동작합니다.
    예: `python3 .claude/scripts/write-verification-verdict.py --output .claude/verification-verdict-phase02-final.json --run-id phase02-final --phase-number 2`
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
@@ -429,6 +438,7 @@ Single isolated phase-attempt rules:
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
 - Record review completion before claiming the verifier state is final.
 - Generate fresh structured verification verdicts with \`.claude/scripts/write-verification-verdict.py\` and write them under \`.claude/verification-verdict-*.json\`; do not hand-author verdict JSON.
+  Include model routing args when available.
   기본 인자만 넣어도 동작하도록 스키마를 완화했습니다.
 - Record the exact repository-root verdict path in QA_REPORT.md so the completion gate can confirm the same file.
 - Refresh QA_REPORT.md at stage transitions instead of batching every artifact update at the end.

@@ -42,7 +42,8 @@ crossRuntimeHarness:
       - max
     rules:
       - "Use deep or max only when a concrete Effort escalation reason is recorded in QA_REPORT.md and workflow evidence."
-      - "Codex maps the shared profile to model_reasoning_effort; Claude Code records the same profile in contracts and prompts."
+      - "Provider-neutral model routing maps the shared profile to runtime-specific model and effort controls."
+      - "Provider-neutral model routing must record selectedModelProvider, selectedModel, selectedModelEffort, and modelSelectionReason."
   retrievalBudget:
     default: "stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output"
     rules:

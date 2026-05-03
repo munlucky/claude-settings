@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
 import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
+import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 export function sanitizeSlug(value) {
   return String(value || '')
@@ -199,6 +200,11 @@ export function ensureExecutionArtifacts(config) {
   const retrievalBudget = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
   const validationProfile = 'workflow_core';
   const phaseReplayPolicy = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
+  const modelRoute = resolveModelRoute({
+    runtime: currentRuntime || requestedRuntime || 'auto',
+    stage: process.env.PHASE_MODEL_STAGE || 'phase_implementation',
+    profile: modelEffortProfile,
+  });
 
   fs.mkdirSync(paths.phaseExecutionDir, { recursive: true });
 
@@ -255,6 +261,10 @@ ${renderSourcePlanSnapshot(phaseDoc)}
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract.
 - Model effort profile: ${modelEffortProfile}
 - Effort escalation reason: ${effortEscalationReason}
+- Selected model provider: ${modelRoute.provider}
+- Selected model: ${modelRoute.model || 'runtime-default'}
+- Selected model effort: ${modelRoute.effort || 'runtime-default'}
+- Model selection reason: ${modelRoute.selectionReason}
 - Retrieval budget: ${retrievalBudget}
 - Validation profile: ${validationProfile}
 - Phase replay policy: ${phaseReplayPolicy}
@@ -396,6 +406,10 @@ ${requiredCommands}
 - Runtime isolation: runtime-adapter; runtime-specific tool flags stay outside the user-facing contract
 - Model effort profile: ${modelEffortProfile}
 - Effort escalation reason: ${effortEscalationReason}
+- Selected model provider: ${modelRoute.provider}
+- Selected model: ${modelRoute.model || 'runtime-default'}
+- Selected model effort: ${modelRoute.effort || 'runtime-default'}
+- Model selection reason: ${modelRoute.selectionReason}
 - Retrieval budget: ${retrievalBudget}
 - Validation profile: ${validationProfile}
 - Phase replay policy: ${phaseReplayPolicy}
@@ -456,6 +470,10 @@ ${requiredCommands}
 ## Workflow Logging
 - session-logger: not recorded yet
 - Detail: placeholder only
+- Selected model provider: ${modelRoute.provider}
+- Selected model: ${modelRoute.model || 'runtime-default'}
+- Selected model effort: ${modelRoute.effort || 'runtime-default'}
+- Model selection reason: ${modelRoute.selectionReason}
 `;
     fs.writeFileSync(paths.phaseHandoff, `${handoff}\n`, 'utf8');
   }
@@ -514,6 +532,7 @@ Codex direct execution checklist:
 4. Execute only the active phase work.
 5. Run review and verification in the phase contract order.
 6. Use \`.claude/scripts/write-verification-verdict.py\` for structured \`.claude/verification-verdict-*.json\` output in the repository root instead of hand-authoring verdict JSON.
+   Include model routing args when available: \`--selected-model-provider\`, \`--selected-model\`, \`--selected-model-effort\`, \`--model-selection-reason\`.
    기본 인자만 넣어도 동작합니다.
    예: \`python3 .claude/scripts/write-verification-verdict.py --output .claude/verification-verdict-phase02-final.json --run-id phase02-final --phase-number 2\`
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
@@ -557,6 +576,7 @@ Single isolated phase-attempt rules:
 - Before code edits, refresh SPRINT_CONTRACT.md for this phase.
 - Record review completion before claiming the verifier state is final.
 - Generate fresh structured verification verdicts with \`.claude/scripts/write-verification-verdict.py\` and write them under \`.claude/verification-verdict-*.json\`; do not hand-author verdict JSON.
+  Include model routing args when available: \`--selected-model-provider\`, \`--selected-model\`, \`--selected-model-effort\`, \`--model-selection-reason\`.
   기본 인자만 넣어도 동작하도록 스키마를 완화했습니다.
 - If a required verifier is blocked by runtime/tool availability, write a blocked verification verdict instead of keeping the phase in blind retry.
 - Respect the active verification runtime target: ${verificationRuntimes}.
@@ -566,7 +586,7 @@ Single isolated phase-attempt rules:
 - Update SCORECARD.md on every meaningful round using objective checklist status, current score, unmet items, and verdict.
 - Refresh SCORECARD.md again after verification or any remediation so progress is visible while the phase is still running.
 - Refresh the default values in the "Workflow Execution", "Contract Review Evidence", and "Failure Loop" sections of QA_REPORT.md when actual execution diverges.
-- Keep Effort escalation reason, Retrieval budget, Validation profile, and Phase replay policy current in QA_REPORT.md and analysis workflow evidence.
+- Keep Effort escalation reason, selected model provider/model/effort/reason, Retrieval budget, Validation profile, and Phase replay policy current in QA_REPORT.md and analysis workflow evidence.
 - If Model effort profile is \`deep\` or \`max\`, record a concrete Effort escalation reason; \`none\` is allowed only for \`economy\` or \`standard\`.
 - Preserve assistant-item \`phase\` values when replaying assistant history: \`commentary\` for progress updates and \`final_answer\` only for completed answers. Never add phase metadata to user messages.
 - For critical SCN-* scenarios, smoke-only evidence is a warning and cannot justify clean finish; record open -> act -> mutate -> persist -> recover evidence or keep the phase open.

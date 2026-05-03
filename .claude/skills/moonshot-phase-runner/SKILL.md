@@ -44,7 +44,8 @@ Effort profile policy:
 - Use `standard` for simple/local bounded work.
 - Use `deep` or `max` only when runtime/core/architecture/security risk, failed retry evidence, or hard long-horizon work justifies escalation.
 - Every `deep` or `max` run must record `Effort escalation reason` in `SPRINT_CONTRACT.md`, `QA_REPORT.md`, and workflow evidence.
-- Codex maps the profile to `model_reasoning_effort`; Claude Code records the same profile and escalation reason in contracts and prompts when no runtime flag is available.
+- Model selection is provider-neutral and automatic. Codex maps the selected route to `-m` plus `model_reasoning_effort`; Claude Code maps it to `--model` plus `--effort`.
+- Evidence must include `selectedModelProvider`, `selectedModel`, `selectedModelEffort`, and `modelSelectionReason`.
 
 Retrieval and validation policy:
 - Default retrieval budget is one compact MemoryGraph/CodeReviewGraph recall per stage.

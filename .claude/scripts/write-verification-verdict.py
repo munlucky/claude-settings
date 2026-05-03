@@ -88,6 +88,10 @@ def main() -> int:
     parser.add_argument("--stage", action="append", default=[])
     parser.add_argument("--workflow-warning", action="append", default=[])
     parser.add_argument("--effort-escalation-reason", default="")
+    parser.add_argument("--selected-model-provider", default="")
+    parser.add_argument("--selected-model", default="")
+    parser.add_argument("--selected-model-effort", default="")
+    parser.add_argument("--model-selection-reason", default="")
     parser.add_argument("--retrieval-budget", default="")
     parser.add_argument("--validation-profile", default="")
     parser.add_argument("--phase-replay-policy", default="")
@@ -224,6 +228,10 @@ def main() -> int:
             "selectedBundles": args.selected_bundle,
             "stageOrder": args.stage,
             "effortEscalationReason": args.effort_escalation_reason,
+            "selectedModelProvider": args.selected_model_provider,
+            "selectedModel": args.selected_model,
+            "selectedModelEffort": args.selected_model_effort,
+            "modelSelectionReason": args.model_selection_reason,
             "retrievalBudget": args.retrieval_budget,
             "validationProfile": args.validation_profile,
             "phaseReplayPolicy": args.phase_replay_policy,

@@ -263,6 +263,14 @@ function extractWorkflowSection(text) {
       result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Effort escalation reason:')) {
       result.effortEscalationReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model provider:')) {
+      result.selectedModelProvider = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model:')) {
+      result.selectedModel = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model effort:')) {
+      result.selectedModelEffort = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Model selection reason:')) {
+      result.modelSelectionReason = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Retrieval budget:')) {
       result.retrievalBudget = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Validation profile:')) {
@@ -855,6 +863,10 @@ function evaluatePhaseCompletionGate(config) {
       !workflowSection.runtimeIsolation ||
       !workflowSection.modelEffortProfile ||
       !workflowSection.effortEscalationReason ||
+      !workflowSection.selectedModelProvider ||
+      !workflowSection.selectedModel ||
+      !workflowSection.selectedModelEffort ||
+      !workflowSection.modelSelectionReason ||
       !workflowSection.retrievalBudget ||
       !workflowSection.validationProfile ||
       !workflowSection.phaseReplayPolicy
@@ -1051,6 +1063,10 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_RUNTIME_ISOLATION: workflowSection.runtimeIsolation || '',
     PHASE_MODEL_EFFORT_PROFILE: workflowSection.modelEffortProfile || '',
     PHASE_EFFORT_ESCALATION_REASON: workflowSection.effortEscalationReason || '',
+    PHASE_SELECTED_MODEL_PROVIDER: workflowSection.selectedModelProvider || '',
+    PHASE_SELECTED_MODEL: workflowSection.selectedModel || '',
+    PHASE_SELECTED_MODEL_EFFORT: workflowSection.selectedModelEffort || '',
+    PHASE_MODEL_SELECTION_REASON: workflowSection.modelSelectionReason || '',
     PHASE_RETRIEVAL_BUDGET: workflowSection.retrievalBudget || '',
     PHASE_VALIDATION_PROFILE: workflowSection.validationProfile || '',
     PHASE_REPLAY_POLICY: workflowSection.phaseReplayPolicy || '',

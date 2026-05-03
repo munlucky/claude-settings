@@ -54,6 +54,10 @@ workflowEvidence:
   selectionReason: ""
   runtimeIsolation: ""
   modelEffortProfile: "standard" # economy | standard | deep | max
+  selectedModelProvider: ""
+  selectedModel: ""
+  selectedModelEffort: ""
+  modelSelectionReason: ""
 strict:
   required: false
   triggers:
@@ -152,7 +156,7 @@ loop:
 - Completion criteria should be phrased as checks that can fail reproducibly, not vague quality claims.
 - Cross-runtime behavior should be controlled through shared contract fields rather than runtime-specific wording in user-facing docs.
 - `workflowEvidence` should include selected/skipped harness components, the selection reason, runtime isolation mode, and model effort profile.
-- Runtime-neutral effort profiles are `economy`, `standard`, `deep`, and `max`; Codex maps them to `model_reasoning_effort`, while Claude Code records the same profile when no direct effort flag exists.
+- Runtime-neutral effort profiles are `economy`, `standard`, `deep`, and `max`; provider-neutral model routing maps them to runtime-specific model and effort controls.
 - For runtime-heavy or UI-heavy work, prefer a separate evaluator path over generator self-approval.
 - Browser/runtime checks should exercise real interactions, not only page-load screenshots.
 - `SPRINT_CONTRACT.md` should define the round-level done criteria before implementation starts.

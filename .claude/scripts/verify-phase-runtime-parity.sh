@@ -607,6 +607,10 @@ EOF
 - Runtime isolation: isolated runtime parity fixture
 - Model effort profile: economy
 - Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-nano
+- Selected model effort: low
+- Model selection reason: runtime parity fixture
 - Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
 - Validation profile: runtime_adapter
 - Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
@@ -687,7 +691,8 @@ run_render_matrix() {
   if target_runtime_selected "claude"; then
     assert_contains "$claude_delegated_out" "agent-loop.sh" "delegated-terminal adapter command"
     assert_contains "$claude_delegated_out" "--runtime claude" "Claude delegated runtime flag"
-    assert_contains "$claude_coord_out" "claude --dangerously-skip-permissions" "Claude coordinator adapter"
+    assert_contains "$claude_coord_out" "claude --model" "Claude coordinator model route"
+    assert_contains "$claude_coord_out" "--dangerously-skip-permissions" "Claude coordinator adapter"
     assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
   fi
   if target_runtime_selected "codex"; then
@@ -816,6 +821,10 @@ EOF
 - Runtime isolation: isolated verifier fixture
 - Model effort profile: economy
 - Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-nano
+- Selected model effort: low
+- Model selection reason: runtime parity fixture
 - Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
 - Validation profile: workflow_core
 - Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
@@ -906,6 +915,10 @@ EOF
 - Runtime isolation: isolated verifier fixture
 - Model effort profile: economy
 - Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-nano
+- Selected model effort: low
+- Model selection reason: runtime parity fixture
 - Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
 - Validation profile: workflow_core
 - Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items

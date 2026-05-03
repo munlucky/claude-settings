@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { resolveCodexReasoningEffort } from './lib/effort-profile.mjs';
+import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const prepareWorktreeScript = path.join(SCRIPT_DIR, 'harness-prepare-worktree.mjs');
@@ -330,17 +330,24 @@ function runtimeCli(args, cwd = process.cwd()) {
 }
 
 function buildRuntimeCommand(prompt, runtime, cwd) {
+  const route = resolveModelRoute({
+    runtime,
+    stage: 'parallel_worker',
+    profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+  });
   if (runtime === 'claude') {
-    return ['claude', '--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt];
+    const args = ['claude'];
+    if (route.model) args.push('--model', route.model);
+    if (route.effort) args.push('--effort', route.effort);
+    args.push('--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt);
+    return args;
   }
   const args = runtimeCli(['codex-base-args', cwd]);
-  const effort = resolveCodexReasoningEffort({
-    explicitEffort: process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
-    profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
-    defaultProfile: 'standard',
-  });
-  if (effort) {
-    args.push('-c', `model_reasoning_effort="${effort}"`);
+  if (route.model) {
+    args.push('-m', route.model);
+  }
+  if (route.effort) {
+    args.push('-c', `model_reasoning_effort="${route.effort}"`);
   }
   args.push(prompt);
   return args;

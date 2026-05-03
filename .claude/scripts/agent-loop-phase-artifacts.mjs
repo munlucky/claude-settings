@@ -142,6 +142,14 @@ function extractWorkflowSection(text) {
       result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Effort escalation reason:')) {
       result.effortEscalationReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model provider:')) {
+      result.selectedModelProvider = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model:')) {
+      result.selectedModel = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model effort:')) {
+      result.selectedModelEffort = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Model selection reason:')) {
+      result.modelSelectionReason = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Retrieval budget:')) {
       result.retrievalBudget = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Validation profile:')) {
@@ -528,10 +536,18 @@ function syncCleanFinishArtifacts({
       let sawRuntimeIsolation = false;
       let sawModelEffortProfile = false;
       let sawEffortEscalationReason = false;
+      let sawSelectedModelProvider = false;
+      let sawSelectedModel = false;
+      let sawSelectedModelEffort = false;
+      let sawModelSelectionReason = false;
       let sawRetrievalBudget = false;
       let sawValidationProfile = false;
       let sawPhaseReplayPolicy = false;
       let modelEffortProfile = process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard';
+      const selectedModelProvider = process.env.PHASE_SELECTED_MODEL_PROVIDER || 'runtime-default';
+      const selectedModel = process.env.PHASE_SELECTED_MODEL || 'runtime-default';
+      const selectedModelEffort = process.env.PHASE_SELECTED_MODEL_EFFORT || 'runtime-default';
+      const modelSelectionReason = process.env.PHASE_MODEL_SELECTION_REASON || 'runtime-default';
       for (let index = workflowSectionRange.start + 1; index < workflowSectionRange.end; index += 1) {
         const line = qaLines[index];
         const stripped = line.trim();
@@ -572,6 +588,18 @@ function syncCleanFinishArtifacts({
         } else if (stripped.startsWith('- Effort escalation reason:')) {
           sawEffortEscalationReason = true;
           body.push(line);
+        } else if (stripped.startsWith('- Selected model provider:')) {
+          sawSelectedModelProvider = true;
+          body.push(line);
+        } else if (stripped.startsWith('- Selected model:')) {
+          sawSelectedModel = true;
+          body.push(line);
+        } else if (stripped.startsWith('- Selected model effort:')) {
+          sawSelectedModelEffort = true;
+          body.push(line);
+        } else if (stripped.startsWith('- Model selection reason:')) {
+          sawModelSelectionReason = true;
+          body.push(line);
         } else if (stripped.startsWith('- Retrieval budget:')) {
           sawRetrievalBudget = true;
           body.push(line);
@@ -602,6 +630,18 @@ function syncCleanFinishArtifacts({
       }
       if (!sawEffortEscalationReason) {
         body.push(`- Effort escalation reason: ${process.env.PHASE_DISPATCH_EFFORT_ESCALATION_REASON || process.env.MOONSHOT_EFFORT_ESCALATION_REASON || defaultEffortEscalationReason(modelEffortProfile)}`);
+      }
+      if (!sawSelectedModelProvider) {
+        body.push(`- Selected model provider: ${selectedModelProvider}`);
+      }
+      if (!sawSelectedModel) {
+        body.push(`- Selected model: ${selectedModel}`);
+      }
+      if (!sawSelectedModelEffort) {
+        body.push(`- Selected model effort: ${selectedModelEffort}`);
+      }
+      if (!sawModelSelectionReason) {
+        body.push(`- Model selection reason: ${modelSelectionReason}`);
       }
       if (!sawRetrievalBudget) {
         body.push(`- Retrieval budget: ${process.env.PHASE_RETRIEVAL_BUDGET || process.env.MOONSHOT_RETRIEVAL_BUDGET || DEFAULT_RETRIEVAL_BUDGET}`);

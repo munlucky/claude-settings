@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifacts } from './agent-loop-phase-plan-lib.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
-import { resolveCodexReasoningEffort } from './lib/effort-profile.mjs';
+import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -334,6 +334,11 @@ function codexBaseArgs(cwd) {
 
 function phaseEnv(paths) {
   const currentRuntime = activeAttemptContext?.runtime || '';
+  const modelRoute = resolveModelRoute({
+    runtime: currentRuntime || state.runtime || 'auto',
+    stage: process.env.PHASE_MODEL_STAGE || 'phase_implementation',
+    profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+  });
   const verificationContext = loadVerificationContractContext('.claude/verification.contract.yaml', {
     requestedRuntime: state.runtime,
     verificationRuntimes: state.verificationRuntimes,
@@ -343,6 +348,10 @@ function phaseEnv(paths) {
     ...process.env,
     WORKSPACE_ROOT: process.cwd(),
     PHASE_WORK_RUNTIME: currentRuntime || state.runtime || 'auto',
+    PHASE_SELECTED_MODEL_PROVIDER: modelRoute.provider,
+    PHASE_SELECTED_MODEL: modelRoute.model,
+    PHASE_SELECTED_MODEL_EFFORT: modelRoute.effort,
+    PHASE_MODEL_SELECTION_REASON: modelRoute.selectionReason,
     PHASE_VERIFICATION_TARGET_RUNTIMES: verificationContext.effectiveSelection,
     PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: verificationContext.effectiveSelection,
     HARNESS_REQUIREMENTS_TRACEABILITY_FILE: `${state.executionRoot}/REQUIREMENTS_TRACEABILITY.md`,
@@ -361,19 +370,30 @@ function phaseEnv(paths) {
   return env;
 }
 
-function buildWorkerCommand(prompt, runtime) {
+function buildWorkerCommand(prompt, runtime, stage = process.env.PHASE_MODEL_STAGE || 'phase_implementation') {
+  const modelRoute = resolveModelRoute({
+    runtime,
+    stage,
+    profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+  });
   if (runtime === 'claude') {
-    return ['claude', '--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt];
+    const args = ['claude'];
+    if (modelRoute.model) {
+      args.push('--model', modelRoute.model);
+    }
+    if (modelRoute.effort) {
+      args.push('--effort', modelRoute.effort);
+    }
+    args.push('--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt);
+    return args;
   }
   if (runtime === 'codex') {
     const args = codexBaseArgs(process.cwd());
-    const effort = resolveCodexReasoningEffort({
-      explicitEffort: process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
-      profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
-      defaultProfile: 'standard',
-    });
-    if (effort) {
-      args.push('-c', `model_reasoning_effort="${effort}"`);
+    if (modelRoute.model) {
+      args.push('-m', modelRoute.model);
+    }
+    if (modelRoute.effort) {
+      args.push('-c', `model_reasoning_effort="${modelRoute.effort}"`);
     }
     appendCodexPromptArg(args, prompt);
     return args;
@@ -406,7 +426,7 @@ function shouldUsePromptFileForCodex(args) {
 }
 
 function runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, runtime) {
-  const command = buildWorkerCommand(prompt, runtime);
+  const command = buildWorkerCommand(prompt, runtime, 'phase_implementation');
   const result = runNodeScript(runtimePath, [
     'run-worker-prompt-with-completion-gate',
     '--log-file', logFile,
@@ -469,16 +489,30 @@ function runCommitPrompt(logFile, prompt, runtime) {
   }
 
   const command = runtime === 'claude'
-    ? ['claude', '--dangerously-skip-permissions', '--no-session-persistence', '-c', '-p', prompt]
+    ? (() => {
+      const route = resolveModelRoute({
+        runtime: 'claude',
+        stage: 'closeout_gate',
+        profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+      });
+      const args = ['claude'];
+      if (route.model) args.push('--model', route.model);
+      if (route.effort) args.push('--effort', route.effort);
+      args.push('--dangerously-skip-permissions', '--no-session-persistence', '-c', '-p', prompt);
+      return args;
+    })()
     : (() => {
       const args = codexBaseArgs(process.cwd());
-      const effort = resolveCodexReasoningEffort({
-        explicitEffort: process.env.AGENT_LOOP_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
+      const route = resolveModelRoute({
+        runtime: 'codex',
+        stage: 'closeout_gate',
         profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
-        defaultProfile: 'standard',
       });
-      if (effort) {
-        args.push('-c', `model_reasoning_effort="${effort}"`);
+      if (route.model) {
+        args.push('-m', route.model);
+      }
+      if (route.effort) {
+        args.push('-c', `model_reasoning_effort="${route.effort}"`);
       }
       appendCodexPromptArg(args, prompt);
       return args;

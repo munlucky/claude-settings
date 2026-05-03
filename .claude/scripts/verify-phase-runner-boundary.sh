@@ -417,6 +417,10 @@ cat > "$CONFORMANCE_PHASE_DIR/QA_REPORT.md" <<'EOF'
 - Runtime isolation: isolated boundary fixture
 - Model effort profile: economy
 - Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-nano
+- Selected model effort: low
+- Model selection reason: phase-runner boundary fixture
 - Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
 - Validation profile: workflow_core
 - Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items

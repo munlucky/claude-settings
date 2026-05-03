@@ -44,5 +44,5 @@ documentPaths:
 - 프로젝트 계약: `@.claude/CLAUDE.md`
 - 검증 계약: `@.claude/verification.contract.yaml`
 - 지식 저장소 운영: `@.claude/docs/guidelines/knowledge-repository-ops.ko.md`
-- GPT-5.5 공통 하네스 정책: `@.claude/docs/guidelines/gpt-5.5-harness-prompting.ko.md`
+- Provider-neutral 모델 라우팅 정책: `@.claude/docs/guidelines/provider-neutral-model-routing.ko.md`
 - 에이전트 정의 규칙: `@.claude/rules/agents/agent-definition.md`

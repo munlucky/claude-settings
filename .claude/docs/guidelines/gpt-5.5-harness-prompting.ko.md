@@ -1,10 +1,12 @@
 ---
 title: GPT-5.5 Cross-Runtime Harness Prompting
-description: Codex와 Claude Code 공통 outcome-first, retrieval, validation, phase replay 정책
-lastReviewed: 2026-05-02
+description: provider-neutral model routing과 harness prompting 정책을 가리키는 compatibility 문서
+lastReviewed: 2026-05-03
 ---
 
 # GPT-5.5 공통 하네스 프롬프팅
+
+이 파일은 compatibility entrypoint입니다. 새 모델/effort 정책은 `.claude/docs/guidelines/provider-neutral-model-routing.ko.md`에 둡니다.
 
 Moonshot phase, bounded-direct, runtime-adapter 작업에서 Codex와 Claude Code가 같은 계약으로 동작하게 하는 정책입니다.
 

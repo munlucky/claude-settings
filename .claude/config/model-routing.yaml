@@ -1,0 +1,101 @@
+schemaVersion: "1.0"
+defaultMode: auto
+defaultProvider:
+  codex: openai
+  claude: anthropic
+  gemini: google
+profiles:
+  economy:
+    openai:
+      model: gpt-5.4-nano
+      effort: low
+      reasoningControl: model_reasoning_effort
+      capabilities: [text, apply_patch]
+    anthropic:
+      model: haiku
+      effort: low
+      reasoningControl: effort
+      capabilities: [text]
+    google:
+      model: gemini-2.5-flash-lite
+      effort: minimal
+      reasoningControl: thinkingLevel
+      capabilities: [text]
+  standard:
+    openai:
+      model: gpt-5.4-mini
+      effort: medium
+      reasoningControl: model_reasoning_effort
+      capabilities: [text, apply_patch, computer_use, tool_search]
+    anthropic:
+      model: sonnet
+      effort: medium
+      reasoningControl: effort
+      capabilities: [text, tools]
+    google:
+      model: gemini-2.5-flash
+      effort: low
+      reasoningControl: dynamic_thinking
+      capabilities: [text, tools]
+  deep:
+    openai:
+      model: gpt-5.5
+      effort: high
+      reasoningControl: model_reasoning_effort
+      capabilities: [text, apply_patch, computer_use, tool_search]
+    anthropic:
+      model: opus
+      implementationModel: sonnet
+      effort: high
+      reasoningControl: effort
+      capabilities: [text, tools]
+    google:
+      model: gemini-2.5-pro
+      effort: high
+      reasoningControl: dynamic_thinking
+      capabilities: [text, tools]
+  max:
+    openai:
+      model: gpt-5.5
+      effort: xhigh
+      reasoningControl: model_reasoning_effort
+      capabilities: [text, apply_patch, computer_use, tool_search]
+    anthropic:
+      model: opus
+      effort: max
+      reasoningControl: effort
+      capabilities: [text, tools]
+    google:
+      model: gemini-2.5-pro
+      effort: high
+      reasoningControl: dynamic_thinking
+      capabilities: [text, tools]
+stages:
+  phase_scan: economy
+  parallel_planning: economy
+  closeout_gate: economy
+  status_parsing: economy
+  docs_only: economy
+  phase_implementation: standard
+  parallel_worker: standard
+  review: deep
+  security_review: deep
+  merge_conflict: deep
+  permission: deep
+  worktree: deep
+  runtime_adapter: deep
+  state_machine: deep
+signals:
+  runtime_core: deep
+  security: deep
+  concurrency: deep
+  ambiguous_dependency: deep
+  merge_risk: deep
+  permission: deep
+  worktree: deep
+  state_machine: deep
+  repeated_failure: deep
+capabilitySignals:
+  computer_use: computer_use
+  tool_search: tool_search
+  apply_patch: apply_patch

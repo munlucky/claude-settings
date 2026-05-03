@@ -77,7 +77,7 @@ Claude Code와 Codex의 실행 옵션은 다를 수 있지만 하네스 계약�
 - `runtimeIsolation`
 - `modelEffortProfile`
 
-공개 effort profile은 `economy | standard | deep | max`를 사용합니다. Codex는 이를 `model_reasoning_effort`로 매핑하고, Claude Code는 같은 값을 `SPRINT_CONTRACT.md`와 attempt prompt에 기록합니다.
+공개 effort profile은 `economy | standard | deep | max`를 사용합니다. Provider-neutral 모델 라우팅이 이를 runtime별 model/effort control로 매핑합니다.
 
 ## Moonshot 적용 원칙
 

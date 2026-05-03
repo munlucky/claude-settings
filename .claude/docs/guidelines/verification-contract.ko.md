@@ -52,6 +52,10 @@ workflowEvidence:
   selectionReason: ""
   runtimeIsolation: ""
   modelEffortProfile: "standard" # economy | standard | deep | max
+  selectedModelProvider: ""
+  selectedModel: ""
+  selectedModelEffort: ""
+  modelSelectionReason: ""
 strict:
   required: false
   triggers:
@@ -150,7 +154,7 @@ loop:
 - 완료 기준은 모호한 품질 표현이 아니라 재현 가능한 실패 체크로 작성해야 합니다.
 - cross-runtime 동작은 런타임별 프롬프트가 아니라 공통 계약 필드로 제어합니다.
 - `workflowEvidence`에는 선택/생략한 하네스 컴포넌트, 선택 이유, runtime isolation, model effort profile을 기록합니다.
-- runtime-neutral effort profile은 `economy`, `standard`, `deep`, `max`입니다. Codex는 이를 `model_reasoning_effort`로 매핑하고, Claude Code는 직접 effort flag가 없으면 같은 profile을 계약과 prompt에 기록합니다.
+- runtime-neutral effort profile은 `economy`, `standard`, `deep`, `max`입니다. Provider-neutral 모델 라우팅이 이를 runtime별 model/effort control로 매핑합니다.
 - 런타임 비중이 크거나 UI 비중이 큰 작업은 generator 자기승인보다 별도 evaluator 경로를 우선합니다.
 - 브라우저/런타임 검증은 단순 첫 화면 확인이 아니라 실제 상호작용을 포함해야 합니다.
 - 구현 시작 전 `SPRINT_CONTRACT.md`로 라운드 완료 기준을 먼저 고정합니다.

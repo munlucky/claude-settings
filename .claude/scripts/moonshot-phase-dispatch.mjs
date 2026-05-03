@@ -6,7 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runCommand } from './lib/process-utils.mjs';
-import { resolveCodexReasoningEffort, resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
+import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
+import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
@@ -33,11 +34,6 @@ const state = {
     profile: process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE ?? 'standard',
     explicitReason: process.env.PHASE_DISPATCH_EFFORT_ESCALATION_REASON
       ?? process.env.MOONSHOT_EFFORT_ESCALATION_REASON,
-  }),
-  codexReasoningEffort: resolveCodexReasoningEffort({
-    explicitEffort: process.env.PHASE_DISPATCH_CODEX_REASONING_EFFORT ?? process.env.MOONSHOT_CODEX_REASONING_EFFORT,
-    profile: process.env.PHASE_DISPATCH_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
-    defaultProfile: 'standard',
   }),
   allowInteractiveInSession: (process.env.PHASE_DISPATCH_ALLOW_INTERACTIVE_IN_SESSION ?? 'false') === 'true',
   killStale: (process.env.PHASE_DISPATCH_KILL_STALE ?? 'true') === 'true',
@@ -788,8 +784,16 @@ function closeoutActivePhaseForSignal(signalName, exitCode = 0) {
 
 function buildCodexCommand(prompt) {
   const args = runtimeCli(['codex-base-args', process.cwd()]);
-  if (state.codexReasoningEffort) {
-    args.push('-c', `model_reasoning_effort="${state.codexReasoningEffort}"`);
+  const route = resolveModelRoute({
+    runtime: 'codex',
+    stage: process.env.PHASE_MODEL_STAGE || 'phase_implementation',
+    profile: state.effortProfile,
+  });
+  if (route.model) {
+    args.push('-m', route.model);
+  }
+  if (route.effort) {
+    args.push('-c', `model_reasoning_effort="${route.effort}"`);
   }
   appendCodexPromptArg(args, prompt);
   return args;
@@ -842,6 +846,7 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
         AGENT_LOOP_EFFORT_PROFILE: state.effortProfile,
         PHASE_DISPATCH_EFFORT_PROFILE: state.effortProfile,
         PHASE_DISPATCH_EFFORT_ESCALATION_REASON: state.effortEscalationReason,
+        PHASE_MODEL_STAGE: 'phase_implementation',
         PHASE_RUN_LEASE_ID: runtimeState.runLeaseId,
       },
     });
@@ -1016,9 +1021,18 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
   let cmd;
 
   switch (effectiveRuntime) {
-    case 'claude':
-      cmd = ['claude', '--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt];
+    case 'claude': {
+      const route = resolveModelRoute({
+        runtime: 'claude',
+        stage: 'phase_implementation',
+        profile: state.effortProfile,
+      });
+      cmd = ['claude'];
+      if (route.model) cmd.push('--model', route.model);
+      if (route.effort) cmd.push('--effort', route.effort);
+      cmd.push('--dangerously-skip-permissions', '--no-session-persistence', '-p', prompt);
       break;
+    }
     case 'codex':
       cmd = buildCodexCommand(prompt);
       break;

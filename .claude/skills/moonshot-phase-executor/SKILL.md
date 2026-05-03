@@ -98,6 +98,7 @@ phaseExecutionResult:
 - Do not pass raw MemoryGraph records to dispatcher/agent-loop/coordinator inputs; pass summarized `projectMemoryContext` only.
 - Use one compact MemoryGraph/CodeReviewGraph recall per stage by default; repeat only for missing owner/date/path/API/schema/failure facts, then stop when answerable.
 - Default `modelEffortProfile` is `standard`; `deep` and `max` require a concrete `Effort escalation reason` in QA and workflow evidence.
+- Do not ask the user to choose a model. The provider-neutral model router selects per-stage runtime model/effort and records the selected provider/model/effort in execution evidence.
 - Preserve assistant-item `phase` values when replaying assistant history (`commentary` for progress, `final_answer` only after completion); never add phase metadata to user messages.
 - Scripts are implementation adapters only and must stay behind this skill.
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.

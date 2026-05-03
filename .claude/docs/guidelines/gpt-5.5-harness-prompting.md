@@ -1,10 +1,12 @@
 ---
 title: GPT-5.5 Cross-Runtime Harness Prompting
-description: Outcome-first prompt, retrieval, validation, and phase replay policy for Codex and Claude Code
-lastReviewed: 2026-05-02
+description: Compatibility pointer for the provider-neutral model routing and harness prompting policy
+lastReviewed: 2026-05-03
 ---
 
 # GPT-5.5 Cross-Runtime Harness Prompting
+
+This file is a compatibility entrypoint. New model and effort policy lives in `.claude/docs/guidelines/provider-neutral-model-routing.md`.
 
 Use this policy for Moonshot phase, bounded-direct, and runtime-adapter work that must behave consistently in Codex and Claude Code.
 
@@ -28,7 +30,7 @@ Keep exact process steps only when the path is a true invariant, such as review-
 - `deep`: runtime/core/architecture/security risk, failed retry evidence, or hard cross-module reasoning.
 - `max`: exceptional asynchronous long-horizon work.
 
-`deep` and `max` require a concrete `Effort escalation reason` in `SPRINT_CONTRACT.md`, `QA_REPORT.md`, and `workflowEvidence`. Codex maps the shared profile to `model_reasoning_effort`; Claude Code records the same profile and reason in prompts and artifacts.
+`deep` and `max` require a concrete `Effort escalation reason` in `SPRINT_CONTRACT.md`, `QA_REPORT.md`, and `workflowEvidence`. Provider-neutral routing maps the shared profile to runtime-specific model and effort controls.
 
 ## Retrieval Budget
 

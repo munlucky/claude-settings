@@ -63,7 +63,7 @@ Resolve `executionRuntime` before orchestration:
   - `standard`: simple/local bounded work
   - `deep`: phase work, agentic coding, review, high-risk or user-visible changes
   - `max`: exceptional long-horizon or ambiguous hard problems only
-- Codex maps these profiles to `model_reasoning_effort`; Claude Code records the same profile in `SPRINT_CONTRACT.md` and attempt prompts when no direct effort flag is available.
+- Provider-neutral model routing maps these profiles to runtime-specific model and effort flags. Codex receives `-m` plus `model_reasoning_effort`; Claude Code receives `--model` plus `--effort`.
 - Human approval belongs to planning closeout only; once execution starts, do not insert approval checkpoints into implementation -> review -> verify -> retry loops unless a true blocker or external dependency requires user input.
 - Cross-runtime policy source of truth:
   - Keep workflow policy in skills/orchestrator state.

@@ -61,6 +61,10 @@
 - Runtime isolation:
 - Model effort profile: economy | standard | deep | max (default: standard)
 - Effort escalation reason: none unless model effort profile is deep|max
+- Selected model provider:
+- Selected model:
+- Selected model effort:
+- Model selection reason:
 - Retrieval budget: stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output
 - Validation profile: prompt_only | docs_only | script_change | workflow_core | runtime_adapter
 - Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items

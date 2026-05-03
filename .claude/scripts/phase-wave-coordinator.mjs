@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths } from './agent-loop-phase-plan-lib.mjs';
+import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const prepareWorktreeScript = path.join(SCRIPT_DIR, 'harness-prepare-worktree.mjs');
@@ -158,7 +159,10 @@ function runPhaseRunner({ root, runId, phase, prepared }) {
     const child = spawn('node', args, {
       cwd: prepared.worktreePath,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
+      env: {
+        ...process.env,
+        PHASE_MODEL_STAGE: 'parallel_worker',
+      },
     });
     child.stdout.pipe(output, { end: false });
     child.stderr.pipe(output, { end: false });
@@ -303,15 +307,20 @@ async function runCoordinator() {
   writeJson(artifactPath, payload);
 
   const results = await Promise.all(wave.phases.map(async (phase) => {
+    const modelRoute = resolveModelRoute({
+      runtime: state.runtime,
+      stage: 'parallel_worker',
+      profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+    });
     const prepared = state.dryRun
       ? { taskId: `dry-${phase.number}`, worktreePath: '', branch: `codex/dry-${phase.number}` }
       : prepareWorktree({ root, runId, phase });
     if (state.dryRun) {
-      return { ...prepared, phase, exitCode: 0, logFile: '', localStatusFile: '', changedFiles: [], mergeStatus: 'dry_run' };
+      return { ...prepared, phase, modelRoute, exitCode: 0, logFile: '', localStatusFile: '', changedFiles: [], mergeStatus: 'dry_run' };
     }
     const runner = await runPhaseRunner({ root, runId, phase, prepared });
     const changedFiles = runner.exitCode === 0 ? collectChangedFiles(prepared.worktreePath) : [];
-    return { ...prepared, phase, ...runner, changedFiles, mergeStatus: 'pending' };
+    return { ...prepared, phase, modelRoute, ...runner, changedFiles, mergeStatus: 'pending' };
   }));
 
   payload.phases = results.map((result) => ({
@@ -319,6 +328,7 @@ async function runCoordinator() {
     title: result.phase.title,
     exitCode: result.exitCode,
     changedFiles: result.changedFiles,
+    modelRoute: result.modelRoute,
     logFile: result.logFile,
     branch: result.branch,
   }));
@@ -369,6 +379,7 @@ async function runCoordinator() {
     title: result.phase.title,
     exitCode: result.exitCode,
     changedFiles: result.changedFiles,
+    modelRoute: result.modelRoute,
     mergeStatus: result.mergeStatus,
     logFile: result.logFile,
     branch: result.branch,

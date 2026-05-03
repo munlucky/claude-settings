@@ -25,6 +25,6 @@ documentPaths:
 - `@.claude/CLAUDE.md`
 - `@.claude/verification.contract.yaml`
 - `@.claude/docs/guidelines/knowledge-repository-ops.md`
-- `@.claude/docs/guidelines/gpt-5.5-harness-prompting.md`
+- `@.claude/docs/guidelines/provider-neutral-model-routing.md`
 - `@.claude/docs/guidelines/resumable-session-layer.md`
 - `@.claude/rules/agents/agent-definition.md`

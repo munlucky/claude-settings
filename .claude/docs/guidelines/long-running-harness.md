@@ -73,7 +73,7 @@ Claude Code and Codex may expose different knobs, but the harness should preserv
 - `runtimeIsolation`
 - `modelEffortProfile`
 
-Use `economy | standard | deep | max` as the public effort profile. Codex maps this to `model_reasoning_effort`; Claude Code records it in contracts and prompts when no equivalent flag is available.
+Use `economy | standard | deep | max` as the public effort profile. Provider-neutral model routing maps this to runtime-specific model and effort controls.
 
 ## Recommended Moonshot Adoption
 

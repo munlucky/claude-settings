@@ -28,6 +28,10 @@
 - runtimeIsolation:
 - modelEffortProfile: economy | standard | deep | max (default: standard)
 - effortEscalationReason: none unless modelEffortProfile is deep|max
+- selectedModelProvider:
+- selectedModel:
+- selectedModelEffort:
+- modelSelectionReason:
 - retrievalBudget: stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output
 - validationProfile: prompt_only | docs_only | script_change | workflow_core | runtime_adapter
 - phaseReplayPolicy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
+import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const STATUS_FILE_DEFAULT = '.claude/docs/phase-status.yaml';
@@ -215,6 +216,14 @@ function extractWorkflowSection(text) {
       result.modelEffortProfile = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Effort escalation reason:')) {
       result.effortEscalationReason = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model provider:')) {
+      result.selectedModelProvider = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model:')) {
+      result.selectedModel = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Selected model effort:')) {
+      result.selectedModelEffort = stripped.split(':', 2)[1]?.trim() ?? '';
+    } else if (stripped.startsWith('- Model selection reason:')) {
+      result.modelSelectionReason = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Retrieval budget:')) {
       result.retrievalBudget = stripped.split(':', 2)[1]?.trim() ?? '';
     } else if (stripped.startsWith('- Validation profile:')) {
@@ -449,6 +458,12 @@ function recordDispatch(argv) {
   }
 
   fs.mkdirSync(WORKFLOW_LOG_DIR, { recursive: true });
+  const effortProfile = process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard';
+  const modelRoute = resolveModelRoute({
+    runtime: options.runtime,
+    stage: 'phase_implementation',
+    profile: effortProfile,
+  });
   const payload = {
     evidenceVersion: '1.0',
     recordedAt: utcTimestamp(),
@@ -497,10 +512,14 @@ function recordDispatch(argv) {
     runtimeIsolation: options.runtime === 'codex'
       ? 'codex delegated-terminal; fresh review/verify attempts preferred'
       : 'claude-code adapter; Task/fork review and verification preferred',
-    modelEffortProfile: process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard',
+    modelEffortProfile: effortProfile,
     effortEscalationReason: process.env.PHASE_DISPATCH_EFFORT_ESCALATION_REASON
       || process.env.MOONSHOT_EFFORT_ESCALATION_REASON
-      || defaultEffortEscalationReason(process.env.PHASE_DISPATCH_EFFORT_PROFILE || process.env.MOONSHOT_EFFORT_PROFILE || 'standard'),
+      || defaultEffortEscalationReason(effortProfile),
+    selectedModelProvider: modelRoute.provider,
+    selectedModel: modelRoute.model || 'runtime-default',
+    selectedModelEffort: modelRoute.effort || 'runtime-default',
+    modelSelectionReason: modelRoute.selectionReason,
     retrievalBudget: process.env.PHASE_RETRIEVAL_BUDGET || process.env.MOONSHOT_RETRIEVAL_BUDGET || DEFAULT_RETRIEVAL_BUDGET,
     validationProfile: process.env.PHASE_VALIDATION_PROFILE || process.env.MOONSHOT_VALIDATION_PROFILE || DEFAULT_VALIDATION_PROFILE,
     phaseReplayPolicy: process.env.PHASE_REPLAY_POLICY || process.env.MOONSHOT_PHASE_REPLAY_POLICY || DEFAULT_PHASE_REPLAY_POLICY,
@@ -541,6 +560,10 @@ function recordDispatch(argv) {
     runtimeIsolation: payload.runtimeIsolation,
     modelEffortProfile: payload.modelEffortProfile,
     effortEscalationReason: payload.effortEscalationReason,
+    selectedModelProvider: payload.selectedModelProvider,
+    selectedModel: payload.selectedModel,
+    selectedModelEffort: payload.selectedModelEffort,
+    modelSelectionReason: payload.modelSelectionReason,
     retrievalBudget: payload.retrievalBudget,
     validationProfile: payload.validationProfile,
     phaseReplayPolicy: payload.phaseReplayPolicy,
@@ -674,6 +697,23 @@ function recordBounded(argv) {
   let effortEscalationReason = typeof existingWorkflow.effortEscalationReason === 'string' && existingWorkflow.effortEscalationReason.trim()
     ? existingWorkflow.effortEscalationReason
     : (process.env.WORKFLOW_EFFORT_ESCALATION_REASON || process.env.MOONSHOT_EFFORT_ESCALATION_REASON || defaultEffortEscalationReason(modelEffortProfile));
+  const defaultModelRoute = resolveModelRoute({
+    runtime: process.env.WORKFLOW_RUNTIME || process.env.PHASE_WORK_RUNTIME || 'auto',
+    stage: 'phase_implementation',
+    profile: modelEffortProfile,
+  });
+  let selectedModelProvider = typeof existingWorkflow.selectedModelProvider === 'string' && existingWorkflow.selectedModelProvider.trim()
+    ? existingWorkflow.selectedModelProvider
+    : (process.env.WORKFLOW_SELECTED_MODEL_PROVIDER || process.env.PHASE_SELECTED_MODEL_PROVIDER || defaultModelRoute.provider);
+  let selectedModel = typeof existingWorkflow.selectedModel === 'string' && existingWorkflow.selectedModel.trim()
+    ? existingWorkflow.selectedModel
+    : (process.env.WORKFLOW_SELECTED_MODEL || process.env.PHASE_SELECTED_MODEL || defaultModelRoute.model || 'runtime-default');
+  let selectedModelEffort = typeof existingWorkflow.selectedModelEffort === 'string' && existingWorkflow.selectedModelEffort.trim()
+    ? existingWorkflow.selectedModelEffort
+    : (process.env.WORKFLOW_SELECTED_MODEL_EFFORT || process.env.PHASE_SELECTED_MODEL_EFFORT || defaultModelRoute.effort || 'runtime-default');
+  let modelSelectionReason = typeof existingWorkflow.modelSelectionReason === 'string' && existingWorkflow.modelSelectionReason.trim()
+    ? existingWorkflow.modelSelectionReason
+    : (process.env.WORKFLOW_MODEL_SELECTION_REASON || process.env.PHASE_MODEL_SELECTION_REASON || defaultModelRoute.selectionReason);
   let retrievalBudget = typeof existingWorkflow.retrievalBudget === 'string' && existingWorkflow.retrievalBudget.trim()
     ? existingWorkflow.retrievalBudget
     : (process.env.WORKFLOW_RETRIEVAL_BUDGET || process.env.MOONSHOT_RETRIEVAL_BUDGET || DEFAULT_RETRIEVAL_BUDGET);
@@ -695,6 +735,10 @@ function recordBounded(argv) {
     if (section.runtimeIsolation) runtimeIsolation = section.runtimeIsolation;
     if (section.modelEffortProfile) modelEffortProfile = section.modelEffortProfile;
     if (section.effortEscalationReason) effortEscalationReason = section.effortEscalationReason;
+    if (section.selectedModelProvider) selectedModelProvider = section.selectedModelProvider;
+    if (section.selectedModel) selectedModel = section.selectedModel;
+    if (section.selectedModelEffort) selectedModelEffort = section.selectedModelEffort;
+    if (section.modelSelectionReason) modelSelectionReason = section.modelSelectionReason;
     if (section.retrievalBudget) retrievalBudget = section.retrievalBudget;
     if (section.validationProfile) validationProfile = section.validationProfile;
     if (section.phaseReplayPolicy) phaseReplayPolicy = section.phaseReplayPolicy;
@@ -733,6 +777,10 @@ function recordBounded(argv) {
     `  runtimeIsolation: ${yamlScalar(runtimeIsolation)}`,
     `  modelEffortProfile: ${yamlScalar(modelEffortProfile)}`,
     `  effortEscalationReason: ${yamlScalar(effortEscalationReason)}`,
+    `  selectedModelProvider: ${yamlScalar(selectedModelProvider)}`,
+    `  selectedModel: ${yamlScalar(selectedModel)}`,
+    `  selectedModelEffort: ${yamlScalar(selectedModelEffort)}`,
+    `  modelSelectionReason: ${yamlScalar(modelSelectionReason)}`,
     `  retrievalBudget: ${yamlScalar(retrievalBudget)}`,
     `  validationProfile: ${yamlScalar(validationProfile)}`,
     `  phaseReplayPolicy: ${yamlScalar(phaseReplayPolicy)}`,
@@ -793,6 +841,10 @@ function recordBounded(argv) {
     runtimeIsolation,
     modelEffortProfile,
     effortEscalationReason,
+    selectedModelProvider,
+    selectedModel,
+    selectedModelEffort,
+    modelSelectionReason,
     retrievalBudget,
     validationProfile,
     phaseReplayPolicy,
@@ -834,6 +886,10 @@ function recordBounded(argv) {
     runtimeIsolation,
     modelEffortProfile,
     effortEscalationReason,
+    selectedModelProvider,
+    selectedModel,
+    selectedModelEffort,
+    modelSelectionReason,
     retrievalBudget,
     validationProfile,
     phaseReplayPolicy,
@@ -896,6 +952,10 @@ function verifyEnforcement(argv) {
         'runtimeIsolation',
         'modelEffortProfile',
         'effortEscalationReason',
+        'selectedModelProvider',
+        'selectedModel',
+        'selectedModelEffort',
+        'modelSelectionReason',
         'retrievalBudget',
         'validationProfile',
         'phaseReplayPolicy',
@@ -973,6 +1033,10 @@ function verifyEnforcement(argv) {
         ['runtimeIsolation', 'Runtime isolation'],
         ['modelEffortProfile', 'Model effort profile'],
         ['effortEscalationReason', 'Effort escalation reason'],
+        ['selectedModelProvider', 'Selected model provider'],
+        ['selectedModel', 'Selected model'],
+        ['selectedModelEffort', 'Selected model effort'],
+        ['modelSelectionReason', 'Model selection reason'],
         ['retrievalBudget', 'Retrieval budget'],
         ['validationProfile', 'Validation profile'],
         ['phaseReplayPolicy', 'Phase replay policy'],
@@ -1182,6 +1246,10 @@ function verifyEnforcement(argv) {
         'runtimeIsolation',
         'modelEffortProfile',
         'effortEscalationReason',
+        'selectedModelProvider',
+        'selectedModel',
+        'selectedModelEffort',
+        'modelSelectionReason',
         'retrievalBudget',
         'validationProfile',
         'phaseReplayPolicy',

@@ -53,11 +53,21 @@ run_worker_prompt() {
 
     case "$RUNNER_RUNTIME" in
         claude)
-            cmd=(env "${phase_env[@]}" claude --dangerously-skip-permissions --no-session-persistence -p "$prompt")
+            cmd=(env "${phase_env[@]}" claude)
+            if [[ -n "${CLAUDE_MODEL:-}" ]]; then
+                cmd+=(--model "$CLAUDE_MODEL")
+            fi
+            if [[ -n "${CLAUDE_EFFORT:-}" ]]; then
+                cmd+=(--effort "$CLAUDE_EFFORT")
+            fi
+            cmd+=(--dangerously-skip-permissions --no-session-persistence -p "$prompt")
             ;;
         codex)
             cmd=(env "${phase_env[@]}")
             runtime_cli_append_codex_base_args cmd "$PWD"
+            if [[ -n "${CODEX_MODEL:-}" ]]; then
+                cmd+=(-m "$CODEX_MODEL")
+            fi
             if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
                 cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
             fi
@@ -89,11 +99,22 @@ run_commit_prompt() {
     case "$RUNNER_RUNTIME" in
         claude)
             log_info "Running commit prompt via commit-moonshot (runtime: claude)"
-            run_with_watchdog "$log_file" claude --dangerously-skip-permissions --no-session-persistence -c -p "$prompt" || true
+            local -a cmd=(claude)
+            if [[ -n "${CLAUDE_MODEL:-}" ]]; then
+                cmd+=(--model "$CLAUDE_MODEL")
+            fi
+            if [[ -n "${CLAUDE_EFFORT:-}" ]]; then
+                cmd+=(--effort "$CLAUDE_EFFORT")
+            fi
+            cmd+=(--dangerously-skip-permissions --no-session-persistence -c -p "$prompt")
+            run_with_watchdog "$log_file" "${cmd[@]}" || true
             ;;
         codex)
             local -a cmd=()
             runtime_cli_append_codex_base_args cmd "$PWD"
+            if [[ -n "${CODEX_MODEL:-}" ]]; then
+                cmd+=(-m "$CODEX_MODEL")
+            fi
             if [[ -n "$CODEX_REASONING_EFFORT" ]]; then
                 cmd+=(-c "model_reasoning_effort=\"$CODEX_REASONING_EFFORT\"")
             fi
