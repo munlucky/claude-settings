@@ -71,6 +71,14 @@ Plan-directory completion rule:
 - If any phase in `phase-status.yaml` remains `pending`, `in_progress`, or retryable `failed`, the run must keep going through the delegated-terminal loop or the in-session coordinator loop.
 - A completed phase boundary is never a valid stop boundary by itself.
 
+Automatic phase parallelization rule:
+- Do not ask the user to choose a parallel phase count. The delegated-terminal loop owns automatic phase-wave planning.
+- Before selecting a single next phase, `agent-loop.mjs` must ask `phase-parallel-planner.mjs` to scan all actionable pending phases.
+- If the planner proves that two or more phases have no unmet dependencies, no target path overlap, and no manual/external-state ambiguity, the loop may route that wave through `phase-wave-coordinator.mjs`.
+- Parallel phase workers must run in isolated Git worktrees. They must not write the shared main `phase-status.yaml` concurrently; the coordinator serializes merge and status updates after successful phase closeout.
+- If the planner or coordinator cannot prove safety, the loop must fall back to the existing sequential next-phase path and record the fallback reason.
+- `PHASE_PARALLEL_AUTO=false` is the only kill switch. It is for emergency/runtime debugging, not normal user-facing workflow selection.
+
 Goal runtime state rule:
 - Runtime state is hybrid: SQLite owns machine state, Markdown/YAML artifacts own human/audit evidence.
 - SQLite path defaults to `.claude/runtime-state.sqlite` and is ignored by git. Override with `PHASE_RUNTIME_DB` only for tests or explicit alternate workspaces.
@@ -153,11 +161,15 @@ MemoryGraph stage rule:
     │      └─ Refresh MemoryGraph with stage=execute/read_only, then execute `moonshot-phase-executor` in the current session
     │         unless `--prepare-only` was requested
     │
-    ├─ 8. Enforce Review / Finish Gates
+    ├─ 8. Automatic Phase-Wave Planning (delegated-terminal)
+    │      └─ Scan pending phases, run independent waves in isolated worktrees when safe,
+    │         otherwise use the sequential next-phase path
+    │
+    ├─ 9. Enforce Review / Finish Gates
     │      └─ A phase may advance only after MemoryGraph review, review evidence, completion evidence,
     │         acceptance evidence, and finish-closeout artifacts are consistent
     │
-    └─ 9. Emit Handoff Summary
+    └─ 10. Emit Handoff Summary
            └─ Orchestrator-readable phaseRunnerResult after the active plan directory is actually done
 ```
 
@@ -299,6 +311,8 @@ Supported values:
 
 💡 Tip: Logs available at .claude/logs/agent-loop/
 ```
+
+The delegated-terminal adapter automatically evaluates phase-level parallel waves. Users do not pass a public `--parallel-phases` option. The loop runs `phase-parallel-planner.mjs`; when it returns `parallel_wave`, `phase-wave-coordinator.mjs` executes those phases in isolated worktrees and serializes their merge/status updates. Ambiguous dependency, target overlap, manual smoke, or external-state signals force sequential fallback.
 
 ### Mode B: in-session-coordinator
 

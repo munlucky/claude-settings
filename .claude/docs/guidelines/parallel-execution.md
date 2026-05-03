@@ -12,7 +12,7 @@
 ## Parallelization Strategy
 Only parallelize independent stages that do not define implementation scope.
 
-Exception: phase-internal implementation may run in parallel only when `WORKSETS.yaml` defines non-overlapping `ownedPaths` and the run explicitly opts in with `--parallel-worktrees N`. Before merge, each worktree diff must stay inside owned paths and no two worksets may modify the same file.
+Exception: the delegated-terminal phase runner may automatically run phase-level waves in parallel when `phase-parallel-planner.mjs` proves that pending phases have no unmet dependency, no target path overlap, and no manual/external-state ambiguity. Users do not pass a public phase parallelism option; `PHASE_PARALLEL_AUTO=false` is only a runtime kill switch. Phase-internal implementation may also run in parallel when `WORKSETS.yaml` defines non-overlapping `ownedPaths` and the coordinator can safely merge the worktree diffs.
 
 Allowed examples:
 - `codex-review-code` + `session-logger`
@@ -20,12 +20,14 @@ Allowed examples:
 - `security-reviewer` + `browser-verifier` after implementation when inputs are disjoint
 - finish-stage logging in parallel with review only when it does not finalize completion state
 - `efficiency-tracker` only for explicit deprecated/historical reporting, never as a default parallel stage
+- automatic phase waves from `moonshot-phase-runner` when the planner returns `parallel_wave`
 
 Not allowed:
 - `codex-validate-plan` + `implementation-runner`
 - `requirements-analyzer` + `context-builder`
 - `completion-verifier` + code-changing remediation
 - final finish-stage closeout before review/verify verdicts settle
+- phase waves with ambiguous dependency, target overlap, shared mutable config/lockfile targets, or manual/external-state smoke requirements
 
 ## Review / Verify Coordination
 

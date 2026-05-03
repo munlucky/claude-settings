@@ -53,6 +53,8 @@ If `executionMode == delegated-terminal`:
 - forward runtime selection (`auto|claude|codex`)
 - keep this hidden behind the skill boundary
 - stay attached to the delegated-terminal process until it exits
+- allow the delegated-terminal loop to auto-select safe phase-level parallel waves through `phase-parallel-planner.mjs`; do not ask the user for a phase parallelism count
+- if the phase-wave coordinator falls back, continue with the existing sequential next-phase loop instead of treating fallback as user-visible failure
 - do not substitute a single implementation attempt, partial checkpoint, or conversational summary for the real loop
 - if the loop leaves the current phase `in_progress` with `lastOutcome=partial` or `score.verdict=retry`, keep following the delegated-terminal path instead of returning early
 - if the loop marks one phase `completed` but the active plan directory still has any actionable phase, keep the same delegated-terminal execution boundary and continue

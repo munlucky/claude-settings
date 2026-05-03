@@ -14,6 +14,8 @@ triggers:
 Run independent workstreams in parallel teams using runtime-adaptive coordination.
 Use Claude Code Agent Teams in Claude runtime, and preserve equivalent isolated coordination semantics in Codex runtime.
 
+This skill is not the owner of phase completion loops. For phase-based implementation, `moonshot-phase-runner` remains the public entrypoint and owns plan-directory completion, return-boundary checks, and automatic phase-wave parallelization. Use teams-runner as an analysis/review/verification helper, not as a replacement for the phase runner loop.
+
 ## Runtime Execution Modes
 
 - `claude-code` mode:

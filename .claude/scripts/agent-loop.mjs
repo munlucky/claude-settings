@@ -13,6 +13,8 @@ const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
 const phasePlanPath = path.join(scriptDir, 'agent-loop-phase-plan.mjs');
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const phaseRunnerPath = path.join(scriptDir, 'agent-loop-phase-runner.mjs');
+const phaseParallelPlannerPath = path.join(scriptDir, 'phase-parallel-planner.mjs');
+const phaseWaveCoordinatorPath = path.join(scriptDir, 'phase-wave-coordinator.mjs');
 const artifactsPath = path.join(scriptDir, 'agent-loop-phase-artifacts.mjs');
 const runtimeStatePath = path.join(scriptDir, 'runtime-state.mjs');
 const logDir = '.claude/logs/agent-loop';
@@ -402,6 +404,19 @@ function runPhaseRunnerOnce(argv) {
   return result.status ?? 0;
 }
 
+function runPhaseWaveCoordinator(argv) {
+  const result = spawnSync('node', [phaseWaveCoordinatorPath, ...argv], {
+    stdio: 'inherit',
+  });
+
+  if (result.error) {
+    console.error(`ERROR: failed to start phase wave coordinator: ${result.error.message}`);
+    process.exit(1);
+  }
+
+  return result.status ?? 0;
+}
+
 function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
   const args = [
     state.planDir,
@@ -425,6 +440,73 @@ function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
 
   args.push('--max-phases', '1', '--single-phase');
   return args;
+}
+
+function writePhaseWavePlan(plan) {
+  ensureLoopLogs();
+  const filePath = path.join(logDir, 'phase-wave-plan.current.json');
+  fs.writeFileSync(filePath, `${JSON.stringify(plan, null, 2)}\n`, 'utf8');
+  return filePath;
+}
+
+function resolvePhaseParallelPlan() {
+  if ((process.env.PHASE_PARALLEL_AUTO ?? 'true') === 'false') {
+    return {
+      executionPlan: 'sequential',
+      fallbackReasons: ['parallel-auto-disabled'],
+      phases: [],
+    };
+  }
+  if (state.maxPhases > 0) {
+    return {
+      executionPlan: 'sequential',
+      fallbackReasons: ['max-phases-limit-active'],
+      phases: [],
+    };
+  }
+  const result = runNodeScript(phaseParallelPlannerPath, [
+    '--plan-dir', state.planDir,
+    '--status-file', state.statusFile,
+    '--wave-cap', process.env.PHASE_PARALLEL_WAVE_CAP ?? '3',
+  ]);
+  if (result.status !== 0) {
+    appendDebugLog('phase-parallel-planner-failed', {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+    return {
+      executionPlan: 'sequential',
+      fallbackReasons: ['planner-failed'],
+      phases: [],
+    };
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    appendDebugLog('phase-parallel-planner-json-failed', {
+      message: error instanceof Error ? error.message : String(error),
+      stdout: result.stdout,
+    });
+    return {
+      executionPlan: 'sequential',
+      fallbackReasons: ['planner-json-invalid'],
+      phases: [],
+    };
+  }
+}
+
+function buildPhaseWaveArgs({ waveFile, runtime }) {
+  return [
+    state.planDir,
+    '--status-file', state.statusFile,
+    '--execution-root', state.executionRoot,
+    '--runtime', runtime || state.runtime,
+    '--verification-runtimes', state.verificationRuntimes,
+    '--wave-file', waveFile,
+    '--worktree-base', state.worktreeBase || 'HEAD',
+    '--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-waves',
+  ];
 }
 
 function sleep(milliseconds) {
@@ -828,6 +910,67 @@ async function runNodeManagedLoop() {
           stopDetail,
         });
         break;
+      }
+
+      const phaseParallelPlan = resolvePhaseParallelPlan();
+      appendDebugLog('phase-parallel-plan-resolved', phaseParallelPlan);
+      if (phaseParallelPlan.executionPlan === 'parallel_wave' && Array.isArray(phaseParallelPlan.phases) && phaseParallelPlan.phases.length > 1) {
+        const waveFile = writePhaseWavePlan(phaseParallelPlan);
+        const waveLabel = phaseParallelPlan.phases.map((phase) => phase.number).join(', ');
+        appendDecisionLog([
+          `## Phase Wave - ${waveLabel}`,
+          '- Status: starting',
+          `- Planner confidence: ${phaseParallelPlan.confidence || 'unknown'}`,
+          `- Wave file: ${waveFile}`,
+          '',
+        ]);
+        writeLiveSummaryReport({
+          planDir: state.planDir,
+          totalPhases,
+          completed: executedPhases,
+          failed: failedPhases,
+          currentPhase: waveLabel,
+          currentPhaseTitle: 'parallel phase wave',
+          loopState: 'parallel-wave',
+        });
+        const waveArgs = buildPhaseWaveArgs({ waveFile, runtime });
+        appendDebugLog('phase-wave-coordinator-invoke', {
+          phases: phaseParallelPlan.phases.map((phase) => phase.number),
+          waveArgs,
+        });
+        const waveExitCode = runPhaseWaveCoordinator(waveArgs);
+        appendDebugLog('phase-wave-coordinator-exit', {
+          phases: phaseParallelPlan.phases.map((phase) => phase.number),
+          exitCode: waveExitCode,
+        });
+        if (waveExitCode === 0) {
+          reconcileCompletedPhasesFromArtifacts();
+          executedPhases += phaseParallelPlan.phases.length;
+          appendDecisionLog([
+            `## Phase Wave - ${waveLabel}`,
+            '- Status: completed',
+            '- Decision: continue plan-directory loop after parallel wave',
+            '',
+          ]);
+          if (state.delaySeconds > 0) {
+            await sleep(state.delaySeconds * 1000);
+          }
+          continue;
+        }
+        if (waveExitCode !== 78) {
+          failedPhases += 1;
+          stoppedEarly = true;
+          stopPhase = waveLabel;
+          stopReason = 'phase-wave-coordinator-failed';
+          stopDetail = `phase wave coordinator exited with code ${waveExitCode}`;
+          break;
+        }
+        appendDecisionLog([
+          `## Phase Wave - ${waveLabel}`,
+          '- Status: fallback',
+          '- Decision: wave was not safe to merge; continue with sequential next phase',
+          '',
+        ]);
       }
 
       const nextPhase = phasePlan('get-next-phase', state.statusFile) || '';

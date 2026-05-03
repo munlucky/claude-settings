@@ -12,7 +12,7 @@
 ## 병렬화 전략
 구현 범위를 결정하지 않는 독립 단계만 병렬화한다.
 
-예외: phase 내부 구현은 `WORKSETS.yaml`에 겹치지 않는 `ownedPaths`가 정의되고 `--parallel-worktrees N`으로 명시적으로 opt-in 된 경우에만 Git worktree 단위로 병렬화할 수 있다. 병합 전에는 각 worktree의 diff가 소유 경로 안에 있는지, 같은 파일을 두 workset이 수정하지 않았는지 확인해야 한다.
+예외: delegated-terminal phase runner는 `phase-parallel-planner.mjs`가 pending phase 사이에 미충족 dependency, target path overlap, manual/external-state ambiguity가 없음을 증명한 경우 phase-level wave를 자동 병렬 실행할 수 있다. 사용자는 공개 phase 병렬 옵션을 넘기지 않는다. `PHASE_PARALLEL_AUTO=false`는 런타임 비상 kill switch일 뿐이다. phase 내부 구현도 `WORKSETS.yaml`에 겹치지 않는 `ownedPaths`가 있고 coordinator가 worktree diff를 안전하게 병합할 수 있을 때 병렬화할 수 있다.
 
 허용 예시:
 - `codex-review-code` + `session-logger`
@@ -20,12 +20,14 @@
 - 입력이 분리되어 있으면 구현 후 `security-reviewer` + `browser-verifier`
 - 완료 판정을 확정하지 않는 범위에서는 review와 finish-stage 로깅 일부 병렬 가능
 - `efficiency-tracker`는 명시적인 deprecated/과거 리포팅 용도에만 사용하고 기본 병렬 단계로 쓰지 않음
+- planner가 `parallel_wave`를 반환한 `moonshot-phase-runner` 자동 phase wave
 
 금지 예시:
 - `codex-validate-plan` + `implementation-runner`
 - `requirements-analyzer` + `context-builder`
 - `completion-verifier` + 코드 수정 remediation
 - review/verify 판정이 확정되기 전 final finish-stage closeout
+- dependency가 애매하거나, target overlap/shared config/lockfile/manual smoke/external-state 신호가 있는 phase wave
 
 ## Review / Verify 조율
 
