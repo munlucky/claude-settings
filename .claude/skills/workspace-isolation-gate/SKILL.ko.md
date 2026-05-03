@@ -31,7 +31,7 @@ strict 구현 흐름에서 Ready / Isolate stage의 기본 게이트입니다.
    - worktree를 쓰면 `.worktrees` 또는 project-local worktree ignore 확인 필요.
    - downstream worktree의 agent config source 필요.
    - 대상 프로젝트가 agent config를 ignore하는 경우 `.claude`, `.agents`, `.codex` ignore 감지 결과 필요.
-   - hydration 이후 `.claude/CLAUDE.md`, `.claude/skills`, `.claude/scripts`, `.agents/skills`, `AGENTS.md`가 worktree에서 사용 가능한지 필요.
+   - hydration 이후 `.claude/CLAUDE.md`, `.claude/skills`, `.claude/scripts`, `.codex/skills`, `AGENTS.md`가 worktree에서 사용 가능한지 필요.
    - dependency/setup command 또는 "setup not required" 메모 필요.
    - baseline verification command 필요.
    - baseline exit code 필요.

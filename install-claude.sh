@@ -1,15 +1,13 @@
 #!/bin/bash
 
 # Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude/.codex를 다운로드하고, .agents/AGENTS.md 브리지와 Codex skills를 설치합니다.
+# GitHub에서 최신 .claude/.codex를 다운로드하고, AGENTS.md 브리지와 Codex project skills를 설치합니다.
 
 set -e
 
 REPO_URL="https://github.com/munlucky/claude-settings"
 BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
-CODEX_SKILLS_DIR=""
-CODEX_SKILL_PATHS=()
 CODEX_PROJECT_FILES=()
 CODEX_BACKUP_PATHS=()
 
@@ -65,72 +63,10 @@ ensure_supported_shell() {
 	esac
 }
 
-remove_legacy_codex_skill_backups() {
-	local skills_dir="$1"
-	local removed_count=0
-
-	for legacy_path in "$skills_dir"/*.backup-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]; do
-		if [ ! -e "$legacy_path" ] && [ ! -L "$legacy_path" ]; then
-			continue
-		fi
-
-		print_info "Codex legacy skill backup 제거 중: $legacy_path"
-		rm -rf "$legacy_path"
-		removed_count=$((removed_count + 1))
-	done
-
-	if [ "$removed_count" -gt 0 ]; then
-		print_info "✓ Codex legacy skill backup ${removed_count}개 제거 완료"
-	fi
-}
-
-setup_codex_skills() {
-	local source_skills_dir=".codex/skills"
-	local codex_home=""
-	local installed_count=0
-	local source_root=""
-
+skip_codex_global_skills() {
 	echo ""
-	print_info "Codex 전역 skills 동기화 중..."
-
-	if [ ! -d "$source_skills_dir" ]; then
-		print_warn "스킬 디렉토리를 찾지 못했습니다: $source_skills_dir"
-		return
-	fi
-
-	codex_home="${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}"
-	CODEX_SKILLS_DIR="$codex_home/skills"
-	mkdir -p "$CODEX_SKILLS_DIR"
-	source_root="$(cd "$source_skills_dir" && pwd -P)"
-	remove_legacy_codex_skill_backups "$CODEX_SKILLS_DIR"
-
-	for skill_path in "$source_root"/*; do
-		local skill_name=""
-		local codex_skill_path=""
-
-		if [ ! -d "$skill_path" ]; then
-			continue
-		fi
-
-		skill_name="$(basename "$skill_path")"
-		codex_skill_path="$CODEX_SKILLS_DIR/$skill_name"
-
-		if [ -f "$skill_path/SKILL.md" ] && grep -Eq '^(status|surfaceStatus):[[:space:]]*deprecated[[:space:]]*$' "$skill_path/SKILL.md"; then
-			print_info "deprecated Codex skill 제외: $skill_name"
-			continue
-		fi
-
-		if [ -e "$codex_skill_path" ] || [ -L "$codex_skill_path" ]; then
-			print_info "Codex 전역 skill 최신화 중: $codex_skill_path"
-			rm -rf "$codex_skill_path"
-		fi
-
-		cp -R "$skill_path" "$codex_skill_path"
-		CODEX_SKILL_PATHS+=("$codex_skill_path")
-		installed_count=$((installed_count + 1))
-	done
-
-	print_info "✓ Codex 전역 skills ${installed_count}개 동기화 완료 (${CODEX_SKILLS_DIR})"
+	print_info "Codex 전역 skills 동기화 건너뜀"
+	print_info "✓ Codex는 프로젝트 .codex/skills만 사용하도록 전역 skills를 수정하지 않습니다."
 }
 
 setup_codex_project_config() {
@@ -210,12 +146,13 @@ setup_codex_project_config() {
 
 setup_agents_bridge() {
 	echo ""
-	print_info ".agents/skills 및 AGENTS.md 동기화 중..."
+	print_info "AGENTS.md 브리지 동기화 중..."
 
 	mkdir -p ".agents"
-	rm -rf ".agents/skills"
-	ln -s "../.claude/skills" ".agents/skills"
-	print_info "✓ .agents/skills 생성 (→ ../.claude/skills)"
+	if [ -e ".agents/skills" ] || [ -L ".agents/skills" ]; then
+		rm -rf ".agents/skills"
+		print_info "✓ legacy .agents/skills 제거 (Codex 중복 discovery 방지)"
+	fi
 
 	rm -f "AGENTS.md"
 	ln -s ".claude/CLAUDE.md" "AGENTS.md"
@@ -604,7 +541,7 @@ usage() {
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
   - .claude/skills/* 를 프로젝트 .codex/skills/에 디렉터리 복사 설치
-  - .codex/skills/* 를 Codex 전역 skills(${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*)에 디렉터리 복사 동기화
+  - Codex 전역 skills(${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*)는 수정하지 않음
   - PROJECT.md도 설치하려면 --include-project 옵션 사용
 
 보호되는 파일 패턴:
@@ -858,9 +795,9 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - .codex/skills 백업 없이 최신 복사본으로 동기화"
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .gitattributes 설치/병합"
-	echo "  - .agents/skills 심볼릭 링크 구성"
+	echo "  - legacy .agents/skills 제거"
 	echo "  - AGENTS.md 심볼릭 링크 구성"
-	echo "  - .codex/skills에서 Codex 전역 skills 복사 동기화 (${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills)"
+	echo "  - Codex 전역 skills는 수정하지 않음"
 	echo "  - MemoryGraph 자동 설치 시도 및 프로젝트 로컬 MCP 등록"
 	echo "  - code-review-graph[communities] 자동 설치 시도 및 코드 분석 MCP 등록 (build/watch/daemon 제외)"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
@@ -1036,11 +973,11 @@ fi
 # 7.8. Codex project config 구성
 setup_codex_project_config "$TEMP_DIR/claude-settings-$BRANCH/.codex"
 
-# 7.9. .agents/skills + AGENTS.md 브리지 구성
+# 7.9. AGENTS.md 브리지 구성 및 legacy .agents/skills 제거
 setup_agents_bridge
 
-# 7.10. Codex skill 설치
-setup_codex_skills
+# 7.10. Codex 전역 skill 설치 생략
+skip_codex_global_skills
 
 # 7.11. Browser runtime bootstrap
 setup_browser_runtime
@@ -1210,12 +1147,6 @@ if [ ${#CODEX_PROJECT_FILES[@]} -gt 0 ]; then
 		echo "  ✓ $path"
 	done
 fi
-if [ -L ".agents/skills" ]; then
-	echo "  ✓ .agents/skills             (→ .claude/skills)"
-fi
-if [ ${#CODEX_SKILL_PATHS[@]} -gt 0 ]; then
-	echo "  ✓ ${CODEX_SKILLS_DIR}/*      (installed from $(pwd -P)/.codex/skills/*)"
-fi
 if [ -x ".claude/bin/browserctl" ]; then
 	echo "  ✓ .claude/bin/browserctl     (브라우저 런타임 전역 진입점)"
 fi
@@ -1248,7 +1179,7 @@ print_warn "다음 단계:"
 echo "  1. .claude/PROJECT.md를 프로젝트에 맞게 수정하세요"
 echo "  2. Git에 커밋: git add .claude .codex .claudeignore .gitattributes AGENTS.md && git commit -m 'Add Claude settings'"
 echo "     주의: .agents/skills, .mcp.json, .claude/memorygraph, .claude/cache/memorygraph 는 커밋하지 않습니다."
-echo "  3. Codex에서 스킬 목록이 보이지 않으면 새 세션을 열어 ${CODEX_SKILLS_DIR:-\${CODEX_GLOBAL_HOME:-\${CODEX_HOME:-\$HOME/.codex}}/skills} 를 다시 로드하세요"
+echo "  3. Codex에서 스킬 목록이 중복되면 새 세션을 열어 project .codex/skills만 로드되는지 확인하세요"
 echo "  4. Claude Code에서 코드 작업을 요청하면 자동으로 PM 워크플로우가 실행됩니다"
 
 if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ] || [ ${#CODEX_BACKUP_PATHS[@]} -gt 0 ]; then

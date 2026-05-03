@@ -165,7 +165,7 @@ chmod +x install-claude.sh
 - `.gitattributes`는 LF 줄바꿈 정책을 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
 - `.claude/skills/*`를 프로젝트 `.codex/skills/*`에 디렉터리 복사 설치
-- `.codex/skills/*`를 Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`에 디렉터리 복사 동기화
+- Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`는 수정하지 않음
 - Python 3.10+ 환경에서 `pipx install memorygraphMCP`를 자동 시도하고 MemoryGraph MCP를 project scope로 등록
 
 보호되는 사용자 파일 패턴:
@@ -208,9 +208,9 @@ custom/
 cp -r claude-settings/.claude /your-project/
 cp claude-settings/.claudeignore /your-project/
 
-# 2. agents/AGENTS 브리지 구성
+# 2. AGENTS 브리지 구성
 mkdir -p /your-project/.agents
-ln -s ../.claude/skills /your-project/.agents/skills
+rm -rf /your-project/.agents/skills
 ln -s .claude/CLAUDE.md /your-project/AGENTS.md
 
 # 3. Codex 프로젝트 설정 복사
@@ -235,7 +235,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 
 ### Codex 설정 동기화
 
-설치 스크립트는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 프로젝트에 실제 파일/디렉터리로 설치합니다. `.codex/skills/*`는 `.claude/skills/*`에서 복사한 프로젝트 로컬 복사본이며, 재설치 시 프로젝트 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. 이후 Codex가 읽는 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`도 `.codex/skills/*`에서 다시 복사 동기화합니다. 전역 `skills` 디렉터리 자체는 유지하고, `claude-settings`가 소유한 스킬 이름은 백업 없이 제거 후 최신 복사본으로 교체합니다.
+설치 스크립트는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 프로젝트에 실제 파일/디렉터리로 설치합니다. `.codex/skills/*`는 `.claude/skills/*`에서 복사한 프로젝트 로컬 복사본이며, 재설치 시 프로젝트 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`는 수정하지 않습니다.
 
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
@@ -264,11 +264,11 @@ Code Review Graph 설정:
 - 프로젝트 분석 DB는 `.code-review-graph/`에 저장하며 버전 관리와 기본 agent context에서 제외합니다.
 
 주의:
-- 프로젝트 `.codex/skills`는 Codex용 로컬 설치본입니다. truth source는 `.claude/skills`이고, Codex Desktop이 읽는 전역 `skills`는 `.codex/skills`에서 동기화한 런타임 복사본입니다.
+- 프로젝트 `.codex/skills`는 Codex용 로컬 설치본입니다. truth source는 `.claude/skills`이고, Codex Desktop에는 프로젝트 `.codex/skills`만 노출하는 구성이 기본입니다.
 - 프로젝트 `.codex/skills`는 generated copy로 취급하므로 재설치 시 백업하지 않고 최신 복사본만 유지합니다.
-- 같은 이름의 기존 전역 스킬이 있으면 백업하지 않고 제거한 뒤 `.codex/skills`의 최신 복사본으로 교체됩니다.
-- 전역 `skills` 루트에 남은 과거 `*.backup-*` 디렉터리도 백업하지 않고 제거해 Codex가 최신 스킬만 읽게 합니다.
-- 설치 직후 Codex에 스킬이 보이지 않으면 새 세션을 열어 전역 스킬 디렉토리를 다시 로드하세요.
+- 설치 스크립트는 legacy `.agents/skills`를 제거해 `.agents/skills`와 `.codex/skills`가 동시에 discovery되는 중복 노출을 막습니다.
+- 전역 `skills` 루트의 개인/시스템 스킬은 설치 스크립트가 건드리지 않습니다.
+- 설치 직후 Codex에 스킬이 중복으로 보이면 새 세션을 열어 project `.codex/skills`만 로드되는지 확인하세요.
 
 ### 다음 단계
 

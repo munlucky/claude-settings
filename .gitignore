@@ -1,5 +1,6 @@
 .history/
 .vscode/
+.agents/skills
 .mcp.json
 __pycache__/
 *.pyc

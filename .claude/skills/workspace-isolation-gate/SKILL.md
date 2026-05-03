@@ -31,7 +31,7 @@ This is the default Ready / Isolate stage gate for strict implementation runs.
    - Require `.worktrees` or project-local worktree ignore confirmation when a worktree is used.
    - Require agent config source for downstream worktrees.
    - Require `.claude`, `.agents`, and `.codex` ignore detection results when the target project ignores agent config.
-   - Require hydration status proving `.claude/CLAUDE.md`, `.claude/skills`, `.claude/scripts`, `.agents/skills`, and `AGENTS.md` are usable in the worktree.
+   - Require hydration status proving `.claude/CLAUDE.md`, `.claude/skills`, `.claude/scripts`, `.codex/skills`, and `AGENTS.md` are usable in the worktree.
    - Require dependency/setup command or explicit "setup not required" note.
    - Require baseline verification command.
    - Require baseline exit code.

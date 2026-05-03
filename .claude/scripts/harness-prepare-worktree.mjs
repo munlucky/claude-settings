@@ -219,13 +219,11 @@ function hydrateAgentBridge(worktreeRoot, hydratedPaths) {
   const agentsDir = path.join(worktreeRoot, '.agents');
   ensureDir(agentsDir);
 
-  const skillsMode = safeSymlinkOrCopy(
-    '../.claude/skills',
-    path.join(worktreeRoot, '.claude', 'skills'),
-    path.join(agentsDir, 'skills'),
-    'dir',
-  );
-  hydratedPaths.push(`.agents/skills (${skillsMode})`);
+  const legacyAgentSkills = path.join(agentsDir, 'skills');
+  if (fs.existsSync(legacyAgentSkills)) {
+    fs.rmSync(legacyAgentSkills, { recursive: true, force: true });
+    hydratedPaths.push('.agents/skills (removed legacy bridge)');
+  }
 
   const agentsMd = path.join(worktreeRoot, 'AGENTS.md');
   if (!fs.existsSync(agentsMd)) {
@@ -244,7 +242,16 @@ function hydrateAgentBridge(worktreeRoot, hydratedPaths) {
 function hydrateCodexScaffold(worktreeRoot, hydratedPaths) {
   const codexDir = path.join(worktreeRoot, '.codex');
   ensureDir(codexDir);
-  hydratedPaths.push('.codex/ (scaffold only)');
+  const sourceSkills = path.join(worktreeRoot, '.claude', 'skills');
+  const targetSkills = path.join(codexDir, 'skills');
+
+  if (fs.existsSync(sourceSkills)) {
+    removePath(targetSkills);
+    copyTree(sourceSkills, targetSkills, '');
+    hydratedPaths.push('.codex/skills (from .claude/skills)');
+  } else {
+    hydratedPaths.push('.codex/ (scaffold only)');
+  }
 }
 
 function missingRequiredHarnessPaths(worktreeRoot) {
@@ -253,7 +260,7 @@ function missingRequiredHarnessPaths(worktreeRoot) {
     '.claude/verification.contract.yaml',
     '.claude/scripts',
     '.claude/skills',
-    '.agents/skills',
+    '.codex/skills',
     'AGENTS.md',
   ];
   return required.filter((rel) => !fs.existsSync(path.join(worktreeRoot, rel)));

@@ -1,6 +1,7 @@
 # Sensitive or noisy paths should stay out of default agent context.
 .history/
 .tmp/
+.agents/skills
 .claude/logs/
 .claude/cache/
 .claude/memory.json
