@@ -47,11 +47,14 @@ It is the main Plan-stage owner for phase documents.
 4. Build or update the master plan.
    - Treat master plan as "plan of all plans."
    - Include phase index and dependency/order summary.
+   - Include a "Parallel Execution Plan" section that groups phases into safe waves or records why a phase must stay sequential.
    - Include source traceability matrix (`discovered source requirements -> Phase`).
    - Include phase completion checklist that maps 1:1 to phase documents.
    - Run `plan-ceo-review` on the master plan when scope or cost appears broad.
 5. Build or update each phase plan document.
    - Keep each phase document independently executable in a separate session.
+   - Include a `Phase Execution Metadata` YAML block with machine-readable ownership and parallel eligibility.
+   - Slice phases by merge-safe `ownedPaths` whenever phase-level parallel execution is expected; do not rely only on product feature names.
    - Include enough context so the phase can be executed without hidden assumptions.
    - Include source mapping section with referenced trace IDs.
    - Map every user-facing requirement to at least one `SCN-*` row in `Critical Product Scenarios`.
@@ -71,6 +74,7 @@ It is the main Plan-stage owner for phase documents.
   - Scope and objective of the whole implementation effort.
   - Phase list with file links.
   - Phase dependency/order notes.
+  - "Parallel Execution Plan" section with wave groups, sequential phases, and blocker reasons.
   - Source traceability matrix:
     - Columns: `Req ID`, `Source`, `Requirement Summary`, `Phase`, `Plan File`, `Status`.
   - Unmapped source requirements section (if any).
@@ -83,6 +87,20 @@ It is the main Plan-stage owner for phase documents.
 ## Phase Plan Rules
 - Filename pattern: `docs/implementation/{NN}-{phase-name}-v{n}.md`.
 - Each file must be a standalone session plan and include:
+  - Phase execution metadata using this minimum YAML shape:
+    ```yaml
+    phaseExecution:
+      schemaVersion: 1
+      parallelEligible: true
+      parallelGroup: "<wave-slug>"
+      dependsOn: []
+      conflictsWith: []
+      ownedPaths: []
+      readOnlyPaths: []
+      sharedMutablePaths: []
+      requiresManualEvidence: false
+      mergePolicy: "disjoint_patch"
+    ```
   - Source mapping (`Req ID` + section reference from selected requirement sources).
   - Goal and expected outcome.
   - Scope / out-of-scope.
@@ -93,6 +111,9 @@ It is the main Plan-stage owner for phase documents.
   - Deliverables.
   - Phase completion checklist with objective criteria.
 - Keep tasks actionable and verifiable (avoid vague "implement X" only).
+- Treat `ownedPaths` as the only paths a parallel worker may create or modify.
+- Leave `parallelEligible: false` and record `parallelBlockers` when ownership is ambiguous, shared mutable files are required, manual evidence is required, or dependencies are not complete.
+- Keep package manifests, lockfiles, verification contracts, phase status files, and other shared mutable files out of parallel phases unless the phase is explicitly sequential.
 - Each task must name:
   - exact files or modules to create, modify, and test
   - exact commands to run
@@ -133,6 +154,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Keep numbering, filenames, and checklist states consistent across all plan files.
 - Do not declare a phase ready when verification commands or ownership boundaries are still implicit.
 - Do not declare a phase ready when files, commands, expected signals, blocker conditions, or evidence paths are still implicit.
+- Do not declare a phase parallel-ready when `ownedPaths`, dependency edges, conflict edges, and manual-evidence requirements are implicit.
 
 ## Phase Runner Integration
 

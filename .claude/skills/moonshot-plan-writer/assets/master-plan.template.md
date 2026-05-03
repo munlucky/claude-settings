@@ -18,6 +18,15 @@
 ## Execution Order Notes
 - <dependency and ordering notes>
 
+## Parallel Execution Plan
+| Wave | Phases | Eligibility | Blockers / Notes |
+|------|--------|-------------|------------------|
+| wave-1 | 01, 02 | parallel | disjoint `ownedPaths`; no shared mutable writes |
+| sequential | 03 | sequential | depends on wave-1 completion |
+
+- Phase-level parallel execution is allowed only when each phase has explicit `Phase Execution Metadata`.
+- Sequential phases must record the blocker reason instead of relying on implicit ordering.
+
 ## Source Traceability Matrix
 | Req ID | Source | Requirement Summary | Phase | Plan File | Status |
 |--------|--------|---------------------|-------|-----------|--------|

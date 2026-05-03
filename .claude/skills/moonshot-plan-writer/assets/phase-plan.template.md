@@ -11,6 +11,25 @@
 ## Expected Outcome
 - <measurable outcome>
 
+## Phase Execution Metadata
+```yaml
+phaseExecution:
+  schemaVersion: 1
+  parallelEligible: true
+  parallelGroup: "<wave-slug>"
+  dependsOn: []
+  conflictsWith: []
+  ownedPaths:
+    - <paths this phase may create or modify>
+  readOnlyPaths:
+    - <paths this phase may inspect only>
+  sharedMutablePaths: []
+  requiresManualEvidence: false
+  mergePolicy: "disjoint_patch"
+```
+
+- Set `parallelEligible: false` and add blocker notes when `ownedPaths` are ambiguous, shared mutable files are required, or manual evidence is required.
+
 ## Scope
 - In scope:
   - <item>

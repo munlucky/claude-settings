@@ -18,6 +18,15 @@
 ## 실행 순서 메모
 - <의존성 및 순서 메모>
 
+## 병렬 실행 계획
+| Wave | Phases | Eligibility | Blockers / Notes |
+|------|--------|-------------|------------------|
+| wave-1 | 01, 02 | parallel | disjoint `ownedPaths`; shared mutable write 없음 |
+| sequential | 03 | sequential | wave-1 완료 후 실행 |
+
+- Phase-level 병렬 실행은 각 phase에 명시적인 `Phase Execution Metadata`가 있을 때만 허용합니다.
+- 순차 phase는 암묵적 순서에 의존하지 말고 blocker 사유를 기록합니다.
+
 ## 소스 추적 매트릭스
 | Req ID | Source | Requirement Summary | Phase | Plan File | Status |
 |--------|--------|---------------------|-------|-----------|--------|

@@ -11,6 +11,25 @@
 ## 기대 결과
 - <측정 가능한 결과>
 
+## Phase Execution Metadata
+```yaml
+phaseExecution:
+  schemaVersion: 1
+  parallelEligible: true
+  parallelGroup: "<wave-slug>"
+  dependsOn: []
+  conflictsWith: []
+  ownedPaths:
+    - <이 phase가 생성 또는 수정할 수 있는 경로>
+  readOnlyPaths:
+    - <이 phase가 읽기만 할 경로>
+  sharedMutablePaths: []
+  requiresManualEvidence: false
+  mergePolicy: "disjoint_patch"
+```
+
+- `ownedPaths`가 모호하거나 shared mutable 파일 수정 또는 manual evidence가 필요하면 `parallelEligible: false`로 두고 blocker를 기록합니다.
+
 ## 범위
 - 포함:
   - <item>
