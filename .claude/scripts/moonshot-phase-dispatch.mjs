@@ -15,6 +15,7 @@ const phaseStatePath = path.join(SCRIPT_DIR, 'agent-loop-phase-state.mjs');
 const phaseArtifactsPath = path.join(SCRIPT_DIR, 'agent-loop-phase-artifacts.mjs');
 const phaseRunLeasePath = path.join(SCRIPT_DIR, 'phase-run-lease.mjs');
 const runtimeStatePath = path.join(SCRIPT_DIR, 'runtime-state.mjs');
+const finalGitCloseoutPath = path.join(SCRIPT_DIR, 'phase-final-git-closeout.mjs');
 const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
 const debugLog = path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl');
 
@@ -42,6 +43,7 @@ const state = {
   worktreeRoot: process.env.PHASE_WORKTREE_ROOT || '.tmp/harness-worktrees/phase-runs',
   goalTimeBudgetSeconds: process.env.PHASE_GOAL_TIME_BUDGET_SECONDS || '',
   goalTokenBudget: process.env.PHASE_GOAL_TOKEN_BUDGET || '',
+  finalGitCloseout: process.env.PHASE_FINAL_GIT_CLOSEOUT || 'strict',
 };
 
 const runtimeState = {
@@ -91,6 +93,8 @@ Options:
   --goal-time-budget-seconds <n>
                             Optional SQLite goal runtime time budget
   --goal-token-budget <n>   Optional SQLite goal runtime token budget
+  --final-git-closeout <mode>
+                            strict|warn|off. Default: strict
   --dry-run                 Print resolved command without executing`);
 }
 
@@ -316,6 +320,19 @@ function resolveRuntime() {
 }
 
 function resolveMasterPlan() {
+  if (fs.existsSync(state.statusFile)) {
+    for (const rawLine of fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/)) {
+      const match = rawLine.match(/^masterPlan:\s*(.+)\s*$/);
+      if (!match) {
+        continue;
+      }
+      const candidate = match[1].trim().replace(/^"|"$/g, '');
+      if (candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(state.planDir)) {
+        return candidate;
+      }
+    }
+  }
+
   const entries = fs.readdirSync(state.planDir, { withFileTypes: true });
   const match = entries
     .filter((entry) => entry.isFile())
@@ -450,6 +467,43 @@ function assertReturnAllowedOrThrow() {
   return values;
 }
 
+function runFinalGitCloseoutAudit() {
+  const mode = String(state.finalGitCloseout || 'strict').trim().toLowerCase();
+  if (mode === 'off' || mode === 'false' || mode === 'none') {
+    return { allowed: true, detail: 'final git closeout audit disabled' };
+  }
+  const artifactPath = path.join('.claude', 'logs', 'agent-loop', `final-git-closeout-${Date.now()}-${process.pid}.json`);
+  const args = [
+    finalGitCloseoutPath,
+    'assert-clean',
+    '--plan-dir', state.planDir,
+    '--status-file', state.statusFile,
+    '--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-runs',
+    '--worktree-root', '.tmp/harness-worktrees/phase-waves',
+    '--output', artifactPath,
+  ];
+  const result = runNodeScript(finalGitCloseoutPath, args.slice(1));
+  const detail = [
+    (result.stdout || result.stderr || '').trim(),
+    `artifact=${artifactPath}`,
+  ].filter(Boolean).join(' | ');
+  appendDebugLog('final-git-closeout-audit', {
+    mode,
+    status: result.status ?? 0,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    artifactPath,
+  });
+  if ((result.status ?? 0) === 0) {
+    return { allowed: true, detail };
+  }
+  if (mode === 'warn' || mode === 'warning') {
+    logWarn(`Final git closeout audit reported issues but is warning-only: ${detail}`);
+    return { allowed: true, detail };
+  }
+  return { allowed: false, detail };
+}
+
 function startTrackingBridge(label) {
   if (state.dryRun) {
     return () => {};
@@ -489,6 +543,13 @@ function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false
 
   try {
     if (exitCode === 0 && requireSuccessBoundary) {
+      const gitCloseout = runFinalGitCloseoutAudit();
+      if (!gitCloseout.allowed) {
+        logError(`Final git closeout audit failed: ${gitCloseout.detail}`);
+        finishDispatchLease('dispatch-stop', 'phase-final-git-closeout-required', gitCloseout.detail, 'failed');
+        process.exit(2);
+        return;
+      }
       assertReturnAllowedOrThrow();
       finishDispatchLease(returnBoundary || 'success-return', stopReasonCode || 'plan-directory-complete', detail, completionStatus || 'completed');
       process.exit(0);
@@ -1251,6 +1312,9 @@ function parseArgs(argv) {
       case '--goal-token-budget':
         state.goalTokenBudget = args.shift() ?? '';
         break;
+      case '--final-git-closeout':
+        state.finalGitCloseout = args.shift() ?? 'strict';
+        break;
       case '--dry-run':
         state.dryRun = true;
         break;
@@ -1288,6 +1352,11 @@ if (!['auto', 'claude', 'codex'].includes(state.runtime)) {
 if (!['auto', 'current', 'claude', 'codex', 'both'].includes(state.verificationRuntimes)) {
   logWarn(`Unsupported verification runtime target '${state.verificationRuntimes}'. Falling back to 'auto'.`);
   state.verificationRuntimes = 'auto';
+}
+
+if (!['strict', 'warn', 'warning', 'off', 'false', 'none'].includes(String(state.finalGitCloseout || '').toLowerCase())) {
+  logWarn(`Unsupported final git closeout mode '${state.finalGitCloseout}'. Falling back to 'strict'.`);
+  state.finalGitCloseout = 'strict';
 }
 
 syncCompletedPhaseArchive();

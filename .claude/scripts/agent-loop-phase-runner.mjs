@@ -548,6 +548,11 @@ function isBlockedCompletionReason(reason) {
     || normalized === 'verification-preflight-blocked';
 }
 
+function isHardBlockedCompletionReason(reason) {
+  const normalized = String(reason || '').trim().toLowerCase();
+  return normalized === 'verification-preflight-blocked';
+}
+
 function stopBlockedPhase(paths, logFile, detail, stopReason = 'verification-preflight-blocked') {
   appendQaRuntimeUpdate(stopReason, logFile, detail, paths);
   appendHandoffUpdate('blocked', logFile, detail, paths);
@@ -906,10 +911,16 @@ function runPhaseAttempt() {
   }
 
   const runtime = resolveRunnerRuntime(state.runtime);
-  const masterPlan = fs.readdirSync(state.planDir)
+  const statusMasterPlan = fs.existsSync(state.statusFile)
+    ? fs.readFileSync(state.statusFile, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.match(/^masterPlan:\s*(.+)\s*$/)?.[1]?.trim().replace(/^"|"$/g, '') || '')
+      .find((candidate) => candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(state.planDir))
+    : '';
+  const masterPlan = statusMasterPlan || fs.readdirSync(state.planDir)
     .filter((name) => name.includes('master') || name.includes('00-'))
     .sort((a, b) => a.localeCompare(b))[0];
-  const masterPlanPath = masterPlan ? path.join(state.planDir, masterPlan) : '';
+  const masterPlanPath = masterPlan ? (path.isAbsolute(masterPlan) || masterPlan.includes('/') || masterPlan.includes('\\') ? masterPlan : path.join(state.planDir, masterPlan)) : '';
   const paths = ensureExecutionArtifacts({
     phaseNum: state.phaseNum,
     phaseTitle: state.phaseTitle,
@@ -1112,7 +1123,7 @@ function runPhaseAttempt() {
         return 0;
       }
 
-      if (isBlockedCompletionReason(gate.PHASE_COMPLETION_REASON)) {
+      if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON)) {
         return stopBlockedPhase(paths, logFile, `completion gate blocked: ${gate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
       }
 
@@ -1166,7 +1177,7 @@ function runPhaseAttempt() {
             );
             return 0;
           }
-          if (isBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
+          if (isHardBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
             return stopBlockedPhase(paths, logFile, `completion gate blocked after remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
           }
           logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${remediationGate.PHASE_COMPLETION_REASON})`);

@@ -158,20 +158,21 @@ Failure context:
 Remediation steps:
 1. Refresh the active phase artifacts instead of starting a new phase or switching to another phase.
 2. Treat the missing completion evidence as an active closeout task for this same phase, not as a valid stop boundary.
-3. If the gate reason is review-related, run the required review pass now and record it in QA_REPORT.md:
+3. If the gate reason starts with \`blocked:\` or equals \`scorecard-verdict=blocked\`, treat it as retryable phase remediation unless the active runtime/preflight is explicitly unavailable.
+4. If the gate reason is review-related, run the required review pass now and record it in QA_REPORT.md:
    - set \`Review completed: yes\` only after the review actually ran
    - ensure \`codex-review-code\` appears in applied workflow evidence
    - capture review-driven changes or explicitly record that no blocking findings remained
-4. If the gate reason is finish-closeout-related, complete finish-stage closeout now:
+5. If the gate reason is finish-closeout-related, complete finish-stage closeout now:
    - fill Why this round may stop now
    - fill Remaining in-scope work
    - fill Remaining blockers before closeout
    - remove placeholder or seed text from HANDOFF.md / QA_REPORT.md closeout sections
-5. If verification evidence is already fresh and the remaining gap is only review or closeout bookkeeping, do not restart broad implementation work. Update only the missing review/finish artifacts and SCORECARD.md.
-6. If a repository-global verifier still fails for a clearly pre-existing reason that this phase did not worsen, record that as carried-forward warning context in QA_REPORT.md/HANDOFF.md instead of leaving the phase in a placeholder closeout state.
-7. Refresh or generate the latest verification/runtime verdict artifact for this phase when the active evidence is stale.
-8. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[] unless the evidence is already fresh and the gate reason is review/finish-closeout only.
-9. Do not return control just because implementation is complete or a verifier ran once. Return only after review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md reaches \`Verdict: done\`, and SCORECARD.md reaches \`Current task status: FULL\`; otherwise keep the phase in retry with an explicit next action.
+6. If verification evidence is already fresh and the remaining gap is only review or closeout bookkeeping, do not restart broad implementation work. Update only the missing review/finish artifacts and SCORECARD.md.
+7. If a repository-global verifier still fails for a clearly pre-existing reason that this phase did not worsen, record that as carried-forward warning context in QA_REPORT.md/HANDOFF.md instead of leaving the phase in a placeholder closeout state.
+8. Refresh or generate the latest verification/runtime verdict artifact for this phase when the active evidence is stale.
+9. If contract-backed verification applies, satisfy evidenceFresh=true and requiredChecks.missing=[] unless the evidence is already fresh and the gate reason is review/finish-closeout only.
+10. Do not return control just because implementation is complete or a verifier ran once. Return only after review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md reaches \`Verdict: done\`, and SCORECARD.md reaches \`Current task status: FULL\`; otherwise keep the phase in retry with an explicit next action.
 
 Priority notes:
 - Review focused: ${reviewFocused ? 'yes' : 'no'}

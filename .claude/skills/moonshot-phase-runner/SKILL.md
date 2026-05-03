@@ -98,6 +98,7 @@ Review and finish gate rule:
 - `QA_REPORT.md` may not claim `Next path: clean_finish` while `Review completed` is still `no`.
 - `HANDOFF.md` and closeout fields may not remain seeded or placeholder-shaped when the phase is being closed.
 - Before a plan-directory completion summary, run `node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir <plan-dir> --master-plan <master-plan>` and block return if it fails.
+- Before a plan-directory success return, run `node .claude/scripts/phase-final-git-closeout.mjs assert-clean --plan-dir <plan-dir> --status-file <status-file>` and block return if main has uncommitted non-runtime changes or phase worktrees under `.tmp/harness-worktrees/phase-runs` / `.tmp/harness-worktrees/phase-waves` remain dirty.
 - Phase closeout requires master checklist, `phase-status.yaml`, archived phase document paths, execution artifacts, verifier verdicts, scorecards, and critical `SCN-*` evidence to agree.
 - If review or closeout evidence is missing, the run must stay inside the active plan-directory loop and remediate the missing steps instead of returning a summary.
 
@@ -170,7 +171,11 @@ MemoryGraph stage rule:
     │      └─ A phase may advance only after MemoryGraph review, review evidence, completion evidence,
     │         acceptance evidence, and finish-closeout artifacts are consistent
     │
-    └─ 10. Emit Handoff Summary
+    ├─ 10. Enforce Final Git Closeout
+    │      └─ Before success return, audit main worktree status and phase worktree residue.
+    │         Dirty main changes or dirty phase worktrees require triage/commit/cleanup instead of success wording
+    │
+    └─ 11. Emit Handoff Summary
            └─ Orchestrator-readable phaseRunnerResult after the active plan directory is actually done
 ```
 
@@ -474,8 +479,9 @@ When called by `/moonshot-orchestrator`:
 8. `partial`, `retry`, refreshed artifacts, or newly written handoff/checkpoint docs are not valid delegated-terminal stop reasons by themselves.
 9. A single completed phase is not a stop reason while the active plan directory still has actionable phases.
 10. In auto-start execution, keep a live `phase-run-lease` attached to the dispatcher boundary and require `node .claude/scripts/phase-run-lease.mjs assert-return-allowed <status-file> <runLeaseId> true false` to pass before any success return.
-11. If `prepareOnly == true`, stop after returning the prepared execution metadata.
-12. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
-13. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
-14. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.
-15. If the user's latest message expressed execution intent and `prepareOnly == true` was not explicitly requested, treat that result as a contract mismatch and continue through the auto-start execution path instead of returning a prepared-only summary.
+11. Before any success return, require the final git closeout audit to pass. If the audit reports dirty main changes or dirty phase worktrees, stop with `phase-final-git-closeout-required` and leave the audit artifact path.
+12. If `prepareOnly == true`, stop after returning the prepared execution metadata.
+13. If `executionMode == in-session-coordinator`, orchestrator must keep the main session thin and run each implementation round as a fresh fork/sub-agent attempt.
+14. Completion verification resumes only after the active attempt updates `phase-status.yaml` and execution artifacts.
+15. Within each phase, preserve `ready/isolate -> execute -> review -> verify -> finish/handoff` as the default stage order.
+16. If the user's latest message expressed execution intent and `prepareOnly == true` was not explicitly requested, treat that result as a contract mismatch and continue through the auto-start execution path instead of returning a prepared-only summary.
