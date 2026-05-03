@@ -161,6 +161,123 @@ function extractTargetPaths(text) {
   return [...candidates].sort((a, b) => a.localeCompare(b));
 }
 
+function stripQuotes(value) {
+  return String(value || '').trim().replace(/^['"]|['"]$/g, '');
+}
+
+function parseInlineArray(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
+    return null;
+  }
+  const inner = trimmed.slice(1, -1).trim();
+  if (!inner) {
+    return [];
+  }
+  return inner.split(',').map((entry) => stripQuotes(entry)).filter(Boolean);
+}
+
+function parseMetadataScalar(value) {
+  const trimmed = String(value || '').trim();
+  const inlineArray = parseInlineArray(trimmed);
+  if (inlineArray) {
+    return inlineArray;
+  }
+  if (/^(true|false)$/i.test(trimmed)) {
+    return trimmed.toLowerCase() === 'true';
+  }
+  if (/^[0-9]+$/.test(trimmed)) {
+    return Number.parseInt(trimmed, 10);
+  }
+  return stripQuotes(trimmed);
+}
+
+function extractPhaseExecutionLines(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === 'phaseExecution:');
+  if (start < 0) {
+    return [];
+  }
+  const baseIndent = lines[start].length - lines[start].trimStart().length;
+  const block = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      break;
+    }
+    if (trimmed && !trimmed.startsWith('#')) {
+      const indent = line.length - line.trimStart().length;
+      if (indent <= baseIndent) {
+        break;
+      }
+    }
+    block.push(line);
+  }
+  return block;
+}
+
+function parsePhaseExecutionMetadata(text) {
+  const lines = extractPhaseExecutionLines(text);
+  if (lines.length === 0) {
+    return null;
+  }
+  const values = {};
+  let currentKey = '';
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+    const listMatch = trimmed.match(/^-\s+(.+)$/);
+    if (listMatch && currentKey) {
+      if (!Array.isArray(values[currentKey])) {
+        values[currentKey] = [];
+      }
+      values[currentKey].push(stripQuotes(listMatch[1]));
+      continue;
+    }
+    const keyMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
+    if (!keyMatch) {
+      continue;
+    }
+    const [, key, rawValue] = keyMatch;
+    currentKey = key;
+    if (!rawValue.trim()) {
+      values[key] = [];
+    } else {
+      values[key] = parseMetadataScalar(rawValue);
+      if (!Array.isArray(values[key])) {
+        currentKey = '';
+      }
+    }
+  }
+
+  const arrayValue = (key) => (
+    Array.isArray(values[key])
+      ? values[key].map(stripQuotes).map(normalizePath).filter(Boolean)
+      : []
+  );
+  const phaseRefs = (key) => (
+    Array.isArray(values[key])
+      ? values[key].map(stripQuotes).filter(Boolean)
+      : []
+  );
+
+  return {
+    schemaVersion: values.schemaVersion || 1,
+    parallelEligible: values.parallelEligible === true,
+    parallelGroup: stripQuotes(values.parallelGroup || ''),
+    dependsOn: phaseRefs('dependsOn').map((value) => String(Number.parseInt(value, 10))).filter((value) => value !== 'NaN'),
+    conflictsWith: phaseRefs('conflictsWith'),
+    ownedPaths: arrayValue('ownedPaths'),
+    readOnlyPaths: arrayValue('readOnlyPaths'),
+    sharedMutablePaths: arrayValue('sharedMutablePaths'),
+    requiresManualEvidence: values.requiresManualEvidence === true,
+    mergePolicy: stripQuotes(values.mergePolicy || 'disjoint_patch'),
+  };
+}
+
 function parseExplicitDependencies(text, phaseNum) {
   const dependencies = new Set();
   const lowered = String(text || '').toLowerCase();
@@ -186,6 +303,11 @@ function parseExplicitDependencies(text, phaseNum) {
     dependencies: [...dependencies].sort((a, b) => Number(a) - Number(b)),
     ambiguousDependency: dependencySignal && dependencies.size === 0,
   };
+}
+
+function formatPhaseRef(value) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isNaN(parsed) ? String(value || '') : String(parsed);
 }
 
 function hasManualOrExternalState(text) {
@@ -214,18 +336,37 @@ function pathsOverlap(left, right) {
   return a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 }
 
+function overlapPathPairs(leftPaths, rightPaths) {
+  const pairs = [];
+  for (const left of leftPaths || []) {
+    for (const right of rightPaths || []) {
+      if (pathsOverlap(left, right)) {
+        pairs.push({ left, right });
+      }
+    }
+  }
+  return pairs;
+}
+
 function analyzePhase({ block, planDir, completed }) {
   const phaseDoc = getPhaseDoc(planDir, block.number);
   const text = readText(phaseDoc);
   const title = block.title || getPhaseTitle(phaseDoc, block.number);
-  const targets = extractTargetPaths(text);
-  const dependency = parseExplicitDependencies(text, block.number);
+  const metadata = parsePhaseExecutionMetadata(text);
+  const planningSource = metadata ? 'phaseExecutionMetadata' : 'legacyExactExecutionTargets';
+  const targets = metadata ? metadata.ownedPaths : extractTargetPaths(text);
+  const dependency = metadata
+    ? { dependencies: metadata.dependsOn, ambiguousDependency: false }
+    : parseExplicitDependencies(text, block.number);
   const reasons = [];
   if (!phaseDoc) reasons.push('phase-doc-missing');
-  if (targets.length === 0) reasons.push('target-paths-missing');
-  if (targets.some(isSharedMutablePath)) reasons.push('shared-mutable-target');
-  if (dependency.ambiguousDependency) reasons.push('ambiguous-dependency-signal');
-  if (hasManualOrExternalState(text)) reasons.push('manual-or-external-state-signal');
+  if (metadata && metadata.parallelEligible !== true) reasons.push('parallel-disabled-by-metadata');
+  if (targets.length === 0) reasons.push(metadata ? 'owned-paths-missing' : 'target-paths-missing');
+  if (targets.some(isSharedMutablePath) || (metadata?.sharedMutablePaths || []).length > 0) reasons.push('shared-mutable-target');
+  if (metadata?.requiresManualEvidence) reasons.push('requires-manual-evidence');
+  if (metadata?.mergePolicy && metadata.mergePolicy !== 'disjoint_patch') reasons.push(`unsupported-merge-policy:${metadata.mergePolicy}`);
+  if (!metadata && dependency.ambiguousDependency) reasons.push('ambiguous-dependency-signal');
+  if (!metadata && hasManualOrExternalState(text)) reasons.push('manual-or-external-state-signal');
   const unmetDependencies = dependency.dependencies.filter((num) => !completed.has(String(num)));
   if (unmetDependencies.length > 0) reasons.push(`unmet-dependencies:${unmetDependencies.join(',')}`);
   return {
@@ -235,11 +376,54 @@ function analyzePhase({ block, planDir, completed }) {
     status: block.status,
     lastOutcome: block.lastOutcome,
     targets,
+    ownedPaths: targets,
+    readOnlyPaths: metadata?.readOnlyPaths || [],
+    sharedMutablePaths: metadata?.sharedMutablePaths || [],
+    conflictsWith: metadata?.conflictsWith || [],
+    requiresManualEvidence: metadata?.requiresManualEvidence || false,
+    mergePolicy: metadata?.mergePolicy || 'disjoint_patch',
+    parallelGroup: metadata?.parallelGroup || '',
+    planningSource,
     dependencies: dependency.dependencies,
     unmetDependencies,
     parallelEligible: reasons.length === 0,
     fallbackReasons: reasons,
   };
+}
+
+function conflictBetween(left, right) {
+  const explicitConflict = (left.conflictsWith || []).map(formatPhaseRef).includes(String(right.number))
+    || (right.conflictsWith || []).map(formatPhaseRef).includes(String(left.number));
+  if (explicitConflict) {
+    return {
+      reason: 'explicit-conflict',
+      phase: left.number,
+      conflictsWith: right.number,
+      paths: [],
+    };
+  }
+  const pairs = overlapPathPairs(left.targets, right.targets);
+  if (pairs.length > 0) {
+    return {
+      reason: 'target-overlap',
+      phase: left.number,
+      conflictsWith: right.number,
+      paths: pairs,
+    };
+  }
+  return null;
+}
+
+function buildWaveGroups(phases) {
+  const groups = new Map();
+  for (const phase of phases) {
+    const key = phase.parallelGroup || 'ungrouped';
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key).push(phase.number);
+  }
+  return [...groups.entries()].map(([group, phaseNumbers]) => ({ group, phases: phaseNumbers }));
 }
 
 export function planPhaseExecution({ planDir, statusFile, waveCap = DEFAULT_WAVE_CAP }) {
@@ -297,15 +481,13 @@ export function planPhaseExecution({ planDir, statusFile, waveCap = DEFAULT_WAVE
   const blockedPhases = candidates.filter((phase) => !phase.parallelEligible);
   const eligible = candidates.filter((phase) => phase.parallelEligible);
   const wave = [];
-  const conflictReasons = [];
+  const overlapDetails = [];
 
   for (const phase of eligible) {
     if (wave.length >= waveCap) break;
-    const conflict = wave.find((existing) => (
-      phase.targets.some((target) => existing.targets.some((other) => pathsOverlap(target, other)))
-    ));
+    const conflict = wave.map((existing) => conflictBetween(phase, existing)).find(Boolean);
     if (conflict) {
-      conflictReasons.push(`target-overlap:${phase.number}:${conflict.number}`);
+      overlapDetails.push(conflict);
       continue;
     }
     wave.push(phase);
@@ -322,10 +504,18 @@ export function planPhaseExecution({ planDir, statusFile, waveCap = DEFAULT_WAVE
       phases: wave,
       dependencyEdges,
       blockedPhases,
+      blockedPhaseDetails: blockedPhases.map((phase) => ({
+        number: phase.number,
+        title: phase.title,
+        planningSource: phase.planningSource,
+        fallbackReasons: phase.fallbackReasons,
+      })),
+      overlapDetails,
+      waveGroups: buildWaveGroups(wave),
       fallbackReasons: [
         'parallel-wave-too-small',
         ...blockedPhases.map((phase) => `phase-${phase.number}:${phase.fallbackReasons.join('|')}`),
-        ...conflictReasons,
+        ...overlapDetails.map((detail) => `${detail.reason}:${detail.phase}:${detail.conflictsWith}`),
       ].filter(Boolean),
       confidence: wave.length === 1 ? 'medium' : 'low',
     };
@@ -338,9 +528,17 @@ export function planPhaseExecution({ planDir, statusFile, waveCap = DEFAULT_WAVE
     phases: wave,
     dependencyEdges,
     blockedPhases,
+    blockedPhaseDetails: blockedPhases.map((phase) => ({
+      number: phase.number,
+      title: phase.title,
+      planningSource: phase.planningSource,
+      fallbackReasons: phase.fallbackReasons,
+    })),
+    overlapDetails,
+    waveGroups: buildWaveGroups(wave),
     fallbackReasons: [
       ...blockedPhases.map((phase) => `phase-${phase.number}:${phase.fallbackReasons.join('|')}`),
-      ...conflictReasons,
+      ...overlapDetails.map((detail) => `${detail.reason}:${detail.phase}:${detail.conflictsWith}`),
     ].filter(Boolean),
     confidence: 'medium',
   };
@@ -420,6 +618,94 @@ function runSelfTest() {
   const overlap = planPhaseExecution({ planDir, statusFile, waveCap: 3 });
   if (overlap.executionPlan !== 'sequential') {
     throw new Error(`expected overlap fallback, got ${JSON.stringify(overlap)}`);
+  }
+  if (!Array.isArray(overlap.overlapDetails) || overlap.overlapDetails[0]?.paths?.[0]?.left !== 'src/alpha.ts') {
+    throw new Error(`expected overlap details, got ${JSON.stringify(overlap.overlapDetails)}`);
+  }
+  writeFixture(path.join(planDir, '01-alpha.md'), `# Phase 01: Alpha
+
+## Phase Execution Metadata
+\`\`\`yaml
+phaseExecution:
+  schemaVersion: 1
+  parallelEligible: true
+  parallelGroup: wave-one
+  dependsOn: []
+  conflictsWith: []
+  ownedPaths:
+    - src/metadata-alpha.ts
+  readOnlyPaths:
+    - docs/spec.md
+  sharedMutablePaths: []
+  requiresManualEvidence: false
+  mergePolicy: disjoint_patch
+\`\`\`
+`);
+  writeFixture(path.join(planDir, '02-beta.md'), `# Phase 02: Beta
+
+## Phase Execution Metadata
+\`\`\`yaml
+phaseExecution:
+  schemaVersion: 1
+  parallelEligible: true
+  parallelGroup: wave-one
+  dependsOn: []
+  conflictsWith: []
+  ownedPaths:
+    - src/metadata-beta.ts
+  readOnlyPaths: []
+  sharedMutablePaths: []
+  requiresManualEvidence: false
+  mergePolicy: disjoint_patch
+\`\`\`
+`);
+  const metadataPlan = planPhaseExecution({ planDir, statusFile, waveCap: 3 });
+  if (metadataPlan.executionPlan !== 'parallel_wave' || metadataPlan.phases[0]?.planningSource !== 'phaseExecutionMetadata') {
+    throw new Error(`expected metadata-first wave, got ${JSON.stringify(metadataPlan)}`);
+  }
+  writeFixture(path.join(planDir, '02-beta.md'), `# Phase 02: Beta
+
+## Phase Execution Metadata
+\`\`\`yaml
+phaseExecution:
+  schemaVersion: 1
+  parallelEligible: true
+  parallelGroup: wave-one
+  dependsOn: []
+  conflictsWith: []
+  ownedPaths:
+    - src/metadata-alpha.ts
+  readOnlyPaths: []
+  sharedMutablePaths: []
+  requiresManualEvidence: false
+  mergePolicy: disjoint_patch
+\`\`\`
+`);
+  const metadataOverlap = planPhaseExecution({ planDir, statusFile, waveCap: 3 });
+  if (metadataOverlap.executionPlan !== 'sequential' || metadataOverlap.overlapDetails[0]?.reason !== 'target-overlap') {
+    throw new Error(`expected metadata overlap fallback, got ${JSON.stringify(metadataOverlap)}`);
+  }
+  writeFixture(path.join(planDir, '02-beta.md'), `# Phase 02: Beta
+
+## Phase Execution Metadata
+\`\`\`yaml
+phaseExecution:
+  schemaVersion: 1
+  parallelEligible: true
+  parallelGroup: wave-one
+  dependsOn: []
+  conflictsWith: []
+  ownedPaths:
+    - src/metadata-beta.ts
+  readOnlyPaths: []
+  sharedMutablePaths: []
+  requiresManualEvidence: true
+  mergePolicy: disjoint_patch
+\`\`\`
+`);
+  const manualBlocked = planPhaseExecution({ planDir, statusFile, waveCap: 3 });
+  if (!manualBlocked.blockedPhaseDetails.some((phase) => phase.number === '2' && phase.fallbackReasons.includes('requires-manual-evidence'))) {
+    throw new Error(`expected manual evidence block detail, got ${JSON.stringify(manualBlocked.blockedPhaseDetails)}`);
   }
   writeStdoutLine('phase-parallel-planner self-test passed');
 }

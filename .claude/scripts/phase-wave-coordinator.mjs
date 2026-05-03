@@ -35,6 +35,31 @@ function normalizePath(value) {
   return String(value || '').replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
+function pathsOverlap(left, right) {
+  const a = normalizePath(left);
+  const b = normalizePath(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.includes('*') || b.includes('*')) {
+    const prefixA = a.split('*')[0].replace(/\/+$/, '');
+    const prefixB = b.split('*')[0].replace(/\/+$/, '');
+    return Boolean(prefixA && prefixB && (prefixA.startsWith(prefixB) || prefixB.startsWith(prefixA)));
+  }
+  return a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
+function declaredOwnedPaths(phase) {
+  return [...new Set([...(phase.ownedPaths || []), ...(phase.targets || [])].map(normalizePath).filter(Boolean))];
+}
+
+function changedFilesOutsideOwnership(phase, changedFiles) {
+  const ownedPaths = declaredOwnedPaths(phase);
+  if (ownedPaths.length === 0) {
+    return [...changedFiles];
+  }
+  return changedFiles.filter((filePath) => !ownedPaths.some((ownedPath) => pathsOverlap(ownedPath, filePath)));
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     encoding: 'utf8',
@@ -328,6 +353,8 @@ async function runCoordinator() {
     title: result.phase.title,
     exitCode: result.exitCode,
     changedFiles: result.changedFiles,
+    declaredOwnedPaths: declaredOwnedPaths(result.phase),
+    undeclaredChangedFiles: changedFilesOutsideOwnership(result.phase, result.changedFiles || []),
     modelRoute: result.modelRoute,
     logFile: result.logFile,
     branch: result.branch,
@@ -338,6 +365,21 @@ async function runCoordinator() {
     payload.status = 'fallback';
     payload.mergeStatus = 'not_started';
     payload.reason = `phase-runner-failed:${failed.phase.number}:exit=${failed.exitCode}`;
+    writeJson(artifactPath, payload);
+    return { exitCode: 78, reason: payload.reason, artifactPath };
+  }
+
+  const ownershipViolations = results
+    .map((result) => ({
+      phase: result.phase.number,
+      changedFiles: changedFilesOutsideOwnership(result.phase, result.changedFiles || []),
+    }))
+    .filter((entry) => entry.changedFiles.length > 0);
+  if (ownershipViolations.length > 0) {
+    payload.status = 'fallback';
+    payload.mergeStatus = 'ownership_violation';
+    payload.ownershipViolations = ownershipViolations;
+    payload.reason = `declared-ownership-violation:${ownershipViolations.map((entry) => `${entry.phase}:${entry.changedFiles.join('|')}`).join(',')}`;
     writeJson(artifactPath, payload);
     return { exitCode: 78, reason: payload.reason, artifactPath };
   }
@@ -379,6 +421,8 @@ async function runCoordinator() {
     title: result.phase.title,
     exitCode: result.exitCode,
     changedFiles: result.changedFiles,
+    declaredOwnedPaths: declaredOwnedPaths(result.phase),
+    undeclaredChangedFiles: changedFilesOutsideOwnership(result.phase, result.changedFiles || []),
     modelRoute: result.modelRoute,
     mergeStatus: result.mergeStatus,
     logFile: result.logFile,

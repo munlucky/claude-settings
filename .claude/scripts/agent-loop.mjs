@@ -351,6 +351,19 @@ function firstBlockedPhase() {
 }
 
 function resolveMasterPlan(planDir) {
+  if (fs.existsSync(state.statusFile)) {
+    for (const rawLine of fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/)) {
+      const match = rawLine.match(/^masterPlan:\s*(.+)\s*$/);
+      if (!match) {
+        continue;
+      }
+      const candidate = match[1].trim().replace(/^"|"$/g, '');
+      if (candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(planDir)) {
+        return candidate;
+      }
+    }
+  }
+
   const files = fs.readdirSync(planDir, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
@@ -406,7 +419,7 @@ function runPhaseRunnerOnce(argv) {
 
 function runPhaseWaveCoordinator(argv) {
   const result = spawnSync('node', [phaseWaveCoordinatorPath, ...argv], {
-    stdio: 'inherit',
+    encoding: 'utf8',
   });
 
   if (result.error) {
@@ -414,7 +427,19 @@ function runPhaseWaveCoordinator(argv) {
     process.exit(1);
   }
 
-  return result.status ?? 0;
+  if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+  if (result.stderr) {
+    process.stderr.write(result.stderr);
+  }
+  return {
+    exitCode: result.status ?? 0,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    artifactPath: (result.stdout || '').match(/^artifactPath=(.+)$/m)?.[1] || '',
+    reason: (result.stdout || '').match(/^reason=(.+)$/m)?.[1] || '',
+  };
 }
 
 function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
@@ -454,6 +479,8 @@ function resolvePhaseParallelPlan() {
     return {
       executionPlan: 'sequential',
       fallbackReasons: ['parallel-auto-disabled'],
+      parallelDisabled: true,
+      disableReason: 'phase-level parallel disabled by PHASE_PARALLEL_AUTO=false',
       phases: [],
     };
   }
@@ -461,6 +488,8 @@ function resolvePhaseParallelPlan() {
     return {
       executionPlan: 'sequential',
       fallbackReasons: ['max-phases-limit-active'],
+      parallelDisabled: true,
+      disableReason: 'phase-level parallel disabled because --max-phases is active',
       phases: [],
     };
   }
@@ -676,6 +705,28 @@ function reconcileCompletedPhasesFromArtifacts() {
   ]);
   logInfo(`Reconciled completed phases from clean-finish artifacts: ${reconciled.map((entry) => entry.phaseNum).join(', ')}`);
   return reconciled;
+}
+
+function recordPhaseParallelSequentialDecision(plan) {
+  if (!plan || plan.executionPlan === 'parallel_wave') {
+    return;
+  }
+  const reasons = Array.isArray(plan.fallbackReasons) ? plan.fallbackReasons : [];
+  if (reasons.length === 0 && !plan.disableReason) {
+    return;
+  }
+  appendDecisionLog([
+    '## Phase Parallel Planner',
+    '- Status: sequential fallback',
+    `- Detail: ${plan.disableReason || reasons.join(', ')}`,
+    ...(Array.isArray(plan.overlapDetails) && plan.overlapDetails.length > 0
+      ? ['- Overlaps:', ...plan.overlapDetails.map((detail) => `  - ${detail.reason}: phase ${detail.phase} vs ${detail.conflictsWith} paths=${JSON.stringify(detail.paths || [])}`)]
+      : []),
+    ...(Array.isArray(plan.blockedPhaseDetails) && plan.blockedPhaseDetails.length > 0
+      ? ['- Blocked phases:', ...plan.blockedPhaseDetails.map((phase) => `  - Phase ${phase.number}: ${(phase.fallbackReasons || []).join(', ')}`)]
+      : []),
+    '',
+  ]);
 }
 
 let loopSignalCloseoutHandled = false;
@@ -914,6 +965,7 @@ async function runNodeManagedLoop() {
 
       const phaseParallelPlan = resolvePhaseParallelPlan();
       appendDebugLog('phase-parallel-plan-resolved', phaseParallelPlan);
+      recordPhaseParallelSequentialDecision(phaseParallelPlan);
       if (phaseParallelPlan.executionPlan === 'parallel_wave' && Array.isArray(phaseParallelPlan.phases) && phaseParallelPlan.phases.length > 1) {
         const waveFile = writePhaseWavePlan(phaseParallelPlan);
         const waveLabel = phaseParallelPlan.phases.map((phase) => phase.number).join(', ');
@@ -938,17 +990,20 @@ async function runNodeManagedLoop() {
           phases: phaseParallelPlan.phases.map((phase) => phase.number),
           waveArgs,
         });
-        const waveExitCode = runPhaseWaveCoordinator(waveArgs);
+        const waveResult = runPhaseWaveCoordinator(waveArgs);
         appendDebugLog('phase-wave-coordinator-exit', {
           phases: phaseParallelPlan.phases.map((phase) => phase.number),
-          exitCode: waveExitCode,
+          exitCode: waveResult.exitCode,
+          reason: waveResult.reason,
+          artifactPath: waveResult.artifactPath,
         });
-        if (waveExitCode === 0) {
+        if (waveResult.exitCode === 0) {
           reconcileCompletedPhasesFromArtifacts();
           executedPhases += phaseParallelPlan.phases.length;
           appendDecisionLog([
             `## Phase Wave - ${waveLabel}`,
             '- Status: completed',
+            `- Artifact: ${waveResult.artifactPath || 'n/a'}`,
             '- Decision: continue plan-directory loop after parallel wave',
             '',
           ]);
@@ -957,17 +1012,19 @@ async function runNodeManagedLoop() {
           }
           continue;
         }
-        if (waveExitCode !== 78) {
+        if (waveResult.exitCode !== 78) {
           failedPhases += 1;
           stoppedEarly = true;
           stopPhase = waveLabel;
           stopReason = 'phase-wave-coordinator-failed';
-          stopDetail = `phase wave coordinator exited with code ${waveExitCode}`;
+          stopDetail = `phase wave coordinator exited with code ${waveResult.exitCode}`;
           break;
         }
         appendDecisionLog([
           `## Phase Wave - ${waveLabel}`,
           '- Status: fallback',
+          `- Reason: ${waveResult.reason || 'coordinator requested fallback'}`,
+          `- Artifact: ${waveResult.artifactPath || 'n/a'}`,
           '- Decision: wave was not safe to merge; continue with sequential next phase',
           '',
         ]);
