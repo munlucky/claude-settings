@@ -1,0 +1,277 @@
+---
+name: codex-review-code
+description: 비사소한 구현 변경을 완료 선언이나 병합 전에 품질과 회귀 위험 관점에서 리뷰할 때 사용합니다.
+context: fork
+---
+
+# Codex 코드 리뷰 (런타임 적응형)
+
+비사소한 코드 변경에 대한 기본 Review stage 소유자입니다.
+
+## 사용 시점
+- 복잡한 작업 구현 후
+- 리팩터링 작업
+- API 변경
+- 중요한 변경사항 병합 전
+
+## 입력
+- `analysisContext.*` (구조화된 상태)
+- `context.md` (경로: `analysisContext.artifacts.contextDocPath`)
+
+## 런타임 어댑터 정책
+
+이 스킬은 실행 전에 `executionRuntime`을 먼저 결정해야 합니다.
+
+- `claude-code`: 가능하면 `mcp__codex__codex` 또는 동등한 격리 review 경로를 사용하고, 호출자 세션은 coordinator로만 둡니다.
+- `codex`: fresh forked review session 또는 동등한 격리 attempt를 우선하고, 메인 세션은 coordinator로 유지하면서 구조화된 review summary만 병합합니다.
+- 격리된 review 실행이 불가능하면 current-session review는 degraded fallback으로만 허용하고 출력에 명시적으로 남깁니다.
+
+## 정책 경계
+
+- 기계적으로 판정 가능한 코드 정책 위반은 `.claude/scripts/verify-code-policy.sh`를 하드 게이트로 취급합니다.
+- 이 리뷰는 deterministic check의 대체물이 아니라 의미적/아키텍처적 위험 평가에 사용합니다.
+- Review stage에서는 변경 파일 review context, impact radius, caller/importer/test 힌트의 기본 소스로 `code-review-graph`를 광범위한 파일 읽기보다 우선 사용합니다.
+- `.claude/docs/guidelines/code-review-graph-workflow.md`를 적용합니다: stage-gated, lazy update, summary-only evidence.
+- watch/daemon을 시작하거나 raw graph 출력을 MemoryGraph에 복제하지 않습니다.
+- 코드 정책 위반은 더 넓은 설계 문제나 유지보수성 문제를 드러낼 때만 반복 언급합니다.
+- 리뷰 피드백은 사회적으로 수용하지 말고 기술적으로 처리합니다. 불명확한 finding은 명확화하고, 틀린 finding은 증거로 반박하며, 각 의미 있는 항목에 명시적 disposition이 생기기 전까지 remediation loop를 닫지 않습니다.
+
+### 1단계: 런타임 실행 경로 결정 (필수 - 최우선 수행)
+먼저 런타임을 결정한 뒤 실행 경로를 선택합니다.
+
+- 런타임이 `codex`이면 먼저 forked review 경로를 시도하고, 격리를 유지할 수 없을 때만 current-session review로 낮춥니다.
+- 런타임이 `claude-code`이면 Codex MCP 가용성을 확인:
+
+```typescript
+// 간단한 MCP 호출로 가용성 확인
+try {
+  mcp__codex__codex({
+    prompt: "ping",
+    sandbox: "read-only",
+    cwd: process.cwd()
+  })
+  // 성공하면 MCP 사용 가능
+} catch (error) {
+  // MCP 사용 불가 - Claude 폴백으로 진행
+}
+```
+
+**MCP 사용 불가 조건:**
+- 도구를 찾을 수 없음 / 등록되지 않음
+- "quota exceeded", "rate limit", "API error", "unavailable"
+- 연결 타임아웃
+- 모든 에러 응답
+
+### 2-9단계: 리뷰 프로세스
+
+2. 변경 범위, 변경된 파일, 핵심 동작 요약
+3. context.md 경로를 캡처한 뒤, 가능하면 `code-review-graph`의 detect changes/review context/impact radius로 관련 코드 읽기 범위를 줄입니다. 기본 경로: `{tasksRoot}/{feature-name}/context.md`
+4. 아래 7-섹션 형식으로 위임 프롬프트 구성
+
+5. **격리된 review 경로를 사용할 수 있는 경우 (1단계에서 확인)**:
+   - 최소 artifact 기반 문맥과 함께 isolated reviewer를 호출합니다.
+   - 성공 시 8단계로 진행
+
+6. **MCP 사용 불가한 경우 (1단계에서 확인)**:
+   - review boundary 내부에서 Claude가 아래 Code Reviewer 지침에 따라 직접 코드 리뷰를 수행합니다.
+   - 노트 추가: `"codex-fallback: Claude가 직접 리뷰 수행 (격리 reviewer 사용 불가)"`
+   - 동일한 MUST DO / MUST NOT DO 기준 따르기
+
+7. **런타임이 `codex`인 경우**:
+   - 동일한 7-섹션 형식/기준으로 fresh forked review session 또는 동등한 격리 attempt에서 리뷰를 수행합니다.
+   - 노트 추가: `"codex-fork-review: isolated review executed in Codex runtime"`
+
+7a. **런타임이 `codex`이고 격리를 유지할 수 없는 경우**:
+   - current Codex session에서 degraded fallback으로만 리뷰를 수행합니다.
+   - 노트 추가: `"codex-fallback-in-session: review isolation unavailable"`
+
+8. 중대 이슈, 경고, 제안사항 기록
+9. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
+
+## Review Feedback 처리 프로토콜
+
+1. 각 의미 있는 finding을 `accepted`, `challenged`, `deferred`, `needs_clarification` 중 하나로 분류합니다.
+2. 연결된 finding이 아직 불명확하면 부분 remediation을 시작하지 않습니다.
+3. finding을 `challenged`로 두면 기술적 이유와 근거 증거를 함께 남깁니다.
+4. finding을 `deferred`로 두면 현재 경계에서 왜 defer가 안전한지 적습니다.
+5. 각 의미 있는 finding의 disposition이 `QA_REPORT.md`에 기록되기 전까지 review loop를 닫지 않습니다.
+
+## 위임 형식
+
+7-섹션 형식 사용:
+
+```
+TASK: [context.md 경로]의 구현을 [집중 영역: 정확성, 보안, 성능, 유지보수성]에 대해 검토합니다.
+
+EXPECTED OUTCOME: 판정 및 권장사항이 포함된 이슈 목록.
+
+CONTEXT:
+- 검토할 코드: [파일 경로 또는 스니펫]
+- 목적: [이 코드가 하는 일]
+- 최근 변경사항:
+  * [변경된 파일 목록]
+  * [핵심 동작 요약]
+- 기능 요약: [간략한 설명]
+
+CONSTRAINTS:
+- 프로젝트 규칙: [따라야 할 기존 패턴]
+- 기술 스택: [언어, 프레임워크]
+
+MUST DO:
+- 우선순위: 정확성 → 보안 → 성능 → 유지보수성
+- **보안 체크 (CRITICAL)**:
+  * 하드코딩된 자격증명 (API 키, 비밀번호, 토큰)
+  * SQL 인젝션 위험 (쿼리 문자열 결합)
+  * XSS 취약점 (이스케이프되지 않은 사용자 입력)
+  * 입력 검증 누락
+- **코드 품질 (HIGH)**:
+  * 긴 함수 (>50줄)
+  * 긴 파일 (>800줄)
+  * 깊은 중첩 (>4단계)
+  * 누락된 에러 처리 (try/catch)
+  * console.log 문
+- **React/Next.js 성능 (CRITICAL)** [signals.reactProject일 때]:
+  * 순차 await 대신 Promise.all() (워터폴 패턴)
+  * 배럴 파일 import (`import { X } from 'lib'` → 직접 import)
+  * 무거운 컴포넌트의 dynamic import 누락
+  * RSC 직렬화: 필요한 필드 대신 전체 객체 전달
+  * async 컴포넌트의 Suspense 경계 누락
+  Reference: `.claude/skills/vercel-react-best-practices/SKILL.md`
+- 중요한 이슈에 집중, 스타일 세부사항 지적하지 않기
+- 로직/흐름 오류 및 엣지 케이스 확인
+- 타입 안전성 및 오류 처리 검증
+- API 계약 및 데이터 모델 일관성 확인
+
+MUST NOT DO:
+- 스타일 세부사항 지적 (포매터가 처리)
+- 발생 가능성 낮은 이론적 우려사항 지적
+- 수정된 파일 범위 외 변경 제안
+
+OUTPUT FORMAT:
+요약 → 중대 이슈 → 경고 → 권장사항 → 판정
+
+## 승인 기준 (Fix Forward 정책)
+
+- ✅ **APPROVE**: 이슈 없음
+- ⚠️ **FIX-FORWARD**: HIGH 이슈 → 머지 허용 + follow-up 태스크 생성
+- ⚠️ **MERGE-NOTE**: MEDIUM 이슈 → 머지 허용 + notes 기록
+- ❌ **REJECT**: CRITICAL 이슈만 (보안/데이터 무결성)
+```
+
+## 도구 호출 (Claude Code + MCP 사용 가능 시)
+
+```typescript
+mcp__codex__codex({
+  prompt: "[전체 컨텍스트가 포함된 7-섹션 위임 프롬프트]",
+  "developer-instructions": "[code-reviewer.md의 내용]",
+  sandbox: "read-only",  // Advisory 모드 - 검토만
+  cwd: "[현재 작업 디렉터리]"
+})
+```
+
+## Claude 폴백 (Claude Code + MCP 사용 불가 시)
+
+MCP를 사용할 수 없을 때, Claude가 직접 리뷰를 수행합니다:
+
+1. 동일한 7-섹션 형식을 자체 리뷰 체크리스트로 적용
+2. 모든 MUST DO / MUST NOT DO 기준 준수
+3. 동일한 형식으로 출력: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
+4. 폴백 모드 사용 표시 노트 추가
+
+## Codex 격리 경로 (runtime=codex, 기본 경로)
+
+Codex 런타임에서는 fresh isolated review boundary에서 리뷰를 실행하는 것을 기본으로 합니다:
+
+1. 전체 세션 이력이 아니라 최소 artifact 기반 입력만 전달합니다.
+2. 동일한 7-섹션 형식을 리뷰 체크리스트로 적용합니다.
+3. 모든 MUST DO / MUST NOT DO 기준을 준수합니다.
+4. 동일한 형식으로 출력합니다: 요약 → 중대 이슈 → 경고 → 권장사항 → 판정
+5. 노트 추가: `"codex-fork-review: isolated review executed in Codex runtime"`
+
+격리를 유지할 수 없을 때만 current session으로 degrade합니다.
+
+## 구현 모드 (자동 수정)
+
+전문가가 이슈를 자동으로 수정하도록 하려면:
+
+```typescript
+mcp__codex__codex({
+  prompt: "[동일한 7-섹션 형식, 단 추가: '발견된 이슈를 수정하고 변경사항을 검증하세요']",
+  "developer-instructions": "[code-reviewer.md의 내용]",
+  sandbox: "workspace-write",  // 구현 모드 - 파일 수정 가능
+  cwd: "[현재 작업 디렉터리]"
+})
+```
+
+`runtime=codex`일 때도 가능하면 fresh isolated implementation boundary를 우선합니다. current session은 명시적 fallback일 때만 사용하고 동일한 verification 요구사항을 유지합니다.
+
+## 출력 (patch)
+```yaml
+notes:
+  - "codex-review: [APPROVE/FIX-FORWARD/MERGE-NOTE/REJECT], critical=[개수], high=[개수], warnings=[개수]"
+  # 폴백 사용 시:
+  - "codex-fallback: Claude가 직접 리뷰 수행 (격리 reviewer 사용 불가)"
+  # Codex 격리 경로 사용 시:
+  - "codex-fork-review: isolated review executed in Codex runtime"
+  # 격리가 current session으로 저하된 경우:
+  - "codex-fallback-in-session: review isolation unavailable"
+
+# Fix Forward Tasks (머지를 허용하면서 follow-up이 필요한 HIGH 이슈)
+fixForward:
+  tasks:
+    - issue: "paymentService.ts의 긴 함수 (62줄)"
+      severity: HIGH
+      file: "src/services/paymentService.ts"
+      suggestion: "쿠폰 검증 로직을 별도 함수로 추출"
+    # HIGH 이슈 없으면 비어있음
+qaReport:
+  reviewFindingDecisions:
+    - finding: "재주문 엔드포인트의 route shadowing"
+      decision: accepted | challenged | deferred | needs_clarification
+      rationale: "이번 실행에서 422를 재현했고 route order 버그로 확인했습니다."
+```
+
+## Review-Fix Loop (자동 수정 모드)
+
+### 워크플로우
+
+1. **codex-review-code 실행**
+2. **결과 분석:**
+   - `APPROVE` → 다음 단계로
+   - `FIX-FORWARD (HIGH 이슈)` → 머지 허용, `fixForward.tasks[]`에 follow-up 태스크 생성
+   - `MERGE-NOTE (MEDIUM 이슈)` → 머지 허용, notes에 기록
+   - `REJECT (CRITICAL 이슈)` → Auto-Fix Loop 진입
+3. **Auto-Fix Loop (CRITICAL만):**
+   - `sandbox: "workspace-write"`로 재호출
+   - 수정 지시 포함
+   - 수정 후 검증 실행
+4. **반복 제한:** 최대 2회
+5. **2회 실패 후:** 사용자 확인 요청
+
+### 설정
+
+```yaml
+reviewFixLoop:
+  enabled: true
+  maxRetries: 2
+  fixableIssues:
+    - console.log 문
+    - 누락된 에러 처리
+    - 타입 에러
+    - 단순 보안 이슈 (하드코딩된 문자열)
+  nonFixableIssues:
+    - 아키텍처 변경
+    - 브레이킹 API 변경
+    - 복잡한 보안 취약점
+```
+
+### Auto-Fix 프롬프트 추가
+
+수정 모드 진입 시 프롬프트에 추가:
+```
+다음 이슈를 수정하고 변경사항을 검증하세요:
+1. [리뷰에서 발견된 이슈 설명]
+2. [리뷰에서 발견된 이슈 설명]
+
+수정 후 검증을 실행하여 이슈가 해결되었는지 확인하세요.
+```
