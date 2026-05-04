@@ -330,6 +330,9 @@ assert_contains "$TMP_ROOT/phase-final-git-closeout-self-test.out" "phase-final-
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop.mjs" "phase-level parallel disabled because --max-phases is active" "max phases parallel disable visibility"
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop.mjs" "recordPhaseParallelSequentialDecision" "phase parallel fallback decision logging"
 assert_contains "$ROOT_DIR/.claude/scripts/phase-wave-coordinator.mjs" "declared-ownership-violation" "phase wave ownership violation fallback"
+assert_contains "$ROOT_DIR/.claude/scripts/phase-wave-coordinator.mjs" "phase-wave-active.json" "phase wave active manifest"
+assert_contains "$ROOT_DIR/.claude/scripts/phase-wave-coordinator.mjs" "PHASE_PARALLEL_PEERS_JSON" "phase wave worker peer context"
+assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "Parallel wave worker context" "parallel worker prompt context"
 assert_contains "$ROOT_DIR/.claude/scripts/moonshot-phase-dispatch.mjs" "phase-final-git-closeout-required" "dispatcher final git closeout blocking reason"
 assert_contains "$ROOT_DIR/.claude/skills/moonshot-phase-runner/SKILL.md" "Enforce Final Git Closeout" "phase runner final git closeout contract"
 
