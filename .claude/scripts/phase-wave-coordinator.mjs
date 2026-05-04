@@ -14,6 +14,7 @@ const prepareWorktreeScript = path.join(SCRIPT_DIR, 'harness-prepare-worktree.mj
 const phaseRunnerScript = path.join(SCRIPT_DIR, 'agent-loop-phase-runner.mjs');
 const phaseStateScript = path.join(SCRIPT_DIR, 'agent-loop-phase-state.mjs');
 const logDir = path.join('.claude', 'logs', 'agent-loop');
+const activeWavePath = path.join(logDir, 'phase-wave-active.json');
 
 const state = {
   planDir: '',
@@ -80,6 +81,10 @@ function runRequired(command, args, options = {}) {
     throw new Error(detail.trim());
   }
   return result.stdout.trim();
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function repoRoot(cwd = process.cwd()) {
@@ -158,7 +163,7 @@ function localStatusPath(runId, phaseNumber) {
   return normalizePath(path.join('.claude', 'logs', 'agent-loop', 'waves', runId, `phase-status-${phaseNumber}.yaml`));
 }
 
-function runPhaseRunner({ root, runId, phase, prepared }) {
+function runPhaseRunner({ root, runId, phase, prepared, manifest }) {
   const statusFile = localStatusPath(runId, phase.number);
   const sourceStatus = path.join(root, state.statusFile);
   const targetStatus = path.join(prepared.worktreePath, statusFile);
@@ -187,6 +192,10 @@ function runPhaseRunner({ root, runId, phase, prepared }) {
       env: {
         ...process.env,
         PHASE_MODEL_STAGE: 'parallel_worker',
+        PHASE_PARALLEL_RUN_ID: runId,
+        PHASE_PARALLEL_ASSIGNED_PHASE: String(phase.number),
+        PHASE_PARALLEL_WAVE_MANIFEST: manifest.relativeManifestPath,
+        PHASE_PARALLEL_PEERS_JSON: manifest.peersJson,
       },
     });
     child.stdout.pipe(output, { end: false });
@@ -203,10 +212,122 @@ function runPhaseRunner({ root, runId, phase, prepared }) {
   });
 }
 
+function writeWaveState(artifactPath, payload) {
+  writeJson(artifactPath, payload);
+  writeJson(activeWavePath, payload);
+}
+
+function updateWavePhase(payload, artifactPath, phaseNumber, patch) {
+  payload.updatedAt = new Date().toISOString();
+  payload.phases = payload.phases.map((phase) => (
+    String(phase.number) === String(phaseNumber) ? { ...phase, ...patch } : phase
+  ));
+  writeWaveState(artifactPath, payload);
+}
+
+function writeWorkerManifest({ root, runId, wave, phase, prepared, logFile }) {
+  const manifestPath = path.join(prepared.worktreePath, '.claude', 'logs', 'agent-loop', 'parallel-wave-manifest.json');
+  const assignedPhase = String(phase.number);
+  const peers = wave.phases.map((peer) => ({
+    number: String(peer.number),
+    title: peer.title || `Phase ${peer.number}`,
+    phaseDoc: peer.phaseDoc,
+    ownedPaths: declaredOwnedPaths(peer),
+    assignedToThisWorker: String(peer.number) === assignedPhase,
+  }));
+  writeJson(manifestPath, {
+    schemaVersion: '1.0',
+    runId,
+    stage: 'parallel_worker',
+    coordinator: 'phase-wave-coordinator',
+    assignedPhase,
+    assignedPhaseTitle: phase.title || `Phase ${phase.number}`,
+    assignedPhaseDoc: phase.phaseDoc,
+    assignedOwnedPaths: declaredOwnedPaths(phase),
+    planDir: state.planDir,
+    statusFile: state.statusFile,
+    executionRoot: state.executionRoot,
+    worktreePath: prepared.worktreePath,
+    branch: prepared.branch,
+    logFile,
+    peers,
+    rules: [
+      'Execute only the assigned phase.',
+      'Do not implement peer phases or edit peer-owned paths.',
+      'If required work crosses into a peer phase or peer-owned path, stop and report a blocked result.',
+      'The coordinator merges only after every worker succeeds and changed files pass ownership/conflict checks.',
+    ],
+    generatedAt: new Date().toISOString(),
+  });
+  return {
+    manifestPath,
+    relativeManifestPath: normalizePath(path.relative(root, manifestPath)),
+    peersJson: JSON.stringify(peers),
+  };
+}
+
+async function runPhaseWorker({ root, runId, wave, phase, payload, artifactPath }) {
+  const modelRoute = resolveModelRoute({
+    runtime: state.runtime,
+    stage: 'parallel_worker',
+    profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
+  });
+  try {
+    const prepared = state.dryRun
+      ? { taskId: `dry-${phase.number}`, worktreePath: '', branch: `codex/dry-${phase.number}` }
+      : prepareWorktree({ root, runId, phase });
+    if (state.dryRun) {
+      return { ...prepared, phase, modelRoute, exitCode: 0, logFile: '', localStatusFile: '', changedFiles: [], mergeStatus: 'dry_run' };
+    }
+    const logFile = path.join(prepared.worktreePath, '.claude', 'logs', 'agent-loop', `wave-phase-${phase.number}.log`);
+    const manifest = writeWorkerManifest({ root, runId, wave, phase, prepared, logFile });
+    updateWavePhase(payload, artifactPath, phase.number, {
+      status: 'running',
+      branch: prepared.branch,
+      worktreePath: prepared.worktreePath,
+      logFile,
+      manifestPath: manifest.relativeManifestPath,
+      modelRoute,
+      startedAt: new Date().toISOString(),
+    });
+    const runner = await runPhaseRunner({ root, runId, phase, prepared, manifest });
+    const changedFiles = runner.exitCode === 0 ? collectChangedFiles(prepared.worktreePath) : [];
+    updateWavePhase(payload, artifactPath, phase.number, {
+      status: runner.exitCode === 0 ? 'completed' : 'failed',
+      exitCode: runner.exitCode,
+      changedFiles,
+      error: runner.error || '',
+      finishedAt: new Date().toISOString(),
+    });
+    return { ...prepared, phase, modelRoute, ...runner, changedFiles, mergeStatus: 'pending' };
+  } catch (error) {
+    updateWavePhase(payload, artifactPath, phase.number, {
+      status: 'failed',
+      exitCode: 1,
+      error: errorMessage(error),
+      finishedAt: new Date().toISOString(),
+    });
+    return {
+      taskId: '',
+      worktreePath: '',
+      branch: '',
+      phase,
+      modelRoute,
+      exitCode: 1,
+      logFile: '',
+      localStatusFile: '',
+      changedFiles: [],
+      mergeStatus: 'not_started',
+      error: errorMessage(error),
+    };
+  }
+}
+
 function isHarnessGeneratedPath(filePath) {
   const normalized = normalizePath(filePath);
   return normalized === 'AGENTS.md'
     || normalized.startsWith('.agents/')
+    || normalized.startsWith('.codex/')
     || normalized === '.claude/worktree-prepare.json'
     || normalized === '.claude/worktree-setup.log'
     || normalized === '.claude/worktree-baseline.log'
@@ -308,6 +429,41 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
+function cleanupMergedWorktrees(results, root) {
+  if (state.dryRun) {
+    return [];
+  }
+  const issues = [];
+  for (const result of results) {
+    if (!result.worktreePath || !result.branch) {
+      continue;
+    }
+    const remove = run('git', ['worktree', 'remove', '--force', result.worktreePath], { cwd: root });
+    if (remove.status !== 0 || remove.error) {
+      issues.push({
+        phase: result.phase.number,
+        branch: result.branch,
+        worktreePath: result.worktreePath,
+        stage: 'worktree-remove',
+        detail: remove.error?.message || remove.stderr || remove.stdout || 'git worktree remove failed',
+      });
+      continue;
+    }
+    const branch = String(result.branch).replace(/^refs\/heads\//, '');
+    const deleteBranch = run('git', ['branch', '-D', branch], { cwd: root });
+    if (deleteBranch.status !== 0 || deleteBranch.error) {
+      issues.push({
+        phase: result.phase.number,
+        branch: result.branch,
+        worktreePath: result.worktreePath,
+        stage: 'branch-delete',
+        detail: deleteBranch.error?.message || deleteBranch.stderr || deleteBranch.stdout || 'git branch delete failed',
+      });
+    }
+  }
+  return issues;
+}
+
 async function runCoordinator() {
   if (!state.waveFile || !fs.existsSync(state.waveFile)) {
     throw new Error('--wave-file is required');
@@ -324,34 +480,30 @@ async function runCoordinator() {
     runId,
     status: 'running',
     mergeStatus: 'pending',
+    planDir: state.planDir,
+    statusFile: state.statusFile,
+    executionRoot: state.executionRoot,
     waveFile: state.waveFile,
     phases: wave.phases.map((phase) => ({ number: phase.number, title: phase.title, status: 'pending' })),
     artifactPath,
     generatedAt: new Date().toISOString(),
   };
-  writeJson(artifactPath, payload);
+  writeWaveState(artifactPath, payload);
 
-  const results = await Promise.all(wave.phases.map(async (phase) => {
-    const modelRoute = resolveModelRoute({
-      runtime: state.runtime,
-      stage: 'parallel_worker',
-      profile: process.env.AGENT_LOOP_EFFORT_PROFILE ?? process.env.MOONSHOT_EFFORT_PROFILE,
-    });
-    const prepared = state.dryRun
-      ? { taskId: `dry-${phase.number}`, worktreePath: '', branch: `codex/dry-${phase.number}` }
-      : prepareWorktree({ root, runId, phase });
-    if (state.dryRun) {
-      return { ...prepared, phase, modelRoute, exitCode: 0, logFile: '', localStatusFile: '', changedFiles: [], mergeStatus: 'dry_run' };
-    }
-    const runner = await runPhaseRunner({ root, runId, phase, prepared });
-    const changedFiles = runner.exitCode === 0 ? collectChangedFiles(prepared.worktreePath) : [];
-    return { ...prepared, phase, modelRoute, ...runner, changedFiles, mergeStatus: 'pending' };
-  }));
+  const results = await Promise.all(wave.phases.map((phase) => runPhaseWorker({
+    root,
+    runId,
+    wave,
+    phase,
+    payload,
+    artifactPath,
+  })));
 
   payload.phases = results.map((result) => ({
     number: result.phase.number,
     title: result.phase.title,
     exitCode: result.exitCode,
+    error: result.error || '',
     changedFiles: result.changedFiles,
     declaredOwnedPaths: declaredOwnedPaths(result.phase),
     undeclaredChangedFiles: changedFilesOutsideOwnership(result.phase, result.changedFiles || []),
@@ -362,11 +514,11 @@ async function runCoordinator() {
 
   const failed = results.find((result) => result.exitCode !== 0);
   if (failed) {
-    payload.status = 'fallback';
+    payload.status = 'blocked';
     payload.mergeStatus = 'not_started';
-    payload.reason = `phase-runner-failed:${failed.phase.number}:exit=${failed.exitCode}`;
-    writeJson(artifactPath, payload);
-    return { exitCode: 78, reason: payload.reason, artifactPath };
+    payload.reason = `phase-runner-failed:${failed.phase.number}:exit=${failed.exitCode}${failed.error ? `:${failed.error}` : ''}`;
+    writeWaveState(artifactPath, payload);
+    return { exitCode: 2, reason: payload.reason, artifactPath };
   }
 
   const ownershipViolations = results
@@ -376,21 +528,21 @@ async function runCoordinator() {
     }))
     .filter((entry) => entry.changedFiles.length > 0);
   if (ownershipViolations.length > 0) {
-    payload.status = 'fallback';
+    payload.status = 'blocked';
     payload.mergeStatus = 'ownership_violation';
     payload.ownershipViolations = ownershipViolations;
     payload.reason = `declared-ownership-violation:${ownershipViolations.map((entry) => `${entry.phase}:${entry.changedFiles.join('|')}`).join(',')}`;
-    writeJson(artifactPath, payload);
-    return { exitCode: 78, reason: payload.reason, artifactPath };
+    writeWaveState(artifactPath, payload);
+    return { exitCode: 2, reason: payload.reason, artifactPath };
   }
 
   const conflicts = detectChangedFileConflicts(results);
   if (conflicts.length > 0) {
-    payload.status = 'fallback';
+    payload.status = 'blocked';
     payload.mergeStatus = 'conflict';
     payload.reason = `changed-file-conflict:${conflicts.join(',')}`;
-    writeJson(artifactPath, payload);
-    return { exitCode: 78, reason: payload.reason, artifactPath };
+    writeWaveState(artifactPath, payload);
+    return { exitCode: 2, reason: payload.reason, artifactPath };
   }
 
   try {
@@ -409,7 +561,7 @@ async function runCoordinator() {
     payload.status = 'blocked';
     payload.mergeStatus = 'failed';
     payload.reason = error instanceof Error ? error.message : String(error);
-    writeJson(artifactPath, payload);
+    writeWaveState(artifactPath, payload);
     return { exitCode: 2, reason: payload.reason, artifactPath };
   }
 
@@ -428,7 +580,16 @@ async function runCoordinator() {
     logFile: result.logFile,
     branch: result.branch,
   }));
-  writeJson(artifactPath, payload);
+  const cleanupIssues = cleanupMergedWorktrees(results, root);
+  payload.cleanupStatus = cleanupIssues.length === 0 ? 'completed' : 'failed';
+  payload.cleanupIssues = cleanupIssues;
+  if (cleanupIssues.length > 0) {
+    payload.status = 'blocked';
+    payload.reason = `phase-wave-cleanup-failed:${cleanupIssues.map((issue) => `${issue.phase}:${issue.stage}`).join(',')}`;
+    writeWaveState(artifactPath, payload);
+    return { exitCode: 2, reason: payload.reason, artifactPath };
+  }
+  writeWaveState(artifactPath, payload);
   return { exitCode: 0, reason: 'completed', artifactPath };
 }
 

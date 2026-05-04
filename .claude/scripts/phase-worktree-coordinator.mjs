@@ -141,6 +141,10 @@ function runRequired(command, args, options = {}) {
   return result.stdout.trim();
 }
 
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function repoRoot(cwd = process.cwd()) {
   return runRequired('git', ['rev-parse', '--show-toplevel'], { cwd });
 }
@@ -381,6 +385,7 @@ function isHarnessGeneratedPath(filePath) {
   const normalized = normalizePath(filePath);
   return normalized === 'AGENTS.md'
     || normalized.startsWith('.agents/')
+    || normalized.startsWith('.codex/')
     || normalized === '.claude/worktree-prepare.json'
     || normalized === '.claude/worktree-setup.log'
     || normalized === '.claude/worktree-baseline.log'
@@ -449,9 +454,29 @@ function prepareWorktree({ root, runId, workset }) {
 }
 
 async function runWorkset({ root, runId, workset }) {
-  const prepared = state.dryRun
+  let prepared = state.dryRun
     ? { taskId: `dry-${workset.id}`, worktreePath: '', branch: `codex/phase-${state.phaseNum}-${sanitizeId(workset.id)}-${runId}` }
-    : prepareWorktree({ root, runId, workset });
+    : null;
+  try {
+    prepared = prepared || prepareWorktree({ root, runId, workset });
+  } catch (error) {
+    return {
+      taskId: '',
+      worktreePath: '',
+      branch: '',
+      id: workset.id,
+      summary: workset.summary,
+      ownedPaths: workset.ownedPaths,
+      mergeOrder: workset.mergeOrder,
+      logFile: '',
+      status: 'failed',
+      exitCode: 1,
+      changedFiles: [],
+      outsideOwnedPaths: [],
+      blockedReason: errorMessage(error),
+      mergeStatus: 'not_started',
+    };
+  }
   const artifactDir = state.dryRun ? logDir : path.join(prepared.worktreePath, '.claude', 'logs', 'agent-loop');
   const logFile = path.join(artifactDir, `workset-${sanitizeId(workset.id)}.log`);
   let exitCode = 0;
@@ -570,6 +595,41 @@ function appendPhaseSummary(payload) {
   appendIfPath(state.scorecard, detail);
 }
 
+function cleanupMergedWorktrees(results, root) {
+  if (state.dryRun) {
+    return [];
+  }
+  const issues = [];
+  for (const result of results) {
+    if (!result.worktreePath || !result.branch) {
+      continue;
+    }
+    const remove = run('git', ['worktree', 'remove', '--force', result.worktreePath], { cwd: root });
+    if (remove.status !== 0 || remove.error) {
+      issues.push({
+        id: result.id,
+        branch: result.branch,
+        worktreePath: result.worktreePath,
+        stage: 'worktree-remove',
+        detail: remove.error?.message || remove.stderr || remove.stdout || 'git worktree remove failed',
+      });
+      continue;
+    }
+    const branch = String(result.branch).replace(/^refs\/heads\//, '');
+    const deleteBranch = run('git', ['branch', '-D', branch], { cwd: root });
+    if (deleteBranch.status !== 0 || deleteBranch.error) {
+      issues.push({
+        id: result.id,
+        branch: result.branch,
+        worktreePath: result.worktreePath,
+        stage: 'branch-delete',
+        detail: deleteBranch.error?.message || deleteBranch.stderr || deleteBranch.stdout || 'git branch delete failed',
+      });
+    }
+  }
+  return issues;
+}
+
 async function runCoordinator() {
   if (!state.phaseExecutionDir) {
     throw new Error('phase execution dir is required');
@@ -630,6 +690,17 @@ async function runCoordinator() {
     } else {
       result.mergeStatus = 'dry_run';
     }
+  }
+  const cleanupIssues = cleanupMergedWorktrees(results, root);
+  payload.cleanupStatus = cleanupIssues.length === 0 ? 'completed' : 'failed';
+  payload.cleanupIssues = cleanupIssues;
+  if (cleanupIssues.length > 0) {
+    payload.status = 'blocked';
+    payload.mergeStatus = state.dryRun ? 'dry_run' : 'merged';
+    payload.blockedReason = `worktree-cleanup-failed:${cleanupIssues.map((issue) => `${issue.id}:${issue.stage}`).join(',')}`;
+    writeJson(artifactPath, payload);
+    appendPhaseSummary(payload);
+    return { exitCode: 2, reason: payload.blockedReason, artifactPath };
   }
   payload.status = 'completed';
   payload.mergeStatus = 'merged';
@@ -711,6 +782,10 @@ function selfTest() {
   }
   if (!fs.readFileSync(path.join(okRepo, 'b.txt'), 'utf8').includes('beta')) {
     throw new Error('success smoke did not merge b.txt');
+  }
+  const remainingBranches = runRequired('git', ['branch', '--list', 'codex/phase-*'], { cwd: okRepo });
+  if (remainingBranches.trim()) {
+    throw new Error(`success smoke left phase branches: ${remainingBranches}`);
   }
 
   const outsideRepo = path.join(tmpRoot, 'outside');

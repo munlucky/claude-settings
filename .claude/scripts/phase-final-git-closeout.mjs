@@ -183,6 +183,98 @@ function collectWorktreeIssues(repoRoot, worktreeRoots) {
   }).filter((entry) => entry.status !== 'clean');
 }
 
+function collectPhaseBranchIssues(repoRoot) {
+  const result = runGit(['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads/codex/phase*'], repoRoot);
+  if (result.status !== 0 || result.error) {
+    return [{
+      type: 'phase_branch_ref_inspect_failed',
+      detail: result.error?.message || result.stderr || result.stdout || 'git for-each-ref failed',
+      entries: [],
+    }];
+  }
+
+  const entries = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [branch, head = ''] = line.split(/\s+/, 2);
+      return { branch, head };
+    })
+    .filter((entry) => (
+      /^codex\/phase-wave-/.test(entry.branch)
+      || /^codex\/phase-[0-9]+-/.test(entry.branch)
+    ));
+
+  if (entries.length === 0) {
+    return [];
+  }
+
+  return [{
+    type: 'phase_branch_ref_remaining',
+    detail: 'temporary phase branch refs remain after phase closeout',
+    entries,
+  }];
+}
+
+function shouldInspectWaveArtifact(payload) {
+  const requestedPlanDir = normalizePath(state.planDir);
+  const requestedStatusFile = normalizePath(state.statusFile);
+  const payloadPlanDir = normalizePath(payload.planDir);
+  const payloadStatusFile = normalizePath(payload.statusFile);
+  if (requestedPlanDir && payloadPlanDir && requestedPlanDir !== payloadPlanDir) {
+    return false;
+  }
+  if (requestedStatusFile && payloadStatusFile && requestedStatusFile !== payloadStatusFile) {
+    return false;
+  }
+  return true;
+}
+
+function collectIncompleteWaveArtifactIssues(repoRoot) {
+  const artifactDir = path.join(repoRoot, '.claude', 'logs', 'agent-loop');
+  if (!fs.existsSync(artifactDir) || !fs.statSync(artifactDir).isDirectory()) {
+    return [];
+  }
+
+  const entries = [];
+  for (const entry of fs.readdirSync(artifactDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !/^(phase-wave-run|parallel-phase-run)-.+\.json$/.test(entry.name)) {
+      continue;
+    }
+    const artifactPath = path.join(artifactDir, entry.name);
+    let payload;
+    try {
+      payload = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!shouldInspectWaveArtifact(payload)) {
+      continue;
+    }
+    const status = String(payload.status || '').trim().toLowerCase();
+    const mergeStatus = String(payload.mergeStatus || '').trim().toLowerCase();
+    if (status === 'running' || mergeStatus === 'pending') {
+      entries.push({
+        artifact: path.relative(repoRoot, artifactPath),
+        status,
+        mergeStatus,
+        runId: payload.runId || '',
+      });
+    }
+  }
+
+  if (entries.length === 0) {
+    return [];
+  }
+
+  return [{
+    type: 'phase_wave_artifact_incomplete',
+    detail: 'phase wave artifacts remain in running or pending merge state',
+    entries,
+  }];
+}
+
 function audit() {
   const repoRoot = runRequiredGit(['rev-parse', '--show-toplevel']);
   const worktreeRoots = state.worktreeRoots.length > 0 ? state.worktreeRoots : DEFAULT_WORKTREE_ROOTS;
@@ -213,6 +305,9 @@ function audit() {
       entries: issue.entries,
     });
   }
+
+  issues.push(...collectPhaseBranchIssues(repoRoot));
+  issues.push(...collectIncompleteWaveArtifactIssues(repoRoot));
 
   const payload = {
     schemaVersion: '1.0',
@@ -318,6 +413,27 @@ function selfTest() {
     result = runSelf(['assert-clean', '--json'], repo);
     if (result.status !== 2 || !result.stdout.includes('phase_worktree_dirty')) {
       throw new Error(`dirty phase worktree should fail: ${result.stderr || result.stdout}`);
+    }
+    runRequiredGit(['worktree', 'remove', '--force', worktreePath], repo);
+
+    runRequiredGit(['branch', 'codex/phase-wave-smoke', 'HEAD'], repo);
+    result = runSelf(['assert-clean', '--json'], repo);
+    if (result.status !== 2 || !result.stdout.includes('phase_branch_ref_remaining')) {
+      throw new Error(`remaining phase branch should fail: ${result.stderr || result.stdout}`);
+    }
+    runRequiredGit(['branch', '-D', 'codex/phase-wave-smoke'], repo);
+
+    const artifactPath = path.join(repo, '.claude', 'logs', 'agent-loop', 'phase-wave-run-smoke.json');
+    writeFixture(artifactPath, JSON.stringify({
+      schemaVersion: '1.0',
+      runId: 'smoke',
+      status: 'running',
+      mergeStatus: 'pending',
+      generatedAt: new Date().toISOString(),
+    }, null, 2));
+    result = runSelf(['assert-clean', '--json'], repo);
+    if (result.status !== 2 || !result.stdout.includes('phase_wave_artifact_incomplete')) {
+      throw new Error(`incomplete wave artifact should fail: ${result.stderr || result.stdout}`);
     }
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });

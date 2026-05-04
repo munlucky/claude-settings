@@ -702,6 +702,40 @@ function localFileTimestamp() {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 }
 
+function parallelWorkerInstructions(phaseNum) {
+  if (process.env.PHASE_MODEL_STAGE !== 'parallel_worker') {
+    return '';
+  }
+  const assignedPhase = process.env.PHASE_PARALLEL_ASSIGNED_PHASE || String(phaseNum);
+  const manifestPath = process.env.PHASE_PARALLEL_WAVE_MANIFEST || '';
+  let peers = [];
+  try {
+    peers = JSON.parse(process.env.PHASE_PARALLEL_PEERS_JSON || '[]');
+  } catch {
+    peers = [];
+  }
+  const peerLines = peers.map((peer) => {
+    const marker = String(peer.number) === String(assignedPhase) ? 'assigned' : 'peer';
+    const owned = Array.isArray(peer.ownedPaths) && peer.ownedPaths.length > 0
+      ? peer.ownedPaths.join(', ')
+      : 'n/a';
+    return `- ${marker} phase ${peer.number}: ${peer.title || ''}; ownedPaths=${owned}; phaseDoc=${peer.phaseDoc || ''}`;
+  }).join('\n') || '- Peer list unavailable; stay strictly on the assigned phase.';
+
+  return `
+
+Parallel wave worker context:
+- This process is one worker in a phase-level parallel wave.
+- Assigned phase for this worker: ${assignedPhase}.
+- Active wave manifest: ${manifestPath || 'not provided'}.
+- Do not implement peer phases, do not edit peer-owned paths, and do not expand scope to shared follow-up work.
+- If the assigned phase needs a peer-owned path or another phase's scope, stop this phase as blocked and record the dependency instead of doing duplicate work.
+- Main merge happens only in the wave coordinator after all workers succeed; do not run git merge, git branch cleanup, or phase-wave cleanup from inside this worker.
+
+Parallel wave assignments:
+${peerLines}`;
+}
+
 function primaryInstructions(phaseNum) {
   return `Implement phase ${phaseNum} using the active phase doc as the only planning baseline.
 
@@ -711,7 +745,7 @@ Primary objective:
 - Do not move to other phases in this run.
 - If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
-- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`.`;
+- Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`.${parallelWorkerInstructions(phaseNum)}`;
 }
 
 function autonomousInstructions() {
