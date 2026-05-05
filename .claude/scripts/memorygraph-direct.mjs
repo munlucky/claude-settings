@@ -21,6 +21,7 @@ const SQLITE_PATH = path.join(DATA_DIR, 'memory.db');
 const DEFAULT_SEED = path.join(CLAUDE_ROOT, 'cache', 'memorygraph', 'project-graph-seed.json');
 const PROTOCOL_VERSION = '2025-03-26';
 const isWindows = process.platform === 'win32';
+const commandDiagnostics = [];
 
 const allowedMemoryTypes = new Set([
   'task',
@@ -129,13 +130,27 @@ function readJsonFile(filePath) {
 }
 
 function commandWorks(command) {
-  const result = spawnSync(command, ['--version'], {
+  const result = spawnSync(command, ['--health', '--health-json'], {
+    cwd: ROOT,
+    env: memorygraphEnv(),
     encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
     shell: false,
-    stdio: ['ignore', 'ignore', 'ignore'],
+    timeout: 10000,
     windowsHide: true,
   });
-  return result.status === 0;
+  if (result.status === 0) {
+    return true;
+  }
+  commandDiagnostics.push({
+    command,
+    status: result.status,
+    signal: result.signal,
+    error: result.error?.message || '',
+    stderr: String(result.stderr || '').trim().slice(0, 500),
+    stdout: String(result.stdout || '').trim().slice(0, 500),
+  });
+  return false;
 }
 
 function candidateCommands(override) {
@@ -157,8 +172,17 @@ function candidateCommands(override) {
 }
 
 function resolveMemoryGraphCommand(override) {
+  commandDiagnostics.length = 0;
   for (const command of candidateCommands(override)) {
     if (path.isAbsolute(command) && !fs.existsSync(command)) {
+      commandDiagnostics.push({
+        command,
+        status: 'missing',
+        signal: '',
+        error: 'absolute path does not exist',
+        stderr: '',
+        stdout: '',
+      });
       continue;
     }
     if (commandWorks(command)) {
@@ -166,6 +190,25 @@ function resolveMemoryGraphCommand(override) {
     }
   }
   return null;
+}
+
+function formatCommandDiagnostics() {
+  if (!commandDiagnostics.length) {
+    return '';
+  }
+  return commandDiagnostics
+    .map((item) => {
+      const detail = [
+        `command=${item.command}`,
+        `status=${item.status}`,
+        item.signal ? `signal=${item.signal}` : '',
+        item.error ? `error=${item.error}` : '',
+        item.stderr ? `stderr=${item.stderr}` : '',
+        item.stdout ? `stdout=${item.stdout}` : '',
+      ].filter(Boolean).join(' | ');
+      return `- ${detail}`;
+    })
+    .join('\n');
 }
 
 function memorygraphEnv() {
@@ -214,7 +257,7 @@ function killTree(pid) {
 function runHealth(options) {
   const command = resolveMemoryGraphCommand(options.memorygraphCommand);
   if (!command) {
-    fail('memorygraph command not found');
+    fail('memorygraph command not found or health check failed', formatCommandDiagnostics());
   }
 
   const result = spawnSync(command, ['--health', '--health-json'], {
@@ -247,7 +290,7 @@ class DirectMcpClient {
     this.options = options;
     this.command = resolveMemoryGraphCommand(options.memorygraphCommand);
     if (!this.command) {
-      fail('memorygraph command not found');
+      fail('memorygraph command not found or health check failed', formatCommandDiagnostics());
     }
     this.nextId = 1;
     this.pending = new Map();

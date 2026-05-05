@@ -24,7 +24,7 @@ url = "https://mcp.exa.ai/mcp"
 
 [mcp_servers.memory]
 command = "node"
-args = [".claude/scripts/codex-mcp-singleton.mjs", "memory", "--", "node", ".claude/scripts/memorygraph-mcp-wrapper.js"]
+args = [".claude/scripts/codex-mcp-singleton.mjs", "memory", "--", "node", ".claude/scripts/memorygraph-mcp-wrapper.mjs"]
 startup_timeout_sec = 30
 
 [mcp_servers.code-review-graph]

@@ -29,6 +29,7 @@
 프로젝트 graph 데이터는 `claude-settings`가 아니라 활성 프로젝트에 속합니다.
 
 - seed 생성: `node .claude/scripts/memorygraph-project-index.mjs`
+- commit refresh helper: `node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <projectId>`
 - seed 출력: `.claude/cache/memorygraph/project-graph-seed.json`
 - 승격 후보: `.claude/cache/memorygraph/promotion-candidates.json`
 - write 경로: `project-memory-refresh`, `memoryMode: write_requested`
@@ -74,6 +75,7 @@ raw memory 본문을 `analysisContext`에 복사하지 않습니다. 현재 단�
 - `memoryMode: write_requested`는 `session-logger`, `commit-moonshot`, 또는 명시적인 memory refresh 요청에서만 사용합니다.
 - 일반 하네스 규칙, system prompt 사실, `.claude/docs/ko/`에서만 나온 사실은 저장하지 않습니다.
 - MemoryGraph를 사용할 수 없으면 `boundaryStatus: not_checked` 또는 warning을 남기고 workflow를 계속합니다.
+- `commit-moonshot`에서 `Transport closed`는 `mcp_transport_failed -> direct_fallback`로 분류합니다. direct fallback 성공은 memory refresh 완료로 취급하고, fallback 실패는 로그에 남기되 명시적 Git closeout을 막지 않습니다.
 
 ## Workflow Evidence
 

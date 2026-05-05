@@ -29,6 +29,7 @@ Use this contract for every public workflow entrypoint and every Moonshot stage 
 Project graph data belongs to the active project, not to `claude-settings`.
 
 - Build seed: `node .claude/scripts/memorygraph-project-index.mjs`
+- Commit refresh helper: `node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <projectId>`
 - Seed output: `.claude/cache/memorygraph/project-graph-seed.json`
 - Promotion candidates: `.claude/cache/memorygraph/promotion-candidates.json`
 - Write path: `project-memory-refresh` with `memoryMode: write_requested`
@@ -74,6 +75,7 @@ Do not copy raw memory text into `analysisContext`. Return only stage-specific d
 - Use `memoryMode: write_requested` only in `session-logger`, `commit-moonshot`, or an explicit memory-refresh request.
 - Do not store generic harness rules, system prompt facts, or facts derived only from `.claude/docs/ko/`.
 - If MemoryGraph is unavailable, set `boundaryStatus: not_checked` or add a warning and continue the workflow.
+- In `commit-moonshot`, `Transport closed` is classified as `mcp_transport_failed -> direct_fallback`; direct fallback success completes memory refresh, and direct fallback failure is logged without blocking an explicit Git closeout.
 
 ## Workflow Evidence
 

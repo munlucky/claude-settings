@@ -22,8 +22,8 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 
 1. inspect staged changes with compact git commands
 2. derive `PROJECT_ID`
-3. run `node .claude/scripts/memorygraph-project-index.mjs` when the project has the script, then refresh MemoryGraph with `project-memory-refresh`, `stage=commit`, `memoryMode=write_requested`, `context.project_path`, `context.project_id`, `project:<projectId>`, and `source:moonshot`; if Codex Memory MCP returns `Transport closed`, run the direct fallback below instead of asking for a Codex restart
-4. summarize created or updated memory facts and promotion candidates in a short bullet list
+3. run `node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID>` when the project has the script; if a prior `mcp__memory__.store_memory` call failed, pass the same payload through `--store-json @<payload-file>` and the MCP error through `--mcp-error`
+4. summarize created or updated memory facts, direct fallback route, and promotion candidates in a short bullet list
 5. keep `.claude/memory.json`, `.claude/memorygraph/`, and `.claude/cache/memorygraph/` unstaged unless the user explicitly asks to include memory artifacts
 6. build a filtered staging path list before `git add`; remove generated bridge paths, ignored files, and local MCP/memory artifacts
 7. create the commit in Korean
@@ -42,7 +42,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - if the candidate list was produced from tool output or a previous assistant step, re-check it manually before execution; ignored/generated paths must be removed even when they appear in the user's pasted command
 - prefer root directories and policy files for installer commits: `.claude`, `.codex`, `.claudeignore`, `.gitattributes`, `.gitignore`, `AGENTS.md`, plus any explicitly changed product docs/code; never include `.agents`
 - only stage memory artifacts when the user explicitly asks to include memory in the commit
-- if MemoryGraph is unavailable, try the direct fallback first; record the failure only after the fallback also fails, then continue the Git closeout when the user explicitly requested commit/push
+- if MemoryGraph MCP is unavailable, treat it as `mcp_transport_failed -> direct_fallback`; record the failure only after the direct fallback also fails, then continue the Git closeout when the user explicitly requested commit/push
 - do not promote project candidates into `claude-settings` during a normal project commit; use `harness-memory-promoter` only after explicit approval
 - warn before committing when product implementation changes are mixed with `.claude/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes
 - require `QA_REPORT.md` to contain a `Harness Change Ledger` entry when harness/tool changes were made during a product phase
@@ -51,18 +51,19 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 
 ## Codex MCP Transport Fallback
 
-If the Memory MCP already attached to Codex Desktop fails with `Transport closed`, do not require a Codex restart. Immediately use the direct fallback that starts a fresh MemoryGraph stdio child process:
+If the Memory MCP already attached to Codex Desktop fails with `Transport closed`, do not require a Codex restart. Immediately use the commit refresh helper, which starts a fresh MemoryGraph stdio child process and writes an auditable log under `.claude/logs/memorygraph/`:
 
 ```bash
-node .claude/scripts/memorygraph-direct.mjs health
-node .claude/scripts/memorygraph-project-index.mjs --max-files 500
-node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID> --mcp-error "Transport closed"
 ```
 
 Rules:
 - Treat `Transport closed` as a failed Codex app-server MCP transport, not as a failed memory payload.
 - If the direct fallback succeeds, memory refresh is complete and the user does not need to restart Codex.
+- If a concrete `store_memory` payload failed through MCP, save that payload to a temporary JSON file and rerun the helper with `--store-json @<payload-file>` so the same content is written through direct fallback.
+- If no concrete payload is available, the helper runs `memorygraph-project-index.mjs` and `memorygraph-direct.mjs refresh-seed` as the commit-time memory refresh.
 - On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell.
+- The helper has per-command timeout and owned child-process tree cleanup. It must not broad-kill unrelated `memorygraph.exe` processes.
 - The direct fallback uses `.claude/memorygraph/memory.db` through `MEMORY_SQLITE_PATH`; keep `.claude/memorygraph/**` and `.claude/cache/memorygraph/**` unstaged unless the user explicitly includes memory artifacts.
 
 ## References
