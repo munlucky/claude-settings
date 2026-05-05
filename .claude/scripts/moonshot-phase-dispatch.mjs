@@ -154,6 +154,96 @@ function runNodeScript(scriptPath, args) {
   return result;
 }
 
+function readCurrentNormalizedVerdict() {
+  if (!state.statusFile || !fs.existsSync(state.statusFile)) {
+    return '';
+  }
+  for (const line of fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/)) {
+    const stripped = line.trim();
+    if (stripped === 'phases:') {
+      break;
+    }
+    if (stripped.startsWith('normalizedRunVerdict:')) {
+      return stripped.slice('normalizedRunVerdict:'.length).trim().replace(/^"|"$/g, '');
+    }
+  }
+  return '';
+}
+
+function setNormalizedRunVerdict(normalizedRunVerdict, stopReasonClass, stopReasonExplanation) {
+  const current = readCurrentNormalizedVerdict();
+  const priority = {
+    success: 0,
+    success_with_warning: 1,
+    paused: 2,
+    blocked: 3,
+    failed: 3,
+    checkpoint_required: 4,
+  };
+  if (current && (priority[current] ?? -1) > (priority[normalizedRunVerdict] ?? -1)) {
+    return;
+  }
+  const result = runNodeScript(phaseStatePath, [
+    'set-root-run-verdict',
+    state.statusFile,
+    normalizedRunVerdict,
+    stopReasonClass,
+    stopReasonExplanation || '',
+  ]);
+  if ((result.status ?? 0) !== 0) {
+    appendDebugLog('dispatch-normalized-verdict-write-failed', {
+      normalizedRunVerdict,
+      stopReasonClass,
+      stderr: result.stderr || '',
+    });
+  }
+}
+
+function normalizeDispatchVerdict(exitCode, stopReasonCode, detail, completionStatus) {
+  const reason = String(stopReasonCode || '').toLowerCase();
+  const explanation = String(detail || stopReasonCode || '').trim();
+  if (exitCode === 0) {
+    return {
+      normalizedRunVerdict: 'success',
+      stopReasonClass: 'clean_complete',
+      stopReasonExplanation: explanation || 'plan directory completed',
+    };
+  }
+  if (reason.includes('final-git-closeout') || reason.includes('checkpoint') || reason.includes('dirty')) {
+    return {
+      normalizedRunVerdict: 'checkpoint_required',
+      stopReasonClass: reason.includes('dirty') ? 'dirty_worktree' : 'git_checkpoint_failed',
+      stopReasonExplanation: explanation || 'final git checkpoint required',
+    };
+  }
+  if (reason.includes('pause') || completionStatus === 'paused') {
+    return {
+      normalizedRunVerdict: 'paused',
+      stopReasonClass: 'user_pause',
+      stopReasonExplanation: explanation || 'dispatcher paused',
+    };
+  }
+  if (reason.includes('runtime') || reason.includes('signal') || reason.includes('delegated-terminal-exit')) {
+    return {
+      normalizedRunVerdict: 'blocked',
+      stopReasonClass: 'runtime_unavailable',
+      stopReasonExplanation: explanation || 'runtime unavailable',
+    };
+  }
+  if (reason.includes('verification')) {
+    return {
+      normalizedRunVerdict: 'failed',
+      stopReasonClass: 'verification_failed',
+      stopReasonExplanation: explanation || 'verification failed',
+    };
+  }
+  return {
+    normalizedRunVerdict: 'failed',
+    stopReasonClass: 'unknown',
+    stopReasonExplanation: explanation || `dispatcher exited with code ${exitCode}`,
+  };
+}
+
 function parseAssignments(text) {
   const values = {};
   for (const rawLine of String(text || '').split(/\r?\n/)) {
@@ -547,15 +637,28 @@ function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false
       if (!gitCloseout.allowed) {
         logError(`Final git closeout audit failed: ${gitCloseout.detail}`);
         finishDispatchLease('dispatch-stop', 'phase-final-git-closeout-required', gitCloseout.detail, 'failed');
+        setNormalizedRunVerdict('checkpoint_required', 'dirty_worktree', gitCloseout.detail);
         process.exit(2);
         return;
       }
       assertReturnAllowedOrThrow();
       finishDispatchLease(returnBoundary || 'success-return', stopReasonCode || 'plan-directory-complete', detail, completionStatus || 'completed');
+      setNormalizedRunVerdict('success', 'clean_complete', detail || 'plan directory completed');
       process.exit(0);
       return;
     }
 
+    const normalized = normalizeDispatchVerdict(
+      exitCode,
+      stopReasonCode || `exit-${exitCode}`,
+      detail,
+      completionStatus || (exitCode === 0 ? 'completed' : 'failed'),
+    );
+    setNormalizedRunVerdict(
+      normalized.normalizedRunVerdict,
+      normalized.stopReasonClass,
+      normalized.stopReasonExplanation,
+    );
     finishDispatchLease(
       returnBoundary || 'dispatch-stop',
       stopReasonCode || `exit-${exitCode}`,

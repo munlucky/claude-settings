@@ -78,6 +78,7 @@ function isIgnorableStatusPath(filePath) {
   const normalized = normalizePath(filePath);
   return normalized === ''
     || normalized.startsWith('.claude/logs/')
+    || normalized === '.claude/docs/phase-status.yaml'
     || normalized === '.claude/runtime-state.sqlite'
     || normalized.startsWith('.claude/runtime-state.sqlite-')
     || normalized.startsWith('.claude/verification-results-')

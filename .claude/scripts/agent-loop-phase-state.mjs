@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -84,6 +85,7 @@ function readStatusBlocks(statusFile) {
   let currentIndent = 0;
   let inAttempts = false;
   let inTiming = false;
+  let inCheckpoint = false;
 
   const rootSignals = {};
   const rootArtifacts = {};
@@ -107,6 +109,12 @@ function readStatusBlocks(statusFile) {
         qaReport: '',
         handoff: '',
         scorecard: '',
+        checkpoint: {
+          status: '',
+          commit: '',
+          committedAt: '',
+          reason: '',
+        },
       };
       currentIndent = rawLine.length - rawLine.trimStart().length;
       inAttempts = false;
@@ -145,9 +153,12 @@ function readStatusBlocks(statusFile) {
     if (inTiming && (rawLine.length - rawLine.trimStart().length) <= currentIndent + 2) {
       inTiming = false;
     }
+    if (inCheckpoint && (rawLine.length - rawLine.trimStart().length) <= currentIndent + 2) {
+      inCheckpoint = false;
+    }
     if (stripped.startsWith('title:')) {
       current.title = stripped.slice('title:'.length).trim().replace(/^"|"$/g, '');
-    } else if (stripped.startsWith('status:')) {
+    } else if (!inCheckpoint && stripped.startsWith('status:')) {
       current.status = stripped.slice('status:'.length).trim();
     } else if (stripped.startsWith('planConfirmed:')) {
       current.planConfirmed = stripped.slice('planConfirmed:'.length).trim().toLowerCase();
@@ -155,6 +166,8 @@ function readStatusBlocks(statusFile) {
       inAttempts = true;
     } else if (stripped.startsWith('timing:') && (rawLine.length - rawLine.trimStart().length) > currentIndent) {
       inTiming = true;
+    } else if (stripped.startsWith('checkpoint:') && (rawLine.length - rawLine.trimStart().length) > currentIndent) {
+      inCheckpoint = true;
     } else if (inAttempts && stripped.startsWith('lastOutcome:')) {
       current.lastOutcome = stripped.slice('lastOutcome:'.length).trim();
     } else if (inAttempts && stripped.startsWith('lastUpdatedAt:')) {
@@ -181,6 +194,14 @@ function readStatusBlocks(statusFile) {
       current.timing.completedAt = stripped.slice('completedAt:'.length).trim().replace(/^"|"$/g, '');
     } else if (inTiming && stripped.startsWith('blockedAt:')) {
       current.timing.blockedAt = stripped.slice('blockedAt:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inCheckpoint && stripped.startsWith('status:')) {
+      current.checkpoint.status = stripped.slice('status:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inCheckpoint && stripped.startsWith('commit:')) {
+      current.checkpoint.commit = stripped.slice('commit:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inCheckpoint && stripped.startsWith('committedAt:')) {
+      current.checkpoint.committedAt = stripped.slice('committedAt:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inCheckpoint && stripped.startsWith('reason:')) {
+      current.checkpoint.reason = stripped.slice('reason:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('sprintContract:')) {
       current.sprintContract = stripped.slice('sprintContract:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('qaReport:')) {
@@ -232,6 +253,9 @@ function readRootStatusMetadata(statusFile) {
       activeBlockedPhases: Number.NaN,
       activePendingPhases: Number.NaN,
       activeRemainingPhases: Number.NaN,
+      normalizedRunVerdict: '',
+      stopReasonClass: '',
+      stopReasonExplanation: '',
     };
   }
 
@@ -245,6 +269,9 @@ function readRootStatusMetadata(statusFile) {
     activeBlockedPhases: Number.NaN,
     activePendingPhases: Number.NaN,
     activeRemainingPhases: Number.NaN,
+    normalizedRunVerdict: '',
+    stopReasonClass: '',
+    stopReasonExplanation: '',
   };
   const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/);
 
@@ -277,6 +304,12 @@ function readRootStatusMetadata(statusFile) {
       result.activePendingPhases = Number.parseInt(stripped.slice('activePendingPhases:'.length).trim().replace(/^"|"$/g, ''), 10);
     } else if (stripped.startsWith('activeRemainingPhases:')) {
       result.activeRemainingPhases = Number.parseInt(stripped.slice('activeRemainingPhases:'.length).trim().replace(/^"|"$/g, ''), 10);
+    } else if (stripped.startsWith('normalizedRunVerdict:')) {
+      result.normalizedRunVerdict = stripped.slice('normalizedRunVerdict:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('stopReasonClass:')) {
+      result.stopReasonClass = stripped.slice('stopReasonClass:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('stopReasonExplanation:')) {
+      result.stopReasonExplanation = stripped.slice('stopReasonExplanation:'.length).trim().replace(/^"|"$/g, '');
     }
   }
 
@@ -326,6 +359,16 @@ function getPhaseSummary(statusFile, phaseNum) {
   const blocks = readStatusBlocks(statusFile);
   const target = blocks.find((block) => String(block.number) === String(phaseNum));
   const counts = summarizePhaseCounts(blocks);
+  if (target) {
+    return {
+      ...target,
+      checkpointStatus: target.checkpoint?.status || '',
+      checkpointCommit: target.checkpoint?.commit || '',
+      checkpointCommittedAt: target.checkpoint?.committedAt || '',
+      checkpointReason: target.checkpoint?.reason || '',
+      phaseCounts: counts,
+    };
+  }
   return target || {
     number: String(phaseNum),
     title: '',
@@ -338,6 +381,11 @@ function getPhaseSummary(statusFile, phaseNum) {
     qaReport: '',
     handoff: '',
     scorecard: '',
+    checkpoint: {},
+    checkpointStatus: '',
+    checkpointCommit: '',
+    checkpointCommittedAt: '',
+    checkpointReason: '',
     phaseAttemptMode: '',
     activePhaseDoc: '',
     phaseCounts: counts,
@@ -378,6 +426,103 @@ function shellQuote(value) {
     return "''";
   }
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function yamlScalar(value) {
+  if (value === null || value === undefined || value === '') {
+    return '""';
+  }
+  const stringValue = String(value);
+  if (/^(true|false|null|[0-9]+)$/i.test(stringValue)) {
+    return `"${stringValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }
+  if (/^[a-zA-Z0-9_.:/@+-]+$/.test(stringValue)) {
+    return stringValue;
+  }
+  return `"${stringValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function setRootScalarInLines(lines, key, value) {
+  const prefix = `${key}:`;
+  const normalizedValue = value === null || value === undefined ? 'null' : value;
+  const index = lines.findIndex((line) => line.startsWith(prefix));
+  if (index >= 0) {
+    lines[index] = `${prefix} ${normalizedValue}`;
+    return;
+  }
+
+  let insertAt = lines.length;
+  for (let probe = 0; probe < lines.length; probe += 1) {
+    const stripped = lines[probe].trim();
+    if (stripped === 'phases:') {
+      insertAt = probe;
+      break;
+    }
+  }
+  lines.splice(insertAt, 0, `${prefix} ${normalizedValue}`);
+}
+
+function readAtomicLedgerStatus(phaseExecutionDir) {
+  const ledgerPath = phaseExecutionDir ? path.join(phaseExecutionDir, 'WORKSETS.yaml') : '';
+  if (!ledgerPath || !fs.existsSync(ledgerPath)) {
+    return {
+      complete: false,
+      reason: 'atomic-ledger-missing',
+      pending: [],
+      total: 0,
+      path: ledgerPath,
+    };
+  }
+
+  const tasks = [];
+  let inAtomicTasks = false;
+  let current = null;
+  for (const rawLine of fs.readFileSync(ledgerPath, 'utf8').split(/\r?\n/)) {
+    const stripped = rawLine.trim();
+    const indent = rawLine.length - rawLine.trimStart().length;
+    if (stripped === 'atomicTasks:') {
+      inAtomicTasks = true;
+      continue;
+    }
+    if (inAtomicTasks && indent === 0 && stripped && stripped !== 'atomicTasks:') {
+      break;
+    }
+    if (!inAtomicTasks) {
+      continue;
+    }
+
+    const idMatch = stripped.match(/^-\s+id:\s*(AT-[0-9]+)/i);
+    if (idMatch) {
+      current = {
+        id: idMatch[1],
+        status: 'pending',
+      };
+      tasks.push(current);
+      continue;
+    }
+    if (current && stripped.startsWith('status:')) {
+      current.status = stripped.slice('status:'.length).trim().replace(/^"|"$/g, '');
+    }
+  }
+
+  if (tasks.length === 0) {
+    return {
+      complete: false,
+      reason: 'atomic-ledger-empty',
+      pending: [],
+      total: 0,
+      path: ledgerPath,
+    };
+  }
+
+  const pending = tasks.filter((task) => task.status !== 'completed').map((task) => `${task.id}:${task.status}`);
+  return {
+    complete: pending.length === 0,
+    reason: pending.length === 0 ? 'ok' : 'atomic-tasks-incomplete',
+    pending,
+    total: tasks.length,
+    path: ledgerPath,
+  };
 }
 
 function extractWorkflowSection(text) {
@@ -1158,6 +1303,7 @@ function evaluatePhaseCompletionGate(config) {
     && failures.length === 0
     && scoreReason === 'ok'
     && scoreVerdict === 'done';
+  const atomicLedger = readAtomicLedgerStatus(phaseExecutionDir);
   const informationalWorkflowWarnings = latestWorkflowWarnings.length > 0
     && structuredVerdictReady
     && closeoutConcrete
@@ -1189,10 +1335,12 @@ function evaluatePhaseCompletionGate(config) {
     }
   }
 
-  const finalAllowed = passedPaths.length > 0 && failures.length === 0 && workflowReason === 'ok' && scoreReason === 'ok';
+  const finalAllowed = passedPaths.length > 0 && failures.length === 0 && workflowReason === 'ok' && scoreReason === 'ok' && atomicLedger.complete;
   const finalReason = finalAllowed
     ? 'ok'
-    : failures[0] || (workflowReason !== 'ok' ? workflowReason : (scoreReason !== 'ok' ? scoreReason : 'no-fresh-verification-artifact'));
+    : failures[0] || (workflowReason !== 'ok'
+      ? workflowReason
+      : (scoreReason !== 'ok' ? scoreReason : (!atomicLedger.complete ? atomicLedger.reason : 'no-fresh-verification-artifact')));
 
   return {
     PHASE_COMPLETION_ALLOWED: finalAllowed ? 'true' : 'false',
@@ -1226,6 +1374,9 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_CLOSEOUT_STATUS: closeoutStatus,
     PHASE_COMPLETION_BLOCKER_CODES: completionBlockers.join('\n'),
     PHASE_COMPLETION_CLEAN_FINISH: closeoutConcrete ? 'true' : 'false',
+    PHASE_COMPLETION_ATOMIC_TASKS_DONE: atomicLedger.complete ? 'true' : 'false',
+    PHASE_COMPLETION_ATOMIC_TASKS_PENDING: atomicLedger.pending.join('\n'),
+    PHASE_COMPLETION_ATOMIC_TASK_LEDGER: atomicLedger.path || '',
     PHASE_PLAN_CONFORMANCE_ALLOWED: planConformance.allowed ? 'true' : 'false',
     PHASE_PLAN_CONFORMANCE_REASON: planConformance.reason,
     PHASE_PLAN_CONFORMANCE_VIOLATIONS: planConformance.violations.map((item) => `${item.code}: ${item.message}`).join('\n'),
@@ -1568,6 +1719,125 @@ function updatePhaseState(config) {
   shadowRuntimePhaseUpdate(config);
 }
 
+function findPhaseBlockRange(lines, phaseNum) {
+  const blockRanges = [];
+  let currentStart = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*-\s+number:\s*/.test(lines[index])) {
+      if (currentStart !== null) {
+        blockRanges.push([currentStart, index]);
+      }
+      currentStart = index;
+    }
+  }
+  if (currentStart !== null) {
+    blockRanges.push([currentStart, lines.length]);
+  }
+
+  for (const [start, end] of blockRanges) {
+    const match = lines[start].match(/number:\s*([0-9]+)/);
+    if (match && match[1] === String(phaseNum)) {
+      return [start, end];
+    }
+  }
+  return null;
+}
+
+function setPhaseCheckpoint(statusFile, phaseNum, checkpoint) {
+  if (!fs.existsSync(statusFile)) {
+    return;
+  }
+  const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, arr) => !(index === arr.length - 1 && arr[index] === ''));
+  const range = findPhaseBlockRange(lines, phaseNum);
+  if (!range) {
+    return;
+  }
+
+  const [start, end] = range;
+  const block = lines.slice(start, end);
+  const itemIndent = block[0].length - block[0].trimStart().length;
+  const topIndent = ' '.repeat(itemIndent + 2);
+  const checkpointIndent = ' '.repeat(itemIndent + 4);
+  const prefix = `${topIndent}checkpoint:`;
+  let checkpointStart = block.findIndex((line) => line.startsWith(prefix));
+  let checkpointEnd = block.length;
+  if (checkpointStart >= 0) {
+    for (let probe = checkpointStart + 1; probe < block.length; probe += 1) {
+      const indent = block[probe].length - block[probe].trimStart().length;
+      if (indent <= topIndent.length) {
+        checkpointEnd = probe;
+        break;
+      }
+    }
+    block.splice(checkpointStart, checkpointEnd - checkpointStart);
+  } else {
+    checkpointStart = block.length;
+    for (let index = 1; index < block.length; index += 1) {
+      const indent = block[index].length - block[index].trimStart().length;
+      if (indent <= itemIndent) {
+        checkpointStart = index;
+        break;
+      }
+    }
+  }
+
+  block.splice(checkpointStart, 0,
+    `${topIndent}checkpoint:`,
+    `${checkpointIndent}status: ${yamlScalar(checkpoint.status)}`,
+    `${checkpointIndent}commit: ${yamlScalar(checkpoint.commit)}`,
+    `${checkpointIndent}committedAt: ${yamlScalar(checkpoint.committedAt)}`,
+    `${checkpointIndent}reason: ${yamlScalar(checkpoint.reason)}`,
+  );
+
+  lines.splice(start, end - start, ...block);
+  writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
+}
+
+function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation) {
+  if (!fs.existsSync(statusFile)) {
+    return;
+  }
+  const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, arr) => !(index === arr.length - 1 && arr[index] === ''));
+  setRootScalarInLines(lines, 'normalizedRunVerdict', yamlScalar(normalizedRunVerdict));
+  setRootScalarInLines(lines, 'stopReasonClass', yamlScalar(stopReasonClass));
+  setRootScalarInLines(lines, 'stopReasonExplanation', yamlScalar(stopReasonExplanation));
+  writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
+}
+
+function runSelfTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-state-'));
+  const statusFile = path.join(tempDir, 'phase-status.yaml');
+  try {
+    fs.writeFileSync(statusFile, `schemaVersion: 1
+activeExecutionStatus: running
+phases:
+  - number: 1
+    title: "Fixture"
+    status: completed
+    planConfirmed: true
+`, 'utf8');
+
+    setPhaseCheckpoint(statusFile, '1', {
+      status: 'committed',
+      commit: 'abc123',
+      committedAt: '2026-05-05T00:00:00.000Z',
+      reason: 'checkpoint_commit_created',
+    });
+    setRootRunVerdict(statusFile, 'success_with_warning', 'reconciled_nonzero', 'completed after reconciled non-zero exit');
+    const metadata = readRootStatusMetadata(statusFile);
+    const summary = getPhaseSummary(statusFile, '1');
+    if (metadata.normalizedRunVerdict !== 'success_with_warning') {
+      throw new Error('root normalizedRunVerdict was not persisted');
+    }
+    if (summary.checkpointStatus !== 'committed' || summary.checkpointCommit !== 'abc123') {
+      throw new Error('phase checkpoint fields were not persisted');
+    }
+    writeStdoutLine('agent-loop-phase-state self-test passed');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 function reconcileCompletedPhases(statusFile) {
   if (!fs.existsSync(statusFile)) {
     return [];
@@ -1586,6 +1856,11 @@ function reconcileCompletedPhases(statusFile) {
     });
 
     if (!artifactState.cleanFinish) {
+      continue;
+    }
+    const executionDir = block.qaReport ? path.dirname(block.qaReport) : '';
+    const atomicLedger = readAtomicLedgerStatus(executionDir);
+    if (!atomicLedger.complete) {
       continue;
     }
 
@@ -1622,7 +1897,10 @@ function printUsage() {
     '  agent-loop-phase-state.mjs get-active-phase-context <status-file>',
     '  agent-loop-phase-state.mjs evaluate-phase-completion-gate <phase-start-epoch> <qa-report-path> <scorecard-path> <phase-execution-dir> <scorecard-required> <target-completion-score> [handoff-path]',
     '  agent-loop-phase-state.mjs reconcile-completed-phases <status-file>',
+    '  agent-loop-phase-state.mjs set-phase-checkpoint <status-file> <phase-num> <status> <commit> <committed-at> <reason>',
+    '  agent-loop-phase-state.mjs set-root-run-verdict <status-file> <normalized-verdict> <stop-reason-class> <explanation>',
     '  agent-loop-phase-state.mjs update-phase-state <status-file> <phase-num> <new-status> <timestamp> <last-outcome> <increment-attempt> <active-phase-doc> <sprint-contract> <qa-report> <handoff> <scorecard>',
+    '  agent-loop-phase-state.mjs self-test',
   ].join('\n'));
 }
 
@@ -1706,6 +1984,32 @@ switch (command) {
       handoffPath: args[9],
       scorecardPath: args[10],
     });
+    break;
+  case 'set-phase-checkpoint': {
+    const [statusFile, phaseNum, status, commit, committedAt, reason] = args;
+    if (!statusFile || !phaseNum || !status) {
+      printUsage();
+      process.exit(64);
+    }
+    setPhaseCheckpoint(statusFile, phaseNum, {
+      status,
+      commit: commit || '',
+      committedAt: committedAt || '',
+      reason: reason || '',
+    });
+    break;
+  }
+  case 'set-root-run-verdict': {
+    const [statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation] = args;
+    if (!statusFile || !normalizedRunVerdict || !stopReasonClass) {
+      printUsage();
+      process.exit(64);
+    }
+    setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation || '');
+    break;
+  }
+  case 'self-test':
+    runSelfTest();
     break;
   default:
     printUsage();

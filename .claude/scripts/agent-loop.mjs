@@ -15,6 +15,7 @@ const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const phaseRunnerPath = path.join(scriptDir, 'agent-loop-phase-runner.mjs');
 const phaseParallelPlannerPath = path.join(scriptDir, 'phase-parallel-planner.mjs');
 const phaseWaveCoordinatorPath = path.join(scriptDir, 'phase-wave-coordinator.mjs');
+const phaseCheckpointCommitPath = path.join(scriptDir, 'phase-checkpoint-commit.mjs');
 const artifactsPath = path.join(scriptDir, 'agent-loop-phase-artifacts.mjs');
 const runtimeStatePath = path.join(scriptDir, 'runtime-state.mjs');
 const logDir = '.claude/logs/agent-loop';
@@ -707,6 +708,173 @@ function reconcileCompletedPhasesFromArtifacts() {
   return reconciled;
 }
 
+function parseJsonObject(text) {
+  try {
+    return JSON.parse(String(text || '').trim() || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function runPhaseCheckpointCommit(phaseNum) {
+  const summary = phaseSummary(phaseNum);
+  if (summary.status !== 'completed') {
+    return {
+      ok: true,
+      status: 'skipped_not_completed',
+      reason: `phase ${phaseNum} is ${summary.status || 'unknown'}`,
+    };
+  }
+  if (['committed', 'skipped_no_changes'].includes(summary.checkpointStatus || '')) {
+    return {
+      ok: true,
+      status: summary.checkpointStatus,
+      commit: summary.checkpointCommit || '',
+      reason: summary.checkpointReason || 'already_checkpointed',
+    };
+  }
+
+  const title = summary.title || phasePlan('get-phase-title', state.planDir, String(phaseNum)) || `Phase ${phaseNum}`;
+  const result = runNodeScript(phaseCheckpointCommitPath, [
+    'commit',
+    '--plan-dir',
+    state.planDir,
+    '--status-file',
+    state.statusFile,
+    '--phase-num',
+    String(phaseNum),
+    '--phase-title',
+    title,
+    '--qa-report',
+    summary.qaReport || '',
+    '--scorecard',
+    summary.scorecard || '',
+    '--json',
+  ]);
+  const payload = parseJsonObject(result.stdout);
+  const status = payload.status || (result.status === 0 ? 'unknown' : 'failed');
+  const reason = payload.reason || result.stderr.trim() || 'checkpoint result unavailable';
+  const committedAt = payload.committedAt || new Date().toISOString();
+  const commit = payload.commit || '';
+
+  phaseState(
+    'set-phase-checkpoint',
+    state.statusFile,
+    String(phaseNum),
+    status,
+    commit,
+    committedAt,
+    reason,
+  );
+  appendDebugLog('phase-checkpoint-commit', {
+    phaseNum,
+    status,
+    commit,
+    reason,
+    exitCode: result.status,
+    memory: payload.memory || {},
+    stageablePaths: payload.stageablePaths || [],
+  });
+  appendDecisionLog([
+    `## Phase ${phaseNum} - Checkpoint`,
+    `- Status: ${status}`,
+    commit ? `- Commit: ${commit}` : '- Commit: n/a',
+    `- Reason: ${reason}`,
+    payload.memory?.status ? `- Memory refresh: ${payload.memory.status}` : '- Memory refresh: n/a',
+    '',
+  ]);
+
+  return {
+    ok: result.status === 0 && ['committed', 'skipped_no_changes'].includes(status),
+    status,
+    commit,
+    reason,
+    payload,
+  };
+}
+
+function checkpointCompletedPhases(phaseNums) {
+  for (const phaseNum of phaseNums) {
+    const checkpoint = runPhaseCheckpointCommit(phaseNum);
+    if (!checkpoint.ok) {
+      return {
+        ok: false,
+        phaseNum,
+        checkpoint,
+      };
+    }
+  }
+  return {
+    ok: true,
+  };
+}
+
+function normalizeRunVerdict({
+  stoppedEarly,
+  controlledStop,
+  stopReason,
+  stopDetail,
+  checkpointRequired,
+  reconciledNonzeroExit,
+}) {
+  const reason = String(stopReason || '').toLowerCase();
+  const detail = String(stopDetail || '').trim();
+  if (checkpointRequired || reason.includes('checkpoint')) {
+    return {
+      normalizedRunVerdict: 'checkpoint_required',
+      stopReasonClass: 'git_checkpoint_failed',
+      stopReasonExplanation: detail || stopReason || 'phase checkpoint commit failed',
+    };
+  }
+  if (controlledStop || reason.includes('pause')) {
+    return {
+      normalizedRunVerdict: 'paused',
+      stopReasonClass: 'user_pause',
+      stopReasonExplanation: detail || stopReason || 'run paused by goal/runtime control',
+    };
+  }
+  if (stoppedEarly) {
+    if (reason.includes('verification')) {
+      return {
+        normalizedRunVerdict: 'failed',
+        stopReasonClass: 'verification_failed',
+        stopReasonExplanation: detail || stopReason || 'verification failed',
+      };
+    }
+    if (reason.includes('runtime') || reason.includes('signal') || reason.includes('spawn') || reason.includes('worker')) {
+      return {
+        normalizedRunVerdict: 'blocked',
+        stopReasonClass: 'runtime_unavailable',
+        stopReasonExplanation: detail || stopReason || 'runtime unavailable',
+      };
+    }
+    if (reason.includes('blocked') || reason.includes('unhealthy')) {
+      return {
+        normalizedRunVerdict: 'blocked',
+        stopReasonClass: 'verification_failed',
+        stopReasonExplanation: detail || stopReason || 'phase blocked',
+      };
+    }
+    return {
+      normalizedRunVerdict: 'failed',
+      stopReasonClass: 'unknown',
+      stopReasonExplanation: detail || stopReason || 'agent loop stopped before clean completion',
+    };
+  }
+  if (reconciledNonzeroExit) {
+    return {
+      normalizedRunVerdict: 'success_with_warning',
+      stopReasonClass: 'reconciled_nonzero',
+      stopReasonExplanation: 'all actionable phases completed after a non-zero phase runner exit was reconciled by clean-finish artifacts',
+    };
+  }
+  return {
+    normalizedRunVerdict: 'success',
+    stopReasonClass: 'clean_complete',
+    stopReasonExplanation: 'all actionable phases completed with phase checkpoint status recorded',
+  };
+}
+
 function recordPhaseParallelSequentialDecision(plan) {
   if (!plan || plan.executionPlan === 'parallel_wave') {
     return;
@@ -904,6 +1072,8 @@ async function runNodeManagedLoop() {
   let failedPhases = 0;
   let stoppedEarly = false;
   let controlledStop = false;
+  let checkpointRequired = false;
+  let reconciledNonzeroExit = false;
   let stopPhase = '';
   let stopReason = '';
   let stopDetail = '';
@@ -999,6 +1169,16 @@ async function runNodeManagedLoop() {
         });
         if (waveResult.exitCode === 0) {
           reconcileCompletedPhasesFromArtifacts();
+          const checkpointResult = checkpointCompletedPhases(phaseParallelPlan.phases.map((phase) => phase.number));
+          if (!checkpointResult.ok) {
+            failedPhases += 1;
+            stoppedEarly = true;
+            checkpointRequired = true;
+            stopPhase = checkpointResult.phaseNum;
+            stopReason = 'phase-checkpoint-commit-failed';
+            stopDetail = checkpointResult.checkpoint?.reason || 'phase checkpoint commit failed';
+            break;
+          }
           executedPhases += phaseParallelPlan.phases.length;
           appendDecisionLog([
             `## Phase Wave - ${waveLabel}`,
@@ -1112,11 +1292,22 @@ async function runNodeManagedLoop() {
           exitCode,
           phaseAfterFailure,
         });
+        reconciledNonzeroExit = true;
       }
 
       let updatedNextPhase = '';
       try {
         reconcileCompletedPhasesFromArtifacts();
+        const checkpointResult = checkpointCompletedPhases([nextPhase]);
+        if (!checkpointResult.ok) {
+          failedPhases += 1;
+          stoppedEarly = true;
+          checkpointRequired = true;
+          stopPhase = checkpointResult.phaseNum;
+          stopReason = 'phase-checkpoint-commit-failed';
+          stopDetail = checkpointResult.checkpoint?.reason || 'phase checkpoint commit failed';
+          break;
+        }
         updatedNextPhase = phasePlan('get-next-phase', state.statusFile) || '';
       } catch (error) {
         failedPhases += 1;
@@ -1190,6 +1381,27 @@ async function runNodeManagedLoop() {
       stack: error instanceof Error ? error.stack || '' : '',
     });
   } finally {
+    const normalized = normalizeRunVerdict({
+      stoppedEarly,
+      controlledStop,
+      stopReason,
+      stopDetail,
+      checkpointRequired,
+      reconciledNonzeroExit,
+    });
+    try {
+      phaseState(
+        'set-root-run-verdict',
+        state.statusFile,
+        normalized.normalizedRunVerdict,
+        normalized.stopReasonClass,
+        normalized.stopReasonExplanation,
+      );
+    } catch (error) {
+      appendDebugLog('agent-loop-normalized-verdict-write-failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
     appendDebugLog('agent-loop-summary-write', {
       completed: executedPhases,
       failed: failedPhases,
@@ -1197,6 +1409,7 @@ async function runNodeManagedLoop() {
       stopPhase,
       stopReason,
       stopDetail,
+      normalized,
     });
     writeLiveSummaryReport({
       planDir: state.planDir,

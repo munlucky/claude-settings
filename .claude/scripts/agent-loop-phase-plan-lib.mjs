@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
@@ -62,6 +65,92 @@ function extractMarkdownSection(text, heading) {
   }
   return lines.slice(start, end).map((line) => line.trimEnd()).join('\n').trim()
     || '- Empty in source phase doc.';
+}
+
+function yamlScalar(value) {
+  const stringValue = String(value || '').trim();
+  if (!stringValue) {
+    return '""';
+  }
+  return `"${stringValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
+  const sourceText = phaseDoc && fs.existsSync(phaseDoc) ? fs.readFileSync(phaseDoc, 'utf8') : '';
+  const detailedTasks = extractMarkdownSection(sourceText, 'Detailed Tasks');
+  const tasks = [];
+  let inCodeFence = false;
+
+  for (const rawLine of detailedTasks.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.startsWith('```')) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence || !line) {
+      continue;
+    }
+
+    const checkbox = line.match(/^[-*]\s+\[[ xX]\]\s+(.+)$/);
+    const numbered = line.match(/^[0-9]+[.)]\s+(.+)$/);
+    const match = checkbox || numbered;
+    if (!match) {
+      continue;
+    }
+    const title = match[1].replace(/\s+/g, ' ').trim();
+    if (!title || title.toLowerCase().startsWith('not found') || title.toLowerCase().startsWith('empty')) {
+      continue;
+    }
+    tasks.push({
+      id: `AT-${String(tasks.length + 1).padStart(2, '0')}`,
+      title,
+      status: 'pending',
+      ownedPaths: [],
+      verificationCommands: [],
+      evidence: [],
+      completedAt: null,
+    });
+  }
+
+  if (tasks.length === 0) {
+    tasks.push({
+      id: 'AT-01',
+      title: 'Complete the source phase scope',
+      status: 'pending',
+      ownedPaths: [],
+      verificationCommands: [],
+      evidence: [],
+      completedAt: null,
+    });
+  }
+
+  return tasks;
+}
+
+export function renderAtomicWorksetsYaml(phasePrefix, phaseDoc) {
+  const tasks = extractAtomicTasksFromPhaseDoc(phaseDoc);
+  const lines = [
+    `# Phase ${phasePrefix} atomic task ledger and optional worktree worksets.`,
+    '# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.',
+    'schemaVersion: 1',
+    `activeAtomicTask: ${tasks[0]?.id || 'AT-01'}`,
+    'atomicTasks:',
+  ];
+
+  for (const task of tasks) {
+    lines.push(
+      `  - id: ${task.id}`,
+      `    title: ${yamlScalar(task.title)}`,
+      '    status: pending',
+      '    ownedPaths: []',
+      '    verificationCommands: []',
+      '    evidence: []',
+      '    completedAt: null',
+    );
+  }
+
+  lines.push('worksets: []', '');
+  return lines.join('\n');
 }
 
 function indentBlock(text) {
@@ -491,11 +580,7 @@ ${requiredCommands}
   }
 
   if (!fs.existsSync(paths.phaseWorksets)) {
-    const worksets = `# Phase ${paths.phasePrefix} worksets for opt-in worktree parallel execution.
-# Default is disabled: leave worksets empty until the phase owner defines non-overlapping ownedPaths.
-worksets: []
-`;
-    fs.writeFileSync(paths.phaseWorksets, worksets, 'utf8');
+    fs.writeFileSync(paths.phaseWorksets, renderAtomicWorksetsYaml(paths.phasePrefix, phaseDoc), 'utf8');
   }
 
   return paths;
@@ -529,7 +614,7 @@ Codex direct execution checklist:
 1. Read only the active phase doc and SPRINT_CONTRACT.md first.
 2. Immediately write an attempt-started checkpoint to QA_REPORT.md and SCORECARD.md before broader inspection or long-running commands.
 3. Refresh SPRINT_CONTRACT.md for this attempt without broad repo inspection.
-4. Execute only the active phase work.
+4. Read WORKSETS.yaml and execute only activeAtomicTask. Do not execute a second atomic task in the same attempt.
 5. Run review and verification in the phase contract order.
 6. Use \`.claude/scripts/write-verification-verdict.py\` for structured \`.claude/verification-verdict-*.json\` output in the repository root instead of hand-authoring verdict JSON.
    Include model routing args when available: \`--selected-model-provider\`, \`--selected-model\`, \`--selected-model-effort\`, \`--model-selection-reason\`.
@@ -564,6 +649,16 @@ executionArtifacts:
 Single isolated phase-attempt rules:
 - Treat this run as one isolated phase attempt only.
 - This attempt may finish the active phase, but phase completion is never run completion or session completion.
+- Before code edits, read "${paths.phaseWorksets}" and resolve exactly one active atomic task:
+  - Use activeAtomicTask when it points to a non-completed AT-* entry.
+  - If activeAtomicTask is missing or already completed, select the first pending AT-* entry and update activeAtomicTask to that id.
+  - Do not work on a second atomic task in the same attempt, even if the first one is small.
+- Update the selected atomic task in WORKSETS.yaml:
+  - Set status to in_progress when starting.
+  - Set status to completed, completedAt, evidence, ownedPaths, and verificationCommands only when that task is actually verified.
+  - If the selected atomic task is not complete, leave the phase in_progress and set the attempt outcome to partial or blocked with evidence.
+- Phase completion is allowed only when every atomicTasks entry is completed and SCORECARD/QA/verification gates are done.
+- If any atomic task remains pending or in_progress, keep phase status in_progress, record lastOutcome partial, and return control for the next attempt.
 - Set signals.phaseAttemptMode = true.
 - Set artifacts.activePhaseDocPath = "${phaseDoc}".
 - Reuse the provided execution artifact paths.
@@ -618,4 +713,51 @@ Additional instructions:
 ${extraInstructions}
 
 ${autonomousInstructions}`.trimEnd();
+}
+
+function runSelfTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-plan-lib-'));
+  try {
+    const phaseDoc = path.join(tempDir, '01-fixture.md');
+    fs.writeFileSync(phaseDoc, `# Fixture
+
+## Detailed Tasks
+- [ ] Define API contract
+1. Add service implementation
+2. Verify failure path
+`, 'utf8');
+    const tasks = extractAtomicTasksFromPhaseDoc(phaseDoc);
+    if (tasks.length !== 3 || tasks[0].id !== 'AT-01' || tasks[2].title !== 'Verify failure path') {
+      throw new Error('failed to extract AT-* tasks from Detailed Tasks');
+    }
+
+    const emptyDoc = path.join(tempDir, '02-empty.md');
+    fs.writeFileSync(emptyDoc, '# Empty\n\n## Detailed Tasks\nNo explicit list.\n', 'utf8');
+    const fallbackTasks = extractAtomicTasksFromPhaseDoc(emptyDoc);
+    if (fallbackTasks.length !== 1 || fallbackTasks[0].id !== 'AT-01') {
+      throw new Error('failed to create fallback AT-01 task');
+    }
+
+    const rendered = renderAtomicWorksetsYaml('01', phaseDoc);
+    if (!rendered.includes('schemaVersion: 1') || !rendered.includes('activeAtomicTask: AT-01') || !rendered.includes('id: AT-03')) {
+      throw new Error('failed to render atomic WORKSETS.yaml');
+    }
+
+    writeStdoutLine('agent-loop-phase-plan-lib self-test passed');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] === 'self-test') {
+    runSelfTest();
+  } else {
+    writeStdoutLine('Usage: agent-loop-phase-plan-lib.mjs self-test');
+    process.exit(64);
+  }
 }
