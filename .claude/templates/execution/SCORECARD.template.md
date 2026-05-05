@@ -5,6 +5,7 @@
 > - `saas`: product/user-flow heavy
 > - `api-backend`: contract and verification heavy
 > - `frontend`: user-flow and UI-state heavy
+> - `demo_first`: clickable/mock demo approval before Real Functional
 > - `platform`: verification and handoff heavy
 >
 > Dynamic weighting rule:
@@ -22,6 +23,19 @@
 | OBJ-SCN | Critical scenarios evidenced | 25 | pending/pass/fail |  |  |
 | OBJ-VER | Required verification commands passed | 20 | pending/pass/fail |  |  |
 | OBJ-CLOSE | Review, finish closeout, and workflow-surface consistency recorded | 10 | pending/pass/fail |  |  |
+
+## Demo-first MVP Objectives
+
+Use when `mvpMethodology.profile: demo_first`.
+
+| ID | Category | Status | Evidence | Notes |
+|----|----------|--------|----------|-------|
+| OBJ-DEMO-FLOW | Clickable demo routes, primary CTA, and core flow are evidenced | pending/pass/fail |  | Required for demo approval |
+| OBJ-DEMO-STATE | Required loading, empty, error, and success states are evidenced | pending/pass/fail |  | Required before demo approval |
+| OBJ-MOCK | Mock success and error paths are evidenced | pending/pass/fail |  | Required for Mock Functional Demo |
+| OBJ-CONTRACT | Mock API contract and real API response shape remain compatible | pending/pass/fail |  | Required for Real Functional |
+| OBJ-USER-APPROVAL | User demo approval has approved non-empty scope | pending/pass/fail | docs/implementation/USER_DEMO_APPROVAL.md | Hard stop before Real Functional |
+| OBJ-REAL | Real API/persistence evidence replaces mock-only behavior | pending/pass/fail |  | Required for Real Functional |
 
 ## Workflow Surface Consistency
 
@@ -60,6 +74,7 @@ Mapping note:
 ## Loop Policy
 - `done` requires Current score >= Target score
 - `done` requires OBJ-CONFORM = pass
+- `done` requires demo-first MVP objectives to be pass when profile is `demo_first`
 - `done` requires Unmet checklist items = 0
 - `done` requires Blocking defects = 0
 - `blocked` means environment, contract, or dependency prevents progress

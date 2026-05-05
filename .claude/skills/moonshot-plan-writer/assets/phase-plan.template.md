@@ -26,9 +26,27 @@ phaseExecution:
   sharedMutablePaths: []
   requiresManualEvidence: false
   mergePolicy: "disjoint_patch"
+
+mvpMethodology:
+  profile: "none | demo_first"
+  sliceId: "<stable-slice-id>"
+  maturityTarget: "demo_ready_ui | mock_functional_demo | demo_evidence_capture | user_demo_approval | real_functional | real_functional_verification | production_hardening"
+  demoGate:
+    required: true
+    mode: hard_stop
+    approvalSource: "docs/implementation/USER_DEMO_APPROVAL.md"
+    evidenceSource: "docs/implementation/DEMO_EVIDENCE.md"
+    mockContractSource: "docs/implementation/MOCK_API_CONTRACT.md"
+    blocks:
+      - real_functional
+      - production_backend
+      - real_persistence
+      - auth_integration
+      - irreversible_migration
 ```
 
 - Set `parallelEligible: false` and add blocker notes when `ownedPaths` are ambiguous, shared mutable files are required, or manual evidence is required.
+- Use `mvpMethodology.profile: demo_first` only for MVP slices that require user demo approval before Real Functional work.
 
 ## Scope
 - In scope:
@@ -39,6 +57,10 @@ phaseExecution:
 ## Preconditions and Inputs
 - Required docs:
   - `docs/implementation/00-master-plan-v<version>.md`
+- Demo-first MVP docs, when profile is `demo_first`:
+  - `docs/implementation/MOCK_API_CONTRACT.md`
+  - `docs/implementation/DEMO_EVIDENCE.md`
+  - `docs/implementation/USER_DEMO_APPROVAL.md`
 - Required code/data:
   - <item>
 
@@ -72,6 +94,11 @@ phaseExecution:
 - <test log path>
 - <changed file list>
 - <verification notes>
+- Demo-first evidence, when profile is `demo_first`:
+  - Mock Functional Demo: mock success path and mock error path evidence.
+  - Demo Evidence Capture: demo run command and tested route/flow evidence.
+  - User Demo Approval: approved non-empty scope in `USER_DEMO_APPROVAL.md`.
+  - Real Functional: real API/persistence evidence plus contract parity against `MOCK_API_CONTRACT.md`.
 
 ## Deliverables
 - <file/path or artifact>
@@ -80,6 +107,7 @@ phaseExecution:
 - [ ] All detailed tasks meet done criteria
 - [ ] Validation checks pass
 - [ ] Deliverables are present and reviewed
+- [ ] Demo-first gate is satisfied for the current maturity target, when applicable
 
 ## Handoff Notes
 - <notes for the next session/phase>

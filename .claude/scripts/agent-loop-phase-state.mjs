@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
@@ -1304,6 +1305,12 @@ function evaluatePhaseCompletionGate(config) {
     && scoreReason === 'ok'
     && scoreVerdict === 'done';
   const atomicLedger = readAtomicLedgerStatus(phaseExecutionDir);
+  const demoFirstGate = evaluateDemoFirstGate({
+    phaseExecutionDir,
+    qaReportPath,
+    scorecardPath,
+    sprintContractPath: phaseExecutionDir ? path.join(phaseExecutionDir, 'SPRINT_CONTRACT.md') : '',
+  });
   const informationalWorkflowWarnings = latestWorkflowWarnings.length > 0
     && structuredVerdictReady
     && closeoutConcrete
@@ -1335,12 +1342,19 @@ function evaluatePhaseCompletionGate(config) {
     }
   }
 
-  const finalAllowed = passedPaths.length > 0 && failures.length === 0 && workflowReason === 'ok' && scoreReason === 'ok' && atomicLedger.complete;
+  const finalAllowed = passedPaths.length > 0
+    && failures.length === 0
+    && workflowReason === 'ok'
+    && scoreReason === 'ok'
+    && atomicLedger.complete
+    && demoFirstGate.allowed;
   const finalReason = finalAllowed
     ? 'ok'
     : failures[0] || (workflowReason !== 'ok'
       ? workflowReason
-      : (scoreReason !== 'ok' ? scoreReason : (!atomicLedger.complete ? atomicLedger.reason : 'no-fresh-verification-artifact')));
+      : (scoreReason !== 'ok'
+        ? scoreReason
+        : (!atomicLedger.complete ? atomicLedger.reason : (!demoFirstGate.allowed ? demoFirstGate.reason : 'no-fresh-verification-artifact'))));
 
   return {
     PHASE_COMPLETION_ALLOWED: finalAllowed ? 'true' : 'false',
@@ -1377,6 +1391,12 @@ function evaluatePhaseCompletionGate(config) {
     PHASE_COMPLETION_ATOMIC_TASKS_DONE: atomicLedger.complete ? 'true' : 'false',
     PHASE_COMPLETION_ATOMIC_TASKS_PENDING: atomicLedger.pending.join('\n'),
     PHASE_COMPLETION_ATOMIC_TASK_LEDGER: atomicLedger.path || '',
+    PHASE_COMPLETION_DEMO_FIRST_APPLIES: demoFirstGate.applies ? 'true' : 'false',
+    PHASE_COMPLETION_DEMO_FIRST_ALLOWED: demoFirstGate.allowed ? 'true' : 'false',
+    PHASE_COMPLETION_DEMO_FIRST_REASON: demoFirstGate.reason,
+    PHASE_COMPLETION_DEMO_FIRST_MATURITY: demoFirstGate.maturityTarget || '',
+    PHASE_COMPLETION_DEMO_FIRST_APPROVAL_STATUS: demoFirstGate.approvalStatus || '',
+    PHASE_COMPLETION_DEMO_FIRST_APPROVED_SCOPE: demoFirstGate.approvedScopePresent ? 'true' : 'false',
     PHASE_PLAN_CONFORMANCE_ALLOWED: planConformance.allowed ? 'true' : 'false',
     PHASE_PLAN_CONFORMANCE_REASON: planConformance.reason,
     PHASE_PLAN_CONFORMANCE_VIOLATIONS: planConformance.violations.map((item) => `${item.code}: ${item.message}`).join('\n'),
@@ -1861,6 +1881,16 @@ function reconcileCompletedPhases(statusFile) {
     const executionDir = block.qaReport ? path.dirname(block.qaReport) : '';
     const atomicLedger = readAtomicLedgerStatus(executionDir);
     if (!atomicLedger.complete) {
+      continue;
+    }
+    const demoFirstGate = evaluateDemoFirstGate({
+      phaseExecutionDir: executionDir,
+      qaReportPath: block.qaReport,
+      scorecardPath: block.scorecard,
+      sprintContractPath: block.sprintContract,
+      phaseDocPath: block.archivedPhaseDoc,
+    });
+    if (!demoFirstGate.allowed) {
       continue;
     }
 

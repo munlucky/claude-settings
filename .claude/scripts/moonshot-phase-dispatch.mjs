@@ -223,6 +223,13 @@ function normalizeDispatchVerdict(exitCode, stopReasonCode, detail, completionSt
       stopReasonExplanation: explanation || 'dispatcher paused',
     };
   }
+  if (reason.includes('user_validation_required') || reason.includes('user validation') || reason.includes('demo-approval') || reason.includes('approval')) {
+    return {
+      normalizedRunVerdict: 'blocked',
+      stopReasonClass: 'user_validation_required',
+      stopReasonExplanation: explanation || 'user demo approval is required before continuing',
+    };
+  }
   if (reason.includes('runtime') || reason.includes('signal') || reason.includes('delegated-terminal-exit')) {
     return {
       normalizedRunVerdict: 'blocked',

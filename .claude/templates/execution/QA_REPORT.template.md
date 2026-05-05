@@ -46,6 +46,28 @@
 - Round fail conditions:
 - Contract revision required: yes | no
 
+## Demo-first MVP Evidence
+- Applies: yes | no
+- Profile: none | demo_first
+- Slice ID:
+- Maturity target: demo_ready_ui | mock_functional_demo | demo_evidence_capture | user_demo_approval | real_functional | real_functional_verification | production_hardening
+- Demo run command:
+- Tested routes:
+- Tested flows:
+- Mock success path: pending | pass | fail
+- Mock error path: pending | pass | fail
+- Browser/user-flow evidence: pending | pass | fail
+- Demo evidence source: docs/implementation/DEMO_EVIDENCE.md
+- User approval source: docs/implementation/USER_DEMO_APPROVAL.md
+- User approval status: pending | approved | rejected | invalidated
+- Approved scope present: yes | no
+- Mock contract source: docs/implementation/MOCK_API_CONTRACT.md
+- Contract parity: pending | pass | fail
+- Evidence mode: mock_only | real_api | mixed | pending
+- Mock-only evidence: yes | no
+- UI change request source: docs/implementation/UI_CHANGE_REQUEST.md
+- UI approval invalidated: yes | no
+
 ## Criteria Review
 | Criterion | Result | Notes |
 |-----------|--------|-------|

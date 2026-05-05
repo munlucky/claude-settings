@@ -49,6 +49,17 @@ PRESETS = {
             "CLOSE": "Review, polish, and handoff recorded",
         },
     },
+    "demo_first": {
+        "label": "Demo-first MVP",
+        "weights": {"CONFORM": 20, "REQ": 15, "SCN": 30, "VER": 20, "CLOSE": 15},
+        "descriptions": {
+            "CONFORM": "Source demo-first phase plan conformance verified",
+            "REQ": "In-scope MVP maturity requirements covered",
+            "SCN": "User-visible demo flow and state scenarios evidenced",
+            "VER": "Required verification and demo evidence checks passed",
+            "CLOSE": "Review, demo gate, and finish closeout recorded",
+        },
+    },
     "platform": {
         "label": "Platform / infra / refactor",
         "weights": {"CONFORM": 20, "REQ": 15, "SCN": 10, "VER": 40, "CLOSE": 15},
@@ -63,6 +74,16 @@ PRESETS = {
 }
 
 PROFILE_KEYWORDS = {
+    "demo_first": [
+        "demo_first",
+        "demo-first",
+        "mock functional demo",
+        "user demo approval",
+        "demo evidence",
+        "mvp methodology",
+        "mock api contract",
+        "user_demo_approval",
+    ],
     "frontend": [
         "frontend",
         "ui",
@@ -120,6 +141,15 @@ PROFILE_KEYWORDS = {
     ],
 }
 
+PROFILE_ALIASES = {
+    "demo": "demo_first",
+    "demo-first": "demo_first",
+    "demo_first": "demo_first",
+    "mvp": "demo_first",
+    "mvp-demo": "demo_first",
+    "mvp_demo": "demo_first",
+}
+
 
 def read_text(path_str):
     if not path_str:
@@ -136,7 +166,8 @@ def count_ids(text, prefix):
 
 def detect_profile(explicit_profile, phase_title, phase_doc_path):
     if explicit_profile and explicit_profile != "auto":
-        return explicit_profile, f"explicit:{explicit_profile}"
+        normalized = PROFILE_ALIASES.get(explicit_profile, explicit_profile)
+        return normalized, f"explicit:{explicit_profile}"
 
     haystack = f"{phase_title}\n{read_text(phase_doc_path)}".lower()
     scores = {name: 0 for name in PROFILE_KEYWORDS}
@@ -149,6 +180,17 @@ def detect_profile(explicit_profile, phase_title, phase_doc_path):
     if scores[best_profile] > 0:
         return best_profile, f"auto:keywords:{best_profile}"
     return "generic", "auto:generic"
+
+
+def demo_first_rows(args):
+    return [
+        ("OBJ-DEMO-FLOW", "Clickable demo routes, primary CTA, and core flow are evidenced", 0, "pending", args.qa_report, "Required for demo_first maturity gates"),
+        ("OBJ-DEMO-STATE", "Required loading, empty, error, and success states are evidenced", 0, "pending", args.qa_report, "Required before demo approval"),
+        ("OBJ-MOCK", "Mock success and error paths are evidenced", 0, "pending", args.qa_report, "Required for Mock Functional Demo"),
+        ("OBJ-CONTRACT", "Mock API contract and real API response shape remain compatible", 0, "pending", args.qa_report, "Required for Real Functional"),
+        ("OBJ-USER-APPROVAL", "User demo approval has approved non-empty scope", 0, "pending", "docs/implementation/USER_DEMO_APPROVAL.md", "Hard stop before Real Functional"),
+        ("OBJ-REAL", "Real API/persistence evidence replaces mock-only behavior", 0, "pending", args.qa_report, "Required for Real Functional"),
+    ]
 
 
 def round_to_five(value):
@@ -193,6 +235,8 @@ def build_markdown(args):
         ("OBJ-VER", preset["descriptions"]["VER"], preset["weights"]["VER"], "pending", args.qa_report, "Fresh contract-backed evidence"),
         ("OBJ-CLOSE", preset["descriptions"]["CLOSE"], preset["weights"]["CLOSE"], "pending", args.qa_report, "Review + finish evidence present"),
     ]
+    if profile == "demo_first":
+        rows.extend(demo_first_rows(args))
 
     lines = [
         f"# Phase {args.phase_prefix} Scorecard",
@@ -239,6 +283,7 @@ def build_markdown(args):
             "## Loop Policy",
             "- `done` requires Current score >= Target score",
             "- `done` requires OBJ-CONFORM = pass",
+            "- `done` requires all demo-first MVP objectives to be pass when profile is `demo_first`",
             "- `done` requires Unmet checklist items = 0",
             "- `done` requires Blocking defects = 0",
             "- `blocked` means environment, contract, or dependency prevents progress",

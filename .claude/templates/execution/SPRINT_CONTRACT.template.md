@@ -20,6 +20,34 @@
 - Code/docs/artifacts changed this round
 - Evidence paths that prove completion
 
+## Demo-first MVP Gate
+- Applies: yes | no
+- Profile: none | demo_first
+- Slice ID:
+- Maturity target: demo_ready_ui | mock_functional_demo | demo_evidence_capture | user_demo_approval | real_functional | real_functional_verification | production_hardening
+- Approval source: docs/implementation/USER_DEMO_APPROVAL.md
+- Evidence source: docs/implementation/DEMO_EVIDENCE.md
+- Mock contract source: docs/implementation/MOCK_API_CONTRACT.md
+- Demo gate mode: hard_stop
+- Backend production code allowed: yes | no
+
+### Pre-approval allowed
+- mock API contract
+- typed request/response interface
+- fixture schema
+- mock handler
+- in-memory state
+- localStorage-based demo persistence
+- browser/user-flow demo evidence
+
+### Pre-approval blocked
+- production DB migration
+- irreversible schema decision
+- real auth provider integration
+- production background job
+- production payment workflow
+- real persistence closeout
+
 ## Stop Rules
 - Continue while actionable phases remain
 - Stop only on clean plan-directory completion, explicit blocker, user pause, or deferred verification handoff

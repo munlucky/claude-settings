@@ -195,6 +195,149 @@ export function renderRequiredVerificationCommands(verificationContractFile, opt
   }).join('\n');
 }
 
+const DEMO_FIRST_MATURITY_ORDER = [
+  'demo_ready_ui',
+  'mock_functional_demo',
+  'demo_evidence_capture',
+  'user_demo_approval',
+  'real_functional',
+  'real_functional_verification',
+  'production_hardening',
+];
+
+function readFileIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return '';
+  }
+  return fs.readFileSync(filePath, 'utf8');
+}
+
+function extractYamlScalar(text, key) {
+  const match = String(text || '').match(new RegExp(`^\\s*${key}:\\s*["']?([^"'\n#]+)`, 'mi'));
+  return match ? match[1].trim() : '';
+}
+
+function slugifySliceId(value) {
+  return String(value || 'mvp-slice')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'mvp-slice';
+}
+
+function inferMaturityTarget(phaseTitle, phaseDocText) {
+  const explicit = extractYamlScalar(phaseDocText, 'maturityTarget');
+  if (DEMO_FIRST_MATURITY_ORDER.includes(explicit)) {
+    return explicit;
+  }
+
+  const lowered = `${phaseTitle}\n${phaseDocText}`.toLowerCase();
+  if (lowered.includes('real functional verification')) return 'real_functional_verification';
+  if (lowered.includes('mock functional demo')) return 'mock_functional_demo';
+  if (lowered.includes('demo evidence capture')) return 'demo_evidence_capture';
+  if (lowered.includes('user demo approval')) return 'user_demo_approval';
+  if (lowered.includes('demo ready ui')) return 'demo_ready_ui';
+  if (lowered.includes('real functional')) return 'real_functional';
+  if (lowered.includes('production hardening')) return 'production_hardening';
+  return '';
+}
+
+function detectDemoFirstMethodology(phaseTitle, phaseDoc) {
+  const phaseDocText = readFileIfExists(phaseDoc);
+  const haystack = `${phaseTitle}\n${phaseDocText}`.toLowerCase();
+  const enabled = /profile:\s*["']?demo_first["']?/i.test(phaseDocText)
+    || haystack.includes('demo-first')
+    || haystack.includes('user_demo_approval')
+    || haystack.includes('mock functional demo');
+  const maturityTarget = inferMaturityTarget(phaseTitle, phaseDocText);
+  const sliceId = extractYamlScalar(phaseDocText, 'sliceId') || slugifySliceId(phaseTitle.replace(/\s+-\s+.*$/, ''));
+
+  return {
+    enabled,
+    profile: enabled ? 'demo_first' : 'none',
+    sliceId,
+    maturityTarget: enabled ? (maturityTarget || 'demo_ready_ui') : 'none',
+    approvalSource: extractYamlScalar(phaseDocText, 'approvalSource') || 'docs/implementation/USER_DEMO_APPROVAL.md',
+    evidenceSource: extractYamlScalar(phaseDocText, 'evidenceSource') || 'docs/implementation/DEMO_EVIDENCE.md',
+    mockContractSource: extractYamlScalar(phaseDocText, 'mockContractSource') || 'docs/implementation/MOCK_API_CONTRACT.md',
+  };
+}
+
+function renderDemoFirstSprintSection(demoFirst) {
+  if (!demoFirst.enabled) {
+    return `## Demo-first MVP Gate
+- Applies: no
+`;
+  }
+
+  const productionAllowed = ['real_functional', 'real_functional_verification', 'production_hardening'].includes(demoFirst.maturityTarget)
+    ? 'yes'
+    : 'no';
+  return `## Demo-first MVP Gate
+- Applies: yes
+- Profile: demo_first
+- Slice ID: ${demoFirst.sliceId}
+- Maturity target: ${demoFirst.maturityTarget}
+- Approval source: ${demoFirst.approvalSource}
+- Evidence source: ${demoFirst.evidenceSource}
+- Mock contract source: ${demoFirst.mockContractSource}
+- Demo gate mode: hard_stop
+- Backend production code allowed: ${productionAllowed}
+
+### Pre-approval allowed
+- mock API contract
+- typed request/response interface
+- fixture schema
+- mock handler
+- in-memory state
+- localStorage-based demo persistence
+- browser/user-flow demo evidence
+
+### Pre-approval blocked
+- production DB migration
+- irreversible schema decision
+- real auth provider integration
+- production background job
+- production payment workflow
+- real persistence closeout
+
+### Approval contract
+- Real Functional phases require \`${demoFirst.approvalSource}\` with \`approval: approved\` and non-empty approved scope.
+- Approved route, primary CTA, flow order, mock response shape, or approved state removal requires \`UI_CHANGE_REQUEST.md\`, approval invalidation, refreshed demo evidence, and user reapproval.
+`;
+}
+
+function renderDemoFirstQaSection(demoFirst) {
+  if (!demoFirst.enabled) {
+    return `## Demo-first MVP Evidence
+- Applies: no
+`;
+  }
+
+  return `## Demo-first MVP Evidence
+- Applies: yes
+- Profile: demo_first
+- Slice ID: ${demoFirst.sliceId}
+- Maturity target: ${demoFirst.maturityTarget}
+- Demo run command:
+- Tested routes:
+- Tested flows:
+- Mock success path: pending
+- Mock error path: pending
+- Browser/user-flow evidence: pending
+- Demo evidence source: ${demoFirst.evidenceSource}
+- User approval source: ${demoFirst.approvalSource}
+- User approval status: pending
+- Approved scope present: no
+- Mock contract source: ${demoFirst.mockContractSource}
+- Contract parity: pending
+- Evidence mode: pending
+- Mock-only evidence: no
+- UI change request source: docs/implementation/UI_CHANGE_REQUEST.md
+- UI approval invalidated: no
+`;
+}
+
 function renderScorecard({
   phasePrefix,
   phaseTitle,
@@ -289,6 +432,7 @@ export function ensureExecutionArtifacts(config) {
   const retrievalBudget = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
   const validationProfile = 'workflow_core';
   const phaseReplayPolicy = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
+  const demoFirst = detectDemoFirstMethodology(phaseTitle, phaseDoc);
   const modelRoute = resolveModelRoute({
     runtime: currentRuntime || requestedRuntime || 'auto',
     stage: process.env.PHASE_MODEL_STAGE || 'phase_implementation',
@@ -320,6 +464,8 @@ export function ensureExecutionArtifacts(config) {
 
 ## Output
 - Update code/docs only inside the active phase scope and record durable evidence in the active execution artifacts.
+
+${renderDemoFirstSprintSection(demoFirst)}
 
 ## Stop Rules
 - Continue while actionable phases remain.
@@ -456,6 +602,8 @@ ${requiredCommands}
 - Round fail conditions: missing contract review or runtime evidence plan keeps this phase in retry_loop
 - Contract revision required: no
 
+${renderDemoFirstQaSection(demoFirst)}
+
 ## Failure Loop
 - Retry strategy: same_direction_refine
 - Delta hypothesis: first attempt pending
@@ -575,7 +723,7 @@ ${requiredCommands}
       phaseQaReport: paths.phaseQaReport,
       phaseDoc,
       executionRoot,
-      scorecardProfile,
+      scorecardProfile: demoFirst.enabled ? 'demo_first' : scorecardProfile,
     }), 'utf8');
   }
 
@@ -602,6 +750,18 @@ export function buildPhasePrompt(config) {
     workspaceRoot = process.cwd(),
     verificationRuntimes = 'auto',
   } = config;
+
+  const demoFirst = detectDemoFirstMethodology(phaseTitle, phaseDoc);
+  const demoFirstPromptRules = demoFirst.enabled ? `
+Demo-first MVP gate rules:
+- This phase uses mvpMethodology.profile=demo_first, sliceId=${demoFirst.sliceId}, maturityTarget=${demoFirst.maturityTarget}.
+- Read ${demoFirst.approvalSource}, ${demoFirst.evidenceSource}, and ${demoFirst.mockContractSource} when they are relevant to this maturity target.
+- Before user demo approval, do not implement production backend, real persistence, auth integration, irreversible migrations, production background jobs, or production payment workflows.
+- Mock API contracts, typed fixtures, mock handlers, in-memory state, and localStorage demo persistence are allowed before approval.
+- If this maturity target is real_functional or later, require USER_DEMO_APPROVAL.md approval=approved with non-empty approved scope before code changes.
+- If Real Functional needs approved route, CTA, flow order, state, or mock response shape changes, write UI_CHANGE_REQUEST.md, invalidate the approval, refresh demo evidence, and stop for reapproval.
+- Do not mark Real Functional FULL/done/clean_finish with mock-only evidence. Record contract parity against ${demoFirst.mockContractSource}.
+` : '';
 
   let promptHeader = '/moonshot-orchestrator';
   let codexDirectSteps = '';
@@ -659,6 +819,7 @@ Single isolated phase-attempt rules:
   - If the selected atomic task is not complete, leave the phase in_progress and set the attempt outcome to partial or blocked with evidence.
 - Phase completion is allowed only when every atomicTasks entry is completed and SCORECARD/QA/verification gates are done.
 - If any atomic task remains pending or in_progress, keep phase status in_progress, record lastOutcome partial, and return control for the next attempt.
+${demoFirstPromptRules}
 - Set signals.phaseAttemptMode = true.
 - Set artifacts.activePhaseDocPath = "${phaseDoc}".
 - Reuse the provided execution artifact paths.

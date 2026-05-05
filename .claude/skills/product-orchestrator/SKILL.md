@@ -8,6 +8,7 @@ loads:
 deepReferences:
   - .claude/docs/guidelines/product-definition-workflow.md
   - .claude/docs/guidelines/requirements-traceability-harness.md
+  - .claude/docs/guidelines/demo-first-mvp-gate.md
   - .claude/docs/guidelines/external-skill-pattern-transfer.md
   - .claude/docs/guidelines/memorygraph-workflow.md
 outputArtifacts:
@@ -44,6 +45,8 @@ This skill is not for:
 - MVP experiment pipelines
 - shipping code directly
 
+It may prepare a `demo_first` MVP execution pack. That pack is a planning and execution contract, not a market experiment runner.
+
 ## Output Package
 
 Write artifacts under:
@@ -62,6 +65,20 @@ Required outputs:
 - `execution/REQUIREMENTS_TRACEABILITY.md` when document-trace completion is required
 - `execution/SCENARIO_MATRIX.md` when user-visible flows matter
 - `execution/UAT_CHECKLIST.md` when the target is UAT-ready handoff
+
+Conditional demo-first MVP outputs:
+- `MVP_SCOPE.md`
+- `MINI_ARCHITECTURE.md`
+- `UI_DEMO_PLAN.md`
+- `UI_FLOW_MAP.md`
+- `UI_STATE_MATRIX.md`
+- `MOCK_SCENARIOS.md`
+- `MOCK_API_CONTRACT.md`
+- `USER_DEMO_TEST.md`
+- `DEMO_EVIDENCE.md`
+- `USER_DEMO_APPROVAL.md`
+- `POST_DEMO_IMPLEMENTATION_PLAN.md`
+- `UI_CHANGE_REQUEST.md`
 
 Planning artifacts should also record:
 - explicit non-goals
@@ -165,11 +182,16 @@ Preferred actions:
 - Narrow or reject slices whose cost is not justified by value
 - Mark slices as AFK or HITL when they may become external issues or agent handoffs
 - Prefer tracer-bullet vertical slices over horizontal layer batches
+- For user-facing MVP work that needs direct user validation, set `mvpMethodology.profile: demo_first` and preserve the Demo Approval Hard Stop in `PLAN.md` and `tasks/*.md`.
+- Demo-first plans must order each in-scope slice as `demo_ready_ui -> mock_functional_demo -> demo_evidence_capture -> user_demo_approval -> real_functional -> real_functional_verification -> production_hardening`.
+- Before approval, allow mock contracts, typed fixtures, mock handlers, in-memory state, and localStorage demo persistence; block production backend, real persistence, auth integration, irreversible migrations, production jobs, and production payment workflows.
+- Treat `USER_DEMO_APPROVAL.md` as the approval truth source and `DEMO_EVIDENCE.md` as the evidence source for what the user approved.
 
 ## Approval Boundary
 
 - Human approval may be used to accept the planning package before execution begins.
 - After execution begins, implementation -> review -> verify -> retry loops should continue without additional human checkpoints unless a true blocker or external dependency appears.
+- Exception: `demo_first` MVP work must hard-stop after Mock Functional Demo evidence until `USER_DEMO_APPROVAL.md` is approved with non-empty approved scope.
 
 ## Handoff Contract
 
@@ -184,6 +206,7 @@ Recommended next step:
 ## References
 
 - `.claude/docs/guidelines/product-definition-workflow.md`
+- `.claude/docs/guidelines/demo-first-mvp-gate.md`
 - `.claude/templates/product-definition/`
 - `.claude/skills/product-gate-reviewer/SKILL.md`
 - `.claude/skills/plan-ceo-review/SKILL.md`

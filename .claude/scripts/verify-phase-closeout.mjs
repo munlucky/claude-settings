@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -8,6 +9,7 @@ import {
   scenarioEvidencePassed as normalizeScenarioEvidencePassed,
   sectionText as normalizeSectionText,
 } from './artifact-normalizer.mjs';
+import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
 
 const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
@@ -35,6 +37,9 @@ function sectionText(text, heading) {
 function parseArgs(argv) {
   const result = {};
   const args = [...argv];
+  if (args[0] === 'self-test') {
+    return { selfTest: true };
+  }
   while (args.length > 0) {
     const arg = args.shift();
     switch (arg) {
@@ -330,6 +335,17 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       addViolation(violations, 'scorecard-not-done', `Completed phase ${phaseNumber} scorecard is not done/FULL.`, phaseNumber);
     }
 
+    const demoFirstGate = evaluateDemoFirstGate({
+      phaseExecutionDir: phase.qaReport ? path.dirname(resolvePath(phase.qaReport)) : '',
+      sprintContractPath: resolvePath(phase.sprintContract || ''),
+      qaReportPath: resolvePath(phase.qaReport || ''),
+      scorecardPath: resolvePath(phase.scorecard || ''),
+      phaseDocPath: archivedPath,
+    });
+    if (!demoFirstGate.allowed) {
+      addViolation(violations, demoFirstGate.reason, `Completed phase ${phaseNumber} violates demo-first MVP gate for maturity ${demoFirstGate.maturityTarget || 'unknown'}.`, phaseNumber);
+    }
+
     if (unresolvedLocalBlocker(evidenceText)) {
       addViolation(violations, 'unresolved-local-blocker', `Completed phase ${phaseNumber} still contains a local blocker.`, phaseNumber);
     }
@@ -374,8 +390,253 @@ function printLine(value) {
   process.stdout.write(`${value}\n`);
 }
 
+function writeFixtureFile(root, relativePath, content) {
+  const filePath = path.join(root, relativePath);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, 'utf8');
+}
+
+function writeDemoFirstFixture(root, options = {}) {
+  const approvalStatus = options.approvalStatus || 'approved';
+  const approvalScope = options.approvalScope === false ? '' : `
+  routes:
+    - /dashboard
+  flows:
+    - create_project_success
+  states:
+    - success
+  mockScenarios:
+    - create_project_success`;
+  const contractParity = options.contractParity || 'pass';
+  const evidenceMode = options.evidenceMode || 'real_api';
+  const mockOnly = options.mockOnly || 'no';
+
+  writeFixtureFile(root, 'docs/implementation/00-master-plan-v1.md', `# Master
+
+## Phase Completion Checklist
+- [x] Phase 01 - Create First Project - Real Functional (\`docs/implementation/01-create-first-project-real-functional-v1.md\`)
+`);
+  writeFixtureFile(root, '.claude/docs/phase-status.yaml', `phases:
+  - number: 1
+    status: completed
+    sprintContract: docs/implementation/execution/phase01/SPRINT_CONTRACT.md
+    qaReport: docs/implementation/execution/phase01/QA_REPORT.md
+    handoff: docs/implementation/execution/phase01/HANDOFF.md
+    scorecard: docs/implementation/execution/phase01/SCORECARD.md
+    archivedPhaseDoc: docs/implementation/01-create-first-project-real-functional-v1.md
+`);
+  writeFixtureFile(root, 'docs/implementation/01-create-first-project-real-functional-v1.md', `# Phase 01: Create First Project - Real Functional
+
+## Phase Execution Metadata
+\`\`\`yaml
+mvpMethodology:
+  profile: demo_first
+  sliceId: create-first-project
+  maturityTarget: real_functional
+  demoGate:
+    required: true
+    mode: hard_stop
+    approvalSource: "docs/implementation/USER_DEMO_APPROVAL.md"
+    evidenceSource: "docs/implementation/DEMO_EVIDENCE.md"
+    mockContractSource: "docs/implementation/MOCK_API_CONTRACT.md"
+\`\`\`
+
+## Critical Product Scenarios
+| ID | User-Visible Expectation | Verification Command | Expected Signal | Evidence Path |
+|----|--------------------------|----------------------|-----------------|---------------|
+| SCN-01-1 | User creates first project | \`npm test\` | pass | \`docs/implementation/execution/phase01/QA_REPORT.md\` |
+`);
+  writeFixtureFile(root, 'docs/implementation/execution/REQUIREMENTS_TRACEABILITY.md', 'REQ-01 | pass | verified\n');
+  writeFixtureFile(root, 'docs/implementation/execution/SCENARIO_MATRIX.md', 'SCN-01-1 | pass | verified\n');
+  writeFixtureFile(root, 'docs/implementation/execution/phase01/SPRINT_CONTRACT.md', `# Sprint
+
+## Demo-first MVP Gate
+- Applies: yes
+- Profile: demo_first
+- Slice ID: create-first-project
+- Maturity target: real_functional
+- Approval source: docs/implementation/USER_DEMO_APPROVAL.md
+- Evidence source: docs/implementation/DEMO_EVIDENCE.md
+- Mock contract source: docs/implementation/MOCK_API_CONTRACT.md
+`);
+  writeFixtureFile(root, 'docs/implementation/execution/phase01/QA_REPORT.md', `# QA
+
+## Verdict
+- Status: pass
+- Next path: clean_finish
+- Closeout reason: scope_complete
+
+## Review Checkpoint
+- Review completed: yes
+
+## Demo-first MVP Evidence
+- Applies: yes
+- Profile: demo_first
+- Slice ID: create-first-project
+- Maturity target: real_functional
+- Demo run command: npm run dev
+- Tested routes: /dashboard, /projects/new, /projects/project_1
+- Tested flows: create_project_success
+- Mock success path: pass
+- Mock error path: pass
+- Browser/user-flow evidence: pass
+- Demo evidence source: docs/implementation/DEMO_EVIDENCE.md
+- User approval source: docs/implementation/USER_DEMO_APPROVAL.md
+- User approval status: ${approvalStatus}
+- Approved scope present: ${approvalScope ? 'yes' : 'no'}
+- Mock contract source: docs/implementation/MOCK_API_CONTRACT.md
+- Contract parity: ${contractParity}
+- Evidence mode: ${evidenceMode}
+- Mock-only evidence: ${mockOnly}
+
+SCN-01-1 | pass | docs/implementation/execution/phase01/QA_REPORT.md
+
+## Workflow Execution
+- Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, codex-review-code, completion-verifier
+- Skipped skills: none
+
+## Finish Readiness
+- Why this round may stop now: scope complete
+- Remaining in-scope work: none
+- Remaining blockers before closeout: none
+`);
+  writeFixtureFile(root, 'docs/implementation/execution/phase01/HANDOFF.md', '# Handoff\n\n- Stop reason: none\n');
+  writeFixtureFile(root, 'docs/implementation/execution/phase01/SCORECARD.md', '# Scorecard\n\n- Verdict: done\n- Current task status: FULL\n');
+  writeFixtureFile(root, 'docs/implementation/USER_DEMO_APPROVAL.md', `approval: ${approvalStatus}
+approvedAt: "2026-05-06T00:00:00+09:00"
+approvedBy: user
+approvedScope:
+  sliceId: create-first-project
+  maturityTarget: mock_functional_demo${approvalScope}
+knownIssues: []
+blockedChanges:
+  - approved_routes_change
+requiresReapprovalIf:
+  - route_structure_changes
+`);
+  writeFixtureFile(root, 'docs/implementation/DEMO_EVIDENCE.md', `# Demo Evidence
+
+- Demo run command: npm run dev
+- Tested routes: /dashboard, /projects/new, /projects/project_1
+`);
+  writeFixtureFile(root, 'docs/implementation/MOCK_API_CONTRACT.md', '# Mock API Contract\n\nPOST /api/projects\n');
+  writeFixtureFile(root, '.claude/verification-verdict-phase01-final.json', JSON.stringify({
+    verdict: 'passed',
+    evidenceFresh: true,
+    blocking: false,
+    commands: [{ name: 'fixture', status: 'passed' }],
+    score: { verdict: 'done' },
+  }, null, 2));
+}
+
+function runSelfTest() {
+  const originalCwd = process.cwd();
+  const tempRoots = [];
+  const makeTempRoot = (prefix) => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tempRoots.push(tempRoot);
+    return tempRoot;
+  };
+  const root = makeTempRoot('phase-closeout-demo-first-');
+  try {
+    writeDemoFirstFixture(root);
+    process.chdir(root);
+    const passing = evaluatePhaseCloseout({
+      statusFile: '.claude/docs/phase-status.yaml',
+      planDir: 'docs/implementation',
+    });
+    if (!passing.allowed) {
+      throw new Error(`expected passing demo-first fixture, got ${passing.reason}`);
+    }
+
+    const failingRoot = makeTempRoot('phase-closeout-demo-first-fail-');
+    writeDemoFirstFixture(failingRoot, { approvalStatus: 'pending' });
+    process.chdir(failingRoot);
+    const failing = evaluatePhaseCloseout({
+      statusFile: '.claude/docs/phase-status.yaml',
+      planDir: 'docs/implementation',
+    });
+    if (failing.allowed || failing.reason !== 'user_validation_required') {
+      throw new Error(`expected user_validation_required, got ${failing.reason}`);
+    }
+
+    const parityRoot = makeTempRoot('phase-closeout-demo-first-parity-');
+    writeDemoFirstFixture(parityRoot, { contractParity: 'fail' });
+    process.chdir(parityRoot);
+    const parity = evaluatePhaseCloseout({
+      statusFile: '.claude/docs/phase-status.yaml',
+      planDir: 'docs/implementation',
+    });
+    if (parity.allowed || parity.reason !== 'contract_parity_failed') {
+      throw new Error(`expected contract_parity_failed, got ${parity.reason}`);
+    }
+
+    const mockRoot = makeTempRoot('phase-closeout-demo-first-mock-');
+    writeFixtureFile(mockRoot, 'docs/implementation/execution/phase01/SPRINT_CONTRACT.md', `# Sprint
+
+## Demo-first MVP Gate
+- Applies: yes
+- Profile: demo_first
+- Maturity target: mock_functional_demo
+`);
+    writeFixtureFile(mockRoot, 'docs/implementation/execution/phase01/QA_REPORT.md', `# QA
+
+## Demo-first MVP Evidence
+- Applies: yes
+- Profile: demo_first
+- Maturity target: mock_functional_demo
+- Mock success path: pass
+- Mock error path: pending
+`);
+    const mockGate = evaluateDemoFirstGate({
+      baseDir: mockRoot,
+      phaseExecutionDir: path.join(mockRoot, 'docs/implementation/execution/phase01'),
+    });
+    if (mockGate.allowed || mockGate.reason !== 'mock-functional-demo-evidence-missing') {
+      throw new Error(`expected mock-functional-demo-evidence-missing, got ${mockGate.reason}`);
+    }
+
+    const evidenceRoot = makeTempRoot('phase-closeout-demo-first-evidence-');
+    writeFixtureFile(evidenceRoot, 'docs/implementation/execution/phase01/SPRINT_CONTRACT.md', `# Sprint
+
+## Demo-first MVP Gate
+- Applies: yes
+- Profile: demo_first
+- Maturity target: demo_evidence_capture
+`);
+    writeFixtureFile(evidenceRoot, 'docs/implementation/execution/phase01/QA_REPORT.md', `# QA
+
+## Demo-first MVP Evidence
+- Applies: yes
+- Profile: demo_first
+- Maturity target: demo_evidence_capture
+- Demo run command:
+- Tested routes:
+`);
+    const evidenceGate = evaluateDemoFirstGate({
+      baseDir: evidenceRoot,
+      phaseExecutionDir: path.join(evidenceRoot, 'docs/implementation/execution/phase01'),
+    });
+    if (evidenceGate.allowed || evidenceGate.reason !== 'demo-evidence-missing') {
+      throw new Error(`expected demo-evidence-missing, got ${evidenceGate.reason}`);
+    }
+
+    printLine('verify-phase-closeout self-test passed');
+  } finally {
+    process.chdir(originalCwd);
+    for (const tempRoot of tempRoots) {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  }
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.selfTest) {
+    runSelfTest();
+    return;
+  }
   const result = evaluatePhaseCloseout(options);
   if (options.json) {
     printLine(JSON.stringify(result, null, 2));
