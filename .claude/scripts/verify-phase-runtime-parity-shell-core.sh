@@ -164,6 +164,38 @@ checksum_file() {
   shasum "$1" | awk '{print $1}'
 }
 
+tree_checksum() {
+  local target_dir="$1"
+
+  python3 - "$target_dir" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+if not root.exists():
+    print("")
+    raise SystemExit(0)
+
+digest = hashlib.sha256()
+for path in sorted((candidate for candidate in root.rglob('*') if candidate.is_file()), key=lambda candidate: candidate.as_posix()):
+    digest.update(path.relative_to(root).as_posix().encode('utf-8'))
+    digest.update(b'\0')
+    digest.update(path.read_bytes())
+    digest.update(b'\0')
+
+print(digest.hexdigest())
+PY
+}
+
+write_agent_loop_log() {
+  local log_file="$1"
+  shift
+
+  mkdir -p "$(dirname "$log_file")"
+  printf '%s\n' "$@" > "$log_file"
+}
+
 snapshot_git_status() {
   local repo_root="$1"
   local output_file="$2"
@@ -937,7 +969,12 @@ run_render_matrix() {
   local claude_coord_out="$TMP_ROOT/dispatch-claude-coordinator.txt"
   local codex_coord_out="$TMP_ROOT/dispatch-codex-coordinator.txt"
   local agent_loop_out="$TMP_ROOT/agent-loop-dry-run.txt"
+  local reference_fixture_root="$REPO_ROOT/$REFERENCE_PLAN_DIR"
+  local runtime_parity_log_dir="$REPO_ROOT/.claude/logs/agent-loop"
+  local runtime_parity_fixture_log="$runtime_parity_log_dir/runtime-parity-fixture-hash.log"
 
+  local reference_fixture_hash_before
+  reference_fixture_hash_before="$(tree_checksum "$reference_fixture_root")"
   (
     cd "$REPO_ROOT"
     bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime claude --dry-run > "$claude_delegated_out"
@@ -991,6 +1028,20 @@ run_render_matrix() {
   assert_contains "$handoff" "## Checks To Rerun" "handoff rerun section"
   assert_contains "$scorecard" "## Score Summary" "scorecard summary section"
 
+  local reference_fixture_hash_after
+  reference_fixture_hash_after="$(tree_checksum "$reference_fixture_root")"
+  if [[ "$reference_fixture_hash_before" != "$reference_fixture_hash_after" ]]; then
+    fail "runtime parity reference fixture hash changed during render matrix"
+  fi
+
+  write_agent_loop_log "$runtime_parity_fixture_log" \
+    "reference_fixture_path: $REFERENCE_PLAN_DIR" \
+    "reference_fixture_hash_before: ${reference_fixture_hash_before:-missing}" \
+    "reference_fixture_hash_after: ${reference_fixture_hash_after:-missing}" \
+    "reference_fixture_hash_unchanged: true" \
+    "temp_fixture_root: $TMP_ROOT/render-fixture" \
+    "temp_fixture_plan_dir: $plan_dir"
+
   local closeout_prompt="$TMP_ROOT/closeout-remediation.txt"
   (
     cd "$REPO_ROOT"
@@ -999,6 +1050,70 @@ run_render_matrix() {
   assert_contains "$closeout_prompt" "Treat the missing completion evidence as an active closeout task for this same phase" "closeout remediation stays on current phase"
   assert_contains "$closeout_prompt" "Resume at stage: review" "review-stage remediation hint"
   assert_contains "$closeout_prompt" "Do not return control just because implementation is complete or a verifier ran once." "closeout remediation no early return"
+}
+
+run_archive_sync_fixture_smoke() {
+  local fixture_root="$TMP_ROOT/archive-sync-fixture"
+  local reference_plan_dir="$fixture_root/.claude/docs/runtime-parity-reference-plan"
+  local execution_root="$reference_plan_dir/execution"
+  local status_file="$fixture_root/.claude/docs/phase-status.yaml"
+  local archive_log="$REPO_ROOT/.claude/logs/agent-loop/archive-sync-fixture.log"
+  local stdout_file="$TMP_ROOT/archive-sync-fixture.out"
+
+  mkdir -p "$reference_plan_dir" "$execution_root" "$(dirname "$status_file")"
+
+  cat > "$reference_plan_dir/00-master-plan-v1.md" <<'EOF'
+# Runtime Parity Reference Plan
+
+- Phase 01: Runtime Smoke
+EOF
+
+  cat > "$reference_plan_dir/01-runtime-smoke.md" <<'EOF'
+# Phase 01: Runtime Smoke
+
+## Goal
+- Keep the runtime parity reference fixture untouched by archive sync.
+EOF
+
+  cat > "$status_file" <<'EOF'
+schemaVersion: "1.0"
+phases:
+  - number: 1
+    title: "Phase 01: Runtime Smoke"
+    status: completed
+    planConfirmed: true
+EOF
+
+  set +e
+  (
+    cd "$REPO_ROOT"
+    python3 .claude/scripts/sync-phase-archive.py --status-file "$status_file" --plan-dir "$reference_plan_dir"
+  ) >"$stdout_file" 2>&1
+  local exit_code=$?
+  set -e
+
+  if [[ "$exit_code" -ne 0 ]]; then
+    cat "$stdout_file" >&2 || true
+    fail "archive sync guard smoke failed"
+  fi
+
+  assert_contains "$stdout_file" "skipping runtime parity reference fixture" "archive sync guard skip message"
+  if [[ ! -f "$reference_plan_dir/01-runtime-smoke.md" ]]; then
+    fail "archive sync guard moved the runtime parity reference fixture"
+  fi
+  if [[ -d "$reference_plan_dir/close" ]]; then
+    fail "archive sync guard created a close archive under the runtime parity reference fixture"
+  fi
+  if grep -Fq "archivedPhaseDoc" "$status_file"; then
+    fail "archive sync guard polluted archivedPhaseDoc for the runtime parity reference fixture"
+  fi
+
+  write_agent_loop_log "$archive_log" \
+    "plan_dir: $reference_plan_dir" \
+    "status_file: $status_file" \
+    "stdout: $stdout_file" \
+    "reference_fixture_preserved: true" \
+    "archivedPhaseDoc_polluted: false"
 }
 
 run_workflow_enforcement_sync_smoke() {
@@ -1552,6 +1667,7 @@ require_command shasum
 resolve_target_runtime_set
 
 run_render_matrix
+run_archive_sync_fixture_smoke
 run_workflow_enforcement_sync_smoke
 run_verify_changes_workflow_verdict_smoke
 

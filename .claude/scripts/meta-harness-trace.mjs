@@ -195,13 +195,15 @@ function parsePhaseStatus(statusPath, qaReportPath) {
   const phases = [];
   let current = null;
   let inAttempts = false;
+  let inTiming = false;
 
   for (const rawLine of lines) {
     if (/^\s*-\s+number:\s*/.test(rawLine)) {
       if (current) phases.push(current);
       const number = Number.parseInt(rawLine.match(/number:\s*([0-9]+)/)?.[1] || '', 10);
-      current = { number, title: '', status: '', qaReport: '', handoff: '', scorecard: '', sprintContract: '', attempts: {} };
+      current = { number, title: '', status: '', qaReport: '', handoff: '', scorecard: '', sprintContract: '', attempts: {}, timing: {} };
       inAttempts = false;
+      inTiming = false;
       continue;
     }
     if (!current) {
@@ -211,26 +213,49 @@ function parsePhaseStatus(statusPath, qaReportPath) {
     const stripped = rawLine.trim();
     if (stripped === 'attempts:') {
       inAttempts = true;
+      inTiming = false;
+      continue;
+    }
+    if (stripped === 'timing:') {
+      inTiming = true;
+      inAttempts = false;
       continue;
     }
     if (inAttempts && !rawLine.startsWith('      ')) {
       inAttempts = false;
     }
+    if (inTiming && !rawLine.startsWith('      ')) {
+      inTiming = false;
+    }
 
     if (inAttempts) {
-      if (stripped.startsWith('total:')) current.attempts.total = stripped.split(':', 2)[1].trim();
-      if (stripped.startsWith('lastOutcome:')) current.attempts.lastOutcome = stripped.split(':', 2)[1].trim();
-      if (stripped.startsWith('lastUpdatedAt:')) current.attempts.lastUpdatedAt = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
+      if (stripped.startsWith('total:')) current.attempts.total = stripped.slice('total:'.length).trim();
+      if (stripped.startsWith('lastOutcome:')) current.attempts.lastOutcome = stripped.slice('lastOutcome:'.length).trim();
+      if (stripped.startsWith('lastUpdatedAt:')) current.attempts.lastUpdatedAt = stripped.slice('lastUpdatedAt:'.length).trim().replace(/^"|"$/g, '');
+      continue;
+    }
+    if (inTiming) {
+      if (stripped.startsWith('startedAt:')) current.timing.startedAt = stripped.slice('startedAt:'.length).trim().replace(/^"|"$/g, '');
+      if (stripped.startsWith('lastStage:')) current.timing.lastStage = stripped.slice('lastStage:'.length).trim().replace(/^"|"$/g, '');
+      if (stripped.startsWith('lastStageAt:')) current.timing.lastStageAt = stripped.slice('lastStageAt:'.length).trim().replace(/^"|"$/g, '');
+      if (stripped.startsWith('wallClockSeconds:')) current.timing.wallClockSeconds = Number.parseFloat(stripped.slice('wallClockSeconds:'.length).trim());
+      if (stripped.startsWith('runnerActiveSeconds:')) current.timing.runnerActiveSeconds = Number.parseFloat(stripped.slice('runnerActiveSeconds:'.length).trim());
+      if (stripped.startsWith('verificationSeconds:')) current.timing.verificationSeconds = Number.parseFloat(stripped.slice('verificationSeconds:'.length).trim());
+      if (stripped.startsWith('remediationSeconds:')) current.timing.remediationSeconds = Number.parseFloat(stripped.slice('remediationSeconds:'.length).trim());
+      if (stripped.startsWith('blockedSeconds:')) current.timing.blockedSeconds = Number.parseFloat(stripped.slice('blockedSeconds:'.length).trim());
+      if (stripped.startsWith('manualCloseoutSeconds:')) current.timing.manualCloseoutSeconds = Number.parseFloat(stripped.slice('manualCloseoutSeconds:'.length).trim());
+      if (stripped.startsWith('completedAt:')) current.timing.completedAt = stripped.slice('completedAt:'.length).trim().replace(/^"|"$/g, '');
+      if (stripped.startsWith('blockedAt:')) current.timing.blockedAt = stripped.slice('blockedAt:'.length).trim().replace(/^"|"$/g, '');
       continue;
     }
 
-    if (stripped.startsWith('title:')) current.title = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
-    else if (stripped.startsWith('status:')) current.status = stripped.split(':', 2)[1].trim();
-    else if (stripped.startsWith('qaReport:')) current.qaReport = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
-    else if (stripped.startsWith('handoff:')) current.handoff = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
-    else if (stripped.startsWith('scorecard:')) current.scorecard = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
-    else if (stripped.startsWith('sprintContract:')) current.sprintContract = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
-    else if (stripped.startsWith('completedAt:')) current.completedAt = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
+    if (stripped.startsWith('title:')) current.title = stripped.slice('title:'.length).trim().replace(/^"|"$/g, '');
+    else if (stripped.startsWith('status:')) current.status = stripped.slice('status:'.length).trim();
+    else if (stripped.startsWith('qaReport:')) current.qaReport = stripped.slice('qaReport:'.length).trim().replace(/^"|"$/g, '');
+    else if (stripped.startsWith('handoff:')) current.handoff = stripped.slice('handoff:'.length).trim().replace(/^"|"$/g, '');
+    else if (stripped.startsWith('scorecard:')) current.scorecard = stripped.slice('scorecard:'.length).trim().replace(/^"|"$/g, '');
+    else if (stripped.startsWith('sprintContract:')) current.sprintContract = stripped.slice('sprintContract:'.length).trim().replace(/^"|"$/g, '');
+    else if (stripped.startsWith('completedAt:')) current.completedAt = stripped.slice('completedAt:'.length).trim().replace(/^"|"$/g, '');
   }
   if (current) phases.push(current);
 
@@ -241,6 +266,147 @@ function parsePhaseStatus(statusPath, qaReportPath) {
     }
   }
   return phases.find((phase) => phase.status === 'in_progress') || phases.find((phase) => phase.status === 'completed') || null;
+}
+
+function parsePhaseStatusCounters(statusPath) {
+  const text = readTextIfExists(statusPath);
+  if (!text) {
+    return {
+      planned: 0,
+      completed: 0,
+      blocked: 0,
+      pending: 0,
+      remaining: 0,
+    };
+  }
+
+  const result = {
+    planned: 0,
+    completed: 0,
+    blocked: 0,
+    pending: 0,
+    remaining: 0,
+  };
+
+  const lines = text.split(/\r?\n/);
+  const phases = [];
+  let current = null;
+  for (const rawLine of lines) {
+    if (/^\s*-\s+number:\s*/.test(rawLine)) {
+      if (current) {
+        phases.push(current);
+      }
+      current = { status: '', planConfirmed: true };
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    const stripped = rawLine.trim();
+    if (stripped.startsWith('status:')) {
+      current.status = stripped.split(':', 2)[1].trim();
+    } else if (stripped.startsWith('planConfirmed:')) {
+      current.planConfirmed = stripped.split(':', 2)[1].trim() !== 'false';
+    }
+  }
+  if (current) {
+    phases.push(current);
+  }
+
+  const actionable = phases.filter((phase) => phase.planConfirmed !== false);
+  result.planned = actionable.length;
+  result.completed = actionable.filter((phase) => phase.status === 'completed').length;
+  result.blocked = actionable.filter((phase) => /blocked|unhealthy/i.test(String(phase.status || ''))).length;
+  result.pending = actionable.filter((phase) => phase.status === 'pending').length;
+  result.remaining = Math.max(result.planned - result.completed - result.blocked, 0);
+  return result;
+}
+
+function asStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).flatMap((item) => asStringList(item));
+  }
+  const text = String(value || '').trim();
+  return text ? [text] : [];
+}
+
+function asCountMap(value) {
+  const result = {};
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  for (const [key, raw] of Object.entries(source)) {
+    const count = Number.parseInt(String(raw), 10);
+    if (!Number.isNaN(count)) {
+      result[key] = count;
+    }
+  }
+  return result;
+}
+
+function looksLikeIsoTimestamp(value) {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(String(value || '').trim());
+}
+
+function summarizeFailureClassCounts(analysis, workflowState, verdict) {
+  return asCountMap(
+    analysis?.failureClassCounts
+    || analysis?.workflowEvidence?.failureClassCounts
+    || workflowState?.failureClassCounts
+    || workflowState?.completion?.failureClassCounts
+    || verdict?.failureClassCounts
+    || {},
+  );
+}
+
+function summarizeFallbackReasons(analysis, workflowState, latestDispatch, latestBounded, verdict, handoffText) {
+  return [
+    ...asStringList(analysis?.fallbackReasons),
+    ...asStringList(analysis?.workflowEvidence?.fallbackReasons),
+    ...asStringList(workflowState?.fallbackReasons),
+    ...asStringList(workflowState?.completion?.fallbackReasons),
+    ...asStringList(latestDispatch?.fallbackReasons),
+    ...asStringList(latestBounded?.fallbackReasons),
+    ...asStringList(verdict?.runtimeContext?.fallbackReason),
+    ...asStringList(verdict?.runtimeContext?.fallbackReasons),
+    ...asStringList(handoffText.match(/fallbackReason=([^\s|]+)/i)?.[1] || ''),
+  ].filter(Boolean);
+}
+
+function summarizeTiming(phase, workflowState) {
+  const phaseTiming = phase?.timing || {};
+  const currentRun = workflowState?.phaseRunLease || {};
+  const startedAt = looksLikeIsoTimestamp(phaseTiming.startedAt)
+    ? phaseTiming.startedAt
+    : (looksLikeIsoTimestamp(currentRun.attachedAt)
+      ? currentRun.attachedAt
+      : (looksLikeIsoTimestamp(workflowState?.updatedAt) ? workflowState.updatedAt : ''));
+  const lastStageAt = looksLikeIsoTimestamp(phaseTiming.lastStageAt)
+    ? phaseTiming.lastStageAt
+    : (looksLikeIsoTimestamp(currentRun.lastHeartbeatAt)
+      ? currentRun.lastHeartbeatAt
+      : (looksLikeIsoTimestamp(workflowState?.updatedAt) ? workflowState.updatedAt : ''));
+  const inferredWallClockSeconds = looksLikeIsoTimestamp(startedAt) && looksLikeIsoTimestamp(lastStageAt)
+    ? Math.max(Math.round((Date.parse(lastStageAt) - Date.parse(startedAt)) / 1000), 0)
+    : 0;
+  const wallClockSeconds = Number.isFinite(Number.parseFloat(phaseTiming.wallClockSeconds))
+    && Number.parseFloat(phaseTiming.wallClockSeconds) > 0
+    ? Number.parseFloat(phaseTiming.wallClockSeconds)
+    : inferredWallClockSeconds;
+  return {
+    startedAt,
+    lastStage: phaseTiming.lastStage || currentRun.currentStage || workflowState?.currentStage || '',
+    lastStageAt,
+    wallClockSeconds,
+    runnerActiveSeconds: Number.isFinite(Number.parseFloat(phaseTiming.runnerActiveSeconds)) ? Number.parseFloat(phaseTiming.runnerActiveSeconds) : 0,
+    verificationSeconds: Number.isFinite(Number.parseFloat(phaseTiming.verificationSeconds)) ? Number.parseFloat(phaseTiming.verificationSeconds) : 0,
+    remediationSeconds: Number.isFinite(Number.parseFloat(phaseTiming.remediationSeconds)) ? Number.parseFloat(phaseTiming.remediationSeconds) : 0,
+    blockedSeconds: Number.isFinite(Number.parseFloat(phaseTiming.blockedSeconds)) ? Number.parseFloat(phaseTiming.blockedSeconds) : 0,
+    manualCloseoutSeconds: Number.isFinite(Number.parseFloat(phaseTiming.manualCloseoutSeconds)) ? Number.parseFloat(phaseTiming.manualCloseoutSeconds) : 0,
+    completedAt: phaseTiming.completedAt || '',
+    blockedAt: phaseTiming.blockedAt || '',
+  };
 }
 
 function findVerdictPath(qaReportPath) {
@@ -383,6 +549,10 @@ function captureTrace(options) {
   const phase = parsePhaseStatus(options.phaseStatusPath, options.qaReportPath);
   const verdictPath = findVerdictPath(options.qaReportPath);
   const verdict = readJsonIfExists(verdictPath);
+  const phaseCounts = parsePhaseStatusCounters(options.phaseStatusPath);
+  const timing = summarizeTiming(phase, workflowState);
+  const failureClassCounts = summarizeFailureClassCounts(analysis, workflowState, verdict);
+  const fallbackReasons = summarizeFallbackReasons(analysis, workflowState, latestDispatch, latestBounded, verdict, handoffText);
 
   const nextPath = extractBulletValue(qaText, '## Verdict', 'Next path');
   const closeoutReason = extractBulletValue(qaText, '## Verdict', 'Closeout reason');
@@ -416,6 +586,8 @@ function captureTrace(options) {
       qaReport: options.qaReportPath,
       handoff: options.handoffPath,
       scorecard: options.scorecardPath,
+      phaseCounts,
+      timing,
     },
     stop: {
       nextPath,
@@ -432,6 +604,8 @@ function captureTrace(options) {
       score: verdict?.score ?? null,
       requiredChecks: verdict?.requiredChecks ?? null,
       workflowWarnings: verdict?.workflowEvidence?.warnings ?? [],
+      importedFrom: verdict?.importedFrom ?? verdict?.reusedVerificationResult ?? null,
+      supersededBy: verdict?.supersededBy ?? null,
     },
     workflow: {
       completionStatus: workflowState?.completionStatus ?? '',
@@ -456,6 +630,16 @@ function captureTrace(options) {
       retrievalBudget: workflowState?.retrievalBudget ?? analysis?.workflowEvidence?.retrievalBudget ?? '',
       validationProfile: workflowState?.validationProfile ?? analysis?.workflowEvidence?.validationProfile ?? '',
       phaseReplayPolicy: workflowState?.phaseReplayPolicy ?? analysis?.workflowEvidence?.phaseReplayPolicy ?? '',
+    },
+    evidence: {
+      phaseStatusPath: options.phaseStatusPath,
+      qaReportPath: options.qaReportPath,
+      handoffPath: options.handoffPath,
+      scorecardPath: options.scorecardPath,
+      verdictPath,
+      failureClassCounts,
+      fallbackReasons,
+      analysisPath: options.analysisPath,
     },
     sourceArtifacts,
     artifactDeltas: sourceArtifacts.filter((artifact) => artifact.exists).map(({ kind, path: filePath, sizeBytes, modifiedAt }) => ({
@@ -498,6 +682,10 @@ function captureTrace(options) {
       scoreCurrent: manifest.verifier.score?.current ?? null,
       scoreTarget: manifest.verifier.score?.target ?? null,
       blockerCodes: manifest.workflow.blockers,
+      phaseCounts: manifest.phase.phaseCounts,
+      timing: manifest.phase.timing,
+      failureClassCounts: manifest.evidence.failureClassCounts,
+      fallbackReasons: manifest.evidence.fallbackReasons,
     },
     salientSources: diagnosisSources,
   };
@@ -516,6 +704,10 @@ function captureTrace(options) {
     `- Evidence fresh: ${diagnosis.summary.verifierEvidenceFresh ? 'yes' : 'no'}`,
     `- Score: ${diagnosis.summary.scoreCurrent ?? 'n/a'} / ${diagnosis.summary.scoreTarget ?? 'n/a'} (${diagnosis.summary.scoreVerdict || 'unknown'})`,
     `- Blocker codes: ${diagnosis.summary.blockerCodes.length > 0 ? diagnosis.summary.blockerCodes.join(', ') : 'none'}`,
+    `- Phase counts: planned=${diagnosis.summary.phaseCounts?.planned ?? 0}, completed=${diagnosis.summary.phaseCounts?.completed ?? 0}, blocked=${diagnosis.summary.phaseCounts?.blocked ?? 0}, pending=${diagnosis.summary.phaseCounts?.pending ?? 0}, remaining=${diagnosis.summary.phaseCounts?.remaining ?? 0}`,
+    `- Timing: wall=${diagnosis.summary.timing?.wallClockSeconds ?? 0}s, active=${diagnosis.summary.timing?.runnerActiveSeconds ?? 0}s, verification=${diagnosis.summary.timing?.verificationSeconds ?? 0}s, remediation=${diagnosis.summary.timing?.remediationSeconds ?? 0}s, blocked=${diagnosis.summary.timing?.blockedSeconds ?? 0}s, manual=${diagnosis.summary.timing?.manualCloseoutSeconds ?? 0}s`,
+    `- Failure class counts: ${Object.keys(diagnosis.summary.failureClassCounts || {}).length > 0 ? JSON.stringify(diagnosis.summary.failureClassCounts) : 'none'}`,
+    `- Fallback reasons: ${diagnosis.summary.fallbackReasons.length > 0 ? diagnosis.summary.fallbackReasons.join(', ') : 'none'}`,
     '',
     `## Source Artifacts`,
     ...manifest.sourceArtifacts.map((artifact) => `- ${artifact.kind}: ${artifact.path || 'n/a'}${artifact.exists ? '' : ' (missing)'}`),

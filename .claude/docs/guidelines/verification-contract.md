@@ -175,6 +175,8 @@ loop:
 - `QA_REPORT.md` should classify review findings as `accepted`, `challenged`, `deferred`, or `needs_clarification` before a remediation loop is considered closed.
 - Do not convert missing evidence into positive wording such as `should pass`, `looks good`, `likely fixed`, `seems resolved`, or `done pending verification`.
 - If a review item is unclear, stop for clarification before continuing the linked remediation path.
+- If verification output is intentionally ignored during clean-finish review, the artifact trail should still name it explicitly so the closeout ledger stays auditable.
+- If an external blocker forces a partial audit, record that as a blocker-aware partial-mode decision; do not upgrade it to a fake pass.
 - Local `policySets` are repository-owned abstractions; mapping them to OPA, Policy-as-Code, or hosted policy sets is a later integration step, not a current requirement.
 - A document-trace completion claim should additionally require:
   - all in-scope `REQ-*` rows to have implementation plus verification evidence
@@ -202,3 +204,4 @@ loop:
   - `modelEffortProfile`
   - `retryCount`
   - `handoffCount`
+- Closeout evidence should retain ignored verification artifacts, evidence-inclusion decisions, and any partial-mode note that explains why a clean finish stayed blocked.

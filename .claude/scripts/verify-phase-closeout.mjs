@@ -3,6 +3,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  getHeadingAliases,
+  scenarioEvidencePassed as normalizeScenarioEvidencePassed,
+  sectionText as normalizeSectionText,
+} from './artifact-normalizer.mjs';
 
 const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
@@ -24,29 +29,7 @@ function readText(filePath) {
 }
 
 function sectionText(text, heading) {
-  const lines = normalize(text).split('\n');
-  let start = -1;
-  let level = 0;
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index].match(/^(#{1,6})\s+(.+?)\s*$/);
-    if (match && match[2].trim().toLowerCase() === heading.toLowerCase()) {
-      start = index + 1;
-      level = match[1].length;
-      break;
-    }
-  }
-  if (start < 0) {
-    return '';
-  }
-  let end = lines.length;
-  for (let index = start; index < lines.length; index += 1) {
-    const match = lines[index].match(/^(#{1,6})\s+/);
-    if (match && match[1].length <= level) {
-      end = index;
-      break;
-    }
-  }
-  return lines.slice(start, end).join('\n').trim();
+  return normalizeSectionText(text, heading, getHeadingAliases(heading));
 }
 
 function parseArgs(argv) {
@@ -165,10 +148,9 @@ function hasConcreteSourceTargets(phaseText) {
 }
 
 function scenarioEvidencePassed(scenarioId, evidenceText) {
-  const normalizedId = scenarioId.toLowerCase();
-  return normalize(evidenceText).split('\n').some((line) => {
+  return normalizeScenarioEvidencePassed(scenarioId, evidenceText) || normalize(evidenceText).split('\n').some((line) => {
     const lowered = line.toLowerCase();
-    return lowered.includes(normalizedId) && PASS_WORDS.test(line) && !FAIL_WORDS.test(line);
+    return lowered.includes(scenarioId.toLowerCase()) && PASS_WORDS.test(line) && !FAIL_WORDS.test(line);
   });
 }
 

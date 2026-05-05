@@ -1,0 +1,155 @@
+schemaVersion: "1.0"
+masterPlan: "docs/implementation/harness-reliability-retro-2026-05-05/00-master-plan-v1.md"
+autonomousMode: true
+executionMode: "delegated-terminal"
+executionRoot: "docs/implementation/harness-reliability-retro-2026-05-05/execution"
+preparedAt: "2026-05-05T09:14:44Z"
+activeExecutionStatus: "finished"
+activeRunLeaseId: "dispatch-1777976864240-23536"
+activeExecutionBoundary: "delegated-terminal"
+activeExecutionAttachedAt: "2026-05-05T10:27:44Z"
+activeExecutionHeartbeatAt: "2026-05-05T10:36:53Z"
+activeActionablePhasesRemaining: 0
+activeCurrentStage: "execute"
+activePhaseNumber: 6
+activePhaseTitle: "Phase 06: Regression Fixtures and Docs Sync (v1)"
+lastReturnBoundary: "dispatch-stop"
+lastStopReasonCode: "delegated-terminal-exit-1"
+lastStopReasonDetail: "delegated-terminal exited with code 1"
+lastDispatchAt: "2026-05-05T09:36:30Z"
+workflowEvidenceFile: ".claude/logs/workflow-enforcement/latest-dispatch.json"
+workflowSelectedBundles: "ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"
+workflowRequiredSkills: "moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"
+activePlannedPhases: 6
+activeCompletedPhases: 6
+activeBlockedPhases: 0
+activePendingPhases: 0
+activeRemainingPhases: 0
+goalRuntime:
+  goalId: "goal-1777971398844-e14a000b2b"
+  objective: "Complete active plan directory docs/implementation/harness-reliability-retro-2026-05-05 using docs/implementation/harness-reliability-retro-2026-05-05/00-master-plan-v1.md"
+  status: "complete"
+  tokenBudget: null
+  tokensUsed: null
+  timeBudgetSeconds: null
+  timeUsedSeconds: 4465
+  accountingQuality: "unavailable"
+  continuationSuppressed: false
+  currentRunLeaseId: "dispatch-1777976864240-23536"
+  lastEvent: "GoalCompleted"
+  createdAt: "2026-05-05T08:56:38Z"
+  updatedAt: "2026-05-05T10:36:53Z"
+phases:
+  - number: 1
+    title: "Phase 01: Capability and Fingerprint Foundation (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/01-capability-fingerprint-foundation-v1.md"
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-05T09:14:44Z"
+    sprintContract: "docs/implementation/harness-reliability-retro-2026-05-05/execution/01-phase-01-capability-and-fingerprint-foundation-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-reliability-retro-2026-05-05/execution/01-phase-01-capability-and-fingerprint-foundation-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-reliability-retro-2026-05-05/execution/01-phase-01-capability-and-fingerprint-foundation-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-reliability-retro-2026-05-05/execution/01-phase-01-capability-and-fingerprint-foundation-v1/SCORECARD.md"
+    archivedPhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/close/01-capability-fingerprint-foundation-v1.md"
+  - number: 2
+    title: "Phase 02: Artifact Schema Normalizer (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/02-artifact-schema-normalizer-v1.md"
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-05T09:37:00Z"
+    sprintContract: "docs/implementation/harness-reliability-retro-2026-05-05/execution/02-phase-02-artifact-schema-normalizer-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-reliability-retro-2026-05-05/execution/02-phase-02-artifact-schema-normalizer-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-reliability-retro-2026-05-05/execution/02-phase-02-artifact-schema-normalizer-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-reliability-retro-2026-05-05/execution/02-phase-02-artifact-schema-normalizer-v1/SCORECARD.md"
+    completedAt: "2026-05-05T09:37:00Z"
+    archivedPhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/close/02-artifact-schema-normalizer-v1.md"
+  - number: 3
+    title: "Phase 03: Runtime Parity Fixture and Archive Safety (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/03-runtime-parity-fixture-archive-safety-v1.md"
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-05T09:53:00Z"
+    sprintContract: "docs/implementation/harness-reliability-retro-2026-05-05/execution/03-phase-03-runtime-parity-fixture-and-archive-safety-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-reliability-retro-2026-05-05/execution/03-phase-03-runtime-parity-fixture-and-archive-safety-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-reliability-retro-2026-05-05/execution/03-phase-03-runtime-parity-fixture-and-archive-safety-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-reliability-retro-2026-05-05/execution/03-phase-03-runtime-parity-fixture-and-archive-safety-v1/SCORECARD.md"
+    completedAt: "2026-05-05T09:53:00Z"
+    archivedPhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/close/03-runtime-parity-fixture-archive-safety-v1.md"
+  - number: 4
+    title: "Phase 04: Runtime Resolver and Dependency Gates (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/04-runtime-resolver-and-dependency-gates-v1.md"
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-05T10:07:00Z"
+    sprintContract: "docs/implementation/harness-reliability-retro-2026-05-05/execution/04-phase-04-runtime-resolver-and-dependency-gates-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-reliability-retro-2026-05-05/execution/04-phase-04-runtime-resolver-and-dependency-gates-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-reliability-retro-2026-05-05/execution/04-phase-04-runtime-resolver-and-dependency-gates-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-reliability-retro-2026-05-05/execution/04-phase-04-runtime-resolver-and-dependency-gates-v1/SCORECARD.md"
+    completedAt: "2026-05-05T10:07:00Z"
+    archivedPhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/close/04-runtime-resolver-and-dependency-gates-v1.md"
+  - number: 5
+    title: "Phase 05: Timing Telemetry and Diagnosis Trace (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/05-timing-telemetry-trace-v1.md"
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-05T10:26:00Z"
+    sprintContract: "docs/implementation/harness-reliability-retro-2026-05-05/execution/05-phase-05-timing-telemetry-and-diagnosis-trace-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-reliability-retro-2026-05-05/execution/05-phase-05-timing-telemetry-and-diagnosis-trace-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-reliability-retro-2026-05-05/execution/05-phase-05-timing-telemetry-and-diagnosis-trace-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-reliability-retro-2026-05-05/execution/05-phase-05-timing-telemetry-and-diagnosis-trace-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-05T10:09:13Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-05T10:26:00Z"
+      wallClockSeconds: 0
+      runnerActiveSeconds: 705
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 61
+      manualCloseoutSeconds: 0
+      blockedAt: "2026-05-05T10:24:17Z"
+      completedAt: "2026-05-05T10:26:00Z"
+    completedAt: "2026-05-05T10:26:00Z"
+    archivedPhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/close/05-timing-telemetry-trace-v1.md"
+  - number: 6
+    title: "Phase 06: Regression Fixtures and Docs Sync (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/06-regression-fixtures-and-doc-sync-v1.md"
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-05T10:42:00Z"
+    sprintContract: "docs/implementation/harness-reliability-retro-2026-05-05/execution/06-phase-06-regression-fixtures-and-docs-sync-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-reliability-retro-2026-05-05/execution/06-phase-06-regression-fixtures-and-docs-sync-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-reliability-retro-2026-05-05/execution/06-phase-06-regression-fixtures-and-docs-sync-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-reliability-retro-2026-05-05/execution/06-phase-06-regression-fixtures-and-docs-sync-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-05T10:27:50Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-05T10:42:00Z"
+      wallClockSeconds: 850
+      runnerActiveSeconds: 5175
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 61
+      manualCloseoutSeconds: 0
+      blockedAt: "2026-05-05T10:36:53Z"
+      completedAt: "2026-05-05T10:42:00Z"
+    completedAt: "2026-05-05T10:42:00Z"
+    archivedPhaseDoc: "docs/implementation/harness-reliability-retro-2026-05-05/close/06-regression-fixtures-and-doc-sync-v1.md"

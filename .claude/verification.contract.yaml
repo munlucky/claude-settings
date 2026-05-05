@@ -170,6 +170,12 @@ qa:
       focus:
         - "automation distinguishes uat_ready from uat_complete"
         - "manual sign-off is explicit when required"
+artifactPolicy:
+  includeIgnoredVerificationEvidence: true
+  retainPartialModeNotes: true
+finishPolicy:
+  externalBlockersRequirePartialModeDecision: true
+  fakePassDisallowed: true
 observability:
   teamMetrics:
     requiredFields:

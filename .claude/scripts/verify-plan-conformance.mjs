@@ -3,6 +3,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  extractBulletValue as normalizeExtractBulletValue,
+  getHeadingAliases,
+  scenarioEvidencePassed as normalizeScenarioEvidencePassed,
+  sectionText as normalizeSectionText,
+} from './artifact-normalizer.mjs';
 
 const DEFERRED_TERMS = [
   'deferred',
@@ -33,41 +39,11 @@ function readText(filePath) {
 }
 
 function sectionText(text, heading) {
-  const lines = normalize(text).split('\n');
-  let start = -1;
-  let level = 0;
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index].match(/^(#{1,6})\s+(.+?)\s*$/);
-    if (match && match[2].trim().toLowerCase() === heading.toLowerCase()) {
-      start = index + 1;
-      level = match[1].length;
-      break;
-    }
-  }
-  if (start < 0) {
-    return '';
-  }
-  let end = lines.length;
-  for (let index = start; index < lines.length; index += 1) {
-    const match = lines[index].match(/^(#{1,6})\s+/);
-    if (match && match[1].length <= level) {
-      end = index;
-      break;
-    }
-  }
-  return lines.slice(start, end).join('\n').trim();
+  return normalizeSectionText(text, heading, getHeadingAliases(heading));
 }
 
 function extractBulletValue(text, heading, label) {
-  const section = sectionText(text, heading);
-  const prefix = `- ${label}:`;
-  for (const line of section.split('\n')) {
-    const stripped = line.trim();
-    if (stripped.startsWith(prefix)) {
-      return stripped.slice(prefix.length).trim();
-    }
-  }
-  return '';
+  return normalizeExtractBulletValue(text, heading, label, getHeadingAliases(heading));
 }
 
 function parseArgs(argv) {
@@ -277,18 +253,7 @@ function parseCriticalScenarios(text) {
 }
 
 function scenarioEvidencePassed(scenarioId, evidenceText) {
-  const normalizedId = scenarioId.toLowerCase();
-  const lines = normalize(evidenceText).split('\n');
-  return lines.some((line) => {
-    const lowered = line.toLowerCase();
-    if (!lowered.includes(normalizedId)) {
-      return false;
-    }
-    if (/\b(fail|failed|blocked|missing|todo|pending|retry)\b/i.test(line)) {
-      return false;
-    }
-    return /\b(pass|passed|done|verified)\b/i.test(line);
-  });
+  return normalizeScenarioEvidencePassed(scenarioId, evidenceText);
 }
 
 function hasConcreteSourceTargets(sourceText) {

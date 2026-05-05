@@ -21,6 +21,7 @@ Required files:
 - phase identity and status
 - stop/closeout fields from `QA_REPORT.md` and `HANDOFF.md`
 - verifier verdict path, verdict, freshness, and score
+- evidence-include policy decisions and any partial-mode blocker note
 - workflow readiness/completion state from `current-run.json`
 - selected/applied/skipped skills and stage order
 - raw source artifact paths with size and mtime
@@ -34,6 +35,7 @@ Required files:
 - score verdict
 - blocker codes
 - review / finish closeout state
+- ignored verification evidence that still matters for auditability
 - workflow bundle and skill evidence
 
 They should trim:
@@ -57,3 +59,4 @@ A usable trace bundle must make it possible to answer all of these without reope
 - What bundles, skills, and stages were active?
 - What blockers or warnings prevented clean finish?
 - Which raw artifacts remain available for deeper inspection?
+- Were any verification artifacts intentionally retained even though they were not counted as pass/fail evidence?

@@ -11,6 +11,7 @@
 - Scope status: complete | partial
 - Next path: clean_finish | retry_loop | resume_later_handoff
 - Closeout reason: scope_complete | verification_failed | blocked | interrupted | context_limit | user_pause | deferred_verification
+- Canonical blocked path: Next path = resume_later_handoff; Closeout reason = blocked
 - Release state: not_ready | uat_ready | uat_complete
 
 ## Review Checkpoint
@@ -63,6 +64,7 @@
 | In-scope `REQ-*` covered | pass/fail/warn |  |
 | Critical `SCN-*` evidenced | pass/fail/warn |  |
 | UAT prerequisites complete | pass/fail/warn |  |
+| Evidence row format | pass/fail/warn | `SCN-ID | pass | evidence path` is accepted |
 
 ## Workflow Surface Coverage
 Use when the task changes harness, workflow docs, skill metadata, or public entrypoint guidance.

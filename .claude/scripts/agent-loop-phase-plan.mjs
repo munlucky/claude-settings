@@ -127,7 +127,7 @@ export function getNextPhase(statusFile) {
 function listPhaseDocs(planDir) {
   return fs
     .readdirSync(planDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+    .filter((entry) => entry.isFile() && /^[0-9]{2}-.+\.md$/.test(entry.name))
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
 }

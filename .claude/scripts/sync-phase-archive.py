@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PHASE_START_RE = re.compile(r"^\s*-\s+number:\s*(\d+)")
+REFERENCE_FIXTURE_SEGMENT = "/.claude/docs/runtime-parity-reference-plan"
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,6 +20,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plan-dir", required=True)
     parser.add_argument("--phase-number")
     return parser.parse_args()
+
+
+def is_reference_fixture_path(path: Path) -> bool:
+    normalized = path.resolve().as_posix().lower()
+    return REFERENCE_FIXTURE_SEGMENT in normalized
 
 
 def iter_phase_block_ranges(lines: list[str]) -> list[tuple[int, int, str]]:
@@ -81,6 +87,8 @@ def looks_like_master_doc(path: Path) -> bool:
 def find_phase_docs(directory: Path, phase_number: str) -> list[Path]:
     if not directory.exists():
         return []
+    if is_reference_fixture_path(directory):
+        return []
 
     phase_prefix = f"{int(phase_number):02d}-"
     prefixed_docs = sorted(
@@ -89,6 +97,7 @@ def find_phase_docs(directory: Path, phase_number: str) -> list[Path]:
         if path.is_file()
         and path.suffix.lower() == ".md"
         and not looks_like_master_doc(path)
+        and not is_reference_fixture_path(path)
         and path.name.startswith(phase_prefix)
     )
     if prefixed_docs:
@@ -100,6 +109,7 @@ def find_phase_docs(directory: Path, phase_number: str) -> list[Path]:
         if path.is_file()
         and path.suffix.lower() == ".md"
         and not looks_like_master_doc(path)
+        and not is_reference_fixture_path(path)
         and "phase" in path.stem.lower()
         and phase_number in path.stem
     )
@@ -130,6 +140,9 @@ def main() -> int:
     archive_dir = plan_dir / "close"
 
     if not status_file.exists() or not plan_dir.exists():
+        return 0
+    if is_reference_fixture_path(plan_dir):
+        print(f"skipping runtime parity reference fixture: {to_repo_relative(plan_dir)}")
         return 0
 
     lines = status_file.read_text(encoding="utf-8").splitlines()

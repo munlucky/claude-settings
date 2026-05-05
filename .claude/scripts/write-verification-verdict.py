@@ -97,6 +97,7 @@ def main() -> int:
     parser.add_argument("--phase-replay-policy", default="")
     parser.add_argument("--requested-runtime", default="")
     parser.add_argument("--effective-runtime", default="")
+    parser.add_argument("--fallback-reason", default="")
     parser.add_argument("--verification-runtime-targets", default="")
     parser.add_argument("--failure-class", choices=["", "implementation", "verification", "environment", "contract"], default="")
     parser.add_argument("--blocking", choices=["true", "false"], default="false")
@@ -240,6 +241,7 @@ def main() -> int:
         "runtimeContext": {
             "requestedRuntime": args.requested_runtime,
             "effectiveRuntime": args.effective_runtime,
+            "fallbackReason": args.fallback_reason,
             "verificationRuntimeTargets": args.verification_runtime_targets,
         },
         "verdictScope": verdict_scope,

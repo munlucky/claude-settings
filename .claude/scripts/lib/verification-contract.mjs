@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import {
   normalizeRequestedRuntime,
@@ -10,7 +11,7 @@ import {
   resolveParentRuntimeContext,
 } from './runtime-platform.mjs';
 
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, '..', 'runtime-cli.mjs');
 
 function parseScalar(value) {

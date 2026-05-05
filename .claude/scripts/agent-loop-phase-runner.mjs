@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifacts } from './agent-loop-phase-plan-lib.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
+import { classifyFailure, summarizeFailureDecision } from './lib/failure-classifier.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -215,6 +216,69 @@ function classifyTimeoutReason(logFile) {
 
 function resolveTimeoutFallbackRuntime(currentRuntime) {
   return runtimeCommand('resolve-timeout-fallback-runtime', currentRuntime).stdout.trim();
+}
+
+function readLatestCapabilityReport(workspaceRoot = process.cwd()) {
+  const logPath = path.join(workspaceRoot, '.claude', 'logs', 'agent-loop');
+  if (!fs.existsSync(logPath)) {
+    return null;
+  }
+
+  const candidates = fs.readdirSync(logPath, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^capabilities-.*\.json$/.test(entry.name))
+    .map((entry) => {
+      const filePath = path.join(logPath, entry.name);
+      const stats = fs.statSync(filePath);
+      return { filePath, mtimeMs: stats.mtimeMs };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  for (const candidate of candidates) {
+    try {
+      const payload = JSON.parse(fs.readFileSync(candidate.filePath, 'utf8'));
+      return { ...candidate, payload };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReason = '') {
+  const latest = readLatestCapabilityReport(workspaceRoot);
+  if (!latest) {
+    return null;
+  }
+
+  const payload = latest.payload || {};
+  const counts = payload.failureClassCounts && typeof payload.failureClassCounts === 'object'
+    ? payload.failureClassCounts
+    : {};
+  const summary = summarizeFailureDecision(counts);
+  const stopClassification = classifyFailure({ reason: finalStopReason, message: finalStopReason });
+  const blockerCode = payload.reason || summary.blockerCode || stopClassification.code;
+  const sameFailureClassCount = Number(
+    payload.sameFailureClassCount
+    ?? counts[blockerCode]
+    ?? summary.sameFailureClassCount
+    ?? 0,
+  );
+  const decision = payload.decision || summary.decision;
+  const reason = payload.reason || summary.reason || stopClassification.code || 'ok';
+  const shouldSuppressRetry = sameFailureClassCount >= 2
+    && decision !== 'continue'
+    && (stopClassification.blocker || decision !== 'continue');
+
+  return {
+    reportPath: latest.filePath,
+    blockerCode,
+    sameFailureClassCount,
+    decision,
+    reason,
+    shouldSuppressRetry,
+    fallbackHints: Array.isArray(payload.fallbackHints) ? payload.fallbackHints : [],
+  };
 }
 
 function evaluatePhaseCompletionGateWithRetry(startEpoch, paths) {
@@ -1058,7 +1122,12 @@ function runPhaseAttempt() {
       activeRuntime = runtimeHealth.FALLBACK_RUNTIME;
       activeAttemptContext.runtime = activeRuntime;
       appendQaRuntimeUpdate('runtime-health-fallback', logFile, runtimeHealth.DETAIL || runtimeHealth.REASON, paths);
-      appendHandoffUpdate('runtime-health-fallback', logFile, `${previousRuntime} -> ${activeRuntime}: ${runtimeHealth.DETAIL || runtimeHealth.REASON}`, paths);
+      appendHandoffUpdate(
+        'runtime-health-fallback',
+        logFile,
+        `requestedRuntime=${state.runtime} | effectiveRuntime=${activeRuntime} | fallbackReason=${runtimeHealth.REASON || runtimeHealth.DETAIL || 'runtime-health-fallback'} | ${previousRuntime} -> ${activeRuntime}: ${runtimeHealth.DETAIL || runtimeHealth.REASON}`,
+        paths,
+      );
       prompt = buildPhasePrompt({
         nextPhase: state.phaseNum,
         phaseTitle: state.phaseTitle,
@@ -1167,6 +1236,16 @@ function runPhaseAttempt() {
       appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
 
       const finalStopReason = detectFinalStopReason(logFile, 'missing-verification-evidence');
+      const retrySuppression = summarizeRetrySuppression(process.cwd(), finalStopReason);
+      if (retrySuppression?.shouldSuppressRetry) {
+        const detail = [
+          `blocker=${retrySuppression.blockerCode || finalStopReason}`,
+          `sameFailureClassCount=${retrySuppression.sameFailureClassCount}`,
+          `decision=${retrySuppression.decision}`,
+          retrySuppression.reportPath ? `artifact=${retrySuppression.reportPath}` : '',
+        ].filter(Boolean).join(' | ');
+        return stopBlockedPhase(paths, logFile, detail, 'verification-preflight-blocked');
+      }
       const decision = decideMissingEvidenceAction(autoFixCount, finalStopReason);
       if (decision.ACTION === 'stop-loop') {
         updatePhaseState(state.phaseNum, 'failed', 'failed', false, state.phaseDoc, paths);
@@ -1271,7 +1350,12 @@ function runPhaseAttempt() {
         const fallbackDetail = `${timeoutDetail}. 동일 phase를 ${previousRuntime}에서 ${activeRuntime}로 전환해 1회 더 시도합니다.`;
         logWarn(`Timeout fallback: switching runtime from ${previousRuntime} to ${activeRuntime}`);
         appendQaRuntimeUpdate('timeout-runtime-fallback', logFile, fallbackDetail, paths);
-        appendHandoffUpdate('timeout-runtime-fallback', logFile, fallbackDetail, paths);
+        appendHandoffUpdate(
+          'timeout-runtime-fallback',
+          logFile,
+          `requestedRuntime=${state.runtime} | effectiveRuntime=${activeRuntime} | fallbackReason=${timeoutReason || timeoutDetail || 'timeout-runtime-fallback'} | ${fallbackDetail}`,
+          paths,
+        );
         continue;
       }
       if (decision.ACTION === 'retry-timeout') {
@@ -1303,6 +1387,16 @@ function runPhaseAttempt() {
     appendQaRuntimeUpdate(`phase-command-failed-attempt-${autoFixCount}`, logFile, '', paths);
 
     const finalStopReason = detectFinalStopReason(logFile, 'phase-failed');
+    const retrySuppression = summarizeRetrySuppression(process.cwd(), finalStopReason);
+    if (retrySuppression?.shouldSuppressRetry) {
+      const detail = [
+        `blocker=${retrySuppression.blockerCode || finalStopReason}`,
+        `sameFailureClassCount=${retrySuppression.sameFailureClassCount}`,
+        `decision=${retrySuppression.decision}`,
+        retrySuppression.reportPath ? `artifact=${retrySuppression.reportPath}` : '',
+      ].filter(Boolean).join(' | ');
+      return stopBlockedPhase(paths, logFile, detail, 'verification-preflight-blocked');
+    }
     const decision = decideFailureAction(autoFixCount, finalStopReason);
 
     if (decision.ACTION === 'stop-loop' && finalStopReason === 'tool-schema-error-loop') {

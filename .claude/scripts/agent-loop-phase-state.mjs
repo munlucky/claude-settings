@@ -26,6 +26,18 @@ function writeStdoutLine(value = '') {
   process.stdout.write(`${String(value)}\n`);
 }
 
+function readJsonIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function shadowRuntimePhaseUpdate(config) {
   const result = spawnSync(process.execPath, [
     RUNTIME_STATE_PATH,
@@ -71,6 +83,7 @@ function readStatusBlocks(statusFile) {
   let current = null;
   let currentIndent = 0;
   let inAttempts = false;
+  let inTiming = false;
 
   const rootSignals = {};
   const rootArtifacts = {};
@@ -89,6 +102,7 @@ function readStatusBlocks(statusFile) {
         planConfirmed: null,
         lastOutcome: null,
         lastUpdatedAt: null,
+        timing: {},
         sprintContract: '',
         qaReport: '',
         handoff: '',
@@ -125,6 +139,12 @@ function readStatusBlocks(statusFile) {
     }
 
     const stripped = rawLine.trim();
+    if (inAttempts && (rawLine.length - rawLine.trimStart().length) <= currentIndent + 2) {
+      inAttempts = false;
+    }
+    if (inTiming && (rawLine.length - rawLine.trimStart().length) <= currentIndent + 2) {
+      inTiming = false;
+    }
     if (stripped.startsWith('title:')) {
       current.title = stripped.slice('title:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('status:')) {
@@ -133,12 +153,34 @@ function readStatusBlocks(statusFile) {
       current.planConfirmed = stripped.slice('planConfirmed:'.length).trim().toLowerCase();
     } else if (stripped.startsWith('attempts:') && (rawLine.length - rawLine.trimStart().length) > currentIndent) {
       inAttempts = true;
-    } else if (inAttempts && (rawLine.length - rawLine.trimStart().length) <= currentIndent + 2) {
-      inAttempts = false;
+    } else if (stripped.startsWith('timing:') && (rawLine.length - rawLine.trimStart().length) > currentIndent) {
+      inTiming = true;
     } else if (inAttempts && stripped.startsWith('lastOutcome:')) {
       current.lastOutcome = stripped.slice('lastOutcome:'.length).trim();
     } else if (inAttempts && stripped.startsWith('lastUpdatedAt:')) {
       current.lastUpdatedAt = stripped.slice('lastUpdatedAt:'.length).trim();
+    } else if (inTiming && stripped.startsWith('startedAt:')) {
+      current.timing.startedAt = stripped.slice('startedAt:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inTiming && stripped.startsWith('lastStage:')) {
+      current.timing.lastStage = stripped.slice('lastStage:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inTiming && stripped.startsWith('lastStageAt:')) {
+      current.timing.lastStageAt = stripped.slice('lastStageAt:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inTiming && stripped.startsWith('wallClockSeconds:')) {
+      current.timing.wallClockSeconds = Number.parseFloat(stripped.slice('wallClockSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('runnerActiveSeconds:')) {
+      current.timing.runnerActiveSeconds = Number.parseFloat(stripped.slice('runnerActiveSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('verificationSeconds:')) {
+      current.timing.verificationSeconds = Number.parseFloat(stripped.slice('verificationSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('remediationSeconds:')) {
+      current.timing.remediationSeconds = Number.parseFloat(stripped.slice('remediationSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('blockedSeconds:')) {
+      current.timing.blockedSeconds = Number.parseFloat(stripped.slice('blockedSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('manualCloseoutSeconds:')) {
+      current.timing.manualCloseoutSeconds = Number.parseFloat(stripped.slice('manualCloseoutSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('completedAt:')) {
+      current.timing.completedAt = stripped.slice('completedAt:'.length).trim().replace(/^"|"$/g, '');
+    } else if (inTiming && stripped.startsWith('blockedAt:')) {
+      current.timing.blockedAt = stripped.slice('blockedAt:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('sprintContract:')) {
       current.sprintContract = stripped.slice('sprintContract:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('qaReport:')) {
@@ -162,11 +204,106 @@ function readStatusBlocks(statusFile) {
   return blocks;
 }
 
+function summarizePhaseCounts(blocks) {
+  const planned = blocks.filter((block) => block.number !== null && block.planConfirmed !== 'false').length;
+  const completed = blocks.filter((block) => block.status === 'completed').length;
+  const blocked = blocks.filter((block) => /blocked|unhealthy/i.test(String(block.status || ''))).length;
+  const pending = blocks.filter((block) => block.status === 'pending').length;
+  const remaining = Math.max(planned - completed - blocked, 0);
+
+  return {
+    planned,
+    completed,
+    blocked,
+    pending,
+    remaining,
+  };
+}
+
+function readRootStatusMetadata(statusFile) {
+  if (!fs.existsSync(statusFile)) {
+    return {
+      activePhaseNumber: Number.NaN,
+      activeExecutionStatus: '',
+      activeCurrentStage: '',
+      activeActionablePhasesRemaining: Number.NaN,
+      activePlannedPhases: Number.NaN,
+      activeCompletedPhases: Number.NaN,
+      activeBlockedPhases: Number.NaN,
+      activePendingPhases: Number.NaN,
+      activeRemainingPhases: Number.NaN,
+    };
+  }
+
+  const result = {
+    activePhaseNumber: Number.NaN,
+    activeExecutionStatus: '',
+    activeCurrentStage: '',
+    activeActionablePhasesRemaining: Number.NaN,
+    activePlannedPhases: Number.NaN,
+    activeCompletedPhases: Number.NaN,
+    activeBlockedPhases: Number.NaN,
+    activePendingPhases: Number.NaN,
+    activeRemainingPhases: Number.NaN,
+  };
+  const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/);
+
+  for (const line of lines) {
+    const stripped = line.trim();
+    if (!stripped) {
+      continue;
+    }
+    if (stripped === 'phases:') {
+      break;
+    }
+    if (stripped.startsWith('activePhaseNumber:')) {
+      result.activePhaseNumber = Number.parseInt(stripped.slice('activePhaseNumber:'.length).trim().replace(/^"|"$/g, ''), 10);
+    } else if (stripped.startsWith('activeExecutionStatus:')) {
+      result.activeExecutionStatus = stripped.slice('activeExecutionStatus:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('activeCurrentStage:')) {
+      result.activeCurrentStage = stripped.slice('activeCurrentStage:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('activeActionablePhasesRemaining:')) {
+      result.activeActionablePhasesRemaining = Number.parseInt(
+        stripped.slice('activeActionablePhasesRemaining:'.length).trim().replace(/^"|"$/g, ''),
+        10,
+      );
+    } else if (stripped.startsWith('activePlannedPhases:')) {
+      result.activePlannedPhases = Number.parseInt(stripped.slice('activePlannedPhases:'.length).trim().replace(/^"|"$/g, ''), 10);
+    } else if (stripped.startsWith('activeCompletedPhases:')) {
+      result.activeCompletedPhases = Number.parseInt(stripped.slice('activeCompletedPhases:'.length).trim().replace(/^"|"$/g, ''), 10);
+    } else if (stripped.startsWith('activeBlockedPhases:')) {
+      result.activeBlockedPhases = Number.parseInt(stripped.slice('activeBlockedPhases:'.length).trim().replace(/^"|"$/g, ''), 10);
+    } else if (stripped.startsWith('activePendingPhases:')) {
+      result.activePendingPhases = Number.parseInt(stripped.slice('activePendingPhases:'.length).trim().replace(/^"|"$/g, ''), 10);
+    } else if (stripped.startsWith('activeRemainingPhases:')) {
+      result.activeRemainingPhases = Number.parseInt(stripped.slice('activeRemainingPhases:'.length).trim().replace(/^"|"$/g, ''), 10);
+    }
+  }
+
+  return result;
+}
+
+function findAuthoritativeActiveBlock(statusFile, blocks = readStatusBlocks(statusFile)) {
+  const root = readRootStatusMetadata(statusFile);
+  if (Number.isInteger(root.activePhaseNumber)) {
+    const matched = blocks.find((block) => Number.parseInt(String(block.number), 10) === root.activePhaseNumber);
+    if (matched && matched.status === 'in_progress' && matched.planConfirmed !== 'false') {
+      return matched;
+    }
+    return null;
+  }
+
+  return blocks.find((block) => block.status === 'in_progress' && block.planConfirmed !== 'false') || null;
+}
+
 function listStaleInProgressPhases(statusFile, staleSeconds) {
   const now = Date.now();
   const results = [];
+  const blocks = readStatusBlocks(statusFile);
+  const authoritative = findAuthoritativeActiveBlock(statusFile, blocks);
+  const candidates = authoritative ? [authoritative] : blocks;
 
-  for (const block of readStatusBlocks(statusFile)) {
+  for (const block of candidates) {
     if (block.status !== 'in_progress' || block.planConfirmed === 'false') {
       continue;
     }
@@ -188,6 +325,7 @@ function listStaleInProgressPhases(statusFile, staleSeconds) {
 function getPhaseSummary(statusFile, phaseNum) {
   const blocks = readStatusBlocks(statusFile);
   const target = blocks.find((block) => String(block.number) === String(phaseNum));
+  const counts = summarizePhaseCounts(blocks);
   return target || {
     number: String(phaseNum),
     title: '',
@@ -195,18 +333,29 @@ function getPhaseSummary(statusFile, phaseNum) {
     planConfirmed: '',
     lastOutcome: '',
     lastUpdatedAt: '',
+    timing: {},
     sprintContract: '',
     qaReport: '',
     handoff: '',
     scorecard: '',
     phaseAttemptMode: '',
     activePhaseDoc: '',
+    phaseCounts: counts,
   };
 }
 
 function getActivePhaseContext(statusFile) {
-  const active = readStatusBlocks(statusFile).find((block) => block.status === 'in_progress' && block.planConfirmed !== 'false');
-  return active || {
+  const blocks = readStatusBlocks(statusFile);
+  const active = findAuthoritativeActiveBlock(statusFile, blocks);
+  const counts = summarizePhaseCounts(blocks);
+  if (active) {
+    return {
+      ...active,
+      phaseCounts: counts,
+    };
+  }
+
+  return {
     number: '',
     title: '',
     status: '',
@@ -219,6 +368,8 @@ function getActivePhaseContext(statusFile) {
     scorecard: '',
     phaseAttemptMode: '',
     activePhaseDoc: '',
+    timing: {},
+    phaseCounts: counts,
   };
 }
 
@@ -1089,6 +1240,10 @@ function updatePhaseState(config) {
     return;
   }
 
+  const rootMetadata = readRootStatusMetadata(statusFile);
+  const currentRun = readJsonIfExists(CURRENT_RUN_FILE) || {};
+  const activeStage = rootMetadata.activeCurrentStage || currentRun.currentStage || currentRun.phaseRunLease?.currentStage || '';
+  const existingBlocks = readStatusBlocks(statusFile);
   const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, arr) => !(index === arr.length - 1 && arr[index] === ''));
   const blockRanges = [];
   let currentStart = null;
@@ -1118,9 +1273,11 @@ function updatePhaseState(config) {
 
   const [start, end] = targetRange;
   const block = lines.slice(start, end);
+  const currentBlock = existingBlocks.find((entry) => String(entry.number) === String(config.phaseNum)) || null;
   const itemIndent = block[0].length - block[0].trimStart().length;
   const topIndent = ' '.repeat(itemIndent + 2);
   const attemptIndent = ' '.repeat(itemIndent + 4);
+  const timingIndent = ' '.repeat(itemIndent + 4);
 
   function setTopLevel(key, value) {
     const prefix = `${topIndent}${key}:`;
@@ -1138,6 +1295,25 @@ function updatePhaseState(config) {
       }
     }
     block.splice(insertAt, 0, `${prefix} ${value}`);
+  }
+
+  function setRootScalarValue(key, value) {
+    const prefix = `${key}:`;
+    const index = lines.findIndex((line) => line.startsWith(prefix));
+    const normalizedValue = value === null || value === undefined ? 'null' : value;
+    if (index >= 0) {
+      lines[index] = `${prefix} ${normalizedValue}`;
+      return;
+    }
+    let insertAt = lines.length;
+    for (let probe = 0; probe < lines.length; probe += 1) {
+      const stripped = lines[probe].trim();
+      if (stripped === 'phases:') {
+        insertAt = probe;
+        break;
+      }
+    }
+    lines.splice(insertAt, 0, `${prefix} ${normalizedValue}`);
   }
 
   function setRootMappingValue(parent, child, value) {
@@ -1215,12 +1391,97 @@ function updatePhaseState(config) {
     return [insertAt, insertAt + 4];
   }
 
+  function ensureTimingBlock() {
+    const prefix = `${topIndent}timing:`;
+    const foundIndex = block.findIndex((line) => line.startsWith(prefix));
+    if (foundIndex >= 0) {
+      let endIndex = block.length;
+      for (let probe = foundIndex + 1; probe < block.length; probe += 1) {
+        const indent = block[probe].length - block[probe].trimStart().length;
+        if (indent <= topIndent.length) {
+          endIndex = probe;
+          break;
+        }
+      }
+      return [foundIndex, endIndex];
+    }
+
+    let insertAt = block.length;
+    for (let index = 1; index < block.length; index += 1) {
+      const indent = block[index].length - block[index].trimStart().length;
+      if (indent <= itemIndent) {
+        insertAt = index;
+        break;
+      }
+    }
+    block.splice(insertAt, 0,
+      `${topIndent}timing:`,
+      `${timingIndent}startedAt: "${config.timestamp}"`,
+      `${timingIndent}lastStage: ""`,
+      `${timingIndent}lastStageAt: "${config.timestamp}"`,
+      `${timingIndent}wallClockSeconds: 0`,
+      `${timingIndent}runnerActiveSeconds: 0`,
+      `${timingIndent}verificationSeconds: 0`,
+      `${timingIndent}remediationSeconds: 0`,
+      `${timingIndent}blockedSeconds: 0`,
+      `${timingIndent}manualCloseoutSeconds: 0`,
+    );
+    return [insertAt, insertAt + 10];
+  }
+
+  function getTimingValue(name, defaultValue) {
+    const [startIdx, endIdx] = ensureTimingBlock();
+    const prefix = `${timingIndent}${name}:`;
+    for (let index = startIdx + 1; index < endIdx; index += 1) {
+      if (block[index].startsWith(prefix)) {
+        return [index, block[index].slice(prefix.length).trim().replace(/^"|"$/g, '')];
+      }
+    }
+    block.splice(endIdx, 0, `${prefix} ${defaultValue}`);
+    return [endIdx, defaultValue.replace(/^"|"$/g, '')];
+  }
+
+  function updateTimingBucket(bucketName, deltaSeconds) {
+    const [index, currentValue] = getTimingValue(bucketName, '0');
+    const currentSeconds = Number.parseFloat(currentValue) || 0;
+    block[index] = `${timingIndent}${bucketName}: ${Math.max(currentSeconds + deltaSeconds, 0)}`;
+  }
+
+  function classifyTimingBucket() {
+    const statusValue = String(config.newStatus || '').toLowerCase();
+    const outcomeValue = String(config.lastOutcome || '').toLowerCase();
+    const stageValue = String(activeStage || '').toLowerCase();
+    if (statusValue.includes('blocked') || outcomeValue.includes('blocked') || stageValue.includes('blocked')) {
+      return 'blockedSeconds';
+    }
+    if (statusValue.includes('verification') || outcomeValue.includes('verification') || stageValue.startsWith('verify')) {
+      return 'verificationSeconds';
+    }
+    if (statusValue.includes('reverify') || outcomeValue.includes('reverify') || outcomeValue.includes('remediation')) {
+      return 'remediationSeconds';
+    }
+    if (stageValue.startsWith('finish') || statusValue.includes('closeout') || outcomeValue.includes('closeout')) {
+      return 'manualCloseoutSeconds';
+    }
+    return 'runnerActiveSeconds';
+  }
+
+  function parseIsoMaybe(value) {
+    const parsed = Date.parse(String(value || '').trim().replace(/^"|"$/g, ''));
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  const currentTiming = currentBlock?.timing || {};
+  const previousStageAt = parseIsoMaybe(currentTiming.lastStageAt || currentTiming.startedAt || currentBlock?.lastUpdatedAt || config.timestamp);
+  const currentTimestamp = parseIsoMaybe(config.timestamp) || Date.now();
+  const deltaSeconds = previousStageAt ? Math.max((currentTimestamp - previousStageAt) / 1000, 0) : 0;
+
   function getAttemptValue(name, defaultValue) {
     const [startIdx, endIdx] = ensureAttemptsBlock();
     const prefix = `${attemptIndent}${name}:`;
     for (let index = startIdx + 1; index < endIdx; index += 1) {
       if (block[index].startsWith(prefix)) {
-        return [index, block[index].split(':', 2)[1].trim().replace(/^"|"$/g, '')];
+        return [index, block[index].slice(prefix.length).trim().replace(/^"|"$/g, '')];
       }
     }
     block.splice(endIdx, 0, `${prefix} ${defaultValue}`);
@@ -1259,6 +1520,24 @@ function updatePhaseState(config) {
     block[updatedIdx] = `${attemptIndent}lastUpdatedAt: "${config.timestamp}"`;
   }
 
+  const [startedAtIdx, startedAtValue] = getTimingValue('startedAt', `"${config.timestamp}"`);
+  block[startedAtIdx] = `${timingIndent}startedAt: "${startedAtValue || config.timestamp}"`;
+  const startedAtEpoch = parseIsoMaybe(startedAtValue || config.timestamp) || currentTimestamp;
+  const [lastStageIdx] = getTimingValue('lastStage', '""');
+  block[lastStageIdx] = `${timingIndent}lastStage: "${activeStage}"`;
+  const [lastStageAtIdx] = getTimingValue('lastStageAt', `"${config.timestamp}"`);
+  block[lastStageAtIdx] = `${timingIndent}lastStageAt: "${config.timestamp}"`;
+  const [wallClockIdx] = getTimingValue('wallClockSeconds', '0');
+  block[wallClockIdx] = `${timingIndent}wallClockSeconds: ${Math.max(Math.round((currentTimestamp - startedAtEpoch) / 1000), 0)}`;
+  updateTimingBucket(classifyTimingBucket(), Math.round(deltaSeconds));
+  if (config.newStatus === 'completed') {
+    const [completedAtIdx] = getTimingValue('completedAt', `"${config.timestamp}"`);
+    block[completedAtIdx] = `${timingIndent}completedAt: "${config.timestamp}"`;
+  } else if (String(config.newStatus || '').includes('blocked')) {
+    const [blockedAtIdx] = getTimingValue('blockedAt', `"${config.timestamp}"`);
+    block[blockedAtIdx] = `${timingIndent}blockedAt: "${config.timestamp}"`;
+  }
+
   lines.splice(start, end - start, ...block);
 
   if (config.newStatus === 'in_progress' && config.activePhaseDoc) {
@@ -1268,6 +1547,22 @@ function updatePhaseState(config) {
     removeRootKey('signals');
     removeRootKey('artifacts');
   }
+
+  const updatedBlocks = existingBlocks.map((entry) => (
+    String(entry.number) === String(config.phaseNum)
+      ? {
+        ...entry,
+        status: config.newStatus,
+      }
+      : entry
+  ));
+  const counts = summarizePhaseCounts(updatedBlocks);
+  setRootScalarValue('activePlannedPhases', counts.planned);
+  setRootScalarValue('activeCompletedPhases', counts.completed);
+  setRootScalarValue('activeBlockedPhases', counts.blocked);
+  setRootScalarValue('activePendingPhases', counts.pending);
+  setRootScalarValue('activeRemainingPhases', counts.remaining);
+  setRootScalarValue('activeActionablePhasesRemaining', counts.remaining);
 
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
   shadowRuntimePhaseUpdate(config);

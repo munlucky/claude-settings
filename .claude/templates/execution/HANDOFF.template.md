@@ -22,6 +22,7 @@
 ## Resume Trigger
 - Why this handoff exists:
 - Stop reason: blocked | interrupted | context_limit | user_pause | deferred_verification
+- Canonical blocked stop reason: blocked
 - Why this cannot continue in the current round:
 - Condition to resume:
 

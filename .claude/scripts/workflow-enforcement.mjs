@@ -5,6 +5,13 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
+import {
+  CANONICAL_CLOSEOUT_REASONS,
+  CANONICAL_NEXT_PATHS,
+  canonicalizeCloseoutReason,
+  canonicalizeHandoffStopReason,
+  canonicalizeNextPath,
+} from './artifact-normalizer.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const STATUS_FILE_DEFAULT = '.claude/docs/phase-status.yaml';
@@ -275,7 +282,7 @@ function deriveCompletionStatusFromQaReport(qaReportPath) {
     return 'verification_pending';
   }
   const text = fs.readFileSync(qaReportPath, 'utf8');
-  const nextPath = extractBulletValue(text, '## Verdict', 'Next path');
+  const nextPath = canonicalizeNextPath(extractBulletValue(text, '## Verdict', 'Next path'));
   const scopeStatus = extractBulletValue(text, '## Verdict', 'Scope status');
   const reviewCompleted = extractBulletValue(text, '## Review Checkpoint', 'Review completed').toLowerCase();
   if (nextPath === 'clean_finish' && scopeStatus === 'complete' && reviewCompleted === 'yes') {
@@ -314,7 +321,7 @@ function deriveCompletionBlockersFromQaReport(qaReportPath) {
   const traceabilityEvidence = extractBulletValue(text, '## Finish Readiness', 'Traceability evidence confirmed').toLowerCase();
   const remainingScope = extractBulletValue(text, '## Finish Readiness', 'Remaining in-scope work').toLowerCase();
   const remainingBlockers = extractBulletValue(text, '## Finish Readiness', 'Remaining blockers before closeout').toLowerCase();
-  const nextPath = extractBulletValue(text, '## Verdict', 'Next path').toLowerCase();
+  const nextPath = canonicalizeNextPath(extractBulletValue(text, '## Verdict', 'Next path'));
 
   if (reviewCompleted !== 'yes') blockers.push('review_incomplete');
   if (freshEvidence && freshEvidence !== 'yes') blockers.push('fresh_evidence_missing');
@@ -1065,8 +1072,8 @@ function verifyEnforcement(argv) {
       }
 
       const scopeStatus = extractBulletValue(text, '## Verdict', 'Scope status');
-      const nextPath = extractBulletValue(text, '## Verdict', 'Next path');
-      const closeoutReason = extractBulletValue(text, '## Verdict', 'Closeout reason');
+      const nextPath = canonicalizeNextPath(extractBulletValue(text, '## Verdict', 'Next path'));
+      const closeoutReason = canonicalizeCloseoutReason(extractBulletValue(text, '## Verdict', 'Closeout reason'));
       const stopWhy = extractBulletValue(text, '## Finish Readiness', 'Why this round may stop now');
       const remainingScope = extractBulletValue(text, '## Finish Readiness', 'Remaining in-scope work');
       const contractReviewed = extractBulletValue(text, '## Contract Review Evidence', 'Contract reviewed by evaluator').toLowerCase();
@@ -1082,10 +1089,10 @@ function verifyEnforcement(argv) {
         if (!['complete', 'partial'].includes(scopeStatus)) {
           violations.push(`${qaReport}: 'Scope status' must be complete or partial`);
         }
-        if (!['clean_finish', 'retry_loop', 'resume_later_handoff'].includes(nextPath)) {
+        if (!CANONICAL_NEXT_PATHS.includes(nextPath)) {
           violations.push(`${qaReport}: 'Next path' must be clean_finish, retry_loop, or resume_later_handoff`);
         }
-        if (!['scope_complete', 'verification_failed', 'blocked', 'interrupted', 'context_limit', 'user_pause', 'deferred_verification'].includes(closeoutReason)) {
+        if (!CANONICAL_CLOSEOUT_REASONS.includes(closeoutReason)) {
           violations.push(`${qaReport}: 'Closeout reason' must use an allowed reason code`);
         }
         if (!stopWhy) violations.push(`${qaReport}: 'Why this round may stop now' must be filled`);
@@ -1164,7 +1171,7 @@ function verifyEnforcement(argv) {
           violations.push(`${handoff}: missing '${heading}' section`);
         }
       }
-      const stopReason = extractBulletValue(text, '## Resume Trigger', 'Stop reason');
+      const stopReason = canonicalizeHandoffStopReason(extractBulletValue(text, '## Resume Trigger', 'Stop reason'));
       const stopWhy = extractBulletValue(text, '## Resume Trigger', 'Why this cannot continue in the current round');
       const remainingScope = extractBulletValue(text, '## Remaining Scope', 'Remaining in-scope work');
       const handoffFieldsPresent = Boolean(stopReason || stopWhy || remainingScope) || sectionExists(text, '## Remaining Scope');

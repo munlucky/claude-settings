@@ -6,6 +6,12 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { npmBaseArgs, resolveCodexCommand, resolvePowerShellCommand } from './runtime-cli.mjs';
+import { resolveCommandEvidence, resolveDockerDependencyGate } from './lib/command-resolver.mjs';
+import {
+  buildFailureClassCounts,
+  classifyCapabilityCheck,
+  summarizeFailureDecision,
+} from './lib/failure-classifier.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = process.cwd();
@@ -60,14 +66,6 @@ function packageHasDependency(manifest, name) {
   return Boolean(manifest.dependencies?.[name] || manifest.devDependencies?.[name]);
 }
 
-function commandAvailable(command, args = ['--version']) {
-  const result = run(command, args, { timeout: 8000 });
-  return {
-    available: result.status === 0 && !result.error,
-    result,
-  };
-}
-
 function shellHasCrLf(relativePath) {
   const fullPath = path.join(workspaceRoot, relativePath);
   if (!fs.existsSync(fullPath)) {
@@ -107,21 +105,155 @@ function selectStringAvailable() {
   };
 }
 
+function readRecentCapabilityReports(limit = 12, recentWindowMs = 24 * 60 * 60 * 1000) {
+  const logDir = path.join(workspaceRoot, '.claude', 'logs', 'agent-loop');
+  if (!fs.existsSync(logDir)) {
+    return [];
+  }
+
+  return fs.readdirSync(logDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^capabilities-.*\.json$/.test(entry.name))
+    .map((entry) => {
+      const filePath = path.join(logDir, entry.name);
+      const stats = fs.statSync(filePath);
+      return { filePath, mtimeMs: stats.mtimeMs };
+    })
+    .filter((entry) => Date.now() - entry.mtimeMs <= recentWindowMs)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, limit)
+    .flatMap((entry) => {
+      try {
+        const payload = JSON.parse(fs.readFileSync(entry.filePath, 'utf8'));
+        return [{ ...entry, payload }];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function buildCapabilitySummary(checks, name) {
+  const probe = checks.find((entry) => entry.name === name) || null;
+  if (!probe) {
+    return {
+      available: false,
+      status: 'missing',
+      detail: 'probe missing',
+      failureClass: 'unknown_failure',
+      decision: 'continue',
+      fallbackHint: '',
+      fingerprint: '',
+    };
+  }
+
+  return {
+    available: probe.status === 'passed' || probe.status === 'passed_with_equivalent_evidence',
+    status: probe.status,
+    detail: probe.detail,
+    command: probe.command || '',
+    failureClass: probe.failureClass || 'unknown_failure',
+    decision: probe.decision || 'continue',
+    fallbackHint: probe.fallbackHint || '',
+    fingerprint: probe.fingerprint || '',
+  };
+}
+
+function buildCapabilities(checks) {
+  return {
+    codex: buildCapabilitySummary(checks, 'codex.resolve'),
+    node: buildCapabilitySummary(checks, 'node.current'),
+    npm: buildCapabilitySummary(checks, 'npm.stablePath'),
+    pnpm: buildCapabilitySummary(checks, 'pnpm.version'),
+    corepack: buildCapabilitySummary(checks, 'corepack.version'),
+    python: buildCapabilitySummary(checks, 'python.version'),
+    pytest: buildCapabilitySummary(checks, 'pytest.version'),
+    bash: buildCapabilitySummary(checks, 'bash.version'),
+    git: buildCapabilitySummary(checks, 'git.version'),
+    docker: buildCapabilitySummary(checks, 'docker.version'),
+    nodeModules: buildCapabilitySummary(checks, 'node_modules'),
+    vitest: buildCapabilitySummary(checks, 'vitest.bin'),
+    next: buildCapabilitySummary(checks, 'next.bin'),
+    shellSyntax: checks
+      .filter((entry) => entry.name.startsWith('shell:'))
+      .map((entry) => buildCapabilitySummary(checks, entry.name)),
+  };
+}
+
+function collectFailureEvidence(checks) {
+  return checks
+    .map(classifyCapabilityCheck)
+    .filter((entry) => entry.blocker || entry.code !== 'ok');
+}
+
+function mergeCounts(target, source) {
+  for (const [key, value] of Object.entries(source || {})) {
+    target[key] = (target[key] || 0) + Number(value || 0);
+  }
+  return target;
+}
+
+function commandCheck(name, evidence, fallbackDetail = '') {
+  if (!evidence) {
+    return check(name, 'failed', fallbackDetail || 'resolver returned no evidence');
+  }
+  if (evidence.status === 'passed' || evidence.status === 'passed_with_equivalent_evidence') {
+    return check(name, evidence.status, evidence.detail || `${evidence.evidenceCommand || evidence.resolvedCommand || evidence.commandName} available`, {
+      command: evidence.invocation?.join(' ') || evidence.evidenceCommand || evidence.resolvedCommand || evidence.commandName,
+      failureClass: evidence.failureCode || '',
+      decision: evidence.decision || 'continue',
+      fallbackHint: evidence.fallbackReason || '',
+    });
+  }
+  return check(name, 'failed', evidence.detail || fallbackDetail || `${evidence.commandName || name} unavailable`, {
+    command: evidence.invocation?.join(' ') || evidence.commandName || name,
+    failureClass: evidence.failureCode || 'command_not_found',
+    decision: evidence.decision || 'resume_later_handoff',
+    fallbackHint: evidence.fallbackReason || '',
+  });
+}
+
 function buildReport() {
-  const checks = [];
   const manifest = readPackageManifest();
-
-  const codexCommand = resolveCodexCommand();
-  checks.push(codexCommand
-    ? check('codex.resolve', 'passed', codexCommand)
-    : check('codex.resolve', 'warning', 'codex command was not resolved; non-codex runtimes may still work'));
-
-  checks.push(check('node.current', 'passed', process.execPath));
-
   const npmArgs = npmBaseArgs();
+  const checks = [];
+  const dockerGate = resolveDockerDependencyGate({ workspaceRoot });
+
+  checks.push(resolveCodexCommand()
+    ? check('codex.resolve', 'passed', resolveCodexCommand())
+    : check('codex.resolve', 'warning', 'codex command was not resolved; non-codex runtimes may still work'));
+  checks.push(check('node.current', 'passed', process.execPath, { command: process.execPath }));
+  checks.push(commandCheck('corepack.version', resolveCommandEvidence('corepack')));
+  checks.push(commandCheck('pnpm.version', resolveCommandEvidence('pnpm')));
+  checks.push(commandCheck('python.version', resolveCommandEvidence('python')));
+  checks.push(commandCheck('pytest.version', resolveCommandEvidence('pytest')));
+  checks.push(commandCheck('bash.version', resolveCommandEvidence('bash')));
+  checks.push(commandCheck('git.version', resolveCommandEvidence('git')));
+  checks.push(commandCheck('docker.version', dockerGate.version));
+  checks.push(check(
+    'docker.compose.config',
+    dockerGate.staticConfig.status === 'passed' ? 'passed' : dockerGate.staticConfig.status === 'failed' ? 'failed' : 'warning',
+    dockerGate.staticConfig.detail || 'docker compose config not evaluated',
+    {
+      command: dockerGate.staticConfig.command,
+      failureClass: dockerGate.staticConfig.failureCode || '',
+      decision: dockerGate.staticConfig.decision || 'continue',
+      fallbackHint: dockerGate.staticConfig.detail || '',
+    },
+  ));
+  checks.push(check(
+    'docker.info',
+    dockerGate.daemon.status === 'passed' ? 'passed' : 'failed',
+    dockerGate.daemon.detail || 'docker daemon probe unavailable',
+    {
+      command: dockerGate.daemon.command,
+      failureClass: dockerGate.daemon.failureCode || 'docker_daemon_unavailable',
+      decision: dockerGate.daemon.decision || 'resume_later_handoff',
+      fallbackHint: dockerGate.fallbackReason || dockerGate.daemon.detail || '',
+    },
+  ));
+
   const npmVersion = run(npmArgs[0], [...npmArgs.slice(1), '--version']);
   if (npmVersion.status === 0) {
-    checks.push(check('npm.stablePath', 'passed', npmVersion.stdout.trim() || npmArgs.join(' ')));
+    checks.push(check('npm.stablePath', 'passed', npmVersion.stdout.trim() || npmArgs.join(' '), { command: npmVersion.command }));
   } else if (spawnBlocked(npmVersion) && npmArgs.length > 1 && fs.existsSync(npmArgs[0]) && fs.existsSync(npmArgs[1])) {
     checks.push(check('npm.stablePath', 'warning', 'npm stable path exists, but child process spawn was blocked by host policy', { command: npmVersion.command }));
   } else {
@@ -157,29 +289,74 @@ function buildReport() {
     checks.push(checkShellSyntax(relativePath));
   }
 
-  const rg = commandAvailable('rg', ['--version']);
-  if (rg.available) {
-    checks.push(check('search.rg', 'passed', rg.result.stdout.split(/\r?\n/)[0] || 'rg available'));
+  const rg = resolveCommandEvidence('rg');
+  if (rg.status === 'passed' || rg.status === 'passed_with_equivalent_evidence') {
+    checks.push(check('search.rg', rg.status, rg.detail || rg.resolvedCommand || 'rg available', {
+      command: rg.invocation?.join(' ') || 'rg --version',
+      failureClass: rg.failureCode || '',
+      decision: rg.decision || 'continue',
+      fallbackHint: rg.fallbackReason || '',
+    }));
   } else {
     const fallback = selectStringAvailable();
     checks.push(fallback.available
       ? check('search.rg', 'passed_with_equivalent_evidence', 'rg unavailable; Select-String fallback available', {
         preferred: 'rg',
         fallback: 'Select-String',
-        rgError: rg.result.stderr || rg.result.error,
+        rgError: rg.detail || rg.failureCode || 'rg unavailable',
       })
-      : check('search.rg', 'failed', rg.result.stderr || rg.result.error || fallback.detail || 'rg unavailable and no fallback found'));
+      : check('search.rg', 'failed', rg.detail || fallback.detail || 'rg unavailable and no fallback found', {
+        failureClass: rg.failureCode || 'command_not_found',
+        decision: rg.decision || 'host_fallback',
+        fallbackHint: rg.fallbackReason || '',
+      }));
   }
 
-  const failed = checks.filter((entry) => entry.status === 'failed');
-  const warnings = checks.filter((entry) => entry.status === 'warning' || entry.status === 'passed_with_equivalent_evidence');
+  const classifiedChecks = checks.map(classifyCapabilityCheck);
+  const currentFailureCounts = buildFailureClassCounts(classifiedChecks.filter((entry) => entry.blocker));
+  const historicalCounts = {};
+  for (const report of readRecentCapabilityReports()) {
+    const reportChecks = Array.isArray(report.payload?.checks) ? report.payload.checks : [];
+    mergeCounts(historicalCounts, buildFailureClassCounts(reportChecks.map(classifyCapabilityCheck).filter((entry) => entry.blocker)));
+  }
+  const failureClassCounts = mergeCounts({ ...historicalCounts }, currentFailureCounts);
+  const summary = summarizeFailureDecision(failureClassCounts);
+  const blockers = classifiedChecks.filter((entry) => entry.blocker);
+  const warnings = classifiedChecks.filter((entry) => entry.status === 'warning' || entry.status === 'passed_with_equivalent_evidence');
+  const decision = blockers.length === 0
+    ? 'continue'
+    : summary.decision;
+  const reason = blockers.length === 0
+    ? 'ok'
+    : summary.reason;
+  const currentBlockers = blockers.map((entry) => ({
+    name: entry.name,
+    code: entry.code,
+    category: entry.category,
+    decision: entry.decision,
+    fallbackHint: entry.fallbackHint,
+    fingerprint: entry.fingerprint,
+    detail: entry.detail,
+  }));
+
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     generatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
     platform: process.platform,
     workspaceRoot,
-    status: failed.length > 0 ? 'failed' : warnings.length > 0 ? 'passed_with_equivalent_evidence' : 'passed',
-    checks,
+    status: blockers.length > 0 ? 'failed' : warnings.length > 0 ? 'passed_with_equivalent_evidence' : 'passed',
+    decision,
+    reason,
+    sameFailureClassCount: summary.sameFailureClassCount,
+    blockerFingerprint: summary.blockerFingerprint,
+    fallbackHints: currentBlockers.map((entry) => entry.fallbackHint).filter(Boolean),
+    currentBlockers,
+    failureClassCounts,
+    dependencyGates: {
+      docker: dockerGate,
+    },
+    capabilities: buildCapabilities(classifiedChecks),
+    checks: classifiedChecks,
   };
 }
 

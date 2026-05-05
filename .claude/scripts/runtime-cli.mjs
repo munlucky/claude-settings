@@ -11,6 +11,7 @@ import {
   isWsl,
   resolveParentRuntimeContext,
 } from './lib/runtime-platform.mjs';
+import { resolveNpmBaseArgs } from './lib/command-resolver.mjs';
 import { runCommand } from './lib/process-utils.mjs';
 
 function windowsCodexAuthCandidates() {
@@ -205,14 +206,7 @@ export function resolvePowerShellCommand() {
 }
 
 export function npmBaseArgs() {
-  if (process.platform === 'win32') {
-    const nodePath = 'C:\\Program Files\\nodejs\\node.exe';
-    const npmCliPath = 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js';
-    if (fs.existsSync(nodePath) && fs.existsSync(npmCliPath)) {
-      return [nodePath, npmCliPath];
-    }
-  }
-  return ['npm'];
+  return resolveNpmBaseArgs();
 }
 
 function getProcessGroupId(pid) {
