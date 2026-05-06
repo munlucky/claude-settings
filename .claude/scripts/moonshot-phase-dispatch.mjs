@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { runCommand } from './lib/process-utils.mjs';
 import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
 import { createPhaseHarnessCaptureSession } from './lib/awtl-harness-capture.mjs';
+import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -123,6 +124,29 @@ function appendDebugLog(event, details = {}) {
     event,
     ...details,
   })}\n`, 'utf8');
+}
+
+function appendCaptureWarning(context, detail) {
+  const record = appendWasteLedgerEntry({
+    repoRoot: process.cwd(),
+    kind: 'warning',
+    phase: 'dispatch',
+    phaseTitle: path.basename(state.planDir || ''),
+    context,
+    detail,
+    evidencePath: debugLog,
+    action: 'capture_warning',
+    source: 'moonshot-phase-dispatch',
+    runtime: state.runtime || 'auto',
+    stage: 'ready/isolate',
+  });
+  if (record.firstOccurrence) {
+    appendDebugLog('awtl-capture-warning', {
+      context,
+      detail,
+      warningClass: record.entry.class,
+    });
+  }
 }
 
 function ensureCommand(name, errorMessage) {
@@ -526,10 +550,7 @@ function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRun
     summary: 'run_started',
   }).then((result) => {
     if (!result.ok) {
-      appendDebugLog('awtl-capture-warning', {
-        context: 'dispatch-run_started',
-        detail: result.error?.message || 'capture failed',
-      });
+      appendCaptureWarning('dispatch-run_started', result.error?.message || 'capture failed');
     }
   });
   const values = leaseAssignments(
@@ -592,10 +613,7 @@ function finishDispatchLease(returnBoundary, stopReasonCode, stopReasonDetail, c
       summary: 'run_completed',
     }).then((result) => {
       if (!result.ok) {
-        appendDebugLog('awtl-capture-warning', {
-          context: 'dispatch-run_completed',
-          detail: result.error?.message || 'capture failed',
-        });
+        appendCaptureWarning('dispatch-run_completed', result.error?.message || 'capture failed');
       }
     });
   }

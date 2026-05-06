@@ -12,6 +12,7 @@ import { evaluatePathAuthority } from './lib/path-authority.mjs';
 import { createPhaseHarnessCaptureSession, normalizeArtifactRefs } from './lib/awtl-harness-capture.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
 import { classifyFailure, summarizeFailureDecision } from './lib/failure-classifier.mjs';
+import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -156,7 +157,26 @@ function appendDebugLog(event, details = {}) {
 }
 
 function appendCaptureWarning(context, detail) {
-  appendDebugLog('awtl-capture-warning', { context, detail });
+  const record = appendWasteLedgerEntry({
+    repoRoot: process.cwd(),
+    kind: 'warning',
+    phase: state.phaseNum,
+    phaseTitle: state.phaseTitle,
+    context,
+    detail,
+    evidencePath: activeAttemptContext?.logFile || '',
+    action: 'capture_warning',
+    source: 'agent-loop-phase-runner',
+    runtime: activeAttemptContext?.runtime || '',
+    stage: 'execute',
+  });
+  if (record.firstOccurrence) {
+    appendDebugLog('awtl-capture-warning', {
+      context,
+      detail,
+      warningClass: record.entry.class,
+    });
+  }
 }
 
 function collectFileReconciliationRefs() {
@@ -887,6 +907,22 @@ function recordLoopStop(phaseNum, reason, detail, logFile) {
   const displayDetail = reason === 'path-authority-preflight-failed'
     ? `${reason}: ${detail}`
     : detail;
+  const classification = classifyFailure({ reason, message: detail, detail });
+  appendWasteLedgerEntry({
+    repoRoot: process.cwd(),
+    kind: 'retry',
+    phase: phaseNum,
+    phaseTitle: state.phaseTitle,
+    class: classification.code,
+    action: classification.retryPolicy === 'retryable' ? 'record_retry_stop' : 'record_waste_stop',
+    evidencePath: logFile || activeAttemptContext?.paths?.phaseQaReport || '',
+    retryPolicy: classification.retryPolicy,
+    context: reason,
+    detail,
+    source: 'agent-loop-phase-runner',
+    runtime: activeAttemptContext?.runtime || '',
+    stage: 'verify',
+  });
   appendDebugLog('phase-stop', {
     reason,
     detail,

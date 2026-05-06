@@ -277,8 +277,8 @@ export function codexBaseArgs(cwd) {
   const windowsWrapper = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-exec-wrapper.ps1');
   const powershellCommand = resolvePowerShellCommand();
   const args = process.platform === 'win32'
-    ? [powershellCommand, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', windowsWrapper, 'exec', '--full-auto', '-C', cwd]
-    : [codexCommand, 'exec', '--full-auto', '-C', cwd];
+    ? [powershellCommand, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', windowsWrapper, 'exec', '--sandbox', 'workspace-write', '-C', cwd]
+    : [codexCommand, 'exec', '--sandbox', 'workspace-write', '-C', cwd];
 
   if (useEphemeral === 'true') {
     args.push('--ephemeral');
