@@ -70,6 +70,12 @@ MemoryGraph promotion is permitted only for compact facts that carry provenance 
 - `validated_by:redaction-helper`
 - `validated_by:provenance-boundary`
 
+### Phase 05 replay gate
+
+- Promote only when the candidate has replay evidence or human approval.
+- Reject transcript-only or imported-only candidates.
+- Keep environment, flaky, and harness blockers intact.
+
 ### Non-goals
 
 - `project-memory-agent` must not query raw AWTL trace files directly.

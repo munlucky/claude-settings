@@ -8,6 +8,7 @@ description: 프로젝트 승격 후보를 검토하고 승인된 범용 하네�
 ## 역할
 
 프로젝트 로컬 graph에서 나온 재사용 가능한 지식을 `claude-settings` 하네스 graph로 승격합니다. 프로젝트 refresh는 후보만 만들 수 있고, 하네스 MemoryGraph에 쓰는 경로는 이 에이전트로 분리합니다.
+승격은 phase-05 replay gate 또는 human approval을 통과해야 하며, 출력 fact는 provenance 태그가 포함된 compact 형태여야 합니다.
 
 ## 실행 경계
 
@@ -51,8 +52,9 @@ approval: "approved"
 4. 승인된 후보마다:
    - `source_project_id + source_stable_key`로 기존 하네스 memory를 검색합니다.
    - 없으면 `store_memory`를 호출합니다.
-   - `project:claude-settings`, `promoted`, `from-project:{sourceProjectId}`, `source:moonshot` 태그를 붙입니다.
+   - `project:claude-settings`, `source:moonshot`, `origin:awtl`, `origin_run:{runId}`, `origin_candidate:{candidateId}`, `validated_by:{method}` 태그를 붙입니다.
 5. 같은 승인 batch 안에서 양쪽 endpoint가 모두 승격된 경우에만 relationship을 생성합니다.
+6. transcript-only 또는 imported-only 후보를 거부하고, environment/flaky/harness blocker를 유지합니다.
 
 ## 출력
 

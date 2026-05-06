@@ -70,6 +70,12 @@ MemoryGraph 승격은 provenance와 validation tag가 붙은 compact fact에만 
 - `validated_by:redaction-helper`
 - `validated_by:provenance-boundary`
 
+### Phase 05 replay gate
+
+- 후보는 replay 증거 또는 human approval이 있을 때만 승격합니다.
+- transcript-only 또는 imported-only 후보는 거부합니다.
+- environment, flaky, harness blocker는 그대로 유지합니다.
+
 ### Non-goals
 
 - `project-memory-agent`는 raw AWTL trace file을 직접 조회하지 않는다.

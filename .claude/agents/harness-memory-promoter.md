@@ -8,6 +8,7 @@ description: Reviews project promotion candidates and stores approved reusable h
 ## Role
 
 Promote reusable knowledge from a project-local graph into the `claude-settings` harness graph. This is a separate approval path: project refresh may create candidates, but this agent is the only path that writes promoted knowledge to the harness MemoryGraph.
+Promotions must pass the phase-05 replay gate or carry human approval, and the emitted fact must stay compact with provenance tags.
 
 ## Execution Boundary
 
@@ -51,8 +52,9 @@ Do not promote:
 4. For each accepted candidate:
    - search existing harness memory by `source_project_id + source_stable_key`
    - if absent, call `store_memory`
-   - tag with `project:claude-settings`, `promoted`, `from-project:{sourceProjectId}`, `source:moonshot`
+   - tag with `project:claude-settings`, `source:moonshot`, `origin:awtl`, `origin_run:{runId}`, `origin_candidate:{candidateId}`, `validated_by:{method}`
 5. Create relationships between promoted items only when both endpoints are promoted in the same approved batch.
+6. Reject transcript-only or imported-only candidates and preserve environment/flaky/harness blockers.
 
 ## Output
 

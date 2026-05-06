@@ -10,6 +10,7 @@ triggers:
 # 하네스 메모리 승격
 
 사용자가 프로젝트 지식 중 재사용 가능한 내용을 하네스 graph로 승격하라고 명시 승인했을 때 사용합니다.
+승격은 replay 증거 또는 human approval로 게이트되며, 결과 fact는 provenance 태그를 포함한 compact 형태여야 합니다.
 
 ## 필수 흐름
 
@@ -20,8 +21,10 @@ triggers:
 5. 승인된 항목은 다음 태그로 저장합니다.
    - `project:claude-settings`
    - `source:moonshot`
-   - `promoted`
-   - `from-project:{sourceProjectId}`
+   - `origin:awtl`
+   - `origin_run:{runId}`
+   - `origin_candidate:{candidateId}`
+   - `validated_by:{method}`
 
 ## 강제 규칙
 
@@ -29,3 +32,4 @@ triggers:
 - raw project graph dump를 승격하지 않습니다.
 - 승격 memory는 짧고 재사용 가능해야 합니다.
 - MemoryGraph가 불가하면 실패를 보고하되 관련 없는 작업은 막지 않습니다.
+- transcript-only 또는 imported-only 후보는 승격하지 말고, environment/flaky/harness blocker는 유지합니다.

@@ -195,7 +195,7 @@ def main() -> int:
             "missing": args.missing_check,
         }
     )
-    phase_closeout_verdict = args.mode == "phase_attempt" and args.verification_mode == "phase_closeout"
+    phase_closeout_verdict = args.verification_mode == "phase_closeout"
     selected_bundles = normalize_workflow_list(
         args.selected_bundle,
         [
@@ -212,6 +212,7 @@ def main() -> int:
         ["ready/isolate", "execute", "review", "verify", "finish"],
         phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true",
     )
+    workflow_warnings = [] if phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true" else args.workflow_warning
     environment_fingerprint = args.environment_fingerprint or stable_fingerprint(
         {
             "requestedRuntime": args.requested_runtime,
@@ -265,7 +266,7 @@ def main() -> int:
             "retrievalBudget": args.retrieval_budget,
             "validationProfile": args.validation_profile,
             "phaseReplayPolicy": args.phase_replay_policy,
-            "warnings": args.workflow_warning,
+            "warnings": workflow_warnings,
         },
         "runtimeContext": {
             "requestedRuntime": args.requested_runtime,

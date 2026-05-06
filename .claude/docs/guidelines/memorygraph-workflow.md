@@ -11,6 +11,7 @@ Use this contract for every public workflow entrypoint and every Moonshot stage 
 - Treat MemoryGraph failure as non-blocking unless the stage itself is a strict memory validation stage.
 - Build and refresh project-local knowledge graphs only on explicit refresh, finish/session logging, or commit-memory flow.
 - Promote reusable cross-project knowledge into the harness graph only through an approval-based promotion path.
+- Phase 05 adds a replay gate before harness-memory-promoter: a candidate must have replay evidence or human approval, and transcript-only/imported-only candidates stay blocked.
 
 ## Stage Coverage
 
@@ -44,6 +45,7 @@ Reusable project knowledge can be promoted into the `claude-settings` graph, but
 - Project refresh creates candidates only.
 - `harness-memory-promoter` must run from the `claude-settings` repository.
 - Promotion requires explicit approval.
+- MemoryGraph unavailable must not block unrelated workflows, but the promotion operation itself still reports failure or blockage.
 - Promoted tags include `project:claude-settings`, `promoted`, `from-project:<projectId>`, and `source:moonshot`.
 - Do not promote project domain/business logic, one-off implementation details, secrets, or facts derived only from `.claude/docs/ko/`.
 

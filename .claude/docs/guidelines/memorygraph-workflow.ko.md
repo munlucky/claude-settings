@@ -11,6 +11,7 @@
 - MemoryGraph 실패는 strict memory validation 단계가 아닌 한 workflow를 막지 않고 warning 또는 `not_checked`로 남깁니다.
 - 프로젝트 로컬 지식그래프 생성/갱신은 명시 refresh, finish/session logging, commit-memory 흐름에서만 수행합니다.
 - 여러 프로젝트에 재사용 가능한 지식은 승인 기반 승격 경로로만 하네스 graph에 저장합니다.
+- Phase 05는 harness-memory-promoter 앞에 replay gate를 추가합니다. 후보는 replay 증거 또는 human approval이 있어야 하며, transcript-only/imported-only 후보는 계속 차단됩니다.
 
 ## 단계별 적용
 
@@ -44,6 +45,7 @@
 - 프로젝트 refresh는 후보만 생성합니다.
 - `harness-memory-promoter`는 반드시 `claude-settings` 저장소에서 실행합니다.
 - 승격에는 명시 승인이 필요합니다.
+- MemoryGraph가 unavailable이어도 관련 없는 워크플로는 막지 말고, 승격 연산만 실패/차단으로 보고합니다.
 - 승격 태그는 `project:claude-settings`, `promoted`, `from-project:<projectId>`, `source:moonshot`을 포함합니다.
 - 프로젝트 도메인/비즈니스 로직, 일회성 구현 세부사항, secrets, `.claude/docs/ko/`에서만 나온 사실은 승격하지 않습니다.
 

@@ -10,6 +10,7 @@ triggers:
 # Harness Memory Promoter
 
 Use this skill when the user explicitly approves promotion of reusable project knowledge into the harness graph.
+Promotion is gated by replay evidence or human approval, and the resulting fact must stay compact with provenance tags.
 
 ## Required Flow
 
@@ -20,8 +21,10 @@ Use this skill when the user explicitly approves promotion of reusable project k
 5. Store accepted items with:
    - `project:claude-settings`
    - `source:moonshot`
-   - `promoted`
-   - `from-project:{sourceProjectId}`
+   - `origin:awtl`
+   - `origin_run:{runId}`
+   - `origin_candidate:{candidateId}`
+   - `validated_by:{method}`
 
 ## Hard Rules
 
@@ -29,3 +32,4 @@ Use this skill when the user explicitly approves promotion of reusable project k
 - Never promote raw project graph dumps.
 - Keep promoted memories compact and reusable.
 - If MemoryGraph is unavailable, report the failure and do not block unrelated work.
+- Do not promote transcript-only or imported-only candidates, and preserve environment/flaky/harness blockers.
