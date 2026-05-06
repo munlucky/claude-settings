@@ -57,6 +57,17 @@ def read_top_level_value(block: list[str], key: str) -> str | None:
     return None
 
 
+def read_root_value(lines: list[str], key: str) -> str | None:
+    prefix = f"{key}:"
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "phases:":
+            return None
+        if stripped.startswith(prefix):
+            return stripped.split(":", 1)[1].strip().strip('"')
+    return None
+
+
 def set_top_level_value(block: list[str], key: str, value: str) -> list[str]:
     item_indent = len(block[0]) - len(block[0].lstrip(" "))
     top_indent = " " * (item_indent + 2)
@@ -146,6 +157,17 @@ def main() -> int:
         return 0
 
     lines = status_file.read_text(encoding="utf-8").splitlines()
+    master_plan = read_root_value(lines, "masterPlan")
+    if master_plan:
+        status_plan_dir = Path(master_plan).parent.resolve()
+        if status_plan_dir != plan_dir.resolve():
+            print(
+                "plan-status-mismatch: "
+                f"status masterPlan '{master_plan}' belongs to '{status_plan_dir}', not '{plan_dir.resolve()}'",
+                file=sys.stderr,
+            )
+            return 2
+
     updates: list[str] = []
 
     for start, end, phase_number in reversed(iter_phase_block_ranges(lines)):

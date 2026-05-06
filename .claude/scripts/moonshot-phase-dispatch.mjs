@@ -14,6 +14,7 @@ import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
+const phasePlanPath = path.join(SCRIPT_DIR, 'agent-loop-phase-plan.mjs');
 const phaseStatePath = path.join(SCRIPT_DIR, 'agent-loop-phase-state.mjs');
 const phaseArtifactsPath = path.join(SCRIPT_DIR, 'agent-loop-phase-artifacts.mjs');
 const phaseRunLeasePath = path.join(SCRIPT_DIR, 'phase-run-lease.mjs');
@@ -181,6 +182,43 @@ function runNodeScript(scriptPath, args) {
     throw result.error;
   }
   return result;
+}
+
+function phasePlan(command, ...args) {
+  const result = runNodeScript(phasePlanPath, [command, ...args]);
+  if ((result.status ?? 0) !== 0) {
+    throw new Error(result.stderr || result.stdout || `phase-plan command failed: ${command}`);
+  }
+  return result.stdout.trim();
+}
+
+function readStatusMasterPlan() {
+  if (!state.statusFile || !fs.existsSync(state.statusFile)) {
+    return '';
+  }
+  for (const rawLine of fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/)) {
+    const stripped = rawLine.trim();
+    if (stripped === 'phases:') {
+      return '';
+    }
+    const match = rawLine.match(/^masterPlan:\s*(.+)\s*$/);
+    if (match) {
+      return match[1].trim().replace(/^"|"$/g, '');
+    }
+  }
+  return '';
+}
+
+function assertPlanStatusIdentity() {
+  const masterPlan = readStatusMasterPlan();
+  if (!masterPlan) {
+    return;
+  }
+  const statusPlanDir = path.dirname(masterPlan);
+  if (path.resolve(statusPlanDir) !== path.resolve(state.planDir)) {
+    logError(`plan-status-mismatch: status masterPlan '${masterPlan}' belongs to '${statusPlanDir}', not '${state.planDir}'`);
+    process.exit(1);
+  }
 }
 
 function readCurrentNormalizedVerdict() {
@@ -420,7 +458,7 @@ function isSignalLikeExit(code, signal) {
 }
 
 function actionablePhaseExists() {
-  const result = spawnSync('node', [path.join(SCRIPT_DIR, 'agent-loop-phase-plan.mjs'), 'get-next-phase', state.statusFile], {
+  const result = spawnSync('node', [phasePlanPath, 'get-next-phase', state.statusFile], {
     encoding: 'utf8',
   });
 
@@ -1661,7 +1699,6 @@ function parseArgs(argv) {
 }
 
 parseArgs(process.argv.slice(2));
-runtimeCli(['sync-wsl-codex-auth']);
 
 if (!state.planDir) {
   logError('Plan directory not specified');
@@ -1689,6 +1726,8 @@ if (!['strict', 'warn', 'warning', 'off', 'false', 'none'].includes(String(state
   state.finalGitCloseout = 'strict';
 }
 
+assertPlanStatusIdentity();
+runtimeCli(['sync-wsl-codex-auth']);
 syncCompletedPhaseArchive();
 let resolvedMode = resolveExecutionMode();
 const resolvedRoot = resolveExecutionRoot();

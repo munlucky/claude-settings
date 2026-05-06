@@ -17,6 +17,8 @@ It is the main Plan-stage owner for phase documents.
   - Fallbacks: `docs/PRD*.md`, `docs/SPEC*.md`, `docs/GDD*.md`, root-level requirement/design docs, issue/ticket text, user request
 - Plan directory path (default: `docs/implementation`)
 - Phase list (from existing files or user request)
+- Active phase status file path when preparing a runnable package (default: `.claude/docs/phase-status.yaml`)
+- Execution root when preparing a runnable package (default: `docs/implementation/execution/<plan-slug>`)
 
 ## Source-of-Truth Precedence
 - Resolve sources by semantic role (not filename):
@@ -63,10 +65,27 @@ It is the main Plan-stage owner for phase documents.
     - When `mvpMethodology.profile: demo_first`, slice by maturity milestone instead of backend-first feature layers.
     - In demo-first plans, a Real Functional phase is executable only when `USER_DEMO_APPROVAL.md` is `approved` with a non-empty approved scope.
     - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
-6. Synchronize completion state.
+6. Prepare runnable phase state when the plan package is the next execution target.
+   - Preserve active root plan documents.
+   - Archive stale runtime/evidence surfaces instead of deleting them:
+     - `docs/implementation/execution`
+     - `docs/implementation/close`
+     - the previous `.claude/docs/phase-status.yaml` active pointer
+   - Use:
+     ```bash
+     node .claude/scripts/prepare-implementation-plan-state.mjs \
+       --plan-dir docs/implementation \
+       --master-plan docs/implementation/00-master-plan-v{n}.md \
+       --status-file .claude/docs/phase-status.yaml \
+       --execution-root docs/implementation/execution/<plan-slug>
+     ```
+   - Run `--dry-run` first when existing `execution`, `close`, or `phase-status.yaml` content may belong to another active workstream.
+   - Do not touch `.claude/scripts`, `.claude/runtime-state.sqlite`, `.claude/memory.json`, `.claude/verification.contract.yaml`, project settings, or verification baselines during this preparation step.
+   - After preparation, the rewritten `phase-status.yaml` must point to the selected master plan, mark phase 1 pending/prepared, and list only the current plan's phase docs.
+7. Synchronize completion state.
    - When a phase is completed, immediately mark its master checklist item as checked.
    - Record evidence links used to justify checked state.
-7. Apply completion loop.
+8. Apply completion loop.
    - Continue iterating until every source requirement is mapped and every master checklist item is checked.
    - Never treat work as fully complete while any checklist item remains unchecked.
 

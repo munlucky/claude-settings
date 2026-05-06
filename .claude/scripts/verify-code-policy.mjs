@@ -53,6 +53,11 @@ function collectTrackedTracePaths(cwd = process.cwd()) {
     .filter(Boolean);
 }
 
+function hasForbiddenTracePath(filePath) {
+  const normalized = normalizePath(filePath);
+  return FORBIDDEN_TRACE_PATH_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 function shouldSkip(filePath) {
   const normalized = normalizePath(filePath);
   const parts = normalized.split('/');
@@ -72,11 +77,6 @@ function isSupported(filePath) {
 
 function isConsoleLogTarget(filePath) {
   return CONSOLE_LOG_SUFFIXES.has(path.extname(filePath).toLowerCase());
-}
-
-function hasForbiddenTracePath(filePath) {
-  const normalized = normalizePath(filePath);
-  return FORBIDDEN_TRACE_PATH_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 function hasTodoComment(line) {
@@ -126,22 +126,21 @@ function isBaselined(rule, filePath, baseline) {
 }
 
 function collectCandidateFiles(argv) {
-  const candidates = [];
-  if (process.env.VERIFY_CODE_POLICY_FILES?.trim()) {
-    candidates.push(
-      ...process.env.VERIFY_CODE_POLICY_FILES.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
-    );
-  } else if (argv.length > 0) {
-    candidates.push(...argv.map((value) => value.trim()).filter(Boolean));
+  if (process.env.VERIFY_CODE_POLICY_FILES) {
+    return process.env.VERIFY_CODE_POLICY_FILES.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  }
+
+  if (argv.length > 0) {
+    return argv.map((value) => value.trim()).filter(Boolean);
   }
 
   if (isInsideGitWorkTree()) {
-    candidates.push(...collectGitStatusPaths(), ...collectTrackedTracePaths());
-  } else if (candidates.length === 0) {
-    return walkFiles('.', { skipDirs: SKIP_PARTS }).map((filePath) => normalizePath(filePath));
+    return [...new Set([...collectGitStatusPaths(), ...collectTrackedTracePaths()].map((filePath) => normalizePath(filePath)))];
   }
 
-  return [...new Set(candidates.map((filePath) => normalizePath(filePath)))];
+  return walkFiles('.', { skipDirs: SKIP_PARTS })
+    .map((filePath) => normalizePath(filePath))
+    .filter((filePath) => !hasForbiddenTracePath(filePath));
 }
 
 function collectViolations(files) {

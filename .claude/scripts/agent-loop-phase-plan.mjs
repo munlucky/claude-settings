@@ -35,6 +35,8 @@ function readStatusBlocks(statusFile) {
         planConfirmed: null,
         lastOutcome: null,
         lastUpdatedAt: null,
+        activePhaseDoc: null,
+        archivedPhaseDoc: null,
       };
       currentIndent = rawLine.length - rawLine.trimStart().length;
       inAttempts = false;
@@ -60,16 +62,20 @@ function readStatusBlocks(statusFile) {
     }
 
     if (stripped.startsWith('status:')) {
-      current.status = stripped.split(':', 2)[1].trim();
+      current.status = stripped.slice('status:'.length).trim();
     } else if (stripped.startsWith('planConfirmed:')) {
-      current.planConfirmed = stripped.split(':', 2)[1].trim().toLowerCase();
+      current.planConfirmed = stripped.slice('planConfirmed:'.length).trim().toLowerCase();
+    } else if (stripped.startsWith('activePhaseDoc:')) {
+      current.activePhaseDoc = stripped.slice('activePhaseDoc:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('archivedPhaseDoc:')) {
+      current.archivedPhaseDoc = stripped.slice('archivedPhaseDoc:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('attempts:') && indent > currentIndent) {
       inAttempts = true;
     } else if (inAttempts) {
       if (stripped.startsWith('lastOutcome:')) {
-        current.lastOutcome = stripped.split(':', 2)[1].trim();
+        current.lastOutcome = stripped.slice('lastOutcome:'.length).trim();
       } else if (stripped.startsWith('lastUpdatedAt:')) {
-        current.lastUpdatedAt = stripped.split(':', 2)[1].trim().replace(/^"|"$/g, '');
+        current.lastUpdatedAt = stripped.slice('lastUpdatedAt:'.length).trim().replace(/^"|"$/g, '');
       }
     }
   }
@@ -79,6 +85,59 @@ function readStatusBlocks(statusFile) {
   }
 
   return blocks;
+}
+
+function readRootScalar(statusFile, key) {
+  if (!statusFile || !fs.existsSync(statusFile)) {
+    return '';
+  }
+
+  for (const rawLine of fs.readFileSync(statusFile, 'utf8').split(/\r?\n/)) {
+    const stripped = rawLine.trim();
+    if (stripped === 'phases:') {
+      return '';
+    }
+    const match = rawLine.match(new RegExp(`^${key}:\\s*(.+)\\s*$`));
+    if (!match) {
+      continue;
+    }
+    return match[1].trim().replace(/^"|"$/g, '');
+  }
+  return '';
+}
+
+function sameDirectory(left, right) {
+  return path.resolve(left) === path.resolve(right);
+}
+
+export function validateStatusPlanIdentity(planDir, statusFile) {
+  const masterPlan = readRootScalar(statusFile, 'masterPlan');
+  if (!masterPlan) {
+    return { ok: true, masterPlan: '', statusPlanDir: '', planDir };
+  }
+
+  const statusPlanDir = path.dirname(masterPlan);
+  if (!sameDirectory(statusPlanDir, planDir)) {
+    return {
+      ok: false,
+      reason: 'plan-status-mismatch',
+      masterPlan,
+      statusPlanDir,
+      planDir,
+    };
+  }
+
+  return { ok: true, masterPlan, statusPlanDir, planDir };
+}
+
+function assertStatusPlanIdentity(planDir, statusFile) {
+  const result = validateStatusPlanIdentity(planDir, statusFile);
+  if (!result.ok) {
+    throw new Error(
+      `plan-status-mismatch: status masterPlan '${result.masterPlan}' belongs to '${result.statusPlanDir}', not '${result.planDir}'`,
+    );
+  }
+  return result;
 }
 
 export function getNextPhase(statusFile) {
@@ -132,7 +191,18 @@ function listPhaseDocs(planDir) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-function getPhaseDoc(planDir, phaseNum) {
+export function getPhaseDoc(planDir, phaseNum, statusFile = '') {
+  if (statusFile && fs.existsSync(statusFile)) {
+    assertStatusPlanIdentity(planDir, statusFile);
+    const block = readStatusBlocks(statusFile).find((entry) => String(entry.number) === String(phaseNum));
+    if (block?.status === 'completed' && block.archivedPhaseDoc) {
+      return block.archivedPhaseDoc;
+    }
+    if (block?.activePhaseDoc && fs.existsSync(block.activePhaseDoc)) {
+      return block.activePhaseDoc;
+    }
+  }
+
   const phasePrefix = String(phaseNum).padStart(2, '0');
   const names = listPhaseDocs(planDir);
   const match = names.find((name) => {
@@ -141,11 +211,19 @@ function getPhaseDoc(planDir, phaseNum) {
     }
     return name.startsWith(`${phasePrefix}-`) || name.includes(`phase${phaseNum}`) || name.includes(`phase-${phaseNum}`);
   });
-  return match ? path.join(planDir, match) : '';
+  if (match) {
+    return path.join(planDir, match);
+  }
+
+  const archivedDir = path.join(planDir, 'close');
+  const archived = fs.existsSync(archivedDir)
+    ? listPhaseDocs(archivedDir).find((name) => name.startsWith(`${phasePrefix}-`))
+    : '';
+  return archived ? path.join(archivedDir, archived) : '';
 }
 
-function getPhaseTitle(planDir, phaseNum) {
-  const phaseDoc = getPhaseDoc(planDir, phaseNum);
+export function getPhaseTitle(planDir, phaseNum, statusFile = '') {
+  const phaseDoc = getPhaseDoc(planDir, phaseNum, statusFile);
   if (!phaseDoc) {
     return `Phase ${phaseNum}`;
   }
@@ -155,10 +233,13 @@ function getPhaseTitle(planDir, phaseNum) {
   return heading ? heading.replace(/^#+\s*/, '').replace(/\r/g, '') : `Phase ${phaseNum}`;
 }
 
-function countTotalPhases(planDir) {
-  return String(
-    listPhaseDocs(planDir).filter((name) => !name.includes('master') && !name.includes('00-')).length,
-  );
+export function countTotalPhases(planDir, statusFile = '') {
+  if (statusFile && fs.existsSync(statusFile)) {
+    assertStatusPlanIdentity(planDir, statusFile);
+    return String(readStatusBlocks(statusFile).filter((block) => block.number !== null).length);
+  }
+
+  return String(listPhaseDocs(planDir).filter((name) => !name.includes('master') && !name.includes('00-')).length);
 }
 
 function parseScalar(value) {
@@ -274,9 +355,10 @@ function printUsage() {
     '',
     'Commands:',
     '  get-next-phase <status-file>',
-    '  get-phase-doc <plan-dir> <phase-num>',
-    '  get-phase-title <plan-dir> <phase-num>',
-    '  count-total-phases <plan-dir>',
+    '  assert-plan-status-match <plan-dir> <status-file>',
+    '  get-phase-doc <plan-dir> <phase-num> [status-file]',
+    '  get-phase-title <plan-dir> <phase-num> [status-file]',
+    '  count-total-phases <plan-dir> [status-file]',
     '  render-required-verification-commands <verification-contract-file> [requested-runtime] [verification-runtimes] [current-runtime]',
     '  active-workspace-contract [cwd]',
   ].join('\n'));
@@ -290,17 +372,20 @@ function main() {
   const [command, ...args] = process.argv.slice(2);
 
   switch (command) {
+    case 'assert-plan-status-match':
+      assertStatusPlanIdentity(args[0], args[1]);
+      break;
     case 'get-next-phase':
       writeStdoutLine(getNextPhase(args[0]));
       break;
     case 'get-phase-doc':
-      writeStdoutLine(getPhaseDoc(args[0], args[1]));
+      writeStdoutLine(getPhaseDoc(args[0], args[1], args[2]));
       break;
     case 'get-phase-title':
-      writeStdoutLine(getPhaseTitle(args[0], args[1]));
+      writeStdoutLine(getPhaseTitle(args[0], args[1], args[2]));
       break;
     case 'count-total-phases':
-      writeStdoutLine(countTotalPhases(args[0]));
+      writeStdoutLine(countTotalPhases(args[0], args[1]));
       break;
     case 'render-required-verification-commands':
       writeStdoutLine(renderRequiredVerificationCommands(args[0], args[1], args[2], args[3]));

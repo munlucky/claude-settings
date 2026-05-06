@@ -188,6 +188,14 @@ function phasePlan(command, ...args) {
   return result.stdout.trim();
 }
 
+function assertPlanStatusIdentity() {
+  const result = runNodeScript(phasePlanPath, ['assert-plan-status-match', state.planDir, state.statusFile]);
+  if (result.status !== 0) {
+    console.error((result.stderr || result.stdout || 'ERROR: plan-status-mismatch').trim());
+    process.exit(1);
+  }
+}
+
 function phaseState(command, ...args) {
   const result = runNodeScript(phaseStatePath, [command, ...args], {
     env: {
@@ -360,12 +368,19 @@ function resolveMasterPlan(planDir) {
         continue;
       }
       const candidate = match[1].trim().replace(/^"|"$/g, '');
-      if (candidate) {
+      if (candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(planDir)) {
         return candidate;
       }
     }
   }
-  return '';
+
+  const entries = fs.readdirSync(planDir, { withFileTypes: true });
+  const match = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b))
+    .find((name) => name.includes('master') || name.includes('00-'));
+  return match ? path.join(planDir, match) : '';
 }
 
 function renderDryRunPrompt({ nextPhase, phaseTitle, phaseDoc, runtime }) {
@@ -759,7 +774,7 @@ function runPhaseCheckpointCommit(phaseNum) {
     };
   }
 
-  const title = summary.title || phasePlan('get-phase-title', state.planDir, String(phaseNum)) || `Phase ${phaseNum}`;
+  const title = summary.title || phasePlan('get-phase-title', state.planDir, String(phaseNum), state.statusFile) || `Phase ${phaseNum}`;
   const result = runNodeScript(phaseCheckpointCommitPath, [
     'commit',
     '--plan-dir',
@@ -995,8 +1010,8 @@ function closeoutActivePhaseForSignal(signalName, origin = 'agent-loop-signal') 
     }
 
     const phaseNum = context.number;
-    const phaseDoc = context.activePhaseDoc || phasePlan('get-phase-doc', state.planDir, phaseNum) || '';
-    const phaseTitle = phasePlan('get-phase-title', state.planDir, phaseNum) || `Phase ${phaseNum}`;
+    const phaseDoc = context.activePhaseDoc || phasePlan('get-phase-doc', state.planDir, phaseNum, state.statusFile) || '';
+    const phaseTitle = phasePlan('get-phase-title', state.planDir, phaseNum, state.statusFile) || `Phase ${phaseNum}`;
     const detail = `${origin}: received ${signalName} while phase ${phaseNum} was still in progress`;
 
     appendDebugLog('agent-loop-signal-closeout', {
@@ -1121,7 +1136,7 @@ async function runNodeManagedLoop() {
     }
 
     runtime = resolveRunnerRuntime();
-    totalPhases = phasePlan('count-total-phases', state.planDir);
+    totalPhases = phasePlan('count-total-phases', state.planDir, state.statusFile);
     ensureLoopLogs({ reset: true });
     writeLiveSummaryReport({
       planDir: state.planDir,
@@ -1283,8 +1298,8 @@ async function runNodeManagedLoop() {
         break;
       }
 
-      const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase);
-      const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase);
+      const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase, state.statusFile);
+      const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase, state.statusFile);
       writeLiveSummaryReport({
         planDir: state.planDir,
         totalPhases,
@@ -1472,6 +1487,7 @@ async function runNodeManagedLoop() {
 parseArgs(process.argv.slice(2));
 syncRuntimeEnvironment();
 assertEnvironment();
+assertPlanStatusIdentity();
 
 for (const signalName of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
   process.on(signalName, () => {
@@ -1498,10 +1514,10 @@ if (!state.dryRun) {
   }
 
   const runtime = resolveRunnerRuntime();
-  const totalPhases = phasePlan('count-total-phases', state.planDir);
+  const totalPhases = phasePlan('count-total-phases', state.planDir, state.statusFile);
   const nextPhase = phasePlan('get-next-phase', state.statusFile) || '1';
-  const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase);
-  const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase);
+  const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase, state.statusFile);
+  const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase, state.statusFile);
 
   writeStdoutLine('');
   writeStdoutLine('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
