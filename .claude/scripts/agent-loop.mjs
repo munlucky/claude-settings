@@ -359,18 +359,12 @@ function resolveMasterPlan(planDir) {
         continue;
       }
       const candidate = match[1].trim().replace(/^"|"$/g, '');
-      if (candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(planDir)) {
+      if (candidate) {
         return candidate;
       }
     }
   }
-
-  const files = fs.readdirSync(planDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
-    .sort((a, b) => a.localeCompare(b));
-  const match = files.find((name) => name.includes('master') || name.includes('00-'));
-  return match ? path.join(planDir, match) : '';
+  return '';
 }
 
 function renderDryRunPrompt({ nextPhase, phaseTitle, phaseDoc, runtime }) {

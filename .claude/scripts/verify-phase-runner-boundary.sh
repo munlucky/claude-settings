@@ -320,6 +320,66 @@ assert_text_contains "$PROMPT_OUTPUT" "Source Plan Requirements Snapshot as bind
 assert_text_contains "$PROMPT_OUTPUT" "---HANDOFF---" "prompt handoff separator"
 assert_text_contains "$PROMPT_OUTPUT" "Current stage: Finish / Handoff" "seeded handoff stage"
 assert_text_contains "$PROMPT_OUTPUT" "placeholder handoff seeded before the first stop or clean-finish update" "seeded handoff placeholder reason"
+
+PATH_AUTH_WORKSPACE="$TMP_ROOT/path-authority-workspace"
+PATH_AUTH_PLAN_DIR="$PATH_AUTH_WORKSPACE/plan"
+PATH_AUTH_EXECUTION_ROOT="$PATH_AUTH_PLAN_DIR/execution"
+PATH_AUTH_STATUS_FILE="$TMP_ROOT/path-authority-phase-status.yaml"
+PATH_AUTH_LOG_DIR="$PATH_AUTH_WORKSPACE/.claude/logs/agent-loop"
+
+mkdir -p "$PATH_AUTH_PLAN_DIR" "$PATH_AUTH_EXECUTION_ROOT" "$PATH_AUTH_LOG_DIR"
+
+cat > "$PATH_AUTH_PLAN_DIR/02-smoke-phase.md" <<'EOF'
+# Smoke Phase
+EOF
+
+cat > "$PATH_AUTH_STATUS_FILE" <<EOF
+planDir: "$PATH_AUTH_PLAN_DIR"
+executionRoot: "$PATH_AUTH_EXECUTION_ROOT"
+phases:
+  - number: 2
+    title: "Smoke Phase"
+    status: pending
+    sprintContract: "$PATH_AUTH_PLAN_DIR/execution/02-smoke-phase/SPRINT_CONTRACT.md"
+    qaReport: "$PATH_AUTH_PLAN_DIR/execution/02-smoke-phase/QA_REPORT.md"
+    handoff: "$PATH_AUTH_PLAN_DIR/execution/02-smoke-phase/HANDOFF.md"
+    scorecard: "$PATH_AUTH_PLAN_DIR/execution/02-smoke-phase/SCORECARD.md"
+    archivedPhaseDoc: "$PATH_AUTH_PLAN_DIR/02-smoke-phase.md"
+EOF
+
+set +e
+(
+  cd "$PATH_AUTH_WORKSPACE"
+  node "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" \
+    "$PATH_AUTH_PLAN_DIR" \
+    --status-file "$PATH_AUTH_STATUS_FILE" \
+    --execution-root "$PATH_AUTH_EXECUTION_ROOT" \
+    --runtime codex \
+    --verification-runtimes codex \
+    --phase-num 2 \
+    --phase-title "Smoke Phase" \
+    --phase-doc "$PATH_AUTH_PLAN_DIR/02-smoke-phase.md" \
+    >"$TMP_ROOT/path-authority-runner.out" 2>&1
+)
+PATH_AUTH_STATUS=$?
+set -e
+
+if [[ "$PATH_AUTH_STATUS" -eq 0 ]]; then
+  echo "FAIL: path-authority preflight should stop runner before worker launch" >&2
+  cat "$TMP_ROOT/path-authority-runner.out" >&2
+  exit 1
+fi
+
+assert_contains "$TMP_ROOT/path-authority-runner.out" "path-authority-preflight-failed" "path authority runner stop reason"
+
+if [[ ! -f "$PATH_AUTH_LOG_DIR/debug.jsonl" ]]; then
+  echo "FAIL: path-authority preflight did not write a debug log" >&2
+  exit 1
+fi
+
+assert_contains "$PATH_AUTH_LOG_DIR/debug.jsonl" "\"event\":\"path-authority-preflight-failed\"" "path authority debug event"
+assert_text_not_contains "$(cat "$PATH_AUTH_LOG_DIR/debug.jsonl")" "worker-prompt-start" "worker prompt launch after path authority failure"
+
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "function isHardBlockedCompletionReason" "hard blocked completion classifier"
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON))" "blocked gate remediation path"
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-attempt.mjs" "gate reason starts with" "blocked gate remediation prompt"

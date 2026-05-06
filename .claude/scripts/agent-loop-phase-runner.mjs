@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifacts } from './agent-loop-phase-plan-lib.mjs';
+import { evaluatePathAuthority } from './lib/path-authority.mjs';
 import { createPhaseHarnessCaptureSession, normalizeArtifactRefs } from './lib/awtl-harness-capture.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
 import { classifyFailure, summarizeFailureDecision } from './lib/failure-classifier.mjs';
@@ -423,12 +424,9 @@ function resolveActiveMasterPlanPath() {
     ? fs.readFileSync(state.statusFile, 'utf8')
       .split(/\r?\n/)
       .map((line) => line.match(/^masterPlan:\s*(.+)\s*$/)?.[1]?.trim().replace(/^"|"$/g, '') || '')
-      .find((candidate) => candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(state.planDir))
+      .find((candidate) => candidate)
     : '';
-  const masterPlan = statusMasterPlan || fs.readdirSync(state.planDir)
-    .filter((name) => name.includes('master') || name.includes('00-'))
-    .sort((a, b) => a.localeCompare(b))[0];
-  return masterPlan ? (path.isAbsolute(masterPlan) || masterPlan.includes('/') || masterPlan.includes('\\') ? masterPlan : path.join(state.planDir, masterPlan)) : '';
+  return statusMasterPlan;
 }
 
 function phaseEnv(paths) {
@@ -450,7 +448,7 @@ function phaseEnv(paths) {
     PHASE_STATUS_FILE: state.statusFile,
     PHASE_PLAN_DIR: state.planDir,
     PHASE_EXECUTION_ROOT: state.executionRoot,
-    PHASE_MASTER_PLAN: resolveActiveMasterPlanPath() || path.join(state.planDir, '00-master-plan-v1.md'),
+    PHASE_MASTER_PLAN: resolveActiveMasterPlanPath(),
     PHASE_SELECTED_MODEL_PROVIDER: modelRoute.provider,
     PHASE_SELECTED_MODEL: modelRoute.model,
     PHASE_SELECTED_MODEL_EFFORT: modelRoute.effort,
@@ -648,12 +646,14 @@ function isBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
   return normalized.startsWith('blocked:')
     || normalized === 'scorecard-verdict=blocked'
-    || normalized === 'verification-preflight-blocked';
+    || normalized === 'verification-preflight-blocked'
+    || normalized === 'path-authority-preflight-failed';
 }
 
 function isHardBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
-  return normalized === 'verification-preflight-blocked';
+  return normalized === 'verification-preflight-blocked'
+    || normalized === 'path-authority-preflight-failed';
 }
 
 function stopBlockedPhase(paths, logFile, detail, stopReason = 'verification-preflight-blocked') {
@@ -861,6 +861,9 @@ function autonomousInstructions() {
 }
 
 function recordLoopStop(phaseNum, reason, detail, logFile) {
+  const displayDetail = reason === 'path-authority-preflight-failed'
+    ? `${reason}: ${detail}`
+    : detail;
   appendDebugLog('phase-stop', {
     reason,
     detail,
@@ -873,7 +876,7 @@ function recordLoopStop(phaseNum, reason, detail, logFile) {
     ...(logFile ? [`- Log: ${logFile}`] : []),
     '',
   ]);
-  logError(`Phase ${phaseNum} 중단 사유: ${detail}`);
+  logError(`Phase ${phaseNum} 중단 사유: ${displayDetail}`);
   if (logFile) {
     logError(`확인할 로그: ${logFile}`);
   }
@@ -1069,9 +1072,42 @@ function runPhaseAttempt() {
     state.executionRoot = `${state.planDir.replace(/\/$/, '')}/execution`;
   }
 
-  const runtime = resolveRunnerRuntime(state.runtime);
   const masterPlanPath = resolveActiveMasterPlanPath();
-  const paths = ensureExecutionArtifacts({
+  let paths = assignExecutionArtifactPaths(state.phaseNum, state.phaseTitle, state.executionRoot);
+  const pathAuthority = evaluatePathAuthority({
+    planDir: state.planDir,
+    statusFile: state.statusFile,
+    masterPlan: masterPlanPath,
+    masterPlanProvided: Boolean(masterPlanPath),
+    executionRoot: state.executionRoot,
+    phaseDoc: state.phaseDoc,
+    artifactPaths: [
+      { label: 'Sprint contract', path: paths.phaseSprintContract, parentPath: paths.phaseExecutionDir },
+      { label: 'QA report', path: paths.phaseQaReport, parentPath: paths.phaseExecutionDir },
+      { label: 'Handoff', path: paths.phaseHandoff, parentPath: paths.phaseExecutionDir },
+      { label: 'Scorecard', path: paths.phaseScorecard, parentPath: paths.phaseExecutionDir },
+      { label: 'Worksets', path: paths.phaseWorksets, parentPath: paths.phaseExecutionDir },
+    ],
+  });
+  if (!pathAuthority.allowed) {
+    const pathAuthorityLogFile = `${logDir}/phase-${state.phaseNum}_${localFileTimestamp()}.log`;
+    fs.mkdirSync(paths.phaseExecutionDir, { recursive: true });
+    appendDebugLog('path-authority-preflight-failed', {
+      requestedRuntime: state.runtime,
+      planDir: state.planDir,
+      statusFile: state.statusFile,
+      executionRoot: state.executionRoot,
+      masterPlanPath,
+      phaseDoc: state.phaseDoc,
+      authorityCode: pathAuthority.authorityCode,
+      reason: pathAuthority.reason,
+      issues: pathAuthority.issues,
+    });
+    return stopBlockedPhase(paths, pathAuthorityLogFile, pathAuthority.detail, 'path-authority-preflight-failed');
+  }
+
+  const runtime = resolveRunnerRuntime(state.runtime);
+  const pathsWithArtifacts = ensureExecutionArtifacts({
     phaseNum: state.phaseNum,
     phaseTitle: state.phaseTitle,
     phaseDoc: state.phaseDoc,
@@ -1090,11 +1126,12 @@ function runPhaseAttempt() {
 
   writeStdoutLine('\u001b[0;36m───────────────────────────────────────────────────────────────\u001b[0m');
   writeStdoutLine(`\u001b[0;36m📦\u001b[0m Phase ${state.phaseNum}: ${state.phaseTitle}`);
-  logInfo(`Sprint contract: ${paths.phaseSprintContract}`);
-  logInfo(`QA report: ${paths.phaseQaReport}`);
-  logInfo(`Handoff: ${paths.phaseHandoff}`);
-  logInfo(`Scorecard: ${paths.phaseScorecard}`);
-  logInfo(`Worksets: ${paths.phaseWorksets}`);
+  logInfo(`Sprint contract: ${pathsWithArtifacts.phaseSprintContract}`);
+  logInfo(`QA report: ${pathsWithArtifacts.phaseQaReport}`);
+  logInfo(`Handoff: ${pathsWithArtifacts.phaseHandoff}`);
+  logInfo(`Scorecard: ${pathsWithArtifacts.phaseScorecard}`);
+  logInfo(`Worksets: ${pathsWithArtifacts.phaseWorksets}`);
+  paths = pathsWithArtifacts;
 
   let activeRuntime = runtime;
   const logFile = `${logDir}/phase-${state.phaseNum}_${localFileTimestamp()}.log`;

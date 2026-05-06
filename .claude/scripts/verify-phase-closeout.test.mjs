@@ -15,12 +15,42 @@ test('phase closeout fails when a completed phase is unchecked in the master che
   });
 });
 
+test('phase closeout fails when no explicit master plan path is supplied', () => {
+  withFixture({}, (root) => {
+    const result = evaluatePhaseCloseout({
+      statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+      planDir: path.join(root, 'docs/implementation'),
+    });
+
+    assert.equal(result.allowed, false);
+    assert.equal(result.reason, 'master_plan_missing');
+    assert.ok(result.violations.some((violation) => violation.code === 'master_plan_missing'));
+    assert.ok(result.violations.some((violation) => violation.message.includes('default fallback is disabled')));
+  });
+});
+
+test('phase closeout fails when an explicit master plan path is missing', () => {
+  withFixture({}, (root) => {
+    const result = evaluatePhaseCloseout({
+      statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+      planDir: path.join(root, 'docs/implementation'),
+      masterPlan: path.join(root, 'docs/implementation/missing-master-plan.md'),
+      masterPlanProvided: true,
+    });
+
+    assert.equal(result.allowed, false);
+    assert.equal(result.reason, 'master_plan_missing');
+    assert.ok(result.violations.some((violation) => violation.code === 'master_plan_missing'));
+    assert.ok(result.violations.some((violation) => violation.message.includes('missing-master-plan.md')));
+  });
+});
+
 test('phase closeout fails when archivedPhaseDoc is missing', () => {
   withFixture({ archived: false }, (root) => {
     const result = evaluatePhaseCloseout(config(root));
 
     assert.equal(result.allowed, false);
-    assert.ok(result.violations.some((violation) => violation.code === 'archived-phase-doc-missing'));
+    assert.ok(result.violations.some((violation) => violation.code === 'artifact_path_missing'));
   });
 });
 
@@ -29,7 +59,7 @@ test('phase closeout fails when critical scenario evidence is missing', () => {
     const result = evaluatePhaseCloseout(config(root));
 
     assert.equal(result.allowed, false);
-    assert.ok(result.violations.some((violation) => violation.code === 'critical-scenario-evidence-missing'));
+    assert.ok(result.violations.some((violation) => violation.code === 'artifact_path_missing'));
   });
 });
 
@@ -38,8 +68,7 @@ test('phase closeout fails when requirements traceability artifacts are missing'
     const result = evaluatePhaseCloseout(config(root));
 
     assert.equal(result.allowed, false);
-    assert.ok(result.violations.some((violation) => violation.code === 'requirements-traceability-missing'));
-    assert.ok(result.violations.some((violation) => violation.code === 'scenario-matrix-missing'));
+    assert.ok(result.violations.filter((violation) => violation.code === 'artifact_path_missing').length >= 2);
   });
 });
 

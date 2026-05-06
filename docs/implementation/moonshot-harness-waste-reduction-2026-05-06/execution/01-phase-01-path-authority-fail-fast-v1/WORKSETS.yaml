@@ -1,0 +1,35 @@
+# Phase 01 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths:
+      - ".claude/scripts/lib/path-authority.mjs"
+      - ".claude/scripts/agent-loop-phase-runner.mjs"
+      - ".claude/scripts/verify-phase-closeout.mjs"
+      - ".claude/scripts/verify-phase-closeout.test.mjs"
+      - ".claude/scripts/verify-phase-runner-boundary.sh"
+      - "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/QA_REPORT.md"
+      - "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/SCORECARD.md"
+      - "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/HANDOFF.md"
+      - "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/WORKSETS.yaml"
+    verificationCommands:
+      - "node --check .claude/scripts/agent-loop-phase-runner.mjs"
+      - "node --test .claude/scripts/verify-phase-closeout.test.mjs"
+      - "bash .claude/scripts/verify-phase-runner-boundary.sh"
+      - "bash .claude/scripts/verify-code-policy.sh"
+      - "bash .claude/scripts/workflow-enforcement.sh verify"
+      - "PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=codex bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
+      - "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/moonshot-harness-waste-reduction-2026-05-06/01-path-authority-fail-fast-v1.md --sprint-contract docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/QA_REPORT.md --scorecard docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/SCORECARD.md --handoff docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/HANDOFF.md"
+    evidence:
+      - "Boundary smoke: PASS"
+      - "Closeout tests: PASS"
+      - "Code policy: PASS"
+      - "Workflow enforcement: PASS"
+      - "Runtime parity: PASS"
+      - "Plan conformance: PASS"
+    completedAt: "2026-05-06T07:30:23Z"
+worksets: []

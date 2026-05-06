@@ -10,6 +10,7 @@ import {
   sectionText as normalizeSectionText,
 } from './artifact-normalizer.mjs';
 import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
+import { evaluatePathAuthority } from './lib/path-authority.mjs';
 
 const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
@@ -51,6 +52,7 @@ function parseArgs(argv) {
         break;
       case '--master-plan':
         result.masterPlan = args.shift() || '';
+        result.masterPlanProvided = true;
         break;
       case '--json':
         result.json = true;
@@ -257,21 +259,24 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     statusFile: rawConfig.statusFile || '.claude/docs/phase-status.yaml',
     planDir: rawConfig.planDir || 'docs/implementation',
     masterPlan: rawConfig.masterPlan || '',
+    masterPlanProvided: rawConfig.masterPlanProvided ?? Object.prototype.hasOwnProperty.call(rawConfig, 'masterPlan'),
+    executionRoot: rawConfig.executionRoot || '',
   };
-  const statusPath = resolvePath(config.statusFile);
-  const planDir = resolvePath(config.planDir);
-  const masterPath = resolvePath(config.masterPlan || path.join(config.planDir, '00-master-plan-v1.md'));
-  const violations = [];
-
-  if (!fs.existsSync(statusPath)) {
-    addViolation(violations, 'phase-status-missing', `Phase status file is missing: ${config.statusFile}`);
-  }
-  if (!fs.existsSync(planDir)) {
-    addViolation(violations, 'plan-dir-missing', `Plan directory is missing: ${config.planDir}`);
-  }
-  if (!fs.existsSync(masterPath)) {
-    addViolation(violations, 'master-plan-missing', `Master plan is missing: ${config.masterPlan || masterPath}`);
-  }
+  const pathAuthority = evaluatePathAuthority({
+    statusFile: config.statusFile,
+    planDir: config.planDir,
+    masterPlan: config.masterPlan,
+    masterPlanProvided: config.masterPlanProvided,
+    executionRoot: config.executionRoot,
+  });
+  const statusPath = pathAuthority.resolvedPaths.statusFile;
+  const planDir = pathAuthority.resolvedPaths.planDir;
+  const masterPath = pathAuthority.resolvedPaths.masterPlan;
+  const violations = pathAuthority.issues.map((issue) => ({
+    code: issue.code,
+    message: issue.detail,
+    phaseNumber: null,
+  }));
 
   const phases = fs.existsSync(statusPath) ? parsePhaseStatus(readText(statusPath)) : [];
   const checklist = fs.existsSync(masterPath) ? parseMasterChecklist(readText(masterPath)) : new Map();
@@ -297,7 +302,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     for (const field of requiredArtifactFields) {
       const artifactPath = resolvePath(phase[field] || '');
       if (!artifactPath || !fs.existsSync(artifactPath)) {
-        addViolation(violations, 'execution-artifact-missing', `Completed phase ${phaseNumber} is missing ${field}.`, phaseNumber);
+        addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} is missing ${field}.`, phaseNumber);
       } else {
         artifactTexts.push(readText(artifactPath));
       }
@@ -305,7 +310,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
 
     const archivedPath = resolvePath(phase.archivedPhaseDoc || '');
     if (!archivedPath || !fs.existsSync(archivedPath)) {
-      addViolation(violations, 'archived-phase-doc-missing', `Completed phase ${phaseNumber} is missing a valid archivedPhaseDoc.`, phaseNumber);
+      addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} is missing a valid archivedPhaseDoc.`, phaseNumber);
     }
 
     const phaseDocText = archivedPath && fs.existsSync(archivedPath) ? readText(archivedPath) : '';
@@ -313,12 +318,12 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     const evidenceText = artifactTexts.join('\n');
 
     if (phaseDocText && scenarios.length === 0 && hasConcreteSourceTargets(phaseDocText)) {
-      addViolation(violations, 'critical-product-scenarios-missing', `Completed phase ${phaseNumber} has implementation targets but no Critical Product Scenarios.`, phaseNumber);
+      addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} has implementation targets but no Critical Product Scenarios.`, phaseNumber);
     }
 
     for (const scenarioId of scenarios) {
       if (!scenarioEvidencePassed(scenarioId, evidenceText)) {
-        addViolation(violations, 'critical-scenario-evidence-missing', `Completed phase ${phaseNumber} lacks passing evidence for ${scenarioId}.`, phaseNumber);
+        addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} lacks passing evidence for ${scenarioId}.`, phaseNumber);
       }
     }
 
@@ -354,10 +359,10 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     const requirementsPath = executionRoot ? path.join(executionRoot, 'REQUIREMENTS_TRACEABILITY.md') : '';
     const scenarioPath = executionRoot ? path.join(executionRoot, 'SCENARIO_MATRIX.md') : '';
     if (!traceabilityArtifactValid(requirementsPath, /\bREQ-[A-Za-z0-9_.-]+\b/)) {
-      addViolation(violations, 'requirements-traceability-missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), requirementsPath || 'REQUIREMENTS_TRACEABILITY.md')} with verified REQ-* coverage.`, phaseNumber);
+      addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), requirementsPath || 'REQUIREMENTS_TRACEABILITY.md')} with verified REQ-* coverage.`, phaseNumber);
     }
     if (!traceabilityArtifactValid(scenarioPath, /\bSCN-[A-Za-z0-9_.-]+\b/)) {
-      addViolation(violations, 'scenario-matrix-missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), scenarioPath || 'SCENARIO_MATRIX.md')} with verified SCN-* coverage.`, phaseNumber);
+      addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), scenarioPath || 'SCENARIO_MATRIX.md')} with verified SCN-* coverage.`, phaseNumber);
     }
   }
 
