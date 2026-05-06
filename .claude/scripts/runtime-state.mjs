@@ -163,9 +163,38 @@ function actionableStatuses() {
   return new Set(['pending', 'in_progress', 'pending_reverify', 'failed']);
 }
 
+function blockedStatuses() {
+  return new Set(['blocked', 'verification_blocked', 'runtime_unhealthy']);
+}
+
+function orderedPhaseRows(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const left = Number.parseInt(a.phase_number ?? a.phaseNumber ?? 0, 10) || 0;
+    const right = Number.parseInt(b.phase_number ?? b.phaseNumber ?? 0, 10) || 0;
+    return left - right;
+  });
+}
+
+function firstBlockingPhase(rows) {
+  const blocked = blockedStatuses();
+  return orderedPhaseRows(rows).find((row) => row.plan_confirmed !== 0 && blocked.has(String(row.status || ''))) || null;
+}
+
 function countActionablePhasesFromRows(rows) {
   const actionable = actionableStatuses();
-  return rows.filter((row) => row.plan_confirmed !== 0 && actionable.has(String(row.status || ''))).length;
+  let count = 0;
+  for (const row of orderedPhaseRows(rows)) {
+    if (row.plan_confirmed === 0) {
+      continue;
+    }
+    if (blockedStatuses().has(String(row.status || ''))) {
+      break;
+    }
+    if (actionable.has(String(row.status || ''))) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function deterministicGoalId(planDir) {
@@ -537,7 +566,7 @@ export function startLease(db, config) {
     timeBudgetSeconds: config.timeBudgetSeconds,
   });
   seedPhasesFromStatus(db, goal, config.statusFile);
-  const rows = db.prepare('SELECT status, plan_confirmed FROM phase_runs WHERE goal_id = ?').all(goal.goal_id);
+  const rows = db.prepare('SELECT phase_number, status, plan_confirmed FROM phase_runs WHERE goal_id = ? ORDER BY phase_number').all(goal.goal_id);
   const actionable = countActionablePhasesFromRows(rows);
   const timestamp = nowMs();
   db.prepare(`
@@ -618,7 +647,7 @@ export function heartbeatLease(db, config) {
   if (goal) {
     seedPhasesFromStatus(db, goal, lease.status_file);
   }
-  const rows = db.prepare('SELECT status, plan_confirmed FROM phase_runs WHERE goal_id = ?').all(lease.goal_id);
+  const rows = db.prepare('SELECT phase_number, status, plan_confirmed FROM phase_runs WHERE goal_id = ? ORDER BY phase_number').all(lease.goal_id);
   const actionable = countActionablePhasesFromRows(rows);
   const timestamp = nowMs();
   accountLeaseTime(db, lease, timestamp);
@@ -654,7 +683,7 @@ export function finishLease(db, config) {
   if (goal) {
     seedPhasesFromStatus(db, goal, lease.status_file);
   }
-  const rows = db.prepare('SELECT status, plan_confirmed FROM phase_runs WHERE goal_id = ?').all(lease.goal_id);
+  const rows = db.prepare('SELECT phase_number, status, plan_confirmed FROM phase_runs WHERE goal_id = ? ORDER BY phase_number').all(lease.goal_id);
   const actionable = countActionablePhasesFromRows(rows);
   const status = actionable === 0 ? 'finished' : 'paused';
   const timestamp = nowMs();
@@ -750,8 +779,17 @@ export function assertReturnAllowed(db, { statusFile, leaseId, executionIntent, 
     return { RETURN_ALLOWED: 'false', RETURN_REASON: 'missing-goal-runtime-state', ACTIONABLE_PHASES_REMAINING: 'unknown' };
   }
   seedPhasesFromStatus(db, goal, statusFile);
-  const rows = db.prepare('SELECT status, plan_confirmed FROM phase_runs WHERE goal_id = ?').all(goal.goal_id);
+  const rows = db.prepare('SELECT phase_number, status, plan_confirmed FROM phase_runs WHERE goal_id = ? ORDER BY phase_number').all(goal.goal_id);
   const actionable = countActionablePhasesFromRows(rows);
+  const blockingPhase = firstBlockingPhase(rows);
+  if (blockingPhase) {
+    return {
+      RETURN_ALLOWED: 'false',
+      RETURN_REASON: 'blocked-phase-prevents-downstream-action',
+      ACTIONABLE_PHASES_REMAINING: String(actionable),
+      BLOCKED_PHASE: String(blockingPhase.phase_number || ''),
+    };
+  }
   if (actionable === 0) {
     return { RETURN_ALLOWED: 'true', RETURN_REASON: 'plan_directory_complete', ACTIONABLE_PHASES_REMAINING: '0' };
   }
@@ -778,12 +816,19 @@ export function statusPayload(db, planDir) {
   const lease = goal.current_lease_id
     ? db.prepare('SELECT * FROM leases WHERE lease_id = ?').get(goal.current_lease_id)
     : null;
+  const blockedPhase = firstBlockingPhase(phases);
+  const activePhase = phases.find((phase) => phase.status === 'in_progress') || blockedPhase || null;
+  const nextPhase = blockedPhase
+    ? null
+    : phases.find((phase) => phase.plan_confirmed !== 0 && actionableStatuses().has(phase.status)) || null;
   return {
     found: true,
     goal,
     actionablePhasesRemaining: countActionablePhasesFromRows(phases),
-    activePhase: phases.find((phase) => phase.status === 'in_progress') || null,
-    nextPhase: phases.find((phase) => phase.plan_confirmed !== 0 && actionableStatuses().has(phase.status)) || null,
+    activePhase,
+    nextPhase,
+    blockedPhase,
+    blockedReason: blockedPhase ? 'blocked phase prevents downstream phases' : '',
     lease,
   };
 }

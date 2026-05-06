@@ -127,6 +127,7 @@ set +e
 PATH="$FAKE_BIN:$PATH" \
 WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
 PHASE_DISPATCH_KILL_STALE=false \
+PHASE_RUNTIME_DB="$TMP_ROOT/runtime-state.sqlite" \
 PHASE_DISPATCH_MAX_PLAN_COMPLETION_RESTARTS=1 \
 node "$ROOT_DIR/.claude/scripts/moonshot-phase-dispatch.mjs" \
   "$PLAN_DIR" \

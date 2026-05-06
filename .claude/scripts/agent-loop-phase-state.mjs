@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
+import { isRelevantVerificationVerdict } from './verification-verdict-state.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
@@ -904,42 +905,16 @@ function isArtifactRelevantToActivePhase({
   explicitVerdictPaths,
   activePhaseNumber,
 }) {
-  const resolvedCandidatePath = path.resolve(candidatePath);
-  const resolvedExecutionDir = phaseExecutionDir ? path.resolve(phaseExecutionDir) : '';
-
-  if (artifactExplicitlyReferenced(candidatePath, explicitVerdictPaths)) {
-    return true;
-  }
-
-  if (resolvedExecutionDir && resolvedCandidatePath.startsWith(`${resolvedExecutionDir}${path.sep}`)) {
-    return true;
-  }
-
-  const phaseMatch = artifactMatchesPhase(payload, activePhaseNumber);
-  if (phaseMatch !== null) {
-    return phaseMatch;
-  }
-
-  const pathPhaseMatch = pathMatchesPhase(candidatePath, activePhaseNumber);
-  if (pathPhaseMatch !== null) {
-    return pathPhaseMatch;
-  }
-
-  if (qaReportPath || phaseExecutionDir) {
-    const verificationMode = String(payload?.verificationMode || payload?.contract?.verificationMode || '').trim().toLowerCase();
-    const contractApplicable = payload?.contractApplicable === true || payload?.contract?.applicable === true;
-    const script = String(payload?.script || '').trim();
-
-    if (script === 'verify-changes.sh' && verificationMode === 'workspace' && !contractApplicable) {
-      return false;
-    }
-  }
-
-  if (Number.isInteger(activePhaseNumber)) {
-    return false;
-  }
-
-  return true;
+  return isRelevantVerificationVerdict(
+    { payload, filePath: candidatePath },
+    {
+      candidatePath,
+      qaReportPath,
+      phaseExecutionDir,
+      explicitVerdictPaths,
+      activePhaseNumber,
+    },
+  );
 }
 
 function evaluatePhaseCompletionGate(config) {

@@ -12,6 +12,7 @@ const VALID_BLOCKER_CLASSES = new Set([
   'verifier_unavailable',
   'verification_failed',
   'content_precondition',
+  'missing_evidence',
   'contract_violation',
 ]);
 
@@ -33,6 +34,115 @@ function normalizeLower(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function parsePhaseNumber(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function pathIsWithinDirectory(candidatePath, directoryPath) {
+  const normalizedCandidate = String(candidatePath || '').trim();
+  const normalizedDirectory = String(directoryPath || '').trim();
+  if (!normalizedCandidate || !normalizedDirectory) {
+    return false;
+  }
+
+  const resolvedCandidate = path.resolve(normalizedCandidate);
+  const resolvedDirectory = path.resolve(normalizedDirectory);
+  return resolvedCandidate === resolvedDirectory || resolvedCandidate.startsWith(`${resolvedDirectory}${path.sep}`);
+}
+
+function phaseNumberFromPayload(payload = {}) {
+  return parsePhaseNumber(
+    payload.phase?.number
+    ?? payload.phaseNumber
+    ?? payload.phase?.phaseNumber
+    ?? payload.phase?.id
+    ?? '',
+  );
+}
+
+function payloadMatchesActivePhase(payload = {}, activePhaseNumber = null) {
+  if (!Number.isInteger(activePhaseNumber)) {
+    return null;
+  }
+
+  const payloadPhaseNumber = phaseNumberFromPayload(payload);
+  if (!Number.isInteger(payloadPhaseNumber)) {
+    return null;
+  }
+
+  return payloadPhaseNumber === activePhaseNumber;
+}
+
+function pathMatchesActivePhase(candidatePath, activePhaseNumber = null) {
+  if (!Number.isInteger(activePhaseNumber)) {
+    return null;
+  }
+
+  const normalizedPath = String(candidatePath || '').replace(/\\/g, '/');
+  if (!normalizedPath) {
+    return null;
+  }
+
+  const phasePattern = new RegExp(`(^|[^0-9])0?${activePhaseNumber}([^0-9]|$)`, 'i');
+  if (phasePattern.test(path.basename(normalizedPath)) && /phase/i.test(normalizedPath)) {
+    return true;
+  }
+
+  return null;
+}
+
+export function isRelevantVerificationVerdict(entry = {}, options = {}) {
+  const payload = entry.payload || {};
+  const candidatePath = String(options.candidatePath || entry.filePath || entry.path || '');
+  const explicitVerdictPaths = options.explicitVerdictPaths;
+  const activePhaseNumber = Number.isInteger(options.activePhaseNumber)
+    ? options.activePhaseNumber
+    : parsePhaseNumber(options.activePhaseNumber);
+  const normalized = entry.scope || entry.blockerClass || entry.stale !== undefined || entry.superseded !== undefined
+    ? entry
+    : normalizeVerdictPayload(payload, candidatePath);
+
+  if (normalized.stale || normalized.superseded) {
+    return false;
+  }
+
+  const resolvedCandidatePath = candidatePath ? path.resolve(candidatePath) : '';
+  if (resolvedCandidatePath && explicitVerdictPaths && typeof explicitVerdictPaths.has === 'function' && explicitVerdictPaths.has(resolvedCandidatePath)) {
+    return true;
+  }
+
+  if (resolvedCandidatePath && pathIsWithinDirectory(resolvedCandidatePath, options.phaseExecutionDir)) {
+    return true;
+  }
+
+  const payloadPhaseMatch = payloadMatchesActivePhase(payload, activePhaseNumber);
+  if (payloadPhaseMatch !== null) {
+    return payloadPhaseMatch;
+  }
+
+  const pathPhaseMatch = pathMatchesActivePhase(candidatePath, activePhaseNumber);
+  if (pathPhaseMatch !== null) {
+    return pathPhaseMatch;
+  }
+
+  if (options.qaReportPath || options.phaseExecutionDir) {
+    const verificationMode = String(payload?.verificationMode || payload?.contract?.verificationMode || '').trim().toLowerCase();
+    const contractApplicable = payload?.contractApplicable === true || payload?.contract?.applicable === true;
+    const script = String(payload?.script || '').trim();
+
+    if (script === 'verify-changes.sh' && verificationMode === 'workspace' && !contractApplicable) {
+      return false;
+    }
+  }
+
+  if (Number.isInteger(activePhaseNumber)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function inferBlockerClass(payload = {}) {
   const explicit = normalizeLower(payload.blockerClass);
   if (VALID_BLOCKER_CLASSES.has(explicit)) {
@@ -41,14 +151,18 @@ export function inferBlockerClass(payload = {}) {
 
   const reason = normalizeLower(payload.blockingReasonCode);
   const failureClass = normalizeLower(payload.failureClass);
+  const missingChecks = Array.isArray(payload.requiredChecks?.missing) ? payload.requiredChecks.missing : [];
+  if (/missing[_-]?verification[_-]?evidence|missing[_-]?evidence/.test(reason) || (missingChecks.length > 0 && (payload.blocking === true || normalizeLower(payload.verdict) === 'failed' || /contract|content_precondition/.test(failureClass)))) {
+    return 'missing_evidence';
+  }
+  if (/content[_-]?precondition|precondition/.test(reason) || failureClass === 'contract') {
+    return 'content_precondition';
+  }
   if (/runtime_verifier|verifier_unavailable|verification_runtime/.test(reason)) {
     return 'verifier_unavailable';
   }
   if (/auth|login|credential|worker_spawn|spawn|codex_exec|runtime_health|runtime_cli/.test(reason)) {
     return 'runtime_unavailable';
-  }
-  if (failureClass === 'contract') {
-    return 'contract_violation';
   }
   if (failureClass === 'environment') {
     return 'verifier_unavailable';
@@ -217,7 +331,7 @@ export function listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles
 
 export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, recentWindowMs, maxFiles) {
   const verdicts = listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles)
-    .filter((entry) => verdictTargetsRuntime(entry.payload, runtime));
+    .filter((entry) => verdictTargetsRuntime(entry.payload, runtime) && isRelevantVerificationVerdict(entry));
 
   if (verdicts.length === 0) {
     return null;
@@ -326,6 +440,13 @@ function selfTest() {
     supersededBy: ['verification-verdict-phase05-final.json'],
     reusedVerificationResult: ['verification-verdict-phase05-import.json'],
   };
+  const missingEvidencePayload = {
+    verdict: 'failed',
+    blocking: true,
+    failureClass: 'contract',
+    blockingReasonCode: 'missing-verification-evidence',
+    requiredChecks: { missing: ['verification-verdict-path'] },
+  };
 
   assert.equal(inferVerdictScope(stalePhasePayload), 'phase_verification');
   assert.equal(inferBlockerClass(stalePhasePayload), 'verifier_unavailable');
@@ -335,6 +456,9 @@ function selfTest() {
   assert.equal(verdictTargetsRuntime(runtimePayload, 'claude'), true);
   assert.equal(normalizeVerdictPayload(supersededPayload).superseded, true);
   assert.equal(normalizeVerdictPayload(supersededPayload).active, false);
+  assert.equal(inferBlockerClass(missingEvidencePayload), 'missing_evidence');
+  assert.equal(isRelevantVerificationVerdict({ payload: stalePhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2 }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: supersededPayload, filePath: '/tmp/verification-verdict-phase05-final.json' }, { activePhaseNumber: 5 }), false);
 }
 
 function main() {

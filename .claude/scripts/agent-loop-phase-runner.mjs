@@ -682,6 +682,29 @@ function decideMissingEvidenceAction(autoFixCount, finalStopReason) {
   );
 }
 
+function classifyGateStopReason(phaseCompletionReason) {
+  return nodeAssignments(
+    attemptPath,
+    'classify-gate-stop-reason',
+    phaseCompletionReason,
+  );
+}
+
+function completeReviewCloseoutFromVerdict(completionArtifacts, gateReason, logFile, paths) {
+  artifactsCommand(
+    'complete-review-closeout-from-verdict',
+    completionArtifacts ?? '',
+    paths.phaseQaReport,
+    paths.phaseScorecard,
+    paths.phaseHandoff,
+    state.phaseTitle,
+    process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+    logFile,
+    gateReason ?? '',
+  );
+  artifactsCommand('normalize-qa-report-workflow-fields', paths.phaseQaReport);
+}
+
 const REVIEW_ONLY_GATE_REASONS = new Set([
   'review-incomplete',
   'workflow-review-skill-missing',
@@ -1414,7 +1437,17 @@ function runPhaseAttempt() {
       appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
       appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
 
-      const finalStopReason = detectFinalStopReason(logFile, 'missing-verification-evidence');
+      const gateStop = classifyGateStopReason(gate.PHASE_COMPLETION_REASON);
+      const defaultStopReason = gateStop.STOP_REASON || 'missing-verification-evidence';
+      const finalStopReason = detectFinalStopReason(logFile, defaultStopReason);
+      if (finalStopReason === 'missing-verification-evidence') {
+        const detail = describeStopReason(finalStopReason, activeRuntime, gate.PHASE_COMPLETION_REASON);
+        appendQaRuntimeUpdate('missing-verification-evidence', logFile, detail, paths);
+        appendHandoffUpdate('blocked', logFile, detail, paths);
+        updatePhaseState(state.phaseNum, 'blocked', 'blocked', false, state.phaseDoc, paths);
+        recordLoopStop(state.phaseNum, finalStopReason, detail, logFile);
+        return 2;
+      }
       const retrySuppression = summarizeRetrySuppression(process.cwd(), finalStopReason);
       if (retrySuppression?.shouldSuppressRetry) {
         const detail = [
@@ -1427,8 +1460,67 @@ function runPhaseAttempt() {
       }
       const decision = decideMissingEvidenceAction(autoFixCount, finalStopReason);
       if (decision.ACTION === 'stop-loop') {
-        updatePhaseState(state.phaseNum, 'failed', 'failed', false, state.phaseDoc, paths);
-        recordLoopStop(state.phaseNum, finalStopReason, describeStopReason(finalStopReason, activeRuntime, gate.PHASE_COMPLETION_REASON), logFile);
+        const detail = describeStopReason(finalStopReason, activeRuntime, gate.PHASE_COMPLETION_REASON);
+        const blockedStatus = finalStopReason === 'missing-review-evidence' || finalStopReason === 'missing-finish-closeout'
+          ? 'blocked'
+          : 'failed';
+        appendQaRuntimeUpdate(finalStopReason, logFile, detail, paths);
+        appendHandoffUpdate(blockedStatus === 'blocked' ? 'blocked' : finalStopReason, logFile, detail, paths);
+        updatePhaseState(state.phaseNum, blockedStatus, blockedStatus, false, state.phaseDoc, paths);
+        recordLoopStop(state.phaseNum, finalStopReason, detail, logFile);
+        return 2;
+      }
+
+      if (decision.ACTION === 'review-remediation' || decision.ACTION === 'finish-remediation') {
+        const remediationStage = gateStop.REMEDIATION_STAGE || remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate);
+        const remediationLabel = decision.ACTION === 'review-remediation' ? 'Review Closeout Remediation' : 'Finish Closeout Remediation';
+        logInfo(`Attempting ${remediationLabel.toLowerCase()} without launching a new implementation worker...`);
+        appendDecisionLog([`## Phase ${state.phaseNum} - ${remediationLabel} #${autoFixCount}`, '']);
+        updatePhaseState(state.phaseNum, 'in_progress', 'running', false, state.phaseDoc, paths);
+        recordPhaseProgressCheckpoint(remediationStage, remediationStatusLabel(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
+        try {
+          completeReviewCloseoutFromVerdict(gate.PHASE_COMPLETION_ARTIFACTS ?? '', gate.PHASE_COMPLETION_REASON, logFile, paths);
+        } catch (error) {
+          const detail = `artifact-only closeout remediation failed: ${error instanceof Error ? error.message : String(error)}`;
+          appendQaRuntimeUpdate(finalStopReason, logFile, detail, paths);
+          appendHandoffUpdate('blocked', logFile, detail, paths);
+          updatePhaseState(state.phaseNum, 'blocked', 'blocked', false, state.phaseDoc, paths);
+          recordLoopStop(state.phaseNum, finalStopReason, detail, logFile);
+          return 2;
+        }
+        const remediationGate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
+        appendDebugLog('completion-gate-result-after-artifact-closeout-remediation', {
+          logFile,
+          runtime: activeRuntime,
+          allowed: remediationGate.PHASE_COMPLETION_ALLOWED,
+          reason: remediationGate.PHASE_COMPLETION_REASON,
+          score: remediationGate.PHASE_COMPLETION_SCORE,
+          scoreVerdict: remediationGate.PHASE_COMPLETION_SCORE_VERDICT,
+          scoreSource: remediationGate.PHASE_COMPLETION_SCORE_SOURCE,
+          originalReason: gate.PHASE_COMPLETION_REASON,
+          finalStopReason,
+        });
+        if (remediationGate.PHASE_COMPLETION_ALLOWED === 'true') {
+          finalizeCompletion(
+            logFile,
+            Math.floor(Date.now() / 1000) - startEpoch,
+            remediationGate.PHASE_COMPLETION_ARTIFACTS ?? '',
+            paths,
+            activeRuntime,
+            '-after-closeout-remediation',
+            `/commit-moonshot Phase ${state.phaseNum} 완료 (closeout remediation). 변경사항을 커밋해주세요.`,
+          );
+          return 0;
+        }
+        if (isHardBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
+          return stopBlockedPhase(paths, logFile, `completion gate blocked after artifact closeout remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
+        }
+        const detail = describeStopReason(finalStopReason, activeRuntime, remediationGate.PHASE_COMPLETION_REASON);
+        logError(`Phase ${state.phaseNum} still lacks closeout evidence (${remediationGate.PHASE_COMPLETION_REASON})`);
+        appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, detail, paths);
+        appendHandoffUpdate('blocked', logFile, detail, paths);
+        updatePhaseState(state.phaseNum, 'blocked', 'blocked', false, state.phaseDoc, paths);
+        recordLoopStop(state.phaseNum, finalStopReason, detail, logFile);
         return 2;
       }
 

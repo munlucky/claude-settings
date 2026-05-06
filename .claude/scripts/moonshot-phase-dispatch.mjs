@@ -54,6 +54,7 @@ const runtimeState = {
   childExitHandled: false,
   captureSession: null,
 };
+const protectedPids = new Set([process.pid]);
 
 const MAX_DELEGATED_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS ?? '32', 10) || 32;
 const MAX_COORDINATOR_RESTARTS = Number.parseInt(
@@ -892,6 +893,60 @@ function terminatePid(pid) {
   }
 }
 
+function getProcessCommandLine(pid) {
+  if (!pid) {
+    return '';
+  }
+  if (process.platform === 'win32') {
+    const psCommand = [
+      '$pidValue=$args[0]',
+      '$proc=Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq [int]$pidValue }',
+      'if ($proc) { $proc.CommandLine }',
+    ].join('; ');
+    const result = runCommand('powershell.exe', ['-NoProfile', '-Command', psCommand, String(pid)]);
+    return (result.stdout || '').trim();
+  }
+  const result = runCommand('ps', ['-p', String(pid), '-o', 'command=']);
+  if (result.status !== 0 || result.error) {
+    return '';
+  }
+  return (result.stdout || '').trim();
+}
+
+function getProcessGroupId(pid) {
+  const [pgid] = runtimeCli(['get-process-group-id', String(pid)]);
+  return pgid || '';
+}
+
+function isProtectedProcess(pid) {
+  if (!Number.isFinite(pid) || pid === process.pid || protectedPids.has(pid) || pid === runtimeState.childPid) {
+    return true;
+  }
+  const currentPgid = getProcessGroupId(process.pid);
+  const targetPgid = getProcessGroupId(pid);
+  return Boolean(currentPgid && targetPgid && currentPgid === targetPgid);
+}
+
+function commandBelongsToCurrentDispatch(commandLine) {
+  const command = String(commandLine || '');
+  if (!command) {
+    return false;
+  }
+  const markers = [
+    state.statusFile,
+    state.planDir,
+    state.executionRoot,
+    runtimeState.runLeaseId,
+  ].filter(Boolean).map((value) => path.resolve(String(value)));
+  const rawMarkers = [
+    state.statusFile,
+    state.planDir,
+    state.executionRoot,
+    runtimeState.runLeaseId,
+  ].filter(Boolean).map(String);
+  return [...markers, ...rawMarkers].some((marker) => marker && command.includes(marker));
+}
+
 function terminateStaleWorkers() {
   if (!state.killStale) {
     return;
@@ -911,13 +966,26 @@ function terminateStaleWorkers() {
     const pids = runtimeCli(['find-pids-by-pattern', pattern]);
     for (const pidValue of pids) {
       const pid = Number.parseInt(pidValue, 10);
-      if (!Number.isFinite(pid) || pid === process.pid) {
+      if (!Number.isFinite(pid)) {
+        continue;
+      }
+      const commandLine = getProcessCommandLine(pid);
+      if (isProtectedProcess(pid) || !commandBelongsToCurrentDispatch(commandLine)) {
+        appendDebugLog('terminate-stale-worker-skipped-protected', {
+          pid,
+          pattern,
+          commandLine,
+          runLeaseId: runtimeState.runLeaseId,
+          planDir: state.planDir,
+          statusFile: state.statusFile,
+        });
         continue;
       }
       logWarn(`terminating stale phase worker (pid=${pid})`);
       appendDebugLog('terminate-stale-worker', {
         pid,
         pattern,
+        commandLine,
       });
       terminatePid(pid);
     }
@@ -1060,6 +1128,9 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
       },
     });
     runtimeState.childPid = child.pid ?? null;
+    if (runtimeState.childPid) {
+      protectedPids.add(runtimeState.childPid);
+    }
     appendDebugLog('delegated-terminal-launch', {
       pid: child.pid ?? null,
       command: cmd,
@@ -1067,6 +1138,9 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
       executionRoot: resolvedRoot,
     });
     child.on('exit', (code, signal) => {
+      if (child.pid) {
+        protectedPids.delete(child.pid);
+      }
       runtimeState.childPid = null;
       appendDebugLog('delegated-terminal-exit', {
         pid: child.pid ?? null,
@@ -1289,6 +1363,9 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
       },
     });
     runtimeState.childPid = child.pid ?? null;
+    if (runtimeState.childPid) {
+      protectedPids.add(runtimeState.childPid);
+    }
     appendDebugLog('in-session-coordinator-launch', {
       pid: child.pid ?? null,
       command: cmd,
@@ -1316,6 +1393,9 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
     child.stdout.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stdout));
     child.stderr.on('data', (chunk) => handleCoordinatorOutput(chunk, process.stderr));
     child.on('exit', (code, signal) => {
+      if (child.pid) {
+        protectedPids.delete(child.pid);
+      }
       runtimeState.childPid = null;
       appendDebugLog('in-session-coordinator-exit', {
         pid: child.pid ?? null,

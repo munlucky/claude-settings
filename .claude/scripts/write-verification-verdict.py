@@ -39,15 +39,18 @@ def stable_fingerprint(value) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
-def infer_blocker_class(reason_code: str, failure_class: str, blocking: bool, verdict: str) -> str:
+def infer_blocker_class(reason_code: str, failure_class: str, blocking: bool, verdict: str, missing_checks = None) -> str:
     reason = (reason_code or "").strip().lower()
     failure = (failure_class or "").strip().lower()
+    missing_count = len(missing_checks or [])
+    if "missing_verification_evidence" in reason or "missing-verification-evidence" in reason or (missing_count > 0 and (blocking or verdict == "failed" or failure in {"contract", "content_precondition"})):
+        return "missing_evidence"
+    if "content_precondition" in reason or "precondition" in reason or failure == "contract":
+        return "content_precondition"
     if "runtime_verifier" in reason or "verifier_unavailable" in reason or "verification_runtime" in reason:
         return "verifier_unavailable"
     if any(token in reason for token in ["auth", "login", "credential", "worker_spawn", "spawn", "codex_exec", "runtime_health", "runtime_cli"]):
         return "runtime_unavailable"
-    if failure == "contract":
-        return "contract_violation"
     if failure == "environment":
         return "verifier_unavailable"
     if blocking or verdict == "failed":
@@ -118,7 +121,7 @@ def main() -> int:
     parser.add_argument("--verdict-scope", choices=["", "runtime", "phase_verification", "phase_closeout"], default="")
     parser.add_argument(
         "--blocker-class",
-        choices=["", "runtime_unavailable", "verifier_unavailable", "verification_failed", "content_precondition", "contract_violation"],
+        choices=["", "runtime_unavailable", "verifier_unavailable", "verification_failed", "content_precondition", "missing_evidence", "contract_violation"],
         default="",
     )
     parser.add_argument("--blocker-fingerprint", default="")
@@ -184,6 +187,7 @@ def main() -> int:
         args.failure_class,
         blocking,
         args.verdict,
+        args.missing_check,
     )
     verdict_scope = infer_verdict_scope(args.verdict_scope, blocker_class, args.blocking_reason_code)
     blocker_fingerprint = args.blocker_fingerprint or stable_fingerprint(

@@ -4,18 +4,18 @@ autonomousMode: true
 executionMode: "delegated-terminal"
 executionRoot: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution"
 preparedAt: "2026-05-06T06:58:00Z"
-activeExecutionStatus: "prepared"
-activeRunLeaseId: ""
+activeExecutionStatus: "paused"
+activeRunLeaseId: "dispatch-1778050927704-62543"
 activeExecutionBoundary: "delegated-terminal"
-activeActionablePhasesRemaining: 6
+activeActionablePhasesRemaining: 4
 activeCurrentStage: "ready/isolate"
 activePhaseNumber: 1
 activePhaseTitle: "Phase 01: Path Authority Fail-fast (v1)"
 activePlannedPhases: 6
-activeCompletedPhases: 0
-activeBlockedPhases: 0
-activePendingPhases: 6
-activeRemainingPhases: 6
+activeCompletedPhases: 1
+activeBlockedPhases: 1
+activePendingPhases: 4
+activeRemainingPhases: 4
 projectMemory:
   backend: MemoryGraph
   stageCoverage:
@@ -24,31 +24,87 @@ projectMemory:
     execute: not_checked
   lastStage: intake
   warning: "MemoryGraph recall not checked in this Codex session; continuing per memorygraph-workflow unavailable policy."
+lastDispatchAt: "2026-05-06T07:02:07Z"
+workflowEvidenceFile: ".claude/logs/workflow-enforcement/latest-dispatch.json"
+workflowSelectedBundles: "ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"
+workflowRequiredSkills: "moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"
+activeExecutionAttachedAt: "2026-05-06T07:02:07Z"
+activeExecutionHeartbeatAt: "2026-05-06T07:47:01Z"
+lastReturnBoundary: "signal-exit"
+lastStopReasonCode: "signal-like-exit"
+lastStopReasonDetail: "delegated-terminal signal-like exit (SIGKILL)"
+normalizedRunVerdict: blocked
+stopReasonClass: runtime_unavailable
+stopReasonExplanation: "delegated-terminal signal-like exit (SIGKILL)"
+goalRuntime:
+  goalId: "goal-1778050927755-d20c2e3cf6"
+  objective: "Complete active plan directory docs/implementation/moonshot-harness-waste-reduction-2026-05-06 using docs/implementation/moonshot-harness-waste-reduction-2026-05-06/00-master-plan-v1.md"
+  status: "active"
+  tokenBudget: null
+  tokensUsed: null
+  timeBudgetSeconds: null
+  timeUsedSeconds: 2667
+  accountingQuality: "unavailable"
+  continuationSuppressed: false
+  currentRunLeaseId: "dispatch-1778050927704-62543"
+  lastEvent: "GoalStarted"
+  createdAt: "2026-05-06T07:02:07Z"
+  updatedAt: "2026-05-06T07:47:01Z"
 phases:
   - number: 1
     title: "Phase 01: Path Authority Fail-fast (v1)"
-    status: pending
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/01-path-authority-fail-fast-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T07:36:16Z"
     sprintContract: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/QA_REPORT.md"
     handoff: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/HANDOFF.md"
     scorecard: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/01-phase-01-path-authority-fail-fast-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T07:02:09Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-06T07:36:16Z"
+      wallClockSeconds: 2047
+      runnerActiveSeconds: 1978
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 0
+      manualCloseoutSeconds: 46
+      completedAt: "2026-05-06T07:36:16Z"
+    completedAt: "2026-05-06T07:36:16Z"
+    checkpoint:
+      status: committed
+      commit: 09ab8d3
+      committedAt: 2026-05-06T07:36:23.608Z
+      reason: checkpoint_commit_created
   - number: 2
     title: "Phase 02: Active Verdict and Evidence Contract (v1)"
-    status: pending
+    status: blocked
     planConfirmed: true
     activePhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/02-active-verdict-evidence-contract-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
+      total: 4
+      lastOutcome: blocked
+      lastUpdatedAt: "2026-05-06T07:46:57Z"
     sprintContract: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/02-phase-02-active-verdict-and-evidence-contract-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/02-phase-02-active-verdict-and-evidence-contract-v1/QA_REPORT.md"
     handoff: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/02-phase-02-active-verdict-and-evidence-contract-v1/HANDOFF.md"
     scorecard: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/02-phase-02-active-verdict-and-evidence-contract-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T07:36:27Z"
+      lastStage: "ready/isolate"
+      lastStageAt: "2026-05-06T07:46:57Z"
+      wallClockSeconds: 630
+      runnerActiveSeconds: 628
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 2
+      manualCloseoutSeconds: 0
+      blockedAt: "2026-05-06T07:46:57Z"
   - number: 3
     title: "Phase 03: Dispatch Lifecycle and Retry Suppression (v1)"
     status: pending

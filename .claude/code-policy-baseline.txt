@@ -8,6 +8,7 @@ file-length|.claude/scripts/agent-loop-phase-runner.mjs
 file-length|.claude/scripts/agent-loop-phase-runtime.mjs
 file-length|.claude/scripts/agent-loop-phase-state.mjs
 file-length|.claude/scripts/agent-loop-phase-artifacts.mjs
+file-length|.claude/scripts/runtime-state.mjs
 file-length|.claude/scripts/agent-loop-shell-core.sh
 file-length|.claude/scripts/workflow-enforcement.mjs
 file-length|.claude/scripts/verify-phase-runtime-parity-shell-core.sh

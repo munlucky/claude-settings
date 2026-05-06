@@ -31,6 +31,17 @@ const REVIEW_ONLY_REASONS = new Set([
   'workflow-review-bundle-missing',
 ]);
 
+function stopReasonForGateReason(reason) {
+  const normalized = String(reason || '').trim();
+  if (REVIEW_ONLY_REASONS.has(normalized)) {
+    return 'missing-review-evidence';
+  }
+  if (requiresCloseoutRemediation(normalized)) {
+    return 'missing-finish-closeout';
+  }
+  return 'missing-verification-evidence';
+}
+
 function requiresCloseoutRemediation(reason) {
   return REVIEW_CLOSEOUT_REASONS.has(String(reason || '').trim());
 }
@@ -69,6 +80,18 @@ function decideMissingEvidenceAction(config) {
 
   if (finalStopReason === 'verification-command-missing' && autonomousMode && !advanceOnFailure) {
     return { ACTION: 'stop-loop', SUMMARY: 'verification-command-missing' };
+  }
+
+  if (finalStopReason === 'missing-review-evidence' && autonomousMode && autoFixCount <= 1) {
+    return { ACTION: 'review-remediation', SUMMARY: 'retry-with-review-remediation' };
+  }
+
+  if (finalStopReason === 'missing-finish-closeout' && autonomousMode && autoFixCount <= 1) {
+    return { ACTION: 'finish-remediation', SUMMARY: 'retry-with-finish-remediation' };
+  }
+
+  if (finalStopReason === 'missing-review-evidence' || finalStopReason === 'missing-finish-closeout') {
+    return { ACTION: 'stop-loop', SUMMARY: finalStopReason };
   }
 
   if (autonomousMode && autoFixCount <= maxAutoFixAttempts) {
@@ -204,6 +227,7 @@ function printUsage() {
     '  agent-loop-phase-attempt.mjs decide-missing-evidence-action <auto-fix-count> <max-auto-fix-attempts> <autonomous-mode> <advance-on-failure> <final-stop-reason>',
     '  agent-loop-phase-attempt.mjs decide-timeout-action <restart-count> <max-restarts> <timeout-runtime-fallback> <timeout-fallback-used> <fallback-runtime> <current-runtime> <autonomous-mode> <advance-on-failure>',
     '  agent-loop-phase-attempt.mjs decide-failure-action <auto-fix-count> <max-auto-fix-attempts> <autonomous-mode> <advance-on-failure> <final-stop-reason>',
+    '  agent-loop-phase-attempt.mjs classify-gate-stop-reason <phase-completion-reason>',
     '  agent-loop-phase-attempt.mjs build-verification-remediation-prompt <phase-num> <log-file> <phase-completion-reason>',
     '  agent-loop-phase-attempt.mjs build-auto-fix-prompt <phase-num> <log-file>',
   ].join('\n'));
@@ -220,6 +244,12 @@ switch (command) {
       advanceOnFailure: args[3],
       finalStopReason: args[4],
     }));
+    break;
+  case 'classify-gate-stop-reason':
+    printAssignments({
+      STOP_REASON: stopReasonForGateReason(args[0]),
+      REMEDIATION_STAGE: remediationStage(args[0]),
+    });
     break;
   case 'decide-timeout-action':
     printAssignments(decideTimeoutAction({

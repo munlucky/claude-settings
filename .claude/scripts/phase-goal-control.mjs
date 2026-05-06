@@ -30,27 +30,35 @@ function renderAssignments(payload) {
     .join('\n');
 }
 
+function writeLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
+
 function renderStatus(payload) {
   if (!payload.found) {
-    console.log(`Goal runtime: not found`);
-    console.log(`Plan: ${payload.planDir || 'n/a'}`);
+    writeLine(`Goal runtime: not found`);
+    writeLine(`Plan: ${payload.planDir || 'n/a'}`);
     return;
   }
   const goal = payload.goal || {};
   const activePhase = payload.activePhase || null;
   const nextPhase = payload.nextPhase || null;
+  const blockedPhase = payload.blockedPhase || null;
   const lease = payload.lease || null;
-  console.log(`Goal: ${goal.goal_id}`);
-  console.log(`Status: ${goal.status}`);
-  console.log(`Objective: ${goal.objective}`);
-  console.log(`Plan: ${goal.plan_dir}`);
-  console.log(`Actionable phases: ${payload.actionablePhasesRemaining}`);
-  console.log(`Active phase: ${activePhase ? `${activePhase.phase_number} ${activePhase.phase_title}` : 'none'}`);
-  console.log(`Next phase: ${nextPhase ? `${nextPhase.phase_number} ${nextPhase.phase_title} (${nextPhase.status})` : 'none'}`);
-  console.log(`Lease: ${lease ? `${lease.lease_id} (${lease.status})` : 'none'}`);
-  console.log(`Time used: ${goal.time_used_seconds || 0}s`);
-  console.log(`Accounting: ${goal.accounting_quality || 'unavailable'}`);
-  console.log(`Continuation suppressed: ${goal.continuation_suppressed ? 'true' : 'false'}`);
+  writeLine(`Goal: ${goal.goal_id}`);
+  writeLine(`Status: ${goal.status}`);
+  writeLine(`Objective: ${goal.objective}`);
+  writeLine(`Plan: ${goal.plan_dir}`);
+  writeLine(`Actionable phases: ${payload.actionablePhasesRemaining}`);
+  writeLine(`Active phase: ${activePhase ? `${activePhase.phase_number} ${activePhase.phase_title}${activePhase.status ? ` (${activePhase.status})` : ''}` : 'none'}`);
+  writeLine(`Next phase: ${blockedPhase ? 'none until unblock' : nextPhase ? `${nextPhase.phase_number} ${nextPhase.phase_title} (${nextPhase.status})` : 'none'}`);
+  if (blockedPhase) {
+    writeLine(`Blocked phase: ${blockedPhase.phase_number} ${blockedPhase.phase_title} (${blockedPhase.status})`);
+  }
+  writeLine(`Lease: ${lease ? `${lease.lease_id} (${lease.status})` : 'none'}`);
+  writeLine(`Time used: ${goal.time_used_seconds || 0}s`);
+  writeLine(`Accounting: ${goal.accounting_quality || 'unavailable'}`);
+  writeLine(`Continuation suppressed: ${goal.continuation_suppressed ? 'true' : 'false'}`);
 }
 
 const [command, planDir, ...rest] = process.argv.slice(2);
@@ -72,7 +80,7 @@ try {
         status: 'paused',
         detail: rest.join(' ') || 'operator pause',
       }));
-      console.log(renderAssignments(result ? { GOAL_ID: result.goal_id, STATUS: result.status } : { STATUS: 'not_found' }));
+      writeLine(renderAssignments(result ? { GOAL_ID: result.goal_id, STATUS: result.status } : { STATUS: 'not_found' }));
       break;
     }
     case 'resume': {
@@ -81,12 +89,12 @@ try {
         status: 'active',
         detail: rest.join(' ') || 'operator resume',
       }));
-      console.log(renderAssignments(result ? { GOAL_ID: result.goal_id, STATUS: result.status } : { STATUS: 'not_found' }));
+      writeLine(renderAssignments(result ? { GOAL_ID: result.goal_id, STATUS: result.status } : { STATUS: 'not_found' }));
       break;
     }
     case 'clear': {
       const result = await withDb((db) => clearGoal(db, planDir, rest.join(' ') || 'operator clear'));
-      console.log(renderAssignments(result ? { GOAL_ID: result.goal_id, STATUS: 'cleared' } : { STATUS: 'not_found' }));
+      writeLine(renderAssignments(result ? { GOAL_ID: result.goal_id, STATUS: 'cleared' } : { STATUS: 'not_found' }));
       break;
     }
     default:
