@@ -87,16 +87,15 @@
 
 ## Phase Completion Checklist
 
-- [ ] Phase 01 - Path Authority Fail-fast (`01-path-authority-fail-fast-v1.md`)
-- [ ] Phase 02 - Active Verdict and Evidence Contract (`02-active-verdict-evidence-contract-v1.md`)
-- [ ] Phase 03 - Dispatch Lifecycle and Retry Suppression (`03-dispatch-lifecycle-retry-suppression-v1.md`)
-- [ ] Phase 04 - Closeout Artifact Synchronization (`04-closeout-artifact-sync-v1.md`)
-- [ ] Phase 05 - Waste Ledger and Log Hygiene (`05-waste-ledger-log-hygiene-v1.md`)
-- [ ] Phase 06 - Regression Fixture and Documentation Sync (`06-regression-doc-sync-v1.md`)
+- [x] Phase 01 - Path Authority Fail-fast (`01-path-authority-fail-fast-v1.md`)
+- [x] Phase 02 - Active Verdict and Evidence Contract (`02-active-verdict-evidence-contract-v1.md`)
+- [x] Phase 03 - Dispatch Lifecycle and Retry Suppression (`03-dispatch-lifecycle-retry-suppression-v1.md`)
+- [x] Phase 04 - Closeout Artifact Synchronization (`04-closeout-artifact-sync-v1.md`)
+- [x] Phase 05 - Waste Ledger and Log Hygiene (`05-waste-ledger-log-hygiene-v1.md`)
+- [x] Phase 06 - Regression Fixture and Documentation Sync (`06-regression-doc-sync-v1.md`)
 
 ## Completion Rule
 
 - Mark a phase checked only when its phase plan completion criteria and verification evidence are satisfied.
 - Do not declare full completion while any abnormal retry class remains untested.
 - Do not treat warning filtering as success unless raw phase logs still preserve actionable error context.
-

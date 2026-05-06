@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt } from './agent-loop-phase-plan-lib.mjs';
+import { noiseSummaryPath } from './lib/waste-ledger.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -583,6 +584,8 @@ function appendDebugLog(event, details = {}) {
 
 function writeSummaryReport({ planDir, totalPhases, completed, failed, stoppedEarly, stopPhase, stopReason, stopDetail }) {
   ensureLoopLogs();
+  const wasteSummary = readWasteSummary();
+  const wasteTotals = wasteSummary?.totals || null;
   const body = [
     '# Agent Loop Summary Report',
     '',
@@ -599,6 +602,13 @@ function writeSummaryReport({ planDir, totalPhases, completed, failed, stoppedEa
     `- Reason: ${stopReason || 'n/a'}`,
     `- Detail: ${stopDetail || 'n/a'}`,
     '',
+    ...(wasteTotals ? [
+      '## Waste Ledger',
+      `- Healthy retries: ${wasteTotals.healthyRetries || 0}`,
+      `- Waste retries: ${wasteTotals.wasteRetries || 0}`,
+      `- Warning entries: ${wasteTotals.warningEntries || 0}`,
+      '',
+    ] : []),
     '## Decision Log',
     `See: ${decisionLog}`,
     '',
@@ -612,6 +622,8 @@ function writeSummaryReport({ planDir, totalPhases, completed, failed, stoppedEa
 
 function writeLiveSummaryReport({ planDir, totalPhases, completed, failed, currentPhase = '', currentPhaseTitle = '', loopState = 'running', stopReason = '', stopDetail = '' }) {
   ensureLoopLogs();
+  const wasteSummary = readWasteSummary();
+  const wasteTotals = wasteSummary?.totals || null;
   const body = [
     '# Agent Loop Live Summary',
     '',
@@ -629,6 +641,13 @@ function writeLiveSummaryReport({ planDir, totalPhases, completed, failed, curre
     `- Current Run State: ${currentRunState}`,
     `- Historical Summary: ${summaryReport}`,
     '',
+    ...(wasteTotals ? [
+      '## Waste Ledger',
+      `- Healthy retries: ${wasteTotals.healthyRetries || 0}`,
+      `- Waste retries: ${wasteTotals.wasteRetries || 0}`,
+      `- Warning entries: ${wasteTotals.warningEntries || 0}`,
+      '',
+    ] : []),
     '## Stop Signals',
     `- Reason: ${stopReason || 'n/a'}`,
     `- Detail: ${stopDetail || 'n/a'}`,
@@ -707,6 +726,18 @@ function parseJsonObject(text) {
     return JSON.parse(String(text || '').trim() || '{}');
   } catch {
     return {};
+  }
+}
+
+function readWasteSummary(repoRoot = process.cwd()) {
+  const filePath = noiseSummaryPath(repoRoot);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
   }
 }
 

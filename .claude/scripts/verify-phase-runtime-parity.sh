@@ -697,7 +697,7 @@ run_render_matrix() {
   fi
   if target_runtime_selected "codex"; then
     assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
-    assert_contains "$codex_coord_out" "codex exec --full-auto" "Codex coordinator adapter"
+    assert_contains "$codex_coord_out" "codex exec --sandbox workspace-write" "Codex coordinator adapter"
     assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
   fi
 

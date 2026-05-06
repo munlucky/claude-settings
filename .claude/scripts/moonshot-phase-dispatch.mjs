@@ -1014,7 +1014,7 @@ function terminateStaleWorkers() {
     '[n]ode .claude/scripts/agent-loop.mjs',
     '[n]ode .claude/scripts/agent-loop-phase-runner.mjs',
     '[c]laude --dangerously-skip-permissions --no-session-persistence -p /moonshot-in-session-coordinator',
-    '[c]odex exec --full-auto -C',
+    '[c]odex exec --sandbox workspace-write -C',
     '[b]ash .claude/scripts/moonshot-phase-dispatch.sh',
   ];
 

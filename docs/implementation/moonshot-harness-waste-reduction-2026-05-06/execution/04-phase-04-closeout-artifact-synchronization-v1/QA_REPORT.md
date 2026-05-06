@@ -40,6 +40,10 @@
 |-----------|--------|-------|
 |  | pending |  |
 
+## Scenario Evidence
+SCN-P04-1 | pass | `.claude/verification-verdict-phase04-final.json`; closeout field consistency fixture passed
+SCN-P04-2 | pass | `.claude/verification-verdict-phase04-final.json`; artifact sync idempotence check passed
+
 ## Plan Conformance Review
 | Plan Item | Required | Actual | Result | Required Action |
 |-----------|----------|--------|--------|-----------------|

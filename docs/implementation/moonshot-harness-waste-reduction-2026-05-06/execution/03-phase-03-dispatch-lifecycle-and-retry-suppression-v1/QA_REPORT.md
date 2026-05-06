@@ -40,6 +40,11 @@
 |-----------|--------|-------|
 |  | pending |  |
 
+## Scenario Evidence
+SCN-P03-1 | pass | `.claude/verification-verdict-phase03-final.json`; delegated route selected without restart-cap loop
+SCN-P03-2 | pass | `.claude/verification-verdict-phase03-final.json`; signal-like no-closeout path produced structured stop evidence
+SCN-P03-3 | pass | `.claude/verification-verdict-phase03-final.json`; dirty worktree preflight was surfaced before worker launch
+
 ## Plan Conformance Review
 | Plan Item | Required | Actual | Result | Required Action |
 |-----------|----------|--------|--------|-----------------|

@@ -1,9 +1,9 @@
-# Phase 05 Handoff
+# Phase 06 Handoff
 
 > Not required after clean completion. Retained only as a closeout marker.
 
 ## Goal
-- Phase 05: Waste Ledger and Log Hygiene (v1)
+- Phase 06: Regression Fixture and Documentation Sync (v1)
 - Current stage: Finish / Handoff
 
 ## Status
@@ -26,10 +26,10 @@
 - Next planned phase or slice: none in this handoff file
 
 ## Evidence Paths
-- Sprint contract: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\05-phase-05-waste-ledger-and-log-hygiene-v1\SPRINT_CONTRACT.md
-- QA report: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\05-phase-05-waste-ledger-and-log-hygiene-v1\QA_REPORT.md
-- Phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/05-waste-ledger-log-hygiene-v1.md
+- Sprint contract: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\06-phase-06-regression-fixture-and-documentation-sync-v1\SPRINT_CONTRACT.md
+- QA report: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\06-phase-06-regression-fixture-and-documentation-sync-v1\QA_REPORT.md
+- Phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/06-regression-doc-sync-v1.md
 
 ## Workflow Logging
 - session-logger: not required for this clean finish
-- Closeout marker recorded at: 2026-05-06 12:24:23
+- Closeout marker recorded at: 2026-05-06 12:39:28

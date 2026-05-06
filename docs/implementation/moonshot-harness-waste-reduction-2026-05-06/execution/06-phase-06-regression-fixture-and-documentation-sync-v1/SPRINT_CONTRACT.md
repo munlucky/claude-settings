@@ -1,15 +1,15 @@
-# Phase 05 Sprint Contract
+# Phase 06 Sprint Contract
 
 > Seeded automatically by `agent-loop.mjs`. Refresh before code changes.
 
 ## Slice
-- Phase: 5
-- Title: Phase 05: Waste Ledger and Log Hygiene (v1)
+- Phase: 6
+- Title: Phase 06: Regression Fixture and Documentation Sync (v1)
 - Source plan: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/00-master-plan-v1.md
-- Source phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/05-waste-ledger-log-hygiene-v1.md
+- Source phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/06-regression-doc-sync-v1.md
 
 ## Goal
-- Make abnormal retry cost visible while reducing phase log noise.
+- Lock the waste-reduction behavior with regression coverage and documentation that prevents future overlapping plans.
 
 ## Success Criteria
 - In-scope source-plan requirements are implemented or explicitly blocked.
@@ -30,32 +30,31 @@
 - Stop only on clean plan-directory completion or a recorded blocker/user pause.
 
 ## Source Plan Requirements Snapshot
-- Source phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/05-waste-ledger-log-hygiene-v1.md
+- Source phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/06-regression-doc-sync-v1.md
 - Goal:
-  - Make abnormal retry cost visible while reducing phase log noise.
+  - Lock the waste-reduction behavior with regression coverage and documentation that prevents future overlapping plans.
 - Expected outcome:
-  - Runs produce `waste-ledger.jsonl` and `noise-summary.json`; repeated plugin/skill/deprecation warnings no longer inflate phase logs.
+  - A fixture representing the 2026-05-06 waste pattern fails before the fixes and passes after Phases 01-05.
 - Scope:
   - In scope:
-    - Add waste ledger append helper.
-    - Add noise summary for repeated warnings.
-    - Replace deprecated `codex exec --full-auto` with supported sandbox flags.
-    - Record MemoryGraph transport failure once per run.
+    - Add boundary/runtime parity fixture for path failure, stale verdict, coordinator restart, closeout sync, and log hygiene.
+    - Update reference docs to link this plan as a follow-up to completed prior work.
+    - Run knowledge repository audit after structural documentation changes.
   - Out of scope:
-    - Deleting historical logs.
+    - Reopening completed prior phase checklists.
 - Detailed tasks:
   | ID | Task | Steps | Done Criteria |
   |---|---|---|---|
-  | P05-1 | Add waste ledger helper | Append abnormal retry events with phase, class, action, evidence path | Every non-healthy retry class has one ledger row |
-  | P05-2 | Add warning filter | Summarize plugin manifest, skill icon, deprecation, MemoryGraph transport warnings | Phase logs keep first occurrence and summary counts |
-  | P05-3 | Replace deprecated Codex flag | Update command builders in dispatch/runtime CLI | No `--full-auto` warning appears in new run logs |
-  | P05-4 | Summary integration | Add waste counts to agent loop summary | Summary lists healthy retries vs waste retries |
+  | P06-1 | Add waste-pattern fixture | Encode 2026-05-06 pattern in boundary/runtime parity tests | Fixture proves no worker retry for path/stale/control-plane failures |
+  | P06-2 | Verify full workflow | Run required workflow/core checks | All configured checks pass |
+  | P06-3 | Update reference docs | Add waste-reduction behavior and related-plan index | Docs explain non-overlap and new artifacts |
+  | P06-4 | Close source map | Confirm every MWR item has phase evidence | Master checklist can be checked only after evidence is present |
 - Exact execution targets:
   | ID | Files To Create | Files To Modify | Files To Test | Commands | Expected Fail/Pass Signals |
   |---|---|---|---|---|---|
-  | P05-1 | `.claude/logs/agent-loop/waste-ledger.jsonl` at runtime | `.claude/scripts/agent-loop-phase-runner.mjs`, `.claude/scripts/agent-loop.mjs`, `.claude/scripts/moonshot-phase-dispatch.mjs` | boundary verifier | `bash .claude/scripts/verify-phase-runner-boundary.sh` | GREEN: ledger rows emitted |
-  | P05-2 | `.claude/logs/agent-loop/noise-summary.json` at runtime | `.claude/scripts/moonshot-phase-dispatch.mjs`, `.claude/scripts/runtime-cli.mjs` | static search and boundary verifier | `rg -- "--full-auto" .claude/scripts` | GREEN: no deprecated active command path |
-  | P05-3 | none | `.claude/verification.contract.yaml` | contract checks | `bash .claude/scripts/workflow-enforcement.sh verify` | GREEN: observability artifacts accepted |
+  | P06-1 | fixture files if boundary script uses external fixtures | `.claude/scripts/verify-phase-runner-boundary.sh`, `.claude/scripts/verify-phase-runtime-parity.sh` | boundary and parity checks | `bash .claude/scripts/verify-phase-runner-boundary.sh` | RED: old waste pattern accepted; GREEN: suppressed |
+  | P06-2 | none | `.claude/docs/reference/codex-phase-runner-workflow.md`, `.claude/docs/reference/codex-phase-runner-workflow.html` | docs audit | `bash .claude/scripts/knowledge-repo-audit.sh` | GREEN: audit passes |
+  | P06-3 | none | `.claude/verification.contract.yaml` | workflow checks | `bash .claude/scripts/workflow-enforcement.sh verify` | GREEN: new artifacts recognized |
 - Binding rule: these source requirements remain authoritative. Deleting, replacing, or deferring any item requires user-approved replan before this phase can close.
 
 ## Spec Deviation Ledger
@@ -64,7 +63,7 @@
 | none | none | none | none | none | none |
 
 ## Non-Goals
-- Delete historical logs.
+- Fill before code changes.
 
 ## Stage Order
 - Ready / Isolate
@@ -90,31 +89,29 @@
 
 ## Planned Changes
 - Files/modules:
-  - `.claude/scripts/agent-loop-phase-runner.mjs`
-  - `.claude/scripts/agent-loop.mjs`
-  - `.claude/scripts/moonshot-phase-dispatch.mjs`
-  - `.claude/scripts/runtime-cli.mjs`
-  - `.claude/scripts/lib/failure-classifier.mjs`
-  - `.claude/scripts/lib/waste-ledger.mjs` if a shared helper is needed for JSONL writes
+  - `.claude/scripts/verify-phase-runner-boundary.sh`
+  - `.claude/scripts/verify-phase-runtime-parity.sh`
+  - `.claude/docs/reference/codex-phase-runner-workflow.md`
+  - `.claude/docs/reference/codex-phase-runner-workflow.html`
+  - `.claude/verification.contract.yaml`
 - Interfaces/contracts:
-  - Waste ledger rows capture `phase`, `class`, `action`, `evidencePath`, and `count` for abnormal retry classes.
-  - Warning hygiene keeps the first actionable occurrence in logs and rolls repeats into `noise-summary.json`.
+  - Add regression fixture coverage for the 2026-05-06 waste pattern.
+  - Sync reference docs and verification contract so the plan is discoverable as the follow-up package.
 
 ## Contract Review
 - Contract reviewed by evaluator: no
 - Verification owner: completion-verifier
-- Runtime evidence plan: open -> act -> mutate -> persist -> recover using phase-runner boundary, workflow enforcement, static deprecated-flag search, and the ledger/noise artifacts.
+- Runtime evidence plan: Critical SCN-* scenarios require open -> act -> mutate -> persist -> recover evidence.
 - Round fail conditions: Missing contract review, missing runtime evidence plan, smoke-only critical scenario evidence, repeated failure class without retry strategy, or stale verification.
 - Contract revision required: no
 - Review notes:
-- Codex has mapped the phase-owned scripts and will keep changes bounded to the active phase scope.
 
 ## Policy Anchors
 - Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
 - Active workspace contract: .claude/CLAUDE.md
 - Verification contract: .claude/verification.contract.yaml
 - Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
-- Round policy summary: Keep this run isolated to phase 05, refresh QA/HANDOFF artifacts when state changes, and require fresh verification evidence before completion.
+- Round policy summary: Keep this run isolated to phase 06, refresh QA/HANDOFF artifacts when state changes, and require fresh verification evidence before completion.
 - Work runtime: codex
 - Verification runtime target: codex
 
@@ -126,12 +123,15 @@
 ## Done Checks
 | Check | Type | Pass Condition |
 |-------|------|----------------|
-|  | UI/API/Test |  |
+| Boundary regression | Test | Waste-pattern fixture suppresses worker retries for path/stale/control-plane failures |
+| Runtime parity | Test | Codex runtime parity still passes under strict waste gates |
+| Knowledge audit | Audit | Reference docs resolve to the active plan package |
+| Workflow enforcement | Policy | Verification contract recognizes the new artifacts |
 
 ## Evaluator Focus
-- Core flow:
-- Edge cases:
-- Stub-only behavior to reject:
+- Core flow: boundary fixture, runtime parity, docs sync, and conformance gating all line up.
+- Edge cases: stale verdicts, restart handling, path failure suppression, and log hygiene.
+- Stub-only behavior to reject: smoke-only evidence, docs-only updates without fixture coverage, or unverified plan conformance.
 
 ## Evidence
 ### Required Verification Commands
@@ -150,10 +150,10 @@
 - Fill before runtime verification.
 
 ### Artifacts
-- QA report: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/05-phase-05-waste-ledger-and-log-hygiene-v1/QA_REPORT.md
-- Handoff: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/05-phase-05-waste-ledger-and-log-hygiene-v1/HANDOFF.md
-- Scorecard: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/05-phase-05-waste-ledger-and-log-hygiene-v1/SCORECARD.md
-- Worksets: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/05-phase-05-waste-ledger-and-log-hygiene-v1/WORKSETS.yaml
+- QA report: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution/06-phase-06-regression-fixture-and-documentation-sync-v1/QA_REPORT.md
+- Handoff: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution/06-phase-06-regression-fixture-and-documentation-sync-v1/HANDOFF.md
+- Scorecard: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution/06-phase-06-regression-fixture-and-documentation-sync-v1/SCORECARD.md
+- Worksets: docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution/06-phase-06-regression-fixture-and-documentation-sync-v1/WORKSETS.yaml
 
 ## Finish Rule
 - Clean finish requires: fresh verification evidence, review complete, and finish-stage closeout recorded.
@@ -168,4 +168,4 @@
 - Rollback or safe fallback:
 
 ## Notes
-- Generated at: 2026-05-06 08:55:51
+- Generated at: 2026-05-06 12:25:20

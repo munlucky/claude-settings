@@ -725,6 +725,32 @@ function completeReviewCloseoutFromVerdict(completionArtifacts, gateReason, logF
   artifactsCommand('normalize-qa-report-workflow-fields', paths.phaseQaReport);
 }
 
+function hasFreshStructuredVerdictArtifact(completionArtifacts, qaReportPath = '') {
+  const qaAbsolute = qaReportPath ? path.resolve(qaReportPath) : '';
+  for (const rawLine of String(completionArtifacts || '').split(/\r?\n/)) {
+    const candidate = rawLine.trim();
+    if (!candidate) {
+      continue;
+    }
+    const resolved = path.resolve(candidate);
+    if (qaAbsolute && resolved === qaAbsolute) {
+      continue;
+    }
+    if (!fs.existsSync(resolved)) {
+      continue;
+    }
+    try {
+      const payload = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+      if (String(payload.verdict || '').trim().toLowerCase() === 'passed' && payload.evidenceFresh === true) {
+        return true;
+      }
+    } catch {
+      // Non-JSON artifacts are not structured verification verdicts.
+    }
+  }
+  return false;
+}
+
 const REVIEW_ONLY_GATE_REASONS = new Set([
   'review-incomplete',
   'workflow-review-skill-missing',
@@ -1507,7 +1533,12 @@ function runPhaseAttempt() {
         return 2;
       }
 
-      if (decision.ACTION === 'review-remediation' || decision.ACTION === 'finish-remediation') {
+      const closeoutRemediationAction = decision.ACTION === 'review-remediation' || decision.ACTION === 'finish-remediation';
+      const hasCloseoutVerdict = closeoutRemediationAction
+        ? hasFreshStructuredVerdictArtifact(gate.PHASE_COMPLETION_ARTIFACTS ?? '', paths.phaseQaReport)
+        : false;
+
+      if (closeoutRemediationAction && hasCloseoutVerdict) {
         const remediationStage = gateStop.REMEDIATION_STAGE || remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate);
         const remediationLabel = decision.ACTION === 'review-remediation' ? 'Review Closeout Remediation' : 'Finish Closeout Remediation';
         logInfo(`Attempting ${remediationLabel.toLowerCase()} without launching a new implementation worker...`);
@@ -1560,7 +1591,7 @@ function runPhaseAttempt() {
         return 2;
       }
 
-      if (decision.ACTION === 'verification-remediation') {
+      if (decision.ACTION === 'verification-remediation' || (closeoutRemediationAction && !hasCloseoutVerdict)) {
         const remediationStage = remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate);
         const remediationLabel = remediationStage === 'verify' ? 'Verification Remediation' : 'Closeout Remediation';
         logInfo(`Attempting ${remediationLabel.toLowerCase()}...`);

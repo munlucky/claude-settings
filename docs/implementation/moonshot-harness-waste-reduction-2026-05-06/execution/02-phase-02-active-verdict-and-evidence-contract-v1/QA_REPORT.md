@@ -40,6 +40,10 @@
 |-----------|--------|-------|
 |  | pending |  |
 
+## Scenario Evidence
+SCN-P02-1 | pass | `.claude/verification-verdict-phase02-final.json`; `node .claude/scripts/verification-verdict-state.mjs self-test` passed
+SCN-P02-2 | pass | `.claude/verification-verdict-phase02-final.json`; `bash .claude/scripts/verify-phase-runner-boundary.sh` passed and missing-evidence stop was recorded once
+
 ## Plan Conformance Review
 | Plan Item | Required | Actual | Result | Required Action |
 |-----------|----------|--------|--------|-----------------|
@@ -151,4 +155,3 @@
 - Remaining in-scope work: none
 - Remaining blockers before closeout: none
 - Checks to rerun if code changes again: `syntax checks`, `python sanity`, `verification-verdict-state self-test`, `runtime parity`, `runner boundary`
-

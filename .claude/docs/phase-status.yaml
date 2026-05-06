@@ -4,18 +4,18 @@ autonomousMode: true
 executionMode: "delegated-terminal"
 executionRoot: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution"
 preparedAt: "2026-05-06T06:58:00Z"
-activeExecutionStatus: "paused"
-activeRunLeaseId: "dispatch-1778057750237-55431"
+activeExecutionStatus: "finished"
+activeRunLeaseId: "dispatch-1778070316100-29568"
 activeExecutionBoundary: "delegated-terminal"
-activeActionablePhasesRemaining: 1
-activeCurrentStage: "execute"
-activePhaseNumber: 5
-activePhaseTitle: "Phase 05: Waste Ledger and Log Hygiene (v1)"
+activeActionablePhasesRemaining: 0
+activeCurrentStage: "finish"
+activePhaseNumber: 6
+activePhaseTitle: "Phase 06: Regression Fixture and Documentation Sync (v1)"
 activePlannedPhases: 6
-activeCompletedPhases: 4
-activeBlockedPhases: 1
-activePendingPhases: 1
-activeRemainingPhases: 1
+activeCompletedPhases: 6
+activeBlockedPhases: 0
+activePendingPhases: 0
+activeRemainingPhases: 0
 projectMemory:
   backend: MemoryGraph
   stageCoverage:
@@ -28,28 +28,28 @@ lastDispatchAt: "2026-05-06T08:55:50Z"
 workflowEvidenceFile: ".claude/logs/workflow-enforcement/latest-dispatch.json"
 workflowSelectedBundles: "ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"
 workflowRequiredSkills: "moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"
-activeExecutionAttachedAt: "2026-05-06T08:55:50Z"
-activeExecutionHeartbeatAt: "2026-05-06T09:00:02Z"
-lastReturnBoundary: "dispatch-interrupted"
-lastStopReasonCode: "dispatcher-interrupted"
-lastStopReasonDetail: "dispatcher interrupted by SIGTERM"
-normalizedRunVerdict: failed
-stopReasonClass: unknown
-stopReasonExplanation: "dispatcher interrupted by SIGTERM"
+activeExecutionAttachedAt: "2026-05-06T12:25:16Z"
+activeExecutionHeartbeatAt: "2026-05-06T12:33:24Z"
+lastReturnBoundary: "dispatch-stop"
+lastStopReasonCode: "delegated-terminal-exit-1"
+lastStopReasonDetail: "delegated-terminal exited with code 1"
+normalizedRunVerdict: completed
+stopReasonClass: clean_finish
+stopReasonExplanation: "all phases completed with fresh verification evidence"
 goalRuntime:
-  goalId: "goal-1778050927755-d20c2e3cf6"
-  objective: "Complete active plan directory docs/implementation/moonshot-harness-waste-reduction-2026-05-06 using docs/implementation/moonshot-harness-waste-reduction-2026-05-06/00-master-plan-v1.md"
+  goalId: "goal-1778069542226-3d1f92db41"
+  objective: "Complete active plan directory docs\\implementation\\moonshot-harness-waste-reduction-2026-05-06 using docs/implementation/moonshot-harness-waste-reduction-2026-05-06/00-master-plan-v1.md"
   status: "complete"
   tokenBudget: null
   tokensUsed: null
   timeBudgetSeconds: null
-  timeUsedSeconds: 4711
+  timeUsedSeconds: 1025
   accountingQuality: "unavailable"
   continuationSuppressed: false
-  currentRunLeaseId: "dispatch-1778057750237-55431"
+  currentRunLeaseId: "dispatch-1778070316100-29568"
   lastEvent: "GoalCompleted"
-  createdAt: "2026-05-06T07:02:07Z"
-  updatedAt: "2026-05-06T09:00:02Z"
+  createdAt: "2026-05-06T12:12:22Z"
+  updatedAt: "2026-05-06T12:33:24Z"
 phases:
   - number: 1
     title: "Phase 01: Path Authority Fail-fast (v1)"
@@ -165,13 +165,13 @@ phases:
     archivedPhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/04-closeout-artifact-sync-v1.md"
   - number: 5
     title: "Phase 05: Waste Ledger and Log Hygiene (v1)"
-    status: blocked
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/05-waste-ledger-log-hygiene-v1.md"
     attempts:
-      total: 1
-      lastOutcome: blocked
-      lastUpdatedAt: "2026-05-06T09:00:02Z"
+      total: 3
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T12:24:42Z"
     sprintContract: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/05-phase-05-waste-ledger-and-log-hygiene-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/05-phase-05-waste-ledger-and-log-hygiene-v1/QA_REPORT.md"
     handoff: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/05-phase-05-waste-ledger-and-log-hygiene-v1/HANDOFF.md"
@@ -179,26 +179,44 @@ phases:
     timing:
       startedAt: "2026-05-06T08:55:51Z"
       lastStage: "execute"
-      lastStageAt: "2026-05-06T09:00:02Z"
-      wallClockSeconds: 251
-      runnerActiveSeconds: 250
+      lastStageAt: "2026-05-06T12:24:42Z"
+      wallClockSeconds: 12531
+      runnerActiveSeconds: 833
       verificationSeconds: 0
-      remediationSeconds: 0
+      remediationSeconds: 11515
       blockedSeconds: 1
       manualCloseoutSeconds: 0
-      blockedAt: "2026-05-06T09:00:02Z"
+      blockedAt: "2026-05-06T12:21:31Z"
+      completedAt: "2026-05-06T12:24:42Z"
+    completedAt: "2026-05-06T12:24:42Z"
+    archivedPhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/05-waste-ledger-log-hygiene-v1.md"
   - number: 6
     title: "Phase 06: Regression Fixture and Documentation Sync (v1)"
-    status: pending
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/06-regression-doc-sync-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
-    sprintContract: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/06-phase-06-regression-fixture-and-documentation-sync-v1/SPRINT_CONTRACT.md"
-    qaReport: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/06-phase-06-regression-fixture-and-documentation-sync-v1/QA_REPORT.md"
-    handoff: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/06-phase-06-regression-fixture-and-documentation-sync-v1/HANDOFF.md"
-    scorecard: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/06-phase-06-regression-fixture-and-documentation-sync-v1/SCORECARD.md"
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T12:41:00Z"
+    sprintContract: "docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\06-phase-06-regression-fixture-and-documentation-sync-v1\SPRINT_CONTRACT.md"
+    qaReport: "docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\06-phase-06-regression-fixture-and-documentation-sync-v1\QA_REPORT.md"
+    handoff: "docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\06-phase-06-regression-fixture-and-documentation-sync-v1\HANDOFF.md"
+    scorecard: "docs\implementation\moonshot-harness-waste-reduction-2026-05-06\execution\06-phase-06-regression-fixture-and-documentation-sync-v1\SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T12:25:20Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-06T12:41:00Z"
+      wallClockSeconds: 940
+      runnerActiveSeconds: 879
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 61
+      manualCloseoutSeconds: 0
+      blockedAt: "2026-05-06T12:33:23Z"
+      completedAt: "2026-05-06T12:41:00Z"
+    completedAt: "2026-05-06T12:41:00Z"
+    archivedPhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/06-regression-doc-sync-v1.md"
 
 
 
