@@ -40,6 +40,7 @@ test('promotion gate blocks incomplete candidates unless replay evidence or appr
     task_id: 'phase-05',
     session_id: 'session-05',
     run_id: 'run-05',
+    turn_id: 'turn-05-1',
     stage: 'verify',
     actor: 'codex',
     summary: 'judge fail',
@@ -75,6 +76,7 @@ test('compact promotion facts carry provenance tags and omit raw trace payloads'
     task_id: 'phase-05',
     session_id: 'session-05',
     run_id: 'run-05',
+    turn_id: 'turn-05-2',
     stage: 'verify',
     actor: 'codex',
     summary: 'judge fail',
@@ -109,6 +111,11 @@ test('compact promotion facts carry provenance tags and omit raw trace payloads'
     `origin_candidate:${candidate.candidate_id}`,
     'validated_by:replay',
   ]);
+  assert.equal(fact.origin_turn, candidate.failure_turn_id);
+  assert.equal(Array.isArray(fact.applies_to), true);
+  assert.equal(Array.isArray(fact.does_not_apply_to), true);
+  assert.equal(fact.validated_by, 'replay');
+  assert.ok(fact.last_validated_at.length > 0);
   assert.equal(JSON.stringify(fact).includes('raw trace'), false);
 });
 
@@ -119,6 +126,7 @@ test('imported-only, flaky, and environment candidates remain blocked', () => {
     task_id: 'phase-05',
     session_id: 'session-05',
     run_id: 'run-05',
+    turn_id: 'turn-05-3',
     stage: 'verify',
     actor: 'codex',
     summary: 'judge fail',
@@ -161,6 +169,7 @@ test('imported-only, flaky, and environment candidates remain blocked', () => {
 
   assert.equal(importedGate.ok, false);
   assert.ok(importedGate.reasons.some((reason) => reason.includes('imported-only')));
+  assert.ok(importedGate.denial_codes.includes('imported_only'));
   assert.equal(blockedCandidate.promotion_status, 'blocked');
   assert.equal(blockedCandidate.requires_human_review, true);
 });
@@ -172,6 +181,7 @@ test('MemoryGraph unavailable reports a blocked promotion without blocking unrel
     task_id: 'phase-05',
     session_id: 'session-05',
     run_id: 'run-05',
+    turn_id: 'turn-05-4',
     stage: 'verify',
     actor: 'codex',
     summary: 'judge fail',
@@ -206,7 +216,9 @@ test('MemoryGraph unavailable reports a blocked promotion without blocking unrel
 
   assert.equal(promotion.status, 'blocked');
   assert.equal(promotion.memory_graph.status, 'unavailable');
+  assert.equal(promotion.memory_graph.write_status, 'skipped');
   assert.equal(promotion.memory_graph.unrelated_workflow_blocked, false);
+  assert.ok(promotion.denial_codes.includes('memorygraph_unavailable'));
   assert.equal(promotion.raw_trace_included, false);
 });
 
@@ -218,12 +230,13 @@ test('candidate JSONL lines are parsed from the final line when promotion input 
     run_id: 'run-05',
     trace_id: 'trace-05',
     failure_event_id: 'evt-05',
+    failure_turn_id: 'turn-05',
     source_action_ids: ['action-verify'],
     failure_type: 'verification_failure',
     failure_class: 'verification',
     root_cause_summary: 'summary',
     proposed_memory: { summary: 'summary', facts: ['fact'], tags: ['tag'] },
-    scope: { run_id: 'run-05', trace_id: 'trace-05', failure_event_id: 'evt-05', artifact_refs: ['docs/example.md'] },
+    scope: { run_id: 'run-05', trace_id: 'trace-05', failure_event_id: 'evt-05', failure_turn_id: 'turn-05', artifact_refs: ['docs/example.md'] },
     evidence_refs: ['trace:event:evt-05'],
     verification_probe_candidate: { command: 'node --test', artifact_refs: ['docs/example.md'], source_action_ids: ['action-verify'] },
     promotion_status: 'needs_more_evidence',
@@ -244,6 +257,7 @@ test('buildPromotionOutput preserves compact provenance data and omits raw trace
     task_id: 'phase-05',
     session_id: 'session-05',
     run_id: 'run-05',
+    turn_id: 'turn-05-5',
     stage: 'verify',
     actor: 'codex',
     summary: 'judge fail',
@@ -280,6 +294,7 @@ test('buildPromotionOutput preserves compact provenance data and omits raw trace
   });
 
   assert.equal(output.raw_trace_included, false);
+  assert.equal(output.memory_graph.write_status, 'not_requested');
   assert.equal(output.compact_fact.tags.includes('validated_by:replay'), true);
   assert.equal(JSON.stringify(output).includes('raw trace'), false);
 });

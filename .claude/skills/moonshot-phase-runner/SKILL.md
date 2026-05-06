@@ -109,6 +109,12 @@ MemoryGraph stage rule:
 - Exclude `.claude/docs/ko/` and omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy.
 - MemoryGraph unavailable -> record `boundaryStatus: not_checked` and continue unless a strict memory gate explicitly fails.
 
+Failure prevention brief rule:
+- Before building a phase-attempt prompt, the runner may read `.claude/cache/awtl/failed_turn_cases.jsonl` as an ignored, repo-local cache.
+- Inject a `Failure Prevention Brief` only when a compact failed-turn case matches the active phase context; missing cache or no match is a no-op.
+- The brief must contain at most five one-sentence bullets and must not include raw trace JSON, prompt body, stdout, stderr, or secret-like strings.
+- This cache read is independent of MemoryGraph availability and does not promote anything to long-term memory.
+
 ## Usage
 
 ```bash

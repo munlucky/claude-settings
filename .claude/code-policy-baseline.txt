@@ -5,6 +5,7 @@ file-length|.claude/scripts/agent-loop.sh
 file-length|.claude/scripts/agent-loop.mjs
 file-length|.claude/scripts/moonshot-phase-dispatch.mjs
 file-length|.claude/scripts/agent-loop-phase-runner.mjs
+file-length|.claude/scripts/agent-loop-phase-plan-lib.mjs
 file-length|.claude/scripts/agent-loop-phase-runtime.mjs
 file-length|.claude/scripts/agent-loop-phase-state.mjs
 file-length|.claude/scripts/agent-loop-phase-artifacts.mjs

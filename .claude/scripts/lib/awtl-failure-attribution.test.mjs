@@ -28,6 +28,7 @@ test('deterministic attribution prefers the last modifying action before verifie
       task_id: 'phase-04',
       session_id: 'session-04',
       run_id: 'run-04',
+      turn_id: 'turn-04-1',
       stage: 'execute',
       actor: 'codex',
       summary: 'edit start',
@@ -88,6 +89,7 @@ test('deterministic attribution prefers the last modifying action before verifie
       task_id: 'phase-04',
       session_id: 'session-04',
       run_id: 'run-04',
+      turn_id: 'turn-04-5',
       stage: 'verify',
       actor: 'codex',
       summary: 'judge fail',
@@ -110,8 +112,10 @@ test('deterministic attribution prefers the last modifying action before verifie
     const attribution = buildFailureAttribution(events, failures[0], { repoRoot: process.cwd() });
 
     assert.deepEqual(attribution.failedArtifactRefs, [phaseDoc]);
+    assert.equal(attribution.failureTurnId, 'turn-04-5');
     assert.deepEqual(attribution.sourceActionIds, [editActionId, verifierActionId]);
     assert.deepEqual(attribution.memoryReadNodeIds, ['node-17', 'node-42']);
+    assert.ok(attribution.evidenceRefs.includes('trace:turn:turn-04-5'));
     assert.ok(attribution.attributionHeuristics.includes('failed-check-artifact-lookup'));
     assert.ok(attribution.attributionHeuristics.includes('command-verifier-adjacency-lookup'));
     assert.ok(!attribution.attributionHeuristics.includes('touched-file-lookup') || attribution.attributionHeuristics.includes('last-modifying-action-lookup'));
@@ -124,6 +128,7 @@ test('memory candidate validation rejects missing scope, evidence refs, source a
     task_id: 'phase-04',
     session_id: 'session-04',
     run_id: 'run-04',
+    turn_id: 'turn-04-2',
     stage: 'verify',
     actor: 'codex',
     summary: 'judge fail',
@@ -160,6 +165,7 @@ test('raw trace details stay out of the optional summarizer input boundary', () 
     task_id: 'phase-04',
     session_id: 'session-04',
     run_id: 'run-04',
+    turn_id: 'turn-04-3',
     stage: 'verify',
     actor: 'codex',
     summary: 'judge fail',
@@ -205,6 +211,7 @@ test('environment, flaky, and harness failures are blocked by default', () => {
       task_id: 'phase-04',
       session_id: 'session-04',
       run_id: 'run-04',
+      turn_id: 'turn-04-4',
       stage: 'verify',
       actor: 'codex',
       summary: 'judge fail',
@@ -242,6 +249,7 @@ test('JSONL writer appends validated memory candidates', () => {
       task_id: 'phase-04',
       session_id: 'session-04',
       run_id: 'run-04',
+      turn_id: 'turn-04-6',
       stage: 'verify',
       actor: 'codex',
       summary: 'judge fail',

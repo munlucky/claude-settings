@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "2",
+  "script": "manual-closeout",
+  "runId": "phase-03-final",
+  "phase": {
+    "number": 3,
+    "title": "Phase 03: Failed Turn Case Builder (v1)",
+    "activePhaseDocPath": "docs/implementation/turn-failure-prevention-harness-2026-05-06/03-failed-turn-case-builder-v1.md"
+  },
+  "contract": {
+    "applicable": true,
+    "verificationMode": "strict"
+  },
+  "contractApplicable": true,
+  "verificationMode": "strict",
+  "mode": "phase-runner",
+  "verdict": "passed",
+  "evidenceFresh": true,
+  "requiredChecks": {
+    "expected": [
+      "failed turn case tests",
+      "analyzer syntax",
+      "code policy",
+      "analyzer smoke",
+      "plan conformance"
+    ],
+    "passed": [
+      "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs",
+      "node --check .claude/scripts/awtl-failure-analyzer.mjs",
+      "bash .claude/scripts/verify-code-policy.sh",
+      "awtl-failure-analyzer synthetic failed judge smoke",
+      "verify-plan-conformance phase 03"
+    ],
+    "missing": []
+  },
+  "changedFiles": [],
+  "commands": [
+    {
+      "name": "node",
+      "run": "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs",
+      "status": "passed"
+    },
+    {
+      "name": "node",
+      "run": "node --check .claude/scripts/awtl-failure-analyzer.mjs",
+      "status": "passed"
+    },
+    {
+      "name": "bash",
+      "run": "bash .claude/scripts/verify-code-policy.sh",
+      "status": "passed"
+    },
+    {
+      "name": "node",
+      "run": "node .claude/scripts/awtl-failure-analyzer.mjs analyze --trace-id phase03-smoke-turn-case --summary",
+      "status": "passed"
+    },
+    {
+      "name": "node",
+      "run": "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/turn-failure-prevention-harness-2026-05-06/03-failed-turn-case-builder-v1.md --json",
+      "status": "passed"
+    }
+  ],
+  "workflowEvidence": {
+    "selectedBundles": [],
+    "stageOrder": [
+      "verify"
+    ],
+    "effortEscalationReason": "",
+    "selectedModelProvider": "",
+    "selectedModel": "",
+    "selectedModelEffort": "",
+    "modelSelectionReason": "",
+    "retrievalBudget": "",
+    "validationProfile": "",
+    "phaseReplayPolicy": "",
+    "warnings": []
+  },
+  "runtimeContext": {
+    "requestedRuntime": "codex",
+    "effectiveRuntime": "codex",
+    "fallbackReason": "",
+    "verificationRuntimeTargets": "codex"
+  },
+  "verdictScope": "phase_closeout",
+  "blockerClass": "",
+  "blockerFingerprint": "ccab54856237f282",
+  "environmentFingerprint": "e88acb91257fded3",
+  "artifactFingerprint": "678591687b2e18ba",
+  "supersedes": [],
+  "supersededBy": "",
+  "staleWhen": [],
+  "stale": false,
+  "failureClass": "",
+  "blocking": false,
+  "blockingReasonCode": "",
+  "score": {
+    "detected": true,
+    "current": 100,
+    "target": 100,
+    "unmetChecklistItems": 0,
+    "unmetItems": 0,
+    "blockingDefects": 0,
+    "verdict": "done"
+  },
+  "generatedAt": "2026-05-06T13:51:25Z"
+}

@@ -15,6 +15,9 @@ This contract freezes the phase-01 boundary language before any sink, runner, or
 | `action` | An intent-bearing step that can produce observation data and compact facts. |
 | `memory candidate` | A compact fact or pattern that may be eligible for promotion after provenance validation. |
 | `promotion` | The approval-based move from compact fact to reusable MemoryGraph knowledge. Raw AWTL never bypasses this gate. |
+| `failed_turn_case` | A compact, redacted case derived from the failing turn only. It is used for next-run prevention and is not a raw transcript excerpt. |
+| `failure_prevention_brief` | A short prompt section built from matching failed turn cases before a new phase attempt starts. |
+| `replay_scorecard` | Append-only promotion/replay evidence that records whether a candidate was verified, denied, stale, risky, or skipped. |
 
 ## Failure Taxonomy V1
 
@@ -69,12 +72,23 @@ MemoryGraph promotion is permitted only for compact facts that carry provenance 
 - `origin:awtl`
 - `validated_by:redaction-helper`
 - `validated_by:provenance-boundary`
+- `origin_turn:{turnId}`
+
+## Turn Failure Loop
+
+- Runner capture must assign a stable `turn_id` before attempt events are written.
+- Failed turn cases must carry `failure_turn_id`, a compact failure summary, redacted evidence refs, and prevention hints.
+- `awtl-failure-analyzer` may write failed turn cases next to memory candidates, but neither output may contain prompt bodies, raw stdout/stderr, cookies, tokens, or unredacted transcript text.
+- Phase prompt construction may inject a `Failure Prevention Brief` only from matching cases. Missing cache is a no-op.
+- Replay scorecard entries marked stale, risky, denied, or not verified must not be used as prevention hints.
 
 ### Phase 05 replay gate
 
 - Promote only when the candidate has replay evidence or human approval.
 - Reject transcript-only or imported-only candidates.
 - Keep environment, flaky, and harness blockers intact.
+- Direct MemoryGraph writes are allowed only when `--write-memorygraph` is explicit and `--auto-promote verified-only` is active.
+- Promotion output must include compact provenance: `origin_turn`, `applies_to`, `does_not_apply_to`, `validated_by`, and `last_validated_at`.
 
 ### Non-goals
 
@@ -85,11 +99,13 @@ MemoryGraph promotion is permitted only for compact facts that carry provenance 
 ## Trace Policy
 
 - `.claude/traces/` is an ignored artifact path.
+- `.claude/.claude/traces/` is forbidden; nested trace roots indicate repository-root resolution drift.
 - The path may exist locally for transient runtime output, but it stays out of version control.
 - Any trace artifact that escapes the ignore boundary is a policy defect.
 - `agent_work_trace.jsonl` is the canonical append-only source of truth for AWTL events.
 - `judge_result.jsonl` is a materialized view built from the canonical log, not an independent source.
 - Partial or corrupt JSONL lines must be quarantined before the canonical file is rewritten.
+- Every captured event in a phase attempt should carry the current `turn_id`; retry attempts must start a new turn id.
 
 ## Runtime Importers
 

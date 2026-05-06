@@ -38,6 +38,11 @@ function toText(value, fallback = '') {
   return text.length > 0 ? text : fallback;
 }
 
+function toInt(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
 export function createPhaseHarnessCaptureSession(options = {}) {
   const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
   const traceRoot = options.traceRoot ?? DEFAULT_TRACE_ROOT;
@@ -53,6 +58,9 @@ export function createPhaseHarnessCaptureSession(options = {}) {
   const state = {
     runSpanId: '',
     attemptSpanId: '',
+    currentTurnId: '',
+    currentTurnSeq: 0,
+    currentAttemptIndex: 0,
     actionSeq: 0,
     spanSeq: 0,
   };
@@ -67,6 +75,33 @@ export function createPhaseHarnessCaptureSession(options = {}) {
     return `${prefix}-${state.spanSeq}-${crypto.randomUUID().slice(0, 8)}`;
   }
 
+  function beginTurn(details = {}) {
+    if (toText(details.turnId, '')) {
+      state.currentTurnId = toText(details.turnId, '');
+      state.currentAttemptIndex = Number.isInteger(details.attemptIndex) ? details.attemptIndex : toInt(details.attemptIndex, state.currentAttemptIndex || 0);
+      return {
+        turnId: state.currentTurnId,
+        attemptIndex: state.currentAttemptIndex,
+        turnSeq: state.currentTurnSeq,
+      };
+    }
+
+    const phaseNum = toText(details.phaseNum, 'phase');
+    const attemptIndex = Number.isInteger(details.attemptIndex)
+      ? details.attemptIndex
+      : toInt(details.attemptIndex, state.currentAttemptIndex || 1);
+    state.currentAttemptIndex = attemptIndex;
+    state.currentTurnSeq += 1;
+    const turnSeq = state.currentTurnSeq;
+    const turnId = `turn-${phaseNum}-${attemptIndex}-${turnSeq}-${crypto.randomUUID().slice(0, 8)}`;
+    state.currentTurnId = turnId;
+    return {
+      turnId,
+      attemptIndex,
+      turnSeq,
+    };
+  }
+
   async function emit(eventType, payload, overrides = {}) {
     try {
       const event = createTraceEvent({
@@ -78,6 +113,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         actor: overrides.actor ?? actor,
         summary: overrides.summary ?? '',
         payload,
+        turn_id: overrides.turnId ?? state.currentTurnId ?? null,
         span_id: overrides.spanId ?? null,
         action_id: overrides.actionId ?? null,
         source: overrides.source ?? source,
@@ -121,6 +157,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? null,
       },
     );
   }
@@ -141,6 +178,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? null,
       },
     );
   }
@@ -148,6 +186,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
   async function recordAttemptStarted(details = {}) {
     const spanId = toText(details.spanId, nextSpanId('attempt'));
     state.attemptSpanId = spanId;
+    beginTurn(details);
     return emit(
       'span_start',
       {
@@ -163,6 +202,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -183,6 +223,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -203,6 +244,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -225,6 +267,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -248,6 +291,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -272,6 +316,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? 'verify',
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -297,6 +342,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -318,6 +364,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -341,6 +388,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
         stage: details.stage ?? stage,
         actor: details.actor ?? actor,
         source: details.source ?? source,
+        turnId: details.turnId ?? state.currentTurnId ?? null,
       },
     );
   }
@@ -349,6 +397,7 @@ export function createPhaseHarnessCaptureSession(options = {}) {
     sink,
     paths: sink.paths,
     state,
+    beginTurn,
     recordRunStarted,
     recordRunCompleted,
     recordAttemptStarted,

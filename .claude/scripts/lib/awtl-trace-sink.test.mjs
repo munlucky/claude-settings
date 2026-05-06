@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import {
@@ -14,12 +15,12 @@ import {
 } from './awtl-trace-sink.mjs';
 import { validateAwtlEvent } from './awtl-event-schema.mjs';
 
-function tempTraceRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'awtl-trace-sink-'));
-}
-
 function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
+}
+
+function cleanupRepoTrace(traceId) {
+  fs.rmSync(path.resolve('.claude/traces', traceId), { recursive: true, force: true });
 }
 
 function makeEvent(overrides = {}) {
@@ -44,6 +45,10 @@ function makeEvent(overrides = {}) {
   }, overrides);
 }
 
+function makeTraceSink(traceId) {
+  return createTraceSink({ traceId, runId: traceId, taskId: 'task-phase-02', sessionId: 'session-phase-02' });
+}
+
 test('schema validation rejects missing required envelope fields', () => {
   const result = validateAwtlEvent({
     schema_version: 1,
@@ -65,8 +70,8 @@ test('schema validation rejects missing required envelope fields', () => {
 });
 
 test('parallel append remains parseable and monotonic', async () => {
-  const traceRoot = tempTraceRoot();
-  const sinks = Array.from({ length: 8 }, () => createTraceSink({ traceRoot, traceId: 'parallel-append', runId: 'run-01', taskId: 'task-01', sessionId: 'session-01' }));
+  const traceId = `parallel-append-${randomUUID()}`;
+  const sink = makeTraceSink(traceId);
 
   try {
     const events = Array.from({ length: 8 }, (_, index) => makeEvent({
@@ -78,20 +83,20 @@ test('parallel append remains parseable and monotonic', async () => {
       },
     }));
 
-    await Promise.all(events.map((event, index) => sinks[index].appendEvent(event)));
-    const written = fs.readFileSync(sinks[0].paths.canonicalPath, 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    await Promise.all(events.map((event) => sink.appendEvent(event)));
+    const written = fs.readFileSync(sink.paths.canonicalPath, 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line));
 
     assert.equal(written.length, 8);
     assert.deepEqual(written.map((event) => event.ingest_seq), [1, 2, 3, 4, 5, 6, 7, 8]);
     assert.deepEqual(sortAwtlEvents(written), written);
   } finally {
-    cleanup(traceRoot);
+    cleanupRepoTrace(traceId);
   }
 });
 
 test('corrupt partial lines are quarantined instead of poisoning the canonical log', async () => {
-  const traceRoot = tempTraceRoot();
-  const sink = createTraceSink({ traceRoot, traceId: 'quarantine-test', runId: 'run-02', taskId: 'task-02', sessionId: 'session-02' });
+  const traceId = `quarantine-test-${randomUUID()}`;
+  const sink = makeTraceSink(traceId);
 
   try {
     fs.mkdirSync(path.dirname(sink.paths.canonicalPath), { recursive: true });
@@ -122,13 +127,13 @@ test('corrupt partial lines are quarantined instead of poisoning the canonical l
     assert.ok(quarantine[0].reason.length > 0);
     assert.ok(quarantine[0].raw_line_redacted.includes('broken'));
   } finally {
-    cleanup(traceRoot);
+    cleanupRepoTrace(traceId);
   }
 });
 
 test('quarantining a corrupted judge result rebuilds the materialized index from canonical events', async () => {
-  const traceRoot = tempTraceRoot();
-  const sink = createTraceSink({ traceRoot, traceId: 'judge-quarantine', runId: 'run-04', taskId: 'task-04', sessionId: 'session-04' });
+  const traceId = `judge-quarantine-${randomUUID()}`;
+  const sink = makeTraceSink(traceId);
 
   try {
     const staleJudge = JSON.stringify(makeEvent({
@@ -164,13 +169,13 @@ test('quarantining a corrupted judge result rebuilds the materialized index from
 
     assert.equal(judgeIndex, '');
   } finally {
-    cleanup(traceRoot);
+    cleanupRepoTrace(traceId);
   }
 });
 
 test('redaction is applied before persistence and judge results materialize from canonical log', async () => {
-  const traceRoot = tempTraceRoot();
-  const sink = createTraceSink({ traceRoot, traceId: 'judge-index', runId: 'run-03', taskId: 'task-03', sessionId: 'session-03' });
+  const traceId = `judge-index-${randomUUID()}`;
+  const sink = makeTraceSink(traceId);
 
   try {
     await sink.appendEvent(makeEvent({
@@ -206,7 +211,27 @@ test('redaction is applied before persistence and judge results materialize from
     assert.equal(judgeIndex[0].payload.judge_name, 'phase-02-verifier');
     assert.ok(!judgeIndex.some((entry) => entry.event_type !== 'judge_result'));
   } finally {
-    cleanup(traceRoot);
+    cleanupRepoTrace(traceId);
+  }
+});
+
+test('nested trace roots are rejected before any files are created', () => {
+  const nestedRoot = path.resolve('.claude/.claude/traces');
+  assert.throws(
+    () => createTraceSink({ traceRoot: nestedRoot, traceId: 'nested-root' }),
+    /Invalid trace root/i,
+  );
+});
+
+test('repo-external trace roots are rejected before any files are created', () => {
+  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'awtl-external-root-'));
+  try {
+    assert.throws(
+      () => createTraceSink({ traceRoot: externalRoot, traceId: 'external-root' }),
+      /Invalid trace root/i,
+    );
+  } finally {
+    cleanup(externalRoot);
   }
 });
 

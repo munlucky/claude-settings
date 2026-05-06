@@ -15,6 +15,9 @@ Last-Reviewed: 2026-05-06
 | `action` | observation 데이터를 만들 수 있는 의도 기반 단계이다. |
 | `memory candidate` | provenance 검증 후 승격될 수 있는 compact fact 또는 패턴이다. |
 | `promotion` | compact fact를 재사용 가능한 MemoryGraph 지식으로 옮기는 승인 기반 단계이다. raw AWTL는 이 gate를 우회할 수 없다. |
+| `failed_turn_case` | 실패한 턴에서만 파생된 redacted compact case다. 다음 실행의 재발 방지에 쓰며 raw transcript 발췌가 아니다. |
+| `failure_prevention_brief` | 새 phase attempt 시작 전에 matching failed turn case에서 만드는 짧은 prompt section이다. |
+| `replay_scorecard` | candidate가 verified, denied, stale, risky, skipped 중 어디에 해당하는지 기록하는 append-only promotion/replay evidence다. |
 
 ## Failure Taxonomy V1
 
@@ -69,12 +72,23 @@ MemoryGraph 승격은 provenance와 validation tag가 붙은 compact fact에만 
 - `origin:awtl`
 - `validated_by:redaction-helper`
 - `validated_by:provenance-boundary`
+- `origin_turn:{turnId}`
+
+## 턴 실패 루프
+
+- runner capture는 attempt event를 쓰기 전에 stable `turn_id`를 부여해야 합니다.
+- failed turn case는 `failure_turn_id`, compact failure summary, redacted evidence ref, prevention hint를 가져야 합니다.
+- `awtl-failure-analyzer`는 memory candidate와 함께 failed turn case를 쓸 수 있지만, 어느 출력에도 prompt body, raw stdout/stderr, cookie, token, unredacted transcript text가 들어가면 안 됩니다.
+- phase prompt 생성은 matching case에서만 `Failure Prevention Brief`를 주입할 수 있습니다. cache가 없으면 no-op입니다.
+- replay scorecard에서 stale, risky, denied, not verified로 표시된 항목은 prevention hint로 쓰지 않습니다.
 
 ### Phase 05 replay gate
 
 - 후보는 replay 증거 또는 human approval이 있을 때만 승격합니다.
 - transcript-only 또는 imported-only 후보는 거부합니다.
 - environment, flaky, harness blocker는 그대로 유지합니다.
+- 직접 MemoryGraph write는 `--write-memorygraph`가 명시되고 `--auto-promote verified-only`가 활성화된 경우에만 허용합니다.
+- promotion output은 `origin_turn`, `applies_to`, `does_not_apply_to`, `validated_by`, `last_validated_at` compact provenance를 포함해야 합니다.
 
 ### Non-goals
 
@@ -85,11 +99,13 @@ MemoryGraph 승격은 provenance와 validation tag가 붙은 compact fact에만 
 ## Trace 정책
 
 - `.claude/traces/`는 ignore 대상 경로다.
+- `.claude/.claude/traces/`는 금지한다. nested trace root는 repository root 계산이 어긋났다는 신호다.
 - 경로는 일시적인 runtime output용으로만 존재할 수 있고 version control에는 들어가지 않는다.
 - ignore 경계를 벗어난 trace artifact는 정책 결함이다.
 - `agent_work_trace.jsonl`은 AWTL event의 canonical append-only source of truth다.
 - `judge_result.jsonl`은 canonical log에서 만든 materialized view이며 독립적인 source가 아니다.
 - 부분 쓰기나 손상된 JSONL line은 canonical file을 다시 쓰기 전에 quarantine해야 한다.
+- phase attempt에서 capture된 모든 event는 현재 `turn_id`를 가져야 하며, retry attempt는 새 turn id를 시작해야 한다.
 
 ## Runtime Importers
 

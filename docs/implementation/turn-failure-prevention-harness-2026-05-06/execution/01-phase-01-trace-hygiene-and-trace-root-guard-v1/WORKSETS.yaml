@@ -1,0 +1,13 @@
+# Phase 01 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: in_progress
+    ownedPaths: []
+    verificationCommands: []
+    evidence: []
+    completedAt: null
+worksets: []

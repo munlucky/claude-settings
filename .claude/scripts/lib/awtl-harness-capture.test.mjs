@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,21 +13,20 @@ import {
   normalizeRepoRelativePath,
 } from './awtl-harness-capture.mjs';
 
-function tempTraceRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'awtl-harness-capture-'));
-}
-
 function cleanup(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
 }
 
+function cleanupRepoTrace(traceId) {
+  fs.rmSync(path.resolve('.claude/traces', traceId), { recursive: true, force: true });
+}
+
 test('lifecycle capture preserves ordered semantic events and repo-relative artifacts', async () => {
-  const traceRoot = tempTraceRoot();
+  const traceId = `phase-03-native-capture-${randomUUID()}`;
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'awtl-harness-repo-'));
   const session = createPhaseHarnessCaptureSession({
-    traceRoot,
     repoRoot,
-    traceId: 'phase-03-native-capture',
+    traceId,
     runId: 'run-03',
     taskId: 'phase-03',
     sessionId: 'session-03',
@@ -43,6 +43,8 @@ test('lifecycle capture preserves ordered semantic events and repo-relative arti
     const attempt = await session.recordAttemptStarted({
       parentSpanId: run.event.span_id,
       attemptIndex: 1,
+      phaseNum: '3',
+      phaseTitle: 'Phase 03: Native Harness Capture (v1)',
       summary: 'attempt_started',
     });
     const span = await session.recordSpanStarted({
@@ -120,6 +122,19 @@ test('lifecycle capture preserves ordered semantic events and repo-relative arti
       .split(/\r?\n/)
       .map((line) => JSON.parse(line));
 
+    const attemptTurnId = attempt.event.turn_id;
+    assert.match(attemptTurnId, /^turn-3-1-\d+-[a-f0-9]{8}$/);
+    assert.ok(new Set([
+      attempt.event.turn_id,
+      span.event.turn_id,
+      actionStart.event.turn_id,
+      actionCompleted.event.turn_id,
+      judge.event.turn_id,
+      memory.event.turn_id,
+      reconciliation.event.turn_id,
+      privacy.event.turn_id,
+    ]).size === 1);
+
     assert.deepEqual(events.map((event) => event.payload.lifecycle_event), [
       'run_started',
       'attempt_started',
@@ -143,7 +158,60 @@ test('lifecycle capture preserves ordered semantic events and repo-relative arti
       '../escape.md',
     ], repoRoot), ['docs/example.md']);
   } finally {
-    cleanup(traceRoot);
+    cleanupRepoTrace(traceId);
+    cleanup(repoRoot);
+  }
+});
+
+test('retry or remediation starts a new turn id while preserving same-turn capture within each attempt', async () => {
+  const traceId = `phase-02-retry-turn-${randomUUID()}`;
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'awtl-harness-repo-'));
+  const session = createPhaseHarnessCaptureSession({
+    repoRoot,
+    traceId,
+    runId: 'run-02',
+    taskId: 'phase-02',
+    sessionId: 'session-02',
+    stage: 'ready/isolate',
+    source: 'moonshot-phase-runner',
+  });
+
+  try {
+    const run = await session.recordRunStarted({
+      phaseNum: '2',
+      phaseTitle: 'Phase 02: Turn Identity Capture (v1)',
+      summary: 'run_started',
+    });
+    const firstAttempt = await session.recordAttemptStarted({
+      parentSpanId: run.event.span_id,
+      attemptIndex: 1,
+      phaseNum: '2',
+      phaseTitle: 'Phase 02: Turn Identity Capture (v1)',
+      summary: 'attempt_started',
+    });
+    const firstAction = await session.recordActionStarted({
+      actionName: 'worker-prompt',
+      summary: 'action_started',
+    });
+    const retryAttempt = await session.recordAttemptStarted({
+      parentSpanId: run.event.span_id,
+      attemptIndex: 2,
+      phaseNum: '2',
+      phaseTitle: 'Phase 02: Turn Identity Capture (v1)',
+      summary: 'attempt_started',
+    });
+    const retryAction = await session.recordActionStarted({
+      actionName: 'worker-prompt',
+      summary: 'action_started',
+    });
+
+    assert.match(firstAttempt.event.turn_id, /^turn-2-1-\d+-[a-f0-9]{8}$/);
+    assert.match(retryAttempt.event.turn_id, /^turn-2-2-\d+-[a-f0-9]{8}$/);
+    assert.notEqual(firstAttempt.event.turn_id, retryAttempt.event.turn_id);
+    assert.equal(firstAction.event.turn_id, firstAttempt.event.turn_id);
+    assert.equal(retryAction.event.turn_id, retryAttempt.event.turn_id);
+  } finally {
+    cleanupRepoTrace(traceId);
     cleanup(repoRoot);
   }
 });

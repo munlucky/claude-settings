@@ -1,0 +1,20 @@
+# Phase 04 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths: []
+    verificationCommands:
+      - "node --test .claude/scripts/lib/awtl-failure-prevention-brief.test.mjs .claude/scripts/lib/awtl-failed-turn-case.test.mjs"
+      - "node --check .claude/scripts/agent-loop-phase-runner.mjs"
+      - "node --check .claude/scripts/agent-loop-phase-plan-lib.mjs"
+      - "bash .claude/scripts/knowledge-repo-audit.sh"
+      - "bash .claude/scripts/verify-code-policy.sh"
+    evidence:
+      - ".claude/verification-verdict-phase04-final.json"
+      - "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/04-phase-04-next-run-recall-brief-v1/QA_REPORT.md"
+    completedAt: "2026-05-06T14:06:00Z"
+worksets: []

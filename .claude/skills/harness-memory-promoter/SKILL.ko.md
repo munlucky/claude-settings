@@ -22,9 +22,18 @@ triggers:
    - `project:claude-settings`
    - `source:moonshot`
    - `origin:awtl`
+   - `origin_turn:{turnId}`
    - `origin_run:{runId}`
    - `origin_candidate:{candidateId}`
    - `validated_by:{method}`
+
+## AWTL 승격 계약
+
+- failed-turn candidate는 `failure_turn_id`를 포함해야 합니다.
+- 직접 write에는 `--write-memorygraph`가 필요합니다. 없으면 올바른 `write_status`는 `not_requested` 또는 `skipped`입니다.
+- `--auto-promote verified-only`만 자동 write policy입니다. 그 외에는 명시적 human approval이 필요합니다.
+- 각 결정은 replay scorecard에 `denial_codes`, `write_status`, `applies_to`, `does_not_apply_to`, `validated_by`, `last_validated_at`와 함께 append합니다.
+- `imported_only`, `transcript_only`, `raw_trace_payload`, `missing_failure_turn_id`, `invalid_candidate`, `memorygraph_unavailable`에 해당하는 후보는 거부합니다.
 
 ## 강제 규칙
 
@@ -33,3 +42,4 @@ triggers:
 - 승격 memory는 짧고 재사용 가능해야 합니다.
 - MemoryGraph가 불가하면 실패를 보고하되 관련 없는 작업은 막지 않습니다.
 - transcript-only 또는 imported-only 후보는 승격하지 말고, environment/flaky/harness blocker는 유지합니다.
+- MemoryGraph unavailable을 성공으로 취급하지 않습니다. 이는 promotion write skip/failure이지 전체 workflow blocker가 아닙니다.

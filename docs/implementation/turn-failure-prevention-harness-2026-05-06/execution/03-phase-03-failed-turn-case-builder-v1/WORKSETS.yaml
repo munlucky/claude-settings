@@ -1,0 +1,18 @@
+# Phase 03 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths: []
+    verificationCommands:
+      - "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs"
+      - "node --check .claude/scripts/awtl-failure-analyzer.mjs"
+      - "bash .claude/scripts/verify-code-policy.sh"
+    evidence:
+      - ".claude/verification-verdict-phase03-final.json"
+      - "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/03-phase-03-failed-turn-case-builder-v1/QA_REPORT.md"
+    completedAt: "2026-05-06T13:48:00Z"
+worksets: []

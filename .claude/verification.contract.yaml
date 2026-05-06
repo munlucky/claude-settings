@@ -7,6 +7,10 @@ commands:
   phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
   phaseWorktreeParallel: "node .claude/scripts/phase-worktree-coordinator.mjs self-test"
   phaseCloseout: "node .claude/scripts/verify-phase-closeout.mjs --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --master-plan ${PHASE_MASTER_PLAN:-docs/implementation/00-master-plan-v1.md}"
+  awtlRegression: "node --test .claude/scripts/lib/awtl-trace-sink.test.mjs .claude/scripts/lib/awtl-harness-capture.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs .claude/scripts/lib/awtl-runtime-importers.test.mjs"
+  awtlFailurePreventionRegression: "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-prevention-brief.test.mjs .claude/scripts/lib/awtl-replay-scorecard.test.mjs"
+  awtlCliSyntax: "node --check .claude/scripts/agent-loop-phase-runner.mjs && node --check .claude/scripts/agent-loop-phase-plan-lib.mjs && node --check .claude/scripts/awtl-failure-analyzer.mjs && node --check .claude/scripts/awtl-memory-promotion.mjs"
+  memoryGraphHealth: "node .claude/scripts/memorygraph-direct.mjs health"
 checkPolicies:
   searchEvidence:
     preferred: rg
@@ -35,8 +39,8 @@ checkPolicies:
       checks: [shellSyntax, codePolicy]
       minimumEvidence: "syntax plus targeted self-test when available"
     workflow_core:
-      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel]
-      minimumEvidence: "cross-runtime workflow contract evidence"
+      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel, awtlRegression, awtlFailurePreventionRegression, awtlCliSyntax]
+      minimumEvidence: "cross-runtime workflow contract evidence plus AWTL turn-failure regression evidence"
     runtime_adapter:
       checks: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout]
       minimumEvidence: "Codex and Claude runtime boundary parity"
@@ -77,6 +81,8 @@ scope:
 artifacts:
   verdict: ".claude/verification-verdict-<runId>.json"
   runtimeVerdict: ".claude/runtime-verdict-<runId>.json"
+  awtlFailedTurnCases: ".claude/cache/awtl/failed_turn_cases.jsonl"
+  awtlReplayScorecard: ".claude/cache/awtl/replay_scorecard.jsonl"
   sprintContract: "{tasksRoot}/{feature-name}/execution/<slice>/SPRINT_CONTRACT.md"
   qaReport: "{tasksRoot}/{feature-name}/execution/<slice>/QA_REPORT.md"
   handoff: "{tasksRoot}/{feature-name}/execution/<slice>/HANDOFF.md"
@@ -166,6 +172,7 @@ qa:
       focus:
         - "every critical SCN has fresh runtime or E2E evidence"
         - "user-visible flows are not closed by static review alone"
+        - "turn-failure prevention flows include trace root, turn_id, failed_turn_case, recall brief, replay scorecard, and verified-only promotion evidence"
     uatReadiness:
       threshold: "warn"
       focus:
@@ -177,6 +184,10 @@ artifactPolicy:
 finishPolicy:
   externalBlockersRequirePartialModeDecision: true
   fakePassDisallowed: true
+  memoryGraphUnavailable:
+    completionSemantics: "non_blocking_unless_strict_memory_validation"
+    promotionWriteSemantics: "record skip or failure; do not claim write success"
+    requiredEvidence: "write_status and denial_codes in promotion output or replay scorecard"
 observability:
   teamMetrics:
     requiredFields:

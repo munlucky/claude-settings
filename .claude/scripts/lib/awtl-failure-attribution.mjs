@@ -42,6 +42,10 @@ function eventSourceActionId(event = {}) {
   return toText(event?.payload?.source_action_id ?? event?.payload?.sourceActionId ?? event?.action_id ?? event?.actionId, '');
 }
 
+function eventTurnId(event = {}) {
+  return toText(event?.turn_id ?? event?.turnId ?? event?.payload?.turn_id ?? event?.payload?.turnId, '');
+}
+
 function eventActionIds(event = {}) {
   const ids = [];
   const sourceActionId = eventSourceActionId(event);
@@ -265,6 +269,7 @@ export function buildFailureAttribution(events = [], failureEvent = {}, options 
   const orderedEvents = sortByEventOrder(events);
   const failureIndex = findFailureIndex(orderedEvents, failureEvent);
   const failedArtifactRefs = uniqueStrings(eventArtifactRefs(failureEvent, repoRoot));
+  const failureTurnId = eventTurnId(failureEvent);
   const matchingActions = collectMatchingActions(orderedEvents, failureIndex, failedArtifactRefs, repoRoot);
   const sourceActionIds = [];
   const evidenceRefs = new Set();
@@ -276,6 +281,9 @@ export function buildFailureAttribution(events = [], failureEvent = {}, options 
 
   for (const ref of failedArtifactRefs) {
     evidenceRefs.add(ref);
+  }
+  if (failureTurnId) {
+    evidenceRefs.add(`trace:turn:${failureTurnId}`);
   }
 
   const matchingActionIds = matchingActions
@@ -330,6 +338,7 @@ export function buildFailureAttribution(events = [], failureEvent = {}, options 
     failureIndex,
     traceId: toText(options.traceId ?? options.trace_id ?? '', ''),
     runId: toText(options.runId ?? failureEvent?.run_id ?? '', ''),
+    failureTurnId,
     failedArtifactRefs,
     sourceActionIds,
     verifierActionId,

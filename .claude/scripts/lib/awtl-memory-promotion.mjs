@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { assertMemoryCandidate, validateMemoryCandidate } from './awtl-memory-candidate.mjs';
@@ -9,6 +10,8 @@ import { assessReplayProbeManifest, buildReplayProbeManifest, readReplayProbeMan
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
+const DIRECT_MEMORYGRAPH_SCRIPT = path.join(REPO_ROOT, '.claude/scripts/memorygraph-direct.mjs');
+const DEFAULT_REPLAY_SCORECARD_PATH = path.join(REPO_ROOT, '.claude/cache/awtl/replay_scorecard.jsonl');
 
 const BLOCKED_PROMOTION_TAGS = new Set(['imported-only', 'transcript-only', 'raw-trace', 'trace-only']);
 const BLOCKED_FAILURE_CLASSES = new Set(['environment', 'flaky', 'harness']);
@@ -83,9 +86,17 @@ function isImportedOnlyCandidate(candidate = {}) {
     candidate.sourceEventType,
     candidate.source_kind,
     candidate.sourceKind,
+    ...(candidate?.proposed_memory?.tags ?? []),
+    ...(candidate?.promotion_tags ?? []),
+    ...(candidate?.tags ?? []),
   ];
 
   if (directFlags.some((value) => value === true)) {
+    return true;
+  }
+
+  const directText = directFlags.map((value) => toText(value, '').toLowerCase()).join(' ');
+  if (/\b(imported-only|imported only|transcript-only|transcript only|raw trace|trace-only|trace only)\b/.test(directText)) {
     return true;
   }
 
@@ -112,6 +123,66 @@ function candidateFailureBlocked(candidate = {}) {
   return BLOCKED_FAILURE_CLASSES.has(failureClass);
 }
 
+function buildDenialCodes({
+  validation = { ok: true, errors: [] },
+  blockedTags = [],
+  importedOnly = false,
+  replayAssessment = { ok: false, status: 'needs_more_evidence', blocking_reasons: [] },
+  approval = { approved: false },
+  memoryGraphStatus = 'available',
+  candidate = {},
+}) {
+  const codes = [];
+
+  if (!validation.ok) {
+    codes.push('invalid_candidate');
+  }
+  if (candidateFailureBlocked(candidate)) {
+    const failureClass = toText(candidate.failure_class, 'unknown').toLowerCase();
+    codes.push(failureClass ? `blocked_failure_class:${failureClass}` : 'blocked_failure_class');
+  }
+  if (blockedTags.length > 0) {
+    codes.push('blocked_promotion_tag');
+  }
+  if (importedOnly) {
+    codes.push('imported_only');
+  }
+
+  if (!approval.approved && !replayAssessment.ok) {
+    codes.push('replay_or_approval_required');
+  }
+
+  if (replayAssessment.status === 'blocked') {
+    const worsened = Array.isArray(replayAssessment.blocking_reasons)
+      && replayAssessment.blocking_reasons.some((reason) => /worsened|regress|failed|blocked/i.test(reason));
+    codes.push(worsened ? 'replay_regression_worsened' : 'replay_blocked');
+  } else if (replayAssessment.status === 'needs_more_evidence') {
+    codes.push('replay_needs_more_evidence');
+  }
+
+  if (memoryGraphStatus === 'unavailable') {
+    codes.push('memorygraph_unavailable');
+  }
+
+  return uniqueStrings(codes);
+}
+
+function compactProvenance(candidate = {}, options = {}) {
+  const appliesTo = uniqueStrings(options.appliesTo ?? candidate?.scope?.artifact_refs ?? []);
+  const doesNotApplyTo = uniqueStrings(options.doesNotApplyTo ?? blockedPromotionTags(candidate));
+  const validatedBy = toText(options.validatedBy ?? candidate.validated_by ?? 'replay', 'replay');
+  const lastValidatedAt = toText(options.lastValidatedAt ?? candidate.last_validated_at ?? candidate.created_at ?? new Date().toISOString(), new Date().toISOString());
+  const originTurn = toText(options.originTurn ?? candidate.failure_turn_id ?? candidate?.scope?.failure_turn_id ?? candidate?.scope?.turn_id, '');
+
+  return {
+    origin_turn: originTurn,
+    applies_to: appliesTo,
+    does_not_apply_to: doesNotApplyTo,
+    validated_by: validatedBy,
+    last_validated_at: lastValidatedAt,
+  };
+}
+
 function buildProvenanceTags(candidate = {}, options = {}) {
   const projectId = toText(options.projectId ?? candidate.project_id ?? candidate.projectId ?? 'claude-settings', 'claude-settings');
   const runId = toText(options.runId ?? candidate.run_id ?? candidate.runId, '');
@@ -131,11 +202,13 @@ function buildProvenanceTags(candidate = {}, options = {}) {
 export function buildCompactFact(candidate = {}, options = {}) {
   const proposed = isPlainObject(candidate.proposed_memory) ? candidate.proposed_memory : {};
   const tags = buildProvenanceTags(candidate, options);
+  const provenance = compactProvenance(candidate, options);
 
   return {
     summary: toText(proposed.summary ?? candidate.root_cause_summary, ''),
     facts: uniqueStrings(Array.isArray(proposed.facts) ? proposed.facts : []),
     tags,
+    ...provenance,
   };
 }
 
@@ -205,6 +278,15 @@ export function evaluatePromotionGate(candidate = {}, options = {}) {
     reasons.push('MemoryGraph unavailable');
   }
 
+  const denialCodes = buildDenialCodes({
+    validation,
+    blockedTags,
+    importedOnly: isImportedOnlyCandidate(candidate),
+    replayAssessment,
+    approval,
+    memoryGraphStatus,
+    candidate,
+  });
   const blocked = reasons.length > 0;
   const gateStatus = blocked ? 'blocked' : 'ready_for_promotion';
   const workflowBlocking = !memoryGraphUnavailable && blocked;
@@ -219,6 +301,7 @@ export function evaluatePromotionGate(candidate = {}, options = {}) {
     approval,
     replay_assessment: replayAssessment,
     memory_graph_status: memoryGraphStatus,
+    denial_codes: denialCodes,
   };
 }
 
@@ -230,7 +313,11 @@ export function buildPromotionOutput(candidate = {}, options = {}) {
     origin: 'awtl',
     origin_run: toText(options.runId ?? candidate.run_id ?? candidate.runId, ''),
     origin_candidate: toText(options.candidateId ?? candidate.candidate_id ?? candidate.candidateId, ''),
+    origin_turn: toText(options.originTurn ?? candidate.failure_turn_id ?? candidate?.scope?.failure_turn_id ?? candidate?.scope?.turn_id, ''),
+    applies_to: uniqueStrings(options.appliesTo ?? candidate?.scope?.artifact_refs ?? []),
+    does_not_apply_to: uniqueStrings(options.doesNotApplyTo ?? blockedPromotionTags(candidate)),
     validated_by: toText(options.validatedBy ?? (gate.replay_assessment?.ok ? 'replay' : 'human_approval'), 'replay'),
+    last_validated_at: toText(options.lastValidatedAt ?? candidate.last_validated_at ?? candidate.created_at ?? new Date().toISOString(), new Date().toISOString()),
     memory_graph_status: gate.memory_graph_status,
   };
 
@@ -245,14 +332,20 @@ export function buildPromotionOutput(candidate = {}, options = {}) {
       runId: provenance.origin_run,
       candidateId: provenance.origin_candidate,
       validatedBy: provenance.validated_by,
+      originTurn: provenance.origin_turn,
+      appliesTo: provenance.applies_to,
+      doesNotApplyTo: provenance.does_not_apply_to,
+      lastValidatedAt: provenance.last_validated_at,
     }),
     provenance,
     replay: gate.replay_assessment,
     approval: gate.approval,
+    denial_codes: gate.denial_codes,
     memory_graph: {
       status: gate.memory_graph_status,
-      write_status: gate.ok && gate.memory_graph_status === 'available' ? 'not_implemented' : 'skipped',
+      write_status: gate.ok && gate.memory_graph_status === 'available' ? 'not_requested' : 'skipped',
       unrelated_workflow_blocked: gate.workflow_blocking,
+      denial_codes: gate.denial_codes,
     },
     raw_trace_included: false,
   };
@@ -261,6 +354,127 @@ export function buildPromotionOutput(candidate = {}, options = {}) {
 export function promoteMemoryCandidate(candidate = {}, options = {}) {
   const checked = assertMemoryCandidate(candidate);
   return buildPromotionOutput(checked, options);
+}
+
+function memoryGraphStorePayload(output = {}) {
+  const compactFact = output.compact_fact ?? {};
+  const provenance = output.provenance ?? {};
+  return {
+    type: 'general',
+    title: toText(compactFact.summary ?? output.candidate_id ?? 'memory promotion', 'memory promotion'),
+    content: JSON.stringify({
+      candidate_id: output.candidate_id ?? '',
+      run_id: output.run_id ?? '',
+      trace_id: output.trace_id ?? '',
+      summary: compactFact.summary ?? '',
+      facts: compactFact.facts ?? [],
+      tags: compactFact.tags ?? [],
+      provenance,
+      denial_codes: output.denial_codes ?? [],
+      gate_status: output.status ?? '',
+    }, null, 2),
+    summary: toText(compactFact.summary ?? '', ''),
+    tags: uniqueStrings([
+      ...(compactFact.tags ?? []),
+      `promotion_status:${toText(output.status ?? '', 'unknown')}`,
+    ]),
+    importance: 0.75,
+    context: {
+      candidate_id: output.candidate_id ?? '',
+      run_id: output.run_id ?? '',
+      trace_id: output.trace_id ?? '',
+      memory_graph_status: provenance.memory_graph_status ?? '',
+      denial_codes: output.denial_codes ?? [],
+      provenance,
+    },
+  };
+}
+
+export function attemptMemoryGraphWrite(output = {}, options = {}) {
+  if (!output || output.status !== 'promotable') {
+    return {
+      attempted: false,
+      status: 'skipped',
+      denial_codes: uniqueStrings([...(output?.denial_codes ?? []), 'candidate_not_promotable']),
+      memory_graph_status: output?.memory_graph?.status ?? 'available',
+      message: 'candidate is not promotable',
+    };
+  }
+
+  const payload = memoryGraphStorePayload(output);
+  const result = spawnSync(process.execPath, [
+    DIRECT_MEMORYGRAPH_SCRIPT,
+    'call',
+    'store_memory',
+    '--args-json',
+    JSON.stringify(payload),
+  ], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+    timeout: Number(options.timeoutMs ?? 30000),
+  });
+
+  const stdout = toText(result.stdout, '');
+  const stderr = toText(result.stderr, '');
+  const errorText = result.error ? toText(result.error.message ?? result.error, '') : '';
+  const combined = uniqueStrings([stdout, stderr, errorText]).join('\n');
+  const unavailable = /memorygraph command not found|health check failed|command not found|Unable to create process/i.test(combined);
+
+  if (result.status === 0) {
+    return {
+      attempted: true,
+      status: 'written',
+      memory_graph_status: output?.memory_graph?.status ?? 'available',
+      result_text: stdout,
+    };
+  }
+
+  return {
+    attempted: true,
+    status: unavailable ? 'unavailable' : 'failed',
+    memory_graph_status: unavailable ? 'unavailable' : (output?.memory_graph?.status ?? 'available'),
+    denial_codes: uniqueStrings([
+      ...(output?.denial_codes ?? []),
+      unavailable ? 'memorygraph_unavailable' : 'memorygraph_store_failed',
+    ]),
+    error: combined,
+    result_text: stdout,
+  };
+}
+
+export function executePromotionFlow(candidate = {}, options = {}) {
+  const output = options.replayManifest || options.replayAssessment
+    ? promoteMemoryCandidate(candidate, options)
+    : buildPromotionOutput(assertMemoryCandidate(candidate), options);
+
+  const shouldWrite = options.writeMemoryGraph === true && toText(options.autoPromote, 'verified-only') === 'verified-only';
+  if (!shouldWrite) {
+    return {
+      ...output,
+      memory_graph: {
+        ...output.memory_graph,
+        write_status: output.status === 'promotable' ? 'not_requested' : 'skipped',
+      },
+    };
+  }
+
+  const writeResult = attemptMemoryGraphWrite(output, options);
+  const finalStatus = writeResult.status === 'written' ? output.status : 'blocked';
+  return {
+    ...output,
+    status: finalStatus,
+    denial_codes: uniqueStrings([...(output.denial_codes ?? []), ...(writeResult.denial_codes ?? [])]),
+    memory_graph: {
+      ...output.memory_graph,
+      status: writeResult.memory_graph_status ?? output.memory_graph.status,
+      write_status: writeResult.status,
+      write_result: writeResult.result_text ?? '',
+      write_attempted: writeResult.attempted,
+      denial_codes: uniqueStrings([...(output.memory_graph?.denial_codes ?? []), ...(writeResult.denial_codes ?? [])]),
+    },
+  };
 }
 
 export function readCandidateFromJsonText(text = '') {

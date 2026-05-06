@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { fileExists, readTextLines, walkFiles } from './lib/fs-utils.mjs';
 import { collectGitStatusPaths, isInsideGitWorkTree } from './lib/git-utils.mjs';
+import { runCommand } from './lib/process-utils.mjs';
 import { printLines } from './lib/logging.mjs';
 
 const MAX_FILE_LINES = Number.parseInt(process.env.VERIFY_CODE_POLICY_MAX_FILE_LINES ?? '800', 10);
@@ -27,6 +28,10 @@ const SKIP_SUFFIXES = [
   '.min.js', '.min.cjs', '.min.mjs', '.bundle.js', '.generated.js',
   '.generated.ts', '.generated.tsx',
 ];
+const FORBIDDEN_TRACE_PATH_PATTERNS = [
+  /(^|[\\/])\.claude[\\/]\.claude[\\/]traces([\\/]|$)/i,
+  /(^|[\\/])\.claude[\\/]traces([\\/]|$)/i,
+];
 
 const consoleLogPattern = /\bconsole\.log\s*\(/;
 const todoPattern = /\b(TODO|FIXME)\b/i;
@@ -34,6 +39,18 @@ const issueRefPattern = /(#\d+|[A-Z][A-Z0-9]+-\d+|https?:\/\/|issue[: -]?\d+|gh-
 
 function normalizePath(filePath) {
   return filePath.replaceAll(path.sep, '/').replace(/^\.\//, '');
+}
+
+function collectTrackedTracePaths(cwd = process.cwd()) {
+  const result = runCommand('git', ['ls-files', '--', '.claude/.claude/traces', '.claude/traces'], { cwd });
+  if (result.status !== 0) {
+    return [];
+  }
+
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function shouldSkip(filePath) {
@@ -55,6 +72,11 @@ function isSupported(filePath) {
 
 function isConsoleLogTarget(filePath) {
   return CONSOLE_LOG_SUFFIXES.has(path.extname(filePath).toLowerCase());
+}
+
+function hasForbiddenTracePath(filePath) {
+  const normalized = normalizePath(filePath);
+  return FORBIDDEN_TRACE_PATH_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 function hasTodoComment(line) {
@@ -104,29 +126,41 @@ function isBaselined(rule, filePath, baseline) {
 }
 
 function collectCandidateFiles(argv) {
-  if (process.env.VERIFY_CODE_POLICY_FILES) {
-    return process.env.VERIFY_CODE_POLICY_FILES.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  }
-
-  if (argv.length > 0) {
-    return argv.map((value) => value.trim()).filter(Boolean);
+  const candidates = [];
+  if (process.env.VERIFY_CODE_POLICY_FILES?.trim()) {
+    candidates.push(
+      ...process.env.VERIFY_CODE_POLICY_FILES.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+    );
+  } else if (argv.length > 0) {
+    candidates.push(...argv.map((value) => value.trim()).filter(Boolean));
   }
 
   if (isInsideGitWorkTree()) {
-    return collectGitStatusPaths();
+    candidates.push(...collectGitStatusPaths(), ...collectTrackedTracePaths());
+  } else if (candidates.length === 0) {
+    return walkFiles('.', { skipDirs: SKIP_PARTS }).map((filePath) => normalizePath(filePath));
   }
 
-  return walkFiles('.', { skipDirs: SKIP_PARTS }).map((filePath) => normalizePath(filePath));
+  return [...new Set(candidates.map((filePath) => normalizePath(filePath)))];
 }
 
 function collectViolations(files) {
   const baseline = loadBaseline();
+  const trackedTracePaths = new Set(collectTrackedTracePaths().map((filePath) => normalizePath(filePath)));
   const checkedFiles = [];
   const violations = [];
 
   for (const rawPath of files) {
     const filePath = rawPath.trim();
+    const normalizedPath = normalizePath(filePath);
     if (!filePath || !fileExists(filePath)) {
+      if (hasForbiddenTracePath(filePath) && trackedTracePaths.has(normalizedPath)) {
+        violations.push(`[forbidden-trace-path] ${normalizedPath}`);
+      }
+      continue;
+    }
+    if (hasForbiddenTracePath(filePath)) {
+      violations.push(`[forbidden-trace-path] ${normalizedPath}`);
       continue;
     }
     if (shouldSkip(filePath) || !isSupported(filePath)) {
@@ -167,11 +201,6 @@ if (candidateFiles.length === 0) {
 
 const { checkedFiles, violations } = collectViolations(candidateFiles);
 
-if (checkedFiles.length === 0) {
-  printLines(['Code policy check: no supported changed code files found']);
-  process.exit(0);
-}
-
 printLines([
   'Code Policy Check',
   `Checked files: ${checkedFiles.length}`,
@@ -184,6 +213,11 @@ if (violations.length > 0) {
     ...violations.map((item) => `- ${item}`),
   ]);
   process.exit(1);
+}
+
+if (checkedFiles.length === 0) {
+  printLines(['Code policy check: no supported changed code files found']);
+  process.exit(0);
 }
 
 printLines(['Violations: 0']);

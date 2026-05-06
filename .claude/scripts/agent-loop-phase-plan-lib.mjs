@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { activeWorkspaceContract } from './lib/runtime-platform.mjs';
+import { buildFailurePreventionBriefSection } from './lib/awtl-failure-prevention-brief.mjs';
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
 import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
@@ -752,6 +753,26 @@ export function buildPhasePrompt(config) {
   } = config;
 
   const demoFirst = detectDemoFirstMethodology(phaseTitle, phaseDoc);
+  const failurePreventionBriefSection = buildFailurePreventionBriefSection(
+    {
+      scope: 'next-run recall',
+      phaseNumber: String(nextPhase),
+      phaseTitle,
+      phaseDocPath: phaseDoc,
+      planDir,
+      stage: 'execute',
+      artifactRefs: [
+        phaseDoc,
+        paths.phaseSprintContract,
+        paths.phaseQaReport,
+        paths.phaseHandoff,
+        paths.phaseScorecard,
+      ],
+    },
+    {
+      cachePath: path.join(workspaceRoot, '.claude/cache/awtl/failed_turn_cases.jsonl'),
+    },
+  );
   const demoFirstPromptRules = demoFirst.enabled ? `
 Demo-first MVP gate rules:
 - This phase uses mvpMethodology.profile=demo_first, sliceId=${demoFirst.sliceId}, maturityTarget=${demoFirst.maturityTarget}.
@@ -806,6 +827,9 @@ executionArtifacts:
   scorecardPath: "${paths.phaseScorecard}"
   worksetsPath: "${paths.phaseWorksets}"
   verificationVerdictGlob: ".claude/verification-verdict-*.json"
+${failurePreventionBriefSection ? `
+${failurePreventionBriefSection.split('\n').map((line) => `  ${line}`).join('\n')}
+` : ''}
 
 Single isolated phase-attempt rules:
 - Treat this run as one isolated phase attempt only.

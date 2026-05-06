@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "2",
+  "script": "phase06-final-closeout",
+  "runId": "phase06-final-20260506",
+  "phase": {
+    "number": 6,
+    "title": "Phase 06: Regression Contract And Docs Sync (v1)",
+    "activePhaseDocPath": "docs/implementation/turn-failure-prevention-harness-2026-05-06/close/06-regression-contract-docs-sync-v1.md"
+  },
+  "contract": {
+    "applicable": true,
+    "verificationMode": "contract"
+  },
+  "contractApplicable": true,
+  "verificationMode": "contract",
+  "mode": "phase-closeout",
+  "verdict": "passed",
+  "evidenceFresh": true,
+  "requiredChecks": {
+    "expected": [
+      "awtlRegression",
+      "awtlFailurePreventionRegression",
+      "syntax",
+      "knowledgeAudit",
+      "codePolicy",
+      "workflowEnforcement",
+      "phaseRunnerBoundary",
+      "phaseWorktreeParallel",
+      "memoryGraphHealth",
+      "runtimeParity",
+      "planConformance",
+      "phaseCloseout"
+    ],
+    "passed": [
+      "awtlRegression",
+      "awtlFailurePreventionRegression",
+      "syntax",
+      "knowledgeAudit",
+      "codePolicy",
+      "workflowEnforcement",
+      "phaseRunnerBoundary",
+      "phaseWorktreeParallel",
+      "memoryGraphHealth",
+      "runtimeParity",
+      "planConformance",
+      "phaseCloseout"
+    ],
+    "missing": []
+  },
+  "changedFiles": [],
+  "commands": [
+    {
+      "name": "awtlRegression",
+      "run": "node --test AWTL regression suite",
+      "status": "passed"
+    },
+    {
+      "name": "awtlFailurePreventionRegression",
+      "run": "node --test failure prevention suite",
+      "status": "passed"
+    },
+    {
+      "name": "knowledgeAudit",
+      "run": "bash .claude/scripts/knowledge-repo-audit.sh",
+      "status": "passed"
+    },
+    {
+      "name": "codePolicy",
+      "run": "bash .claude/scripts/verify-code-policy.sh",
+      "status": "passed"
+    },
+    {
+      "name": "workflowEnforcement",
+      "run": "bash .claude/scripts/workflow-enforcement.sh verify",
+      "status": "passed"
+    },
+    {
+      "name": "phaseCloseout",
+      "run": "node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir docs/implementation/turn-failure-prevention-harness-2026-05-06 --master-plan docs/implementation/turn-failure-prevention-harness-2026-05-06/00-master-plan-v1.md",
+      "status": "passed"
+    }
+  ],
+  "workflowEvidence": {
+    "selectedBundles": [
+      "ready-isolate-bundle",
+      "implementation-bundle",
+      "review-bundle",
+      "verification-bundle",
+      "finish-bundle"
+    ],
+    "stageOrder": [
+      "ready",
+      "execute",
+      "review",
+      "verify",
+      "finish"
+    ],
+    "effortEscalationReason": "",
+    "selectedModelProvider": "openai",
+    "selectedModel": "gpt-5.4-mini",
+    "selectedModelEffort": "medium",
+    "modelSelectionReason": "stage=phase_implementation; profile=standard",
+    "retrievalBudget": "",
+    "validationProfile": "workflow_core",
+    "phaseReplayPolicy": "",
+    "warnings": []
+  },
+  "runtimeContext": {
+    "requestedRuntime": "codex",
+    "effectiveRuntime": "codex",
+    "fallbackReason": "",
+    "verificationRuntimeTargets": "codex"
+  },
+  "verdictScope": "phase_closeout",
+  "blockerClass": "",
+  "blockerFingerprint": "0a243b6dd67b0111",
+  "environmentFingerprint": "e88acb91257fded3",
+  "artifactFingerprint": "f13c5e66836f2a11",
+  "supersedes": [],
+  "supersededBy": "",
+  "staleWhen": [],
+  "stale": false,
+  "failureClass": "",
+  "blocking": false,
+  "blockingReasonCode": "",
+  "score": {
+    "detected": true,
+    "current": 100,
+    "target": 100,
+    "unmetChecklistItems": 0,
+    "unmetItems": 0,
+    "blockingDefects": 0,
+    "verdict": "done"
+  },
+  "generatedAt": "2026-05-06T14:54:00Z"
+}

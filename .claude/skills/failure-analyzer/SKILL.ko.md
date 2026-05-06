@@ -21,6 +21,7 @@ surfaceStatus: internal_stage_owner
 - `readiness_gate_missing`
 - `verification_contract_missing`
 - `correction_lesson`
+- `failed_turn_prevention_gap`
 
 ## Systematic Debugging 규칙
 
@@ -30,6 +31,8 @@ surfaceStatus: internal_stage_owner
 - 세 번 실패하면 local fix를 계속하지 말고 design/contract review로 승격합니다.
 - 사용자 correction은 단발 선호와 재사용 가능한 workflow 실수로 구분한 뒤 durable rule/skill 변경 여부를 판단합니다.
 - 재사용 가능한 correction lesson은 짧게 기록하고, 모든 correction을 새 규칙으로 만들지는 않습니다.
+- capture된 실패에 turn id가 있으면 output에 `failure_turn_id`를 유지하고 raw trace payload 대신 redacted evidence ref를 인용합니다.
+- replay scorecard가 stale, risky, denied, unverified로 표시한 prevention hint는 재사용하지 않습니다.
 
 ## 분석 흐름
 1. 로그에서 실패 신호를 읽는다.
@@ -39,6 +42,7 @@ surfaceStatus: internal_stage_owner
 5. 어떤 파일/규칙/스킬/계약을 고쳐야 하는지 찾는다.
 6. 반복 실패라면 다른 tactic을 제안한다.
 7. 사용자 correction이 trigger였다면 재사용 가능 여부, 기록 위치, rule/skill 변경 필요 여부를 판단한다.
+8. turn-scoped 실패라면 capture, failed turn case 생성, next-run brief matching, MemoryGraph promotion policy 중 어디를 고쳐야 하는지 지정한다.
 
 ## 출력 필드
 
@@ -57,6 +61,11 @@ failureReport:
     logTarget: "analysisContext.notes"
     durableTarget: ".claude/docs/solutions/"
     ruleOrSkillChangeJustified: true
+  turnFailure:
+    failure_turn_id: "turn-phase05-attempt01"
+    failedTurnCasePath: ".claude/cache/awtl/failed_turn_cases.jsonl"
+    preventionHintTarget: "phase-runner failure prevention brief"
+    replayScorecardStatus: "verified|denied|stale|risky|not_checked"
 ```
 
 ## 개선 타겟

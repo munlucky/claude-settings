@@ -11,6 +11,7 @@
     "run_id",
     "trace_id",
     "failure_event_id",
+    "failure_turn_id",
     "source_action_ids",
     "failure_type",
     "failure_class",
@@ -48,6 +49,18 @@
     "failure_event_id": {
       "type": "string",
       "minLength": 1
+    },
+    "failure_turn_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "validated_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "last_validated_at": {
+      "type": "string",
+      "format": "date-time"
     },
     "source_action_ids": {
       "type": "array",
@@ -114,6 +127,7 @@
         "run_id",
         "trace_id",
         "failure_event_id",
+        "failure_turn_id",
         "artifact_refs"
       ],
       "properties": {
@@ -126,6 +140,10 @@
           "minLength": 1
         },
         "failure_event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure_turn_id": {
           "type": "string",
           "minLength": 1
         },
@@ -203,6 +221,27 @@
     },
     "promotion_blocker_reason": {
       "type": "string"
+    },
+    "denial_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "applies_to": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "does_not_apply_to": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "promotion_tags": {
       "type": "array",

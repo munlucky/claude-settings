@@ -167,6 +167,7 @@ function buildScope(attribution, options = {}) {
     run_id: toText(options.runId ?? attribution?.runId ?? attribution?.failureEvent?.run_id, ''),
     trace_id: toText(options.traceId ?? attribution?.traceId ?? '', ''),
     failure_event_id: toText(attribution?.failureEvent?.event_id, ''),
+    failure_turn_id: toText(options.failureTurnId ?? attribution?.failureTurnId ?? attribution?.failureEvent?.turn_id ?? attribution?.failureEvent?.turnId, ''),
     span_id: attribution?.failureEvent?.span_id ?? null,
     artifact_refs: uniqueStrings(attribution?.failedArtifactRefs ?? []),
     memory_read_node_ids: uniqueStrings(attribution?.memoryReadNodeIds ?? []),
@@ -177,6 +178,12 @@ function buildEvidenceRefs(attribution = {}) {
   const evidence = new Set();
   if (attribution?.failureEvent?.event_id) {
     evidence.add(`trace:event:${attribution.failureEvent.event_id}`);
+  }
+  if (toText(attribution?.failureTurnId, '')) {
+    evidence.add(`trace:turn:${attribution.failureTurnId}`);
+  }
+  for (const ref of attribution?.evidenceRefs ?? []) {
+    evidence.add(toText(ref, ''));
   }
   for (const ref of attribution?.failedArtifactRefs ?? []) {
     evidence.add(ref);
@@ -208,6 +215,7 @@ export function buildMemoryCandidate(attribution = {}, options = {}) {
     throw new Error('attribution.failureEvent is required');
   }
 
+  const failureTurnId = toText(options.failureTurnId ?? attribution.failureTurnId ?? attribution.failureEvent.turn_id ?? attribution.failureEvent.turnId, '');
   const classification = deriveFailureClassification(attribution.failureEvent);
   const confidence = computeConfidence(attribution, classification);
   const promotion = promotionOutcome(classification, confidence);
@@ -218,6 +226,7 @@ export function buildMemoryCandidate(attribution = {}, options = {}) {
       run_id: toText(options.runId ?? attribution.runId ?? attribution.failureEvent.run_id, ''),
       trace_id: toText(options.traceId ?? attribution.traceId ?? '', ''),
       failure_event_id: toText(attribution.failureEvent.event_id, ''),
+      failure_turn_id: failureTurnId,
       source_action_ids: uniqueStrings(attribution.sourceActionIds ?? []),
       evidence_refs: uniqueStrings(buildEvidenceRefs(attribution)),
       failure_class: classification.failure_class,
@@ -227,6 +236,7 @@ export function buildMemoryCandidate(attribution = {}, options = {}) {
     run_id: toText(options.runId ?? attribution.runId ?? attribution.failureEvent.run_id, ''),
     trace_id: toText(options.traceId ?? attribution.traceId ?? '', ''),
     failure_event_id: toText(attribution.failureEvent.event_id, ''),
+    failure_turn_id: failureTurnId,
     failure_code: failureClassifier.code,
     failure_category: failureClassifier.category,
     source_action_ids: uniqueStrings(attribution.sourceActionIds ?? []),
@@ -281,6 +291,9 @@ export function validateMemoryCandidate(candidate = {}) {
   if (typeof candidate.failure_event_id !== 'string' || candidate.failure_event_id.length === 0) {
     errors.push('failure_event_id must be a non-empty string');
   }
+  if (typeof candidate.failure_turn_id !== 'string' || candidate.failure_turn_id.length === 0) {
+    errors.push('failure_turn_id must be a non-empty string');
+  }
   if (!Array.isArray(candidate.source_action_ids) || candidate.source_action_ids.length === 0 || candidate.source_action_ids.some((value) => typeof value !== 'string' || value.length === 0)) {
     errors.push('source_action_ids must be a non-empty array of strings');
   }
@@ -318,6 +331,9 @@ export function validateMemoryCandidate(candidate = {}) {
     if (typeof candidate.scope.failure_event_id !== 'string' || candidate.scope.failure_event_id.length === 0) {
       errors.push('scope.failure_event_id must be a non-empty string');
     }
+    if (typeof candidate.scope.failure_turn_id !== 'string' || candidate.scope.failure_turn_id.length === 0) {
+      errors.push('scope.failure_turn_id must be a non-empty string');
+    }
     if (!Array.isArray(candidate.scope.artifact_refs) || candidate.scope.artifact_refs.length === 0) {
       errors.push('scope.artifact_refs must be a non-empty array');
     }
@@ -352,6 +368,21 @@ export function validateMemoryCandidate(candidate = {}) {
   }
   if (candidate.promotion_status === 'blocked' && typeof candidate.promotion_blocker_reason !== 'string' && candidate.promotion_blocker_reason !== null) {
     errors.push('promotion_blocker_reason must be a string when blocked');
+  }
+  if ('denial_codes' in candidate && (!Array.isArray(candidate.denial_codes) || candidate.denial_codes.some((value) => typeof value !== 'string' || value.length === 0))) {
+    errors.push('denial_codes must be an array of non-empty strings when present');
+  }
+  if ('applies_to' in candidate && (!Array.isArray(candidate.applies_to) || candidate.applies_to.some((value) => typeof value !== 'string' || value.length === 0))) {
+    errors.push('applies_to must be an array of non-empty strings when present');
+  }
+  if ('does_not_apply_to' in candidate && (!Array.isArray(candidate.does_not_apply_to) || candidate.does_not_apply_to.some((value) => typeof value !== 'string' || value.length === 0))) {
+    errors.push('does_not_apply_to must be an array of non-empty strings when present');
+  }
+  if ('validated_by' in candidate && (typeof candidate.validated_by !== 'string' || candidate.validated_by.length === 0)) {
+    errors.push('validated_by must be a non-empty string when present');
+  }
+  if ('last_validated_at' in candidate && (typeof candidate.last_validated_at !== 'string' || Number.isNaN(Date.parse(candidate.last_validated_at)))) {
+    errors.push('last_validated_at must be an RFC 3339 date-time string when present');
   }
 
   return {

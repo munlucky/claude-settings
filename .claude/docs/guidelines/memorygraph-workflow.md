@@ -12,6 +12,7 @@ Use this contract for every public workflow entrypoint and every Moonshot stage 
 - Build and refresh project-local knowledge graphs only on explicit refresh, finish/session logging, or commit-memory flow.
 - Promote reusable cross-project knowledge into the harness graph only through an approval-based promotion path.
 - Phase 05 adds a replay gate before harness-memory-promoter: a candidate must have replay evidence or human approval, and transcript-only/imported-only candidates stay blocked.
+- Turn-failure prevention memory is two-tiered: failed turn cases can feed local prevention briefs, while MemoryGraph writes require verified replay or explicit human approval.
 
 ## Stage Coverage
 
@@ -48,6 +49,11 @@ Reusable project knowledge can be promoted into the `claude-settings` graph, but
 - MemoryGraph unavailable must not block unrelated workflows, but the promotion operation itself still reports failure or blockage.
 - Promoted tags include `project:claude-settings`, `promoted`, `from-project:<projectId>`, and `source:moonshot`.
 - Do not promote project domain/business logic, one-off implementation details, secrets, or facts derived only from `.claude/docs/ko/`.
+- AWTL promotion candidates must include `failure_turn_id` when derived from a failed turn.
+- Candidates created only from imported transcripts or raw trace replay are denied until replay evidence or human approval exists.
+- Direct MemoryGraph writes are only valid with `writeMemoryGraph: true` and `autoPromote: verified-only`.
+- Promotion attempts must append replay scorecard entries with `write_status`, `denial_codes`, and compact provenance.
+- `write_status: skipped`, `not_requested`, or `memorygraph_unavailable` is not a workflow completion failure unless the phase objective is strict memory validation.
 
 ## Dedupe Policy
 
@@ -75,6 +81,7 @@ Do not copy raw memory text into `analysisContext`. Return only stage-specific d
 
 - Default stage mode is `memoryMode: read_only`.
 - Use `memoryMode: write_requested` only in `session-logger`, `commit-moonshot`, or an explicit memory-refresh request.
+- Use `memoryMode: verified_write_requested` only for approved harness-memory-promoter flows that already passed replay or human approval.
 - Do not store generic harness rules, system prompt facts, or facts derived only from `.claude/docs/ko/`.
 - If MemoryGraph is unavailable, set `boundaryStatus: not_checked` or add a warning and continue the workflow.
 - In `commit-moonshot`, `Transport closed` is classified as `mcp_transport_failed -> direct_fallback`; direct fallback success completes memory refresh, and direct fallback failure is logged without blocking an explicit Git closeout.

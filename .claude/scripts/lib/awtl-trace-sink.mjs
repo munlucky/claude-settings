@@ -10,8 +10,9 @@ import { assertAwtlEvent, validateAwtlEvent } from './awtl-event-schema.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
+const EXPECTED_TRACE_ROOT = path.resolve(REPO_ROOT, '.claude/traces');
 
-export const DEFAULT_TRACE_ROOT = path.join(REPO_ROOT, '.claude/traces');
+export const DEFAULT_TRACE_ROOT = EXPECTED_TRACE_ROOT;
 export const DEFAULT_TRACE_FILE = 'agent_work_trace.jsonl';
 export const DEFAULT_JUDGE_RESULT_FILE = 'judge_result.jsonl';
 export const DEFAULT_QUARANTINE_FILE = 'agent_work_trace.quarantine.jsonl';
@@ -116,6 +117,38 @@ function compareStrings(left, right) {
   return String(left ?? '').localeCompare(String(right ?? ''));
 }
 
+function normalizeAbsolutePath(filePath) {
+  return path.resolve(filePath).replace(/[\\/]+$/, '');
+}
+
+function isWithinDirectory(parentDir, childPath) {
+  const relative = path.relative(parentDir, childPath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function assertExpectedTraceRoot(traceRoot) {
+  const resolvedRoot = normalizeAbsolutePath(traceRoot);
+  const expectedRoot = normalizeAbsolutePath(EXPECTED_TRACE_ROOT);
+  if (resolvedRoot !== expectedRoot) {
+    throw new Error(`Invalid trace root: ${traceRoot}. Expected repo-root trace root ${EXPECTED_TRACE_ROOT}`);
+  }
+  return resolvedRoot;
+}
+
+function assertSafeTraceId(traceId) {
+  const value = String(traceId ?? '').trim();
+  if (!value) {
+    throw new Error('Invalid trace id: empty value');
+  }
+  if (path.isAbsolute(value) || value.includes('..') || value.includes('/') || value.includes('\\')) {
+    throw new Error(`Invalid trace id: ${traceId}. Trace ids must be a single path segment under ${EXPECTED_TRACE_ROOT}`);
+  }
+  if (path.normalize(value) !== value) {
+    throw new Error(`Invalid trace id: ${traceId}. Trace ids must be a single normalized path segment under ${EXPECTED_TRACE_ROOT}`);
+  }
+  return value;
+}
+
 export function compareAwtlEvents(left, right) {
   const byRun = compareStrings(left?.run_id, right?.run_id);
   if (byRun !== 0) {
@@ -141,9 +174,12 @@ export function sortAwtlEvents(events = []) {
 }
 
 function resolveTracePaths(options = {}) {
-  const traceRoot = path.resolve(options.traceRoot ?? DEFAULT_TRACE_ROOT);
-  const traceId = options.traceId ?? options.runId ?? `awtl-${Date.now()}`;
-  const traceDir = path.join(traceRoot, traceId);
+  const traceRoot = assertExpectedTraceRoot(options.traceRoot ?? DEFAULT_TRACE_ROOT);
+  const traceId = assertSafeTraceId(options.traceId ?? options.runId ?? `awtl-${Date.now()}`);
+  const traceDir = path.resolve(path.join(traceRoot, traceId));
+  if (!isWithinDirectory(traceRoot, traceDir)) {
+    throw new Error(`Invalid trace directory: ${traceDir}. Trace writes must stay under ${EXPECTED_TRACE_ROOT}`);
+  }
   return {
     traceRoot,
     traceId,

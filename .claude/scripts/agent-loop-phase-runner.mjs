@@ -1395,6 +1395,13 @@ function runPhaseAttempt() {
   }
 
   while (true) {
+    const currentAttemptIndex = autoFixCount + 1;
+    if (captureSession.state.currentAttemptIndex !== currentAttemptIndex) {
+      captureSession.beginTurn({
+        phaseNum: state.phaseNum,
+        attemptIndex: currentAttemptIndex,
+      });
+    }
     updatePhaseState(state.phaseNum, 'in_progress', 'running', true, state.phaseDoc, paths);
     recordPhaseProgressCheckpoint('ready/isolate', 'phase-attempt-started', logFile, 'Phase state moved to in_progress before the worker prompt.', activeRuntime, paths);
     const workerSpanId = `span-${crypto.randomUUID().slice(0, 8)}`;
