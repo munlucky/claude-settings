@@ -6,7 +6,7 @@ commands:
   phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
   phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
   phaseWorktreeParallel: "node .claude/scripts/phase-worktree-coordinator.mjs self-test"
-  phaseCloseout: "node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir docs/implementation --master-plan docs/implementation/00-master-plan-v1.md"
+  phaseCloseout: "node .claude/scripts/verify-phase-closeout.mjs --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --master-plan ${PHASE_MASTER_PLAN:-docs/implementation/00-master-plan-v1.md}"
 checkPolicies:
   searchEvidence:
     preferred: rg

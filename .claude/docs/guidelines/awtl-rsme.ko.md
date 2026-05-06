@@ -81,10 +81,12 @@ MemoryGraph 승격은 provenance와 validation tag가 붙은 compact fact에만 
 - `.claude/traces/`는 ignore 대상 경로다.
 - 경로는 일시적인 runtime output용으로만 존재할 수 있고 version control에는 들어가지 않는다.
 - ignore 경계를 벗어난 trace artifact는 정책 결함이다.
+- `agent_work_trace.jsonl`은 AWTL event의 canonical append-only source of truth다.
+- `judge_result.jsonl`은 canonical log에서 만든 materialized view이며 독립적인 source가 아니다.
+- 부분 쓰기나 손상된 JSONL line은 canonical file을 다시 쓰기 전에 quarantine해야 한다.
 
 ## 열린 결정 기록
 
 | 항목 | 상태 | 결정 |
 |---|---|---|
 | RSME 약어 확장 | open | maintainer 승인 또는 다음 ADR까지 확장을 미룬다. |
-

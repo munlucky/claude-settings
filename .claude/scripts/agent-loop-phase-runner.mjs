@@ -396,6 +396,19 @@ function codexBaseArgs(cwd) {
   return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
+function resolveActiveMasterPlanPath() {
+  const statusMasterPlan = fs.existsSync(state.statusFile)
+    ? fs.readFileSync(state.statusFile, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.match(/^masterPlan:\s*(.+)\s*$/)?.[1]?.trim().replace(/^"|"$/g, '') || '')
+      .find((candidate) => candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(state.planDir))
+    : '';
+  const masterPlan = statusMasterPlan || fs.readdirSync(state.planDir)
+    .filter((name) => name.includes('master') || name.includes('00-'))
+    .sort((a, b) => a.localeCompare(b))[0];
+  return masterPlan ? (path.isAbsolute(masterPlan) || masterPlan.includes('/') || masterPlan.includes('\\') ? masterPlan : path.join(state.planDir, masterPlan)) : '';
+}
+
 function phaseEnv(paths) {
   const currentRuntime = activeAttemptContext?.runtime || '';
   const modelRoute = resolveModelRoute({
@@ -412,6 +425,10 @@ function phaseEnv(paths) {
     ...process.env,
     WORKSPACE_ROOT: process.cwd(),
     PHASE_WORK_RUNTIME: currentRuntime || state.runtime || 'auto',
+    PHASE_STATUS_FILE: state.statusFile,
+    PHASE_PLAN_DIR: state.planDir,
+    PHASE_EXECUTION_ROOT: state.executionRoot,
+    PHASE_MASTER_PLAN: resolveActiveMasterPlanPath() || path.join(state.planDir, '00-master-plan-v1.md'),
     PHASE_SELECTED_MODEL_PROVIDER: modelRoute.provider,
     PHASE_SELECTED_MODEL: modelRoute.model,
     PHASE_SELECTED_MODEL_EFFORT: modelRoute.effort,
@@ -1009,16 +1026,7 @@ function runPhaseAttempt() {
   }
 
   const runtime = resolveRunnerRuntime(state.runtime);
-  const statusMasterPlan = fs.existsSync(state.statusFile)
-    ? fs.readFileSync(state.statusFile, 'utf8')
-      .split(/\r?\n/)
-      .map((line) => line.match(/^masterPlan:\s*(.+)\s*$/)?.[1]?.trim().replace(/^"|"$/g, '') || '')
-      .find((candidate) => candidate && fs.existsSync(candidate) && path.resolve(path.dirname(candidate)) === path.resolve(state.planDir))
-    : '';
-  const masterPlan = statusMasterPlan || fs.readdirSync(state.planDir)
-    .filter((name) => name.includes('master') || name.includes('00-'))
-    .sort((a, b) => a.localeCompare(b))[0];
-  const masterPlanPath = masterPlan ? (path.isAbsolute(masterPlan) || masterPlan.includes('/') || masterPlan.includes('\\') ? masterPlan : path.join(state.planDir, masterPlan)) : '';
+  const masterPlanPath = resolveActiveMasterPlanPath();
   const paths = ensureExecutionArtifacts({
     phaseNum: state.phaseNum,
     phaseTitle: state.phaseTitle,

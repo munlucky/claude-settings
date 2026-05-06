@@ -81,10 +81,12 @@ MemoryGraph promotion is permitted only for compact facts that carry provenance 
 - `.claude/traces/` is an ignored artifact path.
 - The path may exist locally for transient runtime output, but it stays out of version control.
 - Any trace artifact that escapes the ignore boundary is a policy defect.
+- `agent_work_trace.jsonl` is the canonical append-only source of truth for AWTL events.
+- `judge_result.jsonl` is a materialized view built from the canonical log, not an independent source.
+- Partial or corrupt JSONL lines must be quarantined before the canonical file is rewritten.
 
 ## Open Decision Record
 
 | Item | Status | Decision |
 |---|---|---|
 | RSME acronym expansion | open | Keep the expansion deferred until maintainer approval or a later ADR. |
-
