@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REAL_NODE="$(command -v node)"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/phase-runner-boundary.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
@@ -9,22 +10,41 @@ PLAN_DIR="$TMP_ROOT/plan"
 EXECUTION_ROOT="$PLAN_DIR/execution"
 STATUS_FILE="$TMP_ROOT/phase-status.yaml"
 LOG_DIR="$TMP_ROOT/logs"
+SIGNAL_LOG_DIR="$TMP_ROOT/signal-logs"
 FAKE_BIN="$TMP_ROOT/bin"
 DISPATCH_OUT="$TMP_ROOT/dispatch.out"
+SIGNAL_PLAN_DIR="$TMP_ROOT/signal-plan"
+SIGNAL_EXECUTION_ROOT="$SIGNAL_PLAN_DIR/execution"
+SIGNAL_STATUS_FILE="$TMP_ROOT/signal-phase-status.yaml"
+SIGNAL_DISPATCH_OUT="$TMP_ROOT/signal-dispatch.out"
 NOENV_WORKSPACE="$TMP_ROOT/noenv-workspace"
 NOENV_STATUS_FILE="$TMP_ROOT/noenv-phase-status.yaml"
 
-mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
+mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$SIGNAL_LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
 
-cat > "$PLAN_DIR/00-master-plan-v1.md" <<'EOF'
+seed_master_plan() {
+  local target_dir="$1"
+  cat > "$target_dir/00-master-plan-v1.md" <<'EOF'
 # Boundary Smoke Plan
 EOF
+}
+
+seed_smoke_phase() {
+  local target_dir="$1"
+  cat > "$target_dir/01-smoke-phase.md" <<'EOF'
+# Phase 01: Smoke Phase
+EOF
+}
 
 write_pending_status() {
-  cat > "$STATUS_FILE" <<EOF
-planDir: "$PLAN_DIR"
+  local status_file="$1"
+  local plan_dir="$2"
+  local execution_root="$3"
+cat > "$status_file" <<EOF
+planDir: "$plan_dir"
+masterPlan: "$plan_dir/00-master-plan-v1.md"
 executionMode: in-session-coordinator
-executionRoot: "$EXECUTION_ROOT"
+executionRoot: "$execution_root"
 phases:
   - number: 1
     title: "Smoke Phase"
@@ -34,10 +54,14 @@ EOF
 }
 
 write_completed_status() {
-  cat > "$STATUS_FILE" <<EOF
-planDir: "$PLAN_DIR"
+  local status_file="$1"
+  local plan_dir="$2"
+  local execution_root="$3"
+cat > "$status_file" <<EOF
+planDir: "$plan_dir"
+masterPlan: "$plan_dir/00-master-plan-v1.md"
 executionMode: delegated-terminal
-executionRoot: "$EXECUTION_ROOT"
+executionRoot: "$execution_root"
 phases:
   - number: 1
     title: "Smoke Phase"
@@ -47,10 +71,14 @@ EOF
 }
 
 write_completed_then_pending_status() {
-  cat > "$STATUS_FILE" <<EOF
-planDir: "$PLAN_DIR"
+  local status_file="$1"
+  local plan_dir="$2"
+  local execution_root="$3"
+cat > "$status_file" <<EOF
+planDir: "$plan_dir"
+masterPlan: "$plan_dir/00-master-plan-v1.md"
 executionMode: delegated-terminal
-executionRoot: "$EXECUTION_ROOT"
+executionRoot: "$execution_root"
 phases:
   - number: 1
     title: "Repository Foundation"
@@ -97,6 +125,10 @@ assert_text_not_contains() {
   fi
 }
 
+mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
+seed_master_plan "$PLAN_DIR"
+seed_smoke_phase "$PLAN_DIR"
+
 cat > "$FAKE_BIN/claude" <<'EOF'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "--help" ]]; then
@@ -107,7 +139,7 @@ exit 0
 EOF
 chmod +x "$FAKE_BIN/claude"
 
-write_pending_status
+write_pending_status "$STATUS_FILE" "$PLAN_DIR" "$EXECUTION_ROOT"
 
 RUNTIME_POLICY_OUTPUT="$(CODEX_THREAD_ID=thread-smoke AGENT_LOOP_RUNTIME_SCOPE=same PATH="$FAKE_BIN:$PATH" ROOT_DIR="$ROOT_DIR" node --input-type=module <<'EOF'
 const rootDir = process.env.ROOT_DIR;
@@ -144,8 +176,8 @@ if [[ "$DISPATCH_STATUS" -eq 0 ]]; then
   exit 1
 fi
 
-assert_contains "$DISPATCH_OUT" "Restarting coordinator (1/1)" "coordinator restart guard"
-assert_contains "$DISPATCH_OUT" "Stopping to avoid an infinite restart loop." "restart cap failure"
+assert_text_not_contains "$(cat "$DISPATCH_OUT")" "Restarting coordinator" "coordinator restart suppression"
+assert_contains "$DISPATCH_OUT" "Stopping instead of restarting." "no-progress restart suppression"
 DISPATCH_ACTIVE_LEASE="$(compgen -G "$LOG_DIR/active-phase-run-*.json" | head -n 1 || true)"
 DISPATCH_CURRENT_RUN="$(compgen -G "$LOG_DIR/current-run-*.json" | head -n 1 || true)"
 if [[ -z "$DISPATCH_ACTIVE_LEASE" ]]; then
@@ -160,8 +192,51 @@ assert_contains "$DISPATCH_ACTIVE_LEASE" "\"runLeaseId\": \"dispatch-" "dispatch
 assert_contains "$DISPATCH_ACTIVE_LEASE" "\"executionBoundary\": \"in-session-coordinator\"" "dispatch lease execution boundary"
 assert_contains "$DISPATCH_ACTIVE_LEASE" "\"status\": \"paused\"" "dispatch lease paused state"
 assert_contains "$DISPATCH_CURRENT_RUN" "\"phaseRunLease\"" "current-run phase lease mirror"
-assert_contains "$DISPATCH_CURRENT_RUN" "\"stopReasonCode\": \"in-session-coordinator-restart-cap\"" "current-run stop reason"
+assert_contains "$DISPATCH_CURRENT_RUN" "\"stopReasonCode\": \"in-session-coordinator-no-progress-restart\"" "current-run stop reason"
 assert_contains "$STATUS_FILE" "activeExecutionStatus: \"paused\"" "dispatch paused execution status"
+
+cat > "$FAKE_BIN/node" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == ".claude/scripts/agent-loop.mjs" || "\${1:-}" == "$ROOT_DIR/.claude/scripts/agent-loop.mjs" ]]; then
+  kill -TERM "\$\$"
+fi
+exec "$REAL_NODE" "\$@"
+EOF
+chmod +x "$FAKE_BIN/node"
+
+mkdir -p "$SIGNAL_PLAN_DIR" "$SIGNAL_EXECUTION_ROOT"
+seed_master_plan "$SIGNAL_PLAN_DIR"
+seed_smoke_phase "$SIGNAL_PLAN_DIR"
+write_pending_status "$SIGNAL_STATUS_FILE" "$SIGNAL_PLAN_DIR" "$SIGNAL_EXECUTION_ROOT"
+
+set +e
+PATH="$FAKE_BIN:$PATH" \
+WORKFLOW_ENFORCEMENT_LOG_DIR="$SIGNAL_LOG_DIR" \
+PHASE_DISPATCH_KILL_STALE=false \
+PHASE_RUNTIME_DB="$TMP_ROOT/runtime-state.sqlite" \
+"$REAL_NODE" "$ROOT_DIR/.claude/scripts/moonshot-phase-dispatch.mjs" \
+  "$SIGNAL_PLAN_DIR" \
+  --execution-mode delegated-terminal \
+  --status-file "$SIGNAL_STATUS_FILE" \
+  --execution-root "$SIGNAL_EXECUTION_ROOT" \
+  --runtime claude >"$SIGNAL_DISPATCH_OUT" 2>&1
+SIGNAL_DISPATCH_STATUS=$?
+set -e
+
+if [[ "$SIGNAL_DISPATCH_STATUS" -eq 0 ]]; then
+  echo "FAIL: delegated-terminal signal-like no-closeout exit should not succeed" >&2
+  cat "$SIGNAL_DISPATCH_OUT" >&2
+  exit 1
+fi
+
+assert_contains "$SIGNAL_DISPATCH_OUT" "Stopping instead of restarting." "signal no-closeout stop"
+assert_text_not_contains "$(cat "$SIGNAL_DISPATCH_OUT")" "Restarting autonomous loop" "signal restart suppression"
+SIGNAL_CURRENT_RUN="$(compgen -G "$SIGNAL_LOG_DIR/current-run-*.json" | head -n 1 || true)"
+if [[ -z "$SIGNAL_CURRENT_RUN" ]]; then
+  echo "FAIL: signal dispatch did not create a current-run mirror" >&2
+  exit 1
+fi
+assert_contains "$SIGNAL_CURRENT_RUN" "\"stopReasonCode\": \"delegated-terminal-signal-no-closeout\"" "signal current-run stop reason"
 
 WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
@@ -191,7 +266,7 @@ INACTIVE_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.clau
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_ALLOWED='false'" "finished lease return denial"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease denial reason"
 
-write_completed_then_pending_status
+write_completed_then_pending_status "$STATUS_FILE" "$PLAN_DIR" "$EXECUTION_ROOT"
 
 WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
@@ -227,7 +302,7 @@ PAUSED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude
 assert_text_contains "$PAUSED_OUTPUT" "RETURN_ALLOWED='false'" "paused lease return denial"
 assert_text_contains "$PAUSED_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease reason"
 
-write_completed_status
+write_completed_status "$STATUS_FILE" "$PLAN_DIR" "$EXECUTION_ROOT"
 
 ALLOWED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$ALLOWED_OUTPUT" "RETURN_ALLOWED='true'" "plan completion return allow"

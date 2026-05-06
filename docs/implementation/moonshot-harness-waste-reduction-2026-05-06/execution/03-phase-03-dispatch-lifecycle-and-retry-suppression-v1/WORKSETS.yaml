@@ -1,0 +1,25 @@
+# Phase 03 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths:
+      - ".claude/scripts/moonshot-phase-dispatch.mjs"
+      - ".claude/scripts/verify-phase-runner-boundary.sh"
+    verificationCommands:
+      - "bash -n .claude/scripts/verify-phase-runner-boundary.sh"
+      - "node --check .claude/scripts/moonshot-phase-dispatch.mjs"
+      - "node --check .claude/scripts/phase-run-lease.mjs"
+      - "bash .claude/scripts/verify-phase-runner-boundary.sh"
+    evidence:
+      - "Structured verdict: .claude/verification-verdict-phase03-dispatch-lifecycle.json"
+      - "Runner log: .claude/logs/agent-loop/phase-3_20260506_172501.log"
+      - "PASS: bash -n .claude/scripts/verify-phase-runner-boundary.sh"
+      - "PASS: node --check .claude/scripts/moonshot-phase-dispatch.mjs"
+      - "PASS: node --check .claude/scripts/phase-run-lease.mjs"
+      - "PASS: bash .claude/scripts/verify-phase-runner-boundary.sh"
+    completedAt: "2026-05-06T08:41:20Z"
+worksets: []

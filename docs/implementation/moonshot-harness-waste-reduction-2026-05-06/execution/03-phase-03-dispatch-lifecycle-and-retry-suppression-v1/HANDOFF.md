@@ -1,9 +1,9 @@
-# Phase 02 Handoff
+# Phase 03 Handoff
 
 > Not required after clean completion. Retained only as a closeout marker.
 
 ## Goal
-- Phase 02: Active Verdict and Evidence Contract (v1)
+- Phase 03: Dispatch Lifecycle and Retry Suppression (v1)
 - Current stage: Finish / Handoff
 
 ## Status
@@ -26,10 +26,10 @@
 - Next planned phase or slice: none in this handoff file
 
 ## Evidence Paths
-- Sprint contract: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/02-phase-02-active-verdict-and-evidence-contract-v1/SPRINT_CONTRACT.md
-- QA report: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/02-phase-02-active-verdict-and-evidence-contract-v1/QA_REPORT.md
-- Phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/02-active-verdict-evidence-contract-v1.md
+- Sprint contract: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/03-phase-03-dispatch-lifecycle-and-retry-suppression-v1/SPRINT_CONTRACT.md
+- QA report: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/03-phase-03-dispatch-lifecycle-and-retry-suppression-v1/QA_REPORT.md
+- Phase doc: docs/implementation/moonshot-harness-waste-reduction-2026-05-06/03-dispatch-lifecycle-retry-suppression-v1.md
 
 ## Workflow Logging
 - session-logger: not required for this clean finish
-- Closeout marker recorded at: 2026-05-06 08:42:08
+- Closeout marker recorded at: 2026-05-06 08:41:20

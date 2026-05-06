@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -53,6 +54,7 @@ const runtimeState = {
   childPid: null,
   childExitHandled: false,
   captureSession: null,
+  launchProgressFingerprint: '',
 };
 const protectedPids = new Set([process.pid]);
 
@@ -340,6 +342,42 @@ function goalRuntimeControlledStop() {
     };
   }
   return null;
+}
+
+function readFileFingerprint(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return `missing:${path.resolve(String(filePath || ''))}`;
+  }
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function currentPhaseProgressFingerprint(context = activePhaseContext()) {
+  const trackedPaths = [
+    context.activePhaseDoc,
+    context.sprintContract,
+    context.qaReport,
+    context.handoff,
+    context.scorecard,
+  ].filter(Boolean);
+  const values = [
+    context.number || '',
+    context.status || '',
+    context.lastOutcome || '',
+    context.lastUpdatedAt || '',
+    context.currentStage || '',
+    context.title || context.activePhaseTitle || '',
+  ];
+  for (const filePath of trackedPaths) {
+    values.push(`${path.resolve(String(filePath))}=${readFileFingerprint(filePath)}`);
+  }
+  return crypto.createHash('sha256').update(values.join('\n')).digest('hex');
+}
+
+function shouldSuppressRestartForNoProgress(context = activePhaseContext()) {
+  if (!runtimeState.launchProgressFingerprint) {
+    return false;
+  }
+  return currentPhaseProgressFingerprint(context) === runtimeState.launchProgressFingerprint;
 }
 
 function appendPhaseArtifact(command, args) {
@@ -1116,6 +1154,7 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
   const stopTracking = startTrackingBridge('delegated-terminal');
 
   const launch = () => {
+    runtimeState.launchProgressFingerprint = currentPhaseProgressFingerprint();
     const child = spawn(cmd[0], cmd.slice(1), {
       stdio: 'inherit',
       env: {
@@ -1160,6 +1199,21 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
           });
         }
 
+        if (!closeoutApplied) {
+          logWarn('Delegated-terminal exited with signal-like termination before closeout applied. Stopping instead of restarting.');
+          appendDebugLog('delegated-terminal-signal-no-closeout-stop', {
+            signal: signal ?? '',
+            code: code ?? 0,
+          });
+          stopTracking();
+          finalizeDispatchExit(1, `delegated-terminal signal-like exit without closeout (${signal || code || 'unknown'})`, {
+            returnBoundary: 'dispatch-stop',
+            stopReasonCode: 'delegated-terminal-signal-no-closeout',
+            completionStatus: 'failed',
+          });
+          return;
+        }
+
         let actionable = false;
         try {
           actionable = actionablePhaseExists();
@@ -1172,6 +1226,21 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
         }
 
         if (actionable) {
+          if (shouldSuppressRestartForNoProgress()) {
+            logWarn('Delegated-terminal signal-like exit did not change phase status or artifacts. Stopping instead of restarting.');
+            appendDebugLog('delegated-terminal-no-progress-restart-suppressed', {
+              signal: signal ?? '',
+              code: code ?? 0,
+              fingerprint: runtimeState.launchProgressFingerprint,
+            });
+            stopTracking();
+            finalizeDispatchExit(1, 'delegated-terminal signal-like exit without phase progress', {
+              returnBoundary: 'dispatch-stop',
+              stopReasonCode: 'delegated-terminal-no-progress-restart',
+              completionStatus: 'failed',
+            });
+            return;
+          }
           signalRestartCount += 1;
           if (signalRestartCount > MAX_SIGNAL_RESTARTS) {
             logError(`Delegated-terminal exited with signal-like termination ${MAX_SIGNAL_RESTARTS} times while actionable phases remained. Stopping.`);
@@ -1351,6 +1420,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
   const stopTracking = startTrackingBridge('in-session-coordinator');
 
   const launch = () => {
+    runtimeState.launchProgressFingerprint = currentPhaseProgressFingerprint();
     let fallbackToDelegated = false;
     const child = spawn(cmd[0], cmd.slice(1), {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1433,6 +1503,20 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
         }
 
         if (actionable) {
+          if (shouldSuppressRestartForNoProgress()) {
+            logWarn('In-session-coordinator clean exit did not change phase status or artifacts. Stopping instead of restarting.');
+            appendDebugLog('in-session-coordinator-no-progress-restart-suppressed', {
+              restartCount,
+              fingerprint: runtimeState.launchProgressFingerprint,
+            });
+            stopTracking();
+            finalizeDispatchExit(1, 'in-session-coordinator clean exit without phase progress', {
+              returnBoundary: 'dispatch-stop',
+              stopReasonCode: 'in-session-coordinator-no-progress-restart',
+              completionStatus: 'failed',
+            });
+            return;
+          }
           const controlledStop = goalRuntimeControlledStop();
           if (controlledStop) {
             stopTracking();
