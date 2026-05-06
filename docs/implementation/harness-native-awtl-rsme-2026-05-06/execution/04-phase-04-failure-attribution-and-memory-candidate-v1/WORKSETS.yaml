@@ -1,0 +1,28 @@
+# Phase 04 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths:
+      - ".claude/schemas/awtl-memory-candidate-v1.schema.json"
+      - ".claude/scripts/lib/awtl-failure-attribution.mjs"
+      - ".claude/scripts/lib/awtl-memory-candidate.mjs"
+      - ".claude/scripts/awtl-failure-analyzer.mjs"
+      - ".claude/scripts/lib/awtl-failure-attribution.test.mjs"
+      - "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/SPRINT_CONTRACT.md"
+    verificationCommands:
+      - "node --check .claude/scripts/awtl-failure-analyzer.mjs"
+      - "node --test .claude/scripts/lib/awtl-failure-attribution.test.mjs"
+      - "node --test .claude/scripts/lib/failure-classifier.test.mjs"
+      - "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/harness-native-awtl-rsme-2026-05-06/04-failure-attribution-memory-candidate-v1.md --sprint-contract docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/QA_REPORT.md --scorecard docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/SCORECARD.md --handoff docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/HANDOFF.md"
+    evidence:
+      - ".claude/verification-verdict-phase04-final.json"
+      - "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/QA_REPORT.md"
+      - "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/SCORECARD.md"
+      - "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/HANDOFF.md"
+      - "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/SPRINT_CONTRACT.md"
+    completedAt: "2026-05-06T04:28:10Z"
+worksets: []

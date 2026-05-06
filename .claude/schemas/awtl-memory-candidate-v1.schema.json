@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://claude-settings.local/schemas/awtl-memory-candidate-v1.schema.json",
+  "title": "awtl.memory_candidate.v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "created_at",
+    "run_id",
+    "trace_id",
+    "failure_event_id",
+    "source_action_ids",
+    "failure_type",
+    "failure_class",
+    "root_cause_summary",
+    "proposed_memory",
+    "scope",
+    "evidence_refs",
+    "verification_probe_candidate",
+    "promotion_status",
+    "promotion_tags",
+    "confidence",
+    "requires_human_review"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "failure_event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_action_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "failure_code": {
+      "type": "string",
+      "minLength": 1
+    },
+    "failure_category": {
+      "type": "string",
+      "minLength": 1
+    },
+    "failure_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "failure_class": {
+      "type": "string",
+      "minLength": 1
+    },
+    "root_cause_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proposed_memory": {
+      "type": "object",
+      "required": [
+        "summary",
+        "facts",
+        "tags"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "run_id",
+        "trace_id",
+        "failure_event_id",
+        "artifact_refs"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failure_event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "span_id": {
+          "type": ["string", "null"]
+        },
+        "artifact_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "memory_read_node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "verification_probe_candidate": {
+      "type": "object",
+      "required": [
+        "command",
+        "artifact_refs",
+        "source_action_ids"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "source_action_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "expected_signal": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "promotion_status": {
+      "type": "string",
+      "enum": [
+        "blocked",
+        "needs_more_evidence",
+        "ready_for_review"
+      ]
+    },
+    "promotion_blocker_reason": {
+      "type": "string"
+    },
+    "promotion_tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "requires_human_review": {
+      "type": "boolean"
+    },
+    "attribution_heuristics": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "memory_read_node_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

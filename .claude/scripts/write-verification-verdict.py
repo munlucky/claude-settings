@@ -64,6 +64,18 @@ def infer_verdict_scope(verdict_scope: str, blocker_class: str, reason_code: str
     return "phase_verification"
 
 
+def normalize_workflow_list(values: list[str], defaults: list[str], should_expand: bool) -> list[str]:
+    ordered = []
+    for value in values:
+        if value and value not in ordered:
+            ordered.append(value)
+    if should_expand:
+        for value in defaults:
+            if value not in ordered:
+                ordered.append(value)
+    return ordered
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Write a structured verification verdict JSON for a phase attempt."
@@ -183,6 +195,23 @@ def main() -> int:
             "missing": args.missing_check,
         }
     )
+    phase_closeout_verdict = args.mode == "phase_attempt" and args.verification_mode == "phase_closeout"
+    selected_bundles = normalize_workflow_list(
+        args.selected_bundle,
+        [
+            "ready-isolate-bundle",
+            "implementation-bundle",
+            "review-bundle",
+            "verification-bundle",
+            "finish-bundle",
+        ],
+        phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true",
+    )
+    stage_order = normalize_workflow_list(
+        args.stage,
+        ["ready/isolate", "execute", "review", "verify", "finish"],
+        phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true",
+    )
     environment_fingerprint = args.environment_fingerprint or stable_fingerprint(
         {
             "requestedRuntime": args.requested_runtime,
@@ -226,8 +255,8 @@ def main() -> int:
         "changedFiles": args.changed_file,
         "commands": args.command,
         "workflowEvidence": {
-            "selectedBundles": args.selected_bundle,
-            "stageOrder": args.stage,
+            "selectedBundles": selected_bundles,
+            "stageOrder": stage_order,
             "effortEscalationReason": args.effort_escalation_reason,
             "selectedModelProvider": args.selected_model_provider,
             "selectedModel": args.selected_model,
