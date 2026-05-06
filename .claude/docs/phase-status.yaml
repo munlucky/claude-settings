@@ -39,17 +39,17 @@ stopReasonExplanation: "all planned phases completed"
 goalRuntime:
   goalId: "goal-1778035156161-d7ef054d2c"
   objective: "Complete active plan directory docs/implementation/harness-native-awtl-rsme-2026-05-06 using docs/implementation/harness-native-awtl-rsme-2026-05-06/00-master-plan-v1.md"
-  status: "active"
+  status: "completed"
   tokenBudget: null
   tokensUsed: null
   timeBudgetSeconds: null
   timeUsedSeconds: 11818
   accountingQuality: "unavailable"
-  continuationSuppressed: false
+  continuationSuppressed: true
   currentRunLeaseId: "dispatch-1778039968189-31271"
-  lastEvent: "GoalStarted"
+  lastEvent: "GoalCompleted"
   createdAt: "2026-05-06T02:39:16Z"
-  updatedAt: "2026-05-06T06:06:24Z"
+  updatedAt: "2026-05-06T06:10:41Z"
 phases:
   - number: 1
     title: "Phase 01: Taxonomy, Privacy, and Provenance Contract (v1)"
@@ -234,8 +234,13 @@ phases:
       manualCloseoutSeconds: 264
       completedAt: "2026-05-06T06:10:00Z"
     completedAt: "2026-05-06T06:10:00Z"
+    checkpoint:
+      status: committed
+      commit: e2932df
+      committedAt: 2026-05-06T06:10:41.000Z
+      reason: checkpoint_commit_created
 
 signals:
   phaseAttemptMode: true
 artifacts:
-  activePhaseDocPath: "docs/implementation/harness-native-awtl-rsme-2026-05-06/06-runtime-importers-regression-hardening-v1.md"
+  activePhaseDocPath: "docs/implementation/harness-native-awtl-rsme-2026-05-06/close/06-runtime-importers-regression-hardening-v1.md"
