@@ -781,10 +781,11 @@ Codex direct execution checklist:
    기본 인자만 넣어도 동작합니다.
    예: \`python3 .claude/scripts/write-verification-verdict.py --output .claude/verification-verdict-phase02-final.json --run-id phase02-final --phase-number 2\`
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
-8. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
-9. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
-10. Stop only when source plan conformance passes, verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
-11. Even when this phase reaches clean completion, do not phrase the result as plan completion or session completion. Return control to the outer loop only.
+8. For artifact-only closeout changes, use \`.claude/scripts/agent-loop-phase-artifacts.mjs sync-closeout-artifacts\` instead of hand-patching QA_REPORT.md, SCORECARD.md, or HANDOFF.md.
+9. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
+10. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
+11. Stop only when source plan conformance passes, verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.
+12. Even when this phase reaches clean completion, do not phrase the result as plan completion or session completion. Return control to the outer loop only.
 
 Do not spend time on extra planning, repo discovery, or alternative verifier selection before step 5.
 Edit the artifact files directly with the runtime's file-edit tool. Do not use shell heredocs or inline apply_patch commands for these artifact updates.`;

@@ -321,6 +321,157 @@ function normalizeQaReportWorkflowFields(qaReportPath) {
   fs.writeFileSync(qaReportPath, `${lines.join('\n')}\n`, 'utf8');
 }
 
+function normalizeScorecardCloseoutFields(scorecardPath, { currentScore, targetScore, unmetItems, blockingDefects, verdict, taskStatus }) {
+  if (!scorecardPath || !fs.existsSync(scorecardPath)) {
+    return;
+  }
+
+  let lines = fs.readFileSync(scorecardPath, 'utf8').split(/\r?\n/);
+  if (lines.length > 0 && lines.at(-1) === '') {
+    lines = lines.slice(0, -1);
+  }
+
+  lines = lines.map((line) => {
+    if (line.trim().startsWith('- Current score:')) {
+      return `- Current score: ${currentScore}`;
+    }
+    if (line.trim().startsWith('- Target score:')) {
+      return `- Target score: ${targetScore}`;
+    }
+    if (line.trim().startsWith('- Unmet checklist items:')) {
+      return `- Unmet checklist items: ${unmetItems}`;
+    }
+    if (line.trim().startsWith('- Blocking defects:')) {
+      return `- Blocking defects: ${blockingDefects}`;
+    }
+    if (line.trim().startsWith('- Verdict:')) {
+      return `- Verdict: ${verdict}`;
+    }
+    return line;
+  });
+
+  lines = ensureTaskLevelStatus(lines, taskStatus);
+  fs.writeFileSync(scorecardPath, `${lines.join('\n')}\n`, 'utf8');
+}
+
+function syncRetryCloseoutArtifacts({
+  qaReportPath,
+  scorecardPath,
+  handoffPath,
+  phaseTitle,
+  phaseDoc,
+  phaseNum,
+  targetCompletionScore,
+  logFile,
+  detail,
+}) {
+  if (qaReportPath && fs.existsSync(qaReportPath)) {
+    let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
+    if (qaLines.length > 0 && qaLines.at(-1) === '') {
+      qaLines = qaLines.slice(0, -1);
+    }
+
+    qaLines = replaceOrAppendSection(qaLines, '## Verdict', [
+      '- Status: fail',
+      `- Summary: ${phaseTitle || 'Active phase'} remains open because closeout verification did not pass.`,
+      '- Scope status: partial',
+      '- Next path: retry_loop',
+      '- Closeout reason: verification_failed',
+      '',
+    ]);
+    qaLines = replaceOrAppendSection(qaLines, '## Score Summary', [
+      '- Current score: 0',
+      `- Target score: ${targetCompletionScore}`,
+      '- Unmet checklist items: 1',
+      '- Blocking defects: 0',
+      '- Verdict: retry',
+      '',
+    ]);
+    qaLines = replaceOrAppendSection(qaLines, '## Finish Readiness', [
+      '- Fresh evidence confirmed: no',
+      '- Why this round may stop now: verification failed and retry is required.',
+      '- Remaining in-scope work: resolve the current verification failure and resync the closeout artifacts.',
+      '- Remaining blockers before closeout: verification has not completed yet.',
+      '- Checks to rerun if code changes again: use the active phase sprint contract.',
+      '',
+    ]);
+    fs.writeFileSync(qaReportPath, `${qaLines.join('\n')}\n`, 'utf8');
+  }
+
+  normalizeScorecardCloseoutFields(scorecardPath, {
+    currentScore: 0,
+    targetScore: targetCompletionScore,
+    unmetItems: 1,
+    blockingDefects: 0,
+    verdict: 'retry',
+    taskStatus: 'NO',
+  });
+
+  if (handoffPath && fs.existsSync(handoffPath)) {
+    appendHandoffUpdate({
+      reason: 'blocked',
+      logFile,
+      detail: detail || 'retry-loop closeout synchronization recorded by artifact writer',
+      nextPhase: phaseNum,
+      phaseTitle: phaseTitle || '',
+      phaseSprintContract: qaReportPath ? path.join(path.dirname(qaReportPath), 'SPRINT_CONTRACT.md') : '',
+      phaseQaReport: qaReportPath || '',
+      phaseDoc: phaseDoc || '',
+      phaseScorecard: scorecardPath || '',
+      phaseHandoff: handoffPath,
+    });
+  }
+}
+
+function syncCloseoutArtifacts({
+  qaReportPath,
+  scorecardPath,
+  handoffPath,
+  phaseTitle,
+  phaseDoc,
+  phaseNum,
+  targetCompletionScore,
+  completionArtifacts,
+  logFile,
+  detail,
+}) {
+  let nextPath = '';
+  if (qaReportPath && fs.existsSync(qaReportPath)) {
+    const text = fs.readFileSync(qaReportPath, 'utf8');
+    nextPath = String(extractBulletValue(text, '## Verdict', 'Next path') || '').trim().toLowerCase();
+  }
+
+  if (nextPath === 'clean_finish') {
+    syncCleanFinishArtifacts({
+      completionArtifacts,
+      qaReportPath,
+      scorecardPath,
+      phaseTitle,
+      targetCompletionScore,
+    });
+    return;
+  }
+
+  if (nextPath === 'retry_loop') {
+    syncRetryCloseoutArtifacts({
+      qaReportPath,
+      scorecardPath,
+      handoffPath,
+      phaseTitle,
+      phaseDoc,
+      phaseNum,
+      targetCompletionScore,
+      logFile,
+      detail,
+    });
+    return;
+  }
+
+  if (qaReportPath && fs.existsSync(qaReportPath)) {
+    normalizeQaReportWorkflowFields(qaReportPath);
+  }
+}
+
 function inferPhaseVerdictPath(qaReportPath) {
   const segments = String(qaReportPath || '').split(/[\\/]/).filter(Boolean);
   const phaseDir = [...segments].reverse().find((segment) => /^[0-9]{2}-/.test(segment));
@@ -596,12 +747,17 @@ function completeReviewCloseoutFromVerdict({
     });
   }
 
-  syncCleanFinishArtifacts({
+  syncCloseoutArtifacts({
     completionArtifacts,
     qaReportPath,
     scorecardPath,
     phaseTitle,
     targetCompletionScore,
+    handoffPath,
+    phaseDoc: verdictPayload.phase?.activePhaseDocPath ?? '',
+    phaseNum: verdictPayload.phase?.number ?? '',
+    logFile,
+    detail,
   });
 }
 
@@ -609,14 +765,16 @@ function syncCleanFinishArtifacts({
   completionArtifacts,
   qaReportPath,
   scorecardPath,
+  handoffPath = '',
   phaseTitle,
   targetCompletionScore,
 }) {
+  const resolvedHandoffPath = handoffPath || (qaReportPath ? path.join(path.dirname(qaReportPath), 'HANDOFF.md') : '');
   const planConformance = evaluatePlanConformance({
     qaReportPath,
     scorecardPath,
     sprintContractPath: qaReportPath ? path.join(path.dirname(qaReportPath), 'SPRINT_CONTRACT.md') : '',
-    handoffPath: qaReportPath ? path.join(path.dirname(qaReportPath), 'HANDOFF.md') : '',
+    handoffPath: resolvedHandoffPath,
   });
   if (!planConformance.allowed) {
     syncPlanConformanceFailureArtifacts({
@@ -925,6 +1083,17 @@ function syncCleanFinishArtifacts({
 
     fs.writeFileSync(scorecardPath, `${scoreLines.join('\n')}\n`, 'utf8');
   }
+
+  if (resolvedHandoffPath && fs.existsSync(resolvedHandoffPath)) {
+    writeCleanFinishHandoff({
+      phaseNum: verdictPayload.phase?.number ?? '',
+      phaseTitle: phaseTitle || verdictPayload.phase?.title || '',
+      phaseDoc: verdictPayload.phase?.activePhaseDocPath ?? '',
+      phaseSprintContract: qaReportPath ? path.join(path.dirname(qaReportPath), 'SPRINT_CONTRACT.md') : '',
+      phaseQaReport: qaReportPath,
+      phaseHandoff: resolvedHandoffPath,
+    });
+  }
 }
 
 function syncPlanConformanceFailureArtifacts({
@@ -1154,6 +1323,139 @@ function writeCleanFinishHandoff({
   fs.writeFileSync(phaseHandoff, body, 'utf8');
 }
 
+function runSelfTest() {
+  const tempDir = fs.mkdtempSync(path.join('/tmp', 'phase-artifacts-'));
+  try {
+    const phaseDoc = path.join(tempDir, 'phase.md');
+    fs.writeFileSync(phaseDoc, '# Fixture phase\n', 'utf8');
+    const qaReportPath = path.join(tempDir, 'QA_REPORT.md');
+    const scorecardPath = path.join(tempDir, 'SCORECARD.md');
+    const handoffPath = path.join(tempDir, 'HANDOFF.md');
+
+    fs.writeFileSync(qaReportPath, [
+      '# QA',
+      '',
+      '## Verdict',
+      '- Status: fail',
+      '- Summary: fixture',
+      '- Scope status: partial',
+      '- Next path: retry_loop',
+      '- Closeout reason: verification_failed',
+      '',
+      '## Review Checkpoint',
+      '- Review completed: yes',
+      '- Review owners: codex-review-code',
+      '- Review-driven code changes:',
+      '',
+      '## Finish Readiness',
+      '- Fresh evidence confirmed: no',
+      '- Why this round may stop now: fixture',
+      '- Remaining in-scope work: fixture',
+      '- Remaining blockers before closeout: fixture',
+      '- Checks to rerun if code changes again: fixture',
+      '',
+      '## Score Summary',
+      '- Current score: 0',
+      '- Target score: 100',
+      '- Unmet checklist items: 1',
+      '- Blocking defects: 0',
+      '- Verdict: retry',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(scorecardPath, [
+      '# Scorecard',
+      '',
+      '## Score Summary',
+      '- Current score: 0',
+      '- Target score: 100',
+      '- Unmet checklist items: 1',
+      '- Blocking defects: 0',
+      '- Verdict: retry',
+      '',
+      '## Task-Level Status Adapter',
+      '- Status: FULL | PARTIAL | NO',
+      '- Current task status: FULL',
+      '- Partial threshold: 60',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(handoffPath, [
+      '# Handoff',
+      '',
+      '## Status',
+      '- Required: no',
+      '- Reason: stale clean-finish marker',
+      '',
+      '## Resume Trigger',
+      '- Why this handoff exists: stale clean-finish marker only',
+      '- Stop reason: phase_local_closeout_marker',
+      '- Why this cannot continue in the current round: stale marker',
+      '- Condition to resume: none',
+      '',
+      '## Checks To Rerun',
+      '- Review: fixture',
+      '- Verification: fixture',
+      '- Runtime flow: fixture',
+      '',
+      '## Remaining Scope',
+      '- Remaining in-scope work: fixture',
+      '- Next planned phase or slice: fixture',
+      '',
+      '## Workflow Logging',
+      '- session-logger: recorded via agent-loop handoff update',
+      '- Detail: fixture',
+      '',
+    ].join('\n'), 'utf8');
+
+    syncCloseoutArtifacts({
+      qaReportPath,
+      scorecardPath,
+      handoffPath,
+      phaseTitle: 'Fixture Phase',
+      phaseDoc,
+      phaseNum: '1',
+      targetCompletionScore: 100,
+      completionArtifacts: '',
+      logFile: 'fixture.log',
+      detail: 'fixture closeout sync',
+    });
+    const firstPass = [
+      fs.readFileSync(qaReportPath, 'utf8'),
+      fs.readFileSync(scorecardPath, 'utf8'),
+      fs.readFileSync(handoffPath, 'utf8'),
+    ].join('\n--\n');
+
+    syncCloseoutArtifacts({
+      qaReportPath,
+      scorecardPath,
+      handoffPath,
+      phaseTitle: 'Fixture Phase',
+      phaseDoc,
+      phaseNum: '1',
+      targetCompletionScore: 100,
+      completionArtifacts: '',
+      logFile: 'fixture.log',
+      detail: 'fixture closeout sync',
+    });
+    const secondPass = [
+      fs.readFileSync(qaReportPath, 'utf8'),
+      fs.readFileSync(scorecardPath, 'utf8'),
+      fs.readFileSync(handoffPath, 'utf8'),
+    ].join('\n--\n');
+
+    if (firstPass !== secondPass) {
+      throw new Error('closeout sync writer is not idempotent');
+    }
+
+    writeStdoutLine('agent-loop-phase-artifacts self-test passed');
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+function writeStdoutLine(value = '') {
+  process.stdout.write(`${String(value)}\n`);
+}
+
 function printUsage() {
   console.error([
     'Usage:',
@@ -1161,9 +1463,11 @@ function printUsage() {
     '  agent-loop-phase-artifacts.mjs append-qa-runtime-update <status> <log-file> [detail] <workflow-log-dir> <phase-qa-report> <phase-scorecard>',
     '  agent-loop-phase-artifacts.mjs record-phase-progress-checkpoint <qa-report> <scorecard> <stage> <status> <log-file> <detail> <runtime>',
     '  agent-loop-phase-artifacts.mjs complete-review-closeout-from-verdict <completion-artifacts> <qa-report> <scorecard> <handoff> <phase-title> <target-score> <log-file> <detail>',
+    '  agent-loop-phase-artifacts.mjs sync-closeout-artifacts <completion-artifacts> <qa-report> <scorecard> <handoff> <phase-title> <phase-num> <target-score> <log-file> <detail>',
     '  agent-loop-phase-artifacts.mjs sync-clean-finish-artifacts <completion-artifacts> <qa-report> <scorecard> <phase-title> <target-score>',
     '  agent-loop-phase-artifacts.mjs append-handoff-update <reason> <log-file> <detail> <next-phase> <phase-title> <sprint-contract> <qa-report> <phase-doc> <scorecard> <handoff>',
     '  agent-loop-phase-artifacts.mjs write-clean-finish-handoff <phase-num> <phase-title> <phase-doc> <sprint-contract> <qa-report> <handoff>',
+    '  agent-loop-phase-artifacts.mjs self-test',
   ].join('\n'));
 }
 
@@ -1198,6 +1502,19 @@ switch (command) {
       scorecardPath: args[2] ?? '',
       phaseTitle: args[3] ?? '',
       targetCompletionScore: args[4] ?? '100',
+    });
+    break;
+  case 'sync-closeout-artifacts':
+    syncCloseoutArtifacts({
+      completionArtifacts: args[0] ?? '',
+      qaReportPath: args[1] ?? '',
+      scorecardPath: args[2] ?? '',
+      handoffPath: args[3] ?? '',
+      phaseTitle: args[4] ?? '',
+      phaseNum: args[5] ?? '',
+      targetCompletionScore: args[6] ?? '100',
+      logFile: args[7] ?? '',
+      detail: args[8] ?? '',
     });
     break;
   case 'complete-review-closeout-from-verdict':
@@ -1235,6 +1552,9 @@ switch (command) {
       phaseQaReport: args[4] ?? '',
       phaseHandoff: args[5] ?? '',
     });
+    break;
+  case 'self-test':
+    runSelfTest();
     break;
   default:
     printUsage();

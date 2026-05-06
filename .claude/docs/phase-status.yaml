@@ -5,17 +5,17 @@ executionMode: "delegated-terminal"
 executionRoot: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution"
 preparedAt: "2026-05-06T06:58:00Z"
 activeExecutionStatus: "paused"
-activeRunLeaseId: "dispatch-1778055900448-3254"
+activeRunLeaseId: "dispatch-1778056989619-33542"
 activeExecutionBoundary: "delegated-terminal"
-activeActionablePhasesRemaining: 3
+activeActionablePhasesRemaining: 2
 activeCurrentStage: "execute"
-activePhaseNumber: 3
-activePhaseTitle: "Phase 03: Dispatch Lifecycle and Retry Suppression (v1)"
+activePhaseNumber: 4
+activePhaseTitle: "Phase 04: Closeout Artifact Synchronization (v1)"
 activePlannedPhases: 6
-activeCompletedPhases: 3
+activeCompletedPhases: 4
 activeBlockedPhases: 0
-activePendingPhases: 3
-activeRemainingPhases: 3
+activePendingPhases: 2
+activeRemainingPhases: 2
 projectMemory:
   backend: MemoryGraph
   stageCoverage:
@@ -24,12 +24,12 @@ projectMemory:
     execute: not_checked
   lastStage: intake
   warning: "MemoryGraph recall not checked in this Codex session; continuing per memorygraph-workflow unavailable policy."
-lastDispatchAt: "2026-05-06T08:25:00Z"
+lastDispatchAt: "2026-05-06T08:43:09Z"
 workflowEvidenceFile: ".claude/logs/workflow-enforcement/latest-dispatch.json"
 workflowSelectedBundles: "ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"
 workflowRequiredSkills: "moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"
-activeExecutionAttachedAt: "2026-05-06T08:25:00Z"
-activeExecutionHeartbeatAt: "2026-05-06T08:39:05Z"
+activeExecutionAttachedAt: "2026-05-06T08:43:09Z"
+activeExecutionHeartbeatAt: "2026-05-06T08:52:13Z"
 lastReturnBoundary: "dispatch-stop"
 lastStopReasonCode: "delegated-terminal-exit-1"
 lastStopReasonDetail: "delegated-terminal exited with code 1"
@@ -39,17 +39,17 @@ stopReasonExplanation: "delegated-terminal exited with code 1"
 goalRuntime:
   goalId: "goal-1778050927755-d20c2e3cf6"
   objective: "Complete active plan directory docs/implementation/moonshot-harness-waste-reduction-2026-05-06 using docs/implementation/moonshot-harness-waste-reduction-2026-05-06/00-master-plan-v1.md"
-  status: "active"
+  status: "complete"
   tokenBudget: null
   tokensUsed: null
   timeBudgetSeconds: null
-  timeUsedSeconds: 3924
+  timeUsedSeconds: 4463
   accountingQuality: "unavailable"
   continuationSuppressed: false
-  currentRunLeaseId: "dispatch-1778055900448-3254"
-  lastEvent: "GoalResumed"
+  currentRunLeaseId: "dispatch-1778056989619-33542"
+  lastEvent: "GoalCompleted"
   createdAt: "2026-05-06T07:02:07Z"
-  updatedAt: "2026-05-06T08:40:33Z"
+  updatedAt: "2026-05-06T08:52:13Z"
 phases:
   - number: 1
     title: "Phase 01: Path Authority Fail-fast (v1)"
@@ -108,6 +108,7 @@ phases:
       blockedAt: "2026-05-06T07:46:57Z"
       completedAt: "2026-05-06T08:42:46Z"
     completedAt: "2026-05-06T08:42:46Z"
+    archivedPhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/02-active-verdict-evidence-contract-v1.md"
   - number: 3
     title: "Phase 03: Dispatch Lifecycle and Retry Suppression (v1)"
     status: completed
@@ -134,18 +135,33 @@ phases:
       blockedAt: "2026-05-06T08:39:05Z"
       completedAt: "2026-05-06T08:41:20Z"
     completedAt: "2026-05-06T08:41:20Z"
+    archivedPhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/close/03-dispatch-lifecycle-retry-suppression-v1.md"
   - number: 4
     title: "Phase 04: Closeout Artifact Synchronization (v1)"
-    status: pending
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/04-closeout-artifact-sync-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
+      total: 1
+      lastOutcome: passed
+      lastUpdatedAt: "2026-05-06T08:56:10Z"
     sprintContract: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/04-phase-04-closeout-artifact-synchronization-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/04-phase-04-closeout-artifact-synchronization-v1/QA_REPORT.md"
     handoff: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/04-phase-04-closeout-artifact-synchronization-v1/HANDOFF.md"
     scorecard: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/04-phase-04-closeout-artifact-synchronization-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T08:43:11Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-06T08:56:10Z"
+      wallClockSeconds: 779
+      runnerActiveSeconds: 719
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 60
+      manualCloseoutSeconds: 0
+      blockedAt: "2026-05-06T08:52:13Z"
+      completedAt: "2026-05-06T08:56:10Z"
+    completedAt: "2026-05-06T08:56:10Z"
   - number: 5
     title: "Phase 05: Waste Ledger and Log Hygiene (v1)"
     status: pending
@@ -170,5 +186,6 @@ phases:
     qaReport: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/06-phase-06-regression-fixture-and-documentation-sync-v1/QA_REPORT.md"
     handoff: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/06-phase-06-regression-fixture-and-documentation-sync-v1/HANDOFF.md"
     scorecard: "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/execution/06-phase-06-regression-fixture-and-documentation-sync-v1/SCORECARD.md"
+
 
 

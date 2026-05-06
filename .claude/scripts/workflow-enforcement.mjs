@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import {
@@ -429,6 +430,85 @@ function containsPlaceholderText(value) {
 function isCleanFinishHandoff(text) {
   const required = extractBulletValue(text, '## Status', 'Required');
   return required.toLowerCase() === 'no';
+}
+
+export function validateCloseoutSynchronization({
+  qaReportPath,
+  scorecardPath,
+  handoffPath,
+}) {
+  const violations = [];
+  if (!qaReportPath || !fs.existsSync(qaReportPath)) {
+    violations.push('qa_report_missing');
+    return violations;
+  }
+
+  const qaText = fs.readFileSync(qaReportPath, 'utf8');
+  const nextPath = canonicalizeNextPath(extractBulletValue(qaText, '## Verdict', 'Next path'));
+  const closeoutReason = canonicalizeCloseoutReason(extractBulletValue(qaText, '## Verdict', 'Closeout reason'));
+  const scopeStatus = extractBulletValue(qaText, '## Verdict', 'Scope status').toLowerCase();
+  const reviewCompleted = extractBulletValue(qaText, '## Review Checkpoint', 'Review completed').toLowerCase();
+  const closeoutFieldsPresent = Boolean(
+    scopeStatus
+      || nextPath
+      || closeoutReason
+      || extractBulletValue(qaText, '## Finish Readiness', 'Why this round may stop now')
+  );
+
+  if (!closeoutFieldsPresent) {
+    return violations;
+  }
+
+  if (!scorecardPath || !fs.existsSync(scorecardPath)) {
+    violations.push(`${qaReportPath}: scorecard_missing_for_closeout_sync`);
+    return violations;
+  }
+
+  const scoreText = fs.readFileSync(scorecardPath, 'utf8');
+  const currentScore = Number.parseInt(extractBulletValue(scoreText, '## Score Summary', 'Current score'), 10);
+  const targetScore = Number.parseInt(extractBulletValue(scoreText, '## Score Summary', 'Target score'), 10);
+  const unmetItems = Number.parseInt(extractBulletValue(scoreText, '## Score Summary', 'Unmet checklist items'), 10);
+  const blockingDefects = Number.parseInt(extractBulletValue(scoreText, '## Score Summary', 'Blocking defects'), 10);
+  const scoreVerdict = extractBulletValue(scoreText, '## Score Summary', 'Verdict').toLowerCase();
+  const currentTaskStatus = extractBulletValue(scoreText, '## Task-Level Status Adapter', 'Current task status').toUpperCase();
+
+  if (nextPath === 'clean_finish') {
+    if (scopeStatus !== 'complete') violations.push(`${qaReportPath}: clean_finish requires Scope status = complete`);
+    if (closeoutReason !== 'scope_complete') violations.push(`${qaReportPath}: clean_finish requires Closeout reason = scope_complete`);
+    if (reviewCompleted !== 'yes') violations.push(`${qaReportPath}: clean_finish requires Review completed = yes`);
+    if (scoreVerdict !== 'done') violations.push(`${scorecardPath}: clean_finish requires Verdict = done`);
+    if (currentTaskStatus !== 'FULL') violations.push(`${scorecardPath}: clean_finish requires Current task status = FULL`);
+    if (!Number.isFinite(currentScore) || !Number.isFinite(targetScore) || currentScore < targetScore) {
+      violations.push(`${scorecardPath}: clean_finish requires Current score >= Target score`);
+    }
+    if (unmetItems !== 0) violations.push(`${scorecardPath}: clean_finish requires Unmet checklist items = 0`);
+    if (blockingDefects !== 0) violations.push(`${scorecardPath}: clean_finish requires Blocking defects = 0`);
+    if (handoffPath && fs.existsSync(handoffPath)) {
+      const handoffText = fs.readFileSync(handoffPath, 'utf8');
+      if (!isCleanFinishHandoff(handoffText)) {
+        violations.push(`${handoffPath}: clean_finish requires a clean-finish marker with Required: no`);
+      }
+    }
+  } else if (nextPath === 'retry_loop') {
+    if (closeoutReason !== 'verification_failed') violations.push(`${qaReportPath}: retry_loop requires Closeout reason = verification_failed`);
+    if (scoreVerdict !== 'retry') violations.push(`${scorecardPath}: retry_loop requires Verdict = retry`);
+    if (currentTaskStatus === 'FULL') violations.push(`${scorecardPath}: retry_loop cannot report Current task status = FULL`);
+    if (Number.isFinite(currentScore) && currentScore > 0) {
+      violations.push(`${scorecardPath}: retry_loop requires Current score = 0`);
+    }
+    if (Number.isFinite(unmetItems) && unmetItems === 0) {
+      violations.push(`${scorecardPath}: retry_loop requires Unmet checklist items > 0`);
+    }
+    if (handoffPath && fs.existsSync(handoffPath)) {
+      const handoffText = fs.readFileSync(handoffPath, 'utf8');
+      const stopReason = canonicalizeHandoffStopReason(extractBulletValue(handoffText, '## Resume Trigger', 'Stop reason'));
+      if (!['blocked', 'interrupted', 'context_limit', 'user_pause', 'deferred_verification'].includes(stopReason)) {
+        violations.push(`${handoffPath}: retry_loop requires a valid handoff stop reason when a handoff is written`);
+      }
+    }
+  }
+
+  return violations;
 }
 
 function isWorkflowArtifact(filePath) {
@@ -1086,6 +1166,11 @@ function verifyEnforcement(argv) {
       const hasRepeatedFailure = /same failure class.*\b2\b|\b2\b.*same failure class|repeats twice|반복.*2회/i.test(text);
       const closeoutFieldsPresent = Boolean(scopeStatus || nextPath || closeoutReason || stopWhy || remainingScope);
       if (closeoutFieldsPresent) {
+        violations.push(...validateCloseoutSynchronization({
+          qaReportPath: qaReport,
+          scorecardPath: path.join(path.dirname(qaReport), 'SCORECARD.md'),
+          handoffPath: path.join(path.dirname(qaReport), 'HANDOFF.md'),
+        }));
         if (!['complete', 'partial'].includes(scopeStatus)) {
           violations.push(`${qaReport}: 'Scope status' must be complete or partial`);
         }
@@ -1338,4 +1423,6 @@ function main() {
   }
 }
 
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
