@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runCommand } from './lib/process-utils.mjs';
 import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
+import { createPhaseHarnessCaptureSession } from './lib/awtl-harness-capture.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +52,7 @@ const runtimeState = {
   leaseActive: false,
   childPid: null,
   childExitHandled: false,
+  captureSession: null,
 };
 
 const MAX_DELEGATED_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS ?? '32', 10) || 32;
@@ -470,6 +472,27 @@ function leaseCompletionStatus(context = {}, actionable) {
 
 function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime) {
   runtimeState.runLeaseId = generateRunLeaseId();
+  runtimeState.captureSession = createPhaseHarnessCaptureSession({
+    traceId: runtimeState.runLeaseId,
+    runId: runtimeState.runLeaseId,
+    taskId: path.basename(state.planDir || 'phase') || 'phase',
+    sessionId: runtimeState.runLeaseId,
+    stage: 'ready/isolate',
+    source: 'moonshot-phase-dispatch',
+  });
+  runtimeState.captureSession.recordRunStarted({
+    spanId: `run-${runtimeState.runLeaseId}`,
+    phaseNum: state.planDir,
+    phaseTitle: path.basename(state.planDir || ''),
+    summary: 'run_started',
+  }).then((result) => {
+    if (!result.ok) {
+      appendDebugLog('awtl-capture-warning', {
+        context: 'dispatch-run_started',
+        detail: result.error?.message || 'capture failed',
+      });
+    }
+  });
   const values = leaseAssignments(
     'start',
     state.statusFile,
@@ -521,6 +544,21 @@ function heartbeatDispatchLease(context = {}) {
 function finishDispatchLease(returnBoundary, stopReasonCode, stopReasonDetail, completionStatus = 'completed') {
   if (!runtimeState.leaseActive || !runtimeState.runLeaseId) {
     return null;
+  }
+  if (runtimeState.captureSession) {
+    runtimeState.captureSession.recordRunCompleted({
+      spanId: `run-${runtimeState.runLeaseId}`,
+      spanName: 'run',
+      completionStatus,
+      summary: 'run_completed',
+    }).then((result) => {
+      if (!result.ok) {
+        appendDebugLog('awtl-capture-warning', {
+          context: 'dispatch-run_completed',
+          detail: result.error?.message || 'capture failed',
+        });
+      }
+    });
   }
   const values = leaseAssignments(
     'finish',

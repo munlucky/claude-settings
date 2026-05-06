@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifacts } from './agent-loop-phase-plan-lib.mjs';
+import { createPhaseHarnessCaptureSession, normalizeArtifactRefs } from './lib/awtl-harness-capture.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
 import { classifyFailure, summarizeFailureDecision } from './lib/failure-classifier.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
@@ -151,6 +152,27 @@ function appendDebugLog(event, details = {}) {
     event,
     ...details,
   })}\n`, 'utf8');
+}
+
+function appendCaptureWarning(context, detail) {
+  appendDebugLog('awtl-capture-warning', { context, detail });
+}
+
+function collectFileReconciliationRefs() {
+  const trackedResult = spawnSync('git', ['diff', '--name-only', 'HEAD'], {
+    encoding: 'utf8',
+  });
+  const untrackedResult = spawnSync('git', ['ls-files', '--others', '--exclude-standard'], {
+    encoding: 'utf8',
+  });
+  const combined = [];
+  if (!trackedResult.error && (trackedResult.status ?? 0) === 0) {
+    combined.push(...(trackedResult.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  }
+  if (!untrackedResult.error && (untrackedResult.status ?? 0) === 0) {
+    combined.push(...(untrackedResult.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  }
+  return normalizeArtifactRefs(combined, process.cwd());
 }
 
 function writeStdoutLine(value = '') {
@@ -865,6 +887,28 @@ function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths
     completionLabel,
     completionArtifacts,
   });
+  if (activeAttemptContext?.captureSession) {
+    activeAttemptContext.captureSession.recordSpanCompleted({
+      spanId: activeAttemptContext.currentWorkerSpanId || activeAttemptContext.captureRunSpanId,
+      parentSpanId: activeAttemptContext.captureAttemptSpanId,
+      spanName: 'worker-prompt',
+      summary: 'span_completed',
+    }).then((result) => {
+      if (!result.ok) {
+        appendCaptureWarning('span_completed', result.error?.message || 'capture failed');
+      }
+    });
+    activeAttemptContext.captureSession.recordSpanCompleted({
+      spanId: activeAttemptContext.captureAttemptSpanId,
+      parentSpanId: activeAttemptContext.captureRunSpanId,
+      spanName: 'attempt',
+      summary: 'span_completed',
+    }).then((result) => {
+      if (!result.ok) {
+        appendCaptureWarning('attempt_completed', result.error?.message || 'capture failed');
+      }
+    });
+  }
   logSuccess(`Phase ${state.phaseNum} completed${completionLabel} (${durationSeconds}s)`);
   appendQaRuntimeUpdate(
     completionLabel === '' ? 'phase-command-succeeded' : `phase-completed${completionLabel}`,
@@ -1033,6 +1077,8 @@ function runPhaseAttempt() {
     phaseDoc: state.phaseDoc,
     masterPlan: masterPlanPath,
     executionRoot: state.executionRoot,
+    statusFile: state.statusFile,
+    planDir: state.planDir,
     verificationContractFile: '.claude/verification.contract.yaml',
     targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
     scorecardProfile: process.env.AGENT_LOOP_SCORECARD_PROFILE ?? 'auto',
@@ -1091,11 +1137,38 @@ function runPhaseAttempt() {
   let restartCount = 0;
   let autoFixCount = 0;
   let timeoutFallbackUsed = false;
+  const captureRunId = process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`;
+  const captureSession = createPhaseHarnessCaptureSession({
+    traceId: captureRunId,
+    runId: captureRunId,
+    taskId: `phase-${state.phaseNum}`,
+    sessionId: captureRunId,
+    stage: 'ready/isolate',
+    source: 'agent-loop-phase-runner',
+  });
+  const captureRunSpanId = `run-${captureRunId}`;
+  const captureAttemptSpanId = `attempt-${crypto.randomUUID().slice(0, 8)}`;
+  captureSession.recordAttemptStarted({
+    spanId: captureAttemptSpanId,
+    parentSpanId: captureRunSpanId,
+    phaseNum: state.phaseNum,
+    phaseTitle: state.phaseTitle,
+    attemptIndex: autoFixCount + 1,
+    summary: 'attempt_started',
+  }).then((result) => {
+    if (!result.ok) {
+      appendCaptureWarning('attempt_started', result.error?.message || 'capture failed');
+    }
+  });
   activeAttemptContext = {
     logFile,
     paths,
     runtime,
     startEpoch,
+    captureSession,
+    captureRunId,
+    captureRunSpanId,
+    captureAttemptSpanId,
   };
 
   const runtimeHealth = assessRuntimeHealth(activeRuntime);
@@ -1174,6 +1247,16 @@ function runPhaseAttempt() {
   if (worktreeCoordinator.status === 0) {
     const detail = (worktreeCoordinator.stdout || '').trim() || 'phase worktree coordinator completed';
     appendQaRuntimeUpdate('parallel-worktree-merged', logFile, detail, paths);
+    captureSession.recordFileReconciliation({
+      spanId: captureAttemptSpanId,
+      artifactRefs: collectFileReconciliationRefs(),
+      reconcileMode: 'git-diff-name-only',
+      summary: 'file_reconciliation',
+    }).then((result) => {
+      if (!result.ok) {
+        appendCaptureWarning('file_reconciliation', result.error?.message || 'capture failed');
+      }
+    });
     appendDecisionLog([
       `## Phase ${state.phaseNum} - Parallel Worktree Worksets`,
       '- Status: completed',
@@ -1192,6 +1275,31 @@ function runPhaseAttempt() {
   while (true) {
     updatePhaseState(state.phaseNum, 'in_progress', 'running', true, state.phaseDoc, paths);
     recordPhaseProgressCheckpoint('ready/isolate', 'phase-attempt-started', logFile, 'Phase state moved to in_progress before the worker prompt.', activeRuntime, paths);
+    const workerSpanId = `span-${crypto.randomUUID().slice(0, 8)}`;
+    const workerActionId = `action-${crypto.randomUUID().slice(0, 8)}`;
+    activeAttemptContext.currentWorkerSpanId = workerSpanId;
+    activeAttemptContext.currentWorkerActionId = workerActionId;
+    captureSession.recordSpanStarted({
+      spanId: workerSpanId,
+      parentSpanId: captureAttemptSpanId,
+      spanName: 'worker-prompt',
+      summary: 'span_started',
+    }).then((result) => {
+      if (!result.ok) {
+        appendCaptureWarning('span_started', result.error?.message || 'capture failed');
+      }
+    });
+    captureSession.recordActionStarted({
+      actionId: workerActionId,
+      spanId: workerSpanId,
+      parentSpanId: captureAttemptSpanId,
+      actionName: 'worker-prompt',
+      summary: 'action_started',
+    }).then((result) => {
+      if (!result.ok) {
+        appendCaptureWarning('action_started', result.error?.message || 'capture failed');
+      }
+    });
     const qaChecksumBefore = sha1FileOrEmpty(paths.phaseQaReport);
     appendDebugLog('worker-prompt-start', {
       logFile,
@@ -1201,6 +1309,19 @@ function runPhaseAttempt() {
       restartCount,
     });
     const exitCode = runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, activeRuntime);
+    captureSession.recordActionCompleted({
+      actionId: workerActionId,
+      spanId: workerSpanId,
+      parentSpanId: captureAttemptSpanId,
+      actionName: 'worker-prompt',
+      actionResult: `exit_code=${exitCode}`,
+      exitCode,
+      summary: 'action_completed',
+    }).then((result) => {
+      if (!result.ok) {
+        appendCaptureWarning('action_completed', result.error?.message || 'capture failed');
+      }
+    });
     appendDebugLog('worker-prompt-exit', {
       logFile,
       runtime: activeRuntime,
@@ -1220,6 +1341,19 @@ function runPhaseAttempt() {
         score: gate.PHASE_COMPLETION_SCORE,
         scoreVerdict: gate.PHASE_COMPLETION_SCORE_VERDICT,
         scoreSource: gate.PHASE_COMPLETION_SCORE_SOURCE,
+      });
+      captureSession.recordJudgeResult({
+        actionId: workerActionId,
+        spanId: captureAttemptSpanId,
+        judgeName: 'phase-completion-gate',
+        result: gate.PHASE_COMPLETION_ALLOWED === 'true' ? 'pass' : 'warn',
+        artifactRefs: collectFileReconciliationRefs(),
+        detail: gate.PHASE_COMPLETION_REASON,
+        summary: 'judge_result',
+      }).then((result) => {
+        if (!result.ok) {
+          appendCaptureWarning('judge_result', result.error?.message || 'capture failed');
+        }
       });
       if (gate.PHASE_COMPLETION_ALLOWED === 'true') {
         finalizeCompletion(

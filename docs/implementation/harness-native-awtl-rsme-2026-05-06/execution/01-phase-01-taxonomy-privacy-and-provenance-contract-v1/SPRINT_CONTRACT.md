@@ -141,7 +141,7 @@
 - phaseRuntimeParity: `PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=codex bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan`
 - phaseRunnerBoundary: `bash .claude/scripts/verify-phase-runner-boundary.sh`
 - phaseWorktreeParallel: `node .claude/scripts/phase-worktree-coordinator.mjs self-test`
-- phaseCloseout: `node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir docs/implementation --master-plan docs/implementation/00-master-plan-v1.md`
+- phaseCloseout: `node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir docs/implementation/harness-native-awtl-rsme-2026-05-06 --master-plan docs/implementation/harness-native-awtl-rsme-2026-05-06/00-master-plan-v1.md`
 
 ### Runtime Flow
 - Runtime evidence depth: complete
