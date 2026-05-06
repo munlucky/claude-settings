@@ -255,6 +255,7 @@ Memory 설정:
 - `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
 - 프로젝트 지식그래프는 `node .claude/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.claude/memorygraph/`에 반영합니다.
 - 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `claude-settings` graph에 승격합니다.
+- AWTL runtime importer utilities (`.claude/scripts/lib/awtl-runtime-importers.mjs`, `.claude/scripts/awtl-import-trace.mjs`) backfill Codex rollout/session and Claude transcript data into canonical AWTL events while keeping import metadata in `payload`.
 
 Code Review Graph 설정:
 - `code-review-graph`는 MemoryGraph를 대체하지 않습니다. MemoryGraph는 작업 기억/정책/결정, `code-review-graph`는 코드 구조/리뷰 영향도/분석 기능을 담당합니다.

@@ -112,8 +112,8 @@ planEngReview:
 - [x] Phase 02 - Schema and Trace Sink Foundation (`02-schema-trace-sink-foundation-v1.md`)
 - [x] Phase 03 - Native Harness Capture (`03-native-harness-capture-v1.md`)
 - [x] Phase 04 - Failure Attribution and Memory Candidate (`04-failure-attribution-memory-candidate-v1.md`)
-- [ ] Phase 05 - Replay Gate and Memory Promotion (`05-replay-gate-memory-promotion-v1.md`)
-- [ ] Phase 06 - Runtime Importers and Regression Hardening (`06-runtime-importers-regression-hardening-v1.md`)
+- [x] Phase 05 - Replay Gate and Memory Promotion (`05-replay-gate-memory-promotion-v1.md`)
+- [x] Phase 06 - Runtime Importers and Regression Hardening (`06-runtime-importers-regression-hardening-v1.md`)
 
 ## 완료 규칙
 - 각 phase 계획의 완료 기준과 fresh verification evidence가 충족될 때만 체크한다.

@@ -91,6 +91,12 @@ MemoryGraph promotion is permitted only for compact facts that carry provenance 
 - `judge_result.jsonl` is a materialized view built from the canonical log, not an independent source.
 - Partial or corrupt JSONL lines must be quarantined before the canonical file is rewritten.
 
+## Runtime Importers
+
+- `awtl-runtime-importers.mjs` and `awtl-import-trace.mjs` may backfill Codex rollout/session and Claude transcript data into canonical AWTL events.
+- Imported records must keep `source_runtime_schema`, `import_confidence`, and `imported_at` in `payload`.
+- Imported-only or transcript-only candidates remain blocked from MemoryGraph promotion.
+
 ## Open Decision Record
 
 | Item | Status | Decision |

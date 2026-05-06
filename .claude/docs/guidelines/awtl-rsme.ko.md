@@ -91,6 +91,12 @@ MemoryGraph 승격은 provenance와 validation tag가 붙은 compact fact에만 
 - `judge_result.jsonl`은 canonical log에서 만든 materialized view이며 독립적인 source가 아니다.
 - 부분 쓰기나 손상된 JSONL line은 canonical file을 다시 쓰기 전에 quarantine해야 한다.
 
+## Runtime Importers
+
+- `awtl-runtime-importers.mjs`와 `awtl-import-trace.mjs`는 Codex rollout/session과 Claude transcript 데이터를 canonical AWTL event로 backfill할 수 있다.
+- imported record는 `payload` 안에 `source_runtime_schema`, `import_confidence`, `imported_at`을 유지해야 한다.
+- imported-only 또는 transcript-only candidate는 MemoryGraph promotion에서 계속 차단된다.
+
 ## 열린 결정 기록
 
 | 항목 | 상태 | 결정 |

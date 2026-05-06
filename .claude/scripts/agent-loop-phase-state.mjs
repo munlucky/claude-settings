@@ -1071,6 +1071,10 @@ function evaluatePhaseCompletionGate(config) {
       continue;
     }
 
+    if (payload?.stale === true || payload?.superseded === true || String(payload?.supersededBy || '').trim()) {
+      continue;
+    }
+
     if (!isArtifactRelevantToActivePhase({
       candidatePath,
       payload,

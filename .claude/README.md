@@ -126,6 +126,7 @@ Do not present them as user-facing workflow entrypoints.
 ### Documentation and Logging
 - `session-logger`
 - `efficiency-tracker` (archived deprecated, explicit historical/reporting use only)
+- `awtl-runtime-importers.mjs` and `awtl-import-trace.mjs` backfill Codex rollout/session and Claude transcript data into canonical AWTL events with import metadata in `payload`
 
 ### Utilities
 - `teach-impeccable` (optional UI/design bundle member)

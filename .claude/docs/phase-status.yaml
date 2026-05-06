@@ -4,18 +4,18 @@ autonomousMode: true
 executionMode: "delegated-terminal"
 executionRoot: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution"
 preparedAt: "2026-05-06T02:45:00Z"
-activeExecutionStatus: "active"
-activeRunLeaseId: "dispatch-1778035318792-5089"
+activeExecutionStatus: "completed"
+activeRunLeaseId: "dispatch-1778039968189-31271"
 activeExecutionBoundary: "delegated-terminal"
-activeActionablePhasesRemaining: 5
-activeCurrentStage: "ready/isolate"
-activePhaseNumber: 1
-activePhaseTitle: "Phase 01: Taxonomy, Privacy, and Provenance Contract (v1)"
+activeActionablePhasesRemaining: 0
+activeCurrentStage: "finish"
+activePhaseNumber: 6
+activePhaseTitle: "Phase 04: Failure Attribution and Memory Candidate (v1)"
 activePlannedPhases: 6
-activeCompletedPhases: 1
+activeCompletedPhases: 6
 activeBlockedPhases: 0
-activePendingPhases: 4
-activeRemainingPhases: 5
+activePendingPhases: 0
+activeRemainingPhases: 0
 projectMemory:
   backend: MemoryGraph
   stageCoverage:
@@ -24,15 +24,18 @@ projectMemory:
     execute: not_checked
   lastStage: intake
   warning: "MemoryGraph recall failed with Transport closed; continuing per memorygraph-workflow unavailable policy."
-lastDispatchAt: "2026-05-06T02:41:58Z"
+lastDispatchAt: "2026-05-06T03:59:28Z"
 workflowEvidenceFile: ".claude/logs/workflow-enforcement/latest-dispatch.json"
 workflowSelectedBundles: "ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"
 workflowRequiredSkills: "moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"
-activeExecutionAttachedAt: "2026-05-06T02:41:58Z"
-activeExecutionHeartbeatAt: "2026-05-06T03:21:44Z"
-lastReturnBoundary: null
-lastStopReasonCode: null
-lastStopReasonDetail: null
+activeExecutionAttachedAt: "2026-05-06T03:59:28Z"
+activeExecutionHeartbeatAt: "2026-05-06T06:06:24Z"
+lastReturnBoundary: "phase-closeout"
+lastStopReasonCode: "completed"
+lastStopReasonDetail: "all planned phases completed"
+normalizedRunVerdict: passed
+stopReasonClass: completed
+stopReasonExplanation: "all planned phases completed"
 goalRuntime:
   goalId: "goal-1778035156161-d7ef054d2c"
   objective: "Complete active plan directory docs/implementation/harness-native-awtl-rsme-2026-05-06 using docs/implementation/harness-native-awtl-rsme-2026-05-06/00-master-plan-v1.md"
@@ -40,20 +43,20 @@ goalRuntime:
   tokenBudget: null
   tokensUsed: null
   timeBudgetSeconds: null
-  timeUsedSeconds: 2361
+  timeUsedSeconds: 11818
   accountingQuality: "unavailable"
   continuationSuppressed: false
-  currentRunLeaseId: "dispatch-1778035318792-5089"
+  currentRunLeaseId: "dispatch-1778039968189-31271"
   lastEvent: "GoalStarted"
   createdAt: "2026-05-06T02:39:16Z"
-  updatedAt: "2026-05-06T03:21:44Z"
+  updatedAt: "2026-05-06T06:06:24Z"
 phases:
   - number: 1
     title: "Phase 01: Taxonomy, Privacy, and Provenance Contract (v1)"
     status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/01-taxonomy-privacy-provenance-v1.md"
-    archivedPhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/01-taxonomy-privacy-provenance-v1.md"
+    archivedPhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/close/01-taxonomy-privacy-provenance-v1.md"
     attempts:
       total: 1
       lastOutcome: completed
@@ -81,81 +84,158 @@ phases:
       reason: checkpoint_commit_created
   - number: 2
     title: "Phase 02: Schema and Trace Sink Foundation (v1)"
-    status: in_progress
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/02-schema-trace-sink-foundation-v1.md"
     attempts:
-      total: 9
-      lastOutcome: running
-      lastUpdatedAt: "2026-05-06T03:21:51Z"
+      total: 20
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T03:35:47Z"
     sprintContract: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/02-phase-02-schema-and-trace-sink-foundation-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/02-phase-02-schema-and-trace-sink-foundation-v1/QA_REPORT.md"
     handoff: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/02-phase-02-schema-and-trace-sink-foundation-v1/HANDOFF.md"
     scorecard: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/02-phase-02-schema-and-trace-sink-foundation-v1/SCORECARD.md"
     timing:
       startedAt: "2026-05-06T03:01:15Z"
-      lastStage: "ready/isolate"
-      lastStageAt: "2026-05-06T03:21:51Z"
-      wallClockSeconds: 1236
-      runnerActiveSeconds: 2211
+      lastStage: "execute"
+      lastStageAt: "2026-05-06T03:35:47Z"
+      wallClockSeconds: 2072
+      runnerActiveSeconds: 3047
       verificationSeconds: 0
       remediationSeconds: 0
       blockedSeconds: 0
       manualCloseoutSeconds: 0
+      completedAt: "2026-05-06T03:35:47Z"
+    completedAt: "2026-05-06T03:35:47Z"
+    checkpoint:
+      status: committed
+      commit: 1576e2f
+      committedAt: 2026-05-06T03:35:53.540Z
+      reason: checkpoint_commit_created
+    archivedPhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/close/02-schema-trace-sink-foundation-v1.md"
   - number: 3
     title: "Phase 03: Native Harness Capture (v1)"
-    status: pending
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/03-native-harness-capture-v1.md"
+    archivedPhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/close/03-native-harness-capture-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
-      lastUpdatedAt: "2026-05-06T02:45:00Z"
+      total: 5
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T04:15:33Z"
     sprintContract: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/03-phase-03-native-harness-capture-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/03-phase-03-native-harness-capture-v1/QA_REPORT.md"
     handoff: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/03-phase-03-native-harness-capture-v1/HANDOFF.md"
     scorecard: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/03-phase-03-native-harness-capture-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T03:35:57Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-06T04:15:33Z"
+      wallClockSeconds: 2376
+      runnerActiveSeconds: 5313
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 0
+      manualCloseoutSeconds: 121
+      completedAt: "2026-05-06T04:15:33Z"
+    lastStopReasonCode: "blocked"
+    lastStopReasonDetail: "repo policy gate failed on an unrelated changed file and runtime-parity evidence was not fresh"
+    completedAt: "2026-05-06T04:15:33Z"
+    checkpoint:
+      status: committed
+      commit: c6dd079
+      committedAt: 2026-05-06T04:15:41.025Z
+      reason: checkpoint_commit_created
   - number: 4
     title: "Phase 04: Failure Attribution and Memory Candidate (v1)"
-    status: pending
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/04-failure-attribution-memory-candidate-v1.md"
+    archivedPhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/close/04-failure-attribution-memory-candidate-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
-      lastUpdatedAt: "2026-05-06T02:45:00Z"
+      total: 3
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T04:53:56Z"
     sprintContract: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/QA_REPORT.md"
     handoff: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/HANDOFF.md"
     scorecard: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/04-phase-04-failure-attribution-and-memory-candidate-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T04:15:44Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-06T04:53:56Z"
+      wallClockSeconds: 2292
+      runnerActiveSeconds: 7822
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 0
+      manualCloseoutSeconds: 118
+      completedAt: "2026-05-06T04:53:56Z"
+    completedAt: "2026-05-06T04:53:56Z"
+    checkpoint:
+      status: committed
+      commit: 8e12ff8
+      committedAt: 2026-05-06T04:54:03.684Z
+      reason: checkpoint_commit_created
   - number: 5
     title: "Phase 05: Replay Gate and Memory Promotion (v1)"
-    status: pending
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/05-replay-gate-memory-promotion-v1.md"
+    archivedPhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/close/05-replay-gate-memory-promotion-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
-      lastUpdatedAt: "2026-05-06T02:45:00Z"
+      total: 2
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T05:24:16Z"
     sprintContract: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/05-phase-05-replay-gate-and-memory-promotion-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/05-phase-05-replay-gate-and-memory-promotion-v1/QA_REPORT.md"
     handoff: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/05-phase-05-replay-gate-and-memory-promotion-v1/HANDOFF.md"
     scorecard: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/05-phase-05-replay-gate-and-memory-promotion-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T04:54:07Z"
+      lastStage: "ready/isolate"
+      lastStageAt: "2026-05-06T05:24:16Z"
+      wallClockSeconds: 1809
+      runnerActiveSeconds: 9556
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 0
+      manualCloseoutSeconds: 0
+      completedAt: "2026-05-06T05:24:16Z"
+    completedAt: "2026-05-06T05:24:16Z"
+    checkpoint:
+      status: committed
+      commit: d627c0d
+      committedAt: 2026-05-06T05:24:23.641Z
+      reason: checkpoint_commit_created
   - number: 6
     title: "Phase 06: Runtime Importers and Regression Hardening (v1)"
-    status: pending
+    status: completed
     planConfirmed: true
     activePhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/06-runtime-importers-regression-hardening-v1.md"
+    archivedPhaseDoc: "docs/implementation/harness-native-awtl-rsme-2026-05-06/close/06-runtime-importers-regression-hardening-v1.md"
     attempts:
-      total: 0
-      lastOutcome: pending
-      lastUpdatedAt: "2026-05-06T02:45:00Z"
+      total: 3
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-06T06:10:00Z"
     sprintContract: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/SPRINT_CONTRACT.md"
     qaReport: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/QA_REPORT.md"
     handoff: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/HANDOFF.md"
     scorecard: "docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-06T05:24:27Z"
+      lastStage: "ready/isolate"
+      lastStageAt: "2026-05-06T06:05:36Z"
+      wallClockSeconds: 2469
+      runnerActiveSeconds: 12036
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 0
+      manualCloseoutSeconds: 264
+      completedAt: "2026-05-06T06:10:00Z"
+    completedAt: "2026-05-06T06:10:00Z"
 
 signals:
   phaseAttemptMode: true
 artifacts:
-  activePhaseDocPath: "docs/implementation/harness-native-awtl-rsme-2026-05-06/02-schema-trace-sink-foundation-v1.md"
+  activePhaseDocPath: "docs/implementation/harness-native-awtl-rsme-2026-05-06/06-runtime-importers-regression-hardening-v1.md"

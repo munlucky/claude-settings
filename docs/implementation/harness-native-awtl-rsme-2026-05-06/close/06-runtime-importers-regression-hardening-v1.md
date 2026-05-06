@@ -86,15 +86,15 @@ phaseExecution:
 ## Critical Product Scenarios
 | Scenario | User-visible expectation | Command that proves it | Expected pass signal | Evidence path |
 |---|---|---|---|---|
-| SCN-P06-1 | Maintainer can backfill a runtime transcript into normalized AWTL events with import metadata | `node --test .claude/scripts/lib/awtl-runtime-importers.test.mjs` | importer fixture validates | `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-runtime-importers-regression-hardening/QA_REPORT.md` |
-| SCN-P06-2 | Imported event alone cannot promote a MemoryGraph fact | `node --test .claude/scripts/lib/awtl-runtime-importers.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs` | imported-only blocker assertion passes | `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-runtime-importers-regression-hardening/QA_REPORT.md` |
-| SCN-P06-3 | Existing phase runner and knowledge repository checks still pass after AWTL docs/scripts are added | `bash .claude/scripts/knowledge-repo-audit.sh` | audit exits 0 | `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-runtime-importers-regression-hardening/QA_REPORT.md` |
+| SCN-P06-1 | Maintainer can backfill a runtime transcript into normalized AWTL events with import metadata | `node --test .claude/scripts/lib/awtl-runtime-importers.test.mjs` | importer fixture validates | `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/QA_REPORT.md` |
+| SCN-P06-2 | Imported event alone cannot promote a MemoryGraph fact | `node --test .claude/scripts/lib/awtl-runtime-importers.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs` | imported-only blocker assertion passes | `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/QA_REPORT.md` |
+| SCN-P06-3 | Existing phase runner and knowledge repository checks still pass after AWTL docs/scripts are added | `bash .claude/scripts/knowledge-repo-audit.sh` | audit exits 0 | `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/QA_REPORT.md` |
 
 ## Blockers And Review
 - Blocker condition: available Codex/Claude transcript fixtures contain private reasoning or prompt bodies that cannot be safely represented even as redacted metadata.
 - First review checkpoint: after importer fixture conversion passes but before docs advertise importer availability.
 - Re-review trigger: any change that allows imported-only data to satisfy promotion gate.
-- Verification evidence path: `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-runtime-importers-regression-hardening/QA_REPORT.md`
+- Verification evidence path: `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/QA_REPORT.md`
 
 ## 검증 계획
 - [ ] Syntax: `node --check .claude/scripts/awtl-import-trace.mjs`
@@ -104,7 +104,7 @@ phaseExecution:
 - [ ] Knowledge audit: `bash .claude/scripts/knowledge-repo-audit.sh`
 
 ## 완료 표시용 증거
-- `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-runtime-importers-regression-hardening/QA_REPORT.md`
+- `docs/implementation/harness-native-awtl-rsme-2026-05-06/execution/06-phase-06-runtime-importers-and-regression-hardening-v1/QA_REPORT.md`
 - final changed file list and targeted test output copied or linked in QA report
 
 ## 산출물
