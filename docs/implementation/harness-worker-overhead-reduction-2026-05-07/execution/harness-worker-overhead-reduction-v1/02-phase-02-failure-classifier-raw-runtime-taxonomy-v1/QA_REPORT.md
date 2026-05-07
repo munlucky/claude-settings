@@ -1,15 +1,15 @@
-# Phase 01 QA Report
+# Phase 02 QA Report
 
 > Updated by verifier/runtime steps. Seeded automatically by `agent-loop.mjs`.
 
 ## Slice
-- Phase: 1
-- Title: Phase 01: Verdict RequiredChecks Contract (v1)
-- Contract: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/01-phase-01-verdict-requiredchecks-contract-v1/SPRINT_CONTRACT.md
+- Phase: 2
+- Title: Phase 02: Failure Classifier Raw Runtime Taxonomy (v1)
+- Contract: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/02-phase-02-failure-classifier-raw-runtime-taxonomy-v1/SPRINT_CONTRACT.md
 
 ## Verdict
 - Status: passed
-- Summary: Phase 01: Verdict RequiredChecks Contract (v1) artifact sync updated structured review, finish, and workset state.
+- Summary: Phase 02: Failure Classifier Raw Runtime Taxonomy (v1) artifact sync updated structured review, finish, and workset state.
 - Scope status: complete
 - Next path: clean_finish
 - Closeout reason: scope_complete
@@ -18,7 +18,7 @@
 - Review completed: yes
 - Review owners: codex-review-code
 - Review-driven code changes: no blocking findings remained after verification
-- Review closeout detail: SCN-P01-1 pass; SCN-P01-2 pass; SCN-P01-3 pass; phase evidence synchronized from verified implementation outputs.
+- Review closeout detail: SCN-P02-1 pass; SCN-P02-2 pass; SCN-P02-3 pass; phase evidence synchronized from verified implementation outputs.
 
 ## Contract Review Evidence
 - Contract reviewed by evaluator: yes
@@ -32,32 +32,34 @@
 
 
 ## Failure Loop
-- Retry strategy: same_direction_refine
-- Delta hypothesis: first attempt pending
-- Repeated failure policy: if the same failure class repeats twice, choose partial_redesign or stop_and_handoff before another attempt
+- Retry strategy: none
+- Delta hypothesis: resolved by targeted regex, runtime stop-line, and workflow evidence updates
+- Repeated failure policy: not applicable after clean finish
 
 ## Criteria Review
 | Criterion | Result | Notes |
 |-----------|--------|-------|
-|  | pending |  |
+| Source plan fidelity | pass | Sprint contract preserved the source phase requirements without unapproved deviations. |
+| Runtime evidence freshness | pass | Classifier regression, runtime stop-reason checks, and workflow verification all passed. |
+| Closeout completeness | pass | QA, scorecard, handoff, and workset now agree on scope_complete. |
 
 ## Plan Conformance Review
 | Plan Item | Required | Actual | Result | Required Action |
 |-----------|----------|--------|--------|-----------------|
-| Source plan snapshot preserved | Source phase doc requirements remain authoritative in SPRINT_CONTRACT.md | pending | pending | Compare source phase doc before closeout |
-| Exact execution targets satisfied | Required files, dependencies, and expected signals are implemented or user-approved replan exists | pending | pending | Run `.claude/scripts/verify-plan-conformance.mjs` |
-| Spec deviation ledger clean | No unapproved delete/substitute/defer decisions | pending | pending | Record retry_loop or user-approved-replan |
+| Source plan snapshot preserved | Source phase doc requirements remain authoritative in SPRINT_CONTRACT.md | pass | pass | none |
+| Exact execution targets satisfied | Required files, dependencies, and expected signals are implemented or user-approved replan exists | pass | pass | none |
+| Spec deviation ledger clean | No unapproved delete/substitute/defer decisions | pass | pass | none |
 
 ## Findings
 | Severity | Area | Reproduction | Expected | Actual |
 |----------|------|--------------|----------|--------|
-|  |  |  |  |  |
+| info | classifier/runtime | `node --test .claude/scripts/lib/failure-classifier.test.mjs` and `node .claude/scripts/agent-loop-phase-runtime.mjs detect-final-stop-reason <log> phase-failed 2` | raw terminate, plugin sync, PATH denial, and resolve-host strings map to stable codes | passed |
 
 ## Runtime Updates
 - 2026-05-07 06:20:00 | Stage: finish | Status: clean-finish-ready | Runtime: codex
-- Log: .claude/logs/agent-loop/phase-1_closeout-sync.log
-- Detail: SCN-P01-1 pass; SCN-P01-2 pass; SCN-P01-3 pass; phase evidence synchronized from verified implementation outputs.
-- Verification verdict file: .claude/verification-verdict-phase01-final.json
+- Log: .claude/logs/agent-loop/phase-2_closeout-sync.log
+- Detail: SCN-P02-1 pass; SCN-P02-2 pass; SCN-P02-3 pass; phase evidence synchronized from verified implementation outputs.
+- Verification verdict file: .claude/verification-verdict-phase02-final.json
 - Verification verdict: passed
 - Runtime evidence depth: open -> act -> mutate -> persist -> recover
 - Critical scenario smoke-only warnings: none
@@ -92,5 +94,5 @@
 - Why this round may stop now: clean-finish conditions are satisfied and recorded.
 - Remaining in-scope work: none
 - Remaining blockers before closeout: none
-- Checks to rerun if code changes again: python3 .claude/scripts/write-verification-verdict.py --output /tmp/hwo-verdict-none.json --run-id hwo-none --phase-number 1 --expected-check smoke --passed-check smoke --missing-check none; node .claude/scripts/verification-verdict-state.mjs self-test; node .claude/scripts/agent-loop-phase-state.mjs self-test; node --test .claude/scripts/verify-phase-closeout.test.mjs
+- Checks to rerun if code changes again: node --test .claude/scripts/lib/failure-classifier.test.mjs; node --check .claude/scripts/agent-loop-phase-runtime.mjs; node .claude/scripts/phase-capability-preflight.mjs --json
 

@@ -354,6 +354,430 @@ function normalizeScorecardCloseoutFields(scorecardPath, { currentScore, targetS
   fs.writeFileSync(scorecardPath, `${lines.join('\n')}\n`, 'utf8');
 }
 
+function parseStructuredArtifactState(stateInput) {
+  if (!stateInput) {
+    return {};
+  }
+
+  const candidate = String(stateInput).trim();
+  if (!candidate) {
+    return {};
+  }
+
+  if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+    return JSON.parse(fs.readFileSync(candidate, 'utf8'));
+  }
+
+  return JSON.parse(candidate);
+}
+
+function normalizeArrayInput(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  return parseListString(value);
+}
+
+function updateWorkflowSectionFromState(qaText, lines, workflow = {}) {
+  const current = extractWorkflowSection(qaText);
+  const next = {
+    selected: workflow.selectedBundles ?? current.selected ?? '',
+    applied: workflow.appliedSkills ?? current.applied ?? '',
+    skipped: workflow.skippedSkills ?? current.skipped ?? '',
+    selectedHarnessComponents: workflow.selectedHarnessComponents ?? current.selectedHarnessComponents ?? '',
+    skippedHarnessComponents: workflow.skippedHarnessComponents ?? current.skippedHarnessComponents ?? '',
+    selectionReason: workflow.selectionReason ?? current.selectionReason ?? '',
+    runtimeIsolation: workflow.runtimeIsolation ?? current.runtimeIsolation ?? '',
+    modelEffortProfile: workflow.modelEffortProfile ?? current.modelEffortProfile ?? '',
+    effortEscalationReason: workflow.effortEscalationReason ?? current.effortEscalationReason ?? '',
+    selectedModelProvider: workflow.selectedModelProvider ?? current.selectedModelProvider ?? '',
+    selectedModel: workflow.selectedModel ?? current.selectedModel ?? '',
+    selectedModelEffort: workflow.selectedModelEffort ?? current.selectedModelEffort ?? '',
+    modelSelectionReason: workflow.modelSelectionReason ?? current.modelSelectionReason ?? '',
+    retrievalBudget: workflow.retrievalBudget ?? current.retrievalBudget ?? '',
+    validationProfile: workflow.validationProfile ?? current.validationProfile ?? '',
+    phaseReplayPolicy: workflow.phaseReplayPolicy ?? current.phaseReplayPolicy ?? '',
+  };
+
+  return replaceOrAppendSection(lines, '## Workflow Execution', [
+    `- Selected bundles: ${next.selected || 'none'}`,
+    `- Applied skills: ${next.applied || 'none'}`,
+    `- Skipped skills: ${next.skipped || 'none'}`,
+    `- Selected harness components: ${next.selectedHarnessComponents || 'none'}`,
+    `- Skipped harness components: ${next.skippedHarnessComponents || 'none'}`,
+    `- Selection reason: ${next.selectionReason || 'artifact sync'}`,
+    `- Runtime isolation: ${next.runtimeIsolation || 'artifact-sync'}`,
+    `- Model effort profile: ${next.modelEffortProfile || 'standard'}`,
+    `- Effort escalation reason: ${next.effortEscalationReason || defaultEffortEscalationReason(next.modelEffortProfile || 'standard')}`,
+    `- Selected model provider: ${next.selectedModelProvider || 'runtime-default'}`,
+    `- Selected model: ${next.selectedModel || 'runtime-default'}`,
+    `- Selected model effort: ${next.selectedModelEffort || 'runtime-default'}`,
+    `- Model selection reason: ${next.modelSelectionReason || 'artifact sync'}`,
+    `- Retrieval budget: ${next.retrievalBudget || DEFAULT_RETRIEVAL_BUDGET}`,
+    `- Validation profile: ${next.validationProfile || DEFAULT_VALIDATION_PROFILE}`,
+    `- Phase replay policy: ${next.phaseReplayPolicy || DEFAULT_PHASE_REPLAY_POLICY}`,
+    '',
+  ]);
+}
+
+function updateObjectiveChecklist(lines, objectives = []) {
+  if (!Array.isArray(objectives) || objectives.length === 0) {
+    return lines;
+  }
+
+  const objectiveMap = new Map();
+  for (const objective of objectives) {
+    const id = String(objective?.id || objective?.code || '').trim();
+    if (!id) {
+      continue;
+    }
+    objectiveMap.set(id, {
+      status: String(objective?.status || 'pending').trim() || 'pending',
+      evidence: String(objective?.evidence || '').trim(),
+      notes: String(objective?.notes || '').trim(),
+      weight: String(objective?.weight || '').trim(),
+      category: String(objective?.category || '').trim(),
+    });
+  }
+
+  if (objectiveMap.size === 0) {
+    return lines;
+  }
+
+  return lines.map((line) => {
+    const match = line.match(/^\| (OBJ-[^|]+) \|/);
+    if (!match) {
+      return line;
+    }
+    const objective = objectiveMap.get(match[1]);
+    if (!objective) {
+      return line;
+    }
+    const parts = line.split('|');
+    if (parts.length < 7) {
+      return line;
+    }
+    parts[4] = ` ${objective.status} `;
+    if (objective.evidence) {
+      parts[5] = ` ${objective.evidence} `;
+    }
+    if (objective.notes) {
+      parts[6] = ` ${objective.notes} `;
+    }
+    return parts.join('|');
+  });
+}
+
+function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
+  if (!worksetsPath || !fs.existsSync(worksetsPath)) {
+    return;
+  }
+
+  let text = fs.readFileSync(worksetsPath, 'utf8');
+  const changedFiles = normalizeArrayInput(state.changedFiles ?? state.workset?.ownedPaths ?? []);
+  const verificationCommands = normalizeArrayInput(state.commands ?? state.workset?.verificationCommands ?? []);
+  const activeAtomicTask = String(state.activeAtomicTask || state.workset?.activeAtomicTask || '').trim();
+  const taskStatus = String(state.workset?.status || state.workset?.taskStatus || '').trim();
+  const evidenceEntries = normalizeArrayInput(state.workset?.evidence ?? []);
+  const completedAt = state.workset?.completedAt || state.completedAt || '';
+  const timestamp = state.timestamp || state.runtime?.timestamp || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const logFile = String(state.logFile || state.runtime?.logFile || '').trim();
+  const verdictPath = String(state.verdictPath || state.runtime?.verdictPath || '').trim();
+  const runtimeStage = String(state.runtime?.stage || state.stage || '').trim();
+  const runtimeStatus = String(state.runtime?.status || state.status || '').trim();
+
+  if (activeAtomicTask) {
+    text = text.replace(/^activeAtomicTask:\s*.*$/m, `activeAtomicTask: ${activeAtomicTask}`);
+  }
+
+  const taskIds = activeAtomicTask ? [activeAtomicTask] : [];
+  const lines = text.split(/\r?\n/);
+  let taskStart = -1;
+  let taskEnd = lines.length;
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+    if (trimmed.startsWith('- id:')) {
+      const currentId = trimmed.split(':', 2)[1]?.trim() || '';
+      if (taskIds.length === 0 || taskIds.includes(currentId)) {
+        taskStart = index;
+        for (let probe = index + 1; probe < lines.length; probe += 1) {
+          const probeTrimmed = lines[probe].trim();
+          if (probeTrimmed.startsWith('- id:')) {
+            taskEnd = probe;
+            break;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  if (taskStart >= 0) {
+    const block = lines.slice(taskStart, taskEnd);
+    const nextBlock = [...block];
+    let sawStatus = false;
+    let sawOwnedPaths = false;
+    let sawVerificationCommands = false;
+    let sawEvidence = false;
+    let sawCompletedAt = false;
+    for (let index = 0; index < nextBlock.length; index += 1) {
+      const stripped = nextBlock[index].trim();
+      if (stripped.startsWith('status:')) {
+        nextBlock[index] = `    status: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`;
+        sawStatus = true;
+      } else if (stripped.startsWith('ownedPaths:')) {
+        nextBlock[index] = `    ownedPaths: [${changedFiles.map((value) => yamlQuote(value)).join(', ')}]`;
+        sawOwnedPaths = true;
+      } else if (stripped.startsWith('verificationCommands:')) {
+        nextBlock[index] = `    verificationCommands: [${verificationCommands.map((value) => yamlQuote(value)).join(', ')}]`;
+        sawVerificationCommands = true;
+      } else if (stripped.startsWith('evidence:')) {
+        const evidence = [
+          verdictPath ? `Structured verdict: ${path.relative(process.cwd(), verdictPath).replace(/\\/g, '/')}` : '',
+          logFile ? `Runner log: ${logFile}` : '',
+          runtimeStage ? `Stage: ${runtimeStage}` : '',
+          runtimeStatus ? `Status: ${runtimeStatus}` : '',
+          ...evidenceEntries,
+        ].filter(Boolean);
+        nextBlock[index] = `    evidence: [${evidence.map((value) => yamlQuote(value)).join(', ')}]`;
+        sawEvidence = true;
+      } else if (stripped.startsWith('completedAt:')) {
+        const nextCompletedAt = taskStatus === 'completed' || runtimeStatus === 'completed'
+          ? (completedAt || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'))
+          : completedAt;
+        nextBlock[index] = `    completedAt: ${nextCompletedAt ? yamlQuote(nextCompletedAt) : 'null'}`;
+        sawCompletedAt = true;
+      }
+    }
+
+    if (!sawStatus) {
+      nextBlock.push(`    status: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`);
+    }
+    if (!sawOwnedPaths) {
+      nextBlock.push(`    ownedPaths: [${changedFiles.map((value) => yamlQuote(value)).join(', ')}]`);
+    }
+    if (!sawVerificationCommands) {
+      nextBlock.push(`    verificationCommands: [${verificationCommands.map((value) => yamlQuote(value)).join(', ')}]`);
+    }
+    if (!sawEvidence) {
+      const evidence = [
+        verdictPath ? `Structured verdict: ${path.relative(process.cwd(), verdictPath).replace(/\\/g, '/')}` : '',
+        logFile ? `Runner log: ${logFile}` : '',
+        runtimeStage ? `Stage: ${runtimeStage}` : '',
+        runtimeStatus ? `Status: ${runtimeStatus}` : '',
+        ...evidenceEntries,
+      ].filter(Boolean);
+      nextBlock.push(`    evidence: [${evidence.map((value) => yamlQuote(value)).join(', ')}]`);
+    }
+    if (!sawCompletedAt) {
+      const nextCompletedAt = taskStatus === 'completed' || runtimeStatus === 'completed'
+        ? (completedAt || timestamp)
+        : completedAt;
+      nextBlock.push(`    completedAt: ${nextCompletedAt ? yamlQuote(nextCompletedAt) : 'null'}`);
+    }
+
+    lines.splice(taskStart, taskEnd - taskStart, ...nextBlock);
+    text = lines.join('\n');
+  }
+
+  fs.writeFileSync(worksetsPath, text.endsWith('\n') ? text : `${text}\n`, 'utf8');
+}
+
+function syncPhaseArtifacts(input = {}) {
+  const {
+  qaReportPath = '',
+  scorecardPath = '',
+  handoffPath = '',
+  worksetsPath = '',
+  phaseTitle = '',
+  phaseNum = '',
+  targetCompletionScore = '100',
+  state: nestedState = {},
+  ...topLevelState
+  } = input;
+  const state = Object.keys(nestedState || {}).length > 0 ? nestedState : topLevelState;
+  const runtime = state.runtime || {};
+  const review = state.review || {};
+  const finish = state.finish || {};
+  const score = state.score || {};
+  const workflow = state.workflow || {};
+  const verdictPath = String(state.verdictPath || runtime.verdictPath || '').trim();
+  const verdictRelPath = verdictPath ? path.relative(process.cwd(), verdictPath).replace(/\\/g, '/') : '';
+  const runtimeStage = String(runtime.stage || state.stage || 'ready/isolate').trim();
+  const runtimeStatus = String(runtime.status || state.status || 'in_progress').trim();
+  const runtimeName = String(runtime.runtime || state.runtimeName || 'artifact-sync').trim();
+  const logFile = String(runtime.logFile || state.logFile || '').trim();
+  const detail = String(runtime.detail || state.detail || '').trim();
+  const timestamp = String(state.timestamp || runtime.timestamp || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')).trim();
+
+  if (qaReportPath && fs.existsSync(qaReportPath)) {
+    let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
+    if (qaLines.length > 0 && qaLines.at(-1) === '') {
+      qaLines = qaLines.slice(0, -1);
+    }
+
+    qaLines = replaceOrAppendSection(qaLines, '## Verdict', [
+      `- Status: ${String(finish.status || (finish.nextPath === 'clean_finish' ? 'passed' : 'in_progress')).trim() || 'in_progress'}`,
+      `- Summary: ${finish.summary || `${phaseTitle || 'Active phase'} artifact sync updated structured review, finish, and workset state.`}`,
+      `- Scope status: ${finish.scopeStatus || (finish.nextPath === 'clean_finish' ? 'complete' : 'partial')}`,
+      `- Next path: ${finish.nextPath || (finish.status === 'passed' ? 'clean_finish' : 'retry_loop')}`,
+      `- Closeout reason: ${finish.closeoutReason || (finish.nextPath === 'clean_finish' ? 'scope_complete' : 'verification_failed')}`,
+      '',
+    ]);
+
+    qaLines = replaceOrAppendSection(qaLines, '## Review Checkpoint', [
+      `- Review completed: ${review.completed === false ? 'no' : 'yes'}`,
+      `- Review owners: ${review.owners || 'codex-review-code'}`,
+      `- Review-driven code changes: ${review.codeChanges || 'structured artifact sync only'}`,
+      `- Review closeout detail: ${review.detail || detail || 'structured artifact sync applied'}`,
+      '',
+    ]);
+
+    qaLines = replaceOrAppendSection(qaLines, '## Contract Review Evidence', [
+      `- Contract reviewed by evaluator: ${review.contractReviewedByEvaluator === false ? 'no' : 'yes'}`,
+      `- Verification owner: ${review.verificationOwner || 'completion-verifier'}`,
+      `- Runtime evidence plan: ${review.runtimeEvidencePlan || 'structured artifact sync with deterministic writer updates and idempotence rerun'}`,
+      `- Round fail conditions: ${review.roundFailConditions || 'stale verification, failed review, failed plan conformance, or missing runtime evidence blocks clean finish'}`,
+      `- Contract revision required: ${review.contractRevisionRequired === true ? 'yes' : 'no'}`,
+      '',
+    ]);
+
+    qaLines = updateWorkflowSectionFromState(fs.readFileSync(qaReportPath, 'utf8'), qaLines, workflow);
+
+    qaLines = replaceOrAppendSection(qaLines, '## Runtime Updates', [
+      `- ${timestamp.replace('T', ' ').slice(0, 19)} | Stage: ${runtimeStage} | Status: ${runtimeStatus} | Runtime: ${runtimeName}`,
+      logFile ? `- Log: ${logFile}` : '- Log: none',
+      detail ? `- Detail: ${detail}` : '- Detail: structured artifact sync',
+      verdictRelPath ? `- Verification verdict file: ${verdictRelPath}` : '- Verification verdict file: .claude/verification-verdict-*.json',
+      `- Verification verdict: ${String(runtime.verdict || score.verdict || 'pending').trim() || 'pending'}`,
+      `- Runtime evidence depth: ${runtime.evidenceDepth || 'pending'}`,
+      `- Critical scenario smoke-only warnings: ${runtime.smokeWarnings || 'none'}`,
+      '',
+    ]);
+
+    qaLines = replaceOrAppendSection(qaLines, '## Score Summary', [
+      `- Current score: ${score.current ?? 0}`,
+      `- Target score: ${score.target ?? targetCompletionScore}`,
+      `- Unmet checklist items: ${score.unmetItems ?? 0}`,
+      `- Blocking defects: ${score.blockingDefects ?? 0}`,
+      `- Verdict: ${score.verdict || 'retry'}`,
+      '',
+    ]);
+
+    qaLines = replaceOrAppendSection(qaLines, '## Finish Readiness', [
+      `- Fresh evidence confirmed: ${finish.freshEvidence === false ? 'no' : 'yes'}`,
+      `- Why this round may stop now: ${finish.whyStop || (finish.nextPath === 'clean_finish' ? 'clean-finish conditions are satisfied and recorded.' : 'structured artifact sync preserved the active phase state.')}`,
+      `- Remaining in-scope work: ${finish.remainingWork || (finish.nextPath === 'clean_finish' ? 'none' : 'continue the active phase from the current structured state.')}`,
+      `- Remaining blockers before closeout: ${finish.remainingBlockers || (finish.nextPath === 'clean_finish' ? 'none' : 'verification has not completed yet.')}`,
+      `- Checks to rerun if code changes again: ${finish.checksToRerun || 'use the active phase sprint contract'}`,
+      '',
+    ]);
+
+    fs.writeFileSync(qaReportPath, `${qaLines.join('\n')}\n`, 'utf8');
+  }
+
+  if (scorecardPath && fs.existsSync(scorecardPath)) {
+    let scoreLines = fs.readFileSync(scorecardPath, 'utf8').split(/\r?\n/);
+    if (scoreLines.length > 0 && scoreLines.at(-1) === '') {
+      scoreLines = scoreLines.slice(0, -1);
+    }
+
+    scoreLines = updateObjectiveChecklist(scoreLines, score.objectives || score.objectiveChecklist || []);
+    scoreLines = scoreLines.map((line) => {
+      if (line.trim().startsWith('- Current score:')) {
+        return `- Current score: ${score.current ?? 0}`;
+      }
+      if (line.trim().startsWith('- Target score:')) {
+        return `- Target score: ${score.target ?? targetCompletionScore}`;
+      }
+      if (line.trim().startsWith('- Unmet checklist items:')) {
+        return `- Unmet checklist items: ${score.unmetItems ?? 0}`;
+      }
+      if (line.trim().startsWith('- Blocking defects:')) {
+        return `- Blocking defects: ${score.blockingDefects ?? 0}`;
+      }
+      if (line.trim().startsWith('- Verdict:')) {
+        return `- Verdict: ${score.verdict || 'retry'}`;
+      }
+      return line;
+    });
+    scoreLines = ensureTaskLevelStatus(scoreLines, score.taskStatus || (score.verdict === 'done' ? 'FULL' : 'NO'));
+    scoreLines = replaceOrAppendSection(scoreLines, '## Progress Checkpoints', [
+      `- ${timestamp.replace('T', ' ').slice(0, 19)} | Stage: ${runtimeStage} | Status: ${runtimeStatus}`,
+      detail ? `- Detail: ${detail}` : '- Detail: structured artifact sync',
+      '',
+    ]);
+
+    fs.writeFileSync(scorecardPath, `${scoreLines.join('\n')}\n`, 'utf8');
+  }
+
+  if (handoffPath && fs.existsSync(handoffPath)) {
+    const stopReason = String(finish.stopReason || runtime.stopReason || (finish.nextPath === 'clean_finish' ? 'phase_local_closeout_marker' : 'blocked')).trim();
+    const normalizedReason = stopReason || 'blocked';
+    const phaseDoc = state.phase?.docPath || state.phaseDoc || '';
+    const phaseSprintContract = qaReportPath ? path.join(path.dirname(qaReportPath), 'SPRINT_CONTRACT.md') : '';
+    const body = `# Phase ${String(phaseNum || state.phase?.number || '').padStart(2, '0')} Handoff
+
+> Generated because the phase stopped without clean completion.
+
+## Goal
+- ${phaseTitle || state.phase?.title || ''}
+- Current stage: Finish / Handoff
+
+## Status
+- Required: ${finish.nextPath === 'clean_finish' ? 'no' : 'pending'}
+- Reason: ${finish.nextPath === 'clean_finish'
+    ? 'the phase completed cleanly with fresh verification evidence, recorded review state, and no pending resume work.'
+    : (finish.detail || detail || 'structured artifact sync recorded by writer')}
+
+## Resume Trigger
+- Why this handoff exists: ${finish.nextPath === 'clean_finish' ? 'clean-finish marker only' : 'the current attempt did not reach clean finish'}
+- Stop reason: ${normalizedReason}
+- Why this cannot continue in the current round: ${finish.nextPath === 'clean_finish'
+    ? 'no additional in-scope work remains for this phase; this marker is phase-local and not a plan-level stop reason'
+    : 'structured artifact sync recorded the active state; resume only after reviewing the latest blockers, interruption, or deferred verification state.'}
+- Condition to resume: ${finish.nextPath === 'clean_finish'
+    ? 'reopen only if a new change invalidates the current verification evidence'
+    : 'review the latest contract and QA evidence, then continue only the active phase'}
+
+## Checks To Rerun
+- Review: ${finish.nextPath === 'clean_finish' ? 'rerun only if code changes again' : 'rerun review for any code changed in the next attempt'}
+- Verification: ${finish.nextPath === 'clean_finish' ? 'rerun only if code changes again' : `rerun the required commands recorded in \`${phaseSprintContract}\``}
+- Runtime flow: ${finish.nextPath === 'clean_finish' ? 'not required for the current clean finish' : 'rerun the active phase flow only after the blocker above is addressed'}
+
+## Remaining Scope
+- Remaining in-scope work: ${finish.nextPath === 'clean_finish' ? 'none' : (finish.remainingWork || 'resolve the current stop reason and finish the active phase with fresh verification evidence')}
+- Next planned phase or slice: ${finish.nextPath === 'clean_finish' ? 'none in this handoff file' : `remain on the current phase until the scorecard reaches \`done\``}
+
+## Evidence Paths
+- Sprint contract: ${phaseSprintContract}
+- QA report: ${qaReportPath}
+- Phase doc: ${phaseDoc}
+- Scorecard: ${scorecardPath}
+
+## Workflow Logging
+- session-logger: ${finish.nextPath === 'clean_finish' ? 'not required for this clean finish' : 'recorded via structured artifact sync'}
+- Detail: ${detail || finish.detail || 'none provided'}
+`;
+    fs.writeFileSync(handoffPath, body, 'utf8');
+  }
+
+  if (worksetsPath && fs.existsSync(worksetsPath)) {
+    updateWorksetsFromStructuredState(worksetsPath, {
+      ...state,
+      verdictPath,
+      logFile,
+      changedFiles: state.changedFiles || state.workset?.ownedPaths || [],
+      commands: state.commands || state.workset?.verificationCommands || [],
+      workset: {
+        ...(state.workset || {}),
+        status: state.workset?.status || (finish.nextPath === 'clean_finish' ? 'completed' : 'in_progress'),
+        activeAtomicTask: state.workset?.activeAtomicTask || state.activeAtomicTask || '',
+      },
+    });
+  }
+}
+
 function syncRetryCloseoutArtifacts({
   qaReportPath,
   scorecardPath,
@@ -1446,6 +1870,260 @@ function runSelfTest() {
       throw new Error('closeout sync writer is not idempotent');
     }
 
+    const worksetsPath = path.join(tempDir, 'WORKSETS.yaml');
+    const verdictPath = path.join(tempDir, 'verdict.json');
+    fs.writeFileSync(verdictPath, JSON.stringify({
+      verdict: 'passed',
+      evidenceFresh: true,
+      phase: { number: 4, title: 'Fixture Phase', activePhaseDocPath: phaseDoc },
+    }, null, 2), 'utf8');
+    fs.writeFileSync(qaReportPath, [
+      '# QA',
+      '',
+      '## Verdict',
+      '- Status: in_progress',
+      '- Summary: fixture',
+      '- Scope status: partial',
+      '- Next path: retry_loop',
+      '- Closeout reason: verification_failed',
+      '',
+      '## Review Checkpoint',
+      '- Review completed: no',
+      '- Review owners: pending',
+      '- Review-driven code changes: pending',
+      '',
+      '## Contract Review Evidence',
+      '- Contract reviewed by evaluator: no',
+      '- Verification owner: pending',
+      '- Runtime evidence plan: pending',
+      '- Round fail conditions: pending',
+      '- Contract revision required: no',
+      '',
+      '## Workflow Execution',
+      '- Selected bundles: none',
+      '- Applied skills: none',
+      '- Skipped skills: none',
+      '- Selected harness components: none',
+      '- Skipped harness components: none',
+      '- Selection reason: pending',
+      '- Runtime isolation: pending',
+      '- Model effort profile: standard',
+      '- Effort escalation reason: none',
+      '- Selected model provider: pending',
+      '- Selected model: pending',
+      '- Selected model effort: pending',
+      '- Model selection reason: pending',
+      '- Retrieval budget: pending',
+      '- Validation profile: pending',
+      '- Phase replay policy: pending',
+      '',
+      '## Runtime Updates',
+      '- Seeded at: 2026-05-07 05:07:23',
+      '- Verification verdict file: pending',
+      '- Verification verdict: pending',
+      '- Runtime evidence depth: pending',
+      '- Critical scenario smoke-only warnings: none',
+      '',
+      '## Score Summary',
+      '- Current score: 0',
+      '- Target score: 100',
+      '- Unmet checklist items: 1',
+      '- Blocking defects: 0',
+      '- Verdict: retry',
+      '',
+      '## Finish Readiness',
+      '- Fresh evidence confirmed: no',
+      '- Why this round may stop now: fixture',
+      '- Remaining in-scope work: fixture',
+      '- Remaining blockers before closeout: fixture',
+      '- Checks to rerun if code changes again: fixture',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(scorecardPath, [
+      '# Scorecard',
+      '',
+      '## Objective Checklist',
+      '| ID | Category | Weight | Status | Evidence | Notes |',
+      '|----|----------|--------|--------|----------|-------|',
+      '| OBJ-CONFORM | Source platform phase plan conformance verified | 20 | pending | fixture | fixture |',
+      '',
+      '## Score Summary',
+      '- Current score: 0',
+      '- Target score: 100',
+      '- Unmet checklist items: 1',
+      '- Blocking defects: 0',
+      '- Verdict: retry',
+      '',
+      '## Task-Level Status Adapter',
+      '- Status: FULL | PARTIAL | NO',
+      '- Current task status: NO',
+      '- Partial threshold: 60',
+      '',
+      '## Progress Checkpoints',
+      '- previous checkpoint',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(handoffPath, [
+      '# Handoff',
+      '',
+      '## Status',
+      '- Required: pending',
+      '- Reason: fixture',
+      '',
+      '## Resume Trigger',
+      '- Why this handoff exists: fixture',
+      '- Stop reason: blocked',
+      '- Why this cannot continue in the current round: fixture',
+      '- Condition to resume: fixture',
+      '',
+      '## Checks To Rerun',
+      '- Review: fixture',
+      '- Verification: fixture',
+      '- Runtime flow: fixture',
+      '',
+      '## Remaining Scope',
+      '- Remaining in-scope work: fixture',
+      '- Next planned phase or slice: fixture',
+      '',
+      '## Evidence Paths',
+      '- Sprint contract: fixture',
+      '- QA report: fixture',
+      '- Phase doc: fixture',
+      '- Scorecard: fixture',
+      '',
+      '## Workflow Logging',
+      '- session-logger: fixture',
+      '- Detail: fixture',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(worksetsPath, [
+      'schemaVersion: 1',
+      'activeAtomicTask: AT-01',
+      'atomicTasks:',
+      '  - id: AT-01',
+      '    title: "Complete the source phase scope"',
+      '    status: in_progress',
+      '    ownedPaths: []',
+      '    verificationCommands: []',
+      '    evidence: []',
+      '    completedAt: null',
+      'worksets: []',
+    ].join('\n'), 'utf8');
+
+    const structuredState = {
+      qaReportPath,
+      scorecardPath,
+      handoffPath,
+      worksetsPath,
+      phaseTitle: 'Fixture Phase',
+      phaseNum: '4',
+      targetCompletionScore: 100,
+      timestamp: '2026-05-07T05:07:23Z',
+      verdictPath,
+      runtime: {
+        stage: 'verify',
+        status: 'in_progress',
+        runtime: 'codex',
+        logFile: 'artifact-sync.log',
+        detail: 'fixture structured sync',
+        evidenceDepth: 'open-act-mutate-persist-recover',
+        smokeWarnings: 'none',
+        verdict: 'passed',
+        timestamp: '2026-05-07T05:07:23Z',
+      },
+      review: {
+        completed: true,
+        owners: 'codex-review-code',
+        codeChanges: 'structured sync fixture',
+        detail: 'structured sync fixture',
+        contractReviewedByEvaluator: true,
+        verificationOwner: 'completion-verifier',
+        runtimeEvidencePlan: 'fixture structured sync',
+        contractRevisionRequired: false,
+      },
+      finish: {
+        freshEvidence: true,
+        summary: 'structured sync fixture',
+        scopeStatus: 'complete',
+        nextPath: 'clean_finish',
+        closeoutReason: 'scope_complete',
+        whyStop: 'clean-finish conditions are satisfied and recorded.',
+        remainingWork: 'none',
+        remainingBlockers: 'none',
+        checksToRerun: 'fixture structured sync',
+      },
+      score: {
+        current: 100,
+        target: 100,
+        unmetItems: 0,
+        blockingDefects: 0,
+        verdict: 'done',
+        taskStatus: 'FULL',
+        objectives: [
+          {
+            id: 'OBJ-CONFORM',
+            status: 'pass',
+            evidence: 'fixture structured sync',
+            notes: 'structured sync fixture',
+          },
+        ],
+      },
+      workflow: {
+        selectedBundles: 'ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle',
+        appliedSkills: 'implementation-runner, codex-review-code, completion-verifier',
+        skippedSkills: 'none',
+        selectedHarnessComponents: 'phase-runner, contract, implementation, review, verification, finish',
+        skippedHarnessComponents: 'none',
+        selectionReason: 'fixture structured sync',
+        runtimeIsolation: 'runtime-adapter',
+        modelEffortProfile: 'standard',
+        effortEscalationReason: 'none',
+        selectedModelProvider: 'openai',
+        selectedModel: 'gpt-5.4-mini',
+        selectedModelEffort: 'medium',
+        modelSelectionReason: 'fixture structured sync',
+        retrievalBudget: DEFAULT_RETRIEVAL_BUDGET,
+        validationProfile: DEFAULT_VALIDATION_PROFILE,
+        phaseReplayPolicy: DEFAULT_PHASE_REPLAY_POLICY,
+      },
+      changedFiles: ['.claude/scripts/agent-loop-phase-artifacts.mjs', '.claude/scripts/agent-loop-phase-plan-lib.mjs'],
+      commands: ['node .claude/scripts/agent-loop-phase-artifacts.mjs self-test'],
+      activeAtomicTask: 'AT-01',
+      workset: {
+        activeAtomicTask: 'AT-01',
+        status: 'completed',
+        ownedPaths: ['.claude/scripts/agent-loop-phase-artifacts.mjs', '.claude/scripts/agent-loop-phase-plan-lib.mjs'],
+        verificationCommands: ['node .claude/scripts/agent-loop-phase-artifacts.mjs self-test'],
+        evidence: ['structured sync fixture'],
+        completedAt: '2026-05-07T05:07:23Z',
+      },
+      phase: {
+        number: '4',
+        title: 'Fixture Phase',
+        docPath: phaseDoc,
+      },
+    };
+
+    syncPhaseArtifacts(structuredState);
+    const structuredFirstPass = [
+      fs.readFileSync(qaReportPath, 'utf8'),
+      fs.readFileSync(scorecardPath, 'utf8'),
+      fs.readFileSync(handoffPath, 'utf8'),
+      fs.readFileSync(worksetsPath, 'utf8'),
+    ].join('\n--\n');
+
+    syncPhaseArtifacts(structuredState);
+    const structuredSecondPass = [
+      fs.readFileSync(qaReportPath, 'utf8'),
+      fs.readFileSync(scorecardPath, 'utf8'),
+      fs.readFileSync(handoffPath, 'utf8'),
+      fs.readFileSync(worksetsPath, 'utf8'),
+    ].join('\n--\n');
+
+    if (structuredFirstPass !== structuredSecondPass) {
+      throw new Error('structured artifact sync writer is not idempotent');
+    }
+
     writeStdoutLine('agent-loop-phase-artifacts self-test passed');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1462,6 +2140,7 @@ function printUsage() {
     '  agent-loop-phase-artifacts.mjs normalize-qa-report-workflow-fields <qa-report-path>',
     '  agent-loop-phase-artifacts.mjs append-qa-runtime-update <status> <log-file> [detail] <workflow-log-dir> <phase-qa-report> <phase-scorecard>',
     '  agent-loop-phase-artifacts.mjs record-phase-progress-checkpoint <qa-report> <scorecard> <stage> <status> <log-file> <detail> <runtime>',
+    '  agent-loop-phase-artifacts.mjs sync-phase-artifacts <state-json-or-path>',
     '  agent-loop-phase-artifacts.mjs complete-review-closeout-from-verdict <completion-artifacts> <qa-report> <scorecard> <handoff> <phase-title> <target-score> <log-file> <detail>',
     '  agent-loop-phase-artifacts.mjs sync-closeout-artifacts <completion-artifacts> <qa-report> <scorecard> <handoff> <phase-title> <phase-num> <target-score> <log-file> <detail>',
     '  agent-loop-phase-artifacts.mjs sync-clean-finish-artifacts <completion-artifacts> <qa-report> <scorecard> <phase-title> <target-score>',
@@ -1494,6 +2173,9 @@ switch (command) {
       detail: args[5] ?? '',
       runtimeName: args[6] ?? '',
     });
+    break;
+  case 'sync-phase-artifacts':
+    syncPhaseArtifacts(parseStructuredArtifactState(args[0] ?? ''));
     break;
   case 'sync-clean-finish-artifacts':
     syncCleanFinishArtifacts({

@@ -1,9 +1,9 @@
-# Phase 01 Handoff
+# Phase 06 Handoff
 
 > Generated because the phase stopped without clean completion.
 
 ## Goal
-- Phase 01: Verdict RequiredChecks Contract (v1)
+- Phase 06: Runtime Unavailable Cache And MemoryGraph Policy (v1)
 - Current stage: Finish / Handoff
 
 ## Status
@@ -26,11 +26,11 @@
 - Next planned phase or slice: none in this handoff file
 
 ## Evidence Paths
-- Sprint contract: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/01-phase-01-verdict-requiredchecks-contract-v1/SPRINT_CONTRACT.md
-- QA report: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/01-phase-01-verdict-requiredchecks-contract-v1/QA_REPORT.md
-- Phase doc: docs/implementation/harness-worker-overhead-reduction-2026-05-07/01-verdict-required-checks-contract-v1.md
-- Scorecard: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/01-phase-01-verdict-requiredchecks-contract-v1/SCORECARD.md
+- Sprint contract: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/06-phase-06-runtime-unavailable-cache-and-memorygraph-policy-v1/SPRINT_CONTRACT.md
+- QA report: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/06-phase-06-runtime-unavailable-cache-and-memorygraph-policy-v1/QA_REPORT.md
+- Phase doc: docs/implementation/harness-worker-overhead-reduction-2026-05-07/06-runtime-unavailable-cache-memorygraph-policy-v1.md
+- Scorecard: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/06-phase-06-runtime-unavailable-cache-and-memorygraph-policy-v1/SCORECARD.md
 
 ## Workflow Logging
 - session-logger: not required for this clean finish
-- Detail: SCN-P01-1 pass; SCN-P01-2 pass; SCN-P01-3 pass; phase evidence synchronized from verified implementation outputs.
+- Detail: SCN-P06-1 pass; SCN-P06-2 pass; SCN-P06-3 pass; phase evidence synchronized from verified implementation outputs.

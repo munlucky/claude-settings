@@ -7,10 +7,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runCommand } from './lib/process-utils.mjs';
+import { archivePromptText, summarizeSpawnCommand } from './lib/prompt-redaction.mjs';
 import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
 import { createPhaseHarnessCaptureSession } from './lib/awtl-harness-capture.mjs';
 import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
+import { classifyFailure } from './lib/failure-classifier.mjs';
+import {
+  knownUnavailableSummary,
+  recordUnavailableCapability,
+} from './lib/runtime-unavailable-cache.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(SCRIPT_DIR, 'runtime-cli.mjs');
@@ -59,6 +65,13 @@ const runtimeState = {
   launchProgressFingerprint: '',
 };
 const protectedPids = new Set([process.pid]);
+const strictMemoryGateEnabled = String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
+const unavailableCapabilityCodes = new Set([
+  'memorygraph_unavailable',
+  'plugin_network_sync_failed',
+  'path_update_denied',
+  'mcp_cleanup_eperm',
+]);
 
 const MAX_DELEGATED_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_DELEGATED_RESTARTS ?? '32', 10) || 32;
 const MAX_COORDINATOR_RESTARTS = Number.parseInt(
@@ -128,13 +141,33 @@ function appendDebugLog(event, details = {}) {
 }
 
 function appendCaptureWarning(context, detail) {
+  const detailText = String(detail || '');
+  const classification = classifyFailure({
+    message: detailText,
+    detail: detailText,
+    stderr: detailText,
+    stdout: detailText,
+    reason: context,
+  });
+  const cachedSummary = classification.code === 'unknown_failure' || strictMemoryGateEnabled
+    ? ''
+    : knownUnavailableSummary(state.statusFile, { code: classification.code });
+  if (unavailableCapabilityCodes.has(classification.code)) {
+    recordUnavailableCapability(state.statusFile, {
+      code: classification.code,
+      fingerprint: classification.fingerprint,
+      source: context,
+      evidencePath: debugLog,
+      strict: strictMemoryGateEnabled ? 'true' : 'false',
+    });
+  }
   const record = appendWasteLedgerEntry({
     repoRoot: process.cwd(),
     kind: 'warning',
     phase: 'dispatch',
     phaseTitle: path.basename(state.planDir || ''),
     context,
-    detail,
+    detail: cachedSummary || detailText,
     evidencePath: debugLog,
     action: 'capture_warning',
     source: 'moonshot-phase-dispatch',
@@ -144,7 +177,7 @@ function appendCaptureWarning(context, detail) {
   if (record.firstOccurrence) {
     appendDebugLog('awtl-capture-warning', {
       context,
-      detail,
+      detail: cachedSummary || detailText,
       warningClass: record.entry.class,
     });
   }
@@ -1171,14 +1204,11 @@ function buildCodexCommand(prompt) {
 }
 
 function appendCodexPromptArg(args, prompt) {
+  const promptArchive = archivePromptText(prompt, process.cwd());
   if (process.platform === 'win32' && args.some((arg, index) => index === 0
     ? /(?:powershell|pwsh)\.exe$/i.test(String(arg))
     : /\.ps1$/i.test(String(arg)))) {
-    const promptDir = path.join('.claude', 'logs', 'agent-loop', 'prompts');
-    fs.mkdirSync(promptDir, { recursive: true });
-    const promptFile = path.resolve(promptDir, `dispatch-codex-prompt-${Date.now()}-${process.pid}.txt`);
-    fs.writeFileSync(promptFile, prompt, 'utf8');
-    args.push('--codex-prompt-file', promptFile);
+    args.push('--codex-prompt-file', path.resolve(process.cwd(), promptArchive.promptArchivePath));
     return;
   }
   args.push(prompt);
@@ -1494,7 +1524,7 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
     }
     appendDebugLog('in-session-coordinator-launch', {
       pid: child.pid ?? null,
-      command: cmd,
+      ...summarizeSpawnCommand(cmd, process.cwd()),
       planDir: state.planDir,
       executionRoot: resolvedRoot,
     });

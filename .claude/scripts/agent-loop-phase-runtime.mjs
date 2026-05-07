@@ -9,10 +9,17 @@ import { fileURLToPath } from 'node:url';
 import { resolveParentRuntimeContext } from './lib/runtime-platform.mjs';
 import { classifyFailure } from './lib/failure-classifier.mjs';
 import { assessRuntimeHealthFromVerdictFiles } from './verification-verdict-state.mjs';
+import { summarizeSpawnCommand } from './lib/prompt-redaction.mjs';
+import { knownUnavailableSummary } from './lib/runtime-unavailable-cache.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const phaseStatePath = path.join(scriptDir, 'agent-loop-phase-state.mjs');
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
+const strictMemoryGateEnabled = String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
+
+function resolvePhaseStatusFile(workspaceRoot) {
+  return path.join(workspaceRoot, '.claude', 'docs', 'phase-status.yaml');
+}
 
 function commandExists(command) {
   const checker = process.platform === 'win32' ? 'where' : 'which';
@@ -272,7 +279,7 @@ function resolveTimeoutFallbackRuntime(currentRuntime) {
   return '';
 }
 
-const TERMINAL_ENVIRONMENT_STOP_CODES = new Set([
+const TERMINAL_STOP_CODES = new Set([
   'bash_access_denied',
   'git_eperm',
   'git_index_denied',
@@ -281,6 +288,10 @@ const TERMINAL_ENVIRONMENT_STOP_CODES = new Set([
   'codex_session_storage_readonly',
   'codex_home_readonly',
   'codex_state_db_readonly',
+  'mcp_cleanup_eperm',
+  'path_update_denied',
+  'plugin_network_sync_failed',
+  'network_fetch_failed',
   'node_spawn_eperm',
   'verifier_unavailable',
   'spawn_blocked',
@@ -302,7 +313,7 @@ function isLogEvidenceLine(line) {
     return false;
   }
 
-  return /(?:Failed to create session:|readonly database|read only database|spawn(?:Sync)? .*?(?:EPERM|EACCES)|(?:Error|ERROR|fatal|Failed|failed): .*?(?:permission denied|operation not permitted|access is denied|EPERM|EACCES)|(?:node --test|bash|git|rg).*?(?:spawn EPERM|access denied|permission denied|operation not permitted)|runtime verifier unavailable|verification runtime unavailable|verifier unavailable|spawn blocked|unable to create process)/i.test(trimmed);
+  return /(?:Failed to create session:|readonly database|read only database|spawn(?:Sync)? .*?(?:EPERM|EACCES)|(?:Error|ERROR|fatal|Failed|failed): .*?(?:permission denied|operation not permitted|access is denied|EPERM|EACCES)|Failed to terminate MCP process group|Failed to kill MCP process group|Could not resolve host|plugin sync failed|could not update PATH|(?:node --test|bash|git|rg).*?(?:spawn EPERM|access denied|permission denied|operation not permitted)|runtime verifier unavailable|verification runtime unavailable|verifier unavailable|spawn blocked|unable to create process)/i.test(trimmed);
 }
 
 function detectEnvironmentStopReason(logFile, defaultReason = 'phase-failed') {
@@ -323,7 +334,7 @@ function detectEnvironmentStopReason(logFile, defaultReason = 'phase-failed') {
       stderr: line,
       stdout: line,
     });
-    if (classification.category === 'environment' && TERMINAL_ENVIRONMENT_STOP_CODES.has(classification.code)) {
+    if ((classification.category === 'environment' || classification.category === 'network') && TERMINAL_STOP_CODES.has(classification.code)) {
       return classification.code;
     }
   }
@@ -556,13 +567,14 @@ function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
   const issuePattern = /migration \d+ was previously applied but is missing|state db discrepancy|Failed to kill MCP process group/i;
   const recentWindowMs = Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_WINDOW_MS ?? String(2 * 60 * 60 * 1000), 10) || (2 * 60 * 60 * 1000);
   const maxLogs = Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_MAX_LOGS ?? '5', 10) || 5;
+  const phaseStatusFile = resolvePhaseStatusFile(workspaceRoot);
+  const memorygraphSummary = knownUnavailableSummary(phaseStatusFile, { code: 'memorygraph_unavailable' });
   const matchingLogs = parseRecentRuntimeIssues(
     logDir,
     issuePattern,
     recentWindowMs,
     maxLogs,
   );
-  const latestIssueTimeMs = matchingLogs[0]?.mtimeMs ?? 0;
   const structuredVerdictAssessment = assessRuntimeHealthFromVerdicts(
     normalizedRuntime,
     workspaceRoot,
@@ -573,6 +585,17 @@ function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
   if (structuredVerdictAssessment) {
     return {
       ...structuredVerdictAssessment,
+      FALLBACK_RUNTIME: '',
+      FALLBACK_POLICY: fallbackPolicy.reason,
+    };
+  }
+
+  if (!strictMemoryGateEnabled && memorygraphSummary) {
+    return {
+      HEALTHY: 'true',
+      RUNTIME: normalizedRuntime,
+      REASON: 'cached-unavailable-capability',
+      DETAIL: memorygraphSummary,
       FALLBACK_RUNTIME: '',
       FALLBACK_POLICY: fallbackPolicy.reason,
     };
@@ -640,9 +663,15 @@ async function runWithWatchdog(args) {
     env: process.env,
     detached: process.platform !== 'win32',
   });
+  const spawnSummary = summarizeSpawnCommand(command, process.cwd());
   writeSupervisorEvent(logStream, 'spawn', {
     pid: child.pid ?? null,
-    command,
+    commandName: spawnSummary.commandName,
+    argvSummary: spawnSummary.argvSummary,
+    argvHash: spawnSummary.argvHash,
+    promptHash: spawnSummary.promptHash,
+    promptBytes: spawnSummary.promptBytes,
+    promptArchivePath: spawnSummary.promptArchivePath,
     mode: 'watchdog',
   });
 
@@ -823,9 +852,15 @@ async function runWorkerPromptWithCompletionGate(args) {
     env: process.env,
     detached: process.platform !== 'win32',
   });
+  const spawnSummary = summarizeSpawnCommand(command, process.cwd());
   writeSupervisorEvent(logStream, 'spawn', {
     pid: child.pid ?? null,
-    command,
+    commandName: spawnSummary.commandName,
+    argvSummary: spawnSummary.argvSummary,
+    argvHash: spawnSummary.argvHash,
+    promptHash: spawnSummary.promptHash,
+    promptBytes: spawnSummary.promptBytes,
+    promptArchivePath: spawnSummary.promptArchivePath,
     mode: 'completion-gate',
   });
 

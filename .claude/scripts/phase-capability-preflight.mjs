@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 import { npmBaseArgs, resolveCodexCommand, resolvePowerShellCommand } from './runtime-cli.mjs';
 import { resolveCommandEvidence, resolveDockerDependencyGate } from './lib/command-resolver.mjs';
+import { classifyFailure } from './lib/failure-classifier.mjs';
+import {
+  hasUnavailableCapability,
+  knownUnavailableSummary,
+  recordUnavailableCapability,
+} from './lib/runtime-unavailable-cache.mjs';
 import {
   buildFailureClassCounts,
   classifyCapabilityCheck,
@@ -15,6 +21,15 @@ import {
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = process.cwd();
+const phaseStatusFile = path.join(workspaceRoot, '.claude', 'docs', 'phase-status.yaml');
+const strictMemoryGateEnabled = String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
+const unavailableCapabilityCodes = new Set([
+  'memorygraph_unavailable',
+  'plugin_network_sync_failed',
+  'path_update_denied',
+  'mcp_cleanup_eperm',
+]);
+const memorygraphFingerprint = classifyFailure({ code: 'memorygraph_unavailable', source: 'memorygraph.health' }).fingerprint;
 
 function run(command, args, options = {}) {
   const env = { ...process.env };
@@ -373,6 +388,12 @@ function buildReport() {
   const shellSnapshotDir = path.join(preflightRoot, 'shell-snapshot');
   const stateDbPath = path.join(workspaceRoot, '.claude', 'runtime-state.sqlite');
   const memorygraphProbeCommand = [process.execPath, path.join(scriptDir, 'memorygraph-direct.mjs'), 'health'];
+  const memorygraphCacheQuery = {
+    code: 'memorygraph_unavailable',
+    fingerprint: memorygraphFingerprint,
+    source: 'memorygraph.health',
+    strict: strictMemoryGateEnabled ? 'true' : 'false',
+  };
 
   checks.push(resolveCodexCommand()
     ? check('codex.resolve', 'passed', resolveCodexCommand())
@@ -388,7 +409,23 @@ function buildReport() {
   checks.push(probeWritablePath('codex.sessionStorage', codexSessionDir, 'session-probe.tmp', 'codex session storage writable', 'codex_session_storage_readonly', 'repair-codex-session-storage-permissions-or-fallback-runtime'));
   checks.push(probeWritableExistingFile('codex.stateDb', stateDbPath, 'codex state DB opened for write access', 'codex_state_db_readonly', 'repair-codex-state-db-permissions-or-fallback-runtime', 'state DB not present; writable probe skipped'));
   checks.push(probeWritablePath('shell.snapshot', shellSnapshotDir, 'snapshot-probe.tmp', 'shell snapshot directory writable', 'shell_snapshot_failure', 'repair-shell-snapshot-path-or-fallback-runtime'));
-  checks.push(runChildProbe('memorygraph.health', memorygraphProbeCommand[0], memorygraphProbeCommand.slice(1), 'MemoryGraph health probe succeeded', 'memorygraph_unavailable', 'install-or-repair-memorygraph-or-defer-memory-backed-verification'));
+  if (hasUnavailableCapability(phaseStatusFile, memorygraphCacheQuery) && !strictMemoryGateEnabled) {
+    checks.push(check(
+      'memorygraph.health',
+      'warning',
+      `cached unavailable capability: ${knownUnavailableSummary(phaseStatusFile, { code: 'memorygraph_unavailable' }) || 'memorygraph_unavailable'}`,
+      {
+        command: memorygraphProbeCommand.join(' '),
+        failureClass: 'memorygraph_unavailable',
+        decision: 'continue',
+        fallbackHint: '',
+        fingerprint: memorygraphFingerprint,
+        cached: true,
+      },
+    ));
+  } else {
+    checks.push(runChildProbe('memorygraph.health', memorygraphProbeCommand[0], memorygraphProbeCommand.slice(1), 'MemoryGraph health probe succeeded', 'memorygraph_unavailable', 'install-or-repair-memorygraph-or-defer-memory-backed-verification'));
+  }
 
   checks.push(commandCheck('corepack.version', resolveCommandEvidence('corepack')));
   checks.push(commandCheck('pnpm.version', resolveCommandEvidence('pnpm')));
@@ -504,7 +541,17 @@ function buildReport() {
       }));
   }
 
-  const classifiedChecks = checks.map(classifyCapabilityCheck);
+  const classifiedChecks = checks.map(classifyCapabilityCheck).map((entry) => {
+    if (!strictMemoryGateEnabled && entry.code === 'memorygraph_unavailable') {
+      return {
+        ...entry,
+        blocker: false,
+        decision: 'continue',
+        retryPolicy: 'retryable',
+      };
+    }
+    return entry;
+  });
   const currentFailureCounts = buildFailureClassCounts(classifiedChecks.filter((entry) => entry.blocker));
   const historicalCounts = {};
   for (const report of readRecentCapabilityReports()) {
@@ -558,6 +605,26 @@ function buildReport() {
   };
 }
 
+function recordUnavailableCapabilityEvidence(report, artifactPath) {
+  const entries = Array.isArray(report?.checks) ? report.checks : [];
+  for (const checkEntry of entries) {
+    const classified = classifyCapabilityCheck(checkEntry);
+    if (!unavailableCapabilityCodes.has(classified.code)) {
+      continue;
+    }
+    if (classified.status === 'passed') {
+      continue;
+    }
+    recordUnavailableCapability(phaseStatusFile, {
+      code: classified.code,
+      fingerprint: classified.fingerprint,
+      source: classified.name || checkEntry.name || classified.code,
+      evidencePath: artifactPath,
+      strict: strictMemoryGateEnabled ? 'true' : 'false',
+    });
+  }
+}
+
 function writeArtifact(report) {
   const outputDir = path.join(workspaceRoot, '.claude', 'logs', 'agent-loop');
   fs.mkdirSync(outputDir, { recursive: true });
@@ -571,6 +638,7 @@ function main() {
   const json = process.argv.includes('--json');
   const report = buildReport();
   const artifactPath = writeArtifact(report);
+  recordUnavailableCapabilityEvidence(report, artifactPath);
   const output = { ...report, artifactPath };
   if (json) {
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);

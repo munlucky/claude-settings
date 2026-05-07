@@ -12,12 +12,21 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { classifyFailure } from './lib/failure-classifier.mjs';
+import {
+  knownUnavailableSummary,
+  readUnavailableCapabilities,
+  recordUnavailableCapability,
+} from './lib/runtime-unavailable-cache.mjs';
+
 const ROOT = process.cwd();
 const CLAUDE_ROOT = path.join(ROOT, '.claude');
 const LOG_DIR = path.join(CLAUDE_ROOT, 'logs', 'memorygraph');
 const DEFAULT_SEED = path.join(CLAUDE_ROOT, 'cache', 'memorygraph', 'project-graph-seed.json');
 const NODE = process.execPath;
 const isWindows = process.platform === 'win32';
+const PHASE_STATUS_FILE = path.join(CLAUDE_ROOT, 'docs', 'phase-status.yaml');
+const MEMORYGRAPH_FINGERPRINT = classifyFailure({ code: 'memorygraph_unavailable', source: 'commit-moonshot-memory-refresh' }).fingerprint;
 
 function printHelp() {
   process.stdout.write(`Usage: node .claude/scripts/commit-moonshot-memory-refresh.mjs [options]
@@ -279,6 +288,8 @@ async function main() {
   const mcp = classifyMcp(options);
   const storePayload = readJsonValue(options.storeJson, '--store-json');
   const commands = [];
+  const strictMemoryGateEnabled = Boolean(options.strict) || String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
+  const cachedUnavailable = readUnavailableCapabilities(PHASE_STATUS_FILE).find((entry) => entry.code === 'memorygraph_unavailable');
 
   if (mcp.status === 'mcp_ok') {
     const summary = {
@@ -292,6 +303,41 @@ async function main() {
     };
     summary.logPath = writeLog(summary);
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
+
+  if (cachedUnavailable && !strictMemoryGateEnabled) {
+    const summary = {
+      status: 'cached_unavailable',
+      route: 'cached_fallback',
+      reason: 'cached_memorygraph_unavailable',
+      projectId,
+      projectPath,
+      mcp,
+      runtime: 'runtime_broken_or_unavailable',
+      writeStatus: 'promotion_write_unavailable',
+      denialCodes: ['memorygraph_unavailable'],
+      closeoutStatus: 'non_blocking',
+      storePayloadProvided: Boolean(storePayload),
+      commands,
+      logPath: '',
+      cachedUnavailableSummary: knownUnavailableSummary(PHASE_STATUS_FILE, { code: 'memorygraph_unavailable' }),
+    };
+    summary.logPath = writeLog(summary);
+    recordUnavailableCapability(PHASE_STATUS_FILE, {
+      code: 'memorygraph_unavailable',
+      fingerprint: MEMORYGRAPH_FINGERPRINT,
+      source: 'commit-moonshot-memory-refresh',
+      evidencePath: summary.logPath,
+      strict: 'false',
+    });
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    } else {
+      process.stdout.write(`MemoryGraph commit refresh: ${summary.status} (${summary.reason})\n`);
+      process.stdout.write(`Route: ${summary.route}; cache: ${summary.cachedUnavailableSummary}\n`);
+      process.stdout.write(`Log: ${summary.logPath}\n`);
+    }
     return;
   }
 
@@ -402,6 +448,15 @@ async function main() {
     logPath: '',
   };
   summary.logPath = writeLog(summary);
+  if (!health.ok || mcp.status !== 'mcp_ok') {
+    recordUnavailableCapability(PHASE_STATUS_FILE, {
+      code: 'memorygraph_unavailable',
+      fingerprint: MEMORYGRAPH_FINGERPRINT,
+      source: 'commit-moonshot-memory-refresh',
+      evidencePath: summary.logPath,
+      strict: strictMemoryGateEnabled ? 'true' : 'false',
+    });
+  }
 
   if (options.json) {
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
@@ -102,6 +103,39 @@ test('phase closeout fails when a structured verdict contradicts itself', () => 
 
     assert.equal(result.allowed, false);
     assert.ok(result.violations.some((violation) => violation.code === 'verification-verdict-inconsistent'));
+  });
+});
+
+test('completion gate taxonomy classifies review, finish, verification, environment, and score gaps', () => {
+  assertGateClassification('review-incomplete', {
+    category: 'review_closeout_missing',
+    stopReason: 'missing-review-evidence',
+    remediationStage: 'review',
+    retryPolicy: 'writer_only',
+  });
+  assertGateClassification('missing-finish-closeout', {
+    category: 'finish_closeout_missing',
+    stopReason: 'missing-finish-closeout',
+    remediationStage: 'finish/handoff',
+    retryPolicy: 'writer_only',
+  });
+  assertGateClassification('missing-fresh-verification-evidence', {
+    category: 'verification_missing',
+    stopReason: 'missing-fresh-verification-evidence',
+    remediationStage: 'verify',
+    retryPolicy: 'verification_remediation',
+  });
+  assertGateClassification('scorecard-score-below-target', {
+    category: 'score_incomplete',
+    stopReason: 'missing-fresh-verification-evidence',
+    remediationStage: 'verify',
+    retryPolicy: 'limited_retry',
+  });
+  assertGateClassification('blocked:verification-preflight-blocked', {
+    category: 'environment_blocked',
+    stopReason: 'blocked:verification-preflight-blocked',
+    remediationStage: 'verify',
+    retryPolicy: 'stop_loop',
   });
 });
 
@@ -303,4 +337,40 @@ function writeFixture(root, options = {}) {
       score: { verdict: settings.inconsistentVerdict ? 'blocked' : 'done' },
     }, null, 2)
   );
+}
+
+function assertGateClassification(reason, expected) {
+  const result = spawnSync('node', ['.claude/scripts/agent-loop-phase-attempt.mjs', 'classify-gate-stop-reason', reason], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+
+  const output = parseAssignments(result.stdout);
+  assert.equal(output.GATE_REASON_CATEGORY, expected.category);
+  assert.equal(output.STOP_REASON, expected.stopReason);
+  assert.equal(output.REMEDIATION_STAGE, expected.remediationStage);
+  assert.equal(output.RETRY_POLICY, expected.retryPolicy);
+}
+
+function parseAssignments(text) {
+  const values = {};
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const separator = trimmed.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    const key = trimmed.slice(0, separator);
+    let value = trimmed.slice(separator + 1);
+    if (value.startsWith("'") && value.endsWith("'")) {
+      value = value.slice(1, -1).replace(/'\\''/g, "'");
+    }
+    values[key] = value;
+  }
+  return values;
 }

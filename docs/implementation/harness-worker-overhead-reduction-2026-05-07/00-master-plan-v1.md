@@ -91,13 +91,13 @@
 
 ## Phase Completion Checklist
 
-- [ ] Phase 01 - Verdict RequiredChecks Contract (`01-verdict-required-checks-contract-v1.md`)
-- [ ] Phase 02 - Failure Classifier Raw Runtime Taxonomy (`02-failure-classifier-raw-runtime-taxonomy-v1.md`)
-- [ ] Phase 03 - Spawn Prompt Redaction And Log Hygiene (`03-spawn-prompt-redaction-log-hygiene-v1.md`)
-- [ ] Phase 04 - Structured Artifact Writer Expansion (`04-structured-artifact-writer-expansion-v1.md`)
-- [ ] Phase 05 - Completion Gate Reason Taxonomy And Retry Policy (`05-completion-gate-reason-taxonomy-retry-policy-v1.md`)
-- [ ] Phase 06 - Runtime Unavailable Cache And MemoryGraph Policy (`06-runtime-unavailable-cache-memorygraph-policy-v1.md`)
-- [ ] Phase 07 - Regression Fixture And Documentation Sync (`07-regression-fixture-documentation-sync-v1.md`)
+- [x] Phase 01 - Verdict RequiredChecks Contract (`01-verdict-required-checks-contract-v1.md`)
+- [x] Phase 02 - Failure Classifier Raw Runtime Taxonomy (`02-failure-classifier-raw-runtime-taxonomy-v1.md`)
+- [x] Phase 03 - Spawn Prompt Redaction And Log Hygiene (`03-spawn-prompt-redaction-log-hygiene-v1.md`)
+- [x] Phase 04 - Structured Artifact Writer Expansion (`04-structured-artifact-writer-expansion-v1.md`)
+- [x] Phase 05 - Completion Gate Reason Taxonomy And Retry Policy (`05-completion-gate-reason-taxonomy-retry-policy-v1.md`)
+- [x] Phase 06 - Runtime Unavailable Cache And MemoryGraph Policy (`06-runtime-unavailable-cache-memorygraph-policy-v1.md`)
+- [x] Phase 07 - Regression Fixture And Documentation Sync (`07-regression-fixture-documentation-sync-v1.md`)
 
 ## Completion Rule
 

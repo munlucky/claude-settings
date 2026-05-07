@@ -328,6 +328,7 @@ function mirrorToCurrentRun(statusFile, leasePayload) {
   const next = {
     ...existing,
     updatedAt: utcTimestamp(),
+    unavailableCapabilities: leasePayload.unavailableCapabilities || existing.unavailableCapabilities || [],
     phaseRunLease: leasePayload,
   };
   writeJson(leaseFiles.currentRunFile, next);
@@ -379,6 +380,7 @@ function startLease(config) {
     returnBoundary: '',
     stopReasonCode: '',
     stopReasonDetail: '',
+    unavailableCapabilities: [],
   };
 
   writeActiveLease(statusFile, payload);

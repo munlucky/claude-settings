@@ -179,6 +179,17 @@ ${indentBlock(extractMarkdownSection(sourceText, 'Exact Execution Targets'))}
 - Binding rule: these source requirements remain authoritative. Deleting, replacing, or deferring any item requires user-approved replan before this phase can close.`;
 }
 
+function materializePhaseCommand(command, options = {}) {
+  const planDir = options.planDir || (options.masterPlan ? path.dirname(options.masterPlan) : 'docs/implementation');
+  const masterPlan = options.masterPlan || path.join(planDir, '00-master-plan-v1.md');
+  const statusFile = options.statusFile || '.claude/docs/phase-status.yaml';
+
+  return String(command || '')
+    .replaceAll('${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml}', statusFile)
+    .replaceAll('${PHASE_PLAN_DIR:-docs/implementation}', planDir)
+    .replaceAll('${PHASE_MASTER_PLAN:-docs/implementation/00-master-plan-v1.md}', masterPlan);
+}
+
 export function renderRequiredVerificationCommands(verificationContractFile, options = {}) {
   if (!verificationContractFile || !fs.existsSync(verificationContractFile)) {
     return '- Populate from the active verification contract before claiming completion.';
@@ -190,8 +201,9 @@ export function renderRequiredVerificationCommands(verificationContractFile, opt
   }
 
   return context.requiredChecks.map((check) => {
-    return check.command
-      ? `- ${check.name}: \`${check.command}\``
+    const command = materializePhaseCommand(check.command, options);
+    return command
+      ? `- ${check.name}: \`${command}\``
       : `- ${check.name}: declare the command in ${verificationContractFile}`;
   }).join('\n');
 }
@@ -419,6 +431,8 @@ export function ensureExecutionArtifacts(config) {
     requestedRuntime,
     verificationRuntimes,
     currentRuntime,
+    planDir: path.dirname(masterPlan),
+    masterPlan,
   });
   const modelEffortProfile = resolveEffortProfile(
     process.env.PHASE_DISPATCH_EFFORT_PROFILE,
@@ -802,7 +816,7 @@ Codex direct execution checklist:
    기본 인자만 넣어도 동작합니다.
    예: \`python3 .claude/scripts/write-verification-verdict.py --output .claude/verification-verdict-phase02-final.json --run-id phase02-final --phase-number 2\`
 7. Record the exact repository-root verdict path in QA_REPORT.md as \`- Verification verdict file: .claude/verification-verdict-...\`.
-8. For artifact-only closeout changes, use \`.claude/scripts/agent-loop-phase-artifacts.mjs sync-closeout-artifacts\` instead of hand-patching QA_REPORT.md, SCORECARD.md, or HANDOFF.md.
+8. For artifact-only closeout changes, use \`.claude/scripts/agent-loop-phase-artifacts.mjs sync-phase-artifacts <structured-state-json-or-path>\` instead of hand-patching QA_REPORT.md, SCORECARD.md, HANDOFF.md, or WORKSETS.yaml.
 9. Update QA_REPORT.md with runtime/mode, review state, and verification evidence.
 10. Update SCORECARD.md with objective checklist status, score, unmet items, and verdict.
 11. Stop only when source plan conformance passes, verification passed or is still fresh, review evidence is recorded, finish-stage closeout is concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`. If any of those are missing, keep the phase open and record the next remediation action instead of treating the checkpoint as a stop boundary.

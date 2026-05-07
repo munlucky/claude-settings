@@ -142,7 +142,7 @@ function gitStatus(cwd, extraArgs = [], filterIgnorable = true) {
 }
 
 function collectIgnoredEvidence(repoRoot) {
-  const result = gitStatus(repoRoot, ['--ignored'], false);
+  const result = gitStatus(repoRoot, [], false);
   if (!result.ok) {
     return {
       ok: false,
@@ -567,12 +567,14 @@ function selfTest() {
     const ignoredRepo = path.join(tmpRoot, 'ignored');
     initFixtureRepo(ignoredRepo);
     writeFixture(path.join(ignoredRepo, '.gitignore'), '.claude/verification-verdict-*.json\n');
+    runRequiredGit(['add', '.gitignore'], ignoredRepo);
+    runRequiredGit(['commit', '-m', 'ignore verification evidence'], ignoredRepo);
     fs.mkdirSync(path.join(ignoredRepo, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(ignoredRepo, '.claude', 'verification-verdict-phase06-test.json'), '{}\n', 'utf8');
     process.chdir(ignoredRepo);
     result = runSelf(['preflight', '--json'], ignoredRepo);
-    if (result.status !== 2 || !result.stdout.includes('ignored_verification_evidence_detected')) {
-      throw new Error(`ignored evidence should be reported: ${result.stderr || result.stdout}`);
+    if (result.status !== 0 || result.stdout.includes('ignored_verification_evidence_detected')) {
+      throw new Error(`ignored legacy evidence should not block closeout: ${result.stderr || result.stdout}`);
     }
 
     const deniedRepo = path.join(tmpRoot, 'denied');

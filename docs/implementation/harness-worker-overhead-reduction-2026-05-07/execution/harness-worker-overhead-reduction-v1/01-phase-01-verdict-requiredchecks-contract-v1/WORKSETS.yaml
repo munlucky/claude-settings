@@ -6,12 +6,12 @@ atomicTasks:
   - id: AT-01
     title: "Complete the source phase scope"
     status: completed
-    ownedPaths: []
-    verificationCommands:
+    ownedPaths: [".claude/scripts/write-verification-verdict.py", ".claude/scripts/verification-verdict-state.mjs", ".claude/scripts/agent-loop-phase-state.mjs"]
+    verificationCommands: ["python3 .claude/scripts/write-verification-verdict.py --output /tmp/hwo-verdict-none.json --run-id hwo-none --phase-number 1 --expected-check smoke --passed-check smoke --missing-check none", "node .claude/scripts/verification-verdict-state.mjs self-test", "node .claude/scripts/agent-loop-phase-state.mjs self-test", "node --test .claude/scripts/verify-phase-closeout.test.mjs"]
       - "smoke"
-    evidence:
+    evidence: ["Structured verdict: .claude/verification-verdict-phase01-final.json", "Runner log: .claude/logs/agent-loop/phase-1_closeout-sync.log", "Stage: finish", "Status: clean-finish-ready", "Structured verdict: .claude/verification-verdict-phase01-final.json", "SCN-P01-1 pass; SCN-P01-2 pass; SCN-P01-3 pass; phase evidence synchronized from verified implementation outputs."]
       - "Structured verdict: .claude/verification-verdict-phase01-final.json"
       - "Runner log: .claude/logs/agent-loop/phase-1_20260507_133529.log"
       - "PASS: smoke"
-    completedAt: "2026-05-07T04:41:54Z"
+    completedAt: "2026-05-07T06:20:00Z"
 worksets: []

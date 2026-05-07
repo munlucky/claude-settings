@@ -18,50 +18,181 @@ function toInt(value, fallback = 0) {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+const REVIEW_CLOSEOUT_GATES = new Set([
+  'review-incomplete',
+  'workflow-review-skill-missing',
+  'workflow-review-bundle-missing',
+  'missing-review-evidence',
+]);
+
+const FINISH_CLOSEOUT_GATES = new Set([
+  'finish-closeout-incomplete',
+  'workflow-finish-bundle-missing',
+  'workflow-evidence-warnings',
+  'missing-finish-closeout',
+]);
+
+const VERIFICATION_MISSING_GATES = new Set([
+  'no-fresh-verification-artifact',
+  'missing-verification-evidence',
+  'missing-fresh-verification-evidence',
+  'verification-verdict-missing',
+  'verification-verdict-inconsistent',
+  'verification-evidence-missing',
+]);
+
+const SCORE_INCOMPLETE_GATES = new Set([
+  'scorecard-missing',
+  'scorecard-verdict=missing',
+  'scorecard-verdict=blocked',
+  'scorecard-score-below-target',
+  'scorecard-unmet-items',
+  'scorecard-blocking-defects',
+  'scorecard-task-status=no',
+  'scorecard-task-status=partial',
+]);
+
+const ARTIFACT_CONTRACT_INVALID_GATES = new Set([
+  'workflow-section-missing',
+  'workflow-selected-bundles-missing',
+  'workflow-applied-skills-missing',
+  'workflow-skipped-skills-missing',
+  'workflow-selected-harness-components-missing',
+  'workflow-harness-decision-evidence-missing',
+  'workflow-effort-escalation-reason-missing',
+  'workflow-code-simplifier-missing',
+  'atomic-ledger-missing',
+  'atomic-ledger-empty',
+  'atomic-tasks-incomplete',
+  'demo-first-gate-blocked',
+  'demo-first-missing-approval',
+  'demo-first-missing-scope',
+  'plan-conformance-missing-master-plan',
+  'plan-conformance-plan-status-mismatch',
+  'plan-conformance-unapproved-deferred-scope',
+  'plan-conformance-verification-verdict-inconsistent',
+]);
+
+function classifyCompletionGateReason(reason, context = {}) {
+  const rawReason = String(reason || '').trim();
+  const normalizedReason = rawReason.toLowerCase();
+  const strongCompletion = context.strongCompletion === true;
+
+  if (!normalizedReason || normalizedReason === 'ok') {
+    return {
+      category: 'ok',
+      detail: rawReason || 'ok',
+      retryPolicy: 'clean_finish',
+      stopReason: 'ok',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
+  if (
+    normalizedReason.startsWith('blocked:')
+    || normalizedReason === 'verification-preflight-blocked'
+    || normalizedReason === 'path-authority-preflight-failed'
+  ) {
+    return {
+      category: 'environment_blocked',
+      detail: rawReason,
+      retryPolicy: 'stop_loop',
+      stopReason: rawReason,
+      remediationStage: 'verify',
+    };
+  }
+
+  if (normalizedReason === 'workflow-evidence-warnings' && strongCompletion) {
+    return {
+      category: 'ok',
+      detail: rawReason,
+      retryPolicy: 'clean_finish',
+      stopReason: 'ok',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
+  if (REVIEW_CLOSEOUT_GATES.has(normalizedReason)) {
+    return {
+      category: 'review_closeout_missing',
+      detail: rawReason,
+      retryPolicy: 'writer_only',
+      stopReason: 'missing-review-evidence',
+      remediationStage: 'review',
+    };
+  }
+
+  if (FINISH_CLOSEOUT_GATES.has(normalizedReason)) {
+    return {
+      category: 'finish_closeout_missing',
+      detail: rawReason,
+      retryPolicy: 'writer_only',
+      stopReason: 'missing-finish-closeout',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
+  if (VERIFICATION_MISSING_GATES.has(normalizedReason)) {
+    return {
+      category: 'verification_missing',
+      detail: rawReason,
+      retryPolicy: 'verification_remediation',
+      stopReason: 'missing-fresh-verification-evidence',
+      remediationStage: 'verify',
+    };
+  }
+
+  if (SCORE_INCOMPLETE_GATES.has(normalizedReason) || normalizedReason.startsWith('scorecard-')) {
+    return {
+      category: 'score_incomplete',
+      detail: rawReason,
+      retryPolicy: 'limited_retry',
+      stopReason: 'missing-fresh-verification-evidence',
+      remediationStage: 'verify',
+    };
+  }
+
+  if (
+    ARTIFACT_CONTRACT_INVALID_GATES.has(normalizedReason)
+    || normalizedReason.startsWith('plan-conformance-')
+    || normalizedReason.startsWith('workflow-')
+    || normalizedReason.startsWith('atomic-')
+    || normalizedReason.startsWith('demo-first-')
+  ) {
+    return {
+      category: 'artifact_contract_invalid',
+      detail: rawReason,
+      retryPolicy: 'limited_retry',
+      stopReason: 'missing-fresh-verification-evidence',
+      remediationStage: 'verify',
+    };
+  }
+
+  return {
+    category: 'artifact_contract_invalid',
+    detail: rawReason,
+    retryPolicy: 'limited_retry',
+    stopReason: 'missing-fresh-verification-evidence',
+    remediationStage: 'verify',
+  };
+}
+
 function isEnvironmentStopReason(reason) {
   const classification = classifyFailure({ reason, message: reason });
   return classification.category === 'environment' && classification.code !== 'unknown_failure';
 }
 
-const REVIEW_CLOSEOUT_REASONS = new Set([
-  'review-incomplete',
-  'workflow-review-skill-missing',
-  'workflow-review-bundle-missing',
-  'finish-closeout-incomplete',
-  'workflow-finish-bundle-missing',
-  'workflow-evidence-warnings',
-]);
-
-const REVIEW_ONLY_REASONS = new Set([
-  'review-incomplete',
-  'workflow-review-skill-missing',
-  'workflow-review-bundle-missing',
-]);
-
-function stopReasonForGateReason(reason) {
-  const normalized = String(reason || '').trim();
-  if (REVIEW_ONLY_REASONS.has(normalized)) {
-    return 'missing-review-evidence';
-  }
-  if (requiresCloseoutRemediation(normalized)) {
-    return 'missing-finish-closeout';
-  }
-  return 'missing-verification-evidence';
+function stopReasonForGateReason(reason, gate = null) {
+  const classification = classifyCompletionGateReason(reason, {
+    strongCompletion: gate?.PHASE_COMPLETION_CLEAN_FINISH === 'true',
+  });
+  return classification.stopReason;
 }
 
-function requiresCloseoutRemediation(reason) {
-  return REVIEW_CLOSEOUT_REASONS.has(String(reason || '').trim());
-}
-
-function remediationStage(reason) {
-  const normalized = String(reason || '').trim();
-  if (REVIEW_ONLY_REASONS.has(normalized)) {
-    return 'review';
-  }
-  if (requiresCloseoutRemediation(normalized)) {
-    return 'finish/handoff';
-  }
-  return 'verify';
+function remediationStage(reason, gate = null) {
+  return classifyCompletionGateReason(reason, {
+    strongCompletion: gate?.PHASE_COMPLETION_CLEAN_FINISH === 'true',
+  }).remediationStage;
 }
 
 function writeStdoutLine(value = '') {
@@ -80,8 +211,9 @@ function decideMissingEvidenceAction(config) {
   const autonomousMode = toBool(config.autonomousMode);
   const advanceOnFailure = toBool(config.advanceOnFailure);
   const finalStopReason = String(config.finalStopReason || 'missing-verification-evidence');
+  const classification = classifyCompletionGateReason(finalStopReason);
 
-  if (isEnvironmentStopReason(finalStopReason)) {
+  if (classification.category === 'environment_blocked' || isEnvironmentStopReason(finalStopReason)) {
     return { ACTION: 'stop-loop', SUMMARY: finalStopReason };
   }
 
@@ -93,16 +225,26 @@ function decideMissingEvidenceAction(config) {
     return { ACTION: 'stop-loop', SUMMARY: 'verification-command-missing' };
   }
 
-  if (finalStopReason === 'missing-review-evidence' && autonomousMode && autoFixCount <= 1) {
+  if (classification.category === 'review_closeout_missing' && autonomousMode && autoFixCount <= 1) {
     return { ACTION: 'review-remediation', SUMMARY: 'retry-with-review-remediation' };
   }
 
-  if (finalStopReason === 'missing-finish-closeout' && autonomousMode && autoFixCount <= 1) {
+  if (classification.category === 'finish_closeout_missing' && autonomousMode && autoFixCount <= 1) {
     return { ACTION: 'finish-remediation', SUMMARY: 'retry-with-finish-remediation' };
   }
 
-  if (finalStopReason === 'missing-review-evidence' || finalStopReason === 'missing-finish-closeout') {
+  if (classification.retryPolicy === 'writer_only') {
     return { ACTION: 'stop-loop', SUMMARY: finalStopReason };
+  }
+
+  if (classification.retryPolicy === 'verification_remediation' || classification.retryPolicy === 'limited_retry') {
+    if (autonomousMode && autoFixCount <= maxAutoFixAttempts) {
+      return { ACTION: 'verification-remediation', SUMMARY: 'retry-with-verification-remediation' };
+    }
+    if (autonomousMode && advanceOnFailure) {
+      return { ACTION: 'advance-after-failure', SUMMARY: 'advance-after-missing-verification-evidence' };
+    }
+    return { ACTION: 'stop-loop', SUMMARY: classification.stopReason };
   }
 
   if (autonomousMode && autoFixCount <= maxAutoFixAttempts) {
@@ -250,7 +392,7 @@ function printUsage() {
 
 const [command, ...args] = process.argv.slice(2);
 
-switch (command) {
+  switch (command) {
   case 'decide-missing-evidence-action':
     printAssignments(decideMissingEvidenceAction({
       autoFixCount: args[0],
@@ -261,10 +403,16 @@ switch (command) {
     }));
     break;
   case 'classify-gate-stop-reason':
-    printAssignments({
-      STOP_REASON: stopReasonForGateReason(args[0]),
-      REMEDIATION_STAGE: remediationStage(args[0]),
-    });
+    {
+      const classification = classifyCompletionGateReason(args[0]);
+      printAssignments({
+        STOP_REASON: stopReasonForGateReason(args[0]),
+        GATE_REASON_CATEGORY: classification.category,
+        GATE_REASON_DETAIL: classification.detail,
+        RETRY_POLICY: classification.retryPolicy,
+        REMEDIATION_STAGE: remediationStage(args[0]),
+      });
+    }
     break;
   case 'decide-timeout-action':
     printAssignments(decideTimeoutAction({

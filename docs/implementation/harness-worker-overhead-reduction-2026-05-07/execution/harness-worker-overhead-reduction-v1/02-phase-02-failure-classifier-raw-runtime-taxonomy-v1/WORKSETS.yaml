@@ -1,0 +1,25 @@
+# Phase 02 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths: [".claude/scripts/lib/failure-classifier.mjs", ".claude/scripts/lib/failure-classifier.test.mjs", ".claude/scripts/agent-loop-phase-runtime.mjs"]
+      - ".claude/scripts/lib/failure-classifier.mjs"
+      - ".claude/scripts/lib/failure-classifier.test.mjs"
+      - ".claude/scripts/agent-loop-phase-runtime.mjs"
+    verificationCommands: ["node --test .claude/scripts/lib/failure-classifier.test.mjs", "node --check .claude/scripts/agent-loop-phase-runtime.mjs", "node .claude/scripts/phase-capability-preflight.mjs --json"]
+      - "node --test .claude/scripts/lib/failure-classifier.test.mjs"
+      - "node --check .claude/scripts/agent-loop-phase-runtime.mjs"
+      - "node .claude/scripts/agent-loop-phase-attempt.mjs decide-failure-action 1 3 true false mcp_cleanup_eperm"
+      - "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/harness-worker-overhead-reduction-2026-05-07/02-failure-classifier-raw-runtime-taxonomy-v1.md --sprint-contract docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/02-phase-02-failure-classifier-raw-runtime-taxonomy-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/02-phase-02-failure-classifier-raw-runtime-taxonomy-v1/QA_REPORT.md --scorecard docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/02-phase-02-failure-classifier-raw-runtime-taxonomy-v1/SCORECARD.md --handoff docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/02-phase-02-failure-classifier-raw-runtime-taxonomy-v1/HANDOFF.md"
+    evidence: ["Structured verdict: .claude/verification-verdict-phase02-final.json", "Runner log: .claude/logs/agent-loop/phase-2_closeout-sync.log", "Stage: finish", "Status: clean-finish-ready", "Structured verdict: .claude/verification-verdict-phase02-final.json", "SCN-P02-1 pass; SCN-P02-2 pass; SCN-P02-3 pass; phase evidence synchronized from verified implementation outputs."]
+      - "Classifier regression passed for MCP terminate, PATH denial, plugin sync, and resolve-host raw strings."
+      - "Runtime stop-reason detection returned mcp_cleanup_eperm, network_fetch_failed, and plugin_network_sync_failed for raw log fixtures."
+      - "Plan conformance passed with zero violations."
+      - "Workflow enforcement passed after review and evidence annotations were added."
+      - "workflow_core verification checks passed."
+    completedAt: "2026-05-07T06:20:00Z"
+worksets: []

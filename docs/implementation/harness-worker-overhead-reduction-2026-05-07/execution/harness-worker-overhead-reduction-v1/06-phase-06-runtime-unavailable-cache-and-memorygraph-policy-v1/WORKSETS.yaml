@@ -1,0 +1,34 @@
+# Phase 06 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths: [".claude/scripts/lib/runtime-unavailable-cache.mjs", ".claude/scripts/phase-run-lease.mjs", ".claude/scripts/phase-capability-preflight.mjs", ".claude/scripts/agent-loop-phase-runtime.mjs", ".claude/scripts/moonshot-phase-dispatch.mjs", ".claude/scripts/commit-moonshot-memory-refresh.mjs"]
+      - ".claude/scripts/phase-run-lease.mjs"
+      - ".claude/scripts/phase-capability-preflight.mjs"
+      - ".claude/scripts/agent-loop-phase-runtime.mjs"
+      - ".claude/scripts/moonshot-phase-dispatch.mjs"
+      - ".claude/scripts/commit-moonshot-memory-refresh.mjs"
+      - ".claude/scripts/lib/runtime-unavailable-cache.mjs"
+    verificationCommands: ["node --check .claude/scripts/lib/runtime-unavailable-cache.mjs", "node --check .claude/scripts/phase-run-lease.mjs", "node --check .claude/scripts/phase-capability-preflight.mjs", "node --check .claude/scripts/agent-loop-phase-runtime.mjs", "node --check .claude/scripts/moonshot-phase-dispatch.mjs", "node --check .claude/scripts/commit-moonshot-memory-refresh.mjs", "node .claude/scripts/phase-capability-preflight.mjs --json", "node .claude/scripts/commit-moonshot-memory-refresh.mjs --mcp-status failed --mcp-error Transport-closed --json", "node --test .claude/scripts/verify-phase-closeout.test.mjs"]
+      - "node --check .claude/scripts/phase-run-lease.mjs"
+      - "node --check .claude/scripts/phase-capability-preflight.mjs"
+      - "node --check .claude/scripts/agent-loop-phase-runtime.mjs"
+      - "node --check .claude/scripts/moonshot-phase-dispatch.mjs"
+      - "node --check .claude/scripts/commit-moonshot-memory-refresh.mjs"
+      - "node --check .claude/scripts/lib/runtime-unavailable-cache.mjs"
+      - "node .claude/scripts/phase-capability-preflight.mjs --json"
+      - "node .claude/scripts/memorygraph-direct.mjs health"
+      - "node .claude/scripts/commit-moonshot-memory-refresh.mjs --mcp-status failed --mcp-error 'Transport closed' --json"
+      - "node --test .claude/scripts/verify-phase-closeout.test.mjs"
+      - "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/harness-worker-overhead-reduction-2026-05-07/06-runtime-unavailable-cache-memorygraph-policy-v1.md --sprint-contract docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/06-phase-06-runtime-unavailable-cache-and-memorygraph-policy-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/06-phase-06-runtime-unavailable-cache-and-memorygraph-policy-v1/QA_REPORT.md --scorecard docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/06-phase-06-runtime-unavailable-cache-and-memorygraph-policy-v1/SCORECARD.md --handoff docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/06-phase-06-runtime-unavailable-cache-and-memorygraph-policy-v1/HANDOFF.md"
+    evidence: ["Structured verdict: .claude/verification-verdict-phase06-final.json", "Runner log: .claude/logs/agent-loop/phase-6_closeout-sync.log", "Stage: finish", "Status: clean-finish-ready", "Structured verdict: .claude/verification-verdict-phase06-final.json", "SCN-P06-1 pass; SCN-P06-2 pass; SCN-P06-3 pass; phase evidence synchronized from verified implementation outputs."]
+      - ".claude/logs/agent-loop/capabilities-2026-05-07T05-39-10-187Z.json"
+      - ".claude/logs/memorygraph/commit-refresh-2026-05-07T05-35-57-256Z.json"
+      - ".claude/knowledge-repo-audit-knowledge-audit-20260507-144006.json"
+      - ".claude/verification-verdict-phase06-final.json"
+    completedAt: "2026-05-07T06:20:00Z"
+worksets: []

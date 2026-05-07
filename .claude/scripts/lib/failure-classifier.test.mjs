@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 import {
   buildFailureClassCounts,
@@ -11,6 +15,19 @@ import {
   normalizeFailureCode,
   summarizeFailureDecision,
 } from './failure-classifier.mjs';
+
+const runtimeCliPath = new URL('../agent-loop-phase-runtime.mjs', import.meta.url);
+
+function detectFinalStopReason(rawLines) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase02-failure-classifier-'));
+  const logFile = path.join(tempDir, 'runtime.log');
+  fs.writeFileSync(logFile, `${rawLines.join('\n')}\n`, 'utf8');
+  const result = spawnSync('node', [runtimeCliPath.pathname, 'detect-final-stop-reason', logFile, 'phase-failed', '2'], {
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0);
+  return String(result.stdout ?? '').trim();
+}
 
 function testBashAccessDenied() {
   const a = classifyFailure({ name: 'shell:.claude/scripts/verify-code-policy.sh', status: 'warning', detail: 'spawnSync bash EPERM' });
@@ -38,6 +55,7 @@ function testCodexStorageAndStateCodes() {
 function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   const shellSnapshot = classifyFailure({ name: 'shell.snapshot', status: 'warning', detail: 'Failed to check rollout age for snapshot' });
   const mcpCleanup = classifyFailure({ name: 'mcp.cleanup', status: 'warning', detail: 'MCP cleanup EPERM while killing process group' });
+  const mcpTerminate = classifyFailure({ name: 'mcp.terminate', status: 'warning', detail: 'Failed to terminate MCP process group: Operation not permitted' });
   const nodeSpawn = classifyFailure({ name: 'node.spawn', status: 'warning', detail: 'spawnSync node EPERM' });
   const gitIndex = classifyFailure({ name: 'git.index', status: 'warning', detail: 'git index write access denied' });
   const rgAccess = classifyFailure({ name: 'search.rg', status: 'warning', detail: 'rg access is denied' });
@@ -45,10 +63,13 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   const verifier = classifyFailure({ name: 'verifier.runtime', status: 'warning', detail: 'runtime verifier unavailable' });
   const pathUpdate = classifyFailure({ name: 'path.update', status: 'warning', detail: 'PATH update denied by host policy' });
   const pluginSync = classifyFailure({ name: 'plugin.sync', status: 'warning', detail: 'plugin network sync failed after timeout' });
+  const pluginHost = classifyFailure({ name: 'plugin.sync.host', status: 'warning', detail: 'plugin sync failed: Could not resolve host: github.com' });
+  const networkHost = classifyFailure({ name: 'network.host', status: 'warning', detail: 'Could not resolve host: github.com' });
   const spawnBlocked = classifyFailure({ name: 'child.spawn', status: 'warning', detail: 'spawn blocked by host policy' });
 
   assert.equal(shellSnapshot.code, 'shell_snapshot_failure');
   assert.equal(mcpCleanup.code, 'mcp_cleanup_eperm');
+  assert.equal(mcpTerminate.code, 'mcp_cleanup_eperm');
   assert.equal(nodeSpawn.code, 'node_spawn_eperm');
   assert.equal(gitIndex.code, 'git_index_denied');
   assert.equal(rgAccess.code, 'rg_access_denied');
@@ -56,6 +77,8 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   assert.equal(verifier.code, 'verifier_unavailable');
   assert.equal(pathUpdate.code, 'path_update_denied');
   assert.equal(pluginSync.code, 'plugin_network_sync_failed');
+  assert.equal(pluginHost.code, 'plugin_network_sync_failed');
+  assert.equal(networkHost.code, 'network_fetch_failed');
   assert.equal(spawnBlocked.code, 'spawn_blocked');
   assert.equal(isEnvironmentBlockerCode('mcp_cleanup_eperm'), true);
   assert.equal(isEnvironmentBlockerCode('memorygraph_unavailable'), true);
@@ -71,6 +94,29 @@ function testGitAndNetworkCodes() {
   assert.equal(network.decision, 'host_fallback');
   assert.equal(decisionForFailureCode('git_eperm'), 'resume_later_handoff');
   assert.equal(normalizeFailureCode({ reason: '  Bash Access Denied  ' }), 'bash_access_denied');
+}
+
+function testDetectFinalStopReasonForRawLogs() {
+  assert.equal(
+    detectFinalStopReason([
+      'Failed to terminate MCP process group: Operation not permitted',
+      'phase worker still running',
+    ]),
+    'mcp_cleanup_eperm',
+  );
+  assert.equal(
+    detectFinalStopReason([
+      'Could not resolve host: github.com',
+      'plugin sync failed during bootstrap',
+    ]),
+    'network_fetch_failed',
+  );
+  assert.equal(
+    detectFinalStopReason([
+      'plugin sync failed: Could not resolve host: github.com',
+    ]),
+    'plugin_network_sync_failed',
+  );
 }
 
 function testCountsAndCapabilityClassification() {
@@ -111,6 +157,7 @@ testBashAccessDenied();
 testCodexStorageAndStateCodes();
 testShellSnapshotMcpNodeGitRgMemoryGraphCodes();
 testGitAndNetworkCodes();
+testDetectFinalStopReasonForRawLogs();
 testCountsAndCapabilityClassification();
 
 process.stdout.write('failure-classifier self-test passed\n');

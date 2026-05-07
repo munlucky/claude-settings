@@ -1,15 +1,15 @@
-# Phase 01 QA Report
+# Phase 07 QA Report
 
 > Updated by verifier/runtime steps. Seeded automatically by `agent-loop.mjs`.
 
 ## Slice
-- Phase: 1
-- Title: Phase 01: Verdict RequiredChecks Contract (v1)
-- Contract: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/01-phase-01-verdict-requiredchecks-contract-v1/SPRINT_CONTRACT.md
+- Phase: 7
+- Title: Phase 07: Regression Fixture And Documentation Sync (v1)
+- Contract: docs/implementation/harness-worker-overhead-reduction-2026-05-07/execution/harness-worker-overhead-reduction-v1/07-phase-07-regression-fixture-and-documentation-sync-v1/SPRINT_CONTRACT.md
 
 ## Verdict
 - Status: passed
-- Summary: Phase 01: Verdict RequiredChecks Contract (v1) artifact sync updated structured review, finish, and workset state.
+- Summary: Phase 07: Regression Fixture And Documentation Sync (v1) artifact sync updated structured review, finish, and workset state.
 - Scope status: complete
 - Next path: clean_finish
 - Closeout reason: scope_complete
@@ -17,8 +17,8 @@
 ## Review Checkpoint
 - Review completed: yes
 - Review owners: codex-review-code
-- Review-driven code changes: no blocking findings remained after verification
-- Review closeout detail: SCN-P01-1 pass; SCN-P01-2 pass; SCN-P01-3 pass; phase evidence synchronized from verified implementation outputs.
+- Review-driven code changes: regression fixture and docs matrix added
+- Review closeout detail: SCN-P07-1 pass; SCN-P07-2 pass; SCN-P07-3 pass; phase evidence synchronized from verified implementation outputs.
 
 ## Contract Review Evidence
 - Contract reviewed by evaluator: yes
@@ -55,16 +55,16 @@
 
 ## Runtime Updates
 - 2026-05-07 06:20:00 | Stage: finish | Status: clean-finish-ready | Runtime: codex
-- Log: .claude/logs/agent-loop/phase-1_closeout-sync.log
-- Detail: SCN-P01-1 pass; SCN-P01-2 pass; SCN-P01-3 pass; phase evidence synchronized from verified implementation outputs.
-- Verification verdict file: .claude/verification-verdict-phase01-final.json
+- Log: .claude/logs/agent-loop/phase-7_closeout-sync.log
+- Detail: SCN-P07-1 pass; SCN-P07-2 pass; SCN-P07-3 pass; phase evidence synchronized from verified implementation outputs.
+- Verification verdict file: .claude/verification-verdict-phase07-final.json
 - Verification verdict: passed
 - Runtime evidence depth: open -> act -> mutate -> persist -> recover
 - Critical scenario smoke-only warnings: none
 
 ## Workflow Execution
 - Selected bundles: ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle
-- Applied skills: implementation-runner,completion-verifier,codex-review-code
+- Applied skills: implementation-runner,completion-verifier,codex-review-code,doc-auto-sync
 - Skipped skills: code-simplifier (not needed), session-logger (clean completion)
 - Selected harness components: phase-runner,contract,implementation,review,verification,finish
 - Skipped harness components: none
@@ -92,5 +92,5 @@
 - Why this round may stop now: clean-finish conditions are satisfied and recorded.
 - Remaining in-scope work: none
 - Remaining blockers before closeout: none
-- Checks to rerun if code changes again: python3 .claude/scripts/write-verification-verdict.py --output /tmp/hwo-verdict-none.json --run-id hwo-none --phase-number 1 --expected-check smoke --passed-check smoke --missing-check none; node .claude/scripts/verification-verdict-state.mjs self-test; node .claude/scripts/agent-loop-phase-state.mjs self-test; node --test .claude/scripts/verify-phase-closeout.test.mjs
+- Checks to rerun if code changes again: node --test .claude/scripts/lib/harness-overhead-regression.test.mjs; node --test .claude/scripts/lib/failure-classifier.test.mjs; node .claude/scripts/verification-verdict-state.mjs self-test; node .claude/scripts/agent-loop-phase-state.mjs self-test; node .claude/scripts/agent-loop-phase-artifacts.mjs self-test; node --test .claude/scripts/verify-phase-closeout.test.mjs; node .claude/scripts/runtime-cli.mjs codex-base-args /Users/dev/claude-settings; bash .claude/scripts/knowledge-repo-audit.sh
 

@@ -14,6 +14,7 @@ import { collectVerificationPreflightBlockers, loadVerificationContractContext }
 import { classifyFailure, summarizeFailureDecision } from './lib/failure-classifier.mjs';
 import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
+import { archivePromptText } from './lib/prompt-redaction.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -523,13 +524,9 @@ function buildWorkerCommand(prompt, runtime, stage = process.env.PHASE_MODEL_STA
 }
 
 function appendCodexPromptArg(args, prompt) {
+  const promptArchive = archivePromptText(prompt, process.cwd());
   if (process.platform === 'win32' && shouldUsePromptFileForCodex(args)) {
-    fs.mkdirSync(logDir, { recursive: true });
-    const promptDir = path.resolve(logDir, 'prompts');
-    fs.mkdirSync(promptDir, { recursive: true });
-    const promptFile = path.join(promptDir, `codex-prompt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.txt`);
-    fs.writeFileSync(promptFile, prompt, 'utf8');
-    args.push('--codex-prompt-file', promptFile);
+    args.push('--codex-prompt-file', path.resolve(process.cwd(), promptArchive.promptArchivePath));
     return;
   }
   args.push(prompt);
@@ -665,7 +662,6 @@ function resolveRunnerRuntime(requestedRuntime) {
 function isBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
   return normalized.startsWith('blocked:')
-    || normalized === 'scorecard-verdict=blocked'
     || normalized === 'verification-preflight-blocked'
     || normalized === 'path-authority-preflight-failed';
 }
@@ -755,6 +751,7 @@ const REVIEW_ONLY_GATE_REASONS = new Set([
   'review-incomplete',
   'workflow-review-skill-missing',
   'workflow-review-bundle-missing',
+  'missing-review-evidence',
 ]);
 
 const CLOSEOUT_GATE_REASONS = new Set([
@@ -762,6 +759,7 @@ const CLOSEOUT_GATE_REASONS = new Set([
   'finish-closeout-incomplete',
   'workflow-finish-bundle-missing',
   'workflow-evidence-warnings',
+  'missing-finish-closeout',
 ]);
 
 function gateIndicatesStrongCompletion(gate) {
@@ -779,6 +777,13 @@ function gateIndicatesStrongCompletion(gate) {
 }
 
 function gateReasonNeedsCloseout(reason, gate = null) {
+  const category = String(gate?.GATE_REASON_CATEGORY || '').trim();
+  if (category === 'review_closeout_missing' || category === 'finish_closeout_missing') {
+    return true;
+  }
+  if (category === 'verification_missing' || category === 'score_incomplete' || category === 'artifact_contract_invalid' || category === 'environment_blocked' || category === 'ok') {
+    return false;
+  }
   const normalized = String(reason || '').trim();
   if (normalized === 'workflow-evidence-warnings' && gateIndicatesStrongCompletion(gate)) {
     return false;
@@ -787,6 +792,16 @@ function gateReasonNeedsCloseout(reason, gate = null) {
 }
 
 function remediationStageForGateReason(reason, gate = null) {
+  const category = String(gate?.GATE_REASON_CATEGORY || '').trim();
+  if (category === 'review_closeout_missing') {
+    return 'review';
+  }
+  if (category === 'finish_closeout_missing') {
+    return 'finish/handoff';
+  }
+  if (category === 'verification_missing' || category === 'score_incomplete' || category === 'artifact_contract_invalid' || category === 'environment_blocked') {
+    return 'verify';
+  }
   const normalized = String(reason || '').trim();
   if (REVIEW_ONLY_GATE_REASONS.has(normalized)) {
     return 'review';
@@ -821,7 +836,11 @@ function incompleteRemediationStatus(reason, gate = null) {
 }
 
 function handoffStopReason(reason, gate = null) {
-  return gateReasonNeedsCloseout(reason, gate) ? 'deferred_verification' : 'missing-fresh-verification-evidence';
+  const category = String(gate?.GATE_REASON_CATEGORY || '').trim();
+  if (category === 'review_closeout_missing' || category === 'finish_closeout_missing') {
+    return 'deferred_verification';
+  }
+  return 'missing-fresh-verification-evidence';
 }
 
 function decideFailureAction(autoFixCount, finalStopReason) {
@@ -1462,6 +1481,7 @@ function runPhaseAttempt() {
     if (exitCode === 0) {
       const duration = Math.floor(Date.now() / 1000) - startEpoch;
       const gate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
+      const gateStop = classifyGateStopReason(gate.PHASE_COMPLETION_REASON);
       appendDebugLog('completion-gate-result', {
         logFile,
         runtime: activeRuntime,
@@ -1470,6 +1490,8 @@ function runPhaseAttempt() {
         score: gate.PHASE_COMPLETION_SCORE,
         scoreVerdict: gate.PHASE_COMPLETION_SCORE_VERDICT,
         scoreSource: gate.PHASE_COMPLETION_SCORE_SOURCE,
+        gateReasonCategory: gateStop.GATE_REASON_CATEGORY || '',
+        gateRetryPolicy: gateStop.RETRY_POLICY || '',
       });
       captureSession.recordJudgeResult({
         actionId: workerActionId,
@@ -1501,12 +1523,15 @@ function runPhaseAttempt() {
         return stopBlockedPhase(paths, logFile, `completion gate blocked: ${gate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
       }
 
+      if (gateStop.GATE_REASON_CATEGORY === 'environment_blocked') {
+        return stopBlockedPhase(paths, logFile, `completion gate blocked: ${gate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
+      }
+
       autoFixCount += 1;
       logError(`Phase ${state.phaseNum} produced no valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
       appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
       appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
 
-      const gateStop = classifyGateStopReason(gate.PHASE_COMPLETION_REASON);
       const defaultStopReason = gateStop.STOP_REASON || 'missing-verification-evidence';
       const finalStopReason = detectFinalStopReason(logFile, defaultStopReason);
       if (finalStopReason === 'missing-verification-evidence') {

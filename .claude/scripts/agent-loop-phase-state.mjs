@@ -860,6 +860,165 @@ function normalizeLower(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+const REVIEW_CLOSEOUT_GATES = new Set([
+  'review-incomplete',
+  'workflow-review-skill-missing',
+  'workflow-review-bundle-missing',
+  'missing-review-evidence',
+]);
+
+const FINISH_CLOSEOUT_GATES = new Set([
+  'finish-closeout-incomplete',
+  'workflow-finish-bundle-missing',
+  'workflow-evidence-warnings',
+  'missing-finish-closeout',
+]);
+
+const VERIFICATION_MISSING_GATES = new Set([
+  'no-fresh-verification-artifact',
+  'missing-verification-evidence',
+  'missing-fresh-verification-evidence',
+  'verification-verdict-missing',
+  'verification-verdict-inconsistent',
+  'verification-evidence-missing',
+]);
+
+const SCORE_INCOMPLETE_GATES = new Set([
+  'scorecard-missing',
+  'scorecard-verdict=missing',
+  'scorecard-verdict=blocked',
+  'scorecard-score-below-target',
+  'scorecard-unmet-items',
+  'scorecard-blocking-defects',
+  'scorecard-task-status=no',
+  'scorecard-task-status=partial',
+]);
+
+const ARTIFACT_CONTRACT_INVALID_GATES = new Set([
+  'workflow-section-missing',
+  'workflow-selected-bundles-missing',
+  'workflow-applied-skills-missing',
+  'workflow-skipped-skills-missing',
+  'workflow-selected-harness-components-missing',
+  'workflow-harness-decision-evidence-missing',
+  'workflow-effort-escalation-reason-missing',
+  'workflow-code-simplifier-missing',
+  'atomic-ledger-missing',
+  'atomic-ledger-empty',
+  'atomic-tasks-incomplete',
+  'demo-first-gate-blocked',
+  'demo-first-missing-approval',
+  'demo-first-missing-scope',
+  'plan-conformance-missing-master-plan',
+  'plan-conformance-plan-status-mismatch',
+  'plan-conformance-unapproved-deferred-scope',
+  'plan-conformance-verification-verdict-inconsistent',
+]);
+
+function classifyCompletionGateReason(reason, context = {}) {
+  const rawReason = String(reason || '').trim();
+  const normalizedReason = normalizeLower(rawReason);
+  const strongCompletion = context.strongCompletion === true;
+
+  if (!normalizedReason || normalizedReason === 'ok') {
+    return {
+      category: 'ok',
+      detail: rawReason || 'ok',
+      retryPolicy: 'clean_finish',
+      stopReason: 'ok',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
+  if (
+    normalizedReason.startsWith('blocked:')
+    || normalizedReason === 'verification-preflight-blocked'
+    || normalizedReason === 'path-authority-preflight-failed'
+  ) {
+    return {
+      category: 'environment_blocked',
+      detail: rawReason,
+      retryPolicy: 'stop_loop',
+      stopReason: rawReason,
+      remediationStage: 'verify',
+    };
+  }
+
+  if (normalizedReason === 'workflow-evidence-warnings' && strongCompletion) {
+    return {
+      category: 'ok',
+      detail: rawReason,
+      retryPolicy: 'clean_finish',
+      stopReason: 'ok',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
+  if (REVIEW_CLOSEOUT_GATES.has(normalizedReason)) {
+    return {
+      category: 'review_closeout_missing',
+      detail: rawReason,
+      retryPolicy: 'writer_only',
+      stopReason: 'missing-review-evidence',
+      remediationStage: 'review',
+    };
+  }
+
+  if (FINISH_CLOSEOUT_GATES.has(normalizedReason)) {
+    return {
+      category: 'finish_closeout_missing',
+      detail: rawReason,
+      retryPolicy: 'writer_only',
+      stopReason: 'missing-finish-closeout',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
+  if (VERIFICATION_MISSING_GATES.has(normalizedReason)) {
+    return {
+      category: 'verification_missing',
+      detail: rawReason,
+      retryPolicy: 'verification_remediation',
+      stopReason: 'missing-fresh-verification-evidence',
+      remediationStage: 'verify',
+    };
+  }
+
+  if (SCORE_INCOMPLETE_GATES.has(normalizedReason) || normalizedReason.startsWith('scorecard-')) {
+    return {
+      category: 'score_incomplete',
+      detail: rawReason,
+      retryPolicy: 'limited_retry',
+      stopReason: 'missing-fresh-verification-evidence',
+      remediationStage: 'verify',
+    };
+  }
+
+  if (
+    ARTIFACT_CONTRACT_INVALID_GATES.has(normalizedReason)
+    || normalizedReason.startsWith('plan-conformance-')
+    || normalizedReason.startsWith('workflow-')
+    || normalizedReason.startsWith('atomic-')
+    || normalizedReason.startsWith('demo-first-')
+  ) {
+    return {
+      category: 'artifact_contract_invalid',
+      detail: rawReason,
+      retryPolicy: 'limited_retry',
+      stopReason: 'missing-fresh-verification-evidence',
+      remediationStage: 'verify',
+    };
+  }
+
+  return {
+    category: 'artifact_contract_invalid',
+    detail: rawReason,
+    retryPolicy: 'limited_retry',
+    stopReason: 'missing-fresh-verification-evidence',
+    remediationStage: 'verify',
+  };
+}
+
 function isNoneLikeValue(value) {
   const normalized = normalizeLower(value).replace(/[.`]/g, '').trim();
   return normalized === 'none' || normalized === '없음';
@@ -1618,10 +1777,18 @@ function evaluatePhaseCompletionGate(config) {
       : (scoreReason !== 'ok'
         ? scoreReason
         : (!atomicLedger.complete ? atomicLedger.reason : (!demoFirstGate.allowed ? demoFirstGate.reason : 'no-fresh-verification-artifact'))));
+  const completionClassification = classifyCompletionGateReason(finalReason, {
+    strongCompletion: closeoutConcrete && finalAllowed,
+  });
 
   return {
     PHASE_COMPLETION_ALLOWED: finalAllowed ? 'true' : 'false',
     PHASE_COMPLETION_REASON: finalReason,
+    PHASE_COMPLETION_REASON_CATEGORY: completionClassification.category,
+    PHASE_COMPLETION_REASON_DETAIL: completionClassification.detail,
+    PHASE_COMPLETION_RETRY_POLICY: completionClassification.retryPolicy,
+    PHASE_COMPLETION_REMEDIATION_STAGE: completionClassification.remediationStage,
+    PHASE_COMPLETION_STOP_REASON: completionClassification.stopReason,
     PHASE_COMPLETION_ARTIFACTS: passedPaths.join('\n'),
     PHASE_COMPLETION_SCORE: String(currentScore),
     PHASE_COMPLETION_TARGET: String(targetScore),
@@ -2243,6 +2410,18 @@ phases:
     }
     if (normalizeRequiredChecksMissing(['verification-verdict-path']).length !== 1) {
       throw new Error('real missing checks were not preserved');
+    }
+    const reviewClassification = classifyCompletionGateReason('review-incomplete');
+    const scoreClassification = classifyCompletionGateReason('scorecard-score-below-target');
+    const blockedClassification = classifyCompletionGateReason('blocked:verification-preflight-blocked');
+    if (reviewClassification.category !== 'review_closeout_missing' || reviewClassification.retryPolicy !== 'writer_only') {
+      throw new Error('review closeout classification was not normalized');
+    }
+    if (scoreClassification.category !== 'score_incomplete' || scoreClassification.retryPolicy !== 'limited_retry') {
+      throw new Error('score incomplete classification was not normalized');
+    }
+    if (blockedClassification.category !== 'environment_blocked' || blockedClassification.retryPolicy !== 'stop_loop') {
+      throw new Error('environment block classification was not normalized');
     }
     writeStdoutLine('agent-loop-phase-state self-test passed');
   } finally {
