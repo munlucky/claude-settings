@@ -65,10 +65,37 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
    - 기준 문서 추적 ID를 포함한 소스 매핑 섹션을 포함한다.
    - 생성/수정/테스트할 정확한 파일, 실행할 정확한 명령, 예상 fail/pass signal, blocker 조건, review checkpoint, verification evidence path를 포함한다.
    - 의존성, 소유권, 검증 경로가 비사소하면 `plan-eng-review`를 실행한다.
-6. 완료 상태를 동기화한다.
+6. plan package가 다음 실행 대상이면 실행 가능한 phase 상태를 준비한다.
+   - 활성 root plan 문서는 보존한다.
+   - 오래된 runtime/evidence surface는 삭제하지 말고 archive한다.
+     - `docs/implementation/execution`
+     - `docs/implementation/close`
+     - 이전 `.claude/docs/phase-status.yaml` active pointer
+     - `.claude/logs/workflow-enforcement/current-run.json`
+     - `.claude/logs/workflow-enforcement/active-phase-run.json`
+     - `.claude/logs/workflow-enforcement/latest-dispatch.json`
+     - 오래된 master plan 또는 execution root를 가리키는 `.claude/logs/workflow-enforcement/dispatch-*.json`
+   - stale `masterPlan`/`executionRoot` pointer 누수는 준비 실패로 취급한다. 예: v9 실행 중 top-level `current-run.json`은 v8을 가리키고 embedded `phaseRunLease`만 v9인 상태는 작업 시작 전 초기화가 깨진 것이다. phase-runner dispatch 전에 멈추고 준비 상태를 고친다.
+   - 사용:
+     ```bash
+     node .claude/scripts/prepare-implementation-plan-state.mjs \
+       --plan-dir docs/implementation \
+       --master-plan docs/implementation/00-master-plan-v{n}.md \
+       --status-file .claude/docs/phase-status.yaml \
+       --execution-root docs/implementation/execution/<plan-slug>
+     ```
+   - 기존 `execution`, `close`, `phase-status.yaml`가 다른 활성 작업흐름에 속할 수 있으면 먼저 `--dry-run`으로 확인한다.
+   - 이 준비 단계에서는 `.claude/scripts`, `.claude/runtime-state.sqlite`, `.claude/memory.json`, `.claude/verification.contract.yaml`, project settings, verification baseline을 건드리지 않는다.
+   - 준비 후 dispatch 전에 pointer self-check를 수행한다.
+     - `phase-status.yaml`은 선택된 master plan과 execution root를 가리키고 phase 1을 pending/prepared로 표시하며 현재 plan의 phase docs만 나열해야 한다.
+     - `current-run.json`, `active-phase-run.json`, `latest-dispatch.json`은 없거나 archive되어야 하며, 남아 있으면 top-level과 embedded `phaseRunLease` 모두 선택된 master plan/execution root를 가리켜야 한다.
+     - actionable phase가 pending, in_progress, blocked, retryable 중 하나로 남아 있으면 `goalRuntime.status`는 `complete`이면 안 된다.
+     - remaining/actionable phase count는 master checklist와 phase-status phase list에 맞아야 한다.
+   - 저장소에 note 필드가 있으면 오래된 runtime/evidence surface의 archive 위치를 master plan 또는 phase status notes에 기록한다.
+7. 완료 상태를 동기화한다.
    - 페이즈 완료 시 즉시 master 체크리스트를 `[x]`로 갱신한다.
    - `[x]` 처리 근거(증빙 경로/검증 결과)를 함께 기록한다.
-7. 완료 루프를 적용한다.
+8. 완료 루프를 적용한다.
    - 모든 기준 요구사항이 매핑되고, master 체크리스트의 모든 항목이 `[x]`가 될 때까지 반복한다.
    - 체크리스트 미완료 상태에서는 전체 완료로 선언하지 않는다.
 
@@ -143,6 +170,7 @@ while (master 체크리스트에 [ ] 존재) OR (미매핑 기준 요구사항 �
 - 파일명/페이즈 번호/체크리스트 상태를 모든 문서에서 일관되게 유지한다.
 - 검증 명령이나 소유권 경계가 암묵적이면 페이즈를 ready 상태로 선언하지 않는다.
 - files, commands, expected signals, blocker condition, evidence path가 암묵적이면 페이즈를 ready 상태로 선언하지 않는다.
+- workflow-enforcement active pointer가 오래된 plan package를 가리키면 `moonshot-phase-runner`를 시작하지 않는다. plan 준비 단계에서 먼저 archive/rewrite한다.
 
 ## Phase Runner 연동
 

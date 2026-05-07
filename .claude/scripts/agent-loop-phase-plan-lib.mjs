@@ -76,9 +76,60 @@ function yamlScalar(value) {
   return `"${stringValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+function uniqueValues(values) {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+function extractInlineCodeValues(text) {
+  const values = [];
+  for (const match of String(text || '').matchAll(/`([^`\n]+)`/g)) {
+    values.push(match[1].trim());
+  }
+  return values;
+}
+
+function looksLikeOwnedPath(value) {
+  const normalized = String(value || '').replace(/\\/g, '/').trim();
+  if (!normalized || /\s/.test(normalized)) {
+    return false;
+  }
+  return /^(?:\.claude|\.codex|docs|src|test|tests|scripts|workflow|packages|apps|lib|bin|config|public|content)\//i.test(normalized)
+    || /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_./-]+$/.test(normalized)
+    || /^[A-Za-z0-9_.-]+\.(?:mjs|cjs|js|ts|tsx|jsx|json|yaml|yml|md|py|sh|ps1|css|scss|html)$/i.test(normalized);
+}
+
+function looksLikeVerificationCommand(value) {
+  return /^(?:node|npm|pnpm|yarn|bash|pwsh|powershell|python|pytest|git|npx|tsc)\b/i.test(String(value || '').trim());
+}
+
+function extractPhaseOwnedPaths(sourceText) {
+  const sections = [
+    extractMarkdownSection(sourceText, 'Exact Execution Targets'),
+    extractMarkdownSection(sourceText, 'Files To Create'),
+    extractMarkdownSection(sourceText, 'Files To Modify'),
+    extractMarkdownSection(sourceText, 'Files To Test'),
+    extractMarkdownSection(sourceText, 'Owned Paths'),
+  ];
+  return uniqueValues(sections.flatMap(extractInlineCodeValues).filter(looksLikeOwnedPath));
+}
+
+function extractPhaseVerificationCommands(sourceText) {
+  const sections = [
+    extractMarkdownSection(sourceText, 'Exact Execution Targets'),
+    extractMarkdownSection(sourceText, 'Validation'),
+    extractMarkdownSection(sourceText, 'Verification'),
+    extractMarkdownSection(sourceText, 'Verification Commands'),
+    extractMarkdownSection(sourceText, 'Test Plan'),
+    extractMarkdownSection(sourceText, 'Commands'),
+  ];
+  return uniqueValues(sections.flatMap(extractInlineCodeValues).filter(looksLikeVerificationCommand));
+}
+
 export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
   const sourceText = phaseDoc && fs.existsSync(phaseDoc) ? fs.readFileSync(phaseDoc, 'utf8') : '';
   const detailedTasks = extractMarkdownSection(sourceText, 'Detailed Tasks');
+  const defaultOwnedPaths = extractPhaseOwnedPaths(sourceText);
+  const defaultVerificationCommands = extractPhaseVerificationCommands(sourceText);
   const tasks = [];
   let inCodeFence = false;
 
@@ -106,8 +157,8 @@ export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
       id: `AT-${String(tasks.length + 1).padStart(2, '0')}`,
       title,
       status: 'pending',
-      ownedPaths: [],
-      verificationCommands: [],
+      ownedPaths: defaultOwnedPaths,
+      verificationCommands: defaultVerificationCommands,
       evidence: [],
       completedAt: null,
     });
@@ -118,8 +169,8 @@ export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
       id: 'AT-01',
       title: 'Complete the source phase scope',
       status: 'pending',
-      ownedPaths: [],
-      verificationCommands: [],
+      ownedPaths: defaultOwnedPaths,
+      verificationCommands: defaultVerificationCommands,
       evidence: [],
       completedAt: null,
     });
@@ -139,12 +190,24 @@ export function renderAtomicWorksetsYaml(phasePrefix, phaseDoc) {
   ];
 
   for (const task of tasks) {
+    const ownedPaths = task.ownedPaths || [];
+    const verificationCommands = task.verificationCommands || [];
     lines.push(
       `  - id: ${task.id}`,
       `    title: ${yamlScalar(task.title)}`,
       '    status: pending',
-      '    ownedPaths: []',
-      '    verificationCommands: []',
+    );
+    if (ownedPaths.length > 0) {
+      lines.push('    ownedPaths:', ...ownedPaths.map((ownedPath) => `      - ${yamlScalar(ownedPath)}`));
+    } else {
+      lines.push('    ownedPaths: []');
+    }
+    if (verificationCommands.length > 0) {
+      lines.push('    verificationCommands:', ...verificationCommands.map((command) => `      - ${yamlScalar(command)}`));
+    } else {
+      lines.push('    verificationCommands: []');
+    }
+    lines.push(
       '    evidence: []',
       '    completedAt: null',
     );
@@ -925,6 +988,11 @@ function runSelfTest() {
 - [ ] Define API contract
 1. Add service implementation
 2. Verify failure path
+
+## Exact Execution Targets
+| ID | Files To Modify | Files To Test | Commands |
+|----|-----------------|---------------|----------|
+| P01-1 | \`src/service.ts\` | \`tests/service.test.ts\` | \`npm test\` |
 `, 'utf8');
     const tasks = extractAtomicTasksFromPhaseDoc(phaseDoc);
     if (tasks.length !== 3 || tasks[0].id !== 'AT-01' || tasks[2].title !== 'Verify failure path') {
@@ -941,6 +1009,9 @@ function runSelfTest() {
     const rendered = renderAtomicWorksetsYaml('01', phaseDoc);
     if (!rendered.includes('schemaVersion: 1') || !rendered.includes('activeAtomicTask: AT-01') || !rendered.includes('id: AT-03')) {
       throw new Error('failed to render atomic WORKSETS.yaml');
+    }
+    if (!rendered.includes('- "src/service.ts"') || !rendered.includes('- "npm test"')) {
+      throw new Error('failed to seed WORKSETS ownedPaths and verificationCommands from phase plan');
     }
 
     writeStdoutLine('agent-loop-phase-plan-lib self-test passed');

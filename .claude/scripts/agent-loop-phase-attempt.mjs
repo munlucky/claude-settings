@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { classifyFailure } from './lib/failure-classifier.mjs';
 
 function shellQuote(value) {
@@ -390,8 +393,8 @@ function printUsage() {
   ].join('\n'));
 }
 
-const [command, ...args] = process.argv.slice(2);
-
+function main(argv = process.argv.slice(2)) {
+const [command, ...args] = argv;
   switch (command) {
   case 'decide-missing-evidence-action':
     printAssignments(decideMissingEvidenceAction({
@@ -452,3 +455,13 @@ const [command, ...args] = process.argv.slice(2);
     printUsage();
     process.exit(64);
 }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}
+
+export {
+  classifyCompletionGateReason,
+  decideMissingEvidenceAction,
+};

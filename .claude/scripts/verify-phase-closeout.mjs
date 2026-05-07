@@ -250,6 +250,79 @@ function traceabilityArtifactValid(filePath, idPattern) {
   return idPattern.test(text) && /\b(implemented|verified|pass|passed|done)\b/i.test(text);
 }
 
+function parseWorksetsYaml(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { exists: false, tasks: [] };
+  }
+  const tasks = [];
+  let current = null;
+  let currentList = '';
+
+  for (const line of readText(filePath).split(/\r?\n/)) {
+    const taskStart = line.match(/^\s+-\s+id:\s*(.+?)\s*$/);
+    if (taskStart) {
+      if (current) {
+        tasks.push(current);
+      }
+      current = {
+        id: stripQuotes(taskStart[1]),
+        status: '',
+        ownedPaths: [],
+        verificationCommands: [],
+        evidence: [],
+      };
+      currentList = '';
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+
+    const scalar = line.match(/^\s{4}([A-Za-z][A-Za-z0-9]*):\s*(.*?)\s*$/);
+    if (scalar) {
+      const key = scalar[1];
+      const rawValue = stripQuotes(scalar[2]);
+      currentList = ['ownedPaths', 'verificationCommands', 'evidence'].includes(key) ? key : '';
+      if (key === 'status') {
+        current.status = rawValue;
+      } else if (currentList && rawValue && rawValue !== '[]') {
+        current[currentList].push(rawValue);
+      }
+      continue;
+    }
+
+    const listItem = line.match(/^\s{6}-\s+(.+?)\s*$/);
+    if (listItem && currentList) {
+      current[currentList].push(stripQuotes(listItem[1]));
+    }
+  }
+
+  if (current) {
+    tasks.push(current);
+  }
+  return { exists: true, tasks };
+}
+
+function evaluateCompletedWorksets(phaseExecutionDir) {
+  const worksetsPath = phaseExecutionDir ? path.join(phaseExecutionDir, 'WORKSETS.yaml') : '';
+  const ledger = parseWorksetsYaml(worksetsPath);
+  if (!ledger.exists) {
+    return { ok: true, reason: 'missing-ledger-allowed', detail: '' };
+  }
+  if (ledger.tasks.length === 0) {
+    return { ok: false, reason: 'atomic-ledger-empty', detail: `${path.relative(process.cwd(), worksetsPath)} has no atomicTasks.` };
+  }
+  for (const task of ledger.tasks) {
+    if (task.status !== 'completed') {
+      return { ok: false, reason: 'atomic-tasks-incomplete', detail: `${task.id || 'atomic task'} status is ${task.status || 'missing'}.` };
+    }
+    if (task.ownedPaths.length === 0 || task.verificationCommands.length === 0 || task.evidence.length === 0) {
+      return { ok: false, reason: 'atomic-task-evidence-missing', detail: `${task.id || 'atomic task'} lacks ownedPaths, verificationCommands, or evidence.` };
+    }
+  }
+  return { ok: true, reason: 'ok', detail: '' };
+}
+
 function addViolation(violations, code, message, phaseNumber = null) {
   violations.push({ code, message, phaseNumber });
 }
@@ -311,6 +384,11 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     const archivedPath = resolvePath(phase.archivedPhaseDoc || '');
     if (!archivedPath || !fs.existsSync(archivedPath)) {
       addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} is missing a valid archivedPhaseDoc.`, phaseNumber);
+    }
+
+    const completedWorksets = evaluateCompletedWorksets(phase.qaReport ? path.dirname(resolvePath(phase.qaReport)) : '');
+    if (!completedWorksets.ok) {
+      addViolation(violations, completedWorksets.reason, `Completed phase ${phaseNumber} has incomplete WORKSETS: ${completedWorksets.detail}`, phaseNumber);
     }
 
     const phaseDocText = archivedPath && fs.existsSync(archivedPath) ? readText(archivedPath) : '';

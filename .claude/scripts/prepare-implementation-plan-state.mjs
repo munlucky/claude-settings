@@ -8,6 +8,12 @@ import { assignExecutionArtifactPaths, sanitizeSlug } from './agent-loop-phase-p
 
 const DEFAULT_PLAN_DIR = 'docs/implementation';
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
+const WORKFLOW_ENFORCEMENT_DIR = '.claude/logs/workflow-enforcement';
+const ACTIVE_POINTER_FILES = [
+  'current-run.json',
+  'active-phase-run.json',
+  'latest-dispatch.json',
+];
 
 function parseArgs(argv) {
   const options = {
@@ -145,6 +151,137 @@ function hasDirectoryEntries(directory) {
   return fs.existsSync(directory) && fs.statSync(directory).isDirectory() && fs.readdirSync(directory).length > 0;
 }
 
+function readJsonIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
+function pathMatchesPointer(value, expected) {
+  return normalizePath(value) === normalizePath(expected);
+}
+
+function pointerIdentityStatus(payload, expected) {
+  const refs = [
+    { key: 'masterPlan', actual: payload?.masterPlan || '' },
+    { key: 'executionRoot', actual: payload?.executionRoot || '' },
+    { key: 'phaseRunLease.masterPlan', actual: payload?.phaseRunLease?.masterPlan || '' },
+    { key: 'phaseRunLease.executionRoot', actual: payload?.phaseRunLease?.executionRoot || '' },
+  ].filter((entry) => entry.actual);
+  const staleRefs = refs.filter((entry) => {
+    const wanted = entry.key.endsWith('masterPlan') ? expected.masterPlan : expected.executionRoot;
+    return !pathMatchesPointer(entry.actual, wanted);
+  });
+
+  return {
+    hasIdentity: refs.length > 0,
+    stale: staleRefs.length > 0,
+    staleRefs,
+  };
+}
+
+function renderPreparedPointerPayload({ masterPlan, executionRoot, statusFile, planDir, preparedAt }) {
+  const masterPlanDisplay = displayPath(masterPlan);
+  const executionRootDisplay = displayPath(executionRoot);
+  const statusFileDisplay = displayPath(statusFile);
+  const planDirDisplay = displayPath(planDir);
+  return {
+    stateVersion: '1.0',
+    status: 'prepared',
+    preparedAt,
+    updatedAt: preparedAt,
+    masterPlan: masterPlanDisplay,
+    executionRoot: executionRootDisplay,
+    planDir: planDirDisplay,
+    statusFile: statusFileDisplay,
+    activeExecutionStatus: 'prepared',
+    phaseRunLease: {
+      stateVersion: '1.0',
+      status: 'prepared',
+      completionStatus: 'prepared',
+      masterPlan: masterPlanDisplay,
+      executionRoot: executionRootDisplay,
+      planDir: planDirDisplay,
+      statusFile: statusFileDisplay,
+      attachedAt: preparedAt,
+      lastHeartbeatAt: preparedAt,
+      currentStage: 'prepared',
+    },
+  };
+}
+
+function collectWorkflowPointerState({ masterPlan, executionRoot, statusFile, planDir, archiveRoot, preparedAt }) {
+  const workflowDir = resolveFromCwd(WORKFLOW_ENFORCEMENT_DIR);
+  const expected = {
+    masterPlan: displayPath(masterPlan),
+    executionRoot: displayPath(executionRoot),
+  };
+  const pointerPayload = renderPreparedPointerPayload({ masterPlan, executionRoot, statusFile, planDir, preparedAt });
+  const entries = [];
+
+  for (const basename of ACTIVE_POINTER_FILES) {
+    const filePath = path.join(workflowDir, basename);
+    const payload = readJsonIfExists(filePath);
+    const identity = pointerIdentityStatus(payload, expected);
+    entries.push({
+      basename,
+      path: filePath,
+      archivePath: path.join(archiveRoot, 'workflow-enforcement', basename),
+      action: fs.existsSync(filePath) ? 'archive-and-rewrite' : 'write',
+      existed: fs.existsSync(filePath),
+      stale: identity.stale,
+      staleRefs: identity.staleRefs,
+      expectedIdentity: expected,
+      payload: pointerPayload,
+    });
+  }
+
+  if (fs.existsSync(workflowDir)) {
+    for (const basename of fs.readdirSync(workflowDir).filter((name) => /^dispatch-.*\.json$/i.test(name)).sort()) {
+      const filePath = path.join(workflowDir, basename);
+      const payload = readJsonIfExists(filePath);
+      const identity = pointerIdentityStatus(payload, expected);
+      if (!identity.stale && identity.hasIdentity) {
+        continue;
+      }
+      entries.push({
+        basename,
+        path: filePath,
+        archivePath: path.join(archiveRoot, 'workflow-enforcement', basename),
+        action: 'archive-stale-dispatch',
+        existed: true,
+        stale: identity.stale || !identity.hasIdentity,
+        staleRefs: identity.staleRefs,
+        expectedIdentity: expected,
+        payload: null,
+      });
+    }
+  }
+
+  return entries;
+}
+
+function verifyPreparedPointers(pointerEntries) {
+  const required = pointerEntries.filter((entry) => ACTIVE_POINTER_FILES.includes(entry.basename));
+  for (const entry of required) {
+    const payload = readJsonIfExists(entry.path);
+    const identity = pointerIdentityStatus(payload, entry.expectedIdentity);
+    if (!payload || identity.stale) {
+      throw new Error(`workflow pointer identity self-check failed for ${displayPath(entry.path)}`);
+    }
+  }
+}
+
 function renderStatus({
   masterPlan,
   executionRoot,
@@ -209,6 +346,14 @@ function prepareImplementationPlanState(options) {
   const phases = listPhaseDocs(planDir);
   const preparedAt = new Date().toISOString();
   const statusContent = renderStatus({ masterPlan, executionRoot, phases, preparedAt });
+  const workflowPointers = collectWorkflowPointerState({
+    masterPlan,
+    executionRoot,
+    statusFile,
+    planDir,
+    archiveRoot,
+    preparedAt,
+  });
 
   if (phases.length === 0) {
     throw new Error(`no phase docs found in ${displayPath(planDir)}`);
@@ -227,6 +372,24 @@ function prepareImplementationPlanState(options) {
   if (fs.existsSync(statusFile)) {
     actions.push({ type: 'copy', from: displayPath(statusFile), to: displayPath(path.join(archiveRoot, 'phase-status.yaml')) });
   }
+  for (const pointer of workflowPointers) {
+    if (pointer.existed) {
+      actions.push({
+        type: 'copy',
+        from: displayPath(pointer.path),
+        to: displayPath(pointer.archivePath),
+        reason: pointer.action,
+        stale: pointer.stale,
+      });
+    }
+    if (pointer.payload) {
+      actions.push({
+        type: 'write',
+        path: displayPath(pointer.path),
+        reason: 'prepared-pointer-rewrite',
+      });
+    }
+  }
   actions.push({ type: 'mkdir', path: displayPath(executionRoot) });
   actions.push({ type: 'write', path: displayPath(statusFile) });
 
@@ -239,6 +402,18 @@ function prepareImplementationPlanState(options) {
     executionRoot: displayPath(executionRoot),
     archiveRoot: displayPath(archiveRoot),
     phases: phases.length,
+    pointerSelfCheck: workflowPointers.map((pointer) => ({
+      path: displayPath(pointer.path),
+      action: pointer.action,
+      existed: pointer.existed,
+      stale: pointer.stale,
+      staleRefs: pointer.staleRefs,
+      expectedIdentity: pointer.expectedIdentity,
+      rewriteIdentity: pointer.payload ? {
+        masterPlan: pointer.payload.masterPlan,
+        executionRoot: pointer.payload.executionRoot,
+      } : null,
+    })),
     actions,
   };
 
@@ -257,9 +432,19 @@ function prepareImplementationPlanState(options) {
     fs.mkdirSync(path.dirname(path.join(archiveRoot, 'phase-status.yaml')), { recursive: true });
     fs.copyFileSync(statusFile, path.join(archiveRoot, 'phase-status.yaml'));
   }
+  for (const pointer of workflowPointers) {
+    if (pointer.existed) {
+      fs.mkdirSync(path.dirname(pointer.archivePath), { recursive: true });
+      fs.copyFileSync(pointer.path, pointer.archivePath);
+    }
+    if (pointer.payload) {
+      writeJson(pointer.path, pointer.payload);
+    }
+  }
   fs.mkdirSync(executionRoot, { recursive: true });
   fs.mkdirSync(path.dirname(statusFile), { recursive: true });
   fs.writeFileSync(statusFile, statusContent, 'utf8');
+  verifyPreparedPointers(workflowPointers);
 
   return summary;
 }

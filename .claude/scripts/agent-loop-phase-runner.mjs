@@ -1332,7 +1332,8 @@ function runPhaseAttempt() {
       '',
     ]);
   } else if (runtimeHealth.HEALTHY === 'true' && runtimeHealth.REASON === 'phase-verification-blocked-not-runtime') {
-    appendDebugLog('phase-verification-blocker-not-runtime', {
+    appendDebugLog('verifier_unavailable_non_task_blocker', {
+      previousEvent: 'phase-verification-blocker-not-runtime',
       detail: runtimeHealth.DETAIL || '',
       verdictPath: runtimeHealth.VERDICT_PATH || '',
       blockerClass: runtimeHealth.BLOCKER_CLASS || '',

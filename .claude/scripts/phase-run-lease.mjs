@@ -325,8 +325,24 @@ function updateStatusLease(statusFile, fields) {
 function mirrorToCurrentRun(statusFile, leasePayload) {
   const leaseFiles = resolveLeaseFiles(statusFile);
   const existing = readJson(leaseFiles.currentRunFile) || {};
+  const identityFields = {
+    runLeaseId: leasePayload.runLeaseId || existing.runLeaseId || '',
+    status: leasePayload.status || existing.status || '',
+    completionStatus: leasePayload.completionStatus || existing.completionStatus || '',
+    executionBoundary: leasePayload.executionBoundary || existing.executionBoundary || '',
+    planDir: leasePayload.planDir || existing.planDir || '',
+    statusFile: leasePayload.statusFile || existing.statusFile || statusFile || '',
+    executionRoot: leasePayload.executionRoot || existing.executionRoot || '',
+    masterPlan: leasePayload.masterPlan || existing.masterPlan || '',
+    activeExecutionStatus: leasePayload.completionStatus || leasePayload.status || existing.activeExecutionStatus || '',
+    activeCurrentStage: leasePayload.currentStage || existing.activeCurrentStage || '',
+    activePhaseNumber: leasePayload.phase?.number ?? existing.activePhaseNumber ?? '',
+    activePhaseTitle: leasePayload.phase?.title ?? existing.activePhaseTitle ?? '',
+    activeActionablePhasesRemaining: leasePayload.actionablePhasesRemaining ?? existing.activeActionablePhasesRemaining ?? '',
+  };
   const next = {
     ...existing,
+    ...identityFields,
     updatedAt: utcTimestamp(),
     unavailableCapabilities: leasePayload.unavailableCapabilities || existing.unavailableCapabilities || [],
     phaseRunLease: leasePayload,

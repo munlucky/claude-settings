@@ -274,9 +274,13 @@ function runSelfTest() {
   assert(resolveModelRoute({ runtime: 'codex', stage: 'phase_implementation', env: baseEnv, config }).profile === 'standard', 'implementation selects standard');
   assert(resolveModelRoute({ runtime: 'codex', stage: 'phase_implementation', signals: ['security'], env: baseEnv, config }).profile === 'deep', 'security escalates deep');
   assert(resolveModelRoute({ runtime: 'codex', stage: 'phase_implementation', signals: { repeatedFailureCount: 2 }, env: baseEnv, config }).profile === 'deep', 'repeated failure escalates');
+  const standardRoute = resolveModelRoute({ runtime: 'codex', stage: 'phase_implementation', env: baseEnv, config });
+  assert(standardRoute.model === 'gpt-5.5' && standardRoute.effort === 'medium', 'standard OpenAI route uses gpt-5.5 medium');
+  const economyRoute = resolveModelRoute({ runtime: 'codex', stage: 'docs_only', env: baseEnv, config });
+  assert(economyRoute.model === 'gpt-5.5' && economyRoute.effort === 'medium', 'economy OpenAI route uses gpt-5.5 medium');
   const capabilityRoute = resolveModelRoute({ runtime: 'codex', stage: 'docs_only', signals: ['computer_use'], env: baseEnv, config });
   assert(capabilityRoute.profile === 'standard', 'capability fallback uses next compatible profile');
-  assert(capabilityRoute.model === 'gpt-5.4-mini', 'capability fallback does not choose cheapest model');
+  assert(capabilityRoute.model === 'gpt-5.5', 'capability fallback keeps minimum OpenAI model');
   const forcedRoute = resolveModelRoute({ runtime: 'codex', stage: 'phase_implementation', env: { ...baseEnv, MOONSHOT_FORCE_MODEL: 'openai:gpt-5.5' }, config });
   assert(forcedRoute.model === 'gpt-5.5' && forcedRoute.selectionReason.includes('forced'), 'forced model is recorded');
   const claudeRoute = resolveModelRoute({ runtime: 'claude', stage: 'phase_implementation', signals: ['security'], env: baseEnv, config });

@@ -79,6 +79,11 @@ It is the main Plan-stage owner for phase documents.
      - `docs/implementation/execution`
      - `docs/implementation/close`
      - the previous `.claude/docs/phase-status.yaml` active pointer
+     - `.claude/logs/workflow-enforcement/current-run.json`
+     - `.claude/logs/workflow-enforcement/active-phase-run.json`
+     - `.claude/logs/workflow-enforcement/latest-dispatch.json`
+     - `.claude/logs/workflow-enforcement/dispatch-*.json` entries that reference a superseded master plan or execution root
+   - Treat stale master/executionRoot pointer leaks as preparation failures. Example: a v8 top-level `current-run.json` with a v9 embedded `phaseRunLease` means the workstream was not initialized cleanly; stop before phase-runner dispatch and repair preparation instead of reconciling mid-run.
    - Use:
      ```bash
      node .claude/scripts/prepare-implementation-plan-state.mjs \
@@ -89,7 +94,12 @@ It is the main Plan-stage owner for phase documents.
      ```
    - Run `--dry-run` first when existing `execution`, `close`, or `phase-status.yaml` content may belong to another active workstream.
    - Do not touch `.claude/scripts`, `.claude/runtime-state.sqlite`, `.claude/memory.json`, `.claude/verification.contract.yaml`, project settings, or verification baselines during this preparation step.
-   - After preparation, the rewritten `phase-status.yaml` must point to the selected master plan, mark phase 1 pending/prepared, and list only the current plan's phase docs.
+   - After preparation, run a pointer self-check before dispatch:
+     - The rewritten `phase-status.yaml` must point to the selected master plan and execution root, mark phase 1 pending/prepared, and list only the current plan's phase docs.
+     - `current-run.json`, `active-phase-run.json`, and `latest-dispatch.json` must be absent/archived or reference the selected master plan and execution root at both top level and embedded `phaseRunLease`.
+     - `goalRuntime.status` must not be `complete` while any actionable phase remains pending, in_progress, blocked, or retryable.
+     - Remaining/actionable phase counts must match the master checklist and phase-status phase list.
+   - Record the archive location for stale runtime/evidence surfaces in the master plan or phase status notes when the repository has a note field.
 7. Synchronize completion state.
    - When a phase is completed, immediately mark its master checklist item as checked.
    - Record evidence links used to justify checked state.
@@ -244,6 +254,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Do not declare a phase ready when verification commands or ownership boundaries are still implicit.
 - Do not declare a phase ready when files, commands, expected signals, blocker conditions, or evidence paths are still implicit.
 - Do not declare a phase parallel-ready when `ownedPaths`, dependency edges, conflict edges, and manual-evidence requirements are implicit.
+- Do not start `moonshot-phase-runner` when workflow-enforcement active pointers reference a superseded plan package; archive/rewrite them during plan preparation first.
 
 ## Phase Runner Integration
 

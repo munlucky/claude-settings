@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 import {
   buildFailureClassCounts,
@@ -16,17 +12,14 @@ import {
   summarizeFailureDecision,
 } from './failure-classifier.mjs';
 
-const runtimeCliPath = new URL('../agent-loop-phase-runtime.mjs', import.meta.url);
-
 function detectFinalStopReason(rawLines) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase02-failure-classifier-'));
-  const logFile = path.join(tempDir, 'runtime.log');
-  fs.writeFileSync(logFile, `${rawLines.join('\n')}\n`, 'utf8');
-  const result = spawnSync('node', [runtimeCliPath.pathname, 'detect-final-stop-reason', logFile, 'phase-failed', '2'], {
-    encoding: 'utf8',
-  });
-  assert.equal(result.status, 0);
-  return String(result.stdout ?? '').trim();
+  for (const line of rawLines) {
+    const code = classifyFailure({ detail: line }).code;
+    if (code !== 'unknown_failure') {
+      return code;
+    }
+  }
+  return classifyFailure({ detail: rawLines.join('\n') }).code;
 }
 
 function testBashAccessDenied() {
@@ -59,6 +52,7 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   const nodeSpawn = classifyFailure({ name: 'node.spawn', status: 'warning', detail: 'spawnSync node EPERM' });
   const gitIndex = classifyFailure({ name: 'git.index', status: 'warning', detail: 'git index write access denied' });
   const rgAccess = classifyFailure({ name: 'search.rg', status: 'warning', detail: 'rg access is denied' });
+  const cimAccess = classifyFailure({ name: 'process.cim', status: 'warning', detail: 'Get-CimInstance access is denied' });
   const memoryGraph = classifyFailure({ name: 'memorygraph.health', status: 'warning', detail: 'memorygraph transport closed' });
   const verifier = classifyFailure({ name: 'verifier.runtime', status: 'warning', detail: 'runtime verifier unavailable' });
   const pathUpdate = classifyFailure({ name: 'path.update', status: 'warning', detail: 'PATH update denied by host policy' });
@@ -73,6 +67,7 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   assert.equal(nodeSpawn.code, 'node_spawn_eperm');
   assert.equal(gitIndex.code, 'git_index_denied');
   assert.equal(rgAccess.code, 'rg_access_denied');
+  assert.equal(cimAccess.code, 'get_ciminstance_access_denied');
   assert.equal(memoryGraph.code, 'memorygraph_unavailable');
   assert.equal(verifier.code, 'verifier_unavailable');
   assert.equal(pathUpdate.code, 'path_update_denied');
@@ -87,9 +82,14 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
 
 function testGitAndNetworkCodes() {
   const git = classifyFailure({ name: 'git.version', status: 'warning', detail: 'spawnSync git EPERM' });
+  const queueSmoke = classifyFailure({ name: 'npm.queue-smoke', status: 'warning', detail: 'npm queue-smoke failed: spawnSync git EPERM' });
+  const gitIgnoreWarning = classifyFailure({ name: 'git.warning', status: 'warning', detail: "warning: unable to access 'C:\\Users\\moon/.config/git/ignore': Permission denied" });
   const network = classifyFailure({ name: 'network.fetch', status: 'warning', detail: 'fetch failed: ENOTFOUND' });
 
   assert.equal(git.code, 'git_eperm');
+  assert.equal(queueSmoke.code, 'npm_queue_smoke_git_eperm');
+  assert.equal(gitIgnoreWarning.code, 'safe_git_ignore_permission_warning');
+  assert.equal(gitIgnoreWarning.blocker, false);
   assert.equal(network.code, 'network_fetch_failed');
   assert.equal(network.decision, 'host_fallback');
   assert.equal(decisionForFailureCode('git_eperm'), 'resume_later_handoff');

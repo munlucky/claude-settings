@@ -187,6 +187,10 @@ function readStatusBlocks(statusFile) {
       current.timing.wallClockSeconds = Number.parseFloat(stripped.slice('wallClockSeconds:'.length).trim().replace(/^"|"$/g, ''));
     } else if (inTiming && stripped.startsWith('runnerActiveSeconds:')) {
       current.timing.runnerActiveSeconds = Number.parseFloat(stripped.slice('runnerActiveSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('workerActiveSeconds:')) {
+      current.timing.workerActiveSeconds = Number.parseFloat(stripped.slice('workerActiveSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('leaseHeartbeatSeconds:')) {
+      current.timing.leaseHeartbeatSeconds = Number.parseFloat(stripped.slice('leaseHeartbeatSeconds:'.length).trim().replace(/^"|"$/g, ''));
     } else if (inTiming && stripped.startsWith('verificationSeconds:')) {
       current.timing.verificationSeconds = Number.parseFloat(stripped.slice('verificationSeconds:'.length).trim().replace(/^"|"$/g, ''));
     } else if (inTiming && stripped.startsWith('remediationSeconds:')) {
@@ -603,6 +607,8 @@ function ensureCompletedAttemptMetadata(statusFile, phaseNum, timestamp) {
       `${timingIndent}lastStageAt: "${timestamp}"`,
       `${timingIndent}wallClockSeconds: 0`,
       `${timingIndent}runnerActiveSeconds: 0`,
+      `${timingIndent}workerActiveSeconds: 0`,
+      `${timingIndent}leaseHeartbeatSeconds: 0`,
       `${timingIndent}verificationSeconds: 0`,
       `${timingIndent}remediationSeconds: 0`,
       `${timingIndent}blockedSeconds: 0`,
@@ -732,6 +738,7 @@ function readAtomicLedgerStatus(phaseExecutionDir) {
   const tasks = [];
   let inAtomicTasks = false;
   let current = null;
+  let currentList = '';
   for (const rawLine of fs.readFileSync(ledgerPath, 'utf8').split(/\r?\n/)) {
     const stripped = rawLine.trim();
     const indent = rawLine.length - rawLine.trimStart().length;
@@ -751,12 +758,31 @@ function readAtomicLedgerStatus(phaseExecutionDir) {
       current = {
         id: idMatch[1],
         status: 'pending',
+        ownedPaths: [],
+        verificationCommands: [],
+        evidence: [],
       };
+      currentList = '';
       tasks.push(current);
       continue;
     }
     if (current && stripped.startsWith('status:')) {
       current.status = stripped.slice('status:'.length).trim().replace(/^"|"$/g, '');
+      currentList = '';
+      continue;
+    }
+    const listKey = current && stripped.match(/^(ownedPaths|verificationCommands|evidence):\s*(.*)$/);
+    if (listKey) {
+      currentList = listKey[1];
+      const inline = listKey[2].trim();
+      if (inline && inline !== '[]') {
+        current[currentList].push(inline.replace(/^"|"$/g, ''));
+      }
+      continue;
+    }
+    const listItem = current && currentList && stripped.match(/^-\s+(.+)$/);
+    if (listItem) {
+      current[currentList].push(listItem[1].replace(/^"|"$/g, ''));
     }
   }
 
@@ -771,10 +797,16 @@ function readAtomicLedgerStatus(phaseExecutionDir) {
   }
 
   const pending = tasks.filter((task) => task.status !== 'completed').map((task) => `${task.id}:${task.status}`);
+  const incompleteEvidence = tasks
+    .filter((task) => task.status === 'completed')
+    .filter((task) => task.ownedPaths.length === 0 || task.verificationCommands.length === 0 || task.evidence.length === 0)
+    .map((task) => task.id);
   return {
-    complete: pending.length === 0,
-    reason: pending.length === 0 ? 'ok' : 'atomic-tasks-incomplete',
-    pending,
+    complete: pending.length === 0 && incompleteEvidence.length === 0,
+    reason: pending.length > 0
+      ? 'atomic-tasks-incomplete'
+      : (incompleteEvidence.length > 0 ? 'atomic-task-evidence-missing' : 'ok'),
+    pending: pending.length > 0 ? pending : incompleteEvidence,
     total: tasks.length,
     path: ledgerPath,
   };
@@ -2022,6 +2054,8 @@ function updatePhaseState(config) {
       `${timingIndent}lastStageAt: "${config.timestamp}"`,
       `${timingIndent}wallClockSeconds: 0`,
       `${timingIndent}runnerActiveSeconds: 0`,
+      `${timingIndent}workerActiveSeconds: 0`,
+      `${timingIndent}leaseHeartbeatSeconds: 0`,
       `${timingIndent}verificationSeconds: 0`,
       `${timingIndent}remediationSeconds: 0`,
       `${timingIndent}blockedSeconds: 0`,
@@ -2046,6 +2080,11 @@ function updatePhaseState(config) {
     const [index, currentValue] = getTimingValue(bucketName, '0');
     const currentSeconds = Number.parseFloat(currentValue) || 0;
     block[index] = `${timingIndent}${bucketName}: ${Math.max(currentSeconds + deltaSeconds, 0)}`;
+  }
+
+  function setTimingValue(bucketName, value) {
+    const [index] = getTimingValue(bucketName, '0');
+    block[index] = `${timingIndent}${bucketName}: ${Math.max(Math.round(value), 0)}`;
   }
 
   function classifyTimingBucket() {
@@ -2129,8 +2168,24 @@ function updatePhaseState(config) {
   const [lastStageAtIdx] = getTimingValue('lastStageAt', `"${config.timestamp}"`);
   block[lastStageAtIdx] = `${timingIndent}lastStageAt: "${config.timestamp}"`;
   const [wallClockIdx] = getTimingValue('wallClockSeconds', '0');
-  block[wallClockIdx] = `${timingIndent}wallClockSeconds: ${Math.max(Math.round((currentTimestamp - startedAtEpoch) / 1000), 0)}`;
-  updateTimingBucket(classifyTimingBucket(), Math.round(deltaSeconds));
+  const wallClockSeconds = Math.max(Math.round((currentTimestamp - startedAtEpoch) / 1000), 0);
+  block[wallClockIdx] = `${timingIndent}wallClockSeconds: ${wallClockSeconds}`;
+  const timingBucket = classifyTimingBucket();
+  updateTimingBucket(timingBucket, Math.round(deltaSeconds));
+  if (timingBucket === 'runnerActiveSeconds') {
+    updateTimingBucket('workerActiveSeconds', Math.round(deltaSeconds));
+  }
+  const [, runnerValue] = getTimingValue('runnerActiveSeconds', '0');
+  const runnerActiveSeconds = Number.parseFloat(runnerValue) || 0;
+  if (runnerActiveSeconds > wallClockSeconds) {
+    setTimingValue('runnerActiveSeconds', wallClockSeconds);
+    const [warningsIdx, warningsRaw] = getTimingValue('timingWarnings', '""');
+    const warningText = String(warningsRaw || '').replace(/^"|"$/g, '');
+    const nextWarning = warningText.includes('runnerActiveSeconds_gt_wallClockSeconds')
+      ? warningText
+      : [warningText, 'runnerActiveSeconds_gt_wallClockSeconds'].filter(Boolean).join(',');
+    block[warningsIdx] = `${timingIndent}timingWarnings: "${nextWarning}"`;
+  }
   if (config.newStatus === 'completed') {
     const [completedAtIdx] = getTimingValue('completedAt', `"${config.timestamp}"`);
     block[completedAtIdx] = `${timingIndent}completedAt: "${config.timestamp}"`;

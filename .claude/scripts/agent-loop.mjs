@@ -597,8 +597,55 @@ function appendDebugLog(event, details = {}) {
   })}\n`, 'utf8');
 }
 
+function readCanonicalPhaseSummary(statusFile) {
+  if (!statusFile || !fs.existsSync(statusFile)) {
+    return null;
+  }
+  const phases = [];
+  let current = null;
+  for (const line of fs.readFileSync(statusFile, 'utf8').split(/\r?\n/)) {
+    const phaseStart = line.match(/^\s*-\s+number:\s*(\d+)/);
+    if (phaseStart) {
+      if (current) {
+        phases.push(current);
+      }
+      current = { number: phaseStart[1], title: '', status: '' };
+      continue;
+    }
+    if (!current) {
+      continue;
+    }
+    const field = line.match(/^ {4}(title|status):\s*(.*?)\s*$/);
+    if (field) {
+      current[field[1]] = String(field[2] || '').replace(/^["']|["']$/g, '');
+    }
+  }
+  if (current) {
+    phases.push(current);
+  }
+  if (phases.length === 0) {
+    return null;
+  }
+  const completed = phases.filter((phase) => phase.status === 'completed').length;
+  const failed = phases.filter((phase) => /(failed|blocked|error)/i.test(phase.status || '')).length;
+  const active = phases.find((phase) => /(in_progress|blocked|pending_reverify)/i.test(phase.status || ''))
+    || phases.find((phase) => phase.status === 'pending')
+    || null;
+  return {
+    totalPhases: phases.length,
+    completed,
+    failed,
+    currentPhase: active?.number || '',
+    currentPhaseTitle: active?.title || '',
+  };
+}
+
 function writeSummaryReport({ planDir, totalPhases, completed, failed, stoppedEarly, stopPhase, stopReason, stopDetail }) {
   ensureLoopLogs();
+  const canonical = readCanonicalPhaseSummary(state.statusFile);
+  const effectiveTotal = canonical?.totalPhases || totalPhases;
+  const effectiveCompleted = canonical?.completed ?? completed;
+  const effectiveFailed = canonical?.failed ?? failed;
   const wasteSummary = readWasteSummary();
   const wasteTotals = wasteSummary?.totals || null;
   const body = [
@@ -606,9 +653,10 @@ function writeSummaryReport({ planDir, totalPhases, completed, failed, stoppedEa
     '',
     '## Execution Info',
     `- **Plan Directory**: ${planDir}`,
-    `- **Total Phases**: ${totalPhases}`,
-    `- **Completed**: ${completed}`,
-    `- **Failed**: ${failed}`,
+    `- **Total Phases**: ${effectiveTotal}`,
+    `- **Completed**: ${effectiveCompleted}`,
+    `- **Failed**: ${effectiveFailed}`,
+    `- **Status Source**: ${canonical ? state.statusFile : 'loop counters'}`,
     `- **Completed At**: ${localTimestamp()}`,
     '',
     '## Loop Stop',
@@ -637,6 +685,12 @@ function writeSummaryReport({ planDir, totalPhases, completed, failed, stoppedEa
 
 function writeLiveSummaryReport({ planDir, totalPhases, completed, failed, currentPhase = '', currentPhaseTitle = '', loopState = 'running', stopReason = '', stopDetail = '' }) {
   ensureLoopLogs();
+  const canonical = readCanonicalPhaseSummary(state.statusFile);
+  const effectiveTotal = canonical?.totalPhases || totalPhases;
+  const effectiveCompleted = canonical?.completed ?? completed;
+  const effectiveFailed = canonical?.failed ?? failed;
+  const effectiveCurrentPhase = currentPhase || canonical?.currentPhase || '';
+  const effectiveCurrentPhaseTitle = currentPhaseTitle || canonical?.currentPhaseTitle || '';
   const wasteSummary = readWasteSummary();
   const wasteTotals = wasteSummary?.totals || null;
   const body = [
@@ -644,15 +698,16 @@ function writeLiveSummaryReport({ planDir, totalPhases, completed, failed, curre
     '',
     '## Status',
     `- State: ${loopState}`,
-    `- Current phase: ${currentPhase || 'n/a'}`,
-    `- Current title: ${currentPhaseTitle || 'n/a'}`,
-    `- Completed: ${completed}`,
-    `- Failed: ${failed}`,
+    `- Current phase: ${effectiveCurrentPhase || 'n/a'}`,
+    `- Current title: ${effectiveCurrentPhaseTitle || 'n/a'}`,
+    `- Completed: ${effectiveCompleted}`,
+    `- Failed: ${effectiveFailed}`,
+    `- Status Source: ${canonical ? state.statusFile : 'loop counters'}`,
     `- Updated At: ${localTimestamp()}`,
     '',
     '## Context',
     `- Plan Directory: ${planDir}`,
-    `- Total Phases: ${totalPhases}`,
+    `- Total Phases: ${effectiveTotal}`,
     `- Current Run State: ${currentRunState}`,
     `- Historical Summary: ${summaryReport}`,
     '',

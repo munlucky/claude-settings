@@ -1,5 +1,5 @@
 const PROFILE_TO_CODEX_EFFORT = {
-  economy: 'low',
+  economy: 'medium',
   standard: 'medium',
   deep: 'high',
   max: process.env.HARNESS_CODEX_MAX_REASONING_EFFORT || 'xhigh',

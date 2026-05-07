@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { classifyCompletionGateReason, decideMissingEvidenceAction } from './agent-loop-phase-attempt.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
 
@@ -73,6 +73,15 @@ test('phase closeout fails when requirements traceability artifacts are missing'
   });
 });
 
+test('phase closeout fails when completed phase WORKSETS still has in-progress atomic tasks', () => {
+  withFixture({ incompleteWorksets: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'atomic-tasks-incomplete'));
+  });
+});
+
 test('plan conformance fails on unapproved alternative implementation language', () => {
   withFixture({ qaExtra: '- Note: alternative implementation used for the renderer.' }, (root) => {
     const result = evaluatePlanConformance({
@@ -139,6 +148,15 @@ test('completion gate taxonomy classifies review, finish, verification, environm
   });
 });
 
+test('finish bundle missing uses exactly one artifact-only remediation before hard stop', () => {
+  const first = decideMissingEvidence(1, 'workflow-finish-bundle-missing');
+  const second = decideMissingEvidence(2, 'workflow-finish-bundle-missing');
+
+  assert.equal(first.ACTION, 'finish-remediation');
+  assert.equal(second.ACTION, 'stop-loop');
+  assert.equal(second.SUMMARY, 'workflow-finish-bundle-missing');
+});
+
 function config(root) {
   return {
     statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
@@ -169,6 +187,7 @@ function writeFixture(root, options = {}) {
     traceability: true,
     qaExtra: '',
     inconsistentVerdict: false,
+    incompleteWorksets: false,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -302,6 +321,26 @@ function writeFixture(root, options = {}) {
     ].join('\n')
   );
 
+  if (settings.incompleteWorksets) {
+    fs.writeFileSync(
+      path.join(executionDir, 'WORKSETS.yaml'),
+      [
+        'schemaVersion: 1',
+        'activeAtomicTask: AT-01',
+        'atomicTasks:',
+        '  - id: AT-01',
+        '    title: "Feature work"',
+        '    status: in_progress',
+        '    ownedPaths: []',
+        '    verificationCommands: []',
+        '    evidence: []',
+        '    completedAt: null',
+        'worksets: []',
+        '',
+      ].join('\n')
+    );
+  }
+
   if (settings.traceability) {
     fs.writeFileSync(
       path.join(docsDir, 'execution/REQUIREMENTS_TRACEABILITY.md'),
@@ -340,37 +379,19 @@ function writeFixture(root, options = {}) {
 }
 
 function assertGateClassification(reason, expected) {
-  const result = spawnSync('node', ['.claude/scripts/agent-loop-phase-attempt.mjs', 'classify-gate-stop-reason', reason], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-
-  const output = parseAssignments(result.stdout);
-  assert.equal(output.GATE_REASON_CATEGORY, expected.category);
-  assert.equal(output.STOP_REASON, expected.stopReason);
-  assert.equal(output.REMEDIATION_STAGE, expected.remediationStage);
-  assert.equal(output.RETRY_POLICY, expected.retryPolicy);
+  const result = classifyCompletionGateReason(reason);
+  assert.equal(result.category, expected.category);
+  assert.equal(result.stopReason, expected.stopReason);
+  assert.equal(result.remediationStage, expected.remediationStage);
+  assert.equal(result.retryPolicy, expected.retryPolicy);
 }
 
-function parseAssignments(text) {
-  const values = {};
-  for (const line of String(text || '').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-    const separator = trimmed.indexOf('=');
-    if (separator <= 0) {
-      continue;
-    }
-    const key = trimmed.slice(0, separator);
-    let value = trimmed.slice(separator + 1);
-    if (value.startsWith("'") && value.endsWith("'")) {
-      value = value.slice(1, -1).replace(/'\\''/g, "'");
-    }
-    values[key] = value;
-  }
-  return values;
+function decideMissingEvidence(autoFixCount, reason) {
+  return decideMissingEvidenceAction({
+    autoFixCount,
+    maxAutoFixAttempts: 3,
+    autonomousMode: true,
+    advanceOnFailure: false,
+    finalStopReason: reason,
+  });
 }
