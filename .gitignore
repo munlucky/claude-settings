@@ -16,6 +16,9 @@ __pycache__/
 .claude/knowledge-repo-audit-*.json
 .claude/tools/browserd/node_modules/
 .claude/tools/browserd/.claude/
+.claude/docs/phase-status.yaml
+.claude/docs/reports/*.json
+.claude/docs/tasks/
 .claude/verification-results-*.txt
 .claude/verification-verdict-*.json
 .claude/docs/moonshot-analysis.yaml

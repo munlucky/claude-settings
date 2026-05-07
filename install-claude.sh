@@ -538,6 +538,7 @@ usage() {
   - .codex/config.toml, .codex/agents/ 중 존재 항목 자동 백업 후 설치
   - .codex/skills/ 는 백업 없이 최신 복사본으로 동기화
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
+  - workflow runtime 산출물(.claude/docs/tasks, phase-status, verdict/report 파일)은 제외됩니다
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
   - .claudeignore는 기본 denylist를 설치하고 기존 파일이 있으면 병합
   - .claude/skills/* 를 프로젝트 .codex/skills/에 디렉터리 복사 설치
@@ -612,6 +613,18 @@ fi
 
 # .mcp.json은 전역 설치 후 불필요하므로 항상 제외
 EXCLUDE_PATTERNS+=(".mcp.json")
+
+# Runtime workflow artifacts are generated per target project and must never be
+# installed from this settings repository if they were accidentally committed.
+EXCLUDE_PATTERNS+=(
+	"phase-status.yaml"
+	"tasks"
+	"reports"
+	"verification-results-*.txt"
+	"verification-verdict-*.json"
+	"moonshot-analysis.yaml"
+	"runtime-verdict-*.json"
+)
 
 # 사용자 파일 자동 보호 (기존 .claude가 있을 경우)
 USER_FILES=()

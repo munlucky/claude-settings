@@ -4,6 +4,12 @@
 .agents/skills
 .claude/logs/
 .claude/cache/
+.claude/docs/phase-status.yaml
+.claude/docs/reports/
+.claude/docs/tasks/
+.claude/verification-results-*.txt
+.claude/verification-verdict-*.json
+.claude/docs/moonshot-analysis.yaml
 .claude/memory.json
 .claude/memorygraph/
 .code-review-graph/

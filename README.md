@@ -14,7 +14,7 @@
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
 - phase 기반 작업이 필요할 때 `docs/implementation/`를 런타임에 생성해 사용
-- `.claude/verification-results-*`, `.claude/verification-verdict-*`, `.claude/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리 대상이 아님
+- `.claude/docs/tasks/`, `.claude/docs/phase-status.yaml`, `.claude/docs/reports/*.json`, `.claude/verification-results-*`, `.claude/verification-verdict-*`, `.claude/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리/설치 배포 대상이 아님
 - 프로젝트 로컬 메모리는 MemoryGraph를 기본 backend로 사용하며 `.claude/memorygraph/`에 저장하고 버전 관리/기본 agent context에서 제외
 - 코드 구조 분석은 `code-review-graph` MCP를 stage-gated + lazy update 방식으로 사용하며 `.code-review-graph/`에 저장하고 자동 build/watch 없이 실행
 
@@ -38,8 +38,7 @@ claude-settings/
 │   └── docs/
 │       ├── guidelines/
 │       ├── reference-downstream/
-│       ├── runtime-parity-reference-plan/
-│       └── tasks/
+│       └── runtime-parity-reference-plan/
 └── AGENTS.md -> .claude/CLAUDE.md
 ```
 
@@ -116,7 +115,7 @@ claude-settings/
 - 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
 - 외부 하네스 도입 준비: `docs/claude-tasks/external-harness-adoption/`
-- 작업 문서 루트: `.claude/docs/tasks/`
+- 작업 문서 루트: `.claude/docs/tasks/` (런타임 생성, 저장소/설치 패키지에는 템플릿만 유지)
 - downstream reference package: `.claude/docs/reference-downstream/`
 - runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`
 - 제품 정의 템플릿: `.claude/templates/product-definition/*.md`
@@ -277,7 +276,7 @@ Code Review Graph 설정:
 2. Git에 커밋: `git add .claude .codex .claudeignore .gitattributes AGENTS.md && git commit -m "Add Claude Code settings"`
 3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
 
-커밋 시 `.agents/skills`, `.mcp.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`는 generated/local runtime 경로이므로 explicit `git add -- <paths>` 목록에 넣지 않습니다.
+커밋 시 `.agents/skills`, `.mcp.json`, `.claude/docs/tasks/`, `.claude/docs/phase-status.yaml`, `.claude/docs/reports/*.json`, `.claude/verification-verdict-*`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`는 generated/local runtime 경로이므로 explicit `git add -- <paths>` 목록에 넣지 않습니다.
 
 직접 스킬을 지정해서 실행하는 경우:
 - review-only, read-only, meta-harness 수정은 direct invocation이 가능
