@@ -56,36 +56,23 @@ git diff --cached --name-only
 ## 4. 3단계 경계 현행화
 
 MemoryGraph 호출은 `stage=commit`, `memoryMode=write_requested`로 수행합니다.
-프로젝트에 `.claude/scripts/commit-moonshot-memory-refresh.mjs`가 있으면 아래 helper를 우선 사용합니다. 이 helper는 Codex Desktop에 붙은 MCP transport가 stale이어도 별도 MemoryGraph child process로 자동 우회하고, 결과 로그를 `.claude/logs/memorygraph/`에 남깁니다.
-
-```bash
-node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id "$PROJECT_ID"
-```
-
-`mcp__memory__.store_memory`가 `Transport closed`로 실패했고 저장 payload가 명확하면, 같은 payload를 임시 JSON 파일로 저장한 뒤 동일 내용을 direct fallback으로 저장합니다.
-
-```bash
-node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id "$PROJECT_ID" --mcp-error "Transport closed" --store-json @.claude/cache/memorygraph/commit-store-payload.json
-```
-
-구형 프로젝트에 helper가 없으면 `.claude/scripts/memorygraph-project-index.mjs`를 먼저 실행해 운영 중인 코드베이스의 파일/import/symbol/API route 수준 seed를 생성한 뒤 `project-memory-refresh` 또는 direct fallback으로 반영합니다.
+프로젝트에 `.claude/scripts/memorygraph-project-index.mjs`가 있으면 먼저 실행해 운영 중인 코드베이스의 파일/import/symbol/API route 수준 seed를 생성한 뒤 `project-memory-refresh`로 반영합니다.
 system/developer/AGENTS/rules/workflow hard rule과 중복되는 항목은 저장하지 말고 `projectMemory.omitted.duplicatedSystemRules`에 기록합니다.
 
 ### Codex MCP transport fallback
-Codex Desktop에 이미 붙어 있는 Memory MCP가 `Transport closed`로 실패하면 Codex 재시작을 요구하지 않습니다. 즉시 commit refresh helper를 사용해 별도 MemoryGraph stdio child process를 띄우는 direct fallback을 사용합니다.
+Codex Desktop에 이미 붙어 있는 Memory MCP가 `Transport closed`로 실패하면 Codex 재시작을 요구하지 않습니다. 즉시 별도 MemoryGraph stdio child process를 띄우는 direct fallback을 사용합니다.
 
 ```bash
-node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id "$PROJECT_ID" --mcp-error "Transport closed"
+node .claude/scripts/memorygraph-direct.mjs health
+node .claude/scripts/memorygraph-project-index.mjs --max-files 500
+node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
 ```
 
 규칙:
 - `Transport closed`는 저장 payload 실패가 아니라 Codex app-server의 기존 MCP transport 실패로 간주합니다.
 - direct fallback이 성공하면 메모리 현행화는 완료로 취급하고, Codex 재시작을 사용자에게 요구하지 않습니다.
-- helper는 `mcp_transport_failed -> direct_fallback` 상태를 로그에 남깁니다.
-- 저장 payload가 있으면 `--store-json`으로 같은 내용을 저장하고, payload가 없으면 `memorygraph-project-index.mjs`와 `refresh-seed`를 실행합니다.
 - direct fallback도 실패한 경우에만 실패 원인을 기록하고 Git closeout을 계속 진행합니다.
 - Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다.
-- helper와 direct client는 timeout과 owned child-process tree cleanup을 수행합니다. 광범위한 `memorygraph.exe` kill은 금지하고, 자신이 시작한 child tree만 정리합니다.
 - direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 사용합니다. `.claude/memorygraph/**`와 `.claude/cache/memorygraph/**`는 사용자가 명시적으로 포함하지 않는 한 커밋하지 않습니다.
 
 ### 기존 경계 확인

@@ -204,7 +204,7 @@ testCoCreation:
     scope: "Each new API endpoint or user flow"
     naming: "{feature}.integration.test.ts"
     minimum: 1 per flow (when applicable)
-
+    
   # 3. Bug fix reproduction tests
   bugfixTests:
     scope: "Each bug being fixed"

@@ -17,6 +17,8 @@ surfaceStatus: internal_stage_owner
 - `session-logs` — Recent activities
 - `projectMemory` — Current project context
 - `skillChain` — Executed skills
+- AWTL `failed_turn_case` records when the failure originated from a captured phase attempt
+- Replay scorecard summaries when a previous prevention hint may be stale, risky, or denied
 
 ## Failure Categories
 
@@ -32,6 +34,7 @@ surfaceStatus: internal_stage_owner
 | **readiness_gate_missing** | Implementation started without project/context readiness | gate skills, `pre-flight-check` |
 | **verification_contract_missing** | Completion evidence unclear because contract was absent | verification contract docs, evidence gate |
 | **correction_lesson** | User correction reveals a reusable workflow or quality mistake | `analysisContext.notes`, optional `session-logger`, `.claude/docs/solutions/`, relevant skill/rule |
+| **failed_turn_prevention_gap** | A repeated failure turn did not produce a usable failed turn case or prevention hint | AWTL analyzer, phase-runner brief, replay scorecard |
 
 ## Systematic Debugging Rules
 
@@ -43,6 +46,8 @@ surfaceStatus: internal_stage_owner
 - Keep external issue drafts durable: avoid file paths and line numbers unless the user requests tactical implementation notes.
 - After a user correction, distinguish one-off preference from reusable workflow mistake before proposing durable rule or skill changes.
 - Record reusable correction lessons compactly; avoid turning every correction into a new rule.
+- When a captured failure has a turn id, keep `failure_turn_id` in the analysis output and cite redacted evidence refs instead of raw trace payloads.
+- Do not reuse a prior prevention hint when the replay scorecard marks it stale, risky, denied, or unverified.
 
 ## Analysis Workflow
 
@@ -53,6 +58,7 @@ surfaceStatus: internal_stage_owner
 5. **Map to Target**: Identify which file/rule/contract needs improvement.
 6. **Next Tactic**: Propose a changed tactic when the same class repeats.
 7. **Correction Lesson**: If the trigger was user correction, state whether it is reusable, where it should be logged, and whether a rule/skill change is justified.
+8. **Turn Prevention Target**: For turn-scoped failures, state whether the right fix is capture, failed turn case creation, next-run brief matching, or MemoryGraph promotion policy.
 
 ## Output (patch)
 
@@ -80,6 +86,11 @@ failureReport:
     logTarget: "analysisContext.notes"
     durableTarget: ".claude/docs/solutions/"
     ruleOrSkillChangeJustified: true
+  turnFailure:
+    failure_turn_id: "turn-phase05-attempt01"
+    failedTurnCasePath: ".claude/cache/awtl/failed_turn_cases.jsonl"
+    preventionHintTarget: "phase-runner failure prevention brief"
+    replayScorecardStatus: "verified|denied|stale|risky|not_checked"
   categorized:
     - type: "context_missing"
       description: "Agent consistently formatted API response wrong"

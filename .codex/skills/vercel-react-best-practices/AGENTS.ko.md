@@ -1,19 +1,19 @@
 # React Best Practices
 
-**Version 1.0.0**
-Vercel Engineering
+**Version 1.0.0**  
+Vercel Engineering  
 January 2026
 
-> **참고:**
-> 이 문서는 Vercel에서 React/Next.js 코드를 유지보수, 생성, 리팩터링할 때
-> 에이전트와 LLM이 따르도록 만든 가이드입니다.
+> **참고:**  
+> 이 문서는 Vercel에서 React/Next.js 코드를 유지보수, 생성, 리팩터링할 때  
+> 에이전트와 LLM이 따르도록 만든 가이드입니다.  
 > 사람도 읽을 수 있지만, 설명 방식은 자동화와 일관성을 우선합니다.
 
 ---
 
 ## 개요
 
-React/Next.js 애플리케이션 성능 최적화를 위한 종합 가이드입니다.
+React/Next.js 애플리케이션 성능 최적화를 위한 종합 가이드입니다.  
 40개 이상의 규칙을 8개 카테고리로 나누고, 영향도가 큰 항목부터 우선 적용할 수 있게 구성합니다.
 
 ## 카테고리

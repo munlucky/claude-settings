@@ -75,7 +75,7 @@ Detect and update the relevant PROJECT.md section:
 
 **Rules:**
 - Only update sections with actual changes (diff-based)
-- **CRITICAL: Preserve user-written content.**
+- **CRITICAL: Preserve user-written content.** 
   - For lists (e.g. Stack), append new items; do not remove existing ones.
   - For descriptions, only append new info if missing.
   - Do not overwrite custom notes or comments.

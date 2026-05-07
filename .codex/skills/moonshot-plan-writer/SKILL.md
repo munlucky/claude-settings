@@ -35,10 +35,11 @@ It is the main Plan-stage owner for phase documents.
    - Do not use `.claude/docs/ko/` as a MemoryGraph source.
    - Omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy.
 1. Discover and load available source documents first.
-   - Check preferred files first: `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md`.
-   - If any are missing, scan `docs/` and root-level `*.md` for PRD/SPEC/GDD-like requirement sources.
-   - If no requirement docs exist, use user request and ticket/issue text as baseline and mark a source-gap note in the master plan.
-   - Extract requirement units and assign trace IDs (example: `PRD-5.1`, `SPEC-2.4`, `GDD-3.2`, `REQ-1.1`).
+    - Check preferred files first: `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md`.
+    - If any are missing, scan `docs/` and root-level `*.md` for PRD/SPEC/GDD-like requirement sources.
+    - For user-facing MVP work, also scan for `UI_SPEC*`, `UI_FLOW_MAP.md`, `UI_STATE_MATRIX.md`, `MOCK_SCENARIOS.md`, `MOCK_API_CONTRACT.md`, and `USER_DEMO_APPROVAL.md`.
+    - If no requirement docs exist, use user request and ticket/issue text as baseline and mark a source-gap note in the master plan.
+    - Extract requirement units and assign trace IDs (example: `PRD-5.1`, `SPEC-2.4`, `GDD-3.2`, `REQ-1.1`).
 2. Inspect existing implementation markdown context.
    - Read root-level `*.md` files (non-recursive).
    - Read `docs/implementation/*.md`.
@@ -60,8 +61,10 @@ It is the main Plan-stage owner for phase documents.
    - Include enough context so the phase can be executed without hidden assumptions.
    - Include source mapping section with referenced trace IDs.
    - Map every user-facing requirement to at least one `SCN-*` row in `Critical Product Scenarios`.
-   - Include exact files to create/modify/test, exact commands, expected fail/pass signals, blocker conditions, review checkpoints, and verification evidence paths.
-   - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
+    - Include exact files to create/modify/test, exact commands, expected fail/pass signals, blocker conditions, review checkpoints, and verification evidence paths.
+    - When `mvpMethodology.profile: demo_first`, slice by maturity milestone instead of backend-first feature layers.
+    - In demo-first plans, a Real Functional phase is executable only when `USER_DEMO_APPROVAL.md` is `approved` with a non-empty approved scope.
+    - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
 6. Prepare runnable phase state when the plan package is the next execution target.
    - Preserve active root plan documents.
    - Archive stale runtime/evidence surfaces instead of deleting them:
@@ -140,11 +143,60 @@ It is the main Plan-stage owner for phase documents.
   - blocker condition that stops execution
   - review checkpoint
   - verification evidence path
-- Each critical scenario must name:
+  - Each critical scenario must name:
   - the user-visible expectation
   - the command that proves it
   - the expected pass signal
   - the evidence path that will be cited in `QA_REPORT.md`
+
+## Demo-first MVP Profile
+
+Use `mvpMethodology.profile: demo_first` when the MVP must be user-tested through a clickable/mock UI demo before Real Functional implementation.
+
+Required maturity order per in-scope slice:
+- `demo_ready_ui`
+- `mock_functional_demo`
+- `demo_evidence_capture`
+- `user_demo_approval`
+- `real_functional`
+- `real_functional_verification`
+- `production_hardening`
+
+Phase names should make the maturity explicit, for example:
+- `Create First Project - Demo Ready UI`
+- `Create First Project - Mock Functional Demo`
+- `Create First Project - Demo Evidence Capture`
+- `Create First Project - User Demo Approval`
+- `Create First Project - Real Functional`
+- `Create First Project - Real Functional Verification`
+
+Every demo-first phase must include a machine-readable `mvpMethodology` block:
+
+```yaml
+mvpMethodology:
+  profile: demo_first
+  sliceId: "<stable-slice-id>"
+  maturityTarget: "<one maturity value>"
+  demoGate:
+    required: true
+    mode: hard_stop
+    approvalSource: "docs/implementation/USER_DEMO_APPROVAL.md"
+    evidenceSource: "docs/implementation/DEMO_EVIDENCE.md"
+    mockContractSource: "docs/implementation/MOCK_API_CONTRACT.md"
+    blocks:
+      - real_functional
+      - production_backend
+      - real_persistence
+      - auth_integration
+      - irreversible_migration
+```
+
+Completion constraints:
+- `Mock Functional Demo` needs mock success and error path evidence.
+- `Demo Evidence Capture` needs a demo run command and tested route/flow evidence.
+- `User Demo Approval` needs approved scope in `USER_DEMO_APPROVAL.md`.
+- `Real Functional` must not close with mock-only evidence and must prove parity with `MOCK_API_CONTRACT.md`.
+- Approved UI route, CTA, flow-order, state, or mock response shape changes invalidate the approval and route the work back through `UI_CHANGE_REQUEST.md`, refreshed demo evidence, and user reapproval.
 
 ## Completion Loop (Critical)
 Use this loop whenever generating or refreshing plans:
@@ -165,6 +217,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 ## Templates
 - Use `assets/master-plan.template.md` as the base for master plan generation.
 - Use `assets/phase-plan.template.md` as the base for phase plan generation.
+- Apply `.claude/docs/guidelines/demo-first-mvp-gate.md` when `mvpMethodology.profile: demo_first`.
 
 ## Guardrails
 - Do not invent repository facts; derive from existing docs/files.

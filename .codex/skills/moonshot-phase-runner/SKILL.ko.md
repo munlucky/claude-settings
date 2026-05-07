@@ -56,6 +56,12 @@ MemoryGraph 단계 규칙:
 - `.claude/docs/ko/`는 제외하고, system/developer/AGENTS/rules 정책과 중복되는 MemoryGraph 항목은 병합하지 않습니다.
 - MemoryGraph를 사용할 수 없으면 `boundaryStatus: not_checked`로 기록하고, strict memory gate가 명시적으로 실패한 경우가 아니면 계속 진행합니다.
 
+실패 재발 방지 brief 규칙:
+- phase-attempt prompt를 만들기 전에 runner는 ignored repo-local cache인 `.claude/cache/awtl/failed_turn_cases.jsonl`을 읽을 수 있습니다.
+- active phase context와 매칭되는 compact failed-turn case가 있을 때만 `Failure Prevention Brief`를 주입합니다. cache가 없거나 매칭이 없으면 no-op입니다.
+- brief는 최대 5개의 1문장 bullet이어야 하며 raw trace JSON, prompt body, stdout, stderr, secret-like string을 포함하면 안 됩니다.
+- 이 cache read는 MemoryGraph 가용성과 독립적이며, 장기 메모리 promotion을 수행하지 않습니다.
+
 ## Workflow
 
 ```text

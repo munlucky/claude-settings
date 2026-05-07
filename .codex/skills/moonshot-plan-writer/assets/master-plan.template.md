@@ -10,6 +10,28 @@
 ## Objective
 - <overall objective>
 
+## MVP Methodology
+```yaml
+mvpMethodology:
+  profile: "none | demo_first"
+  requiredExecutionPack:
+    - MVP_SCOPE.md
+    - MINI_ARCHITECTURE.md
+    - UI_DEMO_PLAN.md
+    - UI_FLOW_MAP.md
+    - UI_STATE_MATRIX.md
+    - MOCK_SCENARIOS.md
+    - MOCK_API_CONTRACT.md
+    - USER_DEMO_TEST.md
+    - DEMO_EVIDENCE.md
+    - USER_DEMO_APPROVAL.md
+    - POST_DEMO_IMPLEMENTATION_PLAN.md
+    - UI_CHANGE_REQUEST.md
+```
+
+- Use `demo_first` only when the MVP must hard-stop after clickable/mock demo evidence until user approval.
+- For `demo_first`, every in-scope slice must progress through demo evidence, user approval, Real Functional, and Real Functional Verification before this plan can complete.
+
 ## Phase Index
 | Phase | Title | Plan File | Depends On |
 |------|-------|-----------|------------|
