@@ -43,6 +43,138 @@ function spawnBlocked(result) {
   return /EPERM|EACCES/i.test(result.error || result.stderr || '');
 }
 
+function combinedProbeText(result = {}) {
+  return [result.error, result.stderr, result.stdout]
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .join(' | ');
+}
+
+function isPermissionDeniedText(text = '') {
+  return /EPERM|EACCES|access is denied|permission denied|read only|readonly|unable to create process/i.test(text);
+}
+
+function resolveFailureClassFromText(text, defaultCode, accessDeniedCode = defaultCode) {
+  if (isPermissionDeniedText(text)) {
+    return accessDeniedCode;
+  }
+  if (/spawn blocked|unable to create process/i.test(text)) {
+    return 'spawn_blocked';
+  }
+  return defaultCode;
+}
+
+function resultToCheck(name, result, successDetail, failureClass, decision = 'resume_later_handoff', fallbackHint = '') {
+  if (result.status === 0) {
+    return check(name, 'passed', successDetail, {
+      command: result.command,
+      failureClass: '',
+      decision: 'continue',
+      fallbackHint: '',
+    });
+  }
+
+  const text = combinedProbeText(result);
+  const resolvedFailureClass = resolveFailureClassFromText(text, failureClass, failureClass);
+  return check(name, /spawn blocked|unable to create process/i.test(text) ? 'warning' : 'failed', text || successDetail, {
+    command: result.command,
+    failureClass: resolvedFailureClass,
+    decision,
+    fallbackHint,
+  });
+}
+
+function ensureDirectory(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function writeProbeFile(filePath, contents = 'probe\n') {
+  ensureDirectory(path.dirname(filePath));
+  fs.writeFileSync(filePath, contents, 'utf8');
+}
+
+function probeWritablePath(name, directoryPath, relativeFileName, successDetail, failureClass, fallbackHint = '') {
+  const filePath = path.join(directoryPath, relativeFileName);
+  try {
+    writeProbeFile(filePath);
+    fs.unlinkSync(filePath);
+    return check(name, 'passed', successDetail, {
+      command: filePath,
+      failureClass: '',
+      decision: 'continue',
+      fallbackHint: '',
+    });
+  } catch (error) {
+    const text = String(error?.message || error || '');
+    return check(name, 'failed', text || successDetail, {
+      command: filePath,
+      failureClass: resolveFailureClassFromText(text, failureClass, failureClass),
+      decision: 'resume_later_handoff',
+      fallbackHint,
+    });
+  }
+}
+
+function probeWritableExistingFile(name, filePath, successDetail, failureClass, fallbackHint = '', missingDetail = 'path missing; writable probe skipped') {
+  if (!fs.existsSync(filePath)) {
+    return check(name, 'passed', missingDetail, {
+      command: filePath,
+      failureClass: '',
+      decision: 'continue',
+      fallbackHint: '',
+    });
+  }
+
+  try {
+    const fd = fs.openSync(filePath, 'r+');
+    fs.closeSync(fd);
+    return check(name, 'passed', successDetail, {
+      command: filePath,
+      failureClass: '',
+      decision: 'continue',
+      fallbackHint: '',
+    });
+  } catch (error) {
+    const text = String(error?.message || error || '');
+    return check(name, 'failed', text || successDetail, {
+      command: filePath,
+      failureClass: resolveFailureClassFromText(text, failureClass, failureClass),
+      decision: 'resume_later_handoff',
+      fallbackHint,
+    });
+  }
+}
+
+function runChildProbe(name, command, args, successDetail, failureClass, fallbackHint = '') {
+  const result = run(command, args);
+  return resultToCheck(name, result, successDetail, failureClass, 'resume_later_handoff', fallbackHint);
+}
+
+function gitIndexWriteCheck() {
+  const result = run('git', ['update-index', '-q', '--refresh']);
+  if (result.status === 0) {
+    return check('git.index', 'passed', 'git index refresh succeeded', {
+      command: result.command,
+      failureClass: '',
+      decision: 'continue',
+      fallbackHint: '',
+    });
+  }
+
+  const text = combinedProbeText(result) || 'git index refresh failed';
+  const failureClass = /command not found|not recognized/i.test(text)
+    ? 'command_not_found'
+    : resolveFailureClassFromText(text, 'git_index_denied', 'git_index_denied');
+  return check('git.index', 'failed', text, {
+    command: result.command,
+    failureClass,
+    decision: failureClass === 'command_not_found' ? 'host_fallback' : 'resume_later_handoff',
+    fallbackHint: failureClass === 'command_not_found'
+      ? 'resolve-command-path-or-fallback-runtime'
+      : 'repair-git-index-permissions-or-fallback-runtime',
+  });
+}
+
 function fileExists(relativePath) {
   return fs.existsSync(path.join(workspaceRoot, relativePath));
 }
@@ -64,6 +196,14 @@ function packageHasDependency(manifest, name) {
     return false;
   }
   return Boolean(manifest.dependencies?.[name] || manifest.devDependencies?.[name]);
+}
+
+function workspaceRequiresPytest(manifest) {
+  return packageHasDependency(manifest, 'pytest')
+    || fileExists('pytest.ini')
+    || fileExists('pyproject.toml')
+    || fileExists('tox.ini')
+    || fileExists('setup.cfg');
 }
 
 function shellHasCrLf(relativePath) {
@@ -132,7 +272,8 @@ function readRecentCapabilityReports(limit = 12, recentWindowMs = 24 * 60 * 60 *
 }
 
 function buildCapabilitySummary(checks, name) {
-  const probe = checks.find((entry) => entry.name === name) || null;
+  const targetName = String(name || '').toLowerCase();
+  const probe = checks.find((entry) => String(entry.name || '').toLowerCase() === targetName) || null;
   if (!probe) {
     return {
       available: false,
@@ -150,7 +291,7 @@ function buildCapabilitySummary(checks, name) {
     status: probe.status,
     detail: probe.detail,
     command: probe.command || '',
-    failureClass: probe.failureClass || 'unknown_failure',
+    failureClass: probe.failureClass ?? (probe.code === 'ok' ? '' : 'unknown_failure'),
     decision: probe.decision || 'continue',
     fallbackHint: probe.fallbackHint || '',
     fingerprint: probe.fingerprint || '',
@@ -160,18 +301,28 @@ function buildCapabilitySummary(checks, name) {
 function buildCapabilities(checks) {
   return {
     codex: buildCapabilitySummary(checks, 'codex.resolve'),
+    codexHome: buildCapabilitySummary(checks, 'codex.home'),
+    codexSessionStorage: buildCapabilitySummary(checks, 'codex.sessionStorage'),
+    codexStateDb: buildCapabilitySummary(checks, 'codex.stateDb'),
     node: buildCapabilitySummary(checks, 'node.current'),
+    nodeSpawn: buildCapabilitySummary(checks, 'node.spawn'),
     npm: buildCapabilitySummary(checks, 'npm.stablePath'),
     pnpm: buildCapabilitySummary(checks, 'pnpm.version'),
     corepack: buildCapabilitySummary(checks, 'corepack.version'),
     python: buildCapabilitySummary(checks, 'python.version'),
     pytest: buildCapabilitySummary(checks, 'pytest.version'),
     bash: buildCapabilitySummary(checks, 'bash.version'),
+    bashSmoke: buildCapabilitySummary(checks, 'bash.smoke'),
     git: buildCapabilitySummary(checks, 'git.version'),
+    gitIndex: buildCapabilitySummary(checks, 'git.index'),
+    rgPath: buildCapabilitySummary(checks, 'search.rg'),
     docker: buildCapabilitySummary(checks, 'docker.version'),
     nodeModules: buildCapabilitySummary(checks, 'node_modules'),
     vitest: buildCapabilitySummary(checks, 'vitest.bin'),
     next: buildCapabilitySummary(checks, 'next.bin'),
+    shellSnapshot: buildCapabilitySummary(checks, 'shell.snapshot'),
+    verifierRuntime: buildCapabilitySummary(checks, 'verifier.runtime'),
+    memorygraph: buildCapabilitySummary(checks, 'memorygraph.health'),
     shellSyntax: checks
       .filter((entry) => entry.name.startsWith('shell:'))
       .map((entry) => buildCapabilitySummary(checks, entry.name)),
@@ -216,15 +367,41 @@ function buildReport() {
   const npmArgs = npmBaseArgs();
   const checks = [];
   const dockerGate = resolveDockerDependencyGate({ workspaceRoot });
+  const preflightRoot = path.join(workspaceRoot, '.claude', 'cache', 'preflight');
+  const codexHomeDir = path.join(preflightRoot, 'codex-home');
+  const codexSessionDir = path.join(preflightRoot, 'codex-home', '.codex', 'sessions');
+  const shellSnapshotDir = path.join(preflightRoot, 'shell-snapshot');
+  const stateDbPath = path.join(workspaceRoot, '.claude', 'runtime-state.sqlite');
+  const memorygraphProbeCommand = [process.execPath, path.join(scriptDir, 'memorygraph-direct.mjs'), 'health'];
 
   checks.push(resolveCodexCommand()
     ? check('codex.resolve', 'passed', resolveCodexCommand())
     : check('codex.resolve', 'warning', 'codex command was not resolved; non-codex runtimes may still work'));
   checks.push(check('node.current', 'passed', process.execPath, { command: process.execPath }));
+  checks.push(runChildProbe('node.spawn', process.execPath, ['-e', 'process.exit(0)'], 'node child spawn succeeded', 'node_spawn_eperm', 'restore-node-child-spawn-permissions-or-fallback-runtime'));
+  checks.push(runChildProbe('bash.smoke', 'bash', ['-lc', 'exit 0'], 'bash smoke succeeded', 'bash_access_denied', 'restore-bash-access-or-fallback-runtime'));
+  checks.push(runChildProbe('verifier.runtime', process.execPath, ['--version'], 'node verifier runtime available', 'verifier_unavailable', 'restore-node-verifier-runtime-or-defer-verification'));
+
+  checks.push(probeWritablePath('codex.home', codexHomeDir, 'home-probe.tmp', 'codex home writable', 'codex_home_readonly', 'make-codex-home-writable-or-fallback-runtime'));
+  checks.push(gitIndexWriteCheck());
+
+  checks.push(probeWritablePath('codex.sessionStorage', codexSessionDir, 'session-probe.tmp', 'codex session storage writable', 'codex_session_storage_readonly', 'repair-codex-session-storage-permissions-or-fallback-runtime'));
+  checks.push(probeWritableExistingFile('codex.stateDb', stateDbPath, 'codex state DB opened for write access', 'codex_state_db_readonly', 'repair-codex-state-db-permissions-or-fallback-runtime', 'state DB not present; writable probe skipped'));
+  checks.push(probeWritablePath('shell.snapshot', shellSnapshotDir, 'snapshot-probe.tmp', 'shell snapshot directory writable', 'shell_snapshot_failure', 'repair-shell-snapshot-path-or-fallback-runtime'));
+  checks.push(runChildProbe('memorygraph.health', memorygraphProbeCommand[0], memorygraphProbeCommand.slice(1), 'MemoryGraph health probe succeeded', 'memorygraph_unavailable', 'install-or-repair-memorygraph-or-defer-memory-backed-verification'));
+
   checks.push(commandCheck('corepack.version', resolveCommandEvidence('corepack')));
   checks.push(commandCheck('pnpm.version', resolveCommandEvidence('pnpm')));
   checks.push(commandCheck('python.version', resolveCommandEvidence('python')));
-  checks.push(commandCheck('pytest.version', resolveCommandEvidence('pytest')));
+  const pytestEvidence = resolveCommandEvidence('pytest');
+  checks.push(workspaceRequiresPytest(manifest)
+    ? commandCheck('pytest.version', pytestEvidence)
+    : check('pytest.version', pytestEvidence.status === 'failed' ? 'warning' : pytestEvidence.status, pytestEvidence.detail || 'pytest not required by this workspace', {
+      command: pytestEvidence.invocation?.join(' ') || pytestEvidence.commandName || 'pytest',
+      failureClass: '',
+      decision: 'continue',
+      fallbackHint: '',
+    }));
   checks.push(commandCheck('bash.version', resolveCommandEvidence('bash')));
   checks.push(commandCheck('git.version', resolveCommandEvidence('git')));
   checks.push(commandCheck('docker.version', dockerGate.version));
@@ -241,13 +418,21 @@ function buildReport() {
   ));
   checks.push(check(
     'docker.info',
-    dockerGate.daemon.status === 'passed' ? 'passed' : 'failed',
+    dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
+      ? 'warning'
+      : dockerGate.daemon.status === 'passed' ? 'passed' : 'failed',
     dockerGate.daemon.detail || 'docker daemon probe unavailable',
     {
       command: dockerGate.daemon.command,
-      failureClass: dockerGate.daemon.failureCode || 'docker_daemon_unavailable',
-      decision: dockerGate.daemon.decision || 'resume_later_handoff',
-      fallbackHint: dockerGate.fallbackReason || dockerGate.daemon.detail || '',
+      failureClass: dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
+        ? ''
+        : dockerGate.daemon.failureCode || 'docker_daemon_unavailable',
+      decision: dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
+        ? 'continue'
+        : dockerGate.daemon.decision || 'resume_later_handoff',
+      fallbackHint: dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
+        ? ''
+        : dockerGate.fallbackReason || dockerGate.daemon.detail || '',
     },
   ));
 
@@ -289,26 +474,33 @@ function buildReport() {
     checks.push(checkShellSyntax(relativePath));
   }
 
-  const rg = resolveCommandEvidence('rg');
-  if (rg.status === 'passed' || rg.status === 'passed_with_equivalent_evidence') {
-    checks.push(check('search.rg', rg.status, rg.detail || rg.resolvedCommand || 'rg available', {
-      command: rg.invocation?.join(' ') || 'rg --version',
-      failureClass: rg.failureCode || '',
-      decision: rg.decision || 'continue',
-      fallbackHint: rg.fallbackReason || '',
+  const rg = run('rg', ['--version']);
+  if (rg.status === 0) {
+    checks.push(check('search.rg', 'passed', rg.stdout.trim() || 'rg available', {
+      command: rg.command,
+      failureClass: '',
+      decision: 'continue',
+      fallbackHint: '',
     }));
   } else {
+    const rgDetail = combinedProbeText(rg);
+    const rgFailureClass = resolveFailureClassFromText(rgDetail, 'command_not_found', 'rg_access_denied');
     const fallback = selectStringAvailable();
     checks.push(fallback.available
-      ? check('search.rg', 'passed_with_equivalent_evidence', 'rg unavailable; Select-String fallback available', {
+      ? check('search.rg', 'passed_with_equivalent_evidence', `rg unavailable; Select-String fallback available (${rgFailureClass})`, {
+        command: rg.command,
         preferred: 'rg',
         fallback: 'Select-String',
-        rgError: rg.detail || rg.failureCode || 'rg unavailable',
+        failureClass: rgFailureClass,
+        decision: 'continue',
+        fallbackHint: 'use-host-search-or-fallback-runtime',
+        rgError: rgDetail || 'rg unavailable',
       })
-      : check('search.rg', 'failed', rg.detail || fallback.detail || 'rg unavailable and no fallback found', {
-        failureClass: rg.failureCode || 'command_not_found',
-        decision: rg.decision || 'host_fallback',
-        fallbackHint: rg.fallbackReason || '',
+      : check('search.rg', 'failed', rgDetail || fallback.detail || 'rg unavailable and no fallback found', {
+        command: rg.command,
+        failureClass: rgFailureClass,
+        decision: rgFailureClass === 'rg_access_denied' ? 'resume_later_handoff' : 'host_fallback',
+        fallbackHint: 'use-host-search-or-fallback-runtime',
       }));
   }
 
@@ -329,6 +521,12 @@ function buildReport() {
   const reason = blockers.length === 0
     ? 'ok'
     : summary.reason;
+  const activeSummary = blockers.length === 0
+    ? {
+      sameFailureClassCount: 0,
+      blockerFingerprint: '',
+    }
+    : summary;
   const currentBlockers = blockers.map((entry) => ({
     name: entry.name,
     code: entry.code,
@@ -347,8 +545,8 @@ function buildReport() {
     status: blockers.length > 0 ? 'failed' : warnings.length > 0 ? 'passed_with_equivalent_evidence' : 'passed',
     decision,
     reason,
-    sameFailureClassCount: summary.sameFailureClassCount,
-    blockerFingerprint: summary.blockerFingerprint,
+    sameFailureClassCount: activeSummary.sameFailureClassCount,
+    blockerFingerprint: activeSummary.blockerFingerprint,
     fallbackHints: currentBlockers.map((entry) => entry.fallbackHint).filter(Boolean),
     currentBlockers,
     failureClassCounts,

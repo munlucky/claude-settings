@@ -1,0 +1,30 @@
+# Phase 01 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths:
+      - ".claude/scripts/lib/failure-classifier.mjs"
+      - ".claude/scripts/lib/failure-classifier.test.mjs"
+      - ".claude/scripts/phase-capability-preflight.mjs"
+      - "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/SPRINT_CONTRACT.md"
+      - "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/QA_REPORT.md"
+      - "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/SCORECARD.md"
+      - "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/WORKSETS.yaml"
+      - ".claude/verification-verdict-phase01-final.json"
+    verificationCommands:
+      - "node --check .claude/scripts/phase-capability-preflight.mjs && node --check .claude/scripts/lib/failure-classifier.mjs"
+      - "node --test .claude/scripts/lib/failure-classifier.test.mjs"
+      - "node .claude/scripts/phase-capability-preflight.mjs --json"
+      - "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/harness-nonwork-failure-prevention-2026-05-07/01-environment-preflight-failure-taxonomy-v1.md --sprint-contract docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/QA_REPORT.md --scorecard docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/SCORECARD.md --handoff docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/HANDOFF.md"
+    evidence:
+      - "Syntax check passed for classifier and preflight scripts."
+      - "failure-classifier self-test passed."
+      - "Preflight smoke passed_with_equivalent_evidence with no current blockers."
+      - "Plan conformance check passed with zero violations."
+      - "Structured verdict written to .claude/verification-verdict-phase01-final.json."
+    completedAt: "2026-05-07T01:18:36Z"
+worksets: []

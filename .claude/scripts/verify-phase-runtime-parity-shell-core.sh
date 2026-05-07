@@ -972,15 +972,26 @@ run_render_matrix() {
   local reference_fixture_root="$REPO_ROOT/$REFERENCE_PLAN_DIR"
   local runtime_parity_log_dir="$REPO_ROOT/.claude/logs/agent-loop"
   local runtime_parity_fixture_log="$runtime_parity_log_dir/runtime-parity-fixture-hash.log"
+  local reference_status_file="$TMP_ROOT/reference-phase-status.yaml"
+
+  cat > "$reference_status_file" <<EOF
+schemaVersion: "1.0"
+masterPlan: "${REFERENCE_PLAN_DIR}/00-master-plan-v1.md"
+phases:
+  - number: 1
+    title: "Phase 01: Dispatch Smoke"
+    status: pending
+    planConfirmed: true
+EOF
 
   local reference_fixture_hash_before
   reference_fixture_hash_before="$(tree_checksum "$reference_fixture_root")"
   (
     cd "$REPO_ROOT"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime claude --dry-run > "$claude_delegated_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --runtime codex --dry-run > "$codex_delegated_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime claude --dry-run > "$claude_coord_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
+    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_delegated_out"
+    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime codex --dry-run > "$codex_delegated_out"
+    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_coord_out"
+    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
   )
 
   if ! grep -Fq -- "agent-loop.sh" "$claude_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$claude_delegated_out"; then
@@ -1307,6 +1318,54 @@ EOF
 - Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
 EOF
 
+  cat > "$analysis_file" <<'EOF'
+workflowEvidence:
+  mode: bounded-direct
+  selectedBundles:
+    - analysis-bundle
+    - ready-isolate-bundle
+    - implementation-bundle
+    - review-bundle
+    - verification-bundle
+    - finish-bundle
+  requiredSkills:
+    - implementation-runner
+    - codex-review-code
+    - code-simplifier
+    - completion-verifier
+    - doc-auto-sync
+    - session-logger
+  stageOrder:
+    - ready/isolate
+    - execute
+    - review
+    - verify
+    - finish
+  appliedSkills:
+    - implementation-runner
+    - codex-review-code
+    - code-simplifier
+    - completion-verifier
+    - doc-auto-sync
+  skippedSkills:
+    - session-logger (clean completion path)
+  selectedHarnessComponents:
+    - contract
+    - implementation
+    - review
+    - verification
+    - finish
+  skippedHarnessComponents:
+    - phase-runner (bounded-direct smoke)
+  selectionReason: workflow evidence smoke uses bounded direct full closeout path
+  runtimeIsolation: isolated verifier fixture
+  modelEffortProfile: economy
+  effortEscalationReason: none
+  retrievalBudget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+  validationProfile: workflow_core
+  phaseReplayPolicy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+EOF
+
   cat > "$handoff" <<'EOF'
 # HANDOFF
 
@@ -1583,10 +1642,44 @@ EOF
     fi
     if ! runtime_is_available "$runtime"; then
       warn "skipping ${scenario_name}: runtime unavailable"
+      record_runtime_failure "$runtime" "runtime_unavailable" "skipping ${scenario_name}: runtime unavailable"
       continue
     fi
     run_actual_flow "$runtime" "$mode" "$scenario_name" || true
   done
+}
+
+runtime_failure_mentions_codex() {
+  local item
+  for item in "${RUNTIME_FAILURES[@]}"; do
+    if [[ "$item" == codex:* || "$item" == codex\ * ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+determine_runtime_exercise_level() {
+  if [[ "$RUN_REAL" != "true" ]]; then
+    printf '%s\n' "passed"
+    return 0
+  fi
+
+  if [[ "$(array_length ACTUAL_FAILURES)" -ne 0 ]]; then
+    return 1
+  fi
+
+  if [[ "$(array_length RUNTIME_FAILURES)" -eq 0 ]]; then
+    printf '%s\n' "fully_exercised"
+    return 0
+  fi
+
+  if runtime_failure_mentions_codex; then
+    printf '%s\n' "passed_with_skipped_probe"
+    return 0
+  fi
+
+  printf '%s\n' "passed_with_environment_warning"
 }
 
 report_failures_and_exit() {
@@ -1615,6 +1708,10 @@ EOF
       for item in "${RUNTIME_FAILURES[@]}"; do
         warn "runtime unavailable: $item"
       done
+    fi
+    local runtime_exercise_level
+    if runtime_exercise_level="$(determine_runtime_exercise_level)"; then
+      log "runtime exercise level: ${runtime_exercise_level}"
     fi
     log "phase runtime parity smoke passed"
     return 0

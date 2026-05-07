@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -182,10 +183,11 @@ def main() -> int:
         archived_path: Path | None = None
 
         for source in find_phase_docs(plan_dir, phase_number):
-            destination = choose_archive_destination(archive_dir, source)
-            source.rename(destination)
+            destination = archive_dir / source.name
+            if not destination.exists():
+                shutil.copy2(source, destination)
+                updates.append(f"archived phase {int(phase_number):02d}: {to_repo_relative(destination)}")
             archived_path = archived_path or destination
-            updates.append(f"archived phase {int(phase_number):02d}: {to_repo_relative(destination)}")
 
         if archived_path is None:
             archived_candidates = find_phase_docs(archive_dir, phase_number)

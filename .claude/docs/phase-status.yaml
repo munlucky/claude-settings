@@ -1,209 +1,205 @@
 schemaVersion: "1.0"
-masterPlan: "docs/implementation/turn-failure-prevention-harness-2026-05-06/00-master-plan-v1.md"
+masterPlan: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/00-master-plan-v1.md"
 autonomousMode: true
-executionMode: "delegated-terminal"
-executionRoot: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution"
-preparedAt: "2026-05-06T13:15:00Z"
-activeExecutionStatus: "finished"
-activeRunLeaseId: "dispatch-1778077688992-10664"
-activeExecutionBoundary: "delegated-terminal"
-activeActionablePhasesRemaining: 0
-activeCurrentStage: "ready/isolate"
-activePhaseNumber: null
-activePhaseTitle: null
+executionMode: delegated-terminal
+executionRoot: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution"
+preparedAt: "2026-05-07T01:15:06.750Z"
+activeExecutionStatus: finished
+activeCurrentStage: finish/handoff
+activePhaseNumber: ""
+activePhaseTitle: "Phase 06: Commit Closeout Preflight And Regression Sync (v1)"
 activePlannedPhases: 6
 activeCompletedPhases: 6
 activeBlockedPhases: 0
 activePendingPhases: 0
 activeRemainingPhases: 0
-projectMemory:
-  backend: MemoryGraph
-  stageCoverage:
-    intake: not_checked
-    plan: not_checked
-    execute: not_checked
-  lastStage: intake
-  warning: "MemoryGraph recall not checked in this Codex session; continuing per memorygraph-workflow unavailable policy."
-activeExecutionAttachedAt: "2026-05-06T14:28:09Z"
-activeExecutionHeartbeatAt: "2026-05-06T14:28:13Z"
+activeActionablePhasesRemaining: 0
+normalizedRunVerdict: success_with_warning
+stopReasonClass: reconciled_nonzero
+stopReasonExplanation: "checkpoint result unavailable"
+lastDispatchAt: "2026-05-07T02:35:18Z"
+workflowEvidenceFile: ".claude/logs/workflow-enforcement/latest-dispatch.json"
+workflowSelectedBundles: "ready-isolate-bundle,implementation-bundle,review-bundle,verification-bundle,finish-bundle"
+workflowRequiredSkills: "moonshot-phase-runner,moonshot-phase-executor,implementation-runner,codex-review-code,code-simplifier,completion-verifier,doc-auto-sync,session-logger"
+activeRunLeaseId: "dispatch-1778121318271-92721"
+activeExecutionBoundary: "delegated-terminal"
+activeExecutionAttachedAt: "2026-05-07T02:35:18Z"
+activeExecutionHeartbeatAt: "2026-05-07T02:51:32Z"
 lastReturnBoundary: "dispatch-stop"
 lastStopReasonCode: "delegated-terminal-exit-1"
 lastStopReasonDetail: "delegated-terminal exited with code 1"
-normalizedRunVerdict: clean_finish
-stopReasonClass: scope_complete
-stopReasonExplanation: "all phases completed with fresh verification evidence"
 goalRuntime:
-  goalId: "goal-1778072501291-9b1a010b2e"
-  objective: "Complete active plan directory docs\\implementation\\turn-failure-prevention-harness-2026-05-06 using docs/implementation/turn-failure-prevention-harness-2026-05-06/00-master-plan-v1.md"
-  status: "complete"
+  goalId: "goal-1778115738300-7cb4042fbd"
+  objective: "Complete active plan directory docs/implementation/harness-nonwork-failure-prevention-2026-05-07 using docs/implementation/harness-nonwork-failure-prevention-2026-05-07/00-master-plan-v1.md"
+  status: "active"
   tokenBudget: null
   tokensUsed: null
   timeBudgetSeconds: null
-  timeUsedSeconds: 2969
+  timeUsedSeconds: 5093
   accountingQuality: "unavailable"
   continuationSuppressed: false
-  currentRunLeaseId: "dispatch-1778077688992-10664"
-  lastEvent: "GoalCompleted"
-  createdAt: "2026-05-06T13:01:41Z"
-  updatedAt: "2026-05-06T14:28:13Z"
+  currentRunLeaseId: "dispatch-1778121318271-92721"
+  lastEvent: "GoalStarted"
+  createdAt: "2026-05-07T01:02:18Z"
+  updatedAt: "2026-05-07T02:51:32Z"
 phases:
   - number: 1
-    title: "Trace Hygiene And Trace Root Guard"
+    title: "Phase 01: Environment Preflight And Failure Taxonomy (v1)"
     status: completed
     planConfirmed: true
-    activePhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/01-trace-hygiene-trace-root-guard-v1.md"
+    activePhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/01-environment-preflight-failure-taxonomy-v1.md"
     attempts:
       total: 1
       lastOutcome: passed
-      lastUpdatedAt: "2026-05-06T13:23:00Z"
-    sprintContract: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/01-phase-01-trace-hygiene-and-trace-root-guard-v1/SPRINT_CONTRACT.md"
-    qaReport: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/01-phase-01-trace-hygiene-and-trace-root-guard-v1/QA_REPORT.md"
-    handoff: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/01-phase-01-trace-hygiene-and-trace-root-guard-v1/HANDOFF.md"
-    scorecard: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/01-phase-01-trace-hygiene-and-trace-root-guard-v1/SCORECARD.md"
+      lastUpdatedAt: "2026-05-07T01:21:40Z"
+    sprintContract: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/01-phase-01-environment-preflight-and-failure-taxonomy-v1/SCORECARD.md"
     timing:
-      startedAt: "2026-05-06T13:04:42Z"
-      lastStage: "execute"
-      lastStageAt: "2026-05-06T13:23:00Z"
-      wallClockSeconds: 1098
-      runnerActiveSeconds: 1037
+      startedAt: "2026-05-07T01:15:13Z"
+      lastStage: "finish"
+      lastStageAt: "2026-05-07T01:21:40Z"
+      wallClockSeconds: 302
+      runnerActiveSeconds: 241
       verificationSeconds: 0
       remediationSeconds: 0
-      blockedSeconds: 61
+      blockedSeconds: 0
       manualCloseoutSeconds: 0
-      blockedAt: "2026-05-06T13:13:45Z"
-      completedAt: "2026-05-06T13:23:00Z"
-    completedAt: "2026-05-06T13:23:00Z"
-    archivedPhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/close/01-trace-hygiene-trace-root-guard-v1.md"
+    archivedPhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/close/01-environment-preflight-failure-taxonomy-v1.md"
   - number: 2
-    title: "Turn Identity Capture"
+    title: "Phase 02: Runtime Retry And Worker Fallback Guard (v1)"
     status: completed
     planConfirmed: true
-    activePhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/02-turn-identity-capture-v1.md"
+    activePhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/02-runtime-retry-worker-fallback-guard-v1.md"
     attempts:
-      total: 1
-      lastOutcome: passed
-      lastUpdatedAt: "2026-05-06T13:31:54Z"
-    sprintContract: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/02-phase-02-turn-identity-capture-v1/SPRINT_CONTRACT.md"
-    qaReport: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/02-phase-02-turn-identity-capture-v1/QA_REPORT.md"
-    handoff: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/02-phase-02-turn-identity-capture-v1/HANDOFF.md"
-    scorecard: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/02-phase-02-turn-identity-capture-v1/SCORECARD.md"
+      total: 3
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-07T03:00:23Z"
+    sprintContract: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/02-phase-02-runtime-retry-and-worker-fallback-guard-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/02-phase-02-runtime-retry-and-worker-fallback-guard-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/02-phase-02-runtime-retry-and-worker-fallback-guard-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/02-phase-02-runtime-retry-and-worker-fallback-guard-v1/SCORECARD.md"
     timing:
-      startedAt: "2026-05-06T13:20:22Z"
+      startedAt: "2026-05-07T01:22:35Z"
       lastStage: "execute"
-      lastStageAt: "2026-05-06T13:31:54Z"
-      wallClockSeconds: 692
-      runnerActiveSeconds: 631
+      lastStageAt: "2026-05-07T03:00:23Z"
+      wallClockSeconds: 5868
+      runnerActiveSeconds: 7209
       verificationSeconds: 0
       remediationSeconds: 0
-      blockedSeconds: 61
+      blockedSeconds: 0
       manualCloseoutSeconds: 0
-      blockedAt: "2026-05-06T13:28:25Z"
-      completedAt: "2026-05-06T13:31:54Z"
-    completedAt: "2026-05-06T13:31:54Z"
-    archivedPhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/close/02-turn-identity-capture-v1.md"
+      completedAt: "2026-05-07T03:00:23Z"
+    completedAt: "2026-05-07T03:00:23Z"
+    archivedPhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/close/02-runtime-retry-worker-fallback-guard-v1.md"
   - number: 3
-    title: "Failed Turn Case Builder"
+    title: "Phase 03: Verdict Identity And Staleness Guard (v1)"
     status: completed
     planConfirmed: true
-    activePhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/03-failed-turn-case-builder-v1.md"
+    activePhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/03-verdict-identity-staleness-guard-v1.md"
     attempts:
       total: 1
-      lastOutcome: passed
-      lastUpdatedAt: "2026-05-06T13:49:00Z"
-    sprintContract: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/03-phase-03-failed-turn-case-builder-v1/SPRINT_CONTRACT.md"
-    qaReport: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/03-phase-03-failed-turn-case-builder-v1/QA_REPORT.md"
-    handoff: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/03-phase-03-failed-turn-case-builder-v1/HANDOFF.md"
-    scorecard: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/03-phase-03-failed-turn-case-builder-v1/SCORECARD.md"
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-07T02:57:47Z"
+    sprintContract: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/03-phase-03-verdict-identity-and-staleness-guard-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/03-phase-03-verdict-identity-and-staleness-guard-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/03-phase-03-verdict-identity-and-staleness-guard-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/03-phase-03-verdict-identity-and-staleness-guard-v1/SCORECARD.md"
     timing:
-      startedAt: "2026-05-06T13:32:26Z"
+      startedAt: "2026-05-07T01:47:40Z"
       lastStage: "execute"
-      lastStageAt: "2026-05-06T13:49:00Z"
-      wallClockSeconds: 994
-      runnerActiveSeconds: 994
+      lastStageAt: "2026-05-07T02:57:47Z"
+      wallClockSeconds: 4207
+      runnerActiveSeconds: 4207
       verificationSeconds: 0
       remediationSeconds: 0
       blockedSeconds: 0
       manualCloseoutSeconds: 0
-      completedAt: "2026-05-06T13:49:00Z"
-    completedAt: "2026-05-06T13:49:00Z"
-    archivedPhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/close/03-failed-turn-case-builder-v1.md"
+      completedAt: "2026-05-07T02:57:47Z"
+    completedAt: "2026-05-07T02:57:47Z"
+    archivedPhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/close/03-verdict-identity-staleness-guard-v1.md"
   - number: 4
-    title: "Next Run Recall Brief"
+    title: "Phase 04: Phase Status Rebuilder And Lease Normalization (v1)"
     status: completed
     planConfirmed: true
-    activePhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/04-next-run-recall-brief-v1.md"
+    activePhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/04-phase-status-rebuilder-lease-normalization-v1.md"
     attempts:
       total: 1
-      lastOutcome: passed
-      lastUpdatedAt: "2026-05-06T14:06:00Z"
-    sprintContract: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/04-phase-04-next-run-recall-brief-v1/SPRINT_CONTRACT.md"
-    qaReport: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/04-phase-04-next-run-recall-brief-v1/QA_REPORT.md"
-    handoff: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/04-phase-04-next-run-recall-brief-v1/HANDOFF.md"
-    scorecard: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/04-phase-04-next-run-recall-brief-v1/SCORECARD.md"
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-07T02:13:10Z"
+    sprintContract: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/04-phase-04-phase-status-rebuilder-and-lease-normalization-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/04-phase-04-phase-status-rebuilder-and-lease-normalization-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/04-phase-04-phase-status-rebuilder-and-lease-normalization-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/04-phase-04-phase-status-rebuilder-and-lease-normalization-v1/SCORECARD.md"
     timing:
-      startedAt: "2026-05-06T13:52:07Z"
-      lastStage: "execute"
-      lastStageAt: "2026-05-06T14:06:00Z"
-      wallClockSeconds: 833
-      runnerActiveSeconds: 772
-      verificationSeconds: 0
-      remediationSeconds: 0
-      blockedSeconds: 61
-      manualCloseoutSeconds: 0
-      blockedAt: "2026-05-06T14:00:10Z"
-      completedAt: "2026-05-06T14:06:00Z"
-    completedAt: "2026-05-06T14:06:00Z"
-    archivedPhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/close/04-next-run-recall-brief-v1.md"
-  - number: 5
-    title: "Verified Memory Promotion And Replay Scorecard"
-    status: completed
-    planConfirmed: true
-    activePhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/05-verified-memory-promotion-replay-scorecard-v1.md"
-    attempts:
-      total: 1
-      lastOutcome: passed
-      lastUpdatedAt: "2026-05-06T14:25:00Z"
-    sprintContract: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/05-phase-05-verified-memory-promotion-and-replay-scorecard-v1/SPRINT_CONTRACT.md"
-    qaReport: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/05-phase-05-verified-memory-promotion-and-replay-scorecard-v1/QA_REPORT.md"
-    handoff: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/05-phase-05-verified-memory-promotion-and-replay-scorecard-v1/HANDOFF.md"
-    scorecard: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/05-phase-05-verified-memory-promotion-and-replay-scorecard-v1/SCORECARD.md"
-    timing:
-      startedAt: "2026-05-06T14:09:50Z"
-      lastStage: "execute"
-      lastStageAt: "2026-05-06T14:25:00Z"
-      wallClockSeconds: 910
-      runnerActiveSeconds: 849
-      verificationSeconds: 0
-      remediationSeconds: 0
-      blockedSeconds: 61
-      manualCloseoutSeconds: 0
-      blockedAt: "2026-05-06T14:22:54Z"
-      completedAt: "2026-05-06T14:25:00Z"
-    completedAt: "2026-05-06T14:25:00Z"
-    archivedPhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/close/05-verified-memory-promotion-replay-scorecard-v1.md"
-  - number: 6
-    title: "Regression Contract And Docs Sync"
-    status: completed
-    planConfirmed: true
-    activePhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/06-regression-contract-docs-sync-v1.md"
-    attempts:
-      total: 0
-      lastOutcome: passed
-      lastUpdatedAt: "2026-05-06T14:49:04Z"
-    sprintContract: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/06-phase-06-regression-contract-and-docs-sync-v1/SPRINT_CONTRACT.md"
-    qaReport: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/06-phase-06-regression-contract-and-docs-sync-v1/QA_REPORT.md"
-    handoff: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/06-phase-06-regression-contract-and-docs-sync-v1/HANDOFF.md"
-    scorecard: "docs/implementation/turn-failure-prevention-harness-2026-05-06/execution/06-phase-06-regression-contract-and-docs-sync-v1/SCORECARD.md"
-    timing:
-      startedAt: "2026-05-06T14:27:37Z"
+      startedAt: "2026-05-07T01:57:10Z"
       lastStage: "ready/isolate"
-      lastStageAt: "2026-05-06T14:49:04Z"
-      wallClockSeconds: 1287
-      runnerActiveSeconds: 1287
+      lastStageAt: "2026-05-07T02:13:10Z"
+      wallClockSeconds: 960
+      runnerActiveSeconds: 960
       verificationSeconds: 0
       remediationSeconds: 0
       blockedSeconds: 0
       manualCloseoutSeconds: 0
-      completedAt: "2026-05-06T14:49:04Z"
-    completedAt: "2026-05-06T14:49:04Z"
-    archivedPhaseDoc: "docs/implementation/turn-failure-prevention-harness-2026-05-06/close/06-regression-contract-docs-sync-v1.md"
+      blockedAt: "2026-05-07T02:09:13Z"
+      completedAt: "2026-05-07T02:13:10Z"
+    completedAt: "2026-05-07T02:13:10Z"
+    archivedPhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/close/04-phase-status-rebuilder-lease-normalization-v1.md"
+  - number: 5
+    title: "Phase 05: Runtime Parity Verdict Split (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/05-runtime-parity-verdict-split-v1.md"
+    attempts:
+      total: 2
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-07T02:56:44Z"
+    sprintContract: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/05-phase-05-runtime-parity-verdict-split-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/05-phase-05-runtime-parity-verdict-split-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/05-phase-05-runtime-parity-verdict-split-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/05-phase-05-runtime-parity-verdict-split-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-07T02:13:30Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-07T02:56:44Z"
+      wallClockSeconds: 2594
+      runnerActiveSeconds: 2594
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 0
+      manualCloseoutSeconds: 0
+      completedAt: "2026-05-07T02:56:44Z"
+    completedAt: "2026-05-07T02:56:44Z"
+    archivedPhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/close/05-runtime-parity-verdict-split-v1.md"
+  - number: 6
+    title: "Phase 06: Commit Closeout Preflight And Regression Sync (v1)"
+    status: completed
+    planConfirmed: true
+    activePhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/06-commit-closeout-preflight-regression-sync-v1.md"
+    attempts:
+      total: 1
+      lastOutcome: completed
+      lastUpdatedAt: "2026-05-07T02:51:25Z"
+    sprintContract: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/06-phase-06-commit-closeout-preflight-and-regression-sync-v1/SPRINT_CONTRACT.md"
+    qaReport: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/06-phase-06-commit-closeout-preflight-and-regression-sync-v1/QA_REPORT.md"
+    handoff: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/06-phase-06-commit-closeout-preflight-and-regression-sync-v1/HANDOFF.md"
+    scorecard: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/execution/06-phase-06-commit-closeout-preflight-and-regression-sync-v1/SCORECARD.md"
+    timing:
+      startedAt: "2026-05-07T02:35:20Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-07T02:51:25Z"
+      wallClockSeconds: 965
+      runnerActiveSeconds: 964
+      verificationSeconds: 0
+      remediationSeconds: 0
+      blockedSeconds: 0
+      manualCloseoutSeconds: 0
+      completedAt: "2026-05-07T02:51:25Z"
+    completedAt: "2026-05-07T02:51:25Z"
+    checkpoint:
+      status: failed
+      commit: ""
+      committedAt: 2026-05-07T02:51:32.387Z
+      reason: "checkpoint result unavailable"
+    archivedPhaseDoc: "docs/implementation/harness-nonwork-failure-prevention-2026-05-07/close/06-commit-closeout-preflight-regression-sync-v1.md"

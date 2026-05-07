@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -37,6 +38,21 @@ def parse_command(value: str) -> dict:
 def stable_fingerprint(value) -> str:
     encoded = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def compute_git_tree_fingerprint(root: str) -> str:
+    candidate = (root or "").strip() or "."
+    try:
+        result = subprocess.run(
+            ["git", "-C", candidate, "rev-parse", "HEAD^{tree}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+    return result.stdout.strip()
 
 
 def infer_blocker_class(reason_code: str, failure_class: str, blocking: bool, verdict: str, missing_checks = None) -> str:
@@ -110,6 +126,11 @@ def main() -> int:
     parser.add_argument("--retrieval-budget", default="")
     parser.add_argument("--validation-profile", default="")
     parser.add_argument("--phase-replay-policy", default="")
+    parser.add_argument("--run-lease-id", default="")
+    parser.add_argument("--plan-dir", default="")
+    parser.add_argument("--status-file", default="")
+    parser.add_argument("--git-tree-fingerprint", default="")
+    parser.add_argument("--git-tree-root", default="")
     parser.add_argument("--requested-runtime", default="")
     parser.add_argument("--effective-runtime", default="")
     parser.add_argument("--fallback-reason", default="")
@@ -117,7 +138,7 @@ def main() -> int:
     parser.add_argument("--failure-class", choices=["", "implementation", "verification", "environment", "contract"], default="")
     parser.add_argument("--blocking", choices=["true", "false"], default="false")
     parser.add_argument("--blocking-reason-code", default="")
-    parser.add_argument("--schema-version", default="2")
+    parser.add_argument("--schema-version", default="3")
     parser.add_argument("--verdict-scope", choices=["", "runtime", "phase_verification", "phase_closeout"], default="")
     parser.add_argument(
         "--blocker-class",
@@ -234,6 +255,20 @@ def main() -> int:
         }
     )
 
+    identity = {}
+    if args.run_lease_id:
+        identity["runLeaseId"] = args.run_lease_id
+    if args.plan_dir:
+        identity["planDir"] = args.plan_dir
+    if args.status_file:
+        identity["statusFile"] = args.status_file
+
+    git_tree_fingerprint = args.git_tree_fingerprint.strip()
+    if not git_tree_fingerprint and (args.git_tree_root.strip() or identity):
+        git_tree_fingerprint = compute_git_tree_fingerprint(args.git_tree_root or ".")
+    if git_tree_fingerprint:
+        identity["gitTreeFingerprint"] = git_tree_fingerprint
+
     payload = {
         "schemaVersion": args.schema_version,
         "script": args.script,
@@ -278,6 +313,7 @@ def main() -> int:
             "fallbackReason": args.fallback_reason,
             "verificationRuntimeTargets": args.verification_runtime_targets,
         },
+        **({"identity": identity} if identity else {}),
         "verdictScope": verdict_scope,
         "blockerClass": blocker_class,
         "blockerFingerprint": blocker_fingerprint,

@@ -104,6 +104,7 @@ function readStatusBlocks(statusFile) {
         title: null,
         status: null,
         planConfirmed: null,
+        attemptTotal: null,
         lastOutcome: null,
         lastUpdatedAt: null,
         timing: {},
@@ -164,6 +165,8 @@ function readStatusBlocks(statusFile) {
       current.status = stripped.slice('status:'.length).trim();
     } else if (stripped.startsWith('planConfirmed:')) {
       current.planConfirmed = stripped.slice('planConfirmed:'.length).trim().toLowerCase();
+    } else if (inAttempts && stripped.startsWith('total:')) {
+      current.attemptTotal = Number.parseInt(stripped.slice('total:'.length).trim(), 10);
     } else if (stripped.startsWith('attempts:') && (rawLine.length - rawLine.trimStart().length) > currentIndent) {
       inAttempts = true;
     } else if (stripped.startsWith('timing:') && (rawLine.length - rawLine.trimStart().length) > currentIndent) {
@@ -173,7 +176,7 @@ function readStatusBlocks(statusFile) {
     } else if (inAttempts && stripped.startsWith('lastOutcome:')) {
       current.lastOutcome = stripped.slice('lastOutcome:'.length).trim();
     } else if (inAttempts && stripped.startsWith('lastUpdatedAt:')) {
-      current.lastUpdatedAt = stripped.slice('lastUpdatedAt:'.length).trim();
+      current.lastUpdatedAt = stripped.slice('lastUpdatedAt:'.length).trim().replace(/^"|"$/g, '');
     } else if (inTiming && stripped.startsWith('startedAt:')) {
       current.timing.startedAt = stripped.slice('startedAt:'.length).trim().replace(/^"|"$/g, '');
     } else if (inTiming && stripped.startsWith('lastStage:')) {
@@ -376,6 +379,7 @@ function getPhaseSummary(statusFile, phaseNum) {
     title: '',
     status: '',
     planConfirmed: '',
+    attemptTotal: null,
     lastOutcome: '',
     lastUpdatedAt: '',
     timing: {},
@@ -421,6 +425,255 @@ function getActivePhaseContext(statusFile) {
     timing: {},
     phaseCounts: counts,
   };
+}
+
+function findPhaseBlockRange(lines, phaseNum) {
+  const blockRanges = [];
+  let currentStart = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*-\s+number:\s*/.test(lines[index])) {
+      if (currentStart !== null) {
+        blockRanges.push([currentStart, index]);
+      }
+      currentStart = index;
+    }
+  }
+  if (currentStart !== null) {
+    blockRanges.push([currentStart, lines.length]);
+  }
+
+  for (const [start, end] of blockRanges) {
+    const match = lines[start].match(/number:\s*([0-9]+)/);
+    if (match && match[1] === String(phaseNum)) {
+      return [start, end];
+    }
+  }
+  return null;
+}
+
+function setRootScalarLine(lines, key, value) {
+  const prefix = `${key}:`;
+  const normalizedValue = value === null || value === undefined ? 'null' : value;
+  const index = lines.findIndex((line) => line.startsWith(prefix));
+  if (index >= 0) {
+    lines[index] = `${prefix} ${normalizedValue}`;
+    return;
+  }
+
+  let insertAt = lines.length;
+  for (let probe = 0; probe < lines.length; probe += 1) {
+    const stripped = lines[probe].trim();
+    if (stripped === 'phases:') {
+      insertAt = probe;
+      break;
+    }
+  }
+  lines.splice(insertAt, 0, `${prefix} ${normalizedValue}`);
+}
+
+function removeRootSectionLines(lines, parent) {
+  const parentPrefix = `${parent}:`;
+  const index = lines.findIndex((line) => line.startsWith(parentPrefix));
+  if (index === -1) {
+    return;
+  }
+  let endIndex = lines.length;
+  for (let probe = index + 1; probe < lines.length; probe += 1) {
+    const stripped = lines[probe].trimStart();
+    const indent = lines[probe].length - stripped.length;
+    if (indent === 0 && stripped) {
+      endIndex = probe;
+      break;
+    }
+  }
+  lines.splice(index, endIndex - index);
+}
+
+function setRootMappingLine(lines, parent, child, value) {
+  const parentPrefix = `${parent}:`;
+  const childPrefix = `  ${child}:`;
+  let parentIndex = lines.findIndex((line) => line.startsWith(parentPrefix));
+  let parentEnd = lines.length;
+  if (parentIndex === -1) {
+    lines.push(parentPrefix, `${childPrefix} ${value}`);
+    return;
+  }
+  for (let index = parentIndex + 1; index < lines.length; index += 1) {
+    const stripped = lines[index].trimStart();
+    const indent = lines[index].length - stripped.length;
+    if (indent === 0 && stripped) {
+      parentEnd = index;
+      break;
+    }
+  }
+  for (let index = parentIndex + 1; index < parentEnd; index += 1) {
+    if (lines[index].startsWith(childPrefix)) {
+      lines[index] = `${childPrefix} ${value}`;
+      return;
+    }
+  }
+  lines.splice(parentEnd, 0, `${childPrefix} ${value}`);
+}
+
+function ensureCompletedAttemptMetadata(statusFile, phaseNum, timestamp) {
+  if (!fs.existsSync(statusFile)) {
+    return false;
+  }
+
+  const blocks = readStatusBlocks(statusFile);
+  const currentBlock = blocks.find((block) => String(block.number) === String(phaseNum));
+  if (!currentBlock || currentBlock.status !== 'completed') {
+    return false;
+  }
+
+  if ((Number.parseInt(String(currentBlock.attemptTotal ?? '0'), 10) || 0) > 0) {
+    return false;
+  }
+
+  const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, arr) => !(index === arr.length - 1 && arr[index] === ''));
+  const range = findPhaseBlockRange(lines, phaseNum);
+  if (!range) {
+    return false;
+  }
+
+  const [start, end] = range;
+  const block = lines.slice(start, end);
+  const itemIndent = block[0].length - block[0].trimStart().length;
+  const topIndent = ' '.repeat(itemIndent + 2);
+  const attemptIndent = ' '.repeat(itemIndent + 4);
+  const timingIndent = ' '.repeat(itemIndent + 4);
+
+  function ensureAttemptsBlock() {
+    const prefix = `${topIndent}attempts:`;
+    const foundIndex = block.findIndex((line) => line.startsWith(prefix));
+    if (foundIndex >= 0) {
+      let endIndex = block.length;
+      for (let probe = foundIndex + 1; probe < block.length; probe += 1) {
+        const indent = block[probe].length - block[probe].trimStart().length;
+        if (indent <= topIndent.length) {
+          endIndex = probe;
+          break;
+        }
+      }
+      return [foundIndex, endIndex];
+    }
+    let insertAt = block.length;
+    for (let index = 1; index < block.length; index += 1) {
+      const indent = block[index].length - block[index].trimStart().length;
+      if (indent <= itemIndent) {
+        insertAt = index;
+        break;
+      }
+    }
+    block.splice(insertAt, 0,
+      `${topIndent}attempts:`,
+      `${attemptIndent}total: 0`,
+      `${attemptIndent}lastOutcome: pending`,
+      `${attemptIndent}lastUpdatedAt: "${timestamp}"`,
+    );
+    return [insertAt, insertAt + 4];
+  }
+
+  function ensureTimingBlock() {
+    const prefix = `${topIndent}timing:`;
+    const foundIndex = block.findIndex((line) => line.startsWith(prefix));
+    if (foundIndex >= 0) {
+      let endIndex = block.length;
+      for (let probe = foundIndex + 1; probe < block.length; probe += 1) {
+        const indent = block[probe].length - block[probe].trimStart().length;
+        if (indent <= topIndent.length) {
+          endIndex = probe;
+          break;
+        }
+      }
+      return [foundIndex, endIndex];
+    }
+    let insertAt = block.length;
+    for (let index = 1; index < block.length; index += 1) {
+      const indent = block[index].length - block[index].trimStart().length;
+      if (indent <= itemIndent) {
+        insertAt = index;
+        break;
+      }
+    }
+    block.splice(insertAt, 0,
+      `${topIndent}timing:`,
+      `${timingIndent}startedAt: "${timestamp}"`,
+      `${timingIndent}lastStage: ""`,
+      `${timingIndent}lastStageAt: "${timestamp}"`,
+      `${timingIndent}wallClockSeconds: 0`,
+      `${timingIndent}runnerActiveSeconds: 0`,
+      `${timingIndent}verificationSeconds: 0`,
+      `${timingIndent}remediationSeconds: 0`,
+      `${timingIndent}blockedSeconds: 0`,
+      `${timingIndent}manualCloseoutSeconds: 0`,
+    );
+    return [insertAt, insertAt + 10];
+  }
+
+  const [attemptStart, attemptEnd] = ensureAttemptsBlock();
+  for (let index = attemptStart + 1; index < attemptEnd; index += 1) {
+    if (block[index].trim().startsWith('total:')) {
+      block[index] = `${attemptIndent}total: 1`;
+    } else if (block[index].trim().startsWith('lastOutcome:')) {
+      block[index] = `${attemptIndent}lastOutcome: completed`;
+    } else if (block[index].trim().startsWith('lastUpdatedAt:')) {
+      block[index] = `${attemptIndent}lastUpdatedAt: "${timestamp}"`;
+    }
+  }
+
+  const [timingStart, timingEnd] = ensureTimingBlock();
+  for (let index = timingStart + 1; index < timingEnd; index += 1) {
+    if (block[index].trim().startsWith('completedAt:')) {
+      block[index] = `${timingIndent}completedAt: "${timestamp}"`;
+    } else if (block[index].trim().startsWith('lastStageAt:')) {
+      block[index] = `${timingIndent}lastStageAt: "${timestamp}"`;
+    }
+  }
+
+  lines.splice(start, end - start, ...block);
+  writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
+  return true;
+}
+
+function normalizeRebuiltRootState(statusFile, counts, state) {
+  if (!fs.existsSync(statusFile)) {
+    return false;
+  }
+
+  const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, arr) => !(index === arr.length - 1 && arr[index] === ''));
+  setRootScalarLine(lines, 'activeExecutionStatus', yamlScalar(state.executionStatus));
+  setRootScalarLine(lines, 'activeCurrentStage', yamlScalar(state.currentStage));
+  setRootScalarLine(lines, 'activePhaseNumber', yamlScalar(state.phaseNumber));
+  setRootScalarLine(lines, 'activeActionablePhasesRemaining', counts.remaining);
+  setRootScalarLine(lines, 'activePlannedPhases', counts.planned);
+  setRootScalarLine(lines, 'activeCompletedPhases', counts.completed);
+  setRootScalarLine(lines, 'activeBlockedPhases', counts.blocked);
+  setRootScalarLine(lines, 'activePendingPhases', counts.pending);
+  setRootScalarLine(lines, 'activeRemainingPhases', counts.remaining);
+  if (state.normalizedRunVerdict) {
+    setRootScalarLine(lines, 'normalizedRunVerdict', yamlScalar(state.normalizedRunVerdict));
+  }
+  if (state.stopReasonClass) {
+    setRootScalarLine(lines, 'stopReasonClass', yamlScalar(state.stopReasonClass));
+  }
+  if (state.stopReasonExplanation) {
+    setRootScalarLine(lines, 'stopReasonExplanation', yamlScalar(state.stopReasonExplanation));
+  }
+  if (state.phaseAttemptMode !== undefined) {
+    setRootMappingLine(lines, 'signals', 'phaseAttemptMode', yamlScalar(state.phaseAttemptMode));
+  }
+  if (state.activePhaseDoc) {
+    setRootMappingLine(lines, 'artifacts', 'activePhaseDocPath', yamlScalar(state.activePhaseDoc));
+  }
+  if (state.removeSignals !== false) {
+    removeRootSectionLines(lines, 'signals');
+  }
+  if (state.removeArtifacts !== false) {
+    removeRootSectionLines(lines, 'artifacts');
+  }
+  writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
+  return true;
 }
 
 function shellQuote(value) {
@@ -897,6 +1150,32 @@ function pathMatchesPhase(candidatePath, activePhaseNumber) {
   return null;
 }
 
+function readSourcePhaseDocFromSprintContract(phaseExecutionDir) {
+  const sprintContractPath = phaseExecutionDir ? path.join(phaseExecutionDir, 'SPRINT_CONTRACT.md') : '';
+  if (!sprintContractPath || !fs.existsSync(sprintContractPath)) {
+    return '';
+  }
+  for (const line of fs.readFileSync(sprintContractPath, 'utf8').split(/\r?\n/)) {
+    const stripped = line.trim();
+    if (stripped.startsWith('- Source phase doc:')) {
+      return stripped.split(':', 2)[1]?.trim() ?? '';
+    }
+  }
+  return '';
+}
+
+function artifactMatchesActivePhaseDoc(payload, phaseExecutionDir) {
+  const payloadPhaseDoc = String(payload?.phase?.activePhaseDocPath || '').trim();
+  if (!payloadPhaseDoc) {
+    return null;
+  }
+  const activePhaseDoc = readSourcePhaseDocFromSprintContract(phaseExecutionDir);
+  if (!activePhaseDoc) {
+    return null;
+  }
+  return path.resolve(payloadPhaseDoc) === path.resolve(activePhaseDoc);
+}
+
 function isArtifactRelevantToActivePhase({
   candidatePath,
   payload,
@@ -905,6 +1184,11 @@ function isArtifactRelevantToActivePhase({
   explicitVerdictPaths,
   activePhaseNumber,
 }) {
+  const activeDocMatch = artifactMatchesActivePhaseDoc(payload, phaseExecutionDir);
+  if (activeDocMatch === false) {
+    return false;
+  }
+
   return isRelevantVerificationVerdict(
     { payload, filePath: candidatePath },
     {
@@ -1718,30 +2002,6 @@ function updatePhaseState(config) {
   shadowRuntimePhaseUpdate(config);
 }
 
-function findPhaseBlockRange(lines, phaseNum) {
-  const blockRanges = [];
-  let currentStart = null;
-  for (let index = 0; index < lines.length; index += 1) {
-    if (/^\s*-\s+number:\s*/.test(lines[index])) {
-      if (currentStart !== null) {
-        blockRanges.push([currentStart, index]);
-      }
-      currentStart = index;
-    }
-  }
-  if (currentStart !== null) {
-    blockRanges.push([currentStart, lines.length]);
-  }
-
-  for (const [start, end] of blockRanges) {
-    const match = lines[start].match(/number:\s*([0-9]+)/);
-    if (match && match[1] === String(phaseNum)) {
-      return [start, end];
-    }
-  }
-  return null;
-}
-
 function setPhaseCheckpoint(statusFile, phaseNum, checkpoint) {
   if (!fs.existsSync(statusFile)) {
     return;
@@ -1803,33 +2063,180 @@ function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, st
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }
 
+function rebuildPhaseStatus(statusFile, planDir) {
+  if (!fs.existsSync(statusFile)) {
+    return {
+      rebuilt: false,
+      reason: 'status-file-missing',
+    };
+  }
+
+  const beforeBlocks = readStatusBlocks(statusFile);
+  const reconciled = reconcileCompletedPhases(statusFile);
+  const afterBlocks = readStatusBlocks(statusFile);
+  const counts = summarizePhaseCounts(afterBlocks);
+  const rootMetadata = readRootStatusMetadata(statusFile);
+  const currentRun = readJsonIfExists(CURRENT_RUN_FILE) || {};
+  const activeBlock = findAuthoritativeActiveBlock(statusFile, afterBlocks);
+  const finished = counts.remaining === 0;
+  const activePhaseNumber = finished
+    ? null
+    : (activeBlock ? Number.parseInt(String(activeBlock.number), 10) || null : (Number.isInteger(rootMetadata.activePhaseNumber) ? rootMetadata.activePhaseNumber : null));
+  const activeExecutionStatus = finished
+    ? 'finished'
+    : (activeBlock?.status || rootMetadata.activeExecutionStatus || currentRun.currentStatus || 'running');
+  const activeCurrentStage = finished
+    ? 'finish/handoff'
+    : (rootMetadata.activeCurrentStage || currentRun.currentStage || (activeBlock?.status === 'in_progress' ? 'ready/isolate' : 'finish/handoff'));
+  const terminalStopDetail = String(currentRun?.completion?.stopReasonDetail || rootMetadata.stopReasonExplanation || '').trim();
+  const stopReasonExplanation = finished
+    ? (terminalStopDetail || 'all actionable phases completed with phase checkpoint status recorded')
+    : terminalStopDetail;
+
+  normalizeRebuiltRootState(statusFile, counts, {
+    executionStatus: activeExecutionStatus,
+    currentStage: activeCurrentStage,
+    phaseNumber: activePhaseNumber,
+    normalizedRunVerdict: finished ? (terminalStopDetail ? 'success_with_warning' : 'success') : rootMetadata.normalizedRunVerdict,
+    stopReasonClass: finished ? (terminalStopDetail ? 'reconciled_nonzero' : 'clean_complete') : rootMetadata.stopReasonClass,
+    stopReasonExplanation,
+    removeSignals: finished,
+    removeArtifacts: finished,
+  });
+
+  const runtimeStatus = spawnSync(process.execPath, [
+    RUNTIME_STATE_PATH,
+    'export-status',
+    statusFile,
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_NO_WARNINGS: process.env.NODE_NO_WARNINGS || '1',
+    },
+  });
+
+  return {
+    rebuilt: true,
+    reason: runtimeStatus.status === 0 ? 'ok' : 'runtime-mirror-export-failed',
+    finished,
+    counts,
+    reconciled,
+    beforePhases: beforeBlocks.length,
+    afterPhases: afterBlocks.length,
+  };
+}
+
 function runSelfTest() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-state-'));
+  const planDir = path.join(tempDir, 'plan');
+  const executionDir = path.join(planDir, 'execution');
   const statusFile = path.join(tempDir, 'phase-status.yaml');
   try {
+    fs.mkdirSync(executionDir, { recursive: true });
     fs.writeFileSync(statusFile, `schemaVersion: 1
 activeExecutionStatus: running
+activeCurrentStage: ready/isolate
+activePhaseNumber: 1
+activeActionablePhasesRemaining: 1
+normalizedRunVerdict: failed
+stopReasonClass: runtime_unavailable
+stopReasonExplanation: "delegated terminal exit detail: exit 13"
+signals:
+  phaseAttemptMode: true
+artifacts:
+  activePhaseDocPath: "docs/plan/phase-01.md"
 phases:
   - number: 1
     title: "Fixture"
     status: completed
     planConfirmed: true
+    attempts:
+      total: 0
+      lastOutcome: pending
+      lastUpdatedAt: "2026-05-05T00:00:00.000Z"
+    timing:
+      startedAt: "2026-05-05T00:00:00.000Z"
+      lastStage: "ready/isolate"
+      lastStageAt: "2026-05-05T00:00:00.000Z"
+      completedAt: "2026-05-05T00:00:00.000Z"
 `, 'utf8');
 
-    setPhaseCheckpoint(statusFile, '1', {
-      status: 'committed',
-      commit: 'abc123',
-      committedAt: '2026-05-05T00:00:00.000Z',
-      reason: 'checkpoint_commit_created',
-    });
-    setRootRunVerdict(statusFile, 'success_with_warning', 'reconciled_nonzero', 'completed after reconciled non-zero exit');
+    fs.writeFileSync(path.join(executionDir, 'QA_REPORT.md'), `# QA
+## Verdict
+- Status: passed
+- Next path: clean_finish
+- Closeout reason: scope_complete
+## Review Checkpoint
+- Review completed: yes
+## Finish Readiness
+- Why this round may stop now: fixture complete
+- Remaining in-scope work: none
+- Remaining blockers before closeout: none
+## Workflow Execution
+- Selected bundles: impl
+- Applied skills: skill-a
+- Skipped skills: skill-b
+- Selected harness components: phase-runner
+- Skipped harness components: none
+- Selection reason: fixture
+- Runtime isolation: runtime-adapter
+- Model effort profile: standard
+- Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-mini
+- Selected model effort: medium
+- Model selection reason: fixture
+- Retrieval budget: fixture
+- Validation profile: workflow_core
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+`, 'utf8');
+    fs.writeFileSync(path.join(executionDir, 'SCORECARD.md'), `# Score
+## Score Summary
+- Current score: 100
+- Target score: 100
+- Unmet checklist items: 0
+- Blocking defects: 0
+- Verdict: done
+## Task-Level Status Adapter
+- Status: FULL
+- Current task status: FULL
+`, 'utf8');
+    fs.writeFileSync(path.join(executionDir, 'HANDOFF.md'), `# Handoff
+## Status
+- Required: no
+## Resume Trigger
+- Stop reason: clean_finish
+`, 'utf8');
+
+    ensureCompletedAttemptMetadata(statusFile, '1', '2026-05-05T00:00:00.000Z');
+    const rebuild = rebuildPhaseStatus(statusFile, planDir);
+    if (!rebuild.rebuilt || !rebuild.finished) {
+      throw new Error('rebuild command did not mark the fixture as finished');
+    }
+
     const metadata = readRootStatusMetadata(statusFile);
     const summary = getPhaseSummary(statusFile, '1');
-    if (metadata.normalizedRunVerdict !== 'success_with_warning') {
-      throw new Error('root normalizedRunVerdict was not persisted');
+    if (metadata.activeCurrentStage === 'ready/isolate') {
+      throw new Error('finished root stage was not normalized');
     }
-    if (summary.checkpointStatus !== 'committed' || summary.checkpointCommit !== 'abc123') {
-      throw new Error('phase checkpoint fields were not persisted');
+    if (Number.isInteger(metadata.activePhaseNumber)) {
+      throw new Error('finished root phase number was not cleared');
+    }
+    if (metadata.normalizedRunVerdict !== 'success_with_warning') {
+      throw new Error('normalized run verdict was not rebuilt');
+    }
+    if (summary.attemptTotal !== 1) {
+      throw new Error('zero-attempt completed phase was not reconciled');
+    }
+    if (!summary.lastUpdatedAt || !summary.timing?.completedAt) {
+      throw new Error('attempt timestamp was not normalized');
+    }
+    if (summary.lastUpdatedAt !== summary.timing?.completedAt) {
+      throw new Error(`attempt and timing timestamps diverged: ${summary.lastUpdatedAt} vs ${summary.timing?.completedAt}`);
+    }
+    if (!String(metadata.stopReasonExplanation || '').includes('delegated terminal exit detail')) {
+      throw new Error('delegated exit detail was not preserved');
     }
     writeStdoutLine('agent-loop-phase-state self-test passed');
   } finally {
@@ -1844,7 +2251,15 @@ function reconcileCompletedPhases(statusFile) {
 
   const reconciled = [];
   for (const block of readStatusBlocks(statusFile)) {
-    if (!block.number || block.status === 'completed') {
+    if (!block.number) {
+      continue;
+    }
+
+    const attemptTotal = Number.parseInt(String(block.attemptTotal ?? '0'), 10) || 0;
+    if (block.status === 'completed') {
+      if (attemptTotal === 0) {
+        ensureCompletedAttemptMetadata(statusFile, String(block.number), block.timing?.completedAt || block.lastUpdatedAt || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'));
+      }
       continue;
     }
 
@@ -1887,6 +2302,8 @@ function reconcileCompletedPhases(statusFile) {
       scorecardPath: block.scorecard,
     });
 
+    ensureCompletedAttemptMetadata(statusFile, String(block.number), artifactState.timestamp);
+
     reconciled.push({
       phaseNum: String(block.number),
       fromStatus: block.status || '',
@@ -1905,6 +2322,7 @@ function printUsage() {
     '  agent-loop-phase-state.mjs get-phase-summary <status-file> <phase-num>',
     '  agent-loop-phase-state.mjs get-active-phase-context <status-file>',
     '  agent-loop-phase-state.mjs evaluate-phase-completion-gate <phase-start-epoch> <qa-report-path> <scorecard-path> <phase-execution-dir> <scorecard-required> <target-completion-score> [handoff-path]',
+    '  agent-loop-phase-state.mjs rebuild-phase-status <status-file> <plan-dir>',
     '  agent-loop-phase-state.mjs reconcile-completed-phases <status-file>',
     '  agent-loop-phase-state.mjs set-phase-checkpoint <status-file> <phase-num> <status> <commit> <committed-at> <reason>',
     '  agent-loop-phase-state.mjs set-root-run-verdict <status-file> <normalized-verdict> <stop-reason-class> <explanation>',
@@ -1939,6 +2357,21 @@ switch (command) {
       handoffPath: args[6],
     });
     for (const [key, value] of Object.entries(result)) {
+      writeStdoutLine(`${key}=${shellQuote(value)}`);
+    }
+    break;
+  }
+  case 'rebuild-phase-status': {
+    const [statusFile, planDir] = args;
+    if (!statusFile || !planDir) {
+      printUsage();
+      process.exit(64);
+    }
+    const result = rebuildPhaseStatus(statusFile, planDir);
+    for (const [key, value] of Object.entries(result)) {
+      if (typeof value === 'object' && value !== null) {
+        continue;
+      }
       writeStdoutLine(`${key}=${shellQuote(value)}`);
     }
     break;

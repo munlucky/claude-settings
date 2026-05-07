@@ -85,6 +85,7 @@ function main() {
           || /runtime probe passed:/.test(trimmed)
           || /actual runtime smoke (starting|passed):/.test(trimmed)
           || /actual runtime timings:/.test(trimmed)
+          || /runtime exercise level:/.test(trimmed)
           || /phase runtime parity smoke (passed|failed)/.test(trimmed)
           || /debug temp root:/.test(trimmed)
           || /keeping temp artifacts:/.test(trimmed)

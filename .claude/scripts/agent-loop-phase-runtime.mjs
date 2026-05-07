@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { resolveParentRuntimeContext } from './lib/runtime-platform.mjs';
+import { classifyFailure } from './lib/failure-classifier.mjs';
 import { assessRuntimeHealthFromVerdictFiles } from './verification-verdict-state.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -160,6 +161,23 @@ function resolveRunnerRuntime(requestedRuntime) {
 
 function describeStopReason(reason, runtime, detail = '') {
   switch (reason) {
+    case 'bash_access_denied':
+      return `bash 실행이 권한 문제로 막혀 ${runtime} 작업을 진행할 수 없습니다`;
+    case 'git_eperm':
+    case 'git_index_denied':
+      return `git 작업이 권한 문제로 막혀 ${runtime} 작업을 진행할 수 없습니다`;
+    case 'node_spawn_eperm':
+      return `Node 프로세스 spawn이 권한 문제로 막혀 ${runtime} 작업을 진행할 수 없습니다`;
+    case 'verifier_unavailable':
+      return `검증 런타임을 사용할 수 없어 ${runtime} 작업을 진행할 수 없습니다`;
+    case 'codex_unavailable':
+      return `Codex 런타임을 찾을 수 없어 ${runtime} 작업을 진행할 수 없습니다`;
+    case 'codex_session_storage_readonly':
+    case 'codex_home_readonly':
+    case 'codex_state_db_readonly':
+      return `Codex 저장소가 읽기 전용이어서 ${runtime} 작업을 진행할 수 없습니다`;
+    case 'spawn_blocked':
+      return `프로세스 spawn이 호스트 정책에 의해 차단되어 ${runtime} 작업을 진행할 수 없습니다`;
     case 'verification-command-missing':
       return '필수 verification 진입점 경로를 찾지 못해 phase를 진행할 수 없습니다 (block)';
     case 'timeout-auth':
@@ -254,7 +272,69 @@ function resolveTimeoutFallbackRuntime(currentRuntime) {
   return '';
 }
 
+const TERMINAL_ENVIRONMENT_STOP_CODES = new Set([
+  'bash_access_denied',
+  'git_eperm',
+  'git_index_denied',
+  'rg_access_denied',
+  'codex_unavailable',
+  'codex_session_storage_readonly',
+  'codex_home_readonly',
+  'codex_state_db_readonly',
+  'node_spawn_eperm',
+  'verifier_unavailable',
+  'spawn_blocked',
+]);
+
+function isLogEvidenceLine(line) {
+  const trimmed = String(line ?? '').trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (/^(?:diff --git|index |@@|\+\+\+|---|[+-]\s|case |return |const |let |function |\| |[-*]\s)/.test(trimmed)) {
+    return false;
+  }
+  if (/^(?:\/bin\/zsh -lc|exec_command|Chunk ID:|Wall time:|Process exited|Original token count:|Output:)/i.test(trimmed)) {
+    return false;
+  }
+  if (/\brg\s+-n\b/.test(trimmed) || /\bgrep\s+-n\b/.test(trimmed)) {
+    return false;
+  }
+
+  return /(?:Failed to create session:|readonly database|read only database|spawn(?:Sync)? .*?(?:EPERM|EACCES)|(?:Error|ERROR|fatal|Failed|failed): .*?(?:permission denied|operation not permitted|access is denied|EPERM|EACCES)|(?:node --test|bash|git|rg).*?(?:spawn EPERM|access denied|permission denied|operation not permitted)|runtime verifier unavailable|verification runtime unavailable|verifier unavailable|spawn blocked|unable to create process)/i.test(trimmed);
+}
+
+function detectEnvironmentStopReason(logFile, defaultReason = 'phase-failed') {
+  if (!logFile || !fs.existsSync(logFile)) {
+    return '';
+  }
+
+  const evidenceLines = fs.readFileSync(logFile, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(isLogEvidenceLine);
+
+  for (const line of evidenceLines) {
+    const classification = classifyFailure({
+      reason: defaultReason,
+      message: line,
+      detail: line,
+      stderr: line,
+      stdout: line,
+    });
+    if (classification.category === 'environment' && TERMINAL_ENVIRONMENT_STOP_CODES.has(classification.code)) {
+      return classification.code;
+    }
+  }
+  return '';
+}
+
 function detectFinalStopReason(logFile, defaultReason = 'phase-failed', guardRaw = '2') {
+  const environmentStopReason = detectEnvironmentStopReason(logFile, defaultReason);
+  if (environmentStopReason) {
+    return environmentStopReason;
+  }
   if (detectToolSchemaErrorLoop(logFile, guardRaw)) {
     return 'tool-schema-error-loop';
   }

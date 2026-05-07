@@ -705,7 +705,7 @@ function runFinalGitCloseoutAudit() {
   const artifactPath = path.join('.claude', 'logs', 'agent-loop', `final-git-closeout-${Date.now()}-${process.pid}.json`);
   const args = [
     finalGitCloseoutPath,
-    'assert-clean',
+    'preflight',
     '--plan-dir', state.planDir,
     '--status-file', state.statusFile,
     '--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-runs',

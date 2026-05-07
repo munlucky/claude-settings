@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { classifyFailure } from './lib/failure-classifier.mjs';
+
 function shellQuote(value) {
   if (value === undefined || value === null) {
     return "''";
@@ -14,6 +16,11 @@ function toBool(value) {
 function toInt(value, fallback = 0) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function isEnvironmentStopReason(reason) {
+  const classification = classifyFailure({ reason, message: reason });
+  return classification.category === 'environment' && classification.code !== 'unknown_failure';
 }
 
 const REVIEW_CLOSEOUT_REASONS = new Set([
@@ -73,6 +80,10 @@ function decideMissingEvidenceAction(config) {
   const autonomousMode = toBool(config.autonomousMode);
   const advanceOnFailure = toBool(config.advanceOnFailure);
   const finalStopReason = String(config.finalStopReason || 'missing-verification-evidence');
+
+  if (isEnvironmentStopReason(finalStopReason)) {
+    return { ACTION: 'stop-loop', SUMMARY: finalStopReason };
+  }
 
   if (finalStopReason === 'tool-schema-error-loop' && autonomousMode) {
     return { ACTION: 'stop-loop', SUMMARY: 'tool-schema-error-loop' };
@@ -144,6 +155,10 @@ function decideFailureAction(config) {
   const autonomousMode = toBool(config.autonomousMode);
   const advanceOnFailure = toBool(config.advanceOnFailure);
   const finalStopReason = String(config.finalStopReason || 'phase-failed');
+
+  if (isEnvironmentStopReason(finalStopReason)) {
+    return { ACTION: 'stop-loop', SUMMARY: finalStopReason };
+  }
 
   if (finalStopReason === 'tool-schema-error-loop' && autonomousMode) {
     return { ACTION: 'stop-loop', SUMMARY: 'tool-schema-error-loop' };

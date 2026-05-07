@@ -376,6 +376,14 @@ async function main() {
     error: command.error || '',
   }));
 
+  const denialCodes = [];
+  if (mcp.status !== 'mcp_ok') {
+    denialCodes.push(mcp.reason || mcp.status);
+  }
+  if (finalStatus === 'direct_failed') {
+    denialCodes.push(directReason);
+  }
+
   const summary = {
     status: finalStatus,
     route,
@@ -384,6 +392,11 @@ async function main() {
     projectPath,
     mcp,
     runtime: finalStatus === 'direct_failed' ? 'runtime_broken_or_unavailable' : 'direct_runtime_ok',
+    writeStatus: (mcp.status === 'mcp_ok' || finalStatus === 'direct_fallback_succeeded')
+      ? 'promotion_write_available'
+      : 'promotion_write_unavailable',
+    denialCodes,
+    closeoutStatus: options.strict && finalStatus !== 'direct_fallback_succeeded' ? 'blocked' : 'non_blocking',
     storePayloadProvided: Boolean(storePayload),
     commands: compactCommands,
     logPath: '',

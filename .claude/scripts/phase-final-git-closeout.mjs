@@ -11,6 +11,30 @@ const DEFAULT_WORKTREE_ROOTS = [
   '.tmp/harness-worktrees/phase-waves',
 ];
 
+const IGNORED_EVIDENCE_PREFIXES = [
+  '.claude/knowledge-repo-audit-',
+  '.claude/runtime-verdict-',
+  '.claude/verification-results-',
+  '.claude/verification-verdict-',
+];
+
+const DENIED_CLOSEOUT_EXACT = new Set([
+  '.claude/docs/phase-status.yaml',
+  '.claude/memory.json',
+  '.claude/worktree-baseline.log',
+  '.claude/worktree-prepare.json',
+  '.claude/worktree-setup.log',
+  '.mcp.json',
+]);
+
+const DENIED_CLOSEOUT_PREFIXES = [
+  '.claude/cache/memorygraph/',
+  '.claude/logs/',
+  '.claude/memorygraph/',
+  '.claude/runtime-state.sqlite',
+  '.tmp/',
+];
+
 const state = {
   command: 'assert-clean',
   planDir: '',
@@ -25,6 +49,7 @@ function usage() {
     'Usage:',
     '  phase-final-git-closeout.mjs assert-clean [options]',
     '  phase-final-git-closeout.mjs audit [options]',
+    '  phase-final-git-closeout.mjs preflight [options]',
     '  phase-final-git-closeout.mjs self-test',
     '',
     'Options:',
@@ -77,21 +102,27 @@ function parseStatusPath(line) {
 function isIgnorableStatusPath(filePath) {
   const normalized = normalizePath(filePath);
   return normalized === ''
-    || normalized.startsWith('.claude/logs/')
     || normalized === '.claude/docs/phase-status.yaml'
-    || normalized === '.claude/runtime-state.sqlite'
-    || normalized.startsWith('.claude/runtime-state.sqlite-')
-    || normalized.startsWith('.claude/verification-results-')
-    || normalized.startsWith('.claude/verification-verdict-')
-    || normalized.startsWith('.claude/runtime-verdict-')
-    || normalized.startsWith('.claude/knowledge-repo-audit-')
     || normalized === '.claude/worktree-prepare.json'
     || normalized === '.claude/worktree-setup.log'
     || normalized === '.claude/worktree-baseline.log';
 }
 
-function gitStatus(cwd) {
-  const result = runGit(['status', '--short', '--untracked-files=all'], cwd);
+function isDeniedCloseoutPath(filePath) {
+  const normalized = normalizePath(filePath);
+  return normalized !== '' && (
+    DENIED_CLOSEOUT_EXACT.has(normalized)
+    || DENIED_CLOSEOUT_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  );
+}
+
+function isIgnoredEvidencePath(filePath) {
+  const normalized = normalizePath(filePath);
+  return normalized !== '' && IGNORED_EVIDENCE_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+function gitStatus(cwd, extraArgs = [], filterIgnorable = true) {
+  const result = runGit(['status', '--short', '--untracked-files=all', ...extraArgs], cwd);
   if (result.status !== 0 || result.error) {
     return {
       ok: false,
@@ -99,14 +130,54 @@ function gitStatus(cwd) {
       entries: [],
     };
   }
+    return {
+      ok: true,
+      error: '',
+      entries: result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trimEnd())
+        .filter(Boolean)
+        .filter((line) => !filterIgnorable || !isIgnorableStatusPath(parseStatusPath(line))),
+  };
+}
+
+function collectIgnoredEvidence(repoRoot) {
+  const result = gitStatus(repoRoot, ['--ignored'], false);
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error,
+      entries: [],
+      deniedEntries: [],
+    };
+  }
+
+  const entries = [];
+  const deniedEntries = [];
+  for (const line of result.entries) {
+    const status = line.slice(0, 2);
+    if (status !== '!!') {
+      continue;
+    }
+    const filePath = parseStatusPath(line);
+    if (isIgnoredEvidencePath(filePath)) {
+      entries.push({
+        path: normalizePath(filePath),
+        status,
+      });
+    } else if (isDeniedCloseoutPath(filePath)) {
+      deniedEntries.push({
+        path: normalizePath(filePath),
+        status,
+      });
+    }
+  }
+
   return {
     ok: true,
     error: '',
-    entries: result.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trimEnd())
-      .filter(Boolean)
-      .filter((line) => !isIgnorableStatusPath(parseStatusPath(line))),
+    entries,
+    deniedEntries,
   };
 }
 
@@ -280,7 +351,11 @@ function audit() {
   const repoRoot = runRequiredGit(['rev-parse', '--show-toplevel']);
   const worktreeRoots = state.worktreeRoots.length > 0 ? state.worktreeRoots : DEFAULT_WORKTREE_ROOTS;
   const mainStatus = gitStatus(repoRoot);
+  const ignoredEvidence = collectIgnoredEvidence(repoRoot);
+  const repoHead = runRequiredGit(['rev-parse', 'HEAD'], repoRoot);
   const issues = [];
+  const deniedEntries = [];
+  const stageableEntries = [];
   if (!mainStatus.ok) {
     issues.push({
       type: 'main_status_failed',
@@ -288,10 +363,56 @@ function audit() {
       entries: [],
     });
   } else if (mainStatus.entries.length > 0) {
+    for (const entry of mainStatus.entries) {
+      const filePath = parseStatusPath(entry);
+      if (isDeniedCloseoutPath(filePath)) {
+        deniedEntries.push({
+          path: normalizePath(filePath),
+          status: entry.slice(0, 2),
+        });
+      } else {
+        stageableEntries.push({
+          path: normalizePath(filePath),
+          status: entry.slice(0, 2),
+        });
+      }
+    }
+    if (stageableEntries.length > 0) {
+      issues.push({
+        type: 'main_worktree_dirty',
+        detail: 'main worktree has uncommitted non-runtime changes',
+        entries: stageableEntries,
+      });
+    }
+  }
+
+  if (ignoredEvidence.ok && ignoredEvidence.entries.length > 0) {
     issues.push({
-      type: 'main_worktree_dirty',
-      detail: 'main worktree has uncommitted non-runtime changes',
-      entries: mainStatus.entries,
+      type: 'ignored_verification_evidence_detected',
+      detail: 'ignored verification evidence must be force-added before closeout',
+      entries: ignoredEvidence.entries,
+    });
+  }
+
+  if (!ignoredEvidence.ok) {
+    issues.push({
+      type: 'ignored_evidence_scan_failed',
+      detail: ignoredEvidence.error,
+      entries: [],
+    });
+  } else if (ignoredEvidence.deniedEntries.length > 0) {
+    issues.push({
+      type: 'ignored_denied_path_detected',
+      detail: 'ignored runtime/cache/private paths are denied for closeout staging',
+      entries: ignoredEvidence.deniedEntries,
+    });
+  }
+
+  if (deniedEntries.length > 0) {
+    issues.push({
+      type: 'denied_closeout_path_detected',
+      detail: 'runtime/cache/private paths must not be staged during closeout',
+      entries: deniedEntries,
     });
   }
 
@@ -314,15 +435,23 @@ function audit() {
     schemaVersion: '1.0',
     generatedAt: new Date().toISOString(),
     repoRoot,
+    head: repoHead,
     planDir: state.planDir,
     statusFile: state.statusFile,
     mode: state.command,
     worktreeRoots,
     clean: issues.length === 0,
+    stageableEntries,
+    ignoredEvidence: ignoredEvidence.ok ? ignoredEvidence.entries : [],
+    deniedEntries: deniedEntries.concat(ignoredEvidence.deniedEntries || []),
     issues,
     nextAction: issues.length === 0
       ? 'none'
-      : 'triage phase worktrees, merge or discard valid residual patches, then commit main worktree changes before returning success',
+      : deniedEntries.length > 0 || (ignoredEvidence.ok && ignoredEvidence.deniedEntries.length > 0)
+        ? 'remove denied runtime/cache/private paths from the closeout scope, then rerun preflight'
+        : ignoredEvidence.ok && ignoredEvidence.entries.length > 0
+          ? `force-add ignored verification evidence (${ignoredEvidence.entries.map((entry) => entry.path).join(', ')}), then commit`
+          : 'triage phase worktrees, merge or discard valid residual patches, then commit main worktree changes before returning success',
   };
 
   if (state.output) {
@@ -376,9 +505,7 @@ function initFixtureRepo(root) {
   runRequiredGit(['init'], root);
   runRequiredGit(['config', 'user.email', 'final-closeout@example.invalid'], root);
   runRequiredGit(['config', 'user.name', 'Final Closeout Test'], root);
-  writeFixture(path.join(root, 'README.md'), '# fixture\n');
-  runRequiredGit(['add', '.'], root);
-  runRequiredGit(['commit', '-m', 'fixture'], root);
+  runRequiredGit(['commit', '--allow-empty', '-m', 'fixture'], root);
 }
 
 function runSelf(commandArgs, cwd) {
@@ -396,29 +523,29 @@ function selfTest() {
     const repo = path.join(tmpRoot, 'repo');
     initFixtureRepo(repo);
 
-    let result = runSelf(['assert-clean', '--json'], repo);
+    let result = runSelf(['preflight', '--json'], repo);
     if (result.status !== 0) {
       throw new Error(`clean repo should pass: ${result.stderr || result.stdout}`);
     }
 
-    fs.appendFileSync(path.join(repo, 'README.md'), 'dirty\n', 'utf8');
-    result = runSelf(['assert-clean', '--json'], repo);
+    fs.writeFileSync(path.join(repo, 'dirty.txt'), 'dirty\n', 'utf8');
+    result = runSelf(['preflight', '--json'], repo);
     if (result.status !== 2 || !result.stdout.includes('main_worktree_dirty')) {
       throw new Error(`dirty main should fail with main_worktree_dirty: ${result.stderr || result.stdout}`);
     }
-    runRequiredGit(['checkout', '--', 'README.md'], repo);
+    fs.rmSync(path.join(repo, 'dirty.txt'), { force: true });
 
     const worktreePath = path.join(repo, '.tmp', 'harness-worktrees', 'phase-runs', 'phase-1');
     runRequiredGit(['worktree', 'add', '-b', 'codex/final-closeout-smoke', worktreePath, 'HEAD'], repo);
     fs.appendFileSync(path.join(worktreePath, 'README.md'), 'worktree dirty\n', 'utf8');
-    result = runSelf(['assert-clean', '--json'], repo);
+    result = runSelf(['preflight', '--json'], repo);
     if (result.status !== 2 || !result.stdout.includes('phase_worktree_dirty')) {
       throw new Error(`dirty phase worktree should fail: ${result.stderr || result.stdout}`);
     }
     runRequiredGit(['worktree', 'remove', '--force', worktreePath], repo);
 
     runRequiredGit(['branch', 'codex/phase-wave-smoke', 'HEAD'], repo);
-    result = runSelf(['assert-clean', '--json'], repo);
+    result = runSelf(['preflight', '--json'], repo);
     if (result.status !== 2 || !result.stdout.includes('phase_branch_ref_remaining')) {
       throw new Error(`remaining phase branch should fail: ${result.stderr || result.stdout}`);
     }
@@ -432,9 +559,36 @@ function selfTest() {
       mergeStatus: 'pending',
       generatedAt: new Date().toISOString(),
     }, null, 2));
-    result = runSelf(['assert-clean', '--json'], repo);
+    result = runSelf(['preflight', '--json'], repo);
     if (result.status !== 2 || !result.stdout.includes('phase_wave_artifact_incomplete')) {
       throw new Error(`incomplete wave artifact should fail: ${result.stderr || result.stdout}`);
+    }
+
+    const ignoredRepo = path.join(tmpRoot, 'ignored');
+    initFixtureRepo(ignoredRepo);
+    writeFixture(path.join(ignoredRepo, '.gitignore'), '.claude/verification-verdict-*.json\n');
+    fs.mkdirSync(path.join(ignoredRepo, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(ignoredRepo, '.claude', 'verification-verdict-phase06-test.json'), '{}\n', 'utf8');
+    process.chdir(ignoredRepo);
+    result = runSelf(['preflight', '--json'], ignoredRepo);
+    if (result.status !== 2 || !result.stdout.includes('ignored_verification_evidence_detected')) {
+      throw new Error(`ignored evidence should be reported: ${result.stderr || result.stdout}`);
+    }
+
+    const deniedRepo = path.join(tmpRoot, 'denied');
+    initFixtureRepo(deniedRepo);
+    fs.mkdirSync(path.join(deniedRepo, '.tmp'), { recursive: true });
+    fs.writeFileSync(path.join(deniedRepo, '.tmp', 'runtime-cache.json'), '{}\n', 'utf8');
+    process.chdir(deniedRepo);
+    result = runSelf(['preflight', '--json'], deniedRepo);
+    if (result.status !== 2 || !result.stdout.includes('denied_closeout_path_detected')) {
+      throw new Error(`denied closeout path should be reported: ${result.stderr || result.stdout}`);
+    }
+
+    const nonRepo = fs.mkdtempSync(path.join(tmpRoot, 'non-repo-'));
+    result = runSelf(['preflight', '--json'], nonRepo);
+    if (result.status === 0) {
+      throw new Error('non-repo execution should fail');
     }
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -448,7 +602,7 @@ try {
     selfTest();
     process.exit(0);
   }
-  if (!['audit', 'assert-clean'].includes(state.command)) {
+  if (!['audit', 'assert-clean', 'preflight'].includes(state.command)) {
     throw new Error(`Unknown command: ${state.command}`);
   }
   const payload = audit();

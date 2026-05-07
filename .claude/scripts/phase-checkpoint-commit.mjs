@@ -9,6 +9,30 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_REFRESH_SCRIPT = path.join(SCRIPT_DIR, 'commit-moonshot-memory-refresh.mjs');
 
+const IGNORED_EVIDENCE_PREFIXES = [
+  '.claude/knowledge-repo-audit-',
+  '.claude/runtime-verdict-',
+  '.claude/verification-results-',
+  '.claude/verification-verdict-',
+];
+
+const DENIED_CHECKPOINT_EXACT = new Set([
+  '.claude/docs/phase-status.yaml',
+  '.claude/memory.json',
+  '.claude/worktree-baseline.log',
+  '.claude/worktree-prepare.json',
+  '.claude/worktree-setup.log',
+  '.mcp.json',
+]);
+
+const DENIED_CHECKPOINT_PREFIXES = [
+  '.claude/cache/memorygraph/',
+  '.claude/logs/',
+  '.claude/memorygraph/',
+  '.claude/runtime-state.sqlite',
+  '.tmp/',
+];
+
 function writeStdoutLine(value = '') {
   process.stdout.write(`${String(value)}\n`);
 }
@@ -130,57 +154,63 @@ function parseStatusPorcelain(output) {
   return entries;
 }
 
-function isRuntimeOrPrivatePath(repoPath) {
+function isDeniedCheckpointPath(repoPath) {
   const normalized = normalizeStatusPath(repoPath);
   if (!normalized) {
     return true;
   }
 
-  const exact = new Set([
-    '.mcp.json',
-    '.claude/memory.json',
-    '.claude/docs/phase-status.yaml',
-    '.claude/worktree-prepare.json',
-    '.claude/worktree-setup.log',
-    '.claude/worktree-baseline.log',
-  ]);
-  if (exact.has(normalized)) {
+  if (DENIED_CHECKPOINT_EXACT.has(normalized)) {
     return true;
   }
 
-  const prefixes = [
-    '.agents/',
-    '.claude/memorygraph/',
-    '.claude/cache/memorygraph/',
-    '.claude/logs/',
-    '.tmp/',
-  ];
-  if (prefixes.some((prefix) => normalized.startsWith(prefix))) {
+  if (DENIED_CHECKPOINT_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
     return true;
   }
 
-  const basenames = [
-    '.claude/runtime-state.sqlite',
-    '.claude/runtime-state.sqlite-shm',
-    '.claude/runtime-state.sqlite-wal',
-  ];
-  if (basenames.includes(normalized)) {
-    return true;
-  }
-
-  return /^\.claude\/(verification-results-|verification-verdict-|runtime-verdict-|knowledge-repo-audit-)/.test(normalized);
+  return normalized === '.claude/runtime-state.sqlite-shm'
+    || normalized === '.claude/runtime-state.sqlite-wal';
 }
 
-function currentStageablePaths(repoRoot) {
-  const status = git(['status', '--short', '--untracked-files=all'], repoRoot);
+function isIgnoredEvidencePath(repoPath) {
+  const normalized = normalizeStatusPath(repoPath);
+  if (!normalized) {
+    return false;
+  }
+  return IGNORED_EVIDENCE_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+function currentStageCandidates(repoRoot) {
+  const status = git(['status', '--short', '--ignored', '--untracked-files=all'], repoRoot);
   if (status.error || status.status !== 0) {
     throw new Error(status.stderr.trim() || status.error?.message || 'git status failed');
   }
 
   const entries = parseStatusPorcelain(status.stdout);
-  return entries
-    .filter((entry) => !isRuntimeOrPrivatePath(entry.path))
-    .map((entry) => entry.path);
+  const stageablePaths = [];
+  const forceAddPaths = [];
+  const deniedPaths = [];
+
+  for (const entry of entries) {
+    const normalized = normalizeStatusPath(entry.path);
+    if (!normalized || isDeniedCheckpointPath(normalized)) {
+      if (normalized) {
+        deniedPaths.push(normalized);
+      }
+      continue;
+    }
+    if (isIgnoredEvidencePath(normalized)) {
+      forceAddPaths.push(normalized);
+      continue;
+    }
+    stageablePaths.push(normalized);
+  }
+
+  return {
+    stageablePaths: [...new Set(stageablePaths)],
+    forceAddPaths: [...new Set(forceAddPaths)],
+    deniedPaths: [...new Set(deniedPaths)],
+  };
 }
 
 function runMemoryRefresh(repoRoot, options) {
@@ -281,33 +311,78 @@ function makeCheckpointCommit(options) {
   const repoRoot = resolveRepoRoot();
   const phasePrefix = String(options.phaseNum || '').padStart(2, '0');
   const memory = runMemoryRefresh(repoRoot, options);
-  const stageablePaths = currentStageablePaths(repoRoot);
+  const { stageablePaths, forceAddPaths, deniedPaths } = currentStageCandidates(repoRoot);
   const committedAt = new Date().toISOString();
 
-  if (stageablePaths.length === 0) {
+  if (deniedPaths.length > 0) {
     return {
-      exitCode: 0,
+      exitCode: 2,
       payload: {
-        status: 'skipped_no_changes',
+        status: 'failed',
         commit: '',
+        head: '',
         committedAt,
-        reason: 'no_stageable_non_runtime_changes',
+        reason: `denied closeout paths detected: ${deniedPaths.join(', ')}`,
         stageablePaths,
+        forceAddPaths,
+        deniedPaths,
         memory,
       },
     };
   }
 
-  const add = git(['add', '--', ...stageablePaths], repoRoot);
+  if (stageablePaths.length === 0 && forceAddPaths.length === 0) {
+    return {
+      exitCode: 0,
+      payload: {
+        status: 'skipped_no_changes',
+        commit: '',
+        head: '',
+        committedAt,
+        reason: 'no_stageable_non_runtime_changes',
+        stageablePaths,
+        forceAddPaths,
+        deniedPaths,
+        memory,
+      },
+    };
+  }
+
+  const add = stageablePaths.length > 0
+    ? git(['add', '--', ...stageablePaths], repoRoot)
+    : { status: 0, error: null, stderr: '', stdout: '' };
   if (add.error || add.status !== 0) {
     return {
       exitCode: 2,
       payload: {
         status: 'failed',
         commit: '',
+        head: '',
         committedAt,
         reason: add.stderr.trim() || add.error?.message || 'git_add_failed',
         stageablePaths,
+        forceAddPaths,
+        deniedPaths,
+        memory,
+      },
+    };
+  }
+
+  const forceAdd = forceAddPaths.length > 0
+    ? git(['add', '-f', '--', ...forceAddPaths], repoRoot)
+    : { status: 0, error: null, stderr: '', stdout: '' };
+  if (forceAdd.error || forceAdd.status !== 0) {
+    return {
+      exitCode: 2,
+      payload: {
+        status: 'failed',
+        commit: '',
+        head: '',
+        committedAt,
+        reason: forceAdd.stderr.trim() || forceAdd.error?.message || 'git_force_add_failed',
+        stageablePaths,
+        forceAddPaths,
+        deniedPaths,
         memory,
       },
     };
@@ -320,9 +395,12 @@ function makeCheckpointCommit(options) {
       payload: {
         status: 'skipped_no_changes',
         commit: '',
+        head: '',
         committedAt,
         reason: 'no_cached_non_runtime_changes',
         stageablePaths,
+        forceAddPaths,
+        deniedPaths,
         memory,
       },
     };
@@ -334,9 +412,12 @@ function makeCheckpointCommit(options) {
       payload: {
         status: 'failed',
         commit: '',
+        head: '',
         committedAt,
         reason: 'forced_commit_failure',
         stageablePaths,
+        forceAddPaths,
+        deniedPaths,
         memory,
       },
     };
@@ -351,23 +432,30 @@ function makeCheckpointCommit(options) {
       payload: {
         status: 'failed',
         commit: '',
+        head: '',
         committedAt,
         reason: commit.stderr.trim() || commit.stdout.trim() || commit.error?.message || 'git_commit_failed',
         stageablePaths,
+        forceAddPaths,
+        deniedPaths,
         memory,
       },
     };
   }
 
   const rev = git(['rev-parse', '--short', 'HEAD'], repoRoot);
+  const head = git(['rev-parse', 'HEAD'], repoRoot);
   return {
     exitCode: 0,
     payload: {
       status: 'committed',
       commit: rev.stdout.trim(),
+      head: head.stdout.trim(),
       committedAt,
       reason: 'checkpoint_commit_created',
       stageablePaths,
+      forceAddPaths,
+      deniedPaths,
       memory,
     },
   };
@@ -419,6 +507,9 @@ function runSelfTest() {
     if (result.payload.status !== 'committed' || !result.payload.commit) {
       throw new Error(`expected commit, got ${result.payload.status}`);
     }
+    if (!result.payload.head || result.payload.head.length < 12) {
+      throw new Error(`expected full head, got ${result.payload.head || 'missing'}`);
+    }
     const commitMessage = git(['log', '-1', '--pretty=format:%s%n%b'], changedRepo);
     if (commitMessage.status !== 0) {
       throw new Error(commitMessage.stderr.trim() || 'git log failed');
@@ -447,9 +538,9 @@ function runSelfTest() {
 
     const ignoredRepo = initFixtureRepo('ignored');
     tempRoots.push(ignoredRepo);
-    fs.mkdirSync(path.join(ignoredRepo, '.claude', 'logs'), { recursive: true });
-    fs.writeFileSync(path.join(ignoredRepo, '.claude', 'memory.json'), '{}\n', 'utf8');
-    fs.writeFileSync(path.join(ignoredRepo, '.claude', 'logs', 'runtime.log'), 'log\n', 'utf8');
+    fs.writeFileSync(path.join(ignoredRepo, '.gitignore'), '.claude/verification-verdict-*.json\n', 'utf8');
+    fs.mkdirSync(path.join(ignoredRepo, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(ignoredRepo, '.claude', 'verification-verdict-phase06-test.json'), '{}\n', 'utf8');
     process.chdir(ignoredRepo);
     result = makeCheckpointCommit({
       phaseNum: '3',
@@ -458,8 +549,12 @@ function runSelfTest() {
       statusFile: '.claude/docs/phase-status.yaml',
       skipMemoryRefresh: true,
     });
-    if (result.payload.status !== 'skipped_no_changes') {
-      throw new Error(`expected ignored artifact skip, got ${result.payload.status}`);
+    if (result.payload.status !== 'committed' || !result.payload.forceAddPaths.includes('.claude/verification-verdict-phase06-test.json')) {
+      throw new Error(`expected ignored evidence force-add commit, got ${result.payload.status}`);
+    }
+    const ignoredTree = git(['ls-tree', '-r', '--name-only', 'HEAD'], ignoredRepo);
+    if (ignoredTree.status !== 0 || !ignoredTree.stdout.includes('.claude/verification-verdict-phase06-test.json')) {
+      throw new Error(`expected ignored evidence in commit tree: ${ignoredTree.stderr.trim() || ignoredTree.stdout.trim()}`);
     }
 
     const failureRepo = initFixtureRepo('failure');
@@ -477,6 +572,22 @@ function runSelfTest() {
     delete process.env.PHASE_CHECKPOINT_FORCE_COMMIT_FAILURE;
     if (result.payload.status !== 'failed') {
       throw new Error(`expected forced failure, got ${result.payload.status}`);
+    }
+
+    const deniedRepo = initFixtureRepo('denied');
+    tempRoots.push(deniedRepo);
+    fs.mkdirSync(path.join(deniedRepo, '.tmp'), { recursive: true });
+    fs.writeFileSync(path.join(deniedRepo, '.tmp', 'runtime-cache.json'), '{}\n', 'utf8');
+    process.chdir(deniedRepo);
+    result = makeCheckpointCommit({
+      phaseNum: '5',
+      phaseTitle: 'Denied',
+      planDir: 'docs/implementation',
+      statusFile: '.claude/docs/phase-status.yaml',
+      skipMemoryRefresh: true,
+    });
+    if (result.payload.status !== 'failed' || !String(result.payload.reason || '').includes('denied closeout paths detected')) {
+      throw new Error(`expected denied path failure, got ${result.payload.status}`);
     }
 
     writeStdoutLine('phase-checkpoint-commit self-test passed');
