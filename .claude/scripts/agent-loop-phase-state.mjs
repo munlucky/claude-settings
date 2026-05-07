@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
-import { isRelevantVerificationVerdict } from './verification-verdict-state.mjs';
+import { isRelevantVerificationVerdict, normalizeRequiredChecksMissing } from './verification-verdict-state.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
@@ -1360,7 +1360,7 @@ function evaluatePhaseCompletionGate(config) {
     const contract = payload.contract || {};
     const verificationMode = payload.verificationMode || contract.verificationMode || '';
     const contractApplicable = Boolean(contract.applicable);
-    const missingRequired = payload.requiredChecks?.missing || [];
+    const missingRequired = normalizeRequiredChecksMissing(payload.requiredChecks?.missing);
     const blocking = payload.blocking === true;
     const failureClass = String(payload.failureClass || '').trim().toLowerCase();
     const blockingReasonCode = String(payload.blockingReasonCode || '').trim().toLowerCase();
@@ -2237,6 +2237,12 @@ phases:
     }
     if (!String(metadata.stopReasonExplanation || '').includes('delegated terminal exit detail')) {
       throw new Error('delegated exit detail was not preserved');
+    }
+    if (normalizeRequiredChecksMissing(['none']).length !== 0) {
+      throw new Error('legacy placeholder missing checks were not normalized');
+    }
+    if (normalizeRequiredChecksMissing(['verification-verdict-path']).length !== 1) {
+      throw new Error('real missing checks were not preserved');
     }
     writeStdoutLine('agent-loop-phase-state self-test passed');
   } finally {

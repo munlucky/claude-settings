@@ -37,6 +37,8 @@ function normalizeLower(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+const REQUIRED_CHECK_PLACEHOLDERS = new Set(['none', '없음', 'n/a', 'na', 'null', '']);
+
 function normalizeIdentityText(value) {
   return String(value || '').trim();
 }
@@ -266,7 +268,7 @@ export function inferBlockerClass(payload = {}) {
 
   const reason = normalizeLower(payload.blockingReasonCode);
   const failureClass = normalizeLower(payload.failureClass);
-  const missingChecks = Array.isArray(payload.requiredChecks?.missing) ? payload.requiredChecks.missing : [];
+  const missingChecks = normalizeRequiredChecksMissing(payload.requiredChecks?.missing);
   if (/missing[_-]?verification[_-]?evidence|missing[_-]?evidence/.test(reason) || (missingChecks.length > 0 && (payload.blocking === true || normalizeLower(payload.verdict) === 'failed' || /contract|content_precondition/.test(failureClass)))) {
     return 'missing_evidence';
   }
@@ -351,6 +353,20 @@ function asStringList(value) {
   return text ? [text] : [];
 }
 
+export function normalizeRequiredChecksMissing(value = []) {
+  const normalized = [];
+  for (const entry of asStringList(value)) {
+    const text = String(entry || '').trim();
+    if (!text || REQUIRED_CHECK_PLACEHOLDERS.has(normalizeLower(text))) {
+      continue;
+    }
+    if (!normalized.includes(text)) {
+      normalized.push(text);
+    }
+  }
+  return normalized;
+}
+
 function buildVerdictSelectionKey(entry = {}) {
   const payload = entry.payload || {};
   const runtimeContext = payload.runtimeContext && typeof payload.runtimeContext === 'object'
@@ -386,6 +402,7 @@ export function normalizeVerdictPayload(payload = {}, filePath = '') {
   const supersession = extractSupersession(payload);
   const superseded = payload.superseded === true || supersession.supersededBy.length > 0 || supersession.importedFrom.length > 0;
   const identity = normalizePayloadIdentity(payload);
+  const missingChecks = normalizeRequiredChecksMissing(payload.requiredChecks?.missing);
   const stale = payload.stale === true
     || (
       scope !== 'runtime'
@@ -416,7 +433,7 @@ export function normalizeVerdictPayload(payload = {}, filePath = '') {
       scope,
       blockerClass,
       reason: payload.blockingReasonCode || '',
-      missing: payload.requiredChecks?.missing || [],
+      missing: missingChecks,
     }),
   };
 }
@@ -628,6 +645,13 @@ function selfTest() {
     blockingReasonCode: 'missing-verification-evidence',
     requiredChecks: { missing: ['verification-verdict-path'] },
   };
+  const placeholderMissingPayload = {
+    verdict: 'failed',
+    blocking: true,
+    failureClass: 'contract',
+    blockingReasonCode: 'missing-verification-evidence',
+    requiredChecks: { missing: ['none', 'verification-verdict-path'] },
+  };
   const legacyV2PassPayload = {
     verdict: 'passed',
     blocking: false,
@@ -653,6 +677,12 @@ function selfTest() {
   assert.equal(inferBlockerClass(stalePhasePayload), 'verifier_unavailable');
   assert.equal(normalizeVerdictPayload(stalePhasePayload).stale, true);
   assert.equal(normalizeVerdictPayload(mismatchedLeasePayload).identity.runLeaseId, 'lease-b');
+  assert.deepEqual(normalizeRequiredChecksMissing(['none', 'n/a', 'verification-verdict-path']), ['verification-verdict-path']);
+  assert.deepEqual(normalizeRequiredChecksMissing(['없음']), []);
+  assert.equal(normalizeVerdictPayload(placeholderMissingPayload).fingerprint, normalizeVerdictPayload({
+    ...placeholderMissingPayload,
+    requiredChecks: { missing: ['verification-verdict-path'] },
+  }).fingerprint);
   assert.equal(resolveVerdictStaleReason({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-mismatch:runLeaseId');
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedPlanPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);

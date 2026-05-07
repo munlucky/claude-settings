@@ -35,6 +35,34 @@ def parse_command(value: str) -> dict:
     return {"name": name, "run": run, "status": status}
 
 
+PLACEHOLDER_CHECK_TOKENS = {"none", "없음", "n/a", "na", "null", ""}
+
+
+def normalize_check_list(values: list[str]) -> list[str]:
+    normalized = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        if text.lower() in PLACEHOLDER_CHECK_TOKENS:
+            continue
+        if text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
+def validate_required_check_list(parser: argparse.ArgumentParser, option_name: str, values: list[str]) -> None:
+    invalid = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text.lower() in PLACEHOLDER_CHECK_TOKENS:
+            invalid.append(value)
+
+    if invalid:
+        rendered = ", ".join(repr(str(value)) for value in invalid)
+        parser.error(f"{option_name} cannot use placeholder values; use real check names instead: {rendered}")
+
+
 def stable_fingerprint(value) -> str:
     encoded = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
@@ -165,6 +193,9 @@ def main() -> int:
 
     phase_title = args.phase_title or f"Phase {args.phase_number}"
     active_phase_doc_path = args.active_phase_doc_path or "."
+    validate_required_check_list(parser, "--expected-check", args.expected_check)
+    validate_required_check_list(parser, "--passed-check", args.passed_check)
+    missing_checks = normalize_check_list(args.missing_check)
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +215,7 @@ def main() -> int:
             "done"
             if args.verdict == "passed"
             and args.evidence_fresh == "true"
-            and len(args.missing_check) == 0
+            and len(missing_checks) == 0
             else "retry"
         )
         target_score = args.score_target if args.score_target is not None else 100
@@ -208,7 +239,7 @@ def main() -> int:
         args.failure_class,
         blocking,
         args.verdict,
-        args.missing_check,
+        missing_checks,
     )
     verdict_scope = infer_verdict_scope(args.verdict_scope, blocker_class, args.blocking_reason_code)
     blocker_fingerprint = args.blocker_fingerprint or stable_fingerprint(
@@ -217,7 +248,7 @@ def main() -> int:
             "scope": verdict_scope,
             "blockerClass": blocker_class,
             "reason": args.blocking_reason_code,
-            "missing": args.missing_check,
+            "missing": missing_checks,
         }
     )
     phase_closeout_verdict = args.verification_mode == "phase_closeout"
@@ -290,7 +321,7 @@ def main() -> int:
         "requiredChecks": {
             "expected": args.expected_check,
             "passed": args.passed_check,
-            "missing": args.missing_check,
+            "missing": missing_checks,
         },
         "changedFiles": args.changed_file,
         "commands": args.command,
