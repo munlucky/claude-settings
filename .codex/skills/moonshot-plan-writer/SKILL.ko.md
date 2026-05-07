@@ -1,12 +1,13 @@
 ---
 name: moonshot-plan-writer
-description: phase 기반 작업을 위해 `docs/implementation`의 master plan과 phase plan을 생성하거나 갱신할 때 사용합니다.
+description: phase 기반 작업을 위해 `docs/implementation`의 master plan과 phase plan을 생성, 갱신, 정리할 때 사용합니다.
 ---
 
 # Implementation Plan Writer
 
 ## 목표
 `docs/implementation`에 master/phase 구조가 일관된 작업계획 문서를 만든다.
+기존 구현/작업 문서를 정리해 활성 plan package, 오래된 plan package, 런타임 증빙, 중복 draft를 구분 가능하게 유지한다.
 
 이 스킬은 안전하게 재사용할 `<plan-dir>`가 없을 때 `moonshot-phase-runner`의 기본 bootstrap 역할을 한다.
 phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
@@ -16,6 +17,7 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
   - 존재 시 우선: `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md`
   - 대체 소스: `docs/PRD*.md`, `docs/SPEC*.md`, `docs/GDD*.md`, 루트 요구사항/설계 문서, 이슈/티켓, 사용자 요청문
 - 계획 디렉토리 경로 (기본: `docs/implementation`)
+- 기존 작업문서 확인 경로(기본: 계획 디렉토리 + 설정된 `documentPaths.tasksRoot`)
 - 페이즈 목록 (기존 문서 또는 사용자 지정 범위)
 
 ## 기준 문서 우선순위
@@ -38,10 +40,16 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
    - 누락 시 `docs/`와 루트 `*.md`에서 PRD/SPEC/GDD 계열 요구사항 문서를 탐색한다.
    - 요구사항 문서가 없으면 사용자 요청문/티켓을 임시 기준으로 사용하고 source-gap을 master-plan에 명시한다.
    - 요구사항 단위를 추출하고 추적 ID를 부여한다 (예: `PRD-5.1`, `SPEC-2.4`, `GDD-3.2`, `REQ-1.1`).
-2. 기존 구현 계획 컨텍스트를 확인한다.
+2. 작성 전에 기존 구현/작업문서 컨텍스트를 인벤토리화하고 정리한다.
    - 루트 `*.md` 파일(비재귀)을 읽는다.
    - `docs/implementation/*.md`를 읽는다.
+   - 설정된 `documentPaths.tasksRoot`가 있으면 관련 작업문서가 요청된 계획과 중복되거나 대체 관계인지 task 디렉토리를 비재귀로 확인한다.
    - 현재 master 파일명을 식별한다 (`00-master-plan-v*.md` 우선).
+   - 발견된 계획/작업 문서를 `active-current`, `active-ambiguous`, `superseded`, `overlapping-draft`, `runtime-evidence`, `unrelated`로 분류한다.
+   - 중복 package를 새로 만들기보다 가장 적절한 active/current package 갱신을 우선한다.
+   - overlapping draft를 선택된 master/phase plan set에 통합할 때 사용자 결정, 제약, 증빙 링크, 완료 체크리스트 상태를 보존한다.
+   - 활성 package가 모호하면 조용히 이동/삭제/덮어쓰기하지 말고 open decision으로 기록한다.
+   - 오래된 package가 명확히 superseded라면 명시적 archive/preservation 절차로만 이동하고, 안전한 archive 관례가 없으면 superseded note를 남긴다.
 3. 소스 추적 매핑을 만든다.
    - 각 기준 요구사항을 하나의 대상 페이즈 문서에 매핑한다.
    - 미매핑 항목은 누락(gap)으로 명시한다.
@@ -99,6 +107,15 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
   - 실행을 멈출 blocker condition
   - review checkpoint
   - verification evidence path
+
+## 기존 문서 정리 규칙
+- 새 master/phase 파일을 만들기 전에 항상 기존 계획/작업문서를 인벤토리화한다.
+- 현재 master plan, 참조된 phase docs, 활성 phase status pointer, 또는 요청 작업흐름과 맞는 최근 execution/close 증빙이 있으면 해당 plan package를 active로 취급한다.
+- 더 최신 master plan 또는 명시적 closeout 증빙이 같은 범위를 포괄할 때만 superseded로 취급한다.
+- 정리 과정에서 기존 plan, task, evidence, 사용자 결정 문서를 삭제하지 않는다. archive하거나 note를 남긴다.
+- 두 문서가 같은 범위를 다루면 하나의 canonical target을 선택하고 durable decision과 증빙 참조를 병합한 뒤, 비canonical 문서는 archive note 또는 superseded note로 발견 가능하게 남긴다.
+- 정리 후 파일명, phase 번호, 체크리스트 항목, source trace ID, phase-status pointer의 일관성을 유지한다.
+- 계획 디렉토리 또는 설정된 task root 밖으로 문서를 옮겨야 한다면 멈추고 확인을 요청한다.
 
 ## 완료 루프 (핵심)
 계획 생성/갱신 시 아래 루프를 강제한다.

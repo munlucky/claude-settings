@@ -1,12 +1,13 @@
 ---
 name: moonshot-plan-writer
-description: Create or refresh `docs/implementation` master and phase plans for phase-based work.
+description: Create, refresh, and organize `docs/implementation` master and phase plans for phase-based work.
 ---
 
 # Implementation Plan Writer
 
 ## Goal
 Produce reliable planning docs in `docs/implementation` with strict master/phase structure.
+Keep existing implementation/work documents organized so active plan packages, stale plan packages, runtime evidence, and overlapping drafts are easy to distinguish.
 
 This skill is the default plan bootstrap for `moonshot-phase-runner` when no safe `<plan-dir>` can be reused.
 It is the main Plan-stage owner for phase documents.
@@ -16,6 +17,7 @@ It is the main Plan-stage owner for phase documents.
   - Preferred when present: `docs/PRD-v2.md`, `docs/SPEC-v2.md`, `docs/GDD.md`
   - Fallbacks: `docs/PRD*.md`, `docs/SPEC*.md`, `docs/GDD*.md`, root-level requirement/design docs, issue/ticket text, user request
 - Plan directory path (default: `docs/implementation`)
+- Existing work document roots to inspect when present (default: the plan directory plus configured `documentPaths.tasksRoot`)
 - Phase list (from existing files or user request)
 - Active phase status file path when preparing a runnable package (default: `.claude/docs/phase-status.yaml`)
 - Execution root when preparing a runnable package (default: `docs/implementation/execution/<plan-slug>`)
@@ -40,10 +42,16 @@ It is the main Plan-stage owner for phase documents.
     - For user-facing MVP work, also scan for `UI_SPEC*`, `UI_FLOW_MAP.md`, `UI_STATE_MATRIX.md`, `MOCK_SCENARIOS.md`, `MOCK_API_CONTRACT.md`, and `USER_DEMO_APPROVAL.md`.
     - If no requirement docs exist, use user request and ticket/issue text as baseline and mark a source-gap note in the master plan.
     - Extract requirement units and assign trace IDs (example: `PRD-5.1`, `SPEC-2.4`, `GDD-3.2`, `REQ-1.1`).
-2. Inspect existing implementation markdown context.
+2. Inventory and organize existing implementation/work-document context before writing.
    - Read root-level `*.md` files (non-recursive).
    - Read `docs/implementation/*.md`.
+   - If configured `documentPaths.tasksRoot` exists, inspect task directories non-recursively for related work documents that may duplicate or supersede the requested plan.
    - Identify current master plan filename (`00-master-plan-v*.md` preferred).
+   - Classify discovered plan/work documents as `active-current`, `active-ambiguous`, `superseded`, `overlapping-draft`, `runtime-evidence`, or `unrelated`.
+   - Prefer refreshing the best active/current package over creating a duplicate package.
+   - Preserve user decisions, constraints, evidence links, and completed checklist state when consolidating overlapping drafts into the selected master/phase plan set.
+   - Record ambiguous active packages as open decisions instead of silently moving, deleting, or overwriting them.
+   - When a stale plan package is clearly superseded, move it only through an explicit archive/preservation step, or leave it in place with a superseded note if no safe archive convention exists.
 3. Build a source traceability map.
    - Map each source requirement to one target phase document.
    - List unmapped requirements as explicit gaps.
@@ -148,6 +156,15 @@ It is the main Plan-stage owner for phase documents.
   - the command that proves it
   - the expected pass signal
   - the evidence path that will be cited in `QA_REPORT.md`
+
+## Existing Document Organization Rules
+- Always inventory existing plan/work documents before creating new master or phase files.
+- Treat a plan package as active when it has a current master plan, referenced phase docs, active phase status pointer, or recent execution/close evidence that matches the requested workstream.
+- Treat a package as superseded only when a newer master plan or explicit closeout evidence covers the same scope.
+- Do not delete existing plan, task, evidence, or user-decision documents while organizing. Archive or annotate instead.
+- When two documents cover the same scope, select one canonical target, merge durable decisions and evidence references into it, and leave the non-canonical document discoverable through an archive note or superseded note.
+- Keep filenames, phase numbers, checklist items, source trace IDs, and phase-status pointers consistent after organization.
+- If organization would require moving documents outside the plan directory or configured task root, stop and ask for confirmation.
 
 ## Demo-first MVP Profile
 
