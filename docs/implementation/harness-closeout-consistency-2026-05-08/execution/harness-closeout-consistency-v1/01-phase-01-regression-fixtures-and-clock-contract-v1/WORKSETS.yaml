@@ -1,0 +1,25 @@
+# Phase 01 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths:
+      - ".claude/scripts/phase-closeout-reconciler.test.mjs"
+      - ".claude/scripts/verify-phase-closeout.test.mjs"
+      - ".claude/scripts/lib/clock.test.mjs"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/REQUIREMENTS_TRACEABILITY.md"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/SCENARIO_MATRIX.md"
+    verificationCommands:
+      - "node .claude/scripts/phase-closeout-reconciler.test.mjs"
+      - "node .claude/scripts/verify-phase-closeout.test.mjs"
+      - "node .claude/scripts/prepare-implementation-plan-state.test.mjs"
+      - "node .claude/scripts/lib/clock.test.mjs"
+    evidence:
+      - ".claude/verification-verdict-phase01-final.json"
+      - "QA_REPORT.md Runtime Updates"
+      - "SCORECARD.md Objective Checklist"
+    completedAt: "2026-05-08 21:27:49 +09:00"
+worksets: []

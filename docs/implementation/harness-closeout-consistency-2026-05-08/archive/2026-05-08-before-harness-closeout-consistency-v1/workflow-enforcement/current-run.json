@@ -1,0 +1,123 @@
+{
+  "stateVersion": "1.0",
+  "updatedAt": "2026-05-08T01:43:56Z",
+  "source": "workflow-enforcement.record-dispatch",
+  "workflowKind": "phase-dispatch",
+  "completionStatus": "prepared",
+  "currentStage": "ready/isolate",
+  "planDir": "docs/implementation/harness-reliability-retro-2026-05-05",
+  "statusFile": ".claude/docs/phase-status.yaml",
+  "masterPlan": "docs/implementation/harness-reliability-retro-2026-05-05/00-master-plan-v1.md",
+  "executionMode": "delegated-terminal",
+  "executionRoot": "docs/implementation/harness-reliability-retro-2026-05-05/execution",
+  "runtime": "codex",
+  "selectedBundles": [
+    "ready-isolate-bundle",
+    "implementation-bundle",
+    "review-bundle",
+    "verification-bundle",
+    "finish-bundle"
+  ],
+  "requiredSkills": [
+    "moonshot-phase-runner",
+    "moonshot-phase-executor",
+    "implementation-runner",
+    "codex-review-code",
+    "code-simplifier",
+    "completion-verifier",
+    "doc-auto-sync",
+    "session-logger"
+  ],
+  "stageOrder": [
+    "ready/isolate",
+    "execute",
+    "review",
+    "verify",
+    "finish/handoff"
+  ],
+  "appliedSkills": [],
+  "skippedSkills": [],
+  "selectedHarnessComponents": [
+    "phase-runner",
+    "contract",
+    "implementation",
+    "review",
+    "verification",
+    "finish"
+  ],
+  "skippedHarnessComponents": [],
+  "selectionReason": "phase-based work uses the full cross-runtime harness by default",
+  "runtimeIsolation": "codex delegated-terminal; fresh review/verify attempts preferred",
+  "modelEffortProfile": "standard",
+  "effortEscalationReason": "none",
+  "selectedModelProvider": "openai",
+  "selectedModel": "gpt-5.4-mini",
+  "selectedModelEffort": "medium",
+  "modelSelectionReason": "stage=phase_implementation; profile=standard",
+  "retrievalBudget": "stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output",
+  "validationProfile": "workflow_core",
+  "phaseReplayPolicy": "preserve assistant phase commentary/final_answer when replaying; never add phase to user items",
+  "readiness": {
+    "planningReady": true,
+    "executionReady": true,
+    "planningBasis": "phase-package",
+    "executionBasis": "phase-runner-dispatch",
+    "phaseAttemptOverride": false
+  },
+  "completion": {
+    "state": "prepared",
+    "closeoutStatus": "active",
+    "blockers": []
+  },
+  "evidenceFiles": {
+    "dispatch": ".claude/logs/workflow-enforcement/latest-dispatch.json",
+    "bounded": null
+  },
+  "phaseRunLease": {
+    "stateVersion": "1.0",
+    "runLeaseId": "dispatch-1778077688992-10664",
+    "status": "finished",
+    "executionBoundary": "delegated-terminal",
+    "planDir": "docs\\implementation\\turn-failure-prevention-harness-2026-05-06",
+    "statusFile": ".claude/docs/phase-status.yaml",
+    "executionRoot": "docs\\implementation\\turn-failure-prevention-harness-2026-05-06\\execution",
+    "runtime": "codex",
+    "masterPlan": "docs/implementation/turn-failure-prevention-harness-2026-05-06/00-master-plan-v1.md",
+    "dispatcherPid": "10664",
+    "attachedAt": "2026-05-06T14:28:09Z",
+    "lastHeartbeatAt": "2026-05-06T14:28:13Z",
+    "currentStage": "ready/isolate",
+    "phase": {
+      "number": "",
+      "title": ""
+    },
+    "actionablePhasesRemaining": 0,
+    "completionStatus": "failed",
+    "returnBoundary": "dispatch-stop",
+    "stopReasonCode": "delegated-terminal-exit-1",
+    "stopReasonDetail": "delegated-terminal exited with code 1",
+    "finishedAt": "2026-05-06T14:28:13Z",
+    "unavailableCapabilities": [
+      {
+        "code": "memorygraph_unavailable",
+        "fingerprint": "d5a1ff04ff1185d1",
+        "source": "commit-moonshot-memory-refresh",
+        "firstSeenAt": "2026-05-07T08:30:08Z",
+        "lastSeenAt": "2026-05-08T01:43:56Z",
+        "evidencePath": "C:\\dev\\claude-settings\\.claude\\logs\\memorygraph\\commit-refresh-2026-05-07T08-30-08-613Z.json",
+        "strict": "false"
+      }
+    ]
+  },
+  "unavailableCapabilities": [
+    {
+      "code": "memorygraph_unavailable",
+      "fingerprint": "d5a1ff04ff1185d1",
+      "source": "commit-moonshot-memory-refresh",
+      "firstSeenAt": "2026-05-07T08:30:08Z",
+      "lastSeenAt": "2026-05-08T01:43:56Z",
+      "evidencePath": "C:\\dev\\claude-settings\\.claude\\logs\\memorygraph\\commit-refresh-2026-05-07T08-30-08-613Z.json",
+      "strict": "false"
+    }
+  ]
+}

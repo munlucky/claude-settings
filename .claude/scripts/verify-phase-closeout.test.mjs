@@ -82,6 +82,57 @@ test('phase closeout fails when completed phase WORKSETS still has in-progress a
   });
 });
 
+test('phase closeout fails when delegated terminal failed but local fallback completed', () => {
+  withFixture({ delegatedFailedLocalFallbackCompleted: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'delegated-failed-local-fallback-completed');
+  });
+});
+
+test('phase closeout fails when current-run is failed but phase-status is completed', () => {
+  withFixture({ currentRunFailedPhaseCompleted: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'current-run-failed-phase-completed');
+  });
+});
+
+test('phase closeout fails when completed status keeps a stale activeRunLeaseId', () => {
+  withFixture({ staleActiveRunLeaseId: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'stale-active-run-lease');
+  });
+});
+
+test('phase closeout fails deterministically for timestamps beyond the injected clock tolerance', () => {
+  withFixture({ futureTimestamp: true, fixedNow: '2026-05-08T12:00:00.000Z' }, (root) => {
+    const result = evaluatePhaseCloseout({
+      ...config(root),
+      now: '2026-05-08T12:00:00.000Z',
+    });
+
+    assertCloseoutViolation(result, 'future-timestamp');
+  });
+});
+
+test('phase closeout fails when session task_complete contradicts failed workflow state', () => {
+  withFixture({ sessionTaskCompleteWorkflowFailed: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'session-task-complete-workflow-failed');
+  });
+});
+
+test('phase closeout fails when environment-blocked smoke evidence claims plan complete', () => {
+  withFixture({ environmentBlockedSmokePlanComplete: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'environment-blocked-smoke-plan-complete');
+  });
+});
+
 test('plan conformance fails on unapproved alternative implementation language', () => {
   withFixture({ qaExtra: '- Note: alternative implementation used for the renderer.' }, (root) => {
     const result = evaluatePlanConformance({
@@ -188,6 +239,13 @@ function writeFixture(root, options = {}) {
     qaExtra: '',
     inconsistentVerdict: false,
     incompleteWorksets: false,
+    delegatedFailedLocalFallbackCompleted: false,
+    currentRunFailedPhaseCompleted: false,
+    staleActiveRunLeaseId: false,
+    futureTimestamp: false,
+    fixedNow: '2026-05-08T12:00:00.000Z',
+    sessionTaskCompleteWorkflowFailed: false,
+    environmentBlockedSmokePlanComplete: false,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -240,10 +298,13 @@ function writeFixture(root, options = {}) {
       'schemaVersion: "1.0"',
       'masterPlan: "docs/implementation/00-master-plan-v1.md"',
       'planDir: "docs/implementation"',
+      ...(settings.staleActiveRunLeaseId ? ['activeRunLeaseId: "delegated-failed-run"'] : []),
       'phases:',
       '  - number: 1',
       '    title: "Phase 01: Feature"',
       '    status: completed',
+      ...(settings.staleActiveRunLeaseId ? ['    activeRunLeaseId: "delegated-failed-run"'] : []),
+      ...(settings.futureTimestamp ? ['    completedAt: "2026-05-08T12:00:05.001Z"'] : []),
       '    sprintContract: "docs/implementation/execution/01-feature/SPRINT_CONTRACT.md"',
       '    qaReport: "docs/implementation/execution/01-feature/QA_REPORT.md"',
       '    handoff: "docs/implementation/execution/01-feature/HANDOFF.md"',
@@ -252,6 +313,63 @@ function writeFixture(root, options = {}) {
       '',
     ].join('\n')
   );
+
+  if (
+    settings.delegatedFailedLocalFallbackCompleted
+    || settings.currentRunFailedPhaseCompleted
+    || settings.sessionTaskCompleteWorkflowFailed
+    || settings.environmentBlockedSmokePlanComplete
+  ) {
+    const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workflowDir, 'current-run.json'),
+      JSON.stringify({
+        runId: 'delegated-failed-run',
+        status: settings.currentRunFailedPhaseCompleted || settings.sessionTaskCompleteWorkflowFailed ? 'failed' : 'completed',
+        failureClass: settings.delegatedFailedLocalFallbackCompleted ? 'delegated_terminal_failed' : undefined,
+        fallbackRunId: settings.delegatedFailedLocalFallbackCompleted ? 'local-fallback-complete-run' : undefined,
+        activeRunLeaseId: settings.staleActiveRunLeaseId ? 'delegated-failed-run' : undefined,
+      }, null, 2)
+    );
+
+    if (settings.delegatedFailedLocalFallbackCompleted) {
+      fs.writeFileSync(
+        path.join(workflowDir, 'local-fallback-complete-run.json'),
+        JSON.stringify({
+          runId: 'local-fallback-complete-run',
+          status: 'completed',
+          completionBoundary: 'phase_only',
+          completedAt: '2026-05-08T11:59:30.000Z',
+        }, null, 2)
+      );
+    }
+
+    if (settings.environmentBlockedSmokePlanComplete) {
+      fs.writeFileSync(
+        path.join(workflowDir, 'environment-blocked-smoke.json'),
+        JSON.stringify({
+          status: 'blocked',
+          reason: 'runtime-health-blocked',
+          evidenceDepth: 'smoke_only',
+          planStatus: 'complete',
+        }, null, 2)
+      );
+    }
+  }
+
+  if (settings.sessionTaskCompleteWorkflowFailed) {
+    const sessionDir = path.join(claudeDir, 'sessions');
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionDir, 'phase01.jsonl'),
+      [
+        JSON.stringify({ type: 'assistant', phase: 'commentary', event: 'task_complete', runId: 'delegated-failed-run' }),
+        JSON.stringify({ type: 'workflow', status: 'failed', runId: 'delegated-failed-run' }),
+        '',
+      ].join('\n')
+    );
+  }
 
   fs.writeFileSync(
     path.join(executionDir, 'SPRINT_CONTRACT.md'),
@@ -394,4 +512,12 @@ function decideMissingEvidence(autoFixCount, reason) {
     advanceOnFailure: false,
     finalStopReason: reason,
   });
+}
+
+function assertCloseoutViolation(result, code) {
+  assert.equal(result.allowed, false);
+  assert.ok(
+    result.violations.some((violation) => violation.code === code),
+    `expected closeout violation ${code}; got ${result.violations.map((violation) => violation.code).join(', ')}`
+  );
 }

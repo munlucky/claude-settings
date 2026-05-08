@@ -1,0 +1,26 @@
+{
+  "stateVersion": "1.0",
+  "runLeaseId": "dispatch-1778242777351-28560",
+  "status": "paused",
+  "executionBoundary": "delegated-terminal",
+  "planDir": "docs/implementation/harness-closeout-consistency-2026-05-08",
+  "statusFile": ".claude/docs/phase-status.yaml",
+  "executionRoot": "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1",
+  "runtime": "codex",
+  "masterPlan": "docs/implementation/harness-closeout-consistency-2026-05-08/00-master-plan-v1.md",
+  "dispatcherPid": "28560",
+  "attachedAt": "2026-05-08T12:19:37Z",
+  "lastHeartbeatAt": "2026-05-08T12:20:43Z",
+  "currentStage": "execute",
+  "phase": {
+    "number": "1",
+    "title": "Phase 01: Regression Fixtures and Clock Contract (v1)"
+  },
+  "actionablePhasesRemaining": 5,
+  "completionStatus": "failed",
+  "returnBoundary": "dispatch-stop",
+  "stopReasonCode": "delegated-terminal-exit-1",
+  "stopReasonDetail": "delegated-terminal exited with code 1",
+  "unavailableCapabilities": [],
+  "finishedAt": "2026-05-08T12:20:43Z"
+}
