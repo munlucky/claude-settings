@@ -27,11 +27,17 @@ test('reconciler supersedes failed delegated workflow state and mirrors fallback
       const payload = readJson(path.join(fixture.workflowDir, basename));
       assert.equal(payload.status, 'superseded-by-local-fallback', basename);
       assert.equal(payload.completionStatus, 'completed-via-local-fallback', basename);
+      assert.equal(payload.executionBoundary, 'delegated-terminal', basename);
+      assert.equal(payload.returnBoundary, 'local-fallback', basename);
+      assert.equal(payload.fallbackReason, 'phase-02-test', basename);
+      assert.equal(payload.originalWorkerExitCode, '1', basename);
+      assert.equal(payload.originalStopReason, 'delegated-terminal-exit-1', basename);
       assert.equal(payload.fallbackRunId, 'local-fallback-complete-run', basename);
       assert.equal(payload.supersededRunLeaseId, 'delegated-failed-run', basename);
       assert.equal(payload.supersededAt, fixture.fixedNow, basename);
       assert.equal(payload.completionBoundary, 'phase_only', basename);
       assert.equal(payload.localFallbackCompletion.completionStatus, 'completed-via-local-fallback', basename);
+      assert.equal(payload.localFallbackCompletion.returnBoundary, 'local-fallback', basename);
     }
 
     const fallback = readJson(path.join(fixture.workflowDir, 'local-fallback-complete-run.json'));
@@ -119,12 +125,14 @@ function writeFixture(root) {
       executionMode: 'delegated-terminal',
       failureClass: 'delegated_terminal_failed',
       stopReasonCode: 'delegated-terminal-exit-1',
+      exitCode: 1,
       fallbackRunId: 'local-fallback-complete-run',
       phaseRunLease: {
         runLeaseId: 'delegated-failed-run',
         status: 'failed',
         completionStatus: 'failed',
         stopReasonCode: 'delegated-terminal-exit-1',
+        exitCode: 1,
       },
     }, null, 2));
   }

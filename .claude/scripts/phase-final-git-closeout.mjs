@@ -237,6 +237,40 @@ function collectIgnoredEvidence(repoRoot) {
   };
 }
 
+function collectTrackedEvidence(repoRoot) {
+  const patterns = [
+    '.claude/docs/phase-status.yaml',
+    '.claude/verification-verdict-*.json',
+    '.claude/verification-results-*.json',
+  ];
+  const result = runGit(['ls-files', ...patterns], repoRoot);
+  if (result.status !== 0 || result.error) {
+    return [];
+  }
+  return result.stdout
+    .split(/\r?\n/)
+    .map((entry) => normalizePath(entry.trim()))
+    .filter(Boolean)
+    .map((entry) => ({ path: entry, source: 'git-ls-files' }));
+}
+
+function collectLineEndingWarnings(repoRoot) {
+  const warnings = [];
+  const autocrlf = runGit(['config', '--get', 'core.autocrlf'], repoRoot);
+  const autocrlfValue = autocrlf.status === 0 ? String(autocrlf.stdout || '').trim() : '';
+  const attributesPath = path.join(repoRoot, '.gitattributes');
+  if (autocrlfValue.toLowerCase() === 'true') {
+    warnings.push({
+      code: 'line_ending.autocrlf_true',
+      severity: 'warning',
+      detail: 'core.autocrlf=true may create LF/CRLF churn on generated harness files.',
+      coreAutocrlf: autocrlfValue,
+      gitattributesPresent: fs.existsSync(attributesPath),
+    });
+  }
+  return warnings;
+}
+
 function parseWorktreeList(text) {
   const entries = [];
   let current = null;
@@ -467,6 +501,9 @@ function audit() {
   const worktreeRoots = state.worktreeRoots.length > 0 ? state.worktreeRoots : DEFAULT_WORKTREE_ROOTS;
   const mainStatus = gitStatus(repoRoot);
   const ignoredEvidence = collectIgnoredEvidence(repoRoot);
+  const trackedEvidence = collectTrackedEvidence(repoRoot);
+  const runtimeOnlyEvidence = ignoredEvidence.ok ? ignoredEvidence.entries : [];
+  const lineEndingWarnings = collectLineEndingWarnings(repoRoot);
   const repoHead = runRequiredGit(['rev-parse', 'HEAD'], repoRoot);
   const environmentWarnings = dedupeWarnings([
     ...(mainStatus.environmentWarnings || []),
@@ -564,6 +601,9 @@ function audit() {
     clean: issues.length === 0,
     stageableEntries,
     environmentWarnings,
+    lineEndingWarnings,
+    trackedEvidence,
+    runtimeOnlyEvidence,
     ignoredEvidence: ignoredEvidence.ok ? ignoredEvidence.entries : [],
     deniedEntries: deniedEntries.concat(ignoredEvidence.deniedEntries || []),
     issues,

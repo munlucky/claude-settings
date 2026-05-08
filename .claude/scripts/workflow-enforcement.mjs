@@ -2,10 +2,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
+import { collectGitStatusPaths, isInsideGitWorkTree } from './lib/git-utils.mjs';
 import {
   CANONICAL_CLOSEOUT_REASONS,
   CANONICAL_NEXT_PATHS,
@@ -67,18 +67,10 @@ function collectCandidateFiles(args) {
   if (args.length > 0) {
     return args;
   }
-  const inside = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { encoding: 'utf8' });
-  if (inside.error || (inside.status ?? 1) !== 0) {
+  if (!isInsideGitWorkTree(process.cwd())) {
     return [];
   }
-  const status = spawnSync('git', ['-c', 'core.autocrlf=true', 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
-  if (status.error || (status.status ?? 1) !== 0) {
-    return [];
-  }
-  return status.stdout.split(/\r?\n/).map((line) => {
-    const trimmed = line.replace(/^.. /, '');
-    return trimmed.includes(' -> ') ? trimmed.split(' -> ').at(-1) : trimmed;
-  }).map((item) => item.trim()).filter(Boolean);
+  return collectGitStatusPaths(process.cwd());
 }
 
 function parseArgs(argv, specs) {

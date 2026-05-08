@@ -17,7 +17,15 @@ const VALID_BLOCKER_CLASSES = new Set([
   'missing_evidence',
   'contract_violation',
 ]);
-const VERDICT_IDENTITY_KEYS = ['runLeaseId', 'planDir', 'statusFile', 'gitTreeFingerprint'];
+const VERDICT_IDENTITY_KEYS = [
+  'runLeaseId',
+  'activePhaseDocPath',
+  'masterPlan',
+  'planDir',
+  'statusFile',
+  'gitTreeFingerprint',
+];
+const FUTURE_VERDICT_TOLERANCE_MS = 5000;
 
 function stableJson(value) {
   if (Array.isArray(value)) {
@@ -48,11 +56,15 @@ function normalizeIdentityPath(value) {
   return text ? path.resolve(text) : '';
 }
 
-function resolveGitTreeFingerprint(root = '') {
+export function resolveGitTreeFingerprint(root = '') {
   const candidate = normalizeIdentityText(root) || process.cwd();
-  const result = spawnSync('git', ['-C', candidate, 'rev-parse', 'HEAD^{tree}'], {
+  const result = spawnSync('git', ['-c', `safe.directory=${candidate}`, '-c', 'core.editor=true', '-C', candidate, 'rev-parse', 'HEAD^{tree}'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
+    env: {
+      ...process.env,
+      GIT_EDITOR: 'true',
+    },
   });
   if (result.error || (result.status ?? 0) !== 0) {
     return '';
@@ -122,7 +134,7 @@ function pathMatchesActivePhase(candidatePath, activePhaseNumber = null) {
 function normalizeVerdictIdentitySource(source = {}) {
   const identity = {};
   for (const key of VERDICT_IDENTITY_KEYS) {
-    const value = key === 'planDir' || key === 'statusFile'
+    const value = ['activePhaseDocPath', 'masterPlan', 'planDir', 'statusFile'].includes(key)
       ? normalizeIdentityPath(source[key])
       : normalizeIdentityText(source[key]);
     if (value) {
@@ -144,12 +156,14 @@ function resolveIdentityOptions(options = {}) {
     let value = source[key];
     if (value === undefined || value === null || value === '') {
       if (key === 'runLeaseId') value = process.env.PHASE_RUN_LEASE_ID;
+      if (key === 'activePhaseDocPath') value = process.env.PHASE_ACTIVE_PHASE_DOC_PATH || options.activePhaseDocPath;
+      if (key === 'masterPlan') value = process.env.PHASE_MASTER_PLAN || options.masterPlan;
       if (key === 'planDir') value = process.env.PHASE_PLAN_DIR || options.planDir;
       if (key === 'statusFile') value = process.env.PHASE_STATUS_FILE || options.statusFile;
       if (key === 'gitTreeFingerprint') value = process.env.PHASE_GIT_TREE_FINGERPRINT || resolveGitTreeFingerprint(options.gitTreeRoot || process.env.PHASE_GIT_TREE_ROOT || options.planDir || process.env.PHASE_PLAN_DIR || '');
     }
 
-    const normalized = key === 'planDir' || key === 'statusFile'
+    const normalized = ['activePhaseDocPath', 'masterPlan', 'planDir', 'statusFile'].includes(key)
       ? normalizeIdentityPath(value)
       : normalizeIdentityText(value);
     if (normalized) {
@@ -203,6 +217,13 @@ function resolveVerdictStaleReason(entry = {}, options = {}) {
   }
   if (normalized.stale) {
     return normalized.staleReason || 'payload-stale';
+  }
+  if (options.now && payload.generatedAt) {
+    const generatedAt = Date.parse(String(payload.generatedAt));
+    const nowAt = Date.parse(String(options.now));
+    if (Number.isFinite(generatedAt) && Number.isFinite(nowAt) && generatedAt > nowAt + FUTURE_VERDICT_TOLERANCE_MS) {
+      return 'generatedAt-in-future';
+    }
   }
 
   return '';
@@ -581,6 +602,8 @@ function printAssignments(result) {
 function selfTest() {
   const activeIdentity = {
     runLeaseId: 'lease-a',
+    activePhaseDocPath: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/phase-02.md',
+    masterPlan: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/master.md',
     planDir: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07',
     statusFile: '/workspace/.claude/docs/phase-status.yaml',
     gitTreeFingerprint: 'tree-a',
@@ -605,6 +628,20 @@ function selfTest() {
     identity: {
       ...activeIdentity,
       planDir: '/workspace/plans/other-phase',
+    },
+  };
+  const mismatchedActivePhaseDocPayload = {
+    ...stalePhasePayload,
+    identity: {
+      ...activeIdentity,
+      activePhaseDocPath: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/phase-03.md',
+    },
+  };
+  const mismatchedMasterPlanPayload = {
+    ...stalePhasePayload,
+    identity: {
+      ...activeIdentity,
+      masterPlan: '/workspace/plans/other-master.md',
     },
   };
   const mismatchedStatusPayload = {
@@ -684,7 +721,11 @@ function selfTest() {
     requiredChecks: { missing: ['verification-verdict-path'] },
   }).fingerprint);
   assert.equal(resolveVerdictStaleReason({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-mismatch:runLeaseId');
+  assert.equal(resolveVerdictStaleReason({ payload: mismatchedActivePhaseDocPayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-mismatch:activePhaseDocPath');
+  assert.equal(resolveVerdictStaleReason({ payload: mismatchedMasterPlanPayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-mismatch:masterPlan');
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedActivePhaseDocPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedMasterPlanPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedPlanPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedStatusPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedTreePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);

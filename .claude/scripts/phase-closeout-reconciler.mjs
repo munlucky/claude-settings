@@ -71,6 +71,15 @@ function resolveRunId(payload = {}) {
     || '';
 }
 
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+  return '';
+}
+
 function appendDebugLog(root, event, details) {
   const logPath = resolvePath(path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl'), root);
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
@@ -85,10 +94,49 @@ function appendDebugLog(root, event, details) {
 
 function reconcilePayload(payload, config) {
   const supersededRunLeaseId = resolveRunId(payload);
+  const executionBoundary = String(firstPresent(
+    config.executionBoundary,
+    payload.executionBoundary,
+    payload.executionMode,
+    payload.phaseRunLease?.executionBoundary,
+    payload.phaseRunLease?.executionMode,
+    'delegated-terminal',
+  ));
+  const returnBoundary = String(firstPresent(
+    config.returnBoundary,
+    payload.returnBoundary,
+    payload.phaseRunLease?.returnBoundary,
+    config.completionBoundary,
+    'local-fallback',
+  ));
+  const fallbackReason = String(firstPresent(config.fallbackReason, config.reason, payload.fallbackReason, payload.stopReasonCode, 'local-fallback-closeout'));
+  const originalWorkerExitCode = String(firstPresent(
+    config.originalWorkerExitCode,
+    payload.originalWorkerExitCode,
+    payload.exitCode,
+    payload.workerExitCode,
+    payload.phaseRunLease?.originalWorkerExitCode,
+    payload.phaseRunLease?.exitCode,
+  ));
+  const originalStopReason = String(firstPresent(
+    config.originalStopReason,
+    payload.originalStopReason,
+    payload.stopReasonCode,
+    payload.stopReasonDetail,
+    payload.phaseRunLease?.originalStopReason,
+    payload.phaseRunLease?.stopReasonCode,
+  ));
   const next = {
     ...payload,
     status: 'superseded-by-local-fallback',
     completionStatus: 'completed-via-local-fallback',
+    executionBoundary,
+    returnBoundary,
+    fallbackReason,
+    originalWorkerExitCode,
+    originalStopReason,
+    originalStatus: firstPresent(payload.originalStatus, payload.status),
+    originalCompletionStatus: firstPresent(payload.originalCompletionStatus, payload.completionStatus),
     fallbackRunId: config.fallbackRunId,
     supersededRunLeaseId,
     supersededAt: config.supersededAt,
@@ -100,6 +148,12 @@ function reconcilePayload(payload, config) {
       reason: config.reason,
       completedAt: config.supersededAt,
       completionBoundary: config.completionBoundary,
+      executionBoundary,
+      returnBoundary,
+      fallbackReason,
+      originalWorkerExitCode,
+      originalStopReason,
+      supersededRunLeaseId,
     },
   };
 
@@ -111,8 +165,12 @@ function reconcilePayload(payload, config) {
       fallbackRunId: config.fallbackRunId,
       supersededRunLeaseId,
       supersededAt: config.supersededAt,
+      executionBoundary,
+      returnBoundary,
+      fallbackReason,
+      originalWorkerExitCode,
+      originalStopReason,
       stopReasonCode: next.phaseRunLease.stopReasonCode || config.reason,
-      returnBoundary: next.phaseRunLease.returnBoundary || config.completionBoundary,
     };
   }
 
@@ -162,8 +220,13 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
     const { next, supersededRunLeaseId } = reconcilePayload(value || {}, {
       fallbackRunId,
       reason,
+      fallbackReason: rawConfig.fallbackReason || reason,
       supersededAt,
       completionBoundary,
+      executionBoundary: rawConfig.executionBoundary || '',
+      returnBoundary: rawConfig.returnBoundary || 'local-fallback',
+      originalWorkerExitCode: rawConfig.originalWorkerExitCode || '',
+      originalStopReason: rawConfig.originalStopReason || '',
     });
     writeJsonAtomic(filePath, next);
     reconciledFiles.push(path.relative(root, filePath).replace(/\\/g, '/'));
@@ -222,6 +285,21 @@ function parseArgs(argv) {
       case '--reason':
         result.reason = args.shift() || '';
         break;
+      case '--fallback-reason':
+        result.fallbackReason = args.shift() || '';
+        break;
+      case '--execution-boundary':
+        result.executionBoundary = args.shift() || '';
+        break;
+      case '--return-boundary':
+        result.returnBoundary = args.shift() || '';
+        break;
+      case '--original-worker-exit-code':
+        result.originalWorkerExitCode = args.shift() || '';
+        break;
+      case '--original-stop-reason':
+        result.originalStopReason = args.shift() || '';
+        break;
       case '--now':
         result.now = args.shift() || '';
         break;
@@ -248,6 +326,11 @@ Options:
   --workflow-dir <path>      Default: ${DEFAULT_WORKFLOW_DIR}
   --fallback-run-id <id>     Local fallback run id to record
   --reason <reason>          Default: local-fallback-closeout
+  --fallback-reason <reason> Stable fallback reason field
+  --execution-boundary <name> Original worker boundary, default delegated-terminal
+  --return-boundary <name>   Return boundary, default local-fallback
+  --original-worker-exit-code <code>
+  --original-stop-reason <reason>
   --now <iso>                Deterministic timestamp for tests
   --root <path>              Repository root for relative paths
 `);

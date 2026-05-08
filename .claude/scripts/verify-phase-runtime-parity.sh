@@ -60,8 +60,8 @@ checksum_file() {
 snapshot_git_status() {
   local repo_root="$1"
   local output_file="$2"
-  if (cd "$repo_root" && git rev-parse --is-inside-work-tree >/dev/null 2>&1); then
-    (cd "$repo_root" && git status --porcelain --untracked-files=all > "$output_file")
+  if (cd "$repo_root" && git -c "safe.directory=$repo_root" -c core.editor=true rev-parse --is-inside-work-tree >/dev/null 2>&1); then
+    (cd "$repo_root" && GIT_EDITOR="${GIT_EDITOR:-true}" git -c "safe.directory=$repo_root" -c core.editor=true status --porcelain --untracked-files=all > "$output_file")
   else
     : > "$output_file"
   fi

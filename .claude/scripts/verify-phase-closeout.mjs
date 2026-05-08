@@ -11,6 +11,10 @@ import {
 } from './artifact-normalizer.mjs';
 import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
 import { evaluatePathAuthority } from './lib/path-authority.mjs';
+import {
+  isRelevantVerificationVerdict,
+  resolveGitTreeFingerprint,
+} from './verification-verdict-state.mjs';
 
 const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
@@ -206,7 +210,18 @@ function scorecardDone(scorecardText) {
     || /Current task status:\s*FULL/i.test(scorecardText);
 }
 
-function readVerdictForPhase(phaseNumber) {
+function buildVerdictIdentity({ phase = {}, statusRoot = {}, statusPath = '', planDir = '', masterPlan = '' } = {}) {
+  return {
+    runLeaseId: statusRoot.activeRunLeaseId || statusRoot.lastRunLeaseId || '',
+    activePhaseDocPath: phase.plan || phase.phaseDocPath || phase.docPath || '',
+    masterPlan: masterPlan ? path.resolve(masterPlan) : '',
+    planDir: planDir ? path.resolve(planDir) : '',
+    statusFile: statusPath ? path.resolve(statusPath) : '',
+    gitTreeFingerprint: resolveGitTreeFingerprint(process.cwd()),
+  };
+}
+
+function readVerdictForPhase(phaseNumber, context = {}) {
   const phaseId = String(phaseNumber).padStart(2, '0');
   const verdictPath = path.resolve(process.cwd(), `.claude/verification-verdict-phase${phaseId}-final.json`);
   if (!fs.existsSync(verdictPath)) {
@@ -215,7 +230,22 @@ function readVerdictForPhase(phaseNumber) {
 
   try {
     const parsed = JSON.parse(fs.readFileSync(verdictPath, 'utf8'));
-    return { path: verdictPath, exists: true, parsed };
+    const relevant = isRelevantVerificationVerdict(
+      { payload: parsed, filePath: verdictPath },
+      {
+        activePhaseNumber: Number.parseInt(String(phaseNumber), 10),
+        candidatePath: verdictPath,
+        identity: buildVerdictIdentity(context),
+        now: context.now || '',
+      },
+    );
+    return {
+      path: verdictPath,
+      exists: true,
+      parsed,
+      relevant,
+      staleReason: relevant ? '' : 'stale-or-mismatched-verdict',
+    };
   } catch (error) {
     return { path: verdictPath, exists: true, parseError: error.message };
   }
@@ -223,6 +253,9 @@ function readVerdictForPhase(phaseNumber) {
 
 function verdictPassed(verdict) {
   if (!verdict.exists || verdict.parseError) {
+    return false;
+  }
+  if (verdict.relevant === false) {
     return false;
   }
   const parsed = verdict.parsed || {};
@@ -427,6 +460,33 @@ function isFailedWorkflowState(payload = {}) {
   return fields.some((value) => value.includes('failed') || value.includes('failure'));
 }
 
+function runningWorkflowStateViolationCode(basename) {
+  switch (basename) {
+    case 'current-run.json':
+      return 'current-run-running-phase-completed';
+    case 'active-phase-run.json':
+      return 'active-phase-run-running-phase-completed';
+    case 'latest-dispatch.json':
+      return 'latest-dispatch-running-phase-completed';
+    default:
+      return 'workflow-state-running-phase-completed';
+  }
+}
+
+function isRunningWorkflowState(payload = {}) {
+  if (!payload || isSupersededByLocalFallback(payload)) {
+    return false;
+  }
+  const fields = [
+    payload.status,
+    payload.completionStatus,
+    payload.activeExecutionStatus,
+    payload.phaseRunLease?.status,
+    payload.phaseRunLease?.completionStatus,
+  ].map((value) => String(value || '').toLowerCase());
+  return fields.some((value) => ['running', 'active', 'in_progress'].includes(value));
+}
+
 function isCompletedLocalFallback(payload = {}) {
   if (!payload) {
     return false;
@@ -452,6 +512,17 @@ function sessionHasTaskComplete(filePath) {
   return /task_complete/i.test(readText(filePath));
 }
 
+function addFutureTimestampViolation(violations, label, value, now, phaseNumber = null) {
+  if (!now || !value) {
+    return;
+  }
+  const timestamp = new Date(value).getTime();
+  const nowAt = new Date(now).getTime();
+  if (Number.isFinite(timestamp) && Number.isFinite(nowAt) && timestamp > nowAt + FUTURE_TIMESTAMP_TOLERANCE_MS) {
+    addViolation(violations, 'future-timestamp', `${label} is more than 5 seconds later than verifier clock.`, phaseNumber);
+  }
+}
+
 function inspectWorkflowCloseoutDrift({
   statusRoot,
   statusText,
@@ -474,6 +545,20 @@ function inspectWorkflowCloseoutDrift({
     }))
     .filter((entry) => entry.payload);
   const failedWorkflowStates = workflowStates.filter((entry) => isFailedWorkflowState(entry.payload));
+  const runningWorkflowStates = workflowStates.filter((entry) => isRunningWorkflowState(entry.payload));
+
+  for (const key of ['updatedAt', 'activeExecutionHeartbeatAt', 'lastExecutionHeartbeatAt']) {
+    addFutureTimestampViolation(violations, `phase-status ${key}`, statusRoot[key], now);
+  }
+
+  for (const { basename, payload } of workflowStates) {
+    for (const key of ['updatedAt', 'lastHeartbeatAt']) {
+      addFutureTimestampViolation(violations, `${basename} ${key}`, payload[key], now);
+    }
+    for (const key of ['updatedAt', 'lastHeartbeatAt']) {
+      addFutureTimestampViolation(violations, `${basename} phaseRunLease.${key}`, payload.phaseRunLease?.[key], now);
+    }
+  }
 
   for (const { basename, payload } of failedWorkflowStates) {
     const fallbackRunId = payload.fallbackRunId || payload.localFallbackCompletion?.runId || '';
@@ -485,18 +570,19 @@ function inspectWorkflowCloseoutDrift({
     addViolation(violations, workflowStateViolationCode(basename), `${basename} is failed while phase-status contains completed phase state.`);
   }
 
+  if (completedPhases.length > 0) {
+    for (const { basename } of runningWorkflowStates) {
+      addViolation(violations, runningWorkflowStateViolationCode(basename), `${basename} is still running while phase-status contains completed phase state.`);
+    }
+  }
+
   const activeRunLeaseId = statusRoot.activeRunLeaseId || '';
   for (const phase of completedPhases) {
     if (activeRunLeaseId || phase.activeRunLeaseId) {
       addViolation(violations, 'stale-active-run-lease', `Completed phase ${phase.number} keeps active run lease state.`, phase.number);
     }
-    if (now && phase.completedAt) {
-      const completedAt = new Date(phase.completedAt).getTime();
-      const nowAt = new Date(now).getTime();
-      if (Number.isFinite(completedAt) && Number.isFinite(nowAt) && completedAt > nowAt + FUTURE_TIMESTAMP_TOLERANCE_MS) {
-        addViolation(violations, 'future-timestamp', `Completed phase ${phase.number} has completedAt more than 5 seconds later than verifier clock.`, phase.number);
-      }
-    }
+    addFutureTimestampViolation(violations, `Completed phase ${phase.number} completedAt`, phase.completedAt, now, phase.number);
+    addFutureTimestampViolation(violations, `Completed phase ${phase.number} updatedAt`, phase.updatedAt, now, phase.number);
   }
 
   const sessionFiles = collectSessionFiles({
@@ -610,9 +696,19 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       }
     }
 
-    const verdict = readVerdictForPhase(phaseNumber);
+    const verdict = readVerdictForPhase(phaseNumber, {
+      phase,
+      statusRoot: statusDocument.root,
+      statusPath,
+      planDir,
+      masterPlan: masterPath,
+      now: config.now || '',
+    });
     if (verdict.exists && !verdict.parseError && !verdictInternallyConsistent(verdict.parsed || {})) {
       addViolation(violations, 'verification-verdict-inconsistent', `Completed phase ${phaseNumber} has contradictory verdict fields at ${path.relative(process.cwd(), verdict.path)}.`, phaseNumber);
+    }
+    if (verdict.exists && verdict.relevant === false) {
+      addViolation(violations, 'verification-verdict-stale', `Completed phase ${phaseNumber} has stale or mismatched verdict identity at ${path.relative(process.cwd(), verdict.path)}.`, phaseNumber);
     }
     if (!verdictPassed(verdict)) {
       addViolation(violations, 'verification-verdict-not-passed', `Completed phase ${phaseNumber} does not have a passing fresh verdict at ${path.relative(process.cwd(), verdict.path)}.`, phaseNumber);

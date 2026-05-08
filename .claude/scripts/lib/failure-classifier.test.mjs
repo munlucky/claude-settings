@@ -84,12 +84,15 @@ function testGitAndNetworkCodes() {
   const git = classifyFailure({ name: 'git.version', status: 'warning', detail: 'spawnSync git EPERM' });
   const queueSmoke = classifyFailure({ name: 'npm.queue-smoke', status: 'warning', detail: 'npm queue-smoke failed: spawnSync git EPERM' });
   const gitIgnoreWarning = classifyFailure({ name: 'git.warning', status: 'warning', detail: "warning: unable to access 'C:\\Users\\moon/.config/git/ignore': Permission denied" });
+  const sandboxProvider = classifyFailure({ name: 'provider.smoke', status: 'warning', detail: 'E_PROVIDER_NETWORK websocket os error 10013 blocked by sandbox' });
   const network = classifyFailure({ name: 'network.fetch', status: 'warning', detail: 'fetch failed: ENOTFOUND' });
 
   assert.equal(git.code, 'git_eperm');
   assert.equal(queueSmoke.code, 'npm_queue_smoke_git_eperm');
   assert.equal(gitIgnoreWarning.code, 'safe_git_ignore_permission_warning');
   assert.equal(gitIgnoreWarning.blocker, false);
+  assert.equal(sandboxProvider.code, 'sandbox_network_boundary_candidate');
+  assert.equal(sandboxProvider.blocker, false);
   assert.equal(network.code, 'network_fetch_failed');
   assert.equal(network.decision, 'host_fallback');
   assert.equal(decisionForFailureCode('git_eperm'), 'resume_later_handoff');

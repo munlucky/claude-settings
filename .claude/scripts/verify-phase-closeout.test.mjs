@@ -143,6 +143,14 @@ test('phase closeout fails when completed status keeps a stale activeRunLeaseId'
   });
 });
 
+test('phase closeout fails when current-run is still running after phase completion', () => {
+  withFixture({ currentRunRunningPhaseCompleted: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'current-run-running-phase-completed');
+  });
+});
+
 test('phase closeout fails deterministically for timestamps beyond the injected clock tolerance', () => {
   withFixture({ futureTimestamp: true, fixedNow: '2026-05-08T12:00:00.000Z' }, (root) => {
     const result = evaluatePhaseCloseout({
@@ -151,6 +159,25 @@ test('phase closeout fails deterministically for timestamps beyond the injected 
     });
 
     assertCloseoutViolation(result, 'future-timestamp');
+  });
+});
+
+test('phase closeout fails for future workflow timestamps', () => {
+  withFixture({ workflowFutureTimestamp: true }, (root) => {
+    const result = evaluatePhaseCloseout({
+      ...config(root),
+      now: '2026-05-08T12:00:00.000Z',
+    });
+
+    assertCloseoutViolation(result, 'future-timestamp');
+  });
+});
+
+test('phase closeout ignores stale verdict identity for older phase context', () => {
+  withFixture({ staleVerdictIdentity: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'verification-verdict-stale');
   });
 });
 
@@ -331,8 +358,11 @@ function writeFixture(root, options = {}) {
     activePhaseRunFailedPhaseCompleted: false,
     latestDispatchFailedPhaseCompleted: false,
     supersededLocalFallbackWorkflowState: false,
+    currentRunRunningPhaseCompleted: false,
     staleActiveRunLeaseId: false,
     futureTimestamp: false,
+    workflowFutureTimestamp: false,
+    staleVerdictIdentity: false,
     fixedNow: '2026-05-08T12:00:00.000Z',
     sessionTaskCompleteWorkflowFailed: false,
     environmentBlockedSmokePlanComplete: false,
@@ -399,6 +429,7 @@ function writeFixture(root, options = {}) {
         '    evidencePath: ".claude/logs/workflow-enforcement/environment-blocked-smoke.json"',
         '    observedAt: "2026-05-08T12:00:00Z"',
       ] : []),
+      ...(settings.workflowFutureTimestamp ? ['updatedAt: "2026-05-08T12:00:06.000Z"'] : []),
       ...(settings.staleActiveRunLeaseId ? ['activeRunLeaseId: "delegated-failed-run"'] : []),
       'phases:',
       '  - number: 1',
@@ -421,6 +452,8 @@ function writeFixture(root, options = {}) {
     || settings.activePhaseRunFailedPhaseCompleted
     || settings.latestDispatchFailedPhaseCompleted
     || settings.supersededLocalFallbackWorkflowState
+    || settings.currentRunRunningPhaseCompleted
+    || settings.workflowFutureTimestamp
     || settings.sessionTaskCompleteWorkflowFailed
     || settings.environmentBlockedSmokePlanComplete
   ) {
@@ -429,7 +462,9 @@ function writeFixture(root, options = {}) {
 
     const failedPayload = {
         runId: 'delegated-failed-run',
-        status: settings.currentRunFailedPhaseCompleted || settings.sessionTaskCompleteWorkflowFailed ? 'failed' : 'completed',
+        status: settings.currentRunRunningPhaseCompleted ? 'running' : (settings.currentRunFailedPhaseCompleted || settings.sessionTaskCompleteWorkflowFailed ? 'failed' : 'completed'),
+        updatedAt: settings.workflowFutureTimestamp ? '2026-05-08T12:00:06.000Z' : undefined,
+        lastHeartbeatAt: settings.workflowFutureTimestamp ? '2026-05-08T12:00:06.000Z' : undefined,
         failureClass: settings.delegatedFailedLocalFallbackCompleted ? 'delegated_terminal_failed' : undefined,
         fallbackRunId: settings.delegatedFailedLocalFallbackCompleted ? 'local-fallback-complete-run' : undefined,
         activeRunLeaseId: settings.staleActiveRunLeaseId ? 'delegated-failed-run' : undefined,
@@ -630,6 +665,13 @@ function writeFixture(root, options = {}) {
       evidenceFresh: true,
       blocking: settings.inconsistentVerdict,
       score: { verdict: settings.inconsistentVerdict ? 'blocked' : 'done' },
+      ...(settings.staleVerdictIdentity ? {
+        identity: {
+          runLeaseId: 'old-run',
+          planDir: path.join(root, 'docs/old-implementation'),
+          statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+        },
+      } : {}),
     }, null, 2)
   );
 }

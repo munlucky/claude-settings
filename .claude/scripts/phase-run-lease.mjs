@@ -26,6 +26,7 @@ const SUCCESS_STOP_REASON_CODES = new Set([
   'clean_finish',
   'current-session-clean-finish',
 ]);
+const STALE_LEASE_STATUSES = new Set(['stale', 'superseded-by-local-fallback']);
 
 function resolveStatusFile(statusFile) {
   if (!statusFile) {
@@ -103,6 +104,41 @@ function parseAssignments(text) {
   return values;
 }
 
+function staleSeconds() {
+  return Number.parseInt(process.env.PHASE_RUN_LEASE_STALE_SECONDS ?? '14400', 10) || 14400;
+}
+
+function processExists(pid) {
+  const parsed = Number.parseInt(String(pid || '').trim(), 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return true;
+  }
+  try {
+    process.kill(parsed, 0);
+    return true;
+  } catch (error) {
+    return error && error.code === 'EPERM';
+  }
+}
+
+function hasLocalFallbackCompletion(payload = {}) {
+  const completion = payload.localFallbackCompletion;
+  return payload.completionStatus === 'completed-via-local-fallback'
+    || payload.returnBoundary === 'local-fallback'
+    || (completion && typeof completion === 'object' && String(completion.completionStatus || '').includes('fallback'));
+}
+
+function staleLeaseReason(payload = {}, currentMs = nowMs()) {
+  if (!processExists(payload.dispatcherPid)) {
+    return 'dead-dispatcher-pid';
+  }
+  const heartbeatAt = parseIsoTimestamp(payload.lastHeartbeatAt);
+  if (Number.isNaN(heartbeatAt) || currentMs - heartbeatAt > staleSeconds() * 1000) {
+    return 'stale-heartbeat-ttl';
+  }
+  return '';
+}
+
 async function runtimeStateAssignments(command, args) {
   try {
     switch (command) {
@@ -145,9 +181,9 @@ async function runtimeStateAssignments(command, args) {
         } : null;
       }
       case 'finish-lease': {
-        const [statusFile, leaseId, returnBoundary = '', stopReasonCode = '', stopReasonDetail = '', completionStatus = ''] = args;
+        const [statusFile, leaseId, returnBoundary = '', stopReasonCode = '', stopReasonDetail = '', completionStatus = '', finalStatus = ''] = args;
         const result = await withDb((db) => {
-          const payload = finishRuntimeLease(db, { statusFile, leaseId, returnBoundary, stopReasonCode, stopReasonDetail, completionStatus });
+          const payload = finishRuntimeLease(db, { statusFile, leaseId, returnBoundary, stopReasonCode, stopReasonDetail, completionStatus, finalStatus });
           if (payload) exportStatusMirror(db, statusFile);
           return payload;
         });
@@ -468,6 +504,16 @@ function heartbeatLease(config) {
   }
 
   const now = utcTimestamp();
+  const staleReason = staleLeaseReason(existing);
+  if (staleReason) {
+    return closeStaleLease({
+      statusFile,
+      existing,
+      staleReason,
+      closedAt: now,
+    });
+  }
+
   const actionable = countActionablePhases(statusFile || existing.statusFile);
   const payload = {
     ...existing,
@@ -492,6 +538,46 @@ function heartbeatLease(config) {
     activeCurrentStage: payload.currentStage,
     activePhaseNumber: payload.phase.number,
     activePhaseTitle: payload.phase.title,
+  });
+  return payload;
+}
+
+function closeStaleLease({ statusFile, existing, staleReason, closedAt }) {
+  const actionable = countActionablePhases(statusFile || existing.statusFile);
+  const supersededByFallback = hasLocalFallbackCompletion(existing);
+  const payload = {
+    ...existing,
+    status: supersededByFallback ? 'superseded-by-local-fallback' : 'stale',
+    completionStatus: supersededByFallback ? 'completed-via-local-fallback' : 'stale',
+    staleReason,
+    staleAt: closedAt,
+    finishedAt: existing.finishedAt || closedAt,
+    lastHeartbeatAt: existing.lastHeartbeatAt || closedAt,
+    actionablePhasesRemaining: actionable,
+    returnBoundary: supersededByFallback ? 'local-fallback' : (existing.returnBoundary || 'stale-lease-cleanup'),
+    stopReasonCode: staleReason,
+    stopReasonDetail: `Active phase run lease closed by heartbeat cleanup: ${staleReason}`,
+  };
+
+  writeActiveLease(statusFile, payload);
+  updateStatusLease(statusFile || existing.statusFile, {
+    activeRunLeaseId: null,
+    activeExecutionBoundary: null,
+    activeExecutionAttachedAt: null,
+    activeExecutionHeartbeatAt: null,
+    activeExecutionStatus: null,
+    activeActionablePhasesRemaining: actionable,
+    activeCurrentStage: payload.currentStage || 'lease/stale-cleanup',
+    activePhaseNumber: payload.phase?.number || '',
+    activePhaseTitle: payload.phase?.title || '',
+    lastRunLeaseId: payload.runLeaseId,
+    lastExecutionBoundary: payload.executionBoundary,
+    lastExecutionAttachedAt: payload.attachedAt,
+    lastExecutionHeartbeatAt: payload.lastHeartbeatAt || closedAt,
+    lastExecutionStatus: payload.status,
+    lastReturnBoundary: payload.returnBoundary,
+    lastStopReasonCode: payload.stopReasonCode,
+    lastStopReasonDetail: payload.stopReasonDetail,
   });
   return payload;
 }
@@ -645,6 +731,80 @@ function assertReturnAllowedFromFiles(config) {
   };
 }
 
+function selfTest() {
+  const tmpRoot = fs.mkdtempSync(path.join(process.env.TMP || process.env.TEMP || '.', 'phase-run-lease-'));
+  const originalCwd = process.cwd();
+  const originalWorkflowLogDir = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR;
+  try {
+    process.chdir(tmpRoot);
+    fs.mkdirSync(path.join(tmpRoot, '.claude/docs'), { recursive: true });
+    const statusFile = path.join(tmpRoot, '.claude/docs/phase-status.yaml');
+    fs.writeFileSync(statusFile, [
+      'schemaVersion: "1.0"',
+      'phases:',
+      '  - number: 1',
+      '    status: in_progress',
+      '',
+    ].join('\n'), 'utf8');
+
+    const missingPid = '99999999';
+    startLease({
+      statusFile,
+      runLeaseId: 'lease-dead-pid',
+      executionBoundary: 'delegated-terminal',
+      planDir: 'docs/implementation/example',
+      executionRoot: tmpRoot,
+      runtime: 'codex',
+      dispatcherPid: missingPid,
+    });
+    const deadPidResult = heartbeatLease({
+      statusFile,
+      runLeaseId: 'lease-dead-pid',
+      currentStage: 'execute',
+    });
+    if (deadPidResult.status !== 'stale' || deadPidResult.staleReason !== 'dead-dispatcher-pid') {
+      throw new Error('dead dispatcher PID did not close stale lease');
+    }
+
+    const rootText = fs.readFileSync(statusFile, 'utf8');
+    if (/activeRunLeaseId:/.test(rootText)) {
+      throw new Error('stale cleanup did not clear activeRunLeaseId');
+    }
+
+    process.env.PHASE_RUN_LEASE_STALE_SECONDS = '1';
+    startLease({
+      statusFile,
+      runLeaseId: 'lease-ttl',
+      executionBoundary: 'delegated-terminal',
+      planDir: 'docs/implementation/example',
+      executionRoot: tmpRoot,
+      runtime: 'codex',
+      dispatcherPid: '',
+    });
+    const activePath = resolveLeaseFiles(statusFile).activeRunFile;
+    const activePayload = readJson(activePath);
+    activePayload.lastHeartbeatAt = '2026-05-08T00:00:00.000Z';
+    writeJson(activePath, activePayload);
+    const ttlResult = heartbeatLease({
+      statusFile,
+      runLeaseId: 'lease-ttl',
+      currentStage: 'execute',
+    });
+    if (ttlResult.status !== 'stale' || ttlResult.staleReason !== 'stale-heartbeat-ttl') {
+      throw new Error('heartbeat TTL did not close stale lease');
+    }
+  } finally {
+    if (originalWorkflowLogDir === undefined) {
+      delete process.env.WORKFLOW_ENFORCEMENT_LOG_DIR;
+    } else {
+      process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = originalWorkflowLogDir;
+    }
+    delete process.env.PHASE_RUN_LEASE_STALE_SECONDS;
+    process.chdir(originalCwd);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
 function usage() {
   console.error([
     'Usage:',
@@ -652,6 +812,7 @@ function usage() {
     '  phase-run-lease.mjs heartbeat <status-file> <run-lease-id> <current-stage> [phase-num] [phase-title] [completion-status]',
     '  phase-run-lease.mjs finish <status-file> <run-lease-id> <return-boundary> <stop-reason-code> <stop-reason-detail> [completion-status]',
     '  phase-run-lease.mjs assert-return-allowed <status-file> <run-lease-id> <execution-intent> <prepare-only>',
+    '  phase-run-lease.mjs self-test',
   ].join('\n'));
 }
 
@@ -698,14 +859,26 @@ switch (command) {
     };
     const payload = heartbeatLease(config) || {};
     if (payload.runLeaseId) {
-      await runtimeStateAssignments('heartbeat-lease', [
-        resolveStatusFile(config.statusFile),
-        config.runLeaseId,
-        payload.currentStage || '',
-        payload.phase?.number || '',
-        payload.phase?.title || '',
-        payload.completionStatus || '',
-      ]);
+      if (STALE_LEASE_STATUSES.has(payload.status)) {
+        await runtimeStateAssignments('finish-lease', [
+          resolveStatusFile(config.statusFile),
+          config.runLeaseId,
+          payload.returnBoundary || 'stale-lease-cleanup',
+          payload.stopReasonCode || payload.staleReason || 'stale-run-lease',
+          payload.stopReasonDetail || '',
+          payload.completionStatus || '',
+          payload.status || '',
+        ]);
+      } else {
+        await runtimeStateAssignments('heartbeat-lease', [
+          resolveStatusFile(config.statusFile),
+          config.runLeaseId,
+          payload.currentStage || '',
+          payload.phase?.number || '',
+          payload.phase?.title || '',
+          payload.completionStatus || '',
+        ]);
+      }
     }
     printAssignments(payload);
     break;
@@ -728,6 +901,7 @@ switch (command) {
         payload.stopReasonCode || '',
         payload.stopReasonDetail || '',
         payload.completionStatus || '',
+        '',
       ]);
     }
     printAssignments(payload);
@@ -740,6 +914,10 @@ switch (command) {
       executionIntent: args[2],
       prepareOnly: args[3],
     }));
+    break;
+  case 'self-test':
+    selfTest();
+    console.log('phase-run-lease self-test passed');
     break;
   default:
     usage();

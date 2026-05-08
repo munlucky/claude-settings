@@ -682,7 +682,8 @@ export function finishLease(db, config) {
   }
   const rows = db.prepare('SELECT phase_number, status, plan_confirmed FROM phase_runs WHERE goal_id = ? ORDER BY phase_number').all(lease.goal_id);
   const actionable = countActionablePhasesFromRows(rows);
-  const status = actionable === 0 ? 'finished' : 'paused';
+  const requestedFinalStatus = String(config.finalStatus || '').trim();
+  const status = requestedFinalStatus || (actionable === 0 ? 'finished' : 'paused');
   const timestamp = nowMs();
   accountLeaseTime(db, lease, timestamp);
   db.prepare(`
@@ -980,9 +981,9 @@ async function main() {
       return;
     }
     case 'finish-lease': {
-      const [statusFile, leaseId, returnBoundary = '', stopReasonCode = '', stopReasonDetail = '', completionStatus = ''] = args;
+      const [statusFile, leaseId, returnBoundary = '', stopReasonCode = '', stopReasonDetail = '', completionStatus = '', finalStatus = ''] = args;
       const result = await withDb((db) => {
-        const payload = finishLease(db, { statusFile, leaseId, returnBoundary, stopReasonCode, stopReasonDetail, completionStatus });
+        const payload = finishLease(db, { statusFile, leaseId, returnBoundary, stopReasonCode, stopReasonDetail, completionStatus, finalStatus });
         if (payload) exportStatusMirror(db, statusFile);
         return payload;
       });
