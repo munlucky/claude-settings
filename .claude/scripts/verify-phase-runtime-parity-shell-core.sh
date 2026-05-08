@@ -222,6 +222,9 @@ allowed_prefixes = (
     ".claude/verification-results-",
     ".claude/verification-verdict-",
     ".claude/runtime-verdict-",
+    ".claude/browser-flow-verdict-",
+    ".claude/visual-diff-verdict-",
+    ".claude/knowledge-repo-audit-",
     "runtime-parity-fixtures/",
 )
 
@@ -454,6 +457,8 @@ prepare_workspace_copy() {
       --exclude='./.claude/verification-results-*' \
       --exclude='./.claude/verification-verdict-*' \
       --exclude='./.claude/runtime-verdict-*' \
+      --exclude='./.claude/browser-flow-verdict-*' \
+      --exclude='./.claude/visual-diff-verdict-*' \
       --exclude='./.claude/knowledge-repo-audit-*' \
       -cf - .
   ) | (

@@ -10,6 +10,7 @@ __pycache__/
 .claude/.claude/traces/
 .claude/runtime-verdict-*.json
 .claude/browser-flow-verdict-*.json
+.claude/visual-diff-verdict-*.json
 .claude/browser-artifacts/
 .claude/runtime-state.sqlite*
 .claude/worktree-prepare.json

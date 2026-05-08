@@ -12,8 +12,10 @@ const DEFAULT_WORKTREE_ROOTS = [
 ];
 
 const IGNORED_EVIDENCE_PREFIXES = [
+  '.claude/browser-flow-verdict-',
   '.claude/knowledge-repo-audit-',
   '.claude/runtime-verdict-',
+  '.claude/visual-diff-verdict-',
   '.claude/verification-results-',
   '.claude/verification-verdict-',
 ];
