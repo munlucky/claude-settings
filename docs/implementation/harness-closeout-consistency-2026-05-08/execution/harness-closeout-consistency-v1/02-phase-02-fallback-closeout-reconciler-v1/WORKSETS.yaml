@@ -1,0 +1,22 @@
+# Phase 02 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths:
+      - ".claude/scripts/phase-closeout-reconciler.mjs"
+      - ".claude/scripts/phase-closeout-reconciler.test.mjs"
+      - ".claude/scripts/moonshot-phase-dispatch.mjs"
+      - ".claude/scripts/verify-phase-closeout.mjs"
+    verificationCommands:
+      - "node .claude/scripts/phase-closeout-reconciler.test.mjs"
+      - "node .claude/scripts/verify-phase-closeout.test.mjs"
+    evidence:
+      - "phase-closeout-reconciler.test.mjs passed 3/3"
+      - "verify-phase-closeout.test.mjs passed 18/18"
+      - "QA_REPORT.md records SCN-02-1 open -> act -> mutate -> persist -> recover evidence"
+    completedAt: "2026-05-08 21:37:10 +09:00"
+worksets: []

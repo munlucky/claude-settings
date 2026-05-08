@@ -26,6 +26,7 @@ const phaseArtifactsPath = path.join(SCRIPT_DIR, 'agent-loop-phase-artifacts.mjs
 const phaseRunLeasePath = path.join(SCRIPT_DIR, 'phase-run-lease.mjs');
 const runtimeStatePath = path.join(SCRIPT_DIR, 'runtime-state.mjs');
 const finalGitCloseoutPath = path.join(SCRIPT_DIR, 'phase-final-git-closeout.mjs');
+const phaseCloseoutReconcilerPath = path.join(SCRIPT_DIR, 'phase-closeout-reconciler.mjs');
 const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
 const debugLog = path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl');
 
@@ -709,6 +710,45 @@ function finishDispatchLease(returnBoundary, stopReasonCode, stopReasonDetail, c
   return values;
 }
 
+function shouldRunLocalFallbackReconciler(stopReasonCode = '', completionStatus = '') {
+  const marker = `${stopReasonCode} ${completionStatus}`.toLowerCase();
+  return marker.includes('local-fallback') || marker.includes('completed-via-local-fallback');
+}
+
+function runLocalFallbackReconciler(stopReasonCode = '', completionStatus = '') {
+  if (!shouldRunLocalFallbackReconciler(stopReasonCode, completionStatus)) {
+    return null;
+  }
+
+  const args = [
+    phaseCloseoutReconcilerPath,
+    '--status-file', state.statusFile,
+    '--workflow-dir', path.join('.claude', 'logs', 'workflow-enforcement'),
+    '--fallback-run-id', runtimeState.runLeaseId || `dispatch-local-fallback-${Date.now()}`,
+    '--reason', stopReasonCode || 'local-fallback-closeout',
+    '--now', utcTimestamp(),
+  ];
+  const result = runNodeScript(args[0], args.slice(1));
+  let summary = null;
+  try {
+    summary = result.stdout ? JSON.parse(result.stdout) : null;
+  } catch {
+    summary = null;
+  }
+  appendDebugLog('phase-closeout-reconciler-dispatch', {
+    status: result.status ?? 0,
+    stopReasonCode,
+    completionStatus,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    summary,
+  });
+  if ((result.status ?? 0) !== 0) {
+    throw new Error(result.stderr || result.stdout || 'phase closeout reconciler failed');
+  }
+  return summary;
+}
+
 function assertReturnAllowedOrThrow() {
   if (!runtimeState.runLeaseId) {
     throw new Error('missing run lease id before success return');
@@ -815,6 +855,7 @@ function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false
         return;
       }
       assertReturnAllowedOrThrow();
+      runLocalFallbackReconciler(stopReasonCode || 'plan-directory-complete', completionStatus || 'completed');
       finishDispatchLease(returnBoundary || 'success-return', stopReasonCode || 'plan-directory-complete', detail, completionStatus || 'completed');
       setNormalizedRunVerdict('success', 'clean_complete', detail || 'plan directory completed');
       process.exit(0);
@@ -832,6 +873,7 @@ function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false
       normalized.stopReasonClass,
       normalized.stopReasonExplanation,
     );
+    runLocalFallbackReconciler(stopReasonCode || `exit-${exitCode}`, completionStatus || (exitCode === 0 ? 'completed' : 'failed'));
     finishDispatchLease(
       returnBoundary || 'dispatch-stop',
       stopReasonCode || `exit-${exitCode}`,

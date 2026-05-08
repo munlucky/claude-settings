@@ -94,8 +94,9 @@ function resolvePath(rawPath, baseDir = process.cwd()) {
   return path.isAbsolute(cleaned) ? cleaned : path.resolve(baseDir, cleaned);
 }
 
-function parsePhaseStatus(text) {
+function parsePhaseStatusDocument(text) {
   const phases = [];
+  const root = {};
   const lines = normalize(text).split('\n');
   let current = null;
 
@@ -109,13 +110,17 @@ function parsePhaseStatus(text) {
       continue;
     }
 
-    if (!current) {
+    if (current) {
+      const field = line.match(/^ {4}([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
+      if (field) {
+        current[field[1]] = stripQuotes(field[2]);
+      }
       continue;
     }
 
-    const field = line.match(/^ {4}([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
-    if (field) {
-      current[field[1]] = stripQuotes(field[2]);
+    const rootField = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
+    if (rootField) {
+      root[rootField[1]] = stripQuotes(rootField[2]);
     }
   }
 
@@ -123,7 +128,7 @@ function parsePhaseStatus(text) {
     phases.push(current);
   }
 
-  return phases;
+  return { root, phases };
 }
 
 function parseMasterChecklist(text) {
@@ -349,6 +354,108 @@ function addViolation(violations, code, message, phaseNumber = null) {
   violations.push({ code, message, phaseNumber });
 }
 
+function readJsonIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function isSupersededByLocalFallback(payload = {}) {
+  return payload.status === 'superseded-by-local-fallback'
+    || payload.completionStatus === 'completed-via-local-fallback'
+    || payload.localFallbackCompletion?.completionStatus === 'completed-via-local-fallback';
+}
+
+function isFailedWorkflowState(payload = {}) {
+  if (!payload || isSupersededByLocalFallback(payload)) {
+    return false;
+  }
+  const fields = [
+    payload.status,
+    payload.completionStatus,
+    payload.activeExecutionStatus,
+    payload.failureClass,
+    payload.stopReasonCode,
+    payload.phaseRunLease?.status,
+    payload.phaseRunLease?.completionStatus,
+    payload.phaseRunLease?.stopReasonCode,
+  ].map((value) => String(value || '').toLowerCase());
+  return fields.some((value) => value.includes('failed') || value.includes('failure'));
+}
+
+function isCompletedLocalFallback(payload = {}) {
+  if (!payload) {
+    return false;
+  }
+  return payload.status === 'completed'
+    || payload.completionStatus === 'completed-via-local-fallback'
+    || payload.completionBoundary === 'phase_only';
+}
+
+function inspectWorkflowCloseoutDrift({ statusRoot, phases, statusPath, now, violations }) {
+  const completedPhases = phases.filter((phase) => phase.status === 'completed');
+  if (completedPhases.length === 0) {
+    return;
+  }
+
+  const repoRoot = path.dirname(path.dirname(path.dirname(statusPath)));
+  const workflowDir = path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement');
+  const currentRun = readJsonIfExists(path.join(workflowDir, 'current-run.json'));
+
+  if (currentRun) {
+    const fallbackRunId = currentRun.fallbackRunId || currentRun.localFallbackCompletion?.runId || '';
+    const fallbackRun = fallbackRunId ? readJsonIfExists(path.join(workflowDir, `${fallbackRunId}.json`)) : null;
+    if (isFailedWorkflowState(currentRun) && fallbackRun && isCompletedLocalFallback(fallbackRun)) {
+      addViolation(violations, 'delegated-failed-local-fallback-completed', 'Failed delegated-terminal workflow state has an unreconciled completed local fallback run.');
+    }
+    if (isFailedWorkflowState(currentRun)) {
+      addViolation(violations, 'current-run-failed-phase-completed', 'current-run.json is failed while phase-status contains completed phase state.');
+    }
+  }
+
+  const activeRunLeaseId = statusRoot.activeRunLeaseId || '';
+  for (const phase of completedPhases) {
+    if (activeRunLeaseId || phase.activeRunLeaseId) {
+      addViolation(violations, 'stale-active-run-lease', `Completed phase ${phase.number} keeps active run lease state.`, phase.number);
+    }
+    if (now && phase.completedAt) {
+      const completedAt = new Date(phase.completedAt).getTime();
+      const nowAt = new Date(now).getTime();
+      if (Number.isFinite(completedAt) && Number.isFinite(nowAt) && completedAt > nowAt) {
+        addViolation(violations, 'future-timestamp', `Completed phase ${phase.number} has completedAt later than verifier clock.`, phase.number);
+      }
+    }
+  }
+
+  const sessionsDir = path.join(repoRoot, '.claude', 'sessions');
+  if (fs.existsSync(sessionsDir)) {
+    for (const entry of fs.readdirSync(sessionsDir)) {
+      if (!entry.endsWith('.jsonl')) {
+        continue;
+      }
+      const text = readText(path.join(sessionsDir, entry));
+      if (/task_complete/i.test(text) && /"status"\s*:\s*"failed"/i.test(text)) {
+        addViolation(violations, 'session-task-complete-workflow-failed', `Session ${entry} records task_complete while workflow state is failed.`);
+      }
+    }
+  }
+
+  const blockedSmoke = readJsonIfExists(path.join(workflowDir, 'environment-blocked-smoke.json'));
+  if (
+    blockedSmoke
+    && String(blockedSmoke.status || '').toLowerCase() === 'blocked'
+    && String(blockedSmoke.evidenceDepth || '').toLowerCase() === 'smoke_only'
+    && String(blockedSmoke.planStatus || '').toLowerCase() === 'complete'
+  ) {
+    addViolation(violations, 'environment-blocked-smoke-plan-complete', 'Environment-blocked smoke evidence cannot justify completed plan status.');
+  }
+}
+
 export function evaluatePhaseCloseout(rawConfig = {}) {
   const config = {
     statusFile: rawConfig.statusFile || '.claude/docs/phase-status.yaml',
@@ -356,6 +463,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     masterPlan: rawConfig.masterPlan || '',
     masterPlanProvided: rawConfig.masterPlanProvided ?? Object.prototype.hasOwnProperty.call(rawConfig, 'masterPlan'),
     executionRoot: rawConfig.executionRoot || '',
+    now: rawConfig.now || '',
   };
   const pathAuthority = evaluatePathAuthority({
     statusFile: config.statusFile,
@@ -373,7 +481,8 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     phaseNumber: null,
   }));
 
-  const phases = fs.existsSync(statusPath) ? parsePhaseStatus(readText(statusPath)) : [];
+  const statusDocument = fs.existsSync(statusPath) ? parsePhaseStatusDocument(readText(statusPath)) : { root: {}, phases: [] };
+  const phases = statusDocument.phases;
   const checklist = fs.existsSync(masterPath) ? parseMasterChecklist(readText(masterPath)) : new Map();
 
   for (const phase of phases) {
@@ -465,6 +574,14 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), scenarioPath || 'SCENARIO_MATRIX.md')} with verified SCN-* coverage.`, phaseNumber);
     }
   }
+
+  inspectWorkflowCloseoutDrift({
+    statusRoot: statusDocument.root,
+    phases,
+    statusPath,
+    now: config.now,
+    violations,
+  });
 
   const allowed = violations.length === 0;
   return {
