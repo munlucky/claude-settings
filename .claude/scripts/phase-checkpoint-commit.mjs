@@ -129,9 +129,14 @@ function run(command, args, options = {}) {
 }
 
 function git(args, cwd, options = {}) {
-  return run('git', ['-c', `safe.directory=${cwd}`, ...args], {
+  return run('git', ['-c', `safe.directory=${cwd}`, '-c', 'core.editor=true', ...args], {
     cwd,
     ...options,
+    env: {
+      ...process.env,
+      GIT_EDITOR: process.env.GIT_EDITOR || 'true',
+      ...(options.env || {}),
+    },
   });
 }
 

@@ -26,6 +26,12 @@ const worktreeCoordinatorPath = path.join(scriptDir, 'phase-worktree-coordinator
 const logDir = '.claude/logs/agent-loop';
 const decisionLog = path.join(logDir, 'decisions.md');
 const debugLog = path.join(logDir, 'debug.jsonl');
+const phaseStartCapabilityBlockers = new Set([
+  'bash_access_denied',
+  'git_index_denied',
+  'node_spawn_eperm',
+  'spawn_blocked',
+]);
 
 const state = {
   planDir: '',
@@ -663,12 +669,14 @@ function isBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
   return normalized.startsWith('blocked:')
     || normalized === 'verification-preflight-blocked'
+    || normalized === 'capability-preflight-blocked'
     || normalized === 'path-authority-preflight-failed';
 }
 
 function isHardBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
   return normalized === 'verification-preflight-blocked'
+    || normalized === 'capability-preflight-blocked'
     || normalized === 'path-authority-preflight-failed';
 }
 
@@ -684,6 +692,103 @@ function stopBlockedPhase(paths, logFile, detail, stopReason = 'verification-pre
 
 function assessRuntimeHealth(runtime) {
   return nodeAssignments(runtimePath, 'assess-runtime-health', runtime, process.cwd());
+}
+
+function capabilityPreflightCommand() {
+  const result = runNodeScript(runtimeCliPath, ['capability-preflight-command']);
+  if (result.status !== 0) {
+    throw new Error(result.stderr || 'capability preflight command resolution failed');
+  }
+  return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function parseJsonPayload(text) {
+  try {
+    return JSON.parse(text || '{}');
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeProcessArgument(value) {
+  return String(value || '').replace(/\0/g, '').replace(/\r?\n/g, ' ').trim();
+}
+
+function runPhaseStartCapabilityPreflight() {
+  const command = capabilityPreflightCommand();
+  const executable = command.shift();
+  if (!executable) {
+    return {
+      blocked: true,
+      status: 1,
+      artifactPath: '',
+      blockers: [{
+        name: 'capability.preflight',
+        code: 'node_spawn_eperm',
+        detail: 'capability preflight command was empty',
+      }],
+      stdout: '',
+      stderr: '',
+      detail: 'capability preflight command was empty',
+    };
+  }
+  const result = spawnSync(executable, [...command, '--json'], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      WORKSPACE_ROOT: process.cwd(),
+    },
+  });
+  const payload = parseJsonPayload(result.stdout);
+  const currentBlockers = Array.isArray(payload?.currentBlockers) ? payload.currentBlockers : [];
+  const phaseStartBlockers = currentBlockers.filter((entry) => {
+    const code = String(entry.code || entry.failureClass || '').trim();
+    const name = String(entry.name || '').trim();
+    return phaseStartCapabilityBlockers.has(code)
+      || (code === 'command_not_found' && /^(bash|git\.index|node\.spawn)/.test(name));
+  });
+
+  if (phaseStartBlockers.length > 0) {
+    return {
+      blocked: true,
+      status: result.status ?? 0,
+      artifactPath: payload?.artifactPath || '',
+      blockers: phaseStartBlockers,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      detail: [
+        `capability preflight blocked phase start`,
+        payload?.artifactPath ? `artifact=${payload.artifactPath}` : '',
+        ...phaseStartBlockers.map((entry) => sanitizeProcessArgument(`${entry.name || entry.code}: ${entry.detail || entry.fallbackHint || entry.code}`)),
+      ].filter(Boolean).join(' | '),
+    };
+  }
+
+  if (result.error) {
+    return {
+      blocked: true,
+      status: result.status ?? 1,
+      artifactPath: payload?.artifactPath || '',
+      blockers: [{
+        name: 'capability.preflight',
+        code: 'node_spawn_eperm',
+        detail: result.error.message,
+      }],
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      detail: `capability preflight could not run: ${result.error.message}`,
+    };
+  }
+
+  return {
+    blocked: false,
+    status: result.status ?? 0,
+    artifactPath: payload?.artifactPath || '',
+    blockers: [],
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    detail: payload?.status ? `capability preflight status=${payload.status}` : 'capability preflight completed',
+  };
 }
 
 function decideMissingEvidenceAction(autoFixCount, finalStopReason) {
@@ -1239,6 +1344,19 @@ function runPhaseAttempt() {
 
   let activeRuntime = runtime;
   const logFile = `${logDir}/phase-${state.phaseNum}_${localFileTimestamp()}.log`;
+  const capabilityPreflight = runPhaseStartCapabilityPreflight();
+  appendDebugLog('capability-preflight-result', {
+    requestedRuntime: state.runtime,
+    currentRuntime: activeRuntime,
+    status: capabilityPreflight.status,
+    blocked: capabilityPreflight.blocked,
+    artifactPath: capabilityPreflight.artifactPath,
+    blockers: capabilityPreflight.blockers,
+  });
+  if (capabilityPreflight.blocked) {
+    return stopBlockedPhase(paths, logFile, capabilityPreflight.detail, 'capability-preflight-blocked');
+  }
+
   const verificationPreflight = collectVerificationPreflightBlockers('.claude/verification.contract.yaml', {
     requestedRuntime: state.runtime,
     verificationRuntimes: state.verificationRuntimes,

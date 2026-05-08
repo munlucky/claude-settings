@@ -24,10 +24,14 @@ const workspaceRoot = process.cwd();
 const phaseStatusFile = path.join(workspaceRoot, '.claude', 'docs', 'phase-status.yaml');
 const strictMemoryGateEnabled = String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
 const unavailableCapabilityCodes = new Set([
+  'bash_access_denied',
   'memorygraph_unavailable',
+  'git_index_denied',
+  'node_spawn_eperm',
   'plugin_network_sync_failed',
   'path_update_denied',
   'mcp_cleanup_eperm',
+  'spawn_blocked',
 ]);
 const memorygraphFingerprint = classifyFailure({ code: 'memorygraph_unavailable', source: 'memorygraph.health' }).fingerprint;
 
@@ -541,6 +545,16 @@ function buildReport() {
       }));
   }
 
+  const fixtureBlocker = String(process.env.PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BLOCKER || '').trim();
+  if (fixtureBlocker) {
+    checks.push(check('fixture.forcedBlocker', 'failed', `forced fixture blocker: ${fixtureBlocker}`, {
+      command: 'PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BLOCKER',
+      failureClass: fixtureBlocker,
+      decision: 'resume_later_handoff',
+      fallbackHint: 'fixture-only',
+    }));
+  }
+
   const classifiedChecks = checks.map(classifyCapabilityCheck).map((entry) => {
     if (!strictMemoryGateEnabled && entry.code === 'memorygraph_unavailable') {
       return {
@@ -635,6 +649,29 @@ function writeArtifact(report) {
 }
 
 function main() {
+  if (process.argv.includes('self-test')) {
+    const originalFixture = process.env.PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BLOCKER;
+    process.env.PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BLOCKER = 'bash_access_denied';
+    try {
+      const report = buildReport();
+      const blocker = report.currentBlockers.find((entry) => entry.code === 'bash_access_denied');
+      if (!blocker) {
+        throw new Error('forced bash_access_denied blocker was not reported');
+      }
+      if (report.decision === 'continue' || report.status !== 'failed') {
+        throw new Error(`forced blocker did not fail preflight: status=${report.status} decision=${report.decision}`);
+      }
+      process.stdout.write('phase-capability-preflight self-test passed\n');
+      return;
+    } finally {
+      if (originalFixture === undefined) {
+        delete process.env.PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BLOCKER;
+      } else {
+        process.env.PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BLOCKER = originalFixture;
+      }
+    }
+  }
+
   const json = process.argv.includes('--json');
   const report = buildReport();
   const artifactPath = writeArtifact(report);

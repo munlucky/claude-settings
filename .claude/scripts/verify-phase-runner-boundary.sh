@@ -456,9 +456,70 @@ fi
 assert_contains "$PATH_AUTH_LOG_DIR/debug.jsonl" "\"event\":\"path-authority-preflight-failed\"" "path authority debug event"
 assert_text_not_contains "$(cat "$PATH_AUTH_LOG_DIR/debug.jsonl")" "worker-prompt-start" "worker prompt launch after path authority failure"
 
+CAPABILITY_WORKSPACE="$TMP_ROOT/capability-workspace"
+CAPABILITY_PLAN_DIR="$CAPABILITY_WORKSPACE/plan"
+CAPABILITY_EXECUTION_ROOT="$CAPABILITY_PLAN_DIR/execution"
+CAPABILITY_STATUS_FILE="$CAPABILITY_WORKSPACE/phase-status.yaml"
+CAPABILITY_LOG_DIR="$CAPABILITY_WORKSPACE/.claude/logs/agent-loop"
+
+mkdir -p "$CAPABILITY_PLAN_DIR" "$CAPABILITY_EXECUTION_ROOT" "$CAPABILITY_LOG_DIR"
+
+cat > "$CAPABILITY_PLAN_DIR/00-master-plan.md" <<'EOF'
+# Master Plan
+EOF
+
+cat > "$CAPABILITY_PLAN_DIR/03-capability-phase.md" <<'EOF'
+# Capability Phase
+EOF
+
+cat > "$CAPABILITY_STATUS_FILE" <<EOF
+masterPlan: "$CAPABILITY_PLAN_DIR/00-master-plan.md"
+planDir: "$CAPABILITY_PLAN_DIR"
+executionRoot: "$CAPABILITY_EXECUTION_ROOT"
+phases:
+  - number: 3
+    title: "Capability Phase"
+    status: pending
+    archivedPhaseDoc: "$CAPABILITY_PLAN_DIR/03-capability-phase.md"
+EOF
+
+set +e
+(
+  cd "$CAPABILITY_WORKSPACE"
+  PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BLOCKER=bash_access_denied node "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" \
+    "$CAPABILITY_PLAN_DIR" \
+    --status-file "$CAPABILITY_STATUS_FILE" \
+    --execution-root "$CAPABILITY_EXECUTION_ROOT" \
+    --runtime codex \
+    --verification-runtimes codex \
+    --phase-num 3 \
+    --phase-title "Capability Phase" \
+    --phase-doc "$CAPABILITY_PLAN_DIR/03-capability-phase.md" \
+    >"$TMP_ROOT/capability-runner.out" 2>&1
+)
+CAPABILITY_STATUS=$?
+set -e
+
+if [[ "$CAPABILITY_STATUS" -eq 0 ]]; then
+  echo "FAIL: capability preflight should stop runner before worker launch" >&2
+  cat "$TMP_ROOT/capability-runner.out" >&2
+  exit 1
+fi
+
+if [[ ! -f "$CAPABILITY_LOG_DIR/debug.jsonl" ]]; then
+  echo "FAIL: capability preflight did not write a debug log" >&2
+  exit 1
+fi
+
+assert_contains "$CAPABILITY_LOG_DIR/debug.jsonl" "\"event\":\"capability-preflight-result\"" "capability preflight debug event"
+assert_contains "$CAPABILITY_LOG_DIR/debug.jsonl" "\"blocked\":true" "capability preflight blocked before worker"
+assert_text_not_contains "$(cat "$CAPABILITY_LOG_DIR/debug.jsonl")" "worker-prompt-start" "worker prompt launch after capability preflight failure"
+
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "function isHardBlockedCompletionReason" "hard blocked completion classifier"
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON))" "blocked gate remediation path"
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-attempt.mjs" "gate reason starts with" "blocked gate remediation prompt"
+node "$ROOT_DIR/.claude/scripts/phase-capability-preflight.mjs" self-test > "$TMP_ROOT/phase-capability-preflight-self-test.out"
+assert_contains "$TMP_ROOT/phase-capability-preflight-self-test.out" "phase-capability-preflight self-test passed" "phase capability preflight self-test"
 node "$ROOT_DIR/.claude/scripts/phase-parallel-planner.mjs" self-test > "$TMP_ROOT/phase-parallel-planner-self-test.out"
 assert_contains "$TMP_ROOT/phase-parallel-planner-self-test.out" "phase-parallel-planner self-test passed" "phase parallel planner self-test"
 node "$ROOT_DIR/.claude/scripts/phase-final-git-closeout.mjs" self-test > "$TMP_ROOT/phase-final-git-closeout-self-test.out"

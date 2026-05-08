@@ -6,6 +6,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { classifyFailure } from './lib/failure-classifier.mjs';
+
 const DEFAULT_WORKTREE_ROOTS = [
   '.tmp/harness-worktrees/phase-runs',
   '.tmp/harness-worktrees/phase-waves',
@@ -77,7 +79,14 @@ function run(command, args, options = {}) {
 }
 
 function runGit(args, cwd = process.cwd()) {
-  return run('git', ['-c', 'safe.directory=*', ...args], { cwd });
+  const result = run('git', ['-c', 'safe.directory=*', '-c', 'core.editor=true', ...args], { cwd });
+  if (process.env.PHASE_FINAL_GIT_CLOSEOUT_FIXTURE_GIT_WARNING === 'true' && args[0] === 'status') {
+    return {
+      ...result,
+      stderr: `${result.stderr || ''}warning: unable to access 'C:\\Users\\moon/.config/git/ignore': Permission denied\n`,
+    };
+  }
+  return result;
 }
 
 function runRequiredGit(args, cwd = process.cwd()) {
@@ -123,13 +132,54 @@ function isIgnoredEvidencePath(filePath) {
   return normalized !== '' && IGNORED_EVIDENCE_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+function safeGitEnvironmentWarnings(text) {
+  const warnings = [];
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const classification = classifyFailure({ message: line });
+    if (classification.code !== 'safe_git_ignore_permission_warning') {
+      continue;
+    }
+    warnings.push({
+      code: classification.code,
+      category: classification.category,
+      decision: classification.decision,
+      detail: line,
+    });
+  }
+  return warnings;
+}
+
+function dedupeWarnings(warnings) {
+  const seen = new Set();
+  const deduped = [];
+  for (const warning of warnings) {
+    const key = `${warning.code}|${warning.detail}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(warning);
+  }
+  return deduped;
+}
+
+function isSafeGitWarningLine(line) {
+  return classifyFailure({ message: line }).code === 'safe_git_ignore_permission_warning';
+}
+
 function gitStatus(cwd, extraArgs = [], filterIgnorable = true) {
   const result = runGit(['status', '--short', '--untracked-files=all', ...extraArgs], cwd);
+  const environmentWarnings = safeGitEnvironmentWarnings(`${result.stderr || ''}\n${result.stdout || ''}`);
   if (result.status !== 0 || result.error) {
     return {
       ok: false,
       error: result.error?.message || result.stderr || result.stdout || 'git status failed',
       entries: [],
+      environmentWarnings,
     };
   }
     return {
@@ -139,7 +189,9 @@ function gitStatus(cwd, extraArgs = [], filterIgnorable = true) {
         .split(/\r?\n/)
         .map((line) => line.trimEnd())
         .filter(Boolean)
+        .filter((line) => !isSafeGitWarningLine(line))
         .filter((line) => !filterIgnorable || !isIgnorableStatusPath(parseStatusPath(line))),
+      environmentWarnings,
   };
 }
 
@@ -151,6 +203,7 @@ function collectIgnoredEvidence(repoRoot) {
       error: result.error,
       entries: [],
       deniedEntries: [],
+      environmentWarnings: result.environmentWarnings || [],
     };
   }
 
@@ -180,6 +233,7 @@ function collectIgnoredEvidence(repoRoot) {
     error: '',
     entries,
     deniedEntries,
+    environmentWarnings: result.environmentWarnings || [],
   };
 }
 
@@ -349,12 +403,75 @@ function collectIncompleteWaveArtifactIssues(repoRoot) {
   }];
 }
 
+function collectGitOperationIssues(repoRoot) {
+  const gitDirResult = runGit(['rev-parse', '--git-dir'], repoRoot);
+  if (gitDirResult.status !== 0 || gitDirResult.error) {
+    return [{
+      type: 'git_operation_state_inspect_failed',
+      detail: gitDirResult.error?.message || gitDirResult.stderr || gitDirResult.stdout || 'git dir inspect failed',
+      entries: [],
+    }];
+  }
+
+  const gitDir = path.resolve(repoRoot, gitDirResult.stdout.trim());
+  const markers = [
+    { type: 'git_rebase_in_progress', marker: 'rebase-merge' },
+    { type: 'git_rebase_in_progress', marker: 'rebase-apply' },
+    { type: 'git_merge_in_progress', marker: 'MERGE_HEAD' },
+  ];
+  const entries = markers
+    .map((entry) => ({ ...entry, path: path.join(gitDir, entry.marker) }))
+    .filter((entry) => fs.existsSync(entry.path));
+
+  return entries.map((entry) => ({
+    type: entry.type,
+    detail: `${entry.marker} exists; finish or abort the Git operation before closeout`,
+    entries: [{
+      path: path.relative(repoRoot, entry.path) || entry.path,
+      marker: entry.marker,
+    }],
+  }));
+}
+
+function collectUpstreamSyncIssues(repoRoot) {
+  const upstream = runGit(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], repoRoot);
+  if (upstream.status !== 0 || upstream.error) {
+    return [];
+  }
+
+  const counts = runGit(['rev-list', '--left-right', '--count', 'HEAD...@{u}'], repoRoot);
+  if (counts.status !== 0 || counts.error) {
+    return [{
+      type: 'upstream_sync_inspect_failed',
+      detail: counts.error?.message || counts.stderr || counts.stdout || 'upstream sync inspect failed',
+      entries: [{ upstream: upstream.stdout.trim() }],
+    }];
+  }
+
+  const [aheadRaw = '0', behindRaw = '0'] = counts.stdout.trim().split(/\s+/);
+  const ahead = Number.parseInt(aheadRaw, 10) || 0;
+  const behind = Number.parseInt(behindRaw, 10) || 0;
+  if (ahead === 0 && behind === 0) {
+    return [];
+  }
+
+  return [{
+    type: 'upstream_not_synced',
+    detail: `HEAD differs from upstream ${upstream.stdout.trim()} (ahead=${ahead}, behind=${behind})`,
+    entries: [{ upstream: upstream.stdout.trim(), ahead, behind }],
+  }];
+}
+
 function audit() {
   const repoRoot = runRequiredGit(['rev-parse', '--show-toplevel']);
   const worktreeRoots = state.worktreeRoots.length > 0 ? state.worktreeRoots : DEFAULT_WORKTREE_ROOTS;
   const mainStatus = gitStatus(repoRoot);
   const ignoredEvidence = collectIgnoredEvidence(repoRoot);
   const repoHead = runRequiredGit(['rev-parse', 'HEAD'], repoRoot);
+  const environmentWarnings = dedupeWarnings([
+    ...(mainStatus.environmentWarnings || []),
+    ...(ignoredEvidence.environmentWarnings || []),
+  ]);
   const issues = [];
   const deniedEntries = [];
   const stageableEntries = [];
@@ -432,6 +549,8 @@ function audit() {
 
   issues.push(...collectPhaseBranchIssues(repoRoot));
   issues.push(...collectIncompleteWaveArtifactIssues(repoRoot));
+  issues.push(...collectGitOperationIssues(repoRoot));
+  issues.push(...collectUpstreamSyncIssues(repoRoot));
 
   const payload = {
     schemaVersion: '1.0',
@@ -444,6 +563,7 @@ function audit() {
     worktreeRoots,
     clean: issues.length === 0,
     stageableEntries,
+    environmentWarnings,
     ignoredEvidence: ignoredEvidence.ok ? ignoredEvidence.entries : [],
     deniedEntries: deniedEntries.concat(ignoredEvidence.deniedEntries || []),
     issues,
@@ -520,6 +640,7 @@ function selfTest() {
     process.stdout.write('phase-final-git-closeout self-test passed (child process spawn unavailable; skipped git fixture)\n');
     return;
   }
+  const originalCwd = process.cwd();
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-final-git-closeout-'));
   try {
     const repo = path.join(tmpRoot, 'repo');
@@ -552,6 +673,28 @@ function selfTest() {
       throw new Error(`remaining phase branch should fail: ${result.stderr || result.stdout}`);
     }
     runRequiredGit(['branch', '-D', 'codex/phase-wave-smoke'], repo);
+
+    const gitDir = path.join(repo, '.git');
+    fs.mkdirSync(path.join(gitDir, 'rebase-merge'), { recursive: true });
+    result = runSelf(['preflight', '--json'], repo);
+    if (result.status !== 2 || !result.stdout.includes('git_rebase_in_progress')) {
+      throw new Error(`rebase in-progress marker should fail: ${result.stderr || result.stdout}`);
+    }
+    fs.rmSync(path.join(gitDir, 'rebase-merge'), { recursive: true, force: true });
+
+    fs.writeFileSync(path.join(gitDir, 'MERGE_HEAD'), `${runRequiredGit(['rev-parse', 'HEAD'], repo)}\n`, 'utf8');
+    result = runSelf(['preflight', '--json'], repo);
+    if (result.status !== 2 || !result.stdout.includes('git_merge_in_progress')) {
+      throw new Error(`merge in-progress marker should fail: ${result.stderr || result.stdout}`);
+    }
+    fs.rmSync(path.join(gitDir, 'MERGE_HEAD'), { force: true });
+
+    process.env.PHASE_FINAL_GIT_CLOSEOUT_FIXTURE_GIT_WARNING = 'true';
+    result = runSelf(['preflight', '--json'], repo);
+    delete process.env.PHASE_FINAL_GIT_CLOSEOUT_FIXTURE_GIT_WARNING;
+    if (result.status !== 0 || !result.stdout.includes('safe_git_ignore_permission_warning')) {
+      throw new Error(`safe git ignore warning should be recorded without failing closeout: ${result.stderr || result.stdout}`);
+    }
 
     const artifactPath = path.join(repo, '.claude', 'logs', 'agent-loop', 'phase-wave-run-smoke.json');
     writeFixture(artifactPath, JSON.stringify({
@@ -595,6 +738,8 @@ function selfTest() {
       throw new Error('non-repo execution should fail');
     }
   } finally {
+    process.chdir(originalCwd);
+    delete process.env.PHASE_FINAL_GIT_CLOSEOUT_FIXTURE_GIT_WARNING;
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
   process.stdout.write('phase-final-git-closeout self-test passed\n');

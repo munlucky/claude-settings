@@ -2258,9 +2258,15 @@ function updatePhaseState(config) {
   const wallClockSeconds = Math.max(Math.round((currentTimestamp - startedAtEpoch) / 1000), 0);
   block[wallClockIdx] = `${timingIndent}wallClockSeconds: ${wallClockSeconds}`;
   const timingBucket = classifyTimingBucket();
-  updateTimingBucket(timingBucket, Math.round(deltaSeconds));
+  const roundedDeltaSeconds = Math.round(deltaSeconds);
+  const [, runnerValueBeforeUpdate] = getTimingValue('runnerActiveSeconds', '0');
+  const runnerActiveBeforeUpdate = Number.parseFloat(runnerValueBeforeUpdate) || 0;
+  const boundedDeltaSeconds = timingBucket === 'runnerActiveSeconds'
+    ? Math.max(Math.min(roundedDeltaSeconds, wallClockSeconds - runnerActiveBeforeUpdate), 0)
+    : roundedDeltaSeconds;
+  updateTimingBucket(timingBucket, boundedDeltaSeconds);
   if (timingBucket === 'runnerActiveSeconds') {
-    updateTimingBucket('workerActiveSeconds', Math.round(deltaSeconds));
+    updateTimingBucket('workerActiveSeconds', boundedDeltaSeconds);
   }
   const [, runnerValue] = getTimingValue('runnerActiveSeconds', '0');
   const runnerActiveSeconds = Number.parseFloat(runnerValue) || 0;
@@ -2588,6 +2594,59 @@ phases:
     }
     if (blockedClassification.category !== 'environment_blocked' || blockedClassification.retryPolicy !== 'stop_loop') {
       throw new Error('environment block classification was not normalized');
+    }
+
+    const timingStatusFile = path.join(tempDir, 'timing-status.yaml');
+    fs.writeFileSync(timingStatusFile, `schemaVersion: 1
+activeExecutionStatus: running
+activeCurrentStage: ready/isolate
+activePhaseNumber: 1
+phases:
+  - number: 1
+    title: "Timing"
+    status: in_progress
+    planConfirmed: true
+    attempts:
+      total: 1
+      lastOutcome: running
+      lastUpdatedAt: "2026-05-05T00:00:00Z"
+    timing:
+      startedAt: "2026-05-05T00:00:00Z"
+      lastStage: "ready/isolate"
+      lastStageAt: "2026-05-05T00:00:00Z"
+      wallClockSeconds: 0
+      runnerActiveSeconds: 0
+      workerActiveSeconds: 0
+`, 'utf8');
+    for (const timestamp of [
+      '2026-05-05T00:00:10Z',
+      '2026-05-05T00:00:20Z',
+      '2026-05-05T00:00:30Z',
+    ]) {
+      updatePhaseState({
+        statusFile: timingStatusFile,
+        phaseNum: '1',
+        newStatus: 'in_progress',
+        timestamp,
+        lastOutcome: 'running',
+        incrementAttempt: 'false',
+        activePhaseDoc: '',
+        sprintContractPath: '',
+        qaReportPath: '',
+        handoffPath: '',
+        scorecardPath: '',
+      });
+    }
+    const timingSummary = getPhaseSummary(timingStatusFile, '1');
+    const timing = timingSummary.timing || {};
+    if (timing.runnerActiveSeconds > timing.wallClockSeconds) {
+      throw new Error(`runnerActiveSeconds exceeded wallClockSeconds: ${timing.runnerActiveSeconds} > ${timing.wallClockSeconds}`);
+    }
+    if (timing.workerActiveSeconds > timing.wallClockSeconds) {
+      throw new Error(`workerActiveSeconds exceeded wallClockSeconds: ${timing.workerActiveSeconds} > ${timing.wallClockSeconds}`);
+    }
+    if (fs.readFileSync(timingStatusFile, 'utf8').includes('runnerActiveSeconds_gt_wallClockSeconds')) {
+      throw new Error('bounded timing update emitted a runnerActiveSeconds invariant warning');
     }
 
     const staleStatusFile = path.join(tempDir, 'stale-root-status.yaml');
