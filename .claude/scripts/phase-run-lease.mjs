@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 import {
   assertReturnAllowed as assertRuntimeReturnAllowed,
   exportStatusMirror,
@@ -58,7 +59,7 @@ function resolveLeaseFiles(statusFile) {
 }
 
 function utcTimestamp() {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  return nowIsoSeconds();
 }
 
 function parseIsoTimestamp(value) {
@@ -336,6 +337,11 @@ function updateStatusLease(statusFile, fields) {
     activeCurrentStage: quoteStatusValue,
     activePhaseNumber: (value) => value === '' ? 'null' : String(value),
     activePhaseTitle: (value) => value ? quoteStatusValue(value) : 'null',
+    lastRunLeaseId: (value) => value ? quoteStatusValue(value) : 'null',
+    lastExecutionBoundary: (value) => value ? quoteStatusValue(value) : 'null',
+    lastExecutionAttachedAt: (value) => value ? quoteStatusValue(value) : 'null',
+    lastExecutionHeartbeatAt: (value) => value ? quoteStatusValue(value) : 'null',
+    lastExecutionStatus: (value) => value ? quoteStatusValue(value) : 'null',
     lastReturnBoundary: (value) => value ? quoteStatusValue(value) : 'null',
     lastStopReasonCode: (value) => value ? quoteStatusValue(value) : 'null',
     lastStopReasonDetail: (value) => value ? quoteStatusValue(value) : 'null',
@@ -343,6 +349,14 @@ function updateStatusLease(statusFile, fields) {
 
   for (const [key, formatter] of Object.entries(mapping)) {
     if (fields[key] === undefined) {
+      continue;
+    }
+    if (fields[key] === null) {
+      const prefix = `${key}:`;
+      const index = nextLines.findIndex((line) => line.startsWith(prefix));
+      if (index >= 0) {
+        nextLines.splice(index, 1);
+      }
       continue;
     }
     upsertRootKey(nextLines, key, formatter(fields[key]));
@@ -511,15 +525,20 @@ function finishLease(config) {
 
   writeActiveLease(statusFile, payload);
   updateStatusLease(statusFile || existing.statusFile, {
-    activeRunLeaseId: payload.runLeaseId,
-    activeExecutionBoundary: payload.executionBoundary,
-    activeExecutionAttachedAt: payload.attachedAt,
-    activeExecutionHeartbeatAt: now,
-    activeExecutionStatus: payload.status,
+    activeRunLeaseId: null,
+    activeExecutionBoundary: null,
+    activeExecutionAttachedAt: null,
+    activeExecutionHeartbeatAt: null,
+    activeExecutionStatus: null,
     activeActionablePhasesRemaining: actionable,
     activeCurrentStage: payload.currentStage || 'finish/handoff',
     activePhaseNumber: payload.phase?.number || '',
     activePhaseTitle: payload.phase?.title || '',
+    lastRunLeaseId: payload.runLeaseId,
+    lastExecutionBoundary: payload.executionBoundary,
+    lastExecutionAttachedAt: payload.attachedAt,
+    lastExecutionHeartbeatAt: now,
+    lastExecutionStatus: payload.status,
     lastReturnBoundary: payload.returnBoundary,
     lastStopReasonCode: payload.stopReasonCode,
     lastStopReasonDetail: payload.stopReasonDetail,
@@ -611,7 +630,7 @@ function assertReturnAllowedFromFiles(config) {
 
   const staleSeconds = Number.parseInt(process.env.PHASE_RUN_LEASE_STALE_SECONDS ?? '14400', 10) || 14400;
   const heartbeatAt = parseIsoTimestamp(existing.lastHeartbeatAt);
-  if (Number.isNaN(heartbeatAt) || Date.now() - heartbeatAt > staleSeconds * 1000) {
+  if (Number.isNaN(heartbeatAt) || nowMs() - heartbeatAt > staleSeconds * 1000) {
     return {
       RETURN_ALLOWED: 'false',
       RETURN_REASON: 'stale-run-lease',

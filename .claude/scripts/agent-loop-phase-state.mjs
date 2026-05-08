@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
 import { isRelevantVerificationVerdict, normalizeRequiredChecksMissing } from './verification-verdict-state.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
+import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
@@ -18,7 +19,7 @@ function writeFileAtomic(filePath, content) {
   const directory = path.dirname(filePath);
   const tempPath = path.join(
     directory,
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+    `.${path.basename(filePath)}.${process.pid}.${nowMs()}.tmp`,
   );
 
   fs.writeFileSync(tempPath, content, 'utf8');
@@ -339,7 +340,7 @@ function findAuthoritativeActiveBlock(statusFile, blocks = readStatusBlocks(stat
 }
 
 function listStaleInProgressPhases(statusFile, staleSeconds) {
-  const now = Date.now();
+  const now = nowMs();
   const results = [];
   const blocks = readStatusBlocks(statusFile);
   const authoritative = findAuthoritativeActiveBlock(statusFile, blocks);
@@ -1240,7 +1241,7 @@ function fileLatestTimestamp(paths) {
   }
   return latest > 0
     ? new Date(latest).toISOString().replace(/\.\d{3}Z$/, 'Z')
-    : new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    : nowIsoSeconds();
 }
 
 function evaluateCleanFinishArtifacts({ qaReportPath, scorecardPath, handoffPath }) {
@@ -2179,7 +2180,7 @@ function updatePhaseState(config) {
 
   const currentTiming = currentBlock?.timing || {};
   const previousStageAt = parseIsoMaybe(currentTiming.lastStageAt || currentTiming.startedAt || currentBlock?.lastUpdatedAt || config.timestamp);
-  const currentTimestamp = parseIsoMaybe(config.timestamp) || Date.now();
+  const currentTimestamp = parseIsoMaybe(config.timestamp) || nowMs();
   const deltaSeconds = previousStageAt ? Math.max((currentTimestamp - previousStageAt) / 1000, 0) : 0;
 
   function getAttemptValue(name, defaultValue) {
@@ -2598,7 +2599,7 @@ function reconcileCompletedPhases(statusFile) {
     const attemptTotal = Number.parseInt(String(block.attemptTotal ?? '0'), 10) || 0;
     if (block.status === 'completed') {
       if (attemptTotal === 0) {
-        ensureCompletedAttemptMetadata(statusFile, String(block.number), block.timing?.completedAt || block.lastUpdatedAt || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'));
+        ensureCompletedAttemptMetadata(statusFile, String(block.number), block.timing?.completedAt || block.lastUpdatedAt || nowIsoSeconds());
       }
       continue;
     }

@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 
 const DEFAULT_DB_PATH = '.claude/runtime-state.sqlite';
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
@@ -22,12 +23,8 @@ async function loadSqlite() {
   }
 }
 
-function nowMs() {
-  return Date.now();
-}
-
 function nowIso() {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  return nowIsoSeconds();
 }
 
 function resolveDbPath(dbPath = process.env.PHASE_RUNTIME_DB || DEFAULT_DB_PATH) {
@@ -199,7 +196,7 @@ function countActionablePhasesFromRows(rows) {
 
 function deterministicGoalId(planDir) {
   const hash = crypto.createHash('sha1').update(path.resolve(planDir || '.')).digest('hex').slice(0, 10);
-  return `goal-${Date.now()}-${hash}`;
+  return `goal-${nowMs()}-${hash}`;
 }
 
 function parseIntegerOrNull(value) {
@@ -708,7 +705,7 @@ export function finishLease(db, config) {
   if (actionable === 0 && goal) {
     db.prepare(`
       UPDATE workflow_goals
-      SET status = 'complete', last_event = 'GoalCompleted', updated_at_ms = ?
+      SET status = 'complete', last_event = 'GoalCompleted', current_lease_id = NULL, updated_at_ms = ?
       WHERE goal_id = ?
     `).run(timestamp, goal.goal_id);
     recordEvent(db, { goalId: goal.goal_id, leaseId: config.leaseId, eventType: 'GoalCompleted', detail: 'No actionable phases remaining.' });

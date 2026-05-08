@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
+import { nowIsoSeconds } from './lib/clock.mjs';
 
 const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
 const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
@@ -480,7 +481,7 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
   const taskStatus = String(state.workset?.status || state.workset?.taskStatus || '').trim();
   const evidenceEntries = normalizeArrayInput(state.workset?.evidence ?? []);
   const completedAt = state.workset?.completedAt || state.completedAt || '';
-  const timestamp = state.timestamp || state.runtime?.timestamp || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const timestamp = state.timestamp || state.runtime?.timestamp || nowIsoSeconds();
   const logFile = String(state.logFile || state.runtime?.logFile || '').trim();
   const verdictPath = String(state.verdictPath || state.runtime?.verdictPath || '').trim();
   const runtimeStage = String(state.runtime?.stage || state.stage || '').trim();
@@ -543,7 +544,7 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
         sawEvidence = true;
       } else if (stripped.startsWith('completedAt:')) {
         const nextCompletedAt = taskStatus === 'completed' || runtimeStatus === 'completed'
-          ? (completedAt || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'))
+          ? (completedAt || nowIsoSeconds())
           : completedAt;
         nextBlock[index] = `    completedAt: ${nextCompletedAt ? yamlQuote(nextCompletedAt) : 'null'}`;
         sawCompletedAt = true;
@@ -608,7 +609,7 @@ function syncPhaseArtifacts(input = {}) {
   const runtimeName = String(runtime.runtime || state.runtimeName || 'artifact-sync').trim();
   const logFile = String(runtime.logFile || state.logFile || '').trim();
   const detail = String(runtime.detail || state.detail || '').trim();
-  const timestamp = String(state.timestamp || runtime.timestamp || new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')).trim();
+  const timestamp = String(state.timestamp || runtime.timestamp || nowIsoSeconds()).trim();
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
@@ -911,7 +912,7 @@ function inferPhaseVerdictPath(qaReportPath) {
 function appendQaRuntimeUpdate(status, logFile, detail, workflowLogDir, phaseQaReport, phaseScorecard) {
   const lines = [
     '',
-    `### ${new Date().toISOString().replace('T', ' ').slice(0, 19)}`,
+    `### ${nowIsoSeconds().replace('T', ' ').slice(0, 19)}`,
     `- Runtime status: ${status}`,
     `- Log: ${logFile}`,
   ];
@@ -936,7 +937,7 @@ function recordPhaseProgressCheckpoint({
   detail,
   runtimeName,
 }) {
-  const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const timestamp = nowIsoSeconds().replace('T', ' ').slice(0, 19);
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
@@ -1077,7 +1078,7 @@ function updateWorksetsFromVerdict(worksetsPath, verdictPayload, verdictPath, lo
   }
   let text = fs.readFileSync(worksetsPath, 'utf8');
   text = text.replace(/status:\s*(in_progress|pending)\b/, 'status: completed');
-  text = text.replace(/completedAt:\s*null\b/, `completedAt: ${yamlQuote(new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'))}`);
+  text = text.replace(/completedAt:\s*null\b/, `completedAt: ${yamlQuote(nowIsoSeconds())}`);
 
   const changedFiles = Array.isArray(verdictPayload.changedFiles) ? verdictPayload.changedFiles : [];
   const commands = Array.isArray(verdictPayload.commands)
@@ -1146,7 +1147,7 @@ function completeReviewCloseoutFromVerdict({
     ]);
     qaLines = appendToSection(qaLines, '## Runtime Updates', [
       '',
-      `- ${new Date().toISOString().replace('T', ' ').slice(0, 19)} | Stage: review | Status: review-closeout-remediated | Runtime: artifact-only`,
+      `- ${nowIsoSeconds().replace('T', ' ').slice(0, 19)} | Stage: review | Status: review-closeout-remediated | Runtime: artifact-only`,
       `- Verification verdict file: ${path.relative(process.cwd(), verdictPath).replace(/\\/g, '/')}`,
       '- Verification verdict: passed',
       logFile ? `- Log: ${logFile}` : '',
@@ -1742,7 +1743,7 @@ function writeCleanFinishHandoff({
 
 ## Workflow Logging
 - session-logger: not required for this clean finish
-- Closeout marker recorded at: ${new Date().toISOString().replace('T', ' ').slice(0, 19)}
+- Closeout marker recorded at: ${nowIsoSeconds().replace('T', ' ').slice(0, 19)}
 `;
   fs.writeFileSync(phaseHandoff, body, 'utf8');
 }
