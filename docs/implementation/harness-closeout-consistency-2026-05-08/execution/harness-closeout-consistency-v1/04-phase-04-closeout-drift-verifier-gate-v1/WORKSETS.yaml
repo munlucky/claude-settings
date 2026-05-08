@@ -1,0 +1,29 @@
+# Phase 04 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths:
+      - ".claude/scripts/verify-phase-closeout.mjs"
+      - ".claude/scripts/verify-phase-closeout.test.mjs"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/REQUIREMENTS_TRACEABILITY.md"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/SCENARIO_MATRIX.md"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/SPRINT_CONTRACT.md"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/QA_REPORT.md"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/SCORECARD.md"
+      - "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/HANDOFF.md"
+    verificationCommands:
+      - "node .claude/scripts/verify-phase-closeout.test.mjs"
+      - "node .claude/scripts/phase-closeout-reconciler.test.mjs"
+      - "bash .claude/scripts/workflow-enforcement.sh verify"
+      - "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/harness-closeout-consistency-2026-05-08/04-closeout-drift-verifier-gate-v1.md --sprint-contract docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/QA_REPORT.md --scorecard docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/SCORECARD.md --handoff docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/04-phase-04-closeout-drift-verifier-gate-v1/HANDOFF.md"
+    evidence:
+      - "`node .claude/scripts/verify-phase-closeout.test.mjs` passed 23/23 after review remediation."
+      - "`node .claude/scripts/phase-closeout-reconciler.test.mjs` passed 3/3."
+      - "SCN-04-1 and SCN-04-2 recorded in SCENARIO_MATRIX.md."
+      - "REQ-1.5 recorded in REQUIREMENTS_TRACEABILITY.md."
+    completedAt: "2026-05-08 21:51:31 +09:00"
+worksets: []

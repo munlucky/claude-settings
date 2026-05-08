@@ -15,6 +15,7 @@ import { evaluatePathAuthority } from './lib/path-authority.mjs';
 const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
 const EXTERNAL_BLOCKER_WORDS = /\b(external|account|credential|credentials|launch|domain|cloudflare|search console|adsense|manual|no-go)\b/i;
+const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 
 function usage() {
   return [
@@ -75,6 +76,18 @@ function parseArgs(argv) {
       case '--master-plan':
         result.masterPlan = args.shift() || '';
         result.masterPlanProvided = true;
+        break;
+      case '--workflow-dir':
+        result.workflowDir = args.shift() || '';
+        break;
+      case '--session-file':
+        result.sessionFile = args.shift() || '';
+        break;
+      case '--session-dir':
+        result.sessionDir = args.shift() || '';
+        break;
+      case '--now':
+        result.now = args.shift() || '';
         break;
       case '--json':
         result.json = true;
@@ -365,6 +378,19 @@ function readJsonIfExists(filePath) {
   }
 }
 
+function workflowStateViolationCode(basename) {
+  switch (basename) {
+    case 'current-run.json':
+      return 'current-run-failed-phase-completed';
+    case 'active-phase-run.json':
+      return 'active-phase-run-failed-phase-completed';
+    case 'latest-dispatch.json':
+      return 'latest-dispatch-failed-phase-completed';
+    default:
+      return 'workflow-state-contradiction';
+  }
+}
+
 function isSupersededByLocalFallback(payload = {}) {
   return payload.status === 'superseded-by-local-fallback'
     || payload.completionStatus === 'completed-via-local-fallback'
@@ -397,25 +423,55 @@ function isCompletedLocalFallback(payload = {}) {
     || payload.completionBoundary === 'phase_only';
 }
 
-function inspectWorkflowCloseoutDrift({ statusRoot, phases, statusPath, now, violations }) {
+function collectSessionFiles({ sessionFile, sessionDir }) {
+  if (sessionFile) {
+    return fs.existsSync(sessionFile) ? [sessionFile] : [];
+  }
+  if (!sessionDir || !fs.existsSync(sessionDir)) {
+    return [];
+  }
+  return fs.readdirSync(sessionDir)
+    .filter((entry) => entry.endsWith('.jsonl'))
+    .map((entry) => path.join(sessionDir, entry));
+}
+
+function sessionHasTaskComplete(filePath) {
+  return /task_complete/i.test(readText(filePath));
+}
+
+function inspectWorkflowCloseoutDrift({
+  statusRoot,
+  phases,
+  statusPath,
+  workflowDir: configuredWorkflowDir,
+  sessionFile: configuredSessionFile,
+  sessionDir: configuredSessionDir,
+  now,
+  violations,
+}) {
   const completedPhases = phases.filter((phase) => phase.status === 'completed');
   if (completedPhases.length === 0) {
     return;
   }
 
   const repoRoot = path.dirname(path.dirname(path.dirname(statusPath)));
-  const workflowDir = path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement');
-  const currentRun = readJsonIfExists(path.join(workflowDir, 'current-run.json'));
+  const workflowDir = configuredWorkflowDir || path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement');
+  const workflowStates = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']
+    .map((basename) => ({
+      basename,
+      payload: readJsonIfExists(path.join(workflowDir, basename)),
+    }))
+    .filter((entry) => entry.payload);
+  const failedWorkflowStates = workflowStates.filter((entry) => isFailedWorkflowState(entry.payload));
 
-  if (currentRun) {
-    const fallbackRunId = currentRun.fallbackRunId || currentRun.localFallbackCompletion?.runId || '';
+  for (const { basename, payload } of failedWorkflowStates) {
+    const fallbackRunId = payload.fallbackRunId || payload.localFallbackCompletion?.runId || '';
     const fallbackRun = fallbackRunId ? readJsonIfExists(path.join(workflowDir, `${fallbackRunId}.json`)) : null;
-    if (isFailedWorkflowState(currentRun) && fallbackRun && isCompletedLocalFallback(fallbackRun)) {
-      addViolation(violations, 'delegated-failed-local-fallback-completed', 'Failed delegated-terminal workflow state has an unreconciled completed local fallback run.');
+    if (fallbackRun && isCompletedLocalFallback(fallbackRun)) {
+      addViolation(violations, 'delegated-failed-local-fallback-completed', `${basename} is failed and points at completed local fallback ${fallbackRunId}, but it was not superseded.`);
+      continue;
     }
-    if (isFailedWorkflowState(currentRun)) {
-      addViolation(violations, 'current-run-failed-phase-completed', 'current-run.json is failed while phase-status contains completed phase state.');
-    }
+    addViolation(violations, workflowStateViolationCode(basename), `${basename} is failed while phase-status contains completed phase state.`);
   }
 
   const activeRunLeaseId = statusRoot.activeRunLeaseId || '';
@@ -426,21 +482,20 @@ function inspectWorkflowCloseoutDrift({ statusRoot, phases, statusPath, now, vio
     if (now && phase.completedAt) {
       const completedAt = new Date(phase.completedAt).getTime();
       const nowAt = new Date(now).getTime();
-      if (Number.isFinite(completedAt) && Number.isFinite(nowAt) && completedAt > nowAt) {
-        addViolation(violations, 'future-timestamp', `Completed phase ${phase.number} has completedAt later than verifier clock.`, phase.number);
+      if (Number.isFinite(completedAt) && Number.isFinite(nowAt) && completedAt > nowAt + FUTURE_TIMESTAMP_TOLERANCE_MS) {
+        addViolation(violations, 'future-timestamp', `Completed phase ${phase.number} has completedAt more than 5 seconds later than verifier clock.`, phase.number);
       }
     }
   }
 
-  const sessionsDir = path.join(repoRoot, '.claude', 'sessions');
-  if (fs.existsSync(sessionsDir)) {
-    for (const entry of fs.readdirSync(sessionsDir)) {
-      if (!entry.endsWith('.jsonl')) {
-        continue;
-      }
-      const text = readText(path.join(sessionsDir, entry));
-      if (/task_complete/i.test(text) && /"status"\s*:\s*"failed"/i.test(text)) {
-        addViolation(violations, 'session-task-complete-workflow-failed', `Session ${entry} records task_complete while workflow state is failed.`);
+  const sessionFiles = collectSessionFiles({
+    sessionFile: configuredSessionFile,
+    sessionDir: configuredSessionDir || path.join(repoRoot, '.claude', 'sessions'),
+  });
+  if (failedWorkflowStates.length > 0) {
+    for (const filePath of sessionFiles) {
+      if (sessionHasTaskComplete(filePath)) {
+        addViolation(violations, 'session-task-complete-workflow-failed', `Session ${path.basename(filePath)} records task_complete while workflow state is failed.`);
       }
     }
   }
@@ -463,6 +518,9 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     masterPlan: rawConfig.masterPlan || '',
     masterPlanProvided: rawConfig.masterPlanProvided ?? Object.prototype.hasOwnProperty.call(rawConfig, 'masterPlan'),
     executionRoot: rawConfig.executionRoot || '',
+    workflowDir: rawConfig.workflowDir || '',
+    sessionFile: rawConfig.sessionFile || '',
+    sessionDir: rawConfig.sessionDir || '',
     now: rawConfig.now || '',
   };
   const pathAuthority = evaluatePathAuthority({
@@ -579,6 +637,9 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     statusRoot: statusDocument.root,
     phases,
     statusPath,
+    workflowDir: config.workflowDir ? resolvePath(config.workflowDir) : '',
+    sessionFile: config.sessionFile ? resolvePath(config.sessionFile) : '',
+    sessionDir: config.sessionDir ? resolvePath(config.sessionDir) : '',
     now: config.now,
     violations,
   });

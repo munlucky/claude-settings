@@ -98,6 +98,43 @@ test('phase closeout fails when current-run is failed but phase-status is comple
   });
 });
 
+test('phase closeout reads active and latest workflow state contradictions', () => {
+  withFixture({ activePhaseRunFailedPhaseCompleted: true, latestDispatchFailedPhaseCompleted: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'active-phase-run-failed-phase-completed');
+    assertCloseoutViolation(result, 'latest-dispatch-failed-phase-completed');
+  });
+});
+
+test('phase closeout accepts explicitly superseded local fallback workflow state', () => {
+  withFixture({ supersededLocalFallbackWorkflowState: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase closeout supports an explicit workflowDir option', () => {
+  withFixture({}, (root) => {
+    const workflowDir = path.join(root, 'custom-workflow');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), JSON.stringify({
+      runId: 'custom-failed-run',
+      status: 'failed',
+      completionStatus: 'failed',
+    }, null, 2));
+
+    const result = evaluatePhaseCloseout({
+      ...config(root),
+      workflowDir,
+    });
+
+    assertCloseoutViolation(result, 'current-run-failed-phase-completed');
+  });
+});
+
 test('phase closeout fails when completed status keeps a stale activeRunLeaseId', () => {
   withFixture({ staleActiveRunLeaseId: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));
@@ -117,9 +154,35 @@ test('phase closeout fails deterministically for timestamps beyond the injected 
   });
 });
 
+test('phase closeout allows completedAt timestamps inside the five-second clock tolerance', () => {
+  withFixture({ futureTimestamp: true }, (root) => {
+    const result = evaluatePhaseCloseout({
+      ...config(root),
+      now: '2026-05-08T12:00:00.001Z',
+    });
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
 test('phase closeout fails when session task_complete contradicts failed workflow state', () => {
   withFixture({ sessionTaskCompleteWorkflowFailed: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'session-task-complete-workflow-failed');
+  });
+});
+
+test('phase closeout supports explicit session jsonl fixture path', () => {
+  withFixture({ currentRunFailedPhaseCompleted: true }, (root) => {
+    const sessionFile = path.join(root, 'custom-session.jsonl');
+    fs.writeFileSync(sessionFile, `${JSON.stringify({ type: 'assistant', phase: 'commentary', event: 'task_complete' })}\n`);
+
+    const result = evaluatePhaseCloseout({
+      ...config(root),
+      sessionFile,
+    });
 
     assertCloseoutViolation(result, 'session-task-complete-workflow-failed');
   });
@@ -241,6 +304,9 @@ function writeFixture(root, options = {}) {
     incompleteWorksets: false,
     delegatedFailedLocalFallbackCompleted: false,
     currentRunFailedPhaseCompleted: false,
+    activePhaseRunFailedPhaseCompleted: false,
+    latestDispatchFailedPhaseCompleted: false,
+    supersededLocalFallbackWorkflowState: false,
     staleActiveRunLeaseId: false,
     futureTimestamp: false,
     fixedNow: '2026-05-08T12:00:00.000Z',
@@ -317,23 +383,60 @@ function writeFixture(root, options = {}) {
   if (
     settings.delegatedFailedLocalFallbackCompleted
     || settings.currentRunFailedPhaseCompleted
+    || settings.activePhaseRunFailedPhaseCompleted
+    || settings.latestDispatchFailedPhaseCompleted
+    || settings.supersededLocalFallbackWorkflowState
     || settings.sessionTaskCompleteWorkflowFailed
     || settings.environmentBlockedSmokePlanComplete
   ) {
     const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');
     fs.mkdirSync(workflowDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(workflowDir, 'current-run.json'),
-      JSON.stringify({
+
+    const failedPayload = {
         runId: 'delegated-failed-run',
         status: settings.currentRunFailedPhaseCompleted || settings.sessionTaskCompleteWorkflowFailed ? 'failed' : 'completed',
         failureClass: settings.delegatedFailedLocalFallbackCompleted ? 'delegated_terminal_failed' : undefined,
         fallbackRunId: settings.delegatedFailedLocalFallbackCompleted ? 'local-fallback-complete-run' : undefined,
         activeRunLeaseId: settings.staleActiveRunLeaseId ? 'delegated-failed-run' : undefined,
-      }, null, 2)
-    );
+    };
+    const supersededPayload = {
+      runId: 'delegated-failed-run',
+      status: 'superseded-by-local-fallback',
+      completionStatus: 'completed-via-local-fallback',
+      fallbackRunId: 'local-fallback-complete-run',
+      supersededRunLeaseId: 'delegated-failed-run',
+      localFallbackCompletion: {
+        runId: 'local-fallback-complete-run',
+        completionStatus: 'completed-via-local-fallback',
+      },
+    };
+    const writeState = (basename, payload) => {
+      fs.writeFileSync(path.join(workflowDir, basename), JSON.stringify(payload, null, 2));
+    };
 
-    if (settings.delegatedFailedLocalFallbackCompleted) {
+    if (settings.supersededLocalFallbackWorkflowState) {
+      for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
+        writeState(basename, supersededPayload);
+      }
+    } else {
+      writeState('current-run.json', failedPayload);
+      if (settings.activePhaseRunFailedPhaseCompleted) {
+        writeState('active-phase-run.json', {
+          runId: 'active-failed-run',
+          status: 'failed',
+          completionStatus: 'failed',
+        });
+      }
+      if (settings.latestDispatchFailedPhaseCompleted) {
+        writeState('latest-dispatch.json', {
+          runId: 'latest-failed-run',
+          status: 'failed',
+          completionStatus: 'failed',
+        });
+      }
+    }
+
+    if (settings.delegatedFailedLocalFallbackCompleted || settings.supersededLocalFallbackWorkflowState) {
       fs.writeFileSync(
         path.join(workflowDir, 'local-fallback-complete-run.json'),
         JSON.stringify({
