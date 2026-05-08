@@ -73,14 +73,8 @@ It is the main Plan-stage owner for phase documents.
     - When `mvpMethodology.profile: demo_first`, slice by maturity milestone instead of backend-first feature layers.
     - In demo-first plans, a Real Functional phase is executable only when `USER_DEMO_APPROVAL.md` is `approved` with a non-empty approved scope.
     - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
-6. Prepare runnable phase state when the plan package is, or is likely to be, the next execution target.
-   - Treat a newly created or refreshed `docs/implementation/00-master-plan-v{n}.md` package as runnable by default when:
-     - the user explicitly names `moonshot-plan-writer`;
-     - the selected plan lives under `docs/implementation`;
-     - recent conversation includes `moonshot-phase-runner`, phase execution, "개발진행", "계속 진행", or similar continue-execution intent.
-   - Skip runnable preparation only when the user explicitly asks for docs-only output or no execution preparation.
-   - After creating or refreshing a new active package, always run `prepare-implementation-plan-state.mjs --dry-run` before the final response.
-   - Preserve active root plan documents for the selected package only.
+6. Prepare runnable phase state when the plan package is the next execution target.
+   - Preserve active root plan documents.
    - Archive stale runtime/evidence surfaces instead of deleting them:
      - `docs/implementation/execution`
      - `docs/implementation/close`
@@ -96,14 +90,11 @@ It is the main Plan-stage owner for phase documents.
        --plan-dir docs/implementation \
        --master-plan docs/implementation/00-master-plan-v{n}.md \
        --status-file .claude/docs/phase-status.yaml \
-       --execution-root docs/implementation/execution/<plan-slug> \
-       --archive-label <archive-label>
+       --execution-root docs/implementation/execution/<plan-slug>
      ```
-   - Run the same command with `--dry-run` first, using the same archive label planned for the real run. If dry-run reports stale pointers, stale active root docs, or runtime/evidence surfaces from a superseded workstream, run the prepare script for real before reporting completion.
-   - Do not manually patch `phase-status.yaml`, move active phase docs, or move `execution`/`close` directories before the prepare script has produced its dry-run findings.
+   - Run `--dry-run` first when existing `execution`, `close`, or `phase-status.yaml` content may belong to another active workstream.
    - Do not touch `.claude/scripts`, `.claude/runtime-state.sqlite`, `.claude/memory.json`, `.claude/verification.contract.yaml`, project settings, or verification baselines during this preparation step.
    - After preparation, run a pointer self-check before dispatch:
-     - Only the selected master and phase docs remain as root-level `docs/implementation/*.md` active plan docs; older master/phase docs are archived under one archive label.
      - The rewritten `phase-status.yaml` must point to the selected master plan and execution root, mark phase 1 pending/prepared, and list only the current plan's phase docs.
      - `current-run.json`, `active-phase-run.json`, and `latest-dispatch.json` must be absent/archived or reference the selected master plan and execution root at both top level and embedded `phaseRunLease`.
      - `goalRuntime.status` must not be `complete` while any actionable phase remains pending, in_progress, blocked, or retryable.
@@ -132,21 +123,6 @@ It is the main Plan-stage owner for phase documents.
   - One checklist item per phase.
   - Item label format: `Phase NN - <title> (<file>)`.
   - Update to `[x]` only when phase completion criteria in that phase doc are satisfied.
-
-## Mandatory Active Package Closeout
-
-When creating or refreshing a new `docs/implementation/00-master-plan-v{n}.md` package, the completion target is not just written Markdown. The package must be organized as a single active, phase-runner-ready workstream unless the user explicitly requests docs-only output.
-
-Before the final response:
-- Run `prepare-implementation-plan-state.mjs --dry-run` for the selected master plan, status file, execution root, and archive label.
-- If dry-run reports stale pointers or superseded active surfaces, run the prepare script for real.
-- Verify root-level `docs/implementation/*.md` contains only the selected active master/phase docs.
-- Verify older master/phase docs are archived under one archive label.
-- Verify `.claude/docs/phase-status.yaml` points to the selected `masterPlan` and `executionRoot`.
-- Verify `docs/implementation/execution/<plan-slug>` exists and is initialized for the selected plan.
-- Verify workflow-enforcement `current-run`, `active-phase-run`, `latest-dispatch`, and stale `dispatch-*.json` records do not reference superseded master plans or execution roots.
-
-If an archive label collision creates a `-1` archive directory, consolidate related archived plan docs, execution evidence, closeout evidence, phase-status snapshots, and workflow-enforcement files into one final archive directory before reporting completion.
 
 ## Phase Plan Rules
 - Filename pattern: `docs/implementation/{NN}-{phase-name}-v{n}.md`.
