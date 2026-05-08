@@ -111,15 +111,8 @@ setup_codex_project_config() {
 	if [ -d "$source_codex_dir/agents" ]; then
 		target_agents="$codex_home/agents"
 		if [ -e "$target_agents" ] || [ -L "$target_agents" ]; then
-			if [ "$DO_BACKUP" = true ]; then
-				local backup_agents="${target_agents}${BACKUP_SUFFIX}"
-				print_info "Codex agents 백업 중: $target_agents → $backup_agents"
-				mv "$target_agents" "$backup_agents"
-				CODEX_BACKUP_PATHS+=("$backup_agents")
-			else
-				print_warn "기존 Codex agents를 덮어씁니다: $target_agents"
-				rm -rf "$target_agents"
-			fi
+			print_info "Codex agents 최신화 중: $target_agents"
+			rm -rf "$target_agents"
 		fi
 		cp -r "$source_codex_dir/agents" "$target_agents"
 		CODEX_PROJECT_FILES+=("$target_agents")
@@ -535,8 +528,8 @@ usage() {
 
 기본 동작:
   - .claude, .agents, AGENTS.md, .claudeignore, .gitattributes 중 존재 항목 자동 백업 후 설치
-  - .codex/config.toml, .codex/agents/ 중 존재 항목 자동 백업 후 설치
-  - .codex/skills/ 는 백업 없이 최신 복사본으로 동기화
+  - .codex/config.toml 중 존재 항목 자동 백업 후 설치
+  - .codex/agents/, .codex/skills/ 는 백업 없이 최신 복사본으로 동기화
   - PROJECT.md는 기본적으로 제외됩니다 (기존 프로젝트 설정 보호)
   - workflow runtime 산출물(.claude/docs/tasks, phase-status, verdict/report 파일)은 제외됩니다
   - 사용자 파일 자동 보호: *.local.*, custom/, .env* 등
@@ -804,8 +797,8 @@ if [ "$DRY_RUN" = true ]; then
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
 	echo "  - .claude 디렉토리 설치"
-	echo "  - .codex/config.toml, .codex/agents 설치"
-	echo "  - .codex/skills 백업 없이 최신 복사본으로 동기화"
+	echo "  - .codex/config.toml 설치"
+	echo "  - .codex/agents, .codex/skills 백업 없이 최신 복사본으로 동기화"
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .gitattributes 설치/병합"
 	echo "  - legacy .agents/skills 제거"

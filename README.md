@@ -158,8 +158,8 @@ chmod +x install-claude.sh
 
 기본 동작:
 - `.claude`, `.agents`, `AGENTS.md` 중 존재 항목은 자동 백업 후 설치
-- `.codex/config.toml`, `.codex/agents/` 중 존재 항목은 자동 백업 후 설치
-- `.codex/skills/`는 백업하지 않고 `.claude/skills/*`의 최신 복사본으로 교체
+- `.codex/config.toml` 중 존재 항목은 자동 백업 후 설치
+- `.codex/agents/`, `.codex/skills/`는 백업하지 않고 최신 복사본으로 교체
 - `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
 - `.gitattributes`는 LF 줄바꿈 정책을 설치하고 기존 파일이 있으면 병합
 - PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
@@ -234,7 +234,7 @@ cp -r claude-settings/.claude/skills/moonshot-orchestrator /your-project/.claude
 
 ### Codex 설정 동기화
 
-설치 스크립트는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 프로젝트에 실제 파일/디렉터리로 설치합니다. `.codex/skills/*`는 `.claude/skills/*`에서 복사한 프로젝트 로컬 복사본이며, 재설치 시 프로젝트 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`는 수정하지 않습니다.
+설치 스크립트는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 프로젝트에 실제 파일/디렉터리로 설치합니다. 재설치 시 프로젝트 `.codex/agents/`와 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. `.codex/skills/*`는 `.claude/skills/*`에서 복사한 프로젝트 로컬 복사본입니다. Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`는 수정하지 않습니다.
 
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
@@ -265,7 +265,7 @@ Code Review Graph 설정:
 
 주의:
 - 프로젝트 `.codex/skills`는 Codex용 로컬 설치본입니다. truth source는 `.claude/skills`이고, Codex Desktop에는 프로젝트 `.codex/skills`만 노출하는 구성이 기본입니다.
-- 프로젝트 `.codex/skills`는 generated copy로 취급하므로 재설치 시 백업하지 않고 최신 복사본만 유지합니다.
+- 프로젝트 `.codex/agents`와 `.codex/skills`는 generated copy로 취급하므로 재설치 시 백업하지 않고 최신 복사본만 유지합니다.
 - 설치 스크립트는 legacy `.agents/skills`를 제거해 `.agents/skills`와 `.codex/skills`가 동시에 discovery되는 중복 노출을 막습니다.
 - 전역 `skills` 루트의 개인/시스템 스킬은 설치 스크립트가 건드리지 않습니다.
 - 설치 직후 Codex에 스킬이 중복으로 보이면 새 세션을 열어 project `.codex/skills`만 로드되는지 확인하세요.
