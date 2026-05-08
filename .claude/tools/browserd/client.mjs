@@ -5,12 +5,13 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { readState } from "./state.mjs";
-import { logPath, runtimeDir, scriptDir, statePath } from "./runtime-paths.mjs";
+import { logPath, runtimeDir, scriptDir, startupErrorPath, statePath } from "./runtime-paths.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const serverEntry = path.join(__dirname, "server.mjs");
 const nodeBin = process.execPath || "/usr/local/bin/node";
+const startupLockPath = path.join(runtimeDir, "startup.lock");
 
 function parseArgs(argv) {
   const [command = "help", ...rest] = argv;
@@ -99,9 +100,21 @@ async function healthcheck(state, { jsonMode = false, silent = false } = {}) {
   }
 }
 
-async function waitForServer(timeoutMs = 15000) {
+function getStartupWaitTimeoutMs() {
+  if (process.env.BROWSERCTL_STARTUP_WAIT_TIMEOUT_MS) {
+    return Number(process.env.BROWSERCTL_STARTUP_WAIT_TIMEOUT_MS);
+  }
+  const serverStartupTimeoutMs = Number(process.env.BROWSERCTL_STARTUP_TIMEOUT_MS || 30000);
+  return serverStartupTimeoutMs + 10000;
+}
+
+async function waitForServer(timeoutMs = getStartupWaitTimeoutMs()) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
+    const startupError = await readStartupError();
+    if (startupError) {
+      throw new Error(`browserd startup failed: ${startupError.error || "unknown"}`);
+    }
     const state = await readState();
     if (state?.port && state?.token) {
       const ok = await healthcheck(state, { silent: true });
@@ -114,6 +127,66 @@ async function waitForServer(timeoutMs = 15000) {
   throw new Error("Timed out waiting for browserd");
 }
 
+async function readStartupError() {
+  try {
+    return JSON.parse(await fs.readFile(startupErrorPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function removeStartupError() {
+  await fs.unlink(startupErrorPath).catch(() => {});
+}
+
+async function terminateChild(child) {
+  if (!child?.pid) {
+    return;
+  }
+  for (const signal of ["SIGTERM", "SIGKILL"]) {
+    try {
+      process.kill(-child.pid, signal);
+    } catch {
+      try {
+        process.kill(child.pid, signal);
+      } catch {
+        // Ignore processes that already exited or cannot be signaled.
+      }
+    }
+    await sleep(500);
+  }
+}
+
+async function acquireStartupLock() {
+  await fs.mkdir(runtimeDir, { recursive: true });
+  try {
+    const handle = await fs.open(startupLockPath, "wx");
+    await handle.writeFile(`${process.pid}\n${new Date().toISOString()}\n`, "utf8");
+    return handle;
+  } catch (error) {
+    if (error?.code !== "EEXIST") {
+      throw error;
+    }
+    const startupError = await readStartupError();
+    if (startupError) {
+      await fs.unlink(startupLockPath).catch(() => {});
+      return acquireStartupLock();
+    }
+    const stat = await fs.stat(startupLockPath).catch(() => null);
+    const ageMs = stat ? Date.now() - stat.mtimeMs : Number.POSITIVE_INFINITY;
+    if (ageMs > 60000) {
+      await fs.unlink(startupLockPath).catch(() => {});
+      return acquireStartupLock();
+    }
+    throw new Error(`browserd startup already in progress (${startupLockPath})`);
+  }
+}
+
+async function releaseStartupLock(handle) {
+  await handle?.close().catch(() => {});
+  await fs.unlink(startupLockPath).catch(() => {});
+}
+
 async function ensureStarted() {
   const state = await readState();
   if (state?.port && state?.token) {
@@ -123,17 +196,34 @@ async function ensureStarted() {
     }
   }
 
-  await fs.mkdir(runtimeDir, { recursive: true });
-  const out = await fs.open(logPath, "a");
-  const child = spawn(nodeBin, [serverEntry], {
-    cwd: scriptDir,
-    detached: true,
-    stdio: ["ignore", out.fd, out.fd],
-    env: process.env
-  });
-  child.unref();
-  await out.close();
-  return waitForServer();
+  const lock = await acquireStartupLock();
+  let out;
+  let child;
+  try {
+    await removeStartupError();
+    out = await fs.open(logPath, "a");
+    child = spawn(nodeBin, [serverEntry], {
+      cwd: scriptDir,
+      detached: true,
+      stdio: ["ignore", out.fd, out.fd],
+      env: process.env
+    });
+    await out.close();
+    out = null;
+    const started = await waitForServer();
+    child.unref();
+    return started;
+  } catch (error) {
+    await terminateChild(child);
+    const startupError = await readStartupError();
+    if (startupError?.error) {
+      throw new Error(`browserd startup failed: ${startupError.error}`);
+    }
+    throw error;
+  } finally {
+    await out?.close().catch(() => {});
+    await releaseStartupLock(lock);
+  }
 }
 
 async function commandStart() {

@@ -1093,36 +1093,67 @@ function parseScorecardSummary(scorecardPath) {
   }
 
   summary.exists = true;
-  const lines = fs.readFileSync(scorecardPath, 'utf8').split(/\r?\n/);
+  const scorecardText = fs.readFileSync(scorecardPath, 'utf8');
+  const scoreSummary = {
+    current: extractBulletValue(scorecardText, '## Score Summary', 'Current score'),
+    target: extractBulletValue(scorecardText, '## Score Summary', 'Target score'),
+    unmetItems: extractBulletValue(scorecardText, '## Score Summary', 'Unmet checklist items'),
+    blockingDefects: extractBulletValue(scorecardText, '## Score Summary', 'Blocking defects'),
+    verdict: extractBulletValue(scorecardText, '## Score Summary', 'Verdict'),
+  };
+  const adapterTaskStatus = extractBulletValue(scorecardText, '## Task-Level Status Adapter', 'Current task status');
+
+  if (scoreSummary.current) {
+    summary.current = Number.parseInt(scoreSummary.current, 10);
+  }
+  if (scoreSummary.target) {
+    summary.target = Number.parseInt(scoreSummary.target, 10);
+  }
+  if (scoreSummary.unmetItems) {
+    summary.unmetItems = Number.parseInt(scoreSummary.unmetItems, 10);
+  }
+  if (scoreSummary.blockingDefects) {
+    summary.blockingDefects = Number.parseInt(scoreSummary.blockingDefects, 10);
+  }
+  if (scoreSummary.verdict) {
+    summary.verdict = scoreSummary.verdict.trim().toLowerCase().replace(/ /g, '_');
+  }
+  if (adapterTaskStatus) {
+    summary.taskStatus = adapterTaskStatus.trim().toUpperCase().replace(/ /g, '_');
+    summary.taskStatusSource = 'scorecard-markdown';
+    summary.taskStatusExplicit = true;
+  }
+
+  const lines = scorecardText.split(/\r?\n/);
   for (const line of lines) {
     const stripped = line.trim();
     let match = stripped.match(/^- Current score:\s*([0-9]+)\s*$/);
-    if (match) {
+    if (match && !scoreSummary.current) {
       summary.current = Number.parseInt(match[1], 10);
       continue;
     }
     match = stripped.match(/^- Target score:\s*([0-9]+)\s*$/);
-    if (match) {
+    if (match && !scoreSummary.target) {
       summary.target = Number.parseInt(match[1], 10);
       continue;
     }
     match = stripped.match(/^- Unmet checklist items:\s*([0-9]+)\s*$/);
-    if (match) {
+    if (match && !scoreSummary.unmetItems) {
       summary.unmetItems = Number.parseInt(match[1], 10);
       continue;
     }
     match = stripped.match(/^- Blocking defects:\s*([0-9]+)\s*$/);
-    if (match) {
+    if (match && !scoreSummary.blockingDefects) {
       summary.blockingDefects = Number.parseInt(match[1], 10);
       continue;
     }
     match = stripped.match(/^- Verdict:\s*([A-Za-z_ -]+)\s*$/);
-    if (match) {
+    if (match && !scoreSummary.verdict) {
       summary.verdict = match[1].trim().toLowerCase().replace(/ /g, '_');
       continue;
     }
     match = stripped.match(/^- Current task status:\s*([A-Za-z_ -]+)\s*$/);
-    if (match) {
+    if (match && !adapterTaskStatus) {
       summary.taskStatus = match[1].trim().toUpperCase().replace(/ /g, '_');
       summary.taskStatusSource = 'scorecard-markdown';
       summary.taskStatusExplicit = true;
@@ -2423,6 +2454,13 @@ phases:
 ## Task-Level Status Adapter
 - Status: FULL
 - Current task status: FULL
+
+## Attempt Checkpoint
+- Current score: 45
+- Unmet checklist items: review pending
+- Blocking defects: 0
+- Verdict: retry
+- Current task status: PARTIAL
 `, 'utf8');
     fs.writeFileSync(path.join(executionDir, 'HANDOFF.md'), `# Handoff
 ## Status

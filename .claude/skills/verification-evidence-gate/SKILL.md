@@ -43,6 +43,8 @@ This closes the Verify stage in strict runs before Finish / Handoff can begin.
    - `completionStatus.traceability.uncoveredRequirements` is not empty for in-scope `REQ-*`
    - `completionStatus.traceability.scenariosMissingEvidence` is not empty for critical `SCN-*`
    - `completionStatus.traceability.uatReady == false` for user-facing finish claims
+   - frontend/UI evidence is required and visual, accessibility, or performance evidence is missing, failed, stale, or blocked by setup
+   - frontend critical `SCN-*` rows rely on smoke-only evidence when the contract or scenario policy requires open -> act -> mutate -> persist -> recover depth
    - `verdict.workflowEvidence.warnings` is not empty for code-changing closeout work
    - verifier artifact says `workflowEvidence.detected == false` for bounded-direct closeout that claims review/finish completion
    - No evidence of a fresh verification run
@@ -79,5 +81,8 @@ missingInfo:
 - Do not soften missing evidence with optimistic language; the absence of fresh evidence remains a hard block.
 - For code-changing closeout, missing review/finish workflow evidence is treated as missing verification evidence, not as optional metadata.
 - In document-trace runs, missing requirement or critical-scenario evidence is also missing verification evidence.
+- In frontend/UI runs, missing required visual, accessibility, or performance evidence is missing verification evidence, while non-required frontend evidence should be recorded as `not_required` rather than forcing a block.
+- Setup gaps are blocking only when they prevent required frontend evidence from being produced; otherwise record them as warnings or follow-up notes.
+- Keep `uat_ready` distinct from `uat_complete`; do not treat automation evidence as human UAT completion.
 - In score-based loops, an unfinished score verdict is also missing verification evidence.
 - If review findings exist, do not treat the remediation loop as closed until `QA_REPORT.md` records each meaningful item as `accepted`, `challenged`, `deferred`, or `needs_clarification`.

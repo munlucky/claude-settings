@@ -988,22 +988,33 @@ EOF
   reference_fixture_hash_before="$(tree_checksum "$reference_fixture_root")"
   (
     cd "$REPO_ROOT"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_delegated_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime codex --dry-run > "$codex_delegated_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_coord_out"
-    bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
+    if target_runtime_selected "claude"; then
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_delegated_out"
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_coord_out"
+    fi
+    if target_runtime_selected "codex"; then
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime codex --dry-run > "$codex_delegated_out"
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
+    fi
   )
 
-  if ! grep -Fq -- "agent-loop.sh" "$claude_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$claude_delegated_out"; then
-    fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
+  if target_runtime_selected "claude"; then
+    if ! grep -Fq -- "agent-loop.sh" "$claude_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$claude_delegated_out"; then
+      fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
+    fi
+    assert_contains "$claude_delegated_out" "--runtime claude" "Claude delegated runtime flag"
+    assert_contains "$claude_coord_out" "claude --model" "Claude coordinator model route"
+    assert_contains "$claude_coord_out" "--dangerously-skip-permissions" "Claude coordinator adapter"
+    assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
   fi
-  assert_contains "$claude_delegated_out" "--runtime claude" "Claude delegated runtime flag"
-  assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
-  assert_contains "$claude_coord_out" "claude --model" "Claude coordinator model route"
-  assert_contains "$claude_coord_out" "--dangerously-skip-permissions" "Claude coordinator adapter"
-  assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
-  assert_contains "$codex_coord_out" "codex exec --sandbox workspace-write" "Codex coordinator adapter"
-  assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
+  if target_runtime_selected "codex"; then
+    if ! grep -Fq -- "agent-loop.sh" "$codex_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$codex_delegated_out"; then
+      fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
+    fi
+    assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
+    assert_contains "$codex_coord_out" "codex exec --sandbox workspace-write" "Codex coordinator adapter"
+    assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
+  fi
 
   local -a fixture_lines=()
   read_fixture_lines "$TMP_ROOT/render-fixture" "render" "delegated-terminal" fixture_lines

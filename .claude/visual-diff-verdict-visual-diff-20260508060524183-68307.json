@@ -1,0 +1,15 @@
+{
+  "runId": "visual-diff-20260508060524183-68307-identical",
+  "status": "passed",
+  "flowName": "self-test-identical",
+  "currentScreenshot": ".claude/browser-artifacts/visual-self-test/visual-diff-20260508060524183-68307-identical/current.png",
+  "baselineScreenshot": ".claude/browser-artifacts/visual-self-test/visual-diff-20260508060524183-68307-identical/baseline.png",
+  "diffImage": ".claude/browser-artifacts/visual-diffs/visual-diff-20260508060524183-68307-identical-identical.diff.png",
+  "maxDiffRatio": 0.01,
+  "actualDiffRatio": 0,
+  "changedPixels": 0,
+  "totalPixels": 16,
+  "breakpoint": "",
+  "setupGaps": [],
+  "failures": []
+}

@@ -65,6 +65,10 @@ Applicability rule:
 - In document-trace runs, do not return a passing completion verdict while any in-scope requirement lacks verification evidence or any critical scenario lacks fresh runtime evidence.
 - In phase-plan runs, parse `## Critical Product Scenarios` from the source phase document and do not return a passing completion verdict while any `SCN-*` lacks passing evidence in `QA_REPORT.md`, linked evidence files, or verifier artifacts.
 - For critical `SCN-*`, smoke-only page-load evidence is a warning and does not support clean finish; require `open -> act -> mutate -> persist -> recover` or equivalent runtime/E2E evidence.
+- For frontend/UI phases, reconcile declared visual, accessibility, and performance evidence separately from generic scenario evidence.
+- Required frontend evidence is determined by the sprint contract, source phase plan, scenario matrix, verification contract, or critical scenario policy; do not require visual/a11y/perf evidence when none of those sources declare it.
+- When required frontend evidence is missing because screenshot, visual diff, axe, keyboard, focus, Lighthouse, performance budget, browser, or preview setup is unavailable, treat the setup gap as blocking and route to retry or handoff instead of returning a strong completion verdict.
+- Keep `uat_ready` and `uat_complete` separate; browser automation and frontend evidence may support `uat_ready`, but do not imply human `uat_complete`.
 - In score-based loops, do not return a passing completion verdict unless the score verdict is `done`.
 - Do not use success-by-implication language without fresh evidence. Forbidden examples include: `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification`.
 
@@ -210,6 +214,12 @@ selfAuditResult:
   runtimeEvidence:
     criticalScenarioDepth: smoke | open-act-mutate-persist-recover | none
     smokeOnlyCriticalScenarios: []
+    frontendEvidence:
+      visual: not_required | missing | passed | failed | blocked
+      accessibility: not_required | missing | passed | failed | blocked
+      performance: not_required | missing | passed | failed | blocked
+      setupGaps: []
+      requiredBy: []
   retryStrategy:
     retryStrategy: same_direction_refine | partial_redesign | stop_and_handoff | none
     deltaHypothesis: null

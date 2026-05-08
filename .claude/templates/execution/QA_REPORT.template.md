@@ -68,6 +68,22 @@
 - UI change request source: docs/implementation/UI_CHANGE_REQUEST.md
 - UI approval invalidated: yes | no
 
+## Frontend Evidence
+- Applies: yes | no
+- Required by: sprint_contract | source_phase | scenario_matrix | verification_contract | critical_scenario_policy | not_required
+- Release state separation: not_ready | uat_ready | uat_complete
+- Runtime flow depth: smoke | open-act-mutate-persist-recover | not_applicable
+- Visual evidence: not_required | pending | pass | fail
+- Visual evidence paths:
+- Accessibility evidence: not_required | pending | pass | fail
+- Accessibility evidence paths:
+- Performance evidence: not_required | pending | pass | fail
+- Performance evidence paths:
+- Setup gaps:
+- Blocking setup gaps: none unless a required frontend evidence type cannot be produced
+- Smoke-only critical scenario warning: none | present
+- Remediation required before clean finish:
+
 ## Criteria Review
 | Criterion | Result | Notes |
 |-----------|--------|-------|

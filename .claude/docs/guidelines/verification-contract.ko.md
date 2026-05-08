@@ -15,6 +15,11 @@ commands:
   test: "npm test"
   lint: "npm run lint"
   workflowParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
+  storybookTest: "npm run storybook:test"
+  playwrightVisual: "npm run test:visual"
+  axeA11y: "npm run test:a11y"
+  lighthouse: "npm run test:perf"
+  frontendRuntime: "npm run verify:frontend-runtime"
 scope:
   executionPlanes:
     - product_project
@@ -24,18 +29,72 @@ scope:
   fallbackOutsideScope: true
 runtime:
   url: "http://localhost:3000"
+  previewUrl: ""
   e2eCommand: "npm run test:e2e"
   browserFlows:
     - name: "dashboard-smoke"
+      critical: true
       entry: "/dashboard"
+      viewport:
+        width: 390
+        height: 844
       markers:
         - "Dashboard"
       criticalInteractions:
         - "create item"
         - "delete item"
+      steps:
+        - action: "click"
+          target:
+            role: "button"
+            name: "Create item"
+        - action: "assertVisible"
+          target:
+            role: "status"
+            name: "Item created"
+      assertions:
+        - kind: "url"
+          mode: "same-origin"
+        - kind: "console"
+          maxErrors: 0
+      artifacts:
+        screenshot: true
+        console: true
+        network: true
+      visual:
+        required: true
+        baseline: "tests/visual-baselines/dashboard-smoke-mobile.png"
+        maxDiffRatio: 0.01
+        breakpoint: "mobile"
       passIf:
         - "primary action succeeds"
         - "list refreshes"
+frontend:
+  visual:
+    requiredForCriticalScenarios: true
+    maxDiffRatio: 0.01
+    baselinesRoot: "tests/visual-baselines"
+    diffsRoot: ".claude/browser-artifacts/visual-diffs"
+    breakpoints:
+      - width: 390
+        height: 844
+        name: "mobile"
+      - width: 768
+        height: 1024
+        name: "tablet"
+      - width: 1440
+        height: 960
+        name: "desktop"
+  accessibility:
+    requiredForCriticalScenarios: true
+    axe: "required_when_available"
+    keyboardFlow: "required_for_dialogs_and_menus"
+  performance:
+    requiredForCriticalScenarios: false
+    budgets:
+      lcpMs: 2500
+      cls: 0.1
+      inpMs: 200
 artifacts:
   verdict: ".claude/verification-verdict-<runId>.json"
   runtimeVerdict: ".claude/runtime-verdict-<runId>.json"
@@ -95,6 +154,11 @@ policy:
   optionalChecks:
     - test
     - runtime
+    - storybookTest
+    - playwrightVisual
+    - axeA11y
+    - lighthouse
+    - frontendRuntime
 qa:
   evaluatorMode: "separate"
   hardFailOn:
@@ -149,6 +213,16 @@ loop:
 ## 규칙
 - harness는 verdict 의미를 책임지고, 프로젝트별 프레임워크 로직은 계약으로 선언합니다.
 - 프로젝트는 명령어와 evidence를 이 계약으로 제공합니다.
+- frontend check는 downstream 계약이 `policy.requiredChecks` 또는 required `policySet`에 넣을 때만 필수입니다.
+- canonical frontend command name은 `storybookTest`, `playwrightVisual`, `axeA11y`, `lighthouse`, `frontendRuntime`입니다.
+- `runtime.previewUrl`은 배포 preview target을 담을 수 있고, `runtime.url`은 local target을 유지합니다. verifier는 현재 run에 선언된 target을 사용해야 하며 배포 URL을 추론하지 않습니다.
+- `runtime.browserFlows[].steps`는 사용자 action과 명시적 UI assertion을 기록합니다. `assertions`는 URL, console, network, storage, cookie 같은 cross-cutting check를 기록합니다. `artifacts`는 run 후 보존할 evidence 파일 종류를 선언합니다.
+- `runtime.browserFlows[].visual`은 해당 browser flow의 screenshot을 baseline과 비교하는 visual diff opt-in 계약입니다. `required: true`이면 verdict가 `passed`가 아닌 경우 clean completion을 막습니다.
+- visual diff verdict 상태는 `passed`, `failed`, `setup_gap`입니다. baseline이나 current screenshot이 없으면 fake pass가 아니라 `setup_gap`이어야 하며, required visual evidence에서는 blocking입니다.
+- `frontend.visual.baselinesRoot`, `diffsRoot`, `breakpoints`, `maxDiffRatio`는 프로젝트 기본값입니다. flow별 `visual.baseline`, `visual.maxDiffRatio`, `visual.breakpoint`가 있으면 flow 선언이 우선합니다.
+- diff runner는 current screenshot, baseline screenshot, optional diff image, changed pixel count, total pixel count, actual/max diff ratio, breakpoint, setup gaps, failures를 machine-readable JSON으로 남겨야 합니다.
+- 선택적 `frontend` block은 visual, accessibility, performance 기대치를 기록합니다. 이 block 자체는 tool 설치나 check 필수화를 의미하지 않습니다.
+- optional frontend tool이 없으면 setup gap으로 기록합니다. 이는 clean pass도 hard failure도 아닙니다. 단, downstream 계약이 해당 check를 필수로 선언했다면 missing tool은 completion을 막는 setup-gap verdict가 되어야 합니다.
 - 계약은 로컬 `policySets` 로 체크를 묶어둘 수 있으며, 이는 향후 외부 정책 엔진에 매핑하기 전까지 저장소 내부의 거버넌스 단위로 사용합니다.
 - 계약은 `scope` 를 선언해 required check 적용 범위를 plane/path 단위로 제한할 수 있으며, 범위 밖에서는 활성 워크스페이스 계약이나 fallback 감지를 사용합니다.
 - 완료 기준은 모호한 품질 표현이 아니라 재현 가능한 실패 체크로 작성해야 합니다.

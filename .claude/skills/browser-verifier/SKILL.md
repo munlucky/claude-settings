@@ -48,7 +48,7 @@ Validate that a web app is reachable and working at runtime after implementation
 
 ## Execution
 1. Resolve target URL from `--url` or `APP_BASE_URL` (default: `http://localhost:3000`).
-2. If `--browser-flow` is set, ask the harness to attempt a browser-based flow using `browserctl` on `PATH` or `.claude/bin/browserctl`.
+2. If `--browser-flow` is set, ask the harness to run `.claude/scripts/browser-flow-runner.mjs` using `browserctl` on `PATH` or `.claude/bin/browserctl`.
 3. If browser runtime is available and the caller did not explicitly choose another flow, treat `smoke` as the default browser-flow for the standard verification path.
 4. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional browser-flow/E2E arguments from the isolated verifier boundary when available.
 5. If `--e2e` is omitted, the script auto-detects npm scripts in this order:
@@ -66,11 +66,18 @@ Validate that a web app is reachable and working at runtime after implementation
 - pass/fail status
 - target URL and HTTP response summary
 - optional browser-flow status
+- optional browser-flow verdict file at `.claude/browser-flow-verdict-<runId>.json`
 - optional E2E result
-- runtime evidence depth: `smoke` or `open-act-mutate-persist-recover`
+- runtime evidence depth: `smoke`, `open-act`, or `open-act-mutate-persist-recover`
 - critical scenario smoke-only warnings
 - next actions (restart server, fix route, rerun tests)
 - structured summary suitable for merge-back into the caller session
+
+## Browser Flow Artifacts
+- Runner verdicts are written to `.claude/browser-flow-verdict-<runId>.json`.
+- Screenshots, console events, and network events are written under `.claude/browser-artifacts/` when the flow requests those artifacts.
+- Missing browser runtime or missing flow declarations should produce a setup-gap verdict instead of a hand-written pass.
+- Critical `SCN-*` flows need interaction evidence beyond smoke before clean finish.
 
 ## Script
 ```bash

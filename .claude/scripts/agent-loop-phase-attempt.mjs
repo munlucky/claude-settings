@@ -35,6 +35,8 @@ const FINISH_CLOSEOUT_GATES = new Set([
   'missing-finish-closeout',
 ]);
 
+const REVIEW_ONLY_REASONS = new Set(REVIEW_CLOSEOUT_GATES);
+
 const VERIFICATION_MISSING_GATES = new Set([
   'no-fresh-verification-artifact',
   'missing-verification-evidence',
@@ -75,6 +77,17 @@ const ARTIFACT_CONTRACT_INVALID_GATES = new Set([
   'plan-conformance-unapproved-deferred-scope',
   'plan-conformance-verification-verdict-inconsistent',
 ]);
+
+function requiresCloseoutRemediation(reason) {
+  const classification = classifyCompletionGateReason(reason);
+  return [
+    'review_closeout_missing',
+    'finish_closeout_missing',
+    'verification_missing',
+    'score_incomplete',
+    'artifact_contract_invalid',
+  ].includes(classification.category);
+}
 
 function classifyCompletionGateReason(reason, context = {}) {
   const rawReason = String(reason || '').trim();

@@ -15,6 +15,8 @@ file-length|.claude/scripts/workflow-enforcement.mjs
 file-length|.claude/scripts/verify-phase-runtime-parity-shell-core.sh
 file-length|.claude/scripts/verify-phase-runtime-parity.sh
 file-length|.claude/agents/verification/verify-changes.sh
+file-length|.claude/agents/verification/verify-runtime.sh
+file-length|.claude/scripts/browser-flow-runner.mjs
 file-length|install-claude.sh
 console-log|.claude/scripts/workflow-enforcement.mjs
 console-log|.claude/scripts/install-browser-runtime.mjs

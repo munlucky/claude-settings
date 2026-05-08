@@ -9,6 +9,8 @@ __pycache__/
 .claude/traces/
 .claude/.claude/traces/
 .claude/runtime-verdict-*.json
+.claude/browser-flow-verdict-*.json
+.claude/browser-artifacts/
 .claude/runtime-state.sqlite*
 .claude/worktree-prepare.json
 .claude/worktree-setup.log
@@ -26,5 +28,8 @@ __pycache__/
 .claude/memorygraph/
 .code-review-graph/
 .claude/logs
+docs/implementation/**/execution/
+docs/implementation/**/close/
+docs/implementation/**/archive/
 .tmp/
 .DS_Store

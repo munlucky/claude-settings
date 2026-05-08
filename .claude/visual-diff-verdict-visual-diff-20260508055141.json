@@ -1,0 +1,17 @@
+{
+  "runId": "visual-diff-20260508055141-missing-baseline",
+  "status": "setup_gap",
+  "flowName": "self-test-missing-baseline",
+  "currentScreenshot": ".claude/browser-artifacts/visual-self-test/visual-diff-20260508055141-missing-baseline/current.png",
+  "baselineScreenshot": ".claude/browser-artifacts/visual-self-test/visual-diff-20260508055141-missing-baseline/missing.png",
+  "diffImage": "",
+  "maxDiffRatio": 0.01,
+  "actualDiffRatio": null,
+  "changedPixels": 0,
+  "totalPixels": 0,
+  "breakpoint": "",
+  "setupGaps": [
+    "missing_baseline:.claude/browser-artifacts/visual-self-test/visual-diff-20260508055141-missing-baseline/missing.png"
+  ],
+  "failures": []
+}

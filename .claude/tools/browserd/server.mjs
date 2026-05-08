@@ -3,10 +3,11 @@ import fs from "node:fs/promises";
 import { chromium } from "playwright";
 import {
   artifactsDir,
-  getChromeExecutablePath,
+  getChromeLaunchConfig,
   getDefaultPort,
   getHost,
-  getIdleTimeoutMs
+  getIdleTimeoutMs,
+  startupErrorPath
 } from "./runtime-paths.mjs";
 import { buildState, createToken, ensureRuntimeDirs, nowIso, removeState, writeState } from "./state.mjs";
 
@@ -15,6 +16,7 @@ const host = getHost();
 const requestedPort = Number(process.env.BROWSERCTL_PORT || getDefaultPort());
 const token = process.env.BROWSERCTL_TOKEN || createToken();
 const idleTimeoutMs = getIdleTimeoutMs();
+const startupTimeoutMs = Number(process.env.BROWSERCTL_STARTUP_TIMEOUT_MS || 30000);
 
 let browser;
 let context;
@@ -27,6 +29,29 @@ let recentConsole = [];
 let recentNetwork = [];
 let idleTimer;
 const PAGE_CONSOLE_BUFFER_KEY = "__browserctlConsoleEvents";
+
+async function writeStartupError(error) {
+  await ensureRuntimeDirs();
+  const payload = {
+    ok: false,
+    phase: "startup",
+    pid: process.pid,
+    timestamp: nowIso(),
+    error: String(error?.message || error),
+    stack: String(error?.stack || ""),
+    chromeExecutablePath: getChromeLaunchConfig().chromeExecutablePath
+  };
+  await fs.writeFile(startupErrorPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8").catch(() => {});
+  await fs.appendFile(
+    `${artifactsDir}/../server.log`,
+    `[${payload.timestamp}] startup_failed:${payload.error}\n`
+  ).catch(() => {});
+}
+
+async function logStartupStep(step) {
+  await ensureRuntimeDirs();
+  await fs.appendFile(`${artifactsDir}/../server.log`, `[${nowIso()}] startup:${step}\n`).catch(() => {});
+}
 
 function touch() {
   if (idleTimer) {
@@ -59,15 +84,21 @@ function resetNetworkBuffers() {
 
 async function initBrowser() {
   await ensureRuntimeDirs();
-  const chromeExecutablePath = getChromeExecutablePath();
+  const { launchOptions, chromeExecutablePath } = getChromeLaunchConfig();
+  await logStartupStep(
+    `launch_begin chrome=${chromeExecutablePath || "playwright-default"} channel=${launchOptions.channel || ""}`
+  );
 
   browser = await chromium.launch({
     headless: true,
-    executablePath: chromeExecutablePath || undefined
+    ...launchOptions,
+    timeout: startupTimeoutMs
   });
+  await logStartupStep("launch_complete");
   context = await browser.newContext({
     viewport: { width: 1440, height: 960 }
   });
+  await logStartupStep("context_complete");
   await context.addInitScript((bufferKey) => {
     const target = globalThis;
     if (!Array.isArray(target[bufferKey])) {
@@ -106,7 +137,9 @@ async function initBrowser() {
       };
     }
   }, PAGE_CONSOLE_BUFFER_KEY);
+  await logStartupStep("init_script_complete");
   page = await context.newPage();
+  await logStartupStep("page_complete");
 
   page.on("console", async (msg) => {
     const entry = {
@@ -159,6 +192,7 @@ async function initBrowser() {
     server.once("error", reject);
     server.listen(requestedPort, host, resolve);
   });
+  await logStartupStep("listen_complete");
 
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : requestedPort;
@@ -171,6 +205,7 @@ async function initBrowser() {
     chromeExecutablePath
   });
   await writeState(state);
+  await logStartupStep("state_written");
   touch();
 }
 
@@ -429,4 +464,17 @@ async function shutdown(reason) {
 process.on("SIGINT", () => void shutdown("sigint"));
 process.on("SIGTERM", () => void shutdown("sigterm"));
 
-await initBrowser();
+const startupTimer = setTimeout(() => {
+  void writeStartupError(new Error(`browserd_startup_timeout:${startupTimeoutMs}`)).finally(() => {
+    process.exit(70);
+  });
+}, startupTimeoutMs + 5000);
+
+try {
+  await initBrowser();
+  clearTimeout(startupTimer);
+} catch (error) {
+  clearTimeout(startupTimer);
+  await writeStartupError(error);
+  await shutdown("startup_failed");
+}
