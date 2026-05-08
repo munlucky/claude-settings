@@ -286,6 +286,7 @@ def build_markdown(args):
             "- `done` requires all demo-first MVP objectives to be pass when profile is `demo_first`",
             "- `done` requires Unmet checklist items = 0",
             "- `done` requires Blocking defects = 0",
+            "- `done` is blocked when environmentBlockers are recorded or normalizedRunVerdict is `complete_with_environment_blocker`",
             "- `blocked` means environment, contract, or dependency prevents progress",
             "- `retry` means continue the active phase only",
         ]

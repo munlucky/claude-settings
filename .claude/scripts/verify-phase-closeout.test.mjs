@@ -196,6 +196,30 @@ test('phase closeout fails when environment-blocked smoke evidence claims plan c
   });
 });
 
+test('phase closeout accepts in-progress environment-blocked normalized verdict with blocker payload', () => {
+  withFixture({
+    checklistChecked: false,
+    environmentBlockedSmokePlanComplete: true,
+    environmentBlockedNormalizedInProgress: true,
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase status fixture records environmentBlockers for environment-blocked completion verdict', () => {
+  withFixture({ checklistChecked: false, environmentBlockedNormalizedInProgress: true }, (root) => {
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.match(text, /normalizedRunVerdict:\s+complete_with_environment_blocker/);
+    assert.match(text, /environmentBlockers:/);
+    assert.match(text, /check:\s+external_provider_smoke/);
+    assert.match(text, /reason:\s+"external provider smoke credential blocked"/);
+  });
+});
+
 test('plan conformance fails on unapproved alternative implementation language', () => {
   withFixture({ qaExtra: '- Note: alternative implementation used for the renderer.' }, (root) => {
     const result = evaluatePlanConformance({
@@ -312,6 +336,7 @@ function writeFixture(root, options = {}) {
     fixedNow: '2026-05-08T12:00:00.000Z',
     sessionTaskCompleteWorkflowFailed: false,
     environmentBlockedSmokePlanComplete: false,
+    environmentBlockedNormalizedInProgress: false,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -364,11 +389,21 @@ function writeFixture(root, options = {}) {
       'schemaVersion: "1.0"',
       'masterPlan: "docs/implementation/00-master-plan-v1.md"',
       'planDir: "docs/implementation"',
+      ...(settings.environmentBlockedNormalizedInProgress ? [
+        'normalizedRunVerdict: complete_with_environment_blocker',
+        'stopReasonClass: environment_blocker',
+        'stopReasonExplanation: "external provider smoke credential blocked"',
+        'environmentBlockers:',
+        '  - check: external_provider_smoke',
+        '    reason: "external provider smoke credential blocked"',
+        '    evidencePath: ".claude/logs/workflow-enforcement/environment-blocked-smoke.json"',
+        '    observedAt: "2026-05-08T12:00:00Z"',
+      ] : []),
       ...(settings.staleActiveRunLeaseId ? ['activeRunLeaseId: "delegated-failed-run"'] : []),
       'phases:',
       '  - number: 1',
       '    title: "Phase 01: Feature"',
-      '    status: completed',
+      `    status: ${settings.environmentBlockedNormalizedInProgress ? 'in_progress' : 'completed'}`,
       ...(settings.staleActiveRunLeaseId ? ['    activeRunLeaseId: "delegated-failed-run"'] : []),
       ...(settings.futureTimestamp ? ['    completedAt: "2026-05-08T12:00:05.001Z"'] : []),
       '    sprintContract: "docs/implementation/execution/01-feature/SPRINT_CONTRACT.md"',

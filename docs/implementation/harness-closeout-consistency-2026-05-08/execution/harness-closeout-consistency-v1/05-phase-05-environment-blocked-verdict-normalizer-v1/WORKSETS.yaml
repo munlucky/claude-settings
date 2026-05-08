@@ -1,0 +1,13 @@
+# Phase 05 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths: [".claude/scripts/moonshot-phase-dispatch.mjs", ".claude/scripts/agent-loop-phase-state.mjs", ".claude/scripts/verify-phase-closeout.mjs", ".claude/scripts/workflow-enforcement.mjs", ".claude/scripts/agent-loop-phase-artifacts.mjs", ".claude/scripts/render-scorecard.py", ".claude/scripts/write-verification-verdict.py", ".claude/scripts/verify-phase-closeout.test.mjs"]
+    verificationCommands: ["node .claude/scripts/verify-phase-closeout.test.mjs", "python .claude/scripts/write-verification-verdict.py --output .claude/verification-verdict-phase05-final.json --run-id phase05-codex-direct --phase-number 5", "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/harness-closeout-consistency-2026-05-08/05-environment-blocked-verdict-normalizer-v1.md --sprint-contract docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/05-phase-05-environment-blocked-verdict-normalizer-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/05-phase-05-environment-blocked-verdict-normalizer-v1/QA_REPORT.md --scorecard docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/05-phase-05-environment-blocked-verdict-normalizer-v1/SCORECARD.md --handoff docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/05-phase-05-environment-blocked-verdict-normalizer-v1/HANDOFF.md"]
+    evidence: ["Structured verdict: .claude/verification-verdict-phase05-final.json", "Runner log: node .claude/scripts/verify-phase-closeout.test.mjs", "Stage: verify", "Status: verified", "Exact target verification passed 25/25", "Structured verdict: .claude/verification-verdict-phase05-final.json", "Plan conformance passed with violations=0"]
+    completedAt: "2026-05-08T13:01:00Z"
+worksets: []

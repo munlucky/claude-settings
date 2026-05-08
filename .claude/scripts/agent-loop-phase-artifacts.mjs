@@ -610,6 +610,10 @@ function syncPhaseArtifacts(input = {}) {
   const logFile = String(runtime.logFile || state.logFile || '').trim();
   const detail = String(runtime.detail || state.detail || '').trim();
   const timestamp = String(state.timestamp || runtime.timestamp || nowIsoSeconds()).trim();
+  const normalizedRunVerdict = String(state.normalizedRunVerdict || runtime.normalizedRunVerdict || '').trim();
+  const environmentBlockers = Array.isArray(state.environmentBlockers)
+    ? state.environmentBlockers
+    : (Array.isArray(runtime.environmentBlockers) ? runtime.environmentBlockers : []);
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
@@ -651,6 +655,8 @@ function syncPhaseArtifacts(input = {}) {
       detail ? `- Detail: ${detail}` : '- Detail: structured artifact sync',
       verdictRelPath ? `- Verification verdict file: ${verdictRelPath}` : '- Verification verdict file: .claude/verification-verdict-*.json',
       `- Verification verdict: ${String(runtime.verdict || score.verdict || 'pending').trim() || 'pending'}`,
+      `- Normalized run verdict: ${normalizedRunVerdict || 'pending'}`,
+      `- Environment blockers: ${environmentBlockers.length > 0 ? JSON.stringify(environmentBlockers) : 'none'}`,
       `- Runtime evidence depth: ${runtime.evidenceDepth || 'pending'}`,
       `- Critical scenario smoke-only warnings: ${runtime.smokeWarnings || 'none'}`,
       '',

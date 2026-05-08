@@ -494,6 +494,26 @@ function removeRootSectionLines(lines, parent) {
   lines.splice(index, endIndex - index);
 }
 
+function setRootListOfMappingsInLines(lines, parent, entries) {
+  removeRootSectionLines(lines, parent);
+  const rendered = [`${parent}:`];
+  for (const entry of entries) {
+    rendered.push(`  - check: ${yamlScalar(entry.check)}`);
+    rendered.push(`    reason: ${yamlScalar(entry.reason)}`);
+    rendered.push(`    evidencePath: ${yamlScalar(entry.evidencePath)}`);
+    rendered.push(`    observedAt: ${yamlScalar(entry.observedAt)}`);
+  }
+
+  let insertAt = lines.length;
+  for (let probe = 0; probe < lines.length; probe += 1) {
+    if (lines[probe].trim() === 'phases:') {
+      insertAt = probe;
+      break;
+    }
+  }
+  lines.splice(insertAt, 0, ...rendered);
+}
+
 function setRootMappingLine(lines, parent, child, value) {
   const parentPrefix = `${parent}:`;
   const childPrefix = `  ${child}:`;
@@ -2352,6 +2372,19 @@ function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, st
   if (normalizedRunVerdict === 'success' && stopReasonClass === 'clean_complete') {
     setRootScalarInLines(lines, 'lastStopReasonDetail', yamlScalar(stopReasonExplanation));
     removeStaleRootStopReasonArtifactLines(lines);
+  }
+
+  if (normalizedRunVerdict === 'complete_with_environment_blocker') {
+    const observedAt = nowIsoSeconds();
+    const reason = stopReasonExplanation || 'external provider smoke blocked by environment';
+    setRootListOfMappingsInLines(lines, 'environmentBlockers', [{
+      check: 'external_provider_smoke',
+      reason,
+      evidencePath: CURRENT_RUN_FILE,
+      observedAt,
+    }]);
+  } else {
+    removeRootSectionLines(lines, 'environmentBlockers');
   }
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }

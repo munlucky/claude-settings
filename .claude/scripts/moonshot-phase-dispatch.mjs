@@ -275,6 +275,7 @@ function setNormalizedRunVerdict(normalizedRunVerdict, stopReasonClass, stopReas
   const current = readCurrentNormalizedVerdict();
   const priority = {
     success: 0,
+    complete_with_environment_blocker: 1,
     success_with_warning: 1,
     paused: 2,
     blocked: 3,
@@ -303,6 +304,15 @@ function setNormalizedRunVerdict(normalizedRunVerdict, stopReasonClass, stopReas
 function normalizeDispatchVerdict(exitCode, stopReasonCode, detail, completionStatus) {
   const reason = String(stopReasonCode || '').toLowerCase();
   const explanation = String(detail || stopReasonCode || '').trim();
+  const environmentBlockedComplete = /\b(environment[-_ ]blocked|external[-_ ]smoke[-_ ]blocked|provider[-_ ]smoke[-_ ]blocked|credential[-_ ]blocked)\b/i.test(`${reason} ${explanation}`)
+    && /\b(complete|completed|local[-_ ]implementation|implementation[-_ ]complete|phase[-_ ]only)\b/i.test(`${completionStatus || ''} ${explanation}`);
+  if (environmentBlockedComplete) {
+    return {
+      normalizedRunVerdict: 'complete_with_environment_blocker',
+      stopReasonClass: 'environment_blocker',
+      stopReasonExplanation: explanation || 'implementation completed but external provider smoke is environment-blocked',
+    };
+  }
   if (exitCode === 0) {
     return {
       normalizedRunVerdict: 'success',

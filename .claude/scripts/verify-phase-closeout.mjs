@@ -240,6 +240,7 @@ function verdictInternallyConsistent(parsed = {}) {
   const verdict = String(parsed.verdict || '').trim().toLowerCase();
   const scoreVerdict = String(parsed.score?.verdict || '').trim().toLowerCase();
   const commands = Array.isArray(parsed.commands) ? parsed.commands : [];
+  const environmentBlockers = Array.isArray(parsed.environmentBlockers) ? parsed.environmentBlockers : [];
   const allCommandsPassed = commands.length > 0
     && commands.every((command) => String(command.status || '').trim().toLowerCase() === 'passed');
 
@@ -250,6 +251,9 @@ function verdictInternallyConsistent(parsed = {}) {
     return false;
   }
   if (verdict === 'passed' && ['blocked', 'retry', 'failed'].includes(scoreVerdict)) {
+    return false;
+  }
+  if (environmentBlockers.length > 0 && verdict === 'passed' && scoreVerdict === 'done') {
     return false;
   }
   return true;
@@ -378,6 +382,15 @@ function readJsonIfExists(filePath) {
   }
 }
 
+function hasEnvironmentBlockerPayload(statusText) {
+  const text = normalize(statusText);
+  return /^environmentBlockers:\s*$/m.test(text)
+    && /^\s+-\s+check:\s*\S+/m.test(text)
+    && /^\s+reason:\s*\S+/m.test(text)
+    && /^\s+evidencePath:\s*\S+/m.test(text)
+    && /^\s+observedAt:\s*\S+/m.test(text);
+}
+
 function workflowStateViolationCode(basename) {
   switch (basename) {
     case 'current-run.json':
@@ -441,6 +454,7 @@ function sessionHasTaskComplete(filePath) {
 
 function inspectWorkflowCloseoutDrift({
   statusRoot,
+  statusText,
   phases,
   statusPath,
   workflowDir: configuredWorkflowDir,
@@ -450,9 +464,6 @@ function inspectWorkflowCloseoutDrift({
   violations,
 }) {
   const completedPhases = phases.filter((phase) => phase.status === 'completed');
-  if (completedPhases.length === 0) {
-    return;
-  }
 
   const repoRoot = path.dirname(path.dirname(path.dirname(statusPath)));
   const workflowDir = configuredWorkflowDir || path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement');
@@ -507,7 +518,11 @@ function inspectWorkflowCloseoutDrift({
     && String(blockedSmoke.evidenceDepth || '').toLowerCase() === 'smoke_only'
     && String(blockedSmoke.planStatus || '').toLowerCase() === 'complete'
   ) {
-    addViolation(violations, 'environment-blocked-smoke-plan-complete', 'Environment-blocked smoke evidence cannot justify completed plan status.');
+    if (completedPhases.length > 0) {
+      addViolation(violations, 'environment-blocked-smoke-plan-complete', 'Environment-blocked smoke evidence cannot justify completed phase status.');
+    } else if (statusRoot.normalizedRunVerdict !== 'complete_with_environment_blocker' || !hasEnvironmentBlockerPayload(statusText)) {
+      addViolation(violations, 'environment-blocked-smoke-plan-complete', 'Environment-blocked smoke evidence must be normalized as complete_with_environment_blocker with environmentBlockers payload.');
+    }
   }
 }
 
@@ -539,7 +554,8 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     phaseNumber: null,
   }));
 
-  const statusDocument = fs.existsSync(statusPath) ? parsePhaseStatusDocument(readText(statusPath)) : { root: {}, phases: [] };
+  const statusText = fs.existsSync(statusPath) ? readText(statusPath) : '';
+  const statusDocument = statusText ? parsePhaseStatusDocument(statusText) : { root: {}, phases: [] };
   const phases = statusDocument.phases;
   const checklist = fs.existsSync(masterPath) ? parseMasterChecklist(readText(masterPath)) : new Map();
 
@@ -635,6 +651,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
 
   inspectWorkflowCloseoutDrift({
     statusRoot: statusDocument.root,
+    statusText,
     phases,
     statusPath,
     workflowDir: config.workflowDir ? resolvePath(config.workflowDir) : '',

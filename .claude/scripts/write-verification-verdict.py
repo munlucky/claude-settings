@@ -35,6 +35,21 @@ def parse_command(value: str) -> dict:
     return {"name": name, "run": run, "status": status}
 
 
+def parse_environment_blocker(value: str) -> dict:
+    parts = [part.strip() for part in value.split("|", 3)]
+    if len(parts) != 4 or any(not part for part in parts):
+        raise argparse.ArgumentTypeError(
+            "environment blocker entries must be formatted as 'check|reason|evidencePath|observedAt'"
+        )
+    check, reason, evidence_path, observed_at = parts
+    return {
+        "check": check,
+        "reason": reason,
+        "evidencePath": evidence_path,
+        "observedAt": observed_at,
+    }
+
+
 PLACEHOLDER_CHECK_TOKENS = {"none", "없음", "n/a", "na", "null", ""}
 
 
@@ -175,6 +190,7 @@ def main() -> int:
     )
     parser.add_argument("--blocker-fingerprint", default="")
     parser.add_argument("--environment-fingerprint", default="")
+    parser.add_argument("--environment-blocker", action="append", type=parse_environment_blocker, default=[])
     parser.add_argument("--artifact-fingerprint", default="")
     parser.add_argument("--supersedes", action="append", default=[])
     parser.add_argument("--superseded-by", default="")
@@ -349,6 +365,7 @@ def main() -> int:
         "blockerClass": blocker_class,
         "blockerFingerprint": blocker_fingerprint,
         "environmentFingerprint": environment_fingerprint,
+        "environmentBlockers": args.environment_blocker,
         "artifactFingerprint": artifact_fingerprint,
         "supersedes": args.supersedes,
         "supersededBy": args.superseded_by,

@@ -1159,6 +1159,8 @@ function verifyEnforcement(argv) {
       const contractReviewed = extractBulletValue(text, '## Contract Review Evidence', 'Contract reviewed by evaluator').toLowerCase();
       const runtimeEvidenceDepth = extractBulletValue(text, '## Runtime Updates', 'Runtime evidence depth').toLowerCase();
       const smokeWarnings = extractBulletValue(text, '## Runtime Updates', 'Critical scenario smoke-only warnings').toLowerCase();
+      const normalizedRunVerdict = extractBulletValue(text, '## Runtime Updates', 'Normalized run verdict').toLowerCase();
+      const environmentBlockers = extractBulletValue(text, '## Runtime Updates', 'Environment blockers').toLowerCase();
       const retryStrategy = extractBulletValue(text, '## Failure Loop', 'Retry strategy');
       const deltaHypothesis = extractBulletValue(text, '## Failure Loop', 'Delta hypothesis');
       const repeatedFailurePolicy = extractBulletValue(text, '## Failure Loop', 'Repeated failure policy');
@@ -1187,6 +1189,12 @@ function verifyEnforcement(argv) {
           violations.push(`${qaReport}: milestone-only stop reasons are invalid`);
         }
         if (nextPath === 'clean_finish') {
+          if (normalizedRunVerdict === 'complete_with_environment_blocker') {
+            violations.push(`${qaReport}: clean_finish is blocked while normalized run verdict is complete_with_environment_blocker`);
+          }
+          if (environmentBlockers && !['none', '[]', 'n/a'].includes(environmentBlockers)) {
+            violations.push(`${qaReport}: clean_finish is blocked while environment blockers are recorded`);
+          }
           if (scopeStatus !== 'complete') violations.push(`${qaReport}: clean_finish requires Scope status = complete`);
           if (closeoutReason !== 'scope_complete') violations.push(`${qaReport}: clean_finish requires Closeout reason = scope_complete`);
           if (reviewCompleted !== 'yes') violations.push(`${qaReport}: clean_finish requires Review completed = yes`);
