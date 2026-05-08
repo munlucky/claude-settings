@@ -16,6 +16,21 @@ const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
 const EXTERNAL_BLOCKER_WORDS = /\b(external|account|credential|credentials|launch|domain|cloudflare|search console|adsense|manual|no-go)\b/i;
 
+function usage() {
+  return [
+    'Usage:',
+    '  verify-phase-closeout.mjs self-test',
+    '  verify-phase-closeout.mjs --plan-dir <path> --master-plan <path> --status-file <path> [--json]',
+    '',
+    'Options:',
+    '  --plan-dir <path>      Active plan directory.',
+    '  --master-plan <path>   Required master plan path; default fallback is disabled.',
+    '  --status-file <path>   Phase status YAML path.',
+    '  --json                 Print JSON result.',
+    '  --help, -h             Show this help.',
+  ].join('\n');
+}
+
 function normalize(value) {
   return String(value || '').replace(/\r\n/g, '\n');
 }
@@ -41,9 +56,16 @@ function parseArgs(argv) {
   if (args[0] === 'self-test') {
     return { selfTest: true };
   }
+  if (args[0] === '--help' || args[0] === '-h') {
+    return { help: true };
+  }
   while (args.length > 0) {
     const arg = args.shift();
     switch (arg) {
+      case '--help':
+      case '-h':
+        result.help = true;
+        break;
       case '--status-file':
         result.statusFile = args.shift() || '';
         break;
@@ -628,9 +650,19 @@ function runSelfTest() {
     const passing = evaluatePhaseCloseout({
       statusFile: '.claude/docs/phase-status.yaml',
       planDir: 'docs/implementation',
+      masterPlan: 'docs/implementation/00-master-plan-v1.md',
+      masterPlanProvided: true,
     });
     if (!passing.allowed) {
       throw new Error(`expected passing demo-first fixture, got ${passing.reason}`);
+    }
+
+    const missingMasterPlan = evaluatePhaseCloseout({
+      statusFile: '.claude/docs/phase-status.yaml',
+      planDir: 'docs/implementation',
+    });
+    if (missingMasterPlan.allowed || missingMasterPlan.reason !== 'master_plan_missing') {
+      throw new Error(`expected master_plan_missing without explicit master plan, got ${missingMasterPlan.reason}`);
     }
 
     const failingRoot = makeTempRoot('phase-closeout-demo-first-fail-');
@@ -639,6 +671,8 @@ function runSelfTest() {
     const failing = evaluatePhaseCloseout({
       statusFile: '.claude/docs/phase-status.yaml',
       planDir: 'docs/implementation',
+      masterPlan: 'docs/implementation/00-master-plan-v1.md',
+      masterPlanProvided: true,
     });
     if (failing.allowed || failing.reason !== 'user_validation_required') {
       throw new Error(`expected user_validation_required, got ${failing.reason}`);
@@ -650,6 +684,8 @@ function runSelfTest() {
     const parity = evaluatePhaseCloseout({
       statusFile: '.claude/docs/phase-status.yaml',
       planDir: 'docs/implementation',
+      masterPlan: 'docs/implementation/00-master-plan-v1.md',
+      masterPlanProvided: true,
     });
     if (parity.allowed || parity.reason !== 'contract_parity_failed') {
       throw new Error(`expected contract_parity_failed, got ${parity.reason}`);
@@ -716,6 +752,10 @@ function runSelfTest() {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    printLine(usage());
+    return;
+  }
   if (options.selfTest) {
     runSelfTest();
     return;

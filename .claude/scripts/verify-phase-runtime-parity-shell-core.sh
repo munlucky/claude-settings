@@ -35,7 +35,11 @@ cleanup() {
     log "keeping temp artifacts: $TMP_ROOT"
     return
   fi
-  rm -rf "$TMP_ROOT"
+  if ! rm -rf "$TMP_ROOT"; then
+    local remaining_count
+    remaining_count="$(find "$TMP_ROOT" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
+    warn "cleanup incomplete: $TMP_ROOT (${remaining_count:-unknown} remaining paths)"
+  fi
 }
 trap cleanup EXIT
 
@@ -594,6 +598,23 @@ run_runtime_probes() {
   fi
 }
 
+terminate_process_tree() {
+  local root_pid="$1"
+  local signal_name="${2:-TERM}"
+  local child_pid
+
+  if [[ -z "$root_pid" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r child_pid; do
+    [[ -n "$child_pid" ]] || continue
+    terminate_process_tree "$child_pid" "$signal_name"
+  done < <(pgrep -P "$root_pid" 2>/dev/null || true)
+
+  kill "-$signal_name" "$root_pid" >/dev/null 2>&1 || true
+}
+
 run_with_runtime_timeout() {
   local timeout_seconds="$1"
   shift
@@ -606,18 +627,24 @@ run_with_runtime_timeout() {
   if [[ ${#env_assignments[@]} -gt 0 ]]; then
     cmd=(env "${env_assignments[@]}" "${cmd[@]}")
   fi
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$timeout_seconds" "${cmd[@]}"
-    return $?
-  fi
 
   local pid
   local exit_code=0
+  local timeout_marker
+  timeout_marker="$(mktemp "$TMP_ROOT/runtime-timeout.XXXXXX")"
+  rm -f "$timeout_marker"
   "${cmd[@]}" &
   pid=$!
   (
     sleep "$timeout_seconds"
-    kill -0 "$pid" >/dev/null 2>&1 && kill -TERM "$pid" >/dev/null 2>&1
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      : > "$timeout_marker"
+      terminate_process_tree "$pid" TERM
+      sleep 5
+      if kill -0 "$pid" >/dev/null 2>&1; then
+        terminate_process_tree "$pid" KILL
+      fi
+    fi
   ) &
   local killer_pid=$!
   wait "$pid"
@@ -625,9 +652,11 @@ run_with_runtime_timeout() {
   kill "$killer_pid" >/dev/null 2>&1 || true
   wait "$killer_pid" >/dev/null 2>&1 || true
 
-  if [[ $exit_code -eq 143 ]]; then
+  if [[ -f "$timeout_marker" ]]; then
+    rm -f "$timeout_marker"
     return 124
   fi
+  rm -f "$timeout_marker"
   return "$exit_code"
 }
 
@@ -1543,15 +1572,15 @@ run_actual_flow() {
     elapsed_seconds=$(( $(date +%s) - started_at ))
     if [[ "$dispatch_exit" -eq 124 ]]; then
       if [[ "$execution_mode" == "delegated-terminal" ]]; then
-        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
       else
-        record_actual_failure "$scenario_name" "in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
       fi
     elif grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then
       if [[ "$execution_mode" == "delegated-terminal" ]]; then
-        record_actual_failure "$scenario_name" "delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
       else
-        record_actual_failure "$scenario_name" "in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
       fi
     else
       if [[ "$execution_mode" == "delegated-terminal" ]]; then

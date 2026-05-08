@@ -272,12 +272,41 @@ function normalizeFinishOutcome({ actionable, returnBoundary, stopReasonCode, st
   };
 }
 
+function quoteStatusValue(value) {
+  return `"${String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`;
+}
+
+function hasOpenDoubleQuotedScalar(line) {
+  let escaped = false;
+  let quoteCount = 0;
+  for (const char of String(line || '')) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      quoteCount += 1;
+    }
+  }
+  return quoteCount % 2 === 1;
+}
+
 function upsertRootKey(lines, key, value) {
   const prefix = `${key}:`;
   const rendered = `${prefix} ${value}`;
   const index = lines.findIndex((line) => line.startsWith(prefix));
   if (index >= 0) {
-    lines[index] = rendered;
+    let deleteCount = 1;
+    let openQuotedScalar = hasOpenDoubleQuotedScalar(lines[index]);
+    while (openQuotedScalar && index + deleteCount < lines.length) {
+      openQuotedScalar = !hasOpenDoubleQuotedScalar(lines[index + deleteCount]);
+      deleteCount += 1;
+    }
+    lines.splice(index, deleteCount, rendered);
     return lines;
   }
   const insertAt = lines.findIndex((line) => line.startsWith('phases:'));
@@ -298,18 +327,18 @@ function updateStatusLease(statusFile, fields) {
   const nextLines = [...lines];
 
   const mapping = {
-    activeRunLeaseId: (value) => `"${value}"`,
-    activeExecutionBoundary: (value) => `"${value}"`,
-    activeExecutionAttachedAt: (value) => `"${value}"`,
-    activeExecutionHeartbeatAt: (value) => `"${value}"`,
-    activeExecutionStatus: (value) => `"${value}"`,
+    activeRunLeaseId: quoteStatusValue,
+    activeExecutionBoundary: quoteStatusValue,
+    activeExecutionAttachedAt: quoteStatusValue,
+    activeExecutionHeartbeatAt: quoteStatusValue,
+    activeExecutionStatus: quoteStatusValue,
     activeActionablePhasesRemaining: (value) => String(value),
-    activeCurrentStage: (value) => `"${value}"`,
+    activeCurrentStage: quoteStatusValue,
     activePhaseNumber: (value) => value === '' ? 'null' : String(value),
-    activePhaseTitle: (value) => value ? `"${value}"` : 'null',
-    lastReturnBoundary: (value) => value ? `"${value}"` : 'null',
-    lastStopReasonCode: (value) => value ? `"${value}"` : 'null',
-    lastStopReasonDetail: (value) => value ? `"${value}"` : 'null',
+    activePhaseTitle: (value) => value ? quoteStatusValue(value) : 'null',
+    lastReturnBoundary: (value) => value ? quoteStatusValue(value) : 'null',
+    lastStopReasonCode: (value) => value ? quoteStatusValue(value) : 'null',
+    lastStopReasonDetail: (value) => value ? quoteStatusValue(value) : 'null',
   };
 
   for (const [key, formatter] of Object.entries(mapping)) {

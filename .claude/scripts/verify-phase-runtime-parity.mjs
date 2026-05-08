@@ -9,6 +9,18 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const shellCorePath = path.join(scriptDir, 'verify-phase-runtime-parity-shell-core.sh');
 const compactOutput = process.argv.includes('--compact') || String(process.env.TOKEN_OUTPUT_MODE || '').toLowerCase() === 'compact';
 
+function usage() {
+  return [
+    'Usage:',
+    '  verify-phase-runtime-parity.mjs [reference-plan-dir] [--render-only] [--compact]',
+    '  verify-phase-runtime-parity.mjs --help',
+    '',
+    'Environment:',
+    '  PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=auto|current|claude|codex|both',
+    '  PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS=<seconds>',
+  ].join('\n');
+}
+
 function resolveBashCommand() {
   const candidates = process.platform === 'win32' ? ['bash.exe', 'bash'] : ['bash'];
   for (const candidate of candidates) {
@@ -33,10 +45,24 @@ function toBashPath(filePath) {
 }
 
 function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    process.stdout.write(`${usage()}\n`);
+    process.exit(0);
+  }
   const bash = resolveBashCommand();
   if (!bash) {
     console.error('ERROR: bash is required for verify-phase-runtime-parity shell core');
     process.exit(1);
+  }
+  if (process.argv.includes('self-test')) {
+    const result = spawnSync(bash, ['-n', toBashPath(shellCorePath)], { encoding: 'utf8' });
+    if (result.status !== 0 || result.error) {
+      const detail = result.error?.message || result.stderr || result.stdout || 'shell core syntax check failed';
+      console.error(`ERROR: ${detail.trim()}`);
+      process.exit(result.status || 1);
+    }
+    process.stdout.write('verify-phase-runtime-parity wrapper self-test passed\n');
+    process.exit(0);
   }
 
   const passthroughArgs = process.argv.slice(2).filter((arg) => arg !== '--compact');
@@ -87,6 +113,8 @@ function main() {
           || /actual runtime timings:/.test(trimmed)
           || /runtime exercise level:/.test(trimmed)
           || /phase runtime parity smoke (passed|failed)/.test(trimmed)
+          || /timeout:/.test(trimmed)
+          || /cleanup incomplete:/.test(trimmed)
           || /debug temp root:/.test(trimmed)
           || /keeping temp artifacts:/.test(trimmed)
         ) {

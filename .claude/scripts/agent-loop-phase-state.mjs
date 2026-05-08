@@ -693,7 +693,7 @@ function yamlScalar(value) {
   if (value === null || value === undefined || value === '') {
     return '""';
   }
-  const stringValue = String(value);
+  const stringValue = String(value).replace(/\r/g, '\\r').replace(/\n/g, '\\n');
   if (/^(true|false|null|[0-9]+)$/i.test(stringValue)) {
     return `"${stringValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
   }
@@ -703,12 +703,37 @@ function yamlScalar(value) {
   return `"${stringValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+function hasOpenDoubleQuotedScalar(line) {
+  let escaped = false;
+  let quoteCount = 0;
+  for (const char of String(line || '')) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      quoteCount += 1;
+    }
+  }
+  return quoteCount % 2 === 1;
+}
+
 function setRootScalarInLines(lines, key, value) {
   const prefix = `${key}:`;
   const normalizedValue = value === null || value === undefined ? 'null' : value;
   const index = lines.findIndex((line) => line.startsWith(prefix));
   if (index >= 0) {
-    lines[index] = `${prefix} ${normalizedValue}`;
+    let deleteCount = 1;
+    let openQuotedScalar = hasOpenDoubleQuotedScalar(lines[index]);
+    while (openQuotedScalar && index + deleteCount < lines.length) {
+      openQuotedScalar = !hasOpenDoubleQuotedScalar(lines[index + deleteCount]);
+      deleteCount += 1;
+    }
+    lines.splice(index, deleteCount, `${prefix} ${normalizedValue}`);
     return;
   }
 
@@ -721,6 +746,16 @@ function setRootScalarInLines(lines, key, value) {
     }
   }
   lines.splice(insertAt, 0, `${prefix} ${normalizedValue}`);
+}
+
+function removeStaleRootStopReasonArtifactLines(lines) {
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (/^artifact:\s+\.claude\/logs\/agent-loop\/final-git-closeout/.test(line)
+      || /^-\s+main_worktree_dirty:/.test(line)) {
+      lines.splice(index, 1);
+    }
+  }
 }
 
 function readAtomicLedgerStatus(phaseExecutionDir) {
@@ -2313,6 +2348,10 @@ function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, st
   setRootScalarInLines(lines, 'normalizedRunVerdict', yamlScalar(normalizedRunVerdict));
   setRootScalarInLines(lines, 'stopReasonClass', yamlScalar(stopReasonClass));
   setRootScalarInLines(lines, 'stopReasonExplanation', yamlScalar(stopReasonExplanation));
+  if (normalizedRunVerdict === 'success' && stopReasonClass === 'clean_complete') {
+    setRootScalarInLines(lines, 'lastStopReasonDetail', yamlScalar(stopReasonExplanation));
+    removeStaleRootStopReasonArtifactLines(lines);
+  }
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }
 
@@ -2515,6 +2554,29 @@ phases:
     }
     if (blockedClassification.category !== 'environment_blocked' || blockedClassification.retryPolicy !== 'stop_loop') {
       throw new Error('environment block classification was not normalized');
+    }
+
+    const staleStatusFile = path.join(tempDir, 'stale-root-status.yaml');
+    fs.writeFileSync(staleStatusFile, `schemaVersion: "1.0"
+normalizedRunVerdict: checkpoint_required
+stopReasonClass: dirty_worktree
+stopReasonExplanation: "phase final git closeout required: 1 issue(s)
+artifact: .claude/logs/agent-loop/final-git-closeout.json
+- main_worktree_dirty: main worktree has uncommitted non-runtime changes"
+lastStopReasonDetail: "phase final git closeout required: 1 issue(s)
+artifact: .claude/logs/agent-loop/final-git-closeout.json
+- main_worktree_dirty: main worktree has uncommitted non-runtime changes"
+phases:
+  - number: 1
+    status: completed
+`, 'utf8');
+    setRootRunVerdict(staleStatusFile, 'success', 'clean_complete', 'plan directory completed');
+    const staleStatusText = fs.readFileSync(staleStatusFile, 'utf8');
+    if (staleStatusText.includes('main_worktree_dirty') || staleStatusText.includes('final-git-closeout.json')) {
+      throw new Error('stale multiline stop reason detail was not removed');
+    }
+    if (!staleStatusText.includes('stopReasonExplanation: "plan directory completed"')) {
+      throw new Error('success stop reason explanation was not written');
     }
     writeStdoutLine('agent-loop-phase-state self-test passed');
   } finally {
