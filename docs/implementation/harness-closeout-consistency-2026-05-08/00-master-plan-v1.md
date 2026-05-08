@@ -76,12 +76,12 @@
 - 없음.
 
 ## Phase 완료 체크리스트
-- [ ] Phase 01 - Regression Fixtures and Clock Contract (`docs/implementation/harness-closeout-consistency-2026-05-08/01-regression-fixtures-clock-contract-v1.md`)
-- [ ] Phase 02 - Fallback Closeout Reconciler (`docs/implementation/harness-closeout-consistency-2026-05-08/02-fallback-closeout-reconciler-v1.md`)
-- [ ] Phase 03 - Lease and Timestamp Writer Contract (`docs/implementation/harness-closeout-consistency-2026-05-08/03-lease-timestamp-writer-contract-v1.md`)
-- [ ] Phase 04 - Closeout Drift Verifier Gate (`docs/implementation/harness-closeout-consistency-2026-05-08/04-closeout-drift-verifier-gate-v1.md`)
-- [ ] Phase 05 - Environment-Blocked Verdict Normalizer (`docs/implementation/harness-closeout-consistency-2026-05-08/05-environment-blocked-verdict-normalizer-v1.md`)
-- [ ] Phase 06 - Docs and Regression Closeout (`docs/implementation/harness-closeout-consistency-2026-05-08/06-docs-regression-closeout-v1.md`)
+- [x] Phase 01 - Regression Fixtures and Clock Contract (`docs/implementation/harness-closeout-consistency-2026-05-08/01-regression-fixtures-clock-contract-v1.md`) - phase-status completed, checkpoint `caef31b`
+- [x] Phase 02 - Fallback Closeout Reconciler (`docs/implementation/harness-closeout-consistency-2026-05-08/02-fallback-closeout-reconciler-v1.md`) - phase-status completed, checkpoint `92a5bad`
+- [x] Phase 03 - Lease and Timestamp Writer Contract (`docs/implementation/harness-closeout-consistency-2026-05-08/03-lease-timestamp-writer-contract-v1.md`) - phase-status completed, checkpoint `886084b`
+- [x] Phase 04 - Closeout Drift Verifier Gate (`docs/implementation/harness-closeout-consistency-2026-05-08/04-closeout-drift-verifier-gate-v1.md`) - phase-status completed, checkpoint `003c6dc`
+- [x] Phase 05 - Environment-Blocked Verdict Normalizer (`docs/implementation/harness-closeout-consistency-2026-05-08/05-environment-blocked-verdict-normalizer-v1.md`) - phase-status completed, checkpoint `ad926e2`
+- [x] Phase 06 - Docs and Regression Closeout (`docs/implementation/harness-closeout-consistency-2026-05-08/06-docs-regression-closeout-v1.md`) - phase-status completed, host closeout evidence `.claude/verification-verdict-phase06-final.json`
 
 ## Closeout 규칙
 - 각 phase 계획의 완료 기준이 충족될 때만 체크한다.

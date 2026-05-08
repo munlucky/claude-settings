@@ -51,6 +51,10 @@ Prefer these inputs in order:
 3. verifier artifact (`.claude/verification-verdict-*.json`)
 4. loop logs (`.claude/logs/agent-loop/*`)
 
+Execution artifacts are the closeout truth source because they carry the phase's explicit stop boundary, review state, score, and verifier path. Workflow state is supporting evidence for active leases, dispatcher status, and fallback transitions. Verifier artifacts prove the most recent machine verdict, but they do not override a newer artifact-level closeout decision. Loop logs are retained for audit and diagnosis, not as the primary completion authority.
+
+When a delegated-terminal attempt fails but a local fallback attempt completes the same phase, the trace must keep both events visible. The fallback completion should be represented as `completed-via-local-fallback`, and the earlier delegated failure should be marked or interpreted as `superseded-by-local-fallback`. Superseding means the older failure is no longer the active closeout verdict; it does not erase the failure from the audit trail.
+
 ## Validation
 
 A usable trace bundle must make it possible to answer all of these without reopening raw logs:

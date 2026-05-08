@@ -1,0 +1,15 @@
+# Phase 06 atomic task ledger and optional worktree worksets.
+# Execute only activeAtomicTask in each attempt. Keep worksets empty unless non-overlapping ownedPaths are explicitly defined.
+schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Complete the source phase scope"
+    status: completed
+    ownedPaths: [".claude/docs/guidelines/meta-harness-trace.md", ".claude/docs/guidelines/product-acceptance-gate.md", "docs/implementation/harness-closeout-consistency-2026-05-08/00-master-plan-v1.md"]
+    verificationCommands: ["rg -n \"superseded-by-local-fallback|completed-via-local-fallback\" .claude/docs/guidelines/meta-harness-trace.md", "rg -n \"complete_with_environment_blocker|clean complete\" .claude/docs/guidelines/product-acceptance-gate.md", "node .claude/scripts/phase-closeout-reconciler.test.mjs", "node .claude/scripts/verify-phase-closeout.test.mjs", "node .claude/scripts/prepare-implementation-plan-state.test.mjs", "C:\\Program Files\\Git\\usr\\bin\\bash.exe -lc 'cd /c/dev/claude-settings && ./.claude/scripts/workflow-enforcement.sh verify'", "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/harness-closeout-consistency-2026-05-08/06-docs-regression-closeout-v1.md --sprint-contract docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/06-phase-06-docs-and-regression-closeout-v1/SPRINT_CONTRACT.md --qa-report docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/06-phase-06-docs-and-regression-closeout-v1/QA_REPORT.md --scorecard docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/06-phase-06-docs-and-regression-closeout-v1/SCORECARD.md"]
+    evidence: ["Structured verdict: .claude/verification-verdict-phase06-final.json", "Runner log: .claude/logs/agent-loop/phase-6_20260508_220308.log", "Stage: finish/handoff", "Status: clean_finish", ".claude/verification-verdict-phase06-final.json", "docs/implementation/harness-closeout-consistency-2026-05-08/execution/harness-closeout-consistency-v1/06-phase-06-docs-and-regression-closeout-v1/QA_REPORT.md"]
+      - "2026-05-08T13:07:38Z blocked: docs and node regressions passed; workflow enforcement verifier could not execute because bash returned Bash/Service/CreateInstance/E_ACCESSDENIED"
+      - ".claude/verification-verdict-phase06-final.json"
+    completedAt: "2026-05-08T13:18:30Z"
+worksets: []
