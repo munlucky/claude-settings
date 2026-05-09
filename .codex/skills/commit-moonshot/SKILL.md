@@ -23,10 +23,11 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 1. inspect staged changes with compact git commands
 2. derive `PROJECT_ID`
 3. run `node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID>` when the project has the script; if a prior `mcp__memory__.store_memory` call failed, pass the same payload through `--store-json @<payload-file>` and the MCP error through `--mcp-error`
-4. summarize created or updated memory facts, direct fallback route, and promotion candidates in a short bullet list
-5. keep `.claude/memory.json`, `.claude/memorygraph/`, and `.claude/cache/memorygraph/` unstaged unless the user explicitly asks to include memory artifacts
-6. build a filtered staging path list before `git add`; remove generated bridge paths, ignored files, and local MCP/memory artifacts
-7. create the commit in Korean
+4. run `node .claude/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json` when the project has the script; this is audit-only by default
+5. summarize created or updated memory facts, direct fallback route, AWTL promotion audit counts, and promotion candidates in a short bullet list
+6. keep `.claude/memory.json`, `.claude/memorygraph/`, and `.claude/cache/memorygraph/` unstaged unless the user explicitly asks to include memory artifacts
+7. build a filtered staging path list before `git add`; remove generated bridge paths, ignored files, and local MCP/memory artifacts
+8. create the commit in Korean
 
 ## Hard rules
 
@@ -43,7 +44,9 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - prefer root directories and policy files for installer commits: `.claude`, `.codex`, `.claudeignore`, `.gitattributes`, `.gitignore`, `AGENTS.md`, plus any explicitly changed product docs/code; never include `.agents`
 - only stage memory artifacts when the user explicitly asks to include memory in the commit
 - if MemoryGraph MCP is unavailable, treat it as `mcp_transport_failed -> direct_fallback`; record the failure only after the direct fallback also fails, then continue the Git closeout when the user explicitly requested commit/push
-- do not promote project candidates into `claude-settings` during a normal project commit; use `harness-memory-promoter` only after explicit approval
+- do not auto-promote project candidates into `claude-settings` during a normal project commit; run the AWTL promotion audit and write only when `--write-verified` is justified by replay evidence or explicit approval
+- use `commit-moonshot-promotion-audit.mjs --write-verified` only when the user explicitly asked for long-term promotion, for example `장기메모리승격 포함`, `승격 승인`, or `write verified memory`
+- keep failed-turn cases as next-run recall cache; do not treat `.claude/cache/awtl/failed_turn_cases.jsonl` itself as a long-term MemoryGraph source
 - warn before committing when product implementation changes are mixed with `.claude/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes
 - require `QA_REPORT.md` to contain a `Harness Change Ledger` entry when harness/tool changes were made during a product phase
 - keep the user-facing summary and commit body grouped by feature area
@@ -65,6 +68,21 @@ Rules:
 - On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell.
 - The helper has per-command timeout and owned child-process tree cleanup. It must not broad-kill unrelated `memorygraph.exe` processes.
 - The direct fallback uses `.claude/memorygraph/memory.db` through `MEMORY_SQLITE_PATH`; keep `.claude/memorygraph/**` and `.claude/cache/memorygraph/**` unstaged unless the user explicitly includes memory artifacts.
+
+## AWTL Promotion Audit
+
+After memory refresh and before Git staging, run the commit-time AWTL promotion audit when available:
+
+```bash
+node .claude/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json
+```
+
+Rules:
+- The default mode is audit-only. It may update `.claude/cache/awtl/replay_scorecard.jsonl`, but it must not write MemoryGraph facts.
+- Use `--write-verified` only when the user explicitly asked for long-term promotion or approval in the current commit turn.
+- `--approval approved` represents explicit human approval; do not infer it from a generic commit request.
+- MemoryGraph write failures from this audit are non-blocking for Git closeout.
+- Report `promotable`, `needs_replay`, `needs_human_approval`, `blocked`, `memorygraph_unavailable`, and `written` counts in the closeout summary.
 
 ## References
 

@@ -173,11 +173,15 @@ git add -- .claude .codex .claudeignore .gitattributes .gitignore AGENTS.md READ
 
 규칙:
 - `.claude/memory.json` 포함 여부와 무관하게 프로젝트 메모리 현행화 자체는 항상 먼저 완료하세요.
+- 메모리 현행화 뒤 Git staging 전에 `node .claude/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json`을 실행해 AWTL 승격 후보를 자동심사하세요. 기본은 audit-only입니다.
+- 사용자가 `장기메모리승격 포함`, `승격 승인`, `write verified memory`처럼 현재 commit turn에서 명시한 경우에만 `--write-verified`를 붙입니다.
+- 명시 승인으로 human approval 경로를 쓸 때만 `--approval approved`를 붙입니다. 일반 `commit-moonshot` 요청만으로 approval을 추정하지 마세요.
+- `.claude/cache/awtl/failed_turn_cases.jsonl`은 다음 실행 brief용 cache이며, 그 자체를 장기 MemoryGraph source로 취급하지 마세요.
 - 사용자 확인 없이 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`를 자동으로 스테이징하지 마세요.
 - 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
 - 사용자가 제외하자고 하면 메모리 산출물은 unstaged 상태로 두고 나머지만 커밋하세요.
 - MemoryGraph 저장 실패는 direct fallback까지 시도한 뒤 기록하되, 사용자가 commit/push를 명시한 흐름에서는 Git closeout을 막지 마세요.
-- 일반 프로젝트 커밋 중 승격 후보를 `claude-settings` graph에 자동 저장하지 마세요. 명시 승인 후 `harness-memory-promoter`를 사용하세요.
+- 일반 프로젝트 커밋 중 승격 후보를 `claude-settings` graph에 자동 저장하지 마세요. 자동심사는 수행하되, replay 검증 통과 또는 명시 승인 조건에서만 write를 시도하세요.
 - 최종 커밋 요약에 사용자의 선택을 명시하세요.
 
 ## 8. 커밋 생성
