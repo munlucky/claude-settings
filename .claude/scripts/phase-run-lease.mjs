@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 import {
   assertReturnAllowed as assertRuntimeReturnAllowed,
   exportStatusMirror,
@@ -13,64 +11,27 @@ import {
   startLease as startRuntimeLease,
   withDb,
 } from './runtime-state.mjs';
+import {
+  assertReturnAllowedFromFiles,
+  hasLocalFallbackCompletion,
+  normalizeFinishOutcome,
+  staleLeaseReason,
+} from './lib/phase-run-lease-policy.mjs';
+import {
+  readActiveLease,
+  readJson,
+  resolveLeaseFiles,
+  resolveStatusFile,
+  utcTimestamp,
+  writeActiveLease,
+  writeJson,
+} from './lib/phase-run-lease-store.mjs';
+import {
+  countActionablePhases,
+  updateStatusLease,
+} from './lib/phase-run-lease-status.mjs';
 
-const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
-const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
-const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
-const CURRENT_RUN_BASENAME = 'current-run.json';
-const SUCCESS_RETURN_BOUNDARIES = new Set(['success-return']);
-const SUCCESS_STOP_REASON_CODES = new Set([
-  'plan-directory-complete',
-  'success-return',
-  'scope_complete',
-  'clean_finish',
-  'current-session-clean-finish',
-]);
 const STALE_LEASE_STATUSES = new Set(['stale', 'superseded-by-local-fallback']);
-
-function resolveStatusFile(statusFile) {
-  if (!statusFile) {
-    return DEFAULT_STATUS_FILE;
-  }
-  return path.resolve(statusFile);
-}
-
-function statusFileHash(statusFile) {
-  return crypto.createHash('sha1').update(resolveStatusFile(statusFile)).digest('hex').slice(0, 12);
-}
-
-function resolveLeaseFiles(statusFile) {
-  const resolvedStatusFile = resolveStatusFile(statusFile);
-  const defaultLeaseFiles = {
-    activeRunFile: path.join(WORKFLOW_LOG_DIR, ACTIVE_RUN_BASENAME),
-    currentRunFile: path.join(WORKFLOW_LOG_DIR, CURRENT_RUN_BASENAME),
-    mirrorGlobalCurrentRun: true,
-  };
-
-  if (resolvedStatusFile === DEFAULT_STATUS_FILE) {
-    return defaultLeaseFiles;
-  }
-
-  const suffix = statusFileHash(resolvedStatusFile);
-  return {
-    activeRunFile: path.join(WORKFLOW_LOG_DIR, `active-phase-run-${suffix}.json`),
-    currentRunFile: path.join(WORKFLOW_LOG_DIR, `current-run-${suffix}.json`),
-    mirrorGlobalCurrentRun: false,
-  };
-}
-
-function utcTimestamp() {
-  return nowIsoSeconds();
-}
-
-function parseIsoTimestamp(value) {
-  if (!value) {
-    return Number.NaN;
-  }
-  const normalized = String(value).trim().replace(/^"|"$/g, '').replace(/Z$/, '+00:00');
-  const parsed = Date.parse(normalized);
-  return Number.isNaN(parsed) ? Number.NaN : parsed;
-}
 
 function shellQuote(value) {
   if (value === undefined || value === null) {
@@ -102,41 +63,6 @@ function parseAssignments(text) {
     values[key] = value;
   }
   return values;
-}
-
-function staleSeconds() {
-  return Number.parseInt(process.env.PHASE_RUN_LEASE_STALE_SECONDS ?? '14400', 10) || 14400;
-}
-
-function processExists(pid) {
-  const parsed = Number.parseInt(String(pid || '').trim(), 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return true;
-  }
-  try {
-    process.kill(parsed, 0);
-    return true;
-  } catch (error) {
-    return error && error.code === 'EPERM';
-  }
-}
-
-function hasLocalFallbackCompletion(payload = {}) {
-  const completion = payload.localFallbackCompletion;
-  return payload.completionStatus === 'completed-via-local-fallback'
-    || payload.returnBoundary === 'local-fallback'
-    || (completion && typeof completion === 'object' && String(completion.completionStatus || '').includes('fallback'));
-}
-
-function staleLeaseReason(payload = {}, currentMs = nowMs()) {
-  if (!processExists(payload.dispatcherPid)) {
-    return 'dead-dispatcher-pid';
-  }
-  const heartbeatAt = parseIsoTimestamp(payload.lastHeartbeatAt);
-  if (Number.isNaN(heartbeatAt) || currentMs - heartbeatAt > staleSeconds() * 1000) {
-    return 'stale-heartbeat-ttl';
-  }
-  return '';
 }
 
 async function runtimeStateAssignments(command, args) {
@@ -205,249 +131,6 @@ async function runtimeStateAssignments(command, args) {
   }
 }
 
-function readJson(filePath) {
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeJson(filePath, payload) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-}
-
-function readStatusBlocks(statusFile) {
-  if (!statusFile || !fs.existsSync(statusFile)) {
-    return [];
-  }
-
-  const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/);
-  const blocks = [];
-  let current = null;
-
-  for (const rawLine of lines) {
-    if (/^\s*-\s+number:\s*/.test(rawLine)) {
-      if (current) {
-        blocks.push(current);
-      }
-      const match = rawLine.match(/number:\s*([0-9]+)/);
-      current = {
-        number: match ? match[1] : null,
-        status: '',
-        planConfirmed: '',
-      };
-      continue;
-    }
-
-    if (!current) {
-      continue;
-    }
-
-    const stripped = rawLine.trim();
-    if (stripped.startsWith('status:')) {
-      current.status = stripped.split(':', 2)[1].trim();
-    } else if (stripped.startsWith('planConfirmed:')) {
-      current.planConfirmed = stripped.split(':', 2)[1].trim().toLowerCase();
-    }
-  }
-
-  if (current) {
-    blocks.push(current);
-  }
-
-  return blocks;
-}
-
-function countActionablePhases(statusFile) {
-  return readStatusBlocks(statusFile).filter((block) => {
-    if (block.planConfirmed === 'false') {
-      return false;
-    }
-    return block.status === 'pending' || block.status === 'in_progress' || block.status === 'failed';
-  }).length;
-}
-
-function isSuccessLikeStopReason(value) {
-  return SUCCESS_STOP_REASON_CODES.has(String(value || '').trim().toLowerCase());
-}
-
-function normalizeFinishOutcome({ actionable, returnBoundary, stopReasonCode, stopReasonDetail }) {
-  if (actionable === 0) {
-    return {
-      status: 'finished',
-      returnBoundary,
-      stopReasonCode,
-      stopReasonDetail,
-    };
-  }
-
-  const normalizedBoundary = String(returnBoundary || '').trim().toLowerCase();
-  const normalizedReason = String(stopReasonCode || '').trim().toLowerCase();
-  if (SUCCESS_RETURN_BOUNDARIES.has(normalizedBoundary) || isSuccessLikeStopReason(normalizedReason)) {
-    const detail = stopReasonDetail
-      ? `${stopReasonDetail} Next actionable phase continuation is still required.`
-      : 'Actionable phases remain; the dispatcher must continue or pause instead of finishing the plan.';
-    return {
-      status: 'paused',
-      returnBoundary: 'dispatch-paused',
-      stopReasonCode: 'actionable-phases-remaining',
-      stopReasonDetail: detail,
-    };
-  }
-
-  return {
-    status: 'paused',
-    returnBoundary: returnBoundary || 'dispatch-paused',
-    stopReasonCode: stopReasonCode || 'actionable-phases-remaining',
-    stopReasonDetail: stopReasonDetail || 'Actionable phases remain; execution paused before plan completion.',
-  };
-}
-
-function quoteStatusValue(value) {
-  return `"${String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`;
-}
-
-function hasOpenDoubleQuotedScalar(line) {
-  let escaped = false;
-  let quoteCount = 0;
-  for (const char of String(line || '')) {
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (char === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (char === '"') {
-      quoteCount += 1;
-    }
-  }
-  return quoteCount % 2 === 1;
-}
-
-function upsertRootKey(lines, key, value) {
-  const prefix = `${key}:`;
-  const rendered = `${prefix} ${value}`;
-  const index = lines.findIndex((line) => line.startsWith(prefix));
-  if (index >= 0) {
-    let deleteCount = 1;
-    let openQuotedScalar = hasOpenDoubleQuotedScalar(lines[index]);
-    while (openQuotedScalar && index + deleteCount < lines.length) {
-      openQuotedScalar = !hasOpenDoubleQuotedScalar(lines[index + deleteCount]);
-      deleteCount += 1;
-    }
-    lines.splice(index, deleteCount, rendered);
-    return lines;
-  }
-  const insertAt = lines.findIndex((line) => line.startsWith('phases:'));
-  if (insertAt >= 0) {
-    lines.splice(insertAt, 0, rendered);
-    return lines;
-  }
-  lines.push(rendered);
-  return lines;
-}
-
-function updateStatusLease(statusFile, fields) {
-  if (!statusFile || !fs.existsSync(statusFile)) {
-    return;
-  }
-
-  const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, array) => !(index === array.length - 1 && array[index] === ''));
-  const nextLines = [...lines];
-
-  const mapping = {
-    activeRunLeaseId: quoteStatusValue,
-    activeExecutionBoundary: quoteStatusValue,
-    activeExecutionAttachedAt: quoteStatusValue,
-    activeExecutionHeartbeatAt: quoteStatusValue,
-    activeExecutionStatus: quoteStatusValue,
-    activeActionablePhasesRemaining: (value) => String(value),
-    activeCurrentStage: quoteStatusValue,
-    activePhaseNumber: (value) => value === '' ? 'null' : String(value),
-    activePhaseTitle: (value) => value ? quoteStatusValue(value) : 'null',
-    lastRunLeaseId: (value) => value ? quoteStatusValue(value) : 'null',
-    lastExecutionBoundary: (value) => value ? quoteStatusValue(value) : 'null',
-    lastExecutionAttachedAt: (value) => value ? quoteStatusValue(value) : 'null',
-    lastExecutionHeartbeatAt: (value) => value ? quoteStatusValue(value) : 'null',
-    lastExecutionStatus: (value) => value ? quoteStatusValue(value) : 'null',
-    lastReturnBoundary: (value) => value ? quoteStatusValue(value) : 'null',
-    lastStopReasonCode: (value) => value ? quoteStatusValue(value) : 'null',
-    lastStopReasonDetail: (value) => value ? quoteStatusValue(value) : 'null',
-  };
-
-  for (const [key, formatter] of Object.entries(mapping)) {
-    if (fields[key] === undefined) {
-      continue;
-    }
-    if (fields[key] === null) {
-      const prefix = `${key}:`;
-      const index = nextLines.findIndex((line) => line.startsWith(prefix));
-      if (index >= 0) {
-        nextLines.splice(index, 1);
-      }
-      continue;
-    }
-    upsertRootKey(nextLines, key, formatter(fields[key]));
-  }
-
-  fs.writeFileSync(statusFile, `${nextLines.join('\n')}\n`, 'utf8');
-}
-
-function mirrorToCurrentRun(statusFile, leasePayload) {
-  const leaseFiles = resolveLeaseFiles(statusFile);
-  const existing = readJson(leaseFiles.currentRunFile) || {};
-  const identityFields = {
-    runLeaseId: leasePayload.runLeaseId || existing.runLeaseId || '',
-    status: leasePayload.status || existing.status || '',
-    completionStatus: leasePayload.completionStatus || existing.completionStatus || '',
-    executionBoundary: leasePayload.executionBoundary || existing.executionBoundary || '',
-    planDir: leasePayload.planDir || existing.planDir || '',
-    statusFile: leasePayload.statusFile || existing.statusFile || statusFile || '',
-    executionRoot: leasePayload.executionRoot || existing.executionRoot || '',
-    masterPlan: leasePayload.masterPlan || existing.masterPlan || '',
-    activeExecutionStatus: leasePayload.completionStatus || leasePayload.status || existing.activeExecutionStatus || '',
-    activeCurrentStage: leasePayload.currentStage || existing.activeCurrentStage || '',
-    activePhaseNumber: leasePayload.phase?.number ?? existing.activePhaseNumber ?? '',
-    activePhaseTitle: leasePayload.phase?.title ?? existing.activePhaseTitle ?? '',
-    activeActionablePhasesRemaining: leasePayload.actionablePhasesRemaining ?? existing.activeActionablePhasesRemaining ?? '',
-  };
-  const next = {
-    ...existing,
-    ...identityFields,
-    updatedAt: utcTimestamp(),
-    unavailableCapabilities: leasePayload.unavailableCapabilities || existing.unavailableCapabilities || [],
-    phaseRunLease: leasePayload,
-  };
-  writeJson(leaseFiles.currentRunFile, next);
-
-  if (!leaseFiles.mirrorGlobalCurrentRun) {
-    return;
-  }
-
-  const globalCurrentRunFile = path.join(WORKFLOW_LOG_DIR, CURRENT_RUN_BASENAME);
-  if (globalCurrentRunFile === leaseFiles.currentRunFile) {
-    return;
-  }
-  writeJson(globalCurrentRunFile, next);
-}
-
-function readActiveLease(statusFile) {
-  return readJson(resolveLeaseFiles(statusFile).activeRunFile);
-}
-
-function writeActiveLease(statusFile, payload) {
-  writeJson(resolveLeaseFiles(statusFile).activeRunFile, payload);
-  mirrorToCurrentRun(statusFile, payload);
-}
-
 function startLease(config) {
   const now = utcTimestamp();
   const statusFile = resolveStatusFile(config.statusFile);
@@ -472,9 +155,15 @@ function startLease(config) {
     },
     actionablePhasesRemaining: actionable,
     completionStatus: 'prepared',
+    recoveryStatus: 'none',
+    completionPath: 'prepared-dispatch',
     returnBoundary: '',
     stopReasonCode: '',
+    rawStopReasonCode: '',
+    blockingStopReasonCode: '',
     stopReasonDetail: '',
+    recoveryEvents: [],
+    residualFailures: [],
     unavailableCapabilities: [],
   };
 
@@ -549,6 +238,8 @@ function closeStaleLease({ statusFile, existing, staleReason, closedAt }) {
     ...existing,
     status: supersededByFallback ? 'superseded-by-local-fallback' : 'stale',
     completionStatus: supersededByFallback ? 'completed-via-local-fallback' : 'stale',
+    recoveryStatus: supersededByFallback ? 'recovered' : (existing.recoveryStatus || 'none'),
+    completionPath: supersededByFallback ? 'local-fallback' : (existing.completionPath || 'stale-lease-cleanup'),
     staleReason,
     staleAt: closedAt,
     finishedAt: existing.finishedAt || closedAt,
@@ -556,6 +247,8 @@ function closeStaleLease({ statusFile, existing, staleReason, closedAt }) {
     actionablePhasesRemaining: actionable,
     returnBoundary: supersededByFallback ? 'local-fallback' : (existing.returnBoundary || 'stale-lease-cleanup'),
     stopReasonCode: staleReason,
+    rawStopReasonCode: existing.rawStopReasonCode || staleReason,
+    blockingStopReasonCode: supersededByFallback ? '' : staleReason,
     stopReasonDetail: `Active phase run lease closed by heartbeat cleanup: ${staleReason}`,
   };
 
@@ -604,18 +297,23 @@ function finishLease(config) {
     finishedAt: now,
     actionablePhasesRemaining: actionable,
     completionStatus: config.completionStatus || existing.completionStatus || '',
+    recoveryStatus: existing.recoveryStatus || 'none',
+    completionPath: finishOutcome.status === 'finished' ? 'clean-dispatch' : (existing.completionPath || 'dispatch-stop'),
     returnBoundary: finishOutcome.returnBoundary,
     stopReasonCode: finishOutcome.stopReasonCode,
+    rawStopReasonCode: existing.rawStopReasonCode || finishOutcome.stopReasonCode,
+    blockingStopReasonCode: finishOutcome.status === 'finished' ? '' : finishOutcome.stopReasonCode,
     stopReasonDetail: finishOutcome.stopReasonDetail,
   };
 
   writeActiveLease(statusFile, payload);
+  const keepPausedActiveState = payload.status === 'paused';
   updateStatusLease(statusFile || existing.statusFile, {
-    activeRunLeaseId: null,
-    activeExecutionBoundary: null,
-    activeExecutionAttachedAt: null,
-    activeExecutionHeartbeatAt: null,
-    activeExecutionStatus: null,
+    activeRunLeaseId: keepPausedActiveState ? payload.runLeaseId : null,
+    activeExecutionBoundary: keepPausedActiveState ? payload.executionBoundary : null,
+    activeExecutionAttachedAt: keepPausedActiveState ? payload.attachedAt : null,
+    activeExecutionHeartbeatAt: keepPausedActiveState ? now : null,
+    activeExecutionStatus: keepPausedActiveState ? payload.status : null,
     activeActionablePhasesRemaining: actionable,
     activeCurrentStage: payload.currentStage || 'finish/handoff',
     activePhaseNumber: payload.phase?.number || '',
@@ -630,20 +328,6 @@ function finishLease(config) {
     lastStopReasonDetail: payload.stopReasonDetail,
   });
   return payload;
-}
-
-function assertReturnAllowed(config) {
-  const statusFile = resolveStatusFile(config.statusFile);
-  const actionable = countActionablePhases(statusFile);
-  const executionIntent = String(config.executionIntent || '').toLowerCase() === 'true';
-  const prepareOnly = String(config.prepareOnly || '').toLowerCase() === 'true';
-  return assertReturnAllowedFromFiles({
-    ...config,
-    statusFile,
-    actionable,
-    executionIntent,
-    prepareOnly,
-  });
 }
 
 async function assertReturnAllowedWithRuntime(config) {
@@ -665,70 +349,14 @@ async function assertReturnAllowedWithRuntime(config) {
   }
 
   return assertReturnAllowedFromFiles({
-    ...config,
-    statusFile,
     actionable,
     executionIntent,
     prepareOnly,
+    existing: (() => {
+      const existing = readActiveLease(statusFile);
+      return existing?.runLeaseId === config.runLeaseId ? existing : null;
+    })(),
   });
-}
-
-function assertReturnAllowedFromFiles(config) {
-  if (!config.executionIntent || config.prepareOnly) {
-    return {
-      RETURN_ALLOWED: 'true',
-      RETURN_REASON: 'non_execution_or_prepare_only',
-      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
-    };
-  }
-
-  if (config.actionable === 0) {
-    return {
-      RETURN_ALLOWED: 'true',
-      RETURN_REASON: 'plan_directory_complete',
-      ACTIONABLE_PHASES_REMAINING: '0',
-    };
-  }
-
-  const existing = readActiveLease(config.statusFile);
-  if (!existing || existing.runLeaseId !== config.runLeaseId) {
-    return {
-      RETURN_ALLOWED: 'false',
-      RETURN_REASON: 'missing-active-run-lease',
-      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
-    };
-  }
-
-  if (existing.status !== 'active') {
-    if (existing.status === 'paused') {
-      return {
-        RETURN_ALLOWED: 'false',
-        RETURN_REASON: 'paused-run-lease-with-actionable-phases',
-        ACTIONABLE_PHASES_REMAINING: String(config.actionable),
-      };
-    }
-    return {
-      RETURN_ALLOWED: 'false',
-      RETURN_REASON: 'inactive-run-lease-with-actionable-phases',
-      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
-    };
-  }
-
-  const staleSeconds = Number.parseInt(process.env.PHASE_RUN_LEASE_STALE_SECONDS ?? '14400', 10) || 14400;
-  const heartbeatAt = parseIsoTimestamp(existing.lastHeartbeatAt);
-  if (Number.isNaN(heartbeatAt) || nowMs() - heartbeatAt > staleSeconds * 1000) {
-    return {
-      RETURN_ALLOWED: 'false',
-      RETURN_REASON: 'stale-run-lease',
-      ACTIONABLE_PHASES_REMAINING: String(config.actionable),
-    };
-  }
-
-  return {
-    RETURN_ALLOWED: 'false',
-    RETURN_REASON: 'actionable-phases-remaining',
-    ACTIONABLE_PHASES_REMAINING: String(config.actionable),
-  };
 }
 
 function selfTest() {
@@ -917,7 +545,7 @@ switch (command) {
     break;
   case 'self-test':
     selfTest();
-    console.log('phase-run-lease self-test passed');
+    process.stdout.write('phase-run-lease self-test passed\n');
     break;
   default:
     usage();

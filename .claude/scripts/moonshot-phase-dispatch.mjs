@@ -362,6 +362,110 @@ function normalizeDispatchVerdict(exitCode, stopReasonCode, detail, completionSt
   };
 }
 
+function dispatchGitPreflight() {
+  const repoProbe = spawnSync('git', ['-c', `safe.directory=${process.cwd()}`, '-c', 'core.editor=true', 'rev-parse', '--show-toplevel'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+  if ((repoProbe.status ?? 0) !== 0) {
+    const detail = (repoProbe.stderr || repoProbe.stdout || repoProbe.error?.message || 'git rev-parse --show-toplevel failed').trim();
+    const classification = classifyFailure({ name: 'git.dispatch-preflight', detail });
+    appendDebugLog('dispatch-git-preflight-failed', {
+      step: 'rev-parse',
+      status: repoProbe.status ?? null,
+      detail,
+      failureClass: classification.code,
+      fallbackHint: classification.fallbackHint,
+    });
+    return {
+      ok: false,
+      detail,
+      failureClass: classification.code,
+      fallbackHint: classification.fallbackHint || 'rerun from a valid git worktree or repair safe.directory permissions',
+    };
+  }
+
+  const repoRoot = String(repoProbe.stdout || '').trim();
+  const statusProbe = spawnSync('git', ['-c', `safe.directory=${repoRoot}`, '-c', 'core.editor=true', 'status', '--short', '--untracked-files=all'], {
+    cwd: repoRoot || process.cwd(),
+    encoding: 'utf8',
+  });
+  if ((statusProbe.status ?? 0) !== 0) {
+    const detail = (statusProbe.stderr || statusProbe.stdout || statusProbe.error?.message || 'git status failed').trim();
+    const classification = classifyFailure({ name: 'git.dispatch-preflight', detail });
+    appendDebugLog('dispatch-git-preflight-failed', {
+      step: 'status',
+      repoRoot,
+      status: statusProbe.status ?? null,
+      detail,
+      failureClass: classification.code,
+      fallbackHint: classification.fallbackHint,
+    });
+    return {
+      ok: false,
+      detail,
+      failureClass: classification.code,
+      fallbackHint: classification.fallbackHint || 'repair git permissions, then rerun dispatch',
+    };
+  }
+
+  appendDebugLog('dispatch-git-preflight-ok', {
+    repoRoot,
+    dirtyPathCount: String(statusProbe.stdout || '').split(/\r?\n/).filter(Boolean).length,
+  });
+  return { ok: true, repoRoot };
+}
+
+function closeLatestDispatchEvidence({ exitCode, detail, returnBoundary = '', stopReasonCode = '', completionStatus = '' } = {}) {
+  const latestFile = path.join('.claude', 'logs', 'workflow-enforcement', 'latest-dispatch.json');
+  if (!fs.existsSync(latestFile)) {
+    return null;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(latestFile, 'utf8'));
+  } catch (error) {
+    appendDebugLog('latest-dispatch-close-failed', {
+      reason: 'json-parse-failed',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+
+  if (payload.status === 'superseded-by-local-fallback') {
+    return payload;
+  }
+
+  const recovered = String(completionStatus || '').toLowerCase().includes('completed-via-local-fallback')
+    || String(stopReasonCode || '').toLowerCase().includes('local-fallback');
+  const terminalStatus = recovered
+    ? 'superseded-by-local-fallback'
+    : ((exitCode ?? 0) === 0 ? 'completed' : 'failed');
+  const now = utcTimestamp();
+  const next = {
+    ...payload,
+    status: terminalStatus,
+    completionStatus: completionStatus || ((exitCode ?? 0) === 0 ? 'completed' : 'failed'),
+    recoveryStatus: recovered ? 'recovered' : 'none',
+    completionPath: recovered ? 'local-fallback' : ((exitCode ?? 0) === 0 ? 'clean-dispatch' : 'dispatch-stop'),
+    returnBoundary,
+    stopReasonCode: stopReasonCode || `exit-${exitCode ?? 0}`,
+    rawStopReasonCode: payload.rawStopReasonCode || stopReasonCode || `exit-${exitCode ?? 0}`,
+    blockingStopReasonCode: (exitCode ?? 0) === 0 || recovered ? '' : (stopReasonCode || `exit-${exitCode ?? 0}`),
+    stopReasonDetail: detail || '',
+    completedAt: (exitCode ?? 0) === 0 || recovered ? now : payload.completedAt,
+    failedAt: (exitCode ?? 0) === 0 || recovered ? payload.failedAt : now,
+    updatedAt: now,
+  };
+  fs.writeFileSync(latestFile, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  appendDebugLog('latest-dispatch-closed', {
+    status: next.status,
+    completionStatus: next.completionStatus,
+    stopReasonCode: next.stopReasonCode,
+  });
+  return next;
+}
+
 function parseAssignments(text) {
   const values = {};
   for (const rawLine of String(text || '').split(/\r?\n/)) {
@@ -866,6 +970,13 @@ function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false
       }
       assertReturnAllowedOrThrow();
       runLocalFallbackReconciler(stopReasonCode || 'plan-directory-complete', completionStatus || 'completed');
+      closeLatestDispatchEvidence({
+        exitCode: 0,
+        detail,
+        returnBoundary: returnBoundary || 'success-return',
+        stopReasonCode: stopReasonCode || 'plan-directory-complete',
+        completionStatus: completionStatus || 'completed',
+      });
       finishDispatchLease(returnBoundary || 'success-return', stopReasonCode || 'plan-directory-complete', detail, completionStatus || 'completed');
       setNormalizedRunVerdict('success', 'clean_complete', detail || 'plan directory completed');
       process.exit(0);
@@ -884,6 +995,13 @@ function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false
       normalized.stopReasonExplanation,
     );
     runLocalFallbackReconciler(stopReasonCode || `exit-${exitCode}`, completionStatus || (exitCode === 0 ? 'completed' : 'failed'));
+    closeLatestDispatchEvidence({
+      exitCode,
+      detail,
+      returnBoundary: returnBoundary || 'dispatch-stop',
+      stopReasonCode: stopReasonCode || `exit-${exitCode}`,
+      completionStatus: completionStatus || (exitCode === 0 ? 'completed' : 'failed'),
+    });
     finishDispatchLease(
       returnBoundary || 'dispatch-stop',
       stopReasonCode || `exit-${exitCode}`,
@@ -1842,6 +1960,12 @@ logInfo(`Execution root: ${resolvedRoot}`);
 logInfo(`Runtime: ${effectiveRuntime}`);
 logInfo(`Verification runtimes: ${state.verificationRuntimes}`);
 logInfo(`Parallel worktrees: ${state.parallelWorktrees}`);
+const gitPreflight = dispatchGitPreflight();
+if (!gitPreflight.ok) {
+  logError(`Git preflight failed before dispatch: ${gitPreflight.detail}`);
+  logError(`Action: ${gitPreflight.fallbackHint}`);
+  process.exit(1);
+}
 recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
 if (!state.dryRun) {
   startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);

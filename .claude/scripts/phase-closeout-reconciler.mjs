@@ -4,6 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  evaluateHarnessStateInvariants,
+} from './lib/harness-state-invariants.mjs';
 
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
 const DEFAULT_WORKFLOW_DIR = '.claude/logs/workflow-enforcement';
@@ -29,6 +32,42 @@ function readJson(filePath) {
     return { exists: false, value: null };
   }
   return { exists: true, value: JSON.parse(fs.readFileSync(filePath, 'utf8')) };
+}
+
+function stripQuotes(value) {
+  return String(value || '').trim().replace(/^["'`]+|["'`]+$/g, '');
+}
+
+function parsePhaseStatusDocument(text) {
+  const phases = [];
+  const root = {};
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+  let current = null;
+
+  for (const line of lines) {
+    const start = line.match(/^\s*-\s+number:\s*(\d+)/);
+    if (start) {
+      if (current) phases.push(current);
+      current = { number: Number(start[1]) };
+      continue;
+    }
+
+    if (current) {
+      const field = line.match(/^ {4}([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
+      if (field) {
+        current[field[1]] = stripQuotes(field[2]);
+      }
+      continue;
+    }
+
+    const rootField = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
+    if (rootField) {
+      root[rootField[1]] = stripQuotes(rootField[2]);
+    }
+  }
+
+  if (current) phases.push(current);
+  return { root, phases };
 }
 
 function writeJsonAtomic(filePath, value) {
@@ -80,6 +119,38 @@ function firstPresent(...values) {
   return '';
 }
 
+function normalizeArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function recoveryEvent(config, payload, originalStatus, originalCompletionStatus, originalStopReason) {
+  return {
+    type: 'delegated-terminal-local-fallback',
+    source: 'phase-closeout-reconciler',
+    occurredAt: config.supersededAt,
+    fromStatus: String(firstPresent(originalCompletionStatus, originalStatus, 'failed')),
+    toStatus: 'completed-via-local-fallback',
+    evidencePath: config.evidencePath || '.claude/logs/agent-loop/debug.jsonl',
+    blockingBeforeRecovery: true,
+    rawStopReasonCode: originalStopReason,
+    fallbackRunId: config.fallbackRunId,
+    supersededRunLeaseId: resolveRunId(payload),
+  };
+}
+
+function residualFailure(config, payload, originalStatus, originalCompletionStatus, originalStopReason) {
+  return {
+    type: 'primary-executor-failure',
+    source: 'phase-closeout-reconciler',
+    occurredAt: config.supersededAt,
+    status: String(firstPresent(originalCompletionStatus, originalStatus, 'failed')),
+    failureClass: firstPresent(payload.failureClass, 'executor-failure'),
+    rawStopReasonCode: originalStopReason,
+    evidencePath: config.evidencePath || '.claude/logs/agent-loop/debug.jsonl',
+    recoveredBy: config.fallbackRunId,
+  };
+}
+
 function appendDebugLog(root, event, details) {
   const logPath = resolvePath(path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl'), root);
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
@@ -126,25 +197,36 @@ function reconcilePayload(payload, config) {
     payload.phaseRunLease?.originalStopReason,
     payload.phaseRunLease?.stopReasonCode,
   ));
+  const originalStatus = firstPresent(payload.originalStatus, payload.status);
+  const originalCompletionStatus = firstPresent(payload.originalCompletionStatus, payload.completionStatus);
+  const recovery = recoveryEvent(config, payload, originalStatus, originalCompletionStatus, originalStopReason);
+  const residual = residualFailure(config, payload, originalStatus, originalCompletionStatus, originalStopReason);
   const next = {
     ...payload,
     status: 'superseded-by-local-fallback',
     completionStatus: 'completed-via-local-fallback',
+    recoveryStatus: 'recovered',
+    completionPath: 'local-fallback',
     executionBoundary,
     returnBoundary,
     fallbackReason,
+    rawStopReasonCode: firstPresent(payload.rawStopReasonCode, originalStopReason),
+    blockingStopReasonCode: '',
     originalWorkerExitCode,
     originalStopReason,
-    originalStatus: firstPresent(payload.originalStatus, payload.status),
-    originalCompletionStatus: firstPresent(payload.originalCompletionStatus, payload.completionStatus),
+    originalStatus,
+    originalCompletionStatus,
     fallbackRunId: config.fallbackRunId,
     supersededRunLeaseId,
     supersededAt: config.supersededAt,
     supersededReason: config.reason,
     completionBoundary: config.completionBoundary,
+    recoveryEvents: [...normalizeArray(payload.recoveryEvents), recovery],
+    residualFailures: [...normalizeArray(payload.residualFailures), residual],
     localFallbackCompletion: {
       runId: config.fallbackRunId,
       completionStatus: 'completed-via-local-fallback',
+      recoveryStatus: 'recovered',
       reason: config.reason,
       completedAt: config.supersededAt,
       completionBoundary: config.completionBoundary,
@@ -153,6 +235,8 @@ function reconcilePayload(payload, config) {
       fallbackReason,
       originalWorkerExitCode,
       originalStopReason,
+      rawStopReasonCode: firstPresent(payload.rawStopReasonCode, originalStopReason),
+      blockingStopReasonCode: '',
       supersededRunLeaseId,
     },
   };
@@ -162,6 +246,8 @@ function reconcilePayload(payload, config) {
       ...next.phaseRunLease,
       status: 'superseded-by-local-fallback',
       completionStatus: 'completed-via-local-fallback',
+      recoveryStatus: 'recovered',
+      completionPath: 'local-fallback',
       fallbackRunId: config.fallbackRunId,
       supersededRunLeaseId,
       supersededAt: config.supersededAt,
@@ -170,7 +256,11 @@ function reconcilePayload(payload, config) {
       fallbackReason,
       originalWorkerExitCode,
       originalStopReason,
+      rawStopReasonCode: firstPresent(next.phaseRunLease.rawStopReasonCode, originalStopReason),
+      blockingStopReasonCode: '',
       stopReasonCode: next.phaseRunLease.stopReasonCode || config.reason,
+      recoveryEvents: [...normalizeArray(next.phaseRunLease.recoveryEvents), recovery],
+      residualFailures: [...normalizeArray(next.phaseRunLease.residualFailures), residual],
     };
   }
 
@@ -242,6 +332,16 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
     fallbackRead.exists ? fallbackRead.value : null,
     { fallbackRunId, reason, supersededAt, completionBoundary },
   );
+  const statusDocument = fs.existsSync(statusFile)
+    ? parsePhaseStatusDocument(fs.readFileSync(statusFile, 'utf8'))
+    : { root: {}, phases: [] };
+  const postReconcileInvariants = evaluateHarnessStateInvariants({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    statusPath: statusFile,
+    workflowDir,
+    now: supersededAt,
+  });
 
   const summary = {
     ok: true,
@@ -257,6 +357,8 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
     reconciledFiles,
     skippedFiles,
     warnings,
+    postReconcileViolations: postReconcileInvariants.violations,
+    degradedEvidence: postReconcileInvariants.degradedEvidence,
     fallbackCompletion,
   };
 

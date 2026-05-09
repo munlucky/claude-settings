@@ -4,21 +4,36 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  getHeadingAliases,
-  scenarioEvidencePassed as normalizeScenarioEvidencePassed,
-  sectionText as normalizeSectionText,
-} from './artifact-normalizer.mjs';
 import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
 import { evaluatePathAuthority } from './lib/path-authority.mjs';
 import {
-  isRelevantVerificationVerdict,
-  resolveGitTreeFingerprint,
-} from './verification-verdict-state.mjs';
+  classifyHarnessViolation,
+  evaluateHarnessStateInvariants,
+  isFailedWorkflowState,
+} from './lib/harness-state-invariants.mjs';
+import {
+  evaluateCompletedWorksets,
+  executionRootFromPhaseArtifact,
+  hasConcreteSourceTargets,
+  scenarioEvidencePassed,
+  scorecardDone,
+  traceabilityArtifactValid,
+  unresolvedLocalBlocker,
+} from './lib/phase-closeout-artifacts.mjs';
+import {
+  normalize,
+  parseCriticalScenarios,
+  parseMasterChecklist,
+  parsePhaseStatusDocument,
+  readText,
+  resolvePath,
+} from './lib/phase-closeout-parsers.mjs';
+import {
+  readVerdictForPhase,
+  verdictInternallyConsistent,
+  verdictPassed,
+} from './lib/phase-closeout-verdict.mjs';
 
-const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
-const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
-const EXTERNAL_BLOCKER_WORDS = /\b(external|account|credential|credentials|launch|domain|cloudflare|search console|adsense|manual|no-go)\b/i;
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 
 function usage() {
@@ -34,25 +49,6 @@ function usage() {
     '  --json                 Print JSON result.',
     '  --help, -h             Show this help.',
   ].join('\n');
-}
-
-function normalize(value) {
-  return String(value || '').replace(/\r\n/g, '\n');
-}
-
-function stripQuotes(value) {
-  return String(value || '').trim().replace(/^["'`]+|["'`]+$/g, '');
-}
-
-function readText(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    return '';
-  }
-  return fs.readFileSync(filePath, 'utf8');
-}
-
-function sectionText(text, heading) {
-  return normalizeSectionText(text, heading, getHeadingAliases(heading));
 }
 
 function parseArgs(argv) {
@@ -103,305 +99,8 @@ function parseArgs(argv) {
   return result;
 }
 
-function resolvePath(rawPath, baseDir = process.cwd()) {
-  const cleaned = stripQuotes(rawPath);
-  if (!cleaned) {
-    return '';
-  }
-  return path.isAbsolute(cleaned) ? cleaned : path.resolve(baseDir, cleaned);
-}
-
-function parsePhaseStatusDocument(text) {
-  const phases = [];
-  const root = {};
-  const lines = normalize(text).split('\n');
-  let current = null;
-
-  for (const line of lines) {
-    const start = line.match(/^\s*-\s+number:\s*(\d+)/);
-    if (start) {
-      if (current) {
-        phases.push(current);
-      }
-      current = { number: Number(start[1]) };
-      continue;
-    }
-
-    if (current) {
-      const field = line.match(/^ {4}([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
-      if (field) {
-        current[field[1]] = stripQuotes(field[2]);
-      }
-      continue;
-    }
-
-    const rootField = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
-    if (rootField) {
-      root[rootField[1]] = stripQuotes(rootField[2]);
-    }
-  }
-
-  if (current) {
-    phases.push(current);
-  }
-
-  return { root, phases };
-}
-
-function parseMasterChecklist(text) {
-  const section = sectionText(text, 'Phase Completion Checklist');
-  const result = new Map();
-
-  for (const line of section.split('\n')) {
-    const match = line.match(/^-\s+\[([ xX])\].*?Phase\s+0?(\d+)\b/);
-    if (match) {
-      result.set(Number(match[2]), match[1].toLowerCase() === 'x');
-    }
-  }
-
-  return result;
-}
-
-function parseCriticalScenarios(text) {
-  const section = sectionText(text, 'Critical Product Scenarios');
-  const scenarios = [];
-  const seen = new Set();
-  const regex = /\b(SCN-[A-Za-z0-9_.-]+)\b/g;
-  let match;
-
-  while ((match = regex.exec(section)) !== null) {
-    const id = match[1];
-    if (!seen.has(id)) {
-      seen.add(id);
-      scenarios.push(id);
-    }
-  }
-
-  return scenarios;
-}
-
-function extractPathTokens(text) {
-  const result = new Set();
-  const regex = /(?:^|[\s`"'(])([A-Za-z0-9_@./\\-]+\.(?:tsx|jsx|ts|js|mjs|cjs|json|yaml|yml|md|sh|py))(?:$|[\s`"',):;])/g;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    const token = match[1].replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
-    if (!token.includes('..')) {
-      result.add(token);
-    }
-  }
-  return [...result];
-}
-
-function hasConcreteSourceTargets(phaseText) {
-  return extractPathTokens(sectionText(phaseText, 'Exact Execution Targets'))
-    .some((token) => !token.endsWith('.md') && !token.endsWith('package.json'));
-}
-
-function scenarioEvidencePassed(scenarioId, evidenceText) {
-  return normalizeScenarioEvidencePassed(scenarioId, evidenceText) || normalize(evidenceText).split('\n').some((line) => {
-    const lowered = line.toLowerCase();
-    return lowered.includes(scenarioId.toLowerCase()) && PASS_WORDS.test(line) && !FAIL_WORDS.test(line);
-  });
-}
-
-function scorecardDone(scorecardText) {
-  return /(?:Verdict|Score verdict):\s*done/i.test(scorecardText)
-    || /Current task status:\s*FULL/i.test(scorecardText);
-}
-
-function buildVerdictIdentity({ phase = {}, statusRoot = {}, statusPath = '', planDir = '', masterPlan = '' } = {}) {
-  return {
-    runLeaseId: statusRoot.activeRunLeaseId || statusRoot.lastRunLeaseId || '',
-    activePhaseDocPath: phase.plan || phase.phaseDocPath || phase.docPath || '',
-    masterPlan: masterPlan ? path.resolve(masterPlan) : '',
-    planDir: planDir ? path.resolve(planDir) : '',
-    statusFile: statusPath ? path.resolve(statusPath) : '',
-    gitTreeFingerprint: resolveGitTreeFingerprint(process.cwd()),
-  };
-}
-
-function readVerdictForPhase(phaseNumber, context = {}) {
-  const phaseId = String(phaseNumber).padStart(2, '0');
-  const verdictPath = path.resolve(process.cwd(), `.claude/verification-verdict-phase${phaseId}-final.json`);
-  if (!fs.existsSync(verdictPath)) {
-    return { path: verdictPath, exists: false };
-  }
-
-  try {
-    const parsed = JSON.parse(fs.readFileSync(verdictPath, 'utf8'));
-    const relevant = isRelevantVerificationVerdict(
-      { payload: parsed, filePath: verdictPath },
-      {
-        activePhaseNumber: Number.parseInt(String(phaseNumber), 10),
-        candidatePath: verdictPath,
-        identity: buildVerdictIdentity(context),
-        now: context.now || '',
-      },
-    );
-    return {
-      path: verdictPath,
-      exists: true,
-      parsed,
-      relevant,
-      staleReason: relevant ? '' : 'stale-or-mismatched-verdict',
-    };
-  } catch (error) {
-    return { path: verdictPath, exists: true, parseError: error.message };
-  }
-}
-
-function verdictPassed(verdict) {
-  if (!verdict.exists || verdict.parseError) {
-    return false;
-  }
-  if (verdict.relevant === false) {
-    return false;
-  }
-  const parsed = verdict.parsed || {};
-  if (!verdictInternallyConsistent(parsed)) {
-    return false;
-  }
-  const scoreVerdict = parsed.score?.verdict;
-  return parsed.verdict === 'passed'
-    && parsed.evidenceFresh === true
-    && parsed.blocking === false
-    && (!scoreVerdict || scoreVerdict === 'done');
-}
-
-function verdictInternallyConsistent(parsed = {}) {
-  const verdict = String(parsed.verdict || '').trim().toLowerCase();
-  const scoreVerdict = String(parsed.score?.verdict || '').trim().toLowerCase();
-  const commands = Array.isArray(parsed.commands) ? parsed.commands : [];
-  const environmentBlockers = Array.isArray(parsed.environmentBlockers) ? parsed.environmentBlockers : [];
-  const allCommandsPassed = commands.length > 0
-    && commands.every((command) => String(command.status || '').trim().toLowerCase() === 'passed');
-
-  if (parsed.blocking === true && verdict === 'passed') {
-    return false;
-  }
-  if (parsed.blocking === true && allCommandsPassed && scoreVerdict === 'done') {
-    return false;
-  }
-  if (verdict === 'passed' && ['blocked', 'retry', 'failed'].includes(scoreVerdict)) {
-    return false;
-  }
-  if (environmentBlockers.length > 0 && verdict === 'passed' && scoreVerdict === 'done') {
-    return false;
-  }
-  return true;
-}
-
-function unresolvedLocalBlocker(text) {
-  return normalize(text).split('\n').some((line) => {
-    const relevant =
-      /Remaining blockers before closeout:/i.test(line)
-      || /Stop reason:\s*(blocked|deferred_verification)/i.test(line)
-      || /blocking defects\s*=\s*[1-9]/i.test(line);
-
-    if (!relevant || /\bnone\b/i.test(line)) {
-      return false;
-    }
-
-    if (/\b(no blocking|blocking defects\s*=\s*0|blocking:\s*false)\b/i.test(line)) {
-      return false;
-    }
-
-    return !EXTERNAL_BLOCKER_WORDS.test(line);
-  });
-}
-
-function executionRootFromPhaseArtifact(phase) {
-  const candidate = phase.qaReport || phase.sprintContract || phase.handoff || phase.scorecard || '';
-  if (!candidate) {
-    return '';
-  }
-  return path.dirname(path.dirname(resolvePath(candidate)));
-}
-
-function traceabilityArtifactValid(filePath, idPattern) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    return false;
-  }
-  const text = readText(filePath);
-  return idPattern.test(text) && /\b(implemented|verified|pass|passed|done)\b/i.test(text);
-}
-
-function parseWorksetsYaml(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    return { exists: false, tasks: [] };
-  }
-  const tasks = [];
-  let current = null;
-  let currentList = '';
-
-  for (const line of readText(filePath).split(/\r?\n/)) {
-    const taskStart = line.match(/^\s+-\s+id:\s*(.+?)\s*$/);
-    if (taskStart) {
-      if (current) {
-        tasks.push(current);
-      }
-      current = {
-        id: stripQuotes(taskStart[1]),
-        status: '',
-        ownedPaths: [],
-        verificationCommands: [],
-        evidence: [],
-      };
-      currentList = '';
-      continue;
-    }
-    if (!current) {
-      continue;
-    }
-
-    const scalar = line.match(/^\s{4}([A-Za-z][A-Za-z0-9]*):\s*(.*?)\s*$/);
-    if (scalar) {
-      const key = scalar[1];
-      const rawValue = stripQuotes(scalar[2]);
-      currentList = ['ownedPaths', 'verificationCommands', 'evidence'].includes(key) ? key : '';
-      if (key === 'status') {
-        current.status = rawValue;
-      } else if (currentList && rawValue && rawValue !== '[]') {
-        current[currentList].push(rawValue);
-      }
-      continue;
-    }
-
-    const listItem = line.match(/^\s{6}-\s+(.+?)\s*$/);
-    if (listItem && currentList) {
-      current[currentList].push(stripQuotes(listItem[1]));
-    }
-  }
-
-  if (current) {
-    tasks.push(current);
-  }
-  return { exists: true, tasks };
-}
-
-function evaluateCompletedWorksets(phaseExecutionDir) {
-  const worksetsPath = phaseExecutionDir ? path.join(phaseExecutionDir, 'WORKSETS.yaml') : '';
-  const ledger = parseWorksetsYaml(worksetsPath);
-  if (!ledger.exists) {
-    return { ok: true, reason: 'missing-ledger-allowed', detail: '' };
-  }
-  if (ledger.tasks.length === 0) {
-    return { ok: false, reason: 'atomic-ledger-empty', detail: `${path.relative(process.cwd(), worksetsPath)} has no atomicTasks.` };
-  }
-  for (const task of ledger.tasks) {
-    if (task.status !== 'completed') {
-      return { ok: false, reason: 'atomic-tasks-incomplete', detail: `${task.id || 'atomic task'} status is ${task.status || 'missing'}.` };
-    }
-    if (task.ownedPaths.length === 0 || task.verificationCommands.length === 0 || task.evidence.length === 0) {
-      return { ok: false, reason: 'atomic-task-evidence-missing', detail: `${task.id || 'atomic task'} lacks ownedPaths, verificationCommands, or evidence.` };
-    }
-  }
-  return { ok: true, reason: 'ok', detail: '' };
-}
-
 function addViolation(violations, code, message, phaseNumber = null) {
-  violations.push({ code, message, phaseNumber });
+  violations.push({ code, message, phaseNumber, failureClass: classifyHarnessViolation(code) });
 }
 
 function readJsonIfExists(filePath) {
@@ -422,78 +121,6 @@ function hasEnvironmentBlockerPayload(statusText) {
     && /^\s+reason:\s*\S+/m.test(text)
     && /^\s+evidencePath:\s*\S+/m.test(text)
     && /^\s+observedAt:\s*\S+/m.test(text);
-}
-
-function workflowStateViolationCode(basename) {
-  switch (basename) {
-    case 'current-run.json':
-      return 'current-run-failed-phase-completed';
-    case 'active-phase-run.json':
-      return 'active-phase-run-failed-phase-completed';
-    case 'latest-dispatch.json':
-      return 'latest-dispatch-failed-phase-completed';
-    default:
-      return 'workflow-state-contradiction';
-  }
-}
-
-function isSupersededByLocalFallback(payload = {}) {
-  return payload.status === 'superseded-by-local-fallback'
-    || payload.completionStatus === 'completed-via-local-fallback'
-    || payload.localFallbackCompletion?.completionStatus === 'completed-via-local-fallback';
-}
-
-function isFailedWorkflowState(payload = {}) {
-  if (!payload || isSupersededByLocalFallback(payload)) {
-    return false;
-  }
-  const fields = [
-    payload.status,
-    payload.completionStatus,
-    payload.activeExecutionStatus,
-    payload.failureClass,
-    payload.stopReasonCode,
-    payload.phaseRunLease?.status,
-    payload.phaseRunLease?.completionStatus,
-    payload.phaseRunLease?.stopReasonCode,
-  ].map((value) => String(value || '').toLowerCase());
-  return fields.some((value) => value.includes('failed') || value.includes('failure'));
-}
-
-function runningWorkflowStateViolationCode(basename) {
-  switch (basename) {
-    case 'current-run.json':
-      return 'current-run-running-phase-completed';
-    case 'active-phase-run.json':
-      return 'active-phase-run-running-phase-completed';
-    case 'latest-dispatch.json':
-      return 'latest-dispatch-running-phase-completed';
-    default:
-      return 'workflow-state-running-phase-completed';
-  }
-}
-
-function isRunningWorkflowState(payload = {}) {
-  if (!payload || isSupersededByLocalFallback(payload)) {
-    return false;
-  }
-  const fields = [
-    payload.status,
-    payload.completionStatus,
-    payload.activeExecutionStatus,
-    payload.phaseRunLease?.status,
-    payload.phaseRunLease?.completionStatus,
-  ].map((value) => String(value || '').toLowerCase());
-  return fields.some((value) => ['running', 'active', 'in_progress'].includes(value));
-}
-
-function isCompletedLocalFallback(payload = {}) {
-  if (!payload) {
-    return false;
-  }
-  return payload.status === 'completed'
-    || payload.completionStatus === 'completed-via-local-fallback'
-    || payload.completionBoundary === 'phase_only';
 }
 
 function collectSessionFiles({ sessionFile, sessionDir }) {
@@ -533,48 +160,22 @@ function inspectWorkflowCloseoutDrift({
   sessionDir: configuredSessionDir,
   now,
   violations,
+  degradedEvidence,
 }) {
   const completedPhases = phases.filter((phase) => phase.status === 'completed');
-
   const repoRoot = path.dirname(path.dirname(path.dirname(statusPath)));
   const workflowDir = configuredWorkflowDir || path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement');
-  const workflowStates = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']
-    .map((basename) => ({
-      basename,
-      payload: readJsonIfExists(path.join(workflowDir, basename)),
-    }))
-    .filter((entry) => entry.payload);
-  const failedWorkflowStates = workflowStates.filter((entry) => isFailedWorkflowState(entry.payload));
-  const runningWorkflowStates = workflowStates.filter((entry) => isRunningWorkflowState(entry.payload));
-
-  for (const key of ['updatedAt', 'activeExecutionHeartbeatAt', 'lastExecutionHeartbeatAt']) {
-    addFutureTimestampViolation(violations, `phase-status ${key}`, statusRoot[key], now);
-  }
-
-  for (const { basename, payload } of workflowStates) {
-    for (const key of ['updatedAt', 'lastHeartbeatAt']) {
-      addFutureTimestampViolation(violations, `${basename} ${key}`, payload[key], now);
-    }
-    for (const key of ['updatedAt', 'lastHeartbeatAt']) {
-      addFutureTimestampViolation(violations, `${basename} phaseRunLease.${key}`, payload.phaseRunLease?.[key], now);
-    }
-  }
-
-  for (const { basename, payload } of failedWorkflowStates) {
-    const fallbackRunId = payload.fallbackRunId || payload.localFallbackCompletion?.runId || '';
-    const fallbackRun = fallbackRunId ? readJsonIfExists(path.join(workflowDir, `${fallbackRunId}.json`)) : null;
-    if (fallbackRun && isCompletedLocalFallback(fallbackRun)) {
-      addViolation(violations, 'delegated-failed-local-fallback-completed', `${basename} is failed and points at completed local fallback ${fallbackRunId}, but it was not superseded.`);
-      continue;
-    }
-    addViolation(violations, workflowStateViolationCode(basename), `${basename} is failed while phase-status contains completed phase state.`);
-  }
-
-  if (completedPhases.length > 0) {
-    for (const { basename } of runningWorkflowStates) {
-      addViolation(violations, runningWorkflowStateViolationCode(basename), `${basename} is still running while phase-status contains completed phase state.`);
-    }
-  }
+  const invariantResult = evaluateHarnessStateInvariants({
+    statusRoot,
+    phases,
+    statusPath,
+    workflowDir,
+    now,
+    strictMemory: String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true',
+  });
+  violations.push(...invariantResult.violations);
+  degradedEvidence.push(...invariantResult.degradedEvidence);
+  const failedWorkflowStates = invariantResult.workflowStates.filter((entry) => isFailedWorkflowState(entry.payload));
 
   const activeRunLeaseId = statusRoot.activeRunLeaseId || '';
   for (const phase of completedPhases) {
@@ -638,7 +239,9 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     code: issue.code,
     message: issue.detail,
     phaseNumber: null,
+    failureClass: classifyHarnessViolation(issue.code),
   }));
+  const degradedEvidence = [];
 
   const statusText = fs.existsSync(statusPath) ? readText(statusPath) : '';
   const statusDocument = statusText ? parsePhaseStatusDocument(statusText) : { root: {}, phases: [] };
@@ -755,6 +358,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     sessionDir: config.sessionDir ? resolvePath(config.sessionDir) : '',
     now: config.now,
     violations,
+    degradedEvidence,
   });
 
   const allowed = violations.length === 0;
@@ -767,6 +371,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     masterPlan: masterPath,
     completedPhases: phases.filter((phase) => phase.status === 'completed').map((phase) => phase.number),
     violations,
+    degradedEvidence,
   };
 }
 

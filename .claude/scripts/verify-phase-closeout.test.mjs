@@ -116,6 +116,34 @@ test('phase closeout accepts explicitly superseded local fallback workflow state
   });
 });
 
+test('phase closeout fails when latest dispatch remains prepared after completion', () => {
+  withFixture({ latestDispatchPreparedAfterCompletion: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'latest-dispatch-stale-after-completion');
+    assert.ok(result.violations.some((violation) => violation.failureClass === 'harness-state'));
+  });
+});
+
+test('phase closeout records non-strict MemoryGraph unavailability as degraded evidence', () => {
+  withFixture({ memorygraphUnavailable: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+    assert.equal(result.degradedEvidence.some((entry) => entry.code === 'memorygraph_unavailable'), true);
+  });
+});
+
+test('phase closeout blocks strict MemoryGraph verification unavailability', () => {
+  withFixture({ memorygraphUnavailable: true, memorygraphStrict: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'memorygraph-unavailable-strict');
+    assert.ok(result.violations.some((violation) => violation.failureClass === 'environment-permission'));
+  });
+});
+
 test('phase closeout supports an explicit workflowDir option', () => {
   withFixture({}, (root) => {
     const workflowDir = path.join(root, 'custom-workflow');
@@ -367,6 +395,9 @@ function writeFixture(root, options = {}) {
     sessionTaskCompleteWorkflowFailed: false,
     environmentBlockedSmokePlanComplete: false,
     environmentBlockedNormalizedInProgress: false,
+    latestDispatchPreparedAfterCompletion: false,
+    memorygraphUnavailable: false,
+    memorygraphStrict: false,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -456,6 +487,8 @@ function writeFixture(root, options = {}) {
     || settings.workflowFutureTimestamp
     || settings.sessionTaskCompleteWorkflowFailed
     || settings.environmentBlockedSmokePlanComplete
+    || settings.latestDispatchPreparedAfterCompletion
+    || settings.memorygraphUnavailable
   ) {
     const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');
     fs.mkdirSync(workflowDir, { recursive: true });
@@ -502,6 +535,30 @@ function writeFixture(root, options = {}) {
           runId: 'latest-failed-run',
           status: 'failed',
           completionStatus: 'failed',
+        });
+      }
+      if (settings.latestDispatchPreparedAfterCompletion) {
+        writeState('latest-dispatch.json', {
+          runId: 'prepared-dispatch-run',
+          status: 'prepared',
+          completionStatus: 'prepared',
+          planDir: 'docs/implementation',
+          statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+        });
+      }
+      if (settings.memorygraphUnavailable) {
+        writeState('current-run.json', {
+          runId: 'memorygraph-degraded-run',
+          status: 'completed',
+          completionStatus: 'completed',
+          planDir: 'docs/implementation',
+          statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+          unavailableCapabilities: [{
+            code: 'memorygraph_unavailable',
+            source: 'memorygraph.health',
+            evidencePath: '.claude/logs/agent-loop/debug.jsonl',
+            strict: settings.memorygraphStrict ? 'true' : 'false',
+          }],
         });
       }
     }

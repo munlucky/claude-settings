@@ -36,6 +36,15 @@ test('reconciler supersedes failed delegated workflow state and mirrors fallback
       assert.equal(payload.supersededRunLeaseId, 'delegated-failed-run', basename);
       assert.equal(payload.supersededAt, fixture.fixedNow, basename);
       assert.equal(payload.completionBoundary, 'phase_only', basename);
+      assert.equal(payload.rawStopReasonCode, 'delegated-terminal-exit-1', basename);
+      assert.equal(payload.blockingStopReasonCode, '', basename);
+      assert.equal(payload.recoveryStatus, 'recovered', basename);
+      assert.equal(payload.completionPath, 'local-fallback', basename);
+      assert.equal(payload.recoveryEvents.length, 1, basename);
+      assert.equal(payload.recoveryEvents[0].blockingBeforeRecovery, true, basename);
+      assert.equal(payload.recoveryEvents[0].toStatus, 'completed-via-local-fallback', basename);
+      assert.equal(payload.residualFailures.length, 1, basename);
+      assert.equal(payload.residualFailures[0].rawStopReasonCode, 'delegated-terminal-exit-1', basename);
       assert.equal(payload.localFallbackCompletion.completionStatus, 'completed-via-local-fallback', basename);
       assert.equal(payload.localFallbackCompletion.returnBoundary, 'local-fallback', basename);
     }
