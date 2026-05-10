@@ -14,6 +14,20 @@ export function stripQuotes(value) {
   return String(value || '').trim().replace(/^["'`]+|["'`]+$/g, '');
 }
 
+function parseInlineYamlList(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
+    return [];
+  }
+  const body = trimmed.slice(1, -1).trim();
+  if (!body) {
+    return [];
+  }
+  return body.split(',')
+    .map((entry) => stripQuotes(entry))
+    .filter(Boolean);
+}
+
 export function readText(filePath) {
   if (!filePath || !fs.existsSync(filePath)) {
     return '';
@@ -116,12 +130,18 @@ export function parseWorksetsYaml(filePath) {
       if (current) {
         tasks.push(current);
       }
-      current = {
-        id: stripQuotes(taskStart[1]),
-        status: '',
-        ownedPaths: [],
-        verificationCommands: [],
-        evidence: [],
+        current = {
+          id: stripQuotes(taskStart[1]),
+          status: '',
+          taskStatus: '',
+          acceptanceCriterionId: '',
+          parentAcceptanceCriterionId: '',
+          linkedRequirementIds: [],
+          acVerdict: '',
+          verificationEvidence: [],
+          ownedPaths: [],
+          verificationCommands: [],
+          evidence: [],
       };
       currentList = '';
       continue;
@@ -131,17 +151,30 @@ export function parseWorksetsYaml(filePath) {
     }
 
     const scalar = line.match(/^\s{4}([A-Za-z][A-Za-z0-9]*):\s*(.*?)\s*$/);
-    if (scalar) {
-      const key = scalar[1];
-      const rawValue = stripQuotes(scalar[2]);
-      currentList = ['ownedPaths', 'verificationCommands', 'evidence'].includes(key) ? key : '';
-      if (key === 'status') {
-        current.status = rawValue;
-      } else if (currentList && rawValue && rawValue !== '[]') {
-        current[currentList].push(rawValue);
+      if (scalar) {
+        const key = scalar[1];
+        const rawValue = stripQuotes(scalar[2]);
+        currentList = ['ownedPaths', 'verificationCommands', 'evidence', 'linkedRequirementIds', 'verificationEvidence'].includes(key) ? key : '';
+        if (key === 'status') {
+          current.status = rawValue;
+        } else if (key === 'taskStatus') {
+          current.taskStatus = rawValue;
+        } else if (key === 'acceptanceCriterionId') {
+          current.acceptanceCriterionId = rawValue;
+        } else if (key === 'parentAcceptanceCriterionId') {
+          current.parentAcceptanceCriterionId = rawValue;
+        } else if (key === 'acVerdict') {
+          current.acVerdict = rawValue;
+        } else if (currentList && rawValue && rawValue !== '[]') {
+          const inlineValues = parseInlineYamlList(scalar[2]);
+          if (inlineValues.length > 0) {
+            current[currentList].push(...inlineValues);
+          } else {
+            current[currentList].push(rawValue);
+          }
+        }
+        continue;
       }
-      continue;
-    }
 
     const listItem = line.match(/^\s{6}-\s+(.+?)\s*$/);
     if (listItem && currentList) {

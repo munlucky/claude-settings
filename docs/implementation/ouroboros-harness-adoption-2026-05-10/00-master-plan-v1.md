@@ -38,14 +38,14 @@
 
 | Phase | Title | Plan File | Depends On |
 |---|---|---|---|
-| 01 | Goal Contract Schema And Template | `01-goal-contract-schema-template-v1.md` | - |
-| 02 | Plan Writer Ambiguity Gate And AC Extraction | `02-plan-writer-ambiguity-ac-extraction-v1.md` | 01 |
-| 03 | AC-linked WORKSETS And Artifact Projection | `03-ac-linked-worksets-artifact-projection-v1.md` | 01, 02 |
-| 04 | Completion Verifier Task-vs-AC Verdict Split | `04-completion-verifier-task-ac-verdict-split-v1.md` | 03 |
-| 05 | Event Ledger And Replay Read Model | `05-event-ledger-replay-read-model-v1.md` | 01, 03, 04 |
-| 06 | Evaluation Trigger Pipeline | `06-evaluation-trigger-pipeline-v1.md` | 04, 05 |
-| 07 | Resilience Retry And Stop-reason Taxonomy | `07-resilience-retry-stop-reason-taxonomy-v1.md` | 05, 06 |
-| 08 | Runtime Capability Status And Resume Model | `08-runtime-capability-status-resume-model-v1.md` | 05, 06, 07 |
+| 01 | Goal Contract Schema And Template | `close/01-goal-contract-schema-template-v1.md` | - |
+| 02 | Plan Writer Ambiguity Gate And AC Extraction | `close/02-plan-writer-ambiguity-ac-extraction-v1.md` | 01 |
+| 03 | AC-linked WORKSETS And Artifact Projection | `close/03-ac-linked-worksets-artifact-projection-v1.md` | 01, 02 |
+| 04 | Completion Verifier Task-vs-AC Verdict Split | `close/04-completion-verifier-task-ac-verdict-split-v1.md` | 03 |
+| 05 | Event Ledger And Replay Read Model | `close/05-event-ledger-replay-read-model-v1.md` | 01, 03, 04 |
+| 06 | Evaluation Trigger Pipeline | `close/06-evaluation-trigger-pipeline-v1.md` | 04, 05 |
+| 07 | Resilience Retry And Stop-reason Taxonomy | `close/07-resilience-retry-stop-reason-taxonomy-v1.md` | 05, 06 |
+| 08 | Runtime Capability Status And Resume Model | `close/08-runtime-capability-status-resume-model-v1.md` | 05, 06, 07 |
 
 ## Execution Order Notes
 
@@ -77,17 +77,17 @@
 
 | Req ID | Source | Requirement Summary | Phase | Plan File | Status |
 |---|---|---|---|---|---|
-| OHA-001 | User strategy | Add Seed-lite / Goal Contract before SPRINT_CONTRACT | 01 | `01-goal-contract-schema-template-v1.md` | mapped |
-| OHA-002 | User strategy | Add objective, scope, non-goals, constraints, AC, exit conditions, brownfield context, snapshot id, provenance | 01 | `01-goal-contract-schema-template-v1.md` | mapped |
-| OHA-003 | User strategy | Add ambiguity and clarity scoring before implementation | 02 | `02-plan-writer-ambiguity-ac-extraction-v1.md` | mapped |
-| OHA-004 | User strategy | Add unresolved questions and assumptions-ledger link | 02 | `02-plan-writer-ambiguity-ac-extraction-v1.md` | mapped |
-| OHA-005 | User strategy | Upgrade WORKSETS to AC-linked work items | 03 | `03-ac-linked-worksets-artifact-projection-v1.md` | mapped |
-| OHA-006 | User strategy | Enforce `taskStatus=completed != acVerdict=passed` | 04 | `04-completion-verifier-task-ac-verdict-split-v1.md` | mapped |
-| OHA-007 | User strategy | Add event ledger or SQLite events for append-only lineage | 05 | `05-event-ledger-replay-read-model-v1.md` | mapped |
-| OHA-008 | User strategy | Add mechanical -> semantic -> consensus trigger pipeline without silent skip-as-pass | 06 | `06-evaluation-trigger-pipeline-v1.md` | mapped |
-| OHA-009 | User strategy | Add stagnation patterns, raw stop reason, recovery action, normalized verdict, per-iteration timeout | 07 | `07-resilience-retry-stop-reason-taxonomy-v1.md` | mapped |
-| OHA-010 | User strategy | Add runtime capability matrix, deferred tool lookup, MCP unavailable classification, fallback policy | 08 | `08-runtime-capability-status-resume-model-v1.md` | mapped |
-| OHA-011 | User strategy | Add compact status, event-backed progress, stale progress detection, resume brief, lineage ids | 08 | `08-runtime-capability-status-resume-model-v1.md` | mapped |
+| OHA-001 | User strategy | Add Seed-lite / Goal Contract before SPRINT_CONTRACT | 01 | `close/01-goal-contract-schema-template-v1.md` | mapped |
+| OHA-002 | User strategy | Add objective, scope, non-goals, constraints, AC, exit conditions, brownfield context, snapshot id, provenance | 01 | `close/01-goal-contract-schema-template-v1.md` | mapped |
+| OHA-003 | User strategy | Add ambiguity and clarity scoring before implementation | 02 | `close/02-plan-writer-ambiguity-ac-extraction-v1.md` | mapped |
+| OHA-004 | User strategy | Add unresolved questions and assumptions-ledger link | 02 | `close/02-plan-writer-ambiguity-ac-extraction-v1.md` | mapped |
+| OHA-005 | User strategy | Upgrade WORKSETS to AC-linked work items | 03 | `close/03-ac-linked-worksets-artifact-projection-v1.md` | mapped |
+| OHA-006 | User strategy | Enforce `taskStatus=completed != acVerdict=passed` | 04 | `close/04-completion-verifier-task-ac-verdict-split-v1.md` | mapped |
+| OHA-007 | User strategy | Add event ledger or SQLite events for append-only lineage | 05 | `close/05-event-ledger-replay-read-model-v1.md` | mapped |
+| OHA-008 | User strategy | Add mechanical -> semantic -> consensus trigger pipeline without silent skip-as-pass | 06 | `close/06-evaluation-trigger-pipeline-v1.md` | mapped |
+| OHA-009 | User strategy | Add stagnation patterns, raw stop reason, recovery action, normalized verdict, per-iteration timeout | 07 | `close/07-resilience-retry-stop-reason-taxonomy-v1.md` | mapped |
+| OHA-010 | User strategy | Add runtime capability matrix, deferred tool lookup, MCP unavailable classification, fallback policy | 08 | `close/08-runtime-capability-status-resume-model-v1.md` | mapped |
+| OHA-011 | User strategy | Add compact status, event-backed progress, stale progress detection, resume brief, lineage ids | 08 | `close/08-runtime-capability-status-resume-model-v1.md` | mapped |
 | OHA-012 | User strategy | Keep current public entrypoints stable | 01-08 | all phase files | mapped |
 | OHA-013 | User strategy | Connect docs rules to schema, template, scripts, and verifier | 01-08 | all phase files | mapped |
 | OHA-014 | Adoption inventory | Add contract change ledger, brownfield readiness, verification override allowlist, QA backend matrix, unstuck route, product-value check, execution-vs-evaluation guide, runtime doctor where appropriate | 01, 02, 06, 07, 08 | relevant phase files | mapped |
@@ -98,14 +98,14 @@
 
 ## Phase Completion Checklist
 
-- [ ] Phase 01 - Goal Contract Schema And Template (`01-goal-contract-schema-template-v1.md`)
-- [ ] Phase 02 - Plan Writer Ambiguity Gate And AC Extraction (`02-plan-writer-ambiguity-ac-extraction-v1.md`)
-- [ ] Phase 03 - AC-linked WORKSETS And Artifact Projection (`03-ac-linked-worksets-artifact-projection-v1.md`)
-- [ ] Phase 04 - Completion Verifier Task-vs-AC Verdict Split (`04-completion-verifier-task-ac-verdict-split-v1.md`)
-- [ ] Phase 05 - Event Ledger And Replay Read Model (`05-event-ledger-replay-read-model-v1.md`)
-- [ ] Phase 06 - Evaluation Trigger Pipeline (`06-evaluation-trigger-pipeline-v1.md`)
-- [ ] Phase 07 - Resilience Retry And Stop-reason Taxonomy (`07-resilience-retry-stop-reason-taxonomy-v1.md`)
-- [ ] Phase 08 - Runtime Capability Status And Resume Model (`08-runtime-capability-status-resume-model-v1.md`)
+- [x] Phase 01 - Goal Contract Schema And Template (`close/01-goal-contract-schema-template-v1.md`)
+- [x] Phase 02 - Plan Writer Ambiguity Gate And AC Extraction (`close/02-plan-writer-ambiguity-ac-extraction-v1.md`)
+- [x] Phase 03 - AC-linked WORKSETS And Artifact Projection (`close/03-ac-linked-worksets-artifact-projection-v1.md`)
+- [x] Phase 04 - Completion Verifier Task-vs-AC Verdict Split (`close/04-completion-verifier-task-ac-verdict-split-v1.md`)
+- [x] Phase 05 - Event Ledger And Replay Read Model (`close/05-event-ledger-replay-read-model-v1.md`)
+- [x] Phase 06 - Evaluation Trigger Pipeline (`close/06-evaluation-trigger-pipeline-v1.md`)
+- [x] Phase 07 - Resilience Retry And Stop-reason Taxonomy (`close/07-resilience-retry-stop-reason-taxonomy-v1.md`)
+- [x] Phase 08 - Runtime Capability Status And Resume Model (`close/08-runtime-capability-status-resume-model-v1.md`)
 
 ## Completion Rule
 

@@ -1176,6 +1176,7 @@ run_workflow_enforcement_sync_smoke() {
   local fixture_root="$TMP_ROOT/workflow-enforcement-sync"
   local analysis_file="$fixture_root/moonshot-analysis.yaml"
   local sprint_contract="$fixture_root/execution/SPRINT_CONTRACT.md"
+  local goal_contract="$fixture_root/execution/GOAL_CONTRACT.yaml"
   local qa_report="$fixture_root/execution/QA_REPORT.md"
   local handoff="$fixture_root/execution/HANDOFF.md"
   local code_file="$fixture_root/example.ts"
@@ -1237,6 +1238,30 @@ EOF
 
 ## Finish Rule
 - finish starts only after review and verification are stable
+EOF
+
+  cat > "$goal_contract" <<'EOF'
+schemaVersion: "1.0"
+snapshotId: "goal-contract-runtime-parity-sync-smoke"
+objective: "Verify workflow enforcement sync smoke keeps required Goal Contract evidence adjacent to the sprint contract."
+scope:
+  - "workflow enforcement bounded sync fixture"
+nonGoals:
+  - "product implementation"
+constraints:
+  - "fixture-only"
+acceptanceCriteria:
+  - id: "AC-RUNTIME-PARITY-SYNC"
+    description: "workflow enforcement sync smoke has adjacent Goal Contract evidence"
+exitConditions:
+  - "workflow-enforcement verify reports zero violations"
+brownfieldContext:
+  repository: "runtime parity fixture"
+provenance:
+  source: "verify-phase-runtime-parity-shell-core.sh"
+sourceArtifacts:
+  - "moonshot-analysis.yaml"
+  - "SPRINT_CONTRACT.md"
 EOF
 
   cat > "$qa_report" <<'EOF'

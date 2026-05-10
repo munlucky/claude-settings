@@ -211,6 +211,18 @@ External blockers do not justify a fake clean finish:
 - if the blocker is only partial, keep the audit note explicit so `QA_REPORT.md` and `HANDOFF.md` both explain why the phase stayed open
 - ignored evidence that must remain in the closeout chain should be named in the artifact record rather than dropped from the finish ledger
 
+### Event ledger vs read models
+
+Mutable artifacts such as `phase-status.yaml`, `current-run.json`, `active-phase-run.json`, `latest-dispatch.json`, `QA_REPORT.md`, and structured verdict files are read models. They are optimized for fast routing and completion gates, not for complete history.
+
+Use the append-only phase event ledger for durable lineage:
+- write lifecycle events with `eventVersion`, `eventType`, `runId`, `phaseId`, `contractSnapshotId`, `source`, `payload`, and `timestamp`
+- keep payloads bounded to state transitions, artifact paths, verdict summaries, and retry/recovery reasons
+- never store raw prompts, secrets, transcripts, raw MemoryGraph output, or raw CodeReviewGraph output in event payloads
+- treat replay mismatches against read models as stale projection defects that must be resolved before clean finish
+
+The v1 ledger is JSONL for boring operational reliability. The schema is intentionally SQLite-compatible so a future adapter can migrate storage without changing event vocabulary.
+
 Invalid handoff reasons:
 - "checkpoint reached"
 - "docs updated"

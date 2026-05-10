@@ -11,7 +11,7 @@ import { assignExecutionArtifactPaths, buildPhasePrompt, ensureExecutionArtifact
 import { evaluatePathAuthority } from './lib/path-authority.mjs';
 import { createPhaseHarnessCaptureSession, normalizeArtifactRefs } from './lib/awtl-harness-capture.mjs';
 import { collectVerificationPreflightBlockers, loadVerificationContractContext } from './lib/verification-contract.mjs';
-import { classifyFailure, summarizeFailureDecision } from './lib/failure-classifier.mjs';
+import { classifyFailure, classifyStagnationPattern, normalizeStopOutcome, summarizeFailureDecision } from './lib/failure-classifier.mjs';
 import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { archivePromptText } from './lib/prompt-redaction.mjs';
@@ -306,6 +306,10 @@ function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReaso
     ? payload.failureClassCounts
     : {};
   const summary = summarizeFailureDecision(counts);
+  const stagnation = classifyStagnationPattern(
+    Object.entries(counts).flatMap(([code, count]) => Array.from({ length: Number(count) || 0 }, () => ({ code }))),
+    { retryBudgetRemaining: Number(payload.retryBudgetRemaining ?? Number.NaN) },
+  );
   const stopClassification = classifyFailure({ reason: finalStopReason, message: finalStopReason });
   const blockerCode = payload.reason || summary.blockerCode || stopClassification.code;
   const sameFailureClassCount = Number(
@@ -316,9 +320,10 @@ function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReaso
   );
   const decision = payload.decision || summary.decision;
   const reason = payload.reason || summary.reason || stopClassification.code || 'ok';
-  const shouldSuppressRetry = sameFailureClassCount >= 2
-    && decision !== 'continue'
-    && (stopClassification.blocker || decision !== 'continue');
+  const shouldSuppressRetry = stagnation.retrySuppressed
+    || (sameFailureClassCount >= 2
+      && decision !== 'continue'
+      && (stopClassification.blocker || decision !== 'continue'));
 
   return {
     reportPath: latest.filePath,
@@ -327,6 +332,9 @@ function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReaso
     decision,
     reason,
     shouldSuppressRetry,
+    stopReasonClass: stagnation.stopReasonClass,
+    recoveryAction: stagnation.recoveryAction,
+    normalizedRunVerdict: stagnation.normalizedRunVerdict,
     fallbackHints: Array.isArray(payload.fallbackHints) ? payload.fallbackHints : [],
   };
 }
@@ -1058,6 +1066,11 @@ function recordLoopStop(phaseNum, reason, detail, logFile) {
     ? `${reason}: ${detail}`
     : detail;
   const classification = classifyFailure({ reason, message: detail, detail });
+  const stopOutcome = normalizeStopOutcome({
+    rawStopReason: reason,
+    detail,
+    recoveryAction: classification.fallbackHint ? 'runtime_fallback_or_handoff' : '',
+  });
   appendWasteLedgerEntry({
     repoRoot: process.cwd(),
     kind: 'retry',
@@ -1067,6 +1080,11 @@ function recordLoopStop(phaseNum, reason, detail, logFile) {
     action: classification.retryPolicy === 'retryable' ? 'record_retry_stop' : 'record_waste_stop',
     evidencePath: logFile || activeAttemptContext?.paths?.phaseQaReport || '',
     retryPolicy: classification.retryPolicy,
+    rawStopReason: stopOutcome.rawStopReason,
+    rawStopReasonCode: stopOutcome.rawStopReasonCode,
+    recoveryAction: stopOutcome.recoveryAction,
+    normalizedRunVerdict: stopOutcome.normalizedRunVerdict,
+    stopReasonClass: stopOutcome.stopReasonClass,
     context: reason,
     detail,
     source: 'agent-loop-phase-runner',
@@ -1077,6 +1095,10 @@ function recordLoopStop(phaseNum, reason, detail, logFile) {
     reason,
     detail,
     logFile,
+    rawStopReason: stopOutcome.rawStopReason,
+    recoveryAction: stopOutcome.recoveryAction,
+    normalizedRunVerdict: stopOutcome.normalizedRunVerdict,
+    stopReasonClass: stopOutcome.stopReasonClass,
   });
   appendDecisionLog([
     `## Phase ${phaseNum} - Stopped Early`,

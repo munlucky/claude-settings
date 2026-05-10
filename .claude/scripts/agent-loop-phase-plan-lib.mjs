@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +10,25 @@ import { buildFailurePreventionBriefSection } from './lib/awtl-failure-preventio
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
 import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
+
+function writableTempRoot() {
+  const candidates = [
+    process.env.CODEX_TMPDIR,
+    process.env.TMP,
+    process.env.TEMP,
+    process.platform === 'win32' ? 'C:\\tmp' : '/tmp',
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      fs.mkdirSync(candidate, { recursive: true });
+      fs.accessSync(candidate, fs.constants.W_OK);
+      return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return process.cwd();
+}
 
 export function sanitizeSlug(value) {
   return String(value || '')
@@ -33,6 +51,7 @@ export function assignExecutionArtifactPaths(phaseNum, phaseTitle, executionRoot
     phasePrefix,
     phaseSlug,
     phaseExecutionDir,
+    phaseGoalContract: `${phaseExecutionDir}/GOAL_CONTRACT.yaml`,
     phaseSprintContract: `${phaseExecutionDir}/SPRINT_CONTRACT.md`,
     phaseQaReport: `${phaseExecutionDir}/QA_REPORT.md`,
     phaseHandoff: `${phaseExecutionDir}/HANDOFF.md`,
@@ -125,11 +144,150 @@ function extractPhaseVerificationCommands(sourceText) {
   return uniqueValues(sections.flatMap(extractInlineCodeValues).filter(looksLikeVerificationCommand));
 }
 
+const UNVERIFIABLE_ADJECTIVES = [
+  'beautiful',
+  'delightful',
+  'fast',
+  'intuitive',
+  'nice',
+  'polished',
+  'robust',
+  'scalable',
+  'seamless',
+  'simple',
+  'user-friendly',
+];
+
+function sectionExists(text, heading) {
+  const section = extractMarkdownSection(text, heading);
+  return !/^-\s+(?:not found|empty) in source phase doc\./i.test(section.trim());
+}
+
+function extractChecklistItems(text, heading) {
+  return extractMarkdownSection(text, heading)
+    .split(/\r?\n/)
+    .map((line) => line.trim().match(/^[-*]\s+\[[ xX]\]\s+(.+)$/)?.[1])
+    .filter(Boolean);
+}
+
+function extractAcceptanceCriteriaFromSource(sourceText) {
+  const candidates = [
+    ...extractChecklistItems(sourceText, 'Phase Completion Checklist')
+      .map((statement) => ({ statement, source: 'Phase Completion Checklist' })),
+    ...extractChecklistItems(sourceText, 'Validation Plan')
+      .map((statement) => ({ statement, source: 'Validation Plan' })),
+  ];
+  const uniqueStatements = new Set();
+  return candidates
+    .filter((candidate) => {
+      const key = candidate.statement.toLowerCase();
+      if (uniqueStatements.has(key)) {
+        return false;
+      }
+      uniqueStatements.add(key);
+      return true;
+    })
+    .map((candidate, index) => ({
+      id: `AC-${String(index + 1).padStart(3, '0')}`,
+      ...candidate,
+    }));
+}
+
+function extractLinkedRequirementIdsFromSource(sourceText) {
+  const ids = [];
+  for (const match of String(sourceText || '').matchAll(/\b[A-Z][A-Z0-9]+-\d{3,}\b/g)) {
+    ids.push(match[0]);
+  }
+  return uniqueValues(ids);
+}
+
+function buildTaskAcceptanceLink(taskIndex, acceptanceCriteria) {
+  if (!Array.isArray(acceptanceCriteria) || acceptanceCriteria.length === 0) {
+    return null;
+  }
+  return acceptanceCriteria[Math.min(taskIndex, acceptanceCriteria.length - 1)] || null;
+}
+
+function detectSourceGaps(sourceText, verificationCommands, acceptanceCriteria) {
+  const gaps = [];
+  const lowerSource = String(sourceText || '').toLowerCase();
+  const scopeText = extractMarkdownSection(sourceText, 'Scope').toLowerCase();
+  const criteriaText = acceptanceCriteria.map((criterion) => criterion.statement).join('\n').toLowerCase();
+  const vagueTerms = UNVERIFIABLE_ADJECTIVES.filter((term) => {
+    const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^A-Za-z0-9-])${escapedTerm}($|[^A-Za-z0-9-])`, 'i').test(lowerSource);
+  });
+
+  if (!sectionExists(sourceText, 'Goal')) {
+    gaps.push({ id: 'GAP-GOAL', severity: 'blocking', reason: 'missing explicit goal section' });
+  }
+  if (!sectionExists(sourceText, 'Scope') || !/in scope/i.test(scopeText)) {
+    gaps.push({ id: 'GAP-SCOPE', severity: 'blocking', reason: 'missing in-scope boundary' });
+  }
+  if (!/out of scope|non-goals?|excluded scope/i.test(scopeText)) {
+    gaps.push({ id: 'GAP-NON-GOALS', severity: 'assumption', reason: 'missing non-goal boundary' });
+  }
+  if (acceptanceCriteria.length === 0) {
+    gaps.push({ id: 'GAP-AC', severity: 'blocking', reason: 'missing acceptance criteria' });
+  }
+  if (criteriaText && /\b(?:etc|and so on|as needed|tbd|reasonable|appropriate)\b/i.test(criteriaText)) {
+    gaps.push({ id: 'GAP-AMBIGUOUS-AC', severity: 'assumption', reason: 'acceptance criteria include ambiguous terms' });
+  }
+  if (verificationCommands.length === 0) {
+    gaps.push({ id: 'GAP-VERIFY', severity: 'blocking', reason: 'missing verification command' });
+  }
+  if (!sectionExists(sourceText, 'Phase Execution Metadata') && !sectionExists(sourceText, 'Preconditions and Inputs')) {
+    gaps.push({ id: 'GAP-BROWNFIELD', severity: 'assumption', reason: 'missing brownfield readiness context' });
+  }
+  for (const term of vagueTerms) {
+    gaps.push({ id: `GAP-ADJECTIVE-${sanitizeSlug(term).toUpperCase()}`, severity: 'assumption', reason: `unverifiable adjective '${term}' requires measurable evidence` });
+  }
+
+  return gaps;
+}
+
+function boundedScore(value) {
+  return Math.max(0, Math.min(1, Number(value.toFixed(2))));
+}
+
+function calculateReadinessAssessment(sourceText, verificationCommands, acceptanceCriteria) {
+  const gaps = detectSourceGaps(sourceText, verificationCommands, acceptanceCriteria);
+  const blockingGaps = gaps.filter((gap) => gap.severity === 'blocking').length;
+  const assumptionGaps = gaps.filter((gap) => gap.severity === 'assumption').length;
+  const scopeText = extractMarkdownSection(sourceText, 'Scope');
+  const goalClarity = sectionExists(sourceText, 'Goal') ? 1 : 0;
+  const scopeClarity = sectionExists(sourceText, 'Scope')
+    ? (/out of scope|non-goals?|excluded scope/i.test(scopeText) ? 1 : 0.7)
+    : 0;
+  const acceptanceCriteriaClarity = acceptanceCriteria.length > 0
+    ? (gaps.some((gap) => gap.id === 'GAP-AMBIGUOUS-AC') ? 0.7 : 1)
+    : 0;
+  const verificationClarity = verificationCommands.length > 0 ? 1 : 0;
+  const clarityScore = boundedScore((goalClarity + scopeClarity + acceptanceCriteriaClarity + verificationClarity) / 4);
+  const ambiguityScore = boundedScore(1 - clarityScore + (blockingGaps * 0.15) + (assumptionGaps * 0.05));
+  const readinessDecision = ambiguityScore <= 0.20
+    ? 'executable'
+    : (ambiguityScore <= 0.35 ? 'constrained_with_assumptions' : 'blocked');
+
+  return {
+    goalClarity,
+    scopeClarity,
+    acceptanceCriteriaClarity,
+    verificationClarity,
+    clarityScore,
+    ambiguityScore,
+    readinessDecision,
+    gaps,
+  };
+}
+
 export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
   const sourceText = phaseDoc && fs.existsSync(phaseDoc) ? fs.readFileSync(phaseDoc, 'utf8') : '';
   const detailedTasks = extractMarkdownSection(sourceText, 'Detailed Tasks');
   const defaultOwnedPaths = extractPhaseOwnedPaths(sourceText);
   const defaultVerificationCommands = extractPhaseVerificationCommands(sourceText);
+  const acceptanceCriteria = extractAcceptanceCriteriaFromSource(sourceText);
+  const linkedRequirementIds = extractLinkedRequirementIdsFromSource(sourceText);
   const tasks = [];
   let inCodeFence = false;
 
@@ -153,10 +311,21 @@ export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
     if (!title || title.toLowerCase().startsWith('not found') || title.toLowerCase().startsWith('empty')) {
       continue;
     }
+    const acceptanceCriterion = buildTaskAcceptanceLink(tasks.length, acceptanceCriteria);
     tasks.push({
       id: `AT-${String(tasks.length + 1).padStart(2, '0')}`,
       title,
       status: 'pending',
+      taskStatus: 'pending',
+      acceptanceCriterionId: acceptanceCriterion?.id || '',
+      parentAcceptanceCriterionId: '',
+      linkedRequirementIds,
+      acVerdict: acceptanceCriterion ? 'pending' : 'not_applicable',
+      verificationEvidence: [],
+      semanticEvaluation: {
+        status: 'not_run',
+        reason: 'out_of_scope_for_phase_03',
+      },
       ownedPaths: defaultOwnedPaths,
       verificationCommands: defaultVerificationCommands,
       evidence: [],
@@ -165,10 +334,21 @@ export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
   }
 
   if (tasks.length === 0) {
+    const acceptanceCriterion = buildTaskAcceptanceLink(0, acceptanceCriteria);
     tasks.push({
       id: 'AT-01',
       title: 'Complete the source phase scope',
       status: 'pending',
+      taskStatus: 'pending',
+      acceptanceCriterionId: acceptanceCriterion?.id || '',
+      parentAcceptanceCriterionId: '',
+      linkedRequirementIds,
+      acVerdict: acceptanceCriterion ? 'pending' : 'not_applicable',
+      verificationEvidence: [],
+      semanticEvaluation: {
+        status: 'not_run',
+        reason: 'out_of_scope_for_phase_03',
+      },
       ownedPaths: defaultOwnedPaths,
       verificationCommands: defaultVerificationCommands,
       evidence: [],
@@ -192,11 +372,29 @@ export function renderAtomicWorksetsYaml(phasePrefix, phaseDoc) {
   for (const task of tasks) {
     const ownedPaths = task.ownedPaths || [];
     const verificationCommands = task.verificationCommands || [];
+    const linkedRequirementIds = task.linkedRequirementIds || [];
     lines.push(
       `  - id: ${task.id}`,
       `    title: ${yamlScalar(task.title)}`,
       '    status: pending',
+      `    taskStatus: ${yamlScalar(task.taskStatus || 'pending')}`,
     );
+    if (task.acceptanceCriterionId) {
+      lines.push(`    acceptanceCriterionId: ${yamlScalar(task.acceptanceCriterionId)}`);
+    }
+    if (task.parentAcceptanceCriterionId) {
+      lines.push(`    parentAcceptanceCriterionId: ${yamlScalar(task.parentAcceptanceCriterionId)}`);
+    }
+    if (linkedRequirementIds.length > 0) {
+      lines.push('    linkedRequirementIds:', ...linkedRequirementIds.map((id) => `      - ${yamlScalar(id)}`));
+    } else {
+      lines.push('    linkedRequirementIds: []');
+    }
+    lines.push(`    acVerdict: ${yamlScalar(task.acVerdict || 'not_applicable')}`);
+    lines.push('    verificationEvidence: []');
+    lines.push('    semanticEvaluation:');
+    lines.push(`      status: ${yamlScalar(task.semanticEvaluation?.status || 'not_run')}`);
+    lines.push(`      reason: ${yamlScalar(task.semanticEvaluation?.reason || 'out_of_scope_for_phase_03')}`);
     if (ownedPaths.length > 0) {
       lines.push('    ownedPaths:', ...ownedPaths.map((ownedPath) => `      - ${yamlScalar(ownedPath)}`));
     } else {
@@ -240,6 +438,122 @@ ${indentBlock(extractMarkdownSection(sourceText, 'Detailed Tasks'))}
 - Exact execution targets:
 ${indentBlock(extractMarkdownSection(sourceText, 'Exact Execution Targets'))}
 - Binding rule: these source requirements remain authoritative. Deleting, replacing, or deferring any item requires user-approved replan before this phase can close.`;
+}
+
+function renderGoalContract({ phasePrefix, phaseTitle, phaseDoc, masterPlan, executionRoot, phaseExecutionDir, phaseSlug }) {
+  const sourceText = phaseDoc && fs.existsSync(phaseDoc) ? fs.readFileSync(phaseDoc, 'utf8') : '';
+  const ownedPaths = extractPhaseOwnedPaths(sourceText);
+  const goal = extractMarkdownSection(sourceText, 'Goal')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*]\s*/, '').trim())
+    .filter(Boolean)[0] || phaseTitle;
+  const scope = [];
+  const nonGoals = [];
+  let scopeMode = '';
+  for (const rawLine of extractMarkdownSection(sourceText, 'Scope').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (/^-\s*In scope:/i.test(line)) {
+      scopeMode = 'scope';
+      continue;
+    }
+    if (/^-\s*Out of scope:/i.test(line)) {
+      scopeMode = 'nonGoals';
+      continue;
+    }
+    if (!line.startsWith('- ')) {
+      continue;
+    }
+    if (scopeMode === 'scope') {
+      scope.push(line.replace(/^-\s*/, ''));
+    } else if (scopeMode === 'nonGoals') {
+      nonGoals.push(line.replace(/^-\s*/, ''));
+    }
+  }
+  const verificationCommands = extractPhaseVerificationCommands(sourceText);
+  const acceptanceCriteria = extractAcceptanceCriteriaFromSource(sourceText);
+  const readinessAssessment = calculateReadinessAssessment(sourceText, verificationCommands, acceptanceCriteria);
+  const snapshotId = `goal-contract-${phasePrefix}-${phaseSlug || sanitizeSlug(phaseTitle) || 'phase'}`;
+  const criteriaLines = acceptanceCriteria.length > 0
+    ? acceptanceCriteria.flatMap((criterion) => [
+      `  - id: ${yamlScalar(criterion.id)}`,
+      `    statement: ${yamlScalar(criterion.statement)}`,
+      `    source: ${yamlScalar(criterion.source)}`,
+      '    evidence: "QA_REPORT.md and verifier output"',
+    ])
+    : [
+      '  - id: "AC-001"',
+      '    statement: "Goal Contract exists with snapshot id and provenance."',
+      '    source: "fallback"',
+      '    evidence: "GOAL_CONTRACT.yaml"',
+    ];
+  const gapLines = readinessAssessment.gaps.length > 0
+    ? readinessAssessment.gaps.flatMap((gap) => [
+      `  - id: ${yamlScalar(gap.id)}`,
+      `    severity: ${yamlScalar(gap.severity)}`,
+      `    reason: ${yamlScalar(gap.reason)}`,
+    ])
+    : ['  - id: "GAP-NONE"', '    severity: "none"', '    reason: "No PRD/SPEC readiness gaps detected."'];
+
+  return [
+    'schemaVersion: 1',
+    `snapshotId: ${yamlScalar(snapshotId)}`,
+    `objective: ${yamlScalar(goal)}`,
+    'readinessAssessment:',
+    `  goalClarity: ${readinessAssessment.goalClarity}`,
+    `  scopeClarity: ${readinessAssessment.scopeClarity}`,
+    `  acceptanceCriteriaClarity: ${readinessAssessment.acceptanceCriteriaClarity}`,
+    `  verificationClarity: ${readinessAssessment.verificationClarity}`,
+    `  clarityScore: ${readinessAssessment.clarityScore}`,
+    `  ambiguityScore: ${readinessAssessment.ambiguityScore}`,
+    `  readinessDecision: ${yamlScalar(readinessAssessment.readinessDecision)}`,
+    '  thresholds:',
+    '    executableMax: 0.20',
+    '    constrainedMax: 0.35',
+    '    blockedAbove: 0.35',
+    '  assumptionRouting:',
+    '    nonCriticalGapTarget: "ASSUMPTIONS.md or active phase assumptions ledger"',
+    '    coreScopeGapTarget: "BLOCKERS.md or active phase blocker ledger"',
+    '  reviewTriggers:',
+    '    - "ambiguityScore > 0.35"',
+    '    - "readinessDecision == blocked"',
+    '    - "product value or brownfield readiness is unclear"',
+    'sourceGaps:',
+    ...gapLines,
+    'scope:',
+    ...(scope.length > 0 ? scope.map((item) => `  - ${yamlScalar(item)}`) : ['  - "Complete the in-scope source phase requirements."']),
+    'nonGoals:',
+    ...(nonGoals.length > 0 ? nonGoals.map((item) => `  - ${yamlScalar(item)}`) : [
+      '  - "Full Ouroboros Pydantic Seed runtime"',
+      '  - "New public slash commands, skills, or entrypoints"',
+      '  - "Semantic evaluation or event ledger implementation"',
+    ]),
+    'constraints:',
+    '  - "Preserve phase-attempt boundaries and stage order."',
+    '  - "Keep source plan requirements authoritative unless a user-approved replan is recorded."',
+    'acceptanceCriteria:',
+    ...criteriaLines,
+    'exitConditions:',
+    '  - "Goal Contract schema/template/generation/enforcement evidence is verified."',
+    '  - "Review, verification verdict, scorecard, and handoff fields agree before clean finish."',
+    'brownfieldContext:',
+    '  repositoryRoot: "."',
+    `  sourcePlanPath: ${yamlScalar(masterPlan)}`,
+    `  sourcePhaseDocPath: ${yamlScalar(phaseDoc)}`,
+    `  executionRoot: ${yamlScalar(executionRoot)}`,
+    '  ownedPaths:',
+    ...(ownedPaths.length > 0 ? ownedPaths.map((ownedPath) => `    - ${yamlScalar(ownedPath)}`) : ['    - ".claude/templates/GOAL_CONTRACT.template.yaml"']),
+    '  readOnlyPaths: []',
+    'provenance:',
+    `  createdAt: ${yamlScalar(new Date().toISOString())}`,
+    '  createdBy: "moonshot-plan-writer"',
+    `  sourceRequest: ${yamlScalar(phaseTitle)}`,
+    '  sourceArtifacts:',
+    `    - ${yamlScalar(masterPlan)}`,
+    `    - ${yamlScalar(phaseDoc)}`,
+    `  planPackage: ${yamlScalar(path.dirname(phaseExecutionDir))}`,
+    'status: draft',
+    '',
+  ].join('\n');
 }
 
 function materializePhaseCommand(command, options = {}) {
@@ -552,6 +866,11 @@ ${renderDemoFirstSprintSection(demoFirst)}
 ## Source Plan Requirements Snapshot
 ${renderSourcePlanSnapshot(phaseDoc)}
 
+## Goal Contract Baseline
+- Goal contract path: ${paths.phaseGoalContract}
+- Goal contract snapshot id: goal-contract-${paths.phasePrefix}-${paths.phaseSlug}
+- Provenance source artifacts: ${masterPlan}, ${phaseDoc}
+
 ## Spec Deviation Ledger
 | Plan Item | Planned Requirement | Actual / Proposed Change | Approval | Completion Impact | Required Action |
 |-----------|---------------------|--------------------------|----------|-------------------|-----------------|
@@ -628,6 +947,7 @@ ${requiredCommands}
 - Fill before runtime verification.
 
 ### Artifacts
+- Goal contract: ${paths.phaseGoalContract}
 - QA report: ${paths.phaseQaReport}
 - Handoff: ${paths.phaseHandoff}
 - Scorecard: ${paths.phaseScorecard}
@@ -649,6 +969,18 @@ ${requiredCommands}
 - Generated at: ${new Date().toISOString().replace('T', ' ').slice(0, 19)}
 `;
     fs.writeFileSync(paths.phaseSprintContract, `${sprint}\n`, 'utf8');
+  }
+
+  if (!fs.existsSync(paths.phaseGoalContract)) {
+    fs.writeFileSync(paths.phaseGoalContract, renderGoalContract({
+      phasePrefix: paths.phasePrefix,
+      phaseTitle,
+      phaseDoc,
+      masterPlan,
+      executionRoot,
+      phaseExecutionDir: paths.phaseExecutionDir,
+      phaseSlug: paths.phaseSlug,
+    }), 'utf8');
   }
 
   if (!fs.existsSync(paths.phaseQaReport)) {
@@ -979,7 +1311,7 @@ ${autonomousInstructions}`.trimEnd();
 }
 
 function runSelfTest() {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-plan-lib-'));
+  const tempDir = fs.mkdtempSync(path.join(writableTempRoot(), 'phase-plan-lib-'));
   try {
     const phaseDoc = path.join(tempDir, '01-fixture.md');
     fs.writeFileSync(phaseDoc, `# Fixture
@@ -988,6 +1320,9 @@ function runSelfTest() {
 - [ ] Define API contract
 1. Add service implementation
 2. Verify failure path
+
+## Phase Completion Checklist
+- [ ] Service contract is linked to acceptance evidence
 
 ## Exact Execution Targets
 | ID | Files To Modify | Files To Test | Commands |
@@ -1012,6 +1347,87 @@ function runSelfTest() {
     }
     if (!rendered.includes('- "src/service.ts"') || !rendered.includes('- "npm test"')) {
       throw new Error('failed to seed WORKSETS ownedPaths and verificationCommands from phase plan');
+    }
+    if (
+      !rendered.includes('taskStatus: "pending"')
+      || !rendered.includes('acVerdict: "pending"')
+      || !rendered.includes('verificationEvidence: []')
+      || !rendered.includes('semanticEvaluation:')
+    ) {
+      throw new Error('failed to seed AC-linked WORKSETS fields');
+    }
+
+    const clearPhaseDoc = path.join(tempDir, '03-clear.md');
+    fs.writeFileSync(clearPhaseDoc, `# Clear
+
+## Goal
+- Build a bounded export flow.
+
+## Scope
+- In scope:
+  - Export selected records.
+- Out of scope:
+  - Bulk archival.
+
+## Phase Execution Metadata
+
+\`\`\`yaml
+phaseExecution:
+  schemaVersion: 1
+\`\`\`
+
+## Phase Completion Checklist
+- [ ] Export returns selected records.
+- [ ] Invalid selection returns a validation error.
+
+## Validation Plan
+- [ ] \`node --check src/export.mjs\`
+
+## Exact Execution Targets
+| ID | Commands |
+|----|----------|
+| P01 | \`node --check src/export.mjs\` |
+`, 'utf8');
+    const clearGoalContract = renderGoalContract({
+      phasePrefix: '03',
+      phaseTitle: 'Clear',
+      phaseDoc: clearPhaseDoc,
+      masterPlan: path.join(tempDir, '00-master-plan-v1.md'),
+      executionRoot: tempDir,
+      phaseExecutionDir: path.join(tempDir, 'execution/03-clear'),
+      phaseSlug: 'clear',
+    });
+    if (!clearGoalContract.includes('readinessAssessment:') || !clearGoalContract.includes('ambiguityScore: 0')) {
+      throw new Error('failed to render executable readiness assessment');
+    }
+    if (!clearGoalContract.includes('id: "AC-001"') || !clearGoalContract.includes('source: "Phase Completion Checklist"')) {
+      throw new Error('failed to render stable AC ids with source mapping');
+    }
+
+    const ambiguousPhaseDoc = path.join(tempDir, '04-ambiguous.md');
+    fs.writeFileSync(ambiguousPhaseDoc, `# Ambiguous
+
+## Goal
+- Make the experience polished and intuitive.
+
+## Scope
+- In scope:
+  - Improve it.
+`, 'utf8');
+    const ambiguousGoalContract = renderGoalContract({
+      phasePrefix: '04',
+      phaseTitle: 'Ambiguous',
+      phaseDoc: ambiguousPhaseDoc,
+      masterPlan: path.join(tempDir, '00-master-plan-v1.md'),
+      executionRoot: tempDir,
+      phaseExecutionDir: path.join(tempDir, 'execution/04-ambiguous'),
+      phaseSlug: 'ambiguous',
+    });
+    if (!ambiguousGoalContract.includes('readinessDecision: "blocked"')) {
+      throw new Error('failed to block ambiguous source docs');
+    }
+    if (!ambiguousGoalContract.includes('GAP-VERIFY') || !ambiguousGoalContract.includes('GAP-AC')) {
+      throw new Error('failed to record PRD/SPEC gap detection evidence');
     }
 
     writeStdoutLine('agent-loop-phase-plan-lib self-test passed');

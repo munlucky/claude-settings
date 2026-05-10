@@ -20,6 +20,55 @@ checkPolicies:
     windowsFallback: Select-String
     exactRequired: false
     fallbackStatus: passed_with_equivalent_evidence
+  evaluationTriggers:
+    deterministicFirst: true
+    semantic:
+      requiredWhen:
+        - "ac ambiguity"
+        - "scope drift"
+        - "architecture risk"
+        - "security risk"
+        - "auth risk"
+        - "payment risk"
+        - "repeated failure"
+        - "tests passing but user value unclear"
+      cannotOverrideMechanicalFailure: true
+    consensus:
+      exceptionalOnly: true
+      requiredWhen:
+        - "contract reinterpretation"
+        - "high-risk security drift"
+        - "high-risk architecture drift"
+        - "unresolved evaluator disagreement"
+      cannotOverrideMechanicalFailure: true
+  mechanicalSkipPolicy:
+    prompt_only: warn
+    docs_only: warn
+    script_change: block
+    workflow_core: block
+    runtime_adapter: block
+  verificationOverrideAllowlist:
+    policy: "project-native commands only"
+    allowedCommandPrefixes:
+      - "bash .claude/scripts/"
+      - "node .claude/scripts/"
+      - "node --test .claude/scripts/"
+      - "python .claude/scripts/"
+      - "python3 .claude/scripts/"
+    unknownExecutable: block
+  qaBackendMatrix:
+    browser:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares browser/runtime UI evidence"
+      missingRequiredBackend: block
+    a11y:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares accessibility evidence"
+      missingRequiredBackend: block
+    visual:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares visual evidence"
+      missingRequiredBackend: block
+    performance:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares performance evidence"
+      missingRequiredBackend: degraded_or_blocked_by_profile
   phaseRuntimeParity:
     runtimeSelectionAware: true
     defaultVerificationRuntimes:
@@ -31,6 +80,27 @@ checkPolicies:
     commandEnv:
       PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: "{verificationTarget}"
     preflightBlockOnUnavailable: true
+  runtimeCapabilityStatus:
+    required: true
+    fields:
+      - fork
+      - mcp
+      - shell
+      - browser
+      - worktree
+      - toolInheritance
+      - fallbackSupport
+    unavailableClassifications:
+      - mcp_unavailable
+      - tool_unavailable
+      - runtime_unavailable
+    deferredToolLookupRequired: true
+    staleReadModelWarnings:
+      - phase_status_missing
+      - latest_dispatch_missing
+      - current_run_missing
+      - latest_dispatch_older_than_phase_status
+      - current_run_older_than_latest_dispatch
   validationProfiles:
     prompt_only:
       checks: [knowledgeAudit, shellSyntax]
@@ -82,6 +152,7 @@ scope:
     - "install-claude.sh"
   fallbackOutsideScope: true
 artifacts:
+  goalContract: "{tasksRoot}/{feature-name}/execution/<slice>/GOAL_CONTRACT.yaml"
   verdict: ".claude/verification-verdict-<runId>.json"
   runtimeVerdict: ".claude/runtime-verdict-<runId>.json"
   awtlFailedTurnCases: ".claude/cache/awtl/failed_turn_cases.jsonl"
@@ -92,6 +163,11 @@ artifacts:
   scorecard: "{tasksRoot}/{feature-name}/execution/<slice>/SCORECARD.md"
   workset: "{tasksRoot}/{feature-name}/execution/<slice>/WORKSET.md"
   worksets: "{tasksRoot}/{feature-name}/execution/<slice>/WORKSETS.yaml"
+  acceptanceCriteria:
+    taskStatusField: "WORKSETS.yaml atomicTasks[].taskStatus"
+    acVerdictField: "WORKSETS.yaml atomicTasks[].acVerdict"
+    linkedAcEvidenceField: "WORKSETS.yaml atomicTasks[].verificationEvidence"
+    cleanFinishRule: "taskStatus=completed is not sufficient; linked AC requires pass/passed/verified/done/not_applicable acVerdict plus verificationEvidence"
   requirementsTraceability: "{tasksRoot}/{feature-name}/execution/REQUIREMENTS_TRACEABILITY.md"
   scenarioMatrix: "{tasksRoot}/{feature-name}/execution/SCENARIO_MATRIX.md"
   uatChecklist: "{tasksRoot}/{feature-name}/execution/UAT_CHECKLIST.md"
@@ -161,6 +237,7 @@ qa:
       focus:
         - "phase attempts inherit policy anchors through SPRINT_CONTRACT"
         - "core workflow edits stay on the strict path"
+        - "non-trivial phase packages include Goal Contract snapshot id and provenance before sprint execution"
     crossRuntimeParity:
       threshold: "pass"
       focus:
@@ -192,6 +269,17 @@ finishPolicy:
     promotionWriteSemantics: "record skip or failure; do not claim write success"
     requiredEvidence: "write_status and denial_codes in promotion output or replay scorecard"
 observability:
+  runtimeStatusReadModel:
+    requiredFields:
+      - "runtimeCapabilityStatus"
+      - "compactStatus.activeContract"
+      - "compactStatus.latestVerdict"
+      - "compactStatus.currentBlocker"
+      - "compactStatus.lineage"
+      - "compactStatus.staleWarnings"
+      - "resumeBrief.nextAction"
+      - "resumeBrief.currentBlocker"
+      - "resumeBrief.lineage"
   teamMetrics:
     requiredFields:
       - "selectedPattern"

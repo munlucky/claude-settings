@@ -58,6 +58,14 @@ Applicability rule:
   - `docs_only` and most `local_policy` work may complete with audit plus syntax evidence
   - `behavior_change` work should not receive a strong completion verdict without deterministic test or verifier evidence when the environment supports it
 - When a verification contract is present, do not return a passing completion verdict unless fresh evidence exists for the contract-defined required checks.
+- Apply evaluation trigger policy from `.claude/verification.contract.yaml` before any semantic or consensus judgment:
+  - Mechanical checks run first and remain authoritative.
+  - Semantic evaluation is required only for explicit triggers: AC ambiguity, scope drift, architecture/security/auth/payment risk, repeated failure, or tests passing while user value is unclear.
+  - Consensus evaluation is exceptional and only for contract reinterpretation, high-risk security/architecture drift, or unresolved evaluator disagreement.
+  - Semantic or consensus evaluation cannot turn a failed mechanical check into clean finish.
+  - Skipped mechanical checks follow validation-profile policy: warning in `prompt_only`/`docs_only`, blocking in `script_change`, `workflow_core`, and `runtime_adapter`.
+  - Project verification overrides require an explicit allowlisted project-native command; unknown executables are not clean-finish evidence.
+  - Required browser/a11y/visual/performance QA backends must be recorded in the backend matrix, and missing required backends route to blocker or degraded evidence according to profile.
 - When the verifier artifact exposes `workflowEvidence.warnings`, treat them as stage-closeout gaps rather than ignorable metadata.
 - When `workflowEvidence` is present, require `selectedHarnessComponents`, `skippedHarnessComponents`, `selectionReason`, `runtimeIsolation`, and `modelEffortProfile` to be populated before a clean closeout claim.
 - When code structure analysis was needed for plan/execute/review, require `code-review-graph` to appear in `selectedHarnessComponents` or `skippedHarnessComponents` with a concrete reason before a clean closeout claim.
@@ -70,6 +78,11 @@ Applicability rule:
 - When required frontend evidence is missing because screenshot, visual diff, axe, keyboard, focus, Lighthouse, performance budget, browser, or preview setup is unavailable, treat the setup gap as blocking and route to retry or handoff instead of returning a strong completion verdict.
 - Keep `uat_ready` and `uat_complete` separate; browser automation and frontend evidence may support `uat_ready`, but do not imply human `uat_complete`.
 - In score-based loops, do not return a passing completion verdict unless the score verdict is `done`.
+- Keep implementation completion separate from acceptance completion:
+  - `taskStatus: completed` means the assigned implementation work is finished.
+  - `acVerdict: pass|passed|verified|done|not_applicable` means linked acceptance evidence is satisfied.
+  - A linked acceptance criterion with missing, pending, unknown, failed, blocked, or rejected `acVerdict` blocks clean closeout even when `taskStatus: completed`.
+  - Operational-only tasks may use no AC linkage or an explicit `acVerdict: not_applicable`; do not infer an exemption from task completion alone.
 - Do not use success-by-implication language without fresh evidence. Forbidden examples include: `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification`.
 
 ## Codex Rule References
@@ -214,6 +227,19 @@ selfAuditResult:
   runtimeEvidence:
     criticalScenarioDepth: smoke | open-act-mutate-persist-recover | none
     smokeOnlyCriticalScenarios: []
+    evaluationTriggers:
+      semanticRequired: true | false
+      semanticReasons: []
+      consensusRequired: true | false
+      consensusReasons: []
+      mechanicalStatus: passed | failed | skipped | blocked
+      skippedMechanicalChecks: []
+      verificationOverrideStatus: allowlisted | blocked | not_used
+      qaBackendMatrix:
+        browser: not_required | available | missing_required | blocked
+        accessibility: not_required | available | missing_required | blocked
+        visual: not_required | available | missing_required | blocked
+        performance: not_required | available | missing_required | degraded | blocked
     frontendEvidence:
       visual: not_required | missing | passed | failed | blocked
       accessibility: not_required | missing | passed | failed | blocked
@@ -224,6 +250,11 @@ selfAuditResult:
     retryStrategy: same_direction_refine | partial_redesign | stop_and_handoff | none
     deltaHypothesis: null
     repeatedFailurePolicy: null
+  acceptanceCriteria:
+    taskStatusComplete: true | false
+    linkedAcceptanceCriteria: []
+    acVerdict: pass | failed | pending | unknown | not_applicable
+    missingOrFailedAcVerdicts: []
   boundaryCheck:
     neverDoViolations: []
     askFirstItems: []
@@ -275,6 +306,11 @@ completionStatus:
   runtimeEvidence:
     criticalScenarioDepth: smoke | open-act-mutate-persist-recover | none
     smokeOnlyCriticalScenarios: []
+  acceptanceCriteria:
+    taskStatusComplete: true | false
+    linkedAcceptanceCriteria: []
+    acVerdict: pass | failed | pending | unknown | not_applicable
+    missingOrFailedAcVerdicts: []
   codeReviewGraph:
     required: true | false
     graphStatus: unknown | not_built | stale | fresh | unavailable
@@ -321,6 +357,7 @@ Passing rule:
   - `QA_REPORT.md` says `Review completed: yes` for code-changing closeout work
   - `evidenceProvenance` is populated for the completion-relevant claims
   - `score.verdict == done`
+  - linked acceptance criteria either have passing `acVerdict` evidence or are explicitly `not_applicable`
   - `score.current >= score.target`
   - `score.unmetChecklistItems == 0`
   - `score.blockingDefects == 0`

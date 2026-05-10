@@ -31,6 +31,42 @@ It is the main Plan-stage owner for phase documents.
 - If a role is missing, continue with available sources and note the missing baseline as an explicit gap/open decision.
 - If a conflict cannot be resolved safely, note it explicitly in the plan as an open decision.
 
+## Runnable Readiness Gate
+
+Treat PRD/SPEC/GDD documents as requirement sources, not as executable contracts by default.
+Before preparing runnable phase state, normalize selected sources into a Goal Contract and score readiness with explicit evidence.
+
+Required Goal Contract readiness fields:
+- `goalClarity`
+- `scopeClarity`
+- `acceptanceCriteriaClarity`
+- `verificationClarity`
+- `clarityScore`
+- `ambiguityScore`
+- `readinessDecision`
+
+Thresholds:
+- `ambiguityScore <= 0.20`: executable
+- `0.20 < ambiguityScore <= 0.35`: constrained execution with assumptions
+- `ambiguityScore > 0.35`: blocked until clarification or a user-approved replan
+
+Gap detection must cover:
+- unverifiable adjectives such as "fast", "intuitive", "robust", or "simple" without measurable evidence
+- missing non-goals or excluded scope
+- missing verification commands
+- missing or ambiguous acceptance criteria
+- missing brownfield readiness context when existing code/docs are part of the work
+
+Routing:
+- Non-critical ambiguity goes to the assumptions ledger path for the active package.
+- Core goal/scope/verification ambiguity goes to blockers and prevents runnable closeout.
+- Product-value and brownfield readiness concerns are non-public stage-owner responsibilities; record review evidence instead of adding user-facing commands.
+
+Acceptance criteria extraction:
+- Generate stable `AC-*` ids from source requirements and phase completion criteria.
+- Each `AC-*` must keep a source label and evidence target.
+- Master traceability and phase docs must refer to `AC-*` ids where later WORKSETS/QA evidence will attach.
+
 ## Workflow
 0. Run `project-memory-agent` with `stage=plan`, `memoryMode=read_only`, and merge only summarized `projectMemoryContext`.
    - Use prior decisions, domain terms, non-goals, and architecture boundaries as planning deltas.
@@ -42,6 +78,8 @@ It is the main Plan-stage owner for phase documents.
     - For user-facing MVP work, also scan for `UI_SPEC*`, `UI_FLOW_MAP.md`, `UI_STATE_MATRIX.md`, `MOCK_SCENARIOS.md`, `MOCK_API_CONTRACT.md`, and `USER_DEMO_APPROVAL.md`.
     - If no requirement docs exist, use user request and ticket/issue text as baseline and mark a source-gap note in the master plan.
     - Extract requirement units and assign trace IDs (example: `PRD-5.1`, `SPEC-2.4`, `GDD-3.2`, `REQ-1.1`).
+    - Extract stable acceptance criteria ids (`AC-*`) with source labels and evidence targets.
+    - Record readiness gaps before treating the plan package as runnable.
 2. Inventory and organize existing implementation/work-document context before writing.
    - Read root-level `*.md` files (non-recursive).
    - Read `docs/implementation/*.md`.
@@ -54,6 +92,7 @@ It is the main Plan-stage owner for phase documents.
    - When a stale plan package is clearly superseded, move it only through an explicit archive/preservation step, or leave it in place with a superseded note if no safe archive convention exists.
 3. Build a source traceability map.
    - Map each source requirement to one target phase document.
+   - Map extracted `AC-*` ids to the source requirement and target phase.
    - List unmapped requirements as explicit gaps.
 4. Build or update the master plan.
    - Treat master plan as "plan of all plans."
@@ -116,7 +155,7 @@ It is the main Plan-stage owner for phase documents.
   - Phase dependency/order notes.
   - "Parallel Execution Plan" section with wave groups, sequential phases, and blocker reasons.
   - Source traceability matrix:
-    - Columns: `Req ID`, `Source`, `Requirement Summary`, `Phase`, `Plan File`, `Status`.
+    - Columns: `Req ID`, `AC ID`, `Source`, `Requirement Summary`, `Phase`, `Plan File`, `Status`.
   - Unmapped source requirements section (if any).
   - "Phase Completion Checklist" section with markdown checkboxes (`- [ ]`, `- [x]`).
 - Checklist rule:
@@ -142,6 +181,7 @@ It is the main Plan-stage owner for phase documents.
       mergePolicy: "disjoint_patch"
     ```
   - Source mapping (`Req ID` + section reference from selected requirement sources).
+  - Acceptance criteria mapping (`AC-*` + source requirement + expected evidence).
   - Goal and expected outcome.
   - Scope / out-of-scope.
   - Preconditions and required inputs.
@@ -253,6 +293,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Keep numbering, filenames, and checklist states consistent across all plan files.
 - Do not declare a phase ready when verification commands or ownership boundaries are still implicit.
 - Do not declare a phase ready when files, commands, expected signals, blocker conditions, or evidence paths are still implicit.
+- Do not declare a phase ready when ambiguity score is above `0.35`, when core scope/verification gaps are unresolved, or when extracted `AC-*` ids are missing source mappings.
 - Do not declare a phase parallel-ready when `ownedPaths`, dependency edges, conflict edges, and manual-evidence requirements are implicit.
 - Do not start `moonshot-phase-runner` when workflow-enforcement active pointers reference a superseded plan package; archive/rewrite them during plan preparation first.
 

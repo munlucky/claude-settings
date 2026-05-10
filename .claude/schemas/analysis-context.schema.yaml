@@ -93,6 +93,29 @@ defaults:
     planningBasis: none
     executionBasis: none
     phaseAttemptOverride: false
+  goalContract:
+    schemaVersion: 1
+    snapshotId: null
+    objective: null
+    scope: []
+    nonGoals: []
+    constraints: []
+    acceptanceCriteria: []
+    exitConditions: []
+    brownfieldContext:
+      repositoryRoot: null
+      sourcePlanPath: null
+      sourcePhaseDocPath: null
+      executionRoot: null
+      ownedPaths: []
+      readOnlyPaths: []
+    provenance:
+      createdAt: null
+      createdBy: null
+      sourceRequest: null
+      sourceArtifacts: []
+      planPackage: null
+    status: draft
   artifacts:
     tasksRoot: "{PROJECT.md:documentPaths.tasksRoot}"
     workflowGuidePath: "workflow/README.md"
@@ -116,6 +139,7 @@ defaults:
     executionRoot: "{tasksRoot}/{feature-name}/execution"
     activeSliceDir: "{executionRoot}/{active-slice}"
     activePhaseDocPath: null
+    goalContractPath: "{activeSliceDir}/GOAL_CONTRACT.yaml"
     sprintContractPath: "{activeSliceDir}/SPRINT_CONTRACT.md"
     qaReportPath: "{activeSliceDir}/QA_REPORT.md"
     handoffPath: "{activeSliceDir}/HANDOFF.md"
@@ -300,6 +324,7 @@ workflowRules:
     - "Use readiness.planningReady as the canonical chain-selection gate."
     - "Use readiness.executionReady as the canonical active-slice execution gate."
     - "Treat phaseAttemptMode as an execution-baseline override."
+    - "Freeze non-trivial request baselines in goalContract before sprint contract execution; chat history must not be the only source for the target outcome."
   persistence:
     - "Save final analysisContext to .claude/docs/moonshot-analysis.yaml."
     - "Keep workflowEvidence selectedBundles, requiredSkills, stageOrder, selectedHarnessComponents, selectionReason, runtimeIsolation, and modelEffortProfile populated for code-changing bounded work."

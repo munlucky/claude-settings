@@ -46,6 +46,8 @@ Effort profile policy:
 - Every `deep` or `max` run must record `Effort escalation reason` in `SPRINT_CONTRACT.md`, `QA_REPORT.md`, and workflow evidence.
 - Model selection is provider-neutral and automatic. Codex maps the selected route to `-m` plus `model_reasoning_effort`; Claude Code maps it to `--model` plus `--effort`.
 - Evidence must include `selectedModelProvider`, `selectedModel`, `selectedModelEffort`, and `modelSelectionReason`.
+- Runtime capability evidence must include fork, MCP, shell, browser, worktree, tool inheritance, and fallback support status. Missing MCP/tool/browser support is a runtime capability condition and must be classified as `mcp_unavailable`, `tool_unavailable`, or `runtime_unavailable`, not as a product implementation failure.
+- Before marking a deferred or optional tool unavailable, perform deferred/native tool lookup where the runtime supports it and record the lookup evidence in the active workflow artifact.
 
 Retrieval and validation policy:
 - Default retrieval budget is one compact MemoryGraph/CodeReviewGraph recall per stage.
@@ -86,6 +88,11 @@ Goal runtime state rule:
 - Store `goalRuntime`, lease, pause/resume/clear, budget/accounting, and event log state in SQLite; do not move `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, or verification reports into the DB.
 - The default long-running path remains `delegated-terminal`. Do not create a second public runner for goal mode; goal runtime is a control layer around the existing phase loop.
 - Use `node .claude/scripts/phase-goal-control.mjs status|pause|resume|clear <plan-dir>` to inspect or control the active goal. `pause` prevents the next continuation/attempt from starting; it does not delete artifacts.
+
+Runtime status and resume read model:
+- The human artifacts remain `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, and `HANDOFF.md`; machine consumers should read compact status from workflow evidence first.
+- Compact status must expose the active contract, latest verdict path/state, current blocker, lineage ids, and stale warnings for `phase-status.yaml`, `current-run.json`, and `latest-dispatch.json`.
+- Resume briefs must name the next action and carry the same lineage ids as the compact status so a resumed Codex or Claude attempt can detect stale projections before closeout.
 
 Channel / return-boundary rule:
 - While `phase-status.yaml` reports `activeExecutionStatus: active`, user-facing updates must stay in progress/commentary form.

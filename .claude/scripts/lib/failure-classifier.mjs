@@ -139,6 +139,18 @@ const ENVIRONMENT_BLOCKER_CODES = new Set([
   'spawn_blocked',
 ]);
 
+const NON_PROGRESS_PATTERNS = new Set([
+  'spinning',
+  'oscillation',
+  'no_drift',
+  'diminishing_returns',
+]);
+
+function numericValue(value, fallback = Number.NaN) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function normalizeText(value) {
   return String(value ?? '')
     .replace(/\s+/g, ' ')
@@ -234,6 +246,189 @@ export function classifyFailure(input = {}) {
     source: name,
     name,
     message,
+  };
+}
+
+function historyEntryFingerprint(entry = {}) {
+  if (entry.fingerprint) {
+    return String(entry.fingerprint);
+  }
+  return historyEntryClassification(entry).fingerprint;
+}
+
+function historyEntryClassification(entry = {}) {
+  return classifyFailure({
+    code: entry.code,
+    failureCode: entry.failureCode,
+    failureClass: entry.failureClass,
+    reason: entry.reason,
+    message: entry.message,
+    detail: entry.detail,
+    stderr: entry.stderr,
+    stdout: entry.stdout,
+    error: entry.error,
+    command: entry.command,
+    name: entry.name,
+  });
+}
+
+function hasNoDrift(entries) {
+  return entries.length >= 2 && entries.every((entry) => {
+    const hasDriftSignal = ['changedFiles', 'diffFiles', 'filesChanged', 'lineDelta', 'diffLines', 'linesChanged', 'driftScore', 'semanticDriftScore']
+      .some((key) => Object.prototype.hasOwnProperty.call(entry, key));
+    if (!hasDriftSignal) {
+      return false;
+    }
+    const changedFiles = numericValue(entry.changedFiles ?? entry.diffFiles ?? entry.filesChanged, 0);
+    const lineDelta = Math.abs(numericValue(entry.lineDelta ?? entry.diffLines ?? entry.linesChanged, 0));
+    const driftScore = numericValue(entry.driftScore ?? entry.semanticDriftScore, 0);
+    return changedFiles === 0 && lineDelta === 0 && driftScore <= 0;
+  });
+}
+
+function hasDiminishingReturns(entries) {
+  const scores = entries
+    .map((entry) => numericValue(entry.improvementScore ?? entry.progressScore ?? entry.deltaScore))
+    .filter((value) => Number.isFinite(value));
+  if (scores.length < 3) {
+    return false;
+  }
+  return scores.slice(1).every((score, index) => score <= scores[index]) && scores.at(-1) <= 0;
+}
+
+function hasOscillation(fingerprints) {
+  if (fingerprints.length < 4) {
+    return false;
+  }
+  const tail = fingerprints.slice(-4);
+  return tail[0] === tail[2] && tail[1] === tail[3] && tail[0] !== tail[1];
+}
+
+export function classifyTimeoutBudget(input = {}) {
+  const rawReason = normalizeText(input.reason || input.rawStopReason || input.stopReason);
+  const iterationElapsedMs = numericValue(input.iterationElapsedMs ?? input.perIterationElapsedMs);
+  const iterationTimeoutMs = numericValue(input.iterationTimeoutMs ?? input.perIterationTimeoutMs);
+  const totalElapsedMs = numericValue(input.totalElapsedMs ?? input.runElapsedMs);
+  const totalTimeoutMs = numericValue(input.totalTimeoutMs ?? input.runTimeoutMs);
+
+  if (rawReason.includes('per-iteration') || rawReason.includes('iteration timeout')) {
+    return 'per_iteration_timeout';
+  }
+  if (rawReason.includes('total timeout') || rawReason.includes('run timeout') || rawReason.includes('watchdog max')) {
+    return 'total_run_timeout';
+  }
+  if (Number.isFinite(iterationElapsedMs) && Number.isFinite(iterationTimeoutMs) && iterationElapsedMs >= iterationTimeoutMs) {
+    return 'per_iteration_timeout';
+  }
+  if (Number.isFinite(totalElapsedMs) && Number.isFinite(totalTimeoutMs) && totalElapsedMs >= totalTimeoutMs) {
+    return 'total_run_timeout';
+  }
+  return '';
+}
+
+export function classifyStagnationPattern(history = [], options = {}) {
+  const entries = Array.isArray(history) ? history.filter(Boolean) : [];
+  const threshold = Math.max(2, Number.parseInt(String(options.threshold ?? 2), 10) || 2);
+  if (entries.length === 0) {
+    return {
+      pattern: 'none',
+      stopReasonClass: 'none',
+      recoveryAction: 'continue',
+      normalizedRunVerdict: 'retryable',
+      retrySuppressed: false,
+      retryBudgetRemaining: null,
+      evidence: [],
+    };
+  }
+
+  const classifications = entries.map(historyEntryClassification);
+  const fingerprints = entries.map(historyEntryFingerprint);
+  const counts = new Map();
+  for (const fingerprint of fingerprints) {
+    counts.set(fingerprint, (counts.get(fingerprint) || 0) + 1);
+  }
+  const maxRepeat = Math.max(...counts.values());
+  const lastClassification = classifications.at(-1);
+  const timeoutClass = classifyTimeoutBudget(entries.at(-1));
+
+  let pattern = 'none';
+  if (timeoutClass) {
+    pattern = timeoutClass;
+  } else if (hasOscillation(fingerprints)) {
+    pattern = 'oscillation';
+  } else if (maxRepeat >= threshold) {
+    pattern = 'spinning';
+  } else if (hasNoDrift(entries)) {
+    pattern = 'no_drift';
+  } else if (hasDiminishingReturns(entries)) {
+    pattern = 'diminishing_returns';
+  } else if (['environment', 'environment_warning', 'network'].includes(lastClassification.category)) {
+    pattern = lastClassification.category === 'network' ? 'provider_failure' : 'environment_failure';
+  } else if (lastClassification.category === 'unknown') {
+    pattern = 'product_contract_failure';
+  }
+
+  const retryBudgetRemaining = Number.isFinite(Number(options.retryBudgetRemaining))
+    ? Number(options.retryBudgetRemaining)
+    : null;
+  const exhausted = retryBudgetRemaining !== null && retryBudgetRemaining <= 0;
+  const nonProgress = NON_PROGRESS_PATTERNS.has(pattern);
+  const blocked = lastClassification.blocker || exhausted || nonProgress;
+  const recoveryAction = nonProgress
+    ? 'unstuck_replan'
+    : (exhausted ? 'stop_and_handoff' : (lastClassification.fallbackHint ? 'runtime_fallback_or_handoff' : 'continue'));
+
+  return {
+    pattern,
+    stopReasonClass: pattern === 'none' ? lastClassification.code : pattern,
+    recoveryAction,
+    normalizedRunVerdict: blocked ? 'retry_suppressed' : 'retryable',
+    retrySuppressed: blocked,
+    retryBudgetRemaining,
+    sameFailureClassCount: maxRepeat,
+    blockerCode: lastClassification.code,
+    fallbackHint: lastClassification.fallbackHint,
+    evidence: [...new Set(fingerprints)].slice(0, 4),
+  };
+}
+
+export function normalizeStopOutcome(input = {}) {
+  const rawStopReason = String(input.rawStopReason || input.reason || input.stopReason || '').trim();
+  const classification = classifyFailure({
+    reason: rawStopReason,
+    message: input.detail || input.message || rawStopReason,
+    code: input.code,
+    failureCode: input.failureCode,
+  });
+  const stagnation = classifyStagnationPattern(input.history || [{
+    reason: rawStopReason,
+    detail: input.detail || input.message || rawStopReason,
+    ...input,
+  }], {
+    threshold: input.threshold,
+    retryBudgetRemaining: input.retryBudgetRemaining,
+  });
+  const timeoutBudget = classifyTimeoutBudget(input);
+  const recoveryAction = input.recoveryAction || stagnation.recoveryAction || (classification.fallbackHint ? 'runtime_fallback_or_handoff' : 'continue');
+  const stopReasonClass = timeoutBudget || stagnation.stopReasonClass || classification.code;
+  const normalizedRunVerdict = input.normalizedRunVerdict
+    || (input.recovered === true ? 'recovered_success'
+      : (stagnation.retrySuppressed || classification.blocker ? 'complete_with_blocker' : 'retryable'));
+
+  return {
+    rawStopReason,
+    rawStopReasonCode: classification.code,
+    recoveryAction,
+    normalizedRunVerdict,
+    stopReasonClass,
+    failureCategory: classification.category,
+    retryPolicy: classification.retryPolicy,
+    fallbackHint: classification.fallbackHint,
+    timeoutBudget,
+    totalTimeoutMs: Number.isFinite(numericValue(input.totalTimeoutMs)) ? numericValue(input.totalTimeoutMs) : null,
+    iterationTimeoutMs: Number.isFinite(numericValue(input.iterationTimeoutMs ?? input.perIterationTimeoutMs)) ? numericValue(input.iterationTimeoutMs ?? input.perIterationTimeoutMs) : null,
+    retryBudgetRemaining: stagnation.retryBudgetRemaining,
+    sameFailureClassCount: stagnation.sameFailureClassCount,
   };
 }
 

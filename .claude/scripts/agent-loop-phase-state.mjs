@@ -9,6 +9,7 @@ import { evaluateDemoFirstGate } from './demo-first-gate-lib.mjs';
 import { isRelevantVerificationVerdict, normalizeRequiredChecksMissing } from './verification-verdict-state.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
+import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
@@ -265,6 +266,8 @@ function readRootStatusMetadata(statusFile) {
       activeRemainingPhases: Number.NaN,
       normalizedRunVerdict: '',
       stopReasonClass: '',
+      rawStopReason: '',
+      recoveryAction: '',
       stopReasonExplanation: '',
     };
   }
@@ -281,6 +284,8 @@ function readRootStatusMetadata(statusFile) {
     activeRemainingPhases: Number.NaN,
     normalizedRunVerdict: '',
     stopReasonClass: '',
+    rawStopReason: '',
+    recoveryAction: '',
     stopReasonExplanation: '',
   };
   const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/);
@@ -318,6 +323,10 @@ function readRootStatusMetadata(statusFile) {
       result.normalizedRunVerdict = stripped.slice('normalizedRunVerdict:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('stopReasonClass:')) {
       result.stopReasonClass = stripped.slice('stopReasonClass:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('rawStopReason:')) {
+      result.rawStopReason = stripped.slice('rawStopReason:'.length).trim().replace(/^"|"$/g, '');
+    } else if (stripped.startsWith('recoveryAction:')) {
+      result.recoveryAction = stripped.slice('recoveryAction:'.length).trim().replace(/^"|"$/g, '');
     } else if (stripped.startsWith('stopReasonExplanation:')) {
       result.stopReasonExplanation = stripped.slice('stopReasonExplanation:'.length).trim().replace(/^"|"$/g, '');
     }
@@ -683,6 +692,12 @@ function normalizeRebuiltRootState(statusFile, counts, state) {
   }
   if (state.stopReasonClass) {
     setRootScalarLine(lines, 'stopReasonClass', yamlScalar(state.stopReasonClass));
+  }
+  if (state.rawStopReason) {
+    setRootScalarLine(lines, 'rawStopReason', yamlScalar(state.rawStopReason));
+  }
+  if (state.recoveryAction) {
+    setRootScalarLine(lines, 'recoveryAction', yamlScalar(state.recoveryAction));
   }
   if (state.stopReasonExplanation) {
     setRootScalarLine(lines, 'stopReasonExplanation', yamlScalar(state.stopReasonExplanation));
@@ -2315,6 +2330,23 @@ function updatePhaseState(config) {
   setRootScalarValue('activeActionablePhasesRemaining', counts.remaining);
 
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
+  appendPhaseEvent(defaultPhaseEventLedgerPath(statusFile), {
+    eventVersion: 1,
+    eventType: 'phase.status.updated',
+    runId: String(currentRun.runId || currentRun.phaseRunLease?.runId || 'local-phase-state'),
+    phaseId: String(config.phaseNum),
+    contractSnapshotId: String(config.sprintContractPath || currentRun.goalContractSnapshotId || 'unknown-contract-snapshot'),
+    source: 'agent-loop-phase-state',
+    payload: {
+      status: String(config.newStatus || ''),
+      lastOutcome: String(config.lastOutcome || ''),
+      activeStage: String(activeStage || ''),
+      sprintContractPath: String(config.sprintContractPath || ''),
+      qaReportPath: String(config.qaReportPath || ''),
+      scorecardPath: String(config.scorecardPath || ''),
+    },
+    timestamp: String(config.timestamp || nowIsoSeconds()),
+  });
   shadowRuntimePhaseUpdate(config);
 }
 
@@ -2368,13 +2400,19 @@ function setPhaseCheckpoint(statusFile, phaseNum, checkpoint) {
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }
 
-function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation) {
+function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation, rawStopReason = '', recoveryAction = '') {
   if (!fs.existsSync(statusFile)) {
     return;
   }
   const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, arr) => !(index === arr.length - 1 && arr[index] === ''));
   setRootScalarInLines(lines, 'normalizedRunVerdict', yamlScalar(normalizedRunVerdict));
   setRootScalarInLines(lines, 'stopReasonClass', yamlScalar(stopReasonClass));
+  if (rawStopReason) {
+    setRootScalarInLines(lines, 'rawStopReason', yamlScalar(rawStopReason));
+  }
+  if (recoveryAction) {
+    setRootScalarInLines(lines, 'recoveryAction', yamlScalar(recoveryAction));
+  }
   setRootScalarInLines(lines, 'stopReasonExplanation', yamlScalar(stopReasonExplanation));
   if (normalizedRunVerdict === 'success' && stopReasonClass === 'clean_complete') {
     setRootScalarInLines(lines, 'lastStopReasonDetail', yamlScalar(stopReasonExplanation));
@@ -2876,12 +2914,12 @@ switch (command) {
     break;
   }
   case 'set-root-run-verdict': {
-    const [statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation] = args;
+    const [statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation, rawStopReason, recoveryAction] = args;
     if (!statusFile || !normalizedRunVerdict || !stopReasonClass) {
       printUsage();
       process.exit(64);
     }
-    setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation || '');
+    setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation || '', rawStopReason || '', recoveryAction || '');
     break;
   }
   case 'self-test':

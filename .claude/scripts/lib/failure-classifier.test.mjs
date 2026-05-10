@@ -6,8 +6,11 @@ import {
   buildFailureClassCounts,
   classifyCapabilityCheck,
   classifyFailure,
+  classifyStagnationPattern,
+  classifyTimeoutBudget,
   decisionForFailureCode,
   isEnvironmentBlockerCode,
+  normalizeStopOutcome,
   normalizeFailureCode,
   summarizeFailureDecision,
 } from './failure-classifier.mjs';
@@ -156,11 +159,75 @@ function testCountsAndCapabilityClassification() {
   assert.equal(summary.sameFailureClassCount, 2);
 }
 
+function testStagnationPatternsAndRetrySuppression() {
+  const spinning = classifyStagnationPattern([
+    { reason: 'verification command missing', detail: 'same missing verdict' },
+    { reason: 'verification command missing', detail: 'same missing verdict' },
+  ]);
+  assert.equal(spinning.pattern, 'spinning');
+  assert.equal(spinning.recoveryAction, 'unstuck_replan');
+  assert.equal(spinning.retrySuppressed, true);
+
+  const oscillation = classifyStagnationPattern([
+    { code: 'git_eperm' },
+    { code: 'memorygraph_unavailable' },
+    { code: 'git_eperm' },
+    { code: 'memorygraph_unavailable' },
+  ]);
+  assert.equal(oscillation.pattern, 'oscillation');
+  assert.equal(oscillation.recoveryAction, 'unstuck_replan');
+
+  const noDrift = classifyStagnationPattern([
+    { code: 'unknown_failure', changedFiles: 0, lineDelta: 0, driftScore: 0 },
+    { code: 'unknown_failure', changedFiles: 0, lineDelta: 0, driftScore: 0 },
+  ], { threshold: 3 });
+  assert.equal(noDrift.pattern, 'no_drift');
+
+  const diminishing = classifyStagnationPattern([
+    { code: 'unknown_failure', improvementScore: 3 },
+    { code: 'unknown_failure', improvementScore: 1 },
+    { code: 'unknown_failure', improvementScore: 0 },
+  ], { threshold: 4 });
+  assert.equal(diminishing.pattern, 'diminishing_returns');
+}
+
+function testStopOutcomeAndTimeoutSplit() {
+  assert.equal(
+    classifyTimeoutBudget({ iterationElapsedMs: 120000, iterationTimeoutMs: 120000, totalElapsedMs: 180000, totalTimeoutMs: 600000 }),
+    'per_iteration_timeout',
+  );
+  assert.equal(
+    classifyTimeoutBudget({ totalElapsedMs: 600000, totalTimeoutMs: 600000 }),
+    'total_run_timeout',
+  );
+
+  const recovered = normalizeStopOutcome({
+    rawStopReason: 'provider websocket failed',
+    detail: 'E_PROVIDER_NETWORK websocket os error 10013 blocked by sandbox',
+    recovered: true,
+    recoveryAction: 'local_fallback',
+  });
+  assert.equal(recovered.rawStopReasonCode, 'sandbox_network_boundary_candidate');
+  assert.equal(recovered.recoveryAction, 'local_fallback');
+  assert.equal(recovered.normalizedRunVerdict, 'recovered_success');
+  assert.notEqual(recovered.normalizedRunVerdict, recovered.rawStopReasonCode);
+
+  const timeout = normalizeStopOutcome({
+    rawStopReason: 'iteration timeout',
+    iterationElapsedMs: 30000,
+    iterationTimeoutMs: 30000,
+  });
+  assert.equal(timeout.timeoutBudget, 'per_iteration_timeout');
+  assert.equal(timeout.stopReasonClass, 'per_iteration_timeout');
+}
+
 testBashAccessDenied();
 testCodexStorageAndStateCodes();
 testShellSnapshotMcpNodeGitRgMemoryGraphCodes();
 testGitAndNetworkCodes();
 testDetectFinalStopReasonForRawLogs();
 testCountsAndCapabilityClassification();
+testStagnationPatternsAndRetrySuppression();
+testStopOutcomeAndTimeoutSplit();
 
 process.stdout.write('failure-classifier self-test passed\n');

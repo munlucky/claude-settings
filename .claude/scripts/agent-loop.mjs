@@ -1570,9 +1570,7 @@ if (!state.dryRun) {
 
   const runtime = resolveRunnerRuntime();
   const totalPhases = phasePlan('count-total-phases', state.planDir, state.statusFile);
-  const nextPhase = phasePlan('get-next-phase', state.statusFile) || '1';
-  const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase, state.statusFile);
-  const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase, state.statusFile);
+  const nextPhase = phasePlan('get-next-phase', state.statusFile);
 
   writeStdoutLine('');
   writeStdoutLine('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
@@ -1586,6 +1584,19 @@ if (!state.dryRun) {
   writeStdoutLine(`\u001b[0;34mℹ️\u001b[0m Runtime: ${runtime}`);
   writeStdoutLine(`\u001b[0;34mℹ️\u001b[0m Total phases: ${totalPhases}`);
   writeStdoutLine('');
+
+  if (!nextPhase) {
+    writeStdoutLine('\u001b[0;32m✅\u001b[0m [DRY-RUN] No actionable phase remains');
+    writeStdoutLine('');
+    writeStdoutLine('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+    writeStdoutLine('\u001b[0;36m  Agent Loop Completed\u001b[0m');
+    writeStdoutLine('\u001b[0;36m═══════════════════════════════════════════════════════════════\u001b[0m');
+    process.exit(0);
+  }
+
+  const phaseTitle = phasePlan('get-phase-title', state.planDir, nextPhase, state.statusFile);
+  const phaseDoc = phasePlan('get-phase-doc', state.planDir, nextPhase, state.statusFile);
+
   writeStdoutLine('\u001b[0;36m───────────────────────────────────────────────────────────────\u001b[0m');
   writeStdoutLine(`\u001b[0;36m📦\u001b[0m Phase ${nextPhase}: ${phaseTitle}`);
   writeStdoutLine(`\u001b[1;33m⚠️\u001b[0m [DRY-RUN] Would execute phase ${nextPhase}`);

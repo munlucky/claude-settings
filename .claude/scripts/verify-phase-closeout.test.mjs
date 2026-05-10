@@ -1,11 +1,18 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyCompletionGateReason, decideMissingEvidenceAction } from './agent-loop-phase-attempt.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
+import {
+  appendPhaseEvent,
+  defaultPhaseEventLedgerPath,
+  replayPhaseEvents,
+  validatePhaseEvent,
+} from './lib/phase-event-ledger.mjs';
+import { validateEvaluationTriggerPipelineEvidence } from './workflow-enforcement.mjs';
+import { config, eventFixture, withFixture } from './verify-phase-closeout-fixtures.mjs';
 
 test('phase closeout fails when a completed phase is unchecked in the master checklist', () => {
   withFixture({ checklistChecked: false }, (root) => {
@@ -27,6 +34,52 @@ test('phase closeout fails when no explicit master plan path is supplied', () =>
     assert.equal(result.reason, 'master_plan_missing');
     assert.ok(result.violations.some((violation) => violation.code === 'master_plan_missing'));
     assert.ok(result.violations.some((violation) => violation.message.includes('default fallback is disabled')));
+  });
+});
+
+test('phase event ledger rejects events missing required schema fields', () => {
+  const validation = validatePhaseEvent({
+    eventVersion: 1,
+    eventType: 'phase.status.updated',
+    phaseId: '1',
+    source: 'test',
+    payload: { status: 'completed' },
+    timestamp: '2026-05-10T00:00:00Z',
+  });
+
+  assert.equal(validation.ok, false);
+  assert.ok(validation.errors.some((error) => error.includes('missing runId')));
+  assert.ok(validation.errors.some((error) => error.includes('missing contractSnapshotId')));
+});
+
+test('phase event ledger replay reconstructs lifecycle sequence', () => {
+  const events = [
+    eventFixture('contract.created', { contractPath: 'SPRINT_CONTRACT.md' }),
+    eventFixture('workset.started', { taskId: 'AT-01' }),
+    eventFixture('workset.completed', { taskId: 'AT-01' }),
+    eventFixture('verification.passed', { verdictPath: '.claude/verification-verdict-phase01-final.json' }),
+    eventFixture('closeout.normalized', { status: 'clean_finish' }),
+    eventFixture('phase.status.updated', { status: 'completed' }),
+  ];
+
+  const replay = replayPhaseEvents(events, '1');
+
+  assert.equal(replay.status, 'completed');
+  assert.equal(replay.worksets.get('AT-01'), 'completed');
+  assert.equal(replay.verificationVerdict, 'passed');
+  assert.equal(replay.closeoutStatus, 'clean_finish');
+});
+
+test('phase closeout fails when event replay and phase status read model disagree', () => {
+  withFixture({}, (root) => {
+    appendPhaseEvent(defaultPhaseEventLedgerPath(path.join(root, '.claude/docs/phase-status.yaml')), eventFixture('phase.status.updated', {
+      status: 'in_progress',
+    }));
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'event-ledger-read-model-mismatch'));
   });
 });
 
@@ -79,6 +132,44 @@ test('phase closeout fails when completed phase WORKSETS still has in-progress a
 
     assert.equal(result.allowed, false);
     assert.ok(result.violations.some((violation) => violation.code === 'atomic-tasks-incomplete'));
+  });
+});
+
+test('phase closeout fails with a distinct code when AC verdict is incomplete', () => {
+  withFixture({ incompleteAcWorksets: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'atomic-task-ac-verdict-incomplete'));
+    assert.ok(!result.violations.some((violation) => violation.code === 'atomic-tasks-incomplete'));
+  });
+});
+
+test('phase closeout fails with a distinct code when AC verdict failed', () => {
+  withFixture({ failedAcWorksets: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'atomic-task-ac-verdict-failed'));
+    assert.ok(!result.violations.some((violation) => violation.code === 'atomic-tasks-incomplete'));
+  });
+});
+
+test('phase closeout keeps legacy completed WORKSETS compatible', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase closeout allows explicit AC not_applicable without AC evidence', () => {
+  withFixture({ notApplicableAcWorksets: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
   });
 });
 
@@ -251,6 +342,44 @@ test('phase closeout fails when environment-blocked smoke evidence claims plan c
   });
 });
 
+test('evaluation trigger pipeline blocks semantic pass over mechanical failure', () => {
+  const violations = validateEvaluationTriggerPipelineEvidence([
+    '## Verdict',
+    '- Next path: clean_finish',
+    '',
+    '## Workflow Execution',
+    '- Validation profile: workflow_core',
+    '',
+    '## Evaluation Trigger Evidence',
+    '- Semantic triggers: ac ambiguity, scope drift, architecture risk, security risk, auth risk, payment risk, repeated failure, user value unclear',
+    '- Consensus triggers: contract reinterpretation, high-risk security, high-risk architecture, evaluator disagreement',
+    '- Mechanical checks: failed',
+    '- Semantic evaluation: pass',
+    '- Skipped mechanical checks: none',
+    '- Verification override: allowlisted',
+    '- QA backend matrix: browser optional available; a11y optional available; visual optional available; performance optional available',
+  ].join('\n'), 'QA_REPORT.md');
+
+  assert.ok(violations.some((violation) => violation.includes('mechanical failure cannot be converted')));
+});
+
+test('phase closeout requires evaluation trigger evidence when the phase declares the pipeline', () => {
+  withFixture({ evaluationPipeline: true, evaluationEvidence: false }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'evaluation-trigger-evidence-missing');
+  });
+});
+
+test('phase closeout accepts complete evaluation trigger evidence', () => {
+  withFixture({ evaluationPipeline: true, evaluationEvidence: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
 test('phase closeout accepts in-progress environment-blocked normalized verdict with blocker payload', () => {
   withFixture({
     checklistChecked: false,
@@ -349,389 +478,6 @@ test('finish bundle missing uses exactly one artifact-only remediation before ha
   assert.equal(second.ACTION, 'stop-loop');
   assert.equal(second.SUMMARY, 'workflow-finish-bundle-missing');
 });
-
-function config(root) {
-  return {
-    statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
-    planDir: path.join(root, 'docs/implementation'),
-    masterPlan: path.join(root, 'docs/implementation/00-master-plan-v1.md'),
-  };
-}
-
-function withFixture(options, callback) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-closeout-'));
-  const previousCwd = process.cwd();
-
-  try {
-    writeFixture(root, options);
-    process.chdir(root);
-    callback(root);
-  } finally {
-    process.chdir(previousCwd);
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-}
-
-function writeFixture(root, options = {}) {
-  const settings = {
-    checklistChecked: true,
-    archived: true,
-    scenarioEvidence: true,
-    traceability: true,
-    qaExtra: '',
-    inconsistentVerdict: false,
-    incompleteWorksets: false,
-    delegatedFailedLocalFallbackCompleted: false,
-    currentRunFailedPhaseCompleted: false,
-    activePhaseRunFailedPhaseCompleted: false,
-    latestDispatchFailedPhaseCompleted: false,
-    supersededLocalFallbackWorkflowState: false,
-    currentRunRunningPhaseCompleted: false,
-    staleActiveRunLeaseId: false,
-    futureTimestamp: false,
-    workflowFutureTimestamp: false,
-    staleVerdictIdentity: false,
-    fixedNow: '2026-05-08T12:00:00.000Z',
-    sessionTaskCompleteWorkflowFailed: false,
-    environmentBlockedSmokePlanComplete: false,
-    environmentBlockedNormalizedInProgress: false,
-    latestDispatchPreparedAfterCompletion: false,
-    memorygraphUnavailable: false,
-    memorygraphStrict: false,
-    ...options,
-  };
-  const docsDir = path.join(root, 'docs/implementation');
-  const closeDir = path.join(docsDir, 'close');
-  const executionDir = path.join(docsDir, 'execution/01-feature');
-  const claudeDir = path.join(root, '.claude');
-
-  fs.mkdirSync(closeDir, { recursive: true });
-  fs.mkdirSync(executionDir, { recursive: true });
-  fs.mkdirSync(path.join(claudeDir, 'docs'), { recursive: true });
-
-  fs.writeFileSync(
-    path.join(docsDir, '00-master-plan-v1.md'),
-    [
-      '# Master Plan',
-      '',
-      '## Phase Completion Checklist',
-      `- [${settings.checklistChecked ? 'x' : ' '}] Phase 01 - Feature (\`docs/implementation/01-feature.md\`)`,
-      '',
-    ].join('\n')
-  );
-
-  const archivedPhaseDoc = 'docs/implementation/close/01-feature.md';
-  if (settings.archived) {
-    fs.writeFileSync(
-      path.join(root, archivedPhaseDoc),
-      [
-        '# Phase 01: Feature',
-        '',
-        '## Critical Product Scenarios',
-        '| ID | User-Visible Expectation | Verification Command | Expected Signal | Evidence Path |',
-        '|----|--------------------------|----------------------|-----------------|---------------|',
-        '| SCN-01-1 | Rendered feature is visible | `npm test` | feature visible pass | `QA_REPORT.md` |',
-        '',
-        '## Exact Execution Targets',
-        '| ID | Files To Create | Files To Modify | Files To Test | Commands | Expected Fail/Pass Signals |',
-        '|----|-----------------|-----------------|---------------|----------|----------------------------|',
-        '| P01-1 | `src/feature.ts` | none | `tests/feature.test.ts` | `npm test` | pass |',
-        '',
-      ].join('\n')
-    );
-  }
-
-  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'src/feature.ts'), 'export const ok = true;\n');
-
-  fs.writeFileSync(
-    path.join(claudeDir, 'docs/phase-status.yaml'),
-    [
-      'schemaVersion: "1.0"',
-      'masterPlan: "docs/implementation/00-master-plan-v1.md"',
-      'planDir: "docs/implementation"',
-      ...(settings.environmentBlockedNormalizedInProgress ? [
-        'normalizedRunVerdict: complete_with_environment_blocker',
-        'stopReasonClass: environment_blocker',
-        'stopReasonExplanation: "external provider smoke credential blocked"',
-        'environmentBlockers:',
-        '  - check: external_provider_smoke',
-        '    reason: "external provider smoke credential blocked"',
-        '    evidencePath: ".claude/logs/workflow-enforcement/environment-blocked-smoke.json"',
-        '    observedAt: "2026-05-08T12:00:00Z"',
-      ] : []),
-      ...(settings.workflowFutureTimestamp ? ['updatedAt: "2026-05-08T12:00:06.000Z"'] : []),
-      ...(settings.staleActiveRunLeaseId ? ['activeRunLeaseId: "delegated-failed-run"'] : []),
-      'phases:',
-      '  - number: 1',
-      '    title: "Phase 01: Feature"',
-      `    status: ${settings.environmentBlockedNormalizedInProgress ? 'in_progress' : 'completed'}`,
-      ...(settings.staleActiveRunLeaseId ? ['    activeRunLeaseId: "delegated-failed-run"'] : []),
-      ...(settings.futureTimestamp ? ['    completedAt: "2026-05-08T12:00:05.001Z"'] : []),
-      '    sprintContract: "docs/implementation/execution/01-feature/SPRINT_CONTRACT.md"',
-      '    qaReport: "docs/implementation/execution/01-feature/QA_REPORT.md"',
-      '    handoff: "docs/implementation/execution/01-feature/HANDOFF.md"',
-      '    scorecard: "docs/implementation/execution/01-feature/SCORECARD.md"',
-      `    archivedPhaseDoc: "${settings.archived ? archivedPhaseDoc : 'docs/implementation/close/missing.md'}"`,
-      '',
-    ].join('\n')
-  );
-
-  if (
-    settings.delegatedFailedLocalFallbackCompleted
-    || settings.currentRunFailedPhaseCompleted
-    || settings.activePhaseRunFailedPhaseCompleted
-    || settings.latestDispatchFailedPhaseCompleted
-    || settings.supersededLocalFallbackWorkflowState
-    || settings.currentRunRunningPhaseCompleted
-    || settings.workflowFutureTimestamp
-    || settings.sessionTaskCompleteWorkflowFailed
-    || settings.environmentBlockedSmokePlanComplete
-    || settings.latestDispatchPreparedAfterCompletion
-    || settings.memorygraphUnavailable
-  ) {
-    const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');
-    fs.mkdirSync(workflowDir, { recursive: true });
-
-    const failedPayload = {
-        runId: 'delegated-failed-run',
-        status: settings.currentRunRunningPhaseCompleted ? 'running' : (settings.currentRunFailedPhaseCompleted || settings.sessionTaskCompleteWorkflowFailed ? 'failed' : 'completed'),
-        updatedAt: settings.workflowFutureTimestamp ? '2026-05-08T12:00:06.000Z' : undefined,
-        lastHeartbeatAt: settings.workflowFutureTimestamp ? '2026-05-08T12:00:06.000Z' : undefined,
-        failureClass: settings.delegatedFailedLocalFallbackCompleted ? 'delegated_terminal_failed' : undefined,
-        fallbackRunId: settings.delegatedFailedLocalFallbackCompleted ? 'local-fallback-complete-run' : undefined,
-        activeRunLeaseId: settings.staleActiveRunLeaseId ? 'delegated-failed-run' : undefined,
-    };
-    const supersededPayload = {
-      runId: 'delegated-failed-run',
-      status: 'superseded-by-local-fallback',
-      completionStatus: 'completed-via-local-fallback',
-      fallbackRunId: 'local-fallback-complete-run',
-      supersededRunLeaseId: 'delegated-failed-run',
-      localFallbackCompletion: {
-        runId: 'local-fallback-complete-run',
-        completionStatus: 'completed-via-local-fallback',
-      },
-    };
-    const writeState = (basename, payload) => {
-      fs.writeFileSync(path.join(workflowDir, basename), JSON.stringify(payload, null, 2));
-    };
-
-    if (settings.supersededLocalFallbackWorkflowState) {
-      for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
-        writeState(basename, supersededPayload);
-      }
-    } else {
-      writeState('current-run.json', failedPayload);
-      if (settings.activePhaseRunFailedPhaseCompleted) {
-        writeState('active-phase-run.json', {
-          runId: 'active-failed-run',
-          status: 'failed',
-          completionStatus: 'failed',
-        });
-      }
-      if (settings.latestDispatchFailedPhaseCompleted) {
-        writeState('latest-dispatch.json', {
-          runId: 'latest-failed-run',
-          status: 'failed',
-          completionStatus: 'failed',
-        });
-      }
-      if (settings.latestDispatchPreparedAfterCompletion) {
-        writeState('latest-dispatch.json', {
-          runId: 'prepared-dispatch-run',
-          status: 'prepared',
-          completionStatus: 'prepared',
-          planDir: 'docs/implementation',
-          statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
-        });
-      }
-      if (settings.memorygraphUnavailable) {
-        writeState('current-run.json', {
-          runId: 'memorygraph-degraded-run',
-          status: 'completed',
-          completionStatus: 'completed',
-          planDir: 'docs/implementation',
-          statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
-          unavailableCapabilities: [{
-            code: 'memorygraph_unavailable',
-            source: 'memorygraph.health',
-            evidencePath: '.claude/logs/agent-loop/debug.jsonl',
-            strict: settings.memorygraphStrict ? 'true' : 'false',
-          }],
-        });
-      }
-    }
-
-    if (settings.delegatedFailedLocalFallbackCompleted || settings.supersededLocalFallbackWorkflowState) {
-      fs.writeFileSync(
-        path.join(workflowDir, 'local-fallback-complete-run.json'),
-        JSON.stringify({
-          runId: 'local-fallback-complete-run',
-          status: 'completed',
-          completionBoundary: 'phase_only',
-          completedAt: '2026-05-08T11:59:30.000Z',
-        }, null, 2)
-      );
-    }
-
-    if (settings.environmentBlockedSmokePlanComplete) {
-      fs.writeFileSync(
-        path.join(workflowDir, 'environment-blocked-smoke.json'),
-        JSON.stringify({
-          status: 'blocked',
-          reason: 'runtime-health-blocked',
-          evidenceDepth: 'smoke_only',
-          planStatus: 'complete',
-        }, null, 2)
-      );
-    }
-  }
-
-  if (settings.sessionTaskCompleteWorkflowFailed) {
-    const sessionDir = path.join(claudeDir, 'sessions');
-    fs.mkdirSync(sessionDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(sessionDir, 'phase01.jsonl'),
-      [
-        JSON.stringify({ type: 'assistant', phase: 'commentary', event: 'task_complete', runId: 'delegated-failed-run' }),
-        JSON.stringify({ type: 'workflow', status: 'failed', runId: 'delegated-failed-run' }),
-        '',
-      ].join('\n')
-    );
-  }
-
-  fs.writeFileSync(
-    path.join(executionDir, 'SPRINT_CONTRACT.md'),
-    [
-      '# Sprint Contract',
-      '',
-      '## Slice',
-      '- Source phase doc: docs/implementation/close/01-feature.md',
-      '',
-      '## Source Plan Requirements Snapshot',
-      '| P01-1 | `src/feature.ts` | none | `tests/feature.test.ts` | `npm test` | pass |',
-      '',
-      '## Spec Deviation Ledger',
-      '- none',
-      '',
-    ].join('\n')
-  );
-
-  fs.writeFileSync(
-    path.join(executionDir, 'QA_REPORT.md'),
-    [
-      '# QA Report',
-      '',
-      '## Verdict',
-      '- Next path: clean_finish',
-      '- Scope status: complete',
-      '',
-      '## Plan Conformance Review',
-      '- Source plan conformance command: pass',
-      settings.scenarioEvidence ? '- SCN-01-1: pass - rendered feature is visible.' : '- SCN-01-1: missing evidence.',
-      settings.qaExtra,
-      '',
-      '## Finish Readiness',
-      '- Remaining blockers before closeout: none',
-      '',
-    ].join('\n')
-  );
-
-  fs.writeFileSync(
-    path.join(executionDir, 'SCORECARD.md'),
-    [
-      '# Scorecard',
-      '',
-      '## Objective Checklist',
-      '| OBJ-CONFORM | pass |',
-      '',
-      '## Score Summary',
-      '- Verdict: done',
-      '',
-      '## Task-Level Status Adapter',
-      '- Current task status: FULL',
-      '',
-    ].join('\n')
-  );
-
-  fs.writeFileSync(
-    path.join(executionDir, 'HANDOFF.md'),
-    [
-      '# Handoff',
-      '',
-      '## Status',
-      '- Required: no',
-      '',
-      '## Resume Trigger',
-      '- Stop reason: clean_finish',
-      '',
-    ].join('\n')
-  );
-
-  if (settings.incompleteWorksets) {
-    fs.writeFileSync(
-      path.join(executionDir, 'WORKSETS.yaml'),
-      [
-        'schemaVersion: 1',
-        'activeAtomicTask: AT-01',
-        'atomicTasks:',
-        '  - id: AT-01',
-        '    title: "Feature work"',
-        '    status: in_progress',
-        '    ownedPaths: []',
-        '    verificationCommands: []',
-        '    evidence: []',
-        '    completedAt: null',
-        'worksets: []',
-        '',
-      ].join('\n')
-    );
-  }
-
-  if (settings.traceability) {
-    fs.writeFileSync(
-      path.join(docsDir, 'execution/REQUIREMENTS_TRACEABILITY.md'),
-      [
-        '# Requirements Traceability',
-        '',
-        '| ID | Requirement | Evidence | Status |',
-        '|----|-------------|----------|--------|',
-        '| REQ-01-1 | Render feature | `QA_REPORT.md` | verified |',
-        '',
-      ].join('\n')
-    );
-
-    fs.writeFileSync(
-      path.join(docsDir, 'execution/SCENARIO_MATRIX.md'),
-      [
-        '# Scenario Matrix',
-        '',
-        '| ID | Requirement | Scenario | Evidence | Status |',
-        '|----|-------------|----------|----------|--------|',
-        '| SCN-01-1 | REQ-01-1 | Rendered feature is visible | `QA_REPORT.md` | verified |',
-        '',
-      ].join('\n')
-    );
-  }
-
-  fs.writeFileSync(
-    path.join(claudeDir, 'verification-verdict-phase01-final.json'),
-    JSON.stringify({
-      verdict: 'passed',
-      evidenceFresh: true,
-      blocking: settings.inconsistentVerdict,
-      score: { verdict: settings.inconsistentVerdict ? 'blocked' : 'done' },
-      ...(settings.staleVerdictIdentity ? {
-        identity: {
-          runLeaseId: 'old-run',
-          planDir: path.join(root, 'docs/old-implementation'),
-          statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
-        },
-      } : {}),
-    }, null, 2)
-  );
-}
 
 function assertGateClassification(reason, expected) {
   const result = classifyCompletionGateReason(reason);

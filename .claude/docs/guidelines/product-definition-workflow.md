@@ -47,6 +47,41 @@ Recommended outcomes:
 - `conditional_pass`: proceed only after assumptions or scope reduction
 - `fail`: value is weak, scope is unstable, or cost/benefit is not defensible
 
+## Readiness And Ambiguity Gate
+
+Before a product package becomes runnable implementation work, treat PRD/SPEC content as source material and normalize it into a Goal Contract.
+
+Required readiness dimensions:
+- `goalClarity`
+- `scopeClarity`
+- `acceptanceCriteriaClarity`
+- `verificationClarity`
+- `clarityScore`
+- `ambiguityScore`
+- `readinessDecision`
+
+Thresholds:
+- `ambiguityScore <= 0.20`: executable
+- `0.20 < ambiguityScore <= 0.35`: constrained execution with assumptions
+- `ambiguityScore > 0.35`: blocked until the contract is clarified or a user-approved replan records the deviation
+
+Gap checks:
+- unverifiable adjectives without measurable evidence
+- missing non-goals or excluded scope
+- missing verification commands
+- missing or ambiguous acceptance criteria
+- missing brownfield readiness context for work that changes existing systems
+
+Acceptance criteria extraction:
+- Convert source requirements and completion criteria into stable `AC-*` ids.
+- Preserve source labels and expected evidence targets for each `AC-*`.
+- Use the `AC-*` ids in downstream phase docs, WORKSETS, and QA evidence so completion can be traced back to source requirements.
+
+Routing:
+- Non-critical ambiguity goes to `ASSUMPTIONS.md`.
+- Core goal, scope, acceptance, or verification ambiguity goes to `BLOCKERS.md`.
+- Product-value and brownfield readiness concerns must be resolved by stage-owner review evidence before runnable closeout.
+
 ## Stages
 
 ### 1. PRODUCT_INTENT

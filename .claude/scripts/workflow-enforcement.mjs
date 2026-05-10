@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { collectGitStatusPaths, isInsideGitWorkTree } from './lib/git-utils.mjs';
+import { parseWorksetsYaml } from './lib/phase-closeout-parsers.mjs';
+import { defaultPhaseEventLedgerPath, readPhaseEvents } from './lib/phase-event-ledger.mjs';
 import {
   CANONICAL_CLOSEOUT_REASONS,
   CANONICAL_NEXT_PATHS,
@@ -28,6 +30,15 @@ const RETRY_STRATEGIES = new Set(['same_direction_refine', 'partial_redesign', '
 const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
 const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
 const DEFAULT_PHASE_REPLAY_POLICY = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
+const RUNTIME_CAPABILITY_FIELDS = [
+  'fork',
+  'mcp',
+  'shell',
+  'browser',
+  'worktree',
+  'toolInheritance',
+  'fallbackSupport',
+];
 
 function defaultEffortEscalationReason(profile) {
   return ['deep', 'max'].includes(String(profile || '').trim()) ? '' : 'none';
@@ -58,6 +69,228 @@ function stampTimestamp() {
   const now = new Date();
   const pad = (value) => String(value).padStart(2, '0');
   return `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}-${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
+}
+
+function envAvailability(name, fallback = 'unknown') {
+  const raw = String(process.env[name] || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'available', 'passed'].includes(raw)) return 'available';
+  if (['0', 'false', 'no', 'unavailable', 'failed'].includes(raw)) return 'unavailable';
+  if (['degraded', 'partial'].includes(raw)) return 'degraded';
+  return fallback;
+}
+
+function statMtimeIso(filePath) {
+  try {
+    return fs.existsSync(filePath) ? fs.statSync(filePath).mtime.toISOString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function classifyUnavailableCapability(name, status) {
+  if (!['unavailable', 'degraded'].includes(status)) {
+    return null;
+  }
+  if (name === 'mcp') {
+    return 'mcp_unavailable';
+  }
+  if (['shell', 'browser', 'worktree'].includes(name)) {
+    return 'runtime_unavailable';
+  }
+  return 'tool_unavailable';
+}
+
+function buildRuntimeCapabilityStatus(runtime) {
+  const normalizedRuntime = String(runtime || 'auto').trim() || 'auto';
+  const forkStatus = normalizedRuntime === 'claude-code' || normalizedRuntime === 'claude'
+    ? 'available'
+    : 'degraded';
+  const toolInheritanceStatus = normalizedRuntime === 'codex' ? 'degraded' : 'available';
+  const capabilities = {
+    fork: {
+      status: envAvailability('WORKFLOW_CAPABILITY_FORK', forkStatus),
+      evidence: normalizedRuntime === 'codex'
+        ? 'Codex review/verify fork semantics require native sub-agent support or recorded current-session fallback.'
+        : 'Claude runtime can route forked Task-style review/verification attempts.',
+    },
+    mcp: {
+      status: envAvailability('WORKFLOW_CAPABILITY_MCP', 'unknown'),
+      evidence: 'MCP connectors/tools must be looked up before an unavailable classification is recorded.',
+    },
+    shell: {
+      status: envAvailability('WORKFLOW_CAPABILITY_SHELL', 'available'),
+      evidence: 'Shell verification commands are part of the active verification contract.',
+    },
+    browser: {
+      status: envAvailability('WORKFLOW_CAPABILITY_BROWSER', 'unknown'),
+      evidence: 'Browser capability is optional unless the source phase or verification contract requires runtime UI evidence.',
+    },
+    worktree: {
+      status: envAvailability('WORKFLOW_CAPABILITY_WORKTREE', 'available'),
+      evidence: 'Git worktree support is required for isolated phase waves; sequential fallback remains available.',
+    },
+    toolInheritance: {
+      status: envAvailability('WORKFLOW_CAPABILITY_TOOL_INHERITANCE', toolInheritanceStatus),
+      evidence: 'Forked attempts must receive only artifact-backed inputs and cannot assume all coordinator tools are inherited.',
+    },
+    fallbackSupport: {
+      status: envAvailability('WORKFLOW_CAPABILITY_FALLBACK_SUPPORT', 'available'),
+      evidence: 'Codex direct fallback may execute the phase attempt in-session when slash orchestration is unavailable.',
+    },
+  };
+  return {
+    schemaVersion: '1.0',
+    runtime: normalizedRuntime,
+    recordedAt: utcTimestamp(),
+    capabilities,
+    deferredToolLookup: {
+      requiredBeforeUnavailable: true,
+      evidenceField: 'toolLookupEvidence',
+      policy: 'search deferred/native tool registry before reporting tool_unavailable or mcp_unavailable',
+    },
+    toolLookupEvidence: process.env.WORKFLOW_TOOL_LOOKUP_EVIDENCE
+      || 'not_run_no_missing_tool_reported',
+    unavailableClassification: Object.fromEntries(
+      Object.entries(capabilities)
+        .map(([name, value]) => [name, classifyUnavailableCapability(name, value.status)])
+        .filter(([, value]) => value)
+    ),
+    fallbackPolicy: normalizedRuntime === 'codex'
+      ? 'codex_direct_phase_attempt_fallback'
+      : 'runtime_adapter_primary',
+  };
+}
+
+function detectStaleProjectionWarnings({ statusFile, latestDispatchFile, currentRunFile }) {
+  const warnings = [];
+  const statusMtime = statMtimeIso(statusFile);
+  const dispatchMtime = statMtimeIso(latestDispatchFile);
+  const currentRunMtime = statMtimeIso(currentRunFile);
+  if (statusFile && !statusMtime) warnings.push('phase_status_missing');
+  if (!dispatchMtime) warnings.push('latest_dispatch_missing');
+  if (!currentRunMtime) warnings.push('current_run_missing');
+  if (statusMtime && dispatchMtime && new Date(dispatchMtime) < new Date(statusMtime)) {
+    warnings.push('latest_dispatch_older_than_phase_status');
+  }
+  if (dispatchMtime && currentRunMtime && new Date(currentRunMtime) < new Date(dispatchMtime)) {
+    warnings.push('current_run_older_than_latest_dispatch');
+  }
+  return warnings;
+}
+
+function buildCompactStatusReadModel({
+  planDir,
+  statusFile,
+  masterPlan,
+  executionRoot,
+  runtime,
+  sprintContractPath = '',
+  qaReportPath = '',
+  latestVerdictFile = '',
+  suppressSelfWriteMissingWarnings = false,
+}) {
+  const latestDispatchFile = path.join(WORKFLOW_LOG_DIR, 'latest-dispatch.json');
+  const rawStaleWarnings = detectStaleProjectionWarnings({
+    statusFile,
+    latestDispatchFile,
+    currentRunFile: CURRENT_RUN_FILE,
+  });
+  const staleWarnings = suppressSelfWriteMissingWarnings
+    ? rawStaleWarnings.filter((item) => !['latest_dispatch_missing', 'current_run_missing'].includes(item))
+    : rawStaleWarnings;
+  return {
+    schemaVersion: '1.0',
+    activeContract: {
+      planDir,
+      statusFile,
+      masterPlan,
+      executionRoot,
+      sprintContractPath,
+      qaReportPath,
+    },
+    latestVerdict: latestVerdictFile
+      ? { path: latestVerdictFile, state: 'recorded' }
+      : { path: null, state: 'pending' },
+    currentBlocker: staleWarnings.length > 0 ? 'stale_projection_warning' : 'verification_pending',
+    lineage: {
+      runId: process.env.PHASE_RUN_ID || process.env.WORKFLOW_RUN_ID || '',
+      phaseId: process.env.PHASE_ID || process.env.PHASE_NUM || '',
+      contractSnapshotId: process.env.GOAL_CONTRACT_SNAPSHOT_ID || '',
+    },
+    staleWarnings,
+    runtime,
+  };
+}
+
+function buildResumeBrief(readModel) {
+  return {
+    schemaVersion: '1.0',
+    nextAction: readModel.currentBlocker === 'verification_pending'
+      ? 'run_review_then_verification'
+      : 'refresh_stale_read_models_before_closeout',
+    activeContract: readModel.activeContract,
+    latestVerdict: readModel.latestVerdict,
+    currentBlocker: readModel.currentBlocker,
+    lineage: readModel.lineage,
+    staleWarnings: readModel.staleWarnings,
+  };
+}
+
+function validateRuntimeReadModels(payload, artifactPath) {
+  const violations = [];
+  const capabilityStatus = payload.runtimeCapabilityStatus;
+  if (!capabilityStatus || typeof capabilityStatus !== 'object') {
+    violations.push(`${artifactPath}: runtimeCapabilityStatus is required`);
+  } else {
+    const capabilities = capabilityStatus.capabilities && typeof capabilityStatus.capabilities === 'object'
+      ? capabilityStatus.capabilities
+      : {};
+    for (const field of RUNTIME_CAPABILITY_FIELDS) {
+      if (!capabilities[field] || typeof capabilities[field].status !== 'string' || !capabilities[field].status.trim()) {
+        violations.push(`${artifactPath}: runtimeCapabilityStatus.capabilities.${field}.status is required`);
+      }
+    }
+    if (!capabilityStatus.deferredToolLookup?.requiredBeforeUnavailable) {
+      violations.push(`${artifactPath}: runtimeCapabilityStatus.deferredToolLookup.requiredBeforeUnavailable must be true`);
+    }
+    if (typeof capabilityStatus.toolLookupEvidence !== 'string' || !capabilityStatus.toolLookupEvidence.trim()) {
+      violations.push(`${artifactPath}: runtimeCapabilityStatus.toolLookupEvidence is required`);
+    }
+    const unavailableValues = Object.values(capabilityStatus.unavailableClassification || {});
+    if (unavailableValues.some((item) => !['mcp_unavailable', 'tool_unavailable', 'runtime_unavailable'].includes(item))) {
+      violations.push(`${artifactPath}: unavailable classifications must use mcp_unavailable, tool_unavailable, or runtime_unavailable`);
+    }
+  }
+
+  const compactStatus = payload.compactStatus;
+  if (!compactStatus || typeof compactStatus !== 'object') {
+    violations.push(`${artifactPath}: compactStatus is required`);
+  } else {
+    if (!compactStatus.activeContract || typeof compactStatus.activeContract !== 'object') {
+      violations.push(`${artifactPath}: compactStatus.activeContract is required`);
+    }
+    if (!compactStatus.latestVerdict || typeof compactStatus.latestVerdict !== 'object') {
+      violations.push(`${artifactPath}: compactStatus.latestVerdict is required`);
+    }
+    if (!compactStatus.lineage || typeof compactStatus.lineage !== 'object') {
+      violations.push(`${artifactPath}: compactStatus.lineage is required`);
+    }
+    if (!Array.isArray(compactStatus.staleWarnings)) {
+      violations.push(`${artifactPath}: compactStatus.staleWarnings must be an array`);
+    }
+  }
+
+  const resumeBrief = payload.resumeBrief;
+  if (!resumeBrief || typeof resumeBrief !== 'object') {
+    violations.push(`${artifactPath}: resumeBrief is required`);
+  } else {
+    for (const key of ['nextAction', 'activeContract', 'latestVerdict', 'currentBlocker', 'lineage', 'staleWarnings']) {
+      if (!(key in resumeBrief)) {
+        violations.push(`${artifactPath}: resumeBrief.${key} is required`);
+      }
+    }
+  }
+  return violations;
 }
 
 function collectCandidateFiles(args) {
@@ -312,19 +545,47 @@ function deriveCompletionBlockersFromQaReport(qaReportPath) {
   const reviewCompleted = extractBulletValue(text, '## Review Checkpoint', 'Review completed').toLowerCase();
   const freshEvidence = extractBulletValue(text, '## Finish Readiness', 'Fresh evidence confirmed').toLowerCase();
   const traceabilityEvidence = extractBulletValue(text, '## Finish Readiness', 'Traceability evidence confirmed').toLowerCase();
+  const acceptanceEvidence = extractBulletValue(text, '## Finish Readiness', 'AC evidence confirmed').toLowerCase()
+    || extractBulletValue(text, '## Finish Readiness', 'Acceptance criteria evidence confirmed').toLowerCase();
   const remainingScope = extractBulletValue(text, '## Finish Readiness', 'Remaining in-scope work').toLowerCase();
   const remainingBlockers = extractBulletValue(text, '## Finish Readiness', 'Remaining blockers before closeout').toLowerCase();
   const nextPath = canonicalizeNextPath(extractBulletValue(text, '## Verdict', 'Next path'));
+  const acLinkedState = evaluateAcLinkedWorksets(path.dirname(qaReportPath));
 
   if (reviewCompleted !== 'yes') blockers.push('review_incomplete');
   if (freshEvidence && freshEvidence !== 'yes') blockers.push('fresh_evidence_missing');
   if (traceabilityEvidence && traceabilityEvidence !== 'yes') blockers.push('traceability_incomplete');
+  if (acceptanceEvidence && acceptanceEvidence !== 'yes') blockers.push('ac_evidence_incomplete');
+  if (!acLinkedState.ok) blockers.push(acLinkedState.reason);
   if (remainingScope && remainingScope !== 'none') blockers.push('remaining_scope');
   if (remainingBlockers && remainingBlockers !== 'none') blockers.push('remaining_blockers');
   if (nextPath === 'retry_loop') blockers.push('retry_loop_active');
   if (nextPath === 'resume_later_handoff') blockers.push('handoff_required');
 
   return blockers;
+}
+
+function evaluateAcLinkedWorksets(phaseExecutionDir) {
+  const ledger = parseWorksetsYaml(path.join(phaseExecutionDir || '', 'WORKSETS.yaml'));
+  if (!ledger.exists || ledger.tasks.length === 0) {
+    return { ok: true, reason: 'no_ac_linkage' };
+  }
+  for (const task of ledger.tasks) {
+    if (!task.acceptanceCriterionId) {
+      continue;
+    }
+    const acVerdict = String(task.acVerdict || '').trim().toLowerCase();
+    if (['fail', 'failed', 'blocked', 'rejected'].includes(acVerdict)) {
+      return { ok: false, reason: 'ac_verdict_failed' };
+    }
+    if (!['pass', 'passed', 'verified', 'done', 'not_applicable'].includes(acVerdict)) {
+      return { ok: false, reason: 'ac_verdict_incomplete' };
+    }
+    if (acVerdict !== 'not_applicable' && task.verificationEvidence.length === 0) {
+      return { ok: false, reason: 'ac_evidence_missing' };
+    }
+  }
+  return { ok: true, reason: 'ok' };
 }
 
 function executionRootFromQaReport(qaReportPath) {
@@ -424,6 +685,81 @@ function isCleanFinishHandoff(text) {
   return required.toLowerCase() === 'no';
 }
 
+const SEMANTIC_TRIGGER_TERMS = [
+  'ac ambiguity',
+  'scope drift',
+  'architecture risk',
+  'security risk',
+  'auth risk',
+  'payment risk',
+  'repeated failure',
+  'user value unclear',
+];
+
+const CONSENSUS_TRIGGER_TERMS = [
+  'contract reinterpretation',
+  'high-risk security',
+  'high-risk architecture',
+  'evaluator disagreement',
+];
+
+function hasTerm(text, term) {
+  return text.toLowerCase().includes(term);
+}
+
+export function validateEvaluationTriggerPipelineEvidence(text, artifactPath = 'QA_REPORT.md') {
+  const violations = [];
+  const normalized = text.toLowerCase();
+  const nextPath = canonicalizeNextPath(extractBulletValue(text, '## Verdict', 'Next path'));
+  const cleanFinish = nextPath === 'clean_finish';
+  const mechanicalFailed = /mechanical (checks?|gate|verification)\s*:\s*(failed|fail|blocked)/i.test(text);
+  const semanticCleanPass = /semantic evaluation\s*:\s*(pass|passed|clean_pass|clean pass)/i.test(text);
+  const consensusCleanPass = /consensus evaluation\s*:\s*(pass|passed|clean_pass|clean pass)/i.test(text);
+  const skippedMechanical = extractBulletValue(text, '## Evaluation Trigger Evidence', 'Skipped mechanical checks')
+    || extractBulletValue(text, '## Runtime Updates', 'Skipped mechanical checks');
+  const validationProfile = extractBulletValue(text, '## Workflow Execution', 'Validation profile').toLowerCase();
+
+  if (!sectionExists(text, '## Evaluation Trigger Evidence')) {
+    return violations;
+  }
+
+  for (const term of SEMANTIC_TRIGGER_TERMS) {
+    if (!hasTerm(normalized, term)) {
+      violations.push(`${artifactPath}: semantic evaluation trigger missing '${term}'`);
+    }
+  }
+  for (const term of CONSENSUS_TRIGGER_TERMS) {
+    if (!hasTerm(normalized, term)) {
+      violations.push(`${artifactPath}: consensus evaluation trigger missing '${term}'`);
+    }
+  }
+
+  if (mechanicalFailed && (cleanFinish || semanticCleanPass || consensusCleanPass)) {
+    violations.push(`${artifactPath}: mechanical failure cannot be converted into clean semantic or consensus pass`);
+  }
+
+  if (cleanFinish && validationProfile && !['prompt_only', 'docs_only'].includes(validationProfile)) {
+    const normalizedSkips = skippedMechanical.trim().toLowerCase();
+    if (normalizedSkips && !['none', 'no', 'n/a', '[]'].includes(normalizedSkips)) {
+      violations.push(`${artifactPath}: skipped mechanical checks are blocking for validation profile ${validationProfile}`);
+    }
+  }
+
+  if (cleanFinish && /verification override\s*:\s*(unknown|untrusted|not_allowed|blocked)/i.test(text)) {
+    violations.push(`${artifactPath}: clean_finish requires verification overrides to be explicitly allowlisted`);
+  }
+
+  if (
+    cleanFinish
+    && /qa backend matrix/i.test(text)
+    && /(browser|a11y|visual|performance)[^\n]*\b(required|mandatory)\b[^\n]*\b(missing|unavailable|blocked)\b/i.test(text)
+  ) {
+    violations.push(`${artifactPath}: missing required QA backend cannot produce clean_finish`);
+  }
+
+  return violations;
+}
+
 export function validateCloseoutSynchronization({
   qaReportPath,
   scorecardPath,
@@ -440,6 +776,9 @@ export function validateCloseoutSynchronization({
   const closeoutReason = canonicalizeCloseoutReason(extractBulletValue(qaText, '## Verdict', 'Closeout reason'));
   const scopeStatus = extractBulletValue(qaText, '## Verdict', 'Scope status').toLowerCase();
   const reviewCompleted = extractBulletValue(qaText, '## Review Checkpoint', 'Review completed').toLowerCase();
+  const acceptanceEvidence = extractBulletValue(qaText, '## Finish Readiness', 'AC evidence confirmed').toLowerCase()
+    || extractBulletValue(qaText, '## Finish Readiness', 'Acceptance criteria evidence confirmed').toLowerCase();
+  const acLinkedState = evaluateAcLinkedWorksets(path.dirname(qaReportPath));
   const closeoutFieldsPresent = Boolean(
     scopeStatus
       || nextPath
@@ -465,9 +804,12 @@ export function validateCloseoutSynchronization({
   const currentTaskStatus = extractBulletValue(scoreText, '## Task-Level Status Adapter', 'Current task status').toUpperCase();
 
   if (nextPath === 'clean_finish') {
+    violations.push(...validateEvaluationTriggerPipelineEvidence(qaText, qaReportPath));
     if (scopeStatus !== 'complete') violations.push(`${qaReportPath}: clean_finish requires Scope status = complete`);
     if (closeoutReason !== 'scope_complete') violations.push(`${qaReportPath}: clean_finish requires Closeout reason = scope_complete`);
     if (reviewCompleted !== 'yes') violations.push(`${qaReportPath}: clean_finish requires Review completed = yes`);
+    if (!acLinkedState.ok) violations.push(`${qaReportPath}: clean_finish requires linked AC verdict/evidence to pass (${acLinkedState.reason})`);
+    if (acceptanceEvidence && acceptanceEvidence !== 'yes') violations.push(`${qaReportPath}: clean_finish requires AC evidence confirmed = yes`);
     if (scoreVerdict !== 'done') violations.push(`${scorecardPath}: clean_finish requires Verdict = done`);
     if (currentTaskStatus !== 'FULL') violations.push(`${scorecardPath}: clean_finish requires Current task status = FULL`);
     if (!Number.isFinite(currentScore) || !Number.isFinite(targetScore) || currentScore < targetScore) {
@@ -510,6 +852,7 @@ function isWorkflowArtifact(filePath) {
   if (normalized.startsWith('.claude/logs/workflow-enforcement/')) return true;
   return normalized.includes('/execution/') && (
     normalized.endsWith('/SPRINT_CONTRACT.md') ||
+    normalized.endsWith('/GOAL_CONTRACT.yaml') ||
     normalized.endsWith('/QA_REPORT.md') ||
     normalized.endsWith('/HANDOFF.md') ||
     normalized.endsWith('/SCORECARD.md')
@@ -521,6 +864,59 @@ const codeSuffixes = new Set([
   '.java', '.kt', '.kts', '.cs', '.php', '.swift', '.scala', '.sh', '.bash',
   '.zsh', '.ps1', '.psm1', '.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx',
 ]);
+
+const REQUIRED_GOAL_CONTRACT_FIELDS = [
+  'schemaVersion',
+  'snapshotId',
+  'objective',
+  'scope',
+  'nonGoals',
+  'constraints',
+  'acceptanceCriteria',
+  'exitConditions',
+  'brownfieldContext',
+  'provenance',
+];
+
+function hasYamlField(text, fieldName) {
+  return new RegExp(`^${fieldName}:`, 'm').test(String(text || ''));
+}
+
+function sprintContractRequiresGoalContract(text) {
+  const lowered = String(text || '').toLowerCase();
+  return lowered.includes('source plan requirements snapshot')
+    && !lowered.includes('goal contract not required');
+}
+
+function validateGoalContractForSprint(sprintContract, sprintText) {
+  const violations = [];
+  if (!sprintContractRequiresGoalContract(sprintText)) {
+    return violations;
+  }
+
+  const sprintDir = path.dirname(sprintContract);
+  const goalContractPath = path.join(sprintDir, 'GOAL_CONTRACT.yaml');
+  const embeddedGoalContract = /\bgoalContract\s*:/i.test(sprintText);
+  if (!fs.existsSync(goalContractPath) && !embeddedGoalContract) {
+    violations.push(`${sprintContract}: missing_goal_contract: non-trivial phase package requires GOAL_CONTRACT.yaml or embedded goalContract block`);
+    return violations;
+  }
+
+  const goalText = fs.existsSync(goalContractPath) ? fs.readFileSync(goalContractPath, 'utf8') : sprintText;
+  for (const fieldName of REQUIRED_GOAL_CONTRACT_FIELDS) {
+    if (!hasYamlField(goalText, fieldName)) {
+      violations.push(`${goalContractPath}: missing required Goal Contract field '${fieldName}'`);
+    }
+  }
+  if (!/\bsnapshotId:\s*["']?goal-contract-[A-Za-z0-9_.-]+/i.test(goalText)) {
+    violations.push(`${goalContractPath}: snapshotId must be stable and start with 'goal-contract-'`);
+  }
+  if (!/\bsourceArtifacts:\s*(?:\r?\n\s*-\s+|[\["'])/i.test(goalText)) {
+    violations.push(`${goalContractPath}: provenance.sourceArtifacts must identify source artifacts`);
+  }
+
+  return violations;
+}
 
 function recordDispatch(argv) {
   const options = parseArgs(argv, {
@@ -543,6 +939,16 @@ function recordDispatch(argv) {
     stage: 'phase_implementation',
     profile: effortProfile,
   });
+  const runtimeCapabilityStatus = buildRuntimeCapabilityStatus(options.runtime);
+  const compactStatus = buildCompactStatusReadModel({
+    planDir: options.planDir,
+    statusFile: options.statusFile || STATUS_FILE_DEFAULT,
+    masterPlan: options.masterPlan || '',
+    executionRoot: options.executionRoot,
+    runtime: options.runtime,
+    suppressSelfWriteMissingWarnings: true,
+  });
+  const resumeBrief = buildResumeBrief(compactStatus);
   const payload = {
     evidenceVersion: '1.0',
     recordedAt: utcTimestamp(),
@@ -602,11 +1008,18 @@ function recordDispatch(argv) {
     retrievalBudget: process.env.PHASE_RETRIEVAL_BUDGET || process.env.MOONSHOT_RETRIEVAL_BUDGET || DEFAULT_RETRIEVAL_BUDGET,
     validationProfile: process.env.PHASE_VALIDATION_PROFILE || process.env.MOONSHOT_VALIDATION_PROFILE || DEFAULT_VALIDATION_PROFILE,
     phaseReplayPolicy: process.env.PHASE_REPLAY_POLICY || process.env.MOONSHOT_PHASE_REPLAY_POLICY || DEFAULT_PHASE_REPLAY_POLICY,
+    runtimeCapabilityStatus,
+    compactStatus,
+    resumeBrief,
     status: 'prepared',
     completionStatus: 'prepared',
     recoveryStatus: 'none',
     completionPath: 'prepared-dispatch',
+    rawStopReason: '',
     rawStopReasonCode: '',
+    recoveryAction: 'none',
+    normalizedRunVerdict: 'prepared',
+    stopReasonClass: '',
     blockingStopReasonCode: '',
     recoveryEvents: [],
     residualFailures: [],
@@ -631,7 +1044,11 @@ function recordDispatch(argv) {
     completionStatus: 'prepared',
     recoveryStatus: 'none',
     completionPath: 'prepared-dispatch',
+    rawStopReason: '',
     rawStopReasonCode: '',
+    recoveryAction: 'none',
+    normalizedRunVerdict: 'prepared',
+    stopReasonClass: '',
     blockingStopReasonCode: '',
     recoveryEvents: [],
     residualFailures: [],
@@ -660,6 +1077,9 @@ function recordDispatch(argv) {
     retrievalBudget: payload.retrievalBudget,
     validationProfile: payload.validationProfile,
     phaseReplayPolicy: payload.phaseReplayPolicy,
+    runtimeCapabilityStatus,
+    compactStatus,
+    resumeBrief,
     readiness: deriveReadinessState({
       planDir: options.planDir,
       statusFile: options.statusFile || STATUS_FILE_DEFAULT,
@@ -816,6 +1236,7 @@ function recordBounded(argv) {
   let phaseReplayPolicy = typeof existingWorkflow.phaseReplayPolicy === 'string' && existingWorkflow.phaseReplayPolicy.trim()
     ? existingWorkflow.phaseReplayPolicy
     : (process.env.WORKFLOW_PHASE_REPLAY_POLICY || process.env.MOONSHOT_PHASE_REPLAY_POLICY || DEFAULT_PHASE_REPLAY_POLICY);
+  const boundedRuntime = process.env.WORKFLOW_RUNTIME || process.env.PHASE_WORK_RUNTIME || 'auto';
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     const section = extractWorkflowSection(fs.readFileSync(qaReportPath, 'utf8'));
@@ -848,6 +1269,19 @@ function recordBounded(argv) {
     qaReportPath,
     handoffPath,
   });
+  const qaText = qaReportPath && fs.existsSync(qaReportPath) ? fs.readFileSync(qaReportPath, 'utf8') : '';
+  const runtimeCapabilityStatus = buildRuntimeCapabilityStatus(boundedRuntime);
+  const compactStatus = buildCompactStatusReadModel({
+    planDir: '',
+    statusFile: '',
+    masterPlan: '',
+    executionRoot: '',
+    runtime: boundedRuntime,
+    sprintContractPath,
+    qaReportPath,
+    latestVerdictFile: extractBulletValue(qaText, '## Runtime Updates', 'Verification verdict file'),
+  });
+  const resumeBrief = buildResumeBrief(compactStatus);
 
   const workflowBlock = [
     'workflowEvidence:',
@@ -941,11 +1375,19 @@ function recordBounded(argv) {
     retrievalBudget,
     validationProfile,
     phaseReplayPolicy,
+    runtimeCapabilityStatus,
+    compactStatus,
+    resumeBrief,
     readiness,
     completion: {
       state: completionState,
       closeoutStatus,
       blockers: completionBlockers,
+      rawStopReason: '',
+      rawStopReasonCode: '',
+      recoveryAction: completionState === 'complete' ? 'none' : 'continue',
+      normalizedRunVerdict: completionState === 'complete' ? 'success' : completionState,
+      stopReasonClass: completionState === 'complete' ? 'clean_complete' : completionState,
     },
     evidenceFiles: {
       analysisContext: analysisPath,
@@ -961,6 +1403,11 @@ function recordBounded(argv) {
     source: 'workflow-enforcement.record-bounded',
     workflowKind: 'bounded-direct',
     completionStatus: completionState,
+    rawStopReason: '',
+    rawStopReasonCode: '',
+    recoveryAction: completionState === 'complete' ? 'none' : 'continue',
+    normalizedRunVerdict: completionState === 'complete' ? 'success' : completionState,
+    stopReasonClass: completionState === 'complete' ? 'clean_complete' : completionState,
     currentStage: stageOrder.at(-1) || 'finish/handoff',
     planDir: null,
     statusFile: null,
@@ -986,6 +1433,9 @@ function recordBounded(argv) {
     retrievalBudget,
     validationProfile,
     phaseReplayPolicy,
+    runtimeCapabilityStatus,
+    compactStatus,
+    resumeBrief,
     readiness,
     completion: {
       state: completionState,
@@ -1030,6 +1480,7 @@ function verifyEnforcement(argv) {
       violations.push('missing latest dispatch evidence at .claude/logs/workflow-enforcement/latest-dispatch.json');
     } else {
       const payload = JSON.parse(fs.readFileSync(latestDispatch, 'utf8'));
+      violations.push(...validateRuntimeReadModels(payload, latestDispatch));
       for (const key of ['planDir', 'executionMode', 'executionRoot', 'runtime']) {
         if (!payload[key]) {
           violations.push(`dispatch evidence missing '${key}'`);
@@ -1084,6 +1535,12 @@ function verifyEnforcement(argv) {
       }
     }
 
+    const ledgerPath = defaultPhaseEventLedgerPath(STATUS_FILE_DEFAULT);
+    const ledger = readPhaseEvents(ledgerPath);
+    for (const entry of ledger.errors) {
+      violations.push(`${path.relative(process.cwd(), ledgerPath)} line ${entry.line}: invalid phase event ledger entry (${entry.errors.join('; ')})`);
+    }
+
     for (const sprintContract of sprintContracts) {
       if (!fs.existsSync(sprintContract)) {
         violations.push(`missing sprint contract: ${sprintContract}`);
@@ -1095,6 +1552,7 @@ function verifyEnforcement(argv) {
           violations.push(`${sprintContract}: missing '${heading}' section`);
         }
       }
+      violations.push(...validateGoalContractForSprint(sprintContract, text));
     }
 
     for (const qaReport of qaReports) {
@@ -1308,6 +1766,7 @@ function verifyEnforcement(argv) {
   if (requiresBoundedTrace) {
     if (fs.existsSync(latestBounded)) {
       const payload = JSON.parse(fs.readFileSync(latestBounded, 'utf8'));
+      violations.push(...validateRuntimeReadModels(payload, latestBounded));
       if (payload.mode !== 'bounded-direct') {
         violations.push('bounded evidence must declare mode=bounded-direct');
       }

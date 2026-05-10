@@ -9,6 +9,25 @@ const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missin
 const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
 const DEFAULT_PHASE_REPLAY_POLICY = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
 
+function writableTempRoot() {
+  const candidates = [
+    process.env.CODEX_TMPDIR,
+    process.env.TMP,
+    process.env.TEMP,
+    process.platform === 'win32' ? 'C:\\tmp' : '/tmp',
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      fs.mkdirSync(candidate, { recursive: true });
+      fs.accessSync(candidate, fs.constants.W_OK);
+      return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return process.cwd();
+}
+
 function defaultEffortEscalationReason(profile) {
   return ['deep', 'max'].includes(String(profile || '').trim()) ? '' : 'none';
 }
@@ -480,6 +499,14 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
   const activeAtomicTask = String(state.activeAtomicTask || state.workset?.activeAtomicTask || '').trim();
   const taskStatus = String(state.workset?.status || state.workset?.taskStatus || '').trim();
   const evidenceEntries = normalizeArrayInput(state.workset?.evidence ?? []);
+  const linkedRequirementIds = normalizeArrayInput(state.workset?.linkedRequirementIds ?? []);
+  const verificationEvidenceEntries = normalizeArrayInput(state.workset?.verificationEvidence ?? evidenceEntries);
+  const acceptanceCriterionId = String(state.workset?.acceptanceCriterionId || state.acceptanceCriterionId || '').trim();
+  const parentAcceptanceCriterionId = String(state.workset?.parentAcceptanceCriterionId || state.parentAcceptanceCriterionId || '').trim();
+  const runtimeVerdict = String(state.runtime?.verdict || '').trim();
+  const derivedAcVerdict = runtimeVerdict === 'passed' || state.verdict === 'passed' ? 'passed' : '';
+  const acVerdict = String(state.workset?.acVerdict || state.acVerdict || derivedAcVerdict).trim();
+  const semanticEvaluation = state.workset?.semanticEvaluation || state.semanticEvaluation || {};
   const completedAt = state.workset?.completedAt || state.completedAt || '';
   const timestamp = state.timestamp || state.runtime?.timestamp || nowIsoSeconds();
   const logFile = String(state.logFile || state.runtime?.logFile || '').trim();
@@ -503,7 +530,7 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
         taskStart = index;
         for (let probe = index + 1; probe < lines.length; probe += 1) {
           const probeTrimmed = lines[probe].trim();
-          if (probeTrimmed.startsWith('- id:')) {
+          if (probeTrimmed.startsWith('- id:') || /^[A-Za-z][A-Za-z0-9]*:\s*/.test(lines[probe])) {
             taskEnd = probe;
             break;
           }
@@ -516,23 +543,66 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
   if (taskStart >= 0) {
     const block = lines.slice(taskStart, taskEnd);
     const nextBlock = [...block];
+    const removeFollowingListItems = (index) => {
+      while (index + 1 < nextBlock.length && /^ {6}-\s+/.test(nextBlock[index + 1])) {
+        nextBlock.splice(index + 1, 1);
+      }
+    };
     let sawStatus = false;
     let sawOwnedPaths = false;
     let sawVerificationCommands = false;
     let sawEvidence = false;
+    let sawTaskStatus = false;
+    let sawAcceptanceCriterionId = false;
+    let sawParentAcceptanceCriterionId = false;
+    let sawLinkedRequirementIds = false;
+    let sawAcVerdict = false;
+    let sawVerificationEvidence = false;
+    let sawSemanticEvaluation = false;
     let sawCompletedAt = false;
     for (let index = 0; index < nextBlock.length; index += 1) {
+      const raw = nextBlock[index];
       const stripped = nextBlock[index].trim();
-      if (stripped.startsWith('status:')) {
+      if (/^ {4}status:/.test(raw)) {
         nextBlock[index] = `    status: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`;
         sawStatus = true;
-      } else if (stripped.startsWith('ownedPaths:')) {
+      } else if (/^ {4}taskStatus:/.test(raw)) {
+        nextBlock[index] = `    taskStatus: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`;
+        sawTaskStatus = true;
+      } else if (/^ {4}acceptanceCriterionId:/.test(raw)) {
+        if (acceptanceCriterionId) {
+          nextBlock[index] = `    acceptanceCriterionId: ${yamlQuote(acceptanceCriterionId)}`;
+        }
+        sawAcceptanceCriterionId = true;
+      } else if (/^ {4}parentAcceptanceCriterionId:/.test(raw)) {
+        if (parentAcceptanceCriterionId) {
+          nextBlock[index] = `    parentAcceptanceCriterionId: ${yamlQuote(parentAcceptanceCriterionId)}`;
+        }
+        sawParentAcceptanceCriterionId = true;
+      } else if (/^ {4}linkedRequirementIds:/.test(raw)) {
+        if (linkedRequirementIds.length > 0) {
+          nextBlock[index] = `    linkedRequirementIds: [${linkedRequirementIds.map((value) => yamlQuote(value)).join(', ')}]`;
+          removeFollowingListItems(index);
+        }
+        sawLinkedRequirementIds = true;
+      } else if (/^ {4}acVerdict:/.test(raw)) {
+        nextBlock[index] = `    acVerdict: ${yamlQuote(acVerdict || 'pending')}`;
+        sawAcVerdict = true;
+      } else if (/^ {4}verificationEvidence:/.test(raw)) {
+        nextBlock[index] = `    verificationEvidence: [${verificationEvidenceEntries.map((value) => yamlQuote(value)).join(', ')}]`;
+        removeFollowingListItems(index);
+        sawVerificationEvidence = true;
+      } else if (/^ {4}semanticEvaluation:/.test(raw)) {
+        sawSemanticEvaluation = true;
+      } else if (/^ {4}ownedPaths:/.test(raw)) {
         nextBlock[index] = `    ownedPaths: [${changedFiles.map((value) => yamlQuote(value)).join(', ')}]`;
+        removeFollowingListItems(index);
         sawOwnedPaths = true;
-      } else if (stripped.startsWith('verificationCommands:')) {
+      } else if (/^ {4}verificationCommands:/.test(raw)) {
         nextBlock[index] = `    verificationCommands: [${verificationCommands.map((value) => yamlQuote(value)).join(', ')}]`;
+        removeFollowingListItems(index);
         sawVerificationCommands = true;
-      } else if (stripped.startsWith('evidence:')) {
+      } else if (/^ {4}evidence:/.test(raw)) {
         const evidence = [
           verdictPath ? `Structured verdict: ${path.relative(process.cwd(), verdictPath).replace(/\\/g, '/')}` : '',
           logFile ? `Runner log: ${logFile}` : '',
@@ -541,8 +611,9 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
           ...evidenceEntries,
         ].filter(Boolean);
         nextBlock[index] = `    evidence: [${evidence.map((value) => yamlQuote(value)).join(', ')}]`;
+        removeFollowingListItems(index);
         sawEvidence = true;
-      } else if (stripped.startsWith('completedAt:')) {
+      } else if (/^ {4}completedAt:/.test(raw)) {
         const nextCompletedAt = taskStatus === 'completed' || runtimeStatus === 'completed'
           ? (completedAt || nowIsoSeconds())
           : completedAt;
@@ -553,6 +624,29 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
 
     if (!sawStatus) {
       nextBlock.push(`    status: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`);
+    }
+    if (!sawTaskStatus) {
+      nextBlock.push(`    taskStatus: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`);
+    }
+    if (!sawAcceptanceCriterionId && acceptanceCriterionId) {
+      nextBlock.push(`    acceptanceCriterionId: ${yamlQuote(acceptanceCriterionId)}`);
+    }
+    if (!sawParentAcceptanceCriterionId && parentAcceptanceCriterionId) {
+      nextBlock.push(`    parentAcceptanceCriterionId: ${yamlQuote(parentAcceptanceCriterionId)}`);
+    }
+    if (!sawLinkedRequirementIds) {
+      nextBlock.push(`    linkedRequirementIds: [${linkedRequirementIds.map((value) => yamlQuote(value)).join(', ')}]`);
+    }
+    if (!sawAcVerdict) {
+      nextBlock.push(`    acVerdict: ${yamlQuote(acVerdict || 'pending')}`);
+    }
+    if (!sawVerificationEvidence) {
+      nextBlock.push(`    verificationEvidence: [${verificationEvidenceEntries.map((value) => yamlQuote(value)).join(', ')}]`);
+    }
+    if (!sawSemanticEvaluation) {
+      nextBlock.push('    semanticEvaluation:');
+      nextBlock.push(`      status: ${yamlQuote(semanticEvaluation.status || 'not_run')}`);
+      nextBlock.push(`      reason: ${yamlQuote(semanticEvaluation.reason || 'out_of_scope_for_phase_03')}`);
     }
     if (!sawOwnedPaths) {
       nextBlock.push(`    ownedPaths: [${changedFiles.map((value) => yamlQuote(value)).join(', ')}]`);
@@ -1078,12 +1172,26 @@ function replaceInlineYamlArray(text, key, values) {
   return text;
 }
 
+function replaceOrInsertTaskScalar(text, key, value, insertAfterKey = 'status') {
+  const scalarPattern = new RegExp(`^(\\s*)${key}:\\s*.*$`, 'm');
+  if (scalarPattern.test(text)) {
+    return text.replace(scalarPattern, `$1${key}: ${yamlQuote(value)}`);
+  }
+  const anchorPattern = new RegExp(`^(\\s*)${insertAfterKey}:\\s*.*$`, 'm');
+  if (anchorPattern.test(text)) {
+    return text.replace(anchorPattern, `$&\n$1${key}: ${yamlQuote(value)}`);
+  }
+  return text;
+}
+
 function updateWorksetsFromVerdict(worksetsPath, verdictPayload, verdictPath, logFile) {
   if (!worksetsPath || !fs.existsSync(worksetsPath)) {
     return;
   }
   let text = fs.readFileSync(worksetsPath, 'utf8');
   text = text.replace(/status:\s*(in_progress|pending)\b/, 'status: completed');
+  text = replaceOrInsertTaskScalar(text, 'taskStatus', 'completed');
+  text = replaceOrInsertTaskScalar(text, 'acVerdict', 'passed', 'taskStatus');
   text = text.replace(/completedAt:\s*null\b/, `completedAt: ${yamlQuote(nowIsoSeconds())}`);
 
   const changedFiles = Array.isArray(verdictPayload.changedFiles) ? verdictPayload.changedFiles : [];
@@ -1103,6 +1211,7 @@ function updateWorksetsFromVerdict(worksetsPath, verdictPayload, verdictPath, lo
   text = replaceInlineYamlArray(text, 'ownedPaths', changedFiles);
   text = replaceInlineYamlArray(text, 'verificationCommands', verificationCommands);
   text = replaceInlineYamlArray(text, 'evidence', evidence);
+  text = replaceInlineYamlArray(text, 'verificationEvidence', evidence);
   fs.writeFileSync(worksetsPath, text.endsWith('\n') ? text : `${text}\n`, 'utf8');
 }
 
@@ -1755,7 +1864,7 @@ function writeCleanFinishHandoff({
 }
 
 function runSelfTest() {
-  const tempDir = fs.mkdtempSync(path.join('/tmp', 'phase-artifacts-'));
+  const tempDir = fs.mkdtempSync(path.join(writableTempRoot(), 'phase-artifacts-'));
   try {
     const phaseDoc = path.join(tempDir, 'phase.md');
     fs.writeFileSync(phaseDoc, '# Fixture phase\n', 'utf8');
@@ -2099,6 +2208,15 @@ function runSelfTest() {
       workset: {
         activeAtomicTask: 'AT-01',
         status: 'completed',
+        taskStatus: 'completed',
+        acceptanceCriterionId: 'AC-001',
+        linkedRequirementIds: ['REQ-001'],
+        acVerdict: 'passed',
+        verificationEvidence: ['AC-001 verified by fixture self-test'],
+        semanticEvaluation: {
+          status: 'not_run',
+          reason: 'fixture',
+        },
         ownedPaths: ['.claude/scripts/agent-loop-phase-artifacts.mjs', '.claude/scripts/agent-loop-phase-plan-lib.mjs'],
         verificationCommands: ['node .claude/scripts/agent-loop-phase-artifacts.mjs self-test'],
         evidence: ['structured sync fixture'],
@@ -2112,23 +2230,40 @@ function runSelfTest() {
     };
 
     syncPhaseArtifacts(structuredState);
-    const structuredFirstPass = [
-      fs.readFileSync(qaReportPath, 'utf8'),
-      fs.readFileSync(scorecardPath, 'utf8'),
-      fs.readFileSync(handoffPath, 'utf8'),
-      fs.readFileSync(worksetsPath, 'utf8'),
-    ].join('\n--\n');
+    const structuredFirstPassArtifacts = {
+      qa: fs.readFileSync(qaReportPath, 'utf8'),
+      scorecard: fs.readFileSync(scorecardPath, 'utf8'),
+      handoff: fs.readFileSync(handoffPath, 'utf8'),
+      worksets: fs.readFileSync(worksetsPath, 'utf8'),
+    };
 
     syncPhaseArtifacts(structuredState);
-    const structuredSecondPass = [
-      fs.readFileSync(qaReportPath, 'utf8'),
-      fs.readFileSync(scorecardPath, 'utf8'),
-      fs.readFileSync(handoffPath, 'utf8'),
-      fs.readFileSync(worksetsPath, 'utf8'),
-    ].join('\n--\n');
-
-    if (structuredFirstPass !== structuredSecondPass) {
-      throw new Error('structured artifact sync writer is not idempotent');
+    const structuredSecondPassArtifacts = {
+      qa: fs.readFileSync(qaReportPath, 'utf8'),
+      scorecard: fs.readFileSync(scorecardPath, 'utf8'),
+      handoff: fs.readFileSync(handoffPath, 'utf8'),
+      worksets: fs.readFileSync(worksetsPath, 'utf8'),
+    };
+    const changedArtifactNames = Object.keys(structuredFirstPassArtifacts)
+      .filter((key) => structuredFirstPassArtifacts[key] !== structuredSecondPassArtifacts[key]);
+    if (changedArtifactNames.length > 0) {
+      if (changedArtifactNames.includes('worksets')) {
+        const firstLines = structuredFirstPassArtifacts.worksets.split(/\r?\n/);
+        const secondLines = structuredSecondPassArtifacts.worksets.split(/\r?\n/);
+        const diffIndex = firstLines.findIndex((line, index) => line !== secondLines[index]);
+        const firstLine = firstLines[diffIndex] || '';
+        const secondLine = secondLines[diffIndex] || '';
+        throw new Error(`structured artifact sync writer is not idempotent: worksets line ${diffIndex + 1}: ${firstLine} != ${secondLine}`);
+      }
+      throw new Error(`structured artifact sync writer is not idempotent: ${changedArtifactNames.join(', ')}`);
+    }
+    const syncedWorksets = fs.readFileSync(worksetsPath, 'utf8');
+    if (
+      !syncedWorksets.includes('acceptanceCriterionId: "AC-001"')
+      || !syncedWorksets.includes('acVerdict: "passed"')
+      || !syncedWorksets.includes('verificationEvidence: ["AC-001 verified by fixture self-test"]')
+    ) {
+      throw new Error('structured artifact sync did not project AC-linked WORKSETS fields');
     }
 
     writeStdoutLine('agent-loop-phase-artifacts self-test passed');

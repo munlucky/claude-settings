@@ -33,8 +33,28 @@ import {
   verdictInternallyConsistent,
   verdictPassed,
 } from './lib/phase-closeout-verdict.mjs';
+import {
+  comparePhaseReplayToReadModel,
+  defaultPhaseEventLedgerPath,
+} from './lib/phase-event-ledger.mjs';
 
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
+const SEMANTIC_TRIGGER_TERMS = [
+  'ac ambiguity',
+  'scope drift',
+  'architecture risk',
+  'security risk',
+  'auth risk',
+  'payment risk',
+  'repeated failure',
+  'user value unclear',
+];
+const CONSENSUS_TRIGGER_TERMS = [
+  'contract reinterpretation',
+  'high-risk security',
+  'high-risk architecture',
+  'evaluator disagreement',
+];
 
 function usage() {
   return [
@@ -101,6 +121,72 @@ function parseArgs(argv) {
 
 function addViolation(violations, code, message, phaseNumber = null) {
   violations.push({ code, message, phaseNumber, failureClass: classifyHarnessViolation(code) });
+}
+
+function extractBulletValue(text, heading, label) {
+  const lines = text.split(/\r?\n/);
+  let inSection = false;
+  const prefix = `- ${label}:`;
+  for (const line of lines) {
+    if (line.trim() === heading) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && line.startsWith('## ')) {
+      break;
+    }
+    if (inSection && line.trim().startsWith(prefix)) {
+      return line.trim().split(':', 2)[1]?.trim() ?? '';
+    }
+  }
+  return '';
+}
+
+function hasSection(text, heading) {
+  return text.split(/\r?\n/).some((line) => line.trim() === heading);
+}
+
+function addEvaluationTriggerViolations(violations, text, phaseNumber) {
+  const normalized = text.toLowerCase();
+  const skippedMechanical = extractBulletValue(text, '## Evaluation Trigger Evidence', 'Skipped mechanical checks')
+    || extractBulletValue(text, '## Runtime Updates', 'Skipped mechanical checks');
+  const validationProfile = extractBulletValue(text, '## Workflow Execution', 'Validation profile').toLowerCase();
+  const mechanicalFailed = /mechanical (checks?|gate|verification)\s*:\s*(failed|fail|blocked)/i.test(text);
+  const semanticCleanPass = /semantic evaluation\s*:\s*(pass|passed|clean_pass|clean pass)/i.test(text);
+  const consensusCleanPass = /consensus evaluation\s*:\s*(pass|passed|clean_pass|clean pass)/i.test(text);
+
+  if (!hasSection(text, '## Evaluation Trigger Evidence')) {
+    addViolation(violations, 'evaluation-trigger-evidence-missing', `Completed phase ${phaseNumber} is missing Evaluation Trigger Evidence.`, phaseNumber);
+    return;
+  }
+  for (const term of SEMANTIC_TRIGGER_TERMS) {
+    if (!normalized.includes(term)) {
+      addViolation(violations, 'semantic-trigger-missing', `Completed phase ${phaseNumber} is missing semantic trigger '${term}'.`, phaseNumber);
+    }
+  }
+  for (const term of CONSENSUS_TRIGGER_TERMS) {
+    if (!normalized.includes(term)) {
+      addViolation(violations, 'consensus-trigger-missing', `Completed phase ${phaseNumber} is missing consensus trigger '${term}'.`, phaseNumber);
+    }
+  }
+  if (mechanicalFailed && (semanticCleanPass || consensusCleanPass)) {
+    addViolation(violations, 'mechanical-first-gate-bypassed', `Completed phase ${phaseNumber} allows semantic/consensus pass to override mechanical failure.`, phaseNumber);
+  }
+  if (validationProfile && !['prompt_only', 'docs_only'].includes(validationProfile)) {
+    const normalizedSkips = skippedMechanical.trim().toLowerCase();
+    if (normalizedSkips && !['none', 'no', 'n/a', '[]'].includes(normalizedSkips)) {
+      addViolation(violations, 'mechanical-skip-policy-blocking', `Completed phase ${phaseNumber} has skipped mechanical checks under ${validationProfile}.`, phaseNumber);
+    }
+  }
+  if (/verification override\s*:\s*(unknown|untrusted|not_allowed|blocked)/i.test(text)) {
+    addViolation(violations, 'verification-override-not-allowlisted', `Completed phase ${phaseNumber} has a non-allowlisted verification override.`, phaseNumber);
+  }
+  if (
+    /qa backend matrix/i.test(text)
+    && /(browser|a11y|visual|performance)[^\n]*\b(required|mandatory)\b[^\n]*\b(missing|unavailable|blocked)\b/i.test(text)
+  ) {
+    addViolation(violations, 'qa-backend-required-missing', `Completed phase ${phaseNumber} is missing required QA backend evidence.`, phaseNumber);
+  }
 }
 
 function readJsonIfExists(filePath) {
@@ -288,9 +374,16 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     const phaseDocText = archivedPath && fs.existsSync(archivedPath) ? readText(archivedPath) : '';
     const scenarios = parseCriticalScenarios(phaseDocText);
     const evidenceText = artifactTexts.join('\n');
+    const phaseDeclaresEvaluationPipeline = /Evaluation Trigger Pipeline/i.test(phase.title || '')
+      || /(^|\n)#\s*Phase\s+\d+:\s*Evaluation Trigger Pipeline\b/i.test(phaseDocText)
+      || /(^|\n)phaseCapability:\s*evaluation-trigger-pipeline\b/i.test(phaseDocText);
 
     if (phaseDocText && scenarios.length === 0 && hasConcreteSourceTargets(phaseDocText)) {
       addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} has implementation targets but no Critical Product Scenarios.`, phaseNumber);
+    }
+
+    if (phaseDeclaresEvaluationPipeline) {
+      addEvaluationTriggerViolations(violations, evidenceText, phaseNumber);
     }
 
     for (const scenarioId of scenarios) {
@@ -345,6 +438,15 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     }
     if (!traceabilityArtifactValid(scenarioPath, /\bSCN-[A-Za-z0-9_.-]+\b/)) {
       addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), scenarioPath || 'SCENARIO_MATRIX.md')} with verified SCN-* coverage.`, phaseNumber);
+    }
+
+    const replayCheck = comparePhaseReplayToReadModel({
+      ledgerPath: defaultPhaseEventLedgerPath(statusPath),
+      statusFile: statusPath,
+      phaseNumber,
+    });
+    for (const violation of replayCheck.violations) {
+      addViolation(violations, violation.code, violation.message, phaseNumber);
     }
   }
 

@@ -91,11 +91,22 @@ export function evaluateCompletedWorksets(phaseExecutionDir) {
     return { ok: false, reason: 'atomic-ledger-empty', detail: `${path.relative(process.cwd(), worksetsPath)} has no atomicTasks.` };
   }
   for (const task of ledger.tasks) {
-    if (task.status !== 'completed') {
-      return { ok: false, reason: 'atomic-tasks-incomplete', detail: `${task.id || 'atomic task'} status is ${task.status || 'missing'}.` };
+    const taskStatus = task.taskStatus || task.status;
+    if (taskStatus !== 'completed') {
+      return { ok: false, reason: 'atomic-tasks-incomplete', detail: `${task.id || 'atomic task'} taskStatus is ${taskStatus || 'missing'}.` };
     }
     if (task.ownedPaths.length === 0 || task.verificationCommands.length === 0 || task.evidence.length === 0) {
       return { ok: false, reason: 'atomic-task-evidence-missing', detail: `${task.id || 'atomic task'} lacks ownedPaths, verificationCommands, or evidence.` };
+    }
+    const acVerdict = String(task.acVerdict || '').trim().toLowerCase();
+    if (task.acceptanceCriterionId && ['fail', 'failed', 'blocked', 'rejected'].includes(acVerdict)) {
+      return { ok: false, reason: 'atomic-task-ac-verdict-failed', detail: `${task.id || 'atomic task'} AC verdict is ${task.acVerdict || 'missing'}.` };
+    }
+    if (task.acceptanceCriterionId && !['pass', 'passed', 'verified', 'done', 'not_applicable'].includes(acVerdict)) {
+      return { ok: false, reason: 'atomic-task-ac-verdict-incomplete', detail: `${task.id || 'atomic task'} AC verdict is ${task.acVerdict || 'missing'}.` };
+    }
+    if (task.acceptanceCriterionId && acVerdict !== 'not_applicable' && task.verificationEvidence.length === 0) {
+      return { ok: false, reason: 'atomic-task-ac-evidence-missing', detail: `${task.id || 'atomic task'} lacks AC verificationEvidence.` };
     }
   }
   return { ok: true, reason: 'ok', detail: '' };
