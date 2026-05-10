@@ -9,7 +9,7 @@ import {
 function buildVerdictIdentity({ phase = {}, statusRoot = {}, statusPath = '', planDir = '', masterPlan = '' } = {}) {
   return {
     runLeaseId: statusRoot.activeRunLeaseId || statusRoot.lastRunLeaseId || '',
-    activePhaseDocPath: phase.plan || phase.phaseDocPath || phase.docPath || '',
+    activePhaseDocPath: phase.archivedPhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '',
     masterPlan: masterPlan ? path.resolve(masterPlan) : '',
     planDir: planDir ? path.resolve(planDir) : '',
     statusFile: statusPath ? path.resolve(statusPath) : '',

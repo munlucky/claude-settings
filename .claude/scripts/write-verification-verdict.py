@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -96,6 +97,19 @@ def compute_git_tree_fingerprint(root: str) -> str:
         return ""
 
     return result.stdout.strip()
+
+
+def validate_identity_guard(args) -> tuple[bool, list[str]]:
+    identity_fields = {
+        "runLeaseId": args.run_lease_id,
+        "planDir": args.plan_dir,
+        "statusFile": args.status_file,
+    }
+    provided = [key for key, value in identity_fields.items() if str(value or "").strip()]
+    if provided and len(provided) != len(identity_fields):
+        missing = [key for key in identity_fields if key not in provided]
+        return False, missing
+    return True, []
 
 
 def infer_blocker_class(reason_code: str, failure_class: str, blocking: bool, verdict: str, missing_checks = None) -> str:
@@ -206,6 +220,21 @@ def main() -> int:
         default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
     args = parser.parse_args()
+
+    identity_valid, identity_missing = validate_identity_guard(args)
+    if not identity_valid:
+        print(
+            json.dumps(
+                {
+                    "error": "partial_identity",
+                    "message": "Identity fields must be supplied together or omitted together.",
+                    "missing": identity_missing,
+                },
+                ensure_ascii=True,
+            ),
+            file=sys.stderr,
+        )
+        return 64
 
     phase_title = args.phase_title or f"Phase {args.phase_number}"
     active_phase_doc_path = args.active_phase_doc_path or "."

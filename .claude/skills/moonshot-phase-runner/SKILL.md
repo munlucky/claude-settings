@@ -97,8 +97,11 @@ Review and finish gate rule:
 - For code-changing phases, `codex-review-code` must appear in applied workflow evidence before `clean_finish` is allowed.
 - `QA_REPORT.md` may not claim `Next path: clean_finish` while `Review completed` is still `no`.
 - `HANDOFF.md` and closeout fields may not remain seeded or placeholder-shaped when the phase is being closed.
-- Before a plan-directory completion summary, run `node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir <plan-dir> --master-plan <master-plan>` and block return if it fails.
-- Before a plan-directory success return, run `node .claude/scripts/phase-final-git-closeout.mjs assert-clean --plan-dir <plan-dir> --status-file <status-file>` and block return if main has uncommitted non-runtime changes or phase worktrees under `.tmp/harness-worktrees/phase-runs` / `.tmp/harness-worktrees/phase-waves` remain dirty.
+- Before a plan-directory completion summary, run the single closeout entrypoint:
+  `node .claude/scripts/phase-closeout-finalize.mjs finalize --phase <NN> --status-file .claude/docs/phase-status.yaml --plan-dir <plan-dir> --master-plan <master-plan> --execution-root <execution-root> --json`.
+- Use `phase-closeout-finalize.mjs finalize --dry-run --json` before mutating state when a session already shows conflicting `phase-status.yaml`, workflow JSON, verdict, or traceability evidence.
+- `phase-closeout-finalize.mjs` owns canonical final verdict creation, phase-status root reconciliation, workflow state reconciliation, goal runtime close, traceability/scenario placeholder generation, closeout verification, and Git closeout preflight. Do not run these steps as separate ad-hoc closeout decisions unless debugging the finalizer itself.
+- Before a plan-directory success return, the finalizer's phase closeout gate must pass, then `node .claude/scripts/phase-final-git-closeout.mjs assert-clean --plan-dir <plan-dir> --status-file <status-file>` must pass after any finalizer writes are committed or intentionally staged.
 - Phase closeout requires master checklist, `phase-status.yaml`, archived phase document paths, execution artifacts, verifier verdicts, scorecards, and critical `SCN-*` evidence to agree.
 - If review or closeout evidence is missing, the run must stay inside the active plan-directory loop and remediate the missing steps instead of returning a summary.
 
