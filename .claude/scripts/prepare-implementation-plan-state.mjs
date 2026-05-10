@@ -124,6 +124,123 @@ function listPhaseDocs(planDir) {
     });
 }
 
+function comparablePath(filePath) {
+  const resolved = path.resolve(filePath);
+  const normalized = normalizePath(resolved);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function stripMarkdownAnchor(value) {
+  return String(value || '').split('#')[0].trim();
+}
+
+function resolveMasterPhaseReference(candidate, masterPlan, planDir) {
+  const stripped = stripMarkdownAnchor(candidate).replace(/\\/g, '/');
+  if (!stripped || stripped.includes('*') || /^[a-z]+:\/\//i.test(stripped)) {
+    return null;
+  }
+
+  if (path.isAbsolute(stripped)) {
+    return path.resolve(stripped);
+  }
+
+  if (/^(?:docs|\.claude)\//i.test(stripped)) {
+    return resolveFromCwd(stripped);
+  }
+
+  if (/^(?:\.\/)?[0-9]{2}-/i.test(stripped)) {
+    return path.resolve(planDir, stripped.replace(/^\.\//, ''));
+  }
+
+  return path.resolve(path.dirname(masterPlan), stripped);
+}
+
+function extractMasterPlanPhaseReferences(masterPlan, planDir) {
+  if (!fs.existsSync(masterPlan)) {
+    return [];
+  }
+
+  const text = fs.readFileSync(masterPlan, 'utf8');
+  const candidates = [];
+  const patterns = [
+    /`([^`\r\n]+\.md(?:#[^`\r\n]+)?)`/g,
+    /\(([^)\r\n]+\.md(?:#[^)\r\n]+)?)\)/g,
+    /(?:^|[\s|])((?:\.\/)?[0-9]{2}-[^\s|`)]*\.md(?:#[^\s|`)]*)?)(?=$|[\s|])/gm,
+    /(?:^|[\s|])((?:docs|\.claude)\/[^\s|`)]*\/[0-9]{2}-[^\s|`)]*\.md(?:#[^\s|`)]*)?)(?=$|[\s|])/gim,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      candidates.push(match[1]);
+    }
+  }
+
+  const planDirKey = comparablePath(planDir);
+  const refs = new Map();
+  for (const candidate of candidates) {
+    const resolved = resolveMasterPhaseReference(candidate, masterPlan, planDir);
+    if (!resolved) {
+      continue;
+    }
+    const basename = path.basename(resolved);
+    if (!/^[0-9]{2}-.*\.md$/i.test(basename) || /^00-/i.test(basename)) {
+      continue;
+    }
+    if (comparablePath(path.dirname(resolved)) !== planDirKey) {
+      continue;
+    }
+    refs.set(comparablePath(resolved), resolved);
+  }
+
+  return [...refs.values()].sort((left, right) => displayPath(left).localeCompare(displayPath(right)));
+}
+
+function validatePhaseInventoryAgainstMasterPlan(masterPlan, planDir, phases) {
+  const referencedPhaseDocs = extractMasterPlanPhaseReferences(masterPlan, planDir);
+  if (referencedPhaseDocs.length === 0) {
+    return {
+      checked: false,
+      referencedPhaseDocs: [],
+      rootPhaseDocs: phases.map((phase) => phase.filePath),
+      missingFromRoot: [],
+      extraInRoot: [],
+    };
+  }
+
+  const referencedByPath = new Map(referencedPhaseDocs.map((filePath) => [comparablePath(filePath), filePath]));
+  const rootByPath = new Map(phases.map((phase) => [comparablePath(phase.filePath), phase.filePath]));
+  const missingFromRoot = [...referencedByPath.entries()]
+    .filter(([key]) => !rootByPath.has(key))
+    .map(([, filePath]) => filePath);
+  const extraInRoot = [...rootByPath.entries()]
+    .filter(([key]) => !referencedByPath.has(key))
+    .map(([, filePath]) => filePath);
+
+  if (missingFromRoot.length > 0 || extraInRoot.length > 0) {
+    const details = [
+      'phase doc inventory mismatch: prepare-implementation-plan-state uses the plan-root NN-*.md file set as runner input, but the selected master plan references a different phase set.',
+      `masterPlan: ${displayPath(masterPlan)}`,
+      `planDir: ${displayPath(planDir)}`,
+    ];
+    if (extraInRoot.length > 0) {
+      details.push(`extra root phase docs: ${extraInRoot.map(displayPath).join(', ')}`);
+    }
+    if (missingFromRoot.length > 0) {
+      details.push(`missing root phase docs: ${missingFromRoot.map(displayPath).join(', ')}`);
+    }
+    details.push('Archive, move, or update stale root phase docs, then rerun prepare-implementation-plan-state.mjs --dry-run before execution.');
+    throw new Error(details.join('\n'));
+  }
+
+  return {
+    checked: true,
+    referencedPhaseDocs,
+    rootPhaseDocs: phases.map((phase) => phase.filePath),
+    missingFromRoot,
+    extraInRoot,
+  };
+}
+
 function makeArchiveLabel(masterPlan) {
   const date = new Date().toISOString().slice(0, 10);
   const masterSlug = planSlugFromMasterPlan(masterPlan);
@@ -344,6 +461,7 @@ function prepareImplementationPlanState(options) {
   const executionDir = path.join(planDir, 'execution');
   const closeDir = path.join(planDir, 'close');
   const phases = listPhaseDocs(planDir);
+  const phaseInventoryCheck = validatePhaseInventoryAgainstMasterPlan(masterPlan, planDir, phases);
   const preparedAt = new Date().toISOString();
   const statusContent = renderStatus({ masterPlan, executionRoot, phases, preparedAt });
   const workflowPointers = collectWorkflowPointerState({
@@ -402,6 +520,13 @@ function prepareImplementationPlanState(options) {
     executionRoot: displayPath(executionRoot),
     archiveRoot: displayPath(archiveRoot),
     phases: phases.length,
+    phaseInventoryCheck: {
+      checked: phaseInventoryCheck.checked,
+      rootPhaseDocs: phaseInventoryCheck.rootPhaseDocs.map(displayPath),
+      masterPlanPhaseRefs: phaseInventoryCheck.referencedPhaseDocs.map(displayPath),
+      missingFromRoot: phaseInventoryCheck.missingFromRoot.map(displayPath),
+      extraInRoot: phaseInventoryCheck.extraInRoot.map(displayPath),
+    },
     pointerSelfCheck: workflowPointers.map((pointer) => ({
       path: displayPath(pointer.path),
       action: pointer.action,

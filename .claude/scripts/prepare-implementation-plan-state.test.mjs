@@ -72,6 +72,83 @@ test('dry-run reports actions without moving or rewriting files', () => {
   });
 });
 
+test('prepare fails when root phase docs do not match selected master plan references', () => {
+  const previousCwd = process.cwd();
+  const root = fs.mkdtempSync(tempPrefix('plan-state-phase-mismatch-'));
+  try {
+    process.chdir(root);
+    fs.mkdirSync(path.join(root, 'docs/implementation'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'docs/implementation/00-master-plan-v16.md'),
+      [
+        '# Master v16',
+        '',
+        '| Phase | Plan File |',
+        '| --- | --- |',
+        '| 13 | `docs/implementation/13-new-plan-v16.md` |',
+        '| 14 | `docs/implementation/14-new-plan-v16.md` |',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    fs.writeFileSync(path.join(root, 'docs/implementation/09-old-plan-v15.md'), '# Old Phase\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'docs/implementation/13-new-plan-v16.md'), '# New Phase 13\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'docs/implementation/14-new-plan-v16.md'), '# New Phase 14\n', 'utf8');
+
+    assert.throws(() => {
+      prepareImplementationPlanState({
+        planDir: 'docs/implementation',
+        masterPlan: 'docs/implementation/00-master-plan-v16.md',
+        dryRun: true,
+      });
+    }, /extra root phase docs: docs\/implementation\/09-old-plan-v15\.md/);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('dry-run reports matching master references and root phase docs', () => {
+  const previousCwd = process.cwd();
+  const root = fs.mkdtempSync(tempPrefix('plan-state-phase-match-'));
+  try {
+    process.chdir(root);
+    fs.mkdirSync(path.join(root, 'docs/implementation'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'docs/implementation/00-master-plan-v16.md'),
+      [
+        '# Master v16',
+        '',
+        '- [ ] Phase 13 - New Plan (`docs/implementation/13-new-plan-v16.md`)',
+        '- [ ] Phase 14 - Next Plan (`14-new-plan-v16.md`)',
+        '| `13-*.md` through `14-*.md` | active-current summary, not concrete phase docs |',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    fs.writeFileSync(path.join(root, 'docs/implementation/13-new-plan-v16.md'), '# New Phase 13\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'docs/implementation/14-new-plan-v16.md'), '# New Phase 14\n', 'utf8');
+
+    const result = prepareImplementationPlanState({
+      planDir: 'docs/implementation',
+      masterPlan: 'docs/implementation/00-master-plan-v16.md',
+      dryRun: true,
+    });
+
+    assert.equal(result.phases, 2);
+    assert.equal(result.phaseInventoryCheck.checked, true);
+    assert.deepEqual(result.phaseInventoryCheck.extraInRoot, []);
+    assert.deepEqual(result.phaseInventoryCheck.missingFromRoot, []);
+    assert.deepEqual(result.phaseInventoryCheck.masterPlanPhaseRefs, [
+      'docs/implementation/13-new-plan-v16.md',
+      'docs/implementation/14-new-plan-v16.md',
+    ]);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('default execution root uses the selected master plan slug', () => {
   withPlanFixture((root) => {
     const result = prepareImplementationPlanState({

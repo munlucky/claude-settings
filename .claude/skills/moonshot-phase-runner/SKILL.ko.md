@@ -93,11 +93,18 @@ MemoryGraph 단계 규칙:
 후보가 여러 개이고 active plan이 명확하지 않으면 추측하지 말고 사용자에게 물어야 합니다.
 `<plan-dir>/close/` 아래의 archived phase 문서는 이력이며 active phase 후보로 세지지 않습니다.
 
+Phase 탐색 truth source:
+- runner는 active phase를 비재귀 `<plan-dir>/NN-*.md` 파일셋에서 탐색하며 `00-*`는 제외합니다.
+- master plan의 phase index는 필수 일관성 계약이지 탐색 source가 아닙니다.
+- 선택된 master plan이 13-16만 참조해도 root에 오래된 09-12가 남아 있으면, archive/이동/명시적 reconcile 전까지 실행 가능한 package는 8개 phase로 잡힙니다.
+
 ## Step 2: 계획 디렉토리 검증
 
 - 디렉토리 존재 확인
 - master plan 찾기
-- phase 문서 개수 확인
+- 비재귀 root `NN-*.md` phase 문서 개수 확인 (`00-*` 제외)
+- 선택된 master plan의 phase 링크/체크리스트와 root `NN-*.md` 파일셋 대조
+- stale execution 또는 root phase 문서가 있을 수 있으면 dispatch 전에 `prepare-implementation-plan-state.mjs --dry-run` 실행
 
 ## Step 3: phase-status.yaml 생성
 

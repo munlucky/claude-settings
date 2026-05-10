@@ -45,6 +45,9 @@ It is the main Plan-stage owner for phase documents.
 2. Inventory and organize existing implementation/work-document context before writing.
    - Read root-level `*.md` files (non-recursive).
    - Read `docs/implementation/*.md`.
+   - Treat the non-recursive `<plan-dir>/NN-*.md` file set as the runner's active phase source of truth, excluding `00-*` and `<plan-dir>/close/*`.
+   - Compare the selected master plan's phase links/checklist against the active root `NN-*.md` file set before creating or refreshing files.
+   - If stale root phase docs would be picked up by the runner, archive or move them through a preservation step before preparing execution; do not leave them in the root because the new master plan omits them.
    - If configured `documentPaths.tasksRoot` exists, inspect task directories non-recursively for related work documents that may duplicate or supersede the requested plan.
    - Identify current master plan filename (`00-master-plan-v*.md` preferred).
    - Classify discovered plan/work documents as `active-current`, `active-ambiguous`, `superseded`, `overlapping-draft`, `runtime-evidence`, or `unrelated`.
@@ -96,6 +99,7 @@ It is the main Plan-stage owner for phase documents.
    - Do not touch `.claude/scripts`, `.claude/runtime-state.sqlite`, `.claude/memory.json`, `.claude/verification.contract.yaml`, project settings, or verification baselines during this preparation step.
    - After preparation, run a pointer self-check before dispatch:
      - The rewritten `phase-status.yaml` must point to the selected master plan and execution root, mark phase 1 pending/prepared, and list only the current plan's phase docs.
+     - The dry-run summary's `phaseInventoryCheck` must either pass with matching `rootPhaseDocs` and `masterPlanPhaseRefs`, or record that the master plan has no explicit phase references; any `extraInRoot` or `missingFromRoot` item is a preparation failure.
      - `current-run.json`, `active-phase-run.json`, and `latest-dispatch.json` must be absent/archived or reference the selected master plan and execution root at both top level and embedded `phaseRunLease`.
      - `goalRuntime.status` must not be `complete` while any actionable phase remains pending, in_progress, blocked, or retryable.
      - Remaining/actionable phase counts must match the master checklist and phase-status phase list.
@@ -255,6 +259,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Do not declare a phase ready when files, commands, expected signals, blocker conditions, or evidence paths are still implicit.
 - Do not declare a phase parallel-ready when `ownedPaths`, dependency edges, conflict edges, and manual-evidence requirements are implicit.
 - Do not start `moonshot-phase-runner` when workflow-enforcement active pointers reference a superseded plan package; archive/rewrite them during plan preparation first.
+- Do not treat master plan creation as sufficient execution readiness. Runnable readiness requires root phase-doc inventory cleanup, `prepare-implementation-plan-state.mjs --dry-run`, and a phase count that matches the selected package.
 
 ## Phase Runner Integration
 

@@ -199,6 +199,11 @@ When `<plan-dir>` is omitted, resolve it in this order:
 
 Archived phase docs under `<plan-dir>/close/` are history, not active phase candidates.
 
+Phase discovery truth source:
+- The runner discovers active phases from the non-recursive `<plan-dir>/NN-*.md` file set, excluding `00-*`.
+- The master plan phase index is a required consistency contract, not the discovery source.
+- If the selected master plan references phases 13-16 but root still contains stale phases 09-12, the runnable package has 8 active phases until those stale root docs are archived, moved, or explicitly reconciled.
+
 Safety rule:
 - If multiple candidate plan directories exist and there is no clear active one, stop and ask the user instead of guessing.
 
@@ -217,11 +222,13 @@ planResolution:
 validation:
   - Check directory exists
   - Find master plan (00-master-plan.md or *master*.md)
-  - Count phase documents
+  - Count non-recursive root phase documents matching NN-*.md, excluding 00-*
+  - Compare the selected master plan's phase links/checklist against the root NN-*.md file set
+  - Run prepare-implementation-plan-state.mjs --dry-run before dispatch when stale execution or root phase documents may exist
 
 output:
   success: "✅ Found {N} phases in {plan-dir}"
-  failure: "❌ Master plan not found"
+  failure: "❌ Master plan not found / phase inventory mismatch"
 ```
 
 ## Step 3: Create phase-status.yaml
