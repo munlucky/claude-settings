@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { currentIndexVerdictArtifacts, finalizePhaseCloseout } from './phase-closeout-finalize.mjs';
+import { currentIndexVerdictArtifacts, finalizePhaseCloseout, recoveredBlockerFingerprint } from './phase-closeout-finalize.mjs';
 import { readCurrentArtifacts, sha256RawBytes } from './lib/current-artifacts-state.mjs';
 import { dedupePaths, resolveGlobFiles, safeRemove } from './lib/windows-safe-files.mjs';
 
@@ -106,12 +106,21 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
     });
 
     assert.equal(result.finalVerdict, 'complete');
+    assert.equal(result.normalizedRunVerdict, 'success_with_warning');
+    assert.equal(result.idempotentNoop, false);
     assert.deepEqual(result.historicalWarnings, ['delegated-terminal-exit-1']);
     const verdict = readJson(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json'));
     assert.equal(verdict.verdict, 'passed');
     assert.equal(verdict.identity.statusFile, fixture.statusFile);
     assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).completionStatus, 'completed');
+    assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).finalOutcomeSchemaVersion, '1.0');
+    assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).normalizedRunVerdict, 'success_with_warning');
     assert.equal(readJson(path.join(fixture.workflowDir, 'latest-dispatch.json')).status, 'superseded');
+    const statusText = fs.readFileSync(fixture.statusFile, 'utf8');
+    assert.match(statusText, /projectionSchemaVersion: final-outcome-v1/);
+    assert.match(statusText, /normalizedRunVerdict: success_with_warning/);
+    assert.match(statusText, /lastOutcome: clean_complete/);
+    assert.match(fs.readFileSync(path.join(fixture.root, '.claude/logs/agent-loop/summary.current.md'), 'utf8'), /Final outcome schema: 1\.0/);
     assert.equal(result.worksetsEvidenceUpdated, true);
     const worksets = fs.readFileSync(path.join(fixture.executionRoot, 'WORKSETS.yaml'), 'utf8');
     assert.match(worksets, /\.claude\/verification-verdict-phase01-final\.json/);
@@ -124,6 +133,185 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
     assert.equal(current.commitToken, result.closeoutCommitToken);
     assert.equal(current.manifestHash, sha256RawBytes(current.manifestPath));
     assert.equal(current.artifacts.some((entry) => entry.relativePath === '.claude/verification-verdict-phase01-final.json'), true);
+  });
+});
+
+test('finalize keeps dirty repository closeout pending without failing runtime closeout by default', async () => {
+  await withFixture(async (fixture) => {
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-dirty-default',
+      gitCloseoutResult: dirtyGitCloseoutPayload(),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.runtimeCloseout.status, 'passed');
+    assert.equal(result.repositoryCloseout.status, 'pending');
+    assert.equal(result.repositoryCloseout.exitCode, 2);
+    assert.equal(result.normalizedRunVerdict, 'success_with_warning');
+  });
+});
+
+test('finalize strict repository closeout fails dirty repository without mutating runtime verdict', async () => {
+  await withFixture(async (fixture) => {
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-dirty-strict',
+      strictRepositoryCloseout: true,
+      gitCloseoutResult: dirtyGitCloseoutPayload(),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.runtimeCloseout.status, 'passed');
+    assert.equal(result.repositoryCloseout.status, 'pending');
+    assert.equal(result.repositoryCloseout.strict, true);
+    assert.equal(result.normalizedRunVerdict, 'success_with_warning');
+  });
+});
+
+test('finalize excludes completion vocabulary from historical warning candidates', async () => {
+  await withFixture(async (fixture) => {
+    for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
+      fs.writeFileSync(path.join(fixture.workflowDir, basename), JSON.stringify({
+        runLeaseId: 'completion-vocabulary-run',
+        status: 'completed',
+        completionStatus: 'completed',
+        executionMode: 'delegated-terminal',
+        stopReasonCode: 'scope_complete',
+        exitCode: 1,
+        phaseRunLease: {
+          status: 'completed',
+          completionStatus: 'completed',
+          stopReasonCode: 'scope_complete',
+          exitCode: 1,
+        },
+      }, null, 2), 'utf8');
+    }
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-warning-filter',
+    });
+
+    assert.deepEqual(result.historicalWarnings, ['delegated-terminal-exit-1']);
+    assert.equal(result.historicalWarnings.includes('scope_complete'), false);
+    const currentRun = readJson(path.join(fixture.workflowDir, 'current-run.json'));
+    assert.deepEqual(currentRun.historicalWarnings, ['delegated-terminal-exit-1']);
+  });
+});
+
+test('finalize returns strict no-op when final outcome projection is already canonical', async () => {
+  await withFixture(async (fixture) => {
+    await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-canonical-seed',
+    });
+
+    const strictTargets = [
+      fixture.statusFile,
+      path.join(fixture.workflowDir, 'current-run.json'),
+      path.join(fixture.workflowDir, 'active-phase-run.json'),
+      path.join(fixture.workflowDir, 'latest-dispatch.json'),
+      path.join(fixture.root, '.claude/logs/agent-loop/summary.current.md'),
+    ];
+    const before = Object.fromEntries(strictTargets.map((filePath) => [filePath, fs.readFileSync(filePath, 'utf8')]));
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: '2026-05-11T12:00:00.000Z',
+      commitToken: 'phase01-canonical-noop',
+    });
+
+    assert.equal(result.idempotentNoop, true);
+    assert.equal(result.canonicalNoop.reason, 'canonical_final_complete_projection');
+    assert.deepEqual(result.publishWrites, []);
+    assert.ok(result.skippedWrites.length > 0);
+    assert.ok(result.skippedWrites.every((entry) => entry.reason === 'canonical_final_complete_projection'));
+    for (const filePath of strictTargets) {
+      assert.equal(fs.readFileSync(filePath, 'utf8'), before[filePath], filePath);
+    }
+  });
+});
+
+test('finalize rewrites stale summary marker without mutating source state files', async () => {
+  await withFixture(async (fixture) => {
+    await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-summary-marker-seed',
+    });
+
+    const summaryPath = path.join(fixture.root, '.claude/logs/agent-loop/summary.current.md');
+    const seededSummary = fs.readFileSync(summaryPath, 'utf8');
+    assert.match(seededSummary, /summaryProjectionSchemaVersion: "1\.0"/);
+    fs.writeFileSync(summaryPath, seededSummary.replace(/^summaryProjectionSchemaVersion: "1\.0"\n/m, ''), 'utf8');
+
+    const sourceFiles = [
+      fixture.statusFile,
+      path.join(fixture.workflowDir, 'current-run.json'),
+      path.join(fixture.workflowDir, 'active-phase-run.json'),
+      path.join(fixture.workflowDir, 'latest-dispatch.json'),
+    ];
+    const before = Object.fromEntries(sourceFiles.map((filePath) => [filePath, fs.readFileSync(filePath, 'utf8')]));
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: '2026-05-11T12:00:00.000Z',
+      commitToken: 'phase01-summary-marker-rewrite',
+    });
+
+    assert.equal(result.finalOutcomeSummary.updated, true);
+    assert.deepEqual(result.finalOutcomeSummary.staleReasons, ['summary_projection_stale']);
+    assert.match(fs.readFileSync(summaryPath, 'utf8'), /summaryProjectionSchemaVersion: "1\.0"/);
+    for (const filePath of sourceFiles) {
+      assert.equal(fs.readFileSync(filePath, 'utf8'), before[filePath], filePath);
+    }
   });
 });
 
@@ -155,6 +343,110 @@ test('finalize ignores stale blocked root verdict when publishing completed cano
     const verdict = readJson(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json'));
     assert.equal(verdict.workflowEvidence.closeoutInvariant.ok, true);
     assert.equal(verdict.workflowEvidence.closeoutInvariant.normalizedRunVerdict, 'success_with_warning');
+  });
+});
+
+test('finalize leaves empty blocker scalars empty without creating recovered blockers', async () => {
+  await withFixture(async (fixture) => {
+    const originalStatus = fs.readFileSync(fixture.statusFile, 'utf8');
+    fs.writeFileSync(fixture.statusFile, originalStatus.replace(
+      'activeRunLeaseId: "delegated-run-1"',
+      [
+        'activeRunLeaseId: "delegated-run-1"',
+        'stopReasonClass: ""',
+        'rawStopReason: null',
+        'blockerClass: ""',
+        'blockingReasonCode: ""',
+        'failureClass: ""',
+        'stopReasonExplanation: ""',
+      ].join('\n'),
+    ), 'utf8');
+
+    await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-empty-blockers',
+    });
+
+    const statusText = fs.readFileSync(fixture.statusFile, 'utf8');
+    assert.doesNotMatch(statusText, /^recoveredBlockers:/m);
+    assert.match(statusText, /^stopReasonClass: ""$/m);
+    assert.match(statusText, /^rawStopReason: ""$/m);
+    assert.match(statusText, /^blockerClass: ""$/m);
+    assert.match(statusText, /^blockingReasonCode: ""$/m);
+    assert.match(statusText, /^failureClass: ""$/m);
+    assert.match(statusText, /^stopReasonExplanation: ""$/m);
+  });
+});
+
+test('finalize dedupes recovered blockers by normalized fingerprint and preserves recoveredAt', async () => {
+  await withFixture(async (fixture) => {
+    const blocker = {
+      stopReasonClass: 'runtime_unavailable',
+      rawStopReason: '',
+      blockerClass: 'verifier_unavailable',
+      blockingReasonCode: 'verifier_unavailable',
+      failureClass: 'verifier_unavailable',
+      stopReasonExplanation: 'delegated-terminal exited with code 1',
+    };
+    const fingerprint = recoveredBlockerFingerprint(blocker);
+    const originalStatus = fs.readFileSync(fixture.statusFile, 'utf8');
+    fs.writeFileSync(fixture.statusFile, originalStatus
+      .replace(
+        'activeRunLeaseId: "delegated-run-1"',
+        [
+          'activeRunLeaseId: "delegated-run-1"',
+          'stopReasonClass: runtime_unavailable',
+          'rawStopReason: null',
+          'blockerClass: verifier_unavailable',
+          'blockingReasonCode: verifier_unavailable',
+          'failureClass: verifier_unavailable',
+          'stopReasonExplanation: "delegated-terminal exited with code 1"',
+        ].join('\n'),
+      )
+      .replace(
+        'phases:',
+        [
+          'recoveredBlockers:',
+          `  - fingerprint: ${fingerprint}`,
+          '    stopReasonClass: runtime_unavailable',
+          '    rawStopReason: ""',
+          '    blockerClass: verifier_unavailable',
+          '    blockingReasonCode: verifier_unavailable',
+          '    failureClass: verifier_unavailable',
+          '    stopReasonExplanation: "delegated-terminal exited with code 1"',
+          '    recoveredAt: "2026-05-10T00:00:00.000Z"',
+          'phases:',
+        ].join('\n'),
+      ), 'utf8');
+
+    await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-dedupe-blocker',
+    });
+
+    const statusText = fs.readFileSync(fixture.statusFile, 'utf8');
+    assert.match(statusText, new RegExp(fingerprint));
+    assert.equal((statusText.match(/^  - fingerprint: /gm) || []).length, 1);
+    assert.equal((statusText.match(/^  fingerprint: /gm) || []).length, 1);
+    assert.equal((statusText.match(/recoveredAt:\s*"?2026-05-10T00:00:00\.000Z"?/g) || []).length, 2);
+    assert.doesNotMatch(statusText, /recoveredAt: "2026-05-10T12:00:00.000Z"/);
+    assert.match(statusText, /^lastRecoveredBlocker:\n  fingerprint: /m);
+    assert.match(statusText, /^blockerClass: ""$/m);
+    assert.match(statusText, /^blockingReasonCode: ""$/m);
   });
 });
 
@@ -344,6 +636,17 @@ test('windows-safe file utilities resolve globs, dedupe paths, and refuse outsid
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function dirtyGitCloseoutPayload() {
+  return {
+    clean: false,
+    issues: [{
+      type: 'main_worktree_dirty',
+      detail: 'main worktree has uncommitted non-runtime changes',
+      entries: [{ path: 'dirty.txt', status: '??' }],
+    }],
+  };
 }
 
 async function withFixture(callback, overrides = {}) {

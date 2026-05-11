@@ -13,15 +13,47 @@ import { appendCloseoutDiagnostic, buildCloseoutDiagnosticEvent } from './lib/cl
 import { evaluateCloseoutInvariant } from './lib/harness-state-invariants.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
 import { parsePhaseStatusDocument, readText, resolvePath } from './lib/phase-closeout-parsers.mjs';
+import {
+  STATUS_PROJECTION_SCHEMA_VERSION,
+  SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION,
+  WORKFLOW_FINAL_OUTCOME_SCHEMA_VERSION,
+  buildFinalOutcomeProjectionHash,
+  canonicalProjectionIssues,
+  isCanonicalFinalCompleteProjection,
+  normalizeFinalRunVerdict,
+  phaseProjectionCounts,
+} from './lib/final-outcome-projection.mjs';
+import {
+  parsePhaseSummaryProjection,
+  renderPhaseSummaryProjection,
+} from './lib/phase-summary-projection.mjs';
 import { updateGoalStatus, withDb } from './runtime-state.mjs';
 
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
 const DEFAULT_WORKFLOW_DIR = '.claude/logs/workflow-enforcement';
+const DEFAULT_AGENT_LOOP_DIR = '.claude/logs/agent-loop';
+const CURRENT_SUMMARY_FILE = 'summary.current.md';
 const CURRENT_ARTIFACTS_INDEX = 'current-artifacts.json';
 const CLOSEOUT_MANIFEST_PREFIX = 'closeout-sync-manifest';
 const CLOSEOUT_ARCHIVE_DIR = 'closeout-archive';
 const LOG_SNAPSHOT_TAIL_BYTES = 64 * 1024;
 const STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
+const COMPLETION_WARNING_VALUES = new Set([
+  'scope_complete',
+  'clean_complete',
+  'success',
+  'success_with_warning',
+  'complete',
+  'completed',
+]);
+const RECOVERABLE_BLOCKER_FIELDS = [
+  'stopReasonClass',
+  'rawStopReason',
+  'blockerClass',
+  'blockingReasonCode',
+  'failureClass',
+  'stopReasonExplanation',
+];
 
 function usage() {
   return [
@@ -37,6 +69,7 @@ function usage() {
     `  --workflow-dir <path>    Default: ${DEFAULT_WORKFLOW_DIR}`,
     '  --dry-run                Report expected writes without mutating files.',
     '  --keep-prep              With --dry-run, write prep preview files only; never publish current state.',
+    '  --strict-repository-closeout  Exit 2 when repository closeout is pending.',
     '  --json                   Print JSON payload.',
     '  --now <iso>              Deterministic timestamp for tests.',
     '  --commit-token <token>    Deterministic closeout publish token for tests.',
@@ -82,6 +115,9 @@ function parseArgs(argv) {
       case '--keep-prep':
         result.keepPrep = true;
         break;
+      case '--strict-repository-closeout':
+        result.strictRepositoryCloseout = true;
+        break;
       case '--json':
         result.json = true;
         break;
@@ -112,11 +148,7 @@ function rel(root, filePath) {
 }
 
 function finalCanonicalRunVerdict({ phase = {}, historicalWarnings = [] } = {}) {
-  const phaseVerdict = String(phase.normalizedRunVerdict || '').trim().toLowerCase();
-  if (['complete', 'success', 'success_with_warning'].includes(phaseVerdict)) {
-    return phaseVerdict;
-  }
-  return historicalWarnings.length > 0 ? 'success_with_warning' : 'complete';
+  return normalizeFinalRunVerdict({ phase, historicalWarnings });
 }
 
 function yamlScalar(value) {
@@ -131,6 +163,123 @@ function yamlScalar(value) {
     return text;
   }
   return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function stripYamlQuotes(value) {
+  return String(value ?? '').trim().replace(/^["'`]+|["'`]+$/g, '');
+}
+
+function normalizeBlockerValue(value) {
+  const text = stripYamlQuotes(value);
+  return text === 'null' ? '' : text;
+}
+
+function normalizedBlockerObject(blocker = {}) {
+  return Object.fromEntries(RECOVERABLE_BLOCKER_FIELDS.map((field) => [field, normalizeBlockerValue(blocker[field])]));
+}
+
+function blockerHasEvidence(blocker = {}) {
+  return Object.values(normalizedBlockerObject(blocker)).some((value) => value !== '');
+}
+
+export function recoveredBlockerFingerprint(blocker = {}) {
+  return crypto.createHash('sha256').update(JSON.stringify(normalizedBlockerObject(blocker))).digest('hex').slice(0, 16);
+}
+
+function recoveredBlockerFromStatusRoot(statusRoot = {}, now) {
+  const blocker = normalizedBlockerObject(statusRoot);
+  if (!blockerHasEvidence(blocker)) {
+    return null;
+  }
+  return {
+    fingerprint: recoveredBlockerFingerprint(blocker),
+    ...blocker,
+    recoveredAt: now,
+  };
+}
+
+function topLevelBlockBounds(lines, key) {
+  const start = lines.findIndex((line) => line.startsWith(`${key}:`));
+  if (start < 0) {
+    return { start: -1, end: -1 };
+  }
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^\S/.test(lines[index]) && !lines[index].startsWith('  - ')) {
+      end = index;
+      break;
+    }
+  }
+  return { start, end };
+}
+
+function parseRecoveredBlockers(lines) {
+  const { start, end } = topLevelBlockBounds(lines, 'recoveredBlockers');
+  if (start < 0) {
+    return [];
+  }
+  const blockers = [];
+  let current = null;
+  for (const line of lines.slice(start + 1, end)) {
+    const itemStart = line.match(/^  - ([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
+    if (itemStart) {
+      if (current) {
+        blockers.push(current);
+      }
+      current = { [itemStart[1]]: stripYamlQuotes(itemStart[2]) };
+      continue;
+    }
+    const field = line.match(/^    ([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
+    if (field && current) {
+      current[field[1]] = stripYamlQuotes(field[2]);
+    }
+  }
+  if (current) {
+    blockers.push(current);
+  }
+  return blockers;
+}
+
+function renderRecoveredBlocker(blocker) {
+  return [
+    `  - fingerprint: ${yamlScalar(blocker.fingerprint)}`,
+    ...RECOVERABLE_BLOCKER_FIELDS.map((field) => `    ${field}: ${yamlScalar(blocker[field] || '')}`),
+    `    recoveredAt: ${yamlScalar(blocker.recoveredAt || '')}`,
+  ];
+}
+
+function upsertTopLevelBlock(lines, key, blockLines) {
+  const { start, end } = topLevelBlockBounds(lines, key);
+  const rendered = [`${key}:`, ...blockLines];
+  if (start >= 0) {
+    lines.splice(start, end - start, ...rendered);
+    return;
+  }
+  const phasesIndex = lines.findIndex((line) => line.startsWith('phases:'));
+  lines.splice(phasesIndex >= 0 ? phasesIndex : lines.length, 0, ...rendered);
+}
+
+function upsertRecoveredBlockerState(lines, statusRoot, now) {
+  const candidate = recoveredBlockerFromStatusRoot(statusRoot, now);
+  const existing = parseRecoveredBlockers(lines);
+  const byFingerprint = new Map(existing.map((blocker) => [
+    blocker.fingerprint || recoveredBlockerFingerprint(blocker),
+    blocker,
+  ]));
+  if (candidate && !byFingerprint.has(candidate.fingerprint)) {
+    byFingerprint.set(candidate.fingerprint, candidate);
+  }
+  const recoveredBlockers = [...byFingerprint.values()];
+  if (recoveredBlockers.length > 0) {
+    upsertTopLevelBlock(lines, 'recoveredBlockers', recoveredBlockers.flatMap(renderRecoveredBlocker));
+    const latest = candidate
+      ? byFingerprint.get(candidate.fingerprint)
+      : recoveredBlockers[recoveredBlockers.length - 1];
+    upsertTopLevelBlock(lines, 'lastRecoveredBlocker', renderRecoveredBlocker(latest).map((line) => line.replace(/^  - /, '  ').replace(/^    /, '  ')));
+  }
+  for (const field of RECOVERABLE_BLOCKER_FIELDS) {
+    upsertTopLevel(lines, field, '');
+  }
 }
 
 function writeJsonAtomic(filePath, payload) {
@@ -193,6 +342,191 @@ function readJsonIfExists(filePath) {
     return null;
   }
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function readWorkflowStates(workflowDir) {
+  return STATE_FILES
+    .map((basename) => {
+      const payload = readJsonIfExists(path.join(workflowDir, basename));
+      return payload ? { basename, ...payload } : null;
+    })
+    .filter(Boolean);
+}
+
+function readFinalOutcomeSummary(summaryPath) {
+  return parsePhaseSummaryProjection(readText(summaryPath));
+}
+
+function summaryPathFor(root, rawConfig = {}) {
+  return resolvePath(rawConfig.summaryPath || path.join(DEFAULT_AGENT_LOOP_DIR, CURRENT_SUMMARY_FILE), root);
+}
+
+function maybeCanonicalNoop({
+  root,
+  statusPath,
+  workflowDir,
+  summaryPath,
+  statusDocument,
+  phaseNumber,
+  now,
+}) {
+  const workflowStates = readWorkflowStates(workflowDir);
+  const summary = readFinalOutcomeSummary(summaryPath);
+  const canonical = isCanonicalFinalCompleteProjection({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    workflowStates,
+    summary,
+  });
+  if (!canonical || summary.summaryProjectionSchemaVersion !== SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION) {
+    return null;
+  }
+  const phase = statusDocument.phases.find((entry) => Number(entry.number) === phaseNumber) || { number: phaseNumber };
+  const gitCloseout = runNodeScript(path.join(root, '.claude/scripts/phase-final-git-closeout.mjs'), [
+    'preflight',
+    '--json',
+  ], root);
+  const gitCloseoutPayload = gitCloseout.parsed || {
+    status: gitCloseout.status,
+    stdout: gitCloseout.stdout,
+    stderr: gitCloseout.stderr,
+  };
+  return {
+    ok: true,
+    dryRun: false,
+    keepPrep: false,
+    runtimeCloseout: {
+      status: 'passed',
+      ok: true,
+      reason: '',
+    },
+    repositoryCloseout: repositoryCloseoutFromGitPayload(gitCloseoutPayload),
+    idempotentNoop: true,
+    finalVerdict: 'complete',
+    normalizedRunVerdict: String(statusDocument.root.normalizedRunVerdict || 'success'),
+    canonicalNoop: {
+      status: 'passed',
+      reason: 'canonical_final_complete_projection',
+      summaryPath: rel(root, summaryPath),
+      statusPath: rel(root, statusPath),
+      workflowDir: rel(root, workflowDir),
+    },
+    phaseNumber,
+    phaseTitle: phase.title || `Phase ${phaseNumber}`,
+    generatedAt: now,
+    plannedWrites: [],
+    ...canonicalNoopWriteVisibility({ root, statusPath, workflowDir, summaryPath }),
+  };
+}
+
+function maybeCanonicalSummaryRepair({
+  root,
+  statusPath,
+  workflowDir,
+  summaryPath,
+  statusDocument,
+  phaseNumber,
+  now,
+}) {
+  const workflowStates = readWorkflowStates(workflowDir);
+  const summary = readFinalOutcomeSummary(summaryPath);
+  const issues = canonicalProjectionIssues({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    workflowStates,
+    summary,
+  });
+  const markerStale = summary.summaryProjectionSchemaVersion !== SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION;
+  const summaryOnlyStale = issues.length === 0 || issues.every((issue) => issue === 'summary_projection_stale');
+  if (!summaryOnlyStale || (!markerStale && !issues.includes('summary_projection_stale'))) {
+    return null;
+  }
+  const projectionHash = buildFinalOutcomeProjectionHash({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    workflowStates,
+  });
+  writeTextAtomic(summaryPath, renderPhaseSummaryProjection({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    workflowStates,
+    projectionHash,
+    generatedAt: now,
+  }));
+  const phase = statusDocument.phases.find((entry) => Number(entry.number) === phaseNumber) || { number: phaseNumber };
+  return {
+    ok: true,
+    dryRun: false,
+    keepPrep: false,
+    runtimeCloseout: {
+      status: 'passed',
+      ok: true,
+      reason: '',
+    },
+    repositoryCloseout: repositoryCloseoutFromGitPayload({ clean: false }),
+    idempotentNoop: false,
+    finalVerdict: 'complete',
+    normalizedRunVerdict: String(statusDocument.root.normalizedRunVerdict || 'success'),
+    summaryOnlyRepair: true,
+    phaseNumber,
+    phaseTitle: phase.title || `Phase ${phaseNumber}`,
+    generatedAt: now,
+    plannedWrites: [{ path: rel(root, summaryPath), kind: 'agent-loop-current-summary' }],
+    publishWrites: [{ path: rel(root, summaryPath), kind: 'agent-loop-current-summary' }],
+    skippedWrites: [],
+    finalOutcomeSummary: {
+      path: rel(root, summaryPath),
+      updated: true,
+      projectionHash,
+      staleReasons: ['summary_projection_stale'],
+    },
+    canonicalNoop: {
+      status: 'repaired',
+      reason: 'canonical_final_complete_projection_summary_marker_rewritten',
+      summaryPath: rel(root, summaryPath),
+      statusPath: rel(root, statusPath),
+      workflowDir: rel(root, workflowDir),
+    },
+  };
+}
+
+function syncFinalOutcomeSummary({ summaryPath, statusPath, workflowDir, dryRun, plannedWrites, now }) {
+  const statusText = readText(statusPath);
+  const statusDocument = statusText ? parsePhaseStatusDocument(statusText) : { root: {}, phases: [] };
+  const workflowStates = readWorkflowStates(workflowDir);
+  const projectionHash = buildFinalOutcomeProjectionHash({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    workflowStates,
+  });
+  const current = readFinalOutcomeSummary(summaryPath);
+  if (
+    current.summaryProjectionSchemaVersion === SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION
+    && current.finalOutcomeSchemaVersion === SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION
+    && current.projectionHash === projectionHash
+  ) {
+    return { updated: false, projectionHash, staleReasons: [] };
+  }
+  const staleReasons = canonicalProjectionIssues({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    workflowStates,
+    summary: current,
+  }).filter((issue) => issue === 'summary_projection_stale');
+  if (current.summaryProjectionSchemaVersion !== SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION && !staleReasons.includes('summary_projection_stale')) {
+    staleReasons.push('summary_projection_stale');
+  }
+  plannedWrites.push({ path: summaryPath, kind: 'agent-loop-current-summary' });
+  if (!dryRun) {
+    writeTextAtomic(summaryPath, renderPhaseSummaryProjection({
+      statusRoot: statusDocument.root,
+      phases: statusDocument.phases,
+      workflowStates,
+      projectionHash,
+      generatedAt: now,
+    }));
+  }
+  return { updated: true, projectionHash, staleReasons };
 }
 
 function resolveArtifactPath(root, artifact) {
@@ -418,8 +752,50 @@ function plannedManifestHash(plannedWrites) {
   return crypto.createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
 }
 
-function classifyPlannedWrites(plannedWrites, dryRun) {
+function normalizeWriteEntry(entry, root) {
+  return {
+    ...entry,
+    path: rel(root, entry.path),
+  };
+}
+
+function skippedWrite(pathName, kind, reason) {
+  return {
+    path: pathName,
+    kind,
+    reason,
+  };
+}
+
+function canonicalNoopWriteVisibility({ root, statusPath, workflowDir, summaryPath }) {
+  return {
+    publishWrites: [],
+    skippedWrites: [
+      skippedWrite(rel(root, statusPath), 'phase-status', 'canonical_final_complete_projection'),
+      skippedWrite(rel(root, path.join(workflowDir, 'current-run.json')), 'workflow-state', 'canonical_final_complete_projection'),
+      skippedWrite(rel(root, path.join(workflowDir, 'active-phase-run.json')), 'workflow-state', 'canonical_final_complete_projection'),
+      skippedWrite(rel(root, path.join(workflowDir, 'latest-dispatch.json')), 'workflow-state', 'canonical_final_complete_projection'),
+      skippedWrite(rel(root, summaryPath), 'agent-loop-current-summary', 'canonical_final_complete_projection'),
+    ],
+  };
+}
+
+function repositoryCloseoutFromGitPayload(gitCloseoutPayload, { dryRun = false, strict = false } = {}) {
+  const repositoryClean = gitCloseoutPayload.clean === true;
+  return {
+    status: dryRun ? 'dry_run' : (repositoryClean ? 'clean' : 'pending'),
+    clean: repositoryClean,
+    strict,
+    exitCode: dryRun ? 0 : (repositoryClean ? 0 : 2),
+    reason: repositoryClean ? '' : 'repository_closeout_pending',
+    issues: Array.isArray(gitCloseoutPayload.issues) ? gitCloseoutPayload.issues : [],
+    preflight: gitCloseoutPayload,
+  };
+}
+
+function classifyPlannedWrites(plannedWrites, { dryRun, root }) {
   const publishBlocked = dryRun === true;
+  const normalized = plannedWrites.map((entry) => normalizeWriteEntry(entry, root));
   return {
     wouldPublishCurrentArtifacts: !publishBlocked && plannedWrites.some((entry) => [
       'phase-status',
@@ -429,6 +805,10 @@ function classifyPlannedWrites(plannedWrites, dryRun) {
       'worksets-final-evidence',
     ].includes(entry.kind)),
     wouldArchiveSupersededArtifacts: !publishBlocked && plannedWrites.some((entry) => /archive|supersede/i.test(String(entry.kind || ''))),
+    publishWrites: publishBlocked ? [] : normalized,
+    skippedWrites: publishBlocked
+      ? normalized.map((entry) => ({ ...entry, reason: 'dry_run' }))
+      : [],
   };
 }
 
@@ -491,7 +871,7 @@ function phaseConfirmed(phase = {}) {
 
 function projectedPhasesAfterCloseout(phases = [], phaseNumber) {
   return phases.map((phase) => (
-    Number(phase.number) === Number(phaseNumber) ? { ...phase, status: 'completed' } : phase
+    Number(phase.number) === Number(phaseNumber) ? { ...phase, status: 'completed', lastOutcome: 'clean_complete' } : phase
   ));
 }
 
@@ -513,18 +893,20 @@ function nextActionablePhase(phases = []) {
   )) || null;
 }
 
-function rewritePhaseStatus({ statusPath, phases, phaseNumber, phase, now, allActionableComplete, dryRun, plannedWrites }) {
+function rewritePhaseStatus({ statusPath, statusRoot, phases, phaseNumber, phase, now, allActionableComplete, dryRun, plannedWrites, normalizedRunVerdict }) {
   const lines = fs.existsSync(statusPath)
     ? fs.readFileSync(statusPath, 'utf8').split(/\r?\n/).filter((line, index, array) => !(index === array.length - 1 && line === ''))
     : [];
   const projectedPhases = projectedPhasesAfterCloseout(phases, phaseNumber);
-  const counts = phaseCounts(projectedPhases);
+  const counts = phaseProjectionCounts(projectedPhases);
   const nextPhase = allActionableComplete ? null : nextActionablePhase(projectedPhases);
   upsertTopLevel(lines, 'updatedAt', now);
+  upsertTopLevel(lines, 'projectionSchemaVersion', STATUS_PROJECTION_SCHEMA_VERSION);
   upsertTopLevel(lines, 'finalVerdict', 'complete');
-  upsertTopLevel(lines, 'normalizedRunVerdict', 'complete');
+  upsertTopLevel(lines, 'normalizedRunVerdict', normalizedRunVerdict);
   upsertTopLevel(lines, 'lastStopReasonCode', 'scope_complete');
   upsertTopLevel(lines, 'lastStopReasonDetail', 'phase closeout finalized');
+  upsertRecoveredBlockerState(lines, statusRoot, now);
   upsertTopLevel(lines, 'activePlannedPhases', counts.planned);
   upsertTopLevel(lines, 'activeCompletedPhases', counts.completed);
   upsertTopLevel(lines, 'activeBlockedPhases', counts.blocked);
@@ -546,7 +928,7 @@ function rewritePhaseStatus({ statusPath, phases, phaseNumber, phase, now, allAc
   upsertPhaseField(lines, phaseNumber, 'status', 'completed');
   upsertPhaseField(lines, phaseNumber, 'completedAt', now);
   upsertPhaseField(lines, phaseNumber, 'updatedAt', now);
-  upsertPhaseField(lines, phaseNumber, 'lastOutcome', 'success');
+  upsertPhaseField(lines, phaseNumber, 'lastOutcome', 'clean_complete');
   const archivedPhaseDoc = phase.archivedPhaseDoc || phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '';
   if (archivedPhaseDoc) {
     upsertPhaseField(lines, phaseNumber, 'archivedPhaseDoc', archivedPhaseDoc);
@@ -756,10 +1138,10 @@ function warningFromState(payload = {}) {
   const stopReason = payload.stopReasonCode || payload.phaseRunLease?.stopReasonCode || '';
   const fields = [payload.status, payload.completionStatus, stopReason, payload.failureClass].map((value) => String(value || '').toLowerCase());
   if (exitCode && String(exitCode) !== '0') {
-    return stopReason || `delegated-terminal-exit-${exitCode}`;
+    return COMPLETION_WARNING_VALUES.has(String(stopReason || '').trim().toLowerCase()) ? `delegated-terminal-exit-${exitCode}` : stopReason || `delegated-terminal-exit-${exitCode}`;
   }
-  if (fields.some((value) => value.includes('failed') || value.includes('failure'))) {
-    return stopReason || 'historical-executor-failure';
+  if (fields.some((value) => !COMPLETION_WARNING_VALUES.has(value) && (value.includes('failed') || value.includes('failure')))) {
+    return COMPLETION_WARNING_VALUES.has(String(stopReason || '').trim().toLowerCase()) ? 'historical-executor-failure' : stopReason || 'historical-executor-failure';
   }
   return '';
 }
@@ -786,7 +1168,8 @@ function reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, planned
       stopReasonCode: 'scope_complete',
       stopReasonDetail: 'phase closeout finalized',
       finalVerdict: 'complete',
-      normalizedRunVerdict: historicalWarnings.length > 0 ? 'success_with_warning' : 'complete',
+      normalizedRunVerdict: normalizeFinalRunVerdict({ phase: payload, historicalWarnings }),
+      finalOutcomeSchemaVersion: WORKFLOW_FINAL_OUTCOME_SCHEMA_VERSION,
       historicalWarnings: [...new Set([...(Array.isArray(payload.historicalWarnings) ? payload.historicalWarnings : []), ...historicalWarnings])],
       blockingStopReasonCode: '',
       completedAt: payload.completedAt || now,
@@ -1122,6 +1505,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   const now = timestamp(rawConfig.now || '');
   const dryRun = rawConfig.dryRun === true;
   const keepPrep = rawConfig.keepPrep === true;
+  const strictRepositoryCloseout = rawConfig.strictRepositoryCloseout === true;
   const statusPath = resolvePath(rawConfig.statusFile || DEFAULT_STATUS_FILE, root);
   const planDir = resolvePath(rawConfig.planDir || 'docs/implementation', root);
   const masterPlan = resolvePath(rawConfig.masterPlan || '', root);
@@ -1129,6 +1513,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   const phaseExecutionRoot = executionRoot;
   const planExecutionRoot = inferPlanExecutionRoot(executionRoot);
   const workflowDir = resolvePath(rawConfig.workflowDir || DEFAULT_WORKFLOW_DIR, root);
+  const summaryPath = summaryPathFor(root, rawConfig);
   const commitToken = stableCommitToken({ phaseNumber, now, override: rawConfig.commitToken || '' });
   const prepRoot = closeoutPrepRoot(workflowDir, commitToken);
   const publishFailurePoint = String(rawConfig.publishFailurePoint || '').trim();
@@ -1140,6 +1525,32 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   const statusText = readText(statusPath);
   const statusDocument = statusText ? parsePhaseStatusDocument(statusText) : { root: {}, phases: [] };
   const phase = statusDocument.phases.find((entry) => Number(entry.number) === phaseNumber) || { number: phaseNumber };
+  if (!dryRun) {
+    const noopResult = maybeCanonicalNoop({
+      root,
+      statusPath,
+      workflowDir,
+      summaryPath,
+      statusDocument,
+      phaseNumber,
+      now,
+    });
+    if (noopResult) {
+      return noopResult;
+    }
+    const summaryRepairResult = maybeCanonicalSummaryRepair({
+      root,
+      statusPath,
+      workflowDir,
+      summaryPath,
+      statusDocument,
+      phaseNumber,
+      now,
+    });
+    if (summaryRepairResult) {
+      return summaryRepairResult;
+    }
+  }
   const complete = allActionableComplete(statusDocument.phases, phaseNumber);
   const supersededArchive = prepareSupersededArtifactsArchive({
     root,
@@ -1151,6 +1562,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   });
 
   const stateResult = reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, plannedWrites });
+  const normalizedRunVerdict = normalizeFinalRunVerdict({ phase, statusRoot: statusDocument.root, historicalWarnings: stateResult.historicalWarnings });
   const canonicalVerdictPath = writeCanonicalVerdict({
     root,
     phase,
@@ -1183,7 +1595,15 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     dryRun,
     plannedWrites,
   });
-  rewritePhaseStatus({ statusPath, phases: statusDocument.phases, phaseNumber, phase, now, allActionableComplete: complete, dryRun, plannedWrites });
+  rewritePhaseStatus({ statusPath, statusRoot: statusDocument.root, phases: statusDocument.phases, phaseNumber, phase, now, allActionableComplete: complete, dryRun, plannedWrites, normalizedRunVerdict });
+  const summaryResult = syncFinalOutcomeSummary({
+    summaryPath,
+    statusPath,
+    workflowDir,
+    dryRun,
+    plannedWrites,
+    now,
+  });
   appendCloseoutPhaseEvent({ statusPath, phase, phaseNumber, now, dryRun, plannedWrites });
   updateMasterChecklist({ masterPlan, phaseNumber, dryRun, plannedWrites });
 
@@ -1237,7 +1657,9 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
       masterPlanProvided: true,
     });
 
-  const gitCloseout = dryRun
+  const gitCloseout = rawConfig.gitCloseoutResult
+    ? { status: rawConfig.gitCloseoutResult.clean === true ? 0 : 2, parsed: rawConfig.gitCloseoutResult }
+    : dryRun
     ? { status: 'dry_run', clean: false }
     : runNodeScript(path.join(root, '.claude/scripts/phase-final-git-closeout.mjs'), [
       'preflight',
@@ -1247,13 +1669,28 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
       statusPath,
       '--json',
     ], root);
+  const gitCloseoutPayload = gitCloseout.parsed || {
+    status: gitCloseout.status,
+    stdout: gitCloseout.stdout,
+    stderr: gitCloseout.stderr,
+  };
+  const runtimeCloseout = {
+    status: dryRun ? 'dry_run' : 'passed',
+    ok: true,
+    reason: closeoutResult.reason || '',
+  };
+  const repositoryCloseout = repositoryCloseoutFromGitPayload(gitCloseoutPayload, {
+    dryRun,
+    strict: strictRepositoryCloseout,
+  });
+  const finalizerOk = runtimeCloseout.ok && (!strictRepositoryCloseout || repositoryCloseout.status !== 'pending');
 
   plannedWrites.push({ path: diagnosticsLedgerPath, kind: 'closeout-diagnostics-ledger' });
   const prepPreviewCandidatePath = dryRunPrepPreviewPath({ executionRoot: phaseExecutionRoot, dryRun, keepPrep });
   if (prepPreviewCandidatePath) {
     plannedWrites.push({ path: prepPreviewCandidatePath, kind: 'dry-run-prep-preview' });
   }
-  const publishPlan = classifyPlannedWrites(plannedWrites, dryRun);
+  const publishPlan = classifyPlannedWrites(plannedWrites, { dryRun, root });
   const dryRunContract = {
     ...publishPlan,
     plannedManifestHash: plannedManifestHash(plannedWrites),
@@ -1265,7 +1702,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
       generatedAt: now,
       dryRun: true,
       keepPrep: true,
-      plannedWrites: plannedWrites.map((entry) => ({ ...entry, path: rel(root, entry.path) })),
+      plannedWrites: plannedWrites.map((entry) => normalizeWriteEntry(entry, root)),
       ...dryRunContract,
     },
   });
@@ -1277,7 +1714,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     payload: {
       dryRun,
       keepPrep,
-      ok: dryRun ? true : closeoutResult.allowed === true,
+      ok: finalizerOk,
       canonicalVerdictPath: rel(root, canonicalVerdictPath),
     },
   });
@@ -1295,11 +1732,14 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     });
 
   return {
-    ok: dryRun ? true : closeoutResult.allowed === true,
+    ok: finalizerOk,
     dryRun,
     keepPrep,
+    runtimeCloseout,
+    repositoryCloseout,
     finalVerdict: 'complete',
-    normalizedRunVerdict: stateResult.historicalWarnings.length > 0 ? 'success_with_warning' : 'complete',
+    normalizedRunVerdict,
+    idempotentNoop: false,
     historicalWarnings: stateResult.historicalWarnings,
     stateReconciled: stateResult.stateReconciled,
     reconciledStateFiles: stateResult.reconciledStateFiles.map((filePath) => rel(root, filePath)),
@@ -1314,23 +1754,25 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     worksetsEvidenceUpdated,
     traceabilityStatus: traceability.traceabilityStatus,
     scenarioMatrixStatus: traceability.scenarioMatrixStatus,
+    finalOutcomeSummary: {
+      path: rel(root, summaryPath),
+      updated: summaryResult.updated,
+      projectionHash: summaryResult.projectionHash,
+      staleReasons: summaryResult.staleReasons,
+    },
     traceabilityPath: rel(root, traceability.requirementsPath),
     scenarioMatrixPath: rel(root, traceability.scenarioPath),
     goalRuntime,
     postPublishStatus,
     phaseCloseoutGate: closeoutResult,
-    gitCloseoutPreflight: gitCloseout.parsed || {
-      status: gitCloseout.status,
-      stdout: gitCloseout.stdout,
-      stderr: gitCloseout.stderr,
-    },
+    gitCloseoutPreflight: gitCloseoutPayload,
     diagnostics: {
       ...diagnostics,
       ledgerPath: rel(root, diagnosticsLedgerPath),
     },
     prepPreviewPath: prepPreviewPath ? rel(root, prepPreviewPath) : '',
     ...dryRunContract,
-    plannedWrites: plannedWrites.map((entry) => ({ ...entry, path: rel(root, entry.path) })),
+    plannedWrites: plannedWrites.map((entry) => normalizeWriteEntry(entry, root)),
   };
 }
 

@@ -12,10 +12,11 @@ const compactOutput = process.argv.includes('--compact') || String(process.env.T
 function usage() {
   return [
     'Usage:',
-    '  verify-phase-runtime-parity.mjs [reference-plan-dir] [--render-only] [--compact]',
+    '  verify-phase-runtime-parity.mjs [reference-plan-dir] [--render-only] [--compact] [--runtime-profile optional_probe|required_runtime]',
     '  verify-phase-runtime-parity.mjs --help',
     '',
     'Environment:',
+    '  PHASE_RUNTIME_PROFILE=optional_probe|required_runtime',
     '  PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=auto|current|claude|codex|both',
     '  PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS=<seconds>',
   ].join('\n');

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# `--runtime-profile` is parsed by the Node wrapper and shell core; the shell
+# entrypoint only preserves argv exactly for runtime parity.
 exec node "$SCRIPT_DIR/verify-phase-runtime-parity.mjs" "$@"
 
 assert_contains() {

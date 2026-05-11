@@ -13,7 +13,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/runtime-cli.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
+DEFAULT_REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
+REFERENCE_PLAN_DIR="$DEFAULT_REFERENCE_PLAN_DIR"
 RUN_REAL=true
 TMP_ROOT="$(mktemp -d)"
 KEEP_TMP="${PHASE_RUNTIME_PARITY_KEEP_TMP:-false}"
@@ -26,6 +27,7 @@ PHASE_RUNTIME_PARITY_TARGET_RUNTIMES="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-au
 CLAUDE_AVAILABLE=false
 CODEX_AVAILABLE=false
 RUNTIME_FAILURES=()
+RUNTIME_FAILURE_CLASSIFICATIONS=()
 ACTUAL_FAILURES=()
 ACTUAL_TIMINGS=()
 TARGET_RUNTIME_SET=()
@@ -46,9 +48,10 @@ trap cleanup EXIT
 usage() {
   cat <<'EOF_USAGE'
 Usage:
-  verify-phase-runtime-parity.sh [reference-plan-dir] [--render-only]
+  verify-phase-runtime-parity.sh [reference-plan-dir] [--render-only] [--runtime-profile optional_probe|required_runtime]
 
 Environment:
+  PHASE_RUNTIME_PROFILE=optional_probe|required_runtime
   PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=auto|current|claude|codex|both
 EOF_USAGE
 }
@@ -291,7 +294,49 @@ record_runtime_failure() {
   local runtime="$1"
   local code="$2"
   local detail="$3"
+  local classification
   RUNTIME_FAILURES+=("$(format_runtime_failure "$runtime" "$code" "$detail")")
+  classification="$(classify_runtime_failure "$runtime" "$code" || printf '%s' 'blocked|runtime_unavailable|true')"
+  RUNTIME_FAILURE_CLASSIFICATIONS+=("${runtime}|${code}|${classification}")
+}
+
+classify_runtime_failure() {
+  local runtime="$1"
+  local code="$2"
+  node --input-type=module - "$SCRIPT_DIR/lib/runtime-parity-classifier.mjs" "$runtime" "$RUNTIME_PROFILE" "$code" <<'NODE'
+import { pathToFileURL } from 'node:url';
+
+const [libraryPath, runtime, runtimeProfile, failureCode] = process.argv.slice(2);
+const { classifyRuntimeParity } = await import(pathToFileURL(libraryPath).href);
+const result = classifyRuntimeParity({
+  runtime,
+  runtimeProfile,
+  available: false,
+  failureCode,
+});
+
+process.stdout.write(`${result.status}|${result.reason}|${result.blocks ? 'true' : 'false'}`);
+NODE
+}
+
+resolve_runtime_profile() {
+  local cli_profile="${RUNTIME_PROFILE_CLI:-}"
+  local env_profile="${PHASE_RUNTIME_PROFILE:-}"
+  local candidate
+
+  for candidate in "$cli_profile" "$env_profile" "required_runtime"; do
+    case "$candidate" in
+      optional_probe|required_runtime)
+        RUNTIME_PROFILE="$candidate"
+        return 0
+        ;;
+      "")
+        ;;
+      *)
+        fail "unknown runtime profile: $candidate"
+        ;;
+    esac
+  done
 }
 
 classify_codex_probe_failure() {
@@ -300,6 +345,11 @@ classify_codex_probe_failure() {
 
   if grep -Fqi "state db discrepancy" "$primary_file" "$secondary_file"; then
     printf '%s\n' "state_db_inconsistent"
+    return 0
+  fi
+
+  if grep -Fqi "@openai/codex-linux-x64" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "package_missing"
     return 0
   fi
 
@@ -1729,6 +1779,20 @@ runtime_failure_mentions_codex() {
   return 1
 }
 
+runtime_failures_include_blocker() {
+  local item
+  local blocks
+
+  for item in "${RUNTIME_FAILURE_CLASSIFICATIONS[@]}"; do
+    blocks="${item##*|}"
+    if [[ "$blocks" == "true" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 determine_runtime_exercise_level() {
   if [[ "$RUN_REAL" != "true" ]]; then
     printf '%s\n' "passed"
@@ -1778,6 +1842,11 @@ EOF
       for item in "${RUNTIME_FAILURES[@]}"; do
         warn "runtime unavailable: $item"
       done
+      if runtime_failures_include_blocker; then
+        log "runtime exercise level: blocked_required_runtime"
+        log "phase runtime parity smoke failed"
+        return 1
+      fi
     fi
     local runtime_exercise_level
     if runtime_exercise_level="$(determine_runtime_exercise_level)"; then
@@ -1809,6 +1878,18 @@ while [[ $# -gt 0 ]]; do
       RUN_REAL=false
       shift
       ;;
+    --runtime-profile)
+      if [[ $# -lt 2 ]]; then
+        usage
+        fail "--runtime-profile requires optional_probe or required_runtime"
+      fi
+      RUNTIME_PROFILE_CLI="$2"
+      shift 2
+      ;;
+    --runtime-profile=*)
+      RUNTIME_PROFILE_CLI="${1#--runtime-profile=}"
+      shift
+      ;;
     --help|-h)
       usage
       exit 0
@@ -1824,6 +1905,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -d "$REFERENCE_PLAN_DIR" && ! -f "$REFERENCE_PLAN_DIR/00-master-plan-v1.md" && -f "$DEFAULT_REFERENCE_PLAN_DIR/00-master-plan-v1.md" ]]; then
+  warn "reference plan directory has no master plan, using default runtime parity reference fixture: $DEFAULT_REFERENCE_PLAN_DIR"
+  REFERENCE_PLAN_DIR="$DEFAULT_REFERENCE_PLAN_DIR"
+fi
+
 if [[ ! -d "$REFERENCE_PLAN_DIR" ]]; then
   fail "reference plan directory not found: $REFERENCE_PLAN_DIR"
 fi
@@ -1831,6 +1917,7 @@ fi
 runtime_cli_prepare_environment
 require_command python3
 require_command shasum
+resolve_runtime_profile
 resolve_target_runtime_set
 
 run_render_matrix

@@ -153,3 +153,49 @@ test('sync-phase-artifacts renders known WORKSETS fields deterministically and p
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('sync-phase-artifacts does not mutate workflow source state files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-artifacts-read-only-'));
+  try {
+    const paths = writeFixture(root);
+    const workflowDir = path.join(root, '.claude/logs/workflow-enforcement');
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    const sourceFiles = [
+      statusFile,
+      path.join(workflowDir, 'current-run.json'),
+      path.join(workflowDir, 'active-phase-run.json'),
+      path.join(workflowDir, 'latest-dispatch.json'),
+    ];
+    for (const filePath of sourceFiles) {
+      fs.writeFileSync(filePath, `${path.basename(filePath)} source\n`, 'utf8');
+    }
+    const before = Object.fromEntries(sourceFiles.map((filePath) => [filePath, fs.readFileSync(filePath, 'utf8')]));
+
+    syncPhaseArtifacts({
+      ...paths,
+      phaseNum: '7',
+      phaseTitle: 'Phase 07',
+      timestamp: '2026-05-11T12:00:00Z',
+      finish: { nextPath: 'retry_loop', status: 'in_progress' },
+      runtime: {
+        stage: 'execute',
+        status: 'in_progress',
+        verdict: 'pending',
+        logFile: '.claude/logs/agent-loop/phase-07.log',
+      },
+      workset: {
+        activeAtomicTask: 'AT-01',
+        status: 'in_progress',
+        semanticEvaluation: { status: 'not_run', reason: 'not_applicable_to_current_phase' },
+      },
+    });
+
+    for (const filePath of sourceFiles) {
+      assert.equal(fs.readFileSync(filePath, 'utf8'), before[filePath], filePath);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
