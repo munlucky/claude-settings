@@ -3,6 +3,9 @@ import path from 'node:path';
 
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 const WORKFLOW_STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
+const BLOCKED_PHASE_STATUSES = new Set(['blocked', 'verification_blocked', 'runtime_unhealthy']);
+const BLOCKED_ROOT_EXECUTION_STATUSES = new Set(['paused', 'blocked', 'verification_blocked', 'runtime_unhealthy']);
+const GENERATED_STALE_PHASE_TOKEN = /\b(?:out_of_scope_for_phase_|phase_)(\d{1,3})\b/gi;
 
 function normalizeText(value) {
   return String(value ?? '').trim();
@@ -10,6 +13,104 @@ function normalizeText(value) {
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase();
+}
+
+function normalizePhaseNumber(value) {
+  const parsed = Number.parseInt(String(value ?? '').replace(/^0+/, '') || '0', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function projectionNeedsActiveLog({ finish = {}, runtime = {}, status = '' } = {}) {
+  const nextPath = normalizeLower(finish.nextPath);
+  const finishStatus = normalizeLower(finish.status);
+  const closeoutReason = normalizeLower(finish.closeoutReason);
+  const runtimeStatus = normalizeLower(runtime.status || status);
+  const normalizedRunVerdict = normalizeLower(runtime.normalizedRunVerdict);
+  return nextPath === 'clean_finish'
+    || finishStatus === 'passed'
+    || closeoutReason === 'blocked'
+    || runtimeStatus.includes('blocked')
+    || normalizedRunVerdict === 'complete_with_environment_blocker';
+}
+
+export function assertProjectionHasActiveLog({ logFile = '', finish = {}, runtime = {}, status = '' } = {}) {
+  if (!projectionNeedsActiveLog({ finish, runtime, status })) {
+    return { ok: true };
+  }
+  if (normalizeText(logFile)) {
+    return { ok: true };
+  }
+  const error = new Error('Artifact projection requires an active log path for final or blocked publish states.');
+  error.code = 'artifact_projection_missing_active_log';
+  throw error;
+}
+
+export function collectGeneratedStalePhaseTokens(value, activePhaseNumber, label = 'value') {
+  const active = normalizePhaseNumber(activePhaseNumber);
+  if (!active) {
+    return [];
+  }
+  const text = String(value ?? '');
+  const violations = [];
+  for (const match of text.matchAll(GENERATED_STALE_PHASE_TOKEN)) {
+    const tokenPhase = normalizePhaseNumber(match[1]);
+    if (tokenPhase && tokenPhase !== active) {
+      violations.push({
+        label,
+        token: match[0],
+        tokenPhase,
+        activePhaseNumber: active,
+      });
+    }
+  }
+  return violations;
+}
+
+export function assertNoGeneratedStalePhaseResidue({ activePhaseNumber, fields = {} } = {}) {
+  const violations = [];
+  for (const [label, value] of Object.entries(fields || {})) {
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) => {
+        violations.push(...collectGeneratedStalePhaseTokens(entry, activePhaseNumber, `${label}[${index}]`));
+      });
+      continue;
+    }
+    violations.push(...collectGeneratedStalePhaseTokens(value, activePhaseNumber, label));
+  }
+  if (violations.length === 0) {
+    return { ok: true, violations };
+  }
+  const rendered = violations.map((entry) => `${entry.label}:${entry.token}`).join(', ');
+  const error = new Error(`Generated stale phase residue cannot be projected into current artifacts: ${rendered}`);
+  error.code = 'artifact_projection_stale_phase_residue';
+  error.violations = violations;
+  throw error;
+}
+
+export function evaluateCloseoutInvariant({ phaseStatus = '', normalizedRunVerdict = '', environmentBlockers = [] } = {}) {
+  const status = normalizeLower(phaseStatus);
+  const verdict = normalizeLower(normalizedRunVerdict);
+  const blockers = Array.isArray(environmentBlockers) ? environmentBlockers.filter(Boolean) : [];
+  if (verdict === 'complete_with_environment_blocker') {
+    return {
+      ok: blockers.length > 0 && ['blocked', 'verification_blocked', 'in_progress'].includes(status),
+      normalizedRunVerdict: verdict,
+      completionState: 'blocked_by_environment',
+      reason: blockers.length > 0
+        ? 'environment blocker completion must remain blocked or in_progress'
+        : 'complete_with_environment_blocker requires environmentBlockers evidence',
+    };
+  }
+  if (status === 'completed' && ['complete', 'success', 'success_with_warning'].includes(verdict)) {
+    return { ok: true, normalizedRunVerdict: verdict, completionState: 'completed', reason: 'clean completion' };
+  }
+  if (['blocked', 'verification_blocked'].includes(status)) {
+    return { ok: true, normalizedRunVerdict: verdict || 'blocked', completionState: 'blocked', reason: 'blocked phase state' };
+  }
+  if (['failed', 'superseded', 'in_progress', 'pending'].includes(status)) {
+    return { ok: true, normalizedRunVerdict: verdict || status, completionState: status, reason: `${status} phase state` };
+  }
+  return { ok: false, normalizedRunVerdict: verdict, completionState: status || 'unknown', reason: 'unknown phase closeout state' };
 }
 
 function stripQuotes(value) {
@@ -56,8 +157,21 @@ function isSupersededByLocalFallback(payload = {}) {
     || payload.localFallbackCompletion?.completionStatus === 'completed-via-local-fallback';
 }
 
+function hasCompletedFinalOutcome(payload = {}) {
+  const finalVerdict = normalizeLower(payload.finalVerdict);
+  const normalizedRunVerdict = normalizeLower(payload.normalizedRunVerdict);
+  const activeExecutionStatus = normalizeLower(payload.activeExecutionStatus);
+  const completionState = normalizeLower(payload.completion?.state);
+  return ['complete', 'passed', 'success'].includes(finalVerdict)
+    && ['complete', 'success', 'success_with_warning'].includes(normalizedRunVerdict)
+    && (activeExecutionStatus === 'completed' || completionState === 'completed');
+}
+
 export function isFailedWorkflowState(payload = {}) {
   if (!payload || isSupersededByLocalFallback(payload)) {
+    return false;
+  }
+  if (hasCompletedFinalOutcome(payload)) {
     return false;
   }
   const fields = [
@@ -181,31 +295,79 @@ function inspectMemoryGraphCapabilities({ workflowStates, strictMemory = false, 
 
 function statePhaseNumber(payload = {}) {
   return normalizeText(
-    payload.activePhaseNumber
-      ?? payload.phaseNumber
-      ?? payload.phase?.number
+    payload.phase?.number
       ?? payload.phaseRunLease?.phase?.number
+      ?? payload.phaseNumber
       ?? payload.phaseRunLease?.activePhaseNumber
+      ?? payload.activePhaseNumber
       ?? '',
   );
 }
 
 function statePhaseTitle(payload = {}) {
   return normalizeText(
-    payload.activePhaseTitle
-      ?? payload.phaseTitle
-      ?? payload.phase?.title
+    payload.phase?.title
       ?? payload.phaseRunLease?.phase?.title
+      ?? payload.phaseTitle
       ?? payload.phaseRunLease?.activePhaseTitle
+      ?? payload.activePhaseTitle
       ?? '',
   );
+}
+
+function workflowStateRunId(payload = {}) {
+  return normalizeText(
+    payload.runId
+      ?? payload.phaseRunLease?.runId
+      ?? payload.activeRunLeaseId
+      ?? payload.phaseRunLease?.activeRunLeaseId
+      ?? '',
+  );
+}
+
+function activeBlockedPhaseForWorkflowState({ statusRoot = {}, phases = [], payload = {} } = {}) {
+  const statePhase = Number.parseInt(statePhaseNumber(payload), 10);
+  const activePhase = Number.parseInt(normalizeText(statusRoot.activePhaseNumber), 10);
+  if (!Number.isInteger(statePhase) || !Number.isInteger(activePhase) || statePhase !== activePhase) {
+    return null;
+  }
+
+  const matchingPhase = phases.find((phase) => Number(phase.number) === statePhase);
+  if (!matchingPhase || !BLOCKED_PHASE_STATUSES.has(normalizeLower(matchingPhase.status))) {
+    return null;
+  }
+
+  const rootExecutionStatus = normalizeLower(statusRoot.activeExecutionStatus || statusRoot.status);
+  if (rootExecutionStatus && !BLOCKED_ROOT_EXECUTION_STATUSES.has(rootExecutionStatus)) {
+    return null;
+  }
+
+  const activeRunLeaseId = normalizeText(statusRoot.activeRunLeaseId);
+  const runId = workflowStateRunId(payload);
+  if (activeRunLeaseId && runId && activeRunLeaseId !== runId) {
+    return null;
+  }
+
+  return matchingPhase;
+}
+
+function blockedActiveWorkflowEvidence({ basename, payload, phase }) {
+  return {
+    code: 'active_phase_blocked_workflow_state',
+    source: basename,
+    phaseNumber: Number(phase.number),
+    phaseStatus: phase.status,
+    runId: workflowStateRunId(payload),
+    failureClass: normalizeText(payload.failureClass || payload.phaseRunLease?.failureClass),
+    status: normalizeText(payload.status || payload.completionStatus || payload.activeExecutionStatus),
+  };
 }
 
 function inspectIdentityMismatch({ statusRoot, phases, workflowStates, statusPath, violations }) {
   const repoRoot = path.dirname(path.dirname(path.dirname(statusPath)));
   const statusPlanDir = resolveMaybePath(statusRoot.planDir || (statusRoot.masterPlan ? path.dirname(statusRoot.masterPlan) : ''), repoRoot);
   const statusExecutionRoot = resolveMaybePath(statusRoot.executionRoot, repoRoot);
-  const completedPhaseNumbers = new Set(phases.filter((phase) => phase.status === 'completed').map((phase) => String(phase.number)));
+  const phasesByNumber = new Map(phases.map((phase) => [String(Number(phase.number)), phase]));
 
   for (const { basename, payload } of workflowStates) {
     const statePlanDir = resolveMaybePath(payload.planDir || payload.phaseRunLease?.planDir, repoRoot);
@@ -239,18 +401,18 @@ function inspectIdentityMismatch({ statusRoot, phases, workflowStates, statusPat
     }
 
     const phaseNumber = statePhaseNumber(payload);
-    if (phaseNumber && completedPhaseNumbers.size > 0 && !completedPhaseNumbers.has(String(Number(phaseNumber)))) {
+    const matchingPhase = phaseNumber ? phasesByNumber.get(String(Number(phaseNumber))) : null;
+    if (phaseNumber && !matchingPhase) {
       addViolation(
         violations,
         'harness-state-phase-id-mismatch',
-        `${basename} points at phase ${phaseNumber}, but completed phase-status entries are ${[...completedPhaseNumbers].join(', ')}.`,
+        `${basename} points at phase ${phaseNumber}, but phase-status has no matching phase entry.`,
         { failureClass: 'harness-state' },
       );
     }
 
     const phaseTitle = statePhaseTitle(payload);
-    if (phaseNumber && phaseTitle) {
-      const matchingPhase = phases.find((phase) => String(phase.number) === String(Number(phaseNumber)));
+    if (matchingPhase && phaseTitle) {
       if (matchingPhase?.title && normalizeLower(matchingPhase.title) !== normalizeLower(phaseTitle)) {
         addViolation(
           violations,
@@ -343,6 +505,12 @@ export function evaluateHarnessStateInvariants({
   }
 
   for (const { basename, payload } of failedWorkflowStates) {
+    const blockedActivePhase = activeBlockedPhaseForWorkflowState({ statusRoot, phases, payload });
+    if (blockedActivePhase) {
+      degradedEvidence.push(blockedActiveWorkflowEvidence({ basename, payload, phase: blockedActivePhase }));
+      continue;
+    }
+
     const fallbackRunId = payload.fallbackRunId || payload.localFallbackCompletion?.runId || '';
     const fallbackRun = fallbackRunId ? readJsonIfExists(path.join(resolvedWorkflowDir, `${fallbackRunId}.json`)) : null;
     if (fallbackRun && isCompletedLocalFallback(fallbackRun)) {
@@ -364,6 +532,12 @@ export function evaluateHarnessStateInvariants({
 
   if (completedPhases.length > 0) {
     for (const { basename, payload } of runningWorkflowStates) {
+      const blockedActivePhase = activeBlockedPhaseForWorkflowState({ statusRoot, phases, payload });
+      if (blockedActivePhase) {
+        degradedEvidence.push(blockedActiveWorkflowEvidence({ basename, payload, phase: blockedActivePhase }));
+        continue;
+      }
+
       const preparedDispatch = basename === 'latest-dispatch.json' && normalizeLower(payload.status || payload.completionStatus) === 'prepared';
       addViolation(
         violations,

@@ -67,15 +67,15 @@ phaseExecution:
 ## Exact Execution Targets
 | ID | Create Files | Modify Files | Test Files | Command | Expected Fail/Pass Signal |
 |----|--------------|--------------|------------|---------|---------------------------|
-| P01-1 | `.claude/tests/fixtures/phase-closeout/phase-08-success/**` | none | `.claude/scripts/lib/current-artifacts-state.test.mjs` | `node --test .claude/scripts/lib/current-artifacts-state.test.mjs` | Before helper: module not found. After helper: fixture cases pass. |
-| P01-2 | `.claude/scripts/lib/current-artifacts-state.mjs` | none | `.claude/scripts/lib/current-artifacts-state.test.mjs` | `node --test .claude/scripts/lib/current-artifacts-state.test.mjs` | `current_index_missing`, `manifest_hash_mismatch`, `legacy_scan` cases pass. |
-| P01-3 | none | `.claude/scripts/verification-verdict-state.mjs`, `.claude/scripts/verify-phase-closeout.mjs`, `.claude/scripts/workflow-enforcement.mjs` | Existing and new reader tests | `node --test .claude/scripts/*.test.mjs` | No scan-first current regression. |
+| P01-1 | `.claude/tests/fixtures/phase-closeout/phase-08-success/**` | none | `.claude/scripts/lib/current-artifacts-state.test.mjs` | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs` | Before helper: module not found. After helper: fixture cases pass. |
+| P01-2 | `.claude/scripts/lib/current-artifacts-state.mjs` | none | `.claude/scripts/lib/current-artifacts-state.test.mjs` | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs` | `current_index_missing`, `manifest_hash_mismatch`, `legacy_scan` cases pass. |
+| P01-3 | none | `.claude/scripts/verification-verdict-state.mjs`, `.claude/scripts/verify-phase-closeout.mjs`, `.claude/scripts/workflow-enforcement.mjs` | Existing and new reader tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | No scan-first current regression. |
 
 ## Critical Product Scenarios
 | Scenario | User-visible Expectation | Proof Command | Expected Pass Signal | Evidence Path |
 |----------|--------------------------|---------------|----------------------|---------------|
-| SCN-01 | A stale newer canonical verdict is not treated as current. | `node --test .claude/scripts/lib/current-artifacts-state.test.mjs` | stale canonical ignored test passes. | `.claude/scripts/lib/current-artifacts-state.test.mjs` output |
-| SCN-02 | Missing current index fails in current mode rather than silently scanning. | `node --test .claude/scripts/lib/current-artifacts-state.test.mjs` | `current_index_missing` case passes. | `.claude/scripts/lib/current-artifacts-state.test.mjs` output |
+| SCN-01 | A stale newer canonical verdict is not treated as current. | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs` | stale canonical ignored test passes. | `.claude/scripts/lib/current-artifacts-state.test.mjs` output |
+| SCN-02 | Missing current index fails in current mode rather than silently scanning. | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs` | `current_index_missing` case passes. | `.claude/scripts/lib/current-artifacts-state.test.mjs` output |
 
 ## Blockers And Review
 - Blocker condition: any primary reader still performs scan-first current verdict selection in current mode.
@@ -84,9 +84,9 @@ phaseExecution:
 - Verification evidence path: phase execution `QA_REPORT.md` and test output.
 
 ## Validation Plan
-- [ ] `node --test .claude/scripts/lib/current-artifacts-state.test.mjs`
-- [ ] `node --test .claude/scripts/*.test.mjs`
-- [ ] `bash .claude/scripts/workflow-enforcement.sh verify`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
+- [ ] `node .claude/scripts/workflow-enforcement.mjs verify`
 
 ## Deliverables
 - `.claude/scripts/lib/current-artifacts-state.mjs`

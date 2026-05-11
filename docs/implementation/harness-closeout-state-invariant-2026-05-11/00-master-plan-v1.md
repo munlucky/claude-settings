@@ -100,14 +100,14 @@ goalContract:
 - None.
 
 ## Phase Completion Checklist
-- [ ] Phase 01 - Current Artifacts Reader And Fixtures (`docs/implementation/harness-closeout-state-invariant-2026-05-11/01-current-artifacts-reader-fixtures-v1.md`)
-- [ ] Phase 02 - Dry-Run And Diagnostics Contract (`docs/implementation/harness-closeout-state-invariant-2026-05-11/02-dry-run-diagnostics-contract-v1.md`)
-- [ ] Phase 03 - Staged Publish Manifest And Current Pointer (`docs/implementation/harness-closeout-state-invariant-2026-05-11/03-staged-publish-manifest-current-pointer-v1.md`)
-- [ ] Phase 04 - Versioned Supersede Archive And Log Snapshot (`docs/implementation/harness-closeout-state-invariant-2026-05-11/04-versioned-supersede-archive-v1.md`)
-- [ ] Phase 05 - Authoritative Verdict Identity Mode (`docs/implementation/harness-closeout-state-invariant-2026-05-11/05-authoritative-verdict-identity-v1.md`)
-- [ ] Phase 06 - Post-Publish Goal Runtime Sidecar (`docs/implementation/harness-closeout-state-invariant-2026-05-11/06-post-publish-goal-runtime-sidecar-v1.md`)
-- [ ] Phase 07 - Artifact Projection Guard (`docs/implementation/harness-closeout-state-invariant-2026-05-11/07-artifact-projection-guard-v1.md`)
-- [ ] Phase 08 - Composite Monitor And Noise Routing (`docs/implementation/harness-closeout-state-invariant-2026-05-11/08-composite-monitor-noise-routing-v1.md`)
+- [x] Phase 01 - Current Artifacts Reader And Fixtures (`docs/implementation/harness-closeout-state-invariant-2026-05-11/01-current-artifacts-reader-fixtures-v1.md`)
+- [x] Phase 02 - Dry-Run And Diagnostics Contract (`docs/implementation/harness-closeout-state-invariant-2026-05-11/02-dry-run-diagnostics-contract-v1.md`)
+- [x] Phase 03 - Staged Publish Manifest And Current Pointer (`docs/implementation/harness-closeout-state-invariant-2026-05-11/03-staged-publish-manifest-current-pointer-v1.md`)
+- [x] Phase 04 - Versioned Supersede Archive And Log Snapshot (`docs/implementation/harness-closeout-state-invariant-2026-05-11/04-versioned-supersede-archive-v1.md`)
+- [x] Phase 05 - Authoritative Verdict Identity Mode (`docs/implementation/harness-closeout-state-invariant-2026-05-11/05-authoritative-verdict-identity-v1.md`)
+- [x] Phase 06 - Post-Publish Goal Runtime Sidecar (`docs/implementation/harness-closeout-state-invariant-2026-05-11/06-post-publish-goal-runtime-sidecar-v1.md`)
+- [x] Phase 07 - Artifact Projection Guard (`docs/implementation/harness-closeout-state-invariant-2026-05-11/07-artifact-projection-guard-v1.md`)
+- [x] Phase 08 - Composite Monitor And Noise Routing (`docs/implementation/harness-closeout-state-invariant-2026-05-11/08-composite-monitor-noise-routing-v1.md`)
 
 ## Completion Rules
 - Do not mark a phase complete until its phase plan completion checklist is satisfied and evidence exists.

@@ -1,4 +1,8 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
+
+import { readJson, resolveLeaseFiles } from './phase-run-lease-store.mjs';
 
 export function readStatusBlocks(statusFile) {
   if (!statusFile || !fs.existsSync(statusFile)) {
@@ -49,6 +53,111 @@ export function countActionablePhases(statusFile) {
     }
     return block.status === 'pending' || block.status === 'in_progress' || block.status === 'failed';
   }).length;
+}
+
+function repoRelative(repoRoot, filePath) {
+  return path.relative(repoRoot, filePath).replace(/\\/g, '/') || '.';
+}
+
+function resolveFromRoot(repoRoot, filePath) {
+  if (!filePath) {
+    return '';
+  }
+  return path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(repoRoot, filePath);
+}
+
+function sha256RawBytes(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function fileCursor(repoRoot, filePath, { hash = true } = {}) {
+  const resolved = resolveFromRoot(repoRoot, filePath);
+  if (!resolved) {
+    return { path: '', exists: false };
+  }
+  if (!fs.existsSync(resolved)) {
+    return { path: repoRelative(repoRoot, resolved), exists: false };
+  }
+  const stat = fs.statSync(resolved);
+  return {
+    path: repoRelative(repoRoot, resolved),
+    exists: true,
+    sizeBytes: stat.size,
+    mtimeMs: Math.trunc(stat.mtimeMs),
+    hash: hash ? sha256RawBytes(resolved) : '',
+  };
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (!value || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+}
+
+function hashCursor(value) {
+  return crypto.createHash('sha256').update(stableJson(value)).digest('hex');
+}
+
+function artifactEntries(currentIndex = {}) {
+  const artifacts = currentIndex && typeof currentIndex === 'object' ? currentIndex.artifacts : null;
+  if (!artifacts || typeof artifacts !== 'object') {
+    return [];
+  }
+  return Object.entries(artifacts)
+    .map(([key, value]) => ({ key, ...(value && typeof value === 'object' ? value : {}) }))
+    .filter((entry) => String(entry.kind || entry.key || '').startsWith('canonical-verdict'))
+    .sort((left, right) => String(left.kind || left.key).localeCompare(String(right.kind || right.key)));
+}
+
+export function buildCompositeMonitorCursor({
+  repoRoot = process.cwd(),
+  statusFile = '.claude/docs/phase-status.yaml',
+  workflowDir = '.claude/logs/workflow-enforcement',
+} = {}) {
+  const root = path.resolve(repoRoot);
+  const statusPath = resolveFromRoot(root, statusFile);
+  const workflowRoot = resolveFromRoot(root, workflowDir);
+  const currentIndexPath = path.join(workflowRoot, 'current-artifacts.json');
+  const currentIndex = readJson(currentIndexPath) || {};
+  const manifestPath = resolveFromRoot(root, currentIndex.manifestPath || '');
+  const leaseFiles = resolveLeaseFiles(statusPath);
+  const activeLease = readJson(leaseFiles.activeRunFile) || {};
+  const workflowLogs = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']
+    .map((basename) => fileCursor(root, path.join(workflowRoot, basename)));
+  const activeVerdicts = artifactEntries(currentIndex).map((entry) => ({
+    kind: entry.kind || entry.key,
+    commitToken: entry.commitToken || currentIndex.commitToken || '',
+    manifestHash: entry.hash || '',
+    file: fileCursor(root, entry.path || entry.relativePath || ''),
+  }));
+  const cursor = {
+    schemaVersion: 1,
+    statusFile: fileCursor(root, statusPath),
+    currentIndex: {
+      commitToken: currentIndex.commitToken || '',
+      manifestHash: currentIndex.manifestHash || '',
+      file: fileCursor(root, currentIndexPath),
+    },
+    manifest: fileCursor(root, manifestPath),
+    lease: {
+      runLeaseId: activeLease.runLeaseId || '',
+      status: activeLease.status || '',
+      completionStatus: activeLease.completionStatus || '',
+      currentStage: activeLease.currentStage || '',
+      lastHeartbeatAt: activeLease.lastHeartbeatAt || '',
+      file: fileCursor(root, leaseFiles.activeRunFile),
+    },
+    workflowLogs,
+    activeVerdicts,
+  };
+  return {
+    ...cursor,
+    fingerprint: hashCursor(cursor),
+  };
 }
 
 function quoteStatusValue(value) {

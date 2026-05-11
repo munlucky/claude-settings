@@ -13,6 +13,7 @@ import { createPhaseHarnessCaptureSession } from './lib/awtl-harness-capture.mjs
 import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { classifyFailure } from './lib/failure-classifier.mjs';
+import { buildCompositeMonitorCursor } from './lib/phase-run-lease-status.mjs';
 import {
   knownUnavailableSummary,
   recordUnavailableCapability,
@@ -562,6 +563,10 @@ function readFileFingerprint(filePath) {
 }
 
 function currentPhaseProgressFingerprint(context = activePhaseContext()) {
+  const compositeCursor = buildCompositeMonitorCursor({
+    repoRoot: process.cwd(),
+    statusFile: state.statusFile,
+  });
   const trackedPaths = [
     context.activePhaseDoc,
     context.sprintContract,
@@ -576,6 +581,7 @@ function currentPhaseProgressFingerprint(context = activePhaseContext()) {
     context.lastUpdatedAt || '',
     context.currentStage || '',
     context.title || context.activePhaseTitle || '',
+    `composite=${compositeCursor.fingerprint}`,
   ];
   for (const filePath of trackedPaths) {
     values.push(`${path.resolve(String(filePath))}=${readFileFingerprint(filePath)}`);
@@ -930,6 +936,10 @@ function startTrackingBridge(label) {
     try {
       const context = activePhaseContext();
       heartbeatDispatchLease(context);
+      const compositeCursor = buildCompositeMonitorCursor({
+        repoRoot: process.cwd(),
+        statusFile: state.statusFile,
+      });
       const summaryParts = [
         label,
         `phase=${context.number || 'none'}`,
@@ -937,8 +947,18 @@ function startTrackingBridge(label) {
         `stage=${context.currentStage || mapLeaseStage(context)}`,
         `status=${context.status || 'idle'}`,
         `outcome=${context.lastOutcome || 'pending'}`,
+        `cursor=${compositeCursor.fingerprint.slice(0, 12)}`,
       ];
       logInfo(`Tracking heartbeat: ${summaryParts.join(' ')}`);
+      appendDebugLog('tracking-bridge-composite-cursor', {
+        label,
+        phase: context.number || '',
+        fingerprint: compositeCursor.fingerprint,
+        currentCommitToken: compositeCursor.currentIndex.commitToken,
+        manifestHash: compositeCursor.currentIndex.manifestHash,
+        workflowLogCount: compositeCursor.workflowLogs.length,
+        activeVerdictCount: compositeCursor.activeVerdicts.length,
+      });
     } catch (error) {
       appendDebugLog('tracking-bridge-heartbeat-failed', {
         label,

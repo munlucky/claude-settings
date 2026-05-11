@@ -1,8 +1,8 @@
 commands:
   knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
-  codePolicy: "bash .claude/scripts/verify-code-policy.sh"
-  workflowEnforcement: "bash .claude/scripts/workflow-enforcement.sh verify"
-  shellSyntax: "bash -n .claude/scripts/knowledge-repo-audit.sh && bash -n .claude/scripts/verify-code-policy.sh && bash -n .claude/scripts/workflow-enforcement.sh && bash -n .claude/scripts/agent-loop.sh && bash -n .claude/scripts/moonshot-phase-dispatch.sh && bash -n .claude/scripts/phase-worktree-coordinator.sh && bash -n .claude/scripts/verify-phase-runtime-parity.sh && bash -n .claude/scripts/verify-phase-runner-boundary.sh && bash -n .claude/agents/verification/verify-changes.sh && bash -n .claude/agents/verification/verify-runtime.sh"
+  codePolicy: "node .claude/scripts/verify-code-policy.mjs"
+  workflowEnforcement: "node .claude/scripts/workflow-enforcement.mjs verify"
+  shellSyntax: "node .claude/scripts/verify-shell-syntax.mjs"
   phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
   phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
   phaseWorktreeParallel: "node .claude/scripts/phase-worktree-coordinator.mjs self-test"

@@ -55,7 +55,7 @@ phaseExecution:
 ## Exact Execution Targets
 | ID | Create Files | Modify Files | Test Files | Command | Expected Fail/Pass Signal |
 |----|--------------|--------------|------------|---------|---------------------------|
-| P02-1 | `.claude/scripts/lib/closeout-diagnostics.mjs` | none | `.claude/scripts/lib/closeout-diagnostics.test.mjs` | `node --test .claude/scripts/lib/closeout-diagnostics.test.mjs` | diagnostic append and fallback cases pass. |
+| P02-1 | `.claude/scripts/lib/closeout-diagnostics.mjs` | none | `.claude/scripts/lib/closeout-diagnostics.test.mjs` | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/closeout-diagnostics.test.mjs` | diagnostic append and fallback cases pass. |
 | P02-2 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer tests or fixture dry-run test | `node .claude/scripts/phase-closeout-finalize.mjs finalize --phase 8 --plan-dir .claude/tests/fixtures/phase-closeout/phase-08-success/docs/implementation --master-plan .claude/tests/fixtures/phase-closeout/phase-08-success/docs/implementation/MASTER_PLAN.md --execution-root .claude/tests/fixtures/phase-closeout/phase-08-success/execution --status-file .claude/tests/fixtures/phase-closeout/phase-08-success/docs/phase-status.yaml --dry-run --json` | JSON includes planned fields and no files are written. |
 
 ## Critical Product Scenarios
@@ -70,9 +70,9 @@ phaseExecution:
 - Verification evidence path: dry-run JSON saved in phase QA evidence.
 
 ## Validation Plan
-- [ ] `node --test .claude/scripts/lib/closeout-diagnostics.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/closeout-diagnostics.test.mjs`
 - [ ] fixture-backed dry-run command
-- [ ] `node --test .claude/scripts/*.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
 
 ## Deliverables
 - Diagnostics helper and tests.

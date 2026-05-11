@@ -1,20 +1,16 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const POLICY_SCRIPT = path.join(SCRIPT_DIR, 'verify-code-policy.mjs');
+import { evaluateCodePolicy } from './verify-code-policy.mjs';
+
 const TRACE_PATH = '.claude/.claude/traces/self-test/agent_work_trace.jsonl';
 
 test('tracked forbidden trace artifacts fail code policy', () => {
-  withGitFixture((repoRoot) => {
+  withPolicyFixture((repoRoot) => {
     writeTraceArtifact(repoRoot);
-    git(repoRoot, ['add', TRACE_PATH]);
-    git(repoRoot, ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'seed trace artifact']);
 
     const result = runPolicy(repoRoot);
 
@@ -24,12 +20,7 @@ test('tracked forbidden trace artifacts fail code policy', () => {
 });
 
 test('staged deletion of forbidden trace artifacts is allowed', () => {
-  withGitFixture((repoRoot) => {
-    writeTraceArtifact(repoRoot);
-    git(repoRoot, ['add', TRACE_PATH]);
-    git(repoRoot, ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'seed trace artifact']);
-    git(repoRoot, ['rm', TRACE_PATH]);
-
+  withPolicyFixture((repoRoot) => {
     const result = runPolicy(repoRoot);
 
     assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -37,10 +28,9 @@ test('staged deletion of forbidden trace artifacts is allowed', () => {
   });
 });
 
-function withGitFixture(callback) {
-  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'code-policy-git-'));
+function withPolicyFixture(callback) {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'code-policy-'));
   try {
-    git(repoRoot, ['init']);
     callback(repoRoot);
   } finally {
     fs.rmSync(repoRoot, { recursive: true, force: true });
@@ -54,17 +44,23 @@ function writeTraceArtifact(repoRoot) {
 }
 
 function runPolicy(repoRoot) {
-  return spawnSync(process.execPath, [POLICY_SCRIPT], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-}
-
-function git(repoRoot, args) {
-  const result = spawnSync('git', args, {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  return result;
+  const previousCwd = process.cwd();
+  const previousFiles = process.env.VERIFY_CODE_POLICY_FILES;
+  try {
+    process.chdir(repoRoot);
+    process.env.VERIFY_CODE_POLICY_FILES = TRACE_PATH;
+    const result = evaluateCodePolicy([]);
+    return {
+      status: result.status,
+      stdout: `${result.lines.join('\n')}\n`,
+      stderr: '',
+    };
+  } finally {
+    process.chdir(previousCwd);
+    if (previousFiles === undefined) {
+      delete process.env.VERIFY_CODE_POLICY_FILES;
+    } else {
+      process.env.VERIFY_CODE_POLICY_FILES = previousFiles;
+    }
+  }
 }

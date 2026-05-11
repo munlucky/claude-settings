@@ -225,6 +225,22 @@ function packageHasDependency(manifest, name) {
   return Boolean(manifest.dependencies?.[name] || manifest.devDependencies?.[name]);
 }
 
+function workspaceDeclaresNodePackageManager(manifest) {
+  return Boolean(manifest && typeof manifest.packageManager === 'string' && manifest.packageManager.trim());
+}
+
+function optionalPackageToolCheck(name, evidence, manifest) {
+  if (manifest || workspaceDeclaresNodePackageManager(manifest)) {
+    return commandCheck(name, evidence);
+  }
+  return check(name, evidence.status === 'failed' ? 'warning' : evidence.status, evidence.detail || `${name} not required by this workspace`, {
+    command: evidence.invocation?.join(' ') || evidence.commandName || name,
+    failureClass: '',
+    decision: 'continue',
+    fallbackHint: '',
+  });
+}
+
 function workspaceRequiresPytest(manifest) {
   return packageHasDependency(manifest, 'pytest')
     || fileExists('pytest.ini')
@@ -439,8 +455,8 @@ function buildReport() {
     checks.push(runChildProbe('memorygraph.health', memorygraphProbeCommand[0], memorygraphProbeCommand.slice(1), 'MemoryGraph health probe succeeded', 'memorygraph_unavailable', 'install-or-repair-memorygraph-or-defer-memory-backed-verification'));
   }
 
-  checks.push(commandCheck('corepack.version', resolveCommandEvidence('corepack')));
-  checks.push(commandCheck('pnpm.version', resolveCommandEvidence('pnpm')));
+  checks.push(optionalPackageToolCheck('corepack.version', resolveCommandEvidence('corepack'), manifest));
+  checks.push(optionalPackageToolCheck('pnpm.version', resolveCommandEvidence('pnpm'), manifest));
   checks.push(commandCheck('python.version', resolveCommandEvidence('python')));
   const pytestEvidence = resolveCommandEvidence('pytest');
   checks.push(workspaceRequiresPytest(manifest)

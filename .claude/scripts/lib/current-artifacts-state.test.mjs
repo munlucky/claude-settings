@@ -94,3 +94,54 @@ test('artifact hash mismatch blocks current state', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('superseded artifacts are history snapshots, not current validation inputs', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'current-artifacts-superseded-'));
+  try {
+    fs.mkdirSync(path.join(root, '.claude/logs/workflow-enforcement'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'canonical.txt'), 'current\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'snapshot.txt'), 'old\n', 'utf8');
+
+    const manifestPath = path.join(root, '.claude/logs/workflow-enforcement/closeout-sync-manifest-current.json');
+    const manifest = {
+      schemaVersion: 1,
+      commitToken: 'current-token',
+      artifacts: {
+        canonical: {
+          kind: 'canonical',
+          path: 'canonical.txt',
+          hash: sha256RawBytes(path.join(root, 'canonical.txt')),
+          commitToken: 'current-token',
+        },
+      },
+    };
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+    const index = {
+      schemaVersion: 1,
+      commitToken: 'current-token',
+      manifestPath: path.relative(root, manifestPath).replace(/\\/g, '/'),
+      manifestHash: sha256RawBytes(manifestPath),
+      artifacts: manifest.artifacts,
+      supersededArtifacts: [
+        {
+          canonicalPath: 'canonical.txt',
+          snapshotPath: 'snapshot.txt',
+          artifactHash: sha256RawBytes(path.join(root, 'snapshot.txt')),
+          commitToken: 'old-token',
+          supersededByCommitToken: 'current-token',
+        },
+      ],
+    };
+
+    const state = validateCurrentArtifactsIndex(index, {
+      root,
+      indexPath: '.claude/logs/workflow-enforcement/current-artifacts.json',
+    });
+
+    assert.equal(state.ok, true);
+    assert.equal(state.commitToken, 'current-token');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

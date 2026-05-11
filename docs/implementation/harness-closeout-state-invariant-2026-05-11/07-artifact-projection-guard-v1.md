@@ -56,9 +56,9 @@ phaseExecution:
 ## Exact Execution Targets
 | ID | Create Files | Modify Files | Test Files | Command | Expected Fail/Pass Signal |
 |----|--------------|--------------|------------|---------|---------------------------|
-| P07-1 | `.claude/scripts/lib/harness-state-invariants.mjs` | `.claude/scripts/phase-closeout-finalize.mjs` | `.claude/scripts/lib/harness-state-invariants.test.mjs` | `node --test .claude/scripts/lib/harness-state-invariants.test.mjs` | invalid state combinations fail. |
-| P07-2 | none | `.claude/scripts/agent-loop-phase-artifacts.mjs` | artifact projection tests | `node --test .claude/scripts/*.test.mjs` | `Log: none` publish case fails. |
-| P07-4 | none | `.claude/scripts/agent-loop-phase-artifacts.mjs` | WORKSETS idempotence test | `node --test .claude/scripts/*.test.mjs` | WORKSETS output stable. |
+| P07-1 | `.claude/scripts/lib/harness-state-invariants.mjs` | `.claude/scripts/phase-closeout-finalize.mjs` | `.claude/scripts/lib/harness-state-invariants.test.mjs` | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/harness-state-invariants.test.mjs` | invalid state combinations fail. |
+| P07-2 | none | `.claude/scripts/agent-loop-phase-artifacts.mjs` | artifact projection tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | `Log: none` publish case fails. |
+| P07-4 | none | `.claude/scripts/agent-loop-phase-artifacts.mjs` | WORKSETS idempotence test | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | WORKSETS output stable. |
 
 ## Critical Product Scenarios
 | Scenario | User-visible Expectation | Proof Command | Expected Pass Signal | Evidence Path |
@@ -72,8 +72,8 @@ phaseExecution:
 - Verification evidence path: invariant and projection tests.
 
 ## Validation Plan
-- [ ] `node --test .claude/scripts/lib/harness-state-invariants.test.mjs`
-- [ ] `node --test .claude/scripts/*.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/harness-state-invariants.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
 - [ ] fixture-backed dry-run command
 
 ## Deliverables

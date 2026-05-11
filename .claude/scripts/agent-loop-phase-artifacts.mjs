@@ -2,8 +2,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { nowIsoSeconds } from './lib/clock.mjs';
+import {
+  assertNoGeneratedStalePhaseResidue,
+  assertProjectionHasActiveLog,
+} from './lib/harness-state-invariants.mjs';
 
 const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
 const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
@@ -488,6 +493,69 @@ function updateObjectiveChecklist(lines, objectives = []) {
   });
 }
 
+function extractTaskScalar(block, key) {
+  const pattern = new RegExp(`^ {4}${key}:\\s*(.*)$`);
+  for (const line of block) {
+    const match = line.match(pattern);
+    if (match) {
+      return match[1].trim().replace(/^["']|["']$/g, '');
+    }
+  }
+  return '';
+}
+
+function renderInlineYamlArray(values) {
+  return `[${values.map((value) => yamlQuote(value)).join(', ')}]`;
+}
+
+function renderDeterministicAtomicTaskBlock(block, {
+  taskStatus,
+  runtimeStatus,
+  acceptanceCriterionId,
+  parentAcceptanceCriterionId,
+  linkedRequirementIds,
+  acVerdict,
+  verificationEvidenceEntries,
+  semanticEvaluation,
+  changedFiles,
+  verificationCommands,
+  evidence,
+  completedAt,
+  timestamp,
+}) {
+  const id = extractTaskScalar(block, 'id') || 'AT-01';
+  const title = extractTaskScalar(block, 'title');
+  const nextStatus = taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed');
+  const nextCompletedAt = nextStatus === 'completed' || runtimeStatus === 'completed'
+    ? (completedAt || timestamp || nowIsoSeconds())
+    : completedAt;
+  const semanticStatus = semanticEvaluation.status || 'not_run';
+  const semanticReason = semanticEvaluation.reason || 'not_applicable_to_current_phase';
+  const nextBlock = [`  - id: ${id}`];
+  if (title) {
+    nextBlock.push(`    title: ${yamlQuote(title)}`);
+  }
+  nextBlock.push(`    status: ${nextStatus}`);
+  nextBlock.push(`    taskStatus: ${yamlQuote(nextStatus)}`);
+  if (acceptanceCriterionId) {
+    nextBlock.push(`    acceptanceCriterionId: ${yamlQuote(acceptanceCriterionId)}`);
+  }
+  if (parentAcceptanceCriterionId) {
+    nextBlock.push(`    parentAcceptanceCriterionId: ${yamlQuote(parentAcceptanceCriterionId)}`);
+  }
+  nextBlock.push(`    linkedRequirementIds: ${renderInlineYamlArray(linkedRequirementIds)}`);
+  nextBlock.push(`    acVerdict: ${yamlQuote(acVerdict || 'pending')}`);
+  nextBlock.push(`    verificationEvidence: ${renderInlineYamlArray(verificationEvidenceEntries)}`);
+  nextBlock.push('    semanticEvaluation:');
+  nextBlock.push(`      status: ${yamlQuote(semanticStatus)}`);
+  nextBlock.push(`      reason: ${yamlQuote(semanticReason)}`);
+  nextBlock.push(`    ownedPaths: ${renderInlineYamlArray(changedFiles)}`);
+  nextBlock.push(`    verificationCommands: ${renderInlineYamlArray(verificationCommands)}`);
+  nextBlock.push(`    evidence: ${renderInlineYamlArray(evidence)}`);
+  nextBlock.push(`    completedAt: ${nextCompletedAt ? yamlQuote(nextCompletedAt) : 'null'}`);
+  return nextBlock;
+}
+
 function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
   if (!worksetsPath || !fs.existsSync(worksetsPath)) {
     return;
@@ -513,6 +581,16 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
   const verdictPath = String(state.verdictPath || state.runtime?.verdictPath || '').trim();
   const runtimeStage = String(state.runtime?.stage || state.stage || '').trim();
   const runtimeStatus = String(state.runtime?.status || state.status || '').trim();
+  const activePhaseNumber = state.phase?.number || state.phaseNum || state.phaseNumber || '';
+
+  assertNoGeneratedStalePhaseResidue({
+    activePhaseNumber,
+    fields: {
+      'workset.semanticEvaluation.reason': semanticEvaluation.reason || '',
+      'workset.evidence': evidenceEntries,
+      'workset.verificationEvidence': verificationEvidenceEntries,
+    },
+  });
 
   if (activeAtomicTask) {
     text = text.replace(/^activeAtomicTask:\s*.*$/m, `activeAtomicTask: ${activeAtomicTask}`);
@@ -542,134 +620,28 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
 
   if (taskStart >= 0) {
     const block = lines.slice(taskStart, taskEnd);
-    const nextBlock = [...block];
-    const removeFollowingListItems = (index) => {
-      while (index + 1 < nextBlock.length && /^ {6}-\s+/.test(nextBlock[index + 1])) {
-        nextBlock.splice(index + 1, 1);
-      }
-    };
-    let sawStatus = false;
-    let sawOwnedPaths = false;
-    let sawVerificationCommands = false;
-    let sawEvidence = false;
-    let sawTaskStatus = false;
-    let sawAcceptanceCriterionId = false;
-    let sawParentAcceptanceCriterionId = false;
-    let sawLinkedRequirementIds = false;
-    let sawAcVerdict = false;
-    let sawVerificationEvidence = false;
-    let sawSemanticEvaluation = false;
-    let sawCompletedAt = false;
-    for (let index = 0; index < nextBlock.length; index += 1) {
-      const raw = nextBlock[index];
-      const stripped = nextBlock[index].trim();
-      if (/^ {4}status:/.test(raw)) {
-        nextBlock[index] = `    status: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`;
-        sawStatus = true;
-      } else if (/^ {4}taskStatus:/.test(raw)) {
-        nextBlock[index] = `    taskStatus: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`;
-        sawTaskStatus = true;
-      } else if (/^ {4}acceptanceCriterionId:/.test(raw)) {
-        if (acceptanceCriterionId) {
-          nextBlock[index] = `    acceptanceCriterionId: ${yamlQuote(acceptanceCriterionId)}`;
-        }
-        sawAcceptanceCriterionId = true;
-      } else if (/^ {4}parentAcceptanceCriterionId:/.test(raw)) {
-        if (parentAcceptanceCriterionId) {
-          nextBlock[index] = `    parentAcceptanceCriterionId: ${yamlQuote(parentAcceptanceCriterionId)}`;
-        }
-        sawParentAcceptanceCriterionId = true;
-      } else if (/^ {4}linkedRequirementIds:/.test(raw)) {
-        if (linkedRequirementIds.length > 0) {
-          nextBlock[index] = `    linkedRequirementIds: [${linkedRequirementIds.map((value) => yamlQuote(value)).join(', ')}]`;
-          removeFollowingListItems(index);
-        }
-        sawLinkedRequirementIds = true;
-      } else if (/^ {4}acVerdict:/.test(raw)) {
-        nextBlock[index] = `    acVerdict: ${yamlQuote(acVerdict || 'pending')}`;
-        sawAcVerdict = true;
-      } else if (/^ {4}verificationEvidence:/.test(raw)) {
-        nextBlock[index] = `    verificationEvidence: [${verificationEvidenceEntries.map((value) => yamlQuote(value)).join(', ')}]`;
-        removeFollowingListItems(index);
-        sawVerificationEvidence = true;
-      } else if (/^ {4}semanticEvaluation:/.test(raw)) {
-        sawSemanticEvaluation = true;
-      } else if (/^ {4}ownedPaths:/.test(raw)) {
-        nextBlock[index] = `    ownedPaths: [${changedFiles.map((value) => yamlQuote(value)).join(', ')}]`;
-        removeFollowingListItems(index);
-        sawOwnedPaths = true;
-      } else if (/^ {4}verificationCommands:/.test(raw)) {
-        nextBlock[index] = `    verificationCommands: [${verificationCommands.map((value) => yamlQuote(value)).join(', ')}]`;
-        removeFollowingListItems(index);
-        sawVerificationCommands = true;
-      } else if (/^ {4}evidence:/.test(raw)) {
-        const evidence = [
-          verdictPath ? `Structured verdict: ${path.relative(process.cwd(), verdictPath).replace(/\\/g, '/')}` : '',
-          logFile ? `Runner log: ${logFile}` : '',
-          runtimeStage ? `Stage: ${runtimeStage}` : '',
-          runtimeStatus ? `Status: ${runtimeStatus}` : '',
-          ...evidenceEntries,
-        ].filter(Boolean);
-        nextBlock[index] = `    evidence: [${evidence.map((value) => yamlQuote(value)).join(', ')}]`;
-        removeFollowingListItems(index);
-        sawEvidence = true;
-      } else if (/^ {4}completedAt:/.test(raw)) {
-        const nextCompletedAt = taskStatus === 'completed' || runtimeStatus === 'completed'
-          ? (completedAt || nowIsoSeconds())
-          : completedAt;
-        nextBlock[index] = `    completedAt: ${nextCompletedAt ? yamlQuote(nextCompletedAt) : 'null'}`;
-        sawCompletedAt = true;
-      }
-    }
-
-    if (!sawStatus) {
-      nextBlock.push(`    status: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`);
-    }
-    if (!sawTaskStatus) {
-      nextBlock.push(`    taskStatus: ${taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed')}`);
-    }
-    if (!sawAcceptanceCriterionId && acceptanceCriterionId) {
-      nextBlock.push(`    acceptanceCriterionId: ${yamlQuote(acceptanceCriterionId)}`);
-    }
-    if (!sawParentAcceptanceCriterionId && parentAcceptanceCriterionId) {
-      nextBlock.push(`    parentAcceptanceCriterionId: ${yamlQuote(parentAcceptanceCriterionId)}`);
-    }
-    if (!sawLinkedRequirementIds) {
-      nextBlock.push(`    linkedRequirementIds: [${linkedRequirementIds.map((value) => yamlQuote(value)).join(', ')}]`);
-    }
-    if (!sawAcVerdict) {
-      nextBlock.push(`    acVerdict: ${yamlQuote(acVerdict || 'pending')}`);
-    }
-    if (!sawVerificationEvidence) {
-      nextBlock.push(`    verificationEvidence: [${verificationEvidenceEntries.map((value) => yamlQuote(value)).join(', ')}]`);
-    }
-    if (!sawSemanticEvaluation) {
-      nextBlock.push('    semanticEvaluation:');
-      nextBlock.push(`      status: ${yamlQuote(semanticEvaluation.status || 'not_run')}`);
-      nextBlock.push(`      reason: ${yamlQuote(semanticEvaluation.reason || 'out_of_scope_for_phase_03')}`);
-    }
-    if (!sawOwnedPaths) {
-      nextBlock.push(`    ownedPaths: [${changedFiles.map((value) => yamlQuote(value)).join(', ')}]`);
-    }
-    if (!sawVerificationCommands) {
-      nextBlock.push(`    verificationCommands: [${verificationCommands.map((value) => yamlQuote(value)).join(', ')}]`);
-    }
-    if (!sawEvidence) {
-      const evidence = [
-        verdictPath ? `Structured verdict: ${path.relative(process.cwd(), verdictPath).replace(/\\/g, '/')}` : '',
-        logFile ? `Runner log: ${logFile}` : '',
-        runtimeStage ? `Stage: ${runtimeStage}` : '',
-        runtimeStatus ? `Status: ${runtimeStatus}` : '',
-        ...evidenceEntries,
-      ].filter(Boolean);
-      nextBlock.push(`    evidence: [${evidence.map((value) => yamlQuote(value)).join(', ')}]`);
-    }
-    if (!sawCompletedAt) {
-      const nextCompletedAt = taskStatus === 'completed' || runtimeStatus === 'completed'
-        ? (completedAt || timestamp)
-        : completedAt;
-      nextBlock.push(`    completedAt: ${nextCompletedAt ? yamlQuote(nextCompletedAt) : 'null'}`);
-    }
+    const evidence = [
+      verdictPath ? `Structured verdict: ${path.relative(process.cwd(), verdictPath).replace(/\\/g, '/')}` : '',
+      logFile ? `Runner log: ${logFile}` : '',
+      runtimeStage ? `Stage: ${runtimeStage}` : '',
+      runtimeStatus ? `Status: ${runtimeStatus}` : '',
+      ...evidenceEntries,
+    ].filter(Boolean);
+    const nextBlock = renderDeterministicAtomicTaskBlock(block, {
+      taskStatus,
+      runtimeStatus,
+      acceptanceCriterionId,
+      parentAcceptanceCriterionId,
+      linkedRequirementIds,
+      acVerdict,
+      verificationEvidenceEntries,
+      semanticEvaluation,
+      changedFiles,
+      verificationCommands,
+      evidence,
+      completedAt,
+      timestamp,
+    });
 
     lines.splice(taskStart, taskEnd - taskStart, ...nextBlock);
     text = lines.join('\n');
@@ -678,7 +650,7 @@ function updateWorksetsFromStructuredState(worksetsPath, state = {}) {
   fs.writeFileSync(worksetsPath, text.endsWith('\n') ? text : `${text}\n`, 'utf8');
 }
 
-function syncPhaseArtifacts(input = {}) {
+export function syncPhaseArtifacts(input = {}) {
   const {
   qaReportPath = '',
   scorecardPath = '',
@@ -708,6 +680,23 @@ function syncPhaseArtifacts(input = {}) {
   const environmentBlockers = Array.isArray(state.environmentBlockers)
     ? state.environmentBlockers
     : (Array.isArray(runtime.environmentBlockers) ? runtime.environmentBlockers : []);
+
+  assertProjectionHasActiveLog({
+    logFile,
+    finish,
+    runtime,
+    status: runtimeStatus,
+  });
+  assertNoGeneratedStalePhaseResidue({
+    activePhaseNumber: phaseNum || state.phase?.number || state.phaseNumber || '',
+    fields: {
+      detail,
+      normalizedRunVerdict,
+      'finish.summary': finish.summary || '',
+      'runtime.detail': runtime.detail || '',
+      'runtime.evidenceDepth': runtime.evidenceDepth || '',
+    },
+  });
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
@@ -875,6 +864,7 @@ function syncPhaseArtifacts(input = {}) {
         status: state.workset?.status || (finish.nextPath === 'clean_finish' ? 'completed' : 'in_progress'),
         activeAtomicTask: state.workset?.activeAtomicTask || state.activeAtomicTask || '',
       },
+      phaseNum,
     });
   }
 }
@@ -2292,95 +2282,101 @@ function printUsage() {
   ].join('\n'));
 }
 
-const [command, ...args] = process.argv.slice(2);
+function main(argv = process.argv.slice(2)) {
+  const [command, ...args] = argv;
 
-switch (command) {
-  case 'normalize-qa-report-workflow-fields':
-    if (!args[0]) {
+  switch (command) {
+    case 'normalize-qa-report-workflow-fields':
+      if (!args[0]) {
+        printUsage();
+        process.exit(64);
+      }
+      normalizeQaReportWorkflowFields(args[0]);
+      break;
+    case 'append-qa-runtime-update':
+      appendQaRuntimeUpdate(args[0], args[1], args[2] ?? '', args[3] ?? '', args[4] ?? '', args[5] ?? '');
+      break;
+    case 'record-phase-progress-checkpoint':
+      recordPhaseProgressCheckpoint({
+        qaReportPath: args[0] ?? '',
+        scorecardPath: args[1] ?? '',
+        stage: args[2] ?? 'execute',
+        status: args[3] ?? 'in_progress',
+        logFile: args[4] ?? '',
+        detail: args[5] ?? '',
+        runtimeName: args[6] ?? '',
+      });
+      break;
+    case 'sync-phase-artifacts':
+      syncPhaseArtifacts(parseStructuredArtifactState(args[0] ?? ''));
+      break;
+    case 'sync-clean-finish-artifacts':
+      syncCleanFinishArtifacts({
+        completionArtifacts: args[0] ?? '',
+        qaReportPath: args[1] ?? '',
+        scorecardPath: args[2] ?? '',
+        phaseTitle: args[3] ?? '',
+        targetCompletionScore: args[4] ?? '100',
+      });
+      break;
+    case 'sync-closeout-artifacts':
+      syncCloseoutArtifacts({
+        completionArtifacts: args[0] ?? '',
+        qaReportPath: args[1] ?? '',
+        scorecardPath: args[2] ?? '',
+        handoffPath: args[3] ?? '',
+        phaseTitle: args[4] ?? '',
+        phaseNum: args[5] ?? '',
+        targetCompletionScore: args[6] ?? '100',
+        logFile: args[7] ?? '',
+        detail: args[8] ?? '',
+      });
+      break;
+    case 'complete-review-closeout-from-verdict':
+      completeReviewCloseoutFromVerdict({
+        completionArtifacts: args[0] ?? '',
+        qaReportPath: args[1] ?? '',
+        scorecardPath: args[2] ?? '',
+        handoffPath: args[3] ?? '',
+        phaseTitle: args[4] ?? '',
+        targetCompletionScore: args[5] ?? '100',
+        logFile: args[6] ?? '',
+        detail: args[7] ?? '',
+      });
+      break;
+    case 'append-handoff-update':
+      appendHandoffUpdate({
+        reason: args[0] ?? '',
+        logFile: args[1] ?? '',
+        detail: args[2] ?? '',
+        nextPhase: args[3] ?? '',
+        phaseTitle: args[4] ?? '',
+        phaseSprintContract: args[5] ?? '',
+        phaseQaReport: args[6] ?? '',
+        phaseDoc: args[7] ?? '',
+        phaseScorecard: args[8] ?? '',
+        phaseHandoff: args[9] ?? '',
+      });
+      break;
+    case 'write-clean-finish-handoff':
+      writeCleanFinishHandoff({
+        phaseNum: args[0] ?? '',
+        phaseTitle: args[1] ?? '',
+        phaseDoc: args[2] ?? '',
+        phaseSprintContract: args[3] ?? '',
+        phaseQaReport: args[4] ?? '',
+        phaseHandoff: args[5] ?? '',
+      });
+      break;
+    case 'self-test':
+      runSelfTest();
+      break;
+    default:
       printUsage();
       process.exit(64);
-    }
-    normalizeQaReportWorkflowFields(args[0]);
-    break;
-  case 'append-qa-runtime-update':
-    appendQaRuntimeUpdate(args[0], args[1], args[2] ?? '', args[3] ?? '', args[4] ?? '', args[5] ?? '');
-    break;
-  case 'record-phase-progress-checkpoint':
-    recordPhaseProgressCheckpoint({
-      qaReportPath: args[0] ?? '',
-      scorecardPath: args[1] ?? '',
-      stage: args[2] ?? 'execute',
-      status: args[3] ?? 'in_progress',
-      logFile: args[4] ?? '',
-      detail: args[5] ?? '',
-      runtimeName: args[6] ?? '',
-    });
-    break;
-  case 'sync-phase-artifacts':
-    syncPhaseArtifacts(parseStructuredArtifactState(args[0] ?? ''));
-    break;
-  case 'sync-clean-finish-artifacts':
-    syncCleanFinishArtifacts({
-      completionArtifacts: args[0] ?? '',
-      qaReportPath: args[1] ?? '',
-      scorecardPath: args[2] ?? '',
-      phaseTitle: args[3] ?? '',
-      targetCompletionScore: args[4] ?? '100',
-    });
-    break;
-  case 'sync-closeout-artifacts':
-    syncCloseoutArtifacts({
-      completionArtifacts: args[0] ?? '',
-      qaReportPath: args[1] ?? '',
-      scorecardPath: args[2] ?? '',
-      handoffPath: args[3] ?? '',
-      phaseTitle: args[4] ?? '',
-      phaseNum: args[5] ?? '',
-      targetCompletionScore: args[6] ?? '100',
-      logFile: args[7] ?? '',
-      detail: args[8] ?? '',
-    });
-    break;
-  case 'complete-review-closeout-from-verdict':
-    completeReviewCloseoutFromVerdict({
-      completionArtifacts: args[0] ?? '',
-      qaReportPath: args[1] ?? '',
-      scorecardPath: args[2] ?? '',
-      handoffPath: args[3] ?? '',
-      phaseTitle: args[4] ?? '',
-      targetCompletionScore: args[5] ?? '100',
-      logFile: args[6] ?? '',
-      detail: args[7] ?? '',
-    });
-    break;
-  case 'append-handoff-update':
-    appendHandoffUpdate({
-      reason: args[0] ?? '',
-      logFile: args[1] ?? '',
-      detail: args[2] ?? '',
-      nextPhase: args[3] ?? '',
-      phaseTitle: args[4] ?? '',
-      phaseSprintContract: args[5] ?? '',
-      phaseQaReport: args[6] ?? '',
-      phaseDoc: args[7] ?? '',
-      phaseScorecard: args[8] ?? '',
-      phaseHandoff: args[9] ?? '',
-    });
-    break;
-  case 'write-clean-finish-handoff':
-    writeCleanFinishHandoff({
-      phaseNum: args[0] ?? '',
-      phaseTitle: args[1] ?? '',
-      phaseDoc: args[2] ?? '',
-      phaseSprintContract: args[3] ?? '',
-      phaseQaReport: args[4] ?? '',
-      phaseHandoff: args[5] ?? '',
-    });
-    break;
-  case 'self-test':
-    runSelfTest();
-    break;
-  default:
-    printUsage();
-    process.exit(64);
+  }
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main();
 }

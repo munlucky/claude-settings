@@ -2400,7 +2400,7 @@ function setPhaseCheckpoint(statusFile, phaseNum, checkpoint) {
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }
 
-function setRootRunVerdict(
+export function setRootRunVerdict(
   statusFile,
   normalizedRunVerdict,
   stopReasonClass,
@@ -2822,9 +2822,10 @@ function printUsage() {
   ].join('\n'));
 }
 
-const [command, ...args] = process.argv.slice(2);
+function main(argv = process.argv.slice(2)) {
+  const [command, ...args] = argv;
 
-switch (command) {
+  switch (command) {
   case 'list-stale-in-progress-phases': {
     const [statusFile, staleSecondsRaw = '1800'] = args;
     if (!statusFile) {
@@ -2947,4 +2948,9 @@ switch (command) {
   default:
     printUsage();
     process.exit(64);
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
 }

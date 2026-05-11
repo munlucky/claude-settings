@@ -55,9 +55,9 @@ phaseExecution:
 ## Exact Execution Targets
 | ID | Create Files | Modify Files | Test Files | Command | Expected Fail/Pass Signal |
 |----|--------------|--------------|------------|---------|---------------------------|
-| P04-1 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer archive tests | `node --test .claude/scripts/*.test.mjs` | archive snapshot failure blocks publish. |
-| P04-2 | none | `.claude/scripts/lib/current-artifacts-state.mjs` | helper tests | `node --test .claude/scripts/lib/current-artifacts-state.test.mjs` | same canonical path with different hash/token is valid. |
-| P04-3 | none | `.claude/scripts/phase-closeout-finalize.mjs` | log snapshot tests | `node --test .claude/scripts/*.test.mjs` | appended log does not cause active hash invalidation. |
+| P04-1 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer archive tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | archive snapshot failure blocks publish. |
+| P04-2 | none | `.claude/scripts/lib/current-artifacts-state.mjs` | helper tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs` | same canonical path with different hash/token is valid. |
+| P04-3 | none | `.claude/scripts/phase-closeout-finalize.mjs` | log snapshot tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | appended log does not cause active hash invalidation. |
 
 ## Critical Product Scenarios
 | Scenario | User-visible Expectation | Proof Command | Expected Pass Signal | Evidence Path |
@@ -71,8 +71,8 @@ phaseExecution:
 - Verification evidence path: archive and helper test outputs.
 
 ## Validation Plan
-- [ ] `node --test .claude/scripts/lib/current-artifacts-state.test.mjs`
-- [ ] `node --test .claude/scripts/*.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
 
 ## Deliverables
 - Versioned archive snapshot implementation.

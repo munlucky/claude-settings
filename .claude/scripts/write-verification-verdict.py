@@ -7,6 +7,12 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
+REQUIRED_VERDICT_IDENTITY_KEYS_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "schemas"
+    / "required-verdict-identity-keys.json"
+)
+
 
 def parse_command(value: str) -> dict:
     parts = value.split("|", 2)
@@ -99,17 +105,43 @@ def compute_git_tree_fingerprint(root: str) -> str:
     return result.stdout.strip()
 
 
-def validate_identity_guard(args) -> tuple[bool, list[str]]:
-    identity_fields = {
+def load_required_identity_keys() -> list[str]:
+    with REQUIRED_VERDICT_IDENTITY_KEYS_PATH.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if isinstance(payload, list):
+        keys = payload
+    else:
+        keys = payload.get("requiredIdentityKeys", [])
+    return [str(key).strip() for key in keys if str(key).strip()]
+
+
+def resolve_verdict_identity(args) -> dict:
+    git_tree_fingerprint = args.git_tree_fingerprint.strip()
+    if not git_tree_fingerprint and (args.git_tree_root.strip() or args.plan_dir.strip()):
+        git_tree_fingerprint = compute_git_tree_fingerprint(
+            args.git_tree_root or args.plan_dir or "."
+        )
+
+    candidates = {
         "runLeaseId": args.run_lease_id,
+        "activePhaseDocPath": args.active_phase_doc_path,
+        "masterPlan": args.master_plan,
         "planDir": args.plan_dir,
         "statusFile": args.status_file,
+        "gitTreeFingerprint": git_tree_fingerprint,
     }
-    provided = [key for key, value in identity_fields.items() if str(value or "").strip()]
-    if provided and len(provided) != len(identity_fields):
-        missing = [key for key in identity_fields if key not in provided]
-        return False, missing
-    return True, []
+    return {key: str(value).strip() for key, value in candidates.items() if str(value or "").strip()}
+
+
+def missing_required_identity_keys(identity: dict) -> list[str]:
+    return [key for key in load_required_identity_keys() if not identity.get(key)]
+
+
+def isAuthoritativeVerdict(args) -> bool:
+    return (
+        bool(getattr(args, "authoritative", False))
+        or args.verdict_scope == "phase_closeout"
+    )
 
 
 def infer_blocker_class(reason_code: str, failure_class: str, blocking: bool, verdict: str, missing_checks = None) -> str:
@@ -170,6 +202,7 @@ def main() -> int:
     parser.add_argument("--mode", default="direct-phase-attempt-fallback")
     parser.add_argument("--script", default=".claude/scripts/write-verification-verdict.py")
     parser.add_argument("--verification-mode", default="contract")
+    parser.add_argument("--authoritative", action="store_true")
     parser.add_argument("--contract-applicable", choices=["true", "false"], default="true")
     parser.add_argument("--verdict", choices=["passed", "failed"], default="passed")
     parser.add_argument("--evidence-fresh", choices=["true", "false"], default="true")
@@ -190,6 +223,7 @@ def main() -> int:
     parser.add_argument("--validation-profile", default="")
     parser.add_argument("--phase-replay-policy", default="")
     parser.add_argument("--run-lease-id", default="")
+    parser.add_argument("--master-plan", default="")
     parser.add_argument("--plan-dir", default="")
     parser.add_argument("--status-file", default="")
     parser.add_argument("--git-tree-fingerprint", default="")
@@ -227,13 +261,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    identity_valid, identity_missing = validate_identity_guard(args)
-    if not identity_valid:
+    identity = resolve_verdict_identity(args)
+    identity_missing = missing_required_identity_keys(identity)
+    authoritative = isAuthoritativeVerdict(args)
+    if authoritative and identity_missing:
         print(
             json.dumps(
                 {
-                    "error": "partial_identity",
-                    "message": "Identity fields must be supplied together or omitted together.",
+                    "error": "missing_authoritative_identity",
+                    "message": "Authoritative verdicts require complete identity fields.",
                     "missing": identity_missing,
                 },
                 ensure_ascii=True,
@@ -337,20 +373,6 @@ def main() -> int:
         }
     )
 
-    identity = {}
-    if args.run_lease_id:
-        identity["runLeaseId"] = args.run_lease_id
-    if args.plan_dir:
-        identity["planDir"] = args.plan_dir
-    if args.status_file:
-        identity["statusFile"] = args.status_file
-
-    git_tree_fingerprint = args.git_tree_fingerprint.strip()
-    if not git_tree_fingerprint and (args.git_tree_root.strip() or identity):
-        git_tree_fingerprint = compute_git_tree_fingerprint(args.git_tree_root or ".")
-    if git_tree_fingerprint:
-        identity["gitTreeFingerprint"] = git_tree_fingerprint
-
     payload = {
         "schemaVersion": args.schema_version,
         "script": args.script,
@@ -367,6 +389,8 @@ def main() -> int:
         "contractApplicable": args.contract_applicable == "true",
         "verificationMode": args.verification_mode,
         "mode": args.mode,
+        "authoritative": authoritative,
+        "identityStatus": "complete" if not identity_missing else "legacy",
         "verdict": args.verdict,
         "evidenceFresh": args.evidence_fresh == "true",
         "requiredChecks": {

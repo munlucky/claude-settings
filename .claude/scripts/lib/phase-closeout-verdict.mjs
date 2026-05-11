@@ -7,14 +7,26 @@ import {
   resolveGitTreeFingerprint,
 } from '../verification-verdict-state.mjs';
 
-function buildVerdictIdentity({ phase = {}, statusRoot = {}, statusPath = '', planDir = '', masterPlan = '' } = {}) {
+function buildVerdictIdentity({ phase = {}, statusRoot = {}, statusPath = '', planDir = '', masterPlan = '', currentArtifactsMode = 'current', verdictPayload = {} } = {}) {
+  const legacyMode = ['legacy', 'history'].includes(String(currentArtifactsMode || '').trim().toLowerCase());
+  const verdictIdentity = verdictPayload.identity && typeof verdictPayload.identity === 'object'
+    ? verdictPayload.identity
+    : {};
+  const archivedPhaseDoc = phase.archivedPhaseDoc || '';
+  const activePhaseDoc = phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '';
+  const verdictPhaseDoc = verdictIdentity.activePhaseDocPath || '';
+  const expectedPhaseDoc = activePhaseDoc
+    && verdictPhaseDoc
+    && path.resolve(verdictPhaseDoc) === path.resolve(activePhaseDoc)
+    ? activePhaseDoc
+    : (archivedPhaseDoc || activePhaseDoc);
   return {
-    runLeaseId: statusRoot.activeRunLeaseId || statusRoot.lastRunLeaseId || '',
-    activePhaseDocPath: phase.archivedPhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '',
+    runLeaseId: phase.runLeaseId || phase.lastRunLeaseId || verdictIdentity.runLeaseId || statusRoot.activeRunLeaseId || statusRoot.lastRunLeaseId || '',
+    activePhaseDocPath: expectedPhaseDoc,
     masterPlan: masterPlan ? path.resolve(masterPlan) : '',
     planDir: planDir ? path.resolve(planDir) : '',
     statusFile: statusPath ? path.resolve(statusPath) : '',
-    gitTreeFingerprint: resolveGitTreeFingerprint(process.cwd()),
+    gitTreeFingerprint: legacyMode ? '' : (verdictIdentity.gitTreeFingerprint || resolveGitTreeFingerprint(process.cwd())),
   };
 }
 
@@ -60,7 +72,7 @@ export function readVerdictForPhase(phaseNumber, context = {}) {
       {
         activePhaseNumber: Number.parseInt(String(phaseNumber), 10),
         candidatePath: verdictPath,
-        identity: buildVerdictIdentity(context),
+        identity: buildVerdictIdentity({ ...context, verdictPayload: parsed }),
         now: context.now || '',
       },
     );

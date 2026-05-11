@@ -11,8 +11,10 @@ const SUMMARY_FILE = 'noise-summary.json';
 
 const WARNING_CLASS_PATTERNS = [
   { className: 'memorygraph_transport', test: /memory\s*graph.*transport|memorygraph.*transport|transport.*memory\s*graph/i },
+  { className: 'plugin_network_sync', test: /remote plugin sync|featured plugin ids cache|plugins\/(?:featured|list)|plugin.*403|403.*plugin/i },
   { className: 'plugin_manifest', test: /plugin.*manifest|manifest.*plugin/i },
   { className: 'skill_icon', test: /skill.*icon|icon.*skill/i },
+  { className: 'mcp_shutdown', test: /mcp.*(?:shutdown|cleanup|eperm)|(?:shutdown|cleanup|eperm).*mcp/i },
   { className: 'deprecation', test: /deprecated|deprecate|full-auto/i },
 ];
 
@@ -183,4 +185,3 @@ export function appendWasteLedgerEntry(entry = {}) {
     firstOccurrence: kind === 'warning' ? warningCount === 1 : false,
   };
 }
-

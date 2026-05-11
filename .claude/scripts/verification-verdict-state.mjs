@@ -9,6 +9,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readCurrentArtifacts } from './lib/current-artifacts-state.mjs';
 
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REQUIRED_VERDICT_IDENTITY_KEYS_PATH = path.resolve(SCRIPT_DIR, '../schemas/required-verdict-identity-keys.json');
 const VALID_SCOPES = new Set(['runtime', 'phase_verification', 'phase_closeout']);
 const VALID_BLOCKER_CLASSES = new Set([
   'runtime_unavailable',
@@ -18,14 +20,13 @@ const VALID_BLOCKER_CLASSES = new Set([
   'missing_evidence',
   'contract_violation',
 ]);
-const VERDICT_IDENTITY_KEYS = [
-  'runLeaseId',
-  'activePhaseDocPath',
-  'masterPlan',
-  'planDir',
-  'statusFile',
-  'gitTreeFingerprint',
-];
+function loadRequiredVerdictIdentityKeys() {
+  const payload = JSON.parse(fs.readFileSync(REQUIRED_VERDICT_IDENTITY_KEYS_PATH, 'utf8'));
+  const keys = Array.isArray(payload) ? payload : payload.requiredIdentityKeys;
+  return Array.isArray(keys) ? keys.map((key) => String(key).trim()).filter(Boolean) : [];
+}
+
+const VERDICT_IDENTITY_KEYS = loadRequiredVerdictIdentityKeys();
 const FUTURE_VERDICT_TOLERANCE_MS = 5000;
 
 function stableJson(value) {
@@ -150,6 +151,10 @@ function normalizePayloadIdentity(payload = {}) {
   return normalizeVerdictIdentitySource(source);
 }
 
+function hasCompleteVerdictIdentity(identity = {}) {
+  return VERDICT_IDENTITY_KEYS.every((key) => normalizeIdentityText(identity[key]));
+}
+
 function resolveIdentityOptions(options = {}) {
   const source = options.identity && typeof options.identity === 'object' ? options.identity : options;
   const identity = {};
@@ -212,6 +217,14 @@ function resolveVerdictStaleReason(entry = {}, options = {}) {
 
   if (!identityCheck.matched) {
     return identityCheck.staleReason;
+  }
+  if (hasCompleteVerdictIdentity(activeIdentity)) {
+    if (normalizeLower(payload.identityStatus) === 'legacy') {
+      return 'identity-legacy';
+    }
+    if (!hasCompleteVerdictIdentity(normalized.identity || {})) {
+      return 'identity-incomplete';
+    }
   }
   if (normalized.superseded) {
     return normalized.staleReason || 'superseded';
@@ -727,6 +740,14 @@ function selfTest() {
     verdict: 'passed',
     blocking: false,
     phase: { number: 2, title: 'Phase 02: Legacy Compatibility' },
+    identityStatus: 'legacy',
+  };
+  const completeV2PassPayload = {
+    verdict: 'passed',
+    blocking: false,
+    phase: { number: 2, title: 'Phase 02: Complete Identity' },
+    identityStatus: 'complete',
+    identity: activeIdentity,
   };
   const explicitVerdictPath = path.resolve('/tmp/verification-verdict-phase02-final.json');
   const ignoredWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-state-'));
@@ -764,7 +785,10 @@ function selfTest() {
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedStatusPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedTreePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, explicitVerdictPaths: new Set([explicitVerdictPath]), identity: activeIdentity }), false);
-  assert.equal(isRelevantVerificationVerdict({ payload: legacyV2PassPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), true);
+  assert.equal(resolveVerdictStaleReason({ payload: legacyV2PassPayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-legacy');
+  assert.equal(resolveVerdictStaleReason({ payload: { ...legacyV2PassPayload, identityStatus: 'complete' }, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-incomplete');
+  assert.equal(isRelevantVerificationVerdict({ payload: legacyV2PassPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: completeV2PassPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), true);
   const runtimeHealth = assessRuntimeHealthFromVerdictFiles('codex', ignoredWorkspace, 60 * 60 * 1000, 5, { identity: activeIdentity, currentArtifactsMode: 'legacy' });
   assert.equal(runtimeHealth.HEALTHY, 'true');
   assert.equal(runtimeHealth.REASON, 'phase-verification-stale-ignored');

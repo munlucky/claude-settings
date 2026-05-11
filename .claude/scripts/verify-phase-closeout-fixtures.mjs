@@ -73,6 +73,7 @@ function writeFixture(root, options = {}) {
     currentRunFailedPhaseCompleted: false,
     activePhaseRunFailedPhaseCompleted: false,
     latestDispatchFailedPhaseCompleted: false,
+    latestDispatchFailedButFinalComplete: false,
     supersededLocalFallbackWorkflowState: false,
     currentRunRunningPhaseCompleted: false,
     staleActiveRunLeaseId: false,
@@ -84,6 +85,7 @@ function writeFixture(root, options = {}) {
     environmentBlockedSmokePlanComplete: false,
     environmentBlockedNormalizedInProgress: false,
     latestDispatchPreparedAfterCompletion: false,
+    activeBlockedWorkflowStateWithCompletedPhase: false,
     memorygraphUnavailable: false,
     memorygraphStrict: false,
     evaluationPipeline: false,
@@ -158,6 +160,11 @@ function writeFixture(root, options = {}) {
       ] : []),
       ...(settings.workflowFutureTimestamp ? ['updatedAt: "2026-05-08T12:00:06.000Z"'] : []),
       ...(settings.staleActiveRunLeaseId ? ['activeRunLeaseId: "delegated-failed-run"'] : []),
+      ...(settings.activeBlockedWorkflowStateWithCompletedPhase ? [
+        'activeExecutionStatus: "paused"',
+        'activePhaseNumber: 2',
+        'activeRunLeaseId: "active-blocked-run"',
+      ] : []),
       'phases:',
       '  - number: 1',
       '    title: "Phase 01: Feature"',
@@ -169,6 +176,11 @@ function writeFixture(root, options = {}) {
       '    handoff: "docs/implementation/execution/01-feature/HANDOFF.md"',
       '    scorecard: "docs/implementation/execution/01-feature/SCORECARD.md"',
       `    archivedPhaseDoc: "${settings.archived ? archivedPhaseDoc : 'docs/implementation/close/missing.md'}"`,
+      ...(settings.activeBlockedWorkflowStateWithCompletedPhase ? [
+        '  - number: 2',
+        '    title: "Phase 02: Blocked verifier phase"',
+        '    status: verification_blocked',
+      ] : []),
       '',
     ].join('\n')
   );
@@ -178,12 +190,14 @@ function writeFixture(root, options = {}) {
     || settings.currentRunFailedPhaseCompleted
     || settings.activePhaseRunFailedPhaseCompleted
     || settings.latestDispatchFailedPhaseCompleted
+    || settings.latestDispatchFailedButFinalComplete
     || settings.supersededLocalFallbackWorkflowState
     || settings.currentRunRunningPhaseCompleted
     || settings.workflowFutureTimestamp
     || settings.sessionTaskCompleteWorkflowFailed
     || settings.environmentBlockedSmokePlanComplete
     || settings.latestDispatchPreparedAfterCompletion
+    || settings.activeBlockedWorkflowStateWithCompletedPhase
     || settings.memorygraphUnavailable
   ) {
     const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');
@@ -233,6 +247,19 @@ function writeFixture(root, options = {}) {
           completionStatus: 'failed',
         });
       }
+      if (settings.latestDispatchFailedButFinalComplete) {
+        writeState('latest-dispatch.json', {
+          runId: 'latest-warning-run',
+          status: 'failed',
+          completionStatus: 'failed',
+          activeExecutionStatus: 'completed',
+          finalVerdict: 'complete',
+          normalizedRunVerdict: 'success_with_warning',
+          stopReasonClass: 'scope_complete',
+          blockingStopReasonCode: 'delegated-terminal-exit-1',
+          completedAt: '2026-05-08T11:59:30.000Z',
+        });
+      }
       if (settings.latestDispatchPreparedAfterCompletion) {
         writeState('latest-dispatch.json', {
           runId: 'prepared-dispatch-run',
@@ -240,6 +267,31 @@ function writeFixture(root, options = {}) {
           completionStatus: 'prepared',
           planDir: 'docs/implementation',
           statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+        });
+      }
+      if (settings.activeBlockedWorkflowStateWithCompletedPhase) {
+        const blockedPayload = {
+          runId: 'active-blocked-run',
+          status: 'failed',
+          completionStatus: 'failed',
+          failureClass: 'verifier_unavailable',
+          activePhaseNumber: 2,
+          activePhaseTitle: 'Phase 02: Blocked verifier phase',
+          phaseRunLease: {
+            runId: 'active-blocked-run',
+            status: 'running',
+            completionStatus: 'running',
+            activePhaseNumber: 2,
+            activePhaseTitle: 'Phase 02: Blocked verifier phase',
+            failureClass: 'verifier_unavailable',
+          },
+        };
+        writeState('current-run.json', blockedPayload);
+        writeState('active-phase-run.json', blockedPayload);
+        writeState('latest-dispatch.json', {
+          ...blockedPayload,
+          status: 'running',
+          completionStatus: 'running',
         });
       }
       if (settings.memorygraphUnavailable) {

@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { fileExists, readTextLines, walkFiles } from './lib/fs-utils.mjs';
 import { collectGitStatusPaths, isInsideGitWorkTree } from './lib/git-utils.mjs';
@@ -191,32 +192,59 @@ function collectViolations(files) {
   return { checkedFiles, violations };
 }
 
-const candidateFiles = collectCandidateFiles(process.argv.slice(2));
+export function evaluateCodePolicy(argv = []) {
+  const candidateFiles = collectCandidateFiles(argv);
 
-if (candidateFiles.length === 0) {
-  printLines(['Code policy check: no candidate files found']);
-  process.exit(0);
+  if (candidateFiles.length === 0) {
+    return {
+      status: 0,
+      lines: ['Code policy check: no candidate files found'],
+    };
+  }
+
+  const { checkedFiles, violations } = collectViolations(candidateFiles);
+  const lines = [
+    'Code Policy Check',
+    `Checked files: ${checkedFiles.length}`,
+    `Max file lines: ${MAX_FILE_LINES}`,
+  ];
+
+  if (violations.length > 0) {
+    return {
+      status: 1,
+      lines: [
+        ...lines,
+        `Violations: ${violations.length}`,
+        ...violations.map((item) => `- ${item}`),
+      ],
+    };
+  }
+
+  if (checkedFiles.length === 0) {
+    return {
+      status: 0,
+      lines: [
+        ...lines,
+        'Code policy check: no supported changed code files found',
+      ],
+    };
+  }
+
+  return {
+    status: 0,
+    lines: [
+      ...lines,
+      'Violations: 0',
+    ],
+  };
 }
 
-const { checkedFiles, violations } = collectViolations(candidateFiles);
-
-printLines([
-  'Code Policy Check',
-  `Checked files: ${checkedFiles.length}`,
-  `Max file lines: ${MAX_FILE_LINES}`,
-]);
-
-if (violations.length > 0) {
-  printLines([
-    `Violations: ${violations.length}`,
-    ...violations.map((item) => `- ${item}`),
-  ]);
-  process.exit(1);
+function isCliEntrypoint() {
+  return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 }
 
-if (checkedFiles.length === 0) {
-  printLines(['Code policy check: no supported changed code files found']);
-  process.exit(0);
+if (isCliEntrypoint()) {
+  const result = evaluateCodePolicy(process.argv.slice(2));
+  printLines(result.lines);
+  process.exit(result.status);
 }
-
-printLines(['Violations: 0']);

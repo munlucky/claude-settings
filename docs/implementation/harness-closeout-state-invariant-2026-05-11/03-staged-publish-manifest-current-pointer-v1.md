@@ -55,8 +55,8 @@ phaseExecution:
 ## Exact Execution Targets
 | ID | Create Files | Modify Files | Test Files | Command | Expected Fail/Pass Signal |
 |----|--------------|--------------|------------|---------|---------------------------|
-| P03-1 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer publish tests | `node --test .claude/scripts/*.test.mjs` | prepare does not mutate canonical paths. |
-| P03-2 | none | `.claude/scripts/phase-closeout-finalize.mjs`, `.claude/scripts/lib/current-artifacts-state.mjs` | helper tests | `node --test .claude/scripts/lib/current-artifacts-state.test.mjs` | raw bytes manifest hash checks pass. |
+| P03-1 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer publish tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | prepare does not mutate canonical paths. |
+| P03-2 | none | `.claude/scripts/phase-closeout-finalize.mjs`, `.claude/scripts/lib/current-artifacts-state.mjs` | helper tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs` | raw bytes manifest hash checks pass. |
 | P03-3 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer publish tests | fixture-backed dry-run and publish simulation | current pointer last tests pass. |
 
 ## Critical Product Scenarios
@@ -71,8 +71,8 @@ phaseExecution:
 - Verification evidence path: finalizer publish tests and dry-run JSON.
 
 ## Validation Plan
-- [ ] `node --test .claude/scripts/lib/current-artifacts-state.test.mjs`
-- [ ] `node --test .claude/scripts/*.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/lib/current-artifacts-state.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
 - [ ] fixture-backed dry-run command
 
 ## Deliverables

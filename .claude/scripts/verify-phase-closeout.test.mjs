@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { classifyCompletionGateReason, decideMissingEvidenceAction } from './agent-loop-phase-attempt.mjs';
+import { setRootRunVerdict } from './agent-loop-phase-state.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
 import {
@@ -14,8 +14,6 @@ import {
 } from './lib/phase-event-ledger.mjs';
 import { validateEvaluationTriggerPipelineEvidence } from './workflow-enforcement.mjs';
 import { config, eventFixture, withFixture } from './verify-phase-closeout-fixtures.mjs';
-
-const REPO_ROOT = process.cwd();
 
 test('phase closeout fails when a completed phase is unchecked in the master checklist', () => {
   withFixture({ checklistChecked: false }, (root) => {
@@ -201,6 +199,16 @@ test('phase closeout reads active and latest workflow state contradictions', () 
   });
 });
 
+test('phase closeout treats failed dispatch with final complete verdict as historical warning', () => {
+  withFixture({ latestDispatchFailedButFinalComplete: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+    assert.ok(!result.violations.some((violation) => violation.code === 'latest-dispatch-failed-phase-completed'));
+  });
+});
+
 test('phase closeout accepts explicitly superseded local fallback workflow state', () => {
   withFixture({ supersededLocalFallbackWorkflowState: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));
@@ -216,6 +224,23 @@ test('phase closeout fails when latest dispatch remains prepared after completio
 
     assertCloseoutViolation(result, 'latest-dispatch-stale-after-completion');
     assert.ok(result.violations.some((violation) => violation.failureClass === 'harness-state'));
+  });
+});
+
+test('phase closeout does not let an active blocked phase poison completed phase closeout', () => {
+  withFixture({ activeBlockedWorkflowStateWithCompletedPhase: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+    assert.ok(!result.violations.some((violation) => violation.code === 'current-run-failed-phase-completed'));
+    assert.ok(!result.violations.some((violation) => violation.code === 'active-phase-run-failed-phase-completed'));
+    assert.ok(!result.violations.some((violation) => violation.code === 'latest-dispatch-running-phase-completed'));
+    assert.ok(result.degradedEvidence.some((entry) => (
+      entry.code === 'active_phase_blocked_workflow_state'
+      && entry.phaseNumber === 2
+      && entry.failureClass === 'verifier_unavailable'
+    )));
   });
 });
 
@@ -262,6 +287,98 @@ test('phase closeout fails when completed status keeps a stale activeRunLeaseId'
     const result = evaluatePhaseCloseout(config(root));
 
     assertCloseoutViolation(result, 'stale-active-run-lease');
+  });
+});
+
+test('phase closeout allows root activeRunLeaseId for the next active phase', () => {
+  withFixture({}, (root) => {
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    const statusText = fs.readFileSync(statusFile, 'utf8');
+    fs.writeFileSync(
+      statusFile,
+      statusText
+        .replace(
+          'planDir: "docs/implementation"',
+          [
+            'planDir: "docs/implementation"',
+            'activePhaseNumber: 2',
+            'activeRunLeaseId: "active-phase-2-run"',
+          ].join('\n'),
+        )
+        .replace(/\s*$/, '')
+        + [
+          '',
+          '  - number: 2',
+          '    title: "Phase 02: Next"',
+          '    status: in_progress',
+          '',
+        ].join('\n'),
+      'utf8',
+    );
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.ok(!result.violations.some((violation) => violation.code === 'stale-active-run-lease'));
+  });
+});
+
+test('phase closeout uses explicit legacy verdict mode before current pointer phase completes', () => {
+  withFixture({}, (root) => {
+    fs.rmSync(path.join(root, '.claude/logs/workflow-enforcement/current-artifacts.json'), { force: true });
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase closeout accepts workflow state for an active non-completed phase', () => {
+  withFixture({}, (root) => {
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    const statusText = fs.readFileSync(statusFile, 'utf8');
+    fs.writeFileSync(
+      statusFile,
+      statusText
+        .replace(
+          'planDir: "docs/implementation"',
+          [
+            'planDir: "docs/implementation"',
+            'activePhaseNumber: 2',
+            'activeRunLeaseId: "active-phase-2-run"',
+          ].join('\n'),
+        )
+        .replace(/\s*$/, '')
+        + [
+          '',
+          '  - number: 2',
+          '    title: "Phase 02: Next"',
+          '    status: in_progress',
+          '',
+        ].join('\n'),
+      'utf8',
+    );
+    const workflowDir = path.join(root, '.claude/logs/workflow-enforcement');
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), JSON.stringify({
+      runId: 'active-phase-2-run',
+      status: 'completed',
+      completionStatus: 'completed',
+      activePhaseNumber: 1,
+      activePhaseTitle: 'Phase 01: Feature',
+      phaseRunLease: {
+        phase: {
+          number: '2',
+          title: 'Phase 02: Next',
+        },
+      },
+    }, null, 2));
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.ok(!result.violations.some((violation) => violation.code === 'harness-state-phase-id-mismatch'));
+    assert.ok(!result.violations.some((violation) => violation.code === 'harness-state-phase-title-mismatch'));
   });
 });
 
@@ -410,9 +527,7 @@ test('phase status fixture records environmentBlockers for environment-blocked c
 test('phase status root records verifier spawn EPERM blocker metadata', () => {
   withFixture({ checklistChecked: false }, (root) => {
     const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
-    const result = spawnSync(process.execPath, [
-      path.join(REPO_ROOT, '.claude/scripts/agent-loop-phase-state.mjs'),
-      'set-root-run-verdict',
+    setRootRunVerdict(
       statusFile,
       'blocked',
       'runtime_unavailable',
@@ -422,12 +537,8 @@ test('phase status root records verifier spawn EPERM blocker metadata', () => {
       'verifier_unavailable',
       'verifier_spawn_eperm',
       'verifier_unavailable',
-    ], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-    });
+    );
 
-    assert.equal(result.status, 0, result.stderr);
     const text = fs.readFileSync(statusFile, 'utf8');
     assert.match(text, /normalizedRunVerdict:\s+blocked/);
     assert.match(text, /stopReasonClass:\s+runtime_unavailable/);

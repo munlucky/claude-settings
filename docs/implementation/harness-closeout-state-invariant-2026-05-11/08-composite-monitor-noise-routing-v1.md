@@ -55,8 +55,8 @@ phaseExecution:
 ## Exact Execution Targets
 | ID | Create Files | Modify Files | Test Files | Command | Expected Fail/Pass Signal |
 |----|--------------|--------------|------------|---------|---------------------------|
-| P08-1 | none | monitor/lease status scripts | monitor tests | `node --test .claude/scripts/*.test.mjs` | composite cursor detects non-parent changes. |
-| P08-3 | none | `.claude/scripts/moonshot-phase-dispatch.mjs`, `.claude/scripts/lib/waste-ledger.mjs` | waste ledger tests | `node --test .claude/scripts/*.test.mjs` | warning-only events route to waste ledger. |
+| P08-1 | none | monitor/lease status scripts | monitor tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | composite cursor detects non-parent changes. |
+| P08-3 | none | `.claude/scripts/moonshot-phase-dispatch.mjs`, `.claude/scripts/lib/waste-ledger.mjs` | waste ledger tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | warning-only events route to waste ledger. |
 
 ## Critical Product Scenarios
 | Scenario | User-visible Expectation | Proof Command | Expected Pass Signal | Evidence Path |
@@ -70,8 +70,8 @@ phaseExecution:
 - Verification evidence path: monitor and waste ledger test outputs.
 
 ## Validation Plan
-- [ ] `node --test .claude/scripts/*.test.mjs`
-- [ ] `bash .claude/scripts/workflow-enforcement.sh verify`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
+- [ ] `node .claude/scripts/workflow-enforcement.mjs verify`
 
 ## Deliverables
 - Composite monitor cursor behavior.

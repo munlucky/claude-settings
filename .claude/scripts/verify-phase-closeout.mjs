@@ -209,6 +209,24 @@ function hasEnvironmentBlockerPayload(statusText) {
     && /^\s+observedAt:\s*\S+/m.test(text);
 }
 
+function currentPointerPhaseCompleted(phases = []) {
+  return phases.some((phase) => (
+    phase.status === 'completed'
+    && (
+      Number(phase.number) === 3
+      || /staged publish manifest and current pointer/i.test(String(phase.title || ''))
+    )
+  ));
+}
+
+function currentArtifactsModeForCloseout(phases = [], explicitMode = '') {
+  const normalized = String(explicitMode || '').trim().toLowerCase();
+  if (normalized) {
+    return normalized;
+  }
+  return currentPointerPhaseCompleted(phases) ? 'current' : 'legacy';
+}
+
 function collectSessionFiles({ sessionFile, sessionDir }) {
   if (sessionFile) {
     return fs.existsSync(sessionFile) ? [sessionFile] : [];
@@ -264,8 +282,12 @@ function inspectWorkflowCloseoutDrift({
   const failedWorkflowStates = invariantResult.workflowStates.filter((entry) => isFailedWorkflowState(entry.payload));
 
   const activeRunLeaseId = statusRoot.activeRunLeaseId || '';
+  const activePhaseNumber = Number.parseInt(String(statusRoot.activePhaseNumber || ''), 10);
   for (const phase of completedPhases) {
-    if (activeRunLeaseId || phase.activeRunLeaseId) {
+    const rootLeaseBelongsToCompletedPhase = activeRunLeaseId
+      && Number.isInteger(activePhaseNumber)
+      && Number(phase.number) === activePhaseNumber;
+    if (rootLeaseBelongsToCompletedPhase || phase.activeRunLeaseId) {
       addViolation(violations, 'stale-active-run-lease', `Completed phase ${phase.number} keeps active run lease state.`, phase.number);
     }
     addFutureTimestampViolation(violations, `Completed phase ${phase.number} completedAt`, phase.completedAt, now, phase.number);
@@ -309,6 +331,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     workflowDir: rawConfig.workflowDir || '',
     sessionFile: rawConfig.sessionFile || '',
     sessionDir: rawConfig.sessionDir || '',
+    currentArtifactsMode: rawConfig.currentArtifactsMode || '',
     now: rawConfig.now || '',
   };
   const pathAuthority = evaluatePathAuthority({
@@ -333,6 +356,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
   const statusDocument = statusText ? parsePhaseStatusDocument(statusText) : { root: {}, phases: [] };
   const phases = statusDocument.phases;
   const checklist = fs.existsSync(masterPath) ? parseMasterChecklist(readText(masterPath)) : new Map();
+  const currentArtifactsMode = currentArtifactsModeForCloseout(phases, config.currentArtifactsMode);
 
   for (const phase of phases) {
     const phaseNumber = phase.number;
@@ -398,6 +422,7 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       statusPath,
       planDir,
       masterPlan: masterPath,
+      currentArtifactsMode,
       now: config.now || '',
     });
     if (verdict.exists && !verdict.parseError && !verdictInternallyConsistent(verdict.parsed || {})) {

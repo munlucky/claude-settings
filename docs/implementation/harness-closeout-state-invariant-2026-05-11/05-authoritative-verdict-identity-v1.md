@@ -72,7 +72,7 @@ phaseExecution:
 - [ ] `python .claude/scripts/write-verification-verdict.py --help`
 - [ ] authoritative missing identity writer test
 - [ ] non-authoritative legacy writer test
-- [ ] `node --test .claude/scripts/*.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
 
 ## Deliverables
 - Required identity key contract.

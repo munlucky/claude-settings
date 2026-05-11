@@ -52,7 +52,7 @@ phaseExecution:
 ## Exact Execution Targets
 | ID | Create Files | Modify Files | Test Files | Command | Expected Fail/Pass Signal |
 |----|--------------|--------------|------------|---------|---------------------------|
-| P06-1 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer sidecar tests | `node --test .claude/scripts/*.test.mjs` | goal failure after publish does not invalidate current. |
+| P06-1 | none | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer sidecar tests | `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs` | goal failure after publish does not invalidate current. |
 | P06-2 | generated runtime sidecar | `.claude/scripts/phase-closeout-finalize.mjs` | finalizer sidecar tests | sidecar fixture test | sidecar contains commit token and status. |
 
 ## Critical Product Scenarios
@@ -66,7 +66,7 @@ phaseExecution:
 - Verification evidence path: finalizer sidecar tests.
 
 ## Validation Plan
-- [ ] `node --test .claude/scripts/*.test.mjs`
+- [ ] `pwsh -NoProfile -File .claude/scripts/run-node-tests-direct.ps1 .claude/scripts/*.test.mjs`
 - [ ] sidecar write failure simulation
 
 ## Deliverables
