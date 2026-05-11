@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "hashAlgorithm": "sha256_raw_bytes",
+  "commitToken": "commit-token-current",
+  "verifiedGitTreeFingerprint": "fixture-tree",
+  "artifacts": {
+    "canonical-verdict": {
+      "path": ".claude/verification-verdict-phase08-final.json",
+      "commitToken": "commit-token-current",
+      "hash": "f1ec1c40327ed60b53bd95d189825482bc55a4432e45a6ef65e937751a9af15c"
+    },
+    "qa-report": {
+      "path": "docs/implementation/execution/phase08/QA_REPORT.md",
+      "commitToken": "commit-token-current",
+      "hash": "8c84585bbc77f9c76c5c95d4b40e34693b06ec46f1043d8a8ee0d831fa7fbb29"
+    },
+    "scorecard": {
+      "path": "docs/implementation/execution/phase08/SCORECARD.md",
+      "commitToken": "commit-token-current",
+      "hash": "f93e2f6035ba37efef736b9f4ac3eae6a8ee1d35d7bc9395ef819dfb6fe12046"
+    },
+    "handoff": {
+      "path": "docs/implementation/execution/phase08/HANDOFF.md",
+      "commitToken": "commit-token-current",
+      "hash": "c0e60b7b1172774106498d54f49740f51f23efc6c78c6c6dc0ae28179635c261"
+    },
+    "worksets": {
+      "path": "docs/implementation/execution/phase08/WORKSETS.yaml",
+      "commitToken": "commit-token-current",
+      "hash": "a7956797418856e93fb417b5d4240503fd4aaa5c7d397a7c5fb7332d2c34d987"
+    },
+    "active-log": {
+      "path": ".claude/logs/workflow-enforcement/active-phase-run.log",
+      "commitToken": "commit-token-current",
+      "hash": "e134953ae7542c1f206f496096c50fc8969362e346f58b06f5874e276aedd7e7"
+    }
+  }
+}

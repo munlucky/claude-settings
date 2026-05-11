@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 
 function writableTempRoot() {
@@ -490,4 +491,29 @@ function writeFixture(root, options = {}) {
       } : {}),
     }, null, 2)
   );
+
+  const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');
+  fs.mkdirSync(workflowDir, { recursive: true });
+  const verdictPath = path.join(claudeDir, 'verification-verdict-phase01-final.json');
+  const verdictHash = crypto.createHash('sha256').update(fs.readFileSync(verdictPath)).digest('hex');
+  const manifestPath = path.join(workflowDir, 'closeout-manifest-fixture-token.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({
+    schemaVersion: 1,
+    hashAlgorithm: 'sha256_raw_bytes',
+    commitToken: 'fixture-token',
+    artifacts: {
+      'canonical-verdict': {
+        path: '.claude/verification-verdict-phase01-final.json',
+        commitToken: 'fixture-token',
+        hash: verdictHash,
+      },
+    },
+  }, null, 2));
+  const manifestHash = crypto.createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex');
+  fs.writeFileSync(path.join(workflowDir, 'current-artifacts.json'), JSON.stringify({
+    schemaVersion: 1,
+    commitToken: 'fixture-token',
+    manifestPath: '.claude/logs/workflow-enforcement/closeout-manifest-fixture-token.json',
+    manifestHash,
+  }, null, 2));
 }

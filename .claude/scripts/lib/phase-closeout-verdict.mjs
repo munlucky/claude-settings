@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { readCurrentArtifacts } from './current-artifacts-state.mjs';
 import {
   isRelevantVerificationVerdict,
   resolveGitTreeFingerprint,
@@ -19,9 +20,37 @@ function buildVerdictIdentity({ phase = {}, statusRoot = {}, statusPath = '', pl
 
 export function readVerdictForPhase(phaseNumber, context = {}) {
   const phaseId = String(phaseNumber).padStart(2, '0');
-  const verdictPath = path.resolve(process.cwd(), `.claude/verification-verdict-phase${phaseId}-final.json`);
+  const canonicalVerdictPath = path.resolve(process.cwd(), `.claude/verification-verdict-phase${phaseId}-final.json`);
+  const current = readCurrentArtifacts({
+    root: process.cwd(),
+    mode: context.currentArtifactsMode || 'current',
+    indexPath: context.currentArtifactsPath || '',
+  });
+  const currentVerdictArtifact = current.ok
+    ? current.artifacts.find((entry) => path.resolve(entry.path) === canonicalVerdictPath)
+    : null;
+  const verdictPath = currentVerdictArtifact?.path || canonicalVerdictPath;
+
+  if (!current.ok) {
+    return {
+      path: verdictPath,
+      exists: fs.existsSync(verdictPath),
+      relevant: false,
+      staleReason: current.reason || 'current-artifacts-unavailable',
+      currentArtifacts: current,
+    };
+  }
+  if (!currentVerdictArtifact) {
+    return {
+      path: verdictPath,
+      exists: fs.existsSync(verdictPath),
+      relevant: false,
+      staleReason: 'canonical-verdict-not-current',
+      currentArtifacts: current,
+    };
+  }
   if (!fs.existsSync(verdictPath)) {
-    return { path: verdictPath, exists: false };
+    return { path: verdictPath, exists: false, currentArtifacts: current };
   }
 
   try {
@@ -41,9 +70,10 @@ export function readVerdictForPhase(phaseNumber, context = {}) {
       parsed,
       relevant,
       staleReason: relevant ? '' : 'stale-or-mismatched-verdict',
+      currentArtifacts: current,
     };
   } catch (error) {
-    return { path: verdictPath, exists: true, parseError: error.message };
+    return { path: verdictPath, exists: true, parseError: error.message, currentArtifacts: current };
   }
 }
 

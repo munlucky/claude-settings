@@ -7,6 +7,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readCurrentArtifacts } from './lib/current-artifacts-state.mjs';
 
 const VALID_SCOPES = new Set(['runtime', 'phase_verification', 'phase_closeout']);
 const VALID_BLOCKER_CLASSES = new Set([
@@ -459,7 +460,40 @@ export function normalizeVerdictPayload(payload = {}, filePath = '') {
   };
 }
 
-export function listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles) {
+export function listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles, options = {}) {
+  const currentMode = String(options.currentArtifactsMode || options.mode || 'current').trim().toLowerCase();
+  if (currentMode !== 'legacy' && currentMode !== 'history') {
+    const current = readCurrentArtifacts({
+      root: workspaceRoot,
+      mode: 'current',
+      indexPath: options.currentArtifactsPath || '',
+    });
+    if (!current.ok) {
+      return [];
+    }
+    return current.artifacts
+      .filter((entry) => entry.kind === 'verification-verdict' || /^verification-verdict-.*\.json$/.test(path.basename(entry.path)))
+      .flatMap((entry) => {
+        try {
+          const stats = fs.statSync(entry.path);
+          return [{
+            path: entry.path,
+            mtimeMs: stats.mtimeMs,
+            isCurrent: true,
+            currentArtifacts: {
+              indexPath: current.indexPath,
+              manifestPath: current.manifestPath,
+              manifestHash: current.manifestHash,
+              commitToken: current.commitToken,
+            },
+            ...normalizeVerdictPayload(JSON.parse(fs.readFileSync(entry.path, 'utf8')), entry.path),
+          }];
+        } catch {
+          return [];
+        }
+      });
+  }
+
   const verdictDir = path.join(workspaceRoot, '.claude');
   if (!fs.existsSync(verdictDir)) {
     return [];
@@ -486,7 +520,7 @@ export function listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles
 }
 
 export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, recentWindowMs, maxFiles, options = {}) {
-  const allVerdicts = listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles)
+  const allVerdicts = listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles, options)
     .filter((entry) => verdictTargetsRuntime(entry.payload, runtime));
   const verdicts = allVerdicts.filter((entry) => isRelevantVerificationVerdict(entry, options));
   const ignoredVerdicts = allVerdicts.filter((entry) => !isRelevantVerificationVerdict(entry, options));
@@ -731,7 +765,7 @@ function selfTest() {
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedTreePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, explicitVerdictPaths: new Set([explicitVerdictPath]), identity: activeIdentity }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: legacyV2PassPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), true);
-  const runtimeHealth = assessRuntimeHealthFromVerdictFiles('codex', ignoredWorkspace, 60 * 60 * 1000, 5, { identity: activeIdentity });
+  const runtimeHealth = assessRuntimeHealthFromVerdictFiles('codex', ignoredWorkspace, 60 * 60 * 1000, 5, { identity: activeIdentity, currentArtifactsMode: 'legacy' });
   assert.equal(runtimeHealth.HEALTHY, 'true');
   assert.equal(runtimeHealth.REASON, 'phase-verification-stale-ignored');
   assert.equal(runtimeHealth.IGNORED_VERDICT_PATH, ignoredVerdictPath);

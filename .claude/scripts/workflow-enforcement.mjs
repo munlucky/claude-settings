@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
+import { readCurrentArtifacts } from './lib/current-artifacts-state.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { collectGitStatusPaths, isInsideGitWorkTree } from './lib/git-utils.mjs';
 import { parseWorksetsYaml } from './lib/phase-closeout-parsers.mjs';
@@ -190,6 +191,11 @@ function buildCompactStatusReadModel({
   suppressSelfWriteMissingWarnings = false,
 }) {
   const latestDispatchFile = path.join(WORKFLOW_LOG_DIR, 'latest-dispatch.json');
+  const currentArtifacts = readCurrentArtifacts({ root: process.cwd(), mode: 'current' });
+  const currentVerdictFile = currentArtifacts.ok
+    ? currentArtifacts.artifacts.find((entry) => entry.kind === 'verification-verdict' || /^verification-verdict-.*\.json$/.test(path.basename(entry.path)))?.relativePath || ''
+    : '';
+  const effectiveLatestVerdictFile = latestVerdictFile || currentVerdictFile;
   const rawStaleWarnings = detectStaleProjectionWarnings({
     statusFile,
     latestDispatchFile,
@@ -208,9 +214,18 @@ function buildCompactStatusReadModel({
       sprintContractPath,
       qaReportPath,
     },
-    latestVerdict: latestVerdictFile
-      ? { path: latestVerdictFile, state: 'recorded' }
-      : { path: null, state: 'pending' },
+    latestVerdict: effectiveLatestVerdictFile
+      ? {
+        path: effectiveLatestVerdictFile,
+        state: currentVerdictFile && !latestVerdictFile ? 'current-artifacts' : 'recorded',
+        currentArtifacts: currentArtifacts.ok ? {
+          indexPath: currentArtifacts.indexPath,
+          manifestPath: currentArtifacts.manifestPath,
+          manifestHash: currentArtifacts.manifestHash,
+          commitToken: currentArtifacts.commitToken,
+        } : null,
+      }
+      : { path: null, state: currentArtifacts.ok ? 'pending' : currentArtifacts.reason || 'pending' },
     currentBlocker: staleWarnings.length > 0 ? 'stale_projection_warning' : 'verification_pending',
     lineage: {
       runId: process.env.PHASE_RUN_ID || process.env.WORKFLOW_RUN_ID || '',
