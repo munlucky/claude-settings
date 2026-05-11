@@ -46,6 +46,8 @@ Effort profile policy:
 - Every `deep` or `max` run must record `Effort escalation reason` in `SPRINT_CONTRACT.md`, `QA_REPORT.md`, and workflow evidence.
 - Model selection is provider-neutral and automatic. Codex maps the selected route to `-m` plus `model_reasoning_effort`; Claude Code maps it to `--model` plus `--effort`.
 - Evidence must include `selectedModelProvider`, `selectedModel`, `selectedModelEffort`, and `modelSelectionReason`.
+- Runtime capability evidence must include fork, MCP, shell, browser, worktree, tool inheritance, and fallback support status. Missing MCP/tool/browser support is a runtime capability condition and must be classified as `mcp_unavailable`, `tool_unavailable`, or `runtime_unavailable`, not as a product implementation failure.
+- Before marking a deferred or optional tool unavailable, perform deferred/native tool lookup where the runtime supports it and record the lookup evidence in the active workflow artifact.
 
 Retrieval and validation policy:
 - Default retrieval budget is one compact MemoryGraph/CodeReviewGraph recall per stage.
@@ -87,6 +89,11 @@ Goal runtime state rule:
 - The default long-running path remains `delegated-terminal`. Do not create a second public runner for goal mode; goal runtime is a control layer around the existing phase loop.
 - Use `node .claude/scripts/phase-goal-control.mjs status|pause|resume|clear <plan-dir>` to inspect or control the active goal. `pause` prevents the next continuation/attempt from starting; it does not delete artifacts.
 
+Runtime status and resume read model:
+- The human artifacts remain `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, and `HANDOFF.md`; machine consumers should read compact status from workflow evidence first.
+- Compact status must expose the active contract, latest verdict path/state, current blocker, lineage ids, and stale warnings for `phase-status.yaml`, `current-run.json`, and `latest-dispatch.json`.
+- Resume briefs must name the next action and carry the same lineage ids as the compact status so a resumed Codex or Claude attempt can detect stale projections before closeout.
+
 Channel / return-boundary rule:
 - While `phase-status.yaml` reports `activeExecutionStatus: active`, user-facing updates must stay in progress/commentary form.
 - Do not emit a `final` answer, closeout phrasing, or any wording that implies the run/session ended until `assert-return-allowed` passes or an explicit stop condition is recorded.
@@ -97,8 +104,11 @@ Review and finish gate rule:
 - For code-changing phases, `codex-review-code` must appear in applied workflow evidence before `clean_finish` is allowed.
 - `QA_REPORT.md` may not claim `Next path: clean_finish` while `Review completed` is still `no`.
 - `HANDOFF.md` and closeout fields may not remain seeded or placeholder-shaped when the phase is being closed.
-- Before a plan-directory completion summary, run `node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml --plan-dir <plan-dir> --master-plan <master-plan>` and block return if it fails.
-- Before a plan-directory success return, run `node .claude/scripts/phase-final-git-closeout.mjs assert-clean --plan-dir <plan-dir> --status-file <status-file>` and block return if main has uncommitted non-runtime changes or phase worktrees under `.tmp/harness-worktrees/phase-runs` / `.tmp/harness-worktrees/phase-waves` remain dirty.
+- Before a plan-directory completion summary, run the single closeout entrypoint:
+  `node .claude/scripts/phase-closeout-finalize.mjs finalize --phase <NN> --status-file .claude/docs/phase-status.yaml --plan-dir <plan-dir> --master-plan <master-plan> --execution-root <execution-root> --json`.
+- Use `phase-closeout-finalize.mjs finalize --dry-run --json` before mutating state when a session already shows conflicting `phase-status.yaml`, workflow JSON, verdict, or traceability evidence.
+- `phase-closeout-finalize.mjs` owns canonical final verdict creation, phase-status root reconciliation, workflow state reconciliation, goal runtime close, traceability/scenario placeholder generation, closeout verification, and Git closeout preflight. Do not run these steps as separate ad-hoc closeout decisions unless debugging the finalizer itself.
+- Before a plan-directory success return, the finalizer's phase closeout gate must pass, then `node .claude/scripts/phase-final-git-closeout.mjs assert-clean --plan-dir <plan-dir> --status-file <status-file>` must pass after any finalizer writes are committed or intentionally staged.
 - Phase closeout requires master checklist, `phase-status.yaml`, archived phase document paths, execution artifacts, verifier verdicts, scorecards, and critical `SCN-*` evidence to agree.
 - If review or closeout evidence is missing, the run must stay inside the active plan-directory loop and remediate the missing steps instead of returning a summary.
 
@@ -196,6 +206,11 @@ When `<plan-dir>` is omitted, resolve it in this order:
 
 Archived phase docs under `<plan-dir>/close/` are history, not active phase candidates.
 
+Phase discovery truth source:
+- The runner discovers active phases from the non-recursive `<plan-dir>/NN-*.md` file set, excluding `00-*`.
+- The master plan phase index is a required consistency contract, not the discovery source.
+- If the selected master plan references phases 13-16 but root still contains stale phases 09-12, the runnable package has 8 active phases until those stale root docs are archived, moved, or explicitly reconciled.
+
 Safety rule:
 - If multiple candidate plan directories exist and there is no clear active one, stop and ask the user instead of guessing.
 
@@ -214,11 +229,13 @@ planResolution:
 validation:
   - Check directory exists
   - Find master plan (00-master-plan.md or *master*.md)
-  - Count phase documents
+  - Count non-recursive root phase documents matching NN-*.md, excluding 00-*
+  - Compare the selected master plan's phase links/checklist against the root NN-*.md file set
+  - Run prepare-implementation-plan-state.mjs --dry-run before dispatch when stale execution or root phase documents may exist
 
 output:
   success: "✅ Found {N} phases in {plan-dir}"
-  failure: "❌ Master plan not found"
+  failure: "❌ Master plan not found / phase inventory mismatch"
 ```
 
 ## Step 3: Create phase-status.yaml

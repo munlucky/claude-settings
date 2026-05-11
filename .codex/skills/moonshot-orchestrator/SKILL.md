@@ -58,6 +58,8 @@ Resolve `executionRuntime` before orchestration:
   - Uncertainty/question handling must use `codex-validate-plan` (planning) and `codex-review-code` (post-implementation) outputs first.
   - Ask user only when those outputs still indicate unresolved blocking items.
 - In both runtimes, phase/adaptor paths must preserve policy through `SPRINT_CONTRACT.md` policy anchors rather than assuming chat memory survives across rounds.
+- Deferred tool lookup is mandatory before declaring a tool, connector, MCP server, or browser capability unavailable. Codex should use native/deferred tool discovery first when available, then record `toolLookupEvidence`; if lookup still fails, classify the result as `mcp_unavailable`, `tool_unavailable`, or `runtime_unavailable` instead of a generic harness or product failure.
+- Runtime capability evidence must be machine-checkable in workflow state. Record fork, MCP, shell, browser, worktree, tool inheritance, and fallback support status before execution or as degraded evidence in the current read model.
 - Use runtime-neutral effort profiles:
   - `economy`: parity smoke, narrow read-only checks, latency-sensitive work
   - `standard`: simple/local bounded work
@@ -591,6 +593,7 @@ When the run is bounded-direct and edits code, keep `QA_REPORT.md` workflow evid
 - Build-only boundary: if upstream product-definition work is still missing, route to `product-orchestrator` instead of inventing product artifacts inside the build chain
 - Product-package handoff: when `PLAN.md` + `tasks/*.md` exist, treat them as the planning source of truth and skip `requirements-analyzer` / `context-builder`
 - Execution bridge: medium/complex `product_project` work must keep `SPRINT_CONTRACT -> QA_REPORT -> HANDOFF` artifacts synchronized with the active slice
+- Status/resume read model: bounded and phase attempts must expose active contract, latest verdict, current blocker, lineage ids, stale pointer warnings, and next action through compact workflow evidence; `HANDOFF.md` remains the human resume artifact, not the only machine-readable state.
 - In-session phase loops: allowed only when retries run through fresh isolated attempts; the coordinator session must stay summary-only between rounds
 - Do not convert a phase-attempt summary into a completion claim unless the verifier evidence for that attempt is fresh and contract-complete
 - Phase attempt mode: when a fresh attempt runs `moonshot-orchestrator`, set `signals.phaseAttemptMode = true` and skip recursive `moonshot-phase-runner` insertion

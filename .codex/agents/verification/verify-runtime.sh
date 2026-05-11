@@ -231,7 +231,7 @@ PY
 usage() {
   cat <<'EOF_USAGE'
 Usage:
-  verify-runtime.sh [--url <target-url>] [--browser-flow <name>] [--browser-only] [--browserctl <path>] [--e2e "<command>"] [--timeout <seconds>] [--no-auto-e2e]
+  verify-runtime.sh [--url <target-url>] [--browser-flow <name>] [--browser-flow-verdict <path>] [--browser-only] [--browserctl <path>] [--e2e "<command>"] [--timeout <seconds>] [--no-auto-e2e]
 EOF_USAGE
 }
 
@@ -268,6 +268,8 @@ write_verdict_json() {
   RUNTIME_STATUS_VALUE="$RUNTIME_STATUS" \
   BROWSER_FLOW_VALUE="$BROWSER_FLOW" \
   BROWSER_FLOW_STATUS_VALUE="$BROWSER_FLOW_STATUS" \
+  BROWSER_FLOW_VERDICT_FILE_VALUE="$BROWSER_FLOW_VERDICT_FILE" \
+  BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE_VALUE="$BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE" \
   BROWSER_ONLY_VALUE="$BROWSER_ONLY" \
   BROWSERCTL_VALUE="$BROWSERCTL" \
   E2E_STATUS_VALUE="$E2E_STATUS" \
@@ -275,11 +277,11 @@ write_verdict_json() {
   E2E_SOURCE_VALUE="$E2E_SOURCE" \
   VERDICT_FILE_PATH="$VERDICT_FILE" \
   EVIDENCE_FRESH_VALUE="$EVIDENCE_FRESH" \
-  REQUIRED_DECLARED_LINES="$(join_lines "${REQUIRED_CHECKS_DECLARED[@]}")" \
-  REQUIRED_EXECUTED_LINES="$(join_lines "${REQUIRED_CHECKS_EXECUTED[@]}")" \
-  REQUIRED_MISSING_LINES="$(join_lines "${REQUIRED_CHECKS_MISSING[@]}")" \
-  OPTIONAL_DECLARED_LINES="$(join_lines "${OPTIONAL_CHECKS_DECLARED[@]}")" \
-  OPTIONAL_EXECUTED_LINES="$(join_lines "${OPTIONAL_CHECKS_EXECUTED[@]}")" \
+  REQUIRED_DECLARED_LINES="$(join_lines "${REQUIRED_CHECKS_DECLARED[@]-}")" \
+  REQUIRED_EXECUTED_LINES="$(join_lines "${REQUIRED_CHECKS_EXECUTED[@]-}")" \
+  REQUIRED_MISSING_LINES="$(join_lines "${REQUIRED_CHECKS_MISSING[@]-}")" \
+  OPTIONAL_DECLARED_LINES="$(join_lines "${OPTIONAL_CHECKS_DECLARED[@]-}")" \
+  OPTIONAL_EXECUTED_LINES="$(join_lines "${OPTIONAL_CHECKS_EXECUTED[@]-}")" \
   CHANGED_FILES_LINES="$(join_lines "${CHANGED_FILES[@]}")" \
   python3 - <<'PY' > "$VERDICT_FILE"
 import json
@@ -334,6 +336,8 @@ payload = {
         "runtimeStatus": os.environ["RUNTIME_STATUS_VALUE"],
         "browserFlow": os.environ["BROWSER_FLOW_VALUE"],
         "browserFlowStatus": os.environ["BROWSER_FLOW_STATUS_VALUE"],
+        "browserFlowVerdictFile": os.environ["BROWSER_FLOW_VERDICT_FILE_VALUE"],
+        "browserFlowVisualDiffVerdictFile": os.environ["BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE_VALUE"],
         "browserOnly": to_bool(os.environ["BROWSER_ONLY_VALUE"]),
         "browserctlPath": os.environ["BROWSERCTL_VALUE"],
         "e2eStatus": os.environ["E2E_STATUS_VALUE"],
@@ -384,7 +388,9 @@ has_npm_script() {
 }
 
 resolve_default_browserctl() {
-  if command -v browserctl >/dev/null 2>&1; then
+  if [ -x ".claude/bin/browserctl" ]; then
+    printf '%s\n' ".claude/bin/browserctl"
+  elif command -v browserctl >/dev/null 2>&1; then
     command -v browserctl
   else
     printf '%s\n' ".claude/bin/browserctl"
@@ -392,8 +398,9 @@ resolve_default_browserctl() {
 }
 
 run_browser_flow() {
-  local start_rc
-  local goto_rc
+  local flow_output
+  local flow_rc
+  local verdict_status
 
   echo ""
   log_info "Optional browser flow check"
@@ -406,6 +413,52 @@ run_browser_flow() {
 
   log_info "Browser flow: ${BROWSER_FLOW}"
 
+  if [ -n "$BROWSER_FLOW_VERDICT_OVERRIDE" ]; then
+    if [ ! -f "$BROWSER_FLOW_VERDICT_OVERRIDE" ]; then
+      log_warning "browser flow verdict override not found: ${BROWSER_FLOW_VERDICT_OVERRIDE}"
+      BROWSER_FLOW_STATUS="setup_gap"
+      if [ "$BROWSER_ONLY" = true ]; then
+        return 1
+      fi
+      return 0
+    fi
+
+    verdict_status="$(python3 - "$BROWSER_FLOW_VERDICT_OVERRIDE" "$BROWSER_FLOW" <<'PY'
+import json
+import sys
+
+path, expected_flow = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+if payload.get("flowName") != expected_flow:
+    print("flow_mismatch")
+elif payload.get("status") == "passed":
+    print("passed")
+else:
+    print(str(payload.get("status") or "unknown"))
+PY
+)"
+    BROWSER_FLOW_VERDICT_FILE="$BROWSER_FLOW_VERDICT_OVERRIDE"
+    BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE="$(python3 - "$BROWSER_FLOW_VERDICT_FILE" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+print(payload.get("artifacts", {}).get("visualDiff", ""))
+PY
+)"
+    if [ "$verdict_status" = "passed" ]; then
+      log_success "Browser flow verdict override passed"
+      [ -n "$BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE" ] && log_info "Visual diff verdict: ${BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE}"
+      BROWSER_FLOW_STATUS="passed"
+      return 0
+    fi
+    log_warning "Browser flow verdict override did not pass (${verdict_status})"
+    BROWSER_FLOW_STATUS="failed"
+    return 1
+  fi
+
   if [ ! -x "$BROWSERCTL" ]; then
     log_warning "browserctl not available at ${BROWSERCTL}"
     BROWSER_FLOW_STATUS="setup_gap"
@@ -415,33 +468,8 @@ run_browser_flow() {
     return 0
   fi
 
-  if "$BROWSERCTL" start >/dev/null 2>&1; then
-    :
-  else
-    start_rc=$?
-    if [ "$start_rc" -eq 64 ]; then
-      log_warning "browserctl reported scaffold/setup gap on start"
-      BROWSER_FLOW_STATUS="setup_gap"
-      if [ "$BROWSER_ONLY" = true ]; then
-        return 1
-      fi
-      return 0
-    fi
-
-    log_error "browserctl start failed"
-    BROWSER_FLOW_STATUS="failed"
-    return 1
-  fi
-
-  if "$BROWSERCTL" goto "$URL" >/dev/null 2>&1; then
-    log_success "Browser flow bootstrap passed"
-    BROWSER_FLOW_STATUS="passed"
-    return 0
-  fi
-
-  goto_rc=$?
-  if [ "$goto_rc" -eq 64 ]; then
-    log_warning "browserctl reported scaffold/setup gap on goto"
+  if [ ! -f ".claude/scripts/browser-flow-runner.mjs" ]; then
+    log_warning "browser flow runner not available at .claude/scripts/browser-flow-runner.mjs"
     BROWSER_FLOW_STATUS="setup_gap"
     if [ "$BROWSER_ONLY" = true ]; then
       return 1
@@ -449,7 +477,46 @@ run_browser_flow() {
     return 0
   fi
 
-  log_error "Browser flow failed during navigation bootstrap"
+  flow_output="$(node .claude/scripts/browser-flow-runner.mjs \
+    --flow "$BROWSER_FLOW" \
+    --url "$URL" \
+    --browserctl "$BROWSERCTL" \
+    --run-id "${RUN_ID}-${BROWSER_FLOW}" 2>&1)"
+  flow_rc=$?
+  BROWSER_FLOW_VERDICT_FILE="$(printf '%s\n' "$flow_output" | grep '^\.claude/browser-flow-verdict-' | tail -1 || true)"
+  if [ -n "$BROWSER_FLOW_VERDICT_FILE" ] && [ -f "$BROWSER_FLOW_VERDICT_FILE" ]; then
+    BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE="$(python3 - "$BROWSER_FLOW_VERDICT_FILE" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+print(payload.get("artifacts", {}).get("visualDiff", ""))
+PY
+)"
+  fi
+
+  if [ "$flow_rc" -eq 0 ]; then
+    log_success "Browser flow runner passed"
+    [ -n "$BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE" ] && log_info "Visual diff verdict: ${BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE}"
+    BROWSER_FLOW_STATUS="passed"
+    return 0
+  fi
+
+  if [ "$flow_rc" -eq 64 ]; then
+    log_warning "Browser flow runner reported setup gap"
+    [ -n "$BROWSER_FLOW_VERDICT_FILE" ] && log_info "Browser flow verdict: ${BROWSER_FLOW_VERDICT_FILE}"
+    [ -n "$BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE" ] && log_info "Visual diff verdict: ${BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE}"
+    BROWSER_FLOW_STATUS="setup_gap"
+    if [ "$BROWSER_ONLY" = true ]; then
+      return 1
+    fi
+    return 0
+  fi
+
+  log_error "Browser flow runner failed"
+  [ -n "$BROWSER_FLOW_VERDICT_FILE" ] && log_info "Browser flow verdict: ${BROWSER_FLOW_VERDICT_FILE}"
+  [ -n "$BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE" ] && log_info "Visual diff verdict: ${BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE}"
   BROWSER_FLOW_STATUS="failed"
   return 1
 }
@@ -497,6 +564,9 @@ E2E_CMD="${RUNTIME_E2E_CMD:-}"
 E2E_SOURCE=""
 E2E_SOURCE="${E2E_SOURCE:-}"
 BROWSER_FLOW="${RUNTIME_BROWSER_FLOW:-}"
+BROWSER_FLOW_VERDICT_FILE=""
+BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE=""
+BROWSER_FLOW_VERDICT_OVERRIDE="${RUNTIME_BROWSER_FLOW_VERDICT:-}"
 BROWSER_FLOW_SOURCE="explicit"
 BROWSER_ONLY=false
 BROWSERCTL="${BROWSERCTL_PATH:-$(resolve_default_browserctl)}"
@@ -568,6 +638,14 @@ while [ $# -gt 0 ]; do
       ;;
     --browser-flow=*)
       BROWSER_FLOW="${1#*=}"
+      shift
+      ;;
+    --browser-flow-verdict)
+      BROWSER_FLOW_VERDICT_OVERRIDE="$2"
+      shift 2
+      ;;
+    --browser-flow-verdict=*)
+      BROWSER_FLOW_VERDICT_OVERRIDE="${1#*=}"
       shift
       ;;
     --browser-only)

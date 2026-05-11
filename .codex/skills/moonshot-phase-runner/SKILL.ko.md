@@ -48,6 +48,10 @@ review / finish gate 규칙:
 - `QA_REPORT.md`에서 `Review completed: no` 인 상태로 `Next path: clean_finish`를 선언하면 안 됩니다.
 - phase closeout 시 `HANDOFF.md`와 closeout 필드는 seeded/placeholder 상태로 남아 있으면 안 됩니다.
 - review 또는 closeout evidence가 비어 있으면 요약을 반환하지 말고, active plan-directory loop 안에서 빠진 단계를 보완해야 합니다.
+- plan-directory 완료 요약 전에는 단일 closeout 진입점인 `node .claude/scripts/phase-closeout-finalize.mjs finalize --phase <NN> --status-file .claude/docs/phase-status.yaml --plan-dir <plan-dir> --master-plan <master-plan> --execution-root <execution-root> --json`을 실행해야 합니다.
+- `phase-status.yaml`, workflow JSON, verdict, traceability evidence가 서로 충돌하는 세션은 먼저 `phase-closeout-finalize.mjs finalize --dry-run --json`으로 예상 변경과 blocker를 확인합니다.
+- `phase-closeout-finalize.mjs`가 canonical final verdict 생성, phase-status root reconcile, workflow state reconcile, goal runtime close, traceability/scenario placeholder 생성, closeout verifier, Git closeout preflight를 한 경로로 수행합니다. finalizer 자체를 디버깅하는 경우가 아니면 이 단계들을 ad-hoc closeout 판단으로 분리하지 않습니다.
+- 성공 반환 전에는 finalizer의 phase closeout gate가 통과해야 하고, finalizer가 쓴 파일을 커밋하거나 의도적으로 staging한 뒤 `node .claude/scripts/phase-final-git-closeout.mjs assert-clean --plan-dir <plan-dir> --status-file <status-file>`도 통과해야 합니다.
 
 MemoryGraph 단계 규칙:
 - phase run 전체에 `.claude/docs/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
@@ -89,11 +93,18 @@ MemoryGraph 단계 규칙:
 후보가 여러 개이고 active plan이 명확하지 않으면 추측하지 말고 사용자에게 물어야 합니다.
 `<plan-dir>/close/` 아래의 archived phase 문서는 이력이며 active phase 후보로 세지지 않습니다.
 
+Phase 탐색 truth source:
+- runner는 active phase를 비재귀 `<plan-dir>/NN-*.md` 파일셋에서 탐색하며 `00-*`는 제외합니다.
+- master plan의 phase index는 필수 일관성 계약이지 탐색 source가 아닙니다.
+- 선택된 master plan이 13-16만 참조해도 root에 오래된 09-12가 남아 있으면, archive/이동/명시적 reconcile 전까지 실행 가능한 package는 8개 phase로 잡힙니다.
+
 ## Step 2: 계획 디렉토리 검증
 
 - 디렉토리 존재 확인
 - master plan 찾기
-- phase 문서 개수 확인
+- 비재귀 root `NN-*.md` phase 문서 개수 확인 (`00-*` 제외)
+- 선택된 master plan의 phase 링크/체크리스트와 root `NN-*.md` 파일셋 대조
+- stale execution 또는 root phase 문서가 있을 수 있으면 dispatch 전에 `prepare-implementation-plan-state.mjs --dry-run` 실행
 
 ## Step 3: phase-status.yaml 생성
 

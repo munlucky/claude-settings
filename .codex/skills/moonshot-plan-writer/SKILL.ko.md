@@ -43,6 +43,9 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
 2. 작성 전에 기존 구현/작업문서 컨텍스트를 인벤토리화하고 정리한다.
    - 루트 `*.md` 파일(비재귀)을 읽는다.
    - `docs/implementation/*.md`를 읽는다.
+   - runner의 active phase source of truth는 비재귀 `<plan-dir>/NN-*.md` 파일셋이다. `00-*`와 `<plan-dir>/close/*`는 제외한다.
+   - 파일 생성/갱신 전에 선택된 master plan의 phase 링크/체크리스트와 root `NN-*.md` 파일셋을 대조한다.
+   - 오래된 root phase 문서가 runner에 같이 잡힐 수 있으면 실행 준비 전에 보존 archive 또는 이동 절차로 정리한다. 새 master plan이 참조하지 않는다는 이유만으로 root에 남겨두면 안 된다.
    - 설정된 `documentPaths.tasksRoot`가 있으면 관련 작업문서가 요청된 계획과 중복되거나 대체 관계인지 task 디렉토리를 비재귀로 확인한다.
    - 현재 master 파일명을 식별한다 (`00-master-plan-v*.md` 우선).
    - 발견된 계획/작업 문서를 `active-current`, `active-ambiguous`, `superseded`, `overlapping-draft`, `runtime-evidence`, `unrelated`로 분류한다.
@@ -88,6 +91,7 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
    - 이 준비 단계에서는 `.claude/scripts`, `.claude/runtime-state.sqlite`, `.claude/memory.json`, `.claude/verification.contract.yaml`, project settings, verification baseline을 건드리지 않는다.
    - 준비 후 dispatch 전에 pointer self-check를 수행한다.
      - `phase-status.yaml`은 선택된 master plan과 execution root를 가리키고 phase 1을 pending/prepared로 표시하며 현재 plan의 phase docs만 나열해야 한다.
+     - dry-run summary의 `phaseInventoryCheck`는 `rootPhaseDocs`와 `masterPlanPhaseRefs`가 일치해야 한다. master plan에 명시적 phase 참조가 없는 경우만 미확인으로 기록할 수 있으며, `extraInRoot` 또는 `missingFromRoot`가 있으면 준비 실패다.
      - `current-run.json`, `active-phase-run.json`, `latest-dispatch.json`은 없거나 archive되어야 하며, 남아 있으면 top-level과 embedded `phaseRunLease` 모두 선택된 master plan/execution root를 가리켜야 한다.
      - actionable phase가 pending, in_progress, blocked, retryable 중 하나로 남아 있으면 `goalRuntime.status`는 `complete`이면 안 된다.
      - remaining/actionable phase count는 master checklist와 phase-status phase list에 맞아야 한다.
@@ -98,6 +102,7 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
 8. 완료 루프를 적용한다.
    - 모든 기준 요구사항이 매핑되고, master 체크리스트의 모든 항목이 `[x]`가 될 때까지 반복한다.
    - 체크리스트 미완료 상태에서는 전체 완료로 선언하지 않는다.
+   - master plan 생성만으로 실행 준비 완료라고 보지 않는다. 실행 가능한 준비 완료는 root phase 문서 정리, `prepare-implementation-plan-state.mjs --dry-run`, 선택된 package와 일치하는 phase count 확인까지 포함한다.
 
 ## Master Plan 규칙
 - 파일명: `docs/implementation/00-master-plan-v{n}.md` (기존 관례가 있으면 유지).
