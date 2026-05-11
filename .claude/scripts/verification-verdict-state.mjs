@@ -297,7 +297,7 @@ export function inferBlockerClass(payload = {}) {
   if (/content[_-]?precondition|precondition/.test(reason) || failureClass === 'contract') {
     return 'content_precondition';
   }
-  if (/runtime_verifier|verifier_unavailable|verification_runtime/.test(reason)) {
+  if (/runtime_verifier|verifier_unavailable|verification_runtime|verifier_spawn_eperm|node_test_spawn_eperm/.test(reason)) {
     return 'verifier_unavailable';
   }
   if (/auth|login|credential|worker_spawn|spawn|codex_exec|runtime_health|runtime_cli/.test(reason)) {

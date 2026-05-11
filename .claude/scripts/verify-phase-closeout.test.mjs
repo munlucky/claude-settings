@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { classifyCompletionGateReason, decideMissingEvidenceAction } from './agent-loop-phase-attempt.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
@@ -13,6 +14,8 @@ import {
 } from './lib/phase-event-ledger.mjs';
 import { validateEvaluationTriggerPipelineEvidence } from './workflow-enforcement.mjs';
 import { config, eventFixture, withFixture } from './verify-phase-closeout-fixtures.mjs';
+
+const REPO_ROOT = process.cwd();
 
 test('phase closeout fails when a completed phase is unchecked in the master checklist', () => {
   withFixture({ checklistChecked: false }, (root) => {
@@ -401,6 +404,38 @@ test('phase status fixture records environmentBlockers for environment-blocked c
     assert.match(text, /environmentBlockers:/);
     assert.match(text, /check:\s+external_provider_smoke/);
     assert.match(text, /reason:\s+"external provider smoke credential blocked"/);
+  });
+});
+
+test('phase status root records verifier spawn EPERM blocker metadata', () => {
+  withFixture({ checklistChecked: false }, (root) => {
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    const result = spawnSync(process.execPath, [
+      path.join(REPO_ROOT, '.claude/scripts/agent-loop-phase-state.mjs'),
+      'set-root-run-verdict',
+      statusFile,
+      'blocked',
+      'runtime_unavailable',
+      'phase-status=verification_blocked | blocker=verifier_unavailable | command=node --test .claude/scripts/lib/current-artifacts-state.test.mjs | spawn EPERM',
+      'verification-preflight-blocked',
+      'runtime_fallback_or_handoff',
+      'verifier_unavailable',
+      'verifier_spawn_eperm',
+      'verifier_unavailable',
+    ], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.match(text, /normalizedRunVerdict:\s+blocked/);
+    assert.match(text, /stopReasonClass:\s+runtime_unavailable/);
+    assert.match(text, /rawStopReason:\s+verification-preflight-blocked/);
+    assert.match(text, /blockerClass:\s+verifier_unavailable/);
+    assert.match(text, /blockingReasonCode:\s+verifier_spawn_eperm/);
+    assert.match(text, /failureClass:\s+verifier_unavailable/);
+    assert.match(text, /spawn EPERM/);
   });
 });
 

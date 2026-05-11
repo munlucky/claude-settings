@@ -325,6 +325,10 @@ function detectEnvironmentStopReason(logFile, defaultReason = 'phase-failed') {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(isLogEvidenceLine);
+  const combinedEvidence = evidenceLines.join('\n');
+  if (/(?:node\s+--test|verifier|verification runtime|runtime verifier)[\s\S]*spawn(?:Sync)?\s+node\s+EPERM/i.test(combinedEvidence)) {
+    return 'verifier_unavailable';
+  }
 
   for (const line of evidenceLines) {
     const classification = classifyFailure({

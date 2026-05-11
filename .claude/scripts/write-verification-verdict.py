@@ -120,7 +120,13 @@ def infer_blocker_class(reason_code: str, failure_class: str, blocking: bool, ve
         return "missing_evidence"
     if "content_precondition" in reason or "precondition" in reason or failure == "contract":
         return "content_precondition"
-    if "runtime_verifier" in reason or "verifier_unavailable" in reason or "verification_runtime" in reason:
+    if (
+        "runtime_verifier" in reason
+        or "verifier_unavailable" in reason
+        or "verification_runtime" in reason
+        or "verifier_spawn_eperm" in reason
+        or "node_test_spawn_eperm" in reason
+    ):
         return "verifier_unavailable"
     if any(token in reason for token in ["auth", "login", "credential", "worker_spawn", "spawn", "codex_exec", "runtime_health", "runtime_cli"]):
         return "runtime_unavailable"

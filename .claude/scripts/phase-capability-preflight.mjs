@@ -28,6 +28,7 @@ const unavailableCapabilityCodes = new Set([
   'memorygraph_unavailable',
   'git_index_denied',
   'node_spawn_eperm',
+  'verifier_unavailable',
   'plugin_network_sync_failed',
   'path_update_denied',
   'mcp_cleanup_eperm',
@@ -74,6 +75,13 @@ function isPermissionDeniedText(text = '') {
 }
 
 function resolveFailureClassFromText(text, defaultCode, accessDeniedCode = defaultCode) {
+  const classified = classifyFailure({
+    failureCode: defaultCode,
+    detail: text,
+  });
+  if (classified.code !== 'unknown_failure' && classified.code !== 'command_not_found') {
+    return classified.code;
+  }
   if (isPermissionDeniedText(text)) {
     return accessDeniedCode;
   }
@@ -572,22 +580,21 @@ function buildReport() {
     const reportChecks = Array.isArray(report.payload?.checks) ? report.payload.checks : [];
     mergeCounts(historicalCounts, buildFailureClassCounts(reportChecks.map(classifyCapabilityCheck).filter((entry) => entry.blocker)));
   }
-  const failureClassCounts = mergeCounts({ ...historicalCounts }, currentFailureCounts);
-  const summary = summarizeFailureDecision(failureClassCounts);
+  const historicalAndCurrentCounts = mergeCounts({ ...historicalCounts }, currentFailureCounts);
+  const currentSummary = summarizeFailureDecision(currentFailureCounts);
   const blockers = classifiedChecks.filter((entry) => entry.blocker);
   const warnings = classifiedChecks.filter((entry) => entry.status === 'warning' || entry.status === 'passed_with_equivalent_evidence');
-  const decision = blockers.length === 0
-    ? 'continue'
-    : summary.decision;
-  const reason = blockers.length === 0
-    ? 'ok'
-    : summary.reason;
   const activeSummary = blockers.length === 0
     ? {
+      decision: 'continue',
+      reason: 'ok',
       sameFailureClassCount: 0,
       blockerFingerprint: '',
     }
-    : summary;
+    : {
+      ...currentSummary,
+      sameFailureClassCount: historicalAndCurrentCounts[currentSummary.blockerCode] || currentSummary.sameFailureClassCount,
+    };
   const currentBlockers = blockers.map((entry) => ({
     name: entry.name,
     code: entry.code,
@@ -604,13 +611,13 @@ function buildReport() {
     platform: process.platform,
     workspaceRoot,
     status: blockers.length > 0 ? 'failed' : warnings.length > 0 ? 'passed_with_equivalent_evidence' : 'passed',
-    decision,
-    reason,
+    decision: activeSummary.decision,
+    reason: activeSummary.reason,
     sameFailureClassCount: activeSummary.sameFailureClassCount,
     blockerFingerprint: activeSummary.blockerFingerprint,
     fallbackHints: currentBlockers.map((entry) => entry.fallbackHint).filter(Boolean),
     currentBlockers,
-    failureClassCounts,
+    failureClassCounts: historicalAndCurrentCounts,
     dependencyGates: {
       docker: dockerGate,
     },

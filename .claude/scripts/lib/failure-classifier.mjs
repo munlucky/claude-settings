@@ -19,6 +19,7 @@ const FAILURE_DEFINITIONS = new Map([
   ['codex_state_db_readonly', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'make-codex-state-db-writable' }],
   ['shell_snapshot_failure', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'repair-shell-snapshot-path-or-fallback-runtime' }],
   ['mcp_cleanup_eperm', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'repair-mcp-cleanup-permissions-or-stop-process-tree-manually' }],
+  ['mcp_shutdown_warning', { category: 'environment_warning', decision: 'continue', retryPolicy: 'continue', fallbackHint: 'record-shutdown-warning-without-overriding-primary-blocker' }],
   ['path_update_denied', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'repair-path-update-permissions-or-use-host-fallback' }],
   ['plugin_network_sync_failed', { category: 'network', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'reconnect-plugin-network-sync-or-fallback-runtime' }],
   ['node_spawn_eperm', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'repair-node-spawn-permissions-or-fallback-runtime' }],
@@ -52,6 +53,8 @@ const FAILURE_CODE_ALIASES = new Map([
   ['mcp_cleanup', 'mcp_cleanup_eperm'],
   ['mcp_cleanup_permission_denied', 'mcp_cleanup_eperm'],
   ['mcp_cleanup_failed', 'mcp_cleanup_eperm'],
+  ['mcp_shutdown_warning', 'mcp_shutdown_warning'],
+  ['mcp_shutdown_cleanup_warning', 'mcp_shutdown_warning'],
   ['path_update', 'path_update_denied'],
   ['path_update_permission_denied', 'path_update_denied'],
   ['plugin_network_sync', 'plugin_network_sync_failed'],
@@ -59,6 +62,8 @@ const FAILURE_CODE_ALIASES = new Map([
   ['plugin_network_sync_unavailable', 'plugin_network_sync_failed'],
   ['node_spawn', 'node_spawn_eperm'],
   ['node_spawn_permission_denied', 'node_spawn_eperm'],
+  ['node_test_spawn_eperm', 'verifier_unavailable'],
+  ['verifier_spawn_eperm', 'verifier_unavailable'],
   ['git_index', 'git_index_denied'],
   ['git_index_permission_denied', 'git_index_denied'],
   ['git_access_denied', 'git_index_denied'],
@@ -80,6 +85,7 @@ const FAILURE_CODE_ALIASES = new Map([
   ['verification_runtime', 'verifier_unavailable'],
   ['runtime_verifier_unavailable', 'verifier_unavailable'],
   ['verification_runtime_unavailable', 'verifier_unavailable'],
+  ['verification_runtime_spawn_eperm', 'verifier_unavailable'],
   ['verifier_unavailable', 'verifier_unavailable'],
   ['git_eperm', 'git_eperm'],
   ['bash_access_denied', 'bash_access_denied'],
@@ -96,8 +102,10 @@ const ENVIRONMENT_PATTERNS = [
   { code: 'codex_state_db_readonly', test: /(?:^|\b)(?:state db|runtime state|sqlite|sqlite3|runtime-state\.sqlite|rollout\/session state db|state database)(?:\b|:).*(read only|readonly|locked|permission denied|access is denied|ep?erm|eacces|discrepancy|inconsistent)/i },
   { code: 'shell_snapshot_failure', test: /(?:^|\b)(?:shell snapshot|snapshot age|rollout age for snapshot|snapshot directory|shell_snapshot)(?:\b|:).*(failed|unavailable|inconsistent|read only|readonly|permission denied|access is denied|ep?erm|eacces)/i },
   { code: 'mcp_cleanup_eperm', test: /(?:^|\b)(?:mcp cleanup|cleanup mcp|kill mcp process group|terminate mcp process group|failed to terminate mcp process group|process group cleanup|tree cleanup)(?:\b|:).*(ep?erm|eacces|permission denied|access is denied|operation not permitted)/i },
+  { code: 'mcp_shutdown_warning', test: /failed to initialize mcp client during shutdown|mcp startup failed.*(?:shutdown|connection closed)|shutdown.*mcp.*(?:connection closed|handshak)/i },
   { code: 'path_update_denied', test: /(?:^|\b)(?:path update|update path|prepend path|PATH)(?:\b|:).*(denied|permission denied|access is denied|ep?erm|eacces|operation not permitted|readonly|read only)/i },
   { code: 'plugin_network_sync_failed', test: /(?:^|\b)(?:plugin sync|plugin network sync|network sync|sync failed|plugin registry|plugin mirror)(?:\b|:).*(failed|unavailable|timeout|network|econnreset|etimedout|eai_again|enotfound|permission denied|access is denied)/i },
+  { code: 'verifier_unavailable', test: /(?:node\s+--test|node test runner|test worker|verifier|verification runtime|runtime verifier).*?(?:spawn(?:Sync)?\s+node\s+)?(?:ep?erm|eacces|permission denied|access is denied|operation not permitted|unable to create process|spawn blocked)/i },
   { code: 'node_spawn_eperm', test: /(?:^|\b)node(?:\b|:).*(ep?erm|eacces|permission denied|access is denied|unable to create process|spawn blocked)/i },
   { code: 'bash_access_denied', test: /(?:^|\b)bash(?:\b|:).*(ep?erm|eacces|access is denied|permission denied|spawn blocked|unable to create process)/i },
   { code: 'git_index_denied', test: /(?:^|\b)(?:git index|index write|git index write|git add|git update-index)(?:\b|:).*(ep?erm|eacces|access is denied|permission denied|readonly|read only)/i },
@@ -175,6 +183,15 @@ function sanitizeCode(value) {
     .replace(/^_|_$/g, '');
 }
 
+function matchEnvironmentPattern(text, excludedCodes = new Set()) {
+  for (const { code, test } of ENVIRONMENT_PATTERNS) {
+    if (!excludedCodes.has(code) && test.test(text)) {
+      return code;
+    }
+  }
+  return '';
+}
+
 export function normalizeFailureCode(input = {}) {
   const explicit = firstMeaningfulValue(
     input.code,
@@ -185,18 +202,6 @@ export function normalizeFailureCode(input = {}) {
     input.name,
     input.failureClass,
   );
-  if (FAILURE_DEFINITIONS.has(explicit)) {
-    return explicit;
-  }
-
-  const sanitizedExplicit = sanitizeCode(explicit);
-  if (FAILURE_DEFINITIONS.has(sanitizedExplicit)) {
-    return sanitizedExplicit;
-  }
-  if (FAILURE_CODE_ALIASES.has(sanitizedExplicit)) {
-    return FAILURE_CODE_ALIASES.get(sanitizedExplicit);
-  }
-
   const haystack = firstMeaningfulValue(
     input.message,
     input.detail,
@@ -209,11 +214,37 @@ export function normalizeFailureCode(input = {}) {
     input.blockingReasonCode,
     input.blockerClass,
   );
+  const patternText = `${explicit} ${haystack}`.trim();
 
-  for (const { code, test } of ENVIRONMENT_PATTERNS) {
-    if (test.test(`${explicit} ${haystack}`.trim())) {
-      return code;
+  const sanitizedExplicit = sanitizeCode(explicit);
+  if (sanitizedExplicit === 'command_not_found' || sanitizedExplicit === 'node_spawn_eperm') {
+    const contextualCode = matchEnvironmentPattern(patternText, new Set(['command_not_found']));
+    if (contextualCode && contextualCode !== sanitizedExplicit) {
+      return contextualCode;
     }
+  }
+
+  if (FAILURE_DEFINITIONS.has(explicit)) {
+    return explicit;
+  }
+
+  if (FAILURE_DEFINITIONS.has(sanitizedExplicit)) {
+    return sanitizedExplicit;
+  }
+  if (FAILURE_CODE_ALIASES.has(sanitizedExplicit)) {
+    const aliased = FAILURE_CODE_ALIASES.get(sanitizedExplicit);
+    if (aliased === 'command_not_found' || aliased === 'node_spawn_eperm') {
+      const contextualCode = matchEnvironmentPattern(patternText, new Set(['command_not_found']));
+      if (contextualCode && contextualCode !== aliased) {
+        return contextualCode;
+      }
+    }
+    return aliased;
+  }
+
+  const matchedCode = matchEnvironmentPattern(patternText);
+  if (matchedCode) {
+    return matchedCode;
   }
 
   return sanitizedExplicit || explicit || 'unknown_failure';

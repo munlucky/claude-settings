@@ -30,6 +30,7 @@ const phaseStartCapabilityBlockers = new Set([
   'bash_access_denied',
   'git_index_denied',
   'node_spawn_eperm',
+  'verifier_unavailable',
   'spawn_blocked',
 ]);
 
@@ -305,21 +306,36 @@ function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReaso
   const counts = payload.failureClassCounts && typeof payload.failureClassCounts === 'object'
     ? payload.failureClassCounts
     : {};
+  const currentBlockers = Array.isArray(payload.currentBlockers) ? payload.currentBlockers : [];
+  const activeBlocker = currentBlockers.find((entry) => classifyFailure({
+    code: entry.code,
+    failureCode: entry.failureClass,
+    reason: entry.detail,
+    detail: entry.detail,
+    name: entry.name,
+  }).blocker);
+  const activeClassification = activeBlocker ? classifyFailure({
+    code: activeBlocker.code,
+    failureCode: activeBlocker.failureClass,
+    reason: activeBlocker.detail,
+    detail: activeBlocker.detail,
+    name: activeBlocker.name,
+  }) : null;
   const summary = summarizeFailureDecision(counts);
   const stagnation = classifyStagnationPattern(
     Object.entries(counts).flatMap(([code, count]) => Array.from({ length: Number(count) || 0 }, () => ({ code }))),
     { retryBudgetRemaining: Number(payload.retryBudgetRemaining ?? Number.NaN) },
   );
   const stopClassification = classifyFailure({ reason: finalStopReason, message: finalStopReason });
-  const blockerCode = payload.reason || summary.blockerCode || stopClassification.code;
+  const blockerCode = activeClassification?.code || payload.reason || summary.blockerCode || stopClassification.code;
   const sameFailureClassCount = Number(
     payload.sameFailureClassCount
     ?? counts[blockerCode]
     ?? summary.sameFailureClassCount
     ?? 0,
   );
-  const decision = payload.decision || summary.decision;
-  const reason = payload.reason || summary.reason || stopClassification.code || 'ok';
+  const decision = activeClassification?.decision || payload.decision || summary.decision;
+  const reason = activeClassification?.code || payload.reason || summary.reason || stopClassification.code || 'ok';
   const shouldSuppressRetry = stagnation.retrySuppressed
     || (sameFailureClassCount >= 2
       && decision !== 'continue'

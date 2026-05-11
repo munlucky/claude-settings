@@ -2400,7 +2400,17 @@ function setPhaseCheckpoint(statusFile, phaseNum, checkpoint) {
   writeFileAtomic(statusFile, `${lines.join('\n')}\n`);
 }
 
-function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation, rawStopReason = '', recoveryAction = '') {
+function setRootRunVerdict(
+  statusFile,
+  normalizedRunVerdict,
+  stopReasonClass,
+  stopReasonExplanation,
+  rawStopReason = '',
+  recoveryAction = '',
+  blockerClass = '',
+  blockingReasonCode = '',
+  failureClass = '',
+) {
   if (!fs.existsSync(statusFile)) {
     return;
   }
@@ -2412,6 +2422,15 @@ function setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, st
   }
   if (recoveryAction) {
     setRootScalarInLines(lines, 'recoveryAction', yamlScalar(recoveryAction));
+  }
+  if (blockerClass) {
+    setRootScalarInLines(lines, 'blockerClass', yamlScalar(blockerClass));
+  }
+  if (blockingReasonCode) {
+    setRootScalarInLines(lines, 'blockingReasonCode', yamlScalar(blockingReasonCode));
+  }
+  if (failureClass) {
+    setRootScalarInLines(lines, 'failureClass', yamlScalar(failureClass));
   }
   setRootScalarInLines(lines, 'stopReasonExplanation', yamlScalar(stopReasonExplanation));
   if (normalizedRunVerdict === 'success' && stopReasonClass === 'clean_complete') {
@@ -2914,12 +2933,12 @@ switch (command) {
     break;
   }
   case 'set-root-run-verdict': {
-    const [statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation, rawStopReason, recoveryAction] = args;
+    const [statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation, rawStopReason, recoveryAction, blockerClass, blockingReasonCode, failureClass] = args;
     if (!statusFile || !normalizedRunVerdict || !stopReasonClass) {
       printUsage();
       process.exit(64);
     }
-    setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation || '', rawStopReason || '', recoveryAction || '');
+    setRootRunVerdict(statusFile, normalizedRunVerdict, stopReasonClass, stopReasonExplanation || '', rawStopReason || '', recoveryAction || '', blockerClass || '', blockingReasonCode || '', failureClass || '');
     break;
   }
   case 'self-test':

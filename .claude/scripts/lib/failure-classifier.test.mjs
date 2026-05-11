@@ -58,6 +58,15 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   const cimAccess = classifyFailure({ name: 'process.cim', status: 'warning', detail: 'Get-CimInstance access is denied' });
   const memoryGraph = classifyFailure({ name: 'memorygraph.health', status: 'warning', detail: 'memorygraph transport closed' });
   const verifier = classifyFailure({ name: 'verifier.runtime', status: 'warning', detail: 'runtime verifier unavailable' });
+  const verifierSpawn = classifyFailure({
+    failureCode: 'command_not_found',
+    name: 'verifier.runtime',
+    detail: 'node --test .claude/scripts/lib/current-artifacts-state.test.mjs failed: spawn EPERM',
+  });
+  const nodeTestWorker = classifyFailure({
+    name: 'node.test.worker',
+    detail: 'Node test worker spawn EPERM',
+  });
   const pathUpdate = classifyFailure({ name: 'path.update', status: 'warning', detail: 'PATH update denied by host policy' });
   const pluginSync = classifyFailure({ name: 'plugin.sync', status: 'warning', detail: 'plugin network sync failed after timeout' });
   const pluginHost = classifyFailure({ name: 'plugin.sync.host', status: 'warning', detail: 'plugin sync failed: Could not resolve host: github.com' });
@@ -73,6 +82,9 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   assert.equal(cimAccess.code, 'get_ciminstance_access_denied');
   assert.equal(memoryGraph.code, 'memorygraph_unavailable');
   assert.equal(verifier.code, 'verifier_unavailable');
+  assert.equal(verifierSpawn.code, 'verifier_unavailable');
+  assert.equal(verifierSpawn.decision, 'resume_later_handoff');
+  assert.equal(nodeTestWorker.code, 'verifier_unavailable');
   assert.equal(pathUpdate.code, 'path_update_denied');
   assert.equal(pluginSync.code, 'plugin_network_sync_failed');
   assert.equal(pluginHost.code, 'plugin_network_sync_failed');
@@ -109,6 +121,35 @@ function testDetectFinalStopReasonForRawLogs() {
       'phase worker still running',
     ]),
     'mcp_cleanup_eperm',
+  );
+  assert.equal(
+    detectFinalStopReason([
+      'node --test .claude/scripts/lib/current-artifacts-state.test.mjs failed: spawnSync node EPERM',
+    ]),
+    'verifier_unavailable',
+  );
+  assert.equal(
+    detectFinalStopReason([
+      'failed to initialize MCP client during shutdown: MCP startup failed: handshaking with MCP server failed: connection closed',
+      'phase worker still running',
+    ]),
+    'mcp_shutdown_warning',
+  );
+  assert.equal(
+    classifyFailure({ failureCode: 'command_not_found', detail: 'actual command not found' }).code,
+    'command_not_found',
+  );
+  assert.equal(
+    classifyFailure({ name: 'node.spawn', detail: 'spawnSync node EPERM' }).code,
+    'node_spawn_eperm',
+  );
+  assert.equal(
+    classifyFailure({ name: 'node.spawn', detail: 'spawnSync node EPERM' }).decision,
+    'resume_later_handoff',
+  );
+  assert.equal(
+    classifyFailure({ detail: 'failed to initialize MCP client during shutdown: connection closed' }).blocker,
+    false,
   );
   assert.equal(
     detectFinalStopReason([

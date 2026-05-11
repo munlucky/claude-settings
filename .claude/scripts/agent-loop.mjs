@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, buildPhasePrompt } from './agent-loop-phase-plan-lib.mjs';
 import { noiseSummaryPath } from './lib/waste-ledger.mjs';
+import { classifyFailure } from './lib/failure-classifier.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -333,6 +334,98 @@ function phaseSummary(phaseNum) {
     values[key] = value;
   }
   return values;
+}
+
+function extractBulletValue(text, heading, label) {
+  const lines = String(text || '').split(/\r?\n/);
+  let inSection = false;
+  const headingToken = String(heading || '').trim().toLowerCase();
+  const labelToken = String(label || '').trim().toLowerCase();
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line.toLowerCase() === headingToken) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && line.startsWith('## ')) {
+      break;
+    }
+    if (inSection && line.startsWith('-')) {
+      const separator = line.indexOf(':');
+      if (separator > 0 && line.slice(1, separator).trim().toLowerCase() === labelToken) {
+        return line.slice(separator + 1).trim();
+      }
+    }
+  }
+  return '';
+}
+
+function readPhaseVerificationVerdict(phaseNum) {
+  const phaseId = String(phaseNum).padStart(2, '0');
+  const verdictPath = path.resolve(process.cwd(), `.claude/verification-verdict-phase${phaseId}-final.json`);
+  if (!fs.existsSync(verdictPath)) {
+    return { path: verdictPath, payload: null };
+  }
+  try {
+    return { path: verdictPath, payload: JSON.parse(fs.readFileSync(verdictPath, 'utf8')) };
+  } catch {
+    return { path: verdictPath, payload: null };
+  }
+}
+
+function readTextIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return '';
+  }
+  return fs.readFileSync(filePath, 'utf8');
+}
+
+function blockedStopFromPhase(phaseNum, phaseAfterFailure, exitCode) {
+  const status = String(phaseAfterFailure?.status || '').trim();
+  if (!['verification_blocked', 'runtime_unhealthy', 'blocked'].includes(status)) {
+    return null;
+  }
+
+  const verdict = readPhaseVerificationVerdict(phaseNum);
+  const payload = verdict.payload || {};
+  const qaText = readTextIfExists(phaseAfterFailure?.qaReport);
+  const qaBlocker = extractBulletValue(qaText, '## Finish Readiness', 'Remaining blockers before closeout')
+    || extractBulletValue(qaText, '## Findings', 'blocking');
+  const blockingReasonCode = String(payload.blockingReasonCode || payload.failureClass || '').trim();
+  const blockerClass = String(payload.blockerClass || '').trim();
+  const verifierCommand = String(payload.command || payload.verificationCommand || '').trim();
+  const verdictSummary = String(payload.summary || payload.message || '').trim();
+  const classification = classifyFailure({
+    blockingReasonCode,
+    blockerClass,
+    failureClass: payload.failureClass,
+    detail: [verifierCommand, verdictSummary, qaBlocker].filter(Boolean).join(' | '),
+    reason: status,
+  });
+  const normalizedReason = status === 'verification_blocked' ? 'verification-preflight-blocked' : status;
+  const normalizedBlockingReasonCode = blockingReasonCode || classification.code;
+  const normalizedBlockerClass = blockerClass || (['verifier_unavailable', 'node_spawn_eperm', 'spawn_blocked'].includes(classification.code)
+    ? 'verifier_unavailable'
+    : classification.code);
+  const detail = [
+    `phase-status=${status}`,
+    `blocker=${classification.code}`,
+    normalizedBlockerClass ? `blockerClass=${normalizedBlockerClass}` : '',
+    normalizedBlockingReasonCode ? `blockingReasonCode=${normalizedBlockingReasonCode}` : '',
+    verifierCommand ? `command=${verifierCommand}` : '',
+    qaBlocker || verdictSummary || `single-phase shell core exited with code ${exitCode}`,
+    verdict.payload ? `verdict=${path.relative(process.cwd(), verdict.path).replace(/\\/g, '/')}` : '',
+  ].filter(Boolean).join(' | ');
+
+  return {
+    stopReason: normalizedReason,
+    stopDetail: detail,
+    stopMetadata: {
+      blockerClass: normalizedBlockerClass,
+      blockingReasonCode: normalizedBlockingReasonCode,
+      failureClass: classification.code,
+    },
+  };
 }
 
 function firstBlockedPhase() {
@@ -911,9 +1004,17 @@ function normalizeRunVerdict({
   stopDetail,
   checkpointRequired,
   reconciledNonzeroExit,
+  stopMetadata = {},
 }) {
   const reason = String(stopReason || '').toLowerCase();
   const detail = String(stopDetail || '').trim();
+  const classification = classifyFailure({
+    reason,
+    detail,
+    blockerClass: stopMetadata.blockerClass,
+    blockingReasonCode: stopMetadata.blockingReasonCode,
+    failureClass: stopMetadata.failureClass,
+  });
   if (checkpointRequired || reason.includes('checkpoint')) {
     return {
       normalizedRunVerdict: 'checkpoint_required',
@@ -929,11 +1030,24 @@ function normalizeRunVerdict({
     };
   }
   if (stoppedEarly) {
+    if (['verifier_unavailable', 'node_spawn_eperm', 'spawn_blocked'].includes(classification.code) || /spawn\s+eperm|spawnsync\s+node\s+eperm|verifier_unavailable/i.test(detail)) {
+      return {
+        normalizedRunVerdict: 'blocked',
+        stopReasonClass: 'runtime_unavailable',
+        stopReasonExplanation: detail || stopReason || 'verification runtime unavailable',
+        blockerClass: stopMetadata.blockerClass || 'verifier_unavailable',
+        blockingReasonCode: stopMetadata.blockingReasonCode || classification.code,
+        failureClass: classification.code,
+      };
+    }
     if (reason.includes('user_validation_required') || reason.includes('user validation') || reason.includes('demo-approval') || reason.includes('approval')) {
       return {
         normalizedRunVerdict: 'blocked',
         stopReasonClass: 'user_validation_required',
         stopReasonExplanation: detail || stopReason || 'user demo approval is required before continuing',
+        blockerClass: stopMetadata.blockerClass || '',
+        blockingReasonCode: stopMetadata.blockingReasonCode || '',
+        failureClass: classification.code,
       };
     }
     if (reason.includes('verification')) {
@@ -941,6 +1055,9 @@ function normalizeRunVerdict({
         normalizedRunVerdict: 'failed',
         stopReasonClass: 'verification_failed',
         stopReasonExplanation: detail || stopReason || 'verification failed',
+        blockerClass: stopMetadata.blockerClass || '',
+        blockingReasonCode: stopMetadata.blockingReasonCode || '',
+        failureClass: classification.code,
       };
     }
     if (reason.includes('runtime') || reason.includes('signal') || reason.includes('spawn') || reason.includes('worker')) {
@@ -948,6 +1065,9 @@ function normalizeRunVerdict({
         normalizedRunVerdict: 'blocked',
         stopReasonClass: 'runtime_unavailable',
         stopReasonExplanation: detail || stopReason || 'runtime unavailable',
+        blockerClass: stopMetadata.blockerClass || '',
+        blockingReasonCode: stopMetadata.blockingReasonCode || '',
+        failureClass: classification.code,
       };
     }
     if (reason.includes('blocked') || reason.includes('unhealthy')) {
@@ -955,12 +1075,18 @@ function normalizeRunVerdict({
         normalizedRunVerdict: 'blocked',
         stopReasonClass: 'verification_failed',
         stopReasonExplanation: detail || stopReason || 'phase blocked',
+        blockerClass: stopMetadata.blockerClass || '',
+        blockingReasonCode: stopMetadata.blockingReasonCode || '',
+        failureClass: classification.code,
       };
     }
     return {
       normalizedRunVerdict: 'failed',
       stopReasonClass: 'unknown',
       stopReasonExplanation: detail || stopReason || 'agent loop stopped before clean completion',
+      blockerClass: stopMetadata.blockerClass || '',
+      blockingReasonCode: stopMetadata.blockingReasonCode || '',
+      failureClass: classification.code,
     };
   }
   if (reconciledNonzeroExit) {
@@ -1179,6 +1305,7 @@ async function runNodeManagedLoop() {
   let stopPhase = '';
   let stopReason = '';
   let stopDetail = '';
+  let stopMetadata = {};
 
   try {
     masterPlan = resolveMasterPlan(state.planDir);
@@ -1381,11 +1508,13 @@ async function runNodeManagedLoop() {
         reconcileCompletedPhasesFromArtifacts();
         const phaseAfterFailure = phaseSummary(nextPhase);
         if (phaseAfterFailure.status !== 'completed') {
+          const blockedStop = blockedStopFromPhase(nextPhase, phaseAfterFailure, exitCode);
           failedPhases += 1;
           stoppedEarly = true;
           stopPhase = nextPhase;
-          stopReason = 'phase-shell-core-failed';
-          stopDetail = `single-phase shell core exited with code ${exitCode}`;
+          stopReason = blockedStop?.stopReason || 'phase-shell-core-failed';
+          stopDetail = blockedStop?.stopDetail || `single-phase shell core exited with code ${exitCode}`;
+          stopMetadata = blockedStop?.stopMetadata || {};
           break;
         }
 
@@ -1490,6 +1619,7 @@ async function runNodeManagedLoop() {
       stopDetail,
       checkpointRequired,
       reconciledNonzeroExit,
+      stopMetadata,
     });
     try {
       phaseState(
@@ -1498,6 +1628,11 @@ async function runNodeManagedLoop() {
         normalized.normalizedRunVerdict,
         normalized.stopReasonClass,
         normalized.stopReasonExplanation,
+        stopReason,
+        normalized.recoveryAction || '',
+        normalized.blockerClass || '',
+        normalized.blockingReasonCode || '',
+        normalized.failureClass || '',
       );
     } catch (error) {
       appendDebugLog('agent-loop-normalized-verdict-write-failed', {
