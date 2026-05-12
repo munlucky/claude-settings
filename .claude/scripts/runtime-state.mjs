@@ -361,14 +361,36 @@ function migrate(db) {
       actionable_phases_remaining INTEGER NOT NULL DEFAULT 0
     );
   `);
+  const runtimeEventColumns = new Set(db.prepare('PRAGMA table_info(runtime_events)').all().map((column) => column.name));
+  if (!runtimeEventColumns.has('transaction_id')) {
+    db.exec('ALTER TABLE runtime_events ADD COLUMN transaction_id TEXT NOT NULL DEFAULT "";');
+  }
   db.prepare('INSERT OR IGNORE INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)').run(1, nowMs());
 }
 
-function recordEvent(db, { goalId = '', phaseRunId = '', attemptId = '', leaseId = '', eventType, detail = '' }) {
+function eventDetail(detail, transactionId) {
+  if (!transactionId) {
+    return detail;
+  }
+  if (!detail) {
+    return JSON.stringify({ transactionId });
+  }
+  try {
+    const parsed = JSON.parse(detail);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return JSON.stringify({ ...parsed, transactionId });
+    }
+  } catch {
+    // Keep plain text detail stable and append structured transaction metadata.
+  }
+  return JSON.stringify({ message: String(detail), transactionId });
+}
+
+function recordEvent(db, { goalId = '', phaseRunId = '', attemptId = '', leaseId = '', eventType, detail = '', transactionId = '' }) {
   db.prepare(`
-    INSERT INTO runtime_events(goal_id, phase_run_id, attempt_id, lease_id, event_type, detail, created_at_ms)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(goalId || null, phaseRunId || null, attemptId || null, leaseId || null, eventType, detail, nowMs());
+    INSERT INTO runtime_events(goal_id, phase_run_id, attempt_id, lease_id, event_type, detail, transaction_id, created_at_ms)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(goalId || null, phaseRunId || null, attemptId || null, leaseId || null, eventType, eventDetail(detail, transactionId), transactionId || '', nowMs());
 }
 
 function activeGoalForPlan(db, planDir) {
@@ -440,6 +462,7 @@ function upsertGoal(db, config) {
     leaseId: config.leaseId || '',
     eventType: config.eventType || 'GoalStarted',
     detail: config.detail || objective,
+    transactionId: config.transactionId || '',
   });
   return goal;
 }
@@ -575,6 +598,7 @@ export function startLease(db, config) {
     eventType: 'GoalStarted',
     tokenBudget: config.tokenBudget,
     timeBudgetSeconds: config.timeBudgetSeconds,
+    transactionId: config.transactionId || '',
   });
   seedPhasesFromStatus(db, goal, config.statusFile);
   const rows = db.prepare('SELECT phase_number, status, plan_confirmed FROM phase_runs WHERE goal_id = ? ORDER BY phase_number').all(goal.goal_id);
@@ -608,7 +632,7 @@ export function startLease(db, config) {
   );
   db.prepare('UPDATE workflow_goals SET current_lease_id = ?, updated_at_ms = ? WHERE goal_id = ?')
     .run(config.leaseId, timestamp, goal.goal_id);
-  recordEvent(db, { goalId: goal.goal_id, leaseId: config.leaseId, eventType: 'LeaseStarted', detail: config.executionBoundary || '' });
+  recordEvent(db, { goalId: goal.goal_id, leaseId: config.leaseId, eventType: 'LeaseStarted', detail: config.executionBoundary || '', transactionId: config.transactionId || '' });
   return { ...activeGoalForPlan(db, goal.plan_dir), actionablePhasesRemaining: actionable };
 }
 
@@ -693,6 +717,7 @@ export function heartbeatLease(db, config) {
     leaseId: config.leaseId,
     eventType: 'LeaseHeartbeat',
     detail: terminalCompletion ? JSON.stringify(detailPayload) : (config.currentStage || ''),
+    transactionId: config.transactionId || '',
   });
   return db.prepare('SELECT * FROM leases WHERE lease_id = ?').get(config.leaseId);
 }
@@ -735,9 +760,9 @@ export function finishLease(db, config) {
       SET status = 'complete', last_event = 'GoalCompleted', current_lease_id = NULL, updated_at_ms = ?
       WHERE goal_id = ?
     `).run(timestamp, goal.goal_id);
-    recordEvent(db, { goalId: goal.goal_id, leaseId: config.leaseId, eventType: 'GoalCompleted', detail: 'No actionable phases remaining.' });
+    recordEvent(db, { goalId: goal.goal_id, leaseId: config.leaseId, eventType: 'GoalCompleted', detail: 'No actionable phases remaining.', transactionId: config.transactionId || '' });
   }
-  recordEvent(db, { goalId: lease.goal_id, leaseId: config.leaseId, eventType: 'LeaseFinished', detail: config.stopReasonCode || '' });
+  recordEvent(db, { goalId: lease.goal_id, leaseId: config.leaseId, eventType: 'LeaseFinished', detail: config.stopReasonCode || '', transactionId: config.transactionId || '' });
   return db.prepare('SELECT * FROM leases WHERE lease_id = ?').get(config.leaseId);
 }
 
@@ -788,6 +813,7 @@ export function updatePhase(db, config) {
     phaseRunId,
     eventType: 'PhaseStateUpdated',
     detail: `${config.phaseNum}:${config.newStatus}:${config.lastOutcome || ''}`,
+    transactionId: config.transactionId || '',
   });
   return db.prepare('SELECT * FROM phase_runs WHERE phase_run_id = ?').get(phaseRunId);
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,7 @@ const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
 const DEFAULT_WORKFLOW_DIR = '.claude/logs/workflow-enforcement';
 const STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
 const DELEGATED_ORPHAN_REJECTION = 'delegated_loop_cannot_adopt_orphan';
+const INTENT_SCHEMA_VERSION = 1;
 
 function utcTimestamp(now = '') {
   if (now) {
@@ -128,6 +130,143 @@ function relativePath(root, filePath) {
   return path.relative(root, filePath).replace(/\\/g, '/');
 }
 
+function stableTransactionId(seed) {
+  return `reconciliation-${crypto.createHash('sha1').update(String(seed || '')).digest('hex').slice(0, 16)}`;
+}
+
+function phaseSlug(rawConfig = {}) {
+  return String(rawConfig.phaseSlug || rawConfig.phaseTitle || rawConfig.phase || 'phase-closeout-reconciliation')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'phase-closeout-reconciliation';
+}
+
+function resolveIntentPaths(rawConfig, root, workflowDir) {
+  const baseDir = rawConfig.executionRoot
+    ? path.join(resolvePath(rawConfig.executionRoot, root), phaseSlug(rawConfig))
+    : workflowDir;
+  const intentPath = rawConfig.reconciliationIntentPath
+    ? resolvePath(rawConfig.reconciliationIntentPath, root)
+    : path.join(baseDir, 'reconciliation-intent.json');
+  const markerDir = path.dirname(intentPath);
+  return {
+    intentPath,
+    partialMarkerPath: path.join(markerDir, 'reconciliation-partial.json'),
+    successMarkerPath: path.join(markerDir, 'reconciliation-success.json'),
+  };
+}
+
+function scanReconciliationTargets(root, workflowDir) {
+  const touchedProjectionPaths = [];
+  const failedPayloads = [];
+  for (const basename of STATE_FILES) {
+    const filePath = path.join(workflowDir, basename);
+    const { exists, value } = readJson(filePath);
+    if (!exists) {
+      continue;
+    }
+    if (isFailedDelegatedState(value || {})) {
+      touchedProjectionPaths.push(relativePath(root, filePath));
+      failedPayloads.push(value || {});
+    }
+  }
+  return { touchedProjectionPaths, failedPayloads };
+}
+
+function originalStopReasonFields(rawConfig, failedPayloads) {
+  const source = failedPayloads[0] || {};
+  const code = String(firstPresent(
+    rawConfig.originalStopReason,
+    source.originalStopReason,
+    source.stopReasonCode,
+    source.stopReasonDetail,
+    source.phaseRunLease?.originalStopReason,
+    source.phaseRunLease?.stopReasonCode,
+  ));
+  const detail = String(firstPresent(
+    rawConfig.originalStopReasonDetail,
+    source.originalStopReasonDetail,
+    source.stopReasonDetail,
+    source.phaseRunLease?.stopReasonDetail,
+    code,
+  ));
+  return { code, detail };
+}
+
+function writeReconciliationIntent(rawConfig, root, workflowDir, supersededAt, fallbackRunId) {
+  const paths = resolveIntentPaths(rawConfig, root, workflowDir);
+  const existingRead = readJson(paths.intentPath);
+  const existing = existingRead.exists ? existingRead.value : null;
+  if (existing && existing.status === 'success' && fs.existsSync(resolvePath(existing.successMarkerPath || paths.successMarkerPath, root))) {
+    return { intent: existing, paths, resumed: false, alreadySuccessful: true };
+  }
+
+  const { touchedProjectionPaths, failedPayloads } = scanReconciliationTargets(root, workflowDir);
+  const originalStopReason = originalStopReasonFields(rawConfig, failedPayloads);
+  const transactionId = existing?.transactionId
+    || rawConfig.transactionId
+    || stableTransactionId(`${fallbackRunId}|${paths.intentPath}|${originalStopReason.code}`);
+  const intent = {
+    schemaVersion: INTENT_SCHEMA_VERSION,
+    transactionId,
+    phaseNumber: Number.parseInt(String(rawConfig.phase || rawConfig.phaseNumber || 0), 10) || 0,
+    phaseSlug: phaseSlug(rawConfig),
+    createdAt: existing?.createdAt || supersededAt,
+    updatedAt: supersededAt,
+    reconciliationReason: String(firstPresent(rawConfig.reconciliationReason, rawConfig.reason, 'local fallback reconciliation')),
+    originalStopReasonCode: originalStopReason.code,
+    originalStopReasonDetail: originalStopReason.detail,
+    touchedProjectionPaths,
+    sqliteEventTargets: ['runtime_events'],
+    status: existing?.status && existing.status !== 'success' ? existing.status : 'pending',
+    partialMarkerPath: relativePath(root, paths.partialMarkerPath),
+    successMarkerPath: relativePath(root, paths.successMarkerPath),
+    historicalWarnings: [
+      ...normalizeArray(existing?.historicalWarnings),
+      ...normalizeArray(rawConfig.historicalWarnings),
+    ],
+  };
+  writeJsonAtomic(paths.intentPath, intent);
+  return { intent, paths, resumed: Boolean(existing), alreadySuccessful: false };
+}
+
+function writeReconciliationPartial(paths, intent, completedSteps, pendingSteps, error, timestamp) {
+  const partial = {
+    schemaVersion: INTENT_SCHEMA_VERSION,
+    transactionId: intent.transactionId,
+    status: 'partial',
+    completedSteps,
+    pendingSteps,
+    lastError: error instanceof Error ? error.message : String(error || ''),
+    updatedAt: timestamp,
+  };
+  writeJsonAtomic(paths.partialMarkerPath, partial);
+  writeJsonAtomic(paths.intentPath, {
+    ...intent,
+    status: 'partial',
+    updatedAt: timestamp,
+  });
+}
+
+function writeReconciliationSuccess(paths, intent, touchedPaths, verifierResult, timestamp) {
+  const success = {
+    schemaVersion: INTENT_SCHEMA_VERSION,
+    transactionId: intent.transactionId,
+    status: 'success',
+    reconciledAt: timestamp,
+    touchedPaths,
+    finalVerifierResult: verifierResult,
+  };
+  writeJsonAtomic(paths.successMarkerPath, success);
+  writeJsonAtomic(paths.intentPath, {
+    ...intent,
+    status: 'success',
+    reconciledAt: timestamp,
+    updatedAt: timestamp,
+  });
+}
+
 function recoveryEvent(config, payload, originalStatus, originalCompletionStatus, originalStopReason) {
   return {
     type: 'delegated-terminal-local-fallback',
@@ -140,6 +279,7 @@ function recoveryEvent(config, payload, originalStatus, originalCompletionStatus
     rawStopReasonCode: originalStopReason,
     fallbackRunId: config.fallbackRunId,
     supersededRunLeaseId: resolveRunId(payload),
+    transactionId: config.transactionId,
   };
 }
 
@@ -153,6 +293,7 @@ function residualFailure(config, payload, originalStatus, originalCompletionStat
     rawStopReasonCode: originalStopReason,
     evidencePath: config.evidencePath || '.claude/logs/agent-loop/debug.jsonl',
     recoveredBy: config.fallbackRunId,
+    transactionId: config.transactionId,
   };
 }
 
@@ -345,6 +486,7 @@ function reconcilePayload(payload, config) {
     completionStatus: 'completed-via-local-fallback',
     recoveryStatus: 'recovered',
     completionPath: 'local-fallback',
+    transactionId: config.transactionId,
     executionBoundary,
     returnBoundary,
     fallbackReason,
@@ -356,7 +498,16 @@ function reconcilePayload(payload, config) {
     originalCompletionStatus,
     fallbackRunId: config.fallbackRunId,
     supersededRunLeaseId,
+    supersededByTransactionId: config.transactionId,
     supersededAt: config.supersededAt,
+    reconciledAt: config.supersededAt,
+    reconciliationReason: config.reason,
+    originalStopReasonCode: originalStopReason,
+    originalStopReasonDetail: firstPresent(payload.originalStopReasonDetail, payload.stopReasonDetail, payload.phaseRunLease?.stopReasonDetail, originalStopReason),
+    historicalWarnings: [
+      ...normalizeArray(payload.historicalWarnings),
+      ...normalizeArray(config.historicalWarnings),
+    ],
     supersededReason: config.reason,
     completionBoundary: config.completionBoundary,
     recoveryEvents: [...normalizeArray(payload.recoveryEvents), recovery],
@@ -376,6 +527,7 @@ function reconcilePayload(payload, config) {
       rawStopReasonCode: firstPresent(payload.rawStopReasonCode, originalStopReason),
       blockingStopReasonCode: '',
       supersededRunLeaseId,
+      transactionId: config.transactionId,
     },
   };
 
@@ -386,6 +538,7 @@ function reconcilePayload(payload, config) {
       completionStatus: 'completed-via-local-fallback',
       recoveryStatus: 'recovered',
       completionPath: 'local-fallback',
+      transactionId: config.transactionId,
       fallbackRunId: config.fallbackRunId,
       supersededRunLeaseId,
       supersededAt: config.supersededAt,
@@ -397,6 +550,15 @@ function reconcilePayload(payload, config) {
       rawStopReasonCode: firstPresent(next.phaseRunLease.rawStopReasonCode, originalStopReason),
       blockingStopReasonCode: '',
       stopReasonCode: next.phaseRunLease.stopReasonCode || config.reason,
+      supersededByTransactionId: config.transactionId,
+      reconciledAt: config.supersededAt,
+      reconciliationReason: config.reason,
+      originalStopReasonCode: originalStopReason,
+      originalStopReasonDetail: firstPresent(next.phaseRunLease.originalStopReasonDetail, next.phaseRunLease.stopReasonDetail, originalStopReason),
+      historicalWarnings: [
+        ...normalizeArray(next.phaseRunLease.historicalWarnings),
+        ...normalizeArray(config.historicalWarnings),
+      ],
       recoveryEvents: [...normalizeArray(next.phaseRunLease.recoveryEvents), recovery],
       residualFailures: [...normalizeArray(next.phaseRunLease.residualFailures), residual],
     };
@@ -415,6 +577,7 @@ function mirrorFallbackCompletion(fallbackPath, existing, config) {
     completedAt: existing?.completedAt || config.supersededAt,
     reconciledAt: config.supersededAt,
     completionBoundary: existing?.completionBoundary || config.completionBoundary,
+    transactionId: config.transactionId,
   };
   writeJsonAtomic(fallbackPath, next);
   return next;
@@ -436,8 +599,38 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
   const reconciledFiles = [];
   const skippedFiles = [];
   const supersededRunLeaseIds = [];
+  const { intent, paths: reconciliationPaths, resumed, alreadySuccessful } = writeReconciliationIntent(
+    rawConfig,
+    root,
+    workflowDir,
+    supersededAt,
+    fallbackRunId,
+  );
+  const completedSteps = ['intent-written'];
 
-  for (const basename of STATE_FILES) {
+  if (alreadySuccessful) {
+    return {
+      ok: true,
+      completionStatus: 'completed-via-local-fallback',
+      completionBoundary,
+      fallbackRunId,
+      transactionId: intent.transactionId,
+      resumed,
+      intentStatus: 'success',
+      reconciliationIntentPath: relativePath(root, reconciliationPaths.intentPath),
+      successMarkerPath: relativePath(root, reconciliationPaths.successMarkerPath),
+      warnings: [],
+      reconciledFiles: [],
+      skippedFiles: [],
+      supersededRunLeaseIds: [],
+    };
+  }
+
+  try {
+    if (process.env.PHASE_RECONCILER_TEST_FAIL_AFTER_INTENT === '1') {
+      throw new Error('injected failure after reconciliation intent');
+    }
+    for (const basename of STATE_FILES) {
     const filePath = path.join(workflowDir, basename);
     const { exists, value } = readJson(filePath);
     if (!exists) {
@@ -455,6 +648,8 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
       fallbackReason: rawConfig.fallbackReason || reason,
       supersededAt,
       completionBoundary,
+      transactionId: intent.transactionId,
+      historicalWarnings: intent.historicalWarnings,
       executionBoundary: rawConfig.executionBoundary || '',
       returnBoundary: rawConfig.returnBoundary || 'local-fallback',
       originalWorkerExitCode: rawConfig.originalWorkerExitCode || '',
@@ -462,6 +657,7 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
     });
     writeJsonAtomic(filePath, next);
     reconciledFiles.push(relativePath(root, filePath));
+    completedSteps.push(`projection:${relativePath(root, filePath)}`);
     if (supersededRunLeaseId) {
       supersededRunLeaseIds.push(supersededRunLeaseId);
     }
@@ -472,8 +668,9 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
   const fallbackCompletion = mirrorFallbackCompletion(
     fallbackPath,
     fallbackRead.exists ? fallbackRead.value : null,
-    { fallbackRunId, reason, supersededAt, completionBoundary },
+    { fallbackRunId, reason, supersededAt, completionBoundary, transactionId: intent.transactionId },
   );
+  completedSteps.push(`fallback:${relativePath(root, fallbackPath)}`);
   const statusDocument = fs.existsSync(statusFile)
     ? parsePhaseStatusDocument(fs.readFileSync(statusFile, 'utf8'))
     : { root: {}, phases: [] };
@@ -490,6 +687,12 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
     statusFile: relativePath(root, statusFile),
     workflowDir: relativePath(root, workflowDir),
     fallbackRunId,
+    transactionId: intent.transactionId,
+    resumed,
+    intentStatus: 'success',
+    reconciliationIntentPath: relativePath(root, reconciliationPaths.intentPath),
+    partialMarkerPath: relativePath(root, reconciliationPaths.partialMarkerPath),
+    successMarkerPath: relativePath(root, reconciliationPaths.successMarkerPath),
     completionStatus: 'completed-via-local-fallback',
     completionBoundary,
     reason,
@@ -505,10 +708,24 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
   };
 
   const debugLogPath = appendDebugLog(root, 'phase-closeout-reconciler-summary', summary);
+  completedSteps.push(`debug-log:${relativePath(root, debugLogPath)}`);
+  writeReconciliationSuccess(
+    reconciliationPaths,
+    intent,
+    [...reconciledFiles, relativePath(root, fallbackPath), relativePath(root, debugLogPath)],
+    { ok: true, postReconcileViolations: summary.postReconcileViolations.length },
+    supersededAt,
+  );
   return {
     ...summary,
     debugLogPath: relativePath(root, debugLogPath),
   };
+  } catch (error) {
+    const pendingSteps = ['projection-writes', 'fallback-marker', 'debug-summary', 'success-marker']
+      .filter((step) => !completedSteps.some((completed) => completed.includes(step)));
+    writeReconciliationPartial(reconciliationPaths, intent, completedSteps, pendingSteps, error, supersededAt);
+    throw error;
+  }
 }
 
 function parseArgs(argv) {
