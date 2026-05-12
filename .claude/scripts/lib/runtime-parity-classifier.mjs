@@ -29,6 +29,11 @@ const RUNTIME_UNAVAILABLE_CODES = new Set([
   'state_db_inconsistent',
 ]);
 
+const RUNTIME_NAMESPACE_MISMATCH_CODES = new Set([
+  'runtime_namespace_mismatch',
+  'windows_npm_codex_shim_used_from_wsl',
+]);
+
 function normalizeProfile(value) {
   if (!value) {
     return '';
@@ -63,7 +68,9 @@ export function classifyRuntimeParity(input = {}) {
   }
 
   let reason = 'runtime_unavailable';
-  if (
+  if (RUNTIME_NAMESPACE_MISMATCH_CODES.has(rawReason)) {
+    reason = 'runtime_namespace_mismatch';
+  } else if (
     PACKAGE_MISSING_CODES.has(rawReason)
     || packageName === '@openai/codex-linux-x64'
   ) {
@@ -97,6 +104,17 @@ export function classifyRuntimeParity(input = {}) {
 
 export function normalizeCodexProbeText({ stderr = '', stdout = '', exitCode = 1 } = {}) {
   const text = `${stderr}\n${stdout}`.toLowerCase();
+  if (
+    text.includes('@openai/codex-linux-x64')
+    && /(?:file:\/\/)?\/mnt\/[a-z]\//i.test(text)
+    && text.includes('/appdata/roaming/npm/node_modules/@openai/codex/')
+  ) {
+    return {
+      failureCode: 'runtime_namespace_mismatch',
+      packageName: '@openai/codex-linux-x64',
+      exitCode,
+    };
+  }
   if (text.includes('@openai/codex-linux-x64')) {
     return { failureCode: 'package_missing', packageName: '@openai/codex-linux-x64', exitCode };
   }

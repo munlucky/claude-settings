@@ -6,6 +6,8 @@ export const SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION = '1.0';
 
 const CANONICAL_RUN_VERDICTS = new Set(['success', 'success_with_warning']);
 const LEGACY_COMPLETE_RUN_VERDICTS = new Set(['complete', 'success', 'success_with_warning']);
+const BLOCKED_RUN_VERDICTS = new Set(['blocked', 'verification_blocked', 'failed']);
+const BLOCKER_COMPLETION_STATUSES = new Set(['blocked', 'verification_blocked']);
 
 export function isBlockedPhaseStatus(status) {
   return /blocked|unhealthy/i.test(String(status || ''));
@@ -40,17 +42,30 @@ export function normalizeFinalRunVerdict({ phase = {}, statusRoot = {}, historic
   if (raw === 'success_with_warning' || historicalWarnings.length > 0) {
     return 'success_with_warning';
   }
+  if (BLOCKED_RUN_VERDICTS.has(raw) || isUnrecoveredBlockerTerminalState(phase) || isUnrecoveredBlockerTerminalState(statusRoot)) {
+    return '';
+  }
   if (LEGACY_COMPLETE_RUN_VERDICTS.has(raw)) {
     return 'success';
   }
   return historicalWarnings.length > 0 ? 'success_with_warning' : 'success';
 }
 
+export function isUnrecoveredBlockerTerminalState(state = {}) {
+  const finalVerdict = String(state.finalVerdict || '').trim().toLowerCase();
+  const completionStatus = String(state.completionStatus || '').trim().toLowerCase();
+  const blockingReason = String(state.blockingStopReasonCode || state.blockingReasonCode || state.stopReasonCode || '').trim();
+  return finalVerdict === 'blocked'
+    || BLOCKER_COMPLETION_STATUSES.has(completionStatus)
+    || (Boolean(blockingReason) && finalVerdict !== 'complete');
+}
+
 export function isFinalCompleteProjection({ statusRoot = {}, phases = [] } = {}) {
   const rootVerdict = String(statusRoot.finalVerdict || '').trim().toLowerCase();
   const runVerdict = String(statusRoot.normalizedRunVerdict || '').trim().toLowerCase();
   const actionable = actionablePhases(phases);
-  return rootVerdict === 'complete'
+  return !isUnrecoveredBlockerTerminalState(statusRoot)
+    && rootVerdict === 'complete'
     && LEGACY_COMPLETE_RUN_VERDICTS.has(runVerdict)
     && actionable.length > 0
     && actionable.every((phase) => String(phase.status || '') === 'completed');
@@ -117,14 +132,15 @@ export function canonicalProjectionIssues({ statusRoot = {}, phases = [], workfl
   const counts = phaseProjectionCounts(phases);
   const expectedHash = buildFinalOutcomeProjectionHash({ statusRoot, phases, workflowStates });
   const runVerdict = String(statusRoot.normalizedRunVerdict || '').trim().toLowerCase();
+  const rootBlockerTerminal = isUnrecoveredBlockerTerminalState(statusRoot);
 
   if (!isFinalCompleteProjection({ statusRoot, phases })) {
-    issues.push('final_projection_incomplete');
+    issues.push(rootBlockerTerminal ? 'blocker_terminal_not_final_complete' : 'final_projection_incomplete');
   }
   if (statusRoot.projectionSchemaVersion !== STATUS_PROJECTION_SCHEMA_VERSION) {
     issues.push('status_projection_schema_stale');
   }
-  if (!CANONICAL_RUN_VERDICTS.has(runVerdict)) {
+  if (!rootBlockerTerminal && !CANONICAL_RUN_VERDICTS.has(runVerdict)) {
     issues.push('run_verdict_not_canonical');
   }
   if (
@@ -139,10 +155,11 @@ export function canonicalProjectionIssues({ statusRoot = {}, phases = [], workfl
   }
   for (const state of workflowStates) {
     const basename = state.basename || 'workflow-state';
+    const workflowBlockerTerminal = isUnrecoveredBlockerTerminalState(state);
     if (state.finalOutcomeSchemaVersion !== WORKFLOW_FINAL_OUTCOME_SCHEMA_VERSION) {
       issues.push(`${basename}:workflow_schema_stale`);
     }
-    if (!CANONICAL_RUN_VERDICTS.has(String(state.normalizedRunVerdict || '').trim().toLowerCase())) {
+    if (!workflowBlockerTerminal && !CANONICAL_RUN_VERDICTS.has(String(state.normalizedRunVerdict || '').trim().toLowerCase())) {
       issues.push(`${basename}:run_verdict_not_canonical`);
     }
   }

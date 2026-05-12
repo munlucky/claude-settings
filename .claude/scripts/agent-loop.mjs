@@ -336,6 +336,139 @@ function phaseSummary(phaseNum) {
   return values;
 }
 
+function rootScalarFromStatusFile(key) {
+  if (!fs.existsSync(state.statusFile)) {
+    return '';
+  }
+  const prefix = `${key}:`;
+  for (const rawLine of fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === 'phases:') {
+      break;
+    }
+    if (line.startsWith(prefix)) {
+      return line.slice(prefix.length).trim().replace(/^"|"$/g, '');
+    }
+  }
+  return '';
+}
+
+function phaseBlockLines(phaseNum) {
+  if (!fs.existsSync(state.statusFile)) {
+    return [];
+  }
+  const lines = fs.readFileSync(state.statusFile, 'utf8').split(/\r?\n/);
+  let start = -1;
+  let end = lines.length;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*-\s+number:\s*/.test(lines[index])) {
+      if (start >= 0) {
+        end = index;
+        break;
+      }
+      const match = lines[index].match(/number:\s*([0-9]+)/);
+      if (match && match[1] === String(phaseNum)) {
+        start = index;
+      }
+    }
+  }
+  return start >= 0 ? lines.slice(start, end) : [];
+}
+
+function phaseNestedValue(phaseNum, section, key) {
+  const block = phaseBlockLines(phaseNum);
+  let inSection = false;
+  let sectionIndent = 0;
+  const sectionToken = `${section}:`;
+  const keyToken = `${key}:`;
+  for (const rawLine of block) {
+    const stripped = rawLine.trim();
+    const indent = rawLine.length - rawLine.trimStart().length;
+    if (stripped === sectionToken) {
+      inSection = true;
+      sectionIndent = indent;
+      continue;
+    }
+    if (inSection && indent <= sectionIndent && stripped) {
+      break;
+    }
+    if (inSection && stripped.startsWith(keyToken)) {
+      return stripped.slice(keyToken.length).trim().replace(/^"|"$/g, '');
+    }
+  }
+  return '';
+}
+
+function firstRegexMatch(text, patterns) {
+  for (const pattern of patterns) {
+    const match = String(text || '').match(pattern);
+    if (match) {
+      return (match[1] || match[0] || '').trim();
+    }
+  }
+  return '';
+}
+
+function readText(pathValue) {
+  return pathValue && fs.existsSync(pathValue) ? fs.readFileSync(pathValue, 'utf8') : '';
+}
+
+function classifyPartialRetryDecision(phaseNum, currentPhase) {
+  const maxPartialRetries = Number.parseInt(process.env.AGENT_LOOP_MAX_PARTIAL_RETRY_ATTEMPTS ?? '2', 10) || 2;
+  const attemptTotal = Number.parseInt(String(currentPhase.attemptTotal || '0'), 10) || 0;
+  const retryBudgetRemaining = Math.max(maxPartialRetries - attemptTotal, 0);
+  const lastStage = phaseNestedValue(phaseNum, 'timing', 'lastStage') || rootScalarFromStatusFile('activeCurrentStage');
+  const qaText = readText(currentPhase.qaReport);
+  const handoffText = readText(currentPhase.handoff);
+  const scorecardText = readText(currentPhase.scorecard);
+  const combinedText = [qaText, handoffText, scorecardText].join('\n');
+  const retryStrategy = firstRegexMatch(combinedText, [
+    /Retry strategy:\s*`?([A-Za-z0-9_-]+)`?/i,
+    /retryStrategy:\s*`?([A-Za-z0-9_-]+)`?/i,
+  ]);
+  const explicitRetryLoop = /Next path:\s*`?retry_loop`?/i.test(combinedText);
+  const blockingStopReasonCode = firstRegexMatch(combinedText, [
+    /blockingStopReasonCode[=:]\s*`?([A-Za-z0-9_.:-]+)`?/i,
+    /blockingReasonCode[=:]\s*`?([A-Za-z0-9_.:-]+)`?/i,
+    /blocker=\s*`?([A-Za-z0-9_.:-]+)`?/i,
+    /code:\s*`?([A-Za-z0-9_.:-]+)`?/i,
+  ]);
+  const classifier = classifyFailure({
+    reason: blockingStopReasonCode,
+    detail: combinedText,
+  });
+  const hasBlockingStop = classifier.blocker && classifier.code !== 'unknown_failure';
+  const finishHandoffPartial = String(lastStage || '').toLowerCase().startsWith('finish');
+  const retryStrategyAllowsRetry = ['same_direction_refine', 'partial_redesign'].includes(String(retryStrategy || '').trim());
+  const retryStrategyStops = String(retryStrategy || '').trim() === 'stop_and_handoff';
+  let allowed = retryBudgetRemaining > 0;
+  let reason = allowed ? 'partial-retry-allowed' : 'partial-retry-budget-exhausted';
+
+  if (hasBlockingStop) {
+    allowed = false;
+    reason = 'partial-blocked-handoff';
+  } else if (retryStrategyStops) {
+    allowed = false;
+    reason = 'partial-stop-and-handoff';
+  } else if (finishHandoffPartial && !(explicitRetryLoop && retryStrategyAllowsRetry)) {
+    allowed = false;
+    reason = 'partial-finish-handoff-terminal';
+  }
+
+  return {
+    allowed,
+    reason,
+    lastStage,
+    attemptTotal,
+    maxPartialRetries,
+    retryBudgetRemaining,
+    retryStrategy,
+    explicitRetryLoop,
+    blockingStopReasonCode: blockingStopReasonCode || (hasBlockingStop ? classifier.code : ''),
+    failureClass: classifier.code,
+  };
+}
+
 function extractBulletValue(text, heading, label) {
   const lines = String(text || '').split(/\r?\n/);
   let inSection = false;
@@ -1030,6 +1163,16 @@ function normalizeRunVerdict({
     };
   }
   if (stoppedEarly) {
+    if (reason.startsWith('partial-')) {
+      return {
+        normalizedRunVerdict: 'blocked',
+        stopReasonClass: 'stop_loop',
+        stopReasonExplanation: detail || stopReason || 'partial handoff stopped before automatic retry',
+        blockerClass: stopMetadata.blockerClass || 'partial_handoff',
+        blockingReasonCode: stopMetadata.blockingReasonCode || reason,
+        failureClass: stopMetadata.failureClass || classification.code,
+      };
+    }
     if (['verifier_unavailable', 'node_spawn_eperm', 'spawn_blocked'].includes(classification.code) || /spawn\s+eperm|spawnsync\s+node\s+eperm|verifier_unavailable/i.test(detail)) {
       return {
         normalizedRunVerdict: 'blocked',
@@ -1566,10 +1709,70 @@ async function runNodeManagedLoop() {
           currentPhase,
         });
         if (currentPhase.status === 'in_progress' && currentPhase.lastOutcome === 'partial') {
+          const partialDecision = classifyPartialRetryDecision(nextPhase, currentPhase);
+          appendDebugLog('partial-retry-decision', {
+            nextPhase,
+            currentPhase,
+            partialDecision,
+          });
+          if (!partialDecision.allowed) {
+            failedPhases += 1;
+            stoppedEarly = true;
+            stopPhase = nextPhase;
+            stopReason = partialDecision.reason;
+            stopDetail = [
+              `phase ${nextPhase} ended partial at stage ${partialDecision.lastStage || 'unknown'}`,
+              `attempts=${partialDecision.attemptTotal}/${partialDecision.maxPartialRetries}`,
+              `retryBudgetRemaining=${partialDecision.retryBudgetRemaining}`,
+              partialDecision.retryStrategy ? `retryStrategy=${partialDecision.retryStrategy}` : 'retryStrategy=missing',
+              `explicitRetryLoop=${partialDecision.explicitRetryLoop ? 'true' : 'false'}`,
+              partialDecision.blockingStopReasonCode ? `blockingStopReasonCode=${partialDecision.blockingStopReasonCode}` : '',
+            ].filter(Boolean).join(' | ');
+            stopMetadata = {
+              blockerClass: partialDecision.blockingStopReasonCode ? 'partial_handoff' : '',
+              blockingReasonCode: partialDecision.blockingStopReasonCode || partialDecision.reason,
+              failureClass: partialDecision.failureClass || partialDecision.reason,
+            };
+            phaseState(
+              'update-phase-state',
+              state.statusFile,
+              String(nextPhase),
+              'blocked',
+              utcTimestamp(),
+              'blocked',
+              'false',
+              currentPhase.activePhaseDoc || phaseDoc || '',
+              currentPhase.sprintContract || '',
+              currentPhase.qaReport || '',
+              currentPhase.handoff || '',
+              currentPhase.scorecard || '',
+            );
+            appendDecisionLog([
+              `## Phase ${nextPhase} - Partial Handoff Terminal`,
+              '- Status: blocked',
+              `- Reason: ${stopReason}`,
+              `- Detail: ${stopDetail}`,
+              '',
+            ]);
+            writeLiveSummaryReport({
+              planDir: state.planDir,
+              totalPhases,
+              completed: executedPhases,
+              failed: failedPhases,
+              currentPhase: nextPhase,
+              currentPhaseTitle: phaseTitle,
+              loopState: 'blocked',
+              stopReason,
+              stopDetail,
+            });
+            break;
+          }
           appendDecisionLog([
             `## Phase ${nextPhase} - Partial Attempt`,
             '- Status: partial',
-            '- Decision: keep the phase in progress and continue with a fresh attempt',
+            '- Decision: retry budget and explicit retry conditions allow one fresh remediation attempt',
+            `- Retry budget remaining: ${partialDecision.retryBudgetRemaining}`,
+            `- Retry strategy: ${partialDecision.retryStrategy || 'n/a'}`,
             '',
           ]);
           logInfo(`Phase ${nextPhase} remains in progress after a partial attempt; continuing with a fresh attempt`);

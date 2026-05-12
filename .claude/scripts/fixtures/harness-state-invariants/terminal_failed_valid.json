@@ -1,0 +1,13 @@
+{
+  "phaseStatus": {
+    "activePhaseNumber": 2
+  },
+  "workflowState": {
+    "status": "failed",
+    "phaseNumber": 2,
+    "lifecycleTerminalEvent": {
+      "phaseNumber": 2,
+      "eventType": "phase_failed"
+    }
+  }
+}

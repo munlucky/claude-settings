@@ -1,0 +1,9 @@
+{
+  "phaseStatus": {
+    "activePhaseNumber": 3
+  },
+  "workflowState": {
+    "status": "completed",
+    "phaseNumber": 2
+  }
+}

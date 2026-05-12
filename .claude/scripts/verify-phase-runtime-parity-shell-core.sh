@@ -363,6 +363,12 @@ classify_codex_probe_failure() {
     return 0
   fi
 
+  if grep -Fqi "@openai/codex-linux-x64" "$primary_file" "$secondary_file" \
+    && grep -Eqi "(file://)?/mnt/[[:alpha:]]/.*/AppData/Roaming/npm/node_modules/@openai/codex/" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "runtime_namespace_mismatch"
+    return 0
+  fi
+
   if grep -Fqi "@openai/codex-linux-x64" "$primary_file" "$secondary_file"; then
     printf '%s\n' "package_missing"
     return 0
@@ -644,6 +650,9 @@ probe_codex_runtime() {
       ;;
     login_required)
       record_runtime_failure "codex" "$failure_code" "login required (${detail:-no additional detail})"
+      ;;
+    runtime_namespace_mismatch)
+      record_runtime_failure "codex" "$failure_code" "WSL/Linux probe loaded the Windows npm Codex shim; install Codex inside WSL or run required_runtime from the Windows-native Codex namespace (${detail:-no additional detail})"
       ;;
     *)
       record_runtime_failure "codex" "$failure_code" "${detail:-probe exited with code ${exit_code}}"

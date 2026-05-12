@@ -16,7 +16,7 @@ const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
 const EXTERNAL_BLOCKER_WORDS = /\b(external|account|credential|credentials|launch|domain|cloudflare|search console|adsense|manual|no-go)\b/i;
 const STRUCTURED_EVIDENCE_SCHEMA = 'phase-closeout-evidence-v1';
-const PASS_STATUSES = new Set(['pass', 'passed', 'done', 'verified', 'complete', 'completed', 'resolved', 'non_blocking', 'historical_warning', 'expected_blocker_passed']);
+const PASS_STATUSES = new Set(['pass', 'passed', 'done', 'verified', 'implemented_verified', 'complete', 'completed', 'resolved', 'non_blocking', 'historical_warning', 'expected_blocker_passed']);
 const FAIL_STATUSES = new Set(['fail', 'failed', 'blocked', 'missing', 'todo', 'pending', 'retry', 'unresolved', 'active']);
 
 function extractPathTokens(text) {

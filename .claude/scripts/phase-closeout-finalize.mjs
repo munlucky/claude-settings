@@ -11,6 +11,7 @@ import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
 import { resolveGitTreeFingerprint } from './verification-verdict-state.mjs';
 import { appendCloseoutDiagnostic, buildCloseoutDiagnosticEvent } from './lib/closeout-diagnostics.mjs';
 import { evaluateCloseoutInvariant } from './lib/harness-state-invariants.mjs';
+import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
 import { parsePhaseStatusDocument, readText, resolvePath } from './lib/phase-closeout-parsers.mjs';
 import {
@@ -257,6 +258,13 @@ function upsertTopLevelBlock(lines, key, blockLines) {
   }
   const phasesIndex = lines.findIndex((line) => line.startsWith('phases:'));
   lines.splice(phasesIndex >= 0 ? phasesIndex : lines.length, 0, ...rendered);
+}
+
+function removeTopLevelBlock(lines, key) {
+  const { start, end } = topLevelBlockBounds(lines, key);
+  if (start >= 0) {
+    lines.splice(start, end - start);
+  }
 }
 
 function upsertRecoveredBlockerState(lines, statusRoot, now) {
@@ -1005,6 +1013,10 @@ function rewritePhaseStatus({ statusPath, statusRoot, phases, phaseNumber, phase
   upsertTopLevel(lines, 'lastStopReasonCode', allActionableComplete ? 'scope_complete' : 'actionable-phases-remaining');
   upsertTopLevel(lines, 'lastStopReasonDetail', allActionableComplete ? 'phase closeout finalized' : 'phase closeout finalized; actionable phases remain');
   upsertRecoveredBlockerState(lines, statusRoot, now);
+  if (allActionableComplete) {
+    removeTopLevelBlock(lines, 'environmentBlockers');
+    upsertTopLevel(lines, 'lastOutcome', 'clean_complete');
+  }
   upsertTopLevel(lines, 'activePlannedPhases', counts.planned);
   upsertTopLevel(lines, 'activeCompletedPhases', counts.completed);
   upsertTopLevel(lines, 'activeBlockedPhases', counts.blocked);
@@ -1244,9 +1256,31 @@ function warningFromState(payload = {}) {
   return '';
 }
 
-function reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, plannedWrites }) {
+function payloadHasPidEvidence(payload = {}) {
+  const pidFields = ['pid', 'childPid', 'dispatcherPid', 'lastChildPid'];
+  return pidFields.some((field) => payload[field] !== undefined)
+    || pidFields.some((field) => payload.phaseRunLease?.[field] !== undefined)
+    || pidFields.some((field) => payload.liveness?.[field] !== undefined);
+}
+
+function payloadPidNamespace(payload = {}) {
+  return payload.pidNamespace
+    || payload.phaseRunLease?.pidNamespace
+    || payload.liveness?.pidNamespace
+    || (payloadHasPidEvidence(payload) ? 'node-parent' : undefined);
+}
+
+function reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, plannedWrites, allActionableComplete = false }) {
   const historicalWarnings = [];
   const updated = [];
+  if (!allActionableComplete) {
+    return {
+      stateReconciled: false,
+      reconciledStateFiles: [],
+      historicalWarnings,
+      skippedReason: 'phase-only-closeout-actionable-phases-remain',
+    };
+  }
   for (const basename of STATE_FILES) {
     const filePath = path.join(workflowDir, basename);
     if (!fs.existsSync(filePath)) {
@@ -1286,7 +1320,20 @@ function reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, planned
     }
     plannedWrites.push({ path: filePath, kind: 'workflow-state' });
     if (!dryRun) {
-      writeJsonAtomic(filePath, next);
+      recordLifecycleTransition({
+        source: 'phase-closeout-finalize',
+        targetStateFiles: [filePath],
+        primaryTargetStateFile: filePath,
+        phaseNumber,
+        phaseTitle: payload.phaseTitle || payload.activePhaseTitle || `Phase ${phaseNumber}`,
+        status: next.status,
+        completionStatus: next.completionStatus,
+        lifecycleEvent: 'closeout_completed',
+        timestamp: now,
+        pidNamespace: payloadPidNamespace(next),
+        payloadPatch: next,
+        writeMode: 'replace',
+      });
     }
     updated.push(filePath);
   }
@@ -1680,7 +1727,14 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     executionRoot: rel(root, executionRoot),
   });
 
-  const stateResult = reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, plannedWrites });
+  const stateResult = reconcileWorkflowState({
+    workflowDir,
+    phaseNumber,
+    now,
+    dryRun,
+    plannedWrites,
+    allActionableComplete: complete,
+  });
   const normalizedRunVerdict = normalizeFinalRunVerdict({ phase, statusRoot: statusDocument.root, historicalWarnings: stateResult.historicalWarnings });
   const verdictPublishCandidate = writeCanonicalVerdict({
     root,

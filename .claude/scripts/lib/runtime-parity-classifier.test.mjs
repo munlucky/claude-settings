@@ -99,6 +99,32 @@ test('shell string normalization is separate from object-input classification', 
   assert.equal(result.status, 'skipped');
 });
 
+test('WSL loading Windows npm Codex shim is a runtime namespace mismatch', () => {
+  const normalized = normalizeCodexProbeText({
+    stderr: [
+      'file:///mnt/c/Users/moon/AppData/Roaming/npm/node_modules/@openai/codex/bin/codex.js:100',
+      'Error: Missing optional dependency @openai/codex-linux-x64.',
+    ].join('\n'),
+    stdout: '',
+    exitCode: 1,
+  });
+  const result = classifyRuntimeParity({
+    runtime: 'codex',
+    runtimeProfile: 'required_runtime',
+    available: false,
+    ...normalized,
+  });
+
+  assert.deepEqual(normalized, {
+    failureCode: 'runtime_namespace_mismatch',
+    packageName: '@openai/codex-linux-x64',
+    exitCode: 1,
+  });
+  assert.equal(result.reason, 'runtime_namespace_mismatch');
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blocks, true);
+});
+
 test('default reference fixture requires explicit opt in', () => {
   const result = validateReferencePlanDir({ referencePlanDir: '', allowDefaultFixture: false });
 

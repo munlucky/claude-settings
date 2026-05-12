@@ -37,7 +37,23 @@ runtime_cli_sync_wsl_codex_auth() {
   runtime_cli_run_node sync-wsl-codex-auth >/dev/null
 }
 
+runtime_cli_prepend_user_local_bin() {
+  local user_local_bin="${HOME:-}/.local/bin"
+  if [[ -z "${HOME:-}" || ! -d "$user_local_bin" ]]; then
+    return 0
+  fi
+
+  case ":${PATH:-}:" in
+    *:"$user_local_bin":*)
+      ;;
+    *)
+      export PATH="$user_local_bin:${PATH:-}"
+      ;;
+  esac
+}
+
 runtime_cli_prepare_environment() {
+  runtime_cli_prepend_user_local_bin
   runtime_cli_sync_wsl_codex_auth
 }
 

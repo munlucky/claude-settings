@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { nowIsoSeconds } from './clock.mjs';
+import { recordLifecycleTransition } from './lifecycle-projection-writer.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
@@ -61,6 +62,42 @@ export function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
+function leaseLifecycleEvent(leasePayload, existingPayload = null) {
+  if (leasePayload.status === 'active') {
+    return existingPayload ? 'lease_heartbeat' : 'lease_started';
+  }
+  if (['finished', 'completed'].includes(leasePayload.status) || leasePayload.completionStatus === 'completed') {
+    return 'lease_completed';
+  }
+  return 'lease_failed';
+}
+
+function phaseIdentity(leasePayload = {}) {
+  return {
+    phaseNumber: leasePayload.phase?.number || leasePayload.activePhaseNumber || 0,
+    phaseTitle: leasePayload.phase?.title || leasePayload.activePhaseTitle || 'phase-run-lease',
+  };
+}
+
+function writeLeaseProjection({ targetFile, payload, existingPayload = null, primaryTargetStateFile = targetFile }) {
+  const lifecycleEvent = leaseLifecycleEvent(payload, existingPayload);
+  return recordLifecycleTransition({
+    source: 'phase-run-lease-store',
+    targetStateFiles: [targetFile],
+    primaryTargetStateFile,
+    ...phaseIdentity(payload),
+    status: payload.status || 'unknown',
+    completionStatus: payload.completionStatus
+      || (lifecycleEvent === 'lease_completed' ? 'completed' : undefined)
+      || (lifecycleEvent === 'lease_failed' ? 'failed' : undefined),
+    lifecycleEvent,
+    timestamp: utcTimestamp(),
+    pidNamespace: payload.dispatcherPid ? 'node-parent' : undefined,
+    payloadPatch: payload,
+    writeMode: 'replace',
+  });
+}
+
 function mirrorToCurrentRun(statusFile, leasePayload) {
   const leaseFiles = resolveLeaseFiles(statusFile);
   const existing = readJson(leaseFiles.currentRunFile) || {};
@@ -86,7 +123,36 @@ function mirrorToCurrentRun(statusFile, leasePayload) {
     unavailableCapabilities: leasePayload.unavailableCapabilities || existing.unavailableCapabilities || [],
     phaseRunLease: leasePayload,
   };
-  writeJson(leaseFiles.currentRunFile, next);
+  if (leasePayload.status === 'active') {
+    for (const key of [
+      'completedAt',
+      'failedAt',
+      'finishedAt',
+      'finalVerdict',
+      'finalStatus',
+      'returnBoundary',
+      'stopReasonCode',
+      'rawStopReasonCode',
+      'blockingStopReasonCode',
+      'stopReasonDetail',
+      'completionPath',
+      'normalizedRunVerdict',
+      'historicalWarnings',
+      'finalOutcomeSchemaVersion',
+    ]) {
+      delete next[key];
+    }
+    if (!leasePayload.completionStatus) {
+      next.completionStatus = '';
+      next.activeExecutionStatus = leasePayload.status || 'active';
+    }
+  }
+  writeLeaseProjection({
+    targetFile: leaseFiles.currentRunFile,
+    payload: next,
+    existingPayload: existing,
+    primaryTargetStateFile: leaseFiles.currentRunFile,
+  });
 
   if (!leaseFiles.mirrorGlobalCurrentRun) {
     return;
@@ -96,7 +162,12 @@ function mirrorToCurrentRun(statusFile, leasePayload) {
   if (globalCurrentRunFile === leaseFiles.currentRunFile) {
     return;
   }
-  writeJson(globalCurrentRunFile, next);
+  writeLeaseProjection({
+    targetFile: globalCurrentRunFile,
+    payload: next,
+    existingPayload: readJson(globalCurrentRunFile),
+    primaryTargetStateFile: leaseFiles.currentRunFile,
+  });
 }
 
 export function readActiveLease(statusFile) {
@@ -104,6 +175,11 @@ export function readActiveLease(statusFile) {
 }
 
 export function writeActiveLease(statusFile, payload) {
-  writeJson(resolveLeaseFiles(statusFile).activeRunFile, payload);
+  const activeRunFile = resolveLeaseFiles(statusFile).activeRunFile;
+  writeLeaseProjection({
+    targetFile: activeRunFile,
+    payload,
+    existingPayload: readJson(activeRunFile),
+  });
   mirrorToCurrentRun(statusFile, payload);
 }

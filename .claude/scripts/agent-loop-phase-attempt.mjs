@@ -166,7 +166,7 @@ function classifyCompletionGateReason(reason, context = {}) {
     detail: context.detail,
   }).code;
   if (
-    normalizedReason === 'scorecard-verdict=blocked'
+    normalizedReason.startsWith('scorecard-verdict=')
     && contextualBlockerCode === 'verification_environment_unavailable'
   ) {
     return {

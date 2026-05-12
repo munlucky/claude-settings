@@ -8,6 +8,7 @@ import {
   canonicalProjectionIssues,
   isCanonicalFinalCompleteProjection,
   isFinalCompleteProjection,
+  isUnrecoveredBlockerTerminalState,
   normalizeFinalRunVerdict,
   phaseProjectionCounts,
 } from './final-outcome-projection.mjs';
@@ -106,6 +107,48 @@ test('canonical final projection passes with schema markers, counters, workflow 
 test('legacy complete normalizes to canonical success verdicts', () => {
   assert.equal(normalizeFinalRunVerdict({ phase: { normalizedRunVerdict: 'complete' } }), 'success');
   assert.equal(normalizeFinalRunVerdict({ phase: { normalizedRunVerdict: 'complete' }, historicalWarnings: ['delegated-terminal-exit-1'] }), 'success_with_warning');
+});
+
+test('unrecovered blocker terminal state is terminal but not final-complete', () => {
+  const input = canonicalInput({
+    statusRoot: {
+      finalVerdict: 'blocked',
+      completionStatus: 'verification_blocked',
+      normalizedRunVerdict: '',
+      blockingStopReasonCode: 'node-test-runner-spawn-eperm',
+    },
+    workflowStates: [
+      {
+        basename: 'current-run.json',
+        status: 'failed',
+        completionStatus: 'verification_blocked',
+        finalOutcomeSchemaVersion: WORKFLOW_FINAL_OUTCOME_SCHEMA_VERSION,
+        finalVerdict: 'blocked',
+        normalizedRunVerdict: '',
+        stopReasonCode: 'node-test-runner-spawn-eperm',
+      },
+    ],
+    summary: {
+      finalOutcomeSchemaVersion: '1.0',
+      projectionHash: 'not-a-final-complete-hash',
+    },
+  });
+
+  assert.equal(isUnrecoveredBlockerTerminalState(input.statusRoot), true);
+  assert.equal(isFinalCompleteProjection(input), false);
+  assert.equal(canonicalProjectionIssues(input).includes('blocker_terminal_not_final_complete'), true);
+  assert.equal(canonicalProjectionIssues(input).includes('run_verdict_not_canonical'), false);
+});
+
+test('unrecovered blocker raw verdict is not normalized into canonical complete', () => {
+  assert.equal(normalizeFinalRunVerdict({ phase: { normalizedRunVerdict: 'blocked' } }), '');
+  assert.equal(normalizeFinalRunVerdict({
+    phase: {
+      completionStatus: 'verification_blocked',
+      finalVerdict: 'blocked',
+      blockingStopReasonCode: 'node-test-runner-spawn-eperm',
+    },
+  }), '');
 });
 
 test('phase projection counts distinguish blocked phases from actionable remaining work', () => {

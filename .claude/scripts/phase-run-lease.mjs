@@ -206,6 +206,7 @@ function heartbeatLease(config) {
   const actionable = countActionablePhases(statusFile || existing.statusFile);
   const payload = {
     ...existing,
+    status: 'active',
     lastHeartbeatAt: now,
     currentStage: config.currentStage || existing.currentStage,
     phase: {
@@ -213,8 +214,28 @@ function heartbeatLease(config) {
       title: config.phaseTitle || existing.phase?.title || '',
     },
     actionablePhasesRemaining: actionable,
-    completionStatus: config.completionStatus || existing.completionStatus || '',
+    completionStatus: config.completionStatus || '',
+    returnBoundary: '',
+    stopReasonCode: '',
+    rawStopReasonCode: '',
+    blockingStopReasonCode: '',
+    stopReasonDetail: '',
   };
+  for (const key of [
+    'completedAt',
+    'failedAt',
+    'finishedAt',
+    'finalVerdict',
+    'finalStatus',
+    'normalizedRunVerdict',
+    'historicalWarnings',
+    'finalOutcomeSchemaVersion',
+    'activeExecutionStatus',
+    'activePhaseNumber',
+    'updatedAt',
+  ]) {
+    delete payload[key];
+  }
 
   writeActiveLease(statusFile, payload);
   updateStatusLease(statusFile || existing.statusFile, {
@@ -305,6 +326,21 @@ function finishLease(config) {
     blockingStopReasonCode: finishOutcome.status === 'finished' ? '' : finishOutcome.stopReasonCode,
     stopReasonDetail: finishOutcome.stopReasonDetail,
   };
+  if (payload.status !== 'finished') {
+    for (const key of [
+      'completedAt',
+      'finalVerdict',
+      'finalStatus',
+      'normalizedRunVerdict',
+      'historicalWarnings',
+      'finalOutcomeSchemaVersion',
+      'activeExecutionStatus',
+      'activePhaseNumber',
+      'updatedAt',
+    ]) {
+      delete payload[key];
+    }
+  }
 
   writeActiveLease(statusFile, payload);
   const keepPausedActiveState = payload.status === 'paused';

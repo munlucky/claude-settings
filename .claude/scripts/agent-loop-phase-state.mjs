@@ -1150,7 +1150,7 @@ function classifyCompletionGateReason(reason, context = {}) {
     detail: context.detail,
   });
   if (
-    normalizedReason === 'scorecard-verdict=blocked'
+    normalizedReason.startsWith('scorecard-verdict=')
     && contextualBlockerCode === 'verification_environment_unavailable'
   ) {
     return {
@@ -1217,6 +1217,32 @@ function listIncludesToken(items, token) {
       || normalizedItem.includes(`${normalizedToken} (`)
       || normalizedItem.includes(`${normalizedToken}:`);
   });
+}
+
+function extractQaBlockerContext(qaText = '') {
+  const text = String(qaText || '');
+  const codeMatch = text.match(/"code"\s*:\s*"([^"]+)"/i)
+    || text.match(/blockingReasonCode[=:]\s*`?([A-Za-z0-9_.:-]+)`?/i)
+    || text.match(/blocker=\s*`?([A-Za-z0-9_.:-]+)`?/i);
+  const blockerClassMatch = text.match(/"blockerClass"\s*:\s*"([^"]+)"/i)
+    || text.match(/blockerClass[=:]\s*`?([A-Za-z0-9_.:-]+)`?/i);
+  const failureClassMatch = text.match(/"failureClass"\s*:\s*"([^"]+)"/i)
+    || text.match(/failureClass[=:]\s*`?([A-Za-z0-9_.:-]+)`?/i);
+  const detailMatch = text.match(/Remaining blockers before closeout:\s*(.+)/i)
+    || text.match(/Environment blockers:\s*(.+)/i);
+  const inferredEnvironment = /verifier_unavailable|spawn\s+eperm|childprocess\.spawn\s+eperm|node-test.*spawn/i.test(text);
+  const blockingReasonCode = codeMatch ? codeMatch[1].trim() : '';
+  const blockerClass = blockerClassMatch ? blockerClassMatch[1].trim() : (inferredEnvironment ? 'verifier_unavailable' : '');
+  const failureClass = failureClassMatch ? failureClassMatch[1].trim() : (inferredEnvironment ? 'environment' : '');
+  if (!blockingReasonCode && !blockerClass && !failureClass) {
+    return {};
+  }
+  return {
+    blockingReasonCode,
+    blockerClass,
+    failureClass,
+    detail: detailMatch ? detailMatch[1].trim() : '',
+  };
 }
 
 function parseScorecardSummary(scorecardPath) {
@@ -1624,11 +1650,13 @@ function evaluatePhaseCompletionGate(config) {
   let latestWorkflowApplied = [];
   let latestWorkflowSkipped = [];
   let latestWorkflowStageOrder = [];
+  let qaBlockerContext = {};
   const currentWorkflowState = readCurrentWorkflowState();
   const explicitVerdictPaths = new Set();
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     const qaText = fs.readFileSync(qaReportPath, 'utf8');
+    qaBlockerContext = extractQaBlockerContext(qaText);
     const qaLines = qaText.split(/\r?\n/);
     workflowSection = extractWorkflowSection(qaText);
     reviewCompleted = extractBulletValue(qaText, '## Review Checkpoint', 'Review completed').toLowerCase().startsWith('yes');
@@ -1995,7 +2023,7 @@ function evaluatePhaseCompletionGate(config) {
         : (!atomicLedger.complete ? atomicLedger.reason : (!demoFirstGate.allowed ? demoFirstGate.reason : 'no-fresh-verification-artifact'))));
   const completionClassification = classifyCompletionGateReason(finalReason, {
     strongCompletion: closeoutConcrete && finalAllowed,
-    ...(finalReason === 'scorecard-verdict=blocked' ? latestScoreBlockerContext : {}),
+    ...(finalReason.startsWith('scorecard-verdict=') ? { ...qaBlockerContext, ...latestScoreBlockerContext } : {}),
   });
 
   return {
@@ -2315,6 +2343,10 @@ function updatePhaseState(config) {
   }
 
   setTopLevel('status', config.newStatus);
+  setTopLevel('updatedAt', `"${config.timestamp}"`);
+  if (config.lastOutcome) {
+    setTopLevel('lastOutcome', config.lastOutcome);
+  }
   setTopLevel('planConfirmed', 'true');
   if (config.sprintContractPath) setTopLevel('sprintContract', `"${config.sprintContractPath}"`);
   if (config.qaReportPath) setTopLevel('qaReport', `"${config.qaReportPath}"`);
@@ -2324,9 +2356,12 @@ function updatePhaseState(config) {
   if (config.newStatus === 'completed') {
     setTopLevel('completedAt', `"${config.timestamp}"`);
   } else {
-    const completedPrefix = `${topIndent}completedAt:`;
+    const terminalOnlyPrefixes = [
+      `${topIndent}completedAt:`,
+      `${topIndent}archivedPhaseDoc:`,
+    ];
     for (let index = block.length - 1; index >= 0; index -= 1) {
-      if (block[index].startsWith(completedPrefix)) {
+      if (terminalOnlyPrefixes.some((prefix) => block[index].startsWith(prefix))) {
         block.splice(index, 1);
       }
     }
@@ -2505,6 +2540,7 @@ export function setRootRunVerdict(
 
   setRootScalarInLines(lines, 'normalizedRunVerdict', yamlScalar(normalizedRunVerdict));
   setRootScalarInLines(lines, 'stopReasonClass', yamlScalar(stopReasonClass));
+  setRootScalarInLines(lines, 'updatedAt', yamlScalar(nowIsoSeconds()));
   if (rawStopReason) {
     setRootScalarInLines(lines, 'rawStopReason', yamlScalar(rawStopReason));
   }
@@ -2538,15 +2574,17 @@ export function setRootRunVerdict(
   if (normalizedRunVerdict === 'success' && stopReasonClass === 'clean_complete') {
     setRootScalarInLines(lines, 'lastStopReasonDetail', yamlScalar(stopReasonExplanation));
     removeStaleRootStopReasonArtifactLines(lines);
+  } else {
+    removeRootScalarLines(lines, ['finalVerdict', 'projectionSchemaVersion']);
   }
 
   if (parentReverifyPassed) {
     removeRootSectionLines(lines, 'environmentBlockers');
-  } else if (normalizedRunVerdict === 'complete_with_environment_blocker') {
+  } else if (normalizedRunVerdict === 'complete_with_environment_blocker' || stopReasonClass === 'environment_blocked') {
     const observedAt = nowIsoSeconds();
-    const reason = stopReasonExplanation || 'external provider smoke blocked by environment';
+    const reason = stopReasonExplanation || blockingReasonCode || 'environment blocker stopped execution';
     setRootListOfMappingsInLines(lines, 'environmentBlockers', [{
-      check: 'external_provider_smoke',
+      check: blockingReasonCode || 'environment_blocker',
       reason,
       evidencePath: CURRENT_RUN_FILE,
       observedAt,

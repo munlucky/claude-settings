@@ -735,12 +735,27 @@ test('completion gate taxonomy classifies review, finish, verification, environm
     remediationStage: 'verify',
     retryPolicy: 'limited_retry',
   });
+  assertGateClassification('scorecard-verdict=retry', {
+    category: 'score_incomplete',
+    stopReason: 'missing-fresh-verification-evidence',
+    remediationStage: 'verify',
+    retryPolicy: 'limited_retry',
+  });
   const verifierScorecard = classifyCompletionGateReason('scorecard-verdict=blocked', {
     blockingReasonCode: 'verification_environment_unavailable',
   });
   assert.equal(verifierScorecard.category, 'environment_blocked');
   assert.equal(verifierScorecard.stopReason, 'blocked:verification_environment_unavailable');
   assert.equal(verifierScorecard.retryPolicy, 'stop_loop');
+
+  const verifierRetryScorecard = classifyCompletionGateReason('scorecard-verdict=retry', {
+    blockingReasonCode: 'node-test-spawn-eperm',
+    blockerClass: 'verifier_unavailable',
+    failureClass: 'environment',
+  });
+  assert.equal(verifierRetryScorecard.category, 'environment_blocked');
+  assert.equal(verifierRetryScorecard.stopReason, 'blocked:verification_environment_unavailable');
+  assert.equal(verifierRetryScorecard.retryPolicy, 'stop_loop');
 });
 
 test('finish bundle missing uses exactly one artifact-only remediation before hard stop', () => {

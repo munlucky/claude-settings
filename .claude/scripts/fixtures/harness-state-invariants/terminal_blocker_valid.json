@@ -1,0 +1,16 @@
+{
+  "phaseStatus": {
+    "activePhaseNumber": 3
+  },
+  "workflowState": {
+    "status": "verification_blocked",
+    "phaseNumber": 2,
+    "terminalEvent": {
+      "phaseNumber": 2,
+      "eventType": "phase_blocked"
+    },
+    "blocker": {
+      "code": "verifier_unavailable"
+    }
+  }
+}

@@ -1016,6 +1016,18 @@ function buildAutoFixPrompt(phaseNum, logFile) {
   ]).stdout;
 }
 
+function phaseAttemptSummary() {
+  try {
+    return nodeAssignments(statePath, 'get-phase-summary', state.statusFile, String(state.phaseNum));
+  } catch (error) {
+    appendDebugLog('phase-attempt-summary-read-failed', {
+      phaseNum: state.phaseNum,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
+}
+
 function localFileTimestamp() {
   const now = new Date();
   const pad = (value) => String(value).padStart(2, '0');
@@ -1066,6 +1078,38 @@ Primary objective:
 - If the phase artifacts declare an exact verification command, run that command exactly once instead of searching for alternative verifiers.
 - Do not stop at implementation-complete or verification-complete checkpoints alone.
 - Return control only after fresh-or-still-valid verification evidence exists, review evidence is recorded, finish-closeout fields are concrete, SCORECARD.md says \`Verdict: done\`, and SCORECARD.md says \`Current task status: FULL\`.${parallelWorkerInstructions(phaseNum)}`;
+}
+
+function retryContinuationInstructions(phaseNum, summary = {}, reason = 'partial-retry') {
+  const lastOutcome = String(summary.lastOutcome || '').trim() || 'unknown';
+  const lastStage = String(summary['timing.lastStage'] || summary.lastStage || '').trim() || 'unknown';
+  const attempts = String(summary.attemptTotal || summary.total || '').trim() || 'unknown';
+  return `Resume phase ${phaseNum} from the recorded handoff/remediation state only.
+
+Retry context:
+- Retry reason: ${reason}
+- Previous outcome: ${lastOutcome}
+- Previous stage: ${lastStage}
+- Attempt count before this worker: ${attempts}
+
+Remediation-only objective:
+- Do not restart broad implementation for phase ${phaseNum}.
+- Read WORKSETS.yaml, QA_REPORT.md, SCORECARD.md, HANDOFF.md, and the latest structured verdict before changing code.
+- Continue only the explicit pending atomic task, missing verification evidence, or blocker remediation already recorded in those artifacts.
+- If HANDOFF.md or QA_REPORT.md says the prior attempt stopped at finish/handoff without an explicit retry strategy and remaining retry budget, stop with a blocked handoff instead of creating a new broad attempt.
+- If the same blocker or failure class is still present, record the blocker code, retry budget state, and stop reason; do not regenerate equivalent evidence just to retry.
+- If no concrete remediation action is discoverable, leave the phase in a terminal blocked/partial handoff with explicit next action rather than switching back to execute.${parallelWorkerInstructions(phaseNum)}`;
+}
+
+function initialInstructionsForAttempt(phaseNum) {
+  const summary = phaseAttemptSummary();
+  const status = String(summary.status || '').trim();
+  const lastOutcome = String(summary.lastOutcome || '').trim();
+  const attemptTotal = Number.parseInt(String(summary.attemptTotal || '0'), 10) || 0;
+  if (attemptTotal > 0 || lastOutcome === 'partial' || status === 'in_progress') {
+    return retryContinuationInstructions(phaseNum, summary, lastOutcome === 'partial' ? 'partial-handoff-continuation' : 'existing-phase-continuation');
+  }
+  return primaryInstructions(phaseNum);
 }
 
 function autonomousInstructions() {
@@ -1425,7 +1469,7 @@ function runPhaseAttempt() {
     paths,
     runtime: activeRuntime,
     targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
-    extraInstructions: primaryInstructions(state.phaseNum),
+    extraInstructions: initialInstructionsForAttempt(state.phaseNum),
     autonomousInstructions: autonomousInstructions(),
     workspaceRoot: process.cwd(),
     verificationRuntimes: verificationPreflight.effectiveSelection,
@@ -1517,7 +1561,7 @@ function runPhaseAttempt() {
         paths,
         runtime: activeRuntime,
         targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
-        extraInstructions: primaryInstructions(state.phaseNum),
+        extraInstructions: initialInstructionsForAttempt(state.phaseNum),
         autonomousInstructions: autonomousInstructions(),
         workspaceRoot: process.cwd(),
         verificationRuntimes: verificationPreflight.effectiveSelection,
@@ -1803,8 +1847,10 @@ function runPhaseAttempt() {
         updatePhaseState(state.phaseNum, 'in_progress', 'running', false, state.phaseDoc, paths);
         recordPhaseProgressCheckpoint(remediationStage, remediationStatusLabel(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
         const remediationExit = runWorkerPrompt(logFile, fixPrompt, startEpoch, sha1FileOrEmpty(paths.phaseQaReport), paths, activeRuntime);
+        let retryReason = gate.PHASE_COMPLETION_REASON;
         if (remediationExit === 0) {
           const remediationGate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
+          retryReason = remediationGate.PHASE_COMPLETION_REASON;
           if (remediationGate.PHASE_COMPLETION_ALLOWED === 'true') {
             finalizeCompletion(
               logFile,
@@ -1824,6 +1870,21 @@ function runPhaseAttempt() {
           appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
           appendHandoffUpdate(handoffStopReason(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
         }
+        prompt = buildPhasePrompt({
+          nextPhase: state.phaseNum,
+          phaseTitle: state.phaseTitle,
+          planDir: state.planDir,
+          phaseDoc: state.phaseDoc,
+          statusFile: state.statusFile,
+          executionRoot: state.executionRoot,
+          paths,
+          runtime: activeRuntime,
+          targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+          extraInstructions: retryContinuationInstructions(state.phaseNum, phaseAttemptSummary(), retryReason),
+          autonomousInstructions: autonomousInstructions(),
+          workspaceRoot: process.cwd(),
+          verificationRuntimes: verificationPreflight.effectiveSelection,
+        });
         continue;
       }
 
@@ -1869,7 +1930,7 @@ function runPhaseAttempt() {
           paths,
           runtime: activeRuntime,
           targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
-          extraInstructions: primaryInstructions(state.phaseNum),
+          extraInstructions: retryContinuationInstructions(state.phaseNum, phaseAttemptSummary(), 'timeout-runtime-fallback'),
           autonomousInstructions: autonomousInstructions(),
           workspaceRoot: process.cwd(),
           verificationRuntimes: verificationPreflight.effectiveSelection,
@@ -1980,6 +2041,21 @@ function runPhaseAttempt() {
         appendQaRuntimeUpdate('auto-fix-succeeded-without-fresh-verification', logFile, gate.PHASE_COMPLETION_REASON, paths);
         appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
       }
+      prompt = buildPhasePrompt({
+        nextPhase: state.phaseNum,
+        phaseTitle: state.phaseTitle,
+        planDir: state.planDir,
+        phaseDoc: state.phaseDoc,
+        statusFile: state.statusFile,
+        executionRoot: state.executionRoot,
+        paths,
+        runtime: activeRuntime,
+        targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+        extraInstructions: retryContinuationInstructions(state.phaseNum, phaseAttemptSummary(), 'auto-fix-incomplete'),
+        autonomousInstructions: autonomousInstructions(),
+        workspaceRoot: process.cwd(),
+        verificationRuntimes: verificationPreflight.effectiveSelection,
+      });
       continue;
     }
 

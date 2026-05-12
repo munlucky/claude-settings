@@ -35,3 +35,4 @@ docs/implementation/**/archive/
 .tmp/
 .DS_Store
 .claude/verification-results-harness-anomaly-phase*.log
+.claude/verification-results-lifecycle-projection-*.log

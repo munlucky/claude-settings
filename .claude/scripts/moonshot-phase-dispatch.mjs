@@ -14,6 +14,11 @@ import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { classifyFailure } from './lib/failure-classifier.mjs';
 import { buildCompositeMonitorCursor } from './lib/phase-run-lease-status.mjs';
+import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
+import {
+  evaluatePidLiveness,
+  isPidAliveInCurrentNamespace,
+} from './lib/phase-liveness-checker.mjs';
 import {
   knownUnavailableSummary,
   recordUnavailableCapability,
@@ -63,6 +68,7 @@ const runtimeState = {
   runLeaseId: '',
   leaseActive: false,
   childPid: null,
+  pidNamespace: 'node-parent',
   lastChildPid: null,
   lastChildExitAt: '',
   lastChildExitCode: null,
@@ -92,6 +98,42 @@ const MAX_COORDINATOR_RESTARTS = Number.parseInt(
 ) || 32;
 const MAX_SIGNAL_RESTARTS = Number.parseInt(process.env.PHASE_DISPATCH_MAX_SIGNAL_RESTARTS ?? '4', 10) || 4;
 const SIGNAL_LIKE_EXIT_CODES = new Set([129, 130, 131, 143]);
+const LATEST_DISPATCH_STATUS_VALUES = new Set([
+  'prepared',
+  'running',
+  'completed',
+  'failed',
+  'superseded',
+  'superseded-by-local-fallback',
+]);
+
+function assertLatestDispatchStatus(status, lifecycleEvent = '') {
+  if (!LATEST_DISPATCH_STATUS_VALUES.has(status)) {
+    throw new TypeError(`unsupported latest-dispatch.status: ${status}`);
+  }
+  if (status === lifecycleEvent) {
+    throw new TypeError('latest-dispatch.status must not store lifecycleEvent values');
+  }
+}
+
+function withLatestDispatchLifecycle(payload = {}, {
+  lifecycleEvent,
+  dispatchStage,
+  timestamp = utcTimestamp(),
+  patch = {},
+} = {}) {
+  const status = patch.status || payload.status || 'prepared';
+  assertLatestDispatchStatus(status, lifecycleEvent);
+  return {
+    ...payload,
+    ...patch,
+    status,
+    lifecycleEvent,
+    dispatchStage,
+    lastLifecycleEventAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
 
 function writeStdoutLine(value = '') {
   process.stdout.write(`${String(value)}\n`);
@@ -451,22 +493,39 @@ function closeLatestDispatchEvidence({ exitCode, detail, returnBoundary = '', st
     ? 'superseded-by-local-fallback'
     : ((exitCode ?? 0) === 0 ? 'completed' : 'failed');
   const now = utcTimestamp();
-  const next = {
-    ...payload,
-    status: terminalStatus,
-    completionStatus: completionStatus || ((exitCode ?? 0) === 0 ? 'completed' : 'failed'),
-    recoveryStatus: recovered ? 'recovered' : 'none',
-    completionPath: recovered ? 'local-fallback' : ((exitCode ?? 0) === 0 ? 'clean-dispatch' : 'dispatch-stop'),
-    returnBoundary,
-    stopReasonCode: stopReasonCode || `exit-${exitCode ?? 0}`,
-    rawStopReasonCode: payload.rawStopReasonCode || stopReasonCode || `exit-${exitCode ?? 0}`,
-    blockingStopReasonCode: (exitCode ?? 0) === 0 || recovered ? '' : (stopReasonCode || `exit-${exitCode ?? 0}`),
-    stopReasonDetail: detail || '',
-    completedAt: (exitCode ?? 0) === 0 || recovered ? now : payload.completedAt,
-    failedAt: (exitCode ?? 0) === 0 || recovered ? payload.failedAt : now,
-    updatedAt: now,
-  };
-  fs.writeFileSync(latestFile, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  const lifecycleEvent = recovered ? 'dispatch_superseded' : ((exitCode ?? 0) === 0 ? 'dispatch_completed' : 'dispatch_failed');
+  const next = withLatestDispatchLifecycle(payload, {
+    lifecycleEvent,
+    dispatchStage: 'terminal',
+    timestamp: now,
+    patch: {
+      status: terminalStatus,
+      completionStatus: completionStatus || ((exitCode ?? 0) === 0 ? 'completed' : 'failed'),
+      recoveryStatus: recovered ? 'recovered' : 'none',
+      completionPath: recovered ? 'local-fallback' : ((exitCode ?? 0) === 0 ? 'clean-dispatch' : 'dispatch-stop'),
+      returnBoundary,
+      stopReasonCode: stopReasonCode || `exit-${exitCode ?? 0}`,
+      rawStopReasonCode: payload.rawStopReasonCode || stopReasonCode || `exit-${exitCode ?? 0}`,
+      blockingStopReasonCode: (exitCode ?? 0) === 0 || recovered ? '' : (stopReasonCode || `exit-${exitCode ?? 0}`),
+      stopReasonDetail: detail || '',
+      completedAt: (exitCode ?? 0) === 0 || recovered ? now : payload.completedAt,
+      failedAt: (exitCode ?? 0) === 0 || recovered ? payload.failedAt : now,
+    },
+  });
+  recordLifecycleTransition({
+    source: 'moonshot-phase-dispatch',
+    targetStateFiles: [latestFile],
+    primaryTargetStateFile: latestFile,
+    phaseNumber: next.phaseNumber || 0,
+    phaseTitle: next.phaseTitle || 'moonshot-phase-dispatch',
+    status: next.status,
+    completionStatus: next.completionStatus,
+    lifecycleEvent: next.lifecycleEvent,
+    timestamp: now,
+    pidNamespace: next.pidNamespace || (next.childPid || next.dispatcherPid ? 'node-parent' : undefined),
+    payloadPatch: next,
+    writeMode: 'replace',
+  });
   appendDebugLog('latest-dispatch-closed', {
     status: next.status,
     completionStatus: next.completionStatus,
@@ -641,28 +700,21 @@ function latestWorkflowLogTimestamp(compositeCursor) {
 }
 
 function isPidAlive(pid) {
-  if (!Number.isFinite(Number(pid)) || Number(pid) <= 0) {
-    return false;
-  }
-  try {
-    process.kill(Number(pid), 0);
-    return true;
-  } catch (error) {
-    if (error && error.code === 'EPERM') {
-      return true;
-    }
-    return false;
-  }
+  return isPidAliveInCurrentNamespace(pid);
 }
 
 function classifyChildTimeoutState() {
-  if (runtimeState.childPid && isPidAlive(runtimeState.childPid)) {
-    return 'child_still_running';
-  }
-  if (runtimeState.lastChildExitAt || runtimeState.lastChildPid) {
+  if (!runtimeState.childPid && !runtimeState.lastChildPid) {
     return 'child_exited_without_closeout';
   }
-  return 'child_exited_without_closeout';
+  const result = evaluatePidLiveness({
+    pid: runtimeState.childPid || runtimeState.lastChildPid,
+    pidNamespace: runtimeState.pidNamespace,
+    checkerNamespace: 'node-parent',
+    toolTimedOut: true,
+    livenessChecker: isPidAlive,
+  });
+  return result.reason;
 }
 
 function updateLatestDispatchLiveness({ label = '', context = {}, compositeCursor = null, livenessReason = '' } = {}) {
@@ -684,32 +736,120 @@ function updateLatestDispatchLiveness({ label = '', context = {}, compositeCurso
   const staleSeconds = runtimeState.lastProgressAtMs > 0
     ? Math.floor((nowMs - runtimeState.lastProgressAtMs) / 1000)
     : 0;
+  const staleNoProgress = state.staleNoProgressSeconds > 0 && staleSeconds >= state.staleNoProgressSeconds;
+  const livenessProbe = evaluatePidLiveness({
+    pid: runtimeState.childPid,
+    pidNamespace: payload.pidNamespace || runtimeState.pidNamespace,
+    checkerNamespace: 'node-parent',
+    staleNoProgress,
+    livenessChecker: isPidAlive,
+  });
+  const effectiveLivenessReason = livenessProbe.degraded ? livenessProbe.reason : (livenessReason || livenessProbe.reason);
   const liveness = {
     label,
     childPid: runtimeState.childPid,
     lastChildPid: runtimeState.lastChildPid,
-    childAlive: runtimeState.childPid ? isPidAlive(runtimeState.childPid) : false,
+    pidNamespace: payload.pidNamespace || runtimeState.pidNamespace,
+    checkerNamespace: 'node-parent',
+    childAlive: livenessProbe.childAlive,
+    degraded: livenessProbe.degraded,
     phaseNumber: context.number || payload.phaseNumber || '',
     phaseTitle: context.title || context.activePhaseTitle || payload.phaseTitle || '',
     currentStage: context.currentStage || mapLeaseStage(context),
     lastHeartbeatAt: cursor.lease?.lastHeartbeatAt || '',
     lastLogAt: latestWorkflowLogTimestamp(cursor),
     lastProgressAt: runtimeState.lastProgressAtMs ? new Date(runtimeState.lastProgressAtMs).toISOString().replace(/\.\d{3}Z$/, 'Z') : '',
+    noProgressThresholdSeconds: state.staleNoProgressSeconds,
     staleNoProgressSeconds: state.staleNoProgressSeconds,
     staleSeconds,
-    reason: livenessReason,
+    reason: effectiveLivenessReason,
     updatedAt: utcTimestamp(),
   };
-  const next = {
-    ...payload,
-    childPid: liveness.childPid,
-    phaseNumber: liveness.phaseNumber,
-    lastHeartbeatAt: liveness.lastHeartbeatAt,
-    lastLogAt: liveness.lastLogAt,
-    liveness,
-    updatedAt: liveness.updatedAt,
-  };
-  fs.writeFileSync(latestFile, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  const activeChildPatch = liveness.childAlive
+    ? {
+      status: 'running',
+      activeExecutionStatus: 'running',
+      completionStatus: context.lastOutcome || 'running',
+      completionPath: 'prepared-dispatch',
+      returnBoundary: '',
+      stopReasonCode: '',
+      rawStopReasonCode: '',
+      blockingStopReasonCode: '',
+      stopReasonDetail: '',
+      activePhaseNumber: liveness.phaseNumber,
+      phaseRunLease: undefined,
+      normalizedRunVerdict: undefined,
+      historicalWarnings: undefined,
+      failedAt: undefined,
+      completedAt: undefined,
+      finalVerdict: undefined,
+    }
+    : {};
+  const next = withLatestDispatchLifecycle(payload, {
+    lifecycleEvent: 'dispatch_heartbeat',
+    dispatchStage: 'child_running',
+    timestamp: liveness.updatedAt,
+    patch: {
+      ...activeChildPatch,
+      childPid: liveness.childPid,
+      pidNamespace: liveness.pidNamespace,
+      phaseNumber: liveness.phaseNumber,
+      lastHeartbeatAt: liveness.lastHeartbeatAt,
+      lastLogAt: liveness.lastLogAt,
+      liveness,
+    },
+  });
+  recordLifecycleTransition({
+    source: 'moonshot-phase-dispatch',
+    targetStateFiles: [latestFile],
+    primaryTargetStateFile: latestFile,
+    phaseNumber: next.phaseNumber || 0,
+    phaseTitle: next.phaseTitle || 'moonshot-phase-dispatch',
+    status: next.status || 'prepared',
+    lifecycleEvent: 'dispatch_heartbeat',
+    timestamp: liveness.updatedAt,
+    pidNamespace: next.childPid ? next.pidNamespace || 'node-parent' : undefined,
+    payloadPatch: next,
+    writeMode: 'replace',
+  });
+  return next;
+}
+
+function recordLatestDispatchLifecycle({ lifecycleEvent, dispatchStage, patch = {}, timestamp = utcTimestamp() } = {}) {
+  const latestFile = path.join('.claude', 'logs', 'workflow-enforcement', 'latest-dispatch.json');
+  if (!fs.existsSync(latestFile)) {
+    return null;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(latestFile, 'utf8'));
+  } catch (error) {
+    appendDebugLog('latest-dispatch-lifecycle-failed', {
+      reason: 'json-parse-failed',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+  const next = withLatestDispatchLifecycle(payload, {
+    lifecycleEvent,
+    dispatchStage,
+    timestamp,
+    patch,
+  });
+  recordLifecycleTransition({
+    source: 'moonshot-phase-dispatch',
+    targetStateFiles: [latestFile],
+    primaryTargetStateFile: latestFile,
+    phaseNumber: next.phaseNumber || 0,
+    phaseTitle: next.phaseTitle || 'moonshot-phase-dispatch',
+    status: next.status,
+    completionStatus: next.completionStatus,
+    lifecycleEvent: next.lifecycleEvent,
+    timestamp: next.lastLifecycleEventAt,
+    pidNamespace: next.childPid || next.dispatcherPid ? 'node-parent' : undefined,
+    payloadPatch: next,
+    writeMode: 'replace',
+  });
   return next;
 }
 
@@ -872,6 +1012,32 @@ function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRun
     runtime: effectiveRuntime,
     goalTimeBudgetSeconds: state.goalTimeBudgetSeconds,
     goalTokenBudget: state.goalTokenBudget,
+  });
+  recordLatestDispatchLifecycle({
+    lifecycleEvent: 'dispatch_started',
+    dispatchStage: 'child_running',
+    patch: {
+      runLeaseId: runtimeState.runLeaseId,
+      activeRunLeaseId: runtimeState.runLeaseId,
+      dispatcherPid: process.pid,
+      status: 'running',
+      activeExecutionStatus: 'running',
+      completionStatus: 'running',
+      completionPath: 'prepared-dispatch',
+      returnBoundary: '',
+      stopReasonCode: '',
+      rawStopReasonCode: '',
+      blockingStopReasonCode: '',
+      stopReasonDetail: '',
+      completedAt: undefined,
+      failedAt: undefined,
+      finalVerdict: undefined,
+      phaseRunLease: undefined,
+      normalizedRunVerdict: undefined,
+      historicalWarnings: undefined,
+      activePhaseNumber: undefined,
+      liveness: undefined,
+    },
   });
   return values;
 }
@@ -1350,6 +1516,22 @@ function recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiv
       ...process.env,
       PHASE_DISPATCH_EFFORT_PROFILE: state.effortProfile,
       PHASE_DISPATCH_EFFORT_ESCALATION_REASON: state.effortEscalationReason,
+    },
+  });
+  recordLatestDispatchLifecycle({
+    lifecycleEvent: 'preflight_passed',
+    dispatchStage: 'preflight',
+    patch: {
+      status: 'prepared',
+      dispatcherPid: process.pid,
+    },
+  });
+  recordLatestDispatchLifecycle({
+    lifecycleEvent: 'dispatch_prepared',
+    dispatchStage: 'prepared',
+    patch: {
+      status: 'prepared',
+      dispatcherPid: process.pid,
     },
   });
 }
