@@ -39,6 +39,7 @@ import {
   stripQuotes,
 } from './lib/phase-closeout-parsers.mjs';
 import {
+  evaluateCompletionGateVerdict,
   readVerdictForPhase,
   verdictInternallyConsistent,
   verdictPassed,
@@ -664,6 +665,21 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     }
     if (!verdictPassed(verdict)) {
       addViolation(violations, 'verification-verdict-not-passed', `Completed phase ${phaseNumber} does not have a passing fresh verdict at ${path.relative(process.cwd(), verdict.path)}.`, phaseNumber);
+    }
+
+    const completionGate = evaluateCompletionGateVerdict({
+      phaseNumber,
+      phase,
+      verdict,
+      phaseExecutionDir,
+    });
+    if (!completionGate.ok) {
+      addViolation(
+        violations,
+        completionGate.reason,
+        `Completed phase ${phaseNumber} failed canonical completion gate: ${completionGate.reason}.`,
+        phaseNumber,
+      );
     }
 
     const harnessChangedPaths = collectHarnessChangedPaths({

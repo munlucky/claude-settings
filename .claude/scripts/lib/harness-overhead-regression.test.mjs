@@ -88,3 +88,25 @@ test('codex base args use workspace-write sandbox and do not reintroduce --full-
   assert.ok(args.includes('workspace-write'));
   assert.equal(args.includes('--full-auto'), false);
 });
+
+test('codex base args allow explicit sandbox override for trusted local phase runners', () => {
+  const result = spawnSync('node', [
+    '.claude/scripts/runtime-cli.mjs',
+    'codex-base-args',
+    process.cwd(),
+  ], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CODEX_EXEC_SANDBOX: 'danger-full-access',
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const args = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
+  assert.ok(args.includes('--sandbox'));
+  assert.ok(args.includes('danger-full-access'));
+  assert.equal(args.includes('workspace-write'), false);
+  assert.equal(args.includes('--full-auto'), false);
+});

@@ -272,13 +272,14 @@ export function codexBaseArgs(cwd) {
   let useOss = process.env.CODEX_USE_OSS_PROVIDER ?? 'auto';
   let localProvider = process.env.CODEX_LOCAL_PROVIDER ?? '';
   const useEphemeral = process.env.CODEX_EXEC_EPHEMERAL ?? 'true';
+  const sandboxMode = process.env.CODEX_EXEC_SANDBOX || 'workspace-write';
 
   const codexCommand = resolveCodexCommand() || 'codex';
   const windowsWrapper = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-exec-wrapper.ps1');
   const powershellCommand = resolvePowerShellCommand();
   const args = process.platform === 'win32'
-    ? [powershellCommand, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', windowsWrapper, 'exec', '--sandbox', 'workspace-write', '-C', cwd]
-    : [codexCommand, 'exec', '--sandbox', 'workspace-write', '-C', cwd];
+    ? [powershellCommand, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', windowsWrapper, 'exec', '--sandbox', sandboxMode, '-C', cwd]
+    : [codexCommand, 'exec', '--sandbox', sandboxMode, '-C', cwd];
 
   if (useEphemeral === 'true') {
     args.push('--ephemeral');

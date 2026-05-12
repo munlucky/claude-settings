@@ -6,6 +6,7 @@ import { classifyCompletionGateReason, decideMissingEvidenceAction } from './age
 import { setRootRunVerdict } from './agent-loop-phase-state.mjs';
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
+import { writeAttemptManifestIntent } from './lib/phase-attempt-manifest.mjs';
 import {
   appendPhaseEvent,
   defaultPhaseEventLedgerPath,
@@ -14,6 +15,116 @@ import {
 } from './lib/phase-event-ledger.mjs';
 import { validateEvaluationTriggerPipelineEvidence } from './workflow-enforcement.mjs';
 import { config, eventFixture, withFixture } from './verify-phase-closeout-fixtures.mjs';
+
+function writePhase2CompletedFixture(root, options = {}) {
+  const docsDir = path.join(root, 'docs/implementation');
+  const phaseDoc = path.join(docsDir, 'close/02-completion-gate.md');
+  const executionDir = path.join(docsDir, 'execution/02-completion-gate');
+  fs.mkdirSync(path.dirname(phaseDoc), { recursive: true });
+  fs.mkdirSync(executionDir, { recursive: true });
+  fs.appendFileSync(
+    path.join(docsDir, '00-master-plan-v1.md'),
+    '- [x] Phase 02 - Completion Gate (`docs/implementation/close/02-completion-gate.md`)\n',
+    'utf8',
+  );
+  fs.writeFileSync(phaseDoc, [
+    '# Phase 02: Completion Gate',
+    '',
+    '## Critical Product Scenarios',
+    '| ID | User-Visible Expectation | Verification Command | Expected Signal | Evidence Path |',
+    '|----|--------------------------|----------------------|-----------------|---------------|',
+    '| SCN-02-1 | Manifest intent alone cannot complete a phase. | `node --test .claude/scripts/verify-phase-closeout.test.mjs` | `incomplete_attempt_manifest` appears. | `QA_REPORT.md` |',
+    '',
+    '## Exact Execution Targets',
+    '| ID | Files To Create | Files To Modify | Files To Test | Commands | Expected Fail/Pass Signals |',
+    '|----|-----------------|-----------------|---------------|----------|----------------------------|',
+    '| P02-1 | none | `.claude/scripts/verify-phase-closeout.mjs` | `.claude/scripts/verify-phase-closeout.test.mjs` | `node --test .claude/scripts/verify-phase-closeout.test.mjs` | exit 0 |',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(executionDir, 'SPRINT_CONTRACT.md'), [
+    '# Sprint Contract',
+    '',
+    '## Source Plan Requirements Snapshot',
+    '| P02-1 | none | `.claude/scripts/verify-phase-closeout.mjs` | `.claude/scripts/verify-phase-closeout.test.mjs` | `node --test .claude/scripts/verify-phase-closeout.test.mjs` | exit 0 |',
+    '',
+    '## Spec Deviation Ledger',
+    '- none',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(executionDir, 'QA_REPORT.md'), [
+    '# QA Report',
+    '',
+    '## Plan Conformance Review',
+    '- Source plan conformance command: pass',
+    '- SCN-02-1: pass - incomplete_attempt_manifest appears.',
+    '',
+    '## Finish Readiness',
+    '- Remaining blockers before closeout: none',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(executionDir, 'SCORECARD.md'), [
+    '# Scorecard',
+    '',
+    '## Objective Checklist',
+    '| OBJ-CONFORM | pass |',
+    '',
+    '## Score Summary',
+    '- Verdict: done',
+    '',
+    '## Task-Level Status Adapter',
+    '- Current task status: FULL',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(executionDir, 'HANDOFF.md'), '# Handoff\n\n## Resume Trigger\n- Stop reason: clean_finish\n', 'utf8');
+  fs.writeFileSync(path.join(executionDir, 'WORKSETS.yaml'), [
+    'schemaVersion: 1',
+    'activeAtomicTask: AT-01',
+    'atomicTasks:',
+    '  - id: AT-01',
+    '    status: completed',
+    '    taskStatus: completed',
+    '    acceptanceCriterionId: "AC-001"',
+    '    linkedRequirementIds: ["REQ-2.1"]',
+    '    acVerdict: passed',
+    '    verificationEvidence:',
+    '      - "PASS: node --test .claude/scripts/verify-phase-closeout.test.mjs"',
+    '    ownedPaths:',
+    '      - ".claude/scripts/verify-phase-closeout.mjs"',
+    '    verificationCommands:',
+    '      - "node --test .claude/scripts/verify-phase-closeout.test.mjs"',
+    '    evidence:',
+    '      - "PASS: node --test .claude/scripts/verify-phase-closeout.test.mjs"',
+    '    completedAt: "2026-05-08T11:59:30Z"',
+    'worksets: []',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(docsDir, 'execution/REQUIREMENTS_TRACEABILITY.md'), 'REQ-2.1 | verified | QA_REPORT.md\n', 'utf8');
+  fs.writeFileSync(path.join(docsDir, 'execution/SCENARIO_MATRIX.md'), 'SCN-02-1 | passed | QA_REPORT.md\n', 'utf8');
+  fs.appendFileSync(path.join(root, '.claude/docs/phase-status.yaml'), [
+    '  - number: 2',
+    '    title: "Phase 02: Completion Gate"',
+    '    status: completed',
+    '    sprintContract: "docs/implementation/execution/02-completion-gate/SPRINT_CONTRACT.md"',
+    '    qaReport: "docs/implementation/execution/02-completion-gate/QA_REPORT.md"',
+    '    handoff: "docs/implementation/execution/02-completion-gate/HANDOFF.md"',
+    '    scorecard: "docs/implementation/execution/02-completion-gate/SCORECARD.md"',
+    `    archivedPhaseDoc: "docs/implementation/close/02-completion-gate.md"`,
+    ...(options.manifestPath ? [`    attemptManifestPath: "${options.manifestPath.replace(/\\/g, '/')}"`] : []),
+    '    attempts:',
+    '      total: 1',
+    '      lastOutcome: clean_complete',
+    '    timing:',
+    '      lastStage: "finish/handoff"',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(root, '.claude/verification-verdict-phase02-final.json'), JSON.stringify({
+    verdict: 'passed',
+    evidenceFresh: true,
+    blocking: false,
+    score: { verdict: 'done' },
+    commands: [{ name: 'fixture', status: 'passed' }],
+  }, null, 2), 'utf8');
+}
 
 function writeSidecarFixture(root, { status = 'open', manifestOnly = false } = {}) {
   const executionDir = path.join(root, 'docs/implementation/execution/01-feature');
@@ -282,6 +393,73 @@ test('phase closeout accepts resolved historical sidecar blocker', () => {
 
     assert.equal(result.allowed, true);
     assert.equal(result.status, 'pass');
+  });
+});
+
+test('manifest-intent-without-exit-is-incomplete', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    const intent = writeAttemptManifestIntent({
+      executionRoot: path.join(root, 'docs/implementation/execution/02-completion-gate'),
+      phaseNumber: 2,
+      phaseSlug: '02-completion-gate',
+      attemptId: 'attempt-phase-02-a',
+      runnerStartedAt: '2026-05-08T11:58:00Z',
+      promptHash: 'prompt-hash',
+      commandHash: 'command-hash',
+      runnerLogPath: '.claude/logs/agent-loop/phase-2.log',
+    });
+    writePhase2CompletedFixture(root, { manifestPath: path.relative(root, intent.manifestPath) });
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'incomplete_attempt_manifest'));
+  });
+});
+
+test('runner-log-without-manifest-rejected', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    const workflowDir = path.join(root, '.claude/logs/workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), JSON.stringify({
+      runId: 'runner-log-only',
+      status: 'completed',
+      completionStatus: 'completed',
+      activePhaseNumber: 2,
+    }, null, 2), 'utf8');
+    writePhase2CompletedFixture(root);
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'orphan_projection_completion'));
+  });
+});
+
+test('phase-status-only-completion-rejected', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writePhase2CompletedFixture(root);
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'orphan_projection_completion'));
+  });
+});
+
+test('direct-pass-only-completion-rejected', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writePhase2CompletedFixture(root);
+    fs.appendFileSync(
+      path.join(root, 'docs/implementation/execution/02-completion-gate/QA_REPORT.md'),
+      '- Direct-pass artifact: pass without canonical attempt manifest.\n',
+      'utf8',
+    );
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'orphan_projection_completion'));
   });
 });
 

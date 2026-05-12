@@ -125,7 +125,7 @@ planQualityReview:
 - None.
 
 ## Phase Completion Checklist
-- [ ] Phase 01 - Attempt Manifest Contract (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md`)
+- [x] Phase 01 - Attempt Manifest Contract (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md`)
 - [ ] Phase 02 - Completion Gate Canonical Enforcement (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/02-completion-gate-canonical-enforcement-v1.md`)
 - [ ] Phase 03 - Manual Orphan Reconcile Mode (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/03-manual-orphan-reconcile-mode-v1.md`)
 - [ ] Phase 04 - Reconciliation Transaction Resume (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md`)

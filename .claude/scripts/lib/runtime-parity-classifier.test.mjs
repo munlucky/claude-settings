@@ -65,6 +65,26 @@ test('optional profile skips unavailable runtime while required profile blocks',
   assert.equal(requiredResult.blocks, true);
 });
 
+test('probe timeout is runtime unavailable and follows profile strictness', () => {
+  const optionalResult = classifyRuntimeParity({
+    runtime: 'codex',
+    runtimeProfile: 'optional_probe',
+    available: false,
+    failureCode: 'probe_timeout',
+  });
+  const requiredResult = classifyRuntimeParity({
+    runtime: 'codex',
+    runtimeProfile: 'required_runtime',
+    available: false,
+    failureCode: 'probe_timeout',
+  });
+
+  assert.equal(optionalResult.reason, 'runtime_unavailable');
+  assert.equal(optionalResult.blocks, false);
+  assert.equal(requiredResult.reason, 'runtime_unavailable');
+  assert.equal(requiredResult.blocks, true);
+});
+
 test('CLI runtime profile overrides PHASE_RUNTIME_PROFILE fallback', () => {
   assert.equal(
     resolveRuntimeProfile({ cliProfile: 'optional_probe', envProfile: 'required_runtime' }),

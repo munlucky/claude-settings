@@ -81,11 +81,17 @@ function testScenarioEvidenceParsing() {
 SCN-HR-003 | pass | .claude/logs/agent-loop/artifact-normalizer-blocked.log
 SCN-HR-004 | verified | .claude/logs/agent-loop/artifact-normalizer-korean.log
 SCN-HR-005 | blocked | .claude/logs/agent-loop/artifact-normalizer-korean.log
+{
+  "id": "SCN-HR-006",
+  "status": "passed",
+  "evidencePath": ".claude/logs/agent-loop/artifact-normalizer-structured.log"
+}
 `;
 
   assert.equal(scenarioEvidencePassed('SCN-HR-003', evidence), true);
   assert.equal(scenarioEvidencePassed('SCN-HR-004', evidence), true);
   assert.equal(scenarioEvidencePassed('SCN-HR-005', evidence), false);
+  assert.equal(scenarioEvidencePassed('SCN-HR-006', evidence), true);
   assert.deepEqual(parseScenarioRowEvidence('SCN-HR-003 | pass | .claude/logs/agent-loop/artifact-normalizer-blocked.log'), {
     scenarioId: 'SCN-HR-003',
     status: 'pass',

@@ -926,12 +926,12 @@ function readAtomicLedgerStatus(phaseExecutionDir) {
       tasks.push(current);
       continue;
     }
-    if (current && stripped.startsWith('status:')) {
+    if (current && indent <= 4 && stripped.startsWith('status:')) {
       current.status = stripped.slice('status:'.length).trim().replace(/^"|"$/g, '');
       currentList = '';
       continue;
     }
-    const listKey = current && stripped.match(/^(ownedPaths|verificationCommands|evidence):\s*(.*)$/);
+    const listKey = current && indent <= 4 && stripped.match(/^(ownedPaths|verificationCommands|evidence):\s*(.*)$/);
     if (listKey) {
       currentList = listKey[1];
       const inline = listKey[2].trim();
@@ -1046,6 +1046,23 @@ function extractBulletValue(text, heading, label) {
 
 function parseListString(value) {
   return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function mergeUniqueList(...lists) {
+  const result = [];
+  const seen = new Set();
+  for (const list of lists) {
+    for (const rawItem of list || []) {
+      const item = String(rawItem || '').trim();
+      const key = item.toLowerCase();
+      if (!item || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(item);
+    }
+  }
+  return result;
 }
 
 function normalizeLower(value) {
@@ -1953,21 +1970,21 @@ function evaluatePhaseCompletionGate(config) {
     passedPaths.push(qaReportPath || 'qa-report-fallback');
   }
 
-  const selectedBundles = latestWorkflowSelected.length > 0
-    ? latestWorkflowSelected
-    : Array.isArray(currentWorkflowState?.selectedBundles) && currentWorkflowState.selectedBundles.length > 0
-      ? currentWorkflowState.selectedBundles.map((item) => String(item).trim()).filter(Boolean)
-      : parseListString(workflowSection.selected);
-  const appliedSkills = latestWorkflowApplied.length > 0
-    ? latestWorkflowApplied
-    : Array.isArray(currentWorkflowState?.appliedSkills) && currentWorkflowState.appliedSkills.length > 0
-      ? currentWorkflowState.appliedSkills.map((item) => String(item).trim()).filter(Boolean)
-      : parseListString(workflowSection.applied);
-  const skippedSkills = latestWorkflowSkipped.length > 0
-    ? latestWorkflowSkipped
-    : Array.isArray(currentWorkflowState?.skippedSkills) && currentWorkflowState.skippedSkills.length > 0
-      ? currentWorkflowState.skippedSkills.map((item) => String(item).trim()).filter(Boolean)
-      : parseListString(workflowSection.skipped);
+  const selectedBundles = mergeUniqueList(
+    parseListString(workflowSection.selected),
+    Array.isArray(currentWorkflowState?.selectedBundles) ? currentWorkflowState.selectedBundles : [],
+    latestWorkflowSelected,
+  );
+  const appliedSkills = mergeUniqueList(
+    parseListString(workflowSection.applied),
+    Array.isArray(currentWorkflowState?.appliedSkills) ? currentWorkflowState.appliedSkills : [],
+    latestWorkflowApplied,
+  );
+  const skippedSkills = mergeUniqueList(
+    parseListString(workflowSection.skipped),
+    Array.isArray(currentWorkflowState?.skippedSkills) ? currentWorkflowState.skippedSkills : [],
+    latestWorkflowSkipped,
+  );
   const effectiveStageOrder = latestWorkflowStageOrder.length > 0
     ? latestWorkflowStageOrder
     : Array.isArray(currentWorkflowState?.stageOrder) && currentWorkflowState.stageOrder.length > 0
@@ -2827,7 +2844,11 @@ atomicTasks:
     acVerdict: passed
     verificationEvidence:
       - "PASS: fixture"
-    ownedPaths: []
+    semanticEvaluation:
+      status: "not_run"
+      reason: "deterministic fixture"
+    ownedPaths:
+      - ".claude/scripts/agent-loop-phase-state.mjs"
     verificationCommands:
       - "fixture"
     evidence:
@@ -2835,6 +2856,10 @@ atomicTasks:
     completedAt: "2026-05-05T00:00:00.000Z"
 worksets: []
 `, 'utf8');
+    const atomicLedger = readAtomicLedgerStatus(executionDir);
+    if (!atomicLedger.complete) {
+      throw new Error(`completed atomic task was not preserved across nested semanticEvaluation status: ${atomicLedger.reason}`);
+    }
     const cleanArtifactStatusFile = path.join(tempDir, 'clean-artifact-status.yaml');
     fs.writeFileSync(cleanArtifactStatusFile, `schemaVersion: 1
 activeExecutionStatus: running

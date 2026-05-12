@@ -192,6 +192,8 @@ function describeStopReason(reason, runtime, detail = '') {
       return `런타임 인증 또는 권한 문제로 ${runtime} 실행이 watchdog 제한 시간 안에 완료되지 않았습니다`;
     case 'timeout-network':
       return `네트워크 또는 외부 요청 문제로 ${runtime} 실행이 watchdog 제한 시간 안에 완료되지 않았습니다`;
+    case 'codex_upstream_stream_stalled':
+      return `Codex upstream 스트림 재연결이 반복되어 ${runtime} 작업을 안전하게 중단했습니다`;
     case 'timeout-browser':
       return '브라우저 또는 앱 런타임 smoke가 제한 시간 안에 준비되지 않았습니다';
     case 'timeout-verification':
@@ -241,6 +243,9 @@ function detectToolSchemaErrorLoop(logFile, guardRaw = '2') {
 function classifyTimeoutReason(logFile) {
   if (logFile && fs.existsSync(logFile)) {
     const text = fs.readFileSync(logFile, 'utf8');
+    if (/(?:codex_core::session::turn: stream disconnected|stream disconnected - retrying sampling request|ERROR:\s*Reconnecting\.\.\. \d+\/\d+|UPSTREAM_STREAM_STALL)/i.test(text)) {
+      return 'codex_upstream_stream_stalled';
+    }
     if (/does not have access to Claude|Please login again|Could not resolve authentication method|login required|subscription|authentication/i.test(text)) {
       return 'timeout-auth';
     }
@@ -280,6 +285,28 @@ function resolveTimeoutFallbackRuntime(currentRuntime) {
   return '';
 }
 
+function detectCodexUpstreamStreamStall(logFile, elapsedSeconds) {
+  const maxSeconds = Number.parseInt(String(process.env.AGENT_LOOP_CODEX_UPSTREAM_STALL_SECONDS ?? '120'), 10) || 120;
+  const reconnectThreshold = Number.parseInt(String(process.env.AGENT_LOOP_CODEX_UPSTREAM_RECONNECT_THRESHOLD ?? '3'), 10) || 3;
+  if (elapsedSeconds < maxSeconds || !logFile || !fs.existsSync(logFile)) {
+    return { stalled: false, maxReconnect: 0, reconnectThreshold, maxSeconds };
+  }
+
+  const text = fs.readFileSync(logFile, 'utf8');
+  let maxReconnect = 0;
+  for (const match of text.matchAll(/(?:stream disconnected - retrying sampling request|ERROR:\s*Reconnecting\.\.\.)[^\n]*?(\d+)\/(\d+)/gi)) {
+    const current = Number.parseInt(match[1] || '0', 10) || 0;
+    maxReconnect = Math.max(maxReconnect, current);
+  }
+
+  return {
+    stalled: maxReconnect >= reconnectThreshold,
+    maxReconnect,
+    reconnectThreshold,
+    maxSeconds,
+  };
+}
+
 const TERMINAL_STOP_CODES = new Set([
   'bash_access_denied',
   'git_eperm',
@@ -293,6 +320,7 @@ const TERMINAL_STOP_CODES = new Set([
   'path_update_denied',
   'plugin_network_sync_failed',
   'network_fetch_failed',
+  'codex_upstream_stream_stalled',
   'node_spawn_eperm',
   'verification_environment_unavailable',
   'verifier_unavailable',
@@ -315,7 +343,7 @@ function isLogEvidenceLine(line) {
     return false;
   }
 
-  return /(?:Failed to create session:|readonly database|read only database|spawn(?:Sync)? .*?(?:EPERM|EACCES)|(?:Error|ERROR|fatal|Failed|failed): .*?(?:permission denied|operation not permitted|access is denied|EPERM|EACCES)|Failed to terminate MCP process group|Failed to kill MCP process group|Could not resolve host|plugin sync failed|could not update PATH|(?:node --test|bash|git|rg).*?(?:spawn EPERM|access denied|permission denied|operation not permitted)|runtime verifier unavailable|verification runtime unavailable|verifier unavailable|spawn blocked|unable to create process)/i.test(trimmed);
+  return /(?:Failed to create session:|readonly database|read only database|spawn(?:Sync)? .*?(?:EPERM|EACCES)|(?:Error|ERROR|fatal|Failed|failed): .*?(?:permission denied|operation not permitted|access is denied|EPERM|EACCES)|Failed to terminate MCP process group|Failed to kill MCP process group|Could not resolve host|plugin sync failed|could not update PATH|(?:node --test|bash|git|rg).*?(?:spawn EPERM|access denied|permission denied|operation not permitted)|runtime verifier unavailable|verification runtime unavailable|verifier unavailable|spawn blocked|unable to create process|stream disconnected - retrying sampling request|ERROR:\s*Reconnecting\.\.\. \d+\/\d+|UPSTREAM_STREAM_STALL)/i.test(trimmed);
 }
 
 function detectEnvironmentStopReason(logFile, defaultReason = 'phase-failed') {
@@ -896,6 +924,8 @@ async function runWorkerPromptWithCompletionGate(args) {
   const startTime = Date.now();
   let timedOut = false;
   let completedEarly = false;
+  let upstreamStreamStalled = false;
+  let upstreamStreamStallDetail = null;
   let lastHeartbeatAt = 0;
 
   while (child.exitCode === null && child.signalCode === null) {
@@ -948,6 +978,24 @@ async function runWorkerPromptWithCompletionGate(args) {
       }
     }
 
+    const upstreamStall = detectCodexUpstreamStreamStall(logFile, elapsedSeconds);
+    if (upstreamStall.stalled) {
+      upstreamStreamStalled = true;
+      upstreamStreamStallDetail = upstreamStall;
+      writeSupervisorEvent(logStream, 'upstream-stream-stalled', {
+        pid: child.pid ?? null,
+        mode: 'completion-gate',
+        phaseNum,
+        maxReconnect: upstreamStall.maxReconnect,
+        reconnectThreshold: upstreamStall.reconnectThreshold,
+        maxSeconds: upstreamStall.maxSeconds,
+      });
+      terminateProcess(child.pid, process.platform !== 'win32');
+      await sleep(5000);
+      killProcessHard(child.pid, process.platform !== 'win32');
+      break;
+    }
+
     if (watchdogMaxSeconds > 0 && elapsedSeconds >= watchdogMaxSeconds) {
       timedOut = true;
       terminateProcess(child.pid, process.platform !== 'win32');
@@ -971,6 +1019,12 @@ async function runWorkerPromptWithCompletionGate(args) {
     logStream.write(`WATCHDOG_TIMEOUT after ${watchdogMaxSeconds}s\n`);
     logStream.end();
     return 124;
+  }
+
+  if (upstreamStreamStalled) {
+    logStream.write(`UPSTREAM_STREAM_STALL reconnect=${upstreamStreamStallDetail?.maxReconnect ?? 'unknown'} threshold=${upstreamStreamStallDetail?.reconnectThreshold ?? 'unknown'} after=${upstreamStreamStallDetail?.maxSeconds ?? 'unknown'}s\n`);
+    logStream.end();
+    return 125;
   }
 
   logStream.end();

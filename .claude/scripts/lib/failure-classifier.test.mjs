@@ -104,6 +104,11 @@ function testGitAndNetworkCodes() {
   const gitIgnoreWarning = classifyFailure({ name: 'git.warning', status: 'warning', detail: "warning: unable to access 'C:\\Users\\moon/.config/git/ignore': Permission denied" });
   const sandboxProvider = classifyFailure({ name: 'provider.smoke', status: 'warning', detail: 'E_PROVIDER_NETWORK websocket os error 10013 blocked by sandbox' });
   const network = classifyFailure({ name: 'network.fetch', status: 'warning', detail: 'fetch failed: ENOTFOUND' });
+  const codexStream = classifyFailure({
+    name: 'codex.exec',
+    status: 'warning',
+    detail: 'codex_core::session::turn: stream disconnected - retrying sampling request (3/5 in 740ms)',
+  });
 
   assert.equal(git.code, 'git_eperm');
   assert.equal(verifierGit.code, 'verification_environment_unavailable');
@@ -114,6 +119,8 @@ function testGitAndNetworkCodes() {
   assert.equal(sandboxProvider.blocker, false);
   assert.equal(network.code, 'network_fetch_failed');
   assert.equal(network.decision, 'host_fallback');
+  assert.equal(codexStream.code, 'codex_upstream_stream_stalled');
+  assert.equal(codexStream.decision, 'resume_later_handoff');
   assert.equal(decisionForFailureCode('git_eperm'), 'resume_later_handoff');
   assert.equal(normalizeFailureCode({ reason: '  Bash Access Denied  ' }), 'bash_access_denied');
 }

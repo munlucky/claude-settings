@@ -21,6 +21,7 @@ const RUNTIME_UNAVAILABLE_CODES = new Set([
   'cli_missing',
   'network_unavailable',
   'probe_no_output',
+  'probe_timeout',
   'probe_unknown',
   'runtime_unavailable',
   'session_storage_permission_denied',

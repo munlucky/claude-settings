@@ -14,7 +14,14 @@ import { collectVerificationPreflightBlockers, loadVerificationContractContext }
 import { classifyFailure, classifyStagnationPattern, normalizeStopOutcome, summarizeFailureDecision } from './lib/failure-classifier.mjs';
 import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
-import { archivePromptText } from './lib/prompt-redaction.mjs';
+import { archivePromptText, summarizeSpawnCommand } from './lib/prompt-redaction.mjs';
+import {
+  appendAttemptHeartbeatEvent,
+  patchAttemptManifestChildIdentity,
+  patchAttemptManifestExit,
+  resolvePhaseAttemptManifestPaths,
+  writeAttemptManifestIntent,
+} from './lib/phase-attempt-manifest.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -575,6 +582,39 @@ function shouldUsePromptFileForCodex(args) {
 
 function runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, runtime) {
   const command = buildWorkerCommand(prompt, runtime, 'phase_implementation');
+  if (activeAttemptContext) {
+    activeAttemptContext.manifestAttemptSequence = (activeAttemptContext.manifestAttemptSequence || 0) + 1;
+  }
+  const manifestAttemptSequence = activeAttemptContext?.manifestAttemptSequence || 1;
+  const attemptId = `${activeAttemptContext?.captureAttemptSpanId || `attempt-${startEpoch}`}-${manifestAttemptSequence}`;
+  const phaseSlug = `${paths.phasePrefix}-${paths.phaseSlug}`;
+  const manifestPaths = resolvePhaseAttemptManifestPaths({
+    executionRoot: state.executionRoot,
+    phaseNumber: state.phaseNum,
+    phaseSlug,
+    attemptId,
+  });
+  const spawnSummary = summarizeSpawnCommand(command, process.cwd());
+  writeAttemptManifestIntent({
+    executionRoot: state.executionRoot,
+    phaseNumber: state.phaseNum,
+    phaseSlug,
+    attemptId,
+    runnerStartedAt: new Date(startEpoch * 1000).toISOString(),
+    promptHash: spawnSummary.promptHash || sha256Text(prompt),
+    commandHash: spawnSummary.argvHash,
+    runnerLogPath: logFile,
+  });
+  appendAttemptHeartbeatEvent({
+    ...manifestPaths,
+    attemptId,
+    eventType: 'worker_spawn_requested',
+    payload: {
+      runtime,
+      runnerLogPath: logFile,
+    },
+  });
+  const logReadOffset = fs.existsSync(logFile) ? fs.statSync(logFile).size : 0;
   const result = runNodeScript(runtimePath, [
     'run-worker-prompt-with-completion-gate',
     '--log-file', logFile,
@@ -596,7 +636,63 @@ function runWorkerPrompt(logFile, prompt, startEpoch, qaChecksumBefore, paths, r
     '--',
     ...command,
   ], { env: phaseEnv(paths), stdio: 'inherit' });
+  const supervisorEvents = readSupervisorEvents(logFile, logReadOffset);
+  const spawnEvent = supervisorEvents.find((event) => event.event === 'spawn' && event.mode === 'completion-gate');
+  if (spawnEvent) {
+    patchAttemptManifestChildIdentity({
+      manifestPath: manifestPaths.manifestPath,
+      childPid: spawnEvent.pid ?? null,
+      childProcessStartTime: spawnEvent.timestamp ?? null,
+    });
+  }
+  const exitEvent = supervisorEvents.findLast?.((event) => event.event === 'exit' && event.mode === 'completion-gate')
+    || [...supervisorEvents].reverse().find((event) => event.event === 'exit' && event.mode === 'completion-gate');
+  const exitCode = result.status ?? 1;
+  patchAttemptManifestExit({
+    manifestPath: manifestPaths.manifestPath,
+    runnerFinishedAt: exitEvent?.timestamp || new Date().toISOString(),
+    runnerExitCode: exitCode,
+  });
+  appendAttemptHeartbeatEvent({
+    ...manifestPaths,
+    attemptId,
+    eventType: 'worker_finished',
+    payload: {
+      runtime,
+      runnerExitCode: exitCode,
+    },
+  });
   return result.status ?? 1;
+}
+
+function readSupervisorEvents(logFile, startOffset = 0) {
+  if (!logFile || !fs.existsSync(logFile)) {
+    return [];
+  }
+  const file = fs.openSync(logFile, 'r');
+  try {
+    const size = fs.fstatSync(file).size;
+    const offset = Math.max(0, Math.min(Number(startOffset) || 0, size));
+    const buffer = Buffer.alloc(size - offset);
+    fs.readSync(file, buffer, 0, buffer.length, offset);
+    return buffer.toString('utf8')
+      .split(/\r?\n/)
+      .map((line) => line.match(/^SUPERVISOR_EVENT\s+(.+)$/)?.[1])
+      .filter(Boolean)
+      .flatMap((jsonText) => {
+        try {
+          return [JSON.parse(jsonText)];
+        } catch {
+          return [];
+        }
+      });
+  } finally {
+    fs.closeSync(file);
+  }
+}
+
+function sha256Text(value) {
+  return `sha256:${crypto.createHash('sha256').update(String(value), 'utf8').digest('hex')}`;
 }
 
 function runWorktreeCoordinator(paths, runtime) {
@@ -1896,6 +1992,17 @@ function runPhaseAttempt() {
       }
       recordLoopStop(state.phaseNum, finalStopReason, describeStopReason(finalStopReason, activeRuntime, gate.PHASE_COMPLETION_REASON), logFile);
       return 2;
+    }
+
+    if (exitCode === 125) {
+      const stopDetail = describeStopReason('codex_upstream_stream_stalled', activeRuntime);
+      appendDebugLog('worker-upstream-stream-stalled', {
+        logFile,
+        runtime: activeRuntime,
+        exitCode,
+        stopDetail,
+      });
+      return stopBlockedPhase(paths, logFile, stopDetail, 'runtime-upstream-stalled');
     }
 
     if (exitCode === 124 && (process.env.AGENT_LOOP_WATCHDOG_AUTO_RESTART ?? 'true') === 'true') {

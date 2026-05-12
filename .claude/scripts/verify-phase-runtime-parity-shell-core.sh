@@ -24,6 +24,7 @@ PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_S
 PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS:-5}"
 PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS:-0}"
 PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS="${PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS:-300000}"
+PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS="${PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS:-60}"
 PHASE_RUNTIME_PARITY_KILL_STALE="${PHASE_RUNTIME_PARITY_KILL_STALE:-true}"
 PHASE_RUNTIME_PARITY_TARGET_RUNTIMES="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-auto}"
 CLAUDE_AVAILABLE=false
@@ -521,25 +522,87 @@ prepare_workspace_copy() {
   local workspace_root="$1"
 
   mkdir -p "$workspace_root"
-  (
-    cd "$REPO_ROOT"
-    tar \
-      --exclude='./.git' \
-      --exclude='./.tmp' \
-      --exclude='./.claude/logs' \
-      --exclude='./.claude/memory.json' \
-      --exclude='./.claude/memorygraph' \
-      --exclude='./.claude/verification-results-*' \
-      --exclude='./.claude/verification-verdict-*' \
-      --exclude='./.claude/runtime-verdict-*' \
-      --exclude='./.claude/browser-flow-verdict-*' \
-      --exclude='./.claude/visual-diff-verdict-*' \
-      --exclude='./.claude/knowledge-repo-audit-*' \
-      -cf - .
-  ) | (
-    cd "$workspace_root"
-    tar -xf -
-  )
+  python3 - "$REPO_ROOT" "$workspace_root" <<'PY'
+import fnmatch
+import os
+import pathlib
+import shutil
+import sys
+import time
+
+source = pathlib.Path(sys.argv[1]).resolve()
+target = pathlib.Path(sys.argv[2]).resolve()
+
+ignored_dirs = {
+    ".git",
+    ".tmp",
+    ".claude/logs",
+    ".claude/memorygraph",
+}
+ignored_file_patterns = (
+    ".claude/memory.json",
+    ".claude/verification-results-*",
+    ".claude/verification-verdict-*",
+    ".claude/runtime-verdict-*",
+    ".claude/browser-flow-verdict-*",
+    ".claude/visual-diff-verdict-*",
+    ".claude/knowledge-repo-audit-*",
+)
+
+
+def rel_posix(path):
+    return path.relative_to(source).as_posix()
+
+
+def should_skip_dir(path):
+    rel = rel_posix(path)
+    return rel in ignored_dirs or any(rel.startswith(f"{item}/") for item in ignored_dirs)
+
+
+def should_skip_file(path):
+    rel = rel_posix(path)
+    return any(fnmatch.fnmatch(rel, pattern) for pattern in ignored_file_patterns)
+
+
+def copy_file(src, dst):
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    last_error = None
+    for _ in range(3):
+        try:
+            shutil.copy2(src, dst, follow_symlinks=False)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last_error = exc
+            time.sleep(0.05)
+    raise last_error
+
+
+for root, dirs, files in os.walk(source, topdown=True, followlinks=False):
+    root_path = pathlib.Path(root)
+    dirs[:] = [
+        item for item in dirs
+        if not should_skip_dir(root_path / item)
+    ]
+    for file_name in files:
+        src = root_path / file_name
+        if should_skip_file(src):
+            continue
+        dst = target / src.relative_to(source)
+        if src.is_symlink():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                dst.symlink_to(os.readlink(src))
+            except FileExistsError:
+                pass
+            except OSError:
+                target_path = src.resolve()
+                if target_path.is_file():
+                    copy_file(target_path, dst)
+            continue
+        copy_file(src, dst)
+PY
 }
 
 initialize_workspace_git() {
@@ -567,7 +630,8 @@ probe_claude_runtime() {
   set +e
   (
     cd "$REPO_ROOT"
-    claude --dangerously-skip-permissions --no-session-persistence -p --output-format text \
+    run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS" \
+      claude --dangerously-skip-permissions --no-session-persistence -p --output-format text \
       'Reply exactly with RUNTIME_OK and nothing else.'
   ) >"$output_file" 2>"$error_file"
   local exit_code=$?
@@ -580,7 +644,9 @@ probe_claude_runtime() {
   fi
 
   detail="$(summarize_probe_detail "$error_file" "$output_file")"
-  if grep -Fqi "needs an update" "$error_file" "$output_file"; then
+  if [[ "$exit_code" -eq 124 ]]; then
+    record_runtime_failure "claude" "probe_timeout" "probe timed out after ${PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS}s (${detail:-no additional detail})"
+  elif grep -Fqi "needs an update" "$error_file" "$output_file"; then
     record_runtime_failure "claude" "needs_update" "TODO: when Claude access is restored, update the Claude CLI on this machine (${detail:-no additional detail})"
   elif grep -Fqi "does not have access to Claude" "$error_file" "$output_file"; then
     record_runtime_failure "claude" "access_unavailable" "TODO: enable Claude subscription/access on this machine (${detail:-no additional detail})"
@@ -619,7 +685,7 @@ probe_codex_runtime() {
     local -a cmd=(env "${probe_env[@]}")
     runtime_cli_append_codex_base_args cmd "$REPO_ROOT"
     cmd+=(-o "$output_file" 'Reply exactly with RUNTIME_OK and nothing else.')
-    "${cmd[@]}"
+    run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS" "${cmd[@]}"
   ) >"$stdout_file" 2>"$error_file"
   local exit_code=$?
   set -e
@@ -631,8 +697,15 @@ probe_codex_runtime() {
   fi
 
   detail="$(summarize_probe_detail "$error_file" "$stdout_file")"
-  failure_code="$(classify_codex_probe_failure "$error_file" "$stdout_file")"
+  if [[ "$exit_code" -eq 124 ]]; then
+    failure_code="probe_timeout"
+  else
+    failure_code="$(classify_codex_probe_failure "$error_file" "$stdout_file")"
+  fi
   case "$failure_code" in
+    probe_timeout)
+      record_runtime_failure "codex" "$failure_code" "probe timed out after ${PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS}s (${detail:-no additional detail})"
+      ;;
     state_db_inconsistent)
       record_runtime_failure "codex" "$failure_code" "isolated probe reported rollout/session state DB inconsistency (${detail:-no additional detail})"
       ;;
@@ -1116,11 +1189,12 @@ EOF
     assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
   fi
   if target_runtime_selected "codex"; then
+    local expected_codex_sandbox="${CODEX_EXEC_SANDBOX:-workspace-write}"
     if ! grep -Fq -- "agent-loop.sh" "$codex_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$codex_delegated_out"; then
       fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
     fi
     assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
-    assert_contains "$codex_coord_out" "codex exec --sandbox workspace-write" "Codex coordinator adapter"
+    assert_contains "$codex_coord_out" "codex exec --sandbox ${expected_codex_sandbox}" "Codex coordinator adapter"
     assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
   fi
 
@@ -1818,6 +1892,11 @@ runtime_failures_include_blocker() {
 }
 
 determine_runtime_exercise_level() {
+  if [[ "${RUNTIME_PROFILE:-required_runtime}" == "optional_probe" ]]; then
+    printf '%s\n' "optional_probe"
+    return 0
+  fi
+
   if [[ "$RUN_REAL" != "true" ]]; then
     printf '%s\n' "passed"
     return 0
@@ -1962,7 +2041,11 @@ run_verify_changes_workflow_verdict_smoke
 
 if [[ "$RUN_REAL" == "true" ]]; then
   run_runtime_probes
-  run_actual_matrix
+  if [[ "${RUNTIME_PROFILE:-required_runtime}" == "optional_probe" ]]; then
+    warn "skipping actual runtime matrix for optional_probe profile"
+  else
+    run_actual_matrix
+  fi
 fi
 
 report_failures_and_exit

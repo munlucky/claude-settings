@@ -281,8 +281,20 @@ function hasCompletionClaim(qaText, scorecardText, handoffText) {
 }
 
 function textHasDeferredTerm(text) {
-  const lowered = text.toLowerCase();
-  return DEFERRED_TERMS.some((term) => lowered.includes(term));
+  return normalize(text).split('\n').some((line) => {
+    const lowered = line.toLowerCase();
+    if (!DEFERRED_TERMS.some((term) => lowered.includes(term))) {
+      return false;
+    }
+    if (/no\s+unapproved\b.*\bdefer/i.test(line)
+      || /(?:no|none|not|without)\s+(?:pending\s+)?(?:unapproved\s+)?(?:defer|deferred|alternative|workaround|residual risk)/i.test(line)) {
+      return false;
+    }
+    if (/deferred verification/i.test(line) && /(?:not_applicable_clean_finish|no repeated failure|rerun only if code changes again|none)/i.test(text)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function parseCriticalScenarios(text) {

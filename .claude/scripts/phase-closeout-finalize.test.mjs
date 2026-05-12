@@ -6,6 +6,13 @@ import test from 'node:test';
 
 import { currentIndexVerdictArtifacts, finalizePhaseCloseout, recoveredBlockerFingerprint } from './phase-closeout-finalize.mjs';
 import { readCurrentArtifacts, sha256RawBytes } from './lib/current-artifacts-state.mjs';
+import {
+  patchAttemptManifestChildIdentity,
+  patchAttemptManifestExit,
+  readAttemptManifest,
+  validateAttemptManifest,
+  writeAttemptManifestIntent,
+} from './lib/phase-attempt-manifest.mjs';
 import { dedupePaths, resolveGlobFiles, safeRemove } from './lib/windows-safe-files.mjs';
 
 function writeOpenBlockerSidecar(executionRoot) {
@@ -173,6 +180,56 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
     assert.equal(current.commitToken, result.closeoutCommitToken);
     assert.equal(current.manifestHash, sha256RawBytes(current.manifestPath));
     assert.equal(current.artifacts.some((entry) => entry.relativePath === '.claude/verification-verdict-phase01-final.json'), true);
+  });
+});
+
+test('finalize writes attempt manifest finalizer seal before status promotion', async () => {
+  await withFixture(async (fixture) => {
+    const intent = writeAttemptManifestIntent({
+      executionRoot: fixture.executionRoot,
+      phaseNumber: 1,
+      phaseSlug: '01-smoke',
+      attemptId: 'attempt-phase-01-a',
+      runnerStartedAt: '2026-05-10T11:58:00Z',
+      promptHash: 'prompt-hash',
+      commandHash: 'command-hash',
+      runnerLogPath: '.claude/logs/agent-loop/phase-1.log',
+    });
+    patchAttemptManifestChildIdentity({
+      manifestPath: intent.manifestPath,
+      childPid: 12345,
+      childProcessStartTime: '2026-05-10T11:58:01Z',
+    });
+    patchAttemptManifestExit({
+      manifestPath: intent.manifestPath,
+      runnerFinishedAt: '2026-05-10T11:59:00Z',
+      runnerExitCode: 0,
+    });
+
+    assert.equal(validateAttemptManifest(intent.manifestPath, { requireFinalizerSeal: true }).reason, 'incomplete_attempt_manifest');
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-seal',
+    });
+
+    assert.equal(result.attemptManifestSeal.sealed, true);
+    assert.equal(result.attemptManifestSeal.manifestPath, path.relative(fixture.root, intent.manifestPath).replace(/\\/g, '/'));
+    const manifest = readAttemptManifest(intent.manifestPath).manifest;
+    assert.equal(manifest.completionTransactionId, 'completion-phase01-seal');
+    assert.equal(manifest.finalizerTransactionId, 'phase01-seal');
+    assert.equal(manifest.verificationVerdictPath, '.claude/verification-verdict-phase01-final.json');
+    assert.equal(manifest.completionGateVerdict.status, 'passed');
+    assert.equal(validateAttemptManifest(intent.manifestPath, { requireFinalizerSeal: true }).ok, true);
+    const statusText = fs.readFileSync(fixture.statusFile, 'utf8');
+    assert.match(statusText, /status: completed/);
   });
 });
 

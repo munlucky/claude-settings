@@ -123,7 +123,14 @@ function withLatestDispatchLifecycle(payload = {}, {
   patch = {},
 } = {}) {
   const status = patch.status || payload.status || 'prepared';
-  const attemptId = patch.attemptId || patch.runLeaseId || payload.attemptId || payload.runLeaseId || runtimeState.runLeaseId || '';
+  const attemptId = patch.attemptId
+    || patch.runLeaseId
+    || payload.attemptId
+    || payload.runLeaseId
+    || payload.phaseRunLease?.attemptId
+    || payload.phaseRunLease?.runLeaseId
+    || runtimeState.runLeaseId
+    || `dispatch-${String(lifecycleEvent || 'lifecycle').replace(/[^a-z0-9_-]/gi, '-')}`;
   assertLatestDispatchStatus(status, lifecycleEvent);
   return {
     ...payload,
@@ -890,7 +897,12 @@ function recordLatestDispatchLifecycle({ lifecycleEvent, dispatchStage, patch = 
     status: next.status,
     completionStatus: next.completionStatus,
     lifecycleEvent: next.lifecycleEvent,
-    attemptId: next.attemptId || next.runLeaseId || runtimeState.runLeaseId,
+    attemptId: next.attemptId
+      || next.runLeaseId
+      || next.phaseRunLease?.attemptId
+      || next.phaseRunLease?.runLeaseId
+      || runtimeState.runLeaseId
+      || `dispatch-${String(next.lifecycleEvent || 'lifecycle').replace(/[^a-z0-9_-]/gi, '-')}`,
     timestamp: next.lastLifecycleEventAt,
     pidNamespace: next.childPid || next.dispatcherPid ? 'node-parent' : undefined,
     payloadPatch: next,

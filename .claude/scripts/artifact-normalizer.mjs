@@ -200,7 +200,16 @@ function parseScenarioRow(line) {
 
 export function scenarioEvidencePassed(scenarioId, evidenceText) {
   const normalizedId = normalizeWhitespace(scenarioId).toLowerCase();
-  return normalizeLineEndings(evidenceText).split('\n').some((line) => {
+  const normalizedText = normalizeLineEndings(evidenceText);
+  const structuredEvidencePattern = new RegExp(
+    `"id"\\s*:\\s*"${normalizedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[\\s\\S]{0,400}?"status"\\s*:\\s*"(?:pass|passed|done|verified)"[\\s\\S]{0,400}?"evidencePath"\\s*:\\s*"[^"]+"`,
+    'i',
+  );
+  if (structuredEvidencePattern.test(normalizedText)) {
+    return true;
+  }
+
+  return normalizedText.split('\n').some((line) => {
     const lowered = line.toLowerCase();
     if (!lowered.includes(normalizedId)) {
       return false;

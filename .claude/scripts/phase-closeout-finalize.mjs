@@ -12,6 +12,7 @@ import { resolveGitTreeFingerprint } from './verification-verdict-state.mjs';
 import { appendCloseoutDiagnostic, buildCloseoutDiagnosticEvent } from './lib/closeout-diagnostics.mjs';
 import { evaluateCloseoutInvariant } from './lib/harness-state-invariants.mjs';
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
+import { patchAttemptManifestFinalizerSeal, readAttemptManifest } from './lib/phase-attempt-manifest.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
 import { parsePhaseStatusDocument, readText, resolvePath } from './lib/phase-closeout-parsers.mjs';
 import {
@@ -844,6 +845,93 @@ function writeOrphanedPrepareArchiveDiagnostic({ root, workflowDir, supersededAr
 
 function canonicalVerdictPathForPhase(root, phaseNumber) {
   return path.join(root, '.claude', `verification-verdict-phase${String(phaseNumber).padStart(2, '0')}-final.json`);
+}
+
+function findAttemptManifestPathForFinalize({ root, phase = {}, executionRoot = '' }) {
+  const explicit = phase.attemptManifestPath
+    || phase.attemptManifest
+    || phase.canonicalAttemptManifest
+    || phase.manifestPath
+    || '';
+  if (explicit) {
+    return resolvePath(explicit, root);
+  }
+  const start = resolvePath(executionRoot, root);
+  if (!start || !fs.existsSync(start)) {
+    return '';
+  }
+  const stack = [start];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const candidate = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(candidate);
+      } else if (entry.isFile() && entry.name === 'attempt-manifest.json') {
+        return candidate;
+      }
+    }
+  }
+  return '';
+}
+
+function sealAttemptManifestForFinalize({
+  root,
+  phase,
+  phaseNumber,
+  executionRoot,
+  completionTransactionId,
+  finalizerTransactionId,
+  verificationVerdictPath,
+  dryRun,
+  plannedWrites,
+}) {
+  const manifestPath = findAttemptManifestPathForFinalize({ root, phase, executionRoot });
+  if (!manifestPath || !fs.existsSync(manifestPath)) {
+    return { sealed: false, reason: 'attempt_manifest_not_found', manifestPath: '' };
+  }
+  const readResult = readAttemptManifest(manifestPath);
+  const manifest = readResult.manifest || {};
+  if (manifest.manifestRequired !== true && Number(manifest.schemaVersion) < 1) {
+    return { sealed: false, reason: 'attempt_manifest_not_enforced', manifestPath: rel(root, manifestPath) };
+  }
+  const alreadySealed = [
+    'completionTransactionId',
+    'finalizerTransactionId',
+    'verificationVerdictPath',
+    'completionGateVerdict',
+  ].every((field) => manifest[field] !== undefined && manifest[field] !== null && manifest[field] !== '');
+  if (alreadySealed) {
+    return {
+      sealed: true,
+      reason: 'already_sealed',
+      manifestPath: rel(root, manifestPath),
+      completionGateVerdict: manifest.completionGateVerdict,
+    };
+  }
+  const completionGateVerdict = {
+    status: 'passed',
+    phaseNumber,
+    completionTransactionId,
+    finalizerTransactionId,
+    verificationVerdictPath: rel(root, verificationVerdictPath),
+  };
+  plannedWrites.push({ path: manifestPath, kind: 'attempt-manifest-finalizer-seal' });
+  if (!dryRun) {
+    patchAttemptManifestFinalizerSeal({
+      manifestPath,
+      completionTransactionId,
+      finalizerTransactionId,
+      verificationVerdictPath: rel(root, verificationVerdictPath),
+      completionGateVerdict,
+    });
+  }
+  return {
+    sealed: true,
+    reason: 'sealed',
+    manifestPath: rel(root, manifestPath),
+    completionGateVerdict,
+  };
 }
 
 export function currentIndexVerdictArtifacts({ root, phases = [], phaseNumber, canonicalVerdictPath, commitToken, attemptLocalVerdict = null }) {
@@ -1913,6 +2001,17 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     dryRun,
     plannedWrites,
   });
+  const attemptManifestSeal = sealAttemptManifestForFinalize({
+    root,
+    phase,
+    phaseNumber,
+    executionRoot: phaseExecutionRoot,
+    completionTransactionId: `completion-${commitToken}`,
+    finalizerTransactionId: commitToken,
+    verificationVerdictPath: canonicalVerdictPath,
+    dryRun,
+    plannedWrites,
+  });
   rewritePhaseStatus({ statusPath, statusRoot: statusDocument.root, phases: statusDocument.phases, phaseNumber, phase, now, allActionableComplete: complete, dryRun, plannedWrites, normalizedRunVerdict });
   const summaryResult = syncFinalOutcomeSummary({
     summaryPath,
@@ -2063,6 +2162,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     stateReconciled: stateResult.stateReconciled,
     reconciledStateFiles: stateResult.reconciledStateFiles.map((filePath) => rel(root, filePath)),
     canonicalVerdictPath: rel(root, canonicalVerdictPath),
+    attemptManifestSeal,
     attemptLocalVerdict,
     closeoutCommitToken: commitToken,
     closeoutPrepRoot: rel(root, prepRoot),
