@@ -136,6 +136,34 @@ test('phase closeout fails when completed phase WORKSETS still has in-progress a
   });
 });
 
+test('phase closeout fails when completed phase has zero attempts', () => {
+  withFixture({ zeroAttemptCompletion: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'missing-phase-attempt-evidence'));
+  });
+});
+
+test('phase closeout fails when completed phase attempt metadata is non-terminal', () => {
+  withFixture({ missingTerminalAttemptOutcome: true, missingTerminalTimingStage: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'completed-attempt-outcome-not-terminal'));
+    assert.ok(result.violations.some((violation) => violation.code === 'completed-timing-stage-not-terminal'));
+  });
+});
+
+test('phase closeout fails when completed phase lacks passing conformance evidence', () => {
+  withFixture({ planConformanceEvidence: false }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'plan-conformance-not-passed'));
+  });
+});
+
 test('phase closeout fails with a distinct code when AC verdict is incomplete', () => {
   withFixture({ incompleteAcWorksets: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));

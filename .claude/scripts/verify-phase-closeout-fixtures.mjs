@@ -95,6 +95,10 @@ function writeFixture(root, options = {}) {
     expectedBlockerPassedVerdict: false,
     harnessChangedPaths: [],
     harnessChangeLedger: false,
+    zeroAttemptCompletion: false,
+    missingTerminalAttemptOutcome: false,
+    missingTerminalTimingStage: false,
+    planConformanceEvidence: true,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -181,6 +185,18 @@ function writeFixture(root, options = {}) {
       '    handoff: "docs/implementation/execution/01-feature/HANDOFF.md"',
       '    scorecard: "docs/implementation/execution/01-feature/SCORECARD.md"',
       `    archivedPhaseDoc: "${settings.archived ? archivedPhaseDoc : 'docs/implementation/close/missing.md'}"`,
+      '    attempts:',
+      `      total: ${settings.zeroAttemptCompletion ? 0 : 1}`,
+      `      lastOutcome: ${settings.missingTerminalAttemptOutcome ? 'running' : 'clean_complete'}`,
+      '      lastUpdatedAt: "2026-05-08T11:59:30.000Z"',
+      '    timing:',
+      '      startedAt: "2026-05-08T11:58:00.000Z"',
+      `      lastStage: "${settings.missingTerminalTimingStage ? 'verify' : 'finish/handoff'}"`,
+      '      lastStageAt: "2026-05-08T11:59:30.000Z"',
+      '      wallClockSeconds: 90',
+      '      runnerActiveSeconds: 90',
+      '      workerActiveSeconds: 60',
+      '      completedAt: "2026-05-08T11:59:30.000Z"',
       ...(settings.activeBlockedWorkflowStateWithCompletedPhase ? [
         '  - number: 2',
         '    title: "Phase 02: Blocked verifier phase"',
@@ -381,7 +397,7 @@ function writeFixture(root, options = {}) {
       '- Scope status: complete',
       '',
       '## Plan Conformance Review',
-      '- Source plan conformance command: pass',
+      settings.planConformanceEvidence ? '- Source plan conformance command: pass' : '- Source plan conformance command: pending',
       settings.markdownContradictsStructuredEvidence
         ? '- SCN-01-1: failed - free-form row is stale and must not override structured metadata.'
         : (settings.scenarioEvidence ? '- SCN-01-1: pass - rendered feature is visible.' : '- SCN-01-1: missing evidence.'),
@@ -416,7 +432,7 @@ function writeFixture(root, options = {}) {
       '# Scorecard',
       '',
       '## Objective Checklist',
-      '| OBJ-CONFORM | pass |',
+      settings.planConformanceEvidence ? '| OBJ-CONFORM | pass |' : '| OBJ-CONFORM | pending |',
       '',
       '## Score Summary',
       '- Verdict: done',

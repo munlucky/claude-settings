@@ -35,6 +35,7 @@ import {
   readText,
   resolvePath,
   sectionText,
+  stripQuotes,
 } from './lib/phase-closeout-parsers.mjs';
 import {
   readVerdictForPhase,
@@ -215,6 +216,80 @@ function hasEnvironmentBlockerPayload(statusText) {
     && /^\s+reason:\s*\S+/m.test(text)
     && /^\s+evidencePath:\s*\S+/m.test(text)
     && /^\s+observedAt:\s*\S+/m.test(text);
+}
+
+function parseCompletedPhaseMetadata(statusText, phaseNumber) {
+  const lines = normalize(statusText).split('\n');
+  const startIndex = lines.findIndex((line) => new RegExp(`^\\s*-\\s+number:\\s*${phaseNumber}\\b`).test(line));
+  if (startIndex < 0) {
+    return {
+      attemptsTotal: 0,
+      lastOutcome: '',
+      lastStage: '',
+    };
+  }
+
+  let endIndex = lines.length;
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    if (/^\s*-\s+number:\s*\d+\b/.test(lines[index])) {
+      endIndex = index;
+      break;
+    }
+  }
+
+  let inAttempts = false;
+  let inTiming = false;
+  const metadata = {
+    attemptsTotal: 0,
+    lastOutcome: '',
+    lastStage: '',
+  };
+
+  for (const line of lines.slice(startIndex + 1, endIndex)) {
+    const stripped = line.trim();
+    if (/^\S/.test(line) || /^\s{2}-\s+number:/.test(line)) {
+      inAttempts = false;
+      inTiming = false;
+    }
+    if (/^\s+attempts:\s*$/.test(line)) {
+      inAttempts = true;
+      inTiming = false;
+      continue;
+    }
+    if (/^\s+timing:\s*$/.test(line)) {
+      inTiming = true;
+      inAttempts = false;
+      continue;
+    }
+    if (inAttempts && stripped.startsWith('total:')) {
+      metadata.attemptsTotal = Number.parseInt(stripped.slice('total:'.length).trim().replace(/^"|"$/g, ''), 10) || 0;
+    } else if (inAttempts && stripped.startsWith('lastOutcome:')) {
+      metadata.lastOutcome = stripQuotes(stripped.slice('lastOutcome:'.length));
+    } else if (inTiming && stripped.startsWith('lastStage:')) {
+      metadata.lastStage = stripQuotes(stripped.slice('lastStage:'.length));
+    }
+  }
+
+  return metadata;
+}
+
+function addCompletedMetadataViolations(violations, statusText, phaseNumber) {
+  const metadata = parseCompletedPhaseMetadata(statusText, phaseNumber);
+  if (metadata.attemptsTotal <= 0) {
+    addViolation(violations, 'missing-phase-attempt-evidence', `Completed phase ${phaseNumber} has attempts.total <= 0.`, phaseNumber);
+  }
+  if (!new Set(['completed', 'verified', 'clean_complete']).has(metadata.lastOutcome)) {
+    addViolation(violations, 'completed-attempt-outcome-not-terminal', `Completed phase ${phaseNumber} has non-terminal attempts.lastOutcome '${metadata.lastOutcome || 'missing'}'.`, phaseNumber);
+  }
+  if (!/^(finish|handoff|finish\/handoff)\b/.test(metadata.lastStage)) {
+    addViolation(violations, 'completed-timing-stage-not-terminal', `Completed phase ${phaseNumber} has non-terminal timing.lastStage '${metadata.lastStage || 'missing'}'.`, phaseNumber);
+  }
+}
+
+function planConformanceEvidencePassed(evidenceText) {
+  return /OBJ-CONFORM\s*\|[^|\n]*\|\s*pass\s*\|/i.test(evidenceText)
+    || /Source plan conformance command:\s*pass/i.test(evidenceText)
+    || /Source plan conformance:\s*pass/i.test(evidenceText);
 }
 
 function normalizeCloseoutPath(value) {
@@ -441,6 +516,8 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       continue;
     }
 
+    addCompletedMetadataViolations(violations, statusText, phaseNumber);
+
     const requiredArtifactFields = ['sprintContract', 'qaReport', 'handoff', 'scorecard'];
     const artifactTexts = [];
     for (const field of requiredArtifactFields) {
@@ -450,6 +527,10 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       } else {
         artifactTexts.push(readText(artifactPath));
       }
+    }
+
+    if (!planConformanceEvidencePassed(artifactTexts.join('\n'))) {
+      addViolation(violations, 'plan-conformance-not-passed', `Completed phase ${phaseNumber} is missing passing source plan conformance evidence.`, phaseNumber);
     }
 
     const archivedPath = resolvePath(phase.archivedPhaseDoc || '');

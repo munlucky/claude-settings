@@ -727,6 +727,23 @@ function ensureCompletedAttemptMetadata(statusFile, phaseNum, timestamp) {
   return true;
 }
 
+function blockCompletedPhaseWithMissingAttemptEvidence(statusFile, phaseNum, timestamp) {
+  updatePhaseState({
+    statusFile,
+    phaseNum: String(phaseNum),
+    newStatus: 'blocked:missing-phase-attempt-evidence',
+    timestamp,
+    lastOutcome: 'blocked:missing-phase-attempt-evidence',
+    incrementAttempt: 'false',
+    activePhaseDoc: '',
+    sprintContractPath: '',
+    qaReportPath: '',
+    handoffPath: '',
+    scorecardPath: '',
+  });
+  return true;
+}
+
 function normalizeRebuiltRootState(statusFile, counts, state) {
   if (!fs.existsSync(statusFile)) {
     return false;
@@ -2747,15 +2764,18 @@ phases:
 ## Resume Trigger
 - Stop reason: clean_finish
 `, 'utf8');
+    fs.writeFileSync(path.join(executionDir, 'SPRINT_CONTRACT.md'), `# Sprint
 
-    ensureCompletedAttemptMetadata(statusFile, '1', '2026-05-05T00:00:00.000Z');
+## Demo-first MVP Gate
+- Applies: no
+`, 'utf8');
+
     const rebuild = rebuildPhaseStatus(statusFile, planDir);
     if (!rebuild.rebuilt || !rebuild.finished) {
       throw new Error('rebuild command did not mark the fixture as finished');
     }
 
     const metadata = readRootStatusMetadata(statusFile);
-    const summary = getPhaseSummary(statusFile, '1');
     if (metadata.activeCurrentStage === 'ready/isolate') {
       throw new Error('finished root stage was not normalized');
     }
@@ -2765,18 +2785,68 @@ phases:
     if (metadata.normalizedRunVerdict !== 'success_with_warning') {
       throw new Error('normalized run verdict was not rebuilt');
     }
-    if (summary.attemptTotal !== 1) {
-      throw new Error('zero-attempt completed phase was not reconciled');
+    const blockedSummary = getPhaseSummary(statusFile, '1');
+    if (blockedSummary.status !== 'blocked:missing-phase-attempt-evidence') {
+      throw new Error(`zero-attempt completed phase was not blocked: ${blockedSummary.status}`);
     }
-    if (!summary.lastUpdatedAt || !summary.timing?.completedAt) {
-      throw new Error('attempt timestamp was not normalized');
+    if (blockedSummary.lastOutcome !== 'blocked:missing-phase-attempt-evidence') {
+      throw new Error(`zero-attempt completed phase missing explicit blocker outcome: ${blockedSummary.lastOutcome}`);
     }
-    if (summary.lastUpdatedAt !== summary.timing?.completedAt) {
-      throw new Error(`attempt and timing timestamps diverged: ${summary.lastUpdatedAt} vs ${summary.timing?.completedAt}`);
+    if (blockedSummary.attemptTotal !== 0) {
+      throw new Error(`zero-attempt completed phase attempt count was mutated: ${blockedSummary.attemptTotal}`);
     }
     if (!String(metadata.stopReasonExplanation || '').includes('delegated terminal exit detail')) {
       throw new Error('delegated exit detail was not preserved');
     }
+
+    fs.writeFileSync(path.join(executionDir, 'WORKSETS.yaml'), `schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Fixture work"
+    status: completed
+    taskStatus: completed
+    acceptanceCriterionId: "AC-001"
+    acVerdict: passed
+    verificationEvidence:
+      - "PASS: fixture"
+    ownedPaths: []
+    verificationCommands:
+      - "fixture"
+    evidence:
+      - "PASS: fixture"
+    completedAt: "2026-05-05T00:00:00.000Z"
+worksets: []
+`, 'utf8');
+    const cleanArtifactStatusFile = path.join(tempDir, 'clean-artifact-status.yaml');
+    fs.writeFileSync(cleanArtifactStatusFile, `schemaVersion: 1
+activeExecutionStatus: running
+activeCurrentStage: ready/isolate
+activePhaseNumber: 1
+phases:
+  - number: 1
+    title: "Clean Artifact"
+    status: in_progress
+    planConfirmed: true
+    attempts:
+      total: 1
+      lastOutcome: verified
+      lastUpdatedAt: "2026-05-05T00:00:00.000Z"
+    timing:
+      startedAt: "2026-05-05T00:00:00.000Z"
+      lastStage: "verify"
+      lastStageAt: "2026-05-05T00:00:00.000Z"
+    sprintContract: "${path.join(executionDir, 'SPRINT_CONTRACT.md')}"
+    qaReport: "${path.join(executionDir, 'QA_REPORT.md')}"
+    handoff: "${path.join(executionDir, 'HANDOFF.md')}"
+    scorecard: "${path.join(executionDir, 'SCORECARD.md')}"
+`, 'utf8');
+    reconcileCompletedPhases(cleanArtifactStatusFile);
+    const cleanArtifactSummary = getPhaseSummary(cleanArtifactStatusFile, '1');
+    if (cleanArtifactSummary.status === 'completed') {
+      throw new Error('reconciler promoted clean artifacts to completed without finalizer');
+    }
+
     if (normalizeRequiredChecksMissing(['none']).length !== 0) {
       throw new Error('legacy placeholder missing checks were not normalized');
     }
@@ -2849,6 +2919,64 @@ phases:
       throw new Error('bounded timing update emitted a runnerActiveSeconds invariant warning');
     }
 
+    const timingEqualStatusFile = path.join(tempDir, 'timing-equal-status.yaml');
+    fs.writeFileSync(timingEqualStatusFile, `schemaVersion: 1
+activeExecutionStatus: running
+activeCurrentStage: ready/isolate
+activePhaseNumber: 1
+phases:
+  - number: 1
+    title: "Timing Equal"
+    status: in_progress
+    planConfirmed: true
+    attempts:
+      total: 1
+      lastOutcome: running
+      lastUpdatedAt: "2026-05-05T00:00:10Z"
+    timing:
+      startedAt: "2026-05-05T00:00:00Z"
+      lastStage: "ready/isolate"
+      lastStageAt: "2026-05-05T00:00:10Z"
+      wallClockSeconds: 10
+      runnerActiveSeconds: 10
+      workerActiveSeconds: 0
+`, 'utf8');
+    updatePhaseState({
+      statusFile: timingEqualStatusFile,
+      phaseNum: '1',
+      newStatus: 'in_progress',
+      timestamp: '2026-05-05T00:00:10Z',
+      lastOutcome: 'running',
+      incrementAttempt: 'false',
+      activePhaseDoc: '',
+      sprintContractPath: '',
+      qaReportPath: '',
+      handoffPath: '',
+      scorecardPath: '',
+    });
+    if (fs.readFileSync(timingEqualStatusFile, 'utf8').includes('runnerActiveSeconds_gt_wallClockSeconds')) {
+      throw new Error('equal runnerActiveSeconds emitted a timing invariant warning');
+    }
+
+    const timingGreaterStatusFile = path.join(tempDir, 'timing-greater-status.yaml');
+    fs.writeFileSync(timingGreaterStatusFile, fs.readFileSync(timingEqualStatusFile, 'utf8').replace('runnerActiveSeconds: 10', 'runnerActiveSeconds: 11'));
+    updatePhaseState({
+      statusFile: timingGreaterStatusFile,
+      phaseNum: '1',
+      newStatus: 'in_progress',
+      timestamp: '2026-05-05T00:00:10Z',
+      lastOutcome: 'running',
+      incrementAttempt: 'false',
+      activePhaseDoc: '',
+      sprintContractPath: '',
+      qaReportPath: '',
+      handoffPath: '',
+      scorecardPath: '',
+    });
+    if (!fs.readFileSync(timingGreaterStatusFile, 'utf8').includes('runnerActiveSeconds_gt_wallClockSeconds')) {
+      throw new Error('greater runnerActiveSeconds did not emit a timing invariant warning');
+    }
+
     const staleStatusFile = path.join(tempDir, 'stale-root-status.yaml');
     fs.writeFileSync(staleStatusFile, `schemaVersion: "1.0"
 normalizedRunVerdict: checkpoint_required
@@ -2891,7 +3019,11 @@ function reconcileCompletedPhases(statusFile) {
     const attemptTotal = Number.parseInt(String(block.attemptTotal ?? '0'), 10) || 0;
     if (block.status === 'completed') {
       if (attemptTotal === 0) {
-        ensureCompletedAttemptMetadata(statusFile, String(block.number), block.timing?.completedAt || block.lastUpdatedAt || nowIsoSeconds());
+        blockCompletedPhaseWithMissingAttemptEvidence(
+          statusFile,
+          String(block.number),
+          block.timing?.completedAt || block.lastUpdatedAt || nowIsoSeconds(),
+        );
       }
       continue;
     }
@@ -2921,26 +3053,10 @@ function reconcileCompletedPhases(statusFile) {
       continue;
     }
 
-    updatePhaseState({
-      statusFile,
-      phaseNum: String(block.number),
-      newStatus: 'completed',
-      timestamp: artifactState.timestamp,
-      lastOutcome: 'completed',
-      incrementAttempt: 'false',
-      activePhaseDoc: '',
-      sprintContractPath: block.sprintContract,
-      qaReportPath: block.qaReport,
-      handoffPath: block.handoff,
-      scorecardPath: block.scorecard,
-    });
-
-    ensureCompletedAttemptMetadata(statusFile, String(block.number), artifactState.timestamp);
-
     reconciled.push({
       phaseNum: String(block.number),
       fromStatus: block.status || '',
-      reason: 'clean-finish-artifacts',
+      reason: 'clean-finish-artifacts-finalizer-required',
       timestamp: artifactState.timestamp,
     });
   }
