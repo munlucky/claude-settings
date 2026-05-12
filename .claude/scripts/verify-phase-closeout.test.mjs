@@ -15,6 +15,46 @@ import {
 import { validateEvaluationTriggerPipelineEvidence } from './workflow-enforcement.mjs';
 import { config, eventFixture, withFixture } from './verify-phase-closeout-fixtures.mjs';
 
+function writeSidecarFixture(root, { status = 'open', manifestOnly = false } = {}) {
+  const executionDir = path.join(root, 'docs/implementation/execution/01-feature');
+  const blockerEvidencePath = path.join(executionDir, 'BLOCKER_EVIDENCE.jsonl');
+  const attemptLedgerPath = path.join(executionDir, 'ATTEMPT_LEDGER.jsonl');
+  const projectionManifestPath = path.join(executionDir, 'projection-manifest.json');
+  if (!manifestOnly) {
+    fs.writeFileSync(blockerEvidencePath, `${JSON.stringify({
+      id: 'blocker-spawn-eperm',
+      status,
+      phaseNumber: 1,
+      attemptId: 'attempt-phase-01-a',
+      transactionId: 'txn-phase-01-a',
+      blockerClass: 'verification_environment_unavailable',
+      blockerCode: 'spawn_eperm',
+      command: 'node --test .claude/scripts/verify-phase-closeout.test.mjs',
+      stderr: 'Error: spawn EPERM',
+      detail: 'node --test spawn EPERM blocked verifier execution',
+      createdAt: '2026-05-08T11:59:00Z',
+      updatedAt: '2026-05-08T11:59:00Z',
+    })}\n`, 'utf8');
+    fs.writeFileSync(attemptLedgerPath, `${JSON.stringify({
+      attemptId: 'attempt-phase-01-a',
+      transactionId: 'txn-phase-01-a',
+      phaseNumber: 1,
+      status: 'blocked',
+      blockerEvidenceId: 'blocker-spawn-eperm',
+      createdAt: '2026-05-08T11:59:00Z',
+      updatedAt: '2026-05-08T11:59:00Z',
+    })}\n`, 'utf8');
+  }
+  fs.writeFileSync(projectionManifestPath, `${JSON.stringify({
+    schemaVersion: 'terminal-blocker-projection-manifest-v1',
+    transactionId: 'txn-phase-01-a',
+    attemptId: 'attempt-phase-01-a',
+    phaseNumber: 1,
+    blockerEvidenceIds: ['blocker-spawn-eperm'],
+    attemptLedgerKeys: ['attempt-phase-01-a:txn-phase-01-a'],
+  }, null, 2)}\n`, 'utf8');
+}
+
 test('phase closeout fails when a completed phase is unchecked in the master checklist', () => {
   withFixture({ checklistChecked: false }, (root) => {
     const result = evaluatePhaseCloseout(config(root));
@@ -186,6 +226,58 @@ test('phase closeout fails with a distinct code when AC verdict failed', () => {
 
 test('phase closeout keeps legacy completed WORKSETS compatible', () => {
   withFixture({ legacyCompletedWorksets: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase closeout fails completed phase with canonical open sidecar blocker', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writeSidecarFixture(root, { status: 'open' });
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'sidecar-open-blocker'));
+  });
+});
+
+test('phase closeout allows legacy verifier only when no sidecar or manifest exists', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writeSidecarFixture(root, { manifestOnly: true });
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'manifest-sidecar-missing'));
+  });
+});
+
+test('phase closeout reports manifest id mismatch in sidecar canonical mode', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writeSidecarFixture(root, { status: 'resolved' });
+    fs.writeFileSync(
+      path.join(root, 'docs/implementation/execution/01-feature/projection-manifest.json'),
+      `${JSON.stringify({
+        blockerEvidenceIds: ['missing-blocker'],
+        attemptLedgerKeys: ['attempt-phase-01-a:txn-phase-01-a'],
+      }, null, 2)}\n`,
+      'utf8',
+    );
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'sidecar-manifest-mismatch'));
+  });
+});
+
+test('phase closeout accepts resolved historical sidecar blocker', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writeSidecarFixture(root, { status: 'resolved' });
+
     const result = evaluatePhaseCloseout(config(root));
 
     assert.equal(result.allowed, true);

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +43,7 @@ import {
   verdictInternallyConsistent,
   verdictPassed,
 } from './lib/phase-closeout-verdict.mjs';
+import { readBlockerSidecarState } from './lib/blocker-sidecar-state.mjs';
 import {
   comparePhaseReplayToReadModel,
   defaultPhaseEventLedgerPath,
@@ -206,6 +208,82 @@ function readJsonIfExists(filePath) {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
     return null;
+  }
+}
+
+function sidecarPathsForExecutionDir(executionDir) {
+  return {
+    blockerEvidencePath: path.join(executionDir, 'BLOCKER_EVIDENCE.jsonl'),
+    attemptLedgerPath: path.join(executionDir, 'ATTEMPT_LEDGER.jsonl'),
+    projectionManifestPath: path.join(executionDir, 'projection-manifest.json'),
+  };
+}
+
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function validateSidecarManifest(paths, sidecarState) {
+  if (!sidecarState || sidecarState.mode !== 'sidecar_canonical') {
+    return [];
+  }
+  const diagnostics = [];
+  let manifest = null;
+  try {
+    manifest = JSON.parse(fs.readFileSync(paths.projectionManifestPath, 'utf8'));
+  } catch (error) {
+    return [{ type: 'invalid_manifest_json', message: error.message }];
+  }
+  const blockerIds = new Set((sidecarState.blockerEvidence || []).map((record) => record.id).filter(Boolean));
+  const attemptKeys = new Set((sidecarState.attemptLedger || []).map((record) => `${record.attemptId}:${record.transactionId}`));
+  for (const id of Array.isArray(manifest.blockerEvidenceIds) ? manifest.blockerEvidenceIds : []) {
+    if (!blockerIds.has(id)) {
+      diagnostics.push({ type: 'manifest_blocker_record_missing', id });
+    }
+  }
+  for (const key of Array.isArray(manifest.attemptLedgerKeys) ? manifest.attemptLedgerKeys : []) {
+    if (!attemptKeys.has(key)) {
+      diagnostics.push({ type: 'manifest_attempt_record_missing', key });
+    }
+  }
+  for (const entry of Array.isArray(manifest.files) ? manifest.files : []) {
+    const filePath = resolvePath(entry?.path || '');
+    const expectedHash = entry?.sha256 || '';
+    if (!filePath || !expectedHash) {
+      continue;
+    }
+    if (!fs.existsSync(filePath)) {
+      diagnostics.push({ type: 'manifest_file_missing', filePath });
+      continue;
+    }
+    const actualHash = sha256File(filePath);
+    if (actualHash !== expectedHash) {
+      diagnostics.push({ type: 'manifest_file_hash_mismatch', filePath, expectedHash, actualHash });
+    }
+  }
+  return diagnostics;
+}
+
+function addSidecarCloseoutViolations(violations, sidecarState, phaseNumber, manifestDiagnostics = []) {
+  if (!sidecarState || sidecarState.mode === 'legacy_verifier') {
+    return;
+  }
+  if (sidecarState.mode === 'manifest_sidecar_missing') {
+    addViolation(violations, 'manifest-sidecar-missing', `Completed phase ${phaseNumber} has projection manifest without required sidecar records.`, phaseNumber);
+  } else if (sidecarState.mode === 'incomplete_transaction') {
+    addViolation(violations, 'incomplete-transaction', `Completed phase ${phaseNumber} has sidecar append without projection manifest commit marker.`, phaseNumber);
+  } else if (sidecarState.mode !== 'sidecar_canonical') {
+    addViolation(violations, 'sidecar-canonical-mode-invalid', `Completed phase ${phaseNumber} has invalid sidecar mode ${sidecarState.mode}.`, phaseNumber);
+  }
+  const diagnostics = [...(sidecarState.diagnostics || []), ...manifestDiagnostics];
+  if (diagnostics.length > 0) {
+    addViolation(violations, 'sidecar-manifest-mismatch', `Completed phase ${phaseNumber} has sidecar manifest diagnostics: ${JSON.stringify(diagnostics)}`, phaseNumber);
+  }
+  if ((sidecarState.latestBlockers?.active || []).length > 0) {
+    addViolation(violations, 'sidecar-open-blocker', `Completed phase ${phaseNumber} has open/regressed sidecar blocker evidence.`, phaseNumber);
+  }
+  if ((sidecarState.latestBlockers?.unknown || []).length > 0) {
+    addViolation(violations, 'sidecar-unknown-blocker-status', `Completed phase ${phaseNumber} has sidecar blocker evidence with unknown status.`, phaseNumber);
   }
 }
 
@@ -541,6 +619,17 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     const completedWorksets = evaluateCompletedWorksets(phase.qaReport ? path.dirname(resolvePath(phase.qaReport)) : '');
     if (!completedWorksets.ok) {
       addViolation(violations, completedWorksets.reason, `Completed phase ${phaseNumber} has incomplete WORKSETS: ${completedWorksets.detail}`, phaseNumber);
+    }
+    const phaseExecutionDir = phase.qaReport ? path.dirname(resolvePath(phase.qaReport)) : '';
+    if (phaseExecutionDir) {
+      const sidecarPaths = sidecarPathsForExecutionDir(phaseExecutionDir);
+      const sidecarState = readBlockerSidecarState(sidecarPaths);
+      addSidecarCloseoutViolations(
+        violations,
+        sidecarState,
+        phaseNumber,
+        validateSidecarManifest(sidecarPaths, sidecarState),
+      );
     }
 
     const phaseDocText = archivedPath && fs.existsSync(archivedPath) ? readText(archivedPath) : '';

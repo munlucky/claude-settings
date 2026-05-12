@@ -51,6 +51,7 @@ function canonicalInput(overrides = {}) {
       finalOutcomeSchemaVersion: '1.0',
       projectionHash,
     },
+    sidecarState: overrides.sidecarState || null,
   };
 }
 
@@ -101,6 +102,48 @@ test('canonical final projection passes with schema markers, counters, workflow 
   const input = canonicalInput();
 
   assert.equal(isFinalCompleteProjection(input), true);
+  assert.equal(isCanonicalFinalCompleteProjection(input), true);
+});
+
+test('canonical final projection rejects active sidecar blockers and partial publish modes', () => {
+  const input = canonicalInput({
+    sidecarState: {
+      mode: 'sidecar_canonical',
+      diagnostics: [],
+      latestBlockers: {
+        active: [{ id: 'blocker-spawn-eperm', status: 'open' }],
+        unknown: [],
+      },
+    },
+  });
+
+  assert.equal(canonicalProjectionIssues(input).includes('sidecar_open_blocker'), true);
+  assert.equal(canonicalProjectionIssues(input).includes('final_projection_incomplete'), true);
+
+  const partial = canonicalInput({
+    sidecarState: {
+      mode: 'incomplete_transaction',
+      diagnostics: [],
+      latestBlockers: { active: [], unknown: [] },
+    },
+  });
+  assert.equal(canonicalProjectionIssues(partial).includes('sidecar_incomplete_transaction'), true);
+});
+
+test('canonical final projection accepts resolved historical sidecar blockers', () => {
+  const input = canonicalInput({
+    sidecarState: {
+      mode: 'sidecar_canonical',
+      diagnostics: [],
+      latestBlockers: {
+        active: [],
+        historical: [{ id: 'blocker-spawn-eperm', status: 'resolved' }],
+        unknown: [],
+      },
+    },
+  });
+
+  assert.equal(canonicalProjectionIssues(input).includes('sidecar_open_blocker'), false);
   assert.equal(isCanonicalFinalCompleteProjection(input), true);
 });
 

@@ -23,7 +23,9 @@ import {
   isCanonicalFinalCompleteProjection,
   normalizeFinalRunVerdict,
   phaseProjectionCounts,
+  sidecarProjectionIssues,
 } from './lib/final-outcome-projection.mjs';
+import { readBlockerSidecarState } from './lib/blocker-sidecar-state.mjs';
 import {
   parsePhaseSummaryProjection,
   renderPhaseSummaryProjection,
@@ -146,6 +148,77 @@ function timestamp(now = '') {
 
 function rel(root, filePath) {
   return path.relative(root, filePath).replace(/\\/g, '/') || '.';
+}
+
+function sidecarPathsForPhaseExecutionDir(executionDir) {
+  return {
+    blockerEvidencePath: path.join(executionDir, 'BLOCKER_EVIDENCE.jsonl'),
+    attemptLedgerPath: path.join(executionDir, 'ATTEMPT_LEDGER.jsonl'),
+    projectionManifestPath: path.join(executionDir, 'projection-manifest.json'),
+  };
+}
+
+function phaseExecutionDirForSidecar({ root, phase, executionRoot }) {
+  const artifactPath = phase.qaReport || phase.sprintContract || phase.scorecard || phase.handoff || '';
+  if (artifactPath) {
+    return path.dirname(resolvePath(artifactPath, root));
+  }
+  return executionRoot;
+}
+
+function loadFinalizeSidecarState({ root, phase, executionRoot }) {
+  const sidecarPaths = sidecarPathsForPhaseExecutionDir(
+    phaseExecutionDirForSidecar({ root, phase, executionRoot }),
+  );
+  const sidecarState = readBlockerSidecarState(sidecarPaths);
+  return {
+    ...sidecarState,
+    diagnostics: [
+      ...(sidecarState.diagnostics || []),
+      ...validateFinalizeSidecarManifest({ root, sidecarPaths, sidecarState }),
+    ],
+  };
+}
+
+function validateFinalizeSidecarManifest({ root, sidecarPaths, sidecarState }) {
+  if (!sidecarState || sidecarState.mode !== 'sidecar_canonical') {
+    return [];
+  }
+  const diagnostics = [];
+  let manifest = null;
+  try {
+    manifest = JSON.parse(fs.readFileSync(sidecarPaths.projectionManifestPath, 'utf8'));
+  } catch (error) {
+    return [{ type: 'invalid_manifest_json', message: error.message }];
+  }
+  const blockerIds = new Set((sidecarState.blockerEvidence || []).map((record) => record.id).filter(Boolean));
+  const attemptKeys = new Set((sidecarState.attemptLedger || []).map((record) => `${record.attemptId}:${record.transactionId}`));
+  for (const id of Array.isArray(manifest.blockerEvidenceIds) ? manifest.blockerEvidenceIds : []) {
+    if (!blockerIds.has(id)) {
+      diagnostics.push({ type: 'manifest_blocker_record_missing', id });
+    }
+  }
+  for (const key of Array.isArray(manifest.attemptLedgerKeys) ? manifest.attemptLedgerKeys : []) {
+    if (!attemptKeys.has(key)) {
+      diagnostics.push({ type: 'manifest_attempt_record_missing', key });
+    }
+  }
+  for (const entry of Array.isArray(manifest.files) ? manifest.files : []) {
+    const filePath = resolvePath(entry?.path || '', root);
+    const expectedHash = entry?.sha256 || '';
+    if (!filePath || !expectedHash) {
+      continue;
+    }
+    if (!fs.existsSync(filePath)) {
+      diagnostics.push({ type: 'manifest_file_missing', filePath });
+      continue;
+    }
+    const actualHash = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+    if (actualHash !== expectedHash) {
+      diagnostics.push({ type: 'manifest_file_hash_mismatch', filePath, expectedHash, actualHash });
+    }
+  }
+  return diagnostics;
 }
 
 function finalCanonicalRunVerdict({ phase = {}, historicalWarnings = [] } = {}) {
@@ -1686,6 +1759,76 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   const statusText = readText(statusPath);
   const statusDocument = statusText ? parsePhaseStatusDocument(statusText) : { root: {}, phases: [] };
   const phase = statusDocument.phases.find((entry) => Number(entry.number) === phaseNumber) || { number: phaseNumber };
+  const sidecarState = loadFinalizeSidecarState({ root, phase, executionRoot: phaseExecutionRoot });
+  const sidecarIssues = sidecarProjectionIssues(sidecarState);
+  if (sidecarIssues.length > 0) {
+    const reason = sidecarIssues[0];
+    plannedWrites.push({ path: diagnosticsLedgerPath, kind: 'closeout-diagnostics-ledger' });
+    const diagnosticsEvent = buildCloseoutDiagnosticEvent({
+      eventType: 'phase_closeout_finalize_blocked',
+      runId: `phase${String(phaseNumber).padStart(2, '0')}-final`,
+      phaseNumber,
+      now,
+      payload: {
+        dryRun,
+        keepPrep,
+        ok: false,
+        reason,
+        sidecarMode: sidecarState.mode,
+        sidecarIssues,
+        sidecarDiagnostics: sidecarState.diagnostics || [],
+      },
+    });
+    const diagnostics = dryRun
+      ? {
+        ok: true,
+        ledgerPath: rel(root, diagnosticsLedgerPath),
+        fallbackEmitted: false,
+        skipped: true,
+        reason: 'dry_run_sidecar_blocked',
+      }
+      : appendCloseoutDiagnostic({
+        ledgerPath: diagnosticsLedgerPath,
+        event: diagnosticsEvent,
+      });
+    return {
+      ok: false,
+      dryRun,
+      keepPrep,
+      runtimeCloseout: {
+        status: 'blocked',
+        ok: false,
+        reason,
+      },
+      repositoryCloseout: { status: 'skipped', reason },
+      finalVerdict: 'blocked',
+      normalizedRunVerdict: '',
+      idempotentNoop: false,
+      sidecarGuard: {
+        status: 'blocked',
+        reason,
+        mode: sidecarState.mode,
+        issues: sidecarIssues,
+        diagnostics: sidecarState.diagnostics || [],
+      },
+      phaseNumber,
+      phaseTitle: phase.title || `Phase ${phaseNumber}`,
+      generatedAt: now,
+      plannedWrites: plannedWrites.map((entry) => normalizeWriteEntry(entry, root)),
+      publishWrites: [],
+      skippedWrites: [
+        skippedWrite(rel(root, statusPath), 'phase-status', reason),
+        skippedWrite(rel(root, path.join(workflowDir, 'current-run.json')), 'workflow-state', reason),
+        skippedWrite(rel(root, path.join(workflowDir, 'active-phase-run.json')), 'workflow-state', reason),
+        skippedWrite(rel(root, path.join(workflowDir, 'latest-dispatch.json')), 'workflow-state', reason),
+        skippedWrite(rel(root, summaryPath), 'agent-loop-current-summary', reason),
+      ],
+      diagnostics: {
+        ...diagnostics,
+        ledgerPath: rel(root, diagnosticsLedgerPath),
+      },
+    };
+  }
   if (!dryRun) {
     const noopResult = maybeCanonicalNoop({
       root,

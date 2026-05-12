@@ -15,6 +15,20 @@ test('validates required lifecycle event fields', () => {
     pidNamespace: '',
     payloadPatch: { dispatcherPid: 1234 },
   })), /pidNamespace/);
+  assert.throws(() => validateLifecycleTransition(baseEvent({
+    lifecycleEvent: 'dispatch_heartbeat',
+  })), /attemptId/);
+  assert.throws(() => validateLifecycleTransition(baseEvent({
+    lifecycleEvent: 'dispatch_blocked',
+    completionStatus: 'blocked',
+    attemptId: 'attempt-1',
+  })), /terminal_blocked_published/);
+});
+
+test('does not require pidNamespace for empty pid placeholders', () => {
+  assert.doesNotThrow(() => validateLifecycleTransition(baseEvent({
+    payloadPatch: { dispatcherPid: '', status: 'active' },
+  })));
 });
 
 test('records merge lifecycle patch atomically', () => {
@@ -27,6 +41,7 @@ test('records merge lifecycle patch atomically', () => {
       targetStateFiles: [target],
       source: 'moonshot-phase-dispatch',
       lifecycleEvent: 'dispatch_heartbeat',
+      attemptId: 'attempt-1',
       payloadPatch: { childPid: 1234, status: 'prepared' },
       pidNamespace: 'node-parent',
     }));
@@ -87,6 +102,7 @@ test('records caller event fixtures for phase lifecycle projections', () => {
       primaryTargetStateFile: latestDispatch,
       targetStateFiles: [latestDispatch],
       lifecycleEvent: 'dispatch_completed',
+      attemptId: 'attempt-1',
       status: 'completed',
       completionStatus: 'completed',
       payloadPatch: { status: 'completed', completionStatus: 'completed' },
@@ -130,11 +146,57 @@ test('rejects lifecycle event values in latest dispatch status', () => {
       primaryTargetStateFile: latestDispatch,
       targetStateFiles: [latestDispatch],
       lifecycleEvent: 'dispatch_completed',
+      attemptId: 'attempt-1',
       status: 'dispatch_completed',
       completionStatus: 'completed',
       payloadPatch: { status: 'dispatch_completed' },
       writeMode: 'replace',
     })), /latest-dispatch\.status/);
+  });
+});
+
+test('preserves terminal attempt fields from same-attempt heartbeat patches', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'latest-dispatch.json');
+    fs.writeFileSync(target, JSON.stringify({
+      attemptId: 'attempt-1',
+      status: 'blocked',
+      completionStatus: 'blocked',
+      attemptOutcome: 'blocked',
+      blockingStopReasonCode: 'spawn_eperm',
+      stopReasonDetail: 'node --test spawn EPERM',
+      finalVerdict: 'blocked',
+      normalizedRunVerdict: 'complete_with_environment_blocker',
+    }, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      source: 'moonshot-phase-dispatch',
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      lifecycleEvent: 'dispatch_heartbeat',
+      attemptId: 'attempt-1',
+      status: 'running',
+      payloadPatch: {
+        attemptId: 'attempt-1',
+        status: 'running',
+        completionStatus: 'running',
+        attemptOutcome: 'running',
+        blockingStopReasonCode: '',
+        stopReasonDetail: '',
+      },
+      writeMode: 'merge',
+    }));
+
+    assert.deepEqual(readJson(target), {
+      attemptId: 'attempt-1',
+      status: 'running',
+      completionStatus: 'blocked',
+      attemptOutcome: 'blocked',
+      blockingStopReasonCode: 'spawn_eperm',
+      stopReasonDetail: 'node --test spawn EPERM',
+      finalVerdict: 'blocked',
+      normalizedRunVerdict: 'complete_with_environment_blocker',
+    });
   });
 });
 

@@ -25,6 +25,30 @@ test('classifies prepared/running evidence as active and terminal closeout evide
   assert.equal(workflowStateClass(readFixture('terminal_failed_valid').workflowState), 'terminal');
 });
 
+test('terminal attempt outcome overrides active status vocabulary', () => {
+  const result = evaluatePointerInvariant({
+    phaseStatus: { activePhaseNumber: 3 },
+    workflowState: {
+      status: 'active',
+      activeExecutionStatus: 'active',
+      completionStatus: 'blocked',
+      attemptOutcome: 'blocked',
+      phase: { number: 2 },
+      completedPhaseNumber: 2,
+    },
+  });
+
+  assert.equal(workflowStateClass({
+    status: 'active',
+    completionStatus: 'blocked',
+    attemptOutcome: 'blocked',
+  }), 'terminal');
+  assert.equal(result.ok, true);
+  assert.equal(result.stateClass, 'terminal');
+  assert.equal(result.workflowPhaseNumber, 2);
+  assert.equal(result.terminalPhaseNumber, 2);
+});
+
 test('active prepared/running workflow phase must match phase-status active pointer', () => {
   assert.equal(evaluatePointerInvariant(readFixture('active_prepared_valid')).ok, true);
   assert.equal(evaluatePointerInvariant(readFixture('active_running_valid')).ok, true);

@@ -129,11 +129,12 @@ export function assertReturnAllowedFromFiles({ actionable, executionIntent, prep
     };
   }
 
-  const heartbeatAt = parseIsoTimestamp(existing.lastHeartbeatAt);
-  if (Number.isNaN(heartbeatAt) || nowMs() - heartbeatAt > staleSeconds() * 1000) {
+  const staleReason = staleLeaseReason(existing);
+  if (staleReason) {
     return {
       RETURN_ALLOWED: 'false',
-      RETURN_REASON: 'stale-run-lease',
+      RETURN_REASON: `stale-run-lease:${staleReason}`,
+      STALE_REASON: staleReason,
       ACTIONABLE_PHASES_REMAINING: String(actionable),
     };
   }

@@ -9,6 +9,8 @@ import {
   assertNoGeneratedStalePhaseResidue,
   assertProjectionHasActiveLog,
 } from './lib/harness-state-invariants.mjs';
+import { readBlockerSidecarState } from './lib/blocker-sidecar-state.mjs';
+import { resolvePhaseExecutionDir } from './lib/phase-execution-paths.mjs';
 
 const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
 const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
@@ -68,6 +70,132 @@ function replaceOrAppendSection(lines, heading, bodyLines) {
     return [...nextLines, ...replacement];
   }
   return [...lines.slice(0, start), ...replacement, ...lines.slice(end)];
+}
+
+function resolveArtifactSidecarPaths({
+  explicitSidecarPaths,
+  state,
+  qaReportPath,
+  phaseNum,
+} = {}) {
+  if (
+    explicitSidecarPaths?.blockerEvidencePath ||
+    explicitSidecarPaths?.attemptLedgerPath ||
+    explicitSidecarPaths?.projectionManifestPath
+  ) {
+    return explicitSidecarPaths;
+  }
+
+  const candidatePaths = state.sidecarPaths || state.blockerSidecarPaths || state.phase?.sidecarPaths || {};
+  if (
+    candidatePaths.blockerEvidencePath ||
+    candidatePaths.attemptLedgerPath ||
+    candidatePaths.projectionManifestPath
+  ) {
+    return candidatePaths;
+  }
+
+  const executionRoot = state.executionRoot || state.phase?.executionRoot || '';
+  if (!executionRoot) {
+    return null;
+  }
+
+  try {
+    return resolvePhaseExecutionDir({
+      planDir: state.planDir || state.phase?.planDir || '',
+      executionRoot,
+      phaseNumber: phaseNum || state.phase?.number || state.phaseNumber,
+      phaseSlug: state.phaseSlug || state.phase?.slug || '',
+      phaseDoc: state.phase?.docPath || state.phaseDoc || '',
+    }).sidecarPaths;
+  } catch {
+    return null;
+  }
+}
+
+function loadBlockerProjection({ sidecarPaths, state, qaReportPath, phaseNum }) {
+  const resolvedPaths = resolveArtifactSidecarPaths({
+    explicitSidecarPaths: sidecarPaths,
+    state,
+    qaReportPath,
+    phaseNum,
+  });
+
+  if (!resolvedPaths) {
+    return {
+      mode: 'legacy_verifier',
+      active: [],
+      diagnostics: [],
+      paths: null,
+    };
+  }
+
+  const sidecarState = readBlockerSidecarState(resolvedPaths);
+  return {
+    mode: sidecarState.mode,
+    active: sidecarState.latestBlockers?.active || [],
+    diagnostics: sidecarState.diagnostics || [],
+    paths: resolvedPaths,
+  };
+}
+
+function compactBlockerValue(value) {
+  const text = String(value ?? '').trim();
+  return text || 'n/a';
+}
+
+function firstActiveBlocker(blockerProjection) {
+  return blockerProjection.active[0] || null;
+}
+
+function renderBlockerProjectionLines(blockerProjection) {
+  const lines = [
+    `- Source mode: ${blockerProjection.mode}`,
+    `- Active blocker count: ${blockerProjection.active.length}`,
+  ];
+
+  if (blockerProjection.paths) {
+    lines.push(`- Blocker evidence: ${blockerProjection.paths.blockerEvidencePath || 'n/a'}`);
+    lines.push(`- Attempt ledger: ${blockerProjection.paths.attemptLedgerPath || 'n/a'}`);
+    lines.push(`- Projection manifest: ${blockerProjection.paths.projectionManifestPath || 'n/a'}`);
+  }
+
+  if (blockerProjection.diagnostics.length > 0) {
+    lines.push(`- Diagnostics: ${JSON.stringify(blockerProjection.diagnostics)}`);
+  }
+
+  for (const blocker of blockerProjection.active) {
+    lines.push(`- Blocker ${compactBlockerValue(blocker.id)}: ${compactBlockerValue(blocker.blockerClass)}/${compactBlockerValue(blocker.blockerCode)}`);
+    lines.push(`  - Status: ${compactBlockerValue(blocker.status)}`);
+    lines.push(`  - Attempt: ${compactBlockerValue(blocker.attemptId)}`);
+    lines.push(`  - Transaction: ${compactBlockerValue(blocker.transactionId)}`);
+    lines.push(`  - Command: ${compactBlockerValue(blocker.command)}`);
+    lines.push(`  - Exit code: ${compactBlockerValue(blocker.exitCode)}`);
+    lines.push(`  - Stderr: ${compactBlockerValue(blocker.stderr)}`);
+    lines.push(`  - Detail: ${compactBlockerValue(blocker.detail)}`);
+    lines.push(`  - Runtime: ${compactBlockerValue(blocker.runtime)}`);
+    lines.push(`  - Rerun command: ${compactBlockerValue(blocker.rerunCommand)}`);
+  }
+
+  if (blockerProjection.active.length === 0 && blockerProjection.mode !== 'legacy_verifier') {
+    lines.push('- Active blocker detail: none in canonical sidecar latest state');
+  }
+
+  lines.push('');
+  return lines;
+}
+
+function concreteBlockerSummary(blocker) {
+  if (!blocker) {
+    return '';
+  }
+  const parts = [
+    `${compactBlockerValue(blocker.blockerClass)}/${compactBlockerValue(blocker.blockerCode)}`,
+    blocker.command ? `command=${blocker.command}` : '',
+    blocker.stderr ? `stderr=${blocker.stderr}` : '',
+    blocker.detail ? `detail=${blocker.detail}` : '',
+  ].filter(Boolean);
+  return parts.join(' | ');
 }
 
 function appendToSection(lines, heading, bodyLines) {
@@ -729,6 +857,7 @@ export function syncPhaseArtifacts(input = {}) {
   scorecardPath = '',
   handoffPath = '',
   worksetsPath = '',
+  sidecarPaths = null,
   phaseTitle = '',
   phaseNum = '',
   targetCompletionScore = '100',
@@ -758,6 +887,14 @@ export function syncPhaseArtifacts(input = {}) {
     verdictRelPath,
     environmentBlockers,
   });
+  const blockerProjection = loadBlockerProjection({
+    sidecarPaths,
+    state,
+    qaReportPath,
+    phaseNum,
+  });
+  const activeBlocker = firstActiveBlocker(blockerProjection);
+  const activeBlockerSummary = concreteBlockerSummary(activeBlocker);
 
   assertProjectionHasActiveLog({
     logFile,
@@ -831,6 +968,14 @@ export function syncPhaseArtifacts(input = {}) {
       );
     }
 
+    if (blockerProjection.mode !== 'legacy_verifier') {
+      qaLines = replaceOrAppendSection(
+        qaLines,
+        '## Blocker Evidence Projection',
+        renderBlockerProjectionLines(blockerProjection),
+      );
+    }
+
     qaLines = replaceOrAppendSection(qaLines, '## Score Summary', [
       `- Current score: ${score.current ?? 0}`,
       `- Target score: ${score.target ?? targetCompletionScore}`,
@@ -892,14 +1037,28 @@ export function syncPhaseArtifacts(input = {}) {
       );
     }
 
+    if (blockerProjection.mode !== 'legacy_verifier') {
+      scoreLines = replaceOrAppendSection(
+        scoreLines,
+        '## Blocker Evidence Projection',
+        renderBlockerProjectionLines(blockerProjection),
+      );
+    }
+
     fs.writeFileSync(scorecardPath, `${scoreLines.join('\n')}\n`, 'utf8');
   }
 
   if (handoffPath && fs.existsSync(handoffPath)) {
     const stopReason = String(finish.stopReason || runtime.stopReason || (finish.nextPath === 'clean_finish' ? 'phase_local_closeout_marker' : 'blocked')).trim();
     const normalizedReason = stopReason || 'blocked';
+    const stopDetail = activeBlockerSummary || finish.detail || detail || 'structured artifact sync recorded by writer';
     const phaseDoc = state.phase?.docPath || state.phaseDoc || '';
     const phaseSprintContract = qaReportPath ? path.join(path.dirname(qaReportPath), 'SPRINT_CONTRACT.md') : '';
+    const blockerSection = blockerProjection.mode !== 'legacy_verifier'
+      ? `
+## Blocker Evidence Projection
+${renderBlockerProjectionLines(blockerProjection).join('\n')}`
+      : '';
     const body = `# Phase ${String(phaseNum || state.phase?.number || '').padStart(2, '0')} Handoff
 
 > Generated because the phase stopped without clean completion.
@@ -912,7 +1071,7 @@ export function syncPhaseArtifacts(input = {}) {
 - Required: ${finish.nextPath === 'clean_finish' ? 'no' : 'pending'}
 - Reason: ${finish.nextPath === 'clean_finish'
     ? 'the phase completed cleanly with fresh verification evidence, recorded review state, and no pending resume work.'
-    : (finish.detail || detail || 'structured artifact sync recorded by writer')}
+    : stopDetail}
 
 ## Resume Trigger
 - Why this handoff exists: ${finish.nextPath === 'clean_finish' ? 'clean-finish marker only' : 'the current attempt did not reach clean finish'}
@@ -938,10 +1097,11 @@ export function syncPhaseArtifacts(input = {}) {
 - QA report: ${qaReportPath}
 - Phase doc: ${phaseDoc}
 - Scorecard: ${scorecardPath}
+${blockerSection}
 
 ## Workflow Logging
 - session-logger: ${finish.nextPath === 'clean_finish' ? 'not required for this clean finish' : 'recorded via structured artifact sync'}
-- Detail: ${detail || finish.detail || 'none provided'}
+- Detail: ${activeBlockerSummary || detail || finish.detail || 'none provided'}
 `;
     fs.writeFileSync(handoffPath, body, 'utf8');
   }

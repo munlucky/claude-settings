@@ -123,11 +123,13 @@ function withLatestDispatchLifecycle(payload = {}, {
   patch = {},
 } = {}) {
   const status = patch.status || payload.status || 'prepared';
+  const attemptId = patch.attemptId || patch.runLeaseId || payload.attemptId || payload.runLeaseId || runtimeState.runLeaseId || '';
   assertLatestDispatchStatus(status, lifecycleEvent);
   return {
     ...payload,
     ...patch,
     status,
+    attemptId,
     lifecycleEvent,
     dispatchStage,
     lastLifecycleEventAt: timestamp,
@@ -521,6 +523,7 @@ function closeLatestDispatchEvidence({ exitCode, detail, returnBoundary = '', st
     status: next.status,
     completionStatus: next.completionStatus,
     lifecycleEvent: next.lifecycleEvent,
+    attemptId: next.attemptId || next.runLeaseId || runtimeState.runLeaseId,
     timestamp: now,
     pidNamespace: next.pidNamespace || (next.childPid || next.dispatcherPid ? 'node-parent' : undefined),
     payloadPatch: next,
@@ -563,6 +566,47 @@ function leaseAssignments(command, ...args) {
     throw new Error(result.stderr || `phase-run-lease failed: ${command}`);
   }
   return parseAssignments(result.stdout);
+}
+
+function cleanupPreviousDeadDispatchLease() {
+  const activeRunFile = path.join('.claude', 'logs', 'workflow-enforcement', 'active-phase-run.json');
+  if (!fs.existsSync(activeRunFile)) {
+    return null;
+  }
+  let existing;
+  try {
+    existing = JSON.parse(fs.readFileSync(activeRunFile, 'utf8'));
+  } catch (error) {
+    appendDebugLog('phase-run-lease-previous-cleanup-skipped', {
+      reason: 'active-run-json-parse-failed',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+  if (!existing || existing.status !== 'active' || !existing.runLeaseId || !existing.dispatcherPid) {
+    return null;
+  }
+  if (existing.planDir && path.resolve(existing.planDir) !== path.resolve(state.planDir)) {
+    return null;
+  }
+  if (isPidAliveInCurrentNamespace(Number(existing.dispatcherPid))) {
+    return null;
+  }
+  const values = leaseAssignments(
+    'heartbeat',
+    state.statusFile,
+    existing.runLeaseId,
+    'stale-preflight',
+    existing.phase?.number || '',
+    existing.phase?.title || '',
+    existing.completionStatus || 'running',
+  );
+  appendDebugLog('phase-run-lease-previous-dead-dispatch-cleanup', {
+    runLeaseId: existing.runLeaseId,
+    dispatcherPid: existing.dispatcherPid,
+    values,
+  });
+  return values;
 }
 
 function activePhaseContext() {
@@ -807,6 +851,7 @@ function updateLatestDispatchLiveness({ label = '', context = {}, compositeCurso
     phaseTitle: next.phaseTitle || 'moonshot-phase-dispatch',
     status: next.status || 'prepared',
     lifecycleEvent: 'dispatch_heartbeat',
+    attemptId: next.attemptId || next.runLeaseId || runtimeState.runLeaseId,
     timestamp: liveness.updatedAt,
     pidNamespace: next.childPid ? next.pidNamespace || 'node-parent' : undefined,
     payloadPatch: next,
@@ -845,6 +890,7 @@ function recordLatestDispatchLifecycle({ lifecycleEvent, dispatchStage, patch = 
     status: next.status,
     completionStatus: next.completionStatus,
     lifecycleEvent: next.lifecycleEvent,
+    attemptId: next.attemptId || next.runLeaseId || runtimeState.runLeaseId,
     timestamp: next.lastLifecycleEventAt,
     pidNamespace: next.childPid || next.dispatcherPid ? 'node-parent' : undefined,
     payloadPatch: next,
@@ -972,6 +1018,7 @@ function leaseCompletionStatus(context = {}, actionable) {
 }
 
 function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime) {
+  cleanupPreviousDeadDispatchLease();
   runtimeState.runLeaseId = generateRunLeaseId();
   runtimeState.captureSession = createPhaseHarnessCaptureSession({
     traceId: runtimeState.runLeaseId,

@@ -63,6 +63,53 @@ function writeFixture(root) {
   return { qaReportPath, scorecardPath, handoffPath, worksetsPath };
 }
 
+function writeBlockerSidecars(root) {
+  const sidecarRoot = path.join(root, 'execution', 'blocker-closeout-prevention-v1', '06-phase-06-artifact-projection-sidecar-v1');
+  fs.mkdirSync(sidecarRoot, { recursive: true });
+  const sidecarPaths = {
+    blockerEvidencePath: path.join(sidecarRoot, 'BLOCKER_EVIDENCE.jsonl'),
+    attemptLedgerPath: path.join(sidecarRoot, 'ATTEMPT_LEDGER.jsonl'),
+    projectionManifestPath: path.join(sidecarRoot, 'projection-manifest.json'),
+  };
+  fs.writeFileSync(sidecarPaths.blockerEvidencePath, `${JSON.stringify({
+    id: 'blocker-spawn-eperm',
+    status: 'open',
+    phaseNumber: 6,
+    attemptId: 'attempt-phase-06-a',
+    transactionId: 'txn-phase-06-a',
+    blockerClass: 'verification_environment_unavailable',
+    blockerCode: 'spawn_eperm',
+    command: 'node --test .claude/scripts/agent-loop-phase-artifacts.test.mjs',
+    exitCode: null,
+    stderr: 'Error: spawn EPERM',
+    detail: 'node --test spawn EPERM blocked verifier execution',
+    runtime: 'node:test',
+    rerunCommand: 'node --test .claude/scripts/agent-loop-phase-artifacts.test.mjs',
+    createdAt: '2026-05-12T09:40:00Z',
+    updatedAt: '2026-05-12T09:40:00Z',
+  })}\n`, 'utf8');
+  fs.writeFileSync(sidecarPaths.attemptLedgerPath, `${JSON.stringify({
+    attemptId: 'attempt-phase-06-a',
+    parentAttemptId: '',
+    transactionId: 'txn-phase-06-a',
+    phaseNumber: 6,
+    status: 'blocked',
+    reason: 'terminal_blocked_published',
+    blockerEvidenceId: 'blocker-spawn-eperm',
+    createdAt: '2026-05-12T09:40:00Z',
+    updatedAt: '2026-05-12T09:40:00Z',
+  })}\n`, 'utf8');
+  fs.writeFileSync(sidecarPaths.projectionManifestPath, `${JSON.stringify({
+    schemaVersion: 'terminal-blocker-projection-manifest-v1',
+    transactionId: 'txn-phase-06-a',
+    attemptId: 'attempt-phase-06-a',
+    phaseNumber: 6,
+    blockerEvidenceIds: ['blocker-spawn-eperm'],
+    attemptLedgerKeys: ['attempt-phase-06-a:txn-phase-06-a'],
+  }, null, 2)}\n`, 'utf8');
+  return sidecarPaths;
+}
+
 test('sync-phase-artifacts rejects clean finish without active log path', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-artifacts-log-'));
   try {
@@ -162,6 +209,52 @@ test('sync-phase-artifacts renders known WORKSETS fields deterministically and p
     assert.match(first, /semanticEvaluation:\n      status: "not_run"\n      reason: "not_applicable_to_current_phase"/);
     assert.match(fs.readFileSync(paths.qaReportPath, 'utf8'), /## Structured Evidence Metadata[\s\S]*"SCN-06-2"/);
     assert.match(fs.readFileSync(paths.scorecardPath, 'utf8'), /## Structured Evidence Metadata[\s\S]*"REQ-1.11"/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('sync-phase-artifacts renders blocker details from sidecar projections', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-artifacts-sidecar-'));
+  try {
+    const paths = writeFixture(root);
+    const sidecarPaths = writeBlockerSidecars(root);
+    syncPhaseArtifacts({
+      ...paths,
+      sidecarPaths,
+      phaseNum: '6',
+      phaseTitle: 'Phase 06',
+      timestamp: '2026-05-12T09:41:00Z',
+      finish: {
+        nextPath: 'resume_later_handoff',
+        status: 'blocked',
+        closeoutReason: 'blocked',
+      },
+      runtime: {
+        stage: 'verify',
+        status: 'blocked',
+        verdict: 'blocked',
+        logFile: '.claude/logs/agent-loop/phase-06.log',
+      },
+      workset: {
+        activeAtomicTask: 'AT-01',
+        status: 'blocked',
+        semanticEvaluation: { status: 'not_run', reason: 'not_applicable_to_current_phase' },
+      },
+    });
+
+    const qa = fs.readFileSync(paths.qaReportPath, 'utf8');
+    const scorecard = fs.readFileSync(paths.scorecardPath, 'utf8');
+    const handoff = fs.readFileSync(paths.handoffPath, 'utf8');
+
+    for (const text of [qa, scorecard, handoff]) {
+      assert.match(text, /## Blocker Evidence Projection/);
+      assert.match(text, /verification_environment_unavailable\/spawn_eperm/);
+      assert.match(text, /node --test \.claude\/scripts\/agent-loop-phase-artifacts\.test\.mjs/);
+      assert.match(text, /Error: spawn EPERM/);
+      assert.match(text, /blocker-spawn-eperm/);
+    }
+    assert.doesNotMatch(handoff, /deferred_verification/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

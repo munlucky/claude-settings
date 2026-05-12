@@ -8,6 +8,40 @@ import { currentIndexVerdictArtifacts, finalizePhaseCloseout, recoveredBlockerFi
 import { readCurrentArtifacts, sha256RawBytes } from './lib/current-artifacts-state.mjs';
 import { dedupePaths, resolveGlobFiles, safeRemove } from './lib/windows-safe-files.mjs';
 
+function writeOpenBlockerSidecar(executionRoot) {
+  fs.writeFileSync(path.join(executionRoot, 'BLOCKER_EVIDENCE.jsonl'), `${JSON.stringify({
+    id: 'blocker-spawn-eperm',
+    status: 'open',
+    phaseNumber: 1,
+    attemptId: 'attempt-phase-01-a',
+    transactionId: 'txn-phase-01-a',
+    blockerClass: 'verification_environment_unavailable',
+    blockerCode: 'spawn_eperm',
+    command: 'node --test .claude/scripts/phase-closeout-finalize.test.mjs',
+    stderr: 'Error: spawn EPERM',
+    detail: 'node --test spawn EPERM blocked verifier execution',
+    createdAt: '2026-05-10T11:59:00Z',
+    updatedAt: '2026-05-10T11:59:00Z',
+  })}\n`, 'utf8');
+  fs.writeFileSync(path.join(executionRoot, 'ATTEMPT_LEDGER.jsonl'), `${JSON.stringify({
+    attemptId: 'attempt-phase-01-a',
+    transactionId: 'txn-phase-01-a',
+    phaseNumber: 1,
+    status: 'blocked',
+    blockerEvidenceId: 'blocker-spawn-eperm',
+    createdAt: '2026-05-10T11:59:00Z',
+    updatedAt: '2026-05-10T11:59:00Z',
+  })}\n`, 'utf8');
+  fs.writeFileSync(path.join(executionRoot, 'projection-manifest.json'), `${JSON.stringify({
+    schemaVersion: 'terminal-blocker-projection-manifest-v1',
+    transactionId: 'txn-phase-01-a',
+    attemptId: 'attempt-phase-01-a',
+    phaseNumber: 1,
+    blockerEvidenceIds: ['blocker-spawn-eperm'],
+    attemptLedgerKeys: ['attempt-phase-01-a:txn-phase-01-a'],
+  }, null, 2)}\n`, 'utf8');
+}
+
 test('finalize dry-run reports planned writes without mutating closeout files', async () => {
   await withFixture(async (fixture) => {
     const result = await finalizePhaseCloseout({
@@ -139,6 +173,30 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
     assert.equal(current.commitToken, result.closeoutCommitToken);
     assert.equal(current.manifestHash, sha256RawBytes(current.manifestPath));
     assert.equal(current.artifacts.some((entry) => entry.relativePath === '.claude/verification-verdict-phase01-final.json'), true);
+  });
+});
+
+test('finalize skips completed reconciliation when sidecar has open blocker', async () => {
+  await withFixture(async (fixture) => {
+    writeOpenBlockerSidecar(fixture.executionRoot);
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.finalVerdict, 'blocked');
+    assert.equal(result.sidecarGuard.reason, 'sidecar_open_blocker');
+    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), false);
+    assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).completionStatus, 'failed');
+    assert.match(fs.readFileSync(path.join(fixture.executionRoot, 'closeout-diagnostics.jsonl'), 'utf8'), /phase_closeout_finalize_blocked/);
   });
 });
 

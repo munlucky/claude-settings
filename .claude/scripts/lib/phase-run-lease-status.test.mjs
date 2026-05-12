@@ -49,3 +49,59 @@ test('composite monitor cursor changes when manifest changes without parent stat
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('lease current-run mirror preserves terminal blocker metadata during active heartbeat', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-run-lease-store-'));
+  const previousWorkflowDir = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR;
+  try {
+    process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = path.join(root, 'workflow');
+    const leaseStore = await import(`./phase-run-lease-store.mjs?case=${Date.now()}`);
+    const statusFile = path.join(root, '.claude', 'docs', 'phase-status.yaml');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    fs.writeFileSync(statusFile, 'phases:\n  - number: 1\n    status: in_progress\n', 'utf8');
+
+    const { currentRunFile } = leaseStore.resolveLeaseFiles(statusFile);
+    fs.mkdirSync(path.dirname(currentRunFile), { recursive: true });
+    fs.writeFileSync(currentRunFile, `${JSON.stringify({
+      runLeaseId: 'lease-terminal',
+      attemptId: 'attempt-terminal',
+      status: 'blocked',
+      completionStatus: 'blocked',
+      attemptOutcome: 'blocked',
+      blockingStopReasonCode: 'spawn_eperm',
+      stopReasonDetail: 'node --test spawn EPERM',
+      blockerEvidenceRef: 'blocker-1',
+      transactionId: 'tx-1',
+      finalVerdict: 'blocked',
+      normalizedRunVerdict: 'complete_with_environment_blocker',
+    }, null, 2)}\n`, 'utf8');
+
+    leaseStore.writeActiveLease(statusFile, {
+      runLeaseId: 'lease-terminal',
+      attemptId: 'attempt-terminal',
+      status: 'active',
+      completionStatus: 'running',
+      currentStage: 'execute',
+      phase: { number: 1, title: 'Phase 01' },
+      actionablePhasesRemaining: 1,
+      blockingStopReasonCode: '',
+      stopReasonDetail: '',
+    });
+
+    const projected = JSON.parse(fs.readFileSync(currentRunFile, 'utf8'));
+    assert.equal(projected.status, 'blocked');
+    assert.equal(projected.completionStatus, 'blocked');
+    assert.equal(projected.attemptOutcome, 'blocked');
+    assert.equal(projected.blockingStopReasonCode, 'spawn_eperm');
+    assert.equal(projected.stopReasonDetail, 'node --test spawn EPERM');
+    assert.equal(projected.blockerEvidenceRef, 'blocker-1');
+    assert.equal(projected.transactionId, 'tx-1');
+  } finally {
+    if (previousWorkflowDir === undefined) {
+      delete process.env.WORKFLOW_ENFORCEMENT_LOG_DIR;
+    } else {
+      process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = previousWorkflowDir;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -16,6 +16,11 @@ const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/lo
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME_STATE_PATH = path.join(SCRIPT_DIR, 'runtime-state.mjs');
+const WINDOWS_ATOMIC_RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 function writeFileAtomic(filePath, content) {
   const directory = path.dirname(filePath);
@@ -25,7 +30,19 @@ function writeFileAtomic(filePath, content) {
   );
 
   fs.writeFileSync(tempPath, content, 'utf8');
-  fs.renameSync(tempPath, filePath);
+  const delays = process.platform === 'win32' ? [25, 50, 100, 200, 400, 800] : [25, 50];
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      fs.renameSync(tempPath, filePath);
+      return;
+    } catch (error) {
+      const retryable = WINDOWS_ATOMIC_RENAME_RETRY_CODES.has(error?.code);
+      if (!retryable || attempt === delays.length) {
+        throw error;
+      }
+      sleepSync(delays[attempt]);
+    }
+  }
 }
 
 function writeStdoutLine(value = '') {

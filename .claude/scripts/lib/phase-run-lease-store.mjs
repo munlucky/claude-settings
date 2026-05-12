@@ -9,6 +9,36 @@ const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/lo
 const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
 const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
 const CURRENT_RUN_BASENAME = 'current-run.json';
+const TERMINAL_ATTEMPT_STATES = new Set([
+  'blocked',
+  'completed',
+  'failed',
+  'stale',
+  'superseded',
+  'superseded-by-local-fallback',
+  'verification_blocked',
+  'runtime_unhealthy',
+]);
+const TERMINAL_METADATA_FIELDS = [
+  'status',
+  'completionStatus',
+  'attemptOutcome',
+  'blockingStopReasonCode',
+  'stopReasonDetail',
+  'blockerEvidenceRef',
+  'blockerEvidenceId',
+  'transactionId',
+  'finalVerdict',
+  'normalizedRunVerdict',
+  'returnBoundary',
+  'stopReasonCode',
+  'rawStopReasonCode',
+  'completionPath',
+  'completedAt',
+  'failedAt',
+  'finishedAt',
+  'finalOutcomeSchemaVersion',
+];
 
 export function resolveStatusFile(statusFile) {
   if (!statusFile) {
@@ -55,6 +85,39 @@ export function readJson(filePath) {
   } catch {
     return null;
   }
+}
+
+function normalizeLower(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isTerminalAttempt(payload = {}) {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const states = [
+    payload.attemptOutcome,
+    payload.completionStatus,
+    payload.status,
+    payload.phaseRunLease?.attemptOutcome,
+    payload.phaseRunLease?.completionStatus,
+    payload.phaseRunLease?.status,
+  ].map(normalizeLower);
+  return states.some((value) => TERMINAL_ATTEMPT_STATES.has(value))
+    || Boolean(payload.blockingStopReasonCode || payload.phaseRunLease?.blockingStopReasonCode);
+}
+
+function preserveTerminalMetadata(next, terminalSource) {
+  if (!terminalSource) {
+    return next;
+  }
+  const preserved = { ...next };
+  for (const field of TERMINAL_METADATA_FIELDS) {
+    if (terminalSource[field] !== undefined && terminalSource[field] !== '') {
+      preserved[field] = terminalSource[field];
+    }
+  }
+  return preserved;
 }
 
 export function writeJson(filePath, payload) {
@@ -123,7 +186,12 @@ function mirrorToCurrentRun(statusFile, leasePayload) {
     unavailableCapabilities: leasePayload.unavailableCapabilities || existing.unavailableCapabilities || [],
     phaseRunLease: leasePayload,
   };
-  if (leasePayload.status === 'active') {
+  const terminalSource = isTerminalAttempt(existing)
+    ? existing
+    : isTerminalAttempt(leasePayload)
+      ? leasePayload
+      : null;
+  if (leasePayload.status === 'active' && !terminalSource) {
     for (const key of [
       'completedAt',
       'failedAt',
@@ -147,9 +215,10 @@ function mirrorToCurrentRun(statusFile, leasePayload) {
       next.activeExecutionStatus = leasePayload.status || 'active';
     }
   }
+  const projected = preserveTerminalMetadata(next, terminalSource);
   writeLeaseProjection({
     targetFile: leaseFiles.currentRunFile,
-    payload: next,
+    payload: projected,
     existingPayload: existing,
     primaryTargetStateFile: leaseFiles.currentRunFile,
   });
@@ -164,7 +233,7 @@ function mirrorToCurrentRun(statusFile, leasePayload) {
   }
   writeLeaseProjection({
     targetFile: globalCurrentRunFile,
-    payload: next,
+    payload: projected,
     existingPayload: readJson(globalCurrentRunFile),
     primaryTargetStateFile: leaseFiles.currentRunFile,
   });

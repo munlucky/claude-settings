@@ -42,7 +42,9 @@ test('lifecycle writer rejects dispatch lifecycle events used as latest-dispatch
       phaseTitle: 'Phase 03',
       status: 'dispatch_started',
       lifecycleEvent: 'dispatch_started',
+      attemptId: 'attempt-3',
       payloadPatch: {
+        attemptId: 'attempt-3',
         status: 'dispatch_started',
         lifecycleEvent: 'dispatch_started',
         dispatchStage: 'child_running',
@@ -77,4 +79,12 @@ test('dispatcher gates stale child classification through namespace-aware livene
   assert.match(source, /pidNamespace/);
   assert.match(source, /livenessProbe\.degraded/);
   assert.match(source, /stale_child_no_progress/);
+});
+
+test('dispatcher preflights stale active lease left by dead dispatcher pid', () => {
+  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  assert.match(source, /function cleanupPreviousDeadDispatchLease/);
+  assert.match(source, /isPidAliveInCurrentNamespace\(Number\(existing\.dispatcherPid\)\)/);
+  assert.match(source, /phase-run-lease-previous-dead-dispatch-cleanup/);
+  assert.match(source, /cleanupPreviousDeadDispatchLease\(\);\s*runtimeState\.runLeaseId = generateRunLeaseId\(\);/s);
 });

@@ -71,6 +71,31 @@ export function isFinalCompleteProjection({ statusRoot = {}, phases = [] } = {})
     && actionable.every((phase) => String(phase.status || '') === 'completed');
 }
 
+export function sidecarProjectionIssues(sidecarState = null) {
+  if (!sidecarState || sidecarState.mode === 'legacy_verifier') {
+    return [];
+  }
+
+  const issues = [];
+  if (sidecarState.mode === 'manifest_sidecar_missing') {
+    issues.push('sidecar_manifest_sidecar_missing');
+  } else if (sidecarState.mode === 'incomplete_transaction') {
+    issues.push('sidecar_incomplete_transaction');
+  } else if (sidecarState.mode !== 'sidecar_canonical') {
+    issues.push(`sidecar_${sidecarState.mode || 'unknown_mode'}`);
+  }
+  if ((sidecarState.latestBlockers?.active || []).length > 0) {
+    issues.push('sidecar_open_blocker');
+  }
+  if ((sidecarState.latestBlockers?.unknown || []).length > 0) {
+    issues.push('sidecar_unknown_blocker_status');
+  }
+  if ((sidecarState.diagnostics || []).length > 0) {
+    issues.push('sidecar_manifest_mismatch');
+  }
+  return issues;
+}
+
 export function buildFinalOutcomeProjectionHash({ statusRoot = {}, phases = [], workflowStates = [] } = {}) {
   const counts = phaseProjectionCounts(phases);
   const workflowProjection = workflowStates
@@ -127,14 +152,18 @@ export function renderFinalOutcomeSummary({ projectionHash, generatedAt }) {
   ].join('\n');
 }
 
-export function canonicalProjectionIssues({ statusRoot = {}, phases = [], workflowStates = [], summary = {} } = {}) {
+export function canonicalProjectionIssues({ statusRoot = {}, phases = [], workflowStates = [], summary = {}, sidecarState = null } = {}) {
   const issues = [];
   const counts = phaseProjectionCounts(phases);
   const expectedHash = buildFinalOutcomeProjectionHash({ statusRoot, phases, workflowStates });
   const runVerdict = String(statusRoot.normalizedRunVerdict || '').trim().toLowerCase();
   const rootBlockerTerminal = isUnrecoveredBlockerTerminalState(statusRoot);
+  const sidecarIssues = sidecarProjectionIssues(sidecarState);
 
-  if (!isFinalCompleteProjection({ statusRoot, phases })) {
+  if (sidecarIssues.length > 0) {
+    issues.push(...sidecarIssues);
+  }
+  if (sidecarIssues.length > 0 || !isFinalCompleteProjection({ statusRoot, phases })) {
     issues.push(rootBlockerTerminal ? 'blocker_terminal_not_final_complete' : 'final_projection_incomplete');
   }
   if (statusRoot.projectionSchemaVersion !== STATUS_PROJECTION_SCHEMA_VERSION) {

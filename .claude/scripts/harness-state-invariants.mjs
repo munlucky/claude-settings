@@ -33,7 +33,12 @@ function firstPhaseNumber(...values) {
 }
 
 export function workflowStateClass(payload = {}) {
-  const status = normalizeLower(payload.status || payload.completionStatus || payload.activeExecutionStatus);
+  const status = normalizeLower(
+    payload.attemptOutcome
+      || payload.completionStatus
+      || payload.activeExecutionStatus
+      || payload.status,
+  );
   if (ACTIVE_STATUSES.has(status)) {
     return 'active';
   }

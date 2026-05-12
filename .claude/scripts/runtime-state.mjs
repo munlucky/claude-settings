@@ -9,6 +9,16 @@ import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 const DEFAULT_DB_PATH = '.claude/runtime-state.sqlite';
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
 const VALID_GOAL_STATUSES = new Set(['active', 'paused', 'budget_limited', 'complete']);
+const TERMINAL_LEASE_COMPLETION_STATUSES = new Set([
+  'blocked',
+  'completed',
+  'failed',
+  'stale',
+  'superseded',
+  'superseded-by-local-fallback',
+  'verification_blocked',
+  'runtime_unhealthy',
+]);
 
 function sqliteUnavailableError(error) {
   const detail = error instanceof Error ? error.message : String(error);
@@ -205,6 +215,10 @@ function parseIntegerOrNull(value) {
   }
   const parsed = Number.parseInt(String(value), 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isTerminalLeaseCompletionStatus(value) {
+  return TERMINAL_LEASE_COMPLETION_STATUSES.has(String(value || '').trim().toLowerCase());
 }
 
 async function openDatabase() {
@@ -648,6 +662,11 @@ export function heartbeatLease(db, config) {
   const actionable = countActionablePhasesFromRows(rows);
   const timestamp = nowMs();
   accountLeaseTime(db, lease, timestamp);
+  const terminalCompletion = isTerminalLeaseCompletionStatus(lease.completion_status)
+    || Boolean(String(lease.stop_reason_code || '').trim());
+  const nextCompletionStatus = terminalCompletion
+    ? lease.completion_status
+    : (config.completionStatus || lease.completion_status || '');
   db.prepare(`
     UPDATE leases
     SET current_stage = ?, phase_number = ?, phase_title = ?, completion_status = ?,
@@ -657,16 +676,23 @@ export function heartbeatLease(db, config) {
     config.currentStage || lease.current_stage || '',
     parseIntegerOrNull(config.phaseNum),
     config.phaseTitle || '',
-    config.completionStatus || lease.completion_status || '',
+    nextCompletionStatus,
     timestamp,
     actionable,
     config.leaseId,
   );
+  const detailPayload = {
+    currentStage: config.currentStage || '',
+    phaseNum: config.phaseNum || '',
+    phaseTitle: config.phaseTitle || '',
+    requestedCompletionStatus: config.completionStatus || '',
+    preservedCompletionStatus: terminalCompletion ? lease.completion_status : '',
+  };
   recordEvent(db, {
     goalId: lease.goal_id,
     leaseId: config.leaseId,
     eventType: 'LeaseHeartbeat',
-    detail: config.currentStage || '',
+    detail: terminalCompletion ? JSON.stringify(detailPayload) : (config.currentStage || ''),
   });
   return db.prepare('SELECT * FROM leases WHERE lease_id = ?').get(config.leaseId);
 }

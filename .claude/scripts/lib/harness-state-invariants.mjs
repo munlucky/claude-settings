@@ -1,11 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { detectSidecarMode } from './blocker-sidecar-state.mjs';
+
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 const WORKFLOW_STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
 const BLOCKED_PHASE_STATUSES = new Set(['blocked', 'verification_blocked', 'runtime_unhealthy']);
 const BLOCKED_ROOT_EXECUTION_STATUSES = new Set(['paused', 'blocked', 'verification_blocked', 'runtime_unhealthy']);
 const GENERATED_STALE_PHASE_TOKEN = /\b(?:out_of_scope_for_phase_|phase_)(\d{1,3})\b/gi;
+const ACTIVE_WORKFLOW_STATUSES = new Set(['prepared', 'running', 'active', 'in_progress']);
+const TERMINAL_WORKFLOW_STATUSES = new Set([
+  'completed',
+  'superseded',
+  'superseded-by-local-fallback',
+  'failed',
+  'blocked',
+  'verification_blocked',
+  'runtime_unhealthy',
+  'stale',
+]);
 
 function normalizeText(value) {
   return String(value ?? '').trim();
@@ -18,6 +31,38 @@ function normalizeLower(value) {
 function normalizePhaseNumber(value) {
   const parsed = Number.parseInt(String(value ?? '').replace(/^0+/, '') || '0', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function workflowStateClass(payload = {}) {
+  const status = normalizeLower(
+    payload.attemptOutcome
+      || payload.phaseRunLease?.attemptOutcome
+      || payload.completionStatus
+      || payload.phaseRunLease?.completionStatus
+      || payload.activeExecutionStatus
+      || payload.status
+      || payload.phaseRunLease?.status,
+  );
+  if (TERMINAL_WORKFLOW_STATUSES.has(status)) {
+    return 'terminal';
+  }
+  if (ACTIVE_WORKFLOW_STATUSES.has(status)) {
+    return 'active';
+  }
+  return 'unknown';
+}
+
+export function evaluateSidecarCanonicalInvariant(paths = {}, options = {}) {
+  const mode = detectSidecarMode({ ...paths, fsImpl: options.fsImpl ?? fs });
+  if (mode.mode === 'legacy_verifier' || mode.mode === 'sidecar_canonical') {
+    return { ok: true, ...mode };
+  }
+  return {
+    ok: false,
+    ...mode,
+    code: mode.mode,
+    message: `Sidecar canonical mode is incomplete: ${mode.mode}`,
+  };
 }
 
 function projectionNeedsActiveLog({ finish = {}, runtime = {}, status = '' } = {}) {
@@ -193,14 +238,7 @@ function isRunningWorkflowState(payload = {}) {
   if (!payload || isSupersededByLocalFallback(payload)) {
     return false;
   }
-  const fields = [
-    payload.status,
-    payload.completionStatus,
-    payload.activeExecutionStatus,
-    payload.phaseRunLease?.status,
-    payload.phaseRunLease?.completionStatus,
-  ].map(normalizeLower);
-  return fields.some((value) => ['running', 'active', 'in_progress', 'prepared'].includes(value));
+  return workflowStateClass(payload) === 'active';
 }
 
 function isCompletedLocalFallback(payload = {}) {
@@ -472,6 +510,7 @@ export function evaluateHarnessStateInvariants({
   phases = [],
   statusPath = '',
   workflowDir = '',
+  sidecarPaths = null,
   now = '',
   strictMemory = false,
 } = {}) {
@@ -490,6 +529,18 @@ export function evaluateHarnessStateInvariants({
   const completedPhases = phases.filter((phase) => phase.status === 'completed');
   const failedWorkflowStates = workflowStates.filter((entry) => isFailedWorkflowState(entry.payload));
   const runningWorkflowStates = workflowStates.filter((entry) => isRunningWorkflowState(entry.payload));
+
+  if (sidecarPaths) {
+    const sidecarInvariant = evaluateSidecarCanonicalInvariant(sidecarPaths);
+    if (!sidecarInvariant.ok) {
+      addViolation(
+        violations,
+        sidecarInvariant.code,
+        sidecarInvariant.message,
+        { failureClass: 'harness-state' },
+      );
+    }
+  }
 
   for (const key of ['updatedAt', 'activeExecutionHeartbeatAt', 'lastExecutionHeartbeatAt']) {
     addFutureTimestampViolation(violations, `phase-status ${key}`, statusRoot[key], now);
