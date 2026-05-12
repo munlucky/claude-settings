@@ -1,5 +1,20 @@
 const PID_NAMESPACES = new Set(['windows', 'wsl', 'node-parent']);
 
+function field(source, name) {
+  if (!source || typeof source !== 'object') {
+    return '';
+  }
+  return source[name] ?? source.payload?.[name] ?? '';
+}
+
+function text(value) {
+  return String(value ?? '').trim();
+}
+
+function sameText(left, right) {
+  return text(left) !== '' && text(left) === text(right);
+}
+
 export function defaultCheckerNamespace() {
   if (process.platform === 'win32') {
     return 'windows';
@@ -80,4 +95,74 @@ export function evaluatePidLiveness({
     return { checked: true, degraded: false, reason: 'child_exited_without_closeout', childAlive, staleChild: false };
   }
   return { checked: true, degraded: false, reason: 'progress_observed', childAlive, staleChild: false };
+}
+
+export function evaluateWorkerIdentityLiveness({
+  manifest,
+  heartbeat,
+  observedProcess,
+  artifactProgress = false,
+} = {}) {
+  const manifestStartTime = text(field(manifest, 'childProcessStartTime'));
+  const manifestIdentity = {
+    attemptId: text(field(manifest, 'attemptId')),
+    childPid: text(field(manifest, 'childPid')),
+    childProcessStartTime: manifestStartTime,
+    commandHash: text(field(manifest, 'commandHash')),
+  };
+  const observedIdentity = {
+    childPid: text(field(observedProcess, 'childPid') || field(heartbeat, 'childPid')),
+    childProcessStartTime: text(field(observedProcess, 'childProcessStartTime') || field(heartbeat, 'childProcessStartTime')),
+    commandHash: text(field(observedProcess, 'commandHash') || field(heartbeat, 'commandHash')),
+  };
+  const heartbeatAttemptId = text(field(heartbeat, 'attemptId'));
+
+  if (!manifestStartTime) {
+    return {
+      checked: true,
+      degraded: true,
+      classification: 'worker_liveness_unknown',
+      reason: 'child_start_time_missing',
+      workerActive: false,
+      completionEligible: false,
+      manifestIdentity,
+      observedIdentity,
+      heartbeatAttemptId,
+    };
+  }
+
+  const matches = {
+    attemptId: sameText(manifestIdentity.attemptId, heartbeatAttemptId),
+    childPid: sameText(manifestIdentity.childPid, observedIdentity.childPid),
+    childProcessStartTime: sameText(manifestIdentity.childProcessStartTime, observedIdentity.childProcessStartTime),
+    commandHash: sameText(manifestIdentity.commandHash, observedIdentity.commandHash),
+  };
+  const workerActive = Object.values(matches).every(Boolean);
+  if (workerActive) {
+    return {
+      checked: true,
+      degraded: false,
+      classification: 'controller_stale_worker_active',
+      reason: 'worker_identity_match',
+      workerActive: true,
+      completionEligible: false,
+      matches,
+      manifestIdentity,
+      observedIdentity,
+      heartbeatAttemptId,
+    };
+  }
+
+  return {
+    checked: true,
+    degraded: false,
+    classification: artifactProgress ? 'controller_stale_artifact_progress' : 'controller_stale_worker_inactive',
+    reason: artifactProgress ? 'artifact_progress_without_worker_identity' : 'worker_identity_mismatch',
+    workerActive: false,
+    completionEligible: false,
+    matches,
+    manifestIdentity,
+    observedIdentity,
+    heartbeatAttemptId,
+  };
 }

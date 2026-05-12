@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   evaluatePidLiveness,
+  evaluateWorkerIdentityLiveness,
   pidNamespacesCompatible,
 } from './phase-liveness-checker.mjs';
 
@@ -72,4 +73,95 @@ test('compatible timeout distinguishes exited child from still-running child', (
     toolTimedOut: true,
     livenessChecker: () => false,
   }).reason, 'child_exited_without_closeout');
+});
+
+test('pid-reuse-not-worker-active rejects reused PID identity mismatches', () => {
+  const manifest = {
+    attemptId: 'attempt-original',
+    childPid: 4242,
+    childProcessStartTime: '2026-05-12T01:00:00.000Z',
+    commandHash: 'sha256:command-a',
+    manifestRequired: true,
+    schemaVersion: 1,
+  };
+  const heartbeat = {
+    attemptId: 'attempt-original',
+    childPid: 4242,
+    childProcessStartTime: '2026-05-12T01:00:00.000Z',
+    commandHash: 'sha256:command-a',
+  };
+
+  assert.equal(evaluateWorkerIdentityLiveness({
+    manifest,
+    heartbeat,
+    observedProcess: {
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:30:00.000Z',
+      commandHash: 'sha256:command-a',
+    },
+  }).classification, 'controller_stale_worker_inactive');
+
+  assert.equal(evaluateWorkerIdentityLiveness({
+    manifest,
+    heartbeat,
+    observedProcess: {
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-b',
+    },
+  }).classification, 'controller_stale_worker_inactive');
+
+  assert.equal(evaluateWorkerIdentityLiveness({
+    manifest,
+    heartbeat: { ...heartbeat, attemptId: 'attempt-reused' },
+    observedProcess: {
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+    },
+  }).classification, 'controller_stale_worker_inactive');
+});
+
+test('child-start-time-missing-is-unknown', () => {
+  const result = evaluateWorkerIdentityLiveness({
+    manifest: {
+      attemptId: 'attempt-start-time-unavailable',
+      childPid: 4242,
+      childProcessStartTime: null,
+      commandHash: 'sha256:command-a',
+      manifestRequired: true,
+      schemaVersion: 1,
+    },
+    heartbeat: {
+      attemptId: 'attempt-start-time-unavailable',
+      childPid: 4242,
+      commandHash: 'sha256:command-a',
+    },
+  });
+
+  assert.equal(result.classification, 'worker_liveness_unknown');
+  assert.equal(result.workerActive, false);
+  assert.equal(result.completionEligible, false);
+});
+
+test('controller_stale_worker_active requires manifest and heartbeat identity match', () => {
+  const result = evaluateWorkerIdentityLiveness({
+    manifest: {
+      attemptId: 'attempt-active',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+      manifestRequired: true,
+      schemaVersion: 1,
+    },
+    heartbeat: {
+      attemptId: 'attempt-active',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+    },
+  });
+
+  assert.equal(result.classification, 'controller_stale_worker_active');
+  assert.equal(result.workerActive, true);
 });

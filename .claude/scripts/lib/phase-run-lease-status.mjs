@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { readJson, resolveLeaseFiles } from './phase-run-lease-store.mjs';
+import { evaluateWorkerIdentityLiveness } from './phase-liveness-checker.mjs';
+import { workerLivenessCanPromoteCompletion } from './phase-run-lease-policy.mjs';
 
 export function readStatusBlocks(statusFile) {
   if (!statusFile || !fs.existsSync(statusFile)) {
@@ -157,6 +159,24 @@ export function buildCompositeMonitorCursor({
   return {
     ...cursor,
     fingerprint: hashCursor(cursor),
+  };
+}
+
+export function classifyLeaseProgressEvidence({
+  manifest,
+  heartbeat,
+  observedProcess,
+  artifactProgress = false,
+} = {}) {
+  const liveness = evaluateWorkerIdentityLiveness({
+    manifest,
+    heartbeat,
+    observedProcess,
+    artifactProgress,
+  });
+  return {
+    ...liveness,
+    canPromoteCompletion: workerLivenessCanPromoteCompletion(liveness.classification),
   };
 }
 

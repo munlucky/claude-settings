@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildCompositeMonitorCursor } from './phase-run-lease-status.mjs';
+import { buildCompositeMonitorCursor, classifyLeaseProgressEvidence } from './phase-run-lease-status.mjs';
 import { sha256RawBytes } from './current-artifacts-state.mjs';
 
 test('composite monitor cursor changes when manifest changes without parent status movement', () => {
@@ -104,4 +104,51 @@ test('lease current-run mirror preserves terminal blocker metadata during active
     }
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('artifact-progress-only remains diagnostic and cannot promote completion', () => {
+  const result = classifyLeaseProgressEvidence({
+    artifactProgress: true,
+    manifest: {
+      attemptId: 'attempt-a',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+      manifestRequired: true,
+      schemaVersion: 1,
+    },
+    heartbeat: {
+      attemptId: 'attempt-b',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+    },
+  });
+
+  assert.equal(result.classification, 'controller_stale_artifact_progress');
+  assert.equal(result.workerActive, false);
+  assert.equal(result.canPromoteCompletion, false);
+});
+
+test('worker-active liveness is not completion evidence', () => {
+  const result = classifyLeaseProgressEvidence({
+    manifest: {
+      attemptId: 'attempt-active',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+      manifestRequired: true,
+      schemaVersion: 1,
+    },
+    heartbeat: {
+      attemptId: 'attempt-active',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+    },
+  });
+
+  assert.equal(result.classification, 'controller_stale_worker_active');
+  assert.equal(result.workerActive, true);
+  assert.equal(result.canPromoteCompletion, false);
 });

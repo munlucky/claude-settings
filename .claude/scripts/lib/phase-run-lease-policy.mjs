@@ -42,6 +42,10 @@ export function hasLocalFallbackCompletion(payload = {}) {
     || (completion && typeof completion === 'object' && String(completion.completionStatus || '').includes('fallback'));
 }
 
+export function workerLivenessCanPromoteCompletion() {
+  return false;
+}
+
 export function staleLeaseReason(payload = {}, currentMs = nowMs()) {
   if (!processExists(payload.dispatcherPid)) {
     return 'dead-dispatcher-pid';
