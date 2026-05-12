@@ -11,6 +11,7 @@ import {
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
 const DEFAULT_WORKFLOW_DIR = '.claude/logs/workflow-enforcement';
 const STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
+const DELEGATED_ORPHAN_REJECTION = 'delegated_loop_cannot_adopt_orphan';
 
 function utcTimestamp(now = '') {
   if (now) {
@@ -123,6 +124,10 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 }
 
+function relativePath(root, filePath) {
+  return path.relative(root, filePath).replace(/\\/g, '/');
+}
+
 function recoveryEvent(config, payload, originalStatus, originalCompletionStatus, originalStopReason) {
   return {
     type: 'delegated-terminal-local-fallback',
@@ -161,6 +166,139 @@ function appendDebugLog(root, event, details) {
     ...details,
   })}\n`, 'utf8');
   return logPath;
+}
+
+function readRequiredJson(filePath, code) {
+  if (!fs.existsSync(filePath)) {
+    const error = new Error(`${code}: ${filePath}`);
+    error.code = code;
+    throw error;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (cause) {
+    const error = new Error(`${code}: invalid JSON at ${filePath}`);
+    error.code = code;
+    error.cause = cause;
+    throw error;
+  }
+}
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function validateAdoptionMetadata(metadata) {
+  const errors = [];
+  if (!nonEmptyString(metadata?.adoptedBy)) {
+    errors.push('adoptedBy');
+  }
+  if (!nonEmptyString(metadata?.adoptionReason)) {
+    errors.push('adoptionReason');
+  }
+  if (metadata?.reconciledFrom !== 'orphan_projection') {
+    errors.push('reconciledFrom');
+  }
+  const sourceProjectionPaths = metadata?.sourceProjectionPaths;
+  if (
+    !Array.isArray(sourceProjectionPaths)
+    || sourceProjectionPaths.length === 0
+    || sourceProjectionPaths.some((entry) => !nonEmptyString(entry))
+  ) {
+    errors.push('sourceProjectionPaths');
+  }
+  if (!Array.isArray(metadata?.reverificationCommands) || metadata.reverificationCommands.length === 0) {
+    errors.push('reverificationCommands');
+  } else {
+    metadata.reverificationCommands.forEach((entry, index) => {
+      if (!nonEmptyString(entry?.command)) {
+        errors.push(`reverificationCommands[${index}].command`);
+      }
+      if (!nonEmptyString(entry?.cwd)) {
+        errors.push(`reverificationCommands[${index}].cwd`);
+      }
+      if (!nonEmptyString(entry?.expectedSignal)) {
+        errors.push(`reverificationCommands[${index}].expectedSignal`);
+      }
+    });
+  }
+  return errors;
+}
+
+function writeReverificationCapture(filePath, commands, recordedAt) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const lines = commands.map((entry) => JSON.stringify({
+    recordedAt,
+    source: 'phase-closeout-reconciler',
+    command: entry.command,
+    cwd: entry.cwd,
+    expectedSignal: entry.expectedSignal,
+  }));
+  fs.writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8');
+}
+
+function manualOrphanReconcile(rawConfig) {
+  if (String(rawConfig.mode || '').trim() !== 'manual' || rawConfig.adoptOrphan !== true) {
+    const error = new Error(`${DELEGATED_ORPHAN_REJECTION}: orphan adoption requires reconcile --mode manual --adopt-orphan`);
+    error.code = DELEGATED_ORPHAN_REJECTION;
+    throw error;
+  }
+
+  const root = rawConfig.root ? resolvePath(rawConfig.root) : process.cwd();
+  const adoptedAt = utcTimestamp(rawConfig.now || '');
+  const adoptionMetadataPath = rawConfig.adoptionMetadata
+    ? resolvePath(rawConfig.adoptionMetadata, root)
+    : '';
+  if (!adoptionMetadataPath) {
+    const error = new Error('missing_adoption_metadata: --adoption-metadata is required');
+    error.code = 'missing_adoption_metadata';
+    throw error;
+  }
+
+  const metadata = readRequiredJson(adoptionMetadataPath, 'missing_adoption_metadata');
+  const validationErrors = validateAdoptionMetadata(metadata);
+  if (validationErrors.length > 0) {
+    const error = new Error(`adoption_metadata_invalid: ${validationErrors.join(', ')}`);
+    error.code = 'adoption_metadata_invalid';
+    error.validationErrors = validationErrors;
+    throw error;
+  }
+
+  const verifierRerunCapturePath = resolvePath(
+    metadata.verifierRerunCapturePath || path.join(path.dirname(adoptionMetadataPath), 'reverification-commands.jsonl'),
+    root,
+  );
+  const normalized = {
+    schemaVersion: 1,
+    ...metadata,
+    reconciledFrom: 'orphan_projection',
+    adoptionStatus: 'adopted_but_unverified',
+    completionStatus: 'adopted_but_unverified',
+    verifierPassRequired: true,
+    verifierRerunCapturePath: relativePath(root, verifierRerunCapturePath),
+    adoptedAt,
+  };
+
+  writeJsonAtomic(adoptionMetadataPath, normalized);
+  writeReverificationCapture(verifierRerunCapturePath, normalized.reverificationCommands, adoptedAt);
+  const debugLogPath = appendDebugLog(root, 'manual-orphan-reconcile-pending', {
+    adoptedAt,
+    adoptionMetadataPath: relativePath(root, adoptionMetadataPath),
+    verifierRerunCapturePath: relativePath(root, verifierRerunCapturePath),
+    sourceProjectionPaths: normalized.sourceProjectionPaths,
+    completionStatus: normalized.completionStatus,
+  });
+
+  return {
+    ok: true,
+    status: 'adopted_but_unverified',
+    completionStatus: 'adopted_but_unverified',
+    reconciledFrom: 'orphan_projection',
+    adoptionMetadataPath: relativePath(root, adoptionMetadataPath),
+    verifierRerunCapturePath: relativePath(root, verifierRerunCapturePath),
+    requiredVerifierPass: true,
+    debugLogPath: relativePath(root, debugLogPath),
+  };
 }
 
 function reconcilePayload(payload, config) {
@@ -283,6 +421,10 @@ function mirrorFallbackCompletion(fallbackPath, existing, config) {
 }
 
 export async function reconcilePhaseCloseout(rawConfig = {}) {
+  if (rawConfig.adoptOrphan === true || rawConfig.command === 'reconcile') {
+    return manualOrphanReconcile(rawConfig);
+  }
+
   const root = rawConfig.root ? resolvePath(rawConfig.root) : process.cwd();
   const statusFile = resolvePath(rawConfig.statusFile || DEFAULT_STATUS_FILE, root);
   const workflowDir = resolvePath(rawConfig.workflowDir || DEFAULT_WORKFLOW_DIR, root);
@@ -299,11 +441,11 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
     const filePath = path.join(workflowDir, basename);
     const { exists, value } = readJson(filePath);
     if (!exists) {
-      warnings.push({ code: 'state-file-missing', file: path.relative(root, filePath).replace(/\\/g, '/') });
+      warnings.push({ code: 'state-file-missing', file: relativePath(root, filePath) });
       continue;
     }
     if (!isFailedDelegatedState(value || {})) {
-      skippedFiles.push(path.relative(root, filePath).replace(/\\/g, '/'));
+      skippedFiles.push(relativePath(root, filePath));
       continue;
     }
 
@@ -319,7 +461,7 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
       originalStopReason: rawConfig.originalStopReason || '',
     });
     writeJsonAtomic(filePath, next);
-    reconciledFiles.push(path.relative(root, filePath).replace(/\\/g, '/'));
+    reconciledFiles.push(relativePath(root, filePath));
     if (supersededRunLeaseId) {
       supersededRunLeaseIds.push(supersededRunLeaseId);
     }
@@ -345,8 +487,8 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
 
   const summary = {
     ok: true,
-    statusFile: path.relative(root, statusFile).replace(/\\/g, '/'),
-    workflowDir: path.relative(root, workflowDir).replace(/\\/g, '/'),
+    statusFile: relativePath(root, statusFile),
+    workflowDir: relativePath(root, workflowDir),
     fallbackRunId,
     completionStatus: 'completed-via-local-fallback',
     completionBoundary,
@@ -365,16 +507,34 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
   const debugLogPath = appendDebugLog(root, 'phase-closeout-reconciler-summary', summary);
   return {
     ...summary,
-    debugLogPath: path.relative(root, debugLogPath).replace(/\\/g, '/'),
+    debugLogPath: relativePath(root, debugLogPath),
   };
 }
 
 function parseArgs(argv) {
   const result = {};
   const args = [...argv];
+  if (args[0] === 'reconcile') {
+    result.command = args.shift();
+  }
   while (args.length > 0) {
     const arg = args.shift();
     switch (arg) {
+      case '--mode':
+        result.mode = args.shift() || '';
+        break;
+      case '--adopt-orphan':
+        result.adoptOrphan = true;
+        break;
+      case '--plan-dir':
+        result.planDir = args.shift() || '';
+        break;
+      case '--phase':
+        result.phase = args.shift() || '';
+        break;
+      case '--adoption-metadata':
+        result.adoptionMetadata = args.shift() || '';
+        break;
       case '--status-file':
         result.statusFile = args.shift() || '';
         break;
@@ -422,6 +582,7 @@ function parseArgs(argv) {
 function printHelp() {
   process.stdout.write(`Usage:
   node .claude/scripts/phase-closeout-reconciler.mjs [options]
+  node .claude/scripts/phase-closeout-reconciler.mjs reconcile --mode manual --adopt-orphan --adoption-metadata <path>
 
 Options:
   --status-file <path>       Default: ${DEFAULT_STATUS_FILE}
@@ -435,6 +596,9 @@ Options:
   --original-stop-reason <reason>
   --now <iso>                Deterministic timestamp for tests
   --root <path>              Repository root for relative paths
+  --mode <manual|auto>       Orphan adoption requires reconcile --mode manual
+  --adopt-orphan             Valid only with reconcile --mode manual
+  --adoption-metadata <path> Required JSON metadata for manual orphan reconcile
 `);
 }
 

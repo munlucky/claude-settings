@@ -463,6 +463,37 @@ test('direct-pass-only-completion-rejected', () => {
   });
 });
 
+test('adopted-but-unverified fixture fails completed gate', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writePhase2CompletedFixture(root);
+    fs.writeFileSync(
+      path.join(root, 'docs/implementation/execution/02-completion-gate/adoption-metadata.json'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        adoptedBy: 'codex-test',
+        adoptionReason: 'manual review of orphan projection',
+        reconciledFrom: 'orphan_projection',
+        sourceProjectionPaths: ['.claude/logs/workflow-enforcement/current-run.json'],
+        reverificationCommands: [
+          {
+            command: 'node --test .claude/scripts/verify-phase-closeout.test.mjs',
+            cwd: 'repository root',
+            expectedSignal: 'exit 0',
+          },
+        ],
+        completionStatus: 'adopted_but_unverified',
+        verifierPassRequired: true,
+      }, null, 2)}\n`,
+      'utf8',
+    );
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.code === 'adopted-but-unverified'));
+  });
+});
+
 test('phase closeout allows explicit AC not_applicable without AC evidence', () => {
   withFixture({ notApplicableAcWorksets: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));

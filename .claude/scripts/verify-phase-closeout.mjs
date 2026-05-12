@@ -288,6 +288,20 @@ function addSidecarCloseoutViolations(violations, sidecarState, phaseNumber, man
   }
 }
 
+function pendingOrphanAdoptionMetadata(executionDir) {
+  const metadataPath = executionDir ? path.join(executionDir, 'adoption-metadata.json') : '';
+  const metadata = readJsonIfExists(metadataPath);
+  if (!metadata || metadata.reconciledFrom !== 'orphan_projection') {
+    return null;
+  }
+  const status = String(metadata.completionStatus || metadata.adoptionStatus || '').trim();
+  const verifierRequired = metadata.verifierPassRequired === true;
+  if (status === 'adopted_but_unverified' || verifierRequired) {
+    return { metadataPath, status: status || 'adopted_but_unverified' };
+  }
+  return null;
+}
+
 function hasEnvironmentBlockerPayload(statusText) {
   const text = normalize(statusText);
   return /^environmentBlockers:\s*$/m.test(text)
@@ -623,6 +637,15 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     }
     const phaseExecutionDir = phase.qaReport ? path.dirname(resolvePath(phase.qaReport)) : '';
     if (phaseExecutionDir) {
+      const pendingAdoption = pendingOrphanAdoptionMetadata(phaseExecutionDir);
+      if (pendingAdoption) {
+        addViolation(
+          violations,
+          'adopted-but-unverified',
+          `Completed phase ${phaseNumber} has pending orphan adoption at ${path.relative(process.cwd(), pendingAdoption.metadataPath)}.`,
+          phaseNumber,
+        );
+      }
       const sidecarPaths = sidecarPathsForExecutionDir(phaseExecutionDir);
       const sidecarState = readBlockerSidecarState(sidecarPaths);
       addSidecarCloseoutViolations(

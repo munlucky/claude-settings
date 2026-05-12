@@ -3126,6 +3126,14 @@ function main(argv = process.argv.slice(2)) {
   const [command, ...args] = argv;
 
   switch (command) {
+  case 'reconcile':
+    if (args.includes('--adopt-orphan')) {
+      console.error('ERROR: delegated_loop_cannot_adopt_orphan');
+      console.error('Use phase-closeout-reconciler.mjs reconcile --mode manual --adopt-orphan for manual orphan reconciliation.');
+      process.exit(64);
+    }
+    printUsage();
+    process.exit(64);
   case 'list-stale-in-progress-phases': {
     const [statusFile, staleSecondsRaw = '1800'] = args;
     if (!statusFile) {

@@ -135,6 +135,10 @@ function parseArgs(argv) {
       case '--dry-run':
         state.dryRun = true;
         break;
+      case '--adopt-orphan':
+        console.error('ERROR: delegated_loop_cannot_adopt_orphan');
+        console.error('Use phase-closeout-reconciler.mjs reconcile --mode manual --adopt-orphan for manual orphan reconciliation.');
+        process.exit(64);
       case '--help':
       case '-h':
         showHelp();
