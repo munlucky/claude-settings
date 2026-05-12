@@ -1,0 +1,65 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "unavailable"
+  reviewerSession: "controller-local-review"
+  targetPlanPackage:
+    planDir: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12"
+    masterPlan: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/02-completion-gate-canonical-enforcement-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/03-manual-orphan-reconcile-mode-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/06-declared-alternate-verifier-policy-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.94
+      evidence:
+        - "Master Objective lists canonical manifest, orphan rejection, reconciliation, liveness, verifier, and telemetry goals."
+      findings: []
+    scopeClarity:
+      weight: 0.20
+      score: 0.90
+      evidence:
+        - "Master Non-Goals protects active residual package and runtime pointers."
+        - "Each phase has in-scope and out-of-scope sections."
+      findings: []
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.90
+      evidence:
+        - "AC-01 through AC-13 map each v4 requirement to phase evidence."
+        - "Named v4 tests are listed in Phase 07."
+      findings: []
+    verificationClarity:
+      weight: 0.20
+      score: 0.88
+      evidence:
+        - "Each phase names exact node/python/git commands and expected pass signals."
+      findings:
+        - "Strict runnable verification still needs an isolated review pass before dispatch."
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.88
+      evidence:
+        - "Source baseline names current scripts and previous completed packages."
+        - "Owned paths are separated by phase."
+      findings: []
+    phaseExecutability:
+      weight: 0.10
+      score: 0.88
+      evidence:
+        - "Phase execution metadata exists for all seven phases."
+        - "Sequential phases are used for shared completion and reconciliation policy."
+      findings:
+        - "Runtime pointer preparation is intentionally deferred."
+  totalScore: 0.90
+  ambiguityScore: 0.10
+  decision: "constrained"
+  blockingFindings:
+    - "Isolation mode is unavailable; strict runnable readiness requires forked reviewer/writer evidence or explicit user acceptance."
+  improvementDirectives: []

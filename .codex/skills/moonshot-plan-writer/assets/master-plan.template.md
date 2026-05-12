@@ -10,6 +10,31 @@
 ## Objective
 - <overall objective>
 
+## Plan Quality Loop
+```yaml
+planQualityReview:
+  schemaVersion: 1
+  finalIteration: <n>
+  isolationMode: "forked | unavailable"
+  maxIterations: 4
+  targetAmbiguityScore: 0.20
+  blockedAmbiguityScore: 0.35
+  totalScore: 0.0
+  ambiguityScore: 1.0
+  decision: "pass | revise | blocked | revise_exhausted"
+  reviewerSessions: []
+  writerSessions: []
+  artifactRoot: "docs/implementation/planning-loop"
+  latestReview: "docs/implementation/planning-loop/plan-quality-review-iter-<NN>.yaml"
+  latestWriterRevision: "docs/implementation/planning-loop/plan-writer-revision-iter-<NN>.yaml"
+  blockingFindings: []
+  remainingImprovementDirectives: []
+  remainingOpenDecisions: []
+```
+
+- Strict runnable readiness requires `ambiguityScore <= 0.20`, no blocking findings, no actionable improvement directives, and forked reviewer/writer evidence unless the user explicitly approves degraded isolation.
+- Keep iteration artifacts under this plan package's `planning-loop/` directory.
+
 ## MVP Methodology
 ```yaml
 mvpMethodology:

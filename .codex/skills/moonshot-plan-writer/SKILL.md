@@ -67,6 +67,100 @@ Acceptance criteria extraction:
 - Each `AC-*` must keep a source label and evidence target.
 - Master traceability and phase docs must refer to `AC-*` ids where later WORKSETS/QA evidence will attach.
 
+## Independent Planning Loop
+
+When a user hands this skill a plan, draft, PRD/SPEC package, or implementation request, treat the current session as the **Planning Controller** and use separate sessions for review and rewrite until the plan package is executable.
+
+Required roles:
+- **Planning Controller**: current session. Owns source selection, iteration state, artifact paths, and final readiness decision.
+- **Reviewer Agent**: fresh fork/sub-agent or equivalent isolated session. Read-only. Scores the current master/phase package and returns only structured review output.
+- **Writer Agent**: fresh fork/sub-agent or equivalent isolated session. Writes only the active plan package and planning-loop artifacts. It receives the reviewer directives and revises the plan to reduce ambiguity.
+
+Runtime requirement:
+- Prefer real fork/sub-agent sessions for both Reviewer Agent and Writer Agent.
+- If the current user request names this skill but does not explicitly authorize sub-agents, delegation, or parallel agent work, pause before the Independent Planning Loop and ask one concise yes/no question for permission to run isolated Reviewer Agent and Writer Agent sessions. Do not downgrade to `isolationMode: "unavailable"` until the user declines, does not answer, or the runtime still cannot provide isolated sessions after permission is granted.
+- Treat user approval such as "yes", "proceed", or "Reviewer Agent and Writer Agent를 분리해서 실행해줘" as explicit authorization for the loop. Record that approval in `controller-state.yaml`.
+- If the runtime cannot provide isolated sessions, record `isolationMode: "unavailable"` and do not claim strict runnable readiness. The package can be returned only as `constrained` or `blocked` unless the user explicitly accepts the degraded path.
+- Never let the Reviewer Agent modify files. Never let the Writer Agent change source code, runtime state, scripts, verification baselines, or files outside the selected plan package unless the user explicitly requests that scope.
+
+Loop contract:
+```text
+iteration = 1
+while true:
+  1) Controller prepares or refreshes the current master/phase plan package.
+  2) Reviewer Agent scores the package with the fixed rubric and emits planQualityReview.
+  3) If ambiguityScore <= 0.20, no blockingFindings, and no improvementDirectives remain: stop with decision=pass.
+  4) If ambiguityScore > 0.35 or core goal/scope/verification gaps exist: route to Writer Agent once if directives are actionable; otherwise stop with decision=blocked.
+  5) Writer Agent applies only the directives needed to reduce ambiguity and emits planWriterRevision.
+  6) Controller records iteration artifacts under <plan-dir>/planning-loop/.
+  7) Repeat while the Reviewer Agent still returns actionable improvementDirectives, until pass or maxIterations is reached.
+```
+
+Default bounds:
+- `maxIterations: 4`
+- `targetAmbiguityScore: 0.20`
+- `blockedAmbiguityScore: 0.35`
+- If `maxIterations` is exhausted without meeting the target, use decision `revise_exhausted` and keep the plan non-runnable unless the user approves constrained execution.
+- A reviewer result with non-empty `improvementDirectives` must route to Writer Agent even when `ambiguityScore <= 0.20`, unless every directive is explicitly marked non-actionable or out-of-scope with evidence.
+
+Fixed scoring rubric:
+- `goalClarity` weight `0.20`
+- `scopeClarity` weight `0.20`
+- `acceptanceCriteriaClarity` weight `0.20`
+- `verificationClarity` weight `0.20`
+- `brownfieldReadiness` weight `0.10`
+- `phaseExecutability` weight `0.10`
+
+Use evidence-backed scores from `0.00` to `1.00`. Compute `totalScore` as the weighted sum and `ambiguityScore` as `1 - totalScore`. Do not raise a score without naming the file, section, AC id, command, or phase metadata that justifies it.
+
+Required planning-loop artifacts:
+- `<plan-dir>/planning-loop/controller-state.yaml`
+- `<plan-dir>/planning-loop/plan-quality-review-iter-<NN>.yaml`
+- `<plan-dir>/planning-loop/plan-writer-revision-iter-<NN>.yaml`
+
+Required `planQualityReview` shape:
+```yaml
+planQualityReview:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked | unavailable"
+  reviewerSession: "<session-id-or-runtime-label>"
+  targetPlanPackage:
+    planDir: "docs/implementation"
+    masterPlan: "docs/implementation/00-master-plan-v<n>.md"
+    phaseDocs: []
+  rubric:
+    goalClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    scopeClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    acceptanceCriteriaClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    verificationClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    brownfieldReadiness: { weight: 0.10, score: 0.0, evidence: [], findings: [] }
+    phaseExecutability: { weight: 0.10, score: 0.0, evidence: [], findings: [] }
+  totalScore: 0.0
+  ambiguityScore: 1.0
+  decision: "pass | revise | blocked | revise_exhausted"
+  blockingFindings: []
+  improvementDirectives: []
+```
+
+Required `planWriterRevision` shape:
+```yaml
+planWriterRevision:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked | unavailable"
+  writerSession: "<session-id-or-runtime-label>"
+  directivesApplied: []
+  filesChanged: []
+  ambiguityReductionNotes: []
+  remainingOpenDecisions: []
+```
+
+Controller closeout:
+- Copy the final `planQualityReview` summary into the master plan's Plan Quality Loop section.
+- The master plan's `readinessDecision` must match the final controller decision.
+- Do not run `prepare-implementation-plan-state.mjs` for strict runnable state unless the final `ambiguityScore <= 0.20`, no blocking findings remain, no actionable improvement directives remain, and phase inventory checks pass.
+
 ## Workflow
 0. Run `project-memory-agent` with `stage=plan`, `memoryMode=read_only`, and merge only summarized `projectMemoryContext`.
    - Use prior decisions, domain terms, non-goals, and architecture boundaries as planning deltas.
@@ -115,7 +209,13 @@ Acceptance criteria extraction:
     - When `mvpMethodology.profile: demo_first`, slice by maturity milestone instead of backend-first feature layers.
     - In demo-first plans, a Real Functional phase is executable only when `USER_DEMO_APPROVAL.md` is `approved` with a non-empty approved scope.
     - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
-6. Prepare runnable phase state when the plan package is the next execution target.
+6. Run the Independent Planning Loop.
+   - Start with the current master/phase package from steps 4 and 5.
+   - Run a Reviewer Agent in a separate session and record `plan-quality-review-iter-<NN>.yaml`.
+   - If the reviewer returns `decision: revise`, run a Writer Agent in a separate session and record `plan-writer-revision-iter-<NN>.yaml`.
+   - Repeat until `ambiguityScore <= 0.20` with no blocking findings and no actionable improvement directives, or until `blocked` / `revise_exhausted`.
+   - Keep non-critical assumptions in the assumptions ledger. Keep core goal/scope/verification gaps as blockers.
+7. Prepare runnable phase state when the plan package is the next execution target.
    - Preserve active root plan documents.
    - Archive stale runtime/evidence surfaces instead of deleting them:
      - `docs/implementation/execution`
@@ -143,10 +243,10 @@ Acceptance criteria extraction:
      - `goalRuntime.status` must not be `complete` while any actionable phase remains pending, in_progress, blocked, or retryable.
      - Remaining/actionable phase counts must match the master checklist and phase-status phase list.
    - Record the archive location for stale runtime/evidence surfaces in the master plan or phase status notes when the repository has a note field.
-7. Synchronize completion state.
+8. Synchronize completion state.
    - When a phase is completed, immediately mark its master checklist item as checked.
    - Record evidence links used to justify checked state.
-8. Apply completion loop.
+9. Apply completion loop.
    - Continue iterating until every source requirement is mapped and every master checklist item is checked.
    - Never treat work as fully complete while any checklist item remains unchecked.
 

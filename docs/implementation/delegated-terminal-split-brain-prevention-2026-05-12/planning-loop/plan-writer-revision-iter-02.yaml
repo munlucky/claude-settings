@@ -1,0 +1,64 @@
+planWriterRevision:
+  schemaVersion: 1
+  iteration: 2
+  isolationMode: "forked"
+  writerSession: "forked-writer-current-session"
+  sourceReview: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-02.yaml"
+  directivesApplied:
+    - id: "DIR-01"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md"
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/controller-state.yaml"
+      summary: "Updated planning-loop state from unavailable/constrained to forked/revise and recorded forked reviewer evidence."
+    - id: "DIR-02"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md"
+      summary: "Added canonical attempt directory convention, manifest and heartbeat filenames, resolver API, and atomic patch semantics."
+    - id: "DIR-03"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md"
+      summary: "Added machine-readable reconciliation intent schema, transactionId reuse, partial/success markers, and idempotent resume rules."
+    - id: "DIR-04"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/03-manual-orphan-reconcile-mode-v1.md"
+      summary: "Fixed forbidden delegated-terminal adoption commands, allowed manual reconcile command shape, adoption metadata schema, and verifier re-run capture path."
+    - id: "DIR-05"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md"
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md"
+      summary: "Added REQ-7.2/AC-14 and bounded legacy grandfathering by absence of schemaVersion and manifestRequired plus known legacy artifact class."
+    - id: "DIR-06"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md"
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md"
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/06-declared-alternate-verifier-policy-v1.md"
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md"
+      summary: "Made Phase 05 and Phase 06 sequential and described Phase 06 as a Phase 02 verdict policy extension."
+    - id: "DIR-07"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/02-completion-gate-canonical-enforcement-v1.md"
+      summary: "Added canonical mode precedence, failure-code priority, and legacy fallback prohibition under attempt manifest required mode."
+    - id: "DIR-08"
+      filesChanged:
+        - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md"
+      summary: "Added liveness fixture input shapes for missing start time, PID reuse, and heartbeat attemptId mismatch; forbids fallback identity."
+  filesChanged:
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/02-completion-gate-canonical-enforcement-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/03-manual-orphan-reconcile-mode-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/06-declared-alternate-verifier-policy-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/controller-state.yaml"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-02.yaml"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-02.yaml"
+  ambiguityReductionNotes:
+    - "Canonical manifest discovery now has one resolver and one attempt directory convention."
+    - "Manual orphan adoption has an explicit CLI boundary and schema instead of implicit operator discretion."
+    - "Partial reconciliation and liveness edge cases now have machine-readable fixture shapes."
+    - "Legacy cutoff is bounded and cannot bypass manifestRequired/schemaVersion enforcement."
+  remainingOpenDecisions:
+    - "Run Reviewer Agent iteration 3 to decide pass after these writer changes."
+    - "Runtime pointer preparation still requires explicit user instruction."

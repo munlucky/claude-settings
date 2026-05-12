@@ -66,6 +66,100 @@ Acceptance criteria extraction:
 - 각 `AC-*`는 source label과 evidence target을 유지해야 합니다.
 - master traceability와 phase docs는 이후 WORKSETS/QA evidence가 붙을 `AC-*` ids를 참조해야 합니다.
 
+## 독립 Planning Loop
+
+사용자가 이 스킬에 계획, draft, PRD/SPEC package, 구현 요청을 전달하면 현재 세션은 **Planning Controller**로 두고, review와 rewrite는 별도 세션에서 수행해 plan package가 실행 가능해질 때까지 반복합니다.
+
+필수 역할:
+- **Planning Controller**: 현재 세션. source 선택, iteration state, artifact path, 최종 readiness decision을 소유합니다.
+- **Reviewer Agent**: fresh fork/sub-agent 또는 동등한 격리 세션. 읽기 전용입니다. 현재 master/phase package를 채점하고 구조화된 review output만 반환합니다.
+- **Writer Agent**: fresh fork/sub-agent 또는 동등한 격리 세션. active plan package와 planning-loop artifact만 작성합니다. reviewer directive를 받아 ambiguity를 줄이는 방향으로 계획을 고칩니다.
+
+Runtime requirement:
+- Reviewer Agent와 Writer Agent 모두 실제 fork/sub-agent 세션을 우선합니다.
+- 현재 사용자 요청이 이 스킬을 지목했지만 sub-agent, delegation, parallel agent work를 명시 승인하지 않았으면, 독립 Planning Loop 직전에 멈추고 isolated Reviewer Agent와 Writer Agent 세션 실행 권한을 묻는 짧은 yes/no 질문을 합니다. 사용자가 거절하거나 답하지 않거나, 승인 후에도 런타임이 격리 세션을 제공하지 못할 때까지 `isolationMode: "unavailable"`로 낮추지 않습니다.
+- 사용자의 "yes", "진행", "Reviewer Agent와 Writer Agent를 분리해서 실행해줘" 같은 응답은 loop에 대한 명시 승인으로 취급합니다. 이 승인은 `controller-state.yaml`에 기록합니다.
+- 런타임이 격리 세션을 제공하지 못하면 `isolationMode: "unavailable"`을 기록하고 strict runnable readiness를 주장하지 않습니다. 사용자가 degraded path를 명시 승인하지 않으면 package는 `constrained` 또는 `blocked`로만 반환합니다.
+- Reviewer Agent는 파일을 수정하면 안 됩니다. Writer Agent는 사용자 명시 요청 없이는 선택된 plan package 밖의 source code, runtime state, scripts, verification baselines를 변경하면 안 됩니다.
+
+Loop contract:
+```text
+iteration = 1
+while true:
+  1) Controller가 현재 master/phase plan package를 준비하거나 갱신한다.
+  2) Reviewer Agent가 고정 rubric으로 package를 채점하고 planQualityReview를 낸다.
+  3) ambiguityScore <= 0.20이고 blockingFindings가 없으며 improvementDirectives도 남지 않으면 decision=pass로 종료한다.
+  4) ambiguityScore > 0.35이거나 core goal/scope/verification gap이 있으면 directive가 실행 가능할 때만 Writer Agent로 한 번 보낸다. 아니면 decision=blocked로 종료한다.
+  5) Writer Agent가 ambiguity 감소에 필요한 directive만 적용하고 planWriterRevision을 낸다.
+  6) Controller가 iteration artifact를 <plan-dir>/planning-loop/ 아래에 기록한다.
+  7) Reviewer Agent가 실행 가능한 improvementDirectives를 반환하는 동안 pass 또는 maxIterations 도달까지 반복한다.
+```
+
+기본 제한:
+- `maxIterations: 4`
+- `targetAmbiguityScore: 0.20`
+- `blockedAmbiguityScore: 0.35`
+- `maxIterations`를 소진해도 target을 충족하지 못하면 `revise_exhausted`로 판정하고, 사용자가 constrained execution을 승인하기 전까지 runnable로 보지 않습니다.
+- reviewer 결과의 `improvementDirectives`가 비어 있지 않으면 `ambiguityScore <= 0.20`이어도 Writer Agent로 보내야 합니다. 단, 모든 directive가 근거와 함께 non-actionable 또는 out-of-scope로 명시된 경우는 예외입니다.
+
+고정 scoring rubric:
+- `goalClarity` weight `0.20`
+- `scopeClarity` weight `0.20`
+- `acceptanceCriteriaClarity` weight `0.20`
+- `verificationClarity` weight `0.20`
+- `brownfieldReadiness` weight `0.10`
+- `phaseExecutability` weight `0.10`
+
+각 score는 `0.00`부터 `1.00`까지 evidence 기반으로 매깁니다. `totalScore`는 weighted sum, `ambiguityScore`는 `1 - totalScore`로 계산합니다. 점수를 올릴 때는 근거가 되는 파일, 섹션, AC id, command, phase metadata를 반드시 적습니다.
+
+필수 planning-loop artifact:
+- `<plan-dir>/planning-loop/controller-state.yaml`
+- `<plan-dir>/planning-loop/plan-quality-review-iter-<NN>.yaml`
+- `<plan-dir>/planning-loop/plan-writer-revision-iter-<NN>.yaml`
+
+필수 `planQualityReview` shape:
+```yaml
+planQualityReview:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked | unavailable"
+  reviewerSession: "<session-id-or-runtime-label>"
+  targetPlanPackage:
+    planDir: "docs/implementation"
+    masterPlan: "docs/implementation/00-master-plan-v<n>.md"
+    phaseDocs: []
+  rubric:
+    goalClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    scopeClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    acceptanceCriteriaClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    verificationClarity: { weight: 0.20, score: 0.0, evidence: [], findings: [] }
+    brownfieldReadiness: { weight: 0.10, score: 0.0, evidence: [], findings: [] }
+    phaseExecutability: { weight: 0.10, score: 0.0, evidence: [], findings: [] }
+  totalScore: 0.0
+  ambiguityScore: 1.0
+  decision: "pass | revise | blocked | revise_exhausted"
+  blockingFindings: []
+  improvementDirectives: []
+```
+
+필수 `planWriterRevision` shape:
+```yaml
+planWriterRevision:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked | unavailable"
+  writerSession: "<session-id-or-runtime-label>"
+  directivesApplied: []
+  filesChanged: []
+  ambiguityReductionNotes: []
+  remainingOpenDecisions: []
+```
+
+Controller closeout:
+- 최종 `planQualityReview` 요약을 master plan의 Plan Quality Loop 섹션에 복사합니다.
+- master plan의 `readinessDecision`은 최종 controller decision과 일치해야 합니다.
+- 최종 `ambiguityScore <= 0.20`, blocking finding 없음, 실행 가능한 improvement directive 없음, phase inventory check 통과 전에는 strict runnable state로 `prepare-implementation-plan-state.mjs`를 실행하지 않습니다.
+
 ## 워크플로우
 0. `project-memory-agent`를 `stage=plan`, `memoryMode=read_only`로 실행하고 요약된 `projectMemoryContext`만 병합한다.
    - 이전 결정, 도메인 용어, non-goal, architecture boundary를 planning delta로 사용한다.
@@ -107,7 +201,13 @@ Acceptance criteria extraction:
    - 기준 문서 추적 ID를 포함한 소스 매핑 섹션을 포함한다.
    - 생성/수정/테스트할 정확한 파일, 실행할 정확한 명령, 예상 fail/pass signal, blocker 조건, review checkpoint, verification evidence path를 포함한다.
    - 의존성, 소유권, 검증 경로가 비사소하면 `plan-eng-review`를 실행한다.
-6. plan package가 다음 실행 대상이면 실행 가능한 phase 상태를 준비한다.
+6. 독립 Planning Loop를 실행한다.
+   - 4, 5단계의 현재 master/phase package를 입력으로 사용한다.
+   - Reviewer Agent를 별도 세션에서 실행하고 `plan-quality-review-iter-<NN>.yaml`을 기록한다.
+   - reviewer가 `decision: revise`를 반환하면 Writer Agent를 별도 세션에서 실행하고 `plan-writer-revision-iter-<NN>.yaml`을 기록한다.
+   - `ambiguityScore <= 0.20`이고 blocking finding과 실행 가능한 improvement directive가 없거나, `blocked` / `revise_exhausted`가 될 때까지 반복한다.
+   - non-critical assumption은 assumptions ledger에 남기고, core goal/scope/verification gap은 blocker로 유지한다.
+7. plan package가 다음 실행 대상이면 실행 가능한 phase 상태를 준비한다.
    - 활성 root plan 문서는 보존한다.
    - 오래된 runtime/evidence surface는 삭제하지 말고 archive한다.
      - `docs/implementation/execution`
@@ -135,10 +235,10 @@ Acceptance criteria extraction:
      - actionable phase가 pending, in_progress, blocked, retryable 중 하나로 남아 있으면 `goalRuntime.status`는 `complete`이면 안 된다.
      - remaining/actionable phase count는 master checklist와 phase-status phase list에 맞아야 한다.
    - 저장소에 note 필드가 있으면 오래된 runtime/evidence surface의 archive 위치를 master plan 또는 phase status notes에 기록한다.
-7. 완료 상태를 동기화한다.
+8. 완료 상태를 동기화한다.
    - 페이즈 완료 시 즉시 master 체크리스트를 `[x]`로 갱신한다.
    - `[x]` 처리 근거(증빙 경로/검증 결과)를 함께 기록한다.
-8. 완료 루프를 적용한다.
+9. 완료 루프를 적용한다.
    - 모든 기준 요구사항이 매핑되고, master 체크리스트의 모든 항목이 `[x]`가 될 때까지 반복한다.
    - 체크리스트 미완료 상태에서는 전체 완료로 선언하지 않는다.
    - master plan 생성만으로 실행 준비 완료라고 보지 않는다. 실행 가능한 준비 완료는 root phase 문서 정리, `prepare-implementation-plan-state.mjs --dry-run`, 선택된 package와 일치하는 phase count 확인까지 포함한다.
