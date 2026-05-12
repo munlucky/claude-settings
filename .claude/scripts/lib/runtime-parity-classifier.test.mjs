@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
   classifyRuntimeParity,
   normalizeCodexProbeText,
   resolveRuntimeProfile,
+  validateReferencePlanDir,
 } from './runtime-parity-classifier.mjs';
 
 test('missing Codex native package is package_missing, not auth failure', () => {
@@ -93,4 +97,50 @@ test('shell string normalization is separate from object-input classification', 
   });
   assert.equal(result.reason, 'package_missing');
   assert.equal(result.status, 'skipped');
+});
+
+test('default reference fixture requires explicit opt in', () => {
+  const result = validateReferencePlanDir({ referencePlanDir: '', allowDefaultFixture: false });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'default_fixture_requires_opt_in');
+  assert.match(result.recommendedCommand, /--allow-default-fixture/);
+});
+
+test('broad implementation directory does not fallback to default fixture', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-parity-ref-'));
+  try {
+    fs.mkdirSync(path.join(root, 'docs', 'implementation'), { recursive: true });
+    const result = validateReferencePlanDir({
+      referencePlanDir: 'docs/implementation',
+      cwd: root,
+      allowDefaultFixture: false,
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'master_plan_not_found');
+    assert.equal(result.broadParentDirectory, true);
+    assert.equal(result.expectedPatterns.includes('00-master-plan-v*.md'), true);
+    assert.match(result.searchedPaths[0], /00-master-plan-v1\.md$/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('concrete reference plan directory with master plan passes validation', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-parity-ref-'));
+  try {
+    const planDir = path.join(root, 'docs', 'implementation', 'valid-plan');
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, '00-master-plan-v1.md'), '# Master\n', 'utf8');
+    const result = validateReferencePlanDir({
+      referencePlanDir: 'docs/implementation/valid-plan',
+      cwd: root,
+    });
+
+    assert.equal(result.ok, true);
+    assert.match(result.masterPlanPath, /00-master-plan-v1\.md$/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

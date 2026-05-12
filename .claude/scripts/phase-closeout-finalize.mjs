@@ -289,6 +289,10 @@ function writeJsonAtomic(filePath, payload) {
   fs.renameSync(tempFile, filePath);
 }
 
+function jsonPayloadRawHash(payload) {
+  return crypto.createHash('sha256').update(Buffer.from(`${JSON.stringify(payload, null, 2)}\n`)).digest('hex');
+}
+
 function writeTextAtomic(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tempFile = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
@@ -324,9 +328,9 @@ function relativeFromRoot(root, candidate) {
   return path.relative(root, candidate).replace(/\\/g, '/');
 }
 
-function artifactMetadata({ root, kind, filePath, commitToken }) {
+function artifactMetadata({ root, kind, filePath, commitToken, sourceAttempt = null }) {
   const stats = fs.statSync(filePath);
-  return {
+  const metadata = {
     kind,
     path: relativeFromRoot(root, filePath),
     hashAlgorithm: 'sha256_raw_bytes',
@@ -335,6 +339,10 @@ function artifactMetadata({ root, kind, filePath, commitToken }) {
     mtimeMs: stats.mtimeMs,
     commitToken,
   };
+  if (sourceAttempt) {
+    metadata.sourceAttempt = sourceAttempt;
+  }
+  return metadata;
 }
 
 function readJsonIfExists(filePath) {
@@ -608,16 +616,69 @@ function buildLogSnapshot({ root, artifact, filePath, oldCommitToken, superseded
   };
 }
 
-function prepareSupersededArtifactsArchive({ root, workflowDir, commitToken, dryRun, keepPrep, plannedWrites }) {
+function staleCurrentArtifactDiagnostic({
+  root,
+  artifact,
+  filePath,
+  expectedHash,
+  actualHash,
+  oldCommitToken,
+  supersededByCommitToken,
+  phaseNumber,
+  statusFile,
+  planDir,
+  masterPlan,
+  executionRoot,
+}) {
+  const artifactPath = relativeFromRoot(root, filePath);
+  return {
+    diagnostic: 'stale_current_artifact_index',
+    code: 'stale_current_artifact_index',
+    artifactKind: artifact.kind || artifact.type || '',
+    artifactPath,
+    oldHash: expectedHash,
+    newHash: actualHash,
+    expectedHash,
+    actualHash,
+    sourceAttempt: artifact.commitToken || oldCommitToken,
+    oldCommitToken,
+    supersededByCommitToken,
+    recoveryCommand: [
+      'node .claude/scripts/phase-closeout-finalize.mjs finalize',
+      `--phase ${phaseNumber}`,
+      `--status-file ${statusFile}`,
+      `--plan-dir ${planDir}`,
+      `--master-plan ${masterPlan}`,
+      `--execution-root ${executionRoot}`,
+      '--json',
+    ].join(' '),
+    meaning: 'The previous current-artifacts.json pointed at a canonical artifact whose raw bytes changed before this closeout publish. The stale artifact was not snapshotted as authoritative history.',
+  };
+}
+
+function prepareSupersededArtifactsArchive({
+  root,
+  workflowDir,
+  commitToken,
+  dryRun,
+  keepPrep,
+  plannedWrites,
+  phaseNumber,
+  statusFile,
+  planDir,
+  masterPlan,
+  executionRoot,
+}) {
   const previous = previousCurrentArtifacts({ root, workflowDir });
   const oldCommitToken = String(previous.index?.commitToken || previous.index?.currentCommitToken || '').trim();
   if (!oldCommitToken || previous.artifacts.length === 0) {
-    return { supersededArtifacts: [], logSnapshots: [], archiveRoot: '', orphanedDiagnostic: null };
+    return { supersededArtifacts: [], logSnapshots: [], archiveRoot: '', orphanedDiagnostic: null, staleCurrentArtifactDiagnostics: [] };
   }
 
   const archiveRoot = path.join(workflowDir, CLOSEOUT_ARCHIVE_DIR, oldCommitToken);
   const supersededArtifacts = [];
   const logSnapshots = [];
+  const staleCurrentArtifactDiagnostics = [];
 
   for (const artifact of previous.artifacts) {
     const sourcePath = resolveArtifactPath(root, artifact);
@@ -632,7 +693,27 @@ function prepareSupersededArtifactsArchive({ root, workflowDir, commitToken, dry
 
     const artifactHash = hashFile(sourcePath);
     if (artifact.hash && artifact.hash !== artifactHash) {
-      throw new Error(`Cannot snapshot previous current artifact with stale hash: ${relativeFromRoot(root, sourcePath)}`);
+      const diagnostic = staleCurrentArtifactDiagnostic({
+        root,
+        artifact,
+        filePath: sourcePath,
+        expectedHash: artifact.hash,
+        actualHash: artifactHash,
+        oldCommitToken,
+        supersededByCommitToken: commitToken,
+        phaseNumber,
+        statusFile,
+        planDir,
+        masterPlan,
+        executionRoot,
+      });
+      staleCurrentArtifactDiagnostics.push(diagnostic);
+      plannedWrites.push({
+        path: previous.indexPath,
+        kind: 'stale_current_artifact_index',
+        diagnostic,
+      });
+      continue;
     }
     const snapshotPath = path.join(archiveRoot, relativeFromRoot(root, sourcePath));
     plannedWrites.push({ path: snapshotPath, kind: 'superseded-artifact-archive' });
@@ -654,6 +735,7 @@ function prepareSupersededArtifactsArchive({ root, workflowDir, commitToken, dry
     supersededArtifacts,
     logSnapshots,
     archiveRoot: relativeFromRoot(root, archiveRoot),
+    staleCurrentArtifactDiagnostics,
     orphanedDiagnostic: supersededArtifacts.length > 0 ? {
       diagnostic: 'orphaned_prepare_archive',
       archiveRoot: relativeFromRoot(root, archiveRoot),
@@ -683,7 +765,7 @@ function canonicalVerdictPathForPhase(root, phaseNumber) {
   return path.join(root, '.claude', `verification-verdict-phase${String(phaseNumber).padStart(2, '0')}-final.json`);
 }
 
-export function currentIndexVerdictArtifacts({ root, phases = [], phaseNumber, canonicalVerdictPath, commitToken }) {
+export function currentIndexVerdictArtifacts({ root, phases = [], phaseNumber, canonicalVerdictPath, commitToken, attemptLocalVerdict = null }) {
   const phaseNumbers = new Set([Number(phaseNumber)]);
   for (const phase of phases) {
     if (phase.status !== 'completed') {
@@ -710,6 +792,7 @@ export function currentIndexVerdictArtifacts({ root, phases = [], phaseNumber, c
         kind: `canonical-verdict-phase${padded}`,
         filePath,
         commitToken,
+        sourceAttempt: number === Number(phaseNumber) ? attemptLocalVerdict : null,
       });
     })
     .filter(Boolean);
@@ -727,8 +810,19 @@ function buildCloseoutSyncManifest({ root, commitToken, verifiedGitTreeFingerpri
   };
 }
 
-function buildCurrentArtifactsIndex({ root, commitToken, manifestPath, manifestHash, artifacts, generatedAt, supersededArtifacts = [], logSnapshots = [], postPublishStatusPath = '' }) {
-  return {
+function buildCurrentArtifactsIndex({
+  root,
+  commitToken,
+  manifestPath,
+  manifestHash,
+  artifacts,
+  generatedAt,
+  supersededArtifacts = [],
+  logSnapshots = [],
+  staleCurrentArtifactDiagnostics = [],
+  postPublishStatusPath = '',
+}) {
+  const index = {
     schemaVersion: 1,
     commitToken,
     manifestPath: relativeFromRoot(root, manifestPath),
@@ -740,6 +834,10 @@ function buildCurrentArtifactsIndex({ root, commitToken, manifestPath, manifestH
     supersededArtifacts,
     logSnapshots,
   };
+  if (staleCurrentArtifactDiagnostics.length > 0) {
+    index.staleCurrentArtifactDiagnostics = staleCurrentArtifactDiagnostics;
+  }
+  return index;
 }
 
 function plannedManifestHash(plannedWrites) {
@@ -904,8 +1002,8 @@ function rewritePhaseStatus({ statusPath, statusRoot, phases, phaseNumber, phase
   upsertTopLevel(lines, 'projectionSchemaVersion', STATUS_PROJECTION_SCHEMA_VERSION);
   upsertTopLevel(lines, 'finalVerdict', 'complete');
   upsertTopLevel(lines, 'normalizedRunVerdict', normalizedRunVerdict);
-  upsertTopLevel(lines, 'lastStopReasonCode', 'scope_complete');
-  upsertTopLevel(lines, 'lastStopReasonDetail', 'phase closeout finalized');
+  upsertTopLevel(lines, 'lastStopReasonCode', allActionableComplete ? 'scope_complete' : 'actionable-phases-remaining');
+  upsertTopLevel(lines, 'lastStopReasonDetail', allActionableComplete ? 'phase closeout finalized' : 'phase closeout finalized; actionable phases remain');
   upsertRecoveredBlockerState(lines, statusRoot, now);
   upsertTopLevel(lines, 'activePlannedPhases', counts.planned);
   upsertTopLevel(lines, 'activeCompletedPhases', counts.completed);
@@ -1298,23 +1396,37 @@ function writeCanonicalVerdict({
   const phaseId = String(phaseNumber).padStart(2, '0');
   const filePath = path.join(root, '.claude', `verification-verdict-phase${phaseId}-final.json`);
   const payload = buildCanonicalVerdict({ root, phase, phaseNumber, statusRoot, statusPath, planDir, masterPlan, now, historicalWarnings });
-  const prepPath = stagedPathFor(prepRoot, root, filePath);
-  plannedWrites.push({ path: prepPath, kind: 'prep-canonical-verdict' });
+  const attemptLocalPath = stagedPathFor(prepRoot, root, filePath);
+  const attemptLocalHash = jsonPayloadRawHash(payload);
+  plannedWrites.push({
+    path: attemptLocalPath,
+    kind: 'attempt-local-verdict',
+    hashAlgorithm: 'sha256_raw_bytes',
+    hash: attemptLocalHash,
+  });
   if (!dryRun || keepPrep) {
-    writeJsonAtomic(prepPath, payload);
+    writeJsonAtomic(attemptLocalPath, payload);
   }
   plannedWrites.push({ path: filePath, kind: 'canonical-verdict' });
   if (!dryRun) {
-    copyFileAtomic(prepPath, filePath);
+    copyFileAtomic(attemptLocalPath, filePath);
   }
-  return filePath;
+  return {
+    canonicalPath: filePath,
+    attemptLocal: {
+      path: relativeFromRoot(root, attemptLocalPath),
+      hashAlgorithm: 'sha256_raw_bytes',
+      hash: attemptLocalHash,
+      commitToken: path.basename(prepRoot),
+    },
+  };
 }
 
 function postPublishStatusPathFor(workflowDir, commitToken) {
   return path.join(workflowDir, `post-publish-status-${commitToken}.json`);
 }
 
-function publishCurrentArtifacts({ root, workflowDir, commitToken, canonicalVerdictPath, phaseNumber, phases, gitTreeFingerprint, now, dryRun, keepPrep, publishFailurePoint, plannedWrites, supersededArchive, postPublishStatusPath }) {
+function publishCurrentArtifacts({ root, workflowDir, commitToken, canonicalVerdictPath, attemptLocalVerdict, phaseNumber, phases, gitTreeFingerprint, now, dryRun, keepPrep, publishFailurePoint, plannedWrites, supersededArchive, postPublishStatusPath }) {
   const prepRoot = closeoutPrepRoot(workflowDir, commitToken);
   const manifestPath = path.join(workflowDir, `${CLOSEOUT_MANIFEST_PREFIX}-${commitToken}.json`);
   const currentIndexPath = path.join(workflowDir, CURRENT_ARTIFACTS_INDEX);
@@ -1324,6 +1436,7 @@ function publishCurrentArtifacts({ root, workflowDir, commitToken, canonicalVerd
     phaseNumber,
     canonicalVerdictPath,
     commitToken,
+    attemptLocalVerdict,
   });
   const manifest = buildCloseoutSyncManifest({
     root,
@@ -1367,6 +1480,7 @@ function publishCurrentArtifacts({ root, workflowDir, commitToken, canonicalVerd
     generatedAt: now,
     supersededArtifacts: supersededArchive.supersededArtifacts,
     logSnapshots: supersededArchive.logSnapshots,
+    staleCurrentArtifactDiagnostics: supersededArchive.staleCurrentArtifactDiagnostics || [],
     postPublishStatusPath,
   });
   const prepCurrentIndexPath = path.join(prepRoot, CURRENT_ARTIFACTS_INDEX);
@@ -1559,11 +1673,16 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     dryRun,
     keepPrep,
     plannedWrites,
+    phaseNumber,
+    statusFile: rel(root, statusPath),
+    planDir: rel(root, planDir),
+    masterPlan: rel(root, masterPlan),
+    executionRoot: rel(root, executionRoot),
   });
 
   const stateResult = reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, plannedWrites });
   const normalizedRunVerdict = normalizeFinalRunVerdict({ phase, statusRoot: statusDocument.root, historicalWarnings: stateResult.historicalWarnings });
-  const canonicalVerdictPath = writeCanonicalVerdict({
+  const verdictPublishCandidate = writeCanonicalVerdict({
     root,
     phase,
     phaseNumber,
@@ -1578,6 +1697,8 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     prepRoot,
     plannedWrites,
   });
+  const canonicalVerdictPath = verdictPublishCandidate.canonicalPath;
+  const attemptLocalVerdict = verdictPublishCandidate.attemptLocal;
   if (!dryRun && publishFailurePoint === 'after_canonical_publish') {
     writeOrphanedPrepareArchiveDiagnostic({
       root,
@@ -1621,6 +1742,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     workflowDir,
     commitToken,
     canonicalVerdictPath,
+    attemptLocalVerdict,
     phaseNumber,
     phases: statusDocument.phases,
     gitTreeFingerprint: resolveGitTreeFingerprint(root),
@@ -1744,6 +1866,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     stateReconciled: stateResult.stateReconciled,
     reconciledStateFiles: stateResult.reconciledStateFiles.map((filePath) => rel(root, filePath)),
     canonicalVerdictPath: rel(root, canonicalVerdictPath),
+    attemptLocalVerdict,
     closeoutCommitToken: commitToken,
     closeoutPrepRoot: rel(root, prepRoot),
     currentArtifactsPath: rel(root, currentArtifacts.currentIndexPath),

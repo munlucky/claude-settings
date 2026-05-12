@@ -403,6 +403,79 @@ function normalizeArrayInput(value) {
   return parseListString(value);
 }
 
+function normalizeStructuredEvidenceEntries(entries, idKey, defaultStatus, defaultEvidencePath) {
+  if (Array.isArray(entries)) {
+    return entries
+      .filter((entry) => entry && typeof entry === 'object')
+      .map((entry) => ({
+        id: String(entry.id || entry[idKey] || entry.code || '').trim(),
+        status: String(entry.status || entry.verdict || defaultStatus || '').trim(),
+        evidencePath: String(entry.evidencePath || entry.path || defaultEvidencePath || '').trim(),
+      }))
+      .filter((entry) => entry.id);
+  }
+  if (entries && typeof entries === 'object') {
+    return Object.entries(entries)
+      .map(([id, entry]) => ({
+        id: String(id || '').trim(),
+        status: String(entry?.status || entry?.verdict || defaultStatus || '').trim(),
+        evidencePath: String(entry?.evidencePath || entry?.path || defaultEvidencePath || '').trim(),
+      }))
+      .filter((entry) => entry.id);
+  }
+  return [];
+}
+
+function structuredEvidenceMetadataFromState(state, { qaReportPath, verdictRelPath, environmentBlockers }) {
+  const explicit = state.evidenceMetadata || state.closeoutEvidence || state.structuredEvidence || {};
+  const defaultEvidencePath = verdictRelPath || (qaReportPath ? path.relative(process.cwd(), qaReportPath).replace(/\\/g, '/') : '');
+  const workset = state.workset || {};
+  const acVerdict = String(workset.acVerdict || state.acVerdict || state.runtime?.verdict || '').trim();
+  const defaultStatus = acVerdict === 'passed' || acVerdict === 'expected_blocker_passed' ? acVerdict : '';
+  const requirementIds = normalizeArrayInput(workset.linkedRequirementIds || state.linkedRequirementIds || []);
+  const scenarioIds = normalizeArrayInput(workset.linkedScenarioIds || state.linkedScenarioIds || state.scenarios || []);
+  const explicitRequirements = normalizeStructuredEvidenceEntries(explicit.requirements, 'requirementId', defaultStatus, defaultEvidencePath);
+  const explicitScenarios = normalizeStructuredEvidenceEntries(explicit.scenarios, 'scenarioId', defaultStatus, defaultEvidencePath);
+  const requirements = explicitRequirements.length > 0
+    ? explicitRequirements
+    : requirementIds.map((id) => ({ id, status: defaultStatus || 'verified', evidencePath: defaultEvidencePath }));
+  const scenarios = explicitScenarios.length > 0
+    ? explicitScenarios
+    : scenarioIds.map((id) => ({ id, status: defaultStatus || 'verified', evidencePath: defaultEvidencePath }));
+  const blockers = Array.isArray(explicit.blockers)
+    ? explicit.blockers
+    : environmentBlockers.map((entry) => ({
+      code: entry.code || entry.reason || entry.blockingReasonCode || 'environment_blocker',
+      blockerClass: entry.blockerClass || entry.class || 'environment',
+      status: entry.status || 'active',
+      blocking: entry.blocking !== false,
+    }));
+
+  if (requirements.length === 0 && scenarios.length === 0 && blockers.length === 0 && !explicit.schemaVersion) {
+    return null;
+  }
+
+  return {
+    schemaVersion: String(explicit.schemaVersion || 'phase-closeout-evidence-v1'),
+    requirements,
+    scenarios,
+    blockers,
+    expectedBlockers: Array.isArray(explicit.expectedBlockers) ? explicit.expectedBlockers : [],
+  };
+}
+
+function renderStructuredEvidenceMetadataLines(metadata) {
+  if (!metadata) {
+    return [];
+  }
+  return [
+    '```json',
+    JSON.stringify(metadata, null, 2),
+    '```',
+    '',
+  ];
+}
+
 function updateWorkflowSectionFromState(qaText, lines, workflow = {}) {
   const current = extractWorkflowSection(qaText);
   const next = {
@@ -680,6 +753,11 @@ export function syncPhaseArtifacts(input = {}) {
   const environmentBlockers = Array.isArray(state.environmentBlockers)
     ? state.environmentBlockers
     : (Array.isArray(runtime.environmentBlockers) ? runtime.environmentBlockers : []);
+  const structuredEvidenceMetadata = structuredEvidenceMetadataFromState(state, {
+    qaReportPath,
+    verdictRelPath,
+    environmentBlockers,
+  });
 
   assertProjectionHasActiveLog({
     logFile,
@@ -745,6 +823,14 @@ export function syncPhaseArtifacts(input = {}) {
       '',
     ]);
 
+    if (structuredEvidenceMetadata) {
+      qaLines = replaceOrAppendSection(
+        qaLines,
+        '## Structured Evidence Metadata',
+        renderStructuredEvidenceMetadataLines(structuredEvidenceMetadata),
+      );
+    }
+
     qaLines = replaceOrAppendSection(qaLines, '## Score Summary', [
       `- Current score: ${score.current ?? 0}`,
       `- Target score: ${score.target ?? targetCompletionScore}`,
@@ -797,6 +883,14 @@ export function syncPhaseArtifacts(input = {}) {
       detail ? `- Detail: ${detail}` : '- Detail: structured artifact sync',
       '',
     ]);
+
+    if (structuredEvidenceMetadata) {
+      scoreLines = replaceOrAppendSection(
+        scoreLines,
+        '## Structured Evidence Metadata',
+        renderStructuredEvidenceMetadataLines(structuredEvidenceMetadata),
+      );
+    }
 
     fs.writeFileSync(scorecardPath, `${scoreLines.join('\n')}\n`, 'utf8');
   }
@@ -2201,6 +2295,7 @@ function runSelfTest() {
         taskStatus: 'completed',
         acceptanceCriterionId: 'AC-001',
         linkedRequirementIds: ['REQ-001'],
+        linkedScenarioIds: ['SCN-001'],
         acVerdict: 'passed',
         verificationEvidence: ['AC-001 verified by fixture self-test'],
         semanticEvaluation: {
@@ -2216,6 +2311,16 @@ function runSelfTest() {
         number: '4',
         title: 'Fixture Phase',
         docPath: phaseDoc,
+      },
+      evidenceMetadata: {
+        schemaVersion: 'phase-closeout-evidence-v1',
+        requirements: {
+          'REQ-001': { status: 'verified', evidencePath: 'QA_REPORT.md' },
+        },
+        scenarios: {
+          'SCN-001': { status: 'passed', evidencePath: 'QA_REPORT.md' },
+        },
+        blockers: [],
       },
     };
 
@@ -2254,6 +2359,14 @@ function runSelfTest() {
       || !syncedWorksets.includes('verificationEvidence: ["AC-001 verified by fixture self-test"]')
     ) {
       throw new Error('structured artifact sync did not project AC-linked WORKSETS fields');
+    }
+    if (
+      !structuredFirstPassArtifacts.qa.includes('## Structured Evidence Metadata')
+      || !structuredFirstPassArtifacts.qa.includes('"schemaVersion": "phase-closeout-evidence-v1"')
+      || !structuredFirstPassArtifacts.scorecard.includes('## Structured Evidence Metadata')
+      || !structuredFirstPassArtifacts.scorecard.includes('"SCN-001"')
+    ) {
+      throw new Error('structured artifact sync did not project closeout evidence metadata');
     }
 
     writeStdoutLine('agent-loop-phase-artifacts self-test passed');

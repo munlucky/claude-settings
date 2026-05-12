@@ -28,6 +28,7 @@ test('finalize dry-run reports planned writes without mutating closeout files', 
     assert.equal(result.canonicalVerdictPath, '.claude/verification-verdict-phase01-final.json');
     assert.equal(result.closeoutPrepRoot, '.claude/logs/workflow-enforcement/closeout-prep/phase01-test-token');
     assert.ok(result.plannedWrites.some((entry) => entry.kind === 'canonical-verdict'));
+    assert.ok(result.plannedWrites.some((entry) => entry.kind === 'attempt-local-verdict' && entry.hash));
     assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), false);
     assert.equal(fs.existsSync(path.join(fixture.workflowDir, 'current-artifacts.json')), false);
     assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).status, 'failed');
@@ -110,8 +111,13 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
     assert.equal(result.idempotentNoop, false);
     assert.deepEqual(result.historicalWarnings, ['delegated-terminal-exit-1']);
     const verdict = readJson(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json'));
+    const currentIndex = readJson(path.join(fixture.workflowDir, 'current-artifacts.json'));
     assert.equal(verdict.verdict, 'passed');
     assert.equal(verdict.identity.statusFile, fixture.statusFile);
+    const phase01Artifact = currentIndex.artifacts['canonical-verdict-phase01'];
+    assert.equal(phase01Artifact.sourceAttempt.path, result.attemptLocalVerdict.path);
+    assert.equal(phase01Artifact.sourceAttempt.hash, sha256RawBytes(path.join(fixture.root, result.attemptLocalVerdict.path)));
+    assert.equal(phase01Artifact.sourceAttempt.hash, phase01Artifact.hash);
     assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).completionStatus, 'completed');
     assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).finalOutcomeSchemaVersion, '1.0');
     assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).normalizedRunVerdict, 'success_with_warning');
@@ -565,14 +571,14 @@ test('publish failures keep the old current pointer after canonical and manifest
   }
 });
 
-test('snapshot failure stops before canonical verdict publish', async () => {
+test('stale previous current artifact emits recovery diagnostic and still publishes new current', async () => {
   await withFixture(async (fixture) => {
     seedOldCurrentArtifacts(fixture.root, fixture.workflowDir);
 
     const oldVerdictPath = path.join(fixture.root, '.claude/verification-verdict-old.json');
     fs.writeFileSync(oldVerdictPath, '{"verdict":"passed","old":false}\n', 'utf8');
 
-    await assert.rejects(() => finalizePhaseCloseout({
+    const result = await finalizePhaseCloseout({
       root: fixture.root,
       phase: 1,
       statusFile: fixture.statusFile,
@@ -582,9 +588,20 @@ test('snapshot failure stops before canonical verdict publish', async () => {
       workflowDir: fixture.workflowDir,
       now: fixture.now,
       commitToken: 'phase01-stale-old-current',
-    }), /stale hash/);
+    });
 
-    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), false);
+    const current = readJson(path.join(fixture.workflowDir, 'current-artifacts.json'));
+    assert.equal(result.ok, true);
+    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), true);
+    assert.equal(current.commitToken, 'phase01-stale-old-current');
+    assert.equal(current.staleCurrentArtifactDiagnostics.length, 1);
+    assert.equal(current.staleCurrentArtifactDiagnostics[0].code, 'stale_current_artifact_index');
+    assert.equal(current.staleCurrentArtifactDiagnostics[0].artifactPath, '.claude/verification-verdict-old.json');
+    assert.equal(current.staleCurrentArtifactDiagnostics[0].sourceAttempt, 'old-current');
+    assert.match(current.staleCurrentArtifactDiagnostics[0].oldHash, /^[a-f0-9]{64}$/);
+    assert.match(current.staleCurrentArtifactDiagnostics[0].newHash, /^[a-f0-9]{64}$/);
+    assert.match(current.staleCurrentArtifactDiagnostics[0].recoveryCommand, /phase-closeout-finalize\.mjs finalize --phase 1/);
+    assert.equal(current.supersededArtifacts.some((entry) => entry.canonicalPath === '.claude/verification-verdict-old.json'), false);
   });
 });
 

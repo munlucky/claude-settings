@@ -56,15 +56,23 @@ const state = {
   goalTimeBudgetSeconds: process.env.PHASE_GOAL_TIME_BUDGET_SECONDS || '',
   goalTokenBudget: process.env.PHASE_GOAL_TOKEN_BUDGET || '',
   finalGitCloseout: process.env.PHASE_FINAL_GIT_CLOSEOUT || 'strict',
+  staleNoProgressSeconds: Number.parseInt(process.env.PHASE_DISPATCH_STALE_NO_PROGRESS_SECONDS ?? '3300', 10) || 0,
 };
 
 const runtimeState = {
   runLeaseId: '',
   leaseActive: false,
   childPid: null,
+  lastChildPid: null,
+  lastChildExitAt: '',
+  lastChildExitCode: null,
+  lastChildExitSignal: '',
   childExitHandled: false,
   captureSession: null,
   launchProgressFingerprint: '',
+  lastProgressFingerprint: '',
+  lastProgressAtMs: 0,
+  staleStopTriggered: false,
 };
 const protectedPids = new Set([process.pid]);
 const strictMemoryGateEnabled = String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
@@ -562,6 +570,17 @@ function readFileFingerprint(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+function progressCompositeFingerprint(compositeCursor) {
+  const workflowLogs = (compositeCursor.workflowLogs || [])
+    .filter((entry) => !String(entry.path || '').endsWith('latest-dispatch.json'));
+  return crypto.createHash('sha256').update(JSON.stringify({
+    currentIndex: compositeCursor.currentIndex || {},
+    manifest: compositeCursor.manifest || {},
+    workflowLogs,
+    activeVerdicts: compositeCursor.activeVerdicts || [],
+  })).digest('hex');
+}
+
 function currentPhaseProgressFingerprint(context = activePhaseContext()) {
   const compositeCursor = buildCompositeMonitorCursor({
     repoRoot: process.cwd(),
@@ -581,7 +600,7 @@ function currentPhaseProgressFingerprint(context = activePhaseContext()) {
     context.lastUpdatedAt || '',
     context.currentStage || '',
     context.title || context.activePhaseTitle || '',
-    `composite=${compositeCursor.fingerprint}`,
+    `composite=${progressCompositeFingerprint(compositeCursor)}`,
   ];
   for (const filePath of trackedPaths) {
     values.push(`${path.resolve(String(filePath))}=${readFileFingerprint(filePath)}`);
@@ -605,6 +624,93 @@ function appendPhaseArtifact(command, args) {
 
 function utcTimestamp() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function timestampFromCursorMtime(mtimeMs) {
+  const numeric = Number(mtimeMs);
+  return Number.isFinite(numeric) && numeric > 0 ? new Date(numeric).toISOString().replace(/\.\d{3}Z$/, 'Z') : '';
+}
+
+function latestWorkflowLogTimestamp(compositeCursor) {
+  const latest = (compositeCursor.workflowLogs || [])
+    .filter((entry) => entry.exists && !String(entry.path || '').endsWith('latest-dispatch.json'))
+    .map((entry) => Number(entry.mtimeMs || 0))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((left, right) => right - left)[0];
+  return timestampFromCursorMtime(latest);
+}
+
+function isPidAlive(pid) {
+  if (!Number.isFinite(Number(pid)) || Number(pid) <= 0) {
+    return false;
+  }
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch (error) {
+    if (error && error.code === 'EPERM') {
+      return true;
+    }
+    return false;
+  }
+}
+
+function classifyChildTimeoutState() {
+  if (runtimeState.childPid && isPidAlive(runtimeState.childPid)) {
+    return 'child_still_running';
+  }
+  if (runtimeState.lastChildExitAt || runtimeState.lastChildPid) {
+    return 'child_exited_without_closeout';
+  }
+  return 'child_exited_without_closeout';
+}
+
+function updateLatestDispatchLiveness({ label = '', context = {}, compositeCursor = null, livenessReason = '' } = {}) {
+  const latestFile = path.join('.claude', 'logs', 'workflow-enforcement', 'latest-dispatch.json');
+  if (!fs.existsSync(latestFile)) {
+    return null;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(latestFile, 'utf8'));
+  } catch {
+    return null;
+  }
+  const cursor = compositeCursor || buildCompositeMonitorCursor({
+    repoRoot: process.cwd(),
+    statusFile: state.statusFile,
+  });
+  const nowMs = Date.now();
+  const staleSeconds = runtimeState.lastProgressAtMs > 0
+    ? Math.floor((nowMs - runtimeState.lastProgressAtMs) / 1000)
+    : 0;
+  const liveness = {
+    label,
+    childPid: runtimeState.childPid,
+    lastChildPid: runtimeState.lastChildPid,
+    childAlive: runtimeState.childPid ? isPidAlive(runtimeState.childPid) : false,
+    phaseNumber: context.number || payload.phaseNumber || '',
+    phaseTitle: context.title || context.activePhaseTitle || payload.phaseTitle || '',
+    currentStage: context.currentStage || mapLeaseStage(context),
+    lastHeartbeatAt: cursor.lease?.lastHeartbeatAt || '',
+    lastLogAt: latestWorkflowLogTimestamp(cursor),
+    lastProgressAt: runtimeState.lastProgressAtMs ? new Date(runtimeState.lastProgressAtMs).toISOString().replace(/\.\d{3}Z$/, 'Z') : '',
+    staleNoProgressSeconds: state.staleNoProgressSeconds,
+    staleSeconds,
+    reason: livenessReason,
+    updatedAt: utcTimestamp(),
+  };
+  const next = {
+    ...payload,
+    childPid: liveness.childPid,
+    phaseNumber: liveness.phaseNumber,
+    lastHeartbeatAt: liveness.lastHeartbeatAt,
+    lastLogAt: liveness.lastLogAt,
+    liveness,
+    updatedAt: liveness.updatedAt,
+  };
+  fs.writeFileSync(latestFile, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  return next;
 }
 
 function isSignalLikeExit(code, signal) {
@@ -932,14 +1038,35 @@ function startTrackingBridge(label) {
     return () => {};
   }
   const intervalMs = (Number.parseInt(process.env.PHASE_DISPATCH_TRACKING_SECONDS ?? '45', 10) || 45) * 1000;
+  const refreshLiveness = () => {
+    const context = activePhaseContext();
+    heartbeatDispatchLease(context);
+    const compositeCursor = buildCompositeMonitorCursor({
+      repoRoot: process.cwd(),
+      statusFile: state.statusFile,
+    });
+    const progressFingerprint = currentPhaseProgressFingerprint(context);
+    if (!runtimeState.lastProgressFingerprint || runtimeState.lastProgressFingerprint !== progressFingerprint) {
+      runtimeState.lastProgressFingerprint = progressFingerprint;
+      runtimeState.lastProgressAtMs = Date.now();
+    }
+    updateLatestDispatchLiveness({ label, context, compositeCursor });
+    return { context, compositeCursor };
+  };
+  try {
+    refreshLiveness();
+  } catch (error) {
+    appendDebugLog('tracking-bridge-liveness-prime-failed', {
+      label,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   const timer = setInterval(() => {
     try {
-      const context = activePhaseContext();
-      heartbeatDispatchLease(context);
-      const compositeCursor = buildCompositeMonitorCursor({
-        repoRoot: process.cwd(),
-        statusFile: state.statusFile,
-      });
+      const { context, compositeCursor } = refreshLiveness();
+      const staleSeconds = runtimeState.lastProgressAtMs > 0
+        ? Math.floor((Date.now() - runtimeState.lastProgressAtMs) / 1000)
+        : 0;
       const summaryParts = [
         label,
         `phase=${context.number || 'none'}`,
@@ -947,6 +1074,8 @@ function startTrackingBridge(label) {
         `stage=${context.currentStage || mapLeaseStage(context)}`,
         `status=${context.status || 'idle'}`,
         `outcome=${context.lastOutcome || 'pending'}`,
+        `pid=${runtimeState.childPid || 'none'}`,
+        `stale=${staleSeconds}s`,
         `cursor=${compositeCursor.fingerprint.slice(0, 12)}`,
       ];
       logInfo(`Tracking heartbeat: ${summaryParts.join(' ')}`);
@@ -958,7 +1087,39 @@ function startTrackingBridge(label) {
         manifestHash: compositeCursor.currentIndex.manifestHash,
         workflowLogCount: compositeCursor.workflowLogs.length,
         activeVerdictCount: compositeCursor.activeVerdicts.length,
+        childPid: runtimeState.childPid,
+        lastHeartbeatAt: compositeCursor.lease?.lastHeartbeatAt || '',
+        lastLogAt: latestWorkflowLogTimestamp(compositeCursor),
+        staleSeconds,
       });
+      if (
+        state.staleNoProgressSeconds > 0
+        && runtimeState.childPid
+        && !runtimeState.staleStopTriggered
+        && staleSeconds >= state.staleNoProgressSeconds
+      ) {
+        runtimeState.staleStopTriggered = true;
+        const detail = `delegated child made no observable progress for ${staleSeconds}s`;
+        updateLatestDispatchLiveness({
+          label,
+          context,
+          compositeCursor,
+          livenessReason: 'stale_child_no_progress',
+        });
+        appendDebugLog('stale-child-no-progress-stop', {
+          label,
+          childPid: runtimeState.childPid,
+          phaseNumber: context.number || '',
+          staleSeconds,
+          thresholdSeconds: state.staleNoProgressSeconds,
+        });
+        terminatePid(runtimeState.childPid);
+        finalizeDispatchExit(1, detail, {
+          returnBoundary: 'dispatch-stop',
+          stopReasonCode: 'stale_child_no_progress',
+          completionStatus: 'failed',
+        });
+      }
     } catch (error) {
       appendDebugLog('tracking-bridge-heartbeat-failed', {
         label,
@@ -1044,12 +1205,20 @@ function finalizeDispatchExit(exitCode, detail, { requireSuccessBoundary = false
 
 function installDispatchSignalHandlers() {
   const handleSignal = (signalName) => {
+    const timeoutLikeSignal = signalName === 'SIGTERM' || signalName === 'SIGHUP';
+    const childStopReason = timeoutLikeSignal ? classifyChildTimeoutState() : 'dispatcher-interrupted';
     appendDebugLog('dispatch-signal', {
       signal: signalName,
       childPid: runtimeState.childPid,
+      childStopReason,
       leaseActive: runtimeState.leaseActive,
       runLeaseId: runtimeState.runLeaseId,
     });
+    try {
+      updateLatestDispatchLiveness({ livenessReason: childStopReason });
+    } catch {
+      // Best-effort signal evidence only.
+    }
     if (runtimeState.childPid) {
       try {
         terminatePid(runtimeState.childPid);
@@ -1061,9 +1230,9 @@ function installDispatchSignalHandlers() {
         });
       }
     }
-    finalizeDispatchExit(1, `dispatcher interrupted by ${signalName}`, {
+    finalizeDispatchExit(1, `dispatcher interrupted by ${signalName}; ${childStopReason}`, {
       returnBoundary: 'dispatch-interrupted',
-      stopReasonCode: 'dispatcher-interrupted',
+      stopReasonCode: childStopReason,
       completionStatus: 'failed',
     });
   };
@@ -1443,6 +1612,12 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
       },
     });
     runtimeState.childPid = child.pid ?? null;
+    runtimeState.lastChildPid = child.pid ?? null;
+    runtimeState.lastChildExitAt = '';
+    runtimeState.lastChildExitCode = null;
+    runtimeState.lastChildExitSignal = '';
+    runtimeState.lastProgressFingerprint = runtimeState.launchProgressFingerprint;
+    runtimeState.lastProgressAtMs = Date.now();
     if (runtimeState.childPid) {
       protectedPids.add(runtimeState.childPid);
     }
@@ -1456,6 +1631,10 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
       if (child.pid) {
         protectedPids.delete(child.pid);
       }
+      runtimeState.lastChildPid = child.pid ?? runtimeState.lastChildPid;
+      runtimeState.lastChildExitAt = utcTimestamp();
+      runtimeState.lastChildExitCode = code ?? 0;
+      runtimeState.lastChildExitSignal = signal ?? '';
       runtimeState.childPid = null;
       appendDebugLog('delegated-terminal-exit', {
         pid: child.pid ?? null,
@@ -1709,6 +1888,12 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
       },
     });
     runtimeState.childPid = child.pid ?? null;
+    runtimeState.lastChildPid = child.pid ?? null;
+    runtimeState.lastChildExitAt = '';
+    runtimeState.lastChildExitCode = null;
+    runtimeState.lastChildExitSignal = '';
+    runtimeState.lastProgressFingerprint = runtimeState.launchProgressFingerprint;
+    runtimeState.lastProgressAtMs = Date.now();
     if (runtimeState.childPid) {
       protectedPids.add(runtimeState.childPid);
     }
@@ -1742,6 +1927,10 @@ ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
       if (child.pid) {
         protectedPids.delete(child.pid);
       }
+      runtimeState.lastChildPid = child.pid ?? runtimeState.lastChildPid;
+      runtimeState.lastChildExitAt = utcTimestamp();
+      runtimeState.lastChildExitCode = code ?? 0;
+      runtimeState.lastChildExitSignal = signal ?? '';
       runtimeState.childPid = null;
       appendDebugLog('in-session-coordinator-exit', {
         pid: child.pid ?? null,

@@ -1,4 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 const VALID_RUNTIME_PROFILES = new Set(['optional_probe', 'required_runtime']);
+const MASTER_PLAN_PATTERNS = ['00-master-plan-v*.md'];
 
 const PACKAGE_MISSING_CODES = new Set([
   'package_missing',
@@ -115,4 +119,58 @@ export function normalizeCodexProbeText({ stderr = '', stdout = '', exitCode = 1
     return { failureCode: 'login_required', exitCode };
   }
   return { failureCode: 'probe_unknown', exitCode };
+}
+
+export function validateReferencePlanDir({ referencePlanDir = '', allowDefaultFixture = false, defaultReferencePlanDir = '.claude/docs/runtime-parity-reference-plan', cwd = process.cwd() } = {}) {
+  const explicit = String(referencePlanDir || '').trim();
+  if (!explicit && !allowDefaultFixture) {
+    return {
+      ok: false,
+      code: 'default_fixture_requires_opt_in',
+      message: 'Default runtime parity reference fixture requires --allow-default-fixture.',
+      referencePlanDir: '',
+      searchedPaths: [],
+      expectedPatterns: MASTER_PLAN_PATTERNS,
+      recommendedCommand: 'bash .claude/scripts/verify-phase-runtime-parity.sh --allow-default-fixture --runtime-profile optional_probe',
+    };
+  }
+
+  const selected = explicit || defaultReferencePlanDir;
+  const resolved = path.resolve(cwd, selected);
+  const searchedPaths = [path.join(resolved, '00-master-plan-v1.md')];
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    return {
+      ok: false,
+      code: 'reference_plan_dir_missing',
+      message: `Reference plan directory not found: ${selected}`,
+      referencePlanDir: selected,
+      searchedPaths,
+      expectedPatterns: MASTER_PLAN_PATTERNS,
+      recommendedCommand: 'Pass a concrete docs/implementation/<plan-package> directory.',
+    };
+  }
+
+  const hasMaster = fs.existsSync(path.join(resolved, '00-master-plan-v1.md'));
+  if (!hasMaster) {
+    return {
+      ok: false,
+      code: 'master_plan_not_found',
+      message: 'Master plan not found.',
+      referencePlanDir: selected,
+      searchedPaths,
+      expectedPatterns: MASTER_PLAN_PATTERNS,
+      broadParentDirectory: path.basename(resolved) === 'implementation',
+      recommendedCommand: 'Pass a concrete docs/implementation/<plan-package> directory.',
+    };
+  }
+
+  return {
+    ok: true,
+    code: 'ok',
+    message: '',
+    referencePlanDir: selected,
+    masterPlanPath: path.join(resolved, '00-master-plan-v1.md'),
+    searchedPaths,
+    expectedPatterns: MASTER_PLAN_PATTERNS,
+  };
 }

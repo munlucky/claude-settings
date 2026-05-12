@@ -14,6 +14,7 @@ const REQUIRED_VERDICT_IDENTITY_KEYS_PATH = path.resolve(SCRIPT_DIR, '../schemas
 const VALID_SCOPES = new Set(['runtime', 'phase_verification', 'phase_closeout']);
 const VALID_BLOCKER_CLASSES = new Set([
   'runtime_unavailable',
+  'verification_environment_unavailable',
   'verifier_unavailable',
   'verification_failed',
   'content_precondition',
@@ -310,14 +311,14 @@ export function inferBlockerClass(payload = {}) {
   if (/content[_-]?precondition|precondition/.test(reason) || failureClass === 'contract') {
     return 'content_precondition';
   }
-  if (/runtime_verifier|verifier_unavailable|verification_runtime|verifier_spawn_eperm|node_test_spawn_eperm/.test(reason)) {
-    return 'verifier_unavailable';
+  if (/verification_environment_unavailable|runtime_verifier|verifier_unavailable|verification_runtime|verifier_spawn_eperm|node_test_spawn_eperm/.test(reason)) {
+    return 'verification_environment_unavailable';
   }
   if (/auth|login|credential|worker_spawn|spawn|codex_exec|runtime_health|runtime_cli/.test(reason)) {
     return 'runtime_unavailable';
   }
   if (failureClass === 'environment') {
-    return 'verifier_unavailable';
+    return 'verification_environment_unavailable';
   }
   if (payload.blocking === true || normalizeLower(payload.verdict) === 'failed') {
     return 'verification_failed';
@@ -766,7 +767,7 @@ function selfTest() {
   }, null, 2)}\n`, 'utf8');
 
   assert.equal(inferVerdictScope(stalePhasePayload), 'phase_verification');
-  assert.equal(inferBlockerClass(stalePhasePayload), 'verifier_unavailable');
+  assert.equal(inferBlockerClass(stalePhasePayload), 'verification_environment_unavailable');
   assert.equal(normalizeVerdictPayload(stalePhasePayload).stale, true);
   assert.equal(normalizeVerdictPayload(mismatchedLeasePayload).identity.runLeaseId, 'lease-b');
   assert.deepEqual(normalizeRequiredChecksMissing(['none', 'n/a', 'verification-verdict-path']), ['verification-verdict-path']);

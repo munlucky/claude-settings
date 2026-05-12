@@ -131,12 +131,23 @@ test('sync-phase-artifacts renders known WORKSETS fields deterministically and p
         status: 'completed',
         acceptanceCriterionId: 'AC-001',
         linkedRequirementIds: ['REQ-1.11'],
+        linkedScenarioIds: ['SCN-06-2'],
         acVerdict: 'passed',
         semanticEvaluation: { status: 'not_run', reason: 'not_applicable_to_current_phase' },
         ownedPaths: ['.claude/scripts/agent-loop-phase-artifacts.mjs'],
         verificationCommands: ['node .claude/scripts/agent-loop-phase-artifacts.mjs self-test'],
         evidence: ['SCN-12 open-act-mutate-persist-recover passed'],
         completedAt: '2026-05-11T12:00:00Z',
+      },
+      evidenceMetadata: {
+        schemaVersion: 'phase-closeout-evidence-v1',
+        requirements: {
+          'REQ-1.11': { status: 'verified', evidencePath: 'QA_REPORT.md' },
+        },
+        scenarios: {
+          'SCN-06-2': { status: 'passed', evidencePath: 'QA_REPORT.md' },
+        },
+        blockers: [],
       },
     };
     fs.writeFileSync(statePath, JSON.stringify(state), 'utf8');
@@ -149,6 +160,8 @@ test('sync-phase-artifacts renders known WORKSETS fields deterministically and p
     assert.match(first, /unknownTopLevel:\n  keep: true/);
     assert.match(first, /status: completed\n    taskStatus: "completed"\n    acceptanceCriterionId: "AC-001"/);
     assert.match(first, /semanticEvaluation:\n      status: "not_run"\n      reason: "not_applicable_to_current_phase"/);
+    assert.match(fs.readFileSync(paths.qaReportPath, 'utf8'), /## Structured Evidence Metadata[\s\S]*"SCN-06-2"/);
+    assert.match(fs.readFileSync(paths.scorecardPath, 'utf8'), /## Structured Evidence Metadata[\s\S]*"REQ-1.11"/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

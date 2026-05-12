@@ -17,7 +17,13 @@ import {
   hasConcreteSourceTargets,
   scenarioEvidencePassed,
   scorecardDone,
+  mergeStructuredEvidenceMetadata,
   traceabilityArtifactValid,
+  structuredEvidenceFromMarkdown,
+  structuredEvidenceFromPayload,
+  structuredLocalBlockerUnresolved,
+  structuredScenarioEvidencePassed,
+  structuredTraceabilityValid,
   unresolvedLocalBlocker,
 } from './lib/phase-closeout-artifacts.mjs';
 import {
@@ -25,8 +31,10 @@ import {
   parseCriticalScenarios,
   parseMasterChecklist,
   parsePhaseStatusDocument,
+  parseWorksetsYaml,
   readText,
   resolvePath,
+  sectionText,
 } from './lib/phase-closeout-parsers.mjs';
 import {
   readVerdictForPhase,
@@ -207,6 +215,65 @@ function hasEnvironmentBlockerPayload(statusText) {
     && /^\s+reason:\s*\S+/m.test(text)
     && /^\s+evidencePath:\s*\S+/m.test(text)
     && /^\s+observedAt:\s*\S+/m.test(text);
+}
+
+function normalizeCloseoutPath(value) {
+  return String(value || '').trim().replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+function isHarnessChangePath(filePath) {
+  const normalized = normalizeCloseoutPath(filePath);
+  return normalized.startsWith('.claude/scripts/')
+    || normalized.startsWith('.claude/skills/')
+    || normalized === '.claude/verification.contract.yaml';
+}
+
+function hasNonEmptyHarnessChangeLedger(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return false;
+  }
+  const section = sectionText(readText(filePath), 'Harness Change Ledger');
+  if (!section) {
+    return false;
+  }
+  return section.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || /^```/.test(trimmed)) {
+      return false;
+    }
+    if (/^\|?\s*-{2,}/.test(trimmed) || /\|\s*Change Area\s*\|/i.test(trimmed)) {
+      return false;
+    }
+    return /^\|.+\|$/.test(trimmed) || /^[-*]\s+\S/.test(trimmed);
+  });
+}
+
+function harnessChangeLedgerPresent(planDir) {
+  return [
+    path.resolve(process.cwd(), 'QA_REPORT.md'),
+    planDir ? path.join(planDir, 'QA_REPORT.md') : '',
+  ].some((candidate) => hasNonEmptyHarnessChangeLedger(candidate));
+}
+
+function collectHarnessChangedPaths({ phaseExecutionDir, verdictPayload = {} } = {}) {
+  const changed = new Set();
+  const worksetsPath = phaseExecutionDir ? path.join(phaseExecutionDir, 'WORKSETS.yaml') : '';
+  const worksets = parseWorksetsYaml(worksetsPath);
+  for (const task of worksets.tasks || []) {
+    for (const ownedPath of task.ownedPaths || []) {
+      const normalized = normalizeCloseoutPath(ownedPath);
+      if (isHarnessChangePath(normalized)) {
+        changed.add(normalized);
+      }
+    }
+  }
+  for (const changedPath of Array.isArray(verdictPayload.changedFiles) ? verdictPayload.changedFiles : []) {
+    const normalized = normalizeCloseoutPath(changedPath);
+    if (isHarnessChangePath(normalized)) {
+      changed.add(normalized);
+    }
+  }
+  return [...changed].sort();
 }
 
 function currentPointerPhaseCompleted(phases = []) {
@@ -410,12 +477,6 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       addEvaluationTriggerViolations(violations, evidenceText, phaseNumber);
     }
 
-    for (const scenarioId of scenarios) {
-      if (!scenarioEvidencePassed(scenarioId, evidenceText)) {
-        addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} lacks passing evidence for ${scenarioId}.`, phaseNumber);
-      }
-    }
-
     const verdict = readVerdictForPhase(phaseNumber, {
       phase,
       statusRoot: statusDocument.root,
@@ -435,6 +496,31 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       addViolation(violations, 'verification-verdict-not-passed', `Completed phase ${phaseNumber} does not have a passing fresh verdict at ${path.relative(process.cwd(), verdict.path)}.`, phaseNumber);
     }
 
+    const harnessChangedPaths = collectHarnessChangedPaths({
+      phaseExecutionDir: phase.qaReport ? path.dirname(resolvePath(phase.qaReport)) : '',
+      verdictPayload: verdict.parsed || {},
+    });
+    if (harnessChangedPaths.length > 0 && !harnessChangeLedgerPresent(planDir)) {
+      addViolation(
+        violations,
+        'harness-change-ledger-missing',
+        `Completed phase ${phaseNumber} changes harness files but no non-empty Harness Change Ledger was found in QA_REPORT.md or ${path.relative(process.cwd(), path.join(planDir, 'QA_REPORT.md'))}: ${harnessChangedPaths.join(', ')}`,
+        phaseNumber,
+      );
+    }
+
+    const structuredEvidence = mergeStructuredEvidenceMetadata(
+      structuredEvidenceFromPayload(verdict.parsed || {}),
+      ...artifactTexts.map((artifactText) => structuredEvidenceFromMarkdown(artifactText)),
+    );
+
+    for (const scenarioId of scenarios) {
+      const structuredScenarioPassed = structuredScenarioEvidencePassed(structuredEvidence, scenarioId);
+      if (structuredScenarioPassed === false || (structuredScenarioPassed === null && !scenarioEvidencePassed(scenarioId, evidenceText))) {
+        addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} lacks passing evidence for ${scenarioId}.`, phaseNumber);
+      }
+    }
+
     const scorecardText = artifactTexts[3] || '';
     if (!scorecardDone(scorecardText)) {
       addViolation(violations, 'scorecard-not-done', `Completed phase ${phaseNumber} scorecard is not done/FULL.`, phaseNumber);
@@ -451,17 +537,20 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
       addViolation(violations, demoFirstGate.reason, `Completed phase ${phaseNumber} violates demo-first MVP gate for maturity ${demoFirstGate.maturityTarget || 'unknown'}.`, phaseNumber);
     }
 
-    if (unresolvedLocalBlocker(evidenceText)) {
+    const structuredBlockerUnresolved = structuredLocalBlockerUnresolved(structuredEvidence);
+    if (structuredBlockerUnresolved === true || (structuredBlockerUnresolved === null && unresolvedLocalBlocker(evidenceText))) {
       addViolation(violations, 'unresolved-local-blocker', `Completed phase ${phaseNumber} still contains a local blocker.`, phaseNumber);
     }
 
     const executionRoot = executionRootFromPhaseArtifact(phase);
     const requirementsPath = executionRoot ? path.join(executionRoot, 'REQUIREMENTS_TRACEABILITY.md') : '';
     const scenarioPath = executionRoot ? path.join(executionRoot, 'SCENARIO_MATRIX.md') : '';
-    if (!traceabilityArtifactValid(requirementsPath, /\bREQ-[A-Za-z0-9_.-]+\b/)) {
+    const structuredRequirementsValid = structuredTraceabilityValid(structuredEvidence, 'requirements');
+    const structuredScenariosValid = structuredTraceabilityValid(structuredEvidence, 'scenarios');
+    if (structuredRequirementsValid === false || (structuredRequirementsValid === null && !traceabilityArtifactValid(requirementsPath, /\bREQ-[A-Za-z0-9_.-]+\b/))) {
       addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), requirementsPath || 'REQUIREMENTS_TRACEABILITY.md')} with verified REQ-* coverage.`, phaseNumber);
     }
-    if (!traceabilityArtifactValid(scenarioPath, /\bSCN-[A-Za-z0-9_.-]+\b/)) {
+    if (structuredScenariosValid === false || (structuredScenariosValid === null && !traceabilityArtifactValid(scenarioPath, /\bSCN-[A-Za-z0-9_.-]+\b/))) {
       addViolation(violations, 'artifact_path_missing', `Completed phase ${phaseNumber} requires ${path.relative(process.cwd(), scenarioPath || 'SCENARIO_MATRIX.md')} with verified SCN-* coverage.`, phaseNumber);
     }
 

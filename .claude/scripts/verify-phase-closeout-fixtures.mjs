@@ -90,6 +90,11 @@ function writeFixture(root, options = {}) {
     memorygraphStrict: false,
     evaluationPipeline: false,
     evaluationEvidence: false,
+    structuredEvidenceMetadata: null,
+    markdownContradictsStructuredEvidence: false,
+    expectedBlockerPassedVerdict: false,
+    harnessChangedPaths: [],
+    harnessChangeLedger: false,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -377,7 +382,9 @@ function writeFixture(root, options = {}) {
       '',
       '## Plan Conformance Review',
       '- Source plan conformance command: pass',
-      settings.scenarioEvidence ? '- SCN-01-1: pass - rendered feature is visible.' : '- SCN-01-1: missing evidence.',
+      settings.markdownContradictsStructuredEvidence
+        ? '- SCN-01-1: failed - free-form row is stale and must not override structured metadata.'
+        : (settings.scenarioEvidence ? '- SCN-01-1: pass - rendered feature is visible.' : '- SCN-01-1: missing evidence.'),
       ...(settings.evaluationEvidence ? [
         '',
         '## Workflow Execution',
@@ -396,7 +403,9 @@ function writeFixture(root, options = {}) {
       settings.qaExtra,
       '',
       '## Finish Readiness',
-      '- Remaining blockers before closeout: none',
+      settings.markdownContradictsStructuredEvidence
+        ? '- Remaining blockers before closeout: local implementation blocker from stale Markdown row'
+        : '- Remaining blockers before closeout: none',
       '',
     ].join('\n')
   );
@@ -446,6 +455,35 @@ function writeFixture(root, options = {}) {
         '    verificationCommands: []',
         '    evidence: []',
         '    completedAt: null',
+        'worksets: []',
+        '',
+      ].join('\n')
+    );
+  }
+
+  if (settings.harnessChangedPaths.length > 0) {
+    fs.writeFileSync(
+      path.join(executionDir, 'WORKSETS.yaml'),
+      [
+        'schemaVersion: 1',
+        'activeAtomicTask: AT-HARNESS',
+        'atomicTasks:',
+        '  - id: AT-HARNESS',
+        '    title: "Harness change fixture"',
+        '    status: completed',
+        '    taskStatus: completed',
+        '    acceptanceCriterionId: "AC-HARNESS"',
+        '    linkedRequirementIds: ["REQ-HARNESS"]',
+        '    acVerdict: passed',
+        '    verificationEvidence:',
+        '      - "PASS: harness ledger fixture"',
+        '    ownedPaths:',
+        ...settings.harnessChangedPaths.map((entry) => `      - "${entry}"`),
+        '    verificationCommands:',
+        '      - "node --test .claude/scripts/verify-phase-closeout.test.mjs"',
+        '    evidence:',
+        '      - "PASS: harness ledger fixture"',
+        '    completedAt: "2026-05-08T11:59:30Z"',
         'worksets: []',
         '',
       ].join('\n')
@@ -527,21 +565,39 @@ function writeFixture(root, options = {}) {
     );
   }
 
+  if (settings.harnessChangeLedger) {
+    fs.writeFileSync(
+      path.join(docsDir, 'QA_REPORT.md'),
+      [
+        '# Plan QA Report',
+        '',
+        '## Harness Change Ledger',
+        '',
+        '| Change Area | Files | Reason | Verification |',
+        '|-------------|-------|--------|--------------|',
+        '| Closeout fixture | `.claude/scripts/fixture.mjs` | test harness ledger gate | `node --test .claude/scripts/verify-phase-closeout.test.mjs` |',
+        '',
+      ].join('\n')
+    );
+  }
+
+  const verdictPayload = {
+    verdict: settings.expectedBlockerPassedVerdict ? 'expected_blocker_passed' : 'passed',
+    evidenceFresh: true,
+    blocking: settings.inconsistentVerdict,
+    score: { verdict: settings.inconsistentVerdict ? 'blocked' : 'done' },
+    ...(settings.structuredEvidenceMetadata ? { evidenceMetadata: settings.structuredEvidenceMetadata } : {}),
+    ...(settings.staleVerdictIdentity ? {
+      identity: {
+        runLeaseId: 'old-run',
+        planDir: path.join(root, 'docs/old-implementation'),
+        statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+      },
+    } : {}),
+  };
   fs.writeFileSync(
     path.join(claudeDir, 'verification-verdict-phase01-final.json'),
-    JSON.stringify({
-      verdict: 'passed',
-      evidenceFresh: true,
-      blocking: settings.inconsistentVerdict,
-      score: { verdict: settings.inconsistentVerdict ? 'blocked' : 'done' },
-      ...(settings.staleVerdictIdentity ? {
-        identity: {
-          runLeaseId: 'old-run',
-          planDir: path.join(root, 'docs/old-implementation'),
-          statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
-        },
-      } : {}),
-    }, null, 2)
+    JSON.stringify(verdictPayload, null, 2)
   );
 
   const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');

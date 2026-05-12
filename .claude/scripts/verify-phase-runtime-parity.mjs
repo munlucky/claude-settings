@@ -12,7 +12,8 @@ const compactOutput = process.argv.includes('--compact') || String(process.env.T
 function usage() {
   return [
     'Usage:',
-    '  verify-phase-runtime-parity.mjs [reference-plan-dir] [--render-only] [--compact] [--runtime-profile optional_probe|required_runtime]',
+    '  verify-phase-runtime-parity.mjs <reference-plan-dir> [--render-only] [--compact] [--runtime-profile optional_probe|required_runtime]',
+    '  verify-phase-runtime-parity.mjs --allow-default-fixture [--render-only] [--runtime-profile optional_probe|required_runtime]',
     '  verify-phase-runtime-parity.mjs --help',
     '',
     'Environment:',

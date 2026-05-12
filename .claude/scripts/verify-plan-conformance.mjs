@@ -23,6 +23,47 @@ const DEFERRED_TERMS = [
   '우회',
 ];
 
+class CliUsageError extends Error {
+  constructor(message, { code = 'usage_error' } = {}) {
+    super(message);
+    this.name = 'CliUsageError';
+    this.code = code;
+  }
+}
+
+function usage() {
+  return [
+    'Usage:',
+    '  node .claude/scripts/verify-plan-conformance.mjs --phase-doc <path> --sprint-contract <path> --qa-report <path> --scorecard <path> --handoff <path> [--json|--env]',
+    '',
+    'Required artifact-level options:',
+    '  --phase-doc <path>        Source phase plan document.',
+    '  --sprint-contract <path>  Phase SPRINT_CONTRACT.md.',
+    '  --qa-report <path>        Phase QA_REPORT.md.',
+    '  --scorecard <path>        Phase SCORECARD.md.',
+    '  --handoff <path>          Phase HANDOFF.md.',
+    '',
+    'Output options:',
+    '  --json                    Print JSON result.',
+    '  --env                     Print shell assignment result.',
+    '  --help, -h                Show this help.',
+    '',
+    'Plan-level alternative:',
+    '  Use node .claude/scripts/verify-phase-closeout.mjs --plan-dir <path> --master-plan <path> --status-file <path> --json',
+  ].join('\n');
+}
+
+function unsupportedPlanOptionMessage(option) {
+  return [
+    `Unsupported plan-level option for artifact conformance verifier: ${option}`,
+    'verify-plan-conformance.mjs validates one phase artifact set.',
+    'Recommended plan-level command:',
+    '  node .claude/scripts/verify-phase-closeout.mjs --plan-dir <path> --master-plan <path> --status-file <path> --json',
+    'Recommended artifact-level command:',
+    '  node .claude/scripts/verify-plan-conformance.mjs --phase-doc <path> --sprint-contract <path> --qa-report <path> --scorecard <path> --handoff <path> --json',
+  ].join('\n');
+}
+
 function normalize(value) {
   return String(value || '').replace(/\r\n/g, '\n');
 }
@@ -52,6 +93,10 @@ function parseArgs(argv) {
   while (args.length > 0) {
     const arg = args.shift();
     switch (arg) {
+      case '--help':
+      case '-h':
+        result.help = true;
+        break;
       case '--phase-doc':
         result.phaseDocPath = args.shift() || '';
         break;
@@ -73,8 +118,12 @@ function parseArgs(argv) {
       case '--env':
         result.env = true;
         break;
+      case '--status-file':
+      case '--plan-dir':
+      case '--master-plan':
+        throw new CliUsageError(unsupportedPlanOptionMessage(arg), { code: 'unsupported_plan_level_option' });
       default:
-        throw new Error(`Unknown option: ${arg}`);
+        throw new CliUsageError(`Unknown option: ${arg}\n\n${usage()}`, { code: 'unknown_option' });
     }
   }
   return result;
@@ -420,6 +469,10 @@ function printLine(value) {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    printLine(usage());
+    return;
+  }
   const result = evaluatePlanConformance(options);
   if (options.json) {
     printLine(JSON.stringify(result, null, 2));
@@ -436,6 +489,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     main();
   } catch (error) {
     console.error(`ERROR: ${error.message}`);
+    if (error instanceof CliUsageError) {
+      console.error('');
+      console.error(usage());
+    }
     process.exit(64);
   }
 }

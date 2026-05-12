@@ -15,6 +15,9 @@ import {
 const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
 const EXTERNAL_BLOCKER_WORDS = /\b(external|account|credential|credentials|launch|domain|cloudflare|search console|adsense|manual|no-go)\b/i;
+const STRUCTURED_EVIDENCE_SCHEMA = 'phase-closeout-evidence-v1';
+const PASS_STATUSES = new Set(['pass', 'passed', 'done', 'verified', 'complete', 'completed', 'resolved', 'non_blocking', 'historical_warning', 'expected_blocker_passed']);
+const FAIL_STATUSES = new Set(['fail', 'failed', 'blocked', 'missing', 'todo', 'pending', 'retry', 'unresolved', 'active']);
 
 function extractPathTokens(text) {
   const result = new Set();
@@ -39,6 +42,160 @@ export function scenarioEvidencePassed(scenarioId, evidenceText) {
     const lowered = line.toLowerCase();
     return lowered.includes(scenarioId.toLowerCase()) && PASS_WORDS.test(line) && !FAIL_WORDS.test(line);
   });
+}
+
+function normalizeStatus(value) {
+  return String(value || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+}
+
+function evidencePassedStatus(value) {
+  const status = normalizeStatus(value);
+  if (!status) {
+    return null;
+  }
+  if (PASS_STATUSES.has(status)) {
+    return true;
+  }
+  if (FAIL_STATUSES.has(status)) {
+    return false;
+  }
+  return null;
+}
+
+function normalizeEvidenceEntries(value, idPattern) {
+  const entries = [];
+  const pushEntry = (id, entry = {}) => {
+    const normalizedId = String(id || '').trim();
+    if (!idPattern.test(normalizedId)) {
+      return;
+    }
+    const candidate = entry && typeof entry === 'object' ? entry : { status: entry };
+    const status = candidate.status ?? candidate.verdict ?? candidate.result ?? candidate.outcome ?? '';
+    entries.push({
+      id: normalizedId,
+      status: normalizeStatus(status),
+      passed: evidencePassedStatus(status),
+      evidencePath: String(candidate.evidencePath || candidate.path || candidate.evidence || '').trim(),
+      source: String(candidate.source || '').trim(),
+    });
+  };
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+      pushEntry(entry.id || entry.requirementId || entry.scenarioId || entry.code, entry);
+    }
+  } else if (value && typeof value === 'object') {
+    for (const [id, entry] of Object.entries(value)) {
+      pushEntry(id, entry);
+    }
+  }
+  return entries;
+}
+
+function normalizeBlockers(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => {
+      const status = entry.status ?? entry.verdict ?? entry.result ?? '';
+      const blocking = entry.blocking === true || normalizeStatus(entry.active) === 'true';
+      const passed = evidencePassedStatus(status);
+      return {
+        code: String(entry.code || entry.reasonCode || entry.blockingReasonCode || '').trim(),
+        blockerClass: String(entry.blockerClass || entry.class || '').trim(),
+        status: normalizeStatus(status),
+        blocking,
+        passed,
+      };
+    });
+}
+
+function extractEvidenceMetadataSource(payload = {}) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  for (const candidate of [
+    payload.closeoutEvidence,
+    payload.evidenceMetadata,
+    payload.structuredEvidence,
+    payload.metadata?.closeoutEvidence,
+    payload.metadata?.evidence,
+  ]) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export function structuredEvidenceFromPayload(payload = {}) {
+  const source = extractEvidenceMetadataSource(payload);
+  if (!source) {
+    return { hasMetadata: false, requirements: [], scenarios: [], blockers: [], blockersExplicit: false };
+  }
+  return {
+    schemaVersion: String(source.schemaVersion || STRUCTURED_EVIDENCE_SCHEMA).trim(),
+    hasMetadata: true,
+    requirements: normalizeEvidenceEntries(source.requirements, /^REQ-[A-Za-z0-9_.-]+$/i),
+    scenarios: normalizeEvidenceEntries(source.scenarios, /^SCN-[A-Za-z0-9_.-]+$/i),
+    blockers: normalizeBlockers(source.blockers),
+    blockersExplicit: Object.prototype.hasOwnProperty.call(source, 'blockers'),
+  };
+}
+
+export function structuredEvidenceFromMarkdown(text = '') {
+  const section = sectionText(text, 'Structured Evidence Metadata');
+  if (!section) {
+    return { hasMetadata: false, requirements: [], scenarios: [], blockers: [], blockersExplicit: false };
+  }
+  const fence = section.match(/```json\s*([\s\S]*?)```/i);
+  const jsonText = fence ? fence[1] : section;
+  try {
+    return structuredEvidenceFromPayload({ evidenceMetadata: JSON.parse(jsonText) });
+  } catch {
+    return { hasMetadata: false, requirements: [], scenarios: [], blockers: [], blockersExplicit: false };
+  }
+}
+
+export function mergeStructuredEvidenceMetadata(...metadataSources) {
+  const merged = { hasMetadata: false, requirements: [], scenarios: [], blockers: [], blockersExplicit: false };
+  for (const source of metadataSources) {
+    if (!source?.hasMetadata) {
+      continue;
+    }
+    merged.hasMetadata = true;
+    merged.requirements.push(...source.requirements);
+    merged.scenarios.push(...source.scenarios);
+    merged.blockers.push(...source.blockers);
+    merged.blockersExplicit = merged.blockersExplicit || source.blockersExplicit;
+  }
+  return merged;
+}
+
+export function structuredScenarioEvidencePassed(metadata, scenarioId) {
+  const normalizedId = String(scenarioId || '').trim().toLowerCase();
+  const entry = (metadata?.scenarios || []).find((candidate) => candidate.id.toLowerCase() === normalizedId);
+  return entry ? entry.passed === true : null;
+}
+
+export function structuredTraceabilityValid(metadata, kind) {
+  const entries = kind === 'requirements' ? metadata?.requirements : metadata?.scenarios;
+  if (!metadata?.hasMetadata || !Array.isArray(entries) || entries.length === 0) {
+    return null;
+  }
+  return entries.some((entry) => entry.passed === true);
+}
+
+export function structuredLocalBlockerUnresolved(metadata) {
+  if (!metadata?.hasMetadata || !metadata.blockersExplicit) {
+    return null;
+  }
+  return metadata.blockers.some((entry) => entry.blocking === true || entry.passed === false || entry.status === 'active' || entry.status === 'blocked');
 }
 
 export function scorecardDone(scorecardText) {

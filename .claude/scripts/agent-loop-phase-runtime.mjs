@@ -175,6 +175,7 @@ function describeStopReason(reason, runtime, detail = '') {
       return `git 작업이 권한 문제로 막혀 ${runtime} 작업을 진행할 수 없습니다`;
     case 'node_spawn_eperm':
       return `Node 프로세스 spawn이 권한 문제로 막혀 ${runtime} 작업을 진행할 수 없습니다`;
+    case 'verification_environment_unavailable':
     case 'verifier_unavailable':
       return `검증 런타임을 사용할 수 없어 ${runtime} 작업을 진행할 수 없습니다`;
     case 'codex_unavailable':
@@ -293,6 +294,7 @@ const TERMINAL_STOP_CODES = new Set([
   'plugin_network_sync_failed',
   'network_fetch_failed',
   'node_spawn_eperm',
+  'verification_environment_unavailable',
   'verifier_unavailable',
   'spawn_blocked',
 ]);
@@ -327,7 +329,7 @@ function detectEnvironmentStopReason(logFile, defaultReason = 'phase-failed') {
     .filter(isLogEvidenceLine);
   const combinedEvidence = evidenceLines.join('\n');
   if (/(?:node\s+--test|verifier|verification runtime|runtime verifier)[\s\S]*spawn(?:Sync)?\s+node\s+EPERM/i.test(combinedEvidence)) {
-    return 'verifier_unavailable';
+    return 'verification_environment_unavailable';
   }
 
   for (const line of evidenceLines) {

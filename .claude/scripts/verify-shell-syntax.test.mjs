@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { evaluateShellSyntax } from './verify-shell-syntax.mjs';
+import { diagnoseShellCommand, evaluateShellSyntax } from './verify-shell-syntax.mjs';
 
 test('passes files with LF endings and successful bash syntax check', () => {
   withFixture((root) => {
@@ -58,6 +58,37 @@ test('reports bash spawn failure as verifier unavailable', () => {
     assert.equal(result.status, 2);
     assert.equal(result.unavailable[0].reason, 'spawnSync bash EPERM');
   });
+});
+
+test('diagnoses POSIX env prefix in PowerShell with env example', () => {
+  const diagnostic = diagnoseShellCommand('FOO=bar node .claude/scripts/verify-plan-conformance.mjs --help', {
+    shell: 'powershell.exe',
+  });
+
+  assert.equal(diagnostic.ok, false);
+  assert.equal(diagnostic.code, 'windows_shell_env_syntax');
+  assert.match(diagnostic.message, /\$env:FOO='bar'; node/);
+});
+
+test('accepts PowerShell env assignment syntax', () => {
+  const diagnostic = diagnoseShellCommand("$env:FOO='bar'; node .claude/scripts/verify-plan-conformance.mjs --help", {
+    shell: 'pwsh.exe',
+  });
+
+  assert.equal(diagnostic.ok, true);
+});
+
+test('shell syntax evaluation reports PowerShell env prefix failures', () => {
+  const result = evaluateShellSyntax([], {
+    files: [],
+    commands: ['FOO=bar node script.mjs'],
+    shell: 'powershell.exe',
+    runSyntaxCheck: () => ({ status: 0, stdout: '', stderr: '', error: '' }),
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(result.failures[0].reason, 'windows_shell_env_syntax');
+  assert.match(result.lines.join('\n'), /\$env:FOO='bar'; node script\.mjs/);
 });
 
 function withFixture(callback) {

@@ -26,12 +26,14 @@ function detectFinalStopReason(rawLines) {
 }
 
 function testBashAccessDenied() {
-  const a = classifyFailure({ name: 'shell:.claude/scripts/verify-code-policy.sh', status: 'warning', detail: 'spawnSync bash EPERM' });
-  const b = classifyFailure({ name: 'shell:.claude/scripts/workflow-enforcement.sh', status: 'warning', detail: 'spawnSync bash Access is denied' });
+  const a = classifyFailure({ name: 'shell:local-script.sh', status: 'warning', detail: 'spawnSync bash EPERM' });
+  const b = classifyFailure({ name: 'shell:local-script.sh', status: 'warning', detail: 'spawnSync bash Access is denied' });
+  const verifierBash = classifyFailure({ name: 'shell:.claude/scripts/verify-code-policy.sh', status: 'warning', detail: 'spawnSync bash EPERM' });
 
   assert.equal(a.code, 'bash_access_denied');
   assert.equal(a.decision, 'resume_later_handoff');
   assert.equal(a.fingerprint, b.fingerprint);
+  assert.equal(verifierBash.code, 'verification_environment_unavailable');
 }
 
 function testCodexStorageAndStateCodes() {
@@ -81,10 +83,10 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   assert.equal(rgAccess.code, 'rg_access_denied');
   assert.equal(cimAccess.code, 'get_ciminstance_access_denied');
   assert.equal(memoryGraph.code, 'memorygraph_unavailable');
-  assert.equal(verifier.code, 'verifier_unavailable');
-  assert.equal(verifierSpawn.code, 'verifier_unavailable');
+  assert.equal(verifier.code, 'verification_environment_unavailable');
+  assert.equal(verifierSpawn.code, 'verification_environment_unavailable');
   assert.equal(verifierSpawn.decision, 'resume_later_handoff');
-  assert.equal(nodeTestWorker.code, 'verifier_unavailable');
+  assert.equal(nodeTestWorker.code, 'verification_environment_unavailable');
   assert.equal(pathUpdate.code, 'path_update_denied');
   assert.equal(pluginSync.code, 'plugin_network_sync_failed');
   assert.equal(pluginHost.code, 'plugin_network_sync_failed');
@@ -97,12 +99,14 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
 
 function testGitAndNetworkCodes() {
   const git = classifyFailure({ name: 'git.version', status: 'warning', detail: 'spawnSync git EPERM' });
+  const verifierGit = classifyFailure({ name: 'phase verifier', command: 'git status', status: 'warning', detail: 'spawnSync git EPERM during verification' });
   const queueSmoke = classifyFailure({ name: 'npm.queue-smoke', status: 'warning', detail: 'npm queue-smoke failed: spawnSync git EPERM' });
   const gitIgnoreWarning = classifyFailure({ name: 'git.warning', status: 'warning', detail: "warning: unable to access 'C:\\Users\\moon/.config/git/ignore': Permission denied" });
   const sandboxProvider = classifyFailure({ name: 'provider.smoke', status: 'warning', detail: 'E_PROVIDER_NETWORK websocket os error 10013 blocked by sandbox' });
   const network = classifyFailure({ name: 'network.fetch', status: 'warning', detail: 'fetch failed: ENOTFOUND' });
 
   assert.equal(git.code, 'git_eperm');
+  assert.equal(verifierGit.code, 'verification_environment_unavailable');
   assert.equal(queueSmoke.code, 'npm_queue_smoke_git_eperm');
   assert.equal(gitIgnoreWarning.code, 'safe_git_ignore_permission_warning');
   assert.equal(gitIgnoreWarning.blocker, false);
@@ -126,7 +130,7 @@ function testDetectFinalStopReasonForRawLogs() {
     detectFinalStopReason([
       'node --test .claude/scripts/lib/current-artifacts-state.test.mjs failed: spawnSync node EPERM',
     ]),
-    'verifier_unavailable',
+    'verification_environment_unavailable',
   );
   assert.equal(
     detectFinalStopReason([
@@ -166,8 +170,32 @@ function testDetectFinalStopReasonForRawLogs() {
   );
 }
 
+function testDispatcherLivenessTimeoutCodes() {
+  const stale = classifyFailure({ reason: 'stale_child_no_progress', detail: 'delegated child made no observable progress for 3300s' });
+  const exited = classifyFailure({ detail: 'child_exited_without_closeout after dispatcher timeout' });
+  const running = classifyFailure({ detail: 'timeout reached and child pid is still alive / child still running' });
+
+  assert.equal(stale.code, 'stale_child_no_progress');
+  assert.equal(stale.category, 'runtime_liveness');
+  assert.equal(stale.decision, 'resume_later_handoff');
+  assert.equal(exited.code, 'child_exited_without_closeout');
+  assert.equal(running.code, 'child_still_running');
+  assert.equal(isEnvironmentBlockerCode('child_still_running'), true);
+}
+
+function testWindowsShellEnvSyntaxCode() {
+  const result = classifyFailure({
+    detail: "PowerShell does not support POSIX env prefix syntax. Use $env:FOO='bar'; node script.mjs",
+  });
+
+  assert.equal(result.code, 'windows_shell_env_syntax');
+  assert.equal(result.category, 'operator_error');
+  assert.equal(result.decision, 'fix_command');
+}
+
 function testCountsAndCapabilityClassification() {
   const counts = buildFailureClassCounts([
+    { name: 'shell:local-script.sh', status: 'warning', detail: 'spawnSync bash EPERM' },
     { name: 'shell:.claude/scripts/verify-code-policy.sh', status: 'warning', detail: 'spawnSync bash EPERM' },
     { name: 'shell:.claude/scripts/workflow-enforcement.sh', status: 'warning', detail: 'spawnSync bash EPERM' },
     { name: 'git.current', status: 'warning', detail: 'spawnSync git EPERM' },
@@ -175,7 +203,8 @@ function testCountsAndCapabilityClassification() {
     { name: 'memorygraph.health', status: 'warning', detail: 'memorygraph transport closed' },
   ]);
 
-  assert.equal(counts.bash_access_denied, 2);
+  assert.equal(counts.bash_access_denied, 1);
+  assert.equal(counts.verification_environment_unavailable, 2);
   assert.equal(counts.git_eperm, 1);
   assert.equal(counts.memorygraph_unavailable, 1);
 
@@ -196,7 +225,7 @@ function testCountsAndCapabilityClassification() {
   assert.equal(optional.decision, 'continue');
 
   const summary = summarizeFailureDecision(counts);
-  assert.equal(summary.blockerCode, 'bash_access_denied');
+  assert.equal(summary.blockerCode, 'verification_environment_unavailable');
   assert.equal(summary.sameFailureClassCount, 2);
 }
 
@@ -267,6 +296,8 @@ testCodexStorageAndStateCodes();
 testShellSnapshotMcpNodeGitRgMemoryGraphCodes();
 testGitAndNetworkCodes();
 testDetectFinalStopReasonForRawLogs();
+testDispatcherLivenessTimeoutCodes();
+testWindowsShellEnvSyntaxCode();
 testCountsAndCapabilityClassification();
 testStagnationPatternsAndRetrySuppression();
 testStopOutcomeAndTimeoutSplit();

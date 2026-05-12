@@ -23,6 +23,11 @@ const FAILURE_DEFINITIONS = new Map([
   ['path_update_denied', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'repair-path-update-permissions-or-use-host-fallback' }],
   ['plugin_network_sync_failed', { category: 'network', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'reconnect-plugin-network-sync-or-fallback-runtime' }],
   ['node_spawn_eperm', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'repair-node-spawn-permissions-or-fallback-runtime' }],
+  ['verification_environment_unavailable', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'restore-verification-runtime-or-run-parent-reverify' }],
+  ['stale_child_no_progress', { category: 'runtime_liveness', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'inspect latest-dispatch liveness fields and resume from handoff' }],
+  ['child_exited_without_closeout', { category: 'runtime_liveness', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'inspect child exit logs and rerun phase closeout finalizer if evidence exists' }],
+  ['child_still_running', { category: 'runtime_liveness', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'attach to or terminate the still-running child before restarting dispatch' }],
+  ['windows_shell_env_syntax', { category: 'operator_error', decision: 'fix_command', retryPolicy: 'after_fix', fallbackHint: "PowerShell example: $env:KEY='value'; command" }],
   ['memorygraph_unavailable', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'install-or-repair-memorygraph-or-defer-memory-backed-verification' }],
   ['verifier_unavailable', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'restore-verification-runtime-or-defer-verification' }],
   ['command_not_found', { category: 'environment', decision: 'host_fallback', retryPolicy: 'no_retry', fallbackHint: 'resolve-command-path-or-fallback-runtime' }],
@@ -62,8 +67,8 @@ const FAILURE_CODE_ALIASES = new Map([
   ['plugin_network_sync_unavailable', 'plugin_network_sync_failed'],
   ['node_spawn', 'node_spawn_eperm'],
   ['node_spawn_permission_denied', 'node_spawn_eperm'],
-  ['node_test_spawn_eperm', 'verifier_unavailable'],
-  ['verifier_spawn_eperm', 'verifier_unavailable'],
+  ['node_test_spawn_eperm', 'verification_environment_unavailable'],
+  ['verifier_spawn_eperm', 'verification_environment_unavailable'],
   ['git_index', 'git_index_denied'],
   ['git_index_permission_denied', 'git_index_denied'],
   ['git_access_denied', 'git_index_denied'],
@@ -82,11 +87,18 @@ const FAILURE_CODE_ALIASES = new Map([
   ['memorygraph_transport_failure', 'memorygraph_unavailable'],
   ['memorygraph_unavailable', 'memorygraph_unavailable'],
   ['runtime_verifier', 'verifier_unavailable'],
-  ['verification_runtime', 'verifier_unavailable'],
-  ['runtime_verifier_unavailable', 'verifier_unavailable'],
-  ['verification_runtime_unavailable', 'verifier_unavailable'],
-  ['verification_runtime_spawn_eperm', 'verifier_unavailable'],
-  ['verifier_unavailable', 'verifier_unavailable'],
+  ['verification_runtime', 'verification_environment_unavailable'],
+  ['runtime_verifier_unavailable', 'verification_environment_unavailable'],
+  ['verification_runtime_unavailable', 'verification_environment_unavailable'],
+  ['verification_runtime_spawn_eperm', 'verification_environment_unavailable'],
+  ['verifier_unavailable', 'verification_environment_unavailable'],
+  ['verification_environment_unavailable', 'verification_environment_unavailable'],
+  ['stale_child_no_progress', 'stale_child_no_progress'],
+  ['child_no_progress', 'stale_child_no_progress'],
+  ['child_exited_without_closeout', 'child_exited_without_closeout'],
+  ['child_still_running', 'child_still_running'],
+  ['windows_shell_env_syntax', 'windows_shell_env_syntax'],
+  ['powershell_env_syntax', 'windows_shell_env_syntax'],
   ['git_eperm', 'git_eperm'],
   ['bash_access_denied', 'bash_access_denied'],
   ['docker_daemon_unavailable', 'docker_daemon_unavailable'],
@@ -105,7 +117,11 @@ const ENVIRONMENT_PATTERNS = [
   { code: 'mcp_shutdown_warning', test: /failed to initialize mcp client during shutdown|mcp startup failed.*(?:shutdown|connection closed)|shutdown.*mcp.*(?:connection closed|handshak)/i },
   { code: 'path_update_denied', test: /(?:^|\b)(?:path update|update path|prepend path|PATH)(?:\b|:).*(denied|permission denied|access is denied|ep?erm|eacces|operation not permitted|readonly|read only)/i },
   { code: 'plugin_network_sync_failed', test: /(?:^|\b)(?:plugin sync|plugin network sync|network sync|sync failed|plugin registry|plugin mirror)(?:\b|:).*(failed|unavailable|timeout|network|econnreset|etimedout|eai_again|enotfound|permission denied|access is denied)/i },
-  { code: 'verifier_unavailable', test: /(?:node\s+--test|node test runner|test worker|verifier|verification runtime|runtime verifier).*?(?:spawn(?:Sync)?\s+node\s+)?(?:ep?erm|eacces|permission denied|access is denied|operation not permitted|unable to create process|spawn blocked)/i },
+  { code: 'verification_environment_unavailable', test: /(?:node\s+--test|node test runner|test worker|verifier|verification runtime|runtime verifier).*?(?:spawn(?:Sync)?\s+node\s+)?(?:ep?erm|eacces|permission denied|access is denied|operation not permitted|unable to create process|spawn blocked)/i },
+  { code: 'stale_child_no_progress', test: /(?:stale[_ -]?child[_ -]?no[_ -]?progress|child.*no observable progress|no-progress child|stale child)/i },
+  { code: 'child_exited_without_closeout', test: /(?:child[_ -]?exited[_ -]?without[_ -]?closeout|child exited.*without closeout|exited child without closeout)/i },
+  { code: 'child_still_running', test: /(?:child[_ -]?still[_ -]?running|child.*still running|pid.*still alive)/i },
+  { code: 'windows_shell_env_syntax', test: /(?:powershell|pwsh|windows).*(?:posix env prefix|env prefix syntax|\$env:)|^[A-Za-z_][A-Za-z0-9_]*=.*\s+(?:node|npm|bash|git|pwsh|powershell)\b/i },
   { code: 'node_spawn_eperm', test: /(?:^|\b)node(?:\b|:).*(ep?erm|eacces|permission denied|access is denied|unable to create process|spawn blocked)/i },
   { code: 'bash_access_denied', test: /(?:^|\b)bash(?:\b|:).*(ep?erm|eacces|access is denied|permission denied|spawn blocked|unable to create process)/i },
   { code: 'git_index_denied', test: /(?:^|\b)(?:git index|index write|git index write|git add|git update-index)(?:\b|:).*(ep?erm|eacces|access is denied|permission denied|readonly|read only)/i },
@@ -116,7 +132,7 @@ const ENVIRONMENT_PATTERNS = [
   { code: 'rg_access_denied', test: /(?:^|\b)rg(?:\b|:).*(ep?erm|eacces|access is denied|permission denied|spawn blocked|unable to create process)/i },
   { code: 'get_ciminstance_access_denied', test: /(?:Get-CimInstance|CimInstance|WMI)(?:\b|:).*(ep?erm|eacces|access is denied|permission denied)/i },
   { code: 'memorygraph_unavailable', test: /(?:^|\b)(?:memorygraph|memory graph)(?:\b|:).*(transport closed|unavailable|not found|health check failed|spawn blocked|unable to create process|ep?erm|eacces)/i },
-  { code: 'verifier_unavailable', test: /(?:^|\b)(?:runtime verifier|verification runtime|verifier)(?:\b|:).*(unavailable|not found|spawn blocked|unable to create process|ep?erm|eacces|permission denied)/i },
+  { code: 'verification_environment_unavailable', test: /(?:^|\b)(?:runtime verifier|verification runtime|verifier)(?:\b|:).*(unavailable|not found|spawn blocked|unable to create process|ep?erm|eacces|permission denied)/i },
   { code: 'codex_unavailable', test: /(?:^|\b)codex(?:\b|:).*(not found|unavailable|spawn blocked|unable to create process|ep?erm|eacces)/i },
   { code: 'docker_daemon_unavailable', test: /(?:^|\b)docker(?:\b|:).*(daemon|cannot connect|connection refused|unavailable|not running|permission denied)/i },
   { code: 'network_fetch_failed', test: /(?:^|\b)(network|fetch|http|https|undici|request|econnreset|etimedout|eai_again|enotfound|could not resolve host|resolve host|name or service not known|temporary failure in name resolution)\b/i },
@@ -141,6 +157,10 @@ const ENVIRONMENT_BLOCKER_CODES = new Set([
   'path_update_denied',
   'plugin_network_sync_failed',
   'node_spawn_eperm',
+  'verification_environment_unavailable',
+  'stale_child_no_progress',
+  'child_exited_without_closeout',
+  'child_still_running',
   'memorygraph_unavailable',
   'verifier_unavailable',
   'command_not_found',
@@ -192,6 +212,19 @@ function matchEnvironmentPattern(text, excludedCodes = new Set()) {
   return '';
 }
 
+function hasVerifierContext(input = {}, patternText = '') {
+  const contextText = firstMeaningfulValue(
+    input.context,
+    input.source,
+    input.name,
+    input.command,
+    input.phase,
+    input.stage,
+  );
+  const combined = `${contextText} ${patternText}`.toLowerCase();
+  return /(?:node\s+--test|verify|verifier|verification|completion-verifier|phase-closeout|workflow-enforcement|code-policy|shell-syntax|runtime-parity|phase-runner-boundary|phase-worktree|knowledge-repo-audit)/i.test(combined);
+}
+
 export function normalizeFailureCode(input = {}) {
   const explicit = firstMeaningfulValue(
     input.code,
@@ -217,6 +250,9 @@ export function normalizeFailureCode(input = {}) {
   const patternText = `${explicit} ${haystack}`.trim();
 
   const sanitizedExplicit = sanitizeCode(explicit);
+  if (sanitizedExplicit === 'verifier_unavailable') {
+    return 'verification_environment_unavailable';
+  }
   if (sanitizedExplicit === 'command_not_found' || sanitizedExplicit === 'node_spawn_eperm') {
     const contextualCode = matchEnvironmentPattern(patternText, new Set(['command_not_found']));
     if (contextualCode && contextualCode !== sanitizedExplicit) {
@@ -233,6 +269,9 @@ export function normalizeFailureCode(input = {}) {
   }
   if (FAILURE_CODE_ALIASES.has(sanitizedExplicit)) {
     const aliased = FAILURE_CODE_ALIASES.get(sanitizedExplicit);
+    if (aliased === 'verifier_unavailable') {
+      return 'verification_environment_unavailable';
+    }
     if (aliased === 'command_not_found' || aliased === 'node_spawn_eperm') {
       const contextualCode = matchEnvironmentPattern(patternText, new Set(['command_not_found']));
       if (contextualCode && contextualCode !== aliased) {
@@ -244,6 +283,9 @@ export function normalizeFailureCode(input = {}) {
 
   const matchedCode = matchEnvironmentPattern(patternText);
   if (matchedCode) {
+    if (hasVerifierContext(input, patternText) && ['bash_access_denied', 'git_eperm', 'git_index_denied', 'spawn_blocked'].includes(matchedCode)) {
+      return 'verification_environment_unavailable';
+    }
     return matchedCode;
   }
 

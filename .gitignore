@@ -34,3 +34,4 @@ docs/implementation/**/close/
 docs/implementation/**/archive/
 .tmp/
 .DS_Store
+.claude/verification-results-harness-anomaly-phase*.log

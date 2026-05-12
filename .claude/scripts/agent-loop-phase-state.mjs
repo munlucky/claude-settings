@@ -10,6 +10,7 @@ import { isRelevantVerificationVerdict, normalizeRequiredChecksMissing } from '.
 import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
+import { normalizeFailureCode } from './lib/failure-classifier.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
@@ -501,6 +502,60 @@ function removeRootSectionLines(lines, parent) {
     }
   }
   lines.splice(index, endIndex - index);
+}
+
+function removeRootScalarLines(lines, keys) {
+  const keySet = new Set(keys);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const match = lines[index].match(/^([A-Za-z][A-Za-z0-9]*):/);
+    if (match && keySet.has(match[1])) {
+      lines.splice(index, 1);
+    }
+  }
+}
+
+function extractRootScalar(lines, key) {
+  const prefix = `${key}:`;
+  const line = lines.find((entry) => entry.startsWith(prefix));
+  if (!line) {
+    return '';
+  }
+  return line.slice(prefix.length).trim().replace(/^"|"$/g, '');
+}
+
+function setRootNonBlockingWarning(lines, entry = {}) {
+  removeRootSectionLines(lines, 'nonBlockingWarnings');
+  const observedAt = entry.observedAt || nowIsoSeconds();
+  const warning = {
+    code: entry.code || 'verification_environment_unavailable',
+    reason: entry.reason || 'parent reverify passed after verifier environment blocker',
+    previousStopReasonClass: entry.previousStopReasonClass || '',
+    previousBlockingReasonCode: entry.previousBlockingReasonCode || '',
+    evidencePath: entry.evidencePath || CURRENT_RUN_FILE,
+    observedAt,
+  };
+  const rendered = [
+    'nonBlockingWarnings:',
+    `  - code: ${yamlScalar(warning.code)}`,
+    `    reason: ${yamlScalar(warning.reason)}`,
+  ];
+  if (warning.previousStopReasonClass) {
+    rendered.push(`    previousStopReasonClass: ${yamlScalar(warning.previousStopReasonClass)}`);
+  }
+  if (warning.previousBlockingReasonCode) {
+    rendered.push(`    previousBlockingReasonCode: ${yamlScalar(warning.previousBlockingReasonCode)}`);
+  }
+  rendered.push(`    evidencePath: ${yamlScalar(warning.evidencePath)}`);
+  rendered.push(`    observedAt: ${yamlScalar(warning.observedAt)}`);
+
+  let insertAt = lines.length;
+  for (let probe = 0; probe < lines.length; probe += 1) {
+    if (lines[probe].trim() === 'phases:') {
+      insertAt = probe;
+      break;
+    }
+  }
+  lines.splice(insertAt, 0, ...rendered);
 }
 
 function setRootListOfMappingsInLines(lines, parent, entries) {
@@ -1087,6 +1142,26 @@ function classifyCompletionGateReason(reason, context = {}) {
     };
   }
 
+  const contextualBlockerCode = normalizeFailureCode({
+    code: context.blockingReasonCode,
+    failureCode: context.failureClass,
+    blockerClass: context.blockerClass,
+    reason: context.reason,
+    detail: context.detail,
+  });
+  if (
+    normalizedReason === 'scorecard-verdict=blocked'
+    && contextualBlockerCode === 'verification_environment_unavailable'
+  ) {
+    return {
+      category: 'environment_blocked',
+      detail: rawReason,
+      retryPolicy: 'stop_loop',
+      stopReason: 'blocked:verification_environment_unavailable',
+      remediationStage: 'verify',
+    };
+  }
+
   if (SCORE_INCOMPLETE_GATES.has(normalizedReason) || normalizedReason.startsWith('scorecard-')) {
     return {
       category: 'score_incomplete',
@@ -1646,6 +1721,7 @@ function evaluatePhaseCompletionGate(config) {
   }
 
   let latestScorePayload = null;
+  let latestScoreBlockerContext = {};
   for (const script of [...latestByScript.keys()].sort()) {
     const { path: verdictPath, payload } = latestByScript.get(script);
     const verdict = payload.verdict;
@@ -1741,6 +1817,12 @@ function evaluatePhaseCompletionGate(config) {
     const score = payload.score;
     if (score && typeof score === 'object' && score.detected === true) {
       latestScorePayload = score;
+      latestScoreBlockerContext = {
+        blockingReasonCode: payload.blockingReasonCode || score.blockingReasonCode || '',
+        failureClass: payload.failureClass || score.failureClass || '',
+        blockerClass: payload.blockerClass || score.blockerClass || '',
+        detail: payload.stopReasonExplanation || payload.reason || score.reason || '',
+      };
     }
   }
 
@@ -1913,6 +1995,7 @@ function evaluatePhaseCompletionGate(config) {
         : (!atomicLedger.complete ? atomicLedger.reason : (!demoFirstGate.allowed ? demoFirstGate.reason : 'no-fresh-verification-artifact'))));
   const completionClassification = classifyCompletionGateReason(finalReason, {
     strongCompletion: closeoutConcrete && finalAllowed,
+    ...(finalReason === 'scorecard-verdict=blocked' ? latestScoreBlockerContext : {}),
   });
 
   return {
@@ -2415,6 +2498,11 @@ export function setRootRunVerdict(
     return;
   }
   const lines = fs.readFileSync(statusFile, 'utf8').split(/\r?\n/).filter((_, index, arr) => !(index === arr.length - 1 && arr[index] === ''));
+  const previousStopReasonClass = extractRootScalar(lines, 'stopReasonClass');
+  const previousBlockingReasonCode = extractRootScalar(lines, 'blockingReasonCode');
+  const previousFailureClass = extractRootScalar(lines, 'failureClass');
+  const parentReverifyPassed = normalizedRunVerdict === 'parent_reverify_passed' || stopReasonClass === 'parent_reverify_passed';
+
   setRootScalarInLines(lines, 'normalizedRunVerdict', yamlScalar(normalizedRunVerdict));
   setRootScalarInLines(lines, 'stopReasonClass', yamlScalar(stopReasonClass));
   if (rawStopReason) {
@@ -2433,12 +2521,28 @@ export function setRootRunVerdict(
     setRootScalarInLines(lines, 'failureClass', yamlScalar(failureClass));
   }
   setRootScalarInLines(lines, 'stopReasonExplanation', yamlScalar(stopReasonExplanation));
+  if (normalizedRunVerdict === 'parent_reverify_required' || stopReasonClass === 'parent_reverify_required') {
+    setRootScalarInLines(lines, 'parentReverifyStatus', yamlScalar('required'));
+  }
+  if (parentReverifyPassed) {
+    setRootScalarInLines(lines, 'parentReverifyStatus', yamlScalar('passed'));
+    setRootNonBlockingWarning(lines, {
+      code: 'verification_environment_unavailable',
+      reason: stopReasonExplanation || 'parent reverify passed after verifier environment blocker',
+      previousStopReasonClass: previousStopReasonClass || stopReasonClass,
+      previousBlockingReasonCode: previousBlockingReasonCode || blockingReasonCode || previousFailureClass,
+      evidencePath: CURRENT_RUN_FILE,
+    });
+    removeRootScalarLines(lines, ['rawStopReason', 'blockerClass', 'blockingReasonCode', 'failureClass']);
+  }
   if (normalizedRunVerdict === 'success' && stopReasonClass === 'clean_complete') {
     setRootScalarInLines(lines, 'lastStopReasonDetail', yamlScalar(stopReasonExplanation));
     removeStaleRootStopReasonArtifactLines(lines);
   }
 
-  if (normalizedRunVerdict === 'complete_with_environment_blocker') {
+  if (parentReverifyPassed) {
+    removeRootSectionLines(lines, 'environmentBlockers');
+  } else if (normalizedRunVerdict === 'complete_with_environment_blocker') {
     const observedAt = nowIsoSeconds();
     const reason = stopReasonExplanation || 'external provider smoke blocked by environment';
     setRootListOfMappingsInLines(lines, 'environmentBlockers', [{

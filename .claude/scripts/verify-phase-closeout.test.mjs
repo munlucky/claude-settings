@@ -530,23 +530,65 @@ test('phase status root records verifier spawn EPERM blocker metadata', () => {
     setRootRunVerdict(
       statusFile,
       'blocked',
-      'runtime_unavailable',
+      'parent_reverify_required',
       'phase-status=verification_blocked | blocker=verifier_unavailable | command=node --test .claude/scripts/lib/current-artifacts-state.test.mjs | spawn EPERM',
       'verification-preflight-blocked',
       'runtime_fallback_or_handoff',
-      'verifier_unavailable',
-      'verifier_spawn_eperm',
-      'verifier_unavailable',
+      'verification_environment_unavailable',
+      'verification_environment_unavailable',
+      'verification_environment_unavailable',
     );
 
     const text = fs.readFileSync(statusFile, 'utf8');
     assert.match(text, /normalizedRunVerdict:\s+blocked/);
-    assert.match(text, /stopReasonClass:\s+runtime_unavailable/);
+    assert.match(text, /stopReasonClass:\s+parent_reverify_required/);
+    assert.match(text, /parentReverifyStatus:\s+required/);
     assert.match(text, /rawStopReason:\s+verification-preflight-blocked/);
-    assert.match(text, /blockerClass:\s+verifier_unavailable/);
-    assert.match(text, /blockingReasonCode:\s+verifier_spawn_eperm/);
-    assert.match(text, /failureClass:\s+verifier_unavailable/);
+    assert.match(text, /blockerClass:\s+verification_environment_unavailable/);
+    assert.match(text, /blockingReasonCode:\s+verification_environment_unavailable/);
+    assert.match(text, /failureClass:\s+verification_environment_unavailable/);
     assert.match(text, /spawn EPERM/);
+  });
+});
+
+test('parent reverify pass clears active verifier blocker and keeps historical warning', () => {
+  withFixture({}, (root) => {
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    setRootRunVerdict(
+      statusFile,
+      'blocked',
+      'parent_reverify_required',
+      'phase-status=verification_blocked | command=node --test .claude/scripts/verify-phase-closeout.test.mjs | spawn EPERM',
+      'verification-preflight-blocked',
+      'runtime_fallback_or_handoff',
+      'verification_environment_unavailable',
+      'verification_environment_unavailable',
+      'verification_environment_unavailable',
+    );
+    setRootRunVerdict(
+      statusFile,
+      'parent_reverify_passed',
+      'parent_reverify_passed',
+      'parent reverify passed in current session; verifier blocker retained as historical warning',
+      '',
+      'continue',
+      '',
+      '',
+      '',
+    );
+
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.match(text, /normalizedRunVerdict:\s+parent_reverify_passed/);
+    assert.match(text, /parentReverifyStatus:\s+passed/);
+    assert.match(text, /nonBlockingWarnings:/);
+    assert.match(text, /code:\s+verification_environment_unavailable/);
+    assert.doesNotMatch(text, /^blockerClass:/m);
+    assert.doesNotMatch(text, /^blockingReasonCode:/m);
+    assert.doesNotMatch(text, /^failureClass:/m);
+
+    const result = evaluatePhaseCloseout(config(root));
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
   });
 });
 
@@ -571,6 +613,79 @@ test('phase closeout passes when artifacts, verdict, score, archive, and scenari
 
     assert.equal(result.allowed, true);
     assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase closeout prefers structured evidence metadata over stale free-form markdown', () => {
+  withFixture({
+    traceability: false,
+    markdownContradictsStructuredEvidence: true,
+    structuredEvidenceMetadata: {
+      schemaVersion: 'phase-closeout-evidence-v1',
+      requirements: {
+        'REQ-01-1': { status: 'verified', evidencePath: 'QA_REPORT.md' },
+      },
+      scenarios: {
+        'SCN-01-1': { status: 'passed', evidencePath: 'QA_REPORT.md' },
+      },
+      blockers: [],
+    },
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase closeout does not let markdown pass override structured scenario failure', () => {
+  withFixture({
+    structuredEvidenceMetadata: {
+      schemaVersion: 'phase-closeout-evidence-v1',
+      requirements: {
+        'REQ-01-1': { status: 'verified', evidencePath: 'QA_REPORT.md' },
+      },
+      scenarios: {
+        'SCN-01-1': { status: 'failed', evidencePath: 'QA_REPORT.md' },
+      },
+      blockers: [],
+    },
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.message.includes('SCN-01-1')));
+  });
+});
+
+test('phase closeout accepts expected_blocker_passed as fresh non-blocking verdict', () => {
+  withFixture({ expectedBlockerPassedVerdict: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
+test('phase closeout blocks harness script changes without Harness Change Ledger', () => {
+  withFixture({ harnessChangedPaths: ['.claude/scripts/fixture.mjs'] }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'harness-change-ledger-missing');
+    assert.ok(result.violations.some((violation) => violation.message.includes('.claude/scripts/fixture.mjs')));
+  });
+});
+
+test('phase closeout accepts harness script changes with plan Harness Change Ledger', () => {
+  withFixture({
+    harnessChangedPaths: ['.claude/scripts/fixture.mjs', '.claude/verification.contract.yaml'],
+    harnessChangeLedger: true,
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+    assert.ok(!result.violations.some((violation) => violation.code === 'harness-change-ledger-missing'));
   });
 });
 
@@ -614,6 +729,18 @@ test('completion gate taxonomy classifies review, finish, verification, environm
     remediationStage: 'verify',
     retryPolicy: 'stop_loop',
   });
+  assertGateClassification('scorecard-verdict=blocked', {
+    category: 'score_incomplete',
+    stopReason: 'missing-fresh-verification-evidence',
+    remediationStage: 'verify',
+    retryPolicy: 'limited_retry',
+  });
+  const verifierScorecard = classifyCompletionGateReason('scorecard-verdict=blocked', {
+    blockingReasonCode: 'verification_environment_unavailable',
+  });
+  assert.equal(verifierScorecard.category, 'environment_blocked');
+  assert.equal(verifierScorecard.stopReason, 'blocked:verification_environment_unavailable');
+  assert.equal(verifierScorecard.retryPolicy, 'stop_loop');
 });
 
 test('finish bundle missing uses exactly one artifact-only remediation before hard stop', () => {

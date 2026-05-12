@@ -32,6 +32,36 @@ function parseFileList(argv) {
     .filter(Boolean);
 }
 
+function parseCommandList(options = {}) {
+  if (Array.isArray(options.commands)) {
+    return options.commands;
+  }
+  const raw = process.env.VERIFY_SHELL_SYNTAX_COMMANDS || '';
+  if (!raw.trim()) {
+    return [];
+  }
+  return raw.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean);
+}
+
+export function diagnoseShellCommand(command, options = {}) {
+  const shell = String(options.shell || process.env.SHELL || process.env.ComSpec || '').toLowerCase();
+  const text = String(command || '').trim();
+  const match = text.match(/^([A-Za-z_][A-Za-z0-9_]*)=('[^']*'|"[^"]*"|[^\s;]+)\s+(.+)$/);
+  const isPowerShell = shell.includes('powershell') || shell.includes('pwsh');
+  if (isPowerShell && match) {
+    const key = match[1];
+    const value = match[2].replace(/^['"]|['"]$/g, '');
+    const rest = match[3];
+    return {
+      ok: false,
+      code: 'windows_shell_env_syntax',
+      message: `PowerShell does not support POSIX env prefix syntax. Use $env:${key}='${value}'; ${rest}`,
+      example: `$env:${key}='${value}'; ${rest}`,
+    };
+  }
+  return { ok: true, code: 'ok', message: '', example: '' };
+}
+
 function hasCrLf(filePath) {
   return fs.readFileSync(filePath).includes(Buffer.from('\r\n'));
 }
@@ -51,10 +81,20 @@ function runBashSyntax(filePath, bashCommand = process.env.VERIFY_SHELL_SYNTAX_B
 
 export function evaluateShellSyntax(argv = [], options = {}) {
   const files = options.files || parseFileList(argv);
+  const commands = parseCommandList(options);
+  const shell = options.shell || process.env.SHELL || process.env.ComSpec || '';
   const runSyntaxCheck = options.runSyntaxCheck || runBashSyntax;
   const lines = [];
   const failures = [];
   const unavailable = [];
+
+  for (const command of commands) {
+    const diagnostic = diagnoseShellCommand(command, { shell });
+    if (!diagnostic.ok) {
+      failures.push({ command, reason: diagnostic.code, message: diagnostic.message, example: diagnostic.example });
+      lines.push(`[${diagnostic.code}] ${diagnostic.message}`);
+    }
+  }
 
   for (const filePath of files) {
     if (!fs.existsSync(filePath)) {

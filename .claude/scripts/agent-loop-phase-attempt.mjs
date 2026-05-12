@@ -158,6 +158,26 @@ function classifyCompletionGateReason(reason, context = {}) {
     };
   }
 
+  const contextualBlockerCode = classifyFailure({
+    code: context.blockingReasonCode,
+    failureCode: context.failureClass,
+    blockerClass: context.blockerClass,
+    reason: context.reason,
+    detail: context.detail,
+  }).code;
+  if (
+    normalizedReason === 'scorecard-verdict=blocked'
+    && contextualBlockerCode === 'verification_environment_unavailable'
+  ) {
+    return {
+      category: 'environment_blocked',
+      detail: rawReason,
+      retryPolicy: 'stop_loop',
+      stopReason: 'blocked:verification_environment_unavailable',
+      remediationStage: 'verify',
+    };
+  }
+
   if (SCORE_INCOMPLETE_GATES.has(normalizedReason) || normalizedReason.startsWith('scorecard-')) {
     return {
       category: 'score_incomplete',

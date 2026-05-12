@@ -106,6 +106,9 @@ export function verdictInternallyConsistent(parsed = {}) {
   if (verdict === 'passed' && ['blocked', 'retry', 'failed'].includes(scoreVerdict)) {
     return false;
   }
+  if (verdict === 'expected_blocker_passed' && ['blocked', 'retry', 'failed'].includes(scoreVerdict)) {
+    return false;
+  }
   if (environmentBlockers.length > 0 && verdict === 'passed' && scoreVerdict === 'done') {
     return false;
   }
@@ -124,7 +127,8 @@ export function verdictPassed(verdict) {
     return false;
   }
   const scoreVerdict = parsed.score?.verdict;
-  return parsed.verdict === 'passed'
+  const normalizedVerdict = String(parsed.verdict || '').trim().toLowerCase();
+  return (normalizedVerdict === 'passed' || normalizedVerdict === 'expected_blocker_passed')
     && parsed.evidenceFresh === true
     && parsed.blocking === false
     && (!scoreVerdict || scoreVerdict === 'done');

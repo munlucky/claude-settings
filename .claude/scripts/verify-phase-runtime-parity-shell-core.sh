@@ -15,6 +15,8 @@ source "$SCRIPT_DIR/runtime-cli.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DEFAULT_REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
 REFERENCE_PLAN_DIR="$DEFAULT_REFERENCE_PLAN_DIR"
+REFERENCE_PLAN_DIR_SET=false
+ALLOW_DEFAULT_FIXTURE=false
 RUN_REAL=true
 TMP_ROOT="$(mktemp -d)"
 KEEP_TMP="${PHASE_RUNTIME_PARITY_KEEP_TMP:-false}"
@@ -48,7 +50,8 @@ trap cleanup EXIT
 usage() {
   cat <<'EOF_USAGE'
 Usage:
-  verify-phase-runtime-parity.sh [reference-plan-dir] [--render-only] [--runtime-profile optional_probe|required_runtime]
+  verify-phase-runtime-parity.sh <reference-plan-dir> [--render-only] [--runtime-profile optional_probe|required_runtime]
+  verify-phase-runtime-parity.sh --allow-default-fixture [--render-only] [--runtime-profile optional_probe|required_runtime]
 
 Environment:
   PHASE_RUNTIME_PROFILE=optional_probe|required_runtime
@@ -70,6 +73,18 @@ fail() {
     log "debug temp root: $TMP_ROOT"
   fi
   exit 1
+}
+
+fail_master_plan_not_found() {
+  local plan_dir="$1"
+  log "Master plan not found"
+  log "reference_plan_dir: $plan_dir"
+  log "searched_paths:"
+  log "  - $plan_dir/00-master-plan-v1.md"
+  log "expected_patterns:"
+  log "  - 00-master-plan-v*.md"
+  log "recommended_valid_plan_dir: docs/implementation/harness-anomaly-remediation-2026-05-12"
+  fail "reference plan directory must be a concrete plan package with a master plan"
 }
 require_command() {
   local name="$1"
@@ -1878,6 +1893,10 @@ while [[ $# -gt 0 ]]; do
       RUN_REAL=false
       shift
       ;;
+    --allow-default-fixture)
+      ALLOW_DEFAULT_FIXTURE=true
+      shift
+      ;;
     --runtime-profile)
       if [[ $# -lt 2 ]]; then
         usage
@@ -1900,18 +1919,25 @@ while [[ $# -gt 0 ]]; do
         fail "unknown option: $1"
       fi
       REFERENCE_PLAN_DIR="$1"
+      REFERENCE_PLAN_DIR_SET=true
       shift
       ;;
   esac
 done
 
-if [[ -d "$REFERENCE_PLAN_DIR" && ! -f "$REFERENCE_PLAN_DIR/00-master-plan-v1.md" && -f "$DEFAULT_REFERENCE_PLAN_DIR/00-master-plan-v1.md" ]]; then
-  warn "reference plan directory has no master plan, using default runtime parity reference fixture: $DEFAULT_REFERENCE_PLAN_DIR"
+if [[ "$REFERENCE_PLAN_DIR_SET" != "true" ]]; then
+  if [[ "$ALLOW_DEFAULT_FIXTURE" != "true" ]]; then
+    fail "default runtime parity reference fixture requires --allow-default-fixture"
+  fi
   REFERENCE_PLAN_DIR="$DEFAULT_REFERENCE_PLAN_DIR"
 fi
 
 if [[ ! -d "$REFERENCE_PLAN_DIR" ]]; then
   fail "reference plan directory not found: $REFERENCE_PLAN_DIR"
+fi
+
+if [[ ! -f "$REFERENCE_PLAN_DIR/00-master-plan-v1.md" ]]; then
+  fail_master_plan_not_found "$REFERENCE_PLAN_DIR"
 fi
 
 runtime_cli_prepare_environment
