@@ -149,6 +149,111 @@ function expandVerificationTargets(selection, currentRuntime = '') {
   return [];
 }
 
+function normalizeAlternateId(value) {
+  return String(value || '').trim();
+}
+
+function normalizeDeclaredAlternateEntry(entry, fallbackAlternateId = '', fallbackRequiredVerifierId = '') {
+  if (typeof entry === 'string') {
+    const text = entry.trim();
+    if (!text) return null;
+    const [left, right] = text.includes('->')
+      ? text.split('->', 2).map((part) => part.trim())
+      : [fallbackRequiredVerifierId, text];
+    const requiredVerifierId = normalizeAlternateId(left || fallbackRequiredVerifierId);
+    const alternateVerifierId = normalizeAlternateId(right || fallbackAlternateId);
+    if (!requiredVerifierId || !alternateVerifierId) return null;
+    return {
+      requiredVerifierId,
+      alternateVerifierId,
+      command: '',
+      reason: '',
+      declared: true,
+    };
+  }
+
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return null;
+  }
+
+  const requiredVerifierId = normalizeAlternateId(
+    entry.requiredVerifierId
+      || entry.requiredVerifier
+      || entry.required
+      || entry.for
+      || fallbackRequiredVerifierId,
+  );
+  const alternateVerifierId = normalizeAlternateId(
+    entry.alternateVerifierId
+      || entry.alternateVerifier
+      || entry.alternate
+      || entry.id
+      || fallbackAlternateId,
+  );
+
+  if (!requiredVerifierId || !alternateVerifierId) {
+    return null;
+  }
+
+  return {
+    requiredVerifierId,
+    alternateVerifierId,
+    command: String(entry.command || '').trim(),
+    reason: String(entry.reason || entry.declarationReason || '').trim(),
+    declared: true,
+  };
+}
+
+export function normalizeDeclaredAlternateVerifiers(contract = {}) {
+  const entries = [];
+  const declared = contract && typeof contract.declaredAlternateVerifiers === 'object'
+    ? contract.declaredAlternateVerifiers
+    : {};
+  for (const [alternateVerifierId, metadata] of Object.entries(declared || {})) {
+    const normalized = normalizeDeclaredAlternateEntry(metadata, alternateVerifierId);
+    if (normalized) entries.push(normalized);
+  }
+
+  const checkPolicies = contract && typeof contract.checkPolicies === 'object'
+    ? contract.checkPolicies
+    : {};
+  for (const [requiredVerifierId, metadata] of Object.entries(checkPolicies || {})) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) continue;
+    const declaredAlternates = Array.isArray(metadata.declaredAlternates)
+      ? metadata.declaredAlternates
+      : metadata.declaredAlternates
+        ? [metadata.declaredAlternates]
+        : [];
+    for (const entry of declaredAlternates) {
+      const normalized = normalizeDeclaredAlternateEntry(entry, '', requiredVerifierId);
+      if (normalized) entries.push(normalized);
+    }
+  }
+
+  const byKey = new Map();
+  for (const entry of entries) {
+    const key = `${entry.requiredVerifierId}\0${entry.alternateVerifierId}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, entry);
+    }
+  }
+
+  return [...byKey.values()].sort((a, b) => (
+    a.requiredVerifierId.localeCompare(b.requiredVerifierId)
+    || a.alternateVerifierId.localeCompare(b.alternateVerifierId)
+  ));
+}
+
+export function isDeclaredAlternateVerifier(contract = {}, requiredVerifierId = '', alternateVerifierId = '') {
+  const requiredId = normalizeAlternateId(requiredVerifierId);
+  const alternateId = normalizeAlternateId(alternateVerifierId);
+  if (!requiredId || !alternateId) return false;
+  return normalizeDeclaredAlternateVerifiers(contract).some((entry) => (
+    entry.requiredVerifierId === requiredId
+    && entry.alternateVerifierId === alternateId
+  ));
+}
+
 export function resolveAvailableRuntimes(options = {}) {
   const override = String(process.env.PHASE_VERIFICATION_AVAILABLE_RUNTIMES || '').trim();
   if (override) {
@@ -198,6 +303,7 @@ export function loadVerificationContractContext(contractFile, options = {}) {
   return {
     contract,
     commands,
+    declaredAlternateVerifiers: normalizeDeclaredAlternateVerifiers(contract),
     parentRuntimeContext: resolveParentRuntimeContext(options),
     requestedSelection: selectionContext.requestedSelection,
     effectiveSelection: selectionContext.effectiveSelection,

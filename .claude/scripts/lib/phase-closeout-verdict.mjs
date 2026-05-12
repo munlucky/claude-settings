@@ -227,6 +227,7 @@ export function verdictInternallyConsistent(parsed = {}) {
   const environmentBlockers = Array.isArray(parsed.environmentBlockers) ? parsed.environmentBlockers : [];
   const allCommandsPassed = commands.length > 0
     && commands.every((command) => String(command.status || '').trim().toLowerCase() === 'passed');
+  const alternatePolicy = evaluateDeclaredAlternateVerifierPolicy(parsed);
 
   if (parsed.blocking === true && verdict === 'passed') {
     return false;
@@ -243,7 +244,113 @@ export function verdictInternallyConsistent(parsed = {}) {
   if (environmentBlockers.length > 0 && verdict === 'passed' && scoreVerdict === 'done') {
     return false;
   }
+  if (alternatePolicy.applies && !alternatePolicy.allowed) {
+    return false;
+  }
   return true;
+}
+
+function normalizeVerifierStatus(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeVerifierPolicy(parsed = {}) {
+  const policy = parsed.verifierPolicy && typeof parsed.verifierPolicy === 'object'
+    ? parsed.verifierPolicy
+    : {};
+  const required = policy.requiredVerifier && typeof policy.requiredVerifier === 'object'
+    ? policy.requiredVerifier
+    : {};
+  const alternate = policy.alternateVerifier && typeof policy.alternateVerifier === 'object'
+    ? policy.alternateVerifier
+    : {};
+
+  return {
+    requiredVerifier: {
+      id: String(required.id || required.verifierId || '').trim(),
+      command: String(required.command || '').trim(),
+      errorCode: String(required.errorCode || required.code || '').trim().toUpperCase(),
+      failureClass: String(required.failureClass || required.blockerClass || '').trim().toLowerCase(),
+      detail: String(required.detail || required.error || required.stderr || '').trim(),
+    },
+    alternateVerifier: {
+      id: String(alternate.id || alternate.verifierId || '').trim(),
+      requiredVerifierId: String(alternate.requiredVerifierId || alternate.requiredVerifier || '').trim(),
+      command: String(alternate.command || '').trim(),
+      status: normalizeVerifierStatus(alternate.status || alternate.verdict),
+      declared: alternate.declared === true,
+      evidencePath: String(alternate.evidencePath || '').trim(),
+    },
+  };
+}
+
+export function evaluateDeclaredAlternateVerifierPolicy(parsed = {}) {
+  const policy = parsed.verifierPolicy && typeof parsed.verifierPolicy === 'object'
+    ? parsed.verifierPolicy
+    : null;
+  if (!policy) {
+    return { applies: false, allowed: true, reason: 'no_alternate_verifier_policy', evidence: [] };
+  }
+
+  const { requiredVerifier, alternateVerifier } = normalizeVerifierPolicy(parsed);
+  const requiredId = requiredVerifier.id;
+  const alternateRequiredId = alternateVerifier.requiredVerifierId || requiredId;
+  const requiredDetail = `${requiredVerifier.errorCode} ${requiredVerifier.failureClass} ${requiredVerifier.detail}`.trim();
+  const requiredEperm = /(?:EPERM|EACCES|permission denied|access is denied|operation not permitted|spawn blocked)/i.test(requiredDetail)
+    && /(?:verification_environment_unavailable|verifier_unavailable|node_spawn_eperm|spawn_blocked|environment)/i.test(requiredDetail);
+  const alternatePassed = ['pass', 'passed', 'done', 'verified', 'expected_blocker_passed'].includes(alternateVerifier.status);
+  const verdict = String(parsed.verdict || '').trim().toLowerCase();
+
+  if (verdict === 'passed') {
+    return {
+      applies: true,
+      allowed: false,
+      reason: 'alternate_verifier_requires_warning_completion',
+      evidence: ['declared alternate verifier evidence cannot become clean success'],
+    };
+  }
+  if (!requiredId || !alternateVerifier.id || alternateRequiredId !== requiredId) {
+    return {
+      applies: true,
+      allowed: false,
+      reason: 'alternate_verifier_required_link_missing',
+      evidence: ['alternate verifier evidence is not linked to the required verifier'],
+    };
+  }
+  if (!requiredEperm) {
+    return {
+      applies: true,
+      allowed: false,
+      reason: 'required_verifier_eperm_missing',
+      evidence: ['required verifier failure is not preserved as EPERM/EACCES verifier unavailability'],
+    };
+  }
+  if (!alternateVerifier.declared) {
+    return {
+      applies: true,
+      allowed: false,
+      reason: 'alternate_verifier_undeclared',
+      evidence: ['undeclared alternate verifier evidence is supporting-only'],
+    };
+  }
+  if (!alternatePassed) {
+    return {
+      applies: true,
+      allowed: false,
+      reason: 'declared_alternate_verifier_not_passed',
+      evidence: ['declared alternate verifier did not pass'],
+    };
+  }
+  return {
+    applies: true,
+    allowed: true,
+    reason: 'declared_alternate_verifier_warning_completion',
+    evidence: [
+      'required verifier EPERM detail preserved',
+      'declared alternate verifier passed',
+      'completion remains warning-only',
+    ],
+  };
 }
 
 export function verdictPassed(verdict) {
@@ -259,6 +366,10 @@ export function verdictPassed(verdict) {
   }
   const scoreVerdict = parsed.score?.verdict;
   const normalizedVerdict = String(parsed.verdict || '').trim().toLowerCase();
+  const alternatePolicy = evaluateDeclaredAlternateVerifierPolicy(parsed);
+  if (alternatePolicy.applies && !alternatePolicy.allowed) {
+    return false;
+  }
   return (normalizedVerdict === 'passed' || normalizedVerdict === 'expected_blocker_passed')
     && parsed.evidenceFresh === true
     && parsed.blocking === false

@@ -6,6 +6,7 @@ import {
   buildFailureClassCounts,
   classifyCapabilityCheck,
   classifyFailure,
+  classifyVerifierEpermFailure,
   classifyStagnationPattern,
   classifyTimeoutBudget,
   decisionForFailureCode,
@@ -95,6 +96,20 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   assert.equal(isEnvironmentBlockerCode('mcp_cleanup_eperm'), true);
   assert.equal(isEnvironmentBlockerCode('memorygraph_unavailable'), true);
   assert.equal(isEnvironmentBlockerCode('path_update_denied'), true);
+}
+
+function testVerifierEpermFailurePreservesCommandAndDetail() {
+  const result = classifyVerifierEpermFailure({
+    name: 'phase verifier',
+    command: 'node --test .claude/scripts/lib/phase-closeout-verdict.test.mjs',
+    detail: 'spawnSync node EPERM while running required verifier',
+  });
+
+  assert.equal(result.isVerifierEperm, true);
+  assert.equal(result.errorCode, 'EPERM');
+  assert.equal(result.code, 'verification_environment_unavailable');
+  assert.match(result.command, /phase-closeout-verdict\.test\.mjs/);
+  assert.match(result.detail, /spawnSync node EPERM/);
 }
 
 function testGitAndNetworkCodes() {
@@ -301,6 +316,7 @@ function testStopOutcomeAndTimeoutSplit() {
 testBashAccessDenied();
 testCodexStorageAndStateCodes();
 testShellSnapshotMcpNodeGitRgMemoryGraphCodes();
+testVerifierEpermFailurePreservesCommandAndDetail();
 testGitAndNetworkCodes();
 testDetectFinalStopReasonForRawLogs();
 testDispatcherLivenessTimeoutCodes();

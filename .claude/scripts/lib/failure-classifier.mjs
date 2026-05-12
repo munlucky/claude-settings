@@ -566,6 +566,34 @@ export function classifyCapabilityCheck(check = {}) {
   return base;
 }
 
+export function classifyVerifierEpermFailure(input = {}) {
+  const classification = classifyFailure(input);
+  const command = String(input.command || input.run || input.name || '').trim();
+  const detail = String(
+    input.detail
+      || input.message
+      || input.stderr
+      || input.stdout
+      || input.error
+      || input.reason
+      || '',
+  ).trim();
+  const combined = `${command} ${detail}`.trim();
+  const hasEperm = /(?:^|\b)(?:EPERM|EACCES|permission denied|access is denied|operation not permitted|spawn blocked)(?:\b|$)/i.test(combined);
+  const verifierContext = hasVerifierContext(input, combined);
+  const isVerifierEperm = hasEperm
+    && verifierContext
+    && ['verification_environment_unavailable', 'verifier_unavailable', 'node_spawn_eperm', 'spawn_blocked'].includes(classification.code);
+
+  return {
+    ...classification,
+    isVerifierEperm,
+    errorCode: isVerifierEperm ? 'EPERM' : '',
+    command,
+    detail,
+  };
+}
+
 export function buildFailureClassCounts(entries = []) {
   const counts = {};
   for (const entry of entries) {

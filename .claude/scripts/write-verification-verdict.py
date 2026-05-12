@@ -57,6 +57,41 @@ def parse_environment_blocker(value: str) -> dict:
     }
 
 
+def parse_required_verifier_failure(value: str) -> dict:
+    parts = [part.strip() for part in value.split("|", 3)]
+    if len(parts) != 4 or any(not part for part in parts[:3]):
+        raise argparse.ArgumentTypeError(
+            "required verifier failure must be formatted as 'id|command|errorCode|detail'"
+        )
+    verifier_id, command, error_code, detail = parts
+    return {
+        "id": verifier_id,
+        "command": command,
+        "errorCode": error_code,
+        "failureClass": "verification_environment_unavailable",
+        "detail": detail,
+    }
+
+
+def parse_alternate_verifier(value: str) -> dict:
+    parts = [part.strip() for part in value.split("|", 4)]
+    if len(parts) != 5 or any(not part for part in parts[:4]):
+        raise argparse.ArgumentTypeError(
+            "alternate verifier must be formatted as 'id|requiredVerifierId|status|declared|command'"
+        )
+    verifier_id, required_verifier_id, status, declared, command = parts
+    normalized_declared = declared.lower()
+    if normalized_declared not in {"true", "false"}:
+        raise argparse.ArgumentTypeError("alternate verifier declared field must be true or false")
+    return {
+        "id": verifier_id,
+        "requiredVerifierId": required_verifier_id,
+        "status": status,
+        "declared": normalized_declared == "true",
+        "command": command,
+    }
+
+
 PLACEHOLDER_CHECK_TOKENS = {"none", "없음", "n/a", "na", "null", ""}
 
 
@@ -204,7 +239,7 @@ def main() -> int:
     parser.add_argument("--verification-mode", default="contract")
     parser.add_argument("--authoritative", action="store_true")
     parser.add_argument("--contract-applicable", choices=["true", "false"], default="true")
-    parser.add_argument("--verdict", choices=["passed", "failed"], default="passed")
+    parser.add_argument("--verdict", choices=["passed", "failed", "expected_blocker_passed"], default="passed")
     parser.add_argument("--evidence-fresh", choices=["true", "false"], default="true")
     parser.add_argument("--expected-check", action="append", default=[])
     parser.add_argument("--passed-check", action="append", default=[])
@@ -245,6 +280,8 @@ def main() -> int:
     parser.add_argument("--blocker-fingerprint", default="")
     parser.add_argument("--environment-fingerprint", default="")
     parser.add_argument("--environment-blocker", action="append", type=parse_environment_blocker, default=[])
+    parser.add_argument("--required-verifier-failure", type=parse_required_verifier_failure)
+    parser.add_argument("--alternate-verifier", type=parse_alternate_verifier)
     parser.add_argument("--artifact-fingerprint", default="")
     parser.add_argument("--supersedes", action="append", default=[])
     parser.add_argument("--superseded-by", default="")
@@ -300,7 +337,7 @@ def main() -> int:
     if score_provided:
         inferred_score_verdict = args.score_verdict or (
             "done"
-            if args.verdict == "passed"
+            if args.verdict in {"passed", "expected_blocker_passed"}
             and args.evidence_fresh == "true"
             and len(missing_checks) == 0
             else "retry"
@@ -348,14 +385,16 @@ def main() -> int:
             "verification-bundle",
             "finish-bundle",
         ],
-        phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true",
+        phase_closeout_verdict and args.verdict in {"passed", "expected_blocker_passed"} and args.evidence_fresh == "true",
     )
     stage_order = normalize_workflow_list(
         args.stage,
         ["ready/isolate", "execute", "review", "verify", "finish"],
-        phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true",
+        phase_closeout_verdict and args.verdict in {"passed", "expected_blocker_passed"} and args.evidence_fresh == "true",
     )
-    workflow_warnings = [] if phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true" else args.workflow_warning
+    workflow_warnings = args.workflow_warning if args.verdict == "expected_blocker_passed" else (
+        [] if phase_closeout_verdict and args.verdict == "passed" and args.evidence_fresh == "true" else args.workflow_warning
+    )
     environment_fingerprint = args.environment_fingerprint or stable_fingerprint(
         {
             "requestedRuntime": args.requested_runtime,
@@ -425,6 +464,10 @@ def main() -> int:
         "blockerFingerprint": blocker_fingerprint,
         "environmentFingerprint": environment_fingerprint,
         "environmentBlockers": args.environment_blocker,
+        **({"verifierPolicy": {
+            "requiredVerifier": args.required_verifier_failure,
+            "alternateVerifier": args.alternate_verifier,
+        }} if args.required_verifier_failure or args.alternate_verifier else {}),
         "artifactFingerprint": artifact_fingerprint,
         "supersedes": args.supersedes,
         "supersededBy": args.superseded_by,
