@@ -210,6 +210,23 @@ critical `SCN-*`는 page-load나 smoke evidence만으로 clean finish할 수 없
    - 같은 failure class가 두 번 반복되면 `partial_redesign` 또는 `stop_and_handoff`를 선택함
    - contract에 연결된 remediation 입력으로 구현 단계로 되돌아감
 
+외부 blocker는 가짜 clean finish를 정당화하지 않습니다.
+- 필수 verifier를 사용할 수 없으면 pass 의미를 강제하지 말고 blocked 또는 deferred-verification verdict를 기록합니다.
+- blocker가 부분적이면 `QA_REPORT.md`와 `HANDOFF.md`가 phase를 열린 상태로 둔 이유를 모두 설명하도록 audit note를 명시합니다.
+- closeout chain에 남아야 하는 ignored evidence는 finish ledger에서 누락하지 말고 artifact record에 이름을 남깁니다.
+
+### Event ledger vs read models
+
+`phase-status.yaml`, `current-run.json`, `active-phase-run.json`, `latest-dispatch.json`, `QA_REPORT.md`, structured verdict file 같은 mutable artifact는 read model입니다. 빠른 routing과 completion gate에 최적화된 것이지 전체 history를 보존하기 위한 저장소가 아닙니다.
+
+지속 lineage에는 append-only phase event ledger를 사용합니다.
+- lifecycle event는 `eventVersion`, `eventType`, `runId`, `phaseId`, `contractSnapshotId`, `source`, `payload`, `timestamp`와 함께 기록합니다.
+- payload는 state transition, artifact path, verdict summary, retry/recovery reason으로 제한합니다.
+- raw prompt, secrets, transcripts, raw MemoryGraph output, raw CodeReviewGraph output은 event payload에 저장하지 않습니다.
+- read model과 replay mismatch가 나면 stale projection defect로 보고 clean finish 전에 해결합니다.
+
+v1 ledger는 운영 안정성을 위해 JSONL입니다. schema는 의도적으로 SQLite-compatible하게 유지해, 이후 adapter가 event vocabulary를 바꾸지 않고 storage를 이전할 수 있게 합니다.
+
 유효하지 않은 handoff 사유:
 - "checkpoint까지 왔음"
 - "문서 정리 완료"

@@ -50,11 +50,46 @@ description: 실행 계획을 독립 실행 가능한 vertical-slice task 문서
 - 사용자에게 보이는 end-to-end 증가분
 - 필요 시 여러 레이어를 관통하되 얇은 slice
 - 독립 소유와 독립 검증이 가능한 작업
+- `REQ-*`, `SCN-*` coverage를 추측 없이 검증 가능한 slice
+- 한 번에 하나의 완전한 behavior path를 증명하는 tracer-bullet slice
+- 사람 판단 없이 구현 가능한 경우 AFK slice
+- 실제 결정, design review, 외부 승인이 필요할 때만 HITL slice
 
 피할 것:
 - 사용자 결과가 없는 순수 레이어 분리
 - 범위가 지나치게 큰 우산형 task
 - 다른 slice의 숨은 맥락 없이는 실행 불가능한 task
+- vertical slice가 가능한데 "all schema", "all API", "all UI" 같은 horizontal batch로 나누는 방식
+
+## Optional GitHub Issue Export Contract
+
+workflow가 task slice를 GitHub issue로 export할 때는 issue body를 durable하고 behavior-focused하게 유지합니다.
+
+- dependency order로 issue를 생성합니다.
+- `AFK` 또는 `HITL`을 포함합니다.
+- 가능하면 parent plan 또는 source issue를 포함합니다.
+- 무엇을 만들지 end-to-end behavior로 설명하고, layer-by-layer file edit로 쓰지 않습니다.
+- acceptance criteria와 verification commands를 포함합니다.
+- 사용자가 tactical ticket을 요청하지 않는 한 file path, line number, implementation snippet을 피합니다.
+- 실제 issue number가 있으면 `Blocked by`에 사용하고, 없으면 plain dependency name을 사용합니다.
+
+Issue body shape:
+
+```markdown
+## What to build
+
+## Type
+
+AFK or HITL
+
+## Acceptance criteria
+
+- [ ] ...
+
+## Verification
+
+## Blocked by
+```
 
 ## 병렬 그룹 규칙
 
@@ -74,6 +109,7 @@ description: 실행 계획을 독립 실행 가능한 vertical-slice task 문서
 - 완료 판정 기준이 명확함
 - 정확한 file/command target이 있음
 - 명시적인 fail/pass evidence expectation이 있음
+- slice가 local document 밖으로 나갈 수 있으면 clear AFK/HITL classification이 있음
 
 ## 참고
 

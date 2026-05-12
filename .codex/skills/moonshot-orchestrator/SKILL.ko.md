@@ -66,6 +66,8 @@ raw idea 정리의 주 진입점으로 쓰지 않는다.
 - `codex`: 네이티브 도구를 쓰더라도 메인 세션은 coordinator로 유지합니다.
   - 읽기 전용 review/verification owner는 기본적으로 fork 의미를 유지해야 합니다. fresh isolated review/verifier attempt를 띄우고, 최소 artifact 기반 입력만 넘기며, 구조화된 summary만 병합합니다.
   - `Task (fork)`로 문서화된 단계는 최소 입력과 요약 반환만 허용합니다.
+- tool, connector, MCP server, browser capability를 unavailable로 선언하기 전에 deferred/native tool lookup을 먼저 수행해야 합니다. Codex는 가능한 경우 native/deferred tool discovery를 먼저 쓰고 `toolLookupEvidence`를 기록합니다. 그래도 실패하면 generic harness/product failure가 아니라 `mcp_unavailable`, `tool_unavailable`, `runtime_unavailable`로 분류합니다.
+- 런타임 capability evidence는 workflow state에서 machine-checkable해야 합니다. 실행 전 또는 degraded evidence로 fork, MCP, shell, browser, worktree, tool inheritance, fallback support 상태를 기록합니다.
   - 읽기 전용 review/verification owner의 fork 의미를 유지할 수 없으면 current-session 실행은 degraded fallback이며 workflow evidence에 기록해야 합니다.
 - planning 질문/불확실성 정리는 `codex-validate-plan`, post-implementation 평가는 `codex-review-code` 출력을 우선합니다.
 
@@ -157,6 +159,7 @@ medium/complex `product_project`는 아래 execution bridge를 기본 전제로 
 - strict 또는 `meta_harness` phase 작업은 active `SPRINT_CONTRACT.md` 에 policy anchors 와 필수 검증 명령을 유지해야 한다.
 - phase harness를 쓰지 않는 bounded direct 작업도 `.claude/docs/moonshot-analysis.yaml`의 `workflowEvidence`를 최신 상태로 유지해야 한다.
 - bounded direct `workflowEvidence`에는 `selectedBundles`, `requiredSkills`, `stageOrder`가 모두 있어야 한다.
+- bounded 및 phase attempt는 active contract, latest verdict, current blocker, lineage ids, stale pointer warnings, next action을 compact workflow evidence로 노출해야 한다. `HANDOFF.md`는 human resume artifact이지 유일한 machine-readable state가 아니다.
 - bounded direct 코드 분석은 `.claude/docs/guidelines/code-review-graph-workflow.md`에 따라 `code-review-graph`를 selected 또는 skipped harness component로 기록해야 한다.
 - bounded direct 코드 변경은 최종 verification 안정 판정 전에 `codex-review-code` 증적을 남겨야 한다.
 - bounded direct 코드 변경은 `code-simplifier` 적용 여부를, 건너뛴 경우에는 이유와 함께 기록해야 한다.

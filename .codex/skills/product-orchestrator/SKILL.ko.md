@@ -8,6 +8,8 @@ loads:
 deepReferences:
   - .claude/docs/guidelines/product-definition-workflow.md
   - .claude/docs/guidelines/requirements-traceability-harness.md
+  - .claude/docs/guidelines/demo-first-mvp-gate.md
+  - .claude/docs/guidelines/external-skill-pattern-transfer.md
   - .claude/docs/guidelines/memorygraph-workflow.ko.md
 outputArtifacts:
   - PRODUCT_INTENT.md
@@ -43,6 +45,8 @@ triggers:
 - MVP 실험 파이프라인
 - 직접 코드 구현
 
+`demo_first` MVP execution pack은 준비할 수 있습니다. 이 pack은 planning/execution contract이며 market experiment runner가 아닙니다.
+
 ## 산출물 패키지
 
 다음 경로 아래 산출물을 작성합니다.
@@ -58,6 +62,20 @@ triggers:
 - `tasks/*.md`
 - `ASSUMPTIONS.md`
 - `BLOCKERS.md`
+
+조건부 demo-first MVP 산출물:
+- `MVP_SCOPE.md`
+- `MINI_ARCHITECTURE.md`
+- `UI_DEMO_PLAN.md`
+- `UI_FLOW_MAP.md`
+- `UI_STATE_MATRIX.md`
+- `MOCK_SCENARIOS.md`
+- `MOCK_API_CONTRACT.md`
+- `USER_DEMO_TEST.md`
+- `DEMO_EVIDENCE.md`
+- `USER_DEMO_APPROVAL.md`
+- `POST_DEMO_IMPLEMENTATION_PLAN.md`
+- `UI_CHANGE_REQUEST.md`
 
 계획 문서에는 아래 가치 판단 정보도 남긴다.
 - 명시적 non-goal
@@ -154,11 +172,16 @@ execution 으로 넘기기 전 planning package 는 아래에 답해야 한다.
 - 각 task를 독립 실행 가능하게 정리
 - Moonshot direct handoff 준비
 - 가치 대비 비용이 약한 slice 는 축소하거나 거절
+- 사용자 직접 검증이 필요한 user-facing MVP 작업은 `mvpMethodology.profile: demo_first`를 설정하고 `PLAN.md`와 `tasks/*.md`에 Demo Approval Hard Stop을 보존합니다.
+- demo-first plan은 각 in-scope slice를 `demo_ready_ui -> mock_functional_demo -> demo_evidence_capture -> user_demo_approval -> real_functional -> real_functional_verification -> production_hardening` 순서로 진행해야 합니다.
+- 승인 전에는 mock contract, typed fixture, mock handler, in-memory state, localStorage demo persistence를 허용하고 production backend, real persistence, auth integration, irreversible migration, production job, production payment workflow는 차단합니다.
+- `USER_DEMO_APPROVAL.md`를 approval truth source로, `DEMO_EVIDENCE.md`를 사용자가 승인한 범위의 evidence source로 취급합니다.
 
 ## 승인 경계
 
 - human approval 은 execution 시작 전 planning package 승인에만 사용할 수 있다.
 - execution 이 시작된 뒤에는 true blocker 나 외부 의존성이 없는 한 implementation -> review -> verify -> retry loop 에 human checkpoint 를 추가하지 않는다.
+- 예외: `demo_first` MVP 작업은 Mock Functional Demo evidence 뒤 `USER_DEMO_APPROVAL.md`가 non-empty approved scope로 승인될 때까지 hard-stop해야 합니다.
 
 ## 핸드오프 계약
 
@@ -173,6 +196,7 @@ PLAN이 통과되면:
 ## 참고
 
 - `.claude/docs/guidelines/product-definition-workflow.md`
+- `.claude/docs/guidelines/demo-first-mvp-gate.md`
 - `.claude/templates/product-definition/`
 - `.claude/skills/product-gate-reviewer/SKILL.md`
 - `.claude/skills/plan-ceo-review/SKILL.md`

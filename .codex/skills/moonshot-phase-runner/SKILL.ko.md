@@ -60,6 +60,17 @@ MemoryGraph 단계 규칙:
 - `.claude/docs/ko/`는 제외하고, system/developer/AGENTS/rules 정책과 중복되는 MemoryGraph 항목은 병합하지 않습니다.
 - MemoryGraph를 사용할 수 없으면 `boundaryStatus: not_checked`로 기록하고, strict memory gate가 명시적으로 실패한 경우가 아니면 계속 진행합니다.
 
+런타임 capability evidence 규칙:
+- fork, MCP, shell, browser, worktree, tool inheritance, fallback support 상태를 포함해야 합니다.
+- MCP/tool/browser support 누락은 runtime capability condition이며 product implementation failure가 아닙니다. `mcp_unavailable`, `tool_unavailable`, `runtime_unavailable`로 분류합니다.
+- deferred 또는 optional tool을 unavailable로 표시하기 전에는 런타임이 지원하는 deferred/native tool lookup을 수행하고 active workflow artifact에 lookup evidence를 기록합니다.
+
+Runtime status와 resume read model:
+- human artifact는 계속 `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`입니다.
+- machine consumer는 먼저 workflow evidence의 compact status를 읽어야 합니다.
+- compact status는 active contract, latest verdict path/state, current blocker, lineage ids, `phase-status.yaml`, `current-run.json`, `latest-dispatch.json`의 stale warning을 노출해야 합니다.
+- resume brief는 next action과 compact status와 동일한 lineage ids를 포함해야 하며, 재개된 Codex 또는 Claude attempt가 closeout 전에 stale projection을 감지할 수 있어야 합니다.
+
 실패 재발 방지 brief 규칙:
 - phase-attempt prompt를 만들기 전에 runner는 ignored repo-local cache인 `.claude/cache/awtl/failed_turn_cases.jsonl`을 읽을 수 있습니다.
 - active phase context와 매칭되는 compact failed-turn case가 있을 때만 `Failure Prevention Brief`를 주입합니다. cache가 없거나 매칭이 없으면 no-op입니다.

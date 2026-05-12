@@ -10,6 +10,10 @@ January 2026
 > may also find it useful, but guidance here is optimized for automation  
 > and consistency by AI-assisted workflows.
 
+> **Localization note:**
+> The Korean counterpart is maintained as a compact summary/index rather than a full duplicate.
+> Use `AGENTS.ko.md` for the Korean overview and `.claude/docs/ko/skills/vercel-react-best-practices/rules/*.ko.md` for Korean rule summaries.
+
 ---
 
 ## Abstract

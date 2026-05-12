@@ -10,6 +10,28 @@
 ## 목표
 - <전체 목표>
 
+## MVP 방법론
+```yaml
+mvpMethodology:
+  profile: "none | demo_first"
+  requiredExecutionPack:
+    - MVP_SCOPE.md
+    - MINI_ARCHITECTURE.md
+    - UI_DEMO_PLAN.md
+    - UI_FLOW_MAP.md
+    - UI_STATE_MATRIX.md
+    - MOCK_SCENARIOS.md
+    - MOCK_API_CONTRACT.md
+    - USER_DEMO_TEST.md
+    - DEMO_EVIDENCE.md
+    - USER_DEMO_APPROVAL.md
+    - POST_DEMO_IMPLEMENTATION_PLAN.md
+    - UI_CHANGE_REQUEST.md
+```
+
+- MVP가 clickable/mock demo evidence 뒤 사용자 승인까지 hard-stop해야 할 때만 `demo_first`를 사용합니다.
+- `demo_first`에서는 모든 in-scope slice가 demo evidence, user approval, Real Functional, Real Functional Verification을 거쳐야 이 plan이 완료될 수 있습니다.
+
 ## Phase 인덱스
 | Phase | 제목 | 계획 파일 | 선행 의존성 |
 |------|------|-----------|-------------|
@@ -28,9 +50,9 @@
 - 순차 phase는 암묵적 순서에 의존하지 말고 blocker 사유를 기록합니다.
 
 ## 소스 추적 매트릭스
-| Req ID | Source | Requirement Summary | Phase | Plan File | Status |
-|--------|--------|---------------------|-------|-----------|--------|
-| SRC-<n> | <source-name> | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
+| Req ID | AC ID | Source | Requirement Summary | Phase | Plan File | Status |
+|--------|-------|--------|---------------------|-------|-----------|--------|
+| SRC-<n> | AC-<n> | <source-name> | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
 
 ## 매핑되지 않은 소스 요구사항
 - <없음 또는 누락 사유>

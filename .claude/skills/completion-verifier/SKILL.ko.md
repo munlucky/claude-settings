@@ -65,6 +65,19 @@ verificationEnvironment:
 - plan/execute/review에서 코드 구조 분석이 필요했다면 clean closeout 전에 `code-review-graph`가 `selectedHarnessComponents` 또는 concrete reason이 있는 `skippedHarnessComponents`에 기록되어야 합니다.
 - score 기반 루프에서는 `SCORECARD.md` 또는 verifier가 계산한 score가 없으면 `gateDecision: pass`를 반환하지 않습니다.
 - score 기반 루프에서는 `score.verdict == done`이 아니면 완료 통과를 반환하지 않습니다.
+- 의미 평가나 consensus 판단 전에 `.claude/verification.contract.yaml`의 evaluation trigger policy를 적용합니다.
+  - Mechanical check가 먼저 실행되며 authoritative source로 남습니다.
+  - Semantic evaluation은 AC 모호성, scope drift, architecture/security/auth/payment risk, 반복 실패, 테스트는 통과하지만 사용자 가치가 불명확한 경우처럼 명시 trigger가 있을 때만 필요합니다.
+  - Consensus evaluation은 contract 재해석, high-risk security/architecture drift, evaluator disagreement 미해결 같은 예외 상황에만 사용합니다.
+  - Semantic 또는 consensus evaluation은 실패한 mechanical check를 clean finish로 바꿀 수 없습니다.
+  - skipped mechanical check는 validation profile에 따릅니다. `prompt_only`/`docs_only`에서는 warning, `script_change`, `workflow_core`, `runtime_adapter`에서는 blocking입니다.
+  - project verification override는 allowlist된 project-native command가 명시된 경우에만 허용합니다. 알 수 없는 executable은 clean-finish evidence가 아닙니다.
+  - required browser/a11y/visual/performance QA backend는 backend matrix에 기록해야 하며, required backend 누락은 profile에 따라 blocker 또는 degraded evidence로 라우팅합니다.
+- 구현 완료와 acceptance 완료를 분리합니다.
+  - `taskStatus: completed`는 할당된 구현 작업이 끝났다는 의미입니다.
+  - `acVerdict: pass|passed|verified|done|not_applicable`는 연결된 acceptance evidence가 충족됐다는 의미입니다.
+  - 연결된 acceptance criterion의 `acVerdict`가 missing, pending, unknown, failed, blocked, rejected이면 `taskStatus: completed`라도 clean closeout을 막습니다.
+  - 운영성 작업은 AC link가 없거나 명시적 `acVerdict: not_applicable`을 사용할 수 있습니다. task completion만으로 exemption을 추론하지 않습니다.
 - 최신 증거 없이 성공을 암시하는 표현을 쓰지 않습니다. 금지 예시는 `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification` 입니다.
 - `verificationState: indeterminate`
   - standard -> `pass_with_warning`
@@ -138,6 +151,27 @@ completionStatus:
     selectedOrSkippedRecorded: true | false
     missingStageCoverage: []
     warnings: []
+  runtimeEvidence:
+    criticalScenarioDepth: smoke | open-act-mutate-persist-recover | none
+    smokeOnlyCriticalScenarios: []
+    evaluationTriggers:
+      semanticRequired: true | false
+      semanticReasons: []
+      consensusRequired: true | false
+      consensusReasons: []
+      mechanicalStatus: passed | failed | skipped | blocked
+      skippedMechanicalChecks: []
+      verificationOverrideStatus: allowlisted | blocked | not_used
+      qaBackendMatrix:
+        browser: not_required | available | missing_required | blocked
+        accessibility: not_required | available | missing_required | blocked
+        visual: not_required | available | missing_required | blocked
+        performance: not_required | available | missing_required | degraded | blocked
+  acceptanceCriteria:
+    taskStatusComplete: true | false
+    linkedAcceptanceCriteria: []
+    acVerdict: pass | failed | pending | unknown | not_applicable
+    missingOrFailedAcVerdicts: []
   gateDecision: pass | failed | pass_with_warning
   verdictArtifact:
     path: "{tasksRoot}/{feature-name}/verification-result.json"
@@ -167,6 +201,7 @@ qaReport:
   - 코드 변경 마감이면 `QA_REPORT.md`에 `Review completed: yes`
   - completion 관련 주장에 대한 `evidenceProvenance`가 채워져 있음
   - `score.verdict == done`
+  - 연결된 acceptance criteria가 passing `acVerdict` evidence를 가지거나 명시적으로 `not_applicable`
   - `score.current >= score.target`
   - `score.unmetChecklistItems == 0`
   - `score.blockingDefects == 0`

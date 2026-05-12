@@ -315,6 +315,34 @@ function checkLocalizedRuleParity(rootDir, errors, missingPairs, parityIssues) {
   }
 }
 
+function checkLocalizedSkillPairs(rootDir, errors, missingPairs) {
+  const skillsRoot = path.join(rootDir, '.claude/skills');
+  if (!fs.existsSync(skillsRoot)) {
+    return;
+  }
+
+  for (const entry of fs.readdirSync(skillsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const skillDir = path.join(skillsRoot, entry.name);
+    const enFile = path.join(skillDir, 'SKILL.md');
+    const koFile = path.join(skillDir, 'SKILL.ko.md');
+
+    if (fs.existsSync(enFile) && !fs.existsSync(koFile)) {
+      missingPairs.push(`.claude/skills/${entry.name}/SKILL.md -> missing .claude/skills/${entry.name}/SKILL.ko.md`);
+    }
+    if (fs.existsSync(koFile) && !fs.existsSync(enFile)) {
+      missingPairs.push(`.claude/skills/${entry.name}/SKILL.ko.md -> missing .claude/skills/${entry.name}/SKILL.md`);
+    }
+  }
+
+  if (missingPairs.length > 0) {
+    errors.push(`Localized skill file pairs missing: ${missingPairs.length}`);
+  }
+}
+
 function main() {
   const rootDir = resolveRootDir();
   const runId = `knowledge-audit-${formatRunIdDate(new Date())}`;
@@ -335,6 +363,7 @@ function main() {
   const duplicateRuleLines = [];
   const localizedRuleMissingPairs = [];
   const localizedRuleParityIssues = [];
+  const localizedSkillMissingPairs = [];
 
   const requiredFiles = [
     'AGENTS.md',
@@ -491,6 +520,7 @@ function main() {
 
   checkDuplicateRuleLines(ruleFiles, duplicateRuleLines, warnings);
   checkLocalizedRuleParity(rootDir, errors, localizedRuleMissingPairs, localizedRuleParityIssues);
+  checkLocalizedSkillPairs(rootDir, errors, localizedSkillMissingPairs);
 
   if (missingReviewDate.length > 0) {
     warnings.push(`Missing Last-Reviewed metadata in ${missingReviewDate.length} file(s)`);
@@ -533,6 +563,7 @@ function main() {
       duplicateRuleLines: duplicateRuleLines.length,
       localizedRuleMissingPairs: localizedRuleMissingPairs.length,
       localizedRuleParityIssues: localizedRuleParityIssues.length,
+      localizedSkillMissingPairs: localizedSkillMissingPairs.length,
     },
     details: {
       errors,
@@ -545,6 +576,7 @@ function main() {
       duplicateRuleLines,
       localizedRuleMissingPairs,
       localizedRuleParityIssues,
+      localizedSkillMissingPairs,
     },
   };
 

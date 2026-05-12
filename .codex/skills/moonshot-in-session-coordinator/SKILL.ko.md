@@ -102,6 +102,12 @@ attemptInput:
 - `SCORECARD.md`를 phase의 객관적인 완료 상태로 사용합니다.
 - `WORKSET.md`에는 현재 목표, 필수 읽기 문서, 생성 아티팩트, 미해결 리스크를 계속 유지합니다.
 
+Cross-runtime provider-neutral model contract:
+- 시작값은 `modelEffortProfile: standard`입니다. `deep` 또는 `max`는 기록된 `Effort escalation reason`이 있을 때만 사용합니다.
+- stage당 MemoryGraph/CodeReviewGraph 조회는 기본적으로 compact recall 1회로 제한하고, owner/date/path/API/schema/failure fact가 부족할 때만 반복합니다.
+- assistant history를 replay할 때 assistant item의 `phase` 값을 보존합니다. 진행 업데이트는 `commentary`, return-boundary check 통과 뒤 최종 응답만 `final_answer`입니다.
+- user message에는 phase metadata를 추가하지 않습니다.
+
 ### 3. fresh attempt 생성
 
 `phase-attempt-agent`를 fresh fork/sub-agent로 실행합니다.

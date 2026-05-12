@@ -10,6 +10,7 @@ deepReferences:
   - .claude/docs/guidelines/strategy-gate-rubric.ko.md
   - .claude/docs/guidelines/verification-contract.md
   - .claude/docs/guidelines/skill-composition.md
+  - .claude/docs/guidelines/external-skill-pattern-transfer.md
 outputArtifacts:
   - SPEC.md
   - PLAN.md
@@ -41,6 +42,8 @@ triggers:
 2. 의존성과 순서가 명시돼 있는가?
 3. 계획된 작업의 검증 경로가 정의돼 있는가?
 4. 숨은 결합이나 아키텍처 드리프트를 피하고 있는가?
+5. 위험한 module/API contract에 대해 실질적으로 다른 interface shape를 최소 2개 이상 검토했는가?
+6. pass-through layer를 늘리는 대신 module depth와 locality를 개선하는가?
 
 ## 적용 기준
 
@@ -79,6 +82,21 @@ planEngReview:
 - 암묵 조율보다 명시적 boundary ownership을 우선합니다.
 - verification이 정의되지 않았다면 `pass`를 주지 않습니다.
 - 기술 리스크의 원인이 과한 범위라면 `scope_reduction`을 사용합니다.
+- 의심스러운 pass-through module에는 deletion test를 적용합니다.
+- deep module을 선호합니다. 즉 작은 interface, 의미 있는 hidden implementation, caller에게 명확한 leverage를 요구합니다.
+- user-visible behavior를 설명하는 plan에는 project glossary/docs의 domain terminology를 요구합니다.
+- long-lived interface가 단 하나의 미검토 design shape만 가지면 verdict를 낮춥니다.
+
+## Interface / Architecture Transfer Checks
+
+계획이 module, API, package boundary, workflow contract, integration adapter를 만들거나 바꿀 때 사용합니다.
+
+- **Interface options**: 나중에 바꾸기 어려운 contract라면 minimal interface, flexible interface, common-case optimized interface를 비교합니다.
+- **Ease of use**: caller가 interface를 올바르게 쓰는 방식과 잘못 쓸 수 있는 방식을 명시합니다.
+- **Depth**: interface가 의미 있는 동작을 숨기는지, 단순 forwarder인지 확인합니다.
+- **Locality**: future bug와 변경이 한 곳에 모이는지 확인합니다.
+- **Adapters**: adapter가 하나뿐인 seam은 두 번째 adapter 또는 test double이 정당화되지 않는 한 hypothetical로 취급합니다.
+- **ADR fit**: 기존 ADR과 충돌이 있을 때는 실제 friction이 decision 재검토를 정당화하는 경우에만 제기합니다.
 
 ## 참고
 

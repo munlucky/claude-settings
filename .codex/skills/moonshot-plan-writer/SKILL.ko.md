@@ -30,6 +30,42 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
 - 역할 문서가 일부 없으면 가용 소스로 진행하되 누락 기준은 master-plan에 gap/open decision으로 명시한다.
 - 안전하게 해소할 수 없는 충돌은 계획 문서에 의사결정 필요 항목으로 명시한다.
 
+## Runnable Readiness Gate
+
+PRD/SPEC/GDD 문서는 기본적으로 executable contract가 아니라 requirement source입니다.
+Runnable phase state를 준비하기 전에 선택된 source를 Goal Contract로 정규화하고 명시적 evidence로 readiness를 채점합니다.
+
+필수 Goal Contract readiness fields:
+- `goalClarity`
+- `scopeClarity`
+- `acceptanceCriteriaClarity`
+- `verificationClarity`
+- `clarityScore`
+- `ambiguityScore`
+- `readinessDecision`
+
+Thresholds:
+- `ambiguityScore <= 0.20`: executable
+- `0.20 < ambiguityScore <= 0.35`: assumptions를 둔 constrained execution
+- `ambiguityScore > 0.35`: clarification 또는 user-approved replan 전까지 blocked
+
+Gap detection은 다음을 포함해야 합니다.
+- measurable evidence 없는 "fast", "intuitive", "robust", "simple" 같은 unverifiable adjective
+- non-goals 또는 excluded scope 누락
+- verification commands 누락
+- missing 또는 ambiguous acceptance criteria
+- existing code/docs가 작업에 포함될 때 brownfield readiness context 누락
+
+Routing:
+- non-critical ambiguity는 active package의 assumptions ledger path로 보냅니다.
+- core goal/scope/verification ambiguity는 blockers로 보내고 runnable closeout을 막습니다.
+- product-value와 brownfield readiness concern은 public command를 추가하지 말고 stage-owner review evidence로 기록합니다.
+
+Acceptance criteria extraction:
+- source requirements와 phase completion criteria에서 stable `AC-*` ids를 생성합니다.
+- 각 `AC-*`는 source label과 evidence target을 유지해야 합니다.
+- master traceability와 phase docs는 이후 WORKSETS/QA evidence가 붙을 `AC-*` ids를 참조해야 합니다.
+
 ## 워크플로우
 0. `project-memory-agent`를 `stage=plan`, `memoryMode=read_only`로 실행하고 요약된 `projectMemoryContext`만 병합한다.
    - 이전 결정, 도메인 용어, non-goal, architecture boundary를 planning delta로 사용한다.
@@ -40,6 +76,8 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
    - 누락 시 `docs/`와 루트 `*.md`에서 PRD/SPEC/GDD 계열 요구사항 문서를 탐색한다.
    - 요구사항 문서가 없으면 사용자 요청문/티켓을 임시 기준으로 사용하고 source-gap을 master-plan에 명시한다.
    - 요구사항 단위를 추출하고 추적 ID를 부여한다 (예: `PRD-5.1`, `SPEC-2.4`, `GDD-3.2`, `REQ-1.1`).
+   - stable acceptance criteria ids(`AC-*`)를 source labels와 evidence targets와 함께 추출한다.
+   - plan package를 runnable로 취급하기 전에 readiness gaps를 기록한다.
 2. 작성 전에 기존 구현/작업문서 컨텍스트를 인벤토리화하고 정리한다.
    - 루트 `*.md` 파일(비재귀)을 읽는다.
    - `docs/implementation/*.md`를 읽는다.
@@ -55,6 +93,7 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
    - 오래된 package가 명확히 superseded라면 명시적 archive/preservation 절차로만 이동하고, 안전한 archive 관례가 없으면 superseded note를 남긴다.
 3. 소스 추적 매핑을 만든다.
    - 각 기준 요구사항을 하나의 대상 페이즈 문서에 매핑한다.
+   - 추출한 `AC-*` ids를 source requirement와 target phase에 매핑한다.
    - 미매핑 항목은 누락(gap)으로 명시한다.
 4. master-plan을 생성/갱신한다.
    - master-plan은 "모든 계획의 계획"으로 취급한다.
@@ -112,7 +151,7 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
   - 페이즈 목록 + 문서 링크
   - 페이즈 의존/순서 메모
   - 소스 추적 매트릭스:
-    - 컬럼: `Req ID`, `Source`, `Requirement Summary`, `Phase`, `Plan File`, `Status`
+    - 컬럼: `Req ID`, `AC ID`, `Source`, `Requirement Summary`, `Phase`, `Plan File`, `Status`
   - 미매핑 기준 요구사항 섹션(존재 시)
   - `Phase Completion Checklist` 섹션 (마크다운 체크박스 `- [ ]`, `- [x]`)
 - 체크리스트 규칙:
@@ -124,6 +163,7 @@ phase 문서 기준 워크플로우에서는 Plan stage의 핵심 소유자다.
 - 파일명 패턴: `docs/implementation/{NN}-{phase-name}-v{n}.md`
 - 각 문서에 다음을 포함한다:
   - 소스 매핑 (`Req ID` + 선택된 기준 문서 섹션 참조)
+  - acceptance criteria mapping (`AC-*` + source requirement + expected evidence)
   - 목표와 기대 결과
   - 범위 / 비범위
   - 선행조건과 입력값
@@ -175,6 +215,7 @@ while (master 체크리스트에 [ ] 존재) OR (미매핑 기준 요구사항 �
 - 파일명/페이즈 번호/체크리스트 상태를 모든 문서에서 일관되게 유지한다.
 - 검증 명령이나 소유권 경계가 암묵적이면 페이즈를 ready 상태로 선언하지 않는다.
 - files, commands, expected signals, blocker condition, evidence path가 암묵적이면 페이즈를 ready 상태로 선언하지 않는다.
+- ambiguity score가 `0.35`보다 높거나 core scope/verification gap이 unresolved이거나 추출된 `AC-*` ids의 source mapping이 없으면 phase ready로 선언하지 않는다.
 - workflow-enforcement active pointer가 오래된 plan package를 가리키면 `moonshot-phase-runner`를 시작하지 않는다. plan 준비 단계에서 먼저 archive/rewrite한다.
 
 ## Phase Runner 연동

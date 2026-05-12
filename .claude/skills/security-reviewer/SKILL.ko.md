@@ -18,6 +18,13 @@ context: fork
 - 인증/권한 관련 변경사항 배포 전
 - 사용자 입력 또는 외부 데이터 처리 시
 
+## Codex Rule References
+
+Codex-native security review는 아래 규칙을 명시적으로 적용해야 합니다.
+- `.claude/rules/security.md`
+- `.claude/rules/quality.md`
+- `.claude/rules/communication.md`
+
 ## 절차
 
 1. 변경된 파일에서 보안 패턴 스캔

@@ -114,6 +114,13 @@ rules/bundle-barrel-imports.md
 rules/_sections.md
 ```
 
+Korean localization is intentionally maintained as a compact summary/index, not a full duplicate:
+
+```
+SKILL.ko.md
+.claude/docs/ko/skills/vercel-react-best-practices/rules/*.ko.md
+```
+
 Each rule file contains:
 - Brief explanation of why it matters
 - Incorrect code example with explanation

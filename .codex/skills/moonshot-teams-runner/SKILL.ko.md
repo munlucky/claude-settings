@@ -14,6 +14,8 @@ triggers:
 런타임 적응형 조율 방식으로 독립 작업을 병렬 팀으로 실행합니다.
 Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 동등한 격리 조율 의미를 유지하는 경로를 사용합니다.
 
+이 스킬은 phase completion loop의 owner가 아닙니다. phase 기반 구현에서는 `moonshot-phase-runner`가 public entrypoint로 남아 plan-directory completion, return-boundary checks, automatic phase-wave parallelization을 소유합니다. teams-runner는 phase runner loop의 대체물이 아니라 analysis/review/verification helper로 사용합니다.
+
 ## 런타임 실행 모드
 
 - `claude-code` 모드:

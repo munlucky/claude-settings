@@ -46,21 +46,34 @@ triggers:
 
 ## 실행
 1. `--url` 또는 `APP_BASE_URL`에서 대상 URL을 결정합니다. (기본값: `http://localhost:3000`)
-2. 가능하면 격리된 verifier 경계에서 URL 및 선택적 E2E 명령으로 `.claude/agents/verification/verify-runtime.sh`를 실행합니다.
-3. `--e2e`가 없으면 다음 순서로 npm 스크립트를 자동 탐지합니다:
+2. `--browser-flow`가 있으면 `PATH`의 `browserctl` 또는 `.claude/bin/browserctl`을 사용해 `.claude/scripts/browser-flow-runner.mjs`를 실행합니다.
+3. browser runtime을 사용할 수 있고 호출자가 다른 flow를 명시하지 않았다면 standard verification path의 기본 browser-flow를 `smoke`로 취급합니다.
+4. 가능하면 격리된 verifier 경계에서 URL 및 선택적 browser-flow/E2E 인자로 `.claude/agents/verification/verify-runtime.sh`를 실행합니다.
+5. `--e2e`가 없으면 다음 순서로 npm 스크립트를 자동 탐지합니다:
    - `test:e2e:agent-browser`
    - `test:e2e`
-4. 런타임 체크 실패 시 즉시 중단하고 환경 준비 상태 문제를 보고합니다.
-5. E2E 실패 시 실패한 명령과 상세 결과를 반환합니다.
+6. 런타임 체크 실패 시 즉시 중단하고 환경 준비 상태 문제를 보고합니다.
+7. E2E 실패 시 실패한 명령과 상세 결과를 반환합니다.
 
 ## 출력 계약
 - pass/fail 상태
 - 대상 URL 및 HTTP 응답 요약
+- optional browser-flow status
+- optional browser-flow verdict file at `.claude/browser-flow-verdict-<runId>.json`
 - 선택적 E2E 결과
+- runtime evidence depth: `smoke`, `open-act`, 또는 `open-act-mutate-persist-recover`
+- critical scenario smoke-only warnings
 - 다음 액션 (서버 재시작, 라우트 수정, 테스트 재실행)
 - 호출자 세션에 병합 가능한 구조화된 요약
 
+## Browser Flow Artifacts
+
+- Runner verdict는 `.claude/browser-flow-verdict-<runId>.json`에 기록됩니다.
+- flow가 해당 artifact를 요청하면 screenshots, console events, network events는 `.claude/browser-artifacts/` 아래에 기록됩니다.
+- browser runtime 또는 flow declaration이 없으면 hand-written pass가 아니라 setup-gap verdict를 생성해야 합니다.
+- Critical `SCN-*` flow는 clean finish 전에 smoke 이상의 interaction evidence가 필요합니다.
+
 ## 스크립트
 ```bash
-.claude/agents/verification/verify-runtime.sh --url=<url> [--e2e="<command>"] [--no-auto-e2e]
+.claude/agents/verification/verify-runtime.sh --url=<url> [--browser-flow=<name>] [--browser-only] [--browserctl=<path>] [--e2e="<command>"] [--no-auto-e2e]
 ```

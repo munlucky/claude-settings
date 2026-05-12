@@ -94,6 +94,8 @@ phaseExecutionResult:
 - 이 스킬은 `moonshot-phase-runner` 뒤에 숨는 내부 phase 실행 handoff입니다.
 - 실행 dispatch 전에 `.claude/docs/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
 - dispatcher/agent-loop/coordinator 입력에는 raw MemoryGraph record가 아니라 요약된 `projectMemoryContext`만 넘깁니다.
+- 기본 `modelEffortProfile`은 `standard`입니다. `deep`과 `max`는 QA와 workflow evidence에 구체적인 `Effort escalation reason`이 있어야 합니다.
+- 사용자에게 모델 선택을 요구하지 않습니다. provider-neutral model router가 stage별 runtime model/effort를 선택하고 선택된 provider/model/effort를 execution evidence에 기록합니다.
 - 스크립트는 구현용 내부 adapter일 뿐이며 이 스킬 뒤에 숨어야 합니다.
 - `moonshot-phase-runner`는 기본적으로 `prepareOnly != true`일 때 이 스킬을 자동 시작해야 합니다.
 - 기본 경로에서 사용자에게 `moonshot-phase-dispatch.mjs` 수동 실행을 요구하지 않습니다.

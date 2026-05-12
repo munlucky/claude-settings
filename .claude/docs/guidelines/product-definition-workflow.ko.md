@@ -47,6 +47,41 @@
 - `conditional_pass`: assumptions 기록 또는 scope reduction 이후에만 진행 가능
 - `fail`: 가치가 약하거나, 스코프가 불안정하거나, cost/benefit 가 방어되지 않음
 
+## 준비도 및 모호성 게이트
+
+제품 패키지가 runnable implementation work가 되기 전에는 PRD/SPEC 내용을 source material로 취급하고, 이를 Goal Contract로 정규화합니다.
+
+필수 준비도 축:
+- `goalClarity`
+- `scopeClarity`
+- `acceptanceCriteriaClarity`
+- `verificationClarity`
+- `clarityScore`
+- `ambiguityScore`
+- `readinessDecision`
+
+Thresholds:
+- `ambiguityScore <= 0.20`: 실행 가능
+- `0.20 < ambiguityScore <= 0.35`: assumptions를 둔 제한 실행
+- `ambiguityScore > 0.35`: contract가 명확해지거나 user-approved replan이 deviation을 기록할 때까지 blocked
+
+Gap checks:
+- 측정 가능한 evidence가 없는 "빠른", "직관적인", "견고한" 같은 검증 불가능한 형용사
+- non-goals 또는 excluded scope 누락
+- verification commands 누락
+- missing 또는 ambiguous acceptance criteria
+- 기존 시스템을 바꾸는 작업에서 brownfield readiness context 누락
+
+Acceptance criteria extraction:
+- source requirements와 completion criteria를 stable `AC-*` id로 변환합니다.
+- 각 `AC-*`에 source label과 expected evidence target을 보존합니다.
+- downstream phase docs, WORKSETS, QA evidence에서 `AC-*` id를 사용해 completion을 source requirements까지 추적할 수 있게 합니다.
+
+Routing:
+- 치명적이지 않은 모호함은 `ASSUMPTIONS.md`로 보냅니다.
+- 핵심 goal, scope, acceptance, verification 모호함은 `BLOCKERS.md`로 보냅니다.
+- product-value와 brownfield readiness 우려는 runnable closeout 전에 stage-owner review evidence로 해결해야 합니다.
+
 ## 단계
 
 ### 1. PRODUCT_INTENT

@@ -38,6 +38,11 @@ strict 실행에서는 Finish / Handoff로 넘어가기 전에 Verify stage를 �
    - `completionStatus.score.current < completionStatus.score.target`
    - `completionStatus.score.unmetChecklistItems > 0`
    - `completionStatus.score.blockingDefects > 0`
+   - in-scope `REQ-*`에 대해 `completionStatus.traceability.uncoveredRequirements`가 비어 있지 않음
+   - critical `SCN-*`에 대해 `completionStatus.traceability.scenariosMissingEvidence`가 비어 있지 않음
+   - user-facing finish claim에서 `completionStatus.traceability.uatReady == false`
+   - frontend/UI evidence가 필요한데 visual, accessibility, performance evidence가 없거나 실패했거나 stale이거나 setup에 막힘
+   - contract 또는 scenario policy가 open -> act -> mutate -> persist -> recover depth를 요구하는데 frontend critical `SCN-*` row가 smoke-only evidence에 의존함
    - 최신 증거 없음
 
 ## 규칙
@@ -48,5 +53,9 @@ strict 실행에서는 Finish / Handoff로 넘어가기 전에 Verify stage를 �
 - contract 기반 검증에서 최신 증거 없는 pass 상태는 여전히 차단합니다.
 - 최신 증거 부족을 낙관적 표현으로 완화하지 않습니다. 증거가 없으면 그대로 차단입니다.
 - 코드 변경 마감에서 review/finish workflow evidence가 없으면 이를 선택적 메타데이터가 아니라 차단 사유로 봅니다.
+- document-trace run에서 requirement 또는 critical-scenario evidence 누락도 verification evidence 누락입니다.
+- frontend/UI run에서 required visual, accessibility, performance evidence 누락은 verification evidence 누락입니다. required가 아닌 frontend evidence는 block으로 강제하지 말고 `not_required`로 기록합니다.
+- setup gap은 required frontend evidence 생산을 막을 때만 blocking입니다. 그 외에는 warning 또는 follow-up note로 기록합니다.
+- `uat_ready`와 `uat_complete`를 분리합니다. automation evidence를 human UAT completion으로 취급하지 않습니다.
 - score 기반 루프에서는 미완료 score verdict도 최신 검증 증거 부족으로 취급합니다.
 - review finding이 있으면 `QA_REPORT.md`에 각 의미 있는 항목의 결정이 `accepted`, `challenged`, `deferred`, `needs_clarification` 중 하나로 기록되기 전까지 remediation loop를 닫지 않습니다.
