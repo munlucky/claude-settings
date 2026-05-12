@@ -54,6 +54,9 @@ function phaseRequiresCanonicalAttempt(phaseNumber, phase = {}, manifestPath = '
   if (manifestPath) {
     return true;
   }
+  if (phase.manifestRequired === true || Number(phase.schemaVersion) >= 1) {
+    return true;
+  }
   const explicitMode = String(
     phase.completionGateMode
       || phase.completionMode
@@ -83,10 +86,10 @@ export function evaluateCompletionGateVerdict({
   if (!manifestRequired) {
     return {
       ok: true,
-      reason: 'legacy_projection_not_evaluated',
+      reason: 'legacy_grandfathered_by_cutoff',
       mode: 'legacy',
       manifestPath: '',
-      evidence: [],
+      evidence: ['pre-enforcement legacy projection has no schemaVersion or manifestRequired signal'],
     };
   }
   if (!manifestPath || !fs.existsSync(manifestPath)) {
