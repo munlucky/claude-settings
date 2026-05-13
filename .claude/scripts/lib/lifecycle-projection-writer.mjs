@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { scrubCompatibilityProjection } from './simple-run-state.mjs';
+
 const VALID_PID_NAMESPACES = new Set(['windows', 'wsl', 'node-parent']);
 const TERMINAL_EVENT_PATTERN = /_(completed|failed|blocked|recovered)$/;
 const ATTEMPT_SCOPED_EVENTS = new Set([
@@ -24,6 +26,8 @@ const TERMINAL_ATTEMPT_STATES = new Set([
 ]);
 const ACTIVE_ATTEMPT_STATES = new Set(['active', 'running', 'in_progress', 'prepared']);
 const PROTECTED_TERMINAL_FIELDS = [
+  'status',
+  'activeExecutionStatus',
   'attemptOutcome',
   'completionStatus',
   'blockingStopReasonCode',
@@ -89,6 +93,14 @@ function isLatestDispatchTarget(filePath) {
   return path.basename(filePath) === 'latest-dispatch.json';
 }
 
+function projectionTargetKind(filePath, event = {}) {
+  const explicit = event.targetKinds?.[filePath] || event.targetKind || event.payloadPatch?.targetKind;
+  if (explicit) {
+    return String(explicit);
+  }
+  return path.basename(filePath, '.json');
+}
+
 function assertLatestDispatchStatusVocabulary(event, payload) {
   if (
     event.targetStateFiles.some(isLatestDispatchTarget)
@@ -99,11 +111,11 @@ function assertLatestDispatchStatusVocabulary(event, payload) {
 }
 
 function lifecycleAttemptId(event = {}) {
-  return String(event.attemptId || event.payloadPatch?.attemptId || '').trim();
+  return String(event.attemptId || event.payloadPatch?.attemptId || event.payloadPatch?.runLeaseId || '').trim();
 }
 
 function payloadAttemptId(payload = {}) {
-  return String(payload.attemptId || payload.phaseRunLease?.attemptId || '').trim();
+  return String(payload.attemptId || payload.runLeaseId || payload.phaseRunLease?.attemptId || payload.phaseRunLease?.runLeaseId || '').trim();
 }
 
 function isTerminalAttemptPayload(payload = {}) {
@@ -140,6 +152,29 @@ function preserveTerminalAttemptFields(existing = {}, next = {}, event = {}) {
     }
   }
   return Object.keys(protectedPatch).length > 0 ? { ...next, ...protectedPatch } : next;
+}
+
+function lifecycleStateForScrub(event = {}, payload = {}) {
+  const status = payload.status || event.payloadPatch?.status || event.status;
+  return {
+    status,
+    phase: event.phaseNumber,
+    attempt: lifecycleAttemptId(event),
+    updated: event.timestamp,
+    projectionStatus: event.payloadPatch?.projectionStatus,
+    reason: event.payloadPatch?.stopReasonCode
+      || event.payloadPatch?.blockingStopReasonCode
+      || event.payloadPatch?.reason,
+  };
+}
+
+function assertStateRunIdCompatible(previousPayload = {}, nextPayload = {}, targetFile = '') {
+  const previousRunId = String(previousPayload.stateRunId || '').trim();
+  const nextRunId = String(nextPayload.stateRunId || nextPayload.phaseRunLease?.stateRunId || nextPayload.runLeaseId || '').trim();
+  if (!previousRunId || !nextRunId || previousRunId === nextRunId) {
+    return;
+  }
+  throw new Error(`stateRunId mismatch rejected before projection overwrite: ${targetFile || 'compatibility projection'} (${previousRunId} != ${nextRunId})`);
 }
 
 export function validateLifecycleTransition(rawEvent = {}) {
@@ -193,7 +228,7 @@ export function validateLifecycleTransition(rawEvent = {}) {
 
 export function recordLifecycleTransition(rawEvent = {}) {
   const event = validateLifecycleTransition(rawEvent);
-  const written = [];
+  const preparedWrites = [];
   for (const target of event.targetStateFiles) {
     const targetPayload = event.targetPayloads?.[target];
     const existingPayload = readJsonObject(target);
@@ -202,12 +237,23 @@ export function recordLifecycleTransition(rawEvent = {}) {
       : event.writeMode === 'replace'
         ? event.payloadPatch
         : mergeJsonPatch(existingPayload, event.payloadPatch);
-    const guardedNext = preserveTerminalAttemptFields(existingPayload, next, event);
+    const targetKind = projectionTargetKind(target, event);
+    const scrubbedNext = scrubCompatibilityProjection(next, lifecycleStateForScrub(event, next), {
+      targetKind,
+      previousPayload: event.writeMode === 'merge' ? existingPayload : {},
+    });
+    const guardedNext = preserveTerminalAttemptFields(existingPayload, scrubbedNext, event);
     if (!isPlainObject(guardedNext)) {
       throw new TypeError(`lifecycle target payload must be an object: ${target}`);
     }
+    assertStateRunIdCompatible(existingPayload, guardedNext, target);
     assertLatestDispatchStatusVocabulary(event, guardedNext);
-    writeJsonAtomic(target, guardedNext);
+    preparedWrites.push({ target, payload: guardedNext });
+  }
+
+  const written = [];
+  for (const { target, payload } of preparedWrites) {
+    writeJsonAtomic(target, payload);
     written.push(target);
   }
   return {

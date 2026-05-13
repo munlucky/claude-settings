@@ -149,20 +149,24 @@ function phaseIdentity(leasePayload = {}) {
 }
 
 function writeLeaseProjection({ targetFile, payload, existingPayload = null, primaryTargetStateFile = targetFile }) {
-  const lifecycleEvent = leaseLifecycleEvent(payload, existingPayload);
+  const projectionPayload = {
+    ...payload,
+    stateRunId: payload.stateRunId || payload.runLeaseId || '',
+  };
+  const lifecycleEvent = leaseLifecycleEvent(projectionPayload, existingPayload);
   return recordLifecycleTransition({
     source: 'phase-run-lease-store',
     targetStateFiles: [targetFile],
     primaryTargetStateFile,
-    ...phaseIdentity(payload),
-    status: payload.status || 'unknown',
-    completionStatus: payload.completionStatus
+    ...phaseIdentity(projectionPayload),
+    status: projectionPayload.status || 'unknown',
+    completionStatus: projectionPayload.completionStatus
       || (lifecycleEvent === 'lease_completed' ? 'completed' : undefined)
       || (lifecycleEvent === 'lease_failed' ? 'failed' : undefined),
     lifecycleEvent,
     timestamp: utcTimestamp(),
-    pidNamespace: payload.dispatcherPid ? 'node-parent' : undefined,
-    payloadPatch: payload,
+    pidNamespace: projectionPayload.dispatcherPid ? 'node-parent' : undefined,
+    payloadPatch: projectionPayload,
     writeMode: 'replace',
   });
 }
@@ -172,6 +176,7 @@ function mirrorToCurrentRun(statusFile, leasePayload) {
   const existing = readJson(leaseFiles.currentRunFile) || {};
   const identityFields = {
     runLeaseId: leasePayload.runLeaseId || existing.runLeaseId || '',
+    stateRunId: leasePayload.stateRunId || leasePayload.runLeaseId || existing.stateRunId || '',
     status: leasePayload.status || existing.status || '',
     completionStatus: leasePayload.completionStatus || existing.completionStatus || '',
     executionBoundary: leasePayload.executionBoundary || existing.executionBoundary || '',

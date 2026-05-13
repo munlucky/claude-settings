@@ -51,6 +51,10 @@ test('records merge lifecycle patch atomically', () => {
       status: 'prepared',
       keep: true,
       childPid: 1234,
+      phaseNumber: '1',
+      attemptId: 'attempt-1',
+      updatedAt: '2026-05-12T00:00:00.000Z',
+      targetKind: 'latest-dispatch',
     });
   });
 });
@@ -73,6 +77,14 @@ test('records replace lifecycle payload for legacy projection compatibility', ()
     assert.deepEqual(readJson(target), {
       runLeaseId: 'lease-1',
       status: 'active',
+      phaseNumber: '1',
+      attemptId: 'lease-1',
+      updatedAt: '2026-05-12T00:00:00.000Z',
+      targetKind: 'active-phase-run',
+      activeExecutionStatus: 'active',
+      completionStatus: 'in_progress',
+      attemptOutcome: 'in_progress',
+      dispatchStage: 'execute',
     });
   });
 });
@@ -189,14 +201,113 @@ test('preserves terminal attempt fields from same-attempt heartbeat patches', ()
 
     assert.deepEqual(readJson(target), {
       attemptId: 'attempt-1',
-      status: 'running',
+      status: 'blocked',
       completionStatus: 'blocked',
       attemptOutcome: 'blocked',
       blockingStopReasonCode: 'spawn_eperm',
       stopReasonDetail: 'node --test spawn EPERM',
       finalVerdict: 'blocked',
       normalizedRunVerdict: 'complete_with_environment_blocker',
+      phaseNumber: '1',
+      updatedAt: '2026-05-12T00:00:00.000Z',
+      targetKind: 'latest-dispatch',
     });
+  });
+});
+
+test('scrubs stale terminal fields from new active compatibility projection', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'active-phase-run.json');
+    fs.writeFileSync(target, JSON.stringify({
+      attemptId: 'attempt-1',
+      status: 'blocked',
+      completionStatus: 'blocked',
+      attemptOutcome: 'blocked',
+      blockingStopReasonCode: 'old_blocker',
+      stopReasonDetail: 'old blocker',
+      finalVerdict: 'blocked',
+    }, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      source: 'phase-run-lease-store',
+      lifecycleEvent: 'lease_heartbeat',
+      status: 'active',
+      payloadPatch: {
+        attemptId: 'attempt-2',
+        status: 'active',
+      },
+      writeMode: 'merge',
+    }));
+
+    const payload = readJson(target);
+    assert.equal(payload.status, 'active');
+    assert.equal(payload.activeExecutionStatus, 'active');
+    assert.equal(payload.completionStatus, 'in_progress');
+    assert.equal(payload.attemptOutcome, 'in_progress');
+    assert.equal(payload.blockingStopReasonCode, undefined);
+    assert.equal(payload.finalVerdict, undefined);
+    assert.equal(payload.targetKind, 'active-phase-run');
+  });
+});
+
+test('rejects stateRunId mismatch before projection overwrite', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'current-run.json');
+    fs.writeFileSync(target, JSON.stringify({
+      stateRunId: 'run-1',
+      status: 'active',
+    }, null, 2) + '\n', 'utf8');
+
+    assert.throws(() => recordLifecycleTransition(baseEvent({
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      source: 'phase-run-lease-store',
+      lifecycleEvent: 'lease_heartbeat',
+      status: 'active',
+      payloadPatch: {
+        stateRunId: 'run-2',
+        status: 'active',
+      },
+      writeMode: 'replace',
+    })), /stateRunId mismatch rejected/);
+
+    assert.equal(readJson(target).stateRunId, 'run-1');
+  });
+});
+
+test('rejects stateRunId mismatch before any multi-target projection write', () => {
+  withTempDir((root) => {
+    const activeRun = path.join(root, 'active-phase-run.json');
+    const currentRun = path.join(root, 'current-run.json');
+    fs.writeFileSync(activeRun, JSON.stringify({
+      stateRunId: 'run-2',
+      status: 'active',
+      keep: 'active-original',
+    }, null, 2) + '\n', 'utf8');
+    fs.writeFileSync(currentRun, JSON.stringify({
+      stateRunId: 'run-1',
+      status: 'active',
+      keep: 'current-original',
+    }, null, 2) + '\n', 'utf8');
+
+    assert.throws(() => recordLifecycleTransition(baseEvent({
+      primaryTargetStateFile: activeRun,
+      targetStateFiles: [activeRun, currentRun],
+      source: 'phase-run-lease-store',
+      lifecycleEvent: 'lease_heartbeat',
+      status: 'active',
+      payloadPatch: {
+        stateRunId: 'run-2',
+        status: 'active',
+        keep: 'overwritten',
+      },
+      writeMode: 'replace',
+    })), /stateRunId mismatch rejected/);
+
+    assert.equal(readJson(activeRun).keep, 'active-original');
+    assert.equal(readJson(currentRun).keep, 'current-original');
   });
 });
 
