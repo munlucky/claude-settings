@@ -167,6 +167,12 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
     assert.match(statusText, /projectionSchemaVersion: final-outcome-v1/);
     assert.match(statusText, /normalizedRunVerdict: success_with_warning/);
     assert.match(statusText, /lastOutcome: clean_complete/);
+    assert.match(statusText, /lastStage: "finish\/handoff"|lastStage: finish\/handoff/);
+    const qaReport = fs.readFileSync(path.join(fixture.executionRoot, 'QA_REPORT.md'), 'utf8');
+    assert.match(qaReport, /Source plan conformance: pass/);
+    assert.match(qaReport, /Structured Evidence Metadata/);
+    assert.match(qaReport, /"id": "SCN-1"/);
+    assert.match(qaReport, /"status": "passed"/);
     assert.match(fs.readFileSync(path.join(fixture.root, '.claude/logs/agent-loop/summary.current.md'), 'utf8'), /Final outcome schema: 1\.0/);
     assert.equal(result.worksetsEvidenceUpdated, true);
     const worksets = fs.readFileSync(path.join(fixture.executionRoot, 'WORKSETS.yaml'), 'utf8');
@@ -342,7 +348,7 @@ test('finalize excludes completion vocabulary from historical warning candidates
   });
 });
 
-test('finalize returns strict no-op when final outcome projection is already canonical', async () => {
+test('finalize refuses canonical no-op while closeout verifier is not allowed', async () => {
   await withFixture(async (fixture) => {
     await finalizePhaseCloseout({
       root: fixture.root,
@@ -355,6 +361,12 @@ test('finalize returns strict no-op when final outcome projection is already can
       now: fixture.now,
       commitToken: 'phase01-canonical-seed',
     });
+
+    fs.writeFileSync(
+      fixture.statusFile,
+      fs.readFileSync(fixture.statusFile, 'utf8').replace(/lastStage: "?finish\/handoff"?/, 'lastStage: execute'),
+      'utf8',
+    );
 
     const strictTargets = [
       fixture.statusFile,
@@ -377,14 +389,49 @@ test('finalize returns strict no-op when final outcome projection is already can
       commitToken: 'phase01-canonical-noop',
     });
 
-    assert.equal(result.idempotentNoop, true);
-    assert.equal(result.canonicalNoop.reason, 'canonical_final_complete_projection');
-    assert.deepEqual(result.publishWrites, []);
-    assert.ok(result.skippedWrites.length > 0);
-    assert.ok(result.skippedWrites.every((entry) => entry.reason === 'canonical_final_complete_projection'));
-    for (const filePath of strictTargets) {
-      assert.equal(fs.readFileSync(filePath, 'utf8'), before[filePath], filePath);
-    }
+    assert.equal(result.idempotentNoop, false);
+    assert.equal(result.phaseCloseoutGate.allowed, false);
+    assert.notDeepEqual(
+      Object.fromEntries(strictTargets.map((filePath) => [filePath, fs.readFileSync(filePath, 'utf8')])),
+      before,
+    );
+  });
+});
+
+test('finalize does not no-op when canonical projection fails closeout verifier', async () => {
+  await withFixture(async (fixture) => {
+    await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-canonical-seed',
+    });
+
+    fs.writeFileSync(
+      fixture.masterPlan,
+      fs.readFileSync(fixture.masterPlan, 'utf8').replace('- [x] Phase 01 - Smoke', '- [ ] Phase 01 - Smoke'),
+      'utf8',
+    );
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: '2026-05-11T12:00:00.000Z',
+      commitToken: 'phase01-canonical-repair',
+    });
+
+    assert.equal(result.idempotentNoop, false);
+    assert.match(fs.readFileSync(fixture.masterPlan, 'utf8'), /- \[x\] Phase 01 - Smoke/);
   });
 });
 
@@ -845,6 +892,10 @@ function writeFixture(root) {
   const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
   const masterPlan = path.join(planDir, '00-master-plan-v1.md');
   const phaseDoc = path.join(planDir, 'close/01-smoke-v1.md');
+  const sprintContract = path.join(executionRoot, 'SPRINT_CONTRACT.md');
+  const qaReport = path.join(executionRoot, 'QA_REPORT.md');
+  const handoff = path.join(executionRoot, 'HANDOFF.md');
+  const scorecard = path.join(executionRoot, 'SCORECARD.md');
   fs.mkdirSync(path.dirname(statusFile), { recursive: true });
   fs.mkdirSync(path.dirname(phaseDoc), { recursive: true });
   fs.mkdirSync(workflowDir, { recursive: true });
@@ -859,6 +910,10 @@ function writeFixture(root) {
     '  - number: 1',
     '    title: "Smoke"',
     '    status: in_progress',
+    `    sprintContract: "${sprintContract}"`,
+    `    qaReport: "${qaReport}"`,
+    `    handoff: "${handoff}"`,
+    `    scorecard: "${scorecard}"`,
     `    archivedPhaseDoc: "${phaseDoc}"`,
     '',
   ].join('\n'), 'utf8');
@@ -875,8 +930,22 @@ function writeFixture(root) {
   fs.writeFileSync(phaseDoc, [
     '# Phase 01',
     '',
+    '## Critical Product Scenarios',
+    '',
     'REQ-1',
     'SCN-1',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(sprintContract, '# Sprint Contract\n\nREQ-1 implemented.\n', 'utf8');
+  fs.writeFileSync(qaReport, '# QA Report\n\nBaseline QA evidence.\n', 'utf8');
+  fs.writeFileSync(handoff, '# Handoff\n\nNo remaining blockers before closeout: none.\n', 'utf8');
+  fs.writeFileSync(scorecard, [
+    '# Scorecard',
+    '',
+    'Score verdict: done',
+    '| ID | Summary | Points | Status | Evidence |',
+    '|---|---|---:|---|---|',
+    '| OBJ-CONFORM | Source platform phase plan conformance verified | 20 | pass | Source plan conformance command: pass |',
     '',
   ].join('\n'), 'utf8');
 

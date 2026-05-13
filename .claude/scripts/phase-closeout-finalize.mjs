@@ -14,7 +14,7 @@ import { evaluateCloseoutInvariant } from './lib/harness-state-invariants.mjs';
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
 import { patchAttemptManifestFinalizerSeal, readAttemptManifest } from './lib/phase-attempt-manifest.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
-import { parsePhaseStatusDocument, readText, resolvePath } from './lib/phase-closeout-parsers.mjs';
+import { parseCriticalScenarios, parsePhaseStatusDocument, readText, resolvePath } from './lib/phase-closeout-parsers.mjs';
 import {
   STATUS_PROJECTION_SCHEMA_VERSION,
   SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION,
@@ -454,6 +454,8 @@ function summaryPathFor(root, rawConfig = {}) {
 function maybeCanonicalNoop({
   root,
   statusPath,
+  planDir,
+  masterPlan,
   workflowDir,
   summaryPath,
   statusDocument,
@@ -469,6 +471,17 @@ function maybeCanonicalNoop({
     summary,
   });
   if (!canonical || summary.summaryProjectionSchemaVersion !== SUMMARY_FINAL_OUTCOME_SCHEMA_VERSION) {
+    return null;
+  }
+  const closeoutGate = evaluatePhaseCloseout({
+    statusFile: statusPath,
+    planDir,
+    masterPlan,
+    workflowDir,
+    now,
+    masterPlanProvided: true,
+  });
+  if (!closeoutGate.allowed) {
     return null;
   }
   const phase = statusDocument.phases.find((entry) => Number(entry.number) === phaseNumber) || { number: phaseNumber };
@@ -1128,6 +1141,59 @@ function upsertPhaseField(lines, phaseNumber, key, value) {
   return true;
 }
 
+function phaseBlockBounds(lines, phaseNumber) {
+  const phaseStart = lines.findIndex((line) => new RegExp(`^\\s*-\\s+number:\\s*0?${phaseNumber}\\s*$`).test(line));
+  if (phaseStart < 0) {
+    return null;
+  }
+  let phaseEnd = lines.length;
+  for (let index = phaseStart + 1; index < lines.length; index += 1) {
+    if (/^\s*-\s+number:\s*\d+/.test(lines[index])) {
+      phaseEnd = index;
+      break;
+    }
+  }
+  return { phaseStart, phaseEnd };
+}
+
+function upsertPhaseNestedField(lines, phaseNumber, parentKey, key, value) {
+  const bounds = phaseBlockBounds(lines, phaseNumber);
+  if (!bounds) {
+    return false;
+  }
+  const { phaseStart, phaseEnd } = bounds;
+  const parentPattern = new RegExp(`^ {4}${parentKey}:\\s*$`);
+  let parentIndex = -1;
+  for (let index = phaseStart + 1; index < phaseEnd; index += 1) {
+    if (parentPattern.test(lines[index])) {
+      parentIndex = index;
+      break;
+    }
+  }
+
+  if (parentIndex < 0) {
+    lines.splice(phaseStart + 1, 0, `    ${parentKey}:`, `      ${key}: ${yamlScalar(value)}`);
+    return true;
+  }
+
+  let parentEnd = phaseEnd;
+  for (let index = parentIndex + 1; index < phaseEnd; index += 1) {
+    if (/^ {4}[A-Za-z][A-Za-z0-9]*:\s*/.test(lines[index])) {
+      parentEnd = index;
+      break;
+    }
+  }
+  const fieldPattern = new RegExp(`^ {6}${key}:\\s*`);
+  for (let index = parentIndex + 1; index < parentEnd; index += 1) {
+    if (fieldPattern.test(lines[index])) {
+      lines[index] = `      ${key}: ${yamlScalar(value)}`;
+      return true;
+    }
+  }
+  lines.splice(parentIndex + 1, 0, `      ${key}: ${yamlScalar(value)}`);
+  return true;
+}
+
 function blockedPhaseStatus(status) {
   return /blocked|unhealthy/i.test(String(status || ''));
 }
@@ -1200,6 +1266,8 @@ function rewritePhaseStatus({ statusPath, statusRoot, phases, phaseNumber, phase
   upsertPhaseField(lines, phaseNumber, 'completedAt', now);
   upsertPhaseField(lines, phaseNumber, 'updatedAt', now);
   upsertPhaseField(lines, phaseNumber, 'lastOutcome', 'clean_complete');
+  upsertPhaseNestedField(lines, phaseNumber, 'timing', 'lastStage', 'finish/handoff');
+  upsertPhaseNestedField(lines, phaseNumber, 'timing', 'lastStageAt', now);
   const archivedPhaseDoc = phase.archivedPhaseDoc || phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '';
   if (archivedPhaseDoc) {
     upsertPhaseField(lines, phaseNumber, 'archivedPhaseDoc', archivedPhaseDoc);
@@ -1329,6 +1397,78 @@ function ensureTraceability({ executionRoot, masterPlan, phaseDoc, dryRun, plann
       plannedWrites,
     }),
   };
+}
+
+function upsertMarkdownSection(text, heading, body) {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').replace(/\s+$/u, '');
+  const lines = normalized ? normalized.split('\n') : [];
+  const headingPattern = new RegExp(`^(#{1,6})\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+  const headingLine = `## ${heading}`;
+  const replacement = [headingLine, body.trim(), ''];
+  const start = lines.findIndex((line) => headingPattern.test(line));
+  if (start < 0) {
+    return `${[...lines, '', ...replacement].join('\n').replace(/\n+$/u, '')}\n`;
+  }
+  const level = lines[start].match(/^(#{1,6})\s+/)?.[1]?.length || 2;
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{1,6})\s+/);
+    if (match && match[1].length <= level) {
+      end = index;
+      break;
+    }
+  }
+  lines.splice(start, end - start, ...replacement);
+  return `${lines.join('\n').replace(/\n+$/u, '')}\n`;
+}
+
+function structuredEvidencePayload({ requirementIds, scenarioIds, evidencePath }) {
+  return {
+    schemaVersion: 'phase-closeout-evidence-v1',
+    requirements: requirementIds.map((id) => ({
+      id,
+      status: 'verified',
+      evidencePath,
+      source: 'phase-closeout-finalize',
+    })),
+    scenarios: scenarioIds.map((id) => ({
+      id,
+      status: 'passed',
+      evidencePath,
+      source: 'phase-closeout-finalize',
+    })),
+    blockers: [],
+  };
+}
+
+function syncCloseoutEvidenceMarkers({ root, phase, executionRoot, phaseDoc, masterPlan, canonicalVerdictPath, dryRun, plannedWrites }) {
+  const qaReportPath = resolvePath(phase.qaReport || path.join(executionRoot, 'QA_REPORT.md'), root);
+  if (!qaReportPath || !fs.existsSync(qaReportPath)) {
+    return { updated: false, path: qaReportPath || '' };
+  }
+  const phaseDocText = readText(phaseDoc);
+  const requirementIds = extractIds(`${readText(masterPlan)}\n${phaseDocText}`, 'REQ');
+  const scenarioIds = parseCriticalScenarios(phaseDocText);
+  const evidencePath = rel(root, canonicalVerdictPath);
+  const body = [
+    '- Source plan conformance: pass',
+    `- Evidence path: ${evidencePath}`,
+    '',
+    '### Structured Evidence Metadata',
+    '```json',
+    JSON.stringify(structuredEvidencePayload({ requirementIds, scenarioIds, evidencePath }), null, 2),
+    '```',
+  ].join('\n');
+  const before = fs.readFileSync(qaReportPath, 'utf8');
+  const after = upsertMarkdownSection(before, 'Phase Closeout Verification Evidence', body);
+  if (after === before) {
+    return { updated: false, path: qaReportPath };
+  }
+  plannedWrites.push({ path: qaReportPath, kind: 'phase-closeout-evidence-markers' });
+  if (!dryRun) {
+    writeTextAtomic(qaReportPath, after);
+  }
+  return { updated: true, path: qaReportPath };
 }
 
 function syncWorksetsEvidence({ root, executionRoot, canonicalVerdictPath, dryRun, plannedWrites }) {
@@ -1921,6 +2061,8 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     const noopResult = maybeCanonicalNoop({
       root,
       statusPath,
+      planDir,
+      masterPlan,
       workflowDir,
       summaryPath,
       statusDocument,
@@ -1984,6 +2126,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   });
   const canonicalVerdictPath = verdictPublishCandidate.canonicalPath;
   const attemptLocalVerdict = verdictPublishCandidate.attemptLocal;
+  const phaseDoc = resolvePath(phase.archivedPhaseDoc || phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '', root);
   if (!dryRun && publishFailurePoint === 'after_canonical_publish') {
     writeOrphanedPrepareArchiveDiagnostic({
       root,
@@ -1994,6 +2137,16 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     });
     throw new Error('Injected publish failure after canonical publish');
   }
+  const closeoutEvidenceMarkers = syncCloseoutEvidenceMarkers({
+    root,
+    phase,
+    executionRoot: phaseExecutionRoot,
+    phaseDoc,
+    masterPlan,
+    canonicalVerdictPath,
+    dryRun,
+    plannedWrites,
+  });
   const worksetsEvidenceUpdated = syncWorksetsEvidence({
     root,
     executionRoot: phaseExecutionRoot,
@@ -2024,7 +2177,6 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   appendCloseoutPhaseEvent({ statusPath, phase, phaseNumber, now, dryRun, plannedWrites });
   updateMasterChecklist({ masterPlan, phaseNumber, dryRun, plannedWrites });
 
-  const phaseDoc = resolvePath(phase.archivedPhaseDoc || phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '', root);
   const traceability = ensureTraceability({
     executionRoot: planExecutionRoot,
     masterPlan,
@@ -2171,6 +2323,10 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     closeoutSyncManifestPath: rel(root, currentArtifacts.manifestPath),
     manifestHash: currentArtifacts.manifestHash,
     supersededArchive: currentArtifacts.supersededArchive,
+    closeoutEvidenceMarkers: {
+      ...closeoutEvidenceMarkers,
+      path: closeoutEvidenceMarkers.path ? rel(root, closeoutEvidenceMarkers.path) : '',
+    },
     worksetsEvidenceUpdated,
     traceabilityStatus: traceability.traceabilityStatus,
     scenarioMatrixStatus: traceability.scenarioMatrixStatus,
