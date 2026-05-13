@@ -72,7 +72,7 @@ test('runtime unavailable cache records once and returns stable summaries for re
   );
 });
 
-test('codex base args use trusted local sandbox and do not reintroduce --full-auto', () => {
+test('codex base args use trusted local sandbox and do not reintroduce removed automation flags', () => {
   const result = spawnSync('node', [
     '.claude/scripts/runtime-cli.mjs',
     'codex-base-args',
@@ -86,8 +86,7 @@ test('codex base args use trusted local sandbox and do not reintroduce --full-au
   const args = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
   assert.ok(args.includes('--sandbox'));
   assert.ok(args.includes('danger-full-access'));
-  assert.ok(args.includes('--ask-for-approval'));
-  assert.ok(args.includes('never'));
+  assert.equal(args.includes('--ask-for-approval'), false);
   assert.equal(args.includes('--full-auto'), false);
 });
 

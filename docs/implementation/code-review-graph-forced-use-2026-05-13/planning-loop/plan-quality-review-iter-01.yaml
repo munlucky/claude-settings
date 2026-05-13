@@ -1,0 +1,51 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked"
+  reviewerSession: "019e20db-0508-7622-8a9a-eb15c99a4bee"
+  targetPlanPackage:
+    planDir: "docs/implementation/code-review-graph-forced-use-2026-05-13"
+    masterPlan: "docs/implementation/code-review-graph-forced-use-2026-05-13/00-master-plan-v12.1.md"
+    phaseDocs:
+      - "01-contract-schema-and-policy-sync-v1.md"
+      - "02-cli-adapter-and-graph-state-v1.md"
+      - "03-validator-parity-and-resolver-v1.md"
+      - "04-bounded-phase-closeout-gates-v1.md"
+      - "05-fixtures-parity-and-readiness-v1.md"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.90
+      evidence: ["Objective and non-goals in master plan"]
+      findings: []
+    scopeClarity:
+      weight: 0.20
+      score: 0.85
+      evidence: ["Phase ownedPaths and non-goals"]
+      findings: []
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.85
+      evidence: ["ACCEPTANCE_CRITERIA.md"]
+      findings: []
+    verificationClarity:
+      weight: 0.20
+      score: 0.85
+      evidence: ["VERIFICATION_PLAN.md"]
+      findings: []
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.80
+      evidence: ["Current-state evidence and existing script paths"]
+      findings: []
+    phaseExecutability:
+      weight: 0.10
+      score: 0.80
+      evidence: ["Five sequential phase docs"]
+      findings: []
+  totalScore: 0.84
+  ambiguityScore: 0.16
+  decision: "pass"
+  blockingFindings: []
+  improvementDirectives: []
+
