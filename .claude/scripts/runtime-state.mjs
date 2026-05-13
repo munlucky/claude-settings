@@ -545,9 +545,12 @@ export function updateGoalStatus(db, { planDir, status, detail = '', expectedGoa
   }
   db.prepare(`
     UPDATE workflow_goals
-    SET status = ?, last_event = ?, updated_at_ms = ?
+    SET status = ?,
+        last_event = ?,
+        current_lease_id = CASE WHEN ? = 'active' THEN current_lease_id ELSE NULL END,
+        updated_at_ms = ?
     WHERE goal_id = ?
-  `).run(status, statusToEvent(status), nowMs(), goal.goal_id);
+  `).run(status, statusToEvent(status), status, nowMs(), goal.goal_id);
   db.prepare(`
     INSERT INTO control_commands(goal_id, plan_dir, command, detail, created_at_ms)
     VALUES (?, ?, ?, ?, ?)
@@ -761,6 +764,22 @@ export function finishLease(db, config) {
       WHERE goal_id = ?
     `).run(timestamp, goal.goal_id);
     recordEvent(db, { goalId: goal.goal_id, leaseId: config.leaseId, eventType: 'GoalCompleted', detail: 'No actionable phases remaining.', transactionId: config.transactionId || '' });
+  } else if (goal && status !== 'active') {
+    db.prepare(`
+      UPDATE workflow_goals
+      SET status = 'paused',
+          last_event = 'GoalPaused',
+          current_lease_id = CASE WHEN current_lease_id = ? THEN NULL ELSE current_lease_id END,
+          updated_at_ms = ?
+      WHERE goal_id = ?
+    `).run(config.leaseId, timestamp, goal.goal_id);
+    recordEvent(db, {
+      goalId: goal.goal_id,
+      leaseId: config.leaseId,
+      eventType: 'GoalPaused',
+      detail: `Lease finished with status=${status}; actionablePhasesRemaining=${actionable}.`,
+      transactionId: config.transactionId || '',
+    });
   }
   recordEvent(db, { goalId: lease.goal_id, leaseId: config.leaseId, eventType: 'LeaseFinished', detail: config.stopReasonCode || '', transactionId: config.transactionId || '' });
   return db.prepare('SELECT * FROM leases WHERE lease_id = ?').get(config.leaseId);

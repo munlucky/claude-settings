@@ -268,6 +268,28 @@ export function resolveDockerDependencyGate(options = {}) {
     },
   };
 
+  if (dockerCommand.status === 'failed' && !composeFile) {
+    gate.version = {
+      ...dockerCommand,
+      status: 'warning',
+      failureCode: '',
+      blockerClass: '',
+      decision: 'continue',
+      detail: dockerCommand.detail || dockerCommand.fallbackReason || 'docker not required; no compose file found in workspace root',
+    };
+    gate.status = 'skipped';
+    gate.decision = 'continue';
+    gate.fallbackReason = dockerCommand.fallbackReason || 'docker not required; no compose file found in workspace root';
+    gate.daemon = {
+      status: 'skipped',
+      command: 'docker info',
+      detail: 'docker daemon probe skipped; no compose file found in workspace root',
+      failureCode: '',
+      decision: 'continue',
+    };
+    return gate;
+  }
+
   if (dockerCommand.status === 'failed') {
     gate.version = {
       ...dockerCommand,

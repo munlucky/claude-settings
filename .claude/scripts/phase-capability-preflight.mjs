@@ -397,6 +397,14 @@ function commandCheck(name, evidence, fallbackDetail = '') {
       fallbackHint: evidence.fallbackReason || '',
     });
   }
+  if (evidence.status === 'warning') {
+    return check(name, 'warning', evidence.detail || fallbackDetail || `${evidence.commandName || name} unavailable`, {
+      command: evidence.invocation?.join(' ') || evidence.commandName || name,
+      failureClass: evidence.failureCode || '',
+      decision: evidence.decision || 'continue',
+      fallbackHint: evidence.fallbackReason || '',
+    });
+  }
   return check(name, 'failed', evidence.detail || fallbackDetail || `${evidence.commandName || name} unavailable`, {
     command: evidence.invocation?.join(' ') || evidence.commandName || name,
     failureClass: evidence.failureCode || 'command_not_found',

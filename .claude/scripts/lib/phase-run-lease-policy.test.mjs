@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { assertReturnAllowedFromFiles } from './phase-run-lease-policy.mjs';
+import { assertReturnAllowedFromFiles, normalizeFinishOutcome } from './phase-run-lease-policy.mjs';
 
 test('assert-return-allowed reports dead dispatcher pid as stale active lease', () => {
   const decision = assertReturnAllowedFromFiles({
@@ -37,4 +37,17 @@ test('assert-return-allowed preserves stale heartbeat classification', () => {
   assert.equal(decision.RETURN_REASON, 'stale-run-lease:stale-heartbeat-ttl');
   assert.equal(decision.STALE_REASON, 'stale-heartbeat-ttl');
   assert.equal(decision.ACTIONABLE_PHASES_REMAINING, '1');
+});
+
+test('terminal blocked finish remains blocked even when actionable phases remain', () => {
+  const outcome = normalizeFinishOutcome({
+    actionable: 2,
+    returnBoundary: 'terminal-blocked',
+    stopReasonCode: 'scorecard-verdict-blocked',
+    stopReasonDetail: 'scorecard verdict blocked',
+  });
+
+  assert.equal(outcome.status, 'blocked');
+  assert.equal(outcome.returnBoundary, 'terminal-blocked');
+  assert.equal(outcome.stopReasonCode, 'scorecard-verdict-blocked');
 });

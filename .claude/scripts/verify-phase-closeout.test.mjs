@@ -573,6 +573,18 @@ test('phase closeout does not let an active blocked phase poison completed phase
   });
 });
 
+test('phase closeout allows the current in-progress phase to run while earlier phases are completed', () => {
+  withFixture({ activeRunningWorkflowStateWithCompletedPhase: true }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+    assert.ok(!result.violations.some((violation) => violation.code === 'current-run-running-phase-completed'));
+    assert.ok(!result.violations.some((violation) => violation.code === 'active-phase-run-running-phase-completed'));
+    assert.ok(!result.violations.some((violation) => violation.code === 'latest-dispatch-running-phase-completed'));
+  });
+});
+
 test('phase closeout records non-strict MemoryGraph unavailability as degraded evidence', () => {
   withFixture({ memorygraphUnavailable: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));
@@ -1051,6 +1063,51 @@ test('phase closeout accepts harness script changes with plan Harness Change Led
   });
 });
 
+test('phase closeout blocks strict harness changes without structured CRG QA evidence', () => {
+  withFixture({
+    harnessChangedPaths: ['.claude/scripts/fixture.mjs'],
+    harnessChangeLedger: true,
+    qaExtra: [
+      '## Workflow Execution',
+      '- Validation profile: workflow_core',
+    ].join('\n'),
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'code-review-graph-evidence-missing');
+  });
+});
+
+test('phase closeout blocks duplicate CRG QA marker blocks in strict mode', () => {
+  const marker = [
+    '# code-review-graph-stage:begin',
+    'analysisContext:',
+    '  codeReviewGraph:',
+    '    graphStatus: fresh',
+    '    stageCoverage: finish',
+    '    evidenceCarrier: phase',
+    '    adapterRunId: crg-fixture',
+    '    adapterArtifact: docs/implementation/execution/01-feature/evidence/code-review-graph/crg-fixture.json',
+    '    adapterArtifactDigest: abc123',
+    '    updatedAt: 2026-05-13T12:00:00Z',
+    '# code-review-graph-stage:end',
+  ].join('\n');
+  withFixture({
+    harnessChangedPaths: ['.claude/scripts/fixture.mjs'],
+    harnessChangeLedger: true,
+    qaExtra: [
+      '## Workflow Execution',
+      '- Validation profile: workflow_core',
+      marker,
+      marker,
+    ].join('\n'),
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assertCloseoutViolation(result, 'code-review-graph-evidence-invalid');
+  });
+});
+
 test('phase closeout fails when a structured verdict contradicts itself', () => {
   withFixture({ inconsistentVerdict: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));
@@ -1092,10 +1149,10 @@ test('completion gate taxonomy classifies review, finish, verification, environm
     retryPolicy: 'stop_loop',
   });
   assertGateClassification('scorecard-verdict=blocked', {
-    category: 'score_incomplete',
-    stopReason: 'missing-fresh-verification-evidence',
-    remediationStage: 'verify',
-    retryPolicy: 'limited_retry',
+    category: 'terminal_blocked',
+    stopReason: 'blocked:scorecard-verdict-blocked',
+    remediationStage: 'finish/handoff',
+    retryPolicy: 'stop_loop',
   });
   assertGateClassification('scorecard-verdict=retry', {
     category: 'score_incomplete',

@@ -4,6 +4,15 @@ import path from 'node:path';
 
 const REQUIRED_STAGES = ['execute', 'review', 'finish'];
 const STRICT_PROFILES = new Set(['strict', 'workflow_core', 'runtime_adapter']);
+export const CODE_CHANGE_SUFFIXES = new Set([
+  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs',
+  '.java', '.kt', '.kts', '.cs', '.php', '.swift', '.scala', '.sh', '.bash',
+  '.zsh', '.ps1', '.psm1', '.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx',
+]);
+
+export function isCodeChangingPath(filePath) {
+  return CODE_CHANGE_SUFFIXES.has(path.extname(String(filePath || '')).toLowerCase());
+}
 
 export function emptyDecision() {
   return {
@@ -212,4 +221,3 @@ export function validateCodeReviewGraphEvidence(input = {}, options = {}) {
   };
   return decision;
 }
-

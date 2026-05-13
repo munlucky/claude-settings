@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { finishLease, heartbeatLease, startLease, withDb } from './runtime-state.mjs';
+import { finishLease, heartbeatLease, startLease, updateGoalStatus, withDb } from './runtime-state.mjs';
 
 async function withTempRuntime(callback) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-state-'));
@@ -117,6 +117,68 @@ test('lease finish events preserve reconciliation transaction id and stale histo
       assert.equal(lease.stop_reason_code, 'delegated-terminal-exit-1');
       assert.equal(lease.stop_reason_detail, 'original blocker detail');
       assert.equal(lease.completion_status, 'completed-via-local-fallback');
+    });
+  });
+});
+
+test('stale lease finish pauses active goal and clears current lease pointer', async () => {
+  await withTempRuntime(async ({ root, statusFile }) => {
+    await withDb((db) => {
+      startLease(db, {
+        statusFile,
+        leaseId: 'lease-stale',
+        executionBoundary: 'delegated-terminal',
+        planDir: path.join(root, 'docs', 'implementation', 'example'),
+        executionRoot: path.join(root, 'execution'),
+        runtime: 'codex',
+        masterPlan: path.join(root, 'docs', 'implementation', 'example', '00-master-plan.md'),
+        dispatcherPid: '1234',
+        objective: 'test stale lease goal pause',
+      });
+
+      const lease = finishLease(db, {
+        leaseId: 'lease-stale',
+        returnBoundary: 'stale-lease-cleanup',
+        stopReasonCode: 'dead-dispatcher-pid',
+        stopReasonDetail: 'dispatcher process no longer exists',
+        completionStatus: 'stale',
+        finalStatus: 'stale',
+      });
+      assert.equal(lease.status, 'stale');
+
+      const goal = db.prepare('SELECT status, current_lease_id, last_event FROM workflow_goals WHERE goal_id = ?')
+        .get(lease.goal_id);
+      assert.equal(goal.status, 'paused');
+      assert.equal(goal.current_lease_id, null);
+      assert.equal(goal.last_event, 'GoalPaused');
+    });
+  });
+});
+
+test('manual pause clears stale current lease pointer', async () => {
+  await withTempRuntime(async ({ root, statusFile }) => {
+    await withDb((db) => {
+      const started = startLease(db, {
+        statusFile,
+        leaseId: 'lease-paused',
+        executionBoundary: 'delegated-terminal',
+        planDir: path.join(root, 'docs', 'implementation', 'example'),
+        executionRoot: path.join(root, 'execution'),
+        runtime: 'codex',
+        masterPlan: path.join(root, 'docs', 'implementation', 'example', '00-master-plan.md'),
+        dispatcherPid: '1234',
+        objective: 'test manual pause pointer cleanup',
+      });
+
+      const paused = updateGoalStatus(db, {
+        planDir: path.join(root, 'docs', 'implementation', 'example'),
+        status: 'paused',
+        detail: 'manual pause for test',
+        expectedGoalId: started.goal_id,
+      });
+      assert.equal(paused.status, 'paused');
+      assert.equal(paused.current_lease_id, null);
+      assert.equal(paused.last_event, 'GoalPaused');
     });
   });
 });

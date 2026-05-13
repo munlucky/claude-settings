@@ -771,6 +771,19 @@ run_workflow_enforcement_sync_smoke() {
 schemaVersion: "1.0"
 signals:
   handoffRequired: false
+analysisContext:
+  codeReviewGraph:
+    crgCliVersion: parity-fixture
+    stages:
+      execute:
+        operation: parity-fixture-execute
+        exitCode: 0
+      review:
+        operation: parity-fixture-review
+        exitCode: 0
+      finish:
+        operation: parity-fixture-finish
+        exitCode: 0
 workflowEvidence:
   mode: bounded-direct
   selectedBundles:

@@ -75,6 +75,7 @@ function buildProjectionPayload({
 }) {
   return {
     status: 'blocked',
+    activeExecutionStatus: 'blocked',
     completionStatus: 'blocked',
     attemptOutcome: 'blocked',
     phaseNumber,
@@ -82,6 +83,8 @@ function buildProjectionPayload({
     attemptId,
     transactionId,
     lifecycleEvent: 'terminal_blocked_published',
+    lastLifecycleEventAt: writtenAt,
+    dispatchStage: 'terminal_blocked',
     completionPath: 'terminal-blocker-publisher',
     returnBoundary: 'terminal-blocked',
     stopReasonCode: blockerEvidence.blockerCode,
@@ -91,8 +94,16 @@ function buildProjectionPayload({
     finalVerdict: 'blocked',
     normalizedRunVerdict: 'complete_with_environment_blocker',
     blockerEvidenceId: blockerEvidence.id,
+    lastHeartbeatAt: writtenAt,
+    lastLogAt: writtenAt,
     updatedAt: writtenAt,
     blockedAt: writtenAt,
+    liveness: {
+      childAlive: false,
+      degraded: false,
+      reason: 'terminal_blocked_published',
+      updatedAt: writtenAt,
+    },
   };
 }
 

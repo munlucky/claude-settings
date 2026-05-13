@@ -62,3 +62,31 @@ test('verdict scope phase_closeout requires complete authoritative identity', ()
     assert.equal(fs.existsSync(output), false);
   });
 });
+
+test('passed command evidence clears stale missing required checks', () => {
+  withTempFile((output) => {
+    const result = runWriter([
+      '--output', output,
+      '--run-id', 'phase04-run',
+      '--phase-number', '4',
+      '--phase-title', 'Phase 04',
+      '--active-phase-doc-path', 'docs/implementation/phase04.md',
+      '--verification-mode', 'contract',
+      '--verdict', 'failed',
+      '--evidence-fresh', 'true',
+      '--expected-check', 'phaseRuntimeParity',
+      '--expected-check', 'phaseCloseout',
+      '--passed-check', 'phaseRuntimeParity',
+      '--missing-check', 'phaseRuntimeParity:timeout',
+      '--missing-check', 'phaseCloseout:failed',
+      '--command', 'PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=codex|PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=codex bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan|passed',
+      '--command', 'node|node .claude/scripts/verify-phase-closeout.mjs --status-file .claude/docs/phase-status.yaml|passed',
+    ]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(fs.readFileSync(output, 'utf8'));
+    assert.deepEqual(payload.requiredChecks.expected, ['phaseRuntimeParity', 'phaseCloseout']);
+    assert.deepEqual(payload.requiredChecks.passed, ['phaseRuntimeParity', 'phaseCloseout']);
+    assert.deepEqual(payload.requiredChecks.missing, []);
+  });
+});

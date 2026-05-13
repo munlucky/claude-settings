@@ -12,6 +12,7 @@ import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
 import { normalizeFailureCode } from './lib/failure-classifier.mjs';
 import { evaluateDeclaredAlternateVerifierPolicy } from './lib/phase-closeout-verdict.mjs';
+import { isCodeChangingPath } from './lib/code-review-graph-evidence.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
@@ -1214,6 +1215,16 @@ function classifyCompletionGateReason(reason, context = {}) {
     };
   }
 
+  if (normalizedReason === 'scorecard-verdict=blocked') {
+    return {
+      category: 'terminal_blocked',
+      detail: rawReason,
+      retryPolicy: 'stop_loop',
+      stopReason: 'blocked:scorecard-verdict-blocked',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
   if (SCORE_INCOMPLETE_GATES.has(normalizedReason) || normalizedReason.startsWith('scorecard-')) {
     return {
       category: 'score_incomplete',
@@ -1852,8 +1863,7 @@ function evaluatePhaseCompletionGate(config) {
     }
 
     for (const changedPath of payload.changedFiles || []) {
-      const suffix = path.extname(changedPath).toLowerCase();
-      if (new Set(['.js','.jsx','.ts','.tsx','.mjs','.cjs','.py','.rb','.go','.rs','.java','.kt','.kts','.cs','.php','.swift','.scala','.sh','.bash','.zsh','.ps1','.psm1','.c','.cc','.cpp','.cxx','.h','.hh','.hpp','.hxx']).has(suffix)) {
+      if (isCodeChangingPath(changedPath)) {
         codeChangeDetected = true;
       }
     }

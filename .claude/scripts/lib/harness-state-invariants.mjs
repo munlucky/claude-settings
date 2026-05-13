@@ -5,6 +5,7 @@ import { detectSidecarMode } from './blocker-sidecar-state.mjs';
 
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 const WORKFLOW_STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
+const COMPLETED_PHASE_STATUSES = new Set(['completed']);
 const BLOCKED_PHASE_STATUSES = new Set(['blocked', 'verification_blocked', 'runtime_unhealthy']);
 const BLOCKED_ROOT_EXECUTION_STATUSES = new Set(['paused', 'blocked', 'verification_blocked', 'runtime_unhealthy']);
 const GENERATED_STALE_PHASE_TOKEN = /\b(?:out_of_scope_for_phase_|phase_)(\d{1,3})\b/gi;
@@ -380,9 +381,18 @@ function activeBlockedPhaseForWorkflowState({ statusRoot = {}, phases = [], payl
     return null;
   }
 
-  const activeRunLeaseId = normalizeText(statusRoot.activeRunLeaseId);
-  const runId = workflowStateRunId(payload);
-  if (activeRunLeaseId && runId && activeRunLeaseId !== runId) {
+  return matchingPhase;
+}
+
+function activeOpenPhaseForWorkflowState({ statusRoot = {}, phases = [], payload = {} } = {}) {
+  const statePhase = Number.parseInt(statePhaseNumber(payload), 10);
+  const activePhase = Number.parseInt(normalizeText(statusRoot.activePhaseNumber), 10);
+  if (!Number.isInteger(statePhase) || !Number.isInteger(activePhase) || statePhase !== activePhase) {
+    return null;
+  }
+
+  const matchingPhase = phases.find((phase) => Number(phase.number) === statePhase);
+  if (!matchingPhase || COMPLETED_PHASE_STATUSES.has(normalizeLower(matchingPhase.status))) {
     return null;
   }
 
@@ -562,6 +572,10 @@ export function evaluateHarnessStateInvariants({
       continue;
     }
 
+    if (activeOpenPhaseForWorkflowState({ statusRoot, phases, payload })) {
+      continue;
+    }
+
     const fallbackRunId = payload.fallbackRunId || payload.localFallbackCompletion?.runId || '';
     const fallbackRun = fallbackRunId ? readJsonIfExists(path.join(resolvedWorkflowDir, `${fallbackRunId}.json`)) : null;
     if (fallbackRun && isCompletedLocalFallback(fallbackRun)) {
@@ -586,6 +600,10 @@ export function evaluateHarnessStateInvariants({
       const blockedActivePhase = activeBlockedPhaseForWorkflowState({ statusRoot, phases, payload });
       if (blockedActivePhase) {
         degradedEvidence.push(blockedActiveWorkflowEvidence({ basename, payload, phase: blockedActivePhase }));
+        continue;
+      }
+
+      if (activeOpenPhaseForWorkflowState({ statusRoot, phases, payload })) {
         continue;
       }
 

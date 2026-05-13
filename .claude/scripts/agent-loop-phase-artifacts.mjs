@@ -11,6 +11,10 @@ import {
 } from './lib/harness-state-invariants.mjs';
 import { readBlockerSidecarState } from './lib/blocker-sidecar-state.mjs';
 import { resolvePhaseExecutionDir } from './lib/phase-execution-paths.mjs';
+import {
+  extractEvidenceBlockText,
+  replaceEvidenceBlock,
+} from './lib/code-review-graph-evidence-block.mjs';
 
 const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
 const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
@@ -70,6 +74,18 @@ function replaceOrAppendSection(lines, heading, bodyLines) {
     return [...nextLines, ...replacement];
   }
   return [...lines.slice(0, start), ...replacement, ...lines.slice(end)];
+}
+
+function preserveCodeReviewGraphEvidenceBlock(originalText, nextLines) {
+  const { blockText, error } = extractEvidenceBlockText(originalText);
+  if (!blockText || error) {
+    return nextLines;
+  }
+  const nextText = nextLines.join('\n');
+  if (nextText.includes(blockText)) {
+    return nextLines;
+  }
+  return replaceEvidenceBlock(nextText, blockText).trimEnd().split('\n');
 }
 
 function resolveArtifactSidecarPaths({
@@ -625,7 +641,7 @@ function updateWorkflowSectionFromState(qaText, lines, workflow = {}) {
     phaseReplayPolicy: workflow.phaseReplayPolicy ?? current.phaseReplayPolicy ?? '',
   };
 
-  return replaceOrAppendSection(lines, '## Workflow Execution', [
+  return preserveCodeReviewGraphEvidenceBlock(qaText, replaceOrAppendSection(lines, '## Workflow Execution', [
     `- Selected bundles: ${next.selected || 'none'}`,
     `- Applied skills: ${next.applied || 'none'}`,
     `- Skipped skills: ${next.skipped || 'none'}`,
@@ -643,7 +659,7 @@ function updateWorkflowSectionFromState(qaText, lines, workflow = {}) {
     `- Validation profile: ${next.validationProfile || DEFAULT_VALIDATION_PROFILE}`,
     `- Phase replay policy: ${next.phaseReplayPolicy || DEFAULT_PHASE_REPLAY_POLICY}`,
     '',
-  ]);
+  ]));
 }
 
 function updateObjectiveChecklist(lines, objectives = []) {
@@ -1272,6 +1288,15 @@ function appendQaRuntimeUpdate(status, logFile, detail, workflowLogDir, phaseQaR
   fs.appendFileSync(phaseQaReport, `${lines.join('\n')}\n`, 'utf8');
 }
 
+function scorecardHasTerminalBlockedVerdict(scorecardPath) {
+  if (!scorecardPath || !fs.existsSync(scorecardPath)) {
+    return false;
+  }
+  const text = fs.readFileSync(scorecardPath, 'utf8');
+  const verdict = extractBulletValue(text, '## Score Summary', 'Verdict').toLowerCase();
+  return verdict === 'blocked';
+}
+
 function recordPhaseProgressCheckpoint({
   qaReportPath,
   scorecardPath,
@@ -1282,6 +1307,7 @@ function recordPhaseProgressCheckpoint({
   runtimeName,
 }) {
   const timestamp = nowIsoSeconds().replace('T', ' ').slice(0, 19);
+  const preserveTerminalBlocked = scorecardHasTerminalBlockedVerdict(scorecardPath);
 
   if (qaReportPath && fs.existsSync(qaReportPath)) {
     let qaLines = fs.readFileSync(qaReportPath, 'utf8').split(/\r?\n/);
@@ -1290,7 +1316,7 @@ function recordPhaseProgressCheckpoint({
     }
     const alreadyPassed = hasFreshPassedVerification(qaLines);
 
-    if (!alreadyPassed) {
+    if (!alreadyPassed && !preserveTerminalBlocked) {
       qaLines = replaceOrAppendSection(qaLines, '## Verdict', [
         '- Status: in_progress',
         `- Summary: Active phase attempt is running at stage \`${stage}\`; final verification is still pending.`,
@@ -1314,7 +1340,7 @@ function recordPhaseProgressCheckpoint({
     runtimeUpdates.push(`- Attempt verification status: ${alreadyPassed ? 'preserved-passed' : 'pending'}`, '');
     qaLines = appendToSection(qaLines, '## Runtime Updates', runtimeUpdates);
 
-    if (!alreadyPassed) {
+    if (!alreadyPassed && !preserveTerminalBlocked) {
       qaLines = replaceOrAppendSection(qaLines, '## Finish Readiness', [
         '- Fresh evidence confirmed: no',
         `- Why this round may stop now: the phase is still in progress at stage \`${stage}\`.`,
@@ -1342,6 +1368,9 @@ function recordPhaseProgressCheckpoint({
 
     scoreLines = scoreLines.map((line) => {
       if (line.trim().startsWith('- Verdict:') && !line.toLowerCase().includes('done')) {
+        if (preserveTerminalBlocked && line.toLowerCase().includes('blocked')) {
+          return line;
+        }
         return '- Verdict: retry';
       }
       return line;
@@ -1808,7 +1837,10 @@ function syncCleanFinishArtifacts({
       if (!sawPhaseReplayPolicy) {
         body.push(`- Phase replay policy: ${process.env.PHASE_REPLAY_POLICY || process.env.MOONSHOT_PHASE_REPLAY_POLICY || DEFAULT_PHASE_REPLAY_POLICY}`);
       }
-      qaLines = [...qaLines.slice(0, workflowSectionRange.start), '## Workflow Execution', ...body, ...qaLines.slice(workflowSectionRange.end)];
+      qaLines = preserveCodeReviewGraphEvidenceBlock(
+        qaLines.join('\n'),
+        [...qaLines.slice(0, workflowSectionRange.start), '## Workflow Execution', ...body, ...qaLines.slice(workflowSectionRange.end)],
+      );
     }
 
     qaLines = replaceOrAppendSection(qaLines, '## Score Summary', [
@@ -2653,3 +2685,7 @@ function main(argv = process.argv.slice(2)) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   main();
 }
+
+export {
+  recordPhaseProgressCheckpoint,
+};

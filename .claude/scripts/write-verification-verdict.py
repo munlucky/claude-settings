@@ -93,6 +93,17 @@ def parse_alternate_verifier(value: str) -> dict:
 
 
 PLACEHOLDER_CHECK_TOKENS = {"none", "없음", "n/a", "na", "null", ""}
+COMMAND_CHECK_PATTERNS = {
+    "knowledgeAudit": ("knowledge-repo-audit",),
+    "codePolicy": ("verify-code-policy",),
+    "workflowEnforcement": ("workflow-enforcement",),
+    "shellSyntax": ("verify-shell-syntax",),
+    "phaseRuntimeParity": ("verify-phase-runtime-parity",),
+    "phaseRunnerBoundary": ("verify-phase-runner-boundary",),
+    "phaseWorktreeParallel": ("phase-worktree-coordinator",),
+    "phaseCloseout": ("verify-phase-closeout",),
+    "planConformance": ("verify-plan-conformance",),
+}
 
 
 def normalize_check_list(values: list[str]) -> list[str]:
@@ -106,6 +117,55 @@ def normalize_check_list(values: list[str]) -> list[str]:
         if text not in normalized:
             normalized.append(text)
     return normalized
+
+
+def required_check_base(value: str) -> str:
+    return str(value or "").strip().split(":", 1)[0]
+
+
+def command_status_is_passed(command: dict) -> bool:
+    return str(command.get("status", "")).strip().lower() in {
+        "pass",
+        "passed",
+        "done",
+        "success",
+        "verified",
+    }
+
+
+def infer_passed_checks_from_commands(commands: list[dict]) -> list[str]:
+    passed = []
+    for command in commands:
+        if not command_status_is_passed(command):
+            continue
+        command_text = f"{command.get('name', '')} {command.get('run', '')}".lower()
+        for check_name, patterns in COMMAND_CHECK_PATTERNS.items():
+            if check_name in passed:
+                continue
+            if any(pattern.lower() in command_text for pattern in patterns):
+                passed.append(check_name)
+    return passed
+
+
+def reconcile_required_checks(expected: list[str], passed: list[str], missing: list[str], commands: list[dict]) -> tuple[list[str], list[str], list[str]]:
+    normalized_expected = normalize_check_list(expected)
+    normalized_passed = normalize_check_list([*passed, *infer_passed_checks_from_commands(commands)])
+    passed_bases = {required_check_base(check) for check in normalized_passed}
+    expected_bases = {required_check_base(check) for check in normalized_expected}
+
+    reconciled_passed = []
+    for check in [*normalized_passed, *normalized_expected]:
+        base = required_check_base(check)
+        if base in passed_bases and check not in reconciled_passed and (not expected_bases or base in expected_bases):
+            reconciled_passed.append(check)
+
+    reconciled_missing = []
+    for check in normalize_check_list(missing):
+        if required_check_base(check) in passed_bases:
+            continue
+        reconciled_missing.append(check)
+
+    return normalized_expected, reconciled_passed, reconciled_missing
 
 
 def validate_required_check_list(parser: argparse.ArgumentParser, option_name: str, values: list[str]) -> None:
@@ -319,7 +379,12 @@ def main() -> int:
     active_phase_doc_path = args.active_phase_doc_path or "."
     validate_required_check_list(parser, "--expected-check", args.expected_check)
     validate_required_check_list(parser, "--passed-check", args.passed_check)
-    missing_checks = normalize_check_list(args.missing_check)
+    expected_checks, passed_checks, missing_checks = reconcile_required_checks(
+        args.expected_check,
+        args.passed_check,
+        args.missing_check,
+        args.command,
+    )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -406,9 +471,9 @@ def main() -> int:
         {
             "changedFiles": args.changed_file,
             "commands": args.command,
-            "expected": args.expected_check,
-            "passed": args.passed_check,
-            "missing": args.missing_check,
+            "expected": expected_checks,
+            "passed": passed_checks,
+            "missing": missing_checks,
         }
     )
 
@@ -433,8 +498,8 @@ def main() -> int:
         "verdict": args.verdict,
         "evidenceFresh": args.evidence_fresh == "true",
         "requiredChecks": {
-            "expected": args.expected_check,
-            "passed": args.passed_check,
+            "expected": expected_checks,
+            "passed": passed_checks,
             "missing": missing_checks,
         },
         "changedFiles": args.changed_file,

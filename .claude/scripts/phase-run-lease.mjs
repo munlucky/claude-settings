@@ -32,6 +32,21 @@ import {
 } from './lib/phase-run-lease-status.mjs';
 
 const STALE_LEASE_STATUSES = new Set(['stale', 'superseded-by-local-fallback']);
+const ACTIVE_LEASE_STALE_PROJECTION_KEYS = [
+  'projectionSchemaVersion',
+  'finalVerdict',
+  'normalizedRunVerdict',
+  'stopReasonClass',
+  'stopReasonExplanation',
+  'rawStopReason',
+  'blockerClass',
+  'blockingReasonCode',
+  'failureClass',
+];
+
+function staleProjectionClearFields() {
+  return Object.fromEntries(ACTIVE_LEASE_STALE_PROJECTION_KEYS.map((key) => [key, null]));
+}
 
 function shellQuote(value) {
   if (value === undefined || value === null) {
@@ -169,6 +184,7 @@ function startLease(config) {
 
   writeActiveLease(statusFile, payload);
   updateStatusLease(statusFile, {
+    ...staleProjectionClearFields(),
     activeRunLeaseId: config.runLeaseId,
     activeExecutionBoundary: config.executionBoundary,
     activeExecutionAttachedAt: now,
@@ -239,6 +255,7 @@ function heartbeatLease(config) {
 
   writeActiveLease(statusFile, payload);
   updateStatusLease(statusFile || existing.statusFile, {
+    ...staleProjectionClearFields(),
     activeRunLeaseId: payload.runLeaseId,
     activeExecutionBoundary: payload.executionBoundary,
     activeExecutionAttachedAt: payload.attachedAt,
@@ -405,6 +422,10 @@ function selfTest() {
     const statusFile = path.join(tmpRoot, '.claude/docs/phase-status.yaml');
     fs.writeFileSync(statusFile, [
       'schemaVersion: "1.0"',
+      'projectionSchemaVersion: final-outcome-v1',
+      'finalVerdict: complete',
+      'normalizedRunVerdict: success',
+      'stopReasonClass: clean_complete',
       'phases:',
       '  - number: 1',
       '    status: in_progress',
@@ -421,6 +442,10 @@ function selfTest() {
       runtime: 'codex',
       dispatcherPid: missingPid,
     });
+    const activeText = fs.readFileSync(statusFile, 'utf8');
+    if (/^(projectionSchemaVersion|finalVerdict|normalizedRunVerdict|stopReasonClass):/m.test(activeText)) {
+      throw new Error('active lease did not clear stale final projection fields');
+    }
     const deadPidResult = heartbeatLease({
       statusFile,
       runLeaseId: 'lease-dead-pid',

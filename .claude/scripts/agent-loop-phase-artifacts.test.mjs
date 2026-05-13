@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { syncPhaseArtifacts } from './agent-loop-phase-artifacts.mjs';
+import { recordPhaseProgressCheckpoint, syncPhaseArtifacts } from './agent-loop-phase-artifacts.mjs';
 
 function writeFixture(root) {
   const qaReportPath = path.join(root, 'QA_REPORT.md');
@@ -301,6 +301,102 @@ test('sync-phase-artifacts does not mutate workflow source state files', () => {
     for (const filePath of sourceFiles) {
       assert.equal(fs.readFileSync(filePath, 'utf8'), before[filePath], filePath);
     }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('progress checkpoint preserves terminal blocked scorecard verdict', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-artifacts-blocked-checkpoint-'));
+  try {
+    const paths = writeFixture(root);
+    fs.writeFileSync(paths.scorecardPath, [
+      '# Scorecard',
+      '',
+      '## Score Summary',
+      '- Current score: 50',
+      '- Target score: 100',
+      '- Unmet checklist items: 2',
+      '- Blocking defects: 1',
+      '- Verdict: blocked',
+      '',
+      '## Progress Checkpoints',
+      '- previous blocked checkpoint',
+      '',
+    ].join('\n'), 'utf8');
+
+    recordPhaseProgressCheckpoint({
+      qaReportPath: paths.qaReportPath,
+      scorecardPath: paths.scorecardPath,
+      stage: 'execute',
+      status: 'controller-execute-retry-started',
+      logFile: '.claude/logs/agent-loop/phase-04.log',
+      detail: 'scorecard-verdict=blocked',
+      runtimeName: 'codex',
+    });
+
+    const scorecard = fs.readFileSync(paths.scorecardPath, 'utf8');
+    const qa = fs.readFileSync(paths.qaReportPath, 'utf8');
+    assert.match(scorecard, /- Verdict: blocked/);
+    assert.doesNotMatch(scorecard, /- Verdict: retry/);
+    assert.doesNotMatch(qa, /Active phase attempt is running at stage `execute`/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('sync-phase-artifacts preserves code-review-graph marker when rewriting workflow execution', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-artifacts-crg-'));
+  try {
+    const paths = writeFixture(root);
+    const marker = [
+      '# code-review-graph-stage:begin',
+      'analysisContext:',
+      '  codeReviewGraph:',
+      '    graphStatus: fresh',
+      '    stageCoverage: finish',
+      '    evidenceCarrier: phase',
+      '    adapterRunId: crg-fixture',
+      '    adapterArtifact: execution/phase/evidence/code-review-graph/crg-fixture.json',
+      '    adapterArtifactDigest: abc123',
+      '    updatedAt: 2026-05-13T12:00:00Z',
+      '# code-review-graph-stage:end',
+      '',
+    ].join('\n');
+    fs.appendFileSync(paths.qaReportPath, [
+      '',
+      '## Workflow Execution',
+      '- Selected bundles: stale',
+      marker,
+    ].join('\n'), 'utf8');
+
+    syncPhaseArtifacts({
+      ...paths,
+      phaseNum: '7',
+      phaseTitle: 'Phase 07',
+      timestamp: '2026-05-13T12:01:00Z',
+      finish: { nextPath: 'retry_loop', status: 'in_progress' },
+      runtime: {
+        stage: 'execute',
+        status: 'in_progress',
+        verdict: 'pending',
+        logFile: '.claude/logs/agent-loop/phase-07.log',
+      },
+      workflow: {
+        selectedBundles: 'ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle',
+        appliedSkills: 'implementation-runner',
+        skippedSkills: 'codex-review-code pending',
+      },
+      workset: {
+        activeAtomicTask: 'AT-01',
+        status: 'in_progress',
+        semanticEvaluation: { status: 'not_run', reason: 'not_applicable_to_current_phase' },
+      },
+    });
+
+    const qa = fs.readFileSync(paths.qaReportPath, 'utf8');
+    assert.equal((qa.match(/# code-review-graph-stage:begin/g) || []).length, 1);
+    assert.match(qa, /adapterRunId: crg-fixture/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

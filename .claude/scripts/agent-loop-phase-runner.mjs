@@ -1082,6 +1082,7 @@ function isBlockedCompletionReason(reason) {
 function isHardBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
   return normalized.startsWith('blocked:')
+    || normalized === 'scorecard-verdict=blocked'
     || normalized === 'verification-preflight-blocked'
     || normalized === 'capability-preflight-blocked'
     || normalized === 'path-authority-preflight-failed';
@@ -2179,7 +2180,7 @@ function runPhaseAttempt() {
         return 2;
       }
 
-      if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON)) {
+      if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON) || gateStop.RETRY_POLICY === 'stop_loop') {
         recordPhaseLoopShadowDecision({
           legacyDecision: 'blocked',
           phaseNumber: state.phaseNum,

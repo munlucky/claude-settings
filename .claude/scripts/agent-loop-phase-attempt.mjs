@@ -178,6 +178,16 @@ function classifyCompletionGateReason(reason, context = {}) {
     };
   }
 
+  if (normalizedReason === 'scorecard-verdict=blocked') {
+    return {
+      category: 'terminal_blocked',
+      detail: rawReason,
+      retryPolicy: 'stop_loop',
+      stopReason: 'blocked:scorecard-verdict-blocked',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
   if (SCORE_INCOMPLETE_GATES.has(normalizedReason) || normalizedReason.startsWith('scorecard-')) {
     return {
       category: 'score_incomplete',
@@ -374,7 +384,7 @@ Failure context:
 Remediation steps:
 1. Refresh the active phase artifacts instead of starting a new phase or switching to another phase.
 2. Treat the missing completion evidence as an active closeout task for this same phase, not as a valid stop boundary.
-3. If the gate reason starts with \`blocked:\` or equals \`scorecard-verdict=blocked\`, treat it as retryable phase remediation unless the active runtime/preflight is explicitly unavailable.
+3. If the gate reason starts with \`blocked:\` or equals \`scorecard-verdict=blocked\`, preserve it as a terminal blocked handoff and do not launch another equivalent remediation attempt.
 4. If the gate reason is review-related, run the required review pass now and record it in QA_REPORT.md:
    - set \`Review completed: yes\` only after the review actually ran
    - ensure \`codex-review-code\` appears in applied workflow evidence

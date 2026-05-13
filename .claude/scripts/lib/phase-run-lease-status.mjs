@@ -252,6 +252,15 @@ export function updateStatusLease(statusFile, fields) {
     lastReturnBoundary: (value) => value ? quoteStatusValue(value) : 'null',
     lastStopReasonCode: (value) => value ? quoteStatusValue(value) : 'null',
     lastStopReasonDetail: (value) => value ? quoteStatusValue(value) : 'null',
+    projectionSchemaVersion: quoteStatusValue,
+    finalVerdict: quoteStatusValue,
+    normalizedRunVerdict: quoteStatusValue,
+    stopReasonClass: quoteStatusValue,
+    stopReasonExplanation: quoteStatusValue,
+    rawStopReason: quoteStatusValue,
+    blockerClass: quoteStatusValue,
+    blockingReasonCode: quoteStatusValue,
+    failureClass: quoteStatusValue,
   };
 
   for (const [key, formatter] of Object.entries(mapping)) {

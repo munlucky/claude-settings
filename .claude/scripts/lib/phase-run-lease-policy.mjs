@@ -73,6 +73,19 @@ export function normalizeFinishOutcome({ actionable, returnBoundary, stopReasonC
 
   const normalizedBoundary = String(returnBoundary || '').trim().toLowerCase();
   const normalizedReason = String(stopReasonCode || '').trim().toLowerCase();
+  if (
+    normalizedBoundary === 'terminal-blocked'
+    || normalizedReason.startsWith('blocked:')
+    || normalizedReason.includes('blocked')
+  ) {
+    return {
+      status: 'blocked',
+      returnBoundary: returnBoundary || 'terminal-blocked',
+      stopReasonCode: stopReasonCode || 'terminal-blocked',
+      stopReasonDetail: stopReasonDetail || 'Execution stopped at a terminal blocked boundary.',
+    };
+  }
+
   if (SUCCESS_RETURN_BOUNDARIES.has(normalizedBoundary) || isSuccessLikeStopReason(normalizedReason)) {
     const detail = stopReasonDetail
       ? `${stopReasonDetail} Next actionable phase continuation is still required.`

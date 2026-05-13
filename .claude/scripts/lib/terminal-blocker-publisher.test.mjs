@@ -105,10 +105,42 @@ test('terminal blocked publisher writes manifest and canonical lifecycle project
       const projection = readJson(projectionFile);
       assert.equal(projection.lifecycleEvent, 'terminal_blocked_published');
       assert.notEqual(projection.lifecycleEvent, 'lease_blocked');
+      assert.equal(projection.activeExecutionStatus, 'blocked');
       assert.equal(projection.attemptId, 'attempt-04');
       assert.equal(projection.transactionId, 'tx-04');
       assert.equal(projection.completionStatus, 'blocked');
       assert.equal(projection.blockingStopReasonCode, 'spawn_eperm');
+      assert.equal(projection.liveness.childAlive, false);
+      assert.equal(projection.liveness.reason, 'terminal_blocked_published');
+    }
+  });
+});
+
+test('terminal blocked publisher clears stale running liveness during merge', () => {
+  withTempDir((root) => {
+    const input = baseInput(root);
+    for (const projectionFile of input.projectionFiles) {
+      fs.writeFileSync(projectionFile, JSON.stringify({
+        status: 'running',
+        activeExecutionStatus: 'running',
+        dispatchStage: 'child_running',
+        childPid: 1234,
+        liveness: {
+          childAlive: true,
+          reason: 'progress_observed',
+        },
+      }, null, 2), 'utf8');
+    }
+
+    publishTerminalBlockedOutcome(input);
+
+    for (const projectionFile of input.projectionFiles) {
+      const projection = readJson(projectionFile);
+      assert.equal(projection.status, 'blocked');
+      assert.equal(projection.activeExecutionStatus, 'blocked');
+      assert.equal(projection.dispatchStage, 'terminal_blocked');
+      assert.equal(projection.liveness.childAlive, false);
+      assert.equal(projection.liveness.reason, 'terminal_blocked_published');
     }
   });
 });

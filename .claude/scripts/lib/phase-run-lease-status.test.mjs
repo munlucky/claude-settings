@@ -4,8 +4,53 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildCompositeMonitorCursor, classifyLeaseProgressEvidence } from './phase-run-lease-status.mjs';
+import { buildCompositeMonitorCursor, classifyLeaseProgressEvidence, updateStatusLease } from './phase-run-lease-status.mjs';
 import { sha256RawBytes } from './current-artifacts-state.mjs';
+
+test('active lease status update can clear stale final projection fields', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-run-lease-status-'));
+  try {
+    const statusFile = path.join(root, '.claude', 'docs', 'phase-status.yaml');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    fs.writeFileSync(statusFile, [
+      'activeExecutionStatus: "active"',
+      'projectionSchemaVersion: final-outcome-v1',
+      'finalVerdict: complete',
+      'normalizedRunVerdict: success',
+      'stopReasonClass: clean_complete',
+      'blockerClass: ""',
+      'blockingReasonCode: ""',
+      'failureClass: ""',
+      'phases:',
+      '  - number: 4',
+      '    status: in_progress',
+      '',
+    ].join('\n'), 'utf8');
+
+    updateStatusLease(statusFile, {
+      projectionSchemaVersion: null,
+      finalVerdict: null,
+      normalizedRunVerdict: null,
+      stopReasonClass: null,
+      blockerClass: null,
+      blockingReasonCode: null,
+      failureClass: null,
+      activeExecutionHeartbeatAt: '2026-05-13T13:41:03Z',
+    });
+
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.doesNotMatch(text, /^projectionSchemaVersion:/m);
+    assert.doesNotMatch(text, /^finalVerdict:/m);
+    assert.doesNotMatch(text, /^normalizedRunVerdict:/m);
+    assert.doesNotMatch(text, /^stopReasonClass:/m);
+    assert.doesNotMatch(text, /^blockerClass:/m);
+    assert.doesNotMatch(text, /^blockingReasonCode:/m);
+    assert.doesNotMatch(text, /^failureClass:/m);
+    assert.match(text, /^activeExecutionHeartbeatAt: "2026-05-13T13:41:03Z"$/m);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('composite monitor cursor changes when manifest changes without parent status movement', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-run-lease-status-'));

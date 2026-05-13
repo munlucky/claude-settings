@@ -49,6 +49,11 @@ import {
   comparePhaseReplayToReadModel,
   defaultPhaseEventLedgerPath,
 } from './lib/phase-event-ledger.mjs';
+import {
+  isCodeChangingPath,
+  validateCodeReviewGraphEvidence,
+} from './lib/code-review-graph-evidence.mjs';
+import { readAnalysisEvidenceFromText } from './lib/code-review-graph-evidence-block.mjs';
 
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 const SEMANTIC_TRIGGER_TERMS = [
@@ -444,6 +449,95 @@ function collectHarnessChangedPaths({ phaseExecutionDir, verdictPayload = {} } =
   return [...changed].sort();
 }
 
+function extractWorkflowValidationProfile(text) {
+  return extractBulletValue(text, '## Workflow Execution', 'Validation profile').toLowerCase();
+}
+
+function codeReviewGraphFromMarker(marker = {}) {
+  if (!marker || typeof marker !== 'object' || marker.__error) {
+    return {};
+  }
+  if (marker.codeReviewGraph && typeof marker.codeReviewGraph === 'object') {
+    return marker.codeReviewGraph;
+  }
+  if (marker.analysisContext?.codeReviewGraph && typeof marker.analysisContext.codeReviewGraph === 'object') {
+    return marker.analysisContext.codeReviewGraph;
+  }
+  const stage = String(marker.stageCoverage || marker.stage || '').trim();
+  if (!stage && !marker.adapterArtifact) {
+    return {};
+  }
+  return {
+    graphStatus: marker.graphStatus || '',
+    adapterRunId: marker.adapterRunId || '',
+    evidenceArtifactPath: marker.adapterArtifact || '',
+    evidenceDigest: marker.adapterArtifactDigest || '',
+    crgCliVersion: marker.crgCliVersion || '',
+    stages: stage ? {
+      [stage]: {
+        operation: marker.operation || 'code-review-graph-stage',
+        exitCode: Number.isInteger(marker.exitCode) ? marker.exitCode : 0,
+      },
+    } : {},
+  };
+}
+
+function addCodeReviewGraphCloseoutViolations({
+  violations,
+  phaseNumber,
+  qaText,
+  verdictPayload,
+  phaseExecutionDir,
+  changedPaths,
+}) {
+  const validationProfile = extractWorkflowValidationProfile(qaText);
+  if (!['strict', 'workflow_core', 'runtime_adapter'].includes(validationProfile)) {
+    return;
+  }
+
+  const codeChangingPaths = changedPaths.filter((changedPath) => isCodeChangingPath(changedPath));
+  if (codeChangingPaths.length === 0) {
+    return;
+  }
+
+  const marker = readAnalysisEvidenceFromText(qaText);
+  if (!marker) {
+    addViolation(violations, 'code-review-graph-evidence-missing', `Completed phase ${phaseNumber} changes strict code paths without structured CodeReviewGraph QA evidence.`, phaseNumber);
+    return;
+  }
+  if (marker.__error) {
+    addViolation(violations, 'code-review-graph-evidence-invalid', `Completed phase ${phaseNumber} has invalid CodeReviewGraph QA evidence: ${marker.__error}.`, phaseNumber);
+    return;
+  }
+
+  const codeReviewGraph = verdictPayload.codeReviewGraph && typeof verdictPayload.codeReviewGraph === 'object'
+    ? verdictPayload.codeReviewGraph
+    : codeReviewGraphFromMarker(marker);
+  const decision = validateCodeReviewGraphEvidence({
+    validationProfile,
+    evidenceCarrier: 'phase',
+    changedFiles: {
+      files: codeChangingPaths,
+      source: 'phase_closeout_changed_paths',
+      baseRef: verdictPayload.changedFilesBaseRef || verdictPayload.baseRef || 'phase-closeout-changed-paths',
+      baseRefSource: verdictPayload.changedFilesBaseRef || verdictPayload.baseRef ? 'verdict' : 'phase_closeout',
+      fallbackUsed: !(verdictPayload.changedFilesBaseRef || verdictPayload.baseRef),
+    },
+    codeReviewGraph,
+  }, {
+    repoRoot: process.cwd(),
+    phaseExecutionDir: phaseExecutionDir ? path.relative(process.cwd(), phaseExecutionDir).replace(/\\/g, '/') : '',
+  });
+  if (decision.blocking) {
+    addViolation(
+      violations,
+      `code-review-graph-${decision.blockerCode || 'blocked'}`,
+      `Completed phase ${phaseNumber} failed CodeReviewGraph closeout validation: ${decision.reason}.`,
+      phaseNumber,
+    );
+  }
+}
+
 function currentPointerPhaseCompleted(phases = []) {
   return phases.some((phase) => (
     phase.status === 'completed'
@@ -708,6 +802,14 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     const harnessChangedPaths = collectHarnessChangedPaths({
       phaseExecutionDir: phase.qaReport ? path.dirname(resolvePath(phase.qaReport)) : '',
       verdictPayload: verdict.parsed || {},
+    });
+    addCodeReviewGraphCloseoutViolations({
+      violations,
+      phaseNumber,
+      qaText: artifactTexts[1] || '',
+      verdictPayload: verdict.parsed || {},
+      phaseExecutionDir,
+      changedPaths: harnessChangedPaths,
     });
     if (harnessChangedPaths.length > 0 && !harnessChangeLedgerPresent(planDir)) {
       addViolation(

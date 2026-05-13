@@ -86,6 +86,7 @@ function writeFixture(root, options = {}) {
     environmentBlockedNormalizedInProgress: false,
     latestDispatchPreparedAfterCompletion: false,
     activeBlockedWorkflowStateWithCompletedPhase: false,
+    activeRunningWorkflowStateWithCompletedPhase: false,
     memorygraphUnavailable: false,
     memorygraphStrict: false,
     evaluationPipeline: false,
@@ -174,6 +175,11 @@ function writeFixture(root, options = {}) {
         'activePhaseNumber: 2',
         'activeRunLeaseId: "active-blocked-run"',
       ] : []),
+      ...(settings.activeRunningWorkflowStateWithCompletedPhase ? [
+        'activeExecutionStatus: "active"',
+        'activePhaseNumber: 2',
+        'activeRunLeaseId: "active-running-run"',
+      ] : []),
       'phases:',
       '  - number: 1',
       '    title: "Phase 01: Feature"',
@@ -202,6 +208,11 @@ function writeFixture(root, options = {}) {
         '    title: "Phase 02: Blocked verifier phase"',
         '    status: verification_blocked',
       ] : []),
+      ...(settings.activeRunningWorkflowStateWithCompletedPhase ? [
+        '  - number: 2',
+        '    title: "Phase 02: Active verifier phase"',
+        '    status: in_progress',
+      ] : []),
       '',
     ].join('\n')
   );
@@ -219,6 +230,7 @@ function writeFixture(root, options = {}) {
     || settings.environmentBlockedSmokePlanComplete
     || settings.latestDispatchPreparedAfterCompletion
     || settings.activeBlockedWorkflowStateWithCompletedPhase
+    || settings.activeRunningWorkflowStateWithCompletedPhase
     || settings.memorygraphUnavailable
   ) {
     const workflowDir = path.join(claudeDir, 'logs/workflow-enforcement');
@@ -314,6 +326,25 @@ function writeFixture(root, options = {}) {
           status: 'running',
           completionStatus: 'running',
         });
+      }
+      if (settings.activeRunningWorkflowStateWithCompletedPhase) {
+        const runningPayload = {
+          runId: 'active-running-run',
+          status: 'running',
+          completionStatus: 'running',
+          activePhaseNumber: 2,
+          activePhaseTitle: 'Phase 02: Active verifier phase',
+          phaseRunLease: {
+            runId: 'active-running-run',
+            status: 'running',
+            completionStatus: 'running',
+            activePhaseNumber: 2,
+            activePhaseTitle: 'Phase 02: Active verifier phase',
+          },
+        };
+        writeState('current-run.json', runningPayload);
+        writeState('active-phase-run.json', runningPayload);
+        writeState('latest-dispatch.json', runningPayload);
       }
       if (settings.memorygraphUnavailable) {
         writeState('current-run.json', {

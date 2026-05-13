@@ -10,6 +10,10 @@ import { collectGitStatusPaths, isInsideGitWorkTree } from './lib/git-utils.mjs'
 import { parseWorksetsYaml } from './lib/phase-closeout-parsers.mjs';
 import { defaultPhaseEventLedgerPath, readPhaseEvents } from './lib/phase-event-ledger.mjs';
 import {
+  isCodeChangingPath,
+  validateCodeReviewGraphEvidence,
+} from './lib/code-review-graph-evidence.mjs';
+import {
   CANONICAL_CLOSEOUT_REASONS,
   CANONICAL_NEXT_PATHS,
   canonicalizeCloseoutReason,
@@ -874,12 +878,6 @@ function isWorkflowArtifact(filePath) {
   );
 }
 
-const codeSuffixes = new Set([
-  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs',
-  '.java', '.kt', '.kts', '.cs', '.php', '.swift', '.scala', '.sh', '.bash',
-  '.zsh', '.ps1', '.psm1', '.c', '.cc', '.cpp', '.cxx', '.h', '.hh', '.hpp', '.hxx',
-]);
-
 const REQUIRED_GOAL_CONTRACT_FIELDS = [
   'schemaVersion',
   'snapshotId',
@@ -1482,7 +1480,7 @@ function verifyEnforcement(argv) {
   const requiresPhaseTrace = files.some((filePath) => isWorkflowArtifact(filePath));
   const requiresBoundedTrace = analysisFiles.length > 0;
   const requiresTrace = forceTrace || requiresPhaseTrace || requiresBoundedTrace;
-  const codeChangeDetected = files.some((filePath) => codeSuffixes.has(path.extname(filePath).toLowerCase()));
+  const codeChangeDetected = files.some((filePath) => isCodeChangingPath(filePath));
   const violations = [];
 
   if (!requiresTrace) {
@@ -1797,7 +1795,8 @@ function verifyEnforcement(argv) {
         violations.push(`missing analysis file: ${analysisFile}`);
         continue;
       }
-      const payload = parseSimpleYaml(fs.readFileSync(analysisFile, 'utf8'));
+      const analysisText = fs.readFileSync(analysisFile, 'utf8');
+      const payload = parseSimpleYaml(analysisText);
       const workflow = payload.workflowEvidence && typeof payload.workflowEvidence === 'object' && !Array.isArray(payload.workflowEvidence)
         ? payload.workflowEvidence
         : {};
@@ -1840,6 +1839,37 @@ function verifyEnforcement(argv) {
       }
       if (effortEscalationMissing(workflow.modelEffortProfile, workflow.effortEscalationReason)) {
         violations.push(`${analysisFile}: workflowEvidence.deep/max effort requires effortEscalationReason`);
+      }
+      const analysisContext = payload.analysisContext && typeof payload.analysisContext === 'object' && !Array.isArray(payload.analysisContext)
+        ? payload.analysisContext
+        : {};
+      const validationProfile = String(workflow.validationProfile || DEFAULT_VALIDATION_PROFILE).trim() || DEFAULT_VALIDATION_PROFILE;
+      const codeReviewGraph = analysisContext.codeReviewGraph && typeof analysisContext.codeReviewGraph === 'object'
+        ? analysisContext.codeReviewGraph
+        : (payload.codeReviewGraph && typeof payload.codeReviewGraph === 'object' ? payload.codeReviewGraph : {});
+      const hasStructuredCrgEvidence = Boolean(
+        codeReviewGraph.stages
+        || codeReviewGraph.stageEvidence
+        || codeReviewGraph.evidenceArtifactPath
+      );
+      if (hasStructuredCrgEvidence) {
+        const crgDecision = validateCodeReviewGraphEvidence({
+          ...analysisContext,
+          validationProfile,
+          evidenceCarrier: 'bounded',
+          workflowEvidence: workflow,
+          changedFiles: {
+            files,
+            source: 'workflow_enforcement_args',
+            baseRef: process.env.WORKFLOW_ENFORCEMENT_BASE_REF || 'workflow-enforcement-file-list',
+            baseRefSource: process.env.WORKFLOW_ENFORCEMENT_BASE_REF ? 'env' : 'bounded_file_list',
+            fallbackUsed: !process.env.WORKFLOW_ENFORCEMENT_BASE_REF,
+          },
+          codeReviewGraph,
+        }, { repoRoot: process.cwd() });
+        if (crgDecision.blocking) {
+          violations.push(`${analysisFile}: codeReviewGraph validation blocked (${crgDecision.blockerCode || crgDecision.reason})`);
+        }
       }
       const appliedText = applied.join(' | ');
       const skippedText = skipped.join(' | ');

@@ -123,6 +123,81 @@ test('completed phase invariant does not treat terminal blocked payload as runni
   }
 });
 
+test('completed phase invariant allows running workflow state for the current open phase', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-invariants-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
+      fs.writeFileSync(path.join(workflowDir, basename), `${JSON.stringify({
+        runId: 'lease-phase-4',
+        status: basename === 'latest-dispatch.json' ? 'running' : 'active',
+        activeExecutionStatus: 'active',
+        phaseNumber: 4,
+        phaseTitle: 'Phase 04',
+      })}\n`, 'utf8');
+    }
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: {
+        activeRunLeaseId: 'outer-dispatch-lease',
+        activeExecutionStatus: 'active',
+        activePhaseNumber: 4,
+      },
+      phases: [
+        { number: 2, title: 'Phase 02', status: 'completed' },
+        { number: 3, title: 'Phase 03', status: 'completed' },
+        { number: 4, title: 'Phase 04', status: 'in_progress' },
+      ],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    const codes = result.violations.map((entry) => entry.code);
+    assert.equal(codes.includes('current-run-running-phase-completed'), false);
+    assert.equal(codes.includes('active-phase-run-running-phase-completed'), false);
+    assert.equal(codes.includes('latest-dispatch-running-phase-completed'), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('completed phase invariant allows failed workflow state for the current open phase', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-invariants-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'latest-dispatch.json'), `${JSON.stringify({
+      runId: 'lease-phase-4',
+      status: 'running',
+      activeExecutionStatus: 'running',
+      completionStatus: 'failed',
+      blockingStopReasonCode: 'delegated-terminal-signal-no-closeout',
+      phaseNumber: 4,
+      phaseTitle: 'Phase 04',
+    })}\n`, 'utf8');
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: {
+        activeRunLeaseId: 'lease-phase-4',
+        activeExecutionStatus: 'active',
+        activePhaseNumber: 4,
+      },
+      phases: [
+        { number: 2, title: 'Phase 02', status: 'completed' },
+        { number: 3, title: 'Phase 03', status: 'completed' },
+        { number: 4, title: 'Phase 04', status: 'in_progress' },
+      ],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    assert.equal(result.violations.some((entry) => entry.code === 'latest-dispatch-failed-phase-completed'), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('sidecar canonical invariant rejects manifest-only state without legacy fallback', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sidecar-invariants-'));
   try {

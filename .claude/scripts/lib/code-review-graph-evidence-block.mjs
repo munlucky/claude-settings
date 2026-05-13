@@ -61,18 +61,56 @@ export function replaceEvidenceBlock(currentText, blockText) {
   return [prefix, blockText.trimEnd()].filter(Boolean).join('\n\n') + '\n';
 }
 
-export function readAnalysisEvidence(analysisFile) {
-  if (!analysisFile || !fs.existsSync(analysisFile)) {
-    return null;
+export function extractEvidenceBlockText(text) {
+  const source = String(text || '');
+  const begin = source.indexOf(EVIDENCE_BLOCK_BEGIN);
+  const end = source.indexOf(EVIDENCE_BLOCK_END);
+  if (begin === -1 && end === -1) {
+    return { blockText: '', error: '', count: 0 };
   }
-  const text = fs.readFileSync(analysisFile, 'utf8');
-  const begin = text.indexOf(EVIDENCE_BLOCK_BEGIN);
-  const end = text.indexOf(EVIDENCE_BLOCK_END);
   if (begin === -1 || end === -1 || end < begin) {
+    return { blockText: '', error: 'malformed_code_review_graph_evidence_block', count: 0 };
+  }
+  const afterEnd = end + EVIDENCE_BLOCK_END.length;
+  const duplicateBegin = source.indexOf(EVIDENCE_BLOCK_BEGIN, afterEnd);
+  const duplicateEnd = source.indexOf(EVIDENCE_BLOCK_END, afterEnd);
+  if (duplicateBegin !== -1 || duplicateEnd !== -1) {
+    return { blockText: '', error: 'duplicate_code_review_graph_evidence_block', count: 2 };
+  }
+  return { blockText: source.slice(begin, afterEnd), error: '', count: 1 };
+}
+
+function parseJsonEvidenceBlock(block) {
+  const fenced = block.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = fenced ? fenced[1] : block
+    .replace(EVIDENCE_BLOCK_BEGIN, '')
+    .replace(EVIDENCE_BLOCK_END, '')
+    .trim();
+  if (!raw.startsWith('{')) {
     return null;
   }
-  const block = text.slice(begin, end);
-  const evidence = {};
+  return JSON.parse(raw);
+}
+
+export function readAnalysisEvidenceFromText(text) {
+  const { blockText, error, count } = extractEvidenceBlockText(text);
+  if (error) {
+    return { __error: error, __count: count };
+  }
+  if (!blockText) {
+    return null;
+  }
+  try {
+    const parsed = parseJsonEvidenceBlock(blockText);
+    if (parsed) {
+      return { ...parsed, __count: count };
+    }
+  } catch {
+    return { __error: 'malformed_code_review_graph_evidence_json', __count: count };
+  }
+
+  const block = blockText.slice(0, blockText.indexOf(EVIDENCE_BLOCK_END));
+  const evidence = { __count: count };
   for (const line of block.split(/\r?\n/u)) {
     const match = line.match(/^\s{4}([A-Za-z][A-Za-z0-9]*):\s*(.*)$/u);
     if (match) {
@@ -80,4 +118,11 @@ export function readAnalysisEvidence(analysisFile) {
     }
   }
   return evidence;
+}
+
+export function readAnalysisEvidence(analysisFile) {
+  if (!analysisFile || !fs.existsSync(analysisFile)) {
+    return null;
+  }
+  return readAnalysisEvidenceFromText(fs.readFileSync(analysisFile, 'utf8'));
 }
