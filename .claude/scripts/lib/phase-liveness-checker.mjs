@@ -117,12 +117,12 @@ export function evaluateWorkerIdentityLiveness({
   };
   const heartbeatAttemptId = text(field(heartbeat, 'attemptId'));
 
-  if (!manifestStartTime) {
+  if (!manifestStartTime || !observedIdentity.childProcessStartTime) {
     return {
       checked: true,
       degraded: true,
       classification: 'worker_liveness_unknown',
-      reason: 'child_start_time_missing',
+      reason: !manifestStartTime ? 'manifest_child_start_time_missing' : 'observed_child_start_time_missing',
       workerActive: false,
       completionEligible: false,
       manifestIdentity,

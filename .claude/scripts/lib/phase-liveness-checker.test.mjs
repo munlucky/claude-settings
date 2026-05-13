@@ -144,6 +144,29 @@ test('child-start-time-missing-is-unknown', () => {
   assert.equal(result.completionEligible, false);
 });
 
+test('observed child start time missing is unknown', () => {
+  const result = evaluateWorkerIdentityLiveness({
+    manifest: {
+      attemptId: 'attempt-start-time-unobserved',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+      manifestRequired: true,
+      schemaVersion: 1,
+    },
+    heartbeat: {
+      attemptId: 'attempt-start-time-unobserved',
+      childPid: 4242,
+      commandHash: 'sha256:command-a',
+    },
+  });
+
+  assert.equal(result.classification, 'worker_liveness_unknown');
+  assert.equal(result.reason, 'observed_child_start_time_missing');
+  assert.equal(result.workerActive, false);
+  assert.equal(result.completionEligible, false);
+});
+
 test('controller_stale_worker_active requires manifest and heartbeat identity match', () => {
   const result = evaluateWorkerIdentityLiveness({
     manifest: {
