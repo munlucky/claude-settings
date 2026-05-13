@@ -1,0 +1,23 @@
+{
+  "validationProfile": "strict",
+  "evidenceCarrier": "phase",
+  "changedFiles": {
+    "files": [
+      "src/app.js"
+    ],
+    "source": "verdict_json",
+    "baseRef": "HEAD~1",
+    "baseRefSource": "explicit",
+    "baseRefWarning": null,
+    "fallbackUsed": false
+  },
+  "codeReviewGraph": {
+    "crgCliVersion": "test-1",
+    "stages": {
+      "execute": {
+        "operation": "scan",
+        "exitCode": 0
+      }
+    }
+  }
+}

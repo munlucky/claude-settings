@@ -69,7 +69,7 @@ planQualityLoop:
 ## Phase Completion Checklist
 - [ ] Phase 01 - Contract, Schema, and Policy Sync (`01-contract-schema-and-policy-sync-v1.md`)
 - [x] Phase 02 - CLI Adapter and Graph State (`02-cli-adapter-and-graph-state-v1.md`)
-- [ ] Phase 03 - Validator Parity and Resolver (`03-validator-parity-and-resolver-v1.md`)
+- [x] Phase 03 - Validator Parity and Resolver (`03-validator-parity-and-resolver-v1.md`)
 - [ ] Phase 04 - Bounded and Phase Closeout Gates (`04-bounded-phase-closeout-gates-v1.md`)
 - [ ] Phase 05 - Fixtures, Parity, and Readiness (`05-fixtures-parity-and-readiness-v1.md`)
 

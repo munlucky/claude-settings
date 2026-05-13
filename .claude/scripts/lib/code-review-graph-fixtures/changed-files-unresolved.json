@@ -1,0 +1,8 @@
+{
+  "validationProfile": "strict",
+  "evidenceCarrier": "phase",
+  "changedFiles": {},
+  "codeReviewGraph": {
+    "crgCliVersion": "test-1"
+  }
+}
