@@ -1,0 +1,31 @@
+controllerState:
+  schemaVersion: 1
+  planDir: "docs/implementation/phase-runner-simple-state-board-2026-05-13"
+  masterPlan: "docs/implementation/phase-runner-simple-state-board-2026-05-13/00-master-plan-v1.md"
+  sourceRequest: "Phase Runner simple state board implementation plan v5"
+  isolationApproved: true
+  isolationMode: "forked"
+  maxIterations: 4
+  targetAmbiguityScore: 0.20
+  blockedAmbiguityScore: 0.35
+  status: "pass"
+  readinessDecision: "pass"
+  strictRunnableReadiness: false
+  activePhaseStatusPointer:
+    path: ".claude/docs/phase-status.yaml"
+    currentMasterPlan: "docs/implementation/code-review-graph-forced-use-2026-05-13/00-master-plan-v12.1.md"
+    action: "do_not_modify_during_planning"
+  iteration:
+    current: 2
+    reviewer: "codex-reviewer-agent-iteration-2"
+    writer: "codex-writer-agent-iteration-1"
+    latestReview: "docs/implementation/phase-runner-simple-state-board-2026-05-13/planning-loop/plan-quality-review-iter-02.yaml"
+    latestWriterRevision: "docs/implementation/phase-runner-simple-state-board-2026-05-13/planning-loop/plan-writer-revision-iter-01.yaml"
+  finalReview:
+    totalScore: 0.932
+    ambiguityScore: 0.068
+    blockingFindings: []
+    improvementDirectives: []
+  runnablePreparationGate:
+    status: "blocked_by_active_pointer_until_intentional_close_archive_or_supersede"
+    dryRunPointerSelfCheckRequired: true
