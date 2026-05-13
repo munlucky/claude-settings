@@ -11,6 +11,7 @@ import { evaluatePlanConformance } from './verify-plan-conformance.mjs';
 import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
 import { normalizeFailureCode } from './lib/failure-classifier.mjs';
+import { evaluateDeclaredAlternateVerifierPolicy } from './lib/phase-closeout-verdict.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
 const CURRENT_RUN_FILE = path.join(WORKFLOW_LOG_DIR, 'current-run.json');
@@ -1809,6 +1810,8 @@ function evaluatePhaseCompletionGate(config) {
     const verificationMode = payload.verificationMode || contract.verificationMode || '';
     const contractApplicable = Boolean(contract.applicable);
     const missingRequired = normalizeRequiredChecksMissing(payload.requiredChecks?.missing);
+    const alternatePolicy = evaluateDeclaredAlternateVerifierPolicy(payload);
+    const acceptedAlternateWarning = verdict === 'expected_blocker_passed' && alternatePolicy.allowed === true;
     const blocking = payload.blocking === true;
     const failureClass = String(payload.failureClass || '').trim().toLowerCase();
     const blockingReasonCode = String(payload.blockingReasonCode || '').trim().toLowerCase();
@@ -1830,12 +1833,12 @@ function evaluatePhaseCompletionGate(config) {
       latestWorkflowStageOrder = workflowEvidence.stageOrder.map((item) => String(item).trim()).filter(Boolean);
     }
 
-    if (blocking && (failureClass === 'environment' || failureClass === 'contract')) {
+    if (blocking && !acceptedAlternateWarning && (failureClass === 'environment' || failureClass === 'contract')) {
       failures.push(`blocked:${blockingReasonCode || script}`);
       continue;
     }
 
-    if (verdict !== 'passed') {
+    if (verdict !== 'passed' && !acceptedAlternateWarning) {
       failures.push(`${script}:verdict=${verdict}`);
       continue;
     }
@@ -1843,7 +1846,7 @@ function evaluatePhaseCompletionGate(config) {
       failures.push(`${script}:evidenceFresh=false`);
       continue;
     }
-    if ((contractApplicable || verificationMode === 'contract') && missingRequired.length > 0) {
+    if ((contractApplicable || verificationMode === 'contract') && missingRequired.length > 0 && !acceptedAlternateWarning) {
       failures.push(`${script}:missingRequiredChecks`);
       continue;
     }
@@ -2860,6 +2863,174 @@ worksets: []
     if (!atomicLedger.complete) {
       throw new Error(`completed atomic task was not preserved across nested semanticEvaluation status: ${atomicLedger.reason}`);
     }
+
+    const alternateDir = path.join(planDir, '01-expected-blocker-passed');
+    const alternatePhaseDoc = path.join(planDir, '01-expected-blocker-source.md');
+    fs.mkdirSync(alternateDir, { recursive: true });
+    fs.writeFileSync(alternatePhaseDoc, `# Phase 01: Expected Blocker Source
+
+## Exact Execution Targets
+No source files for this fixture.
+`, 'utf8');
+    fs.writeFileSync(path.join(alternateDir, 'SPRINT_CONTRACT.md'), `# Sprint
+
+## Slice
+- Source phase doc: ${alternatePhaseDoc}
+
+## Source Plan Requirements Snapshot
+- Fixture validates expected blocker pass handling.
+
+## Spec Deviation Ledger
+- None.
+
+## Demo-first MVP Gate
+- Applies: no
+`, 'utf8');
+    fs.writeFileSync(path.join(alternateDir, 'QA_REPORT.md'), `# QA
+## Verdict
+- Status: passed
+- Next path: clean_finish
+- Closeout reason: scope_complete
+## Review Checkpoint
+- Review completed: yes
+## Finish Readiness
+- Fresh evidence confirmed: yes
+- Why this round may stop now: declared alternate verifier passed after required verifier EPERM
+- Remaining in-scope work: none
+- Remaining blockers before closeout: none
+## Plan Conformance Review
+- Status: pass
+- Reason: ok
+## Runtime Updates
+- Verification verdict file: ${path.join(alternateDir, 'verification-verdict-expected-blocker.json')}
+- Verification verdict: passed
+## Workflow Execution
+- Selected bundles: finish-bundle
+- Applied skills: codex-review-code
+- Skipped skills: none
+- Selected harness components: phase-runner
+- Skipped harness components: none
+- Selection reason: fixture
+- Runtime isolation: runtime-adapter
+- Model effort profile: standard
+- Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-mini
+- Selected model effort: medium
+- Model selection reason: fixture
+- Retrieval budget: fixture
+- Validation profile: workflow_core
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+`, 'utf8');
+    fs.writeFileSync(path.join(alternateDir, 'SCORECARD.md'), `# Score
+## Objective Checklist
+| ID | Category | Weight | Status | Evidence | Notes |
+|----|----------|--------|--------|----------|-------|
+| OBJ-CONFORM | Source platform phase plan conformance verified | 20 | pass | QA_REPORT.md | fixture |
+| OBJ-VER | Required verification and operational checks passed | 40 | pass | verification-verdict-expected-blocker.json | expected blocker passed |
+
+## Score Summary
+- Current score: 100
+- Target score: 100
+- Unmet checklist items: 0
+- Blocking defects: 0
+- Verdict: done
+## Task-Level Status Adapter
+- Status: FULL
+- Current task status: FULL
+`, 'utf8');
+    fs.writeFileSync(path.join(alternateDir, 'HANDOFF.md'), `# Handoff
+## Status
+- Required: no
+## Resume Trigger
+- Stop reason: clean_finish
+`, 'utf8');
+    fs.writeFileSync(path.join(alternateDir, 'WORKSETS.yaml'), `schemaVersion: 1
+activeAtomicTask: AT-01
+atomicTasks:
+  - id: AT-01
+    title: "Expected blocker fixture"
+    status: completed
+    taskStatus: completed
+    acceptanceCriterionId: "AC-001"
+    acVerdict: expected_blocker_passed
+    verificationEvidence:
+      - "PASS: declared alternate verifier"
+    ownedPaths:
+      - ".claude/scripts/agent-loop-phase-state.mjs"
+    verificationCommands:
+      - "node --test fixture.test.mjs"
+      - "node fixture.test.mjs"
+    evidence:
+      - "PASS: declared alternate verifier"
+    completedAt: "2026-05-05T00:00:00.000Z"
+worksets: []
+`, 'utf8');
+    fs.writeFileSync(path.join(alternateDir, 'verification-verdict-expected-blocker.json'), JSON.stringify({
+      script: 'expected-blocker-fixture',
+      verdict: 'expected_blocker_passed',
+      evidenceFresh: true,
+      contract: { applicable: true, verificationMode: 'contract' },
+      phase: { number: 1, activePhaseDocPath: alternatePhaseDoc },
+      requiredChecks: {
+        expected: ['node --test fixture.test.mjs'],
+        passed: ['node fixture.test.mjs'],
+        missing: ['node --test fixture.test.mjs'],
+      },
+      changedFiles: [],
+      commands: [
+        { name: 'node', run: 'node --test fixture.test.mjs', status: 'failed' },
+        { name: 'node', run: 'node fixture.test.mjs', status: 'passed' },
+      ],
+      workflowEvidence: {
+        selectedBundles: ['finish-bundle'],
+        stageOrder: ['verify', 'finish'],
+        appliedSkills: ['codex-review-code'],
+        skippedSkills: ['none'],
+        warnings: ['required verifier EPERM preserved; declared alternate passed'],
+      },
+      verifierPolicy: {
+        requiredVerifier: {
+          id: 'node-test',
+          command: 'node --test fixture.test.mjs',
+          errorCode: 'EPERM',
+          failureClass: 'verification_environment_unavailable',
+          detail: 'spawn EPERM before executing Node test worker',
+        },
+        alternateVerifier: {
+          id: 'node-direct',
+          requiredVerifierId: 'node-test',
+          status: 'passed',
+          declared: true,
+          command: 'node fixture.test.mjs',
+        },
+      },
+      failureClass: 'environment',
+      blocking: false,
+      blockingReasonCode: 'node_test_spawn_eperm',
+      score: {
+        detected: true,
+        current: 100,
+        target: 100,
+        unmetChecklistItems: 0,
+        blockingDefects: 0,
+        verdict: 'done',
+      },
+      generatedAt: '2026-05-05T00:00:00.000Z',
+    }, null, 2), 'utf8');
+    const alternateGate = evaluatePhaseCompletionGate({
+      phaseStartEpoch: '0',
+      qaReportPath: path.join(alternateDir, 'QA_REPORT.md'),
+      scorecardPath: path.join(alternateDir, 'SCORECARD.md'),
+      phaseExecutionDir: alternateDir,
+      scorecardRequired: 'true',
+      targetCompletionScore: '100',
+      handoffPath: path.join(alternateDir, 'HANDOFF.md'),
+    });
+    if (alternateGate.PHASE_COMPLETION_ALLOWED !== 'true') {
+      throw new Error(`declared alternate expected blocker verdict was not accepted: ${alternateGate.PHASE_COMPLETION_REASON}`);
+    }
+
     const cleanArtifactStatusFile = path.join(tempDir, 'clean-artifact-status.yaml');
     fs.writeFileSync(cleanArtifactStatusFile, `schemaVersion: 1
 activeExecutionStatus: running

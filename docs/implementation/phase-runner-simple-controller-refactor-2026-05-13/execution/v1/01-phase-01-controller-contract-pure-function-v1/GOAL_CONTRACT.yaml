@@ -1,0 +1,86 @@
+schemaVersion: 1
+snapshotId: "goal-contract-01-phase-01-controller-contract-pure-function-v1"
+objective: "Establish the controller contract before runner integration."
+readinessAssessment:
+  goalClarity: 1
+  scopeClarity: 1
+  acceptanceCriteriaClarity: 1
+  verificationClarity: 1
+  clarityScore: 1
+  ambiguityScore: 0
+  readinessDecision: "executable"
+  thresholds:
+    executableMax: 0.20
+    constrainedMax: 0.35
+    blockedAbove: 0.35
+  assumptionRouting:
+    nonCriticalGapTarget: "ASSUMPTIONS.md or active phase assumptions ledger"
+    coreScopeGapTarget: "BLOCKERS.md or active phase blocker ledger"
+  reviewTriggers:
+    - "ambiguityScore > 0.35"
+    - "readinessDecision == blocked"
+    - "product value or brownfield readiness is unclear"
+sourceGaps:
+  - id: "GAP-NONE"
+    severity: "none"
+    reason: "No PRD/SPEC readiness gaps detected."
+scope:
+  - "Export a pure function, for example `decidePhaseLoop(signal)`."
+  - "Accept only the normalized input shape from the v13 plan."
+  - "Define the six allowed decisions: `continue_execute`, `rerun_review`, `rerun_verify`, `repair_required`, `blocked`, `clean_finish_candidate`."
+  - "Generate a stable `sourceDecisionId` from normalized input fields, not file contents."
+  - "Populate `nextAttemptInput.retryStrategy` conservatively."
+  - "Normalize unknown finalizer failures to `blocked`, `retryRecommended: false`, and a failed case with `class: \"unknown_finalizer_failure\"`."
+nonGoals:
+  - "Reading Markdown, verdict JSON, logs, or filesystem paths."
+  - "Mutating phase status, runtime state, or execution artifacts."
+  - "Creating remediation packets."
+constraints:
+  - "Preserve phase-attempt boundaries and stage order."
+  - "Keep source plan requirements authoritative unless a user-approved replan is recorded."
+acceptanceCriteria:
+  - id: "AC-001"
+    statement: "Controller returns only the six allowed decisions."
+    source: "Phase Completion Checklist"
+    evidence: "QA_REPORT.md and verifier output"
+  - id: "AC-002"
+    statement: "Output schema includes `attemptNumber`."
+    source: "Phase Completion Checklist"
+    evidence: "QA_REPORT.md and verifier output"
+  - id: "AC-003"
+    statement: "`retryRecommended: true` is only a recommendation signal."
+    source: "Phase Completion Checklist"
+    evidence: "QA_REPORT.md and verifier output"
+  - id: "AC-004"
+    statement: "`clean_finish_candidate` has no completion side effect."
+    source: "Phase Completion Checklist"
+    evidence: "QA_REPORT.md and verifier output"
+  - id: "AC-005"
+    statement: "`node --test .claude/scripts/lib/phase-loop-controller.test.mjs`"
+    source: "Validation Plan"
+    evidence: "QA_REPORT.md and verifier output"
+  - id: "AC-006"
+    statement: "`node --check .claude/scripts/lib/phase-loop-controller.mjs`"
+    source: "Validation Plan"
+    evidence: "QA_REPORT.md and verifier output"
+exitConditions:
+  - "Goal Contract schema/template/generation/enforcement evidence is verified."
+  - "Review, verification verdict, scorecard, and handoff fields agree before clean finish."
+brownfieldContext:
+  repositoryRoot: "."
+  sourcePlanPath: "docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/00-master-plan-v1.md"
+  sourcePhaseDocPath: "docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/01-controller-contract-pure-function-v1.md"
+  executionRoot: "docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/execution/v1"
+  ownedPaths:
+    - ".claude/scripts/lib/phase-loop-controller.mjs"
+    - ".claude/scripts/lib/phase-loop-controller.test.mjs"
+  readOnlyPaths: []
+provenance:
+  createdAt: "2026-05-13T04:23:45.929Z"
+  createdBy: "moonshot-plan-writer"
+  sourceRequest: "Phase 01: Controller Contract Pure Function (v1)"
+  sourceArtifacts:
+    - "docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/00-master-plan-v1.md"
+    - "docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/01-controller-contract-pure-function-v1.md"
+  planPackage: "docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/execution/v1"
+status: draft
