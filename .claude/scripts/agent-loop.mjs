@@ -39,6 +39,7 @@ const state = {
   parallelWorktrees: Number.parseInt(process.env.PHASE_PARALLEL_WORKTREES ?? '1', 10) || 1,
   worktreeBase: process.env.PHASE_WORKTREE_BASE || 'HEAD',
   worktreeRoot: process.env.PHASE_WORKTREE_ROOT || '.tmp/harness-worktrees/phase-runs',
+  resume: false,
 };
 
 function runNodeScript(scriptPath, args, options = {}) {
@@ -92,6 +93,7 @@ function showHelp() {
 #                    Base ref for workset worktrees (default: HEAD)
 #   --worktree-root PATH
 #                    Root for temporary workset worktrees
+#   --resume         Explicitly resume an existing phase run board
 #   --dry-run         Print what would be executed without running
 # =============================================================================`);
 }
@@ -131,6 +133,9 @@ function parseArgs(argv) {
         break;
       case '--worktree-root':
         state.worktreeRoot = args.shift() ?? '.tmp/harness-worktrees/phase-runs';
+        break;
+      case '--resume':
+        state.resume = true;
         break;
       case '--dry-run':
         state.dryRun = true;
@@ -702,6 +707,9 @@ function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
     args.push('--parallel-worktrees', String(state.parallelWorktrees));
     args.push('--worktree-base', state.worktreeBase || 'HEAD');
     args.push('--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-runs');
+  }
+  if (state.resume) {
+    args.push('--resume');
   }
 
   args.push('--max-phases', '1', '--single-phase');

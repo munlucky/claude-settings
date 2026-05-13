@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -86,5 +87,26 @@ test('dispatcher preflights stale active lease left by dead dispatcher pid', () 
   assert.match(source, /function cleanupPreviousDeadDispatchLease/);
   assert.match(source, /isPidAliveInCurrentNamespace\(Number\(existing\.dispatcherPid\)\)/);
   assert.match(source, /phase-run-lease-previous-dead-dispatch-cleanup/);
-  assert.match(source, /cleanupPreviousDeadDispatchLease\(\);\s*runtimeState\.runLeaseId = generateRunLeaseId\(\);/s);
+  assert.match(source, /cleanupPreviousDeadDispatchLease\(\);\s*if \(!runtimeState\.runLeaseId\) \{\s*runtimeState\.runLeaseId = generateRunLeaseId\(\);/s);
+});
+
+test('dispatcher exposes and forwards explicit --resume', () => {
+  const help = spawnSync(process.execPath, ['.claude/scripts/moonshot-phase-dispatch.mjs', '--help'], {
+    encoding: 'utf8',
+  });
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /--resume\s+Explicitly resume an existing phase run board/);
+
+  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  assert.match(source, /case '--resume':\s*state\.resume = true;/s);
+  assert.match(source, /if \(state\.resume\) \{\s*cmd\.push\('--resume'\);/s);
+  assert.match(source, /resume: \$\{state\.resume \? 'true' : 'false'\}/);
+});
+
+test('dispatcher guards latest-dispatch projection identity with stateRunId', () => {
+  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  assert.match(source, /stateRunId: patch\.stateRunId \|\| payload\.stateRunId \|\| runtimeState\.runLeaseId/);
+  assert.match(source, /function assertProjectionStateRunId/);
+  assert.match(source, /stateRunId mismatch rejected before projection overwrite/);
+  assert.match(source, /assertProjectionStateRunId\(payload, next, latestFile\);/);
 });

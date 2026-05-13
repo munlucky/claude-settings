@@ -6,15 +6,33 @@ import { test } from 'node:test';
 
 import {
   buildPhaseLoopShadowSignal,
+  classifyRunnerStartup,
   computeControllerEnforcedGateAction,
   computePhaseLoopShadowDecision,
 } from './agent-loop-phase-runner.mjs';
+import { resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
 import {
   buildRemediationPacket,
   formatRemediationPacketForPrompt,
   readFreshRemediationPacket,
   writeRemediationPacket,
 } from './lib/phase-remediation-packet.mjs';
+
+function writeFixtureRunState(root, stateRunId, status = 'active') {
+  const runRoot = resolveRunRoot(stateRunId, { rootDir: root });
+  writeState({
+    stateRunId,
+    runRoot,
+    status,
+    phase: '2',
+    attempt: 'attempt-01',
+    owner: 'test',
+    reason: 'fixture',
+    planDir: 'docs/implementation/phase-runner-simple-state-board-2026-05-13',
+    statusFile: '.claude/docs/phase-status.yaml',
+  }, { rootDir: root, stateRunId, runRoot });
+  return runRoot;
+}
 
 test('shadow adapter converts review, verify, finish, checkpoint, and pass cases', () => {
   const cases = [
@@ -169,6 +187,45 @@ test('controller-enforced gate action blocks verifier environment failures inste
   assert.equal(result.controllerDecision, 'blocked');
   assert.equal(result.action, 'stop-blocked');
   assert.equal(result.decision.retryRecommended, false);
+});
+
+test('no_implicit_resume_sources', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-resume-'));
+  try {
+    writeFixtureRunState(root, 'run-active', 'blocked');
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'active-phase-run.json'), '{"stateRunId":"run-active"}\n', 'utf8');
+    fs.writeFileSync(path.join(workflowDir, 'reconciliation.json'), '{"present":true}\n', 'utf8');
+    process.env.PHASE_RUN_LEASE_ID = 'lease-env-value';
+    process.env.PHASE_STATE_RUN_ID = 'env-state-value';
+
+    const result = classifyRunnerStartup({
+      resume: false,
+      rootDir: root,
+      stateRunId: process.env.PHASE_RUN_LEASE_ID,
+    });
+
+    assert.equal(result.classification, 'resume-required');
+    assert.equal(result.stateRunId, 'run-active');
+  } finally {
+    delete process.env.PHASE_RUN_LEASE_ID;
+    delete process.env.PHASE_STATE_RUN_ID;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('explicit resume requires an existing active or blocked board', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-resume-missing-'));
+  try {
+    assert.equal(classifyRunnerStartup({ resume: true, rootDir: root }).classification, 'resume-state-missing');
+    writeFixtureRunState(root, 'run-active', 'active');
+    const result = classifyRunnerStartup({ resume: true, rootDir: root });
+    assert.equal(result.classification, 'resume_allowed');
+    assert.equal(result.stateRunId, 'run-active');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('clean finish candidate is routed only to the finalizer boundary action', () => {

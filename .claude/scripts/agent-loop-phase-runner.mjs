@@ -31,6 +31,7 @@ import {
   resolvePhaseAttemptManifestPaths,
   writeAttemptManifestIntent,
 } from './lib/phase-attempt-manifest.mjs';
+import { readState, resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -83,6 +84,8 @@ const state = {
   parallelWorktrees: Number.parseInt(process.env.PHASE_PARALLEL_WORKTREES ?? '1', 10) || 1,
   worktreeBase: process.env.PHASE_WORKTREE_BASE || 'HEAD',
   worktreeRoot: process.env.PHASE_WORKTREE_ROOT || '.tmp/harness-worktrees/phase-runs',
+  resume: false,
+  stateRunId: '',
 };
 
 let activeAttemptContext = null;
@@ -169,10 +172,104 @@ function parseArgs(argv) {
       case '--worktree-root':
         state.worktreeRoot = args.shift() ?? '.tmp/harness-worktrees/phase-runs';
         break;
+      case '--resume':
+        state.resume = true;
+        break;
       default:
         break;
     }
   }
+}
+
+function simpleRunStateRoot(rootDir = process.cwd()) {
+  return path.join(rootDir, '.claude', 'logs', 'simple-run-state');
+}
+
+function readSimpleRunStateById(stateRunId, rootDir = process.cwd()) {
+  if (!stateRunId) {
+    return null;
+  }
+  try {
+    const runRoot = resolveRunRoot(stateRunId, { rootDir });
+    const result = readState({ rootDir, stateRunId, runRoot });
+    return result.exists ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function findExistingRunBoard(rootDir = process.cwd()) {
+  const root = simpleRunStateRoot(rootDir);
+  if (!fs.existsSync(root)) {
+    return null;
+  }
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const result = readSimpleRunStateById(entry.name, rootDir);
+    const status = String(result?.state?.status || '').trim();
+    if (['active', 'blocked'].includes(status)) {
+      return result;
+    }
+  }
+  return null;
+}
+
+export function classifyRunnerStartup({ resume = false, rootDir = process.cwd(), stateRunId = '' } = {}) {
+  const existing = findExistingRunBoard(rootDir);
+  if (!resume) {
+    return existing
+      ? { classification: 'resume-required', stateRunId: existing.state.stateRunId, statePath: existing.statePath }
+      : { classification: 'clean_start', stateRunId: stateRunId || '', statePath: '' };
+  }
+  const requested = stateRunId ? readSimpleRunStateById(stateRunId, rootDir) : null;
+  const candidate = requested || existing;
+  if (!candidate) {
+    return { classification: 'resume-state-missing', stateRunId: stateRunId || '', statePath: '' };
+  }
+  const status = String(candidate.state?.status || '').trim();
+  if (!['active', 'blocked'].includes(status)) {
+    return { classification: 'resume-state-missing', stateRunId: candidate.state?.stateRunId || stateRunId || '', statePath: candidate.statePath };
+  }
+  return { classification: 'resume_allowed', stateRunId: candidate.state.stateRunId, statePath: candidate.statePath };
+}
+
+function ensureStartupResumeState(paths, logFile) {
+  const startup = classifyRunnerStartup({
+    resume: state.resume,
+    rootDir: process.cwd(),
+    stateRunId: state.stateRunId,
+  });
+  state.stateRunId = startup.stateRunId || state.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}-${process.pid}`;
+  appendDebugLog('simple-run-state-startup-classification', {
+    resume: state.resume,
+    classification: startup.classification,
+    stateRunId: state.stateRunId,
+    statePath: startup.statePath || '',
+  });
+  if (startup.classification === 'resume-required' || startup.classification === 'resume-state-missing') {
+    return stopBlockedPhase(paths, logFile, startup.classification, startup.classification);
+  }
+  return 0;
+}
+
+function writeActiveSimpleRunState() {
+  const stateRunId = state.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}-${process.pid}`;
+  const runRoot = resolveRunRoot(stateRunId, { rootDir: process.cwd() });
+  writeState({
+    stateRunId,
+    runRoot,
+    status: 'active',
+    phase: state.phaseNum,
+    attempt: process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`,
+    owner: 'agent-loop-phase-runner',
+    reason: state.resume ? 'resume' : 'start',
+    planDir: state.planDir,
+    statusFile: state.statusFile,
+  }, { rootDir: process.cwd(), stateRunId, runRoot });
+  state.stateRunId = stateRunId;
+  return { stateRunId, runRoot };
 }
 
 function utcTimestamp() {
@@ -797,6 +894,7 @@ function phaseEnv(paths) {
     PHASE_SELECTED_MODEL: modelRoute.model,
     PHASE_SELECTED_MODEL_EFFORT: modelRoute.effort,
     PHASE_MODEL_SELECTION_REASON: modelRoute.selectionReason,
+    PHASE_STATE_RUN_ID: state.stateRunId,
     PHASE_VERIFICATION_TARGET_RUNTIMES: verificationContext.effectiveSelection,
     PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: verificationContext.effectiveSelection,
     HARNESS_REQUIREMENTS_TRACEABILITY_FILE: `${state.executionRoot}/REQUIREMENTS_TRACEABILITY.md`,
@@ -1876,6 +1974,11 @@ function runPhaseAttempt() {
 
   let activeRuntime = runtime;
   const logFile = `${logDir}/phase-${state.phaseNum}_${localFileTimestamp()}.log`;
+  const startupExit = ensureStartupResumeState(paths, logFile);
+  if (startupExit !== 0) {
+    return startupExit;
+  }
+  writeActiveSimpleRunState();
   const capabilityPreflight = runPhaseStartCapabilityPreflight();
   appendDebugLog('capability-preflight-result', {
     requestedRuntime: state.runtime,

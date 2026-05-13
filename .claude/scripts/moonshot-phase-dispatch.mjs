@@ -62,6 +62,7 @@ const state = {
   goalTokenBudget: process.env.PHASE_GOAL_TOKEN_BUDGET || '',
   finalGitCloseout: process.env.PHASE_FINAL_GIT_CLOSEOUT || 'strict',
   staleNoProgressSeconds: Number.parseInt(process.env.PHASE_DISPATCH_STALE_NO_PROGRESS_SECONDS ?? '3300', 10) || 0,
+  resume: false,
 };
 
 const runtimeState = {
@@ -141,7 +142,21 @@ function withLatestDispatchLifecycle(payload = {}, {
     dispatchStage,
     lastLifecycleEventAt: timestamp,
     updatedAt: timestamp,
+    stateRunId: patch.stateRunId || payload.stateRunId || runtimeState.runLeaseId || '',
   };
+}
+
+export function assertProjectionStateRunId(previousPayload = {}, nextPayload = {}, targetFile = '') {
+  const previousRunId = String(previousPayload?.stateRunId || '').trim();
+  const nextRunId = String(nextPayload?.stateRunId || runtimeState.runLeaseId || '').trim();
+  if (!previousRunId || !nextRunId || previousRunId === nextRunId) {
+    return true;
+  }
+  const previousStatus = String(previousPayload.status || previousPayload.activeExecutionStatus || previousPayload.completionStatus || '').trim().toLowerCase();
+  if (['active', 'running', 'blocked', 'in_progress'].includes(previousStatus)) {
+    throw new Error(`stateRunId mismatch rejected before projection overwrite: ${targetFile || 'compatibility projection'} (${previousRunId} != ${nextRunId})`);
+  }
+  return true;
 }
 
 function writeStdoutLine(value = '') {
@@ -176,6 +191,7 @@ Options:
   --goal-token-budget <n>   Optional SQLite goal runtime token budget
   --final-git-closeout <mode>
                             strict|warn|off. Default: strict
+  --resume                  Explicitly resume an existing phase run board
   --dry-run                 Print resolved command without executing`);
 }
 
@@ -521,6 +537,7 @@ function closeLatestDispatchEvidence({ exitCode, detail, returnBoundary = '', st
       failedAt: (exitCode ?? 0) === 0 || recovered ? payload.failedAt : now,
     },
   });
+  assertProjectionStateRunId(payload, next, latestFile);
   recordLifecycleTransition({
     source: 'moonshot-phase-dispatch',
     targetStateFiles: [latestFile],
@@ -850,6 +867,7 @@ function updateLatestDispatchLiveness({ label = '', context = {}, compositeCurso
       liveness,
     },
   });
+  assertProjectionStateRunId(payload, next, latestFile);
   recordLifecycleTransition({
     source: 'moonshot-phase-dispatch',
     targetStateFiles: [latestFile],
@@ -888,6 +906,7 @@ function recordLatestDispatchLifecycle({ lifecycleEvent, dispatchStage, patch = 
     timestamp,
     patch,
   });
+  assertProjectionStateRunId(payload, next, latestFile);
   recordLifecycleTransition({
     source: 'moonshot-phase-dispatch',
     targetStateFiles: [latestFile],
@@ -1031,7 +1050,9 @@ function leaseCompletionStatus(context = {}, actionable) {
 
 function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime) {
   cleanupPreviousDeadDispatchLease();
-  runtimeState.runLeaseId = generateRunLeaseId();
+  if (!runtimeState.runLeaseId) {
+    runtimeState.runLeaseId = generateRunLeaseId();
+  }
   runtimeState.captureSession = createPhaseHarnessCaptureSession({
     traceId: runtimeState.runLeaseId,
     runId: runtimeState.runLeaseId,
@@ -1096,6 +1117,7 @@ function startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRun
       historicalWarnings: undefined,
       activePhaseNumber: undefined,
       liveness: undefined,
+      stateRunId: runtimeState.runLeaseId,
     },
   });
   return values;
@@ -1824,6 +1846,9 @@ function runDelegatedTerminal(resolvedRoot, effectiveRuntime) {
     '--runtime', effectiveRuntime,
     '--verification-runtimes', state.verificationRuntimes,
   ];
+  if (state.resume) {
+    cmd.push('--resume');
+  }
   if (state.parallelWorktrees > 1) {
     cmd.push('--parallel-worktrees', String(state.parallelWorktrees));
     cmd.push('--worktree-base', state.worktreeBase || 'HEAD');
@@ -2063,6 +2088,7 @@ phaseRunnerResult:
 options:
   maxAttemptsPerPhase: ${state.maxAttempts}
   verificationRuntimes: "${state.verificationRuntimes}"
+  resume: ${state.resume ? 'true' : 'false'}
 ${stopLine}
 ${coordinatorContract ? `\n\n${coordinatorContract}` : ''}`;
 
@@ -2333,6 +2359,9 @@ function parseArgs(argv) {
       case '--final-git-closeout':
         state.finalGitCloseout = args.shift() ?? 'strict';
         break;
+      case '--resume':
+        state.resume = true;
+        break;
       case '--dry-run':
         state.dryRun = true;
         break;
@@ -2415,6 +2444,9 @@ if (!gitPreflight.ok) {
   logError(`Git preflight failed before dispatch: ${gitPreflight.detail}`);
   logError(`Action: ${gitPreflight.fallbackHint}`);
   process.exit(1);
+}
+if (!runtimeState.runLeaseId) {
+  runtimeState.runLeaseId = generateRunLeaseId();
 }
 recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
 if (!state.dryRun) {
