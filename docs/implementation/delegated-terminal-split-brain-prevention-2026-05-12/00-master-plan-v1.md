@@ -142,7 +142,7 @@ planQualityReview:
 - [ ] Phase 04 - Reconciliation Transaction Resume (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md`) - reconcile-required
 - [ ] Phase 05 - Controller Worker Liveness Split (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md`) - reconcile-required
 - [ ] Phase 06 - Declared Alternate Verifier Policy (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/06-declared-alternate-verifier-policy-v1.md`) - reconcile-required
-- [ ] Phase 07 - Manifest Event Telemetry Fixtures (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md`) - reconcile-required
+- [x] Phase 07 - Manifest Event Telemetry Fixtures (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md`) - reconcile-required
 
 ## Phase 01-07 Repair Routes
 | Phase | Current blocking failures | Selected repair route | Allowed mutations | Expected evidence | Stop condition |
