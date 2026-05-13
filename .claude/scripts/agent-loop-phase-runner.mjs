@@ -15,6 +15,7 @@ import { classifyFailure, classifyStagnationPattern, normalizeStopOutcome, summa
 import { appendWasteLedgerEntry } from './lib/waste-ledger.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { archivePromptText, summarizeSpawnCommand } from './lib/prompt-redaction.mjs';
+import { decidePhaseLoop } from './lib/phase-loop-controller.mjs';
 import {
   appendAttemptHeartbeatEvent,
   patchAttemptManifestChildIdentity,
@@ -39,6 +40,22 @@ const phaseStartCapabilityBlockers = new Set([
   'node_spawn_eperm',
   'verifier_unavailable',
   'spawn_blocked',
+]);
+
+const FINALIZER_FAILURE_CLASS_BY_CODE = Object.freeze({
+  'verification-verdict-not-passed': 'missing_verification_evidence',
+  'review-evidence-missing': 'missing_review_evidence',
+  'phase-status-inconsistent': 'projection_state_inconsistency',
+  'current-artifacts-stale': 'projection_state_inconsistency',
+  'workflow-state-failed': 'projection_state_inconsistency',
+  'tool-unavailable': 'environment_unavailable',
+  'spawn EPERM': 'environment_unavailable',
+});
+
+const FINALIZER_BLOCKED_CODES = new Set([
+  'tool-unavailable',
+  'spawn EPERM',
+  'unknown_finalizer_failure',
 ]);
 
 const state = {
@@ -169,6 +186,119 @@ function appendDebugLog(event, details = {}) {
     event,
     ...details,
   })}\n`, 'utf8');
+}
+
+function normalizeShadowStage(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (normalized === 'finish/handoff' || normalized === 'handoff' || normalized === 'closeout') {
+    return 'finish';
+  }
+  if (['execute', 'review', 'verify', 'finish', 'checkpoint'].includes(normalized)) {
+    return normalized;
+  }
+  return 'verify';
+}
+
+function normalizeShadowResult(value, fallback = 'fail') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['pass', 'passed', 'success', 'clean_finish', 'complete', 'done'].includes(normalized)) {
+    return 'pass';
+  }
+  if (['blocked', 'block'].includes(normalized)) {
+    return 'blocked';
+  }
+  if (['partial', 'warn', 'warning'].includes(normalized)) {
+    return 'partial';
+  }
+  if (['fail', 'failed', 'failure', 'retry', 'retry_loop'].includes(normalized)) {
+    return 'fail';
+  }
+  return fallback;
+}
+
+function normalizeShadowStringArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  const normalized = String(value || '').trim();
+  return normalized ? [normalized] : [];
+}
+
+function normalizeFinalizerFailureCode(value) {
+  const code = String(value || '').trim();
+  if (!code) {
+    return '';
+  }
+  if (FINALIZER_FAILURE_CLASS_BY_CODE[code]) {
+    return code;
+  }
+  if (/spawn\s+EPERM/i.test(code)) {
+    return 'spawn EPERM';
+  }
+  if (/tool-unavailable/i.test(code)) {
+    return 'tool-unavailable';
+  }
+  return code;
+}
+
+export function buildPhaseLoopShadowSignal(input = {}) {
+  const finalizerCode = normalizeFinalizerFailureCode(input.finalizerFailureCode || input.failureCode || input.code);
+  const mappedFailureClass = finalizerCode
+    ? FINALIZER_FAILURE_CLASS_BY_CODE[finalizerCode] || 'unknown_finalizer_failure'
+    : '';
+  const stage = normalizeShadowStage(input.stage || (finalizerCode ? 'finish' : 'verify'));
+  const failureClass = String(input.failureClass || mappedFailureClass || '').trim();
+  const failedCases = Array.isArray(input.failedCases) && input.failedCases.length > 0
+    ? input.failedCases
+    : failureClass
+      ? [{ class: failureClass, ...(finalizerCode ? { message: finalizerCode } : {}) }]
+      : [];
+  const resultFallback = FINALIZER_BLOCKED_CODES.has(finalizerCode) ? 'blocked' : failedCases.length > 0 ? 'fail' : 'pass';
+  const result = normalizeShadowResult(input.result || input.status || input.verdict, resultFallback);
+
+  return {
+    phaseNumber: toInt(input.phaseNumber ?? state.phaseNum, 0),
+    attemptNumber: toInt(input.attemptNumber ?? input.autoFixCount ?? 1, 1),
+    stage,
+    result,
+    failureClass,
+    failedCases,
+    evidenceRefs: normalizeShadowStringArray(input.evidenceRefs ?? input.evidenceRef),
+    blockers: normalizeShadowStringArray(input.blockers ?? input.blocker),
+    previousRemediation: input.previousRemediation ?? null,
+  };
+}
+
+export function computePhaseLoopShadowDecision(input = {}) {
+  const signal = buildPhaseLoopShadowSignal(input);
+  const controllerDecision = decidePhaseLoop(signal);
+  const legacyDecision = String(input.legacyDecision || '').trim();
+  const mismatch = Boolean(legacyDecision && legacyDecision !== controllerDecision.decision);
+
+  return {
+    legacyDecision,
+    controllerDecision: controllerDecision.decision,
+    mismatch,
+    signal,
+    decision: controllerDecision,
+    mismatchLog: {
+      legacyDecision,
+      controllerDecision: controllerDecision.decision,
+      phaseNumber: signal.phaseNumber,
+      attemptNumber: signal.attemptNumber,
+      stage: signal.stage,
+      failureClass: signal.failureClass,
+      evidenceRefs: signal.evidenceRefs,
+    },
+  };
+}
+
+function recordPhaseLoopShadowDecision(input = {}) {
+  const shadow = computePhaseLoopShadowDecision(input);
+  if (shadow.mismatch) {
+    appendDebugLog('phase-loop-shadow-mismatch', shadow.mismatchLog);
+  }
+  return shadow;
 }
 
 function appendCaptureWarning(context, detail) {
@@ -1037,6 +1167,20 @@ function remediationStageForGateReason(reason, gate = null) {
   return 'verify';
 }
 
+function decisionNameForGateRemediation(stage) {
+  const normalized = normalizeShadowStage(stage);
+  if (normalized === 'review') {
+    return 'rerun_review';
+  }
+  if (normalized === 'finish') {
+    return 'blocked';
+  }
+  if (normalized === 'checkpoint') {
+    return 'rerun_verify';
+  }
+  return 'rerun_verify';
+}
+
 function remediationStatusLabel(reason, gate = null) {
   const stage = remediationStageForGateReason(reason, gate);
   if (stage === 'review') {
@@ -1804,6 +1948,14 @@ function runPhaseAttempt() {
         }
       });
       if (gate.PHASE_COMPLETION_ALLOWED === 'true') {
+        recordPhaseLoopShadowDecision({
+          legacyDecision: 'clean_finish',
+          phaseNumber: state.phaseNum,
+          attemptNumber: autoFixCount + 1,
+          stage: 'finish',
+          result: 'pass',
+          evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
+        });
         finalizeCompletion(
           logFile,
           duration,
@@ -1817,14 +1969,43 @@ function runPhaseAttempt() {
       }
 
       if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON)) {
+        recordPhaseLoopShadowDecision({
+          legacyDecision: 'blocked',
+          phaseNumber: state.phaseNum,
+          attemptNumber: autoFixCount + 1,
+          stage: remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate),
+          result: 'blocked',
+          failureClass: gate.PHASE_COMPLETION_REASON,
+          evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
+          blockers: gate.PHASE_COMPLETION_REASON,
+        });
         return stopBlockedPhase(paths, logFile, `completion gate blocked: ${gate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
       }
 
       if (gateStop.GATE_REASON_CATEGORY === 'environment_blocked') {
+        recordPhaseLoopShadowDecision({
+          legacyDecision: 'blocked',
+          phaseNumber: state.phaseNum,
+          attemptNumber: autoFixCount + 1,
+          stage: remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate),
+          result: 'blocked',
+          finalizerFailureCode: gate.PHASE_COMPLETION_REASON,
+          evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
+          blockers: gate.PHASE_COMPLETION_REASON,
+        });
         return stopBlockedPhase(paths, logFile, `completion gate blocked: ${gate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
       }
 
       autoFixCount += 1;
+      recordPhaseLoopShadowDecision({
+        legacyDecision: decisionNameForGateRemediation(remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate)),
+        phaseNumber: state.phaseNum,
+        attemptNumber: autoFixCount,
+        stage: remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate),
+        result: 'fail',
+        finalizerFailureCode: gate.PHASE_COMPLETION_REASON,
+        evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
+      });
       logError(`Phase ${state.phaseNum} produced no valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
       appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
       appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
@@ -2178,38 +2359,40 @@ function runPhaseAttempt() {
   }
 }
 
-parseArgs(process.argv.slice(2));
-if (!state.planDir || !state.phaseNum || !state.phaseTitle || !state.phaseDoc) {
-  console.error('Usage: agent-loop-phase-runner.mjs <plan-dir> --status-file <path> --execution-root <dir> --runtime <runtime> --verification-runtimes <target> --phase-num <n> --phase-title <title> --phase-doc <path>');
-  process.exit(64);
-}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  parseArgs(process.argv.slice(2));
+  if (!state.planDir || !state.phaseNum || !state.phaseTitle || !state.phaseDoc) {
+    console.error('Usage: agent-loop-phase-runner.mjs <plan-dir> --status-file <path> --execution-root <dir> --runtime <runtime> --verification-runtimes <target> --phase-num <n> --phase-title <title> --phase-doc <path>');
+    process.exit(64);
+  }
 
-process.on('uncaughtException', (error) => {
-  handleFatalPhaseRunnerError(error, 'uncaughtException');
-  console.error(error.stack || error.message);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-  const error = reason instanceof Error ? reason : new Error(String(reason));
-  handleFatalPhaseRunnerError(error, 'unhandledRejection');
-  console.error(error.stack || error.message);
-  process.exit(1);
-});
-
-for (const signalName of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
-  process.on(signalName, () => {
-    closeoutInterruptedAttempt(signalName, 'phase-runner-signal');
-    const signalNumber = os.constants.signals?.[signalName] ?? 1;
-    process.exit(128 + signalNumber);
+  process.on('uncaughtException', (error) => {
+    handleFatalPhaseRunnerError(error, 'uncaughtException');
+    console.error(error.stack || error.message);
+    process.exit(1);
   });
-}
 
-try {
-  process.exit(runPhaseAttempt());
-} catch (error) {
-  handleFatalPhaseRunnerError(error, 'top-level-catch');
-  const normalizedError = error instanceof Error ? error : new Error(String(error));
-  console.error(normalizedError.stack || normalizedError.message);
-  process.exit(1);
+  process.on('unhandledRejection', (reason) => {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    handleFatalPhaseRunnerError(error, 'unhandledRejection');
+    console.error(error.stack || error.message);
+    process.exit(1);
+  });
+
+  for (const signalName of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+    process.on(signalName, () => {
+      closeoutInterruptedAttempt(signalName, 'phase-runner-signal');
+      const signalNumber = os.constants.signals?.[signalName] ?? 1;
+      process.exit(128 + signalNumber);
+    });
+  }
+
+  try {
+    process.exit(runPhaseAttempt());
+  } catch (error) {
+    handleFatalPhaseRunnerError(error, 'top-level-catch');
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    console.error(normalizedError.stack || normalizedError.message);
+    process.exit(1);
+  }
 }
