@@ -272,7 +272,9 @@ export function codexBaseArgs(cwd) {
   let useOss = process.env.CODEX_USE_OSS_PROVIDER ?? 'auto';
   let localProvider = process.env.CODEX_LOCAL_PROVIDER ?? '';
   const useEphemeral = process.env.CODEX_EXEC_EPHEMERAL ?? 'true';
-  const sandboxMode = process.env.CODEX_EXEC_SANDBOX || 'workspace-write';
+  const sandboxMode = process.env.CODEX_EXEC_SANDBOX || 'danger-full-access';
+  const approvalPolicy = process.env.CODEX_EXEC_APPROVAL_POLICY
+    || (sandboxMode === 'danger-full-access' ? 'never' : '');
 
   const codexCommand = resolveCodexCommand() || 'codex';
   const windowsWrapper = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-exec-wrapper.ps1');
@@ -280,6 +282,10 @@ export function codexBaseArgs(cwd) {
   const args = process.platform === 'win32'
     ? [powershellCommand, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', windowsWrapper, 'exec', '--sandbox', sandboxMode, '-C', cwd]
     : [codexCommand, 'exec', '--sandbox', sandboxMode, '-C', cwd];
+
+  if (approvalPolicy) {
+    args.push('--ask-for-approval', approvalPolicy);
+  }
 
   if (useEphemeral === 'true') {
     args.push('--ephemeral');

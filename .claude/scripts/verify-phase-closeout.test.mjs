@@ -987,6 +987,39 @@ test('phase closeout does not let markdown pass override structured scenario fai
   });
 });
 
+test('phase closeout rejects remediation packet as the only structured scenario evidence', () => {
+  withFixture({
+    scenarioEvidence: false,
+    structuredEvidenceMetadata: {
+      schemaVersion: 'phase-closeout-evidence-v1',
+      requirements: {
+        'REQ-01-1': { status: 'verified', evidencePath: 'QA_REPORT.md' },
+      },
+      scenarios: {
+        'SCN-01-1': { status: 'passed', evidencePath: 'docs/implementation/execution/01-feature/remediation-request.json' },
+      },
+      blockers: [],
+    },
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.message.includes('SCN-01-1')));
+  });
+});
+
+test('phase closeout rejects remediation packet as the only markdown scenario evidence', () => {
+  withFixture({
+    scenarioEvidence: false,
+    qaExtra: 'SCN-01-1 | passed | docs/implementation/execution/01-feature/remediation-request.json',
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, false);
+    assert.ok(result.violations.some((violation) => violation.message.includes('SCN-01-1')));
+  });
+});
+
 test('phase closeout accepts expected_blocker_passed as fresh non-blocking verdict', () => {
   withFixture({ expectedBlockerPassedVerdict: true }, (root) => {
     const result = evaluatePhaseCloseout(config(root));

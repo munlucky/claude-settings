@@ -121,3 +121,75 @@ test('structured scenario metadata and no-unapproved-defer wording pass clean fi
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.allowed, true);
 });
+
+test('remediation packet path cannot satisfy critical scenario completion evidence', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-conformance-remediation-'));
+  const phaseDoc = path.join(tempDir, '04-phase.md');
+  const sprint = path.join(tempDir, 'SPRINT_CONTRACT.md');
+  const qa = path.join(tempDir, 'QA_REPORT.md');
+  const scorecard = path.join(tempDir, 'SCORECARD.md');
+  const handoff = path.join(tempDir, 'HANDOFF.md');
+
+  fs.writeFileSync(phaseDoc, `# Phase
+
+## Exact Execution Targets
+- .claude/scripts/lib/phase-remediation-packet.mjs creates pass signal
+
+## Critical Product Scenarios
+- SCN-04-3
+`, 'utf8');
+  fs.writeFileSync(sprint, `# Sprint
+
+## Source Plan Requirements Snapshot
+- .claude/scripts/lib/phase-remediation-packet.mjs creates pass signal
+
+## Spec Deviation Ledger
+- none
+`, 'utf8');
+  fs.writeFileSync(qa, `# QA
+
+## Verdict
+- Next path: clean_finish
+- Scope status: complete
+
+## Plan Conformance Review
+- Source plan conformance command: pass
+
+## Structured Evidence Metadata
+\`\`\`json
+{
+  "scenarios": [
+    { "id": "SCN-04-3", "status": "passed", "evidencePath": "docs/implementation/execution/04/remediation-request.json" }
+  ]
+}
+\`\`\`
+`, 'utf8');
+  fs.writeFileSync(scorecard, `# Scorecard
+
+## Objective Checklist
+| ID | Category | Weight | Status | Evidence | Notes |
+|---|---|---:|---|---|---|
+| OBJ-CONFORM | Conformance | 100 | pass | .claude/scripts/example.test.mjs | pass |
+
+## Score Summary
+- Verdict: done
+
+## Task-Level Status Adapter
+- Current task status: FULL
+`, 'utf8');
+  fs.writeFileSync(handoff, '# Handoff\n\n## Status\n- Required: no\n', 'utf8');
+
+  const result = runCli([
+    '--phase-doc', phaseDoc,
+    '--sprint-contract', sprint,
+    '--qa-report', qa,
+    '--scorecard', scorecard,
+    '--handoff', handoff,
+    '--json',
+  ]);
+
+  assert.equal(result.status, 1, result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.allowed, false);
+  assert.ok(payload.violations.some((violation) => violation.code === 'critical-scenario-evidence-missing'));
+});

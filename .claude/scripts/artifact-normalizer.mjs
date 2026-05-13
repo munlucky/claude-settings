@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+import {
+  hasRemediationPacketReference,
+  isRemediationPacketPath,
+} from './lib/phase-remediation-packet.mjs';
+
 const CANONICAL_NEXT_PATHS = [
   'clean_finish',
   'retry_loop',
@@ -202,10 +207,11 @@ export function scenarioEvidencePassed(scenarioId, evidenceText) {
   const normalizedId = normalizeWhitespace(scenarioId).toLowerCase();
   const normalizedText = normalizeLineEndings(evidenceText);
   const structuredEvidencePattern = new RegExp(
-    `"id"\\s*:\\s*"${normalizedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[\\s\\S]{0,400}?"status"\\s*:\\s*"(?:pass|passed|done|verified)"[\\s\\S]{0,400}?"evidencePath"\\s*:\\s*"[^"]+"`,
+    `"id"\\s*:\\s*"${normalizedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[\\s\\S]{0,400}?"status"\\s*:\\s*"(?:pass|passed|done|verified)"[\\s\\S]{0,400}?"evidencePath"\\s*:\\s*"([^"]+)"`,
     'i',
   );
-  if (structuredEvidencePattern.test(normalizedText)) {
+  const structuredMatch = normalizedText.match(structuredEvidencePattern);
+  if (structuredMatch && !isRemediationPacketPath(structuredMatch[1])) {
     return true;
   }
 
@@ -219,7 +225,11 @@ export function scenarioEvidencePassed(scenarioId, evidenceText) {
       return parsed.scenarioId.toLowerCase() === normalizedId
         && isPassingStatus(parsed.status)
         && Boolean(parsed.evidencePath)
+        && !isRemediationPacketPath(parsed.evidencePath)
         && !/^(none|null|n\/a|placeholder)$/i.test(parsed.evidencePath);
+    }
+    if (hasRemediationPacketReference(line)) {
+      return false;
     }
     return /\b(pass|passed|done|verified)\b/i.test(line) && !/\b(fail|failed|blocked|missing|todo|pending|retry)\b/i.test(line);
   });

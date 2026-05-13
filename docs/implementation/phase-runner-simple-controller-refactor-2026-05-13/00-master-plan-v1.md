@@ -113,9 +113,9 @@ planQualityReview:
 
 ## Phase Completion Checklist
 - [x] Phase 01 - Controller Contract Pure Function (`docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/01-controller-contract-pure-function-v1.md`)
-- [ ] Phase 02 - Shadow Signal Adapter (`docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/02-shadow-signal-adapter-v1.md`)
-- [ ] Phase 03 - Controller Enforcement and Finalizer Gate (`docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/03-controller-enforcement-finalizer-gate-v1.md`)
-- [ ] Phase 04 - Remediation Packet and Worker Prompt (`docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/04-remediation-packet-worker-prompt-v1.md`)
+- [x] Phase 02 - Shadow Signal Adapter (`docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/02-shadow-signal-adapter-v1.md`)
+- [x] Phase 03 - Controller Enforcement and Finalizer Gate (`docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/03-controller-enforcement-finalizer-gate-v1.md`)
+- [x] Phase 04 - Remediation Packet and Worker Prompt (`docs/implementation/phase-runner-simple-controller-refactor-2026-05-13/04-remediation-packet-worker-prompt-v1.md`)
 
 ## Package Verification Commands
 - `node --test .claude/scripts/agent-loop-phase-state.test.mjs`

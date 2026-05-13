@@ -860,19 +860,11 @@ function canonicalVerdictPathForPhase(root, phaseNumber) {
   return path.join(root, '.claude', `verification-verdict-phase${String(phaseNumber).padStart(2, '0')}-final.json`);
 }
 
-function findAttemptManifestPathForFinalize({ root, phase = {}, executionRoot = '' }) {
-  const explicit = phase.attemptManifestPath
-    || phase.attemptManifest
-    || phase.canonicalAttemptManifest
-    || phase.manifestPath
-    || '';
-  if (explicit) {
-    return resolvePath(explicit, root);
-  }
-  const start = resolvePath(executionRoot, root);
+function listAttemptManifestPaths(start) {
   if (!start || !fs.existsSync(start)) {
-    return '';
+    return [];
   }
+  const matches = [];
   const stack = [start];
   while (stack.length > 0) {
     const current = stack.pop();
@@ -881,11 +873,95 @@ function findAttemptManifestPathForFinalize({ root, phase = {}, executionRoot = 
       if (entry.isDirectory()) {
         stack.push(candidate);
       } else if (entry.isFile() && entry.name === 'attempt-manifest.json') {
-        return candidate;
+        matches.push(candidate);
       }
     }
   }
+  return matches.sort();
+}
+
+function manifestTimestampMs(manifest = {}) {
+  for (const key of ['runnerFinishedAt', 'runnerStartedAt']) {
+    const time = Date.parse(manifest?.[key] || '');
+    if (Number.isFinite(time)) {
+      return time;
+    }
+  }
+  return 0;
+}
+
+function readManifestSummary(manifestPath) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const number = Number(manifest?.phaseNumber);
+    return {
+      path: manifestPath,
+      phaseNumber: Number.isFinite(number) ? number : null,
+      timestampMs: manifestTimestampMs(manifest),
+      attemptId: String(manifest?.attemptId || ''),
+    };
+  } catch {
+    return {
+      path: manifestPath,
+      phaseNumber: null,
+      timestampMs: 0,
+      attemptId: '',
+    };
+  }
+}
+
+function phaseExecutionDirFromProjection({ root, phase = {} }) {
+  for (const key of ['sprintContract', 'qaReport', 'handoff', 'scorecard']) {
+    const value = phase[key];
+    if (!value) {
+      continue;
+    }
+    const candidate = resolvePath(value, root);
+    if (candidate && fs.existsSync(candidate)) {
+      return path.dirname(candidate);
+    }
+  }
   return '';
+}
+
+function bestManifestForPhase(manifestPaths, phaseNumber) {
+  const expected = Number(phaseNumber);
+  if (!Number.isFinite(expected)) {
+    return '';
+  }
+  return manifestPaths
+    .map(readManifestSummary)
+    .filter((entry) => entry.phaseNumber === expected)
+    .sort((a, b) => b.timestampMs - a.timestampMs || b.attemptId.localeCompare(a.attemptId) || b.path.localeCompare(a.path))[0]?.path || '';
+}
+
+function findAttemptManifestPathForFinalize({ root, phase = {}, phaseNumber, executionRoot = '' }) {
+  const explicit = phase.attemptManifestPath
+    || phase.attemptManifest
+    || phase.canonicalAttemptManifest
+    || phase.manifestPath
+    || '';
+  if (explicit) {
+    return resolvePath(explicit, root);
+  }
+  const phaseExecutionDir = phaseExecutionDirFromProjection({ root, phase });
+  const executionRootPath = resolvePath(executionRoot, root);
+  const searchRoots = [...new Set([phaseExecutionDir, executionRootPath].filter(Boolean))];
+  for (const searchRoot of searchRoots) {
+    const manifests = listAttemptManifestPaths(searchRoot);
+    const phaseMatch = bestManifestForPhase(manifests, phaseNumber);
+    if (phaseMatch) {
+      return phaseMatch;
+    }
+    if (phaseExecutionDir && path.resolve(searchRoot) === path.resolve(phaseExecutionDir) && manifests.length > 0) {
+      return manifests[0];
+    }
+  }
+  const fallbackRoot = executionRootPath;
+  if (!fallbackRoot || !fs.existsSync(fallbackRoot)) {
+    return '';
+  }
+  return listAttemptManifestPaths(fallbackRoot)[0] || '';
 }
 
 function sealAttemptManifestForFinalize({
@@ -899,7 +975,7 @@ function sealAttemptManifestForFinalize({
   dryRun,
   plannedWrites,
 }) {
-  const manifestPath = findAttemptManifestPathForFinalize({ root, phase, executionRoot });
+  const manifestPath = findAttemptManifestPathForFinalize({ root, phase, phaseNumber, executionRoot });
   if (!manifestPath || !fs.existsSync(manifestPath)) {
     return { sealed: false, reason: 'attempt_manifest_not_found', manifestPath: '' };
   }

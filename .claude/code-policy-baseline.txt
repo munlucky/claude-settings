@@ -19,8 +19,10 @@ file-length|.claude/agents/verification/verify-runtime.sh
 file-length|.claude/scripts/browser-flow-runner.mjs
 file-length|install-claude.sh
 file-length|.claude/scripts/phase-closeout-finalize.mjs
+file-length|.claude/scripts/phase-closeout-finalize.test.mjs
 file-length|.claude/scripts/verification-verdict-state.mjs
 file-length|.claude/scripts/verify-phase-closeout.mjs
+file-length|.claude/scripts/verify-phase-closeout.test.mjs
 console-log|.claude/scripts/workflow-enforcement.mjs
 console-log|.claude/scripts/install-browser-runtime.mjs
 console-log|.claude/scripts/knowledge-repo-audit.mjs

@@ -1,10 +1,20 @@
 import { strict as assert } from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 
 import {
   buildPhaseLoopShadowSignal,
+  computeControllerEnforcedGateAction,
   computePhaseLoopShadowDecision,
 } from './agent-loop-phase-runner.mjs';
+import {
+  buildRemediationPacket,
+  formatRemediationPacketForPrompt,
+  readFreshRemediationPacket,
+  writeRemediationPacket,
+} from './lib/phase-remediation-packet.mjs';
 
 test('shadow adapter converts review, verify, finish, checkpoint, and pass cases', () => {
   const cases = [
@@ -44,27 +54,27 @@ test('shadow adapter converts review, verify, finish, checkpoint, and pass cases
   }
 });
 
-test('finalizer failure codes map to finish-stage normalized signals', () => {
-  const expectedClasses = new Map([
-    ['verification-verdict-not-passed', 'missing_verification_evidence'],
-    ['review-evidence-missing', 'missing_review_evidence'],
-    ['phase-status-inconsistent', 'projection_state_inconsistency'],
-    ['current-artifacts-stale', 'projection_state_inconsistency'],
-    ['workflow-state-failed', 'projection_state_inconsistency'],
-    ['tool-unavailable', 'environment_unavailable'],
-    ['spawn EPERM', 'environment_unavailable'],
+test('finalizer failure codes map to controller-routable normalized signals', () => {
+  const expectedSignals = new Map([
+    ['verification-verdict-not-passed', { failureClass: 'missing_verification_evidence', stage: 'verify' }],
+    ['review-evidence-missing', { failureClass: 'missing_review_evidence', stage: 'review' }],
+    ['phase-status-inconsistent', { failureClass: 'projection_state_inconsistency', stage: 'finish' }],
+    ['current-artifacts-stale', { failureClass: 'projection_state_inconsistency', stage: 'finish' }],
+    ['workflow-state-failed', { failureClass: 'projection_state_inconsistency', stage: 'finish' }],
+    ['tool-unavailable', { failureClass: 'environment_unavailable', stage: 'finish' }],
+    ['spawn EPERM', { failureClass: 'environment_unavailable', stage: 'finish' }],
   ]);
 
-  for (const [code, failureClass] of expectedClasses) {
+  for (const [code, expected] of expectedSignals) {
     const signal = buildPhaseLoopShadowSignal({
       phaseNumber: 2,
       attemptNumber: 3,
       finalizerFailureCode: code,
       evidenceRef: 'QA_REPORT.md',
     });
-    assert.equal(signal.stage, 'finish');
-    assert.equal(signal.failureClass, failureClass);
-    assert.equal(signal.failedCases[0].class, failureClass);
+    assert.equal(signal.stage, expected.stage);
+    assert.equal(signal.failureClass, expected.failureClass);
+    assert.equal(signal.failedCases[0].class, expected.failureClass);
     assert.equal(signal.failedCases[0].message, code);
   }
 });
@@ -84,7 +94,7 @@ test('unknown finalizer failure gives controller enough context to block without
   assert.equal(shadow.decision.failedCases[0].class, 'unknown_finalizer_failure');
 });
 
-test('shadow mismatch is observable and legacy decision remains authoritative', () => {
+test('shadow mismatch is observable before controller enforcement consumes the controller decision', () => {
   const shadow = computePhaseLoopShadowDecision({
     legacyDecision: 'rerun_verify',
     phaseNumber: 2,
@@ -108,4 +118,118 @@ test('shadow mismatch is observable and legacy decision remains authoritative', 
     'evidenceRefs',
   ]);
   assert.equal(shadow.mismatchLog.legacyDecision, 'rerun_verify');
+});
+
+test('controller-enforced gate action routes review, verify, repair, and blocked outcomes', () => {
+  const cases = [
+    {
+      input: { stage: 'review', failureClass: 'code_change_required' },
+      expected: { decision: 'continue_execute', action: 'auto-fix' },
+    },
+    {
+      input: { finalizerFailureCode: 'review-evidence-missing' },
+      expected: { decision: 'rerun_review', action: 'review-remediation' },
+    },
+    {
+      input: { finalizerFailureCode: 'verification-verdict-not-passed' },
+      expected: { decision: 'rerun_verify', action: 'verification-remediation' },
+    },
+    {
+      input: { finalizerFailureCode: 'phase-status-inconsistent' },
+      expected: { decision: 'repair_required', action: 'stop-repair-required' },
+    },
+    {
+      input: { finalizerFailureCode: 'unexpected-finalizer-code' },
+      expected: { decision: 'blocked', action: 'stop-blocked' },
+    },
+  ];
+
+  for (const { input, expected } of cases) {
+    const result = computeControllerEnforcedGateAction({
+      phaseNumber: 3,
+      attemptNumber: 1,
+      result: 'fail',
+      ...input,
+    });
+    assert.equal(result.controllerDecision, expected.decision);
+    assert.equal(result.action, expected.action);
+  }
+});
+
+test('controller-enforced gate action blocks verifier environment failures instead of execute retry', () => {
+  const result = computeControllerEnforcedGateAction({
+    phaseNumber: 4,
+    attemptNumber: 5,
+    stage: 'verify',
+    result: 'blocked',
+    failureClass: 'verification_environment_unavailable',
+    evidenceRefs: ['.claude/verification-verdict-phase04-blocked.json'],
+  });
+
+  assert.equal(result.controllerDecision, 'blocked');
+  assert.equal(result.action, 'stop-blocked');
+  assert.equal(result.decision.retryRecommended, false);
+});
+
+test('clean finish candidate is routed only to the finalizer boundary action', () => {
+  const result = computeControllerEnforcedGateAction({
+    phaseNumber: 3,
+    attemptNumber: 1,
+    stage: 'finish',
+    result: 'pass',
+    evidenceRefs: ['.claude/verification-verdict-phase03-final.json'],
+  });
+
+  assert.equal(result.controllerDecision, 'clean_finish_candidate');
+  assert.equal(result.action, 'finalize');
+});
+
+test('controller remediation packet persists fresh retry context for the next worker prompt', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-remediation-'));
+  try {
+    fs.writeFileSync(path.join(root, 'phase.md'), '# Phase\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'SPRINT_CONTRACT.md'), '# Sprint\n', 'utf8');
+    const controllerAction = computeControllerEnforcedGateAction({
+      phaseNumber: 4,
+      attemptNumber: 2,
+      finalizerFailureCode: 'verification-verdict-not-passed',
+      evidenceRefs: ['QA_REPORT.md'],
+    });
+    const packetPath = path.join(root, 'remediation-request.json');
+    const packet = buildRemediationPacket({
+      root,
+      phaseNumber: 4,
+      attemptNumber: 2,
+      sourceRefs: ['phase.md', 'SPRINT_CONTRACT.md'],
+      controllerOutput: {
+        decision: controllerAction.controllerDecision,
+        failedStage: controllerAction.signal.stage,
+        failedCases: controllerAction.decision.failedCases,
+        improvementDirectives: [{
+          id: 'DIR-VERIFY',
+          targetStage: 'verify',
+          targetFiles: ['QA_REPORT.md'],
+          instruction: 'regenerate fresh structured verification verdict',
+          evidenceRequired: '.claude/verification-verdict-*.json',
+        }],
+        nextAttemptInput: {
+          mustRead: ['QA_REPORT.md'],
+          mustRerun: ['node --test .claude/scripts/agent-loop-phase-runner.test.mjs'],
+          prohibitedActions: ['do not use remediation-request.json as completion evidence'],
+          retryStrategy: 'same_direction_refine',
+        },
+      },
+    });
+
+    writeRemediationPacket(packetPath, packet);
+    const fresh = readFreshRemediationPacket(packetPath, { root });
+    const prompt = formatRemediationPacketForPrompt(fresh);
+
+    assert.equal(fresh.decision, 'rerun_verify');
+    assert.match(prompt, /verification-verdict-not-passed|missing_verification_evidence/);
+    assert.match(prompt, /regenerate fresh structured verification verdict/);
+    assert.match(prompt, /do not use remediation-request\.json as completion evidence/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

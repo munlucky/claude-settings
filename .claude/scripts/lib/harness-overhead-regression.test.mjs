@@ -72,7 +72,7 @@ test('runtime unavailable cache records once and returns stable summaries for re
   );
 });
 
-test('codex base args use workspace-write sandbox and do not reintroduce --full-auto', () => {
+test('codex base args use trusted local sandbox and do not reintroduce --full-auto', () => {
   const result = spawnSync('node', [
     '.claude/scripts/runtime-cli.mjs',
     'codex-base-args',
@@ -85,7 +85,9 @@ test('codex base args use workspace-write sandbox and do not reintroduce --full-
   assert.equal(result.status, 0, result.stderr);
   const args = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
   assert.ok(args.includes('--sandbox'));
-  assert.ok(args.includes('workspace-write'));
+  assert.ok(args.includes('danger-full-access'));
+  assert.ok(args.includes('--ask-for-approval'));
+  assert.ok(args.includes('never'));
   assert.equal(args.includes('--full-auto'), false);
 });
 
@@ -99,14 +101,14 @@ test('codex base args allow explicit sandbox override for trusted local phase ru
     encoding: 'utf8',
     env: {
       ...process.env,
-      CODEX_EXEC_SANDBOX: 'danger-full-access',
+      CODEX_EXEC_SANDBOX: 'workspace-write',
     },
   });
 
   assert.equal(result.status, 0, result.stderr);
   const args = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
   assert.ok(args.includes('--sandbox'));
-  assert.ok(args.includes('danger-full-access'));
-  assert.equal(args.includes('workspace-write'), false);
+  assert.ok(args.includes('workspace-write'));
+  assert.equal(args.includes('danger-full-access'), false);
   assert.equal(args.includes('--full-auto'), false);
 });

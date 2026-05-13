@@ -29,6 +29,16 @@ const VERIFY_RETRY_FAILURES = new Set([
   'verifier_unavailable_retryable',
 ]);
 
+const BLOCKED_FAILURES = new Set([
+  'environment',
+  'environment_unavailable',
+  'verification_environment_unavailable',
+  'verifier_unavailable',
+  'tool_unavailable',
+  'node_test_runner_spawn_eperm',
+  'spawn_eperm',
+]);
+
 const REPAIR_FAILURES = new Set([
   'projection_state_inconsistency',
   'state_projection_inconsistency',
@@ -88,6 +98,14 @@ export function decidePhaseLoop(signal = {}) {
   }
 
   if (normalized.stage === 'verify') {
+    if (normalized.result === 'blocked' || hasAny(failedCaseClasses, BLOCKED_FAILURES)) {
+      return buildDecision(normalized, {
+        decision: PHASE_LOOP_DECISIONS.BLOCKED,
+        retryRecommended: false,
+        retryStrategy: RETRY_STRATEGIES.stopAndHandoff,
+      });
+    }
+
     if (hasAny(failedCaseClasses, VERIFY_RETRY_FAILURES)) {
       return buildDecision(normalized, {
         decision: PHASE_LOOP_DECISIONS.RERUN_VERIFY,
@@ -253,6 +271,9 @@ function normalizeResult(value) {
   const token = normalizeToken(value);
   if (['pass', 'passed', 'done', 'ok', 'success'].includes(token)) {
     return 'pass';
+  }
+  if (['blocked', 'block'].includes(token)) {
+    return 'blocked';
   }
   if (['fail', 'failed', 'failure', 'retry', 'blocked'].includes(token)) {
     return 'fail';

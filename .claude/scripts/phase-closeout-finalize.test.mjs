@@ -239,6 +239,138 @@ test('finalize writes attempt manifest finalizer seal before status promotion', 
   });
 });
 
+test('finalize seals the manifest for the requested phase when execution root contains multiple phases', async () => {
+  await withFixture(async (fixture) => {
+    const planExecutionRoot = path.dirname(fixture.executionRoot);
+    const phase1Dir = path.join(planExecutionRoot, '01-smoke');
+    const phase2Dir = path.join(planExecutionRoot, '02-smoke');
+    fs.mkdirSync(phase2Dir, { recursive: true });
+
+    const phase1Intent = writeAttemptManifestIntent({
+      executionRoot: planExecutionRoot,
+      phaseNumber: 1,
+      phaseSlug: '01-smoke',
+      attemptId: 'attempt-phase-01-a',
+      runnerStartedAt: '2026-05-10T11:58:00Z',
+      promptHash: 'prompt-hash-1',
+      commandHash: 'command-hash-1',
+      runnerLogPath: '.claude/logs/agent-loop/phase-1.log',
+    });
+    patchAttemptManifestChildIdentity({
+      manifestPath: phase1Intent.manifestPath,
+      childPid: 11111,
+      childProcessStartTime: '2026-05-10T11:58:01Z',
+    });
+    patchAttemptManifestExit({
+      manifestPath: phase1Intent.manifestPath,
+      runnerFinishedAt: '2026-05-10T11:59:00Z',
+      runnerExitCode: 0,
+    });
+
+    const phase2OlderIntent = writeAttemptManifestIntent({
+      executionRoot: planExecutionRoot,
+      phaseNumber: 2,
+      phaseSlug: '02-smoke',
+      attemptId: 'attempt-phase-02-a',
+      runnerStartedAt: '2026-05-10T12:01:00Z',
+      promptHash: 'prompt-hash-2',
+      commandHash: 'command-hash-2',
+      runnerLogPath: '.claude/logs/agent-loop/phase-2.log',
+    });
+    patchAttemptManifestChildIdentity({
+      manifestPath: phase2OlderIntent.manifestPath,
+      childPid: 22222,
+      childProcessStartTime: '2026-05-10T12:01:01Z',
+    });
+    patchAttemptManifestExit({
+      manifestPath: phase2OlderIntent.manifestPath,
+      runnerFinishedAt: '2026-05-10T12:02:00Z',
+      runnerExitCode: 0,
+    });
+    const phase2Intent = writeAttemptManifestIntent({
+      executionRoot: planExecutionRoot,
+      phaseNumber: 2,
+      phaseSlug: '02-smoke',
+      attemptId: 'attempt-phase-02-b',
+      runnerStartedAt: '2026-05-10T12:03:00Z',
+      promptHash: 'prompt-hash-2b',
+      commandHash: 'command-hash-2b',
+      runnerLogPath: '.claude/logs/agent-loop/phase-2b.log',
+    });
+    patchAttemptManifestChildIdentity({
+      manifestPath: phase2Intent.manifestPath,
+      childPid: 22223,
+      childProcessStartTime: '2026-05-10T12:03:01Z',
+    });
+    patchAttemptManifestExit({
+      manifestPath: phase2Intent.manifestPath,
+      runnerFinishedAt: '2026-05-10T12:04:00Z',
+      runnerExitCode: 0,
+    });
+
+    const phase2Doc = path.join(fixture.planDir, 'close/02-smoke-v1.md');
+    const phase2Sprint = path.join(phase2Dir, 'SPRINT_CONTRACT.md');
+    const phase2Qa = path.join(phase2Dir, 'QA_REPORT.md');
+    const phase2Handoff = path.join(phase2Dir, 'HANDOFF.md');
+    const phase2Scorecard = path.join(phase2Dir, 'SCORECARD.md');
+    fs.writeFileSync(phase2Doc, '# Phase 02\n\nREQ-2\nSCN-2\n', 'utf8');
+    fs.writeFileSync(phase2Sprint, '# Sprint Contract\n\nREQ-2 implemented.\n', 'utf8');
+    fs.writeFileSync(phase2Qa, '# QA Report\n\nSource plan conformance: pass\n\nStructured Evidence Metadata\n\n{"id":"SCN-2","status":"passed"}\n', 'utf8');
+    fs.writeFileSync(phase2Handoff, '# Handoff\n\nNo remaining blockers before closeout: none.\n', 'utf8');
+    fs.writeFileSync(phase2Scorecard, '# Scorecard\n\nScore verdict: done\nOBJ-CONFORM pass\n', 'utf8');
+    fs.writeFileSync(fixture.masterPlan, [
+      '# Master Plan',
+      '',
+      '## Phase Completion Checklist',
+      '- [x] Phase 01 - Smoke',
+      '- [ ] Phase 02 - Smoke',
+      '',
+      'REQ-1',
+      'REQ-2',
+      'SCN-1',
+      'SCN-2',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(fixture.statusFile, [
+      'schemaVersion: "1.0"',
+      `planDir: "${fixture.planDir}"`,
+      `masterPlan: "${fixture.masterPlan}"`,
+      'activeRunLeaseId: "delegated-run-2"',
+      'phases:',
+      '  - number: 1',
+      '    title: "Smoke"',
+      '    status: completed',
+      `    archivedPhaseDoc: "${path.join(fixture.planDir, 'close/01-smoke-v1.md')}"`,
+      '  - number: 2',
+      '    title: "Smoke 2"',
+      '    status: in_progress',
+      `    sprintContract: "${phase2Sprint}"`,
+      `    qaReport: "${phase2Qa}"`,
+      `    handoff: "${phase2Handoff}"`,
+      `    scorecard: "${phase2Scorecard}"`,
+      `    archivedPhaseDoc: "${phase2Doc}"`,
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 2,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: planExecutionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase02-seal',
+    });
+
+    assert.equal(result.attemptManifestSeal.sealed, true);
+    assert.equal(result.attemptManifestSeal.manifestPath, path.relative(fixture.root, phase2Intent.manifestPath).replace(/\\/g, '/'));
+    assert.equal(readAttemptManifest(phase1Intent.manifestPath).manifest.finalizerTransactionId, undefined);
+    assert.equal(readAttemptManifest(phase2Intent.manifestPath).manifest.finalizerTransactionId, 'phase02-seal');
+  });
+});
+
 test('finalize skips completed reconciliation when sidecar has open blocker', async () => {
   await withFixture(async (fixture) => {
     writeOpenBlockerSidecar(fixture.executionRoot);

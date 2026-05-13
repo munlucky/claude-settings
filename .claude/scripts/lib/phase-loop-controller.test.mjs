@@ -71,6 +71,22 @@ test('missing verification evidence reruns verification', () => {
   assertOutputShape(result);
 });
 
+test('verification environment unavailable blocks without execute retry', () => {
+  const result = decidePhaseLoop({
+    phaseNumber: 1,
+    attemptNumber: 3,
+    stage: 'verify',
+    result: 'blocked',
+    failedCases: [{ class: 'verification_environment_unavailable', evidenceRef: 'node --test spawn EPERM' }],
+  });
+
+  assert.equal(result.decision, PHASE_LOOP_DECISIONS.BLOCKED);
+  assert.equal(result.retryRecommended, false);
+  assert.equal(result.failedStage, 'verify');
+  assert.equal(result.nextAttemptInput.retryStrategy, 'stop_and_handoff');
+  assertOutputShape(result);
+});
+
 test('verification failures that require code change continue execution', () => {
   const result = decidePhaseLoop({
     phaseNumber: 1,

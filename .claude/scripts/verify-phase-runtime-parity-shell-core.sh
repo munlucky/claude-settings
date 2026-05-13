@@ -1189,7 +1189,7 @@ EOF
     assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
   fi
   if target_runtime_selected "codex"; then
-    local expected_codex_sandbox="${CODEX_EXEC_SANDBOX:-workspace-write}"
+    local expected_codex_sandbox="${CODEX_EXEC_SANDBOX:-danger-full-access}"
     if ! grep -Fq -- "agent-loop.sh" "$codex_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$codex_delegated_out"; then
       fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
     fi

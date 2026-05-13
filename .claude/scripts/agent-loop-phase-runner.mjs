@@ -17,6 +17,14 @@ import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { archivePromptText, summarizeSpawnCommand } from './lib/prompt-redaction.mjs';
 import { decidePhaseLoop } from './lib/phase-loop-controller.mjs';
 import {
+  buildRemediationPacket,
+  defaultRemediationSourceRefs,
+  formatRemediationPacketForPrompt,
+  readFreshRemediationPacket,
+  REMEDIATION_PACKET_BASENAME,
+  writeRemediationPacket,
+} from './lib/phase-remediation-packet.mjs';
+import {
   appendAttemptHeartbeatEvent,
   patchAttemptManifestChildIdentity,
   patchAttemptManifestExit,
@@ -57,6 +65,11 @@ const FINALIZER_BLOCKED_CODES = new Set([
   'spawn EPERM',
   'unknown_finalizer_failure',
 ]);
+
+const FINALIZER_STAGE_BY_CODE = Object.freeze({
+  'verification-verdict-not-passed': 'verify',
+  'review-evidence-missing': 'review',
+});
 
 const state = {
   planDir: '',
@@ -241,12 +254,16 @@ function normalizeFinalizerFailureCode(value) {
   return code;
 }
 
+function stageForFinalizerFailureCode(finalizerCode) {
+  return FINALIZER_STAGE_BY_CODE[finalizerCode] || 'finish';
+}
+
 export function buildPhaseLoopShadowSignal(input = {}) {
   const finalizerCode = normalizeFinalizerFailureCode(input.finalizerFailureCode || input.failureCode || input.code);
   const mappedFailureClass = finalizerCode
     ? FINALIZER_FAILURE_CLASS_BY_CODE[finalizerCode] || 'unknown_finalizer_failure'
     : '';
-  const stage = normalizeShadowStage(input.stage || (finalizerCode ? 'finish' : 'verify'));
+  const stage = normalizeShadowStage(input.stage || (finalizerCode ? stageForFinalizerFailureCode(finalizerCode) : 'verify'));
   const failureClass = String(input.failureClass || mappedFailureClass || '').trim();
   const failedCases = Array.isArray(input.failedCases) && input.failedCases.length > 0
     ? input.failedCases
@@ -290,6 +307,32 @@ export function computePhaseLoopShadowDecision(input = {}) {
       failureClass: signal.failureClass,
       evidenceRefs: signal.evidenceRefs,
     },
+  };
+}
+
+export function computeControllerEnforcedGateAction(input = {}) {
+  const shadow = computePhaseLoopShadowDecision({
+    phaseNumber: input.phaseNumber,
+    attemptNumber: input.attemptNumber,
+    stage: input.stage,
+    result: input.result || 'fail',
+    failureClass: input.failureClass,
+    finalizerFailureCode: input.finalizerFailureCode || input.gateReason,
+    evidenceRefs: input.evidenceRefs,
+    blockers: input.blockers,
+  });
+  const actionByDecision = {
+    continue_execute: 'auto-fix',
+    rerun_review: 'review-remediation',
+    rerun_verify: 'verification-remediation',
+    repair_required: 'stop-repair-required',
+    blocked: 'stop-blocked',
+    clean_finish_candidate: 'finalize',
+  };
+
+  return {
+    ...shadow,
+    action: actionByDecision[shadow.controllerDecision] || 'stop-blocked',
   };
 }
 
@@ -590,6 +633,46 @@ function syncCleanFinishArtifacts(completionArtifacts, paths) {
   artifactsCommand('normalize-qa-report-workflow-fields', paths.phaseQaReport);
 }
 
+function runPhaseCloseoutFinalizer(paths) {
+  try {
+    return runNodeScript('.claude/scripts/phase-closeout-finalize.mjs', [
+      'finalize',
+      '--phase',
+      String(state.phaseNum),
+      '--status-file',
+      state.statusFile,
+      '--plan-dir',
+      state.planDir,
+      '--master-plan',
+      resolveActiveMasterPlanPath(),
+      '--execution-root',
+      state.executionRoot,
+      '--json',
+    ], { env: phaseEnv(paths) });
+  } catch (error) {
+    return {
+      status: 1,
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function finalizerFailureCode(result) {
+  const combined = `${result?.stderr || ''}\n${result?.stdout || ''}`;
+  const codeMatch = combined.match(/(?:code|reason|violation)["':=\s]+([a-z0-9_.:-]+)/i);
+  if (codeMatch) {
+    return codeMatch[1];
+  }
+  if (/spawn\s+EPERM/i.test(combined)) {
+    return 'spawn EPERM';
+  }
+  if (/tool-unavailable/i.test(combined)) {
+    return 'tool-unavailable';
+  }
+  return 'unknown_finalizer_failure';
+}
+
 function writeCleanFinishHandoff(paths) {
   artifactsCommand(
     'write-clean-finish-handoff',
@@ -600,6 +683,79 @@ function writeCleanFinishHandoff(paths) {
     paths.phaseQaReport,
     paths.phaseHandoff,
   );
+}
+
+function remediationPacketPath(paths) {
+  return path.join(paths.phaseExecutionDir, REMEDIATION_PACKET_BASENAME);
+}
+
+function sourceRefsForRemediation(paths, evidenceRefs = []) {
+  const phasePrefix = String(state.phaseNum || '').padStart(2, '0');
+  return defaultRemediationSourceRefs({
+    phaseDoc: state.phaseDoc,
+    sprintContract: paths.phaseSprintContract,
+    evidenceRefs,
+    verdictPath: `.claude/verification-verdict-phase${phasePrefix}-final.json`,
+    verifierResultPath: path.join(paths.phaseExecutionDir, 'verification-result.json'),
+    finalizerResultPath: path.join(paths.phaseExecutionDir, 'finalizer-result.json'),
+  });
+}
+
+function writeControllerRemediationPacket(paths, controllerAction, {
+  attemptNumber = 1,
+  failedStage = '',
+  evidenceRefs = [],
+  reason = '',
+} = {}) {
+  const packet = buildRemediationPacket({
+    phaseNumber: state.phaseNum,
+    attemptNumber,
+    sourceRefs: sourceRefsForRemediation(paths, evidenceRefs),
+    controllerOutput: {
+      decision: controllerAction.controllerDecision,
+      sourceDecisionId: `decision-phase-${state.phaseNum}-attempt-${attemptNumber}-${sha1FileOrEmpty(paths.phaseQaReport).slice(0, 12) || Date.now()}`,
+      retryRecommended: controllerAction.decision?.retryRecommended !== false,
+      failedStage: failedStage || controllerAction.signal?.stage || 'verify',
+      failedCases: controllerAction.decision?.failedCases || controllerAction.signal?.failedCases || [],
+      improvementDirectives: [
+        {
+          id: `remediate-${state.phaseNum}-${attemptNumber}`,
+          targetStage: failedStage || controllerAction.signal?.stage || 'verify',
+          targetFiles: [paths.phaseQaReport, paths.phaseScorecard, paths.phaseHandoff].filter(Boolean),
+          instruction: reason || `Resolve controller decision ${controllerAction.controllerDecision} before another completion claim.`,
+          evidenceRequired: 'Fresh review, verification, scorecard, and plan conformance evidence.',
+        },
+      ],
+      evidenceRefs,
+      nextAttemptInput: {
+        mustRead: [state.phaseDoc, paths.phaseSprintContract, paths.phaseQaReport, paths.phaseScorecard, paths.phaseHandoff],
+        mustRerun: ['the phase-specific verification command that failed or was missing'],
+        prohibitedActions: [
+          'Do not cite remediation-request.json as review, verification, closeout, or completion evidence.',
+          'Do not mark phase completion until SCORECARD.md is done/FULL and plan conformance passes.',
+        ],
+        retryStrategy: controllerAction.decision?.retryStrategy || 'same_direction_refine',
+      },
+    },
+  });
+  const packetPath = remediationPacketPath(paths);
+  writeRemediationPacket(packetPath, packet);
+  appendDebugLog('phase-remediation-packet-written', {
+    packetPath,
+    decision: packet.decision,
+    sourceHash: packet.sourceHash,
+    missingRefs: packet.sourceHashManifest.missing,
+  });
+  return packetPath;
+}
+
+function buildPhasePromptForRunner(config) {
+  const packet = readFreshRemediationPacket(remediationPacketPath(config.paths), { root: process.cwd() });
+  const remediationInstructions = formatRemediationPacketForPrompt(packet);
+  return buildPhasePrompt({
+    ...config,
+    extraInstructions: [remediationInstructions, config.extraInstructions].filter(Boolean).join('\n\n'),
+  });
 }
 
 function codexBaseArgs(cwd) {
@@ -925,7 +1081,8 @@ function isBlockedCompletionReason(reason) {
 
 function isHardBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
-  return normalized === 'verification-preflight-blocked'
+  return normalized.startsWith('blocked:')
+    || normalized === 'verification-preflight-blocked'
     || normalized === 'capability-preflight-blocked'
     || normalized === 'path-authority-preflight-failed';
 }
@@ -1179,6 +1336,26 @@ function decisionNameForGateRemediation(stage) {
     return 'rerun_verify';
   }
   return 'rerun_verify';
+}
+
+function gateControllerAction({ gate, gateStop, autoFixCount }) {
+  const stage = gateStop?.REMEDIATION_STAGE || remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate);
+  const reason = String(gate.PHASE_COMPLETION_REASON || '').trim();
+  const category = String(gateStop?.GATE_REASON_CATEGORY || gate.GATE_REASON_CATEGORY || '').trim();
+  const status = String(gate.PHASE_COMPLETION_STATUS || '').trim().toLowerCase();
+  const blockers = toInt(gate.PHASE_COMPLETION_BLOCKERS, 0);
+  const environmentBlocked = category === 'environment_blocked' || reason.toLowerCase().startsWith('blocked:');
+  const scorecardBlocked = status === 'blocked' && blockers > 0;
+  return computeControllerEnforcedGateAction({
+    phaseNumber: state.phaseNum,
+    attemptNumber: autoFixCount,
+    stage,
+    result: environmentBlocked || scorecardBlocked ? 'blocked' : 'fail',
+    failureClass: environmentBlocked ? reason.replace(/^blocked:/i, '') : '',
+    gateReason: environmentBlocked ? '' : gate.PHASE_COMPLETION_REASON,
+    evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
+    blockers: gate.PHASE_COMPLETION_REASON,
+  });
 }
 
 function remediationStatusLabel(reason, gate = null) {
@@ -1443,6 +1620,39 @@ function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths
       }
     });
   }
+  syncCleanFinishArtifacts(completionArtifacts, paths);
+
+  const finalizerResult = runPhaseCloseoutFinalizer(paths);
+  if (finalizerResult.status !== 0) {
+    const failureCode = finalizerFailureCode(finalizerResult);
+    const controllerGateAction = computeControllerEnforcedGateAction({
+      phaseNumber: state.phaseNum,
+      attemptNumber: 1,
+      finalizerFailureCode: failureCode,
+      evidenceRefs: completionArtifacts,
+      blockers: finalizerResult.stderr || finalizerResult.stdout || failureCode,
+    });
+    const detail = [
+      `controllerDecision=${controllerGateAction.controllerDecision}`,
+      `finalizerFailureCode=${failureCode}`,
+      `status=${finalizerResult.status}`,
+    ].join(' | ');
+    appendDebugLog('phase-finalizer-failed-after-clean-finish-candidate', {
+      detail,
+      stdout: finalizerResult.stdout,
+      stderr: finalizerResult.stderr,
+    });
+    const packetPath = writeControllerRemediationPacket(paths, controllerGateAction, {
+      attemptNumber: 1,
+      failedStage: controllerGateAction.signal.stage,
+      evidenceRefs: [completionArtifacts, paths.phaseQaReport, paths.phaseScorecard].filter(Boolean),
+      reason: detail,
+    });
+    appendQaRuntimeUpdate('phase-finalizer-failed', logFile, detail, paths);
+    appendHandoffUpdate('blocked', logFile, `${detail} | remediationPacket=${packetPath}`, paths);
+    return false;
+  }
+
   logSuccess(`Phase ${state.phaseNum} completed${completionLabel} (${durationSeconds}s)`);
   appendQaRuntimeUpdate(
     completionLabel === '' ? 'phase-command-succeeded' : `phase-completed${completionLabel}`,
@@ -1450,8 +1660,6 @@ function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths
     completionArtifacts,
     paths,
   );
-  syncCleanFinishArtifacts(completionArtifacts, paths);
-  updatePhaseState(state.phaseNum, 'completed', 'completed', false, state.phaseDoc, paths);
   writeCleanFinishHandoff(paths);
   appendDecisionLog([
     `## Phase ${state.phaseNum}`,
@@ -1460,6 +1668,7 @@ function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths
     '',
   ]);
   runCommitPrompt(logFile, commitPrompt, runtime);
+  return true;
 }
 
 function handleFatalPhaseRunnerError(error, origin = 'phase-runner-exception') {
@@ -1699,7 +1908,7 @@ function runPhaseAttempt() {
     });
     return stopBlockedPhase(paths, logFile, detail);
   }
-  let prompt = buildPhasePrompt({
+  let prompt = buildPhasePromptForRunner({
     nextPhase: state.phaseNum,
     phaseTitle: state.phaseTitle,
     planDir: state.planDir,
@@ -1791,7 +2000,7 @@ function runPhaseAttempt() {
         `requestedRuntime=${state.runtime} | effectiveRuntime=${activeRuntime} | fallbackReason=${runtimeHealth.REASON || runtimeHealth.DETAIL || 'runtime-health-fallback'} | ${previousRuntime} -> ${activeRuntime}: ${runtimeHealth.DETAIL || runtimeHealth.REASON}`,
         paths,
       );
-      prompt = buildPhasePrompt({
+      prompt = buildPhasePromptForRunner({
         nextPhase: state.phaseNum,
         phaseTitle: state.phaseTitle,
         planDir: state.planDir,
@@ -1956,7 +2165,7 @@ function runPhaseAttempt() {
           result: 'pass',
           evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
         });
-        finalizeCompletion(
+        if (finalizeCompletion(
           logFile,
           duration,
           gate.PHASE_COMPLETION_ARTIFACTS ?? '',
@@ -1964,8 +2173,10 @@ function runPhaseAttempt() {
           activeRuntime,
           '',
           `/commit-moonshot Phase ${state.phaseNum} 완료. 해당 페이즈 변경사항을 커밋해주세요.`,
-        );
-        return 0;
+        )) {
+          return 0;
+        }
+        return 2;
       }
 
       if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON)) {
@@ -1997,29 +2208,27 @@ function runPhaseAttempt() {
       }
 
       autoFixCount += 1;
-      recordPhaseLoopShadowDecision({
-        legacyDecision: decisionNameForGateRemediation(remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate)),
-        phaseNumber: state.phaseNum,
-        attemptNumber: autoFixCount,
-        stage: remediationStageForGateReason(gate.PHASE_COMPLETION_REASON, gate),
-        result: 'fail',
-        finalizerFailureCode: gate.PHASE_COMPLETION_REASON,
+      const controllerGateAction = gateControllerAction({ gate, gateStop, autoFixCount });
+      appendDebugLog('phase-loop-controller-enforced-gate-action', {
+        decision: controllerGateAction.controllerDecision,
+        action: controllerGateAction.action,
+        stage: controllerGateAction.signal.stage,
+        failureClass: controllerGateAction.signal.failureClass,
+        gateReason: gate.PHASE_COMPLETION_REASON,
         evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
       });
+      const remediationPacket = writeControllerRemediationPacket(paths, controllerGateAction, {
+        attemptNumber: autoFixCount,
+        failedStage: controllerGateAction.signal.stage,
+        evidenceRefs: [gate.PHASE_COMPLETION_ARTIFACTS, paths.phaseQaReport, paths.phaseScorecard].filter(Boolean),
+        reason: gate.PHASE_COMPLETION_REASON,
+      });
       logError(`Phase ${state.phaseNum} produced no valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
-      appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
+      appendQaRuntimeUpdate(missingEvidenceRuntimeStatus(gate.PHASE_COMPLETION_REASON, autoFixCount, gate), logFile, `${gate.PHASE_COMPLETION_REASON} | remediationPacket=${remediationPacket}`, paths);
       appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
 
       const defaultStopReason = gateStop.STOP_REASON || 'missing-verification-evidence';
       const finalStopReason = detectFinalStopReason(logFile, defaultStopReason);
-      if (finalStopReason === 'missing-verification-evidence') {
-        const detail = describeStopReason(finalStopReason, activeRuntime, gate.PHASE_COMPLETION_REASON);
-        appendQaRuntimeUpdate('missing-verification-evidence', logFile, detail, paths);
-        appendHandoffUpdate('blocked', logFile, detail, paths);
-        updatePhaseState(state.phaseNum, 'blocked', 'blocked', false, state.phaseDoc, paths);
-        recordLoopStop(state.phaseNum, finalStopReason, detail, logFile);
-        return 2;
-      }
       const retrySuppression = summarizeRetrySuppression(process.cwd(), finalStopReason);
       if (retrySuppression?.shouldSuppressRetry) {
         const detail = [
@@ -2030,7 +2239,7 @@ function runPhaseAttempt() {
         ].filter(Boolean).join(' | ');
         return stopBlockedPhase(paths, logFile, detail, 'verification-preflight-blocked');
       }
-      const decision = decideMissingEvidenceAction(autoFixCount, finalStopReason);
+      const decision = { ACTION: controllerGateAction.action };
       if (decision.ACTION === 'stop-loop') {
         const detail = describeStopReason(finalStopReason, activeRuntime, gate.PHASE_COMPLETION_REASON);
         const blockedStatus = finalStopReason === 'missing-review-evidence' || finalStopReason === 'missing-finish-closeout'
@@ -2041,6 +2250,73 @@ function runPhaseAttempt() {
         updatePhaseState(state.phaseNum, blockedStatus, blockedStatus, false, state.phaseDoc, paths);
         recordLoopStop(state.phaseNum, finalStopReason, detail, logFile);
         return 2;
+      }
+
+      if (decision.ACTION === 'stop-blocked' || decision.ACTION === 'stop-repair-required') {
+        const detail = [
+          `controllerDecision=${controllerGateAction.controllerDecision}`,
+          `gateReason=${gate.PHASE_COMPLETION_REASON}`,
+          `stage=${controllerGateAction.signal.stage}`,
+        ].join(' | ');
+        return stopBlockedPhase(paths, logFile, detail, 'completion-gate-blocked');
+      }
+
+      if (decision.ACTION === 'auto-fix') {
+        logInfo('Controller selected execute retry for completion-gate failure.');
+        appendDecisionLog([`## Phase ${state.phaseNum} - Controller Execute Retry #${autoFixCount}`, '']);
+        const fixPrompt = buildPhasePromptForRunner({
+          nextPhase: state.phaseNum,
+          phaseTitle: state.phaseTitle,
+          planDir: state.planDir,
+          phaseDoc: state.phaseDoc,
+          statusFile: state.statusFile,
+          executionRoot: state.executionRoot,
+          paths,
+          runtime: activeRuntime,
+          targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+          extraInstructions: buildAutoFixPrompt(state.phaseNum, logFile),
+          autonomousInstructions: autonomousInstructions(),
+          workspaceRoot: process.cwd(),
+          verificationRuntimes: verificationPreflight.effectiveSelection,
+        });
+        updatePhaseState(state.phaseNum, 'in_progress', 'running', false, state.phaseDoc, paths);
+        recordPhaseProgressCheckpoint('execute', 'controller-execute-retry-started', logFile, gate.PHASE_COMPLETION_REASON, activeRuntime, paths);
+        const fixExit = runWorkerPrompt(logFile, fixPrompt, startEpoch, sha1FileOrEmpty(paths.phaseQaReport), paths, activeRuntime);
+        if (fixExit === 0) {
+          const remediationGate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
+          if (remediationGate.PHASE_COMPLETION_ALLOWED === 'true') {
+            if (finalizeCompletion(
+              logFile,
+              Math.floor(Date.now() / 1000) - startEpoch,
+              remediationGate.PHASE_COMPLETION_ARTIFACTS ?? '',
+              paths,
+              activeRuntime,
+              '-after-controller-execute-retry',
+              `/commit-moonshot Phase ${state.phaseNum} 완료 (controller execute retry). 변경사항을 커밋해주세요.`,
+            )) {
+              return 0;
+            }
+            return 2;
+          }
+          appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
+          appendHandoffUpdate(handoffStopReason(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
+        }
+        prompt = buildPhasePromptForRunner({
+          nextPhase: state.phaseNum,
+          phaseTitle: state.phaseTitle,
+          planDir: state.planDir,
+          phaseDoc: state.phaseDoc,
+          statusFile: state.statusFile,
+          executionRoot: state.executionRoot,
+          paths,
+          runtime: activeRuntime,
+          targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+          extraInstructions: retryContinuationInstructions(state.phaseNum, phaseAttemptSummary(), gate.PHASE_COMPLETION_REASON),
+          autonomousInstructions: autonomousInstructions(),
+          workspaceRoot: process.cwd(),
+          verificationRuntimes: verificationPreflight.effectiveSelection,
+        });
+        continue;
       }
 
       const closeoutRemediationAction = decision.ACTION === 'review-remediation' || decision.ACTION === 'finish-remediation';
@@ -2078,7 +2354,7 @@ function runPhaseAttempt() {
           finalStopReason,
         });
         if (remediationGate.PHASE_COMPLETION_ALLOWED === 'true') {
-          finalizeCompletion(
+          if (finalizeCompletion(
             logFile,
             Math.floor(Date.now() / 1000) - startEpoch,
             remediationGate.PHASE_COMPLETION_ARTIFACTS ?? '',
@@ -2086,8 +2362,10 @@ function runPhaseAttempt() {
             activeRuntime,
             '-after-closeout-remediation',
             `/commit-moonshot Phase ${state.phaseNum} 완료 (closeout remediation). 변경사항을 커밋해주세요.`,
-          );
-          return 0;
+          )) {
+            return 0;
+          }
+          return 2;
         }
         if (isHardBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
           return stopBlockedPhase(paths, logFile, `completion gate blocked after artifact closeout remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
@@ -2106,7 +2384,7 @@ function runPhaseAttempt() {
         const remediationLabel = remediationStage === 'verify' ? 'Verification Remediation' : 'Closeout Remediation';
         logInfo(`Attempting ${remediationLabel.toLowerCase()}...`);
         appendDecisionLog([`## Phase ${state.phaseNum} - ${remediationLabel} #${autoFixCount}`, '']);
-        const fixPrompt = buildPhasePrompt({
+        const fixPrompt = buildPhasePromptForRunner({
           nextPhase: state.phaseNum,
           phaseTitle: state.phaseTitle,
           planDir: state.planDir,
@@ -2129,7 +2407,7 @@ function runPhaseAttempt() {
           const remediationGate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
           retryReason = remediationGate.PHASE_COMPLETION_REASON;
           if (remediationGate.PHASE_COMPLETION_ALLOWED === 'true') {
-            finalizeCompletion(
+            if (finalizeCompletion(
               logFile,
               Math.floor(Date.now() / 1000) - startEpoch,
               remediationGate.PHASE_COMPLETION_ARTIFACTS ?? '',
@@ -2137,8 +2415,10 @@ function runPhaseAttempt() {
               activeRuntime,
               '-after-verification-remediation',
               `/commit-moonshot Phase ${state.phaseNum} 완료 (verification remediation). 변경사항을 커밋해주세요.`,
-            );
-            return 0;
+            )) {
+              return 0;
+            }
+            return 2;
           }
           if (isHardBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
             return stopBlockedPhase(paths, logFile, `completion gate blocked after remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
@@ -2147,7 +2427,7 @@ function runPhaseAttempt() {
           appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
           appendHandoffUpdate(handoffStopReason(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
         }
-        prompt = buildPhasePrompt({
+        prompt = buildPhasePromptForRunner({
           nextPhase: state.phaseNum,
           phaseTitle: state.phaseTitle,
           planDir: state.planDir,
@@ -2208,7 +2488,7 @@ function runPhaseAttempt() {
         const previousRuntime = activeRuntime;
         activeRuntime = decision.FALLBACK_RUNTIME;
         timeoutFallbackUsed = true;
-        prompt = buildPhasePrompt({
+        prompt = buildPhasePromptForRunner({
           nextPhase: state.phaseNum,
           phaseTitle: state.phaseTitle,
           planDir: state.planDir,
@@ -2293,7 +2573,7 @@ function runPhaseAttempt() {
     if (decision.ACTION === 'auto-fix') {
       logInfo('Attempting auto-fix...');
       appendDecisionLog([`## Phase ${state.phaseNum} - Auto-fix #${autoFixCount}`, '']);
-      const fixPrompt = buildPhasePrompt({
+      const fixPrompt = buildPhasePromptForRunner({
         nextPhase: state.phaseNum,
         phaseTitle: state.phaseTitle,
         planDir: state.planDir,
@@ -2314,7 +2594,7 @@ function runPhaseAttempt() {
       if (fixExit === 0) {
         const gate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
         if (gate.PHASE_COMPLETION_ALLOWED === 'true') {
-          finalizeCompletion(
+          if (finalizeCompletion(
             logFile,
             Math.floor(Date.now() / 1000) - startEpoch,
             gate.PHASE_COMPLETION_ARTIFACTS ?? '',
@@ -2322,14 +2602,16 @@ function runPhaseAttempt() {
             activeRuntime,
             '-after-auto-fix',
             `/commit-moonshot Phase ${state.phaseNum} 완료 (auto-fix). 변경사항을 커밋해주세요.`,
-          );
-          return 0;
+          )) {
+            return 0;
+          }
+          return 2;
         }
         logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${gate.PHASE_COMPLETION_REASON})`);
         appendQaRuntimeUpdate('auto-fix-succeeded-without-fresh-verification', logFile, gate.PHASE_COMPLETION_REASON, paths);
         appendHandoffUpdate(handoffStopReason(gate.PHASE_COMPLETION_REASON, gate), logFile, gate.PHASE_COMPLETION_REASON, paths);
       }
-      prompt = buildPhasePrompt({
+      prompt = buildPhasePromptForRunner({
         nextPhase: state.phaseNum,
         phaseTitle: state.phaseTitle,
         planDir: state.planDir,

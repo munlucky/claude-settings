@@ -11,6 +11,10 @@ import {
   resolvePath,
   sectionText,
 } from './phase-closeout-parsers.mjs';
+import {
+  hasRemediationPacketReference,
+  isRemediationPacketPath,
+} from './phase-remediation-packet.mjs';
 
 const PASS_WORDS = /\b(pass|passed|done|verified)\b/i;
 const FAIL_WORDS = /\b(fail|failed|blocked|missing|todo|pending|retry)\b/i;
@@ -40,7 +44,10 @@ export function hasConcreteSourceTargets(phaseText) {
 export function scenarioEvidencePassed(scenarioId, evidenceText) {
   return normalizeScenarioEvidencePassed(scenarioId, evidenceText) || normalize(evidenceText).split('\n').some((line) => {
     const lowered = line.toLowerCase();
-    return lowered.includes(scenarioId.toLowerCase()) && PASS_WORDS.test(line) && !FAIL_WORDS.test(line);
+    return lowered.includes(scenarioId.toLowerCase())
+      && PASS_WORDS.test(line)
+      && !FAIL_WORDS.test(line)
+      && !hasRemediationPacketReference(line);
   });
 }
 
@@ -180,7 +187,13 @@ export function mergeStructuredEvidenceMetadata(...metadataSources) {
 export function structuredScenarioEvidencePassed(metadata, scenarioId) {
   const normalizedId = String(scenarioId || '').trim().toLowerCase();
   const entry = (metadata?.scenarios || []).find((candidate) => candidate.id.toLowerCase() === normalizedId);
-  return entry ? entry.passed === true : null;
+  if (!entry) {
+    return null;
+  }
+  if (entry.passed === true && isRemediationPacketPath(entry.evidencePath)) {
+    return false;
+  }
+  return entry.passed === true;
 }
 
 export function structuredTraceabilityValid(metadata, kind) {

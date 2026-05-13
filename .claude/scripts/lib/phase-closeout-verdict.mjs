@@ -20,7 +20,68 @@ function resolveCandidatePath(value) {
   return path.isAbsolute(text) ? text : path.resolve(process.cwd(), text);
 }
 
-function findAttemptManifestPath(phase = {}, phaseExecutionDir = '') {
+function listAttemptManifestPaths(start) {
+  if (!start || !fs.existsSync(start)) {
+    return [];
+  }
+  const matches = [];
+  const stack = [start];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const candidate = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(candidate);
+      } else if (entry.isFile() && entry.name === 'attempt-manifest.json') {
+        matches.push(candidate);
+      }
+    }
+  }
+  return matches.sort();
+}
+
+function manifestTimestampMs(manifest = {}) {
+  for (const key of ['runnerFinishedAt', 'runnerStartedAt']) {
+    const time = Date.parse(manifest?.[key] || '');
+    if (Number.isFinite(time)) {
+      return time;
+    }
+  }
+  return 0;
+}
+
+function readManifestSummary(manifestPath) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const number = Number(manifest?.phaseNumber);
+    return {
+      path: manifestPath,
+      phaseNumber: Number.isFinite(number) ? number : null,
+      timestampMs: manifestTimestampMs(manifest),
+      attemptId: String(manifest?.attemptId || ''),
+    };
+  } catch {
+    return {
+      path: manifestPath,
+      phaseNumber: null,
+      timestampMs: 0,
+      attemptId: '',
+    };
+  }
+}
+
+function bestManifestForPhase(manifestPaths, phaseNumber) {
+  const expected = Number(phaseNumber);
+  if (!Number.isFinite(expected)) {
+    return '';
+  }
+  return manifestPaths
+    .map(readManifestSummary)
+    .filter((entry) => entry.phaseNumber === expected)
+    .sort((a, b) => b.timestampMs - a.timestampMs || b.attemptId.localeCompare(a.attemptId) || b.path.localeCompare(a.path))[0]?.path || '';
+}
+
+function findAttemptManifestPath(phase = {}, phaseExecutionDir = '', phaseNumber = null) {
   const explicit = resolveCandidatePath(
     phase.attemptManifestPath
       || phase.attemptManifest
@@ -35,19 +96,8 @@ function findAttemptManifestPath(phase = {}, phaseExecutionDir = '') {
   if (!root || !fs.existsSync(root)) {
     return '';
   }
-  const stack = [root];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      const candidate = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(candidate);
-      } else if (entry.isFile() && entry.name === 'attempt-manifest.json') {
-        return candidate;
-      }
-    }
-  }
-  return '';
+  const manifests = listAttemptManifestPaths(root);
+  return bestManifestForPhase(manifests, phaseNumber) || manifests[0] || '';
 }
 
 function phaseRequiresCanonicalAttempt(phaseNumber, phase = {}, manifestPath = '') {
@@ -81,7 +131,7 @@ export function evaluateCompletionGateVerdict({
   verdict = {},
   phaseExecutionDir = '',
 } = {}) {
-  const manifestPath = findAttemptManifestPath(phase, phaseExecutionDir);
+  const manifestPath = findAttemptManifestPath(phase, phaseExecutionDir, phaseNumber);
   const manifestRequired = phaseRequiresCanonicalAttempt(phaseNumber, phase, manifestPath);
   if (!manifestRequired) {
     return {
