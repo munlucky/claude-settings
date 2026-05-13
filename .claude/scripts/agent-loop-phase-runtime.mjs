@@ -21,6 +21,27 @@ function resolvePhaseStatusFile(workspaceRoot) {
   return path.join(workspaceRoot, '.claude', 'docs', 'phase-status.yaml');
 }
 
+function parseTimestampMs(value) {
+  const parsed = Date.parse(String(value || '').trim().replace(/^"|"$/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readCurrentRunAttachedAtMs(phaseStatusFile) {
+  if (!phaseStatusFile || !fs.existsSync(phaseStatusFile)) {
+    return 0;
+  }
+
+  const text = fs.readFileSync(phaseStatusFile, 'utf8');
+  for (const key of ['activeExecutionAttachedAt', 'lastExecutionAttachedAt']) {
+    const match = text.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`, 'm'));
+    const parsed = parseTimestampMs(match?.[1] || '');
+    if (parsed > 0) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
 function commandExists(command) {
   const checker = process.platform === 'win32' ? 'where' : 'which';
   const result = spawnSync(checker, [command], { stdio: 'ignore' });
@@ -479,7 +500,7 @@ function updatePhaseHeartbeat({
   return !result.error && (result.status ?? 0) === 0;
 }
 
-function parseRecentRuntimeIssues(logDir, pattern, recentWindowMs, maxFiles) {
+function parseRecentRuntimeIssues(logDir, pattern, recentWindowMs, maxFiles, minMtimeMs = 0) {
   if (!logDir || !fs.existsSync(logDir)) {
     return [];
   }
@@ -495,7 +516,7 @@ function parseRecentRuntimeIssues(logDir, pattern, recentWindowMs, maxFiles) {
         mtimeMs: stats.mtimeMs,
       };
     })
-    .filter((entry) => now - entry.mtimeMs <= recentWindowMs)
+    .filter((entry) => now - entry.mtimeMs <= recentWindowMs && entry.mtimeMs >= minMtimeMs)
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
     .slice(0, maxFiles)
     .flatMap((entry) => {
@@ -602,12 +623,14 @@ function assessRuntimeHealth(runtime, workspaceRoot = process.cwd()) {
   const recentWindowMs = Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_WINDOW_MS ?? String(2 * 60 * 60 * 1000), 10) || (2 * 60 * 60 * 1000);
   const maxLogs = Number.parseInt(process.env.AGENT_LOOP_RUNTIME_HEALTH_MAX_LOGS ?? '5', 10) || 5;
   const phaseStatusFile = resolvePhaseStatusFile(workspaceRoot);
+  const currentRunAttachedAtMs = readCurrentRunAttachedAtMs(phaseStatusFile);
   const memorygraphSummary = knownUnavailableSummary(phaseStatusFile, { code: 'memorygraph_unavailable' });
   const matchingLogs = parseRecentRuntimeIssues(
     logDir,
     issuePattern,
     recentWindowMs,
     maxLogs,
+    currentRunAttachedAtMs,
   );
   const structuredVerdictAssessment = assessRuntimeHealthFromVerdicts(
     normalizedRuntime,

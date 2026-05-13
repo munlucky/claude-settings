@@ -1,0 +1,137 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 5
+  isolationMode: "user-designated-read-only"
+  reviewerSession: "isolated-reviewer-agent-iter-05"
+  targetPlanPackage:
+    planDir: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12"
+    masterPlan: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/02-completion-gate-canonical-enforcement-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/03-manual-orphan-reconcile-mode-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/06-declared-alternate-verifier-policy-v1.md"
+      - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md"
+  reviewedPlan: "Split-Brain 재발 방지 + 현재 상태 정합화 분리 실행 계획 v2"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.91
+      evidence:
+        - "Plan v2 separates Track A future-attempt guard and Track B current manual reconciliation."
+        - "Plan v2 keeps verify-phase-closeout.mjs as final hard gate and does not propose relaxing it."
+      findings:
+        - "Goal is clear, but the active package still presents the prior plan as executable rather than reconcile-required."
+    scopeClarity:
+      weight: 0.20
+      score: 0.86
+      evidence:
+        - "Track A is scoped to new attempts/future completions."
+        - "Track B prohibits source mutation, verifier relaxation, post-hoc manifest sealing, and PID/start-time backfill."
+      findings:
+        - "Scope split is sound, but the exact boundary between future guard enforcement and legacy manual reconciliation needs a concrete switch/condition in the written package."
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.82
+      evidence:
+        - "Plan v2 final acceptance uses the same live verify-phase-closeout command and requires allowed:true."
+        - "Plan v2 lists repair policy for master-checklist-not-checked, incomplete_attempt_manifest, completed-timing-stage-not-terminal, plan-conformance-not-passed, artifact_path_missing, WORKSETS/verdict inconsistency, latest-dispatch-failed-phase-completed, and MemoryGraph warning."
+      findings:
+        - "Acceptance is not yet phase-specific: Phase 01 through Phase 07 need route decisions and per-phase expected transition."
+        - "Live acceptance examples name only three absent violations and should cover the full current failure set."
+    verificationClarity:
+      weight: 0.20
+      score: 0.87
+      evidence:
+        - "Test plan includes unit/regression checks for manifest, verdict, reconciler, finalizer, closeout verifier, and delegated-terminal e2e."
+        - "Boundary/static checks include verify-phase-runner-boundary, node --check for touched .mjs files, and git diff --check."
+        - "Live verify command currently returns allowed:false."
+      findings:
+        - "Verification commands are strong, but current failure-code baseline and expected repair transitions should be persisted as iteration 05 planning-loop evidence."
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.74
+      evidence:
+        - "Master plan currently records readinessDecision: executable, ambiguityScore: 0.08, and iteration 4 pass."
+        - "Master checklist has Phase 02 through Phase 05 unchecked while phase-status projects activeCompletedPhases: 7."
+        - "latest-dispatch.json status is failed with stopReasonCode delegated-terminal-signal-no-closeout for phaseNumber 7."
+        - "prepare-implementation-plan-state.mjs --dry-run reports ok:true and phaseInventoryCheck has no missingFromRoot or extraInRoot, but pointerSelfCheck actions include archive-and-rewrite for current-run, active-phase-run, and latest-dispatch."
+      findings:
+        - "The current package metadata is materially stale relative to live verifier state."
+        - "Runtime pointer/archive handling is recognized but not yet converted into concrete Track B reconciliation outputs."
+    phaseExecutability:
+      weight: 0.10
+      score: 0.70
+      evidence:
+        - "Plan v2 defaults repairs to evidence-only replay or fresh no-op canonical attempt."
+        - "Live verify-phase-closeout violations span Phase 01 through Phase 07."
+      findings:
+        - "Phase-level executability is not yet decision-complete because each phase lacks a selected repair route and stop condition."
+  totalScore: 0.84
+  ambiguityScore: 0.16
+  decision: "revise"
+  strictRunnableReadiness: false
+  blockingFindings:
+    - id: "BF-01"
+      severity: "high"
+      finding: "The active package still claims executable readiness and iteration 04 pass while live closeout verification fails."
+      reason: "00-master-plan-v1.md records readinessDecision executable and strict-runnable preparation, but verify-phase-closeout.mjs returns allowed:false with multiple phase and harness-state violations."
+      directive: "Writer must downgrade the active package readiness to constrained/reconcile-required and add iteration 05 review state before any runnable claim."
+    - id: "BF-02"
+      severity: "high"
+      finding: "Track B repair policy is failure-code based but not phase-route complete."
+      reason: "The plan states Phase 01~07 will be classified, but does not yet assign each phase to evidence-only replay, fresh no-op canonical attempt, or blocked_requires_source_change."
+      directive: "Writer must add a Phase 01~07 route table with current failure codes, selected repair action, allowed mutations, expected evidence, and stop condition."
+    - id: "BF-03"
+      severity: "high"
+      finding: "Reconciliation transaction outputs are underspecified."
+      reason: "The plan says supersededByTransactionId and historicalWarnings will be used, but does not define exact artifact paths, success/partial markers, pointer rewrite validation, or which projections receive superseded metadata."
+      directive: "Writer must define reconciliation-intent.json, reconciliation-success.json or partial marker path, touched projection list, latest-dispatch supersede handling, and pointerSelfCheck acceptance."
+    - id: "BF-04"
+      severity: "medium"
+      finding: "Future-attempt guard and legacy manual reconciliation bypass need an explicit enforcement boundary."
+      reason: "Track A must not block Track B, but the plan does not name the condition that lets manual reconciliation proceed while keeping future completion hard-failed."
+      directive: "Writer must state the guard condition, for example future attempts use hard completion gate while manual reconciliation requires explicit reconciliation transaction and cannot emit normal completed projection until final verifier passes."
+    - id: "BF-05"
+      severity: "medium"
+      finding: "Final live acceptance does not enumerate the full current violation set."
+      reason: "The Expected line names incomplete_attempt_manifest, master-checklist-not-checked, and latest-dispatch-failed-phase-completed but omits completed-timing-stage-not-terminal, plan-conformance-not-passed, artifact_path_missing, atomic-tasks-incomplete, verification-verdict-inconsistent, and verification-verdict-not-passed."
+      directive: "Writer must require no remaining blocking violations from the live verifier, not only the three listed examples."
+  improvementDirectives:
+    - id: "DIR-10"
+      directive: "Add plan-quality-review-iter-05.yaml with decision revise and copy the summary into the master Plan Quality Loop."
+    - id: "DIR-11"
+      directive: "Change master readiness from executable/pass to constrained/reconcile-required until live verify-phase-closeout returns allowed:true."
+    - id: "DIR-12"
+      directive: "Add a Phase 01~07 repair route table mapping each current verifier failure to evidence-only replay, fresh no-op canonical attempt, or blocked_requires_source_change."
+    - id: "DIR-13"
+      directive: "Define reconciliation transaction artifacts and fields: transactionId, reconciliation intent path, partial marker, success marker, touched projections, supersededByTransactionId, originalStopReasonCode, originalStopReasonDetail, reconciledAt, reconciliationReason, and historicalWarnings."
+    - id: "DIR-14"
+      directive: "Define latest-dispatch failed + completed phase-status conflict handling as superseded historical evidence, not deletion and not normal completion evidence."
+    - id: "DIR-15"
+      directive: "Expand final acceptance to require zero blocking violations from verify-phase-closeout.mjs and explicitly list the current baseline violations as expected-to-clear."
+    - id: "DIR-16"
+      directive: "State that Track B cannot modify source code; if verifier replay shows source mutation is needed, the phase must be downgraded to blocked_requires_source_change and routed to a separate implementation plan."
+    - id: "DIR-17"
+      directive: "State that MemoryGraph unavailable remains degradedEvidence only and cannot be used to block or prove completion."
+  evidence:
+    - source: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md:25-27"
+      observation: "Goal Contract records ambiguityScore 0.08 and readinessDecision executable with forked reviewer iteration 4 evidence."
+    - source: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md:50-57"
+      observation: "Plan Quality Loop records finalIteration 4, totalScore 0.92, ambiguityScore 0.08, decision pass."
+    - source: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md:127-134"
+      observation: "Master checklist shows Phase 02 through Phase 05 unchecked while Phase 01, 06, and 07 are checked."
+    - source: ".claude/docs/phase-status.yaml:1-20"
+      observation: "phase-status points to the same master plan and execution root but projects activeCompletedPhases 7, activeRemainingPhases 0, lastStopReasonCode scope_complete, and lastExecutionStatus finished."
+    - source: ".claude/docs/phase-status.yaml:32-57"
+      observation: "recoveredBlockers include runtime_unavailable, dirty_worktree, and upstream_not_synced closeout history."
+    - source: ".claude/logs/workflow-enforcement/latest-dispatch.json"
+      observation: "latest-dispatch status is failed with stopReasonCode delegated-terminal-signal-no-closeout, phaseNumber 7, and completionStatus failed."
+    - source: "live command: node .claude/scripts/verify-phase-closeout.mjs --plan-dir docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12 --master-plan docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md --status-file .claude/docs/phase-status.yaml --json"
+      observation: "allowed:false with completed-timing-stage-not-terminal, plan-conformance-not-passed, incomplete_attempt_manifest, master-checklist-not-checked, artifact_path_missing, atomic-tasks-incomplete, verification-verdict-inconsistent, verification-verdict-not-passed, latest-dispatch-failed-phase-completed, and non-strict MemoryGraph degradedEvidence."
+    - source: "live command: node .claude/scripts/prepare-implementation-plan-state.mjs --dry-run --plan-dir docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12 --master-plan docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md --status-file .claude/docs/phase-status.yaml --execution-root docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/execution/v1"
+      observation: "dry-run ok:true and phaseInventoryCheck passes, but pointerSelfCheck includes archive-and-rewrite for current-run, active-phase-run, latest-dispatch and stale dispatch archives."
+    - source: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-04.yaml"
+      observation: "iteration 04 passed before the current live verifier failure baseline was incorporated."

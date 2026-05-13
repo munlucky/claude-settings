@@ -1,0 +1,36 @@
+planWriterRevision:
+  schemaVersion: 1
+  iteration: 5
+  isolationMode: "user-designated-writer"
+  writerSession: "isolated-writer-agent-iter-05"
+  directivesApplied:
+    - "DIR-10"
+    - "DIR-11"
+    - "DIR-12"
+    - "DIR-13"
+    - "DIR-14"
+    - "DIR-15"
+    - "DIR-16"
+    - "DIR-17"
+  filesChanged:
+    - path: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md"
+      changes:
+        - "Downgrade readiness to constrained/reconcile-required."
+        - "Record iteration 05 review summary and strictRunnableReadiness=false."
+        - "Add Phase 01-07 repair route table."
+        - "Define reconciliation transaction artifacts, fields, and latest-dispatch supersede handling."
+        - "Expand final acceptance to zero blocking verifier violations."
+        - "State Track B source mutation prohibition and MemoryGraph degradedEvidence-only policy."
+    - path: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/controller-state.yaml"
+      changes:
+        - "Downgrade controller readinessDecision from pass to constrained/reconcile-required."
+        - "Record reviewer iteration 05 and writer iteration 05."
+        - "Point finalReview/finalWriterRevision to iteration 05 artifacts."
+  ambiguityReductionNotes:
+    - "Track A is scoped to new attempts/future completions and cannot block the current manual reconciliation transaction."
+    - "Track B is evidence-only/no-op canonical attempt work; source mutation forces blocked_requires_source_change."
+    - "Every current verifier failure code now has a selected repair route and stop condition."
+    - "latest-dispatch failed state is preserved as superseded historical evidence, not deleted or counted as completion."
+    - "Final acceptance requires verify-phase-closeout allowed:true with zero blocking violations."
+  remainingOpenDecisions:
+    - "Strict runnable readiness remains false until Track B is actually executed and live verify-phase-closeout returns allowed:true."

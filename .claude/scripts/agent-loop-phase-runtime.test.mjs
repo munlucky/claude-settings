@@ -66,3 +66,41 @@ test('completion-gate runner stops a codex upstream reconnect loop', { timeout: 
   assert.match(text, /SUPERVISOR_EVENT .*"event":"upstream-stream-stalled"/);
   assert.match(text, /UPSTREAM_STREAM_STALL reconnect=3 threshold=3 after=1s/);
 });
+
+test('runtime health ignores log warnings older than the active run attachment', () => {
+  const tempDir = makeTempDir();
+  const logDir = path.join(tempDir, '.claude', 'logs', 'agent-loop');
+  const statusDir = path.join(tempDir, '.claude', 'docs');
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.mkdirSync(statusDir, { recursive: true });
+
+  const oldLog = path.join(logDir, 'phase-6_older.log');
+  fs.writeFileSync(oldLog, 'Failed to kill MCP process group: EPERM\n', 'utf8');
+  const oldTime = new Date(Date.now() - 60_000);
+  fs.utimesSync(oldLog, oldTime, oldTime);
+
+  const attachedAt = new Date().toISOString();
+  fs.writeFileSync(
+    path.join(statusDir, 'phase-status.yaml'),
+    `activeExecutionAttachedAt: "${attachedAt}"\n`,
+    'utf8',
+  );
+
+  const result = spawnSync(process.execPath, [
+    runtimeScript,
+    'assess-runtime-health',
+    'codex',
+    tempDir,
+  ], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      AGENT_LOOP_RUNTIME_HEALTH_WINDOW_MS: String(2 * 60 * 60 * 1000),
+      AGENT_LOOP_RUNTIME_HEALTH_MAX_LOGS: '5',
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /HEALTHY='true'/);
+  assert.doesNotMatch(result.stdout, /runtime-log-health-check-failed/);
+});

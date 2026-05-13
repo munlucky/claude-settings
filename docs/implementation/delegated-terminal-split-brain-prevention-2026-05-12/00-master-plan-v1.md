@@ -19,12 +19,17 @@
 goalContract:
   goalClarity: high
   scopeClarity: high
-  acceptanceCriteriaClarity: high
+  acceptanceCriteriaClarity: medium
   verificationClarity: high
-  clarityScore: 0.92
-  ambiguityScore: 0.08
-  readinessDecision: executable
-  evidence: "forked reviewer iteration 4 returned pass after DIR-01 through DIR-09 were applied and executionRoot was aligned to execution/v1"
+  clarityScore: 0.84
+  ambiguityScore: 0.16
+  readinessDecision: constrained/reconcile-required
+  strictRunnableReadiness: false
+  evidence: "iteration 05 reviewer returned decision=revise because live verify-phase-closeout is allowed:false and current package metadata conflicts with canonical evidence."
+  readinessBlockers:
+    - "BF-01: active package still claimed executable/pass while live closeout verification fails."
+    - "BF-02: Phase 01-07 repair routes must be explicit before runnable execution."
+    - "BF-03: reconciliation transaction outputs and supersede handling must be specified."
 ```
 
 ## Objective
@@ -47,29 +52,35 @@ goalContract:
 ```yaml
 planQualityReview:
   schemaVersion: 1
-  finalIteration: 4
-  isolationMode: "forked"
-  maxIterations: 4
+  finalIteration: 5
+  isolationMode: "user-designated-read-only"
+  maxIterations: 5
   targetAmbiguityScore: 0.20
   blockedAmbiguityScore: 0.35
-  totalScore: 0.92
-  ambiguityScore: 0.08
-  decision: "pass"
+  totalScore: 0.84
+  ambiguityScore: 0.16
+  decision: "revise"
+  strictRunnableReadiness: false
   reviewerSessions:
     - "forked-reviewer-read-only"
     - "forked-reviewer-read-only-iter-03"
     - "forked-reviewer-read-only-iter-04"
+    - "isolated-reviewer-agent-iter-05"
   writerSessions:
     - "forked-writer-current-session"
     - "forked-writer-current-session-iter-03"
+    - "isolated-writer-agent-iter-05"
   artifactRoot: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop"
-  latestReview: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-04.yaml"
-  latestWriterRevision: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-03.yaml"
+  latestReview: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-05.yaml"
+  latestWriterRevision: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-05.yaml"
   canonicalExecutionRoot: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/execution/v1"
-  blockingFindings: []
+  blockingFindings:
+    - "BF-01: readiness metadata stale versus live verifier failure."
+    - "BF-02: phase-level repair routes required."
+    - "BF-03: reconciliation transaction outputs underspecified."
   remainingImprovementDirectives: []
   remainingOpenDecisions:
-    - "Confirm whether this package should supersede or follow the active residual-harness-anomaly-v4 package before preparing runtime pointers."
+    - "Strict runnable readiness remains blocked until live verify-phase-closeout returns allowed:true with zero blocking violations."
 ```
 
 ## Phase Index
@@ -125,21 +136,59 @@ planQualityReview:
 - None.
 
 ## Phase Completion Checklist
-- [x] Phase 01 - Attempt Manifest Contract (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md`)
-- [ ] Phase 02 - Completion Gate Canonical Enforcement (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/02-completion-gate-canonical-enforcement-v1.md`)
-- [ ] Phase 03 - Manual Orphan Reconcile Mode (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/03-manual-orphan-reconcile-mode-v1.md`)
-- [ ] Phase 04 - Reconciliation Transaction Resume (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md`)
-- [ ] Phase 05 - Controller Worker Liveness Split (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md`)
-- [x] Phase 06 - Declared Alternate Verifier Policy (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/06-declared-alternate-verifier-policy-v1.md`)
-- [x] Phase 07 - Manifest Event Telemetry Fixtures (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md`)
+- [ ] Phase 01 - Attempt Manifest Contract (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/01-attempt-manifest-contract-v1.md`) - reconcile-required
+- [ ] Phase 02 - Completion Gate Canonical Enforcement (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/02-completion-gate-canonical-enforcement-v1.md`) - reconcile-required
+- [ ] Phase 03 - Manual Orphan Reconcile Mode (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/03-manual-orphan-reconcile-mode-v1.md`) - reconcile-required
+- [ ] Phase 04 - Reconciliation Transaction Resume (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/04-reconciliation-transaction-resume-v1.md`) - reconcile-required
+- [ ] Phase 05 - Controller Worker Liveness Split (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/05-controller-worker-liveness-split-v1.md`) - reconcile-required
+- [ ] Phase 06 - Declared Alternate Verifier Policy (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/06-declared-alternate-verifier-policy-v1.md`) - reconcile-required
+- [ ] Phase 07 - Manifest Event Telemetry Fixtures (`docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/07-manifest-event-telemetry-fixtures-v1.md`) - reconcile-required
+
+## Phase 01-07 Repair Routes
+| Phase | Current blocking failures | Selected repair route | Allowed mutations | Expected evidence | Stop condition |
+| --- | --- | --- | --- | --- | --- |
+| 01 | `completed-timing-stage-not-terminal`, `plan-conformance-not-passed`, `incomplete_attempt_manifest` | fresh no-op canonical attempt + conformance replay | plan/evidence artifacts only | new manifest intent/child/exit/finalizer seal, terminal timing, passing conformance | source change needed -> `blocked_requires_source_change` |
+| 02 | `master-checklist-not-checked`, `completed-timing-stage-not-terminal`, `plan-conformance-not-passed`, `incomplete_attempt_manifest` | fresh no-op canonical attempt + checklist after evidence | plan/evidence artifacts only | canonical manifest, terminal timing, passing conformance, checklist checked after pass | evidence missing -> incomplete |
+| 03 | Phase 02 failures plus `artifact_path_missing` for `SCN-03-*` | fresh no-op canonical attempt + evidence-only scenario replay | plan/evidence artifacts only | canonical manifest, passing `SCN-03-*`, passing conformance | scenario cannot replay without code change -> blocker |
+| 04 | Phase 02 failures plus `artifact_path_missing` for `SCN-04-*` | fresh no-op canonical attempt + evidence-only transaction replay | plan/evidence artifacts only | canonical manifest, passing `SCN-04-*`, transaction evidence, passing conformance | transaction evidence cannot replay -> blocker |
+| 05 | `master-checklist-not-checked`, `completed-timing-stage-not-terminal`, `plan-conformance-not-passed`, `atomic-tasks-incomplete`, `verification-verdict-inconsistent`, `verification-verdict-not-passed`, `incomplete_attempt_manifest` | fresh no-op canonical attempt + verifier verdict replay | plan/evidence artifacts only | canonical manifest, terminal timing, passing verdict, WORKSETS complete, passing conformance | source mutation required -> `blocked_requires_source_change` |
+| 06 | `plan-conformance-not-passed` | evidence-only conformance replay | plan/evidence artifacts only | fresh passing conformance verdict | replay fails -> incomplete |
+| 07 | `completed-timing-stage-not-terminal`, `plan-conformance-not-passed` | fresh no-op canonical attempt + conformance replay | plan/evidence artifacts only | canonical manifest, terminal timing, passing conformance | latest dispatch remains failed without supersede -> incomplete |
+
+## Reconciliation Transaction Artifacts
+- Transaction root: `docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/execution/v1/reconciliation/<transactionId>/`.
+- Required artifacts:
+  - `reconciliation-intent.json`
+  - `reconciliation-partial.json` when interrupted before success
+  - `reconciliation-success.json` only after final live verifier returns `allowed:true`
+  - `touched-projections.json`
+  - `historical-warnings.jsonl`
+- Required fields:
+  - `transactionId`
+  - `mode: manual_reconciliation`
+  - `sourceMutationAllowed: false`
+  - `originalStopReasonCode`
+  - `originalStopReasonDetail`
+  - `supersededByTransactionId`
+  - `reconciledAt`
+  - `reconciliationReason`
+  - `historicalWarnings`
+  - `degradedEvidence`
+- Touched projection list must include planned handling for `.claude/docs/phase-status.yaml`, `.claude/logs/workflow-enforcement/current-run.json`, `.claude/logs/workflow-enforcement/active-phase-run.json`, `.claude/logs/workflow-enforcement/latest-dispatch.json`, and this master plan.
+- `latest-dispatch.json` failed + completed phase-status conflict is superseded historical evidence only. It must not be deleted and must not count as normal completion evidence.
+- MemoryGraph unavailable is `degradedEvidence` only. It cannot block completion and cannot prove completion.
 
 ## Preparation Status
-- This package is strict-runnable as a plan package after forked Reviewer Agent iteration 4 returned `decision: pass`, `ambiguityScore: 0.08`, no blocking findings, and no improvement directives.
-- Writer iteration 3 applied DIR-09 by aligning phase evidence, manifest, adoption, reconciliation, and QA report paths to `docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/execution/v1`.
-- Before dispatch, run `prepare-implementation-plan-state.mjs --dry-run` against this package and verify no active residual package pointers are overwritten.
-- Runtime pointer preparation requires explicit user instruction.
+- This package is `constrained/reconcile-required`, not strict-runnable.
+- Iteration 05 downgraded readiness because live `verify-phase-closeout.mjs` returns `allowed:false` against the current package.
+- Track A applies to new attempts and future completions only; it must not block the explicit manual reconciliation transaction for current legacy projections.
+- Track B is source-mutation prohibited. If evidence replay requires source edits, stop that phase as `blocked_requires_source_change`.
+- Runtime pointer preparation and archive/rewrite actions remain execution-time work; this writer revision only updates the active plan package.
 
 ## Completion Rule
-- Mark a phase checked only after its phase checklist and validation commands pass in a later implementation run.
-- Do not treat source-only evidence, phase-status-only projection, runner logs, or direct-pass artifacts as completion.
-- Do not adopt orphan projection completion except through manual reconcile mode with verifier re-run evidence.
+- Do not relax `verify-phase-closeout.mjs`.
+- A phase can be checked only after canonical manifest evidence, terminal timing, conformance evidence, scenario/verdict evidence, and the phase checklist all pass.
+- Track B cannot modify source code, scripts, runtime state, or verification baselines.
+- Manual reconciliation can supersede failed historical projections only through a `reconciliation-intent.json` transaction.
+- Final acceptance requires the live verifier to return `allowed:true` with zero blocking violations.
+- Baseline violations expected to clear: `completed-timing-stage-not-terminal`, `plan-conformance-not-passed`, `incomplete_attempt_manifest`, `master-checklist-not-checked`, `artifact_path_missing`, `atomic-tasks-incomplete`, `verification-verdict-inconsistent`, `verification-verdict-not-passed`, `latest-dispatch-failed-phase-completed`.

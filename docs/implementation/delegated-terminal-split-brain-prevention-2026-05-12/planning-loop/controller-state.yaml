@@ -17,8 +17,45 @@ planningController:
       - ".claude/scripts/phase-closeout-finalize.mjs"
       - ".claude/scripts/verify-phase-closeout.mjs"
   isolationMode: "forked"
-  readinessDecision: "pass"
-  reason: "Forked reviewer iteration 4 returned decision=pass after DIR-01 through DIR-09 were applied and executionRoot was aligned to execution/v1."
+  readinessDecision: "constrained/reconcile-required"
+  reason: "Iteration 05 reviewer returned decision=revise because live verify-phase-closeout is allowed:false; package is constrained until manual reconciliation clears all blocking violations."
+  strictRunnableReadiness: false
+  reconciliationRequired:
+    baselineCommand: "node .claude/scripts/verify-phase-closeout.mjs --plan-dir docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12 --master-plan docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/00-master-plan-v1.md --status-file .claude/docs/phase-status.yaml --json"
+    currentAllowed: false
+    expectedFinalAllowed: true
+    sourceMutationAllowed: false
+    expectedToClear:
+      - "completed-timing-stage-not-terminal"
+      - "plan-conformance-not-passed"
+      - "incomplete_attempt_manifest"
+      - "master-checklist-not-checked"
+      - "artifact_path_missing"
+      - "atomic-tasks-incomplete"
+      - "verification-verdict-inconsistent"
+      - "verification-verdict-not-passed"
+      - "latest-dispatch-failed-phase-completed"
+    degradedEvidenceOnly:
+      - "memorygraph_unavailable"
+    transactionArtifacts:
+      rootPattern: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/execution/v1/reconciliation/<transactionId>"
+      requiredFiles:
+        - "reconciliation-intent.json"
+        - "reconciliation-partial.json"
+        - "reconciliation-success.json"
+        - "touched-projections.json"
+        - "historical-warnings.jsonl"
+      requiredFields:
+        - "transactionId"
+        - "mode"
+        - "sourceMutationAllowed"
+        - "originalStopReasonCode"
+        - "originalStopReasonDetail"
+        - "supersededByTransactionId"
+        - "reconciledAt"
+        - "reconciliationReason"
+        - "historicalWarnings"
+        - "degradedEvidence"
   canonicalExecutionRoot: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/execution/v1"
   userAuthorization:
     approvedIsolatedPlanningLoop: true
@@ -42,6 +79,12 @@ planningController:
       decision: "pass"
       totalScore: 0.92
       ambiguityScore: 0.08
+    - session: "isolated-reviewer-agent-iter-05"
+      evidenceSource: "subagent_notification agent_path=019e1eb6-d471-7b90-abeb-74a88787bb5f"
+      iteration: 5
+      decision: "revise"
+      totalScore: 0.84
+      ambiguityScore: 0.16
   writerSessions:
     - session: "forked-writer-current-session"
       iteration: 2
@@ -58,12 +101,23 @@ planningController:
       iteration: 3
       directivesApplied:
         - "DIR-09"
-  maxIterations: 4
-  completedIterations: 4
+    - session: "isolated-writer-agent-iter-05"
+      iteration: 5
+      directivesApplied:
+        - "DIR-10"
+        - "DIR-11"
+        - "DIR-12"
+        - "DIR-13"
+        - "DIR-14"
+        - "DIR-15"
+        - "DIR-16"
+        - "DIR-17"
+  maxIterations: 5
+  completedIterations: 5
   targetAmbiguityScore: 0.20
   blockedAmbiguityScore: 0.35
-  finalReview: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-04.yaml"
-  finalWriterRevision: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-03.yaml"
+  finalReview: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-05.yaml"
+  finalWriterRevision: "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-05.yaml"
   priorArtifacts:
     - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-01.yaml"
     - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-01.yaml"
@@ -71,6 +125,8 @@ planningController:
     - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-02.yaml"
     - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-03.yaml"
     - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-03.yaml"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-quality-review-iter-05.yaml"
+    - "docs/implementation/delegated-terminal-split-brain-prevention-2026-05-12/planning-loop/plan-writer-revision-iter-05.yaml"
   protectedSurfaces:
     - "docs/implementation/residual-harness-anomaly-v4-2026-05-12/**"
     - ".claude/docs/phase-status.yaml"
