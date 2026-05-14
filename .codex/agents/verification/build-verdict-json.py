@@ -23,6 +23,17 @@ def parse_status_lines(name):
     return result
 
 
+def parse_json_env(name):
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {"status": "block", "blocking": True, "reason": "malformed_code_review_graph_decision"}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def parse_scorecard(path):
     result = {
         "detected": False,
@@ -160,6 +171,10 @@ payload = {
     },
     "score": parse_scorecard(os.environ.get("HARNESS_SCORECARD_FILE", "")),
 }
+
+code_review_graph_decision = parse_json_env("CODE_REVIEW_GRAPH_DECISION_JSON")
+if code_review_graph_decision:
+    payload["codeReviewGraphDecision"] = code_review_graph_decision
 
 json.dump(payload, sys.stdout, indent=2)
 sys.stdout.write("\n")

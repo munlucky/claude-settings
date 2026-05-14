@@ -72,15 +72,29 @@ Acceptance criteria extraction:
 
 필수 역할:
 - **Planning Controller**: 현재 세션. source 선택, iteration state, artifact path, 최종 readiness decision을 소유합니다.
-- **Reviewer Agent**: fresh fork/sub-agent 또는 동등한 격리 세션. 읽기 전용입니다. 현재 master/phase package를 채점하고 구조화된 review output만 반환합니다.
-- **Writer Agent**: fresh fork/sub-agent 또는 동등한 격리 세션. active plan package와 planning-loop artifact만 작성합니다. reviewer directive를 받아 ambiguity를 줄이는 방향으로 계획을 고칩니다.
+- **Reviewer Agent**: fresh fork/sub-agent 또는 동등한 격리 세션. 읽기 전용입니다. 현재 master/phase package를 채점하고 구조화된 review output만 반환합니다. review/gate leaf skill만 사용할 수 있고 `moonshot-plan-writer`에 재진입하면 안 됩니다.
+- **Writer Agent**: fresh fork/sub-agent 또는 동등한 격리 세션. active plan package와 planning-loop artifact만 작성합니다. reviewer directive를 받아 ambiguity를 줄이는 방향으로 계획을 고칩니다. writer-support leaf skill만 사용할 수 있고 `moonshot-plan-writer`에 재진입하면 안 됩니다.
 
 Runtime requirement:
 - Reviewer Agent와 Writer Agent 모두 실제 fork/sub-agent 세션을 우선합니다.
 - 현재 사용자 요청이 이 스킬을 지목했지만 sub-agent, delegation, parallel agent work를 명시 승인하지 않았으면, 독립 Planning Loop 직전에 멈추고 isolated Reviewer Agent와 Writer Agent 세션 실행 권한을 묻는 짧은 yes/no 질문을 합니다. 사용자가 거절하거나 답하지 않거나, 승인 후에도 런타임이 격리 세션을 제공하지 못할 때까지 `isolationMode: "unavailable"`로 낮추지 않습니다.
 - 사용자의 "yes", "진행", "Reviewer Agent와 Writer Agent를 분리해서 실행해줘" 같은 응답은 loop에 대한 명시 승인으로 취급합니다. 이 승인은 `controller-state.yaml`에 기록합니다.
 - 런타임이 격리 세션을 제공하지 못하면 `isolationMode: "unavailable"`을 기록하고 strict runnable readiness를 주장하지 않습니다. 사용자가 degraded path를 명시 승인하지 않으면 package는 `constrained` 또는 `blocked`로만 반환합니다.
-- Reviewer Agent는 파일을 수정하면 안 됩니다. Writer Agent는 사용자 명시 요청 없이는 선택된 plan package 밖의 source code, runtime state, scripts, verification baselines를 변경하면 안 됩니다.
+- child agent denylist는 절대 규칙입니다. Reviewer Agent는 어떤 파일도 수정하면 안 됩니다. Writer Agent는 directive가 그런 작업을 암시하더라도 source code, runtime state, scripts, packages, lockfiles, verification baselines, 선택된 plan package와 `<plan-dir>/planning-loop/` 밖의 파일을 수정하면 안 됩니다. 금지된 작업은 Controller에 blocker 또는 out-of-scope directive로 되돌립니다.
+
+### Child Agent Skill Boundary
+
+`moonshot-plan-writer`는 Planning Controller만 호출할 수 있습니다. child agent prompt에는 명시적인 skill boundary를 전달해야 하며, 각 iteration artifact에 boundary compliance를 기록해야 합니다.
+
+Reviewer Agent:
+- Allowed skills: `plan-eng-review`, `plan-ceo-review`, `product-gate-reviewer`, `codex-validate-plan`, `verification-contract-gate`, `context-readiness-gate`, `test-driven-development`, `design-approval-gate`, `browser-verifier`.
+- Forbidden skills: `moonshot-plan-writer`, `moonshot-phase-runner`, `moonshot-orchestrator`, `implementation-runner`, `doc-auto-sync`, `task-slicer`, `assumption-ledger`, `commit-moonshot`, `project-memory-refresh`, `harness-memory-promoter`.
+- Boundary: review/gate leaf skill만 사용합니다. 파일을 쓰거나 plan rewrite를 수행하면 안 됩니다.
+
+Writer Agent:
+- Allowed skills: `assumption-ledger`, `task-slicer`.
+- Forbidden skills: `moonshot-plan-writer`, `moonshot-phase-runner`, `moonshot-orchestrator`, `plan-eng-review`, `plan-ceo-review`, `product-gate-reviewer`, `codex-validate-plan`, `verification-contract-gate`, `context-readiness-gate`, `test-driven-development`, `design-approval-gate`, `browser-verifier`, `doc-auto-sync`, `implementation-runner`, `commit-moonshot`, `project-memory-refresh`, `harness-memory-promoter`.
+- Boundary: writer-support leaf skill만 사용합니다. source/runtime/script/package/lockfile/verification baseline surface를 수정하면 안 되며, 선택된 plan package와 `<plan-dir>/planning-loop/` artifact만 작성합니다.
 
 Loop contract:
 ```text
@@ -124,6 +138,11 @@ planQualityReview:
   iteration: 1
   isolationMode: "forked | unavailable"
   reviewerSession: "<session-id-or-runtime-label>"
+  skillBoundary:
+    allowed: []
+    forbidden: []
+    compliance: "compliant | violation | unavailable"
+    notes: []
   targetPlanPackage:
     planDir: "docs/implementation"
     masterPlan: "docs/implementation/00-master-plan-v<n>.md"
@@ -149,6 +168,11 @@ planWriterRevision:
   iteration: 1
   isolationMode: "forked | unavailable"
   writerSession: "<session-id-or-runtime-label>"
+  skillBoundary:
+    allowed: []
+    forbidden: []
+    compliance: "compliant | violation | unavailable"
+    notes: []
   directivesApplied: []
   filesChanged: []
   ambiguityReductionNotes: []
@@ -203,8 +227,9 @@ Controller closeout:
    - 의존성, 소유권, 검증 경로가 비사소하면 `plan-eng-review`를 실행한다.
 6. 독립 Planning Loop를 실행한다.
    - 4, 5단계의 현재 master/phase package를 입력으로 사용한다.
-   - Reviewer Agent를 별도 세션에서 실행하고 `plan-quality-review-iter-<NN>.yaml`을 기록한다.
-   - reviewer가 `decision: revise`를 반환하면 Writer Agent를 별도 세션에서 실행하고 `plan-writer-revision-iter-<NN>.yaml`을 기록한다.
+   - Reviewer allowed/forbidden skill list를 전달해 Reviewer Agent를 별도 세션에서 실행하고, `skillBoundary.compliance`를 포함해 `plan-quality-review-iter-<NN>.yaml`을 기록한다.
+   - reviewer가 `decision: revise`를 반환하면 Writer allowed/forbidden skill list를 전달해 Writer Agent를 별도 세션에서 실행하고, `skillBoundary.compliance`를 포함해 `plan-writer-revision-iter-<NN>.yaml`을 기록한다.
+   - Reviewer 또는 Writer가 forbidden skill을 사용하면 boundary violation으로 취급한다. Controller가 잘못된 artifact를 폐기하고 깨끗한 boundary로 child agent를 다시 실행할 수 없는 경우 loop를 `blocked`로 중단한다.
    - `ambiguityScore <= 0.20`이고 blocking finding과 실행 가능한 improvement directive가 없거나, `blocked` / `revise_exhausted`가 될 때까지 반복한다.
    - non-critical assumption은 assumptions ledger에 남기고, core goal/scope/verification gap은 blocker로 유지한다.
 7. plan package가 다음 실행 대상이면 실행 가능한 phase 상태를 준비한다.

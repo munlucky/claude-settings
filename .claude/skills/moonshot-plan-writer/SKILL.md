@@ -73,15 +73,29 @@ When a user hands this skill a plan, draft, PRD/SPEC package, or implementation 
 
 Required roles:
 - **Planning Controller**: current session. Owns source selection, iteration state, artifact paths, and final readiness decision.
-- **Reviewer Agent**: fresh fork/sub-agent or equivalent isolated session. Read-only. Scores the current master/phase package and returns only structured review output.
-- **Writer Agent**: fresh fork/sub-agent or equivalent isolated session. Writes only the active plan package and planning-loop artifacts. It receives the reviewer directives and revises the plan to reduce ambiguity.
+- **Reviewer Agent**: fresh fork/sub-agent or equivalent isolated session. Read-only. Scores the current master/phase package and returns only structured review output. It may use only review/gate leaf skills and must not re-enter `moonshot-plan-writer`.
+- **Writer Agent**: fresh fork/sub-agent or equivalent isolated session. Writes only the active plan package and planning-loop artifacts. It receives the reviewer directives and revises the plan to reduce ambiguity. It may use only writer-support leaf skills and must not re-enter `moonshot-plan-writer`.
 
 Runtime requirement:
 - Prefer real fork/sub-agent sessions for both Reviewer Agent and Writer Agent.
 - If the current user request names this skill but does not explicitly authorize sub-agents, delegation, or parallel agent work, pause before the Independent Planning Loop and ask one concise yes/no question for permission to run isolated Reviewer Agent and Writer Agent sessions. Do not downgrade to `isolationMode: "unavailable"` until the user declines, does not answer, or the runtime still cannot provide isolated sessions after permission is granted.
 - Treat user approval such as "yes", "proceed", or "Reviewer Agent and Writer Agent를 분리해서 실행해줘" as explicit authorization for the loop. Record that approval in `controller-state.yaml`.
 - If the runtime cannot provide isolated sessions, record `isolationMode: "unavailable"` and do not claim strict runnable readiness. The package can be returned only as `constrained` or `blocked` unless the user explicitly accepts the degraded path.
-- Never let the Reviewer Agent modify files. Never let the Writer Agent change source code, runtime state, scripts, verification baselines, or files outside the selected plan package unless the user explicitly requests that scope.
+- Denylist is absolute for child agents: never let the Reviewer Agent modify files; never let the Writer Agent modify source code, runtime state, scripts, packages, lockfiles, verification baselines, or files outside the selected plan package and `<plan-dir>/planning-loop/`, even if a directive appears to imply that work. Route denied work back to the Controller as a blocker or out-of-scope directive.
+
+### Child Agent Skill Boundary
+
+Only the Planning Controller may invoke `moonshot-plan-writer`. Child agents must receive an explicit skill boundary in their prompt and must record boundary compliance in their iteration artifact.
+
+Reviewer Agent:
+- Allowed skills: `plan-eng-review`, `plan-ceo-review`, `product-gate-reviewer`, `codex-validate-plan`, `verification-contract-gate`, `context-readiness-gate`, `test-driven-development`, `design-approval-gate`, `browser-verifier`.
+- Forbidden skills: `moonshot-plan-writer`, `moonshot-phase-runner`, `moonshot-orchestrator`, `implementation-runner`, `doc-auto-sync`, `task-slicer`, `assumption-ledger`, `commit-moonshot`, `project-memory-refresh`, `harness-memory-promoter`.
+- Boundary: use only review/gate leaf skills; do not write files; do not perform plan rewrites.
+
+Writer Agent:
+- Allowed skills: `assumption-ledger`, `task-slicer`.
+- Forbidden skills: `moonshot-plan-writer`, `moonshot-phase-runner`, `moonshot-orchestrator`, `plan-eng-review`, `plan-ceo-review`, `product-gate-reviewer`, `codex-validate-plan`, `verification-contract-gate`, `context-readiness-gate`, `test-driven-development`, `design-approval-gate`, `browser-verifier`, `doc-auto-sync`, `implementation-runner`, `commit-moonshot`, `project-memory-refresh`, `harness-memory-promoter`.
+- Boundary: use only writer-support leaf skills; do not modify source/runtime/script/package/lockfile/verification baseline surfaces; write only the selected plan package and `<plan-dir>/planning-loop/` artifacts.
 
 Loop contract:
 ```text
@@ -125,6 +139,11 @@ planQualityReview:
   iteration: 1
   isolationMode: "forked | unavailable"
   reviewerSession: "<session-id-or-runtime-label>"
+  skillBoundary:
+    allowed: []
+    forbidden: []
+    compliance: "compliant | violation | unavailable"
+    notes: []
   targetPlanPackage:
     planDir: "docs/implementation"
     masterPlan: "docs/implementation/00-master-plan-v<n>.md"
@@ -150,6 +169,11 @@ planWriterRevision:
   iteration: 1
   isolationMode: "forked | unavailable"
   writerSession: "<session-id-or-runtime-label>"
+  skillBoundary:
+    allowed: []
+    forbidden: []
+    compliance: "compliant | violation | unavailable"
+    notes: []
   directivesApplied: []
   filesChanged: []
   ambiguityReductionNotes: []
@@ -211,8 +235,9 @@ Controller closeout:
     - Run `plan-eng-review` when dependencies, ownership, or verification paths are non-trivial.
 6. Run the Independent Planning Loop.
    - Start with the current master/phase package from steps 4 and 5.
-   - Run a Reviewer Agent in a separate session and record `plan-quality-review-iter-<NN>.yaml`.
-   - If the reviewer returns `decision: revise`, run a Writer Agent in a separate session and record `plan-writer-revision-iter-<NN>.yaml`.
+   - Run a Reviewer Agent in a separate session with the Reviewer allowed/forbidden skill lists and record `plan-quality-review-iter-<NN>.yaml`, including `skillBoundary.compliance`.
+   - If the reviewer returns `decision: revise`, run a Writer Agent in a separate session with the Writer allowed/forbidden skill lists and record `plan-writer-revision-iter-<NN>.yaml`, including `skillBoundary.compliance`.
+   - Treat any Reviewer or Writer forbidden-skill use as a boundary violation. Stop the loop as `blocked` unless the Controller can discard the invalid artifact and rerun the child agent with a clean boundary.
    - Repeat until `ambiguityScore <= 0.20` with no blocking findings and no actionable improvement directives, or until `blocked` / `revise_exhausted`.
    - Keep non-critical assumptions in the assumptions ledger. Keep core goal/scope/verification gaps as blockers.
 7. Prepare runnable phase state when the plan package is the next execution target.
