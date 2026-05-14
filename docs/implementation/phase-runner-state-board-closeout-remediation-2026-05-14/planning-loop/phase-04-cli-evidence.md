@@ -1,6 +1,6 @@
 # Phase 04 CLI Evidence
 
-Generated: 2026-05-14T09:00:00Z
+Generated: 2026-05-15T01:16:00+09:00
 
 ## Code Review Graph CLI Fallback
 
@@ -13,7 +13,10 @@ code-review-graph detect-changes --repo . --base f56a4f7fc12476fec685af87a6122dd
 Result:
 
 ```text
-Analyzed 79 changed file(s):
+code-review-graph 2.3.2
+Source: C:\Users\moon\.local\bin\code-review-graph.exe
+
+Analyzed 133 changed file(s):
   - 0 changed function(s)/class(es)
   - 0 affected flow(s)
   - 0 test gap(s)

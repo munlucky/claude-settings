@@ -4,8 +4,8 @@
   "runId": "phase03-final",
   "phase": {
     "number": 3,
-    "title": "Phase 03: Runtime Parity Routing",
-    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/03-runtime-parity-routing-v1.md"
+    "title": "Phase 03: Startup Pending Projection Classification",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/03-startup-pending-projection-classification-v1.md"
   },
   "contract": {
     "applicable": true,
@@ -57,12 +57,12 @@
     }
   },
   "identity": {
-    "runLeaseId": "dispatch-1778767304498-27568",
-    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/03-runtime-parity-routing-v1.md",
-    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-timeout-root-fixes-2026-05-14\\00-master-plan-v1.md",
-    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-timeout-root-fixes-2026-05-14",
+    "runLeaseId": "",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/03-startup-pending-projection-classification-v1.md",
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14",
     "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
-    "gitTreeFingerprint": "b49df129787395f169a8035df6813a2cef844ece"
+    "gitTreeFingerprint": "1025a48e67d99100ca41263aa0612d7361b80d26"
   },
   "verdictScope": "phase_closeout",
   "blockerClass": "",
@@ -86,5 +86,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-14T14:51:55.274Z"
+  "generatedAt": "2026-05-14T16:12:44.717Z"
 }

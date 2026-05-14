@@ -79,7 +79,7 @@ Sidecar Wave A can run independently: Phase 04 touches `.codex/agents/verificati
 
 - [x] Phase 01 - Clean Completion Board Terminal Transition (`01-clean-completion-board-terminal-transition-v1.md`)
 - [x] Phase 02 - State Board Terminal Projection Invariants (`02-state-board-terminal-projection-invariants-v1.md`)
-- [ ] Phase 03 - Startup Pending Projection Classification (`03-startup-pending-projection-classification-v1.md`)
+- [x] Phase 03 - Startup Pending Projection Classification (`03-startup-pending-projection-classification-v1.md`)
 - [ ] Phase 04 - Review Range CRG and Diff Hygiene (`04-review-range-crg-and-diff-hygiene-v1.md`)
 
 ## Runnable Preparation Gate
