@@ -339,6 +339,52 @@ test('state board complete status rejects active compatibility projection', () =
   }
 });
 
+test('state board active status rejects terminal compatibility projection', () => {
+  const terminalShapes = [
+    {
+      name: 'root finalVerdict complete',
+      basename: 'current-run.json',
+      payload: { finalVerdict: 'complete' },
+    },
+    {
+      name: 'root completionStatus completed with completedAt',
+      basename: 'current-run.json',
+      payload: { completionStatus: 'completed', completedAt: '2026-05-14T07:30:00Z' },
+    },
+    {
+      name: 'phaseRunLease finalVerdict complete and status finished',
+      basename: 'current-run.json',
+      payload: { phaseRunLease: { stateRunId: 'state-run-a', finalVerdict: 'complete', status: 'finished' } },
+    },
+  ];
+
+  for (const { name, basename, payload } of terminalShapes) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-terminal-'));
+    try {
+      const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+      fs.mkdirSync(workflowDir, { recursive: true });
+      writeStateBoard(workflowDir, { status: 'active' });
+      writeWorkflowProjection(workflowDir, basename, payload);
+
+      const result = evaluateHarnessStateInvariants({
+        statusRoot: { activePhaseNumber: 4 },
+        phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+        statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+        workflowDir,
+      });
+
+      const violation = result.violations.find((entry) => entry.code === 'state-board-active-projection-terminal');
+      assert.ok(violation, name);
+      assert.equal(path.basename(violation.boardPath), 'STATE.md');
+      assert.equal(path.basename(violation.projectionPath), basename);
+      assert.equal(violation.stateRunId, 'state-run-a');
+      assert.equal(violation.boardStatus, 'active');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
 test('state board pending projection status is reported as incomplete transition', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-pending-'));
   try {

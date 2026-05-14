@@ -426,6 +426,22 @@ function isBoardActiveProjection(payload = {}) {
   return direct.some((value) => ACTIVE_WORKFLOW_STATUSES.has(value)) || workflowStateClass(payload) === 'active';
 }
 
+function isBoardTerminalProjection(payload = {}) {
+  const rootFinalVerdict = normalizeLower(payload.finalVerdict);
+  if (rootFinalVerdict === 'complete') {
+    return true;
+  }
+
+  const rootCompletionStatus = normalizeLower(payload.completionStatus);
+  if (rootCompletionStatus === 'completed' && normalizeText(payload.completedAt)) {
+    return true;
+  }
+
+  const leaseFinalVerdict = normalizeLower(payload.phaseRunLease?.finalVerdict);
+  const leaseStatus = normalizeLower(payload.phaseRunLease?.status);
+  return leaseFinalVerdict === 'complete' && leaseStatus === 'finished';
+}
+
 function inspectBoardProjectionInvariants({ boardState, workflowStates, violations }) {
   if (!boardState?.exists || !boardState.state) {
     return;
@@ -474,7 +490,7 @@ function inspectBoardProjectionInvariants({ boardState, workflowStates, violatio
       continue;
     }
 
-    if (!boardRunId || !projectionRunId || boardRunId !== projectionRunId || !isBoardActiveProjection(payload)) {
+    if (!boardRunId || !projectionRunId || boardRunId !== projectionRunId) {
       continue;
     }
 
@@ -485,6 +501,28 @@ function inspectBoardProjectionInvariants({ boardState, workflowStates, violatio
         || payload.attemptOutcome
         || payload.phaseRunLease?.status,
     );
+    if (boardStatus === 'active' && isBoardTerminalProjection(payload)) {
+      addViolation(
+        violations,
+        'state-board-active-projection-terminal',
+        `STATE.md is active while ${basename} reports terminal projection state.`,
+        {
+          failureClass: 'harness-state',
+          evidence: {
+            boardPath,
+            projectionPath,
+            stateRunId: boardRunId,
+            boardStatus: board.status,
+            projectionStatus,
+          },
+        },
+      );
+    }
+
+    if (!isBoardActiveProjection(payload)) {
+      continue;
+    }
+
     if (boardStatus === 'blocked') {
       addViolation(
         violations,
