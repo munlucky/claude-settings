@@ -30,6 +30,21 @@ test('latest-dispatch lifecycle fixtures keep lifecycle events out of status', (
   assert.deepEqual([...requiredEvents], []);
 });
 
+test('terminal latest-dispatch lifecycle fixtures do not expose live child fields', () => {
+  for (const basename of fs.readdirSync(FIXTURE_DIR).filter((item) => item.endsWith('.json'))) {
+    const payload = JSON.parse(fs.readFileSync(path.join(FIXTURE_DIR, basename), 'utf8'));
+    const terminal = ['completed', 'failed', 'superseded', 'superseded-by-local-fallback'].includes(payload.status)
+      || ['completed', 'completed-via-local-fallback', 'failed', 'superseded'].includes(payload.completionStatus)
+      || payload.dispatchStage === 'terminal';
+    if (!terminal) {
+      continue;
+    }
+    assert.notEqual(payload.dispatchStage, 'child_running', `${basename} is not child-running`);
+    assert.equal(payload.childAlive ?? false, false, `${basename} top-level childAlive is false`);
+    assert.equal(payload.liveness?.childAlive ?? false, false, `${basename} liveness childAlive is false`);
+  }
+});
+
 test('lifecycle writer rejects dispatch lifecycle events used as latest-dispatch status', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'latest-dispatch-lifecycle-'));
   try {
@@ -72,6 +87,11 @@ test('dispatcher records preflight, start, heartbeat, and terminal lifecycle pay
   assert.match(source, /lastLifecycleEventAt/);
   assert.match(source, /dispatchStage/);
   assert.match(source, /LATEST_DISPATCH_STATUS_VALUES/);
+  assert.match(source, /function scrubTerminalLatestDispatchLiveness/);
+  assert.match(source, /return scrubTerminalLatestDispatchLiveness\(next\);/);
+  assert.match(source, /dispatchStage: 'terminal'/);
+  assert.match(source, /childAlive: false/);
+  assert.match(source, /terminal_dispatch_closed/);
 });
 
 test('dispatcher gates stale child classification through namespace-aware liveness helper', () => {

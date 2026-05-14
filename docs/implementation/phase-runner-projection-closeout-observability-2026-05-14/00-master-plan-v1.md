@@ -103,7 +103,7 @@ Wave 3:
 ## Phase Completion Checklist
 
 - [x] Phase 01 - Projection Vocabulary Canonicalization (`01-projection-vocabulary-canonicalization-v1.md`)
-- [ ] Phase 02 - Latest Dispatch Terminal Liveness (`02-latest-dispatch-terminal-liveness-v1.md`)
+- [x] Phase 02 - Latest Dispatch Terminal Liveness (`02-latest-dispatch-terminal-liveness-v1.md`)
 - [ ] Phase 03 - Phase Status and Final Git Reconciliation (`03-phase-status-and-final-git-reconciliation-v1.md`)
 - [ ] Phase 04 - Post Closeout Reconcile Barrier (`04-post-closeout-reconcile-barrier-v1.md`)
 - [ ] Phase 05 - Runtime Dependency Health Reconciliation (`05-runtime-dependency-health-reconciliation-v1.md`)

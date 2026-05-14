@@ -265,6 +265,18 @@ function hasLiveChildEvidence(payload = {}) {
     || payload.phaseRunLease?.liveness?.childAlive === true;
 }
 
+function hasStaleTerminalLatestDispatchLiveness(payload = {}) {
+  if (workflowStateClass(payload) !== 'terminal') {
+    return false;
+  }
+  return hasLiveChildEvidence(payload)
+    || normalizeLower(payload.dispatchStage) === 'child_running'
+    || normalizeLower(payload.liveness?.reason).includes('child_running')
+    || normalizeLower(payload.liveness?.reason).includes('child alive')
+    || normalizeLower(payload.phaseRunLease?.liveness?.reason).includes('child_running')
+    || normalizeLower(payload.phaseRunLease?.liveness?.reason).includes('child alive');
+}
+
 function isCompletedLocalFallback(payload = {}) {
   if (!payload) {
     return false;
@@ -759,6 +771,23 @@ export function evaluateHarnessStateInvariants({
     }
     for (const key of ['updatedAt', 'lastHeartbeatAt', 'completedAt', 'failedAt']) {
       addFutureTimestampViolation(violations, `${basename} phaseRunLease.${key}`, payload.phaseRunLease?.[key], now);
+    }
+    if (basename === 'latest-dispatch.json' && hasStaleTerminalLatestDispatchLiveness(payload)) {
+      addViolation(
+        violations,
+        'latest-dispatch-terminal-child-alive',
+        'latest-dispatch.json is terminal or superseded but still reports child-running liveness.',
+        {
+          failureClass: 'harness-state',
+          evidence: {
+            status: normalizeText(payload.status),
+            completionStatus: normalizeText(payload.completionStatus),
+            dispatchStage: normalizeText(payload.dispatchStage),
+            childAlive: payload.childAlive === true,
+            nestedChildAlive: payload.liveness?.childAlive === true,
+          },
+        },
+      );
     }
   }
 

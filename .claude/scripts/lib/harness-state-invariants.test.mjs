@@ -265,6 +265,47 @@ test('paused workflow invariant rejects live child evidence', () => {
   }
 });
 
+test('terminal latest-dispatch invariant rejects stale child-running liveness', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-terminal-dispatch-liveness-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'latest-dispatch.json'), `${JSON.stringify({
+      stateRunId: 'state-run-terminal',
+      status: 'superseded',
+      completionStatus: 'completed',
+      dispatchStage: 'child_running',
+      childAlive: true,
+      liveness: {
+        childAlive: true,
+        reason: 'child_running',
+      },
+      phaseNumber: 2,
+      phaseTitle: 'Phase 02',
+    })}\n`, 'utf8');
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: {
+        activeExecutionStatus: 'active',
+        activePhaseNumber: 2,
+      },
+      phases: [{ number: 2, title: 'Phase 02', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    const violation = result.violations.find((entry) => entry.code === 'latest-dispatch-terminal-child-alive');
+    assert.ok(violation);
+    assert.equal(violation.status, 'superseded');
+    assert.equal(violation.completionStatus, 'completed');
+    assert.equal(violation.dispatchStage, 'child_running');
+    assert.equal(violation.childAlive, true);
+    assert.equal(violation.nestedChildAlive, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('harness snapshot includes STATE.md board facts when present', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-snapshot-'));
   try {

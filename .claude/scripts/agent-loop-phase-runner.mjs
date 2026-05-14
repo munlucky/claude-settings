@@ -250,7 +250,15 @@ function currentSimpleRunAttemptId() {
   return process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`;
 }
 
-export function assessWorkerSpawnStateGuard(readResult, { attemptId = '', reconciliationIntentOptions = null } = {}) {
+export function assessWorkerSpawnStateGuard(
+  readResult,
+  {
+    attemptId = '',
+    requestedPhase = '',
+    allowCompletedPreviousPhase = false,
+    reconciliationIntentOptions = null,
+  } = {},
+) {
   if (!readResult?.exists || !readResult.state) {
     return { allowed: true, reason: 'no_state_board' };
   }
@@ -262,6 +270,21 @@ export function assessWorkerSpawnStateGuard(readResult, { attemptId = '', reconc
 
   if (projectionStatus === 'pending') {
     return { allowed: false, reason: 'incomplete_transaction', status, projectionStatus, boardAttempt };
+  }
+  if (status === 'complete' && allowCompletedPreviousPhase) {
+    const boardPhase = String(board.phase || '').trim();
+    const nextPhase = String(requestedPhase || '').trim();
+    if (boardPhase && nextPhase && boardPhase !== nextPhase) {
+      return {
+        allowed: true,
+        reason: 'state_board_allows_next_phase_after_complete',
+        status,
+        projectionStatus,
+        boardAttempt,
+        boardPhase,
+        requestedPhase: nextPhase,
+      };
+    }
   }
   if (['complete', 'cancelled'].includes(status)) {
     return { allowed: false, reason: `${status}_terminal_state`, status, projectionStatus, boardAttempt };
@@ -290,11 +313,14 @@ export function assessWorkerSpawnStateGuard(readResult, { attemptId = '', reconc
   return { allowed: true, reason: 'state_board_allows_spawn', status, projectionStatus, boardAttempt };
 }
 
-function findExistingRunBoard(rootDir = process.cwd()) {
+function findExistingRunBoard(rootDir = process.cwd(), { includeCommittedComplete = false } = {}) {
   const result = readSimpleRunStateById('', rootDir);
   const status = String(result?.state?.status || '').trim();
   const projectionStatus = String(result?.state?.projectionStatus || '').trim();
-  if (projectionStatus === 'pending' || ['active', 'blocked', 'paused'].includes(status)) {
+  const resumableStatuses = includeCommittedComplete
+    ? ['active', 'blocked', 'paused', 'complete']
+    : ['active', 'blocked', 'paused'];
+  if (projectionStatus === 'pending' || resumableStatuses.includes(status)) {
     return result;
   }
 
@@ -310,7 +336,7 @@ function findExistingRunBoard(rootDir = process.cwd()) {
     const result = readState({ statePath, rootDir });
     const status = String(result?.state?.status || '').trim();
     const projectionStatus = String(result?.state?.projectionStatus || '').trim();
-    if (projectionStatus === 'pending' || ['active', 'blocked', 'paused'].includes(status)) {
+    if (projectionStatus === 'pending' || resumableStatuses.includes(status)) {
       return result;
     }
   }
@@ -318,7 +344,7 @@ function findExistingRunBoard(rootDir = process.cwd()) {
 }
 
 export function classifyRunnerStartup({ resume = false, rootDir = process.cwd(), stateRunId = '' } = {}) {
-  const existing = findExistingRunBoard(rootDir);
+  const existing = findExistingRunBoard(rootDir, { includeCommittedComplete: resume });
   if (!resume) {
     if (!existing) {
       return { classification: 'clean_start', stateRunId: stateRunId || '', statePath: '' };
@@ -344,7 +370,7 @@ export function classifyRunnerStartup({ resume = false, rootDir = process.cwd(),
     };
   }
   const status = String(candidate.state?.status || '').trim();
-  if (!['active', 'blocked', 'paused'].includes(status)) {
+  if (!['active', 'blocked', 'paused', 'complete'].includes(status)) {
     return { classification: 'resume-state-missing', stateRunId: candidate.state?.stateRunId || stateRunId || '', statePath: candidate.statePath };
   }
   return { classification: 'resume_allowed', stateRunId: candidate.state.stateRunId, statePath: candidate.statePath };
@@ -429,6 +455,8 @@ function guardWorkerSpawnAgainstSimpleRunState(paths, logFile) {
   const attemptId = currentSimpleRunAttemptId();
   const guard = assessWorkerSpawnStateGuard(readResult, {
     attemptId,
+    requestedPhase: state.phaseNum,
+    allowCompletedPreviousPhase: state.resume,
     reconciliationIntentOptions: resolveRunnerReconciliationIntentOptions(
       state.stateRunId,
       readResult?.state?.runRoot,

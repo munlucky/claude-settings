@@ -25,13 +25,13 @@ import {
   writeRemediationPacket,
 } from './lib/phase-remediation-packet.mjs';
 
-function writeFixtureRunState(root, stateRunId, status = 'active') {
+function writeFixtureRunState(root, stateRunId, status = 'active', phase = '2') {
   const runRoot = resolveRunRoot(stateRunId, { rootDir: root });
   writeState({
     stateRunId,
     runRoot,
     status,
-    phase: '2',
+    phase,
     attempt: 'attempt-01',
     owner: 'test',
     reason: 'fixture',
@@ -259,7 +259,7 @@ test('no_implicit_resume_sources', () => {
   }
 });
 
-test('explicit resume requires an existing active or blocked board', () => {
+test('explicit resume accepts existing active, blocked, or completed current-run boards', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-resume-missing-'));
   try {
     assert.equal(classifyRunnerStartup({ resume: true, rootDir: root }).classification, 'resume-state-missing');
@@ -270,6 +270,12 @@ test('explicit resume requires an existing active or blocked board', () => {
     const mismatch = classifyRunnerStartup({ resume: true, rootDir: root, stateRunId: 'other-run' });
     assert.equal(mismatch.classification, 'resume-state-missing');
     assert.equal(mismatch.stateRunId, 'other-run');
+
+    fs.rmSync(path.join(root, '.claude', 'logs', 'workflow-enforcement', 'STATE.md'), { force: true });
+    writeFixtureRunState(root, 'run-complete', 'complete', '1');
+    const completed = classifyRunnerStartup({ resume: true, rootDir: root });
+    assert.equal(completed.classification, 'resume_allowed');
+    assert.equal(completed.stateRunId, 'run-complete');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -343,6 +349,28 @@ test('worker spawn guard rejects same-attempt terminal and pending state boards'
     const pendingGuard = assessWorkerSpawnStateGuard(pending, { attemptId: 'attempt-02' });
     assert.equal(pendingGuard.allowed, false);
     assert.equal(pendingGuard.reason, 'incomplete_transaction');
+
+    writeFixtureRunState(root, 'run-complete', 'complete', '1');
+    const complete = readState({
+      rootDir: root,
+      stateRunId: 'run-complete',
+      runRoot: resolveRunRoot('run-complete', { rootDir: root }),
+    });
+    const samePhaseCompleteGuard = assessWorkerSpawnStateGuard(complete, {
+      attemptId: 'attempt-01',
+      requestedPhase: '1',
+      allowCompletedPreviousPhase: true,
+    });
+    assert.equal(samePhaseCompleteGuard.allowed, false);
+    assert.equal(samePhaseCompleteGuard.reason, 'complete_terminal_state');
+
+    const nextPhaseCompleteGuard = assessWorkerSpawnStateGuard(complete, {
+      attemptId: 'attempt-01',
+      requestedPhase: '2',
+      allowCompletedPreviousPhase: true,
+    });
+    assert.equal(nextPhaseCompleteGuard.allowed, true);
+    assert.equal(nextPhaseCompleteGuard.reason, 'state_board_allows_next_phase_after_complete');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

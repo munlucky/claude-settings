@@ -109,6 +109,21 @@ const LATEST_DISPATCH_STATUS_VALUES = new Set([
   'superseded',
   'superseded-by-local-fallback',
 ]);
+const LATEST_DISPATCH_TERMINAL_STATUS_VALUES = new Set([
+  'completed',
+  'failed',
+  'superseded',
+  'superseded-by-local-fallback',
+]);
+const LATEST_DISPATCH_TERMINAL_COMPLETION_VALUES = new Set([
+  'completed',
+  'completed-via-local-fallback',
+  'failed',
+  'blocked',
+  'verification_blocked',
+  'runtime_unhealthy',
+  'superseded',
+]);
 
 function assertLatestDispatchStatus(status, lifecycleEvent = '') {
   if (!LATEST_DISPATCH_STATUS_VALUES.has(status)) {
@@ -135,7 +150,7 @@ function withLatestDispatchLifecycle(payload = {}, {
     || runtimeState.runLeaseId
     || `dispatch-${String(lifecycleEvent || 'lifecycle').replace(/[^a-z0-9_-]/gi, '-')}`;
   assertLatestDispatchStatus(status, lifecycleEvent);
-  return {
+  const next = {
     ...payload,
     ...patch,
     status,
@@ -145,6 +160,54 @@ function withLatestDispatchLifecycle(payload = {}, {
     lastLifecycleEventAt: timestamp,
     updatedAt: timestamp,
     stateRunId: patch.stateRunId || payload.stateRunId || runtimeState.runLeaseId || '',
+  };
+  return scrubTerminalLatestDispatchLiveness(next);
+}
+
+function isTerminalLatestDispatchProjection(payload = {}) {
+  return dispatchStageIsTerminal(payload.dispatchStage)
+    || LATEST_DISPATCH_TERMINAL_STATUS_VALUES.has(String(payload.status || '').toLowerCase())
+    || LATEST_DISPATCH_TERMINAL_COMPLETION_VALUES.has(String(payload.completionStatus || '').toLowerCase());
+}
+
+function dispatchStageIsTerminal(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'terminal' || normalized === 'superseded';
+}
+
+function scrubNestedLiveness(value, reason) {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  return {
+    ...value,
+    childAlive: false,
+    childPid: null,
+    reason,
+  };
+}
+
+function scrubTerminalLatestDispatchLiveness(payload = {}) {
+  if (!isTerminalLatestDispatchProjection(payload)) {
+    return payload;
+  }
+  const reason = payload.status === 'superseded-by-local-fallback' || payload.status === 'superseded'
+    ? 'terminal_dispatch_superseded'
+    : 'terminal_dispatch_closed';
+  return {
+    ...payload,
+    dispatchStage: 'terminal',
+    childAlive: false,
+    childPid: null,
+    liveness: scrubNestedLiveness(payload.liveness, reason),
+    phaseRunLease: payload.phaseRunLease && typeof payload.phaseRunLease === 'object'
+      ? {
+        ...payload.phaseRunLease,
+        childAlive: false,
+        childPid: null,
+        liveness: scrubNestedLiveness(payload.phaseRunLease.liveness, reason),
+      }
+      : payload.phaseRunLease,
   };
 }
 
@@ -510,11 +573,8 @@ function closeLatestDispatchEvidence({ exitCode, detail, returnBoundary = '', st
     return null;
   }
 
-  if (payload.status === 'superseded-by-local-fallback') {
-    return payload;
-  }
-
-  const recovered = String(completionStatus || '').toLowerCase().includes('completed-via-local-fallback')
+  const recovered = payload.status === 'superseded-by-local-fallback'
+    || String(completionStatus || '').toLowerCase().includes('completed-via-local-fallback')
     || String(stopReasonCode || '').toLowerCase().includes('local-fallback');
   const terminalStatus = recovered
     ? 'superseded-by-local-fallback'
