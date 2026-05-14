@@ -7,6 +7,7 @@ phaseExecution:
   parallelGroup: "timeout-root-fixes"
   dependsOn:
     - "01-diagnostic-search-budget-v1.md"
+    - "02-diff-output-budget-v1.md"
   conflictsWith:
     - "04-timeout-ledger-policy-v1.md"
   ownedPaths:
@@ -17,9 +18,10 @@ phaseExecution:
     - ".claude/scripts/lib/phase-closeout-verdict.mjs"
     - ".claude/scripts/lib/phase-closeout-verdict.test.mjs"
     - ".claude/scripts/lib/runtime-unavailable-cache.mjs"
+    - ".claude/scripts/lib/runtime-unavailable-cache.test.mjs"
+    - ".claude/verification.contract.yaml"
   readOnlyPaths:
     - ".claude/docs/runtime-parity-reference-plan"
-    - ".claude/verification.contract.yaml"
   sharedMutablePaths: []
   requiresManualEvidence: false
   mergePolicy: "sequential_patch"
@@ -36,7 +38,7 @@ Keep runtime parity verification available, but stop running it as a repeated sh
 
 ## Scope
 
-- Separate runtime parity into `optional_probe` and `required_runtime` profiles.
+- Acknowledge the existing `optional_probe|required_runtime` parity support and implement contract/profile routing that selects the correct profile.
 - Use `optional_probe` in normal phase loops.
 - Route `required_runtime` to explicit final/long-budget verification.
 - Suppress same-run retry for identical parity timeout keys.
@@ -52,6 +54,8 @@ Keep runtime parity verification available, but stop running it as a repeated sh
 Normal phase loop:
 
 ```text
+read .claude/verification.contract.yaml
+resolve phaseRuntimeParity profile as optional_probe for normal short-budget phase loop
 run optional_probe
 if unavailable:
   record non-strict runtime dependency warning or blocker based on contract
@@ -72,22 +76,31 @@ Timeout key:
 runId + verifierId + referencePlanHash + runtimeTarget
 ```
 
+Contract-aware routing requirement:
+
+- The implementation phase owns `.claude/verification.contract.yaml` in the plan because the active contract may need profile metadata or a policy-set adjustment.
+- If the implementation can avoid editing the contract, it must add or update a resolver in source code and tests proving that the existing contract is read as input and mapped so normal short-budget loops schedule `optional_probe`, not `required_runtime`.
+- The verification fixture must include the current contract shape where `phaseRuntimeParity` is required, and assert the runner still selects `optional_probe` in normal loops.
+- `required_runtime` may be selected only when `verificationProfile=required_runtime`, `PHASE_RUNTIME_PARITY_REQUIRED=true`, final/release closeout mode, or an explicit long-budget command is present.
+
 ## Task Breakdown
 
 | Task ID | Action | Files | Expected Signal |
 | --- | --- | --- | --- |
-| T1 | Add or harden parity profile selection. | parity scripts | `optional_probe` does not spawn heavyweight phase attempt. |
-| T2 | Update runner routing to use optional probe in normal loops. | runner/verdict files | Phase loop avoids required runtime parity. |
+| T1 | Harden contract-aware parity profile selection around existing `optional_probe|required_runtime` support. | parity scripts / contract resolver | `optional_probe` does not spawn heavyweight phase attempt and is selected from normal loop contract input. |
+| T2 | Update runner routing to use optional probe in normal loops. | runner/verdict files | Phase loop avoids required runtime parity even when the contract lists `phaseRuntimeParity` as required. |
 | T3 | Add same-run timeout suppression for required parity. | runtime cache / verdict | Same key is not retried. |
 | T4 | Write blocked verdict fields for parity timeout. | `phase-closeout-verdict.mjs` | Verdict includes rerun command, budget, and why-not-retried. |
+| T5 | Add OBS-4/5/6 no-regression fixture for repeated parity timeout. | `agent-loop-phase-runner.test.mjs`, `runtime-unavailable-cache.test.mjs` | First timeout routes to long budget; repeated same key is not scheduled in short-budget loop. |
 
 ## Critical Scenarios
 
 | SCN ID | Scenario | Command | Pass Signal | Evidence Path |
 | --- | --- | --- | --- | --- |
-| SCN-05 | Normal loop chooses optional probe. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs` | Required parity command absent from short-budget phase loop. | QA_REPORT.md |
-| SCN-06 | Required parity timeout is not retried with same key. | focused cache/verdict test | Same-run retry is suppressed. | QA_REPORT.md |
-| SCN-07 | Blocked parity verdict explains next route. | `node --test .claude/scripts/lib/phase-closeout-verdict.test.mjs` | `phaseRuntimeParity_timeout` verdict includes rerun command and budget. | QA_REPORT.md |
+| SCN-05 | Normal loop chooses optional probe from contract input. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "contract parity optional probe"` | `required_runtime` command absent from short-budget phase loop while `.claude/verification.contract.yaml` still lists `phaseRuntimeParity`. | `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-03-qa.md` |
+| SCN-06 | Required parity timeout is not retried with same key. | `node --test .claude/scripts/lib/runtime-unavailable-cache.test.mjs --test-name-pattern "phase runtime parity same run timeout"` | Same-run retry is suppressed for `runId + verifierId + referencePlanHash + runtimeTarget`. | `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-03-qa.md` |
+| SCN-07 | Blocked parity verdict explains next route. | `node --test .claude/scripts/lib/phase-closeout-verdict.test.mjs --test-name-pattern "parity timeout blocked verdict"` | `phaseRuntimeParity_timeout` verdict includes rerun command, required budget, and why-not-retried. | `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-03-qa.md` |
+| SCN-07A | OBS-4/5/6 no-regression: repeated parity timeouts change scheduling. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "parity timeout no retry"` | First timeout emits blocked long-budget route; repeated same key is not scheduled again in short-budget loop. | `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-03-qa.md` |
 
 ## Validation Plan
 

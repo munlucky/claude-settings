@@ -68,3 +68,32 @@ test('CRG MCP native transport failure records diagnostic and suppresses repeate
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+test('default diagnosis skips npm cache paths', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-mcp-default-skip-'));
+  try {
+    const fakeHome = path.join(tempRoot, 'home');
+    const npxCache = path.join(fakeHome, 'AppData', 'Local', 'npm-cache', '_npx', 'fixture');
+    fs.mkdirSync(npxCache, { recursive: true });
+
+    const result = spawnSync('bash', ['.claude/scripts/check-mcp.sh'], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        HOME: fakeHome,
+        USERPROFILE: fakeHome,
+        CODE_REVIEW_GRAPH_COMMAND: path.join(tempRoot, 'missing-code-review-graph'),
+        CRG_DEBUG_BROAD_SEARCH: 'false',
+      },
+      encoding: 'utf8',
+      timeout: 15000,
+    });
+
+    assert.equal(result.error, undefined);
+    const trace = `${result.stdout}\n${result.stderr}`;
+    assert.doesNotMatch(trace, /npm-cache[\\/]_npx|_npx[\\/]|broad search/i);
+    assert.match(trace, /code-review-graph command found but version check failed|code-review-graph status check returned a warning|code-review-graph status checked|code-review-graph installed in Windows pipx venv/i);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});

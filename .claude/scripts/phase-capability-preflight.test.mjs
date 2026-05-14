@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-capability-preflight-'));
 process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = path.join(tempRoot, 'workflow-enforcement');
@@ -85,4 +87,29 @@ test('new run marks previous non-strict MemoryGraph unavailable warning stale', 
     fingerprint: 'memorygraph-fingerprint',
     strict: 'false',
   }), false);
+});
+
+test('broad search debug caps', () => {
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('./phase-capability-preflight.mjs', import.meta.url)), '--json'], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      CRG_DEBUG_BROAD_SEARCH: 'true',
+      PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BROAD_SEARCH_TIMEOUT: 'true',
+      PHASE_CAPABILITY_PREFLIGHT_FIXTURE_SKIPPED_ROOT: 'C:\\Users\\fixture\\AppData\\Local\\npm-cache\\_npx',
+    },
+    encoding: 'utf8',
+  });
+
+  assert.ok(result.stdout, result.stderr || 'expected JSON output');
+  const report = JSON.parse(result.stdout);
+  const broadSearch = report.checks.find((entry) => entry.name === 'crg.broadsearch');
+
+  assert.ok(broadSearch);
+  assert.equal(broadSearch.failureClass, 'broad_search_timeout');
+  assert.equal(broadSearch.retryPolicy, 'no_retry');
+  assert.equal(broadSearch.broadSearch.maxFiles, 200);
+  assert.equal(broadSearch.broadSearch.timeoutSeconds, 10);
+  assert.equal(broadSearch.broadSearch.maxOutputLines, 80);
+  assert.match(broadSearch.broadSearch.skippedRoot, /npm-cache\\_npx/);
 });

@@ -1,0 +1,118 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 2
+  isolationMode: "forked"
+  reviewerSession: "isolated-reviewer-codex-2026-05-14-iter-02"
+  skillBoundary:
+    allowed:
+      - "read-only file inspection"
+      - "plan-eng-review posture"
+      - "verification-contract-gate posture"
+      - "context-readiness-gate posture"
+    forbidden:
+      - "moonshot-plan-writer"
+      - "moonshot-phase-runner"
+      - "moonshot-orchestrator"
+      - "implementation-runner"
+      - "doc-auto-sync"
+      - "task-slicer"
+      - "assumption-ledger"
+      - "commit-moonshot"
+      - "project-memory-refresh"
+      - "harness-memory-promoter"
+    compliance: "compliant"
+    notes:
+      - "Read-only review only; no files edited."
+      - "Forbidden writer/runner/orchestrator skills were not invoked."
+  targetPlanPackage:
+    planDir: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14"
+    masterPlan: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/01-diagnostic-search-budget-v1.md"
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/02-diff-output-budget-v1.md"
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/03-runtime-parity-routing-v1.md"
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/04-timeout-ledger-policy-v1.md"
+    reviewedArtifacts:
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/planning-loop/plan-quality-review-iter-01.yaml"
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/planning-loop/plan-writer-revision-iter-01.yaml"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.94
+      evidence:
+        - "00-master-plan-v1.md maps OBS-1 through OBS-6 to REQ-1 through REQ-5 and phases 01-04."
+        - "Goal explicitly requires behavior changes: prevent, route, or stop repeated timeout classes."
+      findings:
+        - "Resolved: plan now frames timeout handling as runner policy, not passive telemetry."
+    scopeClarity:
+      weight: 0.20
+      score: 0.90
+      evidence:
+        - "03-runtime-parity-routing-v1.md owns .claude/verification.contract.yaml and defines resolver proof path if no contract edit is needed."
+        - "01-diagnostic-search-budget-v1.md includes runner/agent diagnostic budget, not only check-mcp/preflight."
+        - "04-timeout-ledger-policy-v1.md owns agent-loop-phase-attempt.mjs and agent-loop-phase-attempt.test.mjs."
+      findings:
+        - "Resolved BF-1: contract-aware parity routing has ownership and proof path."
+        - "Resolved BF-2: OBS-1 now covers agent diagnostic behavior."
+        - "Resolved BF-3: attempt-level timeout decision entrypoint is included."
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.89
+      evidence:
+        - "AC-1 defines CRG_DEBUG_BROAD_SEARCH=true, project/package roots, 200 files, and 10 seconds."
+        - "AC-2 defines stat/name-only/check defaults and 200-line raw diff cap via token-safe-git.sh."
+        - "AC-4 and AC-5 define optional_probe routing and same-run parity timeout suppression."
+      findings:
+        - "Exact caps, profile names, decision values, and test names are now specified."
+    verificationClarity:
+      weight: 0.20
+      score: 0.88
+      evidence:
+        - "SCN-02A covers OBS-1 agent diagnostic instruction behavior."
+        - "SCN-04A covers OBS-2/3 retry instructions without raw diff body."
+        - "SCN-07A and SCN-11 cover OBS-4/5/6 no-retry and attempt-level scheduling behavior."
+        - "Phase QA paths are fixed under docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-0N-qa.md."
+      findings:
+        - "Verification now tests behavior change, not only classification."
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.82
+      evidence:
+        - "Existing files include agent-loop-phase-attempt.mjs, token-safe-git.sh, check-mcp.test.mjs, and phase-capability-preflight.test.mjs."
+        - "New files timeout-ledger.mjs, timeout-ledger.test.mjs, and agent-loop-phase-attempt.test.mjs are explicitly listed as implementation deliverables."
+        - "Phase 03 acknowledges existing optional_probe|required_runtime support."
+      findings:
+        - "Ready for implementation; missing test/helper files are planned additions, not planning blockers."
+    phaseExecutability:
+      weight: 0.10
+      score: 0.88
+      evidence:
+        - "Master phase index enforces sequential execution: 01 -> 02 -> 03 -> 04."
+        - "Phase 03 depends on Phases 01-02 for shared runner file edits."
+        - "Phase 04 depends on Phases 01-03 and consumes concrete timeout classes and decision results."
+      findings:
+        - "Shared runner-file conflicts are now encoded by dependencies and conflictsWith metadata."
+  totalScore: 0.890
+  ambiguityScore: 0.14
+  decision: "pass"
+  blockingFindings: []
+  improvementDirectives: []
+  resolvedIteration1Findings:
+    - id: "BF-1"
+      status: "resolved"
+      evidence:
+        - "03-runtime-parity-routing-v1.md owns .claude/verification.contract.yaml."
+        - "AC-4 and SCN-05 require proof that required_runtime is absent from normal short-budget loops."
+    - id: "BF-2"
+      status: "resolved"
+      evidence:
+        - "01-diagnostic-search-budget-v1.md Scope includes runner/agent diagnostic search budget."
+        - "SCN-02A tests generated worker guidance for diagnostic search budget."
+    - id: "BF-3"
+      status: "resolved"
+      evidence:
+        - "04-timeout-ledger-policy-v1.md owns agent-loop-phase-attempt.mjs and agent-loop-phase-attempt.test.mjs."
+        - "SCN-11 verifies attempt-level scheduling consumes same-run timeout policy."
+  finalNotes:
+    - "Pass is for planning readiness only; implementation still must prove the contract/resolver path with fresh tests."
+    - "The remaining OD-1 is acceptable because the plan owns the contract and requires equivalent resolver proof before completion."

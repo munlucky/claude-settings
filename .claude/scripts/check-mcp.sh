@@ -10,6 +10,115 @@ CRG_COMMAND=""
 CRG_WINDOWS_ONLY=""
 CRG_LOG_DIR=".claude/logs/code-review-graph"
 CRG_FALLBACK_EVIDENCE_PATH="$CRG_LOG_DIR/fallback-status.log"
+CRG_PROBE_TIMEOUT_SECONDS="${CRG_PROBE_TIMEOUT_SECONDS:-5}"
+CRG_DEBUG_BROAD_SEARCH="${CRG_DEBUG_BROAD_SEARCH:-false}"
+CRG_BROAD_SEARCH_MAX_FILES="${CRG_BROAD_SEARCH_MAX_FILES:-200}"
+CRG_BROAD_SEARCH_TIMEOUT_SECONDS="${CRG_BROAD_SEARCH_TIMEOUT_SECONDS:-10}"
+CRG_BROAD_SEARCH_MAX_OUTPUT_LINES="${CRG_BROAD_SEARCH_MAX_OUTPUT_LINES:-80}"
+CRG_BROAD_SEARCH_ATTEMPTED=false
+
+run_with_optional_timeout() {
+    local seconds="$1"
+    shift
+    if command -v timeout > /dev/null 2>&1; then
+        timeout "${seconds}s" "$@"
+    else
+        "$@"
+    fi
+}
+
+record_crg_fallback_evidence() {
+    mkdir -p "$CRG_LOG_DIR"
+    printf '%s\n' "$1" > "$CRG_FALLBACK_EVIDENCE_PATH"
+}
+
+is_disallowed_broad_root() {
+    local root="$1"
+    local package_root="${CODE_REVIEW_GRAPH_PACKAGE_ROOT:-}"
+    case "$root" in
+        *npm-cache/_npx*|*npm-cache\\_npx*|*_npx*)
+            if [[ -n "$package_root" && "$root" == "$package_root" ]]; then
+                return 1
+            fi
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+try_debug_broad_search() {
+    [[ "$CRG_DEBUG_BROAD_SEARCH" == "true" ]] || return 1
+    [[ "$CRG_BROAD_SEARCH_ATTEMPTED" == "false" ]] || return 1
+    CRG_BROAD_SEARCH_ATTEMPTED=true
+
+    local roots=("$PWD")
+    if [[ -n "${CODE_REVIEW_GRAPH_PACKAGE_ROOT:-}" ]]; then
+        roots+=("$CODE_REVIEW_GRAPH_PACKAGE_ROOT")
+    fi
+
+    local root
+    local inspected=0
+    local output_lines=0
+    local search_output=""
+    local started_at="$SECONDS"
+    for root in "${roots[@]}"; do
+        if [[ ! -d "$root" ]]; then
+            continue
+        fi
+        if is_disallowed_broad_root "$root"; then
+            record_crg_fallback_evidence "broad_search_timeout skipped_root=$root reason=disallowed_user_cache_root"
+            echo "[WARN] code-review-graph broad search skipped disallowed root: $root"
+            continue
+        fi
+
+        local elapsed=$((SECONDS - started_at))
+        local remaining_seconds=$((CRG_BROAD_SEARCH_TIMEOUT_SECONDS - elapsed))
+        if [[ "$remaining_seconds" -le 0 || "$inspected" -ge "$CRG_BROAD_SEARCH_MAX_FILES" || "$output_lines" -ge "$CRG_BROAD_SEARCH_MAX_OUTPUT_LINES" ]]; then
+            record_crg_fallback_evidence "broad_search_timeout skipped_root=$root inspected=$inspected output_lines=$output_lines"
+            echo "[WARN] code-review-graph broad search reached cap; see $CRG_FALLBACK_EVIDENCE_PATH"
+            return 1
+        fi
+
+        local remaining_files=$((CRG_BROAD_SEARCH_MAX_FILES - inspected))
+        local remaining_output_lines=$((CRG_BROAD_SEARCH_MAX_OUTPUT_LINES - output_lines))
+        local inspected_paths
+        inspected_paths="$(run_with_optional_timeout "$remaining_seconds" find "$root" -type f -print 2>/dev/null | head -n "$remaining_files" || true)"
+        inspected=$((inspected + $(printf '%s\n' "$inspected_paths" | sed '/^$/d' | wc -l | tr -d ' ')))
+        local root_output
+        root_output="$(printf '%s\n' "$inspected_paths" | while IFS= read -r candidate_path; do
+            case "$(basename "$candidate_path")" in
+                code-review-graph|code-review-graph.exe)
+                    printf '%s\n' "$candidate_path"
+                    ;;
+            esac
+        done | head -n "$remaining_output_lines" || true)"
+        search_output="${search_output}${root_output}"$'\n'
+        output_lines=$(printf '%s\n' "$search_output" | sed '/^$/d' | wc -l | tr -d ' ')
+        local candidate
+        candidate="$(printf '%s\n' "$root_output" | sed '/^$/d' | head -1)"
+        if [[ -n "$candidate" && -x "$candidate" ]]; then
+            CRG_COMMAND="$candidate"
+            record_crg_fallback_evidence "broad_search_resolved command=$candidate inspected=$inspected"
+            return 0
+        fi
+        if [[ "$output_lines" -ge "$CRG_BROAD_SEARCH_MAX_OUTPUT_LINES" || ( "$inspected" -ge "$CRG_BROAD_SEARCH_MAX_FILES" && "$output_lines" -eq 0 ) ]]; then
+            record_crg_fallback_evidence "broad_search_timeout skipped_root=$root inspected=$inspected output_lines=$output_lines"
+            echo "[WARN] code-review-graph broad search reached cap; see $CRG_FALLBACK_EVIDENCE_PATH"
+            return 1
+        fi
+    done
+
+    local candidate
+    candidate="$(printf '%s\n' "$search_output" | sed '/^$/d' | head -1)"
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
+        CRG_COMMAND="$candidate"
+        record_crg_fallback_evidence "broad_search_resolved command=$candidate inspected=$inspected"
+        return 0
+    fi
+
+    record_crg_fallback_evidence "broad_search_timeout skipped_root=none inspected=$inspected output_lines=$output_lines"
+    return 1
+}
 
 resolve_code_review_graph() {
     if [[ -n "${CODE_REVIEW_GRAPH_COMMAND:-}" ]]; then
@@ -59,7 +168,7 @@ resolve_code_review_graph() {
         fi
     done
 
-    return 1
+    try_debug_broad_search
 }
 
 # Detect platform
@@ -113,14 +222,14 @@ fi
 
 # Check code-review-graph server
 if resolve_code_review_graph; then
-    if PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$CRG_COMMAND" --version > /dev/null 2>&1; then
+    if run_with_optional_timeout "$CRG_PROBE_TIMEOUT_SECONDS" env PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$CRG_COMMAND" --version > /dev/null 2>&1; then
         echo "[OK] code-review-graph available"
     else
         echo "[WARN] code-review-graph command found but version check failed"
     fi
 
     mkdir -p "$CRG_LOG_DIR"
-    CRG_STATUS=$(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$CRG_COMMAND" status --repo . 2>&1 || true)
+    CRG_STATUS=$(run_with_optional_timeout "$CRG_PROBE_TIMEOUT_SECONDS" env PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$CRG_COMMAND" status --repo . 2>&1 || true)
     printf '%s\n' "$CRG_STATUS" > "$CRG_FALLBACK_EVIDENCE_PATH"
     if echo "$CRG_STATUS" | grep -qi "not.*built\|not.*initialized\|no graph\|missing\|not found"; then
         echo "[WARN] code-review-graph graph not built yet"

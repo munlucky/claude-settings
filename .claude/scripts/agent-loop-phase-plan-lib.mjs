@@ -1240,6 +1240,12 @@ ${failurePreventionBriefSection ? `
 ${failurePreventionBriefSection.split('\n').map((line) => `  ${line}`).join('\n')}
 ` : ''}
 
+Diagnostic search budget:
+- For CRG/MCP diagnosis, check configured commands or known wrapper paths first, then use command lookup, then bounded \`--version\` or \`status --repo .\` probes.
+- Do not recursively search global npm, npx, or user cache paths by default, including \`npm-cache/_npx\`.
+- Broad CRG/MCP search is allowed only when \`CRG_DEBUG_BROAD_SEARCH=true\`; it must stay inside the active project root or the resolved CRG/MCP package root.
+- Broad search caps: inspect at most 200 files total, stop after 10 seconds wall time, emit at most 80 output lines, then record \`broad_search_timeout\` and do not retry broad search in the same run.
+
 Single isolated phase-attempt rules:
 - Treat this run as one isolated phase attempt only.
 - This attempt may finish the active phase, but phase completion is never run completion or session completion.

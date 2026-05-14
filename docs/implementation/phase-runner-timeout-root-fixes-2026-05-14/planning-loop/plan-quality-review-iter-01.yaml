@@ -1,0 +1,125 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked"
+  reviewerSession: "isolated-reviewer-codex-2026-05-14"
+  skillBoundary:
+    allowed:
+      - "plan-eng-review"
+      - "plan-ceo-review"
+      - "product-gate-reviewer"
+      - "codex-validate-plan"
+      - "verification-contract-gate"
+      - "context-readiness-gate"
+    forbidden:
+      - "moonshot-plan-writer"
+      - "moonshot-phase-runner"
+      - "moonshot-orchestrator"
+      - "implementation-runner"
+      - "doc-auto-sync"
+      - "task-slicer"
+      - "assumption-ledger"
+      - "commit-moonshot"
+      - "project-memory-refresh"
+      - "harness-memory-promoter"
+    compliance: "compliant"
+    notes:
+      - "Read-only review only; no files edited."
+      - "Forbidden writer/runner/orchestrator skills were not invoked."
+  targetPlanPackage:
+    planDir: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14"
+    masterPlan: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/01-diagnostic-search-budget-v1.md"
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/02-diff-output-budget-v1.md"
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/03-runtime-parity-routing-v1.md"
+      - "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/04-timeout-ledger-policy-v1.md"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.92
+      evidence:
+        - "00-master-plan-v1.md / Goal Contract maps OBS-1 through OBS-6 to four root-fix areas."
+        - "00-master-plan-v1.md / Requirements clearly distinguishes search, diff, parity routing, and ledger policy."
+      findings:
+        - "Goal is strong: it targets behavior changes, not passive reporting."
+    scopeClarity:
+      weight: 0.20
+      score: 0.68
+      evidence:
+        - "03-runtime-parity-routing-v1.md lists .claude/verification.contract.yaml as readOnlyPaths."
+        - ".claude/verification.contract.yaml currently declares phaseRuntimeParity as a command and required workflow/runtime_adapter check."
+        - "01-diagnostic-search-budget-v1.md scopes only check-mcp/preflight, while OBS-1 was an investigative broad rg over npm/npx cache."
+      findings:
+        - "Revise Phase 03: move .claude/verification.contract.yaml from readOnlyPaths to ownedPaths or explicitly state why contract changes are not required; current contract can still pull phaseRuntimeParity back into strict paths."
+        - "Revise Phase 01: clarify whether this fixes only harness diagnostic scripts or also agent diagnostic behavior; if OBS-1 came from ad-hoc investigation, add runner/prompt diagnostic search budget enforcement."
+        - "Revise Phase 03/04 ownership: include .claude/scripts/agent-loop-phase-attempt.mjs or prove runner-only timeout decisions fully cover retry suppression."
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.73
+      evidence:
+        - "00-master-plan-v1.md / AC-1 through AC-7 provide test targets."
+        - "03-runtime-parity-routing-v1.md / Critical Scenarios SCN-05 through SCN-07 cover optional probe and no-retry behavior."
+        - "04-timeout-ledger-policy-v1.md / Timeout Classes defines class-specific policies."
+      findings:
+        - "Revise AC-4: require an assertion that verification contract/profile routing no longer schedules required_runtime in normal short-budget phase loops."
+        - "Revise AC-5: replace 'or narrow equivalent' with the exact test file or a named new test deliverable."
+        - "Revise Phase 01 AC: define exact broad-search debug caps, e.g. max files, max seconds, allowed roots; 'tight limits' is not executable enough."
+        - "Revise Phase 02 AC: define the raw diff cap mechanism, not only policy wording; e.g. max lines and required wrapper/helper."
+    verificationClarity:
+      weight: 0.20
+      score: 0.70
+      evidence:
+        - "00-master-plan-v1.md / Verification Plan lists concrete node --test commands and git diff --check."
+        - "Phase docs each include validation commands."
+        - "Existing files referenced by most validation commands are present under .claude/scripts."
+      findings:
+        - "Revise verification for Phase 03: add a test against .claude/verification.contract.yaml or equivalent resolver proving profile selection is contract-driven."
+        - "Revise verification for Phase 04: require fixture coverage for same-run repeated timeout changing action, not only ledger record creation."
+        - "Revise verification for Phase 02: use a real or synthetic large diff-dominated log fixture and assert no raw diff body is emitted in retry instructions."
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.62
+      evidence:
+        - "Referenced script/test files mostly exist: check-mcp, phase-capability-preflight, agent-loop-phase-runner, agent-loop-phase-runtime, phase-closeout-verdict, runtime-unavailable-cache."
+        - "verify-phase-runtime-parity already supports optional_probe|required_runtime in wrapper/core."
+        - ".claude/verification.contract.yaml still treats phaseRuntimeParity as required in workflow policy sets."
+      findings:
+        - "Revise Phase 03: acknowledge existing optional_probe|required_runtime support and focus implementation on routing/contract usage, not creating the profile split from scratch."
+        - "Revise Phase 04: timeout-ledger.mjs is new; add creation requirements including atomic append behavior, malformed record rejection, and Windows-safe path handling."
+    phaseExecutability:
+      weight: 0.10
+      score: 0.66
+      evidence:
+        - "Each phase has phaseExecution metadata, ownedPaths, task breakdown, blocker condition, deliverables, and checklist."
+        - "Phase 02 and Phase 03 both touch agent-loop-phase-runner.mjs and agent-loop-phase-runner.test.mjs."
+        - "Master says sequential, but individual dependsOn/conflictsWith do not fully encode all overlapping owned paths."
+      findings:
+        - "Revise Phase 03 dependsOn to include Phase 02 or explicitly encode sequential ordering for shared runner files."
+        - "Revise Phase 04 to consume concrete outputs from Phases 01-03, e.g. class names, policy constants, and verdict fields."
+        - "Revise all phases to name the exact QA artifact path if QA_REPORT.md is expected; current Evidence Path is generic."
+  totalScore: 0.734
+  ambiguityScore: 0.28
+  decision: "revise"
+  blockingFindings:
+    - id: "BF-1"
+      file: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/03-runtime-parity-routing-v1.md"
+      section: "phaseExecution.readOnlyPaths / Required Behavior"
+      finding: "Runtime parity routing cannot be strict-ready while .claude/verification.contract.yaml remains read-only, because the active contract still declares phaseRuntimeParity as required."
+      directive: "Own and update the verification contract/profile routing, or add explicit evidence proving runner routing overrides the contract without reintroducing short-budget parity."
+    - id: "BF-2"
+      file: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/01-diagnostic-search-budget-v1.md"
+      section: "Scope / Required Behavior"
+      finding: "OBS-1 was a broad investigative rg over npm/npx cache, but the phase only fixes check-mcp/preflight paths; this may not prevent the same agent diagnostic timeout."
+      directive: "Add a runner/agent diagnostic search budget requirement or narrow the claim to harness-owned diagnostics only."
+    - id: "BF-3"
+      file: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/04-timeout-ledger-policy-v1.md"
+      section: "Task Breakdown T4"
+      finding: "Retry policy is described, but the plan does not identify all timeout decision entrypoints; agent-loop-phase-attempt.mjs appears to contain timeout action logic."
+      directive: "Add agent-loop-phase-attempt.mjs to ownedPaths or provide a concrete proof that runner-level wiring fully supersedes it."
+  improvementDirectives:
+    - "Make Phase 03 the highest-priority revision: contract-aware parity routing is the root fix for repeated 4/5/6 timeouts."
+    - "Replace ambiguous phrases like 'when appropriate', 'tight limits', and 'focused test' with exact profile names, budgets, file caps, and test file names."
+    - "Add explicit no-regression fixtures for OBS-1, OBS-2/3, and OBS-4/5/6, even if synthetic; each fixture should prove runner behavior changes, not just classification."
+    - "Define the exact ledger write point and repeat-detection key storage; include runId, phase, command fingerprint, timeout class, and same-run decision result."
+    - "Update phase dependencies so shared runner-file edits are sequentially enforced by metadata, not only by prose in the master plan."

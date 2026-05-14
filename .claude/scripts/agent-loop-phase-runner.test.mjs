@@ -24,6 +24,7 @@ import {
   readFreshRemediationPacket,
   writeRemediationPacket,
 } from './lib/phase-remediation-packet.mjs';
+import { buildPhasePrompt } from './agent-loop-phase-plan-lib.mjs';
 
 function writeFixtureRunState(root, stateRunId, status = 'active', phase = '2') {
   const runRoot = resolveRunRoot(stateRunId, { rootDir: root });
@@ -542,6 +543,36 @@ test('clean finish candidate is routed only to the finalizer boundary action', (
 
   assert.equal(result.controllerDecision, 'clean_finish_candidate');
   assert.equal(result.action, 'finalize');
+});
+
+test('diagnostic search budget is included in worker prompt', () => {
+  const prompt = buildPhasePrompt({
+    nextPhase: '1',
+    phaseTitle: 'Phase 01: Diagnostic Search Budget',
+    planDir: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14',
+    phaseDoc: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/01-diagnostic-search-budget-v1.md',
+    statusFile: '.claude/docs/phase-status.yaml',
+    executionRoot: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution',
+    paths: {
+      phaseSprintContract: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/01-phase-01-diagnostic-search-budget/SPRINT_CONTRACT.md',
+      phaseQaReport: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/01-phase-01-diagnostic-search-budget/QA_REPORT.md',
+      phaseHandoff: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/01-phase-01-diagnostic-search-budget/HANDOFF.md',
+      phaseScorecard: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/01-phase-01-diagnostic-search-budget/SCORECARD.md',
+      phaseWorksets: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/01-phase-01-diagnostic-search-budget/WORKSETS.yaml',
+    },
+    runtime: 'codex',
+    targetCompletionScore: 100,
+    verificationRuntimes: 'codex',
+  });
+
+  assert.match(prompt, /Diagnostic search budget:/);
+  assert.match(prompt, /configured commands or known wrapper paths first/);
+  assert.match(prompt, /Do not recursively search global npm, npx, or user cache paths by default/);
+  assert.match(prompt, /CRG_DEBUG_BROAD_SEARCH=true/);
+  assert.match(prompt, /inspect at most 200 files total/);
+  assert.match(prompt, /10 seconds wall time/);
+  assert.match(prompt, /80 output lines/);
+  assert.match(prompt, /broad_search_timeout/);
 });
 
 function withTempCompletionRun(testFn) {

@@ -5,7 +5,8 @@ phaseExecution:
   schemaVersion: 1
   parallelEligible: false
   parallelGroup: "timeout-root-fixes"
-  dependsOn: []
+  dependsOn:
+    - "01-diagnostic-search-budget-v1.md"
   conflictsWith:
     - "04-timeout-ledger-policy-v1.md"
   ownedPaths:
@@ -56,7 +57,7 @@ git diff --check
 Raw diff is allowed only when all are true:
 
 - The command is path-limited.
-- Output is capped by line count.
+- Output is capped at 200 lines by `token-safe-git.sh` or an equivalent helper that truncates before model/log emission.
 - The caller records why raw patch context is required.
 
 ## Task Breakdown
@@ -66,13 +67,15 @@ Raw diff is allowed only when all are true:
 | T1 | Update worker/runner instructions to prohibit unbounded raw diff dumps. | `agent-loop-phase-runner.mjs` | Prompt snapshot contains bounded diff policy. |
 | T2 | Route default diff inspection through safe summary commands. | runner helpers / `token-safe-git.sh` | Closeout logs show stat/name-only/check by default. |
 | T3 | Classify raw diff dominated timeout logs. | `agent-loop-phase-runtime.mjs` | `raw_diff_output_timeout` returned for fixture. |
+| T4 | Add OBS-2/3 no-regression fixture using synthetic large `diff --git` log. | `agent-loop-phase-runtime.test.mjs`, `agent-loop-phase-runner.test.mjs` | Classifier returns `raw_diff_output_timeout` and retry instructions do not include raw patch body. |
 
 ## Critical Scenarios
 
 | SCN ID | Scenario | Command | Pass Signal | Evidence Path |
 | --- | --- | --- | --- | --- |
-| SCN-03 | Worker prompt forbids unbounded raw diff. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs` | Policy is present in prompt/continuation text. | QA_REPORT.md |
-| SCN-04 | Raw diff timeout fixture is classified. | `node --test .claude/scripts/agent-loop-phase-runtime.test.mjs` | `raw_diff_output_timeout`. | QA_REPORT.md |
+| SCN-03 | Worker prompt forbids unbounded raw diff. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "diff output budget"` | Policy is present in prompt/continuation text and names stat/name-only/check defaults plus 200-line cap. | `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-02-qa.md` |
+| SCN-04 | OBS-2/3 large raw diff timeout fixture is classified. | `node --test .claude/scripts/agent-loop-phase-runtime.test.mjs --test-name-pattern "raw diff timeout"` | `raw_diff_output_timeout`. | `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-02-qa.md` |
+| SCN-04A | OBS-2/3 retry behavior changes after classification. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "raw diff retry policy"` | Retry instruction uses bounded diff summary and contains no raw `diff --git` body. | `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-02-qa.md` |
 
 ## Validation Plan
 

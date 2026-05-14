@@ -60,6 +60,48 @@ function check(name, status, detail, extra = {}) {
   return { name, status, detail, ...extra };
 }
 
+function diagnosticBroadSearchCheck() {
+  const debugEnabled = String(process.env.CRG_DEBUG_BROAD_SEARCH || '').toLowerCase() === 'true';
+  const fixtureTimeout = String(process.env.PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BROAD_SEARCH_TIMEOUT || '').toLowerCase() === 'true';
+  const packageRoot = String(process.env.CODE_REVIEW_GRAPH_PACKAGE_ROOT || '').trim();
+  const allowedRoots = [workspaceRoot, packageRoot].filter(Boolean);
+  const caps = { maxFiles: 200, timeoutSeconds: 10, maxOutputLines: 80 };
+  const broadSearch = (extra = {}) => ({ ...caps, allowedRoots, ...extra });
+  const broadCheck = (status, detail, extra = {}) => check('crg.broadSearch', status, detail, {
+    command: extra.command || 'CRG_DEBUG_BROAD_SEARCH=true',
+    failureClass: extra.failureClass || '',
+    decision: 'continue',
+    fallbackHint: extra.fallbackHint || '',
+    broadSearch: broadSearch(extra.broadSearch),
+  });
+
+  if (!debugEnabled && !fixtureTimeout) {
+    return broadCheck('passed', 'broad CRG/MCP diagnostic search skipped by default', {
+      command: 'CRG_DEBUG_BROAD_SEARCH=false',
+      broadSearch: { enabled: false, allowedRoots: [workspaceRoot] },
+    });
+  }
+  if (fixtureTimeout) {
+    return broadCheck('warning', 'broad_search_timeout fixture hit diagnostic search caps', {
+      command: 'PHASE_CAPABILITY_PREFLIGHT_FIXTURE_BROAD_SEARCH_TIMEOUT=true',
+      failureClass: 'broad_search_timeout',
+      fallbackHint: 'do-not-retry-broad-search-in-this-run',
+      broadSearch: { enabled: true, skippedRoot: process.env.PHASE_CAPABILITY_PREFLIGHT_FIXTURE_SKIPPED_ROOT || '' },
+    });
+  }
+
+  const disallowedRoots = allowedRoots.filter((root) => /(?:npm-cache[\\/]+_npx|[\\/]_npx)(?:[\\/]|$)/i.test(root) && root !== packageRoot);
+  if (disallowedRoots.length > 0) {
+    return broadCheck('warning', `broad_search_timeout skipped disallowed root: ${disallowedRoots[0]}`, {
+      failureClass: 'broad_search_timeout',
+      fallbackHint: 'use-configured-command-or-explicit-package-root',
+      broadSearch: { enabled: true, allowedRoots: allowedRoots.filter((root) => !disallowedRoots.includes(root)), skippedRoot: disallowedRoots[0] },
+    });
+  }
+
+  return broadCheck('passed', 'broad CRG/MCP diagnostic search is debug opt-in with hard caps', { broadSearch: { enabled: true } });
+}
+
 function spawnBlocked(result) {
   return /EPERM|EACCES/i.test(result.error || result.stderr || '');
 }
@@ -611,6 +653,8 @@ function buildReport() {
       fallbackHint: 'fixture-only',
     }));
   }
+
+  checks.push(diagnosticBroadSearchCheck());
 
   const classifiedChecks = checks.map(classifyCapabilityCheck).map((entry) => {
     if (!strictMemoryGateEnabled && entry.code === 'memorygraph_unavailable') {

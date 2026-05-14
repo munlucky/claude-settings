@@ -30,6 +30,7 @@ const FAILURE_DEFINITIONS = new Map([
   ['child_still_running', { category: 'runtime_liveness', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'attach to or terminate the still-running child before restarting dispatch' }],
   ['windows_shell_env_syntax', { category: 'operator_error', decision: 'fix_command', retryPolicy: 'after_fix', fallbackHint: "PowerShell example: $env:KEY='value'; command" }],
   ['memorygraph_unavailable', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'install-or-repair-memorygraph-or-defer-memory-backed-verification' }],
+  ['broad_search_timeout', { category: 'diagnostic_budget', decision: 'continue', retryPolicy: 'no_retry', fallbackHint: 'do-not-retry-broad-search-in-this-run' }],
   ['verifier_unavailable', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'restore-verification-runtime-or-defer-verification' }],
   ['command_not_found', { category: 'environment', decision: 'host_fallback', retryPolicy: 'no_retry', fallbackHint: 'resolve-command-path-or-fallback-runtime' }],
   ['spawn_blocked', { category: 'environment', decision: 'resume_later_handoff', retryPolicy: 'no_retry', fallbackHint: 'use-host-fallback-runtime' }],
@@ -533,6 +534,7 @@ export function classifyCapabilityCheck(check = {}) {
 
   const base = {
     ...classification,
+    ...(check.broadSearch ? { broadSearch: check.broadSearch } : {}),
     detail: check.detail ?? classification.message,
     command: check.command ?? '',
     failureClass: classification.code,
@@ -558,7 +560,7 @@ export function classifyCapabilityCheck(check = {}) {
     return {
       ...base,
       blocker: false,
-      retryPolicy: 'retryable',
+      retryPolicy: classification.retryPolicy === 'no_retry' ? 'no_retry' : 'retryable',
       decision: 'continue',
     };
   }

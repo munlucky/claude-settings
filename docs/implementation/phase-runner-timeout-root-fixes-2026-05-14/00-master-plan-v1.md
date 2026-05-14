@@ -39,9 +39,9 @@ Implement timeout prevention policy across diagnostic search, diff output, runti
 
 | Req ID | Requirement |
 | --- | --- |
-| REQ-1 | Diagnostic commands must not scan global npm/npx caches by default. Broad cache scans require explicit debug opt-in and tight limits. |
+| REQ-1 | Harness, runner, and agent diagnostic commands must not scan global npm/npx caches by default. Broad cache scans require `CRG_DEBUG_BROAD_SEARCH=true`, allowed roots limited to the active project plus the resolved package root, at most 200 files, and at most 10 seconds. |
 | REQ-2 | Worker and runner diff usage must default to bounded summary output and prevent unbounded raw `diff --git` transcript dumps. |
-| REQ-3 | `phaseRuntimeParity` must not run as a repeated short-budget per-phase verifier. It must use optional probe in normal phase loops and required long-budget routing only when appropriate. |
+| REQ-3 | `phaseRuntimeParity` must not run as a repeated short-budget per-phase verifier. Normal phase loops must resolve contract-driven parity checks to `optional_probe`; `required_runtime` is allowed only through explicit final or long-budget routing. |
 | REQ-4 | Timeout events must be recorded once with class, root cause, retry policy, and blocker evidence path. |
 | REQ-5 | Same-run repeated timeout class must alter runner behavior: no blind retry for parity timeout, no repeated broad search, and no repeated raw diff dump. |
 
@@ -49,21 +49,21 @@ Implement timeout prevention policy across diagnostic search, diff output, runti
 
 | AC ID | Req ID | Acceptance Criteria | Evidence Target |
 | --- | --- | --- | --- |
-| AC-1 | REQ-1 | `check-mcp.sh` and capability preflight resolve CRG/MCP availability without recursive npm cache search in default mode. | `node --test .claude/scripts/check-mcp.test.mjs`, `node --test .claude/scripts/phase-capability-preflight.test.mjs` |
-| AC-2 | REQ-2 | Runner prompt and closeout helpers use `git diff --stat`, `git diff --name-only`, and `git diff --check` by default; raw diff is path-limited and capped. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs` |
-| AC-3 | REQ-2 | Timeout classifier detects logs dominated by raw `diff --git` output as `raw_diff_output_timeout`. | `node --test .claude/scripts/agent-loop-phase-runtime.test.mjs` |
-| AC-4 | REQ-3 | Normal phase loop runs runtime parity as `optional_probe` only, unless explicit final/long-budget routing is requested. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs`, `node --test .claude/scripts/lib/phase-closeout-verdict.test.mjs` |
-| AC-5 | REQ-3 | A `phaseRuntimeParity_timeout` for the same `runId + verifierId + referencePlanHash + runtimeTarget` is not retried in the same run. | `node --test .claude/scripts/lib/runtime-unavailable-cache.test.mjs` or narrow equivalent |
-| AC-6 | REQ-4 | Timeout ledger writes structured JSONL records with command, phase, timeoutMs, class, rootCause, retryPolicy, and blockedVerdictPath. | `node --test .claude/scripts/agent-loop-phase-runtime.test.mjs` |
-| AC-7 | REQ-5 | QA, HANDOFF, summary, and decision log share the same timeout reason code and next route. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs` |
+| AC-1 | REQ-1 | `check-mcp.sh`, capability preflight, and runner diagnostic instructions resolve CRG/MCP availability without recursive npm cache search in default mode; debug search is limited to `CRG_DEBUG_BROAD_SEARCH=true`, active project root plus resolved package root, 200 files, and 10 seconds. | `node --test .claude/scripts/check-mcp.test.mjs`, `node --test .claude/scripts/phase-capability-preflight.test.mjs`, `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "diagnostic search budget"` |
+| AC-2 | REQ-2 | Runner prompt and closeout helpers use `git diff --stat`, `git diff --name-only`, and `git diff --check` by default; raw diff requires an explicit path allowlist and a 200-line maximum via `token-safe-git.sh`. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "diff output budget"` |
+| AC-3 | REQ-2 | Timeout classifier detects the synthetic OBS-2/3 large raw `diff --git` log fixture as `raw_diff_output_timeout` and retry instructions omit raw diff bodies. | `node --test .claude/scripts/agent-loop-phase-runtime.test.mjs --test-name-pattern "raw diff timeout"` |
+| AC-4 | REQ-3 | Contract/profile routing proves that `.claude/verification.contract.yaml` parity requirements no longer schedule `required_runtime` in normal short-budget phase loops; the selected profile is `optional_probe` unless final or long-budget routing is explicit. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "contract parity optional probe"`, `node --test .claude/scripts/lib/phase-closeout-verdict.test.mjs --test-name-pattern "parity routing"` |
+| AC-5 | REQ-3 | A `phaseRuntimeParity_timeout` for the same `runId + verifierId + referencePlanHash + runtimeTarget` is not retried in the same run and records `sameRunDecisionResult: "route_to_long_budget"`. | `node --test .claude/scripts/lib/runtime-unavailable-cache.test.mjs --test-name-pattern "phase runtime parity same run timeout"` |
+| AC-6 | REQ-4 | Timeout ledger writes structured JSONL records at the timeout decision point with `runId`, `phase`, command fingerprint, timeout class, retry policy, `sameRunDecisionResult`, and blocker path. | `node --test .claude/scripts/lib/timeout-ledger.test.mjs`, `node --test .claude/scripts/agent-loop-phase-runtime.test.mjs --test-name-pattern "timeout ledger"` |
+| AC-7 | REQ-5 | QA, HANDOFF, summary, and decision log share the same timeout reason code and next route for OBS-1, OBS-2/3, and OBS-4/5/6 no-regression fixtures. | `node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern "timeout policy no regression"` |
 
 ## Phase Index
 
 | Phase | File | Purpose | Dependencies | Parallel |
 | --- | --- | --- | --- | --- |
 | 01 | `01-diagnostic-search-budget-v1.md` | Prevent broad diagnostic search timeouts in MCP/CRG checks. | None | No |
-| 02 | `02-diff-output-budget-v1.md` | Prevent raw diff transcript timeouts while preserving required git evidence. | None | No |
-| 03 | `03-runtime-parity-routing-v1.md` | Move heavyweight parity verification out of repeated short-budget phase loops. | Phase 01 | No |
+| 02 | `02-diff-output-budget-v1.md` | Prevent raw diff transcript timeouts while preserving required git evidence. | Phase 01 | No |
+| 03 | `03-runtime-parity-routing-v1.md` | Move heavyweight parity verification out of repeated short-budget phase loops. | Phases 01-02 | No |
 | 04 | `04-timeout-ledger-policy-v1.md` | Add timeout ledger and policy decisions that connect classes to runner behavior. | Phases 01-03 | No |
 
 ## Parallel Execution Plan
@@ -83,18 +83,22 @@ Keep this package sequential. Phase 01 and Phase 02 touch separate concepts but 
 
 ## Phase Completion Checklist
 
-- [ ] Phase 01 - Diagnostic Search Budget (`01-diagnostic-search-budget-v1.md`)
+- [x] Phase 01 - Diagnostic Search Budget (`01-diagnostic-search-budget-v1.md`)
 - [ ] Phase 02 - Diff Output Budget (`02-diff-output-budget-v1.md`)
 - [ ] Phase 03 - Runtime Parity Routing (`03-runtime-parity-routing-v1.md`)
 - [ ] Phase 04 - Timeout Ledger Policy (`04-timeout-ledger-policy-v1.md`)
 
 ## Plan Quality Loop
 
-Status: controller draft only.
+Status: review loop passed after revision iteration 1 and Reviewer Agent iteration 2.
 
-`moonshot-plan-writer` requires isolated Reviewer Agent and Writer Agent sessions for strict runnable readiness. The current user request named the skill but did not explicitly authorize sub-agents, so the Independent Planning Loop is pending permission.
+The Independent Planning Loop completed with separate Reviewer and Writer sessions:
 
-Current controller decision: `controller_draft_pending_independent_review`.
+- Iteration 1 Reviewer Agent result: `revise`, ambiguityScore `0.28`, three blocking findings.
+- Writer Agent revision: `planning-loop/plan-writer-revision-iter-01.yaml`.
+- Iteration 2 Reviewer Agent result: `pass`, ambiguityScore `0.14`, zero blocking findings.
+
+Current controller decision: `review_passed_ready`.
 
 ## Verification Plan
 
@@ -107,7 +111,8 @@ node --test .claude/scripts/agent-loop-phase-runtime.test.mjs
 node --test .claude/scripts/agent-loop-phase-runner.test.mjs
 node --test .claude/scripts/lib/phase-closeout-verdict.test.mjs
 node --test .claude/scripts/lib/runtime-unavailable-cache.test.mjs
+node --test .claude/scripts/lib/timeout-ledger.test.mjs
 git diff --check
 ```
 
-If a listed test file does not exist at implementation time, add the narrowest equivalent test near the changed module and record the replacement in phase QA evidence.
+The implementation must add the listed test files if any are missing. Phase QA evidence paths are fixed per phase under `docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/qa/phase-0N-qa.md`.
