@@ -1,0 +1,30 @@
+loopId: phase-runner-reconciliation-resolved-evidence-guard-2026-05-14
+mode: moonshot-plan-writer
+sourceFinding:
+  priority: P1
+  summary: same-attempt blocked-to-active reconciliation accepts open blocker evidence
+controllerDecision:
+  scope: one surgical implementation phase
+  rationale: the failure is localized to reconciliation validation and runner option plumbing
+  nonGoals:
+    - new state store
+    - terminal publisher rewrite
+    - broad phase runner lifecycle refactor
+reviewLoop:
+  required: true
+  reviewerAgent: revise
+  writerAgent: revisions_applied
+  secondReviewerAgent: pass
+  finalVerdict: pass
+runnableReadiness:
+  dryRunStatus: pass
+  dryRunCommand: node .claude/scripts/prepare-implementation-plan-state.mjs --plan-dir docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14 --master-plan docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/00-master-plan-v1.md --status-file .claude/docs/phase-status.yaml --execution-root docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/execution --dry-run
+  phaseCount: 1
+  phaseInventoryCheck: pass
+  actualPrepareApplied: false
+  note: dry-run showed stale workflow-enforcement pointers would be archived and rewritten; runtime state was not mutated in this planning-only closeout
+artifacts:
+  masterPlan: docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/00-master-plan-v1.md
+  phasePlan: docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/01-reconciliation-intent-resolved-evidence-guard-v1.md
+  finalReview: docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/planning-loop/plan-quality-review-iter-02.yaml
+  readiness: docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/planning-loop/runnable-readiness-dry-run.yaml

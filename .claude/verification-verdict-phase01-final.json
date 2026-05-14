@@ -1,85 +1,75 @@
 {
   "schemaVersion": "3",
-  "script": ".claude/scripts/write-verification-verdict.py",
-  "runId": "phase01-final-refresh-20260514",
+  "script": ".claude/scripts/phase-closeout-finalize.mjs",
+  "runId": "phase01-final",
   "phase": {
     "number": 1,
-    "title": "Phase 01: Terminal Blocked Board Publish Wiring (v1)",
-    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/01-terminal-blocked-board-publish-wiring-v1.md"
+    "title": "Phase 1 - Reconciliation Intent Resolved Evidence Guard",
+    "activePhaseDocPath": "docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/01-reconciliation-intent-resolved-evidence-guard-v1.md"
   },
   "contract": {
     "applicable": true,
-    "verificationMode": "phase_verification"
+    "verificationMode": "phase_closeout"
   },
   "contractApplicable": true,
-  "verificationMode": "phase_verification",
-  "mode": "codex-direct-phase-reverify",
-  "authoritative": true,
-  "identityStatus": "complete",
+  "verificationMode": "phase_closeout",
+  "mode": "phase-closeout-finalize",
   "verdict": "passed",
   "evidenceFresh": true,
   "requiredChecks": {
     "expected": [
-      "terminal blocked board publish wiring"
+      "phase-closeout-finalize"
     ],
-    "passed": [],
+    "passed": [
+      "phase-closeout-finalize"
+    ],
     "missing": []
   },
-  "changedFiles": [
-    ".claude/scripts/agent-loop-phase-runner.mjs",
-    ".claude/scripts/agent-loop-phase-runner.test.mjs",
-    ".claude/scripts/lib/terminal-blocker-publisher.mjs",
-    ".claude/scripts/lib/terminal-blocker-publisher.test.mjs"
-  ],
+  "changedFiles": [],
   "commands": [
     {
-      "name": "node",
-      "run": "node --test .claude/scripts/agent-loop-phase-runner.test.mjs",
-      "status": "passed"
-    },
-    {
-      "name": "node",
-      "run": "node --test .claude/scripts/lib/terminal-blocker-publisher.test.mjs",
+      "name": "phase_closeout_finalize",
+      "run": "node .claude/scripts/phase-closeout-finalize.mjs finalize",
       "status": "passed"
     }
   ],
   "workflowEvidence": {
     "selectedBundles": [
-      "verification-bundle"
+      "ready-isolate-bundle",
+      "implementation-bundle",
+      "review-bundle",
+      "verification-bundle",
+      "finish-bundle"
     ],
     "stageOrder": [
-      "verify"
+      "ready/isolate",
+      "execute",
+      "review",
+      "verify",
+      "finish"
     ],
-    "effortEscalationReason": "none",
-    "selectedModelProvider": "openai",
-    "selectedModel": "gpt-5.5",
-    "selectedModelEffort": "medium",
-    "modelSelectionReason": "phase01-closeout-refresh",
-    "retrievalBudget": "stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output",
-    "validationProfile": "workflow_core",
-    "phaseReplayPolicy": "preserve assistant phase commentary/final_answer when replaying; never add phase to user items",
-    "warnings": []
-  },
-  "runtimeContext": {
-    "requestedRuntime": "codex",
-    "effectiveRuntime": "codex",
-    "fallbackReason": "",
-    "verificationRuntimeTargets": "codex"
+    "warnings": [],
+    "closeoutInvariant": {
+      "ok": true,
+      "normalizedRunVerdict": "success",
+      "completionState": "completed",
+      "reason": "clean completion"
+    }
   },
   "identity": {
-    "runLeaseId": "dispatch-1778737725278-27920",
-    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/01-terminal-blocked-board-publish-wiring-v1.md",
-    "masterPlan": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/00-master-plan-v1.md",
-    "planDir": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14",
-    "statusFile": ".claude/docs/phase-status.yaml",
-    "gitTreeFingerprint": "dedc9b85ff5a48f13542cc8f0c77cea5190a786a"
+    "runLeaseId": "dispatch-1778745801518-5360",
+    "activePhaseDocPath": "docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/01-reconciliation-intent-resolved-evidence-guard-v1.md",
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-reconciliation-resolved-evidence-guard-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-reconciliation-resolved-evidence-guard-2026-05-14",
+    "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
+    "gitTreeFingerprint": "2ef6f69a116479128938654c1625dccb720ad0c3"
   },
-  "verdictScope": "phase_verification",
+  "verdictScope": "phase_closeout",
   "blockerClass": "",
-  "blockerFingerprint": "2f47e3ca02bc379d",
-  "environmentFingerprint": "e88acb91257fded3",
+  "blockerFingerprint": "",
+  "environmentFingerprint": "",
   "environmentBlockers": [],
-  "artifactFingerprint": "7d81a97c6b4497de",
+  "artifactFingerprint": "",
   "supersedes": [],
   "supersededBy": "",
   "staleWhen": [],
@@ -96,5 +86,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-14T07:00:02Z"
+  "generatedAt": "2026-05-14T08:13:44.089Z"
 }

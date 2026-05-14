@@ -53,6 +53,20 @@ function nonEmpty(value, field) {
   return normalized;
 }
 
+function codeError(code, message = code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function requiredReconciliationValue(value, field, code) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) {
+    throw codeError(code, `reconciliation intent requires ${field}`);
+  }
+  return normalized;
+}
+
 function stableId(parts) {
   return crypto.createHash('sha1').update(parts.map((part) => String(part ?? '')).join('\u0000')).digest('hex').slice(0, 16);
 }
@@ -209,20 +223,71 @@ function readJsonFile(filePath, code) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
-function jsonlHasRecord(filePath, predicate) {
+function readJsonlRecords(filePath) {
   if (!fs.existsSync(filePath)) {
-    return false;
+    return [];
   }
   return fs.readFileSync(filePath, 'utf8')
     .split(/\r?\n/)
     .filter((line) => line.trim())
-    .some((line) => {
+    .flatMap((line) => {
       try {
-        return predicate(JSON.parse(line));
+        return [JSON.parse(line)];
       } catch {
-        return false;
+        return [];
       }
     });
+}
+
+function findResolvedBlockerEvidenceRecord(records, expected) {
+  const normalized = records.map((record) => ({
+    record,
+    id: String(record.id || '').trim(),
+    status: String(record.status || '').trim(),
+    transactionId: String(record.transactionId || '').trim(),
+    attemptId: String(record.attemptId || '').trim(),
+    stateRunId: String(record.stateRunId || '').trim(),
+  }));
+
+  const exact = normalized.find(({ id, status, transactionId, attemptId, stateRunId }) => (
+    id === expected.blockerEvidenceId
+    && status === 'resolved'
+    && transactionId === expected.transactionId
+    && attemptId === expected.attemptId
+    && stateRunId === expected.stateRunId
+  ));
+  if (exact) {
+    return exact.record;
+  }
+
+  if (!normalized.some((item) => item.id === expected.blockerEvidenceId)) {
+    throw codeError(
+      'reconciliation_intent_blocker_evidence_missing',
+      `reconciliation intent blockerEvidenceId not found: ${expected.blockerEvidenceId}`,
+    );
+  }
+  if (!normalized.some((item) => item.id === expected.blockerEvidenceId && item.status === 'resolved')) {
+    throw codeError(
+      'reconciliation_intent_blocker_not_resolved',
+      `reconciliation intent blockerEvidenceId is not resolved: ${expected.blockerEvidenceId}`,
+    );
+  }
+  if (!normalized.some((item) => item.id === expected.blockerEvidenceId && item.status === 'resolved' && item.transactionId === expected.transactionId)) {
+    throw codeError(
+      'reconciliation_intent_blocker_transaction_mismatch',
+      `reconciliation intent blocker transactionId mismatch: ${expected.blockerEvidenceId}`,
+    );
+  }
+  if (!normalized.some((item) => item.id === expected.blockerEvidenceId && item.status === 'resolved' && item.transactionId === expected.transactionId && item.attemptId === expected.attemptId)) {
+    throw codeError(
+      'reconciliation_intent_blocker_attempt_mismatch',
+      `reconciliation intent blocker attemptId mismatch: ${expected.blockerEvidenceId}`,
+    );
+  }
+  throw codeError(
+    'reconciliation_intent_blocker_state_run_mismatch',
+    `reconciliation intent blocker stateRunId mismatch: ${expected.blockerEvidenceId}`,
+  );
 }
 
 export function resolveReconciliationIntentPath(stateRunId, options = {}) {
@@ -261,37 +326,45 @@ export function readReconciliationIntent(stateRunId, options = {}) {
 }
 
 export function validateReconciliationIntent(options = {}) {
-  const stateRunId = nonEmpty(options.stateRunId, 'stateRunId');
-  const transactionId = nonEmpty(options.transactionId, 'transactionId');
-  const blockerEvidenceId = nonEmpty(options.blockerEvidenceId, 'blockerEvidenceId');
-  const projectionManifestPath = nonEmpty(options.projectionManifestPath, 'projectionManifestPath');
-  const blockerEvidencePath = nonEmpty(options.blockerEvidencePath, 'blockerEvidencePath');
+  const stateRunId = requiredReconciliationValue(options.stateRunId, 'stateRunId', 'reconciliation_intent_stateRunId_mismatch');
+  const attemptId = requiredReconciliationValue(options.attemptId, 'attemptId', 'reconciliation_intent_attemptId_mismatch');
+  const transactionId = requiredReconciliationValue(options.transactionId, 'transactionId', 'reconciliation_intent_transactionId_mismatch');
+  const blockerEvidenceId = requiredReconciliationValue(options.blockerEvidenceId, 'blockerEvidenceId', 'reconciliation_intent_blockerEvidenceId_mismatch');
+  const projectionManifestPath = requiredReconciliationValue(options.projectionManifestPath, 'projectionManifestPath', 'reconciliation_intent_projectionManifestPath_mismatch');
+  const blockerEvidencePath = requiredReconciliationValue(options.blockerEvidencePath, 'blockerEvidencePath', 'reconciliation_intent_blockerEvidencePath_mismatch');
   const { intent, intentPath, source } = readReconciliationIntent(stateRunId, options);
 
   const expected = {
+    intent: 'resume_blocked_attempt',
+    resumeReason: 'blocker_resolved',
     stateRunId,
+    attemptId,
     transactionId,
     blockerEvidenceId,
     projectionManifestSha256: sha256File(projectionManifestPath),
   };
   const actual = {
+    intent: String(intent.intent || '').trim(),
+    resumeReason: String(intent.resumeReason || '').trim(),
     stateRunId: String(intent.stateRunId || '').trim(),
+    attemptId: String(intent.attemptId || '').trim(),
     transactionId: String(intent.transactionId || '').trim(),
     blockerEvidenceId: String(intent.blockerEvidenceId || '').trim(),
     projectionManifestSha256: String(intent.projectionManifestSha256 || '').trim(),
   };
+  const mismatchCodes = {
+    intent: 'reconciliation_intent_type_mismatch',
+    resumeReason: 'reconciliation_intent_resume_reason_mismatch',
+    attemptId: 'reconciliation_intent_attemptId_mismatch',
+  };
   for (const [field, expectedValue] of Object.entries(expected)) {
     if (actual[field] !== expectedValue) {
       const error = new Error(`reconciliation intent ${field} mismatch: ${actual[field] || 'unknown'} != ${expectedValue}`);
-      error.code = `reconciliation_intent_${field}_mismatch`;
+      error.code = mismatchCodes[field] || `reconciliation_intent_${field}_mismatch`;
       throw error;
     }
   }
-  if (!jsonlHasRecord(blockerEvidencePath, (record) => record.id === blockerEvidenceId)) {
-    const error = new Error(`reconciliation intent blockerEvidenceId not found: ${blockerEvidenceId}`);
-    error.code = 'reconciliation_intent_blocker_evidence_missing';
-    throw error;
-  }
+  const resolvedBlockerEvidence = findResolvedBlockerEvidenceRecord(readJsonlRecords(blockerEvidencePath), expected);
   const manifest = readJsonFile(projectionManifestPath, 'missing_projection_manifest');
   if (!Array.isArray(manifest.blockerEvidenceIds) || !manifest.blockerEvidenceIds.includes(blockerEvidenceId)) {
     const error = new Error(`projection manifest missing blockerEvidenceId: ${blockerEvidenceId}`);
@@ -309,6 +382,7 @@ export function validateReconciliationIntent(options = {}) {
     intent,
     intentPath,
     source,
+    resolvedBlockerEvidence,
     projectionManifestSha256: expected.projectionManifestSha256,
   };
 }

@@ -54,19 +54,34 @@ function writeJson(filePath, payload) {
 
 function writeReconciliationFixture(rootDir, overrides = {}) {
   const stateRunId = overrides.stateRunId ?? 'run-reconcile';
+  const attemptId = overrides.attemptId ?? 'attempt-01';
   const transactionId = overrides.transactionId ?? 'tx-reconcile';
   const blockerEvidenceId = overrides.blockerEvidenceId ?? 'blocker-reconcile';
   const runRoot = resolveRunRoot(stateRunId, { rootDir });
   const blockerEvidencePath = path.join(runRoot, 'BLOCKER_EVIDENCE.jsonl');
   const projectionManifestPath = path.join(runRoot, 'projection-manifest.json');
   fs.mkdirSync(runRoot, { recursive: true });
-  fs.writeFileSync(blockerEvidencePath, `${JSON.stringify({ id: blockerEvidenceId })}\n`, 'utf8');
+  const blockerEvidenceRecords = overrides.blockerEvidenceRecords ?? [{
+    id: blockerEvidenceId,
+    status: 'resolved',
+    transactionId,
+    attemptId,
+    stateRunId,
+  }];
+  fs.writeFileSync(
+    blockerEvidencePath,
+    blockerEvidenceRecords.map((record) => JSON.stringify(record)).join('\n') + '\n',
+    'utf8',
+  );
   writeJson(projectionManifestPath, {
     transactionId,
     blockerEvidenceIds: [blockerEvidenceId],
   });
   const intent = {
+    intent: 'resume_blocked_attempt',
+    resumeReason: 'blocker_resolved',
     stateRunId,
+    attemptId,
     transactionId,
     blockerEvidenceId,
     projectionManifestSha256: sha256File(projectionManifestPath),
@@ -79,6 +94,7 @@ function writeReconciliationFixture(rootDir, overrides = {}) {
     rootDir,
     runsRoot,
     stateRunId,
+    attemptId,
     transactionId,
     blockerEvidenceId,
     blockerEvidencePath,
@@ -86,6 +102,13 @@ function writeReconciliationFixture(rootDir, overrides = {}) {
     intentPath,
     runRoot,
   };
+}
+
+function assertThrowsCode(fn, code) {
+  assert.throws(fn, (error) => {
+    assert.equal(error.code, code);
+    return true;
+  });
 }
 
 test('STATE.md headers round-trip deterministically', () => {
@@ -178,6 +201,156 @@ test('same-attempt blocked restart accepts matching run-scoped reconciliation in
       { reconciliationIntentOptions: fixture },
     ),
     true,
+  );
+});
+
+test('reconciliation intent requires attempt context in options and intent payload', () => {
+  const rootDir = tempRoot();
+  const fixture = writeReconciliationFixture(rootDir);
+  const { attemptId: _attemptId, ...missingAttemptOptions } = fixture;
+  assertThrowsCode(
+    () => validateReconciliationIntent(missingAttemptOptions),
+    'reconciliation_intent_attemptId_mismatch',
+  );
+
+  const missingIntentAttempt = writeReconciliationFixture(tempRoot(), {
+    intentPatch: { attemptId: '' },
+  });
+  assertThrowsCode(
+    () => validateReconciliationIntent(missingIntentAttempt),
+    'reconciliation_intent_attemptId_mismatch',
+  );
+});
+
+test('reconciliation intent requires explicit intent type and resume reason', () => {
+  const wrongIntent = writeReconciliationFixture(tempRoot(), {
+    intentPatch: { intent: 'resume' },
+  });
+  assertThrowsCode(
+    () => validateReconciliationIntent(wrongIntent),
+    'reconciliation_intent_type_mismatch',
+  );
+
+  const wrongResumeReason = writeReconciliationFixture(tempRoot(), {
+    intentPatch: { resumeReason: 'operator_override' },
+  });
+  assertThrowsCode(
+    () => validateReconciliationIntent(wrongResumeReason),
+    'reconciliation_intent_resume_reason_mismatch',
+  );
+});
+
+test('open-only blocker evidence rejects same-attempt reconciliation', () => {
+  const rootDir = tempRoot();
+  const fixture = writeReconciliationFixture(rootDir, {
+    blockerEvidenceRecords: [{
+      id: 'blocker-reconcile',
+      status: 'open',
+      transactionId: 'tx-reconcile',
+      attemptId: 'attempt-01',
+      stateRunId: 'run-reconcile',
+    }],
+  });
+
+  assertThrowsCode(
+    () => validateReconciliationIntent(fixture),
+    'reconciliation_intent_blocker_not_resolved',
+  );
+});
+
+test('missing blocker evidence rejects same-attempt reconciliation', () => {
+  const fixture = writeReconciliationFixture(tempRoot(), {
+    blockerEvidenceRecords: [],
+  });
+
+  assertThrowsCode(
+    () => validateReconciliationIntent(fixture),
+    'reconciliation_intent_blocker_evidence_missing',
+  );
+});
+
+test('multiple blocker records pass only when one resolved record matches the full context', () => {
+  const fixture = writeReconciliationFixture(tempRoot(), {
+    blockerEvidenceRecords: [
+      {
+        id: 'blocker-reconcile',
+        status: 'open',
+        transactionId: 'tx-reconcile',
+        attemptId: 'attempt-01',
+        stateRunId: 'run-reconcile',
+      },
+      {
+        id: 'blocker-reconcile',
+        status: 'resolved',
+        transactionId: 'wrong-tx',
+        attemptId: 'attempt-01',
+        stateRunId: 'run-reconcile',
+      },
+      {
+        id: 'blocker-reconcile',
+        status: 'resolved',
+        transactionId: 'tx-reconcile',
+        attemptId: 'attempt-01',
+        stateRunId: 'run-reconcile',
+      },
+    ],
+  });
+
+  assert.equal(validateReconciliationIntent(fixture).ok, true);
+});
+
+test('resolved blocker evidence mismatch codes follow transaction, attempt, then stateRun priority', () => {
+  const wrongTransaction = writeReconciliationFixture(tempRoot(), {
+    blockerEvidenceRecords: [{
+      id: 'blocker-reconcile',
+      status: 'resolved',
+      transactionId: 'wrong-tx',
+      attemptId: 'attempt-01',
+      stateRunId: 'run-reconcile',
+    }],
+  });
+  assertThrowsCode(
+    () => validateReconciliationIntent(wrongTransaction),
+    'reconciliation_intent_blocker_transaction_mismatch',
+  );
+
+  const wrongAttempt = writeReconciliationFixture(tempRoot(), {
+    blockerEvidenceRecords: [{
+      id: 'blocker-reconcile',
+      status: 'resolved',
+      transactionId: 'tx-reconcile',
+      attemptId: 'attempt-02',
+      stateRunId: 'run-reconcile',
+    }],
+  });
+  assertThrowsCode(
+    () => validateReconciliationIntent(wrongAttempt),
+    'reconciliation_intent_blocker_attempt_mismatch',
+  );
+
+  const wrongStateRun = writeReconciliationFixture(tempRoot(), {
+    blockerEvidenceRecords: [{
+      id: 'blocker-reconcile',
+      status: 'resolved',
+      transactionId: 'tx-reconcile',
+      attemptId: 'attempt-01',
+      stateRunId: 'other-run',
+    }],
+  });
+  assertThrowsCode(
+    () => validateReconciliationIntent(wrongStateRun),
+    'reconciliation_intent_blocker_state_run_mismatch',
+  );
+});
+
+test('wrong intent attemptId rejects with stable mismatch code', () => {
+  const fixture = writeReconciliationFixture(tempRoot(), {
+    intentPatch: { attemptId: 'attempt-02' },
+  });
+
+  assertThrowsCode(
+    () => validateReconciliationIntent(fixture),
+    'reconciliation_intent_attemptId_mismatch',
   );
 });
 

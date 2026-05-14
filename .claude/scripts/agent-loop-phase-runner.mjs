@@ -213,8 +213,13 @@ function readJsonObject(filePath) {
   }
 }
 
-export function resolveRunnerReconciliationIntentOptions(stateRunId, runRoot = '', { resume = state.resume } = {}) {
+export function resolveRunnerReconciliationIntentOptions(
+  stateRunId,
+  runRoot = '',
+  { resume = state.resume, attemptId = '' } = {},
+) {
   const normalizedStateRunId = String(stateRunId || '').trim();
+  const normalizedAttemptId = String(attemptId || '').trim();
   if (!resume || !normalizedStateRunId) {
     return null;
   }
@@ -232,6 +237,7 @@ export function resolveRunnerReconciliationIntentOptions(stateRunId, runRoot = '
   return {
     rootDir,
     stateRunId: normalizedStateRunId,
+    attemptId: normalizedAttemptId,
     transactionId,
     blockerEvidenceId,
     projectionManifestPath,
@@ -273,6 +279,9 @@ export function assessWorkerSpawnStateGuard(readResult, { attemptId = '', reconc
           projectionStatus,
           boardAttempt,
           detail: error instanceof Error ? error.message : String(error),
+          detailCode: error && typeof error === 'object' && 'code' in error
+            ? String(error.code || '')
+            : 'reconciliation_intent_unknown_error',
         };
       }
     }
@@ -373,9 +382,14 @@ export function writeActiveSimpleRunState(overrides = {}) {
 
 function guardWorkerSpawnAgainstSimpleRunState(paths, logFile) {
   const readResult = readSimpleRunStateById(state.stateRunId, process.cwd());
+  const attemptId = currentSimpleRunAttemptId();
   const guard = assessWorkerSpawnStateGuard(readResult, {
-    attemptId: currentSimpleRunAttemptId(),
-    reconciliationIntentOptions: resolveRunnerReconciliationIntentOptions(state.stateRunId, readResult?.state?.runRoot),
+    attemptId,
+    reconciliationIntentOptions: resolveRunnerReconciliationIntentOptions(
+      state.stateRunId,
+      readResult?.state?.runRoot,
+      { resume: state.resume, attemptId },
+    ),
   });
   if (guard.allowed) {
     appendDebugLog('worker-spawn-state-guard-allowed', guard);

@@ -62,6 +62,20 @@ function writeRunnerReconciliationIntentFromPublish(root, publishResult) {
   return intentPath;
 }
 
+function appendResolvedBlockerEvidence(publishResult) {
+  fs.appendFileSync(
+    publishResult.guardMirror.blockerEvidencePath,
+    `${JSON.stringify({
+      id: publishResult.blockerEvidenceId,
+      status: 'resolved',
+      transactionId: publishResult.transactionId,
+      attemptId: 'attempt-01',
+      stateRunId: publishResult.stateRunId,
+    })}\n`,
+    'utf8',
+  );
+}
+
 test('shadow adapter converts review, verify, finish, checkpoint, and pass cases', () => {
   const cases = [
     {
@@ -328,14 +342,24 @@ test('worker spawn guard allows same-attempt blocked resume only with production
     const reconciliationIntentOptions = resolveRunnerReconciliationIntentOptions(
       stateRunId,
       publishResult.runRoot,
-      { resume: true },
+      { resume: true, attemptId: 'attempt-01' },
     );
 
     assert.ok(reconciliationIntentOptions);
+    assert.equal(reconciliationIntentOptions.attemptId, 'attempt-01');
     assert.equal(reconciliationIntentOptions.transactionId, publishResult.transactionId);
     assert.equal(reconciliationIntentOptions.blockerEvidenceId, publishResult.blockerEvidenceId);
     assert.equal(reconciliationIntentOptions.projectionManifestPath, publishResult.guardMirror.projectionManifestPath);
 
+    const openOnlyRejected = assessWorkerSpawnStateGuard(blocked, {
+      attemptId: 'attempt-01',
+      reconciliationIntentOptions,
+    });
+    assert.equal(openOnlyRejected.allowed, false);
+    assert.equal(openOnlyRejected.reason, 'reconciliation_intent_invalid');
+    assert.equal(openOnlyRejected.detailCode, 'reconciliation_intent_blocker_not_resolved');
+
+    appendResolvedBlockerEvidence(publishResult);
     const allowed = assessWorkerSpawnStateGuard(blocked, {
       attemptId: 'attempt-01',
       reconciliationIntentOptions,
@@ -343,15 +367,22 @@ test('worker spawn guard allows same-attempt blocked resume only with production
     assert.equal(allowed.allowed, true);
     assert.equal(allowed.reason, 'state_board_allows_reconciliation_resume');
 
+    writeJson(resolveReconciliationIntentPath(stateRunId, { rootDir: root }), {
+      intent: 'resume',
+      resumeReason: 'blocker_resolved',
+      stateRunId,
+      attemptId: 'attempt-01',
+      transactionId: publishResult.transactionId,
+      blockerEvidenceId: publishResult.blockerEvidenceId,
+      projectionManifestSha256: sha256File(publishResult.guardMirror.projectionManifestPath),
+    });
     const rejected = assessWorkerSpawnStateGuard(blocked, {
       attemptId: 'attempt-01',
-      reconciliationIntentOptions: {
-        ...reconciliationIntentOptions,
-        transactionId: 'wrong-tx',
-      },
+      reconciliationIntentOptions,
     });
     assert.equal(rejected.allowed, false);
     assert.equal(rejected.reason, 'reconciliation_intent_invalid');
+    assert.equal(rejected.detailCode, 'reconciliation_intent_type_mismatch');
   } finally {
     process.chdir(originalCwd);
     fs.rmSync(root, { recursive: true, force: true });
