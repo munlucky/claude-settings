@@ -7,75 +7,42 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { classifyFailure } from './lib/failure-classifier.mjs';
+import { setRootRunVerdict } from './agent-loop-phase-state.mjs';
 
-const DEFAULT_WORKTREE_ROOTS = [
-  '.tmp/harness-worktrees/phase-runs',
-  '.tmp/harness-worktrees/phase-waves',
-];
+const DEFAULT_WORKTREE_ROOTS = ['.tmp/harness-worktrees/phase-runs', '.tmp/harness-worktrees/phase-waves'];
 
 const IGNORED_EVIDENCE_PREFIXES = [
-  '.claude/browser-flow-verdict-',
-  '.claude/knowledge-repo-audit-',
-  '.claude/runtime-verdict-',
-  '.claude/visual-diff-verdict-',
-  '.claude/verification-results-',
-  '.claude/verification-verdict-',
+  '.claude/browser-flow-verdict-', '.claude/knowledge-repo-audit-', '.claude/runtime-verdict-',
+  '.claude/visual-diff-verdict-', '.claude/verification-results-', '.claude/verification-verdict-',
 ];
 
 const DENIED_CLOSEOUT_EXACT = new Set([
-  '.claude/docs/phase-status.yaml',
-  '.claude/memory.json',
-  '.claude/worktree-baseline.log',
-  '.claude/worktree-prepare.json',
-  '.claude/worktree-setup.log',
-  '.mcp.json',
+  '.claude/docs/phase-status.yaml', '.claude/memory.json', '.claude/worktree-baseline.log',
+  '.claude/worktree-prepare.json', '.claude/worktree-setup.log', '.mcp.json',
 ]);
 
-const DENIED_CLOSEOUT_PREFIXES = [
-  '.claude/cache/memorygraph/',
-  '.claude/logs/',
-  '.claude/memorygraph/',
-  '.claude/runtime-state.sqlite',
-  '.tmp/',
-];
+const DENIED_CLOSEOUT_PREFIXES = ['.claude/cache/memorygraph/', '.claude/logs/', '.claude/memorygraph/', '.claude/runtime-state.sqlite', '.tmp/'];
 
-const state = {
-  command: 'assert-clean',
-  planDir: '',
-  statusFile: '',
-  output: '',
-  json: false,
-  worktreeRoots: [],
-};
+const state = { command: 'assert-clean', planDir: '', statusFile: '', output: '', json: false, worktreeRoots: [] };
 
 function usage() {
-  console.error([
-    'Usage:',
-    '  phase-final-git-closeout.mjs assert-clean [options]',
-    '  phase-final-git-closeout.mjs audit [options]',
-    '  phase-final-git-closeout.mjs preflight [options]',
-    '  phase-final-git-closeout.mjs self-test',
-    '',
-    'Options:',
-    '  --plan-dir <path>',
-    '  --status-file <path>',
-    '  --worktree-root <path>    Can be repeated',
-    '  --output <path>           Write JSON audit artifact',
-    '  --json                    Print JSON payload',
-  ].join('\n'));
+  console.error(`Usage:
+  phase-final-git-closeout.mjs assert-clean [options]
+  phase-final-git-closeout.mjs audit [options]
+  phase-final-git-closeout.mjs preflight [options]
+  phase-final-git-closeout.mjs self-test
+
+Options:
+  --plan-dir <path>
+  --status-file <path>
+  --worktree-root <path>    Can be repeated
+  --output <path>           Write JSON audit artifact
+  --json                    Print JSON payload`);
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    encoding: 'utf8',
-    ...options,
-  });
-  return {
-    status: result.status ?? 0,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-    error: result.error ?? null,
-  };
+  const result = spawnSync(command, args, { encoding: 'utf8', ...options });
+  return { status: result.status ?? 0, stdout: result.stdout ?? '', stderr: result.stderr ?? '', error: result.error ?? null };
 }
 
 function runGit(args, cwd = process.cwd()) {
@@ -623,6 +590,20 @@ function audit() {
   return payload;
 }
 
+function reconcileSuccessfulStatusProjection(payload) {
+  if (!payload.clean || !state.statusFile || state.command === 'audit' || !fs.existsSync(state.statusFile)) {
+    return false;
+  }
+
+  setRootRunVerdict(
+    state.statusFile,
+    'success',
+    'clean_complete',
+    'phase final git closeout clean',
+  );
+  return true;
+}
+
 function parseArgs(argv) {
   const args = [...argv];
   if (args.length > 0 && !args[0].startsWith('--')) {
@@ -795,6 +776,7 @@ try {
     throw new Error(`Unknown command: ${state.command}`);
   }
   const payload = audit();
+  payload.reconciledStatusProjection = reconcileSuccessfulStatusProjection(payload);
   if (state.json) {
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   } else if (!payload.clean) {

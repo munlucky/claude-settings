@@ -72,6 +72,6 @@ Stop if no focused final git closeout test file exists and the current closeout 
 
 ## Phase Completion Checklist
 
-- [ ] Completed phase cannot retain running attempt outcome.
-- [ ] Successful git closeout clears stale checkpoint-required fields.
-- [ ] Tests pass without real remote mutation.
+- [x] Completed phase cannot retain running attempt outcome.
+- [x] Successful git closeout clears stale checkpoint-required fields.
+- [x] Tests pass without real remote mutation.

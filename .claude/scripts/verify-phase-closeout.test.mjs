@@ -704,6 +704,28 @@ test('phase closeout uses explicit legacy verdict mode before current pointer ph
   });
 });
 
+test('phase closeout legacy verdict mode preserves historical git tree identity', () => {
+  withFixture({}, (root) => {
+    fs.rmSync(path.join(root, '.claude/logs/workflow-enforcement/current-artifacts.json'), { force: true });
+    const verdictPath = path.join(root, '.claude/verification-verdict-phase01-final.json');
+    const verdict = JSON.parse(fs.readFileSync(verdictPath, 'utf8'));
+    verdict.identity = {
+      runLeaseId: 'historical-run-1',
+      activePhaseDocPath: path.join(root, 'docs/implementation/close/01-feature.md'),
+      masterPlan: path.join(root, 'docs/implementation/00-master-plan-v1.md'),
+      planDir: path.join(root, 'docs/implementation'),
+      statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
+      gitTreeFingerprint: 'historical-tree-fingerprint',
+    };
+    fs.writeFileSync(verdictPath, JSON.stringify(verdict, null, 2));
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
 test('phase closeout accepts workflow state for an active non-completed phase', () => {
   withFixture({}, (root) => {
     const statusFile = path.join(root, '.claude/docs/phase-status.yaml');

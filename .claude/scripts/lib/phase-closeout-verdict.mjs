@@ -210,7 +210,9 @@ function buildVerdictIdentity({ phase = {}, statusRoot = {}, statusPath = '', pl
     masterPlan: masterPlan ? path.resolve(masterPlan) : '',
     planDir: planDir ? path.resolve(planDir) : '',
     statusFile: statusPath ? path.resolve(statusPath) : '',
-    gitTreeFingerprint: legacyMode ? '' : (verdictIdentity.gitTreeFingerprint || resolveGitTreeFingerprint(process.cwd())),
+    gitTreeFingerprint: legacyMode
+      ? (verdictIdentity.gitTreeFingerprint || '')
+      : (verdictIdentity.gitTreeFingerprint || resolveGitTreeFingerprint(process.cwd())),
   };
 }
 

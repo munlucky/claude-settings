@@ -2150,6 +2150,10 @@ function updatePhaseState(config) {
   if (!fs.existsSync(statusFile)) {
     return;
   }
+  const effectiveLastOutcome = config.newStatus === 'completed'
+    && (!config.lastOutcome || String(config.lastOutcome).toLowerCase() === 'running')
+    ? 'completed'
+    : config.lastOutcome;
 
   const rootMetadata = readRootStatusMetadata(statusFile);
   const currentRun = readJsonIfExists(CURRENT_RUN_FILE) || {};
@@ -2367,7 +2371,7 @@ function updatePhaseState(config) {
 
   function classifyTimingBucket() {
     const statusValue = String(config.newStatus || '').toLowerCase();
-    const outcomeValue = String(config.lastOutcome || '').toLowerCase();
+    const outcomeValue = String(effectiveLastOutcome || '').toLowerCase();
     const stageValue = String(activeStage || '').toLowerCase();
     if (statusValue.includes('blocked') || outcomeValue.includes('blocked') || stageValue.includes('blocked')) {
       return 'blockedSeconds';
@@ -2408,8 +2412,8 @@ function updatePhaseState(config) {
 
   setTopLevel('status', config.newStatus);
   setTopLevel('updatedAt', `"${config.timestamp}"`);
-  if (config.lastOutcome) {
-    setTopLevel('lastOutcome', config.lastOutcome);
+  if (effectiveLastOutcome) {
+    setTopLevel('lastOutcome', effectiveLastOutcome);
   }
   setTopLevel('planConfirmed', 'true');
   if (config.sprintContractPath) setTopLevel('sprintContract', `"${config.sprintContractPath}"`);
@@ -2431,15 +2435,15 @@ function updatePhaseState(config) {
     }
   }
 
-  if (config.incrementAttempt === 'true' || config.lastOutcome) {
+  if (config.incrementAttempt === 'true' || effectiveLastOutcome) {
     const [totalIdx, totalValue] = getAttemptValue('total', '0');
     if (config.incrementAttempt === 'true') {
       const totalNumber = Number.parseInt(totalValue, 10) || 0;
       block[totalIdx] = `${attemptIndent}total: ${totalNumber + 1}`;
     }
-    if (config.lastOutcome) {
+    if (effectiveLastOutcome) {
       const [outcomeIdx] = getAttemptValue('lastOutcome', 'pending');
-      block[outcomeIdx] = `${attemptIndent}lastOutcome: ${config.lastOutcome}`;
+      block[outcomeIdx] = `${attemptIndent}lastOutcome: ${effectiveLastOutcome}`;
     }
     const [updatedIdx] = getAttemptValue('lastUpdatedAt', `"${config.timestamp}"`);
     block[updatedIdx] = `${attemptIndent}lastUpdatedAt: "${config.timestamp}"`;
@@ -2504,6 +2508,23 @@ function updatePhaseState(config) {
       : entry
   ));
   const counts = summarizePhaseCounts(updatedBlocks);
+  const nextStatusValue = String(config.newStatus || '').trim().toLowerCase();
+  const pointsAtCurrentPhase = nextStatusValue === 'in_progress'
+    || nextStatusValue.includes('blocked')
+    || ['failed', 'runtime_unhealthy'].includes(nextStatusValue);
+  if (pointsAtCurrentPhase) {
+    const nextRootExecutionStatus = nextStatusValue === 'in_progress'
+      ? 'active'
+      : nextStatusValue.includes('blocked')
+        ? 'paused'
+        : nextStatusValue;
+    setRootScalarValue('activeExecutionStatus', yamlScalar(nextRootExecutionStatus));
+    setRootScalarValue('activeCurrentStage', yamlScalar(activeStage || (nextStatusValue === 'in_progress' ? 'ready/isolate' : 'blocked')));
+    setRootScalarValue('activePhaseNumber', String(config.phaseNum));
+    if (currentBlock?.title) {
+      setRootScalarValue('activePhaseTitle', yamlScalar(currentBlock.title));
+    }
+  }
   setRootScalarValue('activePlannedPhases', counts.planned);
   setRootScalarValue('activeCompletedPhases', counts.completed);
   setRootScalarValue('activeBlockedPhases', counts.blocked);
@@ -2521,7 +2542,7 @@ function updatePhaseState(config) {
     source: 'agent-loop-phase-state',
     payload: {
       status: String(config.newStatus || ''),
-      lastOutcome: String(config.lastOutcome || ''),
+      lastOutcome: String(effectiveLastOutcome || ''),
       activeStage: String(activeStage || ''),
       sprintContractPath: String(config.sprintContractPath || ''),
       qaReportPath: String(config.qaReportPath || ''),
@@ -2529,7 +2550,10 @@ function updatePhaseState(config) {
     },
     timestamp: String(config.timestamp || nowIsoSeconds()),
   });
-  shadowRuntimePhaseUpdate(config);
+  shadowRuntimePhaseUpdate({
+    ...config,
+    lastOutcome: effectiveLastOutcome,
+  });
 }
 
 function setPhaseCheckpoint(statusFile, phaseNum, checkpoint) {
@@ -2637,6 +2661,7 @@ export function setRootRunVerdict(
   }
   if (normalizedRunVerdict === 'success' && stopReasonClass === 'clean_complete') {
     setRootScalarInLines(lines, 'lastStopReasonDetail', yamlScalar(stopReasonExplanation));
+    removeRootScalarLines(lines, ['rawStopReason', 'recoveryAction', 'blockerClass', 'blockingReasonCode', 'failureClass']);
     removeStaleRootStopReasonArtifactLines(lines);
   } else {
     removeRootScalarLines(lines, ['finalVerdict', 'projectionSchemaVersion']);

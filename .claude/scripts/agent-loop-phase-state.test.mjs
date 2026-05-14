@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { reconcilePhaseCloseout } from './phase-closeout-reconciler.mjs';
+
+const phaseStateScriptPath = fileURLToPath(new URL('./agent-loop-phase-state.mjs', import.meta.url));
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -115,4 +119,169 @@ test('partial-reconciliation-not-success and next run resumes intent transaction
     assert.equal(readJson(path.join(attemptDir, 'reconciliation-success.json')).transactionId, transactionId);
     assert.equal(readJson(path.join(workflowDir, 'current-run.json')).transactionId, transactionId);
   });
+});
+
+test('completed phase update forces terminal attempt outcome', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-state-terminal-outcome-'));
+  try {
+    const statusFile = path.join(root, 'phase-status.yaml');
+    fs.writeFileSync(statusFile, [
+      'schemaVersion: "1.0"',
+      'activeExecutionStatus: running',
+      'activeCurrentStage: finish/handoff',
+      'activePhaseNumber: 3',
+      'phases:',
+      '  - number: 3',
+      '    title: "Phase 03"',
+      '    status: in_progress',
+      '    planConfirmed: true',
+      '    attempts:',
+      '      total: 1',
+      '      lastOutcome: running',
+      '      lastUpdatedAt: "2026-05-14T00:00:00.000Z"',
+      '    timing:',
+      '      startedAt: "2026-05-14T00:00:00.000Z"',
+      '      lastStage: "execute"',
+      '      lastStageAt: "2026-05-14T00:00:00.000Z"',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = spawnSync(process.execPath, [
+      phaseStateScriptPath,
+      'update-phase-state',
+      statusFile,
+      '3',
+      'completed',
+      '2026-05-14T00:01:00.000Z',
+      'running',
+      'false',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ], { cwd: root, encoding: 'utf8' });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.match(text, /status:\s+completed/);
+    assert.match(text, /lastOutcome:\s+completed/);
+    assert.doesNotMatch(text, /lastOutcome:\s+running/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('in-progress phase update moves root active phase pointer', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-state-active-pointer-'));
+  try {
+    const statusFile = path.join(root, 'phase-status.yaml');
+    fs.writeFileSync(statusFile, [
+      'schemaVersion: "1.0"',
+      'activeExecutionStatus: active',
+      'activeCurrentStage: finish/handoff',
+      'activePhaseNumber: 2',
+      'activePhaseTitle: "Phase 02"',
+      'phases:',
+      '  - number: 2',
+      '    title: "Phase 02"',
+      '    status: completed',
+      '    planConfirmed: true',
+      '    attempts:',
+      '      total: 1',
+      '      lastOutcome: clean_complete',
+      '      lastUpdatedAt: "2026-05-14T00:00:00.000Z"',
+      '  - number: 3',
+      '    title: "Phase 03"',
+      '    status: pending',
+      '    planConfirmed: true',
+      '    attempts:',
+      '      total: 0',
+      '      lastOutcome: pending',
+      '      lastUpdatedAt: "2026-05-14T00:00:00.000Z"',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = spawnSync(process.execPath, [
+      phaseStateScriptPath,
+      'update-phase-state',
+      statusFile,
+      '3',
+      'in_progress',
+      '2026-05-14T00:01:00.000Z',
+      'running',
+      'false',
+      'docs/implementation/03-phase.md',
+      '',
+      '',
+      '',
+      '',
+    ], { cwd: root, encoding: 'utf8' });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.match(text, /activeExecutionStatus:\s+active/);
+    assert.match(text, /activePhaseNumber:\s+3/);
+    assert.match(text, /activePhaseTitle:\s+"Phase 03"/);
+    assert.match(text, /artifacts:\n  activePhaseDocPath:\s+"docs\/implementation\/03-phase\.md"/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('blocked phase update moves root active pointer away from completed phase', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-state-blocked-pointer-'));
+  try {
+    const statusFile = path.join(root, 'phase-status.yaml');
+    fs.writeFileSync(statusFile, [
+      'schemaVersion: "1.0"',
+      'activeExecutionStatus: active',
+      'activeCurrentStage: finish/handoff',
+      'activePhaseNumber: 2',
+      'activePhaseTitle: "Phase 02"',
+      'phases:',
+      '  - number: 2',
+      '    title: "Phase 02"',
+      '    status: completed',
+      '    planConfirmed: true',
+      '    attempts:',
+      '      total: 1',
+      '      lastOutcome: clean_complete',
+      '      lastUpdatedAt: "2026-05-14T00:00:00.000Z"',
+      '  - number: 3',
+      '    title: "Phase 03"',
+      '    status: in_progress',
+      '    planConfirmed: true',
+      '    attempts:',
+      '      total: 1',
+      '      lastOutcome: running',
+      '      lastUpdatedAt: "2026-05-14T00:00:00.000Z"',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = spawnSync(process.execPath, [
+      phaseStateScriptPath,
+      'update-phase-state',
+      statusFile,
+      '3',
+      'blocked',
+      '2026-05-14T00:01:00.000Z',
+      'blocked',
+      'false',
+      'docs/implementation/03-phase.md',
+      '',
+      '',
+      '',
+      '',
+    ], { cwd: root, encoding: 'utf8' });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.match(text, /activeExecutionStatus:\s+paused/);
+    assert.match(text, /activePhaseNumber:\s+3/);
+    assert.match(text, /activePhaseTitle:\s+"Phase 03"/);
+    assert.doesNotMatch(text, /activePhaseNumber:\s+2/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

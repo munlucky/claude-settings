@@ -552,10 +552,17 @@ function currentPointerPhaseCompleted(phases = []) {
   ));
 }
 
+function currentArtifactsIndexExists() {
+  return fs.existsSync(path.resolve(process.cwd(), '.claude/logs/workflow-enforcement/current-artifacts.json'));
+}
+
 function currentArtifactsModeForCloseout(phases = [], explicitMode = '') {
   const normalized = String(explicitMode || '').trim().toLowerCase();
   if (normalized) {
     return normalized;
+  }
+  if (currentArtifactsIndexExists()) {
+    return 'current';
   }
   return currentPointerPhaseCompleted(phases) ? 'current' : 'legacy';
 }

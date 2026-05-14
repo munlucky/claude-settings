@@ -59,6 +59,10 @@ function codeError(code, message = code) {
   return error;
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function requiredReconciliationValue(value, field, code) {
   const normalized = String(value ?? '').trim();
   if (!normalized) {
@@ -496,9 +500,35 @@ export function scrubCompatibilityProjection(payload = {}, state = {}, { targetK
     next.activeExecutionStatus = 'blocked';
     next.completionStatus = 'blocked';
     next.attemptOutcome = 'blocked';
+    next.activePhaseNumber = state.phase ?? next.activePhaseNumber;
+    if (next.phaseTitle) {
+      next.activePhaseTitle = next.phaseTitle;
+    }
     next.childAlive = false;
     if (next.liveness && typeof next.liveness === 'object' && !Array.isArray(next.liveness)) {
       next.liveness = { ...next.liveness, childAlive: false };
+    }
+    if (isPlainObject(next.phaseRunLease)) {
+      next.phaseRunLease = {
+        ...next.phaseRunLease,
+        status: 'paused',
+        activeExecutionStatus: 'blocked',
+        completionStatus: 'blocked',
+        attemptOutcome: 'blocked',
+        phaseNumber: state.phase ?? next.phaseRunLease.phaseNumber ?? next.phaseNumber,
+        phaseTitle: next.phaseTitle ?? next.phaseRunLease.phaseTitle ?? next.activePhaseTitle,
+        childAlive: false,
+        liveness: isPlainObject(next.phaseRunLease.liveness)
+          ? { ...next.phaseRunLease.liveness, childAlive: false }
+          : next.phaseRunLease.liveness,
+      };
+      if (isPlainObject(next.phaseRunLease.phase)) {
+        next.phaseRunLease.phase = {
+          ...next.phaseRunLease.phase,
+          number: state.phase ?? next.phaseRunLease.phase.number,
+          title: next.phaseTitle ?? next.phaseRunLease.phase.title,
+        };
+      }
     }
     next.dispatchStage = 'terminal_blocked';
     next.stopReasonCode = state.reason ?? next.stopReasonCode ?? 'blocked';

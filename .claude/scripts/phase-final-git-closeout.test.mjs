@@ -40,6 +40,49 @@ test('assert-clean exits 0 when repository is clean', (t) => {
   });
 });
 
+test('successful final git closeout clears stale status projection fields', (t) => {
+  if (!canSpawnGit()) {
+    t.skip('git spawn unavailable');
+    return;
+  }
+  withGitFixture((repo) => {
+    const statusFile = path.join(repo, '.claude', 'docs', 'phase-status.yaml');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    fs.writeFileSync(statusFile, [
+      'schemaVersion: "1.0"',
+      'normalizedRunVerdict: checkpoint_required',
+      'stopReasonClass: dirty_worktree',
+      'stopReasonExplanation: "phase-final-git-closeout-required"',
+      'lastStopReasonDetail: "phase final git closeout required: main_worktree_dirty"',
+      'blockingReasonCode: dirty_worktree',
+      'failureClass: git_closeout',
+      'phases:',
+      '  - number: 3',
+      '    status: completed',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = runNode([
+      'assert-clean',
+      '--status-file',
+      statusFile,
+      '--json',
+    ], repo);
+    const payload = JSON.parse(result.stdout);
+    const text = fs.readFileSync(statusFile, 'utf8');
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(payload.clean, true);
+    assert.equal(payload.reconciledStatusProjection, true);
+    assert.match(text, /normalizedRunVerdict:\s+success/);
+    assert.match(text, /stopReasonClass:\s+clean_complete/);
+    assert.doesNotMatch(text, /checkpoint_required/);
+    assert.doesNotMatch(text, /dirty_worktree/);
+    assert.doesNotMatch(text, /phase-final-git-closeout-required/);
+    assert.doesNotMatch(text, /main_worktree_dirty/);
+  });
+});
+
 function withGitFixture(callback) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-final-git-closeout-test-'));
   try {

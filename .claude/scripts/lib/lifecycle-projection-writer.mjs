@@ -147,6 +147,13 @@ function preserveTerminalAttemptFields(existing = {}, next = {}, event = {}) {
     return next;
   }
 
+  const existingTerminalState = [
+    existing.attemptOutcome,
+    existing.completionStatus,
+    existing.status,
+  ].map((value) => String(value || '').trim().toLowerCase()).find((value) => TERMINAL_ATTEMPT_STATES.has(value)) || '';
+  const preserveDispatchFailureAfterTerminal = event.lifecycleEvent === 'dispatch_failed'
+    && ['blocked', 'completed', 'finished', 'superseded', 'superseded-by-local-fallback'].includes(existingTerminalState);
   const protectedPatch = {};
   for (const field of PROTECTED_TERMINAL_FIELDS) {
     const existingValue = existing[field];
@@ -155,7 +162,8 @@ function preserveTerminalAttemptFields(existing = {}, next = {}, event = {}) {
       continue;
     }
     const nextState = String(nextValue || '').trim().toLowerCase();
-    if (nextValue === undefined || nextValue === '' || ACTIVE_ATTEMPT_STATES.has(nextState)) {
+    const dispatchFailureAfterTerminal = preserveDispatchFailureAfterTerminal && nextState === 'failed';
+    if (nextValue === undefined || nextValue === '' || ACTIVE_ATTEMPT_STATES.has(nextState) || dispatchFailureAfterTerminal) {
       protectedPatch[field] = existingValue;
     }
   }

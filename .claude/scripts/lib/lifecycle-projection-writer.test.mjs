@@ -309,6 +309,103 @@ test('preserves terminal attempt fields from same-attempt heartbeat patches', ()
   });
 });
 
+test('preserves terminal blocked projection from same-attempt dispatch failure', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'latest-dispatch.json');
+    fs.writeFileSync(target, JSON.stringify({
+      attemptId: 'attempt-1',
+      status: 'blocked',
+      completionStatus: 'blocked',
+      attemptOutcome: 'blocked',
+      finalVerdict: 'blocked',
+      normalizedRunVerdict: 'complete_with_environment_blocker',
+      blockingStopReasonCode: 'completion-gate-blocked',
+      stopReasonDetail: 'completion gate blocked',
+    }, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      source: 'moonshot-phase-dispatch',
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      lifecycleEvent: 'dispatch_failed',
+      attemptId: 'attempt-1',
+      status: 'failed',
+      completionStatus: 'failed',
+      payloadPatch: {
+        attemptId: 'attempt-1',
+        status: 'failed',
+        completionStatus: 'failed',
+        attemptOutcome: 'failed',
+        finalVerdict: 'failed',
+        normalizedRunVerdict: 'failed',
+      },
+      writeMode: 'merge',
+    }));
+
+    const payload = readJson(target);
+    assert.equal(payload.status, 'blocked');
+    assert.equal(payload.completionStatus, 'blocked');
+    assert.equal(payload.attemptOutcome, 'blocked');
+    assert.equal(payload.finalVerdict, 'blocked');
+    assert.equal(payload.normalizedRunVerdict, 'complete_with_environment_blocker');
+  });
+});
+
+test('blocked projection scrub realigns stale nested phase run lease fields', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'current-run.json');
+    fs.writeFileSync(target, JSON.stringify({
+      stateRunId: 'run-1',
+      status: 'active',
+      activePhaseNumber: '2',
+      activePhaseTitle: 'Phase 02',
+      phaseRunLease: {
+        stateRunId: 'run-1',
+        status: 'failed',
+        completionStatus: 'failed',
+        activePhaseNumber: '2',
+        activePhaseTitle: 'Phase 02',
+        phase: {
+          number: '2',
+          title: 'Phase 02',
+        },
+      },
+    }, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      source: 'terminal-blocker-publisher',
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      targetKind: 'current-run',
+      lifecycleEvent: 'terminal_blocked_published',
+      phaseNumber: 3,
+      phaseTitle: 'Phase 03',
+      attemptId: 'run-1',
+      status: 'blocked',
+      completionStatus: 'blocked',
+      payloadPatch: {
+        stateRunId: 'run-1',
+        attemptId: 'run-1',
+        status: 'blocked',
+        completionStatus: 'blocked',
+        phaseTitle: 'Phase 03',
+      },
+      writeMode: 'merge',
+    }));
+
+    const payload = readJson(target);
+    assert.equal(payload.activePhaseNumber, '3');
+    assert.equal(payload.activePhaseTitle, 'Phase 03');
+    assert.equal(payload.phaseRunLease.status, 'paused');
+    assert.equal(payload.phaseRunLease.completionStatus, 'blocked');
+    assert.equal(payload.phaseRunLease.attemptOutcome, 'blocked');
+    assert.equal(payload.phaseRunLease.phaseNumber, '3');
+    assert.equal(payload.phaseRunLease.phaseTitle, 'Phase 03');
+    assert.equal(payload.phaseRunLease.phase.number, '3');
+    assert.equal(payload.phaseRunLease.phase.title, 'Phase 03');
+  });
+});
+
 test('scrubs stale terminal fields from new active compatibility projection', () => {
   withTempDir((root) => {
     const target = path.join(root, 'active-phase-run.json');
