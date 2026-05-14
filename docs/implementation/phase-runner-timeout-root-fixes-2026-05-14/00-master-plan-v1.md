@@ -84,7 +84,7 @@ Keep this package sequential. Phase 01 and Phase 02 touch separate concepts but 
 ## Phase Completion Checklist
 
 - [x] Phase 01 - Diagnostic Search Budget (`01-diagnostic-search-budget-v1.md`)
-- [ ] Phase 02 - Diff Output Budget (`02-diff-output-budget-v1.md`)
+- [x] Phase 02 - Diff Output Budget (`02-diff-output-budget-v1.md`)
 - [ ] Phase 03 - Runtime Parity Routing (`03-runtime-parity-routing-v1.md`)
 - [ ] Phase 04 - Timeout Ledger Policy (`04-timeout-ledger-policy-v1.md`)
 

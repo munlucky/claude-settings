@@ -67,6 +67,24 @@ test('completion-gate runner stops a codex upstream reconnect loop', { timeout: 
   assert.match(text, /UPSTREAM_STREAM_STALL reconnect=3 threshold=3 after=1s/);
 });
 
+test('classify-timeout-reason maps raw diff dominated timeout logs', () => {
+  const tempDir = makeTempDir();
+  const logFile = path.join(tempDir, 'phase.log');
+  const diffBody = Array.from({ length: 90 }, (_, index) => `+changed line ${index}`).join('\n');
+  fs.writeFileSync(logFile, `worker output timeout\n\ndiff --git a/app.js b/app.js\nindex 123..456\n@@ -1,3 +1,3 @@\n${diffBody}\n`, 'utf8');
+
+  const result = spawnSync(process.execPath, [
+    runtimeScript,
+    'classify-timeout-reason',
+    logFile,
+  ], {
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'raw_diff_output_timeout');
+});
+
 test('runtime health ignores log warnings older than the active run attachment', () => {
   const tempDir = makeTempDir();
   const logDir = path.join(tempDir, '.claude', 'logs', 'agent-loop');

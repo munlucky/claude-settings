@@ -219,6 +219,8 @@ function describeStopReason(reason, runtime, detail = '') {
       return '브라우저 또는 앱 런타임 smoke가 제한 시간 안에 준비되지 않았습니다';
     case 'timeout-verification':
       return '검증 산출물이 제시간에 생성되지 않아 phase 완료 판정을 내릴 수 없었습니다';
+    case 'raw_diff_output_timeout':
+      return 'raw git diff 본문이 로그/트랜스크립트를 지배해 worker가 제한 시간 안에 완료되지 않았습니다. 다음 시도는 git diff --stat, --name-only, --check 또는 path-limited 200-line raw diff만 사용해야 합니다';
     case 'timeout-restart-limit':
       return '같은 phase가 반복 timeout 되었고 재시도 한도에 도달했습니다';
     case 'tool-schema-error-loop':
@@ -276,11 +278,23 @@ function classifyTimeoutReason(logFile) {
     if (/browserctl|Browser flow failed|URL check failed|setup gap|http=000|LOCAL_FILE_MISSING/i.test(text)) {
       return 'timeout-browser';
     }
+    if (isRawDiffDominatedLog(text)) {
+      return 'raw_diff_output_timeout';
+    }
     if (/verification|scorecard|evidenceFresh|requiredChecks|QA_REPORT|HANDOFF/i.test(text)) {
       return 'timeout-verification';
     }
   }
   return 'timeout-restart-limit';
+}
+
+function isRawDiffDominatedLog(text) {
+  const lines = String(text || '').split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length === 0 || !/\bdiff --git\b/.test(text)) {
+    return false;
+  }
+  const diffLines = lines.filter((line) => /^(?:diff --git|index |@@|\+\+\+ |--- |\+|-)/.test(line.trim()));
+  return diffLines.length >= 80 || diffLines.length / lines.length >= 0.45;
 }
 
 function writeSupervisorEvent(logStream, event, payload = {}) {

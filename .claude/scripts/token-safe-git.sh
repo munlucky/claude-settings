@@ -23,8 +23,34 @@ case "$mode" in
   changed-files)
     "${git_safe[@]}" diff --name-only "$@" | head -80
     ;;
+  raw-diff)
+    if [[ "$#" -eq 0 ]]; then
+      echo "raw-diff requires an explicit path limit, for example: $0 raw-diff -- <path>" >&2
+      exit 64
+    fi
+    has_path_limit=false
+    after_double_dash=false
+    for arg in "$@"; do
+      if [[ "$after_double_dash" == true ]]; then
+        [[ -n "$arg" ]] && has_path_limit=true
+        continue
+      fi
+      if [[ "$arg" == "--" ]]; then
+        after_double_dash=true
+        continue
+      fi
+      if [[ "$arg" != -* ]]; then
+        has_path_limit=true
+      fi
+    done
+    if [[ "$has_path_limit" != true ]]; then
+      echo "raw-diff refuses unbounded output; pass a pathspec such as: $0 raw-diff -- <path>" >&2
+      exit 64
+    fi
+    "${git_safe[@]}" diff "$@" | head -200
+    ;;
   *)
-    echo "Usage: $0 {status|diff-stat|staged-stat|log|changed-files} [git args...]" >&2
+    echo "Usage: $0 {status|diff-stat|staged-stat|log|changed-files|raw-diff} [git args...]" >&2
     exit 64
     ;;
 esac

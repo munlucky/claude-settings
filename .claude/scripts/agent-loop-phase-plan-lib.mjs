@@ -1246,6 +1246,13 @@ Diagnostic search budget:
 - Broad CRG/MCP search is allowed only when \`CRG_DEBUG_BROAD_SEARCH=true\`; it must stay inside the active project root or the resolved CRG/MCP package root.
 - Broad search caps: inspect at most 200 files total, stop after 10 seconds wall time, emit at most 80 output lines, then record \`broad_search_timeout\` and do not retry broad search in the same run.
 
+Diff output budget:
+- For git evidence, use \`git diff --stat\`, \`git diff --name-only\`, and \`git diff --check\` by default.
+- Do not print an unbounded raw \`diff --git\` body into worker logs, retry prompts, QA reports, HANDOFF, or closeout summaries.
+- Raw patch context is allowed only when path-limited, capped before model/log emission, and accompanied by a reason.
+- Use \`.claude/scripts/token-safe-git.sh raw-diff -- <path>\` for capped raw patch context; it emits at most 200 lines.
+- If a timeout log is dominated by raw \`diff --git\` output, classify it as \`raw_diff_output_timeout\` and retry with bounded diff summaries only.
+
 Single isolated phase-attempt rules:
 - Treat this run as one isolated phase attempt only.
 - This attempt may finish the active phase, but phase completion is never run completion or session completion.

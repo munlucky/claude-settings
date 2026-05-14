@@ -575,6 +575,63 @@ test('diagnostic search budget is included in worker prompt', () => {
   assert.match(prompt, /broad_search_timeout/);
 });
 
+test('diff output budget is included in worker prompt', () => {
+  const prompt = buildPhasePrompt({
+    nextPhase: '2',
+    phaseTitle: 'Phase 02: Diff Output Budget',
+    planDir: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14',
+    phaseDoc: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/02-diff-output-budget-v1.md',
+    statusFile: '.claude/docs/phase-status.yaml',
+    executionRoot: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution',
+    paths: {
+      phaseSprintContract: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/SPRINT_CONTRACT.md',
+      phaseQaReport: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/QA_REPORT.md',
+      phaseHandoff: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/HANDOFF.md',
+      phaseScorecard: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/SCORECARD.md',
+      phaseWorksets: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/WORKSETS.yaml',
+    },
+    runtime: 'codex',
+    targetCompletionScore: 100,
+    verificationRuntimes: 'codex',
+  });
+
+  assert.match(prompt, /Diff output budget:/);
+  assert.match(prompt, /git diff --stat/);
+  assert.match(prompt, /git diff --name-only/);
+  assert.match(prompt, /git diff --check/);
+  assert.match(prompt, /Do not print an unbounded raw `diff --git` body/);
+  assert.match(prompt, /token-safe-git\.sh raw-diff -- <path>/);
+  assert.match(prompt, /at most 200 lines/);
+  assert.match(prompt, /raw_diff_output_timeout/);
+});
+
+test('raw diff retry policy omits raw patch body', () => {
+  const prompt = buildPhasePrompt({
+    nextPhase: '2',
+    phaseTitle: 'Phase 02: Diff Output Budget',
+    planDir: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14',
+    phaseDoc: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/02-diff-output-budget-v1.md',
+    statusFile: '.claude/docs/phase-status.yaml',
+    executionRoot: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution',
+    paths: {
+      phaseSprintContract: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/SPRINT_CONTRACT.md',
+      phaseQaReport: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/QA_REPORT.md',
+      phaseHandoff: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/HANDOFF.md',
+      phaseScorecard: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/SCORECARD.md',
+      phaseWorksets: 'docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/execution/02-phase-02-diff-output-budget/WORKSETS.yaml',
+    },
+    runtime: 'codex',
+    targetCompletionScore: 100,
+    verificationRuntimes: 'codex',
+    extraInstructions: 'Retry reason: raw_diff_output_timeout',
+  });
+
+  assert.match(prompt, /raw_diff_output_timeout/);
+  assert.match(prompt, /bounded diff summaries only/);
+  assert.doesNotMatch(prompt, /^diff --git /m);
+  assert.doesNotMatch(prompt, /^@@ /m);
+});
+
 function withTempCompletionRun(testFn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-complete-'));
   const originalCwd = process.cwd();

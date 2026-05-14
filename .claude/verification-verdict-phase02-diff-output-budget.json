@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "3",
+  "script": "manual-codex-phase02",
+  "runId": "phase02-diff-output-budget",
+  "phase": {
+    "number": 2,
+    "title": "Phase 02: Diff Output Budget",
+    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/02-diff-output-budget-v1.md"
+  },
+  "contract": {
+    "applicable": true,
+    "verificationMode": "workflow_core"
+  },
+  "contractApplicable": true,
+  "verificationMode": "workflow_core",
+  "mode": "phase-verification",
+  "authoritative": true,
+  "identityStatus": "complete",
+  "verdict": "passed",
+  "evidenceFresh": true,
+  "requiredChecks": {
+    "expected": [
+      "runner diff output budget prompt",
+      "raw diff timeout classification",
+      "token-safe raw diff cap"
+    ],
+    "passed": [],
+    "missing": []
+  },
+  "changedFiles": [
+    ".claude/scripts/agent-loop-phase-plan-lib.mjs",
+    ".claude/scripts/token-safe-git.sh",
+    ".claude/scripts/agent-loop-phase-runtime.mjs",
+    ".claude/scripts/agent-loop-phase-runner.test.mjs",
+    ".claude/scripts/agent-loop-phase-runtime.test.mjs"
+  ],
+  "commands": [
+    {
+      "name": "node --test .claude/scripts/agent-loop-phase-runner.test.mjs --test-name-pattern 'diff output budget",
+      "run": "raw diff retry policy'",
+      "status": "passed"
+    },
+    {
+      "name": "node --test .claude/scripts/agent-loop-phase-runtime.test.mjs --test-name-pattern 'raw diff timeout",
+      "run": "raw diff dominated'",
+      "status": "passed"
+    },
+    {
+      "name": "bash",
+      "run": "bash .claude/scripts/token-safe-git.sh raw-diff -- .claude/scripts/agent-loop-phase-runtime.mjs|passed",
+      "status": "passed"
+    },
+    {
+      "name": "git",
+      "run": "git diff --check -- phase 02 scoped files|passed",
+      "status": "passed"
+    }
+  ],
+  "workflowEvidence": {
+    "selectedBundles": [
+      "ready-isolate-bundle",
+      "implementation-bundle",
+      "review-bundle",
+      "verification-bundle",
+      "finish-bundle"
+    ],
+    "stageOrder": [
+      "ready/isolate",
+      "execute",
+      "review",
+      "verify",
+      "finish"
+    ],
+    "effortEscalationReason": "",
+    "selectedModelProvider": "openai",
+    "selectedModel": "gpt-5.5",
+    "selectedModelEffort": "medium",
+    "modelSelectionReason": "manual continuation after delegated runtime transport blocker",
+    "retrievalBudget": "stage=1 compact recall; no raw graph output",
+    "validationProfile": "workflow_core",
+    "phaseReplayPolicy": "preserve commentary/final_answer boundaries",
+    "warnings": []
+  },
+  "runtimeContext": {
+    "requestedRuntime": "codex",
+    "effectiveRuntime": "codex",
+    "fallbackReason": "manual current-session continuation after codex_upstream_stream_stalled",
+    "verificationRuntimeTargets": "current"
+  },
+  "identity": {
+    "runLeaseId": "dispatch-1778767304498-27568",
+    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/02-diff-output-budget-v1.md",
+    "masterPlan": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/00-master-plan-v1.md",
+    "planDir": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14",
+    "statusFile": ".claude/docs/phase-status.yaml",
+    "gitTreeFingerprint": "7e6f7be2fa762de5e20f402f684a93531e129208"
+  },
+  "verdictScope": "phase_verification",
+  "blockerClass": "",
+  "blockerFingerprint": "38d8820261232333",
+  "environmentFingerprint": "aaba5c2fe4ef02e4",
+  "environmentBlockers": [],
+  "artifactFingerprint": "7467508a9fe343e8",
+  "supersedes": [],
+  "supersededBy": "",
+  "staleWhen": [],
+  "stale": false,
+  "failureClass": "",
+  "blocking": false,
+  "blockingReasonCode": "",
+  "score": {
+    "detected": true,
+    "current": 100,
+    "target": 100,
+    "unmetChecklistItems": 0,
+    "unmetItems": 0,
+    "blockingDefects": 0,
+    "verdict": "done"
+  },
+  "generatedAt": "2026-05-14T14:32:30Z"
+}
