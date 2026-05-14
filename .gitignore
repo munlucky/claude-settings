@@ -16,6 +16,8 @@ __pycache__/
 .claude/worktree-prepare.json
 .claude/worktree-setup.log
 .claude/worktree-baseline.log
+.claude/settings.local.json
+.claude/verification-results-*.log
 .claude/knowledge-repo-audit-*.json
 .claude/tools/browserd/node_modules/
 .claude/tools/browserd/.claude/
