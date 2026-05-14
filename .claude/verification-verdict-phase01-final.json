@@ -4,8 +4,8 @@
   "runId": "phase01-final",
   "phase": {
     "number": 1,
-    "title": "Phase 01: Diagnostic Search Budget",
-    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/01-diagnostic-search-budget-v1.md"
+    "title": "Phase 01: Clean Completion Board Terminal Transition",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/01-clean-completion-board-terminal-transition-v1.md"
   },
   "contract": {
     "applicable": true,
@@ -57,12 +57,12 @@
     }
   },
   "identity": {
-    "runLeaseId": "dispatch-1778767304498-27568",
-    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/01-diagnostic-search-budget-v1.md",
-    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-timeout-root-fixes-2026-05-14\\00-master-plan-v1.md",
-    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-timeout-root-fixes-2026-05-14",
+    "runLeaseId": "dispatch-1778771299086-17084",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/01-clean-completion-board-terminal-transition-v1.md",
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14",
     "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
-    "gitTreeFingerprint": "a8004263e31d7dbcf3c72c86c2ec7511927c5124"
+    "gitTreeFingerprint": "67328cd0434bfd72162a8eb52dcbf5502368c51e"
   },
   "verdictScope": "phase_closeout",
   "blockerClass": "",
@@ -86,5 +86,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-14T14:25:07.742Z"
+  "generatedAt": "2026-05-14T15:14:41.622Z"
 }
