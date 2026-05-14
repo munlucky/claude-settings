@@ -426,6 +426,30 @@ test('state board active status rejects terminal compatibility projection', () =
   }
 });
 
+test('state board active status ignores non-concrete terminal-like projection fields', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-terminal-like-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    writeStateBoard(workflowDir, { status: 'active' });
+    writeWorkflowProjection(workflowDir, 'current-run.json', {
+      completionStatus: 'completed',
+      phaseRunLease: { stateRunId: 'state-run-a', finalVerdict: 'complete', status: 'active' },
+    });
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 4 },
+      phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    assert.equal(result.violations.some((entry) => entry.code === 'state-board-active-projection-terminal'), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('state board pending projection status is reported as incomplete transition', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-pending-'));
   try {

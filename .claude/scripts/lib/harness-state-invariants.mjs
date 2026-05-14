@@ -444,10 +444,6 @@ function isBoardActiveProjection(payload = {}) {
 }
 
 function isBoardTerminalProjection(payload = {}) {
-  if (workflowStateClass(payload) === 'terminal') {
-    return true;
-  }
-
   const rootFinalVerdict = normalizeLower(payload.finalVerdict);
   if (rootFinalVerdict === 'complete') {
     return true;
