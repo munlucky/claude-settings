@@ -1,6 +1,6 @@
 {
   "schemaVersion": "3",
-  "script": ".claude/scripts/write-verification-verdict.py",
+  "script": ".claude/scripts/phase-closeout-finalize.mjs",
   "runId": "phase04-final",
   "phase": {
     "number": 4,
@@ -9,54 +9,27 @@
   },
   "contract": {
     "applicable": true,
-    "verificationMode": "workflow_core"
+    "verificationMode": "phase_closeout"
   },
   "contractApplicable": true,
-  "verificationMode": "workflow_core",
-  "mode": "codex-direct-phase-attempt",
-  "authoritative": true,
-  "identityStatus": "complete",
+  "verificationMode": "phase_closeout",
+  "mode": "phase-closeout-finalize",
   "verdict": "passed",
   "evidenceFresh": true,
   "requiredChecks": {
     "expected": [
-      "SCN-07 Python CRG evidence tests can read shared fixtures",
-      "SCN-08 range hygiene is clean",
-      "SCN-09 CRG CLI fallback evidence is available",
-      "OBJ-CONFORM source plan conformance passes"
+      "phase-closeout-finalize"
     ],
-    "passed": [],
+    "passed": [
+      "phase-closeout-finalize"
+    ],
     "missing": []
   },
-  "changedFiles": [
-    ".codex/agents/verification/code_review_graph_evidence.py",
-    ".codex/agents/verification/code_review_graph_evidence_test.py",
-    "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/planning-loop/phase-04-cli-evidence.md"
-  ],
+  "changedFiles": [],
   "commands": [
     {
-      "name": "python",
-      "run": "python .codex/agents/verification/code_review_graph_evidence_test.py",
-      "status": "passed"
-    },
-    {
-      "name": "git",
-      "run": "git diff --check",
-      "status": "passed"
-    },
-    {
-      "name": "git",
-      "run": "git diff --check f56a4f7fc12476fec685af87a6122ddd7449e874..HEAD",
-      "status": "passed"
-    },
-    {
-      "name": "code_review_graph",
-      "run": "code-review-graph detect-changes --repo . --base f56a4f7fc12476fec685af87a6122ddd7449e874 --brief",
-      "status": "passed"
-    },
-    {
-      "name": "node",
-      "run": "node .claude/scripts/verify-plan-conformance.mjs --phase-doc docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/04-review-range-crg-and-diff-hygiene-v1.md --sprint-contract docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/execution/04-phase-04-review-range-crg-and-diff-hygiene/SPRINT_CONTRACT.md --qa-report docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/execution/04-phase-04-review-range-crg-and-diff-hygiene/QA_REPORT.md --scorecard docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/execution/04-phase-04-review-range-crg-and-diff-hygiene/SCORECARD.md --handoff docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/execution/04-phase-04-review-range-crg-and-diff-hygiene/HANDOFF.md --json",
+      "name": "phase_closeout_finalize",
+      "run": "node .claude/scripts/phase-closeout-finalize.mjs finalize",
       "status": "passed"
     }
   ],
@@ -69,38 +42,34 @@
       "finish-bundle"
     ],
     "stageOrder": [
+      "ready/isolate",
+      "execute",
+      "review",
+      "verify",
       "finish"
     ],
-    "effortEscalationReason": "none",
-    "selectedModelProvider": "openai",
-    "selectedModel": "gpt-5.5",
-    "selectedModelEffort": "medium",
-    "modelSelectionReason": "stage=phase_implementation; profile=standard",
-    "retrievalBudget": "stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output",
-    "validationProfile": "workflow_core",
-    "phaseReplayPolicy": "preserve assistant phase commentary/final_answer; never add phase to user items",
-    "warnings": []
-  },
-  "runtimeContext": {
-    "requestedRuntime": "codex",
-    "effectiveRuntime": "codex",
-    "fallbackReason": "",
-    "verificationRuntimeTargets": "codex"
+    "warnings": [],
+    "closeoutInvariant": {
+      "ok": true,
+      "normalizedRunVerdict": "success",
+      "completionState": "completed",
+      "reason": "clean completion"
+    }
   },
   "identity": {
-    "runLeaseId": "phase04-final",
+    "runLeaseId": "dispatch-1778771299086-17084",
     "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/04-review-range-crg-and-diff-hygiene-v1.md",
-    "masterPlan": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/00-master-plan-v1.md",
-    "planDir": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14",
-    "statusFile": ".claude/docs/phase-status.yaml",
-    "gitTreeFingerprint": "1025a48e67d99100ca41263aa0612d7361b80d26"
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14",
+    "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
+    "gitTreeFingerprint": "20c2bd4b4319db28ffe666e27e2ed5fb61cd0ae1"
   },
   "verdictScope": "phase_closeout",
   "blockerClass": "",
-  "blockerFingerprint": "00632e4584fda393",
-  "environmentFingerprint": "e88acb91257fded3",
+  "blockerFingerprint": "",
+  "environmentFingerprint": "",
   "environmentBlockers": [],
-  "artifactFingerprint": "9d019790fc1f6ce8",
+  "artifactFingerprint": "",
   "supersedes": [],
   "supersededBy": "",
   "staleWhen": [],
@@ -117,5 +86,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-14T16:19:43Z"
+  "generatedAt": "2026-05-14T16:25:46.374Z"
 }
