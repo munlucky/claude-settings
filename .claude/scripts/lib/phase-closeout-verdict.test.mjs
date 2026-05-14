@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 
 import {
+  buildPhaseRuntimeParityTimeoutBlockedVerdict,
   evaluateDeclaredAlternateVerifierPolicy,
   verdictPassed,
 } from './phase-closeout-verdict.mjs';
@@ -109,9 +111,28 @@ function testAlternateVerifierCannotBecomeCleanPass() {
   assert.equal(verdictPassed(verdict), false);
 }
 
+function testParityTimeoutBlockedVerdict() {
+  const verdict = buildPhaseRuntimeParityTimeoutBlockedVerdict({
+    timeoutKey: 'run-1|phaseRuntimeParity|hash-1|codex',
+  });
+
+  assert.equal(verdict.code, 'phaseRuntimeParity_timeout');
+  assert.equal(verdict.status, 'blocked');
+  assert.equal(verdict.profile, 'required_runtime');
+  assert.match(verdict.rerunCommand, /verify-phase-runtime-parity\.sh/);
+  assert.match(verdict.requiredBudget, /long_budget/);
+  assert.match(verdict.whyNotRetried, /same required_runtime timeout key/);
+  assert.equal(verdict.timeoutKey, 'run-1|phaseRuntimeParity|hash-1|codex');
+}
+
 testDeclaredAlternateVerifierWarningCompletion();
 testUndeclaredAlternateVerifierRejected();
 testDeclaredAlternateFailureRejected();
 testAlternateVerifierCannotBecomeCleanPass();
+testParityTimeoutBlockedVerdict();
+
+test('parity timeout blocked verdict', () => {
+  testParityTimeoutBlockedVerdict();
+});
 
 process.stdout.write('phase-closeout-verdict alternate verifier tests passed\n');

@@ -56,6 +56,39 @@ function normalizeText(value) {
   return String(value ?? '').trim();
 }
 
+function hashText(value) {
+  return crypto.createHash('sha1').update(String(value ?? '')).digest('hex');
+}
+
+function hashFileOrDirectory(targetPath) {
+  const resolved = path.resolve(targetPath || '');
+  if (!targetPath || !fs.existsSync(resolved)) {
+    return hashText(resolved || 'missing').slice(0, 16);
+  }
+  const stat = fs.statSync(resolved);
+  if (stat.isFile()) {
+    return hashText(fs.readFileSync(resolved)).slice(0, 16);
+  }
+  if (!stat.isDirectory()) {
+    return hashText(`${resolved}:${stat.size}:${stat.mtimeMs}`).slice(0, 16);
+  }
+  const entries = [];
+  const stack = [resolved];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+      const candidate = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(candidate);
+      } else if (entry.isFile()) {
+        const relative = path.relative(resolved, candidate).replace(/\\/g, '/');
+        entries.push(`${relative}:${hashText(fs.readFileSync(candidate))}`);
+      }
+    }
+  }
+  return hashText(entries.sort().join('\n')).slice(0, 16);
+}
+
 function isoNow() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
@@ -293,4 +326,43 @@ export function knownUnavailableSummary(statusFile = DEFAULT_STATUS_FILE, query 
     ? entries.filter((entry) => normalizeText(entry.code) === normalizeText(query.code))
     : entries;
   return summarizeUnavailableCapabilities(matches);
+}
+
+export function buildPhaseRuntimeParityTimeoutKey({
+  runId = '',
+  verifierId = 'phaseRuntimeParity',
+  referencePlanHash = '',
+  referencePlanPath = '.claude/docs/runtime-parity-reference-plan',
+  runtimeTarget = '',
+} = {}) {
+  return [
+    normalizeText(runId) || 'unknown-run',
+    normalizeText(verifierId) || 'phaseRuntimeParity',
+    normalizeText(referencePlanHash) || hashFileOrDirectory(referencePlanPath),
+    normalizeText(runtimeTarget) || 'current',
+  ].join('|');
+}
+
+export function hasPhaseRuntimeParityTimeout(statusFile = DEFAULT_STATUS_FILE, input = {}) {
+  return hasUnavailableCapability(statusFile, {
+    code: 'phaseRuntimeParity_timeout',
+    fingerprint: buildPhaseRuntimeParityTimeoutKey(input),
+    strict: 'true',
+  });
+}
+
+export function recordPhaseRuntimeParityTimeout(statusFile = DEFAULT_STATUS_FILE, input = {}) {
+  const fingerprint = buildPhaseRuntimeParityTimeoutKey(input);
+  return recordUnavailableCapability(statusFile, {
+    capability: 'phaseRuntimeParity',
+    code: 'phaseRuntimeParity_timeout',
+    fingerprint,
+    source: 'phaseRuntimeParity.required_runtime',
+    strict: 'true',
+    runId: input.runId,
+    checkId: input.verifierId || 'phaseRuntimeParity',
+    evidencePath: input.evidencePath || '',
+    status: 'unavailable',
+    freshnessState: 'current',
+  });
 }

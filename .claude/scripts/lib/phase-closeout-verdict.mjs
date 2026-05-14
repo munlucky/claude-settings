@@ -408,6 +408,26 @@ export function evaluateDeclaredAlternateVerifierPolicy(parsed = {}) {
   };
 }
 
+export function buildPhaseRuntimeParityTimeoutBlockedVerdict({
+  rerunCommand = 'PHASE_RUNTIME_PARITY_REQUIRED=true PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=codex bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan',
+  requiredBudget = 'long_budget',
+  whyNotRetried = 'same required_runtime timeout key is already recorded for this run',
+  timeoutKey = '',
+  runtimeTarget = 'codex',
+} = {}) {
+  return {
+    code: 'phaseRuntimeParity_timeout',
+    verifierId: 'phaseRuntimeParity',
+    status: 'blocked',
+    profile: 'required_runtime',
+    runtimeTarget,
+    rerunCommand,
+    requiredBudget,
+    whyNotRetried,
+    timeoutKey,
+  };
+}
+
 export function verdictPassed(verdict) {
   if (!verdict.exists || verdict.parseError) {
     return false;

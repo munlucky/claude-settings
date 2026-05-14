@@ -38,6 +38,10 @@ import {
   writeState,
 } from './lib/simple-run-state.mjs';
 import { publishTerminalBlockedOutcome } from './lib/terminal-blocker-publisher.mjs';
+import {
+  hasPhaseRuntimeParityTimeout,
+  recordPhaseRuntimeParityTimeout,
+} from './lib/runtime-unavailable-cache.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -632,6 +636,62 @@ export function computeControllerEnforcedGateAction(input = {}) {
   };
 }
 
+function truthyEnv(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
+}
+
+export function resolvePhaseRuntimeParityProfile(input = {}) {
+  const explicitProfile = String(
+    input.verificationProfile
+      || input.phaseRuntimeParityProfile
+      || process.env.PHASE_RUNTIME_PARITY_VERIFICATION_PROFILE
+      || process.env.PHASE_VERIFICATION_PROFILE
+      || '',
+  ).trim().toLowerCase();
+  if (explicitProfile === 'required_runtime') {
+    return 'required_runtime';
+  }
+  if (explicitProfile === 'optional_probe') {
+    return 'optional_probe';
+  }
+  if (
+    input.phaseRuntimeParityRequired === true
+    || truthyEnv(input.phaseRuntimeParityRequired)
+    || truthyEnv(process.env.PHASE_RUNTIME_PARITY_REQUIRED)
+  ) {
+    return 'required_runtime';
+  }
+  const closeoutMode = String(input.closeoutMode || process.env.PHASE_CLOSEOUT_MODE || '').trim().toLowerCase();
+  if (['final', 'release', 'final_release', 'long_budget'].includes(closeoutMode)) {
+    return 'required_runtime';
+  }
+  if (input.explicitLongBudgetCommand === true || truthyEnv(process.env.PHASE_RUNTIME_PARITY_LONG_BUDGET)) {
+    return 'required_runtime';
+  }
+  return 'optional_probe';
+}
+
+export function applyPhaseRuntimeParityRoutingToPreflight(preflight = {}, options = {}) {
+  const profile = resolvePhaseRuntimeParityProfile(options);
+  const blockers = Array.isArray(preflight.blockers) ? preflight.blockers : [];
+  if (profile === 'required_runtime') {
+    return {
+      ...preflight,
+      phaseRuntimeParityProfile: profile,
+      phaseRuntimeParitySuppressedBlockers: [],
+      blockers,
+    };
+  }
+  const suppressed = blockers.filter((blocker) => blocker?.checkName === 'phaseRuntimeParity');
+  const remaining = blockers.filter((blocker) => blocker?.checkName !== 'phaseRuntimeParity');
+  return {
+    ...preflight,
+    phaseRuntimeParityProfile: profile,
+    phaseRuntimeParitySuppressedBlockers: suppressed,
+    blockers: remaining,
+  };
+}
+
 function recordPhaseLoopShadowDecision(input = {}) {
   const shadow = computePhaseLoopShadowDecision(input);
   if (shadow.mismatch) {
@@ -739,6 +799,36 @@ function detectFinalStopReason(logFile, defaultReason) {
 
 function classifyTimeoutReason(logFile) {
   return runtimeCommand('classify-timeout-reason', logFile).stdout.trim();
+}
+
+function parityTimeoutInput(activeRuntime, verificationPreflight = {}, logFile = '') {
+  return {
+    runId: state.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`,
+    verifierId: 'phaseRuntimeParity',
+    referencePlanPath: '.claude/docs/runtime-parity-reference-plan',
+    runtimeTarget: verificationPreflight.effectiveSelection || activeRuntime || state.runtime || 'current',
+    evidencePath: logFile,
+  };
+}
+
+function summarizePhaseRuntimeParityTimeoutSuppression(finalStopReason, activeRuntime, verificationPreflight = {}, logFile = '') {
+  if (!/phaseRuntimeParity_timeout|phaseRuntimeParity.*timeout|runtime parity.*timeout/i.test(String(finalStopReason || ''))) {
+    return null;
+  }
+  const input = parityTimeoutInput(activeRuntime, verificationPreflight, logFile);
+  const alreadyRecorded = hasPhaseRuntimeParityTimeout(state.statusFile, input);
+  if (!alreadyRecorded) {
+    recordPhaseRuntimeParityTimeout(state.statusFile, input);
+  }
+  return {
+    shouldSuppressRetry: alreadyRecorded,
+    blockerCode: 'phaseRuntimeParity_timeout',
+    sameFailureClassCount: alreadyRecorded ? 2 : 1,
+    decision: alreadyRecorded ? 'stop_and_handoff' : 'route_required_runtime_long_budget',
+    detail: alreadyRecorded
+      ? 'same run phaseRuntimeParity timeout key already recorded; suppressing retry'
+      : 'first phaseRuntimeParity timeout recorded; retry may route only through required_runtime long-budget path',
+  };
 }
 
 function resolveTimeoutFallbackRuntime(currentRuntime) {
@@ -2282,14 +2372,19 @@ function runPhaseAttempt() {
     return stopBlockedPhase(paths, logFile, capabilityPreflight.detail, 'capability-preflight-blocked');
   }
 
-  const verificationPreflight = collectVerificationPreflightBlockers('.claude/verification.contract.yaml', {
+  const verificationPreflight = applyPhaseRuntimeParityRoutingToPreflight(collectVerificationPreflightBlockers('.claude/verification.contract.yaml', {
     requestedRuntime: state.runtime,
     verificationRuntimes: state.verificationRuntimes,
     currentRuntime: activeRuntime,
+  }), {
+    closeoutMode: process.env.PHASE_CLOSEOUT_MODE,
+    explicitLongBudgetCommand: process.env.PHASE_RUNTIME_PARITY_LONG_BUDGET,
+    verificationProfile: process.env.PHASE_RUNTIME_PARITY_VERIFICATION_PROFILE || process.env.PHASE_VERIFICATION_PROFILE,
   });
   if (verificationPreflight.blockers.length > 0) {
     const detail = [
       `verification runtime target=${verificationPreflight.effectiveSelection}`,
+      `phaseRuntimeParityProfile=${verificationPreflight.phaseRuntimeParityProfile || 'required_runtime'}`,
       `available=${verificationPreflight.availableRuntimes.join(',') || 'none'}`,
       ...verificationPreflight.blockers.map((blocker) => blocker.detail),
     ].join(' | ');
@@ -2297,10 +2392,22 @@ function runPhaseAttempt() {
       requestedRuntime: state.runtime,
       verificationRuntimes: state.verificationRuntimes,
       currentRuntime: activeRuntime,
+      phaseRuntimeParityProfile: verificationPreflight.phaseRuntimeParityProfile,
+      phaseRuntimeParitySuppressedBlockers: verificationPreflight.phaseRuntimeParitySuppressedBlockers,
       blockers: verificationPreflight.blockers,
       availableRuntimes: verificationPreflight.availableRuntimes,
     });
     return stopBlockedPhase(paths, logFile, detail);
+  }
+  if (verificationPreflight.phaseRuntimeParitySuppressedBlockers?.length) {
+    appendDebugLog('phase-runtime-parity-optional-probe', {
+      requestedRuntime: state.runtime,
+      verificationRuntimes: state.verificationRuntimes,
+      currentRuntime: activeRuntime,
+      profile: verificationPreflight.phaseRuntimeParityProfile,
+      suppressedBlockers: verificationPreflight.phaseRuntimeParitySuppressedBlockers,
+      detail: 'normal phase loop records runtime parity as optional_probe; required_runtime remains final/long-budget only',
+    });
   }
   let prompt = buildPhasePromptForRunner({
     nextPhase: state.phaseNum,
@@ -2627,7 +2734,10 @@ function runPhaseAttempt() {
 
       const defaultStopReason = gateStop.STOP_REASON || 'missing-verification-evidence';
       const finalStopReason = detectFinalStopReason(logFile, defaultStopReason);
-      const retrySuppression = summarizeRetrySuppression(process.cwd(), finalStopReason);
+      const parityRetrySuppression = summarizePhaseRuntimeParityTimeoutSuppression(finalStopReason, activeRuntime, verificationPreflight, logFile);
+      const retrySuppression = parityRetrySuppression?.shouldSuppressRetry
+        ? parityRetrySuppression
+        : summarizeRetrySuppression(process.cwd(), finalStopReason);
       if (retrySuppression?.shouldSuppressRetry) {
         const detail = [
           `blocker=${retrySuppression.blockerCode || finalStopReason}`,
@@ -2941,7 +3051,10 @@ function runPhaseAttempt() {
     appendQaRuntimeUpdate(`phase-command-failed-attempt-${autoFixCount}`, logFile, '', paths);
 
     const finalStopReason = detectFinalStopReason(logFile, 'phase-failed');
-    const retrySuppression = summarizeRetrySuppression(process.cwd(), finalStopReason);
+    const parityRetrySuppression = summarizePhaseRuntimeParityTimeoutSuppression(finalStopReason, activeRuntime, verificationPreflight, logFile);
+    const retrySuppression = parityRetrySuppression?.shouldSuppressRetry
+      ? parityRetrySuppression
+      : summarizeRetrySuppression(process.cwd(), finalStopReason);
     if (retrySuppression?.shouldSuppressRetry) {
       const detail = [
         `blocker=${retrySuppression.blockerCode || finalStopReason}`,

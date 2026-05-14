@@ -11,8 +11,10 @@ import {
   classifyRunnerStartup,
   computeControllerEnforcedGateAction,
   computePhaseLoopShadowDecision,
+  applyPhaseRuntimeParityRoutingToPreflight,
   finalizeCompletion,
   publishRunnerBlockedCloseout,
+  resolvePhaseRuntimeParityProfile,
   resolveRunnerReconciliationIntentOptions,
   writeTerminalCompleteSimpleRunState,
   writeActiveSimpleRunState,
@@ -630,6 +632,46 @@ test('raw diff retry policy omits raw patch body', () => {
   assert.match(prompt, /bounded diff summaries only/);
   assert.doesNotMatch(prompt, /^diff --git /m);
   assert.doesNotMatch(prompt, /^@@ /m);
+});
+
+test('contract parity optional probe routing suppresses required runtime blocker in normal loop', () => {
+  const routed = applyPhaseRuntimeParityRoutingToPreflight({
+    effectiveSelection: 'codex',
+    availableRuntimes: [],
+    blockers: [
+      {
+        checkName: 'phaseRuntimeParity',
+        detail: 'phaseRuntimeParity requires codex runtime for verification target codex',
+      },
+      {
+        checkName: 'codePolicy',
+        detail: 'codePolicy failed',
+      },
+    ],
+  }, {});
+
+  assert.equal(resolvePhaseRuntimeParityProfile({}), 'optional_probe');
+  assert.equal(routed.phaseRuntimeParityProfile, 'optional_probe');
+  assert.deepEqual(routed.blockers.map((blocker) => blocker.checkName), ['codePolicy']);
+  assert.deepEqual(routed.phaseRuntimeParitySuppressedBlockers.map((blocker) => blocker.checkName), ['phaseRuntimeParity']);
+});
+
+test('parity timeout no retry keeps required runtime blockers when explicit long budget is selected', () => {
+  const routed = applyPhaseRuntimeParityRoutingToPreflight({
+    effectiveSelection: 'codex',
+    availableRuntimes: [],
+    blockers: [
+      {
+        checkName: 'phaseRuntimeParity',
+        detail: 'phaseRuntimeParity requires codex runtime for verification target codex',
+      },
+    ],
+  }, { explicitLongBudgetCommand: true });
+
+  assert.equal(resolvePhaseRuntimeParityProfile({ explicitLongBudgetCommand: true }), 'required_runtime');
+  assert.equal(routed.phaseRuntimeParityProfile, 'required_runtime');
+  assert.deepEqual(routed.blockers.map((blocker) => blocker.checkName), ['phaseRuntimeParity']);
+  assert.deepEqual(routed.phaseRuntimeParitySuppressedBlockers, []);
 });
 
 function withTempCompletionRun(testFn) {
