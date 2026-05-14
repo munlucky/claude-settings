@@ -1,0 +1,39 @@
+controllerState:
+  schemaVersion: 1
+  planPackage: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14"
+  masterPlan: "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/00-master-plan-v1.md"
+  controllerDecision: "controller_draft_pending_independent_review"
+  isolationMode: "pending_user_permission"
+  reason: "The user invoked moonshot-plan-writer but did not explicitly authorize isolated Reviewer Agent and Writer Agent sessions."
+  targetAmbiguityScore: 0.20
+  currentAmbiguityScore: 0.09
+  maxIterations: 4
+  nextStep: "Ask for permission to run isolated Reviewer Agent and Writer Agent sessions before strict runnable readiness."
+  selectedSources:
+    - "user-provided timeout root-fix improvement plan"
+    - "2026-05-14 timeout analysis summary"
+  childAgentBoundary:
+    reviewerAgent:
+      status: "not_started"
+      allowedSkills:
+        - "plan-eng-review"
+        - "plan-ceo-review"
+        - "product-gate-reviewer"
+        - "codex-validate-plan"
+        - "verification-contract-gate"
+        - "context-readiness-gate"
+      forbiddenSkills:
+        - "moonshot-plan-writer"
+        - "moonshot-phase-runner"
+        - "implementation-runner"
+        - "commit-moonshot"
+    writerAgent:
+      status: "not_started"
+      allowedSkills:
+        - "assumption-ledger"
+        - "task-slicer"
+      forbiddenSkills:
+        - "moonshot-plan-writer"
+        - "moonshot-phase-runner"
+        - "implementation-runner"
+        - "commit-moonshot"
