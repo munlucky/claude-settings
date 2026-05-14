@@ -18,7 +18,7 @@ export const REQUIRED_STATE_HEADERS = Object.freeze([
 ]);
 
 const ALLOWED_STATUSES = new Set(['active', 'blocked', 'complete', 'paused', 'cancelled']);
-const TERMINAL_STATUSES = new Set(['complete', 'cancelled']);
+const TERMINAL_STATUSES = new Set(['complete', 'completed', 'finished', 'failed', 'cancelled']);
 const ACTIVE_COMPATIBILITY_FIELDS = [
   'activePhaseDoc',
   'activePhaseDocPath',
@@ -107,6 +107,42 @@ function normalizeState(input = {}, options = {}) {
     runRoot,
     updated: normalizeHeaderValue(input.updated ?? options.updated ?? nowIso()),
   };
+}
+
+function normalizeTargetKind(targetKind = 'generic') {
+  return String(targetKind || 'generic').trim();
+}
+
+function isCompleteTerminal(status, payload = {}) {
+  const values = [
+    status,
+    payload.status,
+    payload.completionStatus,
+    payload.finalVerdict,
+    payload.normalizedRunVerdict,
+  ].map((value) => String(value || '').trim().toLowerCase());
+  return values.includes('complete') || values.includes('completed') || values.includes('finished');
+}
+
+function isFailedTerminal(status, payload = {}) {
+  const values = [
+    status,
+    payload.status,
+    payload.completionStatus,
+    payload.finalVerdict,
+    payload.normalizedRunVerdict,
+  ].map((value) => String(value || '').trim().toLowerCase());
+  return values.includes('failed');
+}
+
+function canonicalCompleteStatus(targetKind, fallbackStatus) {
+  if (targetKind === 'current-run') {
+    return 'completed';
+  }
+  if (targetKind === 'active-phase-run') {
+    return 'finished';
+  }
+  return fallbackStatus === 'finished' ? 'finished' : 'completed';
 }
 
 export function resolveRunRoot(stateRunId, { rootDir = process.cwd(), runRoot } = {}) {
@@ -447,13 +483,14 @@ export function withStateTransition(nextState, options = {}, writeProjectionsFn 
 
 export function scrubCompatibilityProjection(payload = {}, state = {}, { targetKind = 'generic', previousPayload = {} } = {}) {
   const next = { ...previousPayload, ...payload };
+  const normalizedTargetKind = normalizeTargetKind(targetKind);
   const status = String(state.status ?? next.status ?? '').trim();
   next.status = status || 'unknown';
   next.phaseNumber = state.phase ?? next.phaseNumber;
   next.attemptId = state.attempt ?? next.attemptId;
   next.updatedAt = state.updated ?? next.updatedAt;
   next.projectionStatus = state.projectionStatus ?? next.projectionStatus;
-  next.targetKind = targetKind;
+  next.targetKind = normalizedTargetKind;
 
   if (status === 'blocked') {
     next.activeExecutionStatus = 'blocked';
@@ -493,15 +530,34 @@ export function scrubCompatibilityProjection(payload = {}, state = {}, { targetK
     for (const field of ACTIVE_COMPATIBILITY_FIELDS) {
       delete next[field];
     }
-    next.completionStatus = status === 'complete' ? 'completed' : status;
-    next.attemptOutcome = next.completionStatus;
+    const normalizedStatus = status.toLowerCase();
+    const statusIsComplete = ['complete', 'completed', 'finished'].includes(normalizedStatus);
+    const statusIsFailed = normalizedStatus === 'failed';
+    if (statusIsFailed || (!statusIsComplete && isFailedTerminal(status, next))) {
+      next.status = 'failed';
+      next.completionStatus = 'failed';
+      next.attemptOutcome = 'failed';
+      next.finalVerdict = 'failed';
+      next.normalizedRunVerdict = 'failed';
+      next.failedAt = state.updated ?? next.updatedAt;
+    } else if (statusIsComplete || isCompleteTerminal(status, next)) {
+      next.status = canonicalCompleteStatus(normalizedTargetKind, status);
+      next.completionStatus = 'completed';
+      next.attemptOutcome = 'completed';
+      next.finalVerdict = 'complete';
+      next.normalizedRunVerdict = 'complete';
+      next.completedAt = state.updated ?? next.updatedAt;
+    } else {
+      next.completionStatus = status;
+      next.attemptOutcome = next.completionStatus;
+      next.finalVerdict = status;
+      next.normalizedRunVerdict = status;
+      next[status === 'cancelled' ? 'cancelledAt' : 'completedAt'] = state.updated ?? next.updatedAt;
+    }
     next.childAlive = false;
     if (next.liveness && typeof next.liveness === 'object' && !Array.isArray(next.liveness)) {
       next.liveness = { ...next.liveness, childAlive: false };
     }
-    next.finalVerdict = status;
-    next.normalizedRunVerdict = status;
-    next[status === 'complete' ? 'completedAt' : 'cancelledAt'] = state.updated ?? next.updatedAt;
   }
 
   return next;

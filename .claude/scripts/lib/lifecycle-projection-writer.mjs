@@ -18,6 +18,7 @@ const ATTEMPT_SCOPED_EVENTS = new Set([
 const TERMINAL_ATTEMPT_STATES = new Set([
   'blocked',
   'completed',
+  'finished',
   'failed',
   'superseded',
   'superseded-by-local-fallback',
@@ -127,6 +128,13 @@ function isTerminalAttemptPayload(payload = {}) {
     payload.phaseRunLease?.completionStatus,
   ].map((value) => String(value || '').trim().toLowerCase());
   return values.some((value) => TERMINAL_ATTEMPT_STATES.has(value)) || Boolean(payload.blockingStopReasonCode);
+}
+
+function needsTerminalCanonicalization(payload = {}) {
+  return ['status', 'completionStatus', 'attemptOutcome'].some((field) => {
+    const value = String(payload[field] || '').trim().toLowerCase();
+    return ['complete', 'completed', 'finished', 'failed'].includes(value);
+  });
 }
 
 function preserveTerminalAttemptFields(existing = {}, next = {}, event = {}) {
@@ -242,7 +250,13 @@ export function recordLifecycleTransition(rawEvent = {}) {
       targetKind,
       previousPayload: event.writeMode === 'merge' ? existingPayload : {},
     });
-    const guardedNext = preserveTerminalAttemptFields(existingPayload, scrubbedNext, event);
+    const preservedNext = preserveTerminalAttemptFields(existingPayload, scrubbedNext, event);
+    const guardedNext = needsTerminalCanonicalization(preservedNext)
+      ? scrubCompatibilityProjection(preservedNext, lifecycleStateForScrub(event, preservedNext), {
+        targetKind,
+        previousPayload: {},
+      })
+      : preservedNext;
     if (!isPlainObject(guardedNext)) {
       throw new TypeError(`lifecycle target payload must be an object: ${target}`);
     }

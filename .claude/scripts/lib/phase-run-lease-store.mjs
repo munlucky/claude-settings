@@ -12,6 +12,7 @@ const CURRENT_RUN_BASENAME = 'current-run.json';
 const TERMINAL_ATTEMPT_STATES = new Set([
   'blocked',
   'completed',
+  'finished',
   'failed',
   'stale',
   'superseded',

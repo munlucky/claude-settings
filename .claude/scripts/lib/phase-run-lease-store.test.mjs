@@ -76,6 +76,65 @@ test('active heartbeat rejects stateRunId mismatch before lease/current-run proj
   });
 });
 
+test('active heartbeat cannot preserve in-progress attempt outcome after terminal complete', async () => {
+  await withLeaseStore(async ({ statusFile, activeRunFile, currentRunFile, writeActiveLease }) => {
+    writeJson(activeRunFile, {
+      runLeaseId: 'lease-complete',
+      stateRunId: 'run-complete',
+      status: 'finished',
+      activeExecutionStatus: 'failed',
+      completionStatus: 'completed',
+      attemptOutcome: 'in_progress',
+      childAlive: true,
+      liveness: { childAlive: true },
+      finalVerdict: 'complete',
+      normalizedRunVerdict: 'complete',
+    });
+    writeJson(currentRunFile, {
+      runLeaseId: 'lease-complete',
+      stateRunId: 'run-complete',
+      status: 'completed',
+      activeExecutionStatus: 'failed',
+      completionStatus: 'completed',
+      attemptOutcome: 'in_progress',
+      childAlive: true,
+      liveness: { childAlive: true },
+      finalVerdict: 'complete',
+      normalizedRunVerdict: 'complete',
+    });
+
+    writeActiveLease(statusFile, {
+      runLeaseId: 'lease-complete',
+      stateRunId: 'run-complete',
+      status: 'active',
+      completionStatus: '',
+      currentStage: 'execute',
+      phase: { number: 1, title: 'Phase 01' },
+      planDir: 'docs/implementation/phase-runner-projection-closeout-observability-2026-05-14',
+      statusFile,
+      executionRoot: 'execution/phase-01',
+    });
+
+    const activePayload = readJson(activeRunFile);
+    assert.equal(activePayload.status, 'finished');
+    assert.equal(activePayload.completionStatus, 'completed');
+    assert.equal(activePayload.attemptOutcome, 'completed');
+    assert.equal(activePayload.activeExecutionStatus, undefined);
+    assert.equal(activePayload.childAlive, false);
+    assert.notEqual(activePayload.liveness?.childAlive, true);
+    assert.equal(activePayload.finalVerdict, 'complete');
+
+    const currentPayload = readJson(currentRunFile);
+    assert.equal(currentPayload.status, 'completed');
+    assert.equal(currentPayload.completionStatus, 'completed');
+    assert.equal(currentPayload.attemptOutcome, 'completed');
+    assert.equal(currentPayload.activeExecutionStatus, undefined);
+    assert.equal(currentPayload.childAlive, false);
+    assert.notEqual(currentPayload.liveness?.childAlive, true);
+    assert.equal(currentPayload.finalVerdict, 'complete');
+  });
+});
+
 async function withLeaseStore(callback) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-run-lease-store-'));
   const previousLogDir = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR;

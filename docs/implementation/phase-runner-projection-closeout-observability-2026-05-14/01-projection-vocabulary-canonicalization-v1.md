@@ -33,17 +33,14 @@ phaseExecution:
 
 Define and enforce one terminal projection vocabulary for `current-run.json` and `active-phase-run.json`.
 
-Terminal complete shape:
+Fixed terminal vocabulary:
 
-- `status: "completed"` for `current-run.json`
-- `status: "finished"` for `active-phase-run.json` only when existing consumers require it
-- `completionStatus: "completed"`
-- `activeExecutionStatus: "completed"` or absent, but never `failed`, `running`, or `in_progress`
-- `attemptOutcome: "completed"` or absent, but never `in_progress`
-- `finalVerdict: "complete"`
-- `childAlive: false`
+| Projection file | Complete terminal fields | Failed terminal fields | Forbidden stale fields after terminal complete |
+| --- | --- | --- | --- |
+| `current-run.json` | `status: "completed"`, `completionStatus: "completed"`, `finalVerdict: "complete"`, `childAlive: false` | `status: "failed"`, `completionStatus: "failed"`, `finalVerdict: "failed"`, `childAlive: false` | `status: "complete"`, `status: "finished"`, `activeExecutionStatus: "failed"`, `activeExecutionStatus: "running"`, `activeExecutionStatus: "in_progress"`, `attemptOutcome: "in_progress"`, `childAlive: true` |
+| `active-phase-run.json` | `status: "finished"`, `completionStatus: "completed"`, `finalVerdict: "complete"`, `childAlive: false` | `status: "failed"`, `completionStatus: "failed"`, `finalVerdict: "failed"`, `childAlive: false` | `status: "completed"`, `status: "complete"`, `activeExecutionStatus: "failed"`, `activeExecutionStatus: "running"`, `activeExecutionStatus: "in_progress"`, `attemptOutcome: "in_progress"`, `childAlive: true` |
 
-Terminal failed shape must not coexist with `finalVerdict: "complete"`.
+`attemptOutcome` may be absent on terminal complete. If present, it must be `completed` for complete terminal projections and `failed` for failed terminal projections. `activeExecutionStatus` may be absent on terminal complete. If present, it must match `completionStatus`. A failed terminal shape must never coexist with `finalVerdict: "complete"`.
 
 ## Scope
 

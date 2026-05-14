@@ -30,9 +30,9 @@ goalClarity: high
 scopeClarity: high
 acceptanceCriteriaClarity: high
 verificationClarity: high
-clarityScore: 0.86
-ambiguityScore: 0.14
-readinessDecision: draft_pending_independent_review
+clarityScore: 0.925
+ambiguityScore: 0.075
+readinessDecision: review_passed_ready_for_runnable_preparation
 
 The goal is to make harness closeout projections internally consistent, make terminal dispatch liveness unambiguous, reconcile post-git-closeout state, and expose enough telemetry to distinguish worker, verifier, closeout, and runtime dependency bottlenecks.
 
@@ -55,7 +55,7 @@ The goal is to make harness closeout projections internally consistent, make ter
 | AC-4 | REQ-4 | After successful final git closeout, stale `phase-final-git-closeout-required`, `dirty_worktree`, and `checkpoint_required` status fields are cleared or replaced with terminal success fields. | `node --test .claude/scripts/phase-final-git-closeout.test.mjs` or focused equivalent |
 | AC-5 | REQ-9 | A post-closeout reconcile barrier validates all workflow read models together and fails on any remaining split-brain. | `node --test .claude/scripts/phase-closeout-finalize.test.mjs`, `node --test .claude/scripts/lib/harness-state-invariants.test.mjs` |
 | AC-6 | REQ-5 | MemoryGraph unavailable records include freshness, strictness, and decay semantics, and successful health removes stale non-strict warnings from current projections. | `node --test .claude/scripts/phase-capability-preflight.test.mjs`, `node --test .claude/scripts/lib/harness-state-invariants.test.mjs` |
-| AC-7 | REQ-6 | native code-review-graph MCP transport diagnosis records actionable root-cause evidence and avoids repeated same-run dead transport calls after failure. | `node --test .claude/scripts/check-mcp.test.mjs` or focused wrapper test |
+| AC-7 | REQ-6 | native code-review-graph MCP transport diagnosis records actionable root-cause evidence and avoids repeated same-run dead transport calls after failure. | `node --test .claude/scripts/check-mcp.test.mjs` |
 | AC-8 | REQ-7 | Runner timing output separates total wall, worker active, verifier active, closeout, and idle/wait buckets. | `node --test .claude/scripts/agent-loop-phase-state.test.mjs`, `node --test .claude/scripts/lib/phase-attempt-telemetry.test.mjs` |
 | AC-9 | REQ-8 | Verification command execution records non-zero `verificationSeconds` when verification commands run. | focused runner/state timing test |
 
@@ -67,7 +67,7 @@ The goal is to make harness closeout projections internally consistent, make ter
 | 02 | `02-latest-dispatch-terminal-liveness-v1.md` | Scrub terminal dispatch liveness and add invariants. | Phase 01 | No |
 | 03 | `03-phase-status-and-final-git-reconciliation-v1.md` | Fix phase attempt terminal outcome and stale final-git closeout status. | Phase 01 | No |
 | 04 | `04-post-closeout-reconcile-barrier-v1.md` | Add final read-model reconciliation after closeout. | Phases 01-03 | No |
-| 05 | `05-runtime-dependency-health-reconciliation-v1.md` | Repair MemoryGraph/CRG health projection and diagnosis behavior. | None | Yes |
+| 05 | `05-runtime-dependency-health-reconciliation-v1.md` | Repair MemoryGraph/CRG health projection and diagnosis behavior. | Phases 02 and 04 | No |
 | 06 | `06-runner-bottleneck-telemetry-v1.md` | Make phase-runner wall-clock and verification timing attributable. | Phases 01-04 | No |
 
 ## Parallel Execution Plan
@@ -75,7 +75,6 @@ The goal is to make harness closeout projections internally consistent, make ter
 Wave 1:
 
 - Phase 01 runs first because later phases should consume the terminal vocabulary table it defines.
-- Phase 05 may run in parallel with Phase 01 because it owns runtime dependency health surfaces and does not modify workflow projection writers.
 
 Wave 2:
 
@@ -84,6 +83,7 @@ Wave 2:
 Wave 3:
 
 - Phase 04 runs after Phases 01-03 because it validates the full closeout state.
+- Phase 05 runs after Phase 04. It shares `harness-state-invariants.mjs` and `harness-state-invariants.test.mjs` with Phases 02 and 04, so it is not parallel eligible even though the runtime dependency health behavior is logically separate.
 - Phase 06 runs last so its telemetry buckets include the reconciled closeout path.
 
 ## Source Traceability
@@ -102,7 +102,7 @@ Wave 3:
 
 ## Phase Completion Checklist
 
-- [ ] Phase 01 - Projection Vocabulary Canonicalization (`01-projection-vocabulary-canonicalization-v1.md`)
+- [x] Phase 01 - Projection Vocabulary Canonicalization (`01-projection-vocabulary-canonicalization-v1.md`)
 - [ ] Phase 02 - Latest Dispatch Terminal Liveness (`02-latest-dispatch-terminal-liveness-v1.md`)
 - [ ] Phase 03 - Phase Status and Final Git Reconciliation (`03-phase-status-and-final-git-reconciliation-v1.md`)
 - [ ] Phase 04 - Post Closeout Reconcile Barrier (`04-post-closeout-reconcile-barrier-v1.md`)
@@ -122,9 +122,30 @@ Before runnable preparation:
 
 ## Plan Quality Loop
 
-Status: controller draft pending independent review.
+Status: independent planning loop completed.
 
 The user explicitly approved forked Reviewer Agent and Writer Agent sessions for this planning loop.
+
+Reviewer iteration 1 returned `decision: revise`, `ambiguityScore: 0.178`, with three blocking directives:
+
+- Phase 05 shared invariant ownership had unsafe parallel sequencing.
+- Phase 01 terminal projection vocabulary was still conditional.
+- Phase 05 CRG MCP and MemoryGraph contracts needed exact diagnostic, freshness, decay, cache, and verification command details.
+
+Writer iteration 1 applied all directives:
+
+- Phase 05 is no longer parallel with Phase 02/04 invariant work.
+- Phase 01 has a fixed per-file terminal projection vocabulary table.
+- Phase 05 defines MemoryGraph freshness/decay and CRG MCP diagnostic/cache/fallback contracts.
+- AC-7 and Phase 05 validation use `node --test .claude/scripts/check-mcp.test.mjs` as the exact focused command.
+
+Reviewer iteration 2 returned `decision: revise`, `ambiguityScore: 0.135`, with no plan-content blockers. The remaining findings were planning-loop artifact cleanup only.
+
+Controller artifact cleanup updated `controller-state.yaml`, `plan-writer-revision-iter-01.yaml`, and recorded `plan-quality-review-iter-02.yaml`.
+
+Reviewer iteration 3 returned `decision: pass`, `ambiguityScore: 0.075`, `blockingFindings: []`, and `improvementDirectives: []`.
+
+Current controller decision: `review_passed_ready_for_runnable_preparation`.
 
 ## Verification Plan
 
@@ -139,6 +160,7 @@ node --test .claude/scripts/agent-loop-phase-state.test.mjs
 node --test .claude/scripts/verify-phase-closeout.test.mjs
 node --test .claude/scripts/phase-closeout-finalize.test.mjs
 node --test .claude/scripts/phase-capability-preflight.test.mjs
+node --test .claude/scripts/check-mcp.test.mjs
 node --test .claude/scripts/lib/phase-attempt-telemetry.test.mjs
 git diff --check
 ```

@@ -524,3 +524,47 @@ test('scrubCompatibilityProjection applies blocked, active, and complete field r
   assert.equal(complete.finalVerdict, 'complete');
   assert.equal(complete.stopReasonCode, 'old');
 });
+
+test('scrubCompatibilityProjection canonicalizes current and active phase terminal vocabulary', () => {
+  const currentRunComplete = scrubCompatibilityProjection(
+    {
+      status: 'completed',
+      activeExecutionStatus: 'failed',
+      attemptOutcome: 'in_progress',
+      childAlive: true,
+      liveness: { childAlive: true },
+      finalVerdict: 'failed',
+    },
+    baseState({ status: 'completed' }),
+    { targetKind: 'current-run' },
+  );
+  assert.equal(currentRunComplete.status, 'completed');
+  assert.equal(currentRunComplete.completionStatus, 'completed');
+  assert.equal(currentRunComplete.attemptOutcome, 'completed');
+  assert.equal(currentRunComplete.activeExecutionStatus, undefined);
+  assert.equal(currentRunComplete.childAlive, false);
+  assert.equal(currentRunComplete.liveness.childAlive, false);
+  assert.equal(currentRunComplete.finalVerdict, 'complete');
+
+  const activePhaseComplete = scrubCompatibilityProjection(
+    { status: 'completed', activeExecutionStatus: 'running', attemptOutcome: 'in_progress', childAlive: true },
+    baseState({ status: 'completed' }),
+    { targetKind: 'active-phase-run' },
+  );
+  assert.equal(activePhaseComplete.status, 'finished');
+  assert.equal(activePhaseComplete.completionStatus, 'completed');
+  assert.equal(activePhaseComplete.attemptOutcome, 'completed');
+  assert.equal(activePhaseComplete.activeExecutionStatus, undefined);
+  assert.equal(activePhaseComplete.childAlive, false);
+
+  const failed = scrubCompatibilityProjection(
+    { status: 'failed', completionStatus: 'failed', finalVerdict: 'complete', childAlive: true },
+    baseState({ status: 'failed' }),
+    { targetKind: 'current-run' },
+  );
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.completionStatus, 'failed');
+  assert.equal(failed.attemptOutcome, 'failed');
+  assert.equal(failed.finalVerdict, 'failed');
+  assert.equal(failed.childAlive, false);
+});

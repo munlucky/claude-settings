@@ -141,11 +141,105 @@ test('records caller event fixtures for phase lifecycle projections', () => {
       writeMode: 'replace',
     }));
 
-    assert.equal(readJson(activeRun).status, 'completed');
+    assert.equal(readJson(activeRun).status, 'finished');
     assert.equal(readJson(currentRun).completionStatus, 'completed');
     assert.equal(readJson(latestDispatch).status, 'completed');
     assert.equal(readJson(phaseStatus).status, 'completed');
     assert.equal(readJson(reconciled).recoveryStatus, 'recovered');
+  });
+});
+
+test('canonicalizes complete terminal projections and removes stale failure/running fields', () => {
+  withTempDir((root) => {
+    const activeRun = path.join(root, 'active-phase-run.json');
+    const currentRun = path.join(root, 'current-run.json');
+    const staleProjection = {
+      attemptId: 'attempt-1',
+      status: 'active',
+      activeExecutionStatus: 'failed',
+      completionStatus: 'failed',
+      attemptOutcome: 'in_progress',
+      childAlive: true,
+      liveness: { childAlive: true },
+      finalVerdict: 'failed',
+      normalizedRunVerdict: 'failed',
+      dispatchStage: 'execute',
+    };
+    fs.writeFileSync(activeRun, JSON.stringify(staleProjection, null, 2) + '\n', 'utf8');
+    fs.writeFileSync(currentRun, JSON.stringify(staleProjection, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      source: 'phase-closeout-finalize',
+      primaryTargetStateFile: currentRun,
+      targetStateFiles: [currentRun, activeRun],
+      lifecycleEvent: 'closeout_completed',
+      status: 'completed',
+      completionStatus: 'completed',
+      payloadPatch: {
+        attemptId: 'attempt-1',
+        status: 'completed',
+        completionStatus: 'completed',
+      },
+      writeMode: 'merge',
+    }));
+
+    assert.deepEqual(
+      {
+        status: readJson(currentRun).status,
+        completionStatus: readJson(currentRun).completionStatus,
+        attemptOutcome: readJson(currentRun).attemptOutcome,
+        activeExecutionStatus: readJson(currentRun).activeExecutionStatus,
+        finalVerdict: readJson(currentRun).finalVerdict,
+        childAlive: readJson(currentRun).childAlive,
+        livenessChildAlive: readJson(currentRun).liveness.childAlive,
+      },
+      {
+        status: 'completed',
+        completionStatus: 'completed',
+        attemptOutcome: 'completed',
+        activeExecutionStatus: undefined,
+        finalVerdict: 'complete',
+        childAlive: false,
+        livenessChildAlive: false,
+      },
+    );
+    assert.equal(readJson(activeRun).status, 'finished');
+    assert.equal(readJson(activeRun).completionStatus, 'completed');
+    assert.equal(readJson(activeRun).attemptOutcome, 'completed');
+    assert.equal(readJson(activeRun).activeExecutionStatus, undefined);
+    assert.equal(readJson(activeRun).finalVerdict, 'complete');
+  });
+});
+
+test('canonicalizes failed terminal projections that carry stale complete verdicts', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'current-run.json');
+
+    recordLifecycleTransition(baseEvent({
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      source: 'phase-closeout-finalize',
+      lifecycleEvent: 'closeout_failed',
+      status: 'failed',
+      completionStatus: 'failed',
+      payloadPatch: {
+        attemptId: 'attempt-1',
+        status: 'failed',
+        completionStatus: 'failed',
+        finalVerdict: 'complete',
+        normalizedRunVerdict: 'complete',
+        childAlive: true,
+      },
+      writeMode: 'replace',
+    }));
+
+    const payload = readJson(target);
+    assert.equal(payload.status, 'failed');
+    assert.equal(payload.completionStatus, 'failed');
+    assert.equal(payload.attemptOutcome, 'failed');
+    assert.equal(payload.finalVerdict, 'failed');
+    assert.equal(payload.normalizedRunVerdict, 'failed');
+    assert.equal(payload.childAlive, false);
   });
 });
 

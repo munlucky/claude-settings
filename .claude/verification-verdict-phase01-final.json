@@ -4,8 +4,8 @@
   "runId": "phase01-final",
   "phase": {
     "number": 1,
-    "title": "Phase 01: Clean Completion Board Terminal Transition",
-    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/01-clean-completion-board-terminal-transition-v1.md"
+    "title": "Phase 01: Projection Vocabulary Canonicalization",
+    "activePhaseDocPath": "docs/implementation/phase-runner-projection-closeout-observability-2026-05-14/01-projection-vocabulary-canonicalization-v1.md"
   },
   "contract": {
     "applicable": true,
@@ -57,12 +57,12 @@
     }
   },
   "identity": {
-    "runLeaseId": "dispatch-1778748414960-2916",
-    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/01-clean-completion-board-terminal-transition-v1.md",
-    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14\\00-master-plan-v1.md",
-    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14",
+    "runLeaseId": "dispatch-1778750182642-24436",
+    "activePhaseDocPath": "docs/implementation/phase-runner-projection-closeout-observability-2026-05-14/01-projection-vocabulary-canonicalization-v1.md",
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-projection-closeout-observability-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-projection-closeout-observability-2026-05-14",
     "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
-    "gitTreeFingerprint": "5108b74123b661b128d87344e72c3c682087922f"
+    "gitTreeFingerprint": "ccbfa94af15d74a1dd1b67609940b7d5c695b96c"
   },
   "verdictScope": "phase_closeout",
   "blockerClass": "",
@@ -86,5 +86,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-14T08:55:16.108Z"
+  "generatedAt": "2026-05-14T09:27:42.203Z"
 }
