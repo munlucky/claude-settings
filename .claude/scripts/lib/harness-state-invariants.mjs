@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { detectSidecarMode } from './blocker-sidecar-state.mjs';
+import { readState } from './simple-run-state.mjs';
 
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 const WORKFLOW_STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
@@ -169,6 +170,7 @@ function addViolation(violations, code, message, options = {}) {
     message,
     phaseNumber: options.phaseNumber ?? null,
     failureClass: options.failureClass || classifyHarnessViolation(code),
+    ...(options.evidence || {}),
   });
 }
 
@@ -385,12 +387,138 @@ function statePhaseTitle(payload = {}) {
 
 function workflowStateRunId(payload = {}) {
   return normalizeText(
-    payload.runId
+    payload.stateRunId
+      ?? payload.phaseRunLease?.stateRunId
+      ?? payload.runId
       ?? payload.phaseRunLease?.runId
       ?? payload.activeRunLeaseId
       ?? payload.phaseRunLease?.activeRunLeaseId
       ?? '',
   );
+}
+
+function readBoardState({ root, workflowDir } = {}) {
+  const statePath = path.join(workflowDir || path.join(root, '.claude', 'logs', 'workflow-enforcement'), 'STATE.md');
+  try {
+    return readState({ rootDir: root, statePath });
+  } catch (error) {
+    return {
+      exists: true,
+      statePath,
+      state: null,
+      diagnostics: [{ type: 'read_state_failed', message: error.message }],
+      startupClassification: 'read-state-failed',
+    };
+  }
+}
+
+function isBoardActiveProjection(payload = {}) {
+  const direct = [
+    payload.status,
+    payload.activeExecutionStatus,
+    payload.completionStatus,
+    payload.attemptOutcome,
+    payload.phaseRunLease?.status,
+    payload.phaseRunLease?.activeExecutionStatus,
+    payload.phaseRunLease?.completionStatus,
+    payload.phaseRunLease?.attemptOutcome,
+  ].map(normalizeLower);
+  return direct.some((value) => ACTIVE_WORKFLOW_STATUSES.has(value)) || workflowStateClass(payload) === 'active';
+}
+
+function inspectBoardProjectionInvariants({ boardState, workflowStates, violations }) {
+  if (!boardState?.exists || !boardState.state) {
+    return;
+  }
+  const board = boardState.state;
+  const boardPath = boardState.statePath;
+  const boardStatus = normalizeLower(board.status);
+  const boardRunId = normalizeText(board.stateRunId);
+  const boardProjectionStatus = normalizeLower(board.projectionStatus);
+
+  if (boardProjectionStatus === 'pending') {
+    addViolation(
+      violations,
+      'state-board-pending-transition',
+      `STATE.md has pending projectionStatus for stateRunId ${boardRunId || 'unknown'}.`,
+      {
+        failureClass: 'harness-state',
+        evidence: {
+          boardPath,
+          stateRunId: boardRunId,
+          transitionId: normalizeText(board.transitionId),
+          status: board.status,
+          projectionStatus: board.projectionStatus,
+        },
+      },
+    );
+  }
+
+  for (const { basename, path: projectionPath, payload } of workflowStates) {
+    const projectionRunId = workflowStateRunId(payload);
+    if (boardRunId && projectionRunId && boardRunId !== projectionRunId) {
+      addViolation(
+        violations,
+        'state-board-projection-run-id-mismatch',
+        `STATE.md stateRunId ${boardRunId} differs from ${basename} stateRunId ${projectionRunId}.`,
+        {
+          failureClass: 'harness-state',
+          evidence: {
+            boardPath,
+            projectionPath,
+            boardStateRunId: boardRunId,
+            projectionStateRunId: projectionRunId,
+          },
+        },
+      );
+      continue;
+    }
+
+    if (!boardRunId || !projectionRunId || boardRunId !== projectionRunId || !isBoardActiveProjection(payload)) {
+      continue;
+    }
+
+    const projectionStatus = normalizeText(
+      payload.status
+        || payload.activeExecutionStatus
+        || payload.completionStatus
+        || payload.attemptOutcome
+        || payload.phaseRunLease?.status,
+    );
+    if (boardStatus === 'blocked') {
+      addViolation(
+        violations,
+        'state-board-blocked-projection-running',
+        `STATE.md is blocked while ${basename} reports active projection state.`,
+        {
+          failureClass: 'harness-state',
+          evidence: {
+            boardPath,
+            projectionPath,
+            stateRunId: boardRunId,
+            boardStatus: board.status,
+            projectionStatus,
+          },
+        },
+      );
+    } else if (boardStatus === 'complete') {
+      addViolation(
+        violations,
+        'state-board-complete-projection-active',
+        `STATE.md is complete while ${basename} reports active projection state.`,
+        {
+          failureClass: 'harness-state',
+          evidence: {
+            boardPath,
+            projectionPath,
+            stateRunId: boardRunId,
+            boardStatus: board.status,
+            projectionStatus,
+          },
+        },
+      );
+    }
+  }
 }
 
 function activeBlockedPhaseForWorkflowState({ statusRoot = {}, phases = [], payload = {} } = {}) {
@@ -541,6 +669,7 @@ export function readHarnessStateSnapshot({ root = process.cwd(), statusFile = ''
     statusFile: resolvedStatusFile,
     workflowDir: resolvedWorkflowDir,
     workflowStates,
+    boardState: readBoardState({ root, workflowDir: resolvedWorkflowDir }),
   };
 }
 
@@ -557,6 +686,7 @@ export function evaluateHarnessStateInvariants({
   const degradedEvidence = [];
   const repoRoot = statusPath ? path.dirname(path.dirname(path.dirname(statusPath))) : process.cwd();
   const resolvedWorkflowDir = workflowDir || path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement');
+  const boardState = readBoardState({ root: repoRoot, workflowDir: resolvedWorkflowDir });
   const workflowStates = WORKFLOW_STATE_FILES
     .map((basename) => ({
       basename,
@@ -649,11 +779,13 @@ export function evaluateHarnessStateInvariants({
   }
 
   inspectIdentityMismatch({ statusRoot, phases, workflowStates, statusPath, violations });
+  inspectBoardProjectionInvariants({ boardState, workflowStates, violations });
   inspectMemoryGraphCapabilities({ workflowStates, strictMemory, violations, degradedEvidence });
 
   return {
     violations,
     degradedEvidence,
     workflowStates,
+    boardState,
   };
 }

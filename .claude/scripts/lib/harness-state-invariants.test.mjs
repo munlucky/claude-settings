@@ -13,6 +13,44 @@ import {
   workflowStateClass,
 } from './harness-state-invariants.mjs';
 
+function writeStateBoard(workflowDir, overrides = {}) {
+  const state = {
+    stateRunId: 'state-run-a',
+    transitionId: 'transition-a',
+    projectionStatus: 'committed',
+    planDir: 'docs/implementation/example',
+    statusFile: '.claude/docs/phase-status.yaml',
+    status: 'active',
+    phase: '4',
+    attempt: 'attempt-a',
+    owner: 'codex',
+    reason: 'fixture',
+    runRoot: '.claude/logs/workflow-enforcement/runs/state-run-a',
+    updated: '2026-05-14T07:00:00Z',
+    ...overrides,
+  };
+  const body = [
+    '# Simple Run State',
+    '',
+    ...Object.entries(state).map(([key, value]) => `${key}: ${value}`),
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(workflowDir, 'STATE.md'), body, 'utf8');
+}
+
+function writeWorkflowProjection(workflowDir, basename, payload = {}) {
+  fs.writeFileSync(path.join(workflowDir, basename), `${JSON.stringify({
+    stateRunId: 'state-run-a',
+    status: 'running',
+    activeExecutionStatus: 'active',
+    completionStatus: 'in_progress',
+    attemptOutcome: 'in_progress',
+    phaseNumber: 4,
+    phaseTitle: 'Phase 04',
+    ...payload,
+  })}\n`, 'utf8');
+}
+
 test('projection invariant rejects final or blocked artifacts without an active log path', () => {
   assert.throws(
     () => assertProjectionHasActiveLog({ finish: { nextPath: 'clean_finish' }, logFile: '' }),
@@ -222,6 +260,131 @@ test('paused workflow invariant rejects live child evidence', () => {
     });
 
     assert.equal(result.violations.some((entry) => entry.code === 'paused-workflow-child-alive'), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('harness snapshot includes STATE.md board facts when present', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-snapshot-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    writeStateBoard(workflowDir, { status: 'blocked' });
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 4 },
+      phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    assert.equal(result.boardState.exists, true);
+    assert.equal(result.boardState.state.status, 'blocked');
+    assert.equal(path.basename(result.boardState.statePath), 'STATE.md');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('state board blocked status rejects running compatibility projection', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-blocked-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    writeStateBoard(workflowDir, { status: 'blocked' });
+    writeWorkflowProjection(workflowDir, 'current-run.json');
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 4 },
+      phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    const violation = result.violations.find((entry) => entry.code === 'state-board-blocked-projection-running');
+    assert.ok(violation);
+    assert.equal(path.basename(violation.boardPath), 'STATE.md');
+    assert.equal(path.basename(violation.projectionPath), 'current-run.json');
+    assert.equal(violation.stateRunId, 'state-run-a');
+    assert.equal(violation.boardStatus, 'blocked');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('state board complete status rejects active compatibility projection', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-complete-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    writeStateBoard(workflowDir, { status: 'complete' });
+    writeWorkflowProjection(workflowDir, 'active-phase-run.json', { status: 'active' });
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 4 },
+      phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    const violation = result.violations.find((entry) => entry.code === 'state-board-complete-projection-active');
+    assert.ok(violation);
+    assert.equal(path.basename(violation.boardPath), 'STATE.md');
+    assert.equal(path.basename(violation.projectionPath), 'active-phase-run.json');
+    assert.equal(violation.stateRunId, 'state-run-a');
+    assert.equal(violation.boardStatus, 'complete');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('state board pending projection status is reported as incomplete transition', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-pending-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    writeStateBoard(workflowDir, { projectionStatus: 'pending', transitionId: 'transition-pending' });
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 4 },
+      phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    const violation = result.violations.find((entry) => entry.code === 'state-board-pending-transition');
+    assert.ok(violation);
+    assert.equal(path.basename(violation.boardPath), 'STATE.md');
+    assert.equal(violation.stateRunId, 'state-run-a');
+    assert.equal(violation.transitionId, 'transition-pending');
+    assert.equal(violation.status, 'active');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('state board stateRunId mismatch with global compatibility projection is reported', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-run-id-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    writeStateBoard(workflowDir, { stateRunId: 'state-run-board' });
+    writeWorkflowProjection(workflowDir, 'latest-dispatch.json', { stateRunId: 'state-run-projection' });
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 4 },
+      phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    const violation = result.violations.find((entry) => entry.code === 'state-board-projection-run-id-mismatch');
+    assert.ok(violation);
+    assert.equal(path.basename(violation.boardPath), 'STATE.md');
+    assert.equal(path.basename(violation.projectionPath), 'latest-dispatch.json');
+    assert.equal(violation.boardStateRunId, 'state-run-board');
+    assert.equal(violation.projectionStateRunId, 'state-run-projection');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

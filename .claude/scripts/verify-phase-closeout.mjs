@@ -253,6 +253,10 @@ function validateSidecarManifest(paths, sidecarState) {
     }
   }
   for (const entry of Array.isArray(manifest.files) ? manifest.files : []) {
+    const entryKind = String(entry?.kind || '').trim();
+    if (['current-run', 'active-phase-run', 'latest-dispatch'].includes(entryKind)) {
+      continue;
+    }
     const filePath = resolvePath(entry?.path || '');
     const expectedHash = entry?.sha256 || '';
     if (!filePath || !expectedHash) {

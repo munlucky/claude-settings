@@ -66,6 +66,47 @@ function relativeOrAbsolute(filePath, root = process.cwd()) {
   return relative && !relative.startsWith('..') ? relative : filePath.replace(/\\/g, '/');
 }
 
+function mirrorReconciliationGuardInputs({
+  runRoot,
+  stateRunId,
+  attemptId,
+  transactionId,
+  blockerEvidence,
+  manifest,
+}) {
+  const blockerEvidencePath = path.join(runRoot, 'BLOCKER_EVIDENCE.jsonl');
+  const projectionManifestPath = path.join(runRoot, 'projection-manifest.json');
+  const mirrorBlockerEvidence = {
+    ...blockerEvidence,
+    stateRunId,
+    attemptId,
+    transactionId,
+  };
+  const blockerAppend = appendJsonlIfMissing(
+    blockerEvidencePath,
+    mirrorBlockerEvidence,
+    (record) => record.id === blockerEvidence.id,
+  );
+  const guardManifest = {
+    ...manifest,
+    stateRunId,
+    reconciliationGuard: {
+      stateRunId,
+      attemptId,
+      transactionId,
+      blockerEvidenceId: blockerEvidence.id,
+    },
+  };
+  fs.mkdirSync(path.dirname(projectionManifestPath), { recursive: true });
+  fs.writeFileSync(projectionManifestPath, `${JSON.stringify(guardManifest, null, 2)}\n`, 'utf8');
+  return {
+    blockerAppend,
+    blockerEvidencePath,
+    projectionManifestPath,
+    projectionManifestSha256: sha256File(projectionManifestPath),
+  };
+}
+
 function buildProjectionPayload({
   phaseNumber,
   phaseTitle,
@@ -275,11 +316,20 @@ export function publishTerminalBlockedOutcome(input = {}) {
     };
     fs.mkdirSync(path.dirname(sidecarPaths.projectionManifestPath), { recursive: true });
     fs.writeFileSync(sidecarPaths.projectionManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const guardMirror = mirrorReconciliationGuardInputs({
+      runRoot,
+      stateRunId,
+      attemptId,
+      transactionId,
+      blockerEvidence,
+      manifest,
+    });
 
     return {
       blockerAppend,
       attemptAppend,
       manifest,
+      guardMirror,
     };
   });
 
@@ -291,6 +341,8 @@ export function publishTerminalBlockedOutcome(input = {}) {
     blockerAppend: transition.projectionResult.blockerAppend,
     attemptAppend: transition.projectionResult.attemptAppend,
     manifestPath: sidecarPaths.projectionManifestPath,
+    runRoot,
+    guardMirror: transition.projectionResult.guardMirror,
     projectionFiles,
     manifest: transition.projectionResult.manifest,
     statePath: transition.statePath,

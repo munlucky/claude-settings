@@ -1,7 +1,7 @@
 {
   "schemaVersion": "3",
-  "script": ".claude/scripts/phase-closeout-finalize.mjs",
-  "runId": "phase01-final",
+  "script": ".claude/scripts/write-verification-verdict.py",
+  "runId": "phase01-final-refresh-20260514",
   "phase": {
     "number": 1,
     "title": "Phase 01: Terminal Blocked Board Publish Wiring (v1)",
@@ -9,67 +9,77 @@
   },
   "contract": {
     "applicable": true,
-    "verificationMode": "phase_closeout"
+    "verificationMode": "phase_verification"
   },
   "contractApplicable": true,
-  "verificationMode": "phase_closeout",
-  "mode": "phase-closeout-finalize",
+  "verificationMode": "phase_verification",
+  "mode": "codex-direct-phase-reverify",
+  "authoritative": true,
+  "identityStatus": "complete",
   "verdict": "passed",
   "evidenceFresh": true,
   "requiredChecks": {
     "expected": [
-      "phase-closeout-finalize"
+      "terminal blocked board publish wiring"
     ],
-    "passed": [
-      "phase-closeout-finalize"
-    ],
+    "passed": [],
     "missing": []
   },
-  "changedFiles": [],
+  "changedFiles": [
+    ".claude/scripts/agent-loop-phase-runner.mjs",
+    ".claude/scripts/agent-loop-phase-runner.test.mjs",
+    ".claude/scripts/lib/terminal-blocker-publisher.mjs",
+    ".claude/scripts/lib/terminal-blocker-publisher.test.mjs"
+  ],
   "commands": [
     {
-      "name": "phase_closeout_finalize",
-      "run": "node .claude/scripts/phase-closeout-finalize.mjs finalize",
+      "name": "node",
+      "run": "node --test .claude/scripts/agent-loop-phase-runner.test.mjs",
+      "status": "passed"
+    },
+    {
+      "name": "node",
+      "run": "node --test .claude/scripts/lib/terminal-blocker-publisher.test.mjs",
       "status": "passed"
     }
   ],
   "workflowEvidence": {
     "selectedBundles": [
-      "ready-isolate-bundle",
-      "implementation-bundle",
-      "review-bundle",
-      "verification-bundle",
-      "finish-bundle"
+      "verification-bundle"
     ],
     "stageOrder": [
-      "ready/isolate",
-      "execute",
-      "review",
-      "verify",
-      "finish"
+      "verify"
     ],
-    "warnings": [],
-    "closeoutInvariant": {
-      "ok": true,
-      "normalizedRunVerdict": "success",
-      "completionState": "completed",
-      "reason": "clean completion"
-    }
+    "effortEscalationReason": "none",
+    "selectedModelProvider": "openai",
+    "selectedModel": "gpt-5.5",
+    "selectedModelEffort": "medium",
+    "modelSelectionReason": "phase01-closeout-refresh",
+    "retrievalBudget": "stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output",
+    "validationProfile": "workflow_core",
+    "phaseReplayPolicy": "preserve assistant phase commentary/final_answer when replaying; never add phase to user items",
+    "warnings": []
+  },
+  "runtimeContext": {
+    "requestedRuntime": "codex",
+    "effectiveRuntime": "codex",
+    "fallbackReason": "",
+    "verificationRuntimeTargets": "codex"
   },
   "identity": {
     "runLeaseId": "dispatch-1778737725278-27920",
     "activePhaseDocPath": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/01-terminal-blocked-board-publish-wiring-v1.md",
-    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-runtime-contract-fixes-2026-05-14\\00-master-plan-v1.md",
-    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-runtime-contract-fixes-2026-05-14",
-    "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
-    "gitTreeFingerprint": "0dd0302fac13657818a68cfc17869a0ce07f464d"
+    "masterPlan": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/00-master-plan-v1.md",
+    "planDir": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14",
+    "statusFile": ".claude/docs/phase-status.yaml",
+    "gitTreeFingerprint": "dedc9b85ff5a48f13542cc8f0c77cea5190a786a"
   },
-  "verdictScope": "phase_closeout",
+  "verdictScope": "phase_verification",
   "blockerClass": "",
-  "blockerFingerprint": "",
-  "environmentFingerprint": "",
+  "blockerFingerprint": "2f47e3ca02bc379d",
+  "environmentFingerprint": "e88acb91257fded3",
   "environmentBlockers": [],
-  "artifactFingerprint": "",
+  "artifactFingerprint": "7d81a97c6b4497de",
   "supersedes": [],
   "supersededBy": "",
   "staleWhen": [],
@@ -86,5 +96,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-14T05:57:06.925Z"
+  "generatedAt": "2026-05-14T07:00:02Z"
 }

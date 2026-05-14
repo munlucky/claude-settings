@@ -396,6 +396,35 @@ test('phase closeout accepts resolved historical sidecar blocker', () => {
   });
 });
 
+test('phase closeout ignores mutable compatibility projection hash drift in sidecar manifest', () => {
+  withFixture({ legacyCompletedWorksets: true }, (root) => {
+    writeSidecarFixture(root, { status: 'resolved' });
+    const workflowDir = path.join(root, '.claude/logs/workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), '{"status":"completed","completionStatus":"completed","childAlive":false}\n', 'utf8');
+    fs.writeFileSync(
+      path.join(root, 'docs/implementation/execution/01-feature/projection-manifest.json'),
+      `${JSON.stringify({
+        blockerEvidenceIds: ['blocker-spawn-eperm'],
+        attemptLedgerKeys: ['attempt-phase-01-a:txn-phase-01-a'],
+        files: [
+          {
+            path: '.claude/logs/workflow-enforcement/current-run.json',
+            kind: 'current-run',
+            sha256: 'intentionally-stale-mutable-projection-hash',
+          },
+        ],
+      }, null, 2)}\n`,
+      'utf8',
+    );
+
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
 test('manifest-intent-without-exit-is-incomplete', () => {
   withFixture({ legacyCompletedWorksets: true }, (root) => {
     const intent = writeAttemptManifestIntent({

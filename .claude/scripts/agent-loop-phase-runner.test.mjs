@@ -12,8 +12,10 @@ import {
   computeControllerEnforcedGateAction,
   computePhaseLoopShadowDecision,
   publishRunnerBlockedCloseout,
+  resolveRunnerReconciliationIntentOptions,
+  writeActiveSimpleRunState,
 } from './agent-loop-phase-runner.mjs';
-import { readState, resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
+import { readState, resolveReconciliationIntentPath, resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
 import {
   buildRemediationPacket,
   formatRemediationPacketForPrompt,
@@ -46,34 +48,18 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
-function writeRunnerReconciliationFixture(root, stateRunId, runRoot) {
-  const transactionId = 'tx-runner-reconcile';
-  const blockerEvidenceId = 'blocker-runner-reconcile';
-  const blockerEvidencePath = path.join(runRoot, 'BLOCKER_EVIDENCE.jsonl');
-  const projectionManifestPath = path.join(runRoot, 'projection-manifest.json');
-  fs.mkdirSync(runRoot, { recursive: true });
-  fs.writeFileSync(blockerEvidencePath, `${JSON.stringify({ id: blockerEvidenceId })}\n`, 'utf8');
-  writeJson(projectionManifestPath, {
-    transactionId,
-    blockerEvidenceIds: [blockerEvidenceId],
-  });
-  writeJson(path.join(root, '.claude', 'logs', 'workflow-enforcement', 'runs', stateRunId, 'reconciliation-intent.json'), {
+function writeRunnerReconciliationIntentFromPublish(root, publishResult) {
+  const intentPath = resolveReconciliationIntentPath(publishResult.stateRunId, { rootDir: root });
+  writeJson(intentPath, {
     intent: 'resume_blocked_attempt',
     resumeReason: 'blocker_resolved',
-    stateRunId,
+    stateRunId: publishResult.stateRunId,
     attemptId: 'attempt-01',
-    transactionId,
-    blockerEvidenceId,
-    projectionManifestSha256: sha256File(projectionManifestPath),
+    transactionId: publishResult.transactionId,
+    blockerEvidenceId: publishResult.blockerEvidenceId,
+    projectionManifestSha256: sha256File(publishResult.guardMirror.projectionManifestPath),
   });
-  return {
-    rootDir: root,
-    stateRunId,
-    transactionId,
-    blockerEvidenceId,
-    blockerEvidencePath,
-    projectionManifestPath,
-  };
+  return intentPath;
 }
 
 test('shadow adapter converts review, verify, finish, checkpoint, and pass cases', () => {
@@ -312,13 +298,43 @@ test('worker spawn guard rejects same-attempt terminal and pending state boards'
   }
 });
 
-test('worker spawn guard allows same-attempt blocked resume only with valid reconciliation intent', () => {
+test('worker spawn guard allows same-attempt blocked resume only with production publisher evidence', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-reconcile-'));
+  const originalCwd = process.cwd();
   try {
+    process.chdir(root);
     const stateRunId = 'run-reconcile';
-    const runRoot = writeFixtureRunState(root, stateRunId, 'blocked');
-    const blocked = readState({ rootDir: root });
-    const reconciliationIntentOptions = writeRunnerReconciliationFixture(root, stateRunId, runRoot);
+    const planDir = path.join(root, 'docs', 'implementation', 'blocked-plan');
+    const executionRoot = path.join(planDir, 'execution');
+    const phaseExecutionDir = path.join(executionRoot, '02-reconciliation-evidence-path-unification-v1');
+    fs.mkdirSync(phaseExecutionDir, { recursive: true });
+    const publishResult = publishRunnerBlockedCloseout({ phaseExecutionDir }, {
+      detail: 'operator resolved blocker',
+      stopReason: 'blocked:operator-reconciliation-required',
+      attemptId: 'attempt-01',
+      runnerState: {
+        planDir,
+        statusFile: '.claude/docs/phase-status.yaml',
+        executionRoot,
+        runtime: 'codex',
+        phaseNum: '2',
+        phaseTitle: 'Phase 02: Reconciliation Evidence Path Unification (v1)',
+        phaseDoc: path.join(planDir, '02-reconciliation-evidence-path-unification-v1.md'),
+        stateRunId,
+      },
+    });
+    const blocked = readState({ rootDir: root, stateRunId });
+    writeRunnerReconciliationIntentFromPublish(root, publishResult);
+    const reconciliationIntentOptions = resolveRunnerReconciliationIntentOptions(
+      stateRunId,
+      publishResult.runRoot,
+      { resume: true },
+    );
+
+    assert.ok(reconciliationIntentOptions);
+    assert.equal(reconciliationIntentOptions.transactionId, publishResult.transactionId);
+    assert.equal(reconciliationIntentOptions.blockerEvidenceId, publishResult.blockerEvidenceId);
+    assert.equal(reconciliationIntentOptions.projectionManifestPath, publishResult.guardMirror.projectionManifestPath);
 
     const allowed = assessWorkerSpawnStateGuard(blocked, {
       attemptId: 'attempt-01',
@@ -337,16 +353,38 @@ test('worker spawn guard allows same-attempt blocked resume only with valid reco
     assert.equal(rejected.allowed, false);
     assert.equal(rejected.reason, 'reconciliation_intent_invalid');
   } finally {
+    process.chdir(originalCwd);
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('runner active state start uses withStateTransition instead of direct writeState', () => {
+test('runner active state start writes a committed board directly without a no-op transition', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-active-direct-'));
+  const originalCwd = process.cwd();
+  try {
+    process.chdir(root);
+    const result = writeActiveSimpleRunState({
+      stateRunId: 'run-active-direct',
+      phaseNum: '3',
+      attempt: 'attempt-active-direct',
+      planDir: 'docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14',
+      statusFile: '.claude/docs/phase-status.yaml',
+    });
+    const recovered = readState({ rootDir: root, stateRunId: result.stateRunId, runRoot: result.runRoot });
+
+    assert.equal(recovered.exists, true);
+    assert.equal(recovered.state.status, 'active');
+    assert.equal(recovered.state.projectionStatus, 'committed');
+    assert.equal(recovered.state.reason, 'start');
+    assert.equal(recovered.state.attempt, 'attempt-active-direct');
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
   const source = fs.readFileSync('.claude/scripts/agent-loop-phase-runner.mjs', 'utf8');
 
-  assert.match(source, /import \{[\s\S]*withStateTransition[\s\S]*\} from '\.\/lib\/simple-run-state\.mjs';/);
-  assert.match(source, /function writeActiveSimpleRunState\(\) \{[\s\S]*withStateTransition\(nextState, options,/);
-  assert.doesNotMatch(source, /function writeActiveSimpleRunState\(\) \{[\s\S]*writeState\(/);
+  assert.doesNotMatch(source, /function writeActiveSimpleRunState[\s\S]*withStateTransition\(nextState, options,/);
 });
 
 test('stopBlockedPhase publishes terminal state before legacy phase status alignment', () => {

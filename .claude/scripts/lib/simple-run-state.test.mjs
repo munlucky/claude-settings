@@ -199,6 +199,14 @@ test('reconciliation intent rejects identity and manifest mismatches', () => {
     () => validateReconciliationIntent(manifestMismatch),
     /projectionManifestSha256 mismatch/,
   );
+
+  const blockerMismatch = writeReconciliationFixture(tempRoot(), {
+    intentPatch: { blockerEvidenceId: 'wrong-blocker' },
+  });
+  assert.throws(
+    () => validateReconciliationIntent(blockerMismatch),
+    /blockerEvidenceId mismatch/,
+  );
 });
 
 test('global reconciliation intent alias requires matching stateRunId', () => {

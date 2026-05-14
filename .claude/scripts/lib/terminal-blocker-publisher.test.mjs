@@ -126,6 +126,18 @@ test('terminal blocked publisher writes manifest and canonical lifecycle project
     assert.deepEqual(manifest.attemptLedgerKeys, ['attempt-04:tx-04']);
     assert.equal(manifest.files.length, 5);
     assert.equal(manifest.files.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256)), true);
+    assert.equal(fs.existsSync(result.guardMirror.blockerEvidencePath), true);
+    assert.equal(fs.existsSync(result.guardMirror.projectionManifestPath), true);
+    assert.equal(path.dirname(result.guardMirror.blockerEvidencePath), result.runRoot);
+    const mirrorBlocker = jsonlRecords(result.guardMirror.blockerEvidencePath);
+    const mirrorManifest = readJson(result.guardMirror.projectionManifestPath);
+    assert.equal(mirrorBlocker[0].id, 'blocker-04');
+    assert.equal(mirrorBlocker[0].stateRunId, 'state-run-04');
+    assert.equal(mirrorManifest.stateRunId, 'state-run-04');
+    assert.equal(mirrorManifest.transactionId, 'tx-04');
+    assert.deepEqual(mirrorManifest.blockerEvidenceIds, ['blocker-04']);
+    assert.equal(mirrorManifest.reconciliationGuard.blockerEvidenceId, 'blocker-04');
+    assert.equal(/^[a-f0-9]{64}$/.test(result.guardMirror.projectionManifestSha256), true);
 
     for (const projectionFile of input.projectionFiles) {
       const projection = readJson(projectionFile);

@@ -35,7 +35,7 @@ import {
   readState,
   resolveRunRoot,
   validateReconciliationIntent,
-  withStateTransition,
+  writeState,
 } from './lib/simple-run-state.mjs';
 import { publishTerminalBlockedOutcome } from './lib/terminal-blocker-publisher.mjs';
 
@@ -213,9 +213,9 @@ function readJsonObject(filePath) {
   }
 }
 
-function resolveRunnerReconciliationIntentOptions(stateRunId, runRoot = '') {
+export function resolveRunnerReconciliationIntentOptions(stateRunId, runRoot = '', { resume = state.resume } = {}) {
   const normalizedStateRunId = String(stateRunId || '').trim();
-  if (!state.resume || !normalizedStateRunId) {
+  if (!resume || !normalizedStateRunId) {
     return null;
   }
   const rootDir = process.cwd();
@@ -344,27 +344,29 @@ function ensureStartupResumeState(paths, logFile) {
   return 0;
 }
 
-function writeActiveSimpleRunState() {
-  const stateRunId = state.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}-${process.pid}`;
+export function writeActiveSimpleRunState(overrides = {}) {
+  const effectiveState = { ...state, ...overrides };
+  const phaseNum = effectiveState.phaseNum || state.phaseNum;
+  const stateRunId = effectiveState.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${phaseNum}-${process.pid}`;
   const runRoot = resolveRunRoot(stateRunId, { rootDir: process.cwd() });
   const nextState = {
     stateRunId,
     runRoot,
+    projectionStatus: 'committed',
     status: 'active',
-    phase: state.phaseNum,
-    attempt: currentSimpleRunAttemptId(),
+    phase: phaseNum,
+    attempt: overrides.attempt || currentSimpleRunAttemptId(),
     owner: 'agent-loop-phase-runner',
-    reason: state.resume ? 'resume' : 'start',
-    planDir: state.planDir,
-    statusFile: state.statusFile,
+    reason: effectiveState.resume ? 'resume' : 'start',
+    planDir: effectiveState.planDir,
+    statusFile: effectiveState.statusFile,
   };
   const options = {
     rootDir: process.cwd(),
     stateRunId,
     runRoot,
-    reconciliationIntentOptions: resolveRunnerReconciliationIntentOptions(stateRunId, runRoot),
   };
-  withStateTransition(nextState, options, () => ({ active: true }));
+  writeState(nextState, options);
   state.stateRunId = stateRunId;
   return { stateRunId, runRoot };
 }

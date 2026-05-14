@@ -688,7 +688,7 @@ function runPhaseWaveCoordinator(argv) {
   };
 }
 
-function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
+function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime, resumeCurrentRun = false }) {
   const args = [
     state.planDir,
     '--status-file', state.statusFile,
@@ -708,7 +708,7 @@ function buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime }) {
     args.push('--worktree-base', state.worktreeBase || 'HEAD');
     args.push('--worktree-root', state.worktreeRoot || '.tmp/harness-worktrees/phase-runs');
   }
-  if (state.resume) {
+  if (state.resume || resumeCurrentRun) {
     args.push('--resume');
   }
 
@@ -1646,7 +1646,13 @@ async function runNodeManagedLoop() {
         currentPhaseTitle: phaseTitle,
         loopState: 'running',
       });
-      const runnerArgs = buildSinglePhaseArgs({ nextPhase, phaseTitle, phaseDoc, runtime });
+      const runnerArgs = buildSinglePhaseArgs({
+        nextPhase,
+        phaseTitle,
+        phaseDoc,
+        runtime,
+        resumeCurrentRun: executedPhases > 0,
+      });
       appendDebugLog('phase-runner-invoke', {
         nextPhase,
         phaseTitle,

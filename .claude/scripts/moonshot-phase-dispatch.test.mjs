@@ -107,6 +107,7 @@ test('dispatcher exposes and forwards explicit --resume', () => {
   assert.match(source, /planDirMatches/);
   assert.match(source, /incomplete_transaction: --resume requires committed STATE\.md projections/);
   assert.match(source, /resume-state-missing: --resume requires matching STATE\.md planDir for this plan/);
+  assert.match(source, /dispatch-dry-run-existing-board-ignored/);
   assert.match(source, /resume-required: existing active run board requires --resume/);
   assert.match(source, /resume-state-missing: --resume requires an existing stateRunId/);
   assert.match(source, /initializeDispatchRunIdentity\(\);\s*recordDispatchEvidence/s);

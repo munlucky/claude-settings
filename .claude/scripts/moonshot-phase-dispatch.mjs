@@ -641,6 +641,11 @@ function initializeDispatchRunIdentity() {
     return runtimeState.runLeaseId;
   }
   if (existing && ['active', 'blocked', 'paused'].includes(String(existing.status || '').trim())) {
+    if (state.dryRun) {
+      appendDebugLog('dispatch-dry-run-existing-board-ignored', existing);
+      runtimeState.runLeaseId = generateRunLeaseId();
+      return runtimeState.runLeaseId;
+    }
     throw new Error('resume-required: existing active run board requires --resume');
   }
   runtimeState.runLeaseId = generateRunLeaseId();

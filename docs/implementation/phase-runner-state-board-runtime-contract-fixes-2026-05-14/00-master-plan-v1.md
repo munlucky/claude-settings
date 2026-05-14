@@ -118,9 +118,9 @@ git diff --check
 
 ## Phase Completion Checklist
 - [x] Phase 01 - Terminal Blocked Board Publish Wiring (`01-terminal-blocked-board-publish-wiring-v1.md`)
-- [ ] Phase 02 - Reconciliation Evidence Path Unification (`02-reconciliation-evidence-path-unification-v1.md`)
-- [ ] Phase 03 - Active Transition Projection Commit Semantics (`03-active-transition-projection-commit-semantics-v1.md`)
-- [ ] Phase 04 - Board Projection Invariant Coverage (`04-board-projection-invariant-coverage-v1.md`)
+- [x] Phase 02 - Reconciliation Evidence Path Unification (`02-reconciliation-evidence-path-unification-v1.md`)
+- [x] Phase 03 - Active Transition Projection Commit Semantics (`03-active-transition-projection-commit-semantics-v1.md`)
+- [x] Phase 04 - Board Projection Invariant Coverage (`04-board-projection-invariant-coverage-v1.md`)
 
 ## Runnable Preparation Gate
 - Do not run `moonshot-phase-runner` from this package until review loop artifacts exist and report `decision: pass`.
