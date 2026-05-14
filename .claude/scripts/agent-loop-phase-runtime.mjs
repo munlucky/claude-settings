@@ -214,6 +214,7 @@ function describeStopReason(reason, runtime, detail = '') {
     case 'timeout-network':
       return `네트워크 또는 외부 요청 문제로 ${runtime} 실행이 watchdog 제한 시간 안에 완료되지 않았습니다`;
     case 'codex_upstream_stream_stalled':
+    case 'upstream_runtime_stall':
       return `Codex upstream 스트림 재연결이 반복되어 ${runtime} 작업을 안전하게 중단했습니다`;
     case 'timeout-browser':
       return '브라우저 또는 앱 런타임 smoke가 제한 시간 안에 준비되지 않았습니다';
@@ -221,6 +222,12 @@ function describeStopReason(reason, runtime, detail = '') {
       return '검증 산출물이 제시간에 생성되지 않아 phase 완료 판정을 내릴 수 없었습니다';
     case 'raw_diff_output_timeout':
       return 'raw git diff 본문이 로그/트랜스크립트를 지배해 worker가 제한 시간 안에 완료되지 않았습니다. 다음 시도는 git diff --stat, --name-only, --check 또는 path-limited 200-line raw diff만 사용해야 합니다';
+    case 'broad_search_timeout':
+      return '진단 명령이 broad filesystem search budget을 초과했습니다. 같은 run에서는 broad search를 재시도하지 않고 debug opt-in 경로만 남겨야 합니다';
+    case 'phaseRuntimeParity_timeout':
+      return 'phaseRuntimeParity 검증이 short phase loop 예산을 초과했습니다. 같은 run에서 재시도하지 말고 long-budget final verification으로 라우팅해야 합니다';
+    case 'unknown_timeout':
+      return 'timeout 원인 class를 안정적으로 확정하지 못했습니다. 1회 bounded retry 후 같은 run에서는 handoff해야 합니다';
     case 'timeout-restart-limit':
       return '같은 phase가 반복 timeout 되었고 재시도 한도에 도달했습니다';
     case 'tool-schema-error-loop':
@@ -269,6 +276,12 @@ function classifyTimeoutReason(logFile) {
     if (/(?:codex_core::session::turn: stream disconnected|stream disconnected - retrying sampling request|ERROR:\s*Reconnecting\.\.\. \d+\/\d+|UPSTREAM_STREAM_STALL)/i.test(text)) {
       return 'codex_upstream_stream_stalled';
     }
+    if (/broad_search_timeout|diagnostic search caps|skipped_root=.*(?:npm-cache|_npx|npm-cache\/_npx)/i.test(text)) {
+      return 'broad_search_timeout';
+    }
+    if (/phaseRuntimeParity_timeout|verify-phase-runtime-parity|phaseRuntimeParity.*WATCHDOG_TIMEOUT|runtime parity.*WATCHDOG_TIMEOUT/i.test(text)) {
+      return 'phaseRuntimeParity_timeout';
+    }
     if (/does not have access to Claude|Please login again|Could not resolve authentication method|login required|subscription|authentication/i.test(text)) {
       return 'timeout-auth';
     }
@@ -285,7 +298,7 @@ function classifyTimeoutReason(logFile) {
       return 'timeout-verification';
     }
   }
-  return 'timeout-restart-limit';
+  return 'unknown_timeout';
 }
 
 function isRawDiffDominatedLog(text) {

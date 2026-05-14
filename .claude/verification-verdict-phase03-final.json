@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "3",
+  "script": ".claude/scripts/phase-closeout-finalize.mjs",
+  "runId": "phase03-final",
+  "phase": {
+    "number": 3,
+    "title": "Phase 03: Runtime Parity Routing",
+    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/03-runtime-parity-routing-v1.md"
+  },
+  "contract": {
+    "applicable": true,
+    "verificationMode": "phase_closeout"
+  },
+  "contractApplicable": true,
+  "verificationMode": "phase_closeout",
+  "mode": "phase-closeout-finalize",
+  "verdict": "passed",
+  "evidenceFresh": true,
+  "requiredChecks": {
+    "expected": [
+      "phase-closeout-finalize"
+    ],
+    "passed": [
+      "phase-closeout-finalize"
+    ],
+    "missing": []
+  },
+  "changedFiles": [],
+  "commands": [
+    {
+      "name": "phase_closeout_finalize",
+      "run": "node .claude/scripts/phase-closeout-finalize.mjs finalize",
+      "status": "passed"
+    }
+  ],
+  "workflowEvidence": {
+    "selectedBundles": [
+      "ready-isolate-bundle",
+      "implementation-bundle",
+      "review-bundle",
+      "verification-bundle",
+      "finish-bundle"
+    ],
+    "stageOrder": [
+      "ready/isolate",
+      "execute",
+      "review",
+      "verify",
+      "finish"
+    ],
+    "warnings": [],
+    "closeoutInvariant": {
+      "ok": true,
+      "normalizedRunVerdict": "success",
+      "completionState": "completed",
+      "reason": "clean completion"
+    }
+  },
+  "identity": {
+    "runLeaseId": "dispatch-1778767304498-27568",
+    "activePhaseDocPath": "docs/implementation/phase-runner-timeout-root-fixes-2026-05-14/03-runtime-parity-routing-v1.md",
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-timeout-root-fixes-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-timeout-root-fixes-2026-05-14",
+    "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
+    "gitTreeFingerprint": "b49df129787395f169a8035df6813a2cef844ece"
+  },
+  "verdictScope": "phase_closeout",
+  "blockerClass": "",
+  "blockerFingerprint": "",
+  "environmentFingerprint": "",
+  "environmentBlockers": [],
+  "artifactFingerprint": "",
+  "supersedes": [],
+  "supersededBy": "",
+  "staleWhen": [],
+  "stale": false,
+  "failureClass": "",
+  "blocking": false,
+  "blockingReasonCode": "",
+  "score": {
+    "detected": true,
+    "current": 100,
+    "target": 100,
+    "unmetChecklistItems": 0,
+    "unmetItems": 0,
+    "blockingDefects": 0,
+    "verdict": "done"
+  },
+  "generatedAt": "2026-05-14T14:51:55.274Z"
+}

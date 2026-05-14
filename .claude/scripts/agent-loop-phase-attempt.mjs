@@ -337,6 +337,28 @@ function decideTimeoutAction(config) {
   return { ACTION: 'retry-timeout', SUMMARY: 'retry-after-timeout' };
 }
 
+function decideTimeoutPolicy(config) {
+  const timeoutClass = String(config.timeoutClass || 'unknown_timeout');
+  const repeated = toBool(config.repeated);
+  if (timeoutClass === 'broad_search_timeout') {
+    return { ACTION: 'stop-loop', SUMMARY: 'do_not_retry:broad_search_timeout', SAME_RUN_DECISION_RESULT: 'do_not_retry' };
+  }
+  if (timeoutClass === 'phaseRuntimeParity_timeout') {
+    return { ACTION: 'route-long-budget', SUMMARY: 'route_to_long_budget:phaseRuntimeParity_timeout', SAME_RUN_DECISION_RESULT: 'route_to_long_budget' };
+  }
+  if (timeoutClass === 'raw_diff_output_timeout') {
+    return repeated
+      ? { ACTION: 'stop-loop', SUMMARY: 'stop_and_handoff:raw_diff_output_timeout', SAME_RUN_DECISION_RESULT: 'stop_and_handoff' }
+      : { ACTION: 'retry-timeout', SUMMARY: 'bounded_retry:raw_diff_output_timeout', SAME_RUN_DECISION_RESULT: 'bounded_retry' };
+  }
+  if (timeoutClass === 'upstream_runtime_stall' || timeoutClass === 'codex_upstream_stream_stalled') {
+    return { ACTION: 'stop-loop', SUMMARY: 'stop_and_handoff:upstream_runtime_stall', SAME_RUN_DECISION_RESULT: 'stop_and_handoff' };
+  }
+  return repeated
+    ? { ACTION: 'stop-loop', SUMMARY: 'stop_and_handoff:unknown_timeout', SAME_RUN_DECISION_RESULT: 'stop_and_handoff' }
+    : { ACTION: 'retry-timeout', SUMMARY: 'bounded_retry:unknown_timeout', SAME_RUN_DECISION_RESULT: 'bounded_retry' };
+}
+
 function decideFailureAction(config) {
   const autoFixCount = toInt(config.autoFixCount);
   const maxAutoFixAttempts = toInt(config.maxAutoFixAttempts);
@@ -429,6 +451,7 @@ function printUsage() {
     'Usage:',
     '  agent-loop-phase-attempt.mjs decide-missing-evidence-action <auto-fix-count> <max-auto-fix-attempts> <autonomous-mode> <advance-on-failure> <final-stop-reason>',
     '  agent-loop-phase-attempt.mjs decide-timeout-action <restart-count> <max-restarts> <timeout-runtime-fallback> <timeout-fallback-used> <fallback-runtime> <current-runtime> <autonomous-mode> <advance-on-failure>',
+    '  agent-loop-phase-attempt.mjs decide-timeout-policy <timeout-class> <repeated>',
     '  agent-loop-phase-attempt.mjs decide-failure-action <auto-fix-count> <max-auto-fix-attempts> <autonomous-mode> <advance-on-failure> <final-stop-reason>',
     '  agent-loop-phase-attempt.mjs classify-gate-stop-reason <phase-completion-reason>',
     '  agent-loop-phase-attempt.mjs build-verification-remediation-prompt <phase-num> <log-file> <phase-completion-reason>',
@@ -472,6 +495,12 @@ const [command, ...args] = argv;
       advanceOnFailure: args[7],
     }));
     break;
+  case 'decide-timeout-policy':
+    printAssignments(decideTimeoutPolicy({
+      timeoutClass: args[0],
+      repeated: args[1],
+    }));
+    break;
   case 'decide-failure-action':
     printAssignments(decideFailureAction({
       autoFixCount: args[0],
@@ -507,4 +536,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 export {
   classifyCompletionGateReason,
   decideMissingEvidenceAction,
+  decideTimeoutPolicy,
 };

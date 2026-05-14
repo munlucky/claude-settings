@@ -16,6 +16,7 @@ import {
   publishRunnerBlockedCloseout,
   resolvePhaseRuntimeParityProfile,
   resolveRunnerReconciliationIntentOptions,
+  writeTimeoutLedgerDecision,
   writeTerminalCompleteSimpleRunState,
   writeActiveSimpleRunState,
 } from './agent-loop-phase-runner.mjs';
@@ -632,6 +633,32 @@ test('raw diff retry policy omits raw patch body', () => {
   assert.match(prompt, /bounded diff summaries only/);
   assert.doesNotMatch(prompt, /^diff --git /m);
   assert.doesNotMatch(prompt, /^@@ /m);
+});
+
+test('runner timeout ledger decision writes class policy before retry scheduling', () => {
+  const ledgerPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'runner-timeout-ledger-')), 'timeout-ledger.jsonl');
+  const first = writeTimeoutLedgerDecision({
+    runId: 'run-1',
+    phase: 4,
+    command: 'phase-worker:codex',
+    timeoutMs: 7200000,
+    timeoutClass: 'raw_diff_output_timeout',
+    runtime: 'codex',
+    ledgerPath,
+  });
+  const second = writeTimeoutLedgerDecision({
+    runId: 'run-1',
+    phase: 4,
+    command: 'phase-worker:codex',
+    timeoutMs: 7200000,
+    timeoutClass: 'raw_diff_output_timeout',
+    runtime: 'codex',
+    ledgerPath,
+  });
+
+  assert.equal(first.sameRunDecisionResult, 'bounded_retry');
+  assert.equal(second.sameRunDecisionResult, 'stop_and_handoff');
+  assert.match(fs.readFileSync(ledgerPath, 'utf8'), /raw_diff_output_timeout/);
 });
 
 test('contract parity optional probe routing suppresses required runtime blocker in normal loop', () => {

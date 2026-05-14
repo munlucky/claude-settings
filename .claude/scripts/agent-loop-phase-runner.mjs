@@ -42,6 +42,10 @@ import {
   hasPhaseRuntimeParityTimeout,
   recordPhaseRuntimeParityTimeout,
 } from './lib/runtime-unavailable-cache.mjs';
+import {
+  DEFAULT_TIMEOUT_LEDGER_PATH,
+  recordTimeoutDecision,
+} from './lib/timeout-ledger.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -799,6 +803,39 @@ function detectFinalStopReason(logFile, defaultReason) {
 
 function classifyTimeoutReason(logFile) {
   return runtimeCommand('classify-timeout-reason', logFile).stdout.trim();
+}
+
+function phaseBlockedVerdictPath(phaseNum) {
+  return path.join('.claude', `verification-verdict-phase${String(phaseNum).padStart(2, '0')}-blocked.json`).replace(/\\/g, '/');
+}
+
+export function writeTimeoutLedgerDecision({
+  runId = '',
+  phase = '',
+  command = '',
+  timeoutMs = 0,
+  timeoutClass = '',
+  runtime = '',
+  ledgerPath = DEFAULT_TIMEOUT_LEDGER_PATH,
+} = {}) {
+  return recordTimeoutDecision({
+    ledgerPath,
+    runId,
+    phase,
+    command,
+    timeoutMs,
+    class: timeoutClass,
+    runtimeTarget: runtime,
+    verifierId: timeoutClass === 'phaseRuntimeParity_timeout' ? 'phaseRuntimeParity' : '',
+    referencePlanHash: state.masterPlan || state.phaseDoc || '',
+    blockedVerdictPath: timeoutClass === 'phaseRuntimeParity_timeout'
+      ? phaseBlockedVerdictPath(phase)
+      : '',
+  });
+}
+
+function decideTimeoutPolicy(timeoutClass, repeated) {
+  return nodeAssignments(attemptPath, 'decide-timeout-policy', timeoutClass, repeated ? 'true' : 'false');
 }
 
 function parityTimeoutInput(activeRuntime, verificationPreflight = {}, logFile = '') {
@@ -2965,12 +3002,29 @@ function runPhaseAttempt() {
 
     if (exitCode === 125) {
       const stopDetail = describeStopReason('codex_upstream_stream_stalled', activeRuntime);
+      const upstreamTimeoutMs = (Number.parseInt(String(process.env.AGENT_LOOP_CODEX_UPSTREAM_STALL_SECONDS ?? '120'), 10) || 120) * 1000;
+      const ledgerDecision = writeTimeoutLedgerDecision({
+        runId: state.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`,
+        phase: state.phaseNum,
+        command: `phase-worker:${activeRuntime}`,
+        timeoutMs: upstreamTimeoutMs,
+        timeoutClass: 'upstream_runtime_stall',
+        runtime: activeRuntime,
+      });
       appendDebugLog('worker-upstream-stream-stalled', {
         logFile,
         runtime: activeRuntime,
         exitCode,
         stopDetail,
+        timeoutLedger: ledgerDecision.record,
       });
+      appendDecisionLog([
+        `## Phase ${state.phaseNum} - Timeout Ledger`,
+        `- Class: ${ledgerDecision.record.class}`,
+        `- Decision: ${ledgerDecision.sameRunDecisionResult}`,
+        `- Ledger: ${DEFAULT_TIMEOUT_LEDGER_PATH}`,
+        '',
+      ]);
       return stopBlockedPhase(paths, logFile, stopDetail, 'runtime-upstream-stalled');
     }
 
@@ -2978,17 +3032,71 @@ function runPhaseAttempt() {
       restartCount += 1;
       const timeoutReason = classifyTimeoutReason(logFile);
       const timeoutDetail = describeStopReason(timeoutReason, activeRuntime);
+      const timeoutMs = (Number.parseInt(String(process.env.AGENT_LOOP_WATCHDOG_MAX_SECONDS ?? String(2 * 60 * 60)), 10) || (2 * 60 * 60)) * 1000;
+      const ledgerDecision = writeTimeoutLedgerDecision({
+        runId: state.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`,
+        phase: state.phaseNum,
+        command: `phase-worker:${activeRuntime}`,
+        timeoutMs,
+        timeoutClass: timeoutReason,
+        runtime: activeRuntime,
+      });
+      const policyDecision = decideTimeoutPolicy(ledgerDecision.record.class, ledgerDecision.repeated);
       appendDebugLog('worker-timeout', {
         logFile,
         runtime: activeRuntime,
         restartCount,
         timeoutReason,
         timeoutDetail,
+        timeoutLedger: ledgerDecision.record,
+        timeoutPolicy: policyDecision,
       });
       appendQaRuntimeUpdate(`phase-timeout-attempt-${restartCount}`, logFile, timeoutDetail, paths);
       appendHandoffUpdate(`phase-timeout-attempt-${restartCount}`, logFile, timeoutDetail, paths);
       logWarn(`Phase ${state.phaseNum} timed out. Restarting... (attempt ${restartCount})`);
-      appendDecisionLog([`## Phase ${state.phaseNum} - Timeout Restart #${restartCount}`, `- Runtime: ${activeRuntime}`, `- Detail: ${timeoutDetail}`, '']);
+      appendDecisionLog([
+        `## Phase ${state.phaseNum} - Timeout Restart #${restartCount}`,
+        `- Runtime: ${activeRuntime}`,
+        `- Class: ${ledgerDecision.record.class}`,
+        `- Decision: ${ledgerDecision.sameRunDecisionResult}`,
+        `- Ledger: ${DEFAULT_TIMEOUT_LEDGER_PATH}`,
+        `- Detail: ${timeoutDetail}`,
+        '',
+      ]);
+
+      if (policyDecision.ACTION === 'route-long-budget') {
+        const routeDetail = `${timeoutDetail} Ledger decision=${ledgerDecision.sameRunDecisionResult}; blockedVerdictPath=${ledgerDecision.record.blockedVerdictPath}`;
+        appendQaRuntimeUpdate('timeout-route-long-budget', logFile, routeDetail, paths);
+        appendHandoffUpdate('timeout-route-long-budget', logFile, routeDetail, paths);
+        return stopBlockedPhase(paths, logFile, routeDetail, ledgerDecision.record.class);
+      }
+
+      if (policyDecision.ACTION === 'stop-loop') {
+        const stopDetail = `${timeoutDetail} Ledger decision=${ledgerDecision.sameRunDecisionResult}; retryPolicy=${ledgerDecision.record.retryPolicy}`;
+        appendQaRuntimeUpdate('timeout-policy-stop', logFile, stopDetail, paths);
+        appendHandoffUpdate('timeout-policy-stop', logFile, stopDetail, paths);
+        updatePhaseState(state.phaseNum, 'failed', 'failed', false, state.phaseDoc, paths);
+        recordLoopStop(state.phaseNum, ledgerDecision.record.class, stopDetail, logFile);
+        return 2;
+      }
+
+      if (policyDecision.SAME_RUN_DECISION_RESULT === 'bounded_retry') {
+        prompt = buildPhasePromptForRunner({
+          nextPhase: state.phaseNum,
+          phaseTitle: state.phaseTitle,
+          planDir: state.planDir,
+          phaseDoc: state.phaseDoc,
+          statusFile: state.statusFile,
+          executionRoot: state.executionRoot,
+          paths,
+          runtime: activeRuntime,
+          targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+          extraInstructions: retryContinuationInstructions(state.phaseNum, phaseAttemptSummary(), ledgerDecision.record.class),
+          autonomousInstructions: autonomousInstructions(),
+          workspaceRoot: process.cwd(),
+          verificationRuntimes: verificationPreflight.effectiveSelection,
+        });
+      }
 
       const fallbackRuntime = resolveTimeoutFallbackRuntime(activeRuntime);
       const decision = decideTimeoutAction(restartCount, timeoutFallbackUsed, fallbackRuntime, activeRuntime);

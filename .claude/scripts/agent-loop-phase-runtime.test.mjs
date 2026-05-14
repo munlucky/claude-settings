@@ -85,6 +85,22 @@ test('classify-timeout-reason maps raw diff dominated timeout logs', () => {
   assert.equal(result.stdout.trim(), 'raw_diff_output_timeout');
 });
 
+test('classify-timeout-reason maps broad search and parity timeout logs', () => {
+  const tempDir = makeTempDir();
+  const broadLog = path.join(tempDir, 'broad.log');
+  const parityLog = path.join(tempDir, 'parity.log');
+  fs.writeFileSync(broadLog, 'broad_search_timeout skipped_root=C:/Users/moon/AppData/Local/npm-cache/_npx inspected=200 output_lines=80\n', 'utf8');
+  fs.writeFileSync(parityLog, 'WATCHDOG_TIMEOUT after 120s\nbash .claude/scripts/verify-phase-runtime-parity.sh\n', 'utf8');
+
+  const broad = spawnSync(process.execPath, [runtimeScript, 'classify-timeout-reason', broadLog], { encoding: 'utf8' });
+  const parity = spawnSync(process.execPath, [runtimeScript, 'classify-timeout-reason', parityLog], { encoding: 'utf8' });
+
+  assert.equal(broad.status, 0, broad.stderr);
+  assert.equal(parity.status, 0, parity.stderr);
+  assert.equal(broad.stdout.trim(), 'broad_search_timeout');
+  assert.equal(parity.stdout.trim(), 'phaseRuntimeParity_timeout');
+});
+
 test('runtime health ignores log warnings older than the active run attachment', () => {
   const tempDir = makeTempDir();
   const logDir = path.join(tempDir, '.claude', 'logs', 'agent-loop');
