@@ -189,13 +189,23 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
   });
 });
 
-test('finalize blocks clean success when post-closeout read models are split-brain', async () => {
+test('finalize repairs active board and terminal liveness before post-closeout barrier', async () => {
   await withFixture(async (fixture) => {
     for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
       patchJson(path.join(fixture.workflowDir, basename), {
         stateRunId: 'state-run-split',
       });
     }
+    patchJson(path.join(fixture.workflowDir, 'latest-dispatch.json'), {
+      status: 'superseded',
+      completionStatus: 'completed',
+      dispatchStage: 'child_running',
+      childAlive: false,
+      liveness: {
+        childAlive: true,
+        reason: 'progress_observed',
+      },
+    });
     writeStateBoard(fixture.workflowDir, {
       stateRunId: 'state-run-split',
       status: 'active',
@@ -214,16 +224,18 @@ test('finalize blocks clean success when post-closeout read models are split-bra
       commitToken: 'phase01-split-brain',
     });
 
-    assert.equal(result.ok, false);
-    assert.equal(result.finalVerdict, 'blocked');
-    assert.equal(result.runtimeCloseout.reason, 'post_closeout_reconcile_barrier_failed');
-    assert.equal(result.postCloseoutReconcileBarrier.ok, false);
-    assert.equal(
-      result.postCloseoutReconcileBarrier.violations.some((entry) => entry.code === 'state-board-active-projection-terminal'),
-      true,
-    );
-    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), false);
-    assert.match(fs.readFileSync(path.join(fixture.executionRoot, 'closeout-diagnostics.jsonl'), 'utf8'), /phase_closeout_reconcile_barrier_blocked/);
+    assert.equal(result.ok, true);
+    assert.equal(result.finalVerdict, 'complete');
+    assert.equal(result.postCloseoutReconcileBarrier.ok, true);
+    assert.deepEqual(result.postCloseoutReconcileBarrier.violations, []);
+    const latestDispatch = readJson(path.join(fixture.workflowDir, 'latest-dispatch.json'));
+    assert.equal(latestDispatch.dispatchStage, 'terminal');
+    assert.equal(latestDispatch.childAlive, false);
+    assert.equal(latestDispatch.liveness.childAlive, false);
+    const stateBoard = fs.readFileSync(path.join(fixture.workflowDir, 'STATE.md'), 'utf8');
+    assert.match(stateBoard, /status: complete/);
+    assert.match(stateBoard, /reason: scope_complete/);
+    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), true);
   });
 });
 
@@ -255,6 +267,9 @@ test('finalize clean terminal projections pass the post-closeout barrier', async
     assert.equal(result.ok, true);
     assert.equal(result.postCloseoutReconcileBarrier.ok, true);
     assert.deepEqual(result.postCloseoutReconcileBarrier.violations, []);
+    const stateBoard = fs.readFileSync(path.join(fixture.workflowDir, 'STATE.md'), 'utf8');
+    assert.match(stateBoard, /status: complete/);
+    assert.match(stateBoard, /reason: scope_complete/);
     assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), true);
   });
 });

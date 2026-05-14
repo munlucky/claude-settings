@@ -107,7 +107,7 @@ Wave 3:
 - [x] Phase 03 - Phase Status and Final Git Reconciliation (`03-phase-status-and-final-git-reconciliation-v1.md`)
 - [x] Phase 04 - Post Closeout Reconcile Barrier (`04-post-closeout-reconcile-barrier-v1.md`)
 - [x] Phase 05 - Runtime Dependency Health Reconciliation (`05-runtime-dependency-health-reconciliation-v1.md`)
-- [ ] Phase 06 - Runner Bottleneck Telemetry (`06-runner-bottleneck-telemetry-v1.md`)
+- [x] Phase 06 - Runner Bottleneck Telemetry (`06-runner-bottleneck-telemetry-v1.md`)
 
 ## Runnable Preparation Gate
 

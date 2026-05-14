@@ -1765,6 +1765,78 @@ function reconcileStateBoardForNextPhase({ workflowDir, nextPhase, now, dryRun, 
   return board.statePath;
 }
 
+function reconcileStateBoardForCompletedRun({ workflowDir, phaseNumber, now, dryRun, plannedWrites }) {
+  const board = readState({ statePath: path.join(workflowDir, 'STATE.md') });
+  if (!board.exists || !board.state) {
+    return null;
+  }
+  const nextState = {
+    ...board.state,
+    projectionStatus: 'committed',
+    status: 'complete',
+    phase: String(phaseNumber || board.state.phase || '').trim(),
+    reason: 'scope_complete',
+    updated: now,
+  };
+  plannedWrites.push({ path: board.statePath, kind: 'state-board' });
+  if (!dryRun) {
+    writeState(nextState, {
+      statePath: board.statePath,
+      body: [
+        '## Now',
+        `Phase ${phaseNumber} closeout is complete.`,
+        '',
+        '## Reason',
+        'All actionable phases in the active plan directory are complete.',
+        '',
+        '## Next',
+        'No phase runner action remains for this plan directory.',
+        '',
+        '## Evidence',
+        `Updated by phase-closeout-finalize at ${now}.`,
+      ].join('\n'),
+    });
+  }
+  return board.statePath;
+}
+
+function scrubTerminalLiveness(payload = {}, { basename = '', now = '' } = {}) {
+  const next = {
+    ...payload,
+    activeRunLeaseId: '',
+    childAlive: false,
+    rawStopReasonCode: '',
+  };
+  if (basename === 'latest-dispatch.json') {
+    next.dispatchStage = 'terminal';
+  }
+  if (next.liveness && typeof next.liveness === 'object' && !Array.isArray(next.liveness)) {
+    next.liveness = {
+      ...next.liveness,
+      childAlive: false,
+      reason: 'phase_closeout_complete',
+      updatedAt: now,
+    };
+  }
+  if (next.phaseRunLease && typeof next.phaseRunLease === 'object') {
+    next.phaseRunLease = {
+      ...next.phaseRunLease,
+      childAlive: false,
+      activeRunLeaseId: '',
+      rawStopReasonCode: '',
+    };
+    if (next.phaseRunLease.liveness && typeof next.phaseRunLease.liveness === 'object' && !Array.isArray(next.phaseRunLease.liveness)) {
+      next.phaseRunLease.liveness = {
+        ...next.phaseRunLease.liveness,
+        childAlive: false,
+        reason: 'phase_closeout_complete',
+        updatedAt: now,
+      };
+    }
+  }
+  return next;
+}
+
 function reconcileWorkflowState({ workflowDir, phaseNumber, phases = [], now, dryRun, plannedWrites, allActionableComplete = false }) {
   const historicalWarnings = [];
   const updated = [];
@@ -1834,6 +1906,7 @@ function reconcileWorkflowState({ workflowDir, phaseNumber, phases = [], now, dr
         updatedAt: now,
       };
     }
+    const terminalNext = scrubTerminalLiveness(next, { basename, now });
     plannedWrites.push({ path: filePath, kind: 'workflow-state' });
     if (!dryRun) {
       recordLifecycleTransition({
@@ -1841,23 +1914,28 @@ function reconcileWorkflowState({ workflowDir, phaseNumber, phases = [], now, dr
         targetStateFiles: [filePath],
         primaryTargetStateFile: filePath,
         phaseNumber,
-        phaseTitle: payload.phaseTitle || payload.activePhaseTitle || `Phase ${phaseNumber}`,
-        status: next.status,
-        completionStatus: next.completionStatus,
+        phaseTitle: terminalNext.phaseTitle || terminalNext.activePhaseTitle || `Phase ${phaseNumber}`,
+        status: terminalNext.status,
+        completionStatus: terminalNext.completionStatus,
         lifecycleEvent: 'closeout_completed',
         timestamp: now,
-        pidNamespace: payloadPidNamespace(next),
-        payloadPatch: next,
+        pidNamespace: payloadPidNamespace(terminalNext),
+        payloadPatch: terminalNext,
         writeMode: 'replace',
       });
       const written = readJsonIfExists(filePath) || {};
       writeJsonAtomic(filePath, {
         ...written,
-        normalizedRunVerdict: next.normalizedRunVerdict,
-        historicalWarnings: next.historicalWarnings,
+        ...scrubTerminalLiveness(written, { basename, now }),
+        normalizedRunVerdict: terminalNext.normalizedRunVerdict,
+        historicalWarnings: terminalNext.historicalWarnings,
       });
     }
     updated.push(filePath);
+  }
+  const boardPath = reconcileStateBoardForCompletedRun({ workflowDir, phaseNumber, now, dryRun, plannedWrites });
+  if (boardPath) {
+    updated.push(boardPath);
   }
   return {
     stateReconciled: updated.length > 0,
