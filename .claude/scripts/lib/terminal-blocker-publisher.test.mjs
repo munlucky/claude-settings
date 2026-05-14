@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { publishTerminalBlockedOutcome } from './terminal-blocker-publisher.mjs';
+import { readState } from './simple-run-state.mjs';
 
 function withTempDir(callback) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'terminal-blocker-publisher-'));
@@ -40,6 +41,8 @@ function baseInput(root) {
     attemptId: 'attempt-04',
     transactionId: 'tx-04',
     writtenAt: '2026-05-12T09:00:00Z',
+    rootDir: root,
+    stateRunId: 'state-run-04',
     projectionFiles: [
       path.join(root, 'active-phase-run.json'),
       path.join(root, 'current-run.json'),
@@ -83,6 +86,29 @@ test('terminal blocked publisher is idempotent for sidecar appends', () => {
     assert.equal(attemptRecords.length, 1);
     assert.equal(attemptRecords[0].attemptId, 'attempt-04');
     assert.equal(attemptRecords[0].transactionId, 'tx-04');
+  });
+});
+
+test('terminal blocked publisher leaves pending state when projection write fails', () => {
+  withTempDir((root) => {
+    const input = baseInput(root);
+    const unwritableProjection = input.projectionFiles[0];
+    fs.mkdirSync(unwritableProjection, { recursive: true });
+
+    assert.throws(
+      () => publishTerminalBlockedOutcome(input),
+      /EISDIR|illegal operation/,
+    );
+
+    const recovered = readState({
+      rootDir: input.rootDir,
+      stateRunId: input.stateRunId,
+    });
+    assert.equal(recovered.exists, true);
+    assert.equal(recovered.state.status, 'blocked');
+    assert.equal(recovered.state.transitionId, 'tx-04');
+    assert.equal(recovered.state.projectionStatus, 'pending');
+    assert.equal(recovered.startupClassification, 'incomplete_transaction');
   });
 });
 

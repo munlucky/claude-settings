@@ -5,6 +5,7 @@ import path from 'node:path';
 import { readBlockerSidecarState } from './blocker-sidecar-state.mjs';
 import { resolvePhaseExecutionDir } from './phase-execution-paths.mjs';
 import { recordLifecycleTransition } from './lifecycle-projection-writer.mjs';
+import { resolveRunRoot, withStateTransition } from './simple-run-state.mjs';
 
 const WORKFLOW_LOG_DIR = '.claude/logs/workflow-enforcement';
 
@@ -168,6 +169,21 @@ export function publishTerminalBlockedOutcome(input = {}) {
   });
   const sidecarPaths = input.sidecarPaths || resolved.sidecarPaths;
   const projectionFiles = input.projectionFiles || defaultProjectionFiles();
+  const stateRunId = String(input.stateRunId || stableId([attemptId, phaseNumber, 'terminal-blocked'])).trim();
+  const runRoot = input.runRoot || resolveRunRoot(stateRunId, { rootDir: input.rootDir || process.cwd() });
+  const stateOptions = {
+    rootDir: input.rootDir || process.cwd(),
+    stateRunId,
+    runRoot,
+    planDir: input.planDir,
+    statusFile: input.statusFile || '.claude/docs/phase-status.yaml',
+    phase: String(phaseNumber),
+    attempt: attemptId,
+    owner: input.owner || 'codex',
+    reason: input.reason || input.blockerEvidence?.blockerCode || input.blockerCode || 'blocked',
+    updated: writtenAt,
+    committedAt: writtenAt,
+  };
   const blockerEvidence = normalizeBlockerEvidence(input.blockerEvidence || input, {
     attemptId,
     transactionId,
@@ -185,77 +201,100 @@ export function publishTerminalBlockedOutcome(input = {}) {
     writtenAt,
   });
 
-  const blockerAppend = appendJsonlIfMissing(
-    sidecarPaths.blockerEvidencePath,
-    blockerEvidence,
-    (record) => record.id === blockerEvidence.id,
-  );
-  const attemptAppend = appendJsonlIfMissing(
-    sidecarPaths.attemptLedgerPath,
-    attemptLedgerRecord,
-    (record) => record.attemptId === attemptId && record.transactionId === transactionId,
-  );
+  const transition = withStateTransition({
+    stateRunId,
+    transitionId: transactionId,
+    status: 'blocked',
+    phase: String(phaseNumber),
+    attempt: attemptId,
+    owner: stateOptions.owner,
+    reason: blockerEvidence.blockerCode,
+    planDir: input.planDir,
+    statusFile: stateOptions.statusFile,
+    runRoot,
+    updated: writtenAt,
+  }, stateOptions, () => {
+    const blockerAppend = appendJsonlIfMissing(
+      sidecarPaths.blockerEvidencePath,
+      blockerEvidence,
+      (record) => record.id === blockerEvidence.id,
+    );
+    const attemptAppend = appendJsonlIfMissing(
+      sidecarPaths.attemptLedgerPath,
+      attemptLedgerRecord,
+      (record) => record.attemptId === attemptId && record.transactionId === transactionId,
+    );
 
-  const projectionPayload = buildProjectionPayload({
-    phaseNumber,
-    phaseTitle,
-    attemptId,
-    transactionId,
-    blockerEvidence,
-    writtenAt,
-  });
-  for (const targetFile of projectionFiles) {
-    recordLifecycleTransition({
-      source: 'terminal-blocker-publisher',
-      targetStateFiles: [targetFile],
-      primaryTargetStateFile: targetFile,
+    const projectionPayload = buildProjectionPayload({
       phaseNumber,
       phaseTitle,
-      status: 'blocked',
-      completionStatus: 'blocked',
-      lifecycleEvent: 'terminal_blocked_published',
       attemptId,
-      timestamp: writtenAt,
-      payloadPatch: projectionPayload,
-      writeMode: 'merge',
+      transactionId,
+      blockerEvidence,
+      writtenAt,
     });
-  }
+    for (const targetFile of projectionFiles) {
+      recordLifecycleTransition({
+        source: 'terminal-blocker-publisher',
+        targetStateFiles: [targetFile],
+        primaryTargetStateFile: targetFile,
+        phaseNumber,
+        phaseTitle,
+        status: 'blocked',
+        completionStatus: 'blocked',
+        lifecycleEvent: 'terminal_blocked_published',
+        attemptId,
+        timestamp: writtenAt,
+        payloadPatch: projectionPayload,
+        writeMode: 'merge',
+      });
+    }
 
-  const sidecarState = readBlockerSidecarState(sidecarPaths);
-  const manifest = {
-    schemaVersion: 'terminal-blocker-projection-manifest-v1',
-    transactionId,
-    attemptId,
-    phaseNumber,
-    phaseTitle,
-    writtenAt,
-    terminalOutcome: 'blocked',
-    blockerEvidenceIds: [blockerEvidence.id],
-    attemptLedgerKeys: [`${attemptId}:${transactionId}`],
-    sidecarMode: sidecarState.mode,
-    sidecarDiagnostics: sidecarState.diagnostics,
-    files: [
-      sidecarPaths.blockerEvidencePath,
-      sidecarPaths.attemptLedgerPath,
-      ...projectionFiles,
-    ].filter((filePath) => fs.existsSync(filePath)).map((filePath) => ({
-      path: relativeOrAbsolute(filePath),
-      kind: fileKind(filePath),
-      sha256: sha256File(filePath),
-    })),
-  };
-  fs.mkdirSync(path.dirname(sidecarPaths.projectionManifestPath), { recursive: true });
-  fs.writeFileSync(sidecarPaths.projectionManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    const sidecarState = readBlockerSidecarState(sidecarPaths);
+    const manifest = {
+      schemaVersion: 'terminal-blocker-projection-manifest-v1',
+      transactionId,
+      attemptId,
+      phaseNumber,
+      phaseTitle,
+      writtenAt,
+      terminalOutcome: 'blocked',
+      blockerEvidenceIds: [blockerEvidence.id],
+      attemptLedgerKeys: [`${attemptId}:${transactionId}`],
+      sidecarMode: sidecarState.mode,
+      sidecarDiagnostics: sidecarState.diagnostics,
+      files: [
+        sidecarPaths.blockerEvidencePath,
+        sidecarPaths.attemptLedgerPath,
+        ...projectionFiles,
+      ].filter((filePath) => fs.existsSync(filePath)).map((filePath) => ({
+        path: relativeOrAbsolute(filePath),
+        kind: fileKind(filePath),
+        sha256: sha256File(filePath),
+      })),
+    };
+    fs.mkdirSync(path.dirname(sidecarPaths.projectionManifestPath), { recursive: true });
+    fs.writeFileSync(sidecarPaths.projectionManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+
+    return {
+      blockerAppend,
+      attemptAppend,
+      manifest,
+    };
+  });
 
   return {
     transactionId,
     attemptId,
     phaseNumber,
     blockerEvidenceId: blockerEvidence.id,
-    blockerAppend,
-    attemptAppend,
+    blockerAppend: transition.projectionResult.blockerAppend,
+    attemptAppend: transition.projectionResult.attemptAppend,
     manifestPath: sidecarPaths.projectionManifestPath,
     projectionFiles,
-    manifest,
+    manifest: transition.projectionResult.manifest,
+    statePath: transition.statePath,
+    stateRunId,
+    transitionId: transition.transitionId,
   };
 }

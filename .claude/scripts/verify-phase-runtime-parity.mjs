@@ -34,6 +34,31 @@ function appendRuntimeProfileFromEnv(args) {
   return args;
 }
 
+function withWslEnvPassthrough(baseEnv) {
+  if (process.platform !== 'win32') {
+    return baseEnv;
+  }
+  const passthroughNames = Object.keys(baseEnv)
+    .filter((name) => name === 'PHASE_RUNTIME_PROFILE' || name.startsWith('PHASE_RUNTIME_PARITY_'))
+    .sort();
+  if (passthroughNames.length === 0) {
+    return baseEnv;
+  }
+  const existing = String(baseEnv.WSLENV || '')
+    .split(':')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const existingNames = new Set(existing.map((item) => item.split('/')[0]));
+  const additions = passthroughNames.filter((name) => !existingNames.has(name));
+  if (additions.length === 0) {
+    return baseEnv;
+  }
+  return {
+    ...baseEnv,
+    WSLENV: [...existing, ...additions].join(':'),
+  };
+}
+
 function usage() {
   return [
     'Usage:',
@@ -95,7 +120,8 @@ function main() {
   const passthroughArgs = appendRuntimeProfileFromEnv(process.argv.slice(2).filter((arg) => arg !== '--compact'));
   const child = spawn(bash, [toBashPath(shellCorePath), ...passthroughArgs], {
     stdio: compactOutput ? ['ignore', 'pipe', 'pipe'] : 'inherit',
-    env: process.env,
+    env: withWslEnvPassthrough(process.env),
+    detached: process.platform !== 'win32',
   });
   let exiting = false;
   const wrapperTimeoutMs = resolveWrapperTimeoutMs();
@@ -109,9 +135,13 @@ function main() {
       return;
     }
     try {
-      child.kill('SIGTERM');
+      process.kill(-child.pid, 'SIGTERM');
     } catch {
-      // Child already exited.
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // Child already exited.
+      }
     }
   };
 
@@ -153,11 +183,14 @@ function main() {
         }
         if (
           /^WARN:/.test(trimmed)
+          || /phase runtime parity stage:/.test(trimmed)
           || /runtime probe passed:/.test(trimmed)
           || /actual runtime smoke (starting|passed):/.test(trimmed)
           || /actual runtime timings:/.test(trimmed)
           || /runtime exercise level:/.test(trimmed)
           || /phase runtime parity smoke (passed|failed)/.test(trimmed)
+          || /^- actual:/.test(trimmed)
+          || /^- runtime:/.test(trimmed)
           || /timeout:/.test(trimmed)
           || /cleanup incomplete:/.test(trimmed)
           || /debug temp root:/.test(trimmed)

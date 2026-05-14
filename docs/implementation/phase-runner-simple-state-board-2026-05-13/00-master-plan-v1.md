@@ -122,8 +122,8 @@ planQualityReview:
 - [x] Phase 01 - Simple Run State Helper (`docs/implementation/phase-runner-simple-state-board-2026-05-13/01-simple-run-state-helper-v1.md`)
 - [x] Phase 02 - Resume CLI and Run Identity Guard (`docs/implementation/phase-runner-simple-state-board-2026-05-13/02-resume-cli-run-identity-guard-v1.md`)
 - [x] Phase 03 - Projection Scrub and Lease Heartbeat Guard (`docs/implementation/phase-runner-simple-state-board-2026-05-13/03-projection-scrub-lease-heartbeat-guard-v1.md`)
-- [ ] Phase 04 - Terminal Publisher and Reconciliation Intent (`docs/implementation/phase-runner-simple-state-board-2026-05-13/04-terminal-publisher-reconciliation-intent-v1.md`)
-- [ ] Phase 05 - Runner Spawn Guard, Artifacts, and E2E Invariants (`docs/implementation/phase-runner-simple-state-board-2026-05-13/05-runner-spawn-artifacts-e2e-invariants-v1.md`)
+- [x] Phase 04 - Terminal Publisher and Reconciliation Intent (`docs/implementation/phase-runner-simple-state-board-2026-05-13/04-terminal-publisher-reconciliation-intent-v1.md`)
+- [x] Phase 05 - Runner Spawn Guard, Artifacts, and E2E Invariants (`docs/implementation/phase-runner-simple-state-board-2026-05-13/05-runner-spawn-artifacts-e2e-invariants-v1.md`)
 
 ## Package Verification Commands
 - `node --test .claude/scripts/lib/simple-run-state.test.mjs`

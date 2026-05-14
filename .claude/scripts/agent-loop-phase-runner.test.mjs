@@ -5,12 +5,13 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import {
+  assessWorkerSpawnStateGuard,
   buildPhaseLoopShadowSignal,
   classifyRunnerStartup,
   computeControllerEnforcedGateAction,
   computePhaseLoopShadowDecision,
 } from './agent-loop-phase-runner.mjs';
-import { resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
+import { readState, resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
 import {
   buildRemediationPacket,
   formatRemediationPacketForPrompt,
@@ -223,6 +224,45 @@ test('explicit resume requires an existing active or blocked board', () => {
     const result = classifyRunnerStartup({ resume: true, rootDir: root });
     assert.equal(result.classification, 'resume_allowed');
     assert.equal(result.stateRunId, 'run-active');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('worker spawn guard rejects same-attempt terminal and pending state boards', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-spawn-guard-'));
+  try {
+    writeFixtureRunState(root, 'run-blocked', 'blocked');
+    const blocked = readState({
+      rootDir: root,
+      stateRunId: 'run-blocked',
+      runRoot: resolveRunRoot('run-blocked', { rootDir: root }),
+    });
+    const blockedGuard = assessWorkerSpawnStateGuard(blocked, { attemptId: 'attempt-01' });
+    assert.equal(blockedGuard.allowed, false);
+    assert.equal(blockedGuard.reason, 'same_attempt_terminal_blocked');
+
+    const pendingRunRoot = writeFixtureRunState(root, 'run-pending', 'active');
+    writeState({
+      stateRunId: 'run-pending',
+      runRoot: pendingRunRoot,
+      projectionStatus: 'pending',
+      status: 'active',
+      phase: '2',
+      attempt: 'attempt-02',
+      owner: 'test',
+      reason: 'fixture',
+      planDir: 'docs/implementation/phase-runner-simple-state-board-2026-05-13',
+      statusFile: '.claude/docs/phase-status.yaml',
+    }, { rootDir: root, stateRunId: 'run-pending', runRoot: pendingRunRoot });
+    const pending = readState({
+      rootDir: root,
+      stateRunId: 'run-pending',
+      runRoot: pendingRunRoot,
+    });
+    const pendingGuard = assessWorkerSpawnStateGuard(pending, { attemptId: 'attempt-02' });
+    assert.equal(pendingGuard.allowed, false);
+    assert.equal(pendingGuard.reason, 'incomplete_transaction');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

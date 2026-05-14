@@ -288,6 +288,18 @@ function selectStringAvailable() {
   };
 }
 
+function searchFallbackAvailable() {
+  const selectString = selectStringAvailable();
+  if (selectString.available) {
+    return { ...selectString, name: 'Select-String' };
+  }
+  const grep = run('grep', ['--version']);
+  if (grep.status === 0) {
+    return { available: true, detail: grep.stdout.trim() || 'grep available', name: 'grep' };
+  }
+  return { available: false, detail: selectString.detail || combinedProbeText(grep) || 'no search fallback available', name: '' };
+}
+
 function readRecentCapabilityReports(limit = 12, recentWindowMs = 24 * 60 * 60 * 1000) {
   const logDir = path.join(workspaceRoot, '.claude', 'logs', 'agent-loop');
   if (!fs.existsSync(logDir)) {
@@ -558,12 +570,12 @@ function buildReport() {
   } else {
     const rgDetail = combinedProbeText(rg);
     const rgFailureClass = resolveFailureClassFromText(rgDetail, 'command_not_found', 'rg_access_denied');
-    const fallback = selectStringAvailable();
+    const fallback = searchFallbackAvailable();
     checks.push(fallback.available
-      ? check('search.rg', 'passed_with_equivalent_evidence', `rg unavailable; Select-String fallback available (${rgFailureClass})`, {
+      ? check('search.rg', 'passed_with_equivalent_evidence', `rg unavailable; ${fallback.name} fallback available (${rgFailureClass})`, {
         command: rg.command,
         preferred: 'rg',
-        fallback: 'Select-String',
+        fallback: fallback.name,
         failureClass: rgFailureClass,
         decision: 'continue',
         fallbackHint: 'use-host-search-or-fallback-runtime',

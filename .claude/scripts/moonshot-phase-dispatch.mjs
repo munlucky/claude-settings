@@ -34,6 +34,7 @@ const runtimeStatePath = path.join(SCRIPT_DIR, 'runtime-state.mjs');
 const finalGitCloseoutPath = path.join(SCRIPT_DIR, 'phase-final-git-closeout.mjs');
 const phaseCloseoutReconcilerPath = path.join(SCRIPT_DIR, 'phase-closeout-reconciler.mjs');
 const PHASE_COORDINATOR_CONTRACT_TEMPLATE = path.join(SCRIPT_DIR, '..', 'templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md');
+const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || path.join('.claude', 'logs', 'workflow-enforcement');
 const debugLog = path.join('.claude', 'logs', 'agent-loop', 'debug.jsonl');
 
 const state = {
@@ -493,7 +494,7 @@ function dispatchGitPreflight() {
 }
 
 function closeLatestDispatchEvidence({ exitCode, detail, returnBoundary = '', stopReasonCode = '', completionStatus = '' } = {}) {
-  const latestFile = path.join('.claude', 'logs', 'workflow-enforcement', 'latest-dispatch.json');
+  const latestFile = workflowLogFile('latest-dispatch.json');
   if (!fs.existsSync(latestFile)) {
     return null;
   }
@@ -584,6 +585,66 @@ function generateRunLeaseId() {
   return `dispatch-${Date.now()}-${process.pid}`;
 }
 
+function readJsonFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    appendDebugLog('dispatch-run-identity-read-skipped', {
+      filePath,
+      reason: 'json_parse_failed',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+function readExistingDispatchRunIdentity() {
+  const workflowDir = WORKFLOW_LOG_DIR;
+  const candidates = [
+    path.join(workflowDir, 'active-phase-run.json'),
+    path.join(workflowDir, 'current-run.json'),
+    path.join(workflowDir, 'latest-dispatch.json'),
+  ];
+  for (const filePath of candidates) {
+    const payload = readJsonFile(filePath);
+    if (!payload) {
+      continue;
+    }
+    if (payload.planDir && state.planDir && path.resolve(payload.planDir) !== path.resolve(state.planDir)) {
+      continue;
+    }
+    const stateRunId = String(payload.stateRunId || payload.runLeaseId || payload.activeRunLeaseId || '').trim();
+    if (stateRunId) {
+      return {
+        stateRunId,
+        source: filePath,
+        status: payload.status || payload.activeExecutionStatus || payload.completionStatus || '',
+      };
+    }
+  }
+  return null;
+}
+
+function initializeDispatchRunIdentity() {
+  if (runtimeState.runLeaseId) {
+    return runtimeState.runLeaseId;
+  }
+  if (state.resume) {
+    const existing = readExistingDispatchRunIdentity();
+    if (!existing?.stateRunId) {
+      throw new Error('resume-state-missing: --resume requires an existing stateRunId for this plan');
+    }
+    runtimeState.runLeaseId = existing.stateRunId;
+    appendDebugLog('dispatch-resume-run-identity', existing);
+    return runtimeState.runLeaseId;
+  }
+  runtimeState.runLeaseId = generateRunLeaseId();
+  return runtimeState.runLeaseId;
+}
+
 function leaseAssignments(command, ...args) {
   const result = runNodeScript(phaseRunLeasePath, [command, ...args]);
   if ((result.status ?? 0) !== 0) {
@@ -593,7 +654,7 @@ function leaseAssignments(command, ...args) {
 }
 
 function cleanupPreviousDeadDispatchLease() {
-  const activeRunFile = path.join('.claude', 'logs', 'workflow-enforcement', 'active-phase-run.json');
+  const activeRunFile = workflowLogFile('active-phase-run.json');
   if (!fs.existsSync(activeRunFile)) {
     return null;
   }
@@ -753,6 +814,10 @@ function utcTimestamp() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
+function workflowLogFile(basename) {
+  return path.join(WORKFLOW_LOG_DIR, basename);
+}
+
 function timestampFromCursorMtime(mtimeMs) {
   const numeric = Number(mtimeMs);
   return Number.isFinite(numeric) && numeric > 0 ? new Date(numeric).toISOString().replace(/\.\d{3}Z$/, 'Z') : '';
@@ -786,7 +851,7 @@ function classifyChildTimeoutState() {
 }
 
 function updateLatestDispatchLiveness({ label = '', context = {}, compositeCursor = null, livenessReason = '' } = {}) {
-  const latestFile = path.join('.claude', 'logs', 'workflow-enforcement', 'latest-dispatch.json');
+  const latestFile = workflowLogFile('latest-dispatch.json');
   if (!fs.existsSync(latestFile)) {
     return null;
   }
@@ -886,7 +951,7 @@ function updateLatestDispatchLiveness({ label = '', context = {}, compositeCurso
 }
 
 function recordLatestDispatchLifecycle({ lifecycleEvent, dispatchStage, patch = {}, timestamp = utcTimestamp() } = {}) {
-  const latestFile = path.join('.claude', 'logs', 'workflow-enforcement', 'latest-dispatch.json');
+  const latestFile = workflowLogFile('latest-dispatch.json');
   if (!fs.existsSync(latestFile)) {
     return null;
   }
@@ -1196,7 +1261,7 @@ function runLocalFallbackReconciler(stopReasonCode = '', completionStatus = '') 
   const args = [
     phaseCloseoutReconcilerPath,
     '--status-file', state.statusFile,
-    '--workflow-dir', path.join('.claude', 'logs', 'workflow-enforcement'),
+    '--workflow-dir', WORKFLOW_LOG_DIR,
     '--fallback-run-id', runtimeState.runLeaseId || `dispatch-local-fallback-${Date.now()}`,
     '--reason', stopReasonCode || 'local-fallback-closeout',
     '--now', utcTimestamp(),
@@ -1770,7 +1835,7 @@ function closeoutActivePhaseForSignal(signalName, exitCode = 0) {
       'dispatch-interrupted-restart',
       '',
       detail,
-      '.claude/logs/workflow-enforcement',
+      WORKFLOW_LOG_DIR,
       context.qaReport,
       context.scorecard || '',
     ]);
@@ -2445,9 +2510,7 @@ if (!gitPreflight.ok) {
   logError(`Action: ${gitPreflight.fallbackHint}`);
   process.exit(1);
 }
-if (!runtimeState.runLeaseId) {
-  runtimeState.runLeaseId = generateRunLeaseId();
-}
+initializeDispatchRunIdentity();
 recordDispatchEvidence(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);
 if (!state.dryRun) {
   startDispatchLease(resolvedMode, resolvedRoot, masterPlan, effectiveRuntime);

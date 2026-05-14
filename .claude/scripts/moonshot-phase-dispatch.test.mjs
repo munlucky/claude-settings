@@ -101,6 +101,10 @@ test('dispatcher exposes and forwards explicit --resume', () => {
   assert.match(source, /case '--resume':\s*state\.resume = true;/s);
   assert.match(source, /if \(state\.resume\) \{\s*cmd\.push\('--resume'\);/s);
   assert.match(source, /resume: \$\{state\.resume \? 'true' : 'false'\}/);
+  assert.match(source, /function initializeDispatchRunIdentity\(\)/);
+  assert.match(source, /readExistingDispatchRunIdentity\(\)/);
+  assert.match(source, /resume-state-missing: --resume requires an existing stateRunId/);
+  assert.match(source, /initializeDispatchRunIdentity\(\);\s*recordDispatchEvidence/s);
 });
 
 test('dispatcher guards latest-dispatch projection identity with stateRunId', () => {
@@ -109,4 +113,7 @@ test('dispatcher guards latest-dispatch projection identity with stateRunId', ()
   assert.match(source, /function assertProjectionStateRunId/);
   assert.match(source, /stateRunId mismatch rejected before projection overwrite/);
   assert.match(source, /assertProjectionStateRunId\(payload, next, latestFile\);/);
+  assert.match(source, /const WORKFLOW_LOG_DIR = process\.env\.WORKFLOW_ENFORCEMENT_LOG_DIR/);
+  assert.match(source, /function workflowLogFile\(basename\)/);
+  assert.match(source, /workflowLogFile\('latest-dispatch\.json'\)/);
 });

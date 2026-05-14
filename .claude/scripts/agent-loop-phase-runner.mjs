@@ -198,6 +198,32 @@ function readSimpleRunStateById(stateRunId, rootDir = process.cwd()) {
   }
 }
 
+function currentSimpleRunAttemptId() {
+  return process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`;
+}
+
+export function assessWorkerSpawnStateGuard(readResult, { attemptId = '' } = {}) {
+  if (!readResult?.exists || !readResult.state) {
+    return { allowed: true, reason: 'no_state_board' };
+  }
+  const board = readResult.state;
+  const status = String(board.status || '').trim();
+  const projectionStatus = String(board.projectionStatus || '').trim();
+  const boardAttempt = String(board.attempt || '').trim();
+  const requestedAttempt = String(attemptId || '').trim();
+
+  if (projectionStatus === 'pending') {
+    return { allowed: false, reason: 'incomplete_transaction', status, projectionStatus, boardAttempt };
+  }
+  if (['complete', 'cancelled'].includes(status)) {
+    return { allowed: false, reason: `${status}_terminal_state`, status, projectionStatus, boardAttempt };
+  }
+  if (status === 'blocked' && boardAttempt && requestedAttempt && boardAttempt === requestedAttempt) {
+    return { allowed: false, reason: 'same_attempt_terminal_blocked', status, projectionStatus, boardAttempt };
+  }
+  return { allowed: true, reason: 'state_board_allows_spawn', status, projectionStatus, boardAttempt };
+}
+
 function findExistingRunBoard(rootDir = process.cwd()) {
   const root = simpleRunStateRoot(rootDir);
   if (!fs.existsSync(root)) {
@@ -262,7 +288,7 @@ function writeActiveSimpleRunState() {
     runRoot,
     status: 'active',
     phase: state.phaseNum,
-    attempt: process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`,
+    attempt: currentSimpleRunAttemptId(),
     owner: 'agent-loop-phase-runner',
     reason: state.resume ? 'resume' : 'start',
     planDir: state.planDir,
@@ -270,6 +296,17 @@ function writeActiveSimpleRunState() {
   }, { rootDir: process.cwd(), stateRunId, runRoot });
   state.stateRunId = stateRunId;
   return { stateRunId, runRoot };
+}
+
+function guardWorkerSpawnAgainstSimpleRunState(paths, logFile) {
+  const readResult = readSimpleRunStateById(state.stateRunId, process.cwd());
+  const guard = assessWorkerSpawnStateGuard(readResult, { attemptId: currentSimpleRunAttemptId() });
+  if (guard.allowed) {
+    appendDebugLog('worker-spawn-state-guard-allowed', guard);
+    return 0;
+  }
+  appendDebugLog('worker-spawn-state-guard-rejected', guard);
+  return stopBlockedPhase(paths, logFile, guard.reason, 'simple-run-state-guard-blocked');
 }
 
 function utcTimestamp() {
@@ -1978,6 +2015,10 @@ function runPhaseAttempt() {
   if (startupExit !== 0) {
     return startupExit;
   }
+  const activationGuardExit = guardWorkerSpawnAgainstSimpleRunState(paths, logFile);
+  if (activationGuardExit !== 0) {
+    return activationGuardExit;
+  }
   writeActiveSimpleRunState();
   const capabilityPreflight = runPhaseStartCapabilityPreflight();
   appendDebugLog('capability-preflight-result', {
@@ -2174,6 +2215,10 @@ function runPhaseAttempt() {
         phaseNum: state.phaseNum,
         attemptIndex: currentAttemptIndex,
       });
+    }
+    const workerSpawnGuardExit = guardWorkerSpawnAgainstSimpleRunState(paths, logFile);
+    if (workerSpawnGuardExit !== 0) {
+      return workerSpawnGuardExit;
     }
     updatePhaseState(state.phaseNum, 'in_progress', 'running', true, state.phaseDoc, paths);
     recordPhaseProgressCheckpoint('ready/isolate', 'phase-attempt-started', logFile, 'Phase state moved to in_progress before the worker prompt.', activeRuntime, paths);

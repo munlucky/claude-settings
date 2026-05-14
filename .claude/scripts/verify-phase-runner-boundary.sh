@@ -11,6 +11,8 @@ EXECUTION_ROOT="$PLAN_DIR/execution"
 STATUS_FILE="$TMP_ROOT/phase-status.yaml"
 LOG_DIR="$TMP_ROOT/logs"
 SIGNAL_LOG_DIR="$TMP_ROOT/signal-logs"
+MANUAL_LEASE_LOG_DIR="$TMP_ROOT/manual-lease-logs"
+PHASE_BOUNDARY_LOG_DIR="$TMP_ROOT/phase-boundary-logs"
 FAKE_BIN="$TMP_ROOT/bin"
 DISPATCH_OUT="$TMP_ROOT/dispatch.out"
 SIGNAL_PLAN_DIR="$TMP_ROOT/signal-plan"
@@ -20,7 +22,7 @@ SIGNAL_DISPATCH_OUT="$TMP_ROOT/signal-dispatch.out"
 NOENV_WORKSPACE="$TMP_ROOT/noenv-workspace"
 NOENV_STATUS_FILE="$TMP_ROOT/noenv-phase-status.yaml"
 
-mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$SIGNAL_LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
+mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$SIGNAL_LOG_DIR" "$MANUAL_LEASE_LOG_DIR" "$PHASE_BOUNDARY_LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
 
 seed_master_plan() {
   local target_dir="$1"
@@ -238,7 +240,7 @@ if [[ -z "$SIGNAL_CURRENT_RUN" ]]; then
 fi
 assert_contains "$SIGNAL_CURRENT_RUN" "\"stopReasonCode\": \"delegated-terminal-signal-no-closeout\"" "signal current-run stop reason"
 
-WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
+WORKFLOW_ENFORCEMENT_LOG_DIR="$MANUAL_LEASE_LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
   "$STATUS_FILE" \
   lease-smoke \
@@ -249,11 +251,11 @@ node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
   "$PLAN_DIR/00-master-plan-v1.md" \
   "$$" >/dev/null
 
-DENIED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
+DENIED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$MANUAL_LEASE_LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$DENIED_OUTPUT" "RETURN_ALLOWED='false'" "active lease return denial"
 assert_text_contains "$DENIED_OUTPUT" "RETURN_REASON='actionable-phases-remaining'" "active lease denial reason"
 
-WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
+WORKFLOW_ENFORCEMENT_LOG_DIR="$MANUAL_LEASE_LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
   "$STATUS_FILE" \
   lease-smoke \
@@ -262,13 +264,13 @@ node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
   completed-phase-only \
   failed >/dev/null
 
-INACTIVE_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
+INACTIVE_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$MANUAL_LEASE_LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_ALLOWED='false'" "finished lease return denial"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease denial reason"
 
 write_completed_then_pending_status "$STATUS_FILE" "$PLAN_DIR" "$EXECUTION_ROOT"
 
-WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
+WORKFLOW_ENFORCEMENT_LOG_DIR="$PHASE_BOUNDARY_LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
   "$STATUS_FILE" \
   lease-phase-boundary \
@@ -280,12 +282,12 @@ node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" start \
   "$$" >/dev/null
 
 assert_contains "$STATUS_FILE" "activeExecutionStatus: \"active\"" "active execution lease status"
-PHASE_BOUNDARY_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-phase-boundary true false)"
+PHASE_BOUNDARY_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$PHASE_BOUNDARY_LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-phase-boundary true false)"
 assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "RETURN_ALLOWED='false'" "completed-then-pending return denial"
 assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "RETURN_REASON='actionable-phases-remaining'" "completed-then-pending denial reason"
 assert_text_contains "$PHASE_BOUNDARY_OUTPUT" "ACTIONABLE_PHASES_REMAINING='1'" "completed-then-pending actionable count"
 
-WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" \
+WORKFLOW_ENFORCEMENT_LOG_DIR="$PHASE_BOUNDARY_LOG_DIR" \
 node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
   "$STATUS_FILE" \
   lease-phase-boundary \
@@ -298,13 +300,13 @@ assert_contains "$STATUS_FILE" "activeExecutionStatus: \"paused\"" "current-sess
 assert_contains "$STATUS_FILE" "lastStopReasonCode: \"actionable-phases-remaining\"" "current-session clean finish stop reason downgrade"
 assert_contains "$STATUS_FILE" "lastReturnBoundary: \"dispatch-paused\"" "current-session clean finish paused return boundary"
 
-PAUSED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-phase-boundary true false)"
+PAUSED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$PHASE_BOUNDARY_LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-phase-boundary true false)"
 assert_text_contains "$PAUSED_OUTPUT" "RETURN_ALLOWED='false'" "paused lease return denial"
 assert_text_contains "$PAUSED_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease reason"
 
 write_completed_status "$STATUS_FILE" "$PLAN_DIR" "$EXECUTION_ROOT"
 
-ALLOWED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
+ALLOWED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$MANUAL_LEASE_LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$ALLOWED_OUTPUT" "RETURN_ALLOWED='true'" "plan completion return allow"
 assert_text_contains "$ALLOWED_OUTPUT" "RETURN_REASON='plan_directory_complete'" "plan completion allow reason"
 
@@ -516,7 +518,7 @@ assert_contains "$CAPABILITY_LOG_DIR/debug.jsonl" "\"blocked\":true" "capability
 assert_text_not_contains "$(cat "$CAPABILITY_LOG_DIR/debug.jsonl")" "worker-prompt-start" "worker prompt launch after capability preflight failure"
 
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "function isHardBlockedCompletionReason" "hard blocked completion classifier"
-assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON))" "blocked gate remediation path"
+assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-runner.mjs" "if (isHardBlockedCompletionReason(gate.PHASE_COMPLETION_REASON) || gateStop.RETRY_POLICY === 'stop_loop')" "blocked gate remediation path"
 assert_contains "$ROOT_DIR/.claude/scripts/agent-loop-phase-attempt.mjs" "gate reason starts with" "blocked gate remediation prompt"
 node "$ROOT_DIR/.claude/scripts/phase-capability-preflight.mjs" self-test > "$TMP_ROOT/phase-capability-preflight-self-test.out"
 assert_contains "$TMP_ROOT/phase-capability-preflight-self-test.out" "phase-capability-preflight self-test passed" "phase capability preflight self-test"

@@ -57,6 +57,10 @@ function stableId(parts) {
   return crypto.createHash('sha1').update(parts.map((part) => String(part ?? '')).join('\u0000')).digest('hex').slice(0, 16);
 }
 
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
 function normalizeHeaderValue(value) {
   if (value === null || value === undefined || String(value).trim() === '') {
     return 'unknown';
@@ -193,6 +197,123 @@ export function writeState(state, options = {}) {
   return { statePath, state: normalizeState(state, options) };
 }
 
+function isPromiseLike(value) {
+  return Boolean(value) && typeof value.then === 'function';
+}
+
+function readJsonFile(filePath, code) {
+  if (!fs.existsSync(filePath)) {
+    const error = new Error(`${code}: ${filePath}`);
+    error.code = code;
+    throw error;
+  }
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function jsonlHasRecord(filePath, predicate) {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  return fs.readFileSync(filePath, 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .some((line) => {
+      try {
+        return predicate(JSON.parse(line));
+      } catch {
+        return false;
+      }
+    });
+}
+
+export function resolveReconciliationIntentPath(stateRunId, options = {}) {
+  const rootDir = options.rootDir ?? process.cwd();
+  const runsRoot = options.runsRoot ?? path.join(rootDir, 'runs');
+  return path.join(runsRoot, nonEmpty(stateRunId, 'stateRunId'), 'reconciliation-intent.json');
+}
+
+export function readReconciliationIntent(stateRunId, options = {}) {
+  const primaryPath = options.intentPath ?? resolveReconciliationIntentPath(stateRunId, options);
+  if (fs.existsSync(primaryPath)) {
+    return {
+      intent: readJsonFile(primaryPath, 'invalid_reconciliation_intent'),
+      intentPath: primaryPath,
+      source: 'run_scoped',
+    };
+  }
+
+  if (options.globalIntentPath && fs.existsSync(options.globalIntentPath)) {
+    const intent = readJsonFile(options.globalIntentPath, 'invalid_reconciliation_intent');
+    if (String(intent.stateRunId || '').trim() !== String(stateRunId).trim()) {
+      const error = new Error(`reconciliation intent stateRunId mismatch: ${intent.stateRunId || 'unknown'} != ${stateRunId}`);
+      error.code = 'reconciliation_intent_state_run_mismatch';
+      throw error;
+    }
+    return {
+      intent,
+      intentPath: options.globalIntentPath,
+      source: 'global_alias',
+    };
+  }
+
+  const error = new Error(`missing reconciliation intent for stateRunId: ${stateRunId}`);
+  error.code = 'missing_reconciliation_intent';
+  throw error;
+}
+
+export function validateReconciliationIntent(options = {}) {
+  const stateRunId = nonEmpty(options.stateRunId, 'stateRunId');
+  const transactionId = nonEmpty(options.transactionId, 'transactionId');
+  const blockerEvidenceId = nonEmpty(options.blockerEvidenceId, 'blockerEvidenceId');
+  const projectionManifestPath = nonEmpty(options.projectionManifestPath, 'projectionManifestPath');
+  const blockerEvidencePath = nonEmpty(options.blockerEvidencePath, 'blockerEvidencePath');
+  const { intent, intentPath, source } = readReconciliationIntent(stateRunId, options);
+
+  const expected = {
+    stateRunId,
+    transactionId,
+    blockerEvidenceId,
+    projectionManifestSha256: sha256File(projectionManifestPath),
+  };
+  const actual = {
+    stateRunId: String(intent.stateRunId || '').trim(),
+    transactionId: String(intent.transactionId || '').trim(),
+    blockerEvidenceId: String(intent.blockerEvidenceId || '').trim(),
+    projectionManifestSha256: String(intent.projectionManifestSha256 || '').trim(),
+  };
+  for (const [field, expectedValue] of Object.entries(expected)) {
+    if (actual[field] !== expectedValue) {
+      const error = new Error(`reconciliation intent ${field} mismatch: ${actual[field] || 'unknown'} != ${expectedValue}`);
+      error.code = `reconciliation_intent_${field}_mismatch`;
+      throw error;
+    }
+  }
+  if (!jsonlHasRecord(blockerEvidencePath, (record) => record.id === blockerEvidenceId)) {
+    const error = new Error(`reconciliation intent blockerEvidenceId not found: ${blockerEvidenceId}`);
+    error.code = 'reconciliation_intent_blocker_evidence_missing';
+    throw error;
+  }
+  const manifest = readJsonFile(projectionManifestPath, 'missing_projection_manifest');
+  if (!Array.isArray(manifest.blockerEvidenceIds) || !manifest.blockerEvidenceIds.includes(blockerEvidenceId)) {
+    const error = new Error(`projection manifest missing blockerEvidenceId: ${blockerEvidenceId}`);
+    error.code = 'projection_manifest_blocker_evidence_mismatch';
+    throw error;
+  }
+  if (String(manifest.transactionId || '').trim() !== transactionId) {
+    const error = new Error(`projection manifest transactionId mismatch: ${manifest.transactionId || 'unknown'} != ${transactionId}`);
+    error.code = 'projection_manifest_transaction_mismatch';
+    throw error;
+  }
+
+  return {
+    ok: true,
+    intent,
+    intentPath,
+    source,
+    projectionManifestSha256: expected.projectionManifestSha256,
+  };
+}
+
 export function assertCanTransition(previous, next, options = {}) {
   if (!next || !ALLOWED_STATUSES.has(next.status)) {
     throw new TypeError(`unsupported next state status: ${next?.status ?? 'unknown'}`);
@@ -206,13 +327,16 @@ export function assertCanTransition(previous, next, options = {}) {
   const sameAttemptBlockedRestart = previous.status === 'blocked'
     && next.status === 'active'
     && String(previous.attempt ?? '') === String(next.attempt ?? '');
-  if (sameAttemptBlockedRestart && !options.reconciliationId) {
-    throw new Error('unsafe transition rejected: blocked -> active requires a new attempt or reconciliationId');
+  if (sameAttemptBlockedRestart) {
+    if (!options.reconciliationIntentOptions) {
+      throw new Error('unsafe transition rejected: blocked -> active requires a new attempt or reconciliation intent');
+    }
+    validateReconciliationIntent(options.reconciliationIntentOptions);
   }
   return true;
 }
 
-export async function withStateTransition(nextState, options = {}, writeProjectionsFn = async () => {}) {
+export function withStateTransition(nextState, options = {}, writeProjectionsFn = () => {}) {
   const current = readState(options);
   const previous = current.exists ? current.state : null;
   const transitionId = nextState.transitionId ?? stableId([nextState.stateRunId ?? options.stateRunId, nextState.status, nextState.attempt, nowIso()]);
@@ -226,20 +350,26 @@ export async function withStateTransition(nextState, options = {}, writeProjecti
   assertCanTransition(previous, pendingState, options);
   writeState(pendingState, options);
 
-  const projectionResult = await writeProjectionsFn(pendingState);
-  const committedState = normalizeState({
-    ...pendingState,
-    projectionStatus: 'committed',
-    updated: options.committedAt ?? nowIso(),
-  }, options);
-  writeState(committedState, options);
-  return {
-    state: committedState,
-    previous,
-    transitionId,
-    projectionResult,
-    statePath: resolveStatePath({ ...options, stateRunId: committedState.stateRunId, runRoot: committedState.runRoot }),
+  const commit = (projectionResult) => {
+    const committedState = normalizeState({
+      ...pendingState,
+      projectionStatus: 'committed',
+      updated: options.committedAt ?? nowIso(),
+    }, options);
+    writeState(committedState, options);
+    return {
+      state: committedState,
+      previous,
+      transitionId,
+      projectionResult,
+      statePath: resolveStatePath({ ...options, stateRunId: committedState.stateRunId, runRoot: committedState.runRoot }),
+    };
   };
+
+  const projectionResult = writeProjectionsFn(pendingState);
+  return isPromiseLike(projectionResult)
+    ? projectionResult.then(commit)
+    : commit(projectionResult);
 }
 
 export function scrubCompatibilityProjection(payload = {}, state = {}, { targetKind = 'generic', previousPayload = {} } = {}) {
@@ -256,11 +386,15 @@ export function scrubCompatibilityProjection(payload = {}, state = {}, { targetK
     next.activeExecutionStatus = 'blocked';
     next.completionStatus = 'blocked';
     next.attemptOutcome = 'blocked';
+    next.childAlive = false;
+    if (next.liveness && typeof next.liveness === 'object' && !Array.isArray(next.liveness)) {
+      next.liveness = { ...next.liveness, childAlive: false };
+    }
     next.dispatchStage = 'terminal_blocked';
     next.stopReasonCode = state.reason ?? next.stopReasonCode ?? 'blocked';
     next.rawStopReasonCode = next.stopReasonCode;
     next.blockingStopReasonCode = next.stopReasonCode;
-    next.stopReasonDetail = state.reason ?? next.stopReasonDetail ?? 'blocked';
+    next.stopReasonDetail = next.stopReasonDetail ?? state.reason ?? 'blocked';
     next.blockedAt = state.updated ?? next.blockedAt;
   } else if (status === 'active') {
     next.activeExecutionStatus = 'active';
@@ -271,14 +405,18 @@ export function scrubCompatibilityProjection(payload = {}, state = {}, { targetK
       delete next[field];
     }
   } else if (TERMINAL_STATUSES.has(status)) {
-    next.completionStatus = status;
-    next.attemptOutcome = status;
-    next.finalVerdict = status;
-    next.normalizedRunVerdict = status;
-    next[status === 'complete' ? 'completedAt' : 'cancelledAt'] = state.updated ?? next.updatedAt;
     for (const field of ACTIVE_COMPATIBILITY_FIELDS) {
       delete next[field];
     }
+    next.completionStatus = status === 'complete' ? 'completed' : status;
+    next.attemptOutcome = next.completionStatus;
+    next.childAlive = false;
+    if (next.liveness && typeof next.liveness === 'object' && !Array.isArray(next.liveness)) {
+      next.liveness = { ...next.liveness, childAlive: false };
+    }
+    next.finalVerdict = status;
+    next.normalizedRunVerdict = status;
+    next[status === 'complete' ? 'completedAt' : 'cancelledAt'] = state.updated ?? next.updatedAt;
   }
 
   return next;

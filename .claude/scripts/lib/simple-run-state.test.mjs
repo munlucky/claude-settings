@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +12,9 @@ import {
   parseStateMarkdown,
   readState,
   resolveRunRoot,
+  resolveReconciliationIntentPath,
   scrubCompatibilityProjection,
+  validateReconciliationIntent,
   withStateTransition,
   writeState,
 } from './simple-run-state.mjs';
@@ -37,6 +40,51 @@ function baseState(overrides = {}) {
     reason: overrides.reason ?? 'phase-started',
     runRoot,
     updated: overrides.updated ?? '2026-05-14T00:00:00Z',
+  };
+}
+
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function writeJson(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+function writeReconciliationFixture(rootDir, overrides = {}) {
+  const stateRunId = overrides.stateRunId ?? 'run-reconcile';
+  const transactionId = overrides.transactionId ?? 'tx-reconcile';
+  const blockerEvidenceId = overrides.blockerEvidenceId ?? 'blocker-reconcile';
+  const runRoot = resolveRunRoot(stateRunId, { rootDir });
+  const blockerEvidencePath = path.join(runRoot, 'BLOCKER_EVIDENCE.jsonl');
+  const projectionManifestPath = path.join(runRoot, 'projection-manifest.json');
+  fs.mkdirSync(runRoot, { recursive: true });
+  fs.writeFileSync(blockerEvidencePath, `${JSON.stringify({ id: blockerEvidenceId })}\n`, 'utf8');
+  writeJson(projectionManifestPath, {
+    transactionId,
+    blockerEvidenceIds: [blockerEvidenceId],
+  });
+  const intent = {
+    stateRunId,
+    transactionId,
+    blockerEvidenceId,
+    projectionManifestSha256: sha256File(projectionManifestPath),
+    ...overrides.intentPatch,
+  };
+  const runsRoot = path.join(rootDir, 'runs');
+  const intentPath = overrides.intentPath ?? resolveReconciliationIntentPath(stateRunId, { rootDir, runsRoot });
+  writeJson(intentPath, intent);
+  return {
+    rootDir,
+    runsRoot,
+    stateRunId,
+    transactionId,
+    blockerEvidenceId,
+    blockerEvidencePath,
+    projectionManifestPath,
+    intentPath,
+    runRoot,
   };
 }
 
@@ -88,11 +136,71 @@ test('transition rules reject unsafe terminal and same-attempt blocked restarts'
   );
   assert.throws(
     () => assertCanTransition(baseState({ status: 'blocked', attempt: 'attempt-01' }), baseState({ status: 'active', attempt: 'attempt-01' })),
-    /blocked -> active requires/,
+    /reconciliation intent/,
   );
   assert.equal(
     assertCanTransition(baseState({ status: 'blocked', attempt: 'attempt-01' }), baseState({ status: 'active', attempt: 'attempt-02' })),
     true,
+  );
+});
+
+test('same-attempt blocked restart accepts matching run-scoped reconciliation intent', () => {
+  const rootDir = tempRoot();
+  const fixture = writeReconciliationFixture(rootDir);
+
+  assert.equal(
+    assertCanTransition(
+      baseState({ rootDir, stateRunId: fixture.stateRunId, runRoot: fixture.runRoot, status: 'blocked', attempt: 'attempt-01' }),
+      baseState({ rootDir, stateRunId: fixture.stateRunId, runRoot: fixture.runRoot, status: 'active', attempt: 'attempt-01' }),
+      { reconciliationIntentOptions: fixture },
+    ),
+    true,
+  );
+});
+
+test('reconciliation intent rejects identity and manifest mismatches', () => {
+  const rootDir = tempRoot();
+  const mismatch = writeReconciliationFixture(rootDir, {
+    intentPatch: { transactionId: 'wrong-tx' },
+  });
+
+  assert.throws(
+    () => validateReconciliationIntent(mismatch),
+    /transactionId mismatch/,
+  );
+
+  const manifestMismatch = writeReconciliationFixture(tempRoot(), {
+    intentPatch: { projectionManifestSha256: '0'.repeat(64) },
+  });
+  assert.throws(
+    () => validateReconciliationIntent(manifestMismatch),
+    /projectionManifestSha256 mismatch/,
+  );
+});
+
+test('global reconciliation intent alias requires matching stateRunId', () => {
+  const rootDir = tempRoot();
+  const globalIntentPath = path.join(rootDir, 'reconciliation-intent.json');
+  const fixture = writeReconciliationFixture(rootDir, {
+    intentPath: globalIntentPath,
+  });
+  fs.rmSync(resolveReconciliationIntentPath(fixture.stateRunId, { rootDir, runsRoot: fixture.runsRoot }), { force: true });
+
+  const { intentPath: _ignoredIntentPath, ...globalFixture } = fixture;
+  const result = validateReconciliationIntent({ ...globalFixture, globalIntentPath });
+  assert.equal(result.source, 'global_alias');
+
+  const mismatchRoot = tempRoot();
+  const mismatchGlobalPath = path.join(mismatchRoot, 'reconciliation-intent.json');
+  const mismatch = writeReconciliationFixture(mismatchRoot, {
+    intentPath: mismatchGlobalPath,
+    intentPatch: { stateRunId: 'other-run' },
+  });
+  fs.rmSync(resolveReconciliationIntentPath(mismatch.stateRunId, { rootDir: mismatchRoot, runsRoot: mismatch.runsRoot }), { force: true });
+  const { intentPath: _ignoredMismatchIntentPath, ...mismatchFixture } = mismatch;
+  assert.throws(
+    () => validateReconciliationIntent({ ...mismatchFixture, globalIntentPath: mismatchGlobalPath }),
+    /stateRunId mismatch/,
   );
 });
 
@@ -162,6 +270,7 @@ test('scrubCompatibilityProjection applies blocked, active, and complete field r
   );
   assert.equal(blocked.activeExecutionStatus, 'blocked');
   assert.equal(blocked.stopReasonCode, 'verification_failed');
+  assert.equal(blocked.childAlive, false);
 
   const active = scrubCompatibilityProjection(
     { stopReasonCode: 'old', blockedAt: 'old', finalVerdict: 'blocked' },
@@ -179,6 +288,8 @@ test('scrubCompatibilityProjection applies blocked, active, and complete field r
   );
   assert.equal(complete.activeExecutionStatus, undefined);
   assert.equal(complete.dispatchStage, undefined);
+  assert.equal(complete.completionStatus, 'completed');
+  assert.equal(complete.childAlive, false);
   assert.equal(complete.finalVerdict, 'complete');
   assert.equal(complete.stopReasonCode, 'old');
 });
