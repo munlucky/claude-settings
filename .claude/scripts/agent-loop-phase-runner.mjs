@@ -31,7 +31,12 @@ import {
   resolvePhaseAttemptManifestPaths,
   writeAttemptManifestIntent,
 } from './lib/phase-attempt-manifest.mjs';
-import { readState, resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
+import {
+  readState,
+  resolveRunRoot,
+  validateReconciliationIntent,
+  withStateTransition,
+} from './lib/simple-run-state.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -181,28 +186,64 @@ function parseArgs(argv) {
   }
 }
 
-function simpleRunStateRoot(rootDir = process.cwd()) {
-  return path.join(rootDir, '.claude', 'logs', 'simple-run-state');
-}
-
 function readSimpleRunStateById(stateRunId, rootDir = process.cwd()) {
-  if (!stateRunId) {
-    return null;
-  }
   try {
-    const runRoot = resolveRunRoot(stateRunId, { rootDir });
-    const result = readState({ rootDir, stateRunId, runRoot });
-    return result.exists ? result : null;
+    const result = readState({ rootDir });
+    if (!result.exists) {
+      return null;
+    }
+    if (stateRunId && String(result.state?.stateRunId || '').trim() !== String(stateRunId).trim()) {
+      return null;
+    }
+    return result;
   } catch {
     return null;
   }
+}
+
+function readJsonObject(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function resolveRunnerReconciliationIntentOptions(stateRunId, runRoot = '') {
+  const normalizedStateRunId = String(stateRunId || '').trim();
+  if (!state.resume || !normalizedStateRunId) {
+    return null;
+  }
+  const rootDir = process.cwd();
+  const normalizedRunRoot = runRoot || resolveRunRoot(normalizedStateRunId, { rootDir });
+  const projectionManifestPath = path.join(normalizedRunRoot, 'projection-manifest.json');
+  const blockerEvidencePath = path.join(normalizedRunRoot, 'BLOCKER_EVIDENCE.jsonl');
+  const manifest = readJsonObject(projectionManifestPath);
+  const blockerEvidenceIds = Array.isArray(manifest?.blockerEvidenceIds) ? manifest.blockerEvidenceIds : [];
+  const blockerEvidenceId = String(blockerEvidenceIds.at(-1) || '').trim();
+  const transactionId = String(manifest?.transactionId || '').trim();
+  if (!transactionId || !blockerEvidenceId || !fs.existsSync(blockerEvidencePath)) {
+    return null;
+  }
+  return {
+    rootDir,
+    stateRunId: normalizedStateRunId,
+    transactionId,
+    blockerEvidenceId,
+    projectionManifestPath,
+    blockerEvidencePath,
+    globalIntentPath: path.join(rootDir, '.claude', 'logs', 'workflow-enforcement', 'reconciliation-intent.json'),
+  };
 }
 
 function currentSimpleRunAttemptId() {
   return process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}`;
 }
 
-export function assessWorkerSpawnStateGuard(readResult, { attemptId = '' } = {}) {
+export function assessWorkerSpawnStateGuard(readResult, { attemptId = '', reconciliationIntentOptions = null } = {}) {
   if (!readResult?.exists || !readResult.state) {
     return { allowed: true, reason: 'no_state_board' };
   }
@@ -219,23 +260,45 @@ export function assessWorkerSpawnStateGuard(readResult, { attemptId = '' } = {})
     return { allowed: false, reason: `${status}_terminal_state`, status, projectionStatus, boardAttempt };
   }
   if (status === 'blocked' && boardAttempt && requestedAttempt && boardAttempt === requestedAttempt) {
+    if (reconciliationIntentOptions) {
+      try {
+        validateReconciliationIntent(reconciliationIntentOptions);
+        return { allowed: true, reason: 'state_board_allows_reconciliation_resume', status, projectionStatus, boardAttempt };
+      } catch (error) {
+        return {
+          allowed: false,
+          reason: 'reconciliation_intent_invalid',
+          status,
+          projectionStatus,
+          boardAttempt,
+          detail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
     return { allowed: false, reason: 'same_attempt_terminal_blocked', status, projectionStatus, boardAttempt };
   }
   return { allowed: true, reason: 'state_board_allows_spawn', status, projectionStatus, boardAttempt };
 }
 
 function findExistingRunBoard(rootDir = process.cwd()) {
-  const root = simpleRunStateRoot(rootDir);
-  if (!fs.existsSync(root)) {
+  const result = readSimpleRunStateById('', rootDir);
+  const status = String(result?.state?.status || '').trim();
+  if (['active', 'blocked', 'paused'].includes(status)) {
+    return result;
+  }
+
+  const legacyRoot = path.join(rootDir, '.claude', 'logs', 'simple-run-state');
+  if (!fs.existsSync(legacyRoot)) {
     return null;
   }
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(legacyRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) {
       continue;
     }
-    const result = readSimpleRunStateById(entry.name, rootDir);
+    const statePath = path.join(legacyRoot, entry.name, 'STATE.md');
+    const result = readState({ statePath, rootDir });
     const status = String(result?.state?.status || '').trim();
-    if (['active', 'blocked'].includes(status)) {
+    if (['active', 'blocked', 'paused'].includes(status)) {
       return result;
     }
   }
@@ -250,12 +313,12 @@ export function classifyRunnerStartup({ resume = false, rootDir = process.cwd(),
       : { classification: 'clean_start', stateRunId: stateRunId || '', statePath: '' };
   }
   const requested = stateRunId ? readSimpleRunStateById(stateRunId, rootDir) : null;
-  const candidate = requested || existing;
+  const candidate = stateRunId ? requested : existing;
   if (!candidate) {
     return { classification: 'resume-state-missing', stateRunId: stateRunId || '', statePath: '' };
   }
   const status = String(candidate.state?.status || '').trim();
-  if (!['active', 'blocked'].includes(status)) {
+  if (!['active', 'blocked', 'paused'].includes(status)) {
     return { classification: 'resume-state-missing', stateRunId: candidate.state?.stateRunId || stateRunId || '', statePath: candidate.statePath };
   }
   return { classification: 'resume_allowed', stateRunId: candidate.state.stateRunId, statePath: candidate.statePath };
@@ -283,7 +346,7 @@ function ensureStartupResumeState(paths, logFile) {
 function writeActiveSimpleRunState() {
   const stateRunId = state.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${state.phaseNum}-${process.pid}`;
   const runRoot = resolveRunRoot(stateRunId, { rootDir: process.cwd() });
-  writeState({
+  const nextState = {
     stateRunId,
     runRoot,
     status: 'active',
@@ -293,14 +356,24 @@ function writeActiveSimpleRunState() {
     reason: state.resume ? 'resume' : 'start',
     planDir: state.planDir,
     statusFile: state.statusFile,
-  }, { rootDir: process.cwd(), stateRunId, runRoot });
+  };
+  const options = {
+    rootDir: process.cwd(),
+    stateRunId,
+    runRoot,
+    reconciliationIntentOptions: resolveRunnerReconciliationIntentOptions(stateRunId, runRoot),
+  };
+  withStateTransition(nextState, options, () => ({ active: true }));
   state.stateRunId = stateRunId;
   return { stateRunId, runRoot };
 }
 
 function guardWorkerSpawnAgainstSimpleRunState(paths, logFile) {
   const readResult = readSimpleRunStateById(state.stateRunId, process.cwd());
-  const guard = assessWorkerSpawnStateGuard(readResult, { attemptId: currentSimpleRunAttemptId() });
+  const guard = assessWorkerSpawnStateGuard(readResult, {
+    attemptId: currentSimpleRunAttemptId(),
+    reconciliationIntentOptions: resolveRunnerReconciliationIntentOptions(state.stateRunId, readResult?.state?.runRoot),
+  });
   if (guard.allowed) {
     appendDebugLog('worker-spawn-state-guard-allowed', guard);
     return 0;

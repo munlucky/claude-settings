@@ -242,6 +242,27 @@ function isRunningWorkflowState(payload = {}) {
   return workflowStateClass(payload) === 'active';
 }
 
+function isPausedWorkflowState(payload = {}) {
+  const fields = [
+    payload.status,
+    payload.completionStatus,
+    payload.activeExecutionStatus,
+    payload.attemptOutcome,
+    payload.phaseRunLease?.status,
+    payload.phaseRunLease?.completionStatus,
+    payload.phaseRunLease?.activeExecutionStatus,
+    payload.phaseRunLease?.attemptOutcome,
+  ].map(normalizeLower);
+  return fields.includes('paused');
+}
+
+function hasLiveChildEvidence(payload = {}) {
+  return payload.childAlive === true
+    || payload.liveness?.childAlive === true
+    || payload.phaseRunLease?.childAlive === true
+    || payload.phaseRunLease?.liveness?.childAlive === true;
+}
+
 function isCompletedLocalFallback(payload = {}) {
   if (!payload) {
     return false;
@@ -328,6 +349,14 @@ function inspectMemoryGraphCapabilities({ workflowStates, strictMemory = false, 
       } else {
         degradedEvidence.push(evidence);
       }
+    }
+    if (isPausedWorkflowState(payload) && hasLiveChildEvidence(payload)) {
+      addViolation(
+        violations,
+        'paused-workflow-child-alive',
+        `${basename} is paused but still reports a live child process.`,
+        { failureClass: 'harness-state' },
+      );
     }
   }
 }

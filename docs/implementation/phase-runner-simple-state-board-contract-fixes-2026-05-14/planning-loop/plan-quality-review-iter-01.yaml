@@ -1,0 +1,63 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "unavailable"
+  reviewerSession: "controller-self-review"
+  targetPlanPackage:
+    planDir: "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14"
+    masterPlan: "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/01-current-board-path-unification-v1.md"
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/02-dispatch-resume-board-validation-v1.md"
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/03-reconciliation-resume-runner-wiring-v1.md"
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/04-paused-state-and-regression-contract-v1.md"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.90
+      evidence:
+        - "Master Objective lists the four reviewed contract gaps."
+      findings: []
+    scopeClarity:
+      weight: 0.20
+      score: 0.82
+      evidence:
+        - "Non-Goals excludes state-model redesign and compatibility storage migration."
+      findings:
+        - "Phase 01 needs an explicit policy for old .claude/logs/simple-run-state artifacts."
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.84
+      evidence:
+        - "AC-01 through AC-08 map each finding to a phase."
+      findings:
+        - "Phase 02 needs an ordering-specific acceptance criterion proving failed resume validation happens before dispatch evidence writes."
+    verificationClarity:
+      weight: 0.20
+      score: 0.82
+      evidence:
+        - "Each phase has commands and expected signals."
+      findings:
+        - "Phase 03 should name the mocked worker-spawn signal and pending-on-failure signal explicitly."
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.86
+      evidence:
+        - "Source baseline names exact implementation files from the review."
+      findings: []
+    phaseExecutability:
+      weight: 0.10
+      score: 0.80
+      evidence:
+        - "Each phase includes ownedPaths and sequential dependencies."
+      findings:
+        - "Master plan should state constrained readiness because no isolated forked review was authorized."
+  totalScore: 0.844
+  ambiguityScore: 0.156
+  decision: "revise"
+  blockingFindings: []
+  improvementDirectives:
+    - "Add explicit legacy simple-run-state artifact policy to master non-goals and Phase 01 scope."
+    - "Add dispatch mutation-order acceptance and tests to Phase 02."
+    - "Add worker spawn mock and pending-on-failure signals to Phase 03."
+    - "Set final readiness to constrained_pass unless isolated review is later authorized."

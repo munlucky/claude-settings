@@ -1,0 +1,56 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 2
+  isolationMode: "unavailable"
+  reviewerSession: "controller-self-review"
+  targetPlanPackage:
+    planDir: "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14"
+    masterPlan: "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/01-current-board-path-unification-v1.md"
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/02-dispatch-resume-board-validation-v1.md"
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/03-reconciliation-resume-runner-wiring-v1.md"
+      - "docs/implementation/phase-runner-simple-state-board-contract-fixes-2026-05-14/04-paused-state-and-regression-contract-v1.md"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.92
+      evidence:
+        - "Master Objective and Phase Index cover exactly the four reviewed findings."
+      findings: []
+    scopeClarity:
+      weight: 0.20
+      score: 0.88
+      evidence:
+        - "Master Non-Goals and phase Scope sections exclude storage redesign, artifact migration, and parity expansion."
+      findings: []
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.90
+      evidence:
+        - "AC-01 through AC-08 include path, dispatch ordering, reconciliation runner wiring, and paused lifecycle evidence."
+      findings: []
+    verificationClarity:
+      weight: 0.20
+      score: 0.88
+      evidence:
+        - "Each phase includes exact node test commands, expected signals, blocker conditions, and QA evidence paths."
+      findings: []
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.86
+      evidence:
+        - "Source Baseline names implementation files and prior v5 plan package."
+      findings: []
+    phaseExecutability:
+      weight: 0.10
+      score: 0.84
+      evidence:
+        - "Phase metadata includes ownedPaths, dependencies, merge policy, and sequential execution blockers."
+      findings:
+        - "Strict runnable readiness remains withheld because isolated Reviewer/Writer agents were not launched."
+  totalScore: 0.88
+  ambiguityScore: 0.12
+  decision: "constrained_pass"
+  blockingFindings: []
+  improvementDirectives: []

@@ -198,6 +198,35 @@ test('completed phase invariant allows failed workflow state for the current ope
   }
 });
 
+test('paused workflow invariant rejects live child evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-paused-invariants-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), `${JSON.stringify({
+      status: 'paused',
+      activeExecutionStatus: 'paused',
+      completionStatus: 'paused',
+      childAlive: true,
+      activePhaseNumber: 4,
+    })}\n`, 'utf8');
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: {
+        activeExecutionStatus: 'paused',
+        activePhaseNumber: 4,
+      },
+      phases: [{ number: 4, title: 'Phase 04', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    assert.equal(result.violations.some((entry) => entry.code === 'paused-workflow-child-alive'), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('sidecar canonical invariant rejects manifest-only state without legacy fallback', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sidecar-invariants-'));
   try {

@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,6 +34,45 @@ function writeFixtureRunState(root, stateRunId, status = 'active') {
     statusFile: '.claude/docs/phase-status.yaml',
   }, { rootDir: root, stateRunId, runRoot });
   return runRoot;
+}
+
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function writeJson(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+function writeRunnerReconciliationFixture(root, stateRunId, runRoot) {
+  const transactionId = 'tx-runner-reconcile';
+  const blockerEvidenceId = 'blocker-runner-reconcile';
+  const blockerEvidencePath = path.join(runRoot, 'BLOCKER_EVIDENCE.jsonl');
+  const projectionManifestPath = path.join(runRoot, 'projection-manifest.json');
+  fs.mkdirSync(runRoot, { recursive: true });
+  fs.writeFileSync(blockerEvidencePath, `${JSON.stringify({ id: blockerEvidenceId })}\n`, 'utf8');
+  writeJson(projectionManifestPath, {
+    transactionId,
+    blockerEvidenceIds: [blockerEvidenceId],
+  });
+  writeJson(path.join(root, '.claude', 'logs', 'workflow-enforcement', 'runs', stateRunId, 'reconciliation-intent.json'), {
+    intent: 'resume_blocked_attempt',
+    resumeReason: 'blocker_resolved',
+    stateRunId,
+    attemptId: 'attempt-01',
+    transactionId,
+    blockerEvidenceId,
+    projectionManifestSha256: sha256File(projectionManifestPath),
+  });
+  return {
+    rootDir: root,
+    stateRunId,
+    transactionId,
+    blockerEvidenceId,
+    blockerEvidencePath,
+    projectionManifestPath,
+  };
 }
 
 test('shadow adapter converts review, verify, finish, checkpoint, and pass cases', () => {
@@ -224,6 +264,9 @@ test('explicit resume requires an existing active or blocked board', () => {
     const result = classifyRunnerStartup({ resume: true, rootDir: root });
     assert.equal(result.classification, 'resume_allowed');
     assert.equal(result.stateRunId, 'run-active');
+    const mismatch = classifyRunnerStartup({ resume: true, rootDir: root, stateRunId: 'other-run' });
+    assert.equal(mismatch.classification, 'resume-state-missing');
+    assert.equal(mismatch.stateRunId, 'other-run');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -266,6 +309,43 @@ test('worker spawn guard rejects same-attempt terminal and pending state boards'
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('worker spawn guard allows same-attempt blocked resume only with valid reconciliation intent', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-reconcile-'));
+  try {
+    const stateRunId = 'run-reconcile';
+    const runRoot = writeFixtureRunState(root, stateRunId, 'blocked');
+    const blocked = readState({ rootDir: root });
+    const reconciliationIntentOptions = writeRunnerReconciliationFixture(root, stateRunId, runRoot);
+
+    const allowed = assessWorkerSpawnStateGuard(blocked, {
+      attemptId: 'attempt-01',
+      reconciliationIntentOptions,
+    });
+    assert.equal(allowed.allowed, true);
+    assert.equal(allowed.reason, 'state_board_allows_reconciliation_resume');
+
+    const rejected = assessWorkerSpawnStateGuard(blocked, {
+      attemptId: 'attempt-01',
+      reconciliationIntentOptions: {
+        ...reconciliationIntentOptions,
+        transactionId: 'wrong-tx',
+      },
+    });
+    assert.equal(rejected.allowed, false);
+    assert.equal(rejected.reason, 'reconciliation_intent_invalid');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('runner active state start uses withStateTransition instead of direct writeState', () => {
+  const source = fs.readFileSync('.claude/scripts/agent-loop-phase-runner.mjs', 'utf8');
+
+  assert.match(source, /import \{[\s\S]*withStateTransition[\s\S]*\} from '\.\/lib\/simple-run-state\.mjs';/);
+  assert.match(source, /function writeActiveSimpleRunState\(\) \{[\s\S]*withStateTransition\(nextState, options,/);
+  assert.doesNotMatch(source, /function writeActiveSimpleRunState\(\) \{[\s\S]*writeState\(/);
 });
 
 test('clean finish candidate is routed only to the finalizer boundary action', () => {

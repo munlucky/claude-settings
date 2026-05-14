@@ -252,6 +252,43 @@ test('scrubs stale terminal fields from new active compatibility projection', ()
   });
 });
 
+test('scrubs paused compatibility projection as non-running', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'current-run.json');
+    fs.writeFileSync(target, JSON.stringify({
+      stateRunId: 'run-paused',
+      status: 'active',
+      activeExecutionStatus: 'running',
+      childAlive: true,
+      liveness: { childAlive: true },
+      finalVerdict: 'blocked',
+    }, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      source: 'phase-run-lease-store',
+      lifecycleEvent: 'lease_heartbeat',
+      status: 'paused',
+      payloadPatch: {
+        stateRunId: 'run-paused',
+        attemptId: 'attempt-1',
+        status: 'paused',
+      },
+      writeMode: 'merge',
+    }));
+
+    const payload = readJson(target);
+    assert.equal(payload.status, 'paused');
+    assert.equal(payload.activeExecutionStatus, 'paused');
+    assert.equal(payload.completionStatus, 'paused');
+    assert.equal(payload.attemptOutcome, 'paused');
+    assert.equal(payload.childAlive, false);
+    assert.equal(payload.liveness.childAlive, false);
+    assert.equal(payload.finalVerdict, undefined);
+  });
+});
+
 test('rejects stateRunId mismatch before projection overwrite', () => {
   withTempDir((root) => {
     const target = path.join(root, 'current-run.json');

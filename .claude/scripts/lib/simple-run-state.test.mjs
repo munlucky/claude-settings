@@ -122,11 +122,30 @@ test('missing required headers are explicit diagnostics with unknown values', ()
 
 test('readState reports missing state as resume-state-missing', () => {
   const rootDir = tempRoot();
-  const result = readState({ stateRunId: 'missing-run', rootDir });
+  const result = readState({ rootDir });
 
   assert.equal(result.exists, false);
   assert.equal(result.startupClassification, 'resume-state-missing');
   assert.equal(classifyStartupState(result), 'resume-state-missing');
+});
+
+test('default current board path is workflow-enforcement STATE.md and runRoot is run-scoped', () => {
+  const rootDir = tempRoot();
+  const stateRunId = 'run-global-board';
+  const state = baseState({ rootDir, stateRunId });
+  const result = writeState(state, { rootDir, stateRunId });
+  const expectedStatePath = path.join(rootDir, '.claude', 'logs', 'workflow-enforcement', 'STATE.md');
+  const legacyStatePath = path.join(rootDir, '.claude', 'logs', 'simple-run-state', stateRunId, 'STATE.md');
+
+  assert.equal(result.statePath, expectedStatePath);
+  assert.equal(result.state.runRoot, path.join(rootDir, '.claude', 'logs', 'workflow-enforcement', 'runs', stateRunId));
+  assert.equal(fs.existsSync(expectedStatePath), true);
+  assert.equal(fs.existsSync(legacyStatePath), false);
+
+  const recovered = readState({ rootDir });
+  assert.equal(recovered.exists, true);
+  assert.equal(recovered.state.stateRunId, stateRunId);
+  assert.equal(recovered.statePath, expectedStatePath);
 });
 
 test('transition rules reject unsafe terminal and same-attempt blocked restarts', () => {
@@ -140,6 +159,10 @@ test('transition rules reject unsafe terminal and same-attempt blocked restarts'
   );
   assert.equal(
     assertCanTransition(baseState({ status: 'blocked', attempt: 'attempt-01' }), baseState({ status: 'active', attempt: 'attempt-02' })),
+    true,
+  );
+  assert.equal(
+    assertCanTransition(baseState({ status: 'active' }), baseState({ status: 'paused' })),
     true,
   );
 });
@@ -237,6 +260,7 @@ test('withStateTransition commits the same transition id after successful projec
     baseState({ rootDir, stateRunId, runRoot, status: 'active', attempt: 'attempt-01', transitionId: 'transition-commit' }),
     { rootDir, stateRunId, runRoot },
     async (pendingState) => {
+      fs.mkdirSync(path.dirname(projectionPath), { recursive: true });
       fs.writeFileSync(projectionPath, JSON.stringify({ transitionId: pendingState.transitionId }), 'utf8');
       return { projectionPath };
     },
@@ -260,6 +284,32 @@ test('writeState persists blocked state and startup requires resume', () => {
 
   assert.equal(recovered.state.status, 'blocked');
   assert.equal(recovered.startupClassification, 'resume-required');
+});
+
+test('paused state is supported and classified as requiring explicit resume', () => {
+  const rootDir = tempRoot();
+  const stateRunId = 'run-paused';
+  const runRoot = resolveRunRoot(stateRunId, { rootDir });
+
+  writeState(baseState({ rootDir, stateRunId, runRoot, status: 'paused', reason: 'operator_pause' }), { rootDir, stateRunId, runRoot });
+  const recovered = readState({ rootDir });
+
+  assert.equal(recovered.state.status, 'paused');
+  assert.equal(recovered.startupClassification, 'resume-required');
+});
+
+test('scrubCompatibilityProjection keeps paused projections non-running', () => {
+  const paused = scrubCompatibilityProjection(
+    { activeExecutionStatus: 'running', childAlive: true, liveness: { childAlive: true } },
+    baseState({ status: 'paused', reason: 'operator_pause' }),
+    { targetKind: 'current-run' },
+  );
+
+  assert.equal(paused.activeExecutionStatus, 'paused');
+  assert.equal(paused.completionStatus, 'paused');
+  assert.equal(paused.attemptOutcome, 'paused');
+  assert.equal(paused.childAlive, false);
+  assert.equal(paused.liveness.childAlive, false);
 });
 
 test('scrubCompatibilityProjection applies blocked, active, and complete field rules', () => {

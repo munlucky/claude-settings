@@ -17,7 +17,7 @@ export const REQUIRED_STATE_HEADERS = Object.freeze([
   'updated',
 ]);
 
-const ALLOWED_STATUSES = new Set(['active', 'blocked', 'complete', 'cancelled']);
+const ALLOWED_STATUSES = new Set(['active', 'blocked', 'complete', 'paused', 'cancelled']);
 const TERMINAL_STATUSES = new Set(['complete', 'cancelled']);
 const ACTIVE_COMPATIBILITY_FIELDS = [
   'activePhaseDoc',
@@ -72,8 +72,7 @@ function resolveStatePath(options = {}) {
   if (options.statePath) {
     return options.statePath;
   }
-  const stateRunId = nonEmpty(options.stateRunId, 'stateRunId or statePath');
-  return path.join(resolveRunRoot(stateRunId, options), 'STATE.md');
+  return path.join(options.rootDir ?? process.cwd(), '.claude', 'logs', 'workflow-enforcement', 'STATE.md');
 }
 
 function normalizeState(input = {}, options = {}) {
@@ -100,7 +99,7 @@ export function resolveRunRoot(stateRunId, { rootDir = process.cwd(), runRoot } 
   if (runRoot) {
     return runRoot;
   }
-  return path.join(rootDir, '.claude', 'logs', 'simple-run-state', nonEmpty(stateRunId, 'stateRunId'));
+  return path.join(rootDir, '.claude', 'logs', 'workflow-enforcement', 'runs', nonEmpty(stateRunId, 'stateRunId'));
 }
 
 export function formatStateMarkdown(state, { body = '' } = {}) {
@@ -157,7 +156,7 @@ export function classifyStartupState(readResult) {
   if (readResult.state?.projectionStatus === 'pending') {
     return 'incomplete_transaction';
   }
-  if (['active', 'blocked'].includes(readResult.state?.status)) {
+  if (['active', 'blocked', 'paused'].includes(readResult.state?.status)) {
     return 'resume-required';
   }
   return 'clean_start';
@@ -228,7 +227,7 @@ function jsonlHasRecord(filePath, predicate) {
 
 export function resolveReconciliationIntentPath(stateRunId, options = {}) {
   const rootDir = options.rootDir ?? process.cwd();
-  const runsRoot = options.runsRoot ?? path.join(rootDir, 'runs');
+  const runsRoot = options.runsRoot ?? path.join(rootDir, '.claude', 'logs', 'workflow-enforcement', 'runs');
   return path.join(runsRoot, nonEmpty(stateRunId, 'stateRunId'), 'reconciliation-intent.json');
 }
 
@@ -403,6 +402,18 @@ export function scrubCompatibilityProjection(payload = {}, state = {}, { targetK
     next.dispatchStage = 'execute';
     for (const field of TERMINAL_COMPATIBILITY_FIELDS) {
       delete next[field];
+    }
+  } else if (status === 'paused') {
+    for (const field of TERMINAL_COMPATIBILITY_FIELDS) {
+      delete next[field];
+    }
+    next.activeExecutionStatus = 'paused';
+    next.completionStatus = 'paused';
+    next.attemptOutcome = 'paused';
+    next.dispatchStage = 'paused';
+    next.childAlive = false;
+    if (next.liveness && typeof next.liveness === 'object' && !Array.isArray(next.liveness)) {
+      next.liveness = { ...next.liveness, childAlive: false };
     }
   } else if (TERMINAL_STATUSES.has(status)) {
     for (const field of ACTIVE_COMPATIBILITY_FIELDS) {

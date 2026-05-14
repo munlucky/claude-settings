@@ -15,6 +15,7 @@ import { resolveModelRoute } from './lib/model-routing-policy.mjs';
 import { classifyFailure } from './lib/failure-classifier.mjs';
 import { buildCompositeMonitorCursor } from './lib/phase-run-lease-status.mjs';
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
+import { readState } from './lib/simple-run-state.mjs';
 import {
   evaluatePidLiveness,
   isPidAliveInCurrentNamespace,
@@ -602,44 +603,45 @@ function readJsonFile(filePath) {
 }
 
 function readExistingDispatchRunIdentity() {
-  const workflowDir = WORKFLOW_LOG_DIR;
-  const candidates = [
-    path.join(workflowDir, 'active-phase-run.json'),
-    path.join(workflowDir, 'current-run.json'),
-    path.join(workflowDir, 'latest-dispatch.json'),
-  ];
-  for (const filePath of candidates) {
-    const payload = readJsonFile(filePath);
-    if (!payload) {
-      continue;
-    }
-    if (payload.planDir && state.planDir && path.resolve(payload.planDir) !== path.resolve(state.planDir)) {
-      continue;
-    }
-    const stateRunId = String(payload.stateRunId || payload.runLeaseId || payload.activeRunLeaseId || '').trim();
-    if (stateRunId) {
-      return {
-        stateRunId,
-        source: filePath,
-        status: payload.status || payload.activeExecutionStatus || payload.completionStatus || '',
-      };
-    }
+  const board = readState({ statePath: workflowLogFile('STATE.md'), rootDir: process.cwd() });
+  if (!board.exists) {
+    return null;
   }
-  return null;
+  const planDirMatches = !(board.state?.planDir && state.planDir)
+    || path.resolve(board.state.planDir) === path.resolve(state.planDir);
+  const stateRunId = String(board.state?.stateRunId || '').trim();
+  return {
+    stateRunId: stateRunId === 'unknown' ? '' : stateRunId,
+    source: board.statePath,
+    status: board.state.status || '',
+    projectionStatus: board.state.projectionStatus || '',
+    startupClassification: board.startupClassification || '',
+    planDir: board.state.planDir || '',
+    planDirMatches,
+  };
 }
 
 function initializeDispatchRunIdentity() {
   if (runtimeState.runLeaseId) {
     return runtimeState.runLeaseId;
   }
+  const existing = readExistingDispatchRunIdentity();
   if (state.resume) {
-    const existing = readExistingDispatchRunIdentity();
     if (!existing?.stateRunId) {
       throw new Error('resume-state-missing: --resume requires an existing stateRunId for this plan');
+    }
+    if (!existing.planDirMatches) {
+      throw new Error('resume-state-missing: --resume requires matching STATE.md planDir for this plan');
+    }
+    if (existing.projectionStatus === 'pending' || existing.startupClassification === 'incomplete_transaction') {
+      throw new Error('incomplete_transaction: --resume requires committed STATE.md projections');
     }
     runtimeState.runLeaseId = existing.stateRunId;
     appendDebugLog('dispatch-resume-run-identity', existing);
     return runtimeState.runLeaseId;
+  }
+  if (existing && ['active', 'blocked', 'paused'].includes(String(existing.status || '').trim())) {
+    throw new Error('resume-required: existing active run board requires --resume');
   }
   runtimeState.runLeaseId = generateRunLeaseId();
   return runtimeState.runLeaseId;
