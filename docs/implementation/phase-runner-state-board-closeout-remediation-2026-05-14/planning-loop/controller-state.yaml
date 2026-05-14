@@ -1,0 +1,58 @@
+controllerState:
+  schemaVersion: 1
+  planDir: "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14"
+  masterPlan: "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/00-master-plan-v1.md"
+  sourceRequest: "Review findings for f56a4f7..HEAD state-board closeout remediation"
+  selectedSources:
+    - id: "REQ-1"
+      summary: "Clean completion leaves STATE.md active while projection is complete"
+    - id: "REQ-2"
+      summary: "Invariant misses active board plus terminal projection"
+    - id: "REQ-3"
+      summary: "CRG Python fixture root points to .codex instead of .claude"
+    - id: "REQ-4"
+      summary: "Range diff hygiene fails on blank EOF line"
+    - id: "REQ-5"
+      summary: "Pending projection plus complete board startup classification gap"
+    - id: "REQ-6"
+      summary: "Native code-review-graph MCP transport is stale; CLI fallback is available"
+  activePointer:
+    statusFile: ".claude/docs/phase-status.yaml"
+    currentMasterPlan: "docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/00-master-plan-v1.md"
+    action: "preserve_existing_pointer"
+  readiness:
+    goalClarity: 0.94
+    scopeClarity: 0.91
+    acceptanceCriteriaClarity: 0.92
+    verificationClarity: 0.91
+    clarityScore: 0.91
+    ambiguityScore: 0.09
+    readinessDecision: "review_passed_ready_for_runnable_preparation"
+  independentPlanningLoop:
+    required: true
+    status: "completed"
+    userApproval: "2026-05-14 user approved isolated Reviewer/Writer loop"
+    reason: "moonshot-plan-writer requires isolated Reviewer Agent and Writer Agent sessions; user explicitly approved the loop."
+    maxIterations: 4
+    targetAmbiguityScore: 0.20
+    blockedAmbiguityScore: 0.35
+    iterations:
+      - iteration: 1
+        reviewerSession: "019e259f-ec06-7c12-9adb-ce4c7c05c953"
+        reviewDecision: "revise"
+        ambiguityScore: 0.15
+        writerSession: "019e25a3-00b2-76d3-bb20-a91c5cfb83ea"
+        writerStatus: "directives_applied"
+      - iteration: 2
+        reviewerSession: "019e25a5-b011-7130-9ab1-ebc29dad43a1"
+        reviewDecision: "conditional_pass"
+        ambiguityScore: 0.09
+        blockingFindings: 0
+    remainingNotes:
+      - "QA/HANDOFF publication function name is an implementation lookup note, not a planning blocker."
+  runtimeNotes:
+    codeReviewGraph:
+      nativeMcpStatus: "transport_closed"
+      fallback: "code-review-graph CLI"
+      command: "code-review-graph detect-changes --repo . --base f56a4f7fc12476fec685af87a6122ddd7449e874 --brief"
+  controllerDecision: "review_passed_ready_for_runnable_preparation"

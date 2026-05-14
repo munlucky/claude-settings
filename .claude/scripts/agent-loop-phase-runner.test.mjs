@@ -11,8 +11,10 @@ import {
   classifyRunnerStartup,
   computeControllerEnforcedGateAction,
   computePhaseLoopShadowDecision,
+  finalizeCompletion,
   publishRunnerBlockedCloseout,
   resolveRunnerReconciliationIntentOptions,
+  writeTerminalCompleteSimpleRunState,
   writeActiveSimpleRunState,
 } from './agent-loop-phase-runner.mjs';
 import { readState, resolveReconciliationIntentPath, resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
@@ -478,6 +480,173 @@ test('clean finish candidate is routed only to the finalizer boundary action', (
 
   assert.equal(result.controllerDecision, 'clean_finish_candidate');
   assert.equal(result.action, 'finalize');
+});
+
+function withTempCompletionRun(testFn) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-complete-'));
+  const originalCwd = process.cwd();
+  const originalLeaseId = process.env.PHASE_RUN_LEASE_ID;
+  process.chdir(root);
+  process.env.PHASE_RUN_LEASE_ID = 'state-run-01';
+  try {
+    writeFixtureRunState(root, 'state-run-01', 'active');
+    return testFn(root);
+  } finally {
+    process.chdir(originalCwd);
+    if (originalLeaseId === undefined) {
+      delete process.env.PHASE_RUN_LEASE_ID;
+    } else {
+      process.env.PHASE_RUN_LEASE_ID = originalLeaseId;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function completionTestPaths(root) {
+  return {
+    phaseQaReport: path.join(root, 'QA_REPORT.md'),
+    phaseScorecard: path.join(root, 'SCORECARD.md'),
+    phaseHandoff: path.join(root, 'HANDOFF.md'),
+    phaseSprintContract: path.join(root, 'SPRINT_CONTRACT.md'),
+    phaseExecutionDir: root,
+  };
+}
+
+test('terminal complete simple run state is persisted and recoverable for the active stateRunId', () => {
+  withTempCompletionRun((root) => {
+    const result = writeTerminalCompleteSimpleRunState({ rootDir: root, stateRunId: 'state-run-01' });
+    const recovered = readState({ rootDir: root });
+
+    assert.equal(result.statePath, recovered.statePath);
+    assert.equal(recovered.exists, true);
+    assert.equal(recovered.state.stateRunId, 'state-run-01');
+    assert.equal(recovered.state.status, 'complete');
+    assert.equal(recovered.state.projectionStatus, 'committed');
+  });
+});
+
+test('finalizeCompletion writes terminal complete after finalizer and required clean finish artifacts', () => {
+  withTempCompletionRun((root) => {
+    const calls = [];
+    const ok = finalizeCompletion(
+      'phase.log',
+      12,
+      '.claude/verification-verdict-phase01-final.json',
+      completionTestPaths(root),
+      'codex',
+      '',
+      'commit prompt',
+      {
+        runPhaseCloseoutFinalizer: () => {
+          calls.push('finalizer');
+          return { status: 0, stdout: '', stderr: '' };
+        },
+        syncCleanFinishArtifacts: () => calls.push('sync'),
+        appendQaRuntimeUpdate: () => calls.push('qa'),
+        writeCleanFinishHandoff: () => calls.push('handoff'),
+        writeTerminalCompleteSimpleRunState: (overrides) => {
+          calls.push('board');
+          return writeTerminalCompleteSimpleRunState({ ...overrides, rootDir: root, stateRunId: 'state-run-01' });
+        },
+        runCommitPrompt: () => calls.push('commit'),
+      },
+    );
+    const recovered = readState({ rootDir: root });
+
+    assert.equal(ok, true);
+    assert.deepEqual(calls, ['finalizer', 'sync', 'qa', 'handoff', 'board', 'commit']);
+    assert.equal(recovered.state.status, 'complete');
+  });
+});
+
+test('finalizeCompletion leaves board non-terminal when finalizer fails', () => {
+  withTempCompletionRun((root) => {
+    const calls = [];
+    const ok = finalizeCompletion(
+      'phase.log',
+      12,
+      '.claude/verification-verdict-phase01-final.json',
+      completionTestPaths(root),
+      'codex',
+      '',
+      'commit prompt',
+      {
+        runPhaseCloseoutFinalizer: () => ({ status: 1, stdout: '', stderr: 'verification-verdict-not-passed' }),
+        syncCleanFinishArtifacts: () => calls.push('sync'),
+        appendQaRuntimeUpdate: () => calls.push('qa'),
+        appendHandoffUpdate: () => calls.push('handoff'),
+        writeTerminalCompleteSimpleRunState: () => calls.push('board'),
+        runCommitPrompt: () => calls.push('commit'),
+      },
+    );
+    const recovered = readState({ rootDir: root });
+
+    assert.equal(ok, false);
+    assert.equal(recovered.state.status, 'active');
+    assert.deepEqual(calls, ['qa', 'handoff']);
+  });
+});
+
+test('finalizeCompletion leaves board non-terminal when required clean finish artifact publication fails', () => {
+  withTempCompletionRun((root) => {
+    assert.throws(
+      () => finalizeCompletion(
+        'phase.log',
+        12,
+        '.claude/verification-verdict-phase01-final.json',
+        completionTestPaths(root),
+        'codex',
+        '',
+        'commit prompt',
+        {
+          runPhaseCloseoutFinalizer: () => ({ status: 0, stdout: '', stderr: '' }),
+          syncCleanFinishArtifacts: () => {
+            throw new Error('qa publish failed');
+          },
+          writeTerminalCompleteSimpleRunState: () => {
+            throw new Error('board should not be written');
+          },
+        },
+      ),
+      /qa publish failed/,
+    );
+    const recovered = readState({ rootDir: root });
+
+    assert.equal(recovered.state.status, 'active');
+  });
+});
+
+test('finalizeCompletion treats commit prompt failure as advisory after terminal complete', () => {
+  withTempCompletionRun((root) => {
+    const warnings = [];
+    const ok = finalizeCompletion(
+      'phase.log',
+      12,
+      '.claude/verification-verdict-phase01-final.json',
+      completionTestPaths(root),
+      'codex',
+      '',
+      'commit prompt',
+      {
+        runPhaseCloseoutFinalizer: () => ({ status: 0, stdout: '', stderr: '' }),
+        syncCleanFinishArtifacts: () => {},
+        appendQaRuntimeUpdate: (status, _logFile, detail) => warnings.push({ status, detail }),
+        writeCleanFinishHandoff: () => {},
+        writeTerminalCompleteSimpleRunState: (overrides) => (
+          writeTerminalCompleteSimpleRunState({ ...overrides, rootDir: root, stateRunId: 'state-run-01' })
+        ),
+        runCommitPrompt: () => {
+          throw new Error('commit prompt failed');
+        },
+      },
+    );
+    const recovered = readState({ rootDir: root });
+
+    assert.equal(ok, true);
+    assert.equal(recovered.state.status, 'complete');
+    assert.equal(warnings.some((entry) => entry.status === 'commit-prompt-advisory-failed'), true);
+    assert.match(warnings.at(-1).detail, /commit prompt failed/);
+  });
 });
 
 test('controller remediation packet persists fresh retry context for the next worker prompt', () => {

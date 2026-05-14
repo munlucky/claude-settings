@@ -4,8 +4,8 @@
   "runId": "phase01-final",
   "phase": {
     "number": 1,
-    "title": "Phase 1 - Reconciliation Intent Resolved Evidence Guard",
-    "activePhaseDocPath": "docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/01-reconciliation-intent-resolved-evidence-guard-v1.md"
+    "title": "Phase 01: Clean Completion Board Terminal Transition",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/01-clean-completion-board-terminal-transition-v1.md"
   },
   "contract": {
     "applicable": true,
@@ -57,12 +57,12 @@
     }
   },
   "identity": {
-    "runLeaseId": "dispatch-1778745801518-5360",
-    "activePhaseDocPath": "docs/implementation/phase-runner-reconciliation-resolved-evidence-guard-2026-05-14/01-reconciliation-intent-resolved-evidence-guard-v1.md",
-    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-reconciliation-resolved-evidence-guard-2026-05-14\\00-master-plan-v1.md",
-    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-reconciliation-resolved-evidence-guard-2026-05-14",
+    "runLeaseId": "dispatch-1778748414960-2916",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14/01-clean-completion-board-terminal-transition-v1.md",
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-closeout-remediation-2026-05-14",
     "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
-    "gitTreeFingerprint": "2ef6f69a116479128938654c1625dccb720ad0c3"
+    "gitTreeFingerprint": "5108b74123b661b128d87344e72c3c682087922f"
   },
   "verdictScope": "phase_closeout",
   "blockerClass": "",
@@ -86,5 +86,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-14T08:13:44.089Z"
+  "generatedAt": "2026-05-14T08:55:16.108Z"
 }

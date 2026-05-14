@@ -363,7 +363,7 @@ export function writeActiveSimpleRunState(overrides = {}) {
     runRoot,
     projectionStatus: 'committed',
     status: 'active',
-    phase: phaseNum,
+    phase: phaseNum || current.state?.phase,
     attempt: overrides.attempt || currentSimpleRunAttemptId(),
     owner: 'agent-loop-phase-runner',
     reason: effectiveState.resume ? 'resume' : 'start',
@@ -378,6 +378,34 @@ export function writeActiveSimpleRunState(overrides = {}) {
   writeState(nextState, options);
   state.stateRunId = stateRunId;
   return { stateRunId, runRoot };
+}
+
+export function writeTerminalCompleteSimpleRunState(overrides = {}) {
+  const rootDir = overrides.rootDir ?? process.cwd();
+  const effectiveState = { ...state, ...overrides };
+  const phaseNum = effectiveState.phaseNum || state.phaseNum;
+  const stateRunId = effectiveState.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${phaseNum}-${process.pid}`;
+  const runRoot = effectiveState.runRoot || resolveRunRoot(stateRunId, { rootDir });
+  const current = readState({ rootDir });
+  if (current.exists && String(current.state?.stateRunId || '').trim() !== String(stateRunId).trim()) {
+    throw new Error(`simple run stateRunId mismatch: ${current.state?.stateRunId || 'unknown'} != ${stateRunId}`);
+  }
+  const nextState = {
+    ...(current.state || {}),
+    stateRunId,
+    runRoot,
+    projectionStatus: 'committed',
+    status: 'complete',
+    phase: phaseNum,
+    attempt: effectiveState.attemptId || current.state?.attempt || currentSimpleRunAttemptId(),
+    owner: 'agent-loop-phase-runner',
+    reason: overrides.reason || 'phase_complete',
+    planDir: effectiveState.planDir || current.state?.planDir || state.planDir,
+    statusFile: effectiveState.statusFile || current.state?.statusFile || state.statusFile,
+  };
+  const result = writeState(nextState, { rootDir, stateRunId, runRoot });
+  state.stateRunId = stateRunId;
+  return result;
 }
 
 function guardWorkerSpawnAgainstSimpleRunState(paths, logFile) {
@@ -1874,7 +1902,25 @@ function recordLoopStop(phaseNum, reason, detail, logFile) {
   }
 }
 
-function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths, runtime, completionLabel, commitPrompt) {
+export function finalizeCompletion(
+  logFile,
+  durationSeconds,
+  completionArtifacts,
+  paths,
+  runtime,
+  completionLabel,
+  commitPrompt,
+  dependencies = {},
+) {
+  const {
+    syncCleanFinishArtifacts: syncCleanFinishArtifactsFn = syncCleanFinishArtifacts,
+    runPhaseCloseoutFinalizer: runPhaseCloseoutFinalizerFn = runPhaseCloseoutFinalizer,
+    appendQaRuntimeUpdate: appendQaRuntimeUpdateFn = appendQaRuntimeUpdate,
+    appendHandoffUpdate: appendHandoffUpdateFn = appendHandoffUpdate,
+    writeCleanFinishHandoff: writeCleanFinishHandoffFn = writeCleanFinishHandoff,
+    writeTerminalCompleteSimpleRunState: writeTerminalCompleteSimpleRunStateFn = writeTerminalCompleteSimpleRunState,
+    runCommitPrompt: runCommitPromptFn = runCommitPrompt,
+  } = dependencies;
   appendDebugLog('phase-completion', {
     logFile,
     durationSeconds,
@@ -1904,9 +1950,8 @@ function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths
       }
     });
   }
-  syncCleanFinishArtifacts(completionArtifacts, paths);
 
-  const finalizerResult = runPhaseCloseoutFinalizer(paths);
+  const finalizerResult = runPhaseCloseoutFinalizerFn(paths);
   if (finalizerResult.status !== 0) {
     const failureCode = finalizerFailureCode(finalizerResult);
     const controllerGateAction = computeControllerEnforcedGateAction({
@@ -1932,26 +1977,38 @@ function finalizeCompletion(logFile, durationSeconds, completionArtifacts, paths
       evidenceRefs: [completionArtifacts, paths.phaseQaReport, paths.phaseScorecard].filter(Boolean),
       reason: detail,
     });
-    appendQaRuntimeUpdate('phase-finalizer-failed', logFile, detail, paths);
-    appendHandoffUpdate('blocked', logFile, `${detail} | remediationPacket=${packetPath}`, paths);
+    appendQaRuntimeUpdateFn('phase-finalizer-failed', logFile, detail, paths);
+    appendHandoffUpdateFn('blocked', logFile, `${detail} | remediationPacket=${packetPath}`, paths);
     return false;
   }
 
+  syncCleanFinishArtifactsFn(completionArtifacts, paths);
   logSuccess(`Phase ${state.phaseNum} completed${completionLabel} (${durationSeconds}s)`);
-  appendQaRuntimeUpdate(
+  appendQaRuntimeUpdateFn(
     completionLabel === '' ? 'phase-command-succeeded' : `phase-completed${completionLabel}`,
     logFile,
     completionArtifacts,
     paths,
   );
-  writeCleanFinishHandoff(paths);
+  writeCleanFinishHandoffFn(paths);
+  const terminalState = writeTerminalCompleteSimpleRunStateFn({ reason: 'phase_complete' });
+  appendDebugLog('simple-run-state-terminal-complete', {
+    stateRunId: terminalState?.state?.stateRunId || state.stateRunId,
+    statePath: terminalState?.statePath || '',
+  });
   appendDecisionLog([
     `## Phase ${state.phaseNum}`,
     `- Status: ✅ Completed${completionLabel ? ` (${completionLabel.slice(1).replace(/-/g, ' ')})` : ''}`,
     `- Duration: ${durationSeconds}s`,
     '',
   ]);
-  runCommitPrompt(logFile, commitPrompt, runtime);
+  try {
+    runCommitPromptFn(logFile, commitPrompt, runtime);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    appendDebugLog('commit-prompt-advisory-failed-after-terminal-complete', { detail });
+    appendQaRuntimeUpdateFn('commit-prompt-advisory-failed', logFile, detail, paths);
+  }
   return true;
 }
 
