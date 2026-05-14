@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
 import { resolveGitTreeFingerprint } from './verification-verdict-state.mjs';
 import { appendCloseoutDiagnostic, buildCloseoutDiagnosticEvent } from './lib/closeout-diagnostics.mjs';
-import { evaluateCloseoutInvariant } from './lib/harness-state-invariants.mjs';
+import { evaluateCloseoutInvariant, evaluateHarnessStateInvariants } from './lib/harness-state-invariants.mjs';
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
 import { patchAttemptManifestFinalizerSeal, readAttemptManifest } from './lib/phase-attempt-manifest.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
@@ -31,6 +31,7 @@ import {
   parsePhaseSummaryProjection,
   renderPhaseSummaryProjection,
 } from './lib/phase-summary-projection.mjs';
+import { readState, writeState } from './lib/simple-run-state.mjs';
 import { updateGoalStatus, withDb } from './runtime-state.mjs';
 
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
@@ -204,6 +205,9 @@ function validateFinalizeSidecarManifest({ root, sidecarPaths, sidecarState }) {
       diagnostics.push({ type: 'manifest_attempt_record_missing', key });
     }
   }
+  const resolvedTerminalBlocker = manifest.terminalOutcome === 'blocked_resolved'
+    && (sidecarState.latestBlockers?.active || []).length === 0
+    && (sidecarState.latestBlockers?.unknown || []).length === 0;
   for (const entry of Array.isArray(manifest.files) ? manifest.files : []) {
     const filePath = resolvePath(entry?.path || '', root);
     const expectedHash = entry?.sha256 || '';
@@ -216,6 +220,9 @@ function validateFinalizeSidecarManifest({ root, sidecarPaths, sidecarState }) {
     }
     const actualHash = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
     if (actualHash !== expectedHash) {
+      if (resolvedTerminalBlocker && ['current-run', 'active-phase-run', 'latest-dispatch'].includes(entry?.kind)) {
+        continue;
+      }
       diagnostics.push({ type: 'manifest_file_hash_mismatch', filePath, expectedHash, actualHash });
     }
   }
@@ -1647,15 +1654,147 @@ function payloadPidNamespace(payload = {}) {
     || (payloadHasPidEvidence(payload) ? 'node-parent' : undefined);
 }
 
-function reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, plannedWrites, allActionableComplete = false }) {
+function phaseOnlyCloseoutPayload({ payload = {}, basename = '', nextPhase = {}, now = '' } = {}) {
+  const phaseNumber = String(nextPhase.number || '').trim();
+  const phaseTitle = nextPhase.title || `Phase ${phaseNumber}`;
+  const status = basename === 'latest-dispatch.json' ? 'prepared' : 'paused';
+  const next = {
+    ...payload,
+    status,
+    completionStatus: status,
+    activeExecutionStatus: 'paused',
+    activePhaseNumber: phaseNumber,
+    activePhaseTitle: phaseTitle,
+    phaseNumber,
+    phaseTitle,
+    activeRunLeaseId: '',
+    stopReasonCode: 'actionable-phases-remaining',
+    rawStopReasonCode: 'actionable-phases-remaining',
+    blockingStopReasonCode: '',
+    stopReasonDetail: 'phase closeout finalized; actionable phases remain',
+    childAlive: false,
+    updatedAt: now,
+  };
+  for (const field of ['attemptOutcome', 'finalVerdict', 'normalizedRunVerdict', 'failedAt', 'blockedAt', 'blockerEvidenceId']) {
+    delete next[field];
+  }
+  if (next.liveness && typeof next.liveness === 'object' && !Array.isArray(next.liveness)) {
+    next.liveness = {
+      ...next.liveness,
+      childAlive: false,
+      reason: 'phase_closeout_actionable_phases_remain',
+      updatedAt: now,
+    };
+  }
+  if (next.phaseRunLease && typeof next.phaseRunLease === 'object') {
+    next.phaseRunLease = {
+      ...next.phaseRunLease,
+      status: 'paused',
+      completionStatus: 'paused',
+      activeExecutionStatus: 'paused',
+      activePhaseNumber: phaseNumber,
+      activePhaseTitle: phaseTitle,
+      phaseNumber,
+      phaseTitle,
+      activeRunLeaseId: '',
+      stopReasonCode: 'actionable-phases-remaining',
+      rawStopReasonCode: 'actionable-phases-remaining',
+      blockingStopReasonCode: '',
+      stopReasonDetail: 'phase closeout finalized; actionable phases remain',
+      childAlive: false,
+      updatedAt: now,
+    };
+    delete next.phaseRunLease.attemptOutcome;
+    delete next.phaseRunLease.finalVerdict;
+    delete next.phaseRunLease.normalizedRunVerdict;
+    delete next.phaseRunLease.failedAt;
+    delete next.phaseRunLease.blockedAt;
+    delete next.phaseRunLease.blockerEvidenceId;
+    if (next.phaseRunLease.phase && typeof next.phaseRunLease.phase === 'object') {
+      next.phaseRunLease.phase = {
+        ...next.phaseRunLease.phase,
+        number: phaseNumber,
+        title: phaseTitle,
+      };
+    }
+    if (next.phaseRunLease.liveness && typeof next.phaseRunLease.liveness === 'object' && !Array.isArray(next.phaseRunLease.liveness)) {
+      next.phaseRunLease.liveness = {
+        ...next.phaseRunLease.liveness,
+        childAlive: false,
+        reason: 'phase_closeout_actionable_phases_remain',
+        updatedAt: now,
+      };
+    }
+  }
+  return next;
+}
+
+function reconcileStateBoardForNextPhase({ workflowDir, nextPhase, now, dryRun, plannedWrites }) {
+  const board = readState({ statePath: path.join(workflowDir, 'STATE.md') });
+  if (!board.exists || !board.state) {
+    return null;
+  }
+  const phaseNumber = String(nextPhase.number || '').trim();
+  const nextState = {
+    ...board.state,
+    projectionStatus: 'committed',
+    status: 'paused',
+    phase: phaseNumber,
+    reason: 'actionable-phases-remaining',
+    updated: now,
+  };
+  plannedWrites.push({ path: board.statePath, kind: 'state-board' });
+  if (!dryRun) {
+    writeState(nextState, {
+      statePath: board.statePath,
+      body: [
+        '## Now',
+        `Phase ${phaseNumber} is prepared for the next actionable run.`,
+        '',
+        '## Reason',
+        'Previous phase closeout finalized while actionable phases remain.',
+        '',
+        '## Next',
+        'Resume the phase runner to continue execution.',
+        '',
+        '## Evidence',
+        `Updated by phase-closeout-finalize at ${now}.`,
+      ].join('\n'),
+    });
+  }
+  return board.statePath;
+}
+
+function reconcileWorkflowState({ workflowDir, phaseNumber, phases = [], now, dryRun, plannedWrites, allActionableComplete = false }) {
   const historicalWarnings = [];
   const updated = [];
   if (!allActionableComplete) {
+    const projectedPhases = projectedPhasesAfterCloseout(phases, phaseNumber);
+    const nextPhase = nextActionablePhase(projectedPhases);
+    if (nextPhase) {
+      for (const basename of STATE_FILES) {
+        const filePath = path.join(workflowDir, basename);
+        if (!fs.existsSync(filePath)) {
+          continue;
+        }
+        const payload = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const next = phaseOnlyCloseoutPayload({ payload, basename, nextPhase, now });
+        plannedWrites.push({ path: filePath, kind: 'workflow-state' });
+        if (!dryRun) {
+          writeJsonAtomic(filePath, next);
+        }
+        updated.push(filePath);
+      }
+      const boardPath = reconcileStateBoardForNextPhase({ workflowDir, nextPhase, now, dryRun, plannedWrites });
+      if (boardPath) {
+        updated.push(boardPath);
+      }
+    }
     return {
-      stateReconciled: false,
-      reconciledStateFiles: [],
+      stateReconciled: updated.length > 0,
+      reconciledStateFiles: updated,
       historicalWarnings,
-      skippedReason: 'phase-only-closeout-actionable-phases-remain',
+      skippedReason: updated.length > 0 ? '' : 'phase-only-closeout-actionable-phases-remain',
     };
   }
   for (const basename of STATE_FILES) {
@@ -1710,6 +1849,12 @@ function reconcileWorkflowState({ workflowDir, phaseNumber, now, dryRun, planned
         pidNamespace: payloadPidNamespace(next),
         payloadPatch: next,
         writeMode: 'replace',
+      });
+      const written = readJsonIfExists(filePath) || {};
+      writeJsonAtomic(filePath, {
+        ...written,
+        normalizedRunVerdict: next.normalizedRunVerdict,
+        historicalWarnings: next.historicalWarnings,
       });
     }
     updated.push(filePath);
@@ -1843,6 +1988,95 @@ function writeCanonicalVerdict({
       hash: attemptLocalHash,
       commitToken: path.basename(prepRoot),
     },
+  };
+}
+
+function evaluatePostCloseoutReconcileBarrier({ statusPath, workflowDir, now }) {
+  const statusDocument = fs.existsSync(statusPath)
+    ? parsePhaseStatusDocument(fs.readFileSync(statusPath, 'utf8'))
+    : { root: {}, phases: [] };
+  const result = evaluateHarnessStateInvariants({
+    statusRoot: statusDocument.root,
+    phases: statusDocument.phases,
+    statusPath,
+    workflowDir,
+    now,
+  });
+  return {
+    ok: result.violations.length === 0,
+    violations: result.violations,
+    degradedEvidence: result.degradedEvidence,
+    workflowStateFiles: result.workflowStates.map((entry) => path.basename(entry.path)),
+    boardStatePath: result.boardState?.exists ? result.boardState.statePath : '',
+  };
+}
+
+function blockedPostCloseoutBarrierResult({
+  root,
+  dryRun,
+  keepPrep,
+  runtimeCloseoutReason,
+  phaseNumber,
+  phaseTitle,
+  generatedAt,
+  normalizedRunVerdict,
+  stateResult,
+  postCloseoutReconcileBarrier,
+  diagnosticsLedgerPath,
+  plannedWrites,
+}) {
+  plannedWrites.push({ path: diagnosticsLedgerPath, kind: 'closeout-diagnostics-ledger' });
+  const diagnosticsEvent = buildCloseoutDiagnosticEvent({
+    eventType: 'phase_closeout_reconcile_barrier_blocked',
+    runId: `phase${String(phaseNumber).padStart(2, '0')}-final`,
+    phaseNumber,
+    now: generatedAt,
+    payload: {
+      dryRun,
+      keepPrep,
+      ok: false,
+      reason: runtimeCloseoutReason,
+      violations: postCloseoutReconcileBarrier.violations,
+      degradedEvidence: postCloseoutReconcileBarrier.degradedEvidence,
+    },
+  });
+  const diagnostics = dryRun
+    ? {
+      ok: true,
+      ledgerPath: rel(root, diagnosticsLedgerPath),
+      fallbackEmitted: false,
+      skipped: true,
+      reason: 'dry_run_post_closeout_reconcile_barrier_blocked',
+    }
+    : appendCloseoutDiagnostic({
+      ledgerPath: diagnosticsLedgerPath,
+      event: diagnosticsEvent,
+    });
+  return {
+    ok: false,
+    dryRun,
+    keepPrep,
+    runtimeCloseout: {
+      status: 'blocked',
+      ok: false,
+      reason: runtimeCloseoutReason,
+    },
+    repositoryCloseout: { status: 'skipped', reason: runtimeCloseoutReason },
+    finalVerdict: 'blocked',
+    normalizedRunVerdict,
+    idempotentNoop: false,
+    historicalWarnings: stateResult.historicalWarnings,
+    stateReconciled: stateResult.stateReconciled,
+    reconciledStateFiles: stateResult.reconciledStateFiles.map((filePath) => rel(root, filePath)),
+    postCloseoutReconcileBarrier,
+    diagnostics: {
+      ...diagnostics,
+      ledgerPath: rel(root, diagnosticsLedgerPath),
+    },
+    plannedWrites: plannedWrites.map((entry) => normalizeWriteEntry(entry, root)),
+    phaseNumber,
+    phaseTitle,
+    generatedAt,
   };
 }
 
@@ -2179,12 +2413,50 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   const stateResult = reconcileWorkflowState({
     workflowDir,
     phaseNumber,
+    phases: statusDocument.phases,
     now,
     dryRun,
     plannedWrites,
     allActionableComplete: complete,
   });
   const normalizedRunVerdict = normalizeFinalRunVerdict({ phase, statusRoot: statusDocument.root, historicalWarnings: stateResult.historicalWarnings });
+  const phaseDoc = resolvePath(phase.archivedPhaseDoc || phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '', root);
+  rewritePhaseStatus({ statusPath, statusRoot: statusDocument.root, phases: statusDocument.phases, phaseNumber, phase, now, allActionableComplete: complete, dryRun, plannedWrites, normalizedRunVerdict });
+  const summaryResult = syncFinalOutcomeSummary({
+    summaryPath,
+    statusPath,
+    workflowDir,
+    dryRun,
+    plannedWrites,
+    now,
+  });
+  const postCloseoutReconcileBarrier = dryRun || !complete
+    ? {
+      ok: true,
+      skipped: true,
+      reason: dryRun ? 'dry_run' : 'phase_only_closeout_actionable_phases_remain',
+      violations: [],
+      degradedEvidence: [],
+      workflowStateFiles: [],
+      boardStatePath: '',
+    }
+    : evaluatePostCloseoutReconcileBarrier({ statusPath, workflowDir, now });
+  if (!postCloseoutReconcileBarrier.ok) {
+    return blockedPostCloseoutBarrierResult({
+      root,
+      dryRun,
+      keepPrep,
+      runtimeCloseoutReason: 'post_closeout_reconcile_barrier_failed',
+      phaseNumber,
+      phaseTitle: phase.title || `Phase ${phaseNumber}`,
+      generatedAt: now,
+      normalizedRunVerdict,
+      stateResult,
+      postCloseoutReconcileBarrier,
+      diagnosticsLedgerPath,
+      plannedWrites,
+    });
+  }
   const verdictPublishCandidate = writeCanonicalVerdict({
     root,
     phase,
@@ -2202,7 +2474,6 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   });
   const canonicalVerdictPath = verdictPublishCandidate.canonicalPath;
   const attemptLocalVerdict = verdictPublishCandidate.attemptLocal;
-  const phaseDoc = resolvePath(phase.archivedPhaseDoc || phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '', root);
   if (!dryRun && publishFailurePoint === 'after_canonical_publish') {
     writeOrphanedPrepareArchiveDiagnostic({
       root,
@@ -2240,15 +2511,6 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     verificationVerdictPath: canonicalVerdictPath,
     dryRun,
     plannedWrites,
-  });
-  rewritePhaseStatus({ statusPath, statusRoot: statusDocument.root, phases: statusDocument.phases, phaseNumber, phase, now, allActionableComplete: complete, dryRun, plannedWrites, normalizedRunVerdict });
-  const summaryResult = syncFinalOutcomeSummary({
-    summaryPath,
-    statusPath,
-    workflowDir,
-    dryRun,
-    plannedWrites,
-    now,
   });
   appendCloseoutPhaseEvent({ statusPath, phase, phaseNumber, now, dryRun, plannedWrites });
   updateMasterChecklist({ masterPlan, phaseNumber, dryRun, plannedWrites });
@@ -2417,6 +2679,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
     goalRuntime,
     postPublishStatus,
     phaseCloseoutGate: closeoutResult,
+    postCloseoutReconcileBarrier,
     gitCloseoutPreflight: gitCloseoutPayload,
     diagnostics: {
       ...diagnostics,

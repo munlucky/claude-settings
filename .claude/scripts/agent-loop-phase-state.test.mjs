@@ -285,3 +285,56 @@ test('blocked phase update moves root active pointer away from completed phase',
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('verification stage update records non-zero verification seconds', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-state-verification-timing-'));
+  try {
+    const statusFile = path.join(root, 'phase-status.yaml');
+    fs.writeFileSync(statusFile, [
+      'schemaVersion: "1.0"',
+      'activeExecutionStatus: running',
+      'activeCurrentStage: verify',
+      'activePhaseNumber: 6',
+      'phases:',
+      '  - number: 6',
+      '    title: "Phase 06"',
+      '    status: in_progress',
+      '    planConfirmed: true',
+      '    attempts:',
+      '      total: 1',
+      '      lastOutcome: running',
+      '      lastUpdatedAt: "2026-05-14T00:00:00.000Z"',
+      '    timing:',
+      '      startedAt: "2026-05-14T00:00:00.000Z"',
+      '      lastStage: "execute"',
+      '      lastStageAt: "2026-05-14T00:00:10.000Z"',
+      '      wallClockSeconds: 10',
+      '      runnerActiveSeconds: 10',
+      '      workerActiveSeconds: 10',
+      '      verificationSeconds: 0',
+      '',
+    ].join('\n'), 'utf8');
+
+    const result = spawnSync(process.execPath, [
+      phaseStateScriptPath,
+      'update-phase-state',
+      statusFile,
+      '6',
+      'in_progress',
+      '2026-05-14T00:00:18.000Z',
+      'verification_running',
+      'false',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ], { cwd: root, encoding: 'utf8' });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.match(text, /verificationSeconds:\s+8/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

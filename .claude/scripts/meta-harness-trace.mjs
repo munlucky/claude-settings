@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { buildBottleneckWarnings, summarizeTimingBuckets } from './lib/phase-attempt-telemetry.mjs';
 
 const DEFAULT_OUTPUT_ROOT = '.claude/logs/meta-harness-trace';
 const DEFAULT_WORKFLOW_LOG_DIR = '.claude/logs/workflow-enforcement';
@@ -240,10 +241,15 @@ function parsePhaseStatus(statusPath, qaReportPath) {
       if (stripped.startsWith('lastStageAt:')) current.timing.lastStageAt = stripped.slice('lastStageAt:'.length).trim().replace(/^"|"$/g, '');
       if (stripped.startsWith('wallClockSeconds:')) current.timing.wallClockSeconds = Number.parseFloat(stripped.slice('wallClockSeconds:'.length).trim());
       if (stripped.startsWith('runnerActiveSeconds:')) current.timing.runnerActiveSeconds = Number.parseFloat(stripped.slice('runnerActiveSeconds:'.length).trim());
+      if (stripped.startsWith('workerStartupSeconds:')) current.timing.workerStartupSeconds = Number.parseFloat(stripped.slice('workerStartupSeconds:'.length).trim());
+      if (stripped.startsWith('workerActiveSeconds:')) current.timing.workerActiveSeconds = Number.parseFloat(stripped.slice('workerActiveSeconds:'.length).trim());
+      if (stripped.startsWith('leaseHeartbeatSeconds:')) current.timing.leaseHeartbeatSeconds = Number.parseFloat(stripped.slice('leaseHeartbeatSeconds:'.length).trim());
       if (stripped.startsWith('verificationSeconds:')) current.timing.verificationSeconds = Number.parseFloat(stripped.slice('verificationSeconds:'.length).trim());
       if (stripped.startsWith('remediationSeconds:')) current.timing.remediationSeconds = Number.parseFloat(stripped.slice('remediationSeconds:'.length).trim());
       if (stripped.startsWith('blockedSeconds:')) current.timing.blockedSeconds = Number.parseFloat(stripped.slice('blockedSeconds:'.length).trim());
       if (stripped.startsWith('manualCloseoutSeconds:')) current.timing.manualCloseoutSeconds = Number.parseFloat(stripped.slice('manualCloseoutSeconds:'.length).trim());
+      if (stripped.startsWith('idleWaitSeconds:')) current.timing.idleWaitSeconds = Number.parseFloat(stripped.slice('idleWaitSeconds:'.length).trim());
+      if (stripped.startsWith('runtimeFallbackSeconds:')) current.timing.runtimeFallbackSeconds = Number.parseFloat(stripped.slice('runtimeFallbackSeconds:'.length).trim());
       if (stripped.startsWith('completedAt:')) current.timing.completedAt = stripped.slice('completedAt:'.length).trim().replace(/^"|"$/g, '');
       if (stripped.startsWith('blockedAt:')) current.timing.blockedAt = stripped.slice('blockedAt:'.length).trim().replace(/^"|"$/g, '');
       continue;
@@ -394,18 +400,33 @@ function summarizeTiming(phase, workflowState) {
     && Number.parseFloat(phaseTiming.wallClockSeconds) > 0
     ? Number.parseFloat(phaseTiming.wallClockSeconds)
     : inferredWallClockSeconds;
-  return {
+  const timing = {
     startedAt,
     lastStage: phaseTiming.lastStage || currentRun.currentStage || workflowState?.currentStage || '',
     lastStageAt,
     wallClockSeconds,
     runnerActiveSeconds: Number.isFinite(Number.parseFloat(phaseTiming.runnerActiveSeconds)) ? Number.parseFloat(phaseTiming.runnerActiveSeconds) : 0,
+    workerStartupSeconds: Number.isFinite(Number.parseFloat(phaseTiming.workerStartupSeconds)) ? Number.parseFloat(phaseTiming.workerStartupSeconds) : 0,
+    workerActiveSeconds: Number.isFinite(Number.parseFloat(phaseTiming.workerActiveSeconds)) ? Number.parseFloat(phaseTiming.workerActiveSeconds) : 0,
+    leaseHeartbeatSeconds: Number.isFinite(Number.parseFloat(phaseTiming.leaseHeartbeatSeconds)) ? Number.parseFloat(phaseTiming.leaseHeartbeatSeconds) : 0,
     verificationSeconds: Number.isFinite(Number.parseFloat(phaseTiming.verificationSeconds)) ? Number.parseFloat(phaseTiming.verificationSeconds) : 0,
     remediationSeconds: Number.isFinite(Number.parseFloat(phaseTiming.remediationSeconds)) ? Number.parseFloat(phaseTiming.remediationSeconds) : 0,
     blockedSeconds: Number.isFinite(Number.parseFloat(phaseTiming.blockedSeconds)) ? Number.parseFloat(phaseTiming.blockedSeconds) : 0,
     manualCloseoutSeconds: Number.isFinite(Number.parseFloat(phaseTiming.manualCloseoutSeconds)) ? Number.parseFloat(phaseTiming.manualCloseoutSeconds) : 0,
+    idleWaitSeconds: Number.isFinite(Number.parseFloat(phaseTiming.idleWaitSeconds)) ? Number.parseFloat(phaseTiming.idleWaitSeconds) : 0,
+    runtimeFallbackSeconds: Number.isFinite(Number.parseFloat(phaseTiming.runtimeFallbackSeconds)) ? Number.parseFloat(phaseTiming.runtimeFallbackSeconds) : 0,
     completedAt: phaseTiming.completedAt || '',
     blockedAt: phaseTiming.blockedAt || '',
+  };
+  const bucketSummary = summarizeTimingBuckets(timing);
+  return {
+    ...timing,
+    timingBuckets: bucketSummary.buckets,
+    timingBucketTotalSeconds: bucketSummary.bucketTotalSeconds,
+    timingBucketDriftSeconds: bucketSummary.driftSeconds,
+    timingBucketsWithinTolerance: bucketSummary.withinTolerance,
+    dominantTimingBucket: bucketSummary.dominantBucket,
+    bottleneckWarnings: buildBottleneckWarnings(timing),
   };
 }
 
@@ -705,7 +726,9 @@ function captureTrace(options) {
     `- Score: ${diagnosis.summary.scoreCurrent ?? 'n/a'} / ${diagnosis.summary.scoreTarget ?? 'n/a'} (${diagnosis.summary.scoreVerdict || 'unknown'})`,
     `- Blocker codes: ${diagnosis.summary.blockerCodes.length > 0 ? diagnosis.summary.blockerCodes.join(', ') : 'none'}`,
     `- Phase counts: planned=${diagnosis.summary.phaseCounts?.planned ?? 0}, completed=${diagnosis.summary.phaseCounts?.completed ?? 0}, blocked=${diagnosis.summary.phaseCounts?.blocked ?? 0}, pending=${diagnosis.summary.phaseCounts?.pending ?? 0}, remaining=${diagnosis.summary.phaseCounts?.remaining ?? 0}`,
-    `- Timing: wall=${diagnosis.summary.timing?.wallClockSeconds ?? 0}s, active=${diagnosis.summary.timing?.runnerActiveSeconds ?? 0}s, verification=${diagnosis.summary.timing?.verificationSeconds ?? 0}s, remediation=${diagnosis.summary.timing?.remediationSeconds ?? 0}s, blocked=${diagnosis.summary.timing?.blockedSeconds ?? 0}s, manual=${diagnosis.summary.timing?.manualCloseoutSeconds ?? 0}s`,
+    `- Timing: wall=${diagnosis.summary.timing?.wallClockSeconds ?? 0}s, active=${diagnosis.summary.timing?.runnerActiveSeconds ?? 0}s, worker=${diagnosis.summary.timing?.workerActiveSeconds ?? 0}s, verification=${diagnosis.summary.timing?.verificationSeconds ?? 0}s, remediation=${diagnosis.summary.timing?.remediationSeconds ?? 0}s, blocked=${diagnosis.summary.timing?.blockedSeconds ?? 0}s, closeout=${diagnosis.summary.timing?.manualCloseoutSeconds ?? 0}s, idle=${diagnosis.summary.timing?.idleWaitSeconds ?? 0}s, fallback=${diagnosis.summary.timing?.runtimeFallbackSeconds ?? 0}s`,
+    `- Timing buckets: total=${diagnosis.summary.timing?.timingBucketTotalSeconds ?? 0}s, drift=${diagnosis.summary.timing?.timingBucketDriftSeconds ?? 0}s, dominant=${diagnosis.summary.timing?.dominantTimingBucket || 'none'}, withinTolerance=${diagnosis.summary.timing?.timingBucketsWithinTolerance ? 'yes' : 'no'}`,
+    `- Bottleneck warnings: ${(diagnosis.summary.timing?.bottleneckWarnings || []).length > 0 ? diagnosis.summary.timing.bottleneckWarnings.join(', ') : 'none'}`,
     `- Failure class counts: ${Object.keys(diagnosis.summary.failureClassCounts || {}).length > 0 ? JSON.stringify(diagnosis.summary.failureClassCounts) : 'none'}`,
     `- Fallback reasons: ${diagnosis.summary.fallbackReasons.length > 0 ? diagnosis.summary.fallbackReasons.join(', ') : 'none'}`,
     '',

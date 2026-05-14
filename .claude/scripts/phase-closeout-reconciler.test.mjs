@@ -96,6 +96,41 @@ test('reconciler returns deterministic summary JSON payload fields', async () =>
   });
 });
 
+test('reconciler blocks success marker when post-reconcile invariants fail', async () => {
+  await withFixture(async (fixture) => {
+    for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
+      patchJson(path.join(fixture.workflowDir, basename), {
+        stateRunId: 'state-run-reconcile-split',
+      });
+    }
+    writeStateBoard(fixture.workflowDir, {
+      stateRunId: 'state-run-reconcile-split',
+      status: 'active',
+      projectionStatus: 'pending',
+      phase: '2',
+    });
+
+    await assert.rejects(
+      () => reconcilePhaseCloseout({
+        root: fixture.root,
+        statusFile: fixture.statusFile,
+        workflowDir: fixture.workflowDir,
+        fallbackRunId: 'local-fallback-complete-run',
+        reason: 'phase-04-barrier-test',
+        now: fixture.fixedNow,
+      }),
+      /post_reconcile_invariant_failed/,
+    );
+
+    const intent = readJson(path.join(fixture.workflowDir, 'reconciliation-intent.json'));
+    const partial = readJson(path.join(fixture.workflowDir, 'reconciliation-partial.json'));
+    assert.equal(intent.status, 'partial');
+    assert.equal(partial.status, 'partial');
+    assert.equal(fs.existsSync(path.join(fixture.workflowDir, 'reconciliation-success.json')), false);
+    assert.equal(readJson(path.join(fixture.workflowDir, 'latest-dispatch.json')).status, 'superseded-by-local-fallback');
+  });
+});
+
 test('missing adoption metadata blocks manual orphan reconcile', async () => {
   await withFixture(async (fixture) => {
     await assert.rejects(
@@ -194,6 +229,37 @@ test('delegated-loop-cannot-adopt-orphan rejects automatic orphan adoption CLIs'
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function patchJson(filePath, patch) {
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    ...readJson(filePath),
+    ...patch,
+  }, null, 2)}\n`, 'utf8');
+}
+
+function writeStateBoard(workflowDir, overrides = {}) {
+  const state = {
+    stateRunId: 'state-run-a',
+    transitionId: 'transition-a',
+    projectionStatus: 'committed',
+    planDir: 'docs/implementation/reconciler-smoke',
+    statusFile: '.claude/docs/phase-status.yaml',
+    status: 'active',
+    phase: '2',
+    attempt: 'attempt-a',
+    owner: 'codex',
+    reason: 'fixture',
+    runRoot: '.claude/logs/workflow-enforcement/runs/state-run-a',
+    updated: '2026-05-08T12:00:00.000Z',
+    ...overrides,
+  };
+  fs.writeFileSync(path.join(workflowDir, 'STATE.md'), [
+    '# Simple Run State',
+    '',
+    ...Object.entries(state).map(([key, value]) => `${key}: ${value}`),
+    '',
+  ].join('\n'), 'utf8');
 }
 
 function validAdoptionMetadata(overrides = {}) {

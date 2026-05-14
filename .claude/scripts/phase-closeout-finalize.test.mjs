@@ -189,6 +189,128 @@ test('finalize writes canonical verdict and reconciles delegated failure as hist
   });
 });
 
+test('finalize blocks clean success when post-closeout read models are split-brain', async () => {
+  await withFixture(async (fixture) => {
+    for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
+      patchJson(path.join(fixture.workflowDir, basename), {
+        stateRunId: 'state-run-split',
+      });
+    }
+    writeStateBoard(fixture.workflowDir, {
+      stateRunId: 'state-run-split',
+      status: 'active',
+      phase: '1',
+    });
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-split-brain',
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.finalVerdict, 'blocked');
+    assert.equal(result.runtimeCloseout.reason, 'post_closeout_reconcile_barrier_failed');
+    assert.equal(result.postCloseoutReconcileBarrier.ok, false);
+    assert.equal(
+      result.postCloseoutReconcileBarrier.violations.some((entry) => entry.code === 'state-board-active-projection-terminal'),
+      true,
+    );
+    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), false);
+    assert.match(fs.readFileSync(path.join(fixture.executionRoot, 'closeout-diagnostics.jsonl'), 'utf8'), /phase_closeout_reconcile_barrier_blocked/);
+  });
+});
+
+test('finalize clean terminal projections pass the post-closeout barrier', async () => {
+  await withFixture(async (fixture) => {
+    for (const basename of ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json']) {
+      patchJson(path.join(fixture.workflowDir, basename), {
+        stateRunId: 'state-run-clean',
+      });
+    }
+    writeStateBoard(fixture.workflowDir, {
+      stateRunId: 'state-run-clean',
+      status: 'complete',
+      phase: '1',
+    });
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-clean-barrier',
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.postCloseoutReconcileBarrier.ok, true);
+    assert.deepEqual(result.postCloseoutReconcileBarrier.violations, []);
+    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), true);
+  });
+});
+
+test('finalize skips final terminal barrier but realigns workflow projections for next phase', async () => {
+  await withFixture(async (fixture) => {
+    fs.writeFileSync(fixture.statusFile, [
+      fs.readFileSync(fixture.statusFile, 'utf8').trimEnd(),
+      '  - number: 2',
+      '    title: "Next"',
+      '    status: pending',
+      '',
+    ].join('\n'), 'utf8');
+    patchJson(path.join(fixture.workflowDir, 'latest-dispatch.json'), {
+      stateRunId: 'state-run-stale-dispatch',
+      status: 'prepared',
+      completionStatus: 'prepared',
+      activeExecutionStatus: 'prepared',
+      phaseNumber: 1,
+    });
+    writeStateBoard(fixture.workflowDir, {
+      stateRunId: 'state-run-stale-dispatch',
+      status: 'blocked',
+      phase: '1',
+      reason: 'completion-gate-blocked',
+    });
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-no-repair-invalid',
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.postCloseoutReconcileBarrier.skipped, true);
+    assert.equal(result.postCloseoutReconcileBarrier.reason, 'phase_only_closeout_actionable_phases_remain');
+    const latestDispatch = readJson(path.join(fixture.workflowDir, 'latest-dispatch.json'));
+    assert.equal(latestDispatch.status, 'prepared');
+    assert.equal(latestDispatch.activeExecutionStatus, 'paused');
+    assert.equal(latestDispatch.phaseNumber, '2');
+    assert.equal(latestDispatch.activePhaseNumber, '2');
+    assert.equal(latestDispatch.childAlive, false);
+    const stateBoard = fs.readFileSync(path.join(fixture.workflowDir, 'STATE.md'), 'utf8');
+    assert.match(stateBoard, /status: paused/);
+    assert.match(stateBoard, /phase: 2/);
+    assert.match(stateBoard, /reason: actionable-phases-remaining/);
+    assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), true);
+  });
+});
+
 test('finalize writes attempt manifest finalizer seal before status promotion', async () => {
   await withFixture(async (fixture) => {
     const intent = writeAttemptManifestIntent({
@@ -392,6 +514,65 @@ test('finalize skips completed reconciliation when sidecar has open blocker', as
     assert.equal(fs.existsSync(path.join(fixture.root, '.claude/verification-verdict-phase01-final.json')), false);
     assert.equal(readJson(path.join(fixture.workflowDir, 'current-run.json')).completionStatus, 'failed');
     assert.match(fs.readFileSync(path.join(fixture.executionRoot, 'closeout-diagnostics.jsonl'), 'utf8'), /phase_closeout_finalize_blocked/);
+  });
+});
+
+test('finalize accepts resolved blocker sidecar after workflow projections were reconciled', async () => {
+  await withFixture(async (fixture) => {
+    writeOpenBlockerSidecar(fixture.executionRoot);
+    fs.appendFileSync(path.join(fixture.executionRoot, 'BLOCKER_EVIDENCE.jsonl'), `${JSON.stringify({
+      id: 'blocker-spawn-eperm',
+      status: 'resolved',
+      phaseNumber: 1,
+      attemptId: 'attempt-phase-01-a',
+      transactionId: 'txn-phase-01-a',
+      blockerClass: 'verification_environment_unavailable',
+      blockerCode: 'spawn_eperm',
+      detail: 'verifier rerun passed with sufficient controller timeout',
+      createdAt: '2026-05-10T11:59:00Z',
+      updatedAt: '2026-05-10T12:01:00Z',
+      resolvedAt: '2026-05-10T12:01:00Z',
+    })}\n`, 'utf8');
+    fs.writeFileSync(path.join(fixture.executionRoot, 'projection-manifest.json'), `${JSON.stringify({
+      schemaVersion: 'terminal-blocker-projection-manifest-v1',
+      transactionId: 'txn-phase-01-a',
+      attemptId: 'attempt-phase-01-a',
+      phaseNumber: 1,
+      terminalOutcome: 'blocked_resolved',
+      blockerEvidenceIds: ['blocker-spawn-eperm'],
+      attemptLedgerKeys: ['attempt-phase-01-a:txn-phase-01-a'],
+      files: [
+        {
+          path: path.relative(fixture.root, path.join(fixture.executionRoot, 'BLOCKER_EVIDENCE.jsonl')).replace(/\\/g, '/'),
+          kind: 'blockerEvidence',
+          sha256: sha256RawBytes(path.join(fixture.executionRoot, 'BLOCKER_EVIDENCE.jsonl')),
+        },
+        {
+          path: path.relative(fixture.root, path.join(fixture.executionRoot, 'ATTEMPT_LEDGER.jsonl')).replace(/\\/g, '/'),
+          kind: 'attemptLedger',
+          sha256: sha256RawBytes(path.join(fixture.executionRoot, 'ATTEMPT_LEDGER.jsonl')),
+        },
+        {
+          path: '.claude/logs/workflow-enforcement/current-run.json',
+          kind: 'current-run',
+          sha256: 'stale-projection-hash-after-closeout-reconcile',
+        },
+      ],
+    }, null, 2)}\n`, 'utf8');
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+    });
+
+    assert.equal(result.finalVerdict, 'complete');
+    assert.equal(result.runtimeCloseout.status, 'passed');
   });
 });
 
@@ -947,6 +1128,37 @@ test('windows-safe file utilities resolve globs, dedupe paths, and refuse outsid
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function patchJson(filePath, patch) {
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    ...readJson(filePath),
+    ...patch,
+  }, null, 2)}\n`, 'utf8');
+}
+
+function writeStateBoard(workflowDir, overrides = {}) {
+  const state = {
+    stateRunId: 'state-run-a',
+    transitionId: 'transition-a',
+    projectionStatus: 'committed',
+    planDir: 'docs/implementation/finalize-smoke',
+    statusFile: '.claude/docs/phase-status.yaml',
+    status: 'active',
+    phase: '1',
+    attempt: 'attempt-a',
+    owner: 'codex',
+    reason: 'fixture',
+    runRoot: '.claude/logs/workflow-enforcement/runs/state-run-a',
+    updated: '2026-05-10T12:00:00.000Z',
+    ...overrides,
+  };
+  fs.writeFileSync(path.join(workflowDir, 'STATE.md'), [
+    '# Simple Run State',
+    '',
+    ...Object.entries(state).map(([key, value]) => `${key}: ${value}`),
+    '',
+  ].join('\n'), 'utf8');
 }
 
 function dirtyGitCloseoutPayload() {

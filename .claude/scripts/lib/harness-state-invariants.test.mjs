@@ -451,6 +451,79 @@ test('state board pending projection status is reported as incomplete transition
   }
 });
 
+test('MemoryGraph invariant ignores superseded non-strict warning after recovery', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-memorygraph-recovered-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), `${JSON.stringify({
+      stateRunId: 'phase-05-run-a',
+      status: 'running',
+      activeExecutionStatus: 'active',
+      phaseNumber: 5,
+      unavailableCapabilities: [
+        {
+          capability: 'memorygraph',
+          code: 'memorygraph_unavailable',
+          strict: 'false',
+          status: 'superseded',
+          freshnessState: 'recovered',
+          decayReason: 'healthy_probe',
+          decayedAt: '2026-05-14T12:00:00Z',
+          source: 'memorygraph.health',
+        },
+      ],
+    })}\n`, 'utf8');
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 5 },
+      phases: [{ number: 5, title: 'Phase 05', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    assert.equal(result.degradedEvidence.some((entry) => entry.code === 'memorygraph_unavailable'), false);
+    assert.equal(result.violations.some((entry) => entry.code === 'memorygraph-unavailable-strict'), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('strict MemoryGraph unavailable still blocks before recovery', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-memorygraph-strict-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), `${JSON.stringify({
+      stateRunId: 'phase-05-run-a',
+      status: 'running',
+      activeExecutionStatus: 'active',
+      phaseNumber: 5,
+      unavailableCapabilities: [
+        {
+          capability: 'memorygraph',
+          code: 'memorygraph_unavailable',
+          strict: 'true',
+          status: 'unavailable',
+          freshnessState: 'current',
+          source: 'memorygraph.health',
+        },
+      ],
+    })}\n`, 'utf8');
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: { activePhaseNumber: 5 },
+      phases: [{ number: 5, title: 'Phase 05', status: 'in_progress' }],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+    });
+
+    assert.equal(result.violations.some((entry) => entry.code === 'memorygraph-unavailable-strict'), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('state board stateRunId mismatch with global compatibility projection is reported', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-state-board-run-id-'));
   try {

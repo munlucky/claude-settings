@@ -341,6 +341,11 @@ function inspectMemoryGraphCapabilities({ workflowStates, strictMemory = false, 
       if (normalizeLower(entry.code) !== 'memorygraph_unavailable') {
         continue;
       }
+      const status = normalizeLower(entry.status || 'unavailable');
+      const freshnessState = normalizeLower(entry.freshnessState || 'current');
+      if (['superseded', 'stale', 'healthy'].includes(status) || ['recovered', 'stale'].includes(freshnessState)) {
+        continue;
+      }
       const strict = strictMemory || ['true', 'strict', 'blocking'].includes(normalizeLower(entry.strict));
       const key = `${basename}:${entry.code}:${entry.fingerprint || entry.source || ''}:${strict}`;
       if (seen.has(key)) {
@@ -439,6 +444,10 @@ function isBoardActiveProjection(payload = {}) {
 }
 
 function isBoardTerminalProjection(payload = {}) {
+  if (workflowStateClass(payload) === 'terminal') {
+    return true;
+  }
+
   const rootFinalVerdict = normalizeLower(payload.finalVerdict);
   if (rootFinalVerdict === 'complete') {
     return true;

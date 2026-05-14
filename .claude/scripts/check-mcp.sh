@@ -8,6 +8,8 @@ echo ""
 ALL_OK=true
 CRG_COMMAND=""
 CRG_WINDOWS_ONLY=""
+CRG_LOG_DIR=".claude/logs/code-review-graph"
+CRG_FALLBACK_EVIDENCE_PATH="$CRG_LOG_DIR/fallback-status.log"
 
 resolve_code_review_graph() {
     if [[ -n "${CODE_REVIEW_GRAPH_COMMAND:-}" ]]; then
@@ -117,7 +119,9 @@ if resolve_code_review_graph; then
         echo "[WARN] code-review-graph command found but version check failed"
     fi
 
+    mkdir -p "$CRG_LOG_DIR"
     CRG_STATUS=$(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$CRG_COMMAND" status --repo . 2>&1 || true)
+    printf '%s\n' "$CRG_STATUS" > "$CRG_FALLBACK_EVIDENCE_PATH"
     if echo "$CRG_STATUS" | grep -qi "not.*built\|not.*initialized\|no graph\|missing\|not found"; then
         echo "[WARN] code-review-graph graph not built yet"
         echo "  -> Run on demand: code-review-graph build --repo ."

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
+import { buildBottleneckWarnings } from './phase-attempt-telemetry.mjs';
+
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-overhead-regression-'));
 process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = path.join(tempRoot, 'workflow-enforcement');
 
@@ -110,4 +112,18 @@ test('codex base args allow explicit sandbox override for trusted local phase ru
   assert.ok(args.includes('workspace-write'));
   assert.equal(args.includes('danger-full-access'), false);
   assert.equal(args.includes('--full-auto'), false);
+});
+
+test('slow narrow phase emits dominant timing bucket warning', () => {
+  const warnings = buildBottleneckWarnings({
+    wallClockSeconds: 120,
+    workerStartupSeconds: 4,
+    workerActiveSeconds: 6,
+    verificationSeconds: 2,
+    closeoutSeconds: 98,
+    idleWaitSeconds: 10,
+    runtimeFallbackSeconds: 0,
+  }, { thresholdSeconds: 30, ratio: 0.7 });
+
+  assert.deepEqual(warnings, ['phase_attempt_bottleneck:closeoutSeconds:98s_of_120s']);
 });

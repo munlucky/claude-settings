@@ -181,7 +181,7 @@ function graphStatus(repo) {
   return { ok: true, graphStatus: parsed.graphStatus || 'fresh', failureClass: '', detail: 'graph ready', ...parsed };
 }
 
-function runGraphOperation(repo, stage) {
+function runGraphOperation(repo, stage, base = '') {
   const status = graphStatus(repo);
   if (!status.ok) {
     return status;
@@ -189,8 +189,10 @@ function runGraphOperation(repo, stage) {
   if (stage === 'verify' || stage === 'finish') {
     return status;
   }
-  const command = stage === 'review' ? 'detect' : 'update';
-  const result = runCommand('code-review-graph', [command, '--repo', repo], { cwd: repo });
+  const args = stage === 'review'
+    ? ['detect-changes', '--repo', repo, '--base', base || 'HEAD~1', '--brief']
+    : ['update', '--repo', repo];
+  const result = runCommand('code-review-graph', args, { cwd: repo });
   if (isCommandNotFound(result)) {
     return { ok: false, graphStatus: 'unavailable', failureClass: 'tool_unavailable:command_not_found', detail: commandFailureDetail(result) };
   }
@@ -204,7 +206,7 @@ function runGraphOperation(repo, stage) {
       detail: output.trim(),
     };
   }
-  return { ...status, detail: `${command} completed` };
+  return { ...status, detail: `${args[0]} completed` };
 }
 
 function validateExistingEvidence({ analysisFile }) {
@@ -298,7 +300,7 @@ function executeRun(options) {
       } else if (stage === 'finish') {
         result = { ok: true, graphStatus: 'fresh', failureClass: '', detail: 'persist_summary coverage recorded' };
       } else {
-        result = runGraphOperation(repo, stage);
+        result = runGraphOperation(repo, stage, options.base);
       }
     }
 

@@ -75,6 +75,28 @@ process.exit(2);
   assert.match(analysis, /adapterArtifactDigest:/);
 });
 
+test('review uses detect-changes with base instead of legacy detect command', () => {
+  const repo = makeTempRepo();
+  const seenPath = path.join(repo, 'seen-args.json');
+  const bin = writeFakeCrg(repo, `
+const fs = require('fs');
+const args = process.argv.slice(2);
+if (args[0] === 'status') {
+  console.log(JSON.stringify({ status: 'fresh', nodes: 3, files: 2 }));
+  process.exit(0);
+}
+if (args[0] === 'detect-changes') {
+  fs.writeFileSync(${JSON.stringify(seenPath)}, JSON.stringify(args));
+  process.exit(0);
+}
+process.exit(2);
+`);
+  const result = runAdapter(repo, ['--stage', 'review'], { PATH: `${bin}${path.delimiter}${process.env.PATH}` });
+  assert.equal(result.status, 0, result.stderr);
+  const seen = JSON.parse(fs.readFileSync(seenPath, 'utf8'));
+  assert.deepEqual(seen, ['detect-changes', '--repo', repo, '--base', 'HEAD', '--brief']);
+});
+
 test('empty graph is classified as graph_empty and is not treated as ready', () => {
   const repo = makeTempRepo();
   const bin = writeFakeCrg(repo, `

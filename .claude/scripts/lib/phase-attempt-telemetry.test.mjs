@@ -4,7 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { readPhaseAttemptTelemetry } from './phase-attempt-telemetry.mjs';
+import {
+  readPhaseAttemptTelemetry,
+  summarizeTimingBuckets,
+} from './phase-attempt-telemetry.mjs';
 
 test('telemetry derives runner timing from manifest events', () => {
   const telemetry = readPhaseAttemptTelemetry({
@@ -24,6 +27,44 @@ test('telemetry derives runner timing from manifest events', () => {
   assert.equal(telemetry.runnerFinishedAt, '2026-05-12T00:00:40.000Z');
   assert.equal(telemetry.runnerActiveSeconds, 30);
   assert.equal(telemetry.workerStartupSeconds, 2);
+});
+
+test('telemetry counts verification and closeout events into wall-clock buckets', () => {
+  const telemetry = readPhaseAttemptTelemetry({
+    manifest: {
+      events: [
+        { eventType: 'manifest.intent', timestamp: '2026-05-12T00:00:00.000Z' },
+        { eventType: 'child.started', timestamp: '2026-05-12T00:00:03.000Z' },
+        { eventType: 'verification.started', timestamp: '2026-05-12T00:00:10.000Z' },
+        { eventType: 'verification.finished', timestamp: '2026-05-12T00:00:18.000Z' },
+        { eventType: 'runtime_fallback.started', timestamp: '2026-05-12T00:00:20.000Z' },
+        { eventType: 'runtime_fallback.finished', timestamp: '2026-05-12T00:00:25.000Z' },
+        { eventType: 'closeout.started', timestamp: '2026-05-12T00:00:30.000Z' },
+        { eventType: 'closeout.finished', timestamp: '2026-05-12T00:00:36.000Z' },
+        { eventType: 'manifest.exit', timestamp: '2026-05-12T00:00:40.000Z' },
+      ],
+    },
+  });
+
+  assert.equal(telemetry.verificationSeconds, 8);
+  assert.equal(telemetry.closeoutSeconds, 6);
+  assert.equal(telemetry.runtimeFallbackSeconds, 5);
+  assert.equal(telemetry.timingBuckets.buckets.workerStartupSeconds, 3);
+  assert.equal(telemetry.timingBuckets.withinTolerance, true);
+});
+
+test('timing bucket summary fills residual wall time as idle wait', () => {
+  const summary = summarizeTimingBuckets({
+    wallClockSeconds: 20,
+    workerStartupSeconds: 2,
+    workerActiveSeconds: 8,
+    verificationSeconds: 4,
+    closeoutSeconds: 3,
+  });
+
+  assert.equal(summary.buckets.idleWaitSeconds, 3);
+  assert.equal(summary.bucketTotalSeconds, 20);
+  assert.equal(summary.withinTolerance, true);
 });
 
 test('telemetry derives cache hit and miss signals from event fields', () => {

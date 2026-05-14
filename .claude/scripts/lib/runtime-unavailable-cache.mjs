@@ -56,28 +56,68 @@ function normalizeText(value) {
   return String(value ?? '').trim();
 }
 
+function isoNow() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function currentRunId(fallback = {}) {
+  return normalizeText(
+    fallback.runId
+      || fallback.stateRunId
+      || fallback.activeRunLeaseId
+      || process.env.PHASE_RUN_ID
+      || process.env.MOONSHOT_RUN_ID
+      || process.env.AGENT_LOOP_RUN_ID
+      || 'unknown',
+  );
+}
+
+function currentCheckId(entry = {}, fallback = {}) {
+  return normalizeText(entry.checkId || fallback.checkId || entry.source || fallback.source || entry.code || fallback.code || 'capability-check');
+}
+
 function capabilityKey(entry = {}) {
   const code = normalizeText(entry.code);
+  const capability = normalizeText(entry.capability);
   const fingerprint = normalizeText(entry.fingerprint);
   const strict = normalizeText(entry.strict);
   const source = normalizeText(entry.source);
+  const runId = normalizeText(entry.runId);
   return [
-    code,
+    capability || code,
     fingerprint || source,
     strict,
+    runId,
+    normalizeText(entry.status),
   ].join('|');
 }
 
 function normalizeEntry(entry = {}, fallback = {}) {
-  const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const now = isoNow();
+  const code = normalizeText(entry.code || fallback.code);
+  const capability = normalizeText(entry.capability || fallback.capability || (code === 'memorygraph_unavailable' ? 'memorygraph' : code));
+  const strict = normalizeText(entry.strict || fallback.strict);
+  const runId = currentRunId({ runId: entry.runId || fallback.runId });
+  const observedAt = normalizeText(entry.observedAt || fallback.observedAt || entry.lastSeenAt || fallback.lastSeenAt || now);
+  const status = normalizeText(entry.status || fallback.status || 'unavailable');
   return {
-    code: normalizeText(entry.code || fallback.code),
+    capability,
+    code,
     fingerprint: normalizeText(entry.fingerprint || fallback.fingerprint),
     source: normalizeText(fallback.source || entry.source),
     firstSeenAt: normalizeText(fallback.firstSeenAt || entry.firstSeenAt || now),
     lastSeenAt: normalizeText(entry.lastSeenAt || now),
+    observedAt,
+    runId,
+    checkId: currentCheckId(entry, fallback),
+    status,
     evidencePath: normalizeText(fallback.evidencePath || entry.evidencePath),
-    strict: normalizeText(entry.strict || fallback.strict),
+    strict,
+    lastHealthyAt: normalizeText(entry.lastHealthyAt || fallback.lastHealthyAt),
+    lastUnavailableAt: normalizeText(entry.lastUnavailableAt || fallback.lastUnavailableAt || (status === 'unavailable' ? observedAt : '')),
+    freshnessState: normalizeText(entry.freshnessState || fallback.freshnessState || (status === 'unavailable' ? 'current' : status === 'healthy' ? 'current' : 'stale')),
+    decayReason: normalizeText(entry.decayReason || fallback.decayReason),
+    decayedAt: normalizeText(entry.decayedAt || fallback.decayedAt),
   };
 }
 
@@ -93,6 +133,13 @@ export function readUnavailableCapabilities(statusFile = DEFAULT_STATUS_FILE) {
   const unique = new Map();
   for (const entry of flattenCapabilities(current)) {
     const normalized = normalizeEntry(entry);
+    const currentState = normalized.runId === currentRunId(current) || normalized.runId === 'unknown';
+    if (!currentState && normalized.strict !== 'true' && normalized.status === 'unavailable') {
+      normalized.status = 'stale';
+      normalized.freshnessState = 'stale';
+      normalized.decayReason = normalized.decayReason || 'new_run';
+      normalized.decayedAt = normalized.decayedAt || isoNow();
+    }
     unique.set(capabilityKey(normalized), normalized);
   }
   return [...unique.values()];
@@ -123,7 +170,8 @@ export function hasUnavailableCapability(statusFile, query = {}) {
     if (targetFingerprint && normalizeText(entry.fingerprint) && normalizeText(entry.fingerprint) !== targetFingerprint) {
       return false;
     }
-    return true;
+    return normalizeText(entry.status || 'unavailable') === 'unavailable'
+      && normalizeText(entry.freshnessState || 'current') === 'current';
   });
 }
 
@@ -131,7 +179,12 @@ export function recordUnavailableCapability(statusFile, entry = {}) {
   const files = resolveRunCacheFiles(statusFile);
   const current = readJson(files.currentRunFile) || {};
   const existing = flattenCapabilities(current).map((item) => normalizeEntry(item));
-  const normalized = normalizeEntry(entry);
+  const normalized = normalizeEntry({
+    ...entry,
+    status: entry.status || 'unavailable',
+    freshnessState: entry.freshnessState || 'current',
+    lastUnavailableAt: entry.lastUnavailableAt || entry.observedAt || isoNow(),
+  });
   const next = new Map(existing.map((item) => [capabilityKey(item), item]));
   const key = capabilityKey(normalized);
   const prior = next.get(key);
@@ -163,6 +216,71 @@ export function recordUnavailableCapability(statusFile, entry = {}) {
     return nextPayload;
   }
 
+  return nextPayload;
+}
+
+export function recordHealthyCapability(statusFile, entry = {}) {
+  const files = resolveRunCacheFiles(statusFile);
+  const current = readJson(files.currentRunFile) || {};
+  const observedAt = normalizeText(entry.observedAt || isoNow());
+  const capability = normalizeText(entry.capability || (entry.code === 'memorygraph_unavailable' ? 'memorygraph' : entry.code) || 'memorygraph');
+  const runId = currentRunId({ runId: entry.runId || current.runId || current.stateRunId });
+  const existing = flattenCapabilities(current).map((item) => normalizeEntry(item));
+  const nextEntries = existing.map((item) => {
+    if (
+      normalizeText(item.capability || item.code) === capability
+      && normalizeText(item.runId || 'unknown') === runId
+      && normalizeText(item.status || 'unavailable') === 'unavailable'
+    ) {
+      return normalizeEntry({
+        ...item,
+        status: 'superseded',
+        freshnessState: 'recovered',
+        decayReason: 'healthy_probe',
+        decayedAt: observedAt,
+        lastHealthyAt: observedAt,
+      });
+    }
+    return item;
+  });
+  const healthy = normalizeEntry({
+    capability,
+    code: entry.code || `${capability}_healthy`,
+    fingerprint: entry.fingerprint,
+    source: entry.source || `${capability}.health`,
+    strict: entry.strict,
+    observedAt,
+    runId,
+    checkId: entry.checkId || `${capability}.health`,
+    status: 'healthy',
+    freshnessState: 'current',
+    decayReason: 'healthy_probe',
+    lastHealthyAt: observedAt,
+  });
+  const next = new Map(nextEntries.map((item) => [capabilityKey(item), item]));
+  next.set(capabilityKey(healthy), healthy);
+  const unavailableCapabilities = [...next.values()].sort((left, right) => {
+    const leftFirst = normalizeText(left.firstSeenAt);
+    const rightFirst = normalizeText(right.firstSeenAt);
+    return leftFirst.localeCompare(rightFirst);
+  });
+
+  const nextPayload = {
+    ...current,
+    updatedAt: observedAt,
+    unavailableCapabilities,
+    phaseRunLease: {
+      ...(current.phaseRunLease && typeof current.phaseRunLease === 'object' ? current.phaseRunLease : {}),
+      unavailableCapabilities,
+    },
+  };
+
+  writeJson(files.currentRunFile, nextPayload);
+  const active = readJson(files.activeRunFile) || {};
+  writeJson(files.activeRunFile, {
+    ...active,
+    unavailableCapabilities,
+  });
   return nextPayload;
 }
 

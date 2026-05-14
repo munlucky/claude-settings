@@ -221,6 +221,10 @@ function readStatusBlocks(statusFile) {
       current.timing.blockedSeconds = Number.parseFloat(stripped.slice('blockedSeconds:'.length).trim().replace(/^"|"$/g, ''));
     } else if (inTiming && stripped.startsWith('manualCloseoutSeconds:')) {
       current.timing.manualCloseoutSeconds = Number.parseFloat(stripped.slice('manualCloseoutSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('idleWaitSeconds:')) {
+      current.timing.idleWaitSeconds = Number.parseFloat(stripped.slice('idleWaitSeconds:'.length).trim().replace(/^"|"$/g, ''));
+    } else if (inTiming && stripped.startsWith('runtimeFallbackSeconds:')) {
+      current.timing.runtimeFallbackSeconds = Number.parseFloat(stripped.slice('runtimeFallbackSeconds:'.length).trim().replace(/^"|"$/g, ''));
     } else if (inTiming && stripped.startsWith('completedAt:')) {
       current.timing.completedAt = stripped.slice('completedAt:'.length).trim().replace(/^"|"$/g, '');
     } else if (inTiming && stripped.startsWith('blockedAt:')) {
@@ -704,7 +708,7 @@ function ensureCompletedAttemptMetadata(statusFile, phaseNum, timestamp) {
         break;
       }
     }
-    block.splice(insertAt, 0,
+    const timingLines = [
       `${topIndent}timing:`,
       `${timingIndent}startedAt: "${timestamp}"`,
       `${timingIndent}lastStage: ""`,
@@ -717,8 +721,11 @@ function ensureCompletedAttemptMetadata(statusFile, phaseNum, timestamp) {
       `${timingIndent}remediationSeconds: 0`,
       `${timingIndent}blockedSeconds: 0`,
       `${timingIndent}manualCloseoutSeconds: 0`,
-    );
-    return [insertAt, insertAt + 10];
+      `${timingIndent}idleWaitSeconds: 0`,
+      `${timingIndent}runtimeFallbackSeconds: 0`,
+    ];
+    block.splice(insertAt, 0, ...timingLines);
+    return [insertAt, insertAt + timingLines.length];
   }
 
   const [attemptStart, attemptEnd] = ensureAttemptsBlock();
@@ -2329,7 +2336,7 @@ function updatePhaseState(config) {
         break;
       }
     }
-    block.splice(insertAt, 0,
+    const timingLines = [
       `${topIndent}timing:`,
       `${timingIndent}startedAt: "${config.timestamp}"`,
       `${timingIndent}lastStage: ""`,
@@ -2342,8 +2349,11 @@ function updatePhaseState(config) {
       `${timingIndent}remediationSeconds: 0`,
       `${timingIndent}blockedSeconds: 0`,
       `${timingIndent}manualCloseoutSeconds: 0`,
-    );
-    return [insertAt, insertAt + 10];
+      `${timingIndent}idleWaitSeconds: 0`,
+      `${timingIndent}runtimeFallbackSeconds: 0`,
+    ];
+    block.splice(insertAt, 0, ...timingLines);
+    return [insertAt, insertAt + timingLines.length];
   }
 
   function getTimingValue(name, defaultValue) {
@@ -2375,6 +2385,12 @@ function updatePhaseState(config) {
     const stageValue = String(activeStage || '').toLowerCase();
     if (statusValue.includes('blocked') || outcomeValue.includes('blocked') || stageValue.includes('blocked')) {
       return 'blockedSeconds';
+    }
+    if (statusValue.includes('fallback') || outcomeValue.includes('fallback') || stageValue.includes('fallback')) {
+      return 'runtimeFallbackSeconds';
+    }
+    if (statusValue.includes('idle') || statusValue.includes('wait') || outcomeValue.includes('idle') || outcomeValue.includes('wait') || stageValue.includes('wait')) {
+      return 'idleWaitSeconds';
     }
     if (statusValue.includes('verification') || outcomeValue.includes('verification') || stageValue.startsWith('verify')) {
       return 'verificationSeconds';

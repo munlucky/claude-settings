@@ -37,6 +37,76 @@ function durationSeconds(start, end) {
   return (endedAt - startedAt) / 1000;
 }
 
+function numericSeconds(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function eventTimestamp(event) {
+  return event?.timestamp || event?.payload?.timestamp || '';
+}
+
+function pairedDurationSeconds(events, startTypes, endTypes) {
+  let total = 0;
+  let openStart = null;
+  for (const event of events) {
+    if (startTypes.has(event.eventType)) {
+      openStart = eventTimestamp(event);
+      continue;
+    }
+    if (openStart && endTypes.has(event.eventType)) {
+      total += numericSeconds(durationSeconds(openStart, eventTimestamp(event)));
+      openStart = null;
+    }
+  }
+  return total;
+}
+
+function bucketValue(source, fieldName) {
+  return numericSeconds(source?.[fieldName] ?? source?.timing?.[fieldName]);
+}
+
+export function summarizeTimingBuckets(timing = {}) {
+  const wallClockSeconds = bucketValue(timing, 'wallClockSeconds') || bucketValue(timing, 'runnerActiveSeconds');
+  const workerStartupSeconds = bucketValue(timing, 'workerStartupSeconds');
+  const verificationSeconds = bucketValue(timing, 'verificationSeconds');
+  const closeoutSeconds = bucketValue(timing, 'closeoutSeconds') || bucketValue(timing, 'manualCloseoutSeconds');
+  const runtimeFallbackSeconds = bucketValue(timing, 'runtimeFallbackSeconds');
+  const explicitIdleWaitSeconds = bucketValue(timing, 'idleWaitSeconds');
+  const workerActiveSeconds = bucketValue(timing, 'workerActiveSeconds');
+  const knownWithoutIdle = workerStartupSeconds + workerActiveSeconds + verificationSeconds + closeoutSeconds + runtimeFallbackSeconds;
+  const idleWaitSeconds = explicitIdleWaitSeconds || Math.max(wallClockSeconds - knownWithoutIdle, 0);
+  const buckets = {
+    workerStartupSeconds,
+    workerActiveSeconds,
+    verificationSeconds,
+    closeoutSeconds,
+    idleWaitSeconds,
+    runtimeFallbackSeconds,
+  };
+  const bucketTotalSeconds = Object.values(buckets).reduce((sum, value) => sum + value, 0);
+  const driftSeconds = wallClockSeconds > 0 ? Math.abs(bucketTotalSeconds - wallClockSeconds) : 0;
+  const dominantBucket = Object.entries(buckets)
+    .sort((left, right) => right[1] - left[1])[0]?.[0] || '';
+  return {
+    wallClockSeconds,
+    buckets,
+    bucketTotalSeconds,
+    driftSeconds,
+    withinTolerance: wallClockSeconds === 0 || driftSeconds <= Math.max(1, wallClockSeconds * 0.05),
+    dominantBucket,
+  };
+}
+
+export function buildBottleneckWarnings(timing = {}, { thresholdSeconds = 60, ratio = 0.75 } = {}) {
+  const summary = summarizeTimingBuckets(timing);
+  const dominantValue = summary.buckets[summary.dominantBucket] || 0;
+  if (summary.wallClockSeconds <= thresholdSeconds || dominantValue / summary.wallClockSeconds < ratio) {
+    return [];
+  }
+  return [`phase_attempt_bottleneck:${summary.dominantBucket}:${dominantValue}s_of_${summary.wallClockSeconds}s`];
+}
+
 function normalizeCacheSignal(value) {
   const text = String(value || '').trim().toLowerCase();
   if (['hit', 'cache_hit', 'true'].includes(text)) {
@@ -63,6 +133,51 @@ export function readPhaseAttemptTelemetry({ manifest, heartbeatPath = '', events
   const runnerFinished = lastEvent(allEvents, (event) => (
     event.eventType === 'runner.finished' || event.eventType === 'manifest.exit'
   ));
+  const runnerActiveSeconds = durationSeconds(
+    runnerStarted?.timestamp || manifest?.runnerStartedAt,
+    runnerFinished?.timestamp || manifest?.runnerFinishedAt,
+  );
+  const workerStartupSeconds = durationSeconds(
+    runnerStarted?.timestamp || manifest?.runnerStartedAt,
+    childStarted?.timestamp || manifest?.childProcessStartTime,
+  );
+  const verificationSeconds = bucketValue(manifest, 'verificationSeconds') || pairedDurationSeconds(
+    allEvents,
+    new Set(['verification.started', 'verifier.started', 'verify.started']),
+    new Set(['verification.finished', 'verifier.finished', 'verify.finished']),
+  );
+  const closeoutSeconds = bucketValue(manifest, 'closeoutSeconds') || bucketValue(manifest, 'manualCloseoutSeconds') || pairedDurationSeconds(
+    allEvents,
+    new Set(['closeout.started', 'finish.started', 'handoff.started']),
+    new Set(['closeout.finished', 'finish.finished', 'handoff.finished']),
+  );
+  const runtimeFallbackSeconds = bucketValue(manifest, 'runtimeFallbackSeconds') || pairedDurationSeconds(
+    allEvents,
+    new Set(['runtime_fallback.started', 'fallback.started']),
+    new Set(['runtime_fallback.finished', 'fallback.finished']),
+  );
+  const explicitIdleWaitSeconds = bucketValue(manifest, 'idleWaitSeconds') || pairedDurationSeconds(
+    allEvents,
+    new Set(['idle_wait.started', 'wait.started']),
+    new Set(['idle_wait.finished', 'wait.finished']),
+  );
+  const workerActiveSeconds = Math.max(
+    numericSeconds(durationSeconds(
+      childStarted?.timestamp || manifest?.childProcessStartTime,
+      runnerFinished?.timestamp || manifest?.runnerFinishedAt,
+    )) - verificationSeconds - closeoutSeconds - runtimeFallbackSeconds - explicitIdleWaitSeconds,
+    0,
+  );
+  const timingInput = {
+    wallClockSeconds: numericSeconds(runnerActiveSeconds),
+    workerStartupSeconds: numericSeconds(workerStartupSeconds),
+    workerActiveSeconds,
+    verificationSeconds,
+    closeoutSeconds,
+    idleWaitSeconds: explicitIdleWaitSeconds,
+    runtimeFallbackSeconds,
+  };
+  const timingSummary = summarizeTimingBuckets(timingInput);
   const cacheEvents = allEvents
     .map((event) => normalizeCacheSignal(eventField(event, 'cache') || eventField(event, 'cacheStatus') || eventField(event, 'cacheResult')))
     .filter(Boolean);
@@ -73,14 +188,15 @@ export function readPhaseAttemptTelemetry({ manifest, heartbeatPath = '', events
     runnerStartedAt: runnerStarted?.timestamp || manifest?.runnerStartedAt || '',
     childStartedAt: childStarted?.timestamp || manifest?.childProcessStartTime || '',
     runnerFinishedAt: runnerFinished?.timestamp || manifest?.runnerFinishedAt || '',
-    runnerActiveSeconds: durationSeconds(
-      runnerStarted?.timestamp || manifest?.runnerStartedAt,
-      runnerFinished?.timestamp || manifest?.runnerFinishedAt,
-    ),
-    workerStartupSeconds: durationSeconds(
-      runnerStarted?.timestamp || manifest?.runnerStartedAt,
-      childStarted?.timestamp || manifest?.childProcessStartTime,
-    ),
+    runnerActiveSeconds,
+    workerStartupSeconds,
+    workerActiveSeconds,
+    verificationSeconds,
+    closeoutSeconds,
+    idleWaitSeconds: timingSummary.buckets.idleWaitSeconds,
+    runtimeFallbackSeconds,
+    timingBuckets: timingSummary,
+    bottleneckWarnings: buildBottleneckWarnings(timingInput),
     cache: {
       hits: cacheEvents.filter((signal) => signal === 'hit').length,
       misses: cacheEvents.filter((signal) => signal === 'miss').length,
@@ -88,4 +204,3 @@ export function readPhaseAttemptTelemetry({ manifest, heartbeatPath = '', events
     },
   };
 }
-

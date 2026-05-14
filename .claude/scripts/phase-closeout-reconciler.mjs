@@ -683,7 +683,7 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
   });
 
   const summary = {
-    ok: true,
+    ok: postReconcileInvariants.violations.length === 0,
     statusFile: relativePath(root, statusFile),
     workflowDir: relativePath(root, workflowDir),
     fallbackRunId,
@@ -706,6 +706,13 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
     degradedEvidence: postReconcileInvariants.degradedEvidence,
     fallbackCompletion,
   };
+
+  if (!summary.ok) {
+    const error = new Error('post_reconcile_invariant_failed');
+    error.code = 'post_reconcile_invariant_failed';
+    error.violations = summary.postReconcileViolations;
+    throw error;
+  }
 
   const debugLogPath = appendDebugLog(root, 'phase-closeout-reconciler-summary', summary);
   completedSteps.push(`debug-log:${relativePath(root, debugLogPath)}`);
@@ -731,94 +738,49 @@ export async function reconcilePhaseCloseout(rawConfig = {}) {
 function parseArgs(argv) {
   const result = {};
   const args = [...argv];
+  const valueOptions = {
+    '--mode': 'mode',
+    '--plan-dir': 'planDir',
+    '--phase': 'phase',
+    '--adoption-metadata': 'adoptionMetadata',
+    '--status-file': 'statusFile',
+    '--workflow-dir': 'workflowDir',
+    '--fallback-run-id': 'fallbackRunId',
+    '--reason': 'reason',
+    '--fallback-reason': 'fallbackReason',
+    '--execution-boundary': 'executionBoundary',
+    '--return-boundary': 'returnBoundary',
+    '--original-worker-exit-code': 'originalWorkerExitCode',
+    '--original-stop-reason': 'originalStopReason',
+    '--now': 'now',
+    '--root': 'root',
+  };
   if (args[0] === 'reconcile') {
     result.command = args.shift();
   }
   while (args.length > 0) {
     const arg = args.shift();
-    switch (arg) {
-      case '--mode':
-        result.mode = args.shift() || '';
-        break;
-      case '--adopt-orphan':
-        result.adoptOrphan = true;
-        break;
-      case '--plan-dir':
-        result.planDir = args.shift() || '';
-        break;
-      case '--phase':
-        result.phase = args.shift() || '';
-        break;
-      case '--adoption-metadata':
-        result.adoptionMetadata = args.shift() || '';
-        break;
-      case '--status-file':
-        result.statusFile = args.shift() || '';
-        break;
-      case '--workflow-dir':
-        result.workflowDir = args.shift() || '';
-        break;
-      case '--fallback-run-id':
-        result.fallbackRunId = args.shift() || '';
-        break;
-      case '--reason':
-        result.reason = args.shift() || '';
-        break;
-      case '--fallback-reason':
-        result.fallbackReason = args.shift() || '';
-        break;
-      case '--execution-boundary':
-        result.executionBoundary = args.shift() || '';
-        break;
-      case '--return-boundary':
-        result.returnBoundary = args.shift() || '';
-        break;
-      case '--original-worker-exit-code':
-        result.originalWorkerExitCode = args.shift() || '';
-        break;
-      case '--original-stop-reason':
-        result.originalStopReason = args.shift() || '';
-        break;
-      case '--now':
-        result.now = args.shift() || '';
-        break;
-      case '--root':
-        result.root = args.shift() || '';
-        break;
-      case '--help':
-      case '-h':
-        result.help = true;
-        break;
-      default:
-        throw new Error(`Unknown option: ${arg}`);
+    if (arg === '--adopt-orphan') {
+      result.adoptOrphan = true;
+    } else if (arg === '--help' || arg === '-h') {
+      result.help = true;
+    } else if (valueOptions[arg]) {
+      result[valueOptions[arg]] = args.shift() || '';
+    } else {
+      throw new Error(`Unknown option: ${arg}`);
     }
   }
   return result;
 }
 
 function printHelp() {
-  process.stdout.write(`Usage:
-  node .claude/scripts/phase-closeout-reconciler.mjs [options]
-  node .claude/scripts/phase-closeout-reconciler.mjs reconcile --mode manual --adopt-orphan --adoption-metadata <path>
-
-Options:
-  --status-file <path>       Default: ${DEFAULT_STATUS_FILE}
-  --workflow-dir <path>      Default: ${DEFAULT_WORKFLOW_DIR}
-  --fallback-run-id <id>     Local fallback run id to record
-  --reason <reason>          Default: local-fallback-closeout
-  --fallback-reason <reason> Stable fallback reason field
-  --execution-boundary <name> Original worker boundary, default delegated-terminal
-  --return-boundary <name>   Return boundary, default local-fallback
-  --original-worker-exit-code <code>
-  --original-stop-reason <reason>
-  --now <iso>                Deterministic timestamp for tests
-  --root <path>              Repository root for relative paths
-  --mode <manual|auto>       Orphan adoption requires reconcile --mode manual
-  --adopt-orphan             Valid only with reconcile --mode manual
-  --adoption-metadata <path> Required JSON metadata for manual orphan reconcile
-`);
+  process.stdout.write([
+    'Usage: node .claude/scripts/phase-closeout-reconciler.mjs [options]',
+    'Manual: node .claude/scripts/phase-closeout-reconciler.mjs reconcile --mode manual --adopt-orphan --adoption-metadata <path>',
+    `Defaults: --status-file ${DEFAULT_STATUS_FILE}; --workflow-dir ${DEFAULT_WORKFLOW_DIR}; --reason local-fallback-closeout; --return-boundary local-fallback`,
+    'Options: --fallback-run-id, --fallback-reason, --execution-boundary, --original-worker-exit-code, --original-stop-reason, --now, --root, --phase, --plan-dir',
+  ].join(os.EOL));
 }
-
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {

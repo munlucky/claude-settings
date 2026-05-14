@@ -11,6 +11,7 @@ import { classifyFailure } from './lib/failure-classifier.mjs';
 import {
   hasUnavailableCapability,
   knownUnavailableSummary,
+  recordHealthyCapability,
   recordUnavailableCapability,
 } from './lib/runtime-unavailable-cache.mjs';
 import {
@@ -457,7 +458,19 @@ function buildReport() {
   checks.push(probeWritablePath('codex.sessionStorage', codexSessionDir, 'session-probe.tmp', 'codex session storage writable', 'codex_session_storage_readonly', 'repair-codex-session-storage-permissions-or-fallback-runtime'));
   checks.push(probeWritableExistingFile('codex.stateDb', stateDbPath, 'codex state DB opened for write access', 'codex_state_db_readonly', 'repair-codex-state-db-permissions-or-fallback-runtime', 'state DB not present; writable probe skipped'));
   checks.push(probeWritablePath('shell.snapshot', shellSnapshotDir, 'snapshot-probe.tmp', 'shell snapshot directory writable', 'shell_snapshot_failure', 'repair-shell-snapshot-path-or-fallback-runtime'));
-  if (hasUnavailableCapability(phaseStatusFile, memorygraphCacheQuery) && !strictMemoryGateEnabled) {
+  const hasCachedMemorygraphUnavailable = hasUnavailableCapability(phaseStatusFile, memorygraphCacheQuery);
+  const memorygraphProbe = runChildProbe('memorygraph.health', memorygraphProbeCommand[0], memorygraphProbeCommand.slice(1), 'MemoryGraph health probe succeeded', 'memorygraph_unavailable', 'install-or-repair-memorygraph-or-defer-memory-backed-verification');
+  if (memorygraphProbe.status === 'passed') {
+    recordHealthyCapability(phaseStatusFile, {
+      capability: 'memorygraph',
+      code: 'memorygraph_unavailable',
+      fingerprint: memorygraphFingerprint,
+      source: 'memorygraph.health',
+      strict: strictMemoryGateEnabled ? 'true' : 'false',
+      checkId: 'memorygraph.health',
+    });
+    checks.push(memorygraphProbe);
+  } else if (hasCachedMemorygraphUnavailable && !strictMemoryGateEnabled) {
     checks.push(check(
       'memorygraph.health',
       'warning',
@@ -472,7 +485,7 @@ function buildReport() {
       },
     ));
   } else {
-    checks.push(runChildProbe('memorygraph.health', memorygraphProbeCommand[0], memorygraphProbeCommand.slice(1), 'MemoryGraph health probe succeeded', 'memorygraph_unavailable', 'install-or-repair-memorygraph-or-defer-memory-backed-verification'));
+    checks.push(memorygraphProbe);
   }
 
   checks.push(optionalPackageToolCheck('corepack.version', resolveCommandEvidence('corepack'), manifest));
