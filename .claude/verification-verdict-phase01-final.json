@@ -4,8 +4,8 @@
   "runId": "phase01-final",
   "phase": {
     "number": 1,
-    "title": "Phase 01: Simple Run State Helper (v1)",
-    "activePhaseDocPath": "docs/implementation/phase-runner-simple-state-board-2026-05-13/01-simple-run-state-helper-v1.md"
+    "title": "Phase 01: Terminal Blocked Board Publish Wiring (v1)",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/01-terminal-blocked-board-publish-wiring-v1.md"
   },
   "contract": {
     "applicable": true,
@@ -57,12 +57,12 @@
     }
   },
   "identity": {
-    "runLeaseId": "dispatch-1778685465747-9992",
-    "activePhaseDocPath": "docs/implementation/phase-runner-simple-state-board-2026-05-13/01-simple-run-state-helper-v1.md",
-    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-simple-state-board-2026-05-13\\00-master-plan-v1.md",
-    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-simple-state-board-2026-05-13",
+    "runLeaseId": "dispatch-1778737725278-27920",
+    "activePhaseDocPath": "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/01-terminal-blocked-board-publish-wiring-v1.md",
+    "masterPlan": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-runtime-contract-fixes-2026-05-14\\00-master-plan-v1.md",
+    "planDir": "C:\\dev\\claude-settings\\docs\\implementation\\phase-runner-state-board-runtime-contract-fixes-2026-05-14",
     "statusFile": "C:\\dev\\claude-settings\\.claude\\docs\\phase-status.yaml",
-    "gitTreeFingerprint": "f017988f68eb1c55d9942b5f12cfd1741ef65b3e"
+    "gitTreeFingerprint": "0dd0302fac13657818a68cfc17869a0ce07f464d"
   },
   "verdictScope": "phase_closeout",
   "blockerClass": "",
@@ -86,5 +86,5 @@
     "blockingDefects": 0,
     "verdict": "done"
   },
-  "generatedAt": "2026-05-13T15:23:59.113Z"
+  "generatedAt": "2026-05-14T05:57:06.925Z"
 }

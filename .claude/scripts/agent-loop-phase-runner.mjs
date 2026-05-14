@@ -37,6 +37,7 @@ import {
   validateReconciliationIntent,
   withStateTransition,
 } from './lib/simple-run-state.mjs';
+import { publishTerminalBlockedOutcome } from './lib/terminal-blocker-publisher.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const runtimeCliPath = path.join(scriptDir, 'runtime-cli.mjs');
@@ -1296,12 +1297,70 @@ function isHardBlockedCompletionReason(reason) {
     || normalized === 'path-authority-preflight-failed';
 }
 
+export function publishRunnerBlockedCloseout(paths, {
+  detail = '',
+  stopReason = 'verification-preflight-blocked',
+  runnerState = state,
+  attemptId = currentSimpleRunAttemptId(),
+} = {}) {
+  const stateRunId = runnerState.stateRunId || process.env.PHASE_RUN_LEASE_ID || `phase-${runnerState.phaseNum}-${process.pid}`;
+  const runRoot = resolveRunRoot(stateRunId, { rootDir: process.cwd() });
+  runnerState.stateRunId = stateRunId;
+
+  return publishTerminalBlockedOutcome({
+    rootDir: process.cwd(),
+    planDir: runnerState.planDir,
+    executionRoot: runnerState.executionRoot,
+    phaseNumber: runnerState.phaseNum,
+    phaseTitle: runnerState.phaseTitle,
+    phaseDoc: runnerState.phaseDoc,
+    attemptId,
+    stateRunId,
+    runRoot,
+    statusFile: runnerState.statusFile,
+    owner: 'agent-loop-phase-runner',
+    reason: stopReason,
+    blockerEvidence: {
+      blockerClass: stopReason === 'verification-preflight-blocked'
+        ? 'verification_environment_unavailable'
+        : 'phase_terminal_blocker',
+      blockerCode: stopReason,
+      command: '',
+      detail,
+      runtime: runnerState.runtime,
+    },
+    sidecarPaths: paths?.phaseExecutionDir
+      ? {
+        blockerEvidencePath: path.join(paths.phaseExecutionDir, 'BLOCKER_EVIDENCE.jsonl'),
+        attemptLedgerPath: path.join(paths.phaseExecutionDir, 'ATTEMPT_LEDGER.jsonl'),
+        projectionManifestPath: path.join(paths.phaseExecutionDir, 'projection-manifest.json'),
+      }
+      : undefined,
+  });
+}
+
 function stopBlockedPhase(paths, logFile, detail, stopReason = 'verification-preflight-blocked') {
   appendQaRuntimeUpdate(stopReason, logFile, detail, paths);
   appendHandoffUpdate('blocked', logFile, detail, paths);
+  let publishResult;
+  try {
+    publishResult = publishRunnerBlockedCloseout(paths, { detail, stopReason });
+    appendDebugLog('terminal-blocked-published', {
+      stateRunId: publishResult.stateRunId,
+      statePath: publishResult.statePath,
+      manifestPath: publishResult.manifestPath,
+      blockerEvidenceId: publishResult.blockerEvidenceId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendDebugLog('terminal-blocked-publish-failed', { stopReason, detail, error: message });
+    appendDecisionLog([`## Phase ${state.phaseNum}`, '- Status: ⛔ Blocked', `- Detail: ${detail}`, `- Terminal publish failed: ${message}`, '']);
+    recordLoopStop(state.phaseNum, stopReason, `${detail} | terminal publish failed: ${message}`, logFile);
+    return 2;
+  }
   const status = stopReason === 'verification-preflight-blocked' ? 'verification_blocked' : 'blocked';
   updatePhaseState(state.phaseNum, status, 'blocked', false, state.phaseDoc, paths);
-  appendDecisionLog([`## Phase ${state.phaseNum}`, '- Status: ⛔ Blocked', `- Detail: ${detail}`, '']);
+  appendDecisionLog([`## Phase ${state.phaseNum}`, '- Status: ⛔ Blocked', `- Detail: ${detail}`, `- State: ${publishResult.statePath}`, '']);
   recordLoopStop(state.phaseNum, stopReason, detail, logFile);
   return 2;
 }

@@ -11,6 +11,7 @@ import {
   classifyRunnerStartup,
   computeControllerEnforcedGateAction,
   computePhaseLoopShadowDecision,
+  publishRunnerBlockedCloseout,
 } from './agent-loop-phase-runner.mjs';
 import { readState, resolveRunRoot, writeState } from './lib/simple-run-state.mjs';
 import {
@@ -346,6 +347,55 @@ test('runner active state start uses withStateTransition instead of direct write
   assert.match(source, /import \{[\s\S]*withStateTransition[\s\S]*\} from '\.\/lib\/simple-run-state\.mjs';/);
   assert.match(source, /function writeActiveSimpleRunState\(\) \{[\s\S]*withStateTransition\(nextState, options,/);
   assert.doesNotMatch(source, /function writeActiveSimpleRunState\(\) \{[\s\S]*writeState\(/);
+});
+
+test('stopBlockedPhase publishes terminal state before legacy phase status alignment', () => {
+  const source = fs.readFileSync('.claude/scripts/agent-loop-phase-runner.mjs', 'utf8');
+  const match = source.match(/function stopBlockedPhase\([\s\S]*?\n\}/);
+
+  assert.ok(match);
+  assert.match(match[0], /appendQaRuntimeUpdate[\s\S]*appendHandoffUpdate[\s\S]*publishRunnerBlockedCloseout[\s\S]*updatePhaseState/);
+});
+
+test('runner blocked closeout publisher commits blocked state board through production boundary', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-blocked-publish-'));
+  const originalCwd = process.cwd();
+  try {
+    process.chdir(root);
+    const planDir = path.join(root, 'docs', 'implementation', 'blocked-plan');
+    const executionRoot = path.join(planDir, 'execution');
+    const phaseExecutionDir = path.join(executionRoot, '01-terminal-blocked-board-publish-wiring-v1');
+    fs.mkdirSync(phaseExecutionDir, { recursive: true });
+
+    const result = publishRunnerBlockedCloseout({ phaseExecutionDir }, {
+      detail: 'capability preflight blocked phase start',
+      stopReason: 'verification-preflight-blocked',
+      attemptId: 'attempt-01',
+      runnerState: {
+        planDir,
+        statusFile: '.claude/docs/phase-status.yaml',
+        executionRoot,
+        runtime: 'codex',
+        phaseNum: '1',
+        phaseTitle: 'Phase 01: Terminal Blocked Board Publish Wiring (v1)',
+        phaseDoc: path.join(planDir, '01-terminal-blocked-board-publish-wiring-v1.md'),
+        stateRunId: 'state-run-01',
+      },
+    });
+
+    const recovered = readState({ rootDir: root, stateRunId: 'state-run-01' });
+    assert.equal(recovered.exists, true);
+    assert.equal(recovered.state.status, 'blocked');
+    assert.equal(recovered.state.projectionStatus, 'committed');
+    assert.equal(recovered.state.attempt, 'attempt-01');
+    assert.equal(result.statePath, recovered.statePath);
+    assert.equal(fs.existsSync(path.join(phaseExecutionDir, 'BLOCKER_EVIDENCE.jsonl')), true);
+    assert.equal(fs.existsSync(path.join(phaseExecutionDir, 'ATTEMPT_LEDGER.jsonl')), true);
+    assert.equal(fs.existsSync(path.join(phaseExecutionDir, 'projection-manifest.json')), true);
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('clean finish candidate is routed only to the finalizer boundary action', () => {

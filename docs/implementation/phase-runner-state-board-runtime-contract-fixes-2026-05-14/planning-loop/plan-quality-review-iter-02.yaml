@@ -1,0 +1,71 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 2
+  isolationMode: "forked"
+  reviewerSession: "019e2502-116b-7131-b80d-30e3b6aa7b38"
+  targetPlanPackage:
+    planDir: "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14"
+    masterPlan: "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/01-terminal-blocked-board-publish-wiring-v1.md"
+      - "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/02-reconciliation-evidence-path-unification-v1.md"
+      - "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/03-active-transition-projection-commit-semantics-v1.md"
+      - "docs/implementation/phase-runner-state-board-runtime-contract-fixes-2026-05-14/04-board-projection-invariant-coverage-v1.md"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.96
+      evidence:
+        - "00-master-plan-v1.md:Objectives directly names terminal blocked board publish, reconciliation evidence path alignment, active commit semantics, and STATE.md/projection invariants."
+        - "00-master-plan-v1.md:Source Traceability Matrix maps REQ-1.1 through REQ-4.2 and AC-01 through AC-08 to phase documents."
+      findings:
+        - "Goal is clear and covers all four source review findings."
+    scopeClarity:
+      weight: 0.20
+      score: 0.94
+      evidence:
+        - "00-master-plan-v1.md:Goal Contract includes explicit nonGoals for SQLite/event-sourcing, canonical evidence replacement, and runnable state preparation."
+        - "02-reconciliation-evidence-path-unification-v1.md:Evidence Contract selects publisher_runRoot_mirror with exact mirror files."
+        - "03-active-transition-projection-commit-semantics-v1.md:Active Start Contract selects direct_committed_board_write."
+      findings:
+        - "Iteration 1 scope ambiguities for evidence path and active-start semantics are resolved."
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.94
+      evidence:
+        - "00-master-plan-v1.md:Acceptance Criteria AC-01 through AC-08 define pass conditions and evidence targets."
+        - "02-reconciliation-evidence-path-unification-v1.md:Detailed Tasks P02-1 through P02-4 require production publisher output and positive/negative reconciliation tests."
+        - "04-board-projection-invariant-coverage-v1.md:Required Violation Codes names stable invariant codes and trigger conditions."
+      findings:
+        - "Acceptance criteria are testable and no longer depend on implementation-time architectural choices."
+    verificationClarity:
+      weight: 0.20
+      score: 0.93
+      evidence:
+        - "00-master-plan-v1.md:Validation Command Set lists focused node --test commands plus git diff --check."
+        - "Each phase document includes Validation Plan, Evidence to Mark Done, Critical Product Scenarios, and Exact Execution Targets."
+      findings:
+        - "Verification path is concrete and sufficient for the runtime contract fixes."
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.91
+      evidence:
+        - "01-terminal-blocked-board-publish-wiring-v1.md:Production Boundary Contract names stopBlockedPhase and allowed publishRunnerBlockedCloseout wrapper."
+        - "02-reconciliation-evidence-path-unification-v1.md:Runner lookup remains resolveRunnerReconciliationIntentOptions using runRoot guard input mirror."
+        - "03-active-transition-projection-commit-semantics-v1.md:Active Start Contract names existing projection write boundaries and guard order."
+      findings:
+        - "Existing function boundaries and brownfield integration points are now pinned closely enough for execution."
+    phaseExecutability:
+      weight: 0.10
+      score: 0.91
+      evidence:
+        - "All four phase docs include Phase Execution Metadata with ownedPaths, readOnlyPaths, dependencies, conflicts, and mergePolicy."
+        - "planning-loop/controller-state.yaml, plan-quality-review-iter-01.yaml, and plan-writer-revision-iter-01.yaml exist and truthfully record the iteration 1 revise state."
+        - "00-master-plan-v1.md:Plan Quality Loop no longer claims strict pass and explicitly awaits review iteration 2."
+      findings:
+        - "Iteration 1 planning-loop evidence issue is resolved; package is executable after controller records this pass result and runs the separate runnable preparation gate."
+  totalScore: 0.936
+  ambiguityScore: 0.064
+  decision: "pass"
+  blockingFindings: []
+  improvementDirectives: []
