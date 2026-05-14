@@ -220,4 +220,3 @@ def validate_code_review_graph_evidence(input_value, repo_root=None, phase_execu
         "crgCliVersion": code_review_graph.get("crgCliVersion"),
     }
     return decision
-

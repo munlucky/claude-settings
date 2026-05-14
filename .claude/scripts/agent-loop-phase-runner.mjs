@@ -293,7 +293,8 @@ export function assessWorkerSpawnStateGuard(readResult, { attemptId = '', reconc
 function findExistingRunBoard(rootDir = process.cwd()) {
   const result = readSimpleRunStateById('', rootDir);
   const status = String(result?.state?.status || '').trim();
-  if (['active', 'blocked', 'paused'].includes(status)) {
+  const projectionStatus = String(result?.state?.projectionStatus || '').trim();
+  if (projectionStatus === 'pending' || ['active', 'blocked', 'paused'].includes(status)) {
     return result;
   }
 
@@ -308,7 +309,8 @@ function findExistingRunBoard(rootDir = process.cwd()) {
     const statePath = path.join(legacyRoot, entry.name, 'STATE.md');
     const result = readState({ statePath, rootDir });
     const status = String(result?.state?.status || '').trim();
-    if (['active', 'blocked', 'paused'].includes(status)) {
+    const projectionStatus = String(result?.state?.projectionStatus || '').trim();
+    if (projectionStatus === 'pending' || ['active', 'blocked', 'paused'].includes(status)) {
       return result;
     }
   }
@@ -318,14 +320,28 @@ function findExistingRunBoard(rootDir = process.cwd()) {
 export function classifyRunnerStartup({ resume = false, rootDir = process.cwd(), stateRunId = '' } = {}) {
   const existing = findExistingRunBoard(rootDir);
   if (!resume) {
-    return existing
-      ? { classification: 'resume-required', stateRunId: existing.state.stateRunId, statePath: existing.statePath }
-      : { classification: 'clean_start', stateRunId: stateRunId || '', statePath: '' };
+    if (!existing) {
+      return { classification: 'clean_start', stateRunId: stateRunId || '', statePath: '' };
+    }
+    const projectionStatus = String(existing.state?.projectionStatus || '').trim();
+    return {
+      classification: projectionStatus === 'pending' ? 'incomplete_transaction' : 'resume-required',
+      stateRunId: existing.state.stateRunId,
+      statePath: existing.statePath,
+    };
   }
   const requested = stateRunId ? readSimpleRunStateById(stateRunId, rootDir) : null;
   const candidate = stateRunId ? requested : existing;
   if (!candidate) {
     return { classification: 'resume-state-missing', stateRunId: stateRunId || '', statePath: '' };
+  }
+  const projectionStatus = String(candidate.state?.projectionStatus || '').trim();
+  if (projectionStatus === 'pending') {
+    return {
+      classification: 'incomplete_transaction',
+      stateRunId: candidate.state?.stateRunId || stateRunId || '',
+      statePath: candidate.statePath,
+    };
   }
   const status = String(candidate.state?.status || '').trim();
   if (!['active', 'blocked', 'paused'].includes(status)) {
@@ -347,7 +363,7 @@ function ensureStartupResumeState(paths, logFile) {
     stateRunId: state.stateRunId,
     statePath: startup.statePath || '',
   });
-  if (startup.classification === 'resume-required' || startup.classification === 'resume-state-missing') {
+  if (['resume-required', 'resume-state-missing', 'incomplete_transaction'].includes(startup.classification)) {
     return stopBlockedPhase(paths, logFile, startup.classification, startup.classification);
   }
   return 0;

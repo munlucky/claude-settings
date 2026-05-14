@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from code_review_graph_evidence import validate_code_review_graph_evidence
 
 
-FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "scripts" / "lib" / "code-review-graph-fixtures"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+FIXTURE_ROOT = REPO_ROOT / ".claude" / "scripts" / "lib" / "code-review-graph-fixtures"
 
 
 def read_fixture(name):

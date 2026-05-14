@@ -275,6 +275,40 @@ test('explicit resume requires an existing active or blocked board', () => {
   }
 });
 
+test('pending projection residue blocks startup before status-based resume classification', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-pending-projection-'));
+  try {
+    const stateRunId = 'run-pending-terminal';
+    const runRoot = writeFixtureRunState(root, stateRunId, 'complete');
+    writeState({
+      stateRunId,
+      runRoot,
+      projectionStatus: 'pending',
+      status: 'complete',
+      phase: '3',
+      attempt: 'attempt-01',
+      owner: 'test',
+      reason: 'fixture',
+      planDir: 'docs/implementation/phase-runner-state-board-closeout-remediation-2026-05-14',
+      statusFile: '.claude/docs/phase-status.yaml',
+    }, { rootDir: root, stateRunId, runRoot });
+
+    const nonResume = classifyRunnerStartup({ resume: false, rootDir: root });
+    assert.equal(nonResume.classification, 'incomplete_transaction');
+    assert.equal(nonResume.stateRunId, stateRunId);
+
+    const implicitResume = classifyRunnerStartup({ resume: true, rootDir: root });
+    assert.equal(implicitResume.classification, 'incomplete_transaction');
+    assert.equal(implicitResume.stateRunId, stateRunId);
+
+    const explicitResume = classifyRunnerStartup({ resume: true, rootDir: root, stateRunId });
+    assert.equal(explicitResume.classification, 'incomplete_transaction');
+    assert.equal(explicitResume.stateRunId, stateRunId);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('worker spawn guard rejects same-attempt terminal and pending state boards', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-runner-spawn-guard-'));
   try {
