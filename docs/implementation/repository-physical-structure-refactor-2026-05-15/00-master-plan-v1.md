@@ -185,7 +185,7 @@ Keep implementation sequential by default. This migration touches shared path as
 - [x] Phase 01 - Source Boundary Inventory (`01-source-boundary-inventory-v1.md`)
 - [x] Phase 02 - Canonical Layout And Package Contract (`02-canonical-layout-package-contract-v1.md`)
 - [x] Phase 03 - Dev-only `.claude` Profile (`03-dev-only-claude-profile-v1.md`)
-- [ ] Phase 04 - Installer And Plugin Materialization (`04-installer-plugin-materialization-v1.md`)
+- [x] Phase 04 - Installer And Plugin Materialization (`04-installer-plugin-materialization-v1.md`) - accepted with TODO `P04-WIN-DRYRUN`
 - [ ] Phase 05 - Runtime State Extraction (`05-runtime-state-extraction-v1.md`)
 - [ ] Phase 06 - Compatibility Migration And Docs (`06-compatibility-migration-docs-v1.md`)
 
@@ -203,6 +203,12 @@ The Independent Planning Loop completed with separate Reviewer and Writer sessio
 Current controller decision: `review_passed_ready_for_runnable_preparation_dry_run`.
 
 `strictRunnableReadiness` remains `false` only because runnable preparation has not been executed. Before dispatch, run `prepare-implementation-plan-state.mjs --dry-run`, verify phase inventory alignment, and ensure no active workflow-enforcement pointers reference another workstream.
+
+## Follow-up TODOs
+
+| ID | Phase | Status | Runtime | Command | Notes |
+| --- | --- | --- | --- | --- | --- |
+| P04-WIN-DRYRUN | 04 | todo | Windows / PowerShell | `.\install-claude.ps1 -DryRun` | Phase 04 is treated as passed for sequencing. Replace `evidence/p04-install-ps1-dry-run.txt` with passing Windows evidence when available. |
 
 ## Verification Plan
 
