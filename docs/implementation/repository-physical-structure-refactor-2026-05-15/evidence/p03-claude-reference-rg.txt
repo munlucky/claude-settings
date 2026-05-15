@@ -1,0 +1,15 @@
+Command:
+rg -n "\.claude/(skills|agents|scripts|schemas|templates)" docs README.md AGENTS.md .claude
+
+Result:
+exit 0
+
+Output summary:
+- The latest command produced 23705 lines, dominated by existing compatibility-profile references under docs, `.claude`, and historical evidence files.
+- The output is intentionally summarized here to avoid storing an unbounded audit dump in phase artifacts.
+
+Review classification:
+- Allowed: active runtime commands such as `.claude/scripts/...`.
+- Allowed: installed payload or compatibility-profile references such as `.claude/skills/...`, `.claude/agents/...`, and `.claude/templates/...`.
+- Allowed: `.claude/profile-contract.yaml` generated-profile roots for `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/schemas`, and `.claude/templates`.
+- Remediated: top-level `README.md` no longer describes `.claude/skills` as the truth source; it now names canonical `skills/` and treats `.claude/skills` as migration compatibility profile output.

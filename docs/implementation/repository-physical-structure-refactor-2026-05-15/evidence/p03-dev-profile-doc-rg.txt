@@ -1,0 +1,15 @@
+Command:
+rg -n "canonical source|development profile|generated state" .claude/README.md .claude/CLAUDE.md
+
+Result:
+exit 0
+
+Pass signal:
+.claude/CLAUDE.md and .claude/README.md identify .claude as a development profile, name canonical source, and document generated state exclusions.
+
+Matched lines:
+.claude/CLAUDE.md:5:`.claude/` is a development profile, not canonical source. Keep this Tier 1 file as a short TOC while `.claude/rules/` loads recursively for Claude runtime compatibility.
+.claude/CLAUDE.md:8:2. Store durable repository policy in canonical source docs first; use `.claude/PROJECT.md`, `.claude/rules/`, and `.claude/docs/guidelines/` only as the active development profile during migration.
+.claude/CLAUDE.md:10:4. Update canonical source docs first, then refresh TOC links or generated profile output.
+.claude/README.md:3:`.claude/` is this repository's local Claude development profile. It is kept for active agent usability during the repository layout migration, not as the canonical source for reusable workflow assets.
+.claude/README.md:32:Use `tests/package-materialization.test.mjs` to verify the development profile boundary and generated state exclusions.
