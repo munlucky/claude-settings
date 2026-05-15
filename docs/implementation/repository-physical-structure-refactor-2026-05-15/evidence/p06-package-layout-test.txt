@@ -1,0 +1,11 @@
+✔ canonical source and package boundary directories exist (1.326459ms)
+✔ package contract declares required source payload entries and generated-state exclusions (2.273917ms)
+✔ repository layout docs name canonical source, development profile, generated state, and package payload boundaries (3.150666ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60.562667

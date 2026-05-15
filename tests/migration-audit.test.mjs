@@ -34,6 +34,20 @@ const legacyStatePaths = [
   '.code-review-graph/',
 ];
 
+const sourceTruthForbiddenPatterns = [
+  /(?:add|modify|update|edit).{0,80}`\.claude\/(?:skills|agents|scripts|schemas|templates)/is,
+  /canonical source under `\.claude\//i,
+  /source of truth under `\.claude\//i,
+];
+
+const docsThatMustAvoidClaudeSourceTruth = [
+  'README.md',
+  '.claude/README.md',
+  'docs/public/repository-layout.md',
+  'docs/public/installer-usage.md',
+  'docs/public/compatibility-migration.md',
+];
+
 test('runtime state resolver defaults new writes to .moonshot-state', () => {
   assert.equal(DEFAULT_RUNTIME_STATE_ROOT, '.moonshot-state');
   assert.equal(relative(resolveRuntimeStateRoot(root, {})), '.moonshot-state');
@@ -74,4 +88,58 @@ test('migration audit reports old generated state paths and cleanup instructions
   assert.match(cleanupGuide, /Do not delete `.claude\/docs/);
   assert.match(cleanupGuide, /`.claude\/scripts\/`/);
   assert.match(cleanupGuide, /\.moonshot-state\//);
+});
+
+test('public migration docs distinguish source, wrappers, profiles, and generated state', async () => {
+  const docs = [
+    await fs.promises.readFile(fromRoot('docs/public/repository-layout.md'), 'utf8'),
+    await fs.promises.readFile(fromRoot('docs/public/installer-usage.md'), 'utf8'),
+    await fs.promises.readFile(fromRoot('docs/public/compatibility-migration.md'), 'utf8'),
+    await fs.promises.readFile(fromRoot('.claude/README.md'), 'utf8'),
+  ].join('\n');
+
+  for (const phrase of [
+    'canonical source',
+    'development profile',
+    'compatibility wrapper',
+    'generated state',
+    'package payload',
+    'compatibility window',
+    'deprecation',
+  ]) {
+    assert.match(docs, new RegExp(phrase, 'i'), `${phrase} should be documented`);
+  }
+
+  for (const canonicalRoot of ['skills/', 'agents/', 'rules/', 'scripts/', 'schemas/', 'templates/', 'tests/', 'docs/public/']) {
+    assert.match(docs, new RegExp(canonicalRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${canonicalRoot} should be named`);
+  }
+});
+
+test('docs do not treat .claude source trees as canonical source of truth', async () => {
+  for (const relativePath of docsThatMustAvoidClaudeSourceTruth) {
+    const content = await fs.promises.readFile(fromRoot(relativePath), 'utf8');
+    const affirmativeSourceTruthLines = content
+      .split(/\r?\n/)
+      .filter((line) => !/\b(?:do not|don't|not valid|must not|never)\b/i.test(line));
+
+    for (const line of affirmativeSourceTruthLines) {
+      for (const pattern of sourceTruthForbiddenPatterns) {
+        assert.doesNotMatch(line, pattern, `${relativePath} should not contain ${pattern}`);
+      }
+    }
+  }
+});
+
+test('compatibility wrappers document their installed runtime role', async () => {
+  const wrapperPaths = [
+    '.claude/scripts/moonshot-phase-dispatch.sh',
+    '.claude/scripts/workflow-enforcement.sh',
+    '.claude/agents/verification/verify-changes.sh',
+  ];
+
+  for (const wrapperPath of wrapperPaths) {
+    const content = await fs.promises.readFile(fromRoot(wrapperPath), 'utf8');
+    assert.match(content, /compatibility/i, `${wrapperPath} should document compatibility`);
+    assert.match(content, /installed.*\.claude\//is, `${wrapperPath} should document installed .claude runtime behavior`);
+  }
 });

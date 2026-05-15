@@ -1,0 +1,11 @@
+✔ plugin manifests are valid JSON files (4.219584ms)
+✔ runtime plugin manifests point at generated package payloads (2.941625ms)
+✔ marketplace manifests reference existing plugin manifests and payload roots (1.376208ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65.824041

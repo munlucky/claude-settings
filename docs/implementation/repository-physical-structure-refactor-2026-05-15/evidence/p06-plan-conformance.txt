@@ -1,0 +1,9 @@
+Plan Conformance Check
+Status: fail
+Reason: unapproved-deferred-scope
+Phase doc: docs/implementation/repository-physical-structure-refactor-2026-05-15/06-compatibility-migration-docs-v1.md
+Sprint contract: docs/implementation/repository-physical-structure-refactor-2026-05-15/execution/repository-physical-structure-refactor-v1/06-phase-06-compatibility-migration-and-docs/SPRINT_CONTRACT.md
+Completion claim: yes
+Approved deviation: no
+Violations: 1
+- unapproved-deferred-scope: Completion artifacts contain deferred or alternative-implementation language without user-approved replan.

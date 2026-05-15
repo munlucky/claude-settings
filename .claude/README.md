@@ -17,6 +17,8 @@ Canonical source belongs in the root-level directories declared by `package/pack
 
 The `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/schemas`, and `.claude/templates` trees are compatibility or generated-profile material during the migration window. When editing durable skills, agents, scripts, schemas, templates, or tests, update the canonical root first and materialize or wrap profile output from that source.
 
+Compatibility wrappers may remain under `.claude/scripts/...` and `.claude/agents/verification/...` until a later major version removes or replaces legacy entrypoints. Those wrappers must point to a canonical root script, a documented installed runtime path, or a generated package profile path. Do not add undocumented duplicate source trees under `.claude/`.
+
 ## Always-Loaded Profile
 
 - `.claude/CLAUDE.md` stays a short TOC for active runtime instructions.
@@ -30,3 +32,18 @@ The `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/schemas`, an
 Generated state is not source and is never part of package payloads. Excluded state includes logs, cache, traces, browser artifacts, browser runtime materialization, sqlite runtime state, memorygraph data, temporary directories, audit outputs, and transient verification verdict JSON.
 
 Use `tests/package-materialization.test.mjs` to verify the development profile boundary and generated state exclusions.
+
+## Contributor Workflow
+
+To add or modify a reusable asset, edit the matching canonical root directory first:
+
+- `skills/` for skill definitions
+- `agents/` for agent definitions
+- `rules/` for workflow policy
+- `scripts/` for maintained scripts
+- `schemas/` for contracts
+- `templates/` for reusable templates
+- `tests/` for verification
+- `docs/public/` for contributor-facing docs
+
+Refresh generated/profile output only through the package materialization flow or explicit compatibility wrappers.
