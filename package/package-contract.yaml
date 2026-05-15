@@ -75,6 +75,8 @@ requiredPayloadEntries:
       role: package_output
 
 excludedGeneratedState:
+  - scripts/fixtures/**
+  - tests/fixtures/**
   - .claude/logs/**
   - .claude/cache/**
   - .claude/traces/**

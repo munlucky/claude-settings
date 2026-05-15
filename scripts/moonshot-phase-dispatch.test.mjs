@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
 
-const FIXTURE_DIR = path.join('.claude', 'scripts', 'fixtures', 'latest-dispatch-lifecycle');
+const FIXTURE_DIR = path.join('tests', 'fixtures', 'scripts', 'latest-dispatch-lifecycle');
 const ALLOWED_STATUS = new Set([
   'prepared',
   'running',

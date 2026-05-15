@@ -1,9 +1,0 @@
-{
-  "taxonomy": "unrecovered_blocker",
-  "terminal": true,
-  "finalComplete": false,
-  "completionStatus": "verification_blocked",
-  "finalVerdict": "blocked",
-  "blockingStopReasonCode": "node-test-runner-spawn-eperm",
-  "normalizedRunVerdict": ""
-}

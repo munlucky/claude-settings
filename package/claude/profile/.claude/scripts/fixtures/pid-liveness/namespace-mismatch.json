@@ -1,8 +1,0 @@
-{
-  "pid": 123,
-  "pidNamespace": "wsl",
-  "checkerNamespace": "windows",
-  "staleNoProgress": true,
-  "expectedReason": "pid_namespace_mismatch",
-  "expectedStaleChild": false
-}

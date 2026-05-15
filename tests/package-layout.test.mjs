@@ -134,6 +134,9 @@ test('package contract declares required source payload entries and generated-st
     assert.match(contract, new RegExp(exclusion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${exclusion} should be excluded`);
   }
 
+  assert.match(contract, /scripts\/fixtures\/\*\*/);
+  assert.match(contract, /tests\/fixtures\/\*\*/);
+
   assert.match(contract, /symlinkPolicy: avoid_required_symlinks/);
   assert.match(contract, /windowsMaterializationPolicy:/);
   assert.match(contract, /duplicateSourcePolicy:/);

@@ -11,7 +11,7 @@ import {
 } from './harness-state-invariants.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixtureDir = path.join(__dirname, 'fixtures', 'harness-state-invariants');
+const fixtureDir = path.join(__dirname, '..', 'tests', 'fixtures', 'scripts', 'harness-state-invariants');
 
 function readFixture(name) {
   return JSON.parse(fs.readFileSync(path.join(fixtureDir, `${name}.json`), 'utf8'));

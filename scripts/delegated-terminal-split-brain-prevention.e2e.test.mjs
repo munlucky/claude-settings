@@ -9,7 +9,7 @@ import { evaluateCompletionGateVerdict, evaluateDeclaredAlternateVerifierPolicy 
 import { evaluateWorkerIdentityLiveness } from './lib/phase-liveness-checker.mjs';
 import { validateAttemptManifest, writeAttemptManifestIntent } from './lib/phase-attempt-manifest.mjs';
 
-const FIXTURE_PATH = '.claude/scripts/fixtures/delegated-terminal-split-brain-prevention/v4-scenarios.json';
+const FIXTURE_PATH = 'tests/fixtures/scripts/delegated-terminal-split-brain-prevention/v4-scenarios.json';
 
 function fixtureRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'delegated-terminal-split-brain-'));

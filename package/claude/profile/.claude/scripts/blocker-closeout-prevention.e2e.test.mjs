@@ -12,7 +12,7 @@ import { finalizePhaseCloseout } from './phase-closeout-finalize.mjs';
 import { evaluatePhaseCloseout } from './verify-phase-closeout.mjs';
 import { config, withFixture } from './verify-phase-closeout-fixtures.mjs';
 
-const FIXTURE_PATH = new URL('./fixtures/blocker-closeout-prevention/terminal-blocked-sequence.json', import.meta.url);
+const FIXTURE_PATH = new URL('../tests/fixtures/scripts/blocker-closeout-prevention/terminal-blocked-sequence.json', import.meta.url);
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));

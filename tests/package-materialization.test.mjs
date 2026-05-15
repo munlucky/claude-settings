@@ -64,6 +64,7 @@ const generatedStateFragments = [
   '/traces/',
   '/browser-artifacts/',
   '/browser-runtime/',
+  '/scripts/fixtures/',
   '/node_modules/',
   '/tmp/',
   '/memorygraph/',

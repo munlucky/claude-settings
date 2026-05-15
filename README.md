@@ -21,7 +21,7 @@
 
 ## Repository Source Model
 
-- Canonical source: `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`
+- Canonical source: `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `tests/fixtures/`, `docs/public/`
 - Development profile: `.claude/` and `.codex/` for local agent runtime compatibility
 - Package payloads: `package/claude/profile/`, `package/codex/profile/`, `.claude-plugin/`, `.codex-plugin/`
 - Generated state: `.moonshot-state/`, `.claude/logs/`, `.claude/cache/`, `.claude/traces/`, `.claude/browser-artifacts/`, `.claude/browser-runtime/`, `.claude/memorygraph/`, sqlite files, and verdict JSON
@@ -55,6 +55,8 @@ claude-settings/
 ```
 
 Root-level `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, and `docs/public/` are the canonical source directories. The `.claude/` tree remains loaded for current runtime compatibility and installed `.claude/` payload behavior.
+
+Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; they are not runtime output and are not included in installed package payloads.
 
 ## 핵심 구성 요소
 
