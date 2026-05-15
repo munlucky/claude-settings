@@ -22,7 +22,10 @@ const canonicalDirs = [
 
 const wrapperDirs = ['.claude-plugin', '.codex-plugin'];
 
-const profileDirs = ['package/claude/profile', 'package/codex/profile'];
+const profileTemplateDirs = [
+  'package/profile-templates/claude/.claude',
+  'package/profile-templates/codex/.codex',
+];
 
 const canonicalSourceMinimums = new Map([
   ['skills', 10],
@@ -80,7 +83,7 @@ test('canonical source and package boundary directories exist', () => {
     assert.equal(lstatSync(fullPath).isDirectory(), true, `${dir} should be a directory`);
   }
 
-  for (const dir of profileDirs) {
+  for (const dir of profileTemplateDirs) {
     const fullPath = fromRoot(dir);
     assert.equal(existsSync(fullPath), true, `${dir} should exist`);
     assert.equal(lstatSync(fullPath).isDirectory(), true, `${dir} should be a directory`);
@@ -126,6 +129,9 @@ test('package contract declares required source payload entries and generated-st
     'docs/public/**',
     'tests/package-layout.test.mjs',
     '.claude/verification.contract.yaml',
+    'package/build-package.mjs',
+    'package/profile-templates/claude/.claude/',
+    'package/profile-templates/codex/.codex/',
   ]) {
     assert.match(contract, new RegExp(entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${entry} should be listed`);
   }

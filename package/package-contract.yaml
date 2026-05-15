@@ -17,16 +17,20 @@ canonicalSource:
 
 runtimeProfiles:
   claude:
-    profileRoot: package/claude/profile/
+    templateRoot: package/profile-templates/claude/.claude/
+    generatedProfileRoot: package/claude/profile/.claude/
     compatibilityRoot: .claude/
     pluginOutputRoot: .claude-plugin/
-    materialization: generated_copy
+    materializer: package/build-package.mjs
+    materialization: generated_copy_not_committed
     symlinkPolicy: avoid_required_symlinks
   codex:
-    profileRoot: package/codex/profile/
+    templateRoot: package/profile-templates/codex/.codex/
+    generatedProfileRoot: package/codex/profile/.codex/
     compatibilityRoot: .codex/
     pluginOutputRoot: .codex-plugin/
-    materialization: generated_copy
+    materializer: package/build-package.mjs
+    materialization: generated_copy_not_committed
     symlinkPolicy: avoid_required_symlinks
 
 requiredPayloadEntries:
@@ -56,26 +60,39 @@ requiredPayloadEntries:
       canonicalTarget: schemas/verification.contract.yaml
       migrationPolicy: move_with_wrapper_until_phase_06
   claudeRuntime:
-    - target: package/claude/profile/
+    - target: package/profile-templates/claude/.claude/
+      role: runtime_specific_static_template
+    - target: package/claude/profile/.claude/
       generatedFrom: sharedSource
+      materializer: package/build-package.mjs
+      role: ignored_generated_package_payload
     - target: .claude/
       generatedFrom: sharedSource
       role: compatibility_wrapper_until_phase_06
     - target: .claude-plugin/
-      generatedFrom: package/claude/profile/
+      generatedFrom: package/build-package.mjs
       role: package_output
   codexRuntime:
-    - target: package/codex/profile/
+    - target: package/profile-templates/codex/.codex/
+      role: runtime_specific_static_template
+    - target: package/codex/profile/.codex/
       generatedFrom: sharedSource
+      materializer: package/build-package.mjs
+      role: ignored_generated_package_payload
     - target: .codex/
       generatedFrom: sharedSource
       role: development_profile
     - target: .codex-plugin/
-      generatedFrom: package/codex/profile/
+      generatedFrom: package/build-package.mjs
       role: package_output
 
 excludedGeneratedState:
   - scripts/fixtures/**
+  - scripts/**/fixtures/**
+  - scripts/**/*.test.mjs
+  - scripts/**/*.e2e.test.mjs
+  - agents/**/*_test.py
+  - agents/**/*.test.py
   - tests/fixtures/**
   - .claude/logs/**
   - .claude/cache/**
@@ -95,5 +112,5 @@ driftPolicy:
   sourceOfTruth: canonicalSource
   compatibilityPolicy: move_with_wrapper_until_phase_06
   duplicateSourcePolicy: "Do not maintain long-lived manual duplicates between root source directories and generated runtime output."
-  generatedCopyPolicy: "Generated copies must be reproducible from this contract and canonical source."
+  generatedCopyPolicy: "Generated profile copies must be reproducible from package/build-package.mjs and are not committed."
   windowsMaterializationPolicy: "Installers must not require symlink support unless Windows validation is added before release."

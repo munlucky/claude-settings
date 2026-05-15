@@ -4,17 +4,21 @@
   "displayName": "Claude Settings Profile",
   "runtime": "claude",
   "source": {
-    "type": "package-profile",
-    "path": "package/claude/profile/.claude"
+    "type": "materialized-package-profile",
+    "templateRoot": "package/profile-templates/claude/.claude",
+    "materializer": "package/build-package.mjs",
+    "generatedProfileRoot": "package/claude/profile/.claude"
   },
   "entries": [
-    "package/claude/profile/.claude/CLAUDE.md",
-    "package/claude/profile/.claude/skills",
-    "package/claude/profile/.claude/agents",
-    "package/claude/profile/.claude/rules",
-    "package/claude/profile/.claude/scripts",
-    "package/claude/profile/.claude/schemas",
-    "package/claude/profile/.claude/templates",
-    "package/claude/profile/.claude/verification.contract.yaml"
+    "skills",
+    "agents",
+    "rules",
+    "scripts",
+    "bin",
+    "tools",
+    "schemas",
+    "templates",
+    "docs/public",
+    "package/profile-templates/claude/.claude"
   ]
 }

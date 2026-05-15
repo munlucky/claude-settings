@@ -30,7 +30,7 @@ The active repository profile still reads `.claude/CLAUDE.md`, `.claude/verifica
 
 ## Package Payload
 
-`package/package-contract.yaml` declares what Claude and Codex package assembly must include. `package/claude/profile/`, `package/codex/profile/`, `.claude-plugin/`, and `.codex-plugin/` are generated or curated payload boundaries derived from canonical source and the package contract.
+`package/package-contract.yaml` declares what Claude and Codex package assembly must include. `package/profile-templates/`, `package/build-package.mjs`, `.claude-plugin/`, and `.codex-plugin/` are the committed package boundary. `package/claude/profile/` and `package/codex/profile/` are ignored generated payload roots derived from canonical source and the package contract.
 
 Downstream installs continue to materialize `.claude/` payloads until a later major version. That compatibility behavior is intentional and should be verified with `bash install-claude.sh --dry-run` after changes that affect package layout, installer behavior, or public docs.
 

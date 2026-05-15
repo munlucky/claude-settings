@@ -1,14 +1,47 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { after, test } from 'node:test';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
 
-const claudeProfile = 'package/claude/profile/.claude';
-const codexProfile = 'package/codex/profile/.codex';
+let materializedRoot = null;
+
+const materializePackage = async () => {
+  if (materializedRoot) {
+    return materializedRoot;
+  }
+
+  materializedRoot = await mkdtemp(path.join(os.tmpdir(), 'claude-settings-package-'));
+  const result = spawnSync(process.execPath, [
+    'package/build-package.mjs',
+    '--runtime',
+    'all',
+    '--out',
+    materializedRoot,
+    '--clean',
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return materializedRoot;
+};
+
+const claudeProfile = async () => path.join(await materializePackage(), 'claude', 'profile', '.claude');
+const codexProfile = async () => path.join(await materializePackage(), 'codex', 'profile', '.codex');
+
+after(async () => {
+  if (materializedRoot) {
+    await rm(materializedRoot, { recursive: true, force: true });
+  }
+});
 
 const requiredClaudeEntries = [
   'CLAUDE.md',
@@ -65,6 +98,7 @@ const generatedStateFragments = [
   '/browser-artifacts/',
   '/browser-runtime/',
   '/scripts/fixtures/',
+  'fixtures',
   '/node_modules/',
   '/tmp/',
   '/memorygraph/',
@@ -76,6 +110,10 @@ const generatedStateFragments = [
   'browser-flow-verdict-',
   'knowledge-repo-audit-',
   '.code-review-graph/',
+  '.test.mjs',
+  '.e2e.test.mjs',
+  '_test.py',
+  '.test.py',
 ];
 
 const runtimeStateDenylistExamples = [
@@ -107,15 +145,15 @@ const rootVerdictFragments = new Set([
   'knowledge-repo-audit-',
 ]);
 
-const listFiles = async (relativeDir) => {
-  const absoluteDir = fromRoot(relativeDir);
+const listFiles = async (absoluteDir, prefix = '') => {
   const entries = await readdir(absoluteDir, { withFileTypes: true });
   const files = [];
 
   for (const entry of entries) {
-    const relativePath = path.join(relativeDir, entry.name);
+    const relativePath = path.join(prefix, entry.name);
+    const absolutePath = path.join(absoluteDir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...await listFiles(relativePath));
+      files.push(...await listFiles(absolutePath, relativePath));
     } else {
       files.push(relativePath.replaceAll(path.sep, '/'));
     }
@@ -125,7 +163,7 @@ const listFiles = async (relativeDir) => {
 };
 
 const assertEntryExists = async (profileRoot, entry) => {
-  const target = fromRoot(profileRoot, entry);
+  const target = path.join(profileRoot, entry);
   assert.equal(existsSync(target), true, `${profileRoot}/${entry} should exist`);
   assert.ok(await stat(target), `${profileRoot}/${entry} should be stat-able`);
 };
@@ -139,29 +177,31 @@ const matchesGeneratedStateFragment = (file, fragment) => {
 };
 
 test('Claude package payload includes required compatibility and source entries', async () => {
+  const profileRoot = await claudeProfile();
   for (const entry of requiredClaudeEntries) {
-    await assertEntryExists(claudeProfile, entry);
+    await assertEntryExists(profileRoot, entry);
   }
 
   for (const entry of requiredConcretePayloadFiles) {
-    await assertEntryExists(claudeProfile, entry);
+    await assertEntryExists(profileRoot, entry);
   }
 });
 
 test('Codex package payload includes required compatibility and source entries', async () => {
+  const profileRoot = await codexProfile();
   for (const entry of requiredCodexEntries) {
-    await assertEntryExists(codexProfile, entry);
+    await assertEntryExists(profileRoot, entry);
   }
 
   for (const entry of requiredConcreteCodexFiles) {
-    await assertEntryExists(codexProfile, entry);
+    await assertEntryExists(profileRoot, entry);
   }
 });
 
 test('excludes runtime state from package payloads and local-only artifacts', async () => {
   const files = [
-    ...await listFiles('package/claude/profile'),
-    ...await listFiles('package/codex/profile'),
+    ...await listFiles(await claudeProfile(), '.claude'),
+    ...await listFiles(await codexProfile(), '.codex'),
   ];
 
   for (const file of files) {
@@ -187,9 +227,22 @@ test('excludes runtime state roots from package materialization denylist', () =>
 
 test('package materialization contract names generated payload roots and exclusions', async () => {
   const contract = await readFile(fromRoot('package/package-contract.yaml'), 'utf8');
-  assert.match(contract, /profileRoot: package\/claude\/profile\//);
-  assert.match(contract, /profileRoot: package\/codex\/profile\//);
+  assert.match(contract, /templateRoot: package\/profile-templates\/claude\/\.claude\//);
+  assert.match(contract, /templateRoot: package\/profile-templates\/codex\/\.codex\//);
+  assert.match(contract, /generatedProfileRoot: package\/claude\/profile\/\.claude\//);
+  assert.match(contract, /generatedProfileRoot: package\/codex\/profile\/\.codex\//);
+  assert.match(contract, /materializer: package\/build-package\.mjs/);
   assert.match(contract, /\.claude\/logs\/\*\*/);
   assert.match(contract, /\.claude\/runtime-state\.sqlite\*/);
   assert.match(contract, /\.code-review-graph\/\*\*/);
+});
+
+test('generated package profiles are not tracked source files', () => {
+  const result = spawnSync('git', ['ls-files', 'package/claude/profile', 'package/codex/profile'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), '', 'generated package profile files should not be tracked');
 });

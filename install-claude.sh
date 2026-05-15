@@ -10,8 +10,9 @@ BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
 CODEX_PROJECT_FILES=()
 CODEX_BACKUP_PATHS=()
-PACKAGE_CLAUDE_PROFILE="package/claude/profile/.claude"
-PACKAGE_CODEX_PROFILE="package/codex/profile/.codex"
+PACKAGE_BUILDER="package/build-package.mjs"
+MATERIALIZED_CLAUDE_PROFILE="claude/profile/.claude"
+MATERIALIZED_CODEX_PROFILE="codex/profile/.codex"
 GENERATED_STATE_EXCLUSIONS=(
 	".claude/logs/**"
 	".claude/cache/**"
@@ -168,6 +169,25 @@ list_payload_targets() {
 		rel_item="${item#"$source_root"/}"
 		echo "    $target_root/$rel_item"
 	done < <(find "$source_root" -mindepth 1 -type f | sort)
+}
+
+materialize_package_payloads() {
+	local repo_root="$1"
+	local output_root="$2"
+	local builder="$repo_root/$PACKAGE_BUILDER"
+
+	if ! command -v node &>/dev/null; then
+		print_error "Node.js가 필요합니다. package payload는 $PACKAGE_BUILDER로 canonical source에서 조립됩니다."
+		exit 1
+	fi
+
+	if [ ! -f "$builder" ]; then
+		print_error "package materializer를 찾을 수 없습니다: $builder"
+		exit 1
+	fi
+
+	mkdir -p "$output_root"
+	node "$builder" --runtime all --out "$output_root" --clean >/dev/null
 }
 
 setup_agents_bridge() {
@@ -823,15 +843,20 @@ fi
 
 # 3. Dry-run 모드
 if [ "$DRY_RUN" = true ]; then
+	DRY_RUN_PAYLOAD_ROOT=$(mktemp -d)
+	materialize_package_payloads "$(pwd)" "$DRY_RUN_PAYLOAD_ROOT"
+	DRY_RUN_CLAUDE_PAYLOAD="$DRY_RUN_PAYLOAD_ROOT/$MATERIALIZED_CLAUDE_PROFILE"
+	DRY_RUN_CODEX_PAYLOAD="$DRY_RUN_PAYLOAD_ROOT/$MATERIALIZED_CODEX_PROFILE"
 	print_info "[DRY-RUN] 다음 작업이 수행됩니다:"
 	if [ ${#BACKUP_DIRS[@]} -gt 0 ] || [ ${#BACKUP_FILES[@]} -gt 0 ]; then
 		echo "  - 백업할 디렉토리: ${BACKUP_DIRS[*]}"
 		echo "  - 백업할 파일: ${BACKUP_FILES[*]}"
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
-	echo "  - package/claude/profile/.claude payload에서 .claude 디렉토리 설치"
-	echo "  - package/codex/profile/.codex payload에서 .codex/config.toml 설치"
-	echo "  - package/codex/profile/.codex payload에서 .codex/agents, .codex/skills 백업 없이 최신 복사본으로 동기화"
+	echo "  - ${PACKAGE_BUILDER}로 Claude/Codex payload materialize"
+	echo "  - materialized Claude payload에서 .claude 디렉토리 설치"
+	echo "  - materialized Codex payload에서 .codex/config.toml 설치"
+	echo "  - materialized Codex payload에서 .codex/agents, .codex/skills 백업 없이 최신 복사본으로 동기화"
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .gitattributes 설치/병합"
 	echo "  - legacy .agents/skills 제거"
@@ -842,10 +867,10 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
 	echo ""
 	print_info "설치 대상 .claude payload 파일:"
-	list_payload_targets "$PACKAGE_CLAUDE_PROFILE" ".claude"
+	list_payload_targets "$DRY_RUN_CLAUDE_PAYLOAD" ".claude"
 	echo ""
 	print_info "설치 대상 .codex payload 파일:"
-	list_payload_targets "$PACKAGE_CODEX_PROFILE" ".codex"
+	list_payload_targets "$DRY_RUN_CODEX_PAYLOAD" ".codex"
 	echo ""
 	print_info "제외되는 생성 상태 경로:"
 	for pattern in "${GENERATED_STATE_EXCLUSIONS[@]}"; do
@@ -862,6 +887,7 @@ if [ "$DRY_RUN" = true ]; then
 			echo "    ✓ $file"
 		done
 	fi
+	rm -rf "$DRY_RUN_PAYLOAD_ROOT"
 	exit 0
 fi
 
@@ -884,11 +910,13 @@ print_info "패키지 payload 추출 중..."
 extract_zip "$ZIP_FILE" "$TEMP_DIR"
 
 DOWNLOADED_REPO="$TEMP_DIR/claude-settings-$BRANCH"
-DOWNLOADED_CLAUDE_PAYLOAD="$DOWNLOADED_REPO/$PACKAGE_CLAUDE_PROFILE"
-DOWNLOADED_CODEX_PAYLOAD="$DOWNLOADED_REPO/$PACKAGE_CODEX_PROFILE"
+MATERIALIZED_PAYLOAD_ROOT="$TEMP_DIR/materialized-package"
+materialize_package_payloads "$DOWNLOADED_REPO" "$MATERIALIZED_PAYLOAD_ROOT"
+DOWNLOADED_CLAUDE_PAYLOAD="$MATERIALIZED_PAYLOAD_ROOT/$MATERIALIZED_CLAUDE_PROFILE"
+DOWNLOADED_CODEX_PAYLOAD="$MATERIALIZED_PAYLOAD_ROOT/$MATERIALIZED_CODEX_PROFILE"
 
 if [ ! -d "$DOWNLOADED_CLAUDE_PAYLOAD" ]; then
-	print_error "Claude package payload를 찾을 수 없습니다: $PACKAGE_CLAUDE_PROFILE"
+	print_error "Claude package payload를 materialize하지 못했습니다: $DOWNLOADED_CLAUDE_PAYLOAD"
 	rm -rf "$TEMP_DIR"
 	exit 1
 fi

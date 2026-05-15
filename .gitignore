@@ -41,3 +41,5 @@ docs/implementation/**/archive/
 .claude/verification-results-harness-anomaly-phase*.log
 .claude/verification-results-lifecycle-projection-*.log
 .claude/verification-verdict**.json
+package/claude/profile/
+package/codex/profile/

@@ -6,8 +6,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ClaudePayload = Join-Path $PSScriptRoot "package/claude/profile/.claude"
-$CodexPayload = Join-Path $PSScriptRoot "package/codex/profile/.codex"
+$PackageBuilder = Join-Path $PSScriptRoot "package/build-package.mjs"
+$MaterializedClaudeProfile = "claude/profile/.claude"
+$MaterializedCodexProfile = "codex/profile/.codex"
 $GeneratedStateExclusions = @(
     ".claude/logs/**",
     ".claude/cache/**",
@@ -67,9 +68,30 @@ function Copy-PayloadDirectory($SourceRoot, $TargetRoot) {
     }
 }
 
+function New-MaterializedPayloads($OutputRoot) {
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        throw "Node.js is required. Package payloads are materialized from canonical source by package/build-package.mjs."
+    }
+    if (-not (Test-Path -LiteralPath $PackageBuilder -PathType Leaf)) {
+        throw "Package materializer not found: $PackageBuilder"
+    }
+
+    New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
+    & node $PackageBuilder --runtime all --out $OutputRoot --clean | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Package materialization failed."
+    }
+}
+
+$payloadRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("claude-settings-package-" + [System.Guid]::NewGuid().ToString())
+New-MaterializedPayloads $payloadRoot
+$ClaudePayload = Join-Path $payloadRoot $MaterializedClaudeProfile
+$CodexPayload = Join-Path $payloadRoot $MaterializedCodexProfile
+
 if ($DryRun) {
-    Write-Info "[DRY-RUN] package/claude/profile/.claude payload will materialize .claude/"
-    Write-Info "[DRY-RUN] package/codex/profile/.codex payload will materialize .codex/"
+    Write-Info "[DRY-RUN] package/build-package.mjs will materialize Claude/Codex payloads from canonical source."
+    Write-Info "[DRY-RUN] materialized Claude payload will install .claude/"
+    Write-Info "[DRY-RUN] materialized Codex payload will install .codex/"
     Write-Host ""
     Write-Info "Target .claude payload files:"
     Get-PayloadTargets $ClaudePayload ".claude"
@@ -84,6 +106,7 @@ if ($DryRun) {
     if (-not $IncludeProject) {
         Write-Host "    .claude/PROJECT.md (protected unless -IncludeProject is set)"
     }
+    Remove-Item -LiteralPath $payloadRoot -Recurse -Force
     exit 0
 }
 
@@ -129,3 +152,4 @@ if (Test-Path -LiteralPath "AGENTS.md") {
 New-Item -ItemType SymbolicLink -Path "AGENTS.md" -Target ".claude/CLAUDE.md" | Out-Null
 
 Write-Info "Install completed from package payloads."
+Remove-Item -LiteralPath $payloadRoot -Recurse -Force

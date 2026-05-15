@@ -4,7 +4,9 @@
     {
       "name": "claude-settings-profile",
       "manifest": ".claude-plugin/plugin.json",
-      "profileRoot": "package/claude/profile/.claude"
+      "profileTemplateRoot": "package/profile-templates/claude/.claude",
+      "materializer": "package/build-package.mjs",
+      "generatedProfileRoot": "package/claude/profile/.claude"
     }
   ]
 }

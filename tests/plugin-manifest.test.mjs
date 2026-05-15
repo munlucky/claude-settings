@@ -30,29 +30,34 @@ test('plugin manifests are valid JSON files', async () => {
   }
 });
 
-test('runtime plugin manifests point at generated package payloads', async () => {
+test('runtime plugin manifests point at package materializers and canonical inputs', async () => {
   for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json']) {
     const parsed = await loadJson(manifest);
-    assert.match(parsed.source.path, /^package\/(claude|codex)\/profile\//);
-    assert.doesNotMatch(parsed.source.path, /^\.claude\/(skills|scripts|templates)/);
-    assertExistingPath(parsed.source.path, `${manifest} source.path`);
+    assert.equal(parsed.source.type, 'materialized-package-profile');
+    assert.match(parsed.source.templateRoot, /^package\/profile-templates\/(claude|codex)\/\.(claude|codex)$/);
+    assert.equal(parsed.source.materializer, 'package/build-package.mjs');
+    assert.match(parsed.source.generatedProfileRoot, /^package\/(claude|codex)\/profile\/\.(claude|codex)$/);
+    assertExistingPath(parsed.source.templateRoot, `${manifest} source.templateRoot`);
+    assertExistingPath(parsed.source.materializer, `${manifest} source.materializer`);
 
     for (const entry of parsed.entries) {
-      assert.match(entry, /^package\/(claude|codex)\/profile\//, `${entry} should be package-scoped`);
+      assert.doesNotMatch(entry, /^package\/(claude|codex)\/profile\//, `${entry} should not require committed generated payloads`);
       assertExistingPath(entry, `${manifest} entry`);
     }
   }
 });
 
-test('marketplace manifests reference existing plugin manifests and payload roots', async () => {
+test('marketplace manifests reference existing plugin manifests and materializers', async () => {
   for (const manifest of ['.claude-plugin/marketplace.json', '.codex-plugin/marketplace.json']) {
     const parsed = await loadJson(manifest);
     assert.ok(Array.isArray(parsed.plugins), `${manifest} should expose plugins[]`);
 
     for (const plugin of parsed.plugins) {
       assertExistingPath(plugin.manifest, `${manifest} plugin manifest`);
-      assertExistingPath(plugin.profileRoot, `${manifest} profileRoot`);
-      assert.match(plugin.profileRoot, /^package\/(claude|codex)\/profile\//);
+      assertExistingPath(plugin.profileTemplateRoot, `${manifest} profileTemplateRoot`);
+      assertExistingPath(plugin.materializer, `${manifest} materializer`);
+      assert.match(plugin.profileTemplateRoot, /^package\/profile-templates\/(claude|codex)\/\.(claude|codex)$/);
+      assert.match(plugin.generatedProfileRoot, /^package\/(claude|codex)\/profile\/\.(claude|codex)$/);
     }
   }
 });

@@ -19,6 +19,6 @@ Safe generated-state cleanup targets:
 - `.claude/knowledge-repo-audit-*.json`
 - `.code-review-graph/`
 
-Do not delete `.claude/docs/phase-status.yaml`, `.claude/docs/tasks/`, `.claude/docs/guidelines/`, `.claude/scripts/`, `.claude/rules/`, `.claude/schemas/`, `.claude/templates/`, `.claude/skills/`, `package/claude/profile/`, or `package/codex/profile/` as part of state cleanup.
+Do not delete `.claude/docs/phase-status.yaml`, `.claude/docs/tasks/`, `.claude/docs/guidelines/`, `.claude/scripts/`, `.claude/rules/`, `.claude/schemas/`, `.claude/templates/`, `.claude/skills/`, `package/profile-templates/`, or `package/build-package.mjs` as part of state cleanup. Ignored generated profile roots under `package/claude/profile/` and `package/codex/profile/` may be regenerated with `node package/build-package.mjs --runtime all --clean`.
 
 Compatibility note: legacy generated state under `.claude/` remains readable during the cleanup window, but new harness writes should use `.moonshot-state/` unless an explicit environment override such as `MOONSHOT_STATE_ROOT` or `PHASE_RUNTIME_STATE_ROOT` is set.

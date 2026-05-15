@@ -4,14 +4,16 @@
   "displayName": "Claude Settings Codex Profile",
   "runtime": "codex",
   "source": {
-    "type": "package-profile",
-    "path": "package/codex/profile/.codex"
+    "type": "materialized-package-profile",
+    "templateRoot": "package/profile-templates/codex/.codex",
+    "materializer": "package/build-package.mjs",
+    "generatedProfileRoot": "package/codex/profile/.codex"
   },
   "entries": [
-    "package/codex/profile/.codex/config.toml",
-    "package/codex/profile/.codex/skills",
-    "package/codex/profile/.codex/agents",
-    "package/codex/profile/.codex/AGENTS.md",
-    "package/codex/profile/.codex/verification.contract.yaml"
+    "skills",
+    "agents",
+    "schemas",
+    "docs/public",
+    "package/profile-templates/codex/.codex"
   ]
 }

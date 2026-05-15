@@ -4,7 +4,9 @@
     {
       "name": "claude-settings-codex-profile",
       "manifest": ".codex-plugin/plugin.json",
-      "profileRoot": "package/codex/profile/.codex"
+      "profileTemplateRoot": "package/profile-templates/codex/.codex",
+      "materializer": "package/build-package.mjs",
+      "generatedProfileRoot": "package/codex/profile/.codex"
     }
   ]
 }
