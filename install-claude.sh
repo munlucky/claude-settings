@@ -844,7 +844,17 @@ fi
 # 3. Dry-run 모드
 if [ "$DRY_RUN" = true ]; then
 	DRY_RUN_PAYLOAD_ROOT=$(mktemp -d)
-	materialize_package_payloads "$(pwd)" "$DRY_RUN_PAYLOAD_ROOT"
+	DRY_RUN_TEMP_DIR=""
+	DRY_RUN_REPO_ROOT="$(pwd)"
+	if [ ! -f "$DRY_RUN_REPO_ROOT/$PACKAGE_BUILDER" ]; then
+		print_info "[DRY-RUN] local package builder 없음. GitHub archive에서 payload source를 가져옵니다."
+		DRY_RUN_TEMP_DIR=$(mktemp -d)
+		DRY_RUN_ZIP_FILE="$DRY_RUN_TEMP_DIR/claude-settings.zip"
+		curl -L "$REPO_URL/archive/$BRANCH.zip" -o "$DRY_RUN_ZIP_FILE" --progress-bar
+		extract_zip "$DRY_RUN_ZIP_FILE" "$DRY_RUN_TEMP_DIR"
+		DRY_RUN_REPO_ROOT="$DRY_RUN_TEMP_DIR/claude-settings-$BRANCH"
+	fi
+	materialize_package_payloads "$DRY_RUN_REPO_ROOT" "$DRY_RUN_PAYLOAD_ROOT"
 	DRY_RUN_CLAUDE_PAYLOAD="$DRY_RUN_PAYLOAD_ROOT/$MATERIALIZED_CLAUDE_PROFILE"
 	DRY_RUN_CODEX_PAYLOAD="$DRY_RUN_PAYLOAD_ROOT/$MATERIALIZED_CODEX_PROFILE"
 	print_info "[DRY-RUN] 다음 작업이 수행됩니다:"
@@ -888,6 +898,9 @@ if [ "$DRY_RUN" = true ]; then
 		done
 	fi
 	rm -rf "$DRY_RUN_PAYLOAD_ROOT"
+	if [ -n "$DRY_RUN_TEMP_DIR" ]; then
+		rm -rf "$DRY_RUN_TEMP_DIR"
+	fi
 	exit 0
 fi
 

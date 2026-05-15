@@ -13,8 +13,9 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
-const scriptPath = new URL(import.meta.url).pathname;
+const scriptPath = fileURLToPath(import.meta.url);
 const packageRoot = path.dirname(scriptPath);
 const repoRoot = path.dirname(packageRoot);
 
