@@ -13,6 +13,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 
 const isWindows = process.platform === 'win32';
 const cwd = process.cwd();
@@ -43,7 +44,7 @@ function parseArgs(argv) {
 }
 
 function lockPathFor(name) {
-  const dir = path.resolve(cwd, '.claude', 'cache', 'codex-mcp-singleton');
+  const dir = resolveRuntimeStatePath('cache', 'codex-mcp-singleton');
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, `${name}.json`);
 }

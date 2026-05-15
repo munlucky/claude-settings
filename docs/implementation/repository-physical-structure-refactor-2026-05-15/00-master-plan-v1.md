@@ -186,7 +186,7 @@ Keep implementation sequential by default. This migration touches shared path as
 - [x] Phase 02 - Canonical Layout And Package Contract (`02-canonical-layout-package-contract-v1.md`)
 - [x] Phase 03 - Dev-only `.claude` Profile (`03-dev-only-claude-profile-v1.md`)
 - [x] Phase 04 - Installer And Plugin Materialization (`04-installer-plugin-materialization-v1.md`) - accepted with TODO `P04-WIN-DRYRUN`
-- [ ] Phase 05 - Runtime State Extraction (`05-runtime-state-extraction-v1.md`)
+- [x] Phase 05 - Runtime State Extraction (`05-runtime-state-extraction-v1.md`)
 - [ ] Phase 06 - Compatibility Migration And Docs (`06-compatibility-migration-docs-v1.md`)
 
 ## Plan Quality Loop

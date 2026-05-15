@@ -11,11 +11,12 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 
 const cwd = process.cwd();
-const graphDir = path.resolve(cwd, '.code-review-graph');
-const diagnosticsPath = path.resolve(process.env.CODE_REVIEW_GRAPH_MCP_DIAGNOSTICS_PATH || path.join(cwd, '.claude', 'logs', 'code-review-graph', 'mcp-diagnostics.jsonl'));
-const unavailableCachePath = path.resolve(process.env.CODE_REVIEW_GRAPH_MCP_CACHE_PATH || path.join(cwd, '.claude', 'cache', 'code-review-graph-native-mcp-cache.json'));
+const graphDir = path.resolve(process.env.CODE_REVIEW_GRAPH_DATA_DIR || resolveRuntimeStatePath('code-review-graph'));
+const diagnosticsPath = path.resolve(process.env.CODE_REVIEW_GRAPH_MCP_DIAGNOSTICS_PATH || resolveRuntimeStatePath('logs', 'code-review-graph', 'mcp-diagnostics.jsonl'));
+const unavailableCachePath = path.resolve(process.env.CODE_REVIEW_GRAPH_MCP_CACHE_PATH || resolveRuntimeStatePath('cache', 'code-review-graph-native-mcp-cache.json'));
 const isWindows = process.platform === 'win32';
 const idleTimeoutMs = Number.parseInt(process.env.CODE_REVIEW_GRAPH_MCP_IDLE_TIMEOUT_MS ?? '900000', 10);
 const runId = String(process.env.PHASE_RUN_ID || process.env.MOONSHOT_RUN_ID || process.env.AGENT_LOOP_RUN_ID || 'unknown').trim() || 'unknown';
@@ -60,7 +61,7 @@ function fallbackCommand() {
 }
 
 function fallbackEvidencePath() {
-  return process.env.CODE_REVIEW_GRAPH_FALLBACK_EVIDENCE_PATH || path.join(cwd, '.claude', 'logs', 'code-review-graph', 'fallback-status.log');
+  return process.env.CODE_REVIEW_GRAPH_FALLBACK_EVIDENCE_PATH || resolveRuntimeStatePath('logs', 'code-review-graph', 'fallback-status.log');
 }
 
 function appendDiagnostic({ nativeAttempted, nativeSuppressed, failureClass, rootCause, fallbackExitCode = 1 }) {
@@ -291,6 +292,7 @@ const child = spawn(command.command, childArgs, {
     PYTHONUTF8: '1',
     PYTHONIOENCODING: 'utf-8',
     CRG_REPO: cwd,
+    CODE_REVIEW_GRAPH_DATA_DIR: graphDir,
   },
   windowsHide: true,
 });

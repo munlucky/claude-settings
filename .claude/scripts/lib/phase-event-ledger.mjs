@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { parsePhaseStatusDocument, readText, resolvePath } from './phase-closeout-parsers.mjs';
+import { resolveRuntimeStateRoot } from './runtime-state-root.mjs';
 
 export const PHASE_EVENT_VERSION = 1;
 
@@ -38,7 +39,7 @@ export function defaultPhaseEventLedgerPath(statusFile = '.claude/docs/phase-sta
   const repoRoot = resolvedStatus.includes(`${path.sep}.claude${path.sep}`)
     ? resolvedStatus.slice(0, resolvedStatus.indexOf(`${path.sep}.claude${path.sep}`))
     : process.cwd();
-  return path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement', 'events.jsonl');
+  return path.join(resolveRuntimeStateRoot(repoRoot), 'logs', 'workflow-enforcement', 'events.jsonl');
 }
 
 function plainObject(value) {

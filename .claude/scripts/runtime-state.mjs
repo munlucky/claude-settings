@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 
-const DEFAULT_DB_PATH = '.claude/runtime-state.sqlite';
+const DEFAULT_DB_PATH = '.moonshot-state/runtime-state.sqlite';
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
 const VALID_GOAL_STATUSES = new Set(['active', 'paused', 'budget_limited', 'complete']);
 const TERMINAL_LEASE_COMPLETION_STATUSES = new Set([
@@ -37,8 +38,8 @@ function nowIso() {
   return nowIsoSeconds();
 }
 
-function resolveDbPath(dbPath = process.env.PHASE_RUNTIME_DB || DEFAULT_DB_PATH) {
-  return path.resolve(dbPath || DEFAULT_DB_PATH);
+export function resolveDbPath(dbPath = process.env.PHASE_RUNTIME_DB || '') {
+  return dbPath ? path.resolve(dbPath) : resolveRuntimeStatePath('runtime-state.sqlite');
 }
 
 function resolveStatusFile(statusFile = DEFAULT_STATUS_FILE) {

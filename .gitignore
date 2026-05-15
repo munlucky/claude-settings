@@ -4,6 +4,7 @@
 .mcp.json
 __pycache__/
 *.pyc
+.moonshot-state/
 .claude/browser-runtime/
 .claude/cache/
 .claude/traces/
@@ -28,6 +29,7 @@ __pycache__/
 .claude/verification-verdict-*.json
 .claude/docs/moonshot-analysis.yaml
 .claude/memory.json
+.claude/state/
 .claude/memorygraph/
 .code-review-graph/
 .claude/logs

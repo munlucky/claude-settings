@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { detectSidecarMode } from './blocker-sidecar-state.mjs';
 import { readState } from './simple-run-state.mjs';
+import { resolveRuntimeStateRoot } from './runtime-state-root.mjs';
 
 const FUTURE_TIMESTAMP_TOLERANCE_MS = 5000;
 const WORKFLOW_STATE_FILES = ['current-run.json', 'active-phase-run.json', 'latest-dispatch.json'];
@@ -711,7 +712,7 @@ export function classifyHarnessViolation(code = '') {
 
 export function readHarnessStateSnapshot({ root = process.cwd(), statusFile = '', workflowDir = '' } = {}) {
   const resolvedStatusFile = statusFile ? path.resolve(root, statusFile) : path.resolve(root, '.claude/docs/phase-status.yaml');
-  const resolvedWorkflowDir = workflowDir ? path.resolve(root, workflowDir) : path.join(root, '.claude', 'logs', 'workflow-enforcement');
+  const resolvedWorkflowDir = workflowDir ? path.resolve(root, workflowDir) : path.join(resolveRuntimeStateRoot(root), 'logs', 'workflow-enforcement');
   const workflowStates = WORKFLOW_STATE_FILES
     .map((basename) => ({
       basename,
@@ -740,7 +741,7 @@ export function evaluateHarnessStateInvariants({
   const violations = [];
   const degradedEvidence = [];
   const repoRoot = statusPath ? path.dirname(path.dirname(path.dirname(statusPath))) : process.cwd();
-  const resolvedWorkflowDir = workflowDir || path.join(repoRoot, '.claude', 'logs', 'workflow-enforcement');
+  const resolvedWorkflowDir = workflowDir || path.join(resolveRuntimeStateRoot(repoRoot), 'logs', 'workflow-enforcement');
   const boardState = readBoardState({ root: repoRoot, workflowDir: resolvedWorkflowDir });
   const workflowStates = WORKFLOW_STATE_FILES
     .map((basename) => ({

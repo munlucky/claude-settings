@@ -1,0 +1,8 @@
+Command:
+git diff --check
+
+Result:
+exit 0
+
+Output:
+<no output>

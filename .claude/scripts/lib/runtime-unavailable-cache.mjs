@@ -3,9 +3,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { runtimeStateRelativePath } from './runtime-state-root.mjs';
 
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
-const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
+const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || runtimeStateRelativePath('logs', 'workflow-enforcement');
 const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
 const CURRENT_RUN_BASENAME = 'current-run.json';
 

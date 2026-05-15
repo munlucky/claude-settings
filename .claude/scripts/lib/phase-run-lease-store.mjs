@@ -4,8 +4,9 @@ import path from 'node:path';
 
 import { nowIsoSeconds } from './clock.mjs';
 import { recordLifecycleTransition } from './lifecycle-projection-writer.mjs';
+import { runtimeStateRelativePath } from './runtime-state-root.mjs';
 
-const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || '.claude/logs/workflow-enforcement';
+const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || runtimeStateRelativePath('logs', 'workflow-enforcement');
 const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
 const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
 const CURRENT_RUN_BASENAME = 'current-run.json';

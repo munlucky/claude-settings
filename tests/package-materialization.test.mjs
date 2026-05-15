@@ -36,6 +36,8 @@ const requiredCodexEntries = [
 ];
 
 const generatedStateFragments = [
+  '.moonshot-state/',
+  '.claude/state/',
   '/logs/',
   '/cache/',
   '/traces/',
@@ -50,6 +52,28 @@ const generatedStateFragments = [
   'runtime-verdict-',
   'browser-flow-verdict-',
   'knowledge-repo-audit-',
+  '.code-review-graph/',
+];
+
+const runtimeStateDenylistExamples = [
+  '.moonshot-state/logs/agent-loop/run.log',
+  '.moonshot-state/cache/code-review-graph-native-mcp-cache.json',
+  '.moonshot-state/traces/self-test/agent_work_trace.jsonl',
+  '.moonshot-state/browser-artifacts/session/output.json',
+  '.moonshot-state/memorygraph/memory.db',
+  '.moonshot-state/runtime-state.sqlite',
+  '.claude/state/runtime-state.sqlite',
+  '.claude/logs/agent-loop/run.log',
+  '.claude/cache/memorygraph/memory_update_candidates.jsonl',
+  '.claude/traces/self-test/agent_work_trace.jsonl',
+  '.claude/browser-artifacts/session/output.json',
+  '.claude/browser-runtime/profile/lock',
+  '.claude/memorygraph/memory.db',
+  '.claude/runtime-state.sqlite-wal',
+  '.claude/verification-verdict-phase05-final.json',
+  '.claude/knowledge-repo-audit-20260515.json',
+  '.claude/memory.json',
+  '.code-review-graph/index.sqlite',
 ];
 
 const listFiles = async (relativeDir) => {
@@ -87,7 +111,7 @@ test('Codex package payload includes required compatibility and source entries',
   }
 });
 
-test('package payloads exclude generated state and local-only artifacts', async () => {
+test('excludes runtime state from package payloads and local-only artifacts', async () => {
   const files = [
     ...await listFiles('package/claude/profile'),
     ...await listFiles('package/codex/profile'),
@@ -100,10 +124,21 @@ test('package payloads exclude generated state and local-only artifacts', async 
   }
 });
 
+test('excludes runtime state roots from package materialization denylist', () => {
+  for (const file of runtimeStateDenylistExamples) {
+    assert.equal(
+      generatedStateFragments.some((fragment) => file.includes(fragment)),
+      true,
+      `${file} should match generated runtime state denylist`,
+    );
+  }
+});
+
 test('package materialization contract names generated payload roots and exclusions', async () => {
   const contract = await readFile(fromRoot('package/package-contract.yaml'), 'utf8');
   assert.match(contract, /profileRoot: package\/claude\/profile\//);
   assert.match(contract, /profileRoot: package\/codex\/profile\//);
   assert.match(contract, /\.claude\/logs\/\*\*/);
   assert.match(contract, /\.claude\/runtime-state\.sqlite\*/);
+  assert.match(contract, /\.code-review-graph\/\*\*/);
 });

@@ -12,12 +12,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveLegacyClaudeStatePath, resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 
 const cwd = process.cwd();
-const claudeDir = path.resolve(cwd, '.claude');
-const dataDir = path.resolve(claudeDir, 'memorygraph');
+const dataDir = path.resolve(process.env.MEMORYGRAPH_DATA_DIR || resolveRuntimeStatePath('memorygraph'));
+const legacyDataDir = resolveLegacyClaudeStatePath('memorygraph');
 const sqlitePath = path.resolve(dataDir, 'memory.db');
-const logDir = path.resolve(claudeDir, 'logs', 'memorygraph');
+const logDir = path.resolve(process.env.MEMORYGRAPH_LOG_DIR || resolveRuntimeStatePath('logs', 'memorygraph'));
 const logPath = path.join(logDir, 'mcp-wrapper.log');
 const isWindows = process.platform === 'win32';
 const startupHealthTimeoutMs = Number(process.env.MEMORYGRAPH_STARTUP_HEALTH_TIMEOUT_MS || 10000);
@@ -41,6 +42,7 @@ function wrapperEnv() {
     ...process.env,
     MEMORY_SQLITE_PATH: sqlitePath,
     MEMORYGRAPH_DATA_DIR: dataDir,
+    MEMORYGRAPH_LEGACY_DATA_DIR: legacyDataDir,
   };
 }
 

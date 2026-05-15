@@ -1,0 +1,19 @@
+Command:
+node --test tests/migration-audit.test.mjs
+
+Result:
+exit 0 after remediation
+
+Pass signal:
+- tests 5
+- pass 5
+- fail 0
+- resolver defaults new writes to `.moonshot-state/`
+- resolver exposes legacy `.claude` compatibility paths
+- workflow lease and unavailable-capability caches write under `.moonshot-state/`
+- cleanup guide reports old generated-state paths and safe cleanup instructions
+
+Remediation notes:
+- Initial audit failed on over-specific cleanup filename examples.
+- Retry strategy was changed to `partial_redesign`.
+- Audit now validates wildcard generated-state classes directly.
