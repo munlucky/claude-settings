@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "claude-settings-codex-profile",
+  "displayName": "Claude Settings Codex Profile",
+  "runtime": "codex",
+  "source": {
+    "type": "package-profile",
+    "path": "package/codex/profile/.codex"
+  },
+  "entries": [
+    "package/codex/profile/.codex/config.toml",
+    "package/codex/profile/.codex/skills",
+    "package/codex/profile/.codex/agents",
+    "package/codex/profile/.codex/AGENTS.md",
+    "package/codex/profile/.codex/verification.contract.yaml"
+  ]
+}

@@ -1,89 +1,109 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
 
-const canonicalRoots = [
-  'skills/',
-  'agents/',
-  'rules/',
-  'scripts/',
-  'schemas/',
-  'templates/',
-  'tests/',
-  'docs/public/',
+const claudeProfile = 'package/claude/profile/.claude';
+const codexProfile = 'package/codex/profile/.codex';
+
+const requiredClaudeEntries = [
+  'CLAUDE.md',
+  'PROJECT.md',
+  'README.md',
+  'verification.contract.yaml',
+  'profile-contract.yaml',
+  'skills',
+  'agents',
+  'rules',
+  'scripts',
+  'schemas',
+  'templates',
+  'docs/public',
 ];
 
-const generatedProfileRoots = [
-  '.claude/skills/',
-  '.claude/agents/',
-  '.claude/scripts/',
-  '.claude/schemas/',
-  '.claude/templates/',
+const requiredCodexEntries = [
+  'AGENTS.md',
+  'README.md',
+  'verification.contract.yaml',
+  'config.toml',
+  'skills',
+  'agents',
+  'docs/public',
 ];
 
-const generatedStateExclusions = [
-  '.claude/logs/**',
-  '.claude/cache/**',
-  '.claude/traces/**',
-  '.claude/browser-artifacts/**',
-  '.claude/browser-runtime/**',
-  '.claude/tmp/**',
-  '.claude/runtime-state.sqlite*',
-  '.claude/memory.json',
-  '.claude/memorygraph/**',
-  '.claude/*verdict*.json',
-  '.claude/knowledge-repo-audit-*.json',
-  '.code-review-graph/**',
+const generatedStateFragments = [
+  '/logs/',
+  '/cache/',
+  '/traces/',
+  '/browser-artifacts/',
+  '/browser-runtime/',
+  '/tmp/',
+  '/memorygraph/',
+  '/.local/',
+  'runtime-state.sqlite',
+  'memory.json',
+  'verification-verdict-',
+  'runtime-verdict-',
+  'browser-flow-verdict-',
+  'knowledge-repo-audit-',
 ];
 
-const read = (relativePath) => readFile(fromRoot(relativePath), 'utf8');
-const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const listFiles = async (relativeDir) => {
+  const absoluteDir = fromRoot(relativeDir);
+  const entries = await readdir(absoluteDir, { withFileTypes: true });
+  const files = [];
 
-test('dev profile documents canonical source and generated state boundaries', async () => {
-  const readme = await read('.claude/README.md');
-  const claudeToc = await read('.claude/CLAUDE.md');
-  const profileContract = await read('.claude/profile-contract.yaml');
-  const combined = `${readme}\n${claudeToc}\n${profileContract}`;
-
-  for (const phrase of ['development profile', 'canonical source', 'generated state']) {
-    assert.match(combined, new RegExp(phrase, 'i'), `${phrase} should be documented`);
+  for (const entry of entries) {
+    const relativePath = path.join(relativeDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listFiles(relativePath));
+    } else {
+      files.push(relativePath.replaceAll(path.sep, '/'));
+    }
   }
 
-  for (const rootPath of canonicalRoots) {
-    assert.match(profileContract, new RegExp(`- ${escapePattern(rootPath)}`), `${rootPath} should be a canonical source root`);
-  }
+  return files;
+};
 
-  for (const rootPath of generatedProfileRoots) {
-    assert.match(profileContract, new RegExp(`- ${escapePattern(rootPath)}`), `${rootPath} should be a generated profile root`);
+const assertEntryExists = async (profileRoot, entry) => {
+  const target = fromRoot(profileRoot, entry);
+  assert.equal(existsSync(target), true, `${profileRoot}/${entry} should exist`);
+  assert.ok(await stat(target), `${profileRoot}/${entry} should be stat-able`);
+};
+
+test('Claude package payload includes required compatibility and source entries', async () => {
+  for (const entry of requiredClaudeEntries) {
+    await assertEntryExists(claudeProfile, entry);
   }
 });
 
-test('dev profile package contract excludes runtime generated state', async () => {
-  const packageContract = await read('package/package-contract.yaml');
-  const profileContract = await read('.claude/profile-contract.yaml');
-  const combined = `${packageContract}\n${profileContract}`;
-
-  for (const exclusion of generatedStateExclusions) {
-    assert.match(combined, new RegExp(escapePattern(exclusion)), `${exclusion} should be excluded from package/profile payloads`);
+test('Codex package payload includes required compatibility and source entries', async () => {
+  for (const entry of requiredCodexEntries) {
+    await assertEntryExists(codexProfile, entry);
   }
 });
 
-test('dev profile keeps active runtime files and compatibility launchers available', () => {
-  for (const relativePath of [
-    '.claude/CLAUDE.md',
-    '.claude/PROJECT.md',
-    '.claude/README.md',
-    '.claude/verification.contract.yaml',
-    '.claude/profile-contract.yaml',
-    '.claude/scripts/moonshot-phase-dispatch.sh',
-    '.claude/scripts/workflow-enforcement.sh',
-    '.claude/scripts/install-browser-runtime.sh',
-  ]) {
-    assert.equal(existsSync(fromRoot(relativePath)), true, `${relativePath} should remain available`);
+test('package payloads exclude generated state and local-only artifacts', async () => {
+  const files = [
+    ...await listFiles('package/claude/profile'),
+    ...await listFiles('package/codex/profile'),
+  ];
+
+  for (const file of files) {
+    for (const fragment of generatedStateFragments) {
+      assert.equal(file.includes(fragment), false, `${file} should not include generated state fragment ${fragment}`);
+    }
   }
+});
+
+test('package materialization contract names generated payload roots and exclusions', async () => {
+  const contract = await readFile(fromRoot('package/package-contract.yaml'), 'utf8');
+  assert.match(contract, /profileRoot: package\/claude\/profile\//);
+  assert.match(contract, /profileRoot: package\/codex\/profile\//);
+  assert.match(contract, /\.claude\/logs\/\*\*/);
+  assert.match(contract, /\.claude\/runtime-state\.sqlite\*/);
 });

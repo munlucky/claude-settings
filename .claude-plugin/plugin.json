@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "claude-settings-profile",
+  "displayName": "Claude Settings Profile",
+  "runtime": "claude",
+  "source": {
+    "type": "package-profile",
+    "path": "package/claude/profile/.claude"
+  },
+  "entries": [
+    "package/claude/profile/.claude/CLAUDE.md",
+    "package/claude/profile/.claude/skills",
+    "package/claude/profile/.claude/agents",
+    "package/claude/profile/.claude/rules",
+    "package/claude/profile/.claude/scripts",
+    "package/claude/profile/.claude/schemas",
+    "package/claude/profile/.claude/templates",
+    "package/claude/profile/.claude/verification.contract.yaml"
+  ]
+}

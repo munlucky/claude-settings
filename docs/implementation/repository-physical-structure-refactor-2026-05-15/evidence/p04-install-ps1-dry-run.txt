@@ -1,0 +1,1 @@
+BLOCKED: PowerShell executable not available in this runtime. Checked: pwsh, powershell.

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "name": "claude-settings-profile",
+      "manifest": ".claude-plugin/plugin.json",
+      "profileRoot": "package/claude/profile/.claude"
+    }
+  ]
+}

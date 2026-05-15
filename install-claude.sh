@@ -10,6 +10,23 @@ BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
 CODEX_PROJECT_FILES=()
 CODEX_BACKUP_PATHS=()
+PACKAGE_CLAUDE_PROFILE="package/claude/profile/.claude"
+PACKAGE_CODEX_PROFILE="package/codex/profile/.codex"
+GENERATED_STATE_EXCLUSIONS=(
+	".claude/logs/**"
+	".claude/cache/**"
+	".claude/traces/**"
+	".claude/browser-artifacts/**"
+	".claude/browser-runtime/**"
+	".claude/tmp/**"
+	".claude/runtime-state.sqlite*"
+	".claude/memory.json"
+	".claude/memorygraph/**"
+	".claude/*verdict*.json"
+	".claude/knowledge-repo-audit-*.json"
+	".code-review-graph/**"
+	"package/**/.local/**"
+)
 
 # 색상 정의
 RED='\033[0;31m'
@@ -75,7 +92,7 @@ setup_codex_project_config() {
 	local codex_home=""
 	local target_config=""
 	local target_agents=""
-	local source_skills_dir=".claude/skills"
+	local source_skills_dir="$source_codex_dir/skills"
 	local target_skills=""
 
 	echo ""
@@ -135,6 +152,21 @@ setup_codex_project_config() {
 	else
 		print_warn "Codex project skills 원본을 찾지 못했습니다: $source_skills_dir"
 	fi
+}
+
+list_payload_targets() {
+	local source_root="$1"
+	local target_root="$2"
+
+	if [ ! -d "$source_root" ]; then
+		print_warn "패키지 payload를 찾지 못했습니다: $source_root"
+		return
+	fi
+
+	while IFS= read -r item; do
+		rel_item="${item#"$source_root"/}"
+		echo "    $target_root/$rel_item"
+	done < <(find "$source_root" -mindepth 1 -type f | sort)
 }
 
 setup_agents_bridge() {
@@ -796,9 +828,9 @@ if [ "$DRY_RUN" = true ]; then
 		echo "  - 백업할 파일: ${BACKUP_FILES[*]}"
 	fi
 	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
-	echo "  - .claude 디렉토리 설치"
-	echo "  - .codex/config.toml 설치"
-	echo "  - .codex/agents, .codex/skills 백업 없이 최신 복사본으로 동기화"
+	echo "  - package/claude/profile/.claude payload에서 .claude 디렉토리 설치"
+	echo "  - package/codex/profile/.codex payload에서 .codex/config.toml 설치"
+	echo "  - package/codex/profile/.codex payload에서 .codex/agents, .codex/skills 백업 없이 최신 복사본으로 동기화"
 	echo "  - .claudeignore 설치/병합"
 	echo "  - .gitattributes 설치/병합"
 	echo "  - legacy .agents/skills 제거"
@@ -807,8 +839,20 @@ if [ "$DRY_RUN" = true ]; then
 	echo "  - MemoryGraph 자동 설치 시도 및 프로젝트 로컬 MCP 등록"
 	echo "  - code-review-graph[communities] 자동 설치 시도 및 코드 분석 MCP 등록 (build/watch/daemon 제외)"
 	echo "  - browserctl 전역 설치 및 Playwright 런타임 확인"
+	echo ""
+	print_info "설치 대상 .claude payload 파일:"
+	list_payload_targets "$PACKAGE_CLAUDE_PROFILE" ".claude"
+	echo ""
+	print_info "설치 대상 .codex payload 파일:"
+	list_payload_targets "$PACKAGE_CODEX_PROFILE" ".codex"
+	echo ""
+	print_info "제외되는 생성 상태 경로:"
+	for pattern in "${GENERATED_STATE_EXCLUSIONS[@]}"; do
+		echo "    $pattern"
+	done
 	if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
-		echo "  - 제외 패턴: ${EXCLUDE_PATTERNS[*]}"
+		echo ""
+		echo "  - 추가 제외/보호 패턴: ${EXCLUDE_PATTERNS[*]}"
 	fi
 	if [ ${#USER_FILES[@]} -gt 0 ]; then
 		echo ""
@@ -835,11 +879,15 @@ fi
 print_info "✓ 다운로드 완료"
 
 # 5. 압축 해제
-print_info ".claude 디렉토리 추출 중..."
+print_info "패키지 payload 추출 중..."
 extract_zip "$ZIP_FILE" "$TEMP_DIR"
 
-if [ ! -d "$TEMP_DIR/claude-settings-$BRANCH/.claude" ]; then
-	print_error ".claude 디렉토리를 찾을 수 없습니다"
+DOWNLOADED_REPO="$TEMP_DIR/claude-settings-$BRANCH"
+DOWNLOADED_CLAUDE_PAYLOAD="$DOWNLOADED_REPO/$PACKAGE_CLAUDE_PROFILE"
+DOWNLOADED_CODEX_PAYLOAD="$DOWNLOADED_REPO/$PACKAGE_CODEX_PROFILE"
+
+if [ ! -d "$DOWNLOADED_CLAUDE_PAYLOAD" ]; then
+	print_error "Claude package payload를 찾을 수 없습니다: $PACKAGE_CLAUDE_PROFILE"
 	rm -rf "$TEMP_DIR"
 	exit 1
 fi
@@ -848,7 +896,7 @@ fi
 if [ ${#EXCLUDE_PATTERNS[@]} -gt 0 ]; then
 	print_info "제외 패턴 적용 중..."
 	for pattern in "${EXCLUDE_PATTERNS[@]}"; do
-		find "$TEMP_DIR/claude-settings-$BRANCH/.claude" -name "$pattern" -exec rm -rf {} + 2>/dev/null || true
+		find "$DOWNLOADED_CLAUDE_PAYLOAD" -name "$pattern" -exec rm -rf {} + 2>/dev/null || true
 		print_info "  ✓ 제외: $pattern"
 	done
 fi
@@ -884,10 +932,10 @@ fi
 # 7. .claude 디렉토리 복사
 print_info ".claude 디렉토리 설치 중..."
 mkdir -p .claude
-cp -r "$TEMP_DIR/claude-settings-$BRANCH/.claude/." .claude/
+cp -r "$DOWNLOADED_CLAUDE_PAYLOAD/." .claude/
 print_info "✓ 설치 완료"
 
-DOWNLOADED_CLAUDEIGNORE="$TEMP_DIR/claude-settings-$BRANCH/.claudeignore"
+DOWNLOADED_CLAUDEIGNORE="$DOWNLOADED_REPO/.claudeignore"
 if [ -f "$DOWNLOADED_CLAUDEIGNORE" ]; then
 	if [ -n "$CLAUDEIGNORE_STASH" ] && [ -f "$CLAUDEIGNORE_STASH" ]; then
 		if merge_line_file "$DOWNLOADED_CLAUDEIGNORE" "$CLAUDEIGNORE_STASH" ".claudeignore.merged"; then
@@ -903,7 +951,7 @@ if [ -f "$DOWNLOADED_CLAUDEIGNORE" ]; then
 	fi
 fi
 
-DOWNLOADED_GITATTRIBUTES="$TEMP_DIR/claude-settings-$BRANCH/.gitattributes"
+DOWNLOADED_GITATTRIBUTES="$DOWNLOADED_REPO/.gitattributes"
 if [ -f "$DOWNLOADED_GITATTRIBUTES" ]; then
 	if [ -n "$GITATTRIBUTES_STASH" ] && [ -f "$GITATTRIBUTES_STASH" ]; then
 		if merge_line_file "$DOWNLOADED_GITATTRIBUTES" "$GITATTRIBUTES_STASH" ".gitattributes.merged"; then
@@ -956,7 +1004,7 @@ fi
 
 # 7.6. settings.local.json이 없는 경우에만 복사 (있으면 7.5에서 병합됨)
 if [ ! -f ".claude/settings.local.json" ]; then
-	DOWNLOADED_SETTINGS="$TEMP_DIR/claude-settings-$BRANCH/.claude/settings.local.json"
+	DOWNLOADED_SETTINGS="$DOWNLOADED_CLAUDE_PAYLOAD/settings.local.json"
 	if [ -f "$DOWNLOADED_SETTINGS" ]; then
 		cp "$DOWNLOADED_SETTINGS" ".claude/settings.local.json"
 		print_info "✓ settings.local.json 생성 (새 설치)"
@@ -964,7 +1012,7 @@ if [ ! -f ".claude/settings.local.json" ]; then
 fi
 
 # 7.7. scripts/ 디렉토리 파일 복사 (항상 최신 버전으로 덮어쓰기)
-DOWNLOADED_SCRIPTS="$TEMP_DIR/claude-settings-$BRANCH/.claude/scripts"
+DOWNLOADED_SCRIPTS="$DOWNLOADED_CLAUDE_PAYLOAD/scripts"
 if [ -d "$DOWNLOADED_SCRIPTS" ]; then
 	mkdir -p ".claude/scripts"
 	for script in "$DOWNLOADED_SCRIPTS"/*; do
@@ -977,7 +1025,7 @@ if [ -d "$DOWNLOADED_SCRIPTS" ]; then
 fi
 
 # 7.8. Codex project config 구성
-setup_codex_project_config "$TEMP_DIR/claude-settings-$BRANCH/.codex"
+setup_codex_project_config "$DOWNLOADED_CODEX_PAYLOAD"
 
 # 7.9. AGENTS.md 브리지 구성 및 legacy .agents/skills 제거
 setup_agents_bridge

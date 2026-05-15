@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "name": "claude-settings-codex-profile",
+      "manifest": ".codex-plugin/plugin.json",
+      "profileRoot": "package/codex/profile/.codex"
+    }
+  ]
+}
