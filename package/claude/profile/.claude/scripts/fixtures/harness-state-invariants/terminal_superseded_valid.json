@@ -1,0 +1,13 @@
+{
+  "phaseStatus": {
+    "activePhaseNumber": 3
+  },
+  "workflowState": {
+    "status": "superseded-by-local-fallback",
+    "phaseNumber": 2,
+    "terminalEvent": {
+      "phaseNumber": 2,
+      "eventType": "phase_superseded"
+    }
+  }
+}

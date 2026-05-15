@@ -1,0 +1,9 @@
+{
+  "pid": 123,
+  "pidNamespace": "node-parent",
+  "checkerNamespace": "node-parent",
+  "staleNoProgress": true,
+  "checkerAlive": true,
+  "expectedReason": "stale_child_no_progress",
+  "expectedStaleChild": true
+}

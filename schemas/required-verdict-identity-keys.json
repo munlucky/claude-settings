@@ -1,0 +1,10 @@
+{
+  "requiredIdentityKeys": [
+    "runLeaseId",
+    "activePhaseDocPath",
+    "masterPlan",
+    "planDir",
+    "statusFile",
+    "gitTreeFingerprint"
+  ]
+}

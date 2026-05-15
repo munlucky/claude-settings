@@ -14,6 +14,7 @@ $GeneratedStateExclusions = @(
     ".claude/traces/**",
     ".claude/browser-artifacts/**",
     ".claude/browser-runtime/**",
+    ".claude/tools/**/node_modules/**",
     ".claude/tmp/**",
     ".claude/runtime-state.sqlite*",
     ".claude/memory.json",

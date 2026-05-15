@@ -20,6 +20,8 @@ const requiredClaudeEntries = [
   'agents',
   'rules',
   'scripts',
+  'bin',
+  'tools/browserd',
   'schemas',
   'templates',
   'docs/public',
@@ -35,6 +37,25 @@ const requiredCodexEntries = [
   'docs/public',
 ];
 
+const requiredConcretePayloadFiles = [
+  'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
+  'agents/phase-attempt-agent.md',
+  'rules/workflow.md',
+  'scripts/moonshot-phase-dispatch.mjs',
+  'bin/browserctl',
+  'tools/browserd/package.json',
+  'tools/browserd/server.mjs',
+  'schemas/verification.contract.yaml',
+  'templates/GOAL_CONTRACT.template.yaml',
+];
+
+const requiredConcreteCodexFiles = [
+  'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
+  'agents/phase-attempt-agent.md',
+];
+
 const generatedStateFragments = [
   '.moonshot-state/',
   '.claude/state/',
@@ -43,6 +64,7 @@ const generatedStateFragments = [
   '/traces/',
   '/browser-artifacts/',
   '/browser-runtime/',
+  '/node_modules/',
   '/tmp/',
   '/memorygraph/',
   '/.local/',
@@ -62,6 +84,7 @@ const runtimeStateDenylistExamples = [
   '.moonshot-state/browser-artifacts/session/output.json',
   '.moonshot-state/memorygraph/memory.db',
   '.moonshot-state/runtime-state.sqlite',
+  '.claude/tools/browserd/node_modules/playwright/package.json',
   '.claude/state/runtime-state.sqlite',
   '.claude/logs/agent-loop/run.log',
   '.claude/cache/memorygraph/memory_update_candidates.jsonl',
@@ -75,6 +98,13 @@ const runtimeStateDenylistExamples = [
   '.claude/memory.json',
   '.code-review-graph/index.sqlite',
 ];
+
+const rootVerdictFragments = new Set([
+  'verification-verdict-',
+  'runtime-verdict-',
+  'browser-flow-verdict-',
+  'knowledge-repo-audit-',
+]);
 
 const listFiles = async (relativeDir) => {
   const absoluteDir = fromRoot(relativeDir);
@@ -99,14 +129,30 @@ const assertEntryExists = async (profileRoot, entry) => {
   assert.ok(await stat(target), `${profileRoot}/${entry} should be stat-able`);
 };
 
+const matchesGeneratedStateFragment = (file, fragment) => {
+  if (rootVerdictFragments.has(fragment)) {
+    return new RegExp(`(?:^|/)\\.claude/${fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(file);
+  }
+
+  return file.includes(fragment);
+};
+
 test('Claude package payload includes required compatibility and source entries', async () => {
   for (const entry of requiredClaudeEntries) {
+    await assertEntryExists(claudeProfile, entry);
+  }
+
+  for (const entry of requiredConcretePayloadFiles) {
     await assertEntryExists(claudeProfile, entry);
   }
 });
 
 test('Codex package payload includes required compatibility and source entries', async () => {
   for (const entry of requiredCodexEntries) {
+    await assertEntryExists(codexProfile, entry);
+  }
+
+  for (const entry of requiredConcreteCodexFiles) {
     await assertEntryExists(codexProfile, entry);
   }
 });
@@ -119,7 +165,11 @@ test('excludes runtime state from package payloads and local-only artifacts', as
 
   for (const file of files) {
     for (const fragment of generatedStateFragments) {
-      assert.equal(file.includes(fragment), false, `${file} should not include generated state fragment ${fragment}`);
+      assert.equal(
+        matchesGeneratedStateFragment(file, fragment),
+        false,
+        `${file} should not include generated state fragment ${fragment}`,
+      );
     }
   }
 });
@@ -127,7 +177,7 @@ test('excludes runtime state from package payloads and local-only artifacts', as
 test('excludes runtime state roots from package materialization denylist', () => {
   for (const file of runtimeStateDenylistExamples) {
     assert.equal(
-      generatedStateFragments.some((fragment) => file.includes(fragment)),
+      generatedStateFragments.some((fragment) => matchesGeneratedStateFragment(file, fragment)),
       true,
       `${file} should match generated runtime state denylist`,
     );

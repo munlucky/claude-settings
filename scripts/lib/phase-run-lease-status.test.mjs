@@ -1,0 +1,199 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+
+import { buildCompositeMonitorCursor, classifyLeaseProgressEvidence, updateStatusLease } from './phase-run-lease-status.mjs';
+import { sha256RawBytes } from './current-artifacts-state.mjs';
+
+test('active lease status update can clear stale final projection fields', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-run-lease-status-'));
+  try {
+    const statusFile = path.join(root, '.claude', 'docs', 'phase-status.yaml');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    fs.writeFileSync(statusFile, [
+      'activeExecutionStatus: "active"',
+      'projectionSchemaVersion: final-outcome-v1',
+      'finalVerdict: complete',
+      'normalizedRunVerdict: success',
+      'stopReasonClass: clean_complete',
+      'blockerClass: ""',
+      'blockingReasonCode: ""',
+      'failureClass: ""',
+      'phases:',
+      '  - number: 4',
+      '    status: in_progress',
+      '',
+    ].join('\n'), 'utf8');
+
+    updateStatusLease(statusFile, {
+      projectionSchemaVersion: null,
+      finalVerdict: null,
+      normalizedRunVerdict: null,
+      stopReasonClass: null,
+      blockerClass: null,
+      blockingReasonCode: null,
+      failureClass: null,
+      activeExecutionHeartbeatAt: '2026-05-13T13:41:03Z',
+    });
+
+    const text = fs.readFileSync(statusFile, 'utf8');
+    assert.doesNotMatch(text, /^projectionSchemaVersion:/m);
+    assert.doesNotMatch(text, /^finalVerdict:/m);
+    assert.doesNotMatch(text, /^normalizedRunVerdict:/m);
+    assert.doesNotMatch(text, /^stopReasonClass:/m);
+    assert.doesNotMatch(text, /^blockerClass:/m);
+    assert.doesNotMatch(text, /^blockingReasonCode:/m);
+    assert.doesNotMatch(text, /^failureClass:/m);
+    assert.match(text, /^activeExecutionHeartbeatAt: "2026-05-13T13:41:03Z"$/m);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('composite monitor cursor changes when manifest changes without parent status movement', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-run-lease-status-'));
+  try {
+    const workflowDir = path.join(root, '.claude/logs/workflow-enforcement');
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    const verdictFile = path.join(root, '.claude/verification-verdict-phase08-final.json');
+    const manifestFile = path.join(workflowDir, 'closeout-sync-manifest-phase08.json');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    fs.mkdirSync(path.dirname(verdictFile), { recursive: true });
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(statusFile, 'phases:\n  - number: 8\n    status: in_progress\n', 'utf8');
+    fs.writeFileSync(verdictFile, '{"verdict":"passed"}\n', 'utf8');
+    fs.writeFileSync(path.join(workflowDir, 'latest-dispatch.json'), '{"status":"running"}\n', 'utf8');
+    fs.writeFileSync(path.join(workflowDir, 'active-phase-run.json'), '{"runLeaseId":"lease-1","status":"active"}\n', 'utf8');
+    fs.writeFileSync(path.join(workflowDir, 'current-run.json'), '{"status":"running"}\n', 'utf8');
+    fs.writeFileSync(manifestFile, '{"commitToken":"phase08","round":1}\n', 'utf8');
+    fs.writeFileSync(path.join(workflowDir, 'current-artifacts.json'), `${JSON.stringify({
+      commitToken: 'phase08',
+      manifestPath: '.claude/logs/workflow-enforcement/closeout-sync-manifest-phase08.json',
+      manifestHash: sha256RawBytes(manifestFile),
+      artifacts: {
+        'canonical-verdict-phase08': {
+          kind: 'canonical-verdict-phase08',
+          path: '.claude/verification-verdict-phase08-final.json',
+          hash: sha256RawBytes(verdictFile),
+          commitToken: 'phase08',
+        },
+      },
+    }, null, 2)}\n`, 'utf8');
+
+    const before = buildCompositeMonitorCursor({ repoRoot: root, statusFile, workflowDir: path.relative(root, workflowDir) });
+    fs.writeFileSync(manifestFile, '{"commitToken":"phase08","round":2}\n', 'utf8');
+    const after = buildCompositeMonitorCursor({ repoRoot: root, statusFile, workflowDir: path.relative(root, workflowDir) });
+
+    assert.notEqual(after.fingerprint, before.fingerprint);
+    assert.equal(after.currentIndex.commitToken, 'phase08');
+    assert.equal(after.workflowLogs.length, 3);
+    assert.equal(after.activeVerdicts.length, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('lease current-run mirror preserves terminal blocker metadata during active heartbeat', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-run-lease-store-'));
+  const previousWorkflowDir = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR;
+  try {
+    process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = path.join(root, 'workflow');
+    const leaseStore = await import(`./phase-run-lease-store.mjs?case=${Date.now()}`);
+    const statusFile = path.join(root, '.claude', 'docs', 'phase-status.yaml');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    fs.writeFileSync(statusFile, 'phases:\n  - number: 1\n    status: in_progress\n', 'utf8');
+
+    const { currentRunFile } = leaseStore.resolveLeaseFiles(statusFile);
+    fs.mkdirSync(path.dirname(currentRunFile), { recursive: true });
+    fs.writeFileSync(currentRunFile, `${JSON.stringify({
+      runLeaseId: 'lease-terminal',
+      attemptId: 'attempt-terminal',
+      status: 'blocked',
+      completionStatus: 'blocked',
+      attemptOutcome: 'blocked',
+      blockingStopReasonCode: 'spawn_eperm',
+      stopReasonDetail: 'node --test spawn EPERM',
+      blockerEvidenceRef: 'blocker-1',
+      transactionId: 'tx-1',
+      finalVerdict: 'blocked',
+      normalizedRunVerdict: 'complete_with_environment_blocker',
+    }, null, 2)}\n`, 'utf8');
+
+    leaseStore.writeActiveLease(statusFile, {
+      runLeaseId: 'lease-terminal',
+      attemptId: 'attempt-terminal',
+      status: 'active',
+      completionStatus: 'running',
+      currentStage: 'execute',
+      phase: { number: 1, title: 'Phase 01' },
+      actionablePhasesRemaining: 1,
+      blockingStopReasonCode: '',
+      stopReasonDetail: '',
+    });
+
+    const projected = JSON.parse(fs.readFileSync(currentRunFile, 'utf8'));
+    assert.equal(projected.status, 'blocked');
+    assert.equal(projected.completionStatus, 'blocked');
+    assert.equal(projected.attemptOutcome, 'blocked');
+    assert.equal(projected.blockingStopReasonCode, 'spawn_eperm');
+    assert.equal(projected.stopReasonDetail, 'node --test spawn EPERM');
+    assert.equal(projected.blockerEvidenceRef, 'blocker-1');
+    assert.equal(projected.transactionId, 'tx-1');
+  } finally {
+    if (previousWorkflowDir === undefined) {
+      delete process.env.WORKFLOW_ENFORCEMENT_LOG_DIR;
+    } else {
+      process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = previousWorkflowDir;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('artifact-progress-only remains diagnostic and cannot promote completion', () => {
+  const result = classifyLeaseProgressEvidence({
+    artifactProgress: true,
+    manifest: {
+      attemptId: 'attempt-a',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+      manifestRequired: true,
+      schemaVersion: 1,
+    },
+    heartbeat: {
+      attemptId: 'attempt-b',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+    },
+  });
+
+  assert.equal(result.classification, 'controller_stale_artifact_progress');
+  assert.equal(result.workerActive, false);
+  assert.equal(result.canPromoteCompletion, false);
+});
+
+test('worker-active liveness is not completion evidence', () => {
+  const result = classifyLeaseProgressEvidence({
+    manifest: {
+      attemptId: 'attempt-active',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+      manifestRequired: true,
+      schemaVersion: 1,
+    },
+    heartbeat: {
+      attemptId: 'attempt-active',
+      childPid: 4242,
+      childProcessStartTime: '2026-05-12T01:00:00.000Z',
+      commandHash: 'sha256:command-a',
+    },
+  });
+
+  assert.equal(result.classification, 'controller_stale_worker_active');
+  assert.equal(result.workerActive, true);
+  assert.equal(result.canPromoteCompletion, false);
+});

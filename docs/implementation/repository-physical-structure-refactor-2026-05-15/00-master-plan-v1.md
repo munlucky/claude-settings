@@ -72,6 +72,8 @@ claude-settings/
 ├── agents/                       # canonical agent definitions
 ├── rules/                        # canonical shared rules
 ├── scripts/                      # canonical harness scripts and CLI adapters
+├── bin/                          # canonical CLI entrypoints
+├── tools/                        # canonical runtime tooling source
 ├── schemas/                      # canonical schemas
 ├── templates/                    # canonical templates
 ├── docs/
@@ -89,7 +91,7 @@ claude-settings/
 
 | Boundary | Rule |
 | --- | --- |
-| Canonical source | `skills/`, `agents/`, `rules/`, `scripts/`, `schemas/`, `templates/`, and selected public docs are the source of truth. |
+| Canonical source | `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, and selected public docs are the source of truth. |
 | Dev dogfood profile | `.claude/` may import or mirror canonical source, but is not the source of truth for distributable artifacts. |
 | Runtime wrapper | `.claude-plugin/` and `.codex-plugin/` contain manifests, marketplace metadata, and runtime-specific links only. |
 | Generated state | Logs, caches, traces, sqlite, browser artifacts, verdicts, memorygraph data, and temporary reports live in ignored state roots. |
@@ -188,6 +190,7 @@ Keep implementation sequential by default. This migration touches shared path as
 - [x] Phase 04 - Installer And Plugin Materialization (`04-installer-plugin-materialization-v1.md`) - accepted with TODO `P04-WIN-DRYRUN`
 - [x] Phase 05 - Runtime State Extraction (`05-runtime-state-extraction-v1.md`)
 - [x] Phase 06 - Compatibility Migration And Docs (`06-compatibility-migration-docs-v1.md`)
+- [x] Corrective Patch - Populate canonical root source directories with actual harness files and guard against README-only placeholders
 
 ## Plan Quality Loop
 
@@ -209,6 +212,23 @@ Current controller decision: `review_passed_ready_for_runnable_preparation_dry_r
 | ID | Phase | Status | Runtime | Command | Notes |
 | --- | --- | --- | --- | --- | --- |
 | P04-WIN-DRYRUN | 04 | todo | Windows / PowerShell | `.\install-claude.ps1 -DryRun` | Phase 04 is treated as passed for sequencing. Replace `evidence/p04-install-ps1-dry-run.txt` with passing Windows evidence when available. |
+
+## Corrective Patch Notes
+
+The first implementation pass created the canonical directory boundaries but left most root-level source directories as README-only scaffolding. That did not satisfy the physical-structure objective: the repository shape was documented, but the root directories did not yet function as harness source.
+
+The corrective patch materializes the existing harness assets into the root canonical directories:
+
+- `skills/`
+- `agents/`
+- `rules/`
+- `scripts/`
+- `bin/`
+- `tools/`
+- `schemas/`
+- `templates/`
+
+`.claude/` remains the local development profile and compatibility runtime surface. New durable harness changes must start from the canonical root directories, and package/profile output must be refreshed from those roots.
 
 ## Verification Plan
 

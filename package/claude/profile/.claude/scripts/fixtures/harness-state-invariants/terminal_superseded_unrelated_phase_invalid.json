@@ -1,0 +1,13 @@
+{
+  "phaseStatus": {
+    "activePhaseNumber": 3
+  },
+  "workflowState": {
+    "status": "superseded",
+    "phaseNumber": 5,
+    "terminalEvent": {
+      "phaseNumber": 2,
+      "eventType": "phase_superseded"
+    }
+  }
+}

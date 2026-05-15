@@ -18,6 +18,7 @@ GENERATED_STATE_EXCLUSIONS=(
 	".claude/traces/**"
 	".claude/browser-artifacts/**"
 	".claude/browser-runtime/**"
+	".claude/tools/**/node_modules/**"
 	".claude/tmp/**"
 	".claude/runtime-state.sqlite*"
 	".claude/memory.json"
@@ -488,17 +489,17 @@ output_path = sys.argv[3]
 try:
     with open(base_path, 'r', encoding='utf-8') as f:
         base_data = json.load(f)
-    
+
     with open(user_path, 'r', encoding='utf-8') as f:
         user_data = json.load(f)
 
     # Base 데이터를 기준으로 시작 (새로운 설정들)
     merged_data = base_data.copy()
-    
+
     # 사용자 파일의 permissions가 있으면 덮어쓰기 (기존 권한 유지)
     if 'permissions' in user_data:
         merged_data['permissions'] = user_data['permissions']
-        
+
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(merged_data, f, indent=2, ensure_ascii=False)
 except Exception as e:
@@ -981,7 +982,7 @@ if [ -n "$USER_STASH_DIR" ] && [ -d "$USER_STASH_DIR" ]; then
 		item="${file%/}"
 		src="$USER_STASH_DIR/$item"
 		dest=".claude/$item"
-		
+
 		# settings.local.json 파일이고, 새 파일도 존재하면 병합 시도
 		if [ "$item" == "settings.local.json" ] && [ -f "$dest" ]; then
 			print_info "  Merging settings.local.json..."
@@ -1079,7 +1080,7 @@ if [ "$CODEX_INSTALLED" = true ]; then
 	codex_status=$(codex login status 2>&1 || true)
 	if echo "$codex_status" | grep -qi "logged in"; then
 		print_info "✓ Codex 로그인 확인됨"
-		
+
 		# Codex MCP를 user scope로 추가 (전역 설정)
 		print_info "Codex MCP 전역 설정 중..."
 		mcp_result=$(claude mcp add codex -s user -- codex mcp-server 2>&1 || true)

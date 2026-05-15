@@ -1,0 +1,14 @@
+{
+  "taxonomy": "recovered_blocker",
+  "terminal": true,
+  "finalComplete": true,
+  "completionStatus": "completed",
+  "finalVerdict": "complete",
+  "normalizedRunVerdict": "success_with_warning",
+  "historicalWarnings": [
+    {
+      "code": "node-test-runner-spawn-eperm",
+      "status": "recovered"
+    }
+  ]
+}

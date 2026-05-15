@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "delegated-terminal-split-brain-prevention-fixture-v1",
+  "scenarios": [
+    "manifest-created-before-spawn",
+    "manifest-intent-without-exit-is-incomplete",
+    "runner-log-without-manifest-rejected",
+    "phase-status-only-completion-rejected",
+    "delegated-loop-cannot-adopt-orphan",
+    "partial-reconciliation-not-success",
+    "pid-reuse-not-worker-active",
+    "child-start-time-missing-is-unknown",
+    "alternate-verifier-undeclared-rejected",
+    "legacy-grandfathered-by-cutoff"
+  ],
+  "reasonCodes": {
+    "legacy-grandfathered-by-cutoff": "legacy_grandfathered_by_cutoff",
+    "post-enforcement-projection-only": "orphan_projection_completion"
+  }
+}

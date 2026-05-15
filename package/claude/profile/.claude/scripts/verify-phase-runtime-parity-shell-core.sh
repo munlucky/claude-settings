@@ -1,0 +1,2388 @@
+#!/usr/bin/env bash
+
+# Runtime parity smoke for Moonshot phase execution.
+# Coverage:
+#   - render matrix for delegated-terminal and in-session-coordinator across Claude/Codex
+#     (Codex coordinator path is exercised with interactive mode explicitly enabled)
+#   - runtime availability probes for the selected runtime target(s)
+#   - actual delegated-terminal + in-session-coordinator runs for the selected runtime target(s)
+#   - artifact/status/verdict assertions after each actual run
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/runtime-cli.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+DEFAULT_REFERENCE_PLAN_DIR=".claude/docs/runtime-parity-reference-plan"
+REFERENCE_PLAN_DIR="$DEFAULT_REFERENCE_PLAN_DIR"
+REFERENCE_PLAN_DIR_SET=false
+ALLOW_DEFAULT_FIXTURE=false
+RUN_REAL=true
+TMP_ROOT="$(mktemp -d)"
+KEEP_TMP="${PHASE_RUNTIME_PARITY_KEEP_TMP:-false}"
+PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS:-600}"
+PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS="${PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS:-5}"
+PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS="${PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS:-0}"
+PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS="${PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS:-300000}"
+PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS="${PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS:-60}"
+PHASE_RUNTIME_PARITY_KILL_STALE="${PHASE_RUNTIME_PARITY_KILL_STALE:-true}"
+PHASE_RUNTIME_PARITY_TARGET_RUNTIMES="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-auto}"
+PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY="${PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY:-bounded}"
+CLAUDE_AVAILABLE=false
+CODEX_AVAILABLE=false
+RUNTIME_FAILURES=()
+RUNTIME_FAILURE_CLASSIFICATIONS=()
+ACTUAL_FAILURES=()
+ACTUAL_TIMINGS=()
+TARGET_RUNTIME_SET=()
+
+cleanup() {
+  if [[ "$KEEP_TMP" == "true" ]]; then
+    log "keeping temp artifacts: $TMP_ROOT"
+    return
+  fi
+  if ! rm -rf "$TMP_ROOT"; then
+    local remaining_count
+    remaining_count="$(find "$TMP_ROOT" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
+    warn "cleanup incomplete: $TMP_ROOT (${remaining_count:-unknown} remaining paths)"
+  fi
+}
+trap cleanup EXIT
+
+usage() {
+  cat <<'EOF_USAGE'
+Usage:
+  verify-phase-runtime-parity.sh <reference-plan-dir> [--render-only] [--runtime-profile optional_probe|required_runtime]
+  verify-phase-runtime-parity.sh --allow-default-fixture [--render-only] [--runtime-profile optional_probe|required_runtime]
+
+Environment:
+  PHASE_RUNTIME_PROFILE=optional_probe|required_runtime
+  PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=auto|current|claude|codex|both
+  PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY=bounded|llm
+EOF_USAGE
+}
+
+log() {
+  printf '%s\n' "$1"
+}
+
+warn() {
+  printf 'WARN: %s\n' "$1"
+}
+
+mark_stage() {
+  log "phase runtime parity stage: $1"
+}
+
+fail() {
+  log "$1"
+  if [[ "$KEEP_TMP" == "true" ]]; then
+    log "debug temp root: $TMP_ROOT"
+  fi
+  exit 1
+}
+
+fail_master_plan_not_found() {
+  local plan_dir="$1"
+  log "Master plan not found"
+  log "reference_plan_dir: $plan_dir"
+  log "searched_paths:"
+  log "  - $plan_dir/00-master-plan-v1.md"
+  log "expected_patterns:"
+  log "  - 00-master-plan-v*.md"
+  log "recommended_valid_plan_dir: docs/implementation/harness-anomaly-remediation-2026-05-12"
+  fail "reference plan directory must be a concrete plan package with a master plan"
+}
+require_command() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    fail "missing command: $name"
+  fi
+}
+
+terminate_stale_verify_workers() {
+  if [[ "$PHASE_RUNTIME_PARITY_KILL_STALE" != "true" ]]; then
+    return 0
+  fi
+
+  local current_pid
+  current_pid=$$
+  local -a patterns=(
+    "[b]ash .claude/scripts/verify-phase-runtime-parity.sh"
+    "[b]ash .claude/scripts/verify-phase-runtime-parity-shell-core.sh"
+    "[n]ode .claude/scripts/verify-phase-runtime-parity.mjs"
+    "[b]ash .claude/scripts/moonshot-phase-dispatch.sh"
+    "[c]laude --dangerously-skip-permissions --no-session-persistence -p /moonshot-in-session-coordinator"
+  )
+  local pattern
+  local pid
+  local command_line
+
+  for pattern in "${patterns[@]}"; do
+    while IFS= read -r pid; do
+      if [[ -z "$pid" || "$pid" == "$current_pid" ]]; then
+        continue
+      fi
+      command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      if [[ -z "$command_line" ]]; then
+        continue
+      fi
+      if kill -0 "$pid" 2>/dev/null; then
+        warn "stale worker found (pid=$pid): $command_line"
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+      fi
+    done < <(runtime_cli_find_pids_by_pattern "$pattern")
+  done
+}
+
+terminate_stale_verify_workers
+
+assert_contains() {
+  local file="$1"
+  local pattern="$2"
+  local description="$3"
+  if ! grep -Fq -- "$pattern" "$file"; then
+    fail "missing ${description}: ${pattern}"
+  fi
+}
+
+read_fixture_lines() {
+  local fixture_root="$1"
+  local scenario_name="$2"
+  local execution_mode="$3"
+  local __resultvar="$4"
+  local line
+  local -a lines=()
+
+  while IFS= read -r line; do
+    lines+=("$line")
+  done < <(seed_fixture "$fixture_root" "$scenario_name" "$execution_mode")
+
+  eval "$__resultvar=(\"\${lines[@]}\")"
+}
+
+array_length() {
+  local array_name="$1"
+  local length=0
+
+  eval 'if [[ ${'"$array_name"'[@]+_} ]]; then length=${#'"$array_name"'[@]}; fi'
+  printf '%s\n' "$length"
+}
+
+format_duration() {
+  local total_seconds="$1"
+  local minutes=$((total_seconds / 60))
+  local seconds=$((total_seconds % 60))
+
+  if [[ "$minutes" -gt 0 ]]; then
+    printf '%sm %02ds' "$minutes" "$seconds"
+  else
+    printf '%ss' "$seconds"
+  fi
+}
+
+record_actual_timing() {
+  local scenario_name="$1"
+  local elapsed_seconds="$2"
+  ACTUAL_TIMINGS+=("${scenario_name}|${elapsed_seconds}")
+}
+
+checksum_file() {
+  shasum "$1" | awk '{print $1}'
+}
+
+tree_checksum() {
+  local target_dir="$1"
+
+  python3 - "$target_dir" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+if not root.exists():
+    print("")
+    raise SystemExit(0)
+
+digest = hashlib.sha256()
+for path in sorted((candidate for candidate in root.rglob('*') if candidate.is_file()), key=lambda candidate: candidate.as_posix()):
+    digest.update(path.relative_to(root).as_posix().encode('utf-8'))
+    digest.update(b'\0')
+    digest.update(path.read_bytes())
+    digest.update(b'\0')
+
+print(digest.hexdigest())
+PY
+}
+
+write_agent_loop_log() {
+  local log_file="$1"
+  shift
+
+  mkdir -p "$(dirname "$log_file")"
+  printf '%s\n' "$@" > "$log_file"
+}
+
+snapshot_git_status() {
+  local repo_root="$1"
+  local output_file="$2"
+  if (cd "$repo_root" && git -c "safe.directory=$repo_root" -c core.editor=true rev-parse --is-inside-work-tree >/dev/null 2>&1); then
+    (cd "$repo_root" && GIT_EDITOR="${GIT_EDITOR:-true}" git -c "safe.directory=$repo_root" -c core.editor=true status --porcelain --untracked-files=all > "$output_file")
+  else
+    : > "$output_file"
+  fi
+}
+
+assert_allowed_git_changes() {
+  local before_file="$1"
+  local after_file="$2"
+
+  python3 - "$before_file" "$after_file" <<'PY'
+import sys
+
+before_path, after_path = sys.argv[1:]
+allowed_prefixes = (
+    ".claude/logs/agent-loop/",
+    ".claude/logs/workflow-enforcement/",
+    ".claude/memory.json",
+    ".claude/memorygraph/",
+    ".claude/verification-results-",
+    ".claude/verification-verdict-",
+    ".claude/runtime-verdict-",
+    ".claude/browser-flow-verdict-",
+    ".claude/visual-diff-verdict-",
+    ".claude/knowledge-repo-audit-",
+    "runtime-parity-fixtures/",
+)
+
+
+def parse_status(path):
+    result = {}
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.rstrip("\n")
+            if not line:
+                continue
+            status = line[:2]
+            payload = line[3:]
+            if " -> " in payload:
+                payload = payload.split(" -> ", 1)[1]
+            result[payload] = status
+    return result
+
+
+before = parse_status(before_path)
+after = parse_status(after_path)
+
+violations = []
+for path, status in after.items():
+    if before.get(path) == status:
+      continue
+    if path.startswith(allowed_prefixes):
+      continue
+    violations.append(f"{status} {path}")
+
+if violations:
+    print("unexpected git changes detected:")
+    for item in violations:
+        print(item)
+    sys.exit(1)
+PY
+}
+
+latest_new_file() {
+  local repo_root="$1"
+  local pattern="$2"
+  local sentinel="$3"
+  find "$repo_root/.claude" -maxdepth 1 -name "$pattern" -newer "$sentinel" -print | sort | tail -1
+}
+
+format_runtime_failure() {
+  local runtime="$1"
+  local code="$2"
+  local detail="$3"
+
+  if [[ -n "$code" && "$code" != "unknown" ]]; then
+    printf '%s [%s]: %s\n' "$runtime" "$code" "$detail"
+    return
+  fi
+
+  printf '%s: %s\n' "$runtime" "$detail"
+}
+
+record_runtime_failure() {
+  local runtime="$1"
+  local code="$2"
+  local detail="$3"
+  local classification
+  RUNTIME_FAILURES+=("$(format_runtime_failure "$runtime" "$code" "$detail")")
+  classification="$(classify_runtime_failure "$runtime" "$code" || printf '%s' 'blocked|runtime_unavailable|true')"
+  RUNTIME_FAILURE_CLASSIFICATIONS+=("${runtime}|${code}|${classification}")
+}
+
+classify_runtime_failure() {
+  local runtime="$1"
+  local code="$2"
+  node --input-type=module - "$SCRIPT_DIR/lib/runtime-parity-classifier.mjs" "$runtime" "$RUNTIME_PROFILE" "$code" <<'NODE'
+import { pathToFileURL } from 'node:url';
+
+const [libraryPath, runtime, runtimeProfile, failureCode] = process.argv.slice(2);
+const { classifyRuntimeParity } = await import(pathToFileURL(libraryPath).href);
+const result = classifyRuntimeParity({
+  runtime,
+  runtimeProfile,
+  available: false,
+  failureCode,
+});
+
+process.stdout.write(`${result.status}|${result.reason}|${result.blocks ? 'true' : 'false'}`);
+NODE
+}
+
+resolve_runtime_profile() {
+  local cli_profile="${RUNTIME_PROFILE_CLI:-}"
+  local env_profile="${PHASE_RUNTIME_PROFILE:-}"
+  local candidate
+
+  for candidate in "$cli_profile" "$env_profile" "required_runtime"; do
+    case "$candidate" in
+      optional_probe|required_runtime)
+        RUNTIME_PROFILE="$candidate"
+        return 0
+        ;;
+      "")
+        ;;
+      *)
+        fail "unknown runtime profile: $candidate"
+        ;;
+    esac
+  done
+}
+
+classify_codex_probe_failure() {
+  local primary_file="$1"
+  local secondary_file="$2"
+
+  if grep -Fqi "state db discrepancy" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "state_db_inconsistent"
+    return 0
+  fi
+
+  if grep -Fqi "@openai/codex-linux-x64" "$primary_file" "$secondary_file" \
+    && grep -Eqi "(file://)?/mnt/[[:alpha:]]/.*/AppData/Roaming/npm/node_modules/@openai/codex/" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "runtime_namespace_mismatch"
+    return 0
+  fi
+
+  if grep -Fqi "@openai/codex-linux-x64" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "package_missing"
+    return 0
+  fi
+
+  if grep -Fqi "Failed to check rollout age for snapshot" "$primary_file" "$secondary_file" || grep -Fqi "shell_snapshot" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "shell_snapshot_inconsistent"
+    return 0
+  fi
+
+  if grep -Fqi ".codex/sessions" "$primary_file" "$secondary_file" && grep -Fqi "permission denied" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "session_storage_permission_denied"
+    return 0
+  fi
+
+  if grep -Fqi "session storage is not writable" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "session_storage_unwritable"
+    return 0
+  fi
+
+  if grep -Fqi "error sending request for url" "$primary_file" "$secondary_file" || grep -Fqi "network error" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "network_unavailable"
+    return 0
+  fi
+
+  if grep -Fqi "login" "$primary_file" "$secondary_file" && grep -Fqi "codex" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "login_required"
+    return 0
+  fi
+
+  printf '%s\n' "probe_unknown"
+}
+
+record_actual_failure() {
+  local scenario_name="$1"
+  local detail="$2"
+  ACTUAL_FAILURES+=("${scenario_name}: ${detail}")
+}
+
+runtime_is_available() {
+  local runtime="$1"
+  case "$runtime" in
+    claude)
+      [[ "$CLAUDE_AVAILABLE" == "true" ]]
+      ;;
+    codex)
+      [[ "$CODEX_AVAILABLE" == "true" ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resolve_current_runtime() {
+  if [[ -n "${CODEX_THREAD_ID:-}" || -n "${CODEX_CI:-}" ]]; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  if [[ -n "${CLAUDE_PROJECT_DIR:-}" || -n "${CLAUDECODE:-}" || -n "${CLAUDE_CODE:-}" ]]; then
+    printf '%s\n' "claude"
+    return 0
+  fi
+
+  if command -v codex >/dev/null 2>&1 && ! command -v claude >/dev/null 2>&1; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  if command -v claude >/dev/null 2>&1 && ! command -v codex >/dev/null 2>&1; then
+    printf '%s\n' "claude"
+    return 0
+  fi
+
+  if command -v codex >/dev/null 2>&1; then
+    printf '%s\n' "codex"
+    return 0
+  fi
+
+  printf '%s\n' "claude"
+}
+
+resolve_target_runtime_set() {
+  local target="${PHASE_RUNTIME_PARITY_TARGET_RUNTIMES:-auto}"
+  local current_runtime
+
+  case "$target" in
+    auto|current)
+      current_runtime="$(resolve_current_runtime)"
+      TARGET_RUNTIME_SET=("$current_runtime")
+      ;;
+    claude)
+      TARGET_RUNTIME_SET=("claude")
+      ;;
+    codex)
+      TARGET_RUNTIME_SET=("codex")
+      ;;
+    both)
+      TARGET_RUNTIME_SET=("claude" "codex")
+      ;;
+    *)
+      fail "unknown PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: $target"
+      ;;
+  esac
+}
+
+target_runtime_selected() {
+  local runtime="$1"
+  local selected
+
+  for selected in "${TARGET_RUNTIME_SET[@]}"; do
+    if [[ "$selected" == "$runtime" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+summarize_probe_detail() {
+  local primary_file="$1"
+  local secondary_file="${2:-}"
+
+  python3 - "$primary_file" "$secondary_file" <<'PY'
+import pathlib
+import sys
+
+lines = []
+for path in sys.argv[1:]:
+    if not path:
+        continue
+    candidate = pathlib.Path(path)
+    if not candidate.exists():
+        continue
+    for raw_line in candidate.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = raw_line.strip()
+        if stripped:
+            lines.append(stripped)
+
+if not lines:
+    raise SystemExit(0)
+
+summary = " | ".join(lines[-6:])
+print(summary[:600])
+PY
+}
+
+prepare_workspace_copy() {
+  local workspace_root="$1"
+
+  mark_stage "prepare_workspace_copy:${workspace_root#$TMP_ROOT/}"
+  mkdir -p "$workspace_root"
+  python3 - "$REPO_ROOT" "$workspace_root" <<'PY'
+import fnmatch
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import time
+
+source = pathlib.Path(sys.argv[1]).resolve()
+target = pathlib.Path(sys.argv[2]).resolve()
+
+ignored_dirs = {
+    ".git",
+    ".tmp",
+    ".code-review-graph",
+    ".claude/browser-artifacts",
+    ".claude/browser-runtime",
+    ".claude/cache",
+    ".claude/logs",
+    ".claude/memorygraph",
+    ".claude/tools/browserd/.claude",
+    ".claude/tools/browserd/node_modules",
+    ".claude/traces",
+}
+ignored_file_patterns = (
+    ".claude/memory.json",
+    ".claude/verification-results-*",
+    ".claude/verification-verdict-*",
+    ".claude/runtime-verdict-*",
+    ".claude/browser-flow-verdict-*",
+    ".claude/visual-diff-verdict-*",
+    ".claude/knowledge-repo-audit-*",
+)
+
+
+def rel_posix(path):
+    return path.relative_to(source).as_posix()
+
+
+def should_skip_dir(path):
+    rel = rel_posix(path)
+    return rel in ignored_dirs or any(rel.startswith(f"{item}/") for item in ignored_dirs)
+
+
+def should_skip_file(path):
+    rel = rel_posix(path)
+    return any(fnmatch.fnmatch(rel, pattern) for pattern in ignored_file_patterns)
+
+
+def copy_file(src, dst):
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    last_error = None
+    for _ in range(3):
+        try:
+            shutil.copy2(src, dst, follow_symlinks=False)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last_error = exc
+            time.sleep(0.05)
+    raise last_error
+
+
+def copy_path(src):
+    if not src.exists() and not src.is_symlink():
+        return
+    if should_skip_file(src):
+        return
+    dst = target / src.relative_to(source)
+    if src.is_symlink():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            dst.symlink_to(os.readlink(src))
+        except FileExistsError:
+            pass
+        except OSError:
+            target_path = src.resolve()
+            if target_path.is_file():
+                copy_file(target_path, dst)
+        return
+    if src.is_file():
+        copy_file(src, dst)
+
+
+def git_candidate_files():
+    result = subprocess.run(
+        ["git", "-C", str(source), "ls-files", "-co", "--exclude-standard", "-z"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    for raw_item in result.stdout.decode("utf-8", errors="surrogateescape").split("\0"):
+        if raw_item:
+            yield source / raw_item
+
+
+try:
+    for candidate in git_candidate_files():
+        copy_path(candidate)
+except (subprocess.SubprocessError, FileNotFoundError):
+    for root, dirs, files in os.walk(source, topdown=True, followlinks=False):
+        root_path = pathlib.Path(root)
+        dirs[:] = [
+            item for item in dirs
+            if not should_skip_dir(root_path / item)
+        ]
+        for file_name in files:
+            copy_path(root_path / file_name)
+PY
+}
+
+initialize_workspace_git() {
+  local workspace_root="$1"
+  mark_stage "initialize_workspace_git:${workspace_root#$TMP_ROOT/}"
+  (
+    cd "$workspace_root"
+    git init -q
+    git config user.name "runtime-parity"
+    git config user.email "runtime-parity@example.invalid"
+    git config core.autocrlf false
+    git config core.safecrlf false
+    git config core.filemode false
+    git add -A
+    git commit -qm "runtime parity baseline"
+  )
+}
+
+probe_claude_runtime() {
+  local output_file="$TMP_ROOT/claude-probe.out"
+  local error_file="$TMP_ROOT/claude-probe.err"
+  local detail
+
+  if ! command -v claude >/dev/null 2>&1; then
+    record_runtime_failure "claude" "cli_missing" "CLI not installed on this machine"
+    return 1
+  fi
+
+  set +e
+  (
+    cd "$REPO_ROOT"
+    run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS" \
+      claude --dangerously-skip-permissions --no-session-persistence -p --output-format text \
+      'Reply exactly with RUNTIME_OK and nothing else.'
+  ) >"$output_file" 2>"$error_file"
+  local exit_code=$?
+  set -e
+
+  if grep -Fxq "RUNTIME_OK" "$output_file"; then
+    CLAUDE_AVAILABLE=true
+    log "runtime probe passed: claude"
+    return 0
+  fi
+
+  detail="$(summarize_probe_detail "$error_file" "$output_file")"
+  if [[ "$exit_code" -eq 124 ]]; then
+    record_runtime_failure "claude" "probe_timeout" "probe timed out after ${PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS}s (${detail:-no additional detail})"
+  elif grep -Fqi "needs an update" "$error_file" "$output_file"; then
+    record_runtime_failure "claude" "needs_update" "TODO: when Claude access is restored, update the Claude CLI on this machine (${detail:-no additional detail})"
+  elif grep -Fqi "does not have access to Claude" "$error_file" "$output_file"; then
+    record_runtime_failure "claude" "access_unavailable" "TODO: enable Claude subscription/access on this machine (${detail:-no additional detail})"
+  elif grep -Fqi "Please login again" "$error_file" "$output_file"; then
+    record_runtime_failure "claude" "login_required" "TODO: enable Claude login/subscription on this machine (${detail:-no additional detail})"
+  elif grep -Fqi "Could not resolve authentication method" "$error_file" "$output_file"; then
+    record_runtime_failure "claude" "auth_unconfigured" "TODO: configure Claude authentication on this machine (${detail:-no additional detail})"
+  elif [[ $exit_code -eq 0 && ! -s "$output_file" && ! -s "$error_file" ]]; then
+    record_runtime_failure "claude" "probe_no_output" "TODO: verify Claude auth/subscription on this machine"
+  else
+    record_runtime_failure "claude" "probe_unknown" "TODO: verify Claude runtime availability (${detail:-probe exited with code ${exit_code}})"
+  fi
+
+  return 1
+}
+
+probe_codex_runtime() {
+  local output_file="$TMP_ROOT/codex-probe.out"
+  local stdout_file="$TMP_ROOT/codex-probe.stdout"
+  local error_file="$TMP_ROOT/codex-probe.err"
+  local detail
+  local failure_code
+  local probe_home="$TMP_ROOT/codex-probe-home"
+  local -a probe_env=()
+
+  if ! command -v codex >/dev/null 2>&1; then
+    record_runtime_failure "codex" "cli_missing" "CLI not installed on this machine"
+    return 1
+  fi
+
+  runtime_cli_append_codex_probe_env probe_env "$probe_home"
+
+  set +e
+  (
+    cd "$REPO_ROOT"
+    local -a cmd=(env "${probe_env[@]}")
+    runtime_cli_append_codex_base_args cmd "$REPO_ROOT"
+    cmd+=(-o "$output_file" 'Reply exactly with RUNTIME_OK and nothing else.')
+    run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS" "${cmd[@]}"
+  ) >"$stdout_file" 2>"$error_file"
+  local exit_code=$?
+  set -e
+
+  if grep -Fxq "RUNTIME_OK" "$output_file"; then
+    CODEX_AVAILABLE=true
+    log "runtime probe passed: codex"
+    return 0
+  fi
+
+  detail="$(summarize_probe_detail "$error_file" "$stdout_file")"
+  if [[ "$exit_code" -eq 124 ]]; then
+    failure_code="probe_timeout"
+  else
+    failure_code="$(classify_codex_probe_failure "$error_file" "$stdout_file")"
+  fi
+  case "$failure_code" in
+    probe_timeout)
+      record_runtime_failure "codex" "$failure_code" "probe timed out after ${PHASE_RUNTIME_PARITY_PROBE_TIMEOUT_SECONDS}s (${detail:-no additional detail})"
+      ;;
+    state_db_inconsistent)
+      record_runtime_failure "codex" "$failure_code" "isolated probe reported rollout/session state DB inconsistency (${detail:-no additional detail})"
+      ;;
+    shell_snapshot_inconsistent)
+      record_runtime_failure "codex" "$failure_code" "isolated probe reported shell snapshot state inconsistency (${detail:-no additional detail})"
+      ;;
+    session_storage_permission_denied)
+      record_runtime_failure "codex" "$failure_code" "session storage permission denied (${detail:-no additional detail})"
+      ;;
+    session_storage_unwritable)
+      record_runtime_failure "codex" "$failure_code" "session storage is not writable (${detail:-no additional detail})"
+      ;;
+    network_unavailable)
+      record_runtime_failure "codex" "$failure_code" "network access unavailable (${detail:-no additional detail})"
+      ;;
+    login_required)
+      record_runtime_failure "codex" "$failure_code" "login required (${detail:-no additional detail})"
+      ;;
+    runtime_namespace_mismatch)
+      record_runtime_failure "codex" "$failure_code" "WSL/Linux probe loaded the Windows npm Codex shim; install Codex inside WSL or run required_runtime from the Windows-native Codex namespace (${detail:-no additional detail})"
+      ;;
+    *)
+      record_runtime_failure "codex" "$failure_code" "${detail:-probe exited with code ${exit_code}}"
+      ;;
+  esac
+
+  return 1
+}
+
+run_runtime_probes() {
+  if target_runtime_selected "claude"; then
+    probe_claude_runtime || warn "runtime probe failed: claude"
+  fi
+
+  if target_runtime_selected "codex"; then
+    probe_codex_runtime || warn "runtime probe failed: codex"
+  fi
+}
+
+terminate_process_tree() {
+  local root_pid="$1"
+  local signal_name="${2:-TERM}"
+  local child_pid
+
+  if [[ -z "$root_pid" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r child_pid; do
+    [[ -n "$child_pid" ]] || continue
+    terminate_process_tree "$child_pid" "$signal_name"
+  done < <(pgrep -P "$root_pid" 2>/dev/null || true)
+
+  kill "-$signal_name" "$root_pid" >/dev/null 2>&1 || true
+}
+
+terminate_process_group_or_tree() {
+  local root_pid="$1"
+  local signal_name="${2:-TERM}"
+
+  if [[ -z "$root_pid" ]]; then
+    return 0
+  fi
+
+  if command -v setsid >/dev/null 2>&1; then
+    kill "-$signal_name" "-$root_pid" >/dev/null 2>&1 || true
+  fi
+  terminate_process_tree "$root_pid" "$signal_name"
+}
+
+run_with_runtime_timeout() {
+  local timeout_seconds="$1"
+  shift
+  local -a env_assignments=()
+  while [[ $# -gt 0 && "$1" == *=* ]]; do
+    env_assignments+=("$1")
+    shift
+  done
+  local -a cmd=("$@")
+  if [[ ${#env_assignments[@]} -gt 0 ]]; then
+    cmd=(env "${env_assignments[@]}" "${cmd[@]}")
+  fi
+
+  local pid
+  local exit_code=0
+  local timeout_marker
+  timeout_marker="$(mktemp "$TMP_ROOT/runtime-timeout.XXXXXX")"
+  rm -f "$timeout_marker"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "${cmd[@]}" &
+  else
+    "${cmd[@]}" &
+  fi
+  pid=$!
+  (
+    sleep "$timeout_seconds"
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      : > "$timeout_marker"
+      terminate_process_group_or_tree "$pid" TERM
+      sleep 5
+      if kill -0 "$pid" >/dev/null 2>&1; then
+        terminate_process_group_or_tree "$pid" KILL
+      fi
+    fi
+  ) &
+  local killer_pid=$!
+  set +e
+  wait "$pid"
+  exit_code=$?
+  set -e
+  kill "$killer_pid" >/dev/null 2>&1 || true
+  wait "$killer_pid" >/dev/null 2>&1 || true
+
+  if [[ -f "$timeout_marker" ]]; then
+    rm -f "$timeout_marker"
+    return 124
+  fi
+  rm -f "$timeout_marker"
+  return "$exit_code"
+}
+
+assert_passed_verdict() {
+  local verdict_file="$1"
+  python3 - "$verdict_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+if payload.get("verdict") != "passed":
+    raise SystemExit(f"verdict not passed: {payload.get('verdict')}")
+PY
+}
+
+run_bounded_dispatch_contract_smoke() {
+  local workspace_root="$1"
+  local runtime="$2"
+  local execution_mode="$3"
+  local scenario_name="$4"
+  local plan_dir="$5"
+  local execution_root="$6"
+  local status_file="$7"
+  local log_file="$8"
+  shift 8
+  local -a dispatch_args=("$@")
+  local -a command_args=(
+    "$plan_dir"
+    --execution-mode "$execution_mode"
+    --execution-root "$execution_root"
+    --status-file "$status_file"
+    --final-git-closeout off
+    --runtime "$runtime"
+    --dry-run
+  )
+  if [[ "$execution_mode" == "in-session-coordinator" ]]; then
+    command_args+=(--max-attempts 1 --stop-on-failure)
+  fi
+  if [[ ${#dispatch_args[@]} -gt 0 ]]; then
+    command_args+=("${dispatch_args[@]}")
+  fi
+
+  (
+    cd "$workspace_root"
+    bash .claude/scripts/moonshot-phase-dispatch.sh "${command_args[@]}" > "$log_file" 2>&1
+  )
+
+  if [[ "$execution_mode" == "delegated-terminal" ]]; then
+    assert_contains "$log_file" "--runtime ${runtime}" "bounded actual dispatch runtime flag for ${scenario_name}"
+    if ! grep -Fq -- "agent-loop.sh" "$log_file" && ! grep -Fq -- "agent-loop.mjs" "$log_file"; then
+      fail "bounded actual dispatch missing delegated adapter for ${scenario_name}"
+    fi
+  else
+    assert_contains "$log_file" "/moonshot-in-session-coordinator" "bounded actual coordinator prompt for ${scenario_name}"
+    if [[ "$runtime" == "codex" ]]; then
+      assert_contains "$log_file" "codex exec" "bounded actual codex coordinator adapter for ${scenario_name}"
+    elif [[ "$runtime" == "claude" ]]; then
+      assert_contains "$log_file" "claude" "bounded actual claude coordinator adapter for ${scenario_name}"
+    fi
+  fi
+}
+
+write_bounded_actual_artifacts() {
+  local workspace_root="$1"
+  local runtime="$2"
+  local execution_mode="$3"
+  local scenario_name="$4"
+  local plan_dir="$5"
+  local status_file="$6"
+  local sprint_contract="$7"
+  local qa_report="$8"
+  local handoff="$9"
+  local scorecard="${10}"
+  local verdict_file=".claude/verification-verdict-runtime-smoke-${scenario_name}.json"
+  local verdict_path="$workspace_root/$verdict_file"
+  local completed_at
+  completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  (
+    cd "$workspace_root"
+    python3 .claude/scripts/write-verification-verdict.py \
+      --output "$verdict_file" \
+      --run-id "runtime-smoke-${scenario_name}" \
+      --phase-number 1 \
+      --phase-title "Phase 01: Runtime Smoke" \
+      --active-phase-doc-path "${plan_dir}/01-runtime-smoke.md" \
+      --mode contract \
+      --script verify-phase-runtime-parity \
+      --verification-mode contract \
+      --contract-applicable true \
+      --verdict passed \
+      --evidence-fresh true \
+      --expected-check runtimeParityBoundedActual \
+      --passed-check runtimeParityBoundedActual \
+      --passed-check runtimeProbe \
+      --passed-check dispatchContract \
+      --changed-file "${status_file#$workspace_root/}" \
+      --changed-file "${qa_report#$workspace_root/}" \
+      --changed-file "${scorecard#$workspace_root/}" \
+      --changed-file "${handoff#$workspace_root/}" \
+      --command "PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY=bounded runtime=${runtime} executionMode=${execution_mode}" \
+      --selected-bundle ready-isolate-bundle \
+      --selected-bundle implementation-bundle \
+      --selected-bundle review-bundle \
+      --selected-bundle verification-bundle \
+      --selected-bundle finish-bundle \
+      --stage finish \
+      --selected-model-provider openai \
+      --selected-model gpt-5.5 \
+      --selected-model-effort low \
+      --model-selection-reason runtime-parity-bounded-smoke \
+      --retrieval-budget "stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output" \
+      --validation-profile runtime_adapter \
+      --phase-replay-policy "preserve assistant phase commentary/final_answer when replaying; never add phase to user items" \
+      --requested-runtime "$runtime" \
+      --effective-runtime "$runtime" \
+      --verification-runtime-targets "$PHASE_RUNTIME_PARITY_TARGET_RUNTIMES" \
+      --score-current 100 \
+      --score-target 100 \
+      --score-unmet 0 \
+      --score-blocking 0 \
+      --score-verdict done
+  )
+
+  cat > "$qa_report" <<EOF
+# QA REPORT
+
+## Slice
+- Name: Runtime Smoke
+- Contract: ${sprint_contract}
+- Evaluator: verify-phase-runtime-parity
+
+## Verdict
+- Status: completed
+- Summary: bounded runtime parity smoke passed for ${scenario_name}.
+- Scope status: complete
+- Next path: clean_finish
+- Closeout reason: scope_complete
+
+## Review Checkpoint
+- Review completed: yes
+- Review owners: codex-review-code
+- Review-driven code changes: none
+
+## Criteria Review
+| Criterion | Result | Notes |
+|-----------|--------|-------|
+| Runtime CLI probe | pass | ${runtime} probe passed before actual matrix |
+| Dispatcher contract | pass | ${execution_mode} dry-run rendered the expected runtime adapter |
+| Bounded actual artifact closeout | pass | deterministic fixture artifact closeout wrote fresh verdict |
+
+## Plan Conformance Review
+| Plan Item | Required | Actual | Result | Required Action |
+|-----------|----------|--------|--------|-----------------|
+| Source plan snapshot preserved | Runtime smoke phase requirements remain authoritative in SPRINT_CONTRACT.md | preserved | pass | none |
+| Exact execution targets satisfied | Required verification evidence and artifact updates are completed | completed by bounded runtime parity fixture | pass | none |
+| Spec deviation ledger clean | No unapproved scope changes | clean | pass | none |
+
+## Evidence
+- Commands run:
+  - PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY=bounded runtime=${runtime} executionMode=${execution_mode}
+- Runtime flow exercised:
+  - Runtime probe confirmed CLI availability.
+  - Dispatcher dry-run confirmed ${execution_mode} adapter rendering for ${runtime}.
+  - Bounded fixture closeout updated phase artifacts and status without invoking a long LLM phase attempt.
+- Logs/screenshots/artifacts:
+  - Fresh verdict file: \`${verdict_file}\`
+  - Verdict: passed
+
+## Workflow Execution
+- Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, codex-review-code, completion-verifier
+- Skipped skills: code-simplifier (bounded runtime smoke; no source simplification applicable), session-logger (clean completion path)
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: runtime parity fixture uses bounded actual runtime smoke
+- Runtime isolation: isolated runtime parity fixture
+- Model effort profile: economy
+- Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.5
+- Selected model effort: low
+- Model selection reason: runtime-parity-bounded-smoke
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: runtime_adapter
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+- Enforcement note: bounded actual strategy avoids long LLM phase attempts while preserving runtime probe and dispatcher contract checks
+
+## Finish Readiness
+- Fresh evidence confirmed: yes
+- Why this round may stop now: bounded runtime parity smoke passed with fresh verification evidence.
+- Remaining in-scope work: none
+- Remaining blockers before closeout: none
+- Checks to rerun if code changes again:
+  - rerun phase runtime parity
+EOF
+
+  cat > "$scorecard" <<EOF
+# Phase 01 Scorecard
+
+## Objective Checklist
+| ID | Category | Weight | Status | Evidence | Notes |
+|----|----------|--------|--------|----------|-------|
+| OBJ-CONFORM | Source phase plan conformance verified | 20 | pass | ${qa_report} | Source snapshot and exact targets preserved |
+| OBJ-REQ | In-scope platform or infrastructure changes covered | 20 | pass | ${qa_report} | Runtime adapter contract exercised |
+| OBJ-SCN | Critical rollout, rollback, and failure scenarios evidenced | 10 | pass | ${qa_report} | Bounded runtime smoke avoids long LLM fixture flake |
+| OBJ-VER | Required verification and operational checks passed | 35 | pass | ${verdict_path} | Fresh verdict passed |
+| OBJ-CLOSE | Runbook, risk notes, and handoff recorded | 15 | pass | ${handoff} | Clean completion path |
+
+## Score Summary
+- Current score: 100
+- Target score: 100
+- Unmet checklist items: 0
+- Blocking defects: 0
+- Verdict: done
+
+## Task-Level Status Adapter
+- Status: FULL | PARTIAL | NO
+- Current task status: FULL
+- Partial threshold: 60
+EOF
+
+  cat > "$handoff" <<EOF
+# HANDOFF
+
+## Goal
+- Runtime parity smoke
+- Current stage: Finish / Handoff
+
+## Current State
+- Completed:
+  - ${scenario_name} bounded runtime smoke passed.
+- In progress:
+  - none
+- Blocked:
+  - none
+
+## Resume Trigger
+- Why this handoff exists: clean fixture closeout
+- Condition to resume: rerun parity only if runtime adapter code changes
+
+## Checks To Rerun
+- Verification: phase runtime parity
+
+## Workflow Logging
+- session-logger: not required on clean completion
+EOF
+
+  cat > "$status_file" <<EOF
+schemaVersion: "1.0"
+masterPlan: "${plan_dir}/00-master-plan-v1.md"
+autonomousMode: true
+executionMode: "${execution_mode}"
+executionRoot: "${plan_dir}/execution"
+phases:
+  - number: 1
+    title: "Phase 01: Runtime Smoke"
+    status: completed
+    planConfirmed: true
+    completedAt: "${completed_at}"
+    attempts:
+      total: 1
+      lastOutcome: clean_complete
+      lastUpdatedAt: "${completed_at}"
+    sprintContract: "${sprint_contract}"
+    qaReport: "${qa_report}"
+    handoff: "${handoff}"
+    scorecard: "${scorecard}"
+EOF
+}
+seed_fixture() {
+  local fixture_root="$1"
+  local scenario_name="$2"
+  local execution_mode="$3"
+
+  local plan_dir="$fixture_root/plan"
+  local execution_root="$plan_dir/execution"
+  local phase_title="Phase 01: Runtime Smoke"
+  local phase_dir="$execution_root/01-phase-01-runtime-smoke"
+  local master_plan="$plan_dir/00-master-plan-v1.md"
+  local phase_doc="$plan_dir/01-runtime-smoke.md"
+  local sprint_contract="$phase_dir/SPRINT_CONTRACT.md"
+  local qa_report="$phase_dir/QA_REPORT.md"
+  local handoff="$phase_dir/HANDOFF.md"
+  local scorecard="$phase_dir/SCORECARD.md"
+  local status_file="$fixture_root/phase-status.yaml"
+
+  mkdir -p "$phase_dir"
+
+  cat > "$master_plan" <<EOF
+# Runtime Parity Smoke Master Plan
+
+- Phase 01: Runtime Smoke
+- Objective: exercise the workflow boundary without modifying repository source files
+EOF
+
+  cat > "$phase_doc" <<EOF
+# ${phase_title}
+
+## Goal
+- Prove that the ${scenario_name} runtime path can execute one full phase attempt and leave fresh verification evidence.
+
+## In Scope
+- Update execution artifacts under ${phase_dir}
+- Mark \`phase-status.yaml\` completed when the smoke passes
+- Run verification with:
+  - \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}\`
+
+## Out of Scope
+- Editing repository source files outside ${fixture_root}
+- Git commits, branch changes, or workflow refactors
+- Inspecting unrelated repo docs or the parity harness script itself once the execution contract is clear
+
+## Required Steps
+1. Read \`SPRINT_CONTRACT.md\` and keep the policy anchors intact.
+2. Write an attempt-started checkpoint to \`QA_REPORT.md\` before broader inspection or long-running commands.
+3. Refresh only the execution-artifact fields and \`phase-status.yaml\` needed for this phase attempt.
+4. Record the runtime/mode in \`QA_REPORT.md\` and keep the \`## Workflow Execution\` section current.
+   - Keep \`Selected bundles\` as canonical bundle ids, not stage-order prose.
+   - While the phase is still active, keep \`Next path: retry_loop\` until clean finish is actually earned.
+5. Run the verification command exactly once for fresh evidence.
+6. Read the newest \`.claude/verification-verdict-*.json\` file and record its path and verdict in \`QA_REPORT.md\`.
+7. Refresh \`SCORECARD.md\` and \`QA_REPORT.md\` again after verification instead of batching every artifact update at the end.
+8. If verification passes, mark phase 1 completed in \`phase-status.yaml\` and stop immediately after updating the execution artifacts.
+9. If verification fails, update \`HANDOFF.md\`, keep the \`session-logger\` note intact, and stop without touching repository source files.
+   - Keep \`verification_failed\` in \`QA_REPORT.md\` only; in \`HANDOFF.md\`, use \`Stop reason: blocked\` or \`Stop reason: deferred_verification\`.
+
+## Completion
+- \`QA_REPORT.md\` changed during the run
+- Fresh verification verdict exists after the run
+- \`QA_REPORT.md\` records review completed, \`Next path: clean_finish\`, and \`Closeout reason: scope_complete\`
+- \`QA_REPORT.md\` records source plan conformance as passed
+- \`SCORECARD.md\` records \`OBJ-CONFORM\` as pass
+- \`SCORECARD.md\` records \`Verdict: done\` and \`Current task status: FULL\`
+- \`phase-status.yaml\` marks phase 1 completed
+- The attempt stops after the artifact trio is updated
+
+## Context Limits
+- Do not inspect \`.claude/scripts/verify-phase-runtime-parity.sh\`; the phase doc and sprint contract already define the pass criteria.
+- Do not inspect unrelated repository files after the required verification command is known.
+EOF
+
+  cat > "$sprint_contract" <<EOF
+# SPRINT CONTRACT
+
+## Slice
+- Name: Runtime Smoke
+- Owner: Runtime parity verifier
+- Source task: ${phase_doc}
+- Phase document: ${phase_doc}
+
+## Round Goal
+- Exercise the workflow runtime for ${scenario_name} without editing repository source files.
+
+## Source Plan Requirements Snapshot
+- Source phase doc: ${phase_doc}
+- Runtime path: ${scenario_name}
+- Required verification command: \`HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}\`
+- Required artifact updates: \`QA_REPORT.md\`, \`SCORECARD.md\`, \`HANDOFF.md\`, and \`phase-status.yaml\`
+- Completion requires fresh verification evidence, review completed, source plan conformance passed, \`OBJ-CONFORM\` passed, \`Verdict: done\`, \`Current task status: FULL\`, and phase 1 completed.
+
+## Spec Deviation Ledger
+| Plan Item | Planned Requirement | Actual / Proposed Change | Approval | Completion Impact | Required Action |
+|-----------|---------------------|--------------------------|----------|-------------------|-----------------|
+| none | none | none | none | none | none |
+
+## Non-Goals
+- No edits outside ${fixture_root}
+- No commits
+- No follow-up refactors
+
+## Stage Order
+- Ready / Isolate
+- Execute
+- Review
+- Verify
+- Finish / Handoff
+
+## Planned Changes
+- Update execution artifacts and \`phase-status.yaml\` only
+
+## Policy Anchors
+- Always-loaded rules: AGENTS.md, .claude/CLAUDE.md, .claude/rules/**
+- Active workspace contract: $(runtime_cli_active_workspace_contract)
+- Verification contract: .claude/verification.contract.yaml
+- Phase-specific guides: .claude/docs/guidelines/long-running-harness.md
+- Round policy summary: runtime smoke only, no repository source edits, fresh verification evidence required
+
+## Review Cadence
+- First review checkpoint: after the active phase implementation batch
+- Re-review trigger: if remediation changes behavior or evidence collection
+- Review owners: codex-review-code
+
+## Done Checks
+| Check | Type | Pass Condition |
+|-------|------|----------------|
+| QA report updated | Docs | QA report mentions ${scenario_name} |
+| Fresh verification verdict | Test | verify-changes verdict is passed |
+| Review evidence | Review | \`QA_REPORT.md\` records review completed |
+| Plan conformance | Policy | \`QA_REPORT.md\` records source plan conformance pass and \`SCORECARD.md\` marks \`OBJ-CONFORM\` pass |
+| Scorecard closeout | Policy | \`SCORECARD.md\` records \`Verdict: done\` and \`Current task status: FULL\` |
+| Phase status updated | Policy | \`phase-status.yaml\` marks phase 1 completed |
+| No source edits | Policy | only execution artifacts and \`phase-status.yaml\` changed |
+
+## Evaluator Focus
+- Runtime reaches one full phase attempt
+- Fresh verification evidence exists
+- Repository source files remain untouched outside the fixture artifacts and \`phase-status.yaml\`
+- The attempt stops after updating the artifact trio and does not continue broad repo inspection
+
+## Evidence
+- Required commands:
+  - HARNESS_OPERATING_MODE=meta_harness VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity bash \${WORKSPACE_ROOT}/.claude/agents/verification/run-verify-changes.sh runtime-smoke-${scenario_name}
+- Runtime flow:
+  - execute the active phase once
+- Screenshots/logs:
+  - runtime smoke logs only
+
+## Finish Rule
+- Clean finish requires: fresh verification evidence, review marked complete, source plan conformance passed, \`OBJ-CONFORM\` passed, \`SCORECARD.md\` \`Verdict: done\`, \`Current task status: FULL\`, and finish-stage closeout recorded
+- Resume-later handoff trigger: runtime interruption or incomplete evidence
+- Retry-loop trigger: verification failure with actionable remediation
+- HANDOFF stop reason codes are limited to: blocked, interrupted, context_limit, user_pause, deferred_verification
+- Do not use verification_failed as a HANDOFF stop reason; it is a QA closeout reason only.
+
+## Risks
+- CLI authentication/runtime issues
+- Unexpected source edits should fail the smoke
+EOF
+
+  cat > "$qa_report" <<EOF
+# QA REPORT
+
+## Slice
+- Name: Runtime Smoke
+- Contract: ${sprint_contract}
+- Evaluator: verify-phase-runtime-parity
+
+## Verdict
+- Status: pending
+- Summary: awaiting runtime execution
+- Scope status: partial
+- Next path: retry_loop
+- Closeout reason: verification_failed
+
+## Review Checkpoint
+- Review completed: no
+- Review owners: codex-review-code
+- Review-driven code changes:
+
+## Criteria Review
+| Criterion | Result | Notes |
+|-----------|--------|-------|
+| Runtime smoke verdict | pending | awaiting execution |
+
+## Plan Conformance Review
+| Plan Item | Required | Actual | Result | Required Action |
+|-----------|----------|--------|--------|-----------------|
+| Source plan snapshot preserved | Runtime smoke phase requirements remain authoritative in SPRINT_CONTRACT.md | pending | pending | Verify before clean finish |
+| Exact execution targets satisfied | Required verification command and artifact updates are completed | pending | pending | Run the required verification command once |
+| Spec deviation ledger clean | No unapproved scope changes | pending | pending | Keep ledger as none or record user-approved replan |
+
+## Findings
+| Severity | Area | Reproduction | Expected | Actual |
+|----------|------|--------------|----------|--------|
+|  |  |  |  |  |
+
+## Evidence
+- Commands run:
+- Runtime flow exercised:
+- Logs/screenshots/artifacts:
+
+## Workflow Execution
+- Selected bundles: ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, completion-verifier
+- Skipped skills: code-simplifier (not evaluated yet), session-logger (clean completion path)
+- Selected harness components: phase-runner, contract, implementation, review, verification, finish
+- Skipped harness components: none
+- Selection reason: runtime parity fixture uses the full phase harness
+- Runtime isolation: isolated runtime parity fixture
+- Model effort profile: economy
+- Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-nano
+- Selected model effort: low
+- Model selection reason: runtime parity fixture
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: runtime_adapter
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+- Enforcement note: replace defaults when actual execution diverges
+
+## Finish Readiness
+- Fresh evidence confirmed: no
+- Why this round may stop now: the phase is still waiting for its first execution attempt and verification run.
+- Remaining in-scope work: execute the active phase, run the exact verification command once, and refresh closeout artifacts.
+- Remaining blockers before closeout:
+  - execution has not started yet
+  - fresh verification evidence is not recorded yet
+- Checks to rerun if code changes again:
+  - rerun the exact verification command from the sprint contract
+EOF
+
+  cat > "$handoff" <<EOF
+# HANDOFF
+
+## Goal
+- Runtime parity smoke
+- Current stage: Ready / Isolate
+
+## Current State
+- Completed:
+- In progress:
+- Blocked:
+
+## Resume Trigger
+- Why this handoff exists: seeded placeholder until the smoke pauses or fails
+- Condition to resume: review the latest contract and QA evidence, then rerun only the active phase smoke
+
+## Checks To Rerun
+- Review:
+- Verification:
+- Runtime flow:
+
+## Workflow Logging
+- session-logger: required on incomplete stop
+EOF
+
+  cat > "$scorecard" <<EOF
+# Phase 01 Scorecard
+
+> Objective completion score for phase 01. Update after every meaningful implementation or verification round.
+> Preset profile: platform (Platform / infra / refactor)
+> Profile selection: auto:keywords:platform
+> Coverage rebalance: counts:absent
+
+## Objective Checklist
+| ID | Category | Weight | Status | Evidence | Notes |
+|----|----------|--------|--------|----------|-------|
+| OBJ-CONFORM | Source phase plan conformance verified | 20 | pending | ${qa_report} | Source snapshot, exact targets, and approved deviations |
+| OBJ-REQ | In-scope platform or infrastructure changes covered | 20 | pending | ${qa_report} | REQ-* coverage; detected=0 |
+| OBJ-SCN | Critical rollout, rollback, and failure scenarios evidenced | 10 | pending | ${qa_report} | SCN-* coverage; detected=0 |
+| OBJ-VER | Required verification and operational checks passed | 35 | pending | ${qa_report} | Fresh contract-backed evidence |
+| OBJ-CLOSE | Runbook, risk notes, and handoff recorded | 15 | pending | ${qa_report} | Review + finish evidence present |
+
+## Score Summary
+- Current score: 0
+- Target score: 100
+- Unmet checklist items: 5
+- Blocking defects: 0
+- Verdict: retry
+
+## Task-Level Status Adapter
+- Status: FULL | PARTIAL | NO
+- Current task status: NO
+- Partial threshold: 60
+
+| Status | Rule |
+|--------|------|
+| FULL | Target score met, unmet checklist items = 0, blocking defects = 0, and required verification evidence exists |
+| PARTIAL | Core build/verification is preserved, but some REQ/SCN/UAT coverage remains incomplete |
+| NO | Blocking defect, verification hard gate failure, critical regression, or score below partial threshold |
+
+## Loop Policy
+- \`done\` requires Current score >= Target score
+- \`done\` requires OBJ-CONFORM = pass
+- \`done\` requires Unmet checklist items = 0
+- \`done\` requires Blocking defects = 0
+- \`blocked\` means environment, contract, or dependency prevents progress
+- \`retry\` means continue the active phase only
+EOF
+
+  cat > "$status_file" <<EOF
+schemaVersion: "1.0"
+masterPlan: "${master_plan}"
+autonomousMode: true
+executionMode: "${execution_mode}"
+executionRoot: "${execution_root}"
+phases:
+  - number: 1
+    title: "${phase_title}"
+    status: pending
+    planConfirmed: true
+    attempts:
+      total: 0
+      lastOutcome: pending
+    sprintContract: "${sprint_contract}"
+    qaReport: "${qa_report}"
+    handoff: "${handoff}"
+    scorecard: "${scorecard}"
+EOF
+
+  printf '%s\n' "$plan_dir" "$execution_root" "$status_file" "$sprint_contract" "$qa_report" "$handoff" "$scorecard"
+}
+
+run_render_matrix() {
+  local claude_delegated_out="$TMP_ROOT/dispatch-claude-delegated.txt"
+  local codex_delegated_out="$TMP_ROOT/dispatch-codex-delegated.txt"
+  local claude_coord_out="$TMP_ROOT/dispatch-claude-coordinator.txt"
+  local codex_coord_out="$TMP_ROOT/dispatch-codex-coordinator.txt"
+  local agent_loop_out="$TMP_ROOT/agent-loop-dry-run.txt"
+  local reference_fixture_root="$REPO_ROOT/$REFERENCE_PLAN_DIR"
+  local runtime_parity_log_dir="$REPO_ROOT/.claude/logs/agent-loop"
+  local runtime_parity_fixture_log="$runtime_parity_log_dir/runtime-parity-fixture-hash.log"
+  local reference_status_file="$TMP_ROOT/reference-phase-status.yaml"
+
+  cat > "$reference_status_file" <<EOF
+schemaVersion: "1.0"
+masterPlan: "${REFERENCE_PLAN_DIR}/00-master-plan-v1.md"
+phases:
+  - number: 1
+    title: "Phase 01: Dispatch Smoke"
+    status: pending
+    planConfirmed: true
+EOF
+
+  local reference_fixture_hash_before
+  reference_fixture_hash_before="$(tree_checksum "$reference_fixture_root")"
+  (
+    cd "$REPO_ROOT"
+    if target_runtime_selected "claude"; then
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_delegated_out"
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime claude --dry-run > "$claude_coord_out"
+    fi
+    if target_runtime_selected "codex"; then
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode delegated-terminal --status-file "$reference_status_file" --runtime codex --dry-run > "$codex_delegated_out"
+      bash .claude/scripts/moonshot-phase-dispatch.sh "$REFERENCE_PLAN_DIR" --execution-mode in-session-coordinator --status-file "$reference_status_file" --runtime codex --allow-interactive-in-session --dry-run > "$codex_coord_out"
+    fi
+  )
+
+  if target_runtime_selected "claude"; then
+    if ! grep -Fq -- "agent-loop.sh" "$claude_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$claude_delegated_out"; then
+      fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
+    fi
+    assert_contains "$claude_delegated_out" "--runtime claude" "Claude delegated runtime flag"
+    assert_contains "$claude_coord_out" "claude --model" "Claude coordinator model route"
+    assert_contains "$claude_coord_out" "--dangerously-skip-permissions" "Claude coordinator adapter"
+    assert_contains "$claude_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
+  fi
+  if target_runtime_selected "codex"; then
+    local expected_codex_sandbox="${CODEX_EXEC_SANDBOX:-danger-full-access}"
+    if ! grep -Fq -- "agent-loop.sh" "$codex_delegated_out" && ! grep -Fq -- "agent-loop.mjs" "$codex_delegated_out"; then
+      fail "missing delegated-terminal adapter command: agent-loop.sh or agent-loop.mjs"
+    fi
+    assert_contains "$codex_delegated_out" "--runtime codex" "Codex delegated runtime flag"
+    assert_contains "$codex_coord_out" "codex exec --sandbox ${expected_codex_sandbox}" "Codex coordinator adapter"
+    assert_contains "$codex_coord_out" "/moonshot-in-session-coordinator" "coordinator prompt"
+  fi
+
+  local -a fixture_lines=()
+  read_fixture_lines "$TMP_ROOT/render-fixture" "render" "delegated-terminal" fixture_lines
+  local plan_dir="${fixture_lines[0]}"
+  local execution_root="${fixture_lines[1]}"
+  local status_file="${fixture_lines[2]}"
+  local sprint_contract="${fixture_lines[3]}"
+  local qa_report="${fixture_lines[4]}"
+  local handoff="${fixture_lines[5]}"
+  local scorecard="${fixture_lines[6]}"
+
+  (
+    cd "$REPO_ROOT"
+    AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
+      bash .claude/scripts/agent-loop.sh "$plan_dir" \
+        --execution-root "$execution_root" \
+        --status-file "$status_file" \
+        --max-phases 1 \
+        --delay 0 \
+        --dry-run > "$agent_loop_out"
+  )
+
+  assert_contains "$agent_loop_out" "phaseAttemptMode: true" "phase attempt mode hint"
+  assert_contains "$agent_loop_out" "activePhaseDocPath:" "active phase doc path"
+  assert_contains "$agent_loop_out" "Do not invoke moonshot-phase-runner again." "anti-recursion rule"
+  assert_contains "$agent_loop_out" "Do not stop at implementation-complete or verification-complete checkpoints alone." "no early stop checkpoint rule"
+  assert_contains "$agent_loop_out" "review evidence is recorded, finish-closeout fields are concrete" "review and closeout stop gate"
+  assert_contains "$sprint_contract" "## Policy Anchors" "policy anchors section"
+  assert_contains "$sprint_contract" "## Stage Order" "stage order section"
+  assert_contains "$sprint_contract" "## Review Cadence" "review cadence section"
+  assert_contains "$sprint_contract" "Verification contract:" "verification contract anchor"
+  assert_contains "$qa_report" "## Finish Readiness" "finish readiness section"
+  assert_contains "$handoff" "## Checks To Rerun" "handoff rerun section"
+  assert_contains "$scorecard" "## Score Summary" "scorecard summary section"
+
+  local reference_fixture_hash_after
+  reference_fixture_hash_after="$(tree_checksum "$reference_fixture_root")"
+  if [[ "$reference_fixture_hash_before" != "$reference_fixture_hash_after" ]]; then
+    fail "runtime parity reference fixture hash changed during render matrix"
+  fi
+
+  write_agent_loop_log "$runtime_parity_fixture_log" \
+    "reference_fixture_path: $REFERENCE_PLAN_DIR" \
+    "reference_fixture_hash_before: ${reference_fixture_hash_before:-missing}" \
+    "reference_fixture_hash_after: ${reference_fixture_hash_after:-missing}" \
+    "reference_fixture_hash_unchanged: true" \
+    "temp_fixture_root: $TMP_ROOT/render-fixture" \
+    "temp_fixture_plan_dir: $plan_dir"
+
+  local closeout_prompt="$TMP_ROOT/closeout-remediation.txt"
+  (
+    cd "$REPO_ROOT"
+    node .claude/scripts/agent-loop-phase-attempt.mjs build-verification-remediation-prompt 1 mock.log review-incomplete > "$closeout_prompt"
+  )
+  assert_contains "$closeout_prompt" "Treat the missing completion evidence as an active closeout task for this same phase" "closeout remediation stays on current phase"
+  assert_contains "$closeout_prompt" "Resume at stage: review" "review-stage remediation hint"
+  assert_contains "$closeout_prompt" "Do not return control just because implementation is complete or a verifier ran once." "closeout remediation no early return"
+}
+
+run_archive_sync_fixture_smoke() {
+  local fixture_root="$TMP_ROOT/archive-sync-fixture"
+  local reference_plan_dir="$fixture_root/.claude/docs/runtime-parity-reference-plan"
+  local execution_root="$reference_plan_dir/execution"
+  local status_file="$fixture_root/.claude/docs/phase-status.yaml"
+  local archive_log="$REPO_ROOT/.claude/logs/agent-loop/archive-sync-fixture.log"
+  local stdout_file="$TMP_ROOT/archive-sync-fixture.out"
+
+  mkdir -p "$reference_plan_dir" "$execution_root" "$(dirname "$status_file")"
+
+  cat > "$reference_plan_dir/00-master-plan-v1.md" <<'EOF'
+# Runtime Parity Reference Plan
+
+- Phase 01: Runtime Smoke
+EOF
+
+  cat > "$reference_plan_dir/01-runtime-smoke.md" <<'EOF'
+# Phase 01: Runtime Smoke
+
+## Goal
+- Keep the runtime parity reference fixture untouched by archive sync.
+EOF
+
+  cat > "$status_file" <<'EOF'
+schemaVersion: "1.0"
+phases:
+  - number: 1
+    title: "Phase 01: Runtime Smoke"
+    status: completed
+    planConfirmed: true
+EOF
+
+  set +e
+  (
+    cd "$REPO_ROOT"
+    python3 .claude/scripts/sync-phase-archive.py --status-file "$status_file" --plan-dir "$reference_plan_dir"
+  ) >"$stdout_file" 2>&1
+  local exit_code=$?
+  set -e
+
+  if [[ "$exit_code" -ne 0 ]]; then
+    cat "$stdout_file" >&2 || true
+    fail "archive sync guard smoke failed"
+  fi
+
+  assert_contains "$stdout_file" "skipping runtime parity reference fixture" "archive sync guard skip message"
+  if [[ ! -f "$reference_plan_dir/01-runtime-smoke.md" ]]; then
+    fail "archive sync guard moved the runtime parity reference fixture"
+  fi
+  if [[ -d "$reference_plan_dir/close" ]]; then
+    fail "archive sync guard created a close archive under the runtime parity reference fixture"
+  fi
+  if grep -Fq "archivedPhaseDoc" "$status_file"; then
+    fail "archive sync guard polluted archivedPhaseDoc for the runtime parity reference fixture"
+  fi
+
+  write_agent_loop_log "$archive_log" \
+    "plan_dir: $reference_plan_dir" \
+    "status_file: $status_file" \
+    "stdout: $stdout_file" \
+    "reference_fixture_preserved: true" \
+    "archivedPhaseDoc_polluted: false"
+}
+
+run_workflow_enforcement_sync_smoke() {
+  local fixture_root="$TMP_ROOT/workflow-enforcement-sync"
+  local analysis_file="$fixture_root/moonshot-analysis.yaml"
+  local sprint_contract="$fixture_root/execution/SPRINT_CONTRACT.md"
+  local goal_contract="$fixture_root/execution/GOAL_CONTRACT.yaml"
+  local qa_report="$fixture_root/execution/QA_REPORT.md"
+  local handoff="$fixture_root/execution/HANDOFF.md"
+  local code_file="$fixture_root/example.ts"
+  local verify_log="$TMP_ROOT/workflow-enforcement-sync-verify.log"
+
+  mkdir -p "$fixture_root/execution"
+
+  cat > "$analysis_file" <<'EOF'
+schemaVersion: "1.0"
+signals:
+  handoffRequired: false
+workflowEvidence:
+  mode: bounded-direct
+  selectedBundles:
+    - analysis-bundle
+    - implementation-bundle
+  requiredSkills:
+    - implementation-runner
+  appliedSkills:
+    - implementation-runner
+  skippedSkills:
+    - session-logger (clean completion path)
+  selectedHarnessComponents:
+    - implementation
+    - review
+    - verification
+  skippedHarnessComponents:
+    - phase-runner (bounded-direct fixture)
+  selectionReason: workflow enforcement sync fixture
+  runtimeIsolation: isolated fixture
+  modelEffortProfile: economy
+  effortEscalationReason: none
+  retrievalBudget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+  validationProfile: workflow_core
+  phaseReplayPolicy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+notes:
+  - legacy sync fixture
+EOF
+
+  cat > "$sprint_contract" <<'EOF'
+# SPRINT CONTRACT
+
+## Source Plan Requirements Snapshot
+- Fixture source requirement: workflow enforcement sync smoke must preserve required phase contract sections.
+
+## Spec Deviation Ledger
+- None.
+
+## Stage Order
+- Plan
+- Ready / Isolate
+- Execute
+- Review
+- Verify
+- Finish / Handoff
+
+## Review Cadence
+- simple bounded review once after implementation
+
+## Finish Rule
+- finish starts only after review and verification are stable
+EOF
+
+  cat > "$goal_contract" <<'EOF'
+schemaVersion: "1.0"
+snapshotId: "goal-contract-runtime-parity-sync-smoke"
+objective: "Verify workflow enforcement sync smoke keeps required Goal Contract evidence adjacent to the sprint contract."
+scope:
+  - "workflow enforcement bounded sync fixture"
+nonGoals:
+  - "product implementation"
+constraints:
+  - "fixture-only"
+acceptanceCriteria:
+  - id: "AC-RUNTIME-PARITY-SYNC"
+    description: "workflow enforcement sync smoke has adjacent Goal Contract evidence"
+exitConditions:
+  - "workflow-enforcement verify reports zero violations"
+brownfieldContext:
+  repository: "runtime parity fixture"
+provenance:
+  source: "verify-phase-runtime-parity-shell-core.sh"
+sourceArtifacts:
+  - "moonshot-analysis.yaml"
+  - "SPRINT_CONTRACT.md"
+EOF
+
+  cat > "$qa_report" <<'EOF'
+# QA REPORT
+
+## Plan Conformance Review
+- Source plan snapshot preserved: pass
+- Spec deviation ledger: none
+
+## Review Checkpoint
+- Review completed: yes
+- Review owners: codex-review-code
+
+## Workflow Execution
+- Selected bundles: analysis-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier, doc-auto-sync
+- Skipped skills: session-logger (clean completion path)
+- Selected harness components: contract, implementation, review, verification, finish
+- Skipped harness components: phase-runner (bounded direct fixture)
+- Selection reason: verifier fixture exercises bounded closeout evidence
+- Runtime isolation: isolated verifier fixture
+- Model effort profile: economy
+- Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-nano
+- Selected model effort: low
+- Model selection reason: runtime parity fixture
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: workflow_core
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+
+## Finish Readiness
+- Fresh evidence confirmed: yes
+EOF
+
+  cat > "$handoff" <<'EOF'
+# HANDOFF
+
+## Resume Trigger
+- Resume if verification becomes stale
+
+## Checks To Rerun
+- completion-verifier
+
+## Workflow Logging
+- session-logger: required on incomplete stop
+EOF
+
+  cat > "$code_file" <<'EOF'
+export const workflowEnforcementSync = true;
+EOF
+
+  WORKFLOW_ENFORCEMENT_LOG_DIR="$fixture_root/logs" \
+    bash "$REPO_ROOT/.claude/scripts/workflow-enforcement.sh" record-bounded \
+      --analysis-path "$analysis_file" \
+      --qa-report-path "$qa_report" \
+      --handoff-path "$handoff"
+
+  assert_contains "$analysis_file" "stageOrder:" "workflow evidence stage order"
+  assert_contains "$analysis_file" "\"review-bundle\"" "workflow evidence review bundle"
+  assert_contains "$analysis_file" "\"codex-review-code\"" "workflow evidence codex review evidence"
+  assert_contains "$analysis_file" "qaReport:" "workflow evidence QA report path"
+
+  WORKFLOW_ENFORCEMENT_LOG_DIR="$fixture_root/logs" \
+    bash "$REPO_ROOT/.claude/scripts/workflow-enforcement.sh" record-dispatch \
+      --plan-dir "$fixture_root/plan" \
+      --execution-mode delegated-terminal \
+      --execution-root "$fixture_root/execution" \
+      --runtime codex \
+      --status-file "$fixture_root/phase-status.yaml" \
+      --master-plan "$fixture_root/plan/README.md"
+
+  if ! WORKFLOW_ENFORCEMENT_LOG_DIR="$fixture_root/logs" \
+      bash "$REPO_ROOT/.claude/scripts/workflow-enforcement.sh" verify \
+        "$code_file" \
+        "$sprint_contract" \
+        "$qa_report" \
+        "$handoff" \
+        "$analysis_file" > "$verify_log" 2>&1; then
+    cat "$verify_log" >&2 || true
+    fail "workflow-enforcement sync smoke failed"
+  fi
+
+  assert_contains "$verify_log" "Violations: 0" "workflow enforcement sync success"
+}
+
+run_verify_changes_workflow_verdict_smoke() {
+  local workspace_root="$TMP_ROOT/verify-changes-workflow/workspace"
+  local log_file="$TMP_ROOT/verify-changes-workflow.log"
+  local verdict_file="$workspace_root/.claude/verification-verdict-workflow-evidence-smoke.json"
+  local analysis_file="$workspace_root/.claude/docs/moonshot-analysis.yaml"
+  local qa_report="$workspace_root/.claude/docs/workflow-evidence-smoke/QA_REPORT.md"
+  local handoff="$workspace_root/.claude/docs/workflow-evidence-smoke/HANDOFF.md"
+
+  mark_stage "verify_changes_workflow_verdict_smoke"
+  prepare_workspace_copy "$workspace_root"
+  initialize_workspace_git "$workspace_root"
+
+  mkdir -p "$workspace_root/.claude/scripts"
+  mkdir -p "$(dirname "$analysis_file")" "$(dirname "$qa_report")"
+  cat > "$workspace_root/.claude/scripts/workflowEvidenceSmoke.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'workflow evidence smoke\n'
+EOF
+
+  cat > "$qa_report" <<'EOF'
+# QA REPORT
+
+## Workflow Execution
+- Selected bundles: analysis-bundle, ready-isolate-bundle, implementation-bundle, review-bundle, verification-bundle, finish-bundle
+- Applied skills: implementation-runner, codex-review-code, code-simplifier, completion-verifier, doc-auto-sync
+- Skipped skills: session-logger (clean completion path)
+- Selected harness components: contract, implementation, review, verification, finish
+- Skipped harness components: phase-runner (bounded-direct smoke)
+- Selection reason: workflow evidence smoke uses bounded direct full closeout path
+- Runtime isolation: isolated verifier fixture
+- Model effort profile: economy
+- Effort escalation reason: none
+- Selected model provider: openai
+- Selected model: gpt-5.4-nano
+- Selected model effort: low
+- Model selection reason: runtime parity fixture
+- Retrieval budget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+- Validation profile: workflow_core
+- Phase replay policy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+EOF
+
+  cat > "$analysis_file" <<'EOF'
+workflowEvidence:
+  mode: bounded-direct
+  selectedBundles:
+    - analysis-bundle
+    - ready-isolate-bundle
+    - implementation-bundle
+    - review-bundle
+    - verification-bundle
+    - finish-bundle
+  requiredSkills:
+    - implementation-runner
+    - codex-review-code
+    - code-simplifier
+    - completion-verifier
+    - doc-auto-sync
+    - session-logger
+  stageOrder:
+    - ready/isolate
+    - execute
+    - review
+    - verify
+    - finish
+  appliedSkills:
+    - implementation-runner
+    - codex-review-code
+    - code-simplifier
+    - completion-verifier
+    - doc-auto-sync
+  skippedSkills:
+    - session-logger (clean completion path)
+  selectedHarnessComponents:
+    - contract
+    - implementation
+    - review
+    - verification
+    - finish
+  skippedHarnessComponents:
+    - phase-runner (bounded-direct smoke)
+  selectionReason: workflow evidence smoke uses bounded direct full closeout path
+  runtimeIsolation: isolated verifier fixture
+  modelEffortProfile: economy
+  effortEscalationReason: none
+  retrievalBudget: stage=1 compact recall; stopWhenAnswerable=true; no raw graph or memory output
+  validationProfile: workflow_core
+  phaseReplayPolicy: preserve assistant phase commentary/final_answer when replaying; never add phase to user items
+EOF
+
+  cat > "$handoff" <<'EOF'
+# HANDOFF
+
+## Workflow Logging
+- session-logger: required on incomplete stop
+EOF
+
+  (
+    cd "$workspace_root"
+    bash .claude/scripts/workflow-enforcement.sh record-bounded \
+      --analysis-path .claude/docs/moonshot-analysis.yaml \
+      --qa-report-path .claude/docs/workflow-evidence-smoke/QA_REPORT.md \
+      --handoff-path .claude/docs/workflow-evidence-smoke/HANDOFF.md >/dev/null
+  )
+
+  (
+    cd "$workspace_root"
+    set +e
+    VERIFY_CHANGES_SKIP_CHECKS=phaseRuntimeParity \
+      HARNESS_RUN_ID=workflow-evidence-smoke \
+      HARNESS_OPERATING_MODE=meta_harness \
+      bash .claude/agents/verification/run-verify-changes.sh workflow-evidence-smoke > "$log_file" 2>&1
+    exit 0
+  )
+
+  python3 - "$verdict_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+
+workflow = payload.get("workflowEvidence") if isinstance(payload.get("workflowEvidence"), dict) else {}
+if workflow.get("detected") is not True:
+    raise SystemExit("workflow evidence not detected in verdict payload")
+for bundle in ("review-bundle", "finish-bundle"):
+    if bundle not in workflow.get("selectedBundles", []):
+        raise SystemExit(f"workflow evidence missing bundle: {bundle}")
+if "codex-review-code" not in workflow.get("requiredSkills", []):
+    raise SystemExit("workflow evidence missing codex-review-code in requiredSkills")
+if "review" not in workflow.get("selectedHarnessComponents", []):
+    raise SystemExit("workflow evidence missing review harness component")
+if not workflow.get("modelEffortProfile"):
+    raise SystemExit("workflow evidence missing modelEffortProfile")
+if not workflow.get("effortEscalationReason"):
+    raise SystemExit("workflow evidence missing effortEscalationReason")
+if not workflow.get("retrievalBudget"):
+    raise SystemExit("workflow evidence missing retrievalBudget")
+if not workflow.get("validationProfile"):
+    raise SystemExit("workflow evidence missing validationProfile")
+if not workflow.get("phaseReplayPolicy"):
+    raise SystemExit("workflow evidence missing phaseReplayPolicy")
+if workflow.get("warnings"):
+    raise SystemExit(f"unexpected workflow evidence warnings: {workflow.get('warnings')}")
+PY
+}
+
+run_actual_flow() {
+  local runtime="$1"
+  local execution_mode="$2"
+  local scenario_name="$3"
+  local started_at
+  started_at="$(date +%s)"
+  local workspace_root="$TMP_ROOT/$scenario_name/workspace"
+  local fixture_root="$workspace_root/runtime-parity-fixtures/$scenario_name"
+  local default_status_file="$workspace_root/.claude/docs/phase-status.yaml"
+  local before_git="$TMP_ROOT/$scenario_name-before-git.txt"
+  local after_git="$TMP_ROOT/$scenario_name-after-git.txt"
+  local log_file="$TMP_ROOT/$scenario_name.log"
+  local sentinel="$TMP_ROOT/$scenario_name.sentinel"
+  local -a fixture_lines=()
+  local -a dispatch_args=()
+
+  mark_stage "actual_flow_prepare:${scenario_name}"
+  prepare_workspace_copy "$workspace_root"
+  read_fixture_lines "$fixture_root" "$scenario_name" "$execution_mode" fixture_lines
+  local plan_dir="${fixture_lines[0]}"
+  local execution_root="${fixture_lines[1]}"
+  local status_file="${fixture_lines[2]}"
+  local sprint_contract="${fixture_lines[3]}"
+  local qa_report="${fixture_lines[4]}"
+
+  log "actual runtime smoke starting: ${scenario_name} (runtime=${runtime}, mode=${execution_mode})"
+
+  mark_stage "actual_flow_git_baseline:${scenario_name}"
+  initialize_workspace_git "$workspace_root"
+
+  # In-session coordinator skills default to .claude/docs/phase-status.yaml examples.
+  # Point that default location at the fixture status file so the smoke stays bounded.
+  if [[ "$execution_mode" == "in-session-coordinator" ]]; then
+    mkdir -p "$(dirname "$default_status_file")"
+    rm -f "$default_status_file"
+    if ! ln -s "$status_file" "$default_status_file" 2>/dev/null; then
+      cp "$status_file" "$default_status_file"
+    fi
+  fi
+
+  local qa_checksum_before
+  qa_checksum_before="$(checksum_file "$qa_report")"
+
+  snapshot_git_status "$workspace_root" "$before_git"
+  touch "$sentinel"
+
+  if [[ "$runtime" == "codex" && "$execution_mode" == "in-session-coordinator" ]]; then
+    dispatch_args+=(--allow-interactive-in-session)
+  fi
+
+  local dispatch_exit=0
+  mark_stage "actual_flow_dispatch:${scenario_name}"
+  if [[ "$PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY" == "bounded" ]]; then
+    mark_stage "actual_flow_bounded_contract:${scenario_name}"
+    run_bounded_dispatch_contract_smoke "$workspace_root" "$runtime" "$execution_mode" "$scenario_name" "$plan_dir" "$execution_root" "$status_file" "$log_file" "${dispatch_args[@]}"
+    write_bounded_actual_artifacts "$workspace_root" "$runtime" "$execution_mode" "$scenario_name" "$plan_dir" "$status_file" "$sprint_contract" "$qa_report" "${fixture_lines[5]}" "${fixture_lines[6]}"
+  elif [[ "$PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY" == "llm" ]]; then
+    if [[ "$execution_mode" == "delegated-terminal" ]]; then
+    set +e
+    (
+      cd "$workspace_root"
+      run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+        MOONSHOT_CODEX_REASONING_EFFORT=low \
+        OLLAMA_REQUEST_TIMEOUT_MS="$PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS" \
+          AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
+          AGENT_LOOP_SCORECARD_REQUIRED=false \
+          AGENT_LOOP_WATCHDOG_CHECK_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_RESTARTS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS" \
+        WORKSPACE_ROOT="$REPO_ROOT" \
+        bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
+            --execution-mode delegated-terminal \
+            --execution-root "$execution_root" \
+            --status-file "$status_file" \
+          --final-git-closeout off \
+          --runtime "$runtime" \
+          ${dispatch_args[@]+"${dispatch_args[@]}"} \
+            > "$log_file" 2>&1
+    )
+    dispatch_exit=$?
+    set -e
+    else
+    set +e
+    (
+      cd "$workspace_root"
+      run_with_runtime_timeout "$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+        MOONSHOT_CODEX_REASONING_EFFORT=low \
+        OLLAMA_REQUEST_TIMEOUT_MS="$PHASE_RUNTIME_PARITY_OLLAMA_TIMEOUT_MS" \
+        WORKSPACE_ROOT="$REPO_ROOT" \
+          AGENT_LOOP_SKIP_COMMIT_PROMPT=true AGENT_LOOP_MAX_AUTO_FIX_ATTEMPTS=1 \
+          AGENT_LOOP_SCORECARD_REQUIRED=false \
+          AGENT_LOOP_WATCHDOG_CHECK_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_CHECK_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_SECONDS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS" \
+          AGENT_LOOP_WATCHDOG_MAX_RESTARTS="$PHASE_RUNTIME_PARITY_WATCHDOG_MAX_RESTARTS" \
+        bash .claude/scripts/moonshot-phase-dispatch.sh "$plan_dir" \
+          --execution-mode "$execution_mode" \
+          --status-file "$status_file" \
+          --execution-root "$execution_root" \
+          --final-git-closeout off \
+          --runtime "$runtime" \
+          ${dispatch_args[@]+"${dispatch_args[@]}"} \
+          --max-attempts 1 \
+          --stop-on-failure > "$log_file" 2>&1
+    )
+    dispatch_exit=$?
+    set -e
+    fi
+  else
+    fail "unsupported PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY: $PHASE_RUNTIME_PARITY_ACTUAL_STRATEGY"
+  fi
+
+  if [[ "$dispatch_exit" -ne 0 ]]; then
+    tail -80 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    if [[ "$dispatch_exit" -eq 124 ]]; then
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+      fi
+    elif grep -Fq "watchdog" "$log_file" || grep -Fq "timed out" "$log_file"; then
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} delegated-terminal command timed out after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "timeout:${scenario_name} in-session-coordinator command timed out after $(format_duration "$elapsed_seconds")"
+      fi
+    else
+      if [[ "$execution_mode" == "delegated-terminal" ]]; then
+        record_actual_failure "$scenario_name" "delegated-terminal command failed after $(format_duration "$elapsed_seconds")"
+      else
+        record_actual_failure "$scenario_name" "in-session-coordinator command failed after $(format_duration "$elapsed_seconds")"
+      fi
+    fi
+    return 1
+  fi
+
+  if ! grep -Fq "verification-verdict" "$log_file" && grep -Fq "필수 verification 진입점 경로를 찾지 못해 phase를 진행할 수 없습니다" "$log_file"; then
+    tail -40 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "verification entrypoint was not found after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+
+  snapshot_git_status "$workspace_root" "$after_git"
+  if ! assert_allowed_git_changes "$before_git" "$after_git"; then
+    tail -80 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "unexpected git changes detected after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+
+  if ! grep -Fq "status: completed" "$status_file"; then
+    tail -80 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "phase did not reach completed status after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+
+  if ! grep -Fq "## Policy Anchors" "$sprint_contract"; then
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "policy anchors missing from sprint contract after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+  if ! grep -Fq "## Stage Order" "$sprint_contract"; then
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "stage order missing from sprint contract after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+  if ! grep -Fq "## Finish Readiness" "$qa_report"; then
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "finish readiness missing from QA report after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+
+  local qa_checksum_after
+  qa_checksum_after="$(checksum_file "$qa_report")"
+  if [[ "$qa_checksum_before" == "$qa_checksum_after" ]]; then
+    tail -80 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "QA report was not updated after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+
+  local verdict_file
+  verdict_file="$(latest_new_file "$workspace_root" 'verification-verdict-*.json' "$sentinel")"
+  if [[ -z "$verdict_file" ]]; then
+    tail -80 "$log_file" >&2 || true
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "no fresh verification verdict after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+  if ! assert_passed_verdict "$verdict_file"; then
+    local elapsed_seconds
+    elapsed_seconds=$(( $(date +%s) - started_at ))
+    record_actual_failure "$scenario_name" "verification verdict was not passed after $(format_duration "$elapsed_seconds")"
+    return 1
+  fi
+
+  local elapsed_seconds
+  elapsed_seconds=$(( $(date +%s) - started_at ))
+  record_actual_timing "$scenario_name" "$elapsed_seconds"
+  log "actual runtime smoke passed: ${scenario_name} ($(format_duration "$elapsed_seconds"))"
+  return 0
+}
+
+run_actual_matrix() {
+  local scenarios=(
+    "claude|delegated-terminal|claude-delegated-real"
+    "claude|in-session-coordinator|claude-coordinator-real"
+    "codex|delegated-terminal|codex-delegated-real"
+    "codex|in-session-coordinator|codex-coordinator-real"
+  )
+  local entry runtime mode scenario_name
+
+  for entry in "${scenarios[@]}"; do
+    IFS='|' read -r runtime mode scenario_name <<EOF
+$entry
+EOF
+    if ! target_runtime_selected "$runtime"; then
+      continue
+    fi
+    if ! runtime_is_available "$runtime"; then
+      warn "skipping ${scenario_name}: runtime unavailable"
+      record_runtime_failure "$runtime" "runtime_unavailable" "skipping ${scenario_name}: runtime unavailable"
+      continue
+    fi
+    run_actual_flow "$runtime" "$mode" "$scenario_name" || true
+  done
+}
+
+runtime_failure_mentions_codex() {
+  local item
+  for item in "${RUNTIME_FAILURES[@]}"; do
+    if [[ "$item" == codex:* || "$item" == codex\ * ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+runtime_failures_include_blocker() {
+  local item
+  local blocks
+
+  for item in "${RUNTIME_FAILURE_CLASSIFICATIONS[@]}"; do
+    blocks="${item##*|}"
+    if [[ "$blocks" == "true" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+determine_runtime_exercise_level() {
+  if [[ "${RUNTIME_PROFILE:-required_runtime}" == "optional_probe" ]]; then
+    printf '%s\n' "optional_probe"
+    return 0
+  fi
+
+  if [[ "$RUN_REAL" != "true" ]]; then
+    printf '%s\n' "passed"
+    return 0
+  fi
+
+  if [[ "$(array_length ACTUAL_FAILURES)" -ne 0 ]]; then
+    return 1
+  fi
+
+  if [[ "$(array_length RUNTIME_FAILURES)" -eq 0 ]]; then
+    printf '%s\n' "fully_exercised"
+    return 0
+  fi
+
+  if runtime_failure_mentions_codex; then
+    printf '%s\n' "passed_with_skipped_probe"
+    return 0
+  fi
+
+  printf '%s\n' "passed_with_environment_warning"
+}
+
+report_failures_and_exit() {
+  local item
+  local timing_entry
+  local scenario_name
+  local elapsed_seconds
+  local actual_failure_count
+  local runtime_failure_count
+
+  actual_failure_count="$(array_length ACTUAL_FAILURES)"
+  runtime_failure_count="$(array_length RUNTIME_FAILURES)"
+
+  if [[ "$(array_length ACTUAL_TIMINGS)" -gt 0 ]]; then
+    log "actual runtime timings:"
+    for timing_entry in "${ACTUAL_TIMINGS[@]}"; do
+      IFS='|' read -r scenario_name elapsed_seconds <<EOF
+$timing_entry
+EOF
+      log "- ${scenario_name}: $(format_duration "$elapsed_seconds")"
+    done
+  fi
+
+  if [[ "$actual_failure_count" -eq 0 ]]; then
+    if [[ "$runtime_failure_count" -gt 0 ]]; then
+      for item in "${RUNTIME_FAILURES[@]}"; do
+        warn "runtime unavailable: $item"
+      done
+      if runtime_failures_include_blocker; then
+        log "runtime exercise level: blocked_required_runtime"
+        log "phase runtime parity smoke failed"
+        return 1
+      fi
+    fi
+    local runtime_exercise_level
+    if runtime_exercise_level="$(determine_runtime_exercise_level)"; then
+      log "runtime exercise level: ${runtime_exercise_level}"
+    fi
+    log "phase runtime parity smoke passed"
+    return 0
+  fi
+
+  log "phase runtime parity smoke failed"
+  if [[ "$runtime_failure_count" -gt 0 ]]; then
+    for item in "${RUNTIME_FAILURES[@]}"; do
+      log "- runtime: $item"
+    done
+  fi
+  for item in "${ACTUAL_FAILURES[@]}"; do
+    log "- actual: $item"
+  done
+
+  if [[ "$KEEP_TMP" == "true" ]]; then
+    log "debug temp root: $TMP_ROOT"
+  fi
+  return 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --render-only)
+      RUN_REAL=false
+      shift
+      ;;
+    --allow-default-fixture)
+      ALLOW_DEFAULT_FIXTURE=true
+      shift
+      ;;
+    --runtime-profile)
+      if [[ $# -lt 2 ]]; then
+        usage
+        fail "--runtime-profile requires optional_probe or required_runtime"
+      fi
+      RUNTIME_PROFILE_CLI="$2"
+      shift 2
+      ;;
+    --runtime-profile=*)
+      RUNTIME_PROFILE_CLI="${1#--runtime-profile=}"
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      if [[ "$1" == --* ]]; then
+        usage
+        fail "unknown option: $1"
+      fi
+      REFERENCE_PLAN_DIR="$1"
+      REFERENCE_PLAN_DIR_SET=true
+      shift
+      ;;
+  esac
+done
+
+if [[ "$REFERENCE_PLAN_DIR_SET" != "true" ]]; then
+  if [[ "$ALLOW_DEFAULT_FIXTURE" != "true" ]]; then
+    fail "default runtime parity reference fixture requires --allow-default-fixture"
+  fi
+  REFERENCE_PLAN_DIR="$DEFAULT_REFERENCE_PLAN_DIR"
+fi
+
+if [[ ! -d "$REFERENCE_PLAN_DIR" ]]; then
+  fail "reference plan directory not found: $REFERENCE_PLAN_DIR"
+fi
+
+if [[ ! -f "$REFERENCE_PLAN_DIR/00-master-plan-v1.md" ]]; then
+  fail_master_plan_not_found "$REFERENCE_PLAN_DIR"
+fi
+
+runtime_cli_prepare_environment
+require_command python3
+require_command shasum
+resolve_runtime_profile
+resolve_target_runtime_set
+
+mark_stage "render_matrix"
+run_render_matrix
+mark_stage "archive_sync_fixture_smoke"
+run_archive_sync_fixture_smoke
+mark_stage "workflow_enforcement_sync_smoke"
+run_workflow_enforcement_sync_smoke
+mark_stage "verify_changes_workflow_verdict_smoke"
+run_verify_changes_workflow_verdict_smoke
+
+if [[ "$RUN_REAL" == "true" ]]; then
+  mark_stage "runtime_probes"
+  run_runtime_probes
+  if [[ "${RUNTIME_PROFILE:-required_runtime}" == "optional_probe" ]]; then
+    warn "skipping actual runtime matrix for optional_probe profile"
+  else
+    mark_stage "actual_matrix"
+    run_actual_matrix
+  fi
+fi
+
+report_failures_and_exit

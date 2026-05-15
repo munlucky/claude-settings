@@ -110,7 +110,7 @@ test('public migration docs distinguish source, wrappers, profiles, and generate
     assert.match(docs, new RegExp(phrase, 'i'), `${phrase} should be documented`);
   }
 
-  for (const canonicalRoot of ['skills/', 'agents/', 'rules/', 'scripts/', 'schemas/', 'templates/', 'tests/', 'docs/public/']) {
+  for (const canonicalRoot of ['skills/', 'agents/', 'rules/', 'scripts/', 'bin/', 'tools/', 'schemas/', 'templates/', 'tests/', 'docs/public/']) {
     assert.match(docs, new RegExp(canonicalRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${canonicalRoot} should be named`);
   }
 });

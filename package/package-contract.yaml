@@ -7,6 +7,8 @@ canonicalSource:
   agents: agents/
   rules: rules/
   scripts: scripts/
+  bin: bin/
+  tools: tools/
   schemas: schemas/
   templates: templates/
   tests: tests/
@@ -37,6 +39,10 @@ requiredPayloadEntries:
       purpose: workflow_policy
     - source: scripts/**
       purpose: executable_support
+    - source: bin/**
+      purpose: runtime_entrypoints
+    - source: tools/**
+      purpose: runtime_tooling
     - source: schemas/**
       purpose: machine_readable_contracts
     - source: templates/**
@@ -74,6 +80,7 @@ excludedGeneratedState:
   - .claude/traces/**
   - .claude/browser-artifacts/**
   - .claude/browser-runtime/**
+  - .claude/tools/**/node_modules/**
   - .claude/tmp/**
   - .claude/runtime-state.sqlite*
   - .claude/memory.json

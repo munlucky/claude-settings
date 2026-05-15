@@ -8,7 +8,7 @@
 
 ## 구성 요약
 
-- canonical source는 `skills/`, `agents/`, `rules/`, `scripts/`, `schemas/`, `templates/`, `tests/`, `docs/public/`에서 관리하고, `.claude/`는 개발 profile 및 downstream compatibility wrapper로 유지
+- canonical source는 `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`에서 관리하고, `.claude/`는 개발 profile 및 downstream compatibility wrapper로 유지
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
 - `install-claude.sh`로 다른 프로젝트에 빠르게 설치
 - compatibility window 동안 downstream 설치는 계속 `.claude/` payload를 생성하지만, 이 저장소의 source of truth는 root-level source directory입니다
@@ -21,12 +21,12 @@
 
 ## Repository Source Model
 
-- Canonical source: `skills/`, `agents/`, `rules/`, `scripts/`, `schemas/`, `templates/`, `tests/`, `docs/public/`
+- Canonical source: `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`
 - Development profile: `.claude/` and `.codex/` for local agent runtime compatibility
 - Package payloads: `package/claude/profile/`, `package/codex/profile/`, `.claude-plugin/`, `.codex-plugin/`
 - Generated state: `.moonshot-state/`, `.claude/logs/`, `.claude/cache/`, `.claude/traces/`, `.claude/browser-artifacts/`, `.claude/browser-runtime/`, `.claude/memorygraph/`, sqlite files, and verdict JSON
 
-Do not add durable source under `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/schemas`, or `.claude/templates`. Add or modify reusable assets in the canonical root directory first, then refresh generated profile output or compatibility wrappers through the package/materialization flow.
+Do not add durable source under `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/bin`, `.claude/tools`, `.claude/schemas`, or `.claude/templates`. Add or modify reusable assets in the canonical root directory first, then refresh generated profile output or compatibility wrappers through the package/materialization flow.
 
 Compatibility wrappers and installed-runtime docs may still mention `.claude/...` during the deprecation window. Those references describe downstream payload behavior, not repository source ownership. See `docs/public/repository-layout.md`, `docs/public/installer-usage.md`, and `docs/public/compatibility-migration.md`.
 
@@ -54,7 +54,7 @@ claude-settings/
 └── AGENTS.md -> .claude/CLAUDE.md
 ```
 
-Root-level `skills/`, `agents/`, `rules/`, `scripts/`, `schemas/`, `templates/`, `tests/`, and `docs/public/` are the canonical source directories. The `.claude/` tree remains loaded for current runtime compatibility and installed `.claude/` payload behavior.
+Root-level `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, and `docs/public/` are the canonical source directories. The `.claude/` tree remains loaded for current runtime compatibility and installed `.claude/` payload behavior.
 
 ## 핵심 구성 요소
 

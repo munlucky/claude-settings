@@ -1,0 +1,13 @@
+{
+  "planDir": "docs/implementation/example",
+  "executionMode": "delegated-terminal",
+  "executionRoot": "docs/implementation/example/execution",
+  "runtime": "codex",
+  "status": "failed",
+  "completionStatus": "failed",
+  "lifecycleEvent": "dispatch_failed",
+  "dispatchStage": "terminal",
+  "lastLifecycleEventAt": "2026-05-12T00:02:00Z",
+  "failedAt": "2026-05-12T00:02:00Z",
+  "updatedAt": "2026-05-12T00:02:00Z"
+}

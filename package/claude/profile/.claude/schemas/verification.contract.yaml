@@ -1,0 +1,308 @@
+commands:
+  knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
+  codePolicy: "node .claude/scripts/verify-code-policy.mjs"
+  workflowEnforcement: "node .claude/scripts/workflow-enforcement.mjs verify"
+  shellSyntax: "node .claude/scripts/verify-shell-syntax.mjs"
+  phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
+  phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
+  phaseWorktreeParallel: "node .claude/scripts/phase-worktree-coordinator.mjs self-test"
+  phaseCloseout: "node .claude/scripts/verify-phase-closeout.mjs --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --master-plan ${PHASE_MASTER_PLAN:-docs/implementation/00-master-plan-v1.md}"
+  phaseFinalGitCloseout: "node .claude/scripts/phase-final-git-closeout.mjs preflight"
+  phaseCheckpointCommit: "node .claude/scripts/phase-checkpoint-commit.mjs commit --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --phase-num ${PHASE_NUM:-1} --phase-title ${PHASE_TITLE:-phase}"
+  memoryRefreshCommit: "node .claude/scripts/commit-moonshot-memory-refresh.mjs --mcp-status skipped --json"
+  awtlRegression: "node --test .claude/scripts/lib/awtl-trace-sink.test.mjs .claude/scripts/lib/awtl-harness-capture.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs .claude/scripts/lib/awtl-runtime-importers.test.mjs"
+  awtlFailurePreventionRegression: "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-prevention-brief.test.mjs .claude/scripts/lib/awtl-replay-scorecard.test.mjs"
+  awtlCliSyntax: "node --check .claude/scripts/agent-loop-phase-runner.mjs && node --check .claude/scripts/agent-loop-phase-plan-lib.mjs && node --check .claude/scripts/awtl-failure-analyzer.mjs && node --check .claude/scripts/awtl-memory-promotion.mjs"
+  memoryGraphHealth: "node .claude/scripts/memorygraph-direct.mjs health"
+checkPolicies:
+  searchEvidence:
+    preferred: rg
+    windowsFallback: Select-String
+    exactRequired: false
+    fallbackStatus: passed_with_equivalent_evidence
+  evaluationTriggers:
+    deterministicFirst: true
+    semantic:
+      requiredWhen:
+        - "ac ambiguity"
+        - "scope drift"
+        - "architecture risk"
+        - "security risk"
+        - "auth risk"
+        - "payment risk"
+        - "repeated failure"
+        - "tests passing but user value unclear"
+      cannotOverrideMechanicalFailure: true
+    consensus:
+      exceptionalOnly: true
+      requiredWhen:
+        - "contract reinterpretation"
+        - "high-risk security drift"
+        - "high-risk architecture drift"
+        - "unresolved evaluator disagreement"
+      cannotOverrideMechanicalFailure: true
+  mechanicalSkipPolicy:
+    prompt_only: warn
+    docs_only: warn
+    script_change: block
+    workflow_core: block
+    runtime_adapter: block
+  verificationOverrideAllowlist:
+    policy: "project-native commands only"
+    allowedCommandPrefixes:
+      - "bash .claude/scripts/"
+      - "node .claude/scripts/"
+      - "node --test .claude/scripts/"
+      - "python .claude/scripts/"
+      - "python3 .claude/scripts/"
+    unknownExecutable: block
+  qaBackendMatrix:
+    browser:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares browser/runtime UI evidence"
+      missingRequiredBackend: block
+    a11y:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares accessibility evidence"
+      missingRequiredBackend: block
+    visual:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares visual evidence"
+      missingRequiredBackend: block
+    performance:
+      requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares performance evidence"
+      missingRequiredBackend: degraded_or_blocked_by_profile
+  phaseRuntimeParity:
+    runtimeSelectionAware: true
+    defaultVerificationRuntimes:
+      auto: current
+      current: current
+      claude: claude
+      codex: codex
+      both: both
+    commandEnv:
+      PHASE_RUNTIME_PARITY_TARGET_RUNTIMES: "{verificationTarget}"
+    preflightBlockOnUnavailable: true
+  runtimeCapabilityStatus:
+    required: true
+    fields:
+      - fork
+      - mcp
+      - shell
+      - browser
+      - worktree
+      - toolInheritance
+      - fallbackSupport
+    unavailableClassifications:
+      - mcp_unavailable
+      - tool_unavailable
+      - runtime_unavailable
+    deferredToolLookupRequired: true
+    staleReadModelWarnings:
+      - phase_status_missing
+      - latest_dispatch_missing
+      - current_run_missing
+      - latest_dispatch_older_than_phase_status
+      - current_run_older_than_latest_dispatch
+  validationProfiles:
+    prompt_only:
+      checks: [knowledgeAudit, shellSyntax]
+      minimumEvidence: "static contract and knowledge audit"
+    docs_only:
+      checks: [knowledgeAudit, shellSyntax]
+      minimumEvidence: "documentation and template syntax integrity"
+    script_change:
+      checks: [shellSyntax, codePolicy]
+      minimumEvidence: "syntax plus targeted self-test when available"
+    workflow_core:
+      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel, awtlRegression, awtlFailurePreventionRegression, awtlCliSyntax]
+      minimumEvidence: "cross-runtime workflow contract evidence plus AWTL turn-failure regression evidence"
+    runtime_adapter:
+      checks: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout]
+      minimumEvidence: "Codex and Claude runtime boundary parity"
+  crossRuntimePhaseReplay:
+    required: true
+    assistantItemPhaseValues:
+      - commentary
+      - final_answer
+    rule: "Preserve assistant phase values when replaying assistant items; never add phase to user messages."
+scope:
+  executionPlanes:
+    - meta_harness
+  paths:
+    - "AGENTS.md"
+    - ".claude/CLAUDE.md"
+    - ".claude/rules/**"
+    - ".claude/skills/**"
+    - ".claude/skills-archive/**"
+    - ".claude/agents/**"
+    - ".claude/PROJECT.md"
+    - ".claude/PROJECT.ko.md"
+    - ".claude/README.md"
+    - ".claude/README.ko.md"
+    - ".claude/docs/guidelines/**"
+    - ".claude/docs/reference-downstream/**"
+    - ".claude/docs/runtime-parity-reference-plan/**"
+    - ".claude/docs/ko/rules/**"
+    - ".claude/templates/execution/**"
+    - ".claude/scripts/**"
+    - ".claude/verification.contract.yaml"
+    - ".claudeignore"
+    - ".gitignore"
+    - "README.md"
+    - "docs/claude-tasks/external-harness-adoption/**"
+    - "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/**"
+    - "install-claude.sh"
+  fallbackOutsideScope: true
+artifacts:
+  goalContract: "{tasksRoot}/{feature-name}/execution/<slice>/GOAL_CONTRACT.yaml"
+  verdict: ".claude/verification-verdict-<runId>.json"
+  runtimeVerdict: ".claude/runtime-verdict-<runId>.json"
+  awtlFailedTurnCases: ".claude/cache/awtl/failed_turn_cases.jsonl"
+  awtlReplayScorecard: ".claude/cache/awtl/replay_scorecard.jsonl"
+  sprintContract: "{tasksRoot}/{feature-name}/execution/<slice>/SPRINT_CONTRACT.md"
+  qaReport: "{tasksRoot}/{feature-name}/execution/<slice>/QA_REPORT.md"
+  handoff: "{tasksRoot}/{feature-name}/execution/<slice>/HANDOFF.md"
+  scorecard: "{tasksRoot}/{feature-name}/execution/<slice>/SCORECARD.md"
+  workset: "{tasksRoot}/{feature-name}/execution/<slice>/WORKSET.md"
+  worksets: "{tasksRoot}/{feature-name}/execution/<slice>/WORKSETS.yaml"
+  acceptanceCriteria:
+    taskStatusField: "WORKSETS.yaml atomicTasks[].taskStatus"
+    acVerdictField: "WORKSETS.yaml atomicTasks[].acVerdict"
+    linkedAcEvidenceField: "WORKSETS.yaml atomicTasks[].verificationEvidence"
+    cleanFinishRule: "taskStatus=completed is not sufficient; linked AC requires pass/passed/verified/done/not_applicable acVerdict plus verificationEvidence"
+  requirementsTraceability: "{tasksRoot}/{feature-name}/execution/REQUIREMENTS_TRACEABILITY.md"
+  scenarioMatrix: "{tasksRoot}/{feature-name}/execution/SCENARIO_MATRIX.md"
+  uatChecklist: "{tasksRoot}/{feature-name}/execution/UAT_CHECKLIST.md"
+  teamMetrics: ".claude/team-metrics-<runId>.json"
+strict:
+  required: true
+  triggers:
+    - "meta_harness"
+    - "workflow-core"
+    - "phase-runner"
+    - "rules"
+    - "skills"
+    - "agents"
+policySets:
+  knowledge:
+    description: "Knowledge repository freshness, structure, and source-of-truth integrity"
+    checks:
+      - knowledgeAudit
+  workflow:
+    description: "Workflow routing, bounded evidence, and execution discipline"
+    checks:
+      - workflowEnforcement
+      - phaseRuntimeParity
+      - phaseRunnerBoundary
+      - phaseWorktreeParallel
+  acceptance:
+    description: "Product acceptance evidence and phase closeout synchronization"
+    checks:
+      - phaseCloseout
+  verification:
+    description: "Executable verifier and syntax integrity"
+    checks:
+      - shellSyntax
+  security:
+    description: "Machine-checkable policy boundaries for changed code and scripts"
+    checks:
+      - codePolicy
+policy:
+  allowIndeterminate: false
+  requiredPolicySets:
+    - knowledge
+    - workflow
+    - acceptance
+    - verification
+    - security
+  requiredChecks:
+    - knowledgeAudit
+    - codePolicy
+    - workflowEnforcement
+    - shellSyntax
+    - phaseRuntimeParity
+    - phaseRunnerBoundary
+    - phaseWorktreeParallel
+    - phaseCloseout
+qa:
+  evaluatorMode: "separate"
+  hardFailOn:
+    - "knowledge_repo_audit_failed"
+    - "code_policy_failed"
+    - "missing_policy_anchor"
+    - "verification_evidence_missing"
+    - "requirements_traceability_missing"
+    - "critical_scenario_evidence_missing"
+  criteria:
+    policyPropagation:
+      threshold: "pass"
+      focus:
+        - "phase attempts inherit policy anchors through SPRINT_CONTRACT"
+        - "core workflow edits stay on the strict path"
+        - "non-trivial phase packages include Goal Contract snapshot id and provenance before sprint execution"
+    crossRuntimeParity:
+      threshold: "pass"
+      focus:
+        - "Codex and Claude Code use the same orchestrator boundary"
+    requirementsCoverage:
+      threshold: "pass"
+      focus:
+        - "every in-scope REQ has implementation and verification evidence"
+        - "document completeness is tracked explicitly, not inferred"
+    scenarioCoverage:
+      threshold: "pass"
+      focus:
+        - "every critical SCN has fresh runtime or E2E evidence"
+        - "user-visible flows are not closed by static review alone"
+        - "turn-failure prevention flows include trace root, turn_id, failed_turn_case, recall brief, replay scorecard, and verified-only promotion evidence"
+    uatReadiness:
+      threshold: "warn"
+      focus:
+        - "automation distinguishes uat_ready from uat_complete"
+        - "manual sign-off is explicit when required"
+artifactPolicy:
+  includeIgnoredVerificationEvidence: true
+  retainPartialModeNotes: true
+finishPolicy:
+  externalBlockersRequirePartialModeDecision: true
+  fakePassDisallowed: true
+  memoryGraphUnavailable:
+    completionSemantics: "non_blocking_unless_strict_memory_validation"
+    promotionWriteSemantics: "record skip or failure; do not claim write success"
+    requiredEvidence: "write_status and denial_codes in promotion output or replay scorecard"
+observability:
+  runtimeStatusReadModel:
+    requiredFields:
+      - "runtimeCapabilityStatus"
+      - "compactStatus.activeContract"
+      - "compactStatus.latestVerdict"
+      - "compactStatus.currentBlocker"
+      - "compactStatus.lineage"
+      - "compactStatus.staleWarnings"
+      - "resumeBrief.nextAction"
+      - "resumeBrief.currentBlocker"
+      - "resumeBrief.lineage"
+  teamMetrics:
+    requiredFields:
+      - "selectedPattern"
+      - "selectedTeam"
+      - "selectionReason"
+      - "selectedHarnessComponents"
+      - "skippedHarnessComponents"
+      - "runtimeIsolation"
+      - "modelEffortProfile"
+      - "selectedModelProvider"
+      - "selectedModel"
+      - "selectedModelEffort"
+      - "modelSelectionReason"
+      - "retryCount"
+      - "handoffCount"
+      - "indeterminateRatio"
+      - "verifierFailureCategories"
+      - "completionLeadTimeSeconds"
+hooks:
+  extraChecksCommand: ""
+loop:
+  mode: "score_based"
+  stopOnFailure: true
+  scorecardRequired: true
+  scorecardProfile: "auto"
+  targetCompletionScore: 100
