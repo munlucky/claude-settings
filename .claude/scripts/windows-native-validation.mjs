@@ -9,6 +9,7 @@ const rootDir = process.cwd();
 const logDir = path.join(rootDir, '.claude', 'logs', 'windows-native-validation');
 const reportPath = path.join(logDir, 'latest.json');
 const tempInstallDir = path.join(os.tmpdir(), 'browserctl-install-windows-validation');
+const tempStatusFile = path.join(os.tmpdir(), `claude-settings-windows-validation-${process.pid}-phase-status.yaml`);
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -79,10 +80,16 @@ function main() {
       '.claude/docs/runtime-parity-reference-plan',
       '--execution-mode', 'delegated-terminal',
       '--dry-run',
+      '--status-file', tempStatusFile,
     ]),
   ));
   results.push(check('agent-loop dry-run', () =>
-    run('node', ['.claude/scripts/agent-loop.mjs', '.claude/docs/runtime-parity-reference-plan', '--dry-run']),
+    run('node', [
+      '.claude/scripts/agent-loop.mjs',
+      '.claude/docs/runtime-parity-reference-plan',
+      '--dry-run',
+      '--status-file', tempStatusFile,
+    ]),
   ));
 
   if (bashAvailable()) {

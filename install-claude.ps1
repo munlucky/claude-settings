@@ -29,6 +29,18 @@ function Write-Info($Message) {
     Write-Host "[INFO] $Message"
 }
 
+function Get-RelativePayloadPath($BasePath, $ChildPath) {
+    $baseFull = [System.IO.Path]::GetFullPath($BasePath)
+    $childFull = [System.IO.Path]::GetFullPath($ChildPath)
+    if (-not $baseFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $baseFull = $baseFull + [System.IO.Path]::DirectorySeparatorChar
+    }
+    if (-not $childFull.StartsWith($baseFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Payload file is outside source root: $ChildPath"
+    }
+    return $childFull.Substring($baseFull.Length)
+}
+
 function Get-PayloadTargets($SourceRoot, $TargetRoot) {
     if (-not (Test-Path -LiteralPath $SourceRoot -PathType Container)) {
         Write-Host "    missing payload: $SourceRoot"
@@ -38,7 +50,7 @@ function Get-PayloadTargets($SourceRoot, $TargetRoot) {
     Get-ChildItem -LiteralPath $SourceRoot -Recurse -File |
         Sort-Object FullName |
         ForEach-Object {
-            $relative = [System.IO.Path]::GetRelativePath($SourceRoot, $_.FullName)
+            $relative = Get-RelativePayloadPath $SourceRoot $_.FullName
             "    $TargetRoot/$($relative -replace '\\','/')"
         }
 }

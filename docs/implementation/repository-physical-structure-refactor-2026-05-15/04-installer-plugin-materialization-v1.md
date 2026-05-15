@@ -121,4 +121,4 @@ Windows validation:
 
 | ID | Status | Runtime | Command | Notes |
 | --- | --- | --- | --- | --- |
-| P04-WIN-DRYRUN | todo | Windows / PowerShell | `.\install-claude.ps1 -DryRun` | Phase 04 accepted as passed on 2026-05-15 from macOS/Codex evidence. Replace `evidence/p04-install-ps1-dry-run.txt` with passing Windows evidence when available. |
+| P04-WIN-DRYRUN | done | Windows / PowerShell | `.\install-claude.ps1 -DryRun` | Passing Windows PowerShell evidence recorded in `evidence/p04-install-ps1-dry-run.txt`. |

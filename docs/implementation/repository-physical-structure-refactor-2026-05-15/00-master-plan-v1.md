@@ -187,7 +187,7 @@ Keep implementation sequential by default. This migration touches shared path as
 - [x] Phase 01 - Source Boundary Inventory (`01-source-boundary-inventory-v1.md`)
 - [x] Phase 02 - Canonical Layout And Package Contract (`02-canonical-layout-package-contract-v1.md`)
 - [x] Phase 03 - Dev-only `.claude` Profile (`03-dev-only-claude-profile-v1.md`)
-- [x] Phase 04 - Installer And Plugin Materialization (`04-installer-plugin-materialization-v1.md`) - accepted with TODO `P04-WIN-DRYRUN`
+- [x] Phase 04 - Installer And Plugin Materialization (`04-installer-plugin-materialization-v1.md`) - Windows dry-run validated
 - [x] Phase 05 - Runtime State Extraction (`05-runtime-state-extraction-v1.md`)
 - [x] Phase 06 - Compatibility Migration And Docs (`06-compatibility-migration-docs-v1.md`)
 - [x] Corrective Patch - Populate canonical root source directories with actual harness files and guard against README-only placeholders
@@ -211,7 +211,7 @@ Current controller decision: `review_passed_ready_for_runnable_preparation_dry_r
 
 | ID | Phase | Status | Runtime | Command | Notes |
 | --- | --- | --- | --- | --- | --- |
-| P04-WIN-DRYRUN | 04 | todo | Windows / PowerShell | `.\install-claude.ps1 -DryRun` | Phase 04 is treated as passed for sequencing. Replace `evidence/p04-install-ps1-dry-run.txt` with passing Windows evidence when available. |
+| P04-WIN-DRYRUN | 04 | done | Windows / PowerShell | `.\install-claude.ps1 -DryRun` | Passing Windows PowerShell evidence recorded in `evidence/p04-install-ps1-dry-run.txt`. |
 
 ## Corrective Patch Notes
 
