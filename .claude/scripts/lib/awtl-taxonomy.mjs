@@ -80,4 +80,3 @@ export function assertLeafCountWithinLimit(limit = TAXONOMY_LIMIT) {
 export function getLeafById(id) {
   return leaves.find((entry) => entry.id === id) || null;
 }
-

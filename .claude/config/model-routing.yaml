@@ -7,8 +7,8 @@ defaultProvider:
 profiles:
   economy:
     openai:
-      model: gpt-5.5
-      effort: medium
+      model: gpt-5.4-nano
+      effort: low
       reasoningControl: model_reasoning_effort
       capabilities: [text, apply_patch]
     anthropic:
@@ -23,7 +23,7 @@ profiles:
       capabilities: [text]
   standard:
     openai:
-      model: gpt-5.5
+      model: gpt-5.4-mini
       effort: medium
       reasoningControl: model_reasoning_effort
       capabilities: [text, apply_patch, computer_use, tool_search]

@@ -95,29 +95,29 @@ For changed components, verify:
 memoryReviewResult:
   status: "passed" | "failed" | "needs_approval"
   stage: "review"
-  
+
   violations:   # NeverDo violations (critical)
     - rule: "project:{projectId}:boundary:never-do"
       item: "Delete existing tests"
       file: "src/components/Button.test.tsx"
       action: "halt"
-  
+
   needsApproval:  # AskFirst items
     - rule: "project:{projectId}:boundary:ask-first"
       item: "New dependency added"
       detail: "axios package added to dependencies"
       action: "ask_user"
-  
+
   warnings:     # Convention/spec warnings
     - rule: "project:{projectId}:convention:naming"
       item: "Component should use PascalCase"
       file: "src/components/myButton.tsx"
       action: "warn"
-  
+
   reminders:    # AlwaysDo reminders
     - rule: "project:{projectId}:boundary:always-do"
       item: "Run npm run lint before commit"
-  
+
   passed: true | false
 ```
 

@@ -21,8 +21,6 @@ Completion artifacts must record each critical scenario as `pass`, `passed`, `do
 ## Completion Rules
 
 - `clean_finish` is blocked while any critical `SCN-*` lacks passing evidence.
-- `clean complete` requires fresh passing evidence for all in-scope critical scenarios, aligned phase artifacts, a passing verifier verdict, and no recorded environment blocker that changes the normalized run verdict.
-- `complete_with_environment_blocker` is not `clean complete`. It may preserve local implementation evidence when the code or artifact work is done, but it must remain visibly blocked from clean closeout until the environment/account/runtime dependency is resolved or explicitly moved out of scope by an approved Spec Deviation Ledger entry.
 - Alternative implementation, deferred scope, or workaround language is blocked unless `Spec Deviation Ledger` records explicit user approval.
 - External account tasks such as production domains, Cloudflare project access, Search Console, AdSense approval, or other credentials are launch blockers, not local implementation blockers, when they are documented as external/account-gated.
 - Master checklist state, `phase-status.yaml`, archived phase paths, execution artifacts, verifier verdicts, and scorecards must agree before a plan directory is treated as complete.

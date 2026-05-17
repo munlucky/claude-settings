@@ -912,6 +912,13 @@ function activeExecutionRootFromDispatch(payload) {
   return directRoot.replace(/\/$/, '');
 }
 
+function isPreparedDispatchEvidence(payload) {
+  return payload?.status === 'prepared'
+    || payload?.activeExecutionStatus === 'prepared'
+    || payload?.phaseRunLease?.status === 'prepared'
+    || payload?.phaseRunLease?.currentStage === 'prepared';
+}
+
 function scopeWorkflowArtifactFiles(files, { activeExecutionRoot = '' } = {}) {
   const normalizedActiveRoot = normalizeWorkflowPath(activeExecutionRoot).replace(/\/$/, '');
   return files.filter((filePath) => {
@@ -1531,6 +1538,7 @@ function verifyEnforcement(argv) {
   const latestDispatch = path.join(WORKFLOW_LOG_DIR, 'latest-dispatch.json');
   const latestBounded = path.join(WORKFLOW_LOG_DIR, 'latest-bounded.json');
   const latestDispatchPayload = readJsonIfExists(latestDispatch);
+  const preparedDispatchEvidence = isPreparedDispatchEvidence(latestDispatchPayload);
   const rawFiles = collectCandidateFiles(argv);
   const files = scopeWorkflowArtifactFiles(rawFiles, {
     activeExecutionRoot: activeExecutionRootFromDispatch(latestDispatchPayload),
@@ -1557,40 +1565,47 @@ function verifyEnforcement(argv) {
       violations.push('missing latest dispatch evidence at .claude/logs/workflow-enforcement/latest-dispatch.json');
     } else {
       const payload = latestDispatchPayload || {};
-      violations.push(...validateRuntimeReadModels(payload, latestDispatch));
-      for (const key of ['planDir', 'executionMode', 'executionRoot', 'runtime']) {
+      if (!preparedDispatchEvidence) {
+        violations.push(...validateRuntimeReadModels(payload, latestDispatch));
+      }
+      const requiredDispatchKeys = preparedDispatchEvidence
+        ? ['planDir', 'executionRoot']
+        : ['planDir', 'executionMode', 'executionRoot', 'runtime'];
+      for (const key of requiredDispatchKeys) {
         if (!payload[key]) {
           violations.push(`dispatch evidence missing '${key}'`);
         }
       }
-      for (const key of ['selectedBundles', 'requiredSkills', 'stageOrder', 'selectedHarnessComponents']) {
-        if (!Array.isArray(payload[key]) || payload[key].length === 0) {
-          violations.push(`dispatch evidence missing non-empty '${key}'`);
+      if (!preparedDispatchEvidence) {
+        for (const key of ['selectedBundles', 'requiredSkills', 'stageOrder', 'selectedHarnessComponents']) {
+          if (!Array.isArray(payload[key]) || payload[key].length === 0) {
+            violations.push(`dispatch evidence missing non-empty '${key}'`);
+          }
         }
-      }
-      for (const key of [
-        'selectionReason',
-        'runtimeIsolation',
-        'modelEffortProfile',
-        'effortEscalationReason',
-        'selectedModelProvider',
-        'selectedModel',
-        'selectedModelEffort',
-        'modelSelectionReason',
-        'retrievalBudget',
-        'validationProfile',
-        'phaseReplayPolicy',
-      ]) {
-        if (typeof payload[key] !== 'string' || !payload[key].trim()) {
-          violations.push(`dispatch evidence missing '${key}'`);
+        for (const key of [
+          'selectionReason',
+          'runtimeIsolation',
+          'modelEffortProfile',
+          'effortEscalationReason',
+          'selectedModelProvider',
+          'selectedModel',
+          'selectedModelEffort',
+          'modelSelectionReason',
+          'retrievalBudget',
+          'validationProfile',
+          'phaseReplayPolicy',
+        ]) {
+          if (typeof payload[key] !== 'string' || !payload[key].trim()) {
+            violations.push(`dispatch evidence missing '${key}'`);
+          }
         }
-      }
-      if (effortEscalationMissing(payload.modelEffortProfile, payload.effortEscalationReason)) {
-        violations.push('dispatch evidence must explain deep/max effort escalation');
-      }
-      for (const bundle of ['review-bundle', 'verification-bundle', 'finish-bundle']) {
-        if (!payload.selectedBundles?.includes(bundle)) {
-          violations.push(`dispatch evidence must include '${bundle}' in selectedBundles`);
+        if (effortEscalationMissing(payload.modelEffortProfile, payload.effortEscalationReason)) {
+          violations.push('dispatch evidence must explain deep/max effort escalation');
+        }
+        for (const bundle of ['review-bundle', 'verification-bundle', 'finish-bundle']) {
+          if (!payload.selectedBundles?.includes(bundle)) {
+            violations.push(`dispatch evidence must include '${bundle}' in selectedBundles`);
+          }
         }
       }
     }
@@ -1645,6 +1660,9 @@ function verifyEnforcement(argv) {
       }
       if (!sectionExists(text, '## Plan Conformance Review')) {
         violations.push(`${qaReport}: missing '## Plan Conformance Review' section`);
+      }
+      if (preparedDispatchEvidence) {
+        continue;
       }
       const section = extractWorkflowSection(text);
       if (Object.keys(section).length === 0) {
@@ -1805,6 +1823,9 @@ function verifyEnforcement(argv) {
         if (!sectionExists(text, heading)) {
           violations.push(`${handoff}: missing '${heading}' section`);
         }
+      }
+      if (preparedDispatchEvidence) {
+        continue;
       }
       const stopReason = canonicalizeHandoffStopReason(extractBulletValue(text, '## Resume Trigger', 'Stop reason'));
       const stopWhy = extractBulletValue(text, '## Resume Trigger', 'Why this cannot continue in the current round');

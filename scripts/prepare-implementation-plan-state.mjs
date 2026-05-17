@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { assignExecutionArtifactPaths, sanitizeSlug } from './agent-loop-phase-plan-lib.mjs';
+import { assignExecutionArtifactPaths, ensureExecutionArtifacts, sanitizeSlug } from './agent-loop-phase-plan-lib.mjs';
 
 const DEFAULT_PLAN_DIR = 'docs/implementation';
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
@@ -337,6 +337,18 @@ function renderPreparedPointerPayload({ masterPlan, executionRoot, statusFile, p
   };
 }
 
+function extractCheckedMasterPlanPhaseNumbers(masterPlan) {
+  if (!fs.existsSync(masterPlan)) {
+    return new Set();
+  }
+  const text = fs.readFileSync(masterPlan, 'utf8');
+  const completed = new Set();
+  for (const match of text.matchAll(/^\s*-\s*\[[xX]\]\s*Phase\s+([0-9]{1,3})\b/gm)) {
+    completed.add(Number.parseInt(match[1], 10));
+  }
+  return completed;
+}
+
 function collectWorkflowPointerState({ masterPlan, executionRoot, statusFile, planDir, archiveRoot, preparedAt }) {
   const workflowDir = resolveFromCwd(WORKFLOW_ENFORCEMENT_DIR);
   const expected = {
@@ -404,8 +416,13 @@ function renderStatus({
   executionRoot,
   phases,
   preparedAt,
+  completedPhaseNumbers = new Set(),
 }) {
-  const activePhase = phases[0] || null;
+  const pendingPhases = phases.filter((phase) => !completedPhaseNumbers.has(phase.number));
+  const activePhase = pendingPhases[0] || null;
+  const completedCount = phases.length - pendingPhases.length;
+  const pendingCount = pendingPhases.length;
+  const runPrepared = pendingCount > 0;
   const lines = [
     'schemaVersion: "1.0"',
     `masterPlan: ${yamlScalar(displayPath(masterPlan))}`,
@@ -413,17 +430,17 @@ function renderStatus({
     'executionMode: delegated-terminal',
     `executionRoot: ${yamlScalar(displayPath(executionRoot))}`,
     `preparedAt: ${yamlScalar(preparedAt)}`,
-    'activeExecutionStatus: prepared',
-    'activeCurrentStage: prepared',
+    `activeExecutionStatus: ${runPrepared ? 'prepared' : 'finished'}`,
+    `activeCurrentStage: ${runPrepared ? 'prepared' : 'finished'}`,
     `activePhaseNumber: ${activePhase ? activePhase.number : 0}`,
     `activePhaseTitle: ${yamlScalar(activePhase ? activePhase.title : '')}`,
     `activePlannedPhases: ${phases.length}`,
-    'activeCompletedPhases: 0',
+    `activeCompletedPhases: ${completedCount}`,
     'activeBlockedPhases: 0',
-    `activePendingPhases: ${phases.length}`,
-    `activeRemainingPhases: ${phases.length}`,
-    `activeActionablePhasesRemaining: ${phases.length}`,
-    'normalizedRunVerdict: ""',
+    `activePendingPhases: ${pendingCount}`,
+    `activeRemainingPhases: ${pendingCount}`,
+    `activeActionablePhasesRemaining: ${pendingCount}`,
+    `normalizedRunVerdict: ${yamlScalar(runPrepared ? '' : 'complete')}`,
     'stopReasonClass: ""',
     'stopReasonExplanation: ""',
     'phases:',
@@ -431,16 +448,17 @@ function renderStatus({
 
   for (const phase of phases) {
     const paths = assignExecutionArtifactPaths(phase.number, phase.title, displayPath(executionRoot));
+    const completed = completedPhaseNumbers.has(phase.number);
     lines.push(
       `  - number: ${phase.number}`,
       `    title: ${yamlScalar(phase.title)}`,
-      '    status: pending',
+      `    status: ${completed ? 'completed' : 'pending'}`,
       '    planConfirmed: true',
       `    activePhaseDoc: ${yamlScalar(displayPath(phase.filePath))}`,
       '    attempts:',
-      '      total: 0',
-      '      lastOutcome: pending',
-      '      lastUpdatedAt: ""',
+      `      total: ${completed ? 1 : 0}`,
+      `      lastOutcome: ${completed ? 'completed' : 'pending'}`,
+      `      lastUpdatedAt: ${completed ? yamlScalar(preparedAt) : '""'}`,
       `    sprintContract: ${yamlScalar(paths.phaseSprintContract)}`,
       `    qaReport: ${yamlScalar(paths.phaseQaReport)}`,
       `    handoff: ${yamlScalar(paths.phaseHandoff)}`,
@@ -449,6 +467,64 @@ function renderStatus({
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function executionArtifactSummary(phase, executionRoot) {
+  const paths = assignExecutionArtifactPaths(phase.number, phase.title, displayPath(executionRoot));
+  return {
+    phaseNum: phase.number,
+    phaseTitle: phase.title,
+    phaseExecutionDir: paths.phaseExecutionDir,
+    phaseGoalContract: paths.phaseGoalContract,
+    phaseSprintContract: paths.phaseSprintContract,
+    phaseQaReport: paths.phaseQaReport,
+    phaseHandoff: paths.phaseHandoff,
+    phaseScorecard: paths.phaseScorecard,
+    phaseWorksets: paths.phaseWorksets,
+  };
+}
+
+function seedPreparedExecutionArtifacts({ phases, masterPlan, executionRoot, statusFile, planDir }) {
+  return phases.map((phase) => {
+    const paths = ensureExecutionArtifacts({
+      phaseNum: phase.number,
+      phaseTitle: phase.title,
+      phaseDoc: displayPath(phase.filePath),
+      masterPlan: displayPath(masterPlan),
+      executionRoot: displayPath(executionRoot),
+      statusFile: displayPath(statusFile),
+      planDir: displayPath(planDir),
+      verificationContractFile: '.claude/verification.contract.yaml',
+      targetCompletionScore: process.env.AGENT_LOOP_TARGET_COMPLETION_SCORE ?? '100',
+      scorecardProfile: process.env.AGENT_LOOP_SCORECARD_PROFILE ?? 'auto',
+      workspaceRoot: process.cwd(),
+      requestedRuntime: 'auto',
+      verificationRuntimes: 'auto',
+      currentRuntime: 'auto',
+    });
+    normalizeSeededMarkdownArtifacts(paths);
+    return {
+      phaseNum: phase.number,
+      phaseTitle: phase.title,
+      phaseExecutionDir: paths.phaseExecutionDir,
+      phaseGoalContract: paths.phaseGoalContract,
+      phaseSprintContract: paths.phaseSprintContract,
+      phaseQaReport: paths.phaseQaReport,
+      phaseHandoff: paths.phaseHandoff,
+      phaseScorecard: paths.phaseScorecard,
+      phaseWorksets: paths.phaseWorksets,
+    };
+  });
+}
+
+function normalizeSeededMarkdownArtifacts(paths) {
+  for (const filePath of [paths.phaseSprintContract, paths.phaseQaReport, paths.phaseHandoff]) {
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+    const text = fs.readFileSync(filePath, 'utf8');
+    fs.writeFileSync(filePath, `${text.replace(/\s+$/u, '')}\n`, 'utf8');
+  }
 }
 
 function prepareImplementationPlanState(options) {
@@ -463,7 +539,9 @@ function prepareImplementationPlanState(options) {
   const phases = listPhaseDocs(planDir);
   const phaseInventoryCheck = validatePhaseInventoryAgainstMasterPlan(masterPlan, planDir, phases);
   const preparedAt = new Date().toISOString();
-  const statusContent = renderStatus({ masterPlan, executionRoot, phases, preparedAt });
+  const completedPhaseNumbers = extractCheckedMasterPlanPhaseNumbers(masterPlan);
+  const statusContent = renderStatus({ masterPlan, executionRoot, phases, preparedAt, completedPhaseNumbers });
+  const plannedExecutionArtifacts = phases.map((phase) => executionArtifactSummary(phase, executionRoot));
   const workflowPointers = collectWorkflowPointerState({
     masterPlan,
     executionRoot,
@@ -509,6 +587,21 @@ function prepareImplementationPlanState(options) {
     }
   }
   actions.push({ type: 'mkdir', path: displayPath(executionRoot) });
+  for (const artifact of plannedExecutionArtifacts) {
+    actions.push({
+      type: 'seed-execution-artifacts',
+      phase: artifact.phaseNum,
+      path: artifact.phaseExecutionDir,
+      files: [
+        artifact.phaseGoalContract,
+        artifact.phaseSprintContract,
+        artifact.phaseQaReport,
+        artifact.phaseHandoff,
+        artifact.phaseScorecard,
+        artifact.phaseWorksets,
+      ],
+    });
+  }
   actions.push({ type: 'write', path: displayPath(statusFile) });
 
   const summary = {
@@ -539,6 +632,7 @@ function prepareImplementationPlanState(options) {
         executionRoot: pointer.payload.executionRoot,
       } : null,
     })),
+    seededExecutionArtifacts: plannedExecutionArtifacts,
     actions,
   };
 
@@ -567,6 +661,13 @@ function prepareImplementationPlanState(options) {
     }
   }
   fs.mkdirSync(executionRoot, { recursive: true });
+  summary.seededExecutionArtifacts = seedPreparedExecutionArtifacts({
+    phases,
+    masterPlan,
+    executionRoot,
+    statusFile,
+    planDir,
+  });
   fs.mkdirSync(path.dirname(statusFile), { recursive: true });
   fs.writeFileSync(statusFile, statusContent, 'utf8');
   verifyPreparedPointers(workflowPointers);

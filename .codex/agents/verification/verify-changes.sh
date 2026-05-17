@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# Compatibility verifier entrypoint for installed `.claude/` payloads.
+#
+# This script remains under `.claude/agents/verification/` during the
+# compatibility window so existing downstream commands keep working. Generated
+# verdict and result files are runtime state, not package source.
+
 # Generic repository verification harness.
 # Exit codes: 0=pass, 1=build/lint/hook/general fail, 2=test fail
 # Outputs: .claude/verification-results-<timestamp>.txt, .claude/verification-verdict-<runId>.json

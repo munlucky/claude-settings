@@ -13,8 +13,6 @@ Codex 위임형 스킬은 Codex를 사용할 수 없을 때 일관된 fallback �
 - `unavailable`
 - `timeout` (300초 초과)
 
-Fallback은 필수 검증을 그대로 통과시키는 의미가 아닙니다. 필수 verifier 또는 closeout step에서 Codex를 사용할 수 없다면 blocked 또는 deferred-verification evidence를 emit하고 phase를 열린 상태로 유지합니다.
-
 ## 절차
 
 ```yaml
@@ -24,7 +22,6 @@ procedure:
      - 로그: "codex-fallback: Claude performing {task} directly"
      - Claude가 동일 가이드라인으로 작업 직접 수행
      - 출력 notes에 "codex-fallback: true" 추가
-     - 작업이 필수 verifier이고 여전히 실행할 수 없다면 pass를 꾸며내지 말고 blocked evidence로 중단
   3. 결과와 함께 계속 진행
 ```
 

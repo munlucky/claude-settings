@@ -1,15 +1,5 @@
 # PM 분석 가이드라인
 
-## 0. 진단 순서
-
-워크플로우가 의도대로 동작하지 않으면 아래 순서로 레이어를 점검합니다.
-
-1. **실행 평면**: 작업이 `read_only`, `product_project`, `meta_harness` 중 올바른 유형으로 분류됐는가?
-2. **준비도**: `pre-flight-check`가 `projectContractReady`, `contextReady`, `verificationContractReady`를 올바르게 emit했는가?
-3. **계약**: downstream verification contract가 존재하고 작업과 정렬되어 있는가?
-4. **검증**: completion/evidence gate가 fresh verdict artifact를 사용했는가?
-5. **리뷰/수정 진행**: 남은 이슈가 올바른 범주로 분류됐는가?
-
 ## 1. 작업 유형 분류 (Task Type Classification)
 ### feature (신규 기능)
 **키워드**: "신규", "추가", "구현", "생성", "만들어줘"

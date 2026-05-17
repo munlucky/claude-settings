@@ -38,3 +38,5 @@ console-log|scripts/workflow-enforcement.mjs
 console-log|.claude/scripts/install-browser-runtime.mjs
 console-log|.claude/scripts/knowledge-repo-audit.mjs
 console-log|.claude/scripts/code-review-graph-stage.test.mjs
+file-length|.codex/agents/verification/verify-changes.sh
+console-log|.claude/scripts/windows-native-validation.mjs

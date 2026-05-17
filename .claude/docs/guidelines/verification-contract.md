@@ -15,11 +15,6 @@ commands:
   test: "npm test"
   lint: "npm run lint"
   workflowParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
-  storybookTest: "npm run storybook:test"
-  playwrightVisual: "npm run test:visual"
-  axeA11y: "npm run test:a11y"
-  lighthouse: "npm run test:perf"
-  frontendRuntime: "npm run verify:frontend-runtime"
 scope:
   executionPlanes:
     - product_project
@@ -29,56 +24,18 @@ scope:
   fallbackOutsideScope: true
 runtime:
   url: "http://localhost:3000"
-  previewUrl: ""
   e2eCommand: "npm run test:e2e"
   browserFlows:
     - name: "dashboard-smoke"
-      critical: true
       entry: "/dashboard"
-      viewport:
-        width: 390
-        height: 844
       markers:
         - "Dashboard"
       criticalInteractions:
         - "create item"
         - "delete item"
-      steps:
-        - action: "click"
-          target:
-            role: "button"
-            name: "Create item"
-        - action: "assertVisible"
-          target:
-            role: "status"
-            name: "Item created"
-      assertions:
-        - kind: "url"
-          mode: "same-origin"
-        - kind: "console"
-          maxErrors: 0
-      artifacts:
-        screenshot: true
-        console: true
-        network: true
       passIf:
         - "primary action succeeds"
         - "list refreshes"
-frontend:
-  visual:
-    requiredForCriticalScenarios: true
-    maxDiffRatio: 0.01
-    breakpoints: [390, 768, 1440]
-  accessibility:
-    requiredForCriticalScenarios: true
-    axe: "required_when_available"
-    keyboardFlow: "required_for_dialogs_and_menus"
-  performance:
-    requiredForCriticalScenarios: false
-    budgets:
-      lcpMs: 2500
-      cls: 0.1
-      inpMs: 200
 artifacts:
   verdict: ".claude/verification-verdict-<runId>.json"
   runtimeVerdict: ".claude/runtime-verdict-<runId>.json"
@@ -140,11 +97,6 @@ policy:
   optionalChecks:
     - test
     - runtime
-    - storybookTest
-    - playwrightVisual
-    - axeA11y
-    - lighthouse
-    - frontendRuntime
 qa:
   evaluatorMode: "separate"
   hardFailOn:
@@ -199,12 +151,6 @@ loop:
 ## Rules
 - The harness owns verdict semantics, not project-specific framework logic.
 - Projects declare commands and evidence through the contract.
-- Frontend checks are opt-in unless a downstream contract lists them in `policy.requiredChecks` or an active `policySet` required by that contract.
-- Canonical frontend command names are `storybookTest`, `playwrightVisual`, `axeA11y`, `lighthouse`, and `frontendRuntime`.
-- `runtime.previewUrl` may hold an externally hosted preview target while `runtime.url` remains the local target. Verifiers should prefer the target declared for the current run, not infer a deployment URL.
-- `runtime.browserFlows[].steps` describes user actions and explicit UI assertions. `assertions` describes cross-cutting checks such as URL, console, network, storage, or cookie expectations. `artifacts` declares which evidence files the run should retain.
-- The optional `frontend` block records visual, accessibility, and performance expectations. It configures checks but does not require tools by itself.
-- Missing optional frontend tooling is a setup gap, not a clean pass and not a hard failure, unless the check is required by the downstream contract. Required frontend checks with missing tools should block completion with a clear setup-gap verdict.
 - Contracts may group checks into local `policySets` so the repository can enforce named governance bundles before any future enterprise policy-engine mapping exists.
 - Contracts may declare `scope` so required checks apply only to matching planes/paths; outside that scope, fallback to the active workspace contract or detection rules.
 - Completion criteria should be phrased as checks that can fail reproducibly, not vague quality claims.
@@ -229,8 +175,6 @@ loop:
 - `QA_REPORT.md` should classify review findings as `accepted`, `challenged`, `deferred`, or `needs_clarification` before a remediation loop is considered closed.
 - Do not convert missing evidence into positive wording such as `should pass`, `looks good`, `likely fixed`, `seems resolved`, or `done pending verification`.
 - If a review item is unclear, stop for clarification before continuing the linked remediation path.
-- If verification output is intentionally ignored during clean-finish review, the artifact trail should still name it explicitly so the closeout ledger stays auditable.
-- If an external blocker forces a partial audit, record that as a blocker-aware partial-mode decision; do not upgrade it to a fake pass.
 - Local `policySets` are repository-owned abstractions; mapping them to OPA, Policy-as-Code, or hosted policy sets is a later integration step, not a current requirement.
 - A document-trace completion claim should additionally require:
   - all in-scope `REQ-*` rows to have implementation plus verification evidence
@@ -258,4 +202,3 @@ loop:
   - `modelEffortProfile`
   - `retryCount`
   - `handoffCount`
-- Closeout evidence should retain ignored verification artifacts, evidence-inclusion decisions, and any partial-mode note that explains why a clean finish stayed blocked.

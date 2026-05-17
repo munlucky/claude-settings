@@ -20,6 +20,7 @@ const TERMINAL_ATTEMPT_STATES = new Set([
   'completed',
   'finished',
   'failed',
+  'stale',
   'superseded',
   'superseded-by-local-fallback',
   'verification_blocked',
@@ -190,7 +191,68 @@ function assertStateRunIdCompatible(previousPayload = {}, nextPayload = {}, targ
   if (!previousRunId || !nextRunId || previousRunId === nextRunId) {
     return;
   }
+  if (canReplaceStaleRunProjection(previousPayload, targetFile)) {
+    return;
+  }
   throw new Error(`stateRunId mismatch rejected before projection overwrite: ${targetFile || 'compatibility projection'} (${previousRunId} != ${nextRunId})`);
+}
+
+function canReplaceStaleRunProjection(previousPayload = {}, targetFile = '') {
+  const states = [
+    previousPayload.status,
+    previousPayload.activeExecutionStatus,
+    previousPayload.attemptOutcome,
+    previousPayload.completionStatus,
+    previousPayload.phaseRunLease?.status,
+    previousPayload.phaseRunLease?.activeExecutionStatus,
+    previousPayload.phaseRunLease?.attemptOutcome,
+    previousPayload.phaseRunLease?.completionStatus,
+  ].map((value) => String(value || '').trim().toLowerCase());
+  if (states.some((state) => TERMINAL_ATTEMPT_STATES.has(state))) {
+    return true;
+  }
+  const staleReason = previousPayload.stopReasonCode
+    || previousPayload.rawStopReasonCode
+    || previousPayload.blockingStopReasonCode
+    || previousPayload.returnBoundary
+    || previousPayload.phaseRunLease?.stopReasonCode
+    || previousPayload.phaseRunLease?.rawStopReasonCode
+    || previousPayload.phaseRunLease?.blockingStopReasonCode
+    || previousPayload.phaseRunLease?.returnBoundary
+    || '';
+  const hasFinishedStamp = Boolean(previousPayload.finishedAt || previousPayload.failedAt || previousPayload.completedAt);
+  const deadChildEvidence = previousPayload.childAlive === false || previousPayload.phaseRunLease?.childAlive === false;
+  const targetName = path.basename(String(targetFile || '')).toLowerCase();
+  if (
+    targetName === 'latest-dispatch.json'
+    && states.every((state) => !ACTIVE_ATTEMPT_STATES.has(state) || state === 'prepared')
+    && states.includes('prepared')
+    && String(previousPayload.lifecycleEvent || '').trim() === 'dispatch_prepared'
+  ) {
+    return true;
+  }
+  const dispatcherPid = Number(previousPayload.dispatcherPid || previousPayload.phaseRunLease?.dispatcherPid || 0);
+  if (
+    targetName === 'active-phase-run.json'
+    && dispatcherPid > 0
+    && !isPidAlive(dispatcherPid)
+    && states.some((state) => ACTIVE_ATTEMPT_STATES.has(state))
+  ) {
+    return true;
+  }
+  return deadChildEvidence && hasFinishedStamp && /stale|dead-dispatch|superseded/i.test(String(staleReason));
+}
+
+function isPidAlive(pid) {
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function validateLifecycleTransition(rawEvent = {}) {

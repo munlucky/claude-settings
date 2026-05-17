@@ -95,29 +95,29 @@ check:
 memoryReviewResult:
   status: "passed" | "failed" | "needs_approval"
   stage: "review"
-  
+
   violations:   # NeverDo 위반 (치명적)
     - rule: "project:{projectId}:boundary:never-do"
       item: "기존 테스트 삭제"
       file: "src/components/Button.test.tsx"
       action: "halt"
-  
+
   needsApproval:  # AskFirst 항목
     - rule: "project:{projectId}:boundary:ask-first"
       item: "새 의존성 추가"
       detail: "axios 패키지가 dependencies에 추가됨"
       action: "ask_user"
-  
+
   warnings:     # 규약/스펙 경고
     - rule: "project:{projectId}:convention:naming"
       item: "컴포넌트는 PascalCase 사용해야 함"
       file: "src/components/myButton.tsx"
       action: "warn"
-  
+
   reminders:    # AlwaysDo 리마인더
     - rule: "project:{projectId}:boundary:always-do"
       item: "커밋 전 npm run lint 실행"
-  
+
   passed: true | false
 ```
 

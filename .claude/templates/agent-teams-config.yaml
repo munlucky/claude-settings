@@ -396,7 +396,7 @@ teams:
       - name: "frontend-dev"
         prompt: "프론트엔드 컴포넌트 및 UI 구현. API 호출부 작성."
         focus: "프론트엔드 구현"
-        ownedPaths: 
+        ownedPaths:
           - "src/components/"
           - "src/pages/"
           - "src/app/"

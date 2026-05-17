@@ -1,6 +1,6 @@
 # Codex Phase Runner Workflow
 
-Last-Reviewed: 2026-05-06
+Last-Reviewed: 2026-04-24
 
 ## Purpose
 
@@ -14,14 +14,6 @@ Last-Reviewed: 2026-05-06
 - `SCORECARD.md`는 기존 `done / retry / blocked` phase verdict와 함께 task-level `FULL / PARTIAL / NO` 상태를 가진다.
 - strict/phase 작업에서는 worktree나 branch뿐 아니라 ignored agent config hydration과 baseline evidence를 Ready / Isolate evidence로 본다.
 - 외부 `skills.sh`, SWE-bench, Terminal-Bench, OpenAI Evals, Inspect AI는 production runtime을 대체하지 않고 sandbox pilot 및 export/eval plane으로 연결한다.
-
-## Waste Reduction Follow-up Package
-
-`docs/implementation/moonshot-harness-waste-reduction-2026-05-06/` is the active follow-up package for the 2026-05-06 waste analysis.
-
-- Package index: `docs/implementation/moonshot-harness-waste-reduction-2026-05-06/README.md`
-- Phase 06 regression sync: `docs/implementation/moonshot-harness-waste-reduction-2026-05-06/06-regression-doc-sync-v1.md`
-- Non-overlap boundary: completed work under `docs/implementation/harness-reliability-retro-2026-05-05/` and `docs/implementation/harness-native-awtl-rsme-2026-05-06/` stays read-only
 
 ## User-Facing Flow
 
