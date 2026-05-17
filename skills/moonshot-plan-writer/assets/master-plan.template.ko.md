@@ -10,6 +10,25 @@
 ## 목표
 - <전체 목표>
 
+## Plan Package Readiness
+```yaml
+planPackageReadiness:
+  mode: "prepared_now | prep_phase_required | docs_only | blocked"
+  selectedMasterPlan: "docs/implementation/00-master-plan-v<version>.md"
+  selectedPhaseDocs:
+    - "docs/implementation/01-<slug>-v<version>.md"
+  staleRootPhaseDocs: []
+  staleMasterPlans: []
+  dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
+  runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
+  archiveRoot: "docs/implementation/archive/<plan-slug>/"
+  dryRunCommand: "node .claude/scripts/prepare-implementation-plan-state.mjs --dry-run --plan-dir docs/implementation --master-plan docs/implementation/00-master-plan-v<version>.md --status-file .claude/docs/phase-status.yaml --execution-root docs/implementation/execution/<plan-slug> --archive-label <plan-slug>"
+  readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
+```
+
+- `mode: prep_phase_required`이면 첫 번째 미완료 체크리스트 항목은 stale root 보존/archive, dirty path 분류, dry-run 준비, pointer self-check를 수행하는 readiness phase여야 합니다.
+- `mode: docs_only`이면 이 패키지를 `moonshot-phase-runner`에 바로 물릴 수 있는 것으로 표현하지 않습니다.
+
 ## MVP 방법론
 ```yaml
 mvpMethodology:

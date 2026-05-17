@@ -183,6 +183,40 @@ Controller closeout:
 - 최종 `planQualityReview` 요약을 master plan의 Plan Quality Loop 섹션에 복사합니다.
 - master plan의 `readinessDecision`은 최종 controller decision과 일치해야 합니다.
 - 최종 `ambiguityScore <= 0.20`, blocking finding 없음, 실행 가능한 improvement directive 없음, phase inventory check 통과 전에는 strict runnable state로 `prepare-implementation-plan-state.mjs`를 실행하지 않습니다.
+- 사용자가 작업문서, phase-runner 후속 실행, 구현 계획을 요청한 경우 "계획 artifact로는 pass지만 runnable은 아님" 같은 caveat만 남기고 종료하지 않습니다. 실행 준비가 막히면 Controller가 안전한 정리/준비 단계를 즉시 수행하거나, 구현 phase보다 먼저 실행될 `Plan Package Readiness Closeout` phase/workset을 반드시 추가합니다.
+- 오래된 root phase 문서, 오래된 master plan, dirty worktree 소유권, stale runtime pointer 때문에 strict runnable state가 막히면 이를 planning 범위 밖 메모가 아니라 in-scope 산출물로 취급합니다. master/phase 문서에 archive/preservation 대상, dirty-path 분류 요구, dry-run 명령, 기대 pass signal, blocker 조건을 정확히 기록합니다.
+
+## Plan Package Readiness Closeout
+
+계획 패키지를 종료하기 전에 runner readiness를 아래처럼 분류합니다.
+
+```yaml
+planPackageReadiness:
+  mode: "prepared_now | prep_phase_required | docs_only"
+  selectedMasterPlan: "<path>"
+  selectedPhaseDocs: []
+  staleRootPhaseDocs: []
+  staleMasterPlans: []
+  dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
+  runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
+  dryRunCommand: "<exact command or not_run_with_reason>"
+  readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
+```
+
+규칙:
+- `prepared_now`는 현재 턴에서 오래된 plan/runtime surface를 안전하게 archive/preserve하고 `prepare-implementation-plan-state.mjs --dry-run`까지 실행할 수 있을 때만 사용합니다.
+- `prep_phase_required`는 정리가 필요하지만 즉시 수행하면 위험한 경우 사용합니다. 예: dirty checkout, 다른 workstream 활성 가능성, 사용자가 planning-only를 요청한 경우. 이 모드에서는 구현 phase보다 앞선 numbered readiness phase를 생성해야 하며, 이 phase는 planning/runtime-prep surface만 소유하고 code/content phase보다 먼저 실행되어야 합니다.
+- `docs_only`는 사용자가 명시적으로 비실행 제안만 원하거나 phase-status/runtime pointer를 건드리면 active session을 방해할 때만 사용합니다. master plan은 이 패키지가 phase-runner용 runnable package가 아님을 명확히 말해야 합니다.
+- `blocked`는 stale root, dirty path, runtime pointer를 안전하게 분류할 수 없을 때 사용합니다. 이를 open note로 숨기지 않습니다.
+
+readiness phase가 필요하면 반드시 포함할 항목:
+- 보존/archive할 stale root phase docs와 stale master plans의 정확한 목록. 삭제 금지.
+- 정확한 archive root 관례. 예: `<plan-dir>/archive/<plan-slug>/`
+- 최신 `git status --short --branch` 캡처와 모든 dirty path를 `baseline`, `draft`, `generated`, `superseded`, `unknown`으로 분류한 표
+- `unknown` dirty path가 하나라도 있으면 subsequent implementation phase를 막는 hard rule
+- 선택된 `--plan-dir`, `--master-plan`, `--status-file`, `--execution-root`, `--archive-label`을 포함한 `prepare-implementation-plan-state.mjs --dry-run` 명령
+- `.claude/docs/phase-status.yaml`, workflow-enforcement projection, execution root, phase inventory pointer self-check
+- archive manifest, worktree classification, dry-run output, pointer self-check의 evidence path
 
 ## 워크플로우
 0. `project-memory-agent`를 `stage=plan`, `memoryMode=read_only`로 실행하고 요약된 `projectMemoryContext`만 병합한다.
@@ -232,6 +266,14 @@ Controller closeout:
    - Reviewer 또는 Writer가 forbidden skill을 사용하면 boundary violation으로 취급한다. Controller가 잘못된 artifact를 폐기하고 깨끗한 boundary로 child agent를 다시 실행할 수 없는 경우 loop를 `blocked`로 중단한다.
    - `ambiguityScore <= 0.20`이고 blocking finding과 실행 가능한 improvement directive가 없거나, `blocked` / `revise_exhausted`가 될 때까지 반복한다.
    - non-critical assumption은 assumptions ledger에 남기고, core goal/scope/verification gap은 blocker로 유지한다.
+6.5. Plan Package Readiness Closeout을 실행한다.
+   - 비재귀 root phase docs, master plans, `close/`, `execution/`, `.claude/docs/phase-status.yaml`, workflow-enforcement projection, 현재 `git status --short --branch`를 확인한다.
+   - `planPackageReadiness.mode`를 결정한다.
+   - mode가 `prepared_now`이면 안전한 archive/preservation과 dry-run 준비만 수행하고 evidence를 기록한다.
+   - mode가 `prep_phase_required`이면 구현 phase보다 앞선 numbered readiness phase를 추가한다. 이 phase는 선택 사항이 아니며 master checklist의 첫 번째 미완료 항목이어야 한다.
+   - mode가 `docs_only`이면 해당 package가 의도적으로 runnable이 아닌 이유를 명시한다. `moonshot-phase-runner`에 바로 물릴 수 있는 것처럼 쓰지 않는다.
+   - mode가 `blocked`이면 명시적 blocker와 함께 closeout을 중단한다.
+   - Independent Planning Loop는 readiness closeout 상태까지 리뷰해야 한다. stale root docs, unknown dirty paths, stale runtime pointers가 남은 패키지는 `prep_phase_required` 또는 `docs_only`로만 pass 가능하고 runnable로는 pass할 수 없다.
 7. plan package가 다음 실행 대상이면 실행 가능한 phase 상태를 준비한다.
    - 활성 root plan 문서는 보존한다.
    - 오래된 runtime/evidence surface는 삭제하지 말고 archive한다.
@@ -260,6 +302,7 @@ Controller closeout:
      - actionable phase가 pending, in_progress, blocked, retryable 중 하나로 남아 있으면 `goalRuntime.status`는 `complete`이면 안 된다.
      - remaining/actionable phase count는 master checklist와 phase-status phase list에 맞아야 한다.
    - 저장소에 note 필드가 있으면 오래된 runtime/evidence surface의 archive 위치를 master plan 또는 phase status notes에 기록한다.
+   - 이 단계를 안전하게 완료할 수 없으면 final answer caveat로 남기지 않는다. Plan Package Readiness Closeout의 필수 readiness phase/workset으로 변환하고, 구현 phase는 그 뒤에 막아둔다.
 8. 완료 상태를 동기화한다.
    - 페이즈 완료 시 즉시 master 체크리스트를 `[x]`로 갱신한다.
    - `[x]` 처리 근거(증빙 경로/검증 결과)를 함께 기록한다.
@@ -310,6 +353,8 @@ Controller closeout:
 - 현재 master plan, 참조된 phase docs, 활성 phase status pointer, 또는 요청 작업흐름과 맞는 최근 execution/close 증빙이 있으면 해당 plan package를 active로 취급한다.
 - 더 최신 master plan 또는 명시적 closeout 증빙이 같은 범위를 포괄할 때만 superseded로 취급한다.
 - 정리 과정에서 기존 plan, task, evidence, 사용자 결정 문서를 삭제하지 않는다. archive하거나 note를 남긴다.
+- 오래된 root `NN-*.md` phase 문서가 새 package와 함께 runner에 발견될 수 있으면 archive/preservation action 또는 이를 수행하는 readiness phase를 반드시 생성한다. runner가 안전하지 않다는 note만 남기는 것은 부족하다.
+- worktree가 dirty이고 이후 phase가 같은 surface를 건드릴 수 있으면 edit 전에 exhaustive dirty-path classification을 요구한다. 현재 `git status --short --branch`의 모든 path를 `baseline`, `draft`, `generated`, `superseded`, `unknown`으로 분류하고, `unknown`이 있으면 구현을 막는다.
 - 두 문서가 같은 범위를 다루면 하나의 canonical target을 선택하고 durable decision과 증빙 참조를 병합한 뒤, 비canonical 문서는 archive note 또는 superseded note로 발견 가능하게 남긴다.
 - 정리 후 파일명, phase 번호, 체크리스트 항목, source trace ID, phase-status pointer의 일관성을 유지한다.
 - 계획 디렉토리 또는 설정된 task root 밖으로 문서를 옮겨야 한다면 멈추고 확인을 요청한다.
@@ -342,6 +387,7 @@ while (master 체크리스트에 [ ] 존재) OR (미매핑 기준 요구사항 �
 - files, commands, expected signals, blocker condition, evidence path가 암묵적이면 페이즈를 ready 상태로 선언하지 않는다.
 - ambiguity score가 `0.35`보다 높거나 core scope/verification gap이 unresolved이거나 추출된 `AC-*` ids의 source mapping이 없으면 phase ready로 선언하지 않는다.
 - workflow-enforcement active pointer가 오래된 plan package를 가리키면 `moonshot-phase-runner`를 시작하지 않는다. plan 준비 단계에서 먼저 archive/rewrite한다.
+- cleanup/classification이 남았다는 말만 final answer로 남기고 계획 작성 턴을 끝내지 않는다. 안전한 cleanup/preparation을 지금 수행하거나, 정확한 파일/명령/evidence/stop condition을 가진 blocking readiness phase로 인코딩한다.
 
 ## Phase Runner 연동
 
@@ -349,3 +395,4 @@ while (master 체크리스트에 [ ] 존재) OR (미매핑 기준 요구사항 �
 - 기본 출력 디렉토리는 `docs/implementation`
 - 결정된 master plan 경로와 plan directory를 반환한다
 - 병렬 duplicate를 새로 만들기보다 기존 미완성 plan package를 우선 갱신한다
+- `planPackageReadiness.mode`가 `prepared_now`, `prep_phase_required`, `docs_only`, `blocked` 중 무엇인지 반환한다. `moonshot-phase-runner`는 readiness가 `prepared_now`이거나 readiness phase가 완료되기 전에는 implementation phase를 dispatch하면 안 된다.

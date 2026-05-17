@@ -35,6 +35,25 @@ planQualityReview:
 - Strict runnable readiness requires `ambiguityScore <= 0.20`, no blocking findings, no actionable improvement directives, and forked reviewer/writer evidence unless the user explicitly approves degraded isolation.
 - Keep iteration artifacts under this plan package's `planning-loop/` directory.
 
+## Plan Package Readiness
+```yaml
+planPackageReadiness:
+  mode: "prepared_now | prep_phase_required | docs_only | blocked"
+  selectedMasterPlan: "docs/implementation/00-master-plan-v<version>.md"
+  selectedPhaseDocs:
+    - "docs/implementation/01-<slug>-v<version>.md"
+  staleRootPhaseDocs: []
+  staleMasterPlans: []
+  dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
+  runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
+  archiveRoot: "docs/implementation/archive/<plan-slug>/"
+  dryRunCommand: "node .claude/scripts/prepare-implementation-plan-state.mjs --dry-run --plan-dir docs/implementation --master-plan docs/implementation/00-master-plan-v<version>.md --status-file .claude/docs/phase-status.yaml --execution-root docs/implementation/execution/<plan-slug> --archive-label <plan-slug>"
+  readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
+```
+
+- If `mode: prep_phase_required`, the first unchecked checklist item must be a readiness phase that archives/preserves stale roots, classifies dirty paths, runs dry-run preparation, and performs pointer self-checks before implementation phases.
+- If `mode: docs_only`, do not present this package as ready for `moonshot-phase-runner`.
+
 ## MVP Methodology
 ```yaml
 mvpMethodology:

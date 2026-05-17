@@ -184,6 +184,40 @@ Controller closeout:
 - Copy the final `planQualityReview` summary into the master plan's Plan Quality Loop section.
 - The master plan's `readinessDecision` must match the final controller decision.
 - Do not run `prepare-implementation-plan-state.mjs` for strict runnable state unless the final `ambiguityScore <= 0.20`, no blocking findings remain, no actionable improvement directives remain, and phase inventory checks pass.
+- Do not close with a bare caveat such as "review-pass as a planning artifact but not runnable" when the user asked for work documents, phase-runner follow-up, or implementation planning. If runnable preparation is blocked, the Controller must either perform the safe organization/preparation step immediately or add a first-class `Plan Package Readiness Closeout` phase/workset that resolves the blocker before implementation phases can run.
+- If stale root phase docs, stale master plans, dirty worktree ownership, or stale runtime pointers prevent strict runnable state, treat those as in-scope planning deliverables. Record the exact archive/preservation target, dirty-path classification requirement, dry-run command, expected pass signal, and blocker condition in the master plan and phase docs.
+
+## Plan Package Readiness Closeout
+
+Before finalizing any plan package, classify its runner readiness:
+
+```yaml
+planPackageReadiness:
+  mode: "prepared_now | prep_phase_required | docs_only"
+  selectedMasterPlan: "<path>"
+  selectedPhaseDocs: []
+  staleRootPhaseDocs: []
+  staleMasterPlans: []
+  dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
+  runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
+  dryRunCommand: "<exact command or not_run_with_reason>"
+  readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
+```
+
+Rules:
+- Use `prepared_now` only when it is safe to archive/preserve stale plan/runtime surfaces and run `prepare-implementation-plan-state.mjs --dry-run` in the current turn.
+- Use `prep_phase_required` when cleanup is necessary but should not be performed immediately, such as when the checkout is dirty, another workstream may be active, or the user asked only for planning. In this mode, create a numbered readiness phase before implementation phases. This phase owns only planning/runtime-prep surfaces and must run before any code/content phase.
+- Use `docs_only` only when the user explicitly asks for a non-runnable proposal or when touching phase-status/runtime pointers would interfere with an active session. The master plan must say that it is not a phase-runner package and must not imply immediate executability.
+- Use `blocked` when stale roots, dirty paths, or runtime pointers cannot be classified safely. Do not hide this as an open note.
+
+The readiness phase, when required, must include:
+- exact stale root phase docs and stale master plans to preserve/archive, never delete
+- exact archive root convention, for example `<plan-dir>/archive/<plan-slug>/`
+- fresh `git status --short --branch` capture and a table classifying every dirty path as `baseline`, `draft`, `generated`, `superseded`, or `unknown`
+- a hard rule that any `unknown` dirty path blocks subsequent implementation phases
+- `prepare-implementation-plan-state.mjs --dry-run` command with selected `--plan-dir`, `--master-plan`, `--status-file`, `--execution-root`, and `--archive-label`
+- pointer self-checks for `.claude/docs/phase-status.yaml`, workflow-enforcement projections, execution root, and phase inventory
+- evidence paths for the archive manifest, worktree classification, dry-run output, and pointer self-check
 
 ## Workflow
 0. Run `project-memory-agent` with `stage=plan`, `memoryMode=read_only`, and merge only summarized `projectMemoryContext`.
@@ -240,6 +274,14 @@ Controller closeout:
    - Treat any Reviewer or Writer forbidden-skill use as a boundary violation. Stop the loop as `blocked` unless the Controller can discard the invalid artifact and rerun the child agent with a clean boundary.
    - Repeat until `ambiguityScore <= 0.20` with no blocking findings and no actionable improvement directives, or until `blocked` / `revise_exhausted`.
    - Keep non-critical assumptions in the assumptions ledger. Keep core goal/scope/verification gaps as blockers.
+6.5. Run Plan Package Readiness Closeout.
+   - Inspect the non-recursive root phase docs, master plans, `close/`, `execution/`, `.claude/docs/phase-status.yaml`, workflow-enforcement projections, and current `git status --short --branch`.
+   - Decide `planPackageReadiness.mode`.
+   - If mode is `prepared_now`, perform only safe archive/preservation and dry-run preparation steps, then record evidence.
+   - If mode is `prep_phase_required`, add a numbered readiness phase before implementation phases. This phase is not optional and must be the first unchecked master checklist item.
+   - If mode is `docs_only`, state explicitly that the package is intentionally not runnable and why. Do not present it as ready for `moonshot-phase-runner`.
+   - If mode is `blocked`, stop closeout with explicit blockers.
+   - The Independent Planning Loop must review the readiness closeout state. A package with stale root docs, unknown dirty paths, or stale runtime pointers may pass only as `prep_phase_required` or `docs_only`, not as runnable.
 7. Prepare runnable phase state when the plan package is the next execution target.
    - Preserve active root plan documents.
    - Archive stale runtime/evidence surfaces instead of deleting them:
@@ -268,6 +310,7 @@ Controller closeout:
      - `goalRuntime.status` must not be `complete` while any actionable phase remains pending, in_progress, blocked, or retryable.
      - Remaining/actionable phase counts must match the master checklist and phase-status phase list.
    - Record the archive location for stale runtime/evidence surfaces in the master plan or phase status notes when the repository has a note field.
+   - If this step cannot be completed safely, do not leave the issue as a final-answer caveat. Convert it into the required readiness phase/workset described in Plan Package Readiness Closeout and keep implementation phases blocked behind it.
 8. Synchronize completion state.
    - When a phase is completed, immediately mark its master checklist item as checked.
    - Record evidence links used to justify checked state.
@@ -341,6 +384,8 @@ Controller closeout:
 - Treat a plan package as active when it has a current master plan, referenced phase docs, active phase status pointer, or recent execution/close evidence that matches the requested workstream.
 - Treat a package as superseded only when a newer master plan or explicit closeout evidence covers the same scope.
 - Do not delete existing plan, task, evidence, or user-decision documents while organizing. Archive or annotate instead.
+- When old root `NN-*.md` phase docs would be discovered together with the new package, the plan writer must create either an archive/preservation action or a readiness phase that performs it. A note that the runner would not be safe is not enough.
+- When the worktree is dirty and later phases will touch the same surfaces, the plan writer must require an exhaustive dirty-path classification before edits. Classify every current `git status --short --branch` path as `baseline`, `draft`, `generated`, `superseded`, or `unknown`; any `unknown` path blocks implementation.
 - When two documents cover the same scope, select one canonical target, merge durable decisions and evidence references into it, and leave the non-canonical document discoverable through an archive note or superseded note.
 - Keep filenames, phase numbers, checklist items, source trace IDs, and phase-status pointers consistent after organization.
 - If organization would require moving documents outside the plan directory or configured task root, stop and ask for confirmation.
@@ -426,6 +471,7 @@ If implementation appears finished but checklist is not fully checked, continue 
 - Do not declare a phase parallel-ready when `ownedPaths`, dependency edges, conflict edges, and manual-evidence requirements are implicit.
 - Do not start `moonshot-phase-runner` when workflow-enforcement active pointers reference a superseded plan package; archive/rewrite them during plan preparation first.
 - Do not treat master plan creation as sufficient execution readiness. Runnable readiness requires root phase-doc inventory cleanup, `prepare-implementation-plan-state.mjs --dry-run`, and a phase count that matches the selected package.
+- Do not end a plan-writing turn by saying only that cleanup/classification is still needed. Either do the safe cleanup/preparation now or encode it as a blocking readiness phase with exact files, commands, evidence, and stop conditions.
 
 ## Phase Runner Integration
 
@@ -433,3 +479,4 @@ When called as a fallback by `moonshot-phase-runner`:
 - default output directory is `docs/implementation`
 - return the resolved master plan path and plan directory
 - prefer refreshing an incomplete plan package over creating a parallel duplicate
+- return whether `planPackageReadiness.mode` is `prepared_now`, `prep_phase_required`, `docs_only`, or `blocked`; `moonshot-phase-runner` must not dispatch implementation phases until readiness is `prepared_now` or the readiness phase has completed.
