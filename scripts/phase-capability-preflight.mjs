@@ -24,6 +24,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = process.cwd();
 const phaseStatusFile = path.join(workspaceRoot, '.claude', 'docs', 'phase-status.yaml');
 const strictMemoryGateEnabled = String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
+const strictDockerDaemonGateEnabled = String(process.env.PHASE_REQUIRE_DOCKER_DAEMON ?? 'false').toLowerCase() === 'true';
 const unavailableCapabilityCodes = new Set([
   'bash_access_denied',
   'memorygraph_unavailable',
@@ -42,10 +43,12 @@ function run(command, args, options = {}) {
   if (process.platform === 'win32' && !env.npm_config_prefix) {
     env.npm_config_prefix = 'C:\\Program Files\\nodejs';
   }
+  const shell = options.shell ?? (process.platform === 'win32' && !path.isAbsolute(command));
   const result = spawnSync(command, args, {
     encoding: 'utf8',
     timeout: options.timeout ?? 15000,
     env,
+    shell,
   });
   return {
     command: [command, ...args].join(' '),
@@ -164,10 +167,18 @@ function writeProbeFile(filePath, contents = 'probe\n') {
 }
 
 function probeWritablePath(name, directoryPath, relativeFileName, successDetail, failureClass, fallbackHint = '') {
-  const filePath = path.join(directoryPath, relativeFileName);
+  const parsed = path.parse(relativeFileName);
+  const uniqueName = `${parsed.name}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}${parsed.ext}`;
+  const filePath = path.join(directoryPath, uniqueName);
   try {
     writeProbeFile(filePath);
-    fs.unlinkSync(filePath);
+    try {
+      fs.unlinkSync(filePath);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        throw error;
+      }
+    }
     return check(name, 'passed', successDetail, {
       command: filePath,
       failureClass: '',
@@ -558,21 +569,22 @@ function buildReport() {
   ));
   checks.push(check(
     'docker.info',
-    dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
+    dockerGate.daemon.status !== 'passed' && !strictDockerDaemonGateEnabled
       ? 'warning'
       : dockerGate.daemon.status === 'passed' ? 'passed' : 'failed',
     dockerGate.daemon.detail || 'docker daemon probe unavailable',
     {
       command: dockerGate.daemon.command,
-      failureClass: dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
+      failureClass: dockerGate.daemon.status !== 'passed' && !strictDockerDaemonGateEnabled
         ? ''
         : dockerGate.daemon.failureCode || 'docker_daemon_unavailable',
-      decision: dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
+      decision: dockerGate.daemon.status !== 'passed' && !strictDockerDaemonGateEnabled
         ? 'continue'
         : dockerGate.daemon.decision || 'resume_later_handoff',
-      fallbackHint: dockerGate.staticConfig.status === 'skipped' && dockerGate.daemon.status !== 'passed'
-        ? ''
+      fallbackHint: dockerGate.daemon.status !== 'passed' && !strictDockerDaemonGateEnabled
+        ? 'daemon reachability is advisory unless PHASE_REQUIRE_DOCKER_DAEMON=true or a phase verifier invokes Docker'
         : dockerGate.fallbackReason || dockerGate.daemon.detail || '',
+      strict: strictDockerDaemonGateEnabled ? 'true' : 'false',
     },
   ));
 
@@ -785,7 +797,7 @@ function main() {
       process.stdout.write(`- ${entry.name}: ${entry.status} (${entry.detail})\n`);
     }
   }
-  process.exit(report.checks.some((entry) => entry.status === 'failed') ? 1 : 0);
+  process.exit(report.currentBlockers.length > 0 || report.status === 'failed' ? 1 : 0);
 }
 
 main();

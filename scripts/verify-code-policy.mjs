@@ -136,7 +136,9 @@ function collectCandidateFiles(argv) {
   }
 
   if (isInsideGitWorkTree()) {
-    return [...new Set([...collectGitStatusPaths(), ...collectTrackedTracePaths()].map((filePath) => normalizePath(filePath)))];
+    const trackedTracePaths = new Set(collectTrackedTracePaths().map((filePath) => normalizePath(filePath)));
+    return [...new Set([...collectGitStatusPaths(), ...trackedTracePaths].map((filePath) => normalizePath(filePath)))]
+      .filter((filePath) => !hasForbiddenTracePath(filePath) || trackedTracePaths.has(filePath));
   }
 
   return walkFiles('.', { skipDirs: SKIP_PARTS })

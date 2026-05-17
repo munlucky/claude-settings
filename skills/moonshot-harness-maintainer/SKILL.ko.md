@@ -15,6 +15,8 @@ description: Moonshot 하네스와 downstream .claude 설치본을 유지합니�
 - `moonshot-orchestrator`, `product-orchestrator`, `moonshot-phase-runner`를 안정적인 진입점으로 유지합니다.
 - 외부 skill 채택 기준은 `.claude/docs/guidelines/external-skill-pattern-transfer.md`에 두고 orchestrator policy에서 링크합니다.
 - completion gate는 엄격하게 유지합니다. gate logic을 완화하기 전에 stale fixture, prompt, artifact를 먼저 고칩니다.
+- 모든 하네스 동작 수정은 TDD로 처리합니다. incident class를 재현하는 deterministic regression test 또는 fixture를 먼저 추가/선택하고, RED 또는 old-behavior proof를 남긴 뒤 최소 변경으로 GREEN을 만들어야 합니다. source-only evidence로 하네스 incident를 닫지 않습니다.
+- regression test가 실제로 불가능하면 bypass reason, 가장 가까운 executable check, 남은 재발 위험을 handoff/report에 기록합니다.
 - `.claude/memory.json`, `.claude/memorygraph/`, `PROJECT.md`, `.mcp.json`, `settings.local.json`, logs, runtime artifacts, downstream task docs는 사용자가 명시하지 않는 한 project-local로 취급합니다.
 - commit workflow에서는 local policy가 요구할 때 memory를 refresh하되, 사용자가 명시적으로 포함하라고 하지 않는 한 memory artifact는 stage하지 않습니다.
 
@@ -33,14 +35,47 @@ description: Moonshot 하네스와 downstream .claude 설치본을 유지합니�
    - runtime parity 또는 completion-gate fixture update
    - downstream `.claude` synchronization
    - commit 또는 memory policy update
-3. 가장 작은 지속 변경을 적용합니다.
+3. TDD regression contract를 정의합니다.
+   - 이전 incident 또는 failure mode를 한 문장으로 명명합니다.
+   - old behavior에서는 실패하고 fix 이후에는 통과하는 가장 작은 test/fixture를 추가하거나 선택합니다.
+   - 가능하면 구현 변경 전에 RED evidence를 캡처합니다. old behavior가 prior workspace 또는 prior commit에만 있으면 old-behavior proof를 기록하고 조용히 RED를 생략하지 않습니다.
+   - private implementation assertion보다 public harness entrypoint를 우선합니다: CLI command, completion-gate output, runner metadata, workflow-enforcement scope, projection file, package materialization output.
+   - gate를 완화했다면 양쪽을 모두 커버합니다: 더 이상 막으면 안 되는 false positive와 여전히 loop를 멈춰야 하는 true blocker.
+   - source-owned regression input은 `tests/fixtures/`에 둡니다. generated logs, verdicts, runtime state는 explicit fixture가 아닌 한 source에 넣지 않습니다.
+4. 가장 작은 지속 변경을 적용합니다.
    - stage-owner SKILL.md update
    - guideline/reference update
    - template 또는 fixture update
    - script update
    - deferred pilot entry
-4. downstream `.claude`를 sync할 때 project-local state를 보존합니다.
-5. validation을 실행하고, 특히 사용할 수 없는 real runtime은 정확히 skip으로 보고합니다.
+5. downstream `.claude`를 sync할 때 project-local state를 보존합니다.
+6. validation을 실행하고, 특히 사용할 수 없는 real runtime은 정확히 skip으로 보고합니다.
+
+## TDD Incident Regression Contract
+
+모든 하네스 버그, anomaly, retry-loop failure, stale-state issue, projection mismatch, runtime parity failure, completion-gate 변경에는 다음 계약을 적용합니다.
+
+1. 수정 전에 failure boundary를 재구성합니다.
+   - 관련 state authority: `STATE.md`, `current-run.json`, `latest-dispatch.json`, verdict JSON, scorecard, phase status
+   - 잘못된 결정을 만든 writer 또는 reader
+   - fix 이후 기대하는 public signal
+2. production harness code를 바꾸기 전에 executable regression check를 최소 하나 추가하거나 선택합니다.
+   - pure classifier/parser 변경은 unit test
+   - state/projection/gate 동작은 fixture-backed CLI test
+   - self-test는 실제 public decision path를 실행할 때만 허용
+   - source/profile sync 버그는 package/materialization hash check
+3. 선택한 check를 RED로 실행하거나 old-behavior proof를 문서화합니다.
+   - 권장: 현재 checkout에서 fix 전 failing test output
+   - 허용: source workspace, prior commit, fixture replay의 failing output
+   - bypass: 재현 불가능한 runtime incident에만 허용하며 explicit temporary-mitigation label을 붙입니다.
+4. active test를 통과시키는 데 필요한 최소 code 또는 contract 변경만 합니다.
+5. GREEN과 가장 가까운 기존 suite를 실행한 뒤에만 fix 완료를 주장합니다.
+6. test는 좁게 유지합니다. 하나의 fixture로 계약을 고정할 수 있으면 broad scenario runner를 만들지 않습니다.
+7. 새 test name, command, RED/GREEN evidence, 보호하는 incident class를 보고합니다.
+
+MemoryGraph는 incident summary, taxonomy, test mapping, recurrence ledger를 future recall용으로 저장할 수 있지만 enforcement gate가 아닙니다. 재발 방지의 authoritative guard는 executable regression과 completion-gate evidence입니다.
+
+구조적 하네스 fix에서 이 계약은 필수입니다. TDD regression contract 없이 증상만 개선한 변경은 report에서 temporary mitigation이라고 명시하지 않는 한 incomplete입니다.
 
 ## External Pattern Transfer
 
@@ -101,6 +136,15 @@ bash .claude/scripts/verify-phase-runner-boundary.sh
 git diff --check
 ```
 
+하네스 동작 수정에서는 새로 추가하거나 선택한 incident regression command와 가장 가까운 기존 test suite도 실행합니다. report에는 어떤 command가 RED/GREEN evidence인지 명시해야 합니다. 예:
+
+```bash
+node .claude/scripts/agent-loop-phase-state.mjs self-test
+node --test .claude/scripts/agent-loop-phase-state.test.mjs
+node --test .claude/scripts/agent-loop-phase-runner.test.mjs
+node --test .claude/scripts/lib/terminal-blocker-publisher.test.mjs
+```
+
 downstream project를 sync했다면 추가로 실행합니다.
 
 ```bash
@@ -116,5 +160,6 @@ node --check .claude/scripts/agent-loop-phase-plan-lib.mjs
 - source harness와 target projects
 - `PROJECT.md`, memory, settings, logs, task docs 보존 여부
 - 변경된 핵심 파일 또는 owner
+- 추가/선택한 incident regression, RED/GREEN evidence, 증명 command
 - validation command와 pass/fail/skip 상태
 - 건드리지 않은 기존 dirty worktree 변경

@@ -784,6 +784,9 @@ function renderScorecard({
 - \`done\` requires Unmet checklist items = 0
 - \`done\` requires Blocking defects = 0
 - \`blocked\` means environment, contract, or dependency prevents progress
+- Blocking defects are phase-local only: the issue must prevent this phase's source-plan scope, required verifier, or active atomic tasks from completing.
+- Future phases still pending, \`verify-phase-runner-boundary.sh\` actionable-phase output, or outer-loop continuation state is not a phase-local blocking defect.
+- Repository-wide hygiene failures such as \`knowledge-repo-audit\` or \`workflow-enforcement verify\` are blocking defects only when this phase owns or worsened the failing surface; otherwise record them as carried-forward warnings in QA_REPORT.md/HANDOFF.md.
 - \`retry\` means continue the active phase only
 `;
 }
@@ -1296,6 +1299,10 @@ ${demoFirstPromptRules}
 - If the same failure class repeats twice, set Retry strategy to partial_redesign or stop_and_handoff before the next attempt.
 - Before any clean-finish claim, run \`.claude/scripts/verify-plan-conformance.mjs\` against the active phase artifacts and record the result in QA_REPORT.md Plan Conformance Review and SCORECARD.md OBJ-CONFORM.
 - If implementation differs from the source phase plan, use \`retry_loop\` unless the user explicitly approved a replan and the phase doc or Spec Deviation Ledger records that approval.
+- In SCORECARD.md, treat Blocking defects as phase-local only: the defect must block this phase's source-plan scope, required verifier, or active atomic tasks.
+- Do not count future phases still pending, \`verify-phase-runner-boundary.sh\` actionable-phase output, or outer-loop continuation state as a phase-local Blocking defect.
+- Do not count repository-wide \`knowledge-repo-audit\` or \`workflow-enforcement verify\` failures as phase-local Blocking defects unless this phase owns or worsened the failing surface. Record carried-forward repo-wide hygiene as QA/HANDOFF warning context instead.
+- If all phase-local objectives and required phase verifiers pass, SCORECARD.md should use \`Verdict: done\`, \`Current task status: FULL\`, and \`Blocking defects: 0\`; remaining future phases are for the outer loop after this phase closes.
 - In QA_REPORT.md, use only these closeout reason codes: \`scope_complete\`, \`verification_failed\`, \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.
 - If QA_REPORT.md uses \`Next path: retry_loop\`, it must also use \`Closeout reason: verification_failed\`.
 - In HANDOFF.md, use only these stop reason codes: \`blocked\`, \`interrupted\`, \`context_limit\`, \`user_pause\`, \`deferred_verification\`.

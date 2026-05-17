@@ -49,7 +49,6 @@ function defaultProjectionFiles() {
   return [
     path.join(WORKFLOW_LOG_DIR, 'active-phase-run.json'),
     path.join(WORKFLOW_LOG_DIR, 'current-run.json'),
-    path.join(WORKFLOW_LOG_DIR, 'latest-dispatch.json'),
   ];
 }
 

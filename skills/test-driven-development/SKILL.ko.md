@@ -20,9 +20,12 @@ surfaceStatus: internal_stage_owner
 - 버그 수정
 - 동작이 바뀔 수 있는 리팩터링
 - 관찰 가능한 결과가 있는 API, UI, workflow 변경
+- completion gate, phase runner, state/projection writer, workflow enforcement, runtime parity, downstream sync logic 같은 meta-harness 개선
 
 docs-only, read-only, 또는 test-first evidence가 실제로 불가능한 경우에만 우회할 수 있습니다.
 우회할 때는 이유와 대체 verification path를 기록합니다.
+
+meta-harness 작업에서 bypass는 예외입니다. MemoryGraph recall, manual diagnosis, source inspection은 무엇을 테스트할지 정하는 근거일 수 있지만 RED/GREEN executable evidence를 대체할 수 없습니다.
 
 ## 필수 Evidence
 
@@ -55,6 +58,17 @@ tddEvidence:
 7. 모든 active cycle test가 green인 뒤, 선언한 boundary 안에서만 refactor합니다.
 8. cycle evidence를 `SPRINT_CONTRACT.md`와 `QA_REPORT.md`에 기록합니다.
 
+## Meta-Harness Asset Rule
+
+변경 대상이 하네스 자체라면:
+
+- regression test 또는 fixture를 일회성 check가 아니라 durable asset으로 취급합니다.
+- CLI output, exported decision function, state/projection file, package materialization, verifier/gate metadata처럼 public harness boundary를 실행하는 test를 우선합니다.
+- incident가 다른 workspace에서 왔다면 fix를 이식하기 전에 가장 작은 재현 fixture를 가져오거나 가장 가까운 owner test에 동작을 고정합니다.
+- 새 suite가 명확히 필요하지 않으면 가장 가까운 기존 suite에 test를 추가합니다.
+- future failure가 어떤 회귀를 잡았는지 설명할 수 있도록 test name 또는 assertion message에 incident class를 기록합니다.
+- MemoryGraph는 incident와 test path를 index할 수 있지만 enforcement source는 test file입니다.
+
 ## Tracer Bullet Rules
 
 - 동작 test는 한 번에 하나만 작성합니다.
@@ -70,6 +84,7 @@ tddEvidence:
 - 동작 변경 작업에 failing test 또는 명시적 bypass reason이 없습니다.
 - 첫 구현 batch가 test evidence 전에 production code를 바꿉니다.
 - bypass reason이 실제 불가능성이 아니라 편의성만 설명합니다.
+- meta-harness 동작 변경이 durable executable regression 없이 MemoryGraph, manual log analysis, source inspection에만 의존합니다.
 - 동작 변경 작업을 "모든 test 작성 후 모든 code 구현" 같은 horizontal batch로 계획합니다.
 - public behavior interface가 있는데도 test가 implementation detail을 검증합니다.
 

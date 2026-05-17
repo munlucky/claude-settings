@@ -611,7 +611,7 @@ function closeLatestDispatchEvidence({ exitCode, detail, returnBoundary = '', st
     lifecycleEvent: next.lifecycleEvent,
     attemptId: next.attemptId || next.runLeaseId || runtimeState.runLeaseId,
     timestamp: now,
-    pidNamespace: next.pidNamespace || (next.childPid || next.dispatcherPid ? 'node-parent' : undefined),
+    pidNamespace: payloadPidNamespace(next),
     payloadPatch: next,
     writeMode: 'replace',
   });
@@ -885,6 +885,22 @@ function workflowLogFile(basename) {
   return path.join(WORKFLOW_LOG_DIR, basename);
 }
 
+function payloadPidNamespace(payload = {}) {
+  return payload.pidNamespace
+    || payload.phaseRunLease?.pidNamespace
+    || payload.liveness?.pidNamespace
+    || (
+      payload.childPid
+      || payload.dispatcherPid
+      || payload.lastChildPid
+      || payload.phaseRunLease?.childPid
+      || payload.phaseRunLease?.dispatcherPid
+      || payload.phaseRunLease?.lastChildPid
+      ? 'node-parent'
+      : undefined
+    );
+}
+
 function timestampFromCursorMtime(mtimeMs) {
   const numeric = Number(mtimeMs);
   return Number.isFinite(numeric) && numeric > 0 ? new Date(numeric).toISOString().replace(/\.\d{3}Z$/, 'Z') : '';
@@ -939,7 +955,7 @@ function updateLatestDispatchLiveness({ label = '', context = {}, compositeCurso
   const staleNoProgress = state.staleNoProgressSeconds > 0 && staleSeconds >= state.staleNoProgressSeconds;
   const livenessProbe = evaluatePidLiveness({
     pid: runtimeState.childPid,
-    pidNamespace: payload.pidNamespace || runtimeState.pidNamespace,
+    pidNamespace: payloadPidNamespace(payload) || runtimeState.pidNamespace,
     checkerNamespace: 'node-parent',
     staleNoProgress,
     livenessChecker: isPidAlive,
@@ -949,7 +965,7 @@ function updateLatestDispatchLiveness({ label = '', context = {}, compositeCurso
     label,
     childPid: runtimeState.childPid,
     lastChildPid: runtimeState.lastChildPid,
-    pidNamespace: payload.pidNamespace || runtimeState.pidNamespace,
+    pidNamespace: payloadPidNamespace(payload) || runtimeState.pidNamespace,
     checkerNamespace: 'node-parent',
     childAlive: livenessProbe.childAlive,
     degraded: livenessProbe.degraded,
@@ -1010,7 +1026,7 @@ function updateLatestDispatchLiveness({ label = '', context = {}, compositeCurso
     lifecycleEvent: 'dispatch_heartbeat',
     attemptId: next.attemptId || next.runLeaseId || runtimeState.runLeaseId,
     timestamp: liveness.updatedAt,
-    pidNamespace: next.childPid ? next.pidNamespace || 'node-parent' : undefined,
+    pidNamespace: payloadPidNamespace(next),
     payloadPatch: next,
     writeMode: 'replace',
   });
@@ -1055,7 +1071,7 @@ function recordLatestDispatchLifecycle({ lifecycleEvent, dispatchStage, patch = 
       || runtimeState.runLeaseId
       || `dispatch-${String(next.lifecycleEvent || 'lifecycle').replace(/[^a-z0-9_-]/gi, '-')}`,
     timestamp: next.lastLifecycleEventAt,
-    pidNamespace: next.childPid || next.dispatcherPid ? 'node-parent' : undefined,
+    pidNamespace: payloadPidNamespace(next),
     payloadPatch: next,
     writeMode: 'replace',
   });

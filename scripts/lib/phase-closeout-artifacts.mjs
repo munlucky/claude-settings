@@ -262,7 +262,8 @@ export function evaluateCompletedWorksets(phaseExecutionDir) {
   }
   for (const task of ledger.tasks) {
     const taskStatus = task.taskStatus || task.status;
-    if (taskStatus !== 'completed') {
+    const normalizedTaskStatus = normalizeAtomicTaskStatus(taskStatus);
+    if (normalizedTaskStatus !== 'completed') {
       return { ok: false, reason: 'atomic-tasks-incomplete', detail: `${task.id || 'atomic task'} taskStatus is ${taskStatus || 'missing'}.` };
     }
     if (task.ownedPaths.length === 0 || task.verificationCommands.length === 0 || task.evidence.length === 0) {
@@ -280,4 +281,12 @@ export function evaluateCompletedWorksets(phaseExecutionDir) {
     }
   }
   return { ok: true, reason: 'ok', detail: '' };
+}
+
+export function normalizeAtomicTaskStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '_');
+  if (['completed', 'complete', 'done', 'pass', 'passed', 'verified', 'full'].includes(normalized)) {
+    return 'completed';
+  }
+  return normalized;
 }

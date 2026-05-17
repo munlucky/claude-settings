@@ -742,7 +742,7 @@ function renderDeterministicAtomicTaskBlock(block, {
 }) {
   const id = extractTaskScalar(block, 'id') || 'AT-01';
   const title = extractTaskScalar(block, 'title');
-  const nextStatus = taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed');
+  const nextStatus = normalizeAtomicTaskStatus(taskStatus || (runtimeStatus === 'in_progress' ? 'in_progress' : 'completed'));
   const nextCompletedAt = nextStatus === 'completed' || runtimeStatus === 'completed'
     ? (completedAt || timestamp || nowIsoSeconds())
     : completedAt;
@@ -771,6 +771,14 @@ function renderDeterministicAtomicTaskBlock(block, {
   nextBlock.push(`    evidence: ${renderInlineYamlArray(evidence)}`);
   nextBlock.push(`    completedAt: ${nextCompletedAt ? yamlQuote(nextCompletedAt) : 'null'}`);
   return nextBlock;
+}
+
+function normalizeAtomicTaskStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '_');
+  if (['completed', 'complete', 'done', 'pass', 'passed', 'verified', 'full'].includes(normalized)) {
+    return 'completed';
+  }
+  return normalized || 'pending';
 }
 
 function updateWorksetsFromStructuredState(worksetsPath, state = {}) {

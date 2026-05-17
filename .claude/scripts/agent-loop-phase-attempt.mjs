@@ -406,7 +406,8 @@ Failure context:
 Remediation steps:
 1. Refresh the active phase artifacts instead of starting a new phase or switching to another phase.
 2. Treat the missing completion evidence as an active closeout task for this same phase, not as a valid stop boundary.
-3. If the gate reason starts with \`blocked:\` or equals \`scorecard-verdict=blocked\`, preserve it as a terminal blocked handoff and do not launch another equivalent remediation attempt.
+3. If the gate reason starts with \`blocked:\`, preserve it as a terminal blocked handoff and do not launch another equivalent remediation attempt.
+   If the gate reason is \`scorecard-verdict=blocked\`, inspect QA_REPORT.md/SCORECARD.md first: only phase-local environment, contract, dependency, or verifier blockers are terminal. Future phases still pending, \`verify-phase-runner-boundary.sh\` actionable-phase output, or repo-wide hygiene checks outside this phase must be recorded as non-blocking closeout context and reconciled in SCORECARD.md.
 4. If the gate reason is review-related, run the required review pass now and record it in QA_REPORT.md:
    - set \`Review completed: yes\` only after the review actually ran
    - ensure \`codex-review-code\` appears in applied workflow evidence

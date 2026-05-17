@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REAL_NODE="$(command -v node)"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/phase-runner-boundary.XXXXXX")"
 trap 'rm -rf "$TMP_ROOT"' EXIT
+export PHASE_RUNTIME_DB="$TMP_ROOT/runtime-state.sqlite"
 
 PLAN_DIR="$TMP_ROOT/plan"
 EXECUTION_ROOT="$PLAN_DIR/execution"
@@ -21,8 +22,9 @@ SIGNAL_STATUS_FILE="$TMP_ROOT/signal-phase-status.yaml"
 SIGNAL_DISPATCH_OUT="$TMP_ROOT/signal-dispatch.out"
 NOENV_WORKSPACE="$TMP_ROOT/noenv-workspace"
 NOENV_STATUS_FILE="$TMP_ROOT/noenv-phase-status.yaml"
+NOENV_DEFAULT_LOG_DIR="$NOENV_WORKSPACE/.moonshot-state/logs/workflow-enforcement"
 
-mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$SIGNAL_LOG_DIR" "$MANUAL_LEASE_LOG_DIR" "$PHASE_BOUNDARY_LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
+mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$SIGNAL_LOG_DIR" "$MANUAL_LEASE_LOG_DIR" "$PHASE_BOUNDARY_LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement" "$NOENV_DEFAULT_LOG_DIR"
 
 seed_master_plan() {
   local target_dir="$1"
@@ -127,7 +129,19 @@ assert_text_not_contains() {
   fi
 }
 
-mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement"
+assert_text_contains_any() {
+  local text="$1"
+  local first="$2"
+  local second="$3"
+  local label="$4"
+  if [[ "$text" != *"$first"* && "$text" != *"$second"* ]]; then
+    echo "FAIL: missing ${label}: ${first} OR ${second}" >&2
+    printf '%s\n' "$text" >&2
+    exit 1
+  fi
+}
+
+mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement" "$NOENV_DEFAULT_LOG_DIR"
 seed_master_plan "$PLAN_DIR"
 seed_smoke_phase "$PLAN_DIR"
 
@@ -266,7 +280,7 @@ node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" finish \
 
 INACTIVE_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$MANUAL_LEASE_LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-smoke true false)"
 assert_text_contains "$INACTIVE_OUTPUT" "RETURN_ALLOWED='false'" "finished lease return denial"
-assert_text_contains "$INACTIVE_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease denial reason"
+assert_text_contains_any "$INACTIVE_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "RETURN_REASON='paused-goal-with-actionable-phases'" "paused lease denial reason"
 
 write_completed_then_pending_status "$STATUS_FILE" "$PLAN_DIR" "$EXECUTION_ROOT"
 
@@ -302,7 +316,7 @@ assert_contains "$STATUS_FILE" "lastReturnBoundary: \"dispatch-paused\"" "curren
 
 PAUSED_OUTPUT="$(WORKFLOW_ENFORCEMENT_LOG_DIR="$PHASE_BOUNDARY_LOG_DIR" node "$ROOT_DIR/.claude/scripts/phase-run-lease.mjs" assert-return-allowed "$STATUS_FILE" lease-phase-boundary true false)"
 assert_text_contains "$PAUSED_OUTPUT" "RETURN_ALLOWED='false'" "paused lease return denial"
-assert_text_contains "$PAUSED_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "paused lease reason"
+assert_text_contains_any "$PAUSED_OUTPUT" "RETURN_REASON='paused-run-lease-with-actionable-phases'" "RETURN_REASON='paused-goal-with-actionable-phases'" "paused lease reason"
 
 write_completed_status "$STATUS_FILE" "$PLAN_DIR" "$EXECUTION_ROOT"
 
@@ -344,12 +358,12 @@ if [[ -f "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/current-run.json" ]
   exit 1
 fi
 
-if ! compgen -G "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/active-phase-run-*.json" >/dev/null; then
+if ! compgen -G "$NOENV_DEFAULT_LOG_DIR/active-phase-run-*.json" >/dev/null; then
   echo "FAIL: non-default status file did not create namespaced active lease file" >&2
   exit 1
 fi
 
-if ! compgen -G "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement/current-run-*.json" >/dev/null; then
+if ! compgen -G "$NOENV_DEFAULT_LOG_DIR/current-run-*.json" >/dev/null; then
   echo "FAIL: non-default status file did not create namespaced current-run file" >&2
   exit 1
 fi

@@ -63,8 +63,8 @@ function hasPidEvidence(event) {
   return ['pid', 'childPid', 'dispatcherPid', 'lastChildPid'].some((field) => {
     const eventValue = event[field];
     const patchValue = patch[field];
-    return (eventValue !== undefined && eventValue !== '')
-      || (patchValue !== undefined && patchValue !== '');
+    return (eventValue !== undefined && eventValue !== null && eventValue !== '')
+      || (patchValue !== undefined && patchValue !== null && patchValue !== '');
   });
 }
 

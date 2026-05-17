@@ -1133,6 +1133,44 @@ const ARTIFACT_CONTRACT_INVALID_GATES = new Set([
   'plan-conformance-verification-verdict-inconsistent',
 ]);
 
+const NON_PHASE_BLOCKER_CODES = new Set([
+  'plan_continuation_boundary',
+  'repo_wide_hygiene',
+  'phase_external_hygiene',
+]);
+
+const NON_PHASE_BLOCKER_CLASSES = new Set([
+  'plan_continuation',
+  'repo_wide_hygiene',
+  'phase_external_hygiene',
+]);
+
+function isNonPhaseBlockingContext(context = {}) {
+  const code = normalizeLower(context.blockingReasonCode);
+  const blockerClass = normalizeLower(context.blockerClass);
+  const failureClass = normalizeLower(context.failureClass);
+
+  return NON_PHASE_BLOCKER_CODES.has(code)
+    || NON_PHASE_BLOCKER_CODES.has(failureClass)
+    || NON_PHASE_BLOCKER_CLASSES.has(blockerClass)
+    || NON_PHASE_BLOCKER_CLASSES.has(failureClass);
+}
+
+function mergeBlockerContexts(...contexts) {
+  const merged = {};
+  for (const context of contexts) {
+    if (!context || typeof context !== 'object') {
+      continue;
+    }
+    for (const [key, value] of Object.entries(context)) {
+      if (String(value || '').trim()) {
+        merged[key] = value;
+      }
+    }
+  }
+  return merged;
+}
+
 function classifyCompletionGateReason(reason, context = {}) {
   const rawReason = String(reason || '').trim();
   const normalizedReason = normalizeLower(rawReason);
@@ -1222,6 +1260,16 @@ function classifyCompletionGateReason(reason, context = {}) {
     };
   }
 
+  if (normalizedReason === 'scorecard-verdict=blocked' && isNonPhaseBlockingContext(context)) {
+    return {
+      category: 'finish_closeout_missing',
+      detail: `${rawReason}: ${context.detail || context.blockingReasonCode || context.blockerClass || 'non-phase blocker'}`,
+      retryPolicy: 'writer_only',
+      stopReason: 'missing-finish-closeout',
+      remediationStage: 'finish/handoff',
+    };
+  }
+
   if (normalizedReason === 'scorecard-verdict=blocked') {
     return {
       category: 'terminal_blocked',
@@ -1289,6 +1337,36 @@ function listIncludesToken(items, token) {
   });
 }
 
+function inferPhaseExternalBlockerContext(text = '') {
+  const source = String(text || '');
+  const lowered = source.toLowerCase();
+  const mentionsBoundaryScript = /\bverify-phase-runner-boundary(?:\.sh)?\b/.test(lowered);
+  const mentionsContinuation = /actionable phases? remaining|activeactionablephasesremaining|future phases?|plan-continuation|outer loop/.test(lowered);
+  const mentionsBoundary = mentionsContinuation || (mentionsBoundaryScript && /actionable phases? remaining|future phases?|plan-continuation|outer loop/.test(lowered));
+  const mentionsRepoWide = /repo-wide|repository-wide|저장소 전역|outside (?:the )?phase|outside this phase|phase-\d+ 밖|broader repo|전역 hygiene/.test(lowered);
+  const mentionsHygieneGate = /knowledge-repo-audit|workflow-enforcement/.test(lowered);
+
+  if (mentionsBoundary) {
+    return {
+      blockingReasonCode: 'plan_continuation_boundary',
+      blockerClass: 'plan_continuation',
+      failureClass: 'non_phase_blocker',
+      detail: 'Remaining actionable phases are an outer-loop continuation signal, not a current phase blocker.',
+    };
+  }
+
+  if (mentionsRepoWide && mentionsHygieneGate) {
+    return {
+      blockingReasonCode: 'repo_wide_hygiene',
+      blockerClass: 'phase_external_hygiene',
+      failureClass: 'non_phase_blocker',
+      detail: 'Repository-wide hygiene failures outside the active phase scope are parent-loop work, not a current phase blocker.',
+    };
+  }
+
+  return {};
+}
+
 function extractQaBlockerContext(qaText = '') {
   const text = String(qaText || '');
   const codeMatch = text.match(/"code"\s*:\s*"([^"]+)"/i)
@@ -1305,7 +1383,7 @@ function extractQaBlockerContext(qaText = '') {
   const blockerClass = blockerClassMatch ? blockerClassMatch[1].trim() : (inferredEnvironment ? 'verifier_unavailable' : '');
   const failureClass = failureClassMatch ? failureClassMatch[1].trim() : (inferredEnvironment ? 'environment' : '');
   if (!blockingReasonCode && !blockerClass && !failureClass) {
-    return {};
+    return inferPhaseExternalBlockerContext(text);
   }
   return {
     blockingReasonCode,
@@ -2094,7 +2172,7 @@ function evaluatePhaseCompletionGate(config) {
         : (!atomicLedger.complete ? atomicLedger.reason : (!demoFirstGate.allowed ? demoFirstGate.reason : 'no-fresh-verification-artifact'))));
   const completionClassification = classifyCompletionGateReason(finalReason, {
     strongCompletion: closeoutConcrete && finalAllowed,
-    ...(finalReason.startsWith('scorecard-verdict=') ? { ...qaBlockerContext, ...latestScoreBlockerContext } : {}),
+    ...(finalReason.startsWith('scorecard-verdict=') ? mergeBlockerContexts(qaBlockerContext, latestScoreBlockerContext) : {}),
   });
 
   return {
@@ -3120,6 +3198,19 @@ phases:
     const reviewClassification = classifyCompletionGateReason('review-incomplete');
     const scoreClassification = classifyCompletionGateReason('scorecard-score-below-target');
     const blockedClassification = classifyCompletionGateReason('blocked:verification-preflight-blocked');
+    const terminalScoreBlockedClassification = classifyCompletionGateReason('scorecard-verdict=blocked');
+    const repoWideHygieneContext = extractQaBlockerContext('knowledge-repo-audit and workflow-enforcement failed outside the phase-09 scope.');
+    const boundaryContext = extractQaBlockerContext('verify-phase-runner-boundary.sh reported actionable phases remaining for future phases.');
+    const boundaryScriptOnlyContext = extractQaBlockerContext('verify-phase-runner-boundary.sh failed because the active phase artifact is missing.');
+    const mergedRepoWideHygieneContext = mergeBlockerContexts(repoWideHygieneContext, {
+      blockingReasonCode: '',
+      blockerClass: '',
+      failureClass: '',
+      detail: '',
+    });
+    const repoWideScoreClassification = classifyCompletionGateReason('scorecard-verdict=blocked', repoWideHygieneContext);
+    const boundaryScoreClassification = classifyCompletionGateReason('scorecard-verdict=blocked', boundaryContext);
+    const mergedRepoWideScoreClassification = classifyCompletionGateReason('scorecard-verdict=blocked', mergedRepoWideHygieneContext);
     if (reviewClassification.category !== 'review_closeout_missing' || reviewClassification.retryPolicy !== 'writer_only') {
       throw new Error('review closeout classification was not normalized');
     }
@@ -3128,6 +3219,27 @@ phases:
     }
     if (blockedClassification.category !== 'environment_blocked' || blockedClassification.retryPolicy !== 'stop_loop') {
       throw new Error('environment block classification was not normalized');
+    }
+    if (terminalScoreBlockedClassification.category !== 'terminal_blocked' || terminalScoreBlockedClassification.retryPolicy !== 'stop_loop') {
+      throw new Error('phase-local scorecard blocked classification was not terminal');
+    }
+    if (repoWideHygieneContext.blockingReasonCode !== 'repo_wide_hygiene') {
+      throw new Error('repo-wide hygiene blocker context was not inferred');
+    }
+    if (boundaryContext.blockingReasonCode !== 'plan_continuation_boundary') {
+      throw new Error('plan continuation blocker context was not inferred');
+    }
+    if (boundaryScriptOnlyContext.blockingReasonCode) {
+      throw new Error('boundary script mention alone was incorrectly inferred as plan continuation');
+    }
+    if (repoWideScoreClassification.category !== 'finish_closeout_missing' || repoWideScoreClassification.retryPolicy !== 'writer_only') {
+      throw new Error('repo-wide hygiene scorecard block was not routed to finish closeout');
+    }
+    if (boundaryScoreClassification.category !== 'finish_closeout_missing' || boundaryScoreClassification.retryPolicy !== 'writer_only') {
+      throw new Error('plan continuation scorecard block was not routed to finish closeout');
+    }
+    if (mergedRepoWideScoreClassification.category !== 'finish_closeout_missing' || mergedRepoWideScoreClassification.retryPolicy !== 'writer_only') {
+      throw new Error('empty structured score context overwrote QA blocker context');
     }
 
     const timingStatusFile = path.join(tempDir, 'timing-status.yaml');

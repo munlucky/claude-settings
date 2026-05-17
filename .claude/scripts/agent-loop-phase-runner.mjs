@@ -899,7 +899,7 @@ function readLatestCapabilityReport(workspaceRoot = process.cwd()) {
   return null;
 }
 
-function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReason = '') {
+export function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReason = '') {
   const latest = readLatestCapabilityReport(workspaceRoot);
   if (!latest) {
     return null;
@@ -939,6 +939,25 @@ function summarizeRetrySuppression(workspaceRoot = process.cwd(), finalStopReaso
   );
   const decision = activeClassification?.decision || payload.decision || summary.decision;
   const reason = activeClassification?.code || payload.reason || summary.reason || stopClassification.code || 'ok';
+  const reportHasActiveBlocker = Boolean(activeClassification?.blocker || payload.blocking === true);
+  const reportSaysContinue = decision === 'continue'
+    && reason === 'ok'
+    && currentBlockers.length === 0
+    && !reportHasActiveBlocker;
+  if (reportSaysContinue) {
+    return {
+      reportPath: latest.filePath,
+      blockerCode,
+      sameFailureClassCount,
+      decision,
+      reason,
+      shouldSuppressRetry: false,
+      stopReasonClass: stagnation.stopReasonClass,
+      recoveryAction: stagnation.recoveryAction,
+      normalizedRunVerdict: stagnation.normalizedRunVerdict,
+      fallbackHints: Array.isArray(payload.fallbackHints) ? payload.fallbackHints : [],
+    };
+  }
   const shouldSuppressRetry = stagnation.retrySuppressed
     || (sameFailureClassCount >= 2
       && decision !== 'continue'
@@ -1495,6 +1514,26 @@ function resolveRunnerRuntime(requestedRuntime) {
   return runtimeCommand('resolve-runner-runtime', requestedRuntime).stdout.trim();
 }
 
+function recordWorkflowDispatchEvidence({ masterPlanPath, runtime }) {
+  const result = runNodeScript(path.join(scriptDir, 'workflow-enforcement.mjs'), [
+    'record-dispatch',
+    '--plan-dir', state.planDir,
+    '--execution-mode', 'phase-runner',
+    '--execution-root', state.executionRoot,
+    '--runtime', runtime,
+    '--status-file', state.statusFile,
+    '--master-plan', masterPlanPath || '',
+  ], { stdio: 'pipe' });
+
+  if ((result.status ?? 0) !== 0) {
+    appendDebugLog('workflow-dispatch-record-failed', {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+  }
+}
+
 function isBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
   return normalized.startsWith('blocked:')
@@ -1506,10 +1545,14 @@ function isBlockedCompletionReason(reason) {
 function isHardBlockedCompletionReason(reason) {
   const normalized = String(reason || '').trim().toLowerCase();
   return normalized.startsWith('blocked:')
-    || normalized === 'scorecard-verdict=blocked'
     || normalized === 'verification-preflight-blocked'
     || normalized === 'capability-preflight-blocked'
     || normalized === 'path-authority-preflight-failed';
+}
+
+function gateRequiresStopLoop(gate) {
+  return isHardBlockedCompletionReason(gate?.PHASE_COMPLETION_REASON)
+    || String(gate?.PHASE_COMPLETION_RETRY_POLICY || '').trim() === 'stop_loop';
 }
 
 export function publishRunnerBlockedCloseout(paths, {
@@ -1827,6 +1870,21 @@ function gateControllerAction({ gate, gateStop, autoFixCount }) {
   const category = String(gateStop?.GATE_REASON_CATEGORY || gate.GATE_REASON_CATEGORY || '').trim();
   const status = String(gate.PHASE_COMPLETION_STATUS || '').trim().toLowerCase();
   const blockers = toInt(gate.PHASE_COMPLETION_BLOCKERS, 0);
+  if (String(gateStop?.RETRY_POLICY || '').trim() === 'writer_only') {
+    const shadow = computePhaseLoopShadowDecision({
+      phaseNumber: state.phaseNum,
+      attemptNumber: autoFixCount,
+      stage,
+      result: 'fail',
+      failureClass: category || 'closeout_missing',
+      evidenceRefs: gate.PHASE_COMPLETION_ARTIFACTS,
+      blockers: gate.PHASE_COMPLETION_REASON,
+    });
+    return {
+      ...shadow,
+      action: category === 'review_closeout_missing' ? 'review-remediation' : 'finish-remediation',
+    };
+  }
   const environmentBlocked = category === 'environment_blocked' || reason.toLowerCase().startsWith('blocked:');
   const scorecardBlocked = status === 'blocked' && blockers > 0;
   return computeControllerEnforcedGateAction({
@@ -2359,6 +2417,7 @@ function runPhaseAttempt() {
   }
 
   const runtime = resolveRunnerRuntime(state.runtime);
+  recordWorkflowDispatchEvidence({ masterPlanPath, runtime });
   const pathsWithArtifacts = ensureExecutionArtifacts({
     phaseNum: state.phaseNum,
     phaseTitle: state.phaseTitle,
@@ -2390,6 +2449,30 @@ function runPhaseAttempt() {
   const startupExit = ensureStartupResumeState(paths, logFile);
   if (startupExit !== 0) {
     return startupExit;
+  }
+  const alreadyCompleteGate = evaluatePhaseCompletionGateWithRetry(0, paths);
+  if (alreadyCompleteGate.PHASE_COMPLETION_ALLOWED === 'true') {
+    appendDebugLog('phase-already-complete-before-worker-spawn', {
+      reason: alreadyCompleteGate.PHASE_COMPLETION_REASON,
+      score: alreadyCompleteGate.PHASE_COMPLETION_SCORE,
+      status: alreadyCompleteGate.PHASE_COMPLETION_STATUS,
+      cleanFinish: alreadyCompleteGate.PHASE_COMPLETION_CLEAN_FINISH,
+      artifacts: alreadyCompleteGate.PHASE_COMPLETION_ARTIFACTS,
+    });
+    updatePhaseState(state.phaseNum, 'completed', 'completed', false, state.phaseDoc, paths);
+    writeTerminalCompleteSimpleRunState({
+      reason: 'phase_already_complete_from_clean_finish_artifacts',
+      phaseNum: state.phaseNum,
+      statusFile: state.statusFile,
+      planDir: state.planDir,
+    });
+    appendDecisionLog([
+      `## Phase ${state.phaseNum}`,
+      '- Status: ✅ Already complete (clean-finish artifacts)',
+      `- Evidence: ${alreadyCompleteGate.PHASE_COMPLETION_ARTIFACTS || paths.phaseQaReport}`,
+      '',
+    ]);
+    return 0;
   }
   const activationGuardExit = guardWorkerSpawnAgainstSimpleRunState(paths, logFile);
   if (activationGuardExit !== 0) {
@@ -2673,7 +2756,14 @@ function runPhaseAttempt() {
     if (exitCode === 0) {
       const duration = Math.floor(Date.now() / 1000) - startEpoch;
       const gate = evaluatePhaseCompletionGateWithRetry(startEpoch, paths);
-      const gateStop = classifyGateStopReason(gate.PHASE_COMPLETION_REASON);
+      const classifiedGateStop = classifyGateStopReason(gate.PHASE_COMPLETION_REASON);
+      const gateStop = {
+        ...classifiedGateStop,
+        GATE_REASON_CATEGORY: gate.PHASE_COMPLETION_REASON_CATEGORY || classifiedGateStop.GATE_REASON_CATEGORY || '',
+        RETRY_POLICY: gate.PHASE_COMPLETION_RETRY_POLICY || classifiedGateStop.RETRY_POLICY || '',
+        REMEDIATION_STAGE: gate.PHASE_COMPLETION_REMEDIATION_STAGE || classifiedGateStop.REMEDIATION_STAGE || '',
+        STOP_REASON: gate.PHASE_COMPLETION_STOP_REASON || classifiedGateStop.STOP_REASON || '',
+      };
       appendDebugLog('completion-gate-result', {
         logFile,
         runtime: activeRuntime,
@@ -2843,6 +2933,9 @@ function runPhaseAttempt() {
             }
             return 2;
           }
+          if (gateRequiresStopLoop(remediationGate)) {
+            return stopBlockedPhase(paths, logFile, `completion gate blocked after controller execute retry: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
+          }
           appendQaRuntimeUpdate(incompleteRemediationStatus(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
           appendHandoffUpdate(handoffStopReason(remediationGate.PHASE_COMPLETION_REASON, remediationGate), logFile, remediationGate.PHASE_COMPLETION_REASON, paths);
         }
@@ -2912,7 +3005,7 @@ function runPhaseAttempt() {
           }
           return 2;
         }
-        if (isHardBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
+        if (gateRequiresStopLoop(remediationGate)) {
           return stopBlockedPhase(paths, logFile, `completion gate blocked after artifact closeout remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
         }
         const detail = describeStopReason(finalStopReason, activeRuntime, remediationGate.PHASE_COMPLETION_REASON);
@@ -2965,7 +3058,7 @@ function runPhaseAttempt() {
             }
             return 2;
           }
-          if (isHardBlockedCompletionReason(remediationGate.PHASE_COMPLETION_REASON)) {
+          if (gateRequiresStopLoop(remediationGate)) {
             return stopBlockedPhase(paths, logFile, `completion gate blocked after remediation: ${remediationGate.PHASE_COMPLETION_REASON}`, 'completion-gate-blocked');
           }
           logError(`Phase ${state.phaseNum} still lacks valid completion evidence (${remediationGate.PHASE_COMPLETION_REASON})`);

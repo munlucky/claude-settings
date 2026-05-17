@@ -175,10 +175,183 @@ function loadFinalizeSidecarState({ root, phase, executionRoot }) {
   const sidecarState = readBlockerSidecarState(sidecarPaths);
   return {
     ...sidecarState,
+    paths: sidecarPaths,
     diagnostics: [
       ...(sidecarState.diagnostics || []),
       ...validateFinalizeSidecarManifest({ root, sidecarPaths, sidecarState }),
     ],
+  };
+}
+
+function markdownField(text, label) {
+  const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(text || '').match(new RegExp(`^-\\s*${escaped}:\\s*(.+)\\s*$`, 'im'));
+  return match ? match[1].trim() : '';
+}
+
+function cleanFinishEvidenceForSidecarResolution({ root, phase, phaseNumber }) {
+  const qaPath = resolvePath(phase.qaReport || '', root);
+  const scorecardPath = resolvePath(phase.scorecard || '', root);
+  const handoffPath = resolvePath(phase.handoff || '', root);
+  const phasePrefix = String(phaseNumber).padStart(2, '0');
+  const verdictPath = resolvePath(`.claude/verification-verdict-phase${phasePrefix}-final.json`, root);
+  const missing = [qaPath, scorecardPath, handoffPath, verdictPath].filter((filePath) => !filePath || !fs.existsSync(filePath));
+  if (missing.length > 0) {
+    return { ok: false, reason: 'missing_clean_finish_evidence', missing };
+  }
+
+  const qaText = readText(qaPath);
+  const scorecardText = readText(scorecardPath);
+  const handoffText = readText(handoffPath);
+  let verdict = null;
+  try {
+    verdict = JSON.parse(readText(verdictPath));
+  } catch (error) {
+    return { ok: false, reason: 'invalid_verifier_verdict_json', error: error.message };
+  }
+
+  const score = Number(markdownField(scorecardText, 'Current score'));
+  const target = Number(markdownField(scorecardText, 'Target score'));
+  const unmet = Number(markdownField(scorecardText, 'Unmet checklist items'));
+  const defects = Number(markdownField(scorecardText, 'Blocking defects'));
+  const checks = [
+    { ok: /^pass$/i.test(markdownField(qaText, 'Status')), reason: 'qa_status_not_pass' },
+    { ok: /^complete$/i.test(markdownField(qaText, 'Scope status')), reason: 'qa_scope_not_complete' },
+    { ok: /^clean_finish$/i.test(markdownField(qaText, 'Next path')), reason: 'qa_next_path_not_clean_finish' },
+    { ok: /^yes$/i.test(markdownField(qaText, 'Review completed')), reason: 'qa_review_not_complete' },
+    { ok: /^yes$/i.test(markdownField(qaText, 'Fresh evidence confirmed')), reason: 'qa_fresh_evidence_not_confirmed' },
+    { ok: /^none$/i.test(markdownField(qaText, 'Remaining blockers before closeout')), reason: 'qa_remaining_blockers_not_none' },
+    { ok: Number.isFinite(score) && Number.isFinite(target) && score >= target, reason: 'score_below_target' },
+    { ok: unmet === 0, reason: 'scorecard_unmet_items' },
+    { ok: defects === 0, reason: 'scorecard_blocking_defects' },
+    { ok: /^done$/i.test(markdownField(scorecardText, 'Verdict')), reason: 'scorecard_verdict_not_done' },
+    { ok: /^FULL$/i.test(markdownField(scorecardText, 'Current task status')), reason: 'scorecard_task_not_full' },
+    { ok: /^no$/i.test(markdownField(handoffText, 'Required')), reason: 'handoff_required' },
+    { ok: /^scope_complete$/i.test(markdownField(handoffText, 'Reason')), reason: 'handoff_reason_not_scope_complete' },
+    { ok: /^phase_local_closeout_marker$/i.test(markdownField(handoffText, 'Stop reason')), reason: 'handoff_stop_reason_not_clean_marker' },
+    { ok: /^passed$/i.test(String(verdict.verdict || '')), reason: 'verdict_not_passed' },
+    { ok: verdict.blocking === false, reason: 'verdict_blocking' },
+    { ok: Array.isArray(verdict.environmentBlockers) && verdict.environmentBlockers.length === 0, reason: 'verdict_environment_blockers' },
+    { ok: Array.isArray(verdict.requiredChecks?.missing) && verdict.requiredChecks.missing.length === 0, reason: 'verdict_missing_checks' },
+    { ok: Number(verdict.score?.current) >= Number(verdict.score?.target), reason: 'verdict_score_below_target' },
+    { ok: Number(verdict.score?.unmetChecklistItems ?? verdict.score?.unmetItems) === 0, reason: 'verdict_unmet_items' },
+    { ok: /^done$/i.test(String(verdict.score?.verdict || '')), reason: 'verdict_score_not_done' },
+  ];
+  const failed = checks.find((check) => !check.ok);
+  if (failed) {
+    return { ok: false, reason: failed.reason };
+  }
+  return {
+    ok: true,
+    reason: 'clean_finish_evidence_confirmed',
+    evidence: [qaPath, scorecardPath, handoffPath, verdictPath].map((filePath) => rel(root, filePath)),
+  };
+}
+
+function appendJsonlRecord(filePath, record) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+function sha256File(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function refreshSidecarManifestAfterResolution({ root, sidecarPaths, sidecarState, resolvedBlockers, now, dryRun }) {
+  const previous = fs.existsSync(sidecarPaths.projectionManifestPath)
+    ? JSON.parse(readText(sidecarPaths.projectionManifestPath))
+    : {};
+  const blockerIds = [...new Set([
+    ...(Array.isArray(previous.blockerEvidenceIds) ? previous.blockerEvidenceIds : []),
+    ...resolvedBlockers.map((record) => record.id).filter(Boolean),
+  ])];
+  const attemptKeys = [...new Set([
+    ...(Array.isArray(previous.attemptLedgerKeys) ? previous.attemptLedgerKeys : []),
+    ...(sidecarState.attemptLedger || []).map((record) => `${record.attemptId}:${record.transactionId}`),
+  ].filter(Boolean))];
+  const files = [
+    sidecarPaths.blockerEvidencePath,
+    sidecarPaths.attemptLedgerPath,
+    path.join(root, DEFAULT_WORKFLOW_DIR, 'active-phase-run.json'),
+    path.join(root, DEFAULT_WORKFLOW_DIR, 'current-run.json'),
+    path.join(root, DEFAULT_WORKFLOW_DIR, 'latest-dispatch.json'),
+  ].filter((filePath) => fs.existsSync(filePath)).map((filePath) => ({
+    path: rel(root, filePath),
+    kind: path.basename(filePath, path.extname(filePath)) || 'sidecar',
+    sha256: sha256File(filePath),
+  }));
+  const next = {
+    ...previous,
+    terminalOutcome: 'blocked_resolved',
+    resolvedAt: now,
+    blockerEvidenceIds: blockerIds,
+    attemptLedgerKeys: attemptKeys,
+    sidecarMode: 'sidecar_canonical',
+    sidecarDiagnostics: [],
+    files,
+  };
+  if (!dryRun) {
+    writeJsonAtomic(sidecarPaths.projectionManifestPath, next);
+  }
+  return next;
+}
+
+function reconcileResolvedSidecarBlockers({ root, phase, phaseNumber, sidecarState, now, dryRun, plannedWrites }) {
+  if (!sidecarState || sidecarState.mode !== 'sidecar_canonical') {
+    return { state: sidecarState, resolution: { status: 'skipped', reason: 'not_sidecar_canonical' } };
+  }
+  const activeBlockers = sidecarState.latestBlockers?.active || [];
+  if (activeBlockers.length === 0) {
+    return { state: sidecarState, resolution: { status: 'skipped', reason: 'no_active_sidecar_blocker' } };
+  }
+  const evidence = cleanFinishEvidenceForSidecarResolution({ root, phase, phaseNumber });
+  if (!evidence.ok) {
+    return { state: sidecarState, resolution: { status: 'blocked', reason: evidence.reason, evidence } };
+  }
+
+  const resolvedBlockers = activeBlockers.map((record) => ({
+    ...Object.fromEntries(Object.entries(record).filter(([key]) => !key.startsWith('__'))),
+    status: 'resolved',
+    resolvedAt: now,
+    updatedAt: now,
+    resolution: 'phase_clean_finish_evidence_confirmed',
+    resolutionEvidence: evidence.evidence,
+  }));
+  plannedWrites.push({ path: sidecarState.paths.blockerEvidencePath, kind: 'sidecar-blocker-resolution' });
+  plannedWrites.push({ path: sidecarState.paths.projectionManifestPath, kind: 'sidecar-projection-manifest-resolution' });
+  if (!dryRun) {
+    for (const record of resolvedBlockers) {
+      appendJsonlRecord(sidecarState.paths.blockerEvidencePath, record);
+    }
+  }
+  const manifest = refreshSidecarManifestAfterResolution({
+    root,
+    sidecarPaths: sidecarState.paths,
+    sidecarState,
+    resolvedBlockers,
+    now,
+    dryRun,
+  });
+  const nextState = dryRun
+    ? {
+      ...sidecarState,
+      latestBlockers: {
+        ...sidecarState.latestBlockers,
+        active: [],
+        unknown: [],
+        historical: [...(sidecarState.latestBlockers?.historical || []), ...resolvedBlockers],
+      },
+      diagnostics: [],
+    }
+    : loadFinalizeSidecarState({ root, phase, executionRoot: path.dirname(sidecarState.paths.blockerEvidencePath) });
+  return {
+    state: nextState,
+    resolution: {
+      status: dryRun ? 'planned' : 'resolved',
+      reason: 'phase_clean_finish_evidence_confirmed',
+      resolvedBlockerIds: resolvedBlockers.map((record) => record.id),
+      manifestTerminalOutcome: manifest.terminalOutcome,
+    },
   };
 }
 
@@ -2375,7 +2548,17 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
   const statusText = readText(statusPath);
   const statusDocument = statusText ? parsePhaseStatusDocument(statusText) : { root: {}, phases: [] };
   const phase = statusDocument.phases.find((entry) => Number(entry.number) === phaseNumber) || { number: phaseNumber };
-  const sidecarState = loadFinalizeSidecarState({ root, phase, executionRoot: phaseExecutionRoot });
+  let sidecarState = loadFinalizeSidecarState({ root, phase, executionRoot: phaseExecutionRoot });
+  const sidecarResolution = reconcileResolvedSidecarBlockers({
+    root,
+    phase,
+    phaseNumber,
+    sidecarState,
+    now,
+    dryRun,
+    plannedWrites,
+  });
+  sidecarState = sidecarResolution.state;
   const sidecarIssues = sidecarProjectionIssues(sidecarState);
   if (sidecarIssues.length > 0) {
     const reason = sidecarIssues[0];
@@ -2393,6 +2576,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
         sidecarMode: sidecarState.mode,
         sidecarIssues,
         sidecarDiagnostics: sidecarState.diagnostics || [],
+        sidecarResolution: sidecarResolution.resolution,
       },
     });
     const diagnostics = dryRun
@@ -2426,6 +2610,7 @@ export async function finalizePhaseCloseout(rawConfig = {}) {
         mode: sidecarState.mode,
         issues: sidecarIssues,
         diagnostics: sidecarState.diagnostics || [],
+        resolution: sidecarResolution.resolution,
       },
       phaseNumber,
       phaseTitle: phase.title || `Phase ${phaseNumber}`,

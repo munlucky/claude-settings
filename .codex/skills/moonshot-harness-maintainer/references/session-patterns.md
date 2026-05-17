@@ -17,6 +17,8 @@ Use this reference when recreating the harness maintenance flow from the April 2
   - `project-md-refresh`
   - `failure-analyzer`
 - Keep runtime parity gate logic strict; update fixtures to match the current contract.
+- Treat each harness incident fix as a TDD cycle: durable regression test or fixture first, RED or old-behavior proof next, minimal harness change, then GREEN plus neighboring suite.
+- Use MemoryGraph only as recall/index for incident taxonomy and test mapping; executable tests and completion gates are the authoritative recurrence guard.
 - Downstream `.claude` sync should update shared harness assets while preserving project-local files.
 - Transfer useful workflow-prompt patterns as:
   - sideways replan guard in `moonshot-orchestrator`

@@ -40,7 +40,14 @@ function runProbe(probeCommand, invocation) {
 }
 
 function defaultProbe(command, args) {
-  return runCommand(command, args, { encoding: 'utf8' });
+  return runCommand(command, args, {
+    encoding: 'utf8',
+    // Windows package-manager shims are often .cmd/.ps1 wrappers. Node's
+    // shellless spawn can report ENOENT/EINVAL for commands that PowerShell
+    // and cmd can actually execute, so command discovery must probe through
+    // the platform shell on Windows.
+    shell: process.platform === 'win32',
+  });
 }
 
 function commandAvailable(probeCommand, invocation) {
@@ -140,6 +147,8 @@ const COMMAND_POLICIES = {
     exact: [{ command: 'pytest', args: [] }],
     equivalents: [
       { command: 'python', args: ['-m', 'pytest'], label: 'python -m pytest' },
+      { command: 'py', args: ['-3', '-m', 'pytest'], label: 'py -3 -m pytest' },
+      { command: 'python3', args: ['-m', 'pytest'], label: 'python3 -m pytest' },
     ],
   },
   git: {

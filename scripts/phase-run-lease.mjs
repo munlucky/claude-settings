@@ -396,7 +396,9 @@ async function assertReturnAllowedWithRuntime(config) {
   ]);
   if (dbDecision && dbDecision.RETURN_ALLOWED === 'false') {
     const reason = String(dbDecision.RETURN_REASON || '');
-    if (reason.startsWith('paused-goal') || reason.startsWith('budget-limited-goal')) {
+    const dbActionable = Number(dbDecision.ACTIONABLE_PHASES_REMAINING ?? Number.NaN);
+    const dbHasCurrentOrGreaterActionable = !Number.isFinite(dbActionable) || dbActionable <= actionable || actionable > 0;
+    if ((reason.startsWith('paused-goal') || reason.startsWith('budget-limited-goal')) && dbHasCurrentOrGreaterActionable) {
       return dbDecision;
     }
   }

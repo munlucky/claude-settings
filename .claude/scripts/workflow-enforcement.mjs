@@ -795,6 +795,7 @@ export function validateCloseoutSynchronization({
   const closeoutReason = canonicalizeCloseoutReason(extractBulletValue(qaText, '## Verdict', 'Closeout reason'));
   const scopeStatus = extractBulletValue(qaText, '## Verdict', 'Scope status').toLowerCase();
   const reviewCompleted = extractBulletValue(qaText, '## Review Checkpoint', 'Review completed').toLowerCase();
+  const validationProfile = extractBulletValue(qaText, '## Workflow Execution', 'Validation profile').toLowerCase();
   const acceptanceEvidence = extractBulletValue(qaText, '## Finish Readiness', 'AC evidence confirmed').toLowerCase()
     || extractBulletValue(qaText, '## Finish Readiness', 'Acceptance criteria evidence confirmed').toLowerCase();
   const acLinkedState = evaluateAcLinkedWorksets(path.dirname(qaReportPath));
@@ -876,6 +877,65 @@ function isWorkflowArtifact(filePath) {
     normalized.endsWith('/HANDOFF.md') ||
     normalized.endsWith('/SCORECARD.md')
   );
+}
+
+function readJsonIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeWorkflowPath(filePath) {
+  const raw = String(filePath || '').replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!raw) {
+    return '';
+  }
+  const resolved = path.resolve(raw);
+  const relative = path.relative(process.cwd(), resolved).replace(/\\/g, '/');
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return relative.replace(/^\.\//, '');
+  }
+  return raw;
+}
+
+function isImplementationArchiveArtifact(filePath) {
+  return normalizeWorkflowPath(filePath).includes('/archive/');
+}
+
+function activeExecutionRootFromDispatch(payload) {
+  const directRoot = normalizeWorkflowPath(payload?.executionRoot || payload?.phaseRunLease?.executionRoot || '');
+  return directRoot.replace(/\/$/, '');
+}
+
+function scopeWorkflowArtifactFiles(files, { activeExecutionRoot = '' } = {}) {
+  const normalizedActiveRoot = normalizeWorkflowPath(activeExecutionRoot).replace(/\/$/, '');
+  return files.filter((filePath) => {
+    if (!isWorkflowArtifact(filePath)) {
+      return true;
+    }
+    const normalized = normalizeWorkflowPath(filePath);
+    if (isImplementationArchiveArtifact(normalized)) {
+      return false;
+    }
+    if (!normalizedActiveRoot) {
+      return true;
+    }
+    if (normalized === '.claude/docs/phase-status.yaml') {
+      return true;
+    }
+    if (normalized.startsWith('.claude/logs/')) {
+      return true;
+    }
+    if (normalized.includes('/execution/')) {
+      return normalized === normalizedActiveRoot || normalized.startsWith(`${normalizedActiveRoot}/`);
+    }
+    return true;
+  });
 }
 
 const REQUIRED_GOAL_CONTRACT_FIELDS = [
@@ -1468,9 +1528,13 @@ function recordBounded(argv) {
 }
 
 function verifyEnforcement(argv) {
-  const files = collectCandidateFiles(argv);
   const latestDispatch = path.join(WORKFLOW_LOG_DIR, 'latest-dispatch.json');
   const latestBounded = path.join(WORKFLOW_LOG_DIR, 'latest-bounded.json');
+  const latestDispatchPayload = readJsonIfExists(latestDispatch);
+  const rawFiles = collectCandidateFiles(argv);
+  const files = scopeWorkflowArtifactFiles(rawFiles, {
+    activeExecutionRoot: activeExecutionRootFromDispatch(latestDispatchPayload),
+  });
   const forceTrace = String(process.env.WORKFLOW_ENFORCEMENT_REQUIRE_TRACE || '').toLowerCase() === 'true';
   const normalizedFiles = files.map((item) => item.replace(/\\/g, '/'));
   const analysisFiles = files.filter((filePath, index) => normalizedFiles[index] === '.claude/docs/moonshot-analysis.yaml' || normalizedFiles[index].endsWith('/moonshot-analysis.yaml'));
@@ -1480,7 +1544,7 @@ function verifyEnforcement(argv) {
   const requiresPhaseTrace = files.some((filePath) => isWorkflowArtifact(filePath));
   const requiresBoundedTrace = analysisFiles.length > 0;
   const requiresTrace = forceTrace || requiresPhaseTrace || requiresBoundedTrace;
-  const codeChangeDetected = files.some((filePath) => isCodeChangingPath(filePath));
+  const codeChangeDetected = rawFiles.some((filePath) => isCodeChangingPath(filePath));
   const violations = [];
 
   if (!requiresTrace) {
@@ -1492,7 +1556,7 @@ function verifyEnforcement(argv) {
     if (!fs.existsSync(latestDispatch)) {
       violations.push('missing latest dispatch evidence at .claude/logs/workflow-enforcement/latest-dispatch.json');
     } else {
-      const payload = JSON.parse(fs.readFileSync(latestDispatch, 'utf8'));
+      const payload = latestDispatchPayload || {};
       violations.push(...validateRuntimeReadModels(payload, latestDispatch));
       for (const key of ['planDir', 'executionMode', 'executionRoot', 'runtime']) {
         if (!payload[key]) {
@@ -1635,6 +1699,7 @@ function verifyEnforcement(argv) {
       const remainingScope = extractBulletValue(text, '## Finish Readiness', 'Remaining in-scope work');
       const contractReviewed = extractBulletValue(text, '## Contract Review Evidence', 'Contract reviewed by evaluator').toLowerCase();
       const runtimeEvidenceDepth = extractBulletValue(text, '## Runtime Updates', 'Runtime evidence depth').toLowerCase();
+      const validationProfile = String(section.validationProfile || '').trim().toLowerCase();
       const smokeWarnings = extractBulletValue(text, '## Runtime Updates', 'Critical scenario smoke-only warnings').toLowerCase();
       const normalizedRunVerdict = extractBulletValue(text, '## Runtime Updates', 'Normalized run verdict').toLowerCase();
       const environmentBlockers = extractBulletValue(text, '## Runtime Updates', 'Environment blockers').toLowerCase();
@@ -1678,7 +1743,7 @@ function verifyEnforcement(argv) {
           if (!['yes', 'skipped_simple'].includes(contractReviewed)) {
             violations.push(`${qaReport}: clean_finish requires Contract Review Evidence with Contract reviewed by evaluator = yes or skipped_simple`);
           }
-          if (hasCriticalScenario && runtimeEvidenceDepth !== 'open-act-mutate-persist-recover') {
+          if (hasCriticalScenario && !['docs_only', 'prompt_only'].includes(validationProfile) && runtimeEvidenceDepth !== 'open-act-mutate-persist-recover') {
             violations.push(`${qaReport}: clean_finish for critical SCN-* requires Runtime evidence depth = open-act-mutate-persist-recover`);
           }
           if (hasCriticalScenario && smokeWarnings && !['none', 'no', 'n/a'].includes(smokeWarnings)) {
