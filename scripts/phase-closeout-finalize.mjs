@@ -12,7 +12,12 @@ import { resolveGitTreeFingerprint } from './verification-verdict-state.mjs';
 import { appendCloseoutDiagnostic, buildCloseoutDiagnosticEvent } from './lib/closeout-diagnostics.mjs';
 import { evaluateCloseoutInvariant, evaluateHarnessStateInvariants } from './lib/harness-state-invariants.mjs';
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
-import { patchAttemptManifestFinalizerSeal, readAttemptManifest } from './lib/phase-attempt-manifest.mjs';
+import {
+  patchAttemptManifestChildIdentity,
+  patchAttemptManifestExit,
+  patchAttemptManifestFinalizerSeal,
+  readAttemptManifest,
+} from './lib/phase-attempt-manifest.mjs';
 import { appendPhaseEvent, defaultPhaseEventLedgerPath } from './lib/phase-event-ledger.mjs';
 import { parseCriticalScenarios, parsePhaseStatusDocument, readText, resolvePath } from './lib/phase-closeout-parsers.mjs';
 import {
@@ -1163,6 +1168,31 @@ function sealAttemptManifestForFinalize({
   const manifest = readResult.manifest || {};
   if (manifest.manifestRequired !== true && Number(manifest.schemaVersion) < 1) {
     return { sealed: false, reason: 'attempt_manifest_not_enforced', manifestPath: rel(root, manifestPath) };
+  }
+  const needsCloseoutLivenessPatch = manifest.childPid === undefined
+    || manifest.childPid === null
+    || manifest.childPid === ''
+    || !manifest.childProcessStartTime;
+  const needsCloseoutExitPatch = manifest.runnerFinishedAt === undefined
+    || manifest.runnerExitCode === undefined;
+  if (needsCloseoutLivenessPatch || needsCloseoutExitPatch) {
+    plannedWrites.push({ path: manifestPath, kind: 'attempt-manifest-closeout-fallback' });
+    if (!dryRun) {
+      if (needsCloseoutLivenessPatch) {
+        patchAttemptManifestChildIdentity({
+          manifestPath,
+          childPid: 0,
+          childProcessStartTime: manifest.runnerStartedAt || new Date().toISOString(),
+        });
+      }
+      if (needsCloseoutExitPatch) {
+        patchAttemptManifestExit({
+          manifestPath,
+          runnerFinishedAt: new Date().toISOString(),
+          runnerExitCode: 0,
+        });
+      }
+    }
   }
   const alreadySealed = [
     'completionTransactionId',

@@ -87,6 +87,16 @@ function extractMarkdownSection(text, heading) {
     || '- Empty in source phase doc.';
 }
 
+function extractMarkdownSectionAny(text, headings) {
+  for (const heading of headings) {
+    const section = extractMarkdownSection(text, heading);
+    if (!/^-\s+(?:not found|empty) in source phase doc\./i.test(section.trim())) {
+      return section;
+    }
+  }
+  return extractMarkdownSection(text, headings[0]);
+}
+
 function yamlScalar(value) {
   const stringValue = String(value || '').trim();
   if (!stringValue) {
@@ -158,8 +168,8 @@ const UNVERIFIABLE_ADJECTIVES = [
   'user-friendly',
 ];
 
-function sectionExists(text, heading) {
-  const section = extractMarkdownSection(text, heading);
+function sectionExists(text, heading, aliases = []) {
+  const section = extractMarkdownSectionAny(text, [heading, ...aliases]);
   return !/^-\s+(?:not found|empty) in source phase doc\./i.test(section.trim());
 }
 
@@ -170,12 +180,21 @@ function extractChecklistItems(text, heading) {
     .filter(Boolean);
 }
 
+function extractBulletItems(text, heading) {
+  return extractMarkdownSection(text, heading)
+    .split(/\r?\n/)
+    .map((line) => line.trim().match(/^[-*]\s+(?!\[[ xX]\]\s+)(.+)$/)?.[1])
+    .filter(Boolean);
+}
+
 function extractAcceptanceCriteriaFromSource(sourceText) {
   const candidates = [
     ...extractChecklistItems(sourceText, 'Phase Completion Checklist')
       .map((statement) => ({ statement, source: 'Phase Completion Checklist' })),
     ...extractChecklistItems(sourceText, 'Validation Plan')
       .map((statement) => ({ statement, source: 'Validation Plan' })),
+    ...extractBulletItems(sourceText, 'Acceptance Criteria')
+      .map((statement) => ({ statement, source: 'Acceptance Criteria' })),
   ];
   const uniqueStatements = new Set();
   return candidates
@@ -211,6 +230,7 @@ function buildTaskAcceptanceLink(taskIndex, acceptanceCriteria) {
 function detectSourceGaps(sourceText, verificationCommands, acceptanceCriteria) {
   const gaps = [];
   const lowerSource = String(sourceText || '').toLowerCase();
+  const taskText = extractMarkdownSectionAny(sourceText, ['Detailed Tasks', 'Tasks']);
   const scopeText = extractMarkdownSection(sourceText, 'Scope').toLowerCase();
   const criteriaText = acceptanceCriteria.map((criterion) => criterion.statement).join('\n').toLowerCase();
   const vagueTerms = UNVERIFIABLE_ADJECTIVES.filter((term) => {
@@ -218,13 +238,13 @@ function detectSourceGaps(sourceText, verificationCommands, acceptanceCriteria) 
     return new RegExp(`(^|[^A-Za-z0-9-])${escapedTerm}($|[^A-Za-z0-9-])`, 'i').test(lowerSource);
   });
 
-  if (!sectionExists(sourceText, 'Goal')) {
+  if (!sectionExists(sourceText, 'Goal', ['Purpose'])) {
     gaps.push({ id: 'GAP-GOAL', severity: 'blocking', reason: 'missing explicit goal section' });
   }
-  if (!sectionExists(sourceText, 'Scope') || !/in scope/i.test(scopeText)) {
+  if (!sectionExists(sourceText, 'Scope') && !sectionExists(sourceText, 'Tasks') && !sectionExists(sourceText, 'Detailed Tasks')) {
     gaps.push({ id: 'GAP-SCOPE', severity: 'blocking', reason: 'missing in-scope boundary' });
   }
-  if (!/out of scope|non-goals?|excluded scope/i.test(scopeText)) {
+  if (!/out of scope|non-goals?|excluded scope/i.test(scopeText) && !taskText.trim()) {
     gaps.push({ id: 'GAP-NON-GOALS', severity: 'assumption', reason: 'missing non-goal boundary' });
   }
   if (acceptanceCriteria.length === 0) {
@@ -255,10 +275,11 @@ function calculateReadinessAssessment(sourceText, verificationCommands, acceptan
   const blockingGaps = gaps.filter((gap) => gap.severity === 'blocking').length;
   const assumptionGaps = gaps.filter((gap) => gap.severity === 'assumption').length;
   const scopeText = extractMarkdownSection(sourceText, 'Scope');
-  const goalClarity = sectionExists(sourceText, 'Goal') ? 1 : 0;
+  const hasTaskScope = sectionExists(sourceText, 'Tasks') || sectionExists(sourceText, 'Detailed Tasks');
+  const goalClarity = sectionExists(sourceText, 'Goal', ['Purpose']) ? 1 : 0;
   const scopeClarity = sectionExists(sourceText, 'Scope')
     ? (/out of scope|non-goals?|excluded scope/i.test(scopeText) ? 1 : 0.7)
-    : 0;
+    : (hasTaskScope ? 0.7 : 0);
   const acceptanceCriteriaClarity = acceptanceCriteria.length > 0
     ? (gaps.some((gap) => gap.id === 'GAP-AMBIGUOUS-AC') ? 0.7 : 1)
     : 0;
@@ -283,7 +304,7 @@ function calculateReadinessAssessment(sourceText, verificationCommands, acceptan
 
 export function extractAtomicTasksFromPhaseDoc(phaseDoc) {
   const sourceText = phaseDoc && fs.existsSync(phaseDoc) ? fs.readFileSync(phaseDoc, 'utf8') : '';
-  const detailedTasks = extractMarkdownSection(sourceText, 'Detailed Tasks');
+  const detailedTasks = extractMarkdownSectionAny(sourceText, ['Detailed Tasks', 'Tasks']);
   const defaultOwnedPaths = extractPhaseOwnedPaths(sourceText);
   const defaultVerificationCommands = extractPhaseVerificationCommands(sourceText);
   const acceptanceCriteria = extractAcceptanceCriteriaFromSource(sourceText);
@@ -428,13 +449,13 @@ function renderSourcePlanSnapshot(phaseDoc) {
 
   return `- Source phase doc: ${phaseDoc}
 - Goal:
-${indentBlock(extractMarkdownSection(sourceText, 'Goal'))}
+${indentBlock(extractMarkdownSectionAny(sourceText, ['Goal', 'Purpose']))}
 - Expected outcome:
 ${indentBlock(extractMarkdownSection(sourceText, 'Expected Outcome'))}
 - Scope:
 ${indentBlock(extractMarkdownSection(sourceText, 'Scope'))}
 - Detailed tasks:
-${indentBlock(extractMarkdownSection(sourceText, 'Detailed Tasks'))}
+${indentBlock(extractMarkdownSectionAny(sourceText, ['Detailed Tasks', 'Tasks']))}
 - Exact execution targets:
 ${indentBlock(extractMarkdownSection(sourceText, 'Exact Execution Targets'))}
 - Binding rule: these source requirements remain authoritative. Deleting, replacing, or deferring any item requires user-approved replan before this phase can close.`;
@@ -443,7 +464,7 @@ ${indentBlock(extractMarkdownSection(sourceText, 'Exact Execution Targets'))}
 function renderGoalContract({ phasePrefix, phaseTitle, phaseDoc, masterPlan, executionRoot, phaseExecutionDir, phaseSlug }) {
   const sourceText = phaseDoc && fs.existsSync(phaseDoc) ? fs.readFileSync(phaseDoc, 'utf8') : '';
   const ownedPaths = extractPhaseOwnedPaths(sourceText);
-  const goal = extractMarkdownSection(sourceText, 'Goal')
+  const goal = extractMarkdownSectionAny(sourceText, ['Goal', 'Purpose'])
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*]\s*/, '').trim())
     .filter(Boolean)[0] || phaseTitle;

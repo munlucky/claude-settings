@@ -376,6 +376,44 @@ test('finalize writes attempt manifest finalizer seal before status promotion', 
   });
 });
 
+test('finalize patches missing attempt manifest liveness and exit before sealing', async () => {
+  await withFixture(async (fixture) => {
+    const intent = writeAttemptManifestIntent({
+      executionRoot: fixture.executionRoot,
+      phaseNumber: 1,
+      phaseSlug: '01-smoke',
+      attemptId: 'attempt-phase-01-a',
+      runnerStartedAt: '2026-05-10T11:58:00Z',
+      promptHash: 'prompt-hash',
+      commandHash: 'command-hash',
+      runnerLogPath: '.claude/logs/agent-loop/phase-1.log',
+    });
+
+    assert.equal(validateAttemptManifest(intent.manifestPath, { requireFinalizerSeal: true }).ok, false);
+
+    const result = await finalizePhaseCloseout({
+      root: fixture.root,
+      phase: 1,
+      statusFile: fixture.statusFile,
+      planDir: fixture.planDir,
+      masterPlan: fixture.masterPlan,
+      executionRoot: fixture.executionRoot,
+      workflowDir: fixture.workflowDir,
+      now: fixture.now,
+      commitToken: 'phase01-manifest-closeout-fallback',
+    });
+
+    assert.equal(result.attemptManifestSeal.sealed, true);
+    assert.ok(result.plannedWrites.some((entry) => entry.kind === 'attempt-manifest-closeout-fallback'));
+    const manifest = readAttemptManifest(intent.manifestPath).manifest;
+    assert.equal(manifest.childPid, 0);
+    assert.equal(manifest.childProcessStartTime, '2026-05-10T11:58:00Z');
+    assert.equal(manifest.runnerExitCode, 0);
+    assert.match(manifest.runnerFinishedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(validateAttemptManifest(intent.manifestPath, { requireFinalizerSeal: true }).ok, true);
+  });
+});
+
 test('finalize seals the manifest for the requested phase when execution root contains multiple phases', async () => {
   await withFixture(async (fixture) => {
     const planExecutionRoot = path.dirname(fixture.executionRoot);
