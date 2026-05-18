@@ -75,6 +75,20 @@ test('phase closeout fails when a structured verdict contradicts itself', () => 
   });
 });
 
+test('phase closeout skips artifact requirements for carry-forward completed phases', () => {
+  withFixture({
+    carryForward: true,
+    archived: false,
+    scenarioEvidence: false,
+    traceability: false,
+  }, (root) => {
+    const result = evaluatePhaseCloseout(config(root));
+
+    assert.equal(result.allowed, true);
+    assert.equal(result.status, 'pass');
+  });
+});
+
 function config(root) {
   return {
     statusFile: path.join(root, '.claude/docs/phase-status.yaml'),
@@ -105,6 +119,7 @@ function writeFixture(root, options = {}) {
     traceability: true,
     qaExtra: '',
     inconsistentVerdict: false,
+    carryForward: false,
     ...options,
   };
   const docsDir = path.join(root, 'docs/implementation');
@@ -166,6 +181,10 @@ function writeFixture(root, options = {}) {
       '      lastOutcome: completed',
       '    timing:',
       '      lastStage: finish',
+      ...(settings.carryForward ? [
+        '    carryForward: true',
+        '    carryForwardReason: "preserved_completed_foundation_phase"',
+      ] : []),
       '    sprintContract: "docs/implementation/execution/01-feature/SPRINT_CONTRACT.md"',
       '    qaReport: "docs/implementation/execution/01-feature/QA_REPORT.md"',
       '    handoff: "docs/implementation/execution/01-feature/HANDOFF.md"',

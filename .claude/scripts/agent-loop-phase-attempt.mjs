@@ -344,7 +344,7 @@ function decideTimeoutPolicy(config) {
     return { ACTION: 'stop-loop', SUMMARY: 'do_not_retry:broad_search_timeout', SAME_RUN_DECISION_RESULT: 'do_not_retry' };
   }
   if (timeoutClass === 'phaseRuntimeParity_timeout') {
-    return { ACTION: 'route-long-budget', SUMMARY: 'route_to_long_budget:phaseRuntimeParity_timeout', SAME_RUN_DECISION_RESULT: 'route_to_long_budget' };
+    return { ACTION: 'stop-loop', SUMMARY: 'stop_and_handoff:phaseRuntimeParity_timeout', SAME_RUN_DECISION_RESULT: 'stop_and_handoff' };
   }
   if (timeoutClass === 'raw_diff_output_timeout') {
     return repeated

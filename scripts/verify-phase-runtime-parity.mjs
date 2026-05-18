@@ -5,7 +5,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const scriptPath = fileURLToPath(import.meta.url);
+const scriptDir = path.dirname(scriptPath);
 const shellCorePath = path.join(scriptDir, 'verify-phase-runtime-parity-shell-core.sh');
 const compactOutput = process.argv.includes('--compact') || String(process.env.TOKEN_OUTPUT_MODE || '').toLowerCase() === 'compact';
 
@@ -14,13 +15,33 @@ function resolvePositiveInteger(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function resolveWrapperTimeoutMs() {
-  const explicit = resolvePositiveInteger(process.env.PHASE_RUNTIME_PARITY_WRAPPER_TIMEOUT_SECONDS);
+export function argvIncludesRequiredRuntime(args = process.argv.slice(2)) {
+  return args.some((arg, index) => {
+    if (arg === '--runtime-profile') {
+      return args[index + 1] === 'required_runtime';
+    }
+    return arg === '--runtime-profile=required_runtime';
+  });
+}
+
+export function envRequiresRuntime(env = process.env) {
+  return String(env.PHASE_RUNTIME_PARITY_REQUIRED || '').toLowerCase() === 'true'
+    || String(env.PHASE_RUNTIME_PROFILE || '') === 'required_runtime';
+}
+
+export function resolveWrapperTimeoutMs({ env = process.env, args = process.argv.slice(2) } = {}) {
+  const explicit = resolvePositiveInteger(env.PHASE_RUNTIME_PARITY_WRAPPER_TIMEOUT_SECONDS);
   if (explicit) {
     return explicit * 1000;
   }
-  const runtimeWatchdog = resolvePositiveInteger(process.env.PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS) || 600;
-  return Math.max(120, runtimeWatchdog * 2 + 240) * 1000;
+  const requiredRuntime = envRequiresRuntime(env) || argvIncludesRequiredRuntime(args);
+  const runtimeWatchdog = resolvePositiveInteger(env.PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS)
+    || (requiredRuntime ? 600 : 180);
+  const bufferSeconds = requiredRuntime ? 240 : 60;
+  const maxSeconds = requiredRuntime
+    ? Math.max(120, runtimeWatchdog * 2 + bufferSeconds)
+    : Math.max(90, runtimeWatchdog + bufferSeconds);
+  return maxSeconds * 1000;
 }
 
 function appendRuntimeProfileFromEnv(args) {
@@ -68,8 +89,10 @@ function usage() {
     '',
     'Environment:',
     '  PHASE_RUNTIME_PROFILE=optional_probe|required_runtime',
+    '  PHASE_RUNTIME_PARITY_REQUIRED=true enables the long required_runtime wrapper budget',
     '  PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=auto|current|claude|codex|both',
     '  PHASE_RUNTIME_PARITY_WATCHDOG_MAX_SECONDS=<seconds>',
+    '  PHASE_RUNTIME_PARITY_WRAPPER_TIMEOUT_SECONDS=<seconds>',
   ].join('\n');
 }
 
@@ -163,11 +186,12 @@ function main() {
     exiting = true;
     terminateChildTree();
     const seconds = Math.round(wrapperTimeoutMs / 1000);
+    const timeoutLine = `phaseRuntimeParity_timeout: WATCHDOG_TIMEOUT wrapper timed out after ${seconds}s`;
     if (compactOutput) {
-      bufferedLines.push(`timeout: phase runtime parity wrapper timed out after ${seconds}s`);
+      bufferedLines.push(timeoutLine);
       process.stdout.write(`${bufferedLines.join('\n')}\n`);
     } else {
-      console.error(`ERROR: phase runtime parity wrapper timed out after ${seconds}s`);
+      console.error(`ERROR: ${timeoutLine}`);
     }
     process.exit(124);
   }, wrapperTimeoutMs);
@@ -229,4 +253,6 @@ function main() {
   });
 }
 
-main();
+if (path.resolve(process.argv[1] || '') === scriptPath) {
+  main();
+}

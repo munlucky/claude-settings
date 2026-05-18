@@ -2665,6 +2665,45 @@ function setPhaseCheckpoint(statusFile, phaseNum, checkpoint) {
   const itemIndent = block[0].length - block[0].trimStart().length;
   const topIndent = ' '.repeat(itemIndent + 2);
   const checkpointIndent = ' '.repeat(itemIndent + 4);
+
+  function phaseBlockStatus() {
+    const line = block.find((item) => item.startsWith(`${topIndent}status:`));
+    return String(line ? line.slice(`${topIndent}status:`.length) : '').trim().replace(/^"|"$/g, '');
+  }
+
+  function upsertSectionValue(sectionName, key, value) {
+    const sectionPrefix = `${topIndent}${sectionName}:`;
+    const keyPrefix = `${checkpointIndent}${key}:`;
+    let sectionStart = block.findIndex((line) => line.startsWith(sectionPrefix));
+    if (sectionStart < 0) {
+      sectionStart = block.length;
+      block.splice(sectionStart, 0, sectionPrefix);
+    }
+
+    let sectionEnd = block.length;
+    for (let probe = sectionStart + 1; probe < block.length; probe += 1) {
+      const indent = block[probe].length - block[probe].trimStart().length;
+      if (indent <= topIndent.length) {
+        sectionEnd = probe;
+        break;
+      }
+    }
+
+    for (let probe = sectionStart + 1; probe < sectionEnd; probe += 1) {
+      if (block[probe].startsWith(keyPrefix)) {
+        block[probe] = `${keyPrefix} ${value}`;
+        return;
+      }
+    }
+    block.splice(sectionEnd, 0, `${keyPrefix} ${value}`);
+  }
+
+  if (phaseBlockStatus() === 'completed') {
+    upsertSectionValue('attempts', 'lastOutcome', 'completed');
+    upsertSectionValue('timing', 'lastStage', 'finish/handoff');
+    upsertSectionValue('timing', 'lastStageAt', yamlScalar(checkpoint.committedAt || nowIsoSeconds()));
+  }
+
   const prefix = `${topIndent}checkpoint:`;
   let checkpointStart = block.findIndex((line) => line.startsWith(prefix));
   let checkpointEnd = block.length;
@@ -3351,6 +3390,37 @@ phases:
     });
     if (!fs.readFileSync(timingGreaterStatusFile, 'utf8').includes('runnerActiveSeconds_gt_wallClockSeconds')) {
       throw new Error('greater runnerActiveSeconds did not emit a timing invariant warning');
+    }
+
+    const checkpointStatusFile = path.join(tempDir, 'checkpoint-status.yaml');
+    fs.writeFileSync(checkpointStatusFile, `schemaVersion: "1.0"
+activeExecutionStatus: paused
+activeCurrentStage: execute
+phases:
+  - number: 15
+    title: "Checkpoint"
+    status: completed
+    attempts:
+      total: 1
+      lastOutcome: running
+      lastUpdatedAt: "2026-05-05T00:00:00Z"
+    timing:
+      startedAt: "2026-05-05T00:00:00Z"
+      lastStage: "execute"
+      lastStageAt: "2026-05-05T00:00:00Z"
+`, 'utf8');
+    setPhaseCheckpoint(checkpointStatusFile, '15', {
+      status: 'committed',
+      commit: 'abc1234',
+      committedAt: '2026-05-05T00:00:20Z',
+      reason: 'checkpoint_commit_created',
+    });
+    const checkpointStatusText = fs.readFileSync(checkpointStatusFile, 'utf8');
+    if (!checkpointStatusText.includes('lastOutcome: completed')) {
+      throw new Error('checkpoint did not normalize completed phase attempt outcome');
+    }
+    if (!checkpointStatusText.includes('lastStage: finish/handoff')) {
+      throw new Error('checkpoint did not normalize completed phase timing stage');
     }
 
     const staleStatusFile = path.join(tempDir, 'stale-root-status.yaml');

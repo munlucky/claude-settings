@@ -603,3 +603,81 @@ test('sidecar canonical invariant rejects manifest-only state without legacy fal
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('blocked phase workflow state remains degraded evidence when root active phase is cleared', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-blocked-cleared-active-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workflowDir, 'latest-dispatch.json'),
+      `${JSON.stringify({
+        status: 'failed',
+        completionStatus: 'failed',
+        phaseNumber: '16',
+        attemptOutcome: 'failed',
+        runLeaseId: 'dispatch-test',
+        childAlive: false,
+        liveness: { childAlive: false },
+      })}\n`,
+      'utf8',
+    );
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: {
+        activeExecutionStatus: 'paused',
+        activePhaseNumber: null,
+      },
+      phases: [
+        { number: 15, status: 'completed' },
+        { number: 16, status: 'blocked' },
+      ],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+      now: '2026-05-18T00:00:00Z',
+    });
+
+    assert.equal(result.violations.length, 0);
+    assert.equal(result.degradedEvidence.length, 1);
+    assert.equal(result.degradedEvidence[0].code, 'active_phase_blocked_workflow_state');
+    assert.equal(result.degradedEvidence[0].phaseNumber, 16);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('plan-level current-run without phase number follows root active open phase', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-plan-level-current-run-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workflowDir, 'current-run.json'),
+      `${JSON.stringify({
+        completionStatus: 'prepared',
+        planDir: 'docs/implementation',
+        statusFile: '.claude/docs/phase-status.yaml',
+        childAlive: false,
+      })}\n`,
+      'utf8',
+    );
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: {
+        activeExecutionStatus: 'active',
+        activePhaseNumber: 17,
+      },
+      phases: [
+        { number: 16, status: 'completed' },
+        { number: 17, status: 'in_progress' },
+      ],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+      now: '2026-05-18T00:00:00Z',
+    });
+
+    assert.equal(result.violations.length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

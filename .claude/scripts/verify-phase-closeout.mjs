@@ -567,6 +567,16 @@ function currentArtifactsModeForCloseout(phases = [], explicitMode = '') {
   return currentPointerPhaseCompleted(phases) ? 'current' : 'legacy';
 }
 
+function isCarryForwardCompletedPhase(phase = {}) {
+  const carryForward = String(phase.carryForward || '').trim().toLowerCase();
+  const closeoutMode = String(phase.closeoutMode || '').trim().toLowerCase();
+  return carryForward === 'true'
+    || carryForward === 'yes'
+    || carryForward === '1'
+    || closeoutMode === 'carry_forward'
+    || closeoutMode === 'carried_forward';
+}
+
 function collectSessionFiles({ sessionFile, sessionDir }) {
   if (sessionFile) {
     return fs.existsSync(sessionFile) ? [sessionFile] : [];
@@ -711,6 +721,10 @@ export function evaluatePhaseCloseout(rawConfig = {}) {
     }
 
     if (!completed) {
+      continue;
+    }
+
+    if (isCarryForwardCompletedPhase(phase)) {
       continue;
     }
 

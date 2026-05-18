@@ -858,13 +858,13 @@ function summarizePhaseRuntimeParityTimeoutSuppression(finalStopReason, activeRu
     recordPhaseRuntimeParityTimeout(state.statusFile, input);
   }
   return {
-    shouldSuppressRetry: alreadyRecorded,
+    shouldSuppressRetry: true,
     blockerCode: 'phaseRuntimeParity_timeout',
     sameFailureClassCount: alreadyRecorded ? 2 : 1,
-    decision: alreadyRecorded ? 'stop_and_handoff' : 'route_required_runtime_long_budget',
+    decision: 'stop_and_handoff',
     detail: alreadyRecorded
       ? 'same run phaseRuntimeParity timeout key already recorded; suppressing retry'
-      : 'first phaseRuntimeParity timeout recorded; retry may route only through required_runtime long-budget path',
+      : 'first phaseRuntimeParity timeout recorded; stop and require an explicit required_runtime long-budget rerun',
   };
 }
 

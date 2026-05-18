@@ -31,8 +31,8 @@ const CLASS_POLICY = Object.freeze({
   },
   phaseRuntimeParity_timeout: {
     rootCause: 'heavyweight_verifier_in_short_phase_loop',
-    retryPolicy: 'do_not_retry_same_run; route_to_long_budget',
-    sameRunDecisionResult: 'route_to_long_budget',
+    retryPolicy: 'do_not_retry_same_run; rerun manually only with required_runtime long budget',
+    sameRunDecisionResult: 'stop_and_handoff',
   },
   upstream_runtime_stall: {
     rootCause: 'runtime_stream_reconnect_or_stall',

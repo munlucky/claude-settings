@@ -99,6 +99,8 @@ test('prepareImplementationPlanState preserves checked master-plan phases as com
     assert.match(status, /activeCompletedPhases: 1/);
     assert.match(status, /activePendingPhases: 1/);
     assert.match(status, /number: 9\n    title: "Phase 09: Gap"\n    status: completed/);
+    assert.match(status, /number: 9[\s\S]*?carryForward: true/);
+    assert.match(status, /number: 9[\s\S]*?carryForwardReason: "preserved_completed_foundation_phase"/);
     assert.match(status, /number: 9[\s\S]*?attempts:\n      total: 1\n      lastOutcome: completed/);
     assert.match(status, /number: 10\n    title: "Phase 10: Lifecycle"\n    status: pending/);
 
@@ -113,6 +115,79 @@ test('prepareImplementationPlanState preserves checked master-plan phases as com
     assert.equal(reconcile.status, 0, `${reconcile.stdout}\n${reconcile.stderr}`);
     assert.equal(reconcile.stdout.trim(), '');
     assert.match(fs.readFileSync('.claude/docs/phase-status.yaml', 'utf8'), /number: 9\n    title: "Phase 09: Gap"\n    status: completed/);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('prepareImplementationPlanState archives stale simple-run state before new dispatch', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'prepare-plan-simple-state-'));
+  const previousCwd = process.cwd();
+  try {
+    process.chdir(root);
+    fs.mkdirSync('docs/implementation', { recursive: true });
+    fs.writeFileSync('docs/implementation/00-master-plan-v3.md', [
+      '# Master Plan v3',
+      '',
+      '| Phase | Plan File |',
+      '|---|---|',
+      '| 15 | `docs/implementation/15-real-viewer.md` |',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync('docs/implementation/15-real-viewer.md', '# Phase 15: Real Viewer\n', 'utf8');
+    fs.mkdirSync('.claude/logs/workflow-enforcement/runs/phase-9-stale', { recursive: true });
+    fs.writeFileSync('.claude/logs/workflow-enforcement/STATE.md', [
+      '# Simple Run State',
+      '',
+      'stateRunId: phase-9-stale',
+      'transitionId: old-transition',
+      'projectionStatus: committed',
+      'planDir: docs/implementation',
+      'statusFile: .claude/docs/phase-status.yaml',
+      'status: blocked',
+      'phase: 9',
+      'attempt: phase-9-stale',
+      'owner: agent-loop-phase-runner',
+      'reason: old-blocker',
+      `runRoot: ${path.join(root, '.claude/logs/workflow-enforcement/runs/phase-9-stale')}`,
+      'updated: 2026-05-15T00:00:00Z',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync('.claude/logs/workflow-enforcement/reconciliation-intent.json', '{"stateRunId":"phase-9-stale"}\n', 'utf8');
+    fs.writeFileSync('.claude/logs/workflow-enforcement/runs/phase-9-stale/reconciliation-intent.json', '{"stateRunId":"phase-9-stale"}\n', 'utf8');
+    fs.mkdirSync('.moonshot-state/logs/workflow-enforcement', { recursive: true });
+    fs.writeFileSync('.moonshot-state/logs/workflow-enforcement/active-phase-run.json', '{"stateRunId":"phase-9-stale"}\n', 'utf8');
+    fs.writeFileSync('.moonshot-state/logs/workflow-enforcement/current-run.json', '{"stateRunId":"phase-9-stale"}\n', 'utf8');
+
+    const summary = prepareImplementationPlanState({
+      planDir: 'docs/implementation',
+      masterPlan: 'docs/implementation/00-master-plan-v3.md',
+      statusFile: '.claude/docs/phase-status.yaml',
+      executionRoot: 'docs/implementation/execution/real-3d-v3',
+      dryRun: false,
+    });
+
+    assert.equal(summary.ok, true);
+    assert.equal(fs.existsSync('.claude/logs/workflow-enforcement/STATE.md'), false);
+    assert.equal(fs.existsSync('.claude/logs/workflow-enforcement/reconciliation-intent.json'), false);
+    assert.equal(fs.existsSync('.claude/logs/workflow-enforcement/runs'), false);
+    assert.equal(fs.existsSync('.moonshot-state/logs/workflow-enforcement/active-phase-run.json'), false);
+    assert.equal(fs.existsSync('.moonshot-state/logs/workflow-enforcement/current-run.json'), false);
+    assert.equal(
+      summary.simpleRunStateReset.filter((entry) => entry.existed && entry.action === 'archive-and-remove').length,
+      3,
+    );
+    assert.equal(
+      summary.runtimeWorkflowStateReset.filter((entry) => entry.existed && entry.action === 'archive-and-remove').length,
+      2,
+    );
+    for (const entry of summary.simpleRunStateReset.filter((item) => item.existed)) {
+      assert.equal(fs.existsSync(entry.archivePath), true, `${entry.archivePath} was not archived`);
+    }
+    for (const entry of summary.runtimeWorkflowStateReset.filter((item) => item.existed)) {
+      assert.equal(fs.existsSync(entry.archivePath), true, `${entry.archivePath} was not archived`);
+    }
   } finally {
     process.chdir(previousCwd);
     fs.rmSync(root, { recursive: true, force: true });

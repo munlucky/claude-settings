@@ -43,7 +43,7 @@ test('timeout ledger rejects malformed records', () => {
   }), /blockedVerdictPath/);
 });
 
-test('parity timeout route records blocked verdict path and long budget decision', () => {
+test('parity timeout records blocked verdict path and explicit runtime handoff decision', () => {
   const ledgerPath = tempLedger();
   const result = recordTimeoutDecision({
     ledgerPath,
@@ -58,8 +58,9 @@ test('parity timeout route records blocked verdict path and long budget decision
     referencePlanHash: 'plan-1',
   });
 
-  assert.equal(result.sameRunDecisionResult, 'route_to_long_budget');
+  assert.equal(result.sameRunDecisionResult, 'stop_and_handoff');
   assert.equal(result.record.blockedVerdictPath, '.claude/verification-verdict-phase04-blocked.json');
+  assert.match(result.record.retryPolicy, /rerun manually only with required_runtime long budget/);
 });
 
 test('same run repeated raw diff timeout stops after bounded retry', () => {
@@ -86,6 +87,6 @@ test('same run repeated raw diff timeout stops after bounded retry', () => {
 test('timeout policy maps observed classes to deterministic decisions', () => {
   assert.equal(timeoutPolicyFor('broad_search_timeout').sameRunDecisionResult, 'do_not_retry');
   assert.equal(timeoutPolicyFor('raw_diff_output_timeout').sameRunDecisionResult, 'bounded_retry');
-  assert.equal(timeoutPolicyFor('phaseRuntimeParity_timeout').sameRunDecisionResult, 'route_to_long_budget');
+  assert.equal(timeoutPolicyFor('phaseRuntimeParity_timeout').sameRunDecisionResult, 'stop_and_handoff');
   assert.equal(timeoutPolicyFor('codex_upstream_stream_stalled').class, 'upstream_runtime_stall');
 });

@@ -1522,6 +1522,10 @@ function rewritePhaseStatus({ statusPath, statusRoot, phases, phaseNumber, phase
   upsertPhaseField(lines, phaseNumber, 'completedAt', now);
   upsertPhaseField(lines, phaseNumber, 'updatedAt', now);
   upsertPhaseField(lines, phaseNumber, 'lastOutcome', 'clean_complete');
+  upsertPhaseField(lines, phaseNumber, 'lastStopReasonCode', 'scope_complete');
+  upsertPhaseField(lines, phaseNumber, 'lastStopReasonDetail', 'phase closeout finalized');
+  upsertPhaseNestedField(lines, phaseNumber, 'attempts', 'lastOutcome', 'completed');
+  upsertPhaseNestedField(lines, phaseNumber, 'attempts', 'lastUpdatedAt', now);
   upsertPhaseNestedField(lines, phaseNumber, 'timing', 'lastStage', 'finish/handoff');
   upsertPhaseNestedField(lines, phaseNumber, 'timing', 'lastStageAt', now);
   const archivedPhaseDoc = phase.archivedPhaseDoc || phase.activePhaseDoc || phase.plan || phase.phaseDocPath || phase.docPath || '';

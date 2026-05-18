@@ -120,6 +120,7 @@ function testParityTimeoutBlockedVerdict() {
   assert.equal(verdict.status, 'blocked');
   assert.equal(verdict.profile, 'required_runtime');
   assert.match(verdict.rerunCommand, /verify-phase-runtime-parity\.sh/);
+  assert.match(verdict.rerunCommand, /--runtime-profile required_runtime/);
   assert.match(verdict.requiredBudget, /long_budget/);
   assert.match(verdict.whyNotRetried, /same required_runtime timeout key/);
   assert.equal(verdict.timeoutKey, 'run-1|phaseRuntimeParity|hash-1|codex');

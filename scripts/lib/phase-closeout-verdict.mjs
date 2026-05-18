@@ -409,7 +409,7 @@ export function evaluateDeclaredAlternateVerifierPolicy(parsed = {}) {
 }
 
 export function buildPhaseRuntimeParityTimeoutBlockedVerdict({
-  rerunCommand = 'PHASE_RUNTIME_PARITY_REQUIRED=true PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=codex bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan',
+  rerunCommand = 'PHASE_RUNTIME_PARITY_REQUIRED=true PHASE_RUNTIME_PARITY_TARGET_RUNTIMES=codex bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan --runtime-profile required_runtime',
   requiredBudget = 'long_budget',
   whyNotRetried = 'same required_runtime timeout key is already recorded for this run',
   timeoutKey = '',

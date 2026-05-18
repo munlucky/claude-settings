@@ -16,12 +16,12 @@ function decide(timeoutClass, repeated = false) {
   return result.stdout;
 }
 
-test('same run timeout policy maps no retry, bounded retry, and long budget route', () => {
+test('same run timeout policy maps no retry, bounded retry, and explicit runtime handoff', () => {
   assert.match(decide('broad_search_timeout'), /ACTION='stop-loop'/);
   assert.match(decide('broad_search_timeout'), /SAME_RUN_DECISION_RESULT='do_not_retry'/);
   assert.match(decide('raw_diff_output_timeout'), /ACTION='retry-timeout'/);
   assert.match(decide('raw_diff_output_timeout'), /SAME_RUN_DECISION_RESULT='bounded_retry'/);
   assert.match(decide('raw_diff_output_timeout', true), /SAME_RUN_DECISION_RESULT='stop_and_handoff'/);
-  assert.match(decide('phaseRuntimeParity_timeout'), /ACTION='route-long-budget'/);
-  assert.match(decide('phaseRuntimeParity_timeout'), /SAME_RUN_DECISION_RESULT='route_to_long_budget'/);
+  assert.match(decide('phaseRuntimeParity_timeout'), /ACTION='stop-loop'/);
+  assert.match(decide('phaseRuntimeParity_timeout'), /SAME_RUN_DECISION_RESULT='stop_and_handoff'/);
 });

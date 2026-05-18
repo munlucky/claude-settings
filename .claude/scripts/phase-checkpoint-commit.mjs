@@ -140,6 +140,26 @@ function git(args, cwd, options = {}) {
   });
 }
 
+function gitAddPaths(repoRoot, paths, { force = false } = {}) {
+  if (paths.length === 0) {
+    return { status: 0, error: null, stderr: '', stdout: '' };
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-checkpoint-pathspec-'));
+  const pathspecFile = path.join(tempRoot, 'paths.txt');
+  try {
+    fs.writeFileSync(pathspecFile, `${paths.join('\0')}\0`, 'utf8');
+    return git([
+      'add',
+      ...(force ? ['-f'] : []),
+      `--pathspec-from-file=${pathspecFile}`,
+      '--pathspec-file-nul',
+    ], repoRoot);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 function resolveRepoRoot(cwd = process.cwd()) {
   const result = run('git', ['rev-parse', '--show-toplevel'], { cwd });
   if (result.error || result.status !== 0) {
@@ -393,9 +413,7 @@ function makeCheckpointCommit(options) {
     };
   }
 
-  const add = stageablePaths.length > 0
-    ? git(['add', '--', ...stageablePaths], repoRoot)
-    : { status: 0, error: null, stderr: '', stdout: '' };
+  const add = gitAddPaths(repoRoot, stageablePaths);
   if (add.error || add.status !== 0) {
     return {
       exitCode: 2,
@@ -414,9 +432,7 @@ function makeCheckpointCommit(options) {
     };
   }
 
-  const forceAdd = forceAddPaths.length > 0
-    ? git(['add', '-f', '--', ...forceAddPaths], repoRoot)
-    : { status: 0, error: null, stderr: '', stdout: '' };
+  const forceAdd = gitAddPaths(repoRoot, forceAddPaths, { force: true });
   if (forceAdd.error || forceAdd.status !== 0) {
     return {
       exitCode: 2,
@@ -654,6 +670,31 @@ function runSelfTest() {
     });
     if (result.payload.status !== 'failed' || !String(result.payload.reason || '').includes('denied closeout paths detected')) {
       throw new Error(`expected denied path failure, got ${result.payload.status}`);
+    }
+
+    const manyPathsRepo = initFixtureRepo('many-paths');
+    tempRoots.push(manyPathsRepo);
+    for (let index = 0; index < 220; index += 1) {
+      const directory = path.join(
+        manyPathsRepo,
+        'docs',
+        'implementation',
+        'archive',
+        `very-long-phase-runner-checkpoint-path-${String(index).padStart(3, '0')}`,
+      );
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, `artifact-${String(index).padStart(3, '0')}.md`), `artifact ${index}\n`, 'utf8');
+    }
+    process.chdir(manyPathsRepo);
+    result = makeCheckpointCommit({
+      phaseNum: '7',
+      phaseTitle: 'Many Paths',
+      planDir: 'docs/implementation',
+      statusFile: '.claude/docs/phase-status.yaml',
+      skipMemoryRefresh: true,
+    });
+    if (result.payload.status !== 'committed' || result.payload.stageablePaths.length !== 220) {
+      throw new Error(`expected many-path checkpoint commit, got ${result.payload.status}`);
     }
 
     writeStdoutLine('phase-checkpoint-commit self-test passed');

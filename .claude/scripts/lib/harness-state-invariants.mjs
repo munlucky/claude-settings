@@ -580,7 +580,10 @@ function inspectBoardProjectionInvariants({ boardState, workflowStates, violatio
 function activeBlockedPhaseForWorkflowState({ statusRoot = {}, phases = [], payload = {} } = {}) {
   const statePhase = Number.parseInt(statePhaseNumber(payload), 10);
   const activePhase = Number.parseInt(normalizeText(statusRoot.activePhaseNumber), 10);
-  if (!Number.isInteger(statePhase) || !Number.isInteger(activePhase) || statePhase !== activePhase) {
+  if (!Number.isInteger(statePhase)) {
+    return null;
+  }
+  if (Number.isInteger(activePhase) && statePhase !== activePhase) {
     return null;
   }
 
@@ -598,8 +601,11 @@ function activeBlockedPhaseForWorkflowState({ statusRoot = {}, phases = [], payl
 }
 
 function activeOpenPhaseForWorkflowState({ statusRoot = {}, phases = [], payload = {} } = {}) {
-  const statePhase = Number.parseInt(statePhaseNumber(payload), 10);
+  let statePhase = Number.parseInt(statePhaseNumber(payload), 10);
   const activePhase = Number.parseInt(normalizeText(statusRoot.activePhaseNumber), 10);
+  if (!Number.isInteger(statePhase) && Number.isInteger(activePhase)) {
+    statePhase = activePhase;
+  }
   if (!Number.isInteger(statePhase) || !Number.isInteger(activePhase) || statePhase !== activePhase) {
     return null;
   }

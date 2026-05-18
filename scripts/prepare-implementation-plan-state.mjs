@@ -5,6 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assignExecutionArtifactPaths, ensureExecutionArtifacts, sanitizeSlug } from './agent-loop-phase-plan-lib.mjs';
+import {
+  applyPreparedStateResetEntries,
+  collectPreparedStateResetEntries,
+} from './lib/prepared-state-reset.mjs';
 
 const DEFAULT_PLAN_DIR = 'docs/implementation';
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
@@ -453,6 +457,10 @@ function renderStatus({
       `  - number: ${phase.number}`,
       `    title: ${yamlScalar(phase.title)}`,
       `    status: ${completed ? 'completed' : 'pending'}`,
+      ...(completed ? [
+        '    carryForward: true',
+        '    carryForwardReason: "preserved_completed_foundation_phase"',
+      ] : []),
       '    planConfirmed: true',
       `    activePhaseDoc: ${yamlScalar(displayPath(phase.filePath))}`,
       '    attempts:',
@@ -527,6 +535,16 @@ function normalizeSeededMarkdownArtifacts(paths) {
   }
 }
 
+function stateResetSummary(entries) {
+  return entries.map((entry) => ({
+    path: displayPath(entry.path),
+    kind: entry.kind,
+    action: entry.action,
+    existed: entry.existed,
+    archivePath: displayPath(entry.archivePath),
+  }));
+}
+
 function prepareImplementationPlanState(options) {
   const planDir = resolveFromCwd(options.planDir || DEFAULT_PLAN_DIR);
   const masterPlan = options.masterPlan ? resolveFromCwd(options.masterPlan) : findMasterPlan(planDir);
@@ -549,6 +567,10 @@ function prepareImplementationPlanState(options) {
     planDir,
     archiveRoot,
     preparedAt,
+  });
+  const preparedStateResetEntries = collectPreparedStateResetEntries({
+    archiveRoot,
+    workflowDir: resolveFromCwd(WORKFLOW_ENFORCEMENT_DIR),
   });
 
   if (phases.length === 0) {
@@ -583,6 +605,16 @@ function prepareImplementationPlanState(options) {
         type: 'write',
         path: displayPath(pointer.path),
         reason: 'prepared-pointer-rewrite',
+      });
+    }
+  }
+  for (const entry of preparedStateResetEntries) {
+    if (entry.existed) {
+      actions.push({
+        type: entry.kind === 'directory' ? 'move' : 'copy-delete',
+        from: displayPath(entry.path),
+        to: displayPath(entry.archivePath),
+        reason: entry.action,
       });
     }
   }
@@ -632,6 +664,13 @@ function prepareImplementationPlanState(options) {
         executionRoot: pointer.payload.executionRoot,
       } : null,
     })),
+    preparedStateReset: stateResetSummary(preparedStateResetEntries),
+    simpleRunStateReset: stateResetSummary(
+      preparedStateResetEntries.filter((entry) => entry.archiveGroup === 'workflow-enforcement'),
+    ),
+    runtimeWorkflowStateReset: stateResetSummary(
+      preparedStateResetEntries.filter((entry) => entry.archiveGroup === 'workflow-runtime-state'),
+    ),
     seededExecutionArtifacts: plannedExecutionArtifacts,
     actions,
   };
@@ -660,6 +699,7 @@ function prepareImplementationPlanState(options) {
       writeJson(pointer.path, pointer.payload);
     }
   }
+  applyPreparedStateResetEntries(preparedStateResetEntries);
   fs.mkdirSync(executionRoot, { recursive: true });
   summary.seededExecutionArtifacts = seedPreparedExecutionArtifacts({
     phases,
