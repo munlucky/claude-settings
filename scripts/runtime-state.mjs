@@ -471,6 +471,28 @@ function upsertGoal(db, config) {
 function seedPhasesFromStatus(db, goal, statusFile) {
   const blocks = parseStatusBlocks(statusFile);
   const timestamp = nowMs();
+  const currentPhaseNumbers = blocks
+    .map((block) => Number.parseInt(block.phaseNumber, 10) || 0)
+    .filter((phaseNumber) => phaseNumber > 0);
+  if (currentPhaseNumbers.length > 0) {
+    const placeholders = currentPhaseNumbers.map(() => '?').join(',');
+    const staleRows = db.prepare(`
+      SELECT phase_run_id FROM phase_runs
+      WHERE goal_id = ? AND phase_number NOT IN (${placeholders})
+    `).all(goal.goal_id, ...currentPhaseNumbers);
+    const stalePhaseRunIds = staleRows.map((row) => row.phase_run_id).filter(Boolean);
+    if (stalePhaseRunIds.length > 0) {
+      const stalePlaceholders = stalePhaseRunIds.map(() => '?').join(',');
+      db.prepare(`DELETE FROM artifact_links WHERE goal_id = ? AND phase_run_id IN (${stalePlaceholders})`)
+        .run(goal.goal_id, ...stalePhaseRunIds);
+      db.prepare(`DELETE FROM verification_results WHERE goal_id = ? AND phase_run_id IN (${stalePlaceholders})`)
+        .run(goal.goal_id, ...stalePhaseRunIds);
+      db.prepare(`DELETE FROM phase_attempts WHERE goal_id = ? AND phase_run_id IN (${stalePlaceholders})`)
+        .run(goal.goal_id, ...stalePhaseRunIds);
+      db.prepare(`DELETE FROM phase_runs WHERE goal_id = ? AND phase_run_id IN (${stalePlaceholders})`)
+        .run(goal.goal_id, ...stalePhaseRunIds);
+    }
+  }
   const upsert = db.prepare(`
     INSERT INTO phase_runs(
       phase_run_id, goal_id, plan_dir, status_file, phase_number, phase_title, phase_doc,
@@ -737,8 +759,9 @@ export function finishLease(db, config) {
   }
   const rows = db.prepare('SELECT phase_number, status, plan_confirmed FROM phase_runs WHERE goal_id = ? ORDER BY phase_number').all(lease.goal_id);
   const actionable = countActionablePhasesFromRows(rows);
+  const blockingPhase = firstBlockingPhase(rows);
   const requestedFinalStatus = String(config.finalStatus || '').trim();
-  const status = requestedFinalStatus || (actionable === 0 ? 'finished' : 'paused');
+  const status = requestedFinalStatus || (actionable === 0 && !blockingPhase ? 'finished' : 'paused');
   const timestamp = nowMs();
   accountLeaseTime(db, lease, timestamp);
   db.prepare(`
@@ -758,7 +781,7 @@ export function finishLease(db, config) {
     actionable,
     config.leaseId,
   );
-  if (actionable === 0 && goal) {
+  if (actionable === 0 && !blockingPhase && goal) {
     db.prepare(`
       UPDATE workflow_goals
       SET status = 'complete', last_event = 'GoalCompleted', current_lease_id = NULL, updated_at_ms = ?
@@ -778,7 +801,7 @@ export function finishLease(db, config) {
       goalId: goal.goal_id,
       leaseId: config.leaseId,
       eventType: 'GoalPaused',
-      detail: `Lease finished with status=${status}; actionablePhasesRemaining=${actionable}.`,
+      detail: `Lease finished with status=${status}; actionablePhasesRemaining=${actionable}; blockedPhase=${blockingPhase ? blockingPhase.phase_number : ''}.`,
       transactionId: config.transactionId || '',
     });
   }

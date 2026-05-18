@@ -16,6 +16,7 @@ import { classifyFailure } from './lib/failure-classifier.mjs';
 import { buildCompositeMonitorCursor } from './lib/phase-run-lease-status.mjs';
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
 import { readState } from './lib/simple-run-state.mjs';
+import { resolveCommandEvidence } from './lib/command-resolver.mjs';
 import {
   evaluatePidLiveness,
   isPidAliveInCurrentNamespace,
@@ -1709,8 +1710,26 @@ function syncCompletedPhaseArchive() {
     return;
   }
 
-  const result = runCommand('python3', [syncScript, '--status-file', state.statusFile, '--plan-dir', state.planDir]);
+  const python = resolveCommandEvidence('python');
+  if (python.status !== 'passed' && python.status !== 'passed_with_equivalent_evidence') {
+    logWarn(`phase archive sync skipped: ${python.detail || 'python unavailable'}`);
+    return;
+  }
+
+  const result = runCommand(
+    python.resolvedCommand,
+    [
+      ...python.resolvedArgs,
+      syncScript,
+      '--status-file',
+      state.statusFile,
+      '--plan-dir',
+      state.planDir,
+    ],
+    { shell: process.platform === 'win32' },
+  );
   if (result.status !== 0) {
+    logWarn(`phase archive sync failed (${python.evidenceCommand || python.resolvedCommand}): ${result.stderr || result.error || `exit ${result.status}`}`);
     return;
   }
 

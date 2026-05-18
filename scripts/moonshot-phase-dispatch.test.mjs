@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { recordLifecycleTransition } from './lib/lifecycle-projection-writer.mjs';
 
 const FIXTURE_DIR = path.join('tests', 'fixtures', 'scripts', 'latest-dispatch-lifecycle');
+const dispatchScript = path.join(path.dirname(fileURLToPath(import.meta.url)), 'moonshot-phase-dispatch.mjs');
 const ALLOWED_STATUS = new Set([
   'prepared',
   'running',
@@ -73,7 +75,7 @@ test('lifecycle writer rejects dispatch lifecycle events used as latest-dispatch
 });
 
 test('dispatcher records preflight, start, heartbeat, and terminal lifecycle payload fields', () => {
-  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  const source = fs.readFileSync(dispatchScript, 'utf8');
   for (const expected of [
     "lifecycleEvent: 'preflight_passed'",
     "lifecycleEvent: 'dispatch_prepared'",
@@ -95,7 +97,7 @@ test('dispatcher records preflight, start, heartbeat, and terminal lifecycle pay
 });
 
 test('dispatcher gates stale child classification through namespace-aware liveness helper', () => {
-  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  const source = fs.readFileSync(dispatchScript, 'utf8');
   assert.match(source, /evaluatePidLiveness/);
   assert.match(source, /pidNamespace/);
   assert.match(source, /livenessProbe\.degraded/);
@@ -103,7 +105,7 @@ test('dispatcher gates stale child classification through namespace-aware livene
 });
 
 test('dispatcher preflights stale active lease left by dead dispatcher pid', () => {
-  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  const source = fs.readFileSync(dispatchScript, 'utf8');
   assert.match(source, /function cleanupPreviousDeadDispatchLease/);
   assert.match(source, /isPidAliveInCurrentNamespace\(Number\(existing\.dispatcherPid\)\)/);
   assert.match(source, /phase-run-lease-previous-dead-dispatch-cleanup/);
@@ -111,13 +113,13 @@ test('dispatcher preflights stale active lease left by dead dispatcher pid', () 
 });
 
 test('dispatcher exposes and forwards explicit --resume', () => {
-  const help = spawnSync(process.execPath, ['.claude/scripts/moonshot-phase-dispatch.mjs', '--help'], {
+  const help = spawnSync(process.execPath, [dispatchScript, '--help'], {
     encoding: 'utf8',
   });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /--resume\s+Explicitly resume an existing phase run board/);
 
-  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  const source = fs.readFileSync(dispatchScript, 'utf8');
   assert.match(source, /case '--resume':\s*state\.resume = true;/s);
   assert.match(source, /if \(state\.resume\) \{\s*cmd\.push\('--resume'\);/s);
   assert.match(source, /resume: \$\{state\.resume \? 'true' : 'false'\}/);
@@ -134,7 +136,7 @@ test('dispatcher exposes and forwards explicit --resume', () => {
 });
 
 test('dispatcher guards latest-dispatch projection identity with stateRunId', () => {
-  const source = fs.readFileSync('.claude/scripts/moonshot-phase-dispatch.mjs', 'utf8');
+  const source = fs.readFileSync(dispatchScript, 'utf8');
   assert.match(source, /stateRunId: patch\.stateRunId \|\| payload\.stateRunId \|\| runtimeState\.runLeaseId/);
   assert.match(source, /function assertProjectionStateRunId/);
   assert.match(source, /stateRunId mismatch rejected before projection overwrite/);
@@ -142,4 +144,13 @@ test('dispatcher guards latest-dispatch projection identity with stateRunId', ()
   assert.match(source, /const WORKFLOW_LOG_DIR = process\.env\.WORKFLOW_ENFORCEMENT_LOG_DIR/);
   assert.match(source, /function workflowLogFile\(basename\)/);
   assert.match(source, /workflowLogFile\('latest-dispatch\.json'\)/);
+});
+
+test('dispatcher resolves phase archive sync through project command evidence instead of hardcoded python3', () => {
+  const source = fs.readFileSync(dispatchScript, 'utf8');
+  assert.match(source, /resolveCommandEvidence\('python'\)/);
+  assert.match(source, /python\.resolvedCommand/);
+  assert.match(source, /\.\.\.python\.resolvedArgs/);
+  assert.match(source, /shell: process\.platform === 'win32'/);
+  assert.doesNotMatch(source, /runCommand\('python3'/);
 });

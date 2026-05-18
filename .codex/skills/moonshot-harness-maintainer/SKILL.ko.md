@@ -18,6 +18,7 @@ description: Moonshot 하네스와 downstream .claude 설치본을 유지합니�
 - 모든 하네스 동작 수정은 TDD로 처리합니다. incident class를 재현하는 deterministic regression test 또는 fixture를 먼저 추가/선택하고, RED 또는 old-behavior proof를 남긴 뒤 최소 변경으로 GREEN을 만들어야 합니다. source-only evidence로 하네스 incident를 닫지 않습니다.
 - regression test가 실제로 불가능하면 bypass reason, 가장 가까운 executable check, 남은 재발 위험을 handoff/report에 기록합니다.
 - `.claude/memory.json`, `.claude/memorygraph/`, `PROJECT.md`, `.mcp.json`, `settings.local.json`, logs, runtime artifacts, downstream task docs는 사용자가 명시하지 않는 한 project-local로 취급합니다.
+- phase source plan이 project-owned CLI 또는 npm/node command를 호출했는데 command surface가 없거나 plan 요구보다 좁으면 source-plan command surface incident로 분류합니다. target repo에서 project-owned CLI를 고치고 테스트하며, claude-settings에는 제품 CLI 구현이 아니라 재사용 가능한 contract/skill 교훈만 동기화합니다.
 - commit workflow에서는 local policy가 요구할 때 memory를 refresh하되, 사용자가 명시적으로 포함하라고 하지 않는 한 memory artifact는 stage하지 않습니다.
 
 ## 워크플로우
@@ -64,6 +65,7 @@ description: Moonshot 하네스와 downstream .claude 설치본을 유지합니�
    - state/projection/gate 동작은 fixture-backed CLI test
    - self-test는 실제 public decision path를 실행할 때만 허용
    - source/profile sync 버그는 package/materialization hash check
+   - source-plan command surface incident는 계획에 적힌 인자를 그대로 쓰는 public command regression을 요구하며, 나쁜 target content에 대한 true blocker signal을 보존해야 합니다.
 3. 선택한 check를 RED로 실행하거나 old-behavior proof를 문서화합니다.
    - 권장: 현재 checkout에서 fix 전 failing test output
    - 허용: source workspace, prior commit, fixture replay의 failing output

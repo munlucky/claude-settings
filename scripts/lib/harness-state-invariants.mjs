@@ -382,14 +382,20 @@ function inspectMemoryGraphCapabilities({ workflowStates, strictMemory = false, 
 }
 
 function statePhaseNumber(payload = {}) {
-  return normalizeText(
-    payload.phase?.number
-      ?? payload.phaseRunLease?.phase?.number
-      ?? payload.phaseNumber
-      ?? payload.phaseRunLease?.activePhaseNumber
-      ?? payload.activePhaseNumber
-      ?? '',
-  );
+  const values = [
+    payload.phase?.number,
+    payload.phaseRunLease?.phase?.number,
+    payload.phaseNumber,
+    payload.phaseRunLease?.activePhaseNumber,
+    payload.activePhaseNumber,
+  ];
+  for (const value of values) {
+    const phaseNumber = normalizePhaseNumber(value);
+    if (phaseNumber) {
+      return String(phaseNumber);
+    }
+  }
+  return '';
 }
 
 function statePhaseTitle(payload = {}) {
@@ -578,10 +584,19 @@ function inspectBoardProjectionInvariants({ boardState, workflowStates, violatio
 }
 
 function activeBlockedPhaseForWorkflowState({ statusRoot = {}, phases = [], payload = {} } = {}) {
-  const statePhase = Number.parseInt(statePhaseNumber(payload), 10);
+  let statePhase = Number.parseInt(statePhaseNumber(payload), 10);
   const activePhase = Number.parseInt(normalizeText(statusRoot.activePhaseNumber), 10);
-  if (!Number.isInteger(statePhase)) {
+  if (!Number.isInteger(statePhase) && Number.isInteger(activePhase)) {
+    statePhase = activePhase;
+  }
+  const rootExecutionStatus = normalizeLower(statusRoot.activeExecutionStatus || statusRoot.status);
+  if (rootExecutionStatus && !BLOCKED_ROOT_EXECUTION_STATUSES.has(rootExecutionStatus)) {
     return null;
+  }
+
+  if (!Number.isInteger(statePhase)) {
+    const blockedPhases = phases.filter((phase) => BLOCKED_PHASE_STATUSES.has(normalizeLower(phase.status)));
+    return blockedPhases.length === 1 ? blockedPhases[0] : null;
   }
   if (Number.isInteger(activePhase) && statePhase !== activePhase) {
     return null;
@@ -589,11 +604,6 @@ function activeBlockedPhaseForWorkflowState({ statusRoot = {}, phases = [], payl
 
   const matchingPhase = phases.find((phase) => Number(phase.number) === statePhase);
   if (!matchingPhase || !BLOCKED_PHASE_STATUSES.has(normalizeLower(matchingPhase.status))) {
-    return null;
-  }
-
-  const rootExecutionStatus = normalizeLower(statusRoot.activeExecutionStatus || statusRoot.status);
-  if (rootExecutionStatus && !BLOCKED_ROOT_EXECUTION_STATUSES.has(rootExecutionStatus)) {
     return null;
   }
 

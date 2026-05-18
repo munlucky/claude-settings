@@ -681,3 +681,46 @@ test('plan-level current-run without phase number follows root active open phase
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('plan-level failed dispatch follows single blocked phase as degraded evidence', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-plan-level-blocked-dispatch-'));
+  try {
+    const workflowDir = path.join(root, '.claude', 'logs', 'workflow-enforcement');
+    fs.mkdirSync(workflowDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workflowDir, 'latest-dispatch.json'),
+      `${JSON.stringify({
+        status: 'failed',
+        completionStatus: 'failed',
+        phaseNumber: '0',
+        attemptOutcome: 'failed',
+        runLeaseId: 'dispatch-plan',
+        childAlive: false,
+        liveness: { childAlive: false },
+      })}\n`,
+      'utf8',
+    );
+
+    const result = evaluateHarnessStateInvariants({
+      statusRoot: {
+        activeExecutionStatus: 'paused',
+        activePhaseNumber: null,
+        activeBlockedPhases: 1,
+      },
+      phases: [
+        { number: 19, status: 'blocked' },
+        { number: 20, status: 'pending' },
+      ],
+      statusPath: path.join(root, '.claude', 'docs', 'phase-status.yaml'),
+      workflowDir,
+      now: '2026-05-18T00:00:00Z',
+    });
+
+    assert.equal(result.violations.length, 0);
+    assert.equal(result.degradedEvidence.length, 1);
+    assert.equal(result.degradedEvidence[0].code, 'active_phase_blocked_workflow_state');
+    assert.equal(result.degradedEvidence[0].phaseNumber, 19);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

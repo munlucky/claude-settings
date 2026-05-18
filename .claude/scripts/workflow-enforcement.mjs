@@ -36,6 +36,12 @@ const RETRY_STRATEGIES = new Set(['same_direction_refine', 'partial_redesign', '
 const DEFAULT_RETRIEVAL_BUDGET = 'stage=1 compact recall; repeat only for missing owner/date/path/API/failure fact; stopWhenAnswerable=true; no raw graph or memory output';
 const DEFAULT_VALIDATION_PROFILE = 'workflow_core';
 const DEFAULT_PHASE_REPLAY_POLICY = 'preserve assistant phase commentary/final_answer when replaying; never add phase to user items';
+const SELF_HEALING_STALE_WARNINGS = new Set([
+  'latest_dispatch_missing',
+  'current_run_missing',
+  'latest_dispatch_older_than_phase_status',
+  'current_run_older_than_latest_dispatch',
+]);
 const RUNTIME_CAPABILITY_FIELDS = [
   'fork',
   'mcp',
@@ -207,7 +213,7 @@ function buildCompactStatusReadModel({
     currentRunFile: CURRENT_RUN_FILE,
   });
   const staleWarnings = suppressSelfWriteMissingWarnings
-    ? rawStaleWarnings.filter((item) => !['latest_dispatch_missing', 'current_run_missing'].includes(item))
+    ? rawStaleWarnings.filter((item) => !SELF_HEALING_STALE_WARNINGS.has(item))
     : rawStaleWarnings;
   return {
     schemaVersion: '1.0',

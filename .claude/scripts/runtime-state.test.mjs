@@ -33,6 +33,25 @@ async function withTempRuntime(callback) {
   }
 }
 
+function writePhaseStatus(statusFile, phases) {
+  fs.writeFileSync(statusFile, [
+    'schemaVersion: "1.0"',
+    'planDir: "docs/implementation/example"',
+    'phases:',
+    ...phases.flatMap((phase) => [
+      `  - number: ${phase.number}`,
+      `    title: "${phase.title}"`,
+      `    status: ${phase.status}`,
+      '    planConfirmed: true',
+      '    attempts:',
+      '      total: 0',
+      '      lastOutcome: pending',
+      '      lastUpdatedAt: ""',
+    ]),
+    '',
+  ].join('\n'), 'utf8');
+}
+
 test('heartbeatLease preserves terminal completion_status and records heartbeat payload detail', async () => {
   await withTempRuntime(async ({ root, statusFile }) => {
     await withDb((db) => {
@@ -72,6 +91,87 @@ test('heartbeatLease preserves terminal completion_status and records heartbeat 
       const detail = JSON.parse(event.detail);
       assert.equal(detail.requestedCompletionStatus, 'running');
       assert.equal(detail.preservedCompletionStatus, 'blocked');
+    });
+  });
+});
+
+test('runtime state seeding prunes stale phases absent from current phase-status', async () => {
+  await withTempRuntime(async ({ root, statusFile }) => {
+    await withDb((db) => {
+      const planDir = path.join(root, 'docs', 'implementation', 'example');
+      writePhaseStatus(statusFile, [
+        { number: 15, title: 'Phase 15 - Old Renderer', status: 'failed' },
+        { number: 18, title: 'Phase 18 - Old UAT', status: 'in_progress' },
+      ]);
+      startLease(db, {
+        statusFile,
+        leaseId: 'lease-old',
+        executionBoundary: 'delegated-terminal',
+        planDir,
+        executionRoot: path.join(root, 'execution-old'),
+        runtime: 'codex',
+        masterPlan: path.join(planDir, '00-master-plan-v3.md'),
+        dispatcherPid: '1234',
+        objective: 'test stale phase pruning',
+      });
+
+      writePhaseStatus(statusFile, [
+        { number: 19, title: 'Phase 19 - Readiness', status: 'blocked' },
+        { number: 20, title: 'Phase 20 - Runtime', status: 'pending' },
+      ]);
+      startLease(db, {
+        statusFile,
+        leaseId: 'lease-new',
+        executionBoundary: 'delegated-terminal',
+        planDir,
+        executionRoot: path.join(root, 'execution-new'),
+        runtime: 'codex',
+        masterPlan: path.join(planDir, '00-master-plan-v4.md'),
+        dispatcherPid: '1234',
+        objective: 'test stale phase pruning',
+      });
+
+      const phaseNumbers = db.prepare('SELECT phase_number FROM phase_runs ORDER BY phase_number')
+        .all()
+        .map((row) => row.phase_number);
+      assert.deepEqual(phaseNumbers, [19, 20]);
+    });
+  });
+});
+
+test('finish lease does not complete goal when blocked phase prevents progress', async () => {
+  await withTempRuntime(async ({ root, statusFile }) => {
+    await withDb((db) => {
+      const planDir = path.join(root, 'docs', 'implementation', 'example');
+      writePhaseStatus(statusFile, [
+        { number: 19, title: 'Phase 19 - Readiness', status: 'blocked' },
+        { number: 20, title: 'Phase 20 - Runtime', status: 'pending' },
+      ]);
+      startLease(db, {
+        statusFile,
+        leaseId: 'lease-blocked',
+        executionBoundary: 'delegated-terminal',
+        planDir,
+        executionRoot: path.join(root, 'execution'),
+        runtime: 'codex',
+        masterPlan: path.join(planDir, '00-master-plan-v4.md'),
+        dispatcherPid: '1234',
+        objective: 'test blocked phase finish',
+      });
+
+      const lease = finishLease(db, {
+        leaseId: 'lease-blocked',
+        returnBoundary: 'phase_boundary',
+        stopReasonCode: 'blocked',
+        stopReasonDetail: 'phase 19 is blocked',
+        completionStatus: 'blocked',
+      });
+
+      const goal = db.prepare('SELECT status, current_lease_id, last_event FROM workflow_goals WHERE goal_id = ?')
+        .get(lease.goal_id);
+      assert.equal(goal.status, 'paused');
+      assert.equal(goal.current_lease_id, null);
+      assert.equal(goal.last_event, 'GoalPaused');
     });
   });
 });

@@ -89,6 +89,8 @@ test('meta-harness behavior fixes require executable regression assets', () => {
   assert.match(maintainer, /TDD Incident Regression Contract/);
   assert.match(maintainer, /Every harness behavior fix must follow TDD/);
   assert.match(maintainer, /authoritative recurrence guard is the executable regression/);
+  assert.match(maintainer, /project-owned CLI/);
+  assert.match(maintainer, /source-plan command surface/);
   assert.match(tdd, /Meta-Harness Asset Rule/);
   assert.match(tdd, /MemoryGraph may index the incident and the test path, but the test file is the source of enforcement/);
 });

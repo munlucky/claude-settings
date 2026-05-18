@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
   authoritativePlanCloseoutPassed,
   parsePhaseStatusSummary,
 } from './workflow-enforcement.mjs';
+
+const nodeBin = process.execPath;
+const workflowScript = path.join(path.dirname(fileURLToPath(import.meta.url)), 'workflow-enforcement.mjs');
 
 test('authoritative closeout passes only when finished phase status has canonical closeout evidence', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-authoritative-closeout-'));
@@ -164,3 +169,58 @@ function writeCloseoutFixture(root) {
     score: { verdict: 'done' },
   }, null, 2), 'utf8');
 }
+
+test('record-dispatch does not persist self-healing stale projection warnings', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-enforcement-'));
+  try {
+    const statusFile = path.join(root, '.claude/docs/phase-status.yaml');
+    const workflowDir = path.join(root, '.claude/logs/workflow-enforcement');
+    fs.mkdirSync(path.dirname(statusFile), { recursive: true });
+    fs.mkdirSync(workflowDir, { recursive: true });
+
+    fs.writeFileSync(statusFile, [
+      'schemaVersion: "1.0"',
+      'masterPlan: "docs/implementation/00-master-plan-v4.md"',
+      'executionRoot: "docs/implementation/execution/replay-lens-gamestate-timeline-replay-runtime-v4"',
+      'phases:',
+      '  - number: 19',
+      '    title: "Phase 19"',
+      '    status: pending',
+      '    planConfirmed: true',
+      '',
+    ].join('\n'), 'utf8');
+
+    const stalePayload = `${JSON.stringify({ stale: true }, null, 2)}\n`;
+    const latestDispatch = path.join(workflowDir, 'latest-dispatch.json');
+    const currentRun = path.join(workflowDir, 'current-run.json');
+    fs.writeFileSync(latestDispatch, stalePayload, 'utf8');
+    fs.writeFileSync(currentRun, stalePayload, 'utf8');
+
+    const oldTime = new Date('2026-05-18T07:00:00Z');
+    const newTime = new Date('2026-05-18T07:10:00Z');
+    fs.utimesSync(latestDispatch, oldTime, oldTime);
+    fs.utimesSync(currentRun, oldTime, oldTime);
+    fs.utimesSync(statusFile, newTime, newTime);
+
+    execFileSync(nodeBin, [
+      workflowScript,
+      'record-dispatch',
+      '--plan-dir', 'docs/implementation',
+      '--execution-mode', 'phase-runner',
+      '--execution-root', 'docs/implementation/execution/replay-lens-gamestate-timeline-replay-runtime-v4',
+      '--runtime', 'codex',
+      '--status-file', '.claude/docs/phase-status.yaml',
+      '--master-plan', 'docs/implementation/00-master-plan-v4.md',
+    ], { cwd: root, stdio: 'pipe' });
+
+    const nextCurrent = JSON.parse(fs.readFileSync(currentRun, 'utf8'));
+    const nextLatest = JSON.parse(fs.readFileSync(latestDispatch, 'utf8'));
+    for (const payload of [nextCurrent, nextLatest]) {
+      assert.deepEqual(payload.compactStatus.staleWarnings, []);
+      assert.equal(payload.compactStatus.currentBlocker, 'verification_pending');
+      assert.equal(payload.resumeBrief.nextAction, 'run_review_then_verification');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

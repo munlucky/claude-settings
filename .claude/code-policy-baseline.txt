@@ -15,6 +15,7 @@ file-length|scripts/agent-loop-phase-state.mjs
 file-length|.claude/scripts/agent-loop-phase-artifacts.mjs
 file-length|scripts/agent-loop-phase-artifacts.mjs
 file-length|.claude/scripts/runtime-state.mjs
+file-length|scripts/runtime-state.mjs
 file-length|.claude/scripts/agent-loop-shell-core.sh
 file-length|.claude/scripts/workflow-enforcement.mjs
 file-length|scripts/workflow-enforcement.mjs
