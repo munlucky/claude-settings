@@ -460,12 +460,35 @@ export function listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles
 export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, recentWindowMs, maxFiles) {
   const verdicts = listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles)
     .filter((entry) => verdictTargetsRuntime(entry.payload, runtime));
+  const clearedPhaseVerdicts = new Map();
 
   if (verdicts.length === 0) {
     return null;
   }
 
   for (const entry of verdicts) {
+    const phaseNumber = phaseNumberFromPayload(entry.payload);
+    if (!Number.isInteger(phaseNumber)) {
+      continue;
+    }
+    if (normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true) {
+      const previous = clearedPhaseVerdicts.get(phaseNumber) || 0;
+      clearedPhaseVerdicts.set(phaseNumber, Math.max(previous, entry.mtimeMs || 0));
+    }
+  }
+
+  for (const entry of verdicts) {
+    const phaseNumber = phaseNumberFromPayload(entry.payload);
+    const clearedAt = Number.isInteger(phaseNumber) ? (clearedPhaseVerdicts.get(phaseNumber) || 0) : 0;
+    const supersededByPhaseClear = entry.active
+      && clearedAt > 0
+      && (entry.mtimeMs || 0) <= clearedAt
+      && normalizeLower(entry.payload.verdict) !== 'passed';
+
+    if (supersededByPhaseClear) {
+      continue;
+    }
+
     if (entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable') {
       if (entry.active) {
         return {
@@ -562,6 +585,35 @@ function selfTest() {
   assert.deepEqual(normalizeRequiredChecksMissing(['없음']), []);
   assert.equal(isRelevantVerificationVerdict({ payload: completePhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2, identity: activeIdentity }), true);
   assert.equal(isRelevantVerificationVerdict({ payload: mismatchedPhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+
+  const tempRoot = fs.mkdtempSync(path.join(process.cwd(), '.tmp-verdict-state-'));
+  try {
+    const claudeDir = path.join(tempRoot, '.claude');
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const blockedPath = path.join(claudeDir, 'verification-verdict-phase03-blocked.json');
+    const finalPath = path.join(claudeDir, 'verification-verdict-phase03-final.json');
+    fs.writeFileSync(blockedPath, JSON.stringify({
+      verdict: 'failed',
+      blocking: true,
+      blockerClass: 'runtime_unavailable',
+      blockingReasonCode: 'running-harness-state-mismatch',
+      phase: { number: 3 },
+      runtimeContext: { requestedRuntime: 'codex' },
+    }));
+    fs.writeFileSync(finalPath, JSON.stringify({
+      verdict: 'passed',
+      blocking: false,
+      phase: { number: 3 },
+      runtimeContext: { requestedRuntime: 'codex' },
+    }));
+    const older = new Date(Date.now() - 2000);
+    const newer = new Date(Date.now() - 1000);
+    fs.utimesSync(blockedPath, older, older);
+    fs.utimesSync(finalPath, newer, newer);
+    assert.equal(assessRuntimeHealthFromVerdictFiles('codex', tempRoot, 0, 10), null);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
   assert.equal(typeof resolveGitTreeFingerprint(process.cwd()), 'string');
 }
 
