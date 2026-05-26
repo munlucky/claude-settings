@@ -11,7 +11,7 @@ function writeVerdict(filePath, payload, mtime) {
   fs.utimesSync(filePath, mtime, mtime);
 }
 
-test('runtime health ignores older active runtime blocker superseded by same-phase passed verdict', () => {
+test('runtime health clears older active runtime blocker superseded by same-phase passed verdict', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'verification-verdict-state-'));
   try {
     const claudeDir = path.join(root, '.claude');
@@ -34,7 +34,10 @@ test('runtime health ignores older active runtime blocker superseded by same-pha
       runtimeContext: { requestedRuntime: 'codex' },
     }, new Date('2026-05-19T00:01:00Z'));
 
-    assert.equal(assessRuntimeHealthFromVerdictFiles('codex', root, 0, 10), null);
+    const result = assessRuntimeHealthFromVerdictFiles('codex', root, 0, 10);
+    assert.equal(result?.HEALTHY, 'true');
+    assert.equal(result?.REASON, 'phase-verification-passed');
+    assert.equal(result?.VERDICT_PATH, finalPath);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

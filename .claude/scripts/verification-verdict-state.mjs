@@ -514,12 +514,35 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
 
-  const newestRuntimePassIndex = verdicts.findIndex((entry) => entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable'
+  const clearedPhaseVerdicts = new Map();
+  for (const entry of verdicts) {
+    const phaseNumber = phaseNumberFromPayload(entry.payload);
+    if (!Number.isInteger(phaseNumber)) {
+      continue;
+    }
+    if (normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true) {
+      const previous = clearedPhaseVerdicts.get(phaseNumber) || 0;
+      clearedPhaseVerdicts.set(phaseNumber, Math.max(previous, entry.mtimeMs || 0));
+    }
+  }
+
+  const activeVerdicts = verdicts.filter((entry) => {
+    const phaseNumber = phaseNumberFromPayload(entry.payload);
+    const clearedAt = Number.isInteger(phaseNumber) ? (clearedPhaseVerdicts.get(phaseNumber) || 0) : 0;
+    return !(
+      entry.active
+      && clearedAt > 0
+      && (entry.mtimeMs || 0) <= clearedAt
+      && normalizeLower(entry.payload.verdict) !== 'passed'
+    );
+  });
+
+  const newestRuntimePassIndex = activeVerdicts.findIndex((entry) => entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable'
     ? normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true
     : false);
-  const newestRuntimeBlockIndex = verdicts.findIndex((entry) => (entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable') && entry.active);
+  const newestRuntimeBlockIndex = activeVerdicts.findIndex((entry) => (entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable') && entry.active);
   if (newestRuntimePassIndex !== -1 && (newestRuntimeBlockIndex === -1 || newestRuntimePassIndex < newestRuntimeBlockIndex)) {
-    const entry = verdicts[newestRuntimePassIndex];
+    const entry = activeVerdicts[newestRuntimePassIndex];
     return {
       HEALTHY: 'true',
       RUNTIME: runtime,
@@ -536,7 +559,7 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
   if (newestRuntimeBlockIndex !== -1) {
-    const entry = verdicts[newestRuntimeBlockIndex];
+    const entry = activeVerdicts[newestRuntimeBlockIndex];
     return {
       HEALTHY: 'false',
       RUNTIME: runtime,
@@ -553,10 +576,10 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
 
-  const newestPhasePassIndex = verdicts.findIndex((entry) => normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true);
-  const newestPhaseBlockIndex = verdicts.findIndex((entry) => entry.blocking && entry.active);
+  const newestPhasePassIndex = activeVerdicts.findIndex((entry) => normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true);
+  const newestPhaseBlockIndex = activeVerdicts.findIndex((entry) => entry.blocking && entry.active);
   if (newestPhasePassIndex !== -1 && (newestPhaseBlockIndex === -1 || newestPhasePassIndex < newestPhaseBlockIndex)) {
-    const entry = verdicts[newestPhasePassIndex];
+    const entry = activeVerdicts[newestPhasePassIndex];
     return {
       HEALTHY: 'true',
       RUNTIME: runtime,
@@ -573,7 +596,7 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
   if (newestPhaseBlockIndex !== -1) {
-    const entry = verdicts[newestPhaseBlockIndex];
+    const entry = activeVerdicts[newestPhaseBlockIndex];
     return {
       HEALTHY: 'true',
       RUNTIME: runtime,
@@ -599,7 +622,7 @@ function printAssignments(result) {
   }
 }
 
-function selfTest() {
+async function selfTest() {
   const activeIdentity = {
     runLeaseId: 'lease-a',
     activePhaseDocPath: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/phase-02.md',
@@ -694,6 +717,20 @@ function selfTest() {
     blocking: false,
     phase: { number: 2, title: 'Phase 02: Legacy Compatibility' },
   };
+  const completePhasePayload = {
+    verdict: 'passed',
+    evidenceFresh: true,
+    blocking: false,
+    phase: { number: 2 },
+    identity: activeIdentity,
+  };
+  const mismatchedPhasePayload = {
+    ...completePhasePayload,
+    identity: {
+      ...activeIdentity,
+      runLeaseId: 'lease-b',
+    },
+  };
   const explicitVerdictPath = path.resolve('/tmp/verification-verdict-phase02-final.json');
   const ignoredWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-state-'));
   const ignoredVerdictPath = path.join(ignoredWorkspace, '.claude', 'verification-verdict-phase02-final.json');
@@ -745,9 +782,47 @@ function selfTest() {
   assert.equal(isRelevantVerificationVerdict({ payload: stalePhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2 }), false);
   assert.equal(isRelevantVerificationVerdict({ payload: supersededPayload, filePath: '/tmp/verification-verdict-phase05-final.json' }, { activePhaseNumber: 5 }), false);
   fs.rmSync(ignoredWorkspace, { recursive: true, force: true });
+  assert.equal(isRelevantVerificationVerdict({ payload: completePhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2, identity: activeIdentity }), true);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedPhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+
+  const tempRoot = fs.mkdtempSync(path.join(process.cwd(), '.tmp-verdict-state-'));
+  try {
+    const claudeDir = path.join(tempRoot, '.claude');
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const blockedPath = path.join(claudeDir, 'verification-verdict-phase03-blocked.json');
+    const finalPath = path.join(claudeDir, 'verification-verdict-phase03-final.json');
+    fs.writeFileSync(blockedPath, JSON.stringify({
+      verdict: 'failed',
+      blocking: true,
+      blockerClass: 'runtime_unavailable',
+      blockingReasonCode: 'running-harness-state-mismatch',
+      phase: { number: 3 },
+      runtimeContext: { requestedRuntime: 'codex' },
+    }));
+    fs.writeFileSync(finalPath, JSON.stringify({
+      verdict: 'passed',
+      blocking: false,
+      phase: { number: 3 },
+      runtimeContext: { requestedRuntime: 'codex' },
+    }));
+    const older = new Date(Date.now() - 2000);
+    const newer = new Date(Date.now() - 1000);
+    fs.utimesSync(blockedPath, older, older);
+    fs.utimesSync(finalPath, newer, newer);
+    const clearedHealth = assessRuntimeHealthFromVerdictFiles('codex', tempRoot, 0, 10);
+    assert.equal(clearedHealth.HEALTHY, 'true');
+    assert.equal(clearedHealth.REASON, 'phase-verification-passed');
+    assert.equal(clearedHealth.VERDICT_PATH, finalPath);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+  assert.equal(typeof resolveGitTreeFingerprint(process.cwd()), 'string');
+
+  await import('./lib/phase-closeout-verdict.mjs');
+  await import('./agent-loop-phase-state.mjs');
 }
 
-function main() {
+async function main() {
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
     case 'assess-runtime-health': {
@@ -764,7 +839,7 @@ function main() {
       break;
     }
     case 'self-test':
-      selfTest();
+      await selfTest();
       process.stdout.write('verification-verdict-state self-test passed\n');
       break;
     default:
@@ -775,5 +850,8 @@ function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
-  main();
+  main().catch((error) => {
+    process.stderr.write(`${error?.stack || error?.message || error}\n`);
+    process.exit(1);
+  });
 }

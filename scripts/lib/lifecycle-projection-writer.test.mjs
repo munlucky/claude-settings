@@ -505,6 +505,74 @@ test('rejects stateRunId mismatch before projection overwrite', () => {
   });
 });
 
+test('replaces stale dispatch-stop projection with a new state run', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'active-phase-run.json');
+    fs.writeFileSync(target, JSON.stringify({
+      stateRunId: 'old-run',
+      status: 'paused',
+      completionStatus: 'paused',
+      childAlive: false,
+      finishedAt: '2026-05-26T05:43:36Z',
+      returnBoundary: 'dispatch-stop',
+    }, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      source: 'phase-run-lease-store',
+      lifecycleEvent: 'lease_heartbeat',
+      status: 'active',
+      attemptId: 'new-run',
+      payloadPatch: {
+        stateRunId: 'new-run',
+        runLeaseId: 'new-run',
+        attemptId: 'new-run',
+        status: 'active',
+      },
+      writeMode: 'replace',
+    }));
+
+    const payload = readJson(target);
+    assert.equal(payload.stateRunId, 'new-run');
+    assert.equal(payload.status, 'active');
+  });
+});
+
+test('replaces stale delegated terminal exit projection with a new state run', () => {
+  withTempDir((root) => {
+    const target = path.join(root, 'current-run.json');
+    fs.writeFileSync(target, JSON.stringify({
+      stateRunId: 'old-run',
+      status: 'paused',
+      completionStatus: 'paused',
+      childAlive: false,
+      finishedAt: '2026-05-26T05:43:36Z',
+      stopReasonCode: 'delegated-terminal-exit-1',
+    }, null, 2) + '\n', 'utf8');
+
+    recordLifecycleTransition(baseEvent({
+      primaryTargetStateFile: target,
+      targetStateFiles: [target],
+      source: 'phase-run-lease-store',
+      lifecycleEvent: 'lease_heartbeat',
+      status: 'active',
+      attemptId: 'new-run',
+      payloadPatch: {
+        stateRunId: 'new-run',
+        runLeaseId: 'new-run',
+        attemptId: 'new-run',
+        status: 'active',
+      },
+      writeMode: 'replace',
+    }));
+
+    const payload = readJson(target);
+    assert.equal(payload.stateRunId, 'new-run');
+    assert.equal(payload.status, 'active');
+  });
+});
+
 test('rejects stateRunId mismatch before any multi-target projection write', () => {
   withTempDir((root) => {
     const activeRun = path.join(root, 'active-phase-run.json');

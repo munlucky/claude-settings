@@ -240,6 +240,13 @@ function canReplaceStaleRunProjection(previousPayload = {}, targetFile = '') {
   ) {
     return true;
   }
+  if (
+    deadChildEvidence
+    && hasFinishedStamp
+    && /dispatch-stop|delegated-terminal-exit|terminal_dispatch_closed/i.test(String(staleReason))
+  ) {
+    return true;
+  }
   return deadChildEvidence && hasFinishedStamp && /stale|dead-dispatch|superseded/i.test(String(staleReason));
 }
 

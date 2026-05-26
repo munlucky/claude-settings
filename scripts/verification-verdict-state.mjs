@@ -514,12 +514,35 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
 
-  const newestRuntimePassIndex = verdicts.findIndex((entry) => entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable'
+  const clearedPhaseVerdicts = new Map();
+  for (const entry of verdicts) {
+    const phaseNumber = phaseNumberFromPayload(entry.payload);
+    if (!Number.isInteger(phaseNumber)) {
+      continue;
+    }
+    if (normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true) {
+      const previous = clearedPhaseVerdicts.get(phaseNumber) || 0;
+      clearedPhaseVerdicts.set(phaseNumber, Math.max(previous, entry.mtimeMs || 0));
+    }
+  }
+
+  const activeVerdicts = verdicts.filter((entry) => {
+    const phaseNumber = phaseNumberFromPayload(entry.payload);
+    const clearedAt = Number.isInteger(phaseNumber) ? (clearedPhaseVerdicts.get(phaseNumber) || 0) : 0;
+    return !(
+      entry.active
+      && clearedAt > 0
+      && (entry.mtimeMs || 0) <= clearedAt
+      && normalizeLower(entry.payload.verdict) !== 'passed'
+    );
+  });
+
+  const newestRuntimePassIndex = activeVerdicts.findIndex((entry) => entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable'
     ? normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true
     : false);
-  const newestRuntimeBlockIndex = verdicts.findIndex((entry) => (entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable') && entry.active);
+  const newestRuntimeBlockIndex = activeVerdicts.findIndex((entry) => (entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable') && entry.active);
   if (newestRuntimePassIndex !== -1 && (newestRuntimeBlockIndex === -1 || newestRuntimePassIndex < newestRuntimeBlockIndex)) {
-    const entry = verdicts[newestRuntimePassIndex];
+    const entry = activeVerdicts[newestRuntimePassIndex];
     return {
       HEALTHY: 'true',
       RUNTIME: runtime,
@@ -536,7 +559,7 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
   if (newestRuntimeBlockIndex !== -1) {
-    const entry = verdicts[newestRuntimeBlockIndex];
+    const entry = activeVerdicts[newestRuntimeBlockIndex];
     return {
       HEALTHY: 'false',
       RUNTIME: runtime,
@@ -553,10 +576,10 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
 
-  const newestPhasePassIndex = verdicts.findIndex((entry) => normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true);
-  const newestPhaseBlockIndex = verdicts.findIndex((entry) => entry.blocking && entry.active);
+  const newestPhasePassIndex = activeVerdicts.findIndex((entry) => normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true);
+  const newestPhaseBlockIndex = activeVerdicts.findIndex((entry) => entry.blocking && entry.active);
   if (newestPhasePassIndex !== -1 && (newestPhaseBlockIndex === -1 || newestPhasePassIndex < newestPhaseBlockIndex)) {
-    const entry = verdicts[newestPhasePassIndex];
+    const entry = activeVerdicts[newestPhasePassIndex];
     return {
       HEALTHY: 'true',
       RUNTIME: runtime,
@@ -573,7 +596,7 @@ export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, rece
     };
   }
   if (newestPhaseBlockIndex !== -1) {
-    const entry = verdicts[newestPhaseBlockIndex];
+    const entry = activeVerdicts[newestPhaseBlockIndex];
     return {
       HEALTHY: 'true',
       RUNTIME: runtime,

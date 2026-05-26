@@ -1,5 +1,8 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 
 import { scrubCompatibilityProjection } from './simple-run-state.mjs';
 
@@ -197,7 +200,7 @@ function assertStateRunIdCompatible(previousPayload = {}, nextPayload = {}, targ
   throw new Error(`stateRunId mismatch rejected before projection overwrite: ${targetFile || 'compatibility projection'} (${previousRunId} != ${nextRunId})`);
 }
 
-function canReplaceStaleRunProjection(previousPayload = {}, targetFile = '') {
+export function canReplaceStaleRunProjection(previousPayload = {}, targetFile = '') {
   const states = [
     previousPayload.status,
     previousPayload.activeExecutionStatus,
@@ -237,6 +240,13 @@ function canReplaceStaleRunProjection(previousPayload = {}, targetFile = '') {
     && dispatcherPid > 0
     && !isPidAlive(dispatcherPid)
     && states.some((state) => ACTIVE_ATTEMPT_STATES.has(state))
+  ) {
+    return true;
+  }
+  if (
+    deadChildEvidence
+    && hasFinishedStamp
+    && /dispatch-stop|delegated-terminal-exit|terminal_dispatch_closed/i.test(String(staleReason))
   ) {
     return true;
   }
@@ -348,4 +358,95 @@ export function recordLifecycleTransition(rawEvent = {}) {
     timestamp: event.timestamp,
     written,
   };
+}
+
+function selfTestEvent(target, stateRunId) {
+  return {
+    source: 'lifecycle-projection-writer.self-test',
+    primaryTargetStateFile: target,
+    targetStateFiles: [target],
+    phaseTitle: 'Lifecycle Projection Self Test',
+    phaseNumber: 0,
+    status: 'active',
+    lifecycleEvent: 'dispatch_started',
+    attemptId: stateRunId,
+    payloadPatch: {
+      stateRunId,
+      runLeaseId: stateRunId,
+      attemptId: stateRunId,
+      status: 'active',
+      completionStatus: 'running',
+      attemptOutcome: 'in_progress',
+    },
+  };
+}
+
+function runSelfTest() {
+  assert.equal(canReplaceStaleRunProjection({
+    stateRunId: 'old-run',
+    status: 'paused',
+    completionStatus: 'paused',
+    childAlive: false,
+    finishedAt: '2026-05-26T05:43:36Z',
+    returnBoundary: 'dispatch-stop',
+  }, '.moonshot-state/logs/workflow-enforcement/active-phase-run.json'), true);
+
+  assert.equal(canReplaceStaleRunProjection({
+    stateRunId: 'old-run',
+    status: 'paused',
+    completionStatus: 'paused',
+    childAlive: false,
+    finishedAt: '2026-05-26T05:43:36Z',
+    stopReasonCode: 'delegated-terminal-exit-1',
+  }, '.moonshot-state/logs/workflow-enforcement/current-run.json'), true);
+
+  assert.equal(canReplaceStaleRunProjection({
+    stateRunId: 'old-run',
+    status: 'active',
+    completionStatus: 'running',
+    childAlive: true,
+  }, '.moonshot-state/logs/workflow-enforcement/active-phase-run.json'), false);
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifecycle-projection-writer-'));
+  try {
+    const staleTarget = path.join(root, 'active-phase-run.json');
+    fs.writeFileSync(staleTarget, `${JSON.stringify({
+      stateRunId: 'old-run',
+      status: 'paused',
+      completionStatus: 'paused',
+      childAlive: false,
+      finishedAt: '2026-05-26T05:43:36Z',
+      returnBoundary: 'dispatch-stop',
+    }, null, 2)}\n`, 'utf8');
+    recordLifecycleTransition(selfTestEvent(staleTarget, 'new-run'));
+    assert.equal(JSON.parse(fs.readFileSync(staleTarget, 'utf8')).stateRunId, 'new-run');
+
+    const activeTarget = path.join(root, 'active-live-run.json');
+    fs.writeFileSync(activeTarget, `${JSON.stringify({
+      stateRunId: 'old-run',
+      status: 'active',
+      completionStatus: 'running',
+      childAlive: true,
+    }, null, 2)}\n`, 'utf8');
+    assert.throws(
+      () => recordLifecycleTransition(selfTestEvent(activeTarget, 'new-run')),
+      /stateRunId mismatch rejected before projection overwrite/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function main() {
+  if (process.argv[2] === 'self-test') {
+    runSelfTest();
+    process.stdout.write('lifecycle-projection-writer self-test passed\n');
+    return;
+  }
+  process.stderr.write('Usage: lifecycle-projection-writer.mjs self-test\n');
+  process.exit(64);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main();
 }
