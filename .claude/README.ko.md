@@ -131,6 +131,7 @@ Codex 네이티브 경로는 rule 파일을 아래 경로로 명시적으로 소
 ### 문서 및 로깅
 - `session-logger`
 - `efficiency-tracker` (archived deprecated, 명시적 이력/리포팅 용도만)
+- `awtl-runtime-importers.mjs`와 `awtl-import-trace.mjs`는 Codex rollout/session과 Claude transcript를 canonical AWTL event로 backfill하고 import metadata를 `payload`에 유지합니다.
 
 ### 유틸리티
 - `teach-impeccable` (선택 UI/design bundle 구성요소)

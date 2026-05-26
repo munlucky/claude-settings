@@ -63,21 +63,27 @@ function syncWslCodexAuth() {
 
   const localCodexDir = path.join(os.homedir(), '.codex');
   const localAuth = path.join(localCodexDir, 'auth.json');
-
-  try {
-    if (fs.statSync(localAuth).size > 0) {
-      return localAuth;
-    }
-  } catch {
-    // Continue with Windows auth discovery.
-  }
-
   const windowsAuth = findWindowsCodexAuth();
   if (!windowsAuth) {
+    try {
+      if (fs.statSync(localAuth).size > 0) {
+        return localAuth;
+      }
+    } catch {
+      // No usable auth source is available.
+    }
     return '';
   }
 
   fs.mkdirSync(localCodexDir, { recursive: true });
+  try {
+    if (fs.realpathSync(localAuth) === fs.realpathSync(windowsAuth)) {
+      return localAuth;
+    }
+  } catch {
+    // Replace missing, copied, or stale local auth below.
+  }
+
   try {
     fs.rmSync(localAuth, { force: true });
   } catch {
@@ -239,24 +245,49 @@ function copyIfPresent(sourcePath, targetPath) {
   }
 }
 
+function resolveSourceCodexHome() {
+  const candidates = [
+    process.env.CODEX_HOME || '',
+    process.platform === 'win32' && process.env.USERPROFILE ? path.join(process.env.USERPROFILE, '.codex') : '',
+    path.join(os.homedir(), '.codex'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(path.join(candidate, 'auth.json'))) {
+        return candidate;
+      }
+    } catch {
+      // Ignore unusable candidates and continue.
+    }
+  }
+
+  return candidates[0] || path.join(os.homedir(), '.codex');
+}
+
 function prepareCodexProbeHome(rootPath) {
   if (isWsl()) {
     syncWslCodexAuth();
   }
 
   const probeHome = path.resolve(rootPath || path.join(os.tmpdir(), 'codex-probe-home'));
-  const codexHome = path.join(probeHome, '.codex');
+  const sourceCodexHome = resolveSourceCodexHome();
+  const sourceAuthPath = path.join(sourceCodexHome, 'auth.json');
+  const shouldShareCodexHome = fs.existsSync(sourceAuthPath);
+  const codexHome = shouldShareCodexHome ? sourceCodexHome : path.join(probeHome, '.codex');
   const xdgConfigHome = path.join(probeHome, '.config');
   const xdgCacheHome = path.join(probeHome, '.cache');
   const xdgStateHome = path.join(probeHome, '.local', 'state');
 
-  for (const directory of [probeHome, codexHome, xdgConfigHome, xdgCacheHome, xdgStateHome]) {
+  for (const directory of [probeHome, xdgConfigHome, xdgCacheHome, xdgStateHome]) {
     fs.mkdirSync(directory, { recursive: true });
   }
 
-  const sourceCodexHome = path.join(os.homedir(), '.codex');
-  for (const relativePath of ['auth.json', 'config.json', 'config.toml']) {
-    copyIfPresent(path.join(sourceCodexHome, relativePath), path.join(codexHome, relativePath));
+  if (!shouldShareCodexHome) {
+    fs.mkdirSync(codexHome, { recursive: true });
+    for (const relativePath of ['config.json', 'config.toml']) {
+      copyIfPresent(path.join(sourceCodexHome, relativePath), path.join(codexHome, relativePath));
+    }
   }
 
   return {
@@ -272,7 +303,7 @@ export function codexBaseArgs(cwd) {
   let useOss = process.env.CODEX_USE_OSS_PROVIDER ?? 'auto';
   let localProvider = process.env.CODEX_LOCAL_PROVIDER ?? '';
   const useEphemeral = process.env.CODEX_EXEC_EPHEMERAL ?? 'true';
-  const sandboxMode = process.env.CODEX_EXEC_SANDBOX || 'danger-full-access';
+  const sandboxMode = process.env.CODEX_EXEC_SANDBOX || 'workspace-write';
 
   const codexCommand = resolveCodexCommand() || 'codex';
   const windowsWrapper = path.join(path.dirname(fileURLToPath(import.meta.url)), 'codex-exec-wrapper.ps1');

@@ -11,6 +11,8 @@
 - MemoryGraph 실패는 strict memory validation 단계가 아닌 한 workflow를 막지 않고 warning 또는 `not_checked`로 남깁니다.
 - 프로젝트 로컬 지식그래프 생성/갱신은 명시 refresh, finish/session logging, commit-memory 흐름에서만 수행합니다.
 - 여러 프로젝트에 재사용 가능한 지식은 승인 기반 승격 경로로만 하네스 graph에 저장합니다.
+- Phase 05는 harness-memory-promoter 앞에 replay gate를 추가합니다. 후보는 replay 증거 또는 human approval이 있어야 하며, transcript-only/imported-only 후보는 계속 차단됩니다.
+- 턴 실패 재발 방지 memory는 2단계입니다. failed turn case는 로컬 prevention brief에 쓸 수 있지만, MemoryGraph write는 verified replay 또는 명시적 human approval이 있어야 합니다.
 
 ## 단계별 적용
 
@@ -29,6 +31,7 @@
 프로젝트 graph 데이터는 `claude-settings`가 아니라 활성 프로젝트에 속합니다.
 
 - seed 생성: `node .claude/scripts/memorygraph-project-index.mjs`
+- commit refresh helper: `node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <projectId>`
 - seed 출력: `.claude/cache/memorygraph/project-graph-seed.json`
 - 승격 후보: `.claude/cache/memorygraph/promotion-candidates.json`
 - write 경로: `project-memory-refresh`, `memoryMode: write_requested`
@@ -43,8 +46,14 @@
 - 프로젝트 refresh는 후보만 생성합니다.
 - `harness-memory-promoter`는 반드시 `claude-settings` 저장소에서 실행합니다.
 - 승격에는 명시 승인이 필요합니다.
+- MemoryGraph가 unavailable이어도 관련 없는 워크플로는 막지 말고, 승격 연산만 실패/차단으로 보고합니다.
 - 승격 태그는 `project:claude-settings`, `promoted`, `from-project:<projectId>`, `source:moonshot`을 포함합니다.
 - 프로젝트 도메인/비즈니스 로직, 일회성 구현 세부사항, secrets, `.claude/docs/ko/`에서만 나온 사실은 승격하지 않습니다.
+- 실패 턴에서 파생된 AWTL promotion candidate는 `failure_turn_id`를 포함해야 합니다.
+- imported transcript 또는 raw trace replay만으로 만들어진 후보는 replay evidence 또는 human approval 전까지 거부합니다.
+- 직접 MemoryGraph write는 `writeMemoryGraph: true`와 `autoPromote: verified-only`가 함께 있을 때만 유효합니다.
+- promotion attempt는 `write_status`, `denial_codes`, compact provenance를 replay scorecard에 append해야 합니다.
+- `write_status: skipped`, `not_requested`, `memorygraph_unavailable`은 해당 phase가 strict memory validation을 목표로 하지 않는 한 workflow completion failure가 아닙니다.
 
 ## 중복 제거 정책
 
@@ -72,8 +81,10 @@ raw memory 본문을 `analysisContext`에 복사하지 않습니다. 현재 단�
 
 - 기본 단계 모드는 `memoryMode: read_only`입니다.
 - `memoryMode: write_requested`는 `session-logger`, `commit-moonshot`, 또는 명시적인 memory refresh 요청에서만 사용합니다.
+- `memoryMode: verified_write_requested`는 replay 또는 human approval을 통과한 harness-memory-promoter 흐름에서만 사용합니다.
 - 일반 하네스 규칙, system prompt 사실, `.claude/docs/ko/`에서만 나온 사실은 저장하지 않습니다.
 - MemoryGraph를 사용할 수 없으면 `boundaryStatus: not_checked` 또는 warning을 남기고 workflow를 계속합니다.
+- `commit-moonshot`에서 `Transport closed`는 `mcp_transport_failed -> direct_fallback`로 분류합니다. direct fallback 성공은 memory refresh 완료로 취급하고, fallback 실패는 로그에 남기되 명시적 Git closeout을 막지 않습니다.
 
 ## Workflow Evidence
 

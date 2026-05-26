@@ -134,7 +134,12 @@ export function normalizeCodexProbeText({ stderr = '', stdout = '', exitCode = 1
   if (text.includes('error sending request for url') || text.includes('network error')) {
     return { failureCode: 'network_unavailable', exitCode };
   }
-  if (text.includes('login') && text.includes('codex')) {
+  if (
+    (text.includes('login') && text.includes('codex'))
+    || text.includes('failed to refresh token')
+    || text.includes('refresh token was already used')
+    || text.includes('log out and sign in again')
+  ) {
     return { failureCode: 'login_required', exitCode };
   }
   return { failureCode: 'probe_unknown', exitCode };

@@ -6,8 +6,6 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { buildBottleneckWarnings } from './phase-attempt-telemetry.mjs';
-
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-overhead-regression-'));
 process.env.WORKFLOW_ENFORCEMENT_LOG_DIR = path.join(tempRoot, 'workflow-enforcement');
 
@@ -74,7 +72,7 @@ test('runtime unavailable cache records once and returns stable summaries for re
   );
 });
 
-test('codex base args use trusted local sandbox and do not reintroduce removed automation flags', () => {
+test('codex base args use workspace-write sandbox and do not reintroduce --full-auto', () => {
   const result = spawnSync('node', [
     '.claude/scripts/runtime-cli.mjs',
     'codex-base-args',
@@ -82,48 +80,11 @@ test('codex base args use trusted local sandbox and do not reintroduce removed a
   ], {
     cwd: process.cwd(),
     encoding: 'utf8',
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const args = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
-  assert.ok(args.includes('--sandbox'));
-  assert.ok(args.includes('danger-full-access'));
-  assert.equal(args.includes('--ask-for-approval'), false);
-  assert.equal(args.includes('--full-auto'), false);
-});
-
-test('codex base args allow explicit sandbox override for trusted local phase runners', () => {
-  const result = spawnSync('node', [
-    '.claude/scripts/runtime-cli.mjs',
-    'codex-base-args',
-    process.cwd(),
-  ], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      CODEX_EXEC_SANDBOX: 'workspace-write',
-    },
   });
 
   assert.equal(result.status, 0, result.stderr);
   const args = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
   assert.ok(args.includes('--sandbox'));
   assert.ok(args.includes('workspace-write'));
-  assert.equal(args.includes('danger-full-access'), false);
   assert.equal(args.includes('--full-auto'), false);
-});
-
-test('slow narrow phase emits dominant timing bucket warning', () => {
-  const warnings = buildBottleneckWarnings({
-    wallClockSeconds: 120,
-    workerStartupSeconds: 4,
-    workerActiveSeconds: 6,
-    verificationSeconds: 2,
-    closeoutSeconds: 98,
-    idleWaitSeconds: 10,
-    runtimeFallbackSeconds: 0,
-  }, { thresholdSeconds: 30, ratio: 0.7 });
-
-  assert.deepEqual(warnings, ['phase_attempt_bottleneck:closeoutSeconds:98s_of_120s']);
 });

@@ -206,6 +206,11 @@ After verification, choose exactly one closeout path:
    - if the same failure class repeats twice, choose `partial_redesign` or `stop_and_handoff`
    - return to implementation with contract-linked remediation input
 
+External blockers do not justify a fake clean finish:
+- if a required verifier is unavailable, record a blocked or deferred-verification verdict instead of forcing pass semantics
+- if the blocker is only partial, keep the audit note explicit so `QA_REPORT.md` and `HANDOFF.md` both explain why the phase stayed open
+- ignored evidence that must remain in the closeout chain should be named in the artifact record rather than dropped from the finish ledger
+
 Invalid handoff reasons:
 - "checkpoint reached"
 - "docs updated"

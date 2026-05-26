@@ -35,6 +35,7 @@ RUNTIME_FAILURE_CLASSIFICATIONS=()
 ACTUAL_FAILURES=()
 ACTUAL_TIMINGS=()
 TARGET_RUNTIME_SET=()
+RUNTIME_PROBES_RAN=false
 
 cleanup() {
   if [[ "$KEEP_TMP" == "true" ]]; then
@@ -406,6 +407,13 @@ classify_codex_probe_failure() {
     return 0
   fi
 
+  if grep -Fqi "Failed to refresh token" "$primary_file" "$secondary_file" \
+    || grep -Fqi "refresh token was already used" "$primary_file" "$secondary_file" \
+    || grep -Fqi "log out and sign in again" "$primary_file" "$secondary_file"; then
+    printf '%s\n' "login_required"
+    return 0
+  fi
+
   printf '%s\n' "probe_unknown"
 }
 
@@ -738,10 +746,9 @@ probe_codex_runtime() {
   fi
 
   detail="$(summarize_probe_detail "$error_file" "$stdout_file")"
-  if [[ "$exit_code" -eq 124 ]]; then
+  failure_code="$(classify_codex_probe_failure "$error_file" "$stdout_file")"
+  if [[ "$exit_code" -eq 124 && "$failure_code" == "probe_unknown" ]]; then
     failure_code="probe_timeout"
-  else
-    failure_code="$(classify_codex_probe_failure "$error_file" "$stdout_file")"
   fi
   case "$failure_code" in
     probe_timeout)
@@ -784,6 +791,8 @@ run_runtime_probes() {
   if target_runtime_selected "codex"; then
     probe_codex_runtime || warn "runtime probe failed: codex"
   fi
+
+  RUNTIME_PROBES_RAN=true
 }
 
 terminate_process_tree() {
@@ -2365,6 +2374,15 @@ require_command shasum
 resolve_runtime_profile
 resolve_target_runtime_set
 
+if [[ "$RUN_REAL" == "true" && "${RUNTIME_PROFILE:-required_runtime}" == "required_runtime" ]]; then
+  mark_stage "runtime_probes"
+  run_runtime_probes
+  if runtime_failures_include_blocker; then
+    report_failures_and_exit
+    exit $?
+  fi
+fi
+
 mark_stage "render_matrix"
 run_render_matrix
 mark_stage "archive_sync_fixture_smoke"
@@ -2375,8 +2393,10 @@ mark_stage "verify_changes_workflow_verdict_smoke"
 run_verify_changes_workflow_verdict_smoke
 
 if [[ "$RUN_REAL" == "true" ]]; then
-  mark_stage "runtime_probes"
-  run_runtime_probes
+  if [[ "$RUNTIME_PROBES_RAN" != "true" ]]; then
+    mark_stage "runtime_probes"
+    run_runtime_probes
+  fi
   if [[ "${RUNTIME_PROFILE:-required_runtime}" == "optional_probe" ]]; then
     warn "skipping actual runtime matrix for optional_probe profile"
   else

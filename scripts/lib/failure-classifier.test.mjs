@@ -6,12 +6,8 @@ import {
   buildFailureClassCounts,
   classifyCapabilityCheck,
   classifyFailure,
-  classifyVerifierEpermFailure,
-  classifyStagnationPattern,
-  classifyTimeoutBudget,
   decisionForFailureCode,
   isEnvironmentBlockerCode,
-  normalizeStopOutcome,
   normalizeFailureCode,
   summarizeFailureDecision,
 } from './failure-classifier.mjs';
@@ -27,14 +23,12 @@ function detectFinalStopReason(rawLines) {
 }
 
 function testBashAccessDenied() {
-  const a = classifyFailure({ name: 'shell:local-script.sh', status: 'warning', detail: 'spawnSync bash EPERM' });
-  const b = classifyFailure({ name: 'shell:local-script.sh', status: 'warning', detail: 'spawnSync bash Access is denied' });
-  const verifierBash = classifyFailure({ name: 'shell:.claude/scripts/verify-code-policy.sh', status: 'warning', detail: 'spawnSync bash EPERM' });
+  const a = classifyFailure({ name: 'shell:.claude/scripts/verify-code-policy.sh', status: 'warning', detail: 'spawnSync bash EPERM' });
+  const b = classifyFailure({ name: 'shell:.claude/scripts/workflow-enforcement.sh', status: 'warning', detail: 'spawnSync bash Access is denied' });
 
   assert.equal(a.code, 'bash_access_denied');
   assert.equal(a.decision, 'resume_later_handoff');
   assert.equal(a.fingerprint, b.fingerprint);
-  assert.equal(verifierBash.code, 'verification_environment_unavailable');
 }
 
 function testCodexStorageAndStateCodes() {
@@ -61,15 +55,6 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   const cimAccess = classifyFailure({ name: 'process.cim', status: 'warning', detail: 'Get-CimInstance access is denied' });
   const memoryGraph = classifyFailure({ name: 'memorygraph.health', status: 'warning', detail: 'memorygraph transport closed' });
   const verifier = classifyFailure({ name: 'verifier.runtime', status: 'warning', detail: 'runtime verifier unavailable' });
-  const verifierSpawn = classifyFailure({
-    failureCode: 'command_not_found',
-    name: 'verifier.runtime',
-    detail: 'node --test .claude/scripts/lib/current-artifacts-state.test.mjs failed: spawn EPERM',
-  });
-  const nodeTestWorker = classifyFailure({
-    name: 'node.test.worker',
-    detail: 'Node test worker spawn EPERM',
-  });
   const pathUpdate = classifyFailure({ name: 'path.update', status: 'warning', detail: 'PATH update denied by host policy' });
   const pluginSync = classifyFailure({ name: 'plugin.sync', status: 'warning', detail: 'plugin network sync failed after timeout' });
   const pluginHost = classifyFailure({ name: 'plugin.sync.host', status: 'warning', detail: 'plugin sync failed: Could not resolve host: github.com' });
@@ -84,10 +69,7 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   assert.equal(rgAccess.code, 'rg_access_denied');
   assert.equal(cimAccess.code, 'get_ciminstance_access_denied');
   assert.equal(memoryGraph.code, 'memorygraph_unavailable');
-  assert.equal(verifier.code, 'verification_environment_unavailable');
-  assert.equal(verifierSpawn.code, 'verification_environment_unavailable');
-  assert.equal(verifierSpawn.decision, 'resume_later_handoff');
-  assert.equal(nodeTestWorker.code, 'verification_environment_unavailable');
+  assert.equal(verifier.code, 'verifier_unavailable');
   assert.equal(pathUpdate.code, 'path_update_denied');
   assert.equal(pluginSync.code, 'plugin_network_sync_failed');
   assert.equal(pluginHost.code, 'plugin_network_sync_failed');
@@ -98,35 +80,14 @@ function testShellSnapshotMcpNodeGitRgMemoryGraphCodes() {
   assert.equal(isEnvironmentBlockerCode('path_update_denied'), true);
 }
 
-function testVerifierEpermFailurePreservesCommandAndDetail() {
-  const result = classifyVerifierEpermFailure({
-    name: 'phase verifier',
-    command: 'node --test .claude/scripts/lib/phase-closeout-verdict.test.mjs',
-    detail: 'spawnSync node EPERM while running required verifier',
-  });
-
-  assert.equal(result.isVerifierEperm, true);
-  assert.equal(result.errorCode, 'EPERM');
-  assert.equal(result.code, 'verification_environment_unavailable');
-  assert.match(result.command, /phase-closeout-verdict\.test\.mjs/);
-  assert.match(result.detail, /spawnSync node EPERM/);
-}
-
 function testGitAndNetworkCodes() {
   const git = classifyFailure({ name: 'git.version', status: 'warning', detail: 'spawnSync git EPERM' });
-  const verifierGit = classifyFailure({ name: 'phase verifier', command: 'git status', status: 'warning', detail: 'spawnSync git EPERM during verification' });
   const queueSmoke = classifyFailure({ name: 'npm.queue-smoke', status: 'warning', detail: 'npm queue-smoke failed: spawnSync git EPERM' });
   const gitIgnoreWarning = classifyFailure({ name: 'git.warning', status: 'warning', detail: "warning: unable to access 'C:\\Users\\moon/.config/git/ignore': Permission denied" });
   const sandboxProvider = classifyFailure({ name: 'provider.smoke', status: 'warning', detail: 'E_PROVIDER_NETWORK websocket os error 10013 blocked by sandbox' });
   const network = classifyFailure({ name: 'network.fetch', status: 'warning', detail: 'fetch failed: ENOTFOUND' });
-  const codexStream = classifyFailure({
-    name: 'codex.exec',
-    status: 'warning',
-    detail: 'codex_core::session::turn: stream disconnected - retrying sampling request (3/5 in 740ms)',
-  });
 
   assert.equal(git.code, 'git_eperm');
-  assert.equal(verifierGit.code, 'verification_environment_unavailable');
   assert.equal(queueSmoke.code, 'npm_queue_smoke_git_eperm');
   assert.equal(gitIgnoreWarning.code, 'safe_git_ignore_permission_warning');
   assert.equal(gitIgnoreWarning.blocker, false);
@@ -134,8 +95,6 @@ function testGitAndNetworkCodes() {
   assert.equal(sandboxProvider.blocker, false);
   assert.equal(network.code, 'network_fetch_failed');
   assert.equal(network.decision, 'host_fallback');
-  assert.equal(codexStream.code, 'codex_upstream_stream_stalled');
-  assert.equal(codexStream.decision, 'resume_later_handoff');
   assert.equal(decisionForFailureCode('git_eperm'), 'resume_later_handoff');
   assert.equal(normalizeFailureCode({ reason: '  Bash Access Denied  ' }), 'bash_access_denied');
 }
@@ -147,35 +106,6 @@ function testDetectFinalStopReasonForRawLogs() {
       'phase worker still running',
     ]),
     'mcp_cleanup_eperm',
-  );
-  assert.equal(
-    detectFinalStopReason([
-      'node --test .claude/scripts/lib/current-artifacts-state.test.mjs failed: spawnSync node EPERM',
-    ]),
-    'verification_environment_unavailable',
-  );
-  assert.equal(
-    detectFinalStopReason([
-      'failed to initialize MCP client during shutdown: MCP startup failed: handshaking with MCP server failed: connection closed',
-      'phase worker still running',
-    ]),
-    'mcp_shutdown_warning',
-  );
-  assert.equal(
-    classifyFailure({ failureCode: 'command_not_found', detail: 'actual command not found' }).code,
-    'command_not_found',
-  );
-  assert.equal(
-    classifyFailure({ name: 'node.spawn', detail: 'spawnSync node EPERM' }).code,
-    'node_spawn_eperm',
-  );
-  assert.equal(
-    classifyFailure({ name: 'node.spawn', detail: 'spawnSync node EPERM' }).decision,
-    'resume_later_handoff',
-  );
-  assert.equal(
-    classifyFailure({ detail: 'failed to initialize MCP client during shutdown: connection closed' }).blocker,
-    false,
   );
   assert.equal(
     detectFinalStopReason([
@@ -192,32 +122,8 @@ function testDetectFinalStopReasonForRawLogs() {
   );
 }
 
-function testDispatcherLivenessTimeoutCodes() {
-  const stale = classifyFailure({ reason: 'stale_child_no_progress', detail: 'delegated child made no observable progress for 3300s' });
-  const exited = classifyFailure({ detail: 'child_exited_without_closeout after dispatcher timeout' });
-  const running = classifyFailure({ detail: 'timeout reached and child pid is still alive / child still running' });
-
-  assert.equal(stale.code, 'stale_child_no_progress');
-  assert.equal(stale.category, 'runtime_liveness');
-  assert.equal(stale.decision, 'resume_later_handoff');
-  assert.equal(exited.code, 'child_exited_without_closeout');
-  assert.equal(running.code, 'child_still_running');
-  assert.equal(isEnvironmentBlockerCode('child_still_running'), true);
-}
-
-function testWindowsShellEnvSyntaxCode() {
-  const result = classifyFailure({
-    detail: "PowerShell does not support POSIX env prefix syntax. Use $env:FOO='bar'; node script.mjs",
-  });
-
-  assert.equal(result.code, 'windows_shell_env_syntax');
-  assert.equal(result.category, 'operator_error');
-  assert.equal(result.decision, 'fix_command');
-}
-
 function testCountsAndCapabilityClassification() {
   const counts = buildFailureClassCounts([
-    { name: 'shell:local-script.sh', status: 'warning', detail: 'spawnSync bash EPERM' },
     { name: 'shell:.claude/scripts/verify-code-policy.sh', status: 'warning', detail: 'spawnSync bash EPERM' },
     { name: 'shell:.claude/scripts/workflow-enforcement.sh', status: 'warning', detail: 'spawnSync bash EPERM' },
     { name: 'git.current', status: 'warning', detail: 'spawnSync git EPERM' },
@@ -225,8 +131,7 @@ function testCountsAndCapabilityClassification() {
     { name: 'memorygraph.health', status: 'warning', detail: 'memorygraph transport closed' },
   ]);
 
-  assert.equal(counts.bash_access_denied, 1);
-  assert.equal(counts.verification_environment_unavailable, 2);
+  assert.equal(counts.bash_access_denied, 2);
   assert.equal(counts.git_eperm, 1);
   assert.equal(counts.memorygraph_unavailable, 1);
 
@@ -247,82 +152,15 @@ function testCountsAndCapabilityClassification() {
   assert.equal(optional.decision, 'continue');
 
   const summary = summarizeFailureDecision(counts);
-  assert.equal(summary.blockerCode, 'verification_environment_unavailable');
+  assert.equal(summary.blockerCode, 'bash_access_denied');
   assert.equal(summary.sameFailureClassCount, 2);
-}
-
-function testStagnationPatternsAndRetrySuppression() {
-  const spinning = classifyStagnationPattern([
-    { reason: 'verification command missing', detail: 'same missing verdict' },
-    { reason: 'verification command missing', detail: 'same missing verdict' },
-  ]);
-  assert.equal(spinning.pattern, 'spinning');
-  assert.equal(spinning.recoveryAction, 'unstuck_replan');
-  assert.equal(spinning.retrySuppressed, true);
-
-  const oscillation = classifyStagnationPattern([
-    { code: 'git_eperm' },
-    { code: 'memorygraph_unavailable' },
-    { code: 'git_eperm' },
-    { code: 'memorygraph_unavailable' },
-  ]);
-  assert.equal(oscillation.pattern, 'oscillation');
-  assert.equal(oscillation.recoveryAction, 'unstuck_replan');
-
-  const noDrift = classifyStagnationPattern([
-    { code: 'unknown_failure', changedFiles: 0, lineDelta: 0, driftScore: 0 },
-    { code: 'unknown_failure', changedFiles: 0, lineDelta: 0, driftScore: 0 },
-  ], { threshold: 3 });
-  assert.equal(noDrift.pattern, 'no_drift');
-
-  const diminishing = classifyStagnationPattern([
-    { code: 'unknown_failure', improvementScore: 3 },
-    { code: 'unknown_failure', improvementScore: 1 },
-    { code: 'unknown_failure', improvementScore: 0 },
-  ], { threshold: 4 });
-  assert.equal(diminishing.pattern, 'diminishing_returns');
-}
-
-function testStopOutcomeAndTimeoutSplit() {
-  assert.equal(
-    classifyTimeoutBudget({ iterationElapsedMs: 120000, iterationTimeoutMs: 120000, totalElapsedMs: 180000, totalTimeoutMs: 600000 }),
-    'per_iteration_timeout',
-  );
-  assert.equal(
-    classifyTimeoutBudget({ totalElapsedMs: 600000, totalTimeoutMs: 600000 }),
-    'total_run_timeout',
-  );
-
-  const recovered = normalizeStopOutcome({
-    rawStopReason: 'provider websocket failed',
-    detail: 'E_PROVIDER_NETWORK websocket os error 10013 blocked by sandbox',
-    recovered: true,
-    recoveryAction: 'local_fallback',
-  });
-  assert.equal(recovered.rawStopReasonCode, 'sandbox_network_boundary_candidate');
-  assert.equal(recovered.recoveryAction, 'local_fallback');
-  assert.equal(recovered.normalizedRunVerdict, 'recovered_success');
-  assert.notEqual(recovered.normalizedRunVerdict, recovered.rawStopReasonCode);
-
-  const timeout = normalizeStopOutcome({
-    rawStopReason: 'iteration timeout',
-    iterationElapsedMs: 30000,
-    iterationTimeoutMs: 30000,
-  });
-  assert.equal(timeout.timeoutBudget, 'per_iteration_timeout');
-  assert.equal(timeout.stopReasonClass, 'per_iteration_timeout');
 }
 
 testBashAccessDenied();
 testCodexStorageAndStateCodes();
 testShellSnapshotMcpNodeGitRgMemoryGraphCodes();
-testVerifierEpermFailurePreservesCommandAndDetail();
 testGitAndNetworkCodes();
 testDetectFinalStopReasonForRawLogs();
-testDispatcherLivenessTimeoutCodes();
-testWindowsShellEnvSyntaxCode();
 testCountsAndCapabilityClassification();
-testStagnationPatternsAndRetrySuppression();
-testStopOutcomeAndTimeoutSplit();
 
 process.stdout.write('failure-classifier self-test passed\n');

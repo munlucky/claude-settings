@@ -201,7 +201,7 @@
       <h1>Codex 페이즈러너 실제 실행 흐름</h1>
       <p class="subtitle">Codex에서 <code>moonshot-phase-runner</code>를 사용할 때 수행되는 전체 workflow, 실제 작업 위치, 세션/스킬/에이전트 흐름, 컨텍스트 엔지니어링, worktree hydration, TDD/failure loop, 완료 gate, 외부 하네스 pilot/eval plane을 현재 구현 기준으로 정리한 문서입니다.</p>
       <div class="meta">
-        <span class="pill">Last-Reviewed: 2026-04-24</span>
+        <span class="pill">Last-Reviewed: 2026-05-06</span>
         <span class="pill">Entry: moonshot-phase-runner</span>
         <span class="pill">Status: done + FULL 필요</span>
         <span class="pill">Runtime: Codex / Claude</span>
@@ -233,9 +233,6 @@
     <article>
       <section id="summary">
         <h2>1. 핵심 요약</h2>
-        <div class="callout green">
-          <p>페이즈러너는 “큰 프롬프트 하나”가 아니라 파일 시스템 산출물로 상태를 유지하는 실행 장치입니다. Codex worker가 완료를 주장해도 끝이 아니며, <code>QA_REPORT.md</code>, <code>SCORECARD.md</code>, verification verdict, lease gate가 완료 여부를 판단합니다.</p>
-        </div>
         <ul>
           <li>큰 작업은 <code>moonshot-phase-runner</code>로 들어가고, bounded 작업은 <code>moonshot-orchestrator</code>, 제품 정의는 <code>product-orchestrator</code>가 맡습니다.</li>
           <li>단계는 <strong>Intake → Plan → Ready / Isolate → Execute → Review → Verify → Finish / Handoff</strong> 순서입니다.</li>
@@ -244,6 +241,12 @@
           <li>clean finish에는 <code>Verdict: done</code>과 <code>Current task status: FULL</code>이 모두 필요합니다.</li>
           <li>strict/phase 작업에서는 branch/worktree뿐 아니라 ignored agent config hydration과 baseline evidence도 Ready / Isolate 조건입니다.</li>
         </ul>
+        <div class="callout green">
+          <p>페이즈러너는 “큰 프롬프트 하나”가 아니라 파일 시스템 산출물로 상태를 유지하는 실행 장치입니다. Codex worker가 완료를 주장해도 끝이 아니며, <code>QA_REPORT.md</code>, <code>SCORECARD.md</code>, verification verdict, lease gate가 완료 여부를 판단합니다.</p>
+        </div>
+        <div class="callout">
+          <p><strong>Waste reduction follow-up package:</strong> <code>docs/implementation/moonshot-harness-waste-reduction-2026-05-06/</code> is the active follow-up package for the 2026-05-06 waste analysis. Phase 06 locks the regression fixture and documentation sync, while completed work under <code>harness-reliability-retro-2026-05-05</code> and <code>harness-native-awtl-rsme-2026-05-06</code> stays read-only.</p>
+        </div>
       </section>
 
       <section id="user-flow">

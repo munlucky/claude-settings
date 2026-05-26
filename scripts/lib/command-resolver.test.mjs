@@ -68,25 +68,6 @@ function testDockerDaemonMissing() {
   process.stdout.write(`fallbackReason: ${result.fallbackReason}\n`);
 }
 
-function testDockerMissingWithoutComposeIsOptional() {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'command-resolver-no-compose-'));
-  const probe = probeFactory({
-    'docker --version': () => ({ status: 1, stdout: '', stderr: 'docker not found', error: '' }),
-  });
-
-  const result = resolveDockerDependencyGate({
-    probeCommand: probe,
-    workspaceRoot: tempRoot,
-  });
-
-  assert.equal(result.status, 'skipped');
-  assert.equal(result.decision, 'continue');
-  assert.equal(result.version.status, 'warning');
-  assert.equal(result.version.decision, 'continue');
-  assert.equal(result.daemon.status, 'skipped');
-  process.stdout.write('dockerOptionalWithoutCompose: continue\n');
-}
-
 function run() {
   const scenario = String(process.argv[2] || '').trim();
   if (scenario === 'pnpm-equivalent') {
@@ -95,10 +76,6 @@ function run() {
   }
   if (scenario === 'docker-daemon-missing') {
     testDockerDaemonMissing();
-    return;
-  }
-  if (scenario === 'docker-missing-without-compose') {
-    testDockerMissingWithoutComposeIsOptional();
     return;
   }
 

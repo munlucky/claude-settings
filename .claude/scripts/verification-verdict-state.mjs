@@ -2,6 +2,7 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -13,8 +14,18 @@ const VALID_BLOCKER_CLASSES = new Set([
   'verifier_unavailable',
   'verification_failed',
   'content_precondition',
+  'missing_evidence',
   'contract_violation',
 ]);
+const VERDICT_IDENTITY_KEYS = [
+  'runLeaseId',
+  'activePhaseDocPath',
+  'masterPlan',
+  'planDir',
+  'statusFile',
+  'gitTreeFingerprint',
+];
+const FUTURE_VERDICT_TOLERANCE_MS = 5000;
 
 function stableJson(value) {
   if (Array.isArray(value)) {
@@ -35,15 +46,6 @@ function normalizeLower(value) {
 }
 
 const REQUIRED_CHECK_PLACEHOLDERS = new Set(['none', '없음', 'n/a', 'na', 'null', '']);
-const VERDICT_IDENTITY_KEYS = [
-  'runLeaseId',
-  'activePhaseDocPath',
-  'masterPlan',
-  'planDir',
-  'statusFile',
-  'gitTreeFingerprint',
-];
-const FUTURE_VERDICT_TOLERANCE_MS = 5000;
 
 function normalizeIdentityText(value) {
   return String(value || '').trim();
@@ -147,10 +149,6 @@ function normalizePayloadIdentity(payload = {}) {
   return normalizeVerdictIdentitySource(source);
 }
 
-function hasCompleteVerdictIdentity(identity = {}) {
-  return VERDICT_IDENTITY_KEYS.every((key) => normalizeIdentityText(identity[key]));
-}
-
 function resolveIdentityOptions(options = {}) {
   const source = options.identity && typeof options.identity === 'object' ? options.identity : options;
   const identity = {};
@@ -209,20 +207,12 @@ function resolveVerdictStaleReason(entry = {}, options = {}) {
     ? entry
     : normalizeVerdictPayload(payload, entry.filePath || entry.path || '');
   const activeIdentity = resolveIdentityOptions(options);
-  const identityCheck = compareVerificationIdentity(normalized.identity || normalizePayloadIdentity(payload), activeIdentity);
+  const identityCheck = compareVerificationIdentity(normalized.identity || {}, activeIdentity);
 
   if (!identityCheck.matched) {
     return identityCheck.staleReason;
   }
-  if (hasCompleteVerdictIdentity(activeIdentity)) {
-    if (normalizeLower(payload.identityStatus) === 'legacy') {
-      return 'identity-legacy';
-    }
-    if (!hasCompleteVerdictIdentity(normalized.identity || normalizePayloadIdentity(payload))) {
-      return 'identity-incomplete';
-    }
-  }
-  if (normalized.superseded || payload.superseded === true || payload.supersededBy) {
+  if (normalized.superseded) {
     return normalized.staleReason || 'superseded';
   }
   if (normalized.stale) {
@@ -291,31 +281,6 @@ export function isRelevantVerificationVerdict(entry = {}, options = {}) {
   return true;
 }
 
-function asStringList(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (value && typeof value === 'object') {
-    return Object.values(value).flatMap((item) => asStringList(item));
-  }
-  const text = String(value || '').trim();
-  return text ? [text] : [];
-}
-
-export function normalizeRequiredChecksMissing(value = []) {
-  const normalized = [];
-  for (const entry of asStringList(value)) {
-    const text = String(entry || '').trim();
-    if (!text || REQUIRED_CHECK_PLACEHOLDERS.has(normalizeLower(text))) {
-      continue;
-    }
-    if (!normalized.includes(text)) {
-      normalized.push(text);
-    }
-  }
-  return normalized;
-}
-
 export function inferBlockerClass(payload = {}) {
   const explicit = normalizeLower(payload.blockerClass);
   if (VALID_BLOCKER_CLASSES.has(explicit)) {
@@ -324,14 +289,18 @@ export function inferBlockerClass(payload = {}) {
 
   const reason = normalizeLower(payload.blockingReasonCode);
   const failureClass = normalizeLower(payload.failureClass);
+  const missingChecks = normalizeRequiredChecksMissing(payload.requiredChecks?.missing);
+  if (/missing[_-]?verification[_-]?evidence|missing[_-]?evidence/.test(reason) || (missingChecks.length > 0 && (payload.blocking === true || normalizeLower(payload.verdict) === 'failed' || /contract|content_precondition/.test(failureClass)))) {
+    return 'missing_evidence';
+  }
+  if (/content[_-]?precondition|precondition/.test(reason) || failureClass === 'contract') {
+    return 'content_precondition';
+  }
   if (/runtime_verifier|verifier_unavailable|verification_runtime/.test(reason)) {
     return 'verifier_unavailable';
   }
   if (/auth|login|credential|worker_spawn|spawn|codex_exec|runtime_health|runtime_cli/.test(reason)) {
     return 'runtime_unavailable';
-  }
-  if (failureClass === 'contract') {
-    return 'contract_violation';
   }
   if (failureClass === 'environment') {
     return 'verifier_unavailable';
@@ -394,6 +363,56 @@ function commandStatusSummary(payload = {}) {
   return { total: commands.length, passed, failed };
 }
 
+function asStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).flatMap((item) => asStringList(item));
+  }
+  const text = String(value || '').trim();
+  return text ? [text] : [];
+}
+
+export function normalizeRequiredChecksMissing(value = []) {
+  const normalized = [];
+  for (const entry of asStringList(value)) {
+    const text = String(entry || '').trim();
+    if (!text || REQUIRED_CHECK_PLACEHOLDERS.has(normalizeLower(text))) {
+      continue;
+    }
+    if (!normalized.includes(text)) {
+      normalized.push(text);
+    }
+  }
+  return normalized;
+}
+
+function buildVerdictSelectionKey(entry = {}) {
+  const payload = entry.payload || {};
+  const runtimeContext = payload.runtimeContext && typeof payload.runtimeContext === 'object'
+    ? payload.runtimeContext
+    : {};
+  const phaseNumber = payload.phase?.number || '';
+  const runtimeTarget = normalizeLower(runtimeContext.requestedRuntime || runtimeContext.effectiveRuntime || payload.runtime || '');
+  const scope = normalizeLower(entry.scope || payload.verdictScope || inferVerdictScope(payload));
+  const blockerClass = normalizeLower(entry.blockerClass || inferBlockerClass(payload));
+  const reason = normalizeLower(payload.blockingReasonCode || payload.failureClass || payload.verdict || '');
+  return [scope, phaseNumber, runtimeTarget, blockerClass || reason].join('|');
+}
+
+function extractSupersession(payload = {}) {
+  return {
+    supersededBy: asStringList(payload.supersededBy || payload.supersededByRunId || payload.supersededByPath),
+    importedFrom: asStringList(
+      payload.importedFrom
+      || payload.reusedVerificationResult
+      || payload.reusedVerificationResultFrom
+      || payload.reusedResultPath,
+    ),
+  };
+}
+
 export function normalizeVerdictPayload(payload = {}, filePath = '') {
   const scope = inferVerdictScope(payload);
   const blockerClass = inferBlockerClass(payload);
@@ -401,6 +420,10 @@ export function normalizeVerdictPayload(payload = {}, filePath = '') {
   const commands = commandStatusSummary(payload);
   const blocking = payload.blocking === true
     || (normalizeLower(payload.verdict) === 'failed' && ['environment', 'contract'].includes(normalizeLower(payload.failureClass)));
+  const supersession = extractSupersession(payload);
+  const superseded = payload.superseded === true || supersession.supersededBy.length > 0 || supersession.importedFrom.length > 0;
+  const identity = normalizePayloadIdentity(payload);
+  const missingChecks = normalizeRequiredChecksMissing(payload.requiredChecks?.missing);
   const stale = payload.stale === true
     || (
       scope !== 'runtime'
@@ -419,14 +442,19 @@ export function normalizeVerdictPayload(payload = {}, filePath = '') {
     blockerClass,
     blocking,
     stale,
-    active: blocking && !stale && !payload.supersededBy,
+    superseded,
+    staleReason: normalizeLower(payload.staleReason) || '',
+    identity,
+    active: blocking && !stale && !superseded,
     reason: normalizeLower(payload.blockingReasonCode) || normalizeLower(payload.failureClass) || normalizeLower(payload.verdict),
+    supersededBy: supersession.supersededBy,
+    importedFrom: supersession.importedFrom,
     fingerprint: payload.blockerFingerprint || stableFingerprint({
       phase: payload.phase?.number || '',
       scope,
       blockerClass,
       reason: payload.blockingReasonCode || '',
-      missing: payload.requiredChecks?.missing || [],
+      missing: missingChecks,
     }),
   };
 }
@@ -457,77 +485,109 @@ export function listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles
     });
 }
 
-export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, recentWindowMs, maxFiles) {
-  const verdicts = listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles)
+export function assessRuntimeHealthFromVerdictFiles(runtime, workspaceRoot, recentWindowMs, maxFiles, options = {}) {
+  const allVerdicts = listVerificationVerdicts(workspaceRoot, recentWindowMs, maxFiles)
     .filter((entry) => verdictTargetsRuntime(entry.payload, runtime));
-  const clearedPhaseVerdicts = new Map();
+  const verdicts = allVerdicts.filter((entry) => isRelevantVerificationVerdict(entry, options));
+  const ignoredVerdicts = allVerdicts.filter((entry) => !isRelevantVerificationVerdict(entry, options));
 
   if (verdicts.length === 0) {
-    return null;
+    if (ignoredVerdicts.length === 0) {
+      return null;
+    }
+
+    const entry = ignoredVerdicts[0];
+    const staleReason = resolveVerdictStaleReason(entry, options);
+    return {
+      HEALTHY: 'true',
+      RUNTIME: runtime,
+      REASON: 'phase-verification-stale-ignored',
+      DETAIL: `Ignored stale verdict ${entry.fileName}${staleReason ? ` (${staleReason})` : ''}`,
+      VERDICT_PATH: entry.filePath,
+      IGNORED_VERDICT_PATH: entry.filePath,
+      STALE_REASON: staleReason,
+      VERDICT_SCOPE: entry.scope,
+      BLOCKER_CLASS: entry.blockerClass,
+      BLOCKER_STATE: entry.superseded ? 'superseded' : 'stale',
+      VERDICT_SUPERSEDED_BY: entry.supersededBy.join(','),
+      VERDICT_IMPORTED_FROM: entry.importedFrom.join(','),
+    };
   }
 
-  for (const entry of verdicts) {
-    const phaseNumber = phaseNumberFromPayload(entry.payload);
-    if (!Number.isInteger(phaseNumber)) {
-      continue;
-    }
-    if (normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true) {
-      const previous = clearedPhaseVerdicts.get(phaseNumber) || 0;
-      clearedPhaseVerdicts.set(phaseNumber, Math.max(previous, entry.mtimeMs || 0));
-    }
+  const newestRuntimePassIndex = verdicts.findIndex((entry) => entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable'
+    ? normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true
+    : false);
+  const newestRuntimeBlockIndex = verdicts.findIndex((entry) => (entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable') && entry.active);
+  if (newestRuntimePassIndex !== -1 && (newestRuntimeBlockIndex === -1 || newestRuntimePassIndex < newestRuntimeBlockIndex)) {
+    const entry = verdicts[newestRuntimePassIndex];
+    return {
+      HEALTHY: 'true',
+      RUNTIME: runtime,
+      REASON: 'runtime-structured-verdict-passed',
+      DETAIL: `Runtime verdict ${entry.fileName} marked the runtime non-blocking`,
+      VERDICT_PATH: entry.filePath,
+      IGNORED_VERDICT_PATH: '',
+      STALE_REASON: '',
+      VERDICT_SCOPE: entry.scope,
+      BLOCKER_CLASS: entry.blockerClass,
+      BLOCKER_STATE: entry.superseded ? 'superseded' : 'clear',
+      VERDICT_SUPERSEDED_BY: entry.supersededBy.join(','),
+      VERDICT_IMPORTED_FROM: entry.importedFrom.join(','),
+    };
+  }
+  if (newestRuntimeBlockIndex !== -1) {
+    const entry = verdicts[newestRuntimeBlockIndex];
+    return {
+      HEALTHY: 'false',
+      RUNTIME: runtime,
+      REASON: 'runtime-structured-verdict-blocked',
+      DETAIL: `Runtime verdict ${entry.fileName} is active (${entry.blockerClass || entry.reason || 'blocking'})`,
+      VERDICT_PATH: entry.filePath,
+      IGNORED_VERDICT_PATH: '',
+      STALE_REASON: '',
+      VERDICT_SCOPE: entry.scope,
+      BLOCKER_CLASS: entry.blockerClass,
+      BLOCKER_STATE: entry.superseded ? 'superseded' : 'active',
+      VERDICT_SUPERSEDED_BY: entry.supersededBy.join(','),
+      VERDICT_IMPORTED_FROM: entry.importedFrom.join(','),
+    };
   }
 
-  for (const entry of verdicts) {
-    const phaseNumber = phaseNumberFromPayload(entry.payload);
-    const clearedAt = Number.isInteger(phaseNumber) ? (clearedPhaseVerdicts.get(phaseNumber) || 0) : 0;
-    const supersededByPhaseClear = entry.active
-      && clearedAt > 0
-      && (entry.mtimeMs || 0) <= clearedAt
-      && normalizeLower(entry.payload.verdict) !== 'passed';
-
-    if (supersededByPhaseClear) {
-      continue;
-    }
-
-    if (entry.scope === 'runtime' || entry.blockerClass === 'runtime_unavailable') {
-      if (entry.active) {
-        return {
-          HEALTHY: 'false',
-          RUNTIME: runtime,
-          REASON: 'runtime-structured-verdict-blocked',
-          DETAIL: `Runtime verdict ${entry.fileName} is active (${entry.blockerClass || entry.reason || 'blocking'})`,
-          VERDICT_PATH: entry.filePath,
-          VERDICT_SCOPE: entry.scope,
-          BLOCKER_CLASS: entry.blockerClass,
-          BLOCKER_STATE: 'active',
-        };
-      }
-      if (normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true) {
-        return {
-          HEALTHY: 'true',
-          RUNTIME: runtime,
-          REASON: 'runtime-structured-verdict-passed',
-          DETAIL: `Runtime verdict ${entry.fileName} marked the runtime non-blocking`,
-          VERDICT_PATH: entry.filePath,
-          VERDICT_SCOPE: entry.scope,
-          BLOCKER_CLASS: entry.blockerClass,
-          BLOCKER_STATE: 'clear',
-        };
-      }
-    }
-
-    if (entry.blocking) {
-      return {
-        HEALTHY: 'true',
-        RUNTIME: runtime,
-        REASON: entry.stale ? 'phase-verification-blocker-stale' : 'phase-verification-blocked-not-runtime',
-        DETAIL: `Phase verification verdict ${entry.fileName} is ${entry.stale ? 'stale' : 'non-runtime'} (${entry.blockerClass || entry.reason || 'blocking'})`,
-        VERDICT_PATH: entry.filePath,
-        VERDICT_SCOPE: entry.scope,
-        BLOCKER_CLASS: entry.blockerClass,
-        BLOCKER_STATE: entry.stale ? 'stale' : 'active',
-      };
-    }
+  const newestPhasePassIndex = verdicts.findIndex((entry) => normalizeLower(entry.payload.verdict) === 'passed' && entry.payload.blocking !== true);
+  const newestPhaseBlockIndex = verdicts.findIndex((entry) => entry.blocking && entry.active);
+  if (newestPhasePassIndex !== -1 && (newestPhaseBlockIndex === -1 || newestPhasePassIndex < newestPhaseBlockIndex)) {
+    const entry = verdicts[newestPhasePassIndex];
+    return {
+      HEALTHY: 'true',
+      RUNTIME: runtime,
+      REASON: 'phase-verification-passed',
+      DETAIL: `Phase verification verdict ${entry.fileName} marked the target non-blocking`,
+      VERDICT_PATH: entry.filePath,
+      IGNORED_VERDICT_PATH: '',
+      STALE_REASON: '',
+      VERDICT_SCOPE: entry.scope,
+      BLOCKER_CLASS: entry.blockerClass,
+      BLOCKER_STATE: entry.superseded ? 'superseded' : 'clear',
+      VERDICT_SUPERSEDED_BY: entry.supersededBy.join(','),
+      VERDICT_IMPORTED_FROM: entry.importedFrom.join(','),
+    };
+  }
+  if (newestPhaseBlockIndex !== -1) {
+    const entry = verdicts[newestPhaseBlockIndex];
+    return {
+      HEALTHY: 'true',
+      RUNTIME: runtime,
+      REASON: entry.stale ? 'phase-verification-blocker-stale' : 'phase-verification-blocked-not-runtime',
+      DETAIL: `Phase verification verdict ${entry.fileName} is ${entry.stale ? 'stale' : 'non-runtime'} (${entry.blockerClass || entry.reason || 'blocking'})`,
+      VERDICT_PATH: entry.filePath,
+      IGNORED_VERDICT_PATH: entry.stale ? entry.filePath : '',
+      STALE_REASON: entry.stale ? resolveVerdictStaleReason(entry, options) : '',
+      VERDICT_SCOPE: entry.scope,
+      BLOCKER_CLASS: entry.blockerClass,
+      BLOCKER_STATE: entry.stale ? 'stale' : 'active',
+      VERDICT_SUPERSEDED_BY: entry.supersededBy.join(','),
+      VERDICT_IMPORTED_FROM: entry.importedFrom.join(','),
+    };
   }
 
   return null;
@@ -542,9 +602,9 @@ function printAssignments(result) {
 function selfTest() {
   const activeIdentity = {
     runLeaseId: 'lease-a',
-    activePhaseDocPath: '/workspace/plans/phase-02.md',
-    masterPlan: '/workspace/plans/master.md',
-    planDir: '/workspace/plans',
+    activePhaseDocPath: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/phase-02.md',
+    masterPlan: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/master.md',
+    planDir: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07',
     statusFile: '/workspace/.claude/docs/phase-status.yaml',
     gitTreeFingerprint: 'tree-a',
   };
@@ -556,65 +616,135 @@ function selfTest() {
     commands: [{ status: 'passed' }],
     score: { verdict: 'blocked' },
   };
-  const runtimePayload = {
-    verdict: 'failed',
-    blocking: true,
-    blockingReasonCode: 'worker_spawn_failed',
-  };
-  const completePhasePayload = {
-    verdict: 'passed',
-    evidenceFresh: true,
-    blocking: false,
-    phase: { number: 2 },
-    identity: activeIdentity,
-  };
-  const mismatchedPhasePayload = {
-    ...completePhasePayload,
+  const mismatchedLeasePayload = {
+    ...stalePhasePayload,
     identity: {
       ...activeIdentity,
       runLeaseId: 'lease-b',
     },
   };
+  const mismatchedPlanPayload = {
+    ...stalePhasePayload,
+    identity: {
+      ...activeIdentity,
+      planDir: '/workspace/plans/other-phase',
+    },
+  };
+  const mismatchedActivePhaseDocPayload = {
+    ...stalePhasePayload,
+    identity: {
+      ...activeIdentity,
+      activePhaseDocPath: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/phase-03.md',
+    },
+  };
+  const mismatchedMasterPlanPayload = {
+    ...stalePhasePayload,
+    identity: {
+      ...activeIdentity,
+      masterPlan: '/workspace/plans/other-master.md',
+    },
+  };
+  const mismatchedStatusPayload = {
+    ...stalePhasePayload,
+    identity: {
+      ...activeIdentity,
+      statusFile: '/workspace/.claude/docs/other-status.yaml',
+    },
+  };
+  const mismatchedTreePayload = {
+    ...stalePhasePayload,
+    identity: {
+      ...activeIdentity,
+      gitTreeFingerprint: 'tree-b',
+    },
+  };
+  const runtimePayload = {
+    verdict: 'failed',
+    blocking: true,
+    blockingReasonCode: 'worker_spawn_failed',
+    runtimeContext: {
+      requestedRuntime: 'codex',
+      effectiveRuntime: 'claude',
+      fallbackReason: 'runtime fallback exercised',
+    },
+  };
+  const supersededPayload = {
+    verdict: 'failed',
+    blocking: true,
+    blockingReasonCode: 'runtime_verifier_unavailable',
+    supersededBy: ['verification-verdict-phase05-final.json'],
+    reusedVerificationResult: ['verification-verdict-phase05-import.json'],
+  };
+  const missingEvidencePayload = {
+    verdict: 'failed',
+    blocking: true,
+    failureClass: 'contract',
+    blockingReasonCode: 'missing-verification-evidence',
+    requiredChecks: { missing: ['verification-verdict-path'] },
+  };
+  const placeholderMissingPayload = {
+    verdict: 'failed',
+    blocking: true,
+    failureClass: 'contract',
+    blockingReasonCode: 'missing-verification-evidence',
+    requiredChecks: { missing: ['none', 'verification-verdict-path'] },
+  };
+  const legacyV2PassPayload = {
+    verdict: 'passed',
+    blocking: false,
+    phase: { number: 2, title: 'Phase 02: Legacy Compatibility' },
+  };
+  const explicitVerdictPath = path.resolve('/tmp/verification-verdict-phase02-final.json');
+  const ignoredWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-state-'));
+  const ignoredVerdictPath = path.join(ignoredWorkspace, '.claude', 'verification-verdict-phase02-final.json');
+  fs.mkdirSync(path.dirname(ignoredVerdictPath), { recursive: true });
+  fs.writeFileSync(ignoredVerdictPath, `${JSON.stringify({
+    schemaVersion: 3,
+    phase: { number: 2, title: 'Phase 02: Legacy Compatibility' },
+    verdict: 'failed',
+    blocking: true,
+    blockingReasonCode: 'runtime_verifier_unavailable',
+    identity: {
+      ...activeIdentity,
+      runLeaseId: 'lease-b',
+    },
+  }, null, 2)}\n`, 'utf8');
 
   assert.equal(inferVerdictScope(stalePhasePayload), 'phase_verification');
   assert.equal(inferBlockerClass(stalePhasePayload), 'verifier_unavailable');
   assert.equal(normalizeVerdictPayload(stalePhasePayload).stale, true);
-  assert.equal(inferVerdictScope(runtimePayload), 'runtime');
-  assert.equal(inferBlockerClass(runtimePayload), 'runtime_unavailable');
+  assert.equal(normalizeVerdictPayload(mismatchedLeasePayload).identity.runLeaseId, 'lease-b');
   assert.deepEqual(normalizeRequiredChecksMissing(['none', 'n/a', 'verification-verdict-path']), ['verification-verdict-path']);
   assert.deepEqual(normalizeRequiredChecksMissing(['없음']), []);
-  assert.equal(isRelevantVerificationVerdict({ payload: completePhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2, identity: activeIdentity }), true);
-  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedPhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2, identity: activeIdentity }), false);
-
-  const tempRoot = fs.mkdtempSync(path.join(process.cwd(), '.tmp-verdict-state-'));
-  try {
-    const claudeDir = path.join(tempRoot, '.claude');
-    fs.mkdirSync(claudeDir, { recursive: true });
-    const blockedPath = path.join(claudeDir, 'verification-verdict-phase03-blocked.json');
-    const finalPath = path.join(claudeDir, 'verification-verdict-phase03-final.json');
-    fs.writeFileSync(blockedPath, JSON.stringify({
-      verdict: 'failed',
-      blocking: true,
-      blockerClass: 'runtime_unavailable',
-      blockingReasonCode: 'running-harness-state-mismatch',
-      phase: { number: 3 },
-      runtimeContext: { requestedRuntime: 'codex' },
-    }));
-    fs.writeFileSync(finalPath, JSON.stringify({
-      verdict: 'passed',
-      blocking: false,
-      phase: { number: 3 },
-      runtimeContext: { requestedRuntime: 'codex' },
-    }));
-    const older = new Date(Date.now() - 2000);
-    const newer = new Date(Date.now() - 1000);
-    fs.utimesSync(blockedPath, older, older);
-    fs.utimesSync(finalPath, newer, newer);
-    assert.equal(assessRuntimeHealthFromVerdictFiles('codex', tempRoot, 0, 10), null);
-  } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-  assert.equal(typeof resolveGitTreeFingerprint(process.cwd()), 'string');
+  assert.equal(normalizeVerdictPayload(placeholderMissingPayload).fingerprint, normalizeVerdictPayload({
+    ...placeholderMissingPayload,
+    requiredChecks: { missing: ['verification-verdict-path'] },
+  }).fingerprint);
+  assert.equal(resolveVerdictStaleReason({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-mismatch:runLeaseId');
+  assert.equal(resolveVerdictStaleReason({ payload: mismatchedActivePhaseDocPayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-mismatch:activePhaseDocPath');
+  assert.equal(resolveVerdictStaleReason({ payload: mismatchedMasterPlanPayload, filePath: explicitVerdictPath }, { identity: activeIdentity }), 'identity-mismatch:masterPlan');
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedActivePhaseDocPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedMasterPlanPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedPlanPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedStatusPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedTreePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: mismatchedLeasePayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, explicitVerdictPaths: new Set([explicitVerdictPath]), identity: activeIdentity }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: legacyV2PassPayload, filePath: explicitVerdictPath }, { activePhaseNumber: 2, identity: activeIdentity }), true);
+  const runtimeHealth = assessRuntimeHealthFromVerdictFiles('codex', ignoredWorkspace, 60 * 60 * 1000, 5, { identity: activeIdentity });
+  assert.equal(runtimeHealth.HEALTHY, 'true');
+  assert.equal(runtimeHealth.REASON, 'phase-verification-stale-ignored');
+  assert.equal(runtimeHealth.IGNORED_VERDICT_PATH, ignoredVerdictPath);
+  assert.equal(runtimeHealth.STALE_REASON, 'identity-mismatch:runLeaseId');
+  assert.equal(inferVerdictScope(runtimePayload), 'runtime');
+  assert.equal(inferBlockerClass(runtimePayload), 'runtime_unavailable');
+  assert.equal(verdictTargetsRuntime(runtimePayload, 'claude'), true);
+  assert.equal(normalizeVerdictPayload(supersededPayload).superseded, true);
+  assert.equal(normalizeVerdictPayload(supersededPayload).active, false);
+  assert.equal(inferBlockerClass(missingEvidencePayload), 'missing_evidence');
+  assert.equal(isRelevantVerificationVerdict({ payload: stalePhasePayload, filePath: '/tmp/verification-verdict-phase02-final.json' }, { activePhaseNumber: 2 }), false);
+  assert.equal(isRelevantVerificationVerdict({ payload: supersededPayload, filePath: '/tmp/verification-verdict-phase05-final.json' }, { activePhaseNumber: 5 }), false);
+  fs.rmSync(ignoredWorkspace, { recursive: true, force: true });
 }
 
 function main() {

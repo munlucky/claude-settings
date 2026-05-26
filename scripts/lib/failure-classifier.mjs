@@ -90,10 +90,10 @@ const FAILURE_CODE_ALIASES = new Map([
   ['memorygraph_unavailable', 'memorygraph_unavailable'],
   ['runtime_verifier', 'verifier_unavailable'],
   ['verification_runtime', 'verification_environment_unavailable'],
-  ['runtime_verifier_unavailable', 'verification_environment_unavailable'],
+  ['runtime_verifier_unavailable', 'verifier_unavailable'],
   ['verification_runtime_unavailable', 'verification_environment_unavailable'],
   ['verification_runtime_spawn_eperm', 'verification_environment_unavailable'],
-  ['verifier_unavailable', 'verification_environment_unavailable'],
+  ['verifier_unavailable', 'verifier_unavailable'],
   ['verification_environment_unavailable', 'verification_environment_unavailable'],
   ['stale_child_no_progress', 'stale_child_no_progress'],
   ['child_no_progress', 'stale_child_no_progress'],
@@ -137,7 +137,7 @@ const ENVIRONMENT_PATTERNS = [
   { code: 'rg_access_denied', test: /(?:^|\b)rg(?:\b|:).*(ep?erm|eacces|access is denied|permission denied|spawn blocked|unable to create process)/i },
   { code: 'get_ciminstance_access_denied', test: /(?:Get-CimInstance|CimInstance|WMI)(?:\b|:).*(ep?erm|eacces|access is denied|permission denied)/i },
   { code: 'memorygraph_unavailable', test: /(?:^|\b)(?:memorygraph|memory graph)(?:\b|:).*(transport closed|unavailable|not found|health check failed|spawn blocked|unable to create process|ep?erm|eacces)/i },
-  { code: 'verification_environment_unavailable', test: /(?:^|\b)(?:runtime verifier|verification runtime|verifier)(?:\b|:).*(unavailable|not found|spawn blocked|unable to create process|ep?erm|eacces|permission denied)/i },
+  { code: 'verifier_unavailable', test: /(?:^|\b)(?:runtime verifier|verification runtime|verifier)(?:\b|:).*(unavailable|not found)/i },
   { code: 'codex_unavailable', test: /(?:^|\b)codex(?:\b|:).*(not found|unavailable|spawn blocked|unable to create process|ep?erm|eacces)/i },
   { code: 'docker_daemon_unavailable', test: /(?:^|\b)docker(?:\b|:).*(daemon|cannot connect|connection refused|unavailable|not running|permission denied)/i },
   { code: 'codex_upstream_stream_stalled', test: /(?:codex_core::session::turn: stream disconnected|stream disconnected - retrying sampling request|ERROR:\s*Reconnecting\.\.\. \d+\/\d+|UPSTREAM_STREAM_STALL)/i },
@@ -258,7 +258,7 @@ export function normalizeFailureCode(input = {}) {
 
   const sanitizedExplicit = sanitizeCode(explicit);
   if (sanitizedExplicit === 'verifier_unavailable') {
-    return 'verification_environment_unavailable';
+    return 'verifier_unavailable';
   }
   if (sanitizedExplicit === 'command_not_found' || sanitizedExplicit === 'node_spawn_eperm') {
     const contextualCode = matchEnvironmentPattern(patternText, new Set(['command_not_found']));
@@ -277,7 +277,7 @@ export function normalizeFailureCode(input = {}) {
   if (FAILURE_CODE_ALIASES.has(sanitizedExplicit)) {
     const aliased = FAILURE_CODE_ALIASES.get(sanitizedExplicit);
     if (aliased === 'verifier_unavailable') {
-      return 'verification_environment_unavailable';
+      return 'verifier_unavailable';
     }
     if (aliased === 'command_not_found' || aliased === 'node_spawn_eperm') {
       const contextualCode = matchEnvironmentPattern(patternText, new Set(['command_not_found']));
@@ -290,7 +290,7 @@ export function normalizeFailureCode(input = {}) {
 
   const matchedCode = matchEnvironmentPattern(patternText);
   if (matchedCode) {
-    if (hasVerifierContext(input, patternText) && ['bash_access_denied', 'git_eperm', 'git_index_denied', 'spawn_blocked'].includes(matchedCode)) {
+    if (hasVerifierContext(input, patternText) && ['git_eperm', 'git_index_denied', 'spawn_blocked'].includes(matchedCode)) {
       return 'verification_environment_unavailable';
     }
     return matchedCode;
