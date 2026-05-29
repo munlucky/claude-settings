@@ -1,0 +1,59 @@
+planWriterRevision:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked"
+  writerSession: "019e72d7-cd13-7782-af63-c43afdbda9c9"
+  skillBoundary:
+    allowed:
+      - "assumption-ledger"
+      - "task-slicer"
+    forbidden:
+      - "moonshot-plan-writer"
+      - "moonshot-phase-runner"
+      - "moonshot-orchestrator"
+      - "plan-eng-review"
+      - "plan-ceo-review"
+      - "product-gate-reviewer"
+      - "codex-validate-plan"
+      - "verification-contract-gate"
+      - "context-readiness-gate"
+      - "test-driven-development"
+      - "design-approval-gate"
+      - "browser-verifier"
+      - "doc-auto-sync"
+      - "implementation-runner"
+      - "commit-moonshot"
+      - "project-memory-refresh"
+      - "harness-memory-promoter"
+    compliance: "compliant"
+    notes:
+      - "Writer modified only docs/implementation/harness-workflow-core-redesign-2026-05-29/**."
+      - "No source code, scripts, skills, package files, git commands, commits, memory updates, or runtime state were changed."
+      - "Readiness execution was encoded as Phase 01 because Writer boundary forbids runtime preparation and git commands."
+  directivesApplied:
+    - "Added Plan Package Readiness Closeout with selected master plan, selected phase docs, stale doc fields, dirtyWorktreeAction, runtimePointerAction, dryRunCommand, and readinessDecision."
+    - "Created standalone phase documents 01 through 06."
+    - "Added phaseExecution metadata with ownedPaths, readOnlyPaths, sharedMutablePaths, dependsOn, conflictsWith, parallelEligible, and mergePolicy to every phase."
+    - "Converted phase acceptance intent into stable AC-* ids with source labels, expected evidence, expected pass signals, and target phase mapping."
+    - "Added source traceability matrix mapping root causes, success criteria, AC-* ids, phases, plan files, and status."
+    - "Replaced generic verification placeholders with phase-specific commands, expected fail/pass signals, blocker conditions, review checkpoints, and evidence paths."
+    - "Added dirty worktree classification requirement with required values, evidence path, and unknown-owner blocker."
+    - "Defined the first implementation slice as Phase 02 with exact registry, loader, tests, audit wiring, and guideline files."
+  filesChanged:
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/00-master-plan-v1.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/01-readiness-closeout.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/02-control-plane-registry.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/03-state-authority-refactor.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/04-evidence-pipeline-split.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/05-skill-surface-decomposition.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/06-runtime-capability-taxonomy.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/planning-loop/plan-writer-revision-iter-01.yaml"
+  ambiguityReductionNotes:
+    - "Package now has phase docs and phaseExecution metadata instead of a single conceptual master plan."
+    - "Runnable readiness is explicit: prep_phase_required, with Phase 01 owning classification and dry-run preparation."
+    - "AC traceability now links reviewer directives and root causes to phase docs and expected evidence."
+    - "Verification commands now include expected fail/pass signals, evidence targets, and blockers."
+  remainingOpenDecisions:
+    - "Actual git status output was not captured because Writer Agent boundary forbids git commands."
+    - "Actual runtime pointer state was not mutated or archived because Writer Agent boundary forbids runtime state changes."
+    - "Readiness can become runnable only after Phase 01 completes and a follow-up review confirms no blocking findings remain."

@@ -1,0 +1,110 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 4
+  isolationMode: "forked"
+  reviewerSession: "codex-reviewer-agent-iter-04-2026-05-29"
+  skillBoundary:
+    allowed:
+      - "plan-eng-review"
+      - "plan-ceo-review"
+      - "product-gate-reviewer"
+      - "codex-validate-plan"
+      - "verification-contract-gate"
+      - "context-readiness-gate"
+      - "test-driven-development"
+      - "design-approval-gate"
+      - "browser-verifier"
+    forbidden:
+      - "moonshot-plan-writer"
+      - "moonshot-phase-runner"
+      - "moonshot-orchestrator"
+      - "implementation-runner"
+      - "doc-auto-sync"
+      - "task-slicer"
+      - "assumption-ledger"
+      - "commit-moonshot"
+      - "project-memory-refresh"
+      - "harness-memory-promoter"
+    compliance: "compliant"
+    notes:
+      - "Read-only review only; no files modified."
+      - "No forbidden implementation, writer, commit, memory, or orchestration skills were invoked."
+      - "Evidence inspection was limited to focus files, prior review, writer revision artifact, and targeted text search."
+  targetPlanPackage:
+    planDir: "docs/implementation/harness-workflow-core-redesign-2026-05-29"
+    masterPlan: "docs/implementation/harness-workflow-core-redesign-2026-05-29/00-master-plan-v1.md"
+    phaseDocs:
+      - "docs/implementation/harness-workflow-core-redesign-2026-05-29/01-readiness-closeout.md"
+      - "docs/implementation/harness-workflow-core-redesign-2026-05-29/02-control-plane-registry.md"
+      - "docs/implementation/harness-workflow-core-redesign-2026-05-29/03-state-authority-refactor.md"
+      - "docs/implementation/harness-workflow-core-redesign-2026-05-29/04-evidence-pipeline-split.md"
+      - "docs/implementation/harness-workflow-core-redesign-2026-05-29/05-skill-surface-decomposition.md"
+      - "docs/implementation/harness-workflow-core-redesign-2026-05-29/06-runtime-capability-taxonomy.md"
+  rubric:
+    goalClarity:
+      weight: 0.20
+      score: 0.93
+      evidence:
+        - "00-master-plan-v1.md:35 adds RC6 for replacing the old script loop default with forked-agent execution."
+        - "00-master-plan-v1.md:39-50 updates Target Architecture to current-session phase-runner -> forked agent -> parent-owned evidence collection."
+        - "00-master-plan-v1.md:90-94 defines the execution topology and explicitly demotes delegated-terminal and agent-loop.mjs to fallback use."
+      findings:
+        - "Iteration 3 execution-mode premise is now represented in the master goal architecture."
+        - "The prior central-registry delegated-terminal default blocker is resolved."
+    scopeClarity:
+      weight: 0.20
+      score: 0.90
+      evidence:
+        - "00-master-plan-v1.md:72-86 shows defaultExecutionMode: forked-agent, fallbackExecutionMode: delegated-terminal, and agentLoopRole: legacy-headless-cron-fallback."
+        - "00-master-plan-v1.md:96-98 defines script responsibility boundaries and excludes primary orchestration ownership except explicit fallback/headless mode."
+        - "02-control-plane-registry.md:35 scopes Phase 02 to registry execution-mode defaults, fallback-mode boundaries, and skill line budgets."
+        - "03-state-authority-refactor.md:32 scopes Phase 03 to forked-agent attempt state, parent-owned evidence collection state, stale warnings, and next valid action."
+      findings:
+        - "The new execution-mode pivot has clear owner phases: registry in Phase 02 and state/read-model semantics in Phase 03."
+        - "Residual Phase 01 readiness gate remains intentionally out of implementation scope and is not a blocker for this review focus."
+    acceptanceCriteriaClarity:
+      weight: 0.20
+      score: 0.91
+      evidence:
+        - "00-master-plan-v1.md:200-204 adds AC-013, AC-014, and AC-015 for forked-agent default, fallback demotion, and deterministic script boundaries."
+        - "02-control-plane-registry.md:43-44 maps AC-013 and AC-015 to registry print output, loader tests, and schema evidence."
+        - "03-state-authority-refactor.md:40-41 maps AC-014 and AC-015 to state board JSON, fallback fixtures, and status/closeout adapter checks."
+      findings:
+        - "The prior missing-AC blocker is resolved with stable AC ids and phase mappings."
+        - "Acceptance evidence now distinguishes registry default selection from state-board fallback semantics."
+    verificationClarity:
+      weight: 0.20
+      score: 0.89
+      evidence:
+        - "00-master-plan-v1.md:232 requires Phase 02 checks proving defaultExecutionMode: forked-agent, fallbackExecutionMode: delegated-terminal, and agentLoopRole: legacy-headless-cron-fallback."
+        - "00-master-plan-v1.md:233 requires Phase 03 checks for forked-agent attempt identity, parent evidence collection state, and typed fallback/stale warnings."
+        - "02-control-plane-registry.md:50-54 defines task-level commands, fail signals, pass signals, and evidence paths for registry execution boundary validation."
+        - "03-state-authority-refactor.md:47-51 defines task-level checks for board state, stale warnings, status adapter behavior, closeout reader behavior, and fallback adapter semantics."
+      findings:
+        - "The prior missing verification blocker is resolved."
+        - "Phase 03 T04 still says 'Relevant closeout command used by existing harness', but this is non-blocking because the fallback pivot itself has concrete state-board and status checks."
+    brownfieldReadiness:
+      weight: 0.10
+      score: 0.86
+      evidence:
+        - "00-master-plan-v1.md:146-180 keeps readinessDecision: prep_phase_required and blocks Phases 02-06 until dirty worktree classification, dry-run output, phase inventory check, and runtime pointer self-check complete."
+        - "00-master-plan-v1.md:182-190 defines the dirty worktree classification requirement and unknown-owner blocker."
+        - "plan-writer-revision-iter-02.yaml:48-49 records Phase 01 dirty worktree/runtime pointer classification as the remaining open decision, not as an implementation-ready claim."
+      findings:
+        - "The execution-mode revision does not weaken brownfield readiness gates."
+        - "The package remains correctly limited to Phase 01 readiness before implementation dispatch."
+    phaseExecutability:
+      weight: 0.10
+      score: 0.89
+      evidence:
+        - "00-master-plan-v1.md:217-218 aligns Phase 02 with forked-agent default execution mode and Phase 03 with forked-agent primary plus fallback warnings."
+        - "02-control-plane-registry.md:64-72 makes Phase 02 completion depend on registry output proving forked-agent default, delegated-terminal fallback, agent-loop fallback-only role, and deterministic script boundaries."
+        - "03-state-authority-refactor.md:61-67 makes Phase 03 completion depend on state board tests, typed stale warnings, forked-agent attempt identity, parent evidence collection state, and fallback/headless adapter modeling."
+      findings:
+        - "Phase 02 and Phase 03 are aligned to the new premise and have executable task/checkpoint structure."
+        - "Implementation phases remain gated behind Phase 01 by design."
+  totalScore: 0.898
+  ambiguityScore: 0.102
+  decision: "pass"
+  blockingFindings: []
+  improvementDirectives: []

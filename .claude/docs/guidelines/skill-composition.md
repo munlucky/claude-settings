@@ -30,6 +30,11 @@ Default expectation:
 
 ## Public Entrypoints
 
+Source of truth:
+- Public entrypoint metadata, stage order, execution-mode defaults, fallback boundaries, and skill line budgets are defined in `.claude/workflow.registry.yaml`.
+- This guide explains composition behavior. It must not duplicate or override registry fields.
+- `agent-loop.mjs` is a legacy/headless/cron fallback adapter, not the primary control plane for phase work.
+
 Primary public workflow entrypoints:
 
 - `product-orchestrator`: raw idea to bounded product package
@@ -40,6 +45,31 @@ Supplemental public utility entrypoints:
 
 - `session-logger`: explicit session or handoff logging on demand
 - `commit-moonshot`: explicit project-memory update plus commit flow
+
+## Skill Simplification Contract
+
+`SKILL.md` files are routing and execution contracts, not incident archives.
+
+Line budgets:
+- public entrypoints: target <= 180 lines
+- internal stage owners and optional bundle members: target <= 120 lines
+- anything larger must justify why the extra text is required at trigger time
+
+The numeric budgets above are descriptive copies of `.claude/workflow.registry.yaml`; update the registry first, then refresh this guide.
+
+When a skill exceeds budget, simplify in this order:
+1. Keep trigger, routing, hard gates, required inputs, and output artifacts in `SKILL.md`.
+2. Move examples, incident taxonomy, long policy explanations, and command matrices to `deepReferences`.
+3. Merge repeated stage sequencing into this composition guide instead of duplicating it in each skill.
+4. Prefer tightening an existing owner over adding a new public skill.
+
+Run the local-history audit before non-trivial harness or skill-surface changes:
+
+```bash
+node .claude/scripts/harness-bottleneck-audit.mjs
+```
+
+The audit reads the current repository plus local Codex memory at `~/.codex/memories/MEMORY.md`, then reports recurring bottleneck categories, oversized skills, and `.codex/skills` mirror drift.
 
 ## MemoryGraph Stage Contract
 

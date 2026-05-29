@@ -13,6 +13,7 @@ Apply reusable Moonshot harness improvements without expanding the public skill 
 
 - Prefer pattern transfer over new public skills. Add a new skill only when it has a distinct trigger, distinct output contract, and changes orchestration decisions.
 - Keep `moonshot-orchestrator`, `product-orchestrator`, and `moonshot-phase-runner` as stable entrypoints.
+- Treat oversized `SKILL.md` files as a workflow bottleneck. Keep trigger-time skill docs compact and move long policy, examples, and incident archives to referenced guidelines.
 - Put detailed external-skill adoption criteria in `.claude/docs/guidelines/external-skill-pattern-transfer.md` and link it from orchestrator policy.
 - Keep completion gates strict. Fix stale fixtures, prompts, or artifacts before relaxing gate logic.
 - Every harness behavior fix must follow TDD: add or select a deterministic regression test or fixture that reproduces the incident class, run it red or prove it would fail on the old behavior, then make the smallest code change to turn it green. Do not close a harness incident with source-only evidence.
@@ -26,31 +27,35 @@ Apply reusable Moonshot harness improvements without expanding the public skill 
 1. Inspect the current harness contract:
    - `.claude/skills/moonshot-orchestrator/SKILL.md`
    - `.claude/skills/moonshot-phase-runner/SKILL.md`
+   - `.claude/docs/guidelines/skill-composition.md`
    - `.claude/scripts/verify-phase-runtime-parity-shell-core.sh`
    - `.claude/scripts/agent-loop-phase-plan-lib.mjs`
    - `.claude/verification.contract.yaml`
-2. Classify the change:
+2. Run the local-history bottleneck audit when the task is about workflow friction, skill simplification, runtime continuity, or Codex-local lessons:
+   - `node .claude/scripts/harness-bottleneck-audit.mjs`
+   - Use the audit as evidence, not as an automatic refactor plan.
+3. Classify the change:
    - external pattern transfer
    - compact system prompt or `Claude.md` workflow pattern transfer
    - orchestrator or phase-runner policy update
    - runtime parity or completion-gate fixture update
    - downstream `.claude` synchronization
    - commit or memory policy update
-3. Define the TDD regression contract:
+4. Define the TDD regression contract:
    - Name the previous incident or failure mode in one sentence.
    - Add or select the smallest test/fixture that fails on the old behavior and passes after the fix.
    - Capture RED evidence before the implementation change when feasible; when the old behavior is only available from a prior workspace or commit, record the old-behavior proof instead of silently skipping RED.
    - Prefer public harness entrypoints over private implementation assertions: CLI commands, completion-gate output, runner metadata, workflow-enforcement scope, projection files, or package materialization output.
    - Cover both sides of any relaxed gate: the false positive that must no longer block and the true blocker that must still stop the loop.
    - Store durable fixtures under `tests/fixtures/` when they are source-owned regression inputs; keep generated logs, verdicts, and runtime state out of source unless they are explicit fixtures.
-4. Apply the smallest durable change:
+5. Apply the smallest durable change:
    - stage-owner SKILL.md update
    - guideline/reference update
    - template or fixture update
    - script update
    - deferred pilot entry
-5. Preserve project-local state when syncing downstream `.claude`.
-6. Run validation and report exact skips, especially unavailable real runtimes.
+6. Preserve project-local state when syncing downstream `.claude`.
+7. Run validation and report exact skips, especially unavailable real runtimes.
 
 ## TDD Incident Regression Contract
 
@@ -135,6 +140,7 @@ bash .claude/scripts/knowledge-repo-audit.sh
 bash .claude/scripts/verify-code-policy.sh
 bash .claude/scripts/workflow-enforcement.sh verify
 bash .claude/scripts/verify-phase-runner-boundary.sh
+node .claude/scripts/harness-bottleneck-audit.mjs
 git diff --check
 ```
 

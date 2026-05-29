@@ -39,6 +39,29 @@
 - `session-logger`: 세션 또는 HANDOFF 기록을 사용자가 직접 남기고 싶을 때
 - `commit-moonshot`: 프로젝트 메모리 현행화와 커밋을 함께 명시적으로 실행할 때
 
+## 스킬 간략화 계약
+
+`SKILL.md`는 routing과 execution contract이지 incident archive가 아닙니다.
+
+라인 예산:
+- 공개 entrypoint: 목표 180줄 이하
+- 내부 stage owner와 optional bundle member: 목표 120줄 이하
+- 예산을 넘는 본문은 trigger 시점에 반드시 읽어야 하는 이유가 있어야 합니다.
+
+예산을 넘는 스킬은 아래 순서로 줄입니다.
+1. `SKILL.md`에는 trigger, routing, hard gate, required input, output artifact만 남깁니다.
+2. 예시, incident taxonomy, 긴 정책 설명, command matrix는 `deepReferences`로 옮깁니다.
+3. 반복되는 stage sequencing은 각 스킬에 복제하지 말고 이 composition guide에 병합합니다.
+4. 새 public skill을 만들기보다 기존 owner를 더 좁고 명확하게 조정합니다.
+
+비사소한 하네스 또는 skill surface 변경 전에는 로컬 이력 감사를 실행합니다.
+
+```bash
+node .claude/scripts/harness-bottleneck-audit.mjs
+```
+
+이 감사는 현재 저장소와 로컬 Codex memory `~/.codex/memories/MEMORY.md`를 함께 읽어 반복 병목 category, 과도하게 긴 스킬, `.codex/skills` mirror drift를 보고합니다.
+
 ## MemoryGraph 단계 계약
 
 모든 공개 workflow 진입점은 `.claude/docs/guidelines/memorygraph-workflow.ko.md` 계약을 적용해야 합니다.

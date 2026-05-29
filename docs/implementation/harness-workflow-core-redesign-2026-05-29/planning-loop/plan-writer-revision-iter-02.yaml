@@ -1,0 +1,49 @@
+planWriterRevision:
+  schemaVersion: 1
+  iteration: 2
+  isolationMode: "forked"
+  writerSession: "codex-writer-agent-iter-02-2026-05-29"
+  skillBoundary:
+    allowed:
+      - "assumption-ledger"
+      - "task-slicer"
+    forbidden:
+      - "moonshot-plan-writer"
+      - "moonshot-phase-runner"
+      - "moonshot-orchestrator"
+      - "plan-eng-review"
+      - "plan-ceo-review"
+      - "product-gate-reviewer"
+      - "codex-validate-plan"
+      - "verification-contract-gate"
+      - "context-readiness-gate"
+      - "test-driven-development"
+      - "design-approval-gate"
+      - "browser-verifier"
+      - "doc-auto-sync"
+      - "implementation-runner"
+      - "commit-moonshot"
+      - "project-memory-refresh"
+      - "harness-memory-promoter"
+    compliance: "compliant"
+    notes:
+      - "Write scope limited to docs/implementation/harness-workflow-core-redesign-2026-05-29/**."
+      - "No source code, scripts, skills, rules, package files, runtime state, git commands, commits, or memory updates were used."
+  directivesApplied:
+    - "Updated 00-master-plan-v1.md Target Architecture and Workflow Registry example to use current-session phase-runner control plane, defaultExecutionMode: forked-agent, fallbackExecutionMode: delegated-terminal, and parent-owned diff/evidence collection."
+    - "Added explicit agent-loop.mjs legacy/headless/cron fallback adapter role and deterministic script responsibility boundary."
+    - "Added AC-013 execution-mode pivot, AC-014 agent-loop fallback demotion, and AC-015 deterministic script responsibility boundary with Phase 02/03 mapping."
+    - "Revised 02-control-plane-registry.md tasks and completion criteria to validate forked-agent default and delegated-terminal fallback in workflow.registry.yaml."
+    - "Revised 03-state-authority-refactor.md to model forked-agent attempt state, parent evidence collection, and delegated-terminal fallback stale-warning semantics."
+  filesChanged:
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/00-master-plan-v1.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/02-control-plane-registry.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/03-state-authority-refactor.md"
+    - "docs/implementation/harness-workflow-core-redesign-2026-05-29/planning-loop/plan-writer-revision-iter-02.yaml"
+  ambiguityReductionNotes:
+    - "Removed the old delegated-terminal default from the central registry example."
+    - "Made forked-agent primary execution verifiable through ACs, phase tasks, pass signals, and completion criteria."
+    - "Made agent-loop fallback semantics visible to the state board instead of leaving them implicit."
+  remainingOpenDecisions:
+    - "Phase 01 still must classify dirty worktree paths and runtime pointers before implementation phases can run."
+    - "A reviewer iteration should confirm whether AC-013 through AC-015 close the execution-mode pivot findings."

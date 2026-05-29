@@ -13,6 +13,7 @@ commands:
   awtlRegression: "node --test .claude/scripts/lib/awtl-trace-sink.test.mjs .claude/scripts/lib/awtl-harness-capture.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs .claude/scripts/lib/awtl-runtime-importers.test.mjs"
   awtlFailurePreventionRegression: "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-prevention-brief.test.mjs .claude/scripts/lib/awtl-replay-scorecard.test.mjs"
   awtlCliSyntax: "node --check .claude/scripts/agent-loop-phase-runner.mjs && node --check .claude/scripts/agent-loop-phase-plan-lib.mjs && node --check .claude/scripts/awtl-failure-analyzer.mjs && node --check .claude/scripts/awtl-memory-promotion.mjs"
+  harnessBottleneckAudit: "node .claude/scripts/harness-bottleneck-audit.mjs"
   memoryGraphHealth: "node .claude/scripts/memorygraph-direct.mjs health"
 checkPolicies:
   searchEvidence:
@@ -112,7 +113,7 @@ checkPolicies:
       checks: [shellSyntax, codePolicy]
       minimumEvidence: "syntax plus targeted self-test when available"
     workflow_core:
-      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel, awtlRegression, awtlFailurePreventionRegression, awtlCliSyntax]
+      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel, awtlRegression, awtlFailurePreventionRegression, awtlCliSyntax, harnessBottleneckAudit]
       minimumEvidence: "cross-runtime workflow contract evidence plus AWTL turn-failure regression evidence"
     runtime_adapter:
       checks: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout]

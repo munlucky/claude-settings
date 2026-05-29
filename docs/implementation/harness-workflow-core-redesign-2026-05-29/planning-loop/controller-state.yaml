@@ -1,0 +1,85 @@
+controllerState:
+  schemaVersion: 1
+  planPackage: docs/implementation/harness-workflow-core-redesign-2026-05-29
+  masterPlan: docs/implementation/harness-workflow-core-redesign-2026-05-29/00-master-plan-v1.md
+  requestedSkill: moonshot-plan-writer
+  loopType: independent-planning-loop
+  userApproval:
+    granted: true
+    evidence: "User requested: 독립에이전트 리뷰 루프 진행해줘"
+  iteration:
+    current: 6
+    maxIterations: 6
+    targetAmbiguityScore: 0.2
+    blockedAmbiguityScore: 0.35
+  agents:
+    reviewer:
+      isolationMode: forked
+      session: "019e72d5-733a-7842-87dd-b3a787caf989"
+      boundary: read_only_review
+      status: completed
+      decision: revise
+      ambiguityScore: 0.34
+    writer:
+      isolationMode: forked
+      session: "019e72d7-cd13-7782-af63-c43afdbda9c9"
+      boundary: plan_package_only
+      status: completed
+      readinessDecision: runner_prepared
+    reviewerIter2:
+      isolationMode: forked
+      session: "019e72dc-8c4b-7213-8abe-482642af85f9"
+      boundary: read_only_review
+      status: completed
+      decision: pass
+      ambiguityScore: 0.127
+    reviewerIter3:
+      isolationMode: forked
+      session: "019e72e5-3543-7962-a79b-68f9bacdc895"
+      boundary: read_only_review
+      status: completed
+      decision: revise
+      ambiguityScore: 0.562
+    writerIter2:
+      isolationMode: forked
+      session: "019e72e7-c963-7f62-ba48-0f65cba9e52a"
+      boundary: plan_package_only
+      status: completed
+      readinessDecision: prep_phase_required
+    reviewerIter4:
+      isolationMode: forked
+      session: "019e72ea-5f86-7af0-a9cb-42f73e6dfb4d"
+      boundary: read_only_review
+      status: completed
+      decision: pass
+      ambiguityScore: 0.102
+    reviewerIter5:
+      isolationMode: forked
+      session: "019e72f3-bc62-7223-b96f-8933be01e073"
+      boundary: read_only_review
+      status: completed
+      decision: revise
+      ambiguityScore: 0.43
+    writerIter3:
+      isolationMode: parent
+      session: current
+      boundary: plan_package_only
+      status: completed
+      readinessDecision: prep_phase_required
+    reviewerIter6:
+      isolationMode: forked
+      session: "019e72fb-a0ab-7ff3-982f-a0f919315e6a"
+      boundary: read_only_review
+      status: completed
+      decision: revise
+      ambiguityScore: 0.18
+    writerIter4:
+      isolationMode: parent
+      session: current
+      boundary: plan_package_only
+      status: completed
+      readinessDecision: prep_phase_required
+  decision:
+    status: pass_after_parent_fix
+    readinessDecision: runner_prepared
+    reason: "Reviewer iteration 6 found only two wording/command inconsistencies after staged-adoption revision; parent fixed both. Phase-runner state has been prepared with 8 pending phases."
