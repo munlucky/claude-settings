@@ -1,4 +1,0 @@
-interface:
-  display_name: "Moonshot Harness Maintainer"
-  short_description: "Improve and sync Moonshot harness workflows"
-  default_prompt: "Use $moonshot-harness-maintainer to absorb external workflow improvements and sync downstream .claude harnesses safely."

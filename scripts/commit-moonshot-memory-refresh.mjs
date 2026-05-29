@@ -18,6 +18,7 @@ import {
   readUnavailableCapabilities,
   recordUnavailableCapability,
 } from './lib/runtime-unavailable-cache.mjs';
+import { resolveProjectIdentity } from './project-identity.mjs';
 
 const ROOT = process.cwd();
 const CLAUDE_ROOT = path.join(ROOT, '.claude');
@@ -110,7 +111,11 @@ function readPackageName() {
 }
 
 function defaultProjectId() {
-  return readPackageName() || path.basename(ROOT);
+  try {
+    return resolveProjectIdentity({ cwd: ROOT }).identity.projectId;
+  } catch {
+    return readPackageName() || path.basename(ROOT);
+  }
 }
 
 function isRunning(pid) {

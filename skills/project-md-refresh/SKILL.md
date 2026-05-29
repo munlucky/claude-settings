@@ -41,6 +41,7 @@ Create or update the project bootstrap doc set with accurate, evidence-based pro
    - `.claude/PROJECT.md`
    - Fill the overview (name, stack, primary language).
    - Summarize core rules and conventions.
+   - Record project-local adapter boundaries, including project identity and knowledge/verification contract locations when present.
    - Document directory structure (top-level + key subdirectories).
    - Document API/data patterns, auth, and docs paths.
    - Add concrete commands for dev/build/lint/test/typecheck.
@@ -77,3 +78,7 @@ Create or update the project bootstrap doc set with accurate, evidence-based pro
 - Keep content concise and project-specific.
 - Preserve user-written project docs; extend or refresh them instead of rewriting from scratch when possible.
 - Do not create ADRs during bootstrap unless a hard-to-reverse, surprising, trade-off decision is already documented by the project.
+
+## Project Knowledge Boundary
+
+Bootstrap docs may define or point to `.claude/project.identity.yaml`, `.claude/knowledge.contract.yaml`, `.claude/verification.contract.yaml`, and project prompt files. They must not import raw MemoryGraph/KG/ontology/log/transcript payloads. If knowledge state is unavailable, write TODOs and contract references instead of fabricating facts.

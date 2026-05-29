@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot.local/schemas/knowledge-contract.schema.json",
+  "title": "Project Knowledge Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["projectId", "promptMode", "accountStateRoot", "maxPromptTokens", "sources"],
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{1,126}[a-z0-9]$"
+    },
+    "promptMode": {
+      "const": "compact-summary",
+      "description": "Only compact verified summaries may enter prompts; raw graph, logs, and transcripts stay out."
+    },
+    "accountStateRoot": {
+      "type": "string",
+      "description": "Account-root state directory, normally %USERPROFILE%/.codex/state."
+    },
+    "knowledgeRoot": {
+      "type": "string",
+      "description": "Resolved %USERPROFILE%/.codex/state/projects/<projectId>/knowledge path."
+    },
+    "executionRoot": {
+      "type": "string",
+      "description": "Resolved run-scoped execution namespace under %USERPROFILE%/.codex/state/projects/<projectId>/execution/worktrees/<worktreeId>/branches/<branchId>/runs/<runId>."
+    },
+    "executionBaseRoot": {
+      "type": "string",
+      "description": "Shared base directory for execution state under %USERPROFILE%/.codex/state/projects/<projectId>/execution."
+    },
+    "maxPromptTokens": {
+      "type": "integer",
+      "minimum": 256,
+      "maximum": 20000
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "policy",
+          "semantic",
+          "episodic",
+          "graph",
+          "ontology",
+          "provenance",
+          "promotion",
+          "repo-summary",
+          "closeout-manifest"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "excludeSources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "raw-graph",
+          "raw-transcript",
+          "raw-log",
+          "raw-account-state",
+          "execution-trace",
+          "browser-artifact"
+        ]
+      },
+      "uniqueItems": true,
+      "default": ["raw-graph", "raw-transcript", "raw-log", "raw-account-state"]
+    }
+  }
+}

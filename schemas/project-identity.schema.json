@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot.local/schemas/project-identity.schema.json",
+  "title": "Project Identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["projectId", "createdAt"],
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "description": "Immutable logical project id. Once written, later path, package, or worktree changes must not rewrite it.",
+      "pattern": "^[a-z0-9][a-z0-9._-]{1,126}[a-z0-9]$"
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,190}$"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "canonicalRemote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "minLength": 1 },
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,126}[a-z0-9]$" }
+      }
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "migratedFrom": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["projectId", "reason"],
+        "properties": {
+          "projectId": { "type": "string", "minLength": 1 },
+          "source": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 },
+          "migratedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "default": []
+    }
+  }
+}

@@ -1,45 +1,53 @@
 ---
 name: harness-memory-promoter
-description: 승인된 범용 프로젝트 지식을 claude-settings 하네스 MemoryGraph로 승격합니다.
+description: review, replay, rollback, release evidence gate를 통과한 명시 승인 project 또는 harness knowledge만 승격합니다.
 triggers:
-  - "하네스 메모리 승격"
-  - "메모리 후보 승격"
-  - "범용 지식 승격"
+  - "promote harness memory"
+  - "promote memory candidates"
+  - "harness memory promotion"
 ---
 
-# 하네스 메모리 승격
+# Harness Memory Promoter
 
-사용자가 프로젝트 지식 중 재사용 가능한 내용을 하네스 graph로 승격하라고 명시 승인했을 때 사용합니다.
-승격은 replay 증거 또는 human approval로 게이트되며, 결과 fact는 provenance 태그를 포함한 compact 형태여야 합니다.
+사용자가 reusable project knowledge를 global 또는 harness memory로 승격하라고 명시적으로 요청한 경우에만 사용합니다. project-local fact는 기본적으로 승격하지 않습니다.
 
-## 필수 흐름
+## Required Inputs
 
-1. `claude-settings` 저장소 루트에서 실행합니다.
-2. source 프로젝트의 `.claude/cache/memorygraph/promotion-candidates.json`을 읽습니다.
-3. 프로젝트 고유 도메인 사실, 일회성 세부사항, secrets, `.claude/docs/ko/` 기반 사실을 제외합니다.
-4. `harness-memory-promoter`를 `approval: approved`로 호출합니다.
-5. 승인된 항목은 다음 태그로 저장합니다.
-   - `project:claude-settings`
-   - `source:moonshot`
-   - `origin:awtl`
-   - `origin_turn:{turnId}`
-   - `origin_run:{runId}`
-   - `origin_candidate:{candidateId}`
-   - `validated_by:{method}`
+승격은 raw transcript나 graph dump가 아니라 durable manifest를 입력으로 사용해야 합니다.
 
-## AWTL 승격 계약
+- proposal: `improvement/proposals/<proposalId>.yaml`
+- independent review: `improvement/reviews/<proposalId>-review.yaml`
+- replay evidence: `improvement/replay/<proposalId>-replay.json`
+- harness stable promotion rollback evidence: `improvement/rollback/<proposalId>-rollback.json`
+- harness stable promotion release manifest: `improvement/releases/<proposalId>-release-manifest.json`
 
-- failed-turn candidate는 `failure_turn_id`를 포함해야 합니다.
-- 직접 write에는 `--write-memorygraph`가 필요합니다. 없으면 올바른 `write_status`는 `not_requested` 또는 `skipped`입니다.
-- `--auto-promote verified-only`만 자동 write policy입니다. 그 외에는 명시적 human approval이 필요합니다.
-- 각 결정은 replay scorecard에 `denial_codes`, `write_status`, `applies_to`, `does_not_apply_to`, `validated_by`, `last_validated_at`와 함께 append합니다.
-- `imported_only`, `transcript_only`, `raw_trace_payload`, `missing_failure_turn_id`, `invalid_candidate`, `memorygraph_unavailable`에 해당하는 후보는 거부합니다.
+harness self-improvement meta-project contract:
 
-## 강제 규칙
+```yaml
+projectId: moonshot-harness-core
+knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/knowledge"
+improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/improvement"
+candidateReleaseRoot: "%USERPROFILE%/.codex/harness/releases/candidate"
+stableReleaseRoot: "%USERPROFILE%/.codex/harness/releases/stable"
+```
 
-- source 프로젝트에서 하네스 graph에 직접 쓰지 않습니다.
-- raw project graph dump를 승격하지 않습니다.
-- 승격 memory는 짧고 재사용 가능해야 합니다.
-- MemoryGraph가 불가하면 실패를 보고하되 관련 없는 작업은 막지 않습니다.
-- transcript-only 또는 imported-only 후보는 승격하지 말고, environment/flaky/harness blocker는 유지합니다.
-- MemoryGraph unavailable을 성공으로 취급하지 않습니다. 이는 promotion write skip/failure이지 전체 workflow blocker가 아닙니다.
+## Required Flow
+
+1. `claude-settings` repository root에서 실행합니다.
+2. proposal과 evidence manifest를 로드합니다.
+3. `knowledge-improvement-lifecycle.mjs`로 proposal을 검증합니다.
+4. transcript-only, imported-only, secret-like, untrusted external candidate는 durable reason으로 거부합니다.
+5. `global-candidate`는 promotion 전에 independent review와 replay evidence를 요구합니다.
+6. `harness-meta-project` candidate promotion은 independent review, replay, targeted self-test evidence를 요구합니다.
+7. `harness-meta-project` stable promotion은 independent review, affected-project replay, targeted self-test, rollback, release manifest evidence를 요구합니다.
+8. lifecycle helper가 `approved_for_promotion`을 반환한 뒤에만 compact promoted fact를 씁니다.
+
+## Hard Rules
+
+- project-local fact는 기본적으로 승격하지 않습니다.
+- source project에서 harness graph로 직접 쓰지 않습니다.
+- raw project graph dump, raw log, raw transcript를 승격하지 않습니다.
+- denial은 durable evidence이며 denial code와 reason을 포함해야 합니다.
+- unsafe promotion denial은 무관한 workflow를 막지 않습니다.
+- MemoryGraph가 unavailable이면 promotion write skip 또는 failure로 보고하고, 성공으로 취급하지 않습니다.
+- source project, proposal id, review id, replay id, release manifest id 등 provenance tag를 보존합니다.

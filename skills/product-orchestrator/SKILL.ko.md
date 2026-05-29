@@ -84,9 +84,9 @@ triggers:
 
 ## 워크플로우
 
-0. `project-memory-agent`를 `stage=intake`, `memoryMode=read_only`로 실행하고 요약된 `projectMemoryContext`만 병합
+0. `projectKnowledgeContext`를 `stage=intake`, `strictness=advisory`로 만들고 typed summary block/status metadata만 병합
 1. `PRODUCT_INTENT.md` 생성 또는 갱신
-2. 각 reviewer/planning task를 넘기기 전에 직전 산출물이 scope, 용어, architecture를 바꿨다면 `project-memory-agent`를 `stage=plan`으로 갱신
+2. 각 reviewer/planning task를 넘기기 전에 직전 산출물이 scope, 용어, architecture를 바꿨다면 현재 stage(`plan`)의 `projectKnowledgeContext`를 갱신
 3. `PRODUCT_INTENT`에 대해 `product-gate-reviewer` 실행
 4. `PRODUCT_INTENT`에 대해 `plan-ceo-review` 실행
 5. `PRD.md` 생성 또는 갱신
@@ -102,7 +102,7 @@ triggers:
 15. `PLAN`에 대해 `product-gate-reviewer` 실행
 16. `PLAN`에 대해 `plan-ceo-review` 실행
 17. `PLAN`에 대해 `plan-eng-review` 실행
-18. `projectMemoryContext`와 함께 `moonshot-orchestrator`로 handoff
+18. `projectKnowledgeContext`와 함께 `moonshot-orchestrator`로 handoff
 
 모든 단계:
 - `.claude/docs/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
@@ -204,3 +204,9 @@ PLAN이 통과되면:
 - `.claude/skills/task-slicer/SKILL.md`
 - `.claude/skills/assumption-ledger/SKILL.md`
 - `.claude/skills/moonshot-orchestrator/SKILL.md`
+
+## Project Knowledge Context Contract
+
+product-definition 작업은 plan-package prompt assembly 전에 `stage=intake` 또는 `stage=plan`의 advisory `projectKnowledgeContext`를 사용합니다. 이 context는 compact recall source이며 enforcement source가 아닙니다.
+
+helper가 unavailable이면 사용자가 strict memory task를 명시한 경우가 아닌 한 degraded advisory metadata로 계속 진행합니다. raw MemoryGraph/KG/ontology record, log, transcript, secret은 product prompt나 plan artifact에 inline하지 않습니다.

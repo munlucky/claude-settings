@@ -28,10 +28,7 @@ git log -3 --oneline
 ```
 
 ## 2. 프로젝트 ID 확인
-```bash
-# 우선순위: package.json > 디렉토리명 > git remote
-PROJECT_ID=$(cat package.json 2>/dev/null | jq -r '.name // empty' || basename $(pwd))
-```
+Phase 01 Project Identity Resolver 계약을 사용합니다. `.claude/project.identity.yaml`, 계정 루트 registry alias map, canonical git remote/package/basename/path-hash fallback 순서를 따르고, durable `projectId`를 현재 디렉토리명에서 직접 만들지 않습니다.
 
 ## 3. 변경 파일 분석
 ```bash
@@ -73,7 +70,7 @@ node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/me
 - direct fallback이 성공하면 메모리 현행화는 완료로 취급하고, Codex 재시작을 사용자에게 요구하지 않습니다.
 - direct fallback도 실패한 경우에만 실패 원인을 기록하고 Git closeout을 계속 진행합니다.
 - Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다.
-- direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 사용합니다. `.claude/memorygraph/**`와 `.claude/cache/memorygraph/**`는 사용자가 명시적으로 포함하지 않는 한 커밋하지 않습니다.
+- direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 사용하는 프로젝트 로컬 호환 그래프입니다. 계정 루트 knowledge state, `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`는 사용자가 명시적으로 포함하지 않는 한 커밋하지 않습니다.
 
 ### 기존 경계 확인
 `recall_memories`와 `search_memories`로 `project:{PROJECT_ID}`, `boundary` 태그를 가진 메모리 검색
@@ -164,7 +161,7 @@ git add -- .claude .codex .claudeignore .gitattributes .gitignore AGENTS.md READ
 ```
 
 ## 7.6 메모리 산출물 포함 여부 확인
-프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`를 이번 커밋에 포함할지 여부뿐입니다.
+프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 계정 루트 knowledge state 또는 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/` 호환 artifact를 이번 커밋에 포함할지 여부뿐입니다.
 
 권장 질문:
 ```text
@@ -195,7 +192,7 @@ git add [files]
 git commit -m "[간결한 한글 제목]" -m $'- 기능: [기능/영역명] - [핵심 변경]\n- 기능: [기능/영역명] - [핵심 변경]\n- 이유: [변경 이유]\n- 영향: [사용자 영향 또는 기대 효과]'
 ```
 
-> **📌 중요: 메모리 산출물 포함 여부는 사용자 명시 선택을 따르세요.** MemoryGraph 기본 저장소는 `.claude/memorygraph/`입니다.
+> **📌 중요: 메모리 산출물 포함 여부는 사용자 명시 선택을 따르세요.** `.claude/memorygraph/`는 프로젝트 로컬 호환 저장소이며, durable knowledge state는 계정 루트 project namespace에 있을 수 있습니다.
 
 **커밋 메시지 규칙:**
 - 이모지, 특수문자 제외
@@ -219,3 +216,11 @@ git commit -m "[간결한 한글 제목]" -m $'- 기능: [기능/영역명] - [�
 ---
 
 사용자 컨텍스트: $ARGUMENTS
+
+## Project Knowledge Boundary
+
+commit closeout memory refresh는 non-blocking입니다. 검증 뒤 project knowledge를 refresh/audit할 수 있지만 attempt/system prompt assembly의 일부가 아니며, raw MemoryGraph/KG/ontology/log/transcript payload를 commit summary나 manifest에 넣으면 안 됩니다.
+
+Git closeout에는 knowledge refresh status, warning code, promotion/audit count만 기록할 수 있습니다. 사용자가 Git closeout을 명시적으로 요청한 경우 MemoryGraph transport failure가 commit/push를 막아서는 안 됩니다.
+
+계정 루트 프로젝트 knowledge state는 runtime state이며 commit payload가 아닙니다. repo commit에는 검토된 summary, evidence manifest, contract, 명시적 promotion candidate만 포함할 수 있고 raw knowledge state는 포함하지 않습니다.

@@ -32,10 +32,12 @@ attemptInput:
   scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
-  projectMemoryContext:
+  projectKnowledgeContext:
+    schemaVersion: 1
+    status: "ready|degraded_read|degraded_write|not_configured|stale"
+    strictness: "advisory|required"
     stage: "execute"
-    loaded: true
-    deltas: {}
+    promptBlock: "## Project Knowledge Context\n..."
 ```
 
 ## Workflow
@@ -51,7 +53,7 @@ Read only:
 
 Read the `Policy Anchors` section in `SPRINT_CONTRACT.md` first.
 For strict or `meta_harness` work, if policy anchors or required verification commands are missing, refresh the sprint contract before edits or return blocked instead of guessing.
-Read `projectMemoryContext` as summarized MemoryGraph deltas only. If it is missing, run `project-memory-agent` in read-only `stage=execute` mode before invoking `moonshot-orchestrator`.
+Read `projectKnowledgeContext` as summarized Project Knowledge Context summary items only. If it is missing, run `project-memory-agent` in read-only `stage=execute` mode before invoking `moonshot-orchestrator`.
 
 Codex rule references for this attempt:
 - `.claude/rules/basic-principles.md`
@@ -63,7 +65,7 @@ Codex rule references for this attempt:
 - `.claude/rules/agents/agent-delegation.md`
 
 Do not load previous coordinator chatter.
-Do not read `.claude/docs/ko/` as MemoryGraph context and do not pass raw MemoryGraph records forward.
+Do not read `.claude/docs/ko/` as MemoryGraph context and do not pass raw MemoryGraph/KG/ontology records forward.
 
 ### 2. Run orchestrator in phase attempt mode
 
@@ -73,7 +75,7 @@ Required constraints:
 - set `signals.phaseAttemptMode = true`
 - set `artifacts.activePhaseDocPath = {phaseDocPath}`
 - reuse the provided execution artifact paths
-- reuse the provided `projectMemoryContext` and update `analysisContext.projectMemory.stageCoverage.execute`
+- reuse the provided `projectKnowledgeContext` and update only stage coverage bookkeeping such as `analysisContext.projectKnowledge.stageCoverage.execute`
 - do not invoke `moonshot-phase-runner` again
 
 The attempt may:
@@ -154,3 +156,13 @@ Completion normalization rule:
 
 - `.claude/skills/moonshot-orchestrator/SKILL.md`
 - `.claude/skills/moonshot-in-session-coordinator/SKILL.md`
+
+## Project Knowledge Context Contract
+
+`projectKnowledgeContext` is the authoritative prompt-facing contract. It is summary-only and consists of `## Project Knowledge Context`, typed status metadata, policy anchors, semantic facts, graph synopsis, ontology constraints, stale/unavailable entries, and omission categories.
+
+Rules:
+- Consume or return only compact summary items and status metadata.
+- Treat old `projectMemoryContext` wording as legacy and non-authoritative.
+- Never return raw MemoryGraph records, KG edges, ontology dumps, logs, transcripts, or secret-like strings.
+- Advisory unavailable state is a degraded warning; strict memory tasks must mark blocking metadata before execution proceeds.

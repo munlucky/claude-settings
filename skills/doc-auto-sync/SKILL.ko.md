@@ -140,20 +140,20 @@ changelog:
 
 ---
 
-### 6. MemoryGraph Seed 동기화
+### 6. Project Knowledge Seed/Cache 동기화
 
-코드 분석을 바탕으로 문서를 현행화했다면, 이후 MemoryGraph write가 같은 코드/문서 이해를 사용할 수 있도록 프로젝트 지식그래프 seed도 갱신합니다.
+코드 분석을 바탕으로 문서를 현행화했다면, 이후 검증된 지식 write가 같은 코드/문서 이해를 사용할 수 있도록 deterministic project knowledge seed/cache도 갱신합니다.
 
 ```bash
 node .claude/scripts/memorygraph-project-index.mjs
 ```
 
 규칙:
-- doc sync 중에는 seed/cache 파일만 생성합니다. 사용자가 memory refresh를 명시하지 않았다면 MemoryGraph에 쓰지 않습니다.
+- doc sync 중에는 호환 seed/cache 파일만 생성합니다. 사용자가 memory refresh를 명시하지 않았다면 semantic fact나 raw graph state를 쓰지 않습니다.
 - `.claude/docs/ko/`는 seed source에서 제외합니다.
 - 운영 중인 기존 프로젝트도 기본 `--analysis-level code`로 코드 수준 사실을 포함합니다.
 - 승격 후보 개수는 보고하되, 명시 승인 없이 `claude-settings`에 승격하지 않습니다.
-- `.claude/cache/memorygraph/`는 기본 스테이징 대상에서 제외합니다.
+- `.claude/cache/memorygraph/`와 계정 루트 knowledge runtime state는 기본 스테이징 대상에서 제외합니다.
 
 ---
 
@@ -221,3 +221,9 @@ docSync:
 
 > **참고**: `docs/exec-plans/`는 git-tracked 태스크 문서를 위한 `.claude/docs/tasks/`의 선택적 대안입니다.
 > `PROJECT.md: documentPaths.tasksRoot`로 설정합니다.
+
+## Project Knowledge Context Contract
+
+doc sync는 용어 정렬을 위해 compact `projectKnowledgeContext`를 사용할 수 있고 seed/cache material을 생성할 수 있습니다. prompt assembly는 semantic fact를 쓰면 안 됩니다.
+
+doc sync 중 허용되는 write는 문서 갱신과 deterministic seed/cache artifact뿐입니다. semantic fact promotion은 별도의 verify/promote lifecycle에 남겨야 하며, raw MemoryGraph/KG/ontology/log/transcript payload는 doc-sync prompt에 들어가면 안 됩니다.

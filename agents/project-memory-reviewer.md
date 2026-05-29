@@ -17,11 +17,14 @@ Receive from orchestrator:
 ```yaml
 projectId: "{projectId}"
 changedFiles: []                    # list of changed files
-projectMemoryContext:               # from project-memory-agent
-  deltas:
-    boundaries: []
-    conventions: []
-    componentRules: []
+projectKnowledgeContext:             # typed summary-only context
+  status: "ready|degraded_read|degraded_write|not_configured|stale"
+  strictness: "advisory|required"
+  policyAnchors: []
+  semanticFacts: []
+  graphSynopsis: []
+  ontologyConstraints: []
+  staleOrUnavailable: []
 codeReviewGraph:                    # summary only; never raw graph output
   impactSummary: []
   reviewContextSummary: []
@@ -75,7 +78,7 @@ check:
 ```
 
 ### 3. Check Convention Violations
-Compare changes against `projectMemoryContext.deltas.conventions` and refreshed stage-scoped conventions:
+Compare changes against compact `projectKnowledgeContext.policyAnchors`, `semanticFacts`, `graphSynopsis`, and refreshed stage-scoped conventions:
 - Naming conventions
 - File structure patterns
 - Error handling patterns
@@ -142,7 +145,17 @@ return { status: "passed", action: "proceed" }
 ## Contract
 - Runs in forked session to prevent context pollution
 - Returns only violation summary, not full rule contents
-- Consumes only project-specific delta memory, never raw memory contents
+- Consumes only typed summary-only project knowledge context, never raw memory contents
 - NeverDo violations MUST halt execution
 - AskFirst items MUST get user approval before proceeding
-- Must update `analysisContext.projectMemory.stageCoverage.review` to `checked`, `not_checked`, or `skipped`.
+- Must update `analysisContext.projectKnowledge.stageCoverage.review` to `checked`, `not_checked`, or `skipped`.
+
+## Project Knowledge Context Contract
+
+`projectKnowledgeContext` is the authoritative prompt-facing contract. It is summary-only and consists of `## Project Knowledge Context`, typed status metadata, policy anchors, semantic facts, graph synopsis, ontology constraints, stale/unavailable entries, and omission categories.
+
+Rules:
+- Consume or return only compact summary items and status metadata.
+- Treat old `projectMemoryContext` wording as legacy and non-authoritative.
+- Never return raw MemoryGraph records, KG edges, ontology dumps, logs, transcripts, or secret-like strings.
+- Advisory unavailable state is a degraded warning; strict memory tasks must mark blocking metadata before execution proceeds.

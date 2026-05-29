@@ -115,6 +115,10 @@ A good task file allows an implementation agent to start work with:
 - explicit fail/pass evidence expectations
 - a clear AFK/HITL classification when the slice may leave local documents
 
+## Project Knowledge Boundary
+
+Task slices may include compact `projectKnowledgeContext` status, relevant ontology constraints, and provenance refs needed for execution. They must not inline raw MemoryGraph/KG/ontology records, logs, transcripts, or account-root runtime state. Put durable traceability and evidence paths in repo docs; leave raw runtime state in its project namespace.
+
 ## References
 
 - `.claude/docs/guidelines/product-definition-workflow.md`

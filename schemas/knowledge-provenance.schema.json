@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot.local/schemas/knowledge-provenance.schema.json",
+  "title": "Project Knowledge Provenance Ledger Event",
+  "description": "Append-only provenance event for reconstructing knowledge lifecycle, verification, supersession, and promotion decisions.",
+  "type": "object",
+  "required": [
+    "type",
+    "id",
+    "projectId",
+    "status",
+    "createdAt",
+    "updatedAt",
+    "subjectId",
+    "activity",
+    "agent",
+    "sourceType",
+    "sourceRef"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "type": { "const": "provenance_event" },
+    "id": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["observed", "verified", "archived"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "subjectId": { "type": "string", "minLength": 1 },
+    "activity": { "type": "string", "minLength": 1 },
+    "agent": { "type": "string", "minLength": 1 },
+    "factId": { "type": "string", "minLength": 1 },
+    "derivedFrom": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "sourceType": {
+      "enum": [
+        "authoritative_doc",
+        "repo_file",
+        "schema",
+        "test",
+        "review",
+        "transcript",
+        "browser",
+        "tool_output",
+        "external",
+        "derived"
+      ]
+    },
+    "sourceRef": { "type": "string", "minLength": 1 },
+    "verifiedBy": { "type": "string", "minLength": 1 },
+    "verifiedAt": { "type": "string", "format": "date-time" },
+    "supersedes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "sensitivity": {
+      "enum": ["public", "internal", "confidential", "secret"]
+    }
+  },
+  "x-storagePath": "%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/provenance/prov-log.jsonl",
+  "x-allowedTransitions": [["observed", "verified"], ["verified", "archived"]]
+}

@@ -1,0 +1,72 @@
+planQualityReview:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "forked"
+  reviewerSession: "019e7400-83d7-76f3-b4d6-5a834d339689"
+  skillBoundary:
+    allowed:
+      - "review/gate leaf skills only"
+    forbidden:
+      - "moonshot-plan-writer"
+      - "moonshot-phase-runner"
+      - "moonshot-orchestrator"
+      - "implementation-runner"
+      - "doc-auto-sync"
+      - "commit-moonshot"
+      - "project-memory-refresh"
+      - "harness-memory-promoter"
+    compliance: "compliant"
+    notes:
+      - "Reviewer was read-only and did not edit files."
+  targetPlanPackage:
+    planDir: "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29"
+    masterPlan: "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/00-master-plan-v1.md"
+    phaseDocs:
+      - "01-identity-and-storage-contract.md"
+      - "02-typed-knowledge-schema-and-provenance.md"
+      - "03-knowledge-context-builder.md"
+      - "04-orchestrator-prompt-integration.md"
+      - "05-ontology-and-verifier-constraints.md"
+      - "06-recursive-improvement-lifecycle.md"
+      - "07-adoption-and-migration.md"
+  rubric:
+    goalClarity: { weight: 0.20, score: 0.86, evidence: ["objective and source traceability are explicit"], findings: [] }
+    scopeClarity: { weight: 0.20, score: 0.72, evidence: ["scope separates project knowledge and execution state"], findings: ["staged-only mutation boundary ambiguous"] }
+    acceptanceCriteriaClarity: { weight: 0.20, score: 0.74, evidence: ["AC ids exist"], findings: ["wire schemas and migration boundary under-specified"] }
+    verificationClarity: { weight: 0.20, score: 0.70, evidence: ["test commands exist"], findings: ["commands point at live paths before adoption"] }
+    brownfieldReadiness: { weight: 0.10, score: 0.62, evidence: ["existing memory-aware surfaces considered"], findings: ["affected-surface inventory incomplete"] }
+    phaseExecutability: { weight: 0.10, score: 0.66, evidence: ["phase metadata exists"], findings: ["Phase 07 allowlist too broad"] }
+  totalScore: 0.717
+  ambiguityScore: 0.31
+  decision: "revise"
+  blockingFindings:
+    - id: "BF-001"
+      severity: "high"
+      finding: "Phases 01-06 claim staged-only mutation, but commands and ownedPaths reference live .claude files directly."
+      directive: "Use staging overlay paths and overlay-aware commands before Phase 07; prove no live .claude/.codex edits before adoption."
+    - id: "BF-002"
+      severity: "high"
+      finding: "Integration scope misses existing memory-aware entrypoints and projectId derivation surfaces."
+      directive: "Add affected-surface inventory and migrate/update/defer decisions."
+    - id: "BF-003"
+      severity: "high"
+      finding: "Account-root registry and migration boundary are not decision-complete."
+      directive: "Specify account-root registry path, alias collision behavior, and current fallback replacement/wrapping."
+    - id: "BF-004"
+      severity: "medium"
+      finding: "Typed records lack exact storage paths, required fields, transition matrix, and supersession integrity checks."
+      directive: "Add minimal wire schemas, status transitions, and acyclic supersedes tests."
+    - id: "BF-005"
+      severity: "medium"
+      finding: "Ontology verifier insertion point and override conflict behavior are not exact."
+      directive: "Define verification.contract check name, CLI shape, severity mapping, and conflict behavior."
+    - id: "BF-006"
+      severity: "medium"
+      finding: "Harness meta-project lifecycle lacks release-channel and promotion gate details."
+      directive: "Define moonshot-harness-core namespace, candidate/stable gates, rollback, canary, and replay evidence."
+  improvementDirectives:
+    - "Add invariant table to master plan."
+    - "Clarify policy prompt source handling and omittedByPolicy behavior."
+    - "Define exact forbidden prompt payload fixtures."
+    - "Replace broad Phase 07 ownedPaths with exact approved target allowlist."
+    - "Add post-adoption backward compatibility checks for existing project-local memory/cache users."

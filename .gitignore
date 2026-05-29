@@ -1,5 +1,7 @@
 .history/
 .vscode/
+/.claude/
+/.codex/
 .agents/skills
 .mcp.json
 __pycache__/

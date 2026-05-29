@@ -32,10 +32,12 @@ attemptInput:
   scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
-  projectMemoryContext:
+  projectKnowledgeContext:
+    schemaVersion: 1
+    status: "ready|degraded_read|degraded_write|not_configured|stale"
+    strictness: "advisory|required"
     stage: "execute"
-    loaded: true
-    deltas: {}
+    promptBlock: "## Project Knowledge Context\n..."
 ```
 
 ## Workflow
@@ -51,7 +53,7 @@ attemptInput:
 
 가장 먼저 `SPRINT_CONTRACT.md` 의 `Policy Anchors` 섹션을 확인합니다.
 strict 또는 `meta_harness` 작업에서 policy anchors 나 필수 검증 명령이 비어 있으면, 코드 수정보다 먼저 sprint contract 를 보강하거나 blocker 로 반환해야 합니다.
-`projectMemoryContext`는 요약된 MemoryGraph delta로만 읽습니다. 누락되어 있으면 `moonshot-orchestrator`를 실행하기 전에 `project-memory-agent`를 `stage=execute`, read-only로 실행합니다.
+`projectKnowledgeContext`는 typed summary-only Project Knowledge Context로만 읽습니다. 누락되어 있으면 `moonshot-orchestrator`를 실행하기 전에 `stage=execute` context를 advisory 또는 required strictness에 맞춰 생성합니다.
 
 이전 coordinator 대화는 다시 로드하지 않습니다.
 `.claude/docs/ko/`는 MemoryGraph context로 읽지 않고, raw MemoryGraph record를 다음 단계로 넘기지 않습니다.
@@ -64,7 +66,7 @@ strict 또는 `meta_harness` 작업에서 policy anchors 나 필수 검증 명�
 - `signals.phaseAttemptMode = true`
 - `artifacts.activePhaseDocPath = {phaseDocPath}`
 - 전달받은 execution artifact 경로 재사용
-- 전달받은 `projectMemoryContext`를 재사용하고 `analysisContext.projectMemory.stageCoverage.execute`를 갱신
+- 전달받은 `projectKnowledgeContext`를 재사용하고 `analysisContext.projectKnowledge.stageCoverage.execute` 같은 stage coverage bookkeeping만 갱신
 - `moonshot-phase-runner`를 다시 호출하지 않음
 
 이 시도에서 할 수 있는 일:
@@ -145,3 +147,13 @@ attemptResult:
 
 - `.claude/skills/moonshot-orchestrator/SKILL.md`
 - `.claude/skills/moonshot-in-session-coordinator/SKILL.md`
+
+## Project Knowledge Context Contract
+
+`projectKnowledgeContext` is the authoritative prompt-facing contract. It is summary-only and consists of `## Project Knowledge Context`, typed status metadata, policy anchors, semantic facts, graph synopsis, ontology constraints, stale/unavailable entries, and omission categories.
+
+Rules:
+- Consume or return only compact summary items and status metadata.
+- Treat old `projectMemoryContext` wording as legacy and non-authoritative.
+- Never return raw MemoryGraph records, KG edges, ontology dumps, logs, transcripts, or secret-like strings.
+- Advisory unavailable state is a degraded warning; strict memory tasks must mark blocking metadata before execution proceeds.

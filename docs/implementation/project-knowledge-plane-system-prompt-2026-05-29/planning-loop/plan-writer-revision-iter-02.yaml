@@ -1,0 +1,43 @@
+schemaVersion: 1
+iteration: 2
+writerSession: parent-session
+sourceReview: "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/planning-loop/plan-quality-review-iter-02.yaml"
+decision: revision_applied_pending_review
+appliedDirectives:
+  - id: BF2-001
+    summary: "Expanded the affected-surface inventory from orchestrator-only surfaces to memory agents, phase-attempt agents, doc-auto-sync, moonshot-plan-writer, and Codex mirrors."
+    files:
+      - "00-master-plan-v1.md"
+      - "04-orchestrator-prompt-integration.md"
+      - "07-adoption-and-migration.md"
+  - id: BF2-002
+    summary: "Added a projectId migration/wrap/defer matrix so package/basename fallback cannot remain as an untracked default path."
+    files:
+      - "01-identity-and-storage-contract.md"
+  - id: BF2-003
+    summary: "Aligned Phase 07 ownedPaths and adoptionTargets so every live target has explicit adoption ownership."
+    files:
+      - "07-adoption-and-migration.md"
+  - id: BF2-004
+    summary: "Promoted typed knowledge records from narrative categories to minimal wire contracts with required fields and per-type status transitions."
+    files:
+      - "02-typed-knowledge-schema-and-provenance.md"
+  - id: BF2-005
+    summary: "Defined the read-only live helper exception for staged phases and constrained it to overlay-root validation with no live writes."
+    files:
+      - "00-master-plan-v1.md"
+  - id: ID2-002
+    summary: "Defined ontology validator exit behavior and closeout degradation/blocking semantics."
+    files:
+      - "05-ontology-and-verifier-constraints.md"
+  - id: ID2-003
+    summary: "Added account-root no-rewrite snapshot evidence to the adoption phase."
+    files:
+      - "07-adoption-and-migration.md"
+  - id: ID2-004
+    summary: "Specified prompt item shapes for policy anchors, semantic facts, graph synopsis, and ontology constraints."
+    files:
+      - "03-knowledge-context-builder.md"
+remainingKnownRisks:
+  - "Final independent review still needs to confirm ambiguityScore <= 0.20."
+  - "Plan package remains prep-phase-ready, not dispatch-ready implementation code."

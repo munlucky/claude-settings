@@ -46,7 +46,7 @@ If `prepareOnly == true`:
 
 ### 2. Route by execution mode
 
-Before routing, confirm `phaseRunnerResult.projectMemoryContext` or `analysisContext.projectMemory` exists. If missing, run a read-only `project-memory-agent` recall with `stage=execute` and pass only the summarized context to the execution path.
+Before routing, confirm `phaseRunnerResult.projectKnowledgeContext` exists. If missing, run `knowledge-context-build.mjs --stage execute --json` from the current project root and pass only `projectKnowledgeContext.promptBlock` plus status-only metadata to the execution path.
 
 If `executionMode == delegated-terminal`:
 - call `phaseRunnerResult.executionCommand` immediately in the current session
@@ -95,7 +95,7 @@ phaseExecutionResult:
 
 - This skill is the internal phase execution handoff behind `moonshot-phase-runner`.
 - Apply `.claude/docs/guidelines/memorygraph-workflow.md` before dispatching execution.
-- Do not pass raw MemoryGraph records to dispatcher/agent-loop/coordinator inputs; pass summarized `projectMemoryContext` only.
+- Do not pass raw MemoryGraph/KG/ontology records to dispatcher/agent-loop/coordinator inputs; pass summarized `projectKnowledgeContext` only.
 - Use one compact MemoryGraph/CodeReviewGraph recall per stage by default; repeat only for missing owner/date/path/API/schema/failure facts, then stop when answerable.
 - Default `modelEffortProfile` is `standard`; `deep` and `max` require a concrete `Effort escalation reason` in QA and workflow evidence.
 - Do not ask the user to choose a model. The provider-neutral model router selects per-stage runtime model/effort and records the selected provider/model/effort in execution evidence.
@@ -118,3 +118,9 @@ phaseExecutionResult:
 - `.claude/scripts/moonshot-phase-dispatch.mjs`
 - `.claude/scripts/agent-loop.sh` / `.claude/scripts/moonshot-phase-dispatch.sh` as compatibility wrappers
 - `.claude/templates/execution/WORKSET.template.md`
+
+## Project Knowledge Context Contract
+
+Before routing to delegated-terminal, in-session coordinator, or forked-agent execution, confirm `phaseRunnerResult.projectKnowledgeContext` exists. If missing, run `knowledge-context-build.mjs --stage execute --json` and pass only `projectKnowledgeContext.promptBlock` and status-only metadata.
+
+This executor must not bypass the context builder. Dispatcher, agent-loop, coordinator, and attempt manifests may record only knowledge status metadata, never raw MemoryGraph/KG/ontology/log/transcript payloads.

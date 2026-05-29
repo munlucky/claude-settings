@@ -86,16 +86,18 @@ attemptInput:
   worksetPath: "docs/implementation/execution/02-core-implementation/WORKSET.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
-  projectMemoryContext:
+  projectKnowledgeContext:
+    schemaVersion: 1
     stage: "execute"
-    loaded: true
-    deltas: {}
+    status: "ready|degraded_read|degraded_write|not_configured|stale"
+    strictness: "advisory|required"
+    promptBlock: "## Project Knowledge Context\n..."
 ```
 
 규칙:
 - 긴 phase 문서를 메인 세션에 인라인하지 않습니다.
 - 이전 구현 대화를 다시 넘기지 않습니다.
-- 각 fresh attempt 전에 `project-memory-agent`를 `stage=execute`, `memoryMode=read_only`로 실행 또는 갱신하고, 요약된 `projectMemoryContext`만 넘깁니다.
+- 각 fresh attempt 전에 `projectKnowledgeContext`를 `stage=execute`로 build 또는 refresh하고, typed summary block과 status metadata만 넘깁니다.
 - `.claude/docs/ko/`와 system/developer/AGENTS/rules 정책 중복 항목은 attempt input에서 제외합니다.
 - 재시도 메모리는 `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`만 사용합니다.
 - `SPRINT_CONTRACT.md`의 policy anchors와 필수 검증 명령은 attempt 입력의 필수 항목으로 취급합니다.
@@ -235,3 +237,9 @@ coordinatorResult:
 - `.claude/agents/phase-attempt-agent.md`
 - `/moonshot-phase-runner`
 - `/moonshot-orchestrator`
+
+## Project Knowledge Context Contract
+
+각 fresh forked attempt 전에 `knowledge-context-build.mjs --stage execute --json`으로 `projectKnowledgeContext`를 갱신합니다. child prompt에는 `## Project Knowledge Context` block과 status-only metadata만 전달합니다.
+
+`status=degraded_read` 또는 `not_configured`인 advisory degradation은 계속 진행합니다. strict memory task는 attempt spawn 전에 blocking metadata를 표면화해야 합니다. raw graph, raw ontology, raw log, transcript, secret-like string은 전달하지 않습니다.

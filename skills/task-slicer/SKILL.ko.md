@@ -111,6 +111,10 @@ AFK or HITL
 - 명시적인 fail/pass evidence expectation이 있음
 - slice가 local document 밖으로 나갈 수 있으면 clear AFK/HITL classification이 있음
 
+## Project Knowledge 경계
+
+Task slice에는 실행에 필요한 compact `projectKnowledgeContext` 상태, 관련 ontology constraint, provenance ref만 포함할 수 있습니다. raw MemoryGraph/KG/ontology record, log, transcript, 계정 루트 runtime state를 inline으로 넣지 않습니다. 지속 가능한 traceability와 evidence path는 repo 문서에 남기고 raw runtime state는 프로젝트 namespace에 둡니다.
+
 ## 참고
 
 - `.claude/docs/guidelines/product-definition-workflow.md`

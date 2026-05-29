@@ -3,6 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { resolveProjectIdentity } from './project-identity.mjs';
+
 const ROOT = process.cwd();
 const CLAUDE_ROOT = path.join(ROOT, '.claude');
 const DEFAULT_OUTPUT = path.join(CLAUDE_ROOT, 'cache', 'memorygraph', 'project-graph-seed.json');
@@ -144,11 +146,15 @@ function readJson(filePath) {
 }
 
 function projectId() {
-  const pkg = readJson(path.join(ROOT, 'package.json'));
-  if (pkg?.name && typeof pkg.name === 'string') {
-    return pkg.name;
+  try {
+    return resolveProjectIdentity({ cwd: ROOT }).identity.projectId;
+  } catch {
+    const pkg = readJson(path.join(ROOT, 'package.json'));
+    if (pkg?.name && typeof pkg.name === 'string') {
+      return pkg.name;
+    }
+    return path.basename(ROOT);
   }
-  return path.basename(ROOT);
 }
 
 function isExcluded(relativePath) {

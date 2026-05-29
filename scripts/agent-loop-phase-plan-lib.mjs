@@ -10,6 +10,91 @@ import { buildFailurePreventionBriefSection } from './lib/awtl-failure-preventio
 import { loadVerificationContractContext } from './lib/verification-contract.mjs';
 import { resolveEffortEscalationReason, resolveEffortProfile } from './lib/effort-profile.mjs';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
+import { buildProjectKnowledgeContext } from './knowledge-context-build.mjs';
+
+const VALID_KNOWLEDGE_STRICTNESS = new Set(['advisory', 'required']);
+
+function normalizeKnowledgeStrictness(value) {
+  return VALID_KNOWLEDGE_STRICTNESS.has(value) ? value : 'advisory';
+}
+
+function fallbackProjectKnowledgeContext({ stage, strictness, reason }) {
+  const blocking = strictness === 'required';
+  const context = {
+    schemaVersion: 1,
+    projectId: 'unresolved',
+    namespace: 'account-root/project-knowledge',
+    knowledgeRevision: '',
+    status: 'degraded_read',
+    strictness,
+    stage,
+    policyAnchors: [],
+    semanticFacts: [],
+    graphSynopsis: [],
+    ontologyConstraints: [],
+    staleOrUnavailable: [
+      {
+        reason: reason || 'knowledge context helper unavailable',
+        sourceRef: 'knowledge-context-build.mjs',
+        blocking,
+      },
+    ],
+    omittedByPolicy: [],
+    promptBlock: '',
+  };
+  context.promptBlock = [
+    '## Project Knowledge Context',
+    `- projectId: ${context.projectId}`,
+    `- namespace: ${context.namespace}`,
+    `- knowledgeRevision: ${context.knowledgeRevision}`,
+    `- status: ${context.status}`,
+    `- strictness: ${context.strictness}`,
+    `- stage: ${context.stage}`,
+    '- stale or unavailable:',
+    `  - knowledge context helper unavailable${blocking ? ' [blocking]' : ''}`,
+    '- omitted by policy:',
+    '  - raw logs',
+    '  - raw transcript',
+    '  - raw MemoryGraph/KG/ontology payloads',
+    '  - secret-like strings',
+  ].join('\n');
+  return context;
+}
+
+export function buildPromptKnowledgeContext({
+  cwd,
+  stage = 'execute',
+  strictness = 'advisory',
+  builder = buildProjectKnowledgeContext,
+} = {}) {
+  const normalizedStrictness = normalizeKnowledgeStrictness(strictness);
+  try {
+    return builder({
+      cwd: cwd || process.cwd(),
+      stage,
+      strictness: normalizedStrictness,
+    }).projectKnowledgeContext;
+  } catch (error) {
+    return fallbackProjectKnowledgeContext({
+      stage,
+      strictness: normalizedStrictness,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function knowledgeMetadata(context) {
+  return {
+    status: context.status || 'degraded_read',
+    strictness: context.strictness || 'advisory',
+    stage: context.stage || 'execute',
+    knowledgeRevision: context.knowledgeRevision || '',
+    blocking: Array.isArray(context.staleOrUnavailable)
+      ? context.staleOrUnavailable.some((item) => item?.blocking === true)
+      : false,
+    unavailableCount: Array.isArray(context.staleOrUnavailable) ? context.staleOrUnavailable.length : 0,
+  };
+}
 
 function writableTempRoot() {
   const candidates = [
@@ -1183,9 +1268,19 @@ export function buildPhasePrompt(config) {
     autonomousInstructions = '',
     workspaceRoot = process.cwd(),
     verificationRuntimes = 'auto',
+    knowledgeContextBuilder = buildProjectKnowledgeContext,
+    knowledgeStage = 'execute',
+    knowledgeStrictness = 'advisory',
   } = config;
 
   const demoFirst = detectDemoFirstMethodology(phaseTitle, phaseDoc);
+  const projectKnowledgeContext = buildPromptKnowledgeContext({
+    cwd: workspaceRoot,
+    stage: knowledgeStage,
+    strictness: knowledgeStrictness,
+    builder: knowledgeContextBuilder,
+  });
+  const projectKnowledgeMetadata = knowledgeMetadata(projectKnowledgeContext);
   const failurePreventionBriefSection = buildFailurePreventionBriefSection(
     {
       scope: 'next-run recall',
@@ -1260,6 +1355,14 @@ executionArtifacts:
   scorecardPath: "${paths.phaseScorecard}"
   worksetsPath: "${paths.phaseWorksets}"
   verificationVerdictGlob: ".claude/verification-verdict-*.json"
+projectKnowledgeContext:
+  status: "${projectKnowledgeMetadata.status}"
+  strictness: "${projectKnowledgeMetadata.strictness}"
+  stage: "${projectKnowledgeMetadata.stage}"
+  blocking: ${projectKnowledgeMetadata.blocking ? 'true' : 'false'}
+  unavailableCount: ${projectKnowledgeMetadata.unavailableCount}
+  knowledgeRevision: "${projectKnowledgeMetadata.knowledgeRevision}"
+${projectKnowledgeContext.promptBlock}
 ${failurePreventionBriefSection ? `
 ${failurePreventionBriefSection.split('\n').map((line) => `  ${line}`).join('\n')}
 ` : ''}

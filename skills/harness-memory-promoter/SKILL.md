@@ -1,6 +1,6 @@
 ---
 name: harness-memory-promoter
-description: Promote approved reusable project knowledge into the claude-settings harness MemoryGraph.
+description: Promote explicitly approved reusable project or harness knowledge after review, replay, rollback, and release evidence gates.
 triggers:
   - "promote harness memory"
   - "promote memory candidates"
@@ -9,37 +9,45 @@ triggers:
 
 # Harness Memory Promoter
 
-Use this skill when the user explicitly approves promotion of reusable project knowledge into the harness graph.
-Promotion is gated by replay evidence or human approval, and the resulting fact must stay compact with provenance tags.
+Use this skill only when the user explicitly asks to promote reusable project knowledge into global or harness memory. Project-local facts are not promoted by default.
+
+## Required Inputs
+
+Promotion must consume durable manifests instead of raw transcript or graph dumps:
+
+- proposal: `improvement/proposals/<proposalId>.yaml`
+- independent review: `improvement/reviews/<proposalId>-review.yaml`
+- replay evidence: `improvement/replay/<proposalId>-replay.json`
+- rollback evidence for harness stable promotion: `improvement/rollback/<proposalId>-rollback.json`
+- release manifest for harness stable promotion: `improvement/releases/<proposalId>-release-manifest.json`
+
+For harness self-improvement, the meta-project contract is:
+
+```yaml
+projectId: moonshot-harness-core
+knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/knowledge"
+improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/improvement"
+candidateReleaseRoot: "%USERPROFILE%/.codex/harness/releases/candidate"
+stableReleaseRoot: "%USERPROFILE%/.codex/harness/releases/stable"
+```
 
 ## Required Flow
 
 1. Run from the `claude-settings` repository root.
-2. Read the source project's `.claude/cache/memorygraph/promotion-candidates.json`.
-3. Filter out project-specific domain facts, one-off details, secrets, and `.claude/docs/ko/` derived facts.
-4. Invoke `harness-memory-promoter` with `approval: approved`.
-5. Store accepted items with:
-   - `project:claude-settings`
-   - `source:moonshot`
-   - `origin:awtl`
-   - `origin_turn:{turnId}`
-   - `origin_run:{runId}`
-   - `origin_candidate:{candidateId}`
-   - `validated_by:{method}`
-
-## AWTL Promotion Contract
-
-- Failed-turn candidates must include `failure_turn_id`.
-- `--write-memorygraph` is required for direct writes; without it, the correct `write_status` is `not_requested` or `skipped`.
-- `--auto-promote verified-only` is the only automatic write policy. Everything else requires explicit human approval.
-- Append each decision to the replay scorecard with `denial_codes`, `write_status`, `applies_to`, `does_not_apply_to`, `validated_by`, and `last_validated_at`.
-- Deny candidates with `imported_only`, `transcript_only`, `raw_trace_payload`, `missing_failure_turn_id`, `invalid_candidate`, or `memorygraph_unavailable` as applicable.
+2. Load the proposal and evidence manifests.
+3. Validate the proposal with `knowledge-improvement-lifecycle.mjs`.
+4. Deny transcript-only, imported-only, secret-like, or untrusted external candidates with a durable reason.
+5. For `global-candidate`, require independent review and replay evidence before promotion.
+6. For `harness-meta-project` candidate promotion, require independent review, replay, and targeted self-test evidence.
+7. For `harness-meta-project` stable promotion, require independent review, affected-project replay, targeted self-test, rollback, and release manifest evidence.
+8. Write compact promoted facts only after the lifecycle helper returns `approved_for_promotion`.
 
 ## Hard Rules
 
-- Never write directly from the source project into the harness graph.
-- Never promote raw project graph dumps.
-- Keep promoted memories compact and reusable.
-- If MemoryGraph is unavailable, report the failure and do not block unrelated work.
-- Do not promote transcript-only or imported-only candidates, and preserve environment/flaky/harness blockers.
-- Never treat unavailable MemoryGraph as success. It is a promotion write skip/failure, not a general workflow blocker.
+- Never promote project-local facts by default.
+- Never write directly from a source project into the harness graph.
+- Never promote raw project graph dumps, raw logs, or raw transcripts.
+- Denials are durable evidence and must include a denial code and reason.
+- Unsafe promotion denial must not block unrelated workflow.
+- If MemoryGraph is unavailable, report the promotion write skip or failure; do not treat it as success.
+- Preserve provenance tags including source project, proposal id, review id, replay id, and release manifest id when applicable.

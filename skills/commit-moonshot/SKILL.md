@@ -21,7 +21,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 ## Required flow
 
 1. inspect staged changes with compact git commands
-2. derive `PROJECT_ID`
+2. resolve `PROJECT_ID` through the Project Identity Resolver; do not derive durable identity directly from the current directory name
 3. run `node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID>` when the project has the script; if a prior `mcp__memory__.store_memory` call failed, pass the same payload through `--store-json @<payload-file>` and the MCP error through `--mcp-error`
 4. run `node .claude/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json` when the project has the script; this is audit-only by default
 5. summarize created or updated memory facts, direct fallback route, AWTL promotion audit counts, and promotion candidates in a short bullet list
@@ -35,7 +35,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - do not read `.claude/docs/ko/` as a memory source; it is a human-facing Korean mirror
 - do not store facts derived only from `.claude/docs/ko/`
 - do not store system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules as project memory; record duplicates under `projectMemory.omitted.duplicatedSystemRules`
-- never auto-stage `.claude/memory.json` or `.claude/memorygraph/` by default
+- never auto-stage account-root knowledge state, `.claude/memory.json`, or `.claude/memorygraph/` by default
 - never auto-stage `.claude/cache/memorygraph/` by default
 - never auto-stage generated agent bridge paths such as `.agents/` or `.agents/skills`; omit them from explicit `git add -- <paths>` lists unless the user explicitly asks to track generated bridge files
 - never run `git add -A -- .agents`, `git add -A -- .agents/skills`, or any generated explicit path list that still contains `.agents` or `.agents/skills`
@@ -67,7 +67,7 @@ Rules:
 - If no concrete payload is available, the helper runs `memorygraph-project-index.mjs` and `memorygraph-direct.mjs refresh-seed` as the commit-time memory refresh.
 - On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell.
 - The helper has per-command timeout and owned child-process tree cleanup. It must not broad-kill unrelated `memorygraph.exe` processes.
-- The direct fallback uses `.claude/memorygraph/memory.db` through `MEMORY_SQLITE_PATH`; keep `.claude/memorygraph/**` and `.claude/cache/memorygraph/**` unstaged unless the user explicitly includes memory artifacts.
+- The direct fallback uses `.claude/memorygraph/memory.db` through `MEMORY_SQLITE_PATH` as a project-local compatibility graph; keep account-root knowledge state, `.claude/memorygraph/**`, and `.claude/cache/memorygraph/**` unstaged unless the user explicitly includes memory artifacts.
 
 ## AWTL Promotion Audit
 
@@ -92,3 +92,11 @@ Rules:
 ---
 
 User context: $ARGUMENTS
+
+## Project Knowledge Boundary
+
+Commit closeout memory refresh is non-blocking. It can refresh or audit project knowledge after verification, but it is not part of attempt/system prompt assembly and must not put raw MemoryGraph/KG/ontology/log/transcript payloads into commit summaries or manifests.
+
+Git closeout may record only knowledge refresh status, warning codes, and promotion/audit counts. MemoryGraph transport failure must not block commit/push when the user explicitly requested Git closeout.
+
+Account-root project knowledge state is runtime state, not a commit payload. Repo commits may include reviewed summaries, evidence manifests, contracts, or explicit promotion candidates, but not raw knowledge state.

@@ -156,9 +156,10 @@ execution bridge 사용 시:
 
 > MemoryGraph MCP 설정 시에만 활성화
 
-- Finish/Handoff 기록 전에 `project-memory-agent`를 `stage=finish`, `memoryMode=read_only`로 실행해 최신 context를 확인합니다.
-- 저장은 재사용 가능한 결정, correction, fix, 프로젝트별 convention에 한정하며 `memoryMode: write_requested`일 때만 수행합니다.
-- 사용자가 graph refresh를 명시한 경우에만 `project-memory-refresh`를 실행합니다. 그 외 finish logging은 compact reusable fact 저장을 제외하고 read-only로 유지합니다.
+- Finish/Handoff 기록 전에 `knowledge-context-build.mjs --stage finish --json`으로 `projectKnowledgeContext`를 생성하거나 갱신합니다.
+- 세션 로그와 `HANDOFF.md`에는 compact knowledge status, warning code, artifact reference, 재사용 가능한 결정만 기록합니다. raw MemoryGraph/KG/ontology/log/transcript payload는 넣지 않습니다.
+- 사용자가 graph refresh를 명시한 경우에만 `project-memory-refresh`를 실행합니다. 그 외 finish logging은 read-only로 유지하고, 필요하면 승격 후보만 만듭니다.
+- 지식 write는 verify/promote lifecycle을 통과한 재사용 가능한 결정, correction, fix, 프로젝트별 convention에 한정합니다.
 - `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 소스로 사용하지 않습니다.
 - 하네스 승격 후보는 만들 수 있지만, 명시 승인 없이 `claude-settings` graph에 직접 저장하지 않습니다.
 
@@ -181,3 +182,7 @@ execution bridge 사용 시:
 - 재시도 과정에서 재사용 가능한 fix pattern이 드러났을 때
 - 검증 레시피를 다음에도 재사용해야 할 때
 - 다음 planning이나 guardrail 판단을 바꾸는 교훈일 때
+
+## Project Knowledge Context 계약
+
+세션 로그와 handoff 문서는 compact `projectKnowledgeContext` 상태와 provenance ref만 참조할 수 있습니다. 계정 루트의 프로젝트 지식 state는 raw export 대상이 아니며, repo에 남길 수 있는 것은 검토된 summary, evidence manifest, 명시적 promotion candidate뿐입니다.

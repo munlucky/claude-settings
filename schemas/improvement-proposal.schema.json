@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot.local/schemas/improvement-proposal.schema.json",
+  "title": "Knowledge Improvement Proposal",
+  "description": "Recursive project and harness knowledge improvement proposal. Promotion is explicit and evidence-gated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposalId",
+    "projectId",
+    "target",
+    "state",
+    "createdAt",
+    "updatedAt",
+    "summary",
+    "candidate",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "proposalId": {
+      "$ref": "#/$defs/id"
+    },
+    "projectId": {
+      "$ref": "#/$defs/id"
+    },
+    "target": {
+      "type": "string",
+      "enum": ["project-local", "global-candidate", "harness-meta-project"]
+    },
+    "state": {
+      "type": "string",
+      "enum": ["observe", "stage", "verify", "promote", "supersede", "archive"]
+    },
+    "previousState": {
+      "type": "string",
+      "enum": ["observe", "stage", "verify", "promote", "supersede", "archive"]
+    },
+    "promotionTier": {
+      "type": "string",
+      "enum": ["project-local", "candidate", "stable"]
+    },
+    "createdAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "updatedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "supersedes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/id"
+      },
+      "uniqueItems": true
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sourceType", "trustTier", "statement"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["observation", "semantic_fact", "ontology_constraint", "policy_anchor", "harness_rule"]
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": [
+            "authoritative_doc",
+            "repo_file",
+            "schema",
+            "test",
+            "review",
+            "replay",
+            "release_manifest",
+            "transcript",
+            "browser",
+            "tool_output",
+            "external",
+            "imported"
+          ]
+        },
+        "trustTier": {
+          "type": "string",
+          "enum": ["authoritative", "verified", "derived", "quarantined", "degraded"]
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRef": {
+          "type": "string"
+        },
+        "untrustedExternal": {
+          "type": "boolean"
+        },
+        "transcriptOnly": {
+          "type": "boolean"
+        },
+        "secretLike": {
+          "type": "boolean"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verification": {
+          "$ref": "#/$defs/evidenceRef"
+        },
+        "independentReview": {
+          "$ref": "#/$defs/evidenceRef"
+        },
+        "replay": {
+          "$ref": "#/$defs/evidenceRef"
+        },
+        "targetedSelfTest": {
+          "$ref": "#/$defs/evidenceRef"
+        },
+        "rollback": {
+          "$ref": "#/$defs/evidenceRef"
+        },
+        "releaseManifest": {
+          "$ref": "#/$defs/evidenceRef"
+        }
+      }
+    },
+    "denial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/id"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "durable": {
+          "type": "boolean"
+        },
+        "workflowBlocking": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": ["passed", "approved", "present"]
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

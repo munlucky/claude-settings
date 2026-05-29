@@ -46,7 +46,7 @@ phaseRunnerResult:
 
 ### 2. execution mode별 라우팅
 
-라우팅 전에 `phaseRunnerResult.projectMemoryContext` 또는 `analysisContext.projectMemory`가 있는지 확인합니다. 없으면 `project-memory-agent`를 `stage=execute`, `memoryMode=read_only`로 실행하고 요약된 context만 실행 경로에 전달합니다.
+라우팅 전에 `phaseRunnerResult.projectKnowledgeContext`가 있는지 확인합니다. 없으면 현재 프로젝트 루트에서 `knowledge-context-build.mjs --stage execute --json`을 실행하고 `projectKnowledgeContext.promptBlock`과 status-only metadata만 실행 경로에 전달합니다.
 
 `executionMode == delegated-terminal`이면:
 - `phaseRunnerResult.executionCommand`를 현재 세션에서 즉시 실행합니다.
@@ -93,7 +93,7 @@ phaseExecutionResult:
 
 - 이 스킬은 `moonshot-phase-runner` 뒤에 숨는 내부 phase 실행 handoff입니다.
 - 실행 dispatch 전에 `.claude/docs/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
-- dispatcher/agent-loop/coordinator 입력에는 raw MemoryGraph record가 아니라 요약된 `projectMemoryContext`만 넘깁니다.
+- dispatcher/agent-loop/coordinator 입력에는 raw MemoryGraph/KG/ontology record가 아니라 요약된 `projectKnowledgeContext`만 넘깁니다.
 - 기본 `modelEffortProfile`은 `standard`입니다. `deep`과 `max`는 QA와 workflow evidence에 구체적인 `Effort escalation reason`이 있어야 합니다.
 - 사용자에게 모델 선택을 요구하지 않습니다. provider-neutral model router가 stage별 runtime model/effort를 선택하고 선택된 provider/model/effort를 execution evidence에 기록합니다.
 - 스크립트는 구현용 내부 adapter일 뿐이며 이 스킬 뒤에 숨어야 합니다.
@@ -114,3 +114,9 @@ phaseExecutionResult:
 - `.claude/scripts/moonshot-phase-dispatch.mjs`
 - `.claude/scripts/agent-loop.sh` / `.claude/scripts/moonshot-phase-dispatch.sh`는 compatibility wrapper
 - `.claude/templates/execution/WORKSET.template.md`
+
+## Project Knowledge Context Contract
+
+delegated-terminal, in-session coordinator, forked-agent 실행으로 라우팅하기 전에 `phaseRunnerResult.projectKnowledgeContext`가 있는지 확인합니다. 없으면 `knowledge-context-build.mjs --stage execute --json`을 실행하고 `projectKnowledgeContext.promptBlock`과 status-only metadata만 전달합니다.
+
+이 executor는 context builder를 우회하면 안 됩니다. dispatcher, agent-loop, coordinator, attempt manifest에는 knowledge status metadata만 기록할 수 있으며 raw MemoryGraph/KG/ontology/log/transcript payload는 기록하지 않습니다.

@@ -17,11 +17,14 @@ Fork 기반 에이전트로, 코드 변경사항을 프로젝트 메모리 규�
 ```yaml
 projectId: "{projectId}"
 changedFiles: []                    # 변경된 파일 목록
-projectMemoryContext:               # project-memory-agent에서 받은 컨텍스트
-  deltas:
-    boundaries: []
-    conventions: []
-    componentRules: []
+projectKnowledgeContext:               # typed summary-only context
+  status: "ready|degraded_read|degraded_write|not_configured|stale"
+  strictness: "advisory|required"
+  policyAnchors: []
+  semanticFacts: []
+  graphSynopsis: []
+  ontologyConstraints: []
+  staleOrUnavailable: []
 codeReviewGraph:                    # 요약만 사용, raw graph output 금지
   impactSummary: []
   reviewContextSummary: []
@@ -75,7 +78,7 @@ check:
 ```
 
 ### 3. 규약 위반 검사
-`projectMemoryContext.deltas.conventions`와 stage-scoped 최신 규약을 변경사항과 비교:
+compact `projectKnowledgeContext.policyAnchors`, `semanticFacts`, `graphSynopsis`와 stage-scoped 최신 규약을 변경사항과 비교:
 - 네이밍 규칙
 - 파일 구조 패턴
 - 에러 처리 패턴
@@ -142,7 +145,17 @@ return { status: "passed", action: "proceed" }
 ## 계약
 - 컨텍스트 오염 방지를 위해 fork 세션에서 실행
 - 전체 규칙 내용이 아닌 위반 요약만 반환
-- raw memory가 아닌 project-specific delta memory만 사용
+- raw memory가 아닌 typed summary-only project knowledge context만 사용
 - NeverDo 위반은 반드시 실행 중단
 - AskFirst 항목은 진행 전 반드시 사용자 승인 필요
-- `analysisContext.projectMemory.stageCoverage.review`를 `checked`, `not_checked`, `skipped` 중 하나로 갱신
+- `analysisContext.projectKnowledge.stageCoverage.review`를 `checked`, `not_checked`, `skipped` 중 하나로 갱신
+
+## Project Knowledge Context Contract
+
+`projectKnowledgeContext` is the authoritative prompt-facing contract. It is summary-only and consists of `## Project Knowledge Context`, typed status metadata, policy anchors, semantic facts, graph synopsis, ontology constraints, stale/unavailable entries, and omission categories.
+
+Rules:
+- Consume or return only compact summary items and status metadata.
+- Treat old `projectMemoryContext` wording as legacy and non-authoritative.
+- Never return raw MemoryGraph records, KG edges, ontology dumps, logs, transcripts, or secret-like strings.
+- Advisory unavailable state is a degraded warning; strict memory tasks must mark blocking metadata before execution proceeds.

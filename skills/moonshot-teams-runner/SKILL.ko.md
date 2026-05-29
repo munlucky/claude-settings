@@ -334,7 +334,7 @@ communication: enabled (debateRounds: 3)
 
 > **중요**: 런타임과 무관하게 메인 세션 컨텍스트 오염을 방지해야 합니다.
 
-Claude 런타임은 `project-memory-agent`와 같은 fork 패턴을 따릅니다.
+Claude 런타임은 project knowledge worker가 쓰는 forked-agent 격리 패턴을 따릅니다.
 Codex 런타임도 같은 격리 계약(최소 입력, 요약 출력만)을 유지해야 합니다:
 
 ```yaml

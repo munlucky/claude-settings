@@ -19,11 +19,14 @@ Fork 기반 에이전트로, 구현 시작 전 프로젝트 메모리 경계 규
 projectId: "{projectId}"
 changedFiles: []                    # 변경 예정 파일
 plannedActions: []                  # 계획 단계 요약 액션
-projectMemoryContext:               # project-memory-agent에서 로드한 컨텍스트
-  deltas:
-    boundaries: []
-    conventions: []
-    componentRules: []
+projectKnowledgeContext:               # typed summary-only context
+  status: "ready|degraded_read|degraded_write|not_configured|stale"
+  strictness: "advisory|required"
+  policyAnchors: []
+  semanticFacts: []
+  graphSynopsis: []
+  ontologyConstraints: []
+  staleOrUnavailable: []
 userRequest: "{summary}"
 ```
 
@@ -69,7 +72,7 @@ check:
 ```
 
 ### 3. 계획-규약 정합성 점검
-`plannedActions`, `changedFiles`, `projectMemoryContext.deltas`를 비교해 구현 전에 예상 규약/스펙 충돌을 경고합니다.
+`plannedActions`, `changedFiles`를 compact `projectKnowledgeContext.policyAnchors`, `semanticFacts`, `graphSynopsis`, `ontologyConstraints`와 비교해 구현 전에 예상 규약/스펙 충돌을 경고합니다. delta 형태의 memory payload는 요구하지 않습니다.
 
 ### 4. 구조화된 점검 결과 반환
 
@@ -106,7 +109,17 @@ else:
 ## 계약
 - 컨텍스트 오염 방지를 위해 fork 세션에서 실행.
 - 요약된 점검 결과만 반환.
-- raw memory가 아닌 delta memory context만 사용.
+- raw memory가 아닌 typed project knowledge context만 사용.
 - 이 단계에서 메모리 엔티티 write/update 금지.
 - 이 단계에서 소스 코드/프로젝트 파일 변경 금지.
-- `analysisContext.projectMemory.stageCoverage.ready`를 `checked`, `not_checked`, `skipped` 중 하나로 갱신.
+- `analysisContext.projectKnowledge.stageCoverage.ready`를 `checked`, `not_checked`, `skipped` 중 하나로 갱신.
+
+## Project Knowledge Context Contract
+
+`projectKnowledgeContext` is the authoritative prompt-facing contract. It is summary-only and consists of `## Project Knowledge Context`, typed status metadata, policy anchors, semantic facts, graph synopsis, ontology constraints, stale/unavailable entries, and omission categories.
+
+Rules:
+- Consume or return only compact summary items and status metadata.
+- Treat old `projectMemoryContext` wording as legacy and non-authoritative.
+- Never return raw MemoryGraph records, KG edges, ontology dumps, logs, transcripts, or secret-like strings.
+- Advisory unavailable state is a degraded warning; strict memory tasks must mark blocking metadata before execution proceeds.

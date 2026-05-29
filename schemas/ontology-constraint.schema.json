@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot.local/schemas/ontology-constraint.schema.json",
+  "title": "Project Ontology Constraint",
+  "description": "Small executable ontology constraints for verifier and prompt-summary integration. Raw ontology dumps are not valid constraint records.",
+  "type": "object",
+  "required": [
+    "id",
+    "scope",
+    "appliesTo",
+    "severity",
+    "enforcedBy",
+    "sourceRef",
+    "supersedes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "ontology_constraint"
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "projectId": {
+      "$ref": "#/$defs/id"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["staged", "verified", "superseded", "archived", "rejected"]
+    },
+    "origin": {
+      "type": "string",
+      "enum": ["global", "project"]
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1
+    },
+    "appliesTo": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/id"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["error", "warn", "info", "blocking", "warning", "advisory"]
+    },
+    "enforcedBy": {
+      "$ref": "#/$defs/id"
+    },
+    "sourceRef": {
+      "$ref": "#/$defs/id"
+    },
+    "supersedes": {
+      "oneOf": [
+        { "$ref": "#/$defs/id" },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "uniqueItems": true
+        }
+      ]
+    },
+    "specificity": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "createdAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "updatedAt": {
+      "$ref": "#/$defs/timestamp"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

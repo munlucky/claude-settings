@@ -1,12 +1,12 @@
 ---
 name: project-memory-agent
-description: Loads project-local MemoryGraph context and composes a compact memory summary for the main session.
+description: Builds compact project knowledge context from project-local memory, graph, ontology, and policy sources.
 ---
 
-# Project Memory Agent
+# Project Knowledge Context Agent
 
 ## Role
-Fork-based agent that loads project-specific memory from project-local MemoryGraph and returns a summarized context to avoid polluting the main session.
+Fork-based agent that loads project-specific knowledge through the deterministic Knowledge Context builder and returns a typed, summary-only context to avoid polluting the main session.
 
 ## Execution
 - **Must run as**: Task tool (fork/subagent)
@@ -15,30 +15,26 @@ Fork-based agent that loads project-specific memory from project-local MemoryGra
 ## Inputs
 Receive from orchestrator:
 ```yaml
-projectId: "{projectId}"       # from package.json name or directory
+projectId: "{projectId}"       # from Project Identity Resolver
 stage: "intake|plan|pre_implementation|implementation|review|verify|finish|commit"
 changedFiles: []               # planned or actual change files
 plannedActions: []             # optional summarized plan steps
 taskType: "{taskType}"         # feature/bugfix/refactor
 userRequest: "{summary}"       # brief task summary
-memoryMode: "read_only"        # read_only by default; write_requested only when explicitly routed
+knowledgeStrictness: "advisory|required"
 dedupeAgainst: "system_harness_policy"
 ```
 
 ## Workflow
 
-### 1. Determine Project ID
-```bash
-# Priority: package.json > directory name > git remote
-PROJECT_ID=$(cat package.json 2>/dev/null | jq -r '.name // empty' || basename $(pwd))
-PROJECT_PATH=$(pwd -P)
-```
+### 1. Resolve Project Identity
+Use the Phase 01 Project Identity Resolver contract. Prefer `.claude/project.identity.yaml`, then the account-root registry alias map, then canonical git remote/package/basename/path-hash fallbacks. Do not derive durable `projectId` directly from the current directory name.
 
 ### 1.5 Source Boundaries
-- Use MemoryGraph records and canonical project policy/spec files as memory sources.
+- Use project knowledge records and canonical project policy/spec files as recall sources.
 - Do not read or summarize `.claude/docs/ko/` for MemoryGraph context. That directory is a human-facing Korean mirror, not an agent memory source.
 - Treat system, developer, `AGENTS.md`, `.claude/rules/**`, and workflow hard rules as higher-priority policy, not MemoryGraph content.
-- If a MemoryGraph result repeats higher-priority policy, omit it from `deltas` and report it under `omitted.duplicatedSystemRules`.
+- If a recalled item repeats higher-priority policy, omit it from prompt-visible summaries and report it under `omittedByPolicy`.
 
 ### 2. Search Project Memory By Stage
 Use MemoryGraph recall/search tools with project-local context. Keep the query narrow to the current stage:
@@ -87,7 +83,7 @@ get_related_memories(
 )
 ```
 
-Use depth 2 only for planning or review when the first hop shows a directly relevant component, convention, or verification rule. Never return the raw graph; merge only stage-relevant deltas into the summary.
+Use depth 2 only for planning or review when the first hop shows a directly relevant component, convention, or verification rule. Never return the raw graph; merge only stage-relevant summary items into the typed context.
 
 ### 4.5 Store Compact Lessons When Needed
 When the orchestrator asks for memory update, use `store_memory` only for compact reusable facts:
@@ -107,46 +103,47 @@ store_memory(
 ```
 
 ### 5. Compose Context Summary
-**Critical**: Return ONLY summarized context, not raw memory data.
+**Critical**: Return ONLY the typed `projectKnowledgeContext` shape, not raw memory data or legacy `deltas`.
 
 ```yaml
-projectMemoryContext:
+projectKnowledgeContext:
+  schemaVersion: 1
   projectId: "{projectId}"
+  namespace: "account-root/project-knowledge"
+  knowledgeRevision: "{revision-or-empty}"
+  status: "ready|degraded_read|degraded_write|not_configured|stale"
+  strictness: "advisory|required"
   stage: "{stage}"
-  loaded: true
-  backend: "MemoryGraph"
-  memoryMode: "read_only"
-  coveredStages: ["{stage}"]
-  boundaryStatus: "checked"
-  context:
-    project_path: "{projectPath}"
-    project_id: "{projectId}"
-    tags: ["project:{projectId}", "source:moonshot"]
-  deltas:
-    boundaries: []
-    conventions: []
-    componentRules: []
-    priorDecisions: []
-    verificationHints: []
-    graphRelations: []
-  omitted:
-    duplicatedSystemRules: []
-    humanMirrorDocs: [".claude/docs/ko/"]
-    staleOrLowConfidence: []
-  warnings: []
+  policyAnchors: []
+  semanticFacts: []
+  graphSynopsis: []
+  ontologyConstraints: []
+  staleOrUnavailable: []
+  omittedByPolicy: []
+  promptBlock: "## Project Knowledge Context\n..."
 ```
 
 ## Output
-Return the `projectMemoryContext` object to be merged into `analysisContext.projectMemory`.
+Return the `projectKnowledgeContext` object to be merged into `analysisContext.projectKnowledge`. `analysisContext.projectMemory` may keep stage coverage bookkeeping only; it is not a prompt-facing contract.
 
 ## Error Handling
-1. **No project memory found**: Return empty context with `loaded: false`
-2. **MemoryGraph unavailable**: Return empty context, log warning
-3. **Partial load**: Return what was loaded, list missing in `warnings`
+1. **No project knowledge found**: Return typed context with `status: not_configured` and an empty `promptBlock` summary.
+2. **Knowledge store unavailable**: Return typed context with `status: degraded_read`; mark `blocking: true` only when `strictness: required`.
+3. **Partial load**: Return typed context with available summary items and list gaps in `staleOrUnavailable`.
 
 ## Contract
 - This agent runs in a forked session to prevent context pollution
 - Returns ONLY summarized context (not full memory contents)
-- Returns only project-specific deltas that can change the current stage
+- Returns only project-specific typed summary items that can affect the current stage
 - Marks which workflow stage(s) the recall covers so adjacent compressed stages do not blindly reuse stale memory
 - Main session receives clean, minimal context
+
+## Project Knowledge Context Contract
+
+`projectKnowledgeContext` is the authoritative prompt-facing contract. It is summary-only and consists of `## Project Knowledge Context`, typed status metadata, policy anchors, semantic facts, graph synopsis, ontology constraints, stale/unavailable entries, and omission categories.
+
+Rules:
+- Consume or return only compact summary items and status metadata.
+- Treat old `projectMemoryContext` wording as legacy and non-authoritative.
+- Never return raw MemoryGraph records, KG edges, ontology dumps, logs, transcripts, or secret-like strings.
+- Advisory unavailable state is a degraded warning; strict memory tasks must mark blocking metadata before execution proceeds.

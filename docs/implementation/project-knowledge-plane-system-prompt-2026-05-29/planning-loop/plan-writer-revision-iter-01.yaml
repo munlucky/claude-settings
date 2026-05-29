@@ -1,0 +1,44 @@
+planWriterRevision:
+  schemaVersion: 1
+  iteration: 1
+  isolationMode: "current-session-controller-edit"
+  writerSession: "parent-session"
+  skillBoundary:
+    allowed:
+      - "moonshot-plan-writer controller-owned edits"
+    forbidden:
+      - "source code mutation outside selected plan package"
+      - "runtime state mutation"
+      - "live harness adoption"
+    compliance: "compliant"
+    notes:
+      - "Parent session applied Reviewer Agent directives because current controller owns final edits."
+      - "No live .claude/.codex source files were edited."
+  directivesApplied:
+    - "BF-001: Added Pre-Adoption Staging Rule and converted Phase 01-06 ownedPaths/commands to staging overlay semantics."
+    - "BF-002: Added affected-surface inventory and explicit migrate/update/defer decisions for memory-aware entrypoints."
+    - "BF-003: Added account-root project registry path, alias collision behavior, and fallback wrapping requirement."
+    - "BF-004: Added minimal typed record wire schemas, storage paths, transition matrix, and acyclic supersession rule."
+    - "BF-005: Added ontology verifier insertion contract, CLI output shape, severity mapping, and override conflict behavior."
+    - "BF-006: Added moonshot-harness-core namespace, candidate/stable gates, replay, rollback, and release manifest requirements."
+    - "ID-001: Added state scope invariant table."
+    - "ID-002: Clarified policy prompt anchor and omittedByPolicy handling."
+    - "ID-003: Added exact forbidden prompt payload fixture classes."
+    - "ID-004: Replaced broad Phase 07 ownedPaths with exact allowlist."
+    - "ID-005: Added no-delete/no-stage compatibility check for memory/cache/log users."
+  filesChanged:
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/00-master-plan-v1.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/01-identity-and-storage-contract.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/02-typed-knowledge-schema-and-provenance.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/03-knowledge-context-builder.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/04-orchestrator-prompt-integration.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/05-ontology-and-verifier-constraints.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/06-recursive-improvement-lifecycle.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/07-adoption-and-migration.md"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/planning-loop/plan-quality-review-iter-01.yaml"
+    - "docs/implementation/project-knowledge-plane-system-prompt-2026-05-29/planning-loop/plan-writer-revision-iter-01.yaml"
+  ambiguityReductionNotes:
+    - "Separated project knowledge, execution state, raw evidence, portable evidence, and harness meta-knowledge by scope key."
+    - "Made Phase 01-06 explicitly staged-only and moved live target mutation to Phase 07."
+    - "Defined exact contract surfaces for project identity, typed records, ontology verification, and recursive promotion."
+  remainingOpenDecisions: []

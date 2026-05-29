@@ -13,7 +13,9 @@ commands:
   awtlRegression: "node --test .claude/scripts/lib/awtl-trace-sink.test.mjs .claude/scripts/lib/awtl-harness-capture.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs .claude/scripts/lib/awtl-runtime-importers.test.mjs"
   awtlFailurePreventionRegression: "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-prevention-brief.test.mjs .claude/scripts/lib/awtl-replay-scorecard.test.mjs"
   awtlCliSyntax: "node --check .claude/scripts/agent-loop-phase-runner.mjs && node --check .claude/scripts/agent-loop-phase-plan-lib.mjs && node --check .claude/scripts/awtl-failure-analyzer.mjs && node --check .claude/scripts/awtl-memory-promotion.mjs"
+  harnessBottleneckAudit: "node .claude/scripts/harness-bottleneck-audit.mjs"
   memoryGraphHealth: "node .claude/scripts/memorygraph-direct.mjs health"
+  ontologyConstraints: "node .claude/scripts/ontology-constraint-validate.mjs --project-root . --json"
 checkPolicies:
   searchEvidence:
     preferred: rg
@@ -56,6 +58,23 @@ checkPolicies:
       - "python .claude/scripts/"
       - "python3 .claude/scripts/"
     unknownExecutable: block
+  ontologyConstraints:
+    conflictBehavior: "project_override_requires_supersedes"
+    sourceRoots:
+      global:
+        - "${CODEX_STATE_ROOT:-%USERPROFILE%/.codex/state}/harness/ontology/constraints.jsonl"
+        - "${CODEX_STATE_ROOT:-%USERPROFILE%/.codex/state}/global/ontology/constraints.jsonl"
+      project:
+        - ".claude/ontology/constraints.jsonl"
+        - "${CODEX_STATE_ROOT:-%USERPROFILE%/.codex/state}/projects/<projectId>/knowledge/ontology/constraints.jsonl"
+    severityMapping:
+      error: "blocking"
+      warn: "degraded"
+      info: "advisory"
+    overrideRules:
+      projectLocalPrecedence: true
+      requiresSupersedes: true
+      requiresEqualOrHigherSpecificity: true
   qaBackendMatrix:
     browser:
       requiredWhen: "source phase, sprint contract, scenario matrix, or verification contract declares browser/runtime UI evidence"
@@ -112,11 +131,11 @@ checkPolicies:
       checks: [shellSyntax, codePolicy]
       minimumEvidence: "syntax plus targeted self-test when available"
     workflow_core:
-      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel, awtlRegression, awtlFailurePreventionRegression, awtlCliSyntax]
-      minimumEvidence: "cross-runtime workflow contract evidence plus AWTL turn-failure regression evidence"
+      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel, awtlRegression, awtlFailurePreventionRegression, awtlCliSyntax, harnessBottleneckAudit, ontologyConstraints]
+      minimumEvidence: "cross-runtime workflow contract evidence plus AWTL turn-failure regression evidence and executable ontology constraint validation"
     runtime_adapter:
-      checks: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout]
-      minimumEvidence: "Codex and Claude runtime boundary parity"
+      checks: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout, ontologyConstraints]
+      minimumEvidence: "Codex and Claude runtime boundary parity plus project/global ontology constraint health"
   crossRuntimePhaseReplay:
     required: true
     assistantItemPhaseValues:

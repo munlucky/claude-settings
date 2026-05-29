@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot.local/schemas/knowledge-record.schema.json",
+  "title": "Project Knowledge Record",
+  "description": "Typed project knowledge records for the pre-adoption Knowledge Plane staging overlay.",
+  "oneOf": [
+    { "$ref": "#/$defs/policyAnchor" },
+    { "$ref": "#/$defs/semanticFact" },
+    { "$ref": "#/$defs/episodicObservation" },
+    { "$ref": "#/$defs/kgRelation" },
+    { "$ref": "#/$defs/ontologyConstraint" },
+    { "$ref": "#/$defs/provenanceEvent" },
+    { "$ref": "#/$defs/promotionCandidate" }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "idList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/id" },
+      "uniqueItems": true
+    },
+    "trustTier": {
+      "type": "string",
+      "enum": ["authoritative", "verified", "derived", "quarantined", "degraded"]
+    },
+    "sensitivity": {
+      "type": "string",
+      "enum": ["public", "internal", "confidential", "secret"]
+    },
+    "sourceType": {
+      "type": "string",
+      "enum": [
+        "authoritative_doc",
+        "repo_file",
+        "schema",
+        "test",
+        "review",
+        "transcript",
+        "browser",
+        "tool_output",
+        "external",
+        "derived"
+      ]
+    },
+    "baseProperties": {
+      "type": "object",
+      "required": ["type", "id", "projectId", "status", "createdAt", "updatedAt"],
+      "properties": {
+        "type": { "type": "string" },
+        "id": { "$ref": "#/$defs/id" },
+        "projectId": { "$ref": "#/$defs/id" },
+        "status": { "type": "string" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "factId": { "$ref": "#/$defs/id" },
+        "derivedFrom": { "$ref": "#/$defs/idList" },
+        "sourceType": { "$ref": "#/$defs/sourceType" },
+        "sourceRef": { "$ref": "#/$defs/id" },
+        "verifiedBy": { "$ref": "#/$defs/id" },
+        "verifiedAt": { "$ref": "#/$defs/timestamp" },
+        "supersedes": { "$ref": "#/$defs/idList" },
+        "sensitivity": { "$ref": "#/$defs/sensitivity" }
+      }
+    },
+    "policyAnchor": {
+      "allOf": [
+        { "$ref": "#/$defs/baseProperties" },
+        {
+          "type": "object",
+          "required": ["text", "sourceRef", "trustTier", "verifiedAt", "supersedes"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "policy_anchor" },
+            "id": { "$ref": "#/$defs/id" },
+            "projectId": { "$ref": "#/$defs/id" },
+            "status": { "enum": ["verified", "superseded", "archived"] },
+            "createdAt": { "$ref": "#/$defs/timestamp" },
+            "updatedAt": { "$ref": "#/$defs/timestamp" },
+            "text": { "type": "string", "minLength": 1 },
+            "sourceRef": { "$ref": "#/$defs/id" },
+            "trustTier": { "$ref": "#/$defs/trustTier" },
+            "verifiedAt": { "$ref": "#/$defs/timestamp" },
+            "supersedes": { "$ref": "#/$defs/idList" }
+          },
+          "x-allowedTransitions": [["verified", "superseded"], ["superseded", "archived"]]
+        }
+      ]
+    },
+    "semanticFact": {
+      "allOf": [
+        { "$ref": "#/$defs/baseProperties" },
+        {
+          "type": "object",
+          "required": ["statement", "sourceType", "sourceRef", "trustTier", "provenanceRef", "verifiedBy", "verifiedAt", "supersedes"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "semantic_fact" },
+            "id": { "$ref": "#/$defs/id" },
+            "projectId": { "$ref": "#/$defs/id" },
+            "status": { "enum": ["staged", "verified", "superseded", "archived", "rejected"] },
+            "createdAt": { "$ref": "#/$defs/timestamp" },
+            "updatedAt": { "$ref": "#/$defs/timestamp" },
+            "statement": { "type": "string", "minLength": 1 },
+            "sourceType": { "$ref": "#/$defs/sourceType" },
+            "sourceRef": { "$ref": "#/$defs/id" },
+            "trustTier": { "$ref": "#/$defs/trustTier" },
+            "provenanceRef": { "$ref": "#/$defs/id" },
+            "verifiedBy": { "$ref": "#/$defs/id" },
+            "verifiedAt": { "$ref": "#/$defs/timestamp" },
+            "supersedes": { "$ref": "#/$defs/idList" },
+            "derivedFrom": { "$ref": "#/$defs/idList" },
+            "sensitivity": { "$ref": "#/$defs/sensitivity" }
+          },
+          "x-allowedTransitions": [["staged", "verified"], ["verified", "superseded"], ["superseded", "archived"], ["staged", "rejected"]]
+        }
+      ]
+    },
+    "episodicObservation": {
+      "allOf": [
+        { "$ref": "#/$defs/baseProperties" },
+        {
+          "type": "object",
+          "required": ["summary", "sourceType", "sourceRef", "observedAt", "sensitivity"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "episodic_observation" },
+            "id": { "$ref": "#/$defs/id" },
+            "projectId": { "$ref": "#/$defs/id" },
+            "status": { "enum": ["observed", "staged", "archived", "rejected"] },
+            "createdAt": { "$ref": "#/$defs/timestamp" },
+            "updatedAt": { "$ref": "#/$defs/timestamp" },
+            "summary": { "type": "string", "minLength": 1 },
+            "sourceType": { "$ref": "#/$defs/sourceType" },
+            "sourceRef": { "$ref": "#/$defs/id" },
+            "observedAt": { "$ref": "#/$defs/timestamp" },
+            "sensitivity": { "$ref": "#/$defs/sensitivity" },
+            "derivedFrom": { "$ref": "#/$defs/idList" }
+          },
+          "x-allowedTransitions": [["observed", "staged"], ["staged", "archived"], ["observed", "rejected"]]
+        }
+      ]
+    },
+    "kgRelation": {
+      "allOf": [
+        { "$ref": "#/$defs/baseProperties" },
+        {
+          "type": "object",
+          "required": ["from", "to", "relation", "sourceRef", "trustTier", "supersedes"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "kg_relation" },
+            "id": { "$ref": "#/$defs/id" },
+            "projectId": { "$ref": "#/$defs/id" },
+            "status": { "enum": ["derived", "verified", "superseded", "archived", "rejected"] },
+            "createdAt": { "$ref": "#/$defs/timestamp" },
+            "updatedAt": { "$ref": "#/$defs/timestamp" },
+            "from": { "$ref": "#/$defs/id" },
+            "to": { "$ref": "#/$defs/id" },
+            "relation": { "type": "string", "minLength": 1 },
+            "sourceRef": { "$ref": "#/$defs/id" },
+            "trustTier": { "$ref": "#/$defs/trustTier" },
+            "sourceType": { "$ref": "#/$defs/sourceType" },
+            "supersedes": { "$ref": "#/$defs/idList" },
+            "derivedFrom": { "$ref": "#/$defs/idList" }
+          },
+          "x-allowedTransitions": [["derived", "verified"], ["verified", "superseded"], ["superseded", "archived"], ["derived", "rejected"]]
+        }
+      ]
+    },
+    "ontologyConstraint": {
+      "allOf": [
+        { "$ref": "#/$defs/baseProperties" },
+        {
+          "type": "object",
+          "required": ["scope", "appliesTo", "severity", "enforcedBy", "sourceRef", "supersedes"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "ontology_constraint" },
+            "id": { "$ref": "#/$defs/id" },
+            "projectId": { "$ref": "#/$defs/id" },
+            "status": { "enum": ["staged", "verified", "superseded", "archived", "rejected"] },
+            "createdAt": { "$ref": "#/$defs/timestamp" },
+            "updatedAt": { "$ref": "#/$defs/timestamp" },
+            "scope": { "type": "string", "minLength": 1 },
+            "appliesTo": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/id" },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "severity": { "enum": ["advisory", "warning", "blocking"] },
+            "enforcedBy": { "$ref": "#/$defs/id" },
+            "sourceRef": { "$ref": "#/$defs/id" },
+            "supersedes": { "$ref": "#/$defs/idList" },
+            "derivedFrom": { "$ref": "#/$defs/idList" }
+          },
+          "x-allowedTransitions": [["staged", "verified"], ["verified", "superseded"], ["superseded", "archived"], ["staged", "rejected"]]
+        }
+      ]
+    },
+    "provenanceEvent": {
+      "allOf": [
+        { "$ref": "#/$defs/baseProperties" },
+        {
+          "type": "object",
+          "required": ["subjectId", "activity", "agent", "sourceType", "sourceRef"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "provenance_event" },
+            "id": { "$ref": "#/$defs/id" },
+            "projectId": { "$ref": "#/$defs/id" },
+            "status": { "enum": ["observed", "verified", "archived"] },
+            "createdAt": { "$ref": "#/$defs/timestamp" },
+            "updatedAt": { "$ref": "#/$defs/timestamp" },
+            "subjectId": { "$ref": "#/$defs/id" },
+            "activity": { "type": "string", "minLength": 1 },
+            "agent": { "$ref": "#/$defs/id" },
+            "sourceRef": { "$ref": "#/$defs/id" },
+            "sourceType": { "$ref": "#/$defs/sourceType" },
+            "factId": { "$ref": "#/$defs/id" },
+            "derivedFrom": { "$ref": "#/$defs/idList" }
+          },
+          "x-allowedTransitions": [["observed", "verified"], ["verified", "archived"]]
+        }
+      ]
+    },
+    "promotionCandidate": {
+      "allOf": [
+        { "$ref": "#/$defs/baseProperties" },
+        {
+          "type": "object",
+          "required": ["targetScope", "sourceFactId", "reviewEvidence", "replayEvidence", "denialReason"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "promotion_candidate" },
+            "id": { "$ref": "#/$defs/id" },
+            "projectId": { "$ref": "#/$defs/id" },
+            "status": { "enum": ["staged", "verified", "promoted", "rejected"] },
+            "createdAt": { "$ref": "#/$defs/timestamp" },
+            "updatedAt": { "$ref": "#/$defs/timestamp" },
+            "targetScope": { "enum": ["project", "global", "moonshot-harness-core"] },
+            "sourceFactId": { "$ref": "#/$defs/id" },
+            "reviewEvidence": { "$ref": "#/$defs/id" },
+            "replayEvidence": { "$ref": "#/$defs/id" },
+            "denialReason": { "type": "string" },
+            "sourceRef": { "$ref": "#/$defs/id" },
+            "verifiedBy": { "$ref": "#/$defs/id" },
+            "verifiedAt": { "$ref": "#/$defs/timestamp" },
+            "supersedes": { "$ref": "#/$defs/idList" },
+            "sensitivity": { "$ref": "#/$defs/sensitivity" }
+          },
+          "x-allowedTransitions": [["staged", "verified"], ["staged", "rejected"], ["verified", "promoted"], ["verified", "rejected"]]
+        }
+      ]
+    }
+  }
+}

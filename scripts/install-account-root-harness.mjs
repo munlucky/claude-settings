@@ -1,0 +1,417 @@
+#!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import {
+  access,
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+const scriptPath = fileURLToPath(import.meta.url);
+const defaultSourceRoot = path.dirname(path.dirname(scriptPath));
+
+const manifestName = '.claude-settings-install-manifest.json';
+
+const runtimeSpecs = {
+  claude: {
+    payloadPath: path.join('claude', 'profile', '.claude'),
+    defaultHome: () => path.join(os.homedir(), '.claude'),
+    envName: 'CLAUDE_HOME',
+    protectedEntries: new Set([
+      'backups',
+      'cache',
+      'debug',
+      'downloads',
+      'file-history',
+      'history.jsonl',
+      'ide',
+      'memory.json',
+      'paste-cache',
+      'plans',
+      'plugins',
+      'projects',
+      'session-env',
+      'sessions',
+      'settings.json',
+      'shell-snapshots',
+      'stats-cache.json',
+      'statsig',
+      'tasks',
+      'telemetry',
+      'todos',
+      'memory-mcp-wrapper.log',
+    ]),
+    legacyHarnessCore: 'harness-core',
+  },
+  codex: {
+    payloadPath: path.join('codex', 'profile', '.codex'),
+    defaultHome: () => path.join(os.homedir(), '.codex'),
+    envName: 'CODEX_HOME',
+    protectedEntries: new Set([
+      '.sandbox',
+      '.sandbox-bin',
+      '.sandbox-secrets',
+      '.tmp',
+      'ambient-suggestions',
+      'automations',
+      'auth.json',
+      'backups',
+      'bridge-runtime',
+      'browser',
+      'cache',
+      'computer-use',
+      'computer-use-turn-ended',
+      'config.toml',
+      'generated_images',
+      'goals_1.sqlite',
+      'history.jsonl',
+      'installation_id',
+      'log',
+      'logs_2.sqlite',
+      'memories',
+      'models_cache.json',
+      'node_repl',
+      'pets',
+      'plugins',
+      'session_index.jsonl',
+      'sessions',
+      'sqlite',
+      'state_5.sqlite',
+      'tmp',
+      'vendor_imports',
+      'version.json',
+    ]),
+    legacyHarnessCore: 'harness-core',
+  },
+};
+
+const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex] [--source-root <repo>] [--codex-home <dir>] [--claude-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
+
+const parseArgs = (argv) => {
+  const options = {
+    runtime: 'all',
+    sourceRoot: process.env.CLAUDE_SETTINGS_SOURCE_ROOT
+      ? path.resolve(process.env.CLAUDE_SETTINGS_SOURCE_ROOT)
+      : defaultSourceRoot,
+    homes: {},
+    dryRun: false,
+    json: false,
+    backup: true,
+    removeLegacyHarnessCore: false,
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--runtime') {
+      options.runtime = argv[++index];
+    } else if (arg === '--source-root') {
+      options.sourceRoot = path.resolve(argv[++index]);
+    } else if (arg === '--codex-home') {
+      options.homes.codex = path.resolve(argv[++index]);
+    } else if (arg === '--claude-home') {
+      options.homes.claude = path.resolve(argv[++index]);
+    } else if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--json') {
+      options.json = true;
+    } else if (arg === '--no-backup') {
+      options.backup = false;
+    } else if (arg === '--remove-legacy-harness-core') {
+      options.removeLegacyHarnessCore = true;
+    } else if (arg === '--help' || arg === '-h') {
+      console.log(usage());
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown argument: ${arg}\n${usage()}`);
+    }
+  }
+
+  if (!['all', 'claude', 'codex'].includes(options.runtime)) {
+    throw new Error(`Unsupported runtime: ${options.runtime}\n${usage()}`);
+  }
+
+  return options;
+};
+
+const pathExists = async (target) => {
+  try {
+    await access(target, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const toPortable = (filePath) => filePath.split(path.sep).join('/');
+
+const hashFile = async (target) => {
+  const content = await readFile(target);
+  return createHash('sha256').update(content).digest('hex');
+};
+
+const listFiles = async (root, prefix = '') => {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const relative = path.join(prefix, entry.name);
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listFiles(absolute, relative));
+    } else if (entry.isFile()) {
+      files.push(relative);
+    }
+  }
+
+  return files.sort();
+};
+
+const assertSafeChild = (root, candidate) => {
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidate);
+  const relative = path.relative(resolvedRoot, resolvedCandidate);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Unsafe path outside target root: ${resolvedCandidate}`);
+  }
+};
+
+const resolvePackageBuilder = async (sourceRoot) => {
+  const builder = path.join(sourceRoot, 'package', 'build-package.mjs');
+  if (!await pathExists(builder)) {
+    throw new Error(
+      `Package materializer not found: ${builder}. Run this installer from the claude-settings source checkout or pass --source-root <repo>.`,
+    );
+  }
+  return builder;
+};
+
+const materializePayloads = async (sourceRoot) => {
+  const packageBuilder = await resolvePackageBuilder(sourceRoot);
+  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'claude-settings-account-root-'));
+  const result = spawnSync(process.execPath, [
+    packageBuilder,
+    '--runtime',
+    'all',
+    '--out',
+    tmpRoot,
+    '--clean',
+    '--json',
+  ], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+  });
+
+  if (result.status !== 0) {
+    await rm(tmpRoot, { recursive: true, force: true });
+    throw new Error(result.stderr || result.stdout || 'Package materialization failed.');
+  }
+
+  return tmpRoot;
+};
+
+const backupTarget = async (target, backupRoot) => {
+  if (!await pathExists(target)) {
+    return null;
+  }
+
+  await mkdir(backupRoot, { recursive: true });
+  const destination = path.join(backupRoot, path.basename(target));
+  await cp(target, destination, { recursive: true, force: true });
+  return destination;
+};
+
+const copyPayloadEntry = async ({ source, target, dryRun }) => {
+  if (dryRun) {
+    return;
+  }
+
+  await mkdir(path.dirname(target), { recursive: true });
+  const sourceStat = await stat(source);
+  if (sourceStat.isDirectory()) {
+    await cp(source, target, { recursive: true, force: true });
+  } else {
+    await copyFile(source, target);
+  }
+};
+
+const installRuntime = async ({ runtime, payloadRoot, options, installId, sourceRepo }) => {
+  const spec = runtimeSpecs[runtime];
+  const targetRoot = path.resolve(
+    options.homes[runtime]
+      || process.env[spec.envName]
+      || spec.defaultHome(),
+  );
+  const sourceRoot = path.join(payloadRoot, spec.payloadPath);
+
+  if (!await pathExists(sourceRoot)) {
+    throw new Error(`Missing materialized ${runtime} payload: ${sourceRoot}`);
+  }
+
+  const sourceEntries = await readdir(sourceRoot, { withFileTypes: true });
+  const backupRoot = path.join(targetRoot, 'backups', `claude-settings-account-root-${installId}`);
+  const copied = [];
+  const skipped = [];
+  const backups = [];
+
+  if (!options.dryRun) {
+    await mkdir(targetRoot, { recursive: true });
+  }
+
+  for (const entry of sourceEntries) {
+    if (spec.protectedEntries.has(entry.name)) {
+      skipped.push({
+        path: entry.name,
+        reason: 'protected_runtime_entry',
+      });
+      continue;
+    }
+
+    const source = path.join(sourceRoot, entry.name);
+    const target = path.join(targetRoot, entry.name);
+    assertSafeChild(targetRoot, target);
+
+    if (options.backup && !options.dryRun) {
+      const backup = await backupTarget(target, backupRoot);
+      if (backup) {
+        backups.push(toPortable(path.relative(targetRoot, backup)));
+      }
+    }
+
+    await copyPayloadEntry({ source, target, dryRun: options.dryRun });
+
+    const files = entry.isDirectory()
+      ? await listFiles(source, entry.name)
+      : [entry.name];
+
+    for (const relativeFile of files) {
+      const targetFile = path.join(targetRoot, relativeFile);
+      copied.push({
+        path: toPortable(relativeFile),
+        sha256: options.dryRun ? null : await hashFile(targetFile),
+      });
+    }
+  }
+
+  const legacyHarnessCore = path.join(targetRoot, spec.legacyHarnessCore);
+  if (options.removeLegacyHarnessCore && await pathExists(legacyHarnessCore)) {
+    assertSafeChild(targetRoot, legacyHarnessCore);
+    if (!options.dryRun) {
+      if (options.backup) {
+        const backup = await backupTarget(legacyHarnessCore, backupRoot);
+        if (backup) {
+          backups.push(toPortable(path.relative(targetRoot, backup)));
+        }
+      }
+      await rm(legacyHarnessCore, { recursive: true, force: true });
+    }
+    skipped.push({
+      path: spec.legacyHarnessCore,
+      reason: 'removed_legacy_harness_core',
+    });
+  }
+
+  const manifest = {
+    schemaVersion: 1,
+    installId,
+    runtime,
+    installMode: 'account-root-direct',
+    targetRoot,
+    sourceRepo,
+    legacyHarnessCorePresent: await pathExists(legacyHarnessCore),
+    copied,
+    skipped,
+    backups,
+  };
+
+  if (!options.dryRun) {
+    await writeFile(path.join(targetRoot, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
+  }
+
+  return manifest;
+};
+
+const verifyRuntimeManifest = async (manifest) => {
+  const missing = [];
+  const mismatch = [];
+
+  for (const record of manifest.copied) {
+    const target = path.join(manifest.targetRoot, record.path);
+    if (!await pathExists(target)) {
+      missing.push(record.path);
+      continue;
+    }
+    const actualHash = await hashFile(target);
+    if (actualHash !== record.sha256) {
+      mismatch.push(record.path);
+    }
+  }
+
+  return {
+    runtime: manifest.runtime,
+    targetRoot: manifest.targetRoot,
+    checked: manifest.copied.length,
+    missing,
+    mismatch,
+  };
+};
+
+const main = async () => {
+  const options = parseArgs(process.argv.slice(2));
+  const sourceRepo = options.sourceRoot;
+  const runtimes = options.runtime === 'all' ? ['claude', 'codex'] : [options.runtime];
+  const installId = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
+  const payloadRoot = await materializePayloads(sourceRepo);
+
+  try {
+    const manifests = [];
+    for (const runtime of runtimes) {
+      manifests.push(await installRuntime({ runtime, payloadRoot, options, installId, sourceRepo }));
+    }
+
+    const verification = options.dryRun
+      ? []
+      : await Promise.all(manifests.map((manifest) => verifyRuntimeManifest(manifest)));
+
+    const result = {
+      installId,
+      mode: 'account-root-direct',
+      dryRun: options.dryRun,
+      manifests: manifests.map((manifest) => ({
+        runtime: manifest.runtime,
+        targetRoot: manifest.targetRoot,
+        copiedCount: manifest.copied.length,
+        legacyHarnessCorePresent: manifest.legacyHarnessCorePresent,
+        skipped: manifest.skipped,
+        backupCount: manifest.backups.length,
+      })),
+      verification,
+    };
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      for (const manifest of result.manifests) {
+        console.log(`${manifest.runtime}: installed ${manifest.copiedCount} files into ${manifest.targetRoot}`);
+      }
+    }
+  } finally {
+    await rm(payloadRoot, { recursive: true, force: true });
+  }
+};
+
+main().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { existsSync, lstatSync } from 'node:fs';
 import path from 'node:path';
@@ -128,8 +129,10 @@ test('package contract declares required source payload entries and generated-st
     'templates/**',
     'docs/public/**',
     'tests/package-layout.test.mjs',
-    '.claude/verification.contract.yaml',
+    'schemas/verification.contract.yaml',
     'package/build-package.mjs',
+    'scripts/install-account-root-harness.mjs',
+    'scripts/install-account-root-harness.test.mjs',
     'package/profile-templates/claude/.claude/',
     'package/profile-templates/codex/.codex/',
   ]) {
@@ -146,17 +149,31 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /symlinkPolicy: avoid_required_symlinks/);
   assert.match(contract, /windowsMaterializationPolicy:/);
   assert.match(contract, /duplicateSourcePolicy:/);
+  assert.match(contract, /accountRootInstall:/);
+  assert.match(contract, /mode: account-root-direct/);
+  assert.match(contract, /legacyHarnessCorePolicy: remove_when_requested_after_backup/);
 });
 
-test('repository layout docs name canonical source, development profile, generated state, and package payload boundaries', async () => {
+test('repository layout docs name canonical source, local runtime profile, generated state, and package payload boundaries', async () => {
   const repositoryLayout = await readFile(fromRoot('docs', 'public', 'repository-layout.md'), 'utf8');
   const packageReadme = await readFile(fromRoot('package', 'README.md'), 'utf8');
   const combined = `${repositoryLayout}\n${packageReadme}`;
 
-  for (const phrase of ['canonical source', 'development profile', 'generated state', 'package payload']) {
+  for (const phrase of ['canonical source', 'local runtime profile', 'generated state', 'package payload']) {
     assert.match(combined, new RegExp(phrase, 'i'), `${phrase} boundary should be documented`);
   }
 
-  assert.match(repositoryLayout, /Do not add new canonical source under `\.claude\/`/);
+  assert.match(repositoryLayout, /Do not add new canonical source under root `\.claude\/` or `\.codex\/`/);
+  assert.match(repositoryLayout, /do not create or depend on nested `harness-core` directories/i);
   assert.match(packageReadme, /Generated state is never part of the package payload/);
+  assert.match(packageReadme, /install-account-root-harness\.mjs/);
+});
+
+test('root runtime profiles are local-only and not tracked source', () => {
+  const tracked = execFileSync('git', ['ls-files', '.claude', '.codex'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim();
+
+  assert.equal(tracked, '', 'root .claude/ and .codex/ must remain local-only and untracked');
 });

@@ -86,16 +86,18 @@ attemptInput:
   worksetPath: "docs/implementation/execution/02-core-implementation/WORKSET.md"
   executionRoot: "docs/implementation/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
-  projectMemoryContext:
+  projectKnowledgeContext:
+    schemaVersion: 1
     stage: "execute"
-    loaded: true
-    deltas: {}
+    status: "ready|degraded_read|degraded_write|not_configured|stale"
+    strictness: "advisory|required"
+    promptBlock: "## Project Knowledge Context\n..."
 ```
 
 Rules:
 - Do not inline long phase documents into the main session.
 - Do not pass previous implementation chatter.
-- Before each fresh attempt, run or refresh `project-memory-agent` with `stage=execute`, `memoryMode=read_only`, then pass only summarized `projectMemoryContext`.
+- Before each fresh attempt, build or refresh `projectKnowledgeContext` with `stage=execute`, then pass only the typed summary block and status metadata.
 - Exclude `.claude/docs/ko/` and duplicated system/developer/AGENTS/rules policy from attempt input.
 - Use `QA_REPORT.md` and `HANDOFF.md` as the only retry memory.
 - Use `SCORECARD.md` as the objective completion state for the phase.
@@ -252,3 +254,9 @@ coordinatorResult:
 - `.claude/agents/phase-attempt-agent.md`
 - `/moonshot-phase-runner`
 - `/moonshot-orchestrator`
+
+## Project Knowledge Context Contract
+
+Before each fresh forked attempt, refresh `projectKnowledgeContext` with `knowledge-context-build.mjs --stage execute --json`. The child prompt receives the `## Project Knowledge Context` block and status-only metadata.
+
+Advisory degradation continues with `status=degraded_read` or `not_configured`. Strict memory tasks must surface blocking metadata before spawning the attempt. Do not pass raw graph, raw ontology, raw logs, transcripts, or secret-like strings.

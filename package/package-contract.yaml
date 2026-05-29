@@ -19,19 +19,46 @@ runtimeProfiles:
   claude:
     templateRoot: package/profile-templates/claude/.claude/
     generatedProfileRoot: package/claude/profile/.claude/
-    compatibilityRoot: .claude/
+    localRuntimeRoot: .claude/
     pluginOutputRoot: .claude-plugin/
     materializer: package/build-package.mjs
-    materialization: generated_copy_not_committed
+    materialization: local_copy_not_committed
     symlinkPolicy: avoid_required_symlinks
   codex:
     templateRoot: package/profile-templates/codex/.codex/
     generatedProfileRoot: package/codex/profile/.codex/
-    compatibilityRoot: .codex/
+    localRuntimeRoot: .codex/
     pluginOutputRoot: .codex-plugin/
     materializer: package/build-package.mjs
-    materialization: generated_copy_not_committed
+    materialization: local_copy_not_committed
     symlinkPolicy: avoid_required_symlinks
+
+accountRootInstall:
+  installer: scripts/install-account-root-harness.mjs
+  mode: account-root-direct
+  targets:
+    claude: "%USERPROFILE%/.claude"
+    codex: "%USERPROFILE%/.codex"
+  manifestName: .claude-settings-install-manifest.json
+  legacyHarnessCorePolicy: remove_when_requested_after_backup
+  protectedRuntimeEntries:
+    claude:
+      - settings.json
+      - memory.json
+      - sessions/
+      - cache/
+      - plugins/
+      - projects/
+      - telemetry/
+    codex:
+      - auth.json
+      - config.toml
+      - sessions/
+      - cache/
+      - plugins/
+      - memories/
+      - sqlite/
+  statePolicy: "Account-root profile installation must not write project knowledge, execution evidence, phase status, runtime logs, or verification verdict state."
 
 requiredPayloadEntries:
   sharedSource:
@@ -55,10 +82,14 @@ requiredPayloadEntries:
       purpose: public_documentation
     - source: tests/package-layout.test.mjs
       purpose: package_layout_materialization_guard
+    - source: scripts/install-account-root-harness.mjs
+      purpose: account_root_direct_profile_installer
+    - source: scripts/install-account-root-harness.test.mjs
+      purpose: account_root_direct_profile_installer_guard
   verificationContracts:
-    - currentSource: .claude/verification.contract.yaml
-      canonicalTarget: schemas/verification.contract.yaml
-      migrationPolicy: move_with_wrapper_until_phase_06
+    - currentSource: schemas/verification.contract.yaml
+      localRuntimeTarget: .claude/verification.contract.yaml
+      migrationPolicy: materialize_to_local_runtime_only
   claudeRuntime:
     - target: package/profile-templates/claude/.claude/
       role: runtime_specific_static_template
@@ -68,7 +99,7 @@ requiredPayloadEntries:
       role: ignored_generated_package_payload
     - target: .claude/
       generatedFrom: sharedSource
-      role: compatibility_wrapper_until_phase_06
+      role: local_runtime_profile_not_committed
     - target: .claude-plugin/
       generatedFrom: package/build-package.mjs
       role: package_output
@@ -81,7 +112,7 @@ requiredPayloadEntries:
       role: ignored_generated_package_payload
     - target: .codex/
       generatedFrom: sharedSource
-      role: development_profile
+      role: local_runtime_profile_not_committed
     - target: .codex-plugin/
       generatedFrom: package/build-package.mjs
       role: package_output
@@ -110,7 +141,7 @@ excludedGeneratedState:
 
 driftPolicy:
   sourceOfTruth: canonicalSource
-  compatibilityPolicy: move_with_wrapper_until_phase_06
-  duplicateSourcePolicy: "Do not maintain long-lived manual duplicates between root source directories and generated runtime output."
-  generatedCopyPolicy: "Generated profile copies must be reproducible from package/build-package.mjs and are not committed."
+  compatibilityPolicy: local_runtime_profile_only
+  duplicateSourcePolicy: "Do not maintain committed duplicates between root source directories and local runtime output."
+  generatedCopyPolicy: "Generated profile copies must be reproducible from package/build-package.mjs or scripts/install-account-root-harness.mjs and are not committed."
   windowsMaterializationPolicy: "Installers must not require symlink support unless Windows validation is added before release."

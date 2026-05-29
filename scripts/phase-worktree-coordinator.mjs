@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolveModelRoute } from './lib/model-routing-policy.mjs';
+import { buildProjectKnowledgeContext } from './knowledge-context-build.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const prepareWorktreeScript = path.join(SCRIPT_DIR, 'harness-prepare-worktree.mjs');
@@ -27,8 +28,17 @@ const state = {
   qaReport: '',
   handoff: '',
   scorecard: '',
+  knowledgeStrictness: process.env.PHASE_KNOWLEDGE_STRICTNESS || 'advisory',
   dryRun: false,
 };
+
+const VALID_KNOWLEDGE_STRICTNESS = new Set(['advisory', 'required']);
+
+function normalizeKnowledgeStrictness(value) {
+  return VALID_KNOWLEDGE_STRICTNESS.has(String(value || '').trim())
+    ? String(value).trim()
+    : 'advisory';
+}
 
 function usage() {
   console.error([
@@ -49,6 +59,7 @@ function usage() {
     '  --qa-report <path>',
     '  --handoff <path>',
     '  --scorecard <path>',
+    '  --knowledge-strictness <advisory|required>  Default: PHASE_KNOWLEDGE_STRICTNESS or advisory',
     '  --dry-run',
   ].join('\n'));
 }
@@ -103,6 +114,9 @@ function parseArgs(argv) {
         break;
       case '--scorecard':
         state.scorecard = args.shift() ?? '';
+        break;
+      case '--knowledge-strictness':
+        state.knowledgeStrictness = args.shift() ?? 'advisory';
         break;
       case '--dry-run':
         state.dryRun = true;
@@ -409,6 +423,7 @@ function collectChangedFiles(worktreePath, workset) {
 }
 
 function buildWorksetPrompt(workset) {
+  const projectKnowledgeContext = buildWorksetKnowledgeContext();
   return `Phase ${state.phaseNum} parallel workset execution.
 
 Workset:
@@ -418,11 +433,68 @@ Workset:
 - phaseDoc: ${state.phaseDoc}
 - phaseExecutionDir: ${state.phaseExecutionDir}
 
+projectKnowledgeContext:
+  status: "${projectKnowledgeContext.status}"
+  strictness: "${projectKnowledgeContext.strictness}"
+  stage: "${projectKnowledgeContext.stage}"
+  blocking: ${projectKnowledgeContext.blocking ? 'true' : 'false'}
+  unavailableCount: ${projectKnowledgeContext.unavailableCount}
+${projectKnowledgeContext.promptBlock}
+
 Rules:
 1. Edit only ownedPaths for this workset.
 2. Do not modify phase-level QA_REPORT.md, HANDOFF.md, SCORECARD.md, or WORKSETS.yaml.
 3. Run the workset verification commands if they are relevant and available.
 4. Leave a concise result in the command output only. The outer coordinator merges and updates phase artifacts.`;
+}
+
+function buildWorksetKnowledgeContext() {
+  const strictness = normalizeKnowledgeStrictness(state.knowledgeStrictness);
+  try {
+    const context = buildProjectKnowledgeContext({
+      cwd: process.cwd(),
+      stage: 'execute',
+      strictness,
+    }).projectKnowledgeContext;
+    const unavailable = Array.isArray(context.staleOrUnavailable) ? context.staleOrUnavailable : [];
+    return {
+      status: context.status || 'degraded_read',
+      strictness: context.strictness || 'advisory',
+      stage: context.stage || 'execute',
+      blocking: unavailable.some((item) => item?.blocking === true),
+      unavailableCount: unavailable.length,
+      promptBlock: context.promptBlock || [
+        '## Project Knowledge Context',
+        `- projectId: ${context.projectId || 'unresolved'}`,
+        '- status: degraded_read',
+      ].join('\n'),
+    };
+  } catch {
+    const blocking = strictness === 'required';
+    return {
+      status: 'degraded_read',
+      strictness,
+      stage: 'execute',
+      blocking,
+      unavailableCount: 1,
+      promptBlock: [
+        '## Project Knowledge Context',
+        '- projectId: unresolved',
+        '- namespace: account-root/project-knowledge',
+        '- knowledgeRevision: ',
+        '- status: degraded_read',
+        `- strictness: ${strictness}`,
+        '- stage: execute',
+        '- stale or unavailable:',
+        `  - knowledge context helper unavailable${blocking ? ' [blocking]' : ''}`,
+        '- omitted by policy:',
+        '  - raw logs',
+        '  - raw transcript',
+        '  - raw MemoryGraph/KG/ontology payloads',
+        '  - secret-like strings',
+      ].join('\n'),
+    };
+  }
 }
 
 function sanitizeId(value) {
@@ -754,8 +826,25 @@ function runSelfCoordinator(root, worksetsYaml) {
 
 function selfTest() {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-worktree-coordinator-'));
+  const previousCwd = process.cwd();
+  const previousStateStrictness = state.knowledgeStrictness;
+  const previousStateRoot = process.env.CODEX_STATE_ROOT;
   const okRepo = path.join(tmpRoot, 'ok');
   initFixtureRepo(okRepo);
+  process.chdir(okRepo);
+  process.env.CODEX_STATE_ROOT = path.join(tmpRoot, 'codex-state');
+  state.knowledgeStrictness = 'required';
+  const strictKnowledge = buildWorksetKnowledgeContext();
+  if (strictKnowledge.strictness !== 'required' || strictKnowledge.blocking !== true) {
+    throw new Error('strict workset knowledge context should preserve required blocking metadata');
+  }
+  state.knowledgeStrictness = previousStateStrictness;
+  process.chdir(previousCwd);
+  if (previousStateRoot === undefined) {
+    delete process.env.CODEX_STATE_ROOT;
+  } else {
+    process.env.CODEX_STATE_ROOT = previousStateRoot;
+  }
   const ok = runSelfCoordinator(okRepo, `worksets:
   - id: alpha
     summary: alpha

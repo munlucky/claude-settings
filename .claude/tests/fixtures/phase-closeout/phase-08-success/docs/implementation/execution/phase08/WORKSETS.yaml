@@ -1,5 +1,0 @@
-atomicTasks:
-  - id: AT-FIXTURE
-    status: completed
-    evidence:
-      - .claude/verification-verdict-phase08-final.json

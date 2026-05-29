@@ -334,7 +334,7 @@ Prevent file conflicts in implementation teams:
 
 > **CRITICAL**: Keep main-session context clean in both runtimes.
 
-Claude runtime follows the same fork pattern as `project-memory-agent`.
+Claude runtime follows the same forked-agent isolation pattern used by project knowledge workers.
 Codex runtime must emulate the same isolation contract (minimal input, summarized output only):
 
 ```yaml

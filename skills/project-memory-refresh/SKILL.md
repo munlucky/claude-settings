@@ -13,9 +13,9 @@ Use this skill only when the user explicitly asks to refresh, build, or update t
 
 ## Required Flow
 
-1. Derive `projectId` from `package.json` name, then directory name.
+1. Resolve `projectId` through the Phase 01 Project Identity Resolver contract. Prefer `.claude/project.identity.yaml` and the account-root registry alias map, then fall back through canonical git remote, package name, git root basename, and path hash.
 2. Run `node .claude/scripts/memorygraph-project-index.mjs` from the current project root. The default `--analysis-level code` indexes existing code at file, import, symbol, class, function, type, and API/route-surface level.
-3. Confirm the seed paths:
+3. Confirm the compatibility seed/cache paths:
    - `.claude/cache/memorygraph/project-graph-seed.json`
    - `.claude/cache/memorygraph/promotion-candidates.json`
 4. Invoke `project-memory-refresh` with `memoryMode: write_requested`.
@@ -30,11 +30,12 @@ node .claude/scripts/memorygraph-direct.mjs health
 node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
 ```
 
-On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell. The direct fallback sets `MEMORY_SQLITE_PATH` to `.claude/memorygraph/memory.db`, so writes stay in the current project's local graph.
+On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell. The direct fallback sets `MEMORY_SQLITE_PATH` to `.claude/memorygraph/memory.db`; this is a project-local compatibility graph, not the durable Project Knowledge Plane namespace.
 
 ## Boundaries
 
-- Write only to the current project's `.claude/memorygraph/`.
+- Resolve durable project identity/state through the Project Identity Resolver and account-root namespace.
+- Treat `.claude/memorygraph/` and `.claude/cache/memorygraph/` as project-local compatibility/cache artifacts.
 - Do not read `.claude/docs/ko/` as a memory source.
 - Do not commit `.claude/memorygraph/` or `.claude/cache/memorygraph/`.
 - If MemoryGraph is unavailable, try the direct fallback first, then report the failure and leave the workflow unblocked.
@@ -42,3 +43,9 @@ On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with
 ## Harness Promotion
 
 This skill may generate promotion candidates, but it must not store them in `claude-settings`. Use `harness-memory-promoter` from the harness repository after explicit approval.
+
+## Project Knowledge Boundary
+
+`project-memory-refresh` is a seed/write boundary, not a prompt assembly step. It may refresh project knowledge inputs for later `knowledge-context-build.mjs` runs, but it must not inject raw MemoryGraph/KG/ontology records into orchestrator prompts.
+
+Unavailable MemoryGraph remains non-blocking unless the user explicitly requested a strict memory refresh. The durable output is typed knowledge state plus audit evidence; the prompt-facing output is still only `projectKnowledgeContext` summary metadata.

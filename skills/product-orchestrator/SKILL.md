@@ -89,9 +89,9 @@ Planning artifacts should also record:
 
 ## Workflow
 
-0. Run `project-memory-agent` with `stage=intake`, `memoryMode=read_only`, and merge only summarized `projectMemoryContext`
+0. Build `projectKnowledgeContext` with `stage=intake`, `strictness=advisory`, and merge only the typed summary block/status metadata.
 1. Create or refresh `PRODUCT_INTENT.md`
-2. Before each reviewer/planning task, refresh `project-memory-agent` with the current stage (`plan`) when the prior output changed scope, terms, or architecture
+2. Before each reviewer/planning task, refresh `projectKnowledgeContext` for the current stage (`plan`) when the prior output changed scope, terms, or architecture.
 3. Run `product-gate-reviewer` for `PRODUCT_INTENT`
 4. Run `plan-ceo-review` for `PRODUCT_INTENT`
 5. Create or refresh `PRD.md`
@@ -107,7 +107,7 @@ Planning artifacts should also record:
 15. Run `product-gate-reviewer` for `PLAN`
 16. Run `plan-ceo-review` for `PLAN`
 17. Run `plan-eng-review` for `PLAN`
-18. Hand off the plan package to `moonshot-orchestrator` with `projectMemoryContext`
+18. Hand off the plan package to `moonshot-orchestrator` with `projectKnowledgeContext`
 
 At every stage:
 - use `assumption-ledger` before stopping for ambiguity
@@ -214,3 +214,9 @@ Recommended next step:
 - `.claude/skills/task-slicer/SKILL.md`
 - `.claude/skills/assumption-ledger/SKILL.md`
 - `.claude/skills/moonshot-orchestrator/SKILL.md`
+
+## Project Knowledge Context Contract
+
+Product-definition work uses advisory `projectKnowledgeContext` with `stage=intake` or `stage=plan` before plan-package prompt assembly. The context is a compact recall source, not an enforcement source.
+
+If the helper is unavailable, continue with degraded advisory metadata unless the user explicitly requested a strict memory task. Do not inline raw MemoryGraph/KG/ontology records, logs, transcripts, or secrets into product prompts or plan artifacts.

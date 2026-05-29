@@ -151,20 +151,20 @@ changelog:
 
 ---
 
-### 6. MemoryGraph Seed Sync
+### 6. Project Knowledge Seed/Cache Sync
 
-When docs are updated from code analysis, refresh the project knowledge graph seed so later MemoryGraph writes can use the same code/doc understanding:
+When docs are updated from code analysis, refresh the deterministic project knowledge seed/cache so later verified knowledge writes can use the same code/doc understanding:
 
 ```bash
 node .claude/scripts/memorygraph-project-index.mjs
 ```
 
 Rules:
-- Generate only seed/cache files during doc sync; do not write to MemoryGraph unless the user explicitly requested memory refresh.
+- Generate only compatibility seed/cache files during doc sync; do not write semantic facts or raw graph state unless the user explicitly requested memory refresh.
 - Keep `.claude/docs/ko/` out of seed sources.
 - Include code-level facts from existing projects through the default `--analysis-level code`.
 - Report promotion candidate count, but do not promote into `claude-settings` without explicit approval.
-- Keep `.claude/cache/memorygraph/` unstaged by default.
+- Keep `.claude/cache/memorygraph/` and account-root knowledge runtime state unstaged by default.
 
 ---
 
@@ -232,3 +232,9 @@ docSync:
 
 > **Note**: `docs/exec-plans/` is an optional alternative to `.claude/docs/tasks/` for git-tracked task docs.
 > Configure via `PROJECT.md: documentPaths.tasksRoot`.
+
+## Project Knowledge Context Contract
+
+Doc sync may consume compact `projectKnowledgeContext` to align terminology and may generate seed/cache material. Prompt assembly must not write semantic facts.
+
+Allowed writes during doc sync are documentation updates and deterministic seed/cache artifacts only. Semantic fact promotion remains a separate verify/promote lifecycle, and raw MemoryGraph/KG/ontology/log/transcript payloads must not enter doc-sync prompts.

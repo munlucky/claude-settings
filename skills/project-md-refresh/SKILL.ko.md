@@ -25,6 +25,7 @@ description: 현재 저장소를 분석해 `.claude/PROJECT.md`와 프로젝트 
    - UI/디자인 시스템, 공통 용어, 테스트 진입점, 브랜치/스크립트 기반 워크플로우까지 함께 수집한다.
    - 모호하거나 충돌하는 domain term을 식별하고, 근거가 있을 때만 canonical alias를 선택한다.
 3. `.claude/PROJECT.md`와 프로젝트 기준 문서를 실제 프로젝트 내용으로 채운다.
+   - project identity, knowledge contract, verification contract 위치가 있으면 project-local adapter 경계로 기록한다.
 4. 요약과 함께 어떤 최소 계약 영역이 준비되었는지 보고한다.
 
 ## 최소 계약 영역
@@ -42,3 +43,7 @@ description: 현재 저장소를 분석해 `.claude/PROJECT.md`와 프로젝트 
 - 간결하고 프로젝트 맞춤형 유지
 - 기존 사용자 작성 문서는 가능한 한 보존하고 필요한 부분만 갱신
 - bootstrap 중에는 되돌리기 어렵고 놀라운 trade-off decision이 이미 프로젝트에 문서화되어 있는 경우가 아니면 ADR을 만들지 않는다.
+
+## Project Knowledge 경계
+
+Bootstrap 문서는 `.claude/project.identity.yaml`, `.claude/knowledge.contract.yaml`, `.claude/verification.contract.yaml`, project prompt 파일을 정의하거나 참조할 수 있습니다. raw MemoryGraph/KG/ontology/log/transcript payload를 가져오면 안 됩니다. knowledge state가 불가하면 사실을 꾸미지 말고 TODO와 contract reference를 남깁니다.
