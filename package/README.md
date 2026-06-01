@@ -33,6 +33,7 @@ Install the account-root runtime profiles directly into the local Claude/Codex h
 ```sh
 bash install-claude.sh
 node scripts/install-account-root-harness.mjs --runtime all --remove-legacy-harness-core
+npx -y github:munlucky/moonshot-relay install
 ```
 
 This installs shared Moonshot Relay runtime assets into `%USERPROFILE%/.moonshot-relay`, then installs only runtime-discovered exposure entries into `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` without using a nested `harness-core` directory. Claude keeps `rules/`, `skills/`, and `agents/` because Claude reads those profile surfaces directly. Runtime-local files such as Claude settings, Codex auth/config, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.moonshot-relay-install-manifest.json` for hash verification and rollback evidence. Existing `.claude-settings-install-manifest.json` files are treated as legacy install evidence during the rename window.
@@ -45,6 +46,6 @@ Bootstrap from Agent Skills CLI with:
 npx skills add munlucky/moonshot-relay
 ```
 
-This installs the repository root `skills/*/SKILL.md` entries, including `moonshot-relay-setup`. Invoke that setup skill to run the account-root installer and complete the full runtime profile installation. The `npx skills add` command itself does not run repository installers.
+This installs the repository root `skills/*/SKILL.md` entries, including `moonshot-relay-setup`. Invoke that setup skill to run the account-root installer and complete the full runtime profile installation. The `npx skills add` command itself does not run repository installers; use `npx -y github:munlucky/moonshot-relay install` when `npx` must produce the same account-root result as the setup script.
 
 Generated state is never part of the package payload. Runtime payload also excludes dev-only diagnostics and obsolete workflow scripts. Logs, caches, traces, browser artifacts, sqlite state, memorygraph data, temporary runtime directories, and verification verdict outputs must stay outside package assembly.

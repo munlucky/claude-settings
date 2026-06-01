@@ -10,13 +10,19 @@ The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/script
 
 Project-local installs are compatibility output. Run `bash install-claude.sh --project` to materialize them into the current repository. Without `--project`, `bash install-claude.sh` delegates to `scripts/install-account-root-harness.mjs`.
 
+GitHub-based `npx` can run the same account-root installer without a source checkout:
+
+```sh
+npx -y github:munlucky/moonshot-relay install
+```
+
 Agent Skills CLI bootstraps the root `skills/` catalog and installs the `moonshot-relay-setup` skill:
 
 ```sh
 npx skills add munlucky/moonshot-relay
 ```
 
-This command does not execute arbitrary repository installers. After it completes, invoke `moonshot-relay-setup` to run the account-root installer and materialize the full Claude/Codex profile under `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. Use `bash install-claude.sh` when running directly from a source checkout.
+This command does not execute arbitrary repository installers. After it completes, invoke `moonshot-relay-setup` to run the account-root installer and materialize the full Claude/Codex profile under `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. Use `bash install-claude.sh` when running directly from a source checkout, or `npx -y github:munlucky/moonshot-relay install` when the desired result is a one-command full account-root install.
 
 ## Contributor Flow
 

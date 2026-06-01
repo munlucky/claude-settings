@@ -1,0 +1,12 @@
+{
+  "name": "moonshot-relay",
+  "version": "0.1.0",
+  "description": "Moonshot Relay account-root runtime installer for Claude and Codex profiles.",
+  "type": "module",
+  "bin": {
+    "moonshot-relay": "bin/moonshot-relay.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

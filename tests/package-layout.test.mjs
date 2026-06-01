@@ -114,6 +114,8 @@ test('canonical source directories contain real harness files, not README-only p
 
   assert.equal(existsSync(fromRoot('skills', 'moonshot-phase-runner', 'SKILL.md')), true);
   assert.equal(existsSync(fromRoot('scripts', 'install-account-root-harness.mjs')), true);
+  assert.equal(existsSync(fromRoot('package.json')), true);
+  assert.equal(existsSync(fromRoot('bin', 'moonshot-relay.mjs')), true);
   assert.equal(existsSync(fromRoot('scripts', 'memorygraph-mcp-wrapper.js')), true);
   assert.equal(existsSync(fromRoot('bin', 'browserctl')), true);
   assert.equal(existsSync(fromRoot('tools', 'browserd', 'package.json')), true);
@@ -188,7 +190,9 @@ test('repository layout docs name canonical source, local runtime profile, gener
   assert.match(repositoryLayout, /do not create or depend on nested `harness-core` directories/i);
   assert.match(packageReadme, /Generated state is never part of the package payload/);
   assert.match(packageReadme, /install-account-root-harness\.mjs/);
+  assert.match(packageReadme, /npx -y github:munlucky\/moonshot-relay install/);
   assert.match(installerUsage, /default mode is account-root installation/i);
+  assert.match(installerUsage, /npx -y github:munlucky\/moonshot-relay install/);
   assert.match(installerUsage, /~\/\.moonshot-relay/);
   assert.match(installerUsage, /--project/);
   assert.match(repositoryLayout, /Default installs materialize shared Moonshot Relay runtime assets/);

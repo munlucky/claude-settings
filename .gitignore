@@ -3,6 +3,7 @@
 /.claude/
 /.codex/
 .agents/skills
+skills-lock.json
 .mcp.json
 __pycache__/
 *.pyc

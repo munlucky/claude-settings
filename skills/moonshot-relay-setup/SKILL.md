@@ -11,6 +11,12 @@ Use this skill when the user asks to install, refresh, or verify Moonshot Relay 
 
 `npx skills add munlucky/moonshot-relay` installs this skill catalog only. It does not execute arbitrary repository installers. Treat that command as the bootstrap step, not as a complete Moonshot Relay runtime install.
 
+If the user wants a single `npx` command that performs the same account-root installation as this setup script, use:
+
+```bash
+npx -y github:munlucky/moonshot-relay install
+```
+
 To complete installation, run the account-root installer from this skill:
 
 - Windows PowerShell:
