@@ -36,7 +36,7 @@ phaseRunnerResult:
   planDir: "docs/implementation/"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
-  worksetTemplate: ".claude/templates/execution/WORKSET.template.md"
+  worksetTemplate: "<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md"
   executionRuntime: "auto"            # auto | claude | codex
   prepareOnly: false
   autoStartExecution: true
@@ -59,7 +59,7 @@ phaseRunnerResult:
 - `/moonshot-in-session-coordinator`를 호출합니다.
 - `phaseRunnerResult`를 그대로 전달합니다.
 - 현재 런타임이 fresh attempt를 안정적으로 계속 생성하지 못하면, 조용히 `delegated-terminal`로 폴백하지 말고 구체적인 blocker를 기록하거나 runtime 변경을 요청합니다.
-- active slice가 있으면 `.claude/templates/execution/WORKSET.template.md`로 `WORKSET.md` 초기화를 보장합니다.
+- active slice가 있으면 `<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md`로 `WORKSET.md` 초기화를 보장합니다.
 - active plan directory에 다음 actionable phase가 남아 있으면 completed phase 뒤에서 멈추지 않습니다.
 - review pending 또는 finish pending 상태의 slice를 완료로 취급하지 말고, 실제 review와 closeout artifact가 맞춰질 때까지 다음 attempt를 강제합니다.
 
@@ -113,7 +113,7 @@ phaseExecutionResult:
 - `archive/scripts/legacy-phase-adapters/agent-loop.mjs`는 legacy compatibility adapter
 - `archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.mjs`는 legacy compatibility adapter
 - `archive/scripts/legacy-phase-adapters/agent-loop.sh` / `archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.sh`는 legacy wrapper
-- `.claude/templates/execution/WORKSET.template.md`
+- `<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md`
 
 ## Project Knowledge Context Contract
 

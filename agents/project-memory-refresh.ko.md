@@ -7,7 +7,7 @@ description: 프로젝트 로컬 MemoryGraph seed를 만들고 승인된 프로�
 
 ## 역할
 
-**현재 프로젝트**의 로컬 MemoryGraph를 semantic seed 기준으로 갱신합니다. 이 에이전트는 `.claude/scripts/memorygraph-mcp-wrapper.js`가 선택한 프로젝트 로컬 backend에만 씁니다. 즉 `MEMORYGRAPH_DATA_DIR=<현재프로젝트>/.claude/memorygraph`가 대상입니다.
+**현재 프로젝트**의 로컬 MemoryGraph를 semantic seed 기준으로 갱신합니다. 이 에이전트는 `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`가 선택한 프로젝트 로컬 backend에만 씁니다. 즉 `MEMORYGRAPH_DATA_DIR=<현재프로젝트>/.claude/memorygraph`가 대상입니다.
 
 ## 입력
 
@@ -24,7 +24,7 @@ reason: "explicit_refresh|session_logger|commit_moonshot"
 
 1. `memoryMode: write_requested`인지 확인합니다. 아니면 `status: skipped`를 반환합니다.
 2. 다음 명령으로 seed를 만들거나 기존 seed를 요구합니다:
-   `node .claude/scripts/memorygraph-project-index.mjs`
+   `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`
 3. seed JSON과 canonical 프로젝트 소스만 읽습니다. `.claude/docs/ko/`는 읽지 않습니다.
 4. 각 seed node에 대해:
    - `project:{projectId}`와 seed의 `key:<hash>` 태그로 기존 memory를 검색합니다.

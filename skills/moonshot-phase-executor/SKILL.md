@@ -36,7 +36,7 @@ phaseRunnerResult:
   planDir: "docs/implementation/"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
-  worksetTemplate: ".claude/templates/execution/WORKSET.template.md"
+  worksetTemplate: "<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md"
   executionRuntime: "auto"            # auto | claude | codex
   prepareOnly: false
   autoStartExecution: true
@@ -59,7 +59,7 @@ If `executionMode == in-session-coordinator`:
 - invoke `/moonshot-in-session-coordinator`
 - pass through `phaseRunnerResult`
 - when the active runtime cannot reliably keep spawning fresh attempts, stop with a concrete blocker or ask for a runtime change; do not silently fall back to delegated-terminal
-- ensure each active slice can initialize `WORKSET.md` from `.claude/templates/execution/WORKSET.template.md`
+- ensure each active slice can initialize `WORKSET.md` from `<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md`
 - do not stop after a completed phase while the active plan directory still has another actionable phase
 - do not treat a review-pending or finish-pending slice as complete; force another attempt until the artifacts reflect a real review and clean closeout
 
@@ -115,7 +115,7 @@ phaseExecutionResult:
 - `archive/scripts/legacy-phase-adapters/agent-loop.mjs` as a legacy compatibility adapter
 - `archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.mjs` as a legacy compatibility adapter
 - `archive/scripts/legacy-phase-adapters/agent-loop.sh` / `archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.sh` as legacy wrappers
-- `.claude/templates/execution/WORKSET.template.md`
+- `<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md`
 
 ## Project Knowledge Context Contract
 

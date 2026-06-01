@@ -118,4 +118,4 @@ Task slice에는 실행에 필요한 compact `projectKnowledgeContext` 상태, �
 ## 참고
 
 - `.claude/docs/guidelines/product-definition-workflow.md`
-- `.claude/templates/product-definition/task.template.md`
+- `<MOONSHOT_RELAY_HOME>/templates/product-definition/task.template.md`

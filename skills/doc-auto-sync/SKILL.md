@@ -53,7 +53,7 @@ docMapping:
   "*.config.*":
     - ".claude/PROJECT.md#verification-commands"
     - "TEST_GUIDE.md#command-matrix"
-  ".claude/scripts/**|workflow/**":
+  "<MOONSHOT_RELAY_HOME>/scripts/**|workflow/**":
     - "workflow/README.md#standard-entry-points"
   "src/**|apps/**|packages/**":
     - "docs/analysis/README.md"
@@ -156,7 +156,7 @@ changelog:
 When docs are updated from code analysis, refresh the deterministic project knowledge seed/cache so later verified knowledge writes can use the same code/doc understanding:
 
 ```bash
-node .claude/scripts/memorygraph-project-index.mjs
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs
 ```
 
 Rules:

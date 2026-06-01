@@ -14,7 +14,7 @@ surfaceStatus: internal_stage_owner
 ## 공유 계약
 
 전체 계약을 이 문서에 다시 인라인하지 말고, 아래 canonical 파일을 사용합니다.
-- `.claude/schemas/analysis-context.schema.yaml`
+- `<MOONSHOT_RELAY_HOME>/schemas/analysis-context.schema.yaml`
 - `.claude/config/workflow-bundles.yaml`
 
 이 마이크로스킬은 다음을 canonical 파일에서 읽어야 합니다.

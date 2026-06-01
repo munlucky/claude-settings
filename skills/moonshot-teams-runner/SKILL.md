@@ -508,5 +508,5 @@ Output clear progress status during team execution.
 
 - `/moonshot-orchestrator`: orchestrator integration
 - `.claude/agents/team-leader-agent.md`: forked team-leader agent definition
-- `.claude/templates/agent-teams-config.yaml`: team configuration template
+- `<MOONSHOT_RELAY_HOME>/templates/agent-teams-config.yaml`: team configuration template
 - [Claude Code Agent Teams docs](https://code.claude.com/docs/ko/agent-teams) (Claude runtime)

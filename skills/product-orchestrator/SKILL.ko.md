@@ -197,7 +197,7 @@ PLAN이 통과되면:
 
 - `.claude/docs/guidelines/product-definition-workflow.md`
 - `.claude/docs/guidelines/demo-first-mvp-gate.md`
-- `.claude/templates/product-definition/`
+- `<MOONSHOT_RELAY_HOME>/templates/product-definition/`
 - `.claude/skills/product-gate-reviewer/SKILL.md`
 - `.claude/skills/plan-ceo-review/SKILL.md`
 - `.claude/skills/plan-eng-review/SKILL.md`

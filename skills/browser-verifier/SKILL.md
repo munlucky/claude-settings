@@ -48,7 +48,7 @@ Validate that a web app is reachable and working at runtime after implementation
 
 ## Execution
 1. Resolve target URL from `--url` or `APP_BASE_URL` (default: `http://localhost:3000`).
-2. If `--browser-flow` is set, ask the harness to run `.claude/scripts/browser-flow-runner.mjs` using `browserctl` on `PATH` or `.claude/bin/browserctl`.
+2. If `--browser-flow` is set, ask the harness to run the configured browser flow runner with `browserctl` on `PATH` or `<MOONSHOT_RELAY_HOME>/bin/browserctl`; use `BROWSER_FLOW_RUNNER_PATH` only when a project installs a custom runner.
 3. If browser runtime is available and the caller did not explicitly choose another flow, treat `smoke` as the default browser-flow for the standard verification path.
 4. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional browser-flow/E2E arguments from the isolated verifier boundary when available.
 5. If `--e2e` is omitted, the script auto-detects npm scripts in this order:

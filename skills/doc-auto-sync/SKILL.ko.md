@@ -53,7 +53,7 @@ docMapping:
   "*.config.*":
     - ".claude/PROJECT.md#verification-commands"
     - "TEST_GUIDE.md#command-matrix"
-  ".claude/scripts/**|workflow/**":
+  "<MOONSHOT_RELAY_HOME>/scripts/**|workflow/**":
     - "workflow/README.md#standard-entry-points"
   "src/**|apps/**|packages/**":
     - "docs/analysis/README.md"
@@ -145,7 +145,7 @@ changelog:
 코드 분석을 바탕으로 문서를 현행화했다면, 이후 검증된 지식 write가 같은 코드/문서 이해를 사용할 수 있도록 deterministic project knowledge seed/cache도 갱신합니다.
 
 ```bash
-node .claude/scripts/memorygraph-project-index.mjs
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs
 ```
 
 규칙:

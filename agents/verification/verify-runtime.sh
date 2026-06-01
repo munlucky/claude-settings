@@ -387,13 +387,37 @@ has_npm_script() {
   ' "$script_name" >/dev/null 2>&1
 }
 
+resolve_moonshot_relay_home() {
+  if [ -n "${MOONSHOT_RELAY_HOME:-}" ]; then
+    printf '%s\n' "$MOONSHOT_RELAY_HOME"
+  elif [ -n "${HOME:-}" ]; then
+    printf '%s\n' "$HOME/.moonshot-relay"
+  else
+    printf '%s\n' ".moonshot-relay"
+  fi
+}
+
+resolve_moonshot_relay_path() {
+  local home
+  home="$(resolve_moonshot_relay_home)"
+  printf '%s\n' "$home/$1"
+}
+
 resolve_default_browserctl() {
-  if [ -x ".claude/bin/browserctl" ]; then
-    printf '%s\n' ".claude/bin/browserctl"
+  local runtime_browserctl
+  local legacy_browserctl
+
+  runtime_browserctl="$(resolve_moonshot_relay_path "bin/browserctl")"
+  legacy_browserctl="${CLAUDE_HOME:-.claude}/bin/browserctl"
+
+  if [ -x "$runtime_browserctl" ]; then
+    printf '%s\n' "$runtime_browserctl"
   elif command -v browserctl >/dev/null 2>&1; then
     command -v browserctl
+  elif [ -x "$legacy_browserctl" ]; then
+    printf '%s\n' "$legacy_browserctl"
   else
-    printf '%s\n' ".claude/bin/browserctl"
+    printf '%s\n' "$runtime_browserctl"
   fi
 }
 
@@ -468,8 +492,8 @@ PY
     return 0
   fi
 
-  if [ ! -f ".claude/scripts/browser-flow-runner.mjs" ]; then
-    log_warning "browser flow runner not available at .claude/scripts/browser-flow-runner.mjs"
+  if [ ! -f "$BROWSER_FLOW_RUNNER" ]; then
+    log_warning "browser flow runner not available at ${BROWSER_FLOW_RUNNER}"
     BROWSER_FLOW_STATUS="setup_gap"
     if [ "$BROWSER_ONLY" = true ]; then
       return 1
@@ -477,7 +501,7 @@ PY
     return 0
   fi
 
-  flow_output="$(node .claude/scripts/browser-flow-runner.mjs \
+  flow_output="$(node "$BROWSER_FLOW_RUNNER" \
     --flow "$BROWSER_FLOW" \
     --url "$URL" \
     --browserctl "$BROWSERCTL" \
@@ -570,6 +594,10 @@ BROWSER_FLOW_VERDICT_OVERRIDE="${RUNTIME_BROWSER_FLOW_VERDICT:-}"
 BROWSER_FLOW_SOURCE="explicit"
 BROWSER_ONLY=false
 BROWSERCTL="${BROWSERCTL_PATH:-$(resolve_default_browserctl)}"
+BROWSER_FLOW_RUNNER="${BROWSER_FLOW_RUNNER_PATH:-$(resolve_moonshot_relay_path "scripts/browser-flow-runner.mjs")}"
+if [ ! -f "$BROWSER_FLOW_RUNNER" ] && [ -f "${CLAUDE_HOME:-.claude}/scripts/browser-flow-runner.mjs" ]; then
+  BROWSER_FLOW_RUNNER="${CLAUDE_HOME:-.claude}/scripts/browser-flow-runner.mjs"
+fi
 BROWSER_DEFAULT_FLOW="${RUNTIME_DEFAULT_BROWSER_FLOW:-smoke}"
 TIMEOUT="${RUNTIME_TIMEOUT_SECONDS:-20}"
 AUTO_E2E=true

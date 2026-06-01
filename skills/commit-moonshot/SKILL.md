@@ -22,8 +22,8 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 
 1. inspect staged changes with compact git commands
 2. resolve `PROJECT_ID` through the Project Identity Resolver; do not derive durable identity directly from the current directory name
-3. run `node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID>` when the project has the script; if a prior `mcp__memory__.store_memory` call failed, pass the same payload through `--store-json @<payload-file>` and the MCP error through `--mcp-error`
-4. run `node .claude/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json` when the project has the script; this is audit-only by default
+3. run `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID>` when the project has the script; if a prior `mcp__memory__.store_memory` call failed, pass the same payload through `--store-json @<payload-file>` and the MCP error through `--mcp-error`
+4. run `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json` when the project has the script; this is audit-only by default
 5. summarize created or updated memory facts, direct fallback route, AWTL promotion audit counts, and promotion candidates in a short bullet list
 6. keep `.claude/memory.json`, `.claude/memorygraph/`, and `.claude/cache/memorygraph/` unstaged unless the user explicitly asks to include memory artifacts
 7. build a filtered staging path list before `git add`; remove generated bridge paths, ignored files, and local MCP/memory artifacts
@@ -47,7 +47,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - do not auto-promote project candidates into `moonshot-relay` during a normal project commit; run the AWTL promotion audit and write only when `--write-verified` is justified by replay evidence or explicit approval
 - use `commit-moonshot-promotion-audit.mjs --write-verified` only when the user explicitly asked for long-term promotion, for example `장기메모리승격 포함`, `승격 승인`, or `write verified memory`
 - keep failed-turn cases as next-run recall cache; do not treat `.claude/cache/awtl/failed_turn_cases.jsonl` itself as a long-term MemoryGraph source
-- warn before committing when product implementation changes are mixed with `.claude/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes
+- warn before committing when product implementation changes are mixed with `<MOONSHOT_RELAY_HOME>/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes
 - require `QA_REPORT.md` to contain a `Harness Change Ledger` entry when harness/tool changes were made during a product phase
 - keep the user-facing summary and commit body grouped by feature area
 - keep the summary compact; avoid long prose dumps
@@ -57,7 +57,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 If the Memory MCP already attached to Codex Desktop fails with `Transport closed`, do not require a Codex restart. Immediately use the commit refresh helper, which starts a fresh MemoryGraph stdio child process and writes an auditable log under `.claude/logs/memorygraph/`:
 
 ```bash
-node .claude/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID> --mcp-error "Transport closed"
+node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID> --mcp-error "Transport closed"
 ```
 
 Rules:
@@ -74,7 +74,7 @@ Rules:
 After memory refresh and before Git staging, run the commit-time AWTL promotion audit when available:
 
 ```bash
-node .claude/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json
+node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json
 ```
 
 Rules:

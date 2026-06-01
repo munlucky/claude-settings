@@ -14,7 +14,7 @@ Public entry should remain at `product-orchestrator`, `moonshot-phase-runner`, o
 ## Shared contracts
 
 Use these canonical files instead of re-embedding the full contract here:
-- `.claude/schemas/analysis-context.schema.yaml`
+- `<MOONSHOT_RELAY_HOME>/schemas/analysis-context.schema.yaml`
 - `.claude/config/workflow-bundles.yaml`
 
 This micro-skill must consume:

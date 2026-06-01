@@ -33,7 +33,7 @@ workflow가 guided browser QA를 명시적으로 선택하지 않는 한 default
 
 Primary path:
 
-- `.claude/bin/browserctl`
+- `<MOONSHOT_RELAY_HOME>/bin/browserctl`
 
 Fallback path:
 

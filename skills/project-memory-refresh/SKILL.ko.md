@@ -14,7 +14,7 @@ triggers:
 ## 필수 흐름
 
 1. Phase 01 Project Identity Resolver 계약으로 `projectId`를 결정합니다. `.claude/project.identity.yaml`, 계정 루트 registry alias map, canonical git remote/package/basename/path-hash fallback 순서를 따릅니다.
-2. 현재 프로젝트 루트에서 `node .claude/scripts/memorygraph-project-index.mjs`를 실행합니다. 기본 `--analysis-level code`는 운영 중인 코드베이스를 파일, import, symbol, class, function, type, API/route surface 수준으로 인덱싱합니다.
+2. 현재 프로젝트 루트에서 `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`를 실행합니다. 기본 `--analysis-level code`는 운영 중인 코드베이스를 파일, import, symbol, class, function, type, API/route surface 수준으로 인덱싱합니다.
 3. 호환 seed/cache 경로를 확인합니다.
    - `.claude/cache/memorygraph/project-graph-seed.json`
    - `.claude/cache/memorygraph/promotion-candidates.json`
@@ -26,8 +26,8 @@ triggers:
 Codex Desktop의 기존 Memory MCP tool 호출이 `Transport closed`로 실패하면 Codex를 재시작하지 말고 direct fallback을 실행합니다.
 
 ```bash
-node .claude/scripts/memorygraph-direct.mjs health
-node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
 ```
 
 Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다. direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 지정합니다. 이 경로는 프로젝트 로컬 호환 그래프이며 durable Project Knowledge Plane namespace가 아닙니다.

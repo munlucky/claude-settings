@@ -53,16 +53,16 @@ git diff --cached --name-only
 ## 4. 3단계 경계 현행화
 
 MemoryGraph 호출은 `stage=commit`, `memoryMode=write_requested`로 수행합니다.
-프로젝트에 `.claude/scripts/memorygraph-project-index.mjs`가 있으면 먼저 실행해 운영 중인 코드베이스의 파일/import/symbol/API route 수준 seed를 생성한 뒤 `project-memory-refresh`로 반영합니다.
+프로젝트에 `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`가 있으면 먼저 실행해 운영 중인 코드베이스의 파일/import/symbol/API route 수준 seed를 생성한 뒤 `project-memory-refresh`로 반영합니다.
 system/developer/AGENTS/rules/workflow hard rule과 중복되는 항목은 저장하지 말고 `projectMemory.omitted.duplicatedSystemRules`에 기록합니다.
 
 ### Codex MCP transport fallback
 Codex Desktop에 이미 붙어 있는 Memory MCP가 `Transport closed`로 실패하면 Codex 재시작을 요구하지 않습니다. 즉시 별도 MemoryGraph stdio child process를 띄우는 direct fallback을 사용합니다.
 
 ```bash
-node .claude/scripts/memorygraph-direct.mjs health
-node .claude/scripts/memorygraph-project-index.mjs --max-files 500
-node .claude/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs --max-files 500
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
 ```
 
 규칙:
@@ -170,7 +170,7 @@ git add -- .claude .codex .claudeignore .gitattributes .gitignore AGENTS.md READ
 
 규칙:
 - `.claude/memory.json` 포함 여부와 무관하게 프로젝트 메모리 현행화 자체는 항상 먼저 완료하세요.
-- 메모리 현행화 뒤 Git staging 전에 `node .claude/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json`을 실행해 AWTL 승격 후보를 자동심사하세요. 기본은 audit-only입니다.
+- 메모리 현행화 뒤 Git staging 전에 `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json`을 실행해 AWTL 승격 후보를 자동심사하세요. 기본은 audit-only입니다.
 - 사용자가 `장기메모리승격 포함`, `승격 승인`, `write verified memory`처럼 현재 commit turn에서 명시한 경우에만 `--write-verified`를 붙입니다.
 - 명시 승인으로 human approval 경로를 쓸 때만 `--approval approved`를 붙입니다. 일반 `commit-moonshot` 요청만으로 approval을 추정하지 마세요.
 - `.claude/cache/awtl/failed_turn_cases.jsonl`은 다음 실행 brief용 cache이며, 그 자체를 장기 MemoryGraph source로 취급하지 마세요.

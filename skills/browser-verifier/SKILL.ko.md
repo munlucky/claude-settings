@@ -46,7 +46,7 @@ triggers:
 
 ## 실행
 1. `--url` 또는 `APP_BASE_URL`에서 대상 URL을 결정합니다. (기본값: `http://localhost:3000`)
-2. `--browser-flow`가 있으면 `PATH`의 `browserctl` 또는 `.claude/bin/browserctl`을 사용해 `.claude/scripts/browser-flow-runner.mjs`를 실행합니다.
+2. `--browser-flow`가 있으면 `PATH`의 `browserctl` 또는 `<MOONSHOT_RELAY_HOME>/bin/browserctl`을 사용해 설정된 browser flow runner를 실행합니다. 프로젝트가 custom runner를 설치한 경우에만 `BROWSER_FLOW_RUNNER_PATH`를 사용합니다.
 3. browser runtime을 사용할 수 있고 호출자가 다른 flow를 명시하지 않았다면 standard verification path의 기본 browser-flow를 `smoke`로 취급합니다.
 4. 가능하면 격리된 verifier 경계에서 URL 및 선택적 browser-flow/E2E 인자로 `.claude/agents/verification/verify-runtime.sh`를 실행합니다.
 5. `--e2e`가 없으면 다음 순서로 npm 스크립트를 자동 탐지합니다:

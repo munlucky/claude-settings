@@ -33,7 +33,7 @@ It is not part of the default verification chain unless a workflow explicitly se
 
 Primary path:
 
-- `.claude/bin/browserctl`
+- `<MOONSHOT_RELAY_HOME>/bin/browserctl`
 
 Fallback path:
 

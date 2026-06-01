@@ -508,5 +508,5 @@ notes:
 
 - `/moonshot-orchestrator`: 오케스트레이터 통합
 - `.claude/agents/team-leader-agent.ko.md`: 팀 리더 fork 에이전트 정의
-- `.claude/templates/agent-teams-config.yaml`: 팀 설정 템플릿
+- `<MOONSHOT_RELAY_HOME>/templates/agent-teams-config.yaml`: 팀 설정 템플릿
 - [Claude Code Agent Teams 공식 문서](https://code.claude.com/docs/ko/agent-teams) (Claude 런타임)

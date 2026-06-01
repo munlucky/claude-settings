@@ -38,10 +38,16 @@ accountRootInstall:
   defaultShellInstaller: install-claude.sh
   mode: account-root-direct
   projectCompatibilityMode: "install-claude.sh --project"
+  sharedRuntimeHome:
+    env: MOONSHOT_RELAY_HOME
+    windowsCmd: "%MOONSHOT_RELAY_HOME%"
+    windowsPowerShell: "$env:MOONSHOT_RELAY_HOME"
+    posixShell: "${MOONSHOT_RELAY_HOME}"
+    default: "~/.moonshot-relay"
   targets:
-    common: "%USERPROFILE%/.moonshot-relay"
-    claude: "%USERPROFILE%/.claude"
-    codex: "%USERPROFILE%/.codex"
+    common: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}"
+    claude: "${CLAUDE_HOME:-~/.claude}"
+    codex: "${CODEX_HOME:-~/.codex}"
   commonPayloadEntries:
     - bin/
     - docs/

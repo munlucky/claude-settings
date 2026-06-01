@@ -170,7 +170,14 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /defaultShellInstaller: install-claude\.sh/);
   assert.match(contract, /mode: account-root-direct/);
   assert.match(contract, /projectCompatibilityMode: "install-claude\.sh --project"/);
-  assert.match(contract, /common: "%USERPROFILE%\/\.moonshot-relay"/);
+  assert.match(contract, /sharedRuntimeHome:/);
+  assert.match(contract, /env: MOONSHOT_RELAY_HOME/);
+  assert.match(contract, /windowsCmd: "%MOONSHOT_RELAY_HOME%"/);
+  assert.match(contract, /windowsPowerShell: "\$env:MOONSHOT_RELAY_HOME"/);
+  assert.match(contract, /posixShell: "\$\{MOONSHOT_RELAY_HOME\}"/);
+  assert.match(contract, /common: "\$\{MOONSHOT_RELAY_HOME:-~\/\.moonshot-relay\}"/);
+  assert.match(contract, /claude: "\$\{CLAUDE_HOME:-~\/\.claude\}"/);
+  assert.match(contract, /codex: "\$\{CODEX_HOME:-~\/\.codex\}"/);
   assert.match(contract, /commonPayloadEntries:/);
   assert.match(contract, /runtimeExposureEntries:/);
   assert.match(contract, /legacyHarnessCorePolicy: remove_when_requested_after_backup/);
@@ -197,6 +204,57 @@ test('repository layout docs name canonical source, local runtime profile, gener
   assert.match(installerUsage, /--project/);
   assert.match(repositoryLayout, /Default installs materialize shared Moonshot Relay runtime assets/);
   assert.match(repositoryLayout, /Claude keeps `\.claude\/rules\/`/);
+});
+
+test('skills and agents use Moonshot Relay home for shared runtime assets', async () => {
+  const runtimeInstructionFiles = [
+    ...await listFiles('skills'),
+    ...await listFiles('agents'),
+  ].filter((file) => /\.(md|sh)$/.test(file));
+  const forbiddenSharedRuntimeProfileRef = /(?:^|[^A-Za-z0-9_])\.claude[\\/](?:scripts|schemas|templates|tools|bin)(?:[\\/]|`|"|'|\s|$)/;
+  const violations = [];
+
+  for (const file of runtimeInstructionFiles) {
+    const content = await readFile(fromRoot(file), 'utf8');
+    const lines = content.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (forbiddenSharedRuntimeProfileRef.test(line)) {
+        violations.push(`${file}:${index + 1}: ${line.trim()}`);
+      }
+    });
+  }
+
+  assert.deepEqual(
+    violations,
+    [],
+    `Shared runtime assets must be referenced through MOONSHOT_RELAY_HOME, not .claude profile-local paths:\n${violations.join('\n')}`,
+  );
+});
+
+test('explicit Moonshot Relay script references point at packaged support scripts', async () => {
+  const runtimeInstructionFiles = [
+    ...await listFiles('skills'),
+    ...await listFiles('agents'),
+    ...await listFiles(path.join('package', 'profile-templates')),
+  ].filter((file) => /\.(md|sh)$/.test(file));
+  const explicitScriptRef = /<MOONSHOT_RELAY_HOME>\/(scripts\/[^`"'\s)|*]+)/g;
+  const missing = [];
+
+  for (const file of runtimeInstructionFiles) {
+    const content = await readFile(fromRoot(file), 'utf8');
+    for (const match of content.matchAll(explicitScriptRef)) {
+      const sourcePath = match[1];
+      if (!existsSync(fromRoot(sourcePath))) {
+        missing.push(`${file}: ${sourcePath}`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    missing,
+    [],
+    `Explicit Moonshot Relay script references must exist in canonical scripts/:\n${missing.join('\n')}`,
+  );
 });
 
 test('root runtime profiles are local-only and not tracked source', () => {

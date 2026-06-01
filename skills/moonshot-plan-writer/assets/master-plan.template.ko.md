@@ -22,7 +22,7 @@ planPackageReadiness:
   dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
   runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
   archiveRoot: "docs/implementation/archive/<plan-slug>/"
-  dryRunCommand: "node .claude/scripts/prepare-implementation-plan-state.mjs --dry-run --plan-dir docs/implementation --master-plan docs/implementation/00-master-plan-v<version>.md --status-file .claude/docs/phase-status.yaml --execution-root docs/implementation/execution/<plan-slug> --archive-label <plan-slug>"
+  dryRunCommand: "설치된 plan-state preparation entrypoint를 --dry-run, --plan-dir docs/implementation, --master-plan docs/implementation/00-master-plan-v<version>.md, --status-file .claude/docs/phase-status.yaml, --execution-root docs/implementation/execution/<plan-slug>, --archive-label <plan-slug> 인자로 실행"
   readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
 ```
 

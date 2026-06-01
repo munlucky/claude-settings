@@ -51,5 +51,5 @@ Blocker 항목:
 ## 참고
 
 - `.claude/docs/guidelines/product-definition-workflow.md`
-- `.claude/templates/product-definition/ASSUMPTIONS.template.md`
-- `.claude/templates/product-definition/BLOCKERS.template.md`
+- `<MOONSHOT_RELAY_HOME>/templates/product-definition/ASSUMPTIONS.template.md`
+- `<MOONSHOT_RELAY_HOME>/templates/product-definition/BLOCKERS.template.md`
