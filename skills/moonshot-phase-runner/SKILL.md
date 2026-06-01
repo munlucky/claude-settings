@@ -16,21 +16,21 @@ deepReferences:
 
 ## Role
 
-Own the public control-plane entrypoint for phase-based work. Resolve the active plan directory, validate the package, seed or reconcile `phase-status.yaml`, choose the execution route from `.claude/workflow.registry.yaml`, and keep the run moving until the full plan directory is complete or a concrete blocker is recorded.
+Own the public control-plane entrypoint for phase-based work. Resolve the active plan directory, validate the package, seed or reconcile `phase-status.yaml`, choose the in-session/forked-agent execution route, and keep the run moving until the full plan directory is complete or a concrete blocker is recorded.
 
 ## Hard Stops
 
 - Do not treat a completed phase as plan completion while `phase-status.yaml` still has actionable phases.
 - Do not write live `.claude/**` or `.codex/**` adoption targets from staged redesign phases. Phase 08 owns controlled adoption.
-- Do not use `agent-loop.mjs` as the primary interactive control plane. It is a delegated-terminal/headless fallback adapter.
-- Do not return final success until `phase-closeout-finalize.mjs` and final repository closeout gates agree.
+- Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
+- Do not return final success until the in-session coordinator, fresh verifier evidence, scorecard, and repository closeout evidence agree.
 
 ## Inputs
 
 - Optional plan directory argument.
 - Optional master plan path inside the plan directory.
 - Active status file: `.claude/docs/phase-status.yaml`.
-- Registry: `.claude/workflow.registry.yaml`.
+- Execution route: `in-session-coordinator` by default. `delegated-terminal` is legacy compatibility only and requires an explicit legacy maintenance reason.
 - Execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, and verifier verdict.
 
 ## Flow
@@ -39,24 +39,24 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 2. Validate master plan, root phase docs, and execution root consistency.
 3. Build a compact phase-attempt brief from the active phase contract.
 4. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
-5. Use deterministic scripts only for validation, state reads, finalization, and fallback/headless execution.
-6. After each phase, collect diff/evidence in the parent session and run closeout gates.
+5. Use deterministic scripts only for support checks that are still installed in the runtime payload. Do not auto-start legacy delegated-terminal adapters.
+6. After each phase, collect diff/evidence in the parent session and run coordinator closeout gates.
 7. Continue to the next actionable phase until the whole plan directory is done.
 
 ## Required Evidence
 
 - Plan resolution and active phase source.
-- Execution mode and fallback mode from registry.
+- Execution mode and any explicit legacy fallback reason.
 - Runtime capability evidence when a tool/fork/browser path is missing.
 - Review evidence for code-changing phases.
 - Fresh verifier verdict and scorecard agreement.
-- Finalizer output and phase closeout gate result.
+- Coordinator closeout evidence and phase closeout result.
 - Enforce Final Git Closeout evidence before any whole-plan success return.
 
 ## References
 
 - `references/control-plane.md`: state authority, phase discovery, and parent evidence collection.
-- `references/execution-modes.md`: forked-agent primary path and delegated-terminal fallback boundary.
+- `references/execution-modes.md`: forked-agent primary path and legacy delegated-terminal boundary.
 - `references/closeout-gates.md`: review, verification, finalizer, and repository closeout rules.
 
 ## Project Knowledge Context Contract

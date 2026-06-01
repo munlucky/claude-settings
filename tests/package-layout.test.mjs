@@ -28,11 +28,15 @@ const profileTemplateDirs = [
   'package/profile-templates/codex/.codex',
 ];
 
+const archiveDirs = [
+  'archive/scripts/legacy-phase-adapters',
+];
+
 const canonicalSourceMinimums = new Map([
   ['skills', 10],
   ['agents', 5],
   ['rules', 5],
-  ['scripts', 20],
+  ['scripts', 5],
   ['bin', 1],
   ['tools', 5],
   ['schemas', 2],
@@ -89,6 +93,12 @@ test('canonical source and package boundary directories exist', () => {
     assert.equal(existsSync(fullPath), true, `${dir} should exist`);
     assert.equal(lstatSync(fullPath).isDirectory(), true, `${dir} should be a directory`);
   }
+
+  for (const dir of archiveDirs) {
+    const fullPath = fromRoot(dir);
+    assert.equal(existsSync(fullPath), true, `${dir} should exist`);
+    assert.equal(lstatSync(fullPath).isDirectory(), true, `${dir} should be a directory`);
+  }
 });
 
 test('canonical source directories contain real harness files, not README-only placeholders', async () => {
@@ -103,7 +113,8 @@ test('canonical source directories contain real harness files, not README-only p
   }
 
   assert.equal(existsSync(fromRoot('skills', 'moonshot-phase-runner', 'SKILL.md')), true);
-  assert.equal(existsSync(fromRoot('scripts', 'moonshot-phase-dispatch.mjs')), true);
+  assert.equal(existsSync(fromRoot('scripts', 'install-account-root-harness.mjs')), true);
+  assert.equal(existsSync(fromRoot('scripts', 'memorygraph-mcp-wrapper.js')), true);
   assert.equal(existsSync(fromRoot('bin', 'browserctl')), true);
   assert.equal(existsSync(fromRoot('tools', 'browserd', 'package.json')), true);
   assert.equal(existsSync(fromRoot('rules', 'workflow.md')), true);
@@ -122,7 +133,6 @@ test('package contract declares required source payload entries and generated-st
     'skills/**',
     'agents/**',
     'rules/**',
-    'scripts/**',
     'bin/**',
     'tools/**',
     'schemas/**',
@@ -132,7 +142,12 @@ test('package contract declares required source payload entries and generated-st
     'schemas/verification.contract.yaml',
     'package/build-package.mjs',
     'scripts/install-account-root-harness.mjs',
-    'scripts/install-account-root-harness.test.mjs',
+    'claudeSupportScripts:',
+    'archivedLegacyScripts:',
+    'archive/scripts/legacy-phase-adapters/',
+    'scripts/install-browser-runtime.sh',
+    'scripts/memorygraph-mcp-wrapper.js',
+    'scripts/code-review-graph-mcp-wrapper.js',
     'package/profile-templates/claude/.claude/',
     'package/profile-templates/codex/.codex/',
   ]) {

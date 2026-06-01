@@ -1,21 +1,22 @@
 commands:
-  knowledgeAudit: "bash .claude/scripts/knowledge-repo-audit.sh"
-  codePolicy: "node .claude/scripts/verify-code-policy.mjs"
-  workflowEnforcement: "node .claude/scripts/workflow-enforcement.mjs verify"
-  shellSyntax: "node .claude/scripts/verify-shell-syntax.mjs"
-  phaseRuntimeParity: "bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
-  phaseRunnerBoundary: "bash .claude/scripts/verify-phase-runner-boundary.sh"
-  phaseWorktreeParallel: "node .claude/scripts/phase-worktree-coordinator.mjs self-test"
-  phaseCloseout: "node .claude/scripts/verify-phase-closeout.mjs --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --master-plan ${PHASE_MASTER_PLAN:-docs/implementation/00-master-plan-v1.md}"
-  phaseFinalGitCloseout: "node .claude/scripts/phase-final-git-closeout.mjs preflight"
-  phaseCheckpointCommit: "node .claude/scripts/phase-checkpoint-commit.mjs commit --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --phase-num ${PHASE_NUM:-1} --phase-title ${PHASE_TITLE:-phase}"
   memoryRefreshCommit: "node .claude/scripts/commit-moonshot-memory-refresh.mjs --mcp-status skipped --json"
-  awtlRegression: "node --test .claude/scripts/lib/awtl-trace-sink.test.mjs .claude/scripts/lib/awtl-harness-capture.test.mjs .claude/scripts/lib/awtl-failure-attribution.test.mjs .claude/scripts/lib/awtl-memory-promotion.test.mjs .claude/scripts/lib/awtl-runtime-importers.test.mjs"
-  awtlFailurePreventionRegression: "node --test .claude/scripts/lib/awtl-failed-turn-case.test.mjs .claude/scripts/lib/awtl-failure-prevention-brief.test.mjs .claude/scripts/lib/awtl-replay-scorecard.test.mjs"
-  awtlCliSyntax: "node --check .claude/scripts/agent-loop-phase-runner.mjs && node --check .claude/scripts/agent-loop-phase-plan-lib.mjs && node --check .claude/scripts/awtl-failure-analyzer.mjs && node --check .claude/scripts/awtl-memory-promotion.mjs"
-  harnessBottleneckAudit: "node .claude/scripts/harness-bottleneck-audit.mjs"
   memoryGraphHealth: "node .claude/scripts/memorygraph-direct.mjs health"
   ontologyConstraints: "node .claude/scripts/ontology-constraint-validate.mjs --project-root . --json"
+legacyCommands:
+  description: "Delegated-terminal phase adapter checks are source-checkout legacy compatibility checks. They are not part of the active phase-runner workflow profile, are not installed into runtime payloads, and require explicit legacyAdapterReason before use."
+  knowledgeAudit: "bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh"
+  codePolicy: "node archive/scripts/legacy-phase-adapters/verify-code-policy.mjs"
+  workflowEnforcement: "node archive/scripts/legacy-phase-adapters/workflow-enforcement.mjs verify"
+  shellSyntax: "node archive/scripts/legacy-phase-adapters/verify-shell-syntax.mjs"
+  phaseRuntimeParity: "bash archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan"
+  phaseRunnerBoundary: "bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh"
+  phaseWorktreeParallel: "node archive/scripts/legacy-phase-adapters/phase-worktree-coordinator.mjs self-test"
+  phaseCloseout: "node archive/scripts/legacy-phase-adapters/verify-phase-closeout.mjs --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --master-plan ${PHASE_MASTER_PLAN:-docs/implementation/00-master-plan-v1.md}"
+  phaseFinalGitCloseout: "node archive/scripts/legacy-phase-adapters/phase-final-git-closeout.mjs preflight"
+  phaseCheckpointCommit: "node archive/scripts/legacy-phase-adapters/phase-checkpoint-commit.mjs commit --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --status-file ${PHASE_STATUS_FILE:-.claude/docs/phase-status.yaml} --phase-num ${PHASE_NUM:-1} --phase-title ${PHASE_TITLE:-phase}"
+  awtlRegression: "node --test archive/scripts/legacy-phase-adapters/lib/awtl-trace-sink.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-harness-capture.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-failure-attribution.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-memory-promotion.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-runtime-importers.test.mjs"
+  awtlFailurePreventionRegression: "node --test archive/scripts/legacy-phase-adapters/lib/awtl-failed-turn-case.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-failure-prevention-brief.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-replay-scorecard.test.mjs"
+  awtlCliSyntax: "node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs && node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs && node --check archive/scripts/legacy-phase-adapters/awtl-failure-analyzer.mjs && node --check scripts/awtl-memory-promotion.mjs"
 checkPolicies:
   searchEvidence:
     preferred: rg
@@ -122,20 +123,24 @@ checkPolicies:
       - current_run_older_than_latest_dispatch
   validationProfiles:
     prompt_only:
-      checks: [knowledgeAudit, shellSyntax]
-      minimumEvidence: "static contract and knowledge audit"
+      checks: [memoryGraphHealth, ontologyConstraints]
+      minimumEvidence: "active support-script health and ontology constraint validation"
     docs_only:
-      checks: [knowledgeAudit, shellSyntax]
-      minimumEvidence: "documentation and template syntax integrity"
+      checks: [memoryGraphHealth, ontologyConstraints]
+      minimumEvidence: "documentation payload shape plus active support-script health"
     script_change:
-      checks: [shellSyntax, codePolicy]
-      minimumEvidence: "syntax plus targeted self-test when available"
+      checks: [memoryGraphHealth, ontologyConstraints]
+      minimumEvidence: "active support-script health plus targeted self-test when available"
     workflow_core:
-      checks: [knowledgeAudit, codePolicy, workflowEnforcement, phaseRunnerBoundary, phaseWorktreeParallel, awtlRegression, awtlFailurePreventionRegression, awtlCliSyntax, harnessBottleneckAudit, ontologyConstraints]
-      minimumEvidence: "cross-runtime workflow contract evidence plus AWTL turn-failure regression evidence and executable ontology constraint validation"
+      checks: [memoryGraphHealth, ontologyConstraints]
+      minimumEvidence: "active support-script health plus executable ontology constraint validation"
     runtime_adapter:
-      checks: [workflowEnforcement, phaseRuntimeParity, phaseRunnerBoundary, phaseCloseout, ontologyConstraints]
-      minimumEvidence: "Codex and Claude runtime boundary parity plus project/global ontology constraint health"
+      checks: [memoryGraphHealth, ontologyConstraints]
+      minimumEvidence: "active runtime workflow evidence plus project/global ontology constraint health"
+  legacyValidationProfiles:
+    legacy_phase_adapter:
+      checks: [phaseRuntimeParity, phaseRunnerBoundary, phaseWorktreeParallel, phaseCloseout, awtlCliSyntax]
+      minimumEvidence: "explicit legacyAdapterReason plus delegated-terminal compatibility evidence"
   crossRuntimePhaseReplay:
     required: true
     assistantItemPhaseValues:
@@ -204,26 +209,23 @@ policySets:
   knowledge:
     description: "Knowledge repository freshness, structure, and source-of-truth integrity"
     checks:
-      - knowledgeAudit
+      - memoryGraphHealth
   workflow:
-    description: "Workflow routing, bounded evidence, and execution discipline"
+    description: "Active workflow routing, bounded evidence, and execution discipline"
     checks:
-      - workflowEnforcement
-      - phaseRuntimeParity
-      - phaseRunnerBoundary
-      - phaseWorktreeParallel
+      - memoryGraphHealth
   acceptance:
-    description: "Product acceptance evidence and phase closeout synchronization"
+    description: "Product acceptance evidence and in-session phase closeout synchronization"
     checks:
-      - phaseCloseout
+      - ontologyConstraints
   verification:
     description: "Executable verifier and syntax integrity"
     checks:
-      - shellSyntax
+      - memoryGraphHealth
   security:
     description: "Machine-checkable policy boundaries for changed code and scripts"
     checks:
-      - codePolicy
+      - ontologyConstraints
 policy:
   allowIndeterminate: false
   requiredPolicySets:
@@ -233,14 +235,8 @@ policy:
     - verification
     - security
   requiredChecks:
-    - knowledgeAudit
-    - codePolicy
-    - workflowEnforcement
-    - shellSyntax
-    - phaseRuntimeParity
-    - phaseRunnerBoundary
-    - phaseWorktreeParallel
-    - phaseCloseout
+    - memoryGraphHealth
+    - ontologyConstraints
 qa:
   evaluatorMode: "separate"
   hardFailOn:

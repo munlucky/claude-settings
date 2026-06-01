@@ -29,12 +29,44 @@ const runtimeSpecs = {
       'skills',
       'agents',
       'rules',
-      'scripts',
       'bin',
       'tools',
       'schemas',
       'templates',
       path.join('docs', 'public'),
+    ],
+    sharedFiles: [
+      'scripts/awtl-memory-promotion.mjs',
+      'scripts/code-review-graph-mcp-wrapper.js',
+      'scripts/codex-mcp-singleton.mjs',
+      'scripts/commit-moonshot-memory-refresh.mjs',
+      'scripts/commit-moonshot-promotion-audit.mjs',
+      'scripts/install-account-root-harness.mjs',
+      'scripts/install-browser-runtime.mjs',
+      'scripts/install-browser-runtime.sh',
+      'scripts/knowledge-context-build.mjs',
+      'scripts/knowledge-improvement-lifecycle.mjs',
+      'scripts/knowledge-records.mjs',
+      'scripts/lib/awtl-event-schema.mjs',
+      'scripts/lib/awtl-failure-attribution.mjs',
+      'scripts/lib/awtl-harness-capture.mjs',
+      'scripts/lib/awtl-memory-candidate.mjs',
+      'scripts/lib/awtl-memory-promotion.mjs',
+      'scripts/lib/awtl-redaction.mjs',
+      'scripts/lib/awtl-replay-probes.mjs',
+      'scripts/lib/awtl-replay-scorecard.mjs',
+      'scripts/lib/awtl-trace-sink.mjs',
+      'scripts/lib/failure-classifier.mjs',
+      'scripts/lib/runtime-state-root.mjs',
+      'scripts/lib/runtime-unavailable-cache.mjs',
+      'scripts/memory-mcp-wrapper.js',
+      'scripts/memorygraph-direct.mjs',
+      'scripts/memorygraph-mcp-wrapper.js',
+      'scripts/memorygraph-mcp-wrapper.mjs',
+      'scripts/memorygraph-project-index.mjs',
+      'scripts/ontology-constraint-validate.mjs',
+      'scripts/project-identity.mjs',
+      'scripts/verification-verdict-state.mjs',
     ],
     verificationTarget: 'verification.contract.yaml',
   },
@@ -47,6 +79,7 @@ const runtimeSpecs = {
       'schemas',
       path.join('docs', 'public'),
     ],
+    sharedFiles: [],
     verificationTarget: 'verification.contract.yaml',
   },
 };
@@ -78,14 +111,6 @@ const denyBasenames = [
   /_test\.py$/,
   /\.test\.py$/,
 ];
-
-const denyRelativePaths = new Set([
-  'scripts/check-mcp.sh',
-  'scripts/harness-surface-inventory.mjs',
-  'scripts/verify-phase-closeout-fixtures.mjs',
-  'scripts/lib/windows-safe-files.mjs',
-  'scripts/lib/phase-attempt-telemetry.mjs',
-]);
 
 const usage = () => `Usage: node package/build-package.mjs [--runtime all|claude|codex] [--out <dir>] [--clean] [--dry-run] [--json]`;
 
@@ -141,10 +166,6 @@ const shouldExclude = (sourcePath) => {
   const portableRelative = toPortable(relative);
   const segments = relative.split(path.sep);
   const basename = path.basename(sourcePath);
-
-  if (denyRelativePaths.has(portableRelative)) {
-    return true;
-  }
 
   if (segments.some((segment) => denySegments.has(segment) || segment.endsWith('fixtures'))) {
     return true;
@@ -214,6 +235,12 @@ const materializeRuntime = async (runtime, options) => {
       ? path.join(outputRoot, 'docs', 'public')
       : path.join(outputRoot, targetName);
     await copyTree(source, destination, plannedCopies);
+  }
+
+  for (const sharedFile of spec.sharedFiles) {
+    const source = path.join(repoRoot, sharedFile);
+    const destination = path.join(outputRoot, sharedFile);
+    await copyFilePreservingMode(source, destination, plannedCopies);
   }
 
   const verificationSource = path.join(repoRoot, 'schemas', 'verification.contract.yaml');

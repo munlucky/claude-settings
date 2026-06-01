@@ -8,7 +8,7 @@
 
 ## 구성 요약
 
-- canonical source는 `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`에서 관리하고, `.claude/`는 개발 profile 및 downstream compatibility wrapper로 유지
+- canonical source는 `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`와 allowlisted support script만 `scripts/`에서 관리하고, `.claude/`는 개발 profile 및 downstream compatibility wrapper로 유지
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
 - `install-claude.sh`로 다른 프로젝트에 빠르게 설치
 - compatibility window 동안 downstream 설치는 계속 `.claude/` payload를 생성하지만, 이 저장소의 source of truth는 root-level source directory입니다
@@ -21,7 +21,7 @@
 
 ## Repository Source Model
 
-- Canonical source: `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `tests/fixtures/`, `docs/public/`
+- Canonical source: `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `tests/fixtures/`, `docs/public/`, plus allowlisted installer/MCP/memory/closeout support scripts under `scripts/`
 - Development profile: `.claude/` and `.codex/` for local agent runtime compatibility
 - Package payloads: `package/claude/profile/`, `package/codex/profile/`, `.claude-plugin/`, `.codex-plugin/`
 - Generated state: `.moonshot-state/`, `.claude/logs/`, `.claude/cache/`, `.claude/traces/`, `.claude/browser-artifacts/`, `.claude/browser-runtime/`, `.claude/memorygraph/`, sqlite files, and verdict JSON
@@ -54,7 +54,7 @@ moonshot-relay/
 └── AGENTS.md -> .claude/CLAUDE.md
 ```
 
-Root-level `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, and `docs/public/` are the canonical source directories. The `.claude/` tree remains loaded for current runtime compatibility and installed `.claude/` payload behavior.
+Root-level `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`, and allowlisted support files under `scripts/` are the canonical source directories. The `.claude/` tree remains loaded for current runtime compatibility and installed `.claude/` payload behavior.
 
 Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; they are not runtime output and are not included in installed package payloads.
 
@@ -91,7 +91,7 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - `task-slicer`는 `PLAN.md`를 vertical slice 기반 `tasks/*.md`로 분해합니다.
 - `assumption-ledger`는 질문이 필요한 모호함을 `ASSUMPTIONS.md` 또는 `BLOCKERS.md`로 적재해 workflow 정지를 줄입니다.
 - medium/complex 구현은 slice별 `SPRINT_CONTRACT.md`를 먼저 만들고, 검증 결과는 `QA_REPORT.md`, 장시간 세션 상태는 `HANDOFF.md`로 남기는 것을 권장합니다.
-- phase 기반 장시간 실행의 기본 진입점은 `/moonshot-phase-runner <plan-dir>`이며, 내부적으로 `moonshot-phase-executor`가 `delegated-terminal`과 `in-session-coordinator`를 내부 skill 경계 뒤에서 분기합니다.
+- phase 기반 장시간 실행의 기본 진입점은 `/moonshot-phase-runner <plan-dir>`이며, 내부적으로 `moonshot-phase-executor`가 `in-session-coordinator`를 active 실행 경로로 사용합니다. `delegated-terminal` adapter는 legacy compatibility 전용입니다.
 - `<plan-dir>`를 생략하면 기존 안전한 plan dir를 재사용하고, 없으면 `moonshot-plan-writer`로 `docs/implementation`을 자동 생성한 뒤 이어서 실행합니다.
 - 기본적으로 `/moonshot-phase-runner <plan-dir>` 한 번이면 준비 후 실행까지 이어지고, 수동 중단이 필요할 때만 `--prepare-only`를 사용합니다.
 
@@ -135,8 +135,7 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`
 - 제품 정의 템플릿: `.claude/templates/product-definition/*.md`
 - 실행 브리지 템플릿: `.claude/templates/execution/*.md`
-- phase internal adapter: `.claude/scripts/moonshot-phase-dispatch.sh`
-- worktree prepare adapter: `.claude/scripts/harness-prepare-worktree.sh`
+- Runtime payload support scripts are limited to installer, MCP, memory, and commit closeout flows. Workflow orchestration no longer installs `scripts/**` wholesale.
 - 출력 템플릿: `.claude/templates/moonshot-output.*`
 
 ## 빠른 시작
@@ -269,7 +268,7 @@ Memory 설정:
 - `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
 - 프로젝트 지식그래프는 `node .claude/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.claude/memorygraph/`에 반영합니다.
 - 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `moonshot-relay` graph에 승격합니다.
-- AWTL runtime importer utilities (`.claude/scripts/lib/awtl-runtime-importers.mjs`, `.claude/scripts/awtl-import-trace.mjs`) backfill Codex rollout/session and Claude transcript data into canonical AWTL events while keeping import metadata in `payload`.
+- Legacy AWTL runtime importer utilities are preserved under `archive/scripts/legacy-phase-adapters/` for compatibility investigation; they are not installed into active runtime payloads.
 
 Code Review Graph 설정:
 - `code-review-graph`는 MemoryGraph를 대체하지 않습니다. MemoryGraph는 작업 기억/정책/결정, `code-review-graph`는 코드 구조/리뷰 영향도/분석 기능을 담당합니다.

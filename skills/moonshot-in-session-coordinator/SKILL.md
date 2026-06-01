@@ -22,7 +22,7 @@ Use this only when:
 Do not use this for:
 - simple one-shot implementation
 - delegated terminal runs that already use `agent-loop.sh`
-- default user-facing phase execution; prefer `moonshot-phase-runner` and the delegated-terminal path when available
+- default user-facing phase execution without `moonshot-phase-runner`; this is the active executor behind the phase runner, while delegated-terminal is legacy compatibility only
 
 ## Execution
 

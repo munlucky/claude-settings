@@ -7,7 +7,8 @@ Canonical source belongs in root-level directories:
 - `skills/`
 - `agents/`
 - `rules/`
-- `scripts/`
+- `scripts/` for maintained installer, MCP, memory, and closeout support scripts
+- `archive/scripts/legacy-phase-adapters/` for preserved legacy phase adapters that are not installed
 - `bin/`
 - `tools/`
 - `schemas/`
@@ -17,7 +18,9 @@ Canonical source belongs in root-level directories:
 
 Root `.claude/` and `.codex/` are local runtime profiles only and are not committed to the repository. Codex and Claude profile templates live under `package/profile-templates/`; generated profile payloads are written under `package/claude/profile/` and `package/codex/profile/` only when `package/build-package.mjs` runs.
 
-The generated profile payloads must include concrete skills, agents, scripts, CLI entrypoints, runtime tools, schemas, templates, and docs copied or generated from the canonical roots. README-only payload directories are invalid, but generated payload directories themselves are not committed.
+The generated profile payloads must include concrete skills, agents, CLI entrypoints, runtime tools, schemas, templates, docs, and only the allowlisted support scripts needed for installer, MCP, memory, and closeout flows. Runtime workflow scripts are not copied wholesale into the package payload. README-only payload directories are invalid, but generated payload directories themselves are not committed.
+
+Legacy delegated-terminal phase adapters and their tests are archived under `archive/scripts/legacy-phase-adapters/`. They remain available for explicit compatibility investigation, but package materialization must not copy the archive into runtime profiles.
 
 Build local payloads with:
 
@@ -33,4 +36,4 @@ node scripts/install-account-root-harness.mjs --runtime all --remove-legacy-harn
 
 This installs harness-owned payloads into `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` without using a nested `harness-core` directory. Runtime-local files such as Claude settings, Codex auth/config, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.moonshot-relay-install-manifest.json` for hash verification and rollback evidence. Existing `.claude-settings-install-manifest.json` files are treated as legacy install evidence during the rename window.
 
-Generated state is never part of the package payload. Logs, caches, traces, browser artifacts, sqlite state, memorygraph data, temporary runtime directories, and verification verdict outputs must stay outside package assembly.
+Generated state is never part of the package payload. Runtime payload also excludes dev-only diagnostics and obsolete workflow scripts. Logs, caches, traces, browser artifacts, sqlite state, memorygraph data, temporary runtime directories, and verification verdict outputs must stay outside package assembly.

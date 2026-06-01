@@ -26,8 +26,8 @@ description: Moonshot 하네스와 downstream .claude 설치본을 유지합니�
 1. 현재 하네스 계약을 점검합니다.
    - `.claude/skills/moonshot-orchestrator/SKILL.md`
    - `.claude/skills/moonshot-phase-runner/SKILL.md`
-   - `.claude/scripts/verify-phase-runtime-parity-shell-core.sh`
-   - `.claude/scripts/agent-loop-phase-plan-lib.mjs`
+   - `archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh`
+   - `archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs`
    - `.claude/verification.contract.yaml`
 2. 변경 유형을 분류합니다.
    - external pattern transfer
@@ -105,10 +105,10 @@ source가 이미지나 compact prompt라면 통째로 복사하지 않습니다.
 권장 확인:
 
 ```bash
-bash -n .claude/scripts/verify-phase-runtime-parity-shell-core.sh
-node --check .claude/scripts/agent-loop-phase-plan-lib.mjs
-bash .claude/scripts/verify-phase-runner-boundary.sh
-PHASE_RUNTIME_PARITY_KEEP_TMP=true bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan
+bash -n archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh
+node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
+bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
+PHASE_RUNTIME_PARITY_KEEP_TMP=true bash archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan
 ```
 
 ## Downstream Sync
@@ -131,30 +131,30 @@ python3 .claude/skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.
 변경에 비례해 확인합니다.
 
 ```bash
-bash .claude/scripts/knowledge-repo-audit.sh
-bash .claude/scripts/verify-code-policy.sh
-bash .claude/scripts/workflow-enforcement.sh verify
-bash .claude/scripts/verify-phase-runner-boundary.sh
+bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
+bash archive/scripts/legacy-phase-adapters/verify-code-policy.sh
+bash archive/scripts/legacy-phase-adapters/workflow-enforcement.sh verify
+bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
 git diff --check
 ```
 
 하네스 동작 수정에서는 새로 추가하거나 선택한 incident regression command와 가장 가까운 기존 test suite도 실행합니다. report에는 어떤 command가 RED/GREEN evidence인지 명시해야 합니다. 예:
 
 ```bash
-node .claude/scripts/agent-loop-phase-state.mjs self-test
-node --test .claude/scripts/agent-loop-phase-state.test.mjs
-node --test .claude/scripts/agent-loop-phase-runner.test.mjs
-node --test .claude/scripts/lib/terminal-blocker-publisher.test.mjs
+node archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs self-test
+node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-state.test.mjs
+node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs
+node --test archive/scripts/legacy-phase-adapters/lib/terminal-blocker-publisher.test.mjs
 ```
 
 downstream project를 sync했다면 추가로 실행합니다.
 
 ```bash
-HARNESS_KNOWLEDGE_AUDIT_FILE=/tmp/<project>-knowledge-audit.json bash .claude/scripts/knowledge-repo-audit.sh
-bash -n .claude/scripts/knowledge-repo-audit.sh
-bash -n .claude/scripts/verify-code-policy.sh
-bash -n .claude/scripts/workflow-enforcement.sh
-node --check .claude/scripts/agent-loop-phase-plan-lib.mjs
+HARNESS_KNOWLEDGE_AUDIT_FILE=/tmp/<project>-knowledge-audit.json bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
+bash -n archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
+bash -n archive/scripts/legacy-phase-adapters/verify-code-policy.sh
+bash -n archive/scripts/legacy-phase-adapters/workflow-enforcement.sh
+node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
 ```
 
 ## 보고

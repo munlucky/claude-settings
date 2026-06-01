@@ -6,7 +6,7 @@ canonicalSource:
   skills: skills/
   agents: agents/
   rules: rules/
-  scripts: scripts/
+  scripts: scripts/ # maintained support source; workflow scripts are not broadly installed
   bin: bin/
   tools: tools/
   schemas: schemas/
@@ -70,8 +70,6 @@ requiredPayloadEntries:
       purpose: agent_definitions
     - source: rules/**
       purpose: workflow_policy
-    - source: scripts/**
-      purpose: executable_support
     - source: bin/**
       purpose: runtime_entrypoints
     - source: tools/**
@@ -86,8 +84,53 @@ requiredPayloadEntries:
       purpose: package_layout_materialization_guard
     - source: scripts/install-account-root-harness.mjs
       purpose: account_root_direct_profile_installer
-    - source: scripts/install-account-root-harness.test.mjs
-      purpose: account_root_direct_profile_installer_guard
+  claudeSupportScripts:
+    description: "Claude runtime payload installs only support scripts needed by installers, MCP wrappers, memory refresh, and commit closeout. Workflow orchestration no longer installs scripts/** wholesale."
+    entries:
+      - source: scripts/awtl-memory-promotion.mjs
+        purpose: memory_promotion_support
+      - source: scripts/code-review-graph-mcp-wrapper.js
+        purpose: code_review_graph_mcp_wrapper
+      - source: scripts/codex-mcp-singleton.mjs
+        purpose: mcp_singleton_guard
+      - source: scripts/commit-moonshot-memory-refresh.mjs
+        purpose: commit_memory_refresh
+      - source: scripts/commit-moonshot-promotion-audit.mjs
+        purpose: commit_memory_promotion_audit
+      - source: scripts/install-account-root-harness.mjs
+        purpose: account_root_direct_profile_installer
+      - source: scripts/install-browser-runtime.mjs
+        purpose: browser_runtime_install_support
+      - source: scripts/install-browser-runtime.sh
+        purpose: browser_runtime_install_entrypoint
+      - source: scripts/knowledge-context-build.mjs
+        purpose: project_knowledge_context
+      - source: scripts/knowledge-improvement-lifecycle.mjs
+        purpose: project_knowledge_lifecycle
+      - source: scripts/knowledge-records.mjs
+        purpose: project_knowledge_record_parser
+      - source: scripts/lib/**
+        purpose: allowlisted_support_libraries_only
+      - source: scripts/memory-mcp-wrapper.js
+        purpose: memory_mcp_wrapper
+      - source: scripts/memorygraph-direct.mjs
+        purpose: memorygraph_direct_fallback
+      - source: scripts/memorygraph-mcp-wrapper.js
+        purpose: memorygraph_mcp_entrypoint
+      - source: scripts/memorygraph-mcp-wrapper.mjs
+        purpose: memorygraph_mcp_wrapper
+      - source: scripts/memorygraph-project-index.mjs
+        purpose: memorygraph_project_index
+      - source: scripts/ontology-constraint-validate.mjs
+        purpose: ontology_validation_support
+      - source: scripts/project-identity.mjs
+        purpose: project_identity_resolution
+      - source: scripts/verification-verdict-state.mjs
+        purpose: verification_state_support
+  archivedLegacyScripts:
+    description: "Legacy delegated-terminal phase adapters, diagnostics, and script-local tests are preserved as source archive only. They are not active runtime payload and are not copied into installed profiles."
+    root: archive/scripts/legacy-phase-adapters/
+    originalRoot: scripts/
   verificationContracts:
     - currentSource: schemas/verification.contract.yaml
       localRuntimeTarget: .claude/verification.contract.yaml
@@ -140,15 +183,6 @@ excludedGeneratedState:
   - .claude/*verdict*.json
   - .claude/knowledge-repo-audit-*.json
   - .code-review-graph/**
-
-excludedDevOnlyPayload:
-  description: "Repository source may keep these dev/test diagnostics, but package payloads must not install them into runtime profiles."
-  entries:
-    - scripts/check-mcp.sh
-    - scripts/harness-surface-inventory.mjs
-    - scripts/verify-phase-closeout-fixtures.mjs
-    - scripts/lib/windows-safe-files.mjs
-    - scripts/lib/phase-attempt-telemetry.mjs
 
 driftPolicy:
   sourceOfTruth: canonicalSource

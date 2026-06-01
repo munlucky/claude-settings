@@ -4,9 +4,9 @@
 
 ## Compatibility Window
 
-The installer keeps `.claude/` output stable until a later major version removes or replaces legacy entrypoints. This means downstream docs, skills, and scripts that invoke `.claude/scripts/...` remain valid when they refer to installed runtime payloads or compatibility wrappers.
+The installer keeps `.claude/` output stable for skills, agents, rules, tools, schemas, templates, and the support scripts needed by installer, MCP, memory, and closeout flows. Workflow orchestration no longer installs `scripts/**` wholesale, so downstream docs or skills should not add new dependencies on `.claude/scripts/...` unless the file is explicitly listed in `package/package-contract.yaml`.
 
-The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/bin`, `.claude/tools`, `.claude/schemas`, or `.claude/templates` in this repository as canonical source. Durable edits start in `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, or `docs/public/`.
+The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/bin`, `.claude/tools`, `.claude/schemas`, or `.claude/templates` in this repository as canonical source. Durable edits start in `skills/`, `agents/`, `rules/`, the allowlisted support files under `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, or `docs/public/`.
 
 ## Contributor Flow
 

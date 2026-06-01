@@ -1,6 +1,6 @@
 ---
 name: moonshot-phase-executor
-description: Skill-level phase execution adapter that routes prepared phase work to delegated-terminal or in-session coordinator execution.
+description: Skill-level phase execution adapter that routes prepared phase work to in-session coordinator execution, with delegated-terminal kept as legacy compatibility only.
 surfaceStatus: internal_stage_owner
 triggers:
   - "phase executor"
@@ -13,18 +13,26 @@ triggers:
 
 Serve as the skill-first execution boundary after `moonshot-phase-runner`.
 Users should not need to run command adapters directly. This skill consumes `phaseRunnerResult`, then routes execution to:
-- `moonshot-phase-dispatch.mjs` / `agent-loop.mjs` as the primary internal adapter path for `delegated-terminal`
-- `moonshot-in-session-coordinator` for `in-session-coordinator`
+- `moonshot-in-session-coordinator` as the default active execution path
+- `moonshot-phase-dispatch.mjs` / `agent-loop.mjs` only for explicit legacy/headless compatibility maintenance
 
 This is an internal execution handoff, not a primary public workflow entrypoint.
 Users should normally start from `moonshot-phase-runner`, not this skill.
+
+## Legacy Adapter Policy
+
+`delegated-terminal`, `moonshot-phase-dispatch.mjs`, `agent-loop.mjs`, and their shell wrappers are legacy adapters. They are not installed as part of the active runtime workflow payload and must not be selected automatically. Use them only when all of the following are true:
+- the user or maintainer explicitly asks to validate or repair the legacy adapter path
+- the local checkout has the legacy scripts available
+- the run records `legacyAdapterReason`
+- the result is treated as compatibility evidence, not the default phase-runner contract
 
 ## Inputs
 
 ```yaml
 phaseRunnerResult:
   prepared: true
-  executionMode: "delegated-terminal" # or in-session-coordinator
+  executionMode: "in-session-coordinator" # delegated-terminal is legacy only
   planDir: "docs/implementation/"
   phaseStatusFile: ".claude/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
@@ -32,8 +40,7 @@ phaseRunnerResult:
   executionRuntime: "auto"            # auto | claude | codex
   prepareOnly: false
   autoStartExecution: true
-  executionCommand: "node .claude/scripts/moonshot-phase-dispatch.mjs ..."
-  executionAdapterCommand: "node .claude/scripts/agent-loop.mjs ..."
+  legacyAdapterReason: ""             # required when executionMode == delegated-terminal
 ```
 
 ## Workflow
@@ -48,25 +55,19 @@ If `prepareOnly == true`:
 
 Before routing, confirm `phaseRunnerResult.projectKnowledgeContext` exists. If missing, run `knowledge-context-build.mjs --stage execute --json` from the current project root and pass only `projectKnowledgeContext.promptBlock` plus status-only metadata to the execution path.
 
-If `executionMode == delegated-terminal`:
-- call `phaseRunnerResult.executionCommand` immediately in the current session
-- forward runtime selection (`auto|claude|codex`)
-- keep this hidden behind the skill boundary
-- stay attached to the delegated-terminal process until it exits
-- allow the delegated-terminal loop to auto-select safe phase-level parallel waves through `phase-parallel-planner.mjs`; do not ask the user for a phase parallelism count
-- if the phase-wave coordinator falls back, continue with the existing sequential next-phase loop instead of treating fallback as user-visible failure
-- do not substitute a single implementation attempt, partial checkpoint, or conversational summary for the real loop
-- if the loop leaves the current phase `in_progress` with `lastOutcome=partial` or `score.verdict=retry`, keep following the delegated-terminal path instead of returning early
-- if the loop marks one phase `completed` but the active plan directory still has any actionable phase, keep the same delegated-terminal execution boundary and continue
-- if completion gates report missing review evidence or incomplete finish-closeout, do not return success; stay in the loop and remediate those missing steps first
-
 If `executionMode == in-session-coordinator`:
 - invoke `/moonshot-in-session-coordinator`
 - pass through `phaseRunnerResult`
-- when the active runtime cannot reliably keep spawning fresh attempts, prefer a runtime-side fallback to `delegated-terminal` instead of pretending the run is fully autonomous
+- when the active runtime cannot reliably keep spawning fresh attempts, stop with a concrete blocker or ask for a runtime change; do not silently fall back to delegated-terminal
 - ensure each active slice can initialize `WORKSET.md` from `.claude/templates/execution/WORKSET.template.md`
 - do not stop after a completed phase while the active plan directory still has another actionable phase
 - do not treat a review-pending or finish-pending slice as complete; force another attempt until the artifacts reflect a real review and clean closeout
+
+If `executionMode == delegated-terminal`:
+- require non-empty `legacyAdapterReason`
+- confirm the local checkout has `moonshot-phase-dispatch.mjs` / `agent-loop.mjs`
+- run it only as a legacy compatibility check or explicit maintainer repair path
+- do not present the result as the default phase-runner execution contract
 
 ### 3. Runtime handling
 
@@ -100,27 +101,24 @@ phaseExecutionResult:
 - Default `modelEffortProfile` is `standard`; `deep` and `max` require a concrete `Effort escalation reason` in QA and workflow evidence.
 - Do not ask the user to choose a model. The provider-neutral model router selects per-stage runtime model/effort and records the selected provider/model/effort in execution evidence.
 - Preserve assistant-item `phase` values when replaying assistant history (`commentary` for progress, `final_answer` only after completion); never add phase metadata to user messages.
-- Scripts are implementation adapters only and must stay behind this skill.
+- Legacy scripts are compatibility adapters only and must stay behind explicit maintainer intent.
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.
 - Do not ask the user to manually run `moonshot-phase-dispatch.mjs` in the default path.
-- For `delegated-terminal`, the valid execution boundary is the actual dispatcher/agent-loop process, not a one-round summary.
-- `partial`, `retry`, updated QA artifacts, or a resumable handoff are not valid stop reasons for delegated-terminal by themselves.
+- Do not auto-select `delegated-terminal` as a fallback from the active path.
 - `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, or placeholder closeout artifacts are not valid completion states.
 - The valid success boundary is plan-directory completion: every actionable phase completed or an explicit loop stop condition recorded.
-- While the dispatcher lease is still active, progress reports must remain commentary-style; do not emit a `final` answer or session-ended wording from a mid-run checkpoint.
-- In auto-start execution, a success return is valid only if `node .claude/scripts/phase-run-lease.mjs assert-return-allowed <status-file> <runLeaseId> true false` allows it. If the guard denies, keep the loop alive or fail as a contract violation instead of returning a summary.
 
 ## References
 
 - `/moonshot-phase-runner`
 - `/moonshot-in-session-coordinator`
-- `.claude/scripts/agent-loop.mjs`
-- `.claude/scripts/moonshot-phase-dispatch.mjs`
-- `.claude/scripts/agent-loop.sh` / `.claude/scripts/moonshot-phase-dispatch.sh` as compatibility wrappers
+- `archive/scripts/legacy-phase-adapters/agent-loop.mjs` as a legacy compatibility adapter
+- `archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.mjs` as a legacy compatibility adapter
+- `archive/scripts/legacy-phase-adapters/agent-loop.sh` / `archive/scripts/legacy-phase-adapters/moonshot-phase-dispatch.sh` as legacy wrappers
 - `.claude/templates/execution/WORKSET.template.md`
 
 ## Project Knowledge Context Contract
 
-Before routing to delegated-terminal, in-session coordinator, or forked-agent execution, confirm `phaseRunnerResult.projectKnowledgeContext` exists. If missing, run `knowledge-context-build.mjs --stage execute --json` and pass only `projectKnowledgeContext.promptBlock` and status-only metadata.
+Before routing to in-session coordinator or forked-agent execution, confirm `phaseRunnerResult.projectKnowledgeContext` exists. If missing, run `knowledge-context-build.mjs --stage execute --json` and pass only `projectKnowledgeContext.promptBlock` and status-only metadata.
 
-This executor must not bypass the context builder. Dispatcher, agent-loop, coordinator, and attempt manifests may record only knowledge status metadata, never raw MemoryGraph/KG/ontology/log/transcript payloads.
+This executor must not bypass the context builder. Coordinator and attempt manifests may record only knowledge status metadata, never raw MemoryGraph/KG/ontology/log/transcript payloads. Legacy dispatcher/agent-loop runs must follow the same summary-only knowledge rule when explicitly used.

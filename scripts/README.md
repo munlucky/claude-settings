@@ -1,5 +1,5 @@
 # Scripts
 
-Canonical source for repository scripts. Generated launchers, caches, and runtime state are package or profile output, not source.
+Active support scripts that are copied into Claude runtime payloads or used by the account-root installer.
 
-Runtime payloads exclude dev-only diagnostics that are useful in-repo but should not be installed into downstream profiles.
+This directory is intentionally small. Legacy delegated-terminal phase adapters, diagnostics, and script-local tests are preserved under `archive/scripts/legacy-phase-adapters/` and are not installed into downstream runtime profiles.

@@ -22,7 +22,7 @@ triggers:
 사용하지 말아야 하는 경우:
 - 단발성 simple 구현
 - 이미 `agent-loop.sh`를 쓰는 delegated terminal 실행
-- 기본 사용자-facing phase 실행. 가능하면 `moonshot-phase-runner`와 delegated-terminal 경로를 우선합니다.
+- `moonshot-phase-runner` 없는 기본 사용자-facing phase 실행. 이 스킬은 phase runner 뒤의 active executor이며, delegated-terminal은 legacy compatibility 전용입니다.
 
 ## 실행 책임
 

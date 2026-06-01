@@ -75,7 +75,13 @@ const requiredConcretePayloadFiles = [
   'skills/moonshot-plan-writer/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
-  'scripts/moonshot-phase-dispatch.mjs',
+  'scripts/install-browser-runtime.sh',
+  'scripts/memorygraph-mcp-wrapper.js',
+  'scripts/memorygraph-mcp-wrapper.mjs',
+  'scripts/code-review-graph-mcp-wrapper.js',
+  'scripts/commit-moonshot-memory-refresh.mjs',
+  'scripts/lib/runtime-state-root.mjs',
+  'scripts/verification-verdict-state.mjs',
   'bin/browserctl',
   'tools/browserd/package.json',
   'tools/browserd/server.mjs',
@@ -116,12 +122,20 @@ const generatedStateFragments = [
   '.test.py',
 ];
 
-const devOnlyPayloadExclusions = [
+const obsoleteWorkflowScriptExclusions = [
+  '.claude/archive/scripts/legacy-phase-adapters/agent-loop.mjs',
+  '.claude/archive/scripts/legacy-phase-adapters/verify-code-policy.mjs',
   '.claude/scripts/check-mcp.sh',
   '.claude/scripts/harness-surface-inventory.mjs',
   '.claude/scripts/verify-phase-closeout-fixtures.mjs',
   '.claude/scripts/lib/windows-safe-files.mjs',
   '.claude/scripts/lib/phase-attempt-telemetry.mjs',
+  '.claude/scripts/moonshot-phase-dispatch.mjs',
+  '.claude/scripts/moonshot-phase-dispatch.sh',
+  '.claude/scripts/agent-loop.sh',
+  '.claude/scripts/harness-prepare-worktree.sh',
+  '.claude/scripts/verify-phase-runner-boundary.sh',
+  '.claude/scripts/verification-agent-run.mjs',
 ];
 
 const runtimeStateDenylistExamples = [
@@ -223,10 +237,10 @@ test('excludes runtime state from package payloads and local-only artifacts', as
   }
 });
 
-test('excludes dev-only diagnostics from package payloads', async () => {
+test('excludes archived legacy and obsolete workflow scripts from Claude package payload', async () => {
   const files = new Set(await listFiles(await claudeProfile(), '.claude'));
 
-  for (const exclusion of devOnlyPayloadExclusions) {
+  for (const exclusion of obsoleteWorkflowScriptExclusions) {
     assert.equal(files.has(exclusion), false, `${exclusion} should not be installed in the Claude payload`);
   }
 });
@@ -248,13 +262,14 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /generatedProfileRoot: package\/claude\/profile\/\.claude\//);
   assert.match(contract, /generatedProfileRoot: package\/codex\/profile\/\.codex\//);
   assert.match(contract, /materializer: package\/build-package\.mjs/);
+  assert.match(contract, /claudeSupportScripts:/);
+  assert.match(contract, /archivedLegacyScripts:/);
+  assert.match(contract, /archive\/scripts\/legacy-phase-adapters\//);
+  assert.doesNotMatch(contract, /source: scripts\/\*\*/);
   assert.match(contract, /\.claude\/logs\/\*\*/);
   assert.match(contract, /\.claude\/runtime-state\.sqlite\*/);
   assert.match(contract, /\.code-review-graph\/\*\*/);
-  assert.match(contract, /excludedDevOnlyPayload:/);
-  for (const exclusion of devOnlyPayloadExclusions) {
-    assert.match(contract, new RegExp(exclusion.replace(/^\.claude\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  }
+  assert.doesNotMatch(contract, /excludedDevOnlyPayload:/);
 });
 
 test('generated package profiles are not tracked source files', () => {

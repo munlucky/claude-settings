@@ -28,7 +28,7 @@ context: fork
 
 ## 정책 경계
 
-- 기계적으로 판정 가능한 코드 정책 위반은 `.claude/scripts/verify-code-policy.sh`를 하드 게이트로 취급합니다.
+- moonshot-relay source checkout에서는 archived legacy code-policy check를 `archive/scripts/legacy-phase-adapters/verify-code-policy.sh`에서 실행할 수 있습니다. downstream review에서는 project-native deterministic policy gate를 사용합니다.
 - 이 리뷰는 deterministic check의 대체물이 아니라 의미적/아키텍처적 위험 평가에 사용합니다.
 - Review stage에서는 변경 파일 review context, impact radius, caller/importer/test 힌트의 기본 소스로 `code-review-graph`를 광범위한 파일 읽기보다 우선 사용합니다.
 - `.claude/docs/guidelines/code-review-graph-workflow.md`를 적용합니다: stage-gated, lazy update, summary-only evidence.

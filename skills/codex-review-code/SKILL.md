@@ -28,7 +28,7 @@ This is the default Review-stage owner for non-trivial code changes.
 
 ## Policy Boundary
 
-- Treat `.claude/scripts/verify-code-policy.sh` as the hard gate for machine-checkable code policy violations.
+- In a moonshot-relay source checkout, archived legacy code-policy checks may be run from `archive/scripts/legacy-phase-adapters/verify-code-policy.sh`; downstream reviews should use the project-native deterministic policy gate instead.
 - Use this review for semantic and architectural risk assessment, not as a substitute for deterministic checks.
 - In review stage, prefer `code-review-graph` as the default source for changed-file review context, impact radius, and caller/importer/test hints before broad file reading.
 - Apply `.claude/docs/guidelines/code-review-graph-workflow.md`: stage-gated, lazy update, summary-only evidence.

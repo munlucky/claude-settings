@@ -26,8 +26,8 @@ Apply reusable Moonshot harness improvements without expanding the public skill 
 1. Inspect the current harness contract:
    - `.claude/skills/moonshot-orchestrator/SKILL.md`
    - `.claude/skills/moonshot-phase-runner/SKILL.md`
-   - `.claude/scripts/verify-phase-runtime-parity-shell-core.sh`
-   - `.claude/scripts/agent-loop-phase-plan-lib.mjs`
+   - `archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh`
+   - `archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs`
    - `.claude/verification.contract.yaml`
 2. Classify the change:
    - external pattern transfer
@@ -105,10 +105,10 @@ For `verify-phase-runtime-parity.sh` failures:
 Recommended checks:
 
 ```bash
-bash -n .claude/scripts/verify-phase-runtime-parity-shell-core.sh
-node --check .claude/scripts/agent-loop-phase-plan-lib.mjs
-bash .claude/scripts/verify-phase-runner-boundary.sh
-PHASE_RUNTIME_PARITY_KEEP_TMP=true bash .claude/scripts/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan
+bash -n archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh
+node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
+bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
+PHASE_RUNTIME_PARITY_KEEP_TMP=true bash archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan
 ```
 
 ## Downstream Sync
@@ -131,30 +131,30 @@ The script syncs shared harness files and directories only. It intentionally pre
 Use checks proportional to the change:
 
 ```bash
-bash .claude/scripts/knowledge-repo-audit.sh
-bash .claude/scripts/verify-code-policy.sh
-bash .claude/scripts/workflow-enforcement.sh verify
-bash .claude/scripts/verify-phase-runner-boundary.sh
+bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
+bash archive/scripts/legacy-phase-adapters/verify-code-policy.sh
+bash archive/scripts/legacy-phase-adapters/workflow-enforcement.sh verify
+bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
 git diff --check
 ```
 
 For harness behavior fixes, also run the new or selected incident regression command and at least one neighboring existing test suite. The report must identify which command is RED/GREEN evidence. Examples:
 
 ```bash
-node .claude/scripts/agent-loop-phase-state.mjs self-test
-node --test .claude/scripts/agent-loop-phase-state.test.mjs
-node --test .claude/scripts/agent-loop-phase-runner.test.mjs
-node --test .claude/scripts/lib/terminal-blocker-publisher.test.mjs
+node archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs self-test
+node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-state.test.mjs
+node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs
+node --test archive/scripts/legacy-phase-adapters/lib/terminal-blocker-publisher.test.mjs
 ```
 
 When syncing downstream projects, also run:
 
 ```bash
-HARNESS_KNOWLEDGE_AUDIT_FILE=/tmp/<project>-knowledge-audit.json bash .claude/scripts/knowledge-repo-audit.sh
-bash -n .claude/scripts/knowledge-repo-audit.sh
-bash -n .claude/scripts/verify-code-policy.sh
-bash -n .claude/scripts/workflow-enforcement.sh
-node --check .claude/scripts/agent-loop-phase-plan-lib.mjs
+HARNESS_KNOWLEDGE_AUDIT_FILE=/tmp/<project>-knowledge-audit.json bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
+bash -n archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
+bash -n archive/scripts/legacy-phase-adapters/verify-code-policy.sh
+bash -n archive/scripts/legacy-phase-adapters/workflow-enforcement.sh
+node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
 ```
 
 ## Reporting
