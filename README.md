@@ -146,6 +146,20 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 curl -fsSL https://raw.githubusercontent.com/munlucky/moonshot-relay/main/install-claude.sh | bash
 ```
 
+### Agent Skills CLI 설치
+
+`skills/`만 Agent Skills 표준 위치에 설치하려면 `npx skills`를 사용할 수 있습니다.
+
+```bash
+npx skills add munlucky/moonshot-relay
+```
+
+필요한 스킬만 설치하려면:
+
+```bash
+npx skills add munlucky/moonshot-relay --skill moonshot-orchestrator
+```
+
 옵션과 함께 사용:
 
 ```bash

@@ -10,6 +10,14 @@ The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/script
 
 Project-local installs are compatibility output. Run `bash install-claude.sh --project` to materialize them into the current repository. Without `--project`, `bash install-claude.sh` delegates to `scripts/install-account-root-harness.mjs`.
 
+Agent Skills CLI installs are supported for the root `skills/` catalog:
+
+```sh
+npx skills add munlucky/moonshot-relay
+```
+
+This path installs only skills discovered from `skills/*/SKILL.md`. It does not install Moonshot Relay account-root runtime assets, agents, rules, MCP wrappers, templates, or manifests. Use `bash install-claude.sh` when the full account-root Claude/Codex profile is required.
+
 ## Contributor Flow
 
 For a source change:
@@ -20,6 +28,8 @@ For a source change:
 4. Use `bash install-claude.sh --dry-run` to confirm account-root output, and `bash install-claude.sh --project --dry-run` when project-local compatibility output changes.
 
 Do not edit generated package payloads or runtime state to make a test pass. Generated state includes logs, caches, traces, browser artifacts, sqlite files, memorygraph data, and verification verdict JSON.
+
+Runtime execution artifacts under `docs/implementation/**/execution/`, `docs/implementation/**/archive/`, and `docs/implementation/**/close/` must remain untracked. They are excluded from Git so GitHub-based skill installers can clone the repository reliably on Windows path-length-limited systems.
 
 ## Expected Dry-Run Signal
 

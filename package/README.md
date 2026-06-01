@@ -39,4 +39,12 @@ This installs shared Moonshot Relay runtime assets into `%USERPROFILE%/.moonshot
 
 Use `bash install-claude.sh --project` only when a downstream repository needs project-local `.claude/` and `.codex/` compatibility payloads.
 
+Install only the Agent Skills catalog with:
+
+```sh
+npx skills add munlucky/moonshot-relay
+```
+
+This uses the repository root `skills/*/SKILL.md` entries and intentionally skips account-root runtime assets, agents, rules, templates, MCP wrappers, and install manifests.
+
 Generated state is never part of the package payload. Runtime payload also excludes dev-only diagnostics and obsolete workflow scripts. Logs, caches, traces, browser artifacts, sqlite state, memorygraph data, temporary runtime directories, and verification verdict outputs must stay outside package assembly.

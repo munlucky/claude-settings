@@ -1,3 +1,0 @@
-# Phase 04 worksets for opt-in worktree parallel execution.
-# Default is disabled: leave worksets empty until the phase owner defines non-overlapping ownedPaths.
-worksets: []
