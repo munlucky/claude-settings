@@ -15,7 +15,7 @@ const usage = `Usage:
 
 Runs the Moonshot Relay account-root installer from the current package source.`;
 
-const args = process.argv.slice(2);
+const args = process.argv.slice(2).filter((arg) => arg !== '--');
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(usage);
