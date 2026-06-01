@@ -83,7 +83,7 @@ function New-MaterializedPayloads($OutputRoot) {
     }
 }
 
-$payloadRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("claude-settings-package-" + [System.Guid]::NewGuid().ToString())
+$payloadRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("moonshot-relay-package-" + [System.Guid]::NewGuid().ToString())
 New-MaterializedPayloads $payloadRoot
 $ClaudePayload = Join-Path $payloadRoot $MaterializedClaudeProfile
 $CodexPayload = Join-Path $payloadRoot $MaterializedCodexProfile
@@ -126,7 +126,7 @@ if (-not $NoBackup) {
 
 $projectStash = $null
 if (-not $IncludeProject -and (Test-Path -LiteralPath ".claude/PROJECT.md" -PathType Leaf)) {
-    $projectStash = Join-Path ([System.IO.Path]::GetTempPath()) ("claude-settings-project-" + [System.Guid]::NewGuid().ToString() + ".md")
+    $projectStash = Join-Path ([System.IO.Path]::GetTempPath()) ("moonshot-relay-project-" + [System.Guid]::NewGuid().ToString() + ".md")
     Copy-Item -LiteralPath ".claude/PROJECT.md" -Destination $projectStash -Force
 }
 

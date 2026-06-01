@@ -22,7 +22,8 @@ import { fileURLToPath } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 const defaultSourceRoot = path.dirname(path.dirname(scriptPath));
 
-const manifestName = '.claude-settings-install-manifest.json';
+const manifestName = '.moonshot-relay-install-manifest.json';
+const legacyManifestNames = Object.freeze(['.claude-settings-install-manifest.json']);
 
 const runtimeSpecs = {
   claude: {
@@ -102,8 +103,8 @@ const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--run
 const parseArgs = (argv) => {
   const options = {
     runtime: 'all',
-    sourceRoot: process.env.CLAUDE_SETTINGS_SOURCE_ROOT
-      ? path.resolve(process.env.CLAUDE_SETTINGS_SOURCE_ROOT)
+    sourceRoot: process.env.MOONSHOT_RELAY_SOURCE_ROOT || process.env.CLAUDE_SETTINGS_SOURCE_ROOT
+      ? path.resolve(process.env.MOONSHOT_RELAY_SOURCE_ROOT || process.env.CLAUDE_SETTINGS_SOURCE_ROOT)
       : defaultSourceRoot,
     homes: {},
     dryRun: false,
@@ -191,7 +192,7 @@ const resolvePackageBuilder = async (sourceRoot) => {
   const builder = path.join(sourceRoot, 'package', 'build-package.mjs');
   if (!await pathExists(builder)) {
     throw new Error(
-      `Package materializer not found: ${builder}. Run this installer from the claude-settings source checkout or pass --source-root <repo>.`,
+      `Package materializer not found: ${builder}. Run this installer from the moonshot-relay source checkout or pass --source-root <repo>.`,
     );
   }
   return builder;
@@ -199,7 +200,7 @@ const resolvePackageBuilder = async (sourceRoot) => {
 
 const materializePayloads = async (sourceRoot) => {
   const packageBuilder = await resolvePackageBuilder(sourceRoot);
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'claude-settings-account-root-'));
+  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-relay-account-root-'));
   const result = spawnSync(process.execPath, [
     packageBuilder,
     '--runtime',
@@ -260,7 +261,7 @@ const installRuntime = async ({ runtime, payloadRoot, options, installId, source
   }
 
   const sourceEntries = await readdir(sourceRoot, { withFileTypes: true });
-  const backupRoot = path.join(targetRoot, 'backups', `claude-settings-account-root-${installId}`);
+  const backupRoot = path.join(targetRoot, 'backups', `moonshot-relay-account-root-${installId}`);
   const copied = [];
   const skipped = [];
   const backups = [];
@@ -337,6 +338,27 @@ const installRuntime = async ({ runtime, payloadRoot, options, installId, source
 
   if (!options.dryRun) {
     await writeFile(path.join(targetRoot, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
+    for (const legacyManifestName of legacyManifestNames) {
+      const legacyManifestPath = path.join(targetRoot, legacyManifestName);
+      if (await pathExists(legacyManifestPath)) {
+        let legacyManifest;
+        try {
+          const parsedLegacyManifest = JSON.parse(await readFile(legacyManifestPath, 'utf8'));
+          legacyManifest = parsedLegacyManifest
+            && typeof parsedLegacyManifest === 'object'
+            && !Array.isArray(parsedLegacyManifest)
+            ? parsedLegacyManifest
+            : {};
+        } catch {
+          legacyManifest = {};
+        }
+        await writeFile(legacyManifestPath, `${JSON.stringify({
+          ...legacyManifest,
+          legacyManifest: true,
+          supersededBy: manifestName,
+        }, null, 2)}\n`);
+      }
+    }
   }
 
   return manifest;

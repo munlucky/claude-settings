@@ -178,7 +178,7 @@ git add -- .claude .codex .claudeignore .gitattributes .gitignore AGENTS.md READ
 - 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
 - 사용자가 제외하자고 하면 메모리 산출물은 unstaged 상태로 두고 나머지만 커밋하세요.
 - MemoryGraph 저장 실패는 direct fallback까지 시도한 뒤 기록하되, 사용자가 commit/push를 명시한 흐름에서는 Git closeout을 막지 마세요.
-- 일반 프로젝트 커밋 중 승격 후보를 `claude-settings` graph에 자동 저장하지 마세요. 자동심사는 수행하되, replay 검증 통과 또는 명시 승인 조건에서만 write를 시도하세요.
+- 일반 프로젝트 커밋 중 승격 후보를 `moonshot-relay` graph에 자동 저장하지 마세요. 자동심사는 수행하되, replay 검증 통과 또는 명시 승인 조건에서만 write를 시도하세요.
 - 최종 커밋 요약에 사용자의 선택을 명시하세요.
 
 ## 8. 커밋 생성

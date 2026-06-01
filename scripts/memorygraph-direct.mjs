@@ -369,7 +369,7 @@ class DirectMcpClient {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: {
-        name: 'claude-settings-memorygraph-direct',
+        name: 'moonshot-relay-memorygraph-direct',
         version: '1.0.0',
       },
     });

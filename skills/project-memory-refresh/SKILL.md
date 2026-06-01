@@ -42,7 +42,7 @@ On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with
 
 ## Harness Promotion
 
-This skill may generate promotion candidates, but it must not store them in `claude-settings`. Use `harness-memory-promoter` from the harness repository after explicit approval.
+This skill may generate promotion candidates, but it must not store them in `moonshot-relay`. Use `harness-memory-promoter` from the harness repository after explicit approval.
 
 ## Project Knowledge Boundary
 

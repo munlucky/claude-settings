@@ -184,7 +184,7 @@ function compactProvenance(candidate = {}, options = {}) {
 }
 
 function buildProvenanceTags(candidate = {}, options = {}) {
-  const projectId = toText(options.projectId ?? candidate.project_id ?? candidate.projectId ?? 'claude-settings', 'claude-settings');
+  const projectId = toText(options.projectId ?? candidate.project_id ?? candidate.projectId ?? 'moonshot-relay', 'moonshot-relay');
   const runId = toText(options.runId ?? candidate.run_id ?? candidate.runId, '');
   const candidateId = toText(options.candidateId ?? candidate.candidate_id ?? candidate.candidateId, '');
   const validatedBy = toText(options.validatedBy ?? candidate.validated_by ?? candidate.validatedBy, 'replay');
@@ -308,7 +308,7 @@ export function evaluatePromotionGate(candidate = {}, options = {}) {
 export function buildPromotionOutput(candidate = {}, options = {}) {
   const gate = evaluatePromotionGate(candidate, options);
   const provenance = {
-    project_id: toText(options.projectId ?? candidate.project_id ?? candidate.projectId ?? 'claude-settings', 'claude-settings'),
+    project_id: toText(options.projectId ?? candidate.project_id ?? candidate.projectId ?? 'moonshot-relay', 'moonshot-relay'),
     source: 'moonshot',
     origin: 'awtl',
     origin_run: toText(options.runId ?? candidate.run_id ?? candidate.runId, ''),

@@ -20,9 +20,9 @@ export const TARGETS = Object.freeze([
 ]);
 
 export const HARNESS_META_PROJECT = Object.freeze({
-  projectId: 'moonshot-harness-core',
-  knowledgeRoot: '%USERPROFILE%/.codex/state/projects/moonshot-harness-core/knowledge',
-  improvementRoot: '%USERPROFILE%/.codex/state/projects/moonshot-harness-core/improvement',
+  projectId: 'moonshot-relay',
+  knowledgeRoot: '%USERPROFILE%/.codex/state/projects/moonshot-relay/knowledge',
+  improvementRoot: '%USERPROFILE%/.codex/state/projects/moonshot-relay/improvement',
   candidateReleaseRoot: '%USERPROFILE%/.codex/harness/releases/candidate',
   stableReleaseRoot: '%USERPROFILE%/.codex/harness/releases/stable',
   requiredArtifacts: Object.freeze([

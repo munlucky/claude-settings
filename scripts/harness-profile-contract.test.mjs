@@ -36,14 +36,14 @@ function assertFilesEqual(paths) {
 test('harness TDD and readiness contracts stay synchronized across root and profiles', () => {
   const syncedGroups = [
     [
-      'skills/moonshot-harness-maintainer/SKILL.md',
-      '.claude/skills/moonshot-harness-maintainer/SKILL.md',
-      '.codex/skills/moonshot-harness-maintainer/SKILL.md',
+      'skills/moonshot-relay-maintainer/SKILL.md',
+      '.claude/skills/moonshot-relay-maintainer/SKILL.md',
+      '.codex/skills/moonshot-relay-maintainer/SKILL.md',
     ],
     [
-      'skills/moonshot-harness-maintainer/SKILL.ko.md',
-      '.claude/skills/moonshot-harness-maintainer/SKILL.ko.md',
-      '.codex/skills/moonshot-harness-maintainer/SKILL.ko.md',
+      'skills/moonshot-relay-maintainer/SKILL.ko.md',
+      '.claude/skills/moonshot-relay-maintainer/SKILL.ko.md',
+      '.codex/skills/moonshot-relay-maintainer/SKILL.ko.md',
     ],
     [
       'skills/test-driven-development/SKILL.md',
@@ -83,7 +83,7 @@ test('harness TDD and readiness contracts stay synchronized across root and prof
 });
 
 test('meta-harness behavior fixes require executable regression assets', () => {
-  const maintainer = readRepoFile('skills/moonshot-harness-maintainer/SKILL.md');
+  const maintainer = readRepoFile('skills/moonshot-relay-maintainer/SKILL.md');
   const tdd = readRepoFile('skills/test-driven-development/SKILL.md');
 
   assert.match(maintainer, /TDD Incident Regression Contract/);

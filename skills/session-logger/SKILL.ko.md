@@ -161,7 +161,7 @@ execution bridge 사용 시:
 - 사용자가 graph refresh를 명시한 경우에만 `project-memory-refresh`를 실행합니다. 그 외 finish logging은 read-only로 유지하고, 필요하면 승격 후보만 만듭니다.
 - 지식 write는 verify/promote lifecycle을 통과한 재사용 가능한 결정, correction, fix, 프로젝트별 convention에 한정합니다.
 - `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 소스로 사용하지 않습니다.
-- 하네스 승격 후보는 만들 수 있지만, 명시 승인 없이 `claude-settings` graph에 직접 저장하지 않습니다.
+- 하네스 승격 후보는 만들 수 있지만, 명시 승인 없이 `moonshot-relay` graph에 직접 저장하지 않습니다.
 
 | 이벤트 | 키 패턴 | 예시 |
 |--------|---------|------|

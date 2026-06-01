@@ -486,7 +486,7 @@ function promotionCandidates(seed, project) {
       title: item.title,
       content: item.content,
       tags: [
-        'project:claude-settings',
+        'project:moonshot-relay',
         'source:moonshot',
         'promoted',
         `from-project:${project.id}`,
@@ -507,7 +507,7 @@ function promotionCandidates(seed, project) {
   return {
     generatedAt: seed.generatedAt,
     promotionMode: 'candidate_requires_approval',
-    targetProjectId: 'claude-settings',
+    targetProjectId: 'moonshot-relay',
     sourceProjectId: project.id,
     sourceProjectPath: project.path,
     candidateCount: candidates.length,

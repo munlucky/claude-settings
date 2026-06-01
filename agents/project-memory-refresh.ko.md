@@ -63,7 +63,7 @@ create_relationship:
 
 ## 승격 경계
 
-이 에이전트는 하네스 graph에 쓰지 않습니다. `promotion-candidates.json`은 만들 수 있지만, `claude-settings`에 저장하려면 반드시 하네스 프로젝트에서 `harness-memory-promoter`가 실행되어야 합니다.
+이 에이전트는 하네스 graph에 쓰지 않습니다. `promotion-candidates.json`은 만들 수 있지만, `moonshot-relay`에 저장하려면 반드시 하네스 프로젝트에서 `harness-memory-promoter`가 실행되어야 합니다.
 
 ## 출력
 

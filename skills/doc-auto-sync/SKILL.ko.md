@@ -152,7 +152,7 @@ node .claude/scripts/memorygraph-project-index.mjs
 - doc sync 중에는 호환 seed/cache 파일만 생성합니다. 사용자가 memory refresh를 명시하지 않았다면 semantic fact나 raw graph state를 쓰지 않습니다.
 - `.claude/docs/ko/`는 seed source에서 제외합니다.
 - 운영 중인 기존 프로젝트도 기본 `--analysis-level code`로 코드 수준 사실을 포함합니다.
-- 승격 후보 개수는 보고하되, 명시 승인 없이 `claude-settings`에 승격하지 않습니다.
+- 승격 후보 개수는 보고하되, 명시 승인 없이 `moonshot-relay`에 승격하지 않습니다.
 - `.claude/cache/memorygraph/`와 계정 루트 knowledge runtime state는 기본 스테이징 대상에서 제외합니다.
 
 ---

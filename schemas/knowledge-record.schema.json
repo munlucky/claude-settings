@@ -245,7 +245,7 @@
             "status": { "enum": ["staged", "verified", "promoted", "rejected"] },
             "createdAt": { "$ref": "#/$defs/timestamp" },
             "updatedAt": { "$ref": "#/$defs/timestamp" },
-            "targetScope": { "enum": ["project", "global", "moonshot-harness-core"] },
+            "targetScope": { "enum": ["project", "global", "moonshot-relay"] },
             "sourceFactId": { "$ref": "#/$defs/id" },
             "reviewEvidence": { "$ref": "#/$defs/id" },
             "replayEvidence": { "$ref": "#/$defs/id" },

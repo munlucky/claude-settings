@@ -42,7 +42,7 @@ Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인
 
 ## 하네스 승격
 
-이 스킬은 승격 후보를 만들 수 있지만, `claude-settings`에 저장하지 않습니다. 명시 승인 후 하네스 저장소에서 `harness-memory-promoter`를 사용합니다.
+이 스킬은 승격 후보를 만들 수 있지만, `moonshot-relay`에 저장하지 않습니다. 명시 승인 후 하네스 저장소에서 `harness-memory-promoter`를 사용합니다.
 
 ## Project Knowledge Boundary
 

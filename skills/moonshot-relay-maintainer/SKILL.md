@@ -1,9 +1,9 @@
 ---
-name: moonshot-harness-maintainer
+name: moonshot-relay-maintainer
 description: Maintain the Moonshot harness and downstream .claude installs. Use when adopting external skill or harness patterns, improving moonshot-orchestrator or moonshot-phase-runner policy, fixing runtime parity or completion-gate fixtures, updating commit-memory defaults, or syncing shared .claude assets into target projects while preserving project-local PROJECT.md, memory, settings, logs, and task docs.
 ---
 
-# Moonshot Harness Maintainer
+# Moonshot Relay Maintainer
 
 ## Purpose
 
@@ -18,7 +18,7 @@ Apply reusable Moonshot harness improvements without expanding the public skill 
 - Every harness behavior fix must follow TDD: add or select a deterministic regression test or fixture that reproduces the incident class, run it red or prove it would fail on the old behavior, then make the smallest code change to turn it green. Do not close a harness incident with source-only evidence.
 - If a regression test is genuinely infeasible, record the bypass reason, the closest executable check, and the remaining recurrence risk in the handoff/report.
 - Treat `.claude/memory.json`, `.claude/memorygraph/`, `PROJECT.md`, `.mcp.json`, `settings.local.json`, logs, runtime artifacts, and downstream task docs as project-local unless the user explicitly says otherwise.
-- When a phase source plan invokes a project-owned CLI or npm/node command and the command surface is missing or narrower than the plan requires, classify it as a source-plan command surface incident. Fix and test the project-owned CLI in the target repo; sync only the reusable contract/skill lesson back to claude-settings, not the product CLI implementation.
+- When a phase source plan invokes a project-owned CLI or npm/node command and the command surface is missing or narrower than the plan requires, classify it as a source-plan command surface incident. Fix and test the project-owned CLI in the target repo; sync only the reusable contract/skill lesson back to moonshot-relay, not the product CLI implementation.
 - For commit workflows, refresh memory when requested by the local policy, but keep memory artifacts unstaged unless the user explicitly asks to include them.
 
 ## Workflow
@@ -116,7 +116,7 @@ PHASE_RUNTIME_PARITY_KEEP_TMP=true bash .claude/scripts/verify-phase-runtime-par
 Use `scripts/sync_downstream_claude.py` for conservative `.claude` synchronization:
 
 ```bash
-python3 .claude/skills/moonshot-harness-maintainer/scripts/sync_downstream_claude.py \
+python3 .claude/skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py \
   --source .claude \
   --dry-run \
   /path/to/project-a /path/to/project-b

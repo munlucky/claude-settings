@@ -31,6 +31,6 @@ Install the account-root runtime profiles directly into the local Claude/Codex h
 node scripts/install-account-root-harness.mjs --runtime all --remove-legacy-harness-core
 ```
 
-This installs harness-owned payloads into `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` without using a nested `harness-core` directory. Runtime-local files such as Claude settings, Codex auth/config, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.claude-settings-install-manifest.json` for hash verification and rollback evidence.
+This installs harness-owned payloads into `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` without using a nested `harness-core` directory. Runtime-local files such as Claude settings, Codex auth/config, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.moonshot-relay-install-manifest.json` for hash verification and rollback evidence. Existing `.claude-settings-install-manifest.json` files are treated as legacy install evidence during the rename window.
 
 Generated state is never part of the package payload. Logs, caches, traces, browser artifacts, sqlite state, memorygraph data, temporary runtime directories, and verification verdict outputs must stay outside package assembly.

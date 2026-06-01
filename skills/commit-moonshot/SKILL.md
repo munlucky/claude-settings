@@ -44,7 +44,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - prefer root directories and policy files for installer commits: `.claude`, `.codex`, `.claudeignore`, `.gitattributes`, `.gitignore`, `AGENTS.md`, plus any explicitly changed product docs/code; never include `.agents`
 - only stage memory artifacts when the user explicitly asks to include memory in the commit
 - if MemoryGraph MCP is unavailable, treat it as `mcp_transport_failed -> direct_fallback`; record the failure only after the direct fallback also fails, then continue the Git closeout when the user explicitly requested commit/push
-- do not auto-promote project candidates into `claude-settings` during a normal project commit; run the AWTL promotion audit and write only when `--write-verified` is justified by replay evidence or explicit approval
+- do not auto-promote project candidates into `moonshot-relay` during a normal project commit; run the AWTL promotion audit and write only when `--write-verified` is justified by replay evidence or explicit approval
 - use `commit-moonshot-promotion-audit.mjs --write-verified` only when the user explicitly asked for long-term promotion, for example `장기메모리승격 포함`, `승격 승인`, or `write verified memory`
 - keep failed-turn cases as next-run recall cache; do not treat `.claude/cache/awtl/failed_turn_cases.jsonl` itself as a long-term MemoryGraph source
 - warn before committing when product implementation changes are mixed with `.claude/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes

@@ -43,7 +43,7 @@ function candidate(overrides = {}) {
     proposed_memory: overrides.proposed_memory ?? {
       summary: 'Verifier contract needs fresh evidence before closeout.',
       facts: ['Run the verifier against the active artifact before closeout.'],
-      tags: ['source:moonshot', 'project:claude-settings', 'origin:awtl'],
+      tags: ['source:moonshot', 'project:moonshot-relay', 'origin:awtl'],
     },
     scope: {
       run_id: overrides.run_id ?? 'run-01',
@@ -59,7 +59,7 @@ function candidate(overrides = {}) {
       source_action_ids: ['action-verify'],
     },
     promotion_status: overrides.promotion_status ?? 'ready_for_review',
-    promotion_tags: ['source:moonshot', 'project:claude-settings', 'origin:awtl'],
+    promotion_tags: ['source:moonshot', 'project:moonshot-relay', 'origin:awtl'],
     confidence: overrides.confidence ?? 0.8,
     requires_human_review: overrides.requires_human_review ?? false,
     ...overrides,
@@ -86,7 +86,7 @@ test('invalid and raw-trace candidates are blocked without writes', () => {
     proposed_memory: {
       summary: 'raw trace candidate',
       facts: ['raw trace payload should not be promoted'],
-      tags: ['source:moonshot', 'project:claude-settings', 'origin:awtl', 'raw-trace'],
+      tags: ['source:moonshot', 'project:moonshot-relay', 'origin:awtl', 'raw-trace'],
     },
   });
   writeJsonl(p.candidatePath, ['{not-json', rawTraceCandidate]);
