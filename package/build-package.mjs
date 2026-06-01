@@ -79,6 +79,14 @@ const denyBasenames = [
   /\.test\.py$/,
 ];
 
+const denyRelativePaths = new Set([
+  'scripts/check-mcp.sh',
+  'scripts/harness-surface-inventory.mjs',
+  'scripts/verify-phase-closeout-fixtures.mjs',
+  'scripts/lib/windows-safe-files.mjs',
+  'scripts/lib/phase-attempt-telemetry.mjs',
+]);
+
 const usage = () => `Usage: node package/build-package.mjs [--runtime all|claude|codex] [--out <dir>] [--clean] [--dry-run] [--json]`;
 
 const parseArgs = (argv) => {
@@ -130,8 +138,13 @@ const toPortable = (filePath) => filePath.split(path.sep).join('/');
 
 const shouldExclude = (sourcePath) => {
   const relative = path.relative(repoRoot, sourcePath);
+  const portableRelative = toPortable(relative);
   const segments = relative.split(path.sep);
   const basename = path.basename(sourcePath);
+
+  if (denyRelativePaths.has(portableRelative)) {
+    return true;
+  }
 
   if (segments.some((segment) => denySegments.has(segment) || segment.endsWith('fixtures'))) {
     return true;

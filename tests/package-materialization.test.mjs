@@ -116,6 +116,14 @@ const generatedStateFragments = [
   '.test.py',
 ];
 
+const devOnlyPayloadExclusions = [
+  '.claude/scripts/check-mcp.sh',
+  '.claude/scripts/harness-surface-inventory.mjs',
+  '.claude/scripts/verify-phase-closeout-fixtures.mjs',
+  '.claude/scripts/lib/windows-safe-files.mjs',
+  '.claude/scripts/lib/phase-attempt-telemetry.mjs',
+];
+
 const runtimeStateDenylistExamples = [
   '.moonshot-state/logs/agent-loop/run.log',
   '.moonshot-state/cache/code-review-graph-native-mcp-cache.json',
@@ -215,6 +223,14 @@ test('excludes runtime state from package payloads and local-only artifacts', as
   }
 });
 
+test('excludes dev-only diagnostics from package payloads', async () => {
+  const files = new Set(await listFiles(await claudeProfile(), '.claude'));
+
+  for (const exclusion of devOnlyPayloadExclusions) {
+    assert.equal(files.has(exclusion), false, `${exclusion} should not be installed in the Claude payload`);
+  }
+});
+
 test('excludes runtime state roots from package materialization denylist', () => {
   for (const file of runtimeStateDenylistExamples) {
     assert.equal(
@@ -235,6 +251,10 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /\.claude\/logs\/\*\*/);
   assert.match(contract, /\.claude\/runtime-state\.sqlite\*/);
   assert.match(contract, /\.code-review-graph\/\*\*/);
+  assert.match(contract, /excludedDevOnlyPayload:/);
+  for (const exclusion of devOnlyPayloadExclusions) {
+    assert.match(contract, new RegExp(exclusion.replace(/^\.claude\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
 });
 
 test('generated package profiles are not tracked source files', () => {

@@ -104,7 +104,6 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 | **Implementation Agent** | 코드 구현 | 실제 코드 작성, 패턴 준수 |
 | **Verification Agent** | 검증 실행 | typecheck, build, lint 실행 |
 | **Documentation Agent** | 문서화 | 세션 로그, 최종 문서화 |
-| **Design Spec Extractor** | 디자인 분석 | 디자인 스펙 추출, 입력 데이터 정리 |
 
 ### 스킬 라이브러리와 공개 표면
 

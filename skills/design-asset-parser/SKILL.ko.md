@@ -243,7 +243,7 @@ Design Asset Parser Skill 실행 →
 
 ## 통합 워크플로우
 
-### Design Asset Parser → Design Spec Extractor Agent
+### Design Asset Parser → Design Spec Refinement
 ```
 1. Design Asset Parser Skill:
    - 입력: PDF/CSS 파일
@@ -253,7 +253,7 @@ Design Asset Parser Skill 실행 →
    - pending-questions.md 확인
    - HIGH 우선순위 질문 답변
 
-3. Design Spec Extractor Agent:
+3. Design Spec Refinement:
    - design-spec.md 검토
    - CLAUDE.md 규칙과 비교
    - 프로젝트 패턴 반영

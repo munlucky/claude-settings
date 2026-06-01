@@ -243,7 +243,7 @@ Outputs:
 
 ## Integrated Workflow
 
-### Design Asset Parser -> Design Spec Extractor Agent
+### Design Asset Parser -> Design Spec Refinement
 ```
 1. Design Asset Parser Skill:
    - Input: PDF/CSS files
@@ -253,7 +253,7 @@ Outputs:
    - Review pending-questions.md
    - Answer HIGH priority questions
 
-3. Design Spec Extractor Agent:
+3. Design Spec Refinement:
    - Review design-spec.md
    - Compare with CLAUDE.md rules
    - Apply project patterns

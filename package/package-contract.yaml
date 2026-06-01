@@ -141,6 +141,15 @@ excludedGeneratedState:
   - .claude/knowledge-repo-audit-*.json
   - .code-review-graph/**
 
+excludedDevOnlyPayload:
+  description: "Repository source may keep these dev/test diagnostics, but package payloads must not install them into runtime profiles."
+  entries:
+    - scripts/check-mcp.sh
+    - scripts/harness-surface-inventory.mjs
+    - scripts/verify-phase-closeout-fixtures.mjs
+    - scripts/lib/windows-safe-files.mjs
+    - scripts/lib/phase-attempt-telemetry.mjs
+
 driftPolicy:
   sourceOfTruth: canonicalSource
   compatibilityPolicy: local_runtime_profile_only
