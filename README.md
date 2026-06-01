@@ -146,19 +146,21 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 curl -fsSL https://raw.githubusercontent.com/munlucky/moonshot-relay/main/install-claude.sh | bash
 ```
 
-### Agent Skills CLI 설치
+### Agent Skills CLI 부트스트랩
 
-`skills/`만 Agent Skills 표준 위치에 설치하려면 `npx skills`를 사용할 수 있습니다.
+Agent Skills CLI로 시작할 때는 먼저 skill catalog를 설치한 뒤, 함께 설치되는 `moonshot-relay-setup` skill로 account-root 설치를 완료합니다.
 
 ```bash
 npx skills add munlucky/moonshot-relay
 ```
 
-필요한 스킬만 설치하려면:
+그 다음 Codex/Claude에 다음처럼 요청합니다.
 
-```bash
-npx skills add munlucky/moonshot-relay --skill moonshot-orchestrator
+```text
+moonshot-relay-setup을 사용해서 account-root 설치까지 완료해줘.
 ```
+
+`npx skills add` 자체는 보안상 임의 installer를 실행하지 않으므로, 이 단계만으로는 `~/.moonshot-relay`, `~/.claude`, `~/.codex` 동기화가 끝난 것이 아닙니다. 전체 런타임 설치 완료 기준은 `moonshot-relay-setup` 또는 `install-claude.sh`가 `.moonshot-relay-install-manifest.json`을 각 계정 루트에 남기는 것입니다.
 
 옵션과 함께 사용:
 

@@ -1,0 +1,46 @@
+---
+name: moonshot-relay-setup
+description: Complete Moonshot Relay account-root installation after installing the repository with Agent Skills CLI.
+---
+
+# Moonshot Relay Setup
+
+Use this skill when the user asks to install, refresh, or verify Moonshot Relay after running `npx skills add munlucky/moonshot-relay`, or when the current runtime only has the Agent Skills catalog and needs the full account-root profile.
+
+## Contract
+
+`npx skills add munlucky/moonshot-relay` installs this skill catalog only. It does not execute arbitrary repository installers. Treat that command as the bootstrap step, not as a complete Moonshot Relay runtime install.
+
+To complete installation, run the account-root installer from this skill:
+
+- Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-account-root.ps1
+```
+
+- macOS/Linux/Git Bash:
+
+```bash
+bash scripts/install-account-root.sh
+```
+
+For a dry run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-account-root.ps1 -DryRun
+```
+
+```bash
+bash scripts/install-account-root.sh --dry-run
+```
+
+## Verification
+
+After installation, verify these account-root targets exist:
+
+- `~/.moonshot-relay/.moonshot-relay-install-manifest.json`
+- `~/.claude/.moonshot-relay-install-manifest.json`
+- `~/.codex/.moonshot-relay-install-manifest.json`
+
+If verification fails, report which target is missing and include the installer output. Do not claim the setup is complete from `npx skills add` alone.

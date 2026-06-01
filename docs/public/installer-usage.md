@@ -10,13 +10,13 @@ The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/script
 
 Project-local installs are compatibility output. Run `bash install-claude.sh --project` to materialize them into the current repository. Without `--project`, `bash install-claude.sh` delegates to `scripts/install-account-root-harness.mjs`.
 
-Agent Skills CLI installs are supported for the root `skills/` catalog:
+Agent Skills CLI bootstraps the root `skills/` catalog and installs the `moonshot-relay-setup` skill:
 
 ```sh
 npx skills add munlucky/moonshot-relay
 ```
 
-This path installs only skills discovered from `skills/*/SKILL.md`. It does not install Moonshot Relay account-root runtime assets, agents, rules, MCP wrappers, templates, or manifests. Use `bash install-claude.sh` when the full account-root Claude/Codex profile is required.
+This command does not execute arbitrary repository installers. After it completes, invoke `moonshot-relay-setup` to run the account-root installer and materialize the full Claude/Codex profile under `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. Use `bash install-claude.sh` when running directly from a source checkout.
 
 ## Contributor Flow
 
