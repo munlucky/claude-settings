@@ -48,7 +48,7 @@ Use this skill when the user explicitly wants session or handoff logging, or whe
 - use knowledge writes only for reusable decisions, corrections, fixes, or project-specific conventions that pass the verify/promote lifecycle
 - do not use `.claude/docs/ko/` as a MemoryGraph source; it is a human-facing Korean mirror
 - promote reusable remediation patterns to `.claude/docs/solutions/` when justified
-- create harness promotion candidates only; do not write promoted facts into `claude-settings` without explicit approval
+- create harness promotion candidates only; do not write promoted facts into `moonshot-relay` without explicit approval
 - append correction events instead of rewriting prior history
 
 ## Project Knowledge Context Contract

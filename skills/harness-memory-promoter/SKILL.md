@@ -24,16 +24,16 @@ Promotion must consume durable manifests instead of raw transcript or graph dump
 For harness self-improvement, the meta-project contract is:
 
 ```yaml
-projectId: moonshot-harness-core
-knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/knowledge"
-improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/improvement"
+projectId: moonshot-relay
+knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/knowledge"
+improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/improvement"
 candidateReleaseRoot: "%USERPROFILE%/.codex/harness/releases/candidate"
 stableReleaseRoot: "%USERPROFILE%/.codex/harness/releases/stable"
 ```
 
 ## Required Flow
 
-1. Run from the `claude-settings` repository root.
+1. Run from the `moonshot-relay` repository root.
 2. Load the proposal and evidence manifests.
 3. Validate the proposal with `knowledge-improvement-lifecycle.mjs`.
 4. Deny transcript-only, imported-only, secret-like, or untrusted external candidates with a durable reason.

@@ -240,17 +240,17 @@ test('project-local promote is denied and promotion states require previousState
 
 test('harness meta-project contract exposes stable account-root locations', () => {
   const contract = harnessMetaProjectContract({ USERPROFILE: 'C:\\Users\\moon' });
-  assert.equal(contract.projectId, 'moonshot-harness-core');
-  assert.equal(contract.knowledgeRoot, '%USERPROFILE%/.codex/state/projects/moonshot-harness-core/knowledge');
-  assert.equal(contract.improvementRoot, '%USERPROFILE%/.codex/state/projects/moonshot-harness-core/improvement');
+  assert.equal(contract.projectId, 'moonshot-relay');
+  assert.equal(contract.knowledgeRoot, '%USERPROFILE%/.codex/state/projects/moonshot-relay/knowledge');
+  assert.equal(contract.improvementRoot, '%USERPROFILE%/.codex/state/projects/moonshot-relay/improvement');
   assert.equal(contract.candidateReleaseRoot, '%USERPROFILE%/.codex/harness/releases/candidate');
   assert.equal(contract.stableReleaseRoot, '%USERPROFILE%/.codex/harness/releases/stable');
-  assert.ok(contract.resolvedKnowledgeRoot.endsWith(path.join('.codex', 'state', 'projects', 'moonshot-harness-core', 'knowledge')));
+  assert.ok(contract.resolvedKnowledgeRoot.endsWith(path.join('.codex', 'state', 'projects', 'moonshot-relay', 'knowledge')));
 });
 
 test('harness candidate promotion requires review, replay, and targeted self-test evidence', () => {
   const denied = evaluateImprovementProposal(proposal({
-    projectId: 'moonshot-harness-core',
+    projectId: 'moonshot-relay',
     target: 'harness-meta-project',
     state: 'promote',
     previousState: 'verify',
@@ -267,7 +267,7 @@ test('harness candidate promotion requires review, replay, and targeted self-tes
   assert.ok(denied.denial.reason.includes('targetedSelfTest'));
 
   const approved = evaluateImprovementProposal(proposal({
-    projectId: 'moonshot-harness-core',
+    projectId: 'moonshot-relay',
     target: 'harness-meta-project',
     state: 'promote',
     previousState: 'verify',
@@ -285,7 +285,7 @@ test('harness candidate promotion requires review, replay, and targeted self-tes
 
 test('harness stable promotion requires review, replay, rollback, and release manifest evidence', () => {
   const denied = evaluateImprovementProposal(proposal({
-    projectId: 'moonshot-harness-core',
+    projectId: 'moonshot-relay',
     target: 'harness-meta-project',
     state: 'promote',
     previousState: 'verify',
@@ -304,7 +304,7 @@ test('harness stable promotion requires review, replay, rollback, and release ma
   assert.ok(denied.denial.reason.includes('releaseManifest'));
 
   const approved = evaluateImprovementProposal(proposal({
-    projectId: 'moonshot-harness-core',
+    projectId: 'moonshot-relay',
     target: 'harness-meta-project',
     state: 'promote',
     previousState: 'verify',

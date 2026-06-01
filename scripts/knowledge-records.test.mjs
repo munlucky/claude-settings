@@ -260,7 +260,7 @@ test('verified global or harness promotion candidates may supersede cross-projec
       projectId: 'project-a',
       type: 'promotion_candidate',
       status: 'verified',
-      targetScope: 'moonshot-harness-core',
+      targetScope: 'moonshot-relay',
       supersedes: ['project-rule'],
     },
     { id: 'project-rule', projectId: 'project-b', type: 'semantic_fact', supersedes: [] },

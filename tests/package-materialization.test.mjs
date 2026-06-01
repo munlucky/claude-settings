@@ -16,7 +16,7 @@ const materializePackage = async () => {
     return materializedRoot;
   }
 
-  materializedRoot = await mkdtemp(path.join(os.tmpdir(), 'claude-settings-package-'));
+  materializedRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-relay-package-'));
   const result = spawnSync(process.execPath, [
     'package/build-package.mjs',
     '--runtime',

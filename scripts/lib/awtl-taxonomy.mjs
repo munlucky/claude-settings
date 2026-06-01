@@ -62,7 +62,7 @@ export const awtlRsmePolicy = Object.freeze({
   failureTaxonomyV1,
   provenanceTags: Object.freeze([
     'source:moonshot',
-    'project:claude-settings',
+    'project:moonshot-relay',
     'origin:awtl',
     'validated_by:redaction-helper',
     'validated_by:provenance-boundary',

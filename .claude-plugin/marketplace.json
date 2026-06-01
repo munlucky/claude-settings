@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "plugins": [
     {
-      "name": "claude-settings-profile",
+      "name": "moonshot-relay-claude-profile",
       "manifest": ".claude-plugin/plugin.json",
       "profileTemplateRoot": "package/profile-templates/claude/.claude",
       "materializer": "package/build-package.mjs",

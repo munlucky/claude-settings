@@ -39,7 +39,9 @@ accountRootInstall:
   targets:
     claude: "%USERPROFILE%/.claude"
     codex: "%USERPROFILE%/.codex"
-  manifestName: .claude-settings-install-manifest.json
+  manifestName: .moonshot-relay-install-manifest.json
+  legacyManifestNames:
+    - .claude-settings-install-manifest.json
   legacyHarnessCorePolicy: remove_when_requested_after_backup
   protectedRuntimeEntries:
     claude:

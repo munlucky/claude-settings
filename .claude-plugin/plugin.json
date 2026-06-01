@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "claude-settings-profile",
-  "displayName": "Claude Settings Profile",
+  "name": "moonshot-relay-claude-profile",
+  "displayName": "Moonshot Relay Claude Profile",
   "runtime": "claude",
   "source": {
     "type": "materialized-package-profile",

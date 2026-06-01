@@ -71,7 +71,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     scorecardPath: DEFAULT_SCORECARD_PATH,
     memoryGraphStatus: 'available',
     approval: '',
-    projectId: 'claude-settings',
+    projectId: 'moonshot-relay',
     writeVerified: false,
     json: false,
     outputPath: '',
@@ -143,7 +143,7 @@ Options:
   --write-verified                 Write candidates that pass replay or approval gates.
   --replay-manifest-path <path>    Optional replay probe manifest.
   --replay-manifest-json <json>    Optional replay probe manifest JSON.
-  --project-id <id>                Project id for provenance. Default: claude-settings.
+  --project-id <id>                Project id for provenance. Default: moonshot-relay.
   --output <path>                  Write audit JSON to a file.
   --json                           Emit JSON only.
 `);
@@ -345,7 +345,7 @@ export function auditPromotionCandidates(options = {}) {
   const writeVerified = options.writeVerified === true;
   const approval = toText(options.approval, '');
   const memoryGraphStatus = toText(options.memoryGraphStatus, 'available');
-  const projectId = toText(options.projectId, 'claude-settings');
+  const projectId = toText(options.projectId, 'moonshot-relay');
   const promotionExecutor = options.promotionExecutor ?? executePromotionFlow;
   const candidateRecords = loadCandidateRecords(candidatePath);
   const failedTurnCases = countJsonlRecords(failedTurnCasePath);

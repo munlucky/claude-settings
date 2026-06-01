@@ -5,7 +5,7 @@
 
 set -e
 
-REPO_URL="https://github.com/munlucky/claude-settings"
+REPO_URL="https://github.com/munlucky/moonshot-relay"
 BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
 CODEX_PROJECT_FILES=()
@@ -138,7 +138,9 @@ setup_codex_project_config() {
 		print_info "✓ Codex agents 설치: $target_agents"
 	fi
 
-	if [ -n "${CLAUDE_SETTINGS_SKILLS_DIR:-}" ]; then
+	if [ -n "${MOONSHOT_RELAY_SKILLS_DIR:-}" ]; then
+		source_skills_dir="$MOONSHOT_RELAY_SKILLS_DIR"
+	elif [ -n "${CLAUDE_SETTINGS_SKILLS_DIR:-}" ]; then
 		source_skills_dir="$CLAUDE_SETTINGS_SKILLS_DIR"
 	fi
 
@@ -849,10 +851,10 @@ if [ "$DRY_RUN" = true ]; then
 	if [ ! -f "$DRY_RUN_REPO_ROOT/$PACKAGE_BUILDER" ]; then
 		print_info "[DRY-RUN] local package builder 없음. GitHub archive에서 payload source를 가져옵니다."
 		DRY_RUN_TEMP_DIR=$(mktemp -d)
-		DRY_RUN_ZIP_FILE="$DRY_RUN_TEMP_DIR/claude-settings.zip"
+		DRY_RUN_ZIP_FILE="$DRY_RUN_TEMP_DIR/moonshot-relay.zip"
 		curl -L "$REPO_URL/archive/$BRANCH.zip" -o "$DRY_RUN_ZIP_FILE" --progress-bar
 		extract_zip "$DRY_RUN_ZIP_FILE" "$DRY_RUN_TEMP_DIR"
-		DRY_RUN_REPO_ROOT="$DRY_RUN_TEMP_DIR/claude-settings-$BRANCH"
+		DRY_RUN_REPO_ROOT="$DRY_RUN_TEMP_DIR/moonshot-relay-$BRANCH"
 	fi
 	materialize_package_payloads "$DRY_RUN_REPO_ROOT" "$DRY_RUN_PAYLOAD_ROOT"
 	DRY_RUN_CLAUDE_PAYLOAD="$DRY_RUN_PAYLOAD_ROOT/$MATERIALIZED_CLAUDE_PROFILE"
@@ -907,7 +909,7 @@ fi
 # 4. GitHub에서 다운로드
 print_info "GitHub에서 최신 버전 다운로드 중..."
 TEMP_DIR=$(mktemp -d)
-ZIP_FILE="$TEMP_DIR/claude-settings.zip"
+ZIP_FILE="$TEMP_DIR/moonshot-relay.zip"
 
 curl -L "$REPO_URL/archive/$BRANCH.zip" -o "$ZIP_FILE" --progress-bar
 
@@ -922,7 +924,7 @@ print_info "✓ 다운로드 완료"
 print_info "패키지 payload 추출 중..."
 extract_zip "$ZIP_FILE" "$TEMP_DIR"
 
-DOWNLOADED_REPO="$TEMP_DIR/claude-settings-$BRANCH"
+DOWNLOADED_REPO="$TEMP_DIR/moonshot-relay-$BRANCH"
 MATERIALIZED_PAYLOAD_ROOT="$TEMP_DIR/materialized-package"
 materialize_package_payloads "$DOWNLOADED_REPO" "$MATERIALIZED_PAYLOAD_ROOT"
 DOWNLOADED_CLAUDE_PAYLOAD="$MATERIALIZED_PAYLOAD_ROOT/$MATERIALIZED_CLAUDE_PROFILE"

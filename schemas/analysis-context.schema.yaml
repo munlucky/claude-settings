@@ -209,7 +209,7 @@ defaults:
       relationshipsSkipped: 0
     promotion:
       mode: candidate_requires_approval
-      targetProjectId: claude-settings
+      targetProjectId: moonshot-relay
       status: not_requested
       accepted: 0
       rejected: 0
@@ -244,13 +244,13 @@ defaults:
       - duplicate_raw_analysis_into_memorygraph
   harnessMemory:
     backend: MemoryGraph
-    projectId: claude-settings
+    projectId: moonshot-relay
     loaded: false
     promotionMode: candidate_requires_approval
     context:
-      project_id: claude-settings
+      project_id: moonshot-relay
       tags:
-        - project:claude-settings
+        - project:moonshot-relay
         - source:moonshot
         - promoted
     deltas:

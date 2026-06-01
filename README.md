@@ -1,10 +1,10 @@
-﻿# Claude Settings
+﻿# Moonshot Relay
 
-> Claude Code를 위한 프로젝트 설정과 Moonshot 워크플로우 템플릿 모음
+> Claude Code와 Codex를 위한 Moonshot workflow harness 플러그인
 
 ## 개요
 
-이 저장소는 Claude Code에서 사용할 규칙, 에이전트, 스킬, 문서 템플릿을 한곳에서 관리합니다. 다양한 프로젝트에 재사용 가능한 워크플로우를 제공하고, 설치 스크립트로 손쉽게 배포할 수 있습니다.
+이 저장소는 Claude Code와 Codex에서 사용할 규칙, 에이전트, 스킬, 문서 템플릿을 한곳에서 관리하는 Moonshot workflow harness입니다. 다양한 프로젝트에 재사용 가능한 워크플로우를 제공하고, 플러그인 manifest와 설치 스크립트로 배포할 수 있습니다.
 
 ## 구성 요약
 
@@ -33,7 +33,7 @@ Compatibility wrappers and installed-runtime docs may still mention `.claude/...
 ## 디렉터리 구조
 
 ```text
-claude-settings/
+moonshot-relay/
 ├── install-claude.sh
 ├── README.md
 ├── .claudeignore
@@ -145,14 +145,14 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 ### 한 줄 설치 (권장)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/install-claude.sh | bash
+curl -fsSL https://raw.githubusercontent.com/munlucky/moonshot-relay/main/install-claude.sh | bash
 ```
 
 옵션과 함께 사용:
 
 ```bash
 # 다운로드 후 실행
-curl -fsSL https://raw.githubusercontent.com/munlucky/claude-settings/main/install-claude.sh -o install-claude.sh
+curl -fsSL https://raw.githubusercontent.com/munlucky/moonshot-relay/main/install-claude.sh -o install-claude.sh
 chmod +x install-claude.sh
 
 # Windows는 PowerShell이 아니라 Git Bash에서 실행
@@ -220,8 +220,8 @@ custom/
 
 ```bash
 # 1. .claude 폴더와 ignore 정책 복사
-cp -r claude-settings/.claude /your-project/
-cp claude-settings/.claudeignore /your-project/
+cp -r moonshot-relay/.claude /your-project/
+cp moonshot-relay/.claudeignore /your-project/
 
 # 2. AGENTS 브리지 구성
 mkdir -p /your-project/.agents
@@ -229,7 +229,7 @@ rm -rf /your-project/.agents/skills
 ln -s .claude/CLAUDE.md /your-project/AGENTS.md
 
 # 3. Codex 프로젝트 설정 복사
-cp -r claude-settings/.codex /your-project/
+cp -r moonshot-relay/.codex /your-project/
 
 # 4. 부트스트랩 문서 커스터마이징
 # PROJECT.md와 workflow/design/glossary/daily/test/analysis 문서를 프로젝트에 맞게 수정
@@ -245,7 +245,7 @@ cp -r claude-settings/.codex /your-project/
 ./install-claude.sh --exclude "*.local.json"
 
 # 또는 수동 복사: canonical source나 materialized profile output에서 필요한 스킬만 복사
-cp -r claude-settings/skills/moonshot-orchestrator /your-project/.claude/skills/
+cp -r moonshot-relay/skills/moonshot-orchestrator /your-project/.claude/skills/
 ```
 
 ### Codex 설정 동기화
@@ -269,7 +269,7 @@ Memory 설정:
 - wrapper는 `.claude/memorygraph/`를 생성하고 `MEMORYGRAPH_DATA_DIR`로 주입합니다.
 - `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
 - 프로젝트 지식그래프는 `node .claude/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.claude/memorygraph/`에 반영합니다.
-- 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `claude-settings` graph에 승격합니다.
+- 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `moonshot-relay` graph에 승격합니다.
 - AWTL runtime importer utilities (`.claude/scripts/lib/awtl-runtime-importers.mjs`, `.claude/scripts/awtl-import-trace.mjs`) backfill Codex rollout/session and Claude transcript data into canonical AWTL events while keeping import metadata in `payload`.
 
 Code Review Graph 설정:

@@ -63,7 +63,7 @@ create_relationship:
 
 ## Promotion Boundary
 
-This agent does **not** write to the harness graph. It may create `promotion-candidates.json`, but `harness-memory-promoter` must run from the harness project before anything is stored in `claude-settings`.
+This agent does **not** write to the harness graph. It may create `promotion-candidates.json`, but `harness-memory-promoter` must run from the harness project before anything is stored in `moonshot-relay`.
 
 ## Output
 

@@ -19,7 +19,7 @@ Allowed targets:
 
 - `project-local`: project namespace only. This is the default.
 - `global-candidate`: reusable candidate for account-root/global harness knowledge.
-- `harness-meta-project`: self-improvement for the harness project id `moonshot-harness-core`.
+- `harness-meta-project`: self-improvement for the harness project id `moonshot-relay`.
 
 Project-local observations can become semantic facts only after verification evidence. Project-local facts are not promoted by default.
 
@@ -47,9 +47,9 @@ Transcript-only, imported-only, secret-like, or untrusted external candidates mu
 The harness manages its own recursive improvement lifecycle as a project:
 
 ```yaml
-projectId: moonshot-harness-core
-knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/knowledge"
-improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/improvement"
+projectId: moonshot-relay
+knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/knowledge"
+improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/improvement"
 candidateReleaseRoot: "%USERPROFILE%/.codex/harness/releases/candidate"
 stableReleaseRoot: "%USERPROFILE%/.codex/harness/releases/stable"
 ```

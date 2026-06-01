@@ -14,7 +14,7 @@ const scriptPath = path.join(testDir, 'install-account-root-harness.mjs');
 const tempRoots = [];
 
 const makeTempRoot = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'claude-settings-account-root-test-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'moonshot-relay-account-root-test-'));
   tempRoots.push(root);
   return root;
 };
@@ -96,7 +96,7 @@ test('account-root installer skips protected config and removes legacy harness-c
   assert.equal(existsSync(path.join(codexHome, 'harness-core')), false);
   assert.equal(existsSync(path.join(claudeHome, 'harness-core')), false);
 
-  const codexManifest = JSON.parse(await readFile(path.join(codexHome, '.claude-settings-install-manifest.json'), 'utf8'));
+  const codexManifest = JSON.parse(await readFile(path.join(codexHome, '.moonshot-relay-install-manifest.json'), 'utf8'));
   assert.equal(codexManifest.installMode, 'account-root-direct');
   assert.ok(codexManifest.skipped.some((entry) => entry.path === 'config.toml' && entry.reason === 'protected_runtime_entry'));
   assert.ok(codexManifest.skipped.some((entry) => entry.path === 'harness-core' && entry.reason === 'removed_legacy_harness_core'));

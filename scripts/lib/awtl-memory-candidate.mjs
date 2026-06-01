@@ -15,7 +15,7 @@ const SCHEMA_PATH = path.resolve(MODULE_DIR, '../../schemas/awtl-memory-candidat
 export const DEFAULT_MEMORY_CANDIDATE_OUTPUT = path.join(REPO_ROOT, '.claude/cache/memorygraph/memory_update_candidates.jsonl');
 export const REQUIRED_PROMOTION_TAGS = Object.freeze([
   'source:moonshot',
-  'project:claude-settings',
+  'project:moonshot-relay',
   'origin:awtl',
   'validated_by:redaction-helper',
   'validated_by:provenance-boundary',

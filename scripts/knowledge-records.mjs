@@ -96,7 +96,7 @@ export const RECORD_CONTRACTS = Object.freeze({
 });
 
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-const CROSS_PROJECT_PROMOTION_TARGETS = new Set(['global', 'moonshot-harness-core']);
+const CROSS_PROJECT_PROMOTION_TARGETS = new Set(['global', 'moonshot-relay']);
 
 function hasOwn(record, field) {
   return Object.hasOwn(record, field);

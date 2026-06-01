@@ -24,16 +24,16 @@ triggers:
 harness self-improvement meta-project contract:
 
 ```yaml
-projectId: moonshot-harness-core
-knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/knowledge"
-improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-harness-core/improvement"
+projectId: moonshot-relay
+knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/knowledge"
+improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/improvement"
 candidateReleaseRoot: "%USERPROFILE%/.codex/harness/releases/candidate"
 stableReleaseRoot: "%USERPROFILE%/.codex/harness/releases/stable"
 ```
 
 ## Required Flow
 
-1. `claude-settings` repository root에서 실행합니다.
+1. `moonshot-relay` repository root에서 실행합니다.
 2. proposal과 evidence manifest를 로드합니다.
 3. `knowledge-improvement-lifecycle.mjs`로 proposal을 검증합니다.
 4. transcript-only, imported-only, secret-like, untrusted external candidate는 durable reason으로 거부합니다.

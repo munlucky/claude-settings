@@ -163,7 +163,7 @@ Rules:
 - Generate only compatibility seed/cache files during doc sync; do not write semantic facts or raw graph state unless the user explicitly requested memory refresh.
 - Keep `.claude/docs/ko/` out of seed sources.
 - Include code-level facts from existing projects through the default `--analysis-level code`.
-- Report promotion candidate count, but do not promote into `claude-settings` without explicit approval.
+- Report promotion candidate count, but do not promote into `moonshot-relay` without explicit approval.
 - Keep `.claude/cache/memorygraph/` and account-root knowledge runtime state unstaged by default.
 
 ---

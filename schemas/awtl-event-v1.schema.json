@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://claude-settings.local/schemas/awtl-event-v1.schema.json",
+  "$id": "https://moonshot-relay.local/schemas/awtl-event-v1.schema.json",
   "title": "awtl.event.v1",
   "type": "object",
   "additionalProperties": false,

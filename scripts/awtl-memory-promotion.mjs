@@ -13,7 +13,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     replayManifestPath: '',
     replayManifestJson: '',
     approval: '',
-    projectId: 'claude-settings',
+    projectId: 'moonshot-relay',
     validatedBy: '',
     runId: '',
     candidateId: '',

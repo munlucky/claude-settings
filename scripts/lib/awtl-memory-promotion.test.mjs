@@ -97,14 +97,14 @@ test('compact promotion facts carry provenance tags and omit raw trace payloads'
   const attribution = buildFailureAttribution([failureEvent], failureEvent, { repoRoot: process.cwd() });
   const candidate = buildMemoryCandidate(attribution, { runId: 'run-05', traceId: 'trace-05' });
   const fact = buildCompactFact(candidate, {
-    projectId: 'claude-settings',
+    projectId: 'moonshot-relay',
     runId: 'run-05',
     candidateId: candidate.candidate_id,
     validatedBy: 'replay',
   });
 
   assert.deepEqual(fact.tags, [
-    'project:claude-settings',
+    'project:moonshot-relay',
     'source:moonshot',
     'origin:awtl',
     `origin_run:${candidate.run_id}`,
@@ -280,7 +280,7 @@ test('buildPromotionOutput preserves compact provenance data and omits raw trace
   const output = buildPromotionOutput(candidate, {
     approval: 'approved',
     validatedBy: 'replay',
-    projectId: 'claude-settings',
+    projectId: 'moonshot-relay',
     runId: candidate.run_id,
     candidateId: candidate.candidate_id,
     replayManifest: buildReplayProbeManifest({

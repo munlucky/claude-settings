@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "plugins": [
     {
-      "name": "claude-settings-codex-profile",
+      "name": "moonshot-relay-codex-profile",
       "manifest": ".codex-plugin/plugin.json",
       "profileTemplateRoot": "package/profile-templates/codex/.codex",
       "materializer": "package/build-package.mjs",
