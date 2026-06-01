@@ -165,14 +165,20 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /windowsMaterializationPolicy:/);
   assert.match(contract, /duplicateSourcePolicy:/);
   assert.match(contract, /accountRootInstall:/);
+  assert.match(contract, /defaultShellInstaller: install-claude\.sh/);
   assert.match(contract, /mode: account-root-direct/);
+  assert.match(contract, /projectCompatibilityMode: "install-claude\.sh --project"/);
+  assert.match(contract, /common: "%USERPROFILE%\/\.moonshot-relay"/);
+  assert.match(contract, /commonPayloadEntries:/);
+  assert.match(contract, /runtimeExposureEntries:/);
   assert.match(contract, /legacyHarnessCorePolicy: remove_when_requested_after_backup/);
 });
 
 test('repository layout docs name canonical source, local runtime profile, generated state, and package payload boundaries', async () => {
   const repositoryLayout = await readFile(fromRoot('docs', 'public', 'repository-layout.md'), 'utf8');
+  const installerUsage = await readFile(fromRoot('docs', 'public', 'installer-usage.md'), 'utf8');
   const packageReadme = await readFile(fromRoot('package', 'README.md'), 'utf8');
-  const combined = `${repositoryLayout}\n${packageReadme}`;
+  const combined = `${repositoryLayout}\n${installerUsage}\n${packageReadme}`;
 
   for (const phrase of ['canonical source', 'local runtime profile', 'generated state', 'package payload']) {
     assert.match(combined, new RegExp(phrase, 'i'), `${phrase} boundary should be documented`);
@@ -182,6 +188,11 @@ test('repository layout docs name canonical source, local runtime profile, gener
   assert.match(repositoryLayout, /do not create or depend on nested `harness-core` directories/i);
   assert.match(packageReadme, /Generated state is never part of the package payload/);
   assert.match(packageReadme, /install-account-root-harness\.mjs/);
+  assert.match(installerUsage, /default mode is account-root installation/i);
+  assert.match(installerUsage, /~\/\.moonshot-relay/);
+  assert.match(installerUsage, /--project/);
+  assert.match(repositoryLayout, /Default installs materialize shared Moonshot Relay runtime assets/);
+  assert.match(repositoryLayout, /Claude keeps `\.claude\/rules\/`/);
 });
 
 test('root runtime profiles are local-only and not tracked source', () => {

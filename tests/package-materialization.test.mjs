@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -280,4 +280,60 @@ test('generated package profiles are not tracked source files', () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), '', 'generated package profile files should not be tracked');
+});
+
+test('account-root installer merges shared directories without deleting unrelated skills', async () => {
+  const installRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-relay-account-root-install-'));
+  const moonshotHome = path.join(installRoot, 'moonshot-home');
+  const claudeHome = path.join(installRoot, 'claude-home');
+  const codexHome = path.join(installRoot, 'codex-home');
+
+  await mkdir(path.join(codexHome, 'skills', 'external-skill'), { recursive: true });
+  await writeFile(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await writeFile(path.join(codexHome, 'skills', 'moonshot-decide-sequence'), 'legacy file collision\n');
+  await mkdir(path.join(codexHome, 'schemas'), { recursive: true });
+  await writeFile(path.join(codexHome, 'schemas', 'old-managed.schema.json'), '{}\n');
+  await writeFile(path.join(codexHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
+    copied: [{ path: 'schemas/old-managed.schema.json' }],
+  })}\n`);
+  await mkdir(path.join(claudeHome, 'skills', 'external-skill'), { recursive: true });
+  await writeFile(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await mkdir(path.join(claudeHome, 'scripts'), { recursive: true });
+  await writeFile(path.join(claudeHome, 'scripts', 'old-managed.mjs'), 'old\n');
+  await writeFile(path.join(claudeHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
+    copied: [{ path: 'scripts/old-managed.mjs' }],
+  })}\n`);
+
+  try {
+    const result = spawnSync(process.execPath, [
+      'scripts/install-account-root-harness.mjs',
+      '--runtime',
+      'all',
+      '--source-root',
+      root,
+      '--moonshot-home',
+      moonshotHome,
+      '--claude-home',
+      claudeHome,
+      '--codex-home',
+      codexHome,
+      '--remove-legacy-harness-core',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(existsSync(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-decide-sequence', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'scripts')), false);
+    assert.equal(existsSync(path.join(codexHome, 'scripts')), false);
+    assert.equal(existsSync(path.join(codexHome, 'schemas')), false);
+  } finally {
+    await rm(installRoot, { recursive: true, force: true });
+  }
 });

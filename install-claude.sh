@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Claude/Codex 설정 동기화 스크립트
-# GitHub에서 최신 .claude/.codex를 다운로드하고, AGENTS.md 브리지와 Codex project skills를 설치합니다.
+# Moonshot Relay 설정 동기화 스크립트
+# 기본값은 계정 루트(~/.claude, ~/.codex)에 설치하고, --project일 때만 현재 프로젝트에 설치합니다.
 
 set -e
 
 REPO_URL="${MOONSHOT_RELAY_REPO_URL:-https://github.com/munlucky/moonshot-relay}"
-REPO_URL_FALLBACK="https://github.com/munlucky/claude-settings"
+REPO_URL_FALLBACK="${MOONSHOT_RELAY_REPO_URL_FALLBACK:-}"
 DOWNLOADED_ARCHIVE_REPO_ROOT=""
 DOWNLOADED_ARCHIVE_REPO_URL=""
 BRANCH="main"
@@ -55,7 +55,7 @@ print_error() {
 print_header() {
 	echo ""
 	echo "========================================="
-	echo "  Claude Code Settings Installer"
+	echo "  Moonshot Relay Installer"
 	echo "========================================="
 	echo ""
 }
@@ -193,6 +193,68 @@ materialize_package_payloads() {
 
 	mkdir -p "$output_root"
 	node "$builder" --runtime all --out "$output_root" --clean >/dev/null
+}
+
+resolve_source_repo() {
+	local temp_dir="$1"
+	local zip_file="$temp_dir/moonshot-relay.zip"
+
+	if [ -f "$PACKAGE_BUILDER" ]; then
+		DOWNLOADED_ARCHIVE_REPO_ROOT="$(pwd -P)"
+		DOWNLOADED_ARCHIVE_REPO_URL="local checkout"
+		return 0
+	fi
+
+	download_repo_archive "$zip_file" "$temp_dir"
+}
+
+run_account_root_install() {
+	local temp_dir=""
+	local source_repo=""
+	local installer=""
+	local account_root_args=()
+
+	if ! command -v node &>/dev/null; then
+		print_error "Node.js가 필요합니다. account-root 설치는 scripts/install-account-root-harness.mjs를 실행합니다."
+		exit 1
+	fi
+
+	temp_dir=$(mktemp -d)
+	if ! resolve_source_repo "$temp_dir"; then
+		print_error "다운로드 실패"
+		rm -rf "$temp_dir"
+		exit 1
+	fi
+
+	source_repo="$DOWNLOADED_ARCHIVE_REPO_ROOT"
+	installer="$source_repo/scripts/install-account-root-harness.mjs"
+
+	if [ ! -f "$installer" ]; then
+		print_error "account-root installer를 찾을 수 없습니다: $installer"
+		rm -rf "$temp_dir"
+		exit 1
+	fi
+
+	account_root_args=(
+		"$installer"
+		"--source-root"
+		"$source_repo"
+		"--runtime"
+		"all"
+		"--remove-legacy-harness-core"
+	)
+
+	if [ "$DRY_RUN" = true ]; then
+		account_root_args+=("--dry-run")
+	fi
+
+	if [ "$DO_BACKUP" = false ]; then
+		account_root_args+=("--no-backup")
+	fi
+
+	print_info "account-root 설치 실행 중: ${DOWNLOADED_ARCHIVE_REPO_URL:-$REPO_URL}"
+	node "${account_root_args[@]}"
+	rm -rf "$temp_dir"
 }
 
 setup_agents_bridge() {
@@ -619,15 +681,26 @@ usage() {
 사용법: $0 [OPTIONS]
 
 옵션:
+  --account-root         계정 루트(~/.claude, ~/.codex)에 설치 (기본값)
+  --project              현재 프로젝트에 .claude/.codex compatibility payload 설치
   --no-backup            기존 AI 설정 백업하지 않음
   --dry-run              실제 변경 없이 미리보기만
   --force                (deprecated, 자동 백업 후 설치)
-  --include-project      PROJECT.md 포함 (기본값: 제외)
-  --debug                MCP 추가 명령 디버그 출력
-  --exclude PATTERN      추가로 특정 파일/디렉토리 제외
+  --include-project      --project 설치 시 PROJECT.md 포함 (기본값: 제외)
+  --debug                --project 설치 시 MCP 추가 명령 디버그 출력
+  --exclude PATTERN      --project 설치 시 추가로 특정 파일/디렉토리 제외
   -h, --help             도움말 출력
 
 기본 동작:
+  - account-root 직접 설치가 기본값입니다.
+  - 공통 Moonshot Relay runtime payload를 ~/.moonshot-relay에 설치합니다.
+  - Claude/Codex가 자동으로 읽는 profile 표면만 ~/.claude 및 ~/.codex에 설치합니다.
+  - Claude rules/skills/agents는 자동 적용 표면이므로 ~/.claude에 유지합니다.
+  - Claude/Codex 런타임 로컬 파일(settings, auth, sessions, plugins, caches 등)은 보호합니다.
+  - 각 계정 루트에 .moonshot-relay-install-manifest.json 설치 manifest를 남깁니다.
+  - 현재 프로젝트에 compatibility payload가 필요하면 --project를 사용합니다.
+
+--project 동작:
   - .claude, .agents, AGENTS.md, .claudeignore, .gitattributes 중 존재 항목 자동 백업 후 설치
   - .codex/config.toml 중 존재 항목 자동 백업 후 설치
   - .codex/agents/, .codex/skills/ 는 백업 없이 최신 복사본으로 동기화
@@ -647,10 +720,11 @@ usage() {
   - .env* 파일
 
 예시:
-  $0                                    # 기본 실행 (PROJECT.md 제외)
-  $0 --include-project                  # PROJECT.md 포함하여 설치
-  $0 --exclude "*.local.json"           # 추가 파일 제외
-  $0 --dry-run                          # 미리보기
+  $0                                    # 기본 account-root 설치
+  $0 --dry-run                          # account-root 미리보기
+  $0 --project                          # 현재 프로젝트에 compatibility payload 설치
+  $0 --project --include-project        # PROJECT.md 포함하여 프로젝트 설치
+  $0 --project --exclude "*.local.json" # 프로젝트 설치 시 추가 파일 제외
 
 EOF
 	exit 0
@@ -662,10 +736,20 @@ DRY_RUN=false
 FORCE=false
 INCLUDE_PROJECT=false
 DEBUG_MCP=false
+INSTALL_SCOPE="account-root"
+PROJECT_EXCLUDE_USED=false
 EXCLUDE_PATTERNS=()
 
 while [[ $# -gt 0 ]]; do
 	case $1 in
+	--account-root)
+		INSTALL_SCOPE="account-root"
+		shift
+		;;
+	--project)
+		INSTALL_SCOPE="project"
+		shift
+		;;
 	--no-backup)
 		DO_BACKUP=false
 		shift
@@ -688,6 +772,7 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--exclude)
 		EXCLUDE_PATTERNS+=("$2")
+		PROJECT_EXCLUDE_USED=true
 		shift 2
 		;;
 	-h | --help)
@@ -824,6 +909,14 @@ else
 	echo "  권장: uv 설치 후 'uvx agent-browser --help' 로 실행 가능 여부를 확인하세요."
 fi
 
+if [ "$INSTALL_SCOPE" = "account-root" ]; then
+	if [ "$INCLUDE_PROJECT" = true ] || [ "$PROJECT_EXCLUDE_USED" = true ] || [ "$DEBUG_MCP" = true ]; then
+		print_warn "--include-project, --exclude, --debug 옵션은 --project 설치에서만 적용됩니다."
+	fi
+	run_account_root_install
+	exit 0
+fi
+
 # 2. 기존 AI 설정 디렉토리 확인 및 자동 백업
 BACKUP_DIRS=()
 BACKUP_FILES=()
@@ -914,7 +1007,7 @@ if [ "$DRY_RUN" = true ]; then
 		echo "  - 백업할 디렉토리: ${BACKUP_DIRS[*]}"
 		echo "  - 백업할 파일: ${BACKUP_FILES[*]}"
 	fi
-	echo "  - GitHub에서 다운로드: ${DOWNLOADED_ARCHIVE_REPO_URL:-local checkout}/archive/$BRANCH.zip"
+	echo "  - Payload source: ${DOWNLOADED_ARCHIVE_REPO_URL:-local checkout}"
 	echo "  - ${PACKAGE_BUILDER}로 Claude/Codex payload materialize"
 	echo "  - materialized Claude payload에서 .claude 디렉토리 설치"
 	echo "  - materialized Codex payload에서 .codex/config.toml 설치"

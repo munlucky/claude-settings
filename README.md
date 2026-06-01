@@ -157,29 +157,29 @@ chmod +x install-claude.sh
 # Git Bash 예시:
 # bash ./install-claude.sh
 
-# 기본 실행 (PROJECT.md는 자동으로 제외됨)
+# 기본 실행: 계정 루트(~/.claude, ~/.codex)에 Moonshot Relay 설치
 ./install-claude.sh
 
-# PROJECT.md 포함하여 설치
-./install-claude.sh --include-project
+# 현재 프로젝트에 compatibility payload 설치
+./install-claude.sh --project
 
-# 추가 파일 제외
-./install-claude.sh --exclude "*.local.json"
+# PROJECT.md 포함하여 프로젝트 설치
+./install-claude.sh --project --include-project
+
+# 프로젝트 설치 시 추가 파일 제외
+./install-claude.sh --project --exclude "*.local.json"
 
 # 미리보기 (실제 변경 없음)
 ./install-claude.sh --dry-run
 ```
 
 기본 동작:
-- `.claude`, `.agents`, `AGENTS.md` 중 존재 항목은 자동 백업 후 설치
-- `.codex/config.toml` 중 존재 항목은 자동 백업 후 설치
-- `.codex/agents/`, `.codex/skills/`는 백업하지 않고 최신 복사본으로 교체
-- `.claudeignore`는 기본 denylist를 설치하고 기존 파일이 있으면 병합
-- `.gitattributes`는 LF 줄바꿈 정책을 설치하고 기존 파일이 있으면 병합
-- PROJECT.md는 기본적으로 제외되어 기존 프로젝트 설정이 보호됨
-- canonical `skills/`와 migration profile output을 프로젝트 `.codex/skills/*`에 디렉터리 복사 설치
-- Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`는 수정하지 않음
-- Python 3.10+ 환경에서 `pipx install memorygraphMCP`를 자동 시도하고 MemoryGraph MCP를 project scope로 등록
+- 기본 설치는 account-root 직접 설치이며 공통 런타임 자산은 `~/.moonshot-relay`, 런타임별 자동 적용 표면은 `~/.claude`와 `~/.codex`에 동기화
+- Claude의 `rules/`, `skills/`, `agents/`처럼 런타임이 직접 읽는 디렉터리는 각 계정 홈에 유지
+- Claude/Codex 런타임 로컬 파일(settings, auth, sessions, plugins, caches 등)은 보호
+- 각 계정 루트에 `.moonshot-relay-install-manifest.json` 설치 manifest 기록
+- 현재 프로젝트에 `.claude`/`.codex` compatibility payload가 필요하면 `--project`를 사용
+- `--project` 설치는 기존처럼 `.claude`, `.codex`, `AGENTS.md`, `.claudeignore`, `.gitattributes`를 프로젝트에 설치하고 사용자 로컬 파일을 보호
 
 보호되는 사용자 파일 패턴:
 ```
@@ -237,10 +237,10 @@ cp -r moonshot-relay/.codex /your-project/
 
 ```bash
 # 스킬만 설치 (agents, docs 제외)
-./install-claude.sh --exclude "agents" --exclude "docs"
+./install-claude.sh --project --exclude "agents" --exclude "docs"
 
 # 로컬 설정 파일 제외
-./install-claude.sh --exclude "*.local.json"
+./install-claude.sh --project --exclude "*.local.json"
 
 # 또는 수동 복사: canonical source나 materialized profile output에서 필요한 스킬만 복사
 cp -r moonshot-relay/skills/moonshot-orchestrator /your-project/.claude/skills/
@@ -248,7 +248,7 @@ cp -r moonshot-relay/skills/moonshot-orchestrator /your-project/.claude/skills/
 
 ### Codex 설정 동기화
 
-설치 스크립트는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 프로젝트에 실제 파일/디렉터리로 설치합니다. 재설치 시 프로젝트 `.codex/agents/`와 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. `.codex/skills/*`는 canonical `skills/`에서 materialized된 프로젝트 로컬 복사본이며, migration 중에는 `.claude/skills/*` compatibility profile output과 동기화될 수 있습니다. Codex 전역 스킬 경로 `${CODEX_GLOBAL_HOME:-${CODEX_HOME:-$HOME/.codex}}/skills/*`는 수정하지 않습니다.
+기본 account-root 설치는 `~/.moonshot-relay`에 공통 Moonshot Relay 런타임을 설치하고, Codex가 직접 discovery하는 `~/.codex/agents/`와 `~/.codex/skills/`만 얇은 노출층으로 설치합니다. 기존 `config.toml`, auth, sessions, plugins 등 Codex 런타임 로컬 파일은 보호합니다. `--project` 설치는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 현재 프로젝트에 실제 파일/디렉터리로 설치합니다. 재설치 시 프로젝트 `.codex/agents/`와 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. `.codex/skills/*`는 canonical `skills/`에서 materialized된 프로젝트 로컬 복사본이며, migration 중에는 `.claude/skills/*` compatibility profile output과 동기화될 수 있습니다.
 
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`

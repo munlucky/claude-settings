@@ -35,10 +35,37 @@ runtimeProfiles:
 
 accountRootInstall:
   installer: scripts/install-account-root-harness.mjs
+  defaultShellInstaller: install-claude.sh
   mode: account-root-direct
+  projectCompatibilityMode: "install-claude.sh --project"
   targets:
+    common: "%USERPROFILE%/.moonshot-relay"
     claude: "%USERPROFILE%/.claude"
     codex: "%USERPROFILE%/.codex"
+  commonPayloadEntries:
+    - bin/
+    - docs/
+    - schemas/
+    - scripts/
+    - templates/
+    - tools/
+    - verification.contract.yaml
+  runtimeExposureEntries:
+    claude:
+      - CLAUDE.md
+      - PROJECT.md
+      - README.md
+      - agents/
+      - profile-contract.yaml
+      - rules/
+      - skills/
+      - verification.contract.yaml
+    codex:
+      - AGENTS.md
+      - README.md
+      - agents/
+      - skills/
+      - verification.contract.yaml
   manifestName: .moonshot-relay-install-manifest.json
   legacyManifestNames:
     - .claude-settings-install-manifest.json

@@ -28,12 +28,15 @@ Build local payloads with:
 node package/build-package.mjs --runtime all --clean
 ```
 
-Install the account-root runtime profiles directly into the local Claude/Codex homes with:
+Install the account-root runtime profiles directly into the local Claude/Codex homes with either the default shell installer or the direct Node installer:
 
 ```sh
+bash install-claude.sh
 node scripts/install-account-root-harness.mjs --runtime all --remove-legacy-harness-core
 ```
 
-This installs harness-owned payloads into `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` without using a nested `harness-core` directory. Runtime-local files such as Claude settings, Codex auth/config, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.moonshot-relay-install-manifest.json` for hash verification and rollback evidence. Existing `.claude-settings-install-manifest.json` files are treated as legacy install evidence during the rename window.
+This installs shared Moonshot Relay runtime assets into `%USERPROFILE%/.moonshot-relay`, then installs only runtime-discovered exposure entries into `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` without using a nested `harness-core` directory. Claude keeps `rules/`, `skills/`, and `agents/` because Claude reads those profile surfaces directly. Runtime-local files such as Claude settings, Codex auth/config, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.moonshot-relay-install-manifest.json` for hash verification and rollback evidence. Existing `.claude-settings-install-manifest.json` files are treated as legacy install evidence during the rename window.
+
+Use `bash install-claude.sh --project` only when a downstream repository needs project-local `.claude/` and `.codex/` compatibility payloads.
 
 Generated state is never part of the package payload. Runtime payload also excludes dev-only diagnostics and obsolete workflow scripts. Logs, caches, traces, browser artifacts, sqlite state, memorygraph data, temporary runtime directories, and verification verdict outputs must stay outside package assembly.
