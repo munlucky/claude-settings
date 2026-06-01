@@ -40,14 +40,14 @@ export const SOURCE_TYPES = Object.freeze([
 ]);
 
 export const STORAGE_PATHS = Object.freeze({
-  policy_anchor: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/policy/policy-anchors.jsonl',
-  semantic_fact: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/semantic/verified-facts.jsonl',
-  supersession_log: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/semantic/supersession-log.jsonl',
-  episodic_observation: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/episodic/observations.jsonl',
-  kg_relation: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/graph/kg-relations.jsonl',
-  ontology_constraint: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/ontology/constraints.jsonl',
-  provenance_event: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/provenance/prov-log.jsonl',
-  promotion_candidate: '%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/promotion/promotion-candidates.jsonl',
+  policy_anchor: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/policy/policy-anchors.jsonl',
+  semantic_fact: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/semantic/verified-facts.jsonl',
+  supersession_log: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/semantic/supersession-log.jsonl',
+  episodic_observation: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/episodic/observations.jsonl',
+  kg_relation: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/graph/kg-relations.jsonl',
+  ontology_constraint: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/ontology/constraints.jsonl',
+  provenance_event: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/provenance/prov-log.jsonl',
+  promotion_candidate: '%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/promotion/promotion-candidates.jsonl',
 });
 
 export const RECORD_CONTRACTS = Object.freeze({

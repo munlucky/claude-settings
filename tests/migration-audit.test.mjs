@@ -15,6 +15,7 @@ import { resolveDbPath } from '../.claude/scripts/runtime-state.mjs';
 import { defaultPhaseEventLedgerPath } from '../.claude/scripts/lib/phase-event-ledger.mjs';
 import { resolveLeaseFiles } from '../.claude/scripts/lib/phase-run-lease-store.mjs';
 import { resolveRunCacheFiles } from '../.claude/scripts/lib/runtime-unavailable-cache.mjs';
+import { accountStateRoot } from '../scripts/project-identity.mjs';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
@@ -65,18 +66,34 @@ test('runtime state resolver exposes legacy .claude compatibility paths for read
 test('workflow lease and unavailable-capability caches write under .moonshot-state by default', () => {
   const leaseFiles = resolveLeaseFiles('.claude/docs/phase-status.yaml');
   assert.equal(leaseFiles.mirrorGlobalCurrentRun, true);
-  assert.equal(leaseFiles.activeRunFile, '.moonshot-state/logs/workflow-enforcement/active-phase-run.json');
-  assert.equal(leaseFiles.currentRunFile, '.moonshot-state/logs/workflow-enforcement/current-run.json');
+  assert.equal(leaseFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/active-phase-run.json');
+  assert.equal(leaseFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/current-run.json');
 
   const cacheFiles = resolveRunCacheFiles('.claude/docs/phase-status.yaml');
-  assert.equal(cacheFiles.activeRunFile, '.moonshot-state/logs/workflow-enforcement/active-phase-run.json');
-  assert.equal(cacheFiles.currentRunFile, '.moonshot-state/logs/workflow-enforcement/current-run.json');
+  assert.equal(cacheFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/active-phase-run.json');
+  assert.equal(cacheFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/current-run.json');
 });
 
 test('phase event ledger writes under .moonshot-state workflow logs', () => {
   assert.equal(
     relative(defaultPhaseEventLedgerPath('.claude/docs/phase-status.yaml')),
     '.moonshot-state/logs/workflow-enforcement/events.jsonl',
+  );
+});
+
+test('project knowledge account state defaults to .moonshot-relay state', () => {
+  const home = path.join(root, '.tmp', 'home');
+  assert.equal(
+    relative(accountStateRoot({ USERPROFILE: home })),
+    '.tmp/home/.moonshot-relay/state',
+  );
+  assert.equal(
+    relative(accountStateRoot({ USERPROFILE: home, CODEX_STATE_ROOT: path.join(home, '.codex', 'state') })),
+    '.tmp/home/.codex/state',
+  );
+  assert.equal(
+    relative(accountStateRoot({ USERPROFILE: home, MOONSHOT_RELAY_STATE_ROOT: path.join(home, '.moonshot-relay', 'custom-state') })),
+    '.tmp/home/.moonshot-relay/custom-state',
   );
 });
 

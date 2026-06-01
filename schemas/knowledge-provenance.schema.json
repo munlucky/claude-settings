@@ -60,6 +60,6 @@
       "enum": ["public", "internal", "confidential", "secret"]
     }
   },
-  "x-storagePath": "%USERPROFILE%/.codex/state/projects/<projectId>/knowledge/provenance/prov-log.jsonl",
+  "x-storagePath": "%USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge/provenance/prov-log.jsonl",
   "x-allowedTransitions": [["observed", "verified"], ["verified", "archived"]]
 }

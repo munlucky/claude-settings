@@ -48,10 +48,10 @@ The harness manages its own recursive improvement lifecycle as a project:
 
 ```yaml
 projectId: moonshot-relay
-knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/knowledge"
-improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/improvement"
-candidateReleaseRoot: "%USERPROFILE%/.codex/harness/releases/candidate"
-stableReleaseRoot: "%USERPROFILE%/.codex/harness/releases/stable"
+knowledgeRoot: "%USERPROFILE%/.moonshot-relay/state/projects/moonshot-relay/knowledge"
+improvementRoot: "%USERPROFILE%/.moonshot-relay/state/projects/moonshot-relay/improvement"
+candidateReleaseRoot: "%USERPROFILE%/.moonshot-relay/state/harness/releases/candidate"
+stableReleaseRoot: "%USERPROFILE%/.moonshot-relay/state/harness/releases/stable"
 ```
 
 Required promotion artifacts:

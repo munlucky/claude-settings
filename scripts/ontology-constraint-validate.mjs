@@ -71,8 +71,9 @@ function findRepoRoot(startDir) {
 }
 
 function defaultStateRoot(env) {
+  if (env.MOONSHOT_RELAY_STATE_ROOT) return env.MOONSHOT_RELAY_STATE_ROOT;
   if (env.CODEX_STATE_ROOT) return env.CODEX_STATE_ROOT;
-  return path.join(env.USERPROFILE || os.homedir(), '.codex', 'state');
+  return path.join(env.USERPROFILE || os.homedir(), '.moonshot-relay', 'state');
 }
 
 function resolveProjectId(projectRoot, env) {

@@ -63,11 +63,11 @@ checkPolicies:
     conflictBehavior: "project_override_requires_supersedes"
     sourceRoots:
       global:
-        - "${CODEX_STATE_ROOT:-%USERPROFILE%/.codex/state}/harness/ontology/constraints.jsonl"
-        - "${CODEX_STATE_ROOT:-%USERPROFILE%/.codex/state}/global/ontology/constraints.jsonl"
+        - "${MOONSHOT_RELAY_STATE_ROOT:-%USERPROFILE%/.moonshot-relay/state}/harness/ontology/constraints.jsonl"
+        - "${MOONSHOT_RELAY_STATE_ROOT:-%USERPROFILE%/.moonshot-relay/state}/global/ontology/constraints.jsonl"
       project:
         - ".claude/ontology/constraints.jsonl"
-        - "${CODEX_STATE_ROOT:-%USERPROFILE%/.codex/state}/projects/<projectId>/knowledge/ontology/constraints.jsonl"
+        - "${MOONSHOT_RELAY_STATE_ROOT:-%USERPROFILE%/.moonshot-relay/state}/projects/<projectId>/knowledge/ontology/constraints.jsonl"
     severityMapping:
       error: "blocking"
       warn: "degraded"

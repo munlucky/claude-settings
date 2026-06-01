@@ -18,9 +18,10 @@ export class ProjectIdentityError extends Error {
 }
 
 export function accountStateRoot(env = process.env) {
+  if (env.MOONSHOT_RELAY_STATE_ROOT) return path.resolve(env.MOONSHOT_RELAY_STATE_ROOT);
   if (env.CODEX_STATE_ROOT) return path.resolve(env.CODEX_STATE_ROOT);
   const home = env.USERPROFILE || env.HOME || os.homedir();
-  return path.join(home, '.codex', 'state');
+  return path.join(home, '.moonshot-relay', 'state');
 }
 
 export function sanitizeId(value, fallback = 'project') {

@@ -16,19 +16,19 @@
     },
     "accountStateRoot": {
       "type": "string",
-      "description": "Account-root state directory, normally %USERPROFILE%/.codex/state."
+      "description": "Account-root state directory, normally %USERPROFILE%/.moonshot-relay/state."
     },
     "knowledgeRoot": {
       "type": "string",
-      "description": "Resolved %USERPROFILE%/.codex/state/projects/<projectId>/knowledge path."
+      "description": "Resolved %USERPROFILE%/.moonshot-relay/state/projects/<projectId>/knowledge path."
     },
     "executionRoot": {
       "type": "string",
-      "description": "Resolved run-scoped execution namespace under %USERPROFILE%/.codex/state/projects/<projectId>/execution/worktrees/<worktreeId>/branches/<branchId>/runs/<runId>."
+      "description": "Resolved run-scoped execution namespace under %USERPROFILE%/.moonshot-relay/state/projects/<projectId>/execution/worktrees/<worktreeId>/branches/<branchId>/runs/<runId>."
     },
     "executionBaseRoot": {
       "type": "string",
-      "description": "Shared base directory for execution state under %USERPROFILE%/.codex/state/projects/<projectId>/execution."
+      "description": "Shared base directory for execution state under %USERPROFILE%/.moonshot-relay/state/projects/<projectId>/execution."
     },
     "maxPromptTokens": {
       "type": "integer",
