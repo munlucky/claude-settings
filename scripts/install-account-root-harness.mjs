@@ -341,8 +341,19 @@ const installRuntime = async ({ runtime, payloadRoot, options, installId, source
     for (const legacyManifestName of legacyManifestNames) {
       const legacyManifestPath = path.join(targetRoot, legacyManifestName);
       if (await pathExists(legacyManifestPath)) {
+        let legacyManifest;
+        try {
+          const parsedLegacyManifest = JSON.parse(await readFile(legacyManifestPath, 'utf8'));
+          legacyManifest = parsedLegacyManifest
+            && typeof parsedLegacyManifest === 'object'
+            && !Array.isArray(parsedLegacyManifest)
+            ? parsedLegacyManifest
+            : {};
+        } catch {
+          legacyManifest = {};
+        }
         await writeFile(legacyManifestPath, `${JSON.stringify({
-          ...manifest,
+          ...legacyManifest,
           legacyManifest: true,
           supersededBy: manifestName,
         }, null, 2)}\n`);

@@ -5,7 +5,10 @@
 
 set -e
 
-REPO_URL="https://github.com/munlucky/moonshot-relay"
+REPO_URL="${MOONSHOT_RELAY_REPO_URL:-https://github.com/munlucky/moonshot-relay}"
+REPO_URL_FALLBACK="https://github.com/munlucky/claude-settings"
+DOWNLOADED_ARCHIVE_REPO_ROOT=""
+DOWNLOADED_ARCHIVE_REPO_URL=""
 BRANCH="main"
 BACKUP_SUFFIX=".backup-$(date +%Y%m%d-%H%M%S)"
 CODEX_PROJECT_FILES=()
@@ -493,6 +496,49 @@ PY
 	exit 1
 }
 
+repo_slug_from_url() {
+	local repo_url="${1%.git}"
+	echo "${repo_url##*/}"
+}
+
+download_repo_archive() {
+	local zip_file="$1"
+	local temp_dir="$2"
+	local candidate_url=""
+	local repo_slug=""
+	local repo_root=""
+	local attempted_urls=""
+
+	for candidate_url in "$REPO_URL" "$REPO_URL_FALLBACK"; do
+		if [ -z "$candidate_url" ]; then
+			continue
+		fi
+		case " $attempted_urls " in
+		*" $candidate_url "*)
+			continue
+			;;
+		esac
+		attempted_urls="$attempted_urls $candidate_url"
+		repo_slug="$(repo_slug_from_url "$candidate_url")"
+		repo_root="$temp_dir/$repo_slug-$BRANCH"
+
+		print_info "GitHub archive 다운로드 시도: $candidate_url/archive/$BRANCH.zip"
+		if curl -fL "$candidate_url/archive/$BRANCH.zip" -o "$zip_file" --progress-bar; then
+			extract_zip "$zip_file" "$temp_dir"
+			if [ -d "$repo_root" ]; then
+				DOWNLOADED_ARCHIVE_REPO_ROOT="$repo_root"
+				DOWNLOADED_ARCHIVE_REPO_URL="$candidate_url"
+				return 0
+			fi
+			print_warn "archive 압축 해제 후 예상 디렉토리를 찾지 못했습니다: $repo_root"
+		else
+			print_warn "archive 다운로드 실패, 다음 후보를 시도합니다: $candidate_url"
+		fi
+	done
+
+	return 1
+}
+
 # JSON 병합 함수 (settings.local.json 처리를 위해)
 merge_json() {
 	local base_file=$1    # 새로 설치될 파일 (Base)
@@ -852,9 +898,13 @@ if [ "$DRY_RUN" = true ]; then
 		print_info "[DRY-RUN] local package builder 없음. GitHub archive에서 payload source를 가져옵니다."
 		DRY_RUN_TEMP_DIR=$(mktemp -d)
 		DRY_RUN_ZIP_FILE="$DRY_RUN_TEMP_DIR/moonshot-relay.zip"
-		curl -L "$REPO_URL/archive/$BRANCH.zip" -o "$DRY_RUN_ZIP_FILE" --progress-bar
-		extract_zip "$DRY_RUN_ZIP_FILE" "$DRY_RUN_TEMP_DIR"
-		DRY_RUN_REPO_ROOT="$DRY_RUN_TEMP_DIR/moonshot-relay-$BRANCH"
+		if ! download_repo_archive "$DRY_RUN_ZIP_FILE" "$DRY_RUN_TEMP_DIR"; then
+			print_error "다운로드 실패"
+			rm -rf "$DRY_RUN_PAYLOAD_ROOT"
+			rm -rf "$DRY_RUN_TEMP_DIR"
+			exit 1
+		fi
+		DRY_RUN_REPO_ROOT="$DOWNLOADED_ARCHIVE_REPO_ROOT"
 	fi
 	materialize_package_payloads "$DRY_RUN_REPO_ROOT" "$DRY_RUN_PAYLOAD_ROOT"
 	DRY_RUN_CLAUDE_PAYLOAD="$DRY_RUN_PAYLOAD_ROOT/$MATERIALIZED_CLAUDE_PROFILE"
@@ -864,7 +914,7 @@ if [ "$DRY_RUN" = true ]; then
 		echo "  - 백업할 디렉토리: ${BACKUP_DIRS[*]}"
 		echo "  - 백업할 파일: ${BACKUP_FILES[*]}"
 	fi
-	echo "  - GitHub에서 다운로드: $REPO_URL/archive/$BRANCH.zip"
+	echo "  - GitHub에서 다운로드: ${DOWNLOADED_ARCHIVE_REPO_URL:-local checkout}/archive/$BRANCH.zip"
 	echo "  - ${PACKAGE_BUILDER}로 Claude/Codex payload materialize"
 	echo "  - materialized Claude payload에서 .claude 디렉토리 설치"
 	echo "  - materialized Codex payload에서 .codex/config.toml 설치"
@@ -911,20 +961,15 @@ print_info "GitHub에서 최신 버전 다운로드 중..."
 TEMP_DIR=$(mktemp -d)
 ZIP_FILE="$TEMP_DIR/moonshot-relay.zip"
 
-curl -L "$REPO_URL/archive/$BRANCH.zip" -o "$ZIP_FILE" --progress-bar
-
-if [ ! -f "$ZIP_FILE" ]; then
+if ! download_repo_archive "$ZIP_FILE" "$TEMP_DIR"; then
 	print_error "다운로드 실패"
 	rm -rf "$TEMP_DIR"
 	exit 1
 fi
 print_info "✓ 다운로드 완료"
 
-# 5. 압축 해제
-print_info "패키지 payload 추출 중..."
-extract_zip "$ZIP_FILE" "$TEMP_DIR"
-
-DOWNLOADED_REPO="$TEMP_DIR/moonshot-relay-$BRANCH"
+# 5. 패키지 payload materialize
+DOWNLOADED_REPO="$DOWNLOADED_ARCHIVE_REPO_ROOT"
 MATERIALIZED_PAYLOAD_ROOT="$TEMP_DIR/materialized-package"
 materialize_package_payloads "$DOWNLOADED_REPO" "$MATERIALIZED_PAYLOAD_ROOT"
 DOWNLOADED_CLAUDE_PAYLOAD="$MATERIALIZED_PAYLOAD_ROOT/$MATERIALIZED_CLAUDE_PROFILE"
