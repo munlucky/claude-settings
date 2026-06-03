@@ -11,23 +11,31 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { classifyFailure } from './lib/failure-classifier.mjs';
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 import {
+  hasUnavailableCapability,
   knownUnavailableSummary,
-  readUnavailableCapabilities,
+  recordHealthyCapability,
   recordUnavailableCapability,
 } from './lib/runtime-unavailable-cache.mjs';
 import { resolveProjectIdentity } from './project-identity.mjs';
 
 const ROOT = process.cwd();
+const SUPPORT_SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CLAUDE_ROOT = path.join(ROOT, '.claude');
-const LOG_DIR = path.join(CLAUDE_ROOT, 'logs', 'memorygraph');
-const DEFAULT_SEED = path.join(CLAUDE_ROOT, 'cache', 'memorygraph', 'project-graph-seed.json');
+const LOG_DIR = resolveRuntimeStatePath('logs', 'memorygraph');
+const DEFAULT_SEED = resolveRuntimeStatePath('cache', 'memorygraph', 'project-graph-seed.json');
 const NODE = process.execPath;
 const isWindows = process.platform === 'win32';
 const PHASE_STATUS_FILE = path.join(CLAUDE_ROOT, 'docs', 'phase-status.yaml');
 const MEMORYGRAPH_FINGERPRINT = classifyFailure({ code: 'memorygraph_unavailable', source: 'commit-moonshot-memory-refresh' }).fingerprint;
+
+function supportScriptPath(name) {
+  return path.join(SUPPORT_SCRIPT_DIR, name);
+}
 
 function printHelp() {
   process.stdout.write(`Usage: node .claude/scripts/commit-moonshot-memory-refresh.mjs [options]
@@ -294,7 +302,7 @@ async function main() {
   const storePayload = readJsonValue(options.storeJson, '--store-json');
   const commands = [];
   const strictMemoryGateEnabled = Boolean(options.strict) || String(process.env.PHASE_STRICT_MEMORY_GATE ?? process.env.MEMORYGRAPH_STRICT_MODE ?? 'false').toLowerCase() === 'true';
-  const cachedUnavailable = readUnavailableCapabilities(PHASE_STATUS_FILE).find((entry) => entry.code === 'memorygraph_unavailable');
+  const cachedUnavailable = hasUnavailableCapability(PHASE_STATUS_FILE, { code: 'memorygraph_unavailable' });
 
   if (mcp.status === 'mcp_ok') {
     const summary = {
@@ -347,7 +355,7 @@ async function main() {
   }
 
   const health = await runCommand('direct-health', NODE, [
-    path.join(CLAUDE_ROOT, 'scripts', 'memorygraph-direct.mjs'),
+    supportScriptPath('memorygraph-direct.mjs'),
     'health',
     '--json',
   ], options);
@@ -379,7 +387,7 @@ async function main() {
       payload.tags = tags;
 
       const store = await runCommand('direct-store-memory', NODE, [
-        path.join(CLAUDE_ROOT, 'scripts', 'memorygraph-direct.mjs'),
+        supportScriptPath('memorygraph-direct.mjs'),
         'call',
         'store_memory',
         '--args-json',
@@ -390,7 +398,7 @@ async function main() {
       directReason = store.ok ? 'store_memory_fallback_succeeded' : 'store_memory_fallback_failed';
     } else {
       const index = await runCommand('project-index', NODE, [
-        path.join(CLAUDE_ROOT, 'scripts', 'memorygraph-project-index.mjs'),
+        supportScriptPath('memorygraph-project-index.mjs'),
         '--max-files',
         String(options.maxFiles || 500),
       ], options);
@@ -398,7 +406,7 @@ async function main() {
 
       if (index.ok) {
         const refresh = await runCommand('direct-refresh-seed', NODE, [
-          path.join(CLAUDE_ROOT, 'scripts', 'memorygraph-direct.mjs'),
+          supportScriptPath('memorygraph-direct.mjs'),
           'refresh-seed',
           '--seed',
           DEFAULT_SEED,
@@ -453,7 +461,17 @@ async function main() {
     logPath: '',
   };
   summary.logPath = writeLog(summary);
-  if (!health.ok || mcp.status !== 'mcp_ok') {
+  if (finalStatus === 'direct_fallback_succeeded') {
+    recordHealthyCapability(PHASE_STATUS_FILE, {
+      capability: 'memorygraph',
+      code: 'memorygraph_healthy',
+      fingerprint: MEMORYGRAPH_FINGERPRINT,
+      source: 'commit-moonshot-memory-refresh',
+      checkId: 'commit-moonshot-memory-refresh',
+      evidencePath: summary.logPath,
+      strict: strictMemoryGateEnabled ? 'true' : 'false',
+    });
+  } else if (finalStatus === 'direct_failed') {
     recordUnavailableCapability(PHASE_STATUS_FILE, {
       code: 'memorygraph_unavailable',
       fingerprint: MEMORYGRAPH_FINGERPRINT,

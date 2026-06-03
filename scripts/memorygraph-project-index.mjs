@@ -3,12 +3,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 import { resolveProjectIdentity } from './project-identity.mjs';
 
 const ROOT = process.cwd();
-const CLAUDE_ROOT = path.join(ROOT, '.claude');
-const DEFAULT_OUTPUT = path.join(CLAUDE_ROOT, 'cache', 'memorygraph', 'project-graph-seed.json');
-const DEFAULT_PROMOTION_OUTPUT = path.join(CLAUDE_ROOT, 'cache', 'memorygraph', 'promotion-candidates.json');
+const DEFAULT_OUTPUT = resolveRuntimeStatePath('cache', 'memorygraph', 'project-graph-seed.json');
+const DEFAULT_PROMOTION_OUTPUT = resolveRuntimeStatePath('cache', 'memorygraph', 'promotion-candidates.json');
 
 const TEXT_EXTENSIONS = new Set([
   '.cjs',
@@ -36,6 +36,7 @@ const EXCLUDED_SEGMENTS = new Set([
   '.hg',
   '.svn',
   '.claude-cache',
+  '.moonshot-state',
   '.next',
   '.nuxt',
   '.output',
@@ -55,6 +56,7 @@ const EXCLUDED_PREFIXES = [
   '.claude/docs/ko/',
   '.claude/memorygraph/',
   '.claude/logs/',
+  '.moonshot-state/',
   '.tmp/',
   'tmp/',
 ];

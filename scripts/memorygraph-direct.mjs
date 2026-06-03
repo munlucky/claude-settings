@@ -14,11 +14,12 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
+
 const ROOT = process.cwd();
-const CLAUDE_ROOT = path.join(ROOT, '.claude');
-const DATA_DIR = path.join(CLAUDE_ROOT, 'memorygraph');
+const DATA_DIR = resolveRuntimeStatePath('memorygraph');
 const SQLITE_PATH = path.join(DATA_DIR, 'memory.db');
-const DEFAULT_SEED = path.join(CLAUDE_ROOT, 'cache', 'memorygraph', 'project-graph-seed.json');
+const DEFAULT_SEED = resolveRuntimeStatePath('cache', 'memorygraph', 'project-graph-seed.json');
 const PROTOCOL_VERSION = '2025-03-26';
 const isWindows = process.platform === 'win32';
 const commandDiagnostics = [];
