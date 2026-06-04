@@ -6,7 +6,7 @@
  * Codex Desktop may leave old stdio MCP process trees alive when a project
  * session is re-opened or re-initialized. This wrapper keeps one process tree
  * per MCP name in the current project by terminating the previous wrapper PID
- * recorded in .claude/cache before starting a new server.
+ * recorded in the resolved runtime state root before starting a new server.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -20,7 +20,7 @@ const cwd = process.cwd();
 const scriptPath = fs.realpathSync(process.argv[1]);
 
 function usage() {
-  console.error('usage: node .claude/scripts/codex-mcp-singleton.mjs <name> -- <command> [args...]');
+  console.error('usage: node codex-mcp-singleton.mjs <name> -- <command> [args...]');
   process.exit(2);
 }
 

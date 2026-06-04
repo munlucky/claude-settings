@@ -15,6 +15,8 @@ import { resolveDbPath } from '../archive/scripts/legacy-phase-adapters/runtime-
 import { defaultPhaseEventLedgerPath } from '../archive/scripts/legacy-phase-adapters/lib/phase-event-ledger.mjs';
 import { resolveLeaseFiles } from '../archive/scripts/legacy-phase-adapters/lib/phase-run-lease-store.mjs';
 import { resolveRunCacheFiles } from '../scripts/lib/runtime-unavailable-cache.mjs';
+import { DEFAULT_MEMORY_CANDIDATE_OUTPUT } from '../scripts/lib/awtl-memory-candidate.mjs';
+import { DEFAULT_TRACE_ROOT } from '../scripts/lib/awtl-trace-sink.mjs';
 import { accountStateRoot } from '../scripts/project-identity.mjs';
 
 const root = process.cwd();
@@ -49,12 +51,16 @@ const docsThatMustAvoidClaudeSourceTruth = [
   'docs/public/compatibility-migration.md',
 ];
 
-test('runtime state resolver defaults new writes to .moonshot-relay', () => {
+test('runtime state resolver defaults new writes to account-root project knowledge', () => {
   assert.equal(DEFAULT_RUNTIME_STATE_ROOT, '.moonshot-relay');
-  assert.equal(relative(resolveRuntimeStateRoot(root, {})), '.moonshot-relay');
-  assert.equal(relative(resolveRuntimeStatePath('logs', 'workflow-enforcement')), '.moonshot-relay/logs/workflow-enforcement');
-  assert.equal(relative(resolveDbPath()), '.moonshot-relay/runtime-state.sqlite');
-  assert.equal(runtimeStateRelativePath('cache', 'codex-mcp-singleton'), '.moonshot-relay/cache/codex-mcp-singleton');
+  const expectedRoot = fromRoot('.tmp/home/.moonshot-relay/state/projects/munlucky-moonshot-relay/knowledge');
+  const env = { USERPROFILE: fromRoot('.tmp/home') };
+  assert.equal(resolveRuntimeStateRoot(root, env), expectedRoot);
+
+  const defaultRoot = resolveRuntimeStateRoot(root);
+  assert.equal(resolveRuntimeStatePath('logs', 'workflow-enforcement'), path.join(defaultRoot, 'logs', 'workflow-enforcement'));
+  assert.equal(resolveDbPath(), path.join(defaultRoot, 'runtime-state.sqlite'));
+  assert.equal(runtimeStateRelativePath('cache', 'codex-mcp-singleton'), path.join(defaultRoot, 'cache', 'codex-mcp-singleton'));
 });
 
 test('runtime state resolver exposes legacy .claude compatibility paths for reads', () => {
@@ -63,22 +69,30 @@ test('runtime state resolver exposes legacy .claude compatibility paths for read
   assert.equal(relative(resolveLegacyClaudeStatePath('runtime-state.sqlite')), '.claude/runtime-state.sqlite');
 });
 
-test('workflow lease and unavailable-capability caches write under .moonshot-relay by default', () => {
+test('workflow lease and unavailable-capability caches write under account-root workflow logs by default', () => {
+  const expectedRoot = resolveRuntimeStateRoot(root);
   const leaseFiles = resolveLeaseFiles('.claude/docs/phase-status.yaml');
   assert.equal(leaseFiles.mirrorGlobalCurrentRun, true);
-  assert.equal(leaseFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/active-phase-run.json');
-  assert.equal(leaseFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/current-run.json');
+  assert.equal(leaseFiles.activeRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'active-phase-run.json'));
+  assert.equal(leaseFiles.currentRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'current-run.json'));
 
   const cacheFiles = resolveRunCacheFiles('.claude/docs/phase-status.yaml');
-  assert.equal(cacheFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/active-phase-run.json');
-  assert.equal(cacheFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/current-run.json');
+  assert.equal(cacheFiles.activeRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'active-phase-run.json'));
+  assert.equal(cacheFiles.currentRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'current-run.json'));
 });
 
-test('phase event ledger writes under .moonshot-relay workflow logs', () => {
+test('phase event ledger writes under account-root workflow logs', () => {
+  const expectedRoot = resolveRuntimeStateRoot(root);
   assert.equal(
-    relative(defaultPhaseEventLedgerPath('.claude/docs/phase-status.yaml')),
-    '.moonshot-relay/logs/workflow-enforcement/events.jsonl',
+    defaultPhaseEventLedgerPath('.claude/docs/phase-status.yaml'),
+    path.join(expectedRoot, 'logs', 'workflow-enforcement', 'events.jsonl'),
   );
+});
+
+test('AWTL defaults write cache and traces under account-root project knowledge', () => {
+  const expectedRoot = resolveRuntimeStateRoot(root);
+  assert.equal(DEFAULT_MEMORY_CANDIDATE_OUTPUT, path.join(expectedRoot, 'cache', 'memorygraph', 'memory_update_candidates.jsonl'));
+  assert.equal(DEFAULT_TRACE_ROOT, path.join(expectedRoot, 'traces'));
 });
 
 test('project knowledge account state defaults to .moonshot-relay state', () => {

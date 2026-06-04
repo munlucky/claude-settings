@@ -2,12 +2,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
+import { resolveRuntimeStatePath } from './runtime-state-root.mjs';
 
-export const DEFAULT_REPLAY_SCORECARD_OUTPUT = path.join(REPO_ROOT, '.claude/cache/awtl/replay_scorecard.jsonl');
+export const DEFAULT_REPLAY_SCORECARD_OUTPUT = resolveRuntimeStatePath('cache', 'awtl', 'replay_scorecard.jsonl');
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

@@ -10,7 +10,7 @@ import { buildFailureClassifierInput, buildSummarizerInput } from './awtl-failur
 import { resolveRuntimeStateRoot } from './runtime-state-root.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
+const REPO_ROOT = path.resolve(MODULE_DIR, '../..');
 const SCHEMA_PATH = path.resolve(MODULE_DIR, '../../schemas/awtl-memory-candidate-v1.schema.json');
 
 export const DEFAULT_MEMORY_CANDIDATE_OUTPUT = path.join(resolveRuntimeStateRoot(REPO_ROOT), 'cache', 'memorygraph', 'memory_update_candidates.jsonl');

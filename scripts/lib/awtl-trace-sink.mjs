@@ -10,7 +10,7 @@ import { assertAwtlEvent, validateAwtlEvent } from './awtl-event-schema.mjs';
 import { resolveRuntimeStateRoot } from './runtime-state-root.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
+const REPO_ROOT = path.resolve(MODULE_DIR, '../..');
 const EXPECTED_TRACE_ROOT = path.join(resolveRuntimeStateRoot(REPO_ROOT), 'traces');
 
 export const DEFAULT_TRACE_ROOT = EXPECTED_TRACE_ROOT;

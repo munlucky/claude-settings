@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 import { assertMemoryCandidate, validateMemoryCandidate } from './awtl-memory-candidate.mjs';
 import { assessReplayProbeManifest, buildReplayProbeManifest, readReplayProbeManifest } from './awtl-replay-probes.mjs';
+import { resolveRuntimeStatePath } from './runtime-state-root.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
-const DIRECT_MEMORYGRAPH_SCRIPT = path.join(REPO_ROOT, '.claude/scripts/memorygraph-direct.mjs');
-const DEFAULT_REPLAY_SCORECARD_PATH = path.join(REPO_ROOT, '.claude/cache/awtl/replay_scorecard.jsonl');
+const DIRECT_MEMORYGRAPH_SCRIPT = path.resolve(MODULE_DIR, '../memorygraph-direct.mjs');
+const DEFAULT_REPLAY_SCORECARD_PATH = resolveRuntimeStatePath('cache', 'awtl', 'replay_scorecard.jsonl');
 
 const BLOCKED_PROMOTION_TAGS = new Set(['imported-only', 'transcript-only', 'raw-trace', 'trace-only']);
 const BLOCKED_FAILURE_CLASSES = new Set(['environment', 'flaky', 'harness']);

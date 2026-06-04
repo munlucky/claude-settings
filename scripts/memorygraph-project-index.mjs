@@ -118,9 +118,9 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: node .claude/scripts/memorygraph-project-index.mjs [options]
+  process.stdout.write(`Usage: node memorygraph-project-index.mjs [options]
 
-Build a project-local MemoryGraph seed without writing to MemoryGraph.
+Build a project MemoryGraph seed under the resolved runtime state root without writing to MemoryGraph.
 
 Options:
   --dry-run                 Print seed and promotion candidates to stdout only

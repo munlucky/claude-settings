@@ -41,11 +41,11 @@ const allowedMemoryTypes = new Set([
 ]);
 
 function printHelp() {
-  process.stdout.write(`Usage: node .claude/scripts/memorygraph-direct.mjs <command> [options]
+  process.stdout.write(`Usage: node memorygraph-direct.mjs <command> [options]
 
 Commands:
   health
-      Run MemoryGraph CLI health against the project-local SQLite DB.
+      Run MemoryGraph CLI health against the resolved account-root SQLite DB.
 
   call <tool-name> --args-json <json-or-@file>
       Call a MemoryGraph MCP tool through a fresh stdio child process.
