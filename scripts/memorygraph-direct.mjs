@@ -17,9 +17,9 @@ import readline from 'node:readline';
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 
 const ROOT = process.cwd();
-const DATA_DIR = resolveRuntimeStatePath('memorygraph');
+const DATA_DIR = path.resolve(process.env.MEMORYGRAPH_DATA_DIR || resolveRuntimeStatePath('memorygraph'));
 const SQLITE_PATH = path.join(DATA_DIR, 'memory.db');
-const DEFAULT_SEED = resolveRuntimeStatePath('cache', 'memorygraph', 'project-graph-seed.json');
+const DEFAULT_SEED = path.resolve(process.env.MEMORYGRAPH_SEED_PATH || resolveRuntimeStatePath('cache', 'memorygraph', 'project-graph-seed.json'));
 const PROTOCOL_VERSION = '2025-03-26';
 const isWindows = process.platform === 'win32';
 const commandDiagnostics = [];

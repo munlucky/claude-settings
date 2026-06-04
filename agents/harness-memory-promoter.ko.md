@@ -22,7 +22,7 @@ description: 프로젝트 승격 후보를 검토하고 승인된 범용 하네�
 ```yaml
 sourceProjectId: "{projectId}"
 sourceProjectPath: "{absolute-source-project-path}"
-promotionCandidatesPath: "{sourceProjectPath}/.claude/cache/memorygraph/promotion-candidates.json"
+promotionCandidatesPath: "{sourceProjectPath}/.moonshot-relay/cache/memorygraph/promotion-candidates.json"
 approval: "approved"
 ```
 

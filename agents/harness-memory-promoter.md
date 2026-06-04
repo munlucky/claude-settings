@@ -22,7 +22,7 @@ Promotions must pass the phase-05 replay gate or carry human approval, and the e
 ```yaml
 sourceProjectId: "{projectId}"
 sourceProjectPath: "{absolute-source-project-path}"
-promotionCandidatesPath: "{sourceProjectPath}/.claude/cache/memorygraph/promotion-candidates.json"
+promotionCandidatesPath: "{sourceProjectPath}/.moonshot-relay/cache/memorygraph/promotion-candidates.json"
 approval: "approved"
 ```
 

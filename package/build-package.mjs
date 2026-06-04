@@ -86,6 +86,7 @@ const runtimeSpecs = {
 
 const denySegments = new Set([
   '.git',
+  '.moonshot-relay',
   '.moonshot-state',
   '.code-review-graph',
   'node_modules',

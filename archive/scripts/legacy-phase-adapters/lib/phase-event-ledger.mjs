@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { parsePhaseStatusDocument, readText, resolvePath } from './phase-closeout-parsers.mjs';
-import { resolveRuntimeStateRoot } from './runtime-state-root.mjs';
+import { resolveRuntimeStateRoot } from '../../../../scripts/lib/runtime-state-root.mjs';
 
 export const PHASE_EVENT_VERSION = 1;
 

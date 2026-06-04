@@ -5,9 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nowIsoSeconds, nowMs } from './lib/clock.mjs';
-import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
+import { resolveRuntimeStatePath } from '../../../scripts/lib/runtime-state-root.mjs';
 
-const DEFAULT_DB_PATH = '.moonshot-state/runtime-state.sqlite';
+const DEFAULT_DB_PATH = '.moonshot-relay/runtime-state.sqlite';
 const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
 const VALID_GOAL_STATUSES = new Set(['active', 'paused', 'budget_limited', 'complete']);
 const TERMINAL_LEASE_COMPLETION_STATUSES = new Set([

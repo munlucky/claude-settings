@@ -25,12 +25,11 @@ import { resolveProjectIdentity } from './project-identity.mjs';
 
 const ROOT = process.cwd();
 const SUPPORT_SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const CLAUDE_ROOT = path.join(ROOT, '.claude');
 const LOG_DIR = resolveRuntimeStatePath('logs', 'memorygraph');
 const DEFAULT_SEED = resolveRuntimeStatePath('cache', 'memorygraph', 'project-graph-seed.json');
 const NODE = process.execPath;
 const isWindows = process.platform === 'win32';
-const PHASE_STATUS_FILE = path.join(CLAUDE_ROOT, 'docs', 'phase-status.yaml');
+const PHASE_STATUS_FILE = resolveRuntimeStatePath('docs', 'phase-status.yaml');
 const MEMORYGRAPH_FINGERPRINT = classifyFailure({ code: 'memorygraph_unavailable', source: 'commit-moonshot-memory-refresh' }).fingerprint;
 
 function supportScriptPath(name) {

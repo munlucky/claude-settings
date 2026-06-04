@@ -7,10 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 import { redactText, sha256Hex } from './awtl-redaction.mjs';
 import { assertAwtlEvent, validateAwtlEvent } from './awtl-event-schema.mjs';
+import { resolveRuntimeStateRoot } from './runtime-state-root.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
-const EXPECTED_TRACE_ROOT = path.resolve(REPO_ROOT, '.claude/traces');
+const EXPECTED_TRACE_ROOT = path.join(resolveRuntimeStateRoot(REPO_ROOT), 'traces');
 
 export const DEFAULT_TRACE_ROOT = EXPECTED_TRACE_ROOT;
 export const DEFAULT_TRACE_FILE = 'agent_work_trace.jsonl';

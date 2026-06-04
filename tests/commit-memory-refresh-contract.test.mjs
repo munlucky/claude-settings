@@ -27,7 +27,7 @@ test('commit memory refresh records direct fallback recovery as healthy state', 
   assert.doesNotMatch(content, /readUnavailableCapabilities\(PHASE_STATUS_FILE\)\.find/);
 });
 
-test('direct MemoryGraph helpers write generated state under .moonshot-state', async () => {
+test('direct MemoryGraph helpers write generated state under .moonshot-relay', async () => {
   const direct = await readFile(fromRoot('scripts', 'memorygraph-direct.mjs'), 'utf8');
   const index = await readFile(fromRoot('scripts', 'memorygraph-project-index.mjs'), 'utf8');
 

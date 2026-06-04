@@ -10,11 +10,11 @@ import {
   resolveRuntimeStatePath,
   resolveRuntimeStateRoot,
   runtimeStateRelativePath,
-} from '../.claude/scripts/lib/runtime-state-root.mjs';
-import { resolveDbPath } from '../.claude/scripts/runtime-state.mjs';
-import { defaultPhaseEventLedgerPath } from '../.claude/scripts/lib/phase-event-ledger.mjs';
-import { resolveLeaseFiles } from '../.claude/scripts/lib/phase-run-lease-store.mjs';
-import { resolveRunCacheFiles } from '../.claude/scripts/lib/runtime-unavailable-cache.mjs';
+} from '../scripts/lib/runtime-state-root.mjs';
+import { resolveDbPath } from '../archive/scripts/legacy-phase-adapters/runtime-state.mjs';
+import { defaultPhaseEventLedgerPath } from '../archive/scripts/legacy-phase-adapters/lib/phase-event-ledger.mjs';
+import { resolveLeaseFiles } from '../archive/scripts/legacy-phase-adapters/lib/phase-run-lease-store.mjs';
+import { resolveRunCacheFiles } from '../scripts/lib/runtime-unavailable-cache.mjs';
 import { accountStateRoot } from '../scripts/project-identity.mjs';
 
 const root = process.cwd();
@@ -43,18 +43,18 @@ const sourceTruthForbiddenPatterns = [
 
 const docsThatMustAvoidClaudeSourceTruth = [
   'README.md',
-  '.claude/README.md',
+  'package/profile-templates/claude/.claude/README.md',
   'docs/public/repository-layout.md',
   'docs/public/installer-usage.md',
   'docs/public/compatibility-migration.md',
 ];
 
-test('runtime state resolver defaults new writes to .moonshot-state', () => {
-  assert.equal(DEFAULT_RUNTIME_STATE_ROOT, '.moonshot-state');
-  assert.equal(relative(resolveRuntimeStateRoot(root, {})), '.moonshot-state');
-  assert.equal(relative(resolveRuntimeStatePath('logs', 'workflow-enforcement')), '.moonshot-state/logs/workflow-enforcement');
-  assert.equal(relative(resolveDbPath()), '.moonshot-state/runtime-state.sqlite');
-  assert.equal(runtimeStateRelativePath('cache', 'codex-mcp-singleton'), '.moonshot-state/cache/codex-mcp-singleton');
+test('runtime state resolver defaults new writes to .moonshot-relay', () => {
+  assert.equal(DEFAULT_RUNTIME_STATE_ROOT, '.moonshot-relay');
+  assert.equal(relative(resolveRuntimeStateRoot(root, {})), '.moonshot-relay');
+  assert.equal(relative(resolveRuntimeStatePath('logs', 'workflow-enforcement')), '.moonshot-relay/logs/workflow-enforcement');
+  assert.equal(relative(resolveDbPath()), '.moonshot-relay/runtime-state.sqlite');
+  assert.equal(runtimeStateRelativePath('cache', 'codex-mcp-singleton'), '.moonshot-relay/cache/codex-mcp-singleton');
 });
 
 test('runtime state resolver exposes legacy .claude compatibility paths for reads', () => {
@@ -63,21 +63,21 @@ test('runtime state resolver exposes legacy .claude compatibility paths for read
   assert.equal(relative(resolveLegacyClaudeStatePath('runtime-state.sqlite')), '.claude/runtime-state.sqlite');
 });
 
-test('workflow lease and unavailable-capability caches write under .moonshot-state by default', () => {
+test('workflow lease and unavailable-capability caches write under .moonshot-relay by default', () => {
   const leaseFiles = resolveLeaseFiles('.claude/docs/phase-status.yaml');
   assert.equal(leaseFiles.mirrorGlobalCurrentRun, true);
-  assert.equal(leaseFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/active-phase-run.json');
-  assert.equal(leaseFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/current-run.json');
+  assert.equal(leaseFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/active-phase-run.json');
+  assert.equal(leaseFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/current-run.json');
 
   const cacheFiles = resolveRunCacheFiles('.claude/docs/phase-status.yaml');
-  assert.equal(cacheFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/active-phase-run.json');
-  assert.equal(cacheFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-state/logs/workflow-enforcement/current-run.json');
+  assert.equal(cacheFiles.activeRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/active-phase-run.json');
+  assert.equal(cacheFiles.currentRunFile.replaceAll(path.sep, '/'), '.moonshot-relay/logs/workflow-enforcement/current-run.json');
 });
 
-test('phase event ledger writes under .moonshot-state workflow logs', () => {
+test('phase event ledger writes under .moonshot-relay workflow logs', () => {
   assert.equal(
     relative(defaultPhaseEventLedgerPath('.claude/docs/phase-status.yaml')),
-    '.moonshot-state/logs/workflow-enforcement/events.jsonl',
+    '.moonshot-relay/logs/workflow-enforcement/events.jsonl',
   );
 });
 
@@ -104,7 +104,7 @@ test('migration audit reports old generated state paths and cleanup instructions
   }
   assert.match(cleanupGuide, /Do not delete `.claude\/docs/);
   assert.match(cleanupGuide, /`.claude\/scripts\/`/);
-  assert.match(cleanupGuide, /\.moonshot-state\//);
+  assert.match(cleanupGuide, /\.moonshot-relay\//);
 });
 
 test('public migration docs distinguish source, wrappers, profiles, and generated state', async () => {
@@ -112,7 +112,7 @@ test('public migration docs distinguish source, wrappers, profiles, and generate
     await fs.promises.readFile(fromRoot('docs/public/repository-layout.md'), 'utf8'),
     await fs.promises.readFile(fromRoot('docs/public/installer-usage.md'), 'utf8'),
     await fs.promises.readFile(fromRoot('docs/public/compatibility-migration.md'), 'utf8'),
-    await fs.promises.readFile(fromRoot('.claude/README.md'), 'utf8'),
+    await fs.promises.readFile(fromRoot('package/profile-templates/claude/.claude/README.md'), 'utf8'),
   ].join('\n');
 
   for (const phrase of [
@@ -149,9 +149,8 @@ test('docs do not treat .claude source trees as canonical source of truth', asyn
 
 test('compatibility wrappers document their installed runtime role', async () => {
   const wrapperPaths = [
-    '.claude/scripts/moonshot-phase-dispatch.sh',
-    '.claude/scripts/workflow-enforcement.sh',
-    '.claude/agents/verification/verify-changes.sh',
+    'archive/scripts/legacy-phase-adapters/workflow-enforcement.sh',
+    'agents/verification/verify-changes.sh',
   ];
 
   for (const wrapperPath of wrapperPaths) {

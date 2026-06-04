@@ -57,6 +57,7 @@ const EXCLUDED_PREFIXES = [
   '.claude/memorygraph/',
   '.claude/logs/',
   '.moonshot-state/',
+  '.moonshot-relay/',
   '.tmp/',
   'tmp/',
 ];
@@ -472,7 +473,7 @@ function promotionCandidates(seed, project) {
     if (!sourcePath.startsWith('.claude/')) {
       continue;
     }
-    if (sourcePath.startsWith('.claude/docs/ko/') || sourcePath.startsWith('.claude/memorygraph/')) {
+    if (sourcePath.startsWith('.claude/docs/ko/') || sourcePath.startsWith('.claude/memorygraph/') || sourcePath.startsWith('.moonshot-relay/')) {
       continue;
     }
     if (!item.tags.some((tag) => allowedTags.has(tag))) {

@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { executePromotionFlow, readCandidateFromJsonText, readCandidateFile, readReplayManifestFile } from './lib/awtl-memory-promotion.mjs';
 import { appendReplayScorecardRecord } from './lib/awtl-replay-scorecard.mjs';
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = {
@@ -84,7 +85,7 @@ function loadCandidate(args) {
   if (args.candidatePath) {
     return readCandidateFile(args.candidatePath);
   }
-  const defaultPath = path.join(process.cwd(), '.claude/cache/memorygraph/memory_update_candidates.jsonl');
+  const defaultPath = resolveRuntimeStatePath('cache', 'memorygraph', 'memory_update_candidates.jsonl');
   if (fs.existsSync(defaultPath)) {
     return readCandidateFile(defaultPath);
   }
@@ -117,7 +118,7 @@ function main() {
     autoPromote: args.autoPromote,
   });
 
-  appendReplayScorecardRecord(args.scorecardPath || '.claude/cache/awtl/replay_scorecard.jsonl', {
+  appendReplayScorecardRecord(args.scorecardPath || resolveRuntimeStatePath('cache', 'awtl', 'replay_scorecard.jsonl'), {
     record_id: output.candidate_id ? `replay:${output.candidate_id}:${output.provenance?.last_validated_at ?? Date.now()}` : '',
     created_at: output.provenance?.last_validated_at ?? new Date().toISOString(),
     status: output.memory_graph?.write_status ?? output.status,

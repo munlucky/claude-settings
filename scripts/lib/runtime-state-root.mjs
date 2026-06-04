@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-export const DEFAULT_RUNTIME_STATE_ROOT = '.moonshot-state';
+export const DEFAULT_RUNTIME_STATE_ROOT = '.moonshot-relay';
 export const LEGACY_CLAUDE_STATE_ROOT = '.claude';
 
 export function resolveRuntimeStateRoot(cwd = process.cwd(), env = process.env) {

@@ -204,6 +204,7 @@ excludedGeneratedState:
   - agents/**/*.test.py
   - tests/fixtures/**
   - .claude/logs/**
+  - .moonshot-relay/**
   - .claude/cache/**
   - .claude/traces/**
   - .claude/browser-artifacts/**

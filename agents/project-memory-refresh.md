@@ -7,7 +7,7 @@ description: Builds a project-local MemoryGraph seed and writes approved project
 
 ## Role
 
-Refresh the **current project's** local MemoryGraph from a compact semantic seed. This agent writes only to the project-local backend selected by `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`, which means `MEMORYGRAPH_DATA_DIR=<current-project>/.claude/memorygraph`.
+Refresh the **current project's** local MemoryGraph from a compact semantic seed. This agent writes only to the project-local backend selected by `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`, which means `MEMORYGRAPH_DATA_DIR=<current-project>/.moonshot-relay/memorygraph`.
 
 ## Inputs
 
@@ -15,8 +15,8 @@ Refresh the **current project's** local MemoryGraph from a compact semantic seed
 projectId: "{package-name-or-directory}"
 projectPath: "{absolute-current-project-path}"
 memoryMode: "write_requested"
-seedPath: ".claude/cache/memorygraph/project-graph-seed.json"
-promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+seedPath: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
+promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
 reason: "explicit_refresh|session_logger|commit_moonshot"
 ```
 
@@ -71,8 +71,8 @@ This agent does **not** write to the harness graph. It may create `promotion-can
 projectMemoryRefresh:
   status: "refreshed|skipped|partial|failed"
   projectId: "{projectId}"
-  seedPath: ".claude/cache/memorygraph/project-graph-seed.json"
-  promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+  seedPath: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
+  promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
   nodesCreated: 0
   nodesSkipped: 0
   relationshipsCreated: 0

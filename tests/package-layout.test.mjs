@@ -44,6 +44,7 @@ const canonicalSourceMinimums = new Map([
 ]);
 
 const generatedStateExclusions = [
+  '.moonshot-relay/**',
   '.claude/logs/**',
   '.claude/cache/**',
   '.claude/traces/**',

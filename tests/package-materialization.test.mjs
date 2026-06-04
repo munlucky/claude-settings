@@ -96,6 +96,7 @@ const requiredConcreteCodexFiles = [
 ];
 
 const generatedStateFragments = [
+  '.moonshot-relay/',
   '.moonshot-state/',
   '.claude/state/',
   '/logs/',
@@ -139,6 +140,12 @@ const obsoleteWorkflowScriptExclusions = [
 ];
 
 const runtimeStateDenylistExamples = [
+  '.moonshot-relay/logs/agent-loop/run.log',
+  '.moonshot-relay/cache/code-review-graph-native-mcp-cache.json',
+  '.moonshot-relay/traces/self-test/agent_work_trace.jsonl',
+  '.moonshot-relay/browser-artifacts/session/output.json',
+  '.moonshot-relay/memorygraph/memory.db',
+  '.moonshot-relay/runtime-state.sqlite',
   '.moonshot-state/logs/agent-loop/run.log',
   '.moonshot-state/cache/code-review-graph-native-mcp-cache.json',
   '.moonshot-state/traces/self-test/agent_work_trace.jsonl',

@@ -11,11 +11,11 @@ import {
   loadReplayScorecardRecords,
   readLatestReplayScorecardRecord,
 } from './lib/awtl-replay-scorecard.mjs';
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 
-const ROOT = process.cwd();
-const DEFAULT_CANDIDATE_PATH = path.join(ROOT, '.claude/cache/memorygraph/memory_update_candidates.jsonl');
-const DEFAULT_FAILED_TURN_CASE_PATH = path.join(ROOT, '.claude/cache/awtl/failed_turn_cases.jsonl');
-const DEFAULT_SCORECARD_PATH = path.join(ROOT, '.claude/cache/awtl/replay_scorecard.jsonl');
+const DEFAULT_CANDIDATE_PATH = resolveRuntimeStatePath('cache', 'memorygraph', 'memory_update_candidates.jsonl');
+const DEFAULT_FAILED_TURN_CASE_PATH = resolveRuntimeStatePath('cache', 'awtl', 'failed_turn_cases.jsonl');
+const DEFAULT_SCORECARD_PATH = resolveRuntimeStatePath('cache', 'awtl', 'replay_scorecard.jsonl');
 
 const BLOCKED_DENIAL_PATTERNS = [
   /^invalid_candidate$/,

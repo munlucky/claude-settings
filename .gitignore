@@ -7,6 +7,7 @@ skills-lock.json
 .mcp.json
 __pycache__/
 *.pyc
+.moonshot-relay/
 .moonshot-state/
 .claude/browser-runtime/
 .claude/cache/

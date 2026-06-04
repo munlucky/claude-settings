@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url';
 
 import { classifyFailure } from './failure-classifier.mjs';
 import { buildFailureClassifierInput, buildSummarizerInput } from './awtl-failure-attribution.mjs';
+import { resolveRuntimeStateRoot } from './runtime-state-root.mjs';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(MODULE_DIR, '../../..');
 const SCHEMA_PATH = path.resolve(MODULE_DIR, '../../schemas/awtl-memory-candidate-v1.schema.json');
 
-export const DEFAULT_MEMORY_CANDIDATE_OUTPUT = path.join(REPO_ROOT, '.claude/cache/memorygraph/memory_update_candidates.jsonl');
+export const DEFAULT_MEMORY_CANDIDATE_OUTPUT = path.join(resolveRuntimeStateRoot(REPO_ROOT), 'cache', 'memorygraph', 'memory_update_candidates.jsonl');
 export const REQUIRED_PROMOTION_TAGS = Object.freeze([
   'source:moonshot',
   'project:moonshot-relay',

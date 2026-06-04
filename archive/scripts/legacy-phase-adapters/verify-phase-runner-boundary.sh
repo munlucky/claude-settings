@@ -22,7 +22,7 @@ SIGNAL_STATUS_FILE="$TMP_ROOT/signal-phase-status.yaml"
 SIGNAL_DISPATCH_OUT="$TMP_ROOT/signal-dispatch.out"
 NOENV_WORKSPACE="$TMP_ROOT/noenv-workspace"
 NOENV_STATUS_FILE="$TMP_ROOT/noenv-phase-status.yaml"
-NOENV_DEFAULT_LOG_DIR="$NOENV_WORKSPACE/.moonshot-state/logs/workflow-enforcement"
+NOENV_DEFAULT_LOG_DIR="$NOENV_WORKSPACE/.moonshot-relay/logs/workflow-enforcement"
 
 mkdir -p "$PLAN_DIR" "$EXECUTION_ROOT" "$LOG_DIR" "$SIGNAL_LOG_DIR" "$MANUAL_LEASE_LOG_DIR" "$PHASE_BOUNDARY_LOG_DIR" "$FAKE_BIN" "$NOENV_WORKSPACE/.claude/logs/workflow-enforcement" "$NOENV_DEFAULT_LOG_DIR"
 

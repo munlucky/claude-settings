@@ -7,7 +7,7 @@ description: 프로젝트 로컬 MemoryGraph seed를 만들고 승인된 프로�
 
 ## 역할
 
-**현재 프로젝트**의 로컬 MemoryGraph를 semantic seed 기준으로 갱신합니다. 이 에이전트는 `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`가 선택한 프로젝트 로컬 backend에만 씁니다. 즉 `MEMORYGRAPH_DATA_DIR=<현재프로젝트>/.claude/memorygraph`가 대상입니다.
+**현재 프로젝트**의 로컬 MemoryGraph를 semantic seed 기준으로 갱신합니다. 이 에이전트는 `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`가 선택한 프로젝트 로컬 backend에만 씁니다. 즉 `MEMORYGRAPH_DATA_DIR=<현재프로젝트>/.moonshot-relay/memorygraph`가 대상입니다.
 
 ## 입력
 
@@ -15,8 +15,8 @@ description: 프로젝트 로컬 MemoryGraph seed를 만들고 승인된 프로�
 projectId: "{package-name-or-directory}"
 projectPath: "{absolute-current-project-path}"
 memoryMode: "write_requested"
-seedPath: ".claude/cache/memorygraph/project-graph-seed.json"
-promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+seedPath: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
+promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
 reason: "explicit_refresh|session_logger|commit_moonshot"
 ```
 
@@ -71,8 +71,8 @@ create_relationship:
 projectMemoryRefresh:
   status: "refreshed|skipped|partial|failed"
   projectId: "{projectId}"
-  seedPath: ".claude/cache/memorygraph/project-graph-seed.json"
-  promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+  seedPath: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
+  promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
   nodesCreated: 0
   nodesSkipped: 0
   relationshipsCreated: 0
