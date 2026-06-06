@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 
@@ -59,6 +60,25 @@ test('active public guideline references resolve in source', async () => {
     }
   }
   assert.deepEqual(missing, []);
+});
+
+test('public guidelines contain durable policy content, not placeholder stubs', async () => {
+  const violations = [];
+  for (const file of await walk('docs/public/guidelines')) {
+    if (!file.endsWith('.md')) {
+      continue;
+    }
+    const text = await readFile(fromRoot(file), 'utf8');
+    const meaningfulLines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'));
+    const onlyPlaceholder = meaningfulLines.every((line) => /^Canonical source guideline\b/.test(line));
+    if (meaningfulLines.length < 4 || onlyPlaceholder) {
+      violations.push(file);
+    }
+  }
+  assert.deepEqual(violations, []);
 });
 
 test('active memory skills do not present legacy .claude memorygraph cache as the default seed', async () => {
@@ -154,6 +174,45 @@ test('directly executable shell entrypoints use LF line endings', async () => {
     }
   }
   assert.deepEqual(violations, []);
+});
+
+test('browser runtime installer resolves source checkout runtime assets', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-browser-source-'));
+  const emptyHome = path.join(tempRoot, 'empty-home');
+  const binDir = path.join(tempRoot, 'bin');
+  try {
+    const result = spawnSync(process.execPath, [
+      'scripts/install-browser-runtime.mjs',
+      '--bin-dir',
+      binDir,
+    ], {
+      cwd: root,
+      env: {
+        ...process.env,
+        MOONSHOT_RELAY_HOME: emptyHome,
+      },
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const installedShim = process.platform === 'win32'
+      ? path.join(binDir, 'browserctl.cmd')
+      : path.join(binDir, 'browserctl');
+    assert.ok(existsSync(installedShim), `expected installed browserctl shim at ${installedShim}`);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('legacy shell syntax verifier default targets exist in source checkout', () => {
+  const result = spawnSync(process.execPath, [
+    'archive/scripts/legacy-phase-adapters/verify-shell-syntax.mjs',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 });
 
 test('browser-flow missing runner produces structured setup gap verdict', async () => {

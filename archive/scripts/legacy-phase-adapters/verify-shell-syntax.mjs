@@ -6,16 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { printLines } from './lib/logging.mjs';
 
 const DEFAULT_SHELL_FILES = [
-  '.claude/scripts/knowledge-repo-audit.sh',
-  '.claude/scripts/verify-code-policy.sh',
-  '.claude/scripts/workflow-enforcement.sh',
-  '.claude/scripts/agent-loop.sh',
-  '.claude/scripts/moonshot-phase-dispatch.sh',
-  '.claude/scripts/phase-worktree-coordinator.sh',
-  '.claude/scripts/verify-phase-runtime-parity.sh',
-  '.claude/scripts/verify-phase-runner-boundary.sh',
-  '.claude/agents/verification/verify-changes.sh',
-  '.claude/agents/verification/verify-runtime.sh',
+  'install-claude.sh',
+  'bin/browserctl',
+  'agents/verification/run-verify-changes.sh',
+  'agents/verification/verify-changes.sh',
+  'agents/verification/verify-runtime.sh',
+  'scripts/install-browser-runtime.sh',
 ];
 
 function parseFileList(argv) {

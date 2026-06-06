@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(scriptDir, '..', '..');
+const rootDir = path.resolve(scriptDir, '..');
 
 function candidateRuntimeRoots() {
   const moonshotHome = process.env.MOONSHOT_RELAY_HOME
