@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/plan-closeout.schema.json",
+  "title": "Moonshot Relay Plan Closeout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planDir",
+    "masterPlan",
+    "status",
+    "completedPhases",
+    "verification",
+    "commit",
+    "installSync",
+    "issues"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "planDir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "masterPlan": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["complete", "partial", "blocked"]
+    },
+    "completedPhases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "verdictFiles", "notes"],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "status"],
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": ["passed", "failed", "skipped"]
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "verdictFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "hash"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["created", "pending", "skipped"]
+        },
+        "hash": {
+          "type": "string"
+        }
+      }
+    },
+    "installSync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "targets"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["synced", "pending", "skipped"]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "summary"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["fixed", "accepted", "deferred", "blocked"]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

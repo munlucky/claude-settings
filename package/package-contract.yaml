@@ -123,6 +123,8 @@ requiredPayloadEntries:
     entries:
       - source: scripts/awtl-memory-promotion.mjs
         purpose: memory_promotion_support
+      - source: scripts/browser-flow-runner.mjs
+        purpose: browser_flow_runtime_verdict_support
       - source: scripts/code-review-graph-mcp-wrapper.js
         purpose: code_review_graph_mcp_wrapper
       - source: scripts/codex-mcp-singleton.mjs
@@ -143,8 +145,32 @@ requiredPayloadEntries:
         purpose: project_knowledge_lifecycle
       - source: scripts/knowledge-records.mjs
         purpose: project_knowledge_record_parser
-      - source: scripts/lib/**
-        purpose: allowlisted_support_libraries_only
+      - source: scripts/lib/awtl-event-schema.mjs
+        purpose: awtl_event_schema_support
+      - source: scripts/lib/awtl-failure-attribution.mjs
+        purpose: awtl_failure_attribution_support
+      - source: scripts/lib/awtl-harness-capture.mjs
+        purpose: awtl_harness_capture_support
+      - source: scripts/lib/awtl-memory-candidate.mjs
+        purpose: awtl_memory_candidate_support
+      - source: scripts/lib/awtl-memory-promotion.mjs
+        purpose: awtl_memory_promotion_support
+      - source: scripts/lib/awtl-redaction.mjs
+        purpose: awtl_redaction_support
+      - source: scripts/lib/awtl-replay-probes.mjs
+        purpose: awtl_replay_probe_support
+      - source: scripts/lib/awtl-replay-scorecard.mjs
+        purpose: awtl_replay_scorecard_support
+      - source: scripts/lib/awtl-trace-sink.mjs
+        purpose: awtl_trace_sink_support
+      - source: scripts/lib/failure-classifier.mjs
+        purpose: failure_classifier_support
+      - source: scripts/lib/runtime-state-db-path.mjs
+        purpose: runtime_state_db_path_support
+      - source: scripts/lib/runtime-state-root.mjs
+        purpose: runtime_state_root_support
+      - source: scripts/lib/runtime-unavailable-cache.mjs
+        purpose: runtime_unavailable_cache_support
       - source: scripts/memory-mcp-wrapper.js
         purpose: memory_mcp_wrapper
       - source: scripts/memorygraph-direct.mjs
@@ -157,6 +183,8 @@ requiredPayloadEntries:
         purpose: memorygraph_project_index
       - source: scripts/ontology-constraint-validate.mjs
         purpose: ontology_validation_support
+      - source: scripts/prepare-phase-runner-state.mjs
+        purpose: phase_plan_readiness_bridge
       - source: scripts/project-identity.mjs
         purpose: project_identity_resolution
       - source: scripts/verification-verdict-state.mjs

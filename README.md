@@ -35,7 +35,7 @@ Compatibility wrappers and installed-runtime docs may still mention `.claude/...
 - 공식 기본 gate는 `npm test`입니다.
 - `npm run test:active`는 같은 active gate를 실행합니다.
 - `npm run test:package`는 package/materialization/migration 관련 active tests만 실행합니다.
-- bare `node --test` 직접 실행은 archive 보존 테스트까지 발견할 수 있으므로 공식 gate가 아닙니다. active test를 직접 실행해야 할 때는 `node --test tests/*.mjs` 또는 npm scripts를 사용합니다.
+- bare `node --test` 또는 globbed Node test 직접 실행은 archive 보존 테스트까지 발견할 수 있으므로 공식 active gate가 아닙니다. active test를 직접 실행해야 할 때는 `npm test` 또는 `package.json`의 `scripts.test` 파일 목록과 동일한 명령을 사용합니다.
 
 ## 디렉터리 구조
 
@@ -44,24 +44,18 @@ moonshot-relay/
 ├── install-claude.sh
 ├── README.md
 ├── .claudeignore
-├── .claude/
-│   ├── CLAUDE.md / CLAUDE.ko.md
-│   ├── PROJECT.md / PROJECT.ko.md
-│   ├── README.md / README.ko.md
-│   ├── verification.contract.yaml
-│   ├── rules/
-│   ├── skills/
-│   ├── agents/
-│   ├── scripts/
-│   ├── templates/
-│   └── docs/
-│       ├── guidelines/
-│       ├── reference-downstream/
-│       └── runtime-parity-reference-plan/
-└── AGENTS.md -> .claude/CLAUDE.md
+├── skills/
+├── agents/
+├── rules/
+├── scripts/
+├── schemas/
+├── templates/
+├── tools/
+├── docs/public/
+└── AGENTS.md
 ```
 
-Root-level `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`, and allowlisted support files under `scripts/` are the canonical source directories. The `.claude/` tree remains loaded for current runtime compatibility and installed `.claude/` payload behavior.
+Root-level `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`, and allowlisted support files under `scripts/` are the canonical source directories. Root `.claude/` and `.codex/` are local runtime profiles and may be absent or contain only ignored runtime artifacts in a clean source checkout.
 
 Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; they are not runtime output and are not included in installed package payloads.
 
@@ -99,7 +93,7 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - `assumption-ledger`는 질문이 필요한 모호함을 `ASSUMPTIONS.md` 또는 `BLOCKERS.md`로 적재해 workflow 정지를 줄입니다.
 - medium/complex 구현은 slice별 `SPRINT_CONTRACT.md`를 먼저 만들고, 검증 결과는 `QA_REPORT.md`, 장시간 세션 상태는 `HANDOFF.md`로 남기는 것을 권장합니다.
 - phase 기반 장시간 실행의 기본 진입점은 `/moonshot-phase-runner <plan-dir>`이며, 내부적으로 `moonshot-phase-executor`가 `in-session-coordinator`를 active 실행 경로로 사용합니다. `delegated-terminal` adapter는 legacy compatibility 전용입니다.
-- `<plan-dir>`를 생략하면 기존 안전한 plan dir를 재사용하고, 없으면 `moonshot-plan-writer`로 `docs/implementation`을 자동 생성한 뒤 이어서 실행합니다.
+- `<plan-dir>`를 생략한 실행은 active plan resolver가 단일 안전 plan을 판정할 때만 허용합니다. 여러 plan package가 있거나 baseline이 stale이면 명시적 plan dir가 필요합니다.
 - 기본적으로 `/moonshot-phase-runner <plan-dir>` 한 번이면 준비 후 실행까지 이어지고, 수동 중단이 필요할 때만 `--prepare-only`를 사용합니다.
 
 ### 에이전트
@@ -137,7 +131,9 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - 제품 정의 가이드: `docs/public/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `docs/public/guidelines/long-running-harness.ko.md`
 - 외부 하네스 도입 준비: `docs/claude-tasks/external-harness-adoption/`
-- 작업 문서 루트: `.moonshot-relay/docs/tasks/` (런타임 생성, 저장소/설치 패키지에는 템플릿만 유지)
+- 작업 문서 루트: `.moonshot-relay/docs/tasks/` (runtime task output)
+- phase 계획 루트: `docs/implementation/` (tracked implementation plan packages)
+- runtime state root: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/`
 - downstream reference package: `.claude/docs/reference-downstream/`
 - runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`
 - 제품 정의 템플릿: source checkout에서는 `templates/product-definition/*.md`, 설치 런타임에서는 `<MOONSHOT_RELAY_HOME>/templates/product-definition/*.md`
@@ -335,7 +331,7 @@ Code Review Graph 설정:
 - Completion Check: 요구사항 누락 방지
 - Product Definition Layer: 제품 정의 산출물을 먼저 고정한 뒤 기존 구현 체인으로 핸드오프
 
-자세한 내용은 `.claude/README.md`를 참고하세요.
+자세한 phase-runner 사용자 흐름은 `docs/public/reference/phase-runner-user-workflow.md`를 참고하세요.
 
 ## 설정 커스터마이징
 

@@ -24,9 +24,9 @@ planQualityReview:
   decision: "pass | revise | blocked | revise_exhausted"
   reviewerSessions: []
   writerSessions: []
-  artifactRoot: "docs/implementation/planning-loop"
-  latestReview: "docs/implementation/planning-loop/plan-quality-review-iter-<NN>.yaml"
-  latestWriterRevision: "docs/implementation/planning-loop/plan-writer-revision-iter-<NN>.yaml"
+  artifactRoot: "{planRoot}/planning-loop"
+  latestReview: "{planRoot}/planning-loop/plan-quality-review-iter-<NN>.yaml"
+  latestWriterRevision: "{planRoot}/planning-loop/plan-writer-revision-iter-<NN>.yaml"
   blockingFindings: []
   remainingImprovementDirectives: []
   remainingOpenDecisions: []
@@ -39,15 +39,15 @@ planQualityReview:
 ```yaml
 planPackageReadiness:
   mode: "prepared_now | prep_phase_required | docs_only | blocked"
-  selectedMasterPlan: "docs/implementation/00-master-plan-v<version>.md"
+  selectedMasterPlan: "{planRoot}/00-master-plan-v<version>.md"
   selectedPhaseDocs:
-    - "docs/implementation/01-<slug>-v<version>.md"
+    - "{planRoot}/01-<slug>-v<version>.md"
   staleRootPhaseDocs: []
   staleMasterPlans: []
   dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
   runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
-  archiveRoot: "docs/implementation/archive/<plan-slug>/"
-  dryRunCommand: "run the installed plan-state preparation entrypoint with --dry-run, --plan-dir docs/implementation, --master-plan docs/implementation/00-master-plan-v<version>.md, --status-file .claude/docs/phase-status.yaml, --execution-root docs/implementation/execution/<plan-slug>, and --archive-label <plan-slug>"
+  archiveRoot: "{planRoot}/archive/"
+  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir {planRoot} --master-plan {planRoot}/00-master-plan-v<version>.md --status-file .claude/docs/phase-status.yaml --execution-root {planRoot}/execution"
   readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
 ```
 
@@ -79,7 +79,7 @@ mvpMethodology:
 ## Phase Index
 | Phase | Title | Plan File | Depends On |
 |------|-------|-----------|------------|
-| 01 | <title> | `docs/implementation/01-<slug>-v<version>.md` | - |
+| 01 | <title> | `{planRoot}/01-<slug>-v<version>.md` | - |
 
 ## Execution Order Notes
 - <dependency and ordering notes>
@@ -96,14 +96,14 @@ mvpMethodology:
 ## Source Traceability Matrix
 | Req ID | Source | Requirement Summary | Phase | Plan File | Status |
 |--------|--------|---------------------|-------|-----------|--------|
-| SRC-<n> | <source-name> | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
+| SRC-<n> | <source-name> | <summary> | <NN> | `{planRoot}/<NN>-<slug>-v<version>.md` | mapped |
 
 ## Unmapped Source Requirements
 - <none or explicit gap list with reason>
 
 ## Phase Completion Checklist
-- [ ] Phase 01 - <title> (`docs/implementation/01-<slug>-v<version>.md`)
-- [ ] Phase 02 - <title> (`docs/implementation/02-<slug>-v<version>.md`)
+- [ ] Phase 01 - <title> (`{planRoot}/01-<slug>-v<version>.md`)
+- [ ] Phase 02 - <title> (`{planRoot}/02-<slug>-v<version>.md`)
 
 ## Completion Rule
 - Mark a phase as checked only when its phase plan completion criteria are satisfied.

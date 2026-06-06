@@ -117,7 +117,7 @@ Task tool:
 
 Runtime guidance:
 - `claude-code`: use `Task` tool in a forked session
-- `codex`: use a fresh isolated agent/session and merge summary only
+- `codex`: use available multi-agent or thread fork tooling when the user has authorized delegated/parallel agent work; otherwise stop with a structured blocker or run a single current-session attempt only when `phaseRunnerResult.allowCurrentSessionAttempt == true`
 
 ### 4. Merge summarized result only
 

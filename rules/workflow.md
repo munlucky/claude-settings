@@ -13,5 +13,5 @@
 - Stop only for a true blocker, a required user decision, destructive-risk confirmation, or an explicit user pause/redirect.
 - Before any non-clean stop, take the next independent low-risk step.
 - Non-clean stops must record in `QA_REPORT.md` and `HANDOFF.md`: reason, attempts, why autonomy failed, and next step.
-- Confirm IN/OUT scope. See `.claude/rules/scope-confirmation.md`.
+- Confirm IN/OUT scope. See `rules/scope-confirmation.md` in source checkouts or `.claude/rules/scope-confirmation.md` in installed Claude profiles.
 - If info is missing, ask or use low-risk assumptions.

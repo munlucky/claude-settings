@@ -80,7 +80,9 @@ const requiredConcretePayloadFiles = [
   'scripts/memorygraph-mcp-wrapper.js',
   'scripts/memorygraph-mcp-wrapper.mjs',
   'scripts/code-review-graph-mcp-wrapper.js',
+  'scripts/browser-flow-runner.mjs',
   'scripts/commit-moonshot-memory-refresh.mjs',
+  'scripts/prepare-phase-runner-state.mjs',
   'scripts/lib/runtime-state-db-path.mjs',
   'scripts/lib/runtime-state-root.mjs',
   'scripts/verification-verdict-state.mjs',
@@ -110,7 +112,7 @@ const generatedStateFragments = [
   '/sessions/',
   '/sqlite/',
   '/scripts/fixtures/',
-  'fixtures',
+  '/tests/fixtures/',
   '/node_modules/',
   '/tmp/',
   '/memorygraph/',
@@ -323,7 +325,11 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   const plannedTo = payload.runtimes.flatMap((runtime) => runtime.planned.map((entry) => entry.to));
 
   assert.ok(plannedFrom.includes('scripts/verification-verdict-state.mjs'));
+  assert.ok(plannedFrom.includes('scripts/browser-flow-runner.mjs'));
+  assert.ok(plannedFrom.includes('scripts/prepare-phase-runner-state.mjs'));
   assert.equal(plannedTo.some((target) => /\.claude\/verification-verdict-[^/]*\.json$/.test(target)), false);
+  assert.equal(plannedTo.some((target) => /\.claude\/runtime-verdict-[^/]*\.json$/.test(target)), false);
+  assert.equal(plannedTo.some((target) => /\.claude\/browser-flow-verdict-[^/]*\.json$/.test(target)), false);
 });
 
 test('generated package profiles are not tracked source files', () => {

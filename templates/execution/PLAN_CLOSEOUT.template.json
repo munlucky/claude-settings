@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "planDir": "docs/implementation/<plan-slug>",
+  "masterPlan": "docs/implementation/<plan-slug>/00-master-plan-v1.md",
+  "status": "partial",
+  "completedPhases": [],
+  "verification": {
+    "commands": [],
+    "verdictFiles": [],
+    "notes": ""
+  },
+  "commit": {
+    "status": "pending",
+    "hash": ""
+  },
+  "installSync": {
+    "status": "pending",
+    "targets": []
+  },
+  "issues": []
+}

@@ -608,9 +608,9 @@ STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 CONTRACT_FILE="${VERIFICATION_CONTRACT_FILE:-.claude/verification.contract.yaml}"
 EXTRA_CHECKS_CMD="${VERIFICATION_EXTRA_CHECKS_CMD:-}"
 
-mkdir -p .claude
+mkdir -p .claude .moonshot-relay
 RESULTS_FILE=".claude/verification-results-$(date +%Y%m%d-%H%M%S).txt"
-VERDICT_FILE="${HARNESS_VERDICT_FILE:-.claude/verification-verdict-${RUN_ID}.json}"
+VERDICT_FILE="${HARNESS_VERDICT_FILE:-.moonshot-relay/verification-verdict-${RUN_ID}.json}"
 
 VERIFICATION_PASSED=true
 BUILD_FAILED=false

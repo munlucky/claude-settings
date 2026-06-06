@@ -59,6 +59,7 @@ If `executionMode == in-session-coordinator`:
 - invoke `/moonshot-in-session-coordinator`
 - pass through `phaseRunnerResult`
 - when the active runtime cannot reliably keep spawning fresh attempts, stop with a concrete blocker or ask for a runtime change; do not silently fall back to delegated-terminal
+- a current-session direct attempt is allowed only when `phaseRunnerResult.allowCurrentSessionAttempt == true`; record that downgrade in closeout evidence
 - ensure each active slice can initialize `WORKSET.md` from `<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md`
 - do not stop after a completed phase while the active plan directory still has another actionable phase
 - do not treat a review-pending or finish-pending slice as complete; force another attempt until the artifacts reflect a real review and clean closeout

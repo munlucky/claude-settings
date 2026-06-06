@@ -150,10 +150,12 @@ test('package contract declares required source payload entries and generated-st
     'schemas/verification.contract.yaml',
     'package/build-package.mjs',
     'scripts/install-account-root-harness.mjs',
+    'scripts/browser-flow-runner.mjs',
     'claudeSupportScripts:',
     'archivedLegacyScripts:',
     'archive/scripts/legacy-phase-adapters/',
     'scripts/install-browser-runtime.sh',
+    'scripts/prepare-phase-runner-state.mjs',
     'scripts/memorygraph-mcp-wrapper.js',
     'scripts/code-review-graph-mcp-wrapper.js',
     'package/profile-templates/claude/.claude/',
@@ -166,6 +168,8 @@ test('package contract declares required source payload entries and generated-st
     assert.match(contract, new RegExp(exclusion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${exclusion} should be excluded`);
   }
 
+  assert.doesNotMatch(contract, /source: scripts\/lib\/\*\*/);
+  assert.match(contract, /scripts\/lib\/runtime-state-root\.mjs/);
   assert.match(contract, /scripts\/fixtures\/\*\*/);
   assert.match(contract, /tests\/fixtures\/\*\*/);
 

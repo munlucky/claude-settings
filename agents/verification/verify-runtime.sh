@@ -514,7 +514,7 @@ PY
     --browserctl "$BROWSERCTL" \
     --run-id "${RUN_ID}-${BROWSER_FLOW}" 2>&1)"
   flow_rc=$?
-  BROWSER_FLOW_VERDICT_FILE="$(printf '%s\n' "$flow_output" | grep '^\.claude/browser-flow-verdict-' | tail -1 || true)"
+  BROWSER_FLOW_VERDICT_FILE="$(printf '%s\n' "$flow_output" | grep -E '^(\.moonshot-relay|\.claude)/browser-flow-verdict-' | tail -1 || true)"
   if [ -n "$BROWSER_FLOW_VERDICT_FILE" ] && [ -f "$BROWSER_FLOW_VERDICT_FILE" ]; then
     BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE="$(python3 - "$BROWSER_FLOW_VERDICT_FILE" <<'PY'
 import json
@@ -626,8 +626,8 @@ CONTRACT_RUNTIME_E2E=""
 CONTRACT_REQUIRED_CHECKS=()
 CONTRACT_OPTIONAL_CHECKS=()
 
-mkdir -p .claude
-VERDICT_FILE="${HARNESS_VERDICT_FILE:-.claude/runtime-verdict-${RUN_ID}.json}"
+mkdir -p .claude .moonshot-relay
+VERDICT_FILE="${HARNESS_VERDICT_FILE:-.moonshot-relay/runtime-verdict-${RUN_ID}.json}"
 
 RUNTIME_FAILED=false
 FLOW_FAILED=false

@@ -37,6 +37,7 @@ const runtimeSpecs = {
     ],
     sharedFiles: [
       'scripts/awtl-memory-promotion.mjs',
+      'scripts/browser-flow-runner.mjs',
       'scripts/code-review-graph-mcp-wrapper.js',
       'scripts/codex-mcp-singleton.mjs',
       'scripts/commit-moonshot-memory-refresh.mjs',
@@ -66,6 +67,7 @@ const runtimeSpecs = {
       'scripts/memorygraph-mcp-wrapper.mjs',
       'scripts/memorygraph-project-index.mjs',
       'scripts/ontology-constraint-validate.mjs',
+      'scripts/prepare-phase-runner-state.mjs',
       'scripts/project-identity.mjs',
       'scripts/verification-verdict-state.mjs',
     ],
@@ -85,13 +87,15 @@ const runtimeSpecs = {
   },
 };
 
-const denySegments = new Set([
+const denyRootSegments = new Set([
   '.git',
   '.moonshot-relay',
   '.moonshot-state',
   '.code-review-graph',
   'node_modules',
-  'fixtures',
+]);
+
+const denyRuntimeSegments = new Set([
   'browser-artifacts',
   'browser-runtime',
   'cache',
@@ -103,6 +107,18 @@ const denySegments = new Set([
   'tmp',
   'traces',
 ]);
+
+const denyRuntimeRoots = new Set([
+  '.claude',
+  '.codex',
+  '.moonshot-relay',
+  '.moonshot-state',
+]);
+
+const denyPathPrefixes = [
+  'scripts/fixtures/',
+  'tests/fixtures/',
+];
 
 const denyBasenames = [
   /^runtime-state\.sqlite/,
@@ -172,11 +188,19 @@ const shouldExclude = (sourcePath) => {
   const segments = relative.split(path.sep);
   const basename = path.basename(sourcePath);
 
-  if (segments.some((segment) => denySegments.has(segment) || segment.endsWith('fixtures'))) {
+  if (segments.some((segment) => denyRootSegments.has(segment))) {
     return true;
   }
 
-  return basename.includes('fixtures') || denyBasenames.some((pattern) => pattern.test(basename));
+  if (denyPathPrefixes.some((prefix) => portableRelative === prefix.slice(0, -1) || portableRelative.startsWith(prefix))) {
+    return true;
+  }
+
+  if (denyRuntimeRoots.has(segments[0]) && segments.some((segment) => denyRuntimeSegments.has(segment))) {
+    return true;
+  }
+
+  return denyBasenames.some((pattern) => pattern.test(basename));
 };
 
 const walkTree = async (source, visit) => {
