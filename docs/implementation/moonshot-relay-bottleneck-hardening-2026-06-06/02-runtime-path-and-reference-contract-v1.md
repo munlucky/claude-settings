@@ -1,5 +1,7 @@
 # 02 Runtime Path And Reference Contract v1
 
+> Superseded: `00-master-plan-v2.md` is the authoritative executable plan. This v1 phase is historical context only.
+
 ## Goal
 
 Prevent `.claude/.codex` profile paths from being treated as durable canonical source.

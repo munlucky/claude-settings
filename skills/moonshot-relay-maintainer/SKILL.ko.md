@@ -13,7 +13,7 @@ description: Moonshot 하네스와 downstream .claude 설치본을 유지합니�
 
 - 새 public skill보다 패턴 전이를 우선합니다. 새 skill은 별도 trigger, 별도 출력 계약, 오케스트레이션 결정 변경이 모두 있을 때만 추가합니다.
 - `moonshot-orchestrator`, `product-orchestrator`, `moonshot-phase-runner`를 안정적인 진입점으로 유지합니다.
-- 외부 skill 채택 기준은 `.claude/docs/guidelines/external-skill-pattern-transfer.md`에 두고 orchestrator policy에서 링크합니다.
+- 외부 skill 채택 기준은 `docs/public/guidelines/external-skill-pattern-transfer.md`에 두고 orchestrator policy에서 링크합니다.
 - completion gate는 엄격하게 유지합니다. gate logic을 완화하기 전에 stale fixture, prompt, artifact를 먼저 고칩니다.
 - 모든 하네스 동작 수정은 TDD로 처리합니다. incident class를 재현하는 deterministic regression test 또는 fixture를 먼저 추가/선택하고, RED 또는 old-behavior proof를 남긴 뒤 최소 변경으로 GREEN을 만들어야 합니다. source-only evidence로 하네스 incident를 닫지 않습니다.
 - regression test가 실제로 불가능하면 bypass reason, 가장 가까운 executable check, 남은 재발 위험을 handoff/report에 기록합니다.
@@ -89,7 +89,7 @@ MemoryGraph는 incident summary, taxonomy, test mapping, recurrence ledger를 fu
 4. 기존 owner가 무관한 책임을 섞게 될 때만 public skill을 추가합니다.
 5. 채택하지 않은 패턴은 왜 거절했는지 기록합니다.
 
-상세 체크리스트는 `.claude/docs/guidelines/external-skill-pattern-transfer.md`를 읽습니다.
+상세 체크리스트는 `docs/public/guidelines/external-skill-pattern-transfer.md`를 읽습니다.
 
 source가 이미지나 compact prompt라면 통째로 복사하지 않습니다. 재사용 가능한 workflow mechanics만 추출하고, 이미 커버된 항목을 분류한 뒤 gap만 기존 stage owner에 전이합니다.
 
@@ -102,14 +102,7 @@ source가 이미지나 compact prompt라면 통째로 복사하지 않습니다.
 - 계약 자체가 틀린 경우가 아니면 completion gate source는 엄격하게 유지합니다.
 - 기대 alignment에는 fresh verification evidence, review completion, plan conformance pass, `OBJ-CONFORM`, `Verdict: done`, `Current task status: FULL`, completed `phase-status.yaml`이 포함됩니다.
 
-권장 확인:
-
-```bash
-bash -n archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh
-node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
-bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
-PHASE_RUNTIME_PARITY_KEEP_TMP=true bash archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan
-```
+권장 확인은 active test와 source-owned runtime verifier를 먼저 사용합니다. archive 명령은 `bash -n archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh` 또는 `node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs` 같은 explicit compatibility investigation 예시로만 다룹니다.
 
 ## Downstream Sync
 
@@ -128,33 +121,23 @@ python3 .claude/skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.
 
 ## Validation
 
-변경에 비례해 확인합니다.
+변경에 비례해 active check를 실행합니다.
 
 ```bash
-bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
-bash archive/scripts/legacy-phase-adapters/verify-code-policy.sh
-bash archive/scripts/legacy-phase-adapters/workflow-enforcement.sh verify
-bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
+npm test
+npm run test:package
+node bin/moonshot-relay.mjs install --dry-run --runtime all
+node scripts/install-account-root-harness.mjs --runtime all --dry-run --json
 git diff --check
 ```
 
-하네스 동작 수정에서는 새로 추가하거나 선택한 incident regression command와 가장 가까운 기존 test suite도 실행합니다. report에는 어떤 command가 RED/GREEN evidence인지 명시해야 합니다. 예:
-
-```bash
-node archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs self-test
-node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-state.test.mjs
-node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs
-node --test archive/scripts/legacy-phase-adapters/lib/terminal-blocker-publisher.test.mjs
-```
+하네스 동작 수정에서는 새로 추가하거나 선택한 active incident regression command와 가장 가까운 기존 test suite도 실행합니다. report에는 어떤 command가 RED/GREEN evidence인지 명시해야 합니다. `node archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs self-test` 같은 archive specimen 명령은 legacy investigation 전용이며 default gate evidence가 아닙니다.
 
 downstream project를 sync했다면 추가로 실행합니다.
 
 ```bash
-HARNESS_KNOWLEDGE_AUDIT_FILE=/tmp/<project>-knowledge-audit.json bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
-bash -n archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
-bash -n archive/scripts/legacy-phase-adapters/verify-code-policy.sh
-bash -n archive/scripts/legacy-phase-adapters/workflow-enforcement.sh
-node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
+python3 skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py --help
+git diff --check
 ```
 
 ## 보고

@@ -7,8 +7,8 @@ loads:
   - product-artifacts
   - decision-verdict-only
 deepReferences:
-  - .claude/docs/guidelines/strategy-gate-rubric.ko.md
-  - .claude/docs/guidelines/product-definition-workflow.md
+  - docs/public/guidelines/strategy-gate-rubric.ko.md
+  - docs/public/guidelines/product-definition-workflow.md
 outputArtifacts:
   - PRODUCT_INTENT.md
   - PRD.md

@@ -95,7 +95,7 @@ phaseExecutionResult:
 ## Contract
 
 - This skill is the internal phase execution handoff behind `moonshot-phase-runner`.
-- Apply `.claude/docs/guidelines/memorygraph-workflow.md` before dispatching execution.
+- Apply `docs/public/guidelines/memorygraph-workflow.md` before dispatching execution.
 - Do not pass raw MemoryGraph/KG/ontology records to dispatcher/agent-loop/coordinator inputs; pass summarized `projectKnowledgeContext` only.
 - Use one compact MemoryGraph/CodeReviewGraph recall per stage by default; repeat only for missing owner/date/path/API/schema/failure facts, then stop when answerable.
 - Default `modelEffortProfile` is `standard`; `deep` and `max` require a concrete `Effort escalation reason` in QA and workflow evidence.

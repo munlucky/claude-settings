@@ -48,4 +48,4 @@ decisions:
 
 ## 규칙
 - 이 게이트는 정책 검사만 수행합니다.
-- 정확한 섹션 계약은 `.claude/docs/guidelines/context-readiness-schema.ko.md`를 참고합니다.
+- 정확한 섹션 계약은 `docs/public/guidelines/context-readiness-schema.ko.md`를 참고합니다.

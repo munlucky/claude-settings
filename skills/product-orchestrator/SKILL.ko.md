@@ -6,11 +6,11 @@ loads:
   - product-definition-artifacts
   - verdict-summaries
 deepReferences:
-  - .claude/docs/guidelines/product-definition-workflow.md
-  - .claude/docs/guidelines/requirements-traceability-harness.md
-  - .claude/docs/guidelines/demo-first-mvp-gate.md
-  - .claude/docs/guidelines/external-skill-pattern-transfer.md
-  - .claude/docs/guidelines/memorygraph-workflow.ko.md
+  - docs/public/guidelines/product-definition-workflow.md
+  - docs/public/guidelines/requirements-traceability-harness.md
+  - docs/public/guidelines/demo-first-mvp-gate.md
+  - docs/public/guidelines/external-skill-pattern-transfer.md
+  - docs/public/guidelines/memorygraph-workflow.ko.md
 outputArtifacts:
   - PRODUCT_INTENT.md
   - PRD.md
@@ -105,7 +105,7 @@ triggers:
 18. `projectKnowledgeContext`와 함께 `moonshot-orchestrator`로 handoff
 
 모든 단계:
-- `.claude/docs/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
+- `docs/public/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
 - `.claude/docs/ko/`를 MemoryGraph 소스로 사용하지 않습니다.
 - system/developer/AGENTS/rules 정책과 중복되는 MemoryGraph 결과는 병합하지 않습니다.
 
@@ -195,8 +195,8 @@ PLAN이 통과되면:
 
 ## 참고
 
-- `.claude/docs/guidelines/product-definition-workflow.md`
-- `.claude/docs/guidelines/demo-first-mvp-gate.md`
+- `docs/public/guidelines/product-definition-workflow.md`
+- `docs/public/guidelines/demo-first-mvp-gate.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/`
 - `.claude/skills/product-gate-reviewer/SKILL.md`
 - `.claude/skills/plan-ceo-review/SKILL.md`

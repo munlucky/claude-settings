@@ -67,7 +67,7 @@ try {
    - 노트 추가: `"codex-native: plan validation executed in Codex runtime"`
 
 7. 중대/경고/제안 항목을 요약하고 통과/실패 결정
-8. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
+8. **`docs/public/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## 위임 형식
 

@@ -51,5 +51,5 @@ recommendedActions:
 - ignore/protected-path 정책 없음 -> security 문서와 `.claudeignore` 또는 동등 정책 갱신
 
 ## 참조
-- `.claude/docs/guidelines/context-readiness-schema.ko.md`
-- `.claude/docs/guidelines/verification-contract.ko.md`
+- `docs/public/guidelines/context-readiness-schema.ko.md`
+- `docs/public/guidelines/verification-contract.ko.md`

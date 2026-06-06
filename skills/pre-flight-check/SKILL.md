@@ -99,6 +99,6 @@ WARN verification contract missing
 | No ignore/protected-path policy | Refresh security docs and add `.claudeignore` or equivalent |
 
 ## References
-- `.claude/docs/guidelines/document-memory-policy.md`
-- `.claude/docs/guidelines/context-readiness-schema.md`
-- `.claude/docs/guidelines/verification-contract.md`
+- `docs/public/guidelines/document-memory-policy.md`
+- `docs/public/guidelines/context-readiness-schema.md`
+- `docs/public/guidelines/verification-contract.md`

@@ -6,11 +6,11 @@ loads:
   - product-definition-artifacts
   - verdict-summaries
 deepReferences:
-  - .claude/docs/guidelines/product-definition-workflow.md
-  - .claude/docs/guidelines/requirements-traceability-harness.md
-  - .claude/docs/guidelines/demo-first-mvp-gate.md
-  - .claude/docs/guidelines/external-skill-pattern-transfer.md
-  - .claude/docs/guidelines/memorygraph-workflow.md
+  - docs/public/guidelines/product-definition-workflow.md
+  - docs/public/guidelines/requirements-traceability-harness.md
+  - docs/public/guidelines/demo-first-mvp-gate.md
+  - docs/public/guidelines/external-skill-pattern-transfer.md
+  - docs/public/guidelines/memorygraph-workflow.md
 outputArtifacts:
   - PRODUCT_INTENT.md
   - PRD.md
@@ -111,7 +111,7 @@ Planning artifacts should also record:
 
 At every stage:
 - use `assumption-ledger` before stopping for ambiguity
-- apply `.claude/docs/guidelines/memorygraph-workflow.md`
+- apply `docs/public/guidelines/memorygraph-workflow.md`
 - do not use `.claude/docs/ko/` as a MemoryGraph source
 - omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy
 - stop only for true blockers
@@ -205,8 +205,8 @@ Recommended next step:
 
 ## References
 
-- `.claude/docs/guidelines/product-definition-workflow.md`
-- `.claude/docs/guidelines/demo-first-mvp-gate.md`
+- `docs/public/guidelines/product-definition-workflow.md`
+- `docs/public/guidelines/demo-first-mvp-gate.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/`
 - `.claude/skills/product-gate-reviewer/SKILL.md`
 - `.claude/skills/plan-ceo-review/SKILL.md`

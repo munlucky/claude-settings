@@ -12,3 +12,4 @@
 .gitattributes text eol=lf
 .gitignore text eol=lf
 .claude/bin/browserctl text eol=lf
+bin/browserctl text eol=lf

@@ -270,6 +270,8 @@ write_verdict_json() {
   BROWSER_FLOW_STATUS_VALUE="$BROWSER_FLOW_STATUS" \
   BROWSER_FLOW_VERDICT_FILE_VALUE="$BROWSER_FLOW_VERDICT_FILE" \
   BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE_VALUE="$BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE" \
+  BROWSER_FLOW_SETUP_GAP_REASON_VALUE="${BROWSER_FLOW_SETUP_GAP_REASON:-}" \
+  BROWSER_FLOW_EXPECTED_RUNNER_VALUE="${BROWSER_FLOW_EXPECTED_RUNNER:-}" \
   BROWSER_ONLY_VALUE="$BROWSER_ONLY" \
   BROWSERCTL_VALUE="$BROWSERCTL" \
   E2E_STATUS_VALUE="$E2E_STATUS" \
@@ -338,6 +340,8 @@ payload = {
         "browserFlowStatus": os.environ["BROWSER_FLOW_STATUS_VALUE"],
         "browserFlowVerdictFile": os.environ["BROWSER_FLOW_VERDICT_FILE_VALUE"],
         "browserFlowVisualDiffVerdictFile": os.environ["BROWSER_FLOW_VISUAL_DIFF_VERDICT_FILE_VALUE"],
+        "browserFlowSetupGapReason": os.environ["BROWSER_FLOW_SETUP_GAP_REASON_VALUE"],
+        "browserFlowExpectedRunner": os.environ["BROWSER_FLOW_EXPECTED_RUNNER_VALUE"],
         "browserOnly": to_bool(os.environ["BROWSER_ONLY_VALUE"]),
         "browserctlPath": os.environ["BROWSERCTL_VALUE"],
         "e2eStatus": os.environ["E2E_STATUS_VALUE"],
@@ -486,6 +490,7 @@ PY
   if [ ! -x "$BROWSERCTL" ]; then
     log_warning "browserctl not available at ${BROWSERCTL}"
     BROWSER_FLOW_STATUS="setup_gap"
+    BROWSER_FLOW_SETUP_GAP_REASON="browserctl_unavailable"
     if [ "$BROWSER_ONLY" = true ]; then
       return 1
     fi
@@ -495,6 +500,8 @@ PY
   if [ ! -f "$BROWSER_FLOW_RUNNER" ]; then
     log_warning "browser flow runner not available at ${BROWSER_FLOW_RUNNER}"
     BROWSER_FLOW_STATUS="setup_gap"
+    BROWSER_FLOW_SETUP_GAP_REASON="browser_flow_runner_unavailable"
+    BROWSER_FLOW_EXPECTED_RUNNER="$BROWSER_FLOW_RUNNER"
     if [ "$BROWSER_ONLY" = true ]; then
       return 1
     fi
@@ -628,6 +635,8 @@ E2E_FAILED=false
 HTTP_CODE="000"
 RUNTIME_STATUS="not_run"
 BROWSER_FLOW_STATUS="not_run"
+BROWSER_FLOW_SETUP_GAP_REASON=""
+BROWSER_FLOW_EXPECTED_RUNNER=""
 E2E_STATUS="not_run"
 EVIDENCE_FRESH=false
 REQUIRED_CHECKS_DECLARED=()

@@ -50,6 +50,6 @@ Blocker entry:
 
 ## References
 
-- `.claude/docs/guidelines/product-definition-workflow.md`
+- `docs/public/guidelines/product-definition-workflow.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/ASSUMPTIONS.template.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/BLOCKERS.template.md`

@@ -81,7 +81,7 @@ notes:
 
 ### Step 0.3: Code Review Graph 대상 축소
 
-코드 수정 전에 구조 분석이 필요한 작업이면 `.claude/docs/guidelines/code-review-graph-workflow.md`를 적용합니다.
+코드 수정 전에 구조 분석이 필요한 작업이면 `docs/public/guidelines/code-review-graph-workflow.md`를 적용합니다.
 - 넓은 파일 집합을 열기 전에 `analysisContext.codeReviewGraph.contextSummary`와 `impactSummary`를 먼저 읽습니다.
 - graph가 `not_built` 또는 `stale`이고 현재 stage에 구조 분석이 실제로 필요하면 요청 범위 안에서 MCP build/update 또는 CLI fallback을 사용합니다.
 - 요약 결과로 target files, likely dependencies, impact radius를 좁힙니다.

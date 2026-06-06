@@ -1,4 +1,4 @@
-﻿# Moonshot Relay
+# Moonshot Relay
 
 > Claude Code와 Codex를 위한 Moonshot workflow harness 플러그인
 
@@ -133,9 +133,9 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 
 ### 문서와 템플릿
 
-- 가이드라인: `.claude/docs/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화 등)
-- 제품 정의 가이드: `.claude/docs/guidelines/product-definition-workflow.md`
-- 장시간 하네스 가이드: `.claude/docs/guidelines/long-running-harness.ko.md`
+- 가이드라인: `docs/public/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화 등)
+- 제품 정의 가이드: `docs/public/guidelines/product-definition-workflow.md`
+- 장시간 하네스 가이드: `docs/public/guidelines/long-running-harness.ko.md`
 - 외부 하네스 도입 준비: `docs/claude-tasks/external-harness-adoption/`
 - 작업 문서 루트: `.moonshot-relay/docs/tasks/` (런타임 생성, 저장소/설치 패키지에는 템플릿만 유지)
 - downstream reference package: `.claude/docs/reference-downstream/`
@@ -246,21 +246,18 @@ custom/
 ### 수동 설치
 
 ```bash
-# 1. .claude 폴더와 ignore 정책 복사
-cp -r moonshot-relay/.claude /your-project/
-cp moonshot-relay/.claudeignore /your-project/
+# 1. 기본 account-root 설치
+npx -y github:munlucky/moonshot-relay install
 
-# 2. AGENTS 브리지 구성
-mkdir -p /your-project/.agents
-rm -rf /your-project/.agents/skills
-ln -s .claude/CLAUDE.md /your-project/AGENTS.md
+# 2. 현재 프로젝트에 compatibility profile output이 필요할 때만 실행
+cd /your-project
+bash /path/to/moonshot-relay/install-claude.sh --project
 
-# 3. Codex 프로젝트 설정 복사
-cp -r moonshot-relay/.codex /your-project/
-
-# 4. 부트스트랩 문서 커스터마이징
+# 3. 부트스트랩 문서 커스터마이징
 # PROJECT.md와 workflow/design/glossary/daily/test/analysis 문서를 프로젝트에 맞게 수정
 ```
+
+Root `.claude/`와 `.codex/`는 canonical source가 아니라 local/generated profile output입니다. 수동 `cp -r moonshot-relay/.claude` 또는 `cp -r moonshot-relay/.codex` 방식은 사용하지 않습니다.
 
 ### 부분 적용
 
@@ -293,9 +290,9 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 
 Memory 설정:
 - 기본 memory MCP는 `node <MOONSHOT_RELAY_HOME>/scripts/codex-mcp-singleton.mjs memory -- node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`입니다.
-- wrapper는 `.moonshot-relay/memorygraph/`를 생성하고 `MEMORYGRAPH_DATA_DIR`로 주입합니다.
+- wrapper는 account-root project knowledge state 아래 `memorygraph/`를 생성하고 `MEMORYGRAPH_DATA_DIR`로 주입합니다.
 - `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
-- 프로젝트 지식그래프는 `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.moonshot-relay/memorygraph/`에 반영합니다.
+- 프로젝트 지식그래프는 `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`로 `.moonshot-relay/cache/memorygraph/project-graph-seed.json` seed를 만들고 `project-memory-refresh`가 account-root project knowledge state의 `memorygraph/`에 반영합니다.
 - 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `moonshot-relay` graph에 승격합니다.
 - Legacy AWTL runtime importer utilities are preserved under `archive/scripts/legacy-phase-adapters/` for compatibility investigation; they are not installed into active runtime payloads.
 
@@ -303,7 +300,7 @@ Code Review Graph 설정:
 - `code-review-graph`는 MemoryGraph를 대체하지 않습니다. MemoryGraph는 작업 기억/정책/결정, `code-review-graph`는 코드 구조/리뷰 영향도/분석 기능을 담당합니다.
 - Codex MCP는 `node <MOONSHOT_RELAY_HOME>/scripts/codex-mcp-singleton.mjs code-review-graph -- node <MOONSHOT_RELAY_HOME>/scripts/code-review-graph-mcp-wrapper.js`입니다.
 - `install-claude.sh`는 `pipx install "code-review-graph[communities]"`를 best-effort로 시도하고, 자동 `build`, `watch`, `daemon`은 실행하지 않습니다.
-- 하네스 stage별 사용 계약은 `.claude/docs/guidelines/code-review-graph-workflow.md`를 따릅니다. 코드 분석, 영향도, blast radius, architecture overview, large function 탐색, 리뷰 컨텍스트 축소가 필요한 stage에서는 broad file read보다 `code-review-graph` MCP를 우선 사용합니다.
+- 하네스 stage별 사용 계약은 `docs/public/guidelines/code-review-graph-workflow.md`를 따릅니다. 코드 분석, 영향도, blast radius, architecture overview, large function 탐색, 리뷰 컨텍스트 축소가 필요한 stage에서는 broad file read보다 `code-review-graph` MCP를 우선 사용합니다.
 - 프로젝트 분석 DB는 `.code-review-graph/`에 저장하며 버전 관리와 기본 agent context에서 제외합니다.
 
 주의:
@@ -316,7 +313,7 @@ Code Review Graph 설정:
 ### 다음 단계
 
 1. `.claude/PROJECT.md`를 프로젝트에 맞게 수정
-2. Git에 커밋: `git add .claude .codex .claudeignore .gitattributes AGENTS.md && git commit -m "Add Claude Code settings"`
+2. Git에 커밋: generated/runtime denylist를 제외한 명시적 source/doc path만 `git add -- <paths>`로 staging한 뒤 commit
 3. Claude Code에서 작업을 요청하면 Moonshot 워크플로우가 자동 실행
 
 커밋 시 `.agents/skills`, `.mcp.json`, `.moonshot-relay/docs/tasks/`, `.moonshot-relay/docs/phase-status.yaml`, `.moonshot-relay/docs/reports/*.json`, `.moonshot-relay/verification-verdict-*`, `.moonshot-relay/memorygraph/`, `.moonshot-relay/cache/memorygraph/`는 generated/local runtime 경로이므로 explicit `git add -- <paths>` 목록에 넣지 않습니다.

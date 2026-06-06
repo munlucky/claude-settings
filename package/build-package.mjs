@@ -175,9 +175,37 @@ const shouldExclude = (sourcePath) => {
   return basename.includes('fixtures') || denyBasenames.some((pattern) => pattern.test(basename));
 };
 
-const copyTree = async (source, destination, plannedCopies) => {
+const walkTree = async (source, visit) => {
+  const entries = await readdir(source, { withFileTypes: true });
+  for (const entry of entries) {
+    const absolute = path.join(source, entry.name);
+    await visit(absolute, entry);
+    if (entry.isDirectory()) {
+      await walkTree(absolute, visit);
+    }
+  }
+};
+
+const planTree = async (source, destination, plannedCopies) => {
+  await walkTree(source, async (candidate) => {
+    const excluded = shouldExclude(candidate);
+    if (!excluded) {
+      plannedCopies.push({
+        from: toPortable(path.relative(repoRoot, candidate)),
+        to: toPortable(path.relative(repoRoot, path.join(destination, path.relative(source, candidate)))),
+      });
+    }
+  });
+};
+
+const copyTree = async (source, destination, plannedCopies, options = {}) => {
   if (!await pathExists(source)) {
     throw new Error(`Missing package source: ${path.relative(repoRoot, source)}`);
+  }
+
+  if (options.dryRun) {
+    await planTree(source, destination, plannedCopies);
+    return;
   }
 
   await cp(source, destination, {
@@ -197,15 +225,18 @@ const copyTree = async (source, destination, plannedCopies) => {
   });
 };
 
-const copyFilePreservingMode = async (source, destination, plannedCopies) => {
-  await mkdir(path.dirname(destination), { recursive: true });
-  await copyFile(source, destination);
-  const sourceStat = await stat(source);
-  await chmod(destination, sourceStat.mode);
+const copyFilePreservingMode = async (source, destination, plannedCopies, options = {}) => {
   plannedCopies.push({
     from: toPortable(path.relative(repoRoot, source)),
     to: toPortable(path.relative(repoRoot, destination)),
   });
+  if (options.dryRun) {
+    return;
+  }
+  await mkdir(path.dirname(destination), { recursive: true });
+  await copyFile(source, destination);
+  const sourceStat = await stat(source);
+  await chmod(destination, sourceStat.mode);
 };
 
 const materializeRuntime = async (runtime, options) => {
@@ -223,11 +254,7 @@ const materializeRuntime = async (runtime, options) => {
     await mkdir(outputRoot, { recursive: true });
   }
 
-  if (options.dryRun) {
-    return { runtime, outputRoot, copied: plannedCopies };
-  }
-
-  await copyTree(spec.templateRoot, outputRoot, plannedCopies);
+  await copyTree(spec.templateRoot, outputRoot, plannedCopies, options);
 
   for (const sharedDir of spec.sharedDirs) {
     const source = path.join(repoRoot, sharedDir);
@@ -235,17 +262,17 @@ const materializeRuntime = async (runtime, options) => {
     const destination = sharedDir === path.join('docs', 'public')
       ? path.join(outputRoot, 'docs', 'public')
       : path.join(outputRoot, targetName);
-    await copyTree(source, destination, plannedCopies);
+    await copyTree(source, destination, plannedCopies, options);
   }
 
   for (const sharedFile of spec.sharedFiles) {
     const source = path.join(repoRoot, sharedFile);
     const destination = path.join(outputRoot, sharedFile);
-    await copyFilePreservingMode(source, destination, plannedCopies);
+    await copyFilePreservingMode(source, destination, plannedCopies, options);
   }
 
   const verificationSource = path.join(repoRoot, 'schemas', 'verification.contract.yaml');
-  await copyFilePreservingMode(verificationSource, path.join(outputRoot, spec.verificationTarget), plannedCopies);
+  await copyFilePreservingMode(verificationSource, path.join(outputRoot, spec.verificationTarget), plannedCopies, options);
 
   return { runtime, outputRoot, copied: plannedCopies };
 };
@@ -266,6 +293,7 @@ const main = async () => {
         runtime: result.runtime,
         outputRoot: toPortable(path.relative(repoRoot, result.outputRoot)),
         copiedCount: result.copied.length,
+        planned: options.dryRun ? result.copied : undefined,
       })),
     }, null, 2));
   } else {

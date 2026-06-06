@@ -7,10 +7,10 @@ loads:
   - plan-artifacts
   - architecture-contracts
 deepReferences:
-  - .claude/docs/guidelines/strategy-gate-rubric.md
-  - .claude/docs/guidelines/verification-contract.md
-  - .claude/docs/guidelines/skill-composition.md
-  - .claude/docs/guidelines/external-skill-pattern-transfer.md
+  - docs/public/guidelines/strategy-gate-rubric.md
+  - docs/public/guidelines/verification-contract.md
+  - docs/public/guidelines/skill-composition.md
+  - docs/public/guidelines/external-skill-pattern-transfer.md
 outputArtifacts:
   - SPEC.md
   - PLAN.md

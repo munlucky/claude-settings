@@ -70,5 +70,5 @@ failureReport:
 
 ## 개선 타겟
 - 프로젝트 레벨: `PROJECT.md`, 검증 명령, 구조 규칙
-- 범용 레벨: `.claude/rules/*.md`, `.claude/docs/guidelines/*.md`
+- 범용 레벨: `.claude/rules/*.md`, `docs/public/guidelines/*.md`
 - 스킬 레벨: 라우팅, readiness gate, contract 문서, 스킬 로직

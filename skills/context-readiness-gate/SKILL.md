@@ -48,4 +48,4 @@ decisions:
 
 ## Rules
 - This gate is policy-only.
-- Read `.claude/docs/guidelines/context-readiness-schema.md` for the exact section contract.
+- Read `docs/public/guidelines/context-readiness-schema.md` for the exact section contract.

@@ -153,7 +153,7 @@ node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs
 - `.claude/docs/ko/`는 seed source에서 제외합니다.
 - 운영 중인 기존 프로젝트도 기본 `--analysis-level code`로 코드 수준 사실을 포함합니다.
 - 승격 후보 개수는 보고하되, 명시 승인 없이 `moonshot-relay`에 승격하지 않습니다.
-- `.claude/cache/memorygraph/`와 계정 루트 knowledge runtime state는 기본 스테이징 대상에서 제외합니다.
+- `.moonshot-relay/cache/memorygraph/`, legacy `.claude/cache/memorygraph/`, 계정 루트 knowledge runtime state는 기본 스테이징 대상에서 제외합니다.
 
 ---
 
@@ -182,8 +182,8 @@ docSync:
     - section: "stack"
       diff: "+stripe@14.0.0"
   memoryGraphSeed:
-    path: ".claude/cache/memorygraph/project-graph-seed.json"
-    promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+    path: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
+    promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
     nodeCount: 0
     relationshipCount: 0
     promotionCandidateCount: 0

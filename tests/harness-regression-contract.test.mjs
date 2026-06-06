@@ -3,9 +3,9 @@ import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
 import { classifyFailure } from '../scripts/lib/failure-classifier.mjs';
-import { diagnoseShellCommand } from '../archive/scripts/legacy-phase-adapters/verify-shell-syntax.mjs';
+import { diagnoseShellCommand } from '../scripts/lib/shell-command-diagnostics.mjs';
 
-test('verify-plan-conformance rejects plan-level options with an artifact-level alternative', () => {
+test('verify-plan-conformance compatibility specimen rejects plan-level options with an artifact-level alternative', () => {
   const result = spawnSync(process.execPath, [
     'archive/scripts/legacy-phase-adapters/verify-plan-conformance.mjs',
     '--status-file',
@@ -19,6 +19,24 @@ test('verify-plan-conformance rejects plan-level options with an artifact-level 
   assert.match(result.stderr, /Unsupported plan-level option/);
   assert.match(result.stderr, /verify-phase-closeout\.mjs --plan-dir <path> --master-plan <path> --status-file <path> --json/);
   assert.match(result.stderr, /verify-plan-conformance\.mjs --phase-doc <path>/);
+});
+
+test('active tests do not import archive runtime helpers', async () => {
+  const { readdir, readFile } = await import('node:fs/promises');
+  const path = await import('node:path');
+  const testsDir = path.join(process.cwd(), 'tests');
+  const files = (await readdir(testsDir))
+    .filter((name) => name.endsWith('.test.mjs') && name !== 'harness-regression-contract.test.mjs');
+  const violations = [];
+
+  for (const file of files) {
+    const text = await readFile(path.join(testsDir, file), 'utf8');
+    if (/\.\.\/archive\/scripts\/legacy-phase-adapters/.test(text)) {
+      violations.push(file);
+    }
+  }
+
+  assert.deepEqual(violations, []);
 });
 
 test('PowerShell parser mistakes are diagnosed as operator command syntax errors', () => {

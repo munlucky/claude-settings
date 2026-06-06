@@ -31,7 +31,7 @@ context: fork
 - moonshot-relay source checkout에서는 archived legacy code-policy check를 `archive/scripts/legacy-phase-adapters/verify-code-policy.sh`에서 실행할 수 있습니다. downstream review에서는 project-native deterministic policy gate를 사용합니다.
 - 이 리뷰는 deterministic check의 대체물이 아니라 의미적/아키텍처적 위험 평가에 사용합니다.
 - Review stage에서는 변경 파일 review context, impact radius, caller/importer/test 힌트의 기본 소스로 `code-review-graph`를 광범위한 파일 읽기보다 우선 사용합니다.
-- `.claude/docs/guidelines/code-review-graph-workflow.md`를 적용합니다: stage-gated, lazy update, summary-only evidence.
+- `docs/public/guidelines/code-review-graph-workflow.md`를 적용합니다: stage-gated, lazy update, summary-only evidence.
 - watch/daemon을 시작하거나 raw graph 출력을 MemoryGraph에 복제하지 않습니다.
 - 코드 정책 위반은 더 넓은 설계 문제나 유지보수성 문제를 드러낼 때만 반복 언급합니다.
 - 리뷰 피드백은 사회적으로 수용하지 말고 기술적으로 처리합니다. 불명확한 finding은 명확화하고, 틀린 finding은 증거로 반박하며, 각 의미 있는 항목에 명시적 disposition이 생기기 전까지 remediation loop를 닫지 않습니다.
@@ -86,7 +86,7 @@ try {
    - 노트 추가: `"codex-fallback-in-session: review isolation unavailable"`
 
 8. 중대 이슈, 경고, 제안사항 기록
-9. **`.claude/docs/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
+9. **`docs/public/guidelines/document-memory-policy.md` 참조**: 전체 리뷰는 `archives/review-v{n}.md`에 보관하고 `context.md`에는 짧은 요약만 남김
 
 ## Review Feedback 처리 프로토콜
 

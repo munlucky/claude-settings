@@ -69,7 +69,7 @@ try {
    - Add note: `"codex-native: plan validation executed in Codex runtime"`
 
 7. Summarize critical/warning/suggestion items and decide pass/fail
-8. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
+8. **Per `docs/public/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Delegation Format
 

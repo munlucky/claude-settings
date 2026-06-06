@@ -50,7 +50,7 @@ Last-Reviewed: 2026-03-30
 
 ## Type/Domain Patterns
 
-- **Type definition location**: YAML contracts in `.claude/verification.contract.yaml`; operational schemas and checklists in `.claude/docs/guidelines/`
+- **Type definition location**: YAML contracts in `.claude/verification.contract.yaml`; operational schemas and checklists in `docs/public/guidelines/`
 - **Domain models**: `REQ-*`, `SCN-*`, `UAT-*`, `policySets`, scorecard objectives, and harness promotion whitelist entries
 
 ## Auth/Authorization

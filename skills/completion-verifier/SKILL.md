@@ -94,7 +94,7 @@ When the verifier runs in Codex-native flow, explicitly apply:
 - `.claude/rules/security.md`
 - `.claude/rules/communication.md`
 - `.claude/rules/output-format.md`
-- `.claude/docs/guidelines/product-acceptance-gate.md`
+- `docs/public/guidelines/product-acceptance-gate.md`
 
 ## Step 0: Verification Environment Detection
 

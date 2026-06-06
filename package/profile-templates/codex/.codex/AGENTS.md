@@ -5,7 +5,7 @@ Last-Reviewed: 2026-04-09
 `.claude/` is a development profile, not canonical source. Keep this Tier 1 file as a short TOC.
 
 1. `AGENTS.md` and this file are TOCs.
-2. Store durable policy in canonical source docs first; use `.claude/PROJECT.md`, `.claude/rules/`, and `.claude/docs/guidelines/` as active profile links.
+2. Store durable policy in canonical source docs first; use `.claude/PROJECT.md`, `.claude/rules/`, and `docs/public/guidelines/` as active profile links.
 3. Keep always-loaded context minimal and under budget.
 4. Update canonical source docs first, then refresh TOC links.
 5. Run the active knowledge repository audit after structural doc changes when that support entrypoint is installed.
@@ -26,7 +26,7 @@ documentPaths:
 
 - `@.claude/CLAUDE.md`
 - `@.claude/verification.contract.yaml`
-- `@.claude/docs/guidelines/knowledge-repository-ops.md`
-- `@.claude/docs/guidelines/provider-neutral-model-routing.md`
-- `@.claude/docs/guidelines/resumable-session-layer.md`
+- `@docs/public/guidelines/knowledge-repository-ops.md`
+- `@docs/public/guidelines/provider-neutral-model-routing.md`
+- `@docs/public/guidelines/resumable-session-layer.md`
 - `@.claude/rules/agents/agent-definition.md`

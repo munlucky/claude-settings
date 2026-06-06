@@ -57,8 +57,8 @@ Session logs and handoff docs may reference compact `projectKnowledgeContext` st
 
 ## References
 
-- [Session Compaction](/Users/dev/claude-settings/.claude/docs/guidelines/session-compaction.md)
-- [Session Logger Reference](/Users/dev/claude-settings/.claude/docs/reference/session-logger-reference.md)
-- [/Users/dev/claude-settings/.claude/rules/docs/documentation.md](/Users/dev/claude-settings/.claude/rules/docs/documentation.md)
-- [/Users/dev/claude-settings/.claude/rules/communication.md](/Users/dev/claude-settings/.claude/rules/communication.md)
-- [/Users/dev/claude-settings/.claude/rules/output-format.md](/Users/dev/claude-settings/.claude/rules/output-format.md)
+- [Session Compaction](docs/public/guidelines/session-compaction.md)
+- [Session Logger Reference](docs/public/reference/session-logger-reference.md)
+- [rules/docs/documentation.md](rules/docs/documentation.md)
+- [rules/communication.md](rules/communication.md)
+- [rules/output-format.md](rules/output-format.md)

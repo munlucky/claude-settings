@@ -87,5 +87,5 @@ Include in context.md:
 - **Token limit**: Keep context.md under 8000 tokens. Archive previous versions per document-memory-policy.md.
 ## References
 - `.claude/agents/context-builder/templates/context-template.md`
-- `.claude/docs/guidelines/document-memory-policy.md`
-- `.claude/docs/guidelines/context-readiness-schema.md`
+- `docs/public/guidelines/document-memory-policy.md`
+- `docs/public/guidelines/context-readiness-schema.md`

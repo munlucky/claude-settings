@@ -49,4 +49,4 @@ similarFeaturePaths:  # if present
 - **Large specs**: If input spec > 2000 words, create summary per document-memory-policy.md.
 ## References
 - `.claude/agents/requirements-analyzer/templates/agreement-template.md`
-- `.claude/docs/guidelines/document-memory-policy.md`
+- `docs/public/guidelines/document-memory-policy.md`

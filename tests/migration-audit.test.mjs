@@ -11,9 +11,9 @@ import {
   resolveRuntimeStateRoot,
   runtimeStateRelativePath,
 } from '../scripts/lib/runtime-state-root.mjs';
-import { resolveDbPath } from '../archive/scripts/legacy-phase-adapters/runtime-state.mjs';
-import { defaultPhaseEventLedgerPath } from '../archive/scripts/legacy-phase-adapters/lib/phase-event-ledger.mjs';
-import { resolveLeaseFiles } from '../archive/scripts/legacy-phase-adapters/lib/phase-run-lease-store.mjs';
+import { resolveDbPath } from '../scripts/lib/runtime-state-db-path.mjs';
+import { defaultPhaseEventLedgerPath } from '../scripts/lib/phase-event-ledger.mjs';
+import { resolveLeaseFiles } from '../scripts/lib/phase-run-lease-store.mjs';
 import { resolveRunCacheFiles } from '../scripts/lib/runtime-unavailable-cache.mjs';
 import { DEFAULT_MEMORY_CANDIDATE_OUTPUT } from '../scripts/lib/awtl-memory-candidate.mjs';
 import { DEFAULT_TRACE_ROOT } from '../scripts/lib/awtl-trace-sink.mjs';
@@ -163,7 +163,6 @@ test('docs do not treat .claude source trees as canonical source of truth', asyn
 
 test('compatibility wrappers document their installed runtime role', async () => {
   const wrapperPaths = [
-    'archive/scripts/legacy-phase-adapters/workflow-enforcement.sh',
     'agents/verification/verify-changes.sh',
   ];
 

@@ -49,4 +49,4 @@ similarFeaturePaths:  # 있는 경우
 - **대형 명세서**: 입력 명세서가 2000단어 초과 시 document-memory-policy.md에 따라 요약 생성.
 ## References
 - `.claude/agents/requirements-analyzer/templates/agreement-template.md`
-- `.claude/docs/guidelines/document-memory-policy.md`
+- `docs/public/guidelines/document-memory-policy.md`

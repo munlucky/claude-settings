@@ -7,7 +7,7 @@
     "moonshot-relay": "bin/moonshot-relay.mjs"
   },
   "scripts": {
-    "test": "node --test tests/commit-memory-refresh-contract.test.mjs tests/migration-audit.test.mjs tests/package-layout.test.mjs tests/package-materialization.test.mjs tests/plugin-manifest.test.mjs tests/harness-regression-contract.test.mjs",
+    "test": "node --test tests/active-contracts.test.mjs tests/commit-memory-refresh-contract.test.mjs tests/migration-audit.test.mjs tests/package-layout.test.mjs tests/package-materialization.test.mjs tests/plugin-manifest.test.mjs tests/harness-regression-contract.test.mjs",
     "test:active": "npm test",
     "test:package": "node --test tests/migration-audit.test.mjs tests/package-layout.test.mjs tests/package-materialization.test.mjs tests/plugin-manifest.test.mjs"
   },

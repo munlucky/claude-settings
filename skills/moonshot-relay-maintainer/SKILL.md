@@ -13,7 +13,7 @@ Apply reusable Moonshot harness improvements without expanding the public skill 
 
 - Prefer pattern transfer over new public skills. Add a new skill only when it has a distinct trigger, distinct output contract, and changes orchestration decisions.
 - Keep `moonshot-orchestrator`, `product-orchestrator`, and `moonshot-phase-runner` as stable entrypoints.
-- Put detailed external-skill adoption criteria in `.claude/docs/guidelines/external-skill-pattern-transfer.md` and link it from orchestrator policy.
+- Put detailed external-skill adoption criteria in `docs/public/guidelines/external-skill-pattern-transfer.md` and link it from orchestrator policy.
 - Keep completion gates strict. Fix stale fixtures, prompts, or artifacts before relaxing gate logic.
 - Every harness behavior fix must follow TDD: add or select a deterministic regression test or fixture that reproduces the incident class, run it red or prove it would fail on the old behavior, then make the smallest code change to turn it green. Do not close a harness incident with source-only evidence.
 - If a regression test is genuinely infeasible, record the bypass reason, the closest executable check, and the remaining recurrence risk in the handoff/report.
@@ -89,7 +89,7 @@ When importing lessons from another skill repository or video:
 4. Add a public skill only if existing owners would mix unrelated responsibilities.
 5. Record why rejected patterns are not imported.
 
-For the detailed checklist, read `.claude/docs/guidelines/external-skill-pattern-transfer.md`.
+For the detailed checklist, read `docs/public/guidelines/external-skill-pattern-transfer.md`.
 
 When the source is an image or compact prompt, do not copy it wholesale. Extract reusable workflow mechanics, classify already-covered items, and transfer only gaps into existing stage owners.
 
@@ -102,14 +102,7 @@ For `verify-phase-runtime-parity.sh` failures:
 - Keep completion gate sources strict unless the contract itself is wrong.
 - Expected completion alignment includes fresh verification evidence, review completion, plan conformance pass, `OBJ-CONFORM`, `Verdict: done`, `Current task status: FULL`, and completed `phase-status.yaml`.
 
-Recommended checks:
-
-```bash
-bash -n archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh
-node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
-bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
-PHASE_RUNTIME_PARITY_KEEP_TMP=true bash archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.sh .claude/docs/runtime-parity-reference-plan
-```
+Recommended checks use active tests and source-owned runtime verifiers first. Legacy archive commands are explicit compatibility investigation examples only, such as `bash -n archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh` or `node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs`.
 
 ## Downstream Sync
 
@@ -128,33 +121,23 @@ The script syncs shared harness files and directories only. It intentionally pre
 
 ## Validation
 
-Use checks proportional to the change:
+Use active checks proportional to the change:
 
 ```bash
-bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
-bash archive/scripts/legacy-phase-adapters/verify-code-policy.sh
-bash archive/scripts/legacy-phase-adapters/workflow-enforcement.sh verify
-bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh
+npm test
+npm run test:package
+node bin/moonshot-relay.mjs install --dry-run --runtime all
+node scripts/install-account-root-harness.mjs --runtime all --dry-run --json
 git diff --check
 ```
 
-For harness behavior fixes, also run the new or selected incident regression command and at least one neighboring existing test suite. The report must identify which command is RED/GREEN evidence. Examples:
-
-```bash
-node archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs self-test
-node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-state.test.mjs
-node --test archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.test.mjs
-node --test archive/scripts/legacy-phase-adapters/lib/terminal-blocker-publisher.test.mjs
-```
+For harness behavior fixes, also run the new or selected active incident regression command and at least one neighboring existing test suite. The report must identify which command is RED/GREEN evidence. Archive specimen commands, for example `node archive/scripts/legacy-phase-adapters/agent-loop-phase-state.mjs self-test`, are legacy investigation only and are not default gate evidence.
 
 When syncing downstream projects, also run:
 
 ```bash
-HARNESS_KNOWLEDGE_AUDIT_FILE=/tmp/<project>-knowledge-audit.json bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
-bash -n archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh
-bash -n archive/scripts/legacy-phase-adapters/verify-code-policy.sh
-bash -n archive/scripts/legacy-phase-adapters/workflow-enforcement.sh
-node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs
+python3 skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py --help
+git diff --check
 ```
 
 ## Reporting

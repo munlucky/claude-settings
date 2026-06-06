@@ -54,7 +54,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 
 ## Codex MCP Transport Fallback
 
-If the Memory MCP already attached to Codex Desktop fails with `Transport closed`, do not require a Codex restart. Immediately use the commit refresh helper, which starts a fresh MemoryGraph stdio child process and writes an auditable log under `.claude/logs/memorygraph/`:
+If the Memory MCP already attached to Codex Desktop fails with `Transport closed`, do not require a Codex restart. Immediately use the commit refresh helper, which starts a fresh MemoryGraph stdio child process and writes an auditable log under `.moonshot-relay/state/projects/<projectId>/knowledge/logs/memorygraph/`:
 
 ```bash
 node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID> --mcp-error "Transport closed"
@@ -67,7 +67,7 @@ Rules:
 - If no concrete payload is available, the helper runs `memorygraph-project-index.mjs` and `memorygraph-direct.mjs refresh-seed` as the commit-time memory refresh.
 - On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell.
 - The helper has per-command timeout and owned child-process tree cleanup. It must not broad-kill unrelated `memorygraph.exe` processes.
-- The direct fallback uses `.claude/memorygraph/memory.db` through `MEMORY_SQLITE_PATH` as a project-local compatibility graph; keep account-root knowledge state, `.claude/memorygraph/**`, and `.claude/cache/memorygraph/**` unstaged unless the user explicitly includes memory artifacts.
+- The direct fallback uses the current account-root project knowledge namespace by default; `.claude/memorygraph/**` and `.claude/cache/memorygraph/**` are legacy project-local compatibility artifacts and stay unstaged unless the user explicitly includes memory artifacts.
 
 ## AWTL Promotion Audit
 
@@ -86,8 +86,8 @@ Rules:
 
 ## References
 
-- [Commit Moonshot Reference](/Users/dev/claude-settings/.claude/docs/reference/commit-moonshot-reference.md)
-- [Token Optimization Guidelines](/Users/dev/claude-settings/.claude/docs/guidelines/token-optimization.md)
+- [Commit Moonshot Reference](docs/public/reference/commit-moonshot-reference.md)
+- [Token Optimization Guidelines](docs/public/guidelines/token-optimization.md)
 
 ---
 

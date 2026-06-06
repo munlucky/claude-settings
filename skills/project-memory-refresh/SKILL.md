@@ -15,9 +15,9 @@ Use this skill only when the user explicitly asks to refresh, build, or update t
 
 1. Resolve `projectId` through the Phase 01 Project Identity Resolver contract. Prefer `.claude/project.identity.yaml` and the account-root registry alias map, then fall back through canonical git remote, package name, git root basename, and path hash.
 2. Run `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs` from the current project root. The default `--analysis-level code` indexes existing code at file, import, symbol, class, function, type, and API/route-surface level.
-3. Confirm the compatibility seed/cache paths:
-   - `.claude/cache/memorygraph/project-graph-seed.json`
-   - `.claude/cache/memorygraph/promotion-candidates.json`
+3. Confirm the default seed/cache paths under the current Moonshot Relay state root:
+   - `.moonshot-relay/cache/memorygraph/project-graph-seed.json`
+   - `.moonshot-relay/cache/memorygraph/promotion-candidates.json`
 4. Invoke `project-memory-refresh` with `memoryMode: write_requested`.
 5. Report created/skipped node and relationship counts.
 
@@ -27,15 +27,15 @@ If the existing Memory MCP tool attached to Codex Desktop fails with `Transport 
 
 ```bash
 node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health
-node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --max-nodes 200
 ```
 
-On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell. The direct fallback sets `MEMORY_SQLITE_PATH` to `.claude/memorygraph/memory.db`; this is a project-local compatibility graph, not the durable Project Knowledge Plane namespace.
+On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell. The direct fallback uses the current `.moonshot-relay/state/projects/<projectId>/knowledge/memorygraph` namespace by default. `.claude/memorygraph/` is legacy project-local compatibility only.
 
 ## Boundaries
 
 - Resolve durable project identity/state through the Project Identity Resolver and account-root namespace.
-- Treat `.claude/memorygraph/` and `.claude/cache/memorygraph/` as project-local compatibility/cache artifacts.
+- Treat `.claude/memorygraph/` and `.claude/cache/memorygraph/` as legacy project-local compatibility/cache artifacts.
 - Do not read `.claude/docs/ko/` as a memory source.
 - Do not commit `.claude/memorygraph/` or `.claude/cache/memorygraph/`.
 - If MemoryGraph is unavailable, try the direct fallback first, then report the failure and leave the workflow unblocked.

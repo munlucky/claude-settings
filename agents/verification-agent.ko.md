@@ -48,4 +48,4 @@ outputFile: ".claude/features/xxx/verification-result.md"
 - 활동 로그 헤더 누락 가능성을 보고합니다.
 ## References
 - `.claude/agents/verification/verify-changes.sh`
-- `.claude/docs/guidelines/document-memory-policy.md`
+- `docs/public/guidelines/document-memory-policy.md`

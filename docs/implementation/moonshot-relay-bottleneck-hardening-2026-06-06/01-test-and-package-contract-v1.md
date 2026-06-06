@@ -1,5 +1,7 @@
 # 01 Test And Package Contract v1
 
+> Superseded: `00-master-plan-v2.md` is the authoritative executable plan. This v1 phase is historical context only.
+
 ## Goal
 
 Make `npm test` the authoritative active gate without changing preserved archive tests.

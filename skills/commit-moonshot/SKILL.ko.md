@@ -62,7 +62,7 @@ Codex Desktop에 이미 붙어 있는 Memory MCP가 `Transport closed`로 실패
 ```bash
 node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health
 node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs --max-files 500
-node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --max-nodes 200
 ```
 
 규칙:

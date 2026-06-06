@@ -7,9 +7,26 @@ import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, '..', '..');
-const localBrowserctl = path.join(rootDir, '.claude', 'bin', 'browserctl');
-const nodeClient = path.join(rootDir, '.claude', 'tools', 'browserd', 'client.mjs');
-const pythonEntry = path.join(rootDir, '.claude', 'tools', 'browserd', 'browserctl.py');
+
+function candidateRuntimeRoots() {
+  const moonshotHome = process.env.MOONSHOT_RELAY_HOME
+    ? path.resolve(process.env.MOONSHOT_RELAY_HOME)
+    : path.join(os.homedir(), '.moonshot-relay');
+  return [
+    rootDir,
+    moonshotHome,
+    path.join(rootDir, '.claude'),
+  ];
+}
+
+function firstExisting(candidates) {
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+const runtimeRoots = candidateRuntimeRoots();
+const localBrowserctl = firstExisting(runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'bin', 'browserctl')));
+const nodeClient = firstExisting(runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'tools', 'browserd', 'client.mjs')));
+const pythonEntry = firstExisting(runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'tools', 'browserd', 'browserctl.py')));
 
 const state = {
   force: false,
@@ -59,11 +76,11 @@ function parseArgs(argv) {
 
 function assertInputs() {
   if (!fs.existsSync(localBrowserctl)) {
-    console.error(`Missing executable browserctl at ${localBrowserctl}`);
+    console.error(`Missing executable browserctl. Checked: ${runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'bin', 'browserctl')).join(', ')}`);
     process.exit(64);
   }
   if (!fs.existsSync(nodeClient) && !fs.existsSync(pythonEntry)) {
-    console.error(`Missing browser runtime entrypoints under ${path.dirname(nodeClient)}`);
+    console.error(`Missing browser runtime entrypoints. Checked: ${runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'tools', 'browserd')).join(', ')}`);
     process.exit(64);
   }
 }
@@ -169,9 +186,8 @@ esac
 function windowsCmdShim() {
   return `@echo off
 setlocal
-set "ROOT_DIR=${rootDir.replace(/\//g, '\\')}"
-set "NODE_CLIENT=%ROOT_DIR%\\.claude\\tools\\browserd\\client.mjs"
-set "PYTHON_ENTRY=%ROOT_DIR%\\.claude\\tools\\browserd\\browserctl.py"
+set "NODE_CLIENT=${nodeClient.replace(/\//g, '\\')}"
+set "PYTHON_ENTRY=${pythonEntry.replace(/\//g, '\\')}"
 set "NODE_BIN=%BROWSERCTL_NODE_BIN%"
 if not defined NODE_BIN set "NODE_BIN=node"
 if exist "%NODE_CLIENT%" (
@@ -183,15 +199,14 @@ if exist "%PYTHON_ENTRY%" (
   py -3 "%PYTHON_ENTRY%" %*
   exit /b %ERRORLEVEL%
 )
-echo browserctl runtime entrypoints not found under "%ROOT_DIR%\\.claude\\tools\\browserd" 1>&2
+echo browserctl runtime entrypoints not found 1>&2
 exit /b 1
 `;
 }
 
 function windowsPowerShellShim() {
-  return `$RootDir = '${rootDir.replace(/'/g, "''")}'
-$NodeClient = Join-Path $RootDir '.claude\\tools\\browserd\\client.mjs'
-$PythonEntry = Join-Path $RootDir '.claude\\tools\\browserd\\browserctl.py'
+  return `$NodeClient = '${nodeClient.replace(/'/g, "''")}'
+$PythonEntry = '${pythonEntry.replace(/'/g, "''")}'
 $NodeBin = if ($env:BROWSERCTL_NODE_BIN) { $env:BROWSERCTL_NODE_BIN } else { 'node' }
 if (Test-Path $NodeClient) {
   & $NodeBin $NodeClient @args
@@ -201,7 +216,7 @@ if (Test-Path $PythonEntry) {
   & py -3 $PythonEntry @args
   exit $LASTEXITCODE
 }
-Write-Error "browserctl runtime entrypoints not found under $RootDir\\.claude\\tools\\browserd"
+Write-Error "browserctl runtime entrypoints not found"
 exit 1
 `;
 }

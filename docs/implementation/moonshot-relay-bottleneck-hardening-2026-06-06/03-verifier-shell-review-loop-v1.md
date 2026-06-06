@@ -1,5 +1,7 @@
 # 03 Verifier Shell Review Loop v1
 
+> Superseded: `00-master-plan-v2.md` is the authoritative executable plan. This v1 phase is historical context only.
+
 ## Goal
 
 Reduce repeated operator mistakes and review wait loops without replacing deterministic verifier gates.

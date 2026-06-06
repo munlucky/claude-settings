@@ -1,5 +1,7 @@
 # Moonshot Relay Bottleneck Hardening Master Plan v1
 
+> Superseded: `00-master-plan-v2.md` is the authoritative executable plan for the current 9-bundle hardening scope. This v1 file is retained as historical planning context only.
+
 ## Objective
 
 Prevent recurrence of recent Codex/Moonshot Relay bottlenecks by hardening the active test gate, archive boundary, canonical path contract, verifier misuse handling, PowerShell operator-error classification, and independent review loop limits.

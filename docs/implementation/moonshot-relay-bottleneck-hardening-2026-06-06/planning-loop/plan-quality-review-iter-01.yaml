@@ -1,0 +1,40 @@
+reviewedPackageRoot: docs/implementation/moonshot-relay-bottleneck-hardening-2026-06-06
+reviewedPlan: 00-master-plan-v2.md
+reviewer: Socrates
+reviewType: independent-agent-sidecar
+blockingFindings:
+  - id: v2-authority-unclear
+    finding: v1 and v2 coexisted in the same package root without declaring which plan was authoritative.
+    disposition: accepted
+    acceptedChange: Declared 00-master-plan-v2.md authoritative and marked v1 files as superseded historical context.
+  - id: archive-boundary-conflict
+    finding: v1 phase 03 still treated archive verifier execution as acceptance while v2 removes active archive dependency.
+    disposition: accepted
+    acceptedChange: v1 phase docs are now superseded; v2 phase 02 is the active archive boundary contract.
+  - id: browser-flow-decision-open
+    finding: Phase 3 left restore-runner versus optional-only behavior as an implementation guess.
+    disposition: accepted
+    acceptedChange: Chose optional-only browser-flow contract with structured setup_gap verdict.
+  - id: owned-paths-too-wide
+    finding: v2 master used broad owned paths such as scripts and skills instead of phase-local ownership.
+    disposition: accepted
+    acceptedChange: Renamed master section to Candidate Source Surfaces and kept authoritative ownership in phase files.
+  - id: memorygraph-scope-incomplete
+    finding: Phase 7 omitted README, project knowledge docs, and MemoryGraph runtime helper scripts from owned paths.
+    disposition: accepted
+    acceptedChange: Added README, docs/public/project-knowledge-plane.md, runtime-state-root, memorygraph-direct, and memorygraph-mcp-wrapper to phase 7.
+nonBlockingFindings:
+  - id: review-artifact-missing
+    finding: Existing review-disposition.md reviewed v1, not v2.
+    disposition: accepted
+    acceptedChange: Added this v2 plan-quality-review artifact.
+  - id: dry-run-output-schema-open
+    finding: Phase 8 should decide planned[] versus copied[] dry-run schema.
+    disposition: accepted
+    acceptedChange: Chose planned[] for dry-run JSON and reserved copied fields for write operations or documented compatibility aliases.
+rejectedChanges:
+  - id: move-v1-files
+    recommendation: Move v1 files into a superseded folder.
+    reason: Rejected for now to avoid path churn in an untracked package; explicit superseded banners are enough for execution authority.
+remainingAmbiguity:
+  - none

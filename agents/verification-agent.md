@@ -48,4 +48,4 @@ outputFile: ".claude/features/xxx/verification-result.md"
 - Report possible missing activity log headers.
 ## References
 - `.claude/agents/verification/verify-changes.sh`
-- `.claude/docs/guidelines/document-memory-policy.md`
+- `docs/public/guidelines/document-memory-policy.md`

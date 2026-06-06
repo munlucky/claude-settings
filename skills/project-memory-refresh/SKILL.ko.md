@@ -15,9 +15,9 @@ triggers:
 
 1. Phase 01 Project Identity Resolver 계약으로 `projectId`를 결정합니다. `.claude/project.identity.yaml`, 계정 루트 registry alias map, canonical git remote/package/basename/path-hash fallback 순서를 따릅니다.
 2. 현재 프로젝트 루트에서 `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`를 실행합니다. 기본 `--analysis-level code`는 운영 중인 코드베이스를 파일, import, symbol, class, function, type, API/route surface 수준으로 인덱싱합니다.
-3. 호환 seed/cache 경로를 확인합니다.
-   - `.claude/cache/memorygraph/project-graph-seed.json`
-   - `.claude/cache/memorygraph/promotion-candidates.json`
+3. 현재 Moonshot Relay state root 아래의 기본 seed/cache 경로를 확인합니다.
+   - `.moonshot-relay/cache/memorygraph/project-graph-seed.json`
+   - `.moonshot-relay/cache/memorygraph/promotion-candidates.json`
 4. `project-memory-refresh`를 `memoryMode: write_requested`로 호출합니다.
 5. 생성/건너뜀 처리된 node와 relationship 수를 보고합니다.
 
@@ -27,15 +27,15 @@ Codex Desktop의 기존 Memory MCP tool 호출이 `Transport closed`로 실패�
 
 ```bash
 node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health
-node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --seed .claude/cache/memorygraph/project-graph-seed.json --max-nodes 200
+node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --max-nodes 200
 ```
 
-Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다. direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 지정합니다. 이 경로는 프로젝트 로컬 호환 그래프이며 durable Project Knowledge Plane namespace가 아닙니다.
+Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다. direct fallback은 기본적으로 현재 `.moonshot-relay/state/projects/<projectId>/knowledge/memorygraph` namespace를 사용합니다. `.claude/memorygraph/`는 legacy project-local compatibility 전용입니다.
 
 ## 경계
 
 - durable project identity/state는 Project Identity Resolver와 계정 루트 namespace를 통해 해석합니다.
-- `.claude/memorygraph/`와 `.claude/cache/memorygraph/`는 프로젝트 로컬 호환/cache artifact로 취급합니다.
+- `.claude/memorygraph/`와 `.claude/cache/memorygraph/`는 legacy project-local compatibility/cache artifact로 취급합니다.
 - `.claude/docs/ko/`는 memory source로 읽지 않습니다.
 - `.claude/memorygraph/`와 `.claude/cache/memorygraph/`는 커밋하지 않습니다.
 - MemoryGraph가 불가하면 direct fallback까지 시도한 뒤 실패를 보고하되 일반 workflow는 막지 않습니다.

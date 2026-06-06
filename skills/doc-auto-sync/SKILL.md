@@ -164,7 +164,7 @@ Rules:
 - Keep `.claude/docs/ko/` out of seed sources.
 - Include code-level facts from existing projects through the default `--analysis-level code`.
 - Report promotion candidate count, but do not promote into `moonshot-relay` without explicit approval.
-- Keep `.claude/cache/memorygraph/` and account-root knowledge runtime state unstaged by default.
+- Keep `.moonshot-relay/cache/memorygraph/`, legacy `.claude/cache/memorygraph/`, and account-root knowledge runtime state unstaged by default.
 
 ---
 
@@ -193,8 +193,8 @@ docSync:
     - section: "stack"
       diff: "+stripe@14.0.0"
   memoryGraphSeed:
-    path: ".claude/cache/memorygraph/project-graph-seed.json"
-    promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+    path: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
+    promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
     nodeCount: 0
     relationshipCount: 0
     promotionCandidateCount: 0

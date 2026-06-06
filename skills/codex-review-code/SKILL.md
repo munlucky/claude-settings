@@ -31,7 +31,7 @@ This is the default Review-stage owner for non-trivial code changes.
 - In a moonshot-relay source checkout, archived legacy code-policy checks may be run from `archive/scripts/legacy-phase-adapters/verify-code-policy.sh`; downstream reviews should use the project-native deterministic policy gate instead.
 - Use this review for semantic and architectural risk assessment, not as a substitute for deterministic checks.
 - In review stage, prefer `code-review-graph` as the default source for changed-file review context, impact radius, and caller/importer/test hints before broad file reading.
-- Apply `.claude/docs/guidelines/code-review-graph-workflow.md`: stage-gated, lazy update, summary-only evidence.
+- Apply `docs/public/guidelines/code-review-graph-workflow.md`: stage-gated, lazy update, summary-only evidence.
 - Do not start watch/daemon or copy raw graph output into MemoryGraph.
 - Repeat code-policy findings only when they expose a broader design or maintainability problem.
 - Consume review feedback technically, not socially: clarify unclear findings, challenge incorrect findings with evidence, and do not close the remediation loop until each meaningful item has an explicit disposition.
@@ -45,7 +45,7 @@ Codex-native review should explicitly apply:
 - `.claude/rules/refactoring-guidelines.md`
 - `.claude/rules/communication.md`
 - `.claude/rules/output-format.md`
-- `.claude/docs/guidelines/external-skill-pattern-transfer.md`
+- `docs/public/guidelines/external-skill-pattern-transfer.md`
 
 ## Procedure
 
@@ -101,7 +101,7 @@ try {
    - Add note: `"codex-fallback-in-session: review isolation unavailable"`
 
 8. Record coverage findings, ranked issues, warnings, and suggestions
-9. **Per `.claude/docs/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
+9. **Per `docs/public/guidelines/document-memory-policy.md`**: Store full review in `archives/review-v{n}.md`, keep only short summary in `context.md`
 
 ## Review Feedback Handling Protocol
 

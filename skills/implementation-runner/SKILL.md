@@ -92,7 +92,7 @@ When the run is attached to a phase execution bridge:
 
 ### Step 0.3: Code Review Graph Target Narrowing
 
-Before code edits, apply `.claude/docs/guidelines/code-review-graph-workflow.md` when the task requires code structure analysis:
+Before code edits, apply `docs/public/guidelines/code-review-graph-workflow.md` when the task requires code structure analysis:
 - Read `analysisContext.codeReviewGraph.contextSummary` and `impactSummary` before opening broad file sets.
 - If the graph is `not_built` or `stale` and code structure analysis is needed for this stage, use the MCP build/update path or CLI fallback within the current request scope.
 - Use the summary to limit target files, likely dependencies, and impact radius.
