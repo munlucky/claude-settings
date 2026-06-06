@@ -4,10 +4,13 @@ import { resolveProjectIdentity } from '../project-identity.mjs';
 
 export const DEFAULT_RUNTIME_STATE_ROOT = '.moonshot-relay';
 export const LEGACY_CLAUDE_STATE_ROOT = '.claude';
+export const LEGACY_STATE_OVERRIDE_COMPAT_FLAG = 'MOONSHOT_RELAY_LEGACY_STATE_OVERRIDE';
 
 export function resolveRuntimeStateRoot(cwd = process.cwd(), env = process.env) {
   const configured = String(env.MOONSHOT_STATE_ROOT || env.PHASE_RUNTIME_STATE_ROOT || '').trim();
-  if (configured) return path.resolve(cwd, configured);
+  if (configured && env[LEGACY_STATE_OVERRIDE_COMPAT_FLAG] === '1') {
+    return path.resolve(cwd, configured);
+  }
 
   try {
     return resolveProjectIdentity({ cwd, env }).namespaces.knowledgeRoot;

@@ -81,6 +81,7 @@ const requiredConcretePayloadFiles = [
   'scripts/memorygraph-mcp-wrapper.mjs',
   'scripts/code-review-graph-mcp-wrapper.js',
   'scripts/commit-moonshot-memory-refresh.mjs',
+  'scripts/lib/runtime-state-db-path.mjs',
   'scripts/lib/runtime-state-root.mjs',
   'scripts/verification-verdict-state.mjs',
   'bin/browserctl',
@@ -226,6 +227,18 @@ test('Codex package payload includes required compatibility and source entries',
   for (const entry of requiredConcreteCodexFiles) {
     await assertEntryExists(profileRoot, entry);
   }
+});
+
+test('Codex MCP config resolves shared scripts through Moonshot Relay home', async () => {
+  const profileRoot = await codexProfile();
+  const config = await readFile(path.join(profileRoot, 'config.toml'), 'utf8');
+
+  assert.doesNotMatch(config, /\.claude[\\/]scripts[\\/]/);
+  assert.match(config, /MOONSHOT_RELAY_HOME/);
+  assert.match(config, /\.moonshot-relay/);
+  assert.match(config, /scripts', 'codex-mcp-singleton\.mjs'/);
+  assert.match(config, /<MOONSHOT_RELAY_HOME>\/scripts\/memorygraph-mcp-wrapper\.mjs/);
+  assert.match(config, /<MOONSHOT_RELAY_HOME>\/scripts\/code-review-graph-mcp-wrapper\.js/);
 });
 
 test('excludes runtime state from package payloads and local-only artifacts', async () => {

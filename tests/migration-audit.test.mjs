@@ -10,6 +10,7 @@ import {
   resolveRuntimeStatePath,
   resolveRuntimeStateRoot,
   runtimeStateRelativePath,
+  LEGACY_STATE_OVERRIDE_COMPAT_FLAG,
 } from '../scripts/lib/runtime-state-root.mjs';
 import { resolveDbPath } from '../scripts/lib/runtime-state-db-path.mjs';
 import { defaultPhaseEventLedgerPath } from '../scripts/lib/phase-event-ledger.mjs';
@@ -61,6 +62,28 @@ test('runtime state resolver defaults new writes to account-root project knowled
   assert.equal(resolveRuntimeStatePath('logs', 'workflow-enforcement'), path.join(defaultRoot, 'logs', 'workflow-enforcement'));
   assert.equal(resolveDbPath(), path.join(defaultRoot, 'runtime-state.sqlite'));
   assert.equal(runtimeStateRelativePath('cache', 'codex-mcp-singleton'), path.join(defaultRoot, 'cache', 'codex-mcp-singleton'));
+});
+
+test('runtime state resolver does not let legacy overrides bypass project identity by default', () => {
+  const home = fromRoot('.tmp/home');
+  const env = {
+    USERPROFILE: home,
+    MOONSHOT_STATE_ROOT: fromRoot('.tmp/legacy-moonshot-state'),
+    PHASE_RUNTIME_STATE_ROOT: fromRoot('.tmp/legacy-phase-state'),
+  };
+
+  assert.equal(
+    resolveRuntimeStateRoot(root, env),
+    fromRoot('.tmp/home/.moonshot-relay/state/projects/munlucky-moonshot-relay/knowledge'),
+  );
+
+  assert.equal(
+    resolveRuntimeStateRoot(root, {
+      ...env,
+      [LEGACY_STATE_OVERRIDE_COMPAT_FLAG]: '1',
+    }),
+    fromRoot('.tmp/legacy-moonshot-state'),
+  );
 });
 
 test('runtime state resolver exposes legacy .claude compatibility paths for reads', () => {

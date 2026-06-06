@@ -198,12 +198,12 @@ PLAN이 통과되면:
 - `docs/public/guidelines/product-definition-workflow.md`
 - `docs/public/guidelines/demo-first-mvp-gate.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/`
-- `.claude/skills/product-gate-reviewer/SKILL.md`
-- `.claude/skills/plan-ceo-review/SKILL.md`
-- `.claude/skills/plan-eng-review/SKILL.md`
-- `.claude/skills/task-slicer/SKILL.md`
-- `.claude/skills/assumption-ledger/SKILL.md`
-- `.claude/skills/moonshot-orchestrator/SKILL.md`
+- `skills/product-gate-reviewer/SKILL.md`
+- `skills/plan-ceo-review/SKILL.md`
+- `skills/plan-eng-review/SKILL.md`
+- `skills/task-slicer/SKILL.md`
+- `skills/assumption-ledger/SKILL.md`
+- `skills/moonshot-orchestrator/SKILL.md`
 
 ## Project Knowledge Context Contract
 

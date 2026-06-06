@@ -154,8 +154,8 @@ Completion normalization rule:
 
 ## References
 
-- `.claude/skills/moonshot-orchestrator/SKILL.md`
-- `.claude/skills/moonshot-in-session-coordinator/SKILL.md`
+- `skills/moonshot-orchestrator/SKILL.md`
+- `skills/moonshot-in-session-coordinator/SKILL.md`
 
 ## Project Knowledge Context Contract
 

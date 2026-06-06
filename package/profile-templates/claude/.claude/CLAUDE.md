@@ -19,7 +19,7 @@ Last-Reviewed: 2026-04-09
 documentPaths:
   tasksRoot: ".moonshot-relay/docs/tasks"
   agreementsRoot: ".claude/docs/agreements"
-  guidelinesRoot: ".claude/docs/guidelines"
+  guidelinesRoot: "docs/public/guidelines"
 ```
 
 ## References

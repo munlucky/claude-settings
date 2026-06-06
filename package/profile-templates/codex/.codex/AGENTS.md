@@ -17,9 +17,9 @@ Last-Reviewed: 2026-04-09
 
 ```yaml
 documentPaths:
-  tasksRoot: ".claude/docs/tasks"
+  tasksRoot: ".moonshot-relay/docs/tasks"
   agreementsRoot: ".claude/docs/agreements"
-  guidelinesRoot: ".claude/docs/guidelines"
+  guidelinesRoot: "docs/public/guidelines"
 ```
 
 ## References

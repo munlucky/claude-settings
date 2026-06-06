@@ -24,11 +24,10 @@ Apply reusable Moonshot harness improvements without expanding the public skill 
 ## Workflow
 
 1. Inspect the current harness contract:
-   - `.claude/skills/moonshot-orchestrator/SKILL.md`
-   - `.claude/skills/moonshot-phase-runner/SKILL.md`
-   - `archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh`
-   - `archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs`
-   - `.claude/verification.contract.yaml`
+   - `skills/moonshot-orchestrator/SKILL.md`
+   - `skills/moonshot-phase-runner/SKILL.md`
+   - `schemas/verification.contract.yaml`
+   - `package/profile-templates/claude/.claude/verification.contract.yaml` only when checking installed-profile materialization behavior
 2. Classify the change:
    - external pattern transfer
    - compact system prompt or `Claude.md` workflow pattern transfer
@@ -106,11 +105,11 @@ Recommended checks use active tests and source-owned runtime verifiers first. Le
 
 ## Downstream Sync
 
-Use `scripts/sync_downstream_claude.py` for conservative `.claude` synchronization:
+Use `skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py` for conservative `.claude` synchronization:
 
 ```bash
-python3 .claude/skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py \
-  --source .claude \
+python3 skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py \
+  --source package/profile-templates/claude/.claude \
   --dry-run \
   /path/to/project-a /path/to/project-b
 ```

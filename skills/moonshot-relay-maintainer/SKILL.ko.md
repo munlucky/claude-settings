@@ -24,11 +24,10 @@ description: Moonshot 하네스와 downstream .claude 설치본을 유지합니�
 ## 워크플로우
 
 1. 현재 하네스 계약을 점검합니다.
-   - `.claude/skills/moonshot-orchestrator/SKILL.md`
-   - `.claude/skills/moonshot-phase-runner/SKILL.md`
-   - `archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity-shell-core.sh`
-   - `archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs`
-   - `.claude/verification.contract.yaml`
+   - `skills/moonshot-orchestrator/SKILL.md`
+   - `skills/moonshot-phase-runner/SKILL.md`
+   - `schemas/verification.contract.yaml`
+   - installed-profile materialization 동작 확인이 필요할 때만 `package/profile-templates/claude/.claude/verification.contract.yaml`
 2. 변경 유형을 분류합니다.
    - external pattern transfer
    - compact system prompt 또는 `Claude.md` workflow pattern transfer
@@ -106,11 +105,11 @@ source가 이미지나 compact prompt라면 통째로 복사하지 않습니다.
 
 ## Downstream Sync
 
-보수적인 `.claude` 동기화에는 `scripts/sync_downstream_claude.py`를 사용합니다.
+보수적인 `.claude` 동기화에는 `skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py`를 사용합니다.
 
 ```bash
-python3 .claude/skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py \
-  --source .claude \
+python3 skills/moonshot-relay-maintainer/scripts/sync_downstream_claude.py \
+  --source package/profile-templates/claude/.claude \
   --dry-run \
   /path/to/project-a /path/to/project-b
 ```

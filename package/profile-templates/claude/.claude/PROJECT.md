@@ -21,15 +21,13 @@ Last-Reviewed: 2026-03-30
 
 ## Testing Rules
 
-- **Test framework**: Contract-backed shell verification plus isolated worktree smoke flows
+- **Test framework**: Node test contract gates plus account-root installer/package dry-run checks
 - **Commands**:
-  - `bash .claude/scripts/harness-prepare-worktree.sh <task-id> --hydrate-agent-config --baseline-command "<cmd>"`
-  - `bash .claude/scripts/harness-promote.sh --source codex/harness-recursive --target codex/harness-release-candidate --target-base main --target-worktree .tmp/harness-worktrees/harness-release-candidate`
-  - `node .claude/scripts/knowledge-repo-audit.mjs`
-  - `bash .claude/scripts/verify-code-policy.sh`
-  - `bash .claude/scripts/workflow-enforcement.sh verify`
-  - `node .claude/scripts/verify-phase-runtime-parity.mjs .claude/docs/runtime-parity-reference-plan`
-  - `python3 .claude/scripts/normalize-harness-quality.py --input-glob ".tmp/harness-runs/**/harness-quality-run.json" --output ".tmp/harness-runs/harness-quality/latest.json"`
+  - `npm test`
+  - `npm run test:package`
+  - `node package/build-package.mjs --runtime all --dry-run --json`
+  - `node scripts/install-account-root-harness.mjs --runtime all --source-root . --dry-run --json`
+- **Legacy compatibility**: project-local `.claude/scripts/*` workflow adapters are not active package/install commands. Use archived legacy adapter checks only with an explicit legacy compatibility reason.
 
 ## Directory/Structure
 
@@ -45,7 +43,7 @@ Last-Reviewed: 2026-03-30
 ## API/Data Communication Patterns
 
 - **API endpoints**: No persistent network API; repository behavior is exposed through local shell scripts and Git workflows
-- **Helper functions**: `.claude/scripts/*.sh`, `.claude/scripts/*.py`, and verification helpers under `.claude/agents/verification/`
+- **Helper functions**: installed shared scripts under `<MOONSHOT_RELAY_HOME>/scripts/` and verification helpers under `.claude/agents/verification/`
 - **Contract exchange**: Policy lives in `.claude/verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and worktree prepare evidence is written to `.claude/worktree-prepare.json`; daily work happens on an isolated worktree and any release-candidate worktree is temporary
 
 ## Type/Domain Patterns
@@ -65,7 +63,7 @@ Last-Reviewed: 2026-03-30
 documentPaths:
   tasksRoot: "docs/claude-tasks"
   agreementsRoot: ".claude/docs/agreements"
-  guidelinesRoot: ".claude/docs/guidelines"
+  guidelinesRoot: "docs/public/guidelines"
 ```
 
 ## Environment Variables

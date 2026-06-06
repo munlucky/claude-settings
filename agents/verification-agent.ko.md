@@ -26,6 +26,7 @@ implementedFiles:
   - "src/pages/xxx/Page.tsx"
   - "src/api/xxx.ts"
 verificationCommands:
+  - "npm test"
   - "npm run typecheck"
   - "npm run build"
 outputFile: ".claude/features/xxx/verification-result.md"
@@ -40,12 +41,15 @@ outputFile: ".claude/features/xxx/verification-result.md"
 - 검증 결과 요약
 - 결과 파일: `.claude/verification-results-YYYYMMDD-HHMMSS.txt`
 ## Workflow
-1. `.claude/agents/verification/verify-changes.sh {feature-name}` 실행
-2. 결과 요약(성공/경고/실패) 정리
-3. 수동 테스트 필요 항목을 안내
+1. `moonshot-relay`에서는 호출자가 더 좁은 명령을 명시하지 않았으면 active gate인 `npm test`를 실행합니다.
+2. source checkout 검증에서 script-level 확인이 필요하면 `agents/verification/verify-changes.sh {feature-name}`를 실행합니다.
+3. installed Claude profile에서는 `.claude/agents/verification/verify-changes.sh`가 compatibility entrypoint입니다.
+4. 결과 요약(성공/경고/실패)을 정리합니다.
+5. 수동 테스트 필요 항목을 안내합니다.
 ## Quality bar
 - typecheck/build/lint 결과를 명확히 기록합니다.
 - 활동 로그 헤더 누락 가능성을 보고합니다.
 ## References
-- `.claude/agents/verification/verify-changes.sh`
+- `agents/verification/verify-changes.sh`
+- `.claude/agents/verification/verify-changes.sh` (installed-profile compatibility path)
 - `docs/public/guidelines/document-memory-policy.md`

@@ -70,7 +70,7 @@ node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --max-nod
 - direct fallback이 성공하면 메모리 현행화는 완료로 취급하고, Codex 재시작을 사용자에게 요구하지 않습니다.
 - direct fallback도 실패한 경우에만 실패 원인을 기록하고 Git closeout을 계속 진행합니다.
 - Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다.
-- direct fallback은 `.claude/memorygraph/memory.db`를 `MEMORY_SQLITE_PATH`로 사용하는 프로젝트 로컬 호환 그래프입니다. 계정 루트 knowledge state, `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`는 사용자가 명시적으로 포함하지 않는 한 커밋하지 않습니다.
+- direct fallback은 `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs`가 해석한 account-root project knowledge namespace를 기본 대상으로 사용합니다. `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`, `.moonshot-relay/cache/memorygraph/**`는 호환/cache artifact이며 사용자가 명시적으로 포함하지 않는 한 커밋하지 않습니다.
 
 ### 기존 경계 확인
 `recall_memories`와 `search_memories`로 `project:{PROJECT_ID}`, `boundary` 태그를 가진 메모리 검색
@@ -192,7 +192,7 @@ git add [files]
 git commit -m "[간결한 한글 제목]" -m $'- 기능: [기능/영역명] - [핵심 변경]\n- 기능: [기능/영역명] - [핵심 변경]\n- 이유: [변경 이유]\n- 영향: [사용자 영향 또는 기대 효과]'
 ```
 
-> **📌 중요: 메모리 산출물 포함 여부는 사용자 명시 선택을 따르세요.** `.claude/memorygraph/`는 프로젝트 로컬 호환 저장소이며, durable knowledge state는 계정 루트 project namespace에 있을 수 있습니다.
+> **📌 중요: 메모리 산출물 포함 여부는 사용자 명시 선택을 따르세요.** durable knowledge state는 계정 루트 project namespace가 기본이며, `.claude/memorygraph/`는 레거시 호환 저장소일 수 있습니다.
 
 **커밋 메시지 규칙:**
 - 이모지, 특수문자 제외

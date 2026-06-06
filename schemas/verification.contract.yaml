@@ -1,7 +1,7 @@
 commands:
-  memoryRefreshCommit: "node .claude/scripts/commit-moonshot-memory-refresh.mjs --mcp-status skipped --json"
-  memoryGraphHealth: "node .claude/scripts/memorygraph-direct.mjs health"
-  ontologyConstraints: "node .claude/scripts/ontology-constraint-validate.mjs --project-root . --json"
+  memoryRefreshCommit: "node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs --mcp-status skipped --json"
+  memoryGraphHealth: "node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health"
+  ontologyConstraints: "node <MOONSHOT_RELAY_HOME>/scripts/ontology-constraint-validate.mjs --project-root . --json"
 legacyCommands:
   description: "Delegated-terminal phase adapter checks are source-checkout legacy compatibility checks. They are not part of the active phase-runner workflow profile, are not installed into runtime payloads, and require explicit legacyAdapterReason before use."
   knowledgeAudit: "bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh"
@@ -53,11 +53,11 @@ checkPolicies:
   verificationOverrideAllowlist:
     policy: "project-native commands only"
     allowedCommandPrefixes:
-      - "bash .claude/scripts/"
-      - "node .claude/scripts/"
-      - "node --test .claude/scripts/"
-      - "python .claude/scripts/"
-      - "python3 .claude/scripts/"
+      - "bash <MOONSHOT_RELAY_HOME>/scripts/"
+      - "node <MOONSHOT_RELAY_HOME>/scripts/"
+      - "node --test <MOONSHOT_RELAY_HOME>/scripts/"
+      - "python <MOONSHOT_RELAY_HOME>/scripts/"
+      - "python3 <MOONSHOT_RELAY_HOME>/scripts/"
     unknownExecutable: block
   ontologyConstraints:
     conflictBehavior: "project_override_requires_supersedes"

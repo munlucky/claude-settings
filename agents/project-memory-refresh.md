@@ -7,7 +7,7 @@ description: Builds a project-local MemoryGraph seed and writes approved project
 
 ## Role
 
-Refresh the **current project's** local MemoryGraph from a compact semantic seed. This agent writes only to the project-local backend selected by `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`, which means `MEMORYGRAPH_DATA_DIR=<current-project>/.moonshot-relay/memorygraph`.
+Refresh the **current project's** account-root project knowledge namespace from a compact semantic seed. This agent writes only through the backend selected by `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`, which defaults to `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/knowledge`. Project-local `.moonshot-relay/cache/**` paths are seed/cache inputs, not durable MemoryGraph storage.
 
 ## Inputs
 
@@ -17,6 +17,7 @@ projectPath: "{absolute-current-project-path}"
 memoryMode: "write_requested"
 seedPath: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
 promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
+knowledgeRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/{projectId}/knowledge"
 reason: "explicit_refresh|session_logger|commit_moonshot"
 ```
 
@@ -73,6 +74,7 @@ projectMemoryRefresh:
   projectId: "{projectId}"
   seedPath: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
   promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
+  knowledgeRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/{projectId}/knowledge"
   nodesCreated: 0
   nodesSkipped: 0
   relationshipsCreated: 0

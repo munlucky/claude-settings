@@ -9,6 +9,8 @@
     "materializer": "package/build-package.mjs",
     "generatedProfileRoot": "package/codex/profile/.codex"
   },
+  "payloadAuthority": "package/build-package.mjs",
+  "entriesRole": "materializer-inputs-only",
   "entries": [
     "skills",
     "agents",

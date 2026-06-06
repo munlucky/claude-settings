@@ -11,12 +11,12 @@ web_search = "live"
 
 [mcp_servers.github]
 command = "node"
-args = [".claude/scripts/codex-mcp-singleton.mjs", "github", "--", "npx", "-y", "@modelcontextprotocol/server-github"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "github", "--", "npx", "-y", "@modelcontextprotocol/server-github"]
 startup_timeout_sec = 30
 
 [mcp_servers.context7]
 command = "node"
-args = [".claude/scripts/codex-mcp-singleton.mjs", "context7", "--", "npx", "-y", "@upstash/context7-mcp@latest"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "context7", "--", "npx", "-y", "@upstash/context7-mcp@latest"]
 startup_timeout_sec = 30
 
 [mcp_servers.exa]
@@ -24,22 +24,22 @@ url = "https://mcp.exa.ai/mcp"
 
 [mcp_servers.memory]
 command = "node"
-args = [".claude/scripts/codex-mcp-singleton.mjs", "memory", "--", "node", ".claude/scripts/memorygraph-mcp-wrapper.mjs"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "memory", "--", "node", "<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.mjs"]
 startup_timeout_sec = 30
 
 [mcp_servers.code-review-graph]
 command = "node"
-args = [".claude/scripts/codex-mcp-singleton.mjs", "code-review-graph", "--", "node", ".claude/scripts/code-review-graph-mcp-wrapper.js"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "code-review-graph", "--", "node", "<MOONSHOT_RELAY_HOME>/scripts/code-review-graph-mcp-wrapper.js"]
 startup_timeout_sec = 30
 
 [mcp_servers.playwright]
 command = "node"
-args = [".claude/scripts/codex-mcp-singleton.mjs", "playwright", "--", "npx", "-y", "@playwright/mcp@latest", "--extension"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "playwright", "--", "npx", "-y", "@playwright/mcp@latest", "--extension"]
 startup_timeout_sec = 30
 
 [mcp_servers.sequential-thinking]
 command = "node"
-args = [".claude/scripts/codex-mcp-singleton.mjs", "sequential-thinking", "--", "npx", "-y", "@modelcontextprotocol/server-sequential-thinking"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "sequential-thinking", "--", "npx", "-y", "@modelcontextprotocol/server-sequential-thinking"]
 startup_timeout_sec = 30
 
 # Optional MCP servers:

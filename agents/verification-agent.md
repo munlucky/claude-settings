@@ -26,6 +26,7 @@ implementedFiles:
   - "src/pages/xxx/Page.tsx"
   - "src/api/xxx.ts"
 verificationCommands:
+  - "npm test"
   - "npm run typecheck"
   - "npm run build"
 outputFile: ".claude/features/xxx/verification-result.md"
@@ -40,12 +41,15 @@ outputFile: ".claude/features/xxx/verification-result.md"
 - Verification result summary
 - Result file: `.claude/verification-results-YYYYMMDD-HHMMSS.txt`
 ## Workflow
-1. Run `.claude/agents/verification/verify-changes.sh {feature-name}`
-2. Summarize results (success/warn/fail)
-3. Inform any items that need manual testing
+1. For `moonshot-relay`, run the active gate `npm test` unless the caller supplied a narrower explicit command.
+2. For source checkout verification, run `agents/verification/verify-changes.sh {feature-name}` when script-level verification is needed.
+3. For installed Claude profiles, `.claude/agents/verification/verify-changes.sh` is the installed-profile compatibility entrypoint.
+4. Summarize results (success/warn/fail).
+5. Inform any items that need manual testing.
 ## Quality bar
 - Record typecheck/build/lint results clearly.
 - Report possible missing activity log headers.
 ## References
-- `.claude/agents/verification/verify-changes.sh`
+- `agents/verification/verify-changes.sh`
+- `.claude/agents/verification/verify-changes.sh` (installed-profile compatibility path)
 - `docs/public/guidelines/document-memory-policy.md`

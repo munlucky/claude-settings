@@ -57,6 +57,7 @@ const runtimeSpecs = {
       'scripts/lib/awtl-replay-scorecard.mjs',
       'scripts/lib/awtl-trace-sink.mjs',
       'scripts/lib/failure-classifier.mjs',
+      'scripts/lib/runtime-state-db-path.mjs',
       'scripts/lib/runtime-state-root.mjs',
       'scripts/lib/runtime-unavailable-cache.mjs',
       'scripts/memory-mcp-wrapper.js',

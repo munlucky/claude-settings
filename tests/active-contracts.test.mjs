@@ -40,7 +40,7 @@ test('active human-facing references do not use missing profile-local guideline 
   for (const file of await activeTextFiles()) {
     const text = await readFile(fromRoot(file), 'utf8');
     text.split(/\r?\n/).forEach((line, index) => {
-      if (/\.claude\/docs\/guidelines\//.test(line)) {
+      if (/\.claude\/docs\/guidelines(?:\/|["'`\s]|$)/.test(line)) {
         violations.push(`${file}:${index + 1}: ${line.trim()}`);
       }
     });
@@ -98,6 +98,34 @@ test('active memory skills do not present legacy .claude memorygraph cache as th
       }
     });
   }
+  assert.deepEqual(violations, []);
+});
+
+test('active memory instructions default to account-root project knowledge state', async () => {
+  const files = [
+    'agents/project-memory-refresh.md',
+    'agents/project-memory-refresh.ko.md',
+    'skills/harness-memory-promoter/SKILL.md',
+    'skills/harness-memory-promoter/SKILL.ko.md',
+    'skills/commit-moonshot/SKILL.ko.md',
+  ];
+  const violations = [];
+
+  for (const file of files) {
+    const text = await readFile(fromRoot(file), 'utf8');
+    assert.match(
+      text,
+      /\$\{MOONSHOT_RELAY_HOME:-~\/\.moonshot-relay\}\/state\/projects\/|account-root project knowledge namespace|계정 루트 project namespace/,
+      `${file} should name account-root project knowledge state`,
+    );
+
+    text.split(/\r?\n/).forEach((line, index) => {
+      if (/MEMORYGRAPH_DATA_DIR=.*\.moonshot-relay\/memorygraph|%USERPROFILE%\/\.codex\/(?:state\/projects|harness\/releases)|기본 저장소.*`\.claude\/memorygraph/.test(line)) {
+        violations.push(`${file}:${index + 1}: ${line.trim()}`);
+      }
+    });
+  }
+
   assert.deepEqual(violations, []);
 });
 

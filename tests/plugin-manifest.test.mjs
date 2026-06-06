@@ -37,6 +37,8 @@ test('runtime plugin manifests point at package materializers and canonical inpu
     assert.match(parsed.source.templateRoot, /^package\/profile-templates\/(claude|codex)\/\.(claude|codex)$/);
     assert.equal(parsed.source.materializer, 'package/build-package.mjs');
     assert.match(parsed.source.generatedProfileRoot, /^package\/(claude|codex)\/profile\/\.(claude|codex)$/);
+    assert.equal(parsed.payloadAuthority, 'package/build-package.mjs');
+    assert.equal(parsed.entriesRole, 'materializer-inputs-only');
     assertExistingPath(parsed.source.templateRoot, `${manifest} source.templateRoot`);
     assertExistingPath(parsed.source.materializer, `${manifest} source.materializer`);
 
@@ -56,6 +58,7 @@ test('marketplace manifests reference existing plugin manifests and materializer
       assertExistingPath(plugin.manifest, `${manifest} plugin manifest`);
       assertExistingPath(plugin.profileTemplateRoot, `${manifest} profileTemplateRoot`);
       assertExistingPath(plugin.materializer, `${manifest} materializer`);
+      assert.equal(plugin.payloadAuthority, 'package/build-package.mjs');
       assert.match(plugin.profileTemplateRoot, /^package\/profile-templates\/(claude|codex)\/\.(claude|codex)$/);
       assert.match(plugin.generatedProfileRoot, /^package\/(claude|codex)\/profile\/\.(claude|codex)$/);
     }

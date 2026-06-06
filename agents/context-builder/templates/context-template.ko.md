@@ -50,7 +50,7 @@
 1. `npx tsc --noEmit`
 2. `npm run build`
 3. `npm run lint`
-4. `.claude/agents/verification/verify-changes.sh {feature-name}`
+4. source checkout에서는 `agents/verification/verify-changes.sh {feature-name}`, profile materialization 이후에만 installed-profile `.claude/agents/verification/verify-changes.sh`
 
 ## 위험 및 대안
 

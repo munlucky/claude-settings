@@ -6,7 +6,8 @@
       "manifest": ".codex-plugin/plugin.json",
       "profileTemplateRoot": "package/profile-templates/codex/.codex",
       "materializer": "package/build-package.mjs",
-      "generatedProfileRoot": "package/codex/profile/.codex"
+      "generatedProfileRoot": "package/codex/profile/.codex",
+      "payloadAuthority": "package/build-package.mjs"
     }
   ]
 }

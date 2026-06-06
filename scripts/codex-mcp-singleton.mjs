@@ -159,6 +159,23 @@ function resolveCommand(command) {
   return command;
 }
 
+function relayHome() {
+  return process.env.MOONSHOT_RELAY_HOME
+    ? path.resolve(process.env.MOONSHOT_RELAY_HOME)
+    : path.join(os.homedir(), '.moonshot-relay');
+}
+
+function resolveRelayHomeToken(value) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  return value
+    .replaceAll('<MOONSHOT_RELAY_HOME>', relayHome())
+    .replaceAll('${MOONSHOT_RELAY_HOME}', relayHome())
+    .replaceAll('%MOONSHOT_RELAY_HOME%', relayHome());
+}
+
 function removeLockIfOwned(lockFile) {
   const lock = readJson(lockFile);
   if (lock?.pid === process.pid) {
@@ -170,7 +187,10 @@ function removeLockIfOwned(lockFile) {
   }
 }
 
-const { name, command, args } = parseArgs(process.argv.slice(2));
+const parsed = parseArgs(process.argv.slice(2));
+const name = parsed.name;
+const command = resolveRelayHomeToken(parsed.command);
+const args = parsed.args.map(resolveRelayHomeToken);
 const lockFile = lockPathFor(name);
 
 cleanupPrevious(lockFile, name);

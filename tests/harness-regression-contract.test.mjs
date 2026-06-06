@@ -1,32 +1,19 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
 import { classifyFailure } from '../scripts/lib/failure-classifier.mjs';
 import { diagnoseShellCommand } from '../scripts/lib/shell-command-diagnostics.mjs';
-
-test('verify-plan-conformance compatibility specimen rejects plan-level options with an artifact-level alternative', () => {
-  const result = spawnSync(process.execPath, [
-    'archive/scripts/legacy-phase-adapters/verify-plan-conformance.mjs',
-    '--status-file',
-    '.claude/docs/phase-status.yaml',
-  ], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
-
-  assert.equal(result.status, 64);
-  assert.match(result.stderr, /Unsupported plan-level option/);
-  assert.match(result.stderr, /verify-phase-closeout\.mjs --plan-dir <path> --master-plan <path> --status-file <path> --json/);
-  assert.match(result.stderr, /verify-plan-conformance\.mjs --phase-doc <path>/);
-});
 
 test('active tests do not import archive runtime helpers', async () => {
   const { readdir, readFile } = await import('node:fs/promises');
   const path = await import('node:path');
   const testsDir = path.join(process.cwd(), 'tests');
   const files = (await readdir(testsDir))
-    .filter((name) => name.endsWith('.test.mjs') && name !== 'harness-regression-contract.test.mjs');
+    .filter((name) => (
+      name.endsWith('.test.mjs')
+      && name !== 'harness-regression-contract.test.mjs'
+      && name !== 'legacy-archive-contract.test.mjs'
+    ));
   const violations = [];
 
   for (const file of files) {

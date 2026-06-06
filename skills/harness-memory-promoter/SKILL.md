@@ -25,10 +25,10 @@ For harness self-improvement, the meta-project contract is:
 
 ```yaml
 projectId: moonshot-relay
-knowledgeRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/knowledge"
-improvementRoot: "%USERPROFILE%/.codex/state/projects/moonshot-relay/improvement"
-candidateReleaseRoot: "%USERPROFILE%/.codex/harness/releases/candidate"
-stableReleaseRoot: "%USERPROFILE%/.codex/harness/releases/stable"
+knowledgeRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/moonshot-relay/knowledge"
+improvementRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/moonshot-relay/improvement"
+candidateReleaseRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/harness/releases/candidate"
+stableReleaseRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/harness/releases/stable"
 ```
 
 ## Required Flow

@@ -6,7 +6,8 @@
       "manifest": ".claude-plugin/plugin.json",
       "profileTemplateRoot": "package/profile-templates/claude/.claude",
       "materializer": "package/build-package.mjs",
-      "generatedProfileRoot": "package/claude/profile/.claude"
+      "generatedProfileRoot": "package/claude/profile/.claude",
+      "payloadAuthority": "package/build-package.mjs"
     }
   ]
 }

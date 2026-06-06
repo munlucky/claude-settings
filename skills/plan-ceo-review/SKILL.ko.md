@@ -96,5 +96,5 @@ planCeoReview:
 
 ## 참고
 
-- `.claude/skills/product-orchestrator/SKILL.md`
-- `.claude/skills/moonshot-plan-writer/SKILL.md`
+- `skills/product-orchestrator/SKILL.md`
+- `skills/moonshot-plan-writer/SKILL.md`

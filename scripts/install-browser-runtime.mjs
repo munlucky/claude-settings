@@ -19,14 +19,26 @@ function candidateRuntimeRoots() {
   ];
 }
 
-function firstExisting(candidates) {
-  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+function browserRuntimeFor(runtimeRoot) {
+  const browserctl = path.join(runtimeRoot, 'bin', 'browserctl');
+  const nodeClient = path.join(runtimeRoot, 'tools', 'browserd', 'client.mjs');
+  const pythonEntry = path.join(runtimeRoot, 'tools', 'browserd', 'browserctl.py');
+  return { runtimeRoot, browserctl, nodeClient, pythonEntry };
+}
+
+function resolveBrowserRuntime(runtimeRoots) {
+  const candidates = runtimeRoots.map(browserRuntimeFor);
+  return candidates.find((candidate) => (
+    fs.existsSync(candidate.browserctl)
+    && (fs.existsSync(candidate.nodeClient) || fs.existsSync(candidate.pythonEntry))
+  )) || candidates[0];
 }
 
 const runtimeRoots = candidateRuntimeRoots();
-const localBrowserctl = firstExisting(runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'bin', 'browserctl')));
-const nodeClient = firstExisting(runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'tools', 'browserd', 'client.mjs')));
-const pythonEntry = firstExisting(runtimeRoots.map((runtimeRoot) => path.join(runtimeRoot, 'tools', 'browserd', 'browserctl.py')));
+const browserRuntime = resolveBrowserRuntime(runtimeRoots);
+const localBrowserctl = browserRuntime.browserctl;
+const nodeClient = browserRuntime.nodeClient;
+const pythonEntry = browserRuntime.pythonEntry;
 
 const state = {
   force: false,

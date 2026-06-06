@@ -22,7 +22,8 @@ To complete installation, run the account-root installer from this skill:
 - Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$env:CODEX_HOME\skills\moonshot-relay-setup\scripts\install-account-root.ps1"
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+powershell -ExecutionPolicy Bypass -File "$codexHome\skills\moonshot-relay-setup\scripts\install-account-root.ps1"
 ```
 
 - macOS/Linux/Git Bash:
@@ -34,7 +35,8 @@ bash "${CODEX_HOME:-$HOME/.codex}/skills/moonshot-relay-setup/scripts/install-ac
 For a dry run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$env:CODEX_HOME\skills\moonshot-relay-setup\scripts\install-account-root.ps1" -DryRun
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+powershell -ExecutionPolicy Bypass -File "$codexHome\skills\moonshot-relay-setup\scripts\install-account-root.ps1" -DryRun
 ```
 
 ```bash

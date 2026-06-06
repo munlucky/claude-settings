@@ -12,11 +12,12 @@ const DEFAULT_SHELL_FILES = [
   'agents/verification/verify-changes.sh',
   'agents/verification/verify-runtime.sh',
   'scripts/install-browser-runtime.sh',
+  'skills/moonshot-relay-setup/scripts/install-account-root.sh',
 ];
 
 function parseFileList(argv) {
   if (argv.length > 0) {
-    return argv;
+    return argv.map((entry) => entry.replace(/\\/g, '/'));
   }
   const raw = process.env.VERIFY_SHELL_SYNTAX_FILES || '';
   if (!raw.trim()) {
@@ -25,6 +26,7 @@ function parseFileList(argv) {
   return raw
     .split(/[\r\n;,]+/)
     .map((entry) => entry.trim())
+    .map((entry) => entry.replace(/\\/g, '/'))
     .filter(Boolean);
 }
 
