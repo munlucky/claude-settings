@@ -6,7 +6,7 @@ Last-Reviewed: 2026-03-30
 
 ## Project Overview
 
-- **Service**: Harness Project - self-hosted repository for `.claude` rules, skills, agents, scripts, templates, and verification contracts
+- **Service**: Harness Project - self-hosted repository for reusable Moonshot Relay rules, skills, agents, scripts, templates, and verification contracts
 - **Stack**: Bash, Python 3, Markdown, YAML, Git worktrees
 - **Response Language**: Korean by default unless the request explicitly asks for another language
 
@@ -33,22 +33,26 @@ Last-Reviewed: 2026-03-30
 
 ```text
 [project root]/
-|-- .claude/
-|-- docs/
-|-- .tmp/
-|-- install-claude.sh
+|-- agents/
+|-- skills/
+|-- rules/
+|-- scripts/
+|-- schemas/
+|-- templates/
+|-- docs/public/
+|-- package/profile-templates/
 `-- README.md
 ```
 
 ## API/Data Communication Patterns
 
 - **API endpoints**: No persistent network API; repository behavior is exposed through local shell scripts and Git workflows
-- **Helper functions**: installed shared scripts under `<MOONSHOT_RELAY_HOME>/scripts/` and verification helpers under `.claude/agents/verification/`
-- **Contract exchange**: Policy lives in `.claude/verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and worktree prepare evidence is written to `.claude/worktree-prepare.json`; daily work happens on an isolated worktree and any release-candidate worktree is temporary
+- **Helper functions**: installed shared scripts under `<MOONSHOT_RELAY_HOME>/scripts/` and verification helpers exposed through profile-local `agents/verification/`
+- **Contract exchange**: Policy lives in profile-local `verification.contract.yaml`, task memory lives under `documentPaths.tasksRoot`, and generated workflow evidence is written under `.moonshot-relay/`; daily work happens on an isolated worktree and any release-candidate worktree is temporary
 
 ## Type/Domain Patterns
 
-- **Type definition location**: YAML contracts in `.claude/verification.contract.yaml`; operational schemas and checklists in `docs/public/guidelines/`
+- **Type definition location**: YAML contracts in profile-local `verification.contract.yaml`; operational schemas and checklists in `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines/`
 - **Domain models**: `REQ-*`, `SCN-*`, `UAT-*`, `policySets`, scorecard objectives, and harness promotion whitelist entries
 
 ## Auth/Authorization
@@ -63,7 +67,7 @@ Last-Reviewed: 2026-03-30
 documentPaths:
   tasksRoot: ".moonshot-relay/docs/tasks"
   agreementsRoot: ".moonshot-relay/docs/agreements"
-  guidelinesRoot: "docs/public/guidelines"
+  guidelinesRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines"
 ```
 
 ## Environment Variables

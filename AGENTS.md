@@ -22,7 +22,7 @@ This repository's canonical source is the tracked root-level harness source, not
 ```yaml
 documentPaths:
   tasksRoot: ".moonshot-relay/docs/tasks"
-  agreementsRoot: ".claude/docs/agreements"
+  agreementsRoot: ".moonshot-relay/docs/agreements"
   guidelinesRoot: "docs/public/guidelines"
 ```
 
