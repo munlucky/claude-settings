@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/verification-plane.schema.json",
+  "title": "Moonshot Relay Verification Plane Evidence",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "goalId",
+    "fresh",
+    "requiredChecksPassed",
+    "requiredPlanes",
+    "planes"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goalId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fresh": {
+      "type": "boolean"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "staleReason": {
+      "type": "string"
+    },
+    "requiredChecksPassed": {
+      "type": "boolean"
+    },
+    "requiredPlanes": {
+      "type": "array",
+      "items": {
+        "enum": ["unit", "package", "installer", "browser", "security", "quality"]
+      },
+      "uniqueItems": true
+    },
+    "planes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["plane", "status"],
+        "properties": {
+          "plane": {
+            "enum": ["unit", "package", "installer", "browser", "security", "quality"]
+          },
+          "status": {
+            "enum": ["passed", "failed", "blocked", "missing", "stale"]
+          },
+          "command": {
+            "type": "string"
+          },
+          "evidenceId": {
+            "type": "string"
+          },
+          "tracePath": {
+            "type": "string"
+          },
+          "evidenceDepth": {
+            "type": "string"
+          },
+          "blockers": {
+            "type": "array"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "missingPlanes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "failedPlanes": {
+      "type": "array"
+    },
+    "securityBlockers": {
+      "type": "array"
+    },
+    "identity": {
+      "type": "object"
+    },
+    "evidenceId": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

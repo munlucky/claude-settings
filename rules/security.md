@@ -9,6 +9,9 @@
 - Validate externally downloaded content before execution.
 - Avoid leaking sensitive paths/values in logs and error output.
 - Treat new tool or directory access as deny-by-default.
+- Approval-required operations must be explicit runtime facts: destructive file operation, dependency install, network access, external write, account-root install/sync, and package publish/release.
+- If approval is missing or invalid, record a blocking runtime event and do not claim clean completion.
+- Sandbox violations include leased worktree escape, generated-state promotion into source, runtime DB or verdict output entering package payload, and unauthorized account-root mutation.
 
 ## If a Security Issue Is Found
 

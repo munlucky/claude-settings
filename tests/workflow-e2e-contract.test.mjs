@@ -125,10 +125,83 @@ test('plan readiness bridge reports ready state and planned outputs for reviewed
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.status, 'ready');
   assert.deepEqual(payload.phaseDocs, ['01-sample-v1.md']);
+  assert.equal(payload.activeExecutionStatus, 'active');
+  assert.equal(payload.activePhaseDoc, '01-sample-v1.md');
+  assert.equal(payload.phases[0].status, 'in_progress');
   assert.equal(payload.dryRun, true);
   assert.equal(existsSync(path.join(tempRoot, '.moonshot-relay', 'docs', 'phase-status.yaml')), false);
   assert.ok(payload.plannedWrites.some((entry) => entry.endsWith('phase-status.yaml')));
   assert.ok(payload.plannedWrites.some((entry) => entry.endsWith('phase-runner-readiness.json')));
+});
+
+test('tracked source roadmaps default execution scratch to docs implementation', () => {
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--plan-dir',
+    'docs/public/roadmaps/harness-control-plane-modernization',
+    '--master-plan',
+    'docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v1.md',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.ok(payload.plannedWrites.includes('docs/implementation/harness-control-plane-modernization/execution/phase-runner-readiness.json'));
+  assert.equal(payload.plannedWrites.some((entry) => entry.startsWith('docs/public/roadmaps/') && entry.includes('/execution/')), false);
+});
+
+test('phase runner default run ids are unique when omitted', () => {
+  const runPrepare = () => {
+    const result = spawnSync(process.execPath, [
+      fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+      '--dry-run',
+      '--json',
+      '--plan-dir',
+      'docs/public/roadmaps/harness-control-plane-modernization',
+      '--master-plan',
+      'docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v2.md',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+  };
+
+  const first = runPrepare();
+  const second = runPrepare();
+  assert.match(first.runId, /^phase-runner-\d{14}-[0-9a-f-]{8}$/);
+  assert.match(second.runId, /^phase-runner-\d{14}-[0-9a-f-]{8}$/);
+  assert.notEqual(first.runId, second.runId);
+});
+
+test('phase runner plan preparation selects phase docs matching the explicit master version', () => {
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--plan-dir',
+    'docs/public/roadmaps/harness-control-plane-modernization',
+    '--master-plan',
+    'docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v2.md',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.ok(payload.phaseDocs.length >= 12);
+  assert.ok(payload.phaseDocs.every((file) => file.endsWith('-v2.md')), payload.phaseDocs.join('\n'));
+  assert.ok(payload.phaseDocs.includes('01-current-truth-baseline-and-source-preservation-v2.md'));
+  assert.equal(payload.phaseDocs.includes('01-baseline-source-truth-v1.md'), false);
+  assert.equal(payload.activePhaseDoc, '01-current-truth-baseline-and-source-preservation-v2.md');
+  assert.equal(payload.phases[0].status, 'in_progress');
+  assert.equal(payload.phases[1].status, 'pending');
 });
 
 test('implicit phase plan resolution blocks when multiple plan packages exist', () => {
@@ -245,4 +318,16 @@ test('README directs users to npm test as the active gate', async () => {
   assert.match(readme, /npm test/);
   assert.doesNotMatch(readme, /node --test tests\/\*\.mjs/);
   assert.match(readme, /docs\/public\/reference\/phase-runner-user-workflow\.md/);
+});
+
+test('phase runner treats review rejects as carry-forward blockers while phases remain', async () => {
+  const runner = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.md');
+  const executor = await readRoot('skills', 'moonshot-phase-executor', 'SKILL.md');
+
+  assert.match(runner, /Do not stop the whole plan just because a completed phase produced review findings/i);
+  assert.match(runner, /carry-forward evidence/i);
+  assert.match(runner, /continue to the next independent actionable phase/i);
+  assert.match(runner, /Only the final whole-plan completion claim requires `assess-completion` to return `accepted`/);
+  assert.match(executor, /REJECT`.*worsened eval or blocking runtime event/i);
+  assert.match(executor, /carry-forward blockers rather than automatic whole-plan stop conditions/i);
 });

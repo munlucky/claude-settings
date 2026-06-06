@@ -79,4 +79,7 @@ notes:
 - Prefer the installed worktree preparation entrypoint when a fresh worktree is required; if it is unavailable, record manual hydration evidence for the same invariants.
 - Do not copy `.claude/logs`, `.claude/cache`, `.claude/memory.json`, `.claude/memorygraph/`, `.codex/auth.json`, or runtime verdict/cache state into a worktree.
 - Treat harness repo work and downstream product work differently: harness repo work may rely on tracked `.claude` source, while downstream work usually needs ignored agent-config hydration.
+- Treat leased worktree escape, generated-state promotion into source, runtime DB/verdict package inclusion, and unauthorized account-root mutation as sandbox violations that block clean completion.
+- Use `<MOONSHOT_RELAY_HOME>/tools/sandbox/policy.mjs check --json` or the source checkout equivalent to classify protected paths and approval-required operations when runtime-state is available.
+- Sandbox artifacts belong under leased disposable roots and must not be promoted into source or package payloads.
 - If blocked, stop implementation progression.

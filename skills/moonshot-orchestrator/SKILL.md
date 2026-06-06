@@ -27,6 +27,8 @@ Run a bounded implementation slice when the work has enough context and does not
 - Do not broaden scope beyond the user request.
 - Do not skip code review for non-trivial code changes.
 - Do not claim completion with stale, missing, or smoke-only evidence.
+- When runtime-state completion authority is available, do not claim clean finish from chat output, markdown reports, phase status, or verifier JSON alone. Require `scripts/runtime-state.mjs assess-completion` to produce an accepted DB decision.
+- Before approval-required operations or writes near protected runtime paths, classify the operation with `tools/sandbox/policy.mjs check --json`; unauthorized blocking events must stop clean completion.
 - Do not mutate unrelated files or revert user changes.
 
 ## Flow

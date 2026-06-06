@@ -29,8 +29,18 @@ Codex-native security review는 아래 규칙을 명시적으로 적용해야 �
 
 1. 변경된 파일에서 보안 패턴 스캔
 2. 보안 체크리스트(`.claude/rules/security.md`) 대비 확인
-3. 심각도 수준별 발견사항 보고
-4. 각 이슈에 대한 수정안 제안
+3. 사용 가능한 경우 CodeQL, dependency review, Dependabot, secret scanning 같은 machine security status를 반영
+4. `scripts/verification-plane.mjs assess-security --run-id <runId> --goal-id <goalId> --scans-json <json> --json`으로 release-gate evidence 기록
+5. 심각도 수준별 발견사항 보고
+6. 각 이슈에 대한 수정안 제안
+
+## Release Gate Policy
+
+- CodeQL, dependency review, Dependabot, secret scanning status가 누락되면 release/accepted completion blocker입니다.
+- stale scan status는 새로 갱신될 때까지 blocker입니다.
+- high 또는 critical CodeQL finding, vulnerable dependency review finding, secret scanning finding은 release/accepted completion을 차단합니다.
+- exception에는 `approvalId`, `owner`, `reason`이 모두 있어야 승인된 예외로 봅니다.
+- 승인된 예외도 evidence에 계속 보이게 유지하며 finding을 지우지 않습니다.
 
 ## 보안 체크리스트
 

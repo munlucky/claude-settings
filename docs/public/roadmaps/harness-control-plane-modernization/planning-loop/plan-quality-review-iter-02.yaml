@@ -1,0 +1,56 @@
+reviewedPackageRoot: docs/public/roadmaps/harness-control-plane-modernization
+status: reject_v1_scope_shrink_accept_v2_rewrite
+reviewMode: independent_scope_review_then_parent_integration
+trigger:
+  userConcern: "v1 planning package reduced the source reports into a small foundation implementation and risked claiming the whole modernization as complete."
+  requiredCorrection:
+    - "Do not reduce source spec."
+    - "Label v1 as foundation/partial only."
+    - "Create v2 full-scope master and phase plan."
+    - "Map current implementation as Wave 1 completed/in-progress only."
+sourceInputs:
+  - "C:\\Users\\moon\\Downloads\\moonshot-relay 적용 및 고도화 작업계획1.md"
+  - "C:\\Users\\moon\\Downloads\\moonshot-relay 적용 및 고도화 작업계획2.md"
+  - "C:\\Users\\moon\\.codex\\attachments\\03cce362-2a12-4d75-8baa-6312a6a32764\\pasted-text.txt"
+independentReviewPerspectives:
+  - id: source-scope-preservation
+    verdict: reject_v1_as_final_plan
+    findings:
+      - "The source reports include Context State Engine, Tool Registry/Dispatcher, Sandbox Compute Plane, Eval Regression Gate, trace-to-testcase, prompt caching, memory promotion, observability, CI/security, and packaging/account-root rollout."
+      - "The v1 implementation trace mainly closes Runtime Control Plane and Completion Authority foundation."
+      - "A foundation implementation can be valuable, but it cannot be represented as full modernization completion."
+  - id: runtime-architecture
+    verdict: require_v2_dependency_and_lifecycle_phases
+    findings:
+      - "Native dependency delivery and installed account-root availability remain separate from source-level SQLite support."
+      - "Run identity hardening needs heartbeat, TTL, stale lease cleanup, and operations visibility before N:N concurrent work is complete."
+      - "Context state, tool dispatch, and sandbox compute boundaries require dedicated implementation phases."
+  - id: verification-security-eval
+    verdict: require_full_eval_and_security_gates
+    findings:
+      - "False-completion regressions are necessary but not enough for full eval modernization."
+      - "AWTL replay, trace-to-testcase, browser trace isolation, dependency review, CodeQL, branch protection, and security status consumption must remain in scope."
+      - "Unauthorized approval-required operations must be runtime blockers and eval fixtures."
+  - id: operations-rollout
+    verdict: require_account_root_and_metrics_hardening
+    findings:
+      - "Package dry-run success does not prove installed native dependency availability."
+      - "GitHub branch protection is not represented by source files alone."
+      - "Operations metrics and degraded-state runbooks are required to avoid silent authority drift."
+blockingFindings:
+  - id: reject-v1-final-scope
+    severity: reject
+    statement: "v1 cannot be treated as the final harness modernization plan because it narrows the full source reports to Wave 1 control-plane foundation."
+  - id: missing-v2-phase-scope
+    severity: reject
+    statement: "The final plan must include explicit phases for context, tool dispatcher, sandbox compute plane, eval/trace, memory, CI/security operations, packaging/account-root, and observability."
+acceptedCorrections:
+  - "Added `gap-analysis-v1-vs-source-reports.md`."
+  - "Added `00-master-plan-v2.md` as the full-source-scope execution authority."
+  - "Added v2 phase documents 01 through 12."
+  - "Added `implementation-wave-map-v2.md` to separate current foundation work from remaining modernization."
+  - "Relabeled `00-master-plan-v1.md` as `foundation-candidate-partial-implementation-plan`."
+decision:
+  v1Status: foundation_candidate_partial_implementation_trace
+  v2Status: full_source_scope_execution_plan
+  completionRule: "Full modernization completion requires all v2 phases, not only the current runtime-state foundation."

@@ -27,6 +27,8 @@ phase runner가 필요 없는 경계가 명확한 구현 slice를 실행합니�
 - 사용자 요청 범위를 넓히지 않습니다.
 - non-trivial code change에서 code review를 건너뛰지 않습니다.
 - stale, missing, smoke-only evidence로 완료를 주장하지 않습니다.
+- runtime-state completion authority를 사용할 수 있으면 chat output, markdown report, phase status, verifier JSON만으로 clean finish를 주장하지 않습니다. `scripts/runtime-state.mjs assess-completion`의 accepted DB decision이 필요합니다.
+- approval-required operation 또는 protected runtime path 인근 write 전에는 `tools/sandbox/policy.mjs check --json`으로 operation을 분류합니다. unauthorized blocking event가 있으면 clean completion을 멈춥니다.
 - 무관한 파일을 변경하거나 사용자 변경을 되돌리지 않습니다.
 
 ## Flow

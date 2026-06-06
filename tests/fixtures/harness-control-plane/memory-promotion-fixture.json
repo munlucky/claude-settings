@@ -1,0 +1,28 @@
+{
+  "promotion": {
+    "memoryId": "harness-memory-promotion-ledger-contract",
+    "evidence": {
+      "fresh": true,
+      "artifact": "tests/fixtures/harness-control-plane/memory-promotion-fixture.json",
+      "sourceCommand": "node --test tests/memory-promotion-contract.test.mjs"
+    },
+    "reviewer": {
+      "approved": true,
+      "approvalId": "review-memory-ledger-contract",
+      "reviewer": "independent-agent"
+    },
+    "replay": {
+      "status": "passed",
+      "score": 1
+    },
+    "rollbackPlan": {
+      "strategy": "supersede-ledger-decision-and-remove-promoted-fact",
+      "removes": ["harness-memory-promotion-ledger-contract"],
+      "evidencePath": "tests/fixtures/harness-control-plane/memory-promotion-fixture.json"
+    },
+    "scopeOwner": "harness-control-plane"
+  },
+  "rawMemoryGraphRecords": [
+    "RAW_MEMORYGRAPH_RECORD_SHOULD_NOT_APPEAR_IN_PUBLIC_PLANS"
+  ]
+}

@@ -124,6 +124,32 @@ test('tracked docs are limited to installed public documentation', () => {
   );
 });
 
+test('tracked roadmaps are separated from runtime implementation scratch space', async () => {
+  const trackedDocs = execFileSync('git', ['ls-files', 'docs'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).split(/\r?\n/).filter(Boolean);
+
+  assert.ok(
+    trackedDocs.includes('docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v1.md'),
+    'The harness control-plane modernization roadmap should be tracked under docs/public/roadmaps/',
+  );
+  assert.equal(
+    trackedDocs.some((file) => file.startsWith('docs/implementation/')),
+    false,
+    'docs/implementation/** remains runtime execution scratch space and should not be tracked',
+  );
+
+  const readme = await readFile(fromRoot('README.md'), 'utf8');
+  const repositoryLayout = await readFile(fromRoot('docs', 'public', 'repository-layout.md'), 'utf8');
+  const installerUsage = await readFile(fromRoot('docs', 'public', 'installer-usage.md'), 'utf8');
+  const combined = `${readme}\n${repositoryLayout}\n${installerUsage}`;
+
+  assert.match(combined, /docs\/public\/roadmaps\/harness-control-plane-modernization/);
+  assert.match(combined, /docs\/implementation\/\*\*/);
+  assert.match(combined, /runtime execution scratch/i);
+});
+
 test('canonical source directories contain real harness files, not README-only placeholders', async () => {
   for (const [dir, minimumFileCount] of canonicalSourceMinimums) {
     const files = await listFiles(dir);
@@ -217,14 +243,30 @@ test('package contract declares required source payload entries and generated-st
 test('package scripts define the active gate without archive discovery', async () => {
   const manifest = JSON.parse(await readFile(fromRoot('package.json'), 'utf8'));
   const scripts = manifest.scripts || {};
+  const requiredModernizationContracts = [
+    'tests/runtime-control-plane-contract.test.mjs',
+    'tests/completion-authority-contract.test.mjs',
+    'tests/runtime-read-model-contract.test.mjs',
+    'tests/context-state-engine-contract.test.mjs',
+    'tests/tool-registry-dispatcher-contract.test.mjs',
+    'tests/sandbox-compute-plane-contract.test.mjs',
+    'tests/verification-plane-contract.test.mjs',
+    'tests/eval-regression-contract.test.mjs',
+    'tests/tool-sandbox-eval-contract.test.mjs',
+  ];
 
   assert.equal(typeof scripts.test, 'string', 'package.json should define scripts.test');
   assert.equal(scripts['test:active'], 'npm test');
   assert.match(scripts.test, /^node --test tests\//);
+  for (const contractTest of requiredModernizationContracts) {
+    assert.match(scripts.test, new RegExp(contractTest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${contractTest} should be in npm test`);
+  }
   assert.doesNotMatch(scripts.test, /(?:^|\s)node --test\s*$/);
   assert.doesNotMatch(scripts.test, /archive[\\/]/);
   assert.doesNotMatch(scripts.test, /\.claude[\\/]scripts/);
   assert.equal(typeof scripts['test:package'], 'string', 'package.json should define scripts.test:package');
+  assert.equal(typeof scripts['test:eval'], 'string', 'package.json should define scripts.test:eval');
+  assert.match(scripts['test:eval'], /tools\/evals\/harness-control-plane\.mjs run --json/);
   assert.doesNotMatch(scripts['test:package'], /archive[\\/]/);
 });
 

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Moonshot Relay Tool Registry",
+  "type": "object",
+  "required": ["version", "budget", "groups"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "budget": {
+      "type": "object",
+      "required": ["minGroups", "maxGroups"],
+      "properties": {
+        "minGroups": { "type": "integer", "minimum": 1 },
+        "maxGroups": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": ["id", "summary", "tools"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "summary": { "type": "string", "minLength": 1 },
+          "tools": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["name", "summary", "schema"],
+              "properties": {
+                "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+                "summary": { "type": "string", "minLength": 1 },
+                "schema": { "type": "object" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

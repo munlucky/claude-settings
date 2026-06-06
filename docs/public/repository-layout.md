@@ -18,6 +18,8 @@ Durable source files live in the root-level source directories:
 - `tests/` for package and materialization checks
 - `tests/fixtures/` for deterministic regression inputs
 - `docs/public/` for contributor-facing documentation
+- `docs/public/roadmaps/` for source-owned long-running roadmap packages that should be reviewed and tracked
+- `.github/` for CI/security source configuration and `required-checks.json` check-name fixtures
 
 Do not add new canonical source under root `.claude/` or `.codex/`. Those directories are local runtime profiles and must not be tracked by Git. References to `.claude/...` are valid when they describe installed payloads, local runtime wrapper entrypoints, active local profile contracts, or legacy generated-state cleanup. They are not valid when they tell contributors to edit `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/bin`, `.claude/tools`, `.claude/schemas`, or `.claude/templates` as the durable source of truth.
 
@@ -41,6 +43,20 @@ Account-root installs use `scripts/install-account-root-harness.mjs` and write c
 
 Generated state is excluded from package payloads. Logs, caches, traces, browser artifacts, browser runtime materialization, sqlite runtime state, memorygraph data, temporary directories, audit outputs, and verification verdict files must remain outside canonical source and package assembly. Regression fixtures are source-owned test inputs under `tests/fixtures/`, not runtime payload.
 
+## Roadmaps And Execution Scratch
+
+Tracked roadmap packages live under `docs/public/roadmaps/` when they define durable harness direction, review evidence, phase contracts, or implementation gates. For example, `docs/public/roadmaps/harness-control-plane-modernization/` is a source-owned roadmap package.
+
+Runtime execution scratch remains under `docs/implementation/**`. Phase-runner readiness JSON, attempt manifests, QA reports, scorecards, handoffs, local phase status, and generated execution evidence are not tracked source and are not package payload.
+
+## CI And Release Protection
+
+`.github/workflows/**`, `.github/dependabot.yml`, `.github/CODEOWNERS`, and `.github/required-checks.json` are tracked source configuration.
+They can establish `source-ci-ready` when local parse and dry-run gates pass.
+They do not prove `github-settings-applied` or `release-protected`.
+
+GitHub branch protection, required status checks, CODEOWNERS review enforcement, dependency review enforcement, secret scanning, and push protection must be applied through GitHub UI/API and captured as operational evidence before claiming `release-protected`.
+
 ## Public Guideline Classification
 
 `docs/public/guidelines/**` is a durable public policy/reference layer. These files are intentionally compact anchors unless a row below is classified as `operational-procedure`. Operational details belong in durable source such as `docs/public/reference/**`, `package/package-contract.yaml`, `skills/**`, `agents/**`, or `scripts/**`; phase plans record execution decisions and evidence, not the long-term operational source of truth.
@@ -58,7 +74,7 @@ Generated state is excluded from package payloads. Logs, caches, traces, browser
 | `product-acceptance-gate.md` | policy-anchor | `skills/completion-verifier/**`, `skills/product-gate-reviewer/**` |
 | `product-definition-workflow.md` | policy-anchor | `skills/product-orchestrator/**`, `templates/product-definition/**` |
 | `provider-neutral-model-routing.md` | policy-anchor | runtime profile config templates and routing docs |
-| `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, runtime `docs/implementation/**` plan packages |
+| `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, tracked `docs/public/roadmaps/**` contracts, runtime `docs/implementation/**` execution scratch |
 | `resumable-session-layer.md` | policy-anchor | phase-runner state helpers and runtime state docs |
 | `session-compaction.md` | policy-anchor | `skills/session-logger/**`, `docs/public/reference/session-logger-reference.md` |
 | `skill-composition.md` | policy-anchor | `skills/**`, `package/package-contract.yaml` |

@@ -77,6 +77,8 @@ Validate that a web app is reachable and working at runtime after implementation
 ## Browser Flow Artifacts
 - Runner verdicts are written to `.moonshot-relay/browser-flow-verdict-<runId>.json`.
 - Screenshots, console events, and network events are written under `.moonshot-relay/browser-artifacts/` when the flow requests those artifacts.
+- Browser trace metadata is normalized with `scripts/verification-plane.mjs normalize-browser-trace --run-id <runId> --goal-id <goalId> --url <url> --flow <flow> --json`.
+- Normalized trace metadata lives under `.moonshot-relay/browser-artifacts/<runId>/<goalId>/<flow>/trace-metadata.json` and is linked from the browser verification plane evidence.
 - Missing browser runtime or missing flow declarations should produce a setup-gap verdict instead of a hand-written pass.
 - Critical `SCN-*` flows need interaction evidence beyond smoke before clean finish.
 

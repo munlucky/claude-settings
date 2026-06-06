@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "statuses": {
+    "source-ci-ready": {
+      "description": "Tracked source CI and security workflow configuration exists and parses.",
+      "requiresGitHubSettingsEvidence": false
+    },
+    "github-settings-applied": {
+      "description": "Repository branch protection, CODEOWNERS review, dependency review, and secret scanning settings were applied through GitHub UI or API.",
+      "requiresGitHubSettingsEvidence": true
+    },
+    "release-protected": {
+      "description": "A release claim is allowed only after source checks pass and GitHub settings evidence is attached.",
+      "requiresGitHubSettingsEvidence": true
+    }
+  },
+  "requiredChecks": [
+    "CI / Node 18.x on ubuntu-latest",
+    "CI / Node 18.x on windows-latest",
+    "CI / Node 18.x on macos-latest",
+    "CI / Node 20.x on ubuntu-latest",
+    "CI / Node 20.x on windows-latest",
+    "CI / Node 20.x on macos-latest",
+    "CI / Node 22.x on ubuntu-latest",
+    "CI / Node 22.x on windows-latest",
+    "CI / Node 22.x on macos-latest",
+    "CodeQL / Analyze JavaScript",
+    "Dependency Review / Pull Request"
+  ],
+  "operationalSettings": [
+    "Require pull request before merging into main",
+    "Require CODEOWNERS review for harness-critical roots",
+    "Require all listed status checks before merging",
+    "Require branches to be up to date before merging",
+    "Do not allow direct pushes to main",
+    "Do not allow bypasses for harness-critical roots",
+    "Enable secret scanning and push protection",
+    "Enable Dependabot alerts and security updates"
+  ],
+  "pendingEvidence": [
+    "GitHub branch protection settings screenshot or API response",
+    "Secret scanning and push protection settings evidence",
+    "Dependency review enforcement evidence"
+  ]
+}

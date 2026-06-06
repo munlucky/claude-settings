@@ -1,0 +1,59 @@
+reviewedPackageRoot: docs/public/roadmaps/harness-control-plane-modernization
+status: pass_after_parent_edits_with_rollout_blockers_tracked
+reviewMode: independent_three_agent_sidecar_then_parent_integration
+reviewedInputs:
+  - docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v1.md
+  - docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v2.md
+  - docs/public/roadmaps/harness-control-plane-modernization/*-v2.md
+  - docs/public/roadmaps/harness-control-plane-modernization/gap-analysis-v1-vs-source-reports.md
+  - docs/public/roadmaps/harness-control-plane-modernization/implementation-wave-map-v2.md
+  - docs/public/roadmaps/harness-control-plane-modernization/planning-loop/plan-quality-review-iter-02.yaml
+independentReviewers:
+  - id: runtime-architecture-state-authority
+    agent: Wegener
+    initialVerdict: reject_for_phase_runner_execution_readiness
+    blockingFindings:
+      - "v2 preserved source scope, but phase docs lacked executable dependencies, owned paths, read-only paths, regression contracts, and completion evidence."
+      - "The master phase map lacked a dependency column for runner sequencing."
+      - "Typed degraded runtime availability was ambiguous and could be read as installed runtime success."
+      - "Phase 03 state authority schema evolution for heartbeat, TTL, stale cleanup, and recovery events was under-owned."
+  - id: workflow-product-phase-boundary
+    agent: Boyle
+    initialVerdict: reject_for_execution_ready
+    blockingFindings:
+      - "v2 phase docs needed plan-writer metadata: dependencies, conflicts, owned paths, staged paths, read-only paths, adoption targets, live mutation policy, acceptance evidence, and closure traceability."
+      - "v2 master status was stronger than the phase-local execution contract."
+      - "v1 still had an execution-ready phrase that conflicted with foundation/partial status."
+      - "iter-02 rejected v1 scope shrink but did not prove v2 plan-writer contract readiness."
+  - id: verification-security-eval-release
+    agent: Helmholtz
+    initialVerdict: hold_scope
+    blockingFindings:
+      - "Eval gate allowed documentation-only required checks."
+      - "Security blocker wording allowed ambiguous applicability."
+      - "Branch protection source config and release-protected status were mixed."
+      - "Native dependency degraded status and supported rollout success were not separated."
+      - "Metrics lacked threshold and blocker mapping."
+parentAcceptedChanges:
+  - "Added an Execution Metadata Contract to `00-master-plan-v2.md`."
+  - "Added dependency column and explicit dependency failure semantics to the v2 master phase map."
+  - "Added phase-local Execution Metadata to all v2 phase docs, including dependencies, owned paths, read-only paths, adoption targets, live mutation policy, required evidence, conflicts, staged paths, and closure traceability."
+  - "Added phase-local Regression Contract and Completion Evidence sections to all v2 phase docs."
+  - "Changed v1 final readiness wording to `superseded-foundation-trace` and limited v1 to Wave 1 foundation trace."
+  - "Separated typed degraded runtime as negative-path evidence and rollout blocker, not installed availability success."
+  - "Added eval command/check requirements, security scan blocker rules, branch protection status separation, native dependency matrix policy, and metrics threshold policy."
+rejectedChanges:
+  - "No code implementation was started during this planning review loop."
+  - "No new public skill was added."
+  - "No live account-root, profile, GitHub setting, or downstream mutation was allowed during planning."
+  - "v1 was not deleted; it remains as audit trace."
+remainingAmbiguity:
+  - "Supported OS/Node matrix must be finalized from package engine policy during Phase 02/10/11 implementation."
+  - "The concrete AWTL replay command may be `npm run test:eval` or an active equivalent established during Phase 08."
+  - "Browser trace retention policy and exact generated artifact root must be finalized in Phase 07."
+  - "Downstream rollout targets and rollback authority must be listed during Phase 11 before live adoption."
+closureDecision:
+  finalPlanAuthority: docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v2.md
+  v1Status: superseded_foundation_trace
+  phaseRunnerReadiness: ready_to_start_phase_01_with_v2_docs
+  completionRule: "The full modernization is not complete until v2 phases pass with their phase-local evidence."

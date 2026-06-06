@@ -8,6 +8,7 @@ import {
   cp,
   mkdir,
   readdir,
+  readFile,
   rm,
   stat,
 } from 'node:fs/promises';
@@ -33,12 +34,15 @@ const runtimeSpecs = {
       'rules',
     ],
     sharedFiles: [
+      'package.json',
+      'package-lock.json',
       'scripts/awtl-memory-promotion.mjs',
       'scripts/browser-flow-runner.mjs',
       'scripts/code-review-graph-mcp-wrapper.js',
       'scripts/codex-mcp-singleton.mjs',
       'scripts/commit-moonshot-memory-refresh.mjs',
       'scripts/commit-moonshot-promotion-audit.mjs',
+      'scripts/context-state.mjs',
       'scripts/install-account-root-harness.mjs',
       'scripts/install-browser-runtime.mjs',
       'scripts/install-browser-runtime.sh',
@@ -54,6 +58,7 @@ const runtimeSpecs = {
       'scripts/lib/awtl-replay-probes.mjs',
       'scripts/lib/awtl-replay-scorecard.mjs',
       'scripts/lib/awtl-trace-sink.mjs',
+      'scripts/lib/context-state-engine.mjs',
       'scripts/lib/failure-classifier.mjs',
       'scripts/lib/phase-event-ledger.mjs',
       'scripts/lib/phase-run-lease-store.mjs',
@@ -68,8 +73,13 @@ const runtimeSpecs = {
       'scripts/ontology-constraint-validate.mjs',
       'scripts/prepare-phase-runner-state.mjs',
       'scripts/project-identity.mjs',
+      'scripts/runtime-state.mjs',
+      'scripts/lib/runtime-state-store.mjs',
+      'scripts/verification-plane.mjs',
+      'scripts/lib/verification-plane.mjs',
       'scripts/verification-verdict-state.mjs',
     ],
+    materializeRuntimeDependencies: true,
     verificationTarget: 'verification.contract.yaml',
   },
   claude: {
@@ -113,6 +123,7 @@ const denyRuntimeSegments = new Set([
   'memories',
   'sessions',
   'sqlite',
+  'sandbox-artifacts',
   'tmp',
   'traces',
 ]);
@@ -264,6 +275,56 @@ const copyTree = async (source, destination, plannedCopies, options = {}) => {
   });
 };
 
+const copyTreeWithoutPackageExclusions = async (source, destination, plannedCopies, options = {}) => {
+  if (!await pathExists(source)) {
+    throw new Error(`Missing runtime dependency source: ${path.relative(repoRoot, source)}`);
+  }
+
+  if (options.dryRun) {
+    await walkTree(source, async (candidate) => {
+      plannedCopies.push({
+        from: toPortable(path.relative(repoRoot, candidate)),
+        to: toPortable(path.relative(repoRoot, path.join(destination, path.relative(source, candidate)))),
+      });
+    });
+    return;
+  }
+
+  await cp(source, destination, {
+    recursive: true,
+    force: true,
+    preserveTimestamps: false,
+    filter: (candidate) => {
+      if (candidate !== source) {
+        plannedCopies.push({
+          from: toPortable(path.relative(repoRoot, candidate)),
+          to: toPortable(path.relative(repoRoot, path.join(destination, path.relative(source, candidate)))),
+        });
+      }
+      return true;
+    },
+  });
+};
+
+const productionDependencyRoots = async () => {
+  const lock = JSON.parse(await readFile(path.join(repoRoot, 'package-lock.json'), 'utf8'));
+  return Object.entries(lock.packages || {})
+    .filter(([entry, meta]) => entry.startsWith('node_modules/') && !meta.dev)
+    .map(([entry]) => entry)
+    .sort();
+};
+
+const materializeRuntimeDependencies = async (outputRoot, plannedCopies, options = {}) => {
+  for (const dependencyRoot of await productionDependencyRoots()) {
+    await copyTreeWithoutPackageExclusions(
+      path.join(repoRoot, dependencyRoot),
+      path.join(outputRoot, dependencyRoot),
+      plannedCopies,
+      options,
+    );
+  }
+};
+
 const copyFilePreservingMode = async (source, destination, plannedCopies, options = {}) => {
   plannedCopies.push({
     from: toPortable(path.relative(repoRoot, source)),
@@ -310,6 +371,10 @@ const materializeRuntime = async (runtime, options) => {
     const source = path.join(repoRoot, sharedFile);
     const destination = path.join(outputRoot, sharedFile);
     await copyFilePreservingMode(source, destination, plannedCopies, options);
+  }
+
+  if (spec.materializeRuntimeDependencies) {
+    await materializeRuntimeDependencies(outputRoot, plannedCopies, options);
   }
 
   const verificationSource = path.join(repoRoot, 'schemas', 'verification.contract.yaml');

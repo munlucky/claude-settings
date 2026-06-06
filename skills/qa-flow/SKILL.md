@@ -87,6 +87,8 @@ Each flow should eventually define:
 - critical interactions
 - runtime evidence depth: `smoke` or `open-act-mutate-persist-recover`
 - pass/fail conditions
+- normalized trace metadata path produced by `scripts/verification-plane.mjs normalize-browser-trace`
+- verification plane linkage: `plane=browser`, `status`, `tracePath`, and `evidenceDepth`
 
 ## Output Contract
 
@@ -100,6 +102,7 @@ Each flow should eventually define:
 - suggested fixes or follow-up checks
 - issue drafts or issue URLs when QA triage is requested
 - evidence paths such as screenshots, console excerpts, or QA report updates when available
+- browser trace metadata under `.moonshot-relay/browser-artifacts/<runId>/<goalId>/<flow>/trace-metadata.json` when run/goal identity is available
 
 ## Failure Policy
 

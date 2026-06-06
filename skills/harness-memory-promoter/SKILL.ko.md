@@ -21,6 +21,24 @@ triggers:
 - harness stable promotion rollback evidence: `improvement/rollback/<proposalId>-rollback.json`
 - harness stable promotion release manifest: `improvement/releases/<proposalId>-release-manifest.json`
 
+장기 memory 쓰기 전에는 runtime ledger 입력이 필수입니다.
+
+```bash
+node scripts/runtime-state.mjs record-memory-promotion \
+  --run-id "{runId}" \
+  --goal-id "{goalId}" \
+  --memory-id "{memoryId}" \
+  --status promoted \
+  --evidence-json "{...fresh evidence...}" \
+  --reviewer-json "{...approved review...}" \
+  --replay-json "{...passed replay...}" \
+  --rollback-json "{...rollback plan...}" \
+  --scope-owner "{owner}" \
+  --json
+```
+
+evidence, review, replay, rollback, scope owner 중 하나라도 없으면 rejected ledger decision을 남기고 승격을 중단합니다.
+
 harness self-improvement meta-project contract:
 
 ```yaml
@@ -40,14 +58,18 @@ stableReleaseRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/harness/rele
 5. `global-candidate`는 promotion 전에 independent review와 replay evidence를 요구합니다.
 6. `harness-meta-project` candidate promotion은 independent review, replay, targeted self-test evidence를 요구합니다.
 7. `harness-meta-project` stable promotion은 independent review, affected-project replay, targeted self-test, rollback, release manifest evidence를 요구합니다.
-8. lifecycle helper가 `approved_for_promotion`을 반환한 뒤에만 compact promoted fact를 씁니다.
+8. MemoryGraph 쓰기 전에 runtime ledger decision을 기록합니다.
+9. lifecycle helper가 `approved_for_promotion`을 반환하고 ledger decision이 `promoted`인 경우에만 compact promoted fact를 씁니다.
 
 ## Hard Rules
 
 - project-local fact는 기본적으로 승격하지 않습니다.
 - source project에서 harness graph로 직접 쓰지 않습니다.
 - raw project graph dump, raw log, raw transcript를 승격하지 않습니다.
+- memory, project knowledge, promotion ledger decision을 completion authority로 취급하지 않습니다.
 - denial은 durable evidence이며 denial code와 reason을 포함해야 합니다.
 - unsafe promotion denial은 무관한 workflow를 막지 않습니다.
+- controlled rollout approval 전에는 planning/staged modernization phase에서 live MemoryGraph 또는 account-root promotion을 수행하지 않습니다.
 - MemoryGraph가 unavailable이면 promotion write skip 또는 failure로 보고하고, 성공으로 취급하지 않습니다.
 - source project, proposal id, review id, replay id, release manifest id 등 provenance tag를 보존합니다.
+- rollback은 `node scripts/runtime-state.mjs rollback-memory-promotion ...`으로 기록하고 기존 audit row를 보존합니다.

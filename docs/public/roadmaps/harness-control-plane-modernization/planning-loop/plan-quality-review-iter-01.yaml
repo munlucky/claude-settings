@@ -1,0 +1,46 @@
+reviewedPackageRoot: docs/public/roadmaps/harness-control-plane-modernization
+status: pass_with_phase_02_gate
+reviewMode: independent_multi_agent_then_parent_integration
+reviewPerspectives:
+  - id: runtime-architecture-state-authority
+    verdict: hold_scope_before_parent_edits
+    acceptedFindings:
+      - "Native better-sqlite3 dependency delivery must be proven across source, package, account-root, and CI before rollout."
+      - "Schema needs run/goal identity, monotonic ordering, supersede/revoke semantics, writer identity, evidence hash, and lookup indexes."
+      - "Accepted completion decisions need restricted writer authority; verifier evidence and identity must be validated before clean finish."
+      - "Derived artifacts need authoritySource, decisionId, evidenceHash, and stale metadata."
+      - "Typed degraded states are required for native module, schema, DB lock, and path failures."
+  - id: workflow-product-phase-boundary
+    verdict: conditional_pass_before_parent_edits
+    acceptedFindings:
+      - "Every phase document must repeat preserved runtime/profile/account-root boundaries because phase runner briefs can be read independently."
+      - "Phase 02 is the native dependency decision gate and cannot defer installer/package proof to Phase 08."
+      - "docs/implementation is an ignored local execution artifact unless explicitly promoted."
+      - "Broad eval fixture ownership should be narrowed to a harness-control-plane namespace."
+  - id: verification-security-ci
+    verdict: hold_scope_before_parent_edits
+    acceptedFindings:
+      - "Modernization regression tests must be included in the explicit npm test gate."
+      - "tests/package-layout.test.mjs should assert required contract tests are active."
+      - "Approval-required operations must block completion authority when unauthorized."
+      - "CI needs OS and Node matrix coverage for the native dependency."
+      - "Installer dry-runs in CI must use temp homes and prove no live account-root mutation."
+blockingFindingsAfterParentEdits:
+  - "Phase 02 remains a required dependency-delivery gate. Implementation must stop there if better-sqlite3 cannot be proven across the supported release matrix."
+acceptedParentChanges:
+  - "Master plan now includes protected runtime boundaries, dependency delivery strategy, expanded schema, writer authority rules, active npm gate requirements, and CI matrix expectations."
+  - "Phase 02 now owns native dependency proof, expanded schema, typed degraded states, concurrent writer tests, and temp-home installer smoke."
+  - "Phase 03 now owns restricted accepted writers, supersede/revoke behavior, unauthorized operation blockers, eval regression blockers, and projection metadata."
+  - "Phase 04 now requires typed degraded read-model output for empty DB, schema mismatch, lock timeout, native module failure, and stale projections."
+  - "Phase 05 now treats unauthorized approval-required operations as blocking runtime events consumed by completion authority."
+  - "Phase 06 now narrows AWTL ownership to specific current files and `tests/fixtures/harness-control-plane/**`."
+  - "Phase 07 now requires OS/Node matrix CI, temp-home installer dry-run, least-privilege permissions, concurrency, and active-gate assertions."
+  - "Phase 08 now materializes dependency strategy and preserves project-local/account-root state during rollout."
+rejectedChanges:
+  - "No new public skill is added."
+  - "No wholesale external harness import is accepted."
+  - "No live account-root mutation is allowed during planning, package tests, or CI dry-runs."
+  - "No generated sqlite state, verdict JSON, trace, log, or profile-local state is promoted into package payloads."
+remainingAmbiguity:
+  - "Exact supported Node versions must be read from package engine policy during Phase 02 implementation."
+  - "The final dependency materialization mechanism is deliberately decided in Phase 02 after source/package/account-root smoke tests."

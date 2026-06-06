@@ -49,6 +49,16 @@ Applicability rule:
 
 ## Harness Gate Policy
 
+- Runtime Control Plane authority:
+  - When `scripts/runtime-state.mjs` is available, clean finish authority is an accepted runtime DB completion decision produced by `assess-completion`.
+  - `completion-verifier` is an evidence writer/collector. It may record fresh verifier evidence and request or run `assess-completion`; it must not treat chat output, `phase-status.yaml`, verdict JSON, `QA_REPORT.md`, `SCORECARD.md`, or `HANDOFF.md` as final authority by themselves.
+  - Independent review `REJECT` decisions or replay/eval regressions that should halt closeout must be recorded with `record-eval-result --regression-worsened true` so resumed runs see the blocker in `status --json`.
+  - Derived artifacts should carry `authoritySource`, `decisionId`, `evidenceHash`, and `stale` metadata when runtime authority is available.
+  - Stale/superseded verifier evidence, missing active identity, blocking workflow warnings, unauthorized approval-required operations, and worsened eval regressions block clean finish.
+  - Sandbox policy blockers from `tools/sandbox/policy.mjs` or `sandbox.violation` runtime events block clean finish until resolved or explicitly approved.
+  - Completion-relevant verifier evidence should be recorded through `scripts/verification-plane.mjs record-summary --run-id <runId> --goal-id <goalId> --planes-json <json> --identity-json <json> --json`.
+  - The accepted completion path requires fresh unit, package, installer, browser, security, and quality plane evidence. Browser or security setup gaps are explicit plane failures, not silent passes.
+  - `scripts/verification-plane.mjs assess-security` consumes CodeQL, dependency review, Dependabot, and secret scanning status. Missing scans, stale scans, high/critical findings, vulnerable dependency review findings, and secret scan findings block release/accepted completion unless an owner-approved exception is recorded in the evidence.
 - `verificationState: indeterminate` caused by missing executable verification remains `pass_with_warning` by default.
 - In strict mode (`allowIndeterminate: false`), indeterminate is blocking.
 - Missing verification contract:

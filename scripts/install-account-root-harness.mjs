@@ -39,6 +39,9 @@ const commonSpec = {
     'scripts',
     'templates',
     'tools',
+    'node_modules',
+    'package.json',
+    'package-lock.json',
     'verification.contract.yaml',
   ]),
 };

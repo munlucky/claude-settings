@@ -71,6 +71,8 @@ triggers:
 
 - Runner verdict는 `.moonshot-relay/browser-flow-verdict-<runId>.json`에 기록됩니다.
 - flow가 해당 artifact를 요청하면 screenshots, console events, network events는 `.moonshot-relay/browser-artifacts/` 아래에 기록됩니다.
+- Browser trace metadata는 `scripts/verification-plane.mjs normalize-browser-trace --run-id <runId> --goal-id <goalId> --url <url> --flow <flow> --json`으로 정규화합니다.
+- 정규화된 trace metadata는 `.moonshot-relay/browser-artifacts/<runId>/<goalId>/<flow>/trace-metadata.json`에 남기고 browser verification plane evidence에서 참조합니다.
 - browser runtime 또는 flow declaration이 없으면 hand-written pass가 아니라 setup-gap verdict를 생성해야 합니다.
 - Critical `SCN-*` flow는 clean finish 전에 smoke 이상의 interaction evidence가 필요합니다.
 

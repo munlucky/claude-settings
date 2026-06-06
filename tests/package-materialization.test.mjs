@@ -70,8 +70,18 @@ const requiredCommonPayloadFiles = [
   'rules/workflow.md',
   'rules/workflow-bundles.yaml',
   'schemas/verification.contract.yaml',
+  'schemas/awtl-testcase-candidate-v1.schema.json',
+  'schemas/memory-promotion-ledger.schema.json',
+  'schemas/verification-plane.schema.json',
+  'schemas/tool-registry.schema.json',
   'templates/GOAL_CONTRACT.template.yaml',
   'bin/browserctl',
+  'tools/agent-api/registry.yaml',
+  'tools/agent-api/dispatch.mjs',
+  'tools/evals/harness-control-plane.mjs',
+  'tools/evals/fixtures/harness-control-plane/golden-regression.json',
+  'tools/awtl/trace-to-testcase.mjs',
+  'tools/sandbox/policy.mjs',
   'tools/browserd/package.json',
   'tools/browserd/server.mjs',
   'scripts/install-browser-runtime.sh',
@@ -79,13 +89,23 @@ const requiredCommonPayloadFiles = [
   'scripts/memorygraph-mcp-wrapper.mjs',
   'scripts/code-review-graph-mcp-wrapper.js',
   'scripts/browser-flow-runner.mjs',
+  'scripts/context-state.mjs',
   'scripts/commit-moonshot-memory-refresh.mjs',
   'scripts/prepare-phase-runner-state.mjs',
   'scripts/lib/phase-event-ledger.mjs',
   'scripts/lib/phase-run-lease-store.mjs',
+  'scripts/lib/context-state-engine.mjs',
   'scripts/lib/runtime-state-db-path.mjs',
   'scripts/lib/runtime-state-root.mjs',
+  'scripts/lib/runtime-state-store.mjs',
+  'scripts/runtime-state.mjs',
+  'scripts/verification-plane.mjs',
+  'scripts/lib/verification-plane.mjs',
   'scripts/verification-verdict-state.mjs',
+  'package.json',
+  'package-lock.json',
+  'node_modules/better-sqlite3/package.json',
+  'node_modules/bindings/package.json',
 ];
 
 const requiredClaudeConcreteFiles = [
@@ -110,6 +130,7 @@ const generatedStateFragments = [
   '/cache/',
   '/traces/',
   '/browser-artifacts/',
+  '/sandbox-artifacts/',
   '/browser-runtime/',
   '/memories/',
   '/sessions/',
@@ -154,6 +175,8 @@ const runtimeStateDenylistExamples = [
   '.moonshot-relay/cache/code-review-graph-native-mcp-cache.json',
   '.moonshot-relay/traces/self-test/agent_work_trace.jsonl',
   '.moonshot-relay/browser-artifacts/session/output.json',
+  '.moonshot-relay/eval-artifacts/harness-control-plane/scorecard.json',
+  '.moonshot-relay/verification-reports/run/output.json',
   '.moonshot-relay/memorygraph/memory.db',
   '.moonshot-relay/runtime-state.sqlite',
   '.moonshot-state/logs/agent-loop/run.log',
@@ -325,6 +348,15 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /generatedProfileRoot: package\/codex\/profile\/\.codex\//);
   assert.match(contract, /materializer: package\/build-package\.mjs/);
   assert.match(contract, /commonSupportScripts:/);
+  assert.match(contract, /source: package\.json/);
+  assert.match(contract, /source: package-lock\.json/);
+  assert.match(contract, /source: node_modules\/better-sqlite3\/\*\*/);
+  assert.match(contract, /runtimeDependencyDelivery:/);
+  assert.match(contract, /typed_degraded_authority_blocked/);
+  assert.match(contract, /rolloutSmokeLevels:/);
+  assert.match(contract, /temp-home-smoke/);
+  assert.match(contract, /live-account-root-smoke/);
+  assert.match(contract, /preservedStateRoots:/);
   assert.match(contract, /archivedLegacyScripts:/);
   assert.match(contract, /archive\/scripts\/legacy-phase-adapters\//);
   assert.doesNotMatch(contract, /source: scripts\/\*\*/);
@@ -380,8 +412,13 @@ test('account-root installer merges shared directories without deleting unrelate
   const claudeHome = path.join(installRoot, 'claude-home');
   const codexHome = path.join(installRoot, 'codex-home');
 
+  await mkdir(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge'), { recursive: true });
+  await writeFile(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge', 'preserve.txt'), 'keep\n');
   await mkdir(path.join(codexHome, 'skills', 'external-skill'), { recursive: true });
   await writeFile(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await mkdir(path.join(codexHome, 'sessions'), { recursive: true });
+  await writeFile(path.join(codexHome, 'sessions', 'preserve.json'), '{}\n');
+  await writeFile(path.join(codexHome, 'auth.json'), '{}\n');
   await writeFile(path.join(codexHome, 'skills', 'moonshot-decide-sequence'), 'legacy file collision\n');
   await mkdir(path.join(codexHome, 'schemas'), { recursive: true });
   await writeFile(path.join(codexHome, 'schemas', 'old-managed.schema.json'), '{}\n');
@@ -392,6 +429,9 @@ test('account-root installer merges shared directories without deleting unrelate
   })}\n`);
   await mkdir(path.join(claudeHome, 'skills', 'external-skill'), { recursive: true });
   await writeFile(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await mkdir(path.join(claudeHome, 'sessions'), { recursive: true });
+  await writeFile(path.join(claudeHome, 'sessions', 'preserve.json'), '{}\n');
+  await writeFile(path.join(claudeHome, 'memory.json'), '{}\n');
   await mkdir(path.join(claudeHome, 'scripts'), { recursive: true });
   await writeFile(path.join(claudeHome, 'scripts', 'old-managed.mjs'), 'old\n');
   await mkdir(path.join(claudeHome, 'schemas'), { recursive: true });
@@ -429,12 +469,61 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'better-sqlite3', 'package.json')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'bindings', 'package.json')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge', 'preserve.txt')), true);
+    assert.equal(existsSync(path.join(codexHome, 'sessions', 'preserve.json')), true);
+    assert.equal(existsSync(path.join(codexHome, 'auth.json')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'sessions', 'preserve.json')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'memory.json')), true);
     assert.equal(existsSync(path.join(claudeHome, 'scripts')), false);
     assert.equal(existsSync(path.join(claudeHome, 'schemas')), false);
     assert.equal(existsSync(path.join(claudeHome, 'docs', 'public')), false);
     assert.equal(existsSync(path.join(codexHome, 'scripts')), false);
     assert.equal(existsSync(path.join(codexHome, 'schemas')), false);
     assert.equal(existsSync(path.join(codexHome, 'docs', 'public')), false);
+
+    const runtimeSmoke = spawnSync(process.execPath, [
+      path.join(moonshotHome, 'scripts', 'runtime-state.mjs'),
+      'status',
+      '--run-id',
+      'package-install-smoke',
+      '--goal-id',
+      'runtime-state-availability',
+      '--json',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MOONSHOT_RELAY_HOME: moonshotHome,
+      },
+    });
+    assert.equal(runtimeSmoke.status, 0, runtimeSmoke.stderr || runtimeSmoke.stdout);
+    const runtimePayload = JSON.parse(runtimeSmoke.stdout);
+    assert.equal(runtimePayload.runtimeCapabilityStatus.status, 'available');
+
+    const degradedSmoke = spawnSync(process.execPath, [
+      path.join(moonshotHome, 'scripts', 'runtime-state.mjs'),
+      'status',
+      '--run-id',
+      'package-install-smoke',
+      '--goal-id',
+      'runtime-state-availability',
+      '--json',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        MOONSHOT_RELAY_HOME: moonshotHome,
+        MOONSHOT_RUNTIME_STATE_DISABLE_NATIVE: '1',
+      },
+    });
+    assert.equal(degradedSmoke.status, 0, degradedSmoke.stderr || degradedSmoke.stdout);
+    const degradedPayload = JSON.parse(degradedSmoke.stdout);
+    assert.equal(degradedPayload.runtimeCapabilityStatus.status, 'degraded');
+    assert.equal(degradedPayload.runtimeCapabilityStatus.reason, 'missing_native_module');
   } finally {
     await rm(installRoot, { recursive: true, force: true });
   }

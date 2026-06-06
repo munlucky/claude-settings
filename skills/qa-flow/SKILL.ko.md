@@ -87,6 +87,8 @@ Issue draft는 다음을 지켜야 합니다.
 - critical interactions
 - runtime evidence depth: `smoke` 또는 `open-act-mutate-persist-recover`
 - pass/fail conditions
+- `scripts/verification-plane.mjs normalize-browser-trace`가 생성한 normalized trace metadata path
+- verification plane linkage: `plane=browser`, `status`, `tracePath`, `evidenceDepth`
 
 ## Output Contract
 
@@ -98,3 +100,5 @@ Issue draft는 다음을 지켜야 합니다.
 - critical scenario smoke-only warnings
 - issues found
 - suggested fixes 또는 follow-up checks
+- 가능한 경우 screenshot, console excerpt, QA report update 같은 evidence path
+- run/goal identity를 사용할 수 있으면 `.moonshot-relay/browser-artifacts/<runId>/<goalId>/<flow>/trace-metadata.json` 아래 browser trace metadata

@@ -62,7 +62,8 @@ If `executionMode == in-session-coordinator`:
 - a current-session direct attempt is allowed only when `phaseRunnerResult.allowCurrentSessionAttempt == true`; record that downgrade in closeout evidence
 - ensure each active slice can initialize `WORKSET.md` from `<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md`
 - do not stop after a completed phase while the active plan directory still has another actionable phase
-- do not treat a review-pending or finish-pending slice as complete; force another attempt until the artifacts reflect a real review and clean closeout
+- do not treat a review-pending or finish-pending slice as complete; record it as carry-forward evidence, keep the final completion gate closed, and continue the next independent phase when the phase plan still has actionable work
+- if an independent review returns `REJECT`, record it as a worsened eval or blocking runtime event, then continue non-dependent phases instead of ending the whole run
 
 If `executionMode == delegated-terminal`:
 - require non-empty `legacyAdapterReason`
@@ -106,7 +107,7 @@ phaseExecutionResult:
 - `moonshot-phase-runner` should auto-start this skill by default unless `prepareOnly == true`.
 - Do not ask the user to manually run `moonshot-phase-dispatch.mjs` in the default path.
 - Do not auto-select `delegated-terminal` as a fallback from the active path.
-- `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, or placeholder closeout artifacts are not valid completion states.
+- `review pending`, `workflow-review-bundle-missing`, `finish-closeout-incomplete`, or placeholder closeout artifacts are not valid completion states, but they are carry-forward blockers rather than automatic whole-plan stop conditions while independent phases remain.
 - The valid success boundary is plan-directory completion: every actionable phase completed or an explicit loop stop condition recorded.
 
 ## References

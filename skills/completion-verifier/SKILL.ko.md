@@ -52,6 +52,14 @@ verificationEnvironment:
 ```
 
 ## 핵심 규칙
+- Runtime Control Plane authority:
+  - `scripts/runtime-state.mjs`를 사용할 수 있으면 clean finish의 authority는 `assess-completion`이 만든 accepted runtime DB completion decision입니다.
+  - `completion-verifier`는 evidence writer/collector입니다. 최신 verifier evidence를 기록하고 `assess-completion`을 요청하거나 실행할 수 있지만, chat output, `phase-status.yaml`, verdict JSON, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`만으로 최종 완료를 판단하지 않습니다.
+  - runtime authority를 사용할 수 있으면 derived artifact에는 `authoritySource`, `decisionId`, `evidenceHash`, `stale` metadata를 남깁니다.
+  - stale/superseded verifier evidence, active identity 누락, blocking workflow warning, 승인 없는 approval-required operation, worsened eval regression은 clean finish를 막습니다.
+  - 완료 판단에 쓰는 verifier evidence는 `scripts/verification-plane.mjs record-summary --run-id <runId> --goal-id <goalId> --planes-json <json> --identity-json <json> --json`으로 기록합니다.
+  - accepted completion path는 unit, package, installer, browser, security, quality plane의 최신 evidence를 요구합니다. browser 또는 security setup gap은 silent pass가 아니라 명시적 plane failure입니다.
+  - `scripts/verification-plane.mjs assess-security`는 CodeQL, dependency review, Dependabot, secret scanning 상태를 소비합니다. 누락된 scan, stale scan, high/critical finding, 취약 dependency review finding, secret scanning finding은 owner-approved exception 없이는 release/accepted completion을 막습니다.
 - verification contract가 있으면 그 명령과 artifact를 우선 사용합니다.
 - contract가 없고 standard면 fallback 탐지를 허용합니다.
 - contract가 없고 strict면 앞단의 `verification-contract-gate`가 차단해야 합니다.

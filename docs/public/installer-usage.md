@@ -39,8 +39,74 @@ For a source change:
 
 Do not edit generated package payloads or runtime state to make a test pass. Generated state includes logs, caches, traces, browser artifacts, sqlite files, memorygraph data, and verification verdict JSON.
 
-Runtime plan and execution artifacts under `docs/implementation/**` must remain untracked in this harness source repository. They are excluded from Git so GitHub-based skill installers can clone the repository reliably on Windows path-length-limited systems.
+Durable source roadmaps that define harness direction or review contracts are tracked under `docs/public/roadmaps/`, including `docs/public/roadmaps/harness-control-plane-modernization/`. Runtime execution scratch under `docs/implementation/**` must remain untracked in this harness source repository. It is excluded from Git so GitHub-based skill installers can clone the repository reliably on Windows path-length-limited systems.
+
+## GitHub Required Checks
+
+Branch protection is a repository setting, not something this source package can apply by itself. Protect `main` with the following required checks:
+
+- `CI / Node 18.x on ubuntu-latest`
+- `CI / Node 18.x on windows-latest`
+- `CI / Node 18.x on macos-latest`
+- `CI / Node 20.x on ubuntu-latest`
+- `CI / Node 20.x on windows-latest`
+- `CI / Node 20.x on macos-latest`
+- `CI / Node 22.x on ubuntu-latest`
+- `CI / Node 22.x on windows-latest`
+- `CI / Node 22.x on macos-latest`
+- `CodeQL / Analyze JavaScript`
+- `Dependency Review / Pull Request`
+
+Require pull request review for changes under `scripts/`, `skills/`, `agents/`, `schemas/`, `package/`, `.github/`, and `docs/public/`. Do not allow direct pushes to `main` or bypasses for harness-critical roots.
+Enable Dependabot alerts/security updates, secret scanning, and push protection in repository settings.
+
+Track release gate status separately:
+
+- `source-ci-ready`: tracked CI/security source exists, parses, and local dry-runs pass.
+- `github-settings-applied`: branch protection, CODEOWNERS review, dependency review, secret scanning, and push protection are applied in GitHub UI/API with evidence.
+- `release-protected`: source checks pass and GitHub settings evidence is attached.
+
+Source files alone can only close `source-ci-ready`.
+Do not claim `release-protected` from `.github/` files without GitHub settings/API evidence.
 
 ## Expected Dry-Run Signal
 
 The default dry run should show `mode: account-root-direct` and target `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. A project dry run should show that the installer would create or update the downstream `.claude/` profile while preserving protected project-local files such as `PROJECT.md`, local settings, custom files, and environment files.
+
+## Rollout Smoke Levels
+
+Keep rollout evidence separated by target:
+
+- `source-smoke`: run from the checkout with source `scripts/runtime-state.mjs`.
+- `package-smoke`: run from materialized `package/moonshot-relay/profile/scripts/runtime-state.mjs`.
+- `temp-home-smoke`: install into explicit temp `--moonshot-home`, `--claude-home`, and `--codex-home` targets, then run the installed `runtime-state.mjs`.
+- `live-account-root-smoke`: run only after explicit adoption approval and state preservation evidence.
+
+`source-smoke`, `package-smoke`, and `temp-home-smoke` can close package readiness.
+They cannot prove live adoption.
+Live account-root adoption is a separate controlled step.
+
+## State Preservation
+
+The account-root installer must preserve:
+
+- `${MOONSHOT_RELAY_HOME}/state/**`
+- Claude protected profile state such as `settings.json`, `memory.json`, `sessions/`, `cache/`, `plugins/`, `projects/`, and telemetry state
+- Codex protected profile state such as `auth.json`, `config.toml`, `sessions/`, `cache/`, `plugins/`, `memories/`, and sqlite state
+- unrelated user-installed skills and agents
+
+Package payloads must continue excluding generated DB/WAL/SHM files, verdict JSON, traces, logs, caches, browser artifacts, memorygraph DBs, and profile-local state.
+
+## Rollback Checklist
+
+Before live adoption, capture:
+
+- install command and `installId`
+- dry-run JSON for all runtimes
+- temp-home smoke JSON
+- list of preserved state roots
+- backup directory paths from the install manifest when backup is enabled
+- command to restore from backup or rerun the previous released installer
+
+If native dependency smoke returns `missing_native_module`, record it as `typed_degraded_authority_blocked`.
+Do not count degraded native dependency evidence as runtime availability.

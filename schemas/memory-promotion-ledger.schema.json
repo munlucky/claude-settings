@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/memory-promotion-ledger.schema.json",
+  "title": "Moonshot Relay Memory Promotion Ledger Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runId",
+    "goalId",
+    "memoryId",
+    "status",
+    "evidence",
+    "reviewer",
+    "replay",
+    "rollbackPlan",
+    "scopeOwner"
+  ],
+  "properties": {
+    "runId": { "type": "string", "minLength": 1 },
+    "goalId": { "type": "string", "minLength": 1 },
+    "memoryId": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["rejected", "ready_for_review", "promoted", "superseded", "rolled_back"]
+    },
+    "reason": { "type": "string" },
+    "evidence": {
+      "type": "object",
+      "required": ["fresh"],
+      "properties": {
+        "fresh": { "type": "boolean" },
+        "artifact": { "type": "string" },
+        "sourceCommand": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "reviewer": {
+      "type": "object",
+      "properties": {
+        "approved": { "type": "boolean" },
+        "status": { "type": "string" },
+        "approvalId": { "type": "string" },
+        "reviewer": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "replay": {
+      "type": "object",
+      "properties": {
+        "passed": { "type": "boolean" },
+        "status": { "type": "string" },
+        "score": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "rollbackPlan": {
+      "type": "object",
+      "required": ["strategy"],
+      "properties": {
+        "strategy": { "type": "string", "minLength": 1 },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "removes": { "type": "array", "items": { "type": "string" } },
+        "evidencePath": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "scopeOwner": { "type": "string", "minLength": 1 },
+    "staleAfter": { "type": ["string", "null"] },
+    "supersedesDecisionId": { "type": ["string", "null"] }
+  }
+}

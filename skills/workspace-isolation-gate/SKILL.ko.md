@@ -79,4 +79,7 @@ notes:
 - 새 worktree가 필요하면 설치된 worktree preparation entrypoint를 우선 사용합니다. 사용할 수 없으면 동일한 invariant에 대한 수동 hydration evidence를 기록합니다.
 - `.claude/logs`, `.claude/cache`, `.claude/memory.json`, `.claude/memorygraph/`, `.codex/auth.json`, runtime verdict/cache state는 worktree로 복사하지 않습니다.
 - 하네스 repo 작업과 downstream 제품 작업을 구분합니다. 하네스 repo 작업은 tracked `.claude` source를 기준으로 볼 수 있지만, downstream 작업은 보통 ignored agent-config hydration이 필요합니다.
+- leased worktree escape, generated-state promotion into source, runtime DB/verdict package inclusion, unauthorized account-root mutation은 clean completion을 차단하는 sandbox violation입니다.
+- runtime-state를 사용할 수 있으면 `<MOONSHOT_RELAY_HOME>/tools/sandbox/policy.mjs check --json` 또는 source checkout equivalent로 protected path와 approval-required operation을 분류합니다.
+- sandbox artifact는 leased disposable root 아래에 두고 source 또는 package payload로 승격하지 않습니다.
 - 차단 시 구현 진행을 멈춥니다.

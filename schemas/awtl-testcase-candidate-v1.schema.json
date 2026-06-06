@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/awtl-testcase-candidate-v1.schema.json",
+  "title": "AWTL Trace To Testcase Candidate",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "candidateId",
+    "sourceTraceId",
+    "fixtureNamespace",
+    "reviewStatus",
+    "promotion",
+    "rollback",
+    "testcase"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "sourceTraceId": { "type": "string", "minLength": 1 },
+    "fixtureNamespace": { "type": "string", "minLength": 1 },
+    "reviewStatus": { "enum": ["pending_review", "approved", "rejected", "rolled_back"] },
+    "promotion": {
+      "type": "object",
+      "required": ["requiresReview", "requiredEvidence"],
+      "properties": {
+        "requiresReview": { "type": "boolean" },
+        "requiredEvidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "rollback": {
+      "type": "object",
+      "required": ["strategy", "removes"],
+      "properties": {
+        "strategy": { "type": "string", "minLength": 1 },
+        "removes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "testcase": {
+      "type": "object",
+      "required": ["id", "category", "input", "expected"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "category": { "type": "string", "minLength": 1 },
+        "input": { "type": "object" },
+        "expected": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

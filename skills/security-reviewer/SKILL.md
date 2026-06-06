@@ -29,8 +29,18 @@ Codex-native security review should explicitly apply:
 
 1. Scan changed files for security patterns
 2. Check against security checklist (`.claude/rules/security.md`)
-3. Report findings with severity levels
-4. Suggest fixes for each issue
+3. Consume machine security status when available: CodeQL, dependency review, Dependabot, and secret scanning.
+4. Record release-gate evidence with `scripts/verification-plane.mjs assess-security --run-id <runId> --goal-id <goalId> --scans-json <json> --json`.
+5. Report findings with severity levels
+6. Suggest fixes for each issue
+
+## Release Gate Policy
+
+- Missing CodeQL, dependency review, Dependabot, or secret scanning status is a blocker for release/accepted completion.
+- Stale scan status is a blocker until refreshed.
+- High or critical CodeQL findings, vulnerable dependency review findings, and secret scanning findings block release/accepted completion.
+- An exception must include `approvalId`, `owner`, and `reason`; otherwise it is not an approved exception.
+- Approved exceptions stay visible in the evidence and do not erase the finding.
 
 ## Security Checklist
 

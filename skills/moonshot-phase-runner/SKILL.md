@@ -21,6 +21,8 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 ## Hard Stops
 
 - Do not treat a completed phase as plan completion while `phase-status.yaml` still has actionable phases.
+- Do not treat `phase-status.yaml`, verifier JSON, QA report, scorecard, handoff, or child chat output as clean-finish authority when runtime-state completion authority is available. Use `scripts/runtime-state.mjs assess-completion` and require an accepted DB decision.
+- Do not stop the whole plan just because a completed phase produced review findings, failed eval evidence, or a non-accepted completion decision. Record the blocker as carry-forward evidence, keep the final completion gate closed, and continue the next actionable independent phase.
 - Do not write live `.claude/**` or `.codex/**` adoption targets from staged redesign phases. Phase 08 owns controlled adoption.
 - Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
 - Do not return final success until the in-session coordinator, fresh verifier evidence, scorecard, and repository closeout evidence agree.
@@ -29,6 +31,9 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 
 - Optional plan directory argument.
 - Optional master plan path inside the plan directory.
+- Optional run identity arguments: `--run-id`, `--goal-id`, `--workspace-id`.
+- Optional `--allow-parallel` only when the operator intentionally wants more than one active run for the same goal.
+- Optional `--lease-ttl-ms` for controlled lease windows; long phases should heartbeat instead of relying on stale active leases.
 - Active status file: `.moonshot-relay/docs/phase-status.yaml`.
 - Execution route: `in-session-coordinator` by default. `delegated-terminal` is legacy compatibility only and requires an explicit legacy maintenance reason.
 - Execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, and verifier verdict.
@@ -37,11 +42,17 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 
 1. Resolve the active plan directory and active phase from `phase-status.yaml`.
 2. Validate master plan, root phase docs, and execution root consistency.
-3. Build a compact phase-attempt brief from the active phase contract.
-4. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
-5. Use deterministic scripts only for support checks that are still installed in the runtime payload. Do not auto-start legacy delegated-terminal adapters.
-6. After each phase, collect diff/evidence in the parent session and run coordinator closeout gates.
-7. Continue to the next actionable phase until the whole plan directory is done.
+3. Prepare or resume a run with explicit `runId + goalId + workspaceId`; generate a unique run ID only when one was not provided.
+4. If another active run already owns the same goal, block by default unless `--allow-parallel` was explicitly requested.
+5. Treat expired leases as stale, recover them through runtime-state, and surface `compactStatus.staleWarnings` in the phase handoff instead of hiding old active runs.
+6. Heartbeat long-running phases with `scripts/runtime-state.mjs heartbeat-run-lease` before the lease window expires.
+7. Check protected paths and approval-required operations through `tools/sandbox/policy.mjs check --json` before executing sandbox-sensitive tool calls.
+8. Build a compact phase-attempt brief from the active phase contract.
+9. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
+10. Use deterministic scripts only for support checks that are still installed in the runtime payload. Do not auto-start legacy delegated-terminal adapters.
+11. After each phase, collect diff/evidence in the parent session and run coordinator closeout gates.
+12. If closeout gates reject a phase after useful implementation evidence was produced, record the rejection with `record-eval-result --regression-worsened true` or a blocking runtime event, keep the finding in carry-forward state, and continue to the next independent actionable phase.
+13. Continue to the next actionable phase until the whole plan directory is implemented. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
 
 ## Required Evidence
 

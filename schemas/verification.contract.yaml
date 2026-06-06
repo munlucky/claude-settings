@@ -221,10 +221,26 @@ policySets:
     description: "Executable verifier and syntax integrity"
     checks:
       - memoryGraphHealth
+    evidencePlanes:
+      schema: "schemas/verification-plane.schema.json"
+      requiredForAcceptedCompletion:
+        - unit
+        - package
+        - installer
+        - browser
+        - security
+        - quality
+      writer: "scripts/verification-plane.mjs record-summary --json"
   security:
     description: "Machine-checkable policy boundaries for changed code and scripts"
     checks:
       - ontologyConstraints
+    requiredScans:
+      - codeql
+      - dependencyReview
+      - dependabot
+      - secretScanning
+    writer: "scripts/verification-plane.mjs assess-security --json"
 policy:
   allowIndeterminate: false
   requiredPolicySets:
@@ -286,14 +302,33 @@ observability:
   runtimeStatusReadModel:
     requiredFields:
       - "runtimeCapabilityStatus"
+      - "operationalMetrics"
       - "compactStatus.activeContract"
       - "compactStatus.latestVerdict"
       - "compactStatus.currentBlocker"
       - "compactStatus.lineage"
       - "compactStatus.staleWarnings"
+      - "compactStatus.operationalMetrics"
       - "resumeBrief.nextAction"
       - "resumeBrief.currentBlocker"
       - "resumeBrief.lineage"
+      - "resumeBrief.operationalMetrics"
+  contextStateReadModel:
+    requiredFields:
+      - "contextState.objective"
+      - "contextState.phase"
+      - "contextState.currentBlocker"
+      - "contextState.lineage"
+      - "contextState.assumptions"
+      - "contextState.evidence"
+      - "contextState.changedFiles"
+      - "contextState.openRisks"
+      - "contextState.nextAction"
+      - "contextState.projectionFreshness"
+      - "contextState.completionEligible"
+      - "metrics.contextCompactionRatio"
+      - "metrics.stablePrefixHash"
+      - "metrics.promptCacheHit"
   teamMetrics:
     requiredFields:
       - "selectedPattern"

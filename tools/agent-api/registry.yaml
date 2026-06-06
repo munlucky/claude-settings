@@ -1,0 +1,27 @@
+version: 1
+budget:
+  minGroups: 10
+  maxGroups: 12
+groups:
+  - id: filesystem
+    summary: Read and inspect source files without changing state.
+  - id: edit
+    summary: Apply narrow source edits through reviewed patch operations.
+  - id: shell
+    summary: Run deterministic local commands and tests.
+  - id: package
+    summary: Build, materialize, and inspect package payloads.
+  - id: runtime-state
+    summary: Read and write Moonshot runtime-state control-plane records.
+  - id: context
+    summary: Build, compact, rehydrate, and assemble runtime context.
+  - id: browser
+    summary: Verify local browser flows and UI runtime behavior.
+  - id: git
+    summary: Inspect git status, diffs, staging, commits, and branches.
+  - id: github
+    summary: Inspect or operate GitHub PR, CI, and release metadata.
+  - id: security
+    summary: Review security-sensitive changes and policy gates.
+  - id: memory
+    summary: Refresh or audit project knowledge without making it authority.

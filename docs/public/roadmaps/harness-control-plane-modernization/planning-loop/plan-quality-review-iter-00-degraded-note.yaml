@@ -1,0 +1,8 @@
+reviewedPackageRoot: docs/public/roadmaps/harness-control-plane-modernization
+status: pending_independent_review
+reason: "Initial parent-authored package created before independent agent review artifacts were returned."
+blockingFindings: []
+acceptedChanges: []
+rejectedChanges: []
+remainingAmbiguity:
+  - "Independent review must validate phase boundaries, dependency order, and whether native better-sqlite3 dependency is acceptable for all release targets."

@@ -64,6 +64,22 @@ test('runtime state resolver defaults new writes to account-root project knowled
   assert.equal(runtimeStateRelativePath('cache', 'codex-mcp-singleton'), path.join(defaultRoot, 'cache', 'codex-mcp-singleton'));
 });
 
+test('runtime state resolver honors MOONSHOT_RELAY_HOME as the account-root authority', () => {
+  const moonshotHome = fromRoot('.tmp/custom-moonshot-home');
+  assert.equal(accountStateRoot({ MOONSHOT_RELAY_HOME: moonshotHome }), path.join(moonshotHome, 'state'));
+  assert.equal(
+    resolveRuntimeStateRoot(root, { MOONSHOT_RELAY_HOME: moonshotHome }),
+    path.join(moonshotHome, 'state', 'projects', 'munlucky-moonshot-relay', 'knowledge'),
+  );
+  assert.equal(
+    accountStateRoot({
+      MOONSHOT_RELAY_HOME: moonshotHome,
+      MOONSHOT_RELAY_STATE_ROOT: fromRoot('.tmp/explicit-state-root'),
+    }),
+    fromRoot('.tmp/explicit-state-root'),
+  );
+});
+
 test('runtime state resolver does not let legacy overrides bypass project identity by default', () => {
   const home = fromRoot('.tmp/home');
   const env = {

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "suite": "harness-control-plane-golden",
+  "scoreThreshold": 1,
+  "cases": [
+    {
+      "id": "completion-false-positive",
+      "category": "completion_authority",
+      "input": { "phaseStatusComplete": true, "dbAccepted": false },
+      "expected": { "releaseBlocked": true, "reason": "missing accepted completion decision" }
+    },
+    {
+      "id": "stale-verdict",
+      "category": "completion_authority",
+      "input": { "verdictFresh": false, "staleReason": "superseded-verdict" },
+      "expected": { "releaseBlocked": true, "reason": "superseded-verdict" }
+    },
+    {
+      "id": "phase-status-only-completion",
+      "category": "completion_authority",
+      "input": { "phaseStatusComplete": true, "verifierEvidence": null },
+      "expected": { "releaseBlocked": true, "reason": "phase-status-only completion rejected" }
+    },
+    {
+      "id": "missing-identity",
+      "category": "completion_authority",
+      "input": { "activeIdentityPresent": true, "identityMatches": false },
+      "expected": { "releaseBlocked": true, "reason": "identity mismatch" }
+    },
+    {
+      "id": "wrong-tool",
+      "category": "tool_dispatch",
+      "input": { "selectedGroup": "browser", "actualGroup": "shell" },
+      "expected": { "releaseBlocked": true, "reason": "wrong selected tool group" }
+    },
+    {
+      "id": "invalid-schema",
+      "category": "tool_dispatch",
+      "input": { "schemaMode": "rejected" },
+      "expected": { "releaseBlocked": true, "reason": "invalid tool args rejected before execution" }
+    },
+    {
+      "id": "out-of-scope-write",
+      "category": "sandbox",
+      "input": { "operation": "write", "target": ".claude/settings.json" },
+      "expected": { "releaseBlocked": true, "reason": "protected path write blocked" }
+    },
+    {
+      "id": "stale-lease",
+      "category": "run_lifecycle",
+      "input": { "leaseStatus": "expired" },
+      "expected": { "releaseBlocked": true, "reason": "stale run lease recovered" }
+    },
+    {
+      "id": "degraded-runtime",
+      "category": "runtime_capability",
+      "input": { "runtimeStatus": "degraded", "reason": "missing_native_module" },
+      "expected": { "releaseBlocked": true, "reason": "runtime-state unavailable" }
+    },
+    {
+      "id": "eval-worsening",
+      "category": "eval",
+      "input": { "regressionWorsened": true },
+      "expected": { "releaseBlocked": true, "reason": "eval regression worsened" }
+    }
+  ]
+}
