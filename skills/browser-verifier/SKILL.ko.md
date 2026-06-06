@@ -42,13 +42,14 @@ triggers:
 - `claude-code`: fork된 verifier 의미를 유지한 채 Claude 도구 라우팅으로 런타임 검증을 실행합니다.
 - `codex`: fresh forked verification session 또는 동등한 격리 attempt를 우선하며, 메인 세션은 coordinator로만 유지하고 요약 결과만 병합합니다.
 - 활성 런타임이 격리된 verifier 실행을 유지할 수 없으면 current-session 실행으로 명시적으로 degrade하고, isolation이 약화됐음을 기록합니다.
-- 두 런타임 모두 표준 검증 스크립트로 `.claude/agents/verification/verify-runtime.sh`를 사용합니다.
+- canonical verifier source는 `agents/verification/verify-runtime.sh`입니다.
+- project-local Claude profile이 materialize된 경우 installed/local profile entrypoint는 `.claude/agents/verification/verify-runtime.sh`입니다.
 
 ## 실행
 1. `--url` 또는 `APP_BASE_URL`에서 대상 URL을 결정합니다. (기본값: `http://localhost:3000`)
 2. `--browser-flow`가 있으면 `PATH`의 `browserctl` 또는 `<MOONSHOT_RELAY_HOME>/bin/browserctl`을 사용해 설정된 browser flow runner를 실행합니다. 프로젝트가 custom runner를 설치한 경우에만 `BROWSER_FLOW_RUNNER_PATH`를 사용합니다.
 3. browser runtime을 사용할 수 있고 호출자가 다른 flow를 명시하지 않았다면 standard verification path의 기본 browser-flow를 `smoke`로 취급합니다.
-4. 가능하면 격리된 verifier 경계에서 URL 및 선택적 browser-flow/E2E 인자로 `.claude/agents/verification/verify-runtime.sh`를 실행합니다.
+4. 가능하면 격리된 verifier 경계에서 URL 및 선택적 browser-flow/E2E 인자로 installed/local profile entrypoint `.claude/agents/verification/verify-runtime.sh`를 실행합니다.
 5. `--e2e`가 없으면 다음 순서로 npm 스크립트를 자동 탐지합니다:
    - `test:e2e:agent-browser`
    - `test:e2e`

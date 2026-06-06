@@ -129,7 +129,7 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: node .claude/scripts/commit-moonshot-promotion-audit.mjs [options]
+  process.stdout.write(`Usage: node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-promotion-audit.mjs [options]
 
 Audits commit-time AWTL MemoryGraph promotion candidates. Default mode records
 review decisions only; MemoryGraph writes require --write-verified.

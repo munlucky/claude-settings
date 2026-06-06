@@ -35,6 +35,7 @@ const commonSpec = {
   ownedEntries: new Set([
     'bin',
     'docs',
+    'rules',
     'schemas',
     'scripts',
     'templates',

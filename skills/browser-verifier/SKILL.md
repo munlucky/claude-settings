@@ -44,13 +44,14 @@ Validate that a web app is reachable and working at runtime after implementation
 - `claude-code`: execute runtime checks through Claude tool routing while preserving forked verifier semantics.
 - `codex`: prefer a fresh forked verification session or equivalent isolated attempt; keep the main session as coordinator and merge back summary results only.
 - If the active runtime cannot preserve isolated verifier execution, degrade explicitly to current-session execution and record that isolation was degraded.
-- In both runtimes, use `.claude/agents/verification/verify-runtime.sh` as the canonical verifier.
+- Canonical verifier source is `agents/verification/verify-runtime.sh`.
+- Installed/local profile entrypoint is `.claude/agents/verification/verify-runtime.sh` when a project-local Claude profile is materialized.
 
 ## Execution
 1. Resolve target URL from `--url` or `APP_BASE_URL` (default: `http://localhost:3000`).
 2. If `--browser-flow` is set, ask the harness to run the configured browser flow runner with `browserctl` on `PATH` or `<MOONSHOT_RELAY_HOME>/bin/browserctl`; use `BROWSER_FLOW_RUNNER_PATH` only when a project installs a custom runner.
 3. If browser runtime is available and the caller did not explicitly choose another flow, treat `smoke` as the default browser-flow for the standard verification path.
-4. Run `.claude/agents/verification/verify-runtime.sh` with URL and optional browser-flow/E2E arguments from the isolated verifier boundary when available.
+4. Run the installed/local profile entrypoint `.claude/agents/verification/verify-runtime.sh` with URL and optional browser-flow/E2E arguments from the isolated verifier boundary when available.
 5. If `--e2e` is omitted, the script auto-detects npm scripts in this order:
    - `test:e2e:agent-browser`
    - `test:e2e`

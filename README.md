@@ -30,6 +30,13 @@ Do not add durable source under `.claude/skills`, `.claude/agents`, `.claude/scr
 
 Compatibility wrappers and installed-runtime docs may still mention `.claude/...` during the deprecation window. Those references describe downstream payload behavior, not repository source ownership. See `docs/public/repository-layout.md`, `docs/public/installer-usage.md`, and `docs/public/compatibility-migration.md`.
 
+## 테스트 계약
+
+- 공식 기본 gate는 `npm test`입니다.
+- `npm run test:active`는 같은 active gate를 실행합니다.
+- `npm run test:package`는 package/materialization/migration 관련 active tests만 실행합니다.
+- bare `node --test` 직접 실행은 archive 보존 테스트까지 발견할 수 있으므로 공식 gate가 아닙니다. active test를 직접 실행해야 할 때는 `node --test tests/*.mjs` 또는 npm scripts를 사용합니다.
+
 ## 디렉터리 구조
 
 ```text
@@ -275,7 +282,7 @@ cp -r moonshot-relay/skills/moonshot-orchestrator /your-project/.claude/skills/
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`
 - MCP 서버 예시: GitHub, Context7, Exa, MemoryGraph 기반 Memory, Playwright, Sequential Thinking
-- 로컬 stdio MCP는 `.claude/scripts/codex-mcp-singleton.mjs`를 경유해 같은 프로젝트의 이전 동일 MCP process tree를 새 기동 시 정리합니다.
+- 로컬 stdio MCP는 `<MOONSHOT_RELAY_HOME>/scripts/codex-mcp-singleton.mjs`를 경유해 같은 프로젝트의 이전 동일 MCP process tree를 새 기동 시 정리합니다.
 - 멀티에이전트 기본값: `[agents] max_threads = 6`, `max_depth = 1`
 - 커스텀 에이전트: `explorer`, `reviewer`, `docs_researcher`
 
@@ -285,16 +292,16 @@ Codex에서 바로 활용할 수 있는 스킬 예시:
 - 완료 검증: `completion-verifier`
 
 Memory 설정:
-- 기본 memory MCP는 `node .claude/scripts/codex-mcp-singleton.mjs memory -- node .claude/scripts/memorygraph-mcp-wrapper.js`입니다.
+- 기본 memory MCP는 `node <MOONSHOT_RELAY_HOME>/scripts/codex-mcp-singleton.mjs memory -- node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.js`입니다.
 - wrapper는 `.moonshot-relay/memorygraph/`를 생성하고 `MEMORYGRAPH_DATA_DIR`로 주입합니다.
 - `memorygraph` 실행 파일이 없으면 `install-claude.sh`가 `pipx install memorygraphMCP`를 시도하며, 실패해도 전체 설치는 계속됩니다.
-- 프로젝트 지식그래프는 `node .claude/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.moonshot-relay/memorygraph/`에 반영합니다.
+- 프로젝트 지식그래프는 `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`로 seed를 만들고 `project-memory-refresh`가 현재 프로젝트의 `.moonshot-relay/memorygraph/`에 반영합니다.
 - 범용 하네스 지식은 `promotion-candidates.json` 후보 생성 후 명시 승인된 항목만 `harness-memory-promoter`로 `moonshot-relay` graph에 승격합니다.
 - Legacy AWTL runtime importer utilities are preserved under `archive/scripts/legacy-phase-adapters/` for compatibility investigation; they are not installed into active runtime payloads.
 
 Code Review Graph 설정:
 - `code-review-graph`는 MemoryGraph를 대체하지 않습니다. MemoryGraph는 작업 기억/정책/결정, `code-review-graph`는 코드 구조/리뷰 영향도/분석 기능을 담당합니다.
-- Codex MCP는 `node .claude/scripts/codex-mcp-singleton.mjs code-review-graph -- node .claude/scripts/code-review-graph-mcp-wrapper.js`입니다.
+- Codex MCP는 `node <MOONSHOT_RELAY_HOME>/scripts/codex-mcp-singleton.mjs code-review-graph -- node <MOONSHOT_RELAY_HOME>/scripts/code-review-graph-mcp-wrapper.js`입니다.
 - `install-claude.sh`는 `pipx install "code-review-graph[communities]"`를 best-effort로 시도하고, 자동 `build`, `watch`, `daemon`은 실행하지 않습니다.
 - 하네스 stage별 사용 계약은 `.claude/docs/guidelines/code-review-graph-workflow.md`를 따릅니다. 코드 분석, 영향도, blast radius, architecture overview, large function 탐색, 리뷰 컨텍스트 축소가 필요한 stage에서는 broad file read보다 `code-review-graph` MCP를 우선 사용합니다.
 - 프로젝트 분석 DB는 `.code-review-graph/`에 저장하며 버전 관리와 기본 agent context에서 제외합니다.

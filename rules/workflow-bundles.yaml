@@ -1,0 +1,84 @@
+schemaVersion: 1
+registryId: moonshot-workflow-bundles
+description: Canonical bundle routing registry for Moonshot internal sequence decisions.
+
+planes:
+  read_only:
+    defaultBundle: review-bundle
+    forbiddenBundles:
+      - implementation-bundle
+  product_project:
+    withoutProductPackage:
+      phase: planning
+      bundleChain:
+        - product-definition-bundle
+    withProductPackage:
+      phase: implementation
+      bundleChain:
+        - ready-isolate-bundle
+        - planning-bundle
+        - implementation-bundle
+        - review-bundle
+        - verification-bundle
+        - finish-bundle
+  meta_harness:
+    simple:
+      bundleChain:
+        - harness-maintenance-bundle
+        - verification-bundle
+    mediumComplex:
+      bundleChain:
+        - ready-isolate-bundle
+        - planning-bundle
+        - harness-maintenance-bundle
+        - review-bundle
+        - verification-bundle
+        - finish-bundle
+
+bundleExpansion:
+  product-definition-bundle:
+    - product-orchestrator
+  ready-isolate-bundle:
+    - pre-flight-check
+    - project-contract-gate
+    - context-readiness-gate
+    - verification-contract-gate
+  planning-bundle:
+    - requirements-analyzer
+    - context-builder
+    - codex-validate-plan
+  implementation-bundle:
+    - karpathy-execution-gate
+    - test-driven-development
+    - implementation-runner
+    - code-simplifier
+  harness-maintenance-bundle:
+    - moonshot-relay-maintainer
+  review-bundle:
+    - codex-review-code
+  verification-bundle:
+    - completion-verifier
+  finish-bundle:
+    - session-logger
+
+overlays:
+  strict:
+    insert:
+      - workspace-isolation-gate
+      - verification-evidence-gate
+    disables:
+      - indeterminate_completion
+
+stageOrder:
+  requiredForCodeChanges:
+    - review
+    - verification
+    - finish
+
+parallelGroups:
+  allowed:
+    - [moonshot-evaluate-complexity, moonshot-detect-uncertainty]
+    - [codex-review-code, security-reviewer]
+  forbidden:
+    - [implementation-runner, codex-validate-plan]
+    - [implementation-runner, completion-verifier]

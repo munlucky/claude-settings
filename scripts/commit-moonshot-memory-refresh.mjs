@@ -37,7 +37,7 @@ function supportScriptPath(name) {
 }
 
 function printHelp() {
-  process.stdout.write(`Usage: node .claude/scripts/commit-moonshot-memory-refresh.mjs [options]
+  process.stdout.write(`Usage: node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs [options]
 
 Runs commit-time MemoryGraph preflight and direct fallback.
 

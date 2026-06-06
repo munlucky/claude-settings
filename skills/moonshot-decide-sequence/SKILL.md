@@ -15,7 +15,7 @@ Public entry should remain at `product-orchestrator`, `moonshot-phase-runner`, o
 
 Use these canonical files instead of re-embedding the full contract here:
 - `<MOONSHOT_RELAY_HOME>/schemas/analysis-context.schema.yaml`
-- `.claude/config/workflow-bundles.yaml`
+- `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`
 
 This micro-skill must consume:
 - the `analysisContext` field layout and defaults from the schema file
@@ -37,7 +37,7 @@ Migration rule:
 ## Bundle selection
 
 Build the chain from bundles first, then expand into `skillChain`.
-The canonical routing matrix now lives in `.claude/config/workflow-bundles.yaml`.
+The canonical routing matrix lives in root `rules/workflow-bundles.yaml` and is installed under `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`.
 
 Analysis micro-skills are orchestrator-internal and should not be presented as standalone workflow entrypoints.
 
@@ -59,7 +59,7 @@ Summary:
 
 ## Bundle expansion
 
-Bundle expansion is defined in `.claude/config/workflow-bundles.yaml`.
+Bundle expansion is defined in `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`.
 Keep this skill focused on the decision logic, not the duplicated bundle contents.
 
 Execution-bridge expectation for medium/complex `product_project` runs:
@@ -69,7 +69,7 @@ Execution-bridge expectation for medium/complex `product_project` runs:
 
 ## Overlay rules
 
-Resolve overlays and stage-order rules from `.claude/config/workflow-bundles.yaml`.
+Resolve overlays and stage-order rules from `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`.
 Minimum invariants:
 - `workflowProfile == standard` keeps the base bundle chain
 - `workflowProfile == strict` disables indeterminate completion and inserts the strict gates
@@ -77,11 +77,11 @@ Minimum invariants:
 
 ## Plane-specific rules
 
-Use the plane-specific rules from `.claude/config/workflow-bundles.yaml`.
+Use the plane-specific rules from `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`.
 
 ## Additional rules
 
-Apply the registry-driven additional rules from `.claude/config/workflow-bundles.yaml`, including:
+Apply the registry-driven additional rules from `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`, including:
 - `frontend-design` insertion for React work
 - `code-simplifier` insertion for non-trivial code changes
 - `moonshot-phase-runner` insertion when master-plan or phase docs are detected
@@ -90,7 +90,7 @@ Apply the registry-driven additional rules from `.claude/config/workflow-bundles
 
 ## Parallel execution guide
 
-Allowed and forbidden parallel groups are defined in `.claude/config/workflow-bundles.yaml`.
+Allowed and forbidden parallel groups are defined in `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`.
 
 ## Output (patch)
 

@@ -70,6 +70,25 @@ test('diagnoses POSIX env prefix in PowerShell with env example', () => {
   assert.match(diagnostic.message, /\$env:FOO='bar'; node/);
 });
 
+test('diagnoses POSIX here-doc syntax in PowerShell', () => {
+  const diagnostic = diagnoseShellCommand("node <<'EOF'\nconsole.log('x')\nEOF", {
+    shell: 'powershell.exe',
+  });
+
+  assert.equal(diagnostic.ok, false);
+  assert.equal(diagnostic.code, 'powershell_command_syntax');
+  assert.match(diagnostic.example, /@'[\s\S]*'@ \| node -/);
+});
+
+test('diagnoses PowerShell ParserError text as command syntax', () => {
+  const diagnostic = diagnoseShellCommand('ParserError: Array index expression is missing or not valid.', {
+    shell: 'pwsh.exe',
+  });
+
+  assert.equal(diagnostic.ok, false);
+  assert.equal(diagnostic.code, 'powershell_command_syntax');
+});
+
 test('accepts PowerShell env assignment syntax', () => {
   const diagnostic = diagnoseShellCommand("$env:FOO='bar'; node .claude/scripts/verify-plan-conformance.mjs --help", {
     shell: 'pwsh.exe',

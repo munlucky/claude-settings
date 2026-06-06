@@ -75,6 +75,7 @@ const requiredConcretePayloadFiles = [
   'skills/moonshot-plan-writer/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
+  'rules/workflow-bundles.yaml',
   'scripts/install-browser-runtime.sh',
   'scripts/memorygraph-mcp-wrapper.js',
   'scripts/memorygraph-mcp-wrapper.mjs',
@@ -335,6 +336,7 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-decide-sequence', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
     assert.equal(existsSync(path.join(claudeHome, 'scripts')), false);

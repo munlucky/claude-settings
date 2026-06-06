@@ -51,6 +51,7 @@ accountRootInstall:
   commonPayloadEntries:
     - bin/
     - docs/
+    - rules/
     - schemas/
     - scripts/
     - templates/

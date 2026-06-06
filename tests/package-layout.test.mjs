@@ -180,8 +180,23 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /claude: "\$\{CLAUDE_HOME:-~\/\.claude\}"/);
   assert.match(contract, /codex: "\$\{CODEX_HOME:-~\/\.codex\}"/);
   assert.match(contract, /commonPayloadEntries:/);
+  assert.match(contract, /^\s+- rules\/$/m);
   assert.match(contract, /runtimeExposureEntries:/);
   assert.match(contract, /legacyHarnessCorePolicy: remove_when_requested_after_backup/);
+});
+
+test('package scripts define the active gate without archive discovery', async () => {
+  const manifest = JSON.parse(await readFile(fromRoot('package.json'), 'utf8'));
+  const scripts = manifest.scripts || {};
+
+  assert.equal(typeof scripts.test, 'string', 'package.json should define scripts.test');
+  assert.equal(scripts['test:active'], 'npm test');
+  assert.match(scripts.test, /^node --test tests\//);
+  assert.doesNotMatch(scripts.test, /(?:^|\s)node --test\s*$/);
+  assert.doesNotMatch(scripts.test, /archive[\\/]/);
+  assert.doesNotMatch(scripts.test, /\.claude[\\/]scripts/);
+  assert.equal(typeof scripts['test:package'], 'string', 'package.json should define scripts.test:package');
+  assert.doesNotMatch(scripts['test:package'], /archive[\\/]/);
 });
 
 test('repository layout docs name canonical source, local runtime profile, generated state, and package payload boundaries', async () => {
@@ -212,7 +227,7 @@ test('skills and agents use Moonshot Relay home for shared runtime assets', asyn
     ...await listFiles('skills'),
     ...await listFiles('agents'),
   ].filter((file) => /\.(md|sh)$/.test(file));
-  const forbiddenSharedRuntimeProfileRef = /(?:^|[^A-Za-z0-9_])\.claude[\\/](?:scripts|schemas|templates|tools|bin)(?:[\\/]|`|"|'|\s|$)/;
+  const forbiddenSharedRuntimeProfileRef = /(?:^|[^A-Za-z0-9_])\.claude[\\/](?:scripts|schemas|templates|tools|bin|config)(?:[\\/]|`|"|'|\s|$)/;
   const violations = [];
 
   for (const file of runtimeInstructionFiles) {
@@ -229,6 +244,83 @@ test('skills and agents use Moonshot Relay home for shared runtime assets', asyn
     violations,
     [],
     `Shared runtime assets must be referenced through MOONSHOT_RELAY_HOME, not .claude profile-local paths:\n${violations.join('\n')}`,
+  );
+});
+
+test('active docs do not advertise profile-local scripts as canonical commands', async () => {
+  const activeInstructionFiles = [
+    'README.md',
+    'scripts/commit-moonshot-memory-refresh.mjs',
+    'scripts/commit-moonshot-promotion-audit.mjs',
+  ];
+  const violations = [];
+
+  for (const file of activeInstructionFiles) {
+    const content = await readFile(fromRoot(file), 'utf8');
+    const lines = content.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      if (/node\s+\.claude[\\/]scripts[\\/]/.test(line)) {
+        violations.push(`${file}:${index + 1}: ${line.trim()}`);
+      }
+    });
+  }
+
+  assert.deepEqual(
+    violations,
+    [],
+    `Active instructions must use <MOONSHOT_RELAY_HOME>/scripts or explain legacy wrappers:\n${violations.join('\n')}`,
+  );
+});
+
+test('browser verifier distinguishes canonical source from installed profile entrypoint', async () => {
+  for (const file of [
+    'skills/browser-verifier/SKILL.md',
+    'skills/browser-verifier/SKILL.ko.md',
+  ]) {
+    const content = await readFile(fromRoot(file), 'utf8');
+    assert.match(content, /agents\/verification\/verify-runtime\.sh/);
+    assert.match(content, /\.claude\/agents\/verification\/verify-runtime\.sh/);
+    assert.doesNotMatch(content, /\.claude\/agents\/verification\/verify-runtime\.sh[^.\n]*(?:canonical|standard|표준)/i);
+  }
+});
+
+test('moonshot skill deep references resolve within source skill directories', async () => {
+  const skillFiles = [
+    ...await listFiles('skills'),
+  ].filter((file) => /^skills\/moonshot-/.test(file) && /\/SKILL(?:\.ko)?\.md$/.test(file));
+  const missing = [];
+
+  for (const file of skillFiles) {
+    const content = await readFile(fromRoot(file), 'utf8');
+    const lines = content.split(/\r?\n/);
+    const skillDir = path.dirname(file);
+    const deepReferenceIndex = lines.findIndex((line) => line.trim() === 'deepReferences:');
+    if (deepReferenceIndex === -1) {
+      continue;
+    }
+    for (let index = deepReferenceIndex + 1; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (/^\S/.test(line) && line.trim() !== '') {
+        break;
+      }
+      const match = line.match(/^\s*-\s+(.+?)\s*$/);
+      if (!match) {
+        continue;
+      }
+      const referencePath = match[1].replace(/^['"]|['"]$/g, '');
+      const resolved = referencePath.startsWith('.')
+        ? referencePath
+        : path.join(skillDir, referencePath).replaceAll(path.sep, '/');
+      if (!existsSync(fromRoot(resolved))) {
+        missing.push(`${file}: ${referencePath} -> ${resolved}`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    missing,
+    [],
+    `Moonshot skill deepReferences must resolve in source:\n${missing.join('\n')}`,
   );
 });
 

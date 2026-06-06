@@ -15,7 +15,7 @@ surfaceStatus: internal_stage_owner
 
 전체 계약을 이 문서에 다시 인라인하지 말고, 아래 canonical 파일을 사용합니다.
 - `<MOONSHOT_RELAY_HOME>/schemas/analysis-context.schema.yaml`
-- `.claude/config/workflow-bundles.yaml`
+- `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`
 
 이 마이크로스킬은 다음을 canonical 파일에서 읽어야 합니다.
 - `analysisContext` 필드 구조와 기본값
@@ -40,7 +40,7 @@ surfaceStatus: internal_stage_owner
 ## bundle 선택
 
 bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
-정규 라우팅 매트릭스는 `.claude/config/workflow-bundles.yaml`에 둔다.
+정규 라우팅 매트릭스는 root `rules/workflow-bundles.yaml`에 두고 설치 후에는 `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`에서 읽는다.
 
 분석 마이크로스킬은 orchestrator 내부 구성요소이며, 독립 workflow entrypoint로 제시하지 않는다.
 
@@ -62,7 +62,7 @@ bundle을 먼저 결정한 뒤 `skillChain`으로 펼친다.
 
 ## bundle 확장
 
-bundle 확장 정의는 `.claude/config/workflow-bundles.yaml`를 기준으로 둔다.
+bundle 확장 정의는 `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`를 기준으로 둔다.
 이 문서는 decision logic만 설명하고 bundle 내용을 중복 유지하지 않는다.
 
 medium/complex `product_project` 실행에서는 아래 execution bridge를 기본으로 요구한다.
@@ -72,7 +72,7 @@ medium/complex `product_project` 실행에서는 아래 execution bridge를 기�
 
 ## 오버레이 규칙
 
-overlay 와 stage-order 규칙은 `.claude/config/workflow-bundles.yaml`에서 해석한다.
+overlay 와 stage-order 규칙은 `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`에서 해석한다.
 최소 불변식:
 - `workflowProfile == standard`는 base bundle chain 유지
 - `workflowProfile == strict`는 strict gate를 삽입
@@ -80,11 +80,11 @@ overlay 와 stage-order 규칙은 `.claude/config/workflow-bundles.yaml`에서 �
 
 ## plane별 추가 규칙
 
-plane별 추가 규칙도 `.claude/config/workflow-bundles.yaml`를 기준으로 사용한다.
+plane별 추가 규칙도 `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`를 기준으로 사용한다.
 
 ## 추가 규칙
 
-추가 규칙은 `.claude/config/workflow-bundles.yaml`에서 해석한다. 여기에는 다음이 포함된다.
+추가 규칙은 `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`에서 해석한다. 여기에는 다음이 포함된다.
 - React 작업의 `frontend-design` 삽입
 - 비사소한 코드 변경의 `code-simplifier` 삽입
 - phase 문서 감지 시 `moonshot-phase-runner` 삽입
@@ -93,7 +93,7 @@ plane별 추가 규칙도 `.claude/config/workflow-bundles.yaml`를 기준으로
 
 ## 병렬 실행 가이드
 
-허용/금지 병렬 그룹은 `.claude/config/workflow-bundles.yaml`를 기준으로 둔다.
+허용/금지 병렬 그룹은 `<MOONSHOT_RELAY_HOME>/rules/workflow-bundles.yaml`를 기준으로 둔다.
 
 ## 출력 예시
 
