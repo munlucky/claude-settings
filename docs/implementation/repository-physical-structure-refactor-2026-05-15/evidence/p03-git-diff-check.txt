@@ -1,8 +1,0 @@
-Command:
-git diff --check
-
-Result:
-exit 0
-
-Pass signal:
-No whitespace or patch-format errors were reported.

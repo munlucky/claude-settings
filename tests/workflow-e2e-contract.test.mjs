@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -93,12 +93,19 @@ test('plan readiness bridge reports ready state and planned outputs for reviewed
 });
 
 test('implicit phase plan resolution blocks when multiple plan packages exist', () => {
+  const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'moonshot-relay-ambiguous-plans-'));
+  tempRoots.push(tempRoot);
+  mkdirSync(path.join(tempRoot, 'docs', 'implementation', 'plan-a'), { recursive: true });
+  mkdirSync(path.join(tempRoot, 'docs', 'implementation', 'plan-b'), { recursive: true });
+  writeFileSync(path.join(tempRoot, 'docs', 'implementation', 'plan-a', '00-master-plan-v1.md'), '# Plan A\n');
+  writeFileSync(path.join(tempRoot, 'docs', 'implementation', 'plan-b', '00-master-plan-v1.md'), '# Plan B\n');
+
   const result = spawnSync(process.execPath, [
-    'scripts/prepare-phase-runner-state.mjs',
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
     '--dry-run',
     '--json',
   ], {
-    cwd: root,
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 

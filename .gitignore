@@ -40,6 +40,13 @@ __pycache__/
 docs/implementation/**/execution/
 docs/implementation/**/close/
 docs/implementation/**/archive/
+docs/analysis/
+docs/claude-tasks/
+docs/implementation/
+docs/phase-runner-visuals/
+docs/*.html
+docs/*.md
+docs/*.png
 .tmp/
 .DS_Store
 .claude/verification-results-harness-anomaly-phase*.log

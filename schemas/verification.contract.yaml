@@ -171,8 +171,7 @@ scope:
     - ".claudeignore"
     - ".gitignore"
     - "README.md"
-    - "docs/claude-tasks/external-harness-adoption/**"
-    - "docs/implementation/moonshot-harness-waste-reduction-2026-05-06/**"
+    - "docs/public/**"
     - "install-claude.sh"
   fallbackOutsideScope: true
 artifacts:

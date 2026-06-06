@@ -58,7 +58,7 @@ Generated state is excluded from package payloads. Logs, caches, traces, browser
 | `product-acceptance-gate.md` | policy-anchor | `skills/completion-verifier/**`, `skills/product-gate-reviewer/**` |
 | `product-definition-workflow.md` | policy-anchor | `skills/product-orchestrator/**`, `templates/product-definition/**` |
 | `provider-neutral-model-routing.md` | policy-anchor | runtime profile config templates and routing docs |
-| `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, `docs/implementation/**` plan packages |
+| `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, runtime `docs/implementation/**` plan packages |
 | `resumable-session-layer.md` | policy-anchor | phase-runner state helpers and runtime state docs |
 | `session-compaction.md` | policy-anchor | `skills/session-logger/**`, `docs/public/reference/session-logger-reference.md` |
 | `skill-composition.md` | policy-anchor | `skills/**`, `package/package-contract.yaml` |

@@ -50,7 +50,7 @@ accountRootInstall:
     codex: "${CODEX_HOME:-~/.codex}"
   commonPayloadEntries:
     - bin/
-    - docs/
+    - docs/public/
     - rules/
     - schemas/
     - scripts/

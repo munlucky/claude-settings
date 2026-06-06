@@ -107,6 +107,23 @@ test('canonical source and package boundary directories exist', () => {
   }
 });
 
+test('tracked docs are limited to installed public documentation', () => {
+  const output = execFileSync('git', ['ls-files', 'docs'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  const violations = output
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .filter((file) => !file.startsWith('docs/public/'));
+
+  assert.deepEqual(
+    violations,
+    [],
+    `Only docs/public is installed and trackable in this harness source repo:\n${violations.join('\n')}`,
+  );
+});
+
 test('canonical source directories contain real harness files, not README-only placeholders', async () => {
   for (const [dir, minimumFileCount] of canonicalSourceMinimums) {
     const files = await listFiles(dir);
@@ -189,6 +206,8 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /claude: "\$\{CLAUDE_HOME:-~\/\.claude\}"/);
   assert.match(contract, /codex: "\$\{CODEX_HOME:-~\/\.codex\}"/);
   assert.match(contract, /commonPayloadEntries:/);
+  assert.match(contract, /docs\/public\//);
+  assert.doesNotMatch(contract, /^\s+- docs\/$/m);
   assert.match(contract, /^\s+- rules\/$/m);
   assert.match(contract, /runtimeExposureEntries:/);
   assert.match(contract, /legacyHarnessCorePolicy: remove_when_requested_after_backup/);

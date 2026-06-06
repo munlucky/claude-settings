@@ -14,7 +14,7 @@
 - compatibility window 동안 downstream 설치는 계속 `.claude/` payload를 생성하지만, 이 저장소의 source of truth는 root-level source directory입니다
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
-- phase 기반 작업이 필요할 때 `docs/implementation/`를 런타임에 생성해 사용
+- phase 기반 작업이 필요할 때 `docs/implementation/`를 런타임에 생성해 사용하되, 이 저장소의 배포/설치 payload에는 포함하지 않음
 - `.moonshot-relay/docs/tasks/`, `.moonshot-relay/docs/phase-status.yaml`, `.moonshot-relay/docs/reports/*.json`, `.moonshot-relay/verification-results-*`, `.moonshot-relay/verification-verdict-*`, `.moonshot-relay/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리/설치 배포 대상이 아님
 - 프로젝트 지식 메모리는 account-root project knowledge namespace를 기본 backend로 사용합니다. 프로젝트 로컬 `.moonshot-relay/cache/memorygraph/**`는 seed/cache 입력이며 버전 관리/기본 agent context에서 제외합니다.
 - 코드 구조 분석은 `code-review-graph` MCP를 stage-gated + lazy update 방식으로 사용하며 `.code-review-graph/`에 저장하고 자동 build/watch 없이 실행
@@ -130,9 +130,9 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - 가이드라인: `docs/public/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화 등)
 - 제품 정의 가이드: `docs/public/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `docs/public/guidelines/long-running-harness.ko.md`
-- 외부 하네스 도입 준비: `docs/claude-tasks/external-harness-adoption/`
+- 외부 하네스 도입 검토 기록은 runtime/generated task output으로 남기며 source package에는 포함하지 않음
 - 작업 문서 루트: `.moonshot-relay/docs/tasks/` (runtime task output)
-- phase 계획 루트: `docs/implementation/` (tracked implementation plan packages)
+- phase 계획 루트: `docs/implementation/` (runtime/generated implementation plan packages; this harness source repo does not track generated plan history)
 - runtime state root: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/`
 - downstream reference package: `.claude/docs/reference-downstream/`
 - runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`
@@ -230,7 +230,7 @@ custom/
 - `docs/glossary/README.md`
 - `docs/daily/README.md`
 - `TEST_GUIDE.md`
-- `docs/analysis/README.md`
+- `docs/analysis/README.md` (downstream project bootstrap output; not tracked in this harness source repo)
 
 추가로 downstream 프로젝트 구현 전에 다음 readiness gate를 통과하는 구성을 권장합니다.
 

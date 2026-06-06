@@ -39,7 +39,7 @@ For a source change:
 
 Do not edit generated package payloads or runtime state to make a test pass. Generated state includes logs, caches, traces, browser artifacts, sqlite files, memorygraph data, and verification verdict JSON.
 
-Runtime execution artifacts under `docs/implementation/**/execution/`, `docs/implementation/**/archive/`, and `docs/implementation/**/close/` must remain untracked. They are excluded from Git so GitHub-based skill installers can clone the repository reliably on Windows path-length-limited systems.
+Runtime plan and execution artifacts under `docs/implementation/**` must remain untracked in this harness source repository. They are excluded from Git so GitHub-based skill installers can clone the repository reliably on Windows path-length-limited systems.
 
 ## Expected Dry-Run Signal
 
