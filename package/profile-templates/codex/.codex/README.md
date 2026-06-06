@@ -15,12 +15,13 @@ Canonical source belongs in the root-level directories declared by `package/pack
 - `tests/`
 - `docs/public/`
 
-The `.codex/skills` and `.codex/agents` trees are local generated-profile material during the migration window. Claude `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/schemas`, and `.claude/templates` trees are compatibility or generated-profile material, not Codex source. When editing durable skills, agents, scripts, schemas, templates, or tests, update the canonical root first and materialize or wrap profile output from that source.
+The `.codex/skills`, `.codex/agents`, and `.codex/rules` trees are Codex service-profile exposure. Common harness scripts, schemas, templates, CLI entrypoints, runtime tools, and public docs are installed under `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}`. Claude `.claude/skills`, `.claude/agents`, and `.claude/rules` are Claude service-profile exposure, not Codex source. When editing durable skills, agents, rules, scripts, schemas, templates, or tests, update the canonical root first and materialize profile output from that source.
 
 ## Always-Loaded Profile
 
 - `.codex/AGENTS.md` stays a short TOC for active Codex runtime instructions.
 - `.codex/config.toml` stores Codex runtime integration examples.
+- `.codex/skills/**`, `.codex/agents/**`, and `.codex/rules/**` expose Codex service behavior.
 - `.codex/verification.contract.yaml` remains the Codex profile verification contract path during migration.
 
 ## Generated State

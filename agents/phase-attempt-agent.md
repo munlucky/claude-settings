@@ -25,7 +25,7 @@ attemptInput:
   phaseTitle: "Core Implementation"
   planDir: "docs/implementation/"
   phaseDocPath: "docs/implementation/02-core-implementation.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
   sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
@@ -65,7 +65,7 @@ Codex rule references for this attempt:
 - `.claude/rules/agents/agent-delegation.md`
 
 Do not load previous coordinator chatter.
-Do not read `.claude/docs/ko/` as MemoryGraph context and do not pass raw MemoryGraph/KG/ontology records forward.
+Do not read `.moonshot-relay/docs/ko/` as MemoryGraph context and do not pass raw MemoryGraph/KG/ontology records forward.
 
 ### 2. Run orchestrator in phase attempt mode
 

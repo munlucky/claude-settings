@@ -36,6 +36,7 @@ const materializePackage = async () => {
 
 const claudeProfile = async () => path.join(await materializePackage(), 'claude', 'profile', '.claude');
 const codexProfile = async () => path.join(await materializePackage(), 'codex', 'profile', '.codex');
+const commonProfile = async () => path.join(await materializePackage(), 'moonshot-relay', 'profile');
 
 after(async () => {
   if (materializedRoot) {
@@ -52,12 +53,6 @@ const requiredClaudeEntries = [
   'skills',
   'agents',
   'rules',
-  'scripts',
-  'bin',
-  'tools/browserd',
-  'schemas',
-  'templates',
-  'docs/public',
 ];
 
 const requiredCodexEntries = [
@@ -67,15 +62,18 @@ const requiredCodexEntries = [
   'config.toml',
   'skills',
   'agents',
-  'docs/public',
+  'rules',
 ];
 
-const requiredConcretePayloadFiles = [
-  'skills/moonshot-phase-runner/SKILL.md',
-  'skills/moonshot-plan-writer/SKILL.md',
-  'agents/phase-attempt-agent.md',
+const requiredCommonPayloadFiles = [
+  'docs/public/repository-layout.md',
   'rules/workflow.md',
   'rules/workflow-bundles.yaml',
+  'schemas/verification.contract.yaml',
+  'templates/GOAL_CONTRACT.template.yaml',
+  'bin/browserctl',
+  'tools/browserd/package.json',
+  'tools/browserd/server.mjs',
   'scripts/install-browser-runtime.sh',
   'scripts/memorygraph-mcp-wrapper.js',
   'scripts/memorygraph-mcp-wrapper.mjs',
@@ -83,20 +81,25 @@ const requiredConcretePayloadFiles = [
   'scripts/browser-flow-runner.mjs',
   'scripts/commit-moonshot-memory-refresh.mjs',
   'scripts/prepare-phase-runner-state.mjs',
+  'scripts/lib/phase-event-ledger.mjs',
+  'scripts/lib/phase-run-lease-store.mjs',
   'scripts/lib/runtime-state-db-path.mjs',
   'scripts/lib/runtime-state-root.mjs',
   'scripts/verification-verdict-state.mjs',
-  'bin/browserctl',
-  'tools/browserd/package.json',
-  'tools/browserd/server.mjs',
-  'schemas/verification.contract.yaml',
-  'templates/GOAL_CONTRACT.template.yaml',
+];
+
+const requiredClaudeConcreteFiles = [
+  'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
+  'agents/phase-attempt-agent.md',
+  'rules/workflow.md',
 ];
 
 const requiredConcreteCodexFiles = [
   'skills/moonshot-phase-runner/SKILL.md',
   'skills/moonshot-plan-writer/SKILL.md',
   'agents/phase-attempt-agent.md',
+  'rules/workflow.md',
 ];
 
 const generatedStateFragments = [
@@ -216,18 +219,42 @@ const matchesGeneratedStateFragment = (file, fragment) => {
   return file.includes(fragment);
 };
 
-test('Claude package payload includes required compatibility and source entries', async () => {
+test('Moonshot Relay common package payload includes shared harness entries', async () => {
+  const profileRoot = await commonProfile();
+  for (const entry of [
+    'bin',
+    'docs/public',
+    'rules',
+    'schemas',
+    'scripts',
+    'templates',
+    'tools/browserd',
+    'verification.contract.yaml',
+  ]) {
+    await assertEntryExists(profileRoot, entry);
+  }
+
+  for (const entry of requiredCommonPayloadFiles) {
+    await assertEntryExists(profileRoot, entry);
+  }
+});
+
+test('Claude package payload includes only service profile entries', async () => {
   const profileRoot = await claudeProfile();
   for (const entry of requiredClaudeEntries) {
     await assertEntryExists(profileRoot, entry);
   }
 
-  for (const entry of requiredConcretePayloadFiles) {
+  for (const entry of requiredClaudeConcreteFiles) {
     await assertEntryExists(profileRoot, entry);
+  }
+
+  for (const entry of ['bin', 'tools', 'schemas', 'scripts', 'templates', 'docs/public']) {
+    assert.equal(existsSync(path.join(profileRoot, entry)), false, `${entry} should live in the common Moonshot Relay payload`);
   }
 });
 
-test('Codex package payload includes required compatibility and source entries', async () => {
+test('Codex package payload includes only service profile entries', async () => {
   const profileRoot = await codexProfile();
   for (const entry of requiredCodexEntries) {
     await assertEntryExists(profileRoot, entry);
@@ -235,6 +262,10 @@ test('Codex package payload includes required compatibility and source entries',
 
   for (const entry of requiredConcreteCodexFiles) {
     await assertEntryExists(profileRoot, entry);
+  }
+
+  for (const entry of ['bin', 'tools', 'schemas', 'scripts', 'templates', 'docs/public']) {
+    assert.equal(existsSync(path.join(profileRoot, entry)), false, `${entry} should live in the common Moonshot Relay payload`);
   }
 });
 
@@ -287,12 +318,13 @@ test('excludes runtime state roots from package materialization denylist', () =>
 
 test('package materialization contract names generated payload roots and exclusions', async () => {
   const contract = await readFile(fromRoot('package/package-contract.yaml'), 'utf8');
+  assert.match(contract, /generatedProfileRoot: package\/moonshot-relay\/profile\//);
   assert.match(contract, /templateRoot: package\/profile-templates\/claude\/\.claude\//);
   assert.match(contract, /templateRoot: package\/profile-templates\/codex\/\.codex\//);
   assert.match(contract, /generatedProfileRoot: package\/claude\/profile\/\.claude\//);
   assert.match(contract, /generatedProfileRoot: package\/codex\/profile\/\.codex\//);
   assert.match(contract, /materializer: package\/build-package\.mjs/);
-  assert.match(contract, /claudeSupportScripts:/);
+  assert.match(contract, /commonSupportScripts:/);
   assert.match(contract, /archivedLegacyScripts:/);
   assert.match(contract, /archive\/scripts\/legacy-phase-adapters\//);
   assert.doesNotMatch(contract, /source: scripts\/\*\*/);
@@ -333,7 +365,7 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
 });
 
 test('generated package profiles are not tracked source files', () => {
-  const result = spawnSync('git', ['ls-files', 'package/claude/profile', 'package/codex/profile'], {
+  const result = spawnSync('git', ['ls-files', 'package/moonshot-relay/profile', 'package/claude/profile', 'package/codex/profile'], {
     cwd: root,
     encoding: 'utf8',
   });
@@ -353,6 +385,8 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(codexHome, 'skills', 'moonshot-decide-sequence'), 'legacy file collision\n');
   await mkdir(path.join(codexHome, 'schemas'), { recursive: true });
   await writeFile(path.join(codexHome, 'schemas', 'old-managed.schema.json'), '{}\n');
+  await mkdir(path.join(codexHome, 'docs', 'public'), { recursive: true });
+  await writeFile(path.join(codexHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(codexHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
     copied: [{ path: 'schemas/old-managed.schema.json' }],
   })}\n`);
@@ -360,6 +394,10 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
   await mkdir(path.join(claudeHome, 'scripts'), { recursive: true });
   await writeFile(path.join(claudeHome, 'scripts', 'old-managed.mjs'), 'old\n');
+  await mkdir(path.join(claudeHome, 'schemas'), { recursive: true });
+  await writeFile(path.join(claudeHome, 'schemas', 'verification.contract.yaml'), 'runtimeVerdict: ".claude/runtime-verdict-<runId>.json"\n');
+  await mkdir(path.join(claudeHome, 'docs', 'public'), { recursive: true });
+  await writeFile(path.join(claudeHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(claudeHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
     copied: [{ path: 'scripts/old-managed.mjs' }],
   })}\n`);
@@ -392,8 +430,11 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
     assert.equal(existsSync(path.join(claudeHome, 'scripts')), false);
+    assert.equal(existsSync(path.join(claudeHome, 'schemas')), false);
+    assert.equal(existsSync(path.join(claudeHome, 'docs', 'public')), false);
     assert.equal(existsSync(path.join(codexHome, 'scripts')), false);
     assert.equal(existsSync(path.join(codexHome, 'schemas')), false);
+    assert.equal(existsSync(path.join(codexHome, 'docs', 'public')), false);
   } finally {
     await rm(installRoot, { recursive: true, force: true });
   }

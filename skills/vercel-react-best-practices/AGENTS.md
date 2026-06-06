@@ -12,7 +12,7 @@ January 2026
 
 > **Localization note:**
 > The Korean counterpart is maintained as a compact summary/index rather than a full duplicate.
-> Use `AGENTS.ko.md` for the Korean overview and `.claude/docs/ko/skills/vercel-react-best-practices/rules/*.ko.md` for Korean rule summaries.
+> Use `AGENTS.ko.md` for the Korean overview and `.moonshot-relay/docs/ko/skills/vercel-react-best-practices/rules/*.ko.md` for Korean rule summaries.
 
 ---
 

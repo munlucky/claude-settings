@@ -36,7 +36,7 @@ Vercel이 유지하는 React/Next.js 성능 최적화 가이드입니다. 8개 �
 
 - 상세 규칙은 영어 원본 `rules/*.md`를 기준으로 유지합니다.
 - 한국어 미러는 별도 디렉터리의 축약형 요약본을 사용합니다:
-  - `.claude/docs/ko/skills/vercel-react-best-practices/rules/`
+  - `.moonshot-relay/docs/ko/skills/vercel-react-best-practices/rules/`
 - 리뷰나 리팩터링 시에는 카테고리 우선순위를 먼저 적용하고, 필요한 경우 원문 예제까지 내려가 확인합니다.
 
 ## 빠른 기준

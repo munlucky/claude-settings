@@ -22,7 +22,7 @@ planPackageReadiness:
   dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
   runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
   archiveRoot: "docs/implementation/archive/<plan-slug>/"
-  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir {planRoot} --master-plan {planRoot}/00-master-plan-v<version>.md --status-file .claude/docs/phase-status.yaml --execution-root {planRoot}/execution"
+  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir {planRoot} --master-plan {planRoot}/00-master-plan-v<version>.md --status-file .moonshot-relay/docs/phase-status.yaml --execution-root {planRoot}/execution"
   readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
 ```
 

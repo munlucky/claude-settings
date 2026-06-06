@@ -60,7 +60,7 @@ triggers:
 - pass/fail 상태
 - 대상 URL 및 HTTP 응답 요약
 - optional browser-flow status
-- optional browser-flow verdict file at `.claude/browser-flow-verdict-<runId>.json`
+- optional browser-flow verdict file at `.moonshot-relay/browser-flow-verdict-<runId>.json`
 - 선택적 E2E 결과
 - runtime evidence depth: `smoke`, `open-act`, 또는 `open-act-mutate-persist-recover`
 - critical scenario smoke-only warnings
@@ -69,8 +69,8 @@ triggers:
 
 ## Browser Flow Artifacts
 
-- Runner verdict는 `.claude/browser-flow-verdict-<runId>.json`에 기록됩니다.
-- flow가 해당 artifact를 요청하면 screenshots, console events, network events는 `.claude/browser-artifacts/` 아래에 기록됩니다.
+- Runner verdict는 `.moonshot-relay/browser-flow-verdict-<runId>.json`에 기록됩니다.
+- flow가 해당 artifact를 요청하면 screenshots, console events, network events는 `.moonshot-relay/browser-artifacts/` 아래에 기록됩니다.
 - browser runtime 또는 flow declaration이 없으면 hand-written pass가 아니라 setup-gap verdict를 생성해야 합니다.
 - Critical `SCN-*` flow는 clean finish 전에 smoke 이상의 interaction evidence가 필요합니다.
 

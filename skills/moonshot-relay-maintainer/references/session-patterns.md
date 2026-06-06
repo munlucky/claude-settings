@@ -37,13 +37,13 @@ Use this reference when recreating the harness maintenance flow from the April 2
 - `.claude/logs/`
 - `.claude/browser-runtime/`
 - `.claude/tmp/`
-- `.claude/docs/tasks/`
-- `.claude/docs/analysis/`
-- `.claude/docs/plans/`
-- `.claude/docs/code-review/`
-- `.claude/knowledge-repo-audit-*`
-- `.claude/verification-results-*`
-- `.claude/verification-verdict-*`
+- `.moonshot-relay/docs/tasks/`
+- `.moonshot-relay/docs/analysis/`
+- `.moonshot-relay/docs/plans/`
+- `.moonshot-relay/docs/code-review/`
+- `.moonshot-relay/knowledge-repo-audit-*`
+- `.moonshot-relay/verification-results-*`
+- `.moonshot-relay/verification-verdict-*`
 
 ## Commit Policy Captured
 

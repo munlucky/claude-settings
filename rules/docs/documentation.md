@@ -1,6 +1,6 @@
 ---
 paths:
-  - ".claude/docs/**/*.md"
+  - ".moonshot-relay/docs/**/*.md"
 ---
 
 # Documentation Rules

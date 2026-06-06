@@ -67,7 +67,7 @@ teams:
       enabled: true  # 리뷰어간 발견사항 공유
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/review-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/review-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # Research Team - Parallel Analysis
@@ -105,7 +105,7 @@ teams:
       enabled: true
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/research-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/research-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # Verify Team - Adversarial Verification
@@ -143,7 +143,7 @@ teams:
       debateRounds: 2
     aggregation:
       strategy: "debate-resolution"
-      outputPath: ".claude/docs/team-reports/verify-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/verify-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # Planning Team - Parallel Plan Validation
@@ -184,7 +184,7 @@ teams:
       enabled: true
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/planning-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/planning-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # Quality Team - Post-Implementation Quality Check
@@ -225,7 +225,7 @@ teams:
       enabled: true
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/quality-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/quality-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # Analysis Team - Parallel PM Analysis
@@ -265,7 +265,7 @@ teams:
       enabled: true
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/analysis-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/analysis-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # Fix Team - Error Resolution
@@ -304,7 +304,7 @@ teams:
       enabled: true
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/fix-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/fix-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # 🆕 Implementation Team - Parallel Feature Implementation
@@ -360,7 +360,7 @@ teams:
       strategy: "exclusive"
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/impl-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/impl-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # 🆕 Cross-Layer Team - Frontend/Backend/Test Coordination
@@ -429,7 +429,7 @@ teams:
       strategy: "exclusive"  # 각 팀원은 자기 경로만 수정
     aggregation:
       strategy: "merge"
-      outputPath: ".claude/docs/team-reports/cross-layer-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/cross-layer-report.md"
 
   # ─────────────────────────────────────────────────────────────────
   # 🆕 Debug Team - Competing Hypothesis Investigation
@@ -473,7 +473,7 @@ teams:
       debateRounds: 3  # 과학적 논쟁처럼 서로 반박
     aggregation:
       strategy: "debate-resolution"
-      outputPath: ".claude/docs/team-reports/debug-report.md"
+      outputPath: ".moonshot-relay/docs/team-reports/debug-report.md"
 
 # Orchestrator Integration
 orchestratorHooks:

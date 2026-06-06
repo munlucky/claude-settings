@@ -36,7 +36,7 @@
 - **미들웨어**: [인증 미들웨어 위치]
 
 ## 문서 경로
-> `tasksRoot`는 CLAUDE.md에서 설정. 기본값: `.claude/docs/tasks`
+> `tasksRoot`는 CLAUDE.md에서 설정. 기본값: `.moonshot-relay/docs/tasks`
 
 - `{agreementsRoot}/{feature-name}-agreement.md`
 - `{tasksRoot}/{feature-name}/context.md`

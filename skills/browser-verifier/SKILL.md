@@ -67,7 +67,7 @@ Validate that a web app is reachable and working at runtime after implementation
 - pass/fail status
 - target URL and HTTP response summary
 - optional browser-flow status
-- optional browser-flow verdict file at `.claude/browser-flow-verdict-<runId>.json`
+- optional browser-flow verdict file at `.moonshot-relay/browser-flow-verdict-<runId>.json`
 - optional E2E result
 - runtime evidence depth: `smoke`, `open-act`, or `open-act-mutate-persist-recover`
 - critical scenario smoke-only warnings
@@ -75,8 +75,8 @@ Validate that a web app is reachable and working at runtime after implementation
 - structured summary suitable for merge-back into the caller session
 
 ## Browser Flow Artifacts
-- Runner verdicts are written to `.claude/browser-flow-verdict-<runId>.json`.
-- Screenshots, console events, and network events are written under `.claude/browser-artifacts/` when the flow requests those artifacts.
+- Runner verdicts are written to `.moonshot-relay/browser-flow-verdict-<runId>.json`.
+- Screenshots, console events, and network events are written under `.moonshot-relay/browser-artifacts/` when the flow requests those artifacts.
 - Missing browser runtime or missing flow declarations should produce a setup-gap verdict instead of a hand-written pass.
 - Critical `SCN-*` flows need interaction evidence beyond smoke before clean finish.
 

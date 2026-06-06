@@ -49,6 +49,7 @@ test('profile document paths use one active task root and public guideline root'
   for (const file of files) {
     const content = await readRoot(file);
     assert.equal(parseYamlStringValue(content, 'tasksRoot'), '.moonshot-relay/docs/tasks', `${file} tasksRoot`);
+    assert.equal(parseYamlStringValue(content, 'agreementsRoot'), '.moonshot-relay/docs/agreements', `${file} agreementsRoot`);
     assert.doesNotMatch(content, /tasksRoot:\s*"docs\/claude-tasks"/);
     if (content.includes('guidelinesRoot:')) {
       assert.equal(parseYamlStringValue(content, 'guidelinesRoot'), 'docs/public/guidelines', `${file} guidelinesRoot`);
@@ -74,7 +75,7 @@ test('plan readiness bridge reports ready state and planned outputs for reviewed
     '--master-plan',
     path.join(planDir, '00-master-plan-v1.md'),
     '--status-file',
-    path.join(tempRoot, '.claude', 'docs', 'phase-status.yaml'),
+    path.join(tempRoot, '.moonshot-relay', 'docs', 'phase-status.yaml'),
     '--execution-root',
     path.join(planDir, 'execution'),
   ], {
@@ -87,7 +88,7 @@ test('plan readiness bridge reports ready state and planned outputs for reviewed
   assert.equal(payload.status, 'ready');
   assert.deepEqual(payload.phaseDocs, ['01-sample-v1.md']);
   assert.equal(payload.dryRun, true);
-  assert.equal(existsSync(path.join(tempRoot, '.claude', 'docs', 'phase-status.yaml')), false);
+  assert.equal(existsSync(path.join(tempRoot, '.moonshot-relay', 'docs', 'phase-status.yaml')), false);
   assert.ok(payload.plannedWrites.some((entry) => entry.endsWith('phase-status.yaml')));
   assert.ok(payload.plannedWrites.some((entry) => entry.endsWith('phase-runner-readiness.json')));
 });
@@ -164,9 +165,16 @@ test('browser flow runner writes generated-state verdicts and supports smoke hea
 
 test('browser runtime verifier defaults generated verdicts to .moonshot-relay', async () => {
   const content = await readRoot('agents', 'verification', 'verify-runtime.sh');
+  const verifyChanges = await readRoot('agents', 'verification', 'verify-changes.sh');
+  const contract = await readRoot('schemas', 'verification.contract.yaml');
 
   assert.match(content, /mkdir -p \.claude \.moonshot-relay/);
   assert.match(content, /HARNESS_VERDICT_FILE:-\.moonshot-relay\/runtime-verdict-\$\{RUN_ID\}\.json/);
+  assert.match(verifyChanges, /HARNESS_VERDICT_FILE:-\.moonshot-relay\/verification-verdict-\$\{RUN_ID\}\.json/);
+  assert.match(contract, /runtimeVerdict:\s*"\.moonshot-relay\/runtime-verdict-<runId>\.json"/);
+  assert.match(contract, /verdict:\s*"\.moonshot-relay\/verification-verdict-<runId>\.json"/);
+  assert.doesNotMatch(contract, /runtimeVerdict:\s*"\.claude\/runtime-verdict-/);
+  assert.doesNotMatch(contract, /verdict:\s*"\.claude\/verification-verdict-/);
   assert.match(content, /grep -E '\^\(\\.moonshot-relay\|\\.claude\)\/browser-flow-verdict-'/);
 });
 

@@ -131,7 +131,7 @@ Stale docs → add to output `staleDocs[]` for pre-flight-check to surface.
 
 When a phase runner marks a phase complete, finish-bundle doc sync must reconcile:
 - master plan `Phase Completion Checklist`
-- `.claude/docs/phase-status.yaml` status and `archivedPhaseDoc`
+- `.moonshot-relay/docs/phase-status.yaml` status and `archivedPhaseDoc`
 - execution artifact paths for `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `HANDOFF.md`, and `SCORECARD.md`
 - daily log final reconciliation when earlier entries record blocked or failed attempts
 - evidence links for every critical `SCN-*`
@@ -161,7 +161,7 @@ node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs
 
 Rules:
 - Generate only compatibility seed/cache files during doc sync; do not write semantic facts or raw graph state unless the user explicitly requested memory refresh.
-- Keep `.claude/docs/ko/` out of seed sources.
+- Keep `.moonshot-relay/docs/ko/` out of seed sources.
 - Include code-level facts from existing projects through the default `--analysis-level code`.
 - Report promotion candidate count, but do not promote into `moonshot-relay` without explicit approval.
 - Keep `.moonshot-relay/cache/memorygraph/`, legacy `.claude/cache/memorygraph/`, and account-root knowledge runtime state unstaged by default.
@@ -230,7 +230,7 @@ docSync:
     └── docs/tasks/              # Default tasksRoot (or docs/exec-plans/)
 ```
 
-> **Note**: `docs/exec-plans/` is an optional alternative to `.claude/docs/tasks/` for git-tracked task docs.
+> **Note**: `docs/exec-plans/` is an optional alternative to `.moonshot-relay/docs/tasks/` for git-tracked task docs.
 > Configure via `PROJECT.md: documentPaths.tasksRoot`.
 
 ## Project Knowledge Context Contract

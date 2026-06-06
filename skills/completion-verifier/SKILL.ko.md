@@ -181,7 +181,7 @@ completionStatus:
       warnings: []
   evidenceProvenance:
     - source: "verify-changes.sh"
-      artifact: ".claude/verification-verdict-<runId>.json"
+      artifact: ".moonshot-relay/verification-verdict-<runId>.json"
       fresh: true
 qaReport:
   path: "{activeSliceDir}/QA_REPORT.md"

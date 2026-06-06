@@ -55,7 +55,7 @@ workflowEvidence:
     - "doc-auto-sync (not evaluated yet)"
     - "session-logger (clean completion path)"
   evidenceFiles:
-    analysisContext: ".claude/docs/moonshot-analysis.yaml"
+    analysisContext: ".moonshot-relay/docs/moonshot-analysis.yaml"
     qaReport: "{optional}"
     handoff: "{optional}"
 

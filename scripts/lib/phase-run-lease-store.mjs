@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 
-import { runtimeStateRelativePath } from './runtime-state-root.mjs';
+import { resolveRuntimeStatePath, runtimeStateRelativePath } from './runtime-state-root.mjs';
 
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || runtimeStateRelativePath('logs', 'workflow-enforcement');
-const DEFAULT_STATUS_FILE = path.resolve(process.cwd(), '.claude/docs/phase-status.yaml');
+const DEFAULT_STATUS_FILE = resolveRuntimeStatePath('docs', 'phase-status.yaml');
 const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
 const CURRENT_RUN_BASENAME = 'current-run.json';
 

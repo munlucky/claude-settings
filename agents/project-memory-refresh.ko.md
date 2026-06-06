@@ -26,7 +26,7 @@ reason: "explicit_refresh|session_logger|commit_moonshot"
 1. `memoryMode: write_requested`인지 확인합니다. 아니면 `status: skipped`를 반환합니다.
 2. 다음 명령으로 seed를 만들거나 기존 seed를 요구합니다:
    `node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`
-3. seed JSON과 canonical 프로젝트 소스만 읽습니다. `.claude/docs/ko/`는 읽지 않습니다.
+3. seed JSON과 canonical 프로젝트 소스만 읽습니다. `.moonshot-relay/docs/ko/`는 읽지 않습니다.
 4. 각 seed node에 대해:
    - `project:{projectId}`와 seed의 `key:<hash>` 태그로 기존 memory를 검색합니다.
    - 없으면 `store_memory`를 호출합니다.

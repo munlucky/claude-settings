@@ -16,15 +16,16 @@ sourcePolicy:
   generatedProfileRoots:
     - .claude/skills/
     - .claude/agents/
-    - .claude/scripts/
-    - .claude/schemas/
-    - .claude/templates/
-  rule: "Edit canonical source first; materialize or wrap .claude profile output from canonical source."
+    - .claude/rules/
+  commonHarnessRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/"
+  rule: "Edit canonical source first; expose only service profile files in .claude and keep common harness files under MOONSHOT_RELAY_HOME."
 activeRuntimeFiles:
   - .claude/CLAUDE.md
   - .claude/PROJECT.md
   - .claude/README.md
+  - .claude/agents/**
   - .claude/rules/**
+  - .claude/skills/**
   - .claude/verification.contract.yaml
 excludedGeneratedState:
   - .claude/logs/**

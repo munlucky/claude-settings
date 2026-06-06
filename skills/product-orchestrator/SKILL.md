@@ -112,7 +112,7 @@ Planning artifacts should also record:
 At every stage:
 - use `assumption-ledger` before stopping for ambiguity
 - apply `docs/public/guidelines/memorygraph-workflow.md`
-- do not use `.claude/docs/ko/` as a MemoryGraph source
+- do not use `.moonshot-relay/docs/ko/` as a MemoryGraph source
 - omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy
 - stop only for true blockers
 - use max 2 rewrite retries after the first draft

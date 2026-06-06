@@ -628,7 +628,7 @@ function selfTest() {
     activePhaseDocPath: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/phase-02.md',
     masterPlan: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07/master.md',
     planDir: '/workspace/plans/harness-nonwork-failure-prevention-2026-05-07',
-    statusFile: '/workspace/.claude/docs/phase-status.yaml',
+    statusFile: '/workspace/.moonshot-relay/docs/phase-status.yaml',
     gitTreeFingerprint: 'tree-a',
   };
   const stalePhasePayload = {
@@ -671,7 +671,7 @@ function selfTest() {
     ...stalePhasePayload,
     identity: {
       ...activeIdentity,
-      statusFile: '/workspace/.claude/docs/other-status.yaml',
+      statusFile: '/workspace/.moonshot-relay/docs/other-status.yaml',
     },
   };
   const mismatchedTreePayload = {

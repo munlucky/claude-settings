@@ -15,7 +15,7 @@ Promotions must pass the phase-05 replay gate or carry human approval, and the e
 - Must run from the harness repository root, normally `C:\dev\moonshot-relay`.
 - Must write only with `context.project_id: moonshot-relay`.
 - Must not write project-specific domain facts to the harness graph.
-- Must not read `.claude/docs/ko/` as a source.
+- Must not read `.moonshot-relay/docs/ko/` as a source.
 
 ## Inputs
 
@@ -42,7 +42,7 @@ Do not promote:
 - one-off file implementation details
 - temporary errors without reusable lesson
 - secrets, personal data, tokens, local absolute internals beyond source attribution
-- facts derived only from `.claude/docs/ko/`
+- facts derived only from `.moonshot-relay/docs/ko/`
 
 ## Workflow
 

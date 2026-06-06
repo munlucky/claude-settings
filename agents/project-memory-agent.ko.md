@@ -32,7 +32,7 @@ Phase 01 Project Identity Resolver 계약을 사용합니다. `.claude/project.i
 
 ### 1.5 소스 경계
 - 프로젝트 knowledge record와 canonical 프로젝트 정책/스펙 파일만 recall source로 사용합니다.
-- `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다. MemoryGraph 컨텍스트 로드/요약 대상으로 읽지 않습니다.
+- `.moonshot-relay/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다. MemoryGraph 컨텍스트 로드/요약 대상으로 읽지 않습니다.
 - system, developer, `AGENTS.md`, `.claude/rules/**`, workflow hard rule은 MemoryGraph보다 우선하는 정책으로 취급합니다.
 - recall 결과가 상위 정책을 반복하면 prompt-visible summary에서 제외하고 `omittedByPolicy`에 기록합니다.
 
@@ -87,7 +87,7 @@ depth 2는 첫 hop에서 현재 계획/리뷰와 직접 관련된 component, con
 
 ### 4.5 필요한 경우 압축 교훈 저장
 오케스트레이터가 메모리 업데이트를 요청한 경우에만 `store_memory`로 재사용 가능한 짧은 사실을 저장:
-- `.claude/docs/ko/`에서만 나온 내용은 MemoryGraph에 저장하지 않습니다.
+- `.moonshot-relay/docs/ko/`에서만 나온 내용은 MemoryGraph에 저장하지 않습니다.
 - system prompt, developer instruction, `AGENTS.md`, 공통 하네스 규칙은 프로젝트 메모리로 저장하지 않습니다.
 - 일반 stage preflight에서는 메모리를 쓰지 않습니다. `memoryMode: write_requested`일 때만 저장합니다.
 

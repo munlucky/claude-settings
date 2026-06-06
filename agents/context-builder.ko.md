@@ -9,7 +9,7 @@ description: Creates implementation plans (context.md) based on preliminary agre
 ## When to use
 - Requirements Analyzer 단계가 끝났고, 구현 계획이 필요한 경우
 ## Inputs
-- 사전 합의서 (`.claude/docs/agreements/{feature-name}-agreement.md`)
+- 사전 합의서 (`.moonshot-relay/docs/agreements/{feature-name}-agreement.md`)
 - 유사 기능 코드 경로
 - 사용 가능한 경우 `analysisContext.codeReviewGraph` 요약
 - 프로젝트 규칙 (`.claude/PROJECT.md`)

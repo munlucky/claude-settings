@@ -22,18 +22,15 @@ const repoRoot = path.dirname(packageRoot);
 const generatedRoot = packageRoot;
 
 const runtimeSpecs = {
-  claude: {
-    templateRoot: path.join(packageRoot, 'profile-templates', 'claude', '.claude'),
-    outputRoot: path.join('claude', 'profile', '.claude'),
+  'moonshot-relay': {
+    outputRoot: path.join('moonshot-relay', 'profile'),
     sharedDirs: [
-      'skills',
-      'agents',
-      'rules',
       'bin',
       'tools',
       'schemas',
       'templates',
       path.join('docs', 'public'),
+      'rules',
     ],
     sharedFiles: [
       'scripts/awtl-memory-promotion.mjs',
@@ -58,6 +55,8 @@ const runtimeSpecs = {
       'scripts/lib/awtl-replay-scorecard.mjs',
       'scripts/lib/awtl-trace-sink.mjs',
       'scripts/lib/failure-classifier.mjs',
+      'scripts/lib/phase-event-ledger.mjs',
+      'scripts/lib/phase-run-lease-store.mjs',
       'scripts/lib/runtime-state-db-path.mjs',
       'scripts/lib/runtime-state-root.mjs',
       'scripts/lib/runtime-unavailable-cache.mjs',
@@ -73,14 +72,24 @@ const runtimeSpecs = {
     ],
     verificationTarget: 'verification.contract.yaml',
   },
+  claude: {
+    templateRoot: path.join(packageRoot, 'profile-templates', 'claude', '.claude'),
+    outputRoot: path.join('claude', 'profile', '.claude'),
+    sharedDirs: [
+      'skills',
+      'agents',
+      'rules',
+    ],
+    sharedFiles: [],
+    verificationTarget: 'verification.contract.yaml',
+  },
   codex: {
     templateRoot: path.join(packageRoot, 'profile-templates', 'codex', '.codex'),
     outputRoot: path.join('codex', 'profile', '.codex'),
     sharedDirs: [
       'skills',
       'agents',
-      'schemas',
-      path.join('docs', 'public'),
+      'rules',
     ],
     sharedFiles: [],
     verificationTarget: 'verification.contract.yaml',
@@ -133,7 +142,9 @@ const denyBasenames = [
   /\.test\.py$/,
 ];
 
-const usage = () => `Usage: node package/build-package.mjs [--runtime all|claude|codex] [--out <dir>] [--clean] [--dry-run] [--json]`;
+const usage = () => `Usage: node package/build-package.mjs [--runtime all|moonshot-relay|claude|codex] [--out <dir>] [--clean] [--dry-run] [--json]`;
+
+const allRuntimeNames = ['moonshot-relay', 'claude', 'codex'];
 
 const parseArgs = (argv) => {
   const options = {
@@ -164,7 +175,7 @@ const parseArgs = (argv) => {
     }
   }
 
-  if (!['all', 'claude', 'codex'].includes(options.runtime)) {
+  if (!['all', ...allRuntimeNames].includes(options.runtime)) {
     throw new Error(`Unsupported runtime: ${options.runtime}\n${usage()}`);
   }
 
@@ -282,7 +293,9 @@ const materializeRuntime = async (runtime, options) => {
     await mkdir(outputRoot, { recursive: true });
   }
 
-  await copyTree(spec.templateRoot, outputRoot, plannedCopies, options);
+  if (spec.templateRoot) {
+    await copyTree(spec.templateRoot, outputRoot, plannedCopies, options);
+  }
 
   for (const sharedDir of spec.sharedDirs) {
     const source = path.join(repoRoot, sharedDir);
@@ -307,7 +320,7 @@ const materializeRuntime = async (runtime, options) => {
 
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
-  const runtimes = options.runtime === 'all' ? ['claude', 'codex'] : [options.runtime];
+  const runtimes = options.runtime === 'all' ? allRuntimeNames : [options.runtime];
   const results = [];
 
   for (const runtime of runtimes) {

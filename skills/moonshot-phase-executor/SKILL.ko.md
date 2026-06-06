@@ -34,7 +34,7 @@ phaseRunnerResult:
   prepared: true
   executionMode: "in-session-coordinator" # delegated-terminal은 legacy only
   planDir: "docs/implementation/"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
   worksetTemplate: "<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md"
   executionRuntime: "auto"            # auto | claude | codex

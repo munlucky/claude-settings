@@ -168,7 +168,7 @@ test('package contract declares required source payload entries and generated-st
     'package/build-package.mjs',
     'scripts/install-account-root-harness.mjs',
     'scripts/browser-flow-runner.mjs',
-    'claudeSupportScripts:',
+    'commonSupportScripts:',
     'archivedLegacyScripts:',
     'archive/scripts/legacy-phase-adapters/',
     'scripts/install-browser-runtime.sh',
@@ -177,6 +177,7 @@ test('package contract declares required source payload entries and generated-st
     'scripts/code-review-graph-mcp-wrapper.js',
     'package/profile-templates/claude/.claude/',
     'package/profile-templates/codex/.codex/',
+    'package/moonshot-relay/profile/',
   ]) {
     assert.match(contract, new RegExp(entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${entry} should be listed`);
   }
@@ -255,7 +256,7 @@ test('skills and agents use Moonshot Relay home for shared runtime assets', asyn
     ...await listFiles('skills'),
     ...await listFiles('agents'),
   ].filter((file) => /\.(md|sh)$/.test(file));
-  const forbiddenSharedRuntimeProfileRef = /(?:^|[^A-Za-z0-9_])\.claude[\\/](?:scripts|schemas|templates|tools|bin|config)(?:[\\/]|`|"|'|\s|$)/;
+  const forbiddenSharedRuntimeProfileRef = /(?:^|[^A-Za-z0-9_])\.claude[\\/](?:docs|scripts|schemas|templates|tools|bin|config)(?:[\\/]|`|"|'|\s|$)/;
   const violations = [];
 
   for (const file of runtimeInstructionFiles) {

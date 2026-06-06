@@ -3,13 +3,15 @@ import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
+import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
+
 const usage = () => `Usage: node scripts/prepare-phase-runner-state.mjs [--plan-dir <dir>] [--master-plan <file>] [--status-file <file>] [--execution-root <dir>] [--dry-run] [--json]`;
 
 const parseArgs = (argv) => {
   const options = {
     planDir: '',
     masterPlan: '',
-    statusFile: '.claude/docs/phase-status.yaml',
+    statusFile: '',
     executionRoot: '',
     dryRun: false,
     json: false,
@@ -182,7 +184,9 @@ const main = async () => {
   const executionRoot = options.executionRoot
     ? path.resolve(options.executionRoot)
     : path.join(planDir || repoRoot, 'execution');
-  const statusFile = path.resolve(options.statusFile || '.claude/docs/phase-status.yaml');
+  const statusFile = options.statusFile
+    ? path.resolve(options.statusFile)
+    : resolveRuntimeStatePath('docs', 'phase-status.yaml');
   const closeoutFile = path.join(executionRoot, 'phase-runner-readiness.json');
   const status = errors.length > 0 ? 'blocked' : reviewArtifacts.length === 0 ? 'docs_only' : 'ready';
   const preparedAt = new Date().toISOString();

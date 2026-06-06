@@ -8,7 +8,7 @@ Moonshot Relay phase work uses two separate document roots:
 Before execution, prepare an explicit runner state from the plan package:
 
 ```bash
-node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir docs/implementation/<plan-slug> --master-plan docs/implementation/<plan-slug>/00-master-plan-v1.md --status-file .claude/docs/phase-status.yaml --execution-root docs/implementation/<plan-slug>/execution
+node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir docs/implementation/<plan-slug> --master-plan docs/implementation/<plan-slug>/00-master-plan-v1.md --status-file .moonshot-relay/docs/phase-status.yaml --execution-root docs/implementation/<plan-slug>/execution
 ```
 
 Do not rely on implicit plan resolution when multiple `docs/implementation/*/00-master-plan-v*.md` packages exist. Pass `--plan-dir` and `--master-plan` so the runner cannot pick stale plans.

@@ -15,7 +15,7 @@ description: 프로젝트 승격 후보를 검토하고 승인된 범용 하네�
 - 반드시 하네스 저장소 루트, 일반적으로 `C:\dev\moonshot-relay`에서 실행합니다.
 - `context.project_id: moonshot-relay`로만 저장합니다.
 - 프로젝트 고유 도메인 사실은 하네스 graph에 저장하지 않습니다.
-- `.claude/docs/ko/`는 소스로 읽지 않습니다.
+- `.moonshot-relay/docs/ko/`는 소스로 읽지 않습니다.
 
 ## 입력
 
@@ -42,7 +42,7 @@ approval: "approved"
 - 일회성 파일 구현 세부사항
 - 재사용 교훈이 없는 임시 오류
 - secrets, 개인정보, token, 불필요한 로컬 절대경로
-- `.claude/docs/ko/`에서만 나온 사실
+- `.moonshot-relay/docs/ko/`에서만 나온 사실
 
 ## 워크플로우
 

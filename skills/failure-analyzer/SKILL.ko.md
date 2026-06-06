@@ -59,7 +59,7 @@ failureReport:
     reusable: true
     summary: "최신 verifier evidence 없이 완료를 주장함"
     logTarget: "analysisContext.notes"
-    durableTarget: ".claude/docs/solutions/"
+    durableTarget: ".moonshot-relay/docs/solutions/"
     ruleOrSkillChangeJustified: true
   turnFailure:
     failure_turn_id: "turn-phase05-attempt01"

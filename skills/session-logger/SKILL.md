@@ -6,7 +6,7 @@ loads:
   - session-state
   - handoff-artifacts
 deepReferences:
-  - .claude/docs/solutions/README.md
+  - .moonshot-relay/docs/solutions/README.md
 outputArtifacts:
   - HANDOFF.md
   - session-log
@@ -46,8 +46,8 @@ Use this skill when the user explicitly wants session or handoff logging, or whe
 - record only compact knowledge status, warning codes, artifact references, and reusable decisions; never paste raw MemoryGraph/KG/ontology/log/transcript payloads into session logs or `HANDOFF.md`
 - when the user explicitly asks for graph refresh, run `project-memory-refresh`; otherwise finish logging remains read-only and may create promotion candidates only
 - use knowledge writes only for reusable decisions, corrections, fixes, or project-specific conventions that pass the verify/promote lifecycle
-- do not use `.claude/docs/ko/` as a MemoryGraph source; it is a human-facing Korean mirror
-- promote reusable remediation patterns to `.claude/docs/solutions/` when justified
+- do not use `.moonshot-relay/docs/ko/` as a MemoryGraph source; it is a human-facing Korean mirror
+- promote reusable remediation patterns to `.moonshot-relay/docs/solutions/` when justified
 - create harness promotion candidates only; do not write promoted facts into `moonshot-relay` without explicit approval
 - append correction events instead of rewriting prior history
 

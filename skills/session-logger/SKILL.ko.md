@@ -6,7 +6,7 @@ loads:
   - session-state
   - handoff-artifacts
 deepReferences:
-  - .claude/docs/solutions/README.md
+  - .moonshot-relay/docs/solutions/README.md
 outputArtifacts:
   - HANDOFF.md
   - session-log
@@ -160,7 +160,7 @@ execution bridge 사용 시:
 - 세션 로그와 `HANDOFF.md`에는 compact knowledge status, warning code, artifact reference, 재사용 가능한 결정만 기록합니다. raw MemoryGraph/KG/ontology/log/transcript payload는 넣지 않습니다.
 - 사용자가 graph refresh를 명시한 경우에만 `project-memory-refresh`를 실행합니다. 그 외 finish logging은 read-only로 유지하고, 필요하면 승격 후보만 만듭니다.
 - 지식 write는 verify/promote lifecycle을 통과한 재사용 가능한 결정, correction, fix, 프로젝트별 convention에 한정합니다.
-- `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 소스로 사용하지 않습니다.
+- `.moonshot-relay/docs/ko/`는 사용자가 읽기 위한 한국어 미러이므로 MemoryGraph 소스로 사용하지 않습니다.
 - 하네스 승격 후보는 만들 수 있지만, 명시 승인 없이 `moonshot-relay` graph에 직접 저장하지 않습니다.
 
 | 이벤트 | 키 패턴 | 예시 |
@@ -173,8 +173,8 @@ execution bridge 사용 시:
 
 세션에서 재사용 가능한 remediation 패턴이 드러나면:
 
-1. `.claude/docs/solutions/README.md`의 promotion rule에 맞는지 확인합니다.
-2. `.claude/docs/solutions/` 아래에 solution asset을 생성하거나 갱신합니다.
+1. `.moonshot-relay/docs/solutions/README.md`의 promotion rule에 맞는지 확인합니다.
+2. `.moonshot-relay/docs/solutions/` 아래에 solution asset을 생성하거나 갱신합니다.
 3. 어떤 source artifact를 근거로 승격했는지 함께 기록합니다.
 
 승격하는 경우:

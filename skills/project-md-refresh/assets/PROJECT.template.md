@@ -36,7 +36,7 @@
 - **Middleware**: [auth middleware locations]
 
 ## Documentation Paths
-> Configure `tasksRoot` in CLAUDE.md. Default: `.claude/docs/tasks`
+> Configure `tasksRoot` in CLAUDE.md. Default: `.moonshot-relay/docs/tasks`
 
 - `{agreementsRoot}/{feature-name}-agreement.md`
 - `{tasksRoot}/{feature-name}/context.md`

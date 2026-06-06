@@ -9,7 +9,7 @@ description: Creates implementation plans (context.md) based on preliminary agre
 ## When to use
 - After the Requirements Analyzer step, when an implementation plan is needed
 ## Inputs
-- Preliminary agreement (`.claude/docs/agreements/{feature-name}-agreement.md`)
+- Preliminary agreement (`.moonshot-relay/docs/agreements/{feature-name}-agreement.md`)
 - Similar feature code paths
 - `analysisContext.codeReviewGraph` summary when code structure analysis is available
 - Project rules (`.claude/PROJECT.md`)

@@ -16,7 +16,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 디자인 산출물에서 UI/기능 요구사항을 자동으로 추출하고, 개발자가 바로 구현할 수 있는 구조화된 스펙 문서를 생성합니다.
 
 ### 입력 파일 유형
-1. **화면정의서 PDF**: `.claude/docs/디채오늘의문장/*.pdf` 등
+1. **화면정의서 PDF**: `.moonshot-relay/docs/디채오늘의문장/*.pdf` 등
 2. **Figma export**: 이미지(PNG/JPG), CSS/HTML export
 3. **디자인 가이드**: 색상/폰트/간격 토큰 정의
 
@@ -33,7 +33,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 다음 상황에서 자동 또는 수동으로 호출:
 
 ### 자동 트리거
-1. `.claude/docs/디채오늘의문장/` 디렉토리에 PDF 추가 감지
+1. `.moonshot-relay/docs/디채오늘의문장/` 디렉토리에 PDF 추가 감지
 2. Figma export zip 파일 추가 감지
 3. Moonshot Agent가 신규 기능으로 분류 + 디자인 산출물 경로 발견
 
@@ -51,8 +51,8 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 ### 1단계: 입력 파일 확인 (1분)
 ```markdown
 입력 파일 목록:
-- 화면정의서: .claude/docs/디채오늘의문장/배치관리_v3.pdf
-- Figma export: .claude/docs/디채오늘의문장/batch-management-export.zip
+- 화면정의서: .moonshot-relay/docs/디채오늘의문장/배치관리_v3.pdf
+- Figma export: .moonshot-relay/docs/디채오늘의문장/batch-management-export.zip
 - 기능명: batch-management
 ```
 
@@ -191,7 +191,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 ### 예시 1: PDF 화면정의서 파싱
 ```
 사용자: "화면정의서 PDF를 파싱해서 개발 스펙 만들어줘.
-         경로: .claude/docs/디채오늘의문장/배치관리_v3.pdf
+         경로: .moonshot-relay/docs/디채오늘의문장/배치관리_v3.pdf
          기능명: batch-management"
 
 Design Asset Parser Skill 실행 →
@@ -208,7 +208,7 @@ Design Asset Parser Skill 실행 →
 ### 예시 2: Figma CSS export 파싱
 ```
 사용자: "Figma CSS export를 분석해서 스타일 토큰 정리해줘.
-         경로: .claude/docs/디채오늘의문장/batch-ui-export.css
+         경로: .moonshot-relay/docs/디채오늘의문장/batch-ui-export.css
          기능명: batch-management"
 
 Design Asset Parser Skill 실행 →
@@ -224,8 +224,8 @@ Design Asset Parser Skill 실행 →
 ### 예시 3: PDF + CSS 동시 파싱
 ```
 사용자: "화면정의서 PDF와 Figma CSS를 함께 파싱해줘.
-         PDF: .claude/docs/디채오늘의문장/배치관리_v3.pdf
-         CSS: .claude/docs/디채오늘의문장/batch-ui-export.css
+         PDF: .moonshot-relay/docs/디채오늘의문장/배치관리_v3.pdf
+         CSS: .moonshot-relay/docs/디채오늘의문장/batch-ui-export.css
          기능명: batch-management"
 
 Design Asset Parser Skill 실행 →
@@ -268,8 +268,8 @@ Design Asset Parser Skill 실행 →
 ## 참고 정보
 
 ### 프로젝트별 디자인 산출물 경로
-- **디채 오늘의 문장**: `.claude/docs/디채오늘의문장/*.pdf`
-- **Figma export**: `.claude/docs/디채오늘의문장/*.zip`, `*.css`, `*.html`
+- **디채 오늘의 문장**: `.moonshot-relay/docs/디채오늘의문장/*.pdf`
+- **Figma export**: `.moonshot-relay/docs/디채오늘의문장/*.zip`, `*.css`, `*.html`
 
 ### 기존 프로젝트 패턴 (CLAUDE.md 준수)
 - Entity-Request 분리

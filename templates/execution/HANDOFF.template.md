@@ -29,7 +29,7 @@
 ## Checks To Rerun
 - Review:
 - Verification:
-- Plan conformance: `.claude/scripts/verify-plan-conformance.mjs`
+- Plan conformance: legacy compatibility only; active plan conformance checks run from `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/scripts/` or root `scripts/` when a canonical checker exists.
 - Runtime flow:
 - Traceability artifacts:
 

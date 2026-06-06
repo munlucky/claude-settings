@@ -35,7 +35,7 @@ similarFeaturePaths:  # if present
 - Receive only similar feature file paths (no contents)
 - Receive only pattern keywords (no detailed descriptions)
 ## Outputs
-- Preliminary agreement: `.claude/docs/agreements/{feature-name}-agreement.md`
+- Preliminary agreement: `.moonshot-relay/docs/agreements/{feature-name}-agreement.md`
 - Pending questions (if needed): `{tasksRoot}/{feature-name}/pending-questions.md`
 ## Workflow
 1. Classify the request as feature/modification/bug.

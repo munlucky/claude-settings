@@ -29,7 +29,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 
 - Optional plan directory argument.
 - Optional master plan path inside the plan directory.
-- Active status file: `.claude/docs/phase-status.yaml`.
+- Active status file: `.moonshot-relay/docs/phase-status.yaml`.
 - Execution route: `in-session-coordinator` by default. `delegated-terminal` is legacy compatibility only and requires an explicit legacy maintenance reason.
 - Execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, and verifier verdict.
 

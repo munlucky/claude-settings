@@ -33,7 +33,7 @@ surfaceStatus: internal_stage_owner
 | **execution_plane_mismatch** | Downstream flow treated as meta-harness or vice versa | `moonshot-orchestrator`, `workflow.md` |
 | **readiness_gate_missing** | Implementation started without project/context readiness | gate skills, `pre-flight-check` |
 | **verification_contract_missing** | Completion evidence unclear because contract was absent | verification contract docs, evidence gate |
-| **correction_lesson** | User correction reveals a reusable workflow or quality mistake | `analysisContext.notes`, optional `session-logger`, `.claude/docs/solutions/`, relevant skill/rule |
+| **correction_lesson** | User correction reveals a reusable workflow or quality mistake | `analysisContext.notes`, optional `session-logger`, `.moonshot-relay/docs/solutions/`, relevant skill/rule |
 | **failed_turn_prevention_gap** | A repeated failure turn did not produce a usable failed turn case or prevention hint | AWTL analyzer, phase-runner brief, replay scorecard |
 
 ## Systematic Debugging Rules
@@ -84,7 +84,7 @@ failureReport:
     reusable: true
     summary: "Completion was claimed before fresh verifier evidence existed."
     logTarget: "analysisContext.notes"
-    durableTarget: ".claude/docs/solutions/"
+    durableTarget: ".moonshot-relay/docs/solutions/"
     ruleOrSkillChangeJustified: true
   turnFailure:
     failure_turn_id: "turn-phase05-attempt01"

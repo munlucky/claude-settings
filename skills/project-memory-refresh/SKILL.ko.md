@@ -36,7 +36,7 @@ Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인
 
 - durable project identity/state는 Project Identity Resolver와 계정 루트 namespace를 통해 해석합니다.
 - `.claude/memorygraph/`와 `.claude/cache/memorygraph/`는 legacy project-local compatibility/cache artifact로 취급합니다.
-- `.claude/docs/ko/`는 memory source로 읽지 않습니다.
+- `.moonshot-relay/docs/ko/`는 memory source로 읽지 않습니다.
 - `.claude/memorygraph/`와 `.claude/cache/memorygraph/`는 커밋하지 않습니다.
 - MemoryGraph가 불가하면 direct fallback까지 시도한 뒤 실패를 보고하되 일반 workflow는 막지 않습니다.
 

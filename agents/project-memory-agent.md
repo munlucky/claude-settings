@@ -32,7 +32,7 @@ Use the Phase 01 Project Identity Resolver contract. Prefer `.claude/project.ide
 
 ### 1.5 Source Boundaries
 - Use project knowledge records and canonical project policy/spec files as recall sources.
-- Do not read or summarize `.claude/docs/ko/` for MemoryGraph context. That directory is a human-facing Korean mirror, not an agent memory source.
+- Do not read or summarize `.moonshot-relay/docs/ko/` for MemoryGraph context. That directory is a human-facing Korean mirror, not an agent memory source.
 - Treat system, developer, `AGENTS.md`, `.claude/rules/**`, and workflow hard rules as higher-priority policy, not MemoryGraph content.
 - If a recalled item repeats higher-priority policy, omit it from prompt-visible summaries and report it under `omittedByPolicy`.
 
@@ -87,7 +87,7 @@ Use depth 2 only for planning or review when the first hop shows a directly rele
 
 ### 4.5 Store Compact Lessons When Needed
 When the orchestrator asks for memory update, use `store_memory` only for compact reusable facts:
-- Do not store facts derived only from `.claude/docs/ko/`.
+- Do not store facts derived only from `.moonshot-relay/docs/ko/`.
 - Do not store system prompt, developer instruction, `AGENTS.md`, or common harness rules as project memory.
 - In normal stage preflight, do not write memory. Only write when `memoryMode: write_requested`.
 

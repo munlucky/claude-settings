@@ -45,7 +45,7 @@ phaseRunnerResult:
   executionMode: "in-session-coordinator"
   planDir: "docs/implementation/"
   masterPlan: "docs/implementation/00-master-plan.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
   coordinatorPolicy: "fresh-fork-per-attempt"
 
@@ -78,7 +78,7 @@ attemptInput:
   phaseTitle: "Core Implementation"
   planDir: "docs/implementation/"
   phaseDocPath: "docs/implementation/02-core-implementation.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
   sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
@@ -98,7 +98,7 @@ attemptInput:
 - 긴 phase 문서를 메인 세션에 인라인하지 않습니다.
 - 이전 구현 대화를 다시 넘기지 않습니다.
 - 각 fresh attempt 전에 `projectKnowledgeContext`를 `stage=execute`로 build 또는 refresh하고, typed summary block과 status metadata만 넘깁니다.
-- `.claude/docs/ko/`와 system/developer/AGENTS/rules 정책 중복 항목은 attempt input에서 제외합니다.
+- `.moonshot-relay/docs/ko/`와 system/developer/AGENTS/rules 정책 중복 항목은 attempt input에서 제외합니다.
 - 재시도 메모리는 `QA_REPORT.md`, `HANDOFF.md`, `SCORECARD.md`만 사용합니다.
 - `SPRINT_CONTRACT.md`의 policy anchors와 필수 검증 명령은 attempt 입력의 필수 항목으로 취급합니다.
 - `SCORECARD.md`를 phase의 객관적인 완료 상태로 사용합니다.

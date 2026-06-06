@@ -143,7 +143,7 @@ Use when the task changes harness, workflow docs, skill metadata, or public entr
 |  |  |  |  |  |
 
 ## Runtime Updates
-- Verification verdict file: .claude/verification-verdict-phaseNN-final.json
+- Verification verdict file: .moonshot-relay/verification-verdict-phaseNN-final.json
 - Verification verdict: pending
 
 ## Evidence

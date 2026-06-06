@@ -8,7 +8,7 @@
 - Created: {YYYY-MM-DD HH:MM}
 - Branch: {branchName}
 - Complexity: {simple|medium|complex}
-- Related doc: `.claude/docs/agreements/{feature-name}-agreement.md`
+- Related doc: `.moonshot-relay/docs/agreements/{feature-name}-agreement.md`
 
 ## Task Overview
 

@@ -191,6 +191,66 @@ test('active memory instructions default to account-root project knowledge state
   assert.deepEqual(violations, []);
 });
 
+test('active workflow defaults keep generated state out of service profiles', async () => {
+  const files = [
+    'schemas/verification.contract.yaml',
+    'schemas/analysis-context.schema.yaml',
+    'scripts/prepare-phase-runner-state.mjs',
+    'scripts/lib/phase-event-ledger.mjs',
+    'scripts/lib/phase-run-lease-store.mjs',
+    'scripts/lib/runtime-unavailable-cache.mjs',
+    'agents/phase-attempt-agent.md',
+    'agents/phase-attempt-agent.ko.md',
+    'skills/moonshot-phase-runner/SKILL.md',
+    'skills/moonshot-phase-runner/SKILL.ko.md',
+    'skills/moonshot-phase-executor/SKILL.md',
+    'skills/moonshot-phase-executor/SKILL.ko.md',
+    'skills/moonshot-in-session-coordinator/SKILL.md',
+    'skills/moonshot-in-session-coordinator/SKILL.ko.md',
+    'skills/moonshot-plan-writer/assets/master-plan.template.md',
+    'skills/moonshot-plan-writer/assets/master-plan.template.ko.md',
+    'skills/browser-verifier/SKILL.md',
+    'skills/browser-verifier/SKILL.ko.md',
+    'templates/execution/QA_REPORT.template.md',
+    'docs/public/reference/phase-runner-user-workflow.md',
+  ];
+  const violations = [];
+
+  for (const file of files) {
+    const text = await readFile(fromRoot(file), 'utf8');
+    text.split(/\r?\n/).forEach((line, index) => {
+      if (/\.claude\/docs\/phase-status\.yaml|\.claude\/browser-flow-verdict-|\.claude\/verification-verdict-/.test(line)) {
+        violations.push(`${file}:${index + 1}: ${line.trim()}`);
+      }
+    });
+  }
+
+  assert.deepEqual(violations, []);
+});
+
+test('active common docs and workflow files do not target .claude docs', async () => {
+  const files = [
+    ...await walk('agents'),
+    ...await walk('skills'),
+    ...await walk('schemas'),
+    ...await walk('scripts'),
+    ...await walk('templates'),
+    ...await walk('package/profile-templates'),
+  ].filter((file) => /\.(md|yaml|yml|mjs|js|sh)$/.test(file));
+  const violations = [];
+
+  for (const file of files) {
+    const text = await readFile(fromRoot(file), 'utf8');
+    text.split(/\r?\n/).forEach((line, index) => {
+      if (/\.claude\/docs\//.test(line)) {
+        violations.push(`${file}:${index + 1}: ${line.trim()}`);
+      }
+    });
+  }
+
+  assert.deepEqual(violations, []);
+});
+
 test('installer docs route WSL/Linux users to the Node installer path', async () => {
   const docs = [
     await readFile(fromRoot('README.md'), 'utf8'),

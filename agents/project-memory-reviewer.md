@@ -35,7 +35,7 @@ diff: "{git diff summary}"          # or file path to diff
 ## Workflow
 
 ### 0. Source Boundaries
-Do not read `.claude/docs/ko/` for MemoryGraph review context. Treat it as a human-facing Korean mirror and validate against MemoryGraph plus canonical project policy/spec sources.
+Do not read `.moonshot-relay/docs/ko/` for MemoryGraph review context. Treat it as a human-facing Korean mirror and validate against MemoryGraph plus canonical project policy/spec sources.
 Ignore MemoryGraph entries that merely repeat system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules.
 
 ### 1. Reload Relevant Memory

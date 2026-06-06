@@ -118,7 +118,7 @@ Korean localization is intentionally maintained as a compact summary/index, not 
 
 ```
 SKILL.ko.md
-.claude/docs/ko/skills/vercel-react-best-practices/rules/*.ko.md
+.moonshot-relay/docs/ko/skills/vercel-react-best-practices/rules/*.ko.md
 ```
 
 Each rule file contains:

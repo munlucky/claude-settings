@@ -32,8 +32,8 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 ## Hard rules
 
 - always refresh memory before commit
-- do not read `.claude/docs/ko/` as a memory source; it is a human-facing Korean mirror
-- do not store facts derived only from `.claude/docs/ko/`
+- do not read `.moonshot-relay/docs/ko/` as a memory source; it is a human-facing Korean mirror
+- do not store facts derived only from `.moonshot-relay/docs/ko/`
 - do not store system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules as project memory; record duplicates under `projectMemory.omitted.duplicatedSystemRules`
 - never auto-stage account-root knowledge state, `.claude/memory.json`, or `.claude/memorygraph/` by default
 - never auto-stage `.claude/cache/memorygraph/` by default

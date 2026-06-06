@@ -28,8 +28,7 @@ const legacyManifestNames = Object.freeze(['.claude-settings-install-manifest.js
 
 const commonSpec = {
   runtime: 'moonshot-relay',
-  payloadRuntime: 'claude',
-  payloadPath: path.join('claude', 'profile', '.claude'),
+  payloadPath: path.join('moonshot-relay', 'profile'),
   defaultHome: () => path.join(os.homedir(), '.moonshot-relay'),
   envName: 'MOONSHOT_RELAY_HOME',
   ownedEntries: new Set([
@@ -58,6 +57,14 @@ const runtimeSpecs = {
       'rules',
       'skills',
       'verification.contract.yaml',
+    ]),
+    legacyNonExposureEntries: new Set([
+      'bin',
+      'docs',
+      'schemas',
+      'scripts',
+      'templates',
+      'tools',
     ]),
     protectedEntries: new Set([
       'backups',
@@ -93,8 +100,17 @@ const runtimeSpecs = {
       'AGENTS.md',
       'README.md',
       'agents',
+      'rules',
       'skills',
       'verification.contract.yaml',
+    ]),
+    legacyNonExposureEntries: new Set([
+      'bin',
+      'docs',
+      'schemas',
+      'scripts',
+      'templates',
+      'tools',
     ]),
     protectedEntries: new Set([
       '.sandbox',
@@ -343,6 +359,47 @@ const removePreviouslyManagedNonExposureFiles = async ({ targetRoot, exposureEnt
   return removed;
 };
 
+const removeLegacyNonExposureEntries = async ({
+  targetRoot,
+  backupRoot,
+  exposureEntries,
+  legacyEntries,
+  options,
+}) => {
+  if (!legacyEntries || legacyEntries.size === 0) {
+    return { removed: [], backups: [] };
+  }
+
+  const removed = [];
+  const backups = [];
+
+  for (const entryName of legacyEntries) {
+    if (exposureEntries.has(entryName)) {
+      continue;
+    }
+
+    const target = path.join(targetRoot, entryName);
+    assertSafeChild(targetRoot, target);
+    if (!await pathExists(target)) {
+      continue;
+    }
+
+    if (!options.dryRun) {
+      if (options.backup) {
+        const backup = await backupTarget(target, backupRoot);
+        if (backup) {
+          backups.push(toPortable(path.relative(targetRoot, backup)));
+        }
+      }
+      await rm(target, { recursive: true, force: true });
+    }
+
+    removed.push(entryName);
+  }
+
+  return { removed, backups };
+};
+
 const copyPayloadEntry = async ({ source, target, dryRun, replaceDirectories = false }) => {
   if (dryRun) {
     return;
@@ -427,6 +484,16 @@ const installPayloadSpec = async ({
       exposureEntries: ownedEntries,
       options,
     }));
+
+    const legacyCleanup = await removeLegacyNonExposureEntries({
+      targetRoot,
+      backupRoot,
+      exposureEntries: ownedEntries,
+      legacyEntries: spec.legacyNonExposureEntries,
+      options,
+    });
+    removed.push(...legacyCleanup.removed);
+    backups.push(...legacyCleanup.backups);
   }
 
   for (const entry of sourceEntries) {

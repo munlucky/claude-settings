@@ -8,7 +8,7 @@
 - 작성일: {YYYY-MM-DD HH:MM}
 - 브랜치: {branchName}
 - 복잡도: {simple|medium|complex}
-- 관련 문서: `.claude/docs/agreements/{feature-name}-agreement.md`
+- 관련 문서: `.moonshot-relay/docs/agreements/{feature-name}-agreement.md`
 
 ## 작업 개요
 

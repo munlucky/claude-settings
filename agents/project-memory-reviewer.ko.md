@@ -35,7 +35,7 @@ diff: "{git diff 요약}"              # 또는 diff 파일 경로
 ## 워크플로우
 
 ### 0. 소스 경계
-MemoryGraph 리뷰 컨텍스트를 만들기 위해 `.claude/docs/ko/`를 읽지 않습니다. 이 경로는 사용자 열람용 한국어 미러이며, 검증은 MemoryGraph와 canonical 프로젝트 정책/스펙 소스를 기준으로 수행합니다.
+MemoryGraph 리뷰 컨텍스트를 만들기 위해 `.moonshot-relay/docs/ko/`를 읽지 않습니다. 이 경로는 사용자 열람용 한국어 미러이며, 검증은 MemoryGraph와 canonical 프로젝트 정책/스펙 소스를 기준으로 수행합니다.
 system, developer, `AGENTS.md`, `.claude/rules/**`, workflow hard rule을 반복하는 MemoryGraph 항목은 무시합니다.
 
 ### 1. 관련 메모리 재로드

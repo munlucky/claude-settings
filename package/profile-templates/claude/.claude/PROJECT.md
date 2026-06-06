@@ -27,7 +27,7 @@ Last-Reviewed: 2026-03-30
   - `npm run test:package`
   - `node package/build-package.mjs --runtime all --dry-run --json`
   - `node scripts/install-account-root-harness.mjs --runtime all --source-root . --dry-run --json`
-- **Legacy compatibility**: project-local `.claude/scripts/*` workflow adapters are not active package/install commands. Use archived legacy adapter checks only with an explicit legacy compatibility reason.
+- **Legacy compatibility**: profile-local workflow script adapters are not active package/install commands. Use archived legacy adapter checks only with an explicit legacy compatibility reason.
 
 ## Directory/Structure
 
@@ -62,7 +62,7 @@ Last-Reviewed: 2026-03-30
 ```yaml
 documentPaths:
   tasksRoot: ".moonshot-relay/docs/tasks"
-  agreementsRoot: ".claude/docs/agreements"
+  agreementsRoot: ".moonshot-relay/docs/agreements"
   guidelinesRoot: "docs/public/guidelines"
 ```
 

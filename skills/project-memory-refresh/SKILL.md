@@ -36,7 +36,7 @@ On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with
 
 - Resolve durable project identity/state through the Project Identity Resolver and account-root namespace.
 - Treat `.claude/memorygraph/` and `.claude/cache/memorygraph/` as legacy project-local compatibility/cache artifacts.
-- Do not read `.claude/docs/ko/` as a memory source.
+- Do not read `.moonshot-relay/docs/ko/` as a memory source.
 - Do not commit `.claude/memorygraph/` or `.claude/cache/memorygraph/`.
 - If MemoryGraph is unavailable, try the direct fallback first, then report the failure and leave the workflow unblocked.
 

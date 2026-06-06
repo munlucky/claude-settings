@@ -25,7 +25,7 @@ attemptInput:
   phaseTitle: "Core Implementation"
   planDir: "docs/implementation/"
   phaseDocPath: "docs/implementation/02-core-implementation.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
   sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
@@ -56,7 +56,7 @@ strict 또는 `meta_harness` 작업에서 policy anchors 나 필수 검증 명�
 `projectKnowledgeContext`는 typed summary-only Project Knowledge Context로만 읽습니다. 누락되어 있으면 `moonshot-orchestrator`를 실행하기 전에 `stage=execute` context를 advisory 또는 required strictness에 맞춰 생성합니다.
 
 이전 coordinator 대화는 다시 로드하지 않습니다.
-`.claude/docs/ko/`는 MemoryGraph context로 읽지 않고, raw MemoryGraph record를 다음 단계로 넘기지 않습니다.
+`.moonshot-relay/docs/ko/`는 MemoryGraph context로 읽지 않고, raw MemoryGraph record를 다음 단계로 넘기지 않습니다.
 
 ### 2. phase attempt 모드로 orchestrator 실행
 

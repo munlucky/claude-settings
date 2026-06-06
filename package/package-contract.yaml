@@ -16,6 +16,11 @@ canonicalSource:
   verificationContracts: schemas/
 
 runtimeProfiles:
+  moonshotRelay:
+    generatedProfileRoot: package/moonshot-relay/profile/
+    localRuntimeRoot: ${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/
+    materializer: package/build-package.mjs
+    materialization: account_root_common_payload
   claude:
     templateRoot: package/profile-templates/claude/.claude/
     generatedProfileRoot: package/claude/profile/.claude/
@@ -71,6 +76,7 @@ accountRootInstall:
       - AGENTS.md
       - README.md
       - agents/
+      - rules/
       - skills/
       - verification.contract.yaml
   manifestName: .moonshot-relay-install-manifest.json
@@ -118,8 +124,8 @@ requiredPayloadEntries:
       purpose: package_layout_materialization_guard
     - source: scripts/install-account-root-harness.mjs
       purpose: account_root_direct_profile_installer
-  claudeSupportScripts:
-    description: "Claude runtime payload installs only support scripts needed by installers, MCP wrappers, memory refresh, and commit closeout. Workflow orchestration no longer installs scripts/** wholesale."
+  commonSupportScripts:
+    description: "Moonshot Relay common runtime payload installs only support scripts needed by installers, MCP wrappers, memory refresh, workflow state, and commit closeout. Service profiles do not install scripts/**."
     entries:
       - source: scripts/awtl-memory-promotion.mjs
         purpose: memory_promotion_support
@@ -165,6 +171,10 @@ requiredPayloadEntries:
         purpose: awtl_trace_sink_support
       - source: scripts/lib/failure-classifier.mjs
         purpose: failure_classifier_support
+      - source: scripts/lib/phase-event-ledger.mjs
+        purpose: workflow_event_ledger_support
+      - source: scripts/lib/phase-run-lease-store.mjs
+        purpose: workflow_run_lease_support
       - source: scripts/lib/runtime-state-db-path.mjs
         purpose: runtime_state_db_path_support
       - source: scripts/lib/runtime-state-root.mjs

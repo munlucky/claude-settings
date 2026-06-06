@@ -144,7 +144,7 @@ defaults:
     qaReportPath: "{activeSliceDir}/QA_REPORT.md"
     handoffPath: "{activeSliceDir}/HANDOFF.md"
     scorecardPath: "{activeSliceDir}/SCORECARD.md"
-    phaseStatusFile: ".claude/docs/phase-status.yaml"
+    phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
     verificationContractPath: ".claude/verification.contract.yaml"
     verificationScript: ".claude/agents/verification/verify-changes.sh"
     runtimeVerificationScript: ".claude/agents/verification/verify-runtime.sh"
@@ -191,12 +191,12 @@ defaults:
     omitted:
       duplicatedSystemRules: []
       humanMirrorDocs:
-        - ".claude/docs/ko/"
+        - ".moonshot-relay/docs/ko/"
       staleOrLowConfidence: []
     relatedConventions: []
     graphIndex:
-      seedPath: ".claude/cache/memorygraph/project-graph-seed.json"
-      promotionCandidatesPath: ".claude/cache/memorygraph/promotion-candidates.json"
+      seedPath: ".moonshot-relay/cache/memorygraph/project-graph-seed.json"
+      promotionCandidatesPath: ".moonshot-relay/cache/memorygraph/promotion-candidates.json"
       nodeCount: 0
       relationshipCount: 0
       promotionCandidateCount: 0
@@ -272,7 +272,7 @@ defaults:
     runtimeIsolation: null
     modelEffortProfile: standard
     evidenceFiles:
-      analysisContext: ".claude/docs/moonshot-analysis.yaml"
+      analysisContext: ".moonshot-relay/docs/moonshot-analysis.yaml"
       sprintContract: null
       qaReport: null
       handoff: null
@@ -326,7 +326,7 @@ workflowRules:
     - "Treat phaseAttemptMode as an execution-baseline override."
     - "Freeze non-trivial request baselines in goalContract before sprint contract execution; chat history must not be the only source for the target outcome."
   persistence:
-    - "Save final analysisContext to .claude/docs/moonshot-analysis.yaml."
+    - "Save final analysisContext to .moonshot-relay/docs/moonshot-analysis.yaml."
     - "Keep workflowEvidence selectedBundles, requiredSkills, stageOrder, selectedHarnessComponents, selectionReason, runtimeIsolation, and modelEffortProfile populated for code-changing bounded work."
     - "Keep readiness and completionModel aligned with the active execution artifacts."
     - "Track MemoryGraph stageCoverage and omit duplicated system/developer/AGENTS/rules content from projectMemory deltas."

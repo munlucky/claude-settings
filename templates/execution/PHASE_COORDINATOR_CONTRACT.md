@@ -12,7 +12,7 @@ pathAuthority:
     scorecard: "{{ACTIVE_SCORECARD}}"
   rules:
     - "Treat the supplied phaseStatusFile, planDir, executionRoot, and referenced execution artifact paths as authoritative for this run."
-    - "Do not read or reuse .claude/docs/phase-status.yaml, docs/implementation/**, or any other default phase-plan paths unless they exactly match the supplied paths."
+    - "Do not read or reuse .moonshot-relay/docs/phase-status.yaml, docs/implementation/**, or any other default phase-plan paths unless they exactly match the supplied paths."
     - "If examples in skill docs conflict with the supplied paths, ignore the examples and follow the supplied paths."
 
 stageContract:

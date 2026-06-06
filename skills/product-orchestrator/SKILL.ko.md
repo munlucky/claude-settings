@@ -106,7 +106,7 @@ triggers:
 
 모든 단계:
 - `docs/public/guidelines/memorygraph-workflow.ko.md`를 적용합니다.
-- `.claude/docs/ko/`를 MemoryGraph 소스로 사용하지 않습니다.
+- `.moonshot-relay/docs/ko/`를 MemoryGraph 소스로 사용하지 않습니다.
 - system/developer/AGENTS/rules 정책과 중복되는 MemoryGraph 결과는 병합하지 않습니다.
 
 모든 단계에서:

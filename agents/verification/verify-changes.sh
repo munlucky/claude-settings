@@ -8,7 +8,7 @@
 
 # Generic repository verification harness.
 # Exit codes: 0=pass, 1=build/lint/hook/general fail, 2=test fail
-# Outputs: .claude/verification-results-<timestamp>.txt, .claude/verification-verdict-<runId>.json
+# Outputs: .moonshot-relay/verification-results-<timestamp>.txt, .moonshot-relay/verification-verdict-<runId>.json
 
 set -eo pipefail
 
@@ -343,7 +343,7 @@ run_contract_check() {
 }
 
 load_workflow_evidence_context() {
-  local analysis_file="${ANALYSIS_CONTEXT_FILE:-.claude/docs/moonshot-analysis.yaml}"
+  local analysis_file="${ANALYSIS_CONTEXT_FILE:-.moonshot-relay/docs/moonshot-analysis.yaml}"
   local eval_output
 
   WORKFLOW_EVIDENCE_PATH="$analysis_file"
@@ -637,7 +637,7 @@ REQUIRED_CHECKS_EXECUTED=()
 REQUIRED_CHECKS_MISSING=()
 OPTIONAL_CHECKS_EXECUTED=()
 OPTIONAL_CHECKS_FAILED=()
-WORKFLOW_EVIDENCE_PATH=".claude/docs/moonshot-analysis.yaml"
+WORKFLOW_EVIDENCE_PATH=".moonshot-relay/docs/moonshot-analysis.yaml"
 WORKFLOW_EVIDENCE_DETECTED=false
 WORKFLOW_EVIDENCE_MODE=""
 WORKFLOW_SELECTED_BUNDLES=()

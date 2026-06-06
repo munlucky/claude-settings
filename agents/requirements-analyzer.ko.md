@@ -35,7 +35,7 @@ similarFeaturePaths:  # 있는 경우
 - 유사 기능은 파일 경로 목록만 (내용 X)
 - 패턴은 키워드만 (상세 설명 X)
 ## Outputs
-- 사전 합의서: `.claude/docs/agreements/{feature-name}-agreement.md`
+- 사전 합의서: `.moonshot-relay/docs/agreements/{feature-name}-agreement.md`
 - 미해결 질문(필요 시): `{tasksRoot}/{feature-name}/pending-questions.md`
 ## Workflow
 1. 요청을 기능/수정/버그로 분류합니다.

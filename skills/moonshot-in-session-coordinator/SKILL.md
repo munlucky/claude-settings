@@ -45,7 +45,7 @@ phaseRunnerResult:
   executionMode: "in-session-coordinator"
   planDir: "docs/implementation/"
   masterPlan: "docs/implementation/00-master-plan.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
   executionRoot: "docs/implementation/execution"
   coordinatorPolicy: "fresh-fork-per-attempt"
 
@@ -78,7 +78,7 @@ attemptInput:
   phaseTitle: "Core Implementation"
   planDir: "docs/implementation/"
   phaseDocPath: "docs/implementation/02-core-implementation.md"
-  phaseStatusFile: ".claude/docs/phase-status.yaml"
+  phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
   sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
   qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
   handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
@@ -98,7 +98,7 @@ Rules:
 - Do not inline long phase documents into the main session.
 - Do not pass previous implementation chatter.
 - Before each fresh attempt, build or refresh `projectKnowledgeContext` with `stage=execute`, then pass only the typed summary block and status metadata.
-- Exclude `.claude/docs/ko/` and duplicated system/developer/AGENTS/rules policy from attempt input.
+- Exclude `.moonshot-relay/docs/ko/` and duplicated system/developer/AGENTS/rules policy from attempt input.
 - Use `QA_REPORT.md` and `HANDOFF.md` as the only retry memory.
 - Use `SCORECARD.md` as the objective completion state for the phase.
 - Treat `SPRINT_CONTRACT.md` policy anchors and required verification commands as mandatory attempt input.

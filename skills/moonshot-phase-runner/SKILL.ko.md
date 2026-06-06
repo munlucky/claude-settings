@@ -29,7 +29,7 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 
 - 선택적 plan directory argument.
 - plan directory 안의 선택적 master plan path.
-- active status file: `.claude/docs/phase-status.yaml`.
+- active status file: `.moonshot-relay/docs/phase-status.yaml`.
 - 실행 경로: 기본값은 `in-session-coordinator`입니다. `delegated-terminal`은 legacy compatibility 전용이며 명시적인 legacy 유지보수 사유가 필요합니다.
 - execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, verifier verdict.
 

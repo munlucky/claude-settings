@@ -3,9 +3,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { runtimeStateRelativePath } from './runtime-state-root.mjs';
+import { resolveRuntimeStatePath, runtimeStateRelativePath } from './runtime-state-root.mjs';
 
-const DEFAULT_STATUS_FILE = '.claude/docs/phase-status.yaml';
+const DEFAULT_STATUS_FILE = resolveRuntimeStatePath('docs', 'phase-status.yaml');
 const WORKFLOW_LOG_DIR = process.env.WORKFLOW_ENFORCEMENT_LOG_DIR || runtimeStateRelativePath('logs', 'workflow-enforcement');
 const ACTIVE_RUN_BASENAME = 'active-phase-run.json';
 const CURRENT_RUN_BASENAME = 'current-run.json';
@@ -333,7 +333,7 @@ export function buildPhaseRuntimeParityTimeoutKey({
   runId = '',
   verifierId = 'phaseRuntimeParity',
   referencePlanHash = '',
-  referencePlanPath = '.claude/docs/runtime-parity-reference-plan',
+  referencePlanPath = '.moonshot-relay/docs/runtime-parity-reference-plan',
   runtimeTarget = '',
 } = {}) {
   return [

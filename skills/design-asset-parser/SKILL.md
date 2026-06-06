@@ -16,7 +16,7 @@ description: Parses design assets (PDF, CSS) to generate a draft design spec.
 Automatically extract UI/feature requirements from design assets and generate a structured spec that developers can implement immediately.
 
 ### Input file types
-1. **Screen-spec PDF**: `.claude/docs/design-assets/*.pdf`
+1. **Screen-spec PDF**: `.moonshot-relay/docs/design-assets/*.pdf`
 2. **Figma export**: images (PNG/JPG), CSS/HTML export
 3. **Design guide**: color/font/spacing tokens
 
@@ -33,7 +33,7 @@ Automatically extract UI/feature requirements from design assets and generate a 
 Call automatically or manually in these cases:
 
 ### Automatic triggers
-1. PDF added under `.claude/docs/design-assets/`
+1. PDF added under `.moonshot-relay/docs/design-assets/`
 2. Figma export zip added
 3. Moonshot Agent classifies as new feature and finds design asset paths
 
@@ -51,8 +51,8 @@ Call automatically or manually in these cases:
 ### Step 1: Verify input files (1m)
 ```markdown
 Input file list:
-- Screen spec: .claude/docs/design-assets/batch-management_v3.pdf
-- Figma export: .claude/docs/design-assets/batch-management-export.zip
+- Screen spec: .moonshot-relay/docs/design-assets/batch-management_v3.pdf
+- Figma export: .moonshot-relay/docs/design-assets/batch-management-export.zip
 - Feature name: batch-management
 ```
 
@@ -191,7 +191,7 @@ Read design assets and structure a dev spec.
 ### Example 1: Parse screen-spec PDF
 ```
 User: "Parse the screen-spec PDF and create a dev spec.
-       Path: .claude/docs/design-assets/batch-management_v3.pdf
+       Path: .moonshot-relay/docs/design-assets/batch-management_v3.pdf
        Feature: batch-management"
 
 Design Asset Parser Skill ->
@@ -208,7 +208,7 @@ Outputs:
 ### Example 2: Parse Figma CSS export
 ```
 User: "Analyze Figma CSS export and organize style tokens.
-       Path: .claude/docs/design-assets/batch-ui-export.css
+       Path: .moonshot-relay/docs/design-assets/batch-ui-export.css
        Feature: batch-management"
 
 Design Asset Parser Skill ->
@@ -224,8 +224,8 @@ Outputs:
 ### Example 3: Parse PDF + CSS together
 ```
 User: "Parse the screen-spec PDF and Figma CSS together.
-       PDF: .claude/docs/design-assets/batch-management_v3.pdf
-       CSS: .claude/docs/design-assets/batch-ui-export.css
+       PDF: .moonshot-relay/docs/design-assets/batch-management_v3.pdf
+       CSS: .moonshot-relay/docs/design-assets/batch-ui-export.css
        Feature: batch-management"
 
 Design Asset Parser Skill ->
@@ -268,8 +268,8 @@ Outputs:
 ## Reference Info
 
 ### Project design asset paths
-- **Example product**: `.claude/docs/design-assets/*.pdf`
-- **Figma export**: `.claude/docs/design-assets/*.zip`, `*.css`, `*.html`
+- **Example product**: `.moonshot-relay/docs/design-assets/*.pdf`
+- **Figma export**: `.moonshot-relay/docs/design-assets/*.zip`, `*.css`, `*.html`
 
 ### Existing project patterns (follow CLAUDE.md)
 - Entity-Request separation

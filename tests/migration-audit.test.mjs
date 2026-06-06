@@ -94,12 +94,12 @@ test('runtime state resolver exposes legacy .claude compatibility paths for read
 
 test('workflow lease and unavailable-capability caches write under account-root workflow logs by default', () => {
   const expectedRoot = resolveRuntimeStateRoot(root);
-  const leaseFiles = resolveLeaseFiles('.claude/docs/phase-status.yaml');
+  const leaseFiles = resolveLeaseFiles();
   assert.equal(leaseFiles.mirrorGlobalCurrentRun, true);
   assert.equal(leaseFiles.activeRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'active-phase-run.json'));
   assert.equal(leaseFiles.currentRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'current-run.json'));
 
-  const cacheFiles = resolveRunCacheFiles('.claude/docs/phase-status.yaml');
+  const cacheFiles = resolveRunCacheFiles();
   assert.equal(cacheFiles.activeRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'active-phase-run.json'));
   assert.equal(cacheFiles.currentRunFile, path.join(expectedRoot, 'logs', 'workflow-enforcement', 'current-run.json'));
 });
@@ -107,7 +107,7 @@ test('workflow lease and unavailable-capability caches write under account-root 
 test('phase event ledger writes under account-root workflow logs', () => {
   const expectedRoot = resolveRuntimeStateRoot(root);
   assert.equal(
-    defaultPhaseEventLedgerPath('.claude/docs/phase-status.yaml'),
+    defaultPhaseEventLedgerPath(),
     path.join(expectedRoot, 'logs', 'workflow-enforcement', 'events.jsonl'),
   );
 });
@@ -139,7 +139,7 @@ test('migration audit reports old generated state paths and cleanup instructions
   for (const statePath of legacyStatePaths) {
     assert.match(cleanupGuide, new RegExp(statePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  assert.match(cleanupGuide, /Do not delete `.claude\/docs/);
+  assert.match(cleanupGuide, /Legacy non-exposed `.claude\/docs\/public\/`/);
   assert.match(cleanupGuide, /`.claude\/scripts\/`/);
   assert.match(cleanupGuide, /\.moonshot-relay\//);
 });

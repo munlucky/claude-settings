@@ -150,7 +150,7 @@ node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs
 
 규칙:
 - doc sync 중에는 호환 seed/cache 파일만 생성합니다. 사용자가 memory refresh를 명시하지 않았다면 semantic fact나 raw graph state를 쓰지 않습니다.
-- `.claude/docs/ko/`는 seed source에서 제외합니다.
+- `.moonshot-relay/docs/ko/`는 seed source에서 제외합니다.
 - 운영 중인 기존 프로젝트도 기본 `--analysis-level code`로 코드 수준 사실을 포함합니다.
 - 승격 후보 개수는 보고하되, 명시 승인 없이 `moonshot-relay`에 승격하지 않습니다.
 - `.moonshot-relay/cache/memorygraph/`, legacy `.claude/cache/memorygraph/`, 계정 루트 knowledge runtime state는 기본 스테이징 대상에서 제외합니다.
@@ -219,7 +219,7 @@ docSync:
     └── docs/tasks/              # 기본 tasksRoot (또는 docs/exec-plans/)
 ```
 
-> **참고**: `docs/exec-plans/`는 git-tracked 태스크 문서를 위한 `.claude/docs/tasks/`의 선택적 대안입니다.
+> **참고**: `docs/exec-plans/`는 git-tracked 태스크 문서를 위한 `.moonshot-relay/docs/tasks/`의 선택적 대안입니다.
 > `PROJECT.md: documentPaths.tasksRoot`로 설정합니다.
 
 ## Project Knowledge Context Contract

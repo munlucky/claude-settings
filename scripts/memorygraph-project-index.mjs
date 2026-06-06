@@ -53,7 +53,7 @@ const EXCLUDED_SEGMENTS = new Set([
 
 const EXCLUDED_PREFIXES = [
   '.claude/cache/',
-  '.claude/docs/ko/',
+  '.moonshot-relay/docs/ko/',
   '.claude/memorygraph/',
   '.claude/logs/',
   '.moonshot-state/',
@@ -65,6 +65,7 @@ const EXCLUDED_PREFIXES = [
 const EXCLUDED_FILE_PATTERNS = [
   /^\.claude\/knowledge-repo-audit-.*\.json$/,
   /^\.claude\/settings\.local\.json$/,
+  /^\.claude\/runtime-verdict-.*\.json$/,
   /^\.claude\/verification-verdict-.*\.json$/,
   /^\.claude\/verification-verdict-state\.json$/,
 ];
@@ -473,7 +474,7 @@ function promotionCandidates(seed, project) {
     if (!sourcePath.startsWith('.claude/')) {
       continue;
     }
-    if (sourcePath.startsWith('.claude/docs/ko/') || sourcePath.startsWith('.claude/memorygraph/') || sourcePath.startsWith('.moonshot-relay/')) {
+    if (sourcePath.startsWith('.moonshot-relay/docs/ko/') || sourcePath.startsWith('.claude/memorygraph/') || sourcePath.startsWith('.moonshot-relay/')) {
       continue;
     }
     if (!item.tags.some((tag) => allowedTags.has(tag))) {

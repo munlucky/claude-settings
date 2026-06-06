@@ -36,7 +36,7 @@ git diff --cached --name-only
 ```
 
 메모리 소스 경계:
-- `.claude/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다.
+- `.moonshot-relay/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다.
 - MemoryGraph 현행화 중 이 경로를 메모리 소스로 읽거나, 이 경로에서만 나온 내용을 저장하지 않습니다.
 - `.agents/`와 `.agents/skills`는 생성된 agent bridge입니다. 사용자가 명시적으로 추적하라고 하지 않는 한 `git add -- <paths>` 목록에 넣지 않습니다.
 - 이전 명령, 도구 출력, 사용자가 붙여넣은 후보 경로 목록에 `.agents` 또는 `.agents/skills`가 들어 있어도 그대로 실행하지 않습니다. 실행 전 후보 목록에서 반드시 제거합니다.
