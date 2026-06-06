@@ -134,4 +134,4 @@ Recommended outcome:
 ## References
 
 - `docs/public/guidelines/product-definition-workflow.md`
-- `.claude/skills/assumption-ledger/SKILL.md`
+- `skills/assumption-ledger/SKILL.md`

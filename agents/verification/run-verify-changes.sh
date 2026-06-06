@@ -57,6 +57,7 @@ collect_roots "$SCRIPT_DIR"
 
 verification_script=""
 for root in "${roots[@]}"; do
+    # Installed-profile compatibility path used after local profile materialization.
     candidate="${root}/.claude/agents/verification/verify-changes.sh"
     if [[ -f "$candidate" ]]; then
         verification_script="$candidate"
@@ -65,7 +66,7 @@ for root in "${roots[@]}"; do
 done
 
 if [[ -z "$verification_script" ]]; then
-    echo "VERIFICATION_COMMAND_MISSING: unable to locate .claude/agents/verification/verify-changes.sh." >&2
+    echo "VERIFICATION_COMMAND_MISSING: unable to locate installed-profile compatibility path .claude/agents/verification/verify-changes.sh." >&2
     echo "Checked ${#roots[@]} candidate root paths." >&2
     exit 2
 fi

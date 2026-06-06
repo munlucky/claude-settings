@@ -361,7 +361,7 @@ teamReport:
 **런타임 매핑:**
 - `claude-code`: `team-leader-agent` → `subagent_type: "general-purpose"` + 프롬프트 **(fork)**
 - `codex`: 세션 내 동등 코디네이터 플로우 실행 + 동일 `teamReport` 계약 반환
-- 참조: `.claude/agents/team-leader-agent.ko.md`
+- 참조: `agents/team-leader-agent.ko.md`
 
 ## 출력
 
@@ -507,6 +507,6 @@ notes:
 ## 참조
 
 - `/moonshot-orchestrator`: 오케스트레이터 통합
-- `.claude/agents/team-leader-agent.ko.md`: 팀 리더 fork 에이전트 정의
+- `agents/team-leader-agent.ko.md`: 팀 리더 fork 에이전트 정의
 - `<MOONSHOT_RELAY_HOME>/templates/agent-teams-config.yaml`: 팀 설정 템플릿
 - [Claude Code Agent Teams 공식 문서](https://code.claude.com/docs/ko/agent-teams) (Claude 런타임)

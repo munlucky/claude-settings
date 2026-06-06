@@ -206,6 +206,7 @@ excludedGeneratedState:
   - tests/fixtures/**
   - .claude/logs/**
   - .moonshot-relay/**
+  - .moonshot-state/**
   - .claude/cache/**
   - .claude/traces/**
   - .claude/browser-artifacts/**
@@ -217,6 +218,10 @@ excludedGeneratedState:
   - .claude/memorygraph/**
   - .claude/*verdict*.json
   - .claude/knowledge-repo-audit-*.json
+  - .codex/cache/**
+  - .codex/sqlite/**
+  - .codex/memories/**
+  - .codex/sessions/**
   - .code-review-graph/**
 
 driftPolicy:

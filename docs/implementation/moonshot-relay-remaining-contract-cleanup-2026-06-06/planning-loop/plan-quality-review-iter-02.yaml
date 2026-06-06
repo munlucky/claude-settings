@@ -1,0 +1,30 @@
+schemaVersion: 1
+iteration: 2
+reviewedPackageRoot: docs/implementation/moonshot-relay-remaining-contract-cleanup-2026-06-06
+status: blocked_edits_applied
+reviewerTypes:
+  - readme-installer-runtime-docs
+  - active-test-side-effect-archive-boundary
+  - package-contract-manifest-boundary
+  - skill-agent-profile-path-wording
+  - public-guideline-depth-policy
+blockingFindings:
+  - reviewer: readme-installer-runtime-docs
+    finding: Targeted test command used npm argument ordering that does not reliably filter test names; R-03 heading/context assertion needed explicit mention.
+  - reviewer: skill-agent-profile-path-wording
+    finding: Targeted test command used npm argument ordering that does not reliably filter test names.
+  - reviewer: public-guideline-depth-policy
+    finding: Phase 05 left execution/defer, classification location, and line-count guard behavior undecided; `.claude/docs/guidelines` scan included tests and would false-positive on forbidden-pattern assertions.
+acceptedChanges:
+  - Replaced targeted npm test commands with `node --test --test-name-pattern ... tests/active-contracts.test.mjs`.
+  - Added explicit R-03 heading/context assertion requirement.
+  - Strengthened temp-home dry-run with explicit home flags and PowerShell env restoration.
+  - Added TMP/TEMP/TMPDIR to verifier failure-path temp isolation.
+  - Made filesystem snapshot assertion the authority for side-effect checks.
+  - Fixed Phase 03 default manifest strategy to remove broad consumer-facing `scripts` instead of adding a new descriptor by default.
+  - Expanded allowed compatibility context to include generated/local profile warnings.
+  - Made Phase 05 required for R-16, fixed classification location to `docs/public/repository-layout.md`, kept line-count only as placeholder detector, and excluded tests from human-facing `.claude/docs/guidelines` no-hit scan.
+rejectedChanges: []
+remainingAmbiguity:
+  - Existing local runtime artifacts remain outside this package except as pre/post snapshot baseline.
+  - Phase 05 may still classify most guideline files as policy anchors; this is acceptable if recorded in repository-layout.

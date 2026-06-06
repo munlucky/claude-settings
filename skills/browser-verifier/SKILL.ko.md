@@ -74,7 +74,7 @@ triggers:
 - browser runtime 또는 flow declaration이 없으면 hand-written pass가 아니라 setup-gap verdict를 생성해야 합니다.
 - Critical `SCN-*` flow는 clean finish 전에 smoke 이상의 interaction evidence가 필요합니다.
 
-## 스크립트
+## Installed/local Profile Script
 ```bash
 .claude/agents/verification/verify-runtime.sh --url=<url> [--browser-flow=<name>] [--browser-only] [--browserctl=<path>] [--e2e="<command>"] [--no-auto-e2e]
 ```

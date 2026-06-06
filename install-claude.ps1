@@ -17,7 +17,7 @@ function Write-Info($Message) {
 }
 
 if ($Project) {
-    throw "Project-local install is a legacy compatibility mode. Use Git Bash/WSL with: bash install-claude.sh --project"
+    throw "Project-local install is a legacy compatibility mode. Use a macOS/Git Bash compatibility shell with: bash install-claude.sh --project. In WSL/Linux, use the Node installer path."
 }
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {

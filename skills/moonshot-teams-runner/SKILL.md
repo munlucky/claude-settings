@@ -361,7 +361,7 @@ teamReport:
 **Runtime mapping:**
 - `claude-code`: `team-leader-agent` → `subagent_type: "general-purpose"` + prompt **(fork)**
 - `codex`: execute an equivalent coordinator flow in-session and produce the same `teamReport` contract
-- See: `.claude/agents/team-leader-agent.md`
+- See: `agents/team-leader-agent.md`
 
 ## Output
 
@@ -507,6 +507,6 @@ Output clear progress status during team execution.
 ## References
 
 - `/moonshot-orchestrator`: orchestrator integration
-- `.claude/agents/team-leader-agent.md`: forked team-leader agent definition
+- `agents/team-leader-agent.md`: forked team-leader agent definition
 - `<MOONSHOT_RELAY_HOME>/templates/agent-teams-config.yaml`: team configuration template
 - [Claude Code Agent Teams docs](https://code.claude.com/docs/ko/agent-teams) (Claude runtime)

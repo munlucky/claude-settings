@@ -1,0 +1,21 @@
+schemaVersion: 1
+iteration: 3
+reviewedPackageRoot: docs/implementation/moonshot-relay-remaining-contract-cleanup-2026-06-06
+status: pass
+targetedReviewTypes:
+  - readme-installer-runtime-docs
+  - skill-agent-profile-path-wording
+  - public-guideline-depth-policy
+blockingFindings: []
+acceptedChanges:
+  - reviewer: readme-installer-runtime-docs
+    verdict: pass
+    evidence: Targeted test command now uses node --test option ordering; R-03 heading/context assertion is explicit; temp-home dry-run uses explicit homes and try/finally env restoration.
+  - reviewer: skill-agent-profile-path-wording
+    verdict: pass
+    evidence: Targeted test command now uses node --test option ordering; generated/local profile warning is included as an allowed compatibility context.
+  - reviewer: public-guideline-depth-policy
+    verdict: pass
+    evidence: Phase 05 is required for R-16; classification location is fixed to docs/public/repository-layout.md; line-count guard is placeholder-only; tests are excluded from human-facing .claude/docs/guidelines no-hit scan.
+rejectedChanges: []
+remainingAmbiguity: []

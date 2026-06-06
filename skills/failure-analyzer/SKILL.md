@@ -114,7 +114,7 @@ systemImprovements:
       priority: HIGH
       autoApplicable: true
     - type: "skill_fix"
-      file: ".claude/skills/codex-review-code/SKILL.md"
+      file: "skills/codex-review-code/SKILL.md"
       change: "Add check for new security pattern X"
       priority: MEDIUM
       autoApplicable: false # logic change requires review
@@ -135,7 +135,7 @@ systemImprovements:
 - **Quality/Verification**: Testing standards
 - **Security**: Universal security rules
 
-### Skill Level (`.claude/skills/*.md`)
+### Skill Level (`skills/*.md`)
 - **Logic**: Flow corrections, condition updates
 - **Prompts**: Instruction clarifications
 

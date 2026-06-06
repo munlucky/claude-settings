@@ -80,7 +80,7 @@ Validate that a web app is reachable and working at runtime after implementation
 - Missing browser runtime or missing flow declarations should produce a setup-gap verdict instead of a hand-written pass.
 - Critical `SCN-*` flows need interaction evidence beyond smoke before clean finish.
 
-## Script
+## Installed/local Profile Script
 ```bash
 .claude/agents/verification/verify-runtime.sh --url=<url> [--browser-flow=<name>] [--browser-only] [--browserctl=<path>] [--e2e="<command>"] [--no-auto-e2e]
 ```

@@ -97,6 +97,9 @@ const denySegments = new Set([
   'cache',
   'logs',
   'memorygraph',
+  'memories',
+  'sessions',
+  'sqlite',
   'tmp',
   'traces',
 ]);

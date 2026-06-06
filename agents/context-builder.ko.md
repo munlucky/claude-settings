@@ -70,5 +70,5 @@ context.md에 다음 섹션 포함:
 - 프로젝트 세부 규칙은 `.claude/PROJECT.md`를 참조합니다.
 - **토큰 한도**: context.md는 8000 토큰 이하로 유지. 이전 버전은 document-memory-policy.md에 따라 아카이빙.
 ## References
-- `.claude/agents/context-builder/templates/context-template.md`
+- `agents/context-builder/templates/context-template.md`
 - `docs/public/guidelines/document-memory-policy.md`

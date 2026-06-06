@@ -29,7 +29,7 @@ React/Next.js 애플리케이션 성능 최적화를 위한 종합 가이드입�
 
 ## 사용 방법
 
-- 상세 규칙 원문: `.claude/skills/vercel-react-best-practices/rules/*.md`
+- 상세 규칙 원문: `skills/vercel-react-best-practices/rules/*.md`
 - 한국어 미러 요약: `.claude/docs/ko/skills/vercel-react-best-practices/rules/*.ko.md`
 - 리뷰나 리팩터링에서는:
   1. 카테고리 우선순위를 먼저 본다.

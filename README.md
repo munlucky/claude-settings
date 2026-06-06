@@ -10,13 +10,13 @@
 
 - canonical source는 `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`와 allowlisted support script만 `scripts/`에서 관리하고, `.claude/`는 개발 profile 및 downstream compatibility wrapper로 유지
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
-- `install-claude.sh`로 다른 프로젝트에 빠르게 설치
+- `npx -y github:munlucky/moonshot-relay install` 또는 `node bin/moonshot-relay.mjs install --runtime all`로 account-root 런타임을 설치
 - compatibility window 동안 downstream 설치는 계속 `.claude/` payload를 생성하지만, 이 저장소의 source of truth는 root-level source directory입니다
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
 - phase 기반 작업이 필요할 때 `docs/implementation/`를 런타임에 생성해 사용
 - `.moonshot-relay/docs/tasks/`, `.moonshot-relay/docs/phase-status.yaml`, `.moonshot-relay/docs/reports/*.json`, `.moonshot-relay/verification-results-*`, `.moonshot-relay/verification-verdict-*`, `.moonshot-relay/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리/설치 배포 대상이 아님
-- 프로젝트 로컬 메모리는 MemoryGraph를 기본 backend로 사용하며 `.moonshot-relay/memorygraph/`에 저장하고 버전 관리/기본 agent context에서 제외
+- 프로젝트 지식 메모리는 account-root project knowledge namespace를 기본 backend로 사용합니다. 프로젝트 로컬 `.moonshot-relay/cache/memorygraph/**`는 seed/cache 입력이며 버전 관리/기본 agent context에서 제외합니다.
 - 코드 구조 분석은 `code-review-graph` MCP를 stage-gated + lazy update 방식으로 사용하며 `.code-review-graph/`에 저장하고 자동 build/watch 없이 실행
 
 ## Repository Source Model
@@ -140,24 +140,26 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - 작업 문서 루트: `.moonshot-relay/docs/tasks/` (런타임 생성, 저장소/설치 패키지에는 템플릿만 유지)
 - downstream reference package: `.claude/docs/reference-downstream/`
 - runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`
-- 제품 정의 템플릿: `.claude/templates/product-definition/*.md`
-- 실행 브리지 템플릿: `.claude/templates/execution/*.md`
+- 제품 정의 템플릿: source checkout에서는 `templates/product-definition/*.md`, 설치 런타임에서는 `<MOONSHOT_RELAY_HOME>/templates/product-definition/*.md`
+- 실행 브리지 템플릿: source checkout에서는 `templates/execution/*.md`, 설치 런타임에서는 `<MOONSHOT_RELAY_HOME>/templates/execution/*.md`
 - Runtime payload support scripts are limited to installer, MCP, memory, and commit closeout flows. Workflow orchestration no longer installs `scripts/**` wholesale.
-- 출력 템플릿: `.claude/templates/moonshot-output.*`
+- 출력 템플릿: source checkout에서는 `templates/moonshot-output.*`, 설치 런타임에서는 `<MOONSHOT_RELAY_HOME>/templates/moonshot-output.*`
 
 ## 빠른 시작
 
 ### 한 줄 설치 (권장)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/munlucky/moonshot-relay/main/install-claude.sh | bash
-```
-
-GitHub 기반 `npx`로도 같은 account-root installer를 실행할 수 있습니다.
-
-```bash
 npx -y github:munlucky/moonshot-relay install
 ```
+
+Source checkout에서 실행할 때는 Node installer를 직접 사용할 수 있습니다.
+
+```bash
+node bin/moonshot-relay.mjs install --runtime all
+```
+
+`install-claude.sh`는 macOS/Git Bash compatibility installer입니다. WSL/Linux bash에서 `unsupported shell: Linux`가 나오면 Node/npx installer를 사용합니다.
 
 ### Agent Skills CLI 부트스트랩
 
@@ -268,8 +270,8 @@ Root `.claude/`와 `.codex/`는 canonical source가 아니라 local/generated pr
 # 로컬 설정 파일 제외
 ./install-claude.sh --project --exclude "*.local.json"
 
-# 또는 수동 복사: canonical source나 materialized profile output에서 필요한 스킬만 복사
-cp -r moonshot-relay/skills/moonshot-orchestrator /your-project/.claude/skills/
+# 또는 canonical source만 필요한 경우 source checkout에서 스킬 정의를 참고하고,
+# project-local compatibility payload가 필요하면 위 --project installer를 사용
 ```
 
 ### Codex 설정 동기화

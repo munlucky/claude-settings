@@ -106,6 +106,9 @@ const generatedStateFragments = [
   '/traces/',
   '/browser-artifacts/',
   '/browser-runtime/',
+  '/memories/',
+  '/sessions/',
+  '/sqlite/',
   '/scripts/fixtures/',
   'fixtures',
   '/node_modules/',
@@ -166,6 +169,10 @@ const runtimeStateDenylistExamples = [
   '.claude/verification-verdict-phase05-final.json',
   '.claude/knowledge-repo-audit-20260515.json',
   '.claude/memory.json',
+  '.codex/cache/session.json',
+  '.codex/sqlite/state.sqlite',
+  '.codex/memories/project.jsonl',
+  '.codex/sessions/session.json',
   '.code-review-graph/index.sqlite',
 ];
 
@@ -290,7 +297,33 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /\.claude\/logs\/\*\*/);
   assert.match(contract, /\.claude\/runtime-state\.sqlite\*/);
   assert.match(contract, /\.code-review-graph\/\*\*/);
+  assert.match(contract, /\.moonshot-state\/\*\*/);
+  assert.match(contract, /\.codex\/cache\/\*\*/);
+  assert.match(contract, /\.codex\/sqlite\/\*\*/);
+  assert.match(contract, /\.codex\/memories\/\*\*/);
+  assert.match(contract, /\.codex\/sessions\/\*\*/);
   assert.doesNotMatch(contract, /excludedDevOnlyPayload:/);
+});
+
+test('package dry-run distinguishes source verdict helpers from generated verdict outputs', () => {
+  const result = spawnSync(process.execPath, [
+    'package/build-package.mjs',
+    '--runtime',
+    'all',
+    '--dry-run',
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  const plannedFrom = payload.runtimes.flatMap((runtime) => runtime.planned.map((entry) => entry.from));
+  const plannedTo = payload.runtimes.flatMap((runtime) => runtime.planned.map((entry) => entry.to));
+
+  assert.ok(plannedFrom.includes('scripts/verification-verdict-state.mjs'));
+  assert.equal(plannedTo.some((target) => /\.claude\/verification-verdict-[^/]*\.json$/.test(target)), false);
 });
 
 test('generated package profiles are not tracked source files', () => {

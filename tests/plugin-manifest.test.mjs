@@ -41,6 +41,7 @@ test('runtime plugin manifests point at package materializers and canonical inpu
     assert.equal(parsed.entriesRole, 'materializer-inputs-only');
     assertExistingPath(parsed.source.templateRoot, `${manifest} source.templateRoot`);
     assertExistingPath(parsed.source.materializer, `${manifest} source.materializer`);
+    assert.equal(parsed.entries.includes('scripts'), false, `${manifest} entries must not expose broad scripts as consumer payload`);
 
     for (const entry of parsed.entries) {
       assert.doesNotMatch(entry, /^package\/(claude|codex)\/profile\//, `${entry} should not require committed generated payloads`);

@@ -35,3 +35,14 @@ test('legacy shell syntax verifier accepts Windows backslash path input', () => 
   assert.equal(result.status, 0);
   assert.deepEqual(result.files, ['skills/moonshot-relay-setup/scripts/install-account-root.sh']);
 });
+
+test('legacy shell syntax verifier default targets exist in source checkout', () => {
+  const result = spawnSync(process.execPath, [
+    'archive/scripts/legacy-phase-adapters/verify-shell-syntax.mjs',
+  ], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});

@@ -37,8 +37,8 @@ Primary path:
 
 Fallback path:
 
-- `.claude/skills/browser-verifier/SKILL.md`
-- `.claude/agents/verification/verify-runtime.sh`
+- `skills/browser-verifier/SKILL.md`
+- `agents/verification/verify-runtime.sh`
 
 ## 사용 예
 

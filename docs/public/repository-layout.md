@@ -41,6 +41,33 @@ Account-root installs use `scripts/install-account-root-harness.mjs` and write c
 
 Generated state is excluded from package payloads. Logs, caches, traces, browser artifacts, browser runtime materialization, sqlite runtime state, memorygraph data, temporary directories, audit outputs, and verification verdict files must remain outside canonical source and package assembly. Regression fixtures are source-owned test inputs under `tests/fixtures/`, not runtime payload.
 
+## Public Guideline Classification
+
+`docs/public/guidelines/**` is a durable public policy/reference layer. These files are intentionally compact anchors unless a row below is classified as `operational-procedure`. Operational details belong in durable source such as `docs/public/reference/**`, `package/package-contract.yaml`, `skills/**`, `agents/**`, or `scripts/**`; phase plans record execution decisions and evidence, not the long-term operational source of truth.
+
+| Guideline file | Class | Durable detail owner |
+|----------------|-------|----------------------|
+| `code-review-graph-workflow.md` | policy-anchor | `skills/codex-review-code/**`, `scripts/code-review-graph-mcp-wrapper.js` |
+| `context-readiness-schema.md` / `context-readiness-schema.ko.md` | reference-index | `skills/context-readiness-gate/**`, `agents/context-builder*` |
+| `demo-first-mvp-gate.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/product-gate-reviewer/**` |
+| `document-memory-policy.md` | policy-anchor | `agents/*memory*`, `skills/doc-auto-sync/**`, `skills/commit-moonshot/**` |
+| `external-skill-pattern-transfer.md` | policy-anchor | `skills/moonshot-relay-maintainer/**` |
+| `knowledge-repository-ops.md` | policy-anchor | `scripts/knowledge-*.mjs`, `docs/public/project-knowledge-plane.md` |
+| `long-running-harness.ko.md` | policy-anchor | `skills/moonshot-phase-runner/**`, `skills/moonshot-in-session-coordinator/**` |
+| `memorygraph-workflow.md` / `memorygraph-workflow.ko.md` | policy-anchor | `scripts/memorygraph-*.mjs`, `skills/project-memory-refresh/**` |
+| `product-acceptance-gate.md` | policy-anchor | `skills/completion-verifier/**`, `skills/product-gate-reviewer/**` |
+| `product-definition-workflow.md` | policy-anchor | `skills/product-orchestrator/**`, `templates/product-definition/**` |
+| `provider-neutral-model-routing.md` | policy-anchor | runtime profile config templates and routing docs |
+| `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, `docs/implementation/**` plan packages |
+| `resumable-session-layer.md` | policy-anchor | phase-runner state helpers and runtime state docs |
+| `session-compaction.md` | policy-anchor | `skills/session-logger/**`, `docs/public/reference/session-logger-reference.md` |
+| `skill-composition.md` | policy-anchor | `skills/**`, `package/package-contract.yaml` |
+| `strategy-gate-rubric.md` / `strategy-gate-rubric.ko.md` | reference-index | `skills/plan-ceo-review/**`, `skills/plan-eng-review/**` |
+| `token-optimization.md` | policy-anchor | `skills/commit-moonshot/**`, session logging guidance |
+| `verification-contract.md` / `verification-contract.ko.md` | reference-index | `schemas/verification.contract.yaml`, `agents/verification/**` |
+
+The existing public guideline content test is a placeholder detector only. Add semantic required-field tests only for files classified as `operational-procedure`.
+
 ## Contributor Rule
 
 When adding a new skill, agent, rule, support script, CLI entrypoint, runtime tool, schema, template, or test:

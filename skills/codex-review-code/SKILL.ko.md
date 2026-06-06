@@ -136,7 +136,7 @@ MUST DO:
   * 무거운 컴포넌트의 dynamic import 누락
   * RSC 직렬화: 필요한 필드 대신 전체 객체 전달
   * async 컴포넌트의 Suspense 경계 누락
-  Reference: `.claude/skills/vercel-react-best-practices/SKILL.md`
+  Reference: `skills/vercel-react-best-practices/SKILL.md`
 - 중요한 이슈에 집중, 스타일 세부사항 지적하지 않기
 - 로직/흐름 오류 및 엣지 케이스 확인
 - 타입 안전성 및 오류 처리 검증

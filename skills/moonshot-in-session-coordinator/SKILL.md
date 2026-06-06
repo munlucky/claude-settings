@@ -251,7 +251,7 @@ coordinatorResult:
 
 ## References
 
-- `.claude/agents/phase-attempt-agent.md`
+- `agents/phase-attempt-agent.md`
 - `/moonshot-phase-runner`
 - `/moonshot-orchestrator`
 

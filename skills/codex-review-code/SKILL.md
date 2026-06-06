@@ -160,7 +160,7 @@ MUST DO:
   * Missing dynamic imports for heavy components
   * RSC serialization: passing entire objects instead of needed fields
   * Missing Suspense boundaries for async components
-  Reference: `.claude/skills/vercel-react-best-practices/SKILL.md`
+  Reference: `skills/vercel-react-best-practices/SKILL.md`
 - In Stage B, focus on issues that matter, not style nitpicks
 - Check logic/flow errors and edge cases
 - Validate type safety and error handling

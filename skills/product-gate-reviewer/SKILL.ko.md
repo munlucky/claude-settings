@@ -134,4 +134,4 @@ gateResult:
 ## 참고
 
 - `docs/public/guidelines/product-definition-workflow.md`
-- `.claude/skills/assumption-ledger/SKILL.md`
+- `skills/assumption-ledger/SKILL.md`
