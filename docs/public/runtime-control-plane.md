@@ -11,9 +11,9 @@ Moonshot Relay runtime-state support is an authoritative local control plane for
 
 ## Native Dependency Decision
 
-Source checkout runtime-state support uses `better-sqlite3@11.10.0`.
+Source checkout runtime-state support uses `better-sqlite3@12.10.0`.
 
-`better-sqlite3@12.x` is not used because its current engine range excludes Node 18, while this repository declares `node >=18`. The Phase 02 implementation keeps Node 18 compatibility by pinning `better-sqlite3@11.10.0`.
+`better-sqlite3@12.x` requires Node 20 or newer, so this repository declares `node >=20` and CI covers the supported Node 20 and Node 22 lanes across Linux, Windows, and macOS.
 
 No fallback SQLite adapter is installed. The accepted fallback behavior is typed degradation:
 

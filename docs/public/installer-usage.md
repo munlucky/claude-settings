@@ -45,9 +45,6 @@ Durable source roadmaps that define harness direction or review contracts are tr
 
 Branch protection is a repository setting, not something this source package can apply by itself. Protect `main` with the following required checks:
 
-- `CI / Node 18.x on ubuntu-latest`
-- `CI / Node 18.x on windows-latest`
-- `CI / Node 18.x on macos-latest`
 - `CI / Node 20.x on ubuntu-latest`
 - `CI / Node 20.x on windows-latest`
 - `CI / Node 20.x on macos-latest`

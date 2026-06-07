@@ -21,7 +21,7 @@ test('CI workflow runs active gates across supported OS and Node matrix', async 
   for (const os of ['ubuntu-latest', 'windows-latest', 'macos-latest']) {
     assert.match(ci, new RegExp(`- ${os}`));
   }
-  for (const node of ['18.x', '20.x', '22.x']) {
+  for (const node of ['20.x', '22.x']) {
     assert.match(ci, new RegExp(`- ${node.replace('.', '\\.')}`));
   }
   for (const command of [
@@ -49,8 +49,8 @@ test('CI workflow runs active gates across supported OS and Node matrix', async 
 test('CodeQL workflow targets JavaScript TypeScript with least privilege', async () => {
   const codeql = await readRoot('.github', 'workflows', 'codeql.yml');
 
-  assert.match(codeql, /github\/codeql-action\/init@v3/);
-  assert.match(codeql, /github\/codeql-action\/analyze@v3/);
+  assert.match(codeql, /github\/codeql-action\/init@v4/);
+  assert.match(codeql, /github\/codeql-action\/analyze@v4/);
   assert.match(codeql, /languages: javascript-typescript/);
   assert.match(codeql, /contents: read/);
   assert.match(codeql, /security-events: write/);
@@ -65,7 +65,7 @@ test('Dependency Review workflow is least privilege and release blocking', async
   assert.match(workflow, /contents: read/);
   assert.match(workflow, /pull-requests: read/);
   assert.match(workflow, /concurrency:/);
-  assert.match(workflow, /actions\/dependency-review-action@v4/);
+  assert.match(workflow, /actions\/dependency-review-action@v5/);
   assert.match(workflow, /fail-on-severity: high/);
   assert.match(workflow, /name: Dependency Review \/ Pull Request/);
 });
@@ -97,7 +97,7 @@ test('required check names are stable and mapped to workflow jobs', async () => 
   assert.deepEqual(checks.statuses['github-settings-applied'].requiresGitHubSettingsEvidence, true);
   assert.deepEqual(checks.statuses['release-protected'].requiresGitHubSettingsEvidence, true);
 
-  for (const node of ['18.x', '20.x', '22.x']) {
+  for (const node of ['20.x', '22.x']) {
     for (const osName of ['ubuntu-latest', 'windows-latest', 'macos-latest']) {
       assert.ok(checks.requiredChecks.includes(`CI / Node ${node} on ${osName}`));
     }
@@ -122,9 +122,6 @@ test('docs name required branch protection checks and review roots', async () =>
 
   for (const phrase of [
     'Branch protection is a repository setting',
-    'CI / Node 18.x on ubuntu-latest',
-    'CI / Node 18.x on windows-latest',
-    'CI / Node 18.x on macos-latest',
     'CI / Node 20.x on ubuntu-latest',
     'CI / Node 22.x on macos-latest',
     'CodeQL / Analyze JavaScript',

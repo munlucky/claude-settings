@@ -15,9 +15,6 @@
     }
   },
   "requiredChecks": [
-    "CI / Node 18.x on ubuntu-latest",
-    "CI / Node 18.x on windows-latest",
-    "CI / Node 18.x on macos-latest",
     "CI / Node 20.x on ubuntu-latest",
     "CI / Node 20.x on windows-latest",
     "CI / Node 20.x on macos-latest",
