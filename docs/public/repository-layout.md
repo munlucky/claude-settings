@@ -47,7 +47,7 @@ Generated state is excluded from package payloads. Logs, caches, traces, browser
 
 Tracked roadmap packages live under `docs/public/roadmaps/` when they define durable harness direction, review evidence, phase contracts, or implementation gates. For example, `docs/public/roadmaps/harness-control-plane-modernization/` is a source-owned roadmap package.
 
-Runtime execution scratch remains under `docs/implementation/**`. Phase-runner readiness JSON, attempt manifests, QA reports, scorecards, handoffs, local phase status, and generated execution evidence are not tracked source and are not package payload.
+Source-local implementation plan packages may live under `docs/implementation/<plan-slug>/` when they contain reviewed phase plans or planning-loop review artifacts. Runtime execution scratch remains under `docs/implementation/**/execution/`, `docs/implementation/**/close/`, and `docs/implementation/**/archive/`. Phase-runner readiness JSON, attempt manifests, QA reports, scorecards, handoffs, local phase status, and generated execution evidence are not tracked source and are not package payload.
 
 ## CI And Release Protection
 

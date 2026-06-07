@@ -11,4 +11,6 @@ When an active phase runner identity exists, pass `--run-id`, `--goal-id`, and `
 
 Commit closeout event payloads may include status, warning codes, sanitized counts, route, and log path. They must not include raw MemoryGraph/KG/ontology/log/transcript payloads and must not create accepted completion decisions.
 
+Use `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-closeout-event.mjs --event-type <type> --payload-json <json> --json` for staging, Git commit, and push outcomes. The helper enforces the commit closeout event taxonomy, default severities, audit-only identity fallback, and payload sanitization.
+
 Project knowledge writes default to the account-root project namespace under `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/knowledge`. Raw memorygraph databases, logs, transcripts, and cache artifacts are runtime state and are not commit payloads unless the user explicitly asks to include a reviewed artifact.

@@ -227,6 +227,8 @@ Git closeout에는 knowledge refresh status, warning code, promotion/audit count
 
 phase runner의 `runId`와 `goalId`가 있으면 memory refresh/audit helper에 전달해 active runtime identity 아래 commit closeout event를 남기세요. active identity가 없으면 helper는 audit-only commit closeout identity를 사용하며, 이 identity는 증거일 뿐 whole-plan completion authority가 아닙니다.
 
+staging, commit, push 결과는 `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-closeout-event.mjs --event-type <type> --payload-json <json> --json` helper로 기록하세요. commit closeout taxonomy는 이 helper가 강제하므로 ad hoc `runtime-state record-event`를 직접 조립하지 않습니다.
+
 commit closeout event taxonomy:
 
 - `commit.closeout.started`
@@ -245,3 +247,5 @@ commit closeout event taxonomy:
 - `commit.push.failed`
 
 이 event들은 audit evidence입니다. `completion_decisions.status=accepted`를 만들거나 암시하면 안 됩니다.
+
+Git 결과 payload에는 sanitized status, count, commit hash, remote, branch, reason, warning code만 넣습니다. raw MemoryGraph/KG/ontology/log/transcript payload나 후보 원문은 기록하지 않습니다.

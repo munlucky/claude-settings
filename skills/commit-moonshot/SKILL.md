@@ -53,6 +53,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - keep the summary compact; avoid long prose dumps
 - when a phase runner `runId` and `goalId` are available, pass them to commit memory/audit helpers so commit closeout writes runtime events under the active identity
 - if no active runtime identity exists, helpers use an audit-only commit closeout identity; that identity is evidence only and must not be treated as whole-plan completion authority
+- record staging, commit, and push outcomes through `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-closeout-event.mjs --event-type <type> --payload-json <json> --json`; do not hand-write ad hoc `runtime-state record-event` calls for commit closeout taxonomy
 
 ## Codex MCP Transport Fallback
 
@@ -121,3 +122,18 @@ Commit closeout runtime event taxonomy:
 - `commit.push.failed`
 
 These events are audit evidence only. They must not create or imply an accepted `completion_decisions` row.
+
+Use the closeout event helper for Git outcomes after memory refresh and promotion audit:
+
+```sh
+node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-closeout-event.mjs \
+  --project-id <PROJECT_ID> \
+  --run-id <RUN_ID> \
+  --goal-id <GOAL_ID> \
+  --workspace-id <WORKSPACE_ID> \
+  --event-type commit.staging.selected \
+  --payload-json '{"selectedCount":0,"status":"selected"}' \
+  --json
+```
+
+Then record `commit.created`, `commit.failed`, `commit.push.skipped`, `commit.push.requested`, `commit.push.completed`, or `commit.push.failed` with sanitized status, counts, commit hash, remote, branch, reason, and warning codes only.

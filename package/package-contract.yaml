@@ -13,6 +13,7 @@ canonicalSource:
   templates: templates/
   tests: tests/
   publicDocs: docs/public/
+  implementationPlans: docs/implementation/
   verificationContracts: schemas/
 
 runtimeProfiles:
@@ -150,6 +151,10 @@ requiredPayloadEntries:
       purpose: reusable_templates
     - source: docs/public/**
       purpose: public_documentation
+    - source: docs/implementation/*/[0-9][0-9]-*.md
+      purpose: source_local_implementation_phase_plans_not_installed
+    - source: docs/implementation/*/planning-loop/**
+      purpose: source_local_plan_review_artifacts_not_installed
     - source: tests/package-layout.test.mjs
       purpose: package_layout_materialization_guard
     - source: scripts/install-account-root-harness.mjs
@@ -177,6 +182,8 @@ requiredPayloadEntries:
         purpose: code_review_graph_mcp_wrapper
       - source: scripts/codex-mcp-singleton.mjs
         purpose: mcp_singleton_guard
+      - source: scripts/commit-moonshot-closeout-event.mjs
+        purpose: commit_closeout_git_event_cli
       - source: scripts/commit-moonshot-memory-refresh.mjs
         purpose: commit_memory_refresh
       - source: scripts/commit-moonshot-promotion-audit.mjs
@@ -215,6 +222,8 @@ requiredPayloadEntries:
         purpose: awtl_trace_sink_support
       - source: scripts/lib/context-state-engine.mjs
         purpose: context_state_engine_support
+      - source: scripts/lib/commit-closeout-events.mjs
+        purpose: commit_closeout_event_contract
       - source: scripts/lib/failure-classifier.mjs
         purpose: failure_classifier_support
       - source: scripts/lib/phase-event-ledger.mjs
@@ -296,6 +305,9 @@ excludedGeneratedState:
   - agents/**/*_test.py
   - agents/**/*.test.py
   - tests/fixtures/**
+  - docs/implementation/**/execution/**
+  - docs/implementation/**/close/**
+  - docs/implementation/**/archive/**
   - .claude/logs/**
   - .moonshot-relay/browser-artifacts/**
   - .moonshot-relay/eval-artifacts/**

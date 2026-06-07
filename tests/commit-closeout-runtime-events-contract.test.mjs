@@ -53,6 +53,15 @@ const readEvents = (dbPath) => {
   }
 };
 
+const countCompletionDecisions = (dbPath) => {
+  const db = new Database(dbPath);
+  try {
+    return db.prepare('SELECT COUNT(*) AS count FROM completion_decisions').get().count;
+  } finally {
+    db.close();
+  }
+};
+
 test('commit memory refresh records sanitized runtime events with active identity', async () => {
   const { env } = await makeEnv();
 
@@ -141,4 +150,82 @@ test('commit promotion audit accepts active runtime identity arguments', async (
   assert.equal(events[0].event_type, 'commit.promotion_audit.completed');
   assert.equal(events[0].payload.auditOnly, false);
   assert.equal(events[0].payload.projectId, 'commit-audit-project');
+});
+
+test('commit closeout event helper records staging commit and push taxonomy without completion authority', async () => {
+  const { env } = await makeEnv();
+  const commonArgs = [
+    'scripts/commit-moonshot-closeout-event.mjs',
+    '--project-id',
+    'commit-git-project',
+    '--project-path',
+    root,
+    '--run-id',
+    'run-commit-git',
+    '--goal-id',
+    'goal-commit-git',
+    '--workspace-id',
+    'workspace-commit-git',
+    '--json',
+  ];
+
+  json(run([
+    ...commonArgs,
+    '--event-type',
+    'commit.staging.selected',
+    '--payload-json',
+    '{"selectedCount":4,"status":"staged","commands":["git add ."],"candidates":[{"path":"raw"}]}',
+  ], env));
+  json(run([
+    ...commonArgs,
+    '--event-type',
+    'commit.created',
+    '--payload-json',
+    '{"status":"created","commit":"abc123","message":"test commit","rawMemoryGraph":{"secret":"no"}}',
+  ], env));
+  json(run([
+    ...commonArgs,
+    '--event-type',
+    'commit.push.skipped',
+    '--payload-json',
+    '{"reason":"push not requested","remote":"origin"}',
+  ], env));
+  json(run([
+    ...commonArgs,
+    '--event-type',
+    'commit.push.failed',
+    '--payload-json',
+    '{"reason":"remote rejected","transcript":"raw git output"}',
+  ], env));
+  const events = readEvents(env.PHASE_RUNTIME_DB);
+
+  assert.deepEqual(events.map((event) => event.event_type), [
+    'commit.staging.selected',
+    'commit.created',
+    'commit.push.skipped',
+    'commit.push.failed',
+  ]);
+  assert.deepEqual(events.map((event) => event.severity), ['info', 'info', 'info', 'blocking']);
+  assert.equal(events[0].payload.auditOnly, false);
+  assert.equal(events[0].payload.selectedCount, 4);
+  assert.equal(Object.hasOwn(events[0].payload, 'commands'), false);
+  assert.equal(Object.hasOwn(events[0].payload, 'candidates'), false);
+  assert.equal(Object.hasOwn(events[1].payload, 'rawMemoryGraph'), false);
+  assert.equal(Object.hasOwn(events[3].payload, 'transcript'), false);
+  assert.equal(countCompletionDecisions(env.PHASE_RUNTIME_DB), 0);
+});
+
+test('commit closeout event helper rejects unknown taxonomy entries', async () => {
+  const { env } = await makeEnv();
+  const result = run([
+    'scripts/commit-moonshot-closeout-event.mjs',
+    '--project-id',
+    'commit-git-project',
+    '--event-type',
+    'commit.unknown',
+    '--json',
+  ], env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unknown commit closeout event type: commit\.unknown/);
 });

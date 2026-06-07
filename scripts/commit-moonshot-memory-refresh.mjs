@@ -14,8 +14,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { classifyFailure } from './lib/failure-classifier.mjs';
+import { recordCommitCloseoutEvent } from './lib/commit-closeout-events.mjs';
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
-import { recordRuntimeEvent } from './lib/runtime-state-store.mjs';
 import {
   hasUnavailableCapability,
   knownUnavailableSummary,
@@ -90,38 +90,18 @@ function parseArgs(argv) {
   return options;
 }
 
-function commitRuntimeIdentity(options, projectId, projectPath) {
-  const auditOnly = !options.runId || !options.goalId;
-  return {
-    runId: options.runId || `commit-closeout-audit:${projectId}`,
-    goalId: options.goalId || `commit-closeout:${projectId}`,
-    workspaceId: options.workspaceId || '',
-    auditOnly,
-    identity: {
+async function recordCommitRuntimeEvent(options, projectId, projectPath, eventType, severity, payload = {}) {
+  try {
+    await recordCommitCloseoutEvent({
+      runId: options.runId || '',
+      goalId: options.goalId || '',
+      workspaceId: options.workspaceId || '',
       projectId,
       projectPath,
-      commitCloseoutAuditOnly: auditOnly,
-      writer: 'commit-moonshot-memory-refresh',
-    },
-  };
-}
-
-async function recordCommitRuntimeEvent(options, projectId, projectPath, eventType, severity, payload = {}) {
-  const runtime = commitRuntimeIdentity(options, projectId, projectPath);
-  try {
-    await recordRuntimeEvent({
-      runId: runtime.runId,
-      goalId: runtime.goalId,
-      workspaceId: runtime.workspaceId,
       eventType,
       severity,
-      payload: {
-        projectId,
-        projectPath,
-        auditOnly: runtime.auditOnly,
-        ...payload,
-      },
-      identity: runtime.identity,
+      payload,
+      writer: 'commit-moonshot-memory-refresh',
     });
   } catch {
     // Commit closeout event recording must not turn memory refresh into a Git blocker.

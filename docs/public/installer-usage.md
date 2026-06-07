@@ -10,7 +10,7 @@ Shared runtime references must resolve through `MOONSHOT_RELAY_HOME`. In `cmd.ex
 
 The installer keeps runtime-discovered profile output stable for skills, agents, and Claude rules. Shared runtime assets such as tools, schemas, templates, docs, and support scripts live under `~/.moonshot-relay`. Workflow orchestration no longer installs `scripts/**` wholesale, so downstream docs or skills should depend on package-contract-listed support scripts rather than profile-local script paths.
 
-The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/bin`, `.claude/tools`, `.claude/schemas`, or `.claude/templates` in this repository as canonical source. Durable edits start in `skills/`, `agents/`, `rules/`, the allowlisted support files under `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, or `docs/public/`.
+The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/bin`, `.claude/tools`, `.claude/schemas`, or `.claude/templates` in this repository as canonical source. Durable edits start in `skills/`, `agents/`, `rules/`, the allowlisted support files under `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`, or source-local phase plans under `docs/implementation/<plan-slug>/`.
 
 Project-local installs are compatibility output. Run `bash install-claude.sh --project` from supported macOS/Git Bash shells to materialize them into the current repository. In WSL/Linux bash environments where `install-claude.sh` reports `unsupported shell: Linux`, use `node bin/moonshot-relay.mjs install --runtime all` or `node scripts/install-account-root-harness.mjs --runtime all`.
 
@@ -39,7 +39,7 @@ For a source change:
 
 Do not edit generated package payloads or runtime state to make a test pass. Generated state includes logs, caches, traces, browser artifacts, sqlite files, memorygraph data, and verification verdict JSON.
 
-Durable source roadmaps that define harness direction or review contracts are tracked under `docs/public/roadmaps/`, including `docs/public/roadmaps/harness-control-plane-modernization/`. Runtime execution scratch under `docs/implementation/**` must remain untracked in this harness source repository. It is excluded from Git so GitHub-based skill installers can clone the repository reliably on Windows path-length-limited systems.
+Durable source roadmaps that define harness direction or review contracts are tracked under `docs/public/roadmaps/`, including `docs/public/roadmaps/harness-control-plane-modernization/`. Source-local implementation plan packages may be tracked under `docs/implementation/<plan-slug>/` when they contain phase plans or planning-loop review artifacts. Runtime execution scratch under `docs/implementation/**/execution/`, `docs/implementation/**/close/`, and `docs/implementation/**/archive/` must remain untracked and excluded from package payloads.
 
 ## GitHub Required Checks
 

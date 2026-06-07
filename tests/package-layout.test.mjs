@@ -46,6 +46,9 @@ const canonicalSourceMinimums = new Map([
 const generatedStateExclusions = [
   '.moonshot-relay/**',
   '.moonshot-state/**',
+  'docs/implementation/**/execution/**',
+  'docs/implementation/**/close/**',
+  'docs/implementation/**/archive/**',
   '.claude/logs/**',
   '.claude/cache/**',
   '.claude/traces/**',
@@ -107,7 +110,17 @@ test('canonical source and package boundary directories exist', () => {
   }
 });
 
-test('tracked docs are limited to installed public documentation', () => {
+const trackedImplementationPlanAllowlist = [
+  /^docs\/implementation\/[^/]+\/[0-9][0-9]-[^/]+\.md$/,
+  /^docs\/implementation\/[^/]+\/planning-loop\/[^/]+\.(?:ya?ml|json|md)$/,
+];
+
+const isAllowedTrackedDoc = (file) => (
+  file.startsWith('docs/public/')
+  || trackedImplementationPlanAllowlist.some((pattern) => pattern.test(file))
+);
+
+test('tracked docs are limited to public docs and source-local implementation plans', () => {
   const output = execFileSync('git', ['ls-files', 'docs'], {
     cwd: root,
     encoding: 'utf8',
@@ -115,16 +128,16 @@ test('tracked docs are limited to installed public documentation', () => {
   const violations = output
     .split(/\r?\n/)
     .filter(Boolean)
-    .filter((file) => !file.startsWith('docs/public/'));
+    .filter((file) => !isAllowedTrackedDoc(file));
 
   assert.deepEqual(
     violations,
     [],
-    `Only docs/public is installed and trackable in this harness source repo:\n${violations.join('\n')}`,
+    `Only docs/public and allowlisted docs/implementation plan artifacts are trackable:\n${violations.join('\n')}`,
   );
 });
 
-test('tracked roadmaps are separated from runtime implementation scratch space', async () => {
+test('tracked roadmaps and source-local plans are separated from runtime execution scratch space', async () => {
   const trackedDocs = execFileSync('git', ['ls-files', 'docs'], {
     cwd: root,
     encoding: 'utf8',
@@ -134,10 +147,20 @@ test('tracked roadmaps are separated from runtime implementation scratch space',
     trackedDocs.includes('docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v1.md'),
     'The harness control-plane modernization roadmap should be tracked under docs/public/roadmaps/',
   );
+  const trackedImplementationDocs = trackedDocs.filter((file) => file.startsWith('docs/implementation/'));
+  assert.ok(
+    trackedImplementationDocs.length > 0,
+    'source-local implementation plan packages may be tracked under docs/implementation/',
+  );
+  assert.deepEqual(
+    trackedImplementationDocs.filter((file) => !isAllowedTrackedDoc(file)),
+    [],
+    'tracked docs/implementation entries must be phase plans or planning-loop review artifacts',
+  );
   assert.equal(
-    trackedDocs.some((file) => file.startsWith('docs/implementation/')),
+    trackedImplementationDocs.some((file) => /\/(?:execution|close|archive)\//.test(file)),
     false,
-    'docs/implementation/** remains runtime execution scratch space and should not be tracked',
+    'docs/implementation execution, closeout, and archive artifacts remain runtime scratch and must not be tracked',
   );
 
   const readme = await readFile(fromRoot('README.md'), 'utf8');
@@ -147,6 +170,7 @@ test('tracked roadmaps are separated from runtime implementation scratch space',
 
   assert.match(combined, /docs\/public\/roadmaps\/harness-control-plane-modernization/);
   assert.match(combined, /docs\/implementation\/\*\*/);
+  assert.match(combined, /source-local implementation plan/i);
   assert.match(combined, /runtime execution scratch/i);
 });
 
@@ -189,11 +213,15 @@ test('package contract declares required source payload entries and generated-st
     'schemas/**',
     'templates/**',
     'docs/public/**',
+    'docs/implementation/*/[0-9][0-9]-*.md',
+    'docs/implementation/*/planning-loop/**',
+    'source_local_implementation_phase_plans_not_installed',
     'tests/package-layout.test.mjs',
     'schemas/verification.contract.yaml',
     'package/build-package.mjs',
     'scripts/install-account-root-harness.mjs',
     'scripts/browser-flow-runner.mjs',
+    'scripts/commit-moonshot-closeout-event.mjs',
     'commonSupportScripts:',
     'archivedLegacyScripts:',
     'archive/scripts/legacy-phase-adapters/',
@@ -321,6 +349,7 @@ test('skills and agents use Moonshot Relay home for shared runtime assets', asyn
 test('active docs do not advertise profile-local scripts as canonical commands', async () => {
   const activeInstructionFiles = [
     'README.md',
+    'scripts/commit-moonshot-closeout-event.mjs',
     'scripts/commit-moonshot-memory-refresh.mjs',
     'scripts/commit-moonshot-promotion-audit.mjs',
   ];
