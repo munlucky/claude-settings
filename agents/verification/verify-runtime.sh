@@ -626,8 +626,8 @@ CONTRACT_RUNTIME_E2E=""
 CONTRACT_REQUIRED_CHECKS=()
 CONTRACT_OPTIONAL_CHECKS=()
 
-mkdir -p .claude .moonshot-relay
 VERDICT_FILE="${HARNESS_VERDICT_FILE:-.moonshot-relay/runtime-verdict-${RUN_ID}.json}"
+mkdir -p "$(dirname "$VERDICT_FILE")"
 
 RUNTIME_FAILED=false
 FLOW_FAILED=false

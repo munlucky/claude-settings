@@ -279,8 +279,8 @@ test('browser runtime verifier defaults generated verdicts to .moonshot-relay', 
   const verifyChanges = await readRoot('agents', 'verification', 'verify-changes.sh');
   const contract = await readRoot('schemas', 'verification.contract.yaml');
 
-  assert.match(content, /mkdir -p \.claude \.moonshot-relay/);
   assert.match(content, /HARNESS_VERDICT_FILE:-\.moonshot-relay\/runtime-verdict-\$\{RUN_ID\}\.json/);
+  assert.match(content, /mkdir -p "\$\(dirname "\$VERDICT_FILE"\)"/);
   assert.match(verifyChanges, /HARNESS_VERDICT_FILE:-\.moonshot-relay\/verification-verdict-\$\{RUN_ID\}\.json/);
   assert.match(contract, /runtimeVerdict:\s*"\.moonshot-relay\/runtime-verdict-<runId>\.json"/);
   assert.match(contract, /verdict:\s*"\.moonshot-relay\/verification-verdict-<runId>\.json"/);
