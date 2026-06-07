@@ -44,6 +44,12 @@ docs/implementation/**/archive/
 docs/analysis/
 docs/claude-tasks/
 docs/implementation/
+!docs/implementation/
+docs/implementation/*
+!docs/implementation/runtime-control-plane-authority-hardening-2026-06-07/
+!docs/implementation/runtime-control-plane-authority-hardening-2026-06-07/*.md
+!docs/implementation/runtime-control-plane-authority-hardening-2026-06-07/planning-loop/
+!docs/implementation/runtime-control-plane-authority-hardening-2026-06-07/planning-loop/**
 docs/phase-runner-visuals/
 docs/*.html
 docs/*.md

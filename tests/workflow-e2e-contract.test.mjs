@@ -331,3 +331,29 @@ test('phase runner treats review rejects as carry-forward blockers while phases 
   assert.match(executor, /REJECT`.*worsened eval or blocking runtime event/i);
   assert.match(executor, /carry-forward blockers rather than automatic whole-plan stop conditions/i);
 });
+
+test('runtime control plane docs publish DB authority matrix and closeout boundaries', async () => {
+  const controlPlane = await readRoot('docs', 'public', 'runtime-control-plane.md');
+  const workflow = await readRoot('docs', 'public', 'reference', 'phase-runner-user-workflow.md');
+  const coordinator = await readRoot('skills', 'moonshot-in-session-coordinator', 'SKILL.md');
+
+  assert.match(controlPlane, /## Workflow Authority Matrix/);
+  assert.match(controlPlane, /runtime-state\.sqlite/);
+  assert.match(controlPlane, /\|\s*phase start\s*\|[\s\S]*runtime_events[\s\S]*phase\.start/);
+  assert.match(controlPlane, /\|\s*resume\s*\|[\s\S]*resume_snapshots[\s\S]*resume\.(success|failure)/);
+  assert.match(controlPlane, /\|\s*blocker\s*\|[\s\S]*runtime_events[\s\S]*blocking/);
+  assert.match(controlPlane, /\|\s*phase closeout\s*\|[\s\S]*phase-local evidence/);
+  assert.match(controlPlane, /\|\s*whole-plan closeout\s*\|[\s\S]*completion_decisions[\s\S]*accepted/);
+  assert.match(controlPlane, /phase-status\.yaml[\s\S]*projection/i);
+  assert.match(controlPlane, /projection[\s\S]*must not become authority/i);
+
+  assert.match(workflow, /Phase closeout/i);
+  assert.match(workflow, /Whole-plan closeout/i);
+  assert.match(workflow, /phase-local evidence/i);
+  assert.match(workflow, /assess-completion[\s\S]*accepted DB decision/i);
+  assert.match(workflow, /phase-status\.yaml[\s\S]*projection/i);
+
+  assert.match(coordinator, /phase-status\.yaml[\s\S]*projection/i);
+  assert.match(coordinator, /whole-plan completion authority/i);
+  assert.match(coordinator, /assess-completion[\s\S]*accepted DB decision/i);
+});

@@ -12,6 +12,7 @@ import {
   readLatestReplayScorecardRecord,
 } from './lib/awtl-replay-scorecard.mjs';
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
+import { recordRuntimeEvent } from './lib/runtime-state-store.mjs';
 
 const DEFAULT_CANDIDATE_PATH = resolveRuntimeStatePath('cache', 'memorygraph', 'memory_update_candidates.jsonl');
 const DEFAULT_FAILED_TURN_CASE_PATH = resolveRuntimeStatePath('cache', 'awtl', 'failed_turn_cases.jsonl');
@@ -101,6 +102,15 @@ function parseArgs(argv = process.argv.slice(2)) {
       case '--project-id':
         options.projectId = argv[++index] ?? options.projectId;
         break;
+      case '--run-id':
+        options.runId = argv[++index] ?? '';
+        break;
+      case '--goal-id':
+        options.goalId = argv[++index] ?? '';
+        break;
+      case '--workspace-id':
+        options.workspaceId = argv[++index] ?? '';
+        break;
       case '--write-verified':
         options.writeVerified = true;
         break;
@@ -126,6 +136,52 @@ function parseArgs(argv = process.argv.slice(2)) {
   }
 
   return options;
+}
+
+function commitRuntimeIdentity(options, projectId) {
+  const auditOnly = !options.runId || !options.goalId;
+  return {
+    runId: options.runId || `commit-closeout-audit:${projectId}`,
+    goalId: options.goalId || `commit-closeout:${projectId}`,
+    workspaceId: options.workspaceId || '',
+    auditOnly,
+    identity: {
+      projectId,
+      commitCloseoutAuditOnly: auditOnly,
+      writer: 'commit-moonshot-promotion-audit',
+    },
+  };
+}
+
+async function recordPromotionAuditEvent(options, summary, eventType = 'commit.promotion_audit.completed', severity = 'info') {
+  const runtime = commitRuntimeIdentity(options, summary.projectId);
+  try {
+    await recordRuntimeEvent({
+      runId: runtime.runId,
+      goalId: runtime.goalId,
+      workspaceId: runtime.workspaceId,
+      eventType,
+      severity,
+      payload: {
+        projectId: summary.projectId,
+        auditOnly: runtime.auditOnly,
+        status: summary.status,
+        closeoutStatus: summary.closeoutStatus,
+        mode: summary.mode,
+        candidateCacheLoaded: summary.candidateCacheLoaded,
+        candidateCount: summary.candidateCount,
+        invalidCandidateCount: summary.invalidCandidateCount,
+        failedTurnCaseCount: summary.failedTurnCaseCount,
+        replayScorecardLoaded: summary.replayScorecardLoaded,
+        memoryGraphStatus: summary.memoryGraphStatus,
+        counts: summary.counts,
+        warnings: summary.warnings,
+      },
+      identity: runtime.identity,
+    });
+  } catch {
+    // Commit closeout event recording is audit evidence, not a Git blocker.
+  }
 }
 
 function printHelp() {
@@ -501,6 +557,7 @@ async function main() {
     return;
   }
   const summary = auditPromotionCandidates(options);
+  await recordPromotionAuditEvent(options, summary);
   if (!options.json) {
     process.stdout.write(`${formatHumanSummary(summary)}\n`);
   }

@@ -13,6 +13,14 @@ node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir docs/imp
 
 Do not rely on implicit plan resolution when multiple `docs/implementation/*/00-master-plan-v*.md` packages exist. Pass `--plan-dir` and `--master-plan` so the runner cannot pick stale plans.
 
+`phase-status.yaml` is a human-readable projection for the active plan loop. It is useful for selecting the next phase, but it is not authority for blocker, resume, or completion decisions when `runtime-state.sqlite` is available.
+
+## Closeout Boundaries
+
+Phase closeout records phase-local evidence. A phase can pass, fail, or carry findings forward based on scorecard, QA, review, and verifier evidence, but a phase-local pass is not whole-plan completion.
+
+Whole-plan closeout is the final authority boundary. After the last actionable phase, run `scripts/runtime-state.mjs assess-completion --json` and require an accepted DB decision before claiming clean completion.
+
 Completion evidence should include:
 
 - a closeout JSON matching `schemas/plan-closeout.schema.json`;

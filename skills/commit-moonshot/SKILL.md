@@ -51,6 +51,8 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - require `QA_REPORT.md` to contain a `Harness Change Ledger` entry when harness/tool changes were made during a product phase
 - keep the user-facing summary and commit body grouped by feature area
 - keep the summary compact; avoid long prose dumps
+- when a phase runner `runId` and `goalId` are available, pass them to commit memory/audit helpers so commit closeout writes runtime events under the active identity
+- if no active runtime identity exists, helpers use an audit-only commit closeout identity; that identity is evidence only and must not be treated as whole-plan completion authority
 
 ## Codex MCP Transport Fallback
 
@@ -100,3 +102,22 @@ Commit closeout memory refresh is non-blocking. It can refresh or audit project 
 Git closeout may record only knowledge refresh status, warning codes, and promotion/audit counts. MemoryGraph transport failure must not block commit/push when the user explicitly requested Git closeout.
 
 Account-root project knowledge state is runtime state, not a commit payload. Repo commits may include reviewed summaries, evidence manifests, contracts, or explicit promotion candidates, but not raw knowledge state.
+
+Commit closeout runtime event taxonomy:
+
+- `commit.closeout.started`
+- `commit.memory_refresh.completed`
+- `commit.memory_refresh.failed`
+- `commit.memory_refresh.skipped`
+- `commit.promotion_audit.completed`
+- `commit.promotion_audit.failed`
+- `commit.promotion_audit.skipped`
+- `commit.staging.selected`
+- `commit.created`
+- `commit.failed`
+- `commit.push.skipped`
+- `commit.push.requested`
+- `commit.push.completed`
+- `commit.push.failed`
+
+These events are audit evidence only. They must not create or imply an accepted `completion_decisions` row.

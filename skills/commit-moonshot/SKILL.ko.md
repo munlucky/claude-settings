@@ -224,3 +224,24 @@ commit closeout memory refresh는 non-blocking입니다. 검증 뒤 project know
 Git closeout에는 knowledge refresh status, warning code, promotion/audit count만 기록할 수 있습니다. 사용자가 Git closeout을 명시적으로 요청한 경우 MemoryGraph transport failure가 commit/push를 막아서는 안 됩니다.
 
 계정 루트 프로젝트 knowledge state는 runtime state이며 commit payload가 아닙니다. repo commit에는 검토된 summary, evidence manifest, contract, 명시적 promotion candidate만 포함할 수 있고 raw knowledge state는 포함하지 않습니다.
+
+phase runner의 `runId`와 `goalId`가 있으면 memory refresh/audit helper에 전달해 active runtime identity 아래 commit closeout event를 남기세요. active identity가 없으면 helper는 audit-only commit closeout identity를 사용하며, 이 identity는 증거일 뿐 whole-plan completion authority가 아닙니다.
+
+commit closeout event taxonomy:
+
+- `commit.closeout.started`
+- `commit.memory_refresh.completed`
+- `commit.memory_refresh.failed`
+- `commit.memory_refresh.skipped`
+- `commit.promotion_audit.completed`
+- `commit.promotion_audit.failed`
+- `commit.promotion_audit.skipped`
+- `commit.staging.selected`
+- `commit.created`
+- `commit.failed`
+- `commit.push.skipped`
+- `commit.push.requested`
+- `commit.push.completed`
+- `commit.push.failed`
+
+이 event들은 audit evidence입니다. `completion_decisions.status=accepted`를 만들거나 암시하면 안 됩니다.

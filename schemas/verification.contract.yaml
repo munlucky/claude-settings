@@ -50,6 +50,19 @@ checkPolicies:
     script_change: block
     workflow_core: block
     runtime_adapter: block
+  verificationProfiles:
+    prompt_only:
+      profileRequiredPlanes: [quality]
+    docs_only:
+      profileRequiredPlanes: [package, quality]
+    script_change:
+      profileRequiredPlanes: [unit, quality]
+    workflow_core:
+      profileRequiredPlanes: [unit, package, installer, security, quality]
+    runtime_adapter:
+      profileRequiredPlanes: [unit, package, installer, browser, security, quality]
+    completionAuthorityRequiredPlanes: [unit, package, installer, browser, security, quality]
+    requiredPlanesOverrideScope: "summary_only"
   verificationOverrideAllowlist:
     policy: "project-native commands only"
     allowedCommandPrefixes:

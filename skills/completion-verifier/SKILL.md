@@ -57,6 +57,8 @@ Applicability rule:
   - Stale/superseded verifier evidence, missing active identity, blocking workflow warnings, unauthorized approval-required operations, and worsened eval regressions block clean finish.
   - Sandbox policy blockers from `tools/sandbox/policy.mjs` or `sandbox.violation` runtime events block clean finish until resolved or explicitly approved.
   - Completion-relevant verifier evidence should be recorded through `scripts/verification-plane.mjs record-summary --run-id <runId> --goal-id <goalId> --planes-json <json> --identity-json <json> --json`.
+  - Verification profiles are summary scopes only: `profileRequiredPlanes` can vary by task, but `completionAuthorityRequiredPlanes` stays `unit`, `package`, `installer`, `browser`, `security`, and `quality` for accepted DB completion.
+  - `--required-planes-json` can make summary evidence pass for a narrow task, but it must not be treated as authority to claim accepted completion.
   - The accepted completion path requires fresh unit, package, installer, browser, security, and quality plane evidence. Browser or security setup gaps are explicit plane failures, not silent passes.
   - `scripts/verification-plane.mjs assess-security` consumes CodeQL, dependency review, Dependabot, and secret scanning status. Missing scans, stale scans, high/critical findings, vulnerable dependency review findings, and secret scan findings block release/accepted completion unless an owner-approved exception is recorded in the evidence.
 - `verificationState: indeterminate` caused by missing executable verification remains `pass_with_warning` by default.

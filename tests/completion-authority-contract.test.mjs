@@ -168,6 +168,47 @@ test('fresh verifier evidence can produce an accepted DB decision', async () => 
   assert.match(status.compactStatus.latestVerdict.evidenceHash, /^[a-f0-9]{64}$/);
 });
 
+test('lowered requiredPlanes payload cannot weaken accepted completion authority', async () => {
+  const env = await makeEnv();
+  json(runtimeState(['init', '--json'], env));
+
+  recordEvidence(env, 'run-lowered-required-planes', 'goal-lowered-required-planes', {
+    fresh: true,
+    requiredChecksPassed: true,
+    activeIdentityPresent: true,
+    identityMatches: true,
+    identity: { runLeaseId: 'lease-lowered' },
+    requiredPlanes: ['quality'],
+    planes: [
+      { plane: 'quality', status: 'passed', command: 'git diff --check' },
+    ],
+  });
+  const result = assess(env, 'run-lowered-required-planes', 'goal-lowered-required-planes');
+
+  assert.equal(result.status, 'rejected');
+  assert.equal(result.reason, 'missing verification plane: unit');
+});
+
+test('profile evidence with full authority planes can still produce accepted completion', async () => {
+  const env = await makeEnv();
+  json(runtimeState(['init', '--json'], env));
+
+  recordEvidence(env, 'run-profile-authority', 'goal-profile-authority', {
+    fresh: true,
+    requiredChecksPassed: true,
+    profile: 'runtime_adapter',
+    profileRequiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
+    completionAuthorityRequiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
+    ...fullPassingPlanes(),
+    activeIdentityPresent: true,
+    identityMatches: true,
+    identity: { runLeaseId: 'lease-profile-authority' },
+  });
+  const result = assess(env, 'run-profile-authority', 'goal-profile-authority');
+
+  assert.equal(result.status, 'accepted');
+});
+
 test('fresh verifier evidence can supersede earlier needs-more-evidence decision', async () => {
   const env = await makeEnv();
   json(runtimeState(['init', '--json'], env));

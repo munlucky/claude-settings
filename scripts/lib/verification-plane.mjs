@@ -13,6 +13,16 @@ export const REQUIRED_VERIFICATION_PLANES = [
   'quality',
 ];
 
+export const COMPLETION_AUTHORITY_REQUIRED_PLANES = REQUIRED_VERIFICATION_PLANES;
+
+export const VERIFICATION_PROFILES = {
+  prompt_only: ['quality'],
+  docs_only: ['package', 'quality'],
+  script_change: ['unit', 'quality'],
+  workflow_core: ['unit', 'package', 'installer', 'security', 'quality'],
+  runtime_adapter: COMPLETION_AUTHORITY_REQUIRED_PLANES,
+};
+
 export const REQUIRED_SECURITY_SCANS = [
   'codeql',
   'dependencyReview',
@@ -48,19 +58,26 @@ export function buildVerificationSummary({
   runId,
   goalId,
   planes = [],
-  requiredPlanes = REQUIRED_VERIFICATION_PLANES,
+  profile = 'runtime_adapter',
+  requiredPlanes = null,
   identity = {},
   producedAt = nowIso(),
   maxAgeMinutes = 60,
   reason = 'verification plane evidence accepted',
 } = {}) {
+  if (!Object.hasOwn(VERIFICATION_PROFILES, profile)) {
+    throw new Error(`unknown verification profile: ${profile}`);
+  }
   const normalizedPlanes = normalizePlaneList(planes);
   const planeByName = new Map(normalizedPlanes.map((plane) => [plane.plane, plane]));
-  const missingPlanes = requiredPlanes.filter((plane) => !planeByName.has(plane));
+  const profileRequiredPlanes = Array.isArray(requiredPlanes) ? requiredPlanes : VERIFICATION_PROFILES[profile];
+  const completionAuthorityRequiredPlanes = COMPLETION_AUTHORITY_REQUIRED_PLANES;
+  const missingPlanes = profileRequiredPlanes.filter((plane) => !planeByName.has(plane));
   const failedPlanes = normalizedPlanes
-    .filter((plane) => requiredPlanes.includes(plane.plane))
+    .filter((plane) => profileRequiredPlanes.includes(plane.plane))
     .filter((plane) => plane.status !== 'passed')
     .map((plane) => ({ plane: plane.plane, status: plane.status || 'missing' }));
+  const missingCompletionAuthorityPlanes = completionAuthorityRequiredPlanes.filter((plane) => !planeByName.has(plane));
   const producedDate = parseDate(producedAt);
   const maxAgeMs = Number(maxAgeMinutes) * 60 * 1000;
   const ageMs = producedDate ? Date.now() - producedDate.getTime() : Number.POSITIVE_INFINITY;
@@ -87,12 +104,17 @@ export function buildVerificationSummary({
     reason,
     producedAt,
     maxAgeMinutes: Number(maxAgeMinutes),
-    requiredPlanes,
+    profile,
+    profileRequiredPlanes,
+    completionAuthorityRequiredPlanes,
+    requiredPlanes: profileRequiredPlanes,
     planes: normalizedPlanes,
     missingPlanes,
+    missingProfilePlanes: missingPlanes,
+    missingCompletionAuthorityPlanes,
     failedPlanes,
     securityBlockers,
-    evidenceId: evidenceIdFor({ runId, goalId, producedAt, requiredPlanes, planes: normalizedPlanes }),
+    evidenceId: evidenceIdFor({ runId, goalId, producedAt, profile, requiredPlanes: profileRequiredPlanes, planes: normalizedPlanes }),
   };
 }
 

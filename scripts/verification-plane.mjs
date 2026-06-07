@@ -68,6 +68,7 @@ const main = async () => {
       runId,
       goalId,
       planes: parseJsonOption(options.planesJson, '--planes-json', []),
+      profile: options.profile || 'runtime_adapter',
       requiredPlanes: options.requiredPlanesJson
         ? parseJsonOption(options.requiredPlanesJson, '--required-planes-json', [])
         : undefined,
@@ -91,8 +92,10 @@ const main = async () => {
       suite: 'verification-plane',
       status: summary.requiredChecksPassed ? 'passed' : 'failed',
       score: {
-        requiredPlanes: summary.requiredPlanes.length,
-        missingPlanes: summary.missingPlanes.length,
+        profileRequiredPlanes: summary.profileRequiredPlanes.length,
+        completionAuthorityRequiredPlanes: summary.completionAuthorityRequiredPlanes.length,
+        missingProfilePlanes: summary.missingProfilePlanes.length,
+        missingCompletionAuthorityPlanes: summary.missingCompletionAuthorityPlanes.length,
         failedPlanes: summary.failedPlanes.length,
         securityBlockers: summary.securityBlockers.length,
       },

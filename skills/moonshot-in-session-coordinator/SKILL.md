@@ -63,6 +63,8 @@ Read `phase-status.yaml` and select the next actionable phase:
 - or `status == in_progress`
 - or `status == failed` with remaining attempts
 
+`phase-status.yaml` is a loop-cursor projection only. It can identify the next actionable phase, but blocker state, resume reconstruction, and whole-plan completion authority must come from the runtime-state DB read model when runtime-state is available.
+
 Skip phases that are:
 - already `completed`
 - not `planConfirmed`
@@ -212,6 +214,7 @@ Pre-return self-check:
 - While `phase-status.yaml` still reports `activeExecutionStatus: active`, keep user-facing updates commentary/progress-only and do not emit `final`, closeout, or session-ended wording.
 - If Phase 01 becomes `completed` while Phase 02 or later is still actionable, update the artifacts and phase state, then enter Phase 02 immediately instead of returning a terminal summary.
 - If the coordinator still exits 0 early, the dispatcher should restart it while actionable phases remain; treat that early exit as a contract violation.
+- When no actionable phase remains, whole-plan completion authority still requires `scripts/runtime-state.mjs assess-completion --json` to produce an accepted DB decision. A complete `phase-status.yaml`, closeout JSON, scorecard, or child-agent summary is projection/evidence only.
 
 Cross-runtime provider-neutral model contract:
 - Start with `modelEffortProfile: standard`; use `deep` or `max` only with a recorded `Effort escalation reason`.

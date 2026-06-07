@@ -79,6 +79,118 @@ test('fresh verification plane evidence is required before accepted completion',
   assert.equal(assessed.authoritySource, 'runtime-state.sqlite');
 });
 
+test('verification profiles summarize task-scope evidence without weakening completion authority', async () => {
+  const { env } = await makeEnv();
+  json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
+
+  const docsOnly = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-docs-profile',
+    '--goal-id',
+    'goal-docs-profile',
+    '--profile',
+    'docs_only',
+    '--planes-json',
+    JSON.stringify([
+      { plane: 'package', status: 'passed', command: 'doc payload check' },
+      { plane: 'quality', status: 'passed', command: 'git diff --check' },
+    ]),
+    '--identity-json',
+    '{"runLeaseId":"lease-docs"}',
+    '--json',
+  ], env));
+  const assessedDocs = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-docs-profile',
+    '--goal-id',
+    'goal-docs-profile',
+    '--json',
+  ], env));
+
+  assert.equal(docsOnly.profile, 'docs_only');
+  assert.deepEqual(docsOnly.profileRequiredPlanes, ['package', 'quality']);
+  assert.deepEqual(docsOnly.missingProfilePlanes, []);
+  assert.deepEqual(docsOnly.completionAuthorityRequiredPlanes, ['unit', 'package', 'installer', 'browser', 'security', 'quality']);
+  assert.deepEqual(docsOnly.missingCompletionAuthorityPlanes, ['unit', 'installer', 'browser', 'security']);
+  assert.equal(docsOnly.requiredChecksPassed, true);
+  assert.equal(assessedDocs.status, 'rejected');
+  assert.equal(assessedDocs.reason, 'missing verification plane: unit');
+
+  const promptOnly = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-prompt-profile',
+    '--goal-id',
+    'goal-prompt-profile',
+    '--profile',
+    'prompt_only',
+    '--planes-json',
+    JSON.stringify([{ plane: 'quality', status: 'passed', command: 'prompt review' }]),
+    '--identity-json',
+    '{"runLeaseId":"lease-prompt"}',
+    '--json',
+  ], env));
+  assert.equal(promptOnly.requiredChecksPassed, true);
+  assert.deepEqual(promptOnly.missingCompletionAuthorityPlanes, ['unit', 'package', 'installer', 'browser', 'security']);
+});
+
+test('required planes override affects summary only and unknown profile fails fast', async () => {
+  const { env } = await makeEnv();
+  json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
+
+  const override = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-required-override',
+    '--goal-id',
+    'goal-required-override',
+    '--required-planes-json',
+    '["quality"]',
+    '--planes-json',
+    JSON.stringify([{ plane: 'quality', status: 'passed', command: 'git diff --check' }]),
+    '--identity-json',
+    '{"runLeaseId":"lease-override"}',
+    '--json',
+  ], env));
+  const assessed = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-required-override',
+    '--goal-id',
+    'goal-required-override',
+    '--json',
+  ], env));
+
+  assert.deepEqual(override.requiredPlanes, ['quality']);
+  assert.deepEqual(override.profileRequiredPlanes, ['quality']);
+  assert.equal(override.requiredChecksPassed, true);
+  assert.equal(assessed.status, 'rejected');
+  assert.equal(assessed.reason, 'missing verification plane: unit');
+
+  const unknown = run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-unknown-profile',
+    '--goal-id',
+    'goal-unknown-profile',
+    '--profile',
+    'unknown_profile',
+    '--planes-json',
+    '[]',
+    '--json',
+  ], env);
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /unknown verification profile: unknown_profile/);
+});
+
 test('stale verification plane evidence cannot produce accepted completion', async () => {
   const { env } = await makeEnv();
   json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));

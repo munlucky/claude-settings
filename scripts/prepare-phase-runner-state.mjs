@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
-import { acquireRunLease, recordResumeSnapshot } from './lib/runtime-state-store.mjs';
+import { acquireRunLease, recordResumeSnapshot, recordRuntimeEvent } from './lib/runtime-state-store.mjs';
 
 const usage = () => `Usage: node scripts/prepare-phase-runner-state.mjs [--plan-dir <dir>] [--master-plan <file>] [--status-file <file>] [--execution-root <dir>] [--run-id <id>] [--goal-id <id>] [--workspace-id <id>] [--allow-parallel] [--lease-ttl-ms <ms>] [--dry-run] [--json]`;
 
@@ -328,6 +328,21 @@ const main = async () => {
 
   if (!options.dryRun && errors.length === 0) {
     try {
+      result.phaseStartEvent = await recordRuntimeEvent({
+        runId,
+        goalId,
+        workspaceId,
+        eventType: 'phase.start',
+        severity: 'info',
+        payload: {
+          planDir: result.planDir,
+          masterPlan: result.masterPlan,
+          phaseDoc: result.activePhaseDoc,
+          phaseNumber: result.phases[0]?.number ?? null,
+          workspaceId,
+        },
+        identity,
+      });
       result.runtimeSnapshot = await recordResumeSnapshot({
         runId,
         goalId,

@@ -9,6 +9,20 @@ Moonshot Relay runtime-state support is an authoritative local control plane for
 - Legacy `PHASE_RUNTIME_DB` remains a direct DB override for tests and controlled smoke checks.
 - Generated sqlite files, WAL, and SHM files are runtime state and must not enter package payloads.
 
+## Workflow Authority Matrix
+
+`runtime-state.sqlite` is the single workflow authority for run status, blockers, resume state, and whole-plan completion decisions. Files such as `.moonshot-relay/docs/phase-status.yaml`, `QA_REPORT.md`, `SCORECARD.md`, closeout JSON, and verifier verdicts are readable projections or evidence payloads. A projection can summarize DB state, but projection files must not become authority for completion, blocker, or resume decisions.
+
+| Workflow path | Required DB authority | Required writer/evidence | Authority boundary |
+| --- | --- | --- | --- |
+| phase start | `runs`, `goals`, `runtime_events` with `phase.start`, `resume_snapshots` | `prepare-phase-runner-state.mjs` with `runId`, `goalId`, `workspaceId`, and phase identity | opens or resumes a phase run only |
+| resume | `runs` lease state, `resume_snapshots`, `runtime_events` with `resume.success` or `resume.failure` | `runtime-state.mjs status --json` and snapshot lineage | reconstructs current state, blocker, and next action from DB read model |
+| blocker | `runtime_events` with blocking severity or rejected completion/eval evidence | `record-event`, `record-eval-result`, or `assess-completion` rejection payload | blocks eligibility until resolved, superseded, or carried forward |
+| verification evidence | `runtime_events` or verification-plane evidence referenced by runtime-state | fresh command output, verdict JSON, security scan, or profile-specific plane evidence | makes completion assessment eligible, not complete |
+| phase closeout | `runtime_events` or `eval_results` carrying phase-local evidence | scorecard, QA, review, and verifier evidence for the current phase | records phase-local evidence; does not require `completion_decisions.status=accepted` |
+| commit closeout | `runtime_events` for memory refresh, audit, staging, commit, and install-sync evidence | commit workflow output and filtered staging evidence | records repository closeout evidence, not whole-plan acceptance by itself |
+| whole-plan closeout | `completion_decisions` with latest `status=accepted` after `assess-completion` | accepted DB decision with fresh verification-plane evidence and writer identity | only boundary that can claim clean whole-plan completion |
+
 ## Native Dependency Decision
 
 Source checkout runtime-state support uses `better-sqlite3@12.10.0`.
@@ -29,8 +43,8 @@ This keeps account-root/package rollout conservative while still requiring insta
 | Target | Command shape | Success status |
 | --- | --- | --- |
 | source checkout | `node scripts/runtime-state.mjs status --json` | `available` |
-| materialized package | `node package/moonshot-relay/profile/scripts/runtime-state.mjs status --json` | `available` |
-| temp account-root install | `node <temp-moonshot-home>/scripts/runtime-state.mjs status --json` with temp homes | `available` |
+| materialized package | set `MOONSHOT_RELAY_HOME=<package>/moonshot-relay/profile`, then run `<package>/moonshot-relay/profile/scripts/runtime-state.mjs status --json` | `available` |
+| temp account-root install | set `MOONSHOT_RELAY_HOME=<temp-moonshot-home>`, then run `<temp-moonshot-home>/scripts/runtime-state.mjs status --json` with temp Claude/Codex homes | `available` |
 | live account-root install | installed `~/.moonshot-relay/scripts/runtime-state.mjs status --json` after explicit adoption approval | `available` |
 
 Missing native dependencies must return typed degradation such as `missing_native_module`.
@@ -96,6 +110,8 @@ Run leases are stored on `runs` with `workspace_id`, `heartbeat_at`, `lease_expi
 ## Eval And Review Blockers
 
 `scripts/runtime-state.mjs record-eval-result` records harness regression and review-loop evidence in `eval_results`.
+
+Runtime blockers use event-backed lifecycle records. Canonical event types are `blocker.opened`, `blocker.resolved`, `blocker.superseded`, and `blocker.reopened`. Each lifecycle event must include a stable `blockerFingerprint`; only a matching resolved or superseded event clears an opened blocker. Legacy `severity=blocking` events remain blocking audit history unless they are represented through the lifecycle taxonomy.
 
 Use it for independent review outcomes that must block closeout, replay scorecards, and active eval fixtures:
 
@@ -172,10 +188,23 @@ Completion evidence is written as structured verification-plane evidence before 
 node scripts/verification-plane.mjs record-summary \
   --run-id <runId> \
   --goal-id <goalId> \
+  --profile runtime_adapter \
   --planes-json '[{"plane":"unit","status":"passed"}]' \
   --identity-json '{"runLeaseId":"<lease>"}' \
   --json
 ```
+
+Verification profiles describe task-scope summary requirements. They do not lower whole-plan completion authority.
+
+| Profile | `profileRequiredPlanes` | Accepted completion alone |
+| --- | --- | --- |
+| `prompt_only` | `quality` | no |
+| `docs_only` | `package`, `quality` | no |
+| `script_change` | `unit`, `quality` | no |
+| `workflow_core` | `unit`, `package`, `installer`, `security`, `quality` | no |
+| `runtime_adapter` | `unit`, `package`, `installer`, `browser`, `security`, `quality` | yes, when all blockers are absent |
+
+`--required-planes-json` is a summary override only. The summary payload records both `profileRequiredPlanes` and `completionAuthorityRequiredPlanes`; `assess-completion` only accepts the canonical completion authority planes.
 
 Accepted completion requires fresh `unit`, `package`, `installer`, `browser`, `security`, and `quality` plane evidence. Missing planes, stale evidence, failed planes, or security blockers keep `assess-completion` rejected or in `needs_more_evidence`.
 

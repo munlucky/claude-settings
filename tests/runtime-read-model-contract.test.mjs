@@ -188,12 +188,213 @@ test('phase runner prepare dry-run writes nothing but non-dry-run records resume
     assert.equal(snapshot.goal_id, 'goal-prepare-explicit');
     const run = db.prepare('SELECT * FROM runs WHERE run_id = ?').get('run-prepare-explicit');
     assert.equal(run.workspace_id, 'workspace-prepare-explicit');
+    const events = db.prepare('SELECT event_type, severity, payload_json FROM runtime_events ORDER BY event_sequence').all();
+    assert.deepEqual(events.map((event) => event.event_type), ['phase.start', 'resume.success']);
+    assert.equal(events[0].severity, 'info');
+    assert.equal(events[1].severity, 'info');
+    const phasePayload = JSON.parse(events[0].payload_json);
+    assert.equal(phasePayload.phaseDoc, '01-baseline-source-truth-v1.md');
+    assert.equal(phasePayload.workspaceId, 'workspace-prepare-explicit');
     const resumeBrief = JSON.parse(snapshot.resume_brief_json);
     assert.equal(resumeBrief.nextAction, '01-baseline-source-truth-v1.md');
     assert.deepEqual(resumeBrief.lineage, [planDir, masterPlan]);
   } finally {
     db.close();
   }
+});
+
+test('resume snapshots record success and failure events in the read model', async () => {
+  const tempRoot = await makeTempRoot();
+  const dbPath = path.join(tempRoot, 'runtime-state.sqlite');
+  const env = { PHASE_RUNTIME_DB: dbPath };
+
+  parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'snapshot-resume',
+    '--run-id',
+    'run-resume-success',
+    '--goal-id',
+    'goal-resume-taxonomy',
+    '--workspace-id',
+    'workspace-resume',
+    '--status-json',
+    '{"phase":"02","status":"running"}',
+    '--resume-brief-json',
+    '{"nextAction":"continue phase 02","currentBlocker":"","lineage":["phase-02"]}',
+    '--identity-json',
+    '{"phaseId":"02"}',
+    '--json',
+  ], env));
+  parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'snapshot-resume',
+    '--run-id',
+    'run-resume-failure',
+    '--goal-id',
+    'goal-resume-taxonomy',
+    '--workspace-id',
+    'workspace-resume',
+    '--status-json',
+    '{"phase":"02","status":"blocked"}',
+    '--resume-brief-json',
+    '{"nextAction":"refresh runtime-state","currentBlocker":"missing resume identity","lineage":["phase-02"]}',
+    '--identity-json',
+    '{"phaseId":"02"}',
+    '--json',
+  ], env));
+
+  const db = new Database(dbPath);
+  try {
+    const successEvent = db.prepare('SELECT event_type, severity, payload_json FROM runtime_events WHERE run_id = ?').get('run-resume-success');
+    assert.equal(successEvent.event_type, 'resume.success');
+    assert.equal(successEvent.severity, 'info');
+    assert.equal(JSON.parse(successEvent.payload_json).workspaceId, 'workspace-resume');
+
+    const failureEvent = db.prepare('SELECT event_type, severity, payload_json FROM runtime_events WHERE run_id = ?').get('run-resume-failure');
+    assert.equal(failureEvent.event_type, 'resume.failure');
+    assert.equal(failureEvent.severity, 'blocking');
+    assert.equal(JSON.parse(failureEvent.payload_json).reason, 'missing resume identity');
+  } finally {
+    db.close();
+  }
+
+  const failureStatus = parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'status',
+    '--run-id',
+    'run-resume-failure',
+    '--goal-id',
+    'goal-resume-taxonomy',
+    '--json',
+  ], env));
+  assert.equal(failureStatus.compactStatus.currentBlocker, 'missing resume identity');
+  assert.equal(failureStatus.resumeBrief.nextAction, 'refresh runtime-state');
+  assert.equal(failureStatus.operationalMetrics.metrics.run_resume_success_rate, 0);
+});
+
+test('blocker lifecycle events control current blocker and completion authority', async () => {
+  const tempRoot = await makeTempRoot();
+  const dbPath = path.join(tempRoot, 'runtime-state.sqlite');
+  const env = { PHASE_RUNTIME_DB: dbPath };
+  const runId = 'run-blocker-lifecycle';
+  const goalId = 'goal-blocker-lifecycle';
+
+  parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'record-event',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--event-type',
+    'verification.evidence',
+    '--payload-json',
+    fullPassingEvidence('lease-blocker-lifecycle'),
+    '--json',
+  ], env));
+  parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'record-event',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--event-type',
+    'blocker.opened',
+    '--severity',
+    'blocking',
+    '--payload-json',
+    '{"blockerFingerprint":"blocker-db-authority","reason":"DB authority missing","nextAction":"record runtime event"}',
+    '--json',
+  ], env));
+
+  const blocked = parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--json',
+  ], env));
+  assert.equal(blocked.status, 'rejected');
+  assert.equal(blocked.reason, 'DB authority missing');
+
+  parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'record-event',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--event-type',
+    'blocker.resolved',
+    '--payload-json',
+    '{"blockerFingerprint":"unrelated","reason":"unrelated resolution"}',
+    '--json',
+  ], env));
+  const stillBlocked = parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'status',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--json',
+  ], env));
+  assert.equal(stillBlocked.compactStatus.currentBlocker, 'DB authority missing');
+  assert.equal(stillBlocked.compactStatus.blockingEvents[0].blockerFingerprint, 'blocker-db-authority');
+
+  parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'record-event',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--event-type',
+    'blocker.resolved',
+    '--payload-json',
+    '{"blockerFingerprint":"blocker-db-authority","reason":"runtime event recorded"}',
+    '--json',
+  ], env));
+  const accepted = parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--json',
+  ], env));
+  assert.equal(accepted.status, 'accepted');
+
+  parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'record-event',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--event-type',
+    'blocker.reopened',
+    '--severity',
+    'blocking',
+    '--payload-json',
+    '{"blockerFingerprint":"blocker-db-authority","reason":"regression reopened","nextAction":"rerun audit"}',
+    '--json',
+  ], env));
+  const reopened = parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'status',
+    '--run-id',
+    runId,
+    '--goal-id',
+    goalId,
+    '--json',
+  ], env));
+  assert.equal(reopened.compactStatus.currentBlocker, 'regression reopened');
+  assert.equal(reopened.resumeBrief.nextAction, 'rerun audit');
 });
 
 test('phase runner prepare blocks duplicate active goal unless parallel is explicit', async () => {

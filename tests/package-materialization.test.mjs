@@ -396,6 +396,44 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.equal(plannedTo.some((target) => /\.claude\/browser-flow-verdict-[^/]*\.json$/.test(target)), false);
 });
 
+test('package smoke runs materialized runtime-state from package home', async () => {
+  const profileRoot = await commonProfile();
+  const runtimeStateScript = path.join(profileRoot, 'scripts', 'runtime-state.mjs');
+  const result = spawnSync(process.execPath, [
+    runtimeStateScript,
+    'status',
+    '--run-id',
+    'package-home-smoke',
+    '--goal-id',
+    'runtime-state-availability',
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      MOONSHOT_RELAY_HOME: profileRoot,
+      PHASE_RUNTIME_DB: '',
+      NODE_PATH: '',
+    },
+  });
+  const payload = JSON.parse(result.stdout);
+  const expectedDbPath = path.join(
+    profileRoot,
+    'state',
+    'projects',
+    'munlucky-moonshot-relay',
+    'knowledge',
+    'runtime-state.sqlite',
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(payload.runtimeCapabilityStatus.status, 'available');
+  assert.equal(payload.runtimeCapabilityStatus.dbPath, expectedDbPath);
+  assert.equal(existsSync(expectedDbPath), true);
+  assert.equal(existsSync(path.join(profileRoot, 'node_modules', 'better-sqlite3', 'package.json')), true);
+});
+
 test('generated package profiles are not tracked source files', () => {
   const result = spawnSync('git', ['ls-files', 'package/moonshot-relay/profile', 'package/claude/profile', 'package/codex/profile'], {
     cwd: root,

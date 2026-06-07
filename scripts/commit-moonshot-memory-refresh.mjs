@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { classifyFailure } from './lib/failure-classifier.mjs';
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
+import { recordRuntimeEvent } from './lib/runtime-state-store.mjs';
 import {
   hasUnavailableCapability,
   knownUnavailableSummary,
@@ -87,6 +88,44 @@ function parseArgs(argv) {
   }
 
   return options;
+}
+
+function commitRuntimeIdentity(options, projectId, projectPath) {
+  const auditOnly = !options.runId || !options.goalId;
+  return {
+    runId: options.runId || `commit-closeout-audit:${projectId}`,
+    goalId: options.goalId || `commit-closeout:${projectId}`,
+    workspaceId: options.workspaceId || '',
+    auditOnly,
+    identity: {
+      projectId,
+      projectPath,
+      commitCloseoutAuditOnly: auditOnly,
+      writer: 'commit-moonshot-memory-refresh',
+    },
+  };
+}
+
+async function recordCommitRuntimeEvent(options, projectId, projectPath, eventType, severity, payload = {}) {
+  const runtime = commitRuntimeIdentity(options, projectId, projectPath);
+  try {
+    await recordRuntimeEvent({
+      runId: runtime.runId,
+      goalId: runtime.goalId,
+      workspaceId: runtime.workspaceId,
+      eventType,
+      severity,
+      payload: {
+        projectId,
+        projectPath,
+        auditOnly: runtime.auditOnly,
+        ...payload,
+      },
+      identity: runtime.identity,
+    });
+  } catch {
+    // Commit closeout event recording must not turn memory refresh into a Git blocker.
+  }
 }
 
 function readJsonValue(value, label) {
@@ -297,6 +336,11 @@ async function main() {
 
   const projectId = options.projectId || defaultProjectId();
   const projectPath = path.resolve(options.projectPath || ROOT);
+  await recordCommitRuntimeEvent(options, projectId, projectPath, 'commit.closeout.started', 'info', {
+    phase: 'memory_refresh',
+    mcpStatus: options.mcpStatus || 'skipped',
+    storePayloadProvided: Boolean(options.storeJson),
+  });
   const mcp = classifyMcp(options);
   const storePayload = readJsonValue(options.storeJson, '--store-json');
   const commands = [];
@@ -314,6 +358,14 @@ async function main() {
       logPath: '',
     };
     summary.logPath = writeLog(summary);
+    await recordCommitRuntimeEvent(options, projectId, projectPath, 'commit.memory_refresh.completed', 'info', {
+      status: summary.status,
+      route: summary.route,
+      reason: summary.mcp.reason,
+      writeStatus: 'promotion_write_available',
+      storePayloadProvided: Boolean(storePayload),
+      logPath: summary.logPath,
+    });
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
     return;
   }
@@ -336,6 +388,16 @@ async function main() {
       cachedUnavailableSummary: knownUnavailableSummary(PHASE_STATUS_FILE, { code: 'memorygraph_unavailable' }),
     };
     summary.logPath = writeLog(summary);
+    await recordCommitRuntimeEvent(options, projectId, projectPath, 'commit.memory_refresh.skipped', 'warning', {
+      status: summary.status,
+      route: summary.route,
+      reason: summary.reason,
+      writeStatus: summary.writeStatus,
+      denialCodes: summary.denialCodes,
+      closeoutStatus: summary.closeoutStatus,
+      storePayloadProvided: summary.storePayloadProvided,
+      logPath: summary.logPath,
+    });
     recordUnavailableCapability(PHASE_STATUS_FILE, {
       code: 'memorygraph_unavailable',
       fingerprint: MEMORYGRAPH_FINGERPRINT,
@@ -460,6 +522,23 @@ async function main() {
     logPath: '',
   };
   summary.logPath = writeLog(summary);
+  await recordCommitRuntimeEvent(
+    options,
+    projectId,
+    projectPath,
+    finalStatus === 'direct_fallback_succeeded' ? 'commit.memory_refresh.completed' : 'commit.memory_refresh.failed',
+    finalStatus === 'direct_fallback_succeeded' ? 'info' : (summary.closeoutStatus === 'blocked' ? 'blocking' : 'warning'),
+    {
+      status: summary.status,
+      route: summary.route,
+      reason: summary.reason,
+      writeStatus: summary.writeStatus,
+      denialCodes: summary.denialCodes,
+      closeoutStatus: summary.closeoutStatus,
+      storePayloadProvided: summary.storePayloadProvided,
+      logPath: summary.logPath,
+    },
+  );
   if (finalStatus === 'direct_fallback_succeeded') {
     recordHealthyCapability(PHASE_STATUS_FILE, {
       capability: 'memorygraph',

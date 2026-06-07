@@ -1,0 +1,32 @@
+reviewedPackageRoot: docs/implementation/runtime-control-plane-authority-hardening-2026-06-07
+iteration: 1
+mode: first-pass-independent-review
+reviewPerspectives:
+  - architecture-control-plane
+  - verification-test-strategy
+  - packaging-account-root-adoption
+blockingFindings:
+  - finding: "Phase closeout and whole-plan closeout were conflated in the first draft."
+    disposition: accepted
+    acceptedChange: "Master plan and phase 01 split phase-local closeout from final accepted DB completion."
+  - finding: "Blocking events had no resolution lifecycle."
+    disposition: accepted
+    acceptedChange: "Phase 03 defines event-backed blocker.opened/resolved/superseded/reopened lifecycle with fingerprint matching."
+  - finding: "Verification profiles could weaken accepted completion authority."
+    disposition: accepted
+    acceptedChange: "Phase 04 separates profileRequiredPlanes from completionAuthorityRequiredPlanes."
+  - finding: "Commit closeout had no runtime event identity or taxonomy."
+    disposition: accepted
+    acceptedChange: "Phase 05 defines commit event taxonomy, severity, sanitized payload, and audit-only identity rules."
+  - finding: "Package dry-run and runtime smoke were mixed."
+    disposition: accepted
+    acceptedChange: "Phase 06 separates package dry-run, package smoke, installer dry-run, temp-home smoke, and live adoption."
+rejectedChanges:
+  - proposal: "Use live account-root smoke as a default automated gate."
+    reason: "Rejected because live mutation requires explicit user approval, state preservation, and rollback evidence."
+  - proposal: "Treat memory refresh or promotion audit success as completion authority."
+    reason: "Rejected because commit/memory events are audit evidence only."
+remainingAmbiguity:
+  - "Whether blocker lifecycle needs a new table remains open; default plan uses runtime_events first and requires tests before escalating schema shape."
+  - "Unsupported OS/Node degraded behavior must remain typed authority-blocking unless a later explicit support exception is approved."
+acceptedChangesApplied: true

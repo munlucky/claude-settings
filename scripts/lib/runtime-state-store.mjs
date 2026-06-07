@@ -469,6 +469,33 @@ export async function recordResumeSnapshot({ runId, goalId, status = {}, resumeB
         INSERT INTO resume_snapshots(snapshot_id, run_id, goal_id, snapshot_sequence, status_json, resume_brief_json)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(snapshotId, runId, goalId, snapshotSequence, jsonText(status), jsonText(resumeBrief));
+      const currentBlocker = typeof resumeBrief.currentBlocker === 'string' ? resumeBrief.currentBlocker : '';
+      const isFailure = Boolean(currentBlocker)
+        || status.status === 'blocked'
+        || status.activeExecutionStatus === 'blocked';
+      const eventSequence = nextSequence(db, 'runtime_events', 'event_sequence', runId);
+      db.prepare(`
+        INSERT INTO runtime_events(event_id, run_id, goal_id, event_sequence, event_type, severity, payload_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        newId(),
+        runId,
+        goalId,
+        eventSequence,
+        isFailure ? 'resume.failure' : 'resume.success',
+        isFailure ? 'blocking' : 'info',
+        jsonText({
+          snapshotId,
+          snapshotSequence,
+          workspaceId,
+          phase: resumeBrief.phase || status.phase || status.activePhaseDoc || '',
+          nextAction: resumeBrief.nextAction || '',
+          currentBlocker,
+          reason: currentBlocker || (isFailure ? 'resume failed' : ''),
+          lineage: Array.isArray(resumeBrief.lineage) ? resumeBrief.lineage : [],
+          identity,
+        }),
+      );
       return snapshotSequence;
     });
     const snapshotSequence = insert();
@@ -760,22 +787,41 @@ function readLatestDecision(db, runId, goalId) {
 }
 
 function readBlockingEvent(db, runId, goalId) {
-  return db.prepare(`
-    SELECT *
-    FROM runtime_events
-    WHERE run_id = ? AND goal_id = ? AND severity = 'blocking'
-    ORDER BY event_sequence DESC, created_at DESC
-    LIMIT 1
-  `).get(runId, goalId);
+  return readBlockingEvents(db, runId, goalId)[0] || null;
 }
 
 function readBlockingEvents(db, runId, goalId) {
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT event_id, event_type, severity, payload_json, created_at, event_sequence
     FROM runtime_events
-    WHERE run_id = ? AND goal_id = ? AND severity = 'blocking'
-    ORDER BY event_sequence DESC, created_at DESC
+    WHERE run_id = ?
+      AND goal_id = ?
+      AND (severity = 'blocking' OR event_type IN ('blocker.opened', 'blocker.resolved', 'blocker.superseded', 'blocker.reopened'))
+    ORDER BY event_sequence ASC, created_at ASC
   `).all(runId, goalId);
+  const active = new Map();
+
+  for (const row of rows) {
+    const payload = parseJsonText(row.payload_json, {});
+    const fingerprint = payload.blockerFingerprint || payload.fingerprint || payload.blockerId || '';
+    const lifecycleEvent = row.event_type.startsWith('blocker.');
+    if (lifecycleEvent && fingerprint) {
+      if (row.event_type === 'blocker.opened' || row.event_type === 'blocker.reopened') {
+        active.set(fingerprint, { ...row, blockerFingerprint: fingerprint, payload });
+      } else if (row.event_type === 'blocker.resolved' || row.event_type === 'blocker.superseded') {
+        active.delete(fingerprint);
+      }
+      continue;
+    }
+    if (row.severity === 'blocking') {
+      active.set(`legacy:${row.event_id}`, { ...row, blockerFingerprint: fingerprint, payload });
+    }
+  }
+
+  return [...active.values()].sort((left, right) => (
+    right.event_sequence - left.event_sequence
+    || String(right.created_at).localeCompare(String(left.created_at))
+  ));
 }
 
 function readWorsenedEval(db, runId, goalId) {
@@ -879,13 +925,13 @@ function verificationPlaneBlocker(evidencePayload) {
     return '';
   }
 
-  const requiredPlanes = Array.isArray(evidencePayload.requiredPlanes)
-    ? evidencePayload.requiredPlanes
+  const requiredPlanes = Array.isArray(evidencePayload.completionAuthorityRequiredPlanes)
+    ? evidencePayload.completionAuthorityRequiredPlanes
     : ['unit', 'package', 'installer', 'browser', 'security', 'quality'];
   const planes = Array.isArray(evidencePayload.planes) ? evidencePayload.planes : [];
   const planeByName = new Map(planes.map((plane) => [plane.plane, plane]));
-  const missingPlanes = Array.isArray(evidencePayload.missingPlanes)
-    ? evidencePayload.missingPlanes
+  const missingPlanes = Array.isArray(evidencePayload.missingCompletionAuthorityPlanes)
+    ? evidencePayload.missingCompletionAuthorityPlanes
     : requiredPlanes.filter((plane) => !planeByName.has(plane));
 
   if (missingPlanes.length > 0) {
@@ -1524,7 +1570,9 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
           blockingEvents: blockingEvents.map((event) => ({
             eventId: event.event_id,
             eventType: event.event_type,
+            blockerFingerprint: event.blockerFingerprint || '',
             reason: parseJsonText(event.payload_json, {}).reason || event.event_type,
+            nextAction: parseJsonText(event.payload_json, {}).nextAction || '',
             createdAt: event.created_at,
           })),
           pendingApprovals,
@@ -1549,7 +1597,7 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
           operationalMetrics,
         },
         resumeBrief: {
-          nextAction: resumeBrief.nextAction || (currentBlocker ? 'collect fresh evidence' : 'initialize runtime state'),
+          nextAction: resumeBrief.nextAction || blockerPayload.nextAction || (currentBlocker ? 'collect fresh evidence' : 'initialize runtime state'),
           currentBlocker: resumeBrief.currentBlocker || currentBlocker,
           ...contextProjection,
           lineage: Array.isArray(resumeBrief.lineage) ? resumeBrief.lineage : [runId, goalId].filter(Boolean),
