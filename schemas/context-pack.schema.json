@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/context-pack.schema.json",
+  "title": "ContextPackV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "packId",
+    "contextPackRef",
+    "projectId",
+    "namespace",
+    "knowledgeRevision",
+    "stage",
+    "strictness",
+    "status",
+    "blocking",
+    "runtimeAuthorityRef",
+    "tokenEstimate",
+    "promptFacingAuthority",
+    "compatibility",
+    "harnessSlice",
+    "projectSlice",
+    "candidateMemory",
+    "staleWarnings",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "packId": { "type": "string", "pattern": "^ctxpack:[a-f0-9]{16}$" },
+    "contextPackRef": { "type": "string", "pattern": "^ctxpack:[a-f0-9]{16}$" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "namespace": { "type": "string", "minLength": 1 },
+    "knowledgeRevision": { "type": "string" },
+    "stage": { "enum": ["intake", "plan", "execute", "verify", "finish"] },
+    "strictness": { "enum": ["advisory", "required"] },
+    "status": { "enum": ["ready", "stale", "degraded_read", "degraded_write", "not_configured"] },
+    "blocking": { "type": "boolean" },
+    "runtimeAuthorityRef": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runId", "goalId"],
+          "properties": {
+            "runId": { "type": "string" },
+            "goalId": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "tokenEstimate": { "type": "integer", "minimum": 0 },
+    "promptFacingAuthority": { "const": "projectKnowledgeContext.promptBlock" },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["additiveOnly", "preservedTopLevelFields", "statusVocabulary", "servingMode"],
+      "properties": {
+        "additiveOnly": { "const": true },
+        "preservedTopLevelFields": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "statusVocabulary": {
+          "type": "array",
+          "items": { "enum": ["ready", "stale", "degraded_read", "degraded_write", "not_configured"] },
+          "minItems": 5,
+          "uniqueItems": true
+        },
+        "servingMode": { "enum": ["advisory", "required"] }
+      }
+    },
+    "harnessSlice": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["policyAnchors", "omittedByPolicy"],
+      "properties": {
+        "policyAnchors": { "type": "array" },
+        "omittedByPolicy": { "type": "array" }
+      }
+    },
+    "projectSlice": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["semanticFacts", "graphSynopsis", "ontologyConstraints"],
+      "properties": {
+        "semanticFacts": { "type": "array" },
+        "graphSynopsis": { "type": "array" },
+        "ontologyConstraints": { "type": "array" }
+      }
+    },
+    "candidateMemory": { "type": "array" },
+    "staleWarnings": { "type": "array" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generatedBy", "source"],
+      "properties": {
+        "generatedBy": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

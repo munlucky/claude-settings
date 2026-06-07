@@ -1,41 +1,17 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import {
   recordRuntimeEvent,
   recordToolCall,
 } from '../../scripts/lib/runtime-state-store.mjs';
 
-const registry = {
-  version: 1,
-  budget: { minGroups: 10, maxGroups: 12 },
-  groups: [
-    ['filesystem', 'Read and inspect source files without changing state.', [['read-file', 'Read a file', { path: 'string' }]]],
-    ['edit', 'Apply narrow source edits through reviewed patch operations.', [['apply-patch', 'Apply a patch', { patch: 'string' }]]],
-    ['shell', 'Run deterministic local commands and tests.', [['run-command', 'Run a command', { command: 'string' }]]],
-    ['package', 'Build, materialize, and inspect package payloads.', [['package-dry-run', 'Run package dry-run', { runtime: 'string' }]]],
-    ['runtime-state', 'Read and write Moonshot runtime-state records.', [['runtime-status', 'Read runtime status', { runId: 'string', goalId: 'string' }]]],
-    ['context', 'Build, compact, rehydrate, and assemble runtime context.', [['context-build', 'Build context state', { runId: 'string', goalId: 'string' }]]],
-    ['browser', 'Verify local browser flows and UI runtime behavior.', [['browser-smoke', 'Run browser smoke', { url: 'string' }]]],
-    ['git', 'Inspect git status, diffs, staging, commits, and branches.', [['git-status', 'Read git status', {}]]],
-    ['github', 'Inspect or operate GitHub PR, CI, and release metadata.', [['github-ci', 'Inspect CI metadata', { ref: 'string' }]]],
-    ['security', 'Review security-sensitive changes and policy gates.', [['security-review', 'Review a path', { path: 'string' }]]],
-    ['memory', 'Refresh or audit project knowledge without making it authority.', [['memory-audit', 'Audit project knowledge', { projectId: 'string' }]]],
-  ].map(([id, summary, tools]) => ({
-    id,
-    summary,
-    tools: tools.map(([name, toolSummary, schema]) => ({
-      name,
-      summary: toolSummary,
-      schema: {
-        type: 'object',
-        required: Object.keys(schema),
-        properties: Object.fromEntries(Object.entries(schema).map(([key, type]) => [key, { type }])),
-        additionalProperties: false,
-      },
-    })),
-  })),
-};
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const registryPath = resolve(currentDir, 'registry.yaml');
+const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
 
 const usage = () => `Usage: node tools/agent-api/dispatch.mjs <registry|select|dispatch> [--task <text>] [--group <id>] [--tool <name>] [--args-json <json>] [--selected-groups-json <json>] [--run-id <id>] [--goal-id <id>] [--json]`;
 

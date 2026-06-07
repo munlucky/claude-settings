@@ -1,27 +1,207 @@
-version: 1
-budget:
-  minGroups: 10
-  maxGroups: 12
-groups:
-  - id: filesystem
-    summary: Read and inspect source files without changing state.
-  - id: edit
-    summary: Apply narrow source edits through reviewed patch operations.
-  - id: shell
-    summary: Run deterministic local commands and tests.
-  - id: package
-    summary: Build, materialize, and inspect package payloads.
-  - id: runtime-state
-    summary: Read and write Moonshot runtime-state control-plane records.
-  - id: context
-    summary: Build, compact, rehydrate, and assemble runtime context.
-  - id: browser
-    summary: Verify local browser flows and UI runtime behavior.
-  - id: git
-    summary: Inspect git status, diffs, staging, commits, and branches.
-  - id: github
-    summary: Inspect or operate GitHub PR, CI, and release metadata.
-  - id: security
-    summary: Review security-sensitive changes and policy gates.
-  - id: memory
-    summary: Refresh or audit project knowledge without making it authority.
+{
+  "version": 1,
+  "budget": {
+    "minGroups": 10,
+    "maxGroups": 12
+  },
+  "groups": [
+    {
+      "id": "filesystem",
+      "summary": "Read and inspect source files without changing state.",
+      "tools": [
+        {
+          "name": "read-file",
+          "summary": "Read a file",
+          "schema": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "edit",
+      "summary": "Apply narrow source edits through reviewed patch operations.",
+      "tools": [
+        {
+          "name": "apply-patch",
+          "summary": "Apply a patch",
+          "schema": {
+            "type": "object",
+            "required": ["patch"],
+            "properties": {
+              "patch": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "shell",
+      "summary": "Run deterministic local commands and tests.",
+      "tools": [
+        {
+          "name": "run-command",
+          "summary": "Run a command",
+          "schema": {
+            "type": "object",
+            "required": ["command"],
+            "properties": {
+              "command": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "package",
+      "summary": "Build, materialize, and inspect package payloads.",
+      "tools": [
+        {
+          "name": "package-dry-run",
+          "summary": "Run package dry-run",
+          "schema": {
+            "type": "object",
+            "required": ["runtime"],
+            "properties": {
+              "runtime": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "runtime-state",
+      "summary": "Read and write Moonshot runtime-state control-plane records.",
+      "tools": [
+        {
+          "name": "runtime-status",
+          "summary": "Read runtime status",
+          "schema": {
+            "type": "object",
+            "required": ["runId", "goalId"],
+            "properties": {
+              "runId": { "type": "string" },
+              "goalId": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "context",
+      "summary": "Build, compact, rehydrate, and assemble runtime context.",
+      "tools": [
+        {
+          "name": "context-build",
+          "summary": "Build context state",
+          "schema": {
+            "type": "object",
+            "required": ["runId", "goalId"],
+            "properties": {
+              "runId": { "type": "string" },
+              "goalId": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "browser",
+      "summary": "Verify local browser flows and UI runtime behavior.",
+      "tools": [
+        {
+          "name": "browser-smoke",
+          "summary": "Run browser smoke",
+          "schema": {
+            "type": "object",
+            "required": ["url"],
+            "properties": {
+              "url": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "git",
+      "summary": "Inspect git status, diffs, staging, commits, and branches.",
+      "tools": [
+        {
+          "name": "git-status",
+          "summary": "Read git status",
+          "schema": {
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "github",
+      "summary": "Inspect or operate GitHub PR, CI, and release metadata.",
+      "tools": [
+        {
+          "name": "github-ci",
+          "summary": "Inspect CI metadata",
+          "schema": {
+            "type": "object",
+            "required": ["ref"],
+            "properties": {
+              "ref": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "summary": "Review security-sensitive changes and policy gates.",
+      "tools": [
+        {
+          "name": "security-review",
+          "summary": "Review a path",
+          "schema": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "summary": "Refresh or audit project knowledge without making it authority.",
+      "tools": [
+        {
+          "name": "memory-audit",
+          "summary": "Audit project knowledge",
+          "schema": {
+            "type": "object",
+            "required": ["projectId"],
+            "properties": {
+              "projectId": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  ]
+}

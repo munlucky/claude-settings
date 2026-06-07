@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/improvement-candidate-v1.schema.json",
+  "title": "ImprovementCandidateV1",
+  "description": "Eval-gated improvement candidate metadata. Candidates can become review-ready but cannot mutate source automatically.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "candidateId",
+    "sourceCandidateId",
+    "state",
+    "verdict",
+    "sourceMutation",
+    "requiredEvidence",
+    "rollback"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "sourceCandidateId": { "type": "string", "minLength": 1 },
+    "state": {
+      "type": "string",
+      "enum": ["pending_review", "ready_for_review", "rejected", "rolled_back"]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "INCONCLUSIVE"]
+    },
+    "sourceMutation": {
+      "type": "object",
+      "required": ["allowed", "requiresAcceptedParentEdit", "forbiddenTargets"],
+      "properties": {
+        "allowed": { "const": false },
+        "requiresAcceptedParentEdit": { "const": true },
+        "forbiddenTargets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "schemas",
+              "ontology",
+              "public_skills",
+              "agents",
+              "tool_permissions",
+              "verification_contracts"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "requiredEvidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "rollback": {
+      "type": "object",
+      "required": ["required", "strategy"],
+      "properties": {
+        "required": { "const": true },
+        "strategy": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

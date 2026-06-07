@@ -21,7 +21,7 @@ This map prevents the current implementation from being overstated. It names wha
 
 ## Wave 1 - Known Limitations
 
-- Native dependency materialization for installed account-root runtime is not yet a full availability guarantee.
+- Live account-root adoption is not claimed by Wave 1 or Wave 2; it remains controlled rollout work under Phase 11.
 - Runtime leases do not yet include heartbeat/TTL/recovery cleanup.
 - `eval_results` exists, but the AWTL replay/promotion gate is not fully wired.
 - Tool and sandbox events can block completion, but there is no complete dispatcher/sandbox compute plane.
@@ -29,13 +29,21 @@ This map prevents the current implementation from being overstated. It names wha
 
 ## Wave 2 - Dependency and Runtime Availability Hardening
 
-Required next implementation:
+Status: in progress; source/package/temp-home evidence collected locally on 2026-06-07, but phase closeout has not been accepted.
 
-- Materialize or install runtime dependencies for the packaged support root.
-- Add account-root runtime-state smoke that verifies working DB authority when native module is present.
-- Keep typed degraded output for unsupported or missing native module cases.
-- Run OS/Node matrix in CI before claiming native dependency rollout.
-- Add stale active-run lease cleanup and recovery policy.
+| Area | Status | Evidence owner |
+|---|---|---|
+| Packaged runtime dependency materialization | Evidence collected locally | `package/package-contract.yaml`, `tests/package-materialization.test.mjs`, `node package/build-package.mjs --runtime all --dry-run --json` |
+| Source runtime-state smoke | Evidence collected locally | `node scripts/runtime-state.mjs status --json` with temp `PHASE_RUNTIME_DB` |
+| Temp-home installed runtime-state smoke | Evidence collected locally | `node scripts/install-account-root-harness.mjs --runtime all --moonshot-home <temp> --claude-home <temp> --codex-home <temp>` followed by installed `scripts/runtime-state.mjs status --json` |
+| Typed degraded native dependency behavior | Evidence collected locally | Runtime control-plane, read-model, package materialization, and tool/sandbox eval contract tests |
+| OS/Node matrix source config | Implemented as source config | `.github/workflows/ci.yml` covers Node 20.x and 22.x on Ubuntu, Windows, and macOS |
+
+Remaining release evidence:
+
+- Remote GitHub CI matrix results must be attached before release/native rollout claims.
+- Live account-root adoption remains Phase 11 work and requires explicit approval plus state preservation evidence.
+- Phase closeout has not been accepted yet; do not treat this wave as completed from evidence collection alone.
 
 ## Wave 3 - Context, Tool, and Sandbox Core
 

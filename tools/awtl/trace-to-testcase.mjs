@@ -58,10 +58,11 @@ export function buildTraceToTestcaseCandidate(trace = {}, options = {}) {
   const sourceCase = trace.failedCase || trace.case || {};
   const category = String(sourceCase.category || trace.category || 'harness-control-plane');
   const testcaseId = String(sourceCase.id || trace.failedCaseId || `candidate-${digest({ sourceTraceId, category })}`);
+  const candidateId = `awtl-testcase-candidate-${digest({ sourceTraceId, testcaseId, score })}`;
 
   return {
     schemaVersion: 1,
-    candidateId: `awtl-testcase-candidate-${digest({ sourceTraceId, testcaseId, score })}`,
+    candidateId,
     createdAt: nowIso(),
     sourceTraceId,
     fixtureNamespace: 'tests/fixtures/harness-control-plane',
@@ -91,6 +92,35 @@ export function buildTraceToTestcaseCandidate(trace = {}, options = {}) {
       input: sourceCase.input || trace.input || {},
       expected: sourceCase.expected || trace.expected || { releaseBlocked: true },
       sourceFailure: trace.failure || trace.reason || '',
+    },
+    improvementCandidate: {
+      schemaVersion: 1,
+      candidateId: `improvement-candidate-${digest({ sourceTraceId, testcaseId, score })}`,
+      sourceCandidateId: candidateId,
+      state: failed ? 'ready_for_review' : 'pending_review',
+      verdict: failed ? 'FAIL' : 'PASS',
+      sourceMutation: {
+        allowed: false,
+        requiresAcceptedParentEdit: true,
+        forbiddenTargets: [
+          'schemas',
+          'ontology',
+          'public_skills',
+          'agents',
+          'tool_permissions',
+          'verification_contracts',
+        ],
+      },
+      requiredEvidence: [
+        'accepted-parent-edit',
+        'fresh-regression-evidence',
+        'owner-review',
+        'rollback-metadata',
+      ],
+      rollback: {
+        required: true,
+        strategy: 'discard candidate sidecar and rerun golden eval before any parent edit',
+      },
     },
   };
 }

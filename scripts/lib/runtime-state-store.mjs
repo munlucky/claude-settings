@@ -874,6 +874,26 @@ function readStaleMemoryPromotions(db, runId, goalId, now) {
   `).all(runId, goalId, runId, goalId, now);
 }
 
+function readRolledBackContextPackWarnings(db, runId, goalId) {
+  return db.prepare(`
+    SELECT memory_id, rollback_json
+    FROM memory_promotion_decisions
+    WHERE run_id = ?
+      AND goal_id = ?
+      AND status = 'rolled_back'
+    ORDER BY decision_sequence DESC, created_at DESC
+  `).all(runId, goalId)
+    .map((row) => {
+      const rollback = parseJsonText(row.rollback_json, {});
+      const contextPackRef = normalizeText(rollback.contextPackRef);
+      if (!contextPackRef) {
+        return '';
+      }
+      return `stale context pack projection: ${contextPackRef} from rolled back memory promotion: ${row.memory_id}`;
+    })
+    .filter(Boolean);
+}
+
 function readUnauthorizedApprovalToolCall(db, runId, goalId) {
   const rows = db.prepare(`
     SELECT *
@@ -1521,6 +1541,7 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
       const operationalMetrics = buildOperationalMetrics(db, runId, goalId);
       const staleMemoryPromotions = runId && goalId ? readStaleMemoryPromotions(db, runId, goalId, current) : [];
       const memoryWarnings = staleMemoryPromotions.map((memory) => `stale memory promotion: ${memory.memory_id}`);
+      const contextPackWarnings = runId && goalId ? readRolledBackContextPackWarnings(db, runId, goalId) : [];
       const resumeBrief = parseJsonText(snapshot?.resume_brief_json, {});
       const snapshotStatus = parseJsonText(snapshot?.status_json, {});
       const blockerPayload = parseJsonText(blockingEvent?.payload_json, {});
@@ -1592,8 +1613,12 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
           staleWarnings: [
             ...staleRuns.map((run) => `stale run lease: ${run.run_id}`),
             ...memoryWarnings,
+            ...contextPackWarnings,
           ],
-          memoryWarnings,
+          memoryWarnings: [
+            ...memoryWarnings,
+            ...contextPackWarnings,
+          ],
           operationalMetrics,
         },
         resumeBrief: {
@@ -1601,7 +1626,10 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
           currentBlocker: resumeBrief.currentBlocker || currentBlocker,
           ...contextProjection,
           lineage: Array.isArray(resumeBrief.lineage) ? resumeBrief.lineage : [runId, goalId].filter(Boolean),
-          memoryWarnings,
+          memoryWarnings: [
+            ...memoryWarnings,
+            ...contextPackWarnings,
+          ],
           operationalMetrics,
         },
       };

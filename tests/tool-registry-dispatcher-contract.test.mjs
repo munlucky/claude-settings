@@ -40,17 +40,29 @@ const parseJson = (result) => {
 
 test('tool registry source and public group budget are valid', async () => {
   const schema = JSON.parse(await readFile(path.join(root, 'schemas/tool-registry.schema.json'), 'utf8'));
-  const yaml = await readFile(path.join(root, 'tools/agent-api/registry.yaml'), 'utf8');
+  const registrySource = JSON.parse(await readFile(path.join(root, 'tools/agent-api/registry.yaml'), 'utf8'));
   const registry = parseJson(runDispatch(['registry'])).registry;
 
   assert.equal(schema.properties.groups.minItems, 10);
   assert.equal(schema.properties.groups.maxItems, 12);
+  assert.equal(registrySource.version, registry.version);
+  assert.deepEqual(registrySource.budget, registry.budget);
+  assert.equal(registrySource.groups.length, registry.groupCount);
   assert.equal(registry.groupCount >= registry.budget.minGroups, true);
   assert.equal(registry.groupCount <= registry.budget.maxGroups, true);
   assert.equal(registry.groupCount, 11);
   for (const group of registry.groups) {
-    assert.match(yaml, new RegExp(`id: ${group.id}`));
+    const sourceGroup = registrySource.groups.find((item) => item.id === group.id);
+    assert.ok(sourceGroup, `${group.id} must be defined in registry source`);
     assert.ok(group.summary);
+    assert.equal(Array.isArray(sourceGroup.tools), true);
+    assert.equal(sourceGroup.tools.length > 0, true);
+    for (const tool of sourceGroup.tools) {
+      assert.equal(typeof tool.schema, 'object');
+      assert.equal(tool.schema.type, 'object');
+      assert.equal(Array.isArray(tool.schema.required), true);
+      assert.equal(typeof tool.schema.properties, 'object');
+    }
   }
 });
 

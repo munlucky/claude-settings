@@ -156,8 +156,17 @@ test('low-score traces produce reviewed testcase candidates with rollback metada
   assert.equal(result.candidate.reviewStatus, 'pending_review');
   assert.equal(result.candidate.promotion.requiresReview, true);
   assert.ok(result.candidate.promotion.requiredEvidence.includes('rollback-metadata'));
+  assert.equal(result.candidate.improvementCandidate.schemaVersion, 1);
+  assert.equal(result.candidate.improvementCandidate.state, 'ready_for_review');
+  assert.equal(result.candidate.improvementCandidate.sourceMutation.allowed, false);
+  assert.equal(result.candidate.improvementCandidate.sourceMutation.requiresAcceptedParentEdit, true);
+  assert.ok(result.candidate.improvementCandidate.sourceMutation.forbiddenTargets.includes('schemas'));
+  assert.ok(result.candidate.improvementCandidate.sourceMutation.forbiddenTargets.includes('verification_contracts'));
+  assert.ok(result.candidate.improvementCandidate.requiredEvidence.includes('accepted-parent-edit'));
+  assert.ok(result.candidate.improvementCandidate.requiredEvidence.includes('fresh-regression-evidence'));
   assert.match(result.candidate.rollback.removes[0], /tests\/fixtures\/harness-control-plane\/completion-false-positive\.json/);
   assert.equal(written.sourceTraceId, 'trace-low-score');
+  assert.equal(written.improvementCandidate.sourceMutation.allowed, false);
 });
 
 test('eval gate package contract includes source tools and keeps generated eval artifacts out', async () => {
@@ -168,7 +177,9 @@ test('eval gate package contract includes source tools and keeps generated eval 
   assert.match(packageJson.scripts['test:eval'], /tools\/evals\/harness-control-plane\.mjs run --json/);
   assert.match(contract, /source: tools\/evals\/harness-control-plane\.mjs/);
   assert.match(contract, /source: tools\/awtl\/trace-to-testcase\.mjs/);
+  assert.match(contract, /source: schemas\/improvement-candidate-v1\.schema\.json/);
   assert.match(contract, /\.moonshot-relay\/eval-artifacts\/\*\*/);
+  assert.match(packageTest, /schemas\/improvement-candidate-v1\.schema\.json/);
   assert.match(packageTest, /tools\/evals\/harness-control-plane\.mjs/);
   assert.match(packageTest, /tools\/awtl\/trace-to-testcase\.mjs/);
 });

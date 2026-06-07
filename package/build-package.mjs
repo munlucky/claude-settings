@@ -73,6 +73,7 @@ const runtimeSpecs = {
       'scripts/memorygraph-mcp-wrapper.mjs',
       'scripts/memorygraph-project-index.mjs',
       'scripts/ontology-constraint-validate.mjs',
+      'scripts/phase-final-guard.mjs',
       'scripts/prepare-phase-runner-state.mjs',
       'scripts/project-identity.mjs',
       'scripts/runtime-state.mjs',

@@ -143,8 +143,12 @@ requiredPayloadEntries:
       purpose: runtime_tooling
     - source: schemas/**
       purpose: machine_readable_contracts
+    - source: schemas/context-pack.schema.json
+      purpose: context_pack_v1_contract
     - source: schemas/awtl-testcase-candidate-v1.schema.json
       purpose: awtl_trace_to_testcase_candidate_contract
+    - source: schemas/improvement-candidate-v1.schema.json
+      purpose: eval_gated_improvement_candidate_contract_no_auto_source_mutation
     - source: schemas/memory-promotion-ledger.schema.json
       purpose: runtime_memory_promotion_ledger_contract
     - source: templates/**
@@ -248,6 +252,8 @@ requiredPayloadEntries:
         purpose: memorygraph_project_index
       - source: scripts/ontology-constraint-validate.mjs
         purpose: ontology_validation_support
+      - source: scripts/phase-final-guard.mjs
+        purpose: phase_runner_final_stop_and_turn_ended_guard
       - source: scripts/prepare-phase-runner-state.mjs
         purpose: phase_plan_readiness_bridge
       - source: scripts/project-identity.mjs

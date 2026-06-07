@@ -1,0 +1,75 @@
+artifact: plan-quality-review-iter-04
+reviewedPackageRoot: docs/public/roadmaps/harness-control-plane-modernization
+createdAt: 2026-06-07
+reviewMode: independent_review_and_improvement_sidecars_parent_integrated
+parentAuthority: true
+reviewedInputs:
+  - docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v2.md
+  - docs/public/roadmaps/harness-control-plane-modernization/04-context-state-engine-compaction-and-prompt-assembly-v2.md
+  - docs/public/roadmaps/harness-control-plane-modernization/08-eval-regression-awtl-trace-to-testcase-v2.md
+  - docs/public/roadmaps/harness-control-plane-modernization/09-memory-promotion-knowledge-and-decision-ledger-v2.md
+  - C:/Users/moon/.codex/attachments/bf96244b-7587-49ed-a495-89d5d93ab2bb/pasted-text.txt
+independentAgents:
+  reviewAgent:
+    id: 019ea207-9e34-7e90-927f-9bffb2415481
+    authority: read_only_proposal
+    resultSummary:
+      - Existing v2 plan package remains executable; no package-level blocker was found.
+      - ContextPackV1 must be additive to projectKnowledgeContext and cannot replace promptBlock or existing status metadata.
+      - New context pack schema/script work must update Phase 04 ownership and Phase 11 package materialization handoff.
+      - Improvement candidates must not auto-mutate source after PASS.
+  improvementAgent:
+    id: 019ea207-dc0d-7bf3-a519-54d184690f3f
+    authority: read_only_proposal
+    resultSummary:
+      - Keep prompt-facing authority on projectKnowledgeContext.promptBlock.
+      - Add ContextPackV1 compatibility rules, contextPackRef lineage, and promptBlock backward compatibility tests.
+      - Treat task/day/week/month as memory promotion cadence, not storage paths or context pack types.
+      - Record parent integration in plan-quality-review-iter-04.yaml even if additional improvement sidecars exist.
+externalResearchBasis:
+  scope: direction_only_not_source_authority
+  retrievedAt: 2026-06-07
+  sources:
+    - id: anthropic-effective-agents
+      url: https://www.anthropic.com/engineering/building-effective-agents
+      mappedUse: simple composable workflows, orchestrator-workers, parallel review, evaluator-optimizer
+    - id: openai-agents-sdk
+      url: https://developers.openai.com/api/docs/guides/agents
+      mappedUse: orchestration, guardrails, state/results, tracing, eval workflow links
+    - id: mcp-tools
+      url: https://modelcontextprotocol.io/specification/2024-11-05/server/tools
+      mappedUse: explicit tool schema, model-controlled tool use, human-in-the-loop boundary
+    - id: graphrag
+      url: https://microsoft.github.io/graphrag/
+      mappedUse: graph-backed retrieval and query-time context slices
+    - id: memgpt
+      url: https://arxiv.org/abs/2310.08560
+      mappedUse: virtual context and hierarchical memory management
+    - id: zep-temporal-kg
+      url: https://arxiv.org/abs/2501.13956
+      mappedUse: temporal knowledge graph memory for cross-session context
+    - id: agentassay
+      url: https://arxiv.org/abs/2603.02601
+      mappedUse: trace-first regression testing and non-deterministic agent workflow gates
+acceptedChanges:
+  - ContextPackV1 is accepted only as an additive structured source object under projectKnowledgeContext.contextPack.
+  - projectKnowledgeContext.promptBlock and existing top-level summary/status fields remain backward-compatible prompt-facing authority.
+  - contextPackRef is a deterministic lineage id, not a file path.
+  - blocking remains derived metadata; blocked is not added to the status enum.
+  - strictness remains public authority; servingMode is metadata-only or derived.
+  - runtimeAuthorityRef is stage-conditional so intake/plan stages can build context without active runId/goalId.
+  - Phase 04 owns knowledge-context-build/context-pack/schema/consumer contract updates and compatibility fixtures.
+  - Phase 08 treats ImprovementCandidateV1 as a trace-to-testcase candidate extension with no automatic source mutation.
+  - Phase 09 treats task/day/week/month as promotion cadence and requires rollback to stale related contextPackRef projections.
+rejectedChanges:
+  - Replacing promptBlock with full raw context pack payload in worker prompts.
+  - Copying raw MemoryGraph/KG/ontology records into plan, QA, handoff, or prompt documents.
+  - Replacing strictness with servingMode as public contract.
+  - Adding blocked as a new status enum value.
+  - Letting eval PASS auto-edit schemas, ontology, skills, agents, tool permissions, or verification contracts.
+  - Treating project knowledge, memory, or context packs as completion authority.
+remainingAmbiguity:
+  - Exact required/optional fields for ContextPackV1 still need schema-level design during Phase 04.
+  - Parent must decide during implementation whether context-pack tests are standalone or folded into existing knowledge-context/context-state tests.
+  - Agent contract updates should be checked with rg before Phase 04 implementation because project-memory and phase-attempt agents also describe projectKnowledgeContext shape.
+status: pass_after_parent_edits_with_phase04_phase08_phase09_constraints

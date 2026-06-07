@@ -23,6 +23,7 @@ The full plan preserves these source-report requirements:
 - Runtime Control Plane backed by local SQLite with WAL, busy timeout, migrations, event ledger, decisions, snapshots, tool calls, eval results, and run identity.
 - Completion authority cutover so only accepted DB decisions can cleanly finish work.
 - Context State Engine for build, compaction, rehydration, resume brief, stale warnings, lineage, and prompt assembly.
+- Semantic Context Serving layer that accumulates harness/project ontology, KG, and memory broadly but serves agents only through compact `projectKnowledgeContext.promptBlock` plus additive `ContextPackV1` metadata/source objects.
 - Tool Registry/Dispatcher with 10 to 12 public tool groups, lazy schema promotion, schema validation, and wrong-tool regression fixtures.
 - Sandbox Compute Plane with leased worktree, shell/browser isolation, approval-required operation policy, artifact collection, and protected path enforcement.
 - Verification Plane covering unit, package, installer, browser, security, and workflow contracts.
@@ -38,7 +39,7 @@ The full plan preserves these source-report requirements:
 |---|---|---|---|
 | 0 | Plan correction and source-scope restoration | This document set | v1 relabeled, gap analysis written, iter-02 review rejects scope shrink, v2 phase docs exist. |
 | 1 | Runtime control-plane foundation | Partially implemented in current staged work | Runtime DB, completion authority, read model, run identity, package exclusion, CI source config, and foundation tests pass. |
-| 2 | Installed runtime and dependency hardening | Not complete | `better-sqlite3` works or degrades correctly in source, package, account-root, temp install, and OS/Node CI matrix. |
+| 2 | Installed runtime and dependency hardening | In progress; source/package/temp-home evidence collected locally, remote CI matrix and adoption evidence still pending | `better-sqlite3` works or degrades correctly in source, package, account-root, temp install, and OS/Node CI matrix. |
 | 3 | Context engine, prompt assembly, tool registry, sandbox core | Not started | Context rehydration and tool/sandbox dispatcher contracts are executable and regression-tested. |
 | 4 | Verification, eval, browser trace, memory promotion | Not started | AWTL replay gate, trace-to-testcase loop, memory promotion ledger, and browser trace artifacts are active. |
 | 5 | CI/security/release/downstream rollout | Source config partial | Required checks, branch protection operation, CodeQL/dependency review behavior, release runbook, and downstream adoption evidence exist. |
@@ -74,11 +75,21 @@ Every v2 phase document is runnable only when it names:
 
 Default read-only boundaries for all phases are `.claude/**`, `.codex/**`, `.moonshot-relay/**`, `.moonshot-state/**`, runtime DB/WAL/SHM files, traces, logs, caches, verdict JSON, browser artifacts, and live account-root homes. A phase can write to temp homes only when it explicitly owns temp-home installer or smoke evidence.
 
+## External Research Basis
+
+These sources justify direction only; they do not expand source scope or override local runtime contracts.
+
+- Anthropic's agent architecture guidance maps to this plan's simple, composable workflow, orchestrator-worker, parallel review, and evaluator-optimizer patterns.
+- OpenAI Agents SDK documentation maps to code-owned orchestration, state/result contracts, guardrails, tracing, and eval-backed agent workflow changes.
+- MCP tool specifications map to explicit tool/resource schemas, model-controlled discovery, and human-in-the-loop operation boundaries.
+- GraphRAG, MemGPT, and Zep/Graphiti map to structured and temporal knowledge retrieval where broad memory stores are sliced into task-specific context instead of copied wholesale into prompts.
+- AgentAssay-style trace-first regression testing maps to Phase 08's eval-gated improvement loop for non-deterministic agent workflow changes.
+
 ## Final Plan Readiness
 
-Status: final-plan-execution-ready-after-iter-03
+Status: final-plan-execution-ready-after-iter-04
 
-The plan is source-scope complete after v2, but execution readiness depends on the phase metadata and review loop in `planning-loop/plan-quality-review-iter-03.yaml`. Phase execution must use v2 documents, not v1. v1 remains a historical foundation slice.
+The plan is source-scope complete after v2 and the iter-04 semantic-control-plane review loop, but execution readiness depends on the phase metadata and review loop in `planning-loop/plan-quality-review-iter-04.yaml`. Phase execution must use v2 documents, not v1. v1 remains a historical foundation slice.
 
 ## Current Implementation Mapping
 
@@ -94,7 +105,7 @@ Completed or currently staged as Wave 1 foundation:
 
 Partial and not yet full v2 completion:
 
-- Installed account-root runtime-state can still be typed degraded if the native module is absent from the materialized support root.
+- Installed runtime dependency hardening has local source/package/temp-home evidence collected, but Wave 2 remains in progress until its phase closeout is explicitly accepted; live account-root adoption and remote CI matrix results remain Phase 10/11 release evidence.
 - Active run lease lacks full heartbeat, TTL expiry, recovery, and stale lease cleanup semantics.
 - Eval recording exists, but AWTL replay, scorecard thresholding, promotion, and trace-to-testcase automation are not complete.
 - Tool calls are recorded, but the bounded Tool Registry/Dispatcher and lazy schema promotion path are not implemented.

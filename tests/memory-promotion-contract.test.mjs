@@ -206,7 +206,7 @@ test('rollback supersedes promoted memory without deleting audit history', async
     '--reason',
     'contract rollback',
     '--rollback-evidence-json',
-    '{"command":"node --test tests/memory-promotion-contract.test.mjs"}',
+    '{"command":"node --test tests/memory-promotion-contract.test.mjs","contextPackRef":"ctxpack:0123456789abcdef"}',
     '--json',
   ], env));
   assert.equal(rolledBack.status, 'rolled_back');
@@ -233,6 +233,8 @@ test('rollback supersedes promoted memory without deleting audit history', async
     '--json',
   ], env));
   assert.equal(status.compactStatus.staleWarnings.includes(`stale memory promotion: ${fixture.promotion.memoryId}`), false);
+  assert.ok(status.compactStatus.staleWarnings.includes(`stale context pack projection: ctxpack:0123456789abcdef from rolled back memory promotion: ${fixture.promotion.memoryId}`));
+  assert.ok(status.resumeBrief.memoryWarnings.includes(`stale context pack projection: ctxpack:0123456789abcdef from rolled back memory promotion: ${fixture.promotion.memoryId}`));
 });
 
 test('memory-derived facts never become completion authority', async () => {

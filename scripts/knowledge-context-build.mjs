@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ import { resolveProjectIdentity } from './project-identity.mjs';
 const VALID_STAGES = new Set(['intake', 'plan', 'execute', 'verify', 'finish']);
 const DEFAULT_MAX_PROMPT_TOKENS = 900;
 const DEFAULT_STALE_AFTER_DAYS = 30;
+const CONTEXT_PACK_SCHEMA_VERSION = 1;
 
 const KNOWLEDGE_FILES = Object.freeze([
   { type: 'policy_anchor', path: ['policy', 'policy-anchors.jsonl'] },
@@ -417,6 +419,100 @@ function approximateTokens(text) {
   return Math.ceil(String(text || '').length / 4);
 }
 
+function stableHash(value) {
+  return crypto
+    .createHash('sha256')
+    .update(typeof value === 'string' ? value : JSON.stringify(value))
+    .digest('hex');
+}
+
+function buildContextPack(context, options = {}) {
+  const staleWarnings = context.staleOrUnavailable
+    .filter((item) => item.blocking || context.status === 'stale')
+    .map((item) => ({
+      reason: item.reason,
+      sourceRef: item.sourceRef,
+      blocking: item.blocking === true,
+    }));
+  const statusBlocking = context.staleOrUnavailable.some((item) => item.blocking === true);
+  const runtimeAuthorityRef = options.runId || options.goalId
+    ? {
+        runId: options.runId || '',
+        goalId: options.goalId || '',
+      }
+    : null;
+  const lineageInput = [
+    context.projectId,
+    context.namespace,
+    context.knowledgeRevision || '',
+    context.stage,
+    context.status,
+    context.strictness,
+    stableHash({
+      policyAnchors: context.policyAnchors,
+      semanticFacts: context.semanticFacts,
+      graphSynopsis: context.graphSynopsis,
+      ontologyConstraints: context.ontologyConstraints,
+      staleOrUnavailable: context.staleOrUnavailable,
+      omittedByPolicy: context.omittedByPolicy,
+      runtimeAuthorityRef,
+    }),
+  ].join('|');
+  const contextPackRef = `ctxpack:${stableHash(lineageInput).slice(0, 16)}`;
+
+  return {
+    schemaVersion: CONTEXT_PACK_SCHEMA_VERSION,
+    packId: contextPackRef,
+    contextPackRef,
+    projectId: context.projectId,
+    namespace: context.namespace,
+    knowledgeRevision: context.knowledgeRevision || '',
+    stage: context.stage,
+    strictness: context.strictness,
+    status: context.status,
+    blocking: statusBlocking,
+    runtimeAuthorityRef,
+    tokenEstimate: approximateTokens(context.promptBlock),
+    promptFacingAuthority: 'projectKnowledgeContext.promptBlock',
+    compatibility: {
+      additiveOnly: true,
+      preservedTopLevelFields: [
+        'schemaVersion',
+        'projectId',
+        'namespace',
+        'knowledgeRevision',
+        'status',
+        'strictness',
+        'stage',
+        'policyAnchors',
+        'semanticFacts',
+        'graphSynopsis',
+        'ontologyConstraints',
+        'staleOrUnavailable',
+        'omittedByPolicy',
+        'promptBlock',
+      ],
+      statusVocabulary: ['ready', 'stale', 'degraded_read', 'degraded_write', 'not_configured'],
+      servingMode: context.strictness,
+    },
+    harnessSlice: {
+      policyAnchors: context.policyAnchors,
+      omittedByPolicy: context.omittedByPolicy,
+    },
+    projectSlice: {
+      semanticFacts: context.semanticFacts,
+      graphSynopsis: context.graphSynopsis,
+      ontologyConstraints: context.ontologyConstraints,
+    },
+    candidateMemory: [],
+    staleWarnings,
+    provenance: {
+      generatedBy: 'scripts/knowledge-context-build.mjs',
+      source: 'account-root/project-knowledge',
+    },
+  };
+}
+
 function renderPromptBlock(context, maxPromptTokens) {
   const sections = [
     '## Project Knowledge Context',
@@ -583,6 +679,19 @@ export function buildProjectKnowledgeContext(options = {}) {
   };
 
   context.promptBlock = renderPromptBlock(context, maxPromptTokens);
+  context.contextPack = buildContextPack(context, {
+    runId: options.runId || '',
+    goalId: options.goalId || '',
+  });
+  context.metadata = {
+    contextPackRef: context.contextPack.contextPackRef,
+    packId: context.contextPack.packId,
+    contextPackSchemaVersion: context.contextPack.schemaVersion,
+    tokenEstimate: context.contextPack.tokenEstimate,
+    blocking: context.contextPack.blocking,
+    unavailableCount: context.staleOrUnavailable.length,
+    servingMode: context.strictness,
+  };
   const leaked = detectUnsafeText(context.promptBlock);
   if (leaked.length > 0) {
     throw new Error(`prompt purity violation after render: ${leaked.join(', ')}`);
@@ -592,13 +701,17 @@ export function buildProjectKnowledgeContext(options = {}) {
 }
 
 function parseArgs(argv) {
-  const args = { cwd: process.cwd(), stage: 'plan', json: false };
+  const args = { cwd: process.cwd(), stage: 'plan', runId: '', goalId: '', json: false };
   for (let index = 0; index < argv.length; index += 1) {
     const item = argv[index];
     if (item === '--cwd') args.cwd = argv[++index] || args.cwd;
     else if (item.startsWith('--cwd=')) args.cwd = item.slice('--cwd='.length);
     else if (item === '--stage') args.stage = argv[++index] || args.stage;
     else if (item.startsWith('--stage=')) args.stage = item.slice('--stage='.length);
+    else if (item === '--run-id') args.runId = argv[++index] || '';
+    else if (item.startsWith('--run-id=')) args.runId = item.slice('--run-id='.length);
+    else if (item === '--goal-id') args.goalId = argv[++index] || '';
+    else if (item.startsWith('--goal-id=')) args.goalId = item.slice('--goal-id='.length);
     else if (item === '--strictness') args.strictness = argv[++index] || '';
     else if (item.startsWith('--strictness=')) args.strictness = item.slice('--strictness='.length);
     else if (item === '--json') args.json = true;
@@ -608,7 +721,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: node knowledge-context-build.mjs --cwd <path> --stage <intake|plan|execute|verify|finish> --json
+  console.log(`Usage: node knowledge-context-build.mjs --cwd <path> --stage <intake|plan|execute|verify|finish> [--run-id <id>] [--goal-id <id>] --json
 
 Builds a deterministic, prompt-safe projectKnowledgeContext block from account-root project knowledge.`);
 }
