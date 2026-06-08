@@ -75,6 +75,9 @@ const activeTextFiles = async () => [
   ...await walk('package/profile-templates'),
 ].filter((file) => /\.(md|yaml|yml|toml|sh)$/.test(file));
 
+const legacyAdapterReferenceFile = 'docs/public/reference/legacy-phase-adapters.md';
+const legacyArchiveFragment = ['archive', 'scripts', 'legacy-phase-adapters'].join('/');
+
 test('active human-facing references do not use missing profile-local guideline source paths', async () => {
   const violations = [];
   for (const file of await activeTextFiles()) {
@@ -313,6 +316,9 @@ test('skill and agent docs do not present .claude skills or agents as source', a
 test('active skills and docs do not recommend default archive execution', async () => {
   const violations = [];
   for (const file of await activeTextFiles()) {
+    if (file === legacyAdapterReferenceFile) {
+      continue;
+    }
     const text = await readFile(fromRoot(file), 'utf8');
     text.split(/\r?\n/).forEach((line, index) => {
       if (/(?:^|\s)(?:bash|node|npm|pnpm|yarn)\s+archive\/scripts\/legacy-phase-adapters\//.test(line)) {
@@ -415,6 +421,15 @@ test('active tests do not execute archive compatibility scripts', async () => {
   }
 
   assert.deepEqual(violations, []);
+});
+
+test('active verification contract does not expose legacy adapter command catalog', async () => {
+  const contract = await readFile(fromRoot('schemas', 'verification.contract.yaml'), 'utf8');
+
+  assert.doesNotMatch(contract, /^legacyCommands:/m);
+  assert.doesNotMatch(contract, new RegExp(legacyArchiveFragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(contract, /legacyValidationProfiles:/);
+  assert.match(contract, /legacy_phase_adapter:/);
 });
 
 test('browser flow setup gap payload shape is contractually defined', async () => {

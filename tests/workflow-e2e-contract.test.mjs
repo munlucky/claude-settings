@@ -357,3 +357,38 @@ test('runtime control plane docs publish DB authority matrix and closeout bounda
   assert.match(coordinator, /whole-plan completion authority/i);
   assert.match(coordinator, /assess-completion[\s\S]*accepted DB decision/i);
 });
+
+test('phase runner surfaces describe phase-status as projection only', async () => {
+  const files = [
+    ['skills', 'moonshot-phase-runner', 'SKILL.md'],
+    ['skills', 'moonshot-phase-runner', 'SKILL.ko.md'],
+    ['skills', 'moonshot-phase-runner', 'references', 'control-plane.md'],
+    ['skills', 'moonshot-in-session-coordinator', 'SKILL.md'],
+    ['skills', 'moonshot-in-session-coordinator', 'SKILL.ko.md'],
+    ['docs', 'public', 'reference', 'phase-runner-user-workflow.md'],
+    ['docs', 'public', 'reference', 'phase-final-guard-hooks.md'],
+    ['templates', 'execution', 'PHASE_COORDINATOR_CONTRACT.md'],
+  ];
+  const unsafePatterns = [
+    /phaseStatusFile[\s\S]{0,120}authoritative for this run/i,
+    /Runtime status:\s*active\s+`?phase-status\.yaml/i,
+    /phase-status\.yaml[\s\S]{0,120}(?:is|as)\s+(?:the\s+)?(?:single\s+)?authority/i,
+  ];
+
+  for (const segments of files) {
+    const text = await readRoot(...segments);
+    assert.match(
+      text,
+      /phase-status\.yaml|phaseStatusFile/,
+      `${segments.join('/')} should name the phase status projection surface`,
+    );
+    assert.match(
+      text,
+      /projection|cursor/i,
+      `${segments.join('/')} should describe phase status as a projection or cursor`,
+    );
+    for (const pattern of unsafePatterns) {
+      assert.doesNotMatch(text, pattern, `${segments.join('/')} should not imply phase-status authority`);
+    }
+  }
+});

@@ -39,6 +39,8 @@ const parseDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const firstReason = (...values) => values.find((value) => String(value || '').trim()) || '';
+
 export function evidenceIdFor(value) {
   return crypto
     .createHash('sha256')
@@ -89,6 +91,26 @@ export function buildVerificationSummary({
     && failedPlanes.length === 0
     && securityBlockers.length === 0
     && !stale;
+  const completionAuthorityFailedPlanes = normalizedPlanes
+    .filter((plane) => completionAuthorityRequiredPlanes.includes(plane.plane))
+    .filter((plane) => plane.status !== 'passed')
+    .map((plane) => ({ plane: plane.plane, status: plane.status || 'missing' }));
+  const wholePlanAuthorityEligible = missingCompletionAuthorityPlanes.length === 0
+    && completionAuthorityFailedPlanes.length === 0
+    && securityBlockers.length === 0
+    && !stale;
+  const taskLocalBlocker = firstReason(
+    staleReason,
+    securityBlockers[0]?.reason,
+    failedPlanes[0] ? `failed verification plane: ${failedPlanes[0].plane}` : '',
+    missingPlanes[0] ? `missing verification plane: ${missingPlanes[0]}` : '',
+  );
+  const wholePlanBlocker = firstReason(
+    staleReason,
+    securityBlockers[0]?.reason,
+    completionAuthorityFailedPlanes[0] ? `failed verification plane: ${completionAuthorityFailedPlanes[0].plane}` : '',
+    missingCompletionAuthorityPlanes[0] ? `missing verification plane: ${missingCompletionAuthorityPlanes[0]}` : '',
+  );
 
   return {
     schemaVersion: VERIFICATION_PLANE_SCHEMA_VERSION,
@@ -114,6 +136,24 @@ export function buildVerificationSummary({
     missingCompletionAuthorityPlanes,
     failedPlanes,
     securityBlockers,
+    taskLocalCompletion: {
+      status: requiredChecksPassed ? 'complete' : 'blocked',
+      fresh: !stale,
+      profile,
+      requiredPlanes: profileRequiredPlanes,
+      missingPlanes,
+      failedPlanes,
+      reason: requiredChecksPassed ? 'profile evidence complete' : taskLocalBlocker,
+    },
+    wholePlanAuthority: {
+      status: wholePlanAuthorityEligible ? 'evidence_eligible' : 'blocked',
+      authoritySource: 'runtime-state.sqlite',
+      acceptedCompletionRequired: true,
+      requiredPlanes: completionAuthorityRequiredPlanes,
+      missingPlanes: missingCompletionAuthorityPlanes,
+      failedPlanes: completionAuthorityFailedPlanes,
+      reason: wholePlanAuthorityEligible ? 'all authority planes present; accepted DB decision still required' : wholePlanBlocker,
+    },
     evidenceId: evidenceIdFor({ runId, goalId, producedAt, profile, requiredPlanes: profileRequiredPlanes, planes: normalizedPlanes }),
   };
 }

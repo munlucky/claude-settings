@@ -10,8 +10,10 @@
     "generatedProfileRoot": "package/codex/profile/.codex"
   },
   "payloadAuthority": "package/build-package.mjs",
+  "runtimeSurfaceManifest": "package/runtime-surface.json",
   "entriesRole": "materializer-inputs-only",
   "entries": [
+    "package/runtime-surface.json",
     "skills",
     "agents",
     "schemas",

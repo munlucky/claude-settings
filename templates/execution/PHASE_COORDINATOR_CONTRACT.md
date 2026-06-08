@@ -11,7 +11,9 @@ pathAuthority:
     handoff: "{{ACTIVE_HANDOFF}}"
     scorecard: "{{ACTIVE_SCORECARD}}"
   rules:
-    - "Treat the supplied phaseStatusFile, planDir, executionRoot, and referenced execution artifact paths as authoritative for this run."
+    - "Treat the supplied phaseStatusFile as the phase cursor projection for this run; use it only to identify the active or next actionable phase."
+    - "Keep blocker, resume, run-state, and whole-plan completion authority in runtime-state.sqlite when available."
+    - "Treat the supplied planDir, executionRoot, and referenced execution artifact paths as the source paths for this run."
     - "Do not read or reuse .moonshot-relay/docs/phase-status.yaml, docs/implementation/**, or any other default phase-plan paths unless they exactly match the supplied paths."
     - "If examples in skill docs conflict with the supplied paths, ignore the examples and follow the supplied paths."
 

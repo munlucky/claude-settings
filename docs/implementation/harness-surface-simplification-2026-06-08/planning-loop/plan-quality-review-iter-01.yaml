@@ -1,0 +1,47 @@
+reviewedPackageRoot: docs/implementation/harness-surface-simplification-2026-06-08
+iteration: 1
+mode: first-pass-independent-review
+isolationMode: forked_independent_agents
+reviewPerspectives:
+  - legacy-archive-contract
+  - phase-projection-terminology
+  - task-local-completion-read-model
+  - completion-verifier-surface
+  - runtime-skill-surface
+blockingFindings:
+  - finding: "Active contract exposes top-level legacyCommands, and existing active-contract tests do not inspect schemas enough to prevent recurrence."
+    disposition: accepted
+    acceptedChange: "Phase 01 requires RED active-contract coverage before removing legacyCommands and moving the catalog to a legacy reference."
+  - finding: "PHASE_COORDINATOR_CONTRACT.md describes phaseStatusFile as authoritative, which can leak into attempt prompts."
+    disposition: accepted
+    acceptedChange: "Phase 02 makes the template an owned path and requires projection-only wording tests."
+  - finding: "taskLocalCompletion must not become assess-completion input or accepted completion authority."
+    disposition: accepted
+    acceptedChange: "Phase 03 defines taskLocalCompletion and latestVerificationEvidence as normalized read-model projections only."
+  - finding: "completion-verifier prompt reduction needs output-shape tests or it can look like gate weakening."
+    disposition: accepted
+    acceptedChange: "Phase 04 adds a completion-verifier surface contract test before rewriting the skill docs."
+  - finding: "Current package tests and builder materially expose full skills in runtime profiles, so skill surface reduction must update package tests, build-package, plugin manifests, and installer pruning together."
+    disposition: accepted
+    acceptedChange: "Phase 05 adds a runtime-surface manifest, exact-five profile tests, common full skill payload, and temp-home pruning smoke."
+  - finding: "Phase 03 and Phase 01 both own schemas/verification.contract.yaml, so Phase 03 must depend on Phase 01."
+    disposition: accepted
+    acceptedChange: "Master plan and Phase 03 metadata now require Phase 01 before Phase 03."
+rejectedChanges:
+  - proposal: "Delete or move archive/scripts/legacy-phase-adapters."
+    reason: "Rejected because archive files are preserved compatibility specimens."
+  - proposal: "Rename phase-status.yaml."
+    reason: "Rejected because installed hooks and old phase packages depend on the file name."
+  - proposal: "Relax completion authority planes for docs-only or prompt-only work."
+    reason: "Rejected because the goal is signal separation, not gate weakening."
+  - proposal: "Remove completion-verifier output keys during prompt reduction."
+    reason: "Rejected because downstream QA/reporting surfaces need stable output shape."
+  - proposal: "Replace entire live .codex/skills or .claude/skills directories."
+    reason: "Rejected because external user skills must be preserved."
+remainingAmbiguity:
+  - "Implementation must confirm whether public orchestrators can resolve internal skill contracts from common payload without slash-skill discovery; Phase 05 stops on blocker if not."
+  - "A later adoption phase is needed to mutate live account-root installs; this plan only requires dry-run and temp-home evidence."
+acceptedChangesApplied: true
+baselineEvidence:
+  worktree: "Clean before plan package creation."
+  memoryDerivedContext: "Prior moonshot-relay control-plane and plan-writer memory was used only to avoid stale authority assumptions."

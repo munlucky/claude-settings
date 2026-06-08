@@ -37,9 +37,11 @@ const commonSpec = {
     'rules',
     'schemas',
     'scripts',
+    'skills',
     'templates',
     'tools',
     'node_modules',
+    'package',
     'package.json',
     'package-lock.json',
     'verification.contract.yaml',
@@ -362,6 +364,59 @@ const removePreviouslyManagedNonExposureFiles = async ({ targetRoot, exposureEnt
   return removed;
 };
 
+const removePreviouslyManagedSkillsAbsentFromPayload = async ({ targetRoot, sourceRoot, options }) => {
+  if (options.dryRun) {
+    return [];
+  }
+
+  const manifest = await readJsonFile(path.join(targetRoot, manifestName));
+  if (!manifest || !Array.isArray(manifest.copied)) {
+    return [];
+  }
+
+  const removed = [];
+  const pruneCandidates = new Set();
+
+  for (const record of manifest.copied) {
+    if (!record || typeof record.path !== 'string') {
+      continue;
+    }
+
+    const segments = record.path.split(/[\\/]/).filter(Boolean);
+    if (segments[0] !== 'skills' || !segments[1]) {
+      continue;
+    }
+
+    const sourceSkill = path.join(sourceRoot, 'skills', segments[1]);
+    if (await pathExists(sourceSkill)) {
+      continue;
+    }
+
+    const target = path.join(targetRoot, ...segments);
+    assertSafeChild(targetRoot, target);
+    if (!await pathExists(target)) {
+      continue;
+    }
+
+    const targetStat = await stat(target);
+    if (targetStat.isDirectory()) {
+      continue;
+    }
+
+    await rm(target, { force: true });
+    removed.push(toPortable(record.path));
+
+    let relativeDir = path.dirname(path.join(...segments));
+    while (relativeDir && relativeDir !== '.') {
+      pruneCandidates.add(toPortable(relativeDir));
+      relativeDir = path.dirname(relativeDir);
+    }
+  }
+
+  await pruneEmptyDirs(targetRoot, pruneCandidates);
+  return removed;
+};
+
 const removeLegacyNonExposureEntries = async ({
   targetRoot,
   backupRoot,
@@ -487,6 +542,14 @@ const installPayloadSpec = async ({
       exposureEntries: ownedEntries,
       options,
     }));
+
+    if (ownedEntries.has('skills')) {
+      removed.push(...await removePreviouslyManagedSkillsAbsentFromPayload({
+        targetRoot,
+        sourceRoot,
+        options,
+      }));
+    }
 
     const legacyCleanup = await removeLegacyNonExposureEntries({
       targetRoot,

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 const packageRoot = path.dirname(scriptPath);
 const repoRoot = path.dirname(packageRoot);
+const runtimeSurfacePath = path.join(packageRoot, 'runtime-surface.json');
 
 const generatedRoot = packageRoot;
 
@@ -30,10 +31,12 @@ const runtimeSpecs = {
       'tools',
       'schemas',
       'templates',
+      'skills',
       path.join('docs', 'public'),
       'rules',
     ],
     sharedFiles: [
+      'package/runtime-surface.json',
       'package.json',
       'package-lock.json',
       'scripts/awtl-memory-promotion.mjs',
@@ -94,6 +97,7 @@ const runtimeSpecs = {
       'rules',
     ],
     sharedFiles: [],
+    skillExposure: 'publicRuntimeSkills',
     verificationTarget: 'verification.contract.yaml',
   },
   codex: {
@@ -105,6 +109,7 @@ const runtimeSpecs = {
       'rules',
     ],
     sharedFiles: [],
+    skillExposure: 'publicRuntimeSkills',
     verificationTarget: 'verification.contract.yaml',
   },
 };
@@ -159,6 +164,7 @@ const denyBasenames = [
 const usage = () => `Usage: node package/build-package.mjs [--runtime all|moonshot-relay|claude|codex] [--out <dir>] [--clean] [--dry-run] [--json]`;
 
 const allRuntimeNames = ['moonshot-relay', 'claude', 'codex'];
+let runtimeSurfaceCache = null;
 
 const parseArgs = (argv) => {
   const options = {
@@ -278,6 +284,27 @@ const copyTree = async (source, destination, plannedCopies, options = {}) => {
   });
 };
 
+const loadRuntimeSurface = async () => {
+  if (!runtimeSurfaceCache) {
+    runtimeSurfaceCache = JSON.parse(await readFile(runtimeSurfacePath, 'utf8'));
+    if (!Array.isArray(runtimeSurfaceCache.publicRuntimeSkills) || runtimeSurfaceCache.publicRuntimeSkills.length === 0) {
+      throw new Error('package/runtime-surface.json must define publicRuntimeSkills.');
+    }
+  }
+  return runtimeSurfaceCache;
+};
+
+const copyPublicRuntimeSkills = async (sourceRoot, destinationRoot, plannedCopies, options = {}) => {
+  const surface = await loadRuntimeSurface();
+  const publicSkills = [...surface.publicRuntimeSkills].sort();
+
+  for (const skillName of publicSkills) {
+    const source = path.join(sourceRoot, skillName);
+    const destination = path.join(destinationRoot, skillName);
+    await copyTree(source, destination, plannedCopies, options);
+  }
+};
+
 const copyTreeWithoutPackageExclusions = async (source, destination, plannedCopies, options = {}) => {
   if (!await pathExists(source)) {
     throw new Error(`Missing runtime dependency source: ${path.relative(repoRoot, source)}`);
@@ -367,7 +394,11 @@ const materializeRuntime = async (runtime, options) => {
     const destination = sharedDir === path.join('docs', 'public')
       ? path.join(outputRoot, 'docs', 'public')
       : path.join(outputRoot, targetName);
-    await copyTree(source, destination, plannedCopies, options);
+    if (sharedDir === 'skills' && spec.skillExposure === 'publicRuntimeSkills') {
+      await copyPublicRuntimeSkills(source, destination, plannedCopies, options);
+    } else {
+      await copyTree(source, destination, plannedCopies, options);
+    }
   }
 
   for (const sharedFile of spec.sharedFiles) {

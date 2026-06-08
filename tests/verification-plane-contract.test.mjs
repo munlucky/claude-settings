@@ -75,6 +75,9 @@ test('fresh verification plane evidence is required before accepted completion',
 
   assert.equal(accepted.status, 'recorded');
   assert.equal(accepted.requiredChecksPassed, true);
+  assert.equal(accepted.taskLocalCompletion.status, 'complete');
+  assert.equal(accepted.wholePlanAuthority.status, 'evidence_eligible');
+  assert.equal(accepted.wholePlanAuthority.acceptedCompletionRequired, true);
   assert.equal(assessed.status, 'accepted');
   assert.equal(assessed.authoritySource, 'runtime-state.sqlite');
 });
@@ -117,6 +120,20 @@ test('verification profiles summarize task-scope evidence without weakening comp
   assert.deepEqual(docsOnly.completionAuthorityRequiredPlanes, ['unit', 'package', 'installer', 'browser', 'security', 'quality']);
   assert.deepEqual(docsOnly.missingCompletionAuthorityPlanes, ['unit', 'installer', 'browser', 'security']);
   assert.equal(docsOnly.requiredChecksPassed, true);
+  assert.deepEqual(docsOnly.taskLocalCompletion, {
+    status: 'complete',
+    fresh: true,
+    profile: 'docs_only',
+    requiredPlanes: ['package', 'quality'],
+    missingPlanes: [],
+    failedPlanes: [],
+    reason: 'profile evidence complete',
+  });
+  assert.equal(docsOnly.wholePlanAuthority.status, 'blocked');
+  assert.equal(docsOnly.wholePlanAuthority.authoritySource, 'runtime-state.sqlite');
+  assert.equal(docsOnly.wholePlanAuthority.acceptedCompletionRequired, true);
+  assert.deepEqual(docsOnly.wholePlanAuthority.requiredPlanes, ['unit', 'package', 'installer', 'browser', 'security', 'quality']);
+  assert.deepEqual(docsOnly.wholePlanAuthority.missingPlanes, ['unit', 'installer', 'browser', 'security']);
   assert.equal(assessedDocs.status, 'rejected');
   assert.equal(assessedDocs.reason, 'missing verification plane: unit');
 
@@ -136,6 +153,8 @@ test('verification profiles summarize task-scope evidence without weakening comp
     '--json',
   ], env));
   assert.equal(promptOnly.requiredChecksPassed, true);
+  assert.equal(promptOnly.taskLocalCompletion.status, 'complete');
+  assert.equal(promptOnly.wholePlanAuthority.status, 'blocked');
   assert.deepEqual(promptOnly.missingCompletionAuthorityPlanes, ['unit', 'package', 'installer', 'browser', 'security']);
 });
 

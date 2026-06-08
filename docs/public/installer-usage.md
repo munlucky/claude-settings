@@ -4,6 +4,8 @@
 
 The default mode is account-root installation into the shared Moonshot Relay home (`~/.moonshot-relay`) plus the local Claude/Codex homes (`~/.claude`, `~/.codex`).
 
+The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex profile-local `skills/` discovery is intentionally smaller and is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-orchestrator`, `moonshot-phase-runner`, `commit-moonshot`, and `session-logger`. Reinstalling prunes previously managed internal skills that are no longer in the profile payload, while unrelated user-installed skills remain preserved.
+
 Shared runtime references must resolve through `MOONSHOT_RELAY_HOME`. In `cmd.exe` this is `%MOONSHOT_RELAY_HOME%`, in PowerShell it is `$env:MOONSHOT_RELAY_HOME`, and in bash/zsh it is `${MOONSHOT_RELAY_HOME}`. If the variable is unset, installers and skills use the account default `~/.moonshot-relay`.
 
 ## Compatibility Window
@@ -26,7 +28,7 @@ Agent Skills CLI bootstraps the root `skills/` catalog and installs the `moonsho
 npx skills add munlucky/moonshot-relay
 ```
 
-This command does not execute arbitrary repository installers. After it completes, invoke `moonshot-relay-setup` to run the account-root installer and materialize the full Claude/Codex profile under `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. Use `node bin/moonshot-relay.mjs install --runtime all` when running directly from a source checkout, or `npx -y github:munlucky/moonshot-relay install` when the desired result is a one-command full account-root install. Use `bash install-claude.sh` only for the supported macOS/Git Bash compatibility path.
+This command does not execute arbitrary repository installers and may expose the source catalog during bootstrap. After it completes, invoke `moonshot-relay-setup` to run the account-root installer and materialize the smaller Claude/Codex runtime discovery surface under `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. Use `node bin/moonshot-relay.mjs install --runtime all` when running directly from a source checkout, or `npx -y github:munlucky/moonshot-relay install` when the desired result is a one-command full account-root install. Use `bash install-claude.sh` only for the supported macOS/Git Bash compatibility path.
 
 ## Contributor Flow
 

@@ -22,6 +22,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 
 - Do not treat a completed phase as plan completion while `phase-status.yaml` still has actionable phases.
 - Do not treat `phase-status.yaml`, verifier JSON, QA report, scorecard, handoff, or child chat output as clean-finish authority when runtime-state completion authority is available. Use `scripts/runtime-state.mjs assess-completion` and require an accepted DB decision.
+- Treat `runtime-state.sqlite` as the authority for blocker state, resume reconstruction, run status, and whole-plan completion decisions; `phase-status.yaml` is only a phase cursor projection.
 - Do not stop the whole plan just because a completed phase produced review findings, failed eval evidence, or a non-accepted completion decision. Record the blocker as carry-forward evidence, keep the final completion gate closed, and continue the next actionable independent phase.
 - Do not write live `.claude/**` or `.codex/**` adoption targets from staged redesign phases. Phase 08 owns controlled adoption.
 - Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
@@ -34,7 +35,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Optional run identity arguments: `--run-id`, `--goal-id`, `--workspace-id`.
 - Optional `--allow-parallel` only when the operator intentionally wants more than one active run for the same goal.
 - Optional `--lease-ttl-ms` for controlled lease windows; long phases should heartbeat instead of relying on stale active leases.
-- Active status file: `.moonshot-relay/docs/phase-status.yaml`.
+- Active status file: `.moonshot-relay/docs/phase-status.yaml`, used as a phase cursor projection only.
 - Execution route: `in-session-coordinator` by default. `delegated-terminal` is legacy compatibility only and requires an explicit legacy maintenance reason.
 - Execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, and verifier verdict.
 

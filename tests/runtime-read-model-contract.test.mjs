@@ -47,7 +47,10 @@ const fullPassingEvidence = (runLeaseId) => JSON.stringify({
   activeIdentityPresent: true,
   identityMatches: true,
   identity: { runLeaseId },
+  profile: 'runtime_adapter',
   requiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
+  profileRequiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
+  completionAuthorityRequiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
   planes: [
     { plane: 'unit', status: 'passed', command: 'npm test' },
     { plane: 'package', status: 'passed', command: 'npm run test:package' },
@@ -56,6 +59,25 @@ const fullPassingEvidence = (runLeaseId) => JSON.stringify({
     { plane: 'security', status: 'passed', blockers: [] },
     { plane: 'quality', status: 'passed', command: 'git diff --check' },
   ],
+  taskLocalCompletion: {
+    status: 'complete',
+    fresh: true,
+    profile: 'runtime_adapter',
+    requiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
+    missingPlanes: [],
+    failedPlanes: [],
+    reason: 'profile evidence complete',
+  },
+  wholePlanAuthority: {
+    status: 'evidence_eligible',
+    authoritySource: 'runtime-state.sqlite',
+    acceptedCompletionRequired: true,
+    requiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
+    missingPlanes: [],
+    failedPlanes: [],
+    reason: 'all authority planes present; accepted DB decision still required',
+  },
+  evidenceId: `evidence-${runLeaseId}`,
 });
 
 test('runtime status read model includes all verification contract fields', async () => {
@@ -81,6 +103,7 @@ test('runtime status read model includes all verification contract fields', asyn
     'operationalMetrics',
     'compactStatus.activeContract',
     'compactStatus.latestVerdict',
+    'compactStatus.latestVerificationEvidence',
     'compactStatus.currentBlocker',
     'compactStatus.lineage',
     'compactStatus.staleWarnings',
@@ -110,6 +133,7 @@ test('empty DB and missing native dependency return typed read-model defaults', 
     PHASE_RUNTIME_DB: path.join(tempRoot, 'available.sqlite'),
   }));
   assert.equal(available.runtimeCapabilityStatus.status, 'available');
+  assert.equal(available.compactStatus.latestVerificationEvidence, null);
   assert.deepEqual(available.compactStatus.staleWarnings, []);
   assert.deepEqual(available.compactStatus.lineage, ['run-empty', 'goal-empty']);
 
@@ -127,7 +151,56 @@ test('empty DB and missing native dependency return typed read-model defaults', 
   }));
   assert.equal(degraded.runtimeCapabilityStatus.status, 'degraded');
   assert.equal(degraded.runtimeCapabilityStatus.reason, 'missing_native_module');
+  assert.equal(degraded.compactStatus.latestVerificationEvidence, null);
   assert.ok(degraded.compactStatus.staleWarnings.includes('missing_native_module'));
+});
+
+test('runtime status exposes normalized latest verification evidence projection', async () => {
+  const tempRoot = await makeTempRoot();
+  const dbPath = path.join(tempRoot, 'runtime-state.sqlite');
+  const env = { PHASE_RUNTIME_DB: dbPath };
+  parseJson(runNode([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-latest-verification',
+    '--goal-id',
+    'goal-latest-verification',
+    '--profile',
+    'docs_only',
+    '--planes-json',
+    JSON.stringify([
+      { plane: 'package', status: 'passed', command: 'doc payload check', rawLog: 'not surfaced' },
+      { plane: 'quality', status: 'passed', command: 'git diff --check', rawLog: 'not surfaced' },
+    ]),
+    '--identity-json',
+    '{"runLeaseId":"lease-latest-verification"}',
+    '--json',
+  ], env));
+
+  const status = parseJson(runNode([
+    'scripts/runtime-state.mjs',
+    'status',
+    '--run-id',
+    'run-latest-verification',
+    '--goal-id',
+    'goal-latest-verification',
+    '--json',
+  ], env));
+  const latest = status.compactStatus.latestVerificationEvidence;
+
+  assert.equal(latest.eventType, 'verification.evidence');
+  assert.equal(latest.profile, 'docs_only');
+  assert.equal(latest.fresh, true);
+  assert.equal(latest.requiredChecksPassed, true);
+  assert.equal(latest.taskLocalCompletion.status, 'complete');
+  assert.equal(latest.wholePlanAuthority.status, 'blocked');
+  assert.deepEqual(latest.missingCompletionAuthorityPlanes, ['unit', 'installer', 'browser', 'security']);
+  assert.deepEqual(latest.planeStatuses, [
+    { plane: 'package', status: 'passed' },
+    { plane: 'quality', status: 'passed' },
+  ]);
+  assert.equal(Object.hasOwn(latest, 'planes'), false);
 });
 
 test('phase runner prepare dry-run writes nothing but non-dry-run records resume snapshot', async () => {

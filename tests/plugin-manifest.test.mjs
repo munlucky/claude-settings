@@ -14,6 +14,14 @@ const manifests = [
   '.codex-plugin/marketplace.json',
 ];
 
+const publicRuntimeSkills = [
+  'product-orchestrator',
+  'moonshot-orchestrator',
+  'moonshot-phase-runner',
+  'commit-moonshot',
+  'session-logger',
+];
+
 const loadJson = async (relativePath) => {
   const content = await readFile(fromRoot(relativePath), 'utf8');
   return JSON.parse(content);
@@ -31,6 +39,11 @@ test('plugin manifests are valid JSON files', async () => {
 });
 
 test('runtime plugin manifests point at package materializers and canonical inputs', async () => {
+  const runtimeSurface = await loadJson('package/runtime-surface.json');
+  assert.deepEqual(runtimeSurface.publicRuntimeSkills, publicRuntimeSkills);
+  assert.equal(runtimeSurface.serviceProfileSkillPolicy, 'allowlist_only');
+  assert.equal(runtimeSurface.commonPayloadSkillPolicy, 'preserve_all_canonical_skills');
+
   for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json']) {
     const parsed = await loadJson(manifest);
     assert.equal(parsed.source.type, 'materialized-package-profile');
@@ -39,8 +52,11 @@ test('runtime plugin manifests point at package materializers and canonical inpu
     assert.match(parsed.source.generatedProfileRoot, /^package\/(claude|codex)\/profile\/\.(claude|codex)$/);
     assert.equal(parsed.payloadAuthority, 'package/build-package.mjs');
     assert.equal(parsed.entriesRole, 'materializer-inputs-only');
+    assert.equal(parsed.runtimeSurfaceManifest, 'package/runtime-surface.json');
     assertExistingPath(parsed.source.templateRoot, `${manifest} source.templateRoot`);
     assertExistingPath(parsed.source.materializer, `${manifest} source.materializer`);
+    assertExistingPath(parsed.runtimeSurfaceManifest, `${manifest} runtimeSurfaceManifest`);
+    assert.equal(parsed.entries.includes('package/runtime-surface.json'), true, `${manifest} entries should include runtime surface manifest`);
     assert.equal(parsed.entries.includes('scripts'), false, `${manifest} entries must not expose broad scripts as consumer payload`);
 
     for (const entry of parsed.entries) {

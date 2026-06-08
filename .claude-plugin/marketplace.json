@@ -7,7 +7,8 @@
       "profileTemplateRoot": "package/profile-templates/claude/.claude",
       "materializer": "package/build-package.mjs",
       "generatedProfileRoot": "package/claude/profile/.claude",
-      "payloadAuthority": "package/build-package.mjs"
+      "payloadAuthority": "package/build-package.mjs",
+      "runtimeSurfaceManifest": "package/runtime-surface.json"
     }
   ]
 }

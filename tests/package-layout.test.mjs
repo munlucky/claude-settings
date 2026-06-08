@@ -222,6 +222,7 @@ test('package contract declares required source payload entries and generated-st
     'scripts/install-account-root-harness.mjs',
     'scripts/browser-flow-runner.mjs',
     'scripts/commit-moonshot-closeout-event.mjs',
+    'package/runtime-surface.json',
     'commonSupportScripts:',
     'archivedLegacyScripts:',
     'archive/scripts/legacy-phase-adapters/',
@@ -261,7 +262,22 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /claude: "\$\{CLAUDE_HOME:-~\/\.claude\}"/);
   assert.match(contract, /codex: "\$\{CODEX_HOME:-~\/\.codex\}"/);
   assert.match(contract, /commonPayloadEntries:/);
+  assert.match(contract, /skillExposure:/);
+  assert.match(contract, /manifest: package\/runtime-surface\.json/);
+  for (const publicSkill of [
+    'product-orchestrator',
+    'moonshot-orchestrator',
+    'moonshot-phase-runner',
+    'commit-moonshot',
+    'session-logger',
+  ]) {
+    assert.match(contract, new RegExp(publicSkill));
+  }
+  assert.match(contract, /commonPayloadSkillPolicy: preserve_all_canonical_skills/);
+  assert.match(contract, /serviceProfileSkillPolicy: allowlist_only/);
+  assert.match(contract, /managedSkillPrunePolicy: prune_previously_managed_profile_skills_absent_from_current_payload_preserve_external/);
   assert.match(contract, /docs\/public\//);
+  assert.match(contract, /^\s+- skills\/$/m);
   assert.doesNotMatch(contract, /^\s+- docs\/$/m);
   assert.match(contract, /^\s+- rules\/$/m);
   assert.match(contract, /runtimeExposureEntries:/);

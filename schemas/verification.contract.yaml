@@ -2,21 +2,6 @@ commands:
   memoryRefreshCommit: "node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs --mcp-status skipped --json"
   memoryGraphHealth: "node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health"
   ontologyConstraints: "node <MOONSHOT_RELAY_HOME>/scripts/ontology-constraint-validate.mjs --project-root . --json"
-legacyCommands:
-  description: "Delegated-terminal phase adapter checks are source-checkout legacy compatibility checks. They are not part of the active phase-runner workflow profile, are not installed into runtime payloads, and require explicit legacyAdapterReason before use."
-  knowledgeAudit: "bash archive/scripts/legacy-phase-adapters/knowledge-repo-audit.sh"
-  codePolicy: "node archive/scripts/legacy-phase-adapters/verify-code-policy.mjs"
-  workflowEnforcement: "node archive/scripts/legacy-phase-adapters/workflow-enforcement.mjs verify"
-  shellSyntax: "node archive/scripts/legacy-phase-adapters/verify-shell-syntax.mjs"
-  phaseRuntimeParity: "bash archive/scripts/legacy-phase-adapters/verify-phase-runtime-parity.sh .moonshot-relay/docs/runtime-parity-reference-plan"
-  phaseRunnerBoundary: "bash archive/scripts/legacy-phase-adapters/verify-phase-runner-boundary.sh"
-  phaseWorktreeParallel: "node archive/scripts/legacy-phase-adapters/phase-worktree-coordinator.mjs self-test"
-  phaseCloseout: "node archive/scripts/legacy-phase-adapters/verify-phase-closeout.mjs --status-file ${PHASE_STATUS_FILE:-.moonshot-relay/docs/phase-status.yaml} --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --master-plan ${PHASE_MASTER_PLAN:-docs/implementation/00-master-plan-v1.md}"
-  phaseFinalGitCloseout: "node archive/scripts/legacy-phase-adapters/phase-final-git-closeout.mjs preflight"
-  phaseCheckpointCommit: "node archive/scripts/legacy-phase-adapters/phase-checkpoint-commit.mjs commit --plan-dir ${PHASE_PLAN_DIR:-docs/implementation} --status-file ${PHASE_STATUS_FILE:-.moonshot-relay/docs/phase-status.yaml} --phase-num ${PHASE_NUM:-1} --phase-title ${PHASE_TITLE:-phase}"
-  awtlRegression: "node --test archive/scripts/legacy-phase-adapters/lib/awtl-trace-sink.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-harness-capture.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-failure-attribution.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-memory-promotion.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-runtime-importers.test.mjs"
-  awtlFailurePreventionRegression: "node --test archive/scripts/legacy-phase-adapters/lib/awtl-failed-turn-case.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-failure-prevention-brief.test.mjs archive/scripts/legacy-phase-adapters/lib/awtl-replay-scorecard.test.mjs"
-  awtlCliSyntax: "node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-runner.mjs && node --check archive/scripts/legacy-phase-adapters/agent-loop-phase-plan-lib.mjs && node --check archive/scripts/legacy-phase-adapters/awtl-failure-analyzer.mjs && node --check scripts/awtl-memory-promotion.mjs"
 checkPolicies:
   searchEvidence:
     preferred: rg
@@ -153,7 +138,7 @@ checkPolicies:
   legacyValidationProfiles:
     legacy_phase_adapter:
       checks: [phaseRuntimeParity, phaseRunnerBoundary, phaseWorktreeParallel, phaseCloseout, awtlCliSyntax]
-      minimumEvidence: "explicit legacyAdapterReason plus delegated-terminal compatibility evidence"
+      minimumEvidence: "explicit legacyAdapterReason plus delegated-terminal compatibility evidence from docs/public/reference/legacy-phase-adapters.md"
   crossRuntimePhaseReplay:
     required: true
     assistantItemPhaseValues:
@@ -318,6 +303,7 @@ observability:
       - "operationalMetrics"
       - "compactStatus.activeContract"
       - "compactStatus.latestVerdict"
+      - "compactStatus.latestVerificationEvidence"
       - "compactStatus.currentBlocker"
       - "compactStatus.lineage"
       - "compactStatus.staleWarnings"

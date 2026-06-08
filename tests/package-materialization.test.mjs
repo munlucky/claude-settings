@@ -38,6 +38,14 @@ const claudeProfile = async () => path.join(await materializePackage(), 'claude'
 const codexProfile = async () => path.join(await materializePackage(), 'codex', 'profile', '.codex');
 const commonProfile = async () => path.join(await materializePackage(), 'moonshot-relay', 'profile');
 
+const publicRuntimeSkills = [
+  'commit-moonshot',
+  'moonshot-orchestrator',
+  'moonshot-phase-runner',
+  'product-orchestrator',
+  'session-logger',
+];
+
 after(async () => {
   if (materializedRoot) {
     await rm(materializedRoot, { recursive: true, force: true });
@@ -77,6 +85,9 @@ const requiredCommonPayloadFiles = [
   'schemas/verification-plane.schema.json',
   'schemas/tool-registry.schema.json',
   'templates/GOAL_CONTRACT.template.yaml',
+  'skills/completion-verifier/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
+  'skills/verification-contract-gate/SKILL.md',
   'bin/browserctl',
   'tools/agent-api/registry.yaml',
   'tools/agent-api/dispatch.mjs',
@@ -105,6 +116,7 @@ const requiredCommonPayloadFiles = [
   'scripts/verification-plane.mjs',
   'scripts/lib/verification-plane.mjs',
   'scripts/verification-verdict-state.mjs',
+  'package/runtime-surface.json',
   'package.json',
   'package-lock.json',
   'node_modules/better-sqlite3/package.json',
@@ -112,15 +124,21 @@ const requiredCommonPayloadFiles = [
 ];
 
 const requiredClaudeConcreteFiles = [
+  'skills/commit-moonshot/SKILL.md',
+  'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
-  'skills/moonshot-plan-writer/SKILL.md',
+  'skills/product-orchestrator/SKILL.md',
+  'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
 ];
 
 const requiredConcreteCodexFiles = [
+  'skills/commit-moonshot/SKILL.md',
+  'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
-  'skills/moonshot-plan-writer/SKILL.md',
+  'skills/product-orchestrator/SKILL.md',
+  'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
 ];
@@ -237,6 +255,14 @@ const assertEntryExists = async (profileRoot, entry) => {
   assert.ok(await stat(target), `${profileRoot}/${entry} should be stat-able`);
 };
 
+const listSkillDirs = async (profileRoot) => {
+  const entries = await readdir(path.join(profileRoot, 'skills'), { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+};
+
 const matchesGeneratedStateFragment = (file, fragment) => {
   if (rootVerdictFragments.has(fragment)) {
     return new RegExp(`(?:^|/)\\.claude/${fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(file);
@@ -255,6 +281,7 @@ test('Moonshot Relay common package payload includes shared harness entries', as
     'scripts',
     'templates',
     'tools/browserd',
+    'package/runtime-surface.json',
     'verification.contract.yaml',
   ]) {
     await assertEntryExists(profileRoot, entry);
@@ -274,6 +301,9 @@ test('Claude package payload includes only service profile entries', async () =>
   for (const entry of requiredClaudeConcreteFiles) {
     await assertEntryExists(profileRoot, entry);
   }
+  assert.deepEqual(await listSkillDirs(profileRoot), publicRuntimeSkills);
+  assert.equal(existsSync(path.join(profileRoot, 'skills', 'completion-verifier', 'SKILL.md')), false);
+  assert.equal(existsSync(path.join(profileRoot, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
 
   for (const entry of ['bin', 'tools', 'schemas', 'scripts', 'templates', 'docs/public']) {
     assert.equal(existsSync(path.join(profileRoot, entry)), false, `${entry} should live in the common Moonshot Relay payload`);
@@ -289,6 +319,9 @@ test('Codex package payload includes only service profile entries', async () => 
   for (const entry of requiredConcreteCodexFiles) {
     await assertEntryExists(profileRoot, entry);
   }
+  assert.deepEqual(await listSkillDirs(profileRoot), publicRuntimeSkills);
+  assert.equal(existsSync(path.join(profileRoot, 'skills', 'completion-verifier', 'SKILL.md')), false);
+  assert.equal(existsSync(path.join(profileRoot, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
 
   for (const entry of ['bin', 'tools', 'schemas', 'scripts', 'templates', 'docs/public']) {
     assert.equal(existsSync(path.join(profileRoot, entry)), false, `${entry} should live in the common Moonshot Relay payload`);
@@ -392,8 +425,13 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   const plannedTo = payload.runtimes.flatMap((runtime) => runtime.planned.map((entry) => entry.to));
 
   assert.ok(plannedFrom.includes('scripts/verification-verdict-state.mjs'));
+  assert.ok(plannedFrom.includes('skills/completion-verifier/SKILL.md'));
   assert.ok(plannedFrom.includes('scripts/browser-flow-runner.mjs'));
   assert.ok(plannedFrom.includes('scripts/prepare-phase-runner-state.mjs'));
+  assert.ok(plannedTo.includes('package/moonshot-relay/profile/skills/completion-verifier/SKILL.md'));
+  assert.ok(plannedTo.includes('package/codex/profile/.codex/skills/moonshot-phase-runner/SKILL.md'));
+  assert.equal(plannedTo.includes('package/codex/profile/.codex/skills/completion-verifier/SKILL.md'), false);
+  assert.equal(plannedTo.includes('package/claude/profile/.claude/skills/completion-verifier/SKILL.md'), false);
   assert.equal(plannedTo.some((target) => /\.claude\/verification-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/runtime-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/browser-flow-verdict-[^/]*\.json$/.test(target)), false);
@@ -457,19 +495,25 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge', 'preserve.txt'), 'keep\n');
   await mkdir(path.join(codexHome, 'skills', 'external-skill'), { recursive: true });
   await writeFile(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await mkdir(path.join(codexHome, 'skills', 'completion-verifier'), { recursive: true });
+  await writeFile(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md'), 'stale managed\n');
   await mkdir(path.join(codexHome, 'sessions'), { recursive: true });
   await writeFile(path.join(codexHome, 'sessions', 'preserve.json'), '{}\n');
   await writeFile(path.join(codexHome, 'auth.json'), '{}\n');
-  await writeFile(path.join(codexHome, 'skills', 'moonshot-decide-sequence'), 'legacy file collision\n');
   await mkdir(path.join(codexHome, 'schemas'), { recursive: true });
   await writeFile(path.join(codexHome, 'schemas', 'old-managed.schema.json'), '{}\n');
   await mkdir(path.join(codexHome, 'docs', 'public'), { recursive: true });
   await writeFile(path.join(codexHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(codexHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
-    copied: [{ path: 'schemas/old-managed.schema.json' }],
+    copied: [
+      { path: 'schemas/old-managed.schema.json' },
+      { path: 'skills/completion-verifier/SKILL.md' },
+    ],
   })}\n`);
   await mkdir(path.join(claudeHome, 'skills', 'external-skill'), { recursive: true });
   await writeFile(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await mkdir(path.join(claudeHome, 'skills', 'moonshot-plan-writer'), { recursive: true });
+  await writeFile(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md'), 'stale managed\n');
   await mkdir(path.join(claudeHome, 'sessions'), { recursive: true });
   await writeFile(path.join(claudeHome, 'sessions', 'preserve.json'), '{}\n');
   await writeFile(path.join(claudeHome, 'memory.json'), '{}\n');
@@ -480,7 +524,10 @@ test('account-root installer merges shared directories without deleting unrelate
   await mkdir(path.join(claudeHome, 'docs', 'public'), { recursive: true });
   await writeFile(path.join(claudeHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(claudeHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
-    copied: [{ path: 'scripts/old-managed.mjs' }],
+    copied: [
+      { path: 'scripts/old-managed.mjs' },
+      { path: 'skills/moonshot-plan-writer/SKILL.md' },
+    ],
   })}\n`);
 
   try {
@@ -505,9 +552,13 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
-    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-decide-sequence', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'skills', 'completion-verifier', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'better-sqlite3', 'package.json')), true);

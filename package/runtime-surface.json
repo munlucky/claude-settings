@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "publicRuntimeSkills": [
+    "product-orchestrator",
+    "moonshot-orchestrator",
+    "moonshot-phase-runner",
+    "commit-moonshot",
+    "session-logger"
+  ],
+  "serviceProfileSkillPolicy": "allowlist_only",
+  "commonPayloadSkillPolicy": "preserve_all_canonical_skills",
+  "managedSkillPrunePolicy": "prune_previously_managed_profile_skills_absent_from_current_payload_preserve_external",
+  "bootstrapNote": "moonshot-relay-setup can remain a source/bootstrap skill for Agent Skills CLI, but Claude/Codex runtime profile discovery is limited to publicRuntimeSkills."
+}

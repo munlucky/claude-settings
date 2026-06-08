@@ -86,6 +86,62 @@
     "securityBlockers": {
       "type": "array"
     },
+    "taskLocalCompletion": {
+      "type": "object",
+      "required": ["status", "fresh", "profile", "requiredPlanes", "missingPlanes", "failedPlanes", "reason"],
+      "properties": {
+        "status": {
+          "enum": ["complete", "blocked"]
+        },
+        "fresh": {
+          "type": "boolean"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "requiredPlanes": {
+          "type": "array"
+        },
+        "missingPlanes": {
+          "type": "array"
+        },
+        "failedPlanes": {
+          "type": "array"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "wholePlanAuthority": {
+      "type": "object",
+      "required": ["status", "authoritySource", "acceptedCompletionRequired", "requiredPlanes", "missingPlanes", "failedPlanes", "reason"],
+      "properties": {
+        "status": {
+          "enum": ["evidence_eligible", "blocked"]
+        },
+        "authoritySource": {
+          "const": "runtime-state.sqlite"
+        },
+        "acceptedCompletionRequired": {
+          "type": "boolean"
+        },
+        "requiredPlanes": {
+          "type": "array"
+        },
+        "missingPlanes": {
+          "type": "array"
+        },
+        "failedPlanes": {
+          "type": "array"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
     "identity": {
       "type": "object"
     },

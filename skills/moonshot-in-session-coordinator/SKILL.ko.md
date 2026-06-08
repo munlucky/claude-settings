@@ -59,6 +59,7 @@ options:
 ### 1. phase 상태 로드
 
 `phase-status.yaml`을 읽고 다음 actionable phase를 선택합니다.
+`phase-status.yaml`은 loop-cursor projection일 뿐이며, blocker 상태, resume 재구성, whole-plan completion authority는 runtime-state DB read model에서 가져와야 합니다.
 - `status == pending`
 - 또는 `status == in_progress`
 - 또는 재시도 여유가 있는 `status == failed`

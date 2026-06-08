@@ -21,6 +21,7 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 ## Hard Stops
 
 - `phase-status.yaml`에 actionable phase가 남아 있으면 completed phase 하나를 plan completion으로 취급하지 않습니다.
+- `phase-status.yaml`, verifier JSON, QA report, scorecard, handoff, child chat output만으로 clean-finish authority를 만들지 않습니다. blocker, resume, run state, whole-plan completion authority는 `runtime-state.sqlite` DB read model과 `scripts/runtime-state.mjs assess-completion`의 accepted DB decision에서 옵니다.
 - staged redesign phase에서 live `.claude/**` 또는 `.codex/**` adoption target을 바로 쓰지 않습니다. controlled adoption phase가 소유해야 합니다.
 - `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, delegated-terminal adapter를 기본 실행 경로로 사용하지 않습니다. legacy/headless compatibility adapter로만 취급합니다.
 - in-session coordinator, fresh verifier evidence, scorecard, repository closeout evidence가 동의하기 전에는 final success를 반환하지 않습니다.
@@ -29,13 +30,13 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 
 - 선택적 plan directory argument.
 - plan directory 안의 선택적 master plan path.
-- active status file: `.moonshot-relay/docs/phase-status.yaml`.
+- active status file: `.moonshot-relay/docs/phase-status.yaml`이며, phase cursor projection으로만 사용합니다.
 - 실행 경로: 기본값은 `in-session-coordinator`입니다. `delegated-terminal`은 legacy compatibility 전용이며 명시적인 legacy 유지보수 사유가 필요합니다.
 - execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, verifier verdict.
 
 ## Flow
 
-1. `phase-status.yaml`에서 active plan directory와 active phase를 결정합니다.
+1. `phase-status.yaml` phase cursor projection에서 active plan directory와 active phase를 결정합니다.
 2. master plan, root phase docs, execution root consistency를 검증합니다.
 3. active phase contract에서 compact phase-attempt brief를 만듭니다.
 4. interactive run에서는 현재 세션이 조정하고 각 phase attempt/review는 fresh forked agent에 위임합니다.

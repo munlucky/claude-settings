@@ -18,3 +18,10 @@ Verification profiles separate task-scope summary evidence from final completion
 | `runtime_adapter` | `unit`, `package`, `installer`, `browser`, `security`, `quality` |
 
 `completionAuthorityRequiredPlanes` remains `unit`, `package`, `installer`, `browser`, `security`, and `quality` for accepted completion. A `--required-planes-json` override may make the profile summary pass, but it must not make `assess-completion` return accepted without the authority planes.
+
+Verification summaries expose two additive projection fields:
+
+- `taskLocalCompletion`: profile-scoped evidence completeness for the current task type.
+- `wholePlanAuthority`: evidence eligibility against the whole-plan authority planes; accepted completion still requires a runtime-state DB decision.
+
+`compactStatus.latestVerificationEvidence` may repeat these projections in the runtime read model, but it is evidence visibility only. It must not be used as `completion_decisions.status=accepted`.

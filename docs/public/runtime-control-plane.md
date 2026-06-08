@@ -68,7 +68,8 @@ Metrics are derived from runtime-state rows, not hand-written reports.
 | `eval_regression_worsened_count` | `eval_results.regression_worsened` | non-zero | non-zero |
 | `memory_promotion_rollback_count` | `memory_promotion_decisions.status = rolled_back` | non-zero | no direct blocker |
 
-Status also surfaces `compactStatus.blockingEvents`, `compactStatus.pendingApprovals`, and `compactStatus.evalRegressions`.
+Status also surfaces `compactStatus.blockingEvents`, `compactStatus.pendingApprovals`, `compactStatus.evalRegressions`, and `compactStatus.latestVerificationEvidence`.
+`compactStatus.latestVerificationEvidence` is a normalized read-model projection of the latest verification event. It can show `taskLocalCompletion.status=complete` for profile-scoped evidence while `wholePlanAuthority.status=blocked`; it is not a completion decision and does not replace `assess-completion`.
 Low-score or flaky traces should be linked through eval evidence such as `traceCandidatePath` and converted with `tools/awtl/trace-to-testcase.mjs`.
 
 ## Operations Recovery

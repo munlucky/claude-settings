@@ -50,6 +50,10 @@ docs/implementation/*
 !docs/implementation/runtime-control-plane-authority-hardening-2026-06-07/*.md
 !docs/implementation/runtime-control-plane-authority-hardening-2026-06-07/planning-loop/
 !docs/implementation/runtime-control-plane-authority-hardening-2026-06-07/planning-loop/**
+!docs/implementation/harness-surface-simplification-2026-06-08/
+!docs/implementation/harness-surface-simplification-2026-06-08/*.md
+!docs/implementation/harness-surface-simplification-2026-06-08/planning-loop/
+!docs/implementation/harness-surface-simplification-2026-06-08/planning-loop/**
 docs/phase-runner-visuals/
 docs/*.html
 docs/*.md

@@ -62,6 +62,7 @@ export function degradedRuntimeStatus(reason, dbPath = resolveDbPath(), detail =
     compactStatus: {
       activeContract: null,
       latestVerdict: null,
+      latestVerificationEvidence: null,
       currentBlocker: `runtime-state unavailable: ${reason}`,
       lineage: [],
       staleWarnings: [reason],
@@ -940,6 +941,36 @@ function readLatestVerifierEvidence(db, runId, goalId) {
   `).get(runId, goalId);
 }
 
+function normalizeLatestVerificationEvidence(row) {
+  if (!row) {
+    return null;
+  }
+  const payload = parseJsonText(row.payload_json, {});
+  const planes = Array.isArray(payload.planes) ? payload.planes : [];
+  return {
+    eventId: row.event_id,
+    eventType: row.event_type,
+    createdAt: row.created_at,
+    runId: row.run_id,
+    goalId: row.goal_id,
+    profile: payload.profile || '',
+    fresh: payload.fresh === true,
+    stale: payload.stale === true,
+    requiredChecksPassed: payload.requiredChecksPassed === true,
+    taskLocalCompletion: payload.taskLocalCompletion || null,
+    wholePlanAuthority: payload.wholePlanAuthority || null,
+    evidenceId: payload.evidenceId || '',
+    planeStatuses: planes.map((plane) => ({
+      plane: plane.plane || '',
+      status: plane.status || '',
+    })),
+    missingProfilePlanes: Array.isArray(payload.missingProfilePlanes) ? payload.missingProfilePlanes : [],
+    missingCompletionAuthorityPlanes: Array.isArray(payload.missingCompletionAuthorityPlanes) ? payload.missingCompletionAuthorityPlanes : [],
+    failedPlanes: Array.isArray(payload.failedPlanes) ? payload.failedPlanes : [],
+    authoritySource: 'runtime-state.sqlite',
+  };
+}
+
 function verificationPlaneBlocker(evidencePayload) {
   if (!evidencePayload || evidencePayload.fresh !== true) {
     return '';
@@ -1538,6 +1569,8 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
       const activeRuns = readActiveRuns(db, { now: current });
       const staleRuns = readStaleRuns(db, { now: current });
       const pendingApprovals = runId && goalId ? readPendingApprovalToolCalls(db, runId, goalId) : [];
+      const latestVerificationEvidenceRow = runId && goalId ? readLatestVerifierEvidence(db, runId, goalId) : null;
+      const latestVerificationEvidence = normalizeLatestVerificationEvidence(latestVerificationEvidenceRow);
       const operationalMetrics = buildOperationalMetrics(db, runId, goalId);
       const staleMemoryPromotions = runId && goalId ? readStaleMemoryPromotions(db, runId, goalId, current) : [];
       const memoryWarnings = staleMemoryPromotions.map((memory) => `stale memory promotion: ${memory.memory_id}`);
@@ -1606,6 +1639,7 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
             createdAt: row.created_at,
           })),
           latestVerdict: latestStatus,
+          latestVerificationEvidence,
           latestEval: latestEvalStatus,
           currentBlocker,
           ...contextProjection,
