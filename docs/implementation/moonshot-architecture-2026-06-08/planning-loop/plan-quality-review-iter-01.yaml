@@ -1,0 +1,54 @@
+schemaVersion: 1
+reviewedPackageRoot: "docs/implementation/moonshot-architecture-2026-06-08"
+reviewType: "parent-applied-independent-loop"
+iteration: 1
+reviewAgents:
+  - role: "independent-review-agent"
+    status: "completed"
+    agentId: "019ea74d-516c-7f92-95b1-1bc6e2139c3e"
+    decision: "blocking-revise"
+  - role: "improvement-agent"
+    status: "completed"
+    agentId: "019ea74d-9d07-7422-a84a-1156d6bcd09c"
+    decision: "improve-package-shape"
+blockingFindings:
+  - id: "BLK-001"
+    finding: "The original master plan had inline phases only and no root NN phase docs, so a phase runner would have to infer execution boundaries."
+    accepted: true
+    appliedChange: "Added 01-08 phase docs with Phase Execution Metadata."
+  - id: "BLK-002"
+    finding: "The original master plan did not contain Plan Package Readiness metadata or an explicit phase-runner dry-run command."
+    accepted: true
+    appliedChange: "Added Plan Package Readiness with explicit plan-dir, master-plan, status-file, and execution-root."
+  - id: "BLK-003"
+    finding: "The original plan did not separate source roadmap files from runtime execution artifacts."
+    accepted: true
+    appliedChange: "Added execution root and runtime artifact boundary."
+  - id: "BLK-004"
+    finding: "The original plan mentioned handoff but did not bind whole-plan completion to runtime-state assess-completion authority."
+    accepted: true
+    appliedChange: "Added Closeout Authority section and Phase 08 completion gate."
+  - id: "BLK-005"
+    finding: "The source roadmap lived under docs/public/roadmaps, while the phase-runner user workflow expects implementation plans under docs/implementation/<plan-slug>."
+    accepted: true
+    appliedChange: "Materialized a runner package at docs/implementation/moonshot-architecture-2026-06-08 and kept the public roadmap as source."
+acceptedChanges:
+  - "Created one phase doc per implementation phase."
+  - "Added ownedPaths, readOnlyPaths, stagedPaths, dependencies, conflicts, and merge policy to each phase."
+  - "Added source traceability matrix from master requirements to phases."
+  - "Added parallel execution wave plan."
+  - "Added explicit adoption boundary for .claude/.codex/account-root mutation."
+  - "Materialized the runner package under docs/implementation/moonshot-architecture-2026-06-08."
+  - "Updated final gate expectations to include phase-final-guard, runtime-state assess-completion, and required verification planes."
+rejectedChanges:
+  - change: "Perform live account-root adoption inside phases 01-08."
+    reason: "Controlled adoption is intentionally gated; source and dry-run evidence must pass before real profile/account-root mutation."
+  - change: "Merge Greenfield and Brownfield flows into one phase."
+    reason: "Separate phases preserve fixture ownership, parallel execution, and clearer Brownfield evidence requirements."
+  - change: "Store raw MemoryGraph/KG/log excerpts as traceability evidence."
+    reason: "Plan packages allow compact summaries and status metadata only."
+remainingAmbiguity:
+  - "Real public rollout/account-root sync may need a later optional Phase 09 or a separate adoption package if the user explicitly requests live install."
+  - "Exact test filenames may be adjusted during implementation if existing test organization provides a better local pattern, but each phase must preserve equivalent verification coverage."
+status: "reviewed-and-parent-applied"
+

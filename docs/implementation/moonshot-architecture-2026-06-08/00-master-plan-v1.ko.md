@@ -50,10 +50,9 @@ PRODUCT_INTENT
 ```yaml
 planPackageReadiness:
   schemaVersion: 1
-  status: "source-roadmap-with-execution-package"
+  status: "phase-runner-execution-ready"
   mode: "prepared_now"
-  sourceRoadmapRoot: "docs/public/roadmaps/moonshot-architecture"
-  executionPackageRoot: "docs/implementation/moonshot-architecture-2026-06-08"
+  planRoot: "docs/implementation/moonshot-architecture-2026-06-08"
   selectedMasterPlan: "docs/implementation/moonshot-architecture-2026-06-08/00-master-plan-v1.ko.md"
   selectedPhaseDocs:
     - "docs/implementation/moonshot-architecture-2026-06-08/01-public-surface-skill-skeleton-v1.ko.md"
@@ -78,8 +77,8 @@ planPackageReadiness:
 
 Execution note:
 
-- 이 문서는 source roadmap이다. phase-runner 실행 package는 `docs/implementation/moonshot-architecture-2026-06-08`에 materialize되어 있으며, 실행 시 implicit plan discovery에 의존하지 말고 위 `dryRunCommand`의 `--plan-dir`, `--master-plan`, `--status-file`, `--execution-root`를 명시한다.
-- runtime 실행 산출물(`execution/`, `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, verdict JSON)은 public roadmap과 섞지 않고 implementation package의 execution root 아래에 둔다.
+- 이 package는 phase-runner 실행용 implementation plan package다. phase-runner 실행 시 implicit plan discovery에 의존하지 말고 위 `dryRunCommand`의 `--plan-dir`, `--master-plan`, `--status-file`, `--execution-root`를 명시한다.
+- runtime 실행 산출물(`execution/`, `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, verdict JSON)은 source roadmap과 섞지 않고 execution root 아래에 둔다.
 - `.claude/**`, `.codex/**`, account-root install mutation은 Phase 07의 controlled adoption gate 전에는 금지한다.
 
 ## Phase Runner Execution Index
@@ -1161,3 +1160,4 @@ product-orchestrator
 ```
 
 This structure supports both project-start PRD workflows and existing-codebase Brownfield workflows while preserving the existing Moonshot execution harness boundaries.
+
