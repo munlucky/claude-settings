@@ -27,6 +27,11 @@ phaseExecution:
     - "tests/moonshot-architecture-template-contract.test.mjs"
     - "tests/moonshot-architecture-schema-contract.test.mjs"
     - "tests/fixtures/moonshot-architecture/artifacts/**"
+    - "package.json"
+    - "package/build-package.mjs"
+    - "package/package-contract.yaml"
+    - "tests/package-layout.test.mjs"
+    - "tests/package-materialization.test.mjs"
   readOnlyPaths:
     - "templates/product-definition/**"
     - "schemas/verification.contract.yaml"
@@ -37,7 +42,17 @@ phaseExecution:
     - "scripts/architecture-artifact-validate.mjs"
     - "tests/moonshot-architecture-*-contract.test.mjs"
     - "tests/fixtures/moonshot-architecture/**"
-  sharedMutablePaths: []
+    - "package.json"
+    - "package/build-package.mjs"
+    - "package/package-contract.yaml"
+    - "tests/package-layout.test.mjs"
+    - "tests/package-materialization.test.mjs"
+  sharedMutablePaths:
+    - "package.json"
+    - "package/build-package.mjs"
+    - "package/package-contract.yaml"
+    - "tests/package-layout.test.mjs"
+    - "tests/package-materialization.test.mjs"
   requiresManualEvidence: false
   mergePolicy: "disjoint_patch"
 ```
@@ -48,6 +63,7 @@ phaseExecution:
   - master plan에 나열된 architecture templates.
   - architecture schemas.
   - artifact validator script.
+  - validator package materialization allowlist and active test gate wiring.
   - Greenfield/Brownfield example package fixtures.
 - 제외:
   - context builder implementation.
@@ -62,6 +78,7 @@ phaseExecution:
 | P02-2 | Schema set 추가 | required schema 목록 생성 | schema files parse and cover required IDs |
 | P02-3 | Validator 추가 | artifact path와 mode를 받아 validate | valid fixtures pass, malformed fixtures fail |
 | P02-4 | Fixture tests | template/schema contract tests 작성 | negative cases are covered |
+| P02-5 | Package gate wiring | validator와 새 계약 테스트를 active/package gate에 편입 | package dry-run includes validator and `npm test` runs architecture contracts |
 
 ## 정확한 실행 대상
 
@@ -70,6 +87,7 @@ phaseExecution:
 | P02-1 | `templates/architecture/**` | none | `tests/moonshot-architecture-template-contract.test.mjs` | `npm test -- tests/moonshot-architecture-template-contract.test.mjs` | exit 0 |
 | P02-2 | `schemas/architecture/**` | none | `tests/moonshot-architecture-schema-contract.test.mjs` | `npm test -- tests/moonshot-architecture-schema-contract.test.mjs` | exit 0 |
 | P02-3 | `scripts/architecture-artifact-validate.mjs` | none | same | `node scripts/architecture-artifact-validate.mjs --help` | exit 0 |
+| P02-5 | none | `package.json`, `package/build-package.mjs`, `package/package-contract.yaml`, `tests/package-layout.test.mjs`, `tests/package-materialization.test.mjs` | `tests/package-materialization.test.mjs` | `npm run test:package` | exit 0 |
 
 ## Blockers And Review
 
@@ -81,6 +99,7 @@ phaseExecution:
 ## 검증 계획
 
 - [ ] `npm test -- tests/moonshot-architecture-template-contract.test.mjs tests/moonshot-architecture-schema-contract.test.mjs`
+- [ ] `npm run test:package`
 - [ ] `npm test`
 - [ ] `git diff --check`
 

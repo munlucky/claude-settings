@@ -287,6 +287,15 @@ test('package scripts define the active gate without archive discovery', async (
     'tests/verification-plane-contract.test.mjs',
     'tests/eval-regression-contract.test.mjs',
     'tests/tool-sandbox-eval-contract.test.mjs',
+    'tests/moonshot-architecture-skill-surface.test.mjs',
+    'tests/moonshot-architecture-template-contract.test.mjs',
+    'tests/moonshot-architecture-schema-contract.test.mjs',
+    'tests/moonshot-architecture-internal-skills.test.mjs',
+    'tests/moonshot-architecture-context-pack.test.mjs',
+    'tests/moonshot-architecture-greenfield-flow.test.mjs',
+    'tests/moonshot-architecture-brownfield-flow.test.mjs',
+    'tests/moonshot-architecture-handoff-contract.test.mjs',
+    'tests/moonshot-architecture-regression.test.mjs',
   ];
 
   assert.equal(typeof scripts.test, 'string', 'package.json should define scripts.test');

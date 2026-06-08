@@ -94,6 +94,8 @@ const requiredCommonPayloadFiles = [
   'tools/browserd/package.json',
   'tools/browserd/server.mjs',
   'scripts/install-browser-runtime.sh',
+  'scripts/architecture-context-build.mjs',
+  'scripts/architecture-artifact-validate.mjs',
   'scripts/memorygraph-mcp-wrapper.js',
   'scripts/memorygraph-mcp-wrapper.mjs',
   'scripts/code-review-graph-mcp-wrapper.js',
@@ -122,6 +124,7 @@ const requiredCommonPayloadFiles = [
 
 const requiredClaudeConcreteFiles = [
   'skills/commit-moonshot/SKILL.md',
+  'skills/moonshot-architecture/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
   'skills/moonshot-plan-writer/SKILL.md',
@@ -133,6 +136,7 @@ const requiredClaudeConcreteFiles = [
 
 const requiredConcreteCodexFiles = [
   'skills/commit-moonshot/SKILL.md',
+  'skills/moonshot-architecture/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
   'skills/moonshot-plan-writer/SKILL.md',

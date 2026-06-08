@@ -27,6 +27,11 @@ phaseExecution:
     - "tests/knowledge-context-build-contract.test.mjs"
     - "docs/public/guidelines/moonshot-architecture.md"
     - "docs/public/guidelines/moonshot-architecture.ko.md"
+    - "package.json"
+    - "package/build-package.mjs"
+    - "package/package-contract.yaml"
+    - "tests/package-layout.test.mjs"
+    - "tests/package-materialization.test.mjs"
   readOnlyPaths:
     - "scripts/knowledge-context-build.mjs"
     - "schemas/architecture/architecture-context-pack.schema.json"
@@ -35,10 +40,21 @@ phaseExecution:
   stagedPaths:
     - "scripts/architecture-context-build.mjs"
     - "tests/moonshot-architecture-context-pack.test.mjs"
-    - "docs/public/guidelines/moonshot-architecture*.md"
+    - "docs/public/guidelines/moonshot-architecture.md"
+    - "docs/public/guidelines/moonshot-architecture.ko.md"
+    - "package.json"
+    - "package/build-package.mjs"
+    - "package/package-contract.yaml"
+    - "tests/package-layout.test.mjs"
+    - "tests/package-materialization.test.mjs"
   sharedMutablePaths:
     - "tests/context-pack-contract.test.mjs"
     - "tests/knowledge-context-build-contract.test.mjs"
+    - "package.json"
+    - "package/build-package.mjs"
+    - "package/package-contract.yaml"
+    - "tests/package-layout.test.mjs"
+    - "tests/package-materialization.test.mjs"
   requiresManualEvidence: false
   mergePolicy: "parent_serial_merge"
 ```
@@ -50,6 +66,7 @@ phaseExecution:
   - stage/mode metadata.
   - prompt safety redaction/rejection checks.
   - compatibility with existing knowledge context helper.
+  - package materialization and active test gate wiring for the context builder.
 - 제외:
   - DB authority changes.
   - raw MemoryGraph/KG/ontology storage changes.
@@ -62,6 +79,7 @@ phaseExecution:
 | P04-2 | Helper wrapping | existing knowledge helper 호출 | compatibility tests remain green |
 | P04-3 | Prompt safety | forbidden raw content negative tests | raw dump/leakage cases fail |
 | P04-4 | Guidelines | architecture context policy 문서화 | public guideline references are stable |
+| P04-5 | Package gate wiring | context builder를 shared payload와 active gate에 편입 | package dry-run includes script and `npm test` runs context pack test |
 
 ## 정확한 실행 대상
 
@@ -70,6 +88,7 @@ phaseExecution:
 | P04-1 | `scripts/architecture-context-build.mjs` | none | `tests/moonshot-architecture-context-pack.test.mjs` | `node scripts/architecture-context-build.mjs --stage plan --mode greenfield_prd --json` | valid JSON |
 | P04-2 | none | compatibility tests as needed | `tests/knowledge-context-build-contract.test.mjs` | `npm test -- tests/knowledge-context-build-contract.test.mjs` | exit 0 |
 | P04-3 | none | none | `tests/moonshot-architecture-context-pack.test.mjs` | `npm test -- tests/moonshot-architecture-context-pack.test.mjs` | exit 0 |
+| P04-5 | none | `package.json`, `package/build-package.mjs`, `package/package-contract.yaml`, `tests/package-layout.test.mjs`, `tests/package-materialization.test.mjs` | `tests/package-materialization.test.mjs` | `npm run test:package` | exit 0 |
 
 ## Blockers And Review
 
@@ -81,6 +100,7 @@ phaseExecution:
 ## 검증 계획
 
 - [ ] `npm test -- tests/moonshot-architecture-context-pack.test.mjs tests/context-pack-contract.test.mjs tests/knowledge-context-build-contract.test.mjs`
+- [ ] `npm run test:package`
 - [ ] `npm test`
 - [ ] `git diff --check`
 
@@ -92,5 +112,8 @@ phaseExecution:
 
 ## 핸드오프 메모
 
-- Phase 05 and Phase 06 must use this script rather than building prompt context ad hoc.
+- Phase 05 greenfield prompt setup must call `node scripts/architecture-context-build.mjs --stage execute --mode greenfield_prd --json`.
+- Phase 06 brownfield prompt setup must call `node scripts/architecture-context-build.mjs --stage execute --mode brownfield_codebase --json`.
+- Allowed prompt inputs are `architectureContext.promptBlock`, `projectKnowledgeContext.promptBlock`, and status-only metadata. Do not attach raw graph/KG/ontology/log/transcript/browser bodies or secret-like strings.
+- `architectureContext.status=degraded` with `blocking=false` is non-blocking advisory evidence, not clean current-state authority. Preserve it in Phase 05/06 QA reports and avoid inventing missing current-state facts.
 

@@ -138,6 +138,7 @@ skillExposure:
   managedSkillPrunePolicy: prune_previously_managed_profile_skills_absent_from_current_payload_preserve_external
   publicRuntimeSkills:
     - product-orchestrator
+    - moonshot-architecture
     - moonshot-orchestrator
     - moonshot-phase-runner
     - moonshot-plan-writer
@@ -197,8 +198,12 @@ requiredPayloadEntries:
   commonSupportScripts:
     description: "Moonshot Relay common runtime payload installs only support scripts needed by installers, MCP wrappers, memory refresh, workflow state, and commit closeout. Service profiles do not install scripts/**."
     entries:
+      - source: scripts/architecture-context-build.mjs
+        purpose: architecture_context_pack_builder
       - source: scripts/awtl-memory-promotion.mjs
         purpose: memory_promotion_support
+      - source: scripts/architecture-artifact-validate.mjs
+        purpose: architecture_artifact_contract_validation
       - source: scripts/browser-flow-runner.mjs
         purpose: browser_flow_runtime_verdict_support
       - source: scripts/code-review-graph-mcp-wrapper.js

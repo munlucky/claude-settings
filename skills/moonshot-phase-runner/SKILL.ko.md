@@ -22,6 +22,7 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 
 - `phase-status.yaml`에 actionable phase가 남아 있으면 completed phase 하나를 plan completion으로 취급하지 않습니다.
 - `phase-status.yaml`, verifier JSON, QA report, scorecard, handoff, child chat output만으로 clean-finish authority를 만들지 않습니다. blocker, resume, run state, whole-plan completion authority는 `runtime-state.sqlite` DB read model과 `scripts/runtime-state.mjs assess-completion`의 accepted DB decision에서 옵니다.
+- architecture package에서 파생된 phase plan은 선택된 ADR, traceability row, owner, verification signal이 phase metadata에 없으면 실행하지 않습니다.
 - staged redesign phase에서 live `.claude/**` 또는 `.codex/**` adoption target을 바로 쓰지 않습니다. controlled adoption phase가 소유해야 합니다.
 - `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, delegated-terminal adapter를 기본 실행 경로로 사용하지 않습니다. legacy/headless compatibility adapter로만 취급합니다.
 - in-session coordinator, fresh verifier evidence, scorecard, repository closeout evidence가 동의하기 전에는 final success를 반환하지 않습니다.
@@ -39,10 +40,11 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 1. `phase-status.yaml` phase cursor projection에서 active plan directory와 active phase를 결정합니다.
 2. master plan, root phase docs, execution root consistency를 검증합니다.
 3. active phase contract에서 compact phase-attempt brief를 만듭니다.
-4. interactive run에서는 현재 세션이 조정하고 각 phase attempt/review는 fresh forked agent에 위임합니다.
-5. deterministic script는 runtime payload에 남아 있는 support check에만 사용합니다. legacy delegated-terminal adapter를 자동 시작하지 않습니다.
-6. 각 phase 뒤 parent session이 diff/evidence를 수집하고 closeout gate를 실행합니다.
-7. 전체 plan directory가 완료될 때까지 다음 actionable phase로 계속 진행합니다.
+4. architecture-derived plan에서는 active phase에 필요한 selected ADR, traceability, owner, verification signal, architecture review path만 붙입니다.
+5. interactive run에서는 현재 세션이 조정하고 각 phase attempt/review는 fresh forked agent에 위임합니다.
+6. deterministic script는 runtime payload에 남아 있는 support check에만 사용합니다. legacy delegated-terminal adapter를 자동 시작하지 않습니다.
+7. 각 phase 뒤 parent session이 diff/evidence를 수집하고 closeout gate를 실행합니다.
+8. 전체 plan directory가 완료될 때까지 다음 actionable phase로 계속 진행합니다.
 
 ## Required Evidence
 

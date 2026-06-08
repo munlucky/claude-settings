@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/tradeoff-analysis.schema.json",
+  "title": "Tradeoff Analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactId", "drivers", "recommendation"],
+  "properties": {
+    "artifactId": { "const": "TRADEOFF_ANALYSIS" },
+    "drivers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "driver", "source"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^DRV-[0-9]{3,}$" },
+          "driver": { "type": "string", "minLength": 1 },
+          "source": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "required": ["selectedOptionId", "rationale", "rejectedAlternatives"],
+      "properties": {
+        "selectedOptionId": { "type": "string", "pattern": "^OPT-[0-9]{3,}$" },
+        "rationale": { "type": "string", "minLength": 1 },
+        "rejectedAlternatives": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

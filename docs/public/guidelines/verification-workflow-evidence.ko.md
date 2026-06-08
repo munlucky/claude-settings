@@ -18,6 +18,12 @@
 - critical scenario에 대한 smoke-only evidence는 warning evidence이지 clean-finish evidence가 아닙니다.
 - `uat_ready`와 `uat_complete`는 분리합니다. automation은 readiness를 만들 수 있지만 human completion을 의미하지 않습니다.
 
+## Architecture Evidence
+
+- Architecture package에는 missing ASR, ADR, traceability, architecture review, raw KG/MemoryGraph leakage, missing verification signal에 대한 positive fixture coverage와 negative coverage가 필요합니다.
+- Brownfield architecture evidence는 repo root를 사용할 수 있으면 repository path로 해석되어야 합니다.
+- Architecture eval case는 regression evidence일 뿐이며 runtime-state completion authority를 대체하지 않습니다.
+
 ## Closeout Policy
 
 - `workflowEvidence.warnings`가 비어 있지 않으면 strict run에서 clean `gateDecision: pass`를 금지하고 standard run에서도 표면화해야 합니다.

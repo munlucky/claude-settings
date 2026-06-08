@@ -166,6 +166,7 @@ execution 으로 넘기기 전 planning package 는 아래에 답해야 한다.
 - 동작 모델을 아키텍처로 번역
 - 인터페이스, 컨테이너, 의존성, 비기능 요구 정리
 - 주요 선택은 ADR에 기록
+- architecture-heavy PRD는 최종 `PLAN.md` 전에 `moonshot-architecture`로 라우팅합니다. 반환된 architecture package path를 사용하고 architecture decision을 inline으로 다시 쓰지 않습니다.
 
 ### EXECUTION_PLAN
 - 아키텍처를 vertical slice로 변환
@@ -188,7 +189,9 @@ execution 으로 넘기기 전 planning package 는 아래에 답해야 한다.
 PLAN이 통과되면:
 - 문서 본문 전체가 아니라 경로를 전달
 - assumptions와 blockers를 요약
+- `moonshot-architecture`를 사용했다면 `REQUIREMENT_INVENTORY.md`, `ASR_CATALOG.md`, `TRACEABILITY_MATRIX.md`, 선택된 `ADR/*.md`, `ARCHITECTURE_REVIEW.md` path를 포함
 - `tasks/*.md`를 구현 중심 워크플로우에 연결
+- bounded implementation은 `moonshot-orchestrator`로, multi-phase/staged adoption/long-running package는 `moonshot-phase-runner`로 라우팅
 
 권장 다음 단계:
 - 생성된 제품 패키지와 함께 `/moonshot-orchestrator`

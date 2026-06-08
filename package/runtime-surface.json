@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "publicRuntimeSkills": [
     "product-orchestrator",
+    "moonshot-architecture",
     "moonshot-orchestrator",
     "moonshot-phase-runner",
     "moonshot-plan-writer",

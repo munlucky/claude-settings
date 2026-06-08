@@ -64,6 +64,9 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 
 | Guideline file | Class | Durable detail owner |
 |----------------|-------|----------------------|
+| `asr-extraction.md` / `asr-extraction.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, planned architecture artifact schemas |
+| `brownfield-architecture-recovery.md` / `brownfield-architecture-recovery.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, planned `skills/codebase-architecture-recovery/**` |
+| `c4-adr-design-contract.md` / `c4-adr-design-contract.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, planned architecture templates |
 | `code-review-graph-workflow.md` | policy-anchor | `skills/codex-review-code/**`, `scripts/code-review-graph-mcp-wrapper.js` |
 | `context-readiness-schema.md` / `context-readiness-schema.ko.md` | reference-index | `skills/context-readiness-gate/**`, `agents/context-builder*` |
 | `demo-first-mvp-gate.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/product-gate-reviewer/**` |
@@ -72,6 +75,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `knowledge-repository-ops.md` | policy-anchor | `scripts/knowledge-*.mjs`, `docs/public/project-knowledge-plane.md` |
 | `long-running-harness.ko.md` | policy-anchor | `skills/moonshot-phase-runner/**`, `skills/moonshot-in-session-coordinator/**` |
 | `memorygraph-workflow.md` / `memorygraph-workflow.ko.md` | policy-anchor | `scripts/memorygraph-*.mjs`, `skills/project-memory-refresh/**` |
+| `moonshot-architecture.md` / `moonshot-architecture.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, `docs/public/roadmaps/moonshot-architecture/**` |
 | `product-acceptance-gate.md` | policy-anchor | `skills/completion-verifier/**`, `skills/product-gate-reviewer/**` |
 | `product-definition-workflow.md` | policy-anchor | `skills/product-orchestrator/**`, `templates/product-definition/**` |
 | `provider-neutral-model-routing.md` | policy-anchor | runtime profile config templates and routing docs |

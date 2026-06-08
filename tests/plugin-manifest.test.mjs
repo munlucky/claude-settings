@@ -37,6 +37,7 @@ test('runtime plugin manifests point at package materializers and canonical inpu
   assert.deepEqual(runtimeSurface.publicRuntimeSkills, publicRuntimeSkills);
   assert.deepEqual(publicRuntimeSkills, [
     'product-orchestrator',
+    'moonshot-architecture',
     'moonshot-orchestrator',
     'moonshot-phase-runner',
     'moonshot-plan-writer',

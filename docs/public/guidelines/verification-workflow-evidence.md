@@ -18,6 +18,12 @@ This guideline owns workflow evidence closeout policy for `completion-verifier`.
 - Smoke-only evidence for critical scenarios is warning evidence, not clean-finish evidence.
 - `uat_ready` and `uat_complete` are separate. Automation can establish readiness, not human completion.
 
+## Architecture Evidence
+
+- Architecture packages need positive fixture coverage and negative coverage for missing ASR, ADR, traceability, architecture review, raw KG/MemoryGraph leakage, and missing verification signals.
+- Brownfield architecture evidence must resolve repository paths when a repo root is available.
+- Architecture eval cases are regression evidence only; they do not replace runtime-state completion authority.
+
 ## Closeout Policy
 
 - Non-empty `workflowEvidence.warnings` prevents clean `gateDecision: pass` in strict runs and must be surfaced in standard runs.

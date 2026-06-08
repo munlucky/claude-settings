@@ -403,3 +403,17 @@ test('strict workflow overlay keeps workspace isolation but does not insert depr
   assert.match(workflow, /completion-verifier[\s\S]*runtime-state authority/);
   assert.doesNotMatch(workflow, /Strict runs pass `workspace-isolation-gate` before implementation and `verification-evidence-gate`/);
 });
+
+test('product architecture handoff routes to bounded or phase execution without live adoption first', async () => {
+  const product = await readRoot('skills', 'product-orchestrator', 'SKILL.md');
+  const planWriter = await readRoot('skills', 'moonshot-plan-writer', 'SKILL.md');
+  const bounded = await readRoot('skills', 'moonshot-orchestrator', 'SKILL.md');
+  const runner = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.md');
+  const surface = await readRoot('docs', 'public', 'reference', 'runtime-skill-surface.md');
+
+  assert.match(product, /architecture-heavy PRDs[\s\S]*moonshot-architecture/i);
+  assert.match(planWriter, /selected ADRs[\s\S]*TRACEABILITY_MATRIX\.md[\s\S]*phase metadata/i);
+  assert.match(bounded, /bounded selected ADR[\s\S]*traceability slice/i);
+  assert.match(runner, /multi-phase|phase-based/i);
+  assert.match(surface, /Controlled adoption[\s\S]*package dry-run[\s\S]*installer dry-run/i);
+});

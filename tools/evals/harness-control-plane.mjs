@@ -18,6 +18,10 @@ export const REQUIRED_HARNESS_CONTROL_PLANE_CASES = [
   'stale-lease',
   'degraded-runtime',
   'eval-worsening',
+  'architecture-missing-traceability',
+  'architecture-raw-kg-leakage',
+  'architecture-missing-verification-signal',
+  'architecture-phase-status-only-closeout',
 ];
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));

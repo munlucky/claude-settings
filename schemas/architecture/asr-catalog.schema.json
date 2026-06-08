@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/asr-catalog.schema.json",
+  "title": "Architecturally Significant Requirement Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactId", "asrs"],
+  "properties": {
+    "artifactId": { "const": "ASR_CATALOG" },
+    "asrs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "requirementIds", "qualityAttribute", "architecturalImpact", "verificationSignal"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^ASR-[0-9]{3,}$" },
+          "requirementIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^REQ-[0-9]{3,}$" }
+          },
+          "qualityAttribute": { "type": "string", "minLength": 1 },
+          "architecturalImpact": { "type": "string", "minLength": 1 },
+          "verificationSignal": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

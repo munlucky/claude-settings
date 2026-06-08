@@ -47,7 +47,8 @@ phaseExecution:
     - "skills/moonshot-orchestrator/**"
     - "skills/moonshot-phase-runner/**"
     - "docs/public/reference/**"
-    - "docs/public/guidelines/moonshot-architecture*.md"
+    - "docs/public/guidelines/moonshot-architecture.md"
+    - "docs/public/guidelines/moonshot-architecture.ko.md"
     - "tests/workflow-e2e-contract.test.mjs"
     - "tests/moonshot-architecture-handoff-contract.test.mjs"
   adoptionTargets:

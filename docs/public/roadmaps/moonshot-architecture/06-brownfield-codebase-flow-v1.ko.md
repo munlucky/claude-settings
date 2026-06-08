@@ -26,16 +26,23 @@ phaseExecution:
     - "skills/codebase-architecture-recovery/**"
     - "templates/architecture/**"
     - "scripts/architecture-artifact-validate.mjs"
+    - "package.json"
+    - "tests/package-layout.test.mjs"
   readOnlyPaths:
     - "scripts/architecture-context-build.mjs"
-    - "docs/public/guidelines/brownfield-architecture-recovery*.md"
+    - "docs/public/guidelines/brownfield-architecture-recovery.md"
+    - "docs/public/guidelines/brownfield-architecture-recovery.ko.md"
     - "schemas/architecture/**"
   stagedPaths:
     - "tests/moonshot-architecture-brownfield-flow.test.mjs"
     - "tests/fixtures/moonshot-architecture/brownfield/**"
+    - "package.json"
+    - "tests/package-layout.test.mjs"
   sharedMutablePaths:
     - "templates/architecture/**"
     - "scripts/architecture-artifact-validate.mjs"
+    - "package.json"
+    - "tests/package-layout.test.mjs"
   requiresManualEvidence: false
   mergePolicy: "parent_serial_merge_for_shared_validator"
 ```
@@ -47,6 +54,7 @@ phaseExecution:
   - current architecture evidence assertions.
   - PRD fit-gap, impact map, migration strategy, compatibility contract.
   - SPEC_DELTA and PLAN readiness checks.
+  - active test gate wiring for the Brownfield flow test.
 - 제외:
   - live repository mutation outside fixture.
   - account-root or service profile adoption.
@@ -59,6 +67,7 @@ phaseExecution:
 | P06-2 | Recovery contract | codebase recovery skill/test 연결 | architecture claims cite repo paths |
 | P06-3 | Fit-gap and impact | PRD_FIT_GAP, IMPACT_MAP, MIGRATION_STRATEGY 검증 | owned/read-only/staged paths present |
 | P06-4 | Handoff readiness | SPEC_DELTA/PLAN/TRACEABILITY validation | suitable for plan-writer handoff |
+| P06-5 | Active gate wiring | Brownfield flow test를 `npm test`에 편입 | package layout gate confirms test is active |
 
 ## 정확한 실행 대상
 
@@ -66,17 +75,20 @@ phaseExecution:
 |---|---|---|---|---|---|
 | P06-1 | `tests/fixtures/moonshot-architecture/brownfield/**` | none | `tests/moonshot-architecture-brownfield-flow.test.mjs` | `npm test -- tests/moonshot-architecture-brownfield-flow.test.mjs` | exit 0 |
 | P06-2 | none | `skills/codebase-architecture-recovery/**` | same | same | path evidence assertions pass |
+| P06-5 | none | `package.json`, `tests/package-layout.test.mjs` | `tests/package-layout.test.mjs` | `npm run test:package` | exit 0 |
 
 ## Blockers And Review
 
 - Blocker condition: current architecture claim has no repository evidence.
 - First review checkpoint: after fixture current architecture and fit-gap validate.
 - Re-review trigger: Brownfield flow invents new architecture before reading existing constraints.
-- Verification evidence path: `docs/public/roadmaps/moonshot-architecture/execution/phase-06/QA_REPORT.md`
+- Verification evidence path: `docs/implementation/moonshot-architecture-2026-06-08/execution/phase-06/QA_REPORT.md`
 
 ## 검증 계획
 
 - [ ] `npm test -- tests/moonshot-architecture-brownfield-flow.test.mjs`
+- [ ] `node scripts/architecture-artifact-validate.mjs --mode brownfield_codebase --path tests/fixtures/moonshot-architecture/brownfield/package --repo-root tests/fixtures/moonshot-architecture/brownfield/repo --json`
+- [ ] `npm run test:package`
 - [ ] `npm test`
 - [ ] `git diff --check`
 

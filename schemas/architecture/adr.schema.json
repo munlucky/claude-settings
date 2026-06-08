@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/adr.schema.json",
+  "title": "Architecture Decision Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactId", "adrId", "status", "context", "decision", "consequences", "rejectedAlternatives"],
+  "properties": {
+    "artifactId": { "const": "ADR" },
+    "adrId": { "type": "string", "pattern": "^ADR-[0-9]{4,}$" },
+    "status": { "enum": ["Proposed", "Accepted", "Deprecated", "Superseded"] },
+    "context": { "type": "string", "minLength": 1 },
+    "decision": { "type": "string", "minLength": 1 },
+    "consequences": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "rejectedAlternatives": { "type": "array", "items": { "type": "string" } }
+  }
+}

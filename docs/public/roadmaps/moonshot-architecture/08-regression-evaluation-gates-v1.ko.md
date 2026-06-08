@@ -39,7 +39,8 @@ phaseExecution:
     - "tests/moonshot-architecture-*.test.mjs"
     - "tests/harness-regression-contract.test.mjs"
     - "tools/evals/**"
-    - "docs/public/guidelines/verification-workflow-evidence*.md"
+    - "docs/public/guidelines/verification-workflow-evidence.md"
+    - "docs/public/guidelines/verification-workflow-evidence.ko.md"
   sharedMutablePaths:
     - "tests/harness-regression-contract.test.mjs"
     - "tools/evals/**"

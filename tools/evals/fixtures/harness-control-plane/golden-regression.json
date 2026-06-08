@@ -62,6 +62,30 @@
       "category": "eval",
       "input": { "regressionWorsened": true },
       "expected": { "releaseBlocked": true, "reason": "eval regression worsened" }
+    },
+    {
+      "id": "architecture-missing-traceability",
+      "category": "architecture",
+      "input": { "artifact": "architecture package", "missing": "TRACEABILITY_MATRIX.md" },
+      "expected": { "releaseBlocked": true, "reason": "architecture traceability missing" }
+    },
+    {
+      "id": "architecture-raw-kg-leakage",
+      "category": "architecture",
+      "input": { "promptBlock": "raw KG edge dump" },
+      "expected": { "releaseBlocked": true, "reason": "raw architecture context leakage" }
+    },
+    {
+      "id": "architecture-missing-verification-signal",
+      "category": "architecture",
+      "input": { "traceabilityRow": { "requirementId": "REQ-001", "verificationSignal": "" } },
+      "expected": { "releaseBlocked": true, "reason": "architecture verification signal missing" }
+    },
+    {
+      "id": "architecture-phase-status-only-closeout",
+      "category": "architecture",
+      "input": { "phaseStatusComplete": true, "assessCompletionAccepted": false },
+      "expected": { "releaseBlocked": true, "reason": "architecture closeout requires accepted DB decision" }
     }
   ]
 }

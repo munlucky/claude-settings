@@ -23,6 +23,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Do not treat a completed phase as plan completion while `phase-status.yaml` still has actionable phases.
 - Do not treat `phase-status.yaml`, verifier JSON, QA report, scorecard, handoff, or child chat output as clean-finish authority when runtime-state completion authority is available. Use `scripts/runtime-state.mjs assess-completion` and require an accepted DB decision.
 - Treat `runtime-state.sqlite` as the authority for blocker state, resume reconstruction, run status, and whole-plan completion decisions; `phase-status.yaml` is only a phase cursor projection.
+- Do not execute a phase plan derived from an architecture package when selected ADRs, traceability rows, owners, or verification signals are missing from the phase metadata.
 - Do not stop the whole plan just because a completed phase produced review findings, failed eval evidence, or a non-accepted completion decision. Record the blocker as carry-forward evidence, keep the final completion gate closed, and continue the next actionable independent phase.
 - Do not write live `.claude/**` or `.codex/**` adoption targets from staged redesign phases. Phase 08 owns controlled adoption.
 - Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
@@ -49,11 +50,12 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 6. Heartbeat long-running phases with `scripts/runtime-state.mjs heartbeat-run-lease` before the lease window expires.
 7. Check protected paths and approval-required operations through `tools/sandbox/policy.mjs check --json` before executing sandbox-sensitive tool calls.
 8. Build a compact phase-attempt brief from the active phase contract.
-9. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
-10. Use deterministic scripts only for support checks that are still installed in the runtime payload. Do not auto-start legacy delegated-terminal adapters.
-11. After each phase, collect diff/evidence in the parent session and run coordinator closeout gates.
-12. If closeout gates reject a phase after useful implementation evidence was produced, record the rejection with `record-eval-result --regression-worsened true` or a blocking runtime event, keep the finding in carry-forward state, and continue to the next independent actionable phase.
-13. Continue to the next actionable phase until the whole plan directory is implemented. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
+9. For architecture-derived plans, attach only selected ADR, traceability, owner, verification signal, and architecture review paths needed by the active phase.
+10. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
+11. Use deterministic scripts only for support checks that are still installed in the runtime payload. Do not auto-start legacy delegated-terminal adapters.
+12. After each phase, collect diff/evidence in the parent session and run coordinator closeout gates.
+13. If closeout gates reject a phase after useful implementation evidence was produced, record the rejection with `record-eval-result --regression-worsened true` or a blocking runtime event, keep the finding in carry-forward state, and continue to the next independent actionable phase.
+14. Continue to the next actionable phase until the whole plan directory is implemented. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
 
 ## Required Evidence
 

@@ -173,6 +173,7 @@ Preferred actions:
 - Record major choices in ADRs
 - Prefer deep modules: small interfaces that hide meaningful behavior and improve locality
 - For hard-to-change interfaces, consider multiple materially different shapes before choosing one
+- For architecture-heavy PRDs, route through `moonshot-architecture` before final `PLAN.md`. Use the returned architecture package paths rather than rewriting architecture decisions inline.
 
 ### EXECUTION_PLAN
 - Convert architecture into vertical slices
@@ -198,7 +199,9 @@ Preferred actions:
 When the plan passes:
 - provide document paths, not full inline content
 - summarize assumptions and blockers
+- include architecture package paths when `moonshot-architecture` was used: `REQUIREMENT_INVENTORY.md`, `ASR_CATALOG.md`, `TRACEABILITY_MATRIX.md`, selected `ADR/*.md`, and `ARCHITECTURE_REVIEW.md`
 - hand `tasks/*.md` to the implementation-oriented workflow
+- route bounded implementation to `moonshot-orchestrator`; route multi-phase, staged adoption, or long-running packages to `moonshot-phase-runner`
 
 Recommended next step:
 - `/moonshot-orchestrator` with the generated product package

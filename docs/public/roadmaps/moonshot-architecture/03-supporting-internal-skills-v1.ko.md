@@ -30,6 +30,8 @@ phaseExecution:
     - "skills/moonshot-architecture/SKILL.md"
     - "skills/moonshot-architecture/SKILL.ko.md"
     - "tests/moonshot-architecture-internal-skills.test.mjs"
+    - "package.json"
+    - "tests/package-layout.test.mjs"
   readOnlyPaths:
     - "package/runtime-surface.json"
     - "package/package-contract.yaml"
@@ -42,9 +44,13 @@ phaseExecution:
     - "skills/architecture-gate-reviewer/**"
     - "skills/codebase-architecture-recovery/**"
     - "tests/moonshot-architecture-internal-skills.test.mjs"
+    - "package.json"
+    - "tests/package-layout.test.mjs"
   sharedMutablePaths:
     - "skills/moonshot-architecture/SKILL.md"
     - "skills/moonshot-architecture/SKILL.ko.md"
+    - "package.json"
+    - "tests/package-layout.test.mjs"
   requiresManualEvidence: false
   mergePolicy: "parent_serial_merge_for_shared_skill_docs"
 ```
@@ -55,6 +61,7 @@ phaseExecution:
   - six internal skill directories and bilingual skill contracts.
   - stage ownership, inputs, outputs, hard stops, evidence.
   - negative test that internal skills are not public runtime entrypoints.
+  - active test gate wiring for the internal skill contract test.
 - 제외:
   - runtime orchestration engine.
   - template/schema implementation owned by Phase 02.
@@ -66,6 +73,7 @@ phaseExecution:
 | P03-1 | Internal skill contracts | six skill folders 작성 | each skill has role, flow, hard stops, evidence |
 | P03-2 | Public exposure guard | runtime-surface negative assertion | internal skills absent from public allowlist |
 | P03-3 | Orchestrator references | `moonshot-architecture` references internal stages | stage names match actual skill dirs |
+| P03-4 | Active gate wiring | internal skill contract test를 active gate에 편입 | `npm test` runs the internal skill contract |
 
 ## 정확한 실행 대상
 
@@ -73,6 +81,7 @@ phaseExecution:
 |---|---|---|---|---|---|
 | P03-1 | `skills/<internal>/**` | none | `tests/moonshot-architecture-internal-skills.test.mjs` | `npm test -- tests/moonshot-architecture-internal-skills.test.mjs` | exit 0 |
 | P03-2 | none | none | same | `npm test -- tests/plugin-manifest.test.mjs` | exit 0 |
+| P03-4 | none | `package.json`, `tests/package-layout.test.mjs` | `tests/package-layout.test.mjs` | `npm test` | exit 0 |
 
 ## Blockers And Review
 
@@ -85,6 +94,7 @@ phaseExecution:
 
 - [ ] `npm test -- tests/moonshot-architecture-internal-skills.test.mjs tests/plugin-manifest.test.mjs`
 - [ ] `npm run test:package`
+- [ ] `npm test`
 - [ ] `git diff --check`
 
 ## 완료 표시용 증거
