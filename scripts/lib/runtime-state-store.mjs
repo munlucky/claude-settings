@@ -44,9 +44,67 @@ const leaseTtlMs = (value) => {
 
 const leaseExpiryIso = (ttlMs) => new Date(Date.now() + leaseTtlMs(ttlMs)).toISOString();
 
+const runtimeStoreErrorReasonSet = new Set([
+  'missing_native_module',
+  'permission_denied',
+  'sandbox_denied',
+  'db_lock_timeout',
+  'schema_mismatch',
+  'unresolved_db_path',
+  'schema_or_open_failure',
+]);
+
+export function runtimeStoreErrorCode(error = {}, phase = '') {
+  const code = normalizeText(error.code).toUpperCase();
+  const message = normalizeText(error.message || error);
+  const haystack = `${code} ${message} ${normalizeText(phase)}`.toLowerCase();
+
+  if (code === 'MOONSHOT_RUNTIME_NATIVE_MISSING' || haystack.includes('missing_native_module') || /native .*sqlite|sqlite .*native|better-sqlite3|native module/.test(haystack)) {
+    return 'missing_native_module';
+  }
+  if (code === 'EPERM' || code === 'EACCES' || /permission denied|access is denied/.test(haystack)) {
+    return 'permission_denied';
+  }
+  if (/sandbox|managed sandbox|operation not permitted/.test(haystack)) {
+    return 'sandbox_denied';
+  }
+  if (code === 'SQLITE_BUSY' || code === 'SQLITE_LOCKED' || /\bbusy\b|\blocked\b|database is locked/.test(haystack)) {
+    return 'db_lock_timeout';
+  }
+  if (code === 'SQLITE_CORRUPT' || /no such table|schema|migration|corrupt/.test(haystack)) {
+    return 'schema_mismatch';
+  }
+  if (/unresolved.*db.*path|db.*path.*unresolved|mkdir|parent directory|invalid path/.test(haystack)) {
+    return 'unresolved_db_path';
+  }
+  return 'schema_or_open_failure';
+}
+
+export function recoveryHintForRuntimeReason(reason) {
+  switch (reason) {
+    case 'missing_native_module':
+      return 'reinstall or materialize runtime dependencies, then retry runtime-state status';
+    case 'permission_denied':
+      return 'check account-root permissions and choose a writable MOONSHOT_RELAY_HOME or state root';
+    case 'sandbox_denied':
+      return 'rerun from a sandbox policy that permits runtime-state filesystem access';
+    case 'db_lock_timeout':
+      return 'wait for the active runtime-state writer or clean stale leases before retrying';
+    case 'schema_mismatch':
+      return 'verify runtime-state schema migration compatibility before reusing the database';
+    case 'unresolved_db_path':
+      return 'set MOONSHOT_RELAY_HOME or MOONSHOT_RELAY_STATE_ROOT to a resolvable writable path';
+    case 'schema_or_open_failure':
+    default:
+      return 'inspect runtime-state database path and open failure details before retrying';
+  }
+}
+
 export function degradedRuntimeStatus(reason, dbPath = resolveDbPath(), detail = '') {
+  const normalizedReason = runtimeStoreErrorReasonSet.has(reason) ? reason : 'schema_or_open_failure';
+  const recoveryHint = recoveryHintForRuntimeReason(normalizedReason);
   const metrics = emptyOperationalMetrics();
-  metrics.metrics.db_busy_timeout_count = reason === 'db_lock_timeout' ? 1 : 0;
+  metrics.metrics.db_busy_timeout_count = normalizedReason === 'db_lock_timeout' ? 1 : 0;
   const evaluatedMetrics = {
     ...metrics,
     ...buildMetricThresholds(metrics.metrics),
@@ -54,23 +112,24 @@ export function degradedRuntimeStatus(reason, dbPath = resolveDbPath(), detail =
   return {
     runtimeCapabilityStatus: {
       status: 'degraded',
-      reason,
+      reason: normalizedReason,
       detail,
       dbPath,
+      recoveryHint,
     },
     operationalMetrics: evaluatedMetrics,
     compactStatus: {
       activeContract: null,
       latestVerdict: null,
       latestVerificationEvidence: null,
-      currentBlocker: `runtime-state unavailable: ${reason}`,
+      currentBlocker: `runtime-state unavailable: ${normalizedReason}`,
       lineage: [],
-      staleWarnings: [reason],
+      staleWarnings: [normalizedReason],
       operationalMetrics: evaluatedMetrics,
     },
     resumeBrief: {
-      nextAction: 'restore runtime-state capability',
-      currentBlocker: `runtime-state unavailable: ${reason}`,
+      nextAction: recoveryHint,
+      currentBlocker: `runtime-state unavailable: ${normalizedReason}`,
       lineage: [],
       operationalMetrics: evaluatedMetrics,
     },
@@ -89,7 +148,7 @@ async function loadDatabase() {
     return module.default;
   } catch (error) {
     const wrapped = new Error(error instanceof Error ? error.message : String(error));
-    wrapped.code = 'missing_native_module';
+    wrapped.code = runtimeStoreErrorCode(error, 'loadDatabase');
     throw wrapped;
   }
 }
@@ -100,7 +159,7 @@ async function openRuntimeDatabase() {
     await mkdir(path.dirname(dbPath), { recursive: true });
   } catch (error) {
     const wrapped = new Error(error instanceof Error ? error.message : String(error));
-    wrapped.code = 'unresolved_db_path';
+    wrapped.code = runtimeStoreErrorCode(error, 'mkdir runtime-state directory');
     throw wrapped;
   }
 
@@ -112,7 +171,7 @@ async function openRuntimeDatabase() {
     return { db, dbPath };
   } catch (error) {
     const wrapped = new Error(error instanceof Error ? error.message : String(error));
-    wrapped.code = /busy|locked/i.test(wrapped.message) ? 'db_lock_timeout' : 'schema_or_open_failure';
+    wrapped.code = runtimeStoreErrorCode(error, 'open runtime-state database');
     throw wrapped;
   }
 }
@@ -1669,6 +1728,6 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
       };
     });
   } catch (error) {
-    return degradedRuntimeStatus(error.code || 'schema_mismatch', resolveDbPath(), error.message);
+    return degradedRuntimeStatus(runtimeStoreErrorCode(error, 'build runtime status read model'), resolveDbPath(), error.message);
   }
 }

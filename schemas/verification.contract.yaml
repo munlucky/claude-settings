@@ -329,6 +329,8 @@ observability:
       - "metrics.stablePrefixHash"
       - "metrics.promptCacheHit"
   teamMetrics:
+    # Deprecated compatibility surface. New consumers should read decisionFields
+    # for routing/completion decisions and reportingFields for diagnostics.
     requiredFields:
       - "selectedPattern"
       - "selectedTeam"
@@ -345,6 +347,24 @@ observability:
       - "handoffCount"
       - "indeterminateRatio"
       - "verifierFailureCategories"
+      - "completionLeadTimeSeconds"
+    decisionFields:
+      - "selectedPattern"
+      - "selectedHarnessComponents"
+      - "skippedHarnessComponents"
+      - "runtimeIsolation"
+      - "verifierFailureCategories"
+    reportingFields:
+      - "selectedTeam"
+      - "selectionReason"
+      - "modelEffortProfile"
+      - "selectedModelProvider"
+      - "selectedModel"
+      - "selectedModelEffort"
+      - "modelSelectionReason"
+      - "retryCount"
+      - "handoffCount"
+      - "indeterminateRatio"
       - "completionLeadTimeSeconds"
 hooks:
   extraChecksCommand: ""

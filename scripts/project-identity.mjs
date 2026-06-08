@@ -3,8 +3,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { gitConfigValue, gitCurrentBranch } from './lib/git-safe.mjs';
 
 const PROJECT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,126}[a-z0-9]$/;
 
@@ -153,14 +153,7 @@ function readGitConfigRemote(gitRoot) {
 }
 
 export function gitRemoteUrl(cwd) {
-  try {
-    return execFileSync('git', ['-C', cwd, 'config', '--get', 'remote.origin.url'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    }).trim();
-  } catch {
-    return readGitConfigRemote(findGitRoot(cwd));
-  }
+  return gitConfigValue(cwd, 'remote.origin.url') || readGitConfigRemote(findGitRoot(cwd));
 }
 
 export function remoteSlug(remoteUrl) {
@@ -252,15 +245,7 @@ function assertNoFallbackCollision(registry, projectId, source) {
 }
 
 function currentBranch(cwd) {
-  try {
-    const branch = execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    }).trim();
-    return branch && branch !== 'HEAD' ? branch : '';
-  } catch {
-    return '';
-  }
+  return gitCurrentBranch(cwd);
 }
 
 function namespaceFor(identity, cwd, env, options = {}) {

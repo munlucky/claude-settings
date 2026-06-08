@@ -1,0 +1,49 @@
+schemaVersion: 1
+packageRoot: docs/implementation/harness-cleanup-contract-hardening-2026-06-08
+sourceReviewArtifact: docs/implementation/harness-cleanup-contract-hardening-2026-06-08/planning-loop/plan-quality-review-iter-01.yaml
+improver:
+  name: Pauli
+  role: independent_plan_improver
+  sessionId: 019ea6bf-93b8-78c0-92ff-6cb021efdada
+parentOwner: main_session
+acceptedDirectives:
+  - id: D1
+    directive: Materialize a complete file-backed package under docs/implementation/harness-cleanup-contract-hardening-2026-06-08.
+    implementedIn:
+      - 00-master-plan-v1.md
+      - 01-git-safe-child-process-v1.md
+      - 02-runtime-error-classifier-v1.md
+      - 03-observability-contract-fields-v1.md
+      - 04-prompt-gate-surface-v1.md
+      - 05-runtime-skill-package-surface-v1.md
+      - 06-final-validation-readiness-v1.md
+  - id: D2
+    directive: Treat harness-surface-simplification as historical input and prevent duplicate execution ownership.
+    implementedIn:
+      - 00-master-plan-v1.md
+  - id: D3
+    directive: Define exact Git helper API, direct-call migration targets, and direct Git call closure check.
+    implementedIn:
+      - 01-git-safe-child-process-v1.md
+  - id: D4
+    directive: Define typed runtime-state error reasons, named exports, recovery hints, and synthetic tests.
+    implementedIn:
+      - 02-runtime-error-classifier-v1.md
+  - id: D5
+    directive: Preserve teamMetrics.requiredFields while adding decisionFields and reportingFields.
+    implementedIn:
+      - 03-observability-contract-fields-v1.md
+  - id: D6
+    directive: Make verification-evidence-gate a deprecated compatibility shim and keep completion-verifier/runtime-state as active authority.
+    implementedIn:
+      - 04-prompt-gate-surface-v1.md
+  - id: D7
+    directive: Reduce profile-local public runtime skills to five and keep moonshot-plan-writer in common/internal payload only.
+    implementedIn:
+      - 05-runtime-skill-package-surface-v1.md
+  - id: D8
+    directive: Map final validation to required verification planes and require assess-completion accepted before whole-plan completion.
+    implementedIn:
+      - 06-final-validation-readiness-v1.md
+rejectedDirectives: []
+remainingAmbiguity: []

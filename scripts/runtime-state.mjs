@@ -15,6 +15,7 @@ import {
   recordResumeSnapshot,
   recordEvalResult,
   recordToolCall,
+  runtimeStoreErrorCode,
   rollbackMemoryPromotionDecision,
   supersedeCompletionDecision,
 } from './lib/runtime-state-store.mjs';
@@ -70,6 +71,8 @@ const writeResult = (result, json) => {
 
 const runtimeStoreErrorCodes = new Set([
   'missing_native_module',
+  'permission_denied',
+  'sandbox_denied',
   'schema_mismatch',
   'schema_or_open_failure',
   'db_lock_timeout',
@@ -210,10 +213,11 @@ const main = async () => {
       throw new Error(`Unknown command: ${options.command}\n${usage()}`);
     }
   } catch (error) {
-    if (!runtimeStoreErrorCodes.has(error.code)) {
+    const runtimeReason = runtimeStoreErrorCode(error, 'runtime-state cli');
+    if (!runtimeStoreErrorCodes.has(runtimeReason)) {
       throw error;
     }
-    result = degradedRuntimeStatus(error.code, undefined, error.message);
+    result = degradedRuntimeStatus(runtimeReason, undefined, error.message);
   }
 
   writeResult(result, options.json);

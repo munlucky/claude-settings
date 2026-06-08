@@ -54,6 +54,10 @@ docs/implementation/*
 !docs/implementation/harness-surface-simplification-2026-06-08/*.md
 !docs/implementation/harness-surface-simplification-2026-06-08/planning-loop/
 !docs/implementation/harness-surface-simplification-2026-06-08/planning-loop/**
+!docs/implementation/harness-cleanup-contract-hardening-2026-06-08/
+!docs/implementation/harness-cleanup-contract-hardening-2026-06-08/*.md
+!docs/implementation/harness-cleanup-contract-hardening-2026-06-08/planning-loop/
+!docs/implementation/harness-cleanup-contract-hardening-2026-06-08/planning-loop/**
 docs/phase-runner-visuals/
 docs/*.html
 docs/*.md

@@ -6,6 +6,7 @@ import process from 'node:process';
 
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 import { acquireRunLease, recordResumeSnapshot, recordRuntimeEvent } from './lib/runtime-state-store.mjs';
+import { gitStatusBranchLine } from './lib/git-safe.mjs';
 
 const usage = () => `Usage: node scripts/prepare-phase-runner-state.mjs [--plan-dir <dir>] [--master-plan <file>] [--status-file <file>] [--execution-root <dir>] [--run-id <id>] [--goal-id <id>] [--workspace-id <id>] [--allow-parallel] [--lease-ttl-ms <ms>] [--dry-run] [--json]`;
 
@@ -174,17 +175,7 @@ const buildPhaseStates = (phaseDocs) => phaseDocs.map((file, index) => ({
 
 const hasAheadClaim = (masterText) => /ahead\s+\d+/i.test(masterText) || /unpushed\s+commit/i.test(masterText);
 
-const gitBranchLine = async () => {
-  const { spawnSync } = await import('node:child_process');
-  const result = spawnSync('git', ['status', '--short', '--branch'], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) {
-    return '';
-  }
-  return result.stdout.split(/\r?\n/)[0] || '';
-};
+const gitBranchLine = async () => gitStatusBranchLine(process.cwd());
 
 const buildStatusYaml = (result) => {
   const lines = [

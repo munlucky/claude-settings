@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { execFileSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { existsSync, lstatSync } from 'node:fs';
 import path from 'node:path';
+import { gitLsFiles } from '../scripts/lib/git-safe.mjs';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
@@ -121,10 +121,7 @@ const isAllowedTrackedDoc = (file) => (
 );
 
 test('tracked docs are limited to public docs and source-local implementation plans', () => {
-  const output = execFileSync('git', ['ls-files', 'docs'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
+  const output = gitLsFiles(root, ['docs']).stdout;
   const violations = output
     .split(/\r?\n/)
     .filter(Boolean)
@@ -138,10 +135,7 @@ test('tracked docs are limited to public docs and source-local implementation pl
 });
 
 test('tracked roadmaps and source-local plans are separated from runtime execution scratch space', async () => {
-  const trackedDocs = execFileSync('git', ['ls-files', 'docs'], {
-    cwd: root,
-    encoding: 'utf8',
-  }).split(/\r?\n/).filter(Boolean);
+  const trackedDocs = gitLsFiles(root, ['docs']).stdout.split(/\r?\n/).filter(Boolean);
 
   assert.ok(
     trackedDocs.includes('docs/public/roadmaps/harness-control-plane-modernization/00-master-plan-v1.md'),
@@ -264,16 +258,11 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /commonPayloadEntries:/);
   assert.match(contract, /skillExposure:/);
   assert.match(contract, /manifest: package\/runtime-surface\.json/);
-  for (const publicSkill of [
-    'product-orchestrator',
-    'moonshot-orchestrator',
-    'moonshot-phase-runner',
-    'moonshot-plan-writer',
-    'commit-moonshot',
-    'session-logger',
-  ]) {
+  const runtimeSurface = JSON.parse(await readFile(fromRoot('package', 'runtime-surface.json'), 'utf8'));
+  for (const publicSkill of runtimeSurface.publicRuntimeSkills) {
     assert.match(contract, new RegExp(publicSkill));
   }
+  assert.doesNotMatch(contract.match(/publicRuntimeSkills:[\s\S]*?commonPayloadSkillPolicy:/)?.[0] || '', /moonshot-plan-writer/);
   assert.match(contract, /commonPayloadSkillPolicy: preserve_all_canonical_skills/);
   assert.match(contract, /serviceProfileSkillPolicy: allowlist_only/);
   assert.match(contract, /managedSkillPrunePolicy: prune_previously_managed_profile_skills_absent_from_current_payload_preserve_external/);
@@ -468,10 +457,7 @@ test('explicit Moonshot Relay script references point at packaged support script
 });
 
 test('root runtime profiles are local-only and not tracked source', () => {
-  const tracked = execFileSync('git', ['ls-files', '.claude', '.codex'], {
-    cwd: root,
-    encoding: 'utf8',
-  }).trim();
+  const tracked = gitLsFiles(root, ['.claude', '.codex']).stdout.trim();
 
   assert.equal(tracked, '', 'root .claude/ and .codex/ must remain local-only and untracked');
 });

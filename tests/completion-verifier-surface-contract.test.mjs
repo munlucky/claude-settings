@@ -49,3 +49,37 @@ test('workflow evidence guideline pair exists and is classified', async () => {
   const layout = await readRoot('docs', 'public', 'repository-layout.md');
   assert.match(layout, /verification-workflow-evidence\.md` \/ `verification-workflow-evidence\.ko\.md/);
 });
+
+test('verification evidence gate is deprecated compatibility shim', async () => {
+  const english = await readRoot('skills', 'verification-evidence-gate', 'SKILL.md');
+  const korean = await readRoot('skills', 'verification-evidence-gate', 'SKILL.ko.md');
+
+  for (const text of [english, korean]) {
+    assert.match(text, /deprecated compatibility shim/i);
+    assert.match(text, /completion-verifier/);
+    assert.match(text, /verification-plane\.mjs/);
+    assert.match(text, /runtime-state\.mjs assess-completion/);
+    assert.match(text, /do not insert|직접 insert하지 않습니다/i);
+  }
+});
+
+test('workspace isolation gate requires only minimum machine-checkable artifact fields', async () => {
+  const english = await readRoot('skills', 'workspace-isolation-gate', 'SKILL.md');
+  const korean = await readRoot('skills', 'workspace-isolation-gate', 'SKILL.ko.md');
+  const requiredFields = [
+    'branchOrWorktree',
+    'prepareArtifact',
+    'hydrationStatus',
+    'baselineCommand',
+    'baselineExitCode',
+    'sandboxPolicyStatus',
+  ];
+
+  for (const text of [english, korean]) {
+    for (const field of requiredFields) {
+      assert.match(text, new RegExp(field));
+    }
+    assert.doesNotMatch(text, /ignoredAgentPaths:/);
+    assert.match(text, /prepare artifact/i);
+  }
+});

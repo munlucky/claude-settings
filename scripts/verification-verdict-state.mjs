@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { runGit } from './lib/git-safe.mjs';
 
 const VALID_SCOPES = new Set(['runtime', 'phase_verification', 'phase_closeout']);
 const VALID_BLOCKER_CLASSES = new Set([
@@ -58,7 +58,7 @@ function normalizeIdentityPath(value) {
 
 export function resolveGitTreeFingerprint(root = '') {
   const candidate = normalizeIdentityText(root) || process.cwd();
-  const result = spawnSync('git', ['-c', `safe.directory=${candidate}`, '-c', 'core.editor=true', '-C', candidate, 'rev-parse', 'HEAD^{tree}'], {
+  const result = runGit(candidate, ['-c', 'core.editor=true', 'rev-parse', 'HEAD^{tree}'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
     env: {

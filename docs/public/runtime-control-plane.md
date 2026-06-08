@@ -34,6 +34,8 @@ No fallback SQLite adapter is installed. The accepted fallback behavior is typed
 - source checkout with dependencies installed: runtime-state is `available`
 - materialized common payload with packaged production dependencies: runtime-state is `available`
 - missing native module reason: `missing_native_module`
+- typed degraded reasons: `missing_native_module`, `permission_denied`, `sandbox_denied`, `db_lock_timeout`, `schema_mismatch`, `unresolved_db_path`, `schema_or_open_failure`
+- degraded status includes `runtimeCapabilityStatus.recoveryHint` and mirrors that reason-specific action in `resumeBrief.nextAction`
 - degraded runtime-state must not claim completion authority
 
 This keeps account-root/package rollout conservative while still requiring installed-runtime smoke evidence before availability is claimed.
@@ -72,15 +74,19 @@ Status also surfaces `compactStatus.blockingEvents`, `compactStatus.pendingAppro
 `compactStatus.latestVerificationEvidence` is a normalized read-model projection of the latest verification event. It can show `taskLocalCompletion.status=complete` for profile-scoped evidence while `wholePlanAuthority.status=blocked`; it is not a completion decision and does not replace `assess-completion`.
 Low-score or flaky traces should be linked through eval evidence such as `traceCandidatePath` and converted with `tools/awtl/trace-to-testcase.mjs`.
 
+Team metrics keep `observability.teamMetrics.requiredFields` as deprecated compatibility. New contract consumers should use `decisionFields` for routing, completion, and blocker decisions, and `reportingFields` for model, retry, handoff, and lead-time diagnostics.
+
 ## Operations Recovery
 
 When status is degraded, first restore runtime-state capability:
 
 1. Check `runtimeCapabilityStatus.reason`.
-2. If `missing_native_module`, rerun dependency materialization or account-root install in a temp home before live adoption.
-3. If `db_lock_timeout`, inspect long-running sessions, stale leases, and WAL/SHM files under the runtime state root.
-4. Run `node scripts/runtime-state.mjs cleanup-stale-leases --json`.
-5. Re-run `node scripts/runtime-state.mjs status --run-id <runId> --goal-id <goalId> --json`.
+2. Check `runtimeCapabilityStatus.recoveryHint` for the reason-specific next action.
+3. If `missing_native_module`, rerun dependency materialization or account-root install in a temp home before live adoption.
+4. If `permission_denied`, `sandbox_denied`, or `unresolved_db_path`, choose a writable and permitted `MOONSHOT_RELAY_HOME` or state root.
+5. If `db_lock_timeout`, inspect long-running sessions, stale leases, and WAL/SHM files under the runtime state root.
+6. Run `node scripts/runtime-state.mjs cleanup-stale-leases --json`.
+7. Re-run `node scripts/runtime-state.mjs status --run-id <runId> --goal-id <goalId> --json`.
 
 Do not claim clean completion while `operationalMetrics.releaseBlockerMetrics` is non-empty, while pending approvals exist, or while eval regressions are present.
 

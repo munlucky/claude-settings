@@ -25,3 +25,5 @@ Verification summaries expose two additive projection fields:
 - `wholePlanAuthority`: evidence eligibility against the whole-plan authority planes; accepted completion still requires a runtime-state DB decision.
 
 `compactStatus.latestVerificationEvidence` may repeat these projections in the runtime read model, but it is evidence visibility only. It must not be used as `completion_decisions.status=accepted`.
+
+`observability.teamMetrics.requiredFields` remains as deprecated compatibility. Decision-critical consumers should use `observability.teamMetrics.decisionFields`; dashboards and reports should use `observability.teamMetrics.reportingFields`.

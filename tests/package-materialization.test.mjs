@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { after, test } from 'node:test';
+import { gitLsFiles } from '../scripts/lib/git-safe.mjs';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
@@ -38,14 +39,8 @@ const claudeProfile = async () => path.join(await materializePackage(), 'claude'
 const codexProfile = async () => path.join(await materializePackage(), 'codex', 'profile', '.codex');
 const commonProfile = async () => path.join(await materializePackage(), 'moonshot-relay', 'profile');
 
-const publicRuntimeSkills = [
-  'commit-moonshot',
-  'moonshot-orchestrator',
-  'moonshot-phase-runner',
-  'moonshot-plan-writer',
-  'product-orchestrator',
-  'session-logger',
-];
+const runtimeSurface = JSON.parse(await readFile(fromRoot('package', 'runtime-surface.json'), 'utf8'));
+const publicRuntimeSkills = [...runtimeSurface.publicRuntimeSkills].sort();
 
 after(async () => {
   if (materializedRoot) {
@@ -107,6 +102,7 @@ const requiredCommonPayloadFiles = [
   'scripts/commit-moonshot-memory-refresh.mjs',
   'scripts/phase-final-guard.mjs',
   'scripts/prepare-phase-runner-state.mjs',
+  'scripts/lib/git-safe.mjs',
   'scripts/lib/phase-event-ledger.mjs',
   'scripts/lib/phase-run-lease-store.mjs',
   'scripts/lib/context-state-engine.mjs',
@@ -128,7 +124,6 @@ const requiredClaudeConcreteFiles = [
   'skills/commit-moonshot/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
-  'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
@@ -139,7 +134,6 @@ const requiredConcreteCodexFiles = [
   'skills/commit-moonshot/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
-  'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
@@ -477,10 +471,7 @@ test('package smoke runs materialized runtime-state from package home', async ()
 });
 
 test('generated package profiles are not tracked source files', () => {
-  const result = spawnSync('git', ['ls-files', 'package/moonshot-relay/profile', 'package/claude/profile', 'package/codex/profile'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
+  const result = gitLsFiles(root, ['package/moonshot-relay/profile', 'package/claude/profile', 'package/codex/profile']);
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), '', 'generated package profile files should not be tracked');
@@ -557,8 +548,9 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
-    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
-    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(moonshotHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills', 'completion-verifier', 'SKILL.md')), true);

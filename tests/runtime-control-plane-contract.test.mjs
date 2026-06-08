@@ -212,6 +212,8 @@ test('runtime-state reports typed degraded status when native sqlite support is 
 
   assert.equal(result.runtimeCapabilityStatus.status, 'degraded');
   assert.equal(result.runtimeCapabilityStatus.reason, 'missing_native_module');
+  assert.match(result.runtimeCapabilityStatus.recoveryHint, /runtime dependencies/i);
+  assert.equal(result.resumeBrief.nextAction, result.runtimeCapabilityStatus.recoveryHint);
   assert.equal(result.compactStatus.currentBlocker, 'runtime-state unavailable: missing_native_module');
 });
 

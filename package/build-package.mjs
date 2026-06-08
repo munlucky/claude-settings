@@ -65,6 +65,7 @@ const runtimeSpecs = {
       'scripts/lib/context-state-engine.mjs',
       'scripts/lib/commit-closeout-events.mjs',
       'scripts/lib/failure-classifier.mjs',
+      'scripts/lib/git-safe.mjs',
       'scripts/lib/phase-event-ledger.mjs',
       'scripts/lib/phase-run-lease-store.mjs',
       'scripts/lib/runtime-state-db-path.mjs',

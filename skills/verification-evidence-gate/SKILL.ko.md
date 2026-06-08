@@ -6,9 +6,13 @@ description: strict 실행에서 최신 검증 증거가 없을 때 완료 선�
 # 검증 증거 게이트
 
 ## 역할
-strict 프로필에서 evidence-before-completion 원칙을 강제합니다.
+strict evidence-before-completion 정책을 위한 deprecated compatibility shim입니다.
 
-strict 실행에서는 Finish / Handoff로 넘어가기 전에 Verify stage를 닫는 마지막 게이트입니다.
+활성 strict evidence 정책은 `completion-verifier`, `scripts/verification-plane.mjs`, `scripts/lib/verification-plane.mjs`, `scripts/runtime-state.mjs assess-completion`이 소유합니다. 새 workflow default는 이 skill을 직접 insert하지 않습니다.
+
+## 사용 시점
+- 오래된 bundle이 `verification-evidence-gate`를 명시 호출할 때만 legacy compatibility로 사용합니다.
+- 현재 Verify stage assembly는 `completion-verifier`를 우선 사용합니다.
 
 ## 입력
 - `analysisContext.signals.workflowProfile`
@@ -19,43 +23,12 @@ strict 실행에서는 Finish / Handoff로 넘어가기 전에 Verify stage를 �
 - 최신 verifier verdict artifact, 특히 `verdict.workflowEvidence.*`
 
 ## 게이트 로직
-1. strict가 아니면 통과 메모만 남깁니다.
-2. strict면 최신 증거가 필요합니다.
-   - 우선 기준: `completionStatus.verificationState == passed`
-   - 가능하면 `completionStatus.evidenceFresh == true`여야 합니다.
-   - verifier artifact가 있으면 자유형 notes보다 그 구조화된 증거를 우선합니다.
-   - 대체 기준: 이번 실행의 contract 기반 검증 명령 성공 증거가 notes에 남아 있음
-3. 즉시 차단:
-   - `verificationState == failed`
-   - `verificationState == indeterminate`
-   - `contractApplicable == true`이고 `requiredChecks.missing`이 비어 있지 않음
-   - `verificationMode == contract`이고 `requiredChecks.missing`이 비어 있지 않음
-   - contract 기반 판정인데 `evidenceFresh == false`
-   - 완료 주장이 `should pass`, `looks good`, `likely fixed`, `seems resolved`, `done pending verification` 같은 낙관 표현에만 기대고 있음
-   - 코드 변경 마감인데 `verdict.workflowEvidence.warnings`가 비어 있지 않음
-   - bounded-direct 마감인데 verifier artifact의 `workflowEvidence.detected == false`
-   - `completionStatus.score.verdict != done`
-   - `completionStatus.score.current < completionStatus.score.target`
-   - `completionStatus.score.unmetChecklistItems > 0`
-   - `completionStatus.score.blockingDefects > 0`
-   - in-scope `REQ-*`에 대해 `completionStatus.traceability.uncoveredRequirements`가 비어 있지 않음
-   - critical `SCN-*`에 대해 `completionStatus.traceability.scenariosMissingEvidence`가 비어 있지 않음
-   - user-facing finish claim에서 `completionStatus.traceability.uatReady == false`
-   - frontend/UI evidence가 필요한데 visual, accessibility, performance evidence가 없거나 실패했거나 stale이거나 setup에 막힘
-   - contract 또는 scenario policy가 open -> act -> mutate -> persist -> recover depth를 요구하는데 frontend critical `SCN-*` row가 smoke-only evidence에 의존함
-   - 최신 증거 없음
+1. 호출되면 현재 `completion-verifier` output에 정책 판단을 위임합니다.
+2. `completionStatus.gateDecision != pass`, stale evidence, missing required checks는 blocked로 취급합니다.
+3. 이 shim에서 독립적인 completion authority decision을 만들지 않습니다.
 
 ## 규칙
 - 차단 상태이면 성공/완료를 선언하지 않습니다.
+- completion-verifier, verification-plane, runtime-state 정책을 여기서 반복하지 않습니다.
 - 오래된 결과나 추정은 인정하지 않습니다.
-- 가능하면 contract에 정의된 artifact 경로를 우선 신뢰합니다.
-- 구조화된 `verdict.workflowEvidence` 경고가 있으면 수동 해석보다 그것을 우선 신뢰합니다.
-- contract 기반 검증에서 최신 증거 없는 pass 상태는 여전히 차단합니다.
-- 최신 증거 부족을 낙관적 표현으로 완화하지 않습니다. 증거가 없으면 그대로 차단입니다.
-- 코드 변경 마감에서 review/finish workflow evidence가 없으면 이를 선택적 메타데이터가 아니라 차단 사유로 봅니다.
-- document-trace run에서 requirement 또는 critical-scenario evidence 누락도 verification evidence 누락입니다.
-- frontend/UI run에서 required visual, accessibility, performance evidence 누락은 verification evidence 누락입니다. required가 아닌 frontend evidence는 block으로 강제하지 말고 `not_required`로 기록합니다.
-- setup gap은 required frontend evidence 생산을 막을 때만 blocking입니다. 그 외에는 warning 또는 follow-up note로 기록합니다.
-- `uat_ready`와 `uat_complete`를 분리합니다. automation evidence를 human UAT completion으로 취급하지 않습니다.
-- score 기반 루프에서는 미완료 score verdict도 최신 검증 증거 부족으로 취급합니다.
-- review finding이 있으면 `QA_REPORT.md`에 각 의미 있는 항목의 결정이 `accepted`, `challenged`, `deferred`, `needs_clarification` 중 하나로 기록되기 전까지 remediation loop를 닫지 않습니다.
+- 이 gate는 policy-only이며 source code를 수정하지 않습니다.

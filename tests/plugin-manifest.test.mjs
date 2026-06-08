@@ -14,19 +14,13 @@ const manifests = [
   '.codex-plugin/marketplace.json',
 ];
 
-const publicRuntimeSkills = [
-  'product-orchestrator',
-  'moonshot-orchestrator',
-  'moonshot-phase-runner',
-  'moonshot-plan-writer',
-  'commit-moonshot',
-  'session-logger',
-];
-
 const loadJson = async (relativePath) => {
   const content = await readFile(fromRoot(relativePath), 'utf8');
   return JSON.parse(content);
 };
+
+const runtimeSurface = await loadJson('package/runtime-surface.json');
+const publicRuntimeSkills = runtimeSurface.publicRuntimeSkills;
 
 const assertExistingPath = (relativePath, label) => {
   assert.equal(existsSync(fromRoot(relativePath)), true, `${label} should exist: ${relativePath}`);
@@ -40,8 +34,14 @@ test('plugin manifests are valid JSON files', async () => {
 });
 
 test('runtime plugin manifests point at package materializers and canonical inputs', async () => {
-  const runtimeSurface = await loadJson('package/runtime-surface.json');
   assert.deepEqual(runtimeSurface.publicRuntimeSkills, publicRuntimeSkills);
+  assert.deepEqual(publicRuntimeSkills, [
+    'product-orchestrator',
+    'moonshot-orchestrator',
+    'moonshot-phase-runner',
+    'commit-moonshot',
+    'session-logger',
+  ]);
   assert.equal(runtimeSurface.serviceProfileSkillPolicy, 'allowlist_only');
   assert.equal(runtimeSurface.commonPayloadSkillPolicy, 'preserve_all_canonical_skills');
 

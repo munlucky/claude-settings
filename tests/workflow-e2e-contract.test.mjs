@@ -392,3 +392,14 @@ test('phase runner surfaces describe phase-status as projection only', async () 
     }
   }
 });
+
+test('strict workflow overlay keeps workspace isolation but does not insert deprecated evidence gate', async () => {
+  const bundles = await readRoot('rules', 'workflow-bundles.yaml');
+  const workflow = await readRoot('rules', 'workflow.md');
+  const strictBlock = bundles.match(/strict:\n([\s\S]*?)\n\nstageOrder:/)?.[1] || '';
+
+  assert.match(strictBlock, /workspace-isolation-gate/);
+  assert.doesNotMatch(strictBlock, /verification-evidence-gate/);
+  assert.match(workflow, /completion-verifier[\s\S]*runtime-state authority/);
+  assert.doesNotMatch(workflow, /Strict runs pass `workspace-isolation-gate` before implementation and `verification-evidence-gate`/);
+});
