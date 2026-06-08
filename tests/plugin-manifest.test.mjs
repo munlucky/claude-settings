@@ -18,6 +18,7 @@ const publicRuntimeSkills = [
   'product-orchestrator',
   'moonshot-orchestrator',
   'moonshot-phase-runner',
+  'moonshot-plan-writer',
   'commit-moonshot',
   'session-logger',
 ];

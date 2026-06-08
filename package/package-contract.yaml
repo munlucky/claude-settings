@@ -140,6 +140,7 @@ skillExposure:
     - product-orchestrator
     - moonshot-orchestrator
     - moonshot-phase-runner
+    - moonshot-plan-writer
     - commit-moonshot
     - session-logger
   internalSkillPolicy: "Internal and optional skills remain canonical source under skills/ and are preserved in the shared Moonshot Relay common payload, but Claude/Codex runtime profile discovery must not materialize them under profile-local skills/."

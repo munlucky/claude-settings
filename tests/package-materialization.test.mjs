@@ -42,6 +42,7 @@ const publicRuntimeSkills = [
   'commit-moonshot',
   'moonshot-orchestrator',
   'moonshot-phase-runner',
+  'moonshot-plan-writer',
   'product-orchestrator',
   'session-logger',
 ];
@@ -127,6 +128,7 @@ const requiredClaudeConcreteFiles = [
   'skills/commit-moonshot/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
@@ -137,6 +139,7 @@ const requiredConcreteCodexFiles = [
   'skills/commit-moonshot/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
@@ -303,7 +306,6 @@ test('Claude package payload includes only service profile entries', async () =>
   }
   assert.deepEqual(await listSkillDirs(profileRoot), publicRuntimeSkills);
   assert.equal(existsSync(path.join(profileRoot, 'skills', 'completion-verifier', 'SKILL.md')), false);
-  assert.equal(existsSync(path.join(profileRoot, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
 
   for (const entry of ['bin', 'tools', 'schemas', 'scripts', 'templates', 'docs/public']) {
     assert.equal(existsSync(path.join(profileRoot, entry)), false, `${entry} should live in the common Moonshot Relay payload`);
@@ -321,7 +323,6 @@ test('Codex package payload includes only service profile entries', async () => 
   }
   assert.deepEqual(await listSkillDirs(profileRoot), publicRuntimeSkills);
   assert.equal(existsSync(path.join(profileRoot, 'skills', 'completion-verifier', 'SKILL.md')), false);
-  assert.equal(existsSync(path.join(profileRoot, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
 
   for (const entry of ['bin', 'tools', 'schemas', 'scripts', 'templates', 'docs/public']) {
     assert.equal(existsSync(path.join(profileRoot, entry)), false, `${entry} should live in the common Moonshot Relay payload`);
@@ -512,8 +513,8 @@ test('account-root installer merges shared directories without deleting unrelate
   })}\n`);
   await mkdir(path.join(claudeHome, 'skills', 'external-skill'), { recursive: true });
   await writeFile(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
-  await mkdir(path.join(claudeHome, 'skills', 'moonshot-plan-writer'), { recursive: true });
-  await writeFile(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md'), 'stale managed\n');
+  await mkdir(path.join(claudeHome, 'skills', 'completion-verifier'), { recursive: true });
+  await writeFile(path.join(claudeHome, 'skills', 'completion-verifier', 'SKILL.md'), 'stale managed\n');
   await mkdir(path.join(claudeHome, 'sessions'), { recursive: true });
   await writeFile(path.join(claudeHome, 'sessions', 'preserve.json'), '{}\n');
   await writeFile(path.join(claudeHome, 'memory.json'), '{}\n');
@@ -526,7 +527,7 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(claudeHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
     copied: [
       { path: 'scripts/old-managed.mjs' },
-      { path: 'skills/moonshot-plan-writer/SKILL.md' },
+      { path: 'skills/completion-verifier/SKILL.md' },
     ],
   })}\n`);
 
@@ -553,9 +554,11 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
-    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(claudeHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills', 'completion-verifier', 'SKILL.md')), true);

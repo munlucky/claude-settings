@@ -4,7 +4,7 @@
 
 The default mode is account-root installation into the shared Moonshot Relay home (`~/.moonshot-relay`) plus the local Claude/Codex homes (`~/.claude`, `~/.codex`).
 
-The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex profile-local `skills/` discovery is intentionally smaller and is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-orchestrator`, `moonshot-phase-runner`, `commit-moonshot`, and `session-logger`. Reinstalling prunes previously managed internal skills that are no longer in the profile payload, while unrelated user-installed skills remain preserved.
+The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex profile-local `skills/` discovery is intentionally smaller and is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, and `session-logger`. Reinstalling prunes previously managed internal skills that are no longer in the profile payload, while unrelated user-installed skills remain preserved.
 
 Shared runtime references must resolve through `MOONSHOT_RELAY_HOME`. In `cmd.exe` this is `%MOONSHOT_RELAY_HOME%`, in PowerShell it is `$env:MOONSHOT_RELAY_HOME`, and in bash/zsh it is `${MOONSHOT_RELAY_HOME}`. If the variable is unset, installers and skills use the account default `~/.moonshot-relay`.
 

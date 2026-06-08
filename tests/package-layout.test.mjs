@@ -268,6 +268,7 @@ test('package contract declares required source payload entries and generated-st
     'product-orchestrator',
     'moonshot-orchestrator',
     'moonshot-phase-runner',
+    'moonshot-plan-writer',
     'commit-moonshot',
     'session-logger',
   ]) {
