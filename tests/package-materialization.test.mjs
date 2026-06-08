@@ -124,6 +124,7 @@ const requiredClaudeConcreteFiles = [
   'skills/commit-moonshot/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
@@ -134,6 +135,7 @@ const requiredConcreteCodexFiles = [
   'skills/commit-moonshot/SKILL.md',
   'skills/moonshot-orchestrator/SKILL.md',
   'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
   'agents/phase-attempt-agent.md',
@@ -548,8 +550,8 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
-    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
-    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);

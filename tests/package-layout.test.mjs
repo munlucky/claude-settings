@@ -262,7 +262,7 @@ test('package contract declares required source payload entries and generated-st
   for (const publicSkill of runtimeSurface.publicRuntimeSkills) {
     assert.match(contract, new RegExp(publicSkill));
   }
-  assert.doesNotMatch(contract.match(/publicRuntimeSkills:[\s\S]*?commonPayloadSkillPolicy:/)?.[0] || '', /moonshot-plan-writer/);
+  assert.match(contract.match(/publicRuntimeSkills:[\s\S]*?internalSkillPolicy:/)?.[0] || '', /moonshot-plan-writer/);
   assert.match(contract, /commonPayloadSkillPolicy: preserve_all_canonical_skills/);
   assert.match(contract, /serviceProfileSkillPolicy: allowlist_only/);
   assert.match(contract, /managedSkillPrunePolicy: prune_previously_managed_profile_skills_absent_from_current_payload_preserve_external/);

@@ -38,7 +38,7 @@ acceptedDirectives:
     implementedIn:
       - 04-prompt-gate-surface-v1.md
   - id: D7
-    directive: Reduce profile-local public runtime skills to five and keep moonshot-plan-writer in common/internal payload only.
+    directive: Keep profile-local public runtime skills at six and preserve moonshot-plan-writer as a user-invoked planning entrypoint.
     implementedIn:
       - 05-runtime-skill-package-surface-v1.md
   - id: D8

@@ -39,6 +39,7 @@ test('runtime plugin manifests point at package materializers and canonical inpu
     'product-orchestrator',
     'moonshot-orchestrator',
     'moonshot-phase-runner',
+    'moonshot-plan-writer',
     'commit-moonshot',
     'session-logger',
   ]);

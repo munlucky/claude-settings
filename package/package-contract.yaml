@@ -136,12 +136,13 @@ skillExposure:
   commonPayloadSkillPolicy: preserve_all_canonical_skills
   serviceProfileSkillPolicy: allowlist_only
   managedSkillPrunePolicy: prune_previously_managed_profile_skills_absent_from_current_payload_preserve_external
-    publicRuntimeSkills:
-      - product-orchestrator
-      - moonshot-orchestrator
-      - moonshot-phase-runner
-      - commit-moonshot
-      - session-logger
+  publicRuntimeSkills:
+    - product-orchestrator
+    - moonshot-orchestrator
+    - moonshot-phase-runner
+    - moonshot-plan-writer
+    - commit-moonshot
+    - session-logger
   internalSkillPolicy: "Internal and optional skills remain canonical source under skills/ and are preserved in the shared Moonshot Relay common payload, but Claude/Codex runtime profile discovery must not materialize them under profile-local skills/."
   bootstrapSkillPolicy: "moonshot-relay-setup may be installed by Agent Skills CLI from repository source, but it is not part of the Claude/Codex account-root runtime profile public discovery surface."
 

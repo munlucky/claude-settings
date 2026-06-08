@@ -14,7 +14,7 @@ In scope:
 - Classify runtime-state open/setup failures into typed degraded reasons.
 - Split observability team metrics into decision fields and reporting fields while preserving compatibility.
 - Collapse duplicated prompt evidence gates into completion-verifier/runtime-state authority.
-- Reduce profile-local runtime skill discovery from 6 skills to 5 skills.
+- Keep profile-local runtime skill discovery at 6 skills, including the user-invoked `moonshot-plan-writer` entrypoint.
 - Define final validation readiness across required verification planes.
 
 Out of scope:
@@ -76,7 +76,7 @@ Execute phases sequentially. The write sets intentionally overlap in shared test
 | HC-02 | Runtime-state degraded status must distinguish permission, sandbox, lock, schema, path, and native-module failures. | 02 | Classifier tests and `runtime-state status --json` typed degraded evidence. |
 | HC-03 | Observability metrics must separate decision-critical fields from reporting fields without breaking existing contract consumers. | 03 | Contract tests preserve `requiredFields` and assert `decisionFields`/`reportingFields`. |
 | HC-04 | Evidence gate prompt duplication must move under completion-verifier and runtime-state authority. | 04 | Workflow bundle tests show no active `verification-evidence-gate` strict insert. |
-| HC-05 | Runtime profile discovery must expose 5 public skills and keep plan-writer only in common/internal payload. | 05 | Package/plugin/materialization tests compare against `package/runtime-surface.json`. |
+| HC-05 | Runtime profile discovery must expose 6 public skills and keep `moonshot-plan-writer` in Claude/Codex profile payloads. | 05 | Package/plugin/materialization tests compare against `package/runtime-surface.json`. |
 | HC-06 | Final closeout must map evidence to unit, package, eval, installer, browser, security, and quality planes. | 06 | Final validation matrix and completion authority checks are recorded. |
 
 ## Plan Quality Loop
@@ -108,7 +108,7 @@ planQualityReview:
 - `phase-status.yaml` remains a cursor/projection, not completion authority.
 - `completion-verifier` output shape remains compatible.
 - `observability.teamMetrics.requiredFields` remains available as deprecated compatibility.
-- `moonshot-plan-writer` remains in common/internal payload but leaves profile-local public discovery.
+- `moonshot-plan-writer` remains in Claude/Codex profile-local public discovery because it is a user-invoked planning entrypoint.
 - Live account-root install sync is not performed by this plan.
 
 ## Final Validation

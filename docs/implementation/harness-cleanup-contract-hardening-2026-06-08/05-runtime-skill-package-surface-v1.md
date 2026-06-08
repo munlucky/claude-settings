@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Make `package/runtime-surface.json` the single authority for profile-local runtime skill discovery and reduce the public runtime surface from 6 skills to 5.
+Make `package/runtime-surface.json` the single authority for profile-local runtime skill discovery and preserve the 6 public runtime skills, including `moonshot-plan-writer`.
 
 ## Execution Metadata
 
@@ -58,7 +58,7 @@ liveMutationPolicy: dry_run_and_temp_home_only
 - `commit-moonshot`
 - `session-logger`
 
-`moonshot-plan-writer` must be removed from profile-local public runtime discovery and retained in common/internal payload.
+`moonshot-plan-writer` must remain in profile-local public runtime discovery because users invoke it directly for plan package creation.
 
 Update:
 
@@ -77,16 +77,16 @@ Test refactor:
 
 Profile/package behavior:
 
-- Claude/Codex profile payloads include only the 5 public skills.
+- Claude/Codex profile payloads include the 6 public skills.
 - Common payload includes `skills/moonshot-plan-writer/SKILL.md`.
 - Plugin manifests refer to `package/runtime-surface.json` and do not own a divergent 6-skill allowlist.
 - `.claude-plugin/marketplace.json` and `.codex-plugin/marketplace.json` remain unchanged unless they contain their own skill allowlist.
 
 ## Acceptance Criteria
 
-- `moonshot-plan-writer` is absent from profile-local public discovery.
-- `moonshot-plan-writer` remains available in common/internal payload.
-- Public docs describe 5 public runtime skills.
+- `moonshot-plan-writer` remains present in profile-local public discovery.
+- `moonshot-plan-writer` also remains available in common/internal payload.
+- Public docs describe 6 public runtime skills.
 - No hardcoded test allowlist drifts from `package/runtime-surface.json`.
 - Live account-root is not mutated.
 

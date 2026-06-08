@@ -30,7 +30,7 @@ liveMutationPolicy: no_live_account_root_mutation
 | Plane | Commands / Evidence | Acceptance |
 |---|---|---|
 | unit | `npm test` plus focused phase suites | 0 fail |
-| package | `npm run test:package`; `node package/build-package.mjs --runtime all --dry-run --json` | profile exposes 5 skills; common payload preserves full skills |
+| package | `npm run test:package`; `node package/build-package.mjs --runtime all --dry-run --json` | profile exposes 6 skills including `moonshot-plan-writer`; common payload preserves full skills |
 | eval | `npm run test:eval` | no worsened regression |
 | installer | `node scripts/install-account-root-harness.mjs --runtime all --dry-run --json`; temp-home smoke if needed | no live account-root mutation |
 | browser | not applicable unless UI/browser surface changes | explicit not-applicable evidence |
@@ -58,7 +58,7 @@ node scripts/runtime-state.mjs assess-completion --json
 
 Expected final states:
 
-- `moonshot-plan-writer` appears only as common/internal support, not public runtime discovery.
+- `moonshot-plan-writer` appears in Claude/Codex public runtime discovery and common/internal payload.
 - Direct active Git child-process calls appear only in `scripts/lib/git-safe.mjs` outside `archive/**`.
 - `runtime-state.mjs status --json` returns `available` or a typed degraded payload with `recoveryHint`.
 - `runtime-state.mjs assess-completion --json` returns `accepted` before whole-plan clean completion is claimed.
