@@ -28,7 +28,7 @@ const requiredTemplates = [
 ];
 
 const requiredTemplateSignals = new Map([
-  ['ARCHITECTURE_BRIEF.md', ['# Architecture Brief', '## Success Criteria', 'Verification Signal']],
+  ['ARCHITECTURE_BRIEF.md', ['# Architecture Brief', '## Knowledge Context', 'knowledgeAnchors', '## Success Criteria', 'Verification Signal']],
   ['REQUIREMENT_INVENTORY.md', ['# Requirement Inventory', 'REQ-001', 'Verification Signal']],
   ['ASR_CATALOG.md', ['# Architecturally Significant Requirement Catalog', 'ASR-001', 'QAS-001']],
   ['QUALITY_ATTRIBUTE_SCENARIOS.md', ['# Quality Attribute Scenarios', 'QAS-001', 'Response Measure']],

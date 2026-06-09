@@ -51,18 +51,19 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 
 1. Classify the mode.
 2. Build `projectKnowledgeContext` with the current stage and preserve status-only metadata.
-3. Build compact architecture context through `scripts/architecture-context-build.mjs` when available.
-4. Normalize requirements into `REQUIREMENT_INVENTORY.md`.
-5. Extract ASRs and quality attribute scenarios.
-6. Build domain model, capability map, and data/integration flow.
-7. For Brownfield/Hybrid work, recover current architecture and existing constraints from repository evidence.
-8. Generate at least two architecture options for non-trivial work.
-9. Run trade-off review.
-10. Write C4 model and ADRs for significant decisions.
-11. Produce `SPEC.md` or `SPEC_DELTA.md`.
-12. Produce `PLAN.md` and `TRACEABILITY_MATRIX.md`.
-13. Run `architecture-gate-reviewer` and write `ARCHITECTURE_REVIEW.md`.
-14. Hand off to `moonshot-plan-writer`, `moonshot-orchestrator`, or `moonshot-phase-runner` with explicit owned/read-only/staged paths and verification signals.
+3. Inspect project-local `knowledgeAnchors` declared in the target root `AGENTS.md`, if present. Select only anchors whose `mustConsultFor`/keywords match the current architecture scope, then read the smallest referenced agreement documents needed for evidence.
+4. Build compact architecture context through `scripts/architecture-context-build.mjs` when available.
+5. Normalize requirements into `REQUIREMENT_INVENTORY.md`.
+6. Extract ASRs and quality attribute scenarios.
+7. Build domain model, capability map, and data/integration flow.
+8. For Brownfield/Hybrid work, recover current architecture and existing constraints from repository evidence.
+9. Generate at least two architecture options for non-trivial work.
+10. Run trade-off review.
+11. Write C4 model and ADRs for significant decisions.
+12. Produce `SPEC.md` or `SPEC_DELTA.md`.
+13. Produce `PLAN.md` and `TRACEABILITY_MATRIX.md`.
+14. Run `architecture-gate-reviewer` and write `ARCHITECTURE_REVIEW.md`.
+15. Hand off to `moonshot-plan-writer`, `moonshot-orchestrator`, or `moonshot-phase-runner` with explicit owned/read-only/staged paths and verification signals.
 
 ## Internal Stage Owners
 
@@ -94,6 +95,7 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 
 - Mode classification and input source path.
 - Architecture package path.
+- Project-local knowledge anchor disposition: consulted anchor IDs, consumed agreement paths, and skipped-anchor rationale when anchors were present.
 - Requirement inventory and ASR catalog.
 - Domain/capability model or Brownfield current architecture evidence.
 - Option comparison and trade-off review.

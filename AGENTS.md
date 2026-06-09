@@ -26,6 +26,27 @@ documentPaths:
   guidelinesRoot: "docs/public/guidelines"
 ```
 
+## Project-Local Knowledge Anchors
+
+Projects may declare always-loaded `knowledgeAnchors` in their own `AGENTS.md` to expose durable agreement packages without copying full document bodies into every prompt.
+
+A knowledge anchor is generic metadata, not a Moonshot Relay source entry:
+
+```yaml
+knowledgeAnchors:
+  - id: "PROJECT-SCOPED-STABLE-ID"
+    title: "Short human-readable title"
+    package: ".moonshot-relay/docs/agreements/<package-id>"
+    startHere: ".moonshot-relay/docs/agreements/<package-id>/ARCHITECTURE_BRIEF.md"
+    index: ".moonshot-relay/docs/agreements/README.md"
+    keywords: ["domain", "component", "workflow"]
+    summary: "Compact prompt-safe synopsis."
+    mustConsultFor:
+      - "architecture/planning/implementation condition"
+```
+
+`moonshot-architecture` must inspect applicable project-local anchors before architecture package generation, record which anchors were consulted, and load only the specific referenced agreement documents required for the current scope.
+
 ## References
 
 - `README.md`

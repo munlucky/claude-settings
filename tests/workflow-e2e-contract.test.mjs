@@ -80,6 +80,19 @@ test('service profile TOCs carry current boundary metadata', async () => {
   }
 });
 
+test('installed profile TOCs set up project-local knowledge anchor discovery', async () => {
+  for (const file of [
+    'AGENTS.md',
+    'package/profile-templates/claude/.claude/CLAUDE.md',
+    'package/profile-templates/codex/.codex/AGENTS.md',
+  ]) {
+    const content = await readRoot(file);
+    assert.match(content, /Project-Local Knowledge Anchors/, `${file} anchor section`);
+    assert.match(content, /knowledgeAnchors/, `${file} anchor key`);
+    assert.match(content, /moonshot-architecture/, `${file} architecture skill setup`);
+  }
+});
+
 test('service profile TOCs point at their own profile entries and common home docs', async () => {
   const claude = await readRoot('package/profile-templates/claude/.claude/CLAUDE.md');
   const codex = await readRoot('package/profile-templates/codex/.codex/AGENTS.md');

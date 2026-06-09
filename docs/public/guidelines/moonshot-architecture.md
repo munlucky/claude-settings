@@ -10,6 +10,16 @@ Brownfield work must recover current architecture from repository evidence befor
 
 Build phase prompts with `scripts/architecture-context-build.mjs`. The prompt-facing authority is `architectureContext.promptBlock`; project knowledge may be attached only as `projectKnowledgeContext.promptBlock` plus status metadata.
 
+## Project-Local Knowledge Anchors
+
+When the target project's root `AGENTS.md` declares `knowledgeAnchors`, `moonshot-architecture` checks applicable anchors after mode classification and before package generation.
+
+Anchors are always-loaded discovery metadata. They should carry only a compact summary, package path, start document, and applicability conditions. Detailed agreement documents are loaded selectively for the current architecture scope.
+
+Architecture packages record consulted anchor IDs, consumed agreement paths, and the reason any discovered anchor was not used in `ARCHITECTURE_BRIEF.md` or `ARCHITECTURE_REVIEW.md`.
+
+Do not put project-specific anchors in Moonshot Relay canonical source. Project-specific anchors live in the consuming project's `AGENTS.md` and `.moonshot-relay/docs/agreements/**`.
+
 If the project knowledge namespace is unavailable in advisory mode, keep the architecture context status degraded and continue with explicit evidence. Do not silently invent missing current-state facts.
 
 Architecture packages must not include raw MemoryGraph records, KG dumps, ontology dumps, runtime logs, transcripts, browser scrapes, or secret-like strings.

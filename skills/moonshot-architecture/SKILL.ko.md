@@ -51,18 +51,19 @@ triggers:
 
 1. 모드를 분류합니다.
 2. 현재 stage에 맞는 `projectKnowledgeContext`를 만들고 status metadata만 보존합니다.
-3. 가능하면 `scripts/architecture-context-build.mjs`로 compact architecture context를 만듭니다.
-4. 요구사항을 `REQUIREMENT_INVENTORY.md`로 정규화합니다.
-5. ASR과 품질속성 시나리오를 추출합니다.
-6. 도메인 모델, capability map, data/integration flow를 만듭니다.
-7. Brownfield/Hybrid 작업에서는 repository evidence로 현재 아키텍처와 기존 제약을 복구합니다.
-8. non-trivial 작업에는 최소 2개 architecture option을 만듭니다.
-9. trade-off review를 실행합니다.
-10. 중요한 결정은 C4 model과 ADR로 기록합니다.
-11. `SPEC.md` 또는 `SPEC_DELTA.md`를 만듭니다.
-12. `PLAN.md`와 `TRACEABILITY_MATRIX.md`를 만듭니다.
-13. `architecture-gate-reviewer`를 실행하고 `ARCHITECTURE_REVIEW.md`를 작성합니다.
-14. owned/read-only/staged paths와 verification signal을 명시해 `moonshot-plan-writer`, `moonshot-orchestrator`, `moonshot-phase-runner` 중 적절한 대상으로 handoff합니다.
+3. 대상 root `AGENTS.md`에 project-local `knowledgeAnchors`가 있으면 확인합니다. 현재 architecture scope에 맞는 anchor만 선택하고, 필요한 최소 agreement 문서만 evidence로 읽습니다.
+4. 가능하면 `scripts/architecture-context-build.mjs`로 compact architecture context를 만듭니다.
+5. 요구사항을 `REQUIREMENT_INVENTORY.md`로 정규화합니다.
+6. ASR과 품질속성 시나리오를 추출합니다.
+7. 도메인 모델, capability map, data/integration flow를 만듭니다.
+8. Brownfield/Hybrid 작업에서는 repository evidence로 현재 아키텍처와 기존 제약을 복구합니다.
+9. non-trivial 작업에는 최소 2개 architecture option을 만듭니다.
+10. trade-off review를 실행합니다.
+11. 중요한 결정은 C4 model과 ADR로 기록합니다.
+12. `SPEC.md` 또는 `SPEC_DELTA.md`를 만듭니다.
+13. `PLAN.md`와 `TRACEABILITY_MATRIX.md`를 만듭니다.
+14. `architecture-gate-reviewer`를 실행하고 `ARCHITECTURE_REVIEW.md`를 작성합니다.
+15. owned/read-only/staged paths와 verification signal을 명시해 `moonshot-plan-writer`, `moonshot-orchestrator`, `moonshot-phase-runner` 중 적절한 대상으로 handoff합니다.
 
 ## Internal Stage Owners
 
@@ -94,6 +95,7 @@ triggers:
 
 - mode classification과 input source path.
 - architecture package path.
+- project-local knowledge anchor 처리 결과: anchor가 있으면 consulted anchor ID, 사용한 agreement path, skipped anchor 이유.
 - requirement inventory와 ASR catalog.
 - domain/capability model 또는 Brownfield current architecture evidence.
 - architecture option comparison과 trade-off review.

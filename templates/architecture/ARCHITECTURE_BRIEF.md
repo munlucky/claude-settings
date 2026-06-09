@@ -24,6 +24,12 @@ Describe the product, system, or bounded architecture decision this package cove
 - Out of scope:
 - Read-only inputs:
 
+## Knowledge Context
+
+| Anchor ID | Source | Use Decision | Consumed Paths |
+|---|---|---|---|
+|  | `AGENTS.md knowledgeAnchors` | consulted / skipped / unavailable |  |
+
 ## Success Criteria
 
 | ID | Criterion | Verification Signal |

@@ -31,6 +31,8 @@ test('moonshot-architecture skill contracts exist and define the public entrypoi
     assert.match(text, /TRACEABILITY_MATRIX\.md/);
     assert.match(text, /runtime-state\.mjs assess-completion/);
     assert.match(text, /raw MemoryGraph|raw MemoryGraph record/);
+    assert.match(text, /knowledgeAnchors/);
+    assert.match(text, /consulted anchor|consulted anchor ID|consulted anchor IDs|anchor ID/i);
   }
 });
 

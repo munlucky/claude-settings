@@ -7,6 +7,23 @@ Run the active knowledge audit after structural doc or knowledge layout changes 
 Do not package sqlite databases, logs, traces, cache directories, or verdict JSON as source knowledge.
 Migration work should report source path, destination path, preservation behavior, and cleanup boundaries.
 
+## Project-Local Knowledge Anchors
+
+Projects may expose reusable local knowledge through `knowledgeAnchors` in their root `AGENTS.md`.
+
+Anchors should be compact and prompt-safe:
+
+- stable `id`
+- `package` path under the project agreement repository
+- `startHere` path for the smallest useful entry document
+- optional `index` path
+- keywords and a compact summary
+- `mustConsultFor` conditions that tell orchestration skills when the anchor applies
+
+Anchors are always-loaded discovery metadata, not permission to inline every referenced document. Workflows should read the anchor first, then load only the specific agreement documents needed for the current task.
+
+Do not put project-specific anchors in Moonshot Relay canonical source. Keep them in the consuming project's `AGENTS.md` and agreement repository.
+
 ## Memory Promotion Ledger
 
 Reusable knowledge promotion is a controlled workflow, not a side effect of project refresh or phase completion.

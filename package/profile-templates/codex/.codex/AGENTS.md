@@ -22,6 +22,14 @@ documentPaths:
   guidelinesRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines"
 ```
 
+## Project-Local Knowledge Anchors
+
+When a workspace root `AGENTS.md` declares `knowledgeAnchors`, treat those anchors as always-loaded discovery metadata for Moonshot work in that workspace.
+
+`moonshot-architecture` must consult applicable anchors before producing or updating an architecture package. Load only the referenced agreement documents needed for the current scope, and record consulted anchor IDs and consumed paths in the architecture package.
+
+Project-specific anchor entries belong in the consuming project, not in this installed runtime profile.
+
 ## References
 
 - `@verification.contract.yaml`
