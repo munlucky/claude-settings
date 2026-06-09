@@ -94,6 +94,7 @@ const requiredCommonPayloadFiles = [
   'tools/browserd/package.json',
   'tools/browserd/server.mjs',
   'scripts/install-browser-runtime.sh',
+  'scripts/install-project-runtime-bridge.mjs',
   'scripts/architecture-context-build.mjs',
   'scripts/architecture-artifact-validate.mjs',
   'scripts/memorygraph-mcp-wrapper.js',
@@ -429,6 +430,7 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('skills/completion-verifier/SKILL.md'));
   assert.ok(plannedFrom.includes('scripts/browser-flow-runner.mjs'));
   assert.ok(plannedFrom.includes('scripts/prepare-phase-runner-state.mjs'));
+  assert.ok(plannedFrom.includes('scripts/install-project-runtime-bridge.mjs'));
   assert.ok(plannedTo.includes('package/moonshot-relay/profile/skills/completion-verifier/SKILL.md'));
   assert.ok(plannedTo.includes('package/codex/profile/.codex/skills/moonshot-phase-runner/SKILL.md'));
   assert.equal(plannedTo.includes('package/codex/profile/.codex/skills/completion-verifier/SKILL.md'), false);

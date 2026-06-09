@@ -6,6 +6,7 @@ Moonshot Relay runtime-state support is an authoritative local control plane for
 
 - DB path authority is `scripts/lib/runtime-state-db-path.mjs`.
 - Default DB location is `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/knowledge/runtime-state.sqlite` through the existing runtime-state root resolver.
+- Project-local bridge entrypoints may set `MOONSHOT_RELAY_STATE_ROOT` to `.moonshot-relay/state` before delegating to the shared runtime. This keeps runtime-state authority available in sandboxed downstream workspaces while still resolving executable code through `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}`.
 - Legacy `PHASE_RUNTIME_DB` remains a direct DB override for tests and controlled smoke checks.
 - Generated sqlite files, WAL, and SHM files are runtime state and must not enter package payloads.
 
@@ -48,6 +49,7 @@ This keeps account-root/package rollout conservative while still requiring insta
 | materialized package | set `MOONSHOT_RELAY_HOME=<package>/moonshot-relay/profile`, then run `<package>/moonshot-relay/profile/scripts/runtime-state.mjs status --json` | `available` |
 | temp account-root install | set `MOONSHOT_RELAY_HOME=<temp-moonshot-home>`, then run `<temp-moonshot-home>/scripts/runtime-state.mjs status --json` with temp Claude/Codex homes | `available` |
 | live account-root install | installed `~/.moonshot-relay/scripts/runtime-state.mjs status --json` after explicit adoption approval | `available` |
+| project-local bridge | `moonshot-relay bridge --target <project>`, then run `<project>/scripts/runtime-state.mjs status --json` | `available` with DB under `<project>/.moonshot-relay/state` |
 
 Missing native dependencies must return typed degradation such as `missing_native_module`.
 Typed degradation is useful negative-path evidence, but it blocks authority claims and rollout success on supported targets.

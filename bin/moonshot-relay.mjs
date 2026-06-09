@@ -8,10 +8,12 @@ import { fileURLToPath } from 'node:url';
 const binPath = fileURLToPath(import.meta.url);
 const repoRoot = path.dirname(path.dirname(binPath));
 const installer = path.join(repoRoot, 'scripts', 'install-account-root-harness.mjs');
+const bridgeInstaller = path.join(repoRoot, 'scripts', 'install-project-runtime-bridge.mjs');
 
 const usage = `Usage:
   moonshot-relay [install] [--dry-run] [--json] [--no-backup]
   moonshot-relay install [--runtime all|claude|codex] [--moonshot-home <dir>] [--claude-home <dir>] [--codex-home <dir>]
+  moonshot-relay bridge [--target <project-root>] [--plan-package docs/implementation/<slug>] [--dry-run] [--json]
 
 Runs the Moonshot Relay account-root installer from the current package source.`;
 
@@ -27,25 +29,29 @@ if (args[0] && !args[0].startsWith('-')) {
   command = args.shift();
 }
 
-if (command !== 'install') {
+if (!['install', 'bridge'].includes(command)) {
   console.error(`Unknown command: ${command}\n${usage}`);
   process.exit(1);
 }
 
-if (!existsSync(installer)) {
-  console.error(`Moonshot Relay installer not found: ${installer}`);
+const selectedInstaller = command === 'bridge' ? bridgeInstaller : installer;
+
+if (!existsSync(selectedInstaller)) {
+  console.error(`Moonshot Relay installer not found: ${selectedInstaller}`);
   process.exit(1);
 }
 
-const installerArgs = [
-  installer,
-  '--runtime',
-  'all',
-  '--source-root',
-  repoRoot,
-  '--remove-legacy-harness-core',
-  ...args,
-];
+const installerArgs = command === 'bridge'
+  ? [selectedInstaller, ...args]
+  : [
+      selectedInstaller,
+      '--runtime',
+      'all',
+      '--source-root',
+      repoRoot,
+      '--remove-legacy-harness-core',
+      ...args,
+    ];
 
 const result = spawnSync(process.execPath, installerArgs, {
   cwd: repoRoot,

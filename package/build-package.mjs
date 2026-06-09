@@ -52,6 +52,7 @@ const runtimeSpecs = {
       'scripts/install-account-root-harness.mjs',
       'scripts/install-browser-runtime.mjs',
       'scripts/install-browser-runtime.sh',
+      'scripts/install-project-runtime-bridge.mjs',
       'scripts/knowledge-context-build.mjs',
       'scripts/knowledge-improvement-lifecycle.mjs',
       'scripts/knowledge-records.mjs',

@@ -16,6 +16,14 @@ The installer must not treat `.claude/skills`, `.claude/agents`, `.claude/script
 
 Project-local installs are compatibility output. Run `bash install-claude.sh --project` from supported macOS/Git Bash shells to materialize them into the current repository. In WSL/Linux bash environments where `install-claude.sh` reports `unsupported shell: Linux`, use `node bin/moonshot-relay.mjs install --runtime all` or `node scripts/install-account-root-harness.mjs --runtime all`.
 
+Project-local runtime bridges are explicit downstream adoption output. Run this from a repository that needs local phase-runner entrypoints:
+
+```sh
+moonshot-relay bridge --target . --plan-package docs/implementation/<plan-slug>
+```
+
+The bridge writes thin project-local entrypoints for `scripts/runtime-state.mjs`, `scripts/prepare-phase-runner-state.mjs`, `scripts/knowledge-context-build.mjs`, and `tools/sandbox/policy.mjs`. Each entrypoint delegates to `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}` and defaults `MOONSHOT_RELAY_STATE_ROOT` to `.moonshot-relay/state`, so sandboxed project runs do not need to write into the account-root state directory. It also writes `verification.contract.yaml` and `.moonshot-relay/.gitignore`. When `--plan-package` is provided, the bridge adds `.gitignore` exceptions for that slugged `docs/implementation/<plan-slug>` package so plan, QA, scorecard, and handoff evidence can be tracked intentionally.
+
 GitHub-based `npx` can run the same account-root installer without a source checkout:
 
 ```sh
@@ -71,6 +79,8 @@ Do not claim `release-protected` from `.github/` files without GitHub settings/A
 ## Expected Dry-Run Signal
 
 The default dry run should show `mode: account-root-direct` and target `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. A project dry run should show that the installer would create or update the downstream `.claude/` profile while preserving protected project-local files such as `PROJECT.md`, local settings, custom files, and environment files.
+
+A bridge dry run should show only project-local bridge files and optional `.gitignore` plan-package exceptions. It must not copy shared runtime source, `node_modules`, generated state, or sqlite files into the downstream project.
 
 ## Rollout Smoke Levels
 
