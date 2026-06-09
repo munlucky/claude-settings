@@ -54,6 +54,9 @@ test('architecture-context-build emits greenfield architecture context pack', ()
   assert.ok(context.requiredArtifacts.includes('ARCHITECTURE_REVIEW.md'));
   assert.ok(context.internalStageOwners.includes('asr-extractor'));
   assert.ok(context.internalStageOwners.includes('architecture-gate-reviewer'));
+  assert.equal(context.knowledgeResolveCommand, 'scripts/architecture-knowledge-resolve.mjs');
+  assert.equal(context.contractBindCommand, 'scripts/architecture-contract-bind.mjs');
+  assert.equal(context.handoffBuildCommand, 'scripts/architecture-handoff-build.mjs');
   assert.match(context.promptBlock, /^## Moonshot Architecture Context/m);
 });
 

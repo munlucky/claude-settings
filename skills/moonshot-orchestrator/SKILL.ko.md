@@ -30,6 +30,7 @@ architecture-derived 작업에서는 전체 architecture package가 아니라 bo
 - 사용자 요청 범위를 넓히지 않습니다.
 - non-trivial code change에서 code review를 건너뛰지 않습니다.
 - stale, missing, smoke-only evidence로 완료를 주장하지 않습니다.
+- blocked `ARCHITECTURE_HANDOFF`를 실행하지 않고, ready handoff를 우회해 raw KG, ontology, MemoryGraph, log, transcript, browser scrape payload를 attempt prompt에 복사하지 않습니다.
 - runtime-state completion authority를 사용할 수 있으면 chat output, markdown report, phase status, verifier JSON만으로 clean finish를 주장하지 않습니다. `scripts/runtime-state.mjs assess-completion`의 accepted DB decision이 필요합니다.
 - approval-required operation 또는 protected runtime path 인근 write 전에는 `tools/sandbox/policy.mjs check --json`으로 operation을 분류합니다. unauthorized blocking event가 있으면 clean completion을 멈춥니다.
 - 무관한 파일을 변경하거나 사용자 변경을 되돌리지 않습니다.
@@ -38,11 +39,13 @@ architecture-derived 작업에서는 전체 architecture package가 아니라 bo
 
 1. 작업이 bounded이고 충분한 컨텍스트가 있는지 확인합니다.
 2. architecture package가 제공되면 선택된 `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `PLAN.md`, `ARCHITECTURE_REVIEW.md` path를 소비하고 chat-only summary로 대체하지 않습니다.
-3. 편집 전에 local contract와 영향 파일을 확인합니다.
-4. 선택된 ADR과 traceability slice를 만족하는 가장 작은 구현을 적용합니다.
-5. 집중 검증을 실행하고 실패를 implementation, verification, environment, contract로 분류합니다.
-6. review feedback을 반영한 뒤, 변경으로 무효화된 검증만 다시 실행합니다.
-7. 변경 파일, 검증, 잔여 리스크를 보고하고 phase-style finalization claim은 하지 않습니다.
+3. `ARCHITECTURE_HANDOFF.json`이 제공되면 `status=ready`를 요구하고, `promptBlock`과 compact metadata만 소비하며, `ownedPaths`, `readOnlyPaths`, `verificationSignalIds`를 scope와 verification guard로 사용합니다.
+4. 편집 전에 local contract와 영향 파일을 확인합니다.
+5. 선택된 ADR, traceability slice, handoff constraints를 만족하는 가장 작은 구현을 적용합니다.
+6. 집중 검증을 실행하고 실패를 implementation, verification, environment, contract로 분류합니다.
+7. contract violation이 있으면 `scripts/architecture-feedback-render.mjs`로 read-before-retry와 required-action feedback을 생성합니다.
+8. review feedback을 반영한 뒤, 변경으로 무효화된 검증만 다시 실행합니다.
+9. 변경 파일, 검증, 잔여 리스크를 보고하고 phase-style finalization claim은 하지 않습니다.
 
 ## Required Evidence
 

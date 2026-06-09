@@ -21,6 +21,7 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 
 - Do not mark a plan execution-ready when phase docs, dependencies, owned paths, or acceptance evidence are missing.
 - Do not accept an architecture package handoff without `TRACEABILITY_MATRIX.md`, selected `ADR/*.md`, `ARCHITECTURE_REVIEW.md`, and task owner/verification signal mapping.
+- Do not mark architecture-heavy plans execution-ready when a required `ARCHITECTURE_CONTRACT_SLICE` or `ARCHITECTURE_HANDOFF` is missing, blocked, or lacks verification signals.
 - Do not allow child planning agents to mutate the source plan directly. Parent session owns final plan edits.
 - Do not put live `.claude/**` adoption into early redesign phases unless the plan explicitly reserves a controlled adoption phase.
 - Do not hide unresolved ambiguity. Record it as an assumption, blocker, or user question.
@@ -32,8 +33,9 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 3. Draft or refresh `00-master-plan-*.md` and root `NN-*.md` phase files.
 4. Add phase execution metadata: dependencies, conflicts, owned paths, staged paths, adoption targets, read-only paths, and live mutation policy.
 5. When an architecture package is present, map selected ADRs and `TRACEABILITY_MATRIX.md` rows into phase scope, owners, verification signals, and acceptance evidence.
-6. Run independent review loops as sidecar review, then parent applies accepted edits.
-7. Prepare execution only after readiness, traceability, and phase boundary checks are satisfied.
+6. When `ARCHITECTURE_HANDOFF.json` is present, carry only its path, status, selected decision IDs, selected constraint IDs, owned/read-only/staged paths, verification signal IDs, and blocking preconditions into phase metadata.
+7. Run independent review loops as sidecar review, then parent applies accepted edits.
+8. Prepare execution only after readiness, traceability, handoff status, and phase boundary checks are satisfied.
 
 ## Required Evidence
 
@@ -41,6 +43,7 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 - Phase inventory with dependencies and owned paths.
 - Acceptance criteria mapped to phase evidence.
 - Architecture package path inventory when used, including traceability matrix, selected ADRs, architecture review, and any Brownfield evidence boundary.
+- Architecture handoff path and status when used, including selected constraints, selected verification signals, and blocked/ready decision.
 - Review loop findings and accepted changes.
 - Explicit adoption strategy for all harness, skill, and agent surfaces.
 

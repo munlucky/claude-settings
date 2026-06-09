@@ -19,6 +19,11 @@ const requiredSchemas = [
   'c4-model.schema.json',
   'traceability-matrix.schema.json',
   'architecture-context-pack.schema.json',
+  'applicable-knowledge-slice.schema.json',
+  'architecture-contract-slice.schema.json',
+  'architecture-handoff.schema.json',
+  'architecture-feedback.schema.json',
+  'kg-relation-vocabulary.schema.json',
 ];
 
 const runValidator = (mode, fixtureName) => {

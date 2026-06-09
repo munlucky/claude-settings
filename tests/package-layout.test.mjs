@@ -112,6 +112,9 @@ test('canonical source and package boundary directories exist', () => {
 
 const trackedImplementationPlanAllowlist = [
   /^docs\/implementation\/[^/]+\/[0-9][0-9]-[^/]+\.md$/,
+  /^docs\/implementation\/[^/]+\/(?:ARCHITECTURE_REVIEW|ASR_CATALOG|CURRENT_ARCHITECTURE|IMPACT_MAP|PLAN|PRD_FIT_GAP|REQUIREMENT_INVENTORY|SPEC_DELTA|TRACEABILITY_MATRIX|TRADEOFF_ANALYSIS)\.md$/,
+  /^docs\/implementation\/[^/]+\/ADR\/[^/]+\.md$/,
+  /^docs\/implementation\/[^/]+\/C4\/[^/]+\.md$/,
   /^docs\/implementation\/[^/]+\/planning-loop\/[^/]+\.(?:ya?ml|json|md)$/,
 ];
 
@@ -208,6 +211,9 @@ test('package contract declares required source payload entries and generated-st
     'templates/**',
     'docs/public/**',
     'docs/implementation/*/[0-9][0-9]-*.md',
+    'source_local_architecture_package_artifacts_not_installed',
+    'source_local_architecture_decision_records_not_installed',
+    'source_local_architecture_c4_artifacts_not_installed',
     'docs/implementation/*/planning-loop/**',
     'source_local_implementation_phase_plans_not_installed',
     'tests/package-layout.test.mjs',
@@ -215,6 +221,10 @@ test('package contract declares required source payload entries and generated-st
     'package/build-package.mjs',
     'scripts/install-account-root-harness.mjs',
     'scripts/browser-flow-runner.mjs',
+    'scripts/architecture-knowledge-resolve.mjs',
+    'scripts/architecture-contract-bind.mjs',
+    'scripts/architecture-handoff-build.mjs',
+    'scripts/architecture-feedback-render.mjs',
     'scripts/commit-moonshot-closeout-event.mjs',
     'package/runtime-surface.json',
     'commonSupportScripts:',
@@ -290,11 +300,17 @@ test('package scripts define the active gate without archive discovery', async (
     'tests/moonshot-architecture-skill-surface.test.mjs',
     'tests/moonshot-architecture-template-contract.test.mjs',
     'tests/moonshot-architecture-schema-contract.test.mjs',
+    'tests/architecture-knowledge-schema-contract.test.mjs',
+    'tests/architecture-knowledge-resolve.test.mjs',
+    'tests/architecture-contract-bind.test.mjs',
+    'tests/architecture-handoff-build.test.mjs',
+    'tests/architecture-feedback-render.test.mjs',
     'tests/moonshot-architecture-internal-skills.test.mjs',
     'tests/moonshot-architecture-context-pack.test.mjs',
     'tests/moonshot-architecture-greenfield-flow.test.mjs',
     'tests/moonshot-architecture-brownfield-flow.test.mjs',
     'tests/moonshot-architecture-handoff-contract.test.mjs',
+    'tests/moonshot-architecture-contract-binding-flow.test.mjs',
     'tests/moonshot-architecture-regression.test.mjs',
   ];
 

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/architecture-contract-slice.schema.json",
+  "title": "Architecture Contract Slice",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "owner", "status", "requirements", "asrs", "decisions", "constraints", "enforcementRules", "verificationSignals", "pathBoundaries", "handoffRecommendation", "warnings", "errors"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "ARCHITECTURE_CONTRACT_SLICE" },
+    "owner": { "const": "moonshot-architecture" },
+    "status": { "$ref": "#/$defs/status" },
+    "sourceKnowledgeSliceRef": { "type": "string" },
+    "requirements": { "type": "array", "items": { "$ref": "#/$defs/contractItem" } },
+    "asrs": { "type": "array", "items": { "$ref": "#/$defs/contractItem" } },
+    "decisions": { "type": "array", "items": { "$ref": "#/$defs/contractItem" } },
+    "constraints": { "type": "array", "items": { "$ref": "#/$defs/constraint" } },
+    "enforcementRules": { "type": "array", "items": { "$ref": "#/$defs/enforcementRule" } },
+    "verificationSignals": { "type": "array", "items": { "$ref": "#/$defs/verificationSignal" } },
+    "pathBoundaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ownedPaths", "readOnlyPaths", "stagedPaths"],
+      "properties": {
+        "ownedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "readOnlyPaths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "stagedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "handoffRecommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "reason", "blocking"],
+      "properties": {
+        "target": { "enum": ["moonshot-orchestrator", "moonshot-phase-runner", "none"] },
+        "reason": { "$ref": "#/$defs/safeText" },
+        "blocking": { "type": "boolean" }
+      }
+    },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/message" } }
+  },
+  "not": { "$ref": "#/$defs/unsafeRawPayloadFields" },
+  "$defs": {
+    "status": { "enum": ["ready", "degraded", "blocked", "failed"] },
+    "severity": { "enum": ["info", "warning", "blocking", "critical"] },
+    "id": { "type": "string", "minLength": 1 },
+    "safeText": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "contractItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "sourceRef"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "sourceRef": { "type": "string", "minLength": 1 },
+        "derivedFrom": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
+      },
+      "not": { "$ref": "#/$defs/unsafeRawPayloadFields" }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "sourceRef", "severity", "appliesTo"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "sourceRef": { "type": "string", "minLength": 1 },
+        "derivedFrom": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "severity": { "$ref": "#/$defs/severity" },
+        "appliesTo": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "enforcedBy": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true }
+      },
+      "not": { "$ref": "#/$defs/unsafeRawPayloadFields" }
+    },
+    "enforcementRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "commandOrPolicyRef", "sourceRef"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "commandOrPolicyRef": { "type": "string", "minLength": 1 },
+        "sourceRef": { "type": "string", "minLength": 1 }
+      }
+    },
+    "verificationSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "commandOrEvidence", "sourceRef"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "commandOrEvidence": { "type": "string", "minLength": 1 },
+        "sourceRef": { "type": "string", "minLength": 1 }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/id" },
+        "message": { "$ref": "#/$defs/safeText" },
+        "severity": { "$ref": "#/$defs/severity" }
+      }
+    },
+    "unsafeRawPayloadFields": {
+      "anyOf": [
+        { "required": ["rawGraph"] },
+        { "required": ["rawOntology"] },
+        { "required": ["rawMemoryGraph"] },
+        { "required": ["transcriptBody"] },
+        { "required": ["runtimeLogBody"] },
+        { "required": ["browserScrapeBody"] },
+        { "required": ["secret"] }
+      ]
+    }
+  }
+}

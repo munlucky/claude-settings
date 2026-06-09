@@ -1,0 +1,41 @@
+schemaVersion: 1
+reviewedPackageRoot: "docs/implementation/architecture-knowledge-contract-binding-2026-06-09"
+reviewType: "parent-applied-independent-loop"
+iteration: 1
+reviewAgents:
+  - role: "writer-agent"
+    status: "completed"
+    agentId: "019eacca-870d-7f60-bacc-5d184dcbf9a9"
+    decision: "draft-package-shape"
+  - role: "independent-review-agent"
+    status: "completed"
+    agentId: "019eacce-dbe7-7dc2-ac5e-cf16705a5982"
+    decision: "blocking-revise-before-execution-ready"
+blockingFindings:
+  - id: "AKCB-REVIEW-B01"
+    finding: "Declared planning-loop review artifact was absent."
+    accepted: true
+    appliedChange: "Added planning-loop/plan-quality-review-iter-01.yaml."
+  - id: "AKCB-REVIEW-B02"
+    finding: "Readiness status was ahead of actual evidence while reviewArtifacts was empty."
+    accepted: true
+    appliedChange: "Recorded review artifact and updated master status to phase-runner-execution-ready."
+acceptedChanges:
+  - "Kept this package separate from harness-control-plane-modernization Phase 09; this package owns architecture binding, not memory promotion."
+  - "Kept live .claude, .codex, .moonshot-relay, and account-root mutation out of phases 01-08."
+  - "Kept package/runtime-surface.json read-only for public discovery; common payload may expand only through package contract and materialization tests."
+  - "Preserved raw KG, ontology, MemoryGraph, log, transcript, browser scrape, prompt archive, and secret-like payload bans across schemas, handoff, feedback, review prompts, and runtime manifests."
+  - "Restricted generated ARCHITECTURE_CONTRACT_SLICE.json and ARCHITECTURE_HANDOFF.json output to execution roots or explicit test fixtures unless a later phase owns another target path."
+  - "Added runtime-surface invariant evidence for Phases 06 and 07."
+rejectedChanges:
+  - change: "Treat this package as a replacement for harness-control-plane Phase 09."
+    reason: "Existing Phase 09 owns evidence-gated memory promotion, rollback, stale warnings, and raw record copy bans."
+  - change: "Dispatch to phase-runner before recording review artifact."
+    reason: "Plan-package-contract requires a review artifact or degraded-review note."
+  - change: "Use this plan to perform live account-root/profile adoption."
+    reason: "Live adoption is an explicit later closeout and is outside this source-first plan."
+remainingAmbiguity:
+  - "If a future implementation wants to commit ARCHITECTURE_CONTRACT_SLICE.json or ARCHITECTURE_HANDOFF.json outside fixtures, that phase must explicitly own the target source path."
+  - "Phase 08 whole-plan `runtime-state assess-completion` remains optional unless the user explicitly requests whole-plan execution closeout."
+  - "Package/common payload expansion in Phase 07 does not imply live account-root sync; that remains a later operational step."
+status: "reviewed-and-parent-applied"

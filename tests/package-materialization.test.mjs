@@ -96,6 +96,10 @@ const requiredCommonPayloadFiles = [
   'scripts/install-browser-runtime.sh',
   'scripts/install-project-runtime-bridge.mjs',
   'scripts/architecture-context-build.mjs',
+  'scripts/architecture-knowledge-resolve.mjs',
+  'scripts/architecture-contract-bind.mjs',
+  'scripts/architecture-handoff-build.mjs',
+  'scripts/architecture-feedback-render.mjs',
   'scripts/architecture-artifact-validate.mjs',
   'scripts/memorygraph-mcp-wrapper.js',
   'scripts/memorygraph-mcp-wrapper.mjs',
@@ -431,6 +435,10 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('scripts/browser-flow-runner.mjs'));
   assert.ok(plannedFrom.includes('scripts/prepare-phase-runner-state.mjs'));
   assert.ok(plannedFrom.includes('scripts/install-project-runtime-bridge.mjs'));
+  assert.ok(plannedFrom.includes('scripts/architecture-knowledge-resolve.mjs'));
+  assert.ok(plannedFrom.includes('scripts/architecture-contract-bind.mjs'));
+  assert.ok(plannedFrom.includes('scripts/architecture-handoff-build.mjs'));
+  assert.ok(plannedFrom.includes('scripts/architecture-feedback-render.mjs'));
   assert.ok(plannedTo.includes('package/moonshot-relay/profile/skills/completion-verifier/SKILL.md'));
   assert.ok(plannedTo.includes('package/codex/profile/.codex/skills/moonshot-phase-runner/SKILL.md'));
   assert.equal(plannedTo.includes('package/codex/profile/.codex/skills/completion-verifier/SKILL.md'), false);

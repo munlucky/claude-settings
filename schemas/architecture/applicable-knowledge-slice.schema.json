@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/applicable-knowledge-slice.schema.json",
+  "title": "Applicable Knowledge Slice",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "owner", "mode", "stage", "status", "selected", "skipped", "blocking", "warnings", "errors"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "APPLICABLE_KNOWLEDGE_SLICE" },
+    "owner": { "const": "moonshot-architecture" },
+    "mode": { "$ref": "#/$defs/mode" },
+    "stage": { "$ref": "#/$defs/stage" },
+    "status": { "$ref": "#/$defs/status" },
+    "objectiveRef": { "type": "string" },
+    "blocking": { "type": "boolean" },
+    "selected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyAnchors", "semanticFacts", "kgRelations", "ontologyConstraints", "knowledgeAnchors"],
+      "properties": {
+        "policyAnchors": { "type": "array", "items": { "$ref": "#/$defs/selectedRecord" } },
+        "semanticFacts": { "type": "array", "items": { "$ref": "#/$defs/selectedRecord" } },
+        "kgRelations": { "type": "array", "items": { "$ref": "#/$defs/selectedRelation" } },
+        "ontologyConstraints": { "type": "array", "items": { "$ref": "#/$defs/selectedConstraint" } },
+        "knowledgeAnchors": { "type": "array", "items": { "$ref": "#/$defs/selectedAnchor" } }
+      }
+    },
+    "skipped": { "type": "array", "items": { "$ref": "#/$defs/skipRecord" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+    "metadata": { "$ref": "#/$defs/metadata" }
+  },
+  "not": { "$ref": "#/$defs/unsafeRawPayloadFields" },
+  "$defs": {
+    "status": { "enum": ["ready", "degraded", "blocked", "failed"] },
+    "severity": { "enum": ["info", "warning", "blocking", "critical"] },
+    "mode": { "enum": ["greenfield_prd", "brownfield_codebase", "hybrid_prd_plus_existing_repo", "meta_harness_design"] },
+    "stage": { "enum": ["intake", "plan", "execute", "verify", "finish"] },
+    "recordType": { "enum": ["policy_anchor", "semantic_fact", "kg_relation", "ontology_constraint", "knowledge_anchor"] },
+    "trustTier": { "enum": ["authoritative", "verified", "derived", "quarantined", "degraded"] },
+    "id": { "type": "string", "minLength": 1 },
+    "safeText": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "sourceRef": { "type": "string", "minLength": 1 },
+    "selectedRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "summary", "sourceRef", "trustTier", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "$ref": "#/$defs/recordType" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "sourceRef": { "$ref": "#/$defs/sourceRef" },
+        "provenanceRef": { "type": "string" },
+        "trustTier": { "$ref": "#/$defs/trustTier" },
+        "status": { "type": "string", "minLength": 1 },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/stage" }, "uniqueItems": true },
+        "severity": { "$ref": "#/$defs/severity" }
+      },
+      "not": { "$ref": "#/$defs/unsafeRawPayloadFields" }
+    },
+    "selectedRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "summary", "sourceRef", "trustTier", "status", "from", "to", "relation"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "kg_relation" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "sourceRef": { "$ref": "#/$defs/sourceRef" },
+        "provenanceRef": { "type": "string" },
+        "trustTier": { "$ref": "#/$defs/trustTier" },
+        "status": { "type": "string", "minLength": 1 },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/stage" }, "uniqueItems": true },
+        "severity": { "$ref": "#/$defs/severity" },
+        "from": { "$ref": "#/$defs/id" },
+        "to": { "$ref": "#/$defs/id" },
+        "relation": {
+          "enum": [
+            "requires",
+            "has_scenario",
+            "derives_asr",
+            "constrained_by",
+            "decides",
+            "supersedes",
+            "conflicts_with",
+            "applies_to",
+            "implemented_by",
+            "owns_path",
+            "read_only_path",
+            "staged_path",
+            "enforced_by",
+            "verified_by",
+            "produces_evidence",
+            "consults_anchor",
+            "handoff_requires"
+          ]
+        }
+      },
+      "not": { "$ref": "#/$defs/unsafeRawPayloadFields" }
+    },
+    "selectedConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "summary", "sourceRef", "trustTier", "status", "appliesTo"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "ontology_constraint" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "sourceRef": { "$ref": "#/$defs/sourceRef" },
+        "provenanceRef": { "type": "string" },
+        "trustTier": { "$ref": "#/$defs/trustTier" },
+        "status": { "type": "string", "minLength": 1 },
+        "stages": { "type": "array", "items": { "$ref": "#/$defs/stage" }, "uniqueItems": true },
+        "severity": { "$ref": "#/$defs/severity" },
+        "appliesTo": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "enforcedBy": { "type": "string" }
+      },
+      "not": { "$ref": "#/$defs/unsafeRawPayloadFields" }
+    },
+    "selectedAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "reason", "package", "consumedPaths"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "status": { "enum": ["consulted", "skipped", "unavailable"] },
+        "reason": { "$ref": "#/$defs/safeText" },
+        "package": { "type": "string", "minLength": 1 },
+        "startHere": { "type": "string" },
+        "consumedPaths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "not": { "$ref": "#/$defs/unsafeRawPayloadFields" }
+    },
+    "skipRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "reason"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "$ref": "#/$defs/recordType" },
+        "reason": { "$ref": "#/$defs/safeText" },
+        "sourceRef": { "type": "string" }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/id" },
+        "message": { "$ref": "#/$defs/safeText" },
+        "severity": { "$ref": "#/$defs/severity" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "knowledgeRevision": { "type": "string" },
+        "contextPackRef": { "type": "string" },
+        "unavailableCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "unsafeRawPayloadFields": {
+      "anyOf": [
+        { "required": ["rawGraph"] },
+        { "required": ["rawOntology"] },
+        { "required": ["rawMemoryGraph"] },
+        { "required": ["transcriptBody"] },
+        { "required": ["runtimeLogBody"] },
+        { "required": ["browserScrapeBody"] },
+        { "required": ["secret"] }
+      ]
+    }
+  }
+}

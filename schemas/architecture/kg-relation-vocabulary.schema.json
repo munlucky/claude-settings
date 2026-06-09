@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/kg-relation-vocabulary.schema.json",
+  "title": "KG Relation Vocabulary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifactId", "owner", "entityKinds", "relations"],
+  "properties": {
+    "artifactId": { "const": "KG_RELATION_VOCABULARY" },
+    "owner": { "const": "moonshot-architecture" },
+    "entityKinds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entityKind" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "relations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/relation" },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "entityKind": {
+      "enum": [
+        "Requirement",
+        "Scenario",
+        "BehaviorScenario",
+        "ASR",
+        "QualityScenario",
+        "ArchitectureDecision",
+        "Constraint",
+        "EnforcementRule",
+        "Component",
+        "Container",
+        "CodePath",
+        "VerificationSignal",
+        "Evidence",
+        "KnowledgeAnchor",
+        "HandoffContract"
+      ]
+    },
+    "relation": {
+      "enum": [
+        "requires",
+        "has_scenario",
+        "derives_asr",
+        "constrained_by",
+        "decides",
+        "supersedes",
+        "conflicts_with",
+        "applies_to",
+        "implemented_by",
+        "owns_path",
+        "read_only_path",
+        "staged_path",
+        "enforced_by",
+        "verified_by",
+        "produces_evidence",
+        "consults_anchor",
+        "handoff_requires"
+      ]
+    }
+  }
+}

@@ -177,6 +177,12 @@ requiredPayloadEntries:
       purpose: public_documentation
     - source: docs/implementation/*/[0-9][0-9]-*.md
       purpose: source_local_implementation_phase_plans_not_installed
+    - source: docs/implementation/*/{ARCHITECTURE_REVIEW,ASR_CATALOG,CURRENT_ARCHITECTURE,IMPACT_MAP,PLAN,PRD_FIT_GAP,REQUIREMENT_INVENTORY,SPEC_DELTA,TRACEABILITY_MATRIX,TRADEOFF_ANALYSIS}.md
+      purpose: source_local_architecture_package_artifacts_not_installed
+    - source: docs/implementation/*/ADR/*.md
+      purpose: source_local_architecture_decision_records_not_installed
+    - source: docs/implementation/*/C4/*.md
+      purpose: source_local_architecture_c4_artifacts_not_installed
     - source: docs/implementation/*/planning-loop/**
       purpose: source_local_plan_review_artifacts_not_installed
     - source: tests/package-layout.test.mjs
@@ -200,6 +206,14 @@ requiredPayloadEntries:
     entries:
       - source: scripts/architecture-context-build.mjs
         purpose: architecture_context_pack_builder
+      - source: scripts/architecture-knowledge-resolve.mjs
+        purpose: architecture_applicable_knowledge_slice_resolver
+      - source: scripts/architecture-contract-bind.mjs
+        purpose: architecture_contract_slice_binder
+      - source: scripts/architecture-handoff-build.mjs
+        purpose: architecture_handoff_prompt_builder
+      - source: scripts/architecture-feedback-render.mjs
+        purpose: architecture_contract_failure_feedback_renderer
       - source: scripts/awtl-memory-promotion.mjs
         purpose: memory_promotion_support
       - source: scripts/architecture-artifact-validate.mjs

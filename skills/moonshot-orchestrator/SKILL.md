@@ -30,6 +30,7 @@ For architecture-derived work, this means a bounded selected ADR and traceabilit
 - Do not broaden scope beyond the user request.
 - Do not skip code review for non-trivial code changes.
 - Do not claim completion with stale, missing, or smoke-only evidence.
+- Do not execute a blocked `ARCHITECTURE_HANDOFF`, and do not bypass a ready handoff by copying raw KG, ontology, MemoryGraph, log, transcript, or browser scrape payloads into the attempt prompt.
 - When runtime-state completion authority is available, do not claim clean finish from chat output, markdown reports, phase status, or verifier JSON alone. Require `scripts/runtime-state.mjs assess-completion` to produce an accepted DB decision.
 - Before approval-required operations or writes near protected runtime paths, classify the operation with `tools/sandbox/policy.mjs check --json`; unauthorized blocking events must stop clean completion.
 - Do not mutate unrelated files or revert user changes.
@@ -38,11 +39,13 @@ For architecture-derived work, this means a bounded selected ADR and traceabilit
 
 1. Confirm the task is bounded and has enough context.
 2. If an architecture package is supplied, consume selected `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `PLAN.md`, and `ARCHITECTURE_REVIEW.md` paths; do not replace them with chat-only summaries.
-3. Inspect local contracts and affected files before editing.
-4. Make the smallest implementation that satisfies the selected ADR and traceability slice.
-5. Run focused checks and classify failures as implementation, verification, environment, or contract.
-6. Apply review feedback, then rerun only the checks invalidated by the change.
-7. Close with changed files, verification, residual risk, and no phase-style finalization claims.
+3. If `ARCHITECTURE_HANDOFF.json` is supplied, require `status=ready`, consume only `promptBlock` and compact metadata, and use `ownedPaths`, `readOnlyPaths`, and `verificationSignalIds` as scope and verification guards.
+4. Inspect local contracts and affected files before editing.
+5. Make the smallest implementation that satisfies the selected ADR, traceability slice, and handoff constraints.
+6. Run focused checks and classify failures as implementation, verification, environment, or contract.
+7. On contract violation, use `scripts/architecture-feedback-render.mjs` to produce read-before-retry and required-action feedback.
+8. Apply review feedback, then rerun only the checks invalidated by the change.
+9. Close with changed files, verification, residual risk, and no phase-style finalization claims.
 
 ## Required Evidence
 

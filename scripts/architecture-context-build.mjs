@@ -226,6 +226,9 @@ export function buildArchitectureContext(options = {}) {
       'schemas/context-pack.schema.json',
     ],
     validator: 'scripts/architecture-artifact-validate.mjs',
+    knowledgeResolveCommand: 'scripts/architecture-knowledge-resolve.mjs',
+    contractBindCommand: 'scripts/architecture-contract-bind.mjs',
+    handoffBuildCommand: 'scripts/architecture-handoff-build.mjs',
     evidence: [
       {
         path: 'scripts/knowledge-context-build.mjs',
@@ -234,7 +237,13 @@ export function buildArchitectureContext(options = {}) {
     ],
     boundaries: {
       ownedPaths: ['scripts/architecture-context-build.mjs', 'tests/moonshot-architecture-context-pack.test.mjs'],
-      readOnlyPaths: ['scripts/knowledge-context-build.mjs', 'schemas/architecture/architecture-context-pack.schema.json'],
+      readOnlyPaths: [
+        'scripts/knowledge-context-build.mjs',
+        'schemas/architecture/architecture-context-pack.schema.json',
+        'scripts/architecture-knowledge-resolve.mjs',
+        'scripts/architecture-contract-bind.mjs',
+        'scripts/architecture-handoff-build.mjs',
+      ],
       stagedPaths: ['scripts/architecture-context-build.mjs', 'tests/moonshot-architecture-context-pack.test.mjs'],
     },
     staleWarnings: projectKnowledgeContext?.contextPack?.staleWarnings || [],

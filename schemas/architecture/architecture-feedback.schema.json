@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/architecture-feedback.schema.json",
+  "title": "Architecture Feedback",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "owner", "status", "violated", "evidence", "readBeforeRetry", "requiredActions", "verificationSignals"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "ARCHITECTURE_FEEDBACK" },
+    "owner": { "const": "moonshot-architecture" },
+    "status": { "$ref": "#/$defs/status" },
+    "sourceContractRef": { "type": "string" },
+    "sourceHandoffRef": { "type": "string" },
+    "violated": { "type": "array", "items": { "$ref": "#/$defs/violation" }, "minItems": 1 },
+    "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+    "readBeforeRetry": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "requiredActions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+    "verificationSignals": { "type": "array", "items": { "$ref": "#/$defs/verificationSignal" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/message" } }
+  },
+  "not": { "$ref": "#/$defs/unsafeRawPayloadFields" },
+  "$defs": {
+    "status": { "enum": ["ready", "degraded", "blocked", "failed"] },
+    "severity": { "enum": ["info", "warning", "blocking", "critical"] },
+    "id": { "type": "string", "minLength": 1 },
+    "violation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "severity", "summary"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRef", "summary"],
+      "properties": {
+        "sourceRef": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    },
+    "verificationSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "commandOrEvidence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "commandOrEvidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/id" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "severity": { "$ref": "#/$defs/severity" }
+      }
+    },
+    "unsafeRawPayloadFields": {
+      "anyOf": [
+        { "required": ["rawGraph"] },
+        { "required": ["rawOntology"] },
+        { "required": ["rawMemoryGraph"] },
+        { "required": ["transcriptBody"] },
+        { "required": ["runtimeLogBody"] },
+        { "required": ["browserScrapeBody"] },
+        { "required": ["secret"] }
+      ]
+    }
+  }
+}

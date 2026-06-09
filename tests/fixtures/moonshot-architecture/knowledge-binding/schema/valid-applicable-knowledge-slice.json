@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "APPLICABLE_KNOWLEDGE_SLICE",
+  "owner": "moonshot-architecture",
+  "mode": "brownfield_codebase",
+  "stage": "execute",
+  "status": "ready",
+  "selected": {
+    "policyAnchors": [],
+    "semanticFacts": [],
+    "kgRelations": [],
+    "ontologyConstraints": [],
+    "knowledgeAnchors": []
+  },
+  "skipped": [],
+  "blocking": false,
+  "warnings": [],
+  "errors": []
+}

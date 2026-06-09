@@ -34,8 +34,11 @@ test('plan writer requires architecture package traceability before execution re
     assert.match(content, /TRACEABILITY_MATRIX\.md/);
     assert.match(content, /ADR\/\*\.md/);
     assert.match(content, /ARCHITECTURE_REVIEW\.md/);
+    assert.match(content, /ARCHITECTURE_HANDOFF/);
+    assert.match(content, /selected constraint/i);
     assert.match(content, /owner/i);
     assert.match(content, /verification signal/i);
+    assert.match(content, /blocked/i);
     assert.match(content, /phase metadata/i);
   }
 });
@@ -53,6 +56,10 @@ test('orchestrator and phase runner consume selected architecture slices without
     assert.match(content, /ARCHITECTURE_REVIEW\.md/);
     assert.match(content, /selected ADR/i);
     assert.match(content, /traceability slice/i);
+    assert.match(content, /ARCHITECTURE_HANDOFF/);
+    assert.match(content, /promptBlock/);
+    assert.match(content, /architecture-feedback-render\.mjs/);
+    assert.match(content, /raw KG/i);
   }
 
   for (const file of [
@@ -66,7 +73,27 @@ test('orchestrator and phase runner consume selected architecture slices without
     assert.match(content, /traceability/i);
     assert.match(content, /owner/i);
     assert.match(content, /verification signal/i);
+    assert.match(content, /ARCHITECTURE_HANDOFF/);
+    assert.match(content, /architecture\.required/);
+    assert.match(content, /promptBlock/);
+    assert.match(content, /blocked handoff|blocked `ARCHITECTURE_HANDOFF`|blocked 상태/i);
     assert.match(content, /Phase 08 owns controlled adoption|controlled adoption phase/i);
+  }
+});
+
+test('architecture gate reviewer requires contract slices before handoff approval', async () => {
+  for (const file of [
+    ['skills', 'architecture-gate-reviewer', 'SKILL.md'],
+    ['skills', 'architecture-gate-reviewer', 'SKILL.ko.md'],
+  ]) {
+    const content = await readRoot(...file);
+
+    assert.match(content, /APPLICABLE_KNOWLEDGE_SLICE/);
+    assert.match(content, /ARCHITECTURE_CONTRACT_SLICE/);
+    assert.match(content, /ARCHITECTURE_HANDOFF/);
+    assert.match(content, /blocking ontology constraint/i);
+    assert.match(content, /enforcement rule/i);
+    assert.match(content, /verification signals/i);
   }
 });
 

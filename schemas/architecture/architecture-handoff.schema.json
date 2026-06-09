@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/architecture/architecture-handoff.schema.json",
+  "title": "Architecture Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "owner", "sourceContractRef", "handoffTarget", "status", "blocking", "promptBlock", "metadata", "readBeforeRetry"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "ARCHITECTURE_HANDOFF" },
+    "owner": { "const": "moonshot-architecture" },
+    "sourceContractRef": { "type": "string", "minLength": 1 },
+    "handoffTarget": { "enum": ["moonshot-orchestrator", "moonshot-phase-runner", "none"] },
+    "status": { "$ref": "#/$defs/status" },
+    "blocking": { "type": "boolean" },
+    "promptBlock": { "type": "string", "minLength": 1, "maxLength": 8000 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selectedDecisionIds", "selectedConstraintIds", "verificationSignalIds", "ownedPaths", "readOnlyPaths"],
+      "properties": {
+        "selectedDecisionIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "selectedConstraintIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "verificationSignalIds": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true },
+        "ownedPaths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "readOnlyPaths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "readBeforeRetry": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/message" } },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/message" } }
+  },
+  "not": { "$ref": "#/$defs/unsafeRawPayloadFields" },
+  "$defs": {
+    "status": { "enum": ["ready", "degraded", "blocked", "failed"] },
+    "severity": { "enum": ["info", "warning", "blocking", "critical"] },
+    "id": { "type": "string", "minLength": 1 },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "$ref": "#/$defs/id" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "severity": { "$ref": "#/$defs/severity" }
+      }
+    },
+    "unsafeRawPayloadFields": {
+      "anyOf": [
+        { "required": ["rawGraph"] },
+        { "required": ["rawOntology"] },
+        { "required": ["rawMemoryGraph"] },
+        { "required": ["transcriptBody"] },
+        { "required": ["runtimeLogBody"] },
+        { "required": ["browserScrapeBody"] },
+        { "required": ["secret"] }
+      ]
+    }
+  }
+}
