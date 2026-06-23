@@ -29,6 +29,7 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 - completed phase가 review finding, failed eval evidence, non-accepted completion decision을 만들었다는 이유만으로 whole plan을 멈추지 않습니다. blocker를 carry-forward evidence로 기록하고 final completion gate는 닫은 채 다음 independent actionable phase를 계속합니다.
 - prose만 보고 phase가 parallelizable하다고 가정하지 않습니다. Parallel execution에는 dependencies satisfied와 non-overlapping write sets가 검증된 plan graph metadata가 필요합니다.
 - staged redesign phase에서 live `.claude/**` 또는 `.codex/**` adoption target을 바로 쓰지 않습니다. controlled adoption phase가 소유해야 합니다.
+- source evidence에서 Operational Adoption Closeout gate가 통과하기 전에는 live account-root, `.claude/**`, `.codex/**` runtime profile을 변경하지 않습니다. live adoption은 harness-lab, package, eval, doctor, runtime-surface parity 증거 뒤의 별도 controlled step입니다.
 - `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, delegated-terminal adapter를 기본 실행 경로로 사용하지 않습니다. legacy/headless compatibility adapter로만 취급합니다.
 - in-session coordinator, fresh verifier evidence, scorecard, repository closeout evidence가 동의하기 전에는 final success를 반환하지 않습니다.
 
@@ -63,6 +64,8 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 14. phase-local closeout evidence로 phase가 완료되면 status를 reconcile해서 다음 incomplete phase가 active가 되게 한 뒤 상태를 보고합니다.
 15. closeout gate가 유용한 implementation evidence 이후 phase를 reject하면 `record-eval-result --regression-worsened true` 또는 blocking runtime event로 기록하고, finding을 carry-forward state에 남긴 뒤 다음 independent actionable phase를 계속합니다.
 16. 전체 plan directory가 구현될 때까지 다음 actionable phase로 계속 진행합니다. 최종 whole-plan completion claim만 `assess-completion`의 `accepted`가 필요합니다.
+17. live account-root/profile adoption 전에는 `references/closeout-gates.md`의 Operational Adoption Closeout gate를 실행합니다. 두 독립 audit, source doctor, skills audit, harness lab, package test, eval test, full test, package dry-run을 먼저 끝낸 뒤 live install과 installed-profile parity check로 넘어갑니다.
+18. adoption 뒤에는 installed doctor output과 profile surface parity를 확인한 다음 repository closeout을 진행합니다. Git closeout이 요청되면 `commit-moonshot`을 사용하고 staging, commit, push, `HEAD == origin/<branch>` 증거를 기록합니다.
 
 ## Required Evidence
 
@@ -73,6 +76,8 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 - plan graph validation evidence 또는 명시적 markdown-compatible mode evidence.
 - fresh verifier verdict와 scorecard agreement.
 - coordinator closeout evidence와 phase closeout result.
+- live account-root/profile sync 전 Operational Adoption Closeout evidence: independent completion audit, independent operational adoption audit, `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, `node package/build-package.mjs --runtime all --dry-run --json`.
+- live adoption을 수행한 경우의 증거: `node bin/moonshot-relay.mjs install --runtime all --json`, `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}` 아래 explicit `--repo-root`, `--lock`, `--runtime-surface` 경로로 실행한 installed doctor, installer JSON `profileSurfaceParity`, `profileSurfaceParity[runtime=codex].extraCanonicalCount=0`.
 - whole-plan success 전 Final Git Closeout evidence.
 
 ## References

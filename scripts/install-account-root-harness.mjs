@@ -779,12 +779,57 @@ const verifyRuntimeManifest = async (manifest) => {
   };
 };
 
+const readRuntimeSurface = async (sourceRepo) => {
+  const surface = await readJsonFile(path.join(sourceRepo, 'package', 'runtime-surface.json'));
+  if (!surface || !Array.isArray(surface.publicRuntimeSkills)) {
+    throw new Error('package/runtime-surface.json must define publicRuntimeSkills.');
+  }
+  return surface.publicRuntimeSkills;
+};
+
+const listDirectoryNames = async (root) => {
+  if (!await pathExists(root)) {
+    return [];
+  }
+  const entries = await readdir(root, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+};
+
+const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntimeSkills }) => {
+  if (!['claude', 'codex'].includes(manifest.runtime)) {
+    return null;
+  }
+
+  const installedSkillNames = await listDirectoryNames(path.join(manifest.targetRoot, 'skills'));
+  const canonicalSkillNames = new Set(await listDirectoryNames(path.join(sourceRepo, 'skills')));
+  const expected = [...publicRuntimeSkills].sort();
+  const expectedSet = new Set(expected);
+  const missingPublicSkills = expected.filter((skill) => !installedSkillNames.includes(skill));
+  const extraPublicSkills = installedSkillNames
+    .filter((skill) => expectedSet.has(skill) === false && canonicalSkillNames.has(skill) === false);
+  const extraCanonicalSkills = installedSkillNames
+    .filter((skill) => expectedSet.has(skill) === false && canonicalSkillNames.has(skill));
+
+  return {
+    runtime: manifest.runtime,
+    targetRoot: manifest.targetRoot,
+    expectedPublicSkills: expected,
+    installedPublicSkills: installedSkillNames.filter((skill) => expectedSet.has(skill)).sort(),
+    missingPublicSkills,
+    extraPublicSkills,
+    extraCanonicalSkills,
+    extraCanonicalCount: extraCanonicalSkills.length,
+    status: missingPublicSkills.length === 0 && extraCanonicalSkills.length === 0 ? 'pass' : 'blocked',
+  };
+};
+
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
   const sourceRepo = options.sourceRoot;
   const runtimes = options.runtime === 'all' ? ['claude', 'codex'] : [options.runtime];
   const installId = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
   const payloadRoot = await materializePayloads(sourceRepo);
+  const publicRuntimeSkills = await readRuntimeSurface(sourceRepo);
 
   try {
     const manifests = [];
@@ -796,6 +841,13 @@ const main = async () => {
     const verification = options.dryRun
       ? []
       : await Promise.all(manifests.map((manifest) => verifyRuntimeManifest(manifest)));
+    const profileSurfaceParity = options.dryRun
+      ? []
+      : (await Promise.all(manifests.map((manifest) => computeProfileSurfaceParity({
+        manifest,
+        sourceRepo,
+        publicRuntimeSkills,
+      })))).filter(Boolean);
 
     const result = {
       installId,
@@ -811,6 +863,7 @@ const main = async () => {
         backupCount: manifest.backups.length,
       })),
       verification,
+      profileSurfaceParity,
     };
 
     if (options.json) {

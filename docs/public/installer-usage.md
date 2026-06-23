@@ -47,6 +47,18 @@ For a source change:
 3. Run the package and migration checks from the active phase contract.
 4. Use `node bin/moonshot-relay.mjs install --dry-run --runtime all` to confirm account-root output. Use `bash install-claude.sh --project --dry-run` only from supported macOS/Git Bash shells when project-local compatibility output changes.
 
+For harness/package/profile changes that will be adopted into the live account root, use the Operational Adoption Closeout before the live install:
+
+1. Complete an independent completion audit and an independent operational adoption audit.
+2. Run `node scripts/doctor.mjs check --json`.
+3. Run `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`.
+4. Run `npm run test:lab`, `npm run test:package`, `npm run test:eval`, and `npm test`.
+5. Run `node package/build-package.mjs --runtime all --dry-run --json`.
+6. Run `node bin/moonshot-relay.mjs install --runtime all --json` only after the source gates pass.
+7. Require the installer JSON to include `installId`, `verification[]` with no missing or mismatch entries, and `profileSurfaceParity[]`; Codex managed canonical pruning must report `profileSurfaceParity[runtime=codex].extraCanonicalCount=0`.
+8. Run the installed doctor against the installed common payload, not the source checkout: `node "$env:MOONSHOT_RELAY_HOME\scripts\doctor.mjs" check --repo-root "$env:MOONSHOT_RELAY_HOME" --lock "$env:MOONSHOT_RELAY_HOME\skills.lock.json" --runtime-surface "$env:MOONSHOT_RELAY_HOME\package\runtime-surface.json" --json`.
+9. If commit/push closeout is requested, use `commit-moonshot` and verify `HEAD == origin/<branch>` after push.
+
 Do not edit generated package payloads or runtime state to make a test pass. Generated state includes logs, caches, traces, browser artifacts, sqlite files, memorygraph data, and verification verdict JSON.
 
 Durable source roadmaps that define harness direction or review contracts are tracked under `docs/public/roadmaps/`, including `docs/public/roadmaps/harness-control-plane-modernization/`. Source-local implementation plan packages may be tracked under `docs/implementation/<plan-slug>/` when they contain phase plans or planning-loop review artifacts. Runtime execution scratch under `docs/implementation/**/execution/`, `docs/implementation/**/close/`, and `docs/implementation/**/archive/` must remain untracked and excluded from package payloads.

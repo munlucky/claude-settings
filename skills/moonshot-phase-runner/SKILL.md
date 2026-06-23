@@ -29,6 +29,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Do not stop the whole plan just because a completed phase produced review findings, failed eval evidence, or a non-accepted completion decision. Record the blocker as carry-forward evidence, keep the final completion gate closed, and continue the next actionable independent phase.
 - Do not assume phases are parallelizable from prose alone. Parallel execution requires validated plan graph metadata with dependencies satisfied and non-overlapping write sets.
 - Do not write live `.claude/**` or `.codex/**` adoption targets from staged redesign phases. Phase 08 owns controlled adoption.
+- Do not mutate live account-root, `.claude/**`, or `.codex/**` runtime profiles until the Operational Adoption Closeout gate passes from source evidence. Live adoption is a separate controlled step after harness-lab, package, eval, doctor, and runtime-surface parity evidence.
 - Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
 - Do not return final success until the in-session coordinator, fresh verifier evidence, scorecard, and repository closeout evidence agree.
 
@@ -63,6 +64,8 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 14. If a phase completes with phase-local closeout evidence, reconcile runner state so the next incomplete phase becomes active before reporting status.
 15. If closeout gates reject a phase after useful implementation evidence was produced, record the rejection with `record-eval-result --regression-worsened true` or a blocking runtime event, keep the finding in carry-forward state, and continue to the next independent actionable phase.
 16. Continue to the next actionable phase until the whole plan directory is implemented. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
+17. Before any live account-root/profile adoption, run the Operational Adoption Closeout gate from `references/closeout-gates.md`: two independent audits, source doctor, skills audit, harness lab, package tests, eval tests, full tests, package dry-run, then live install and installed-profile parity checks.
+18. After adoption, verify installed doctor output and profile surface parity before repository closeout. If Git closeout is requested, use `commit-moonshot` and record staging, commit, push, and `HEAD == origin/<branch>` evidence.
 
 ## Required Evidence
 
@@ -73,6 +76,8 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Plan graph validation evidence or explicit markdown-compatible mode evidence.
 - Fresh verifier verdict and scorecard agreement.
 - Coordinator closeout evidence and phase closeout result.
+- Operational Adoption Closeout evidence before any live account-root/profile sync: independent completion audit, independent operational adoption audit, `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, and `node package/build-package.mjs --runtime all --dry-run --json`.
+- Live adoption evidence, when performed: `node bin/moonshot-relay.mjs install --runtime all --json`, installed doctor with explicit `--repo-root`, `--lock`, and `--runtime-surface` paths under `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}`, and installer JSON `profileSurfaceParity` with `profileSurfaceParity[runtime=codex].extraCanonicalCount=0`.
 - Enforce Final Git Closeout evidence before any whole-plan success return.
 
 ## References

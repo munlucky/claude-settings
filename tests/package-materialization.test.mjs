@@ -592,12 +592,24 @@ test('account-root installer merges shared directories without deleting unrelate
       '--codex-home',
       codexHome,
       '--remove-legacy-harness-core',
+      '--json',
     ], {
       cwd: root,
       encoding: 'utf8',
     });
 
     assert.equal(result.status, 0, result.stderr || result.stdout);
+    const installPayload = JSON.parse(result.stdout);
+    assert.ok(installPayload.installId);
+    assert.equal(installPayload.profileSurfaceParity.length, 2);
+    const codexParity = installPayload.profileSurfaceParity.find((entry) => entry.runtime === 'codex');
+    const claudeParity = installPayload.profileSurfaceParity.find((entry) => entry.runtime === 'claude');
+    assert.equal(codexParity.status, 'pass');
+    assert.equal(claudeParity.status, 'pass');
+    assert.equal(codexParity.extraCanonicalCount, 0);
+    assert.deepEqual(codexParity.missingPublicSkills, []);
+    assert.deepEqual(claudeParity.missingPublicSkills, []);
+    assert.deepEqual(codexParity.extraCanonicalSkills, []);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md')), false);

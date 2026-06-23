@@ -215,7 +215,7 @@
       "name": "commit-moonshot",
       "path": "skills/commit-moonshot",
       "source": "canonical",
-      "contentHash": "0418a3e0ecd71eade80ddee4d369966f51ebf1426738951c313b902365ec5cc4",
+      "contentHash": "346a3821ebb9dc726c2ed37a74f7255f22248f79ada52b62eb54616788fa66b6",
       "license": "MIT",
       "stages": [],
       "permissions": [
@@ -503,7 +503,7 @@
       "name": "moonshot-phase-runner",
       "path": "skills/moonshot-phase-runner",
       "source": "canonical",
-      "contentHash": "3ea0e159bde1ef6cacbafeb61e8f5b9ef4751ebdb94bc27a234820dbcca22f55",
+      "contentHash": "1ece6911297694ecac4be47a191dbc6137049fe2ae7283ba457092c2b6803bc6",
       "license": "MIT",
       "stages": [],
       "permissions": [

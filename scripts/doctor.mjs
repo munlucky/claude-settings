@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { access, readFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
 
 import {
@@ -8,13 +9,14 @@ import {
   auditSkillsLock,
 } from './lib/skills-lock.mjs';
 
-const usage = () => 'Usage: node scripts/doctor.mjs check [--lock <skills-lock.json>] [--runtime-surface <runtime-surface.json>] [--expected-runtime-surface-json <json-array>] [--json]';
+const usage = () => 'Usage: node scripts/doctor.mjs check [--repo-root <root>] [--lock <skills-lock.json>] [--runtime-surface <runtime-surface.json>] [--expected-runtime-surface-json <json-array>] [--json]';
 
 const parseArgs = (argv) => {
   const options = { command: argv[0] || '', json: false };
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--lock') options.lock = argv[++index] || '';
+    if (arg === '--repo-root') options.repoRoot = argv[++index] || '';
+    else if (arg === '--lock') options.lock = argv[++index] || '';
     else if (arg === '--runtime-surface') options.runtimeSurface = argv[++index] || '';
     else if (arg === '--expected-runtime-surface-json') options.expectedRuntimeSurfaceJson = argv[++index] || '';
     else if (arg === '--json') options.json = true;
@@ -23,6 +25,8 @@ const parseArgs = (argv) => {
   }
   return options;
 };
+
+const resolveFromRoot = (repoRoot, file) => (path.isAbsolute(file) ? file : path.join(repoRoot, file));
 
 const readJson = async (file) => JSON.parse(await readFile(file, 'utf8'));
 
@@ -43,7 +47,11 @@ const main = async () => {
   }
   if (args.command !== 'check') throw new Error(`Unknown command: ${args.command}\n${usage()}`);
 
-  const runtimeSurface = args.runtimeSurface ? await readJson(args.runtimeSurface) : await readJson('package/runtime-surface.json');
+  const repoRoot = path.resolve(args.repoRoot || process.cwd());
+  const runtimeSurfacePath = args.runtimeSurface
+    ? resolveFromRoot(repoRoot, args.runtimeSurface)
+    : path.join(repoRoot, 'package', 'runtime-surface.json');
+  const runtimeSurface = await readJson(runtimeSurfacePath);
   const expectedRuntimeSurface = args.expectedRuntimeSurfaceJson
     ? JSON.parse(args.expectedRuntimeSurfaceJson)
     : runtimeSurface.publicRuntimeSkills;
@@ -61,19 +69,22 @@ const main = async () => {
     });
   }
 
-  const defaultLockPath = 'skills.lock.json';
+  const defaultLockPath = path.join(repoRoot, 'skills.lock.json');
   const lock = args.lock
-    ? await readJson(args.lock)
+    ? await readJson(resolveFromRoot(repoRoot, args.lock))
     : await pathExists(defaultLockPath)
       ? await readJson(defaultLockPath)
       : null;
-  const skills = await auditSkillsLock({ lock, runtimeSurface });
+  const skills = await auditSkillsLock({ repoRoot, lock, runtimeSurface });
   findings.push(...skills.findings);
 
   const result = {
     status: findings.some((finding) => finding.severity === 'blocking') ? 'blocked' : findings.length ? 'review_required' : 'pass',
     checks: {
-      runtimeSettings: 'source_checkout',
+      runtimeSettings: args.repoRoot ? 'explicit_repo_root' : 'source_checkout',
+      repoRoot,
+      lockPath: args.lock ? resolveFromRoot(repoRoot, args.lock) : defaultLockPath,
+      runtimeSurfacePath,
       gitState: 'caller_owned',
       schemaVersions: [1],
       packageDrift: 'runtime_surface_guarded',

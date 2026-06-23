@@ -100,7 +100,7 @@ test('skills audit CLI generates and audits a lock file', async () => {
 
 test('doctor uses repository skills lock by default', () => {
   const result = spawnSync(process.execPath, [
-    'scripts/doctor.mjs',
+    path.join(process.cwd(), 'scripts', 'doctor.mjs'),
     'check',
     '--json',
   ], {
@@ -110,6 +110,31 @@ test('doctor uses repository skills lock by default', () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(JSON.parse(result.stdout).status, 'pass');
+});
+
+test('doctor can verify an explicit installed payload root', () => {
+  const result = spawnSync(process.execPath, [
+    path.join(process.cwd(), 'scripts', 'doctor.mjs'),
+    'check',
+    '--repo-root',
+    process.cwd(),
+    '--lock',
+    'skills.lock.json',
+    '--runtime-surface',
+    'package/runtime-surface.json',
+    '--json',
+  ], {
+    cwd: os.tmpdir(),
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'pass');
+  assert.equal(payload.checks.runtimeSettings, 'explicit_repo_root');
+  assert.equal(payload.checks.repoRoot, process.cwd());
+  assert.match(payload.checks.lockPath, /skills\.lock\.json$/);
+  assert.match(payload.checks.runtimeSurfacePath, /package[\\/]runtime-surface\.json$/);
 });
 
 test('doctor blocks missing lock and runtime surface expansion', async () => {

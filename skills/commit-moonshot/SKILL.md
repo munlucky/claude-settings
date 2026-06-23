@@ -49,6 +49,8 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 - keep failed-turn cases as next-run recall cache; do not treat `.claude/cache/awtl/failed_turn_cases.jsonl` itself as a long-term MemoryGraph source
 - warn before committing when product implementation changes are mixed with `<MOONSHOT_RELAY_HOME>/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes
 - require `QA_REPORT.md` to contain a `Harness Change Ledger` entry when harness/tool changes were made during a product phase
+- for Moonshot Relay harness/package/profile changes, require full Operational Adoption Closeout evidence before claiming commit-ready state: independent completion audit, independent operational adoption audit, source `doctor.mjs check --json`, `skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, package dry-run, and, when live account-root adoption occurred, live install `installId`, installed doctor with explicit `--repo-root`, `--lock`, and `--runtime-surface` paths, installer JSON `profileSurfaceParity`, and `profileSurfaceParity[runtime=codex].extraCanonicalCount=0`
+- when commit/push closeout is requested, do not claim push completion until `git rev-parse HEAD` equals `git rev-parse origin/<branch>` after `git push`; record this parity result with the push closeout evidence
 - keep the user-facing summary and commit body grouped by feature area
 - keep the summary compact; avoid long prose dumps
 - when a phase runner `runId` and `goalId` are available, pass them to commit memory/audit helpers so commit closeout writes runtime events under the active identity

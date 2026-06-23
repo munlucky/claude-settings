@@ -35,3 +35,25 @@ Completion evidence should include:
 - account-root install sync status when shared runtime files changed.
 
 Controlled adoption evidence should be source-first: `node package/build-package.mjs --runtime all --dry-run --json` and `node scripts/install-account-root-harness.mjs --runtime all --dry-run --json` must pass before any live profile or account-root mutation.
+
+## Operational Adoption Closeout
+
+Harness/package/profile changes use the same closeout every time. Before live account-root adoption, collect two independent audits: an independent completion audit and an independent operational adoption audit. Then run:
+
+- `node scripts/doctor.mjs check --json`
+- `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`
+- `npm run test:lab`
+- `npm run test:package`
+- `npm run test:eval`
+- `npm test`
+- `node package/build-package.mjs --runtime all --dry-run --json`
+
+Only after those pass may a live sync run `node bin/moonshot-relay.mjs install --runtime all --json`. The installer JSON must include `installId`, `verification[]` with no missing or mismatch entries, and `profileSurfaceParity[]`; Codex managed canonical pruning must report `profileSurfaceParity[runtime=codex].extraCanonicalCount=0`.
+
+After the install, run the installed doctor against the installed common payload, not the source checkout:
+
+```powershell
+node "$env:MOONSHOT_RELAY_HOME\scripts\doctor.mjs" check --repo-root "$env:MOONSHOT_RELAY_HOME" --lock "$env:MOONSHOT_RELAY_HOME\skills.lock.json" --runtime-surface "$env:MOONSHOT_RELAY_HOME\package\runtime-surface.json" --json
+```
+
+Close repository state with `commit-moonshot` when commit/push was requested. A pushed closeout must verify `HEAD == origin/<branch>`.

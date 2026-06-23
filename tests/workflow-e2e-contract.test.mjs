@@ -464,6 +464,49 @@ test('phase runner treats general start as full-plan execution intent', async ()
   assert.match(workflow, /must not stop after Phase 01/i);
 });
 
+test('phase runner regular workflow requires operational adoption closeout before live profile sync', async () => {
+  const runner = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.md');
+  const runnerKo = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.ko.md');
+  const closeout = await readRoot('skills', 'moonshot-phase-runner', 'references', 'closeout-gates.md');
+  const workflow = await readRoot('docs', 'public', 'reference', 'phase-runner-user-workflow.md');
+  const installer = await readRoot('docs', 'public', 'installer-usage.md');
+  const surface = await readRoot('docs', 'public', 'reference', 'runtime-skill-surface.md');
+  const commitSkill = await readRoot('skills', 'commit-moonshot', 'SKILL.md');
+
+  for (const content of [runner, runnerKo, closeout, workflow, installer, surface]) {
+    assert.match(content, /Operational Adoption Closeout/);
+    assert.match(content, /independent completion audit/i);
+    assert.match(content, /independent operational adoption audit/i);
+    assert.match(content, /node scripts\/doctor\.mjs check --json/);
+    assert.match(content, /node scripts\/skills-audit\.mjs audit --lock skills\.lock\.json --runtime-surface package\/runtime-surface\.json --json/);
+    assert.match(content, /npm run test:lab/);
+    assert.match(content, /npm run test:package/);
+    assert.match(content, /npm run test:eval/);
+    assert.match(content, /npm test/);
+    assert.match(content, /node package\/build-package\.mjs --runtime all --dry-run --json/);
+    assert.match(content, /node bin\/moonshot-relay\.mjs install --runtime all --json/);
+    assert.match(content, /--repo-root/);
+    assert.match(content, /--lock/);
+    assert.match(content, /--runtime-surface/);
+    assert.match(content, /profileSurfaceParity/);
+    assert.match(content, /extraCanonicalCount=0/);
+  }
+
+  assert.match(closeout, /HEAD == origin\/<branch>/);
+  assert.match(workflow, /HEAD == origin\/<branch>/);
+  assert.match(installer, /HEAD == origin\/<branch>/);
+  assert.match(commitSkill, /Operational Adoption Closeout evidence/);
+  assert.match(commitSkill, /independent completion audit/i);
+  assert.match(commitSkill, /independent operational adoption audit/i);
+  assert.match(commitSkill, /live install `installId`/);
+  assert.match(commitSkill, /installed doctor with explicit `--repo-root`, `--lock`, and `--runtime-surface` paths/);
+  assert.match(commitSkill, /installer JSON `profileSurfaceParity`/);
+  assert.match(commitSkill, /profileSurfaceParity\[runtime=codex\]\.extraCanonicalCount=0/);
+  assert.match(commitSkill, /skills-audit\.mjs audit --lock skills\.lock\.json --runtime-surface package\/runtime-surface\.json --json/);
+  assert.match(commitSkill, /git rev-parse HEAD/);
+  assert.match(commitSkill, /git rev-parse origin\/<branch>/);
+});
+
 test('runtime control plane docs publish DB authority matrix and closeout boundaries', async () => {
   const controlPlane = await readRoot('docs', 'public', 'runtime-control-plane.md');
   const workflow = await readRoot('docs', 'public', 'reference', 'phase-runner-user-workflow.md');
