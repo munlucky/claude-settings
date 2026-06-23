@@ -44,6 +44,7 @@ const commonSpec = {
     'package',
     'package.json',
     'package-lock.json',
+    'skills.lock.json',
     'verification.contract.yaml',
   ]),
 };
@@ -417,6 +418,60 @@ const removePreviouslyManagedSkillsAbsentFromPayload = async ({ targetRoot, sour
   return removed;
 };
 
+const removeCanonicalProfileSkillsAbsentFromPayload = async ({
+  targetRoot,
+  sourceRepo,
+  sourceRoot,
+  backupRoot,
+  options,
+}) => {
+  const targetSkillsRoot = path.join(targetRoot, 'skills');
+  const sourceSkillsRoot = path.join(sourceRepo, 'skills');
+  const payloadSkillsRoot = path.join(sourceRoot, 'skills');
+  if (!await pathExists(targetSkillsRoot) || !await pathExists(sourceSkillsRoot)) {
+    return { removed: [], backups: [] };
+  }
+
+  const sourceSkillEntries = await readdir(sourceSkillsRoot, { withFileTypes: true });
+  const canonicalSkillNames = new Set(sourceSkillEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name));
+  const payloadSkillEntries = await pathExists(payloadSkillsRoot)
+    ? await readdir(payloadSkillsRoot, { withFileTypes: true })
+    : [];
+  const payloadSkillNames = new Set(payloadSkillEntries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name));
+
+  const removed = [];
+  const backups = [];
+  const targetSkillEntries = await readdir(targetSkillsRoot, { withFileTypes: true });
+  for (const entry of targetSkillEntries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    if (!canonicalSkillNames.has(entry.name) || payloadSkillNames.has(entry.name)) {
+      continue;
+    }
+
+    const target = path.join(targetSkillsRoot, entry.name);
+    assertSafeChild(targetRoot, target);
+    if (!options.dryRun && options.backup) {
+      const backup = await backupTarget(target, backupRoot);
+      if (backup) {
+        backups.push(toPortable(path.relative(targetRoot, backup)));
+      }
+    }
+    if (!options.dryRun) {
+      await rm(target, { recursive: true, force: true });
+    }
+    removed.push(toPortable(path.join('skills', entry.name)));
+  }
+
+  await pruneEmptyDirs(targetRoot, ['skills']);
+  return { removed, backups };
+};
+
 const removeLegacyNonExposureEntries = async ({
   targetRoot,
   backupRoot,
@@ -549,6 +604,16 @@ const installPayloadSpec = async ({
         sourceRoot,
         options,
       }));
+
+      const canonicalSkillCleanup = await removeCanonicalProfileSkillsAbsentFromPayload({
+        targetRoot,
+        sourceRepo,
+        sourceRoot,
+        backupRoot,
+        options,
+      });
+      removed.push(...canonicalSkillCleanup.removed);
+      backups.push(...canonicalSkillCleanup.backups);
     }
 
     const legacyCleanup = await removeLegacyNonExposureEntries({

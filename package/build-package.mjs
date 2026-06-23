@@ -39,6 +39,7 @@ const runtimeSpecs = {
       'package/runtime-surface.json',
       'package.json',
       'package-lock.json',
+      'skills.lock.json',
       'scripts/architecture-context-build.mjs',
       'scripts/architecture-knowledge-resolve.mjs',
       'scripts/architecture-contract-bind.mjs',

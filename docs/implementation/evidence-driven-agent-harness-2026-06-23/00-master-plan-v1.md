@@ -2,9 +2,9 @@
 
 ## Scope Status
 
-Status: phase-01-complete-handoff-ready-for-source-execution
+Status: all-phases-complete-operational-closeout-complete
 
-This package converts the provided final AI agent harness design into a source-local Moonshot Relay implementation plan. It is a preparation package plus Phase 01 architecture handoff closeout, not a claim that the harness redesign is implemented. Phase-runner execution for later source phases is now unblocked by the Phase 01 handoff artifacts under `architecture-handoff/`.
+This package converts the provided final AI agent harness design into a source-local Moonshot Relay implementation plan and completed source implementation. Phase 01 created the architecture handoff that unblocked source phases, and Phases 02-10 implemented the evidence-driven harness contracts, gates, package surfaces, and plan canvas.
 
 ## Objective
 
@@ -39,7 +39,7 @@ The target system must not wrap or depend on external open-source harnesses as r
 
 ```yaml
 executionBlocker:
-  status: resolved_for_phases_02_to_09
+  status: resolved_for_all_source_phases
   reason: architecture_contract_slice_and_ready_handoff_created_by_phase_01
   evidence:
     - docs/implementation/evidence-driven-agent-harness-2026-06-23/planning-loop/phase-01-waiver.yaml
@@ -47,7 +47,7 @@ executionBlocker:
     - docs/implementation/evidence-driven-agent-harness-2026-06-23/architecture-handoff/ARCHITECTURE_HANDOFF.json
   remainingLimit:
     - Phase 10 was explicitly pulled into implementation scope on 2026-06-23 after user clarification.
-    - Live account-root/profile adoption remains blocked without explicit approval.
+    - Live account-root/profile adoption requires harness-lab, package, doctor, and profile-surface parity evidence.
 ```
 
 ## Accepted Independent Review Directives
@@ -76,7 +76,7 @@ acceptedReviewDirectives:
 ```yaml
 planPackageReadiness:
   schemaVersion: 1
-  status: phase-01-complete-handoff-ready-for-source-execution
+  status: all-phases-complete-operational-closeout-complete
   planRoot: docs/implementation/evidence-driven-agent-harness-2026-06-23
   selectedMasterPlan: docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md
   selectedPhaseDocs:
@@ -102,14 +102,14 @@ planPackageReadiness:
 | Phase | Title | Plan File | Depends On | Execution Readiness |
 |---|---|---|---|---|
 | 01 | Architecture Contract and Authority Normalization | `01-architecture-contract-normalization-v1.md` | - | may run first with explicit waiver |
-| 02 | Candidate Identity and Artifact Schemas | `02-candidate-identity-and-artifact-schemas-v1.md` | 01 | blocked until handoff ready |
-| 03 | Contract Engine and Spec Revision | `03-contract-engine-and-spec-revision-v1.md` | 01, 02 | blocked until handoff ready |
-| 04 | Independent Review Engine | `04-independent-review-engine-v1.md` | 02, 03 | blocked until handoff ready |
-| 05 | Verification and Scoring Engine | `05-verification-and-scoring-engine-v1.md` | 02, 04 | blocked until handoff ready |
-| 06 | Workspace, Execution, and Event Ledger | `06-workspace-execution-and-event-ledger-v1.md` | 02, 03, 05 | blocked until handoff ready |
-| 07 | Plan Graph Scheduler and Scope Drift | `07-plan-graph-scheduler-and-scope-drift-v1.md` | 03, 06 | blocked until handoff ready |
-| 08 | Delivery Submit Gate | `08-delivery-submit-gate-v1.md` | 04, 05, 06, 07 | blocked until handoff ready |
-| 09 | Skills Doctor and Package Boundary | `09-skills-doctor-and-package-boundary-v1.md` | 02, 07 | blocked until handoff ready |
+| 02 | Candidate Identity and Artifact Schemas | `02-candidate-identity-and-artifact-schemas-v1.md` | 01 | complete |
+| 03 | Contract Engine and Spec Revision | `03-contract-engine-and-spec-revision-v1.md` | 01, 02 | complete |
+| 04 | Independent Review Engine | `04-independent-review-engine-v1.md` | 02, 03 | complete |
+| 05 | Verification and Scoring Engine | `05-verification-and-scoring-engine-v1.md` | 02, 04 | complete |
+| 06 | Workspace, Execution, and Event Ledger | `06-workspace-execution-and-event-ledger-v1.md` | 02, 03, 05 | complete |
+| 07 | Plan Graph Scheduler and Scope Drift | `07-plan-graph-scheduler-and-scope-drift-v1.md` | 03, 06 | complete |
+| 08 | Delivery Submit Gate | `08-delivery-submit-gate-v1.md` | 04, 05, 06, 07 | complete |
+| 09 | Skills Doctor and Package Boundary | `09-skills-doctor-and-package-boundary-v1.md` | 02, 07 | complete |
 | 10 | Plan Canvas UI Optional | `10-plan-canvas-ui-optional-v1.md` | 07 | complete after explicit pull into scope |
 
 ## Source Traceability Matrix
@@ -219,7 +219,7 @@ Before any future execution closeout:
 
 ## Completion Rule
 
-This package is complete as a preparation artifact when all listed files exist, reviews are recorded, and the package search/closure checks pass. Phase 01 is complete when the waiver, architecture handoff artifacts, phase scorecard, QA report, and handoff note exist and pass the listed verification commands. It is not a claim that the harness redesign is implemented.
+This package is complete when all phase source artifacts exist, reviews are recorded, phase-local scorecard/QA/handoff evidence exists, runner projection reports no active phase, and final validation gates pass. Operational account-root closeout additionally requires doctor pass and live service profile surface parity with `package/runtime-surface.json`.
 
 ## Implementation Closeout
 
@@ -229,9 +229,17 @@ Completed phases:
 - Phase 01 through Phase 10 have phase-local scorecard, QA report, handoff, and closeout evidence.
 
 Out of scope:
-- Live account-root/profile adoption remains blocked without explicit approval.
+- Further live account-root/profile adoption after this closeout requires fresh harness-lab, doctor, package, and profile-surface parity evidence.
 
 Current runner projection:
 - `activeExecutionStatus=all_phases_projected_complete`
 - `activePhaseDoc=""`
 - Phase 10 status is projected as `complete`.
+
+Operational closeout:
+- `skills.lock.json` is tracked as the canonical skill supply-chain lock.
+- `node scripts/doctor.mjs check --json` returns `status=pass`.
+- `npm run test:lab` passed with `runId=harness-lab-20260623-101647` and `promotable=true`.
+- Account-root install `installId=20260623-101724` completed after lab pass.
+- Installed profile verification reported no missing or mismatched files for `moonshot-relay`, `claude`, or `codex`.
+- Live Codex canonical skill surface has `extraCanonicalCount=0` against `package/runtime-surface.json`.

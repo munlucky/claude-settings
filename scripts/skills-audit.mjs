@@ -7,7 +7,7 @@ import {
   buildSkillsLock,
 } from './lib/skills-lock.mjs';
 
-const usage = () => 'Usage: node scripts/skills-audit.mjs audit [--lock <skills-lock.json>] [--runtime-surface <runtime-surface.json>] [--json]\n       node scripts/skills-audit.mjs generate-lock [--out <skills-lock.json>] [--json]';
+const usage = () => 'Usage: node scripts/skills-audit.mjs audit [--lock <skills-lock.json>] [--runtime-surface <runtime-surface.json>] [--json]\n       node scripts/skills-audit.mjs generate-lock [--out <skills-lock.json>] [--default-license <license>] [--default-permissions-json <json-array>] [--approve-permissions] [--json]';
 
 const parseArgs = (argv) => {
   const options = { command: argv[0] || '', json: false };
@@ -16,6 +16,9 @@ const parseArgs = (argv) => {
     if (arg === '--lock') options.lock = argv[++index] || '';
     else if (arg === '--runtime-surface') options.runtimeSurface = argv[++index] || '';
     else if (arg === '--out') options.out = argv[++index] || '';
+    else if (arg === '--default-license') options.defaultLicense = argv[++index] || '';
+    else if (arg === '--default-permissions-json') options.defaultPermissionsJson = argv[++index] || '';
+    else if (arg === '--approve-permissions') options.approvePermissions = true;
     else if (arg === '--json') options.json = true;
     else if (arg === '--help' || arg === '-h') options.help = true;
     else throw new Error(`Unknown argument: ${arg}\n${usage()}`);
@@ -32,7 +35,22 @@ const main = async () => {
     return;
   }
   if (args.command === 'generate-lock') {
-    const lock = await buildSkillsLock();
+    const defaultPermissions = args.defaultPermissionsJson
+      ? JSON.parse(args.defaultPermissionsJson)
+      : ['filesystem-read'];
+    const lock = await buildSkillsLock({
+      defaultLicense: args.defaultLicense || 'UNSPECIFIED',
+      defaultPermissions,
+    });
+    if (args.approvePermissions) {
+      for (const skill of lock.skills) {
+        skill.permissionReview = {
+          status: 'approved',
+          reviewedAt: lock.generatedAt,
+          reviewer: 'skills-audit-generate-lock',
+        };
+      }
+    }
     if (args.out) await writeFile(args.out, `${JSON.stringify(lock, null, 2)}\n`, 'utf8');
     if (args.json) console.log(JSON.stringify({ status: 'generated', lock, wrote: args.out || '' }, null, 2));
     else console.log('generated');

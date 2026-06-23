@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import process from 'node:process';
 
 import {
@@ -24,6 +25,15 @@ const parseArgs = (argv) => {
 };
 
 const readJson = async (file) => JSON.parse(await readFile(file, 'utf8'));
+
+const pathExists = async (file) => {
+  try {
+    await access(file, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -51,7 +61,12 @@ const main = async () => {
     });
   }
 
-  const lock = args.lock ? await readJson(args.lock) : null;
+  const defaultLockPath = 'skills.lock.json';
+  const lock = args.lock
+    ? await readJson(args.lock)
+    : await pathExists(defaultLockPath)
+      ? await readJson(defaultLockPath)
+      : null;
   const skills = await auditSkillsLock({ lock, runtimeSurface });
   findings.push(...skills.findings);
 

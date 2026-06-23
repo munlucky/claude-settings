@@ -98,6 +98,20 @@ test('skills audit CLI generates and audits a lock file', async () => {
   assert.equal(JSON.parse(audit.stdout).status, 'review_required');
 });
 
+test('doctor uses repository skills lock by default', () => {
+  const result = spawnSync(process.execPath, [
+    'scripts/doctor.mjs',
+    'check',
+    '--json',
+  ], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(JSON.parse(result.stdout).status, 'pass');
+});
+
 test('doctor blocks missing lock and runtime surface expansion', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-doctor-'));
   tempRoots.push(tempRoot);
@@ -108,7 +122,7 @@ test('doctor blocks missing lock and runtime surface expansion', async () => {
   }, null, 2));
 
   const result = spawnSync(process.execPath, [
-    'scripts/doctor.mjs',
+    path.join(process.cwd(), 'scripts', 'doctor.mjs'),
     'check',
     '--runtime-surface',
     runtimeSurfacePath,
@@ -116,7 +130,7 @@ test('doctor blocks missing lock and runtime surface expansion', async () => {
     JSON.stringify(['moonshot-phase-runner']),
     '--json',
   ], {
-    cwd: process.cwd(),
+    cwd: tempRoot,
     encoding: 'utf8',
   });
 
