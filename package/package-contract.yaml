@@ -199,8 +199,12 @@ requiredPayloadEntries:
       purpose: harness_control_plane_golden_eval_gate
     - source: tools/evals/fixtures/harness-control-plane/golden-regression.json
       purpose: packaged_harness_control_plane_golden_eval_fixture
+    - source: tools/harness-lab/harness-lab.mjs
+      purpose: external_bootstrap_lab_for_harness_change_gates
     - source: tools/awtl/trace-to-testcase.mjs
       purpose: awtl_trace_to_testcase_candidate_generation
+    - source: docs/public/guidelines/harness-bootstrap-lab.md
+      purpose: harness_bootstrap_lab_operating_contract
   commonSupportScripts:
     description: "Moonshot Relay common runtime payload installs only support scripts needed by installers, MCP wrappers, memory refresh, workflow state, and commit closeout. Service profiles do not install scripts/**."
     entries:

@@ -226,6 +226,8 @@ test('package contract declares required source payload entries and generated-st
     'scripts/architecture-handoff-build.mjs',
     'scripts/architecture-feedback-render.mjs',
     'scripts/commit-moonshot-closeout-event.mjs',
+    'tools/harness-lab/harness-lab.mjs',
+    'docs/public/guidelines/harness-bootstrap-lab.md',
     'package/runtime-surface.json',
     'commonSupportScripts:',
     'archivedLegacyScripts:',
@@ -297,6 +299,7 @@ test('package scripts define the active gate without archive discovery', async (
     'tests/verification-plane-contract.test.mjs',
     'tests/eval-regression-contract.test.mjs',
     'tests/tool-sandbox-eval-contract.test.mjs',
+    'tests/harness-lab-contract.test.mjs',
     'tests/moonshot-architecture-skill-surface.test.mjs',
     'tests/moonshot-architecture-template-contract.test.mjs',
     'tests/moonshot-architecture-schema-contract.test.mjs',
@@ -325,7 +328,9 @@ test('package scripts define the active gate without archive discovery', async (
   assert.doesNotMatch(scripts.test, /\.claude[\\/]scripts/);
   assert.equal(typeof scripts['test:package'], 'string', 'package.json should define scripts.test:package');
   assert.equal(typeof scripts['test:eval'], 'string', 'package.json should define scripts.test:eval');
+  assert.equal(typeof scripts['test:lab'], 'string', 'package.json should define scripts.test:lab');
   assert.match(scripts['test:eval'], /tools\/evals\/harness-control-plane\.mjs run --json/);
+  assert.match(scripts['test:lab'], /tools\/harness-lab\/harness-lab\.mjs run --candidate-root \. --json/);
   assert.doesNotMatch(scripts['test:package'], /archive[\\/]/);
 });
 

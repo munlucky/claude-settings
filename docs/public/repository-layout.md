@@ -72,6 +72,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `demo-first-mvp-gate.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/product-gate-reviewer/**` |
 | `document-memory-policy.md` | policy-anchor | `agents/*memory*`, `skills/doc-auto-sync/**`, `skills/commit-moonshot/**` |
 | `external-skill-pattern-transfer.md` | policy-anchor | `skills/moonshot-relay-maintainer/**` |
+| `harness-bootstrap-lab.md` | operational-procedure | `tools/harness-lab/harness-lab.mjs`, `tests/harness-lab-contract.test.mjs` |
 | `knowledge-repository-ops.md` | policy-anchor | `scripts/knowledge-*.mjs`, `docs/public/project-knowledge-plane.md` |
 | `long-running-harness.ko.md` | policy-anchor | `skills/moonshot-phase-runner/**`, `skills/moonshot-in-session-coordinator/**` |
 | `memorygraph-workflow.md` / `memorygraph-workflow.ko.md` | policy-anchor | `scripts/memorygraph-*.mjs`, `skills/project-memory-refresh/**` |
