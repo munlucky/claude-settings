@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/score-receipt.schema.json",
+  "title": "Score Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "candidate_id", "candidateId", "sourceDigest", "environmentDigest", "policyDigest", "policyVersion", "status", "hardGates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "SCORE_RECEIPT" },
+    "candidate_id": { "$ref": "#/$defs/candidateId" },
+    "candidateId": { "$ref": "#/$defs/candidateId" },
+    "sourceDigest": { "$ref": "#/$defs/sha256" },
+    "environmentDigest": { "$ref": "#/$defs/sha256" },
+    "policyDigest": { "$ref": "#/$defs/sha256" },
+    "policyVersion": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["FULL", "PARTIAL", "BLOCKED"] },
+    "hardGates": { "type": "array", "items": { "type": "object" } },
+    "weightedScore": { "type": "number", "minimum": 0, "maximum": 1 }
+  },
+  "$defs": {
+    "candidateId": { "type": "string", "pattern": "^cand_[a-f0-9]{32}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

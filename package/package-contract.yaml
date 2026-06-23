@@ -185,6 +185,8 @@ requiredPayloadEntries:
       purpose: source_local_architecture_c4_artifacts_not_installed
     - source: docs/implementation/*/planning-loop/**
       purpose: source_local_plan_review_artifacts_not_installed
+    - source: docs/implementation/*/architecture-handoff/**
+      purpose: source_local_architecture_handoff_artifacts_not_installed
     - source: tests/package-layout.test.mjs
       purpose: package_layout_materialization_guard
     - source: scripts/install-account-root-harness.mjs
@@ -236,6 +238,12 @@ requiredPayloadEntries:
         purpose: commit_memory_promotion_audit
       - source: scripts/context-state.mjs
         purpose: context_state_control_plane_cli
+      - source: scripts/contract-engine.mjs
+        purpose: task_contract_and_spec_revision_cli
+      - source: scripts/delivery-submit.mjs
+        purpose: delivery_submission_gate_cli
+      - source: scripts/doctor.mjs
+        purpose: runtime_package_boundary_doctor
       - source: scripts/install-account-root-harness.mjs
         purpose: account_root_direct_profile_installer
       - source: scripts/install-browser-runtime.mjs
@@ -268,18 +276,30 @@ requiredPayloadEntries:
         purpose: awtl_replay_scorecard_support
       - source: scripts/lib/awtl-trace-sink.mjs
         purpose: awtl_trace_sink_support
+      - source: scripts/lib/candidate-identity.mjs
+        purpose: evidence_candidate_identity_binding
       - source: scripts/lib/context-state-engine.mjs
         purpose: context_state_engine_support
       - source: scripts/lib/commit-closeout-events.mjs
         purpose: commit_closeout_event_contract
+      - source: scripts/lib/contract-invalidation.mjs
+        purpose: contract_revision_invalidation_support
+      - source: scripts/lib/delivery-policy.mjs
+        purpose: delivery_submission_policy_support
+      - source: scripts/lib/event-ledger.mjs
+        purpose: event_ledger_hash_chain_support
       - source: scripts/lib/failure-classifier.mjs
         purpose: failure_classifier_support
       - source: scripts/lib/git-safe.mjs
         purpose: git_safe_child_process_support
+      - source: scripts/lib/plan-graph.mjs
+        purpose: plan_graph_and_scope_drift_support
       - source: scripts/lib/phase-event-ledger.mjs
         purpose: workflow_event_ledger_support
       - source: scripts/lib/phase-run-lease-store.mjs
         purpose: workflow_run_lease_support
+      - source: scripts/lib/review-bundle.mjs
+        purpose: independent_review_bundle_support
       - source: scripts/lib/runtime-state-db-path.mjs
         purpose: runtime_state_db_path_support
       - source: scripts/lib/runtime-state-root.mjs
@@ -300,16 +320,28 @@ requiredPayloadEntries:
         purpose: ontology_validation_support
       - source: scripts/phase-final-guard.mjs
         purpose: phase_runner_final_stop_and_turn_ended_guard
+      - source: scripts/plan-graph-validate.mjs
+        purpose: plan_graph_validation_cli
       - source: scripts/prepare-phase-runner-state.mjs
         purpose: phase_plan_readiness_bridge
       - source: scripts/project-identity.mjs
         purpose: project_identity_resolution
+      - source: scripts/review-bundle-build.mjs
+        purpose: independent_review_bundle_cli
       - source: scripts/runtime-state.mjs
         purpose: runtime_state_control_plane_cli
+      - source: scripts/skills-audit.mjs
+        purpose: skills_lock_supply_chain_audit
+      - source: scripts/lib/skills-lock.mjs
+        purpose: skills_lock_audit_support
       - source: scripts/verification-plane.mjs
         purpose: verification_plane_evidence_cli
       - source: scripts/verification-verdict-state.mjs
         purpose: verification_state_support
+      - source: scripts/workspace-manager.mjs
+        purpose: workspace_lease_return_safety_cli
+      - source: scripts/lib/workspace-manager.mjs
+        purpose: workspace_lease_return_safety_support
       - source: scripts/lib/runtime-state-store.mjs
         purpose: runtime_state_control_plane_store
       - source: scripts/lib/verification-plane.mjs

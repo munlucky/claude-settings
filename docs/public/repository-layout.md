@@ -79,6 +79,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `moonshot-architecture.md` / `moonshot-architecture.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, `docs/public/roadmaps/moonshot-architecture/**` |
 | `product-acceptance-gate.md` | policy-anchor | `skills/completion-verifier/**`, `skills/product-gate-reviewer/**` |
 | `product-definition-workflow.md` | policy-anchor | `skills/product-orchestrator/**`, `templates/product-definition/**` |
+| `plan-review-canvas.md` | operational-procedure | `tools/plan-canvas/plan-canvas.mjs`, `schemas/plan-feedback.schema.json`, `tests/plan-canvas-contract.test.mjs` |
 | `provider-neutral-model-routing.md` | policy-anchor | runtime profile config templates and routing docs |
 | `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, tracked `docs/public/roadmaps/**` contracts, runtime `docs/implementation/**` execution scratch |
 | `resumable-session-layer.md` | policy-anchor | phase-runner state helpers and runtime state docs |

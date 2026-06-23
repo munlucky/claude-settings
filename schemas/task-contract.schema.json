@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/task-contract.schema.json",
+  "title": "Task Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contractId", "revision", "frozen", "requirements", "acceptanceCriteria", "constraints"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "contractId": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "frozen": { "type": "boolean" },
+    "requirements": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "acceptanceCriteria": { "type": "array", "items": { "$ref": "#/$defs/acceptance" } },
+    "constraints": { "type": "array", "items": { "$ref": "#/$defs/constraint" } },
+    "previousRevision": { "$ref": "spec-revision.schema.json" },
+    "revisionReason": { "type": "string" },
+    "changeType": { "enum": ["spec", "done", "design", "plan", "source", "lockfile", "environment", "policy"] }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "verification"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "verification": { "type": "string" },
+        "covered": { "type": "boolean" }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["resolved", "unresolved"] }
+      }
+    }
+  }
+}

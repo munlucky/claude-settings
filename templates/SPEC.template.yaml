@@ -1,0 +1,18 @@
+schemaVersion: 1
+contractId: "<task-or-feature-id>"
+revision: 1
+frozen: false
+changeType: "spec"
+revisionReason: ""
+requirements:
+  - id: "REQ-001"
+    summary: "<required behavior>"
+acceptanceCriteria:
+  - id: "AC-001"
+    summary: "<observable acceptance criterion>"
+    verification: "<command or artifact>"
+    covered: false
+constraints:
+  - id: "CON-001"
+    summary: "<known constraint>"
+    status: "unresolved"

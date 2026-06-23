@@ -1,0 +1,384 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "ARCHITECTURE_CONTRACT_SLICE",
+  "owner": "moonshot-architecture",
+  "status": "ready",
+  "sourceKnowledgeSliceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md",
+  "requirements": [
+    {
+      "id": "EDAH-REQ-01",
+      "summary": "External harnesses are reference patterns only; Moonshot Relay owns native runtime authority.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-02",
+      "summary": "Review, verify, score, submit, and close artifacts must bind to candidate identity and exact source digests.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-03",
+      "summary": "Contract/spec revision and invalidation rules must prevent stale plan, review, verify, score, and submission evidence.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-04",
+      "summary": "Independent review bundles must use fresh context and exclude implementation transcript or self-evaluation.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-05",
+      "summary": "Verification and scoring artifacts must be deterministic, command-backed, source-bound, and policy-controlled.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-06",
+      "summary": "Workspace leases, run receipts, event ledger, and resume reconstruction must be durable and replayable.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-07",
+      "summary": "Plan graph scheduling must enforce dependencies, write-set conflicts, and scope drift.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-08",
+      "summary": "Delivery must be blocked unless candidate evidence and submitted source SHA align.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-09",
+      "summary": "JSON receipts and JSONL events must project into current runtime-state authority instead of competing with it.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-10",
+      "summary": "Skills doctor must detect lock, hash, license, and permission drift without expanding public runtime surface.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    },
+    {
+      "id": "EDAH-REQ-11",
+      "summary": "Plan canvas UI is optional derived output and must not replace Markdown or YAML source truth.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#source-traceability-matrix"
+    }
+  ],
+  "asrs": [
+    {
+      "id": "EDAH-ASR-01",
+      "summary": "Whole-plan completion authority remains in runtime-state completion decisions.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/01-architecture-contract-normalization-v1.md#objective",
+      "derivedFrom": [
+        "EDAH-REQ-09"
+      ]
+    },
+    {
+      "id": "EDAH-ASR-02",
+      "summary": "Evidence artifacts must be reconstructable from source-bound receipts and runtime events.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/06-workspace-execution-and-event-ledger-v1.md#acceptance-criteria",
+      "derivedFrom": [
+        "EDAH-REQ-06"
+      ]
+    },
+    {
+      "id": "EDAH-ASR-03",
+      "summary": "Package and runtime public surface must not expand accidentally.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/09-skills-doctor-and-package-boundary-v1.md#acceptance-criteria",
+      "derivedFrom": [
+        "EDAH-REQ-10"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "id": "EDAH-DEC-01",
+      "summary": "Build a native Moonshot Relay harness; do not adopt external harnesses as runtime authority or dependencies.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#objective",
+      "derivedFrom": [
+        "EDAH-REQ-01"
+      ]
+    },
+    {
+      "id": "EDAH-DEC-02",
+      "summary": "Preserve runtime-state.sqlite as workflow authority for blockers, run status, and whole-plan completion decisions.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/architecture-handoff/ADR/ADR-001-runtime-state-authority.md",
+      "derivedFrom": [
+        "EDAH-REQ-09"
+      ]
+    },
+    {
+      "id": "EDAH-DEC-03",
+      "summary": "Implement against the existing Node ESM repository surface instead of introducing a Python harness subsystem.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#non-negotiables",
+      "derivedFrom": [
+        "EDAH-REQ-02",
+        "EDAH-REQ-03"
+      ]
+    },
+    {
+      "id": "EDAH-DEC-04",
+      "summary": "Use a Phase 01-only waiver to produce architecture handoff artifacts before source implementation phases run.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/planning-loop/phase-01-waiver.yaml",
+      "derivedFrom": [
+        "EDAH-REQ-01"
+      ]
+    },
+    {
+      "id": "EDAH-DEC-05",
+      "summary": "Treat review, verify, score, submission, and JSONL receipt artifacts as evidence inputs and replay receipts.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/architecture-handoff/ADR/ADR-001-runtime-state-authority.md",
+      "derivedFrom": [
+        "EDAH-REQ-02",
+        "EDAH-REQ-05",
+        "EDAH-REQ-09"
+      ]
+    },
+    {
+      "id": "EDAH-DEC-06",
+      "summary": "Keep H0 harness-lab as a pre-implementation safety gate outside candidate-controlled evidence authority.",
+      "sourceRef": "tools/harness-lab/harness-lab.mjs",
+      "derivedFrom": [
+        "EDAH-REQ-01",
+        "EDAH-REQ-09"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "EDAH-CON-01",
+      "summary": "No source phase may add an external harness as runtime authority or package dependency.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#non-negotiables",
+      "derivedFrom": [
+        "EDAH-DEC-01"
+      ],
+      "severity": "blocking",
+      "appliesTo": [
+        "package",
+        "scripts",
+        "tools",
+        "skills"
+      ],
+      "enforcedBy": [
+        "EDAH-RULE-01"
+      ]
+    },
+    {
+      "id": "EDAH-CON-02",
+      "summary": "JSON evidence and scores cannot replace runtime-state completion decisions for whole-plan closeout.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/architecture-handoff/ADR/ADR-001-runtime-state-authority.md",
+      "derivedFrom": [
+        "EDAH-DEC-02",
+        "EDAH-DEC-05"
+      ],
+      "severity": "critical",
+      "appliesTo": [
+        "scripts/lib/runtime-state-store.mjs",
+        "scripts/verification-plane.mjs",
+        "tests/completion-authority-contract.test.mjs"
+      ],
+      "enforcedBy": [
+        "EDAH-RULE-02"
+      ]
+    },
+    {
+      "id": "EDAH-CON-03",
+      "summary": "Live .claude, .codex, account-root, and shared runtime-home mutation is forbidden until explicitly approved.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#adoption-strategy",
+      "derivedFrom": [
+        "EDAH-DEC-04"
+      ],
+      "severity": "blocking",
+      "appliesTo": [
+        ".claude",
+        ".codex",
+        "${MOONSHOT_RELAY_HOME}"
+      ],
+      "enforcedBy": [
+        "EDAH-RULE-03"
+      ]
+    },
+    {
+      "id": "EDAH-CON-04",
+      "summary": "Candidate evidence must bind to candidate identity, source digest, and relevant environment or policy digest.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/02-candidate-identity-and-artifact-schemas-v1.md#acceptance-criteria",
+      "derivedFrom": [
+        "EDAH-REQ-02"
+      ],
+      "severity": "blocking",
+      "appliesTo": [
+        "schemas",
+        "scripts",
+        "tests"
+      ],
+      "enforcedBy": [
+        "EDAH-RULE-04"
+      ]
+    },
+    {
+      "id": "EDAH-CON-05",
+      "summary": "Package payload changes must not expand public runtime skill discovery unless explicitly approved.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/09-skills-doctor-and-package-boundary-v1.md#acceptance-criteria",
+      "derivedFrom": [
+        "EDAH-REQ-10"
+      ],
+      "severity": "blocking",
+      "appliesTo": [
+        "package/package-contract.yaml",
+        "package/runtime-surface.json"
+      ],
+      "enforcedBy": [
+        "EDAH-RULE-05"
+      ]
+    },
+    {
+      "id": "EDAH-CON-06",
+      "summary": "Plan canvas output is derived UI and cannot become source truth or packaged output without approval.",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/10-plan-canvas-ui-optional-v1.md#acceptance-criteria",
+      "derivedFrom": [
+        "EDAH-REQ-11"
+      ],
+      "severity": "warning",
+      "appliesTo": [
+        "tools/plan-canvas",
+        "docs/implementation"
+      ],
+      "enforcedBy": [
+        "EDAH-RULE-06"
+      ]
+    }
+  ],
+  "enforcementRules": [
+    {
+      "id": "EDAH-RULE-01",
+      "summary": "Package and dependency review must reject external harness runtime dependency adoption.",
+      "commandOrPolicyRef": "npm test and package materialization review",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#final-validation-gate"
+    },
+    {
+      "id": "EDAH-RULE-02",
+      "summary": "Completion authority tests must prove JSON score alone cannot close whole-plan completion.",
+      "commandOrPolicyRef": "tests/completion-authority-contract.test.mjs and runtime-state assess-completion negative tests",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/05-verification-and-scoring-engine-v1.md#verification-signals"
+    },
+    {
+      "id": "EDAH-RULE-03",
+      "summary": "Phase execution must avoid live account-root/profile mutation unless explicit adoption is requested.",
+      "commandOrPolicyRef": "phase plan live mutation policy and package/install dry-run only",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#adoption-strategy"
+    },
+    {
+      "id": "EDAH-RULE-04",
+      "summary": "Receipt schema and helper tests must reject mismatched candidate, source, environment, or policy digests.",
+      "commandOrPolicyRef": "tests/candidate-identity-contract.test.mjs and tests/receipt-schema-contract.test.mjs",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/02-candidate-identity-and-artifact-schemas-v1.md#verification-signals"
+    },
+    {
+      "id": "EDAH-RULE-05",
+      "summary": "Package materialization tests must guard public runtime surface non-expansion.",
+      "commandOrPolicyRef": "tests/package-materialization.test.mjs",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/09-skills-doctor-and-package-boundary-v1.md#verification-signals"
+    },
+    {
+      "id": "EDAH-RULE-06",
+      "summary": "Plan canvas tests must prove generated UI does not replace Markdown/YAML source.",
+      "commandOrPolicyRef": "tests/plan-canvas-contract.test.mjs",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/10-plan-canvas-ui-optional-v1.md#verification-signals"
+    }
+  ],
+  "verificationSignals": [
+    {
+      "id": "EDAH-VSIG-01",
+      "summary": "Phase 01 search check for required authority and handoff terms.",
+      "commandOrEvidence": "rg -n \"ARCHITECTURE_HANDOFF|candidate_id|harness-lab|runtime-state|completion_decisions\" docs/implementation/evidence-driven-agent-harness-2026-06-23",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/01-architecture-contract-normalization-v1.md#verification-signals"
+    },
+    {
+      "id": "EDAH-VSIG-02",
+      "summary": "Phase-runner dry-run must resolve active phase and phase package shape.",
+      "commandOrEvidence": "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir docs/implementation/evidence-driven-agent-harness-2026-06-23 --master-plan docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md --status-file .moonshot-relay/docs/phase-status.yaml --execution-root docs/implementation/evidence-driven-agent-harness-2026-06-23/execution",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#plan-package-readiness"
+    },
+    {
+      "id": "EDAH-VSIG-03",
+      "summary": "H0 harness lab must continue to pass before source implementation phases.",
+      "commandOrEvidence": "npm run test:lab",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#final-validation-gate"
+    },
+    {
+      "id": "EDAH-VSIG-04",
+      "summary": "Existing full test suite remains the regression gate for broad harness changes.",
+      "commandOrEvidence": "npm test",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md#final-validation-gate"
+    },
+    {
+      "id": "EDAH-VSIG-05",
+      "summary": "Each source phase must add or run its targeted schema, contract, runtime-state, package, or UI tests.",
+      "commandOrEvidence": "targeted phase tests listed in phase documents 02-10",
+      "sourceRef": "docs/implementation/evidence-driven-agent-harness-2026-06-23/02-candidate-identity-and-artifact-schemas-v1.md#verification-signals"
+    }
+  ],
+  "pathBoundaries": {
+    "ownedPaths": [
+      "schemas/candidate-identity.schema.json",
+      "schemas/run-receipt.schema.json",
+      "schemas/review-receipt.schema.json",
+      "schemas/verification-receipt.schema.json",
+      "schemas/score-receipt.schema.json",
+      "schemas/submission-receipt.schema.json",
+      "schemas/task-contract.schema.json",
+      "schemas/done-contract.schema.json",
+      "schemas/spec-revision.schema.json",
+      "schemas/review-bundle.schema.json",
+      "schemas/review-finding.schema.json",
+      "schemas/plan-graph.schema.json",
+      "schemas/skills-lock.schema.json",
+      "scripts/",
+      "scripts/lib/",
+      "templates/",
+      "tools/plan-canvas/",
+      "tests/",
+      "tests/fixtures/",
+      "package/package-contract.yaml",
+      "bin/moonshot-relay.mjs",
+      "docs/public/guidelines/plan-review-canvas.md"
+    ],
+    "readOnlyPaths": [
+      "docs/implementation/current-architecture-2026-06-09/**",
+      "docs/public/runtime-control-plane.md",
+      "docs/public/repository-layout.md",
+      "schemas/verification.contract.yaml",
+      "package/runtime-surface.json",
+      "tools/harness-lab/harness-lab.mjs",
+      ".claude/**",
+      ".codex/**",
+      "${MOONSHOT_RELAY_HOME}/**"
+    ],
+    "stagedPaths": [
+      "docs/implementation/evidence-driven-agent-harness-2026-06-23/",
+      "schemas/",
+      "scripts/",
+      "templates/",
+      "tools/",
+      "tests/",
+      "package/",
+      "bin/",
+      "docs/public/"
+    ]
+  },
+  "handoffRecommendation": {
+    "target": "moonshot-phase-runner",
+    "reason": "Phase 01 produced a ready architecture handoff; remaining work is multi-phase source implementation with explicit dependencies.",
+    "blocking": false
+  },
+  "warnings": [
+    {
+      "code": "phase10_optional_backlog",
+      "message": "Phase 10 remains optional backlog unless explicitly pulled into source implementation scope.",
+      "severity": "info"
+    },
+    {
+      "code": "live_adoption_deferred",
+      "message": "Live account-root and profile adoption remains blocked without explicit user approval.",
+      "severity": "warning"
+    }
+  ],
+  "errors": []
+}

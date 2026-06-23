@@ -71,6 +71,14 @@ const exists = async (target) => {
 
 const toPortable = (target) => target.split(path.sep).join('/');
 
+const toRepoPortable = (repoRoot, target) => {
+  const relative = path.relative(repoRoot, target);
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return toPortable(relative);
+  }
+  return toPortable(target);
+};
+
 const shortHash = (value) => crypto.createHash('sha1').update(String(value || '')).digest('hex').slice(0, 12);
 
 const defaultRunId = () => {
@@ -161,17 +169,111 @@ const titleFromPhaseFile = (file) => {
     .join(' ');
 };
 
-const buildPhaseStates = (phaseDocs) => phaseDocs.map((file, index) => ({
-  number: index + 1,
-  doc: file,
-  title: titleFromPhaseFile(file),
-  status: index === 0 ? 'in_progress' : 'pending',
-  attempts: {
-    total: 0,
-    lastOutcome: '',
-    lastUpdatedAt: '',
-  },
-}));
+const phaseNumberFromFile = (file, fallbackIndex) => {
+  const match = /^(\d{2})-/.exec(file);
+  return match ? Number.parseInt(match[1], 10) : fallbackIndex + 1;
+};
+
+const phaseIdFromFile = (file, fallbackIndex) => {
+  const number = phaseNumberFromFile(file, fallbackIndex);
+  return String(number).padStart(2, '0');
+};
+
+const readIfExists = async (target) => {
+  try {
+    return await readFile(target, 'utf8');
+  } catch {
+    return '';
+  }
+};
+
+const includesPassingStatus = (content) => /(?:^|\n)\s*Status:\s*(?:pass|passed|ready|complete)\b/i.test(content);
+
+const phaseDocClaimsComplete = (content) => /(?:^|\n)\s*Status:\s*complete\b/i.test(content)
+  || /(?:^|\n)##\s+Phase\s+\d+\s+Closeout[\s\S]*?(?:^|\n)\s*Status:\s*complete\b/i.test(content);
+
+const phaseDocIsOptionalBacklog = ({ masterText = '', phaseDoc = '', phaseText = '' } = {}) => {
+  const escapedPhaseDoc = phaseDoc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const masterLinePattern = new RegExp(`^.*${escapedPhaseDoc}.*(?:optional|backlog).*explicitly\\s+pulled.*$`, 'im');
+  return masterLinePattern.test(masterText)
+    || /(?:^|\n)#\s+Phase\s+\d+\s+-.*Optional\b/i.test(phaseText)
+    || /optional\s+backlog\s+unless\s+explicitly\s+pulled\s+into\s+(?:implementation\s+)?scope/i.test(phaseText);
+};
+
+const inspectPhaseCloseout = async ({ repoRoot, planDir, executionRoot, phaseDoc, fallbackIndex }) => {
+  const phaseId = phaseIdFromFile(phaseDoc, fallbackIndex);
+  const phaseText = await readIfExists(path.join(planDir, phaseDoc));
+  const phaseRoot = path.join(executionRoot, `phase-${phaseId}`);
+  const scorecardPath = path.join(phaseRoot, 'SCORECARD.md');
+  const qaReportPath = path.join(phaseRoot, 'QA_REPORT.md');
+  const handoffPath = path.join(phaseRoot, 'HANDOFF.md');
+  const scorecard = await readIfExists(scorecardPath);
+  const qaReport = await readIfExists(qaReportPath);
+  const handoff = await readIfExists(handoffPath);
+  const evidence = {
+    phaseDocClaimsComplete: phaseDocClaimsComplete(phaseText),
+    scorecard: scorecard ? includesPassingStatus(scorecard) : false,
+    qaReport: qaReport ? includesPassingStatus(qaReport) : false,
+    handoff: handoff ? includesPassingStatus(handoff) : false,
+    paths: {
+      scorecard: toRepoPortable(repoRoot, scorecardPath),
+      qaReport: toRepoPortable(repoRoot, qaReportPath),
+      handoff: toRepoPortable(repoRoot, handoffPath),
+    },
+  };
+  return {
+    phaseId,
+    complete: evidence.phaseDocClaimsComplete && evidence.scorecard && evidence.qaReport && evidence.handoff,
+    evidence,
+  };
+};
+
+const buildPhaseStates = async ({ repoRoot, planDir, executionRoot, phaseDocs }) => {
+  if (!planDir || phaseDocs.length === 0) {
+    return [];
+  }
+  const inspected = [];
+  const masterFiles = (await readdir(planDir)).filter((file) => /^00-master-plan-v\d+\.md$/.test(file)).sort();
+  const masterText = masterFiles.length === 1 ? await readIfExists(path.join(planDir, masterFiles[0])) : '';
+  for (let index = 0; index < phaseDocs.length; index += 1) {
+    inspected.push(await inspectPhaseCloseout({
+      repoRoot,
+      planDir,
+      executionRoot,
+      phaseDoc: phaseDocs[index],
+      fallbackIndex: index,
+    }));
+  }
+  const optionalBacklog = [];
+  for (let index = 0; index < phaseDocs.length; index += 1) {
+    const phaseText = await readIfExists(path.join(planDir, phaseDocs[index]));
+    optionalBacklog.push(phaseDocIsOptionalBacklog({
+      masterText,
+      phaseDoc: phaseDocs[index],
+      phaseText,
+    }));
+  }
+  const activeIndex = inspected.findIndex((phase, index) => !phase.complete && !optionalBacklog[index]);
+
+  return phaseDocs.map((file, index) => ({
+    number: phaseNumberFromFile(file, index),
+    doc: file,
+    title: titleFromPhaseFile(file),
+    status: inspected[index]?.complete
+      ? 'complete'
+      : optionalBacklog[index]
+        ? 'optional_backlog'
+        : index === activeIndex
+          ? 'in_progress'
+          : 'pending',
+    attempts: {
+      total: inspected[index]?.complete ? 1 : 0,
+      lastOutcome: inspected[index]?.complete ? 'phase-local-closeout-pass' : '',
+      lastUpdatedAt: '',
+    },
+    closeoutEvidence: inspected[index]?.evidence || null,
+  }));
+};
 
 const hasAheadClaim = (masterText) => /ahead\s+\d+/i.test(masterText) || /unpushed\s+commit/i.test(masterText);
 
@@ -271,12 +373,18 @@ const main = async () => {
   const goalId = options.goalId || (planDir ? path.basename(planDir) : 'phase-runner');
   const workspaceId = options.workspaceId || `workspace-${shortHash(repoRoot)}`;
   const status = errors.length > 0 ? 'blocked' : reviewArtifacts.length === 0 ? 'docs_only' : 'ready';
-  const phases = buildPhaseStates(phaseDocs);
+  const phases = await buildPhaseStates({
+    repoRoot,
+    planDir,
+    executionRoot,
+    phaseDocs,
+  });
+  const activePhase = phases.find((phase) => phase.status === 'in_progress') || null;
   const preparedAt = new Date().toISOString();
   const result = {
     status,
-    activeExecutionStatus: errors.length > 0 ? 'blocked' : 'active',
-    activePhaseDoc: phaseDocs[0] || '',
+    activeExecutionStatus: errors.length > 0 ? 'blocked' : activePhase ? 'active' : 'all_phases_projected_complete',
+    activePhaseDoc: activePhase?.doc || '',
     preparedAt,
     dryRun: options.dryRun,
     runId,
@@ -329,7 +437,7 @@ const main = async () => {
           planDir: result.planDir,
           masterPlan: result.masterPlan,
           phaseDoc: result.activePhaseDoc,
-          phaseNumber: result.phases[0]?.number ?? null,
+          phaseNumber: activePhase?.number ?? null,
           workspaceId,
         },
         identity,
@@ -340,7 +448,7 @@ const main = async () => {
         workspaceId,
         status: result,
         resumeBrief: {
-          nextAction: phaseDocs[0] || '',
+          nextAction: result.activePhaseDoc,
           currentBlocker: '',
           lineage: [result.planDir, result.masterPlan],
         },

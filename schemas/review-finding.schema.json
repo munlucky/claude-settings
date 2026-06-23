@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/review-finding.schema.json",
+  "title": "Review Finding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "findingId", "severity", "disposition", "blocksFullScore", "summary"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "findingId": { "type": "string", "minLength": 1 },
+    "severity": { "enum": ["info", "warning", "critical"] },
+    "disposition": { "enum": ["autofix_safe", "replan_required", "human_decision", "informational"] },
+    "blocksFullScore": { "type": "boolean" },
+    "summary": { "type": "string" }
+  }
+}

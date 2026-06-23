@@ -19,7 +19,7 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 
 ## Hard Stops
 
-- Do not mark a plan execution-ready when phase docs, dependencies, owned paths, or acceptance evidence are missing.
+- Do not mark a plan execution-ready when phase docs, dependencies, owned paths, read/write-set boundaries, or acceptance evidence are missing.
 - Do not accept an architecture package handoff without `TRACEABILITY_MATRIX.md`, selected `ADR/*.md`, `ARCHITECTURE_REVIEW.md`, and task owner/verification signal mapping.
 - Do not mark architecture-heavy plans execution-ready when a required `ARCHITECTURE_CONTRACT_SLICE` or `ARCHITECTURE_HANDOFF` is missing, blocked, or lacks verification signals.
 - Do not allow child planning agents to mutate the source plan directly. Parent session owns final plan edits.
@@ -31,7 +31,7 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 1. Identify the user objective and existing plan directory.
 2. Audit current artifacts and stale phase docs.
 3. Draft or refresh `00-master-plan-*.md` and root `NN-*.md` phase files.
-4. Add phase execution metadata: dependencies, conflicts, owned paths, staged paths, adoption targets, read-only paths, and live mutation policy.
+4. Add phase execution metadata: dependencies, conflicts, owned paths, staged paths, read-only paths, write-set boundaries, adoption targets, and live mutation policy.
 5. When an architecture package is present, map selected ADRs and `TRACEABILITY_MATRIX.md` rows into phase scope, owners, verification signals, and acceptance evidence.
 6. When `ARCHITECTURE_HANDOFF.json` is present, carry only its path, status, selected decision IDs, selected constraint IDs, owned/read-only/staged paths, verification signal IDs, and blocking preconditions into phase metadata.
 7. Run independent review loops as sidecar review, then parent applies accepted edits.
@@ -40,12 +40,13 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 ## Required Evidence
 
 - Plan directory and master plan path.
-- Phase inventory with dependencies and owned paths.
+- Phase inventory with dependencies, read-only paths, owned paths, and write-set boundaries.
 - Acceptance criteria mapped to phase evidence.
 - Architecture package path inventory when used, including traceability matrix, selected ADRs, architecture review, and any Brownfield evidence boundary.
 - Architecture handoff path and status when used, including selected constraints, selected verification signals, and blocked/ready decision.
 - Review loop findings and accepted changes.
 - Explicit adoption strategy for all harness, skill, and agent surfaces.
+- Plan graph readiness evidence when a package claims graph execution. Markdown-only packages remain supported, but do not label them graph-ready without validated DAG metadata.
 
 ## References
 

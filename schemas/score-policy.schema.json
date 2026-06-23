@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/score-policy.schema.json",
+  "title": "Score Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "policyVersion", "fullThreshold", "hardGates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "policyVersion": { "type": "string", "minLength": 1 },
+    "fullThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+    "hardGates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "requiredStatus"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "requiredStatus": { "const": "passed" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+schemaVersion: 1
+contractId: "<task-or-feature-id>"
+revision: 1
+requiredEvidence:
+  - id: "DONE-TEST"
+    kind: "test"
+    description: "Fresh targeted verification command passed."
+  - id: "DONE-QA"
+    kind: "qa_report"
+    description: "QA report records residual risks and command results."
+  - id: "DONE-HANDOFF"
+    kind: "handoff"
+    description: "Handoff names the next phase or completion boundary."

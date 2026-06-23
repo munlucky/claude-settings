@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/verification-evidence.schema.json",
+  "title": "Verification Command Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["argv", "cwd", "env", "timeoutMs", "exitCode", "startedAt", "endedAt", "stdoutDigest", "stderrDigest"],
+  "properties": {
+    "argv": { "type": "array", "items": { "type": "string" } },
+    "cwd": { "type": "string" },
+    "env": { "type": "object", "additionalProperties": { "type": "string" } },
+    "timeoutMs": { "type": "number", "minimum": 0 },
+    "exitCode": { "type": ["integer", "null"] },
+    "startedAt": { "type": "string", "minLength": 1 },
+    "endedAt": { "type": "string", "minLength": 1 },
+    "stdoutDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "stderrDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

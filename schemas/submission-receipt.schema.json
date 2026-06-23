@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/submission-receipt.schema.json",
+  "title": "Submission Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "candidate_id", "candidateId", "sourceDigest", "environmentDigest", "policyDigest", "scoreStatus", "submittedSha", "currentSha", "reviewedSha", "verifiedSha", "scoredSha", "sourceMutationAfterScore", "deliveryAllowed", "mode", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "SUBMISSION_RECEIPT" },
+    "candidate_id": { "$ref": "#/$defs/candidateId" },
+    "candidateId": { "$ref": "#/$defs/candidateId" },
+    "sourceDigest": { "$ref": "#/$defs/sha256" },
+    "environmentDigest": { "$ref": "#/$defs/sha256" },
+    "policyDigest": { "$ref": "#/$defs/sha256" },
+    "scoreStatus": { "enum": ["FULL", "PARTIAL", "BLOCKED"] },
+    "submittedSha": { "type": "string", "minLength": 7 },
+    "currentSha": { "type": "string", "minLength": 7 },
+    "reviewedSha": { "type": "string", "minLength": 7 },
+    "verifiedSha": { "type": "string", "minLength": 7 },
+    "scoredSha": { "type": "string", "minLength": 7 },
+    "sourceMutationAfterScore": { "const": false },
+    "deliveryAllowed": { "const": true },
+    "mode": { "enum": ["local", "pr", "release"] },
+    "createdAt": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "candidateId": { "type": "string", "pattern": "^cand_[a-f0-9]{32}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

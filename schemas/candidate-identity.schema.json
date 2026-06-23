@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/candidate-identity.schema.json",
+  "title": "Candidate Identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "candidate_id", "candidateId", "profile", "dimensions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "candidate_id": { "$ref": "#/$defs/candidateId" },
+    "candidateId": { "$ref": "#/$defs/candidateId" },
+    "profile": { "enum": ["full", "docs_only", "prompt_only", "reduced"] },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "spec", "plan", "done", "source", "environment", "policy"],
+      "properties": {
+        "task": { "$ref": "#/$defs/sha256" },
+        "spec": { "$ref": "#/$defs/sha256" },
+        "plan": { "$ref": "#/$defs/sha256" },
+        "done": { "$ref": "#/$defs/sha256" },
+        "source": { "$ref": "#/$defs/sha256" },
+        "environment": { "$ref": "#/$defs/sha256" },
+        "policy": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "$defs": {
+    "candidateId": { "type": "string", "pattern": "^cand_[a-f0-9]{32}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

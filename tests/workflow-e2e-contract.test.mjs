@@ -147,6 +147,110 @@ test('plan readiness bridge reports ready state and planned outputs for reviewed
   assert.ok(payload.plannedWrites.some((entry) => entry.endsWith('phase-runner-readiness.json')));
 });
 
+test('phase runner advances active phase after phase-local closeout evidence', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-phase-closeout-');
+  const planDir = path.join(tempRoot, 'docs', 'implementation', 'sample-plan');
+  const reviewRoot = path.join(planDir, 'planning-loop');
+  const phaseRoot = path.join(planDir, 'execution', 'phase-01');
+  await mkdir(reviewRoot, { recursive: true });
+  await mkdir(phaseRoot, { recursive: true });
+  await writeFile(path.join(planDir, '00-master-plan-v1.md'), '# Sample Plan\n');
+  await writeFile(path.join(planDir, '01-first-v1.md'), [
+    '# Phase 01',
+    '',
+    '## Phase 01 Closeout',
+    '',
+    'Status: complete',
+    '',
+  ].join('\n'));
+  await writeFile(path.join(planDir, '02-second-v1.md'), '# Phase 02\n');
+  await writeFile(path.join(reviewRoot, 'plan-quality-review-iter-01.yaml'), 'status: pass\n');
+  await writeFile(path.join(phaseRoot, 'SCORECARD.md'), 'Status: pass\n');
+  await writeFile(path.join(phaseRoot, 'QA_REPORT.md'), 'Status: pass\n');
+  await writeFile(path.join(phaseRoot, 'HANDOFF.md'), 'Status: ready for Phase 02\n');
+
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--plan-dir',
+    planDir,
+    '--master-plan',
+    path.join(planDir, '00-master-plan-v1.md'),
+    '--status-file',
+    path.join(tempRoot, '.moonshot-relay', 'docs', 'phase-status.yaml'),
+    '--execution-root',
+    path.join(planDir, 'execution'),
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'ready');
+  assert.equal(payload.activeExecutionStatus, 'active');
+  assert.equal(payload.activePhaseDoc, '02-second-v1.md');
+  assert.equal(payload.phases[0].status, 'complete');
+  assert.equal(payload.phases[0].attempts.lastOutcome, 'phase-local-closeout-pass');
+  assert.equal(payload.phases[1].status, 'in_progress');
+});
+
+test('phase runner excludes optional backlog phases from active cursor unless explicitly pulled', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-optional-backlog-');
+  const planDir = path.join(tempRoot, 'docs', 'implementation', 'sample-plan');
+  const reviewRoot = path.join(planDir, 'planning-loop');
+  const phaseRoot = path.join(planDir, 'execution', 'phase-01');
+  await mkdir(reviewRoot, { recursive: true });
+  await mkdir(phaseRoot, { recursive: true });
+  await writeFile(path.join(planDir, '00-master-plan-v1.md'), [
+    '# Sample Plan',
+    '',
+    '| Phase | Title | Plan File | Depends On | Execution Readiness |',
+    '|---|---|---|---|---|',
+    '| 01 | Required | `01-required-v1.md` | - | ready |',
+    '| 02 | Optional Canvas | `02-optional-canvas-v1.md` | 01 | backlog unless explicitly pulled into scope |',
+    '',
+  ].join('\n'));
+  await writeFile(path.join(planDir, '01-required-v1.md'), [
+    '# Phase 01',
+    '',
+    '## Phase 01 Closeout',
+    '',
+    'Status: complete',
+    '',
+  ].join('\n'));
+  await writeFile(path.join(planDir, '02-optional-canvas-v1.md'), '# Phase 02 - Optional Canvas v1\n');
+  await writeFile(path.join(reviewRoot, 'plan-quality-review-iter-01.yaml'), 'status: pass\n');
+  await writeFile(path.join(phaseRoot, 'SCORECARD.md'), 'Status: pass\n');
+  await writeFile(path.join(phaseRoot, 'QA_REPORT.md'), 'Status: pass\n');
+  await writeFile(path.join(phaseRoot, 'HANDOFF.md'), 'Status: ready\n');
+
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--plan-dir',
+    planDir,
+    '--master-plan',
+    path.join(planDir, '00-master-plan-v1.md'),
+    '--status-file',
+    path.join(tempRoot, '.moonshot-relay', 'docs', 'phase-status.yaml'),
+    '--execution-root',
+    path.join(planDir, 'execution'),
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.activeExecutionStatus, 'all_phases_projected_complete');
+  assert.equal(payload.activePhaseDoc, '');
+  assert.equal(payload.phases[0].status, 'complete');
+  assert.equal(payload.phases[1].status, 'optional_backlog');
+});
+
 test('tracked source roadmaps default execution scratch to docs implementation', () => {
   const result = spawnSync(process.execPath, [
     fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
@@ -343,6 +447,21 @@ test('phase runner treats review rejects as carry-forward blockers while phases 
   assert.match(runner, /Only the final whole-plan completion claim requires `assess-completion` to return `accepted`/);
   assert.match(executor, /REJECT`.*worsened eval or blocking runtime event/i);
   assert.match(executor, /carry-forward blockers rather than automatic whole-plan stop conditions/i);
+});
+
+test('phase runner treats general start as full-plan execution intent', async () => {
+  const runner = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.md');
+  const runnerKo = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.ko.md');
+  const workflow = await readRoot('docs', 'public', 'reference', 'phase-runner-user-workflow.md');
+
+  for (const content of [runner, runnerKo, workflow]) {
+    assert.match(content, /작업시작/);
+    assert.match(content, /full-plan execution|전체 plan 실행/);
+    assert.match(content, /Phase 01만|only phase 01/);
+  }
+  assert.match(runner, /Do not narrow it to Phase 01/i);
+  assert.match(runnerKo, /임의 축소하지 않습니다/);
+  assert.match(workflow, /must not stop after Phase 01/i);
 });
 
 test('runtime control plane docs publish DB authority matrix and closeout boundaries', async () => {

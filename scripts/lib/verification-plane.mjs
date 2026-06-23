@@ -2,6 +2,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+import { evidenceBinding, normalizeCandidateId, sha256Hex } from './candidate-identity.mjs';
+import { classifyFinding } from './review-bundle.mjs';
+
 export const VERIFICATION_PLANE_SCHEMA_VERSION = 1;
 
 export const REQUIRED_VERIFICATION_PLANES = [
@@ -54,6 +57,135 @@ export function normalizePlaneList(planes = []) {
     plane: String(entry.plane || '').trim(),
     status: String(entry.status || '').trim(),
   }));
+}
+
+const DEFAULT_ENV_ALLOWLIST = ['NODE_ENV', 'CI', 'OS', 'PROCESSOR_ARCHITECTURE'];
+
+export function buildCommandEvidence({
+  argv = [],
+  cwd = '.',
+  env = {},
+  envAllowlist = DEFAULT_ENV_ALLOWLIST,
+  timeoutMs = 0,
+  exitCode = null,
+  stdout = '',
+  stderr = '',
+  startedAt = nowIso(),
+  endedAt = nowIso(),
+} = {}) {
+  const allowedEnv = {};
+  for (const key of envAllowlist) {
+    if (Object.hasOwn(env, key)) allowedEnv[key] = String(env[key]);
+  }
+  return {
+    argv: argv.map(String),
+    cwd,
+    env: allowedEnv,
+    timeoutMs: Number(timeoutMs),
+    exitCode,
+    startedAt,
+    endedAt,
+    stdoutDigest: sha256Hex(stdout),
+    stderrDigest: sha256Hex(stderr),
+  };
+}
+
+export function buildVerificationReceipt({
+  candidate,
+  sourceDigest,
+  environmentDigest,
+  policyDigest = '',
+  commands = [],
+  status = 'passed',
+} = {}) {
+  const candidate_id = normalizeCandidateId(candidate);
+  return {
+    schemaVersion: 1,
+    artifactId: 'VERIFICATION_RECEIPT',
+    candidate_id,
+    candidateId: candidate_id,
+    sourceDigest: sourceDigest || candidate?.dimensions?.source || '',
+    environmentDigest: environmentDigest || candidate?.dimensions?.environment || '',
+    policyDigest: policyDigest || candidate?.dimensions?.policy || '',
+    status,
+    commands,
+  };
+}
+
+export function scoreCandidate({
+  candidate,
+  verification,
+  reviewFindings = [],
+  policyVersion = 'score-policy-v1',
+  hardGates = [],
+  weights = {},
+} = {}) {
+  const candidate_id = normalizeCandidateId(candidate || verification);
+  const binding = evidenceBinding({
+    candidate_id,
+    sourceDigest: verification?.sourceDigest || candidate?.dimensions?.source,
+    environmentDigest: verification?.environmentDigest || candidate?.dimensions?.environment,
+    policyDigest: verification?.policyDigest || candidate?.dimensions?.policy,
+  });
+  const classifiedFindings = reviewFindings.map((finding) => classifyFinding(finding));
+  const failedHardGates = hardGates.filter((gate) => gate.status !== 'passed');
+  const blockingFindings = classifiedFindings.filter((finding) => finding.blocksFullScore);
+  const verificationFailed = verification?.status !== 'passed';
+  const hardGateFailed = failedHardGates.length > 0 || blockingFindings.length > 0 || verificationFailed;
+  const weightedScore = hardGateFailed
+    ? 0
+    : Math.min(1, Object.values(weights).reduce((sum, value) => sum + Number(value || 0), 0) || 1);
+  return {
+    schemaVersion: 1,
+    artifactId: 'SCORE_RECEIPT',
+    candidate_id,
+    candidateId: candidate_id,
+    sourceDigest: binding.sourceDigest,
+    environmentDigest: binding.environmentDigest,
+    policyDigest: binding.policyDigest,
+    policyVersion,
+    status: hardGateFailed ? 'BLOCKED' : 'FULL',
+    hardGates: [
+      ...hardGates,
+      ...blockingFindings.map((finding) => ({
+        id: finding.findingId,
+        status: 'failed',
+        reason: `review finding blocks FULL: ${finding.summary || finding.findingId}`,
+      })),
+      ...(verificationFailed ? [{ id: 'verification-status', status: 'failed', reason: `verification status ${verification?.status || 'missing'}` }] : []),
+    ],
+    weightedScore,
+    wholePlanAuthority: {
+      status: 'not_completion_authority',
+      acceptedCompletionRequired: true,
+      authoritySource: 'runtime-state.sqlite',
+    },
+  };
+}
+
+export function projectVerifyScoreEvidence({ runId, goalId, verifyReceipt, scoreReceipt } = {}) {
+  return {
+    runtimeEvent: {
+      event_type: 'verification.score',
+      severity: scoreReceipt?.status === 'FULL' ? 'info' : 'blocking',
+      payload: {
+        candidate_id: scoreReceipt?.candidate_id || verifyReceipt?.candidate_id || '',
+        verifyStatus: verifyReceipt?.status || '',
+        scoreStatus: scoreReceipt?.status || '',
+        policyVersion: scoreReceipt?.policyVersion || '',
+      },
+    },
+    evalEvidence: {
+      runId,
+      goalId,
+      suite: 'verification-scoring',
+      status: scoreReceipt?.status === 'FULL' ? 'passed' : 'failed',
+      evidence: {
+        verifyReceipt,
+        scoreReceipt,
+      },
+    },
+  };
 }
 
 export function buildVerificationSummary({

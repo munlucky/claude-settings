@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/plan-feedback.schema.json",
+  "title": "Plan Canvas Feedback",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "planDir", "sourceTruth", "items"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "PLAN_CANVAS_FEEDBACK" },
+    "planDir": { "type": "string", "minLength": 1 },
+    "sourceTruth": { "const": "markdown_yaml_plan_package" },
+    "generatedFrom": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "target", "severity", "comment", "disposition"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file"],
+            "properties": {
+              "file": { "type": "string", "minLength": 1 },
+              "heading": { "type": "string" },
+              "selector": { "type": "string" }
+            }
+          },
+          "severity": { "enum": ["info", "warning", "blocking"] },
+          "comment": { "type": "string", "minLength": 1 },
+          "disposition": { "enum": ["needs_revision", "accepted", "rejected"] }
+        }
+      }
+    }
+  }
+}

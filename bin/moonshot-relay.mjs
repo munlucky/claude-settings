@@ -9,11 +9,13 @@ const binPath = fileURLToPath(import.meta.url);
 const repoRoot = path.dirname(path.dirname(binPath));
 const installer = path.join(repoRoot, 'scripts', 'install-account-root-harness.mjs');
 const bridgeInstaller = path.join(repoRoot, 'scripts', 'install-project-runtime-bridge.mjs');
+const deliverySubmit = path.join(repoRoot, 'scripts', 'delivery-submit.mjs');
 
 const usage = `Usage:
   moonshot-relay [install] [--dry-run] [--json] [--no-backup]
   moonshot-relay install [--runtime all|claude|codex] [--moonshot-home <dir>] [--claude-home <dir>] [--codex-home <dir>]
   moonshot-relay bridge [--target <project-root>] [--plan-package docs/implementation/<slug>] [--dry-run] [--json]
+  moonshot-relay delivery submit --score <json-file> --verification <json-file> --current-sha <sha> [--mode local|pr|release] [--out <submission.json>] [--json]
 
 Runs the Moonshot Relay account-root installer from the current package source.`;
 
@@ -29,9 +31,31 @@ if (args[0] && !args[0].startsWith('-')) {
   command = args.shift();
 }
 
-if (!['install', 'bridge'].includes(command)) {
+if (!['install', 'bridge', 'delivery'].includes(command)) {
   console.error(`Unknown command: ${command}\n${usage}`);
   process.exit(1);
+}
+
+if (command === 'delivery') {
+  const subcommand = args.shift();
+  if (subcommand !== 'submit') {
+    console.error(`Unknown delivery command: ${subcommand || ''}\n${usage}`);
+    process.exit(1);
+  }
+  if (!existsSync(deliverySubmit)) {
+    console.error(`Moonshot Relay delivery submit command not found: ${deliverySubmit}`);
+    process.exit(1);
+  }
+  const result = spawnSync(process.execPath, [deliverySubmit, 'submit', ...args], {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: 'inherit',
+  });
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
 }
 
 const selectedInstaller = command === 'bridge' ? bridgeInstaller : installer;

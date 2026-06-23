@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/review-bundle.schema.json",
+  "title": "Review Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "candidate_id", "sourceDigest", "contractRevision", "freshSessionId", "input", "bundleDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "REVIEW_BUNDLE" },
+    "candidate_id": { "type": "string", "pattern": "^cand_[a-f0-9]{32}$" },
+    "sourceDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "contractRevision": { "type": "integer", "minimum": 1 },
+    "freshSessionId": { "type": "string", "minLength": 1 },
+    "bundleDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spec", "plan", "done", "diff", "testResults"],
+      "properties": {
+        "spec": {},
+        "plan": {},
+        "done": {},
+        "diff": {},
+        "testResults": {}
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["implementationTranscript"] },
+          { "required": ["hiddenReasoning"] },
+          { "required": ["selfEvaluation"] },
+          { "required": ["chatHistory"] },
+          { "required": ["conversation"] }
+        ]
+      }
+    }
+  }
+}

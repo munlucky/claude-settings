@@ -116,6 +116,7 @@ const trackedImplementationPlanAllowlist = [
   /^docs\/implementation\/[^/]+\/ADR\/[^/]+\.md$/,
   /^docs\/implementation\/[^/]+\/C4\/[^/]+\.md$/,
   /^docs\/implementation\/[^/]+\/planning-loop\/[^/]+\.(?:ya?ml|json|md)$/,
+  /^docs\/implementation\/[^/]+\/architecture-handoff\/.+\.(?:ya?ml|json|md)$/,
 ];
 
 const isAllowedTrackedDoc = (file) => (

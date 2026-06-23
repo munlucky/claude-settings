@@ -1,0 +1,107 @@
+schemaVersion: 1
+reviewedPackageRoot: "docs/implementation/evidence-driven-agent-harness-2026-06-23"
+reviewType: "document-level-review-improvement-loop"
+iteration: 1
+status: "reviewed-parent-applied"
+reviewAgents:
+  - agentId: "019ef34c-46fd-70e3-8543-afe93b36c303"
+    role: "independent-review-agent-a"
+    status: "completed"
+  - agentId: "019ef34c-7718-7a52-8b91-3bc6d64aff23"
+    role: "independent-review-agent-b"
+    status: "completed"
+documents:
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/00-master-plan-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Phase 01 waiver path was ambiguous."
+      - "Expected architecture handoff paths and required metadata fields were not named."
+    acceptedChanges:
+      - "Added Phase 01 waiver contract with artifact path, required fields, allowed paths, and forbidden actions."
+      - "Added expected architecture handoff paths and required handoff metadata."
+      - "Added invalidation matrix and accepted review directives."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/01-architecture-contract-normalization-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Architecture handoff output paths were generic."
+    acceptedChanges:
+      - "Replaced generic future paths with concrete architecture-handoff artifacts."
+      - "Recorded runtime-state authority decision as an ADR output."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/02-candidate-identity-and-artifact-schemas-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "candidate_id testability and candidateId compatibility were not decided."
+      - "Owned paths were broad globs."
+    acceptedChanges:
+      - "Added exact schema/helper/test/fixture filenames."
+      - "Required canonical serialization, environment allowlist, invalidation fixtures, and candidate_id/candidateId interop tests."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/03-contract-engine-and-spec-revision-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Invalidation matrix was referenced but absent."
+      - "Owned paths were broad globs."
+    acceptedChanges:
+      - "Added master invalidation matrix."
+      - "Added exact schema/script/template/test filenames."
+      - "Added waiver misuse and forward-state negative test requirement."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/04-independent-review-engine-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Review evidence runtime-state recording path was not named."
+      - "Owned paths and bundle artifacts were too broad."
+    acceptedChanges:
+      - "Added exact review schema/builder/test/fixture paths."
+      - "Specified runtime_events and eval_results mapping without completion authority."
+      - "Required bundle hash and fresh-session identity evidence."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/05-verification-and-scoring-engine-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Verification/scoring projection into runtime-state was not concrete enough."
+      - "FULL score and whole-plan closeout boundary were easy to conflate."
+    acceptedChanges:
+      - "Added verification-plane record-summary and runtime-state assess-completion negative test signals."
+      - "Clarified FULL is submit eligibility only; completion_decisions remain whole-plan closeout authority."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/06-workspace-execution-and-event-ledger-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Event writer/projection direction was deferred into the same phase as ledger implementation."
+    acceptedChanges:
+      - "Made current runtime_events authority and JSONL receipt/replay mirror the default."
+      - "Marked JSONL implementation blocked until event compatibility contract is accepted."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/07-plan-graph-scheduler-and-scope-drift-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Owned paths included broad skill surfaces and shared workflow tests without migration rules."
+    acceptedChanges:
+      - "Added exact schema/script/test filenames."
+      - "Added additive plan.yaml rule preserving existing markdown-only package support until explicit migration."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/08-delivery-submit-gate-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Original Phase 08 bundled delivery, skills supply chain, package, docs, and UI too broadly."
+    acceptedChanges:
+      - "Split delivery submit gate into a narrow Phase 08 with exact schema/script/bin/test paths."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/09-skills-doctor-and-package-boundary-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Skills doctor and package boundary needed separate public-surface controls."
+    acceptedChanges:
+      - "Created separate Phase 09 with skills lock/audit/doctor and package materialization guard."
+  - path: "docs/implementation/evidence-driven-agent-harness-2026-06-23/10-plan-canvas-ui-optional-v1.md"
+    reviewStatus: "reviewed-parent-applied"
+    blockingFindings:
+      - "Plan canvas UI needed to be optional derived output rather than part of delivery/package source truth."
+    acceptedChanges:
+      - "Created optional Phase 10 with generated-vs-source boundaries and feedback revision workflow."
+acceptedChanges:
+  - "Document-level blockers from both independent reviewers were applied by the parent session."
+  - "The package remains blocked for execution until architecture handoff or Phase 01 waiver exists."
+  - "Over-broad Phase 08 was split into 08 delivery, 09 skills/package, and 10 optional canvas."
+rejectedChanges:
+  - change: "Mark document-level review complete without applying blocker edits."
+    reason: "Both reviewers identified blocking document-level gaps."
+  - change: "Use broad `docs/public/**` or `schemas/**candidate**` owned paths for execution."
+    reason: "Reviewer feedback required exact paths before runnable execution."
+remainingAmbiguity:
+  - "Exact architecture handoff contents are still pending; this is intentionally tracked as execution blocker, not hidden ambiguity."
+  - "Plan canvas remains optional/backlog unless explicitly pulled into implementation scope."

@@ -107,10 +107,23 @@ const requiredCommonPayloadFiles = [
   'scripts/code-review-graph-mcp-wrapper.js',
   'scripts/browser-flow-runner.mjs',
   'scripts/context-state.mjs',
+  'scripts/contract-engine.mjs',
+  'scripts/delivery-submit.mjs',
   'scripts/commit-moonshot-memory-refresh.mjs',
   'scripts/phase-final-guard.mjs',
   'scripts/prepare-phase-runner-state.mjs',
+  'scripts/skills-audit.mjs',
+  'scripts/doctor.mjs',
+  'scripts/lib/skills-lock.mjs',
+  'scripts/plan-graph-validate.mjs',
+  'scripts/review-bundle-build.mjs',
   'scripts/lib/git-safe.mjs',
+  'scripts/lib/candidate-identity.mjs',
+  'scripts/lib/contract-invalidation.mjs',
+  'scripts/lib/delivery-policy.mjs',
+  'scripts/lib/event-ledger.mjs',
+  'scripts/lib/plan-graph.mjs',
+  'scripts/lib/review-bundle.mjs',
   'scripts/lib/phase-event-ledger.mjs',
   'scripts/lib/phase-run-lease-store.mjs',
   'scripts/lib/context-state-engine.mjs',
@@ -120,6 +133,8 @@ const requiredCommonPayloadFiles = [
   'scripts/runtime-state.mjs',
   'scripts/verification-plane.mjs',
   'scripts/lib/verification-plane.mjs',
+  'scripts/workspace-manager.mjs',
+  'scripts/lib/workspace-manager.mjs',
   'scripts/verification-verdict-state.mjs',
   'package/runtime-surface.json',
   'docs/public/guidelines/harness-bootstrap-lab.md',
@@ -436,6 +451,21 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('skills/completion-verifier/SKILL.md'));
   assert.ok(plannedFrom.includes('scripts/browser-flow-runner.mjs'));
   assert.ok(plannedFrom.includes('scripts/prepare-phase-runner-state.mjs'));
+  assert.ok(plannedFrom.includes('scripts/contract-engine.mjs'));
+  assert.ok(plannedFrom.includes('scripts/delivery-submit.mjs'));
+  assert.ok(plannedFrom.includes('scripts/plan-graph-validate.mjs'));
+  assert.ok(plannedFrom.includes('scripts/review-bundle-build.mjs'));
+  assert.ok(plannedFrom.includes('scripts/workspace-manager.mjs'));
+  assert.ok(plannedFrom.includes('scripts/skills-audit.mjs'));
+  assert.ok(plannedFrom.includes('scripts/doctor.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/candidate-identity.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/contract-invalidation.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/delivery-policy.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/event-ledger.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/plan-graph.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/review-bundle.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/skills-lock.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/workspace-manager.mjs'));
   assert.ok(plannedFrom.includes('scripts/install-project-runtime-bridge.mjs'));
   assert.ok(plannedFrom.includes('scripts/architecture-knowledge-resolve.mjs'));
   assert.ok(plannedFrom.includes('scripts/architecture-contract-bind.mjs'));
@@ -445,6 +475,8 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedTo.includes('package/codex/profile/.codex/skills/moonshot-phase-runner/SKILL.md'));
   assert.equal(plannedTo.includes('package/codex/profile/.codex/skills/completion-verifier/SKILL.md'), false);
   assert.equal(plannedTo.includes('package/claude/profile/.claude/skills/completion-verifier/SKILL.md'), false);
+  assert.equal(plannedTo.includes('package/codex/profile/.codex/skills/skills-doctor/SKILL.md'), false);
+  assert.equal(plannedTo.includes('package/claude/profile/.claude/skills/skills-doctor/SKILL.md'), false);
   assert.equal(plannedTo.some((target) => /\.claude\/verification-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/runtime-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/browser-flow-verdict-[^/]*\.json$/.test(target)), false);

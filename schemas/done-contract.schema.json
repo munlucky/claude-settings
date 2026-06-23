@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/done-contract.schema.json",
+  "title": "Done Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contractId", "revision", "requiredEvidence"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "contractId": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "requiredEvidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "description"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["test", "review", "scorecard", "qa_report", "handoff", "runtime_event"] },
+          "description": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

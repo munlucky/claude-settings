@@ -3,6 +3,10 @@ import process from 'node:process';
 
 import {
   assessSecurityScans,
+  buildCommandEvidence,
+  buildVerificationReceipt,
+  projectVerifyScoreEvidence,
+  scoreCandidate,
   buildVerificationSummary,
   writeBrowserTraceMetadata,
 } from './lib/verification-plane.mjs';
@@ -105,6 +109,32 @@ const main = async () => {
       workspaceId: options.workspaceId || '',
     });
     result = { status: 'recorded', ...summary, event, evalResult };
+  } else if (options.command === 'score-candidate') {
+    const candidate = parseJsonOption(options.candidateJson, '--candidate-json', {});
+    const commands = parseJsonOption(options.commandsJson, '--commands-json', []).map((command) => buildCommandEvidence(command));
+    const verification = buildVerificationReceipt({
+      candidate,
+      commands,
+      status: options.verifyStatus || 'passed',
+    });
+    const score = scoreCandidate({
+      candidate,
+      verification,
+      reviewFindings: parseJsonOption(options.reviewFindingsJson, '--review-findings-json', []),
+      hardGates: parseJsonOption(options.hardGatesJson, '--hard-gates-json', []),
+      policyVersion: options.policyVersion || 'score-policy-v1',
+    });
+    result = {
+      status: 'scored',
+      verification,
+      score,
+      projection: projectVerifyScoreEvidence({
+        runId: options.runId || '',
+        goalId: options.goalId || '',
+        verifyReceipt: verification,
+        scoreReceipt: score,
+      }),
+    };
   } else if (options.command === 'assess-security') {
     const runId = requireOption(options, 'runId');
     const goalId = requireOption(options, 'goalId');

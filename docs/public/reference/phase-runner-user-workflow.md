@@ -13,9 +13,13 @@ node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir docs/imp
 
 Do not rely on implicit plan resolution when multiple `docs/implementation/*/00-master-plan-v*.md` packages exist. Pass `--plan-dir` and `--master-plan` so the runner cannot pick stale plans.
 
+General start wording such as "작업시작", "start work", "run this plan", or a plan directory plus master plan means full-plan execution. The runner must not stop after Phase 01 or a preparation/waiver phase unless the operator explicitly asks for a single phase, such as "Phase 01만" or "only phase 01".
+
 For architecture-derived phase plans, the plan package should carry selected `ADR/*.md`, `TRACEABILITY_MATRIX.md` rows, owners, verification signals, and `ARCHITECTURE_REVIEW.md` paths in phase metadata. The runner should pass only the active phase slice to attempt/review agents.
 
 `phase-status.yaml` is a human-readable projection for the active plan loop. It is useful for selecting the next phase, but it is not authority for blocker, resume, or completion decisions when `runtime-state.sqlite` is available.
+
+When a phase has phase-local closeout evidence, the next runner preparation should reconcile that evidence and select the next incomplete phase as active. A phase-local pass is a cursor advance, not a whole-plan success claim.
 
 ## Closeout Boundaries
 

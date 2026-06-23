@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/spec-revision.schema.json",
+  "title": "Spec Revision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "frozen", "changeType", "contractDigest", "invalidates", "actor", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "frozen": { "type": "boolean" },
+    "changeType": { "enum": ["spec", "done", "design", "plan", "source", "lockfile", "environment", "policy"] },
+    "contractDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "previousDigest": { "type": "string" },
+    "invalidates": { "type": "array", "items": { "type": "string" } },
+    "actor": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string" },
+    "createdAt": { "type": "string", "minLength": 1 }
+  }
+}
