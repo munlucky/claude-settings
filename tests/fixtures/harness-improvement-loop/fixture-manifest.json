@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "moonshot-harness-fixture-manifest.v1",
+  "fixtureSetId": "harness-improvement-loop-foundation-v1",
+  "fixtures": [
+    {
+      "fixtureId": "plan-package-minimal-valid",
+      "title": "Minimal valid plan package",
+      "fixtureType": "plan_package",
+      "inputPath": "tests/fixtures/harness-improvement-loop/plan-package-minimal-valid/input.md",
+      "inputHash": "sha256:c8f8007cfa1afad649c31b33fa74437459604c9a49ddb3298465089b97221994",
+      "allowedOutputRoot": "<runRoot>/artifacts/plan-package-minimal-valid",
+      "expectedArtifacts": [
+        {
+          "path": "00-master-plan-v1.md",
+          "required": true,
+          "schema": null,
+          "requiredSections": ["# Fixture Master Plan", "## Objective"]
+        },
+        {
+          "path": "01-phase-v1.md",
+          "required": true,
+          "schema": null,
+          "requiredSections": ["# Fixture Phase 01", "## Acceptance Criteria"]
+        },
+        {
+          "path": "planning-loop/plan-quality-review-iter-01.yaml",
+          "required": true,
+          "schema": null,
+          "requiredSections": ["schemaVersion:", "reviewedPackageRoot:"]
+        }
+      ],
+      "scorer": { "id": "artifact-scorer", "version": "1" }
+    },
+    {
+      "fixtureId": "plan-package-missing-scorecard",
+      "title": "Plan package with intentionally missing closeout evidence",
+      "fixtureType": "plan_package",
+      "inputPath": "tests/fixtures/harness-improvement-loop/plan-package-missing-scorecard/input.md",
+      "inputHash": "sha256:9f51813d465d1e34c87dbc49a11579023724fb70f3ddb3a6512973e735a271d0",
+      "allowedOutputRoot": "<runRoot>/artifacts/plan-package-missing-scorecard",
+      "expectedArtifacts": [
+        {
+          "path": "execution/phase-01/SCORECARD.md",
+          "required": true,
+          "schema": null,
+          "requiredSections": ["Status: pass"]
+        }
+      ],
+      "scorer": { "id": "artifact-scorer", "version": "1" }
+    }
+  ]
+}

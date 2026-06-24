@@ -1,0 +1,8 @@
+{
+  "taskId": "fake-swe-bench-smoke-001",
+  "repo": "moonshot-relay/fake",
+  "baseCommit": "0000000000000000000000000000000000000000",
+  "problemStatement": "Change the fake repository so the verifier can observe a candidate patch artifact.",
+  "testPatch": "diff --git a/test.js b/test.js\n",
+  "patch": "diff --git a/index.js b/index.js\n--- a/index.js\n+++ b/index.js\n@@ -1 +1 @@\n-fail\n+pass\n"
+}
