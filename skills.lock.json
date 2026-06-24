@@ -270,6 +270,20 @@
       }
     },
     {
+      "name": "figma-spec-synthesizer",
+      "path": "skills/figma-spec-synthesizer",
+      "source": "canonical",
+      "contentHash": "5a1e8998e318513d5ddfb1a68d1f427671e8a709df1030cb5e7837446e884e14",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [],
+      "permissionReview": {
+        "status": "approved",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
+        "reviewer": "skills-audit-generate-lock"
+      }
+    },
+    {
       "name": "frontend-design",
       "path": "skills/frontend-design",
       "source": "canonical",

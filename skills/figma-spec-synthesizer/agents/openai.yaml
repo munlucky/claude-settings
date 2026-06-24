@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Spec Synthesizer"
+  short_description: "Turn Figma nodes into implementation specs"
+  default_prompt: "Use $figma-spec-synthesizer to turn the linked Figma design or planning node into an implementation-ready spec."
