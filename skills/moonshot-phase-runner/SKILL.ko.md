@@ -55,7 +55,8 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 6. long-running phase는 lease window가 끝나기 전에 `scripts/runtime-state.mjs heartbeat-run-lease`로 heartbeat합니다.
 7. sandbox-sensitive tool call 전에는 protected paths와 approval-required operation을 `tools/sandbox/policy.mjs check --json`으로 확인합니다.
 8. active phase contract에서 compact phase-attempt brief를 만듭니다.
-8.1. declared read-only paths와 owned/write-set paths를 phase-attempt brief에 포함합니다. write set 밖의 변경 파일은 scope drift로 기록해야 합니다.
+8.1. `docs/public/guidelines/minimal-correct-implementation.md`를 mandatory implementation-shape constraint로 phase-attempt brief에 포함합니다.
+8.2. declared read-only paths와 owned/write-set paths를 phase-attempt brief에 포함합니다. write set 밖의 변경 파일은 scope drift로 기록해야 합니다.
 9. architecture-derived plan에서는 active phase에 필요한 selected ADR, traceability, owner, verification signal, architecture review path만 붙입니다.
 10. phase metadata에 `architecture.handoff`가 있으면 `status=ready`를 요구하고 `ARCHITECTURE_HANDOFF.promptBlock`과 compact metadata만 붙이며 blocked handoff dispatch는 reject합니다.
 11. interactive run에서는 현재 세션이 조정하고 각 phase attempt/review는 fresh forked agent에 위임합니다.
@@ -74,6 +75,7 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 - tool/fork/browser path가 없을 때 runtime capability evidence.
 - code-changing phase의 review evidence.
 - plan graph validation evidence 또는 명시적 markdown-compatible mode evidence.
+- `docs/public/guidelines/minimal-correct-implementation.md`에 따른 lower-rung reuse/skip/new-surface 선택 근거인 minimality decision evidence.
 - fresh verifier verdict와 scorecard agreement.
 - coordinator closeout evidence와 phase closeout result.
 - live account-root/profile sync 전 Operational Adoption Closeout evidence: independent completion audit, independent operational adoption audit, `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, `node package/build-package.mjs --runtime all --dry-run --json`.

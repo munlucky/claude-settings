@@ -76,6 +76,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `knowledge-repository-ops.md` | policy-anchor | `scripts/knowledge-*.mjs`, `docs/public/project-knowledge-plane.md` |
 | `long-running-harness.ko.md` | policy-anchor | `skills/moonshot-phase-runner/**`, `skills/moonshot-in-session-coordinator/**` |
 | `memorygraph-workflow.md` / `memorygraph-workflow.ko.md` | policy-anchor | `scripts/memorygraph-*.mjs`, `skills/project-memory-refresh/**` |
+| `minimal-correct-implementation.md` | policy-anchor | `skills/moonshot-orchestrator/**`, `skills/moonshot-phase-runner/**`, `templates/execution/SCORECARD.template.md` |
 | `moonshot-architecture.md` / `moonshot-architecture.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, `docs/public/roadmaps/moonshot-architecture/**` |
 | `product-acceptance-gate.md` | policy-anchor | `skills/completion-verifier/**`, `skills/product-gate-reviewer/**` |
 | `product-definition-workflow.md` | policy-anchor | `skills/product-orchestrator/**`, `templates/product-definition/**` |

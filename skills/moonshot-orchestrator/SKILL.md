@@ -40,16 +40,18 @@ For architecture-derived work, this means a bounded selected ADR and traceabilit
 1. Confirm the task is bounded and has enough context.
 2. If an architecture package is supplied, consume selected `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `PLAN.md`, and `ARCHITECTURE_REVIEW.md` paths; do not replace them with chat-only summaries.
 3. If `ARCHITECTURE_HANDOFF.json` is supplied, require `status=ready`, consume only `promptBlock` and compact metadata, and use `ownedPaths`, `readOnlyPaths`, and `verificationSignalIds` as scope and verification guards.
-4. Inspect local contracts and affected files before editing.
-5. Make the smallest implementation that satisfies the selected ADR, traceability slice, and handoff constraints.
-6. Run focused checks and classify failures as implementation, verification, environment, or contract.
-7. On contract violation, use `scripts/architecture-feedback-render.mjs` to produce read-before-retry and required-action feedback.
-8. Apply review feedback, then rerun only the checks invalidated by the change.
-9. Close with changed files, verification, residual risk, and no phase-style finalization claims.
+4. Read and apply `docs/public/guidelines/minimal-correct-implementation.md` before choosing the implementation shape.
+5. Inspect local contracts and affected files before editing.
+6. Make the smallest implementation that satisfies the selected ADR, traceability slice, handoff constraints, and minimal-correct implementation ladder.
+7. Run focused checks and classify failures as implementation, verification, environment, or contract.
+8. On contract violation, use `scripts/architecture-feedback-render.mjs` to produce read-before-retry and required-action feedback.
+9. Apply review feedback, then rerun only the checks invalidated by the change.
+10. Close with changed files, verification, minimality decision, residual risk, and no phase-style finalization claims.
 
 ## Required Evidence
 
 - Affected file list and rationale.
+- Minimality decision: reused existing surface, added new surface, or skipped lower-rung options, with reason.
 - Fresh test/build/lint or targeted verification output.
 - Review evidence when behavior, shared contracts, or harness logic changes.
 - Explicit blocker classification if a required check cannot run.

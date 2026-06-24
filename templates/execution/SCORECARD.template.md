@@ -25,6 +25,7 @@
 | OBJ-SCN | Critical scenarios evidenced | 25 | pending/pass/fail |  |  |
 | OBJ-VER | Required verification commands passed | 20 | pending/pass/fail |  |  |
 | OBJ-CLOSE | Review, finish closeout, and workflow-surface consistency recorded | 10 | pending/pass/fail |  |  |
+| OBJ-MIN | Minimal-correct implementation ladder checked; lower-rung reuse/skip/new-surface decision recorded | 5 | pending/pass/fail |  | `docs/public/guidelines/minimal-correct-implementation.md` |
 
 ## Frontend Preset Objectives
 
@@ -40,6 +41,7 @@ Use when the phase, contract, or detected scope is frontend/UI work.
 | OBJ-PERF | Required performance evidence passed | 10 | pending/pass/fail |  | Required performance budget or runtime measurement evidence passes; missing required setup is blocking |
 | OBJ-VER | Required verification commands passed | 10 | pending/pass/fail |  | Contract required checks passed with fresh evidence |
 | OBJ-CLOSE | Review and closeout recorded | 5 | pending/pass/fail |  | QA, handoff, review disposition, and finish readiness are current |
+| OBJ-MIN | Minimality decision recorded | 5 | pending/pass/fail |  | Existing surface reuse, new surface reason, or skipped lower-rung options are explicit |
 
 Frontend evidence rule:
 - `OBJ-VIS`, `OBJ-A11Y`, and `OBJ-PERF` are required only when declared by the sprint contract, source phase plan, scenario matrix, verification contract, or critical scenario policy.

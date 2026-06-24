@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-23T10:13:44.841Z",
+  "generatedAt": "2026-06-24T01:17:28.064Z",
   "sourceCommit": "",
   "skills": [
     {
@@ -10,12 +10,10 @@
       "contentHash": "498df76b67b6ae960f266dbbe0c211b6eb73b77eb2709aa4a1365b33f6fd4748",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -26,12 +24,10 @@
       "contentHash": "3faf1e5001ffb698d0ee7667c05c97f162cbd48af31a84c314e69f5da2b26dd6",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -42,12 +38,10 @@
       "contentHash": "cd3ba1bea0a5e23ce9e9688897d23aef17a637ad94de6710406d2d966813ba40",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -58,12 +52,10 @@
       "contentHash": "9f3f54a4ea995f6352bc75bf692e418da3aae364b7eed9c93a393db2f5660c6f",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -74,12 +66,10 @@
       "contentHash": "6a530058f52789118bec6dd3cf25f18184e0d628bbffbe5012b925eb019a3fb9",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -90,12 +80,10 @@
       "contentHash": "cb325e9acf895118ed337d7eefaef72e552323201b8d464ac102704ff92ece6f",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -106,12 +94,10 @@
       "contentHash": "c4b848be8c80d9b93b6144073a79c189a579ee314acf967af0fadf7acd035ed3",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -122,12 +108,10 @@
       "contentHash": "119e849384578a9ba27c76d0c0436e6335f7e00f849eb36cd426913ab02b29ca",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -138,12 +122,10 @@
       "contentHash": "f7fdac6a5d7d228fc443c6b167faddddd7a26350368e593c5dd92f187a604d43",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -154,12 +136,10 @@
       "contentHash": "e7ab5fb43b13edcfeeb0c321556a3d9c278e9cb700f2620e64b946d94646f2bb",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -170,12 +150,10 @@
       "contentHash": "b180f63fe4b2cad1b24bbcc875794375587c734fbdbc75a11bc8e54870d77156",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -186,12 +164,10 @@
       "contentHash": "ceee16d1b780b227662c9ffed149491d8831c65dfefb903dc60e9e57cc8ffc36",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -202,12 +178,10 @@
       "contentHash": "2d8cd2aa6322d0f1777b129b914065389e4d4af794451c4e1ec5a651cda11f67",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -218,12 +192,10 @@
       "contentHash": "346a3821ebb9dc726c2ed37a74f7255f22248f79ada52b62eb54616788fa66b6",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -234,12 +206,10 @@
       "contentHash": "32f60668802957a70ab89618a8f31ffa23f3ce35b92f4c4f60638bef871b13d4",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -250,12 +220,10 @@
       "contentHash": "d387cdea11591540e86adb4b9bec8f3116432d9582f77fc8fc6e443fba155999",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -266,12 +234,10 @@
       "contentHash": "07b62b0a25123e2201013b34acd32a41a01740b59a94335f41bd141e87fa30ef",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -282,12 +248,10 @@
       "contentHash": "c62f573cb59279842a860ed0fabbc48cbf7c10c26c24f9b5e55cdacfe06892c0",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -298,12 +262,10 @@
       "contentHash": "5fa0ce458a61f7e82c70085bc1432c832af0646184121c3722b61798e89cde6e",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -314,12 +276,10 @@
       "contentHash": "2de0803009880ffd6e2740f559a577ac4f4f9afc149b10fc4d24b7d5ecd70d4e",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -330,12 +290,10 @@
       "contentHash": "9ff5cf1704e9b476d4bd07f0ea6dbb2047ce47fa34a0a2f4b24c319620d53c05",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -346,12 +304,10 @@
       "contentHash": "32f515800d5c302760fb37b886dbee20adacc94eb22adb119400197c1b4cfb77",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -362,12 +318,10 @@
       "contentHash": "9e5b092b389dde2b2e16b075129700f1875949b7e084bf2b9a2a45a1bdc0c8dd",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -378,12 +332,10 @@
       "contentHash": "331bfc3c1a6a1ed0627a81d1b7b59bce43d59fc34ad9a98b31b070e58e20e64c",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -394,12 +346,10 @@
       "contentHash": "06cc2fbc4fb94cfa970e4a8d91814698902d8ead0bd8e8f3bdd7a82b51b84688",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -410,12 +360,10 @@
       "contentHash": "fab5caa7d5ced19dcec73a8e6c6635d4fef6cd95b8bb490b2acbe33b30aaac4f",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -426,12 +374,10 @@
       "contentHash": "5b2edcac4483db6fe40c6d98d92339e22682309db326b2420e2493d9406ac279",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -442,12 +388,10 @@
       "contentHash": "41aed8bc0044042062e9569a5b6e8fff9dd02a98d534ee3993ce712a3ae09ff7",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -458,12 +402,10 @@
       "contentHash": "ce5cf8fe09da990d86b8efca0335123eefbc3753a302e0650f89c7a16e9ccb1e",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -471,15 +413,13 @@
       "name": "moonshot-orchestrator",
       "path": "skills/moonshot-orchestrator",
       "source": "canonical",
-      "contentHash": "a6fce6beacacb187952e2a3e60dc80647d232cfa4795ea37d3f52a828b8ec737",
+      "contentHash": "2378f3915fb7ea4615c8af09fc69527cbbd9b7f95406237b07ff507fe227f297",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -490,12 +430,10 @@
       "contentHash": "5b365511802951370f64f516ac2f8a44c19c703e20f45f2752a1fdf82f495657",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -503,15 +441,13 @@
       "name": "moonshot-phase-runner",
       "path": "skills/moonshot-phase-runner",
       "source": "canonical",
-      "contentHash": "1ece6911297694ecac4be47a191dbc6137049fe2ae7283ba457092c2b6803bc6",
+      "contentHash": "a04cc21e07d4eaa3962c94ed2b72e0e883643d623695a7e657b8104160ca7b00",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -519,15 +455,13 @@
       "name": "moonshot-plan-writer",
       "path": "skills/moonshot-plan-writer",
       "source": "canonical",
-      "contentHash": "ac475e80b980818c5e6ca09853c657c4110885d19e93dc572e2fa7c7d1408230",
+      "contentHash": "9f36a3a4946488dc88a747fdbceba2955bd6e21163a4c9d8bd3a8be19df6d08c",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -538,12 +472,10 @@
       "contentHash": "442ea3e3e32e8f9cf19ae5f57c6eb80f5b65838f99cd8e41c9ff4653ae3966d7",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -554,12 +486,10 @@
       "contentHash": "5d4b0398a935723cd02591bba2b979625279247913c972cf03ec61b35aa5f2ad",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -570,12 +500,10 @@
       "contentHash": "5b84bc42acca27fc85fd2d3dfba7f266b5657d0637c293f5e83117bc00afb506",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -586,12 +514,10 @@
       "contentHash": "1de657ccc0d4c5b5008a4d5fd5b0ec0b693e539e479f5b41fa41f398871426db",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -602,12 +528,10 @@
       "contentHash": "63896a202b8103fc5ec916572961521731c10ce4e1cc6b92c11eb6ee971f7126",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -618,12 +542,10 @@
       "contentHash": "460c74a3cc0ecba85bbae638a552c604e4297691f819d16a3f25bdc594f2686f",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -634,12 +556,10 @@
       "contentHash": "7416066634b7b90c88acc99b4bf5fc4b89a8b2456d824a13c4942cc5f8bf1f13",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -650,12 +570,10 @@
       "contentHash": "6a3adeee66506823af0f2332ba91cb483002123ca8a0398ca7d61365eaeeb46a",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -666,12 +584,10 @@
       "contentHash": "b3e15614a41426346bed180be0fc9d56ae7de34d77960e514245d6cb034b1e75",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -682,12 +598,10 @@
       "contentHash": "a678dae71f89ea5098cd372bf06d83bbf63516d578adb9c447a7e42b5dfd7a76",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -698,12 +612,10 @@
       "contentHash": "73ac4affd9ef54d3dbd9805c2a55de929f79a5d9d1c853b93d709a910bb35e56",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -714,12 +626,10 @@
       "contentHash": "c42a3374b732f7472ba8abdb1a2f5209f38f29c85d4ed090922c4419c4740acd",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -730,12 +640,10 @@
       "contentHash": "2c394d871cd4889f7aeb1aa1e064b7ce3d55820418db3a714a0d710d3fd11b80",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -746,12 +654,10 @@
       "contentHash": "63525f11d709d8990f297d8db7945f9239f6c4f794ce30641ebca475ab2eb96b",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -762,12 +668,10 @@
       "contentHash": "af3c4f7550fdb630f2c8d74f3d7c1e99cdbc56568a0e5da069304838c9a4770d",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -778,12 +682,10 @@
       "contentHash": "b2941f1abe87cd8067f5c52416e4a2aa02e0f88966cebcf9b71ee14770a1e502",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -794,12 +696,10 @@
       "contentHash": "19bc417512d20b485eaa49d5eb36010cbff007ffa3569669c1727d6998c1a268",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -810,12 +710,10 @@
       "contentHash": "643f4db120e30ed2bc8d861f5582ba4db69d2b96a1b5da2283b8481f0cbcd85c",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -826,12 +724,10 @@
       "contentHash": "52e28a4c4563873f27dc2121a873effc6d3d56b397865cde8b02947f8effe572",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -842,12 +738,10 @@
       "contentHash": "6d4cd587c9375e320ec2fae55afe8c7bfb3f1d418d40a91bf3871286b70af10d",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -858,12 +752,10 @@
       "contentHash": "460c3284202c0c7dd4949d9890b9844bd87dac17d735f601cb1ae4d403fea045",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -874,12 +766,10 @@
       "contentHash": "5c051716f2104e4d239a7357b6a7923290d9284d5821a6734a0eeaf2d5d303bc",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -890,12 +780,10 @@
       "contentHash": "3a0f5f27c9dd163bbd82b34a0ab7ca5274b5f47dcc14bb3efd905c44779df9dd",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -906,12 +794,10 @@
       "contentHash": "a91a31051591d16f1278d647bf318c30a2b423608c37e642aadfb45bd4062419",
       "license": "MIT",
       "stages": [],
-      "permissions": [
-        "filesystem-read"
-      ],
+      "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-23T10:13:44.841Z",
+        "reviewedAt": "2026-06-24T01:17:28.064Z",
         "reviewer": "skills-audit-generate-lock"
       }
     }

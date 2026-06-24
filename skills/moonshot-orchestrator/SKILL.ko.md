@@ -40,16 +40,18 @@ architecture-derived 작업에서는 전체 architecture package가 아니라 bo
 1. 작업이 bounded이고 충분한 컨텍스트가 있는지 확인합니다.
 2. architecture package가 제공되면 선택된 `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `PLAN.md`, `ARCHITECTURE_REVIEW.md` path를 소비하고 chat-only summary로 대체하지 않습니다.
 3. `ARCHITECTURE_HANDOFF.json`이 제공되면 `status=ready`를 요구하고, `promptBlock`과 compact metadata만 소비하며, `ownedPaths`, `readOnlyPaths`, `verificationSignalIds`를 scope와 verification guard로 사용합니다.
-4. 편집 전에 local contract와 영향 파일을 확인합니다.
-5. 선택된 ADR, traceability slice, handoff constraints를 만족하는 가장 작은 구현을 적용합니다.
-6. 집중 검증을 실행하고 실패를 implementation, verification, environment, contract로 분류합니다.
-7. contract violation이 있으면 `scripts/architecture-feedback-render.mjs`로 read-before-retry와 required-action feedback을 생성합니다.
-8. review feedback을 반영한 뒤, 변경으로 무효화된 검증만 다시 실행합니다.
-9. 변경 파일, 검증, 잔여 리스크를 보고하고 phase-style finalization claim은 하지 않습니다.
+4. 구현 형태를 선택하기 전에 `docs/public/guidelines/minimal-correct-implementation.md`를 읽고 적용합니다.
+5. 편집 전에 local contract와 영향 파일을 확인합니다.
+6. 선택된 ADR, traceability slice, handoff constraints, minimal-correct implementation ladder를 만족하는 가장 작은 구현을 적용합니다.
+7. 집중 검증을 실행하고 실패를 implementation, verification, environment, contract로 분류합니다.
+8. contract violation이 있으면 `scripts/architecture-feedback-render.mjs`로 read-before-retry와 required-action feedback을 생성합니다.
+9. review feedback을 반영한 뒤, 변경으로 무효화된 검증만 다시 실행합니다.
+10. 변경 파일, 검증, minimality decision, 잔여 리스크를 보고하고 phase-style finalization claim은 하지 않습니다.
 
 ## Required Evidence
 
 - 영향 파일 목록과 이유.
+- minimality decision: 기존 surface 재사용, 새 surface 추가, 또는 lower-rung option skip 여부와 이유.
 - fresh test/build/lint 또는 targeted verification output.
 - behavior, shared contract, harness logic이 바뀌면 review evidence.
 - 필수 check를 실행할 수 없으면 명시적 blocker classification.

@@ -146,6 +146,36 @@ test('public guidelines are resolved from docs/public and classified', async () 
   assert.deepEqual(missing, []);
 });
 
+test('minimal-correct implementation guideline is wired into implementation flows', async () => {
+  const requiredRef = 'docs/public/guidelines/minimal-correct-implementation.md';
+  const files = [
+    'skills/moonshot-orchestrator/SKILL.md',
+    'skills/moonshot-orchestrator/SKILL.ko.md',
+    'skills/moonshot-orchestrator/references/bounded-flow.md',
+    'skills/moonshot-phase-runner/SKILL.md',
+    'skills/moonshot-phase-runner/SKILL.ko.md',
+    'templates/execution/SCORECARD.template.md',
+  ];
+
+  const missing = [];
+  for (const file of files) {
+    const text = await readFile(fromRoot(file), 'utf8');
+    if (!text.includes(requiredRef)) {
+      missing.push(file);
+    }
+  }
+
+  const orchestrator = await readFile(fromRoot('skills/moonshot-orchestrator/SKILL.md'), 'utf8');
+  const phaseRunner = await readFile(fromRoot('skills/moonshot-phase-runner/SKILL.md'), 'utf8');
+  const scorecard = await readFile(fromRoot('templates/execution/SCORECARD.template.md'), 'utf8');
+
+  assert.match(orchestrator, /before choosing the implementation shape/);
+  assert.match(orchestrator, /Minimality decision/);
+  assert.match(phaseRunner, /mandatory implementation-shape constraint/);
+  assert.match(scorecard, /OBJ-MIN/);
+  assert.deepEqual(missing, []);
+});
+
 test('active memory skills do not present legacy .claude memorygraph cache as the default seed', async () => {
   const violations = [];
   for (const file of [

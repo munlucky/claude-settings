@@ -55,7 +55,8 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 6. Heartbeat long-running phases with `scripts/runtime-state.mjs heartbeat-run-lease` before the lease window expires.
 7. Check protected paths and approval-required operations through `tools/sandbox/policy.mjs check --json` before executing sandbox-sensitive tool calls.
 8. Build a compact phase-attempt brief from the active phase contract.
-8.1. Include declared read-only paths and owned/write-set paths in the phase-attempt brief; changed files outside that write set must be recorded as scope drift.
+8.1. Include `docs/public/guidelines/minimal-correct-implementation.md` in the phase-attempt brief as a mandatory implementation-shape constraint.
+8.2. Include declared read-only paths and owned/write-set paths in the phase-attempt brief; changed files outside that write set must be recorded as scope drift.
 9. For architecture-derived plans, attach only selected ADR, traceability, owner, verification signal, and architecture review paths needed by the active phase.
 10. When phase metadata includes `architecture.handoff`, require `status=ready`, attach only `ARCHITECTURE_HANDOFF.promptBlock` plus compact metadata, and reject blocked handoff dispatch.
 11. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
@@ -74,6 +75,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Runtime capability evidence when a tool/fork/browser path is missing.
 - Review evidence for code-changing phases.
 - Plan graph validation evidence or explicit markdown-compatible mode evidence.
+- Minimality decision evidence: lower-rung reuse/skip/new-surface choice from `docs/public/guidelines/minimal-correct-implementation.md`.
 - Fresh verifier verdict and scorecard agreement.
 - Coordinator closeout evidence and phase closeout result.
 - Operational Adoption Closeout evidence before any live account-root/profile sync: independent completion audit, independent operational adoption audit, `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, and `node package/build-package.mjs --runtime all --dry-run --json`.
