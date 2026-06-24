@@ -1,0 +1,36 @@
+phase: "03"
+status: "complete"
+branch: "instruction_tier_only"
+reviewer: "Codex phase runner"
+decisionDate: "2026-06-24"
+sourcePin:
+  repo: "https://github.com/DietrichGebert/ponytail"
+  commit: "17a466013e7956f91418d188a960754ba26a1bdf"
+  evidence: "docs/implementation/ponytail-harness-adoption-2026-06-24/source-intake/source-pin.json"
+rationale:
+  - "Phase 02 proved the useful Ponytail pressure can be represented as a source-owned public guideline."
+  - "Moonshot Relay does not need to own a Ponytail-derived skill to preserve the minimal-correct-implementation behavior."
+  - "The upstream plugin and hooks include executable runtime behavior that is outside the reviewed package/runtime-surface boundary for this adoption."
+  - "Keeping the adoption instruction-tier only avoids lock churn, runtime-surface expansion, live profile mutation, and hidden hook trust escalation."
+ownedFiles:
+  - "docs/public/guidelines/minimal-correct-implementation.md"
+  - "docs/implementation/ponytail-harness-adoption-2026-06-24/**"
+unchangedByDecision:
+  - "skills/**"
+  - "skills.lock.json"
+  - "schemas/skills-lock.schema.json"
+  - "scripts/lib/skills-lock.mjs"
+  - "scripts/skills-audit.mjs"
+  - "package/runtime-surface.json"
+  - ".claude/**"
+  - ".codex/**"
+requires_phase_04: false
+phase04Reason: "No package payload, runtime-surface, installer, or live profile adoption remains after the instruction-tier-only decision."
+rollbackSteps:
+  - "Remove docs/public/guidelines/minimal-correct-implementation.md."
+  - "Remove docs/implementation/ponytail-harness-adoption-2026-06-24/phase-03/ and execution/phase-03/ closeout artifacts if abandoning this plan package."
+  - "No skills.lock.json, runtime-surface, package, or installed profile rollback is required."
+validation:
+  skillsAudit: "pass"
+  doctor: "pass"
+  dependencyOrRuntimeSurfaceMutation: "none from this phase"

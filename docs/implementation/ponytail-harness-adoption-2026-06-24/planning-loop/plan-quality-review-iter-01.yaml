@@ -1,0 +1,41 @@
+schemaVersion: 1
+reviewedPackageRoot: "docs/implementation/ponytail-harness-adoption-2026-06-24"
+reviewType: "degraded-parent-review"
+iteration: 1
+reviewAgents:
+  - role: "parent-session-review"
+    status: "completed"
+    focus:
+      - "phase boundaries"
+      - "external-source supply-chain"
+      - "runtime-surface adoption boundary"
+      - "verification evidence preservation"
+degradedReason: "No separate child review agent was invoked for this planning-only request; this artifact records the parent-owned review pass and remaining ambiguity."
+blockingFindings:
+  - id: "PONY-REVIEW-B01"
+    finding: "Directly copying upstream AGENTS.md into root instructions could override Moonshot Relay authority and closeout rules."
+    accepted: true
+    appliedChange: "Master plan and Phase 02 require Moonshot-specific instruction-tier PoC with safety exclusions."
+  - id: "PONY-REVIEW-B02"
+    finding: "Codex/Claude lifecycle hooks are executable external code and cannot be treated like static instructions."
+    accepted: true
+    appliedChange: "Phase 01 classifies hooks as disabled external code; Phase 04 requires permission and dry-run review before adoption."
+  - id: "PONY-REVIEW-B03"
+    finding: "Runtime-surface expansion would bypass current allowlist policy if treated as a casual skill addition."
+    accepted: true
+    appliedChange: "Phase 03 and Phase 04 require explicit approval, lock/audit updates, package dry-run, doctor, and parity checks."
+acceptedChanges:
+  - "Split adoption into instruction-tier, supply-chain, package, and rollout phases."
+  - "Kept external Ponytail as style/rubric input, not runtime completion authority."
+  - "Added local validation requirement instead of relying on upstream benchmark claims."
+  - "Added explicit phase execution metadata for write-set boundaries, conflict boundaries, adoption targets, and markdown-only graph readiness."
+rejectedChanges:
+  - change: "Mark plan live-adoption-ready immediately."
+    reason: "Source pin, permission review, package dry-run, and local evidence are missing."
+  - change: "Install upstream Codex plugin as part of plan writing."
+    reason: "The user requested a plan, and live/plugin mutation requires explicit adoption approval."
+remainingAmbiguity:
+  - "Whether the final adoption should be instruction-tier only, Moonshot-owned skill, or user-managed upstream plugin is intentionally left to Phase 03 evidence."
+  - "The exact upstream commit hash must be pinned during Phase 01 execution."
+  - "Live account-root adoption requires a separate explicit approval."
+status: "reviewed-preparation-ready-not-live-adoption-ready"

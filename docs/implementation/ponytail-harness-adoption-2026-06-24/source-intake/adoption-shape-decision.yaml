@@ -1,0 +1,21 @@
+schemaVersion: 1
+source_pin_status: pinned
+policy_mapping_status: compatible_with_mitigation
+recommended_branch: instruction_tier_only
+selected_guideline_path: docs/public/guidelines/minimal-correct-implementation.md
+selected_rule_path: null
+selected_test_path: null
+recommended_next_phase: "02"
+phase03_blocked_reason: "Phase 03 should not run until Phase 02 records whether the instruction-tier guideline is sufficient or a reusable skill path remains justified."
+rejected_branches:
+  - branch: moonshot_owned_skill
+    reason: "Potentially useful later, but current evidence does not justify public skill or lock/runtime surface maintenance before trying a source guideline."
+  - branch: user_managed_plugin_documented
+    reason: "Can remain an external opt-in note, but not needed for first adoption."
+  - branch: managed_hooks
+    reason: "Hooks write host-local state and inject runtime context; require Phase 03 permission review and Phase 04 smoke/approval before consideration."
+next_phase_inputs:
+  source_pin: source-intake/source-pin.json
+  policy_compatibility: source-intake/policy-compatibility.md
+  hook_inventory: source-intake/hook-inventory.md
+  selected_guideline_path: docs/public/guidelines/minimal-correct-implementation.md

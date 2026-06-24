@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "repo": "https://github.com/DietrichGebert/ponytail",
+  "observedAt": "2026-06-24T09:31:23.5129364+09:00",
+  "observedRef": "HEAD",
+  "observedCommit": "17a466013e7956f91418d188a960754ba26a1bdf",
+  "tagOrVersion": "v4.8.1",
+  "packageVersion": "4.8.1",
+  "pluginVersion": "4.8.1",
+  "license": "MIT",
+  "licenseEvidencePath": "https://github.com/DietrichGebert/ponytail/blob/17a466013e7956f91418d188a960754ba26a1bdf/LICENSE",
+  "fetchedAt": "2026-06-24T09:31:23.5129364+09:00",
+  "reviewer": "parent-session-plus-independent-attempt-019ef707-238a-78d1-851a-1f51233f4f4c",
+  "commands": [
+    "git ls-remote https://github.com/DietrichGebert/ponytail HEAD refs/tags/*",
+    "PowerShell Invoke-WebRequest raw GitHub reads at observedCommit and SHA-256 over fetched content"
+  ],
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/AGENTS.md",
+      "sha256": "1cd148db944eff33bf8bb878c41a290fe85b86de3e65ac311d5d501e71a0cdbf",
+      "bytes": 2603,
+      "notCopiedReason": "reference-only instruction source for Moonshot-specific guideline"
+    },
+    {
+      "path": ".codex-plugin/plugin.json",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/.codex-plugin/plugin.json",
+      "sha256": "9ff84f40f91cc5cd426198580e7e508bb5a5f0865f401740430acd089154165a",
+      "bytes": 1280,
+      "notCopiedReason": "plugin manifest is evaluated for adoption boundary only"
+    },
+    {
+      "path": "skills/ponytail/SKILL.md",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/skills/ponytail/SKILL.md",
+      "sha256": "d11df477b1a4e807155a7e578b135a4d9c52beef06eb3a44322940c331a06942",
+      "bytes": 6482,
+      "notCopiedReason": "reference-only source for a narrower Moonshot guideline"
+    },
+    {
+      "path": "skills/ponytail-review/SKILL.md",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/skills/ponytail-review/SKILL.md",
+      "sha256": "40df33b58fc6ef889b93585733feb9566b76e9586efa7f376785c1e995197ac0",
+      "bytes": 2383,
+      "notCopiedReason": "reference-only review rubric source"
+    },
+    {
+      "path": "hooks/claude-codex-hooks.json",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/hooks/claude-codex-hooks.json",
+      "sha256": "9931e8e8d76ec4ca1d249358ef91c798b0987e2a11176587d43bfde21cb7cf92",
+      "bytes": 992,
+      "notCopiedReason": "executable hook manifest is disabled pending explicit managed-hook approval"
+    },
+    {
+      "path": "hooks/ponytail-activate.js",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/hooks/ponytail-activate.js",
+      "sha256": "ff7c15a7f7a8c0fdb8c0a12654fb4d5d33ee745e1e8d37afae074eebef93085a",
+      "bytes": 3563,
+      "notCopiedReason": "executable hook script writes host-local mode state; disabled pending hook smoke and approval"
+    },
+    {
+      "path": "hooks/ponytail-mode-tracker.js",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/hooks/ponytail-mode-tracker.js",
+      "sha256": "97c12a9038636bc1d6e583f673f1e979070b1519bd8db43bfb69f92f37fe8f5b",
+      "bytes": 1820,
+      "notCopiedReason": "executable hook script writes host-local mode state; disabled pending hook smoke and approval"
+    },
+    {
+      "path": "hooks/ponytail-runtime.js",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/hooks/ponytail-runtime.js",
+      "sha256": "f630a2b4ea3d4fe87df445747d6e50265d32c1d1077bbf58d850a53368e2e0c6",
+      "bytes": 1381,
+      "notCopiedReason": "dependency of disabled executable hooks"
+    },
+    {
+      "path": "hooks/ponytail-config.js",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/hooks/ponytail-config.js",
+      "sha256": "35f6632fc086d5d42211f23fcd72de72c7e56048808702c95690bc5f22e0b0d2",
+      "bytes": 3952,
+      "notCopiedReason": "dependency of disabled executable hooks"
+    },
+    {
+      "path": "hooks/ponytail-instructions.js",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/hooks/ponytail-instructions.js",
+      "sha256": "d935b7672409324c7be0be793a3299facb8b229a03de39ac6e861ef1455f6ba2",
+      "bytes": 5170,
+      "notCopiedReason": "dependency of disabled executable hooks"
+    },
+    {
+      "path": "docs/agent-portability.md",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/docs/agent-portability.md",
+      "sha256": "6535076683d9e6d0c9c80e5547feb3cdff69173f25d2cc30c6e034d372bd0584",
+      "bytes": 4153,
+      "notCopiedReason": "reference-only portability pattern"
+    },
+    {
+      "path": "LICENSE",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/LICENSE",
+      "sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
+      "bytes": 1071,
+      "notCopiedReason": "license evidence only"
+    },
+    {
+      "path": "package.json",
+      "commitBoundUrl": "https://raw.githubusercontent.com/DietrichGebert/ponytail/17a466013e7956f91418d188a960754ba26a1bdf/package.json",
+      "sha256": "38dab4c8538436fb457dc9a7e9b8ad72a9dc5ea525905f8f0bde34c76ef36e6e",
+      "bytes": 1135,
+      "notCopiedReason": "version evidence only"
+    }
+  ]
+}

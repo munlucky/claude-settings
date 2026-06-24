@@ -1,0 +1,119 @@
+schemaVersion: 1
+reviewedPackageRoot: "docs/implementation/ponytail-harness-adoption-2026-06-24"
+iteration: 2
+reviewType: "two-independent-agent-per-document-review"
+reviewAgents:
+  - role: "independent-reviewer-b"
+    agentId: "019ef6f2-b57f-7092-abc3-27bbd03d4c7b"
+    status: "completed"
+    focus:
+      - "execution readiness"
+      - "phase-runner handoff clarity"
+      - "source-vs-live adoption safety"
+      - "supply-chain/plugin/hook threat boundary"
+      - "acceptance-to-evidence mapping"
+  - role: "independent-reviewer-a2"
+    agentId: "019ef6fa-7cf1-7273-ada0-c102aabb6fb6"
+    status: "completed"
+    focus:
+      - "ambiguity removal"
+      - "fixed evidence paths"
+      - "dependency consistency"
+      - "write-set boundaries"
+      - "phase-runner closeout artifacts"
+  - role: "independent-reviewer-a"
+    agentId: "019ef6f2-7d95-76c1-a32b-2fbb363367a1"
+    status: "replaced_timeout_shutdown"
+    note: "Original reviewer A did not complete after two waits; replacement reviewer A2 was used to preserve two completed independent reviews."
+documents:
+  - path: "docs/implementation/ponytail-harness-adoption-2026-06-24/00-master-plan-v1.md"
+    reviewerBFindings:
+      - "Acceptance evidence was outcome-level rather than artifact-level."
+      - "Phase 04 could be required or skipped depending on adoption branch but branch decision was not encoded."
+      - "Final validation gate needed branch-specific required/conditional/skipped commands."
+    reviewerA2Findings:
+      - "Phase 04 dependency conflicted with instruction-tier-only skip path."
+      - "Traceability matrix lacked exact artifact paths."
+      - "Validation gate was one-size-fits-all."
+    acceptedChanges:
+      - "Added Adoption Branch Matrix."
+      - "Added Evidence Artifact column to Source Traceability Matrix."
+      - "Split validation gates by instruction-tier, managed skill/runtime surface, managed hooks, and live rollout."
+    remainingAmbiguity: []
+  - path: "docs/implementation/ponytail-harness-adoption-2026-06-24/01-source-intake-and-policy-mapping-v1.md"
+    reviewerBFindings:
+      - "Source-pin output path was late-bound."
+      - "Hook classification did not require exact command/env/write/timeout inventory."
+      - "Hash evidence covered copied files only."
+    reviewerA2Findings:
+      - "Source pin path was null/late-bound."
+      - "Work item outputs were generic."
+      - "Every upstream planning input needed hash or commit-bound permalink evidence."
+    acceptedChanges:
+      - "Fixed source-intake artifact paths."
+      - "Added expected evidence artifact table with required fields."
+      - "Required hook inventory and upstream file inventory."
+      - "Added expected closeout artifacts."
+    remainingAmbiguity: []
+  - path: "docs/implementation/ponytail-harness-adoption-2026-06-24/02-instruction-tier-poc-v1.md"
+    reviewerBFindings:
+      - "Evidence-preservation static/test gate was optional."
+      - "Selected guideline/rule path was not required in handoff."
+      - "No-dependency claim lacked diff evidence."
+    reviewerA2Findings:
+      - "Evidence guard could be skipped."
+      - "HANDOFF needed selected path and rule-touch rationale."
+      - "Package diff evidence was missing."
+    acceptedChanges:
+      - "Made static gate or equivalent documented gate mandatory."
+      - "Required HANDOFF path/adoption-shape/rules rationale."
+      - "Added no-dependency diff evidence artifact."
+      - "Added expected closeout artifacts."
+    remainingAmbiguity: []
+  - path: "docs/implementation/ponytail-harness-adoption-2026-06-24/03-skill-and-plugin-supply-chain-v1.md"
+    reviewerBFindings:
+      - "Adoption decision record schema was undefined."
+      - "Permission model was underspecified."
+      - "Lock regeneration/check command was unclear."
+    reviewerA2Findings:
+      - "Adoption decision record was unnamed."
+      - "Write boundary allowed broad skill/lock edits before branch selection."
+      - "Permission review needed executable/env/network/filesystem/lifetime/failure fields."
+    acceptedChanges:
+      - "Added phase-03/adoption-decision.yaml schema."
+      - "Split write boundaries by adoption branch."
+      - "Added permission-review.md, skills-audit.json, and lock-update-decision.md artifacts."
+      - "Added expected closeout artifacts."
+    remainingAmbiguity: []
+  - path: "docs/implementation/ponytail-harness-adoption-2026-06-24/04-runtime-package-adoption-gate-v1.md"
+    reviewerBFindings:
+      - "Explicit approval artifact was unnamed."
+      - "Hook degradation acceptance lacked smoke tests."
+      - "Rollback feasibility was not acceptance-gated."
+    reviewerA2Findings:
+      - "Runtime approval artifact was missing."
+      - "Rollback mentioned lock regeneration while skills.lock.json was read-only."
+      - "Hook degradation needed normal/missing-node/timeout/denied-env report."
+    acceptedChanges:
+      - "Added runtime-surface-approval.md and runtime-adoption-skipped.md."
+      - "Added hook-smoke-report.md requirements."
+      - "Added rollback-dry-run.md requirement."
+      - "Made skills.lock.json conditionally writable only for approved rollback dry-run."
+      - "Added expected closeout artifacts."
+    remainingAmbiguity: []
+  - path: "docs/implementation/ponytail-harness-adoption-2026-06-24/05-validation-metrics-and-rollout-v1.md"
+    reviewerBFindings:
+      - "Local evidence criteria were qualitative."
+      - "Live approval/parity/skip artifacts were unnamed."
+      - "Phase 04 dependency was unconditional despite instruction-tier skip path."
+    reviewerA2Findings:
+      - "Execution metadata unconditionally depended on Phase 04."
+      - "Local evidence needed fixed rubric."
+      - "Live approval/parity/skip artifacts were unnamed."
+    acceptedChanges:
+      - "Changed Phase 04 to conditionalDependsOn."
+      - "Added local-evidence-report.md rubric."
+      - "Added live-rollout-approval.md, installed-parity.json, adoption-skipped.md, and rejection-decision.md."
+      - "Added expected closeout artifacts."
+    remainingAmbiguity: []
+status: "reviewed-parent-applied"
