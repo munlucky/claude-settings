@@ -15,7 +15,7 @@ deepReferences:
 
 ## 역할
 
-phase runner가 추측 없이 실행할 수 있는 phase-plan package를 생성하거나 개정합니다. 산출물은 master plan, numbered phase docs, execution metadata, acceptance criteria, blocker, 명확한 adoption boundary입니다.
+phase runner가 추측 없이 실행할 수 있는 phase-plan package를 생성하거나 개정합니다. 산출물은 master plan, numbered phase docs, execution metadata, acceptance criteria, blocker, surface classification, 명확한 adoption boundary입니다.
 
 ## Hard Stops
 
@@ -24,6 +24,8 @@ phase runner가 추측 없이 실행할 수 있는 phase-plan package를 생성�
 - 필요한 `ARCHITECTURE_CONTRACT_SLICE` 또는 `ARCHITECTURE_HANDOFF`가 없거나 blocked 상태이거나 verification signals가 없으면 architecture-heavy plan을 execution-ready로 표시하지 않습니다.
 - child planning agent가 source plan을 직접 수정하게 두지 않습니다. parent session이 최종 plan edit을 소유합니다.
 - plan이 controlled adoption phase를 명시적으로 예약하지 않았다면 early redesign phase에 live `.claude/**` adoption을 넣지 않습니다.
+- 이 repository의 harness, package, doctor, installer, profile-parity 명령을 generic plan에 hard-code하지 않습니다. 구체 gate 명령은 대상 프로젝트의 policy source에서 가져오거나 missing policy로 기록해야 합니다.
+- package/runtime payload, installed profile, external service, data/state를 변경하는 plan은 해당 surface를 분류하고 required evidence slot을 명명하기 전에는 execution-ready로 표시하지 않습니다.
 - unresolved ambiguity를 숨기지 않습니다. assumption, blocker, user question 중 하나로 기록합니다.
 
 ## Flow
@@ -31,11 +33,13 @@ phase runner가 추측 없이 실행할 수 있는 phase-plan package를 생성�
 1. 사용자 objective와 기존 plan directory를 식별합니다.
 2. 현재 artifact와 stale phase docs를 감사합니다.
 3. `00-master-plan-*.md`와 root `NN-*.md` phase file을 draft 또는 refresh합니다.
-4. phase execution metadata를 추가합니다: dependencies, conflicts, owned paths, staged paths, read-only paths, write-set boundaries, adoption targets, live mutation policy.
-5. architecture package가 있으면 선택된 ADR과 `TRACEABILITY_MATRIX.md` row를 phase scope, owner, verification signal, acceptance evidence에 매핑합니다.
-6. `ARCHITECTURE_HANDOFF.json`이 있으면 path, status, selected decision IDs, selected constraint IDs, owned/read-only/staged paths, verification signal IDs, blocking preconditions만 phase metadata에 싣습니다.
-7. independent review loop는 sidecar review로 실행하고, parent가 accepted edit만 적용합니다.
-8. readiness, traceability, handoff status, phase boundary check가 만족된 뒤에만 execution을 준비합니다.
+4. 모든 planned change surface를 `source_only`, `package_runtime_payload`, `installed_profile_or_account_root`, `external_deployment_or_service`, `data_or_state_migration` 중 하나로 분류합니다.
+5. root `AGENTS.md`, verification contract, deployment runbook, package contract, migration policy, project-local guideline anchor처럼 해당 surface에 적용되는 local policy source만 읽습니다.
+6. phase execution metadata를 추가합니다: dependencies, conflicts, owned paths, staged paths, read-only paths, write-set boundaries, adoption targets, live mutation policy, policy source paths, required evidence slots.
+7. architecture package가 있으면 선택된 ADR과 `TRACEABILITY_MATRIX.md` row를 phase scope, owner, verification signal, acceptance evidence에 매핑합니다.
+8. `ARCHITECTURE_HANDOFF.json`이 있으면 path, status, selected decision IDs, selected constraint IDs, owned/read-only/staged paths, verification signal IDs, blocking preconditions만 phase metadata에 싣습니다.
+9. independent review loop는 sidecar review로 실행하고, parent가 accepted edit만 적용합니다.
+10. readiness, traceability, handoff status, phase boundary, surface classification, policy-sourced adoption check가 만족된 뒤에만 execution을 준비합니다.
 
 ## Required Evidence
 
@@ -45,7 +49,9 @@ phase runner가 추측 없이 실행할 수 있는 phase-plan package를 생성�
 - architecture package를 사용한 경우 traceability matrix, selected ADR, architecture review, Brownfield evidence boundary가 포함된 path inventory.
 - architecture handoff를 사용한 경우 handoff path와 status, selected constraints, selected verification signals, blocked/ready decision.
 - review loop finding과 accepted change.
-- harness, skill, agent surface 전체에 대한 explicit adoption strategy.
+- 모든 planned mutation에 대한 surface classification, policy source path, required evidence slot.
+- scope에 포함된 workflow, skill, agent, package/runtime, deployment/service, profile/account-root, data/state surface에 대한 explicit adoption strategy.
+- 구체 gate 명령은 대상 프로젝트 policy document에서 나온 경우에만 기록합니다. 그렇지 않으면 missing policy를 blocker 또는 assumption으로 기록합니다.
 - package가 graph execution을 주장할 때 plan graph readiness evidence. Markdown-only package는 계속 지원하지만, validated DAG metadata 없이는 graph-ready로 표시하지 않습니다.
 
 ## References

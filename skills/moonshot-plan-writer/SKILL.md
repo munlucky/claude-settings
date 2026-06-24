@@ -15,7 +15,7 @@ deepReferences:
 
 ## Role
 
-Create or revise a phase-plan package that a phase runner can execute without guessing. The output is a master plan plus numbered phase docs, execution metadata, acceptance criteria, blockers, and a clear adoption boundary.
+Create or revise a phase-plan package that a phase runner can execute without guessing. The output is a master plan plus numbered phase docs, execution metadata, acceptance criteria, blockers, surface classification, and a clear adoption boundary.
 
 ## Hard Stops
 
@@ -24,6 +24,8 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 - Do not mark architecture-heavy plans execution-ready when a required `ARCHITECTURE_CONTRACT_SLICE` or `ARCHITECTURE_HANDOFF` is missing, blocked, or lacks verification signals.
 - Do not allow child planning agents to mutate the source plan directly. Parent session owns final plan edits.
 - Do not put live `.claude/**` adoption into early redesign phases unless the plan explicitly reserves a controlled adoption phase.
+- Do not hard-code this repository's harness, package, doctor, installer, or profile-parity commands into a generic plan. Concrete gate commands must come from the target project's policy sources or be recorded as missing policy.
+- Do not mark a plan execution-ready when it mutates package/runtime payloads, installed profiles, external services, or data/state without classifying that surface and naming required evidence slots.
 - Do not hide unresolved ambiguity. Record it as an assumption, blocker, or user question.
 
 ## Flow
@@ -31,11 +33,13 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 1. Identify the user objective and existing plan directory.
 2. Audit current artifacts and stale phase docs.
 3. Draft or refresh `00-master-plan-*.md` and root `NN-*.md` phase files.
-4. Add phase execution metadata: dependencies, conflicts, owned paths, staged paths, read-only paths, write-set boundaries, adoption targets, and live mutation policy.
-5. When an architecture package is present, map selected ADRs and `TRACEABILITY_MATRIX.md` rows into phase scope, owners, verification signals, and acceptance evidence.
-6. When `ARCHITECTURE_HANDOFF.json` is present, carry only its path, status, selected decision IDs, selected constraint IDs, owned/read-only/staged paths, verification signal IDs, and blocking preconditions into phase metadata.
-7. Run independent review loops as sidecar review, then parent applies accepted edits.
-8. Prepare execution only after readiness, traceability, handoff status, and phase boundary checks are satisfied.
+4. Classify every planned change surface as `source_only`, `package_runtime_payload`, `installed_profile_or_account_root`, `external_deployment_or_service`, or `data_or_state_migration`.
+5. Load only the applicable local policy sources for those surfaces, such as root `AGENTS.md`, verification contracts, deployment runbooks, package contracts, migration policies, or project-local guideline anchors.
+6. Add phase execution metadata: dependencies, conflicts, owned paths, staged paths, read-only paths, write-set boundaries, adoption targets, live mutation policy, policy source paths, and required evidence slots.
+7. When an architecture package is present, map selected ADRs and `TRACEABILITY_MATRIX.md` rows into phase scope, owners, verification signals, and acceptance evidence.
+8. When `ARCHITECTURE_HANDOFF.json` is present, carry only its path, status, selected decision IDs, selected constraint IDs, owned/read-only/staged paths, verification signal IDs, and blocking preconditions into phase metadata.
+9. Run independent review loops as sidecar review, then parent applies accepted edits.
+10. Prepare execution only after readiness, traceability, handoff status, phase boundary, surface classification, and policy-sourced adoption checks are satisfied.
 
 ## Required Evidence
 
@@ -45,7 +49,9 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 - Architecture package path inventory when used, including traceability matrix, selected ADRs, architecture review, and any Brownfield evidence boundary.
 - Architecture handoff path and status when used, including selected constraints, selected verification signals, and blocked/ready decision.
 - Review loop findings and accepted changes.
-- Explicit adoption strategy for all harness, skill, and agent surfaces.
+- Surface classification for every planned mutation, including policy source paths and required evidence slots.
+- Explicit adoption strategy for workflow, skill, agent, package/runtime, deployment/service, profile/account-root, and data/state surfaces that are in scope.
+- Concrete gate commands only when sourced from the target project's policy documents; otherwise record the missing policy as a blocker or assumption.
 - Plan graph readiness evidence when a package claims graph execution. Markdown-only packages remain supported, but do not label them graph-ready without validated DAG metadata.
 
 ## References

@@ -10,6 +10,38 @@
 ## 목표
 - <전체 목표>
 
+## Adoption Surface Classification
+```yaml
+adoptionSurface:
+  schemaVersion: 1
+  policySourcePaths:
+    - "<root instructions, verification contract, deployment runbook, package contract, migration policy>"
+  surfaces:
+    - id: "<stable-surface-id>"
+      category: "source_only | package_runtime_payload | installed_profile_or_account_root | external_deployment_or_service | data_or_state_migration"
+      plannedMutation: "<변경 내용 또는 none>"
+      controlledAdoptionPhase: "<NN 또는 none>"
+      liveMutationPolicy: "forbidden | dry_run_only | controlled_phase_only | allowed_with_policy_gate"
+      policyGateRefs:
+        - "<policy section, command id, checklist id, missing-policy>"
+      requiredEvidenceSlots:
+        - "preflight_or_dry_run"
+        - "independent_review"
+        - "targeted_tests"
+        - "build_or_package_verification"
+        - "post_adoption_verification"
+        - "rollback_or_recovery_evidence"
+        - "git_closeout_parity"
+      concreteGateCommands:
+        source: "project_policy | phase_plan | not_applicable | missing_policy"
+        commands: []
+  unresolvedPolicyGaps: []
+```
+
+- 이 섹션은 project-neutral하게 유지합니다. 다른 repository의 harness, package, installer, profile-parity, deployment, migration 명령을 hard-code하지 않습니다.
+- 구체 gate 명령은 대상 프로젝트의 policy source에서 가져오거나 `missing_policy`로 기록합니다.
+- source-only가 아닌 surface에 policy source path와 required evidence slot이 없으면 execution readiness를 막습니다.
+
 ## Plan Package Readiness
 ```yaml
 planPackageReadiness:
@@ -83,4 +115,5 @@ mvpMethodology:
 ## 완료 규칙
 - 각 phase 계획의 완료 기준이 충족될 때만 체크합니다.
 - 명시적 사유 없이 소스 요구사항을 누락하지 않습니다.
+- source-only가 아닌 surface에 policy-sourced adoption evidence가 없으면 전체 완료를 선언하지 않습니다.
 - 체크리스트가 모두 완료되기 전에는 전체 완료로 선언하지 않습니다.

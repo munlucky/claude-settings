@@ -10,6 +10,38 @@
 ## Objective
 - <overall objective>
 
+## Adoption Surface Classification
+```yaml
+adoptionSurface:
+  schemaVersion: 1
+  policySourcePaths:
+    - "<root instructions, verification contract, deployment runbook, package contract, or migration policy>"
+  surfaces:
+    - id: "<stable-surface-id>"
+      category: "source_only | package_runtime_payload | installed_profile_or_account_root | external_deployment_or_service | data_or_state_migration"
+      plannedMutation: "<what changes, or none>"
+      controlledAdoptionPhase: "<NN or none>"
+      liveMutationPolicy: "forbidden | dry_run_only | controlled_phase_only | allowed_with_policy_gate"
+      policyGateRefs:
+        - "<policy section, command id, checklist id, or missing-policy>"
+      requiredEvidenceSlots:
+        - "preflight_or_dry_run"
+        - "independent_review"
+        - "targeted_tests"
+        - "build_or_package_verification"
+        - "post_adoption_verification"
+        - "rollback_or_recovery_evidence"
+        - "git_closeout_parity"
+      concreteGateCommands:
+        source: "project_policy | phase_plan | not_applicable | missing_policy"
+        commands: []
+  unresolvedPolicyGaps: []
+```
+
+- Keep this section project-neutral. Do not hard-code another repository's harness, package, installer, profile-parity, deployment, or migration commands.
+- Concrete gate commands must be copied from the target project's policy sources or recorded as `missing_policy`.
+- A non-source-only surface without policy source paths and required evidence slots blocks execution readiness.
+
 ## Plan Quality Loop
 ```yaml
 planQualityReview:
@@ -108,4 +140,5 @@ mvpMethodology:
 ## Completion Rule
 - Mark a phase as checked only when its phase plan completion criteria are satisfied.
 - Do not leave source requirements unmapped without explicit decision notes.
+- Do not declare full completion when a non-source-only surface lacks policy-sourced adoption evidence.
 - Do not declare full completion until every checklist item is checked.

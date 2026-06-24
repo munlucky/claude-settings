@@ -24,6 +24,14 @@ phaseExecution:
   readOnlyPaths:
     - <paths this phase may inspect only>
   sharedMutablePaths: []
+  surfaceClassifications:
+    - surfaceId: "<stable-surface-id>"
+      category: "source_only | package_runtime_payload | installed_profile_or_account_root | external_deployment_or_service | data_or_state_migration"
+      policySourcePaths:
+        - "<project policy source or missing-policy>"
+      requiredEvidenceSlots:
+        - "<slot names from master adoptionSurface>"
+      concreteGateCommandsSource: "project_policy | phase_plan | not_applicable | missing_policy"
   requiresManualEvidence: false
   mergePolicy: "disjoint_patch"
 
@@ -46,6 +54,7 @@ mvpMethodology:
 ```
 
 - Set `parallelEligible: false` and add blocker notes when `ownedPaths` are ambiguous, shared mutable files are required, or manual evidence is required.
+- Set `concreteGateCommandsSource: missing_policy` and block execution readiness when a non-source-only surface lacks project policy for its required evidence slots.
 - Use `mvpMethodology.profile: demo_first` only for MVP slices that require user demo approval before Real Functional work.
 
 ## Scope
@@ -89,11 +98,13 @@ mvpMethodology:
 - [ ] Build/type checks: <command>
 - [ ] Behavior checks: <what to verify>
 - [ ] Regression checks: <what to verify>
+- [ ] Surface/adoption checks: <project-policy sourced evidence slots, or not applicable for source_only>
 
 ## Evidence to Mark Done
 - <test log path>
 - <changed file list>
 - <verification notes>
+- <surface classification and policy-sourced adoption evidence, when applicable>
 - Demo-first evidence, when profile is `demo_first`:
   - Mock Functional Demo: mock success path and mock error path evidence.
   - Demo Evidence Capture: demo run command and tested route/flow evidence.

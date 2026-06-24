@@ -24,6 +24,14 @@ phaseExecution:
   readOnlyPaths:
     - <이 phase가 읽기만 할 경로>
   sharedMutablePaths: []
+  surfaceClassifications:
+    - surfaceId: "<stable-surface-id>"
+      category: "source_only | package_runtime_payload | installed_profile_or_account_root | external_deployment_or_service | data_or_state_migration"
+      policySourcePaths:
+        - "<project policy source 또는 missing-policy>"
+      requiredEvidenceSlots:
+        - "<master adoptionSurface의 slot 이름>"
+      concreteGateCommandsSource: "project_policy | phase_plan | not_applicable | missing_policy"
   requiresManualEvidence: false
   mergePolicy: "disjoint_patch"
 
@@ -46,6 +54,7 @@ mvpMethodology:
 ```
 
 - `ownedPaths`가 모호하거나 shared mutable 파일 수정 또는 manual evidence가 필요하면 `parallelEligible: false`로 두고 blocker를 기록합니다.
+- source-only가 아닌 surface에 required evidence slot을 위한 project policy가 없으면 `concreteGateCommandsSource: missing_policy`로 두고 execution readiness를 막습니다.
 - user demo approval 전 Real Functional 작업을 막아야 하는 MVP slice에만 `mvpMethodology.profile: demo_first`를 사용합니다.
 
 ## 범위
@@ -84,11 +93,13 @@ mvpMethodology:
 - [ ] 빌드/타입 체크: <command>
 - [ ] 동작 확인: <what to verify>
 - [ ] 회귀 확인: <what to verify>
+- [ ] Surface/adoption 확인: <project-policy sourced evidence slots 또는 source_only이면 not applicable>
 
 ## 완료 표시용 증거
 - <test log path>
 - <changed file list>
 - <verification notes>
+- <해당하는 경우 surface classification과 policy-sourced adoption evidence>
 - `demo_first` profile인 경우 demo-first evidence:
   - Mock Functional Demo: mock success path와 mock error path evidence.
   - Demo Evidence Capture: demo run command와 tested route/flow evidence.
