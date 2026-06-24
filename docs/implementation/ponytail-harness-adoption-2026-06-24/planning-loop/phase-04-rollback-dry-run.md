@@ -8,9 +8,9 @@ Rollback dry-run is not applicable because Phase 04 did not adopt Ponytail into 
 
 ## Evidence
 
-- `phase-04/runtime-adoption-skipped.md` records no runtime-surface diff.
-- `phase-04/package-dry-run.json` proves package materialization still plans successfully without Ponytail runtime adoption.
-- `phase-04/rollback-manifest.yaml` records prior hashes and states no reinstall command is required.
+- `planning-loop/phase-04-runtime-adoption-skipped.md` records no runtime-surface diff.
+- `planning-loop/phase-04-package-dry-run.json` proves package materialization still plans successfully without Ponytail runtime adoption.
+- `planning-loop/phase-04-rollback-manifest.yaml` records prior hashes and states no reinstall command is required.
 
 ## Result
 

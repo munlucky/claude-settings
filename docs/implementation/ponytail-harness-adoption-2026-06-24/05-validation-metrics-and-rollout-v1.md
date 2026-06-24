@@ -86,8 +86,8 @@ Live account-root/profile mutation requires explicit approval and full operation
 | `phase-05/live-rollout-approval.md` | approver, exact install scope, source root, target homes, date, rollback plan; required before live install |
 | `phase-05/installed-parity.json` | installer output, installed doctor result, profileSurfaceParity, representative hash parity; required after live install |
 | `phase-05/rollback-manifest.yaml` | rollback command, previous manifest/hash evidence, target homes, verification commands |
-| `phase-05/final-decision.yaml` | final branch, runtime-state completion status or `live_adoption_skipped`, accepted evidence path, residual backlog |
-| `phase-05/adoption-skipped.md` | branch, reason, no live profile mutation statement, follow-up decision; required when live install is skipped |
+| `planning-loop/phase-05-final-decision.yaml` | final branch, runtime-state completion status or `live_adoption_skipped`, accepted evidence path, residual backlog |
+| `planning-loop/phase-05-adoption-skipped.md` | branch, reason, no live profile mutation statement, follow-up decision; required when live install is skipped |
 | `phase-05/rejection-decision.md` | required when branch closes as `rejected` |
 
 ## Acceptance Criteria
@@ -100,8 +100,8 @@ Live account-root/profile mutation requires explicit approval and full operation
 - `execution/phase-05/local-evidence-report.md` records at least 2 representative tasks, baseline vs Ponytail-influenced diff/file counts, validation commands, and review finding categories.
 - No required security, accessibility, runtime-state, package, or closeout gate is skipped; any not-applicable gate has a branch-specific reason.
 - Live install cannot run without `phase-05/live-rollout-approval.md`.
-- If live install is skipped, `phase-05/adoption-skipped.md` replaces installed parity evidence.
-- Final closeout records either accepted runtime-state completion evidence or explicit `live_adoption_skipped` in `phase-05/final-decision.yaml`.
+- If live install is skipped, `planning-loop/phase-05-adoption-skipped.md` replaces installed parity evidence.
+- Final closeout records either accepted runtime-state completion evidence or explicit `live_adoption_skipped` in `planning-loop/phase-05-final-decision.yaml`.
 
 ## Verification Signals
 
@@ -113,8 +113,8 @@ Live account-root/profile mutation requires explicit approval and full operation
 - If live adoption occurs: installed `doctor` with explicit `--repo-root`, `--lock`, and `--runtime-surface` paths plus installer `profileSurfaceParity`.
 - `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/execution/phase-05/local-evidence-report.md`
 - `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-05/live-rollout-approval.md` before live install.
-- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-05/installed-parity.json` after live install, or `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-05/adoption-skipped.md` when skipped.
-- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-05/final-decision.yaml`
+- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-05/installed-parity.json` after live install, or `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/phase-05-adoption-skipped.md` when skipped.
+- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/phase-05-final-decision.yaml`
 
 ## Review-Improvement Loop
 
@@ -139,8 +139,8 @@ Selected closeout: `instruction_tier_only`.
 - `execution/phase-05/local-evidence-report.md`
 - `phase-05/live-rollout-approval.md` and `phase-05/installed-parity.json` if live adoption occurs
 - `phase-05/rollback-manifest.yaml` if live adoption occurs
-- `phase-05/final-decision.yaml`
-- `phase-05/adoption-skipped.md` if live adoption is skipped
+- `planning-loop/phase-05-final-decision.yaml`
+- `planning-loop/phase-05-adoption-skipped.md` if live adoption is skipped
 - `phase-05/rejection-decision.md` if rejected
 
 ## Phase 05 Closeout
@@ -152,8 +152,8 @@ Live adoption is skipped. The adopted durable source is `docs/public/guidelines/
 Closeout artifacts:
 
 - `execution/phase-05/local-evidence-report.md`
-- `phase-05/adoption-skipped.md`
-- `phase-05/final-decision.yaml`
+- `planning-loop/phase-05-adoption-skipped.md`
+- `planning-loop/phase-05-final-decision.yaml`
 - `execution/phase-05/SCORECARD.md`
 - `execution/phase-05/QA_REPORT.md`
 - `execution/phase-05/HANDOFF.md`

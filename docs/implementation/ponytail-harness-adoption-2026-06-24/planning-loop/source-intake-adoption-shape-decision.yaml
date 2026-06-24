@@ -15,7 +15,7 @@ rejected_branches:
   - branch: managed_hooks
     reason: "Hooks write host-local state and inject runtime context; require Phase 03 permission review and Phase 04 smoke/approval before consideration."
 next_phase_inputs:
-  source_pin: source-intake/source-pin.json
-  policy_compatibility: source-intake/policy-compatibility.md
-  hook_inventory: source-intake/hook-inventory.md
+  source_pin: planning-loop/source-intake-source-pin.json
+  policy_compatibility: planning-loop/source-intake-policy-compatibility.md
+  hook_inventory: planning-loop/source-intake-hook-inventory.md
   selected_guideline_path: docs/public/guidelines/minimal-correct-implementation.md

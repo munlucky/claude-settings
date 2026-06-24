@@ -24,7 +24,7 @@ The goal is not to make Moonshot Relay depend on Ponytail as completion authorit
 | `hooks/claude-codex-hooks.json` | Claude/Codex lifecycle hooks using Node commands for activation and mode tracking. | Must remain disabled until hook execution, env vars, and profile interaction are tested. |
 | `docs/agent-portability.md` | Adapter map across Codex, Claude Code, OpenCode, Pi, Gemini, and instruction-tier hosts. | Confirms thin-adapter pattern; Moonshot adoption should keep host adapters thin. |
 
-The snapshot above is `observed_unpinned` until Phase 01 records `observedAt`, `observedRef`, `observedCommit`, `licenseEvidencePath`, and upstream file evidence in `source-intake/source-pin.json`.
+The snapshot above is `observed_unpinned` until Phase 01 records `observedAt`, `observedRef`, `observedCommit`, `licenseEvidencePath`, and upstream file evidence in `planning-loop/source-intake-source-pin.json`.
 
 ## Current Moonshot Constraints
 
@@ -79,18 +79,18 @@ runnerContract:
   blockedPhases:
     - phase: "02"
       until:
-        - "source-intake/source-pin.json"
-        - "source-intake/policy-compatibility.md"
-        - "source-intake/adoption-shape-decision.yaml"
+        - "planning-loop/source-intake-source-pin.json"
+        - "planning-loop/source-intake-policy-compatibility.md"
+        - "planning-loop/source-intake-adoption-shape-decision.yaml"
     - phase: "03"
       until:
         - "execution/phase-02/HANDOFF.md"
         - "execution/phase-02/phase-decision.yaml"
     - phase: "04"
       until:
-        - "phase-03/adoption-decision.yaml with requires_phase_04: true"
+        - "planning-loop/phase-03-adoption-decision.yaml with requires_phase_04: true"
       skipWhen:
-        - "phase-03/adoption-decision.yaml selects instruction_tier_only, user_managed_plugin_documented, or rejected"
+        - "planning-loop/phase-03-adoption-decision.yaml selects instruction_tier_only, user_managed_plugin_documented, or rejected"
     - phase: "05"
       until:
         - "execution/phase-05/local-evidence-report.md can be produced from prior branch evidence"
@@ -135,10 +135,10 @@ runnerContract:
 
 | Branch | Phase 03 Decision | Phase 04 Requirement | Phase 05 Closeout Evidence |
 |---|---|---|---|
-| `instruction_tier_only` | `phase-03/adoption-decision.yaml` selects `instruction_tier_only`; no source skill is created. | Managed package/runtime adoption is skipped; `phase-04/runtime-surface-approval.md` is not required; `phase-04/runtime-adoption-skipped.md` records no `package/runtime-surface.json` diff. | `phase-05/adoption-skipped.md` or `phase-05/instruction-tier-rollout.md` records no live install and points to Phase 02 validation. |
-| `moonshot_owned_skill` | `phase-03/adoption-decision.yaml` selects `moonshot_owned_skill` and names skill path, lock update, permissions, rollback steps. | Required. `phase-04/runtime-surface-approval.md` is required before public runtime-surface expansion; package dry-run evidence is required. | `phase-05/local-evidence-report.md`; live install only with `phase-05/live-rollout-approval.md` and `phase-05/installed-parity.json`. |
-| `user_managed_plugin_documented` | `phase-03/adoption-decision.yaml` selects `user_managed_plugin_documented`; upstream plugin remains outside package authority. | Managed package/runtime adoption is skipped unless a separate approval changes package policy. | `phase-05/adoption-skipped.md` records external opt-in docs only and no live profile mutation. |
-| `rejected` | `phase-03/adoption-decision.yaml` or Phase 05 evidence rejects adoption. | Skipped. | `phase-05/rejection-decision.md` records reason and residual backlog. |
+| `instruction_tier_only` | `planning-loop/phase-03-adoption-decision.yaml` selects `instruction_tier_only`; no source skill is created. | Managed package/runtime adoption is skipped; `phase-04/runtime-surface-approval.md` is not required; `planning-loop/phase-04-runtime-adoption-skipped.md` records no `package/runtime-surface.json` diff. | `planning-loop/phase-05-adoption-skipped.md` or `phase-05/instruction-tier-rollout.md` records no live install and points to Phase 02 validation. |
+| `moonshot_owned_skill` | `planning-loop/phase-03-adoption-decision.yaml` selects `moonshot_owned_skill` and names skill path, lock update, permissions, rollback steps. | Required. `phase-04/runtime-surface-approval.md` is required before public runtime-surface expansion; package dry-run evidence is required. | `phase-05/local-evidence-report.md`; live install only with `phase-05/live-rollout-approval.md` and `phase-05/installed-parity.json`. |
+| `user_managed_plugin_documented` | `planning-loop/phase-03-adoption-decision.yaml` selects `user_managed_plugin_documented`; upstream plugin remains outside package authority. | Managed package/runtime adoption is skipped unless a separate approval changes package policy. | `planning-loop/phase-05-adoption-skipped.md` records external opt-in docs only and no live profile mutation. |
+| `rejected` | `planning-loop/phase-03-adoption-decision.yaml` or Phase 05 evidence rejects adoption. | Skipped. | `phase-05/rejection-decision.md` records reason and residual backlog. |
 
 ## Source Traceability Matrix
 
@@ -146,9 +146,9 @@ runnerContract:
 |---|---|---|---|---|---|
 | PONY-REQ-01 | Ponytail ladder | Prefer YAGNI, existing code, stdlib/native/platform/dependency reuse before new code. | 02 | Moonshot-specific guideline/rubric exists and preserves required evidence rules. | `execution/phase-02/HANDOFF.md`, selected guideline/rule path, and `execution/phase-02/minimality-static-gate.txt` |
 | PONY-REQ-02 | Ponytail safety exclusions | Never simplify away validation, error handling, security, accessibility, explicit asks, or real-world calibration. | 02, 05 | Tests/review checklist prove evidence and safety gates remain mandatory. | `execution/phase-02/QA_REPORT.md`, `execution/phase-05/local-evidence-report.md` |
-| PONY-REQ-03 | Ponytail review skill | Add over-engineering review as an optional sidecar perspective. | 03, 05 | Review artifact distinguishes complexity-only findings from correctness/security findings. | `phase-03/adoption-decision.yaml`, `execution/phase-05/local-evidence-report.md` |
-| PONY-REQ-04 | Codex plugin manifest/hooks | Codex integration uses skills plus lifecycle hooks. | 03, 04 | Hook permissions, env vars, and timeout behavior are reviewed before live use. | `source-intake/hook-inventory.md`, `phase-03/permission-review.md`, `phase-04/hook-smoke-report.md` if managed hooks are selected |
-| PONY-REQ-05 | Moonshot package policy | Runtime skill surface is allowlist-only and live sync requires parity. | 04 | `doctor`, `skills-audit`, package dry-run, and profile parity gates pass before adoption. | `phase-04/runtime-surface-approval.md`, `phase-04/package-dry-run.json`, `phase-04/skills-audit.json`, `phase-05/installed-parity.json` if live adoption occurs |
+| PONY-REQ-03 | Ponytail review skill | Add over-engineering review as an optional sidecar perspective. | 03, 05 | Review artifact distinguishes complexity-only findings from correctness/security findings. | `planning-loop/phase-03-adoption-decision.yaml`, `execution/phase-05/local-evidence-report.md` |
+| PONY-REQ-04 | Codex plugin manifest/hooks | Codex integration uses skills plus lifecycle hooks. | 03, 04 | Hook permissions, env vars, and timeout behavior are reviewed before live use. | `planning-loop/source-intake-hook-inventory.md`, `planning-loop/phase-03-permission-review.md`, `phase-04/hook-smoke-report.md` if managed hooks are selected |
+| PONY-REQ-05 | Moonshot package policy | Runtime skill surface is allowlist-only and live sync requires parity. | 04 | `doctor`, `skills-audit`, package dry-run, and profile parity gates pass before adoption. | `phase-04/runtime-surface-approval.md`, `planning-loop/phase-04-package-dry-run.json`, `planning-loop/phase-04-skills-audit.json`, `phase-05/installed-parity.json` if live adoption occurs |
 | PONY-REQ-06 | Local impact | Upstream benchmark claims are not local authority. | 05 | Harness-lab or source-local eval captures before/after complexity and failure metrics. | `execution/phase-05/local-evidence-report.md` |
 
 ## Invalidation Matrix
@@ -175,12 +175,12 @@ Moonshot-owned skill or managed runtime-surface adoption:
 - `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`
 - `npm run test:package`
 - `npm test`
-- `node package/build-package.mjs --runtime all --dry-run --json`, captured as `phase-04/package-dry-run.json`.
+- `node package/build-package.mjs --runtime all --dry-run --json`, captured as `planning-loop/phase-04-package-dry-run.json`.
 - `phase-04/runtime-surface-approval.md` exists before `package/runtime-surface.json` changes.
 
 Managed hooks:
 
-- `phase-03/permission-review.md` records executable path, arguments, env vars, network use, filesystem writes, process lifetime, failure behavior, and policy fit.
+- `planning-loop/phase-03-permission-review.md` records executable path, arguments, env vars, network use, filesystem writes, process lifetime, failure behavior, and policy fit.
 - `phase-04/hook-smoke-report.md` covers normal run, timeout, missing Node, and denied environment cases before package adoption.
 
 Live account-root/profile rollout:
@@ -191,7 +191,7 @@ Live account-root/profile rollout:
 - `phase-05/live-rollout-approval.md` exists before install.
 - `node scripts/install-account-root-harness.mjs --runtime all --source-root <repo> --moonshot-home <home> --claude-home <home> --codex-home <home> --json`
 - Installed doctor and installer `profileSurfaceParity` are captured in `phase-05/installed-parity.json`.
-- Runtime-state completion authority is either accepted with fresh evidence or explicitly marked `live_adoption_skipped` in `phase-05/final-decision.yaml`.
+- Runtime-state completion authority is either accepted with fresh evidence or explicitly marked `live_adoption_skipped` in `planning-loop/phase-05-final-decision.yaml`.
 
 ## Completion Rule
 
@@ -218,8 +218,8 @@ Rejected or skipped adoption surfaces:
 
 Final evidence:
 
-- `phase-05/final-decision.yaml`
-- `phase-05/adoption-skipped.md`
+- `planning-loop/phase-05-final-decision.yaml`
+- `planning-loop/phase-05-adoption-skipped.md`
 - `execution/phase-05/local-evidence-report.md`
 - `execution/phase-05/QA_REPORT.md`
 

@@ -80,7 +80,7 @@ documents:
       - "Write boundary allowed broad skill/lock edits before branch selection."
       - "Permission review needed executable/env/network/filesystem/lifetime/failure fields."
     acceptedChanges:
-      - "Added phase-03/adoption-decision.yaml schema."
+      - "Added planning-loop/phase-03-adoption-decision.yaml schema."
       - "Split write boundaries by adoption branch."
       - "Added permission-review.md, skills-audit.json, and lock-update-decision.md artifacts."
       - "Added expected closeout artifacts."

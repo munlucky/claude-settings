@@ -8,7 +8,7 @@ priorHashes:
   skillsLock:
     path: "skills.lock.json"
     sha256: "49bd68dce26a0576722df29663f48f15e7ec0d58c5a967c4f3111a26e82fc413"
-packageDryRunArtifact: "docs/implementation/ponytail-harness-adoption-2026-06-24/phase-04/package-dry-run.json"
+packageDryRunArtifact: "docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/phase-04-package-dry-run.json"
 reinstallCommand: "not applicable; no live install was performed"
 verificationCommands:
   - "node package/build-package.mjs --runtime all --dry-run --json"

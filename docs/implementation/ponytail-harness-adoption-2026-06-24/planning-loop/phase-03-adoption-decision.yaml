@@ -6,7 +6,7 @@ decisionDate: "2026-06-24"
 sourcePin:
   repo: "https://github.com/DietrichGebert/ponytail"
   commit: "17a466013e7956f91418d188a960754ba26a1bdf"
-  evidence: "docs/implementation/ponytail-harness-adoption-2026-06-24/source-intake/source-pin.json"
+  evidence: "docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/source-intake-source-pin.json"
 rationale:
   - "Phase 02 proved the useful Ponytail pressure can be represented as a source-owned public guideline."
   - "Moonshot Relay does not need to own a Ponytail-derived skill to preserve the minimal-correct-implementation behavior."

@@ -12,7 +12,7 @@ acceptedEvidence:
   - "docs/public/guidelines/minimal-correct-implementation.md"
   - "docs/public/repository-layout.md"
   - "docs/implementation/ponytail-harness-adoption-2026-06-24/execution/phase-05/local-evidence-report.md"
-  - "docs/implementation/ponytail-harness-adoption-2026-06-24/phase-05/adoption-skipped.md"
+  - "docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/phase-05-adoption-skipped.md"
 liveAdoption:
   performed: false
   approvalRequired: true

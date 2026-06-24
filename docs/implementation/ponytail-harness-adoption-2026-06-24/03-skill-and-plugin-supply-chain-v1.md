@@ -80,10 +80,10 @@ No live profile or account-root mutation. External plugin installation remains u
 
 | Artifact | Required Fields |
 |---|---|
-| `phase-03/adoption-decision.yaml` | `branch` as one of `instruction_tier_only`, `moonshot_owned_skill`, `user_managed_plugin_documented`, `rejected`; rationale; owned files; rollback steps; `requires_phase_04`; reviewer |
-| `phase-03/permission-review.md` | executable path, arguments, env vars, network use, filesystem writes, process lifetime, timeout/failure behavior, package-policy representation, verdict |
-| `phase-03/skills-audit.json` | output of `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json` |
-| `phase-03/lock-update-decision.md` | exact lock regeneration command and result, or explicit `no-regeneration-allowed` reason for non-skill branches |
+| `planning-loop/phase-03-adoption-decision.yaml` | `branch` as one of `instruction_tier_only`, `moonshot_owned_skill`, `user_managed_plugin_documented`, `rejected`; rationale; owned files; rollback steps; `requires_phase_04`; reviewer |
+| `planning-loop/phase-03-permission-review.md` | executable path, arguments, env vars, network use, filesystem writes, process lifetime, timeout/failure behavior, package-policy representation, verdict |
+| `planning-loop/phase-03-skills-audit.json` | output of `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json` |
+| `planning-loop/phase-03-lock-update-decision.md` | exact lock regeneration command and result, or explicit `no-regeneration-allowed` reason for non-skill branches |
 
 ## Acceptance Criteria
 
@@ -92,16 +92,16 @@ No live profile or account-root mutation. External plugin installation remains u
 - Any external executable hook is either blocked from managed adoption or covered by a reviewed permission model.
 - `package/runtime-surface.json` is unchanged unless explicit approval is recorded.
 - `doctor` and `skills-audit` do not regress.
-- `phase-03/adoption-decision.yaml` names the selected branch, rollback steps, owned files, and whether Phase 04 is required.
-- `phase-03/permission-review.md` exists even when hooks are rejected, with a clear rejected or not-applicable verdict.
+- `planning-loop/phase-03-adoption-decision.yaml` names the selected branch, rollback steps, owned files, and whether Phase 04 is required.
+- `planning-loop/phase-03-permission-review.md` exists even when hooks are rejected, with a clear rejected or not-applicable verdict.
 - Non-skill branches explicitly record that `skills.lock.json` regeneration is not allowed.
 
 ## Verification Signals
 
 - `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`
 - `node scripts/doctor.mjs check --json`
-- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-03/adoption-decision.yaml`
-- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-03/permission-review.md`
+- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/phase-03-adoption-decision.yaml`
+- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/phase-03-permission-review.md`
 - If a skill is added: `node scripts/skills-audit.mjs generate-lock --out skills.lock.json --default-license MIT --default-permissions-json [] --approve-permissions --json` followed by the audit command above.
 - Targeted `node --test` command for updated supply-chain tests.
 
@@ -118,10 +118,10 @@ Do not proceed to active Phase 04 implementation. Package/runtime adoption is no
 - `execution/phase-03/SCORECARD.md`
 - `execution/phase-03/QA_REPORT.md`
 - `execution/phase-03/HANDOFF.md`
-- `phase-03/adoption-decision.yaml`
-- `phase-03/permission-review.md`
-- `phase-03/skills-audit.json`
-- `phase-03/lock-update-decision.md`
+- `planning-loop/phase-03-adoption-decision.yaml`
+- `planning-loop/phase-03-permission-review.md`
+- `planning-loop/phase-03-skills-audit.json`
+- `planning-loop/phase-03-lock-update-decision.md`
 
 ## Phase 03 Closeout
 
@@ -131,10 +131,10 @@ Phase 03 rejects managed adoption of Ponytail plugin, skill, and executable hook
 
 Closeout artifacts:
 
-- `phase-03/adoption-decision.yaml`
-- `phase-03/permission-review.md`
-- `phase-03/skills-audit.json`
-- `phase-03/lock-update-decision.md`
+- `planning-loop/phase-03-adoption-decision.yaml`
+- `planning-loop/phase-03-permission-review.md`
+- `planning-loop/phase-03-skills-audit.json`
+- `planning-loop/phase-03-lock-update-decision.md`
 - `execution/phase-03/SCORECARD.md`
 - `execution/phase-03/QA_REPORT.md`
 - `execution/phase-03/HANDOFF.md`

@@ -7,7 +7,7 @@ Status: complete
 Runtime/package adoption is skipped for this plan package.
 
 - adoption branch: `instruction_tier_only`
-- source decision: `phase-03/adoption-decision.yaml`
+- source decision: `planning-loop/phase-03-adoption-decision.yaml`
 - approval required for runtime-surface expansion: not requested
 - runtime-surface entries approved: none
 - denied paths: Ponytail upstream plugin, skills, hooks, live profile install paths
@@ -25,7 +25,7 @@ No account-root, `.claude/`, `.codex/`, runtime sqlite/state, plugin install, or
 
 ## Package Dry-Run Evidence
 
-`node package/build-package.mjs --runtime all --dry-run --json` was captured in `phase-04/package-dry-run.json`.
+`node package/build-package.mjs --runtime all --dry-run --json` was captured in `planning-loop/phase-04-package-dry-run.json`.
 
 Summary:
 

@@ -28,7 +28,7 @@ Create a source-only Moonshot-specific minimality guideline or rubric based on P
 
 ## Staged Paths
 
-- Exact candidate guideline, rule, and test paths selected in `source-intake/adoption-shape-decision.yaml`.
+- Exact candidate guideline, rule, and test paths selected in `planning-loop/source-intake-adoption-shape-decision.yaml`.
 - Targeted test file or documented static gate output.
 - `docs/implementation/ponytail-harness-adoption-2026-06-24/execution/phase-02/minimality-static-gate.txt`
 

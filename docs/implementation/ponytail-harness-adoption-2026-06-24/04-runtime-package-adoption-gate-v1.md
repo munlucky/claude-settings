@@ -89,12 +89,12 @@ Live account-root/profile adoption is still blocked during implementation. This 
 | Artifact | Required Fields |
 |---|---|
 | `phase-04/runtime-surface-approval.md` | approver, approval source, scope, approved paths, denied paths, date, exact adoption branch, runtime-surface entries approved |
-| `phase-04/runtime-adoption-skipped.md` | required when Phase 03 selects `instruction_tier_only`, `user_managed_plugin_documented`, or `rejected`; records no runtime-surface diff |
-| `phase-04/package-dry-run.json` | output of `node package/build-package.mjs --runtime all --dry-run --json` |
-| `phase-04/skills-audit.json` | output of skills audit after any skill/runtime-surface changes |
+| `planning-loop/phase-04-runtime-adoption-skipped.md` | required when Phase 03 selects `instruction_tier_only`, `user_managed_plugin_documented`, or `rejected`; records no runtime-surface diff |
+| `planning-loop/phase-04-package-dry-run.json` | output of `node package/build-package.mjs --runtime all --dry-run --json` |
+| `planning-loop/phase-04-skills-audit.json` | output of skills audit after any skill/runtime-surface changes |
 | `phase-04/hook-smoke-report.md` | normal run, timeout, missing Node, denied env, filesystem write behavior, verdict; required only for managed hooks |
-| `phase-04/rollback-manifest.yaml` | prior runtime-surface hash, prior skills.lock hash when applicable, package dry-run artifact path, reinstall command, verification commands |
-| `phase-04/rollback-dry-run.md` | rollback steps and dry-run result, or explicit not-applicable reason for skipped runtime adoption |
+| `planning-loop/phase-04-rollback-manifest.yaml` | prior runtime-surface hash, prior skills.lock hash when applicable, package dry-run artifact path, reinstall command, verification commands |
+| `planning-loop/phase-04-rollback-dry-run.md` | rollback steps and dry-run result, or explicit not-applicable reason for skipped runtime adoption |
 
 ## Acceptance Criteria
 
@@ -106,7 +106,7 @@ Live account-root/profile adoption is still blocked during implementation. This 
 - Runtime-surface expansion cannot proceed without `phase-04/runtime-surface-approval.md`.
 - Hook adoption cannot proceed without `phase-04/hook-smoke-report.md` covering normal run, timeout, missing Node, and denied environment.
 - Rollback manifest captures prior payload/hash/install targets before managed package adoption.
-- Rollback is dry-run verified in `phase-04/rollback-dry-run.md`, or runtime adoption is explicitly skipped.
+- Rollback is dry-run verified in `planning-loop/phase-04-rollback-dry-run.md`, or runtime adoption is explicitly skipped.
 
 ## Verification Signals
 
@@ -115,7 +115,7 @@ Live account-root/profile adoption is still blocked during implementation. This 
 - `node scripts/doctor.mjs check --json`
 - `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`
 - `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-04/runtime-surface-approval.md` when runtime surface changes.
-- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-04/runtime-adoption-skipped.md` when runtime adoption is skipped.
+- `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/phase-04-runtime-adoption-skipped.md` when runtime adoption is skipped.
 - `Test-Path docs/implementation/ponytail-harness-adoption-2026-06-24/phase-04/hook-smoke-report.md` when managed hooks are selected.
 
 ## Review-Improvement Loop
@@ -131,12 +131,12 @@ Phase 05 may perform measured local validation. Live adoption remains skipped un
 - `execution/phase-04/SCORECARD.md`
 - `execution/phase-04/QA_REPORT.md`
 - `execution/phase-04/HANDOFF.md`
-- `phase-04/runtime-surface-approval.md` or `phase-04/runtime-adoption-skipped.md`
-- `phase-04/package-dry-run.json`
-- `phase-04/skills-audit.json`
+- `phase-04/runtime-surface-approval.md` or `planning-loop/phase-04-runtime-adoption-skipped.md`
+- `planning-loop/phase-04-package-dry-run.json`
+- `planning-loop/phase-04-skills-audit.json`
 - `phase-04/hook-smoke-report.md` when managed hooks are selected
-- `phase-04/rollback-manifest.yaml`
-- `phase-04/rollback-dry-run.md`
+- `planning-loop/phase-04-rollback-manifest.yaml`
+- `planning-loop/phase-04-rollback-dry-run.md`
 
 ## Phase 04 Closeout
 
@@ -146,11 +146,11 @@ Runtime/package adoption is skipped because Phase 03 selected `instruction_tier_
 
 Closeout artifacts:
 
-- `phase-04/runtime-adoption-skipped.md`
-- `phase-04/package-dry-run.json`
-- `phase-04/skills-audit.json`
-- `phase-04/rollback-manifest.yaml`
-- `phase-04/rollback-dry-run.md`
+- `planning-loop/phase-04-runtime-adoption-skipped.md`
+- `planning-loop/phase-04-package-dry-run.json`
+- `planning-loop/phase-04-skills-audit.json`
+- `planning-loop/phase-04-rollback-manifest.yaml`
+- `planning-loop/phase-04-rollback-dry-run.md`
 - `execution/phase-04/SCORECARD.md`
 - `execution/phase-04/QA_REPORT.md`
 - `execution/phase-04/HANDOFF.md`
@@ -158,7 +158,7 @@ Closeout artifacts:
 
 Verification:
 
-- `node package/build-package.mjs --runtime all --dry-run --json` passed and was captured in `phase-04/package-dry-run.json`.
+- `node package/build-package.mjs --runtime all --dry-run --json` passed and was captured in `planning-loop/phase-04-package-dry-run.json`.
 - `npm run test:package -- --runInBand` passed 40 tests.
 - `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json` returned `status: pass`.
 - `node scripts/doctor.mjs check --json` returned `status: pass`.

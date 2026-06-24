@@ -6,7 +6,7 @@ Status: complete
 
 This review covers whether the pinned upstream Ponytail executable surfaces should become Moonshot Relay managed package/runtime assets.
 
-- source pin: `docs/implementation/ponytail-harness-adoption-2026-06-24/source-intake/source-pin.json`
+- source pin: `docs/implementation/ponytail-harness-adoption-2026-06-24/planning-loop/source-intake-source-pin.json`
 - selected branch: `instruction_tier_only`
 - managed adoption verdict: rejected
 

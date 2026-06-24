@@ -10,7 +10,7 @@
 01-source-intake-and-policy-mapping-v1.md:
   - blocker: "Source-pin output is optional/ambiguous: 'manifest or plan appendix' lets runner guess where commit, license, hashes, and policy decision live."
     evidence: "lines 14, 63, 68-88"
-    suggested_edit: "Make exact required outputs: source-intake/source-pin.yaml, source-intake/artifact-classification.md, source-intake/policy-compatibility-matrix.md, source-intake/adoption-shape-decision.yaml."
+    suggested_edit: "Make exact required outputs: source-intake/source-pin.yaml, planning-loop/source-intake-artifact-classification.md, source-intake/policy-compatibility-matrix.md, planning-loop/source-intake-adoption-shape-decision.yaml."
   - blocker: "Closeout decision gates Phase 02/03 on records that have no schema or required path."
     evidence: "lines 86-88"
     suggested_edit: "Define adoption-shape-decision.yaml fields: source_pin_status, policy_mapping_status, recommended_next_phase, phase03_blocked_reason."
@@ -18,7 +18,7 @@
 02-instruction-tier-poc-v1.md:
   - blocker: "Runner must infer the selected guideline/rule path and targeted test path from Phase 01."
     evidence: "lines 29-31, 82-86"
-    suggested_edit: "Consume source-intake/adoption-shape-decision.yaml and require exact fields selected_guideline_path, selected_rule_path|null, selected_test_path|null."
+    suggested_edit: "Consume planning-loop/source-intake-adoption-shape-decision.yaml and require exact fields selected_guideline_path, selected_rule_path|null, selected_test_path|null."
   - blocker: "Closeout can skip Phase 03, but no machine-readable skip decision is required."
     evidence: "lines 92-93"
     suggested_edit: "Require phase-decision.yaml with next: phase03 | close_instruction_tier_only and evidence.no_runtime_surface_changed: true."
