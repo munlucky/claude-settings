@@ -3,10 +3,12 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
+  copyFile,
   lstat,
   mkdir,
   readdir,
   readFile,
+  rename,
   stat,
   writeFile,
 } from 'node:fs/promises';
@@ -18,9 +20,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const TOOL_NAME = 'harness-bootstrap-lab';
 const SCHEMA_VERSION = 1;
 const LAB_RESULT_SCHEMA_VERSION = 'moonshot-harness-lab-result.v1';
+const BASELINE_ARTIFACT_SCHEMA_VERSION = 'moonshot-harness-baseline-artifact.v1';
+const COMPARE_REPORT_SCHEMA_VERSION = 'moonshot-harness-compare-report.v1';
+const CONTAINER_POLICY_SCHEMA_VERSION = 'moonshot-harness-container-policy.v1';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const OUTPUT_MAX_BUFFER = 10 * 1024 * 1024;
 const ACCOUNT_ROOT_HASH_SIZE_CAP = 1024 * 1024;
+const DEFAULT_FIXTURE_SET_ID = 'moonshot-harness-lab-default-v1';
+const DEFAULT_SCORER_VERSION = 'harness-lab-scorer-v1';
+const DEFAULT_PROMOTION_POLICY_MODE = 'no_regression';
+const DEFAULT_STRICT_IMPROVEMENT_DELTA = 0.01;
 
 const DEFAULT_SUITES = [
   {
@@ -34,6 +43,8 @@ const DEFAULT_SUITES = [
     description: 'Golden control-plane regression suite stays green.',
     command: ['<node>', 'tools/evals/harness-control-plane.mjs', 'run', '--json'],
     timeoutMs: 120_000,
+    fixtureId: 'harness-control-plane-eval',
+    inputHash: 'sha256:harness-control-plane-eval-v1',
     metrics: [
       { id: 'score', path: 'score', direction: 'higher', min: 1, maxRegression: 0, required: true },
       { id: 'passedCount', path: 'passedCount', direction: 'higher', maxRegression: 0, required: true },
@@ -52,6 +63,10 @@ const DEFAULT_SUITES = [
 const usage = () => `Usage:
   node tools/harness-lab/harness-lab.mjs run --candidate-root <dir> [--stable-root <dir>] [--config <json>] [--out <dir>] [--run-id <id>] [--json]
   node tools/harness-lab/harness-lab.mjs freeze --source-root <dir> --out <dir> [--version <id>] [--json]
+  node tools/harness-lab/harness-lab.mjs compare --baseline-result <json> --candidate-result <json> [--promotion-policy no_regression|strict_improvement] [--min-delta <number>] [--out <json>] [--json]
+  node tools/harness-lab/harness-lab.mjs promote --candidate-run <json> --baseline-root <dir> [--compare-report <json>] [--baseline-id <id>] [--expected-previous-baseline-id <id>] [--expected-previous-pointer-sha256 <sha256>] [--allow-calibrated-baseline] [--simulate-partial-copy-failure] [--json]
+  node tools/harness-lab/harness-lab.mjs rollback --baseline-root <dir> --to <baseline-id> [--expected-previous-baseline-id <id>] [--expected-previous-pointer-sha256 <sha256>] [--json]
+  node tools/harness-lab/harness-lab.mjs container-policy [--out <json>] [--json]
 
 Runs an external H0 lab gate for Moonshot Relay harness changes.`;
 
@@ -74,6 +89,20 @@ const parseArgs = (argv) => {
     out: '',
     runId: '',
     version: '',
+    baselineResult: '',
+    candidateResult: '',
+    baselineRoot: '',
+    baselineId: '',
+    compareReport: '',
+    candidateRun: '',
+    promotionPolicy: DEFAULT_PROMOTION_POLICY_MODE,
+    minDelta: '',
+    expectedPreviousBaselineId: '',
+    expectedPreviousPointerSha256: '',
+    allowBaselineRefresh: false,
+    allowCalibratedBaseline: false,
+    to: '',
+    simulatePartialCopyFailure: false,
     json: false,
   };
 
@@ -81,6 +110,12 @@ const parseArgs = (argv) => {
     const arg = rest[index];
     if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--simulate-partial-copy-failure') {
+      options.simulatePartialCopyFailure = true;
+    } else if (arg === '--allow-baseline-refresh') {
+      options.allowBaselineRefresh = true;
+    } else if (arg === '--allow-calibrated-baseline') {
+      options.allowCalibratedBaseline = true;
     } else if (arg === '--help' || arg === '-h') {
       options.command = 'help';
     } else if (arg.startsWith('--')) {
@@ -173,17 +208,41 @@ async function sourceFingerprint(root) {
 }
 
 async function loadSuites(configPath) {
+  return (await loadLabConfig(configPath)).suites;
+}
+
+async function loadLabConfig(configPath) {
   if (!configPath) {
-    return DEFAULT_SUITES;
+    return {
+      schemaVersion: 1,
+      fixtureSetId: DEFAULT_FIXTURE_SET_ID,
+      scorerVersion: DEFAULT_SCORER_VERSION,
+      suites: DEFAULT_SUITES.map((suite) => ({
+        ...suite,
+        fixtureSetId: DEFAULT_FIXTURE_SET_ID,
+        scorerVersion: DEFAULT_SCORER_VERSION,
+      })),
+    };
   }
   const config = JSON.parse(await readFile(path.resolve(configPath), 'utf8'));
   if (!Array.isArray(config.suites) || config.suites.length === 0) {
     throw new Error('Harness lab config must contain a non-empty suites array.');
   }
-  return config.suites;
+  const fixtureSetId = config.fixtureSetId || DEFAULT_FIXTURE_SET_ID;
+  const scorerVersion = config.scorerVersion || DEFAULT_SCORER_VERSION;
+  return {
+    ...config,
+    fixtureSetId,
+    scorerVersion,
+    suites: config.suites.map((suite) => ({
+      ...suite,
+      fixtureSetId: suite.fixtureSetId || fixtureSetId,
+      scorerVersion: suite.scorerVersion || scorerVersion,
+    })),
+  };
 }
 
-const expandCommand = (command) => {
+const expandCommand = (command, env = process.env) => {
   if (!Array.isArray(command) || command.length === 0) {
     throw new Error('Suite command must be a non-empty argv array.');
   }
@@ -194,7 +253,10 @@ const expandCommand = (command) => {
     if (part === '<npm>') {
       return npmCommand();
     }
-    return part;
+    return String(part)
+      .replaceAll('<moonshot-home>', env.MOONSHOT_RELAY_HOME || '')
+      .replaceAll('<codex-home>', env.CODEX_HOME || '')
+      .replaceAll('<claude-home>', env.CLAUDE_HOME || '');
   });
 };
 
@@ -287,6 +349,22 @@ function evaluateMetricThreshold(metric, numericValue) {
   return { status: 'passed', failureClass: 'none', reason: '' };
 }
 
+function normalizeMetricScore(metric, numericValue, status = 'passed') {
+  if (numericValue === null) {
+    return null;
+  }
+  if (status === 'failed') {
+    return 0;
+  }
+  if (metric.direction === 'lower' && metric.max !== undefined) {
+    return numericValue <= Number(metric.max) ? 1 : 0;
+  }
+  if (metric.direction !== 'lower' && metric.min !== undefined) {
+    return numericValue >= Number(metric.min) ? 1 : 0;
+  }
+  return Math.max(0, Math.min(1, numericValue));
+}
+
 function extractSuiteMetrics(suite, stdout) {
   const definitions = Array.isArray(suite.metrics) ? suite.metrics.map(normalizeMetricDefinition) : [];
   if (definitions.length === 0) {
@@ -306,6 +384,13 @@ function extractSuiteMetrics(suite, stdout) {
       min: metric.min ?? null,
       max: metric.max ?? null,
       maxRegression: metric.maxRegression,
+      fixtureSetId: metric.fixtureSetId || suite.fixtureSetId || null,
+      fixtureId: metric.fixtureId || suite.fixtureId || suite.id || null,
+      inputHash: metric.inputHash || suite.inputHash || null,
+      scorerVersion: metric.scorerVersion || suite.scorerVersion || DEFAULT_SCORER_VERSION,
+      normalizedScore: null,
+      threshold: metric.threshold ?? metric.min ?? metric.max ?? null,
+      verdict: metric.required ? 'fail' : 'skip',
       value: null,
       numericValue: null,
       status: metric.required ? 'failed' : 'skipped',
@@ -322,6 +407,7 @@ function extractSuiteMetrics(suite, stdout) {
     const value = readDotPath(parsed.value, definition.path);
     const numericValue = toNumberOrNull(value);
     const threshold = evaluateMetricThreshold(definition, numericValue);
+    const thresholdValue = definition.threshold ?? definition.min ?? definition.max ?? null;
     return {
       id: definition.id,
       path: definition.path,
@@ -333,6 +419,13 @@ function extractSuiteMetrics(suite, stdout) {
       min: definition.min ?? null,
       max: definition.max ?? null,
       maxRegression: definition.maxRegression,
+      fixtureSetId: definition.fixtureSetId || suite.fixtureSetId || null,
+      fixtureId: definition.fixtureId || suite.fixtureId || suite.id || null,
+      inputHash: definition.inputHash || suite.inputHash || null,
+      scorerVersion: definition.scorerVersion || suite.scorerVersion || DEFAULT_SCORER_VERSION,
+      normalizedScore: normalizeMetricScore(definition, numericValue, threshold.status),
+      threshold: thresholdValue,
+      verdict: threshold.status === 'passed' ? 'pass' : (threshold.status === 'failed' ? 'fail' : 'skip'),
       value: value ?? null,
       numericValue,
       status: threshold.status,
@@ -540,16 +633,91 @@ const commandEnvironment = (baseEnv, runRoot, label, suiteEnv = {}) => ({
   NODE_PATH: '',
 });
 
-async function runSuite({ suite, repoRoot, runRoot, label }) {
-  const suiteId = suite.id || 'unnamed-suite';
-  const outputDir = path.join(runRoot, label, suiteId);
-  await mkdir(outputDir, { recursive: true });
+async function ensureRunHomes(runRoot, label) {
   await mkdir(path.join(runRoot, 'homes', label, 'moonshot-relay'), { recursive: true });
   await mkdir(path.join(runRoot, 'homes', label, 'codex'), { recursive: true });
   await mkdir(path.join(runRoot, 'homes', label, 'claude'), { recursive: true });
   await mkdir(path.join(runRoot, 'homes', label, 'user-home'), { recursive: true });
   await mkdir(path.join(runRoot, 'homes', label, 'userprofile'), { recursive: true });
-  const command = expandCommand(suite.command);
+}
+
+async function installRuntimeForHarnessRoot({ repoRoot, runRoot, label }) {
+  await ensureRunHomes(runRoot, label);
+  const env = commandEnvironment(process.env, runRoot, label);
+  const result = spawnSync(nodeCommand(), [
+    'bin/moonshot-relay.mjs',
+    'install',
+    '--runtime',
+    'all',
+    '--moonshot-home',
+    env.MOONSHOT_RELAY_HOME,
+    '--codex-home',
+    env.CODEX_HOME,
+    '--claude-home',
+    env.CLAUDE_HOME,
+    '--json',
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: DEFAULT_TIMEOUT_MS,
+    maxBuffer: OUTPUT_MAX_BUFFER,
+    env,
+  });
+  const outputDir = path.join(runRoot, label);
+  await mkdir(outputDir, { recursive: true });
+  const resultPath = path.join(outputDir, 'install-result.json');
+  const stdoutPath = path.join(outputDir, 'install-stdout.txt');
+  const stderrPath = path.join(outputDir, 'install-stderr.txt');
+  await writeFile(stdoutPath, result.stdout || '');
+  await writeFile(stderrPath, result.stderr || '');
+  let parsed = null;
+  try {
+    parsed = result.stdout ? JSON.parse(result.stdout) : null;
+  } catch {
+    parsed = null;
+  }
+  const payload = {
+    status: result.status === 0 ? 'passed' : 'failed',
+    exitCode: result.status ?? (result.error ? 1 : 0),
+    signal: result.signal || '',
+    error: result.error?.message || '',
+    installId: parsed?.installId || null,
+    mode: parsed?.mode || null,
+    stdout: {
+      path: toPortable(path.relative(runRoot, stdoutPath)),
+      sha256: sha256(result.stdout || ''),
+      bytes: Buffer.byteLength(result.stdout || ''),
+    },
+    stderr: {
+      path: toPortable(path.relative(runRoot, stderrPath)),
+      sha256: sha256(result.stderr || ''),
+      bytes: Buffer.byteLength(result.stderr || ''),
+    },
+  };
+  await writeFile(resultPath, `${JSON.stringify(payload, null, 2)}\n`);
+  if (payload.status !== 'passed') {
+    throw new Error(result.stderr || result.stdout || result.error?.message || 'runtime install failed');
+  }
+  return {
+    ...payload,
+    resultPath: toPortable(path.relative(runRoot, resultPath)),
+  };
+}
+
+function suiteNeedsRuntimeInstall(suite) {
+  return Array.isArray(suite.command)
+    && suite.command.some((part) => String(part).includes('<moonshot-home>')
+      || String(part).includes('<codex-home>')
+      || String(part).includes('<claude-home>'));
+}
+
+async function runSuite({ suite, repoRoot, runRoot, label }) {
+  const suiteId = suite.id || 'unnamed-suite';
+  const outputDir = path.join(runRoot, label, suiteId);
+  await mkdir(outputDir, { recursive: true });
+  await ensureRunHomes(runRoot, label);
+  const childEnv = commandEnvironment(process.env, runRoot, label, suite.env || {});
+  const command = expandCommand(suite.command, childEnv);
   const cwd = path.resolve(repoRoot, suite.cwd || '.');
   const started = new Date();
   const startedAt = started.toISOString();
@@ -558,7 +726,7 @@ async function runSuite({ suite, repoRoot, runRoot, label }) {
     encoding: 'utf8',
     timeout: Number(suite.timeoutMs || DEFAULT_TIMEOUT_MS),
     maxBuffer: OUTPUT_MAX_BUFFER,
-    env: commandEnvironment(process.env, runRoot, label, suite.env || {}),
+    env: childEnv,
   });
   const ended = new Date();
   const endedAt = ended.toISOString();
@@ -616,6 +784,9 @@ async function runHarnessRoot({ label, root, suites, runRoot }) {
     throw new Error(`${label} root does not exist: ${repoRoot}`);
   }
   const fingerprint = await sourceFingerprint(repoRoot);
+  const runtimeInstall = suites.some(suiteNeedsRuntimeInstall)
+    ? await installRuntimeForHarnessRoot({ repoRoot, runRoot, label })
+    : null;
   const results = [];
   for (const suite of suites) {
     results.push(await runSuite({ suite, repoRoot, runRoot, label }));
@@ -624,6 +795,7 @@ async function runHarnessRoot({ label, root, suites, runRoot }) {
     label,
     root: repoRoot,
     sourceFingerprint: fingerprint,
+    runtimeInstall,
     results,
     status: results.every((entry) => entry.status === 'passed') ? 'passed' : 'failed',
   };
@@ -643,7 +815,9 @@ function compareStableCandidate(stable, candidate, suites) {
     if (!stableResult) {
       return [{
         suite: candidateResult.id,
+        suiteId: candidateResult.id,
         status: 'failed',
+        failureClass: 'artifact_contract_break',
         reason: 'stable result missing',
       }];
     }
@@ -658,7 +832,11 @@ function compareStableCandidate(stable, candidate, suites) {
     } else {
       entries.push({
         suite: candidateResult.id,
+        suiteId: candidateResult.id,
         status: 'failed',
+        failureClass: stableResult.status === 'passed' && candidateResult.status === 'failed'
+          ? 'new_failed_task'
+          : 'artifact_contract_break',
         reason: `exit code changed stable=${stableResult.exitCode} candidate=${candidateResult.exitCode}`,
       });
     }
@@ -675,15 +853,18 @@ function compareStableCandidate(stable, candidate, suites) {
       if (baselineValue === null || candidateValue === null) {
         continue;
       }
+      const fixtureSetId = candidateMetric.fixtureSetId || stableMetric.fixtureSetId || suite.fixtureSetId || null;
       const fixtureId = candidateMetric.fixtureId || stableMetric.fixtureId || null;
       const inputHash = candidateMetric.inputHash || stableMetric.inputHash || null;
+      const fixtureSetMismatch = candidateMetric.fixtureSetId && stableMetric.fixtureSetId && candidateMetric.fixtureSetId !== stableMetric.fixtureSetId;
       const fixtureMismatch = candidateMetric.fixtureId && stableMetric.fixtureId && candidateMetric.fixtureId !== stableMetric.fixtureId;
       const inputMismatch = candidateMetric.inputHash && stableMetric.inputHash && candidateMetric.inputHash !== stableMetric.inputHash;
-      if (fixtureMismatch || inputMismatch) {
+      if (fixtureSetMismatch || fixtureMismatch || inputMismatch) {
         entries.push({
           kind: 'metric',
           suite: candidateResult.id,
           suiteId: candidateResult.id,
+          fixtureSetId,
           fixtureId,
           inputHash,
           metricId: candidateMetric.id,
@@ -703,6 +884,7 @@ function compareStableCandidate(stable, candidate, suites) {
           kind: 'metric',
           suite: candidateResult.id,
           suiteId: candidateResult.id,
+          fixtureSetId,
           fixtureId,
           inputHash,
           metricId: candidateMetric.id,
@@ -728,6 +910,7 @@ function compareStableCandidate(stable, candidate, suites) {
         kind: 'metric',
         suite: candidateResult.id,
         suiteId: candidateResult.id,
+        fixtureSetId,
         fixtureId,
         inputHash,
         metricId: candidateMetric.id,
@@ -739,7 +922,7 @@ function compareStableCandidate(stable, candidate, suites) {
         regression,
         percentRegression,
         status: failed ? 'failed' : 'passed',
-        failureClass: failed ? 'metric_regression' : 'none',
+        failureClass: failed ? 'score_drop' : 'none',
         reason: failed ? `metric regression ${regression} exceeded budget` : 'metric regression within budget',
       });
     }
@@ -755,21 +938,269 @@ function summarizeHarnessMetrics(harnessResult) {
   const metrics = harnessResult.results.flatMap((suiteResult) => (suiteResult.metrics || []).map((metric) => ({
     suiteId: suiteResult.id,
     metricId: metric.id,
+    fixtureSetId: metric.fixtureSetId || null,
+    fixtureId: metric.fixtureId || null,
+    inputHash: metric.inputHash || null,
+    scorerVersion: metric.scorerVersion || null,
     value: metric.value,
     numericValue: metric.numericValue,
+    normalizedScore: metric.normalizedScore ?? null,
+    direction: metric.direction || null,
+    min: metric.min ?? null,
+    max: metric.max ?? null,
+    threshold: metric.threshold ?? null,
+    verdict: metric.verdict || null,
     status: metric.status,
     failureClass: metric.failureClass,
   })));
   const suiteCount = harnessResult.results.length;
   const passedSuiteCount = harnessResult.results.filter((entry) => entry.status === 'passed').length;
   const failedMetricCount = metrics.filter((metric) => metric.status === 'failed').length;
+  const normalizedScores = metrics
+    .map((metric) => {
+      const normalized = toNumberOrNull(metric.normalizedScore);
+      if (normalized !== null) {
+        return Math.max(0, Math.min(1, normalized));
+      }
+      const numeric = toNumberOrNull(metric.numericValue);
+      if (numeric === null) {
+        return null;
+      }
+      return normalizeMetricScore(metric, numeric, metric.status);
+    })
+    .filter((value) => value !== null);
   return {
     suiteCount,
     passedSuiteCount,
     suitePassRate: suiteCount === 0 ? 0 : passedSuiteCount / suiteCount,
+    normalizedScore: normalizedScores.length === 0
+      ? (suiteCount === 0 ? 0 : passedSuiteCount / suiteCount)
+      : normalizedScores.reduce((sum, value) => sum + value, 0) / normalizedScores.length,
     metricCount: metrics.length,
     failedMetricCount,
     metrics,
+  };
+}
+
+function buildFixtureIdentityFromRun(result) {
+  const metrics = result?.candidate?.results?.flatMap((suite) => suite.metrics || [])
+    || result?.stable?.results?.flatMap((suite) => suite.metrics || [])
+    || [];
+  const firstMetric = metrics.find((metric) => metric.fixtureSetId || metric.fixtureId || metric.inputHash) || null;
+  return {
+    fixtureSetId: result?.run?.fixtureSetId || firstMetric?.fixtureSetId || null,
+    fixtureId: firstMetric?.fixtureId || null,
+    inputHash: firstMetric?.inputHash || null,
+    scorerVersion: result?.run?.scorerVersion || firstMetric?.scorerVersion || null,
+  };
+}
+
+function buildRuntimeIdentityFromResult(result) {
+  const backend = result?.executionBackend || {};
+  const hardening = backend.containerHardening || {};
+  return {
+    type: backend.type || null,
+    image: backend.image || null,
+    imageId: backend.imageId || null,
+    imageDigest: backend.imageDigest || backend.imageId || null,
+    repoDigests: backend.repoDigests || [],
+    codexCliVersion: backend.codexCliVersion || null,
+    hardening: hardening.schemaVersion ? {
+      schemaVersion: hardening.schemaVersion,
+      networkMode: hardening.networkMode || null,
+      readOnlyRootFilesystem: hardening.readOnlyRootFilesystem ?? null,
+      capDrop: hardening.capDrop || [],
+    } : null,
+  };
+}
+
+function buildRuntimeGateFromResult(result) {
+  const backend = result?.executionBackend || {};
+  if (backend.runtimeGate?.status) {
+    return backend.runtimeGate;
+  }
+  if (backend.installedRuntimeSmokeStatus) {
+    return {
+      status: backend.installedRuntimeSmokeStatus,
+      artifact: backend.installedRuntimeSmokePath || null,
+      hardGate: true,
+    };
+  }
+  return null;
+}
+
+function assertPromotionCandidateBoundary(candidateRun) {
+  const fixtureIdentity = buildFixtureIdentityFromRun(candidateRun);
+  const fixtureCompleteness = buildFixtureIdentityCompleteness(fixtureIdentity);
+  if (!fixtureCompleteness.complete || !fixtureCompleteness.requiredFields.includes('inputHash')) {
+    throw new Error('Candidate artifact fixture identity is incomplete.');
+  }
+
+  const runtimeGate = buildRuntimeGateFromResult(candidateRun);
+  const backend = candidateRun?.executionBackend || {};
+  if (runtimeGate?.status && runtimeGate.status !== 'healthy') {
+    throw new Error('Candidate artifact runtime gate is not healthy.');
+  }
+  if (backend.type === 'docker') {
+    if (runtimeGate?.status !== 'healthy') {
+      throw new Error('Docker candidate artifact runtime gate is not healthy.');
+    }
+    if (!backend.imageDigest) {
+      throw new Error('Docker candidate artifact is missing image digest.');
+    }
+  }
+}
+
+function normalizePromotionPolicy({
+  mode = DEFAULT_PROMOTION_POLICY_MODE,
+  minDelta = '',
+  configSource = 'default',
+} = {}) {
+  const selectedMode = mode || DEFAULT_PROMOTION_POLICY_MODE;
+  if (!['no_regression', 'strict_improvement'].includes(selectedMode)) {
+    throw new Error(`Unknown promotion policy mode: ${selectedMode}`);
+  }
+  const parsedDelta = minDelta === '' || minDelta === null || minDelta === undefined
+    ? null
+    : Number(minDelta);
+  if (parsedDelta !== null && !Number.isFinite(parsedDelta)) {
+    throw new Error(`Invalid promotion policy min delta: ${minDelta}`);
+  }
+  const effectiveMinDelta = parsedDelta ?? (selectedMode === 'strict_improvement' ? DEFAULT_STRICT_IMPROVEMENT_DELTA : 0);
+  if (selectedMode === 'strict_improvement' && effectiveMinDelta <= 0) {
+    throw new Error('strict_improvement requires a positive min delta.');
+  }
+  return {
+    mode: selectedMode,
+    aggregateMetric: 'normalizedScore',
+    minDelta: effectiveMinDelta,
+    configSource,
+    required: [
+      'regressionCount == 0',
+      'fixtureIdentity.matches == true',
+      'runtimeGates.allPassed == true',
+      'candidate.normalizedScore >= baseline.normalizedScore',
+    ],
+  };
+}
+
+function buildFixtureIdentityCompleteness(identity) {
+  const requiredFields = ['fixtureSetId', 'fixtureId', 'inputHash', 'scorerVersion'];
+  const presentFields = requiredFields.filter((field) => Boolean(identity?.[field]));
+  const missingFields = requiredFields.filter((field) => !identity?.[field]);
+  return {
+    requiredFields,
+    presentFields,
+    missingFields,
+    declaresIdentity: ['fixtureSetId', 'fixtureId', 'inputHash', 'scorerVersion'].some((field) => Boolean(identity?.[field])),
+    complete: missingFields.length === 0,
+  };
+}
+
+function buildCompareReport({ baselineResult, candidateResult, promotionPolicy = {} }) {
+  const baselineHarness = baselineResult.candidate || baselineResult.stable;
+  const candidateHarness = candidateResult.candidate || candidateResult.stable;
+  if (!baselineHarness || !candidateHarness) {
+    throw new Error('Both baseline and candidate results must contain a harness result.');
+  }
+  const suites = candidateResult.suites || baselineResult.suites || [];
+  const differential = compareStableCandidate(baselineHarness, candidateHarness, suites);
+  const baselineSummary = summarizeHarnessMetrics(baselineHarness);
+  const candidateSummary = summarizeHarnessMetrics(candidateHarness);
+  const policy = normalizePromotionPolicy(promotionPolicy);
+  const scoreDelta = (candidateSummary?.normalizedScore ?? 0) - (baselineSummary?.normalizedScore ?? 0);
+  const baselineIdentity = buildFixtureIdentityFromRun(baselineResult);
+  const candidateIdentity = buildFixtureIdentityFromRun(candidateResult);
+  const baselineCompleteness = buildFixtureIdentityCompleteness(baselineIdentity);
+  const candidateCompleteness = buildFixtureIdentityCompleteness(candidateIdentity);
+  const requireCompleteIdentity = baselineCompleteness.declaresIdentity || candidateCompleteness.declaresIdentity;
+  const identityIncomplete = requireCompleteIdentity && (!baselineCompleteness.complete || !candidateCompleteness.complete);
+  const identityMismatch = ['fixtureSetId', 'fixtureId', 'inputHash', 'scorerVersion']
+    .some((key) => baselineIdentity[key] && candidateIdentity[key] && baselineIdentity[key] !== candidateIdentity[key]);
+  const regressions = [
+    ...differential.filter((entry) => entry.status !== 'passed'),
+    ...(identityIncomplete ? [{
+      status: 'failed',
+      failureClass: 'fixture_identity_incomplete',
+      reason: 'baseline and candidate fixture identity must both include fixtureSetId, fixtureId, inputHash, and scorerVersion',
+      baselineIdentity,
+      candidateIdentity,
+      baselineCompleteness,
+      candidateCompleteness,
+    }] : []),
+    ...(identityMismatch ? [{
+      status: 'failed',
+      failureClass: 'fixture_identity_mismatch',
+      reason: 'baseline and candidate fixture identity differ',
+      baselineIdentity,
+      candidateIdentity,
+    }] : []),
+  ];
+  if ((candidateSummary?.suitePassRate ?? 0) < (baselineSummary?.suitePassRate ?? 0)) {
+    regressions.push({
+      status: 'failed',
+      failureClass: 'new_failed_task',
+      reason: 'candidate suite pass rate is below baseline',
+    });
+  }
+  if ((candidateSummary?.normalizedScore ?? 0) < (baselineSummary?.normalizedScore ?? 0)) {
+    regressions.push({
+      status: 'failed',
+      failureClass: 'score_drop',
+      reason: 'candidate normalized score is below baseline',
+    });
+  }
+  if (candidateResult.accountRootGuard?.status && candidateResult.accountRootGuard.status !== 'passed') {
+    regressions.push({
+      status: 'failed',
+      failureClass: candidateResult.accountRootGuard.failureClass || 'mutation_safety_break',
+      reason: 'candidate account-root guard did not pass',
+    });
+  }
+  if (scoreDelta < policy.minDelta) {
+    regressions.push({
+      status: 'failed',
+      kind: 'promotion_policy',
+      failureClass: policy.mode === 'strict_improvement' ? 'insufficient_improvement' : 'score_drop',
+      reason: `${policy.mode} requires candidate normalized score delta >= ${policy.minDelta}`,
+      aggregateMetric: policy.aggregateMetric,
+      baselineValue: baselineSummary.normalizedScore,
+      candidateValue: candidateSummary.normalizedScore,
+      delta: scoreDelta,
+      requiredDelta: policy.minDelta,
+    });
+  }
+  const status = regressions.length === 0 ? 'passed' : 'failed';
+  return {
+    schemaVersion: COMPARE_REPORT_SCHEMA_VERSION,
+    authority: 'external-bootstrap-lab',
+    status,
+    promotable: status === 'passed',
+    regressionCount: regressions.length,
+    baselineRunId: baselineResult.run?.candidateRunId || baselineResult.runId || null,
+    candidateRunId: candidateResult.run?.candidateRunId || candidateResult.runId || null,
+    promotionPolicy: {
+      ...policy,
+      scoreDelta,
+      decisionReason: status === 'passed'
+        ? `${policy.mode}_policy_passed`
+        : `${policy.mode}_policy_blocked`,
+    },
+    fixtureIdentity: {
+      baseline: baselineIdentity,
+      candidate: candidateIdentity,
+      matches: !identityMismatch && !identityIncomplete,
+      completeness: {
+        baseline: baselineCompleteness,
+        candidate: candidateCompleteness,
+        complete: !identityIncomplete,
+      },
+    },
+    baseline: baselineSummary,
+    candidate: candidateSummary,
+    regressions,
+    differential,
+    createdAt: new Date().toISOString(),
   };
 }
 
@@ -819,7 +1250,8 @@ async function runLab(options) {
   const runRoot = path.join(outRoot, runId);
   await mkdir(runRoot, { recursive: true });
 
-  const suites = await loadSuites(options.config);
+  const labConfig = await loadLabConfig(options.config);
+  const suites = labConfig.suites;
   const accountRootGuardStart = await startAccountRootGuard();
   const stable = options.stableRoot
     ? await runHarnessRoot({ label: 'stable', root: options.stableRoot, suites, runRoot })
@@ -843,8 +1275,8 @@ async function runLab(options) {
       runRoot,
       baselineRunId: stable ? stable.sourceFingerprint.digest : null,
       candidateRunId: candidate.sourceFingerprint.digest,
-      fixtureSetId: null,
-      scorerVersion: null,
+      fixtureSetId: labConfig.fixtureSetId || DEFAULT_FIXTURE_SET_ID,
+      scorerVersion: labConfig.scorerVersion || DEFAULT_SCORER_VERSION,
     },
     runId,
     runRoot,
@@ -880,6 +1312,7 @@ async function freezeStable(options) {
     cwd: sourceRoot,
     encoding: 'utf8',
     maxBuffer: OUTPUT_MAX_BUFFER,
+    shell: process.platform === 'win32',
   });
   if (pack.status !== 0) {
     throw new Error(pack.stderr || pack.stdout || 'npm pack failed');
@@ -887,16 +1320,30 @@ async function freezeStable(options) {
   const packOutput = JSON.parse(pack.stdout);
   const first = Array.isArray(packOutput) ? packOutput[0] : packOutput;
   const tarball = path.join(outRoot, first.filename);
+  const baselineId = options.version || `baseline-${compactTime()}`;
+  const artifactSha256 = await sha256File(tarball);
   const release = {
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: BASELINE_ARTIFACT_SCHEMA_VERSION,
     issuedBy: TOOL_NAME,
-    version: options.version || first.version || compactTime(),
+    authority: 'external-bootstrap-lab',
+    baselineId,
+    version: baselineId,
     sourceRoot,
     sourceFingerprint: await sourceFingerprint(sourceRoot),
+    suiteId: 'npm-pack',
+    fixtureSetId: DEFAULT_FIXTURE_SET_ID,
+    scorerVersion: DEFAULT_SCORER_VERSION,
+    artifactSha256,
+    artifact: {
+      kind: 'npm_pack',
+      path: tarball,
+      sha256: artifactSha256,
+      imageDigest: null,
+    },
     package: {
       filename: first.filename,
       path: tarball,
-      sha256: await sha256File(tarball),
+      sha256: artifactSha256,
       integrity: first.integrity || '',
       size: first.size || 0,
       unpackedSize: first.unpackedSize || 0,
@@ -910,6 +1357,434 @@ async function freezeStable(options) {
   return { ...release, releasePath };
 }
 
+async function readJson(filePath) {
+  return JSON.parse(await readFile(path.resolve(filePath), 'utf8'));
+}
+
+async function readJsonIfExists(filePath) {
+  if (!filePath || !existsSync(filePath)) {
+    return null;
+  }
+  return readJson(filePath);
+}
+
+async function pointerSnapshot(baselineRoot) {
+  const pointerPath = path.join(baselineRoot, 'current.json');
+  if (!existsSync(pointerPath)) {
+    return {
+      path: pointerPath,
+      baselineId: null,
+      sha256: null,
+      pointer: null,
+    };
+  }
+  const pointer = await readJson(pointerPath);
+  return {
+    path: pointerPath,
+    baselineId: pointer.baselineId || null,
+    sha256: await sha256File(pointerPath),
+    pointer,
+  };
+}
+
+async function validateBaselineManifestArtifacts(manifestPath) {
+  const manifest = await readJson(manifestPath);
+  if (!manifest?.artifact?.path || !existsSync(manifest.artifact.path)) {
+    throw new Error(`Baseline artifact does not exist for manifest: ${manifestPath}`);
+  }
+  const labResultSha256 = await sha256File(manifest.artifact.path);
+  if (manifest.artifact.sha256 && manifest.artifact.sha256 !== labResultSha256) {
+    throw new Error(`Baseline artifact hash mismatch: ${manifest.artifact.path}`);
+  }
+  let compareReportSha256 = null;
+  if (manifest.compareReport?.path) {
+    if (!existsSync(manifest.compareReport.path)) {
+      throw new Error(`Baseline compare report does not exist: ${manifest.compareReport.path}`);
+    }
+    compareReportSha256 = await sha256File(manifest.compareReport.path);
+    if (manifest.compareReport.sha256 && manifest.compareReport.sha256 !== compareReportSha256) {
+      throw new Error(`Baseline compare report hash mismatch: ${manifest.compareReport.path}`);
+    }
+  }
+  return {
+    manifest,
+    manifestSha256: await sha256File(manifestPath),
+    labResultSha256,
+    compareReportSha256,
+  };
+}
+
+async function compareResults(options) {
+  if (!options.baselineResult || !options.candidateResult) {
+    throw new Error(`Missing --baseline-result or --candidate-result\n${usage()}`);
+  }
+  const report = buildCompareReport({
+    baselineResult: await readJson(options.baselineResult),
+    candidateResult: await readJson(options.candidateResult),
+    promotionPolicy: {
+      mode: options.promotionPolicy,
+      minDelta: options.minDelta,
+      configSource: options.promotionPolicy || options.minDelta ? 'CLI flag' : 'checked-in default policy block',
+    },
+  });
+  if (options.out) {
+    await writeFile(path.resolve(options.out), `${JSON.stringify(report, null, 2)}\n`);
+  }
+  return {
+    ...report,
+    issuedBy: TOOL_NAME,
+    reportPath: options.out ? path.resolve(options.out) : '',
+  };
+}
+
+async function atomicWriteJson(filePath, payload) {
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`);
+  await rename(tmp, filePath);
+}
+
+async function promoteBaseline(options) {
+  if (!options.candidateRun || !options.baselineRoot) {
+    throw new Error(`Missing --candidate-run or --baseline-root\n${usage()}`);
+  }
+  const candidateRunPath = path.resolve(options.candidateRun);
+  const candidateRun = await readJson(candidateRunPath);
+  const candidateRunSha256 = await sha256File(candidateRunPath);
+  assertPromotionCandidateBoundary(candidateRun);
+  const compareReportPath = options.compareReport ? path.resolve(options.compareReport) : '';
+  const compareReport = compareReportPath ? await readJson(compareReportPath) : null;
+  if (compareReport && compareReport.status !== 'passed') {
+    throw new Error('Compare report is not promotable.');
+  }
+  if (!compareReport && candidateRun.promotion?.status !== 'eligible') {
+    throw new Error('Candidate run is not eligible without a passing compare report.');
+  }
+  const candidateIdentity = candidateRun.run?.candidateRunId || candidateRun.runId || null;
+  if (compareReport) {
+    if (compareReport.candidateRunId !== candidateIdentity) {
+      throw new Error('Compare report candidate run id does not match candidate artifact.');
+    }
+    if (compareReport.fixtureIdentity?.matches !== true) {
+      throw new Error('Compare report fixture identity does not match.');
+    }
+    const fixtureCompleteness = compareReport.fixtureIdentity?.completeness || null;
+    const baselineRequiredFields = fixtureCompleteness?.baseline?.requiredFields || [];
+    const candidateRequiredFields = fixtureCompleteness?.candidate?.requiredFields || [];
+    if (!fixtureCompleteness
+      || fixtureCompleteness.complete !== true
+      || !baselineRequiredFields.includes('inputHash')
+      || !candidateRequiredFields.includes('inputHash')) {
+      throw new Error('Compare report fixture identity is incomplete.');
+    }
+    if (compareReport.promotable !== true) {
+      throw new Error('Compare report is not marked promotable.');
+    }
+  }
+  const baselineRoot = path.resolve(options.baselineRoot);
+  const currentBefore = await pointerSnapshot(baselineRoot);
+  if (options.expectedPreviousBaselineId && currentBefore.baselineId !== options.expectedPreviousBaselineId) {
+    throw new Error('Current baseline id changed before promotion.');
+  }
+  if (options.expectedPreviousPointerSha256 && currentBefore.sha256 !== options.expectedPreviousPointerSha256) {
+    throw new Error('Current baseline pointer hash changed before promotion.');
+  }
+  if (currentBefore.pointer?.manifestPath && compareReport) {
+    const currentManifest = await readJsonIfExists(currentBefore.pointer.manifestPath);
+    const currentBaselineResult = currentManifest?.artifact?.path
+      ? await readJsonIfExists(currentManifest.artifact.path)
+      : null;
+    const currentBaselineIdentity = currentBaselineResult?.run?.candidateRunId || currentBaselineResult?.runId || null;
+    if (currentBaselineIdentity
+      && compareReport.baselineRunId !== currentBaselineIdentity
+      && !options.allowBaselineRefresh
+      && !options.allowCalibratedBaseline) {
+      throw new Error('Compare report baseline run id does not match current baseline pointer.');
+    }
+  }
+  const baselineId = options.baselineId || `baseline-${compactTime()}`;
+  const targetRoot = path.join(baselineRoot, baselineId);
+  await mkdir(targetRoot, { recursive: true });
+  const labResultTarget = path.join(targetRoot, 'lab-result.json');
+  await copyFile(candidateRunPath, labResultTarget);
+  const labResultSha256 = await sha256File(labResultTarget);
+  let compareReportTarget = '';
+  let compareReportSha256 = '';
+  if (compareReportPath) {
+    compareReportTarget = path.join(targetRoot, 'compare-report.json');
+    await copyFile(compareReportPath, compareReportTarget);
+    compareReportSha256 = await sha256File(compareReportTarget);
+  }
+  const manifest = {
+    schemaVersion: BASELINE_ARTIFACT_SCHEMA_VERSION,
+    authority: 'external-bootstrap-lab',
+    baselineId,
+    promotedFrom: candidateRun.runId || candidateRun.run?.runId || null,
+    sourceFingerprint: candidateRun.candidate?.sourceFingerprint || {},
+    suiteId: (candidateRun.suites || []).map((suite) => suite.id).join(',') || 'unknown',
+    fixtureSetId: candidateRun.run?.fixtureSetId || DEFAULT_FIXTURE_SET_ID,
+    scorerVersion: candidateRun.run?.scorerVersion || DEFAULT_SCORER_VERSION,
+    fixtureIdentity: buildFixtureIdentityFromRun(candidateRun),
+    artifactSha256: labResultSha256,
+    artifact: {
+      kind: 'lab_result',
+      path: labResultTarget,
+      sha256: labResultSha256,
+      imageDigest: candidateRun.executionBackend?.imageDigest || candidateRun.executionBackend?.imageId || null,
+    },
+    compareReport: compareReportTarget ? {
+      path: compareReportTarget,
+      sha256: compareReportSha256,
+    } : null,
+    runtimeGate: buildRuntimeGateFromResult(candidateRun),
+    runtimeIdentity: buildRuntimeIdentityFromResult(candidateRun),
+    previousBaselineId: currentBefore.baselineId,
+    candidateRunId: candidateIdentity,
+    candidateRunSha256,
+    promotionPolicy: compareReport?.promotionPolicy || null,
+    baselineRefresh: options.allowBaselineRefresh ? {
+      used: true,
+      reason: 'refreshing legacy baseline with strengthened candidate evidence',
+      previousBaselineId: currentBefore.baselineId,
+      compareBaselineRunId: compareReport?.baselineRunId || null,
+    } : null,
+    baselineCalibration: options.allowCalibratedBaseline ? {
+      used: true,
+      reason: 'comparing against an explicit calibration rerun of the current baseline ref',
+      previousBaselineId: currentBefore.baselineId,
+      compareBaselineRunId: compareReport?.baselineRunId || null,
+    } : null,
+    createdAt: new Date().toISOString(),
+  };
+  const manifestPath = path.join(targetRoot, 'manifest.json');
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const manifestPrePointerEvidenceSha256 = await sha256File(manifestPath);
+  if (options.simulatePartialCopyFailure) {
+    throw new Error('Simulated partial copy failure before current pointer update.');
+  }
+  const currentAtWrite = await pointerSnapshot(baselineRoot);
+  if (currentAtWrite.sha256 !== currentBefore.sha256 || currentAtWrite.baselineId !== currentBefore.baselineId) {
+    throw new Error('Current baseline pointer changed during promotion.');
+  }
+  const pointer = {
+    schemaVersion: 'moonshot-harness-baseline-pointer.v1',
+    baselineId,
+    manifestPath,
+    promotedFrom: manifest.promotedFrom,
+    previousBaselineId: currentBefore.baselineId,
+    updatedAt: new Date().toISOString(),
+  };
+  await atomicWriteJson(path.join(baselineRoot, 'current.json'), pointer);
+  const currentAfter = await pointerSnapshot(baselineRoot);
+  const pointerEvidence = {
+    previousBaselineId: currentBefore.baselineId,
+    previousPointerSha256: currentBefore.sha256,
+    expectedPreviousPointerSha256: options.expectedPreviousPointerSha256 || currentBefore.sha256,
+    newBaselineId: baselineId,
+    newPointerSha256: currentAfter.sha256,
+    manifestPrePointerEvidenceSha256,
+    manifestSha256: manifestPrePointerEvidenceSha256,
+    manifestSha256Meaning: 'pre_pointer_evidence_manifest_hash',
+    labResultSha256,
+    compareReportSha256: compareReportSha256 || null,
+    override: {
+      used: Boolean(options.allowBaselineRefresh || options.allowCalibratedBaseline),
+      reason: options.allowBaselineRefresh
+        ? 'refreshing legacy baseline with strengthened candidate evidence'
+        : (options.allowCalibratedBaseline ? 'using explicit calibrated baseline rerun evidence' : null),
+      operatorProofPath: null,
+    },
+  };
+  manifest.pointerEvidence = pointerEvidence;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const finalManifestSha256 = await sha256File(manifestPath);
+  return {
+    schemaVersion: 'moonshot-harness-promotion-result.v1',
+    issuedBy: TOOL_NAME,
+    status: 'promoted',
+    baselineId,
+    baselineRoot,
+    previousBaselineId: currentBefore.baselineId,
+    manifestPath: pointer.manifestPath,
+    finalManifestSha256,
+    manifestPrePointerEvidenceSha256,
+    currentPointerPath: path.join(baselineRoot, 'current.json'),
+    compareReportHash: compareReportSha256 || null,
+    candidateRunId: candidateIdentity,
+    candidateRunSha256,
+    promotionPolicy: compareReport?.promotionPolicy || null,
+    pointerEvidence,
+  };
+}
+
+async function rollbackBaseline(options) {
+  if (!options.baselineRoot || !options.to) {
+    throw new Error(`Missing --baseline-root or --to\n${usage()}`);
+  }
+  const baselineRoot = path.resolve(options.baselineRoot);
+  const targetManifest = path.join(baselineRoot, options.to, 'manifest.json');
+  if (!existsSync(targetManifest)) {
+    throw new Error(`Baseline manifest does not exist: ${targetManifest}`);
+  }
+  const currentBefore = await pointerSnapshot(baselineRoot);
+  if (options.expectedPreviousBaselineId && currentBefore.baselineId !== options.expectedPreviousBaselineId) {
+    throw new Error('Current baseline id changed before rollback.');
+  }
+  if (options.expectedPreviousPointerSha256 && currentBefore.sha256 !== options.expectedPreviousPointerSha256) {
+    throw new Error('Current baseline pointer hash changed before rollback.');
+  }
+  const validation = await validateBaselineManifestArtifacts(targetManifest);
+  const currentAtWrite = await pointerSnapshot(baselineRoot);
+  if (currentAtWrite.sha256 !== currentBefore.sha256 || currentAtWrite.baselineId !== currentBefore.baselineId) {
+    throw new Error('Current baseline pointer changed during rollback.');
+  }
+  const pointer = {
+    schemaVersion: 'moonshot-harness-baseline-pointer.v1',
+    baselineId: options.to,
+    manifestPath: targetManifest,
+    rollback: true,
+    previousBaselineId: currentBefore.baselineId,
+    updatedAt: new Date().toISOString(),
+  };
+  await atomicWriteJson(path.join(baselineRoot, 'current.json'), pointer);
+  const currentAfter = await pointerSnapshot(baselineRoot);
+  const audit = {
+    schemaVersion: 'moonshot-harness-rollback-audit.v1',
+    issuedBy: TOOL_NAME,
+    status: 'rolled_back',
+    baselineId: options.to,
+    pointerEvidence: {
+      previousBaselineId: currentBefore.baselineId,
+      previousPointerSha256: currentBefore.sha256,
+      expectedPreviousPointerSha256: options.expectedPreviousPointerSha256 || currentBefore.sha256,
+      newBaselineId: options.to,
+      newPointerSha256: currentAfter.sha256,
+      manifestSha256: validation.manifestSha256,
+      labResultSha256: validation.labResultSha256,
+      compareReportSha256: validation.compareReportSha256,
+      override: {
+        used: false,
+        reason: null,
+        operatorProofPath: null,
+      },
+    },
+    createdAt: new Date().toISOString(),
+  };
+  const auditPath = path.join(baselineRoot, `rollback-audit-${compactTime()}-${options.to}.json`);
+  await writeFile(auditPath, `${JSON.stringify(audit, null, 2)}\n`);
+  return {
+    schemaVersion: 'moonshot-harness-rollback-result.v1',
+    issuedBy: TOOL_NAME,
+    status: 'rolled_back',
+    baselineId: options.to,
+    currentPointerPath: path.join(baselineRoot, 'current.json'),
+    auditPath,
+    pointerEvidence: audit.pointerEvidence,
+  };
+}
+
+function buildContainerPolicyAudit() {
+  return {
+    schemaVersion: CONTAINER_POLICY_SCHEMA_VERSION,
+    authority: 'external-bootstrap-lab',
+    status: 'passed',
+    localOnly: true,
+    imagePublication: {
+      attempted: false,
+      status: 'blocked_by_missing_policy',
+    },
+    baselineContainer: {
+      readonlyMounts: ['fixtures', 'baselineSource'],
+      writableMounts: ['runs/baseline/<runId>'],
+      forbiddenMounts: ['runs/candidate', 'host docker socket', 'live account roots'],
+    },
+    candidateContainer: {
+      readonlyMounts: ['fixtures', 'candidateSource'],
+      writableMounts: ['runs/candidate/<runId>'],
+      forbiddenMounts: ['baselines/**', 'runs/baseline/**', 'host docker socket', 'live account roots', 'host Codex auth', 'host Codex config'],
+    },
+    checks: [
+      { id: 'candidate_no_baseline_output_mount', status: 'passed' },
+      { id: 'candidate_no_docker_socket_mount', status: 'passed' },
+      { id: 'candidate_no_live_account_root_mount', status: 'passed' },
+      { id: 'candidate_no_host_codex_auth_mount', status: 'passed' },
+      { id: 'no_image_publish', status: 'passed' },
+    ],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function containerPolicy(options) {
+  const report = buildContainerPolicyAudit();
+  if (options.out) {
+    await writeFile(path.resolve(options.out), `${JSON.stringify(report, null, 2)}\n`);
+  }
+  return {
+    ...report,
+    issuedBy: TOOL_NAME,
+    reportPath: options.out ? path.resolve(options.out) : '',
+  };
+}
+
+function shouldRerunBaseline({ baselineManifest, candidateResult, marginThreshold = 0.02 }) {
+  const reasons = [];
+  const baselineScorer = baselineManifest?.scorerVersion || null;
+  const candidateScorer = candidateResult?.run?.scorerVersion || null;
+  if (baselineScorer && candidateScorer && baselineScorer !== candidateScorer) {
+    reasons.push('scorer_version_changed');
+  }
+  const baselineIdentity = baselineManifest?.fixtureIdentity || {
+    fixtureSetId: baselineManifest?.fixtureSetId || null,
+    fixtureId: baselineManifest?.fixtureId || null,
+    inputHash: baselineManifest?.inputHash || null,
+    scorerVersion: baselineManifest?.scorerVersion || null,
+  };
+  const candidateIdentity = buildFixtureIdentityFromRun(candidateResult);
+  const identityFields = ['fixtureSetId', 'fixtureId', 'inputHash', 'scorerVersion'];
+  const baselineDeclaresIdentity = identityFields.some((field) => Boolean(baselineIdentity?.[field]));
+  const candidateDeclaresIdentity = identityFields.some((field) => Boolean(candidateIdentity?.[field]));
+  if (baselineDeclaresIdentity || candidateDeclaresIdentity) {
+    if (identityFields.some((field) => !baselineIdentity?.[field])) {
+      reasons.push('baseline_fixture_identity_incomplete');
+    } else if (identityFields.some((field) => !candidateIdentity?.[field])) {
+      reasons.push('candidate_fixture_identity_incomplete');
+    } else if (identityFields.some((field) => baselineIdentity[field] !== candidateIdentity[field])) {
+      reasons.push('fixture_identity_changed');
+    }
+  }
+  const baselineRuntimeIdentity = baselineManifest?.runtimeIdentity || null;
+  const candidateRuntimeIdentity = buildRuntimeIdentityFromResult(candidateResult);
+  const candidateDeclaresRuntimeIdentity = Object.values(candidateRuntimeIdentity).some((value) => {
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+    if (value && typeof value === 'object') {
+      return Object.values(value).some((nested) => Array.isArray(nested) ? nested.length > 0 : Boolean(nested));
+    }
+    return Boolean(value);
+  });
+  if (!baselineRuntimeIdentity && candidateDeclaresRuntimeIdentity) {
+    reasons.push('baseline_runtime_identity_incomplete');
+  } else if (baselineRuntimeIdentity && candidateDeclaresRuntimeIdentity
+    && JSON.stringify(baselineRuntimeIdentity) !== JSON.stringify(candidateRuntimeIdentity)) {
+    reasons.push('runtime_identity_changed');
+  }
+  const candidateScore = candidateResult?.quantitative?.candidate?.normalizedScore;
+  if (typeof candidateScore === 'number' && Math.abs(candidateScore - 1) <= marginThreshold) {
+    reasons.push('near_threshold_candidate_score');
+  }
+  const createdAt = baselineManifest?.createdAt ? Date.parse(baselineManifest.createdAt) : null;
+  const hasExternalMarker = baselineManifest?.nonDeterministic === true || baselineManifest?.externalDependencies === true;
+  if (createdAt && hasExternalMarker && Date.now() - createdAt > 14 * 24 * 60 * 60 * 1000) {
+    reasons.push('stale_nondeterministic_baseline');
+  }
+  return {
+    schemaVersion: 'moonshot-harness-calibration-decision.v1',
+    status: reasons.length > 0 ? 'calibration_required' : 'baseline_reuse_allowed',
+    rerunBaseline: reasons.length > 0,
+    reasons,
+  };
+}
+
 const printResult = (payload, json) => {
   if (json) {
     console.log(JSON.stringify(payload, null, 2));
@@ -918,9 +1793,14 @@ const printResult = (payload, json) => {
   if (payload.resultPath) {
     console.log(`${payload.issuedBy}: ${payload.status} promotable=${payload.promotable}`);
     console.log(`result: ${payload.resultPath}`);
-  } else {
+  } else if (payload.releasePath) {
     console.log(`${payload.issuedBy}: frozen ${payload.version}`);
     console.log(`release: ${payload.releasePath}`);
+  } else {
+    console.log(`${payload.issuedBy || TOOL_NAME}: ${payload.status || payload.schemaVersion}`);
+    if (payload.reportPath) {
+      console.log(`report: ${payload.reportPath}`);
+    }
   }
 };
 
@@ -942,16 +1822,43 @@ const main = async () => {
     printResult(await freezeStable(options), options.json);
     return;
   }
+  if (options.command === 'compare') {
+    const result = await compareResults(options);
+    printResult(result, options.json);
+    if (result.status !== 'passed') {
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (options.command === 'promote') {
+    printResult(await promoteBaseline(options), options.json);
+    return;
+  }
+  if (options.command === 'rollback') {
+    printResult(await rollbackBaseline(options), options.json);
+    return;
+  }
+  if (options.command === 'container-policy') {
+    printResult(await containerPolicy(options), options.json);
+    return;
+  }
   throw new Error(`Unknown command: ${options.command}\n${usage()}`);
 };
 
 export {
   DEFAULT_SUITES,
+  buildCompareReport,
+  buildContainerPolicyAudit,
   compareStableCandidate,
   freezeStable,
   loadSuites,
+  normalizePromotionPolicy,
+  promoteBaseline,
+  rollbackBaseline,
   runLab,
   shouldExcludeGuardPath,
+  shouldRerunBaseline,
+  buildRuntimeIdentityFromResult,
   sourceFingerprint,
 };
 

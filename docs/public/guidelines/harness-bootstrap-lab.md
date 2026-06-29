@@ -8,7 +8,7 @@ The Harness Bootstrap Lab is the H0 control point for testing Moonshot Relay har
 - H1 stable and H2 candidate harnesses only write their own command outputs.
 - Candidate `verify.json`, `score.json`, runtime-state projections, or chat output are evidence inputs, not promotion authority.
 - `lab-result.json` uses `authority: "external-bootstrap-lab"` to make that boundary machine-checkable.
-- Lab run output lives outside the candidate repository by default under `.moonshot-relay/harness-lab-runs/<runId>/`.
+- Lab run output lives under the generated lab state root by default at `.moonshot-relay/harness-lab/runs/<runId>/`.
 
 ## Default Gate
 
@@ -29,7 +29,75 @@ node tools/harness-lab/harness-lab.mjs run \
 
 The built-in suite currently checks package materialization dry-run, the harness control-plane golden eval, and the lab contract tests. Use `npm run test:lab` for the candidate-only default gate.
 
-Candidate-only runs are smoke evidence. They can block a bad candidate, but they do not prove improvement unless they are compared with a stable or baseline run for the same fixture identity.
+## Local Loop Setup
+
+Use the loop wrapper when operating the baseline -> candidate workflow locally. The default loop backend is Docker:
+
+```bash
+npm run lab:auto
+npm run lab:auto:promote
+npm run lab:auto:promote:no-regression
+npm run lab:auto:promote:strict
+npm run lab:init
+npm run lab:status
+npm run lab:candidate
+npm run lab:candidate:promote
+npm run lab:candidate:promote:no-regression
+npm run lab:candidate:promote:strict
+npm run lab:calibrate
+npm run lab:refresh-baseline
+npm run lab:auth-smoke
+npm run lab:closeout
+```
+
+`lab:init` creates a detached baseline worktree from `HEAD`, builds or reuses the local `moonshot-relay-harness-lab:local` image, creates source snapshots that exclude `.git`, `.moonshot-relay`, `node_modules`, generated profile payloads, sqlite files, and package tarballs, runs a baseline container against the baseline snapshot, runs a candidate container against the current working tree snapshot, compares the two `lab-result.json` files, and promotes the current candidate to `baseline-0001` only when the compare report passes. Local loop state is generated under:
+
+```text
+.moonshot-relay/harness-lab/
+  baselines/current.json
+  baselines/baseline-0001/
+  compare/
+  env/
+  runs/
+  source-snapshots/
+  worktrees/baseline-0001/
+```
+
+`lab:auto` is the normal product-level lifecycle entrypoint. If `baselines/current.json` is missing, it selects `initial_bootstrap`, runs baseline and candidate Docker benchmarks, compares them, and promotes a passing candidate as the first current baseline. If the current baseline exists, it selects `candidate_only`, runs only the candidate Docker benchmark, compares against the stored baseline artifact, and writes `runs/<candidate-id>/candidate-summary.json` plus `runs/<candidate-id>/lab-closeout-receipt.json`. `lab:auto:promote` is the explicit promotion variant for existing-baseline candidate runs. Use the `:no-regression` and `:strict` script aliases when an automation needs the policy in the command name instead of relying on the default.
+
+`lab:candidate` runs only a candidate container and compares it with `baselines/current.json`. `lab:candidate:promote` additionally promotes a passing candidate to the next baseline id. `lab:candidate:promote:strict` requires a positive score delta under `strict_improvement`; `lab:candidate:promote:no-regression` allows equal score when all regression gates pass. Host execution is retained for diagnostics through `npm run lab:init:host`, `npm run lab:candidate:host`, and `npm run lab:candidate:promote:host`.
+
+Host Codex auth is never mounted into a candidate benchmark container. `npm run lab:auth-smoke` is the separate opt-in auth/model capability stage. It mounts host Codex auth only into ephemeral container homes, uses network access for the model-backed smoke, does not run benchmark suites, and scans output artifacts for copied `auth.json` or token-like payloads. Legacy `lab:candidate:codex-auth` and `lab:candidate:codex-dev-smoke` scripts route to this separate auth-smoke stage.
+
+Docker lifecycle promotion treats `installed-runtime-smoke.json` as a hard gate. `degraded`, `failed`, missing native capability, or blocker metrics fail the run. The lab normalizes the runtime-state `available` status to lifecycle `healthy` only when blocker and stale-warning lists are empty. `install-result.json` is also normalized after the container run; if install verification and profile surface parity are clean, the lab writes top-level `status: "installed"` and records `executionBackend.installStatus: "installed"` in `lab-result.json`. Docker runs record the inspected image identity as `executionBackend.imageId`, `executionBackend.imageDigest`, and `executionBackend.repoDigests`; promotion rejects Docker candidate artifacts without `executionBackend.imageDigest` and promoted baselines copy that identity into `runtimeIdentity` and `artifact.imageDigest` for stronger replay evidence.
+
+The Docker lifecycle is:
+
+```text
+no baseline:
+  baseline worktree -> baseline container -> baseline lab-result.json
+  current worktree -> candidate container -> candidate lab-result.json
+  compare candidate vs baseline
+  promote candidate as current baseline after passing bootstrap
+
+existing baseline:
+  current worktree -> candidate container -> candidate lab-result.json
+  compare candidate vs stored baseline artifact
+  promote candidate as next baseline only through explicit promote
+
+calibration:
+  current baseline source ref -> baseline container -> fresh baseline lab-result.json
+  current worktree -> candidate container -> candidate lab-result.json
+  compare and optionally promote
+
+legacy baseline refresh:
+  verify current baseline is legacy or missing strengthened evidence
+  current worktree -> candidate container -> candidate lab-result.json
+  self-compare current candidate evidence
+  promote as a strengthened current baseline with refresh override evidence
+```
+
+Candidate-only runs are smoke evidence and lifecycle evidence. They can block a bad candidate, but they do not prove improvement unless they are compared with a stable or baseline run for the same fixture identity and the selected promotion policy passes.
 
 ## Quantitative Gate
 
@@ -71,7 +139,7 @@ node tools/evals/artifact-scorer.mjs score \
   --json
 ```
 
-Stable/candidate improvement claims require matching `fixtureSetId`, `fixtureId`, `inputHash`, and scorer version. A mismatch blocks promotion with `fixture_identity_mismatch`.
+Stable/candidate improvement claims require matching `fixtureSetId`, `fixtureId`, `inputHash`, and scorer version. A value mismatch blocks promotion with `fixture_identity_mismatch`. If either side declares fixture identity but omits any required field, including `inputHash`, promotion is blocked with `fixture_identity_incomplete`.
 
 ## Account-Root Isolation
 
@@ -148,7 +216,92 @@ node tools/harness-lab/harness-lab.mjs freeze \
   --version 2026-06-23
 ```
 
-The freeze manifest records the Git source fingerprint, package tarball SHA-256, Node version, and platform. The tarball is the stable execution artifact equivalent for this Node-based harness.
+The freeze manifest uses `schemaVersion: "moonshot-harness-baseline-artifact.v1"` and records `baselineId`, `authority: "external-bootstrap-lab"`, Git source fingerprint, fixture set, scorer version, package tarball SHA-256, Node version, and platform. The tarball is the stable execution artifact equivalent for this Node-based harness.
+
+## Baseline Compare, Promote, And Rollback
+
+Compare a stored baseline lab result and a candidate lab result:
+
+```bash
+node tools/harness-lab/harness-lab.mjs compare \
+  --baseline-result .moonshot-relay/harness-lab-runs/baseline/lab-result.json \
+  --candidate-result .moonshot-relay/harness-lab-runs/candidate/lab-result.json \
+  --promotion-policy no_regression \
+  --out .moonshot-relay/harness-lab-runs/compare/candidate-vs-baseline.json \
+  --json
+```
+
+The compare report uses `schemaVersion: "moonshot-harness-compare-report.v1"` and classifies blocking regressions as `new_failed_task`, `score_drop`, `artifact_contract_break`, `mutation_safety_break`, `stale_evidence_break`, `runtime_regression`, `insufficient_improvement`, `fixture_identity_incomplete`, or `fixture_identity_mismatch`.
+
+Promotion policy is explicit:
+
+- `no_regression` is the default and allows equal score when regressions are zero.
+- `strict_improvement` requires `candidate.normalizedScore - baseline.normalizedScore >= minDelta`; the default strict delta is `0.01`.
+- `strict_improvement` rejects zero or negative `minDelta`; equal-score strict candidates cannot pass by setting `--min-delta 0`.
+- Policy mode, aggregate metric, threshold, score delta, and decision reason are copied into compare reports, candidate summaries, promotion manifests, and closeout receipts.
+
+Promote only after a passing compare report:
+
+```bash
+node tools/harness-lab/harness-lab.mjs promote \
+  --candidate-run .moonshot-relay/harness-lab-runs/candidate/lab-result.json \
+  --compare-report .moonshot-relay/harness-lab-runs/compare/candidate-vs-baseline.json \
+  --baseline-root .moonshot-relay/harness-lab-baselines \
+  --baseline-id baseline-0002 \
+  --expected-previous-baseline-id baseline-0001 \
+  --json
+```
+
+Promotion validates the candidate run id, compare candidate id, current baseline artifact identity, fixture identity including `inputHash`, promotion policy, candidate runtime gate, Docker image digest, and compare hash before writing a new baseline. Calibration reruns may use `--allow-calibrated-baseline`; normal promotion still rejects compare reports whose baseline run id does not bind to the current baseline pointer. Promotion records pointer evidence with previous baseline id, previous pointer SHA-256, new pointer SHA-256, `manifestPrePointerEvidenceSha256`, lab result hash, and compare report hash. The legacy `manifestSha256` field is retained as an alias for the pre-pointer-evidence manifest hash and carries `manifestSha256Meaning: "pre_pointer_evidence_manifest_hash"` so it is not confused with the final self-containing manifest file hash. Promotion results expose `finalManifestSha256` separately. It then atomically replaces `current.json`. If artifact copy or pointer compare-and-swap fails before replacement, the prior pointer remains active.
+
+Rollback is pointer-only for source-first baselines:
+
+```bash
+node tools/harness-lab/harness-lab.mjs rollback \
+  --baseline-root .moonshot-relay/harness-lab-baselines \
+  --to baseline-0001 \
+  --json
+```
+
+Rollback validates the target baseline manifest, lab artifact, compare artifact when present, and stored hashes before pointer replacement. It writes a rollback audit artifact under `.moonshot-relay/harness-lab/baselines/`.
+
+## Closeout Receipt
+
+Every lifecycle run writes `lab-closeout-receipt.json`. `lab:closeout` revalidates the receipt against the current baseline pointer, candidate hash, compare hash, artifact-backed runtime gate, complete fixture identity, Docker image digest consistency, promotion manifest, and current source fingerprint before marking it commit-consumable. The CLI exits non-zero when revalidation fails or the receipt is not commit-consumable, so shell gates can use `npm run lab:closeout` directly. Commit workflows may consume only:
+
+```text
+promoted_ready_for_commit_workflow
+```
+
+Other statuses are blocking or non-consumable:
+
+```text
+rejected_no_commit
+blocked_hard_gate
+calibration_required
+```
+
+The receipt records baseline id, previous baseline id, candidate run id, candidate run hash, compare path and hash, promotion policy, runtime gate, calibration status, source fingerprint, and the next operator action. Stale or mismatched promoted receipts are not commit-consumable. The lab never commits or pushes source changes.
+
+## Container Policy
+
+Local container support is source-only and uses `Dockerfile.harness-lab` plus the Docker backend in `tools/harness-lab/harness-loop.mjs`. It is not package runtime payload and must not publish images.
+
+Audit the required container isolation policy:
+
+```bash
+node tools/harness-lab/harness-lab.mjs container-policy --json
+```
+
+The candidate benchmark container must mount only its sanitized source snapshot, prepared workspace, prepared Codex CLI, and writable run output. It must not mount baseline outputs, `runs/baseline/**`, `baselines/**`, the host Docker socket, live account-root paths, host Codex auth, or host Codex config. Baseline containers are for initial and calibration loops only; normal loops run candidate-only against stored baseline artifacts.
+
+The default strict run uses `--read-only`, `--network none`, `--cap-drop ALL`, `--security-opt no-new-privileges`, a PID limit, and tmpfs mounts for mutable homes. The homes tmpfs allows native runtime modules to load, while `/tmp` remains `nosuid,nodev`. Dependency installation and Codex CLI installation happen in a separate prepare container before the strict benchmark run.
+
+## Calibration
+
+Stored baseline results are reusable for normal loops. `lab:auto` with an existing baseline remains candidate-only. If scorer version changes, fixture identity changes, candidate score is within the configured margin threshold, Docker/base runtime identity changes, or the baseline includes stale non-deterministic/external dependency markers, the candidate loop reports `calibration_required` and does not rerun baseline automatically. Run `npm run lab:calibrate` to rerun both baseline and candidate explicitly. When a legacy baseline source ref rerun lacks fixture identity but the current baseline manifest has complete identity, calibration writes a separate `lab-result.fixture-normalized.json` compare input; the original rerun artifact remains unchanged and promotion records calibrated-baseline override evidence.
+
+Use `npm run lab:refresh-baseline` only to replace a legacy or incomplete current baseline with strengthened policy, runtime identity, runtime gate, fixture identity, hash, and pointer evidence after the current candidate checkout passes Docker benchmark. The command first checks the current baseline manifest, lab result, and compare report; it fails if the current baseline already has strengthened evidence. This is a baseline evidence refresh, not a proof of improvement over the legacy baseline.
 
 ## Custom Suites
 

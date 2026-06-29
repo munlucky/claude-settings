@@ -10,6 +10,7 @@ __pycache__/
 node_modules/
 .moonshot-relay/
 .moonshot-state/
+state/
 .claude/browser-runtime/
 .claude/cache/
 .claude/traces/

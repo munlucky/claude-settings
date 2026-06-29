@@ -1,0 +1,11 @@
+.git
+.claude
+.codex
+.moonshot-relay
+node_modules
+package/claude/profile
+package/codex/profile
+**/*.sqlite
+**/*.sqlite-shm
+**/*.sqlite-wal
+**/*.tgz

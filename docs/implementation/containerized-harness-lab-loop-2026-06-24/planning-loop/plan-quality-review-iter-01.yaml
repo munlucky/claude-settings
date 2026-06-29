@@ -1,0 +1,47 @@
+schemaVersion: 1
+reviewedPackageRoot: docs/implementation/containerized-harness-lab-loop-2026-06-24
+iteration: 1
+reviewMode: independent_sidecar_then_parent_apply
+blockingFindings:
+  - id: PLAN-001
+    finding: "Source draft was a single root-level design file, not a runnable plan package."
+    status: resolved_by_plan_update
+    acceptedChange: "Created master plan, five phase docs, and planning-loop artifacts."
+  - id: PLAN-002
+    finding: "Surface classifications and policy source paths were missing."
+    status: resolved_by_plan_update
+    acceptedChange: "Added surface classification and policy source tables to the master plan and phase metadata."
+  - id: PLAN-003
+    finding: "Candidate container isolation was not enforceable."
+    status: resolved_by_plan_update
+    acceptedChange: "Added volume policy, forbidden mounts, account-root temp-home evidence, and phase acceptance criteria."
+  - id: PLAN-004
+    finding: "Baseline acquisition and promotion atomicity were ambiguous."
+    status: resolved_by_plan_update
+    acceptedChange: "Added baseline artifact manifest, immutable hash requirements, atomic pointer update, and rollback criteria."
+  - id: PLAN-005
+    finding: "Acceptance evidence lacked concrete phase owners and paths."
+    status: resolved_by_plan_update
+    acceptedChange: "Mapped HLAB acceptance criteria to phases and evidence paths."
+acceptedChanges:
+  - "Plan package root created."
+  - "Execution authority limited to Markdown plan package."
+  - "Docker publish and package/runtime adoption explicitly blocked until sourced policy exists."
+  - "Candidate-only normal loop and calibration loop documented."
+rejectedChanges: []
+remainingAmbiguity:
+  - id: DOCKER-PUBLISH-POLICY
+    status: blocked
+    note: "No repository policy source defines Docker registry publication, signing, or shipped Docker payload adoption. v1 remains local-only."
+reviewedSurfaceClassifications:
+  - source_only
+  - package_runtime_payload
+  - installed_profile_or_account_root
+  - external_deployment_or_service
+  - data_or_state_migration
+missingPolicyGates:
+  - "Docker registry/publish policy"
+parentOwnedEditBoundary:
+  childAgentsMutatedSource: false
+  parentAppliedFinalEdits: true
+

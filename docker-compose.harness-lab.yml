@@ -1,0 +1,36 @@
+services:
+  baseline-harness:
+    build:
+      context: .
+      dockerfile: Dockerfile.harness-lab
+    network_mode: "none"
+    working_dir: /workspace
+    volumes:
+      - ./:/harness-source:ro
+      - ./.moonshot-relay/harness-lab/runs/container-baseline:/harness-run/output
+    environment:
+      MOONSHOT_RELAY_HOME: /harness-run/homes/moonshot-relay
+      PHASE_RUNTIME_DB: /harness-run/homes/runtime-state.sqlite
+      CODEX_HOME: /harness-run/homes/codex
+      CLAUDE_HOME: /harness-run/homes/claude
+      HOME: /harness-run/homes/user-home
+      USERPROFILE: /harness-run/homes/userprofile
+    command: ["sh", "-lc", "node --version && test -d /harness-source && test -d /harness-run/output"]
+
+  candidate-harness:
+    build:
+      context: .
+      dockerfile: Dockerfile.harness-lab
+    network_mode: "none"
+    working_dir: /workspace
+    volumes:
+      - ./:/harness-source:ro
+      - ./.moonshot-relay/harness-lab/runs/container-candidate:/harness-run/output
+    environment:
+      MOONSHOT_RELAY_HOME: /harness-run/homes/moonshot-relay
+      PHASE_RUNTIME_DB: /harness-run/homes/runtime-state.sqlite
+      CODEX_HOME: /harness-run/homes/codex
+      CLAUDE_HOME: /harness-run/homes/claude
+      HOME: /harness-run/homes/user-home
+      USERPROFILE: /harness-run/homes/userprofile
+    command: ["sh", "-lc", "node --version && test -d /harness-source && test -d /harness-run/output"]

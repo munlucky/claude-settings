@@ -1,0 +1,24 @@
+FROM node:20-bookworm-slim
+
+WORKDIR /workspace
+
+ENV NODE_ENV=test
+ENV MOONSHOT_RELAY_HOME=/harness-run/homes/moonshot-relay
+ENV PHASE_RUNTIME_DB=/harness-run/homes/runtime-state.sqlite
+ENV CODEX_HOME=/harness-run/homes/codex
+ENV CLAUDE_HOME=/harness-run/homes/claude
+ENV HOME=/harness-run/homes/user-home
+ENV USERPROFILE=/harness-run/homes/userprofile
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /harness-run/homes/moonshot-relay \
+  /harness-run/homes/codex \
+  /harness-run/homes/claude \
+  /harness-run/homes/user-home \
+  /harness-run/homes/userprofile \
+  /harness-run/output
+
+CMD ["node", "--version"]
