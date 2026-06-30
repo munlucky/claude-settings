@@ -230,6 +230,8 @@ node scripts/verification-plane.mjs normalize-browser-trace \
 
 Playwright smoke and integration results are normalized into `BROWSER_COMPLETION_RESULT` evidence:
 
+Browser scenarios are described by the source-owned `schemas/browser-scenario.schema.json` contract. That schema owns the prompt-safe scenario identity, expected URL/text/role/name, required artifact types, evidence depth vocabulary (`smoke`, `open-act`, `open-act-mutate-persist-recover`, or `agentic-browser-confirmation`), Playwright requirement, task verification class, and diagnosis-only failure policy. Critical scenarios must keep `playwrightRequired=true`; a Playwright waiver can support non-critical browser confirmation, but it cannot downgrade critical browser proof to agentic-only evidence.
+
 ```sh
 node scripts/verification-plane.mjs normalize-playwright-result \
   --run-id <runId> \

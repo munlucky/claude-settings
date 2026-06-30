@@ -305,6 +305,7 @@ export const buildRepairPrompt = ({
   const requiredProhibitions = [
     'do not delete or weaken failing assertions',
     'do not change expected behavior without a tracked blocker',
+    'do not update screenshot or visual baselines automatically',
     'do not skip required browser or integration tests',
   ];
   const finalProhibitions = unique([...requiredProhibitions, ...prohibitedRepairActions.map(String)]);

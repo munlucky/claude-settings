@@ -75,6 +75,7 @@ const requiredCommonPayloadFiles = [
   'rules/workflow-bundles.yaml',
   'schemas/verification.contract.yaml',
   'schemas/browser-completion-result.schema.json',
+  'schemas/browser-scenario.schema.json',
   'schemas/context-pack.schema.json',
   'schemas/awtl-testcase-candidate-v1.schema.json',
   'schemas/improvement-candidate-v1.schema.json',

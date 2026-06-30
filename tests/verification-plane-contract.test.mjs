@@ -987,6 +987,33 @@ test('agentic browser confirmation is evidence-only and cannot override Playwrig
   assert.equal(failedPlaywright.browserResult.failureClass, 'playwright_assertion_failed');
   assert.equal(failedPlaywright.browserPlane.status, 'failed');
 
+  const setupGapPlaywright = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-setup-gap-playwright',
+    '--goal-id',
+    'goal-agentic-setup-gap-playwright',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify({ ...cleanPlaywright, status: 'setup_gap', failureClass: 'runtime_environment_failed' }),
+    '--confirmation-json',
+    JSON.stringify(cleanConfirmation),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(setupGapPlaywright.browserResult.status, 'setup_gap');
+  assert.equal(setupGapPlaywright.browserResult.failedStage, 'playwright');
+  assert.equal(setupGapPlaywright.browserResult.failureClass, 'runtime_environment_failed');
+  assert.equal(setupGapPlaywright.browserPlane.status, 'blocked');
+
   const flakyPlaywright = json(run([
     'scripts/verification-plane.mjs',
     'normalize-browser-confirmation',
@@ -1196,12 +1223,44 @@ test('agentic browser confirmation is evidence-only and cannot override Playwrig
     '--confirmation-json',
     JSON.stringify(cleanConfirmation),
     '--task-json',
-    '{"taskType":"frontend"}',
+    '{"taskType":"browser","requiresBrowserEvidence":true,"requiresIntegrationEvidence":false,"criticalScenario":false}',
     '--json',
   ]));
 
   assert.equal(playwrightWaived.browserResult.status, 'clean_pass');
   assert.equal(playwrightWaived.browserPlane.status, 'passed');
+
+  const criticalPlaywrightWaived = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-critical-playwright-waived',
+    '--goal-id',
+    'goal-agentic-critical-playwright-waived',
+    '--scenario-id',
+    'critical-integration-flow',
+    '--scenario-json',
+    JSON.stringify({
+      ...scenario,
+      playwrightRequired: false,
+      playwrightWaiver: {
+        reason: 'critical waiver should not close browser proof',
+        approvedBy: 'phase-05-review',
+      },
+    }),
+    '--confirmation-json',
+    JSON.stringify(cleanConfirmation),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(criticalPlaywrightWaived.browserResult.status, 'failed');
+  assert.equal(criticalPlaywrightWaived.browserResult.failedStage, 'playwright');
+  assert.equal(criticalPlaywrightWaived.diagnostics.playwrightExempt, false);
+  assert.equal(criticalPlaywrightWaived.browserPlane.status, 'failed');
 });
 
 test('browser completion result sanitizes raw command evidence and omits env', () => {

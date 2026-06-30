@@ -450,8 +450,12 @@ export function normalizePlaywrightResult({
   };
 }
 
-const hasRecordedPlaywrightExemption = (scenario = {}) => {
+const hasRecordedPlaywrightExemption = (scenario = {}, taskVerificationClass = null) => {
   if (scenario.playwrightRequired !== false) {
+    return false;
+  }
+  const taskClass = classifyTaskVerification(taskVerificationClass || scenario.taskVerificationClass || {});
+  if (taskClass.criticalScenario) {
     return false;
   }
   const reason = String(scenario.playwrightNotRequiredReason || scenario.playwrightWaiver?.reason || '').trim();
@@ -522,7 +526,7 @@ export function normalizeBrowserConfirmationResult({
     taskVerificationClass,
     generatedAt,
   });
-  const playwrightExempt = hasRecordedPlaywrightExemption(scenario);
+  const playwrightExempt = hasRecordedPlaywrightExemption(scenario, taskVerificationClass);
   const playwrightBrowserResult = normalizedPlaywright?.browserResult || null;
   const playwrightPassed = playwrightBrowserResult
     ? playwrightBrowserResult.status === 'clean_pass'

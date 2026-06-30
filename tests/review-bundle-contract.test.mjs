@@ -175,6 +175,45 @@ test('repair prompt preserves failure evidence and prohibited repair actions', (
   assert.match(repair.prompt, /npm run browser:test/);
 });
 
+test('repair prompt and receipt compose the canonical browser failure package', () => {
+  const artifacts = [
+    { type: 'screenshot', path: '.moonshot-relay/browser-artifacts/run/goal/critical/screenshot.png' },
+    { type: 'trace', path: '.moonshot-relay/browser-artifacts/run/goal/critical/trace.zip' },
+  ];
+  const repair = buildRepairPrompt({
+    scenarioId: 'critical-browser-flow',
+    originalScenarioId: 'critical-browser-flow',
+    rerunScenarioId: 'critical-browser-flow',
+    failedStep: 'assertion',
+    failureClass: 'playwright_assertion_failed',
+    consoleSummary: { errorCount: 0 },
+    networkSummary: { failedCount: 1 },
+    artifacts,
+    rerunCommand: 'node --test tests/workflow-e2e-contract.test.mjs --test-name-pattern critical-browser-flow',
+    maxRepairAttempts: 2,
+  });
+  const receipt = buildRepairLoopReceipt({
+    scenarioId: repair.scenarioId,
+    originalScenarioId: repair.originalScenarioId,
+    rerunScenarioId: repair.rerunScenarioId,
+    failedAssertionIds: ['assert-text', 'assert-role'],
+    preservedAssertionIds: ['assert-text', 'assert-role'],
+    attemptIndex: 1,
+    maxRepairAttempts: repair.maxRepairAttempts,
+    artifactLinks: artifacts.map((artifact) => artifact.path),
+  });
+
+  assert.equal(repair.artifactId, 'REPAIR_PROMPT');
+  assert.equal(receipt.artifactId, 'REPAIR_LOOP_RECEIPT');
+  assert.equal(repair.scenarioId, receipt.scenarioId);
+  assert.equal(repair.originalScenarioId, receipt.originalScenarioId);
+  assert.equal(repair.rerunScenarioId, receipt.rerunScenarioId);
+  assert.deepEqual(receipt.artifactLinks, artifacts.map((artifact) => artifact.path));
+  assert.match(repair.prompt, /do not delete or weaken failing assertions/);
+  assert.match(repair.prompt, /do not update screenshot or visual baselines automatically/);
+  assert.equal(repairLoopBlockers({ receipt, required: true }).length, 0);
+});
+
 test('repair loop receipt blocks exhausted changed-scenario or weakened assertion reruns', () => {
   const clean = buildRepairLoopReceipt({
     scenarioId: 'critical-browser-flow',

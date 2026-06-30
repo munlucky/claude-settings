@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "browser-confirmation-waived",
+  "description": "Explicitly waived Playwright scenario that still requires evidence-only agentic browser confirmation.",
+  "evidenceDepth": "agentic-browser-confirmation",
+  "baseUrl": "http://127.0.0.1:3000",
+  "expectedUrl": "http://127.0.0.1:3000/health",
+  "expectedText": "Ready",
+  "expectedRole": "status",
+  "expectedName": "Health",
+  "requiredArtifactTypes": ["screenshot", "accessibility_snapshot"],
+  "playwrightRequired": false,
+  "playwrightWaiver": {
+    "reason": "Non-Playwright smoke fixture for backend-neutral confirmation adapter contract.",
+    "approvedBy": "phase-runner-plan"
+  },
+  "determinismRequired": false,
+  "taskVerificationClass": {
+    "taskType": "browser",
+    "requiresBrowserEvidence": true,
+    "requiresIntegrationEvidence": false,
+    "criticalScenario": false,
+    "waiver": {
+      "allowed": false,
+      "reason": "",
+      "approvedBy": ""
+    }
+  },
+  "failurePolicy": {
+    "maxRepairAttempts": 2,
+    "preserveScenarioId": true,
+    "preserveFailingAssertionIds": true,
+    "fallbackAuthority": "diagnosis_only",
+    "forbiddenMutations": ["delete_test", "weaken_assertion", "change_expected_text", "update_baseline"]
+  }
+}

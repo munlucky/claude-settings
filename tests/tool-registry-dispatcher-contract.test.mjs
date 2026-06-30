@@ -55,6 +55,8 @@ test('tool registry source and public group budget are valid', async () => {
     const sourceGroup = registrySource.groups.find((item) => item.id === group.id);
     assert.ok(sourceGroup, `${group.id} must be defined in registry source`);
     assert.ok(group.summary);
+    assert.equal(JSON.stringify(group).includes('"schema"'), false);
+    assert.equal(JSON.stringify(group).includes('"fullSchema"'), false);
     assert.equal(Array.isArray(sourceGroup.tools), true);
     assert.equal(sourceGroup.tools.length > 0, true);
     for (const tool of sourceGroup.tools) {
@@ -82,7 +84,10 @@ test('dispatcher records selected and skipped groups with summary schema mode', 
   assert.equal(selected.status, 'selected');
   assert.ok(selected.selectedGroups.some((group) => group.id === 'shell'));
   assert.ok(selected.selectedGroups.some((group) => group.id === 'runtime-state'));
+  assert.equal(selected.selectedGroups.length <= 3, true);
   assert.ok(selected.selectedGroups.every((group) => group.schemaMode === 'summary'));
+  assert.equal(JSON.stringify(selected.selectedGroups).includes('"schema"'), false);
+  assert.equal(JSON.stringify(selected.selectedGroups).includes('"fullSchema"'), false);
   assert.ok(selected.skippedGroups.length > 0);
 
   const db = new Database(env.PHASE_RUNTIME_DB);

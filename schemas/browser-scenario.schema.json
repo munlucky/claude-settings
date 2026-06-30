@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/browser-scenario.schema.json",
+  "title": "Moonshot Relay Browser Scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scenarioId",
+    "evidenceDepth",
+    "expectedUrl",
+    "expectedText",
+    "expectedRole",
+    "expectedName",
+    "requiredArtifactTypes",
+    "playwrightRequired",
+    "taskVerificationClass",
+    "failurePolicy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "scenarioId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "description": { "type": "string" },
+    "evidenceDepth": {
+      "enum": ["smoke", "open-act", "open-act-mutate-persist-recover", "agentic-browser-confirmation"]
+    },
+    "baseUrl": { "type": "string" },
+    "expectedUrl": { "type": "string" },
+    "expectedText": { "type": "string" },
+    "expectedRole": { "type": "string" },
+    "expectedName": { "type": "string" },
+    "requiredArtifactTypes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["screenshot", "trace", "console", "network", "report", "video", "accessibility_snapshot"]
+      },
+      "uniqueItems": true
+    },
+    "playwrightRequired": { "type": "boolean" },
+    "playwrightWaiver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "approvedBy"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1 },
+        "approvedBy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "determinismRequired": { "type": "boolean" },
+    "taskVerificationClass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskType", "requiresBrowserEvidence", "requiresIntegrationEvidence", "criticalScenario"],
+      "properties": {
+        "taskType": { "type": "string", "minLength": 1 },
+        "requiresBrowserEvidence": { "type": "boolean" },
+        "requiresIntegrationEvidence": { "type": "boolean" },
+        "criticalScenario": { "type": "boolean" },
+        "waiver": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowed", "reason", "approvedBy"],
+          "properties": {
+            "allowed": { "type": "boolean" },
+            "reason": { "type": "string" },
+            "approvedBy": { "type": "string" }
+          }
+        }
+      }
+    },
+    "failurePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxRepairAttempts",
+        "preserveScenarioId",
+        "preserveFailingAssertionIds",
+        "fallbackAuthority",
+        "forbiddenMutations"
+      ],
+      "properties": {
+        "maxRepairAttempts": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "preserveScenarioId": { "const": true },
+        "preserveFailingAssertionIds": { "const": true },
+        "fallbackAuthority": { "enum": ["diagnosis_only"] },
+        "forbiddenMutations": {
+          "type": "array",
+          "minItems": 4,
+          "items": {
+            "enum": ["delete_test", "weaken_assertion", "change_expected_text", "update_baseline"]
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "playwrightRequired": { "const": false } },
+        "required": ["playwrightRequired"]
+      },
+      "then": { "required": ["playwrightWaiver"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "taskVerificationClass": {
+            "properties": { "criticalScenario": { "const": true } },
+            "required": ["criticalScenario"]
+          }
+        },
+        "required": ["taskVerificationClass"]
+      },
+      "then": {
+        "properties": {
+          "playwrightRequired": { "const": true }
+        }
+      }
+    }
+  ]
+}

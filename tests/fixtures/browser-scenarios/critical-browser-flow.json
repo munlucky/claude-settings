@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "critical-browser-flow",
+  "description": "Critical browser scenario requiring deterministic browser evidence and repair-loop preservation.",
+  "evidenceDepth": "open-act-mutate-persist-recover",
+  "baseUrl": "http://127.0.0.1:3000",
+  "expectedUrl": "http://127.0.0.1:3000/dashboard",
+  "expectedText": "Ready",
+  "expectedRole": "button",
+  "expectedName": "Submit",
+  "requiredArtifactTypes": ["screenshot", "trace", "console", "network", "report"],
+  "playwrightRequired": true,
+  "determinismRequired": true,
+  "taskVerificationClass": {
+    "taskType": "ui",
+    "requiresBrowserEvidence": true,
+    "requiresIntegrationEvidence": false,
+    "criticalScenario": true,
+    "waiver": {
+      "allowed": false,
+      "reason": "",
+      "approvedBy": ""
+    }
+  },
+  "failurePolicy": {
+    "maxRepairAttempts": 2,
+    "preserveScenarioId": true,
+    "preserveFailingAssertionIds": true,
+    "fallbackAuthority": "diagnosis_only",
+    "forbiddenMutations": ["delete_test", "weaken_assertion", "change_expected_text", "update_baseline"]
+  }
+}
