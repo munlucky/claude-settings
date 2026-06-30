@@ -19,6 +19,10 @@ Verification profiles separate task-scope summary evidence from final completion
 
 `completionAuthorityRequiredPlanes` remains `unit`, `package`, `installer`, `browser`, `security`, and `quality` for accepted completion. A `--required-planes-json` override may make the profile summary pass, but it must not make `assess-completion` return accepted without the authority planes.
 
+Task verification classification is fail-closed. Unknown task class is `needs_classification`; frontend/UI work requires browser evidence by default, route/API integration work requires integration evidence by default, and docs-only work does not require browser evidence by default. A waiver must include a reason and approver.
+
+Browser completion result artifacts are evidence only. They use `artifactId=BROWSER_COMPLETION_RESULT`, `completionAuthority=false`, and `authoritySource=evidence_only`; they must not be confused with H0 `lab-result.json` or treated as runtime-state completion authority. Critical scenarios cannot cleanly close from smoke-only or `flaky_pass` browser evidence.
+
 Verification summaries expose two additive projection fields:
 
 - `taskLocalCompletion`: profile-scoped evidence completeness for the current task type.

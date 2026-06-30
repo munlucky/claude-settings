@@ -22,6 +22,7 @@ runtimeProfiles:
     localRuntimeRoot: ${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/
     materializer: package/build-package.mjs
     materialization: account_root_common_payload
+    generatedCopyPolicy: ignored_generated_package_payload
   claude:
     templateRoot: package/profile-templates/claude/.claude/
     generatedProfileRoot: package/claude/profile/.claude/
@@ -163,6 +164,8 @@ requiredPayloadEntries:
       purpose: runtime_tooling
     - source: schemas/**
       purpose: machine_readable_contracts
+    - source: schemas/browser-completion-result.schema.json
+      purpose: browser_completion_evidence_only_result_contract
     - source: schemas/context-pack.schema.json
       purpose: context_pack_v1_contract
     - source: schemas/awtl-testcase-candidate-v1.schema.json

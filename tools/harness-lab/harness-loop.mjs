@@ -39,6 +39,8 @@ const usage = () => `Usage:
   node tools/harness-lab/harness-loop.mjs refresh-baseline [--backend docker|host] [--candidate-root <dir>] [--json]
   node tools/harness-lab/harness-loop.mjs auth-smoke [--backend docker] [--use-host-codex-auth] [--json]
   node tools/harness-lab/harness-loop.mjs closeout [--run-id <candidate-run-id>] [--json]
+  node tools/harness-lab/harness-loop.mjs worktrees:status [--json]
+  node tools/harness-lab/harness-loop.mjs worktrees:prune [--dry-run] [--retain-current] [--json]
   node tools/harness-lab/harness-loop.mjs status [--json]
   node tools/harness-lab/harness-loop.mjs run-status --run-id <run-id> [--json]
   node tools/harness-lab/harness-loop.mjs resume --run-id <run-id> [--json]
@@ -694,6 +696,10 @@ function parseArgs(argv) {
       options.json = true;
     } else if (arg === '--promote') {
       options.promote = true;
+    } else if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--retain-current') {
+      options.retainCurrent = true;
     } else if (arg === '--use-host-codex-auth') {
       options.useHostCodexAuth = true;
     } else if (arg === '--codex-dev-smoke') {
@@ -2207,6 +2213,269 @@ function gitEnv() {
   };
 }
 
+function normalizeForBoundary(filePath) {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function isPathInside(parent, child) {
+  const parentPath = normalizeForBoundary(parent);
+  const childPath = normalizeForBoundary(child);
+  const relative = path.relative(parentPath, childPath);
+  return relative === '' || (relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function parseGitWorktreePorcelain(text = '') {
+  const entries = [];
+  let current = null;
+  for (const line of String(text).split(/\r?\n/)) {
+    if (!line.trim()) {
+      if (current) {
+        entries.push(current);
+        current = null;
+      }
+      continue;
+    }
+    const [key, ...rest] = line.split(' ');
+    const value = rest.join(' ');
+    if (key === 'worktree') {
+      if (current) entries.push(current);
+      current = { path: value, head: '', branch: '', detached: false, bare: false, prunable: false };
+    } else if (current && key === 'HEAD') {
+      current.head = value;
+    } else if (current && key === 'branch') {
+      current.branch = value;
+    } else if (current && key === 'detached') {
+      current.detached = true;
+    } else if (current && key === 'bare') {
+      current.bare = true;
+    } else if (current && key === 'prunable') {
+      current.prunable = true;
+    }
+  }
+  if (current) entries.push(current);
+  return entries;
+}
+
+function parseHarnessWorktreeId(worktreePath) {
+  const name = path.basename(worktreePath);
+  const match = /^(baseline-\d+)(?:-(calibration|initial|refresh))?-(\d{8}-\d{6})$/.exec(name)
+    || /^(baseline-\d+)$/.exec(name);
+  return {
+    id: name,
+    baselineId: match?.[1] || '',
+    purpose: match?.[2] || 'baseline',
+    createdAtCompact: match?.[3] || '',
+  };
+}
+
+function classifyHarnessWorktree(entry, {
+  worktreeRoot = DEFAULT_WORKTREE_ROOT,
+  currentBaselineId = '',
+  dirtyStatusShort = '',
+  retainCurrent = false,
+} = {}) {
+  const resolvedRoot = path.resolve(worktreeRoot);
+  const resolvedPath = path.resolve(entry.path || '');
+  const identity = parseHarnessWorktreeId(resolvedPath);
+  const insideHarnessRoot = isPathInside(resolvedRoot, resolvedPath) && resolvedPath !== resolvedRoot;
+  const detached = entry.detached === true || (!entry.branch && Boolean(entry.head));
+  const dirty = Boolean(String(dirtyStatusShort || '').trim());
+  const reasons = [];
+  if (!insideHarnessRoot) reasons.push('outside_harness_worktree_root');
+  if (!detached) reasons.push('not_detached_worktree');
+  if (dirty) reasons.push('dirty_or_untracked_worktree');
+  if (retainCurrent && identity.baselineId && identity.baselineId === currentBaselineId) {
+    reasons.push('current_baseline_retained_by_operator');
+  }
+  const prunable = reasons.length === 0;
+  return {
+    ...identity,
+    path: resolvedPath,
+    head: entry.head || '',
+    branch: entry.branch || '',
+    detached,
+    insideHarnessRoot,
+    dirty,
+    dirtyStatusShort: dirtyStatusShort || '',
+    prunable,
+    action: prunable ? 'remove' : 'retain',
+    retainReason: reasons[0] || '',
+    reasons,
+    retentionTtlHours: prunable ? 0 : 72,
+  };
+}
+
+async function listHarnessWorktrees({ retainCurrent = false } = {}) {
+  const listed = run('git', ['worktree', 'list', '--porcelain'], { env: gitEnv(), expect: null });
+  const currentPointer = await readCurrentPointer();
+  const entries = parseGitWorktreePorcelain(listed.stdout)
+    .filter((entry) => isPathInside(path.resolve(DEFAULT_WORKTREE_ROOT), path.resolve(entry.path || ''))
+      && path.resolve(entry.path || '') !== path.resolve(DEFAULT_WORKTREE_ROOT));
+  const worktrees = [];
+  for (const entry of entries) {
+    let dirtyStatusShort = '';
+    const status = run('git', ['-C', entry.path, 'status', '--short'], { env: gitEnv(), expect: null });
+    if ((status.status ?? 1) === 0) {
+      dirtyStatusShort = status.stdout.trim();
+    } else {
+      dirtyStatusShort = `status_unavailable: ${status.stderr || status.stdout || status.error?.message || 'unknown'}`;
+    }
+    worktrees.push(classifyHarnessWorktree(entry, {
+      currentBaselineId: currentPointer?.baselineId || '',
+      dirtyStatusShort,
+      retainCurrent,
+    }));
+  }
+  return {
+    schemaVersion: 'moonshot-harness-worktree-status.v1',
+    status: 'ready',
+    worktreeRoot: path.resolve(DEFAULT_WORKTREE_ROOT),
+    currentBaselineId: currentPointer?.baselineId || '',
+    totalCount: worktrees.length,
+    prunableCount: worktrees.filter((entry) => entry.prunable).length,
+    retainedCount: worktrees.filter((entry) => !entry.prunable).length,
+    worktrees,
+  };
+}
+
+async function writeWorktreeRetentionManifest(retained, { dryRun = false } = {}) {
+  const manifestPath = path.resolve(DEFAULT_WORKTREE_ROOT, 'retention-manifest.json');
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  const manifest = {
+    schemaVersion: 'moonshot-harness-worktree-retention.v1',
+    generatedAt: new Date().toISOString(),
+    dryRun,
+    retained,
+  };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifestPath;
+}
+
+async function pruneHarnessWorktrees({ dryRun = false, retainCurrent = false } = {}) {
+  const status = await listHarnessWorktrees({ retainCurrent });
+  const removed = [];
+  const retained = [];
+  for (const worktree of status.worktrees) {
+    if (!worktree.prunable) {
+      retained.push(worktree);
+      continue;
+    }
+    if (dryRun) {
+      removed.push({ ...worktree, removed: false, dryRun: true });
+      continue;
+    }
+    const result = run('git', ['worktree', 'remove', worktree.path], { env: gitEnv(), expect: null });
+    const exitCode = result.status ?? (result.error ? 1 : 0);
+    if (exitCode === 0) {
+      removed.push({ ...worktree, removed: true, command: `git worktree remove ${worktree.path}` });
+    } else {
+      retained.push({
+        ...worktree,
+        prunable: false,
+        action: 'retain',
+        retainReason: 'git_worktree_remove_failed',
+        reasons: ['git_worktree_remove_failed'],
+        removeError: result.stderr || result.stdout || result.error?.message || `git worktree remove exited ${exitCode}`,
+        retentionTtlHours: 72,
+      });
+    }
+  }
+  if (!dryRun) {
+    run('git', ['worktree', 'prune'], { env: gitEnv(), expect: null });
+  }
+  const retentionManifestPath = retained.length > 0
+    ? await writeWorktreeRetentionManifest(retained, { dryRun })
+    : '';
+  return {
+    schemaVersion: 'moonshot-harness-worktree-prune.v1',
+    status: retained.length === 0 ? 'pruned' : 'maintenance_required',
+    dryRun,
+    retainCurrent,
+    worktreeRoot: status.worktreeRoot,
+    currentBaselineId: status.currentBaselineId,
+    totalCount: status.totalCount,
+    removedCount: removed.length,
+    retainedCount: retained.length,
+    removed,
+    retained,
+    retentionManifestPath,
+    maintenanceRequired: retained.length > 0,
+  };
+}
+
+async function retireHarnessWorktree(worktreePath, {
+  runId = '',
+  baselineId = '',
+  reason = 'ephemeral_success',
+} = {}) {
+  const entry = {
+    path: path.resolve(worktreePath),
+    head: '',
+    branch: '',
+    detached: true,
+  };
+  const status = run('git', ['-C', worktreePath, 'rev-parse', 'HEAD'], { env: gitEnv(), expect: null });
+  if ((status.status ?? 1) === 0) {
+    entry.head = status.stdout.trim();
+  }
+  const dirty = run('git', ['-C', worktreePath, 'status', '--short'], { env: gitEnv(), expect: null });
+  const classified = classifyHarnessWorktree(entry, {
+    dirtyStatusShort: (dirty.status ?? 1) === 0 ? dirty.stdout.trim() : 'status_unavailable',
+  });
+  if (!classified.prunable) {
+    const retained = {
+      ...classified,
+      runId,
+      baselineId: classified.baselineId || baselineId,
+      retainReason: classified.retainReason || 'retire_precondition_failed',
+      retentionTtlHours: 72,
+    };
+    const retentionManifestPath = await writeWorktreeRetentionManifest([retained]);
+    return {
+      schemaVersion: 'moonshot-harness-worktree-retire.v1',
+      status: 'retained',
+      reason,
+      runId,
+      baselineId,
+      worktree: retained,
+      retentionManifestPath,
+    };
+  }
+  const removed = run('git', ['worktree', 'remove', worktreePath], { env: gitEnv(), expect: null });
+  const exitCode = removed.status ?? (removed.error ? 1 : 0);
+  if (exitCode !== 0) {
+    const retained = {
+      ...classified,
+      runId,
+      baselineId: classified.baselineId || baselineId,
+      retainReason: 'git_worktree_remove_failed',
+      reasons: ['git_worktree_remove_failed'],
+      removeError: removed.stderr || removed.stdout || removed.error?.message || `git worktree remove exited ${exitCode}`,
+      retentionTtlHours: 72,
+    };
+    const retentionManifestPath = await writeWorktreeRetentionManifest([retained]);
+    return {
+      schemaVersion: 'moonshot-harness-worktree-retire.v1',
+      status: 'retained',
+      reason,
+      runId,
+      baselineId,
+      worktree: retained,
+      retentionManifestPath,
+    };
+  }
+  run('git', ['worktree', 'prune'], { env: gitEnv(), expect: null });
+  return {
+    schemaVersion: 'moonshot-harness-worktree-retire.v1',
+    status: 'removed',
+    reason,
+    runId,
+    baselineId,
+    worktree: classified,
+  };
+}
+
 async function createBaselineWorktree(baselineRef, baselineId) {
   const worktreePath = path.resolve(DEFAULT_WORKTREE_ROOT, baselineId);
   if (existsSync(worktreePath)) {
@@ -2416,6 +2685,11 @@ async function initLoop(options) {
     pointerAfter,
   });
   const closeoutReceiptPath = await writeCloseoutReceipt(labResult.runId || runId, receipt);
+  const worktreeCleanup = await retireHarnessWorktree(stableRoot, {
+    runId,
+    baselineId,
+    reason: receiptStatus === 'promoted_ready_for_commit_workflow' ? 'initial_baseline_promoted' : 'initial_baseline_run_completed',
+  });
   const summary = {
     schemaVersion: 'moonshot-harness-loop-init.v1',
     status: promotion?.status === 'promoted'
@@ -2436,6 +2710,7 @@ async function initLoop(options) {
     promotionPolicy: compareResult?.promotionPolicy || null,
     promotion,
     closeoutReceiptPath,
+    worktreeCleanup,
     baselineRoot: path.resolve(DEFAULT_BASELINE_ROOT),
     currentPointerPath: promotion?.currentPointerPath || path.resolve(DEFAULT_BASELINE_ROOT, 'current.json'),
   };
@@ -2888,6 +3163,11 @@ async function calibrationLoop(options) {
     pointerAfter,
   });
   const closeoutReceiptPath = await writeCloseoutReceipt(`${runId}-candidate`, receipt);
+  const worktreeCleanup = await retireHarnessWorktree(stableRoot, {
+    runId,
+    baselineId: pointer.baselineId,
+    reason: receiptStatus === 'promoted_ready_for_commit_workflow' ? 'calibration_promoted' : 'calibration_run_completed',
+  });
   return {
     schemaVersion: 'moonshot-harness-loop-calibration.v1',
     status: compareResult.status,
@@ -2907,6 +3187,7 @@ async function calibrationLoop(options) {
     calibrationBaselineFixtureNormalization,
     promotion,
     closeoutReceiptPath,
+    worktreeCleanup,
   };
 }
 
@@ -3105,6 +3386,19 @@ async function closeoutLoop(options) {
   }
   const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
   const revalidation = await revalidateCloseoutReceipt(receipt, { receiptPath });
+  const worktreeStatus = await listHarnessWorktrees();
+  const maintenanceWarnings = revalidation.consumableByCommitWorkflow && worktreeStatus.totalCount > 0
+    ? [{
+      id: 'harness_worktree_maintenance_required',
+      status: 'maintenance_required',
+      severity: 'warning',
+      reason: 'ephemeral harness worktrees are still registered with git worktree',
+      worktreeRoot: worktreeStatus.worktreeRoot,
+      worktreeCount: worktreeStatus.totalCount,
+      prunableCount: worktreeStatus.prunableCount,
+      command: 'npm run lab:worktrees:prune -- --dry-run',
+    }]
+    : [];
   return {
     schemaVersion: 'moonshot-harness-closeout-read.v1',
     status: receipt.status,
@@ -3112,6 +3406,8 @@ async function closeoutLoop(options) {
     receiptPath,
     revalidation,
     blockingGates: revalidation.blockingGates,
+    maintenanceWarnings,
+    maintenanceRequired: maintenanceWarnings.length > 0,
     receipt,
   };
 }
@@ -3188,6 +3484,18 @@ async function main() {
     process.exitCode = closeoutExitCode(result);
     return;
   }
+  if (options.command === 'worktrees:status') {
+    print(await listHarnessWorktrees({ retainCurrent: options.retainCurrent }), options.json);
+    return;
+  }
+  if (options.command === 'worktrees:prune') {
+    const result = await pruneHarnessWorktrees({
+      dryRun: options.dryRun === true,
+      retainCurrent: options.retainCurrent === true,
+    });
+    print(result, options.json);
+    return;
+  }
   if (options.command === 'status') {
     print(await statusLoop(), options.json);
     return;
@@ -3238,6 +3546,7 @@ export {
   closeoutLoop,
   closeoutExitCode,
   cancelLoop,
+  classifyHarnessWorktree,
   dockerScript,
   deriveInstallStatus,
   initLoop,
@@ -3248,8 +3557,11 @@ export {
   normalizeInstalledRuntimeSmoke,
   normalizeCalibrationBaselineFixtureIdentity,
   patchDockerLabResult,
+  parseGitWorktreePorcelain,
   prepareDockerScript,
+  pruneHarnessWorktrees,
   refreshBaselineLoop,
+  retireHarnessWorktree,
   revalidateCloseoutReceipt,
   rewriteContainerPaths,
   runDockerAuthSmoke,
@@ -3259,6 +3571,7 @@ export {
   buildRunSpec,
   selectAutoLifecycle,
   shouldExcludeSourceSnapshotPath,
+  listHarnessWorktrees,
   runSpecHash,
   resumeLoop,
   runStatusLoop,

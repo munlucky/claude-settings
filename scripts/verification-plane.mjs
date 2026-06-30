@@ -3,7 +3,12 @@ import process from 'node:process';
 
 import {
   assessSecurityScans,
+  browserResultToPlane,
   buildCommandEvidence,
+  buildBrowserCompletionResult,
+  classifyTaskVerification,
+  normalizeBrowserConfirmationResult,
+  normalizePlaywrightResult,
   buildVerificationReceipt,
   projectVerifyScoreEvidence,
   scoreCandidate,
@@ -15,7 +20,7 @@ import {
   recordRuntimeEvent,
 } from './lib/runtime-state-store.mjs';
 
-const usage = () => `Usage: node scripts/verification-plane.mjs <record-summary|assess-security|normalize-browser-trace> [--json]`;
+const usage = () => `Usage: node scripts/verification-plane.mjs <record-summary|assess-security|normalize-browser-trace|normalize-playwright-result|normalize-browser-confirmation|classify-task|browser-result> [--json]`;
 
 const parseArgs = (argv) => {
   const [command = ''] = argv;
@@ -76,6 +81,12 @@ const main = async () => {
       requiredPlanes: options.requiredPlanesJson
         ? parseJsonOption(options.requiredPlanesJson, '--required-planes-json', [])
         : undefined,
+      taskVerificationClass: parseJsonOption(options.taskClassJson || options.taskJson, '--task-class-json', null),
+      browserCompletionResult: parseJsonOption(options.browserResultJson, '--browser-result-json', null),
+      reviewCritiqueLoopReceipt: parseJsonOption(options.reviewCritiqueLoopJson || options.reviewReceiptJson, '--review-critique-loop-json', null),
+      repairLoopReceipt: parseJsonOption(options.repairLoopJson, '--repair-loop-json', null),
+      completionClaim: options.completionClaim === 'true',
+      phaseCloseout: options.phaseCloseout === 'true',
       identity: parseJsonOption(options.identityJson, '--identity-json', {}),
       producedAt: options.producedAt,
       maxAgeMinutes: options.maxAgeMinutes || 60,
@@ -190,6 +201,75 @@ const main = async () => {
       workspaceId: options.workspaceId || '',
     });
     result = { ...trace, event };
+  } else if (options.command === 'normalize-playwright-result') {
+    const runId = requireOption(options, 'runId');
+    const goalId = requireOption(options, 'goalId');
+    const scenarioId = requireOption(options, 'scenarioId');
+    const taskVerificationClass = parseJsonOption(options.taskClassJson || options.taskJson, '--task-class-json', null);
+    const normalized = normalizePlaywrightResult({
+      repoRoot: options.repoRoot || process.cwd(),
+      runId,
+      goalId,
+      scenarioId,
+      scenario: parseJsonOption(options.scenarioJson, '--scenario-json', {}),
+      result: parseJsonOption(options.resultJson, '--result-json', {}),
+      taskVerificationClass,
+      generatedAt: options.generatedAt,
+    });
+    result = {
+      ...normalized,
+      browserPlane: browserResultToPlane(normalized.browserResult, taskVerificationClass),
+    };
+  } else if (options.command === 'normalize-browser-confirmation') {
+    const runId = requireOption(options, 'runId');
+    const goalId = requireOption(options, 'goalId');
+    const scenarioId = requireOption(options, 'scenarioId');
+    const taskVerificationClass = parseJsonOption(options.taskClassJson || options.taskJson, '--task-class-json', null);
+    const normalized = normalizeBrowserConfirmationResult({
+      repoRoot: options.repoRoot || process.cwd(),
+      runId,
+      goalId,
+      scenarioId,
+      scenario: parseJsonOption(options.scenarioJson, '--scenario-json', {}),
+      confirmation: parseJsonOption(options.confirmationJson, '--confirmation-json', {}),
+      playwrightResult: parseJsonOption(options.playwrightResultJson, '--playwright-result-json', null),
+      taskVerificationClass,
+      generatedAt: options.generatedAt,
+    });
+    result = {
+      ...normalized,
+      browserPlane: browserResultToPlane(normalized.browserResult, taskVerificationClass),
+    };
+  } else if (options.command === 'classify-task') {
+    result = classifyTaskVerification(parseJsonOption(options.taskJson, '--task-json', {}));
+  } else if (options.command === 'browser-result') {
+    const taskVerificationClass = parseJsonOption(options.taskClassJson || options.taskJson, '--task-class-json', null);
+    const browserResult = buildBrowserCompletionResult({
+      runId: requireOption(options, 'runId'),
+      goalId: requireOption(options, 'goalId'),
+      scenarioId: requireOption(options, 'scenarioId'),
+      status: options.status || 'failed',
+      failedStage: options.failedStage || '',
+      failureClass: options.failureClass || 'artifact_missing',
+      evidenceDepth: options.evidenceDepth || 'smoke',
+      sourceFingerprint: options.sourceFingerprint || '',
+      commands: parseJsonOption(options.commandsJson, '--commands-json', []),
+      artifacts: parseJsonOption(options.artifactsJson, '--artifacts-json', []),
+      repairPromptPath: options.repairPromptPath || '',
+      setupGap: options.setupGap === 'true',
+      artifactSha256: options.artifactSha256 || '',
+      generatedAt: options.generatedAt,
+      producerCommand: options.producerCommand || 'node scripts/verification-plane.mjs browser-result',
+      staleStatus: options.staleStatus || 'fresh',
+      runtimeDecisionRef: options.runtimeDecisionRef || '',
+      redactionManifest: parseJsonOption(options.redactionManifestJson, '--redaction-manifest-json', {}),
+      taskVerificationClass,
+    });
+    result = {
+      status: 'built',
+      browserResult,
+      browserPlane: browserResultToPlane(browserResult, taskVerificationClass),
+    };
   } else if (options.command === '--help' || options.command === '-h') {
     console.log(usage());
     return;

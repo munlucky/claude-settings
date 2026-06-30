@@ -1,0 +1,183 @@
+schemaVersion: 1
+reviewedPackageRoot: docs/implementation/internal-browser-completion-gate-2026-06-30
+reviewDate: 2026-06-30
+reviewMode: independent_review_critique_loop_placement_then_parent_integration
+iteration: 2
+reviewedInputs:
+  - docs/implementation/internal-browser-completion-gate-2026-06-30/00-master-plan-v1.md
+  - docs/implementation/internal-browser-completion-gate-2026-06-30/01-authority-and-result-contract-v1.md
+  - docs/implementation/internal-browser-completion-gate-2026-06-30/02-preview-fixture-runner-v1.md
+  - docs/implementation/internal-browser-completion-gate-2026-06-30/03-playwright-artifact-normalization-v1.md
+  - docs/implementation/internal-browser-completion-gate-2026-06-30/04-agentic-browser-confirmation-v1.md
+  - docs/implementation/internal-browser-completion-gate-2026-06-30/05-repair-loop-and-done-gate-v1.md
+  - docs/implementation/internal-browser-completion-gate-2026-06-30/06-closeout-validation-and-lab-promotion-v1.md
+  - scripts/lib/review-bundle.mjs
+  - schemas/review-critique-loop.schema.json
+  - tests/review-bundle-contract.test.mjs
+  - tests/review-finding-contract.test.mjs
+independentReviewers:
+  - id: review-loop-placement
+    focus: package planning-loop versus new implementation phase
+  - id: plan-writer-contract
+    focus: required review artifacts, per-document review, phase metadata, generated evidence boundaries
+  - id: review-evidence-surface
+    focus: review-bundle schemas/tests, verification-plane consumption, H0 lab exclusion
+blockingFindings:
+  - id: IBCG-REV2-001
+    finding: current package had only iter-01 but requested flow requires two critique/improve cycles
+    status: resolved_by_plan_update
+    acceptedChange: added this iter-02 artifact and updated the master review contract to require two iterations
+  - id: IBCG-REV2-002
+    finding: N was undefined and could conflict with plan-writer first-pass cap
+    status: resolved_by_plan_update
+    acceptedChange: set default reviewer count to 3 and policy to effectiveReviewerCount = min(requestedN ?? 3, 3) unless explicitly overridden
+  - id: IBCG-REV2-003
+    finding: adding a new phase only for review would duplicate the planning-loop and phase closeout surfaces
+    status: resolved_by_plan_update
+    acceptedChange: kept review-critique-loop as cross-cutting planning/Phase 05/Phase 06 gate, not Phase 07
+  - id: IBCG-REV2-004
+    finding: implementation surface should reuse existing review-bundle contracts rather than creating review authority in H0 lab
+    status: resolved_by_plan_update
+    acceptedChange: added review-bundle scripts, schemas, and tests to Phase 05 and Phase 06 planned surfaces
+  - id: IBCG-REV2-005
+    finding: package-level review artifact lacked per-document review entries for docs that change execution/evidence authority
+    status: accepted_plan_correction
+    acceptedChange: this iter-02 artifact records per-document review entries
+  - id: IBCG-REV2-006
+    finding: review finding disposition and parent resolution status were conflated
+    status: resolved_by_plan_update
+    acceptedChange: master plan now separates reviewFinding.disposition from parentResolution.status with closed enums
+  - id: IBCG-REV2-007
+    finding: review-critique-loop receipt schema was described as conditional despite Phase 05 depending on it
+    status: resolved_by_plan_update
+    acceptedChange: Phase 05 now requires closed schemas/review-critique-loop.schema.json and lists required receipt fields
+  - id: IBCG-REV2-008
+    finding: master package status still implied iteration 2 was pending after parent updates had landed
+    status: resolved_by_plan_update
+    acceptedChange: master status changed to reviewed_source_plan_ready_for_phase_01
+perDocumentReview:
+  - path: docs/implementation/internal-browser-completion-gate-2026-06-30/00-master-plan-v1.md
+    authoritySurfaceChecked: planning-loop review contract, H0 lab boundary, runtime-state completion authority
+    blockingFindings: []
+    acceptedChanges:
+      - added two-iteration review-critique-loop contract
+      - added review-bundle implementation surface
+      - kept H0 lab out of reviewer orchestration
+    remainingAmbiguity:
+      - exact runtime command surface remains Phase 01 work
+  - path: docs/implementation/internal-browser-completion-gate-2026-06-30/01-authority-and-result-contract-v1.md
+    authoritySurfaceChecked: result authority, task classification, runtime-state final completion authority
+    blockingFindings: []
+    acceptedChanges:
+      - kept browser result artifacts as evidence only
+      - preserved fail-closed classification for unknown browser or integration requirements
+      - left exact command surface selection as explicit Phase 01 implementation work
+    remainingAmbiguity:
+      - exact source command and schema names must be selected during Phase 01 implementation
+  - path: docs/implementation/internal-browser-completion-gate-2026-06-30/02-preview-fixture-runner-v1.md
+    authoritySurfaceChecked: preview startup, fixture setup, generated artifact boundaries, no live account-root mutation
+    blockingFindings: []
+    acceptedChanges:
+      - kept preview and fixture evidence under generated execution/artifact paths
+      - preserved setup-gap classification instead of treating missing runtime as clean finish
+    remainingAmbiguity:
+      - target project command discovery remains Phase 02 implementation work
+  - path: docs/implementation/internal-browser-completion-gate-2026-06-30/03-playwright-artifact-normalization-v1.md
+    authoritySurfaceChecked: deterministic Playwright pass/fail authority, artifact freshness, flaky-pass treatment
+    blockingFindings: []
+    acceptedChanges:
+      - kept Playwright assertions as deterministic pass/fail source
+      - kept flaky_pass from satisfying critical clean finish
+    remainingAmbiguity:
+      - exact Playwright runner and artifact writer wiring remains Phase 03 implementation work
+  - path: docs/implementation/internal-browser-completion-gate-2026-06-30/04-agentic-browser-confirmation-v1.md
+    authoritySurfaceChecked: agentic browser confirmation role, adapter policy, fallback evidence boundary
+    blockingFindings: []
+    acceptedChanges:
+      - kept Agent Browser CLI or Playwright MCP as final confirmation adapter target
+      - kept browserctl fallback as explicit local compatibility evidence only
+      - preserved rule that agentic confirmation cannot override failed Playwright assertions
+    remainingAmbiguity:
+      - exact adapter selection and fallback flags remain Phase 04 implementation work
+  - path: docs/implementation/internal-browser-completion-gate-2026-06-30/05-repair-loop-and-done-gate-v1.md
+    authoritySurfaceChecked: completion gate, repair loop, review evidence, verification-plane preconditions
+    blockingFindings: []
+    acceptedChanges:
+      - required review-critique-loop receipt for non-trivial and browser/integration-required closeout
+      - added two-iteration parent integration semantics
+      - added review-bundle and review-finding tests
+      - required closed review-critique-loop receipt schema and field list
+    remainingAmbiguity: []
+  - path: docs/implementation/internal-browser-completion-gate-2026-06-30/06-closeout-validation-and-lab-promotion-v1.md
+    authoritySurfaceChecked: final closeout, lab promotion, generated evidence, runtime-state accepted decision
+    blockingFindings: []
+    acceptedChanges:
+      - added iter-02 review artifact requirement
+      - added no unresolved blocking review findings criterion
+      - kept assess-completion as final completion authority
+    remainingAmbiguity: []
+  - path: scripts/lib/review-bundle.mjs
+    authoritySurfaceChecked: review bundle construction, forbidden context redaction, finding classification
+    blockingFindings: []
+    acceptedChanges:
+      - selected as implementation target for review-critique-loop receipt
+    remainingAmbiguity:
+      - schema-only producers need nested forbidden-key protection during implementation
+  - path: schemas/review-critique-loop.schema.json
+    authoritySurfaceChecked: two-iteration loop receipt, reviewer count cap, candidate/source digest matching, closeout eligibility
+    blockingFindings: []
+    acceptedChanges:
+      - selected as required Phase 05 receipt schema
+      - fields must include iterations[2], effectiveReviewerCount, reviewer ids/foci, bundleDigest, candidate_id, sourceDigest, parent resolutions, unresolved blocking count, and closeoutEligible
+    remainingAmbiguity: []
+  - path: tests/review-bundle-contract.test.mjs
+    authoritySurfaceChecked: review bundle redaction and digest tests
+    blockingFindings: []
+    acceptedChanges:
+      - selected as required targeted gate
+    remainingAmbiguity: []
+  - path: tests/review-finding-contract.test.mjs
+    authoritySurfaceChecked: finding dispositions, blocking score behavior, no source mutation
+    blockingFindings: []
+    acceptedChanges:
+      - selected as required targeted gate
+    remainingAmbiguity: []
+acceptedChanges:
+  - review-critique-loop is a cross-cutting evidence gate, not a new phase
+  - use two iterations with parent-owned integration after each iteration
+  - effectiveReviewerCount is capped at min(requestedN ?? 3, 3) under plan-writer review limits
+  - review-bundle contracts are the planned source implementation surface
+  - review-critique-loop schema is a required Phase 05 receipt contract
+  - reviewFinding.disposition is separate from parentResolution.status
+  - raw subagent outputs stay out of runtime-state and package payloads
+rejectedChanges:
+  - proposal: add Phase 07 solely for review critique
+    reason: review is a planning/closeout evidence gate; a new phase is only justified if implementing a reusable runner as product scope
+  - proposal: place reviewer orchestration inside H0 lab
+    reason: H0 must remain deterministic external promotion authority and should only test review contract requirements
+remainingAmbiguity:
+  - exact review perspectives may be narrowed by phase contract but must remain distinct
+reviewedSurfaceClassifications:
+  source_only:
+    - docs/implementation/internal-browser-completion-gate-2026-06-30/*.md
+    - docs/implementation/internal-browser-completion-gate-2026-06-30/planning-loop/*.yaml
+    - scripts/lib/review-bundle.mjs
+    - scripts/review-bundle-build.mjs
+    - schemas/review-*.schema.json
+    - tests/review-*-contract.test.mjs
+  data_or_state_migration:
+    - docs/implementation/internal-browser-completion-gate-2026-06-30/execution/**
+    - .moonshot-relay/verification-reports/**
+    - .moonshot-relay/browser-artifacts/**
+  external_deployment_or_service:
+    - Docker daemon and benchmark image runtime remains H0 runtime dependency only
+missingPolicyGates:
+  - command: npm run harness:verify
+    status: blocker_until_phase_01_selects_surface
+  - command: npm run test:e2e:smoke
+    status: blocker_until_phase_01_selects_surface
+  - command: npm run harness:browser-verify
+    status: blocker_until_phase_01_selects_surface
+finalReviewDecision:
+  status: reviewed_source_plan_ready_for_phase_01
+  notes: review-critique-loop placement is ready as planning/Phase 05/Phase 06 contract; implementation must still add schema/helper/tests and runtime evidence wiring

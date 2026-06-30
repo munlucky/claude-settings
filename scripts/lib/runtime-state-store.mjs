@@ -1066,7 +1066,10 @@ function verificationPlaneBlocker(evidencePayload) {
   }
 
   if (evidencePayload.requiredChecksPassed !== true) {
-    return evidencePayload.reason || 'verification checks did not pass';
+    const taskEvidenceBlockers = Array.isArray(evidencePayload.taskEvidenceBlockers)
+      ? evidencePayload.taskEvidenceBlockers
+      : [];
+    return taskEvidenceBlockers[0]?.reason || evidencePayload.reason || 'verification checks did not pass';
   }
 
   return '';

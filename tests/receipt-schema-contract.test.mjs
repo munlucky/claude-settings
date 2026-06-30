@@ -58,3 +58,17 @@ test('verification receipt requires command evidence', async () => {
   assert.equal(schema.properties.commands.minItems, 1);
   assert.deepEqual(schema.$defs.commandEvidence.required, ['argv', 'cwd', 'exitCode', 'startedAt', 'endedAt']);
 });
+
+test('browser completion result schema is evidence-only and closed', async () => {
+  const schema = await readSchema('browser-completion-result.schema.json');
+
+  assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
+  assert.equal(schema.type, 'object');
+  assert.equal(schema.additionalProperties, false);
+  assert.ok(schema.required.includes('completionAuthority'));
+  assert.ok(schema.required.includes('authoritySource'));
+  assert.equal(schema.properties.completionAuthority.const, false);
+  assert.equal(schema.properties.authoritySource.const, 'evidence_only');
+  assert.deepEqual(schema.properties.status.enum, ['clean_pass', 'flaky_pass', 'failed', 'setup_gap']);
+  assert.ok(schema.properties.failureClass.enum.includes('playwright_assertion_failed'));
+});

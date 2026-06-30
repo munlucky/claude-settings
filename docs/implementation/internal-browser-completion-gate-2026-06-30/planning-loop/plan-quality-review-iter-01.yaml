@@ -1,0 +1,81 @@
+schemaVersion: 1
+reviewedPackageRoot: docs/implementation/internal-browser-completion-gate-2026-06-30
+reviewDate: 2026-06-30
+reviewMode: independent_agent_sidecar
+reviewers:
+  - id: requirements-review
+    focus: scheduler exclusion, browser/integration before done, Playwright authority, repair loop, operator flow
+  - id: authority-review
+    focus: runtime-state completion authority, H0 lab authority, generated evidence boundary
+  - id: plan-contract-review
+    focus: plan-writer contract completeness, surface classification, policy-sourced gates
+blockingFindings:
+  - id: IBCG-REV-001
+    finding: planning-loop review artifact was missing
+    status: resolved_by_plan_update
+    acceptedChange: added this review artifact and referenced it from the master plan package metadata
+  - id: IBCG-REV-002
+    finding: browser and integration evidence requirement was not fail-closed for UI or API integration work
+    status: resolved_by_plan_update
+    acceptedChange: added task classification contract with requiresBrowserEvidence, requiresIntegrationEvidence, criticalScenario, waiver, and fail-closed defaults
+  - id: IBCG-REV-003
+    finding: final browser adapter choice was ambiguous against the Agent Browser or Playwright MCP objective
+    status: resolved_by_plan_update
+    acceptedChange: made Agent Browser CLI or Playwright MCP the final confirmation adapter and demoted browserctl to explicit legacy/local fallback
+  - id: IBCG-REV-004
+    finding: H0 lab closeout could be read as final completion authority
+    status: resolved_by_plan_update
+    acceptedChange: added verification-plane record-summary and runtime-state assess-completion accepted decision to operator and phase 06 closeout
+  - id: IBCG-REV-005
+    finding: generated execution evidence was accidentally covered by source-only plan package glob
+    status: resolved_by_plan_update
+    acceptedChange: split source plan docs and planning-loop artifacts from execution, close, and archive generated evidence paths
+  - id: IBCG-REV-006
+    finding: Dockerfile.harness-lab was misclassified as external service
+    status: resolved_by_plan_update
+    acceptedChange: reclassified Dockerfile.harness-lab as source_only and left Docker daemon/image runtime as external_deployment_or_service
+  - id: IBCG-REV-007
+    finding: phase metadata missed conflicts, staged paths, adoption targets, and live mutation policy
+    status: accepted_plan_correction
+    acceptedChange: phase docs updated to include these fields
+  - id: IBCG-REV-008
+    finding: gate sourcing was not precise enough and planned commands were not typed blockers
+    status: resolved_by_plan_update
+    acceptedChange: added a gate source table and marked harness:verify, test:e2e:smoke, and harness:browser-verify as blockers until phase 01 selects a surface
+acceptedChanges:
+  - runtime-state accepted completion is required for whole-plan clean completion claims
+  - lab closeout remains commit-workflow consumption evidence only
+  - no_regression is the default product safety promotion; strict_improvement is optional until new measurable metrics exist
+  - auth smoke remains separate from benchmark scoring and improvement proof
+  - generated browser and lab artifacts are command-written evidence only and are not package payload
+rejectedChanges:
+  - proposal: make browserctl the primary final confirmation backend
+    reason: user objective named Agent Browser or Playwright MCP for final agentic confirmation; browserctl remains compatibility fallback only
+remainingAmbiguity:
+  - exact command surface is intentionally phase 01 work
+  - target-project static, build, preview, and fixture commands are configured per target project and cannot be hard-coded in this generic plan
+  - non-critical smoke-only sufficiency requires explicit task classification or waiver
+reviewedSurfaceClassifications:
+  source_only:
+    - plan docs and planning-loop review artifact
+    - verification contract, scripts, tests, docs, package.json, Dockerfile.harness-lab if edited
+  data_or_state_migration:
+    - docs/implementation/.../execution/**
+    - docs/implementation/.../close/**
+    - docs/implementation/.../archive/**
+    - .moonshot-relay/browser-artifacts/**
+    - .moonshot-relay/harness-lab/**
+  installed_profile_or_account_root:
+    - account roots are read-only and out of scope
+  external_deployment_or_service:
+    - Docker daemon and benchmark image runtime only
+missingPolicyGates:
+  - command: npm run harness:verify
+    status: blocker_until_phase_01_selects_surface
+  - command: npm run test:e2e:smoke
+    status: blocker_until_phase_01_selects_surface
+  - command: npm run harness:browser-verify
+    status: blocker_until_phase_01_selects_surface
+finalReviewDecision:
+  status: pass_after_accepted_plan_updates
+  notes: package is ready as a reviewed source-local plan; implementation execution still requires phase-local review and evidence

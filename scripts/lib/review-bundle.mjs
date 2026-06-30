@@ -6,6 +6,9 @@ const FORBIDDEN_KEYS = new Set([
   'selfEvaluation',
   'chatHistory',
   'conversation',
+  'rawPrompt',
+  'transcript',
+  'prompt',
 ]);
 
 const scanForbidden = (value, path = []) => {
@@ -72,6 +75,338 @@ export const classifyFinding = (finding = {}) => {
     blocksFullScore,
     summary: finding.summary || '',
   };
+};
+
+export const REVIEW_RESOLUTION_STATUSES = [
+  'accepted',
+  'rejected_with_evidence',
+  'deferred_with_blocker',
+  'blocking_tracked',
+];
+
+const unique = (values = []) => [...new Set(values.filter(Boolean))];
+
+export const buildReviewCritiqueLoopReceipt = ({
+  candidate_id,
+  sourceDigest,
+  bundleDigest,
+  iterations = [],
+  parentResolutions = [],
+  generatedAt = new Date().toISOString(),
+} = {}) => {
+  const normalizedIterations = iterations.map((iteration, index) => ({
+    iteration: Number(iteration.iteration || index + 1),
+    reviewers: (iteration.reviewers || []).map((reviewer) => ({
+      reviewerId: String(reviewer.reviewerId || reviewer.id || ''),
+      focus: String(reviewer.focus || reviewer.perspective || ''),
+    })),
+  }));
+  const reviewerIds = unique(normalizedIterations.flatMap((iteration) => iteration.reviewers.map((reviewer) => reviewer.reviewerId)));
+  const normalizedResolutions = parentResolutions.map((resolution) => ({
+    findingId: String(resolution.findingId || ''),
+    status: String(resolution.status || ''),
+    evidence: String(resolution.evidence || ''),
+    blockerId: String(resolution.blockerId || ''),
+  }));
+  const unresolvedBlockingCount = normalizedResolutions
+    .filter((resolution) => ['deferred_with_blocker', 'blocking_tracked'].includes(resolution.status))
+    .length;
+  const closeoutEligible = normalizedIterations.length === 2
+    && reviewerIds.length >= 2
+    && unresolvedBlockingCount === 0
+    && normalizedResolutions.every((resolution) => REVIEW_RESOLUTION_STATUSES.includes(resolution.status));
+  const receipt = {
+    schemaVersion: 1,
+    artifactId: 'REVIEW_CRITIQUE_LOOP_RECEIPT',
+    candidate_id,
+    sourceDigest,
+    bundleDigest,
+    effectiveReviewerCount: reviewerIds.length,
+    reviewerIds,
+    iterations: normalizedIterations,
+    parentResolutions: normalizedResolutions,
+    unresolvedBlockingCount,
+    closeoutEligible,
+    generatedAt,
+  };
+  return {
+    ...receipt,
+    receiptDigest: digestForReviewCritiqueLoopReceipt(receipt),
+  };
+};
+
+export const normalizeReviewCritiqueLoopReceipt = (receipt = {}) => ({
+  schemaVersion: receipt.schemaVersion,
+  artifactId: receipt.artifactId,
+  candidate_id: receipt.candidate_id,
+  sourceDigest: receipt.sourceDigest,
+  bundleDigest: receipt.bundleDigest,
+  effectiveReviewerCount: receipt.effectiveReviewerCount,
+  reviewerIds: Array.isArray(receipt.reviewerIds) ? receipt.reviewerIds.map(String) : [],
+  iterations: Array.isArray(receipt.iterations)
+    ? receipt.iterations.map((iteration) => ({
+      iteration: Number(iteration.iteration),
+      reviewers: Array.isArray(iteration.reviewers)
+        ? iteration.reviewers.map((reviewer) => ({
+          reviewerId: String(reviewer.reviewerId || ''),
+          focus: String(reviewer.focus || ''),
+        }))
+        : [],
+    }))
+    : [],
+  parentResolutions: Array.isArray(receipt.parentResolutions)
+    ? receipt.parentResolutions.map((resolution) => ({
+      findingId: String(resolution.findingId || ''),
+      status: String(resolution.status || ''),
+      evidence: String(resolution.evidence || ''),
+      blockerId: String(resolution.blockerId || ''),
+    }))
+    : [],
+  unresolvedBlockingCount: Number(receipt.unresolvedBlockingCount || 0),
+  closeoutEligible: receipt.closeoutEligible === true,
+  generatedAt: String(receipt.generatedAt || ''),
+  receiptDigest: String(receipt.receiptDigest || ''),
+});
+
+const digestForReviewCritiqueLoopReceipt = (receipt = {}) => {
+  const normalized = normalizeReviewCritiqueLoopReceipt(receipt);
+  const { receiptDigest: _receiptDigest, ...digestInput } = normalized;
+  return sha256Hex(digestInput);
+};
+
+export const reviewCritiqueLoopBlockers = ({
+  receipt = null,
+  required = true,
+  candidate_id = '',
+  sourceDigest = '',
+  bundleDigest = '',
+} = {}) => {
+  if (!required) return [];
+  if (!receipt || typeof receipt !== 'object') {
+    return [{ code: 'review_critique_loop_missing', reason: 'missing review-critique-loop receipt' }];
+  }
+  const forbidden = scanForbidden(receipt);
+  if (forbidden.length > 0) {
+    return [{ code: 'review_critique_loop_forbidden_context', reason: `review-critique-loop contains forbidden context: ${forbidden.join(', ')}` }];
+  }
+  const allowedKeys = new Set([
+    'schemaVersion',
+    'artifactId',
+    'candidate_id',
+    'sourceDigest',
+    'bundleDigest',
+    'effectiveReviewerCount',
+    'reviewerIds',
+    'iterations',
+    'parentResolutions',
+    'unresolvedBlockingCount',
+    'closeoutEligible',
+    'generatedAt',
+    'receiptDigest',
+  ]);
+  const blockers = [];
+  for (const key of Object.keys(receipt)) {
+    if (!allowedKeys.has(key)) {
+      blockers.push({ code: 'review_critique_loop_unknown_field', reason: `review-critique-loop contains unknown field: ${key}` });
+    }
+  }
+  if (receipt.artifactId !== 'REVIEW_CRITIQUE_LOOP_RECEIPT') {
+    blockers.push({ code: 'review_critique_loop_invalid', reason: 'invalid review-critique-loop artifact' });
+  }
+  if (receipt.receiptDigest !== digestForReviewCritiqueLoopReceipt(receipt)) {
+    blockers.push({ code: 'review_critique_loop_digest_mismatch', reason: 'review-critique-loop digest mismatch' });
+  }
+  if (candidate_id && receipt.candidate_id !== candidate_id) {
+    blockers.push({ code: 'review_critique_loop_candidate_mismatch', reason: 'review-critique-loop candidate mismatch' });
+  }
+  if (sourceDigest && receipt.sourceDigest !== sourceDigest) {
+    blockers.push({ code: 'review_critique_loop_source_mismatch', reason: 'review-critique-loop source digest mismatch' });
+  }
+  if (bundleDigest && receipt.bundleDigest !== bundleDigest) {
+    blockers.push({ code: 'review_critique_loop_bundle_mismatch', reason: 'review-critique-loop bundle digest mismatch' });
+  }
+  if (!Array.isArray(receipt.iterations) || receipt.iterations.length !== 2) {
+    blockers.push({ code: 'review_critique_loop_iteration_count', reason: 'review-critique-loop requires exactly two iterations' });
+  }
+  const reviewerIds = Array.isArray(receipt.reviewerIds) ? unique(receipt.reviewerIds.map(String)) : [];
+  const derivedReviewerIds = unique((Array.isArray(receipt.iterations) ? receipt.iterations : [])
+    .flatMap((iteration) => (iteration.reviewers || []).map((reviewer) => String(reviewer.reviewerId || ''))));
+  const sortedClaimed = [...reviewerIds].sort();
+  const sortedDerived = [...derivedReviewerIds].sort();
+  if (JSON.stringify(sortedClaimed) !== JSON.stringify(sortedDerived)) {
+    blockers.push({ code: 'review_critique_loop_reviewer_set_mismatch', reason: 'reviewerIds must match reviewers derived from iterations' });
+  }
+  if (Number(receipt.effectiveReviewerCount || 0) !== derivedReviewerIds.length) {
+    blockers.push({ code: 'review_critique_loop_reviewer_count_mismatch', reason: 'effectiveReviewerCount must equal unique reviewers derived from iterations' });
+  }
+  if (derivedReviewerIds.length < 2) {
+    blockers.push({ code: 'review_critique_loop_reviewer_count', reason: 'review-critique-loop requires at least two independent reviewers' });
+  }
+  for (const iteration of Array.isArray(receipt.iterations) ? receipt.iterations : []) {
+    if (!Array.isArray(iteration.reviewers) || iteration.reviewers.length === 0) {
+      blockers.push({ code: 'review_critique_loop_iteration_reviewers', reason: `review iteration ${iteration.iteration || '?'} has no reviewers` });
+    }
+    for (const reviewer of iteration.reviewers || []) {
+      if (!reviewer.reviewerId || !reviewer.focus) {
+        blockers.push({ code: 'review_critique_loop_reviewer_metadata', reason: 'reviewer id and focus are required' });
+      }
+    }
+  }
+  for (const resolution of Array.isArray(receipt.parentResolutions) ? receipt.parentResolutions : []) {
+    if (!REVIEW_RESOLUTION_STATUSES.includes(resolution.status)) {
+      blockers.push({ code: 'review_critique_loop_resolution_status', reason: 'review resolution status is outside contract enum' });
+    }
+    if (resolution.status === 'rejected_with_evidence' && !resolution.evidence) {
+      blockers.push({ code: 'review_critique_loop_resolution_evidence', reason: 'rejected review finding requires evidence' });
+    }
+    if (['deferred_with_blocker', 'blocking_tracked'].includes(resolution.status) && !resolution.blockerId) {
+      blockers.push({ code: 'review_critique_loop_blocker_missing', reason: 'blocking review resolution requires blockerId' });
+    }
+  }
+  const derivedUnresolvedBlockingCount = (Array.isArray(receipt.parentResolutions) ? receipt.parentResolutions : [])
+    .filter((resolution) => ['deferred_with_blocker', 'blocking_tracked'].includes(resolution.status))
+    .length;
+  if (Number(receipt.unresolvedBlockingCount || 0) !== derivedUnresolvedBlockingCount) {
+    blockers.push({ code: 'review_critique_loop_blocking_count_mismatch', reason: 'unresolvedBlockingCount must match parent resolutions' });
+  }
+  const derivedCloseoutEligible = Array.isArray(receipt.iterations)
+    && receipt.iterations.length === 2
+    && derivedReviewerIds.length >= 2
+    && derivedUnresolvedBlockingCount === 0
+    && (Array.isArray(receipt.parentResolutions) ? receipt.parentResolutions : [])
+      .every((resolution) => REVIEW_RESOLUTION_STATUSES.includes(resolution.status));
+  if (receipt.closeoutEligible !== derivedCloseoutEligible) {
+    blockers.push({ code: 'review_critique_loop_closeout_eligibility_mismatch', reason: 'closeoutEligible must be derived from receipt contents' });
+  }
+  if (derivedUnresolvedBlockingCount > 0) {
+    blockers.push({ code: 'review_critique_loop_unresolved_blocking', reason: 'review-critique-loop has unresolved blocking findings' });
+  }
+  if (receipt.closeoutEligible !== true) {
+    blockers.push({ code: 'review_critique_loop_not_eligible', reason: 'review-critique-loop is not closeout eligible' });
+  }
+  return blockers;
+};
+
+export const buildRepairPrompt = ({
+  scenarioId,
+  originalScenarioId = scenarioId,
+  rerunScenarioId = scenarioId,
+  failedStep,
+  failureClass,
+  failedAssertionIds = [],
+  consoleSummary = {},
+  networkSummary = {},
+  artifacts = [],
+  prohibitedRepairActions = [],
+  rerunCommand,
+  maxRepairAttempts = 2,
+  attemptIndex = 1,
+} = {}) => {
+  const requiredProhibitions = [
+    'do not delete or weaken failing assertions',
+    'do not change expected behavior without a tracked blocker',
+    'do not skip required browser or integration tests',
+  ];
+  const finalProhibitions = unique([...requiredProhibitions, ...prohibitedRepairActions.map(String)]);
+  const boundedMaxRepairAttempts = Math.max(1, Math.min(2, Number(maxRepairAttempts) || 2));
+  const lines = [
+    '# Repair Prompt',
+    '',
+    `- scenarioId: ${scenarioId || 'unknown'}`,
+    `- originalScenarioId: ${originalScenarioId || scenarioId || 'unknown'}`,
+    `- rerunScenarioId: ${rerunScenarioId || 'unknown'}`,
+    `- failedStep: ${failedStep || 'unknown'}`,
+    `- failureClass: ${failureClass || 'unknown'}`,
+    `- failedAssertionIds: ${failedAssertionIds.join(', ') || 'none'}`,
+    `- attemptIndex: ${Number(attemptIndex) || 1}`,
+    `- maxRepairAttempts: ${boundedMaxRepairAttempts}`,
+    `- rerunCommand: ${rerunCommand || 'rerun the same scenarioId with the original assertions'}`,
+    '',
+    '## Console Summary',
+    JSON.stringify(consoleSummary || {}, null, 2),
+    '',
+    '## Network Summary',
+    JSON.stringify(networkSummary || {}, null, 2),
+    '',
+    '## Artifact Paths',
+    ...(artifacts || []).map((artifact) => `- ${artifact.path || artifact}`),
+    '',
+    '## Prohibited Repair Actions',
+    ...finalProhibitions.map((action) => `- ${action}`),
+  ];
+  return {
+    schemaVersion: 1,
+    artifactId: 'REPAIR_PROMPT',
+    scenarioId: scenarioId || '',
+    originalScenarioId: originalScenarioId || scenarioId || '',
+    rerunScenarioId: rerunScenarioId || '',
+    failedStep: failedStep || '',
+    failureClass: failureClass || '',
+    failedAssertionIds,
+    attemptIndex: Number(attemptIndex) || 1,
+    maxRepairAttempts: boundedMaxRepairAttempts,
+    rerunCommand: rerunCommand || '',
+    artifacts,
+    prohibitedRepairActions: finalProhibitions,
+    prompt: `${lines.join('\n')}\n`,
+  };
+};
+
+export const buildRepairLoopReceipt = ({
+  scenarioId,
+  originalScenarioId = scenarioId,
+  rerunScenarioId = scenarioId,
+  failedAssertionIds = [],
+  preservedAssertionIds = failedAssertionIds,
+  attemptIndex = 1,
+  maxRepairAttempts = 2,
+  status = 'ready_for_rerun',
+  artifactLinks = [],
+} = {}) => {
+  const boundedMaxRepairAttempts = Math.max(1, Math.min(2, Number(maxRepairAttempts) || 2));
+  const normalized = {
+    schemaVersion: 1,
+    artifactId: 'REPAIR_LOOP_RECEIPT',
+    scenarioId: scenarioId || '',
+    originalScenarioId: originalScenarioId || scenarioId || '',
+    rerunScenarioId: rerunScenarioId || '',
+    failedAssertionIds: failedAssertionIds.map(String),
+    preservedAssertionIds: preservedAssertionIds.map(String),
+    attemptIndex: Number(attemptIndex) || 1,
+    maxRepairAttempts: boundedMaxRepairAttempts,
+    status,
+    artifactLinks,
+  };
+  return {
+    ...normalized,
+    receiptDigest: sha256Hex(normalized),
+  };
+};
+
+export const repairLoopBlockers = ({ receipt = null, required = false } = {}) => {
+  if (!required) return [];
+  if (!receipt || typeof receipt !== 'object') {
+    return [{ code: 'repair_loop_missing', reason: 'missing repair loop receipt' }];
+  }
+  const blockers = [];
+  if (receipt.artifactId !== 'REPAIR_LOOP_RECEIPT') {
+    blockers.push({ code: 'repair_loop_invalid', reason: 'invalid repair loop receipt' });
+  }
+  if (Number(receipt.maxRepairAttempts || 0) > 2) {
+    blockers.push({ code: 'repair_loop_attempt_budget_invalid', reason: 'maxRepairAttempts cannot exceed 2' });
+  }
+  if (receipt.status === 'repair_exhausted' || Number(receipt.attemptIndex || 0) > Number(receipt.maxRepairAttempts || 0)) {
+    blockers.push({ code: 'repair_exhausted', reason: 'repair loop exhausted' });
+  }
+  if (receipt.originalScenarioId !== receipt.rerunScenarioId) {
+    blockers.push({ code: 'repair_scenario_mismatch', reason: 'repair rerun must use the same scenarioId' });
+  }
+  const preserved = new Set((receipt.preservedAssertionIds || []).map(String));
+  const missingAssertions = (receipt.failedAssertionIds || []).filter((id) => !preserved.has(String(id)));
+  if (missingAssertions.length > 0) {
+    blockers.push({ code: 'repair_assertion_ids_changed', reason: 'repair rerun must preserve failing assertion ids' });
+  }
+  return blockers;
 };
 
 export const reviewOutcomeEvidence = ({

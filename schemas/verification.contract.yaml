@@ -48,6 +48,39 @@ checkPolicies:
       profileRequiredPlanes: [unit, package, installer, browser, security, quality]
     completionAuthorityRequiredPlanes: [unit, package, installer, browser, security, quality]
     requiredPlanesOverrideScope: "summary_only"
+  taskVerificationClass:
+    fields:
+      - requiresBrowserEvidence
+      - requiresIntegrationEvidence
+      - criticalScenario
+      - waiver.allowed
+      - waiver.reason
+      - waiver.approvedBy
+    unknownTaskClass: needs_classification
+    failClosedDefaults:
+      ui_or_frontend_change:
+        requiresBrowserEvidence: true
+        requiresIntegrationEvidence: false
+        criticalScenario: true
+      route_or_api_integration_change:
+        requiresBrowserEvidence: false
+        requiresIntegrationEvidence: true
+        criticalScenario: true
+      docs_only:
+        requiresBrowserEvidence: false
+        requiresIntegrationEvidence: false
+        criticalScenario: false
+    waiverPolicy: "A waiver must include reason and approvedBy; incomplete waivers block task-local completion."
+  browserCompletionResult:
+    schema: "schemas/browser-completion-result.schema.json"
+    reservedPath: ".moonshot-relay/browser-artifacts/<runId>/<scenarioId>/browser-completion-result.v1.json"
+    artifactId: "BROWSER_COMPLETION_RESULT"
+    completionAuthority: false
+    authoritySource: "evidence_only"
+    cleanStatus: "clean_pass"
+    nonCleanStatuses: [flaky_pass, failed, setup_gap]
+    criticalScenarioSmokeOnly: block
+    criticalScenarioFlakyPass: block
   verificationOverrideAllowlist:
     policy: "project-native commands only"
     allowedCommandPrefixes:

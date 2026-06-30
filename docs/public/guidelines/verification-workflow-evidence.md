@@ -16,6 +16,9 @@ This guideline owns workflow evidence closeout policy for `completion-verifier`.
 - In-scope `REQ-*` rows need implementation and verification evidence or a blocker.
 - Critical `SCN-*` rows need fresh runtime, browser, generated artifact, or E2E evidence.
 - Smoke-only evidence for critical scenarios is warning evidence, not clean-finish evidence.
+- Browser completion result artifacts are verification-plane inputs only; runtime-state `assess-completion` remains the accepted completion authority.
+- Agentic browser confirmation is a semantic review evidence layer after deterministic Playwright evidence. It cannot replace Playwright failures, mutate scenario expectations, or claim completion authority.
+- Review-critique-loop receipts are semantic review evidence only. Completion claims and phase closeout must fail closed when the receipt is missing, tampered, blocking, mismatched to the candidate/source/bundle, or contaminated with raw prompts or transcripts.
 - `uat_ready` and `uat_complete` are separate. Automation can establish readiness, not human completion.
 
 ## Architecture Evidence

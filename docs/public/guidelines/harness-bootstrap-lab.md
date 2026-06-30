@@ -63,6 +63,18 @@ npm run lab:closeout
   worktrees/baseline-0001/
 ```
 
+Baseline and calibration worktrees are ephemeral execution state, not authority evidence. The durable evidence is the baseline manifest, candidate summary, compare report, run kernel, event ledger, and closeout receipt under `baselines/**`, `runs/**`, and `compare/**`. Successful bootstrap or calibration runs remove their detached baseline worktree after those artifacts are written. Failed, dirty, or operator-retained worktrees are kept only as short-lived diagnostic state with a retention manifest.
+
+Worktree maintenance commands:
+
+```powershell
+npm run lab:worktrees:status
+npm run lab:worktrees:prune -- --dry-run
+npm run lab:worktrees:prune
+```
+
+The prune command only targets detached worktrees under `.moonshot-relay/harness-lab/worktrees/**`. It refuses to remove branch worktrees, dirty or untracked worktrees, and anything outside the harness worktree root. Removal goes through `git worktree remove <path>` followed by `git worktree prune`; it does not delete worktree directories directly. `lab:closeout` may report `maintenance_required` warnings when old generated worktrees remain, but these warnings do not make an otherwise valid `consumableByCommitWorkflow=true` receipt non-consumable.
+
 `lab:auto` is the normal product-level lifecycle entrypoint. If `baselines/current.json` is missing, it selects `initial_bootstrap`, runs baseline and candidate Docker benchmarks, compares them, and promotes a passing candidate as the first current baseline. If the current baseline exists, it selects `candidate_only`, runs only the candidate Docker benchmark, compares against the stored baseline artifact, and writes `runs/<candidate-id>/candidate-summary.json` plus `runs/<candidate-id>/lab-closeout-receipt.json`. `lab:auto:promote` is the explicit promotion variant for existing-baseline candidate runs. Use the `:no-regression` and `:strict` script aliases when an automation needs the policy in the command name instead of relying on the default.
 
 `lab:candidate` runs only a candidate container and compares it with `baselines/current.json`. `lab:candidate:promote` additionally promotes a passing candidate to the next baseline id. `lab:candidate:promote:strict` requires a positive score delta under `strict_improvement`; `lab:candidate:promote:no-regression` allows equal score when all regression gates pass. Host execution is retained for diagnostics through `npm run lab:init:host`, `npm run lab:candidate:host`, and `npm run lab:candidate:promote:host`.

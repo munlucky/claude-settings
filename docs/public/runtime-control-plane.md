@@ -228,6 +228,52 @@ node scripts/verification-plane.mjs normalize-browser-trace \
   --json
 ```
 
+Playwright smoke and integration results are normalized into `BROWSER_COMPLETION_RESULT` evidence:
+
+```sh
+node scripts/verification-plane.mjs normalize-playwright-result \
+  --run-id <runId> \
+  --goal-id <goalId> \
+  --scenario-id <scenarioId> \
+  --scenario-json '<json>' \
+  --result-json '<json>' \
+  --json
+```
+
+The normalizer treats missing required artifacts as `artifact_missing`, critical console errors and 5xx or failed network responses as `playwright_assertion_failed`, and retries as `flaky_pass`. A `flaky_pass` or smoke-only result for a critical scenario is browser evidence, but it is not clean-finish evidence. Agentic browser confirmation can add evidence after Playwright, but cannot override failed Playwright assertions.
+
+Agentic browser confirmation is normalized as a second browser evidence layer after Playwright:
+
+```sh
+node scripts/verification-plane.mjs normalize-browser-confirmation \
+  --run-id <runId> \
+  --goal-id <goalId> \
+  --scenario-id <scenarioId> \
+  --scenario-json '<json>' \
+  --playwright-result-json '<json>' \
+  --confirmation-json '<json>' \
+  --json
+```
+
+The confirmation adapter may be `agent-browser`, `playwright-mcp`, or explicitly recorded local `browserctl` fallback evidence. It must report observed URL, expected text match, expected role/name affordance, screenshot, accessibility snapshot or equivalent structured snapshot, and console/network summary when available. Unsupported or unavailable backends are setup gaps; missing screenshots or snapshots are artifact failures; failed console/network summaries are browser confirmation failures. Adapter output cannot redefine the scenario expectations, cannot claim completion authority, and cannot turn failed, flaky, or setup-gap Playwright evidence into `clean_pass`.
+
+Review-critique-loop evidence is required for browser/integration-required tasks, critical scenarios, phase closeout, and explicit completion claims:
+
+```sh
+node scripts/verification-plane.mjs record-summary \
+  --run-id <runId> \
+  --goal-id <goalId> \
+  --planes-json '<json>' \
+  --task-class-json '<json>' \
+  --review-critique-loop-json '<REVIEW_CRITIQUE_LOOP_RECEIPT>' \
+  --completion-claim true \
+  --json
+```
+
+The receipt is a closed semantic evidence projection. It records exactly two review iterations, reviewer ids and foci, parent dispositions, candidate/source/bundle digests, and derived closeout eligibility. Raw prompts, transcripts, chat history, hidden reasoning, and self-evaluation are forbidden. A missing, mismatched, tampered, blocking, or non-eligible receipt makes `requiredChecksPassed=false`, so `assess-completion` remains rejected.
+
+Repair-loop evidence must preserve the same `scenarioId`, failing assertion ids, artifact links, and the original rerun command. `maxRepairAttempts` defaults to `2` and cannot be raised by the prompt. Exhausted repair loops use `repair_exhausted` evidence and block clean completion until a tracked blocker or accepted fix exists.
+
 Security evidence is assessed from CodeQL, dependency review, Dependabot, and secret scanning status:
 
 ```sh

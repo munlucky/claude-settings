@@ -173,6 +173,8 @@ test('runtime status exposes normalized latest verification evidence projection'
       { plane: 'package', status: 'passed', command: 'doc payload check', rawLog: 'not surfaced' },
       { plane: 'quality', status: 'passed', command: 'git diff --check', rawLog: 'not surfaced' },
     ]),
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
     '--identity-json',
     '{"runLeaseId":"lease-latest-verification"}',
     '--json',

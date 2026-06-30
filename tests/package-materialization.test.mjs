@@ -74,6 +74,7 @@ const requiredCommonPayloadFiles = [
   'rules/workflow.md',
   'rules/workflow-bundles.yaml',
   'schemas/verification.contract.yaml',
+  'schemas/browser-completion-result.schema.json',
   'schemas/context-pack.schema.json',
   'schemas/awtl-testcase-candidate-v1.schema.json',
   'schemas/improvement-candidate-v1.schema.json',
@@ -171,6 +172,7 @@ const requiredConcreteCodexFiles = [
 
 const generatedStateFragments = [
   '.moonshot-relay/',
+  '.moonshot-relay/harness-lab/',
   '.moonshot-state/',
   '.claude/state/',
   '/logs/',
@@ -201,6 +203,27 @@ const generatedStateFragments = [
   '.test.py',
 ];
 
+const phase06GeneratedArtifactFragments = [
+  '.moonshot-relay/browser-artifacts/',
+  '.moonshot-relay/harness-lab/',
+  '.moonshot-relay/eval-artifacts/',
+  '.moonshot-relay/verification-reports/',
+  '.moonshot-state/browser-artifacts/',
+  '.claude/browser-artifacts/',
+  '.claude/sandbox-artifacts/',
+  'screenshots/',
+  'videos/',
+  'traces/',
+  'reports/',
+  'verification-verdict-',
+  'runtime-verdict-',
+  'browser-flow-verdict-',
+  'lab-closeout-receipt.json',
+  'candidate-summary.json',
+  'lab-result.json',
+  'events.jsonl',
+];
+
 const obsoleteWorkflowScriptExclusions = [
   '.claude/archive/scripts/legacy-phase-adapters/agent-loop.mjs',
   '.claude/archive/scripts/legacy-phase-adapters/verify-code-policy.mjs',
@@ -222,6 +245,10 @@ const runtimeStateDenylistExamples = [
   '.moonshot-relay/cache/code-review-graph-native-mcp-cache.json',
   '.moonshot-relay/traces/self-test/agent_work_trace.jsonl',
   '.moonshot-relay/browser-artifacts/session/output.json',
+  '.moonshot-relay/harness-lab/runs/candidate-001/candidate-summary.json',
+  '.moonshot-relay/harness-lab/runs/candidate-001/lab-result.json',
+  '.moonshot-relay/harness-lab/runs/candidate-001/lab-closeout-receipt.json',
+  '.moonshot-relay/harness-lab/runs/candidate-001/events.jsonl',
   '.moonshot-relay/eval-artifacts/harness-control-plane/scorecard.json',
   '.moonshot-relay/verification-reports/run/output.json',
   '.moonshot-relay/memorygraph/memory.db',
@@ -367,12 +394,13 @@ test('Codex MCP config resolves shared scripts through Moonshot Relay home', asy
 
 test('excludes runtime state from package payloads and local-only artifacts', async () => {
   const files = [
+    ...await listFiles(await commonProfile(), 'moonshot-relay'),
     ...await listFiles(await claudeProfile(), '.claude'),
     ...await listFiles(await codexProfile(), '.codex'),
   ];
 
   for (const file of files) {
-    for (const fragment of generatedStateFragments) {
+    for (const fragment of phase06GeneratedArtifactFragments) {
       assert.equal(
         matchesGeneratedStateFragment(file, fragment),
         false,
@@ -403,6 +431,7 @@ test('excludes runtime state roots from package materialization denylist', () =>
 test('package materialization contract names generated payload roots and exclusions', async () => {
   const contract = await readFile(fromRoot('package/package-contract.yaml'), 'utf8');
   assert.match(contract, /generatedProfileRoot: package\/moonshot-relay\/profile\//);
+  assert.match(contract, /generatedCopyPolicy: ignored_generated_package_payload/);
   assert.match(contract, /templateRoot: package\/profile-templates\/claude\/\.claude\//);
   assert.match(contract, /templateRoot: package\/profile-templates\/codex\/\.codex\//);
   assert.match(contract, /generatedProfileRoot: package\/claude\/profile\/\.claude\//);
@@ -448,6 +477,7 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   const payload = JSON.parse(result.stdout);
   const plannedFrom = payload.runtimes.flatMap((runtime) => runtime.planned.map((entry) => entry.from));
   const plannedTo = payload.runtimes.flatMap((runtime) => runtime.planned.map((entry) => entry.to));
+  const plannedPaths = [...plannedFrom, ...plannedTo];
 
   assert.ok(plannedFrom.includes('scripts/verification-verdict-state.mjs'));
   assert.ok(plannedFrom.includes('skills/completion-verifier/SKILL.md'));
@@ -482,6 +512,14 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.equal(plannedTo.some((target) => /\.claude\/verification-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/runtime-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/browser-flow-verdict-[^/]*\.json$/.test(target)), false);
+
+  for (const fragment of phase06GeneratedArtifactFragments) {
+    assert.equal(
+      plannedPaths.some((target) => matchesGeneratedStateFragment(target, fragment)),
+      false,
+      `dry-run plan should exclude generated artifact fragment ${fragment}`,
+    );
+  }
 });
 
 test('package smoke runs materialized runtime-state from package home', async () => {

@@ -47,7 +47,7 @@ test('autofix disposition requires a new candidate id', () => {
 });
 
 test('review schemas are parseable closed contracts', async () => {
-  for (const name of ['review-bundle.schema.json', 'review-finding.schema.json']) {
+  for (const name of ['review-bundle.schema.json', 'review-finding.schema.json', 'review-critique-loop.schema.json']) {
     const schema = JSON.parse(await readFile(path.join(process.cwd(), 'schemas', name), 'utf8'));
     assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
     assert.equal(schema.type, 'object');

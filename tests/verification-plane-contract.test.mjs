@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { after, test } from 'node:test';
+
+import { buildReviewCritiqueLoopReceipt } from '../scripts/lib/review-bundle.mjs';
 
 const root = process.cwd();
 const tempRoots = [];
@@ -59,6 +61,8 @@ test('fresh verification plane evidence is required before accepted completion',
     'goal-fresh-plane',
     '--planes-json',
     JSON.stringify(fullPassingPlanes()),
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
     '--identity-json',
     '{"runLeaseId":"lease-plane"}',
     '--json',
@@ -100,6 +104,8 @@ test('verification profiles summarize task-scope evidence without weakening comp
       { plane: 'package', status: 'passed', command: 'doc payload check' },
       { plane: 'quality', status: 'passed', command: 'git diff --check' },
     ]),
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
     '--identity-json',
     '{"runLeaseId":"lease-docs"}',
     '--json',
@@ -148,6 +154,8 @@ test('verification profiles summarize task-scope evidence without weakening comp
     'prompt_only',
     '--planes-json',
     JSON.stringify([{ plane: 'quality', status: 'passed', command: 'prompt review' }]),
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
     '--identity-json',
     '{"runLeaseId":"lease-prompt"}',
     '--json',
@@ -173,6 +181,8 @@ test('required planes override affects summary only and unknown profile fails fa
     '["quality"]',
     '--planes-json',
     JSON.stringify([{ plane: 'quality', status: 'passed', command: 'git diff --check' }]),
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
     '--identity-json',
     '{"runLeaseId":"lease-override"}',
     '--json',
@@ -397,6 +407,994 @@ test('browser trace evidence is normalized under excluded runtime artifact roots
   assert.ok(await stat(metadataPath));
 });
 
+test('task verification classification fails closed for unknown and browser relevant work', () => {
+  const unknown = json(run([
+    'scripts/verification-plane.mjs',
+    'classify-task',
+    '--task-json',
+    '{}',
+    '--json',
+  ]));
+
+  assert.equal(unknown.status, 'needs_classification');
+  assert.equal(unknown.failClosed, true);
+  assert.equal(unknown.completionBlocked, true);
+  assert.equal(unknown.requiresBrowserEvidence, true);
+  assert.equal(unknown.requiresIntegrationEvidence, true);
+  assert.equal(unknown.completionAuthority, false);
+  assert.equal(unknown.authoritySource, 'classification_evidence_only');
+
+  const frontend = json(run([
+    'scripts/verification-plane.mjs',
+    'classify-task',
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(frontend.status, 'classified');
+  assert.equal(frontend.requiresBrowserEvidence, true);
+  assert.equal(frontend.requiresIntegrationEvidence, false);
+  assert.equal(frontend.criticalScenario, true);
+
+  const docsOnly = json(run([
+    'scripts/verification-plane.mjs',
+    'classify-task',
+    '--task-json',
+    '{"taskType":"docs_only"}',
+    '--json',
+  ]));
+
+  assert.equal(docsOnly.status, 'classified');
+  assert.equal(docsOnly.requiresBrowserEvidence, false);
+  assert.equal(docsOnly.requiresIntegrationEvidence, false);
+  assert.equal(docsOnly.evidenceRequired, false);
+});
+
+test('browser completion result is evidence-only and maps critical weak evidence to blocking browser plane', async () => {
+  const schema = JSON.parse(await readFile(path.join(root, 'schemas', 'browser-completion-result.schema.json'), 'utf8'));
+  assert.equal(schema.additionalProperties, false);
+  assert.ok(schema.required.includes('authoritySource'));
+  assert.equal(schema.properties.authoritySource.const, 'evidence_only');
+  assert.equal(schema.properties.completionAuthority.const, false);
+
+  const smokeCritical = json(run([
+    'scripts/verification-plane.mjs',
+    'browser-result',
+    '--run-id',
+    'run-browser-result',
+    '--goal-id',
+    'goal-browser-result',
+    '--scenario-id',
+    'critical-ui',
+    '--status',
+    'clean_pass',
+    '--failure-class',
+    'none',
+    '--evidence-depth',
+    'smoke',
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(smokeCritical.status, 'built');
+  assert.equal(smokeCritical.browserResult.artifactId, 'BROWSER_COMPLETION_RESULT');
+  assert.equal(smokeCritical.browserResult.completionAuthority, false);
+  assert.equal(smokeCritical.browserResult.authoritySource, 'evidence_only');
+  assert.equal(smokeCritical.browserResult.criticalSmokeOnlyWarning, true);
+  assert.equal(smokeCritical.browserPlane.plane, 'browser');
+  assert.equal(smokeCritical.browserPlane.status, 'blocked');
+  assert.match(smokeCritical.browserPlane.reason, /smoke-only/);
+
+  const deepCritical = json(run([
+    'scripts/verification-plane.mjs',
+    'browser-result',
+    '--run-id',
+    'run-browser-result',
+    '--goal-id',
+    'goal-browser-result',
+    '--scenario-id',
+    'critical-ui',
+    '--status',
+    'clean_pass',
+    '--failure-class',
+    'none',
+    '--evidence-depth',
+    'open-act-mutate-persist-recover',
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(deepCritical.browserPlane.status, 'passed');
+
+  const flakyCritical = json(run([
+    'scripts/verification-plane.mjs',
+    'browser-result',
+    '--run-id',
+    'run-browser-result',
+    '--goal-id',
+    'goal-browser-result',
+    '--scenario-id',
+    'critical-ui',
+    '--status',
+    'flaky_pass',
+    '--failure-class',
+    'none',
+    '--evidence-depth',
+    'open-act-mutate-persist-recover',
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(flakyCritical.browserPlane.status, 'blocked');
+  assert.match(flakyCritical.browserPlane.reason, /flaky_pass/);
+});
+
+test('playwright result normalization turns deterministic artifacts into browser completion evidence', async () => {
+  const { repoRoot } = await makeEnv();
+  const artifacts = [
+    { type: 'screenshot', path: '.moonshot-relay/browser-artifacts/run/goal/integration/screenshot.png' },
+    { type: 'trace', path: '.moonshot-relay/browser-artifacts/run/goal/integration/trace.zip' },
+    { type: 'console', path: '.moonshot-relay/browser-artifacts/run/goal/integration/console.jsonl' },
+    { type: 'network', path: '.moonshot-relay/browser-artifacts/run/goal/integration/network.jsonl' },
+    { type: 'report', path: '.moonshot-relay/browser-artifacts/run/goal/integration/playwright-report/index.html' },
+  ];
+  for (const artifact of artifacts) {
+    const artifactPath = path.join(repoRoot, artifact.path);
+    await mkdir(path.dirname(artifactPath), { recursive: true });
+    await writeFile(artifactPath, `${artifact.type}\n`);
+  }
+
+  const clean = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-clean',
+    '--goal-id',
+    'goal-playwright-clean',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    '{"evidenceDepth":"open-act-mutate-persist-recover"}',
+    '--result-json',
+    JSON.stringify({
+      status: 'passed',
+      artifacts,
+      console: [{ level: 'info', text: 'ready' }],
+      network: [{ url: 'http://127.0.0.1/api', status: 200 }],
+      command: 'npx playwright test',
+      stdout: 'passed',
+      stderr: '',
+      retryCount: 0,
+      uncontrolledNetworkBlocked: true,
+      deterministicSelectors: true,
+      fixedTime: true,
+    }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(clean.status, 'normalized');
+  assert.equal(clean.browserResult.status, 'clean_pass');
+  assert.equal(clean.browserResult.failureClass, 'none');
+  assert.equal(clean.browserResult.evidenceDepth, 'open-act-mutate-persist-recover');
+  assert.equal(clean.browserResult.completionAuthority, false);
+  assert.equal(clean.browserResult.authoritySource, 'evidence_only');
+  assert.equal(clean.browserResult.redactionManifest.uncontrolledNetworkBlocked, true);
+  assert.equal(clean.browserPlane.status, 'passed');
+
+  const missingArtifact = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-missing-artifact',
+    '--goal-id',
+    'goal-playwright-missing-artifact',
+    '--scenario-id',
+    'integration-flow',
+    '--result-json',
+    JSON.stringify({ status: 'passed', artifacts: artifacts.filter((artifact) => artifact.type !== 'trace') }),
+    '--json',
+  ]));
+
+  assert.equal(missingArtifact.browserResult.status, 'failed');
+  assert.equal(missingArtifact.browserResult.failedStage, 'artifact');
+  assert.equal(missingArtifact.browserResult.failureClass, 'artifact_missing');
+  assert.deepEqual(missingArtifact.diagnostics.missingArtifactTypes, ['trace']);
+
+  const diagnosticSecret = 'playwright-secret-token';
+  const consoleFailureRaw = run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-console',
+    '--goal-id',
+    'goal-playwright-console',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({ status: 'passed', artifacts, console: [{ level: 'error', text: `hydration failed ${diagnosticSecret}` }] }),
+    '--json',
+  ]);
+  const consoleFailure = json(consoleFailureRaw);
+
+  assert.equal(consoleFailure.browserResult.status, 'failed');
+  assert.equal(consoleFailure.browserResult.failedStage, 'console');
+  assert.equal(consoleFailure.browserResult.failureClass, 'playwright_assertion_failed');
+  assert.equal(consoleFailureRaw.stdout.includes(diagnosticSecret), false);
+
+  const networkFailure = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-network',
+    '--goal-id',
+    'goal-playwright-network',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({ status: 'passed', artifacts, network: [{ url: `http://127.0.0.1/api?token=${diagnosticSecret}`, status: 503, errorText: diagnosticSecret }] }),
+    '--json',
+  ]));
+
+  assert.equal(networkFailure.browserResult.status, 'failed');
+  assert.equal(networkFailure.browserResult.failedStage, 'network');
+  assert.equal(networkFailure.browserResult.failureClass, 'playwright_assertion_failed');
+
+  const flaky = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-flaky',
+    '--goal-id',
+    'goal-playwright-flaky',
+    '--scenario-id',
+    'critical-ui',
+    '--scenario-json',
+    '{"evidenceDepth":"open-act-mutate-persist-recover"}',
+    '--result-json',
+    JSON.stringify({
+      status: 'passed',
+      artifacts,
+      retryCount: 1,
+      uncontrolledNetworkBlocked: true,
+      deterministicSelectors: true,
+      fixedTime: true,
+    }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(flaky.browserResult.status, 'flaky_pass');
+  assert.equal(flaky.browserPlane.status, 'blocked');
+  assert.match(flaky.browserPlane.reason, /flaky_pass/);
+
+  const missingDeterminism = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-missing-determinism',
+    '--goal-id',
+    'goal-playwright-missing-determinism',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    '{"evidenceDepth":"open-act-mutate-persist-recover"}',
+    '--result-json',
+    JSON.stringify({ status: 'passed', artifacts }),
+    '--json',
+  ]));
+
+  assert.equal(missingDeterminism.browserResult.status, 'setup_gap');
+  assert.equal(missingDeterminism.browserResult.failedStage, 'determinism');
+  assert.equal(missingDeterminism.browserResult.failureClass, 'runtime_environment_failed');
+  assert.equal(missingDeterminism.browserPlane.status, 'blocked');
+
+  const smokeOnlyCritical = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-smoke-only',
+    '--goal-id',
+    'goal-playwright-smoke-only',
+    '--scenario-id',
+    'critical-ui',
+    '--scenario-json',
+    '{"evidenceDepth":"smoke"}',
+    '--result-json',
+    JSON.stringify({ status: 'passed', artifacts }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(smokeOnlyCritical.browserResult.status, 'clean_pass');
+  assert.equal(smokeOnlyCritical.browserResult.criticalSmokeOnlyWarning, true);
+  assert.equal(smokeOnlyCritical.browserPlane.status, 'blocked');
+
+  const outsideArtifact = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-outside-artifact',
+    '--goal-id',
+    'goal-playwright-outside-artifact',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({
+      status: 'passed',
+      artifacts: [
+        ...artifacts.filter((artifact) => artifact.type !== 'trace'),
+        { type: 'trace', path: 'tmp/trace.zip' },
+      ],
+    }),
+    '--json',
+  ]));
+
+  assert.equal(outsideArtifact.browserResult.status, 'failed');
+  assert.equal(outsideArtifact.browserResult.failureClass, 'artifact_missing');
+  assert.deepEqual(outsideArtifact.diagnostics.invalidArtifactPaths, ['tmp/trace.zip']);
+
+  const absoluteArtifact = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-absolute-artifact',
+    '--goal-id',
+    'goal-playwright-absolute-artifact',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({
+      status: 'passed',
+      artifacts: [
+        ...artifacts.filter((artifact) => artifact.type !== 'trace'),
+        { type: 'trace', path: path.join(repoRoot, 'outside-trace.zip') },
+      ],
+    }),
+    '--json',
+  ]));
+
+  assert.equal(absoluteArtifact.browserResult.status, 'failed');
+  assert.equal(absoluteArtifact.browserResult.failureClass, 'artifact_missing');
+
+  const traversalArtifact = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    root,
+    '--run-id',
+    'run-playwright-traversal-artifact',
+    '--goal-id',
+    'goal-playwright-traversal-artifact',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({
+      status: 'passed',
+      artifacts: ['screenshot', 'trace', 'console', 'network', 'report'].map((type) => ({
+        type,
+        path: '.moonshot-relay/browser-artifacts/../../package.json',
+      })),
+    }),
+    '--json',
+  ]));
+
+  assert.equal(traversalArtifact.browserResult.status, 'failed');
+  assert.equal(traversalArtifact.browserResult.failureClass, 'artifact_missing');
+  assert.deepEqual(traversalArtifact.diagnostics.invalidArtifactPaths, [
+    '.moonshot-relay/browser-artifacts/../../package.json',
+    '.moonshot-relay/browser-artifacts/../../package.json',
+    '.moonshot-relay/browser-artifacts/../../package.json',
+    '.moonshot-relay/browser-artifacts/../../package.json',
+    '.moonshot-relay/browser-artifacts/../../package.json',
+  ]);
+
+  const setupGap = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-setup-gap',
+    '--goal-id',
+    'goal-playwright-setup-gap',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({ status: 'setup_gap', failedStage: 'preview', failureClass: 'preview_start_failed', artifacts: [] }),
+    '--json',
+  ]));
+
+  assert.equal(setupGap.browserResult.status, 'setup_gap');
+  assert.equal(setupGap.browserResult.failureClass, 'preview_start_failed');
+  assert.equal(setupGap.browserPlane.status, 'blocked');
+
+  const runnerLocalSetupGap = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-runner-local-setup-gap',
+    '--goal-id',
+    'goal-playwright-runner-local-setup-gap',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({ status: 'setup_gap', failedStage: 'preview', failureClass: 'missing_preview_command', artifacts: [] }),
+    '--json',
+  ]));
+
+  assert.equal(runnerLocalSetupGap.browserResult.status, 'setup_gap');
+  assert.equal(runnerLocalSetupGap.browserResult.failureClass, 'setup_gap');
+  assert.equal(runnerLocalSetupGap.browserPlane.status, 'blocked');
+
+  const commandSecret = 'sk_live_abc123';
+  const commandSecretRaw = run([
+    'scripts/verification-plane.mjs',
+    'normalize-playwright-result',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-playwright-command-secret',
+    '--goal-id',
+    'goal-playwright-command-secret',
+    '--scenario-id',
+    'smoke-flow',
+    '--result-json',
+    JSON.stringify({
+      status: 'passed',
+      artifacts,
+      commands: [{
+        command: `npx playwright test --token=${commandSecret}`,
+        stdout: `stdout ${commandSecret}`,
+        stderr: `stderr ${commandSecret}`,
+        env: { API_TOKEN: commandSecret },
+        exitCode: 0,
+      }],
+    }),
+    '--json',
+  ]);
+  const commandSecretResult = json(commandSecretRaw);
+
+  assert.equal(commandSecretRaw.stdout.includes(commandSecret), false);
+  assert.equal(commandSecretResult.browserResult.status, 'clean_pass');
+  assert.equal(commandSecretResult.browserResult.commands.some((command) => Object.hasOwn(command, 'env')), false);
+});
+
+test('agentic browser confirmation is evidence-only and cannot override Playwright state', async () => {
+  const { repoRoot } = await makeEnv();
+  const artifacts = [
+    { type: 'screenshot', path: '.moonshot-relay/browser-artifacts/run/goal/integration/screenshot.png' },
+    { type: 'trace', path: '.moonshot-relay/browser-artifacts/run/goal/integration/trace.zip' },
+    { type: 'console', path: '.moonshot-relay/browser-artifacts/run/goal/integration/console.jsonl' },
+    { type: 'network', path: '.moonshot-relay/browser-artifacts/run/goal/integration/network.jsonl' },
+    { type: 'report', path: '.moonshot-relay/browser-artifacts/run/goal/integration/playwright-report/index.html' },
+  ];
+  const confirmationScreenshot = '.moonshot-relay/browser-artifacts/run/goal/integration/agentic-confirmation.png';
+  const confirmationSnapshot = '.moonshot-relay/browser-artifacts/run/goal/integration/accessibility-snapshot.json';
+  for (const artifact of [...artifacts, { path: confirmationScreenshot, type: 'screenshot' }, { path: confirmationSnapshot, type: 'accessibility_snapshot' }]) {
+    const artifactPath = path.join(repoRoot, artifact.path);
+    await mkdir(path.dirname(artifactPath), { recursive: true });
+    await writeFile(artifactPath, `${artifact.type}\n`);
+  }
+  const scenario = {
+    evidenceDepth: 'open-act-mutate-persist-recover',
+    expectedUrl: 'http://127.0.0.1:3000/done',
+    expectedText: 'Ready',
+    expectedRole: 'button',
+    expectedName: 'Save',
+  };
+  const cleanPlaywright = {
+    status: 'passed',
+    artifacts,
+    uncontrolledNetworkBlocked: true,
+    deterministicSelectors: true,
+    fixedTime: true,
+  };
+  const cleanConfirmation = {
+    backend: 'agent-browser',
+    url: 'http://127.0.0.1:3000/done',
+    expectedTextFound: true,
+    roleNameFound: true,
+    screenshotPath: confirmationScreenshot,
+    snapshotPath: confirmationSnapshot,
+    accessibilitySnapshot: { role: 'main', name: 'Ready' },
+    consoleSummary: { errorCount: 0 },
+    networkSummary: { failedRequestCount: 0 },
+    command: 'agent-browser confirm',
+    stdout: 'ok',
+    exitCode: 0,
+  };
+
+  const clean = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-clean',
+    '--goal-id',
+    'goal-agentic-clean',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify(cleanPlaywright),
+    '--confirmation-json',
+    JSON.stringify(cleanConfirmation),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(clean.browserResult.status, 'clean_pass');
+  assert.equal(clean.browserResult.evidenceDepth, 'agentic-browser-confirmation');
+  assert.equal(clean.browserResult.completionAuthority, false);
+  assert.equal(clean.browserResult.authoritySource, 'evidence_only');
+  assert.equal(clean.browserPlane.status, 'passed');
+
+  const failedPlaywright = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-failed-playwright',
+    '--goal-id',
+    'goal-agentic-failed-playwright',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify({ ...cleanPlaywright, status: 'failed', assertions: [{ status: 'failed' }] }),
+    '--confirmation-json',
+    JSON.stringify(cleanConfirmation),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(failedPlaywright.browserResult.status, 'failed');
+  assert.equal(failedPlaywright.browserResult.failedStage, 'playwright');
+  assert.equal(failedPlaywright.browserResult.failureClass, 'playwright_assertion_failed');
+  assert.equal(failedPlaywright.browserPlane.status, 'failed');
+
+  const flakyPlaywright = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-flaky-playwright',
+    '--goal-id',
+    'goal-agentic-flaky-playwright',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify({ ...cleanPlaywright, retryCount: 1 }),
+    '--confirmation-json',
+    JSON.stringify(cleanConfirmation),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(flakyPlaywright.browserResult.status, 'flaky_pass');
+  assert.equal(flakyPlaywright.browserPlane.status, 'blocked');
+  assert.match(flakyPlaywright.browserPlane.reason, /flaky_pass/);
+
+  const backendGap = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-backend-gap',
+    '--goal-id',
+    'goal-agentic-backend-gap',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify(cleanPlaywright),
+    '--confirmation-json',
+    JSON.stringify({ ...cleanConfirmation, backendAvailable: false }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(backendGap.browserResult.status, 'setup_gap');
+  assert.equal(backendGap.browserResult.failureClass, 'runtime_environment_failed');
+  assert.equal(backendGap.browserPlane.status, 'blocked');
+
+  const unsupportedBackend = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-unsupported-backend',
+    '--goal-id',
+    'goal-agentic-unsupported-backend',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify(cleanPlaywright),
+    '--confirmation-json',
+    JSON.stringify({ ...cleanConfirmation, backend: 'unsupported-browser' }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(unsupportedBackend.browserResult.status, 'setup_gap');
+  assert.equal(unsupportedBackend.browserResult.failureClass, 'setup_gap');
+  assert.equal(unsupportedBackend.browserPlane.status, 'blocked');
+
+  const missingSnapshot = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-missing-snapshot',
+    '--goal-id',
+    'goal-agentic-missing-snapshot',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify(cleanPlaywright),
+    '--confirmation-json',
+    JSON.stringify({
+      ...cleanConfirmation,
+      accessibilitySnapshot: null,
+      snapshotPath: '.moonshot-relay/browser-artifacts/../../package.json',
+    }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(missingSnapshot.browserResult.status, 'failed');
+  assert.equal(missingSnapshot.browserResult.failureClass, 'artifact_missing');
+  assert.deepEqual(missingSnapshot.diagnostics.invalidArtifactPaths, ['.moonshot-relay/browser-artifacts/../../package.json']);
+
+  const tamperedAssertions = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-tampered',
+    '--goal-id',
+    'goal-agentic-tampered',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify(cleanPlaywright),
+    '--confirmation-json',
+    JSON.stringify({ ...cleanConfirmation, updatedExpectedText: 'Changed' }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(tamperedAssertions.browserResult.status, 'failed');
+  assert.equal(tamperedAssertions.browserResult.failedStage, 'assertion_contract');
+  assert.equal(tamperedAssertions.browserResult.failureClass, 'browser_confirmation_failed');
+
+  const authorityContaminated = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-authority-contaminated',
+    '--goal-id',
+    'goal-agentic-authority-contaminated',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify(cleanPlaywright),
+    '--confirmation-json',
+    JSON.stringify({ ...cleanConfirmation, completionAuthority: true, authoritySource: 'adapter_claim' }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(authorityContaminated.browserResult.status, 'failed');
+  assert.equal(authorityContaminated.browserResult.failedStage, 'authority_contract');
+  assert.equal(authorityContaminated.browserResult.failureClass, 'browser_confirmation_failed');
+
+  const failedNetworkAlias = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-failed-network-alias',
+    '--goal-id',
+    'goal-agentic-failed-network-alias',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify(scenario),
+    '--playwright-result-json',
+    JSON.stringify(cleanPlaywright),
+    '--confirmation-json',
+    JSON.stringify({ ...cleanConfirmation, networkSummary: { failedCount: 1 } }),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(failedNetworkAlias.browserResult.status, 'failed');
+  assert.equal(failedNetworkAlias.browserResult.failedStage, 'network');
+  assert.equal(failedNetworkAlias.browserResult.failureClass, 'browser_confirmation_failed');
+
+  const playwrightWaived = json(run([
+    'scripts/verification-plane.mjs',
+    'normalize-browser-confirmation',
+    '--repo-root',
+    repoRoot,
+    '--run-id',
+    'run-agentic-playwright-waived',
+    '--goal-id',
+    'goal-agentic-playwright-waived',
+    '--scenario-id',
+    'integration-flow',
+    '--scenario-json',
+    JSON.stringify({
+      ...scenario,
+      playwrightRequired: false,
+      playwrightWaiver: {
+        reason: 'static HTML confirmation only',
+        approvedBy: 'phase-04-test',
+      },
+    }),
+    '--confirmation-json',
+    JSON.stringify(cleanConfirmation),
+    '--task-json',
+    '{"taskType":"frontend"}',
+    '--json',
+  ]));
+
+  assert.equal(playwrightWaived.browserResult.status, 'clean_pass');
+  assert.equal(playwrightWaived.browserPlane.status, 'passed');
+});
+
+test('browser completion result sanitizes raw command evidence and omits env', () => {
+  const secret = 'sk_live_browser_result_123';
+  const result = json(run([
+    'scripts/verification-plane.mjs',
+    'browser-result',
+    '--run-id',
+    'run-browser-result-redaction',
+    '--goal-id',
+    'goal-browser-result-redaction',
+    '--scenario-id',
+    'redaction',
+    '--status',
+    'clean_pass',
+    '--failure-class',
+    'none',
+    '--evidence-depth',
+    'open-act-mutate-persist-recover',
+    '--commands-json',
+    JSON.stringify([{
+      command: `npx playwright test --key=${secret}`,
+      stdout: `stdout ${secret}`,
+      stderr: `stderr ${secret}`,
+      env: { API_TOKEN: secret },
+      exitCode: 0,
+    }]),
+    '--task-json',
+    '{"taskType":"docs_only"}',
+    '--json',
+  ]));
+  const serialized = JSON.stringify(result);
+
+  assert.equal(serialized.includes(secret), false);
+  assert.equal(result.browserResult.commands.some((command) => Object.hasOwn(command, 'env')), false);
+  assert.equal(result.browserPlane.status, 'passed');
+});
+
+test('record-summary consumes task class and browser completion result as task-local blockers', async () => {
+  const { env } = await makeEnv();
+  json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
+
+  const browserResult = {
+    schemaVersion: 1,
+    artifactId: 'BROWSER_COMPLETION_RESULT',
+    runId: 'run-task-browser-summary',
+    goalId: 'goal-task-browser-summary',
+    scenarioId: 'critical-ui',
+    status: 'clean_pass',
+    failedStage: '',
+    failureClass: 'none',
+    evidenceDepth: 'smoke',
+    sourceFingerprint: 'source-1',
+    commands: [],
+    artifacts: [],
+    repairPromptPath: '',
+    setupGap: false,
+    completionAuthority: false,
+    authoritySource: 'evidence_only',
+    artifactSha256: '',
+    generatedAt: new Date().toISOString(),
+    producerCommand: 'node scripts/verification-plane.mjs browser-result',
+    staleStatus: 'fresh',
+    runtimeDecisionRef: '',
+    redactionManifest: {},
+    taskVerificationClass: null,
+    criticalSmokeOnlyWarning: true,
+  };
+
+  const summary = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-task-browser-summary',
+    '--goal-id',
+    'goal-task-browser-summary',
+    '--profile',
+    'script_change',
+    '--task-class-json',
+    '{"taskType":"frontend"}',
+    '--browser-result-json',
+    JSON.stringify(browserResult),
+    '--planes-json',
+    JSON.stringify([
+      { plane: 'unit', status: 'passed', command: 'npm test' },
+      { plane: 'quality', status: 'passed', command: 'git diff --check' },
+    ]),
+    '--identity-json',
+    '{"runLeaseId":"lease-task-browser"}',
+    '--json',
+  ], env));
+  const assessed = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-task-browser-summary',
+    '--goal-id',
+    'goal-task-browser-summary',
+    '--json',
+  ], env));
+  const status = json(run([
+    'scripts/runtime-state.mjs',
+    'status',
+    '--run-id',
+    'run-task-browser-summary',
+    '--goal-id',
+    'goal-task-browser-summary',
+    '--json',
+  ], env));
+
+  assert.equal(summary.requiredChecksPassed, false);
+  assert.equal(summary.taskLocalCompletion.status, 'blocked');
+  assert.equal(summary.taskEvidenceBlockers[0].code, 'browser_evidence_blocked');
+  assert.equal(summary.evalResult.status, 'recorded');
+  assert.equal(status.compactStatus.latestEval.status, 'failed');
+  assert.equal(assessed.status, 'rejected');
+  assert.equal(assessed.reason, 'missing verification plane: package');
+});
+
+test('record-summary fails closed without task class and browser result overrides forged passed browser plane', async () => {
+  const { env } = await makeEnv();
+  json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
+
+  const noTaskClass = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-no-task-class',
+    '--goal-id',
+    'goal-no-task-class',
+    '--planes-json',
+    JSON.stringify(fullPassingPlanes()),
+    '--identity-json',
+    '{"runLeaseId":"lease-no-task-class"}',
+    '--json',
+  ], env));
+
+  assert.equal(noTaskClass.taskVerificationClass.status, 'needs_classification');
+  assert.equal(noTaskClass.requiredChecksPassed, false);
+  assert.equal(noTaskClass.taskEvidenceBlockers[0].code, 'needs_classification');
+  assert.equal(noTaskClass.wholePlanAuthority.status, 'evidence_eligible');
+
+  const browserResult = {
+    schemaVersion: 1,
+    artifactId: 'BROWSER_COMPLETION_RESULT',
+    runId: 'run-forged-browser-plane',
+    goalId: 'goal-forged-browser-plane',
+    scenarioId: 'critical-ui',
+    status: 'clean_pass',
+    failedStage: '',
+    failureClass: 'none',
+    evidenceDepth: 'smoke',
+    sourceFingerprint: 'source-1',
+    commands: [],
+    artifacts: [],
+    repairPromptPath: '',
+    setupGap: false,
+    completionAuthority: false,
+    authoritySource: 'evidence_only',
+    artifactSha256: '',
+    generatedAt: new Date().toISOString(),
+    producerCommand: 'node scripts/verification-plane.mjs browser-result',
+    staleStatus: 'fresh',
+    runtimeDecisionRef: '',
+    redactionManifest: {},
+    taskVerificationClass: null,
+    criticalSmokeOnlyWarning: true,
+  };
+  const forgedPlane = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-forged-browser-plane',
+    '--goal-id',
+    'goal-forged-browser-plane',
+    '--task-class-json',
+    '{"taskType":"frontend"}',
+    '--browser-result-json',
+    JSON.stringify(browserResult),
+    '--planes-json',
+    JSON.stringify(fullPassingPlanes()),
+    '--identity-json',
+    '{"runLeaseId":"lease-forged-browser-plane"}',
+    '--json',
+  ], env));
+
+  assert.equal(forgedPlane.requiredChecksPassed, false);
+  assert.equal(forgedPlane.planes.find((plane) => plane.plane === 'browser').status, 'blocked');
+  assert.equal(forgedPlane.taskEvidenceBlockers[0].code, 'browser_evidence_blocked');
+  assert.equal(forgedPlane.wholePlanAuthority.status, 'blocked');
+  assert.match(forgedPlane.wholePlanAuthority.reason, /failed verification plane: browser/);
+});
+
 test('package contract excludes generated verification traces and includes verification plane helper', async () => {
   const contract = await readFile(path.join(root, 'package', 'package-contract.yaml'), 'utf8');
   const packageTest = await readFile(path.join(root, 'tests', 'package-materialization.test.mjs'), 'utf8');
@@ -407,4 +1405,209 @@ test('package contract excludes generated verification traces and includes verif
   assert.match(contract, /\.moonshot-relay\/verification-reports\/\*\*/);
   assert.match(packageTest, /scripts\/verification-plane\.mjs/);
   assert.match(packageTest, /scripts\/lib\/verification-plane\.mjs/);
+});
+
+test('record-summary requires review critique loop receipt for browser completion claims', async () => {
+  const { env } = await makeEnv();
+  json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
+  const identity = {
+    runLeaseId: 'lease-review-loop',
+    candidate_id: `cand_${'a'.repeat(32)}`,
+    sourceDigest: 'b'.repeat(64),
+    bundleDigest: 'c'.repeat(64),
+  };
+
+  const missingReview = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-review-loop-missing',
+    '--goal-id',
+    'goal-review-loop-missing',
+    '--planes-json',
+    JSON.stringify(fullPassingPlanes()),
+    '--task-class-json',
+    '{"taskType":"frontend"}',
+    '--identity-json',
+    JSON.stringify(identity),
+    '--json',
+  ], env));
+  const missingAssessed = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-review-loop-missing',
+    '--goal-id',
+    'goal-review-loop-missing',
+    '--json',
+  ], env));
+
+  assert.equal(missingReview.requiredChecksPassed, false);
+  assert.equal(missingReview.taskEvidenceBlockers.some((blocker) => blocker.code === 'review_critique_loop_missing'), true);
+  assert.equal(missingAssessed.status, 'rejected');
+  assert.match(missingAssessed.reason, /missing browser completion result/);
+
+  const receipt = buildReviewCritiqueLoopReceipt({
+    candidate_id: identity.candidate_id,
+    sourceDigest: identity.sourceDigest,
+    bundleDigest: identity.bundleDigest,
+    iterations: [
+      {
+        reviewers: [
+          { reviewerId: 'agent-a', focus: 'requirements_contract' },
+          { reviewerId: 'agent-b', focus: 'runtime_authority' },
+        ],
+      },
+      {
+        reviewers: [
+          { reviewerId: 'agent-c', focus: 'regression_risk' },
+          { reviewerId: 'agent-d', focus: 'security_or_data_safety' },
+        ],
+      },
+    ],
+    parentResolutions: [
+      { findingId: 'finding-1', status: 'accepted', evidence: 'fixed', blockerId: '' },
+      { findingId: 'finding-2', status: 'rejected_with_evidence', evidence: 'covered by test', blockerId: '' },
+    ],
+  });
+  const browserResult = {
+    schemaVersion: 1,
+    artifactId: 'BROWSER_COMPLETION_RESULT',
+    runId: 'run-review-loop-present',
+    goalId: 'goal-review-loop-present',
+    scenarioId: 'critical-ui',
+    status: 'clean_pass',
+    failedStage: '',
+    failureClass: 'none',
+    evidenceDepth: 'open-act-mutate-persist-recover',
+    sourceFingerprint: identity.sourceDigest,
+    commands: [],
+    artifacts: [{ type: 'trace', path: '.moonshot-relay/browser-artifacts/run/goal/critical-ui/trace.zip' }],
+    repairPromptPath: '',
+    setupGap: false,
+    completionAuthority: false,
+    authoritySource: 'evidence_only',
+    artifactSha256: '',
+    generatedAt: new Date().toISOString(),
+    producerCommand: 'node scripts/verification-plane.mjs normalize-browser-confirmation',
+    staleStatus: 'fresh',
+    runtimeDecisionRef: '',
+    redactionManifest: {},
+    taskVerificationClass: null,
+    criticalSmokeOnlyWarning: false,
+  };
+
+  const acceptedReview = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-review-loop-present',
+    '--goal-id',
+    'goal-review-loop-present',
+    '--planes-json',
+    JSON.stringify(fullPassingPlanes()),
+    '--task-class-json',
+    '{"taskType":"frontend"}',
+    '--browser-result-json',
+    JSON.stringify(browserResult),
+    '--identity-json',
+    JSON.stringify(identity),
+    '--review-critique-loop-json',
+    JSON.stringify(receipt),
+    '--json',
+  ], env));
+  const acceptedAssessed = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-review-loop-present',
+    '--goal-id',
+    'goal-review-loop-present',
+    '--json',
+  ], env));
+
+  assert.equal(acceptedReview.requiredChecksPassed, true);
+  assert.equal(acceptedReview.reviewCritiqueLoopRequired, true);
+  assert.equal(acceptedAssessed.status, 'accepted');
+
+  const mismatchedReview = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-review-loop-mismatch',
+    '--goal-id',
+    'goal-review-loop-mismatch',
+    '--planes-json',
+    JSON.stringify(fullPassingPlanes()),
+    '--task-class-json',
+    '{"taskType":"frontend"}',
+    '--browser-result-json',
+    JSON.stringify({ ...browserResult, runId: 'run-review-loop-mismatch', goalId: 'goal-review-loop-mismatch' }),
+    '--identity-json',
+    JSON.stringify({ ...identity, sourceDigest: 'e'.repeat(64) }),
+    '--review-critique-loop-json',
+    JSON.stringify(receipt),
+    '--json',
+  ], env));
+
+  assert.equal(mismatchedReview.requiredChecksPassed, false);
+  assert.equal(mismatchedReview.taskEvidenceBlockers.some((blocker) => blocker.code === 'review_critique_loop_source_mismatch'), true);
+
+  const docsOnlyCompletionClaim = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-docs-only-completion-claim',
+    '--goal-id',
+    'goal-docs-only-completion-claim',
+    '--planes-json',
+    JSON.stringify(fullPassingPlanes()),
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
+    '--identity-json',
+    JSON.stringify({ ...identity, runLeaseId: 'lease-docs-only-completion' }),
+    '--completion-claim',
+    'true',
+    '--json',
+  ], env));
+  const docsOnlyAssessed = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-docs-only-completion-claim',
+    '--goal-id',
+    'goal-docs-only-completion-claim',
+    '--json',
+  ], env));
+
+  assert.equal(docsOnlyCompletionClaim.requiredChecksPassed, false);
+  assert.equal(docsOnlyCompletionClaim.reviewCritiqueLoopRequired, true);
+  assert.equal(docsOnlyAssessed.status, 'rejected');
+  assert.match(docsOnlyAssessed.reason, /missing review-critique-loop receipt/);
+
+  const contaminatedReceipt = {
+    ...receipt,
+    rawPrompt: 'DO_NOT_STORE_RAW_PROMPT',
+  };
+  const contaminated = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-review-loop-contaminated',
+    '--goal-id',
+    'goal-review-loop-contaminated',
+    '--planes-json',
+    JSON.stringify(fullPassingPlanes()),
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
+    '--identity-json',
+    JSON.stringify({ ...identity, runLeaseId: 'lease-review-loop-contaminated', completionClaim: true }),
+    '--review-critique-loop-json',
+    JSON.stringify(contaminatedReceipt),
+    '--json',
+  ], env));
+
+  assert.equal(contaminated.requiredChecksPassed, false);
+  assert.equal(contaminated.taskEvidenceBlockers.some((blocker) => blocker.code === 'review_critique_loop_forbidden_context'), true);
+  assert.equal(JSON.stringify(contaminated).includes('DO_NOT_STORE_RAW_PROMPT'), false);
 });

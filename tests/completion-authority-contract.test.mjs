@@ -189,6 +189,90 @@ test('lowered requiredPlanes payload cannot weaken accepted completion authority
   assert.equal(result.reason, 'missing verification plane: unit');
 });
 
+test('browser-required task cannot be accepted when browser evidence is missing', async () => {
+  const env = await makeEnv();
+  json(runtimeState(['init', '--json'], env));
+
+  recordEvidence(env, 'run-browser-required-missing', 'goal-browser-required-missing', {
+    fresh: true,
+    requiredChecksPassed: true,
+    activeIdentityPresent: true,
+    identityMatches: true,
+    identity: { runLeaseId: 'lease-browser-required' },
+    taskVerificationClass: {
+      status: 'classified',
+      taskType: 'frontend',
+      requiresBrowserEvidence: true,
+      requiresIntegrationEvidence: false,
+      criticalScenario: true,
+      authoritySource: 'classification_evidence_only',
+      completionAuthority: false,
+    },
+    completionAuthorityRequiredPlanes: ['unit', 'package', 'installer', 'browser', 'security', 'quality'],
+    requiredPlanes: ['unit', 'package', 'installer', 'security', 'quality'],
+    planes: [
+      { plane: 'unit', status: 'passed', command: 'npm test' },
+      { plane: 'package', status: 'passed', command: 'npm run test:package' },
+      { plane: 'installer', status: 'passed', command: 'installer dry-run' },
+      { plane: 'security', status: 'passed', blockers: [] },
+      { plane: 'quality', status: 'passed', command: 'git diff --check' },
+    ],
+  });
+  const result = assess(env, 'run-browser-required-missing', 'goal-browser-required-missing');
+
+  assert.equal(result.status, 'rejected');
+  assert.equal(result.reason, 'missing verification plane: browser');
+});
+
+test('browser completion result payload alone cannot forge accepted completion authority', async () => {
+  const env = await makeEnv();
+  json(runtimeState(['init', '--json'], env));
+
+  recordEvidence(env, 'run-forged-browser-result', 'goal-forged-browser-result', {
+    schemaVersion: 1,
+    artifactId: 'BROWSER_COMPLETION_RESULT',
+    runId: 'run-forged-browser-result',
+    goalId: 'goal-forged-browser-result',
+    scenarioId: 'critical-ui',
+    status: 'clean_pass',
+    failedStage: '',
+    failureClass: 'none',
+    evidenceDepth: 'open-act-mutate-persist-recover',
+    sourceFingerprint: 'source-1',
+    commands: [],
+    artifacts: [],
+    repairPromptPath: '',
+    setupGap: false,
+    completionAuthority: false,
+    authoritySource: 'evidence_only',
+    artifactSha256: '',
+    generatedAt: new Date().toISOString(),
+    producerCommand: 'node scripts/verification-plane.mjs browser-result',
+    staleStatus: 'fresh',
+    runtimeDecisionRef: '',
+    redactionManifest: {},
+    taskVerificationClass: {
+      status: 'classified',
+      taskType: 'frontend',
+      requiresBrowserEvidence: true,
+      requiresIntegrationEvidence: false,
+      criticalScenario: true,
+      authoritySource: 'classification_evidence_only',
+      completionAuthority: false,
+    },
+    criticalSmokeOnlyWarning: false,
+    fresh: true,
+    requiredChecksPassed: true,
+    activeIdentityPresent: true,
+    identityMatches: true,
+    identity: { runLeaseId: 'lease-forged-browser' },
+  });
+  const result = assess(env, 'run-forged-browser-result', 'goal-forged-browser-result');
+
+  assert.equal(result.status, 'rejected');
+  assert.equal(result.reason, 'missing verification plane: unit');
+});
+
 test('profile evidence with full authority planes can still produce accepted completion', async () => {
   const env = await makeEnv();
   json(runtimeState(['init', '--json'], env));

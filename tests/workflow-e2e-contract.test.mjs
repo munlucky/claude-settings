@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -20,6 +22,25 @@ const makeTempRoot = async (prefix) => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), prefix));
   tempRoots.push(tempRoot);
   return tempRoot;
+};
+
+const getFreePort = async () => new Promise((resolve, reject) => {
+  const server = net.createServer();
+  server.once('error', reject);
+  server.listen(0, '127.0.0.1', () => {
+    const port = server.address().port;
+    server.close(() => resolve(port));
+  });
+});
+
+const createFakeBrowserctl = async (dir) => {
+  const fakeBrowserctl = path.join(dir, process.platform === 'win32' ? 'browserctl.cmd' : 'browserctl');
+  const script = process.platform === 'win32'
+    ? '@echo off\r\necho healthy\r\nexit /b 0\r\n'
+    : '#!/usr/bin/env sh\necho healthy\nexit 0\n';
+  await writeFile(fakeBrowserctl, script);
+  await chmod(fakeBrowserctl, 0o755);
+  return fakeBrowserctl;
 };
 
 const readRoot = async (...segments) => readFile(fromRoot(...segments), 'utf8');
@@ -389,6 +410,892 @@ test('browser flow runner writes generated-state verdicts and supports smoke hea
   assert.equal(verdict.status, 'passed');
   assert.equal(verdict.setupGap, false);
   assert.equal(verdict.flow, 'smoke');
+});
+
+test('browser flow runner executes configured preview lifecycle and records cleanup evidence', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-preview-');
+  const port = await getFreePort();
+  const mockPort = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const cleanupMarker = path.join(tempRoot, 'cleanup-marker.txt');
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  const secret = 'do-not-copy-secret';
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    staticCommands: [
+      { command: process.execPath, args: ['-e', `console.log("static ok ${secret}")`] },
+    ],
+    buildCommand: { command: process.execPath, args: ['-e', `console.log("build ok ${secret}")`] },
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    mockApiCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'mock-api.mjs'), '--port', String(mockPort)],
+      env: { BROWSER_COMPLETION_SECRET: secret },
+    },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+      cwd: '.',
+      env: { BROWSER_COMPLETION_SECRET: secret },
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    cleanupCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'cleanup-marker.mjs')],
+      env: { BROWSER_COMPLETION_CLEANUP_MARKER: cleanupMarker, BROWSER_COMPLETION_SECRET: secret },
+    },
+    redactValues: [secret],
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'preview-lifecycle',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-preview-lifecycle.json'), 'utf8'));
+  const verdictText = JSON.stringify(verdict);
+  assert.equal(verdict.status, 'passed');
+  assert.equal(verdict.setupGap, false);
+  assert.equal(verdict.failureClass, '');
+  assert.equal(verdict.steps.find((step) => step.name === 'browser_backend').status, 'passed');
+  assert.match(verdict.steps.find((step) => step.name === 'static_1').stdout, /static ok \[REDACTED\]/);
+  assert.match(verdict.steps.find((step) => step.name === 'build').stdout, /build ok \[REDACTED\]/);
+  assert.equal(verdict.steps.find((step) => step.name === 'fixture_seed').stdout.trim(), 'fixture seed ok');
+  assert.equal(verdict.preview.readiness.ready, true);
+  assert.match(verdict.preview.logs.stdout, /preview listening/);
+  assert.match(verdict.preview.logs.stdout, /preview \[REDACTED\] \[REDACTED\]/);
+  assert.match(verdict.mockApi.logs.stdout, /mock api listening/);
+  assert.match(verdict.mockApi.logs.stderr, /mock api \[REDACTED\] \[REDACTED\]/);
+  assert.equal(verdict.cleanup.previewProcessTerminated, true);
+  assert.equal(verdict.cleanup.mockApiProcessTerminated, true);
+  assert.equal(verdict.cleanup.cleanupCommand.status, 'passed');
+  assert.match(verdict.cleanup.cleanupCommand.stdout, /cleanup \[REDACTED\] \[REDACTED\]/);
+  assert.equal(existsSync(cleanupMarker), true);
+  assert.equal(verdictText.includes(secret), false);
+  assert.equal(verdictText.includes('[REDACTED]'), true);
+});
+
+test('browser flow runner executes swappable agentic confirmation adapter after preview readiness', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-agentic-confirmation-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  const screenshotPath = '.moonshot-relay/browser-artifacts/run/goal/agentic/confirmation.png';
+  const snapshotPath = '.moonshot-relay/browser-artifacts/run/goal/agentic/snapshot.json';
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    agenticConfirmation: {
+      backend: 'agent-browser',
+      expectedUrl: `http://127.0.0.1:${port}/health`,
+      expectedText: 'Ready',
+      expectedRole: 'button',
+      expectedName: 'Save',
+      command: {
+        command: process.execPath,
+        cwd: '.',
+        args: [
+          fromRoot('tests', 'fixtures', 'browser-completion', 'agentic-confirmation.mjs'),
+          '--url',
+          `http://127.0.0.1:${port}/health`,
+          '--text',
+          'Ready',
+          '--screenshot',
+          screenshotPath,
+          '--snapshot',
+          snapshotPath,
+        ],
+      },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'agentic-confirmation',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-agentic-confirmation.json'), 'utf8'));
+  const confirmationStep = verdict.steps.find((step) => step.name === 'agentic_browser_confirmation');
+  assert.equal(verdict.status, 'passed');
+  assert.equal(confirmationStep.status, 'passed');
+  assert.equal(confirmationStep.backend, 'agent-browser');
+  assert.equal(verdict.agenticConfirmation.expectedText, 'Ready');
+  assert.equal(verdict.agenticConfirmation.expectedRole, 'button');
+  assert.equal(verdict.agenticConfirmation.expectedName, 'Save');
+  assert.equal(verdict.agenticConfirmation.adapterExpectedText, 'adapter supplied text');
+  assert.equal(verdict.agenticConfirmation.expectedTextFound, true);
+  assert.equal(verdict.agenticConfirmation.roleNameFound, true);
+  assert.equal(existsSync(path.join(tempRoot, screenshotPath)), true);
+  assert.equal(existsSync(path.join(tempRoot, snapshotPath)), true);
+});
+
+test('browser flow runner preserves adapter setup-gap JSON even with zero exit code', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-agentic-json-gap-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    agenticConfirmation: {
+      backend: 'agent-browser',
+      command: {
+        command: process.execPath,
+        args: ['-e', 'console.log(JSON.stringify({status:"setup_gap",failureClass:"runtime_environment_failed",backendAvailable:false}))'],
+      },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'agentic-json-gap',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-agentic-json-gap.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.setupGap, true);
+  assert.equal(verdict.failureClass, 'runtime_environment_failed');
+  assert.equal(verdict.steps.find((step) => step.name === 'agentic_browser_confirmation').status, 'setup_gap');
+});
+
+test('browser flow runner treats missing agentic adapter executable as setup gap', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-agentic-missing-adapter-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    agenticConfirmation: {
+      backend: 'agent-browser',
+      command: { command: path.join(tempRoot, 'missing-agent-browser') },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'agentic-missing-adapter',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-agentic-missing-adapter.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.setupGap, true);
+  assert.equal(verdict.failureClass, 'missing_browser_backend');
+  assert.equal(verdict.browserCompletionFailureClass, 'runtime_environment_failed');
+});
+
+test('browser flow runner redacts token-shaped adapter output in raw verdicts', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-agentic-raw-redaction-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  const rawSecret = 'sk_live_runner_raw_secret_token_123';
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    agenticConfirmation: {
+      backend: 'agent-browser',
+      command: {
+        command: process.execPath,
+        args: ['-e', `console.log(JSON.stringify({status:"setup_gap",failureClass:"runtime_environment_failed",stderr:"${rawSecret}"}))`],
+      },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'agentic-raw-redaction',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdictText = await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-agentic-raw-redaction.json'), 'utf8');
+  assert.equal(verdictText.includes(rawSecret), false);
+  assert.match(verdictText, /\[REDACTED\]/);
+});
+
+test('browser flow runner rejects agentic artifacts outside browser artifact root', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-agentic-artifact-boundary-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  const outsideScreenshot = path.join(tempRoot, 'outside.png');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    agenticConfirmation: {
+      backend: 'agent-browser',
+      command: {
+        command: process.execPath,
+        args: [
+          fromRoot('tests', 'fixtures', 'browser-completion', 'agentic-confirmation.mjs'),
+          '--url',
+          `http://127.0.0.1:${port}/health`,
+          '--screenshot',
+          outsideScreenshot,
+          '--snapshot',
+          '.moonshot-relay/browser-artifacts/run/goal/agentic/snapshot.json',
+        ],
+      },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'agentic-artifact-boundary',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-agentic-artifact-boundary.json'), 'utf8'));
+  assert.equal(verdict.status, 'failed');
+  assert.equal(verdict.failureClass, 'artifact_missing');
+  assert.equal(verdict.browserCompletionFailureClass, 'artifact_missing');
+});
+
+test('browser flow runner reports unsupported agentic confirmation backend as setup gap', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-agentic-gap-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const cleanupMarker = path.join(tempRoot, 'cleanup-marker.txt');
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    cleanupCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'cleanup-marker.mjs')],
+      env: { BROWSER_COMPLETION_CLEANUP_MARKER: cleanupMarker },
+    },
+    agenticConfirmation: {
+      backend: 'unsupported-browser',
+      command: { command: process.execPath, args: ['-e', 'console.log("{}")'] },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'agentic-unsupported',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-agentic-unsupported.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.setupGap, true);
+  assert.equal(verdict.failureClass, 'unsupported_browser_backend');
+  assert.equal(verdict.browserCompletionFailureClass, 'setup_gap');
+  assert.equal(verdict.steps.find((step) => step.name === 'agentic_browser_confirmation').status, 'setup_gap');
+  assert.equal(verdict.cleanup.previewProcessTerminated, true);
+  assert.equal(verdict.cleanup.cleanupCommand.status, 'passed');
+  assert.equal(existsSync(cleanupMarker), true);
+});
+
+test('browser flow runner reports missing preview command as setup gap and still runs cleanup', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-preview-missing-');
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const cleanupMarker = path.join(tempRoot, 'cleanup-marker.txt');
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 1000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    readinessUrl: 'http://127.0.0.1:9/health',
+    cleanupCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'cleanup-marker.mjs')],
+      env: { BROWSER_COMPLETION_CLEANUP_MARKER: cleanupMarker },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'missing-preview',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '1000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-missing-preview.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.failureClass, 'missing_preview_command');
+  assert.equal(verdict.cleanup.cleanupCommand.status, 'passed');
+  assert.equal(existsSync(cleanupMarker), true);
+});
+
+test('browser flow runner reports readiness timeout as setup gap and cleans up preview process', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-readiness-timeout-');
+  const port = await getFreePort();
+  const readinessPort = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const cleanupMarker = path.join(tempRoot, 'cleanup-marker.txt');
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 800,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${readinessPort}/health`,
+    cleanupCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'cleanup-marker.mjs')],
+      env: { BROWSER_COMPLETION_CLEANUP_MARKER: cleanupMarker },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'readiness-timeout',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '800',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-readiness-timeout.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.failureClass, 'readiness_timeout');
+  assert.equal(verdict.browserCompletionFailureClass, 'preview_start_failed');
+  assert.equal(verdict.cleanup.previewProcessTerminated, true);
+  assert.equal(verdict.cleanup.cleanupCommand.status, 'passed');
+  assert.equal(existsSync(cleanupMarker), true);
+});
+
+test('browser flow runner downgrades successful preview when cleanup command fails', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-cleanup-failure-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    cleanupCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'cleanup-fail.mjs')],
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'cleanup-failure',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-cleanup-failure.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.failureClass, 'cleanup_failed');
+  assert.equal(verdict.browserCompletionFailureClass, 'runtime_environment_failed');
+  assert.equal(verdict.cleanup.previewProcessTerminated, true);
+  assert.equal(verdict.cleanup.cleanupCommand.status, 'failed');
+});
+
+test('browser flow runner downgrades successful preview when leak check fails', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-leak-check-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health`,
+    leakCheckCommand: {
+      command: process.execPath,
+      args: ['-e', 'console.error("preview leak detected"); process.exit(22)'],
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'leak-check-failure',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-leak-check-failure.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.failureClass, 'preview_process_leak');
+  assert.equal(verdict.browserCompletionFailureClass, 'runtime_environment_failed');
+  assert.equal(verdict.cleanup.previewProcessTerminated, true);
+  assert.equal(verdict.cleanup.leakCheckCommand.status, 'failed');
+});
+
+test('browser flow runner separates fixture seed failure and missing browser backend setup gaps', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-fixture-gap-');
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const cleanupMarker = path.join(tempRoot, 'cleanup-marker.txt');
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 1000,
+    fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-fail.mjs')] },
+    previewCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', '9'] },
+    readinessUrl: 'http://127.0.0.1:9/health',
+    cleanupCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'cleanup-marker.mjs')],
+      env: { BROWSER_COMPLETION_CLEANUP_MARKER: cleanupMarker },
+    },
+  }, null, 2));
+
+  const fixtureFailure = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'fixture-failure',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '1000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(fixtureFailure.status, 64, fixtureFailure.stderr || fixtureFailure.stdout);
+  const fixtureVerdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-fixture-failure.json'), 'utf8'));
+  assert.equal(fixtureVerdict.status, 'setup_gap');
+  assert.equal(fixtureVerdict.failureClass, 'fixture_seed_failure');
+  assert.equal(fixtureVerdict.browserCompletionFailureClass, 'fixture_setup_failed');
+  assert.equal(fixtureVerdict.cleanup.cleanupCommand.status, 'passed');
+  await rm(cleanupMarker, { force: true });
+
+  const missingBackend = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    path.join(tempRoot, 'missing-browserctl'),
+    '--run-id',
+    'missing-browser-backend',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '1000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(missingBackend.status, 64, missingBackend.stderr || missingBackend.stdout);
+  const backendVerdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-missing-browser-backend.json'), 'utf8'));
+  assert.equal(backendVerdict.status, 'setup_gap');
+  assert.equal(backendVerdict.failureClass, 'missing_browser_backend');
+  assert.equal(backendVerdict.browserCompletionFailureClass, 'runtime_environment_failed');
+  assert.equal(backendVerdict.cleanup.cleanupCommand.status, 'passed');
+  assert.equal(existsSync(cleanupMarker), true);
+});
+
+test('browser flow runner writes structured verdict for malformed preview command', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-malformed-preview-');
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const cleanupMarker = path.join(tempRoot, 'cleanup-marker.txt');
+  const configPath = path.join(tempRoot, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 1000,
+    previewCommand: { args: ['missing-command-field'] },
+    readinessUrl: 'http://127.0.0.1:9/health',
+    cleanupCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'cleanup-marker.mjs')],
+      env: { BROWSER_COMPLETION_CLEANUP_MARKER: cleanupMarker },
+    },
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'malformed-preview',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '1000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 64, result.stderr || result.stdout);
+  const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-malformed-preview.json'), 'utf8'));
+  assert.equal(verdict.status, 'setup_gap');
+  assert.equal(verdict.failureClass, 'preview_start_failed');
+  assert.equal(verdict.browserCompletionFailureClass, 'preview_start_failed');
+  assert.equal(verdict.cleanup.cleanupCommand.status, 'passed');
+  assert.equal(existsSync(cleanupMarker), true);
+});
+
+test('browser flow runner redacts config env secrets from paths urls commands and logs without explicit redactValues', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-redaction-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const secret = 'env-only-secret-token';
+  const secretDir = path.join(tempRoot, `config-${secret}`);
+  await mkdir(secretDir, { recursive: true });
+  const configPath = path.join(secretDir, 'browser-flow-config.json');
+  await writeFile(configPath, JSON.stringify({
+    timeoutMs: 5000,
+    staticCommands: [
+      { command: process.execPath, args: ['-e', 'console.log(process.cwd())'], cwd: '.' },
+    ],
+    previewCommand: {
+      command: process.execPath,
+      args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+      cwd: '.',
+      env: { BROWSER_COMPLETION_SECRET: secret },
+    },
+    readinessUrl: `http://127.0.0.1:${port}/health?token=${secret}`,
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    'scripts/browser-flow-runner.mjs',
+    '--flow',
+    'preview',
+    '--config',
+    configPath,
+    '--browserctl',
+    fakeBrowserctl,
+    '--run-id',
+    'env-redaction',
+    '--verdict-dir',
+    path.join(tempRoot, '.moonshot-relay'),
+    '--timeout-ms',
+    '5000',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const verdictText = await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-env-redaction.json'), 'utf8');
+  const verdict = JSON.parse(verdictText);
+  assert.equal(verdictText.includes(secret), false);
+  assert.match(verdict.configPath, /\[REDACTED\]/);
+  assert.match(verdict.url, /\[REDACTED\]/);
+  assert.match(verdict.steps.find((step) => step.name === 'static_1').cwd, /\[REDACTED\]/);
+  assert.match(verdict.steps.find((step) => step.name === 'static_1').stdout, /\[REDACTED\]/);
+  assert.match(verdict.preview.readinessUrl, /\[REDACTED\]/);
+  assert.match(verdict.preview.cwd, /\[REDACTED\]/);
+  assert.match(verdict.preview.logs.stdout, /\[REDACTED\]/);
+});
+
+test('browser flow runner browser completion failure class stays inside schema enum', async () => {
+  const schema = JSON.parse(await readRoot('schemas', 'browser-completion-result.schema.json'));
+  const allowed = new Set(schema.properties.failureClass.enum);
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-failure-class-');
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const failingBrowserctl = path.join(tempRoot, process.platform === 'win32' ? 'browserctl-fail.cmd' : 'browserctl-fail');
+  await writeFile(
+    failingBrowserctl,
+    process.platform === 'win32' ? '@echo off\r\necho backend failed 1>&2\r\nexit /b 7\r\n' : '#!/usr/bin/env sh\necho backend failed >&2\nexit 7\n',
+  );
+  await chmod(failingBrowserctl, 0o755);
+
+  const staticFailConfig = path.join(tempRoot, 'static-fail.json');
+  await writeFile(staticFailConfig, JSON.stringify({
+    timeoutMs: 1000,
+    staticCommands: [{ command: process.execPath, args: ['-e', 'process.exit(5)'] }],
+    previewCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', '9'] },
+    readinessUrl: 'http://127.0.0.1:9/health',
+  }, null, 2));
+
+  const backendFailConfig = path.join(tempRoot, 'backend-fail.json');
+  await writeFile(backendFailConfig, JSON.stringify({
+    timeoutMs: 1000,
+    previewCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', '9'] },
+    readinessUrl: 'http://127.0.0.1:9/health',
+  }, null, 2));
+
+  const cases = [
+    {
+      id: 'static-fail',
+      args: ['--flow', 'preview', '--config', staticFailConfig, '--browserctl', fakeBrowserctl],
+    },
+    {
+      id: 'backend-fail',
+      args: ['--flow', 'preview', '--config', backendFailConfig, '--browserctl', failingBrowserctl],
+    },
+    {
+      id: 'unsupported-flow',
+      args: ['--flow', 'visual', '--url', 'data:text/html,ok', '--browserctl', fakeBrowserctl],
+    },
+    {
+      id: 'missing-url',
+      args: ['--flow', 'smoke', '--browserctl', fakeBrowserctl],
+    },
+  ];
+
+  for (const fixture of cases) {
+    const result = spawnSync(process.execPath, [
+      'scripts/browser-flow-runner.mjs',
+      ...fixture.args,
+      '--run-id',
+      fixture.id,
+      '--verdict-dir',
+      path.join(tempRoot, '.moonshot-relay'),
+      '--timeout-ms',
+      '1000',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    assert.notEqual(result.status, 0, `${fixture.id} should fail`);
+    const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', `browser-flow-verdict-${fixture.id}.json`), 'utf8'));
+    assert.ok(allowed.has(verdict.browserCompletionFailureClass), `${fixture.id}: ${verdict.browserCompletionFailureClass}`);
+  }
+});
+
+test('browser flow runner classifies preview port conflicts as unavailable port setup gaps', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-browser-port-gap-');
+  const port = await getFreePort();
+  const fakeBrowserctl = await createFakeBrowserctl(tempRoot);
+  const occupyingServer = http.createServer((request, response) => {
+    response.writeHead(503, { 'content-type': 'text/plain' });
+    response.end('occupied\n');
+  });
+  await new Promise((resolve, reject) => {
+    occupyingServer.once('error', reject);
+    occupyingServer.listen(port, '127.0.0.1', resolve);
+  });
+
+  try {
+    const configPath = path.join(tempRoot, 'browser-flow-config.json');
+    await writeFile(configPath, JSON.stringify({
+      timeoutMs: 1200,
+      fixtureSeedCommand: { command: process.execPath, args: [fromRoot('tests', 'fixtures', 'browser-completion', 'seed-ok.mjs')] },
+      previewCommand: {
+        command: process.execPath,
+        args: [fromRoot('tests', 'fixtures', 'browser-completion', 'preview-server.mjs'), '--port', String(port)],
+      },
+      readinessUrl: `http://127.0.0.1:${port}/health`,
+    }, null, 2));
+
+    const result = spawnSync(process.execPath, [
+      'scripts/browser-flow-runner.mjs',
+      '--flow',
+      'preview',
+      '--config',
+      configPath,
+      '--browserctl',
+      fakeBrowserctl,
+      '--run-id',
+      'unavailable-port',
+      '--verdict-dir',
+      path.join(tempRoot, '.moonshot-relay'),
+      '--timeout-ms',
+      '1200',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 64, result.stderr || result.stdout);
+    const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-unavailable-port.json'), 'utf8'));
+    assert.equal(verdict.status, 'setup_gap');
+    assert.equal(verdict.failureClass, 'unavailable_port');
+    assert.equal(verdict.cleanup.previewProcessTerminated, true);
+  } finally {
+    await new Promise((resolve) => occupyingServer.close(resolve));
+  }
 });
 
 test('browser runtime verifier defaults generated verdicts to .moonshot-relay', async () => {

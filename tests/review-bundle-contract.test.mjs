@@ -6,7 +6,14 @@ import { spawnSync } from 'node:child_process';
 import { after, test } from 'node:test';
 
 import { sha256Hex } from '../scripts/lib/candidate-identity.mjs';
-import { buildReviewBundle } from '../scripts/lib/review-bundle.mjs';
+import {
+  buildRepairPrompt,
+  buildRepairLoopReceipt,
+  buildReviewBundle,
+  buildReviewCritiqueLoopReceipt,
+  repairLoopBlockers,
+  reviewCritiqueLoopBlockers,
+} from '../scripts/lib/review-bundle.mjs';
 
 const tempRoots = [];
 
@@ -65,4 +72,138 @@ test('review bundle CLI emits JSON digest', async () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
   assert.match(payload.bundleDigest, /^[a-f0-9]{64}$/);
+});
+
+test('review critique loop receipt requires two iterations and parent dispositions', () => {
+  const receipt = buildReviewCritiqueLoopReceipt({
+    candidate_id: input().candidate_id,
+    sourceDigest: input().sourceDigest,
+    bundleDigest: 'd'.repeat(64),
+    iterations: [
+      { reviewers: [{ reviewerId: 'agent-a', focus: 'requirements_contract' }, { reviewerId: 'agent-b', focus: 'runtime_authority' }] },
+      { reviewers: [{ reviewerId: 'agent-c', focus: 'regression_risk' }, { reviewerId: 'agent-d', focus: 'security_or_data_safety' }] },
+    ],
+    parentResolutions: [
+      { findingId: 'finding-1', status: 'accepted', evidence: 'fixed in tests', blockerId: '' },
+      { findingId: 'finding-2', status: 'rejected_with_evidence', evidence: 'existing test covers it', blockerId: '' },
+    ],
+  });
+
+  assert.equal(receipt.artifactId, 'REVIEW_CRITIQUE_LOOP_RECEIPT');
+  assert.equal(receipt.iterations.length, 2);
+  assert.equal(receipt.effectiveReviewerCount, 4);
+  assert.equal(receipt.closeoutEligible, true);
+  assert.equal(reviewCritiqueLoopBlockers({
+    receipt,
+    candidate_id: input().candidate_id,
+    sourceDigest: input().sourceDigest,
+    bundleDigest: 'd'.repeat(64),
+  }).length, 0);
+
+  const missing = reviewCritiqueLoopBlockers({ required: true });
+  assert.equal(missing[0].code, 'review_critique_loop_missing');
+
+  const blocking = buildReviewCritiqueLoopReceipt({
+    candidate_id: input().candidate_id,
+    sourceDigest: input().sourceDigest,
+    bundleDigest: 'd'.repeat(64),
+    iterations: receipt.iterations,
+    parentResolutions: [
+      { findingId: 'finding-3', status: 'blocking_tracked', evidence: '', blockerId: 'blocker-1' },
+    ],
+  });
+  assert.ok(reviewCritiqueLoopBlockers({ receipt: blocking }).some((blocker) => blocker.code === 'review_critique_loop_unresolved_blocking'));
+
+  const forgedReviewerIndependence = buildReviewCritiqueLoopReceipt({
+    candidate_id: input().candidate_id,
+    sourceDigest: input().sourceDigest,
+    bundleDigest: 'd'.repeat(64),
+    iterations: [
+      { reviewers: [{ reviewerId: 'agent-a', focus: 'requirements_contract' }] },
+      { reviewers: [{ reviewerId: 'agent-a', focus: 'runtime_authority' }] },
+    ],
+    parentResolutions: [],
+  });
+  const forgedReviewerClaim = {
+    ...forgedReviewerIndependence,
+    reviewerIds: ['agent-a', 'agent-b'],
+    effectiveReviewerCount: 2,
+  };
+  assert.ok(reviewCritiqueLoopBlockers({ receipt: forgedReviewerClaim }).some((blocker) => blocker.code === 'review_critique_loop_reviewer_set_mismatch'));
+
+  const forgedBlockingAggregate = buildReviewCritiqueLoopReceipt({
+    candidate_id: input().candidate_id,
+    sourceDigest: input().sourceDigest,
+    bundleDigest: 'd'.repeat(64),
+    iterations: receipt.iterations,
+    parentResolutions: [
+      { findingId: 'finding-4', status: 'blocking_tracked', evidence: '', blockerId: 'blocker-4' },
+    ],
+  });
+  const forgedBlockingClean = {
+    ...forgedBlockingAggregate,
+    unresolvedBlockingCount: 0,
+    closeoutEligible: true,
+  };
+  assert.ok(reviewCritiqueLoopBlockers({ receipt: forgedBlockingClean }).some((blocker) => blocker.code === 'review_critique_loop_blocking_count_mismatch'));
+
+  const tampered = { ...receipt, receiptDigest: 'f'.repeat(64) };
+  assert.ok(reviewCritiqueLoopBlockers({ receipt: tampered }).some((blocker) => blocker.code === 'review_critique_loop_digest_mismatch'));
+
+  const rawPrompt = { ...receipt, rawPrompt: 'DO_NOT_STORE_RAW_PROMPT' };
+  assert.ok(reviewCritiqueLoopBlockers({ receipt: rawPrompt }).some((blocker) => blocker.code === 'review_critique_loop_forbidden_context'));
+});
+
+test('repair prompt preserves failure evidence and prohibited repair actions', () => {
+  const repair = buildRepairPrompt({
+    scenarioId: 'critical-browser-flow',
+    failedStep: 'expected_text',
+    failureClass: 'browser_confirmation_failed',
+    consoleSummary: { errorCount: 1 },
+    networkSummary: { failedCount: 0 },
+    artifacts: [{ path: '.moonshot-relay/browser-artifacts/run/goal/flow/screenshot.png' }],
+    prohibitedRepairActions: [],
+    rerunCommand: 'npm run browser:test -- --scenario critical-browser-flow',
+    maxRepairAttempts: 99,
+  });
+
+  assert.equal(repair.artifactId, 'REPAIR_PROMPT');
+  assert.equal(repair.maxRepairAttempts, 2);
+  assert.equal(repair.prohibitedRepairActions.includes('do not skip required browser or integration tests'), true);
+  assert.match(repair.prompt, /scenarioId: critical-browser-flow/);
+  assert.match(repair.prompt, /do not delete or weaken failing assertions/);
+  assert.match(repair.prompt, /npm run browser:test/);
+});
+
+test('repair loop receipt blocks exhausted changed-scenario or weakened assertion reruns', () => {
+  const clean = buildRepairLoopReceipt({
+    scenarioId: 'critical-browser-flow',
+    originalScenarioId: 'critical-browser-flow',
+    rerunScenarioId: 'critical-browser-flow',
+    failedAssertionIds: ['assert-text', 'assert-role'],
+    preservedAssertionIds: ['assert-text', 'assert-role'],
+    attemptIndex: 1,
+    maxRepairAttempts: 2,
+  });
+
+  assert.equal(repairLoopBlockers({ receipt: clean, required: true }).length, 0);
+
+  const exhausted = buildRepairLoopReceipt({
+    ...clean,
+    status: 'repair_exhausted',
+    artifactLinks: ['.moonshot-relay/verification-reports/repair-exhausted.json'],
+  });
+  assert.ok(repairLoopBlockers({ receipt: exhausted, required: true }).some((blocker) => blocker.code === 'repair_exhausted'));
+
+  const changedScenario = buildRepairLoopReceipt({
+    ...clean,
+    rerunScenarioId: 'different-scenario',
+  });
+  assert.ok(repairLoopBlockers({ receipt: changedScenario, required: true }).some((blocker) => blocker.code === 'repair_scenario_mismatch'));
+
+  const weakenedAssertions = buildRepairLoopReceipt({
+    ...clean,
+    preservedAssertionIds: ['assert-text'],
+  });
+  assert.ok(repairLoopBlockers({ receipt: weakenedAssertions, required: true }).some((blocker) => blocker.code === 'repair_assertion_ids_changed'));
 });

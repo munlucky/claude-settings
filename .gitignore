@@ -55,3 +55,4 @@ docs/*.png
 .claude/verification-verdict**.json
 package/claude/profile/
 package/codex/profile/
+package/moonshot-relay/profile/

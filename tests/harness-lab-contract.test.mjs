@@ -27,6 +27,7 @@ import {
   buildCloseoutReceipt,
   buildRunSpec,
   cancelLoop,
+  classifyHarnessWorktree,
   closeoutExitCode,
   deriveInstallStatus,
   dockerScript,
@@ -38,6 +39,7 @@ import {
   normalizeCalibrationBaselineFixtureIdentity,
   normalizeInstalledRuntimeSmoke,
   patchDockerLabResult,
+  parseGitWorktreePorcelain,
   prepareDockerScript,
   revalidateCloseoutReceipt,
   resumeLoop,
@@ -2117,6 +2119,66 @@ test('closeout receipt statuses gate commit workflow consumption', async () => {
   });
   assert.equal(rejected.status === 'promoted_ready_for_commit_workflow', false);
   assert.match(rejected.nextAction, /fix candidate/);
+});
+
+test('harness worktree lifecycle keeps generated baseline worktrees ephemeral and safe to prune', () => {
+  const porcelain = [
+    'worktree C:/dev/moonshot-relay',
+    'HEAD main-head',
+    'branch refs/heads/main',
+    '',
+    'worktree C:/dev/moonshot-relay/.moonshot-relay/harness-lab/worktrees/baseline-0026-calibration-20260630-091721',
+    'HEAD baseline-head',
+    'detached',
+    '',
+  ].join('\n');
+  const entries = parseGitWorktreePorcelain(porcelain);
+
+  assert.equal(entries.length, 2);
+  assert.equal(entries[1].detached, true);
+
+  const clean = classifyHarnessWorktree(entries[1], {
+    worktreeRoot: 'C:/dev/moonshot-relay/.moonshot-relay/harness-lab/worktrees',
+    currentBaselineId: 'baseline-0027',
+    dirtyStatusShort: '',
+  });
+  assert.equal(clean.insideHarnessRoot, true);
+  assert.equal(clean.detached, true);
+  assert.equal(clean.prunable, true);
+  assert.equal(clean.action, 'remove');
+  assert.equal(clean.baselineId, 'baseline-0026');
+
+  const dirty = classifyHarnessWorktree(entries[1], {
+    worktreeRoot: 'C:/dev/moonshot-relay/.moonshot-relay/harness-lab/worktrees',
+    dirtyStatusShort: '?? debug.log',
+  });
+  assert.equal(dirty.prunable, false);
+  assert.equal(dirty.action, 'retain');
+  assert.equal(dirty.retainReason, 'dirty_or_untracked_worktree');
+  assert.equal(dirty.retentionTtlHours, 72);
+
+  const outside = classifyHarnessWorktree({
+    path: 'C:/dev/moonshot-relay/other-worktree',
+    head: 'head',
+    detached: true,
+  }, {
+    worktreeRoot: 'C:/dev/moonshot-relay/.moonshot-relay/harness-lab/worktrees',
+    dirtyStatusShort: '',
+  });
+  assert.equal(outside.prunable, false);
+  assert.equal(outside.retainReason, 'outside_harness_worktree_root');
+
+  const branch = classifyHarnessWorktree({
+    path: 'C:/dev/moonshot-relay/.moonshot-relay/harness-lab/worktrees/baseline-0026-calibration-20260630-091721',
+    head: 'head',
+    branch: 'refs/heads/main',
+    detached: false,
+  }, {
+    worktreeRoot: 'C:/dev/moonshot-relay/.moonshot-relay/harness-lab/worktrees',
+    dirtyStatusShort: '',
+  });
+  assert.equal(branch.prunable, false);
+  assert.equal(branch.retainReason, 'not_detached_worktree');
 });
 
 test('closeout revalidation rejects stale promoted receipts', async () => {
