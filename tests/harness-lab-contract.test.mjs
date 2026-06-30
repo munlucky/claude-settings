@@ -12,6 +12,7 @@ import {
   buildCompareReport,
   buildContainerPolicyAudit,
   compareStableCandidate,
+  loadLabConfig,
   promoteBaseline,
   normalizePromotionPolicy,
   rollbackBaseline,
@@ -21,26 +22,41 @@ import {
 } from '../tools/harness-lab/harness-lab.mjs';
 import {
   buildCandidateSummaryArtifact,
+  bindRunKernelToLabResult,
   buildBaselineRefreshReadiness,
   buildCloseoutReceipt,
+  buildRunSpec,
+  cancelLoop,
   closeoutExitCode,
   deriveInstallStatus,
   dockerScript,
   dockerRunHardeningArgs,
   dockerRunHardeningPolicy,
+  evaluateLoop,
+  evolveLoop,
+  loadRunProjection,
   normalizeCalibrationBaselineFixtureIdentity,
   normalizeInstalledRuntimeSmoke,
   patchDockerLabResult,
   prepareDockerScript,
   revalidateCloseoutReceipt,
+  resumeLoop,
   rewriteContainerPaths,
+  runStatusLoop,
+  runSpecHash,
   scanAuthArtifacts,
   selectAutoLifecycle,
+  writeRunKernelStart,
   shouldExcludeSourceSnapshotPath,
 } from '../tools/harness-lab/harness-loop.mjs';
+import { appendLedgerEvent, readLedger, verifyLedger } from '../scripts/lib/event-ledger.mjs';
 
 const root = process.cwd();
 const tempRoots = [];
+
+async function fileSha256(filePath) {
+  return createHash('sha256').update(await readFile(filePath)).digest('hex');
+}
 
 after(async () => {
   await Promise.all(tempRoots.map((dir) => rm(dir, { recursive: true, force: true })));
@@ -192,6 +208,35 @@ test('default control-plane suite declares quantitative metrics', () => {
   ]);
 });
 
+test('default lab suite includes pinned research fixture metrics', () => {
+  const research = DEFAULT_SUITES.find((suite) => suite.id === 'moonshot-research-fixture');
+
+  assert.ok(research);
+  assert.equal(research.fixtureSetId, 'moonshot-research-fixtures-v1');
+  assert.equal(research.fixtureId, 'harness-product-surfaces-2026-06-24');
+  assert.equal(research.inputHash, 'sha256:moonshot-research-2026-06-24-harness-product-surfaces-v1');
+  assert.equal(research.scorerVersion, 'research-fixture-scorer-v1');
+  assert.deepEqual(research.metrics.map((metric) => metric.id), [
+    'evidenceCount',
+    'queryVariantCount',
+    'laneFailureCount',
+    'primarySourceRatio',
+    'claimLedgerCoverage',
+    'boundaryAccessItemCount',
+    'adjacentRepoContaminationRatio',
+    'requiredArtifactCompleteness',
+  ]);
+});
+
+test('default lab config materialization preserves suite-specific fixture identity', async () => {
+  const config = await loadLabConfig('');
+  const research = config.suites.find((suite) => suite.id === 'moonshot-research-fixture');
+
+  assert.ok(research);
+  assert.equal(research.fixtureSetId, 'moonshot-research-fixtures-v1');
+  assert.equal(research.scorerVersion, 'research-fixture-scorer-v1');
+});
+
 test('metric threshold failure blocks lab promotion even when command exits zero', async () => {
   const candidateRoot = await makeFixtureRepo();
   await writeFile(
@@ -322,6 +367,7 @@ test('account-root guard ignores live Codex volatile runtime files only', () => 
     'models_cache.json',
     '.codex-global-state.json',
     '.codex-global-state.json.tmp',
+    '.codex-global-state.json.bak',
     'logs_2.sqlite',
     'logs_2.sqlite-wal',
     'logs_2.sqlite-shm',
@@ -329,6 +375,7 @@ test('account-root guard ignores live Codex volatile runtime files only', () => 
     'state_5.sqlite-wal',
     'state_5.sqlite-shm',
     'state/cache.sqlite-journal',
+    'process_manager/chat_processes.json',
   ];
   for (const relativePath of volatilePaths) {
     assert.equal(shouldExcludeGuardPath(relativePath), true, `${relativePath} should be volatile`);
@@ -339,6 +386,14 @@ test('account-root guard ignores live Codex volatile runtime files only', () => 
     'AGENTS.md',
     'rules/policy.md',
     'profiles/codex/settings.json',
+    'plugins/installed/plugin.json',
+    'projects/project-a/state.json',
+    'process_manager/manager-policy.json',
+    'state/projects/demo/knowledge/preserve.txt',
+    'tasks/task-001.md',
+    'teams/team-a.json',
+    'vendor_imports/tooling/manifest.json',
+    'generated_images/kept-asset.png',
   ];
   for (const relativePath of durablePaths) {
     assert.equal(shouldExcludeGuardPath(relativePath), false, `${relativePath} should stay protected`);
@@ -402,6 +457,32 @@ test('stable and candidate differential detects metric regression', () => {
   assert.equal(metric.status, 'failed');
   assert.equal(metric.failureClass, 'score_drop');
   assert.equal(metric.metricId, 'score');
+});
+
+test('stable and candidate differential allows new passing candidate suites', () => {
+  const differential = compareStableCandidate(
+    {
+      results: [
+        { id: 'existing', exitCode: 0, status: 'passed' },
+      ],
+    },
+    {
+      results: [
+        { id: 'existing', exitCode: 0, status: 'passed' },
+        { id: 'new-research-fixture', exitCode: 0, status: 'passed' },
+      ],
+    },
+    [
+      { id: 'existing' },
+      { id: 'new-research-fixture' },
+    ],
+  );
+
+  const newSuite = differential.find((entry) => entry.suite === 'new-research-fixture');
+  assert.ok(newSuite);
+  assert.equal(newSuite.status, 'passed');
+  assert.equal(newSuite.failureClass, 'none');
+  assert.equal(newSuite.reason, 'new passing candidate suite has no stable result');
 });
 
 test('freeze writes immutable baseline artifact manifest contract', async () => {
@@ -955,6 +1036,350 @@ test('candidate loop summary artifact captures compare and promotion authority p
   assert.equal(summary.promotion.status, 'promoted');
   assert.equal(summary.promotion.baselineId, 'baseline-0002');
   assert.equal(summary.promotion.copiedFiles, undefined);
+});
+
+test('run spec hash excludes self hash and rejects in-place mutation', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-kernel-'));
+  tempRoots.push(tempRoot);
+  const spec = buildRunSpec({
+    runId: 'candidate-kernel',
+    candidateRoot: root,
+    outputRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+    baselineId: 'baseline-0001',
+  });
+
+  assert.equal(spec.schemaVersion, 'moonshot-run-spec.v1');
+  assert.equal(spec.specHash, runSpecHash(spec));
+  assert.equal(spec.candidateRoot.portablePath, '.');
+  assert.equal(spec.allowedMutationBoundary.generatedState.portablePath, 'candidate-kernel');
+
+  const kernel = await writeRunKernelStart({
+    runId: 'candidate-kernel',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+    baselineId: 'baseline-0001',
+  });
+  assert.equal(existsSync(kernel.specPath), true);
+  assert.equal(existsSync(kernel.eventsPath), true);
+  assert.equal((await readLedger(kernel.eventsPath)).map((event) => event.type).join(','), 'run.spec_written,run.started');
+  assert.equal(verifyLedger(await readLedger(kernel.eventsPath)).valid, true);
+
+  const tamperedSpec = JSON.parse(await readFile(kernel.specPath, 'utf8'));
+  tamperedSpec.objective = 'tampered-without-updating-spec-hash';
+  await writeFile(kernel.specPath, `${JSON.stringify(tamperedSpec, null, 2)}\n`);
+  await assert.rejects(
+    () => writeRunKernelStart({
+      runId: 'candidate-kernel',
+      sourceRoot: root,
+      outRoot: tempRoot,
+      lifecyclePath: 'candidate_only',
+      backend: 'host',
+      baselineId: 'baseline-0001',
+    }),
+    /run-spec mutation rejected/,
+  );
+  await writeFile(kernel.specPath, `${JSON.stringify(kernel.spec, null, 2)}\n`);
+
+  await assert.rejects(
+    () => writeRunKernelStart({
+      runId: 'candidate-kernel',
+      sourceRoot: root,
+      outRoot: tempRoot,
+      lifecyclePath: 'calibration',
+      backend: 'host',
+      baselineId: 'baseline-0001',
+    }),
+    /run-spec mutation rejected/,
+  );
+});
+
+test('host candidate lab result can be bound to run spec and events', async () => {
+  const candidateRoot = await makeFixtureRepo();
+  const configPath = await makeConfig();
+  const outRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-kernel-bind-'));
+  tempRoots.push(outRoot);
+  const runId = 'kernel-bind';
+  const kernel = await writeRunKernelStart({
+    runId,
+    sourceRoot: candidateRoot,
+    outRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+
+  const result = spawnSync(process.execPath, [
+    'tools/harness-lab/harness-lab.mjs',
+    'run',
+    '--candidate-root',
+    candidateRoot,
+    '--config',
+    configPath,
+    '--out',
+    outRoot,
+    '--run-id',
+    runId,
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    env: await makeLabEnv('kernel-bind'),
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  const bound = await bindRunKernelToLabResult(payload.resultPath, kernel);
+  assert.equal(bound?.run?.specHash, kernel.specHash);
+  assert.equal(bound?.runKernel?.eventsPath, kernel.eventsPath);
+  const events = await readLedger(kernel.eventsPath);
+  assert.equal(events.some((event) => event.type === 'artifact.written'), true);
+  assert.notEqual(events.at(-1).type, 'run.completed');
+  assert.equal(verifyLedger(events).valid, true);
+});
+
+test('run-status rejects tampered ledgers and stale artifact hashes', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-status-'));
+  tempRoots.push(tempRoot);
+  const kernel = await writeRunKernelStart({
+    runId: 'status-tamper',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+  await writeFile(path.join(kernel.runRoot, 'lab-result.json'), `${JSON.stringify({
+    schemaVersion: 'moonshot-harness-lab-result.v1',
+    status: 'passed',
+  }, null, 2)}\n`);
+  await bindRunKernelToLabResult(path.join(kernel.runRoot, 'lab-result.json'), kernel);
+  await writeFile(path.join(kernel.runRoot, 'lab-result.json'), `${JSON.stringify({
+    schemaVersion: 'moonshot-harness-lab-result.v1',
+    status: 'passed',
+    tampered: true,
+    runKernel: {
+      schemaVersion: 'moonshot-run-kernel-binding.v1',
+      specHash: kernel.specHash,
+      runSpecPath: kernel.specPath,
+      eventsPath: kernel.eventsPath,
+    },
+  }, null, 2)}\n`);
+
+  const stale = await runStatusLoop({ runId: 'status-tamper', runsRoot: tempRoot });
+  assert.equal(stale.status, 'stale');
+  assert.equal(stale.artifactConsistency.staleArtifacts.some((entry) => entry.reasons.includes('artifact_hash_mismatch')), true);
+
+  const eventLines = (await readFile(kernel.eventsPath, 'utf8')).trimEnd().split('\n');
+  const first = JSON.parse(eventLines[0]);
+  first.payload.specHash = 'tampered';
+  await writeFile(kernel.eventsPath, `${[JSON.stringify(first), ...eventLines.slice(1)].join('\n')}\n`);
+  const invalid = await runStatusLoop({ runId: 'status-tamper', runsRoot: tempRoot });
+  assert.equal(invalid.status, 'invalid');
+  assert.equal(invalid.ledgerValid, false);
+});
+
+test('lifecycle run-status CLI reads selected run by id', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-status-cli-'));
+  tempRoots.push(tempRoot);
+  const kernel = await writeRunKernelStart({
+    runId: 'cli-status',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+
+  const result = spawnSync(process.execPath, [
+    'tools/harness-lab/harness-loop.mjs',
+    'run-status',
+    '--run-id',
+    'cli-status',
+    '--runs-root',
+    tempRoot,
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'running');
+  assert.equal(payload.specHash, kernel.specHash);
+});
+
+test('resume is idempotent for terminal runs and refuses invalid spec hash', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-resume-'));
+  tempRoots.push(tempRoot);
+  const kernel = await writeRunKernelStart({
+    runId: 'resume-terminal',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+  await appendLedgerEvent(kernel.eventsPath, {
+    type: 'run.completed',
+    payload: { runId: 'resume-terminal', specHash: kernel.specHash, status: 'passed' },
+  });
+  const terminal = await resumeLoop({ runId: 'resume-terminal', runsRoot: tempRoot });
+  assert.equal(terminal.status, 'terminal_noop');
+
+  const tamperedSpec = JSON.parse(await readFile(kernel.specPath, 'utf8'));
+  tamperedSpec.backend = 'docker';
+  await writeFile(kernel.specPath, `${JSON.stringify(tamperedSpec, null, 2)}\n`);
+  const invalid = await resumeLoop({ runId: 'resume-terminal', runsRoot: tempRoot });
+  assert.equal(invalid.status, 'invalid');
+  assert.equal(invalid.projection.specHashValid, false);
+});
+
+test('cancel appends terminal event without rewriting run spec', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-cancel-'));
+  tempRoots.push(tempRoot);
+  const kernel = await writeRunKernelStart({
+    runId: 'cancel-me',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+  const specBefore = await readFile(kernel.specPath, 'utf8');
+  const result = await cancelLoop({
+    runId: 'cancel-me',
+    runsRoot: tempRoot,
+    reason: 'operator requested stop',
+  });
+
+  assert.equal(result.status, 'cancelled');
+  assert.equal(await readFile(kernel.specPath, 'utf8'), specBefore);
+  const events = await readLedger(kernel.eventsPath);
+  assert.equal(events.at(-1).type, 'run.cancelled');
+  assert.equal(events.at(-1).payload.reason, 'operator requested stop');
+  const repeat = await cancelLoop({
+    runId: 'cancel-me',
+    runsRoot: tempRoot,
+    reason: 'repeat',
+  });
+  assert.equal(repeat.status, 'terminal_noop');
+  assert.equal((await readLedger(kernel.eventsPath)).filter((event) => event.type === 'run.cancelled').length, 1);
+});
+
+test('evaluate writes derived verdict without promotion authority', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-evaluate-'));
+  tempRoots.push(tempRoot);
+  const kernel = await writeRunKernelStart({
+    runId: 'evaluate-me',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+  await writeFile(path.join(kernel.runRoot, 'lab-result.json'), `${JSON.stringify({
+    schemaVersion: 'moonshot-harness-lab-result.v1',
+    status: 'passed',
+  }, null, 2)}\n`);
+  await bindRunKernelToLabResult(path.join(kernel.runRoot, 'lab-result.json'), kernel);
+
+  const result = await evaluateLoop({ runId: 'evaluate-me', runsRoot: tempRoot });
+  assert.equal(result.status, 'verdict_written');
+  assert.equal(existsSync(result.verdictPath), true);
+  assert.equal(result.verdict.promotionAuthority, false);
+  assert.equal(result.verdict.promotionAuthorityReason.includes('H0 compare/promote'), true);
+  const events = await readLedger(kernel.eventsPath);
+  assert.equal(events.at(-1).type, 'run.completed');
+
+  const incompleteKernel = await writeRunKernelStart({
+    runId: 'evaluate-incomplete',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+  const incomplete = await evaluateLoop({ runId: 'evaluate-incomplete', runsRoot: tempRoot });
+  assert.equal(incomplete.status, 'incomplete');
+  assert.equal(existsSync(path.join(incompleteKernel.runRoot, 'verdict.json')), true);
+});
+
+test('evaluate fails derived verdict when lab artifact failed', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-evaluate-failed-'));
+  tempRoots.push(tempRoot);
+  const kernel = await writeRunKernelStart({
+    runId: 'evaluate-failed',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+  await writeFile(path.join(kernel.runRoot, 'lab-result.json'), `${JSON.stringify({
+    schemaVersion: 'moonshot-harness-lab-result.v1',
+    status: 'failed',
+  }, null, 2)}\n`);
+  await bindRunKernelToLabResult(path.join(kernel.runRoot, 'lab-result.json'), kernel);
+
+  const result = await evaluateLoop({ runId: 'evaluate-failed', runsRoot: tempRoot });
+  assert.equal(result.status, 'verdict_written');
+  assert.equal(result.verdict.status, 'failed');
+  assert.equal(
+    result.verdict.artifactVerdict.checks.find((check) => check.id === 'lab_result_status').status,
+    'failed',
+  );
+  const events = await readLedger(kernel.eventsPath);
+  assert.equal(events.at(-1).type, 'run.completed');
+  assert.equal(events.at(-1).payload.status, 'failed');
+});
+
+test('evolve creates a child run with parent lineage and leaves parent spec unchanged', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-evolve-'));
+  tempRoots.push(tempRoot);
+  const parent = await writeRunKernelStart({
+    runId: 'evolve-parent',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+    baselineId: 'baseline-0001',
+  });
+  const parentSpecBefore = await readFile(parent.specPath, 'utf8');
+  const result = await evolveLoop({
+    runId: 'evolve-parent',
+    outRunId: 'evolve-child',
+    runsRoot: tempRoot,
+  });
+
+  assert.equal(result.status, 'created');
+  assert.equal(await readFile(parent.specPath, 'utf8'), parentSpecBefore);
+  const childSpec = JSON.parse(await readFile(result.runSpecPath, 'utf8'));
+  assert.equal(childSpec.lineage.parentRunId, 'evolve-parent');
+  assert.equal(childSpec.lineage.evolvedFromSpecHash, parent.specHash);
+  assert.equal(childSpec.baselineId, 'baseline-0001');
+  const childEvents = await readLedger(result.eventsPath);
+  assert.equal(childEvents.some((event) => event.type === 'run.evolved'), true);
+});
+
+test('run-status rejects terminal events that are not last', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-terminal-last-'));
+  tempRoots.push(tempRoot);
+  const kernel = await writeRunKernelStart({
+    runId: 'terminal-not-last',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+  });
+  await appendLedgerEvent(kernel.eventsPath, {
+    type: 'run.completed',
+    payload: { runId: 'terminal-not-last', specHash: kernel.specHash, status: 'passed' },
+  });
+  await appendLedgerEvent(kernel.eventsPath, {
+    type: 'artifact.written',
+    payload: { artifactKind: 'late', path: kernel.specPath, sha256: await fileSha256(kernel.specPath), specHash: kernel.specHash },
+  });
+
+  const result = await loadRunProjection({ runId: 'terminal-not-last', runsRoot: tempRoot });
+  assert.equal(result.status, 'invalid');
+  assert.equal(result.terminalEventLast, false);
 });
 
 test('auto lifecycle promotes initial bootstrap only when no current baseline exists', () => {
@@ -1550,7 +1975,7 @@ test('rollback validates baseline artifacts and writes audit evidence', async ()
   const labResultPath = path.join(baselineRoot, 'baseline-0001', 'lab-result.json');
   await writeFile(labResultPath, '{"status":"passed"}\n');
   const crypto = await import('node:crypto');
-  const labResultSha256 = crypto.createHash('sha256').update(await readFile(labResultPath)).digest('hex');
+  const labResultSha256 = await fileSha256(labResultPath);
   await writeFile(path.join(baselineRoot, 'baseline-0001', 'manifest.json'), JSON.stringify({
     schemaVersion: 'moonshot-harness-baseline-artifact.v1',
     baselineId: 'baseline-0001',
@@ -1795,10 +2220,41 @@ test('closeout revalidation rejects stale promoted receipts', async () => {
     runtimeGate: { status: 'healthy' },
     sourceFingerprint: fingerprint,
   };
+  const kernelRoot = path.join(tempRoot, 'runs');
+  const kernel = await writeRunKernelStart({
+    runId: 'candidate-0002',
+    sourceRoot,
+    outRoot: kernelRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+    baselineId: 'baseline-0001',
+  });
+  await appendLedgerEvent(kernel.eventsPath, {
+    type: 'run.completed',
+    payload: {
+      status: 'promoted_ready_for_commit_workflow',
+      resultPath: candidatePath,
+    },
+  });
+  receipt.specHash = kernel.specHash;
+  receipt.runSpecPath = kernel.specPath;
+  receipt.eventsPath = kernel.eventsPath;
 
   const valid = await revalidateCloseoutReceipt(receipt, { baselineRoot, sourceRoot });
   assert.equal(valid.status, 'passed');
   assert.equal(valid.consumableByCommitWorkflow, true);
+
+  const tamperedKernel = structuredClone(receipt);
+  const tamperedEventsPath = path.join(path.dirname(kernel.eventsPath), 'events-tampered.jsonl');
+  const eventLines = (await readFile(kernel.eventsPath, 'utf8')).trimEnd().split('\n');
+  const lastEvent = JSON.parse(eventLines.at(-1));
+  lastEvent.payload.status = 'tampered';
+  eventLines[eventLines.length - 1] = JSON.stringify(lastEvent);
+  await writeFile(tamperedEventsPath, `${eventLines.join('\n')}\n`);
+  tamperedKernel.eventsPath = tamperedEventsPath;
+  const tampered = await revalidateCloseoutReceipt(tamperedKernel, { baselineRoot, sourceRoot });
+  assert.equal(tampered.consumableByCommitWorkflow, false);
+  assert.equal(tampered.blockingGates.some((gate) => gate.id === 'event_ledger_hash_chain_valid'), true);
 
   const stalePointer = structuredClone(receipt);
   stalePointer.baselinePointerAfter.sha256 = 'bad';

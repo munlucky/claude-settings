@@ -6,6 +6,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { recordEvalResult } from '../../scripts/lib/runtime-state-store.mjs';
+import { scoreResearchFixture } from './research-fixture-scorer.mjs';
 
 export const REQUIRED_HARNESS_CONTROL_PLANE_CASES = [
   'completion-false-positive',
@@ -35,7 +36,7 @@ const SOURCE_FIXTURE_PATH = path.join(
 const PACKAGED_FIXTURE_PATH = path.join(MODULE_DIR, 'fixtures', 'harness-control-plane', 'golden-regression.json');
 const DEFAULT_FIXTURE_PATH = existsSync(SOURCE_FIXTURE_PATH) ? SOURCE_FIXTURE_PATH : PACKAGED_FIXTURE_PATH;
 
-const usage = () => 'Usage: node tools/evals/harness-control-plane.mjs run [--fixture <path>] [--run-id <id>] [--goal-id <id>] [--json]';
+const usage = () => 'Usage: node tools/evals/harness-control-plane.mjs run [--fixture <path>] [--run-id <id>] [--goal-id <id>] [--include-research] [--json]';
 
 const parseArgs = (argv) => {
   const [command = 'run'] = argv;
@@ -45,12 +46,15 @@ const parseArgs = (argv) => {
     json: false,
     runId: '',
     goalId: '',
+    includeResearch: false,
   };
 
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--include-research') {
+      options.includeResearch = true;
     } else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, char) => char.toUpperCase());
       options[key] = argv[++index] || '';
@@ -123,26 +127,37 @@ const main = async () => {
 
   const fixture = await readFixture(options.fixture);
   const output = runHarnessControlPlaneEval(fixture);
+  const researchFixture = options.includeResearch
+    ? await scoreResearchFixture()
+    : null;
+  const combinedOutput = researchFixture
+    ? {
+      ...output,
+      status: output.status === 'passed' && researchFixture.status === 'passed' ? 'passed' : 'failed',
+      score: Math.min(output.score, researchFixture.normalizedScore),
+      researchFixture,
+    }
+    : output;
   let evalResult = null;
   if (options.runId && options.goalId) {
     evalResult = await recordEvalResult({
       runId: options.runId,
       goalId: options.goalId,
-      suite: output.suite,
-      status: output.status,
+      suite: combinedOutput.suite,
+      status: combinedOutput.status,
       score: {
-        score: output.score,
-        scoreThreshold: output.scoreThreshold,
-        passedCount: output.passedCount,
-        failedCount: output.failedCount,
-        totalCount: output.totalCount,
-        missingCases: output.missingCases,
+        score: combinedOutput.score,
+        scoreThreshold: combinedOutput.scoreThreshold,
+        passedCount: combinedOutput.passedCount,
+        failedCount: combinedOutput.failedCount,
+        totalCount: combinedOutput.totalCount,
+        missingCases: combinedOutput.missingCases,
       },
-      regressionWorsened: output.regressionWorsened,
-      evidence: output,
+      regressionWorsened: combinedOutput.regressionWorsened || researchFixture?.status === 'failed',
+      evidence: combinedOutput,
     });
   }
-  const result = { ...output, evalResult };
+  const result = { ...combinedOutput, evalResult };
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));

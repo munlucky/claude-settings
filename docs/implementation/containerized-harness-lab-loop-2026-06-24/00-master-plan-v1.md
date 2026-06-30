@@ -15,7 +15,7 @@ planPackage:
   schemaVersion: 1
   status: plan_ready_source_first
   planRoot: docs/implementation/containerized-harness-lab-loop-2026-06-24
-  sourceDraft: docs/implementation/36-containerized-harness-lab-loop-v1.md
+  sourceDraft: docs/implementation/containerized-harness-lab-loop-2026-06-24/00-source-draft-v1.md
   selectedMasterPlan: docs/implementation/containerized-harness-lab-loop-2026-06-24/00-master-plan-v1.md
   selectedPhaseDocs:
     - docs/implementation/containerized-harness-lab-loop-2026-06-24/01-baseline-artifact-and-result-contract-v1.md
@@ -146,4 +146,3 @@ Independent review and improvement sidecars found blocking gaps in the source dr
 ## Completion Rule
 
 This plan package is complete when all five phase docs and planning-loop review artifacts exist, surface classifications are recorded, concrete gates are policy-sourced or marked as missing policy, and phase evidence slots are explicit. Execution closeout is separate and requires phase-local scorecard, QA, handoff, and lab evidence for every executed phase.
-

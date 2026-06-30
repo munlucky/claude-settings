@@ -27,7 +27,7 @@ node tools/harness-lab/harness-lab.mjs run \
   --json
 ```
 
-The built-in suite currently checks package materialization dry-run, the harness control-plane golden eval, and the lab contract tests. Use `npm run test:lab` for the candidate-only default gate.
+The built-in suite currently checks package materialization dry-run, the harness control-plane golden eval, the pinned `moonshot-research` fixture suite, and the lab contract tests. Use `npm run test:lab` for the candidate-only default gate.
 
 ## Local Loop Setup
 
@@ -68,6 +68,31 @@ npm run lab:closeout
 `lab:candidate` runs only a candidate container and compares it with `baselines/current.json`. `lab:candidate:promote` additionally promotes a passing candidate to the next baseline id. `lab:candidate:promote:strict` requires a positive score delta under `strict_improvement`; `lab:candidate:promote:no-regression` allows equal score when all regression gates pass. Host execution is retained for diagnostics through `npm run lab:init:host`, `npm run lab:candidate:host`, and `npm run lab:candidate:promote:host`.
 
 Host Codex auth is never mounted into a candidate benchmark container. `npm run lab:auth-smoke` is the separate opt-in auth/model capability stage. It mounts host Codex auth only into ephemeral container homes, uses network access for the model-backed smoke, does not run benchmark suites, and scans output artifacts for copied `auth.json` or token-like payloads. Legacy `lab:candidate:codex-auth` and `lab:candidate:codex-dev-smoke` scripts route to this separate auth-smoke stage.
+
+New loop runs also write a run-kernel pair under the run root:
+
+```text
+runs/<run-id>/run-spec.json
+runs/<run-id>/events.jsonl
+```
+
+`run-spec.json` uses `schemaVersion: "moonshot-run-spec.v1"` and records the lifecycle path, backend, source boundary, account-root boundary, promotion criteria, fixture set, scorer version, and a self-excluding `specHash`. The hash is calculated over canonical JSON with sorted keys and portable path forms. Reusing a run id with a different spec is rejected as an in-place mutation; a changed objective, fixture set, backend, scorer, or mutation boundary must create a new run.
+
+`events.jsonl` is append-only and hash-chained. New lab-loop runs start with `run.spec_written` and `run.started`, record loop-owned command execution with `command.started` and `command.completed`, record artifact writes, and end with a terminal run event. `lab-result.json`, compare reports, `candidate-summary.json`, and `lab-closeout-receipt.json` carry the same `specHash` when they are produced by the loop wrapper. These run-local events are evidence for the lab run; they are not whole-plan completion authority.
+
+Operator lifecycle controls are available after a run kernel exists:
+
+```bash
+npm run lab:run-status -- --run-id <run-id>
+npm run lab:resume -- --run-id <run-id>
+npm run lab:cancel -- --run-id <run-id> --reason "operator reason"
+npm run lab:evaluate -- --run-id <run-id>
+npm run lab:evolve -- --run-id <run-id> --out-run-id <new-run-id>
+```
+
+`lab:status` remains the baseline-loop readiness command. `lab:run-status` is the run-kernel projection command for a selected run. It reads `run-spec.json`, verifies the self-excluding `specHash`, verifies the hash-chained event ledger, reports terminal state, and marks projections stale when event-recorded artifact hashes no longer match files. `lab:resume` is replay-first and idempotent for terminal runs; the initial implementation does not create a second execution authority for non-terminal runs. `lab:cancel` appends an event-only `run.cancelled` terminal event and does not promise process termination. `lab:evaluate` writes a derived `verdict.json` from verified run evidence, but it records `promotionAuthority: false`; H0 compare/promote evidence remains required for promotion claims. `lab:evolve` creates a new child run spec with parent run id and parent spec hash lineage and never edits the parent spec.
+
+Lifecycle commands may append events and write derived verdicts under `.moonshot-relay/harness-lab/runs/<run-id>/`. They must not edit prior run specs, baseline manifests, compare reports, current baseline pointers, live account-root profiles, or source files.
 
 Docker lifecycle promotion treats `installed-runtime-smoke.json` as a hard gate. `degraded`, `failed`, missing native capability, or blocker metrics fail the run. The lab normalizes the runtime-state `available` status to lifecycle `healthy` only when blocker and stale-warning lists are empty. `install-result.json` is also normalized after the container run; if install verification and profile surface parity are clean, the lab writes top-level `status: "installed"` and records `executionBackend.installStatus: "installed"` in `lab-result.json`. Docker runs record the inspected image identity as `executionBackend.imageId`, `executionBackend.imageDigest`, and `executionBackend.repoDigests`; promotion rejects Docker candidate artifacts without `executionBackend.imageDigest` and promoted baselines copy that identity into `runtimeIdentity` and `artifact.imageDigest` for stronger replay evidence.
 
@@ -127,6 +152,29 @@ Parsing rules:
 
 Metric failures block `promotable` even when the command exits with code 0.
 
+## Research Fixture Gate
+
+The default lab includes a fixed `moonshot-research` fixture from the tracked clean-checkout path:
+
+```text
+tests/fixtures/harness-research-fixtures/
+  fixture-manifest.json
+  2026-06-24/run.json
+  2026-06-24/evidence.json
+  2026-06-24/claim-ledger.json
+  2026-06-24/report.md
+```
+
+The scorer is deterministic and network-free:
+
+```bash
+node tools/evals/research-fixture-scorer.mjs score \
+  --manifest tests/fixtures/harness-research-fixtures/fixture-manifest.json \
+  --json
+```
+
+It checks evidence count, query variant count, lane failures, primary-source ratio, claim ledger coverage, boundary/access evidence, adjacent repository contamination, and required artifact completeness. The seed pack is intentionally the raw 2026-06-24 evidence pack: its `minimumPrimarySourceRatio` is calibrated to `0.18` with a manifest note that the earlier `0.70` planning draft applies to future filtered-source fixtures, not this raw seed fixture.
+
 ## Fixture Artifact Scoring
 
 Use the artifact scorer when stable and candidate runs must be compared against the same document, plan, or evidence input:
@@ -160,7 +208,7 @@ The lab fingerprints the real protected account roots before and after execution
 
 Any protected-root change blocks promotion with `account_root_contamination`. Unreadable protected roots block promotion with `account_root_guard_unavailable`.
 
-The guard excludes volatile or very large runtime payload directories such as `logs`, `cache`, `sessions`, `node_modules`, `plugins`, `backups`, `runtimes`, `state`, `projects`, and temp/lock files. It also excludes known live Codex runtime files such as `models_cache.json`, `.codex-global-state.json`, `logs_N.sqlite*`, and `state_N.sqlite*`; these may change while the Codex Desktop host is running and are not evidence that the candidate suite wrote to account root. Durable profile files such as `config.toml`, `AGENTS.md`, rules, and profile settings remain protected. Suite child processes still receive temp homes so lab writes should not target those real roots.
+The guard excludes volatile or very large runtime payload directories such as `logs`, `cache`, `sessions`, `node_modules`, `backups`, `runtimes`, `todos`, `shell-snapshots`, `session-env`, and temp/lock files. It also excludes known live Codex runtime files such as `models_cache.json`, `.codex-global-state.json`, `.codex-global-state.json.bak`, `process_manager/chat_processes.json`, `logs_N.sqlite*`, `state_N.sqlite*`, and sqlite journal sidecars; these may change while the Codex Desktop host is running and are not evidence that the candidate suite wrote to account root. Durable profile files such as `config.toml`, `AGENTS.md`, rules, profile settings, plugin manifests, project records, `state/projects/...` knowledge, tasks, teams, vendor imports, and generated assets remain protected. Suite child processes still receive temp homes so lab writes should not target those real roots.
 
 ## SWE-bench Adapter Contract
 
@@ -281,7 +329,7 @@ blocked_hard_gate
 calibration_required
 ```
 
-The receipt records baseline id, previous baseline id, candidate run id, candidate run hash, compare path and hash, promotion policy, runtime gate, calibration status, source fingerprint, and the next operator action. Stale or mismatched promoted receipts are not commit-consumable. The lab never commits or pushes source changes.
+The receipt records baseline id, previous baseline id, candidate run id, candidate run hash, compare path and hash, promotion policy, runtime gate, calibration status, source fingerprint, run-kernel `specHash` when present, and the next operator action. When a receipt includes `specHash`, `runSpecPath`, and `eventsPath`, closeout revalidation checks that the run spec hash matches the receipt, the event ledger hash chain verifies, and the ledger ends with a terminal event. Stale or mismatched promoted receipts are not commit-consumable. The lab never commits or pushes source changes.
 
 ## Container Policy
 

@@ -53,6 +53,33 @@ const DEFAULT_SUITES = [
     ],
   },
   {
+    id: 'moonshot-research-fixture',
+    description: 'Pinned moonshot-research evidence pack fixture stays deterministic.',
+    command: [
+      '<node>',
+      'tools/evals/research-fixture-scorer.mjs',
+      'score',
+      '--manifest',
+      'tests/fixtures/harness-research-fixtures/fixture-manifest.json',
+      '--json',
+    ],
+    timeoutMs: 120_000,
+    fixtureSetId: 'moonshot-research-fixtures-v1',
+    fixtureId: 'harness-product-surfaces-2026-06-24',
+    inputHash: 'sha256:moonshot-research-2026-06-24-harness-product-surfaces-v1',
+    scorerVersion: 'research-fixture-scorer-v1',
+    metrics: [
+      { id: 'evidenceCount', path: 'evidenceCount', direction: 'higher', min: 50, maxRegression: 0, required: true },
+      { id: 'queryVariantCount', path: 'queryVariantCount', direction: 'higher', min: 11, maxRegression: 0, required: true },
+      { id: 'laneFailureCount', path: 'laneFailureCount', direction: 'lower', max: 0, maxRegression: 0, required: true },
+      { id: 'primarySourceRatio', path: 'primarySourceRatio', direction: 'higher', min: 0.18, maxRegression: 0, required: true },
+      { id: 'claimLedgerCoverage', path: 'claimLedgerCoverage', direction: 'higher', min: 0.9, maxRegression: 0, required: true },
+      { id: 'boundaryAccessItemCount', path: 'boundaryAccessItemCount', direction: 'higher', min: 1, maxRegression: 0, required: true },
+      { id: 'adjacentRepoContaminationRatio', path: 'adjacentRepoContaminationRatio', direction: 'lower', max: 0.1, maxRegression: 0, required: true },
+      { id: 'requiredArtifactCompleteness', path: 'requiredArtifactCompleteness', direction: 'higher', min: 1, maxRegression: 0, required: true },
+    ],
+  },
+  {
     id: 'harness-lab-contract',
     description: 'Bootstrap lab contract tests pass.',
     command: ['<node>', '--test', 'tests/harness-lab-contract.test.mjs'],
@@ -219,8 +246,8 @@ async function loadLabConfig(configPath) {
       scorerVersion: DEFAULT_SCORER_VERSION,
       suites: DEFAULT_SUITES.map((suite) => ({
         ...suite,
-        fixtureSetId: DEFAULT_FIXTURE_SET_ID,
-        scorerVersion: DEFAULT_SCORER_VERSION,
+        fixtureSetId: suite.fixtureSetId || DEFAULT_FIXTURE_SET_ID,
+        scorerVersion: suite.scorerVersion || DEFAULT_SCORER_VERSION,
       })),
     };
   }
@@ -450,21 +477,14 @@ const shouldExcludeGuardPath = (relativePath) => {
     || segments.includes('cache')
     || segments.includes('sessions')
     || segments.includes('node_modules')
-    || segments.includes('plugins')
     || segments.includes('backups')
     || segments.includes('runtimes')
-    || segments.includes('state')
-    || segments.includes('projects')
     || segments.includes('todos')
     || segments.includes('shell-snapshots')
-    || segments.includes('tasks')
-    || segments.includes('teams')
     || segments.includes('session-env')
     || segments.includes('.tmp')
     || segments.includes('tmp')
-    || segments.includes('vendor_imports')
     || segments.includes('computer-use-turn-ended')
-    || segments.includes('generated_images')
   ) {
     return true;
   }
@@ -475,6 +495,8 @@ const shouldExcludeGuardPath = (relativePath) => {
     || fileName === 'models_cache.json'
     || fileName === '.codex-global-state.json'
     || fileName === '.codex-global-state.json.tmp'
+    || fileName === '.codex-global-state.json.bak'
+    || normalized === 'process_manager/chat_processes.json'
     || /^logs_\d+\.sqlite(?:-.+)?$/.test(fileName)
     || /^state_\d+\.sqlite(?:-.+)?$/.test(fileName);
 };
@@ -813,12 +835,21 @@ function compareStableCandidate(stable, candidate, suites) {
     }
     const stableResult = stableById.get(candidateResult.id);
     if (!stableResult) {
+      if (candidateResult.status === 'passed') {
+        return [{
+          suite: candidateResult.id,
+          suiteId: candidateResult.id,
+          status: 'passed',
+          failureClass: 'none',
+          reason: 'new passing candidate suite has no stable result',
+        }];
+      }
       return [{
         suite: candidateResult.id,
         suiteId: candidateResult.id,
         status: 'failed',
-        failureClass: 'artifact_contract_break',
-        reason: 'stable result missing',
+        failureClass: 'new_failed_task',
+        reason: 'stable result missing and candidate suite failed',
       }];
     }
     const entries = [];
@@ -1851,6 +1882,7 @@ export {
   buildContainerPolicyAudit,
   compareStableCandidate,
   freezeStable,
+  loadLabConfig,
   loadSuites,
   normalizePromotionPolicy,
   promoteBaseline,

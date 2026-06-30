@@ -1,0 +1,30 @@
+{
+  "query": "LazyCodex doctor plugin cache hooks MCP agents config state Gajae-Code external runner ultragoal evidence Ouroboros seed ledger status resume cancel evaluate evolve agent harness product surface",
+  "started_at": "2026-06-24T14:34:38+00:00",
+  "finished_at": "2026-06-24T14:36:24+00:00",
+  "capabilities": {
+    "curl_cffi": false,
+    "playwright": false,
+    "yt_dlp": false
+  },
+  "lanes": [
+    "web",
+    "github",
+    "hn",
+    "reddit"
+  ],
+  "queries": [
+    "LazyCodex doctor plugin cache hooks MCP agents config state Gajae-Code external runner ultragoal evidence Ouroboros seed ledger status resume cancel evaluate evolve agent harness product surface",
+    "LazyCodex doctor plugin",
+    "agent harness evaluation",
+    "agent evaluation harness",
+    "LazyCodex",
+    "MCP",
+    "Gajae-Code",
+    "LazyCodex doctor plugin cache hooks MCP agents config state Gajae-Code external runner ultragoal evidence Ouroboros seed ledger status resume cancel evaluate evolve agent harness product surface latest",
+    "LazyCodex doctor plugin cache hooks MCP agents config state Gajae-Code external runner ultragoal evidence Ouroboros seed ledger status resume cancel evaluate evolve agent harness product surface trending",
+    "LazyCodex doctor plugin cache hooks MCP agents config state Gajae-Code external runner ultragoal evidence Ouroboros seed ledger status resume cancel evaluate evolve agent harness product surface discussion",
+    "LazyCodex doctor plugin cache hooks MCP agents config state Gajae-Code external runner ultragoal evidence Ouroboros seed ledger status resume cancel evaluate evolve agent harness product surface review OR benchmark OR launch"
+  ],
+  "failures": []
+}

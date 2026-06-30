@@ -1,0 +1,452 @@
+[
+  {
+    "id": "claim-001",
+    "claim": "ultraworkers/claw-code",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/ultraworkers/claw-code"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T13:54:25Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 29.7,
+    "notes": "An agent-managed museum exhibit, built in Rust with Gajae-Code / LazyCodex — developed and maintained with no human intervention."
+  },
+  {
+    "id": "claim-002",
+    "claim": "code-yeongyu/oh-my-openagent",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/code-yeongyu/oh-my-openagent"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:31:08Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 29.7,
+    "notes": "omo/lazycodex: The coding agent for tokenmaxxers;the one and only agent harness for complex codebases. For your Codex, for your OpenCode"
+  },
+  {
+    "id": "claim-003",
+    "claim": "affaan-m/ECC",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/affaan-m/ECC"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:33:15Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 27.0,
+    "notes": "The agent harness performance optimization system. Skills, instincts, memory, security, and research-first development for Claude Code, Codex, Opencode, Cursor and beyond."
+  },
+  {
+    "id": "claim-004",
+    "claim": "langgenius/dify",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/langgenius/dify"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:34:58Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 24.3,
+    "notes": "Production-ready platform for agentic workflow development."
+  },
+  {
+    "id": "claim-005",
+    "claim": "farion1231/cc-switch",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/farion1231/cc-switch"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:30:59Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 24.3,
+    "notes": "A cross-platform desktop All-in-One assistant for Claude Code, Codex, OpenCode, OpenClaw, Gemini CLI & Hermes Agent. Only official website: ccswitch.io"
+  },
+  {
+    "id": "claim-006",
+    "claim": "n8n-io/n8n",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/n8n-io/n8n"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:34:38Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 21.6,
+    "notes": "Fair-code workflow automation platform with native AI capabilities. Combine visual building with custom code, self-host or cloud, 400+ integrations."
+  },
+  {
+    "id": "claim-007",
+    "claim": "punkpeye/awesome-mcp-servers",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/punkpeye/awesome-mcp-servers"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:24:44Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 21.6,
+    "notes": "A collection of MCP servers."
+  },
+  {
+    "id": "claim-008",
+    "claim": "code-yeongyu/lazycodex",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/code-yeongyu/lazycodex"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:19:54Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 19.063,
+    "notes": "The one and only agent harness for complex codebases. Project memory, planning, execution, and verified completion inside Codex."
+  },
+  {
+    "id": "claim-009",
+    "claim": "Snailclimb/JavaGuide",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/Snailclimb/JavaGuide"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:18:30Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 18.9,
+    "notes": "Java 面试 & 后端通用面试指南，覆盖计算机基础、数据库、分布式、高并发、系统设计与 AI 应用开发"
+  },
+  {
+    "id": "claim-010",
+    "claim": "open-webui/open-webui",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/open-webui/open-webui"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:31:15Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 18.9,
+    "notes": "User-friendly AI Interface (Supports Ollama, OpenAI API, ...)"
+  },
+  {
+    "id": "claim-011",
+    "claim": "netdata/netdata",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/netdata/netdata"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:15:23Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 18.9,
+    "notes": "The fastest path to AI-powered full stack observability, even for lean teams."
+  },
+  {
+    "id": "claim-012",
+    "claim": "devswha/oh-my-docs",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/devswha/oh-my-docs"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T05:25:55Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 16.201,
+    "notes": "Monorepo for Oh My Codex, Oh My Claude Code, Oh My OpenAgent, Gajae-Code, and LazyCodex documentation sites."
+  },
+  {
+    "id": "claim-013",
+    "claim": "Yeachan-Heo/gajae-code-website",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/Yeachan-Heo/gajae-code-website"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T05:47:13Z",
+    "observed_at": "2026-06-24T14:35:04+00:00",
+    "score": 16.2,
+    "notes": "GitHub Pages website for Gajae Code - shape, act, prove with autonomous coding agents"
+  },
+  {
+    "id": "claim-014",
+    "claim": "Show HN: Codemcp, One MCP tool that lets agents write Python to call many",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/skymoore/codemcp"
+    ],
+    "source_lane": "hn",
+    "route": "hn-algolia-api",
+    "published_at": "2026-06-24T11:41:30Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 15.1,
+    "notes": "HN story: 4 points, 0 comments"
+  },
+  {
+    "id": "claim-015",
+    "claim": "suyoumo/ClawProBench",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/suyoumo/ClawProBench"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T09:08:56Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 14.697,
+    "notes": "ClawProBench is a live-first benchmark harness for evaluating LLM agents in the OpenClaw runtime with deterministic grading and repeated-trial reliability."
+  },
+  {
+    "id": "claim-016",
+    "claim": "claw-eval/claw-eval",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/claw-eval/claw-eval"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-23T11:58:57Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 14.58,
+    "notes": "Claw-Eval is an evaluation harness for evaluating LLM as agents. All tasks verified by humans."
+  },
+  {
+    "id": "claim-017",
+    "claim": "Mercor-Intelligence/archipelago",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/Mercor-Intelligence/archipelago"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-22T13:48:50Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 13.902,
+    "notes": "Harness for running and evaluating AI agents against RL environments"
+  },
+  {
+    "id": "claim-018",
+    "claim": "lemon07r/SanityHarness",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/lemon07r/SanityHarness"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T05:44:18Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 13.832,
+    "notes": "A lightweight harness designed to be simple to use, efficient, universially compatible with any coding agent to evaluate them over a broad set of coding tasks and languages."
+  },
+  {
+    "id": "claim-019",
+    "claim": "responsibleai/ASSERT",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/responsibleai/ASSERT"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-23T20:32:39Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 13.774,
+    "notes": "Requirement-driven evaluation harness for AI agents and LLM applications. Generate behavior-specific test cases, run them against any target (hosted models, callable wrappers, OTel-traced agents), and inspect local-first artifacts."
+  },
+  {
+    "id": "claim-020",
+    "claim": "coleam00/adversarial-dev",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/coleam00/adversarial-dev"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-19T13:16:14Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 13.77,
+    "notes": "GAN-inspired three-agent harness that pits a generator against an adversarial evaluator to build applications with quality gates at every step. Built with Claude Agent SDK and Codex SDK."
+  },
+  {
+    "id": "claim-021",
+    "claim": "agentscope-ai/PawBench",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/agentscope-ai/PawBench"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T09:29:23Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 13.607,
+    "notes": "A benchmark for evaluating LLM × harness performance."
+  },
+  {
+    "id": "claim-022",
+    "claim": "akillness/jeo-code",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/akillness/jeo-code"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T13:24:39Z",
+    "observed_at": "2026-06-24T14:35:04+00:00",
+    "score": 13.511,
+    "notes": "Analysis & direction repo: jeo-line (ledger/review/cleanup) over gajae-code (gjc) philosophy"
+  },
+  {
+    "id": "claim-023",
+    "claim": "Edward-Lucas/Orbit-Code",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/Edward-Lucas/Orbit-Code"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-23T18:37:05Z",
+    "observed_at": "2026-06-24T14:35:04+00:00",
+    "score": 13.5,
+    "notes": "MiMo-Code + gajae-code integrated AI coding platform with Coordinator-based multi-agent system"
+  },
+  {
+    "id": "claim-024",
+    "claim": "Yeachan-Heo/gajae-code",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/Yeachan-Heo/gajae-code"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T14:19:28Z",
+    "observed_at": "2026-06-24T14:35:04+00:00",
+    "score": 12.747,
+    "notes": "Gajae Code MVP"
+  },
+  {
+    "id": "claim-025",
+    "claim": "ApodexAI/AgentHarness",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/ApodexAI/AgentHarness"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T13:43:54Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 11.237,
+    "notes": "Evaluation harness for Apodex-1.0 on public deep-research benchmarks."
+  },
+  {
+    "id": "claim-026",
+    "claim": "project820/gjc-multivendor-setup-guide",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/project820/gjc-multivendor-setup-guide"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-21T18:57:16Z",
+    "observed_at": "2026-06-24T14:35:04+00:00",
+    "score": 10.822,
+    "notes": "GJC(Gajae Code) 5구독 멀티벤더 셋업 — 3대 리서치(Codex/LLM Council/Opus ultracode) + 엔진 ground-truth + red-team 통합 가이드"
+  },
+  {
+    "id": "claim-027",
+    "claim": "islee23520/lazycodex-flavour-pack",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/islee23520/lazycodex-flavour-pack"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-24T13:37:37Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 10.801,
+    "notes": "Linalab-local LazyCodex Flavour Pack for Codex"
+  },
+  {
+    "id": "claim-028",
+    "claim": "ai-studying-man/hackerton_260623_lazy",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/ai-studying-man/hackerton_260623_lazy"
+    ],
+    "source_lane": "github",
+    "route": "github-search-api",
+    "published_at": "2026-06-23T03:18:41Z",
+    "observed_at": "2026-06-24T14:34:39+00:00",
+    "score": 10.8,
+    "notes": "hackerton_260623_lazycodex 하네스 구현"
+  },
+  {
+    "id": "claim-029",
+    "claim": "Show HN: Heku – Dynamic MCP Tooling via JSON Configs",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/RapidThoughtLabs/heku"
+    ],
+    "source_lane": "hn",
+    "route": "hn-algolia-api",
+    "published_at": "2026-06-24T13:55:24Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 10.025,
+    "notes": "HN story: 1 points, 0 comments"
+  },
+  {
+    "id": "claim-030",
+    "claim": "Show HN: CLI and MCP for model fusion via harnesses",
+    "status": "source-observed",
+    "confidence": "high",
+    "evidence_urls": [
+      "https://github.com/KerryRitter/parley"
+    ],
+    "source_lane": "hn",
+    "route": "hn-algolia-api",
+    "published_at": "2026-06-24T13:43:51Z",
+    "observed_at": "2026-06-24T14:35:03+00:00",
+    "score": 10.025,
+    "notes": "HN story: 1 points, 0 comments"
+  }
+]

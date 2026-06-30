@@ -7,6 +7,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import { appendLedgerEvent, readLedger, verifyLedger } from '../../scripts/lib/event-ledger.mjs';
+
 import { shouldRerunBaseline, sourceFingerprint } from './harness-lab.mjs';
 
 const DEFAULT_STATE_ROOT = '.moonshot-relay/harness-lab';
@@ -27,6 +29,7 @@ const CONTAINER_CODEX_AUTH_SOURCE_ROOT = '/codex-auth-source';
 const CONTAINER_CODEX_CLI_ROOT = '/harness-codex-cli';
 const CONTAINER_PREPARED_ROOT = '/prepared';
 const CLOSEOUT_RECEIPT_SCHEMA_VERSION = 'moonshot-harness-lab-closeout-receipt.v1';
+const RUN_TERMINAL_EVENTS = new Set(['run.completed', 'run.cancelled']);
 
 const usage = () => `Usage:
   node tools/harness-lab/harness-loop.mjs auto [--backend docker|host] [--baseline-ref <git-ref>] [--candidate-root <dir>] [--promote] [--promotion-policy no_regression|strict_improvement] [--min-delta <number>] [--json]
@@ -37,6 +40,11 @@ const usage = () => `Usage:
   node tools/harness-lab/harness-loop.mjs auth-smoke [--backend docker] [--use-host-codex-auth] [--json]
   node tools/harness-lab/harness-loop.mjs closeout [--run-id <candidate-run-id>] [--json]
   node tools/harness-lab/harness-loop.mjs status [--json]
+  node tools/harness-lab/harness-loop.mjs run-status --run-id <run-id> [--json]
+  node tools/harness-lab/harness-loop.mjs resume --run-id <run-id> [--json]
+  node tools/harness-lab/harness-loop.mjs cancel --run-id <run-id> --reason <text> [--json]
+  node tools/harness-lab/harness-loop.mjs evaluate --run-id <run-id> [--json]
+  node tools/harness-lab/harness-loop.mjs evolve --run-id <run-id> --out-run-id <new-run-id> [--json]
 
 Initializes and operates the local baseline -> candidate harness loop under .moonshot-relay/harness-lab/.`;
 
@@ -44,6 +52,620 @@ const compactTime = () => new Date().toISOString().replace(/[-:.]/g, '').replace
 const toPortable = (filePath) => filePath.split(path.sep).join('/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const sha256File = async (filePath) => sha256(await readFile(filePath));
+
+function canonicalStringify(value) {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((entry) => canonicalStringify(entry)).join(',')}]`;
+  return `{${Object.entries(value)
+    .filter(([, nested]) => nested !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalStringify(nested)}`)
+    .join(',')}}`;
+}
+
+function portablePathRecord(filePath, { root = process.cwd() } = {}) {
+  const absolute = path.resolve(filePath);
+  const rootAbsolute = path.resolve(root);
+  const relative = path.relative(rootAbsolute, absolute);
+  if (!relative) {
+    return {
+      path: absolute,
+      portablePath: '.',
+    };
+  }
+  const underRoot = relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return {
+    path: absolute,
+    portablePath: underRoot ? toPortable(relative) : toPortable(absolute),
+  };
+}
+
+function runSpecHash(spec) {
+  const { specHash: _specHash, ...hashInput } = spec;
+  return sha256(canonicalStringify(hashInput));
+}
+
+function buildRunSpec({
+  runId,
+  objective = 'harness-lab-run',
+  lifecyclePath = 'candidate_only',
+  backend = 'docker',
+  candidateRoot = '.',
+  baselineRef = null,
+  baselineId = null,
+  role = 'candidate',
+  fixtureSetId = 'moonshot-harness-default-fixtures',
+  scorerVersion = 'moonshot-harness-scorer.v1',
+  promotionCriteria = null,
+  outputRoot = DEFAULT_RUN_ROOT,
+  createdAt = new Date().toISOString(),
+  parentRunId = null,
+  evolvedFromSpecHash = null,
+} = {}) {
+  const spec = {
+    schemaVersion: 'moonshot-run-spec.v1',
+    runId,
+    createdAt,
+    objective,
+    scope: {
+      surface: 'harness-lab',
+      lifecyclePath,
+      role,
+    },
+    backend,
+    candidateRoot: portablePathRecord(candidateRoot),
+    baselineRef,
+    baselineId,
+    fixtureSetId,
+    scorerVersion,
+    allowedMutationBoundary: {
+      source: 'read-only during lab execution',
+      generatedState: portablePathRecord(path.join(outputRoot, runId), { root: outputRoot }),
+      accountRoot: 'run-local homes only',
+    },
+    accountRootBoundary: {
+      moonshotRelayHome: 'run-local',
+      codexHome: 'run-local',
+      claudeHome: 'run-local',
+    },
+    timeoutBudget: {
+      suiteDefaultMs: 120000,
+    },
+    retryBudget: {
+      retries: 0,
+    },
+    lineage: {
+      parentRunId,
+      evolvedFromSpecHash,
+    },
+    promotionCriteria: promotionCriteria || {
+      authority: 'external-bootstrap-lab',
+      candidateOnly: 'smoke_only',
+    },
+    outputContract: {
+      runSpec: 'run-spec.json',
+      events: 'events.jsonl',
+      labResult: 'lab-result.json',
+    },
+  };
+  return {
+    ...spec,
+    specHash: runSpecHash(spec),
+  };
+}
+
+async function writeRunKernelStart({
+  runId,
+  sourceRoot = '.',
+  outRoot = DEFAULT_RUN_ROOT,
+  lifecyclePath = 'candidate_only',
+  backend = 'docker',
+  role = 'candidate',
+  baselineRef = null,
+  baselineId = null,
+  promotionCriteria = null,
+  parentRunId = null,
+  evolvedFromSpecHash = null,
+} = {}) {
+  const runRoot = path.resolve(outRoot, runId);
+  await mkdir(runRoot, { recursive: true });
+  const spec = buildRunSpec({
+    runId,
+    objective: `harness-lab-${lifecyclePath}`,
+    lifecyclePath,
+    backend,
+    candidateRoot: sourceRoot,
+    baselineRef,
+    baselineId,
+    role,
+    promotionCriteria,
+    outputRoot: outRoot,
+    parentRunId,
+    evolvedFromSpecHash,
+  });
+  const specPath = path.join(runRoot, 'run-spec.json');
+  const eventsPath = path.join(runRoot, 'events.jsonl');
+  if (existsSync(specPath)) {
+    const existing = JSON.parse(await readFile(specPath, 'utf8'));
+    const existingComputedSpecHash = runSpecHash(existing);
+    if (existing.specHash !== existingComputedSpecHash || existing.specHash !== spec.specHash) {
+      throw new Error(`run-spec mutation rejected for ${runId}: existing ${existing.specHash} computed ${existingComputedSpecHash} new ${spec.specHash}`);
+    }
+  } else {
+    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+  }
+  if (!existsSync(eventsPath)) {
+    await appendLedgerEvent(eventsPath, {
+      type: 'run.spec_written',
+      payload: { runId, specPath, specHash: spec.specHash },
+    });
+    await appendLedgerEvent(eventsPath, {
+      type: 'run.started',
+      payload: { runId, specHash: spec.specHash, lifecyclePath, backend, parentRunId, evolvedFromSpecHash },
+    });
+  }
+  return { runRoot, spec, specHash: spec.specHash, specPath, eventsPath };
+}
+
+async function appendRunEvent(kernel, type, payload = {}) {
+  if (!kernel?.eventsPath) return null;
+  return appendLedgerEvent(kernel.eventsPath, { type, payload });
+}
+
+async function bindRunKernelToLabResult(resultPath, kernel) {
+  if (!resultPath || !existsSync(resultPath) || !kernel?.specHash) return null;
+  const payload = JSON.parse(await readFile(resultPath, 'utf8'));
+  const patched = {
+    ...payload,
+    run: {
+      ...(payload.run || {}),
+      specHash: kernel.specHash,
+      runSpecPath: kernel.specPath,
+      eventsPath: kernel.eventsPath,
+    },
+    runKernel: {
+      schemaVersion: 'moonshot-run-kernel-binding.v1',
+      specHash: kernel.specHash,
+      runSpecPath: kernel.specPath,
+      eventsPath: kernel.eventsPath,
+    },
+  };
+  await writeFile(resultPath, `${JSON.stringify(patched, null, 2)}\n`);
+  await appendRunEvent(kernel, 'artifact.written', {
+    artifactKind: 'lab-result',
+    path: resultPath,
+    sha256: await sha256File(resultPath),
+  });
+  return { ...patched, resultPath };
+}
+
+async function bindRunKernelToJsonArtifact(filePath, kernel, artifactKind) {
+  if (!filePath || !existsSync(filePath) || !kernel?.specHash) return null;
+  const payload = JSON.parse(await readFile(filePath, 'utf8'));
+  const patched = {
+    ...payload,
+    runKernel: {
+      ...(payload.runKernel || {}),
+      schemaVersion: 'moonshot-run-kernel-binding.v1',
+      specHash: kernel.specHash,
+      runSpecPath: kernel.specPath,
+      eventsPath: kernel.eventsPath,
+    },
+    specHash: kernel.specHash,
+  };
+  await writeFile(filePath, `${JSON.stringify(patched, null, 2)}\n`);
+  await appendRunEvent(kernel, 'artifact.written', {
+    artifactKind,
+    path: filePath,
+    sha256: await sha256File(filePath),
+  });
+  return patched;
+}
+
+function runKernelFromArtifact(artifact) {
+  const binding = artifact?.runKernel || artifact?.run || {};
+  const specHash = binding.specHash || null;
+  if (!specHash) return null;
+  return {
+    specHash,
+    specPath: binding.runSpecPath || binding.specPath || null,
+    eventsPath: binding.eventsPath || null,
+  };
+}
+
+function runRootFor(runId, { runsRoot = DEFAULT_RUN_ROOT } = {}) {
+  if (!runId) throw new Error('--run-id is required');
+  return path.resolve(runsRoot, runId);
+}
+
+function terminalEvent(events = []) {
+  return [...events].reverse().find((event) => RUN_TERMINAL_EVENTS.has(event.type)) || null;
+}
+
+function artifactKernelBinding(artifact) {
+  if (!artifact) return null;
+  const binding = artifact.runKernel || artifact.run || artifact;
+  return {
+    specHash: binding.specHash || null,
+    runSpecPath: binding.runSpecPath || binding.specPath || null,
+    eventsPath: binding.eventsPath || null,
+  };
+}
+
+async function artifactConsistencyFor({ artifacts = {}, specHash, specPath, eventsPath, events = [] }) {
+  const artifactEntries = Object.entries(artifacts).filter(([, artifact]) => artifact);
+  const staleArtifacts = [];
+  for (const [artifactKind, artifact] of artifactEntries) {
+    const binding = artifactKernelBinding(artifact);
+    if (!binding?.specHash && !binding?.runSpecPath && !binding?.eventsPath) continue;
+    const reasons = [];
+    if (binding.specHash && binding.specHash !== specHash) reasons.push('spec_hash_mismatch');
+    if (binding.runSpecPath && path.resolve(binding.runSpecPath) !== path.resolve(specPath)) reasons.push('run_spec_path_mismatch');
+    if (binding.eventsPath && path.resolve(binding.eventsPath) !== path.resolve(eventsPath)) reasons.push('events_path_mismatch');
+    if (reasons.length > 0) staleArtifacts.push({ artifactKind, reasons, binding });
+  }
+  const artifactHashEvents = events.filter((event) => event.type === 'artifact.written' && event.payload?.path && event.payload?.sha256);
+  for (const event of artifactHashEvents) {
+    const artifactPath = event.payload.path;
+    if (!existsSync(artifactPath)) {
+      staleArtifacts.push({
+        artifactKind: event.payload.artifactKind || 'unknown',
+        reasons: ['artifact_missing'],
+        binding: { path: artifactPath, expectedSha256: event.payload.sha256 },
+      });
+      continue;
+    }
+    const actualSha256 = await sha256File(artifactPath);
+    staleArtifacts.push({
+      artifactKind: event.payload.artifactKind || 'unknown',
+      reasons: actualSha256 === event.payload.sha256 ? [] : ['artifact_hash_mismatch'],
+      binding: { path: artifactPath, expectedSha256: event.payload.sha256, actualSha256 },
+    });
+  }
+  const filteredStaleArtifacts = staleArtifacts.filter((entry) => entry.reasons.length > 0);
+  return {
+    status: filteredStaleArtifacts.length === 0 ? 'passed' : 'stale',
+    staleArtifacts: filteredStaleArtifacts,
+  };
+}
+
+async function loadRunProjection({ runId, runsRoot = DEFAULT_RUN_ROOT } = {}) {
+  const runRoot = runRootFor(runId, { runsRoot });
+  const specPath = path.join(runRoot, 'run-spec.json');
+  const eventsPath = path.join(runRoot, 'events.jsonl');
+  if (!existsSync(runRoot) || !existsSync(specPath)) {
+    return {
+      schemaVersion: 'moonshot-run-status.v1',
+      status: 'not_found',
+      runId,
+      runRoot,
+      specPath,
+      eventsPath,
+      valid: false,
+      reason: 'run spec not found',
+    };
+  }
+  const spec = await readJsonIfExists(specPath);
+  const expectedSpecHash = spec ? runSpecHash(spec) : null;
+  const specHashValid = Boolean(spec?.specHash && spec.specHash === expectedSpecHash);
+  let events = [];
+  let ledgerVerification = { valid: false, reason: 'events ledger not found' };
+  if (existsSync(eventsPath)) {
+    try {
+      events = await readLedger(eventsPath);
+      ledgerVerification = verifyLedger(events);
+    } catch (error) {
+      ledgerVerification = { valid: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  const artifacts = {
+    labResult: await readJsonIfExists(path.join(runRoot, 'lab-result.json')),
+    candidateSummary: await readJsonIfExists(path.join(runRoot, 'candidate-summary.json')),
+    closeoutReceipt: await readJsonIfExists(path.join(runRoot, 'lab-closeout-receipt.json')),
+    verdict: await readJsonIfExists(path.join(runRoot, 'verdict.json')),
+  };
+  const artifactConsistency = await artifactConsistencyFor({
+    artifacts,
+    specHash: spec?.specHash || '',
+    specPath,
+    eventsPath,
+    events,
+  });
+  const terminal = terminalEvent(events);
+  const terminalEventLast = !terminal || RUN_TERMINAL_EVENTS.has(events.at(-1)?.type);
+  const valid = specHashValid && ledgerVerification.valid && terminalEventLast;
+  const status = !valid
+    ? 'invalid'
+    : (artifactConsistency.status === 'stale'
+      ? 'stale'
+      : (terminal?.type === 'run.cancelled'
+        ? 'cancelled'
+        : (terminal?.type === 'run.completed' ? 'completed' : 'running')));
+  return {
+    schemaVersion: 'moonshot-run-status.v1',
+    status,
+    runId,
+    runRoot,
+    specPath,
+    eventsPath,
+    valid,
+    specHash: spec?.specHash || null,
+    expectedSpecHash,
+    specHashValid,
+    ledgerValid: ledgerVerification.valid,
+    ledgerVerification,
+    terminalEventLast,
+    terminal: Boolean(terminal),
+    terminalEvent: terminal,
+    lastEvent: events.at(-1) || null,
+    eventCount: events.length,
+    artifactConsistency,
+    artifacts: Object.fromEntries(Object.entries(artifacts).map(([key, value]) => [key, Boolean(value)])),
+    artifactDetails: artifacts,
+    spec,
+  };
+}
+
+async function runStatusLoop(options = {}) {
+  return loadRunProjection({
+    runId: options.runId,
+    runsRoot: options.runsRoot || DEFAULT_RUN_ROOT,
+  });
+}
+
+async function resumeLoop(options = {}) {
+  const projection = await loadRunProjection({
+    runId: options.runId,
+    runsRoot: options.runsRoot || DEFAULT_RUN_ROOT,
+  });
+  if (!projection.valid) {
+    return {
+      schemaVersion: 'moonshot-run-resume.v1',
+      status: 'invalid',
+      runId: options.runId,
+      resumable: false,
+      projection,
+    };
+  }
+  if (projection.terminal) {
+    return {
+      schemaVersion: 'moonshot-run-resume.v1',
+      status: 'terminal_noop',
+      runId: options.runId,
+      resumable: false,
+      projection,
+    };
+  }
+  return {
+    schemaVersion: 'moonshot-run-resume.v1',
+    status: 'manual_resume_required',
+    runId: options.runId,
+    resumable: true,
+    reason: 'initial lifecycle command is replay-only; execution continuation remains with candidate/calibrate flows',
+    projection,
+  };
+}
+
+async function cancelLoop(options = {}) {
+  if (!options.reason) throw new Error('--reason is required');
+  const projection = await loadRunProjection({
+    runId: options.runId,
+    runsRoot: options.runsRoot || DEFAULT_RUN_ROOT,
+  });
+  if (!projection.valid) {
+    return {
+      schemaVersion: 'moonshot-run-cancel.v1',
+      status: 'invalid',
+      runId: options.runId,
+      projection,
+    };
+  }
+  if (projection.terminal) {
+    return {
+      schemaVersion: 'moonshot-run-cancel.v1',
+      status: 'terminal_noop',
+      runId: options.runId,
+      projection,
+    };
+  }
+  const event = await appendLedgerEvent(projection.eventsPath, {
+    type: 'run.cancelled',
+    payload: {
+      runId: options.runId,
+      specHash: projection.specHash,
+      reason: options.reason,
+    },
+  });
+  return {
+    schemaVersion: 'moonshot-run-cancel.v1',
+    status: 'cancelled',
+    runId: options.runId,
+    event,
+    projection: await loadRunProjection({
+      runId: options.runId,
+      runsRoot: options.runsRoot || DEFAULT_RUN_ROOT,
+    }),
+  };
+}
+
+function artifactStatusCheck(id, payload) {
+  if (!payload) return { id, status: 'skipped', reason: 'artifact absent' };
+  if (id === 'lab_result_status') {
+    return {
+      id,
+      status: payload.status === 'passed' ? 'passed' : 'failed',
+      reason: payload.status === 'passed' ? '' : `lab result status is ${payload.status || 'missing'}`,
+    };
+  }
+  if (id === 'candidate_summary_status') {
+    const passed = payload.status === 'passed' && payload.promotable !== false;
+    return {
+      id,
+      status: passed ? 'passed' : 'failed',
+      reason: passed ? '' : `candidate summary status=${payload.status || 'missing'} promotable=${payload.promotable}`,
+    };
+  }
+  if (id === 'closeout_receipt_status') {
+    const passed = payload.status === 'passed' && payload.consumableByCommitWorkflow === true;
+    return {
+      id,
+      status: passed ? 'passed' : 'failed',
+      reason: passed ? '' : `closeout receipt status=${payload.status || 'missing'} consumableByCommitWorkflow=${payload.consumableByCommitWorkflow}`,
+    };
+  }
+  return { id, status: 'failed', reason: 'unknown artifact check' };
+}
+
+function evaluateRunArtifacts(projection) {
+  const details = projection.artifactDetails || {};
+  const complete = Boolean(details.labResult || details.candidateSummary || details.closeoutReceipt);
+  const artifactChecks = [
+    artifactStatusCheck('lab_result_status', details.labResult),
+    artifactStatusCheck('candidate_summary_status', details.candidateSummary),
+    artifactStatusCheck('closeout_receipt_status', details.closeoutReceipt),
+  ];
+  const checks = [
+    {
+      id: 'spec_hash_valid',
+      status: projection.specHashValid ? 'passed' : 'failed',
+    },
+    {
+      id: 'event_ledger_valid',
+      status: projection.ledgerValid ? 'passed' : 'failed',
+    },
+    {
+      id: 'artifact_consistency',
+      status: projection.artifactConsistency.status === 'passed' ? 'passed' : 'failed',
+    },
+    {
+      id: 'lab_or_closeout_artifact_present',
+      status: complete ? 'passed' : 'failed',
+    },
+    ...artifactChecks,
+  ];
+  const blockingChecks = checks.filter((check) => check.status === 'failed');
+  return {
+    status: !complete ? 'incomplete' : (blockingChecks.length === 0 ? 'passed' : 'failed'),
+    complete,
+    checks,
+  };
+}
+
+async function evaluateLoop(options = {}) {
+  const projection = await loadRunProjection({
+    runId: options.runId,
+    runsRoot: options.runsRoot || DEFAULT_RUN_ROOT,
+  });
+  if (!projection.valid || projection.status === 'stale') {
+    return {
+      schemaVersion: 'moonshot-run-evaluate.v1',
+      status: 'invalid',
+      runId: options.runId,
+      projection,
+    };
+  }
+  const artifactVerdict = evaluateRunArtifacts(projection);
+  const verdict = {
+    schemaVersion: 'moonshot-run-verdict.v1',
+    runId: options.runId,
+    status: artifactVerdict.status,
+    authority: 'derived_run_kernel_verdict',
+    promotionAuthority: false,
+    promotionAuthorityReason: 'H0 compare/promote receipt remains required for promotion claims',
+    specHash: projection.specHash,
+    runSpecPath: projection.specPath,
+    eventsPath: projection.eventsPath,
+    terminal: projection.terminal,
+    artifactVerdict,
+  };
+  const verdictPath = path.join(projection.runRoot, 'verdict.json');
+  await writeFile(verdictPath, `${JSON.stringify(verdict, null, 2)}\n`);
+  let eventAppendStatus = 'skipped_terminal';
+  if (!projection.terminal) {
+    await appendLedgerEvent(projection.eventsPath, {
+      type: 'artifact.written',
+      payload: {
+        artifactKind: 'verdict',
+        path: verdictPath,
+        sha256: await sha256File(verdictPath),
+        specHash: projection.specHash,
+      },
+    });
+    eventAppendStatus = 'appended';
+    if (artifactVerdict.complete) {
+      await appendLedgerEvent(projection.eventsPath, {
+        type: 'run.completed',
+        payload: {
+          runId: options.runId,
+          specHash: projection.specHash,
+          status: artifactVerdict.status,
+          verdictPath,
+        },
+      });
+      eventAppendStatus = 'appended_terminal';
+    }
+  }
+  return {
+    schemaVersion: 'moonshot-run-evaluate.v1',
+    status: artifactVerdict.complete ? 'verdict_written' : 'incomplete',
+    runId: options.runId,
+    verdictPath,
+    eventAppendStatus,
+    verdict,
+    projection: await loadRunProjection({
+      runId: options.runId,
+      runsRoot: options.runsRoot || DEFAULT_RUN_ROOT,
+    }),
+  };
+}
+
+async function evolveLoop(options = {}) {
+  if (!options.outRunId) throw new Error('--out-run-id is required');
+  const runsRoot = options.runsRoot || DEFAULT_RUN_ROOT;
+  const projection = await loadRunProjection({ runId: options.runId, runsRoot });
+  if (!projection.valid || projection.status === 'stale') {
+    return {
+      schemaVersion: 'moonshot-run-evolve.v1',
+      status: 'invalid',
+      runId: options.runId,
+      outRunId: options.outRunId,
+      projection,
+    };
+  }
+  const kernel = await writeRunKernelStart({
+    runId: options.outRunId,
+    sourceRoot: projection.spec?.candidateRoot?.path || '.',
+    outRoot: runsRoot,
+    lifecyclePath: 'evolve',
+    backend: projection.spec?.backend || options.backend || 'docker',
+    role: 'candidate',
+    baselineRef: projection.spec?.baselineRef || null,
+    baselineId: projection.spec?.baselineId || null,
+    promotionCriteria: projection.spec?.promotionCriteria || null,
+    parentRunId: options.runId,
+    evolvedFromSpecHash: projection.specHash,
+  });
+  await appendLedgerEvent(kernel.eventsPath, {
+    type: 'run.evolved',
+    payload: {
+      runId: options.outRunId,
+      parentRunId: options.runId,
+      parentSpecHash: projection.specHash,
+      specHash: kernel.specHash,
+    },
+  });
+  return {
+    schemaVersion: 'moonshot-run-evolve.v1',
+    status: 'created',
+    runId: options.runId,
+    outRunId: options.outRunId,
+    parentSpecHash: projection.specHash,
+    runSpecPath: kernel.specPath,
+    eventsPath: kernel.eventsPath,
+    specHash: kernel.specHash,
+  };
+}
 
 function parseArgs(argv) {
   const [command = 'status', ...rest] = argv;
@@ -112,6 +734,39 @@ function run(command, args, { cwd = process.cwd(), env = process.env, expect = 0
   });
   const exitCode = result.status ?? (result.error ? 1 : 0);
   if (expect !== null && exitCode !== expect) {
+    throw new Error(result.stderr || result.stdout || result.error?.message || `${command} exited ${exitCode}`);
+  }
+  return result;
+}
+
+async function runCommandWithEvents(kernel, {
+  commandId,
+  suiteId = 'harness-loop',
+  command,
+  args,
+  cwd = process.cwd(),
+  env = process.env,
+  expect = 0,
+}) {
+  const startedAt = Date.now();
+  await appendRunEvent(kernel, 'command.started', {
+    commandId,
+    suiteId,
+    cwd,
+    command: [command, ...args],
+    timeoutMs: null,
+  });
+  const result = run(command, args, { cwd, env, expect: null });
+  const exitCode = result.status ?? (result.error ? 1 : 0);
+  const passed = expect === null || exitCode === expect;
+  await appendRunEvent(kernel, 'command.completed', {
+    commandId,
+    suiteId,
+    exitCode,
+    durationMs: Date.now() - startedAt,
+    status: passed ? 'passed' : 'failed',
+  });
+  if (!passed) {
     throw new Error(result.stderr || result.stdout || result.error?.message || `${command} exited ${exitCode}`);
   }
   return result;
@@ -390,6 +1045,9 @@ function buildCandidateSummaryArtifact(summary, { createdAt = new Date().toISOSt
     previousBaselineId: summary.previousBaselineId,
     backend: summary.backend,
     runId: summary.runId,
+    specHash: summary.specHash || null,
+    runSpecPath: summary.runSpecPath || null,
+    eventsPath: summary.eventsPath || null,
     candidateResultPath: summary.candidateResultPath,
     compareReportPath: summary.compareReportPath,
     promotionPolicy: summary.promotionPolicy || null,
@@ -411,6 +1069,16 @@ async function writeCandidateSummaryArtifact(summary) {
   await mkdir(path.dirname(summaryPath), { recursive: true });
   const payload = buildCandidateSummaryArtifact(summary);
   await writeFile(summaryPath, `${JSON.stringify(payload, null, 2)}\n`);
+  if (summary.eventsPath && summary.specHash) {
+    await appendLedgerEvent(summary.eventsPath, {
+      type: 'artifact.written',
+      payload: {
+        artifactKind: 'candidate-summary',
+        path: summaryPath,
+        sha256: await sha256File(summaryPath),
+      },
+    });
+  }
   return summaryPath;
 }
 
@@ -616,6 +1284,9 @@ async function buildCloseoutReceipt({
     baselinePointerAfter: pointerAfter,
     candidateResultPath,
     candidateRunId: candidateRun?.run?.candidateRunId || candidateRun?.runId || runId,
+    specHash: candidateRun?.run?.specHash || candidateRun?.runKernel?.specHash || null,
+    runSpecPath: candidateRun?.run?.runSpecPath || candidateRun?.runKernel?.runSpecPath || null,
+    eventsPath: candidateRun?.run?.eventsPath || candidateRun?.runKernel?.eventsPath || null,
     candidateRunSha256: candidateResultPath && existsSync(candidateResultPath) ? await sha256File(candidateResultPath) : null,
     compareReportPath,
     compareReportSha256: compareReportPath && existsSync(compareReportPath) ? await sha256File(compareReportPath) : null,
@@ -643,6 +1314,62 @@ async function writeCloseoutReceipt(runId, receipt) {
   const receiptPath = path.join(path.resolve(DEFAULT_RUN_ROOT), runId, 'lab-closeout-receipt.json');
   await mkdir(path.dirname(receiptPath), { recursive: true });
   await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+  if (receipt.eventsPath && receipt.specHash) {
+    const receiptSha256 = await sha256File(receiptPath);
+    await appendLedgerEvent(receipt.eventsPath, {
+      type: 'verdict.written',
+      payload: {
+        status: receipt.status,
+        baselineId: receipt.baselineId || null,
+        reason: receipt.decisionReason || null,
+        blockingGates: receipt.blockingGates || [],
+        verdictPath: receiptPath,
+        sha256: receiptSha256,
+      },
+    });
+    if (['promoted_ready_for_commit_workflow', 'rejected_no_commit'].includes(receipt.status)) {
+      await appendLedgerEvent(receipt.eventsPath, {
+        type: 'promotion.eligible',
+        payload: {
+          compareReportPath: receipt.compareReportPath || null,
+          policyMode: receipt.promotionPolicy?.mode || null,
+          status: receipt.status,
+        },
+      });
+    }
+    if (receipt.status === 'promoted_ready_for_commit_workflow') {
+      await appendLedgerEvent(receipt.eventsPath, {
+        type: 'promotion.completed',
+        payload: {
+          status: receipt.status,
+          baselineId: receipt.baselineId || null,
+          manifestPath: receipt.promotionManifestPath || null,
+          pointerSha256: receipt.baselinePointerAfter?.sha256 || null,
+          verdictPath: receiptPath,
+          sha256: receiptSha256,
+        },
+      });
+    } else if (receipt.status === 'blocked_hard_gate') {
+      await appendLedgerEvent(receipt.eventsPath, {
+        type: 'promotion.blocked',
+        payload: {
+          status: receipt.status,
+          baselineId: receipt.baselineId || null,
+          reason: receipt.decisionReason || null,
+          blockingGates: receipt.blockingGates || [],
+          verdictPath: receiptPath,
+          sha256: receiptSha256,
+        },
+      });
+    }
+    await appendLedgerEvent(receipt.eventsPath, {
+      type: 'run.completed',
+      payload: {
+        status: receipt.status,
+        resultPath: receiptPath,
+      },
+    });
+  }
   return receiptPath;
 }
 
@@ -764,6 +1491,61 @@ async function revalidateCloseoutReceipt(receipt, {
     actual: currentSource.digest,
   });
 
+  const runKernelFieldCount = [receipt.specHash, receipt.runSpecPath, receipt.eventsPath].filter(Boolean).length;
+  if (runKernelFieldCount === 0) {
+    addCloseoutCheck(checks, 'run_kernel_legacy_compatibility', true, {
+      compatibilityMode: 'legacy_run_spec_missing',
+    });
+  } else {
+    addCloseoutCheck(checks, 'run_kernel_fields_complete', runKernelFieldCount === 3, {
+      specHash: receipt.specHash || null,
+      runSpecPath: receipt.runSpecPath || null,
+      eventsPath: receipt.eventsPath || null,
+    });
+    const runSpec = receipt.runSpecPath && existsSync(receipt.runSpecPath)
+      ? await readJsonIfExists(receipt.runSpecPath)
+      : null;
+    const computedSpecHash = runSpec ? runSpecHash(runSpec) : null;
+    addCloseoutCheck(checks, 'run_spec_exists', Boolean(runSpec), {
+      runSpecPath: receipt.runSpecPath || null,
+    });
+    addCloseoutCheck(checks, 'run_spec_hash_matches_receipt', Boolean(runSpec)
+      && runSpec.specHash === receipt.specHash
+      && computedSpecHash === receipt.specHash, {
+      expected: receipt.specHash || null,
+      actual: runSpec?.specHash || null,
+      computed: computedSpecHash,
+    });
+    const eventLedgerExists = Boolean(receipt.eventsPath && existsSync(receipt.eventsPath));
+    let events = [];
+    let ledgerVerification = { valid: false };
+    let ledgerReadError = '';
+    if (eventLedgerExists) {
+      try {
+        events = await readLedger(receipt.eventsPath);
+        ledgerVerification = verifyLedger(events);
+      } catch (error) {
+        ledgerReadError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    addCloseoutCheck(checks, 'event_ledger_exists', eventLedgerExists, {
+      eventsPath: receipt.eventsPath || null,
+    });
+    addCloseoutCheck(checks, 'event_ledger_hash_chain_valid', ledgerVerification.valid === true, {
+      eventCount: events.length,
+      error: ledgerReadError || null,
+    });
+    addCloseoutCheck(checks, 'event_ledger_terminal_event_last', ['run.completed', 'run.cancelled'].includes(events.at(-1)?.type), {
+      lastType: events.at(-1)?.type || null,
+    });
+    addCloseoutCheck(checks, 'event_ledger_spec_hash_matches_receipt', events.every((event) => {
+      const eventSpecHash = event.payload?.specHash;
+      return !eventSpecHash || eventSpecHash === receipt.specHash;
+    }), {
+      expected: receipt.specHash || null,
+    });
+  }
+
   const blockingGates = checks.filter((check) => check.status !== 'passed');
   return {
     schemaVersion: 'moonshot-harness-closeout-revalidation.v1',
@@ -820,6 +1602,7 @@ async function patchDockerLabResult({
   imageMetadata = null,
   codexDevSmoke = false,
   containerHardening = dockerRunHardeningPolicy(),
+  runKernel = null,
 }) {
   const payload = JSON.parse(await readFile(resultPath, 'utf8'));
   const installResultPath = path.join(path.resolve(outRoot), payload.runId || payload.run?.runId || '', 'install-result.json');
@@ -919,6 +1702,9 @@ async function patchDockerLabResult({
     },
   };
   await writeFile(resultPath, `${JSON.stringify(patched, null, 2)}\n`);
+  if (runKernel) {
+    return bindRunKernelToLabResult(resultPath, runKernel);
+  }
   return { ...patched, resultPath };
 }
 
@@ -1090,12 +1876,27 @@ async function runDockerLab({
   useHostCodexAuth = false,
   codexDevSmoke = false,
   dockerNetwork = '',
+  lifecyclePath = 'candidate_only',
+  baselineRef = null,
+  baselineId = null,
+  promotionCriteria = null,
 }) {
   if (codexDevSmoke && !useHostCodexAuth) {
     throw new Error('--codex-dev-smoke requires --use-host-codex-auth');
   }
   assertDockerAvailable();
   await mkdir(outRoot, { recursive: true });
+  const runKernel = await writeRunKernelStart({
+    runId,
+    sourceRoot,
+    outRoot,
+    lifecyclePath,
+    backend: 'docker',
+    role,
+    baselineRef,
+    baselineId,
+    promotionCriteria,
+  });
   const codexCliCache = await ensureCodexCliCache(codexCliVersion);
   const hostCodexAuth = useHostCodexAuth ? resolveHostCodexAuthFiles() : null;
   const source = path.resolve(sourceRoot);
@@ -1158,7 +1959,11 @@ async function runDockerLab({
     '-lc',
     dockerScript(runId, { useHostCodexAuth, codexDevSmoke }),
   ];
-  const result = run('docker', args);
+  const result = await runCommandWithEvents(runKernel, {
+    commandId: `${role}.docker_lab`,
+    command: 'docker',
+    args,
+  });
   const hostResultPath = path.join(output, runId, 'lab-result.json');
   if (!existsSync(hostResultPath)) {
     throw new Error(result.stdout || `Docker lab did not write expected result: ${hostResultPath}`);
@@ -1177,6 +1982,7 @@ async function runDockerLab({
     imageMetadata,
     codexDevSmoke,
     containerHardening: hardeningPolicy,
+    runKernel,
   });
 }
 
@@ -1223,6 +2029,14 @@ async function runDockerAuthSmoke({
   assertDockerAvailable();
   await mkdir(outRoot, { recursive: true });
   const role = 'auth-smoke';
+  const runKernel = await writeRunKernelStart({
+    runId,
+    sourceRoot,
+    outRoot,
+    lifecyclePath: 'auth_smoke',
+    backend: 'docker',
+    role,
+  });
   const codexCliCache = await ensureCodexCliCache(codexCliVersion);
   const hostCodexAuth = resolveHostCodexAuthFiles();
   const source = path.resolve(sourceRoot);
@@ -1270,7 +2084,11 @@ async function runDockerAuthSmoke({
     '-lc',
     dockerScript(runId, { useHostCodexAuth: true, codexDevSmoke: true, runHarnessLab: false }),
   ];
-  run('docker', args);
+  await runCommandWithEvents(runKernel, {
+    commandId: 'auth-smoke.docker',
+    command: 'docker',
+    args,
+  });
   const runRoot = path.join(output, runId);
   const summaryPath = path.join(runRoot, 'auth-smoke-summary.json');
   const codexDevSmokePath = path.join(runRoot, 'codex-dev-smoke.json');
@@ -1297,6 +2115,9 @@ async function runDockerAuthSmoke({
     schemaVersion: 'moonshot-harness-auth-smoke-loop.v1',
     status: 'passed',
     runId,
+    specHash: runKernel.specHash,
+    runSpecPath: runKernel.specPath,
+    eventsPath: runKernel.eventsPath,
     stage: 'auth_smoke',
     candidateBenchmarkRun: false,
     resultPath: summaryPath,
@@ -1316,6 +2137,15 @@ async function runDockerAuthSmoke({
     },
   };
   await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+  await appendRunEvent(runKernel, 'artifact.written', {
+    artifactKind: 'auth-smoke-summary',
+    path: summaryPath,
+    sha256: await sha256File(summaryPath),
+  });
+  await appendRunEvent(runKernel, 'run.completed', {
+    status: summary.status,
+    resultPath: summaryPath,
+  });
   return summary;
 }
 
@@ -1441,6 +2271,9 @@ async function initLoop(options) {
       useHostCodexAuth: options.useHostCodexAuth,
       codexDevSmoke: options.codexDevSmoke,
       dockerNetwork: options.dockerNetwork,
+      lifecyclePath: 'initial_bootstrap',
+      baselineRef: options.baselineRef,
+      baselineId,
     });
     const candidateResult = await runDockerLab({
       role: 'candidate',
@@ -1452,13 +2285,24 @@ async function initLoop(options) {
       useHostCodexAuth: options.useHostCodexAuth,
       codexDevSmoke: options.codexDevSmoke,
       dockerNetwork: options.dockerNetwork,
+      lifecyclePath: 'initial_bootstrap',
+      baselineRef: options.baselineRef,
+      baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
     });
     baselineResultPath = baselineResult.resultPath;
     labResult = candidateResult;
     const compareDir = path.resolve(DEFAULT_STATE_ROOT, 'compare');
     await mkdir(compareDir, { recursive: true });
     comparePath = path.join(compareDir, `${candidateRunId}-vs-${baselineId}.json`);
-    const compare = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    const candidateKernel = runKernelFromArtifact(candidateResult);
+    const compare = await runCommandWithEvents(candidateKernel, {
+      commandId: 'initial_bootstrap.compare',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'compare',
       '--baseline-result',
       baselineResult.resultPath,
@@ -1470,8 +2314,14 @@ async function initLoop(options) {
       options.promotionPolicy,
       ...(options.minDelta !== '' ? ['--min-delta', String(options.minDelta)] : []),
       '--json',
-    ]), { env: loopEnv(runId), expect: null });
+      ]),
+      env: loopEnv(runId),
+      expect: null,
+    });
     const compareResult = JSON.parse(compare.stdout);
+    if (candidateKernel) {
+      await bindRunKernelToJsonArtifact(comparePath, candidateKernel, 'compare-report');
+    }
     backend = {
       type: 'docker',
       image: options.dockerImage,
@@ -1484,7 +2334,24 @@ async function initLoop(options) {
     };
   } else if (options.backend === 'host') {
     const baselineDependencies = ensureBaselineDependencies(stableRoot);
-    const lab = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    const hostKernel = await writeRunKernelStart({
+      runId,
+      sourceRoot: options.candidateRoot,
+      outRoot: DEFAULT_RUN_ROOT,
+      lifecyclePath: 'initial_bootstrap',
+      backend: 'host',
+      role: 'candidate',
+      baselineRef: options.baselineRef,
+      baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
+    });
+    const lab = await runCommandWithEvents(hostKernel, {
+      commandId: 'initial_bootstrap.host_lab',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'run',
       '--stable-root',
       stableRoot,
@@ -1495,8 +2362,11 @@ async function initLoop(options) {
       '--run-id',
       runId,
       '--json',
-    ]), { env: loopEnv(runId) });
+      ]),
+      env: loopEnv(runId),
+    });
     labResult = JSON.parse(lab.stdout);
+    labResult = await bindRunKernelToLabResult(labResult.resultPath, hostKernel);
     backend = {
       type: 'host',
       baselineDependencies,
@@ -1505,9 +2375,13 @@ async function initLoop(options) {
     throw new Error(`Unknown backend: ${options.backend}`);
   }
   const compareResult = comparePath ? await readJsonIfExists(comparePath) : null;
+  const runKernel = runKernelFromArtifact(labResult);
   let promotion = null;
   if (options.promoteInitial !== false && labResult.status === 'passed' && (!compareResult || compareResult.status === 'passed')) {
-    const promoted = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    const promoted = await runCommandWithEvents(runKernel, {
+      commandId: 'initial_bootstrap.promote',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'promote',
       '--candidate-run',
       labResult.resultPath,
@@ -1517,7 +2391,9 @@ async function initLoop(options) {
       '--baseline-id',
       baselineId,
       '--json',
-    ]), { env: loopEnv(runId) });
+      ]),
+      env: loopEnv(runId),
+    });
     promotion = JSON.parse(promoted.stdout);
   }
   const pointerAfter = await currentPointerSnapshot();
@@ -1551,6 +2427,9 @@ async function initLoop(options) {
     backend,
     stableRoot,
     runId,
+    specHash: runKernel?.specHash || null,
+    runSpecPath: runKernel?.specPath || null,
+    eventsPath: runKernel?.eventsPath || null,
     labResultPath: labResult.resultPath,
     baselineResultPath,
     compareReportPath: comparePath,
@@ -1590,6 +2469,12 @@ async function candidateLoop(options) {
       useHostCodexAuth: options.useHostCodexAuth,
       codexDevSmoke: options.codexDevSmoke,
       dockerNetwork: options.dockerNetwork,
+      lifecyclePath: options.lifecyclePath || 'candidate_only',
+      baselineId: pointer.baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
     });
     backend = {
       type: 'docker',
@@ -1597,7 +2482,23 @@ async function candidateLoop(options) {
       imagePreparation: dockerImage,
     };
   } else if (options.backend === 'host') {
-    const candidate = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    const hostKernel = await writeRunKernelStart({
+      runId,
+      sourceRoot: options.candidateRoot,
+      outRoot: DEFAULT_RUN_ROOT,
+      lifecyclePath: options.lifecyclePath || 'candidate_only',
+      backend: 'host',
+      role: 'candidate',
+      baselineId: pointer.baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
+    });
+    const candidate = await runCommandWithEvents(hostKernel, {
+      commandId: 'candidate.host_lab',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'run',
       '--candidate-root',
       options.candidateRoot,
@@ -1606,8 +2507,11 @@ async function candidateLoop(options) {
       '--run-id',
       runId,
       '--json',
-    ]), { env: loopEnv(runId) });
+      ]),
+      env: loopEnv(runId),
+    });
     candidateResult = JSON.parse(candidate.stdout);
+    candidateResult = await bindRunKernelToLabResult(candidateResult.resultPath, hostKernel);
     backend = {
       type: 'host',
     };
@@ -1617,7 +2521,11 @@ async function candidateLoop(options) {
   const compareDir = path.resolve(DEFAULT_STATE_ROOT, 'compare');
   await mkdir(compareDir, { recursive: true });
   const comparePath = path.join(compareDir, `${runId}-vs-${pointer.baselineId}.json`);
-  const compare = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+  const runKernel = runKernelFromArtifact(candidateResult);
+  const compare = await runCommandWithEvents(runKernel, {
+    commandId: 'candidate.compare',
+    command: process.execPath,
+    args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
     'compare',
     '--baseline-result',
     manifest.artifact.path,
@@ -1629,8 +2537,14 @@ async function candidateLoop(options) {
     options.promotionPolicy,
     ...(options.minDelta !== '' ? ['--min-delta', String(options.minDelta)] : []),
     '--json',
-  ]), { env: loopEnv(runId), expect: null });
+    ]),
+    env: loopEnv(runId),
+    expect: null,
+  });
   const compareResult = JSON.parse(compare.stdout);
+  if (runKernel) {
+    await bindRunKernelToJsonArtifact(comparePath, runKernel, 'compare-report');
+  }
   const calibration = shouldRerunBaseline({
     baselineManifest: manifest,
     candidateResult,
@@ -1640,7 +2554,10 @@ async function candidateLoop(options) {
   if (options.promote && calibration.status !== 'calibration_required') {
     const nextNumber = Number((pointer.baselineId || '').match(/(\d+)$/)?.[1] || 1) + 1;
     const baselineId = `baseline-${String(nextNumber).padStart(4, '0')}`;
-    promotion = JSON.parse(run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    promotion = JSON.parse((await runCommandWithEvents(runKernel, {
+      commandId: 'candidate.promote',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'promote',
       '--candidate-run',
       candidateResult.resultPath,
@@ -1654,7 +2571,9 @@ async function candidateLoop(options) {
       pointer.baselineId,
       ...(pointerBefore.sha256 ? ['--expected-previous-pointer-sha256', pointerBefore.sha256] : []),
       '--json',
-    ]), { env: loopEnv(runId) }).stdout);
+      ]),
+      env: loopEnv(runId),
+    })).stdout);
   }
   const pointerAfter = await currentPointerSnapshot();
   const closeoutStatus = calibration.status === 'calibration_required'
@@ -1680,7 +2599,7 @@ async function candidateLoop(options) {
     pointerBefore,
     pointerAfter,
   });
-  const closeoutReceiptPath = await writeCloseoutReceipt(runId, closeoutReceipt);
+  const closeoutReceiptPath = path.join(path.resolve(DEFAULT_RUN_ROOT), runId, 'lab-closeout-receipt.json');
   const summary = {
     schemaVersion: 'moonshot-harness-loop-candidate.v1',
     status: closeoutStatus === 'calibration_required' ? 'calibration_required' : compareResult.status,
@@ -1689,6 +2608,9 @@ async function candidateLoop(options) {
     previousBaselineId: pointer.baselineId,
     backend,
     runId,
+    specHash: runKernel?.specHash || null,
+    runSpecPath: runKernel?.specPath || null,
+    eventsPath: runKernel?.eventsPath || null,
     candidateResultPath: candidateResult.resultPath,
     compareReportPath: comparePath,
     promotionPolicy: compareResult.promotionPolicy,
@@ -1697,6 +2619,7 @@ async function candidateLoop(options) {
     promotion,
   };
   summary.candidateSummaryPath = await writeCandidateSummaryArtifact(summary);
+  await writeCloseoutReceipt(runId, closeoutReceipt);
   return summary;
 }
 
@@ -1795,6 +2718,9 @@ async function calibrationLoop(options) {
       imageMetadata: dockerImage,
       codexCliVersion: options.codexCliVersion,
       dockerNetwork: options.dockerNetwork,
+      lifecyclePath: 'calibration',
+      baselineRef,
+      baselineId: pointer.baselineId,
     });
     candidateResult = await runDockerLab({
       role: 'candidate',
@@ -1804,6 +2730,13 @@ async function calibrationLoop(options) {
       imageMetadata: dockerImage,
       codexCliVersion: options.codexCliVersion,
       dockerNetwork: options.dockerNetwork,
+      lifecyclePath: 'calibration',
+      baselineRef,
+      baselineId: pointer.baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
     });
     backend = {
       type: 'docker',
@@ -1814,7 +2747,34 @@ async function calibrationLoop(options) {
     };
   } else if (options.backend === 'host') {
     ensureBaselineDependencies(stableRoot);
-    const baseline = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    const baselineKernel = await writeRunKernelStart({
+      runId: `${runId}-baseline`,
+      sourceRoot: stableRoot,
+      outRoot: DEFAULT_RUN_ROOT,
+      lifecyclePath: 'calibration',
+      backend: 'host',
+      role: 'baseline',
+      baselineRef,
+      baselineId: pointer.baselineId,
+    });
+    const candidateKernel = await writeRunKernelStart({
+      runId: `${runId}-candidate`,
+      sourceRoot: options.candidateRoot,
+      outRoot: DEFAULT_RUN_ROOT,
+      lifecyclePath: 'calibration',
+      backend: 'host',
+      role: 'candidate',
+      baselineRef,
+      baselineId: pointer.baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
+    });
+    const baseline = await runCommandWithEvents(baselineKernel, {
+      commandId: 'calibration.baseline_host_lab',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'run',
       '--candidate-root',
       stableRoot,
@@ -1823,8 +2783,13 @@ async function calibrationLoop(options) {
       '--run-id',
       `${runId}-baseline`,
       '--json',
-    ]), { env: loopEnv(runId) });
-    const candidate = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+      ]),
+      env: loopEnv(runId),
+    });
+    const candidate = await runCommandWithEvents(candidateKernel, {
+      commandId: 'calibration.candidate_host_lab',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'run',
       '--candidate-root',
       options.candidateRoot,
@@ -1833,9 +2798,13 @@ async function calibrationLoop(options) {
       '--run-id',
       `${runId}-candidate`,
       '--json',
-    ]), { env: loopEnv(runId) });
+      ]),
+      env: loopEnv(runId),
+    });
     baselineResult = JSON.parse(baseline.stdout);
     candidateResult = JSON.parse(candidate.stdout);
+    baselineResult = await bindRunKernelToLabResult(baselineResult.resultPath, baselineKernel);
+    candidateResult = await bindRunKernelToLabResult(candidateResult.resultPath, candidateKernel);
     backend = { type: 'host' };
   } else {
     throw new Error(`Unknown backend: ${options.backend}`);
@@ -1847,7 +2816,11 @@ async function calibrationLoop(options) {
     manifest,
   });
   const comparePath = path.join(compareDir, `${runId}-candidate-vs-${pointer.baselineId}-calibrated.json`);
-  const compare = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+  const runKernel = runKernelFromArtifact(candidateResult);
+  const compare = await runCommandWithEvents(runKernel, {
+    commandId: 'calibration.compare',
+    command: process.execPath,
+    args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
     'compare',
     '--baseline-result',
     calibrationBaselineFixtureNormalization.resultPath,
@@ -1859,14 +2832,23 @@ async function calibrationLoop(options) {
     options.promotionPolicy,
     ...(options.minDelta !== '' ? ['--min-delta', String(options.minDelta)] : []),
     '--json',
-  ]), { env: loopEnv(runId), expect: null });
+    ]),
+    env: loopEnv(runId),
+    expect: null,
+  });
   const compareResult = JSON.parse(compare.stdout);
+  if (runKernel) {
+    await bindRunKernelToJsonArtifact(comparePath, runKernel, 'compare-report');
+  }
   const pointerBefore = await currentPointerSnapshot();
   let promotion = null;
   if (options.promote && compareResult.status === 'passed') {
     const nextNumber = Number((pointer.baselineId || '').match(/(\d+)$/)?.[1] || 1) + 1;
     const baselineId = `baseline-${String(nextNumber).padStart(4, '0')}`;
-    promotion = JSON.parse(run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    promotion = JSON.parse((await runCommandWithEvents(runKernel, {
+      commandId: 'calibration.promote',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'promote',
       '--candidate-run',
       candidateResult.resultPath,
@@ -1881,7 +2863,9 @@ async function calibrationLoop(options) {
       ...(pointerBefore.sha256 ? ['--expected-previous-pointer-sha256', pointerBefore.sha256] : []),
       '--allow-calibrated-baseline',
       '--json',
-    ]), { env: loopEnv(runId) }).stdout);
+      ]),
+      env: loopEnv(runId),
+    })).stdout);
   }
   const pointerAfter = await currentPointerSnapshot();
   const receiptStatus = promotion?.status === 'promoted'
@@ -1912,6 +2896,9 @@ async function calibrationLoop(options) {
     baselineRef,
     backend,
     runId,
+    specHash: runKernel?.specHash || null,
+    runSpecPath: runKernel?.specPath || null,
+    eventsPath: runKernel?.eventsPath || null,
     baselineResultPath: baselineResult.resultPath,
     baselineCompareResultPath: calibrationBaselineFixtureNormalization.resultPath,
     candidateResultPath: candidateResult.resultPath,
@@ -1953,6 +2940,12 @@ async function refreshBaselineLoop(options) {
       imageMetadata: dockerImage,
       codexCliVersion: options.codexCliVersion,
       dockerNetwork: options.dockerNetwork,
+      lifecyclePath: 'baseline_refresh',
+      baselineId: pointer.baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
     });
     backend = {
       type: 'docker',
@@ -1960,7 +2953,23 @@ async function refreshBaselineLoop(options) {
       imagePreparation: dockerImage,
     };
   } else if (options.backend === 'host') {
-    const candidate = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+    const hostKernel = await writeRunKernelStart({
+      runId,
+      sourceRoot: options.candidateRoot,
+      outRoot: DEFAULT_RUN_ROOT,
+      lifecyclePath: 'baseline_refresh',
+      backend: 'host',
+      role: 'candidate',
+      baselineId: pointer.baselineId,
+      promotionCriteria: {
+        policy: options.promotionPolicy,
+        minDelta: options.minDelta || null,
+      },
+    });
+    const candidate = await runCommandWithEvents(hostKernel, {
+      commandId: 'refresh-baseline.host_lab',
+      command: process.execPath,
+      args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
       'run',
       '--candidate-root',
       options.candidateRoot,
@@ -1969,8 +2978,11 @@ async function refreshBaselineLoop(options) {
       '--run-id',
       runId,
       '--json',
-    ]), { env: loopEnv(runId) });
+      ]),
+      env: loopEnv(runId),
+    });
     candidateResult = JSON.parse(candidate.stdout);
+    candidateResult = await bindRunKernelToLabResult(candidateResult.resultPath, hostKernel);
     backend = { type: 'host' };
   } else {
     throw new Error(`Unknown backend: ${options.backend}`);
@@ -1978,7 +2990,11 @@ async function refreshBaselineLoop(options) {
   const compareDir = path.resolve(DEFAULT_STATE_ROOT, 'compare');
   await mkdir(compareDir, { recursive: true });
   const comparePath = path.join(compareDir, `${runId}-refresh-self-compare.json`);
-  const compare = run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+  const refreshRunKernel = runKernelFromArtifact(candidateResult);
+  const compare = await runCommandWithEvents(refreshRunKernel, {
+    commandId: 'refresh-baseline.compare',
+    command: process.execPath,
+    args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
     'compare',
     '--baseline-result',
     candidateResult.resultPath,
@@ -1990,15 +3006,24 @@ async function refreshBaselineLoop(options) {
     options.promotionPolicy,
     ...(options.minDelta !== '' ? ['--min-delta', String(options.minDelta)] : []),
     '--json',
-  ]), { env: loopEnv(runId), expect: null });
+    ]),
+    env: loopEnv(runId),
+    expect: null,
+  });
   const compareResult = JSON.parse(compare.stdout);
+  if (refreshRunKernel) {
+    await bindRunKernelToJsonArtifact(comparePath, refreshRunKernel, 'compare-report');
+  }
   if (compareResult.status !== 'passed') {
     throw new Error(`Refresh self-compare failed: ${comparePath}`);
   }
   const pointerBefore = await currentPointerSnapshot();
   const nextNumber = Number((pointer.baselineId || '').match(/(\d+)$/)?.[1] || 1) + 1;
   const baselineId = `baseline-${String(nextNumber).padStart(4, '0')}`;
-  const promotion = JSON.parse(run(process.execPath, nodeArgs('tools/harness-lab/harness-lab.mjs', [
+  const promotion = JSON.parse((await runCommandWithEvents(refreshRunKernel, {
+    commandId: 'refresh-baseline.promote',
+    command: process.execPath,
+    args: nodeArgs('tools/harness-lab/harness-lab.mjs', [
     'promote',
     '--candidate-run',
     candidateResult.resultPath,
@@ -2013,7 +3038,9 @@ async function refreshBaselineLoop(options) {
     ...(pointerBefore.sha256 ? ['--expected-previous-pointer-sha256', pointerBefore.sha256] : []),
     '--allow-baseline-refresh',
     '--json',
-  ]), { env: loopEnv(runId) }).stdout);
+    ]),
+    env: loopEnv(runId),
+  })).stdout);
   const pointerAfter = await currentPointerSnapshot();
   const receipt = await buildCloseoutReceipt({
     status: 'promoted_ready_for_commit_workflow',
@@ -2043,6 +3070,9 @@ async function refreshBaselineLoop(options) {
     baselineId: promotion.baselineId,
     backend,
     runId,
+    specHash: refreshRunKernel?.specHash || null,
+    runSpecPath: refreshRunKernel?.specPath || null,
+    eventsPath: refreshRunKernel?.eventsPath || null,
     candidateResultPath: candidateResult.resultPath,
     compareReportPath: comparePath,
     refreshReadiness,
@@ -2088,6 +3118,13 @@ async function closeoutLoop(options) {
 
 function closeoutExitCode(result) {
   return result?.consumableByCommitWorkflow === true ? 0 : 1;
+}
+
+function lifecycleExitCode(result) {
+  if (!result) return 1;
+  if (['invalid', 'not_found', 'stale', 'incomplete'].includes(result.status)) return 1;
+  if (result.schemaVersion === 'moonshot-run-resume.v1' && result.status !== 'terminal_noop') return 1;
+  return 0;
 }
 
 function print(payload, json) {
@@ -2155,11 +3192,42 @@ async function main() {
     print(await statusLoop(), options.json);
     return;
   }
+  if (options.command === 'run-status') {
+    const result = await runStatusLoop(options);
+    print(result, options.json);
+    process.exitCode = lifecycleExitCode(result);
+    return;
+  }
+  if (options.command === 'resume') {
+    const result = await resumeLoop(options);
+    print(result, options.json);
+    process.exitCode = lifecycleExitCode(result);
+    return;
+  }
+  if (options.command === 'cancel') {
+    const result = await cancelLoop(options);
+    print(result, options.json);
+    process.exitCode = lifecycleExitCode(result);
+    return;
+  }
+  if (options.command === 'evaluate') {
+    const result = await evaluateLoop(options);
+    print(result, options.json);
+    process.exitCode = lifecycleExitCode(result);
+    return;
+  }
+  if (options.command === 'evolve') {
+    const result = await evolveLoop(options);
+    print(result, options.json);
+    process.exitCode = lifecycleExitCode(result);
+    return;
+  }
   throw new Error(`Unknown command: ${options.command}\n${usage()}`);
 }
 
 export {
   authSmokeLoop,
+  bindRunKernelToLabResult,
   autoLoop,
   buildCandidateSummaryArtifact,
   buildCloseoutReceipt,
@@ -2169,9 +3237,14 @@ export {
   candidateLoop,
   closeoutLoop,
   closeoutExitCode,
+  cancelLoop,
   dockerScript,
   deriveInstallStatus,
   initLoop,
+  evaluateLoop,
+  evolveLoop,
+  lifecycleExitCode,
+  loadRunProjection,
   normalizeInstalledRuntimeSmoke,
   normalizeCalibrationBaselineFixtureIdentity,
   patchDockerLabResult,
@@ -2183,9 +3256,14 @@ export {
   runDockerLab,
   scanAuthArtifacts,
   buildBaselineRefreshReadiness,
+  buildRunSpec,
   selectAutoLifecycle,
   shouldExcludeSourceSnapshotPath,
+  runSpecHash,
+  resumeLoop,
+  runStatusLoop,
   statusLoop,
+  writeRunKernelStart,
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

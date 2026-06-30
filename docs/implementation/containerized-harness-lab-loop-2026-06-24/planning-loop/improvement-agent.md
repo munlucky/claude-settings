@@ -1,6 +1,6 @@
 # Independent Improvement Agent
 
-Reviewed source draft: `docs/implementation/36-containerized-harness-lab-loop-v1.md`
+Reviewed source draft: `docs/implementation/containerized-harness-lab-loop-2026-06-24/00-source-draft-v1.md`
 
 ## Proposed Edits
 
@@ -15,4 +15,3 @@ Reviewed source draft: `docs/implementation/36-containerized-harness-lab-loop-v1
 ## Parent-Applied Result
 
 The parent session accepted these changes and wrote the plan package. Child agents did not mutate the source plan directly.
-

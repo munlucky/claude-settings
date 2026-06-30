@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -32,6 +32,36 @@ const approvedLock = async () => {
     })),
   };
 };
+
+const createDoctorFixtureRoot = async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-doctor-fixture-'));
+  tempRoots.push(tempRoot);
+  await mkdir(path.join(tempRoot, 'skills', 'fixture-skill'), { recursive: true });
+  await mkdir(path.join(tempRoot, 'package'), { recursive: true });
+  await writeFile(path.join(tempRoot, 'skills', 'fixture-skill', 'SKILL.md'), '# Fixture Skill\n');
+  await writeFile(path.join(tempRoot, 'package', 'runtime-surface.json'), JSON.stringify({
+    schemaVersion: 1,
+    publicRuntimeSkills: ['fixture-skill'],
+  }, null, 2));
+  const lock = await buildSkillsLock({
+    repoRoot: tempRoot,
+    generatedAt: '2026-06-30T00:00:00.000Z',
+    defaultLicense: 'MIT',
+    defaultPermissions: [],
+  });
+  await writeFile(path.join(tempRoot, 'skills.lock.json'), JSON.stringify(lock, null, 2));
+  return tempRoot;
+};
+
+const runDoctor = (args, options = {}) => spawnSync(process.execPath, [
+  path.join(process.cwd(), 'scripts', 'doctor.mjs'),
+  'check',
+  ...args,
+  '--json',
+], {
+  cwd: options.cwd || process.cwd(),
+  encoding: 'utf8',
+});
 
 test('skills audit detects missing lock hash drift license and permission review gaps', async () => {
   const missing = await auditSkillsLock({ lock: null });
@@ -99,39 +129,45 @@ test('skills audit CLI generates and audits a lock file', async () => {
 });
 
 test('doctor uses repository skills lock by default', () => {
-  const result = spawnSync(process.execPath, [
-    path.join(process.cwd(), 'scripts', 'doctor.mjs'),
-    'check',
-    '--json',
-  ], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-  });
+  const result = runDoctor([]);
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(JSON.parse(result.stdout).status, 'pass');
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.schemaVersion, 'moonshot-doctor-readiness.v1');
+  assert.equal(payload.status, 'pass');
+  for (const key of [
+    'runtimeSurface',
+    'skillsLock',
+    'labReadiness',
+    'evalReadiness',
+    'researchReadiness',
+    'profileTrust',
+    'generatedStateBoundary',
+  ]) {
+    assert.ok(payload.checks[key], `missing ${key}`);
+  }
+  assert.equal(payload.checks.runtimeSurface.status, 'pass');
+  assert.equal(payload.checks.skillsLock.status, 'pass');
 });
 
 test('doctor can verify an explicit installed payload root', () => {
-  const result = spawnSync(process.execPath, [
-    path.join(process.cwd(), 'scripts', 'doctor.mjs'),
-    'check',
+  const result = runDoctor([
     '--repo-root',
     process.cwd(),
     '--lock',
     'skills.lock.json',
     '--runtime-surface',
     'package/runtime-surface.json',
-    '--json',
   ], {
     cwd: os.tmpdir(),
-    encoding: 'utf8',
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.status, 'pass');
   assert.equal(payload.checks.runtimeSettings, 'explicit_repo_root');
+  assert.equal(payload.checks.profileTrust.mode, 'explicit_repo_root');
+  assert.equal(payload.checks.profileTrust.installedInputs, 'explicit');
   assert.equal(payload.checks.repoRoot, process.cwd());
   assert.match(payload.checks.lockPath, /skills\.lock\.json$/);
   assert.match(payload.checks.runtimeSurfacePath, /package[\\/]runtime-surface\.json$/);
@@ -146,24 +182,71 @@ test('doctor blocks missing lock and runtime surface expansion', async () => {
     publicRuntimeSkills: ['moonshot-phase-runner', 'internal-skill'],
   }, null, 2));
 
-  const result = spawnSync(process.execPath, [
-    path.join(process.cwd(), 'scripts', 'doctor.mjs'),
-    'check',
+  const result = runDoctor([
     '--runtime-surface',
     runtimeSurfacePath,
     '--expected-runtime-surface-json',
     JSON.stringify(['moonshot-phase-runner']),
-    '--json',
   ], {
     cwd: tempRoot,
-    encoding: 'utf8',
   });
 
   assert.equal(result.status, 2, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
+  assert.equal(payload.schemaVersion, 'moonshot-doctor-readiness.v1');
   assert.equal(payload.status, 'blocked');
+  assert.equal(payload.checks.runtimeSurface.status, 'blocked');
+  assert.equal(payload.checks.skillsLock.status, 'blocked');
   assert.ok(payload.findings.some((finding) => finding.type === 'runtime_surface_expanded'));
   assert.ok(payload.findings.some((finding) => finding.type === 'missing_lock'));
+});
+
+test('doctor treats missing optional readiness evidence as degraded not blocking', async () => {
+  const tempRoot = await createDoctorFixtureRoot();
+  const result = runDoctor([
+    '--repo-root',
+    tempRoot,
+    '--lock',
+    'skills.lock.json',
+    '--runtime-surface',
+    'package/runtime-surface.json',
+  ]);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'degraded');
+  assert.equal(payload.checks.runtimeSurface.status, 'pass');
+  assert.equal(payload.checks.skillsLock.status, 'pass');
+  assert.equal(payload.checks.labReadiness.status, 'not_initialized');
+  assert.equal(payload.checks.evalReadiness.status, 'not_available');
+  assert.equal(payload.checks.researchReadiness.status, 'not_available');
+  assert.ok(payload.findings.every((finding) => finding.severity !== 'blocking'));
+});
+
+test('doctor blocks generated state selected for package payload', async () => {
+  const tempRoot = await createDoctorFixtureRoot();
+  await writeFile(path.join(tempRoot, 'package.json'), JSON.stringify({
+    files: [
+      'scripts/',
+      '.moonshot-relay/**',
+      'docs/implementation/example/execution/**',
+    ],
+  }, null, 2));
+
+  const result = runDoctor([
+    '--repo-root',
+    tempRoot,
+    '--lock',
+    'skills.lock.json',
+    '--runtime-surface',
+    'package/runtime-surface.json',
+  ]);
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'blocked');
+  assert.equal(payload.checks.generatedStateBoundary.status, 'blocked');
+  assert.ok(payload.findings.some((finding) => finding.type === 'generated_state_selected_for_package'));
 });
 
 test('skills lock schema is parseable and source skill discovery finds phase runner', async () => {

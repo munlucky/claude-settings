@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "moonshot-research-fixture-manifest.v1",
+  "fixtureSetId": "moonshot-research-fixtures-v1",
+  "fixtureId": "harness-product-surfaces-2026-06-24",
+  "inputHash": "sha256:moonshot-research-2026-06-24-harness-product-surfaces-v1",
+  "queryVariants": 11,
+  "allowedSources": [
+    "github.com/code-yeongyu/lazycodex",
+    "github.com/Yeachan-Heo/gajae-code-website",
+    "github.com/devswa/oh-my-docs",
+    "github.com/search?q=Ouroboros"
+  ],
+  "primarySourceRules": {
+    "primarySourceTypeIncludes": "primary",
+    "sourceObservedStatus": "source-observed"
+  },
+  "boundaryAccessExpectations": {
+    "minimumItemCount": 1
+  },
+  "claimLedgerRequired": true,
+  "minimumEvidenceCount": 50,
+  "minimumPrimarySourceRatio": 0.18,
+  "minimumClaimCoverageRatio": 0.9,
+  "maximumAdjacentRepoContaminationRatio": 0.1,
+  "maximumLaneFailureCount": 0,
+  "requiredBoundaryAccessItemCount": 1,
+  "requiredArtifactCompleteness": 1,
+  "requiredArtifactPaths": {
+    "run": "2026-06-24/run.json",
+    "evidence": "2026-06-24/evidence.json",
+    "claimLedger": "2026-06-24/claim-ledger.json",
+    "report": "2026-06-24/report.md"
+  },
+  "adjacentRepoRules": [
+    "ultraworkers/claw-code",
+    "code-yeongyu/oh-my-openagent",
+    "affaan-m/ECC",
+    "langgenius/dify",
+    "farion1231/cc-switch",
+    "n8n-io/n8n",
+    "punkpeye/awesome-mcp-servers"
+  ],
+  "calibrationNotes": [
+    "The seed pack is the 2026-06-24 raw evidence pack. The raw pack has 158 evidence items, 30 primary repository items, 30 covered claims, 0 lane failures, and adjacent repository contamination below 0.10.",
+    "minimumPrimarySourceRatio is calibrated to the raw pack at 0.18. The 0.70 planning draft applies to future filtered-source fixtures, not this raw seed fixture."
+  ]
+}

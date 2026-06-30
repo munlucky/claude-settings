@@ -1,0 +1,83 @@
+schemaVersion: 1
+reviewedPackageRoot: docs/implementation/harness-product-readiness-kernel-2026-06-30
+reviewIteration: 2
+reviewMode: independent_plan_review_after_draft
+reviewers:
+  - id: plan_contract_reviewer
+    agent: 019f13f1-606a-77e1-bdb9-d9ea57650d4f
+    focus: plan package contract, phase boundaries, surface classifications, policy gates
+  - id: technical_spec_reviewer
+    agent: 019f13f1-8c8b-7552-a2f2-a17175ac07f5
+    focus: doctor status, run-spec hash binding, event vocabulary, lifecycle CLI, research fixture mapping
+blockingFindings:
+  - id: B1
+    source: plan_contract_reviewer
+    finding: "Readiness state was contradictory: draft/review-required but phases used ready-source-first language."
+    acceptedChange: "Master and phases now use review-fix-applied/awaiting blocker-confirmation language; no phase is marked execution-ready."
+    status: accepted_plan_correction
+  - id: B2
+    source: plan_contract_reviewer
+    finding: "Generated-state write boundaries conflicted with read-only .moonshot-relay/harness-lab paths."
+    acceptedChange: "Phase 02 and 05 now separate read-only baseline/compare state from staged generated write paths under active run roots."
+    status: accepted_plan_correction
+  - id: B3
+    source: plan_contract_reviewer
+    finding: "Phase 04 referenced missing tools/research and skills/moonshot-research source surfaces."
+    acceptedChange: "Phase 04 now states repo-local implementation is limited to tools/evals and tests/fixtures, and marks missing research paths out of scope."
+    status: accepted_plan_correction
+  - id: B4
+    source: plan_contract_reviewer
+    finding: "Direct node --test commands were labeled as gates without package.json policy source."
+    acceptedChange: "Direct targeted tests are now supporting checks; npm scripts remain required gates."
+    status: accepted_plan_correction
+  - id: B5
+    source: technical_spec_reviewer
+    finding: "Doctor aggregation, severity mapping, and exit codes were ambiguous."
+    acceptedChange: "Phase 01 now includes status precedence, findings severity vocabulary, and exit-code table."
+    status: accepted_plan_correction
+  - id: B6
+    source: technical_spec_reviewer
+    finding: "run-spec hash and artifact binding contract was missing."
+    acceptedChange: "Phase 02 now defines canonicalization, self-hash exclusion, portable path normalization, and specHash binding locations."
+    status: accepted_plan_correction
+  - id: B7
+    source: technical_spec_reviewer
+    finding: "Event vocabulary lacked payload/order/cardinality and compatibility rules."
+    acceptedChange: "Phase 02 now defines event table with payloads, lifecycle applicability, ordering, terminal behavior, and phase-event compatibility boundary."
+    status: accepted_plan_correction
+  - id: B8
+    source: technical_spec_reviewer
+    finding: "Lifecycle commands were not mapped to real CLI namespace."
+    acceptedChange: "Phase 05 now selects harness-loop command names, reserves lab:status for baseline status, and defines required args and exit behavior."
+    status: accepted_plan_correction
+acceptedChanges:
+  - "Added closeout receipt status vocabulary and non-consumable meanings."
+  - "Added research fixture schema owner, calibration thresholds, and metric-to-lab-result mapping."
+  - "Added package-layout targeted test result as residual current-checkout risk, not caused by this package."
+rejectedChanges: []
+remainingAmbiguity:
+  - id: A1
+    item: "Phase 04 threshold defaults are calibration defaults and may need adjustment after pinned fixture scoring."
+    disposition: "Phase 04 remains blocked until threshold/schema contract is confirmed."
+  - id: A2
+    item: "Lifecycle process termination is backend-specific."
+    disposition: "Phase 05 initial scope is event-only cancellation."
+reviewedSurfaceClassifications:
+  source_only:
+    - scripts/doctor.mjs
+    - tools/harness-lab/**
+    - scripts/lib/event-ledger.mjs
+    - tools/evals/**
+    - tests/fixtures/**
+    - tests/**
+    - docs/public/guidelines/harness-bootstrap-lab.md
+  data_or_state_migration:
+    - staged active-run writes under .moonshot-relay/harness-lab/runs/<run-id>/**
+    - read-only baseline and compare artifacts unless existing promotion/calibration command owns them
+  installed_profile_or_account_root:
+    - read-only inspection only
+  external_deployment_or_service:
+    - Docker backend used by existing harness-lab commands
+missingPolicyGates:
+  - "No live adoption policy is included in this package; live adoption remains out of scope."
+blockerConfirmationRequired: false
