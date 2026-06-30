@@ -82,7 +82,7 @@ phaseExecution:
 - Blocker condition: current architecture claim has no repository evidence.
 - First review checkpoint: after fixture current architecture and fit-gap validate.
 - Re-review trigger: Brownfield flow invents new architecture before reading existing constraints.
-- Verification evidence path: `docs/implementation/moonshot-architecture-2026-06-08/execution/phase-06/QA_REPORT.md`
+- Verification evidence path: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/execution/.../plans/moonshot-architecture-2026-06-08/runs/<runId>/execution/phase-06/QA_REPORT.md`
 
 ## 검증 계획
 

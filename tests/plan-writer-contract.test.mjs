@@ -75,3 +75,15 @@ test('plan writer review loop escalates document review by risk without making i
   assert.match(reviewLoop, /data\/state/);
   assert.doesNotMatch(reviewLoop, /harness-lab|profileSurfaceParity|skills-audit\.mjs|doctor\.mjs/);
 });
+
+test('plan writer defaults plan packages to project-scoped account-root planning', async () => {
+  const combined = (await Promise.all(planWriterFiles.map((file) => readRoot(...file)))).join('\n');
+
+  assert.match(combined, /state\/projects\/<projectId>\/planning\/packages\/<plan-slug>/);
+  assert.match(combined, /scripts\/project-identity\.mjs/);
+  assert.match(combined, /planningPackageRoot/);
+  assert.match(combined, /tracked_source_design|tracked source design|tracked-source/i);
+  assert.match(combined, /docs\/implementation\/<plan-slug>/);
+  assert.match(combined, /install-project-runtime-bridge\.mjs --plan-package docs\/implementation\/<plan-slug>/);
+  assert.doesNotMatch(combined, /--execution-root\s+\{planRoot\}\/execution/);
+});

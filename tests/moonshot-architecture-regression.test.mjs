@@ -150,8 +150,8 @@ test('architecture regression blocks raw context leakage and phase-status-only c
   tempRoots.push(tempRoot);
   const statusFile = path.join(tempRoot, 'phase-status.yaml');
   await writeFile(statusFile, [
-    'planDir: "docs/implementation/moonshot-architecture-2026-06-08"',
-    'masterPlan: "docs/implementation/moonshot-architecture-2026-06-08/00-master-plan-v1.ko.md"',
+    'planDir: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08"',
+    'masterPlan: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/00-master-plan-v1.ko.md"',
     'runId: "run-architecture-regression"',
     'goalId: "goal-architecture-regression"',
     'workspaceId: "workspace-architecture-regression"',

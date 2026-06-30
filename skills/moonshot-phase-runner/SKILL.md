@@ -37,12 +37,14 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 
 - Optional plan directory argument.
 - Optional master plan path inside the plan directory.
+- Plan directories may be account-root project planning packages, for example `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`. Repo-local `docs/implementation/<plan-slug>/` is tracked-source mode, not the default scratch location.
 - Optional run identity arguments: `--run-id`, `--goal-id`, `--workspace-id`.
 - Optional `--allow-parallel` only when the operator intentionally wants more than one active run for the same goal.
 - Optional `--lease-ttl-ms` for controlled lease windows; long phases should heartbeat instead of relying on stale active leases.
 - Active status file: `.moonshot-relay/docs/phase-status.yaml`, used as a phase cursor projection only.
 - Execution route: `in-session-coordinator` by default. `delegated-terminal` is legacy compatibility only and requires an explicit legacy maintenance reason.
 - Execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, and verifier verdict.
+- Default execution artifacts are written under the project-scoped account-root execution namespace resolved by `scripts/project-identity.mjs`, separated by projectId, worktree, branch, plan slug, and runId. Pass `--execution-root` only when an explicit alternate root is required.
 
 ## Flow
 

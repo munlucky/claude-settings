@@ -39,6 +39,7 @@ state/
 .claude/memorygraph/
 .code-review-graph/
 .claude/logs
+docs/implementation/**
 docs/implementation/**/execution/
 docs/implementation/**/close/
 docs/implementation/**/archive/

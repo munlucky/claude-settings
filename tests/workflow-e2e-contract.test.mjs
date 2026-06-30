@@ -272,7 +272,7 @@ test('phase runner excludes optional backlog phases from active cursor unless ex
   assert.equal(payload.phases[1].status, 'optional_backlog');
 });
 
-test('tracked source roadmaps default execution scratch to docs implementation', () => {
+test('tracked source roadmaps default execution scratch to account-root project execution', () => {
   const result = spawnSync(process.execPath, [
     fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
     '--dry-run',
@@ -288,8 +288,14 @@ test('tracked source roadmaps default execution scratch to docs implementation',
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
-  assert.ok(payload.plannedWrites.includes('docs/implementation/harness-control-plane-modernization/execution/phase-runner-readiness.json'));
+  assert.ok(
+    payload.plannedWrites.some((entry) => (
+      /\.moonshot-relay\/state\/projects\/munlucky-moonshot-relay\/execution\/worktrees\/wt-[a-f0-9]+\/branches\/[^/]+\/plans\/harness-control-plane-modernization\/runs\/phase-runner-\d{14}-[0-9a-f-]+\/execution\/phase-runner-readiness\.json$/.test(entry)
+    )),
+    payload.plannedWrites.join('\n'),
+  );
   assert.equal(payload.plannedWrites.some((entry) => entry.startsWith('docs/public/roadmaps/') && entry.includes('/execution/')), false);
+  assert.equal(payload.plannedWrites.some((entry) => entry.startsWith('docs/implementation/') && entry.includes('/execution/')), false);
 });
 
 test('phase runner default run ids are unique when omitted', () => {
@@ -315,6 +321,9 @@ test('phase runner default run ids are unique when omitted', () => {
   assert.match(first.runId, /^phase-runner-\d{14}-[0-9a-f-]{8}$/);
   assert.match(second.runId, /^phase-runner-\d{14}-[0-9a-f-]{8}$/);
   assert.notEqual(first.runId, second.runId);
+  assert.notDeepEqual(first.plannedWrites, second.plannedWrites);
+  assert.ok(first.plannedWrites.some((entry) => entry.includes(`/runs/${first.runId}/execution/`)));
+  assert.ok(second.plannedWrites.some((entry) => entry.includes(`/runs/${second.runId}/execution/`)));
 });
 
 test('phase runner plan preparation selects phase docs matching the explicit master version', () => {
@@ -1412,6 +1421,25 @@ test('phase runner regular workflow requires operational adoption closeout befor
   assert.match(commitSkill, /skills-audit\.mjs audit --lock skills\.lock\.json --runtime-surface package\/runtime-surface\.json --json/);
   assert.match(commitSkill, /git rev-parse HEAD/);
   assert.match(commitSkill, /git rev-parse origin\/<branch>/);
+});
+
+test('phase planning defaults to project-scoped account-root paths', async () => {
+  const runner = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.md');
+  const runnerKo = await readRoot('skills', 'moonshot-phase-runner', 'SKILL.ko.md');
+  const planWriter = await readRoot('skills', 'moonshot-plan-writer', 'SKILL.md');
+  const planWriterKo = await readRoot('skills', 'moonshot-plan-writer', 'SKILL.ko.md');
+  const workflow = await readRoot('docs', 'public', 'reference', 'phase-runner-user-workflow.md');
+  const repositoryLayout = await readRoot('docs', 'public', 'repository-layout.md');
+  const installerUsage = await readRoot('docs', 'public', 'installer-usage.md');
+  const combined = `${runner}\n${runnerKo}\n${planWriter}\n${planWriterKo}\n${workflow}\n${repositoryLayout}\n${installerUsage}`;
+
+  assert.match(combined, /state\/projects\/<projectId>\/planning\/packages\/<plan-slug>/);
+  assert.match(combined, /plans\/<plan-slug>\/runs\/<runId>\/execution/);
+  assert.match(combined, /scripts\/project-identity\.mjs/);
+  assert.match(combined, /projectId/);
+  assert.match(combined, /tracked-source|tracked source|tracked_source_design/i);
+  assert.match(combined, /docs\/implementation\/<plan-slug>/);
+  assert.match(combined, /install-project-runtime-bridge\.mjs --plan-package docs\/implementation\/<plan-slug>/);
 });
 
 test('runtime control plane docs publish DB authority matrix and closeout boundaries', async () => {

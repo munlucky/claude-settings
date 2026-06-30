@@ -1,17 +1,21 @@
 # Phase Runner User Workflow
 
-Moonshot Relay phase work uses two separate document roots:
+Moonshot Relay phase work separates durable source docs from project-scoped operational planning:
 
-- Phase plans live under `docs/implementation/<plan-slug>/`.
+- Default phase plans live under `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`.
+- Repo-local `docs/implementation/<plan-slug>/` is tracked-source mode. Use it only when the operator explicitly wants the plan package committed as source.
 - User task notes live under `.moonshot-relay/docs/tasks/`.
+- Phase execution scratch defaults to `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/worktrees/<worktreeId>/branches/<branchId>/plans/<plan-slug>/runs/<runId>/execution/`.
 
 Before execution, prepare an explicit runner state from the plan package:
 
 ```bash
-node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir docs/implementation/<plan-slug> --master-plan docs/implementation/<plan-slug>/00-master-plan-v1.md --status-file .moonshot-relay/docs/phase-status.yaml --execution-root docs/implementation/<plan-slug>/execution
+node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>" --master-plan "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/00-master-plan-v1.md" --status-file .moonshot-relay/docs/phase-status.yaml
 ```
 
-Do not rely on implicit plan resolution when multiple `docs/implementation/*/00-master-plan-v*.md` packages exist. Pass `--plan-dir` and `--master-plan` so the runner cannot pick stale plans.
+Do not rely on implicit plan resolution when multiple packages exist. Pass `--plan-dir` and `--master-plan` so the runner cannot pick stale plans. The `<projectId>` must come from `scripts/project-identity.mjs`; do not hand-share a generic account-root planning directory across repositories.
+
+When tracked-source mode is intentional, first add a slug-specific `.gitignore` exception through the bridge, for example `node scripts/install-project-runtime-bridge.mjs --target . --plan-package docs/implementation/<plan-slug> --json`, or explicitly force-add the reviewed package. The repository ignores new `docs/implementation/**` files by default so normal planning artifacts do not appear in commit workflows.
 
 General start wording such as "작업시작", "start work", "run this plan", or a plan directory plus master plan means full-plan execution. The runner must not stop after Phase 01 or a preparation/waiver phase unless the operator explicitly asks for a single phase, such as "Phase 01만" or "only phase 01".
 

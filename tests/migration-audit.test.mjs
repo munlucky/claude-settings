@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { test } from 'node:test';
 
 import {
@@ -148,6 +149,52 @@ test('project knowledge account state defaults to .moonshot-relay state', () => 
     relative(accountStateRoot({ USERPROFILE: home, MOONSHOT_RELAY_STATE_ROOT: path.join(home, '.moonshot-relay', 'custom-state') })),
     '.tmp/home/.moonshot-relay/custom-state',
   );
+});
+
+test('project identity exposes project-scoped planning and execution namespaces', async () => {
+  const { resolveProjectIdentity } = await import('../scripts/project-identity.mjs');
+  const home = path.join(root, '.tmp', 'home');
+  const resolved = resolveProjectIdentity({ cwd: root, env: { USERPROFILE: home } });
+
+  assert.equal(resolved.identity.projectId, 'munlucky-moonshot-relay');
+  assert.equal(
+    relative(resolved.namespaces.planningRoot),
+    '.tmp/home/.moonshot-relay/state/projects/munlucky-moonshot-relay/planning',
+  );
+  assert.equal(
+    relative(resolved.namespaces.planningPackageRoot),
+    '.tmp/home/.moonshot-relay/state/projects/munlucky-moonshot-relay/planning/packages',
+  );
+  assert.match(
+    relative(resolved.namespaces.planExecutionRoot),
+    /^\.tmp\/home\/\.moonshot-relay\/state\/projects\/munlucky-moonshot-relay\/execution\/worktrees\/wt-[a-f0-9]+\/branches\/[^/]+\/plans$/,
+  );
+});
+
+test('package-name fallback project identities are path-disambiguated', async () => {
+  const { resolveProjectIdentity } = await import('../scripts/project-identity.mjs');
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'moonshot-project-id-'));
+  const projectA = path.join(tempRoot, 'a');
+  const projectB = path.join(tempRoot, 'b');
+  fs.mkdirSync(projectA, { recursive: true });
+  fs.mkdirSync(projectB, { recursive: true });
+  fs.writeFileSync(path.join(projectA, 'package.json'), JSON.stringify({ name: 'web' }));
+  fs.writeFileSync(path.join(projectB, 'package.json'), JSON.stringify({ name: 'web' }));
+  const env = { MOONSHOT_RELAY_STATE_ROOT: path.join(tempRoot, 'state') };
+
+  try {
+    const first = resolveProjectIdentity({ cwd: projectA, env });
+    const second = resolveProjectIdentity({ cwd: projectB, env });
+
+    assert.equal(first.source, 'package-name-local');
+    assert.equal(second.source, 'package-name-local');
+    assert.match(first.identity.projectId, /^web-[a-f0-9]{8}$/);
+    assert.match(second.identity.projectId, /^web-[a-f0-9]{8}$/);
+    assert.notEqual(first.identity.projectId, second.identity.projectId);
+    assert.notEqual(first.namespaces.planningPackageRoot, second.namespaces.planningPackageRoot);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('migration audit reports old generated state paths and cleanup instructions', async () => {

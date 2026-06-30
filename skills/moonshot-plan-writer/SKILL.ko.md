@@ -1,6 +1,6 @@
 ---
 name: moonshot-plan-writer
-description: phase 기반 작업을 위한 docs/implementation master plan과 phase plan을 생성, 갱신, 정리합니다.
+description: phase 기반 작업을 위한 project-scoped account-root master plan과 phase plan을 생성, 갱신, 정리합니다.
 triggers:
   - "write plan"
   - "master plan"
@@ -17,6 +17,8 @@ deepReferences:
 
 phase runner가 추측 없이 실행할 수 있는 phase-plan package를 생성하거나 개정합니다. 산출물은 master plan, numbered phase docs, execution metadata, acceptance criteria, blocker, surface classification, 명확한 adoption boundary입니다.
 
+기본 산출 위치는 `scripts/project-identity.mjs`가 resolve한 account-root project namespace입니다. 예: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`. 사용자가 tracked source design package를 명시적으로 요청했거나 기존 tracked doc 자체를 수정하는 경우에만 repo-local `docs/implementation/<plan-slug>/`를 사용합니다.
+
 ## Hard Stops
 
 - phase docs, dependencies, owned paths, read/write-set boundaries, acceptance evidence가 빠진 plan을 execution-ready로 표시하지 않습니다.
@@ -31,6 +33,7 @@ phase runner가 추측 없이 실행할 수 있는 phase-plan package를 생성�
 ## Flow
 
 1. 사용자 objective와 기존 plan directory를 식별합니다.
+1.1. project identity를 resolve하고 plan root를 선택합니다. 여러 repository 작업이 겹치지 않도록 `namespaces.planningPackageRoot/<plan-slug>/`를 우선 사용합니다. master plan metadata에는 projectId와 선택된 account-root plan directory를 기록합니다.
 2. 현재 artifact와 stale phase docs를 감사합니다.
 3. `00-master-plan-*.md`와 root `NN-*.md` phase file을 draft 또는 refresh합니다.
 4. 모든 planned change surface를 `source_only`, `package_runtime_payload`, `installed_profile_or_account_root`, `external_deployment_or_service`, `data_or_state_migration` 중 하나로 분류합니다.

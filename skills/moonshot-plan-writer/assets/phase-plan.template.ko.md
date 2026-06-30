@@ -42,9 +42,9 @@ mvpMethodology:
   demoGate:
     required: true
     mode: hard_stop
-    approvalSource: "docs/implementation/USER_DEMO_APPROVAL.md"
-    evidenceSource: "docs/implementation/DEMO_EVIDENCE.md"
-    mockContractSource: "docs/implementation/MOCK_API_CONTRACT.md"
+    approvalSource: "{planRoot}/demo/USER_DEMO_APPROVAL.md"
+    evidenceSource: "{planRoot}/demo/DEMO_EVIDENCE.md"
+    mockContractSource: "{planRoot}/demo/MOCK_API_CONTRACT.md"
     blocks:
       - real_functional
       - production_backend
@@ -65,11 +65,11 @@ mvpMethodology:
 
 ## 선행조건과 입력
 - 필수 문서:
-  - `docs/implementation/00-master-plan-v<version>.md`
+  - `{planRoot}/00-master-plan-v<version>.md`
 - `demo_first` profile인 경우 필수 문서:
-  - `docs/implementation/MOCK_API_CONTRACT.md`
-  - `docs/implementation/DEMO_EVIDENCE.md`
-  - `docs/implementation/USER_DEMO_APPROVAL.md`
+  - `{planRoot}/demo/MOCK_API_CONTRACT.md`
+  - `{planRoot}/demo/DEMO_EVIDENCE.md`
+  - `{planRoot}/demo/USER_DEMO_APPROVAL.md`
 - 필수 코드/데이터:
   - <item>
 

@@ -13,7 +13,6 @@ canonicalSource:
   templates: templates/
   tests: tests/
   publicDocs: docs/public/
-  implementationPlans: docs/implementation/
   verificationContracts: schemas/
 
 runtimeProfiles:
@@ -178,18 +177,6 @@ requiredPayloadEntries:
       purpose: reusable_templates
     - source: docs/public/**
       purpose: public_documentation
-    - source: docs/implementation/*/[0-9][0-9]-*.md
-      purpose: source_local_implementation_phase_plans_not_installed
-    - source: docs/implementation/*/{ARCHITECTURE_REVIEW,ASR_CATALOG,CURRENT_ARCHITECTURE,IMPACT_MAP,PLAN,PRD_FIT_GAP,REQUIREMENT_INVENTORY,SPEC_DELTA,TRACEABILITY_MATRIX,TRADEOFF_ANALYSIS}.md
-      purpose: source_local_architecture_package_artifacts_not_installed
-    - source: docs/implementation/*/ADR/*.md
-      purpose: source_local_architecture_decision_records_not_installed
-    - source: docs/implementation/*/C4/*.md
-      purpose: source_local_architecture_c4_artifacts_not_installed
-    - source: docs/implementation/*/planning-loop/**
-      purpose: source_local_plan_review_artifacts_not_installed
-    - source: docs/implementation/*/architecture-handoff/**
-      purpose: source_local_architecture_handoff_artifacts_not_installed
     - source: tests/package-layout.test.mjs
       purpose: package_layout_materialization_guard
     - source: scripts/install-account-root-harness.mjs

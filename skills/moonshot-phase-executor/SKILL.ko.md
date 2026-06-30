@@ -33,9 +33,9 @@ triggers:
 phaseRunnerResult:
   prepared: true
   executionMode: "in-session-coordinator" # delegated-terminal은 legacy only
-  planDir: "docs/implementation/"
+  planDir: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>"
   phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
-  executionRoot: "docs/implementation/execution"
+  executionRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution"
   worksetTemplate: "<MOONSHOT_RELAY_HOME>/templates/execution/WORKSET.template.md"
   executionRuntime: "auto"            # auto | claude | codex
   prepareOnly: false

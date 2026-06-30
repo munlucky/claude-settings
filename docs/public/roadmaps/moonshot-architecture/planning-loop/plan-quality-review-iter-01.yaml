@@ -31,14 +31,14 @@ blockingFindings:
   - id: "BLK-005"
     finding: "The source roadmap lived under docs/public/roadmaps, while the phase-runner user workflow expects implementation plans under docs/implementation/<plan-slug>."
     accepted: true
-    appliedChange: "Materialized a runner package at docs/implementation/moonshot-architecture-2026-06-08 and kept the public roadmap as source."
+    appliedChange: "Materialized a runner package, later migrated to the account-root project planning namespace, and kept the public roadmap as source."
 acceptedChanges:
   - "Created one phase doc per implementation phase."
   - "Added ownedPaths, readOnlyPaths, stagedPaths, dependencies, conflicts, and merge policy to each phase."
   - "Added source traceability matrix from master requirements to phases."
   - "Added parallel execution wave plan."
   - "Added explicit adoption boundary for .claude/.codex/account-root mutation."
-  - "Materialized the runner package under docs/implementation/moonshot-architecture-2026-06-08."
+  - "Materialized the runner package, now stored under the account-root project planning namespace."
   - "Updated final gate expectations to include phase-final-guard, runtime-state assess-completion, and required verification planes."
 rejectedChanges:
   - change: "Perform live account-root adoption inside phases 01-08."

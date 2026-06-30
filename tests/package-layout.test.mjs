@@ -138,7 +138,7 @@ test('tracked docs are limited to public docs and source-local implementation pl
   );
 });
 
-test('tracked roadmaps and source-local plans are separated from runtime execution scratch space', async () => {
+test('tracked roadmaps and account-root plans are separated from runtime execution scratch space', async () => {
   const trackedDocs = gitLsFiles(root, ['docs']).stdout.split(/\r?\n/).filter(Boolean);
 
   assert.ok(
@@ -146,9 +146,10 @@ test('tracked roadmaps and source-local plans are separated from runtime executi
     'The harness control-plane modernization roadmap should be tracked under docs/public/roadmaps/',
   );
   const trackedImplementationDocs = trackedDocs.filter((file) => file.startsWith('docs/implementation/'));
-  assert.ok(
-    trackedImplementationDocs.length > 0,
-    'source-local implementation plan packages may be tracked under docs/implementation/',
+  assert.equal(
+    trackedImplementationDocs.length,
+    0,
+    'default source checkout should not track repo-local docs/implementation plan packages',
   );
   assert.deepEqual(
     trackedImplementationDocs.filter((file) => !isAllowedTrackedDoc(file)),
@@ -168,7 +169,9 @@ test('tracked roadmaps and source-local plans are separated from runtime executi
 
   assert.match(combined, /docs\/public\/roadmaps\/harness-control-plane-modernization/);
   assert.match(combined, /docs\/implementation\/\*\*/);
-  assert.match(combined, /source-local implementation plan/i);
+  assert.match(combined, /state\/projects\/<projectId>\/planning\/packages\/<plan-slug>/);
+  assert.match(combined, /plans\/<plan-slug>\/runs\/<runId>\/execution/);
+  assert.match(combined, /account-root project planning namespace/i);
   assert.match(combined, /runtime execution scratch/i);
 });
 
@@ -211,12 +214,6 @@ test('package contract declares required source payload entries and generated-st
     'schemas/**',
     'templates/**',
     'docs/public/**',
-    'docs/implementation/*/[0-9][0-9]-*.md',
-    'source_local_architecture_package_artifacts_not_installed',
-    'source_local_architecture_decision_records_not_installed',
-    'source_local_architecture_c4_artifacts_not_installed',
-    'docs/implementation/*/planning-loop/**',
-    'source_local_implementation_phase_plans_not_installed',
     'tests/package-layout.test.mjs',
     'schemas/verification.contract.yaml',
     'package/build-package.mjs',

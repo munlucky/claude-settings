@@ -50,36 +50,36 @@ PRODUCT_INTENT
 ```yaml
 planPackageReadiness:
   schemaVersion: 1
-  status: "source-roadmap-with-execution-package"
-  mode: "prepared_now"
+  status: "source-roadmap-with-account-root-execution-package"
+  mode: "migrated_to_account_root_project_state"
   sourceRoadmapRoot: "docs/public/roadmaps/moonshot-architecture"
-  executionPackageRoot: "docs/implementation/moonshot-architecture-2026-06-08"
-  selectedMasterPlan: "docs/implementation/moonshot-architecture-2026-06-08/00-master-plan-v1.ko.md"
+  executionPackageRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08"
+  selectedMasterPlan: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/00-master-plan-v1.ko.md"
   selectedPhaseDocs:
-    - "docs/implementation/moonshot-architecture-2026-06-08/01-public-surface-skill-skeleton-v1.ko.md"
-    - "docs/implementation/moonshot-architecture-2026-06-08/02-architecture-artifact-templates-schemas-v1.ko.md"
-    - "docs/implementation/moonshot-architecture-2026-06-08/03-supporting-internal-skills-v1.ko.md"
-    - "docs/implementation/moonshot-architecture-2026-06-08/04-architecture-context-builder-v1.ko.md"
-    - "docs/implementation/moonshot-architecture-2026-06-08/05-greenfield-prd-flow-v1.ko.md"
-    - "docs/implementation/moonshot-architecture-2026-06-08/06-brownfield-codebase-flow-v1.ko.md"
-    - "docs/implementation/moonshot-architecture-2026-06-08/07-product-execution-integration-v1.ko.md"
-    - "docs/implementation/moonshot-architecture-2026-06-08/08-regression-evaluation-gates-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/01-public-surface-skill-skeleton-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/02-architecture-artifact-templates-schemas-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/03-supporting-internal-skills-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/04-architecture-context-builder-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/05-greenfield-prd-flow-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/06-brownfield-codebase-flow-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/07-product-execution-integration-v1.ko.md"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/08-regression-evaluation-gates-v1.ko.md"
   reviewArtifacts:
-    - "docs/implementation/moonshot-architecture-2026-06-08/planning-loop/plan-quality-review-iter-01.yaml"
+    - "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/planning-loop/plan-quality-review-iter-01.yaml"
   staleRootPhaseDocs: []
   staleMasterPlans: []
   dirtyWorktreeAction: "classify_before_edit"
   runtimePointerAction: "explicit_plan_dir_required"
-  executionRoot: "docs/implementation/moonshot-architecture-2026-06-08/execution"
+  executionRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/execution/.../plans/moonshot-architecture-2026-06-08/runs/<runId>/execution"
   statusFile: ".moonshot-relay/docs/phase-status.yaml"
-  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir docs/implementation/moonshot-architecture-2026-06-08 --master-plan docs/implementation/moonshot-architecture-2026-06-08/00-master-plan-v1.ko.md --status-file .moonshot-relay/docs/phase-status.yaml --execution-root docs/implementation/moonshot-architecture-2026-06-08/execution"
+  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir ${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08 --master-plan ${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/moonshot-architecture-2026-06-08/00-master-plan-v1.ko.md --status-file .moonshot-relay/docs/phase-status.yaml"
   readinessDecision: "runnable"
 ```
 
 Execution note:
 
-- 이 문서는 source roadmap이다. phase-runner 실행 package는 `docs/implementation/moonshot-architecture-2026-06-08`에 materialize되어 있으며, 실행 시 implicit plan discovery에 의존하지 말고 위 `dryRunCommand`의 `--plan-dir`, `--master-plan`, `--status-file`, `--execution-root`를 명시한다.
-- runtime 실행 산출물(`execution/`, `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, verdict JSON)은 public roadmap과 섞지 않고 implementation package의 execution root 아래에 둔다.
+- 이 문서는 source roadmap이다. phase-runner 실행 package는 account-root project planning namespace로 이관되었으며, 실행 시 implicit plan discovery에 의존하지 말고 위 `dryRunCommand`의 `--plan-dir`, `--master-plan`, `--status-file`을 명시한다.
+- runtime 실행 산출물(`execution/`, `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, verdict JSON)은 public roadmap과 섞지 않고 account-root project execution namespace 아래에 둔다.
 - `.claude/**`, `.codex/**`, account-root install mutation은 Phase 07의 controlled adoption gate 전에는 금지한다.
 
 ## Phase Runner Execution Index

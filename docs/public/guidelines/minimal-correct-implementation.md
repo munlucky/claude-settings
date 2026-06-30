@@ -37,4 +37,4 @@ When a minimality review recommends skipping work, it must name the lower-rung a
 
 ## Source Note
 
-This guideline is a Moonshot-specific rewrite informed by Ponytail source pinned in `docs/implementation/ponytail-harness-adoption-2026-06-24/source-intake/source-pin.json`. Ponytail remains an external reference; this file is the local policy surface.
+This guideline is a Moonshot-specific rewrite informed by Ponytail source pinned in the account-root project planning package `state/projects/munlucky-moonshot-relay/planning/packages/ponytail-harness-adoption-2026-06-24/source-intake/source-pin.json`. Ponytail remains an external reference; this file is the local policy surface.

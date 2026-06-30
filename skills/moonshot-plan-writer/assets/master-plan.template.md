@@ -10,6 +10,19 @@
 ## Objective
 - <overall objective>
 
+## Execution Metadata
+```yaml
+executionMetadata:
+  projectId: "<resolved by scripts/project-identity.mjs>"
+  planRootMode: "account_project_planning | tracked_source_design"
+  planRoot: "{planRoot}"
+  accountPlanningRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages"
+  sourceDesignFallback: "docs/implementation/<plan-slug>"
+```
+
+- Default to `account_project_planning`. Use `tracked_source_design` only when the operator explicitly asks to commit the plan package as source.
+- Project separation is by `projectId`; do not share a generic account-root planning directory across repositories.
+
 ## Adoption Surface Classification
 ```yaml
 adoptionSurface:
@@ -79,7 +92,8 @@ planPackageReadiness:
   dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
   runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
   archiveRoot: "{planRoot}/archive/"
-  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir {planRoot} --master-plan {planRoot}/00-master-plan-v<version>.md --status-file .moonshot-relay/docs/phase-status.yaml --execution-root {planRoot}/execution"
+  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir {planRoot} --master-plan {planRoot}/00-master-plan-v<version>.md --status-file .moonshot-relay/docs/phase-status.yaml"
+  executionRootPolicy: "default_account_project_execution_root"
   readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
 ```
 

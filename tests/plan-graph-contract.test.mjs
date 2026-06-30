@@ -26,7 +26,7 @@ const validGraph = () => ({
     {
       id: 'phase-01',
       doc: '01-architecture-contract-normalization-v1.md',
-      ownedPaths: ['docs/implementation/evidence-driven-agent-harness-2026-06-23/architecture-handoff/**'],
+      ownedPaths: ['docs/public/roadmaps/evidence-driven-agent-harness/architecture-handoff/**'],
       acceptanceEvidence: ['execution/phase-01/SCORECARD.md'],
     },
     {

@@ -7,6 +7,7 @@ import process from 'node:process';
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 import { acquireRunLease, recordResumeSnapshot, recordRuntimeEvent } from './lib/runtime-state-store.mjs';
 import { gitStatusBranchLine } from './lib/git-safe.mjs';
+import { resolveProjectIdentity, sanitizeId } from './project-identity.mjs';
 
 const usage = () => `Usage: node scripts/prepare-phase-runner-state.mjs [--plan-dir <dir>] [--master-plan <file>] [--status-file <file>] [--execution-root <dir>] [--run-id <id>] [--goal-id <id>] [--workspace-id <id>] [--allow-parallel] [--lease-ttl-ms <ms>] [--dry-run] [--json]`;
 
@@ -86,37 +87,48 @@ const defaultRunId = () => {
   return `phase-runner-${timestamp}-${crypto.randomUUID().slice(0, 8)}`;
 };
 
-const defaultExecutionRoot = (repoRoot, planDir) => {
-  if (!planDir) {
-    return path.join(repoRoot, 'docs', 'implementation', 'execution');
-  }
-
+const planSlugFromDir = (repoRoot, planDir) => {
+  if (!planDir) return 'phase-runner';
   const relativePlanDir = toPortable(path.relative(repoRoot, planDir));
   const sourceRoadmapPrefix = 'docs/public/roadmaps/';
   if (relativePlanDir.startsWith(sourceRoadmapPrefix)) {
     const [roadmapSlug] = relativePlanDir.slice(sourceRoadmapPrefix.length).split('/');
-    return path.join(repoRoot, 'docs', 'implementation', roadmapSlug, 'execution');
+    return roadmapSlug || path.basename(planDir);
   }
+  return path.basename(planDir);
+};
 
-  return path.join(planDir, 'execution');
+const defaultExecutionRoot = (repoRoot, planDir, runId) => {
+  const resolved = resolveProjectIdentity({ cwd: repoRoot });
+  const planSlug = sanitizeId(planSlugFromDir(repoRoot, planDir), 'phase-plan');
+  const runSlug = sanitizeId(runId || 'local-run', 'run');
+  return path.join(resolved.namespaces.planExecutionRoot, planSlug, 'runs', runSlug, 'execution');
 };
 
 const discoverPlanDirs = async (repoRoot) => {
-  const implementationRoot = path.join(repoRoot, 'docs', 'implementation');
-  if (!await exists(implementationRoot)) {
-    return [];
+  const roots = [];
+  try {
+    roots.push(resolveProjectIdentity({ cwd: repoRoot }).namespaces.planningPackageRoot);
+  } catch {
+    // Project identity failures are reported later by runtime-state helpers.
   }
+  roots.push(path.join(repoRoot, 'docs', 'implementation'));
 
-  const entries = await readdir(implementationRoot, { withFileTypes: true });
   const candidates = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
+  for (const rootDir of roots) {
+    if (!rootDir || !await exists(rootDir)) {
       continue;
     }
-    const candidate = path.join(implementationRoot, entry.name);
-    const files = await readdir(candidate);
-    if (files.some((file) => /^00-master-plan-v\d+\.md$/.test(file))) {
-      candidates.push(candidate);
+    const entries = await readdir(rootDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const candidate = path.join(rootDir, entry.name);
+      const files = await readdir(candidate);
+      if (files.some((file) => /^00-master-plan-v\d+\.md$/.test(file))) {
+        candidates.push(candidate);
+      }
     }
   }
   return candidates.sort();
@@ -325,7 +337,7 @@ const main = async () => {
     if (discovered.length === 1) {
       planDir = discovered[0];
     } else if (discovered.length === 0) {
-      errors.push('No docs/implementation plan package with 00-master-plan-v*.md was found.');
+      errors.push('No account-root planning package or docs/implementation plan package with 00-master-plan-v*.md was found.');
     } else {
       errors.push(`Implicit plan resolution is ambiguous: ${discovered.map((dir) => toPortable(path.relative(repoRoot, dir))).join(', ')}`);
     }
@@ -362,14 +374,14 @@ const main = async () => {
     }
   }
 
-  const executionRoot = options.executionRoot
-    ? path.resolve(options.executionRoot)
-    : defaultExecutionRoot(repoRoot, planDir);
   const statusFile = options.statusFile
     ? path.resolve(options.statusFile)
     : resolveRuntimeStatePath('docs', 'phase-status.yaml');
-  const closeoutFile = path.join(executionRoot, 'phase-runner-readiness.json');
   const runId = options.runId || defaultRunId();
+  const executionRoot = options.executionRoot
+    ? path.resolve(options.executionRoot)
+    : defaultExecutionRoot(repoRoot, planDir, runId);
+  const closeoutFile = path.join(executionRoot, 'phase-runner-readiness.json');
   const goalId = options.goalId || (planDir ? path.basename(planDir) : 'phase-runner');
   const workspaceId = options.workspaceId || `workspace-${shortHash(repoRoot)}`;
   const status = errors.length > 0 ? 'blocked' : reviewArtifacts.length === 0 ? 'docs_only' : 'ready';
@@ -392,14 +404,14 @@ const main = async () => {
     workspaceId,
     allowParallel: options.allowParallel,
     leaseTtlMs: options.leaseTtlMs,
-    planDir: planDir ? toPortable(path.relative(repoRoot, planDir)) || '.' : '',
-    masterPlan: masterPlan ? toPortable(path.relative(repoRoot, masterPlan)) : '',
+    planDir: planDir ? toRepoPortable(repoRoot, planDir) || '.' : '',
+    masterPlan: masterPlan ? toRepoPortable(repoRoot, masterPlan) : '',
     phaseDocs,
     phases,
     reviewArtifacts,
     plannedWrites: [
-      toPortable(path.relative(repoRoot, statusFile)),
-      toPortable(path.relative(repoRoot, closeoutFile)),
+      toRepoPortable(repoRoot, statusFile),
+      toRepoPortable(repoRoot, closeoutFile),
     ],
     warnings,
     errors,

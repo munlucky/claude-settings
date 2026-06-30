@@ -37,12 +37,14 @@ phase 기반 작업의 public control-plane entrypoint입니다. active plan dir
 
 - 선택적 plan directory argument.
 - plan directory 안의 선택적 master plan path.
+- plan directory는 account-root project planning package일 수 있습니다. 예: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`. repo-local `docs/implementation/<plan-slug>/`는 tracked-source mode이며 기본 scratch 위치가 아닙니다.
 - 선택적 run identity arguments: `--run-id`, `--goal-id`, `--workspace-id`.
 - 같은 goal에 active run이 이미 있을 때만 명시적으로 허용하는 선택적 `--allow-parallel`.
 - controlled lease window를 위한 선택적 `--lease-ttl-ms`; long phase는 stale active lease에 의존하지 말고 heartbeat해야 합니다.
 - active status file: `.moonshot-relay/docs/phase-status.yaml`이며, phase cursor projection으로만 사용합니다.
 - 실행 경로: 기본값은 `in-session-coordinator`입니다. `delegated-terminal`은 legacy compatibility 전용이며 명시적인 legacy 유지보수 사유가 필요합니다.
 - execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, verifier verdict.
+- 기본 execution artifact는 `scripts/project-identity.mjs`가 resolve한 project-scoped account-root execution namespace에 기록합니다. 이 경로는 projectId, worktree, branch, plan slug, runId로 분리됩니다. 명시적 대체 root가 필요할 때만 `--execution-root`를 넘깁니다.
 
 ## Flow
 

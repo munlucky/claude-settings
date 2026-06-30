@@ -43,10 +43,10 @@ Do not use this for:
 phaseRunnerResult:
   prepared: true
   executionMode: "in-session-coordinator"
-  planDir: "docs/implementation/"
-  masterPlan: "docs/implementation/00-master-plan.md"
+  planDir: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>"
+  masterPlan: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/00-master-plan.md"
   phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
-  executionRoot: "docs/implementation/execution"
+  executionRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution"
   coordinatorPolicy: "fresh-fork-per-attempt"
 
 options:
@@ -78,15 +78,15 @@ attemptInput:
   phaseAttemptMode: true
   phaseNumber: 2
   phaseTitle: "Core Implementation"
-  planDir: "docs/implementation/"
-  phaseDocPath: "docs/implementation/02-core-implementation.md"
+  planDir: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>"
+  phaseDocPath: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/02-core-implementation.md"
   phaseStatusFile: ".moonshot-relay/docs/phase-status.yaml"
-  sprintContractPath: "docs/implementation/execution/02-core-implementation/SPRINT_CONTRACT.md"
-  qaReportPath: "docs/implementation/execution/02-core-implementation/QA_REPORT.md"
-  handoffPath: "docs/implementation/execution/02-core-implementation/HANDOFF.md"
-  scorecardPath: "docs/implementation/execution/02-core-implementation/SCORECARD.md"
-  worksetPath: "docs/implementation/execution/02-core-implementation/WORKSET.md"
-  executionRoot: "docs/implementation/execution"
+  sprintContractPath: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution/02-core-implementation/SPRINT_CONTRACT.md"
+  qaReportPath: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution/02-core-implementation/QA_REPORT.md"
+  handoffPath: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution/02-core-implementation/HANDOFF.md"
+  scorecardPath: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution/02-core-implementation/SCORECARD.md"
+  worksetPath: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution/02-core-implementation/WORKSET.md"
+  executionRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution"
   priorAttemptSummary: "E2E login flow failed after API refactor"
   projectKnowledgeContext:
     schemaVersion: 1

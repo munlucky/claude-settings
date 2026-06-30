@@ -10,6 +10,19 @@
 ## 목표
 - <전체 목표>
 
+## Execution Metadata
+```yaml
+executionMetadata:
+  projectId: "<scripts/project-identity.mjs로 resolve>"
+  planRootMode: "account_project_planning | tracked_source_design"
+  planRoot: "{planRoot}"
+  accountPlanningRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages"
+  sourceDesignFallback: "docs/implementation/<plan-slug>"
+```
+
+- 기본값은 `account_project_planning`입니다. 사용자가 plan package를 source로 commit하라고 명시한 경우에만 `tracked_source_design`을 사용합니다.
+- project 분리는 `projectId` 기준입니다. 여러 repository가 generic account-root planning directory를 공유하게 만들지 않습니다.
+
 ## Adoption Surface Classification
 ```yaml
 adoptionSurface:
@@ -46,15 +59,16 @@ adoptionSurface:
 ```yaml
 planPackageReadiness:
   mode: "prepared_now | prep_phase_required | docs_only | blocked"
-  selectedMasterPlan: "docs/implementation/00-master-plan-v<version>.md"
+  selectedMasterPlan: "{planRoot}/00-master-plan-v<version>.md"
   selectedPhaseDocs:
-    - "docs/implementation/01-<slug>-v<version>.md"
+    - "{planRoot}/01-<slug>-v<version>.md"
   staleRootPhaseDocs: []
   staleMasterPlans: []
   dirtyWorktreeAction: "none | classify_before_edit | blocked_unknown_owner"
   runtimePointerAction: "none | archive_before_dispatch | blocked_active_workstream"
-  archiveRoot: "docs/implementation/archive/<plan-slug>/"
-  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir {planRoot} --master-plan {planRoot}/00-master-plan-v<version>.md --status-file .moonshot-relay/docs/phase-status.yaml --execution-root {planRoot}/execution"
+  archiveRoot: "{planRoot}/archive/"
+  dryRunCommand: "node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir {planRoot} --master-plan {planRoot}/00-master-plan-v<version>.md --status-file .moonshot-relay/docs/phase-status.yaml"
+  executionRootPolicy: "default_account_project_execution_root"
   readinessDecision: "runnable | prep_phase_required | docs_only | blocked"
 ```
 
@@ -86,7 +100,7 @@ mvpMethodology:
 ## Phase 인덱스
 | Phase | 제목 | 계획 파일 | 선행 의존성 |
 |------|------|-----------|-------------|
-| 01 | <title> | `docs/implementation/01-<slug>-v<version>.md` | - |
+| 01 | <title> | `{planRoot}/01-<slug>-v<version>.md` | - |
 
 ## 실행 순서 메모
 - <의존성 및 순서 메모>
@@ -103,14 +117,14 @@ mvpMethodology:
 ## 소스 추적 매트릭스
 | Req ID | AC ID | Source | Requirement Summary | Phase | Plan File | Status |
 |--------|-------|--------|---------------------|-------|-----------|--------|
-| SRC-<n> | AC-<n> | <source-name> | <summary> | <NN> | `docs/implementation/<NN>-<slug>-v<version>.md` | mapped |
+| SRC-<n> | AC-<n> | <source-name> | <summary> | <NN> | `{planRoot}/<NN>-<slug>-v<version>.md` | mapped |
 
 ## 매핑되지 않은 소스 요구사항
 - <없음 또는 누락 사유>
 
 ## Phase 완료 체크리스트
-- [ ] Phase 01 - <title> (`docs/implementation/01-<slug>-v<version>.md`)
-- [ ] Phase 02 - <title> (`docs/implementation/02-<slug>-v<version>.md`)
+- [ ] Phase 01 - <title> (`{planRoot}/01-<slug>-v<version>.md`)
+- [ ] Phase 02 - <title> (`{planRoot}/02-<slug>-v<version>.md`)
 
 ## 완료 규칙
 - 각 phase 계획의 완료 기준이 충족될 때만 체크합니다.

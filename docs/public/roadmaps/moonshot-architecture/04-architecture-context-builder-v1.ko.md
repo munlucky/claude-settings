@@ -95,7 +95,7 @@ phaseExecution:
 - Blocker condition: promptBlock includes raw MemoryGraph/KG/ontology/log/transcript/secret-like content.
 - First review checkpoint: after greenfield and brownfield JSON examples pass.
 - Re-review trigger: existing knowledge context tests change behavior.
-- Verification evidence path: `docs/implementation/moonshot-architecture-2026-06-08/execution/phase-04/QA_REPORT.md`
+- Verification evidence path: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/execution/.../plans/moonshot-architecture-2026-06-08/runs/<runId>/execution/phase-04/QA_REPORT.md`
 
 ## 검증 계획
 

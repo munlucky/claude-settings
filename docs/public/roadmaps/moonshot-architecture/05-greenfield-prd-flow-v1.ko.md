@@ -83,7 +83,7 @@ phaseExecution:
 - Blocker condition: implementation PLAN can be produced without traceability matrix.
 - First review checkpoint: after fixture output validates.
 - Re-review trigger: Greenfield fixture requires Brownfield-only evidence.
-- Verification evidence path: `docs/implementation/moonshot-architecture-2026-06-08/execution/phase-05/QA_REPORT.md`
+- Verification evidence path: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/execution/.../plans/moonshot-architecture-2026-06-08/runs/<runId>/execution/phase-05/QA_REPORT.md`
 
 ## 검증 계획
 

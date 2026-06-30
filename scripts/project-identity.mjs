@@ -49,6 +49,17 @@ export function pathHashId(cwd) {
   return `path-${stableHash(path.resolve(cwd).toLowerCase()).slice(0, 16)}`;
 }
 
+function localDisambiguatedId(value, cwd, fallback = 'project') {
+  const base = sanitizeId(value, fallback);
+  const localRoot = findGitRoot(cwd) || path.resolve(cwd);
+  const suffix = stableHash(path.resolve(localRoot).toLowerCase()).slice(0, 8);
+  const maxPrefixLength = 126 - suffix.length;
+  const prefix = base
+    .slice(0, Math.max(1, maxPrefixLength))
+    .replace(/[-_.]+$/g, '') || fallback;
+  return sanitizeId(`${prefix}-${suffix}`, fallback);
+}
+
 export function findUp(startDir, relativePath) {
   let current = path.resolve(startDir);
   while (true) {
@@ -255,17 +266,22 @@ function namespaceFor(identity, cwd, env, options = {}) {
   const branchId = options.branchId || sanitizeId(currentBranch(cwd) || 'unknown-branch', 'branch');
   const runId = options.runId || env.HARNESS_RUN_ID || env.CODEX_RUN_ID || 'local-run';
   const projectRoot = path.join(stateRoot, 'projects', identity.projectId);
+  const planningRoot = path.join(projectRoot, 'planning');
   const executionBaseRoot = path.join(projectRoot, 'execution');
   const worktreeRoot = path.join(executionBaseRoot, 'worktrees', worktreeId);
   const branchRoot = path.join(worktreeRoot, 'branches', branchId);
+  const planExecutionRoot = path.join(branchRoot, 'plans');
   const runRoot = path.join(branchRoot, 'runs', runId);
   return {
     accountStateRoot: stateRoot,
     projectRoot,
+    planningRoot,
+    planningPackageRoot: path.join(planningRoot, 'packages'),
     knowledgeRoot: path.join(projectRoot, 'knowledge'),
     executionBaseRoot,
     worktreeRoot,
     branchRoot,
+    planExecutionRoot,
     executionRoot: runRoot,
     worktreeId,
     branchId,
@@ -312,8 +328,8 @@ export function resolveProjectIdentity(options = {}) {
 
   const fallbackCandidates = [
     ['git-remote-slug', slug],
-    ['package-name', pkgName ? sanitizeId(pkgName) : ''],
-    ['git-root-basename', rootBase ? sanitizeId(rootBase) : ''],
+    ['package-name-local', pkgName ? localDisambiguatedId(pkgName, cwd, 'package') : ''],
+    ['git-root-basename-local', rootBase ? localDisambiguatedId(rootBase, cwd, 'project') : ''],
     ['path-hash', pathHashId(cwd)]
   ].filter(([, value]) => value && PROJECT_ID_PATTERN.test(value));
 

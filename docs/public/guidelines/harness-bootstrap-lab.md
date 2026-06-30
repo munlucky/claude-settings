@@ -234,7 +234,7 @@ node tools/adapters/swe-bench-adapter.mjs run-fake --fixture tests/fixtures/harn
 Fake SWE-bench-like fixtures prove adapter shape only. Real SWE-bench readiness requires a dependency decision at:
 
 ```text
-docs/implementation/harness-improvement-loop-lab-2026-06-24/planning-loop/SWE_BENCH_DEPENDENCY_DECISION.md
+${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/munlucky-moonshot-relay/planning/packages/harness-improvement-loop-lab-2026-06-24/planning-loop/SWE_BENCH_DEPENDENCY_DECISION.md
 ```
 
 Real readiness is not complete unless `realExecutionEnabled: true` and a verifier result is imported into `lab-result.json.quantitative`.

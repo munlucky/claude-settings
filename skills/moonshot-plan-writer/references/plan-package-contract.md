@@ -12,7 +12,12 @@ Every runnable plan package must have:
 - adoption surface classification in the master plan and in every phase that mutates a non-source-only surface
 - policy source paths for every concrete gate command or a recorded missing-policy blocker
 
-If `docs/implementation` already contains unrelated root-level plan files, create a slugged package root such as `docs/implementation/<plan-slug>/` and put the full package there.
+Default package location is project-scoped account-root state:
+
+- `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`
+- `projectId` must come from `scripts/project-identity.mjs`, not from a hand-written folder name.
+
+Repo-local `docs/implementation/<plan-slug>/` is an explicit tracked-source mode only. Use it when the operator asks for a source design package, when public roadmaps intentionally materialize implementation plans, or when the existing tracked source artifact is being revised. New `docs/implementation/**` files are ignored by default, so tracked-source mode must add a slug-specific allowlist through `scripts/install-project-runtime-bridge.mjs --plan-package docs/implementation/<plan-slug>` or use a deliberate force-add. If `docs/implementation` already contains unrelated root-level plan files and tracked-source mode is explicit, create a slugged package root such as `docs/implementation/<plan-slug>/` and put the full package there.
 
 ## Project-Neutral Adoption Surfaces
 

@@ -1,6 +1,6 @@
 ---
 name: moonshot-plan-writer
-description: Create, refresh, and organize docs/implementation master and phase plans for phase-based work.
+description: Create, refresh, and organize project-scoped account-root master and phase plans for phase-based work.
 triggers:
   - "write plan"
   - "master plan"
@@ -17,6 +17,8 @@ deepReferences:
 
 Create or revise a phase-plan package that a phase runner can execute without guessing. The output is a master plan plus numbered phase docs, execution metadata, acceptance criteria, blockers, surface classification, and a clear adoption boundary.
 
+By default, write plan packages under the account-root project namespace resolved by `scripts/project-identity.mjs`, for example `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`. Use repo-local `docs/implementation/<plan-slug>/` only when the operator explicitly asks for a tracked source design package or when existing tracked docs are the source artifact being revised.
+
 ## Hard Stops
 
 - Do not mark a plan execution-ready when phase docs, dependencies, owned paths, read/write-set boundaries, or acceptance evidence are missing.
@@ -31,6 +33,7 @@ Create or revise a phase-plan package that a phase runner can execute without gu
 ## Flow
 
 1. Identify the user objective and existing plan directory.
+1.1. Resolve project identity and choose the plan root. Prefer `namespaces.planningPackageRoot/<plan-slug>/` so concurrent work in different repositories cannot collide. Record the projectId and selected account-root plan directory in the master plan metadata.
 2. Audit current artifacts and stale phase docs.
 3. Draft or refresh `00-master-plan-*.md` and root `NN-*.md` phase files.
 4. Classify every planned change surface as `source_only`, `package_runtime_payload`, `installed_profile_or_account_root`, `external_deployment_or_service`, or `data_or_state_migration`.

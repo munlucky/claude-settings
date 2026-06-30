@@ -15,7 +15,7 @@
 - compatibility window 동안 downstream 설치는 계속 `.claude/` payload를 생성하지만, 이 저장소의 source of truth는 root-level source directory입니다
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
-- source-owned 장기 roadmap은 `docs/public/roadmaps/`에 추적하고, phase 실행 계획 패키지는 `docs/implementation/<plan-slug>/`에 추적할 수 있습니다. phase 실행 중 생성되는 runtime execution scratch는 `docs/implementation/**/execution/`, `docs/implementation/**/close/`, `docs/implementation/**/archive/`에 두며 배포/설치 payload에는 포함하지 않습니다.
+- source-owned 장기 roadmap은 `docs/public/roadmaps/`에 추적하고, phase 실행 계획 패키지와 review-loop 산출물은 `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`에 둡니다. phase 실행 중 생성되는 runtime execution scratch는 `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution/`에 두며 배포/설치 payload에는 포함하지 않습니다.
 - `.moonshot-relay/docs/tasks/`, `.moonshot-relay/docs/phase-status.yaml`, `.moonshot-relay/docs/reports/*.json`, `.moonshot-relay/verification-results-*`, `.moonshot-relay/verification-verdict-*`, `.moonshot-relay/docs/moonshot-analysis.yaml` 같은 런타임 산출물은 버전 관리/설치 배포 대상이 아님
 - 프로젝트 지식 메모리는 account-root project knowledge namespace를 기본 backend로 사용합니다. 프로젝트 로컬 `.moonshot-relay/cache/memorygraph/**`는 seed/cache 입력이며 버전 관리/기본 agent context에서 제외합니다.
 - 코드 구조 분석은 `code-review-graph` MCP를 stage-gated + lazy update 방식으로 사용하며 `.code-review-graph/`에 저장하고 자동 build/watch 없이 실행
@@ -135,8 +135,8 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - 외부 하네스 도입 검토 기록은 runtime/generated task output으로 남기며 source package에는 포함하지 않음
 - 작업 문서 루트: `.moonshot-relay/docs/tasks/` (runtime task output)
 - source roadmap 루트: `docs/public/roadmaps/` (tracked long-running harness plans, such as `docs/public/roadmaps/harness-control-plane-modernization/`)
-- implementation plan package 루트: `docs/implementation/<plan-slug>/` (tracked numbered phase docs and planning-loop review artifacts)
-- runtime execution scratch 루트: `docs/implementation/**/execution/`, `docs/implementation/**/close/`, `docs/implementation/**/archive/` (generated phase-runner readiness, attempt, QA, scorecard, handoff, and other execution artifacts; not tracked)
+- implementation plan package 루트: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/` (numbered phase docs and planning-loop review artifacts)
+- runtime execution scratch 루트: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/execution/.../plans/<plan-slug>/runs/<runId>/execution/` (generated phase-runner readiness, attempt, QA, scorecard, handoff, and other execution artifacts; not tracked)
 - runtime state root: `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/`
 - downstream reference package: `.claude/docs/reference-downstream/`
 - runtime parity fixture: `.claude/docs/runtime-parity-reference-plan/`
