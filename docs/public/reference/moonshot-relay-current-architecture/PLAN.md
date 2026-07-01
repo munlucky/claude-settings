@@ -1,0 +1,10 @@
+# Plan
+
+| Task ID | Owner | Task | Owned Paths | Read-only Paths | Verification Signal |
+|---|---|---|---|---|---|
+| TASK-001 | docs-architecture | Maintain source/runtime boundary in this architecture baseline. | `docs/public/reference/moonshot-relay-current-architecture/**` | `AGENTS.md`, `docs/public/repository-layout.md` | `node scripts/architecture-artifact-validate.mjs --mode brownfield_codebase --path docs/public/reference/moonshot-relay-current-architecture --repo-root . --json` |
+| TASK-002 | package-runtime | Preserve public runtime skill allowlist and package payload contract in future changes. | future `package/**` changes only by explicit plan | `package/runtime-surface.json`, `package/package-contract.yaml` | `npm run test:package` |
+| TASK-003 | runtime-state | Preserve runtime-state completion authority and phase readiness boundaries. | future `scripts/runtime-state*.mjs` and `scripts/prepare-phase-runner-state.mjs` changes only by explicit plan | `scripts/runtime-state.mjs`, `scripts/prepare-phase-runner-state.mjs` | `npm test` |
+| TASK-004 | architecture-context | Keep architecture context prompt-safe and evidence-grounded. | future `scripts/architecture-*.mjs`, `schemas/architecture/**`, `templates/architecture/**` changes only by explicit plan | `scripts/architecture-context-build.mjs`, `scripts/architecture-artifact-validate.mjs` | `node scripts/architecture-context-build.mjs --stage plan --mode brownfield_codebase --cwd . --json` |
+| TASK-005 | phase-planning | Convert any runtime-impacting follow-up into a plan-writer/phase-runner package. | future plan package path selected by `moonshot-plan-writer` | `docs/public/guidelines/moonshot-architecture.md`, `scripts/prepare-phase-runner-state.mjs` | `node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir <plan-dir> --master-plan <master-plan>` |
+| TASK-006 | harness-regression | Run quantitative harness regression for behavior-changing harness work. | future lab/eval evidence path selected by the implementation plan | `tools/harness-lab/harness-lab.mjs`, `package.json` | `npm run test:lab` or scoped harness-lab config |
