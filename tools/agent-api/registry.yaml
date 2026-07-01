@@ -4,6 +4,14 @@
     "minGroups": 10,
     "maxGroups": 12
   },
+  "selectionPolicy": {
+    "maxSelectedGroups": 3,
+    "fallbackGroup": "filesystem",
+    "fallbackAuthority": "diagnosis_only",
+    "completionAuthority": false,
+    "schemaModeBeforeDispatch": "summary",
+    "schemaModeAfterDispatch": "full"
+  },
   "groups": [
     {
       "id": "filesystem",

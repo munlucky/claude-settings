@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Moonshot Relay Tool Registry",
   "type": "object",
-  "required": ["version", "budget", "groups"],
+  "required": ["version", "budget", "selectionPolicy", "groups"],
   "properties": {
     "version": { "type": "integer", "minimum": 1 },
     "budget": {
@@ -11,6 +11,26 @@
       "properties": {
         "minGroups": { "type": "integer", "minimum": 1 },
         "maxGroups": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "selectionPolicy": {
+      "type": "object",
+      "required": [
+        "maxSelectedGroups",
+        "fallbackGroup",
+        "fallbackAuthority",
+        "completionAuthority",
+        "schemaModeBeforeDispatch",
+        "schemaModeAfterDispatch"
+      ],
+      "properties": {
+        "maxSelectedGroups": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "fallbackGroup": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "fallbackAuthority": { "enum": ["diagnosis_only"] },
+        "completionAuthority": { "const": false },
+        "schemaModeBeforeDispatch": { "enum": ["summary"] },
+        "schemaModeAfterDispatch": { "enum": ["full"] }
       },
       "additionalProperties": false
     },

@@ -1070,6 +1070,75 @@ function buildCandidateSummaryArtifact(summary, { createdAt = new Date().toISOSt
   };
 }
 
+function firstNumber(...values) {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function firstFailureClass(...collections) {
+  for (const collection of collections) {
+    if (!Array.isArray(collection)) continue;
+    const failureClass = collection.find((entry) => entry?.failureClass && entry.failureClass !== 'none')?.failureClass;
+    if (failureClass) return failureClass;
+  }
+  return 'none';
+}
+
+function buildLabResultSummaryContract({
+  labResult = null,
+  compareReport = null,
+  runStatus = null,
+  closeoutReceipt = null,
+  candidateResultPath = '',
+  baselineResultPath = '',
+  closeoutReceiptPath = '',
+} = {}) {
+  const differentialEntries = Array.isArray(compareReport?.differential)
+    ? compareReport.differential
+    : (Array.isArray(labResult?.differential) ? labResult.differential : []);
+  const regressions = Array.isArray(compareReport?.regressions) ? compareReport.regressions : [];
+  const promotionBlockers = Array.isArray(labResult?.promotion?.blockers) ? labResult.promotion.blockers : [];
+  const blockingGates = Array.isArray(closeoutReceipt?.blockingGates) ? closeoutReceipt.blockingGates : [];
+  const failureClass = firstFailureClass(regressions, differentialEntries, promotionBlockers, blockingGates);
+  const staleArtifacts = Array.isArray(runStatus?.artifactConsistency?.staleArtifacts)
+    ? runStatus.artifactConsistency.staleArtifacts
+    : [];
+  const score = firstNumber(
+    labResult?.score,
+    labResult?.quantitative?.candidate?.normalizedScore,
+    labResult?.candidate?.normalizedScore,
+    compareReport?.candidate?.normalizedScore,
+  );
+
+  return {
+    schemaVersion: 'moonshot-harness-lab-result-summary.v1',
+    status: labResult?.status || compareReport?.status || closeoutReceipt?.status || 'unknown',
+    score,
+    failureClass,
+    candidateResultPath: candidateResultPath || closeoutReceipt?.candidateResultPath || labResult?.resultPath || '',
+    baselineResultPath: baselineResultPath || compareReport?.baselineResultPath || '',
+    differential: {
+      failureClass,
+      failedCount: differentialEntries.filter((entry) => entry?.status !== 'passed').length + regressions.length,
+      entries: differentialEntries,
+      regressions,
+    },
+    artifactConsistency: {
+      status: runStatus?.artifactConsistency?.status || 'not_recorded',
+      staleArtifacts,
+    },
+    promotionDecision: closeoutReceipt?.status || labResult?.promotion?.status || (compareReport?.promotable === true
+      ? 'promotable'
+      : (compareReport?.status === 'failed' ? 'blocked_hard_gate' : 'not_evaluated')),
+    closeoutReceiptPath,
+    consumableByCommitWorkflow: closeoutReceipt?.consumableByCommitWorkflow === true,
+    compareHash: closeoutReceipt?.compareReportSha256 || null,
+    candidateHash: closeoutReceipt?.candidateRunSha256 || null,
+  };
+}
+
 async function writeCandidateSummaryArtifact(summary) {
   const summaryPath = path.join(path.resolve(DEFAULT_RUN_ROOT), summary.runId, 'candidate-summary.json');
   await mkdir(path.dirname(summaryPath), { recursive: true });
@@ -3363,7 +3432,7 @@ async function refreshBaselineLoop(options) {
 }
 
 async function closeoutLoop(options) {
-  const runsRoot = path.resolve(DEFAULT_RUN_ROOT);
+  const runsRoot = path.resolve(options.runsRoot || DEFAULT_RUN_ROOT);
   let runId = options.runId;
   if (!runId) {
     const entries = await readdir(runsRoot, { withFileTypes: true }).catch(() => []);
@@ -3385,7 +3454,27 @@ async function closeoutLoop(options) {
     throw new Error(`Lab closeout receipt not found: ${receiptPath}`);
   }
   const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
-  const revalidation = await revalidateCloseoutReceipt(receipt, { receiptPath });
+  const revalidation = await revalidateCloseoutReceipt(receipt, {
+    receiptPath,
+    sourceRoot: options.sourceRoot || process.cwd(),
+    baselineRoot: options.baselineRoot || DEFAULT_BASELINE_ROOT,
+  });
+  const runStatus = await loadRunProjection({ runId, runsRoot });
+  const labResult = await readJsonIfExists(receipt.candidateResultPath);
+  const compareReport = await readJsonIfExists(receipt.compareReportPath);
+  const previousBaselineManifest = await readBaselineManifest(receipt.baselinePointerBefore?.pointer);
+  const labResultSummary = buildLabResultSummaryContract({
+    labResult,
+    compareReport,
+    runStatus,
+    closeoutReceipt: {
+      ...receipt,
+      consumableByCommitWorkflow: revalidation.consumableByCommitWorkflow,
+    },
+    candidateResultPath: receipt.candidateResultPath,
+    baselineResultPath: previousBaselineManifest?.artifact?.path || '',
+    closeoutReceiptPath: receiptPath,
+  });
   const worktreeStatus = await listHarnessWorktrees();
   const maintenanceWarnings = revalidation.consumableByCommitWorkflow && worktreeStatus.totalCount > 0
     ? [{
@@ -3404,6 +3493,7 @@ async function closeoutLoop(options) {
     status: receipt.status,
     consumableByCommitWorkflow: revalidation.consumableByCommitWorkflow,
     receiptPath,
+    labResultSummary,
     revalidation,
     blockingGates: revalidation.blockingGates,
     maintenanceWarnings,
@@ -3539,6 +3629,7 @@ export {
   autoLoop,
   buildCandidateSummaryArtifact,
   buildCloseoutReceipt,
+  buildLabResultSummaryContract,
   calibrationLoop,
   dockerRunHardeningArgs,
   dockerRunHardeningPolicy,

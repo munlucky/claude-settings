@@ -121,6 +121,8 @@ const requiredCommonPayloadFiles = [
   'scripts/review-bundle-build.mjs',
   'scripts/lib/git-safe.mjs',
   'scripts/lib/candidate-identity.mjs',
+  'scripts/lib/browser-failure-package.mjs',
+  'scripts/lib/browser-scenario-contract.mjs',
   'scripts/lib/contract-invalidation.mjs',
   'scripts/lib/delivery-policy.mjs',
   'scripts/lib/event-ledger.mjs',
@@ -442,6 +444,8 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /source: package\.json/);
   assert.match(contract, /source: package-lock\.json/);
   assert.match(contract, /source: node_modules\/better-sqlite3\/\*\*/);
+  assert.match(contract, /source: scripts\/lib\/browser-failure-package\.mjs/);
+  assert.match(contract, /source: scripts\/lib\/browser-scenario-contract\.mjs/);
   assert.match(contract, /runtimeDependencyDelivery:/);
   assert.match(contract, /typed_degraded_authority_blocked/);
   assert.match(contract, /rolloutSmokeLevels:/);
@@ -492,6 +496,8 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('scripts/skills-audit.mjs'));
   assert.ok(plannedFrom.includes('scripts/doctor.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/candidate-identity.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/browser-failure-package.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/browser-scenario-contract.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/contract-invalidation.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/delivery-policy.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/event-ledger.mjs'));

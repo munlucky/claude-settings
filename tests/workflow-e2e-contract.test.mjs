@@ -771,6 +771,9 @@ test('browser flow runner rejects agentic artifacts outside browser artifact roo
   assert.equal(verdict.status, 'failed');
   assert.equal(verdict.failureClass, 'artifact_missing');
   assert.equal(verdict.browserCompletionFailureClass, 'artifact_missing');
+  assert.equal(verdict.blockerMapping[0].source, 'browser_completion_result');
+  assert.equal(verdict.blockerMapping[0].failureClass, 'artifact_missing');
+  assert.equal(verdict.blockerMapping[0].blocksCompletion, true);
 });
 
 test('browser flow runner reports unsupported agentic confirmation backend as setup gap', async () => {

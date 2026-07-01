@@ -47,6 +47,11 @@ test('tool registry source and public group budget are valid', async () => {
   assert.equal(schema.properties.groups.maxItems, 12);
   assert.equal(registrySource.version, registry.version);
   assert.deepEqual(registrySource.budget, registry.budget);
+  assert.deepEqual(registrySource.selectionPolicy, registry.selectionPolicy);
+  assert.equal(schema.required.includes('selectionPolicy'), true);
+  assert.equal(schema.properties.selectionPolicy.properties.maxSelectedGroups.maximum, 3);
+  assert.deepEqual(schema.properties.selectionPolicy.properties.fallbackAuthority.enum, ['diagnosis_only']);
+  assert.deepEqual(schema.properties.selectionPolicy.properties.completionAuthority, { const: false });
   assert.equal(registrySource.groups.length, registry.groupCount);
   assert.equal(registry.groupCount >= registry.budget.minGroups, true);
   assert.equal(registry.groupCount <= registry.budget.maxGroups, true);
@@ -85,9 +90,12 @@ test('dispatcher records selected and skipped groups with summary schema mode', 
   assert.ok(selected.selectedGroups.some((group) => group.id === 'shell'));
   assert.ok(selected.selectedGroups.some((group) => group.id === 'runtime-state'));
   assert.equal(selected.selectedGroups.length <= 3, true);
+  assert.equal(selected.selectionPolicy.maxSelectedGroups, 3);
   assert.ok(selected.selectedGroups.every((group) => group.schemaMode === 'summary'));
   assert.equal(JSON.stringify(selected.selectedGroups).includes('"schema"'), false);
   assert.equal(JSON.stringify(selected.selectedGroups).includes('"fullSchema"'), false);
+  assert.equal(JSON.stringify(selected.selectedToolInjection).includes('"schema"'), false);
+  assert.equal(selected.selectedToolInjection.fullSchemaAvailableOnlyAfterDispatch, true);
   assert.ok(selected.skippedGroups.length > 0);
 
   const db = new Database(env.PHASE_RUNTIME_DB);
@@ -105,6 +113,15 @@ test('dispatcher records selected and skipped groups with summary schema mode', 
 test('dispatcher promotes full schema only for selected valid tool calls', async () => {
   const tempRoot = await makeTempRoot();
   const env = { PHASE_RUNTIME_DB: path.join(tempRoot, 'runtime-state.sqlite') };
+  const selected = parseJson(runDispatch([
+    'select',
+    '--task',
+    'run npm test',
+    '--run-id',
+    'run-tool-full',
+    '--goal-id',
+    'goal-tool-full',
+  ], env));
   const result = parseJson(runDispatch([
     'dispatch',
     '--group',
@@ -112,7 +129,7 @@ test('dispatcher promotes full schema only for selected valid tool calls', async
     '--tool',
     'run-command',
     '--selected-groups-json',
-    '["shell"]',
+    JSON.stringify(selected.selectedToolInjection),
     '--args-json',
     '{"command":"npm test"}',
     '--run-id',
@@ -124,6 +141,7 @@ test('dispatcher promotes full schema only for selected valid tool calls', async
   assert.equal(result.status, 'prepared');
   assert.equal(result.schemaMode, 'full');
   assert.equal(result.fullSchema.required.includes('command'), true);
+  assert.equal(JSON.stringify(selected).includes('"fullSchema"'), false);
 
   const db = new Database(env.PHASE_RUNTIME_DB);
   try {
@@ -133,6 +151,27 @@ test('dispatcher promotes full schema only for selected valid tool calls', async
   } finally {
     db.close();
   }
+});
+
+test('dispatcher fallback selection is diagnosis-only summary schema without completion authority', async () => {
+  const tempRoot = await makeTempRoot();
+  const env = { PHASE_RUNTIME_DB: path.join(tempRoot, 'runtime-state.sqlite') };
+  const selected = parseJson(runDispatch([
+    'select',
+    '--task',
+    'unmatched words without registered keywords',
+    '--run-id',
+    'run-tool-fallback',
+    '--goal-id',
+    'goal-tool-fallback',
+  ], env));
+
+  assert.deepEqual(selected.selectedToolInjection.selectedGroupIds, ['filesystem']);
+  assert.equal(selected.fallbackPolicy.fallbackAuthority, 'diagnosis_only');
+  assert.equal(selected.fallbackPolicy.completionAuthority, false);
+  assert.equal(selected.fallbackPolicy.mutatesState, false);
+  assert.equal(selected.selectedGroups[0].schemaMode, 'summary');
+  assert.equal(JSON.stringify(selected).includes('"fullSchema"'), false);
 });
 
 test('dispatcher rejects invalid args and wrong selected tool group before execution', async () => {

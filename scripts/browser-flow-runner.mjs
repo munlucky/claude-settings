@@ -4,6 +4,10 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
+import {
+  browserArtifactPathAllowed,
+  buildBrowserFailureBlockerMapping,
+} from './lib/browser-failure-package.mjs';
 
 const SETUP_GAP_EXIT = 64;
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -168,17 +172,6 @@ const commandLine = (spec) => [spec.command, ...(spec.args || [])].filter(Boolea
 
 const isPathLikeCommand = (command) => path.isAbsolute(command) || command.includes('/') || command.includes('\\');
 
-const artifactPathAllowed = (artifactPath, baseDir) => {
-  const normalized = String(artifactPath || '').replaceAll('\\', '/');
-  if (!normalized) {
-    return false;
-  }
-  const artifactRoot = path.resolve(baseDir || process.cwd(), '.moonshot-relay', 'browser-artifacts');
-  const absoluteArtifactPath = path.resolve(baseDir || process.cwd(), normalized);
-  const relative = path.relative(artifactRoot, absoluteArtifactPath);
-  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
-};
-
 const browserCompletionFailureClassFor = (failureClass) => ({
   static_check_failed: 'static_gate_failed',
   build_failed: 'build_failed',
@@ -289,7 +282,7 @@ const runAgenticConfirmation = (config, context) => {
     merged.snapshotPath,
     ...(Array.isArray(merged.artifacts) ? merged.artifacts.map((artifact) => artifact?.path || artifact?.artifactPath) : []),
   ].filter(Boolean);
-  const outsideArtifactPaths = artifactPaths.filter((artifactPath) => !artifactPathAllowed(artifactPath, context.baseDir));
+  const outsideArtifactPaths = artifactPaths.filter((artifactPath) => !browserArtifactPathAllowed(artifactPath, { baseDir: context.baseDir }));
   const confirmationStep = {
     ...step,
     backend,
@@ -563,13 +556,24 @@ const buildBaseVerdict = (options) => ({
 
 const finish = (verdict, fields) => {
   const failureClass = fields.failureClass || verdict.failureClass || '';
-  return {
+  const finished = {
     ...verdict,
     ...fields,
     setupGapReason: fields.setupGapReason || (fields.setupGap ? failureClass : verdict.setupGapReason || ''),
     browserCompletionFailureClass: fields.browserCompletionFailureClass || browserCompletionFailureClassFor(failureClass),
     finishedAt: new Date().toISOString(),
   };
+  if (finished.status !== 'passed') {
+    finished.blockerMapping = buildBrowserFailureBlockerMapping({
+      failureClass: finished.browserCompletionFailureClass || finished.failureClass,
+      failedStage: finished.failedStage || finished.failureClass,
+      setupGap: finished.setupGap === true,
+      browserResult: finished,
+    });
+  } else {
+    finished.blockerMapping = [];
+  }
+  return finished;
 };
 
 const runLifecycle = async (options, configBundle) => {

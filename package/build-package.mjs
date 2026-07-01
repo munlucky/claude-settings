@@ -74,6 +74,8 @@ const runtimeSpecs = {
       'scripts/lib/awtl-replay-scorecard.mjs',
       'scripts/lib/awtl-trace-sink.mjs',
       'scripts/lib/candidate-identity.mjs',
+      'scripts/lib/browser-failure-package.mjs',
+      'scripts/lib/browser-scenario-contract.mjs',
       'scripts/lib/context-state-engine.mjs',
       'scripts/lib/commit-closeout-events.mjs',
       'scripts/lib/contract-invalidation.mjs',

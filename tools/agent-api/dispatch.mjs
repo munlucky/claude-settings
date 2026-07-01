@@ -57,7 +57,17 @@ const keywords = {
   memory: ['memory', 'knowledge', 'promotion', 'audit'],
 };
 
+const selectionPolicy = () => ({
+  maxSelectedGroups: Number(registry.selectionPolicy?.maxSelectedGroups || 3),
+  fallbackGroup: registry.selectionPolicy?.fallbackGroup || 'filesystem',
+  fallbackAuthority: registry.selectionPolicy?.fallbackAuthority || 'diagnosis_only',
+  completionAuthority: registry.selectionPolicy?.completionAuthority === true,
+  schemaModeBeforeDispatch: registry.selectionPolicy?.schemaModeBeforeDispatch || 'summary',
+  schemaModeAfterDispatch: registry.selectionPolicy?.schemaModeAfterDispatch || 'full',
+});
+
 const selectGroups = (task) => {
+  const policy = selectionPolicy();
   const taskTokens = tokens(task);
   const scored = registry.groups
     .map((group) => ({
@@ -65,17 +75,32 @@ const selectGroups = (task) => {
       score: (keywords[group.id] || []).filter((keyword) => taskTokens.has(keyword)).length,
     }))
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-  const selected = scored.filter((group) => group.score > 0).slice(0, 3);
-  const fallback = selected.length > 0 ? selected : [registry.groups.find((group) => group.id === 'filesystem')];
+  const selected = scored.filter((group) => group.score > 0).slice(0, policy.maxSelectedGroups);
+  const fallback = selected.length > 0 ? selected : [registry.groups.find((group) => group.id === policy.fallbackGroup)];
   const selectedIds = new Set(fallback.map((group) => group.id));
+  const selectedGroups = fallback.map((group) => ({
+    id: group.id,
+    summary: group.summary,
+    selectionReason: group.score > 0 ? `matched task keywords for ${group.id}` : 'fallback summary schema only',
+    schemaMode: policy.schemaModeBeforeDispatch,
+    tools: group.tools.map((tool) => ({ name: tool.name, summary: tool.summary })),
+  }));
   return {
-    selectedGroups: fallback.map((group) => ({
-      id: group.id,
-      summary: group.summary,
-      selectionReason: group.score > 0 ? `matched task keywords for ${group.id}` : 'fallback summary schema only',
-      schemaMode: 'summary',
-      tools: group.tools.map((tool) => ({ name: tool.name, summary: tool.summary })),
-    })),
+    selectionPolicy: policy,
+    fallbackPolicy: {
+      fallbackGroup: policy.fallbackGroup,
+      fallbackAuthority: policy.fallbackAuthority,
+      completionAuthority: policy.completionAuthority,
+      mutatesState: false,
+    },
+    selectedGroups,
+    selectedToolInjection: {
+      schemaVersion: 1,
+      schemaMode: policy.schemaModeBeforeDispatch,
+      selectedGroupIds: [...selectedIds],
+      maxSelectedGroups: policy.maxSelectedGroups,
+      fullSchemaAvailableOnlyAfterDispatch: true,
+    },
     skippedGroups: registry.groups
       .filter((group) => !selectedIds.has(group.id))
       .map((group) => ({ id: group.id, skipReason: 'not selected for this task summary' })),
@@ -103,6 +128,7 @@ const validateArgs = (schema, args) => {
 const publicRegistry = () => ({
   version: registry.version,
   budget: registry.budget,
+  selectionPolicy: registry.selectionPolicy,
   groupCount: registry.groups.length,
   groups: registry.groups.map((group) => ({
     id: group.id,
@@ -110,6 +136,17 @@ const publicRegistry = () => ({
     tools: group.tools.map((tool) => ({ name: tool.name, summary: tool.summary })),
   })),
 });
+
+const normalizeSelectedGroupIds = (selectedGroups) => {
+  if (Array.isArray(selectedGroups)) {
+    return selectedGroups.map((item) => (typeof item === 'string' ? item : item.id)).filter(Boolean);
+  }
+  if (selectedGroups && typeof selectedGroups === 'object') {
+    if (Array.isArray(selectedGroups.selectedGroupIds)) return selectedGroups.selectedGroupIds.map(String);
+    if (Array.isArray(selectedGroups.selectedGroups)) return normalizeSelectedGroupIds(selectedGroups.selectedGroups);
+  }
+  return [];
+};
 
 const maybeRecordSelection = async (options, payload) => {
   if (!options.runId || !options.goalId) return null;
@@ -139,7 +176,7 @@ const dispatchTool = async (options) => {
   const tool = group?.tools.find((item) => item.name === options.tool);
   const selectedGroups = parseJson(options.selectedGroupsJson, [], '--selected-groups-json');
   const args = parseJson(options.argsJson, {}, '--args-json');
-  const selectedIds = new Set(selectedGroups.map((item) => (typeof item === 'string' ? item : item.id)).filter(Boolean));
+  const selectedIds = new Set(normalizeSelectedGroupIds(selectedGroups));
 
   if (!group || !tool) {
     const payload = {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -14,8 +14,12 @@ import {
   repairLoopBlockers,
   reviewCritiqueLoopBlockers,
 } from '../scripts/lib/review-bundle.mjs';
+import { buildBrowserFailurePackage } from '../scripts/lib/browser-failure-package.mjs';
 
 const tempRoots = [];
+const root = process.cwd();
+const fromRoot = (...segments) => path.join(root, ...segments);
+const readJson = async (...segments) => JSON.parse(await readFile(fromRoot(...segments), 'utf8'));
 
 after(async () => {
   await Promise.all(tempRoots.map((dir) => rm(dir, { recursive: true, force: true })));
@@ -175,42 +179,68 @@ test('repair prompt preserves failure evidence and prohibited repair actions', (
   assert.match(repair.prompt, /npm run browser:test/);
 });
 
-test('repair prompt and receipt compose the canonical browser failure package', () => {
+test('repair prompt browserResult adapter preserves summaries and artifacts', () => {
+  const repair = buildRepairPrompt({
+    scenarioId: 'critical-browser-flow',
+    browserResult: {
+      status: 'failed',
+      failedStage: 'assertion',
+      failureClass: 'playwright_assertion_failed',
+      consoleSummary: { errorCount: 2 },
+      networkSummary: { failedCount: 1 },
+      artifacts: [{ type: 'screenshot', path: '.moonshot-relay/browser-artifacts/run/goal/critical/screenshot.png' }],
+      failedAssertionIds: ['assert-text'],
+      rerunCommand: 'node --test tests/workflow-e2e-contract.test.mjs --test-name-pattern critical-browser-flow',
+    },
+  });
+
+  assert.deepEqual(repair.failurePackage.consoleSummary, { errorCount: 2 });
+  assert.deepEqual(repair.failurePackage.networkSummary, { failedCount: 1 });
+  assert.deepEqual(repair.artifacts.map((artifact) => artifact.path), ['.moonshot-relay/browser-artifacts/run/goal/critical/screenshot.png']);
+  assert.deepEqual(repair.failedAssertionIds, ['assert-text']);
+});
+
+test('repair prompt and receipt compose the canonical browser failure package', async () => {
+  const scenario = await readJson('tests', 'fixtures', 'browser-scenarios', 'critical-browser-flow.json');
   const artifacts = [
     { type: 'screenshot', path: '.moonshot-relay/browser-artifacts/run/goal/critical/screenshot.png' },
     { type: 'trace', path: '.moonshot-relay/browser-artifacts/run/goal/critical/trace.zip' },
+    { type: 'console', path: '.moonshot-relay/browser-artifacts/run/goal/critical/console.json' },
+    { type: 'network', path: '.moonshot-relay/browser-artifacts/run/goal/critical/network.json' },
+    { type: 'report', path: '.moonshot-relay/browser-artifacts/run/goal/critical/report.json' },
   ];
-  const repair = buildRepairPrompt({
-    scenarioId: 'critical-browser-flow',
-    originalScenarioId: 'critical-browser-flow',
-    rerunScenarioId: 'critical-browser-flow',
-    failedStep: 'assertion',
-    failureClass: 'playwright_assertion_failed',
-    consoleSummary: { errorCount: 0 },
-    networkSummary: { failedCount: 1 },
+  const failurePackage = buildBrowserFailurePackage({
+    scenario,
+    browserResult: {
+      status: 'failed',
+      failedStage: 'assertion',
+      failureClass: 'playwright_assertion_failed',
+      setupGap: false,
+    },
+    failedAssertionIds: ['assert-text', 'assert-role'],
     artifacts,
     rerunCommand: 'node --test tests/workflow-e2e-contract.test.mjs --test-name-pattern critical-browser-flow',
     maxRepairAttempts: 2,
   });
+  const repair = buildRepairPrompt({
+    failurePackage,
+  });
   const receipt = buildRepairLoopReceipt({
-    scenarioId: repair.scenarioId,
-    originalScenarioId: repair.originalScenarioId,
-    rerunScenarioId: repair.rerunScenarioId,
-    failedAssertionIds: ['assert-text', 'assert-role'],
-    preservedAssertionIds: ['assert-text', 'assert-role'],
-    attemptIndex: 1,
-    maxRepairAttempts: repair.maxRepairAttempts,
-    artifactLinks: artifacts.map((artifact) => artifact.path),
+    failurePackage,
   });
 
   assert.equal(repair.artifactId, 'REPAIR_PROMPT');
+  assert.equal(repair.failurePackage.artifactId, 'BROWSER_FAILURE_PACKAGE');
   assert.equal(receipt.artifactId, 'REPAIR_LOOP_RECEIPT');
   assert.equal(repair.scenarioId, receipt.scenarioId);
   assert.equal(repair.originalScenarioId, receipt.originalScenarioId);
   assert.equal(repair.rerunScenarioId, receipt.rerunScenarioId);
   assert.deepEqual(receipt.artifactLinks, artifacts.map((artifact) => artifact.path));
+  assert.equal(repair.blockerMapping[0].failureClass, 'playwright_assertion_failed');
+  assert.equal(receipt.blockerMapping[0].blocksCompletion, true);
   assert.match(repair.prompt, /do not delete or weaken failing assertions/);
   assert.match(repair.prompt, /do not update screenshot or visual baselines automatically/);
+  assert.match(repair.prompt, /Blocker Mapping/);
   assert.equal(repairLoopBlockers({ receipt, required: true }).length, 0);
 });
 

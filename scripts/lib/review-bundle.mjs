@@ -1,4 +1,10 @@
 import { sha256Hex } from './candidate-identity.mjs';
+import { BROWSER_REPAIR_MAX_ATTEMPTS } from './browser-scenario-contract.mjs';
+import {
+  buildBrowserFailurePackage,
+  repairPromptInputFromFailurePackage,
+  repairReceiptInputFromFailurePackage,
+} from './browser-failure-package.mjs';
 
 const FORBIDDEN_KEYS = new Set([
   'implementationTranscript',
@@ -288,6 +294,9 @@ export const reviewCritiqueLoopBlockers = ({
 };
 
 export const buildRepairPrompt = ({
+  failurePackage = null,
+  scenario = null,
+  browserResult = {},
   scenarioId,
   originalScenarioId = scenarioId,
   rerunScenarioId = scenarioId,
@@ -299,38 +308,68 @@ export const buildRepairPrompt = ({
   artifacts = [],
   prohibitedRepairActions = [],
   rerunCommand,
-  maxRepairAttempts = 2,
+  maxRepairAttempts = BROWSER_REPAIR_MAX_ATTEMPTS,
   attemptIndex = 1,
+  setupGap = false,
+  redactionManifest = {},
+  blockerMapping = [],
 } = {}) => {
+  const canonicalPackage = failurePackage || buildBrowserFailurePackage({
+    scenario,
+    browserResult,
+    scenarioId,
+    originalScenarioId,
+    rerunScenarioId,
+    failedStep,
+    failedStage: browserResult.failedStage || failedStep,
+    failureClass,
+    failedAssertionIds: failedAssertionIds.length > 0 ? failedAssertionIds : browserResult.failedAssertionIds || [],
+    consoleSummary: Object.keys(consoleSummary || {}).length > 0 ? consoleSummary : browserResult.consoleSummary || {},
+    networkSummary: Object.keys(networkSummary || {}).length > 0 ? networkSummary : browserResult.networkSummary || {},
+    artifacts: artifacts.length > 0 ? artifacts : browserResult.artifacts || [],
+    prohibitedRepairActions,
+    rerunCommand,
+    maxRepairAttempts,
+    attemptIndex,
+    setupGap,
+    redactionManifest,
+    blockerMapping,
+    requireScenarioArtifacts: false,
+  });
+  const repairInput = repairPromptInputFromFailurePackage(canonicalPackage);
   const requiredProhibitions = [
     'do not delete or weaken failing assertions',
     'do not change expected behavior without a tracked blocker',
     'do not update screenshot or visual baselines automatically',
     'do not skip required browser or integration tests',
   ];
-  const finalProhibitions = unique([...requiredProhibitions, ...prohibitedRepairActions.map(String)]);
-  const boundedMaxRepairAttempts = Math.max(1, Math.min(2, Number(maxRepairAttempts) || 2));
+  const finalProhibitions = unique([...requiredProhibitions, ...(repairInput.prohibitedRepairActions || []).map(String)]);
+  const boundedMaxRepairAttempts = Math.max(1, Math.min(BROWSER_REPAIR_MAX_ATTEMPTS, Number(repairInput.maxRepairAttempts) || BROWSER_REPAIR_MAX_ATTEMPTS));
   const lines = [
     '# Repair Prompt',
     '',
-    `- scenarioId: ${scenarioId || 'unknown'}`,
-    `- originalScenarioId: ${originalScenarioId || scenarioId || 'unknown'}`,
-    `- rerunScenarioId: ${rerunScenarioId || 'unknown'}`,
-    `- failedStep: ${failedStep || 'unknown'}`,
-    `- failureClass: ${failureClass || 'unknown'}`,
-    `- failedAssertionIds: ${failedAssertionIds.join(', ') || 'none'}`,
-    `- attemptIndex: ${Number(attemptIndex) || 1}`,
+    `- scenarioId: ${repairInput.scenarioId || 'unknown'}`,
+    `- originalScenarioId: ${repairInput.originalScenarioId || repairInput.scenarioId || 'unknown'}`,
+    `- rerunScenarioId: ${repairInput.rerunScenarioId || 'unknown'}`,
+    `- failedStep: ${repairInput.failedStep || 'unknown'}`,
+    `- failedStage: ${repairInput.failedStage || repairInput.failedStep || 'unknown'}`,
+    `- failureClass: ${repairInput.failureClass || 'unknown'}`,
+    `- failedAssertionIds: ${(repairInput.failedAssertionIds || []).join(', ') || 'none'}`,
+    `- attemptIndex: ${Number(repairInput.attemptIndex) || 1}`,
     `- maxRepairAttempts: ${boundedMaxRepairAttempts}`,
-    `- rerunCommand: ${rerunCommand || 'rerun the same scenarioId with the original assertions'}`,
+    `- rerunCommand: ${repairInput.rerunCommand || 'rerun the same scenarioId with the original assertions'}`,
     '',
     '## Console Summary',
-    JSON.stringify(consoleSummary || {}, null, 2),
+    JSON.stringify(repairInput.consoleSummary || {}, null, 2),
     '',
     '## Network Summary',
-    JSON.stringify(networkSummary || {}, null, 2),
+    JSON.stringify(repairInput.networkSummary || {}, null, 2),
     '',
     '## Artifact Paths',
-    ...(artifacts || []).map((artifact) => `- ${artifact.path || artifact}`),
+    ...(repairInput.artifacts || []).map((artifact) => `- ${artifact.path || artifact}`),
+    '',
+    '## Blocker Mapping',
+    JSON.stringify(repairInput.blockerMapping || [], null, 2),
     '',
     '## Prohibited Repair Actions',
     ...finalProhibitions.map((action) => `- ${action}`),
@@ -338,45 +377,63 @@ export const buildRepairPrompt = ({
   return {
     schemaVersion: 1,
     artifactId: 'REPAIR_PROMPT',
-    scenarioId: scenarioId || '',
-    originalScenarioId: originalScenarioId || scenarioId || '',
-    rerunScenarioId: rerunScenarioId || '',
-    failedStep: failedStep || '',
-    failureClass: failureClass || '',
-    failedAssertionIds,
-    attemptIndex: Number(attemptIndex) || 1,
+    scenarioId: repairInput.scenarioId || '',
+    originalScenarioId: repairInput.originalScenarioId || repairInput.scenarioId || '',
+    rerunScenarioId: repairInput.rerunScenarioId || '',
+    failedStep: repairInput.failedStep || '',
+    failedStage: repairInput.failedStage || repairInput.failedStep || '',
+    failureClass: repairInput.failureClass || '',
+    failedAssertionIds: repairInput.failedAssertionIds || [],
+    attemptIndex: Number(repairInput.attemptIndex) || 1,
     maxRepairAttempts: boundedMaxRepairAttempts,
-    rerunCommand: rerunCommand || '',
-    artifacts,
+    rerunCommand: repairInput.rerunCommand || '',
+    artifacts: repairInput.artifacts || [],
+    redactionManifest: repairInput.redactionManifest || {},
+    blockerMapping: repairInput.blockerMapping || [],
+    failurePackage: canonicalPackage,
     prohibitedRepairActions: finalProhibitions,
     prompt: `${lines.join('\n')}\n`,
   };
 };
 
 export const buildRepairLoopReceipt = ({
+  failurePackage = null,
   scenarioId,
   originalScenarioId = scenarioId,
   rerunScenarioId = scenarioId,
   failedAssertionIds = [],
   preservedAssertionIds = failedAssertionIds,
   attemptIndex = 1,
-  maxRepairAttempts = 2,
+  maxRepairAttempts = BROWSER_REPAIR_MAX_ATTEMPTS,
   status = 'ready_for_rerun',
   artifactLinks = [],
+  blockerMapping = [],
 } = {}) => {
-  const boundedMaxRepairAttempts = Math.max(1, Math.min(2, Number(maxRepairAttempts) || 2));
+  const receiptInput = failurePackage ? repairReceiptInputFromFailurePackage(failurePackage) : {
+    scenarioId,
+    originalScenarioId,
+    rerunScenarioId,
+    failedAssertionIds,
+    preservedAssertionIds,
+    attemptIndex,
+    maxRepairAttempts,
+    artifactLinks,
+    blockerMapping,
+  };
+  const boundedMaxRepairAttempts = Math.max(1, Math.min(BROWSER_REPAIR_MAX_ATTEMPTS, Number(receiptInput.maxRepairAttempts) || BROWSER_REPAIR_MAX_ATTEMPTS));
   const normalized = {
     schemaVersion: 1,
     artifactId: 'REPAIR_LOOP_RECEIPT',
-    scenarioId: scenarioId || '',
-    originalScenarioId: originalScenarioId || scenarioId || '',
-    rerunScenarioId: rerunScenarioId || '',
-    failedAssertionIds: failedAssertionIds.map(String),
-    preservedAssertionIds: preservedAssertionIds.map(String),
-    attemptIndex: Number(attemptIndex) || 1,
+    scenarioId: receiptInput.scenarioId || '',
+    originalScenarioId: receiptInput.originalScenarioId || receiptInput.scenarioId || '',
+    rerunScenarioId: receiptInput.rerunScenarioId || '',
+    failedAssertionIds: (receiptInput.failedAssertionIds || []).map(String),
+    preservedAssertionIds: (receiptInput.preservedAssertionIds || receiptInput.failedAssertionIds || []).map(String),
+    attemptIndex: Number(receiptInput.attemptIndex) || 1,
     maxRepairAttempts: boundedMaxRepairAttempts,
     status,
-    artifactLinks,
+    artifactLinks: receiptInput.artifactLinks || [],
+    blockerMapping: receiptInput.blockerMapping || [],
   };
   return {
     ...normalized,

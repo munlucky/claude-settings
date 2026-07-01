@@ -3,71 +3,30 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 
+import {
+  BROWSER_REPAIR_MAX_ATTEMPTS,
+  REQUIRED_BROWSER_SCENARIO_FIELDS,
+  REQUIRED_FORBIDDEN_REPAIR_MUTATIONS,
+  normalizeBrowserScenarioContract,
+  validateBrowserScenarioContract,
+} from '../scripts/lib/browser-scenario-contract.mjs';
+import {
+  buildBrowserFailurePackage,
+  validateBrowserFailureArtifacts,
+} from '../scripts/lib/browser-failure-package.mjs';
+
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
 
 const readJson = async (...segments) => JSON.parse(await readFile(fromRoot(...segments), 'utf8'));
 
-const requiredScenarioFields = [
-  'schemaVersion',
-  'scenarioId',
-  'evidenceDepth',
-  'expectedUrl',
-  'expectedText',
-  'expectedRole',
-  'expectedName',
-  'requiredArtifactTypes',
-  'playwrightRequired',
-  'taskVerificationClass',
-  'failurePolicy',
-];
-
-const requiredForbiddenMutations = ['delete_test', 'weaken_assertion', 'change_expected_text', 'update_baseline'];
-
-const validateScenarioContract = (schema, scenario) => {
-  const errors = [];
-  for (const field of schema.required) {
-    if (!Object.hasOwn(scenario, field)) errors.push(`missing ${field}`);
-  }
-  const allowedKeys = new Set(Object.keys(schema.properties));
-  for (const key of Object.keys(scenario)) {
-    if (!allowedKeys.has(key)) errors.push(`additional property ${key}`);
-  }
-  if (!schema.properties.evidenceDepth.enum.includes(scenario.evidenceDepth)) {
-    errors.push(`invalid evidenceDepth ${scenario.evidenceDepth}`);
-  }
-  if (!Array.isArray(scenario.requiredArtifactTypes) || scenario.requiredArtifactTypes.length < 1) {
-    errors.push('requiredArtifactTypes must not be empty');
-  }
-  if (scenario.playwrightRequired === false) {
-    if (!scenario.playwrightWaiver) {
-      errors.push('playwrightWaiver is required when playwrightRequired=false');
-    } else {
-      if (!String(scenario.playwrightWaiver.reason || '').trim()) errors.push('playwrightWaiver.reason is required');
-      if (!String(scenario.playwrightWaiver.approvedBy || '').trim()) errors.push('playwrightWaiver.approvedBy is required');
-    }
-  }
-  if (scenario.taskVerificationClass?.criticalScenario === true && scenario.playwrightRequired !== true) {
-    errors.push('critical scenarios require playwrightRequired=true');
-  }
-  const forbidden = scenario.failurePolicy?.forbiddenMutations;
-  if (!Array.isArray(forbidden)) {
-    errors.push('failurePolicy.forbiddenMutations is required');
-  } else {
-    for (const mutation of requiredForbiddenMutations) {
-      if (!forbidden.includes(mutation)) errors.push(`missing forbidden mutation ${mutation}`);
-    }
-  }
-  return errors;
-};
-
 test('browser scenario schema names the canonical scenario and failure-policy surface', async () => {
   const schema = await readJson('schemas', 'browser-scenario.schema.json');
 
   assert.equal(schema.$id, 'https://moonshot-relay.local/schemas/browser-scenario.schema.json');
-  assert.deepEqual(schema.required, requiredScenarioFields);
+  assert.deepEqual(schema.required, REQUIRED_BROWSER_SCENARIO_FIELDS);
   assert.equal(schema.additionalProperties, false);
-  assert.equal(schema.properties.failurePolicy.properties.maxRepairAttempts.maximum, 2);
+  assert.equal(schema.properties.failurePolicy.properties.maxRepairAttempts.maximum, BROWSER_REPAIR_MAX_ATTEMPTS);
   assert.deepEqual(schema.properties.failurePolicy.properties.preserveScenarioId, { const: true });
   assert.deepEqual(schema.properties.failurePolicy.properties.preserveFailingAssertionIds, { const: true });
   assert.deepEqual(schema.properties.failurePolicy.properties.fallbackAuthority.enum, ['diagnosis_only']);
@@ -87,11 +46,14 @@ test('browser scenario fixtures preserve browser proof and diagnosis-only fallba
   const waived = await readJson('tests', 'fixtures', 'browser-scenarios', 'playwright-waived-confirmation.json');
 
   for (const fixture of [critical, waived]) {
-    for (const field of requiredScenarioFields) {
+    for (const field of REQUIRED_BROWSER_SCENARIO_FIELDS) {
       assert.ok(Object.hasOwn(fixture, field), `${fixture.scenarioId} missing ${field}`);
     }
-    assert.deepEqual(validateScenarioContract(schema, fixture), []);
-    assert.equal(fixture.failurePolicy.maxRepairAttempts, 2);
+    assert.deepEqual(validateBrowserScenarioContract(fixture, { schema }), []);
+    const normalized = normalizeBrowserScenarioContract(fixture, { schema });
+    assert.equal(normalized.scenarioId, fixture.scenarioId);
+    assert.equal(normalized.failurePolicy.maxRepairAttempts, BROWSER_REPAIR_MAX_ATTEMPTS);
+    assert.equal(fixture.failurePolicy.maxRepairAttempts, BROWSER_REPAIR_MAX_ATTEMPTS);
     assert.equal(fixture.failurePolicy.preserveScenarioId, true);
     assert.equal(fixture.failurePolicy.preserveFailingAssertionIds, true);
     assert.equal(fixture.failurePolicy.fallbackAuthority, 'diagnosis_only');
@@ -113,32 +75,89 @@ test('browser scenario contract rejects ambiguous or unsafe waiver and artifact 
   const schema = await readJson('schemas', 'browser-scenario.schema.json');
   const valid = await readJson('tests', 'fixtures', 'browser-scenarios', 'critical-browser-flow.json');
 
-  assert.ok(validateScenarioContract(schema, {
+  assert.ok(validateBrowserScenarioContract({
     ...valid,
     evidenceDepth: 'integration',
-  }).some((error) => /invalid evidenceDepth/.test(error)));
-  assert.ok(validateScenarioContract(schema, {
+  }, { schema }).some((error) => /invalid evidenceDepth/.test(error)));
+  assert.ok(validateBrowserScenarioContract({
     ...valid,
     requiredArtifactTypes: [],
-  }).includes('requiredArtifactTypes must not be empty'));
-  assert.ok(validateScenarioContract(schema, {
+  }, { schema }).includes('requiredArtifactTypes must not be empty'));
+  assert.ok(validateBrowserScenarioContract({
     ...valid,
     playwrightRequired: false,
     playwrightWaiver: { reason: 'critical waiver should not pass', approvedBy: 'reviewer' },
-  }).includes('critical scenarios require playwrightRequired=true'));
-  assert.ok(validateScenarioContract(schema, {
+  }, { schema }).includes('critical scenarios require playwrightRequired=true'));
+  assert.ok(validateBrowserScenarioContract({
     ...valid,
     taskVerificationClass: { ...valid.taskVerificationClass, criticalScenario: false },
     playwrightRequired: false,
     playwrightWaiver: { reason: '', approvedBy: '' },
-  }).some((error) => /playwrightWaiver\.(reason|approvedBy) is required/.test(error)));
-  assert.ok(validateScenarioContract(schema, {
+  }, { schema }).some((error) => /playwrightWaiver\.(reason|approvedBy) is required/.test(error)));
+  assert.ok(validateBrowserScenarioContract({
     ...valid,
     failurePolicy: {
       ...valid.failurePolicy,
       forbiddenMutations: ['delete_test'],
     },
-  }).some((error) => /missing forbidden mutation/.test(error)));
+  }, { schema }).some((error) => /missing forbidden mutation/.test(error)));
+  const { maxRepairAttempts: _maxRepairAttempts, ...policyWithoutAttempts } = valid.failurePolicy;
+  assert.ok(validateBrowserScenarioContract({
+    ...valid,
+    failurePolicy: policyWithoutAttempts,
+  }, { schema }).includes('failurePolicy.maxRepairAttempts is required'));
+  assert.ok(validateBrowserScenarioContract({
+    ...valid,
+    failurePolicy: {
+      ...valid.failurePolicy,
+      maxRepairAttempts: 0,
+    },
+  }, { schema }).includes('failurePolicy.maxRepairAttempts must be at least 1'));
+  assert.ok(validateBrowserScenarioContract({
+    ...valid,
+    failurePolicy: {
+      ...valid.failurePolicy,
+      maxRepairAttempts: 'not-a-number',
+    },
+  }, { schema }).includes('failurePolicy.maxRepairAttempts must be an integer'));
+});
+
+test('browser failure package validates required artifact types and artifact root', async () => {
+  const scenario = await readJson('tests', 'fixtures', 'browser-scenarios', 'critical-browser-flow.json');
+  const artifacts = scenario.requiredArtifactTypes.map((type) => ({
+    type,
+    path: `.moonshot-relay/browser-artifacts/run/goal/${scenario.scenarioId}/${type}.json`,
+  }));
+  const failurePackage = buildBrowserFailurePackage({
+    scenario,
+    browserResult: {
+      status: 'failed',
+      failedStage: 'assertion',
+      failureClass: 'playwright_assertion_failed',
+      setupGap: false,
+    },
+    failedAssertionIds: ['assert-text'],
+    artifacts,
+    rerunCommand: 'node --test tests/workflow-e2e-contract.test.mjs --test-name-pattern critical-browser-flow',
+  });
+
+  assert.equal(failurePackage.artifactId, 'BROWSER_FAILURE_PACKAGE');
+  assert.equal(failurePackage.maxRepairAttempts, BROWSER_REPAIR_MAX_ATTEMPTS);
+  assert.equal(failurePackage.blockerMapping[0].failureClass, 'playwright_assertion_failed');
+  assert.deepEqual(
+    REQUIRED_FORBIDDEN_REPAIR_MUTATIONS.every((mutation) => failurePackage.repairPolicy.forbiddenMutations.includes(mutation)),
+    true,
+  );
+
+  assert.ok(validateBrowserFailureArtifacts({
+    scenario,
+    artifacts: artifacts.slice(1),
+  }).some((error) => /missing required artifact type/.test(error)));
+  assert.ok(validateBrowserFailureArtifacts({
+    scenario,
+    artifacts: [{ type: 'screenshot', path: 'outside/screenshot.png' }],
+    requireScenarioArtifacts: false,
+  }).some((error) => /outside \.moonshot-relay\/browser-artifacts/.test(error)));
 });
 
 test('runtime control plane docs bind browser scenarios to the source schema contract', async () => {

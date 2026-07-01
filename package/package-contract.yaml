@@ -270,6 +270,10 @@ requiredPayloadEntries:
         purpose: awtl_trace_sink_support
       - source: scripts/lib/candidate-identity.mjs
         purpose: evidence_candidate_identity_binding
+      - source: scripts/lib/browser-failure-package.mjs
+        purpose: browser_failure_package_contract_support
+      - source: scripts/lib/browser-scenario-contract.mjs
+        purpose: browser_scenario_contract_support
       - source: scripts/lib/context-state-engine.mjs
         purpose: context_state_engine_support
       - source: scripts/lib/commit-closeout-events.mjs

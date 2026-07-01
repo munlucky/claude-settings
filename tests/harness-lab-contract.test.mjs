@@ -25,9 +25,11 @@ import {
   bindRunKernelToLabResult,
   buildBaselineRefreshReadiness,
   buildCloseoutReceipt,
+  buildLabResultSummaryContract,
   buildRunSpec,
   cancelLoop,
   classifyHarnessWorktree,
+  closeoutLoop,
   closeoutExitCode,
   deriveInstallStatus,
   dockerScript,
@@ -1038,6 +1040,120 @@ test('candidate loop summary artifact captures compare and promotion authority p
   assert.equal(summary.promotion.status, 'promoted');
   assert.equal(summary.promotion.baselineId, 'baseline-0002');
   assert.equal(summary.promotion.copiedFiles, undefined);
+});
+
+test('lab result summary contract consolidates quantitative closeout fields', () => {
+  const summary = buildLabResultSummaryContract({
+    labResult: {
+      status: 'failed',
+      resultPath: 'runs/candidate-0002/lab-result.json',
+      quantitative: { candidate: { normalizedScore: 0.75 } },
+      differential: [{
+        suite: 'harness-control-plane-eval',
+        status: 'failed',
+        failureClass: 'score_drop',
+      }],
+      promotion: {
+        status: 'blocked',
+        blockers: [{ failureClass: 'score_drop', reason: 'candidate regressed' }],
+      },
+    },
+    compareReport: {
+      status: 'failed',
+      baselineResultPath: 'baselines/baseline-0001/lab-result.json',
+      regressions: [{ failureClass: 'artifact_contract_break', reason: 'artifact drift' }],
+    },
+    runStatus: {
+      artifactConsistency: {
+        status: 'stale',
+        staleArtifacts: [{ artifactKind: 'labResult', reasons: ['artifact_hash_mismatch'] }],
+      },
+    },
+    closeoutReceipt: {
+      status: 'blocked_hard_gate',
+      candidateResultPath: 'runs/candidate-0002/lab-result.json',
+      candidateRunSha256: 'candidate-sha',
+      compareReportSha256: 'compare-sha',
+      consumableByCommitWorkflow: false,
+    },
+    closeoutReceiptPath: 'runs/candidate-0002/lab-closeout-receipt.json',
+  });
+
+  assert.equal(summary.schemaVersion, 'moonshot-harness-lab-result-summary.v1');
+  assert.equal(summary.status, 'failed');
+  assert.equal(summary.score, 0.75);
+  assert.equal(summary.failureClass, 'artifact_contract_break');
+  assert.equal(summary.candidateResultPath, 'runs/candidate-0002/lab-result.json');
+  assert.equal(summary.baselineResultPath, 'baselines/baseline-0001/lab-result.json');
+  assert.equal(summary.differential.failureClass, 'artifact_contract_break');
+  assert.equal(summary.differential.failedCount, 2);
+  assert.equal(summary.artifactConsistency.staleArtifacts[0].artifactKind, 'labResult');
+  assert.equal(summary.promotionDecision, 'blocked_hard_gate');
+  assert.equal(summary.consumableByCommitWorkflow, false);
+  assert.equal(summary.compareHash, 'compare-sha');
+  assert.equal(summary.candidateHash, 'candidate-sha');
+});
+
+test('closeout loop exposes lab result summary contract for commit consumers', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-closeout-summary-'));
+  tempRoots.push(tempRoot);
+  const runsRoot = path.join(tempRoot, 'runs');
+  const baselineRoot = path.join(tempRoot, 'baselines');
+  const runRoot = path.join(runsRoot, 'candidate-summary-runtime');
+  await mkdir(runRoot, { recursive: true });
+  const sourceRoot = await makeFixtureRepo();
+  const candidatePath = path.join(runRoot, 'lab-result.json');
+  const comparePath = path.join(runRoot, 'compare-report.json');
+  const previousBaselinePath = path.join(baselineRoot, 'baseline-0001', 'lab-result.json');
+  const previousManifestPath = path.join(baselineRoot, 'baseline-0001', 'manifest.json');
+  await mkdir(path.dirname(previousManifestPath), { recursive: true });
+  await writeFile(previousBaselinePath, JSON.stringify({ status: 'passed' }, null, 2));
+  await writeFile(previousManifestPath, JSON.stringify({
+    schemaVersion: 'moonshot-harness-baseline-artifact.v1',
+    baselineId: 'baseline-0001',
+    artifact: { path: previousBaselinePath },
+  }, null, 2));
+  await writeFile(candidatePath, JSON.stringify({
+    schemaVersion: 'moonshot-harness-lab-result.v1',
+    status: 'failed',
+    resultPath: candidatePath,
+    quantitative: { candidate: { normalizedScore: 0.5 } },
+  }, null, 2));
+  await writeFile(comparePath, JSON.stringify({
+    status: 'failed',
+    regressions: [{ failureClass: 'score_drop' }],
+    differential: [{ status: 'failed', failureClass: 'score_drop' }],
+  }, null, 2));
+  await writeFile(path.join(runRoot, 'lab-closeout-receipt.json'), JSON.stringify({
+    schemaVersion: 'moonshot-harness-lab-closeout-receipt.v1',
+    status: 'blocked_hard_gate',
+    baselineId: 'baseline-0001',
+    baselinePointerBefore: {
+      baselineId: 'baseline-0001',
+      pointer: { manifestPath: previousManifestPath },
+    },
+    candidateResultPath: candidatePath,
+    compareReportPath: comparePath,
+    blockingGates: [{ failureClass: 'score_drop' }],
+  }, null, 2));
+
+  const closeout = await closeoutLoop({
+    runId: 'candidate-summary-runtime',
+    runsRoot,
+    baselineRoot,
+    sourceRoot,
+  });
+
+  assert.equal(closeout.schemaVersion, 'moonshot-harness-closeout-read.v1');
+  assert.equal(closeout.labResultSummary.schemaVersion, 'moonshot-harness-lab-result-summary.v1');
+  assert.equal(closeout.labResultSummary.status, 'failed');
+  assert.equal(closeout.labResultSummary.score, 0.5);
+  assert.equal(closeout.labResultSummary.failureClass, 'score_drop');
+  assert.equal(closeout.labResultSummary.candidateResultPath, candidatePath);
+  assert.equal(closeout.labResultSummary.baselineResultPath, previousBaselinePath);
+  assert.equal(closeout.labResultSummary.differential.failureClass, 'score_drop');
+  assert.equal(Array.isArray(closeout.labResultSummary.artifactConsistency.staleArtifacts), true);
+  assert.equal(closeout.labResultSummary.promotionDecision, 'blocked_hard_gate');
 });
 
 test('run spec hash excludes self hash and rejects in-place mutation', async () => {
