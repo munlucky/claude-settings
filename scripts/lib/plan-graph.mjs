@@ -30,17 +30,42 @@ export const markdownPlanCompatibility = ({ phaseDocs = [] } = {}) => ({
   phaseCount: phaseDocs.length,
 });
 
-export const validatePlanGraph = (graph = {}) => {
+export const validatePlanGraph = (graph = {}, { expectedPhaseDocs = [] } = {}) => {
   const findings = [];
   const phases = Array.isArray(graph.phases) ? graph.phases : [];
   const ids = new Set();
+  if (graph.schemaVersion === undefined || graph.schemaVersion === null) {
+    findings.push({ type: 'missing_schema_version', severity: 'blocking' });
+  }
+  if (!graph.planId) {
+    findings.push({ type: 'missing_plan_id', severity: 'blocking' });
+  }
+  if (!Array.isArray(graph.phases)) {
+    findings.push({ type: 'missing_phases', severity: 'blocking' });
+  }
 
   for (const phase of phases) {
     if (!phase.id) findings.push({ type: 'missing_phase_id', severity: 'blocking' });
+    if (!phase.doc) findings.push({ type: 'missing_phase_doc', phaseId: phase.id, severity: 'blocking' });
     if (ids.has(phase.id)) findings.push({ type: 'duplicate_phase_id', phaseId: phase.id, severity: 'blocking' });
     ids.add(phase.id);
     if (!Array.isArray(phase.ownedPaths) || phase.ownedPaths.length === 0) {
       findings.push({ type: 'missing_owned_paths', phaseId: phase.id, severity: 'blocking' });
+    }
+  }
+
+  if (expectedPhaseDocs.length > 0) {
+    const expected = unique(expectedPhaseDocs.map(normalizePath)).sort();
+    const actual = unique(phases.map((phase) => normalizePath(phase.doc)).filter(Boolean)).sort();
+    for (const doc of expected) {
+      if (!actual.includes(doc)) {
+        findings.push({ type: 'missing_graph_phase_doc', doc, severity: 'blocking' });
+      }
+    }
+    for (const doc of actual) {
+      if (!expected.includes(doc)) {
+        findings.push({ type: 'unknown_graph_phase_doc', doc, severity: 'blocking' });
+      }
     }
   }
 

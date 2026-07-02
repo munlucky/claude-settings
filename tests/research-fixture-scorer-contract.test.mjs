@@ -228,6 +228,12 @@ test('harness lab can score research fixture metrics with complete fixture ident
   ], {
     cwd: root,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      MOONSHOT_RELAY_HOME: path.join(outRoot, 'homes', 'moonshot-relay'),
+      CODEX_HOME: path.join(outRoot, 'homes', 'codex'),
+      CLAUDE_HOME: path.join(outRoot, 'homes', 'claude'),
+    },
   });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);

@@ -288,6 +288,12 @@ test('tracked source roadmaps default execution scratch to account-root project 
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
+  assert.equal(payload.planRootKind, 'source_roadmap');
+  assert.equal(payload.planGraphStatus.status, 'markdown_sequential');
+  assert.equal(payload.planGraphStatus.parallelAllowed, false);
+  assert.equal(payload.executionPackageRecommendation.status, 'recommended');
+  assert.match(payload.executionPackageRecommendation.reason, /source roadmaps/i);
+  assert.equal(payload.runtimeBridgeStatus.status, 'not_applicable');
   assert.ok(
     payload.plannedWrites.some((entry) => (
       /\.moonshot-relay\/state\/projects\/munlucky-moonshot-relay\/execution\/worktrees\/wt-[a-f0-9]+\/branches\/[^/]+\/plans\/harness-control-plane-modernization\/runs\/phase-runner-\d{14}-[0-9a-f-]+\/execution\/phase-runner-readiness\.json$/.test(entry)
@@ -296,6 +302,178 @@ test('tracked source roadmaps default execution scratch to account-root project 
   );
   assert.equal(payload.plannedWrites.some((entry) => entry.startsWith('docs/public/roadmaps/') && entry.includes('/execution/')), false);
   assert.equal(payload.plannedWrites.some((entry) => entry.startsWith('docs/implementation/') && entry.includes('/execution/')), false);
+});
+
+test('phase runner blocks parallel markdown-only plans without graph metadata', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-parallel-no-graph-');
+  const planDir = path.join(tempRoot, 'docs', 'implementation', 'sample-plan');
+  await mkdir(path.join(planDir, 'planning-loop'), { recursive: true });
+  await writeFile(path.join(planDir, '00-master-plan-v1.md'), '# Sample Plan\n');
+  await writeFile(path.join(planDir, '01-sample-v1.md'), '# Phase 01\n');
+  await writeFile(path.join(planDir, 'planning-loop', 'plan-quality-review-iter-01.yaml'), 'status: pass\n');
+
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--allow-parallel',
+    '--plan-dir',
+    planDir,
+    '--master-plan',
+    path.join(planDir, '00-master-plan-v1.md'),
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'blocked');
+  assert.equal(payload.planGraphStatus.status, 'markdown_sequential');
+  assert.equal(payload.planGraphStatus.parallelAllowed, false);
+  assert.ok(payload.errors.some((error) => /validated plan graph/i.test(error)), payload.errors.join('\n'));
+});
+
+test('phase runner validates explicit plan graph metadata before dispatch', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-plan-graph-ready-');
+  const planDir = path.join(tempRoot, 'docs', 'implementation', 'sample-plan');
+  await mkdir(path.join(planDir, 'planning-loop'), { recursive: true });
+  await writeFile(path.join(planDir, '00-master-plan-v1.md'), '# Sample Plan\n');
+  await writeFile(path.join(planDir, '01-sample-v1.md'), '# Phase 01\n');
+  await writeFile(path.join(planDir, '02-sample-v1.md'), '# Phase 02\n');
+  await writeFile(path.join(planDir, 'planning-loop', 'plan-quality-review-iter-01.yaml'), 'status: pass\n');
+  await writeFile(path.join(planDir, 'plan-graph.json'), JSON.stringify({
+    schemaVersion: 1,
+    planId: 'sample-plan',
+    phases: [
+      { id: 'phase-01', doc: '01-sample-v1.md', ownedPaths: ['scripts/a.mjs'] },
+      { id: 'phase-02', doc: '02-sample-v1.md', dependsOn: ['phase-01'], parallelGroup: 'later', ownedPaths: ['scripts/b.mjs'] },
+    ],
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--allow-parallel',
+    '--plan-dir',
+    planDir,
+    '--master-plan',
+    path.join(planDir, '00-master-plan-v1.md'),
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'ready');
+  assert.equal(payload.planGraphStatus.status, 'validated_graph');
+  assert.equal(payload.planGraphStatus.parallelAllowed, true);
+});
+
+test('phase runner blocks graph metadata that does not cover discovered phase docs', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-plan-graph-mismatch-');
+  const planDir = path.join(tempRoot, 'docs', 'implementation', 'sample-plan');
+  await mkdir(path.join(planDir, 'planning-loop'), { recursive: true });
+  await writeFile(path.join(planDir, '00-master-plan-v1.md'), '# Sample Plan\n');
+  await writeFile(path.join(planDir, '01-sample-v1.md'), '# Phase 01\n');
+  await writeFile(path.join(planDir, '02-sample-v1.md'), '# Phase 02\n');
+  await writeFile(path.join(planDir, 'planning-loop', 'plan-quality-review-iter-01.yaml'), 'status: pass\n');
+  await writeFile(path.join(planDir, 'plan-graph.json'), JSON.stringify({
+    schemaVersion: 1,
+    planId: 'sample-plan',
+    phases: [
+      { id: 'phase-01', doc: '01-sample-v1.md', ownedPaths: ['scripts/a.mjs'] },
+    ],
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--allow-parallel',
+    '--plan-dir',
+    planDir,
+    '--master-plan',
+    path.join(planDir, '00-master-plan-v1.md'),
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 2, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'blocked');
+  assert.equal(payload.planGraphStatus.status, 'blocked_graph');
+  assert.equal(payload.planGraphStatus.parallelAllowed, false);
+  assert.ok(payload.planGraphStatus.findings.some((finding) => finding.type === 'missing_graph_phase_doc'));
+});
+
+test('project runtime bridge accepts account-root plan packages for temp smoke without gitignore exception', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-bridge-account-package-');
+  const planRoot = path.join(tempRoot, 'account-root', 'state', 'projects', 'demo', 'planning', 'packages', 'sample-plan');
+  const targetRoot = path.join(tempRoot, 'target-project');
+  await mkdir(planRoot, { recursive: true });
+  await mkdir(targetRoot, { recursive: true });
+
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'install-project-runtime-bridge.mjs'),
+    '--target',
+    targetRoot,
+    '--plan-package',
+    planRoot,
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.deepEqual(payload.written.sort(), [
+    '.moonshot-relay/.gitignore',
+    'scripts/knowledge-context-build.mjs',
+    'scripts/prepare-phase-runner-state.mjs',
+    'scripts/runtime-state.mjs',
+    'tools/sandbox/policy.mjs',
+    'verification.contract.yaml',
+  ]);
+  const gitignore = await readFile(path.join(targetRoot, '.moonshot-relay', '.gitignore'), 'utf8');
+  assert.match(gitignore, /state\//);
+});
+
+test('phase runner reports runnable bridge recovery command outside source checkout', async () => {
+  const tempRoot = await makeTempRoot('moonshot-relay-downstream-bridge-status-');
+  const targetRoot = path.join(tempRoot, 'target project');
+  const planDir = path.join(targetRoot, 'docs', 'implementation', 'sample plan');
+  await mkdir(path.join(planDir, 'planning-loop'), { recursive: true });
+  await writeFile(path.join(planDir, '00-master-plan-v1.md'), '# Sample Plan\n');
+  await writeFile(path.join(planDir, '01-sample-v1.md'), '# Phase 01\n');
+  await writeFile(path.join(planDir, 'planning-loop', 'plan-quality-review-iter-01.yaml'), 'status: pass\n');
+
+  const result = spawnSync(process.execPath, [
+    fromRoot('scripts', 'prepare-phase-runner-state.mjs'),
+    '--dry-run',
+    '--json',
+    '--plan-dir',
+    planDir,
+    '--master-plan',
+    path.join(planDir, '00-master-plan-v1.md'),
+    '--execution-root',
+    path.join(targetRoot, '.moonshot-relay', 'execution'),
+  ], {
+    cwd: targetRoot,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.runtimeBridgeStatus.status, 'missing');
+  assert.match(payload.runtimeBridgeStatus.recoveryCommand, /^moonshot-relay bridge --target "/);
+  assert.match(payload.runtimeBridgeStatus.recoveryCommand, /target project"/);
+  assert.match(payload.runtimeBridgeStatus.recoveryCommand, /--plan-package ".*sample plan"/);
+  assert.equal(payload.runtimeBridgeStatus.recoveryCommand.includes('node scripts/install-project-runtime-bridge.mjs'), false);
 });
 
 test('phase runner default run ids are unique when omitted', () => {
@@ -529,6 +707,8 @@ test('browser flow runner executes swappable agentic confirmation adapter after 
           `http://127.0.0.1:${port}/health`,
           '--text',
           'Ready',
+          '--stdoutPrefix',
+          'adapter diagnostic log',
           '--screenshot',
           screenshotPath,
           '--snapshot',
@@ -566,7 +746,11 @@ test('browser flow runner executes swappable agentic confirmation adapter after 
   assert.equal(verdict.agenticConfirmation.expectedText, 'Ready');
   assert.equal(verdict.agenticConfirmation.expectedRole, 'button');
   assert.equal(verdict.agenticConfirmation.expectedName, 'Save');
-  assert.equal(verdict.agenticConfirmation.adapterExpectedText, 'adapter supplied text');
+  assert.equal(
+    verdict.agenticConfirmation.adapterExpectedText,
+    'adapter supplied text',
+    JSON.stringify({ confirmationStep, agenticConfirmation: verdict.agenticConfirmation }, null, 2),
+  );
   assert.equal(verdict.agenticConfirmation.expectedTextFound, true);
   assert.equal(verdict.agenticConfirmation.roleNameFound, true);
   assert.equal(existsSync(path.join(tempRoot, screenshotPath)), true);
@@ -766,8 +950,15 @@ test('browser flow runner rejects agentic artifacts outside browser artifact roo
     encoding: 'utf8',
   });
 
-  assert.equal(result.status, 1, result.stderr || result.stdout);
   const verdict = JSON.parse(await readFile(path.join(tempRoot, '.moonshot-relay', 'browser-flow-verdict-agentic-artifact-boundary.json'), 'utf8'));
+  assert.equal(result.status, 1, JSON.stringify({
+    stdout: result.stdout,
+    stderr: result.stderr,
+    status: verdict.status,
+    failureClass: verdict.failureClass,
+    agenticConfirmation: verdict.agenticConfirmation,
+    confirmationStep: verdict.steps.find((step) => step.name === 'agentic_browser_confirmation'),
+  }, null, 2));
   assert.equal(verdict.status, 'failed');
   assert.equal(verdict.failureClass, 'artifact_missing');
   assert.equal(verdict.browserCompletionFailureClass, 'artifact_missing');

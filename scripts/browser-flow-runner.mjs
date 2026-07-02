@@ -87,6 +87,15 @@ const loadConfig = async (configPath) => {
 
 const redactValueSet = (config = {}) => {
   const values = new Set();
+  const addRedactValue = (value) => {
+    if (typeof value !== 'string' || value.length < 4) {
+      return;
+    }
+    if (/^(true|false|null|none|undefined|yes|no|on|off)$/i.test(value.trim())) {
+      return;
+    }
+    values.add(value);
+  };
   const collectConfigSecrets = (value, key = '') => {
     if (Array.isArray(value)) {
       value.forEach((item) => collectConfigSecrets(item, key));
@@ -98,19 +107,17 @@ const redactValueSet = (config = {}) => {
       }
       return;
     }
-    if (/TOKEN|SECRET|PASSWORD|AUTH|API[_-]?KEY|PRIVATE/i.test(key) && typeof value === 'string' && value.length >= 4) {
-      values.add(value);
+    if (/TOKEN|SECRET|PASSWORD|AUTH|API[_-]?KEY|PRIVATE/i.test(key)) {
+      addRedactValue(value);
     }
   };
   for (const [key, value] of Object.entries(process.env)) {
-    if (/TOKEN|SECRET|PASSWORD|AUTH|API[_-]?KEY|PRIVATE/i.test(key) && typeof value === 'string' && value.length >= 4) {
-      values.add(value);
+    if (/TOKEN|SECRET|PASSWORD|AUTH|API[_-]?KEY|PRIVATE/i.test(key)) {
+      addRedactValue(value);
     }
   }
   for (const value of Array.isArray(config.redactValues) ? config.redactValues : []) {
-    if (typeof value === 'string' && value.length >= 4) {
-      values.add(value);
-    }
+    addRedactValue(value);
   }
   collectConfigSecrets(config);
   return values;
@@ -205,6 +212,18 @@ const parseJsonObject = (text) => {
     const parsed = JSON.parse(text);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
+    const lines = String(text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (const line of lines.reverse()) {
+      if (!line.startsWith('{') || !line.endsWith('}')) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(line);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        // Keep scanning earlier lines; adapter stdout can contain non-JSON logs.
+      }
+    }
     return {};
   }
 };

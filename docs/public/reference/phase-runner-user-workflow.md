@@ -15,6 +15,12 @@ node scripts/prepare-phase-runner-state.mjs --dry-run --json --plan-dir "${MOONS
 
 Do not rely on implicit plan resolution when multiple packages exist. Pass `--plan-dir` and `--master-plan` so the runner cannot pick stale plans. The `<projectId>` must come from `scripts/project-identity.mjs`; do not hand-share a generic account-root planning directory across repositories.
 
+The dry-run JSON reports `planRootKind` so operators can distinguish `account_project_planning`, `tracked_source_design`, and `source_roadmap` packages. For `docs/public/roadmaps/**`, the runner keeps execution scratch under the account-root project execution namespace and emits `executionPackageRecommendation` so durable roadmaps are not mistaken for ordinary implementation packages.
+
+Parallel execution requires explicit graph metadata. Without `plan-graph.json`, `planGraphStatus.status` is `markdown_sequential`; `--allow-parallel` is blocked until a validated graph proves dependencies and non-overlapping write sets.
+
+When the runner is invoked outside this source checkout, `runtimeBridgeStatus` reports whether project-local bridge entries exist: `scripts/runtime-state.mjs`, `scripts/prepare-phase-runner-state.mjs`, `scripts/knowledge-context-build.mjs`, `tools/sandbox/policy.mjs`, `verification.contract.yaml`, and `.moonshot-relay/.gitignore`. Missing entries include exact recovery and dry-run recovery commands.
+
 When tracked-source mode is intentional, first add a slug-specific `.gitignore` exception through the bridge, for example `node scripts/install-project-runtime-bridge.mjs --target . --plan-package docs/implementation/<plan-slug> --json`, or explicitly force-add the reviewed package. The repository ignores new `docs/implementation/**` files by default so normal planning artifacts do not appear in commit workflows.
 
 General start wording such as "작업시작", "start work", "run this plan", or a plan directory plus master plan means full-plan execution. The runner must not stop after Phase 01 or a preparation/waiver phase unless the operator explicitly asks for a single phase, such as "Phase 01만" or "only phase 01".
@@ -24,6 +30,10 @@ For architecture-derived phase plans, the plan package should carry selected `AD
 `phase-status.yaml` is a human-readable projection for the active plan loop. It is useful for selecting the next phase, but it is not authority for blocker, resume, or completion decisions when `runtime-state.sqlite` is available.
 
 When a phase has phase-local closeout evidence, the next runner preparation should reconcile that evidence and select the next incomplete phase as active. A phase-local pass is a cursor advance, not a whole-plan success claim.
+
+## Session Retrospective Audit
+
+Use `node scripts/phase-runner-session-audit.mjs --sessions-root <dir-or-jsonl> --json` when auditing phase-runner usage from Codex JSONL exports. The analyzer counts direct user invocations, deduplicates sessions by stable session or thread identity, and excludes injected skill metadata, memory summaries, subagent prompts, duplicate rollout files, invalid JSON lines, and tool-only prepare-state evidence. Tests must use synthetic fixtures, not live `.codex/sessions/**` data.
 
 ## Closeout Boundaries
 

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-const usage = () => `Usage: node scripts/install-project-runtime-bridge.mjs [--target <project-root>] [--plan-package <docs/implementation/slug>] [--dry-run] [--json]`;
+const usage = () => `Usage: node scripts/install-project-runtime-bridge.mjs [--target <project-root>] [--plan-package <docs/implementation/slug-or-account-root-package>] [--dry-run] [--json]`;
 
 const parseArgs = (argv) => {
   const options = {
@@ -104,7 +104,7 @@ const mergeGitignore = async (targetRoot, planPackage) => {
   if (!planPackage) return null;
   const normalized = portable(planPackage).replace(/^\/+/, '').replace(/\/+$/, '');
   if (!normalized.startsWith('docs/implementation/')) {
-    throw new Error('--plan-package must be under docs/implementation/<slug>');
+    return null;
   }
   const gitignorePath = path.join(targetRoot, '.gitignore');
   let existing = '';
@@ -153,7 +153,7 @@ const main = async () => {
     status: 'ready',
     dryRun: options.dryRun,
     target: targetRoot,
-    written: writes.map((item) => item.relative).sort(),
+    written: writes.map((item) => portable(item.relative)).sort(),
     nextVerification: [
       'node scripts/runtime-state.mjs init --json',
       'node scripts/runtime-state.mjs status --json',

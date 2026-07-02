@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -476,13 +476,36 @@ test('phase runner prepare blocks duplicate active goal unless parallel is expli
   const tempRoot = await makeTempRoot();
   const dbPath = path.join(tempRoot, 'runtime-state.sqlite');
   const env = { PHASE_RUNTIME_DB: dbPath };
+  const tempPlanDir = path.join(tempRoot, 'plan');
+  await cp(path.join(root, planDir), tempPlanDir, { recursive: true });
+  const phaseDocs = [
+    '01-baseline-source-truth-v1.md',
+    '02-runtime-control-plane-foundation-v1.md',
+    '03-completion-authority-derived-artifacts-v1.md',
+    '04-context-state-engine-prompt-assembly-v1.md',
+    '05-tool-registry-lazy-schema-sandbox-v1.md',
+    '06-eval-regression-trace-improvement-loop-v1.md',
+    '07-ci-security-branch-protection-v1.md',
+    '08-packaging-rollout-account-root-adoption-v1.md',
+  ];
+  await writeFile(path.join(tempPlanDir, 'plan-graph.json'), JSON.stringify({
+    schemaVersion: 1,
+    planId: 'runtime-read-model-duplicate-goal-test',
+    executionMode: 'graph',
+    phases: phaseDocs.map((doc, index) => ({
+      id: `phase-${String(index + 1).padStart(2, '0')}`,
+      doc,
+      dependsOn: index === 0 ? [] : [`phase-${String(index).padStart(2, '0')}`],
+      ownedPaths: [`execution/phase-${String(index + 1).padStart(2, '0')}/**`],
+    })),
+  }, null, 2));
   const commonArgs = [
     'scripts/prepare-phase-runner-state.mjs',
     '--json',
     '--plan-dir',
-    planDir,
+    tempPlanDir,
     '--master-plan',
-    masterPlan,
+    path.join(tempPlanDir, '00-master-plan-v1.md'),
     '--goal-id',
     'goal-shared-plan',
     '--workspace-id',

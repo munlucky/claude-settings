@@ -7,6 +7,7 @@ import process from 'node:process';
 import { resolveRuntimeStatePath } from './lib/runtime-state-root.mjs';
 import { acquireRunLease, recordResumeSnapshot, recordRuntimeEvent } from './lib/runtime-state-store.mjs';
 import { gitStatusBranchLine } from './lib/git-safe.mjs';
+import { markdownPlanCompatibility, validatePlanGraph } from './lib/plan-graph.mjs';
 import { resolveProjectIdentity, sanitizeId } from './project-identity.mjs';
 
 const usage = () => `Usage: node scripts/prepare-phase-runner-state.mjs [--plan-dir <dir>] [--master-plan <file>] [--status-file <file>] [--execution-root <dir>] [--run-id <id>] [--goal-id <id>] [--workspace-id <id>] [--allow-parallel] [--lease-ttl-ms <ms>] [--dry-run] [--json]`;
@@ -199,6 +200,146 @@ const readIfExists = async (target) => {
   }
 };
 
+const classifyPlanRoot = ({ repoRoot, planDir }) => {
+  const relativePlanDir = toPortable(path.relative(repoRoot, planDir || ''));
+  let kind = 'external_or_unknown';
+  if (relativePlanDir.startsWith('docs/public/roadmaps/')) {
+    kind = 'source_roadmap';
+  } else if (relativePlanDir.startsWith('docs/implementation/')) {
+    kind = 'tracked_source_design';
+  } else {
+    try {
+      const planningRoot = resolveProjectIdentity({ cwd: repoRoot }).namespaces.planningPackageRoot;
+      const relativeToPlanningRoot = path.relative(planningRoot, planDir || '');
+      if (relativeToPlanningRoot && !relativeToPlanningRoot.startsWith('..') && !path.isAbsolute(relativeToPlanningRoot)) {
+        kind = 'account_project_planning';
+      }
+    } catch {
+      // Keep external_or_unknown; runtime-state capability checks report identity failures separately.
+    }
+  }
+
+  const recommendation = kind === 'source_roadmap'
+    ? {
+      status: 'recommended',
+      reason: 'docs/public/roadmaps packages are durable source roadmaps; materialize or select an account-root implementation package when execution scratch should be operational-only.',
+      defaultExecutionScratch: 'account_project_execution_root',
+    }
+    : null;
+
+  return {
+    kind,
+    relativePath: relativePlanDir || '.',
+    executionPackageRecommendation: recommendation,
+  };
+};
+
+const bridgeRequiredEntries = [
+  'scripts/runtime-state.mjs',
+  'scripts/prepare-phase-runner-state.mjs',
+  'scripts/knowledge-context-build.mjs',
+  'tools/sandbox/policy.mjs',
+  'verification.contract.yaml',
+  '.moonshot-relay/.gitignore',
+];
+
+const commandArg = (value = '') => `"${String(value).replaceAll('"', '\\"')}"`;
+
+const buildRuntimeBridgeStatus = async ({ repoRoot, planDir }) => {
+  const sourceCheckout = await exists(path.join(repoRoot, 'package', 'package-contract.yaml'))
+    && await exists(path.join(repoRoot, 'scripts', 'install-project-runtime-bridge.mjs'));
+  if (sourceCheckout) {
+    return {
+      status: 'not_applicable',
+      blockingSeverity: 'none',
+      targetRoot: toPortable(repoRoot),
+      requiredEntries: bridgeRequiredEntries,
+      missingEntries: [],
+      recoveryCommand: '',
+      dryRunRecoveryCommand: '',
+      reason: 'source checkout owns canonical runtime files directly',
+    };
+  }
+
+  const missingEntries = [];
+  for (const entry of bridgeRequiredEntries) {
+    if (!await exists(path.join(repoRoot, ...entry.split('/')))) {
+      missingEntries.push(entry);
+    }
+  }
+  const packageArg = planDir ? ` --plan-package ${commandArg(toPortable(planDir))}` : '';
+  const recoveryCommand = `moonshot-relay bridge --target ${commandArg(toPortable(repoRoot))}${packageArg} --json`;
+  return {
+    status: missingEntries.length > 0 ? 'missing' : 'ok',
+    blockingSeverity: missingEntries.length > 0 ? 'warning' : 'none',
+    targetRoot: toPortable(repoRoot),
+    requiredEntries: bridgeRequiredEntries,
+    missingEntries,
+    recoveryCommand,
+    dryRunRecoveryCommand: recoveryCommand.replace(' --json', ' --dry-run --json'),
+  };
+};
+
+const findPlanGraphPath = async (planDir) => {
+  for (const name of ['plan-graph.json', 'plan.graph.json']) {
+    const candidate = path.join(planDir, name);
+    if (await exists(candidate)) return candidate;
+  }
+  return '';
+};
+
+const buildPlanGraphStatus = async ({ repoRoot, planDir, phaseDocs, allowParallel, errors }) => {
+  const graphPath = planDir ? await findPlanGraphPath(planDir) : '';
+  if (!graphPath) {
+    const compatibility = markdownPlanCompatibility({ phaseDocs });
+    const result = {
+      status: 'markdown_sequential',
+      executionMode: compatibility.executionMode,
+      parallelAllowed: false,
+      graphPath: '',
+      phaseCount: compatibility.phaseCount,
+      findings: [],
+      reason: compatibility.reason,
+    };
+    if (allowParallel) {
+      errors.push('Parallel execution requires validated plan graph metadata; markdown-only phase packages are sequential.');
+      result.findings.push({
+        type: 'parallel_without_graph',
+        severity: 'blocking',
+        reason: 'allowParallel was requested but no plan-graph.json exists',
+      });
+    }
+    return result;
+  }
+
+  try {
+    const graph = JSON.parse(await readFile(graphPath, 'utf8'));
+    const validation = validatePlanGraph(graph, { expectedPhaseDocs: phaseDocs });
+    const result = {
+      status: validation.status === 'pass' ? 'validated_graph' : 'blocked_graph',
+      executionMode: 'graph',
+      parallelAllowed: validation.status === 'pass',
+      graphPath: toRepoPortable(repoRoot, graphPath),
+      phaseCount: validation.phaseCount,
+      findings: validation.findings,
+    };
+    if (validation.status !== 'pass') {
+      errors.push(`Plan graph validation failed: ${validation.findings.map((finding) => finding.type).join(', ')}`);
+    }
+    return result;
+  } catch (error) {
+    errors.push(`Plan graph could not be parsed: ${error instanceof Error ? error.message : String(error)}`);
+    return {
+      status: 'blocked_graph',
+      executionMode: 'graph',
+      parallelAllowed: false,
+      graphPath: toRepoPortable(repoRoot, graphPath),
+      phaseCount: 0,
+      findings: [{ type: 'graph_parse_error', severity: 'blocking' }],
+    };
+  }
+};
+
 const includesPassingStatus = (content) => /(?:^|\n)\s*Status:\s*(?:pass|passed|ready|complete)\b/i.test(content);
 
 const phaseDocClaimsComplete = (content) => /(?:^|\n)\s*Status:\s*complete\b/i.test(content)
@@ -384,6 +525,18 @@ const main = async () => {
   const closeoutFile = path.join(executionRoot, 'phase-runner-readiness.json');
   const goalId = options.goalId || (planDir ? path.basename(planDir) : 'phase-runner');
   const workspaceId = options.workspaceId || `workspace-${shortHash(repoRoot)}`;
+  const planRoot = classifyPlanRoot({ repoRoot, planDir });
+  if (planRoot.kind === 'source_roadmap') {
+    warnings.push('Plan directory is a tracked source roadmap; execution scratch will remain under account-root project execution, and an account-root implementation package is recommended for ordinary implementation work.');
+  }
+  const runtimeBridgeStatus = await buildRuntimeBridgeStatus({ repoRoot, planDir });
+  const planGraphStatus = await buildPlanGraphStatus({
+    repoRoot,
+    planDir,
+    phaseDocs,
+    allowParallel: options.allowParallel,
+    errors,
+  });
   const status = errors.length > 0 ? 'blocked' : reviewArtifacts.length === 0 ? 'docs_only' : 'ready';
   const phases = await buildPhaseStates({
     repoRoot,
@@ -404,6 +557,11 @@ const main = async () => {
     workspaceId,
     allowParallel: options.allowParallel,
     leaseTtlMs: options.leaseTtlMs,
+    planRootKind: planRoot.kind,
+    planRoot,
+    executionPackageRecommendation: planRoot.executionPackageRecommendation,
+    planGraphStatus,
+    runtimeBridgeStatus,
     planDir: planDir ? toRepoPortable(repoRoot, planDir) || '.' : '',
     masterPlan: masterPlan ? toRepoPortable(repoRoot, masterPlan) : '',
     phaseDocs,

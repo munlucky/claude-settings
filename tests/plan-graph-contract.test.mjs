@@ -63,6 +63,23 @@ test('plan graph blocks missing dependencies and parallel write conflicts', () =
   assert.deepEqual(result.findings.map((finding) => finding.type), ['missing_dependency', 'parallel_write_conflict']);
 });
 
+test('plan graph requires schema identity and phase doc bindings', () => {
+  const graph = {
+    phases: [
+      { id: 'phase-01', ownedPaths: ['scripts/a.mjs'] },
+    ],
+  };
+  const result = validatePlanGraph(graph, { expectedPhaseDocs: ['01-a-v1.md'] });
+
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(result.findings.map((finding) => finding.type), [
+    'missing_schema_version',
+    'missing_plan_id',
+    'missing_phase_doc',
+    'missing_graph_phase_doc',
+  ]);
+});
+
 test('scope drift reports actual changed files outside declared write set', () => {
   const result = detectScopeDrift({
     declaredWriteSet: ['scripts/lib/**', 'schemas/plan-graph.schema.json'],

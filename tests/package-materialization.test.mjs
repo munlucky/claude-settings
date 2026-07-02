@@ -113,6 +113,7 @@ const requiredCommonPayloadFiles = [
   'scripts/delivery-submit.mjs',
   'scripts/commit-moonshot-memory-refresh.mjs',
   'scripts/phase-final-guard.mjs',
+  'scripts/phase-runner-session-audit.mjs',
   'scripts/prepare-phase-runner-state.mjs',
   'scripts/skills-audit.mjs',
   'scripts/doctor.mjs',
@@ -127,6 +128,7 @@ const requiredCommonPayloadFiles = [
   'scripts/lib/delivery-policy.mjs',
   'scripts/lib/event-ledger.mjs',
   'scripts/lib/plan-graph.mjs',
+  'scripts/lib/phase-runner-session-audit.mjs',
   'scripts/lib/review-bundle.mjs',
   'scripts/lib/phase-event-ledger.mjs',
   'scripts/lib/phase-run-lease-store.mjs',
@@ -488,6 +490,9 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('skills/completion-verifier/SKILL.md'));
   assert.ok(plannedFrom.includes('scripts/browser-flow-runner.mjs'));
   assert.ok(plannedFrom.includes('scripts/prepare-phase-runner-state.mjs'));
+  assert.ok(plannedFrom.includes('scripts/phase-final-guard.mjs'));
+  assert.ok(plannedFrom.includes('scripts/phase-runner-session-audit.mjs'));
+  assert.ok(plannedFrom.includes('docs/public/reference/phase-final-guard-hooks.md'));
   assert.ok(plannedFrom.includes('scripts/contract-engine.mjs'));
   assert.ok(plannedFrom.includes('scripts/delivery-submit.mjs'));
   assert.ok(plannedFrom.includes('scripts/plan-graph-validate.mjs'));
@@ -502,6 +507,7 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('scripts/lib/delivery-policy.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/event-ledger.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/plan-graph.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lib/phase-runner-session-audit.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/review-bundle.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/skills-lock.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/workspace-manager.mjs'));

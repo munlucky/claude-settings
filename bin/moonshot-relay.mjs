@@ -14,7 +14,7 @@ const deliverySubmit = path.join(repoRoot, 'scripts', 'delivery-submit.mjs');
 const usage = `Usage:
   moonshot-relay [install] [--dry-run] [--json] [--no-backup]
   moonshot-relay install [--runtime all|claude|codex] [--moonshot-home <dir>] [--claude-home <dir>] [--codex-home <dir>]
-  moonshot-relay bridge [--target <project-root>] [--plan-package docs/implementation/<slug>] [--dry-run] [--json]
+  moonshot-relay bridge [--target <project-root>] [--plan-package docs/implementation/<slug-or-account-root-package>] [--dry-run] [--json]
   moonshot-relay delivery submit --score <json-file> --verification <json-file> --current-sha <sha> [--mode local|pr|release] [--out <submission.json>] [--json]
 
 Runs the Moonshot Relay account-root installer from the current package source.`;

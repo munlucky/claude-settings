@@ -4,6 +4,15 @@
 
 It reads the current project phase projection from `.moonshot-relay/docs/phase-status.yaml` by default. The projection is not completion authority; the guard uses it only to detect actionable remaining phases. When every phase is marked complete, the guard checks for an accepted runtime-state completion decision before allowing a final completion claim.
 
+## Evidence Levels
+
+Final guard parity has four evidence levels:
+
+- `source`: `node --test tests/phase-final-guard-contract.test.mjs` proves script behavior in the checkout.
+- `package`: `node --test tests/package-materialization.test.mjs` and `node package/build-package.mjs --runtime all --dry-run --json` prove `scripts/phase-final-guard.mjs` and this reference are retained in the common payload.
+- `temp-home`: installer dry-runs or temp-home installs prove planned wiring without mutating live profiles.
+- `live-account-root`: only allowed after Operational Adoption Closeout. Do not treat source or package evidence as live profile adoption.
+
 ## Claude Stop
 
 Claude Code can run the guard from a `Stop` hook:

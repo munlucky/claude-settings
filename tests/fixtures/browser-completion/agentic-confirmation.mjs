@@ -18,6 +18,10 @@ await mkdir(path.dirname(path.resolve(snapshotPath)), { recursive: true });
 await writeFile(path.resolve(screenshotPath), 'png\n', 'utf8');
 await writeFile(path.resolve(snapshotPath), '{"role":"main"}\n', 'utf8');
 
+if (options.stdoutPrefix) {
+  console.log(options.stdoutPrefix);
+}
+
 console.log(JSON.stringify({
   status: 'passed',
   backend: options.backend || 'agent-browser',

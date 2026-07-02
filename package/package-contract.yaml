@@ -290,6 +290,8 @@ requiredPayloadEntries:
         purpose: git_safe_child_process_support
       - source: scripts/lib/plan-graph.mjs
         purpose: plan_graph_and_scope_drift_support
+      - source: scripts/lib/phase-runner-session-audit.mjs
+        purpose: phase_runner_session_jsonl_audit_support
       - source: scripts/lib/phase-event-ledger.mjs
         purpose: workflow_event_ledger_support
       - source: scripts/lib/phase-run-lease-store.mjs
@@ -316,6 +318,8 @@ requiredPayloadEntries:
         purpose: ontology_validation_support
       - source: scripts/phase-final-guard.mjs
         purpose: phase_runner_final_stop_and_turn_ended_guard
+      - source: scripts/phase-runner-session-audit.mjs
+        purpose: phase_runner_session_jsonl_audit_cli
       - source: scripts/plan-graph-validate.mjs
         purpose: plan_graph_validation_cli
       - source: scripts/prepare-phase-runner-state.mjs
