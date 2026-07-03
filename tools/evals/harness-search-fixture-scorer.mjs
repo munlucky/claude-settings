@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-const DEFAULT_MANIFEST = 'tests/fixtures/harness-search-fixtures/fixture-manifest.json';
+const DEFAULT_MANIFEST = 'tools/evals/fixtures/harness-search-fixtures/fixture-manifest.json';
 const SCHEMA_VERSION = 'moonshot-harness-search-fixture-score.v1';
 const SCORER_VERSION = 'harness-search-fixture-scorer-v1';
 const REQUIRED_FIXTURE_FIELDS = ['fixtureId', 'fixtureClass', 'inputHash', 'expectedFailureClass'];

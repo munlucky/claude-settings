@@ -199,7 +199,7 @@ requiredPayloadEntries:
       purpose: deterministic_harness_search_fixture_scorer
     - source: tools/evals/fixtures/harness-control-plane/golden-regression.json
       purpose: packaged_harness_control_plane_golden_eval_fixture
-    - source: tests/fixtures/harness-search-fixtures/fixture-manifest.json
+    - source: tools/evals/fixtures/harness-search-fixtures/fixture-manifest.json
       purpose: packaged_harness_search_fixture_manifest
     - source: tools/harness-lab/harness-lab.mjs
       purpose: external_bootstrap_lab_for_harness_change_gates

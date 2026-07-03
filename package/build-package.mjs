@@ -117,7 +117,6 @@ const runtimeSpecs = {
       'scripts/verification-verdict-state.mjs',
       'scripts/workspace-manager.mjs',
       'scripts/lib/workspace-manager.mjs',
-      'tests/fixtures/harness-search-fixtures/fixture-manifest.json',
     ],
     materializeRuntimeDependencies: true,
     verificationTarget: 'verification.contract.yaml',

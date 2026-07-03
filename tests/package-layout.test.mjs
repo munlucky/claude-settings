@@ -301,7 +301,7 @@ test('moonshot-relay package dry-run includes explicit runtime fixture and helpe
   const payload = JSON.parse(result.stdout);
   const planned = new Set(payload.runtimes?.[0]?.planned?.map((entry) => entry.from) || []);
   assert.equal(planned.has('scripts/lib/harness-environment-snapshot.mjs'), true);
-  assert.equal(planned.has('tests/fixtures/harness-search-fixtures/fixture-manifest.json'), true);
+  assert.equal(planned.has('tools/evals/fixtures/harness-search-fixtures/fixture-manifest.json'), true);
 });
 
 test('package scripts define the active gate without archive discovery', async () => {
