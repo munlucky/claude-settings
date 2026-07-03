@@ -70,6 +70,7 @@ const requiredCodexEntries = [
 ];
 
 const requiredCommonPayloadFiles = [
+  'catalog/moonshot-catalog.json',
   'docs/public/repository-layout.md',
   'rules/workflow.md',
   'rules/workflow-bundles.yaml',
@@ -96,6 +97,9 @@ const requiredCommonPayloadFiles = [
   'tools/sandbox/policy.mjs',
   'tools/browserd/package.json',
   'tools/browserd/server.mjs',
+  'scripts/catalog-check.mjs',
+  'scripts/skill-router.mjs',
+  'scripts/lint-skills.mjs',
   'scripts/install-browser-runtime.sh',
   'scripts/install-project-runtime-bridge.mjs',
   'scripts/architecture-context-build.mjs',
@@ -333,6 +337,7 @@ test('Moonshot Relay common package payload includes shared harness entries', as
   const profileRoot = await commonProfile();
   for (const entry of [
     'bin',
+    'catalog',
     'docs/public',
     'rules',
     'schemas',
@@ -444,6 +449,10 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /materializer: package\/build-package\.mjs/);
   assert.match(contract, /commonSupportScripts:/);
   assert.match(contract, /source: package\.json/);
+  assert.match(contract, /source: catalog\/moonshot-catalog\.json/);
+  assert.match(contract, /source: scripts\/catalog-check\.mjs/);
+  assert.match(contract, /source: scripts\/skill-router\.mjs/);
+  assert.match(contract, /source: scripts\/lint-skills\.mjs/);
   assert.match(contract, /source: package-lock\.json/);
   assert.match(contract, /source: node_modules\/better-sqlite3\/\*\*/);
   assert.match(contract, /source: scripts\/lib\/browser-failure-package\.mjs/);
@@ -487,6 +496,10 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   const plannedPaths = [...plannedFrom, ...plannedTo];
 
   assert.ok(plannedFrom.includes('scripts/verification-verdict-state.mjs'));
+  assert.ok(plannedFrom.includes('catalog/moonshot-catalog.json'));
+  assert.ok(plannedFrom.includes('scripts/catalog-check.mjs'));
+  assert.ok(plannedFrom.includes('scripts/skill-router.mjs'));
+  assert.ok(plannedFrom.includes('scripts/lint-skills.mjs'));
   assert.ok(plannedFrom.includes('skills/completion-verifier/SKILL.md'));
   assert.ok(plannedFrom.includes('scripts/browser-flow-runner.mjs'));
   assert.ok(plannedFrom.includes('scripts/prepare-phase-runner-state.mjs'));

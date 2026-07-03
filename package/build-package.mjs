@@ -27,6 +27,7 @@ const runtimeSpecs = {
   'moonshot-relay': {
     outputRoot: path.join('moonshot-relay', 'profile'),
     sharedDirs: [
+      'catalog',
       'bin',
       'tools',
       'schemas',
@@ -40,6 +41,9 @@ const runtimeSpecs = {
       'package.json',
       'package-lock.json',
       'skills.lock.json',
+      'scripts/catalog-check.mjs',
+      'scripts/skill-router.mjs',
+      'scripts/lint-skills.mjs',
       'scripts/architecture-context-build.mjs',
       'scripts/architecture-knowledge-resolve.mjs',
       'scripts/architecture-contract-bind.mjs',

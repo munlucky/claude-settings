@@ -3,6 +3,7 @@ contractId: repository-physical-structure-refactor-phase-02
 description: "Canonical source and package payload contract for Claude and Codex runtime profiles."
 
 canonicalSource:
+  catalog: catalog/
   skills: skills/
   agents: agents/
   rules: rules/
@@ -55,6 +56,7 @@ accountRootInstall:
     claude: "${CLAUDE_HOME:-~/.claude}"
     codex: "${CODEX_HOME:-~/.codex}"
   commonPayloadEntries:
+    - catalog/
     - bin/
     - docs/public/
     - rules/
@@ -149,6 +151,8 @@ skillExposure:
 
 requiredPayloadEntries:
   sharedSource:
+    - source: catalog/moonshot-catalog.json
+      purpose: skill_catalog_authority_and_router_metadata
     - source: package/runtime-surface.json
       purpose: runtime_skill_surface_manifest
     - source: skills/**
@@ -202,6 +206,12 @@ requiredPayloadEntries:
   commonSupportScripts:
     description: "Moonshot Relay common runtime payload installs only support scripts needed by installers, MCP wrappers, memory refresh, workflow state, and commit closeout. Service profiles do not install scripts/**."
     entries:
+      - source: scripts/catalog-check.mjs
+        purpose: catalog_runtime_surface_package_contract_drift_gate
+      - source: scripts/skill-router.mjs
+        purpose: metadata_first_internal_skill_router
+      - source: scripts/lint-skills.mjs
+        purpose: skill_agent_contract_lint_gate
       - source: scripts/architecture-context-build.mjs
         purpose: architecture_context_pack_builder
       - source: scripts/architecture-knowledge-resolve.mjs

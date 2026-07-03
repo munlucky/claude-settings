@@ -7,6 +7,7 @@ This repository separates canonical source, local runtime profiles, generated pa
 Durable source files live in the root-level source directories:
 
 - `skills/` for skill definitions
+- `catalog/` for skill catalog authority, public/internal routing metadata, and package surface drift checks
 - `agents/` for agent definitions
 - `rules/` for workflow and policy rules
 - `scripts/` for maintained installer, MCP, memory, and closeout support scripts
@@ -36,7 +37,7 @@ Local agents may still read `.claude/CLAUDE.md`, `.claude/verification.contract.
 
 `package/package-contract.yaml` declares what Claude and Codex package assembly must include. `package/profile-templates/`, `package/build-package.mjs`, `.claude-plugin/`, and `.codex-plugin/` are the committed package boundary. `package/claude/profile/` and `package/codex/profile/` are ignored generated payload roots derived from canonical source and the package contract.
 
-Default installs materialize shared Moonshot Relay runtime assets under `.moonshot-relay/` and only runtime-discovered exposure entries under `.claude/` and `.codex/`. The shared common payload preserves canonical `skills/**`, while Claude/Codex profile-local `skills/` discovery is allowlisted by `package/runtime-surface.json` to `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, and `session-logger`. Reinstalling prunes canonical source skills that are no longer in the service profile payload and keeps unrelated user-installed skills. Claude keeps `.claude/rules/`, `.claude/skills/`, and `.claude/agents/` because those are active profile surfaces. Project-local installs continue to materialize local `.claude/` payloads only when `install-claude.sh --project` is used from a supported macOS/Git Bash compatibility shell. Workflow orchestration no longer receives `scripts/**` wholesale. This compatibility behavior is intentional and should be verified with `node bin/moonshot-relay.mjs install --dry-run --runtime all`, `node scripts/install-account-root-harness.mjs --runtime all --dry-run`, and Git Bash/macOS `bash install-claude.sh --project --dry-run` when project-local compatibility output changes. In WSL/Linux bash environments where `install-claude.sh` reports `unsupported shell: Linux`, use the Node installer path.
+Default installs materialize shared Moonshot Relay runtime assets under `.moonshot-relay/` and only runtime-discovered exposure entries under `.claude/` and `.codex/`. The shared common payload preserves canonical `skills/**` and `catalog/moonshot-catalog.json`, while Claude/Codex profile-local `skills/` discovery is allowlisted by `package/runtime-surface.json` to `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, and `session-logger`. Reinstalling prunes canonical source skills that are no longer in the service profile payload and keeps unrelated user-installed skills. Claude keeps `.claude/rules/`, `.claude/skills/`, and `.claude/agents/` because those are active profile surfaces. Project-local installs continue to materialize local `.claude/` payloads only when `install-claude.sh --project` is used from a supported macOS/Git Bash compatibility shell. Workflow orchestration no longer receives `scripts/**` wholesale. This compatibility behavior is intentional and should be verified with `node scripts/catalog-check.mjs --json`, `node bin/moonshot-relay.mjs install --dry-run --runtime all`, `node scripts/install-account-root-harness.mjs --runtime all --dry-run`, and Git Bash/macOS `bash install-claude.sh --project --dry-run` when project-local compatibility output changes. In WSL/Linux bash environments where `install-claude.sh` reports `unsupported shell: Linux`, use the Node installer path.
 
 Account-root installs use `scripts/install-account-root-harness.mjs` and write common harness-owned payloads into `MOONSHOT_RELAY_HOME`, defaulting to `~/.moonshot-relay`, with thin Claude/Codex exposure layers in `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` on Windows or `~/.claude` and `~/.codex` on macOS/Linux. Use `%MOONSHOT_RELAY_HOME%` in `cmd.exe`, `$env:MOONSHOT_RELAY_HOME` in PowerShell, and `${MOONSHOT_RELAY_HOME}` in bash/zsh. They do not create or depend on nested `harness-core` directories. Runtime-local files such as settings, auth, sessions, caches, plugins, memories, sqlite databases, project knowledge state, execution evidence, phase status, logs, and verification verdicts remain outside the installed harness payload.
 
@@ -97,9 +98,9 @@ The existing public guideline content test is a placeholder detector only. Add s
 
 ## Contributor Rule
 
-When adding a new skill, agent, rule, support script, CLI entrypoint, runtime tool, schema, template, or test:
+When adding a new skill, catalog entry, agent, rule, support script, CLI entrypoint, runtime tool, schema, template, or test:
 
-1. Edit the matching canonical root directory first, such as `skills/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, or `tests/`.
+1. Edit the matching canonical root directory first, such as `skills/`, `catalog/`, `agents/`, `rules/`, `scripts/`, `bin/`, `tools/`, `schemas/`, `templates/`, or `tests/`.
 2. Update public docs in `docs/public/` when the contributor workflow or installed behavior changes.
 3. Regenerate or refresh profile/package output through the materialization path declared by `package/package-contract.yaml`.
 4. Keep root `.claude/` and `.codex/` local-only; regenerate them from canonical source instead of committing them.

@@ -1,0 +1,127 @@
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { test } from 'node:test';
+import { checkCatalog, parsePublicRuntimeSkillsFromContract } from '../scripts/catalog-check.mjs';
+
+const root = process.cwd();
+
+const writeJson = (target, value) => writeFile(target, `${JSON.stringify(value, null, 2)}\n`);
+
+test('catalog contract parses package publicRuntimeSkills lists', () => {
+  const lists = parsePublicRuntimeSkillsFromContract(`
+skillExposure:
+  publicRuntimeSkills:
+    - product-orchestrator
+    - moonshot-phase-runner
+`);
+  assert.deepEqual(lists, [['product-orchestrator', 'moonshot-phase-runner']]);
+});
+
+test('catalog check passes against current source authority files', async () => {
+  const result = await checkCatalog({ repoRoot: root, runPackageDryRun: false });
+
+  assert.equal(result.status, 'pass', JSON.stringify(result.findings, null, 2));
+  assert.deepEqual(result.publicEntrypoints, [
+    'commit-moonshot',
+    'moonshot-architecture',
+    'moonshot-orchestrator',
+    'moonshot-phase-runner',
+    'moonshot-plan-writer',
+    'product-orchestrator',
+    'session-logger',
+  ]);
+});
+
+test('catalog check fails when package contract public surface drifts', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'catalog-check-'));
+  await mkdir(path.join(temp, 'catalog'), { recursive: true });
+  await mkdir(path.join(temp, 'package'), { recursive: true });
+  await mkdir(path.join(temp, 'skills', 'alpha'), { recursive: true });
+  await mkdir(path.join(temp, 'skills', 'beta'), { recursive: true });
+  await writeFile(path.join(temp, 'skills', 'alpha', 'SKILL.md'), '---\nname: alpha\ndescription: Alpha\n---\n# Alpha\n');
+  await writeFile(path.join(temp, 'skills', 'beta', 'SKILL.md'), '---\nname: beta\ndescription: Beta\n---\n# Beta\n');
+  await writeJson(path.join(temp, 'catalog', 'moonshot-catalog.json'), {
+    schemaVersion: 1,
+    requiredDocumentation: { files: ['README.md'] },
+    publicEntrypoints: [
+      { name: 'alpha', source: 'skills/alpha/SKILL.md' },
+      { name: 'beta', source: 'skills/beta/SKILL.md' },
+    ],
+    internalSkillClusters: [],
+  });
+  await writeJson(path.join(temp, 'package', 'runtime-surface.json'), {
+    publicRuntimeSkills: ['alpha', 'beta'],
+  });
+  await writeFile(path.join(temp, 'package', 'package-contract.yaml'), `
+accountRootInstall:
+  commonPayloadEntries:
+    - catalog/
+skillExposure:
+  publicRuntimeSkills:
+    - alpha
+requiredPayloadEntries:
+  sharedSource:
+    - source: catalog/moonshot-catalog.json
+`);
+  await writeFile(path.join(temp, 'README.md'), 'alpha beta\n');
+
+  const result = await checkCatalog({ repoRoot: temp, runPackageDryRun: false });
+
+  assert.equal(result.status, 'fail');
+  assert.ok(result.findings.some((finding) => finding.code === 'catalog.package_contract_mismatch'));
+});
+
+test('catalog check fails when public entry source points at another skill', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'catalog-check-source-'));
+  await mkdir(path.join(temp, 'catalog'), { recursive: true });
+  await mkdir(path.join(temp, 'package'), { recursive: true });
+  await mkdir(path.join(temp, 'skills', 'alpha'), { recursive: true });
+  await mkdir(path.join(temp, 'skills', 'beta'), { recursive: true });
+  await writeFile(path.join(temp, 'skills', 'alpha', 'SKILL.md'), '---\nname: alpha\ndescription: Alpha\n---\n# Alpha\n');
+  await writeFile(path.join(temp, 'skills', 'beta', 'SKILL.md'), '---\nname: beta\ndescription: Beta\n---\n# Beta\n');
+  await writeJson(path.join(temp, 'catalog', 'moonshot-catalog.json'), {
+    schemaVersion: 1,
+    requiredDocumentation: { files: ['README.md'] },
+    publicEntrypoints: [
+      { name: 'alpha', source: 'skills/beta/SKILL.md' },
+    ],
+    internalSkillClusters: [],
+  });
+  await writeJson(path.join(temp, 'package', 'runtime-surface.json'), {
+    publicRuntimeSkills: ['alpha'],
+  });
+  await writeFile(path.join(temp, 'package', 'package-contract.yaml'), `
+accountRootInstall:
+  commonPayloadEntries:
+    - catalog/
+skillExposure:
+  publicRuntimeSkills:
+    - alpha
+requiredPayloadEntries:
+  sharedSource:
+    - source: catalog/moonshot-catalog.json
+`);
+  await writeFile(path.join(temp, 'README.md'), 'alpha\n');
+
+  const result = await checkCatalog({ repoRoot: temp, runPackageDryRun: false });
+
+  assert.equal(result.status, 'fail');
+  assert.ok(result.findings.some((finding) => finding.code === 'catalog.public_source_mismatch'));
+});
+
+test('catalog check CLI runs package dry-run and reports pass', () => {
+  const result = spawnSync(process.execPath, [
+    'scripts/catalog-check.mjs',
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'pass', JSON.stringify(payload.findings, null, 2));
+});

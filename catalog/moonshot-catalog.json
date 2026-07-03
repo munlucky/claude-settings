@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "moonshot-relay-skill-catalog.v1",
+  "authority": {
+    "publicRuntimeSurface": "package/runtime-surface.json",
+    "packageContract": "package/package-contract.yaml",
+    "sourceSkillRoot": "skills",
+    "serviceProfilePolicy": "allowlist_only",
+    "commonPayloadPolicy": "preserve_all_canonical_skills"
+  },
+  "requiredDocumentation": {
+    "files": [
+      "README.md",
+      "docs/public/reference/runtime-skill-surface.md"
+    ]
+  },
+  "publicEntrypoints": [
+    {
+      "name": "product-orchestrator",
+      "stage": "product",
+      "ownerCluster": "product-planning",
+      "source": "skills/product-orchestrator/SKILL.md",
+      "purpose": "Product-definition entrypoint for idea-to-plan work."
+    },
+    {
+      "name": "moonshot-architecture",
+      "stage": "architecture",
+      "ownerCluster": "architecture",
+      "source": "skills/moonshot-architecture/SKILL.md",
+      "purpose": "Architecture package entrypoint for PRD or brownfield objectives."
+    },
+    {
+      "name": "moonshot-orchestrator",
+      "stage": "implementation",
+      "ownerCluster": "bounded-execution",
+      "source": "skills/moonshot-orchestrator/SKILL.md",
+      "purpose": "Bounded implementation entrypoint when the phase harness is not required."
+    },
+    {
+      "name": "moonshot-phase-runner",
+      "stage": "phase-execution",
+      "ownerCluster": "phase-control-plane",
+      "source": "skills/moonshot-phase-runner/SKILL.md",
+      "purpose": "Full plan-directory execution entrypoint for phase-based work."
+    },
+    {
+      "name": "moonshot-plan-writer",
+      "stage": "planning",
+      "ownerCluster": "planning",
+      "source": "skills/moonshot-plan-writer/SKILL.md",
+      "purpose": "Plan package authoring and refresh entrypoint."
+    },
+    {
+      "name": "commit-moonshot",
+      "stage": "closeout",
+      "ownerCluster": "repository-closeout",
+      "source": "skills/commit-moonshot/SKILL.md",
+      "purpose": "Memory refresh and commit closeout utility."
+    },
+    {
+      "name": "session-logger",
+      "stage": "closeout",
+      "ownerCluster": "documentation-closeout",
+      "source": "skills/session-logger/SKILL.md",
+      "purpose": "Session logging utility for durable handoff records."
+    }
+  ],
+  "internalDiscovery": {
+    "sourceRoot": "skills",
+    "includeUnlistedSourceSkills": true,
+    "profileLocalExposure": "forbidden"
+  },
+  "internalSkillClusters": [
+    {
+      "id": "architecture-stage-owners",
+      "stage": "architecture",
+      "skills": [
+        "asr-extractor",
+        "architecture-option-generator",
+        "architecture-tradeoff-reviewer",
+        "adr-c4-writer",
+        "architecture-gate-reviewer",
+        "codebase-architecture-recovery"
+      ]
+    },
+    {
+      "id": "phase-control-plane-support",
+      "stage": "phase-execution",
+      "skills": [
+        "moonshot-in-session-coordinator",
+        "moonshot-phase-executor",
+        "completion-verifier",
+        "verification-evidence-gate"
+      ]
+    },
+    {
+      "id": "quality-and-review",
+      "stage": "verification",
+      "skills": [
+        "codex-review-code",
+        "codex-validate-plan",
+        "plan-ceo-review",
+        "plan-eng-review",
+        "security-reviewer",
+        "test-driven-development"
+      ]
+    }
+  ],
+  "checks": {
+    "publicEntrypointsMatchRuntimeSurface": true,
+    "publicEntrypointsMatchPackageContract": true,
+    "publicEntrypointsDocumented": true,
+    "serviceProfilesExposeOnlyPublicEntrypoints": true,
+    "commonPayloadIncludesCatalog": true
+  }
+}
