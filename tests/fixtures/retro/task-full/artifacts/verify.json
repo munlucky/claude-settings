@@ -1,0 +1,19 @@
+{
+  "status": "PARTIAL",
+  "failureClasses": ["acceptance_mapping_missing"],
+  "replanCount": 1,
+  "verifyCount": 2,
+  "reviewCount": 1,
+  "reviewFindings": {
+    "critical": 0,
+    "important": 1,
+    "minor": 0
+  },
+  "candidateLessons": [
+    {
+      "type": "planning_rule",
+      "summary": "Acceptance criteria should map to verifier checks.",
+      "confidence": "medium"
+    }
+  ]
+}

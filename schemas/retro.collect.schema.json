@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/retro.collect.schema.json",
+  "title": "Retro Collect Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "taskId",
+    "date",
+    "status",
+    "score",
+    "execution",
+    "failureClasses",
+    "reviewFindings",
+    "evidence",
+    "candidateLessons",
+    "redactions",
+    "promotionAuthority"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "retro.collect.v1" },
+    "projectId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "taskId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "sourceRepo": { "type": "string" },
+    "sourceBranch": { "type": "string" },
+    "commitSha": { "type": "string" },
+    "status": { "enum": ["FULL", "PARTIAL", "NO"] },
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "total": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "status": { "enum": ["FULL", "PARTIAL", "NO", "UNKNOWN"] },
+        "hardGatesPassed": { "type": "boolean" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replanCount", "verifyCount", "reviewCount"],
+      "properties": {
+        "startedAt": { "type": "string" },
+        "closedAt": { "type": "string" },
+        "replanCount": { "type": "integer", "minimum": 0 },
+        "verifyCount": { "type": "integer", "minimum": 0 },
+        "reviewCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "failureClasses": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "reviewFindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["critical", "important", "minor"],
+      "properties": {
+        "critical": { "type": "integer", "minimum": 0 },
+        "important": { "type": "integer", "minimum": 0 },
+        "minor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "changedFiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "paths"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "paths": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "maxLength": 1000 }
+    },
+    "candidateLessons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "summary", "confidence"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "confidence": { "enum": ["low", "medium", "high"] }
+        }
+      }
+    },
+    "redactions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rawLogsCopied", "secretsDetected"],
+      "properties": {
+        "rawLogsCopied": { "const": false },
+        "secretsDetected": { "const": false }
+      }
+    },
+    "promotionAuthority": { "const": false }
+  }
+}

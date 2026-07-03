@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/retro.import-result.schema.json",
+  "title": "Retro Import Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "date",
+    "imported",
+    "skippedDuplicates",
+    "rejected",
+    "inboxRoot",
+    "promotionAuthority"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "retro.import-result.v1" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "imported": { "type": "integer", "minimum": 0 },
+    "skippedDuplicates": { "type": "integer", "minimum": 0 },
+    "rejected": { "type": "integer", "minimum": 0 },
+    "inboxRoot": { "type": "string", "minLength": 1 },
+    "promotionAuthority": { "const": false }
+  }
+}

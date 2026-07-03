@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "ARCHITECTURE_HANDOFF",
+  "owner": "moonshot-architecture",
+  "sourceContractRef": "docs/public/roadmaps/daily-retro-harness-loop-2026-07-03/TRACEABILITY_MATRIX.md",
+  "handoffTarget": "moonshot-phase-runner",
+  "status": "ready",
+  "blocking": false,
+  "promptBlock": "Daily Retro Harness Loop handoff: implement an advisory retro plane under tools/retro, schemas/templates/tests/docs, route it through moonshot-relay retro collect/import/daily/propose/issue-draft, keep runtime retro data outside source, keep promotionAuthority=false on all generated outputs, defer GitHub writes and installed profile adoption.",
+  "metadata": {
+    "selectedDecisionIds": [
+      "ADR-0001",
+      "ADR-0002",
+      "ADR-0003",
+      "ADR-0004",
+      "ADR-0005"
+    ],
+    "selectedConstraintIds": [
+      "CONSTRAINT-advisory-only",
+      "CONSTRAINT-runtime-state-not-source",
+      "CONSTRAINT-draft-only-github",
+      "CONSTRAINT-repeat-or-contract-backed-candidates",
+      "CONSTRAINT-no-installed-profile-mutation"
+    ],
+    "verificationSignalIds": [
+      "VS-retro-help",
+      "VS-test-retro",
+      "VS-npm-test",
+      "VS-package-dry-run",
+      "VS-install-dry-run"
+    ],
+    "ownedPaths": [
+      "schemas/retro.collect.schema.json",
+      "schemas/retro.daily.schema.json",
+      "schemas/retro.improvement-candidate.schema.json",
+      "schemas/retro.import-result.schema.json",
+      "schemas/retro.issue-draft.schema.json",
+      "templates/retro/**",
+      "tools/retro/**",
+      "skills/moonshot-retro/**",
+      "docs/public/guidelines/daily-retro-workflow.md",
+      "docs/public/guidelines/daily-retro-workflow.ko.md",
+      "bin/moonshot-relay.mjs",
+      "package.json",
+      "README.md",
+      "docs/public/repository-layout.md",
+      "docs/public/reference/runtime-skill-surface.md",
+      "package/package-contract.yaml",
+      "tests/retro-*.test.mjs",
+      "tests/daily-retro-contract.test.mjs",
+      "tests/package-layout.test.mjs",
+      "tests/package-materialization.test.mjs"
+    ],
+    "readOnlyPaths": [
+      "AGENTS.md",
+      "schemas/verification.contract.yaml",
+      "schemas/improvement-candidate-v1.schema.json",
+      "schemas/improvement-proposal.schema.json",
+      "tools/harness-lab/harness-history.mjs",
+      "scripts/project-identity.mjs",
+      "scripts/install-account-root-harness.mjs",
+      "package/runtime-surface.json"
+    ]
+  },
+  "readBeforeRetry": [
+    "docs/public/roadmaps/daily-retro-harness-loop-2026-07-03/00-master-plan-v1.ko.md",
+    "docs/public/roadmaps/daily-retro-harness-loop-2026-07-03/TRACEABILITY_MATRIX.md",
+    "docs/public/roadmaps/daily-retro-harness-loop-2026-07-03/SPEC_DELTA.md",
+    "docs/public/roadmaps/daily-retro-harness-loop-2026-07-03/planning-loop/plan-quality-review-iter-01.yaml"
+  ],
+  "warnings": [
+    {
+      "code": "meta_harness_validator_gap",
+      "message": "Current architecture artifact validator does not validate meta_harness_design packages directly; use manual review, traceability, handoff schema, and phase tests until validator support exists.",
+      "severity": "warning"
+    }
+  ],
+  "errors": []
+}

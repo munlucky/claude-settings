@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "retro.collect.v1",
+  "projectId": "fixture",
+  "taskId": "TASK-002",
+  "date": "2026-07-03",
+  "sourceRepo": "fixture/repo",
+  "sourceBranch": "main",
+  "commitSha": "abc002",
+  "status": "PARTIAL",
+  "score": {
+    "total": 0.84,
+    "status": "PARTIAL",
+    "hardGatesPassed": false
+  },
+  "execution": {
+    "startedAt": "",
+    "closedAt": "",
+    "replanCount": 1,
+    "verifyCount": 2,
+    "reviewCount": 1
+  },
+  "failureClasses": ["acceptance_mapping_missing"],
+  "reviewFindings": {
+    "critical": 0,
+    "important": 1,
+    "minor": 1
+  },
+  "changedFiles": {
+    "count": 1,
+    "paths": ["docs/example.md"]
+  },
+  "evidence": {
+    "verify": ".moonshot-relay/tasks/TASK-002/artifacts/verify.json",
+    "score": ".moonshot-relay/tasks/TASK-002/artifacts/score.json"
+  },
+  "candidateLessons": [
+    {
+      "type": "planning_rule",
+      "summary": "Verifier mapping needs to be explicit.",
+      "confidence": "medium"
+    }
+  ],
+  "redactions": {
+    "rawLogsCopied": false,
+    "secretsDetected": false
+  },
+  "promotionAuthority": false
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/retro.daily.schema.json",
+  "title": "Daily Retro Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "date",
+    "sourceCount",
+    "summary",
+    "repeatedFailureClasses",
+    "rootPatterns",
+    "improvementCandidates",
+    "promotionAuthority"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "retro.daily.v1" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "sourceCount": { "type": "integer", "minimum": 0 },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed", "full", "partial", "no", "averageScore", "totalReplans"],
+      "properties": {
+        "completed": { "type": "integer", "minimum": 0 },
+        "full": { "type": "integer", "minimum": 0 },
+        "partial": { "type": "integer", "minimum": 0 },
+        "no": { "type": "integer", "minimum": 0 },
+        "averageScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "totalReplans": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "repeatedFailureClasses": { "type": "array" },
+    "rootPatterns": { "type": "array" },
+    "improvementCandidates": {
+      "type": "array",
+      "items": { "$ref": "retro.improvement-candidate.schema.json" }
+    },
+    "promotionAuthority": { "const": false }
+  }
+}

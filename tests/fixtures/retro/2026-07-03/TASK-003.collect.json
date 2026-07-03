@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "retro.collect.v1",
+  "projectId": "fixture",
+  "taskId": "TASK-003",
+  "date": "2026-07-03",
+  "sourceRepo": "fixture/repo",
+  "sourceBranch": "main",
+  "commitSha": "abc003",
+  "status": "FULL",
+  "score": {
+    "total": 0.95,
+    "status": "FULL",
+    "hardGatesPassed": true
+  },
+  "execution": {
+    "startedAt": "",
+    "closedAt": "",
+    "replanCount": 0,
+    "verifyCount": 1,
+    "reviewCount": 0
+  },
+  "failureClasses": ["docs_not_updated"],
+  "reviewFindings": {
+    "critical": 0,
+    "important": 0,
+    "minor": 1
+  },
+  "changedFiles": {
+    "count": 1,
+    "paths": ["README.md"]
+  },
+  "evidence": {
+    "verify": ".moonshot-relay/tasks/TASK-003/artifacts/verify.json",
+    "score": ".moonshot-relay/tasks/TASK-003/artifacts/score.json"
+  },
+  "candidateLessons": [
+    {
+      "type": "documentation",
+      "summary": "Documentation impact should be checked during closeout.",
+      "confidence": "low"
+    }
+  ],
+  "redactions": {
+    "rawLogsCopied": false,
+    "secretsDetected": false
+  },
+  "promotionAuthority": false
+}

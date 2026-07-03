@@ -10,12 +10,14 @@ const repoRoot = path.dirname(path.dirname(binPath));
 const installer = path.join(repoRoot, 'scripts', 'install-account-root-harness.mjs');
 const bridgeInstaller = path.join(repoRoot, 'scripts', 'install-project-runtime-bridge.mjs');
 const deliverySubmit = path.join(repoRoot, 'scripts', 'delivery-submit.mjs');
+const retroCli = path.join(repoRoot, 'tools', 'retro', 'retro-cli.mjs');
 
 const usage = `Usage:
   moonshot-relay [install] [--dry-run] [--json] [--no-backup]
   moonshot-relay install [--runtime all|claude|codex] [--moonshot-home <dir>] [--claude-home <dir>] [--codex-home <dir>]
   moonshot-relay bridge [--target <project-root>] [--plan-package docs/implementation/<slug-or-account-root-package>] [--dry-run] [--json]
   moonshot-relay delivery submit --score <json-file> --verification <json-file> --current-sha <sha> [--mode local|pr|release] [--out <submission.json>] [--json]
+  moonshot-relay retro collect|import|daily|propose|issue-draft [options]
 
 Runs the Moonshot Relay account-root installer from the current package source.`;
 
@@ -31,9 +33,26 @@ if (args[0] && !args[0].startsWith('-')) {
   command = args.shift();
 }
 
-if (!['install', 'bridge', 'delivery'].includes(command)) {
+if (!['install', 'bridge', 'delivery', 'retro'].includes(command)) {
   console.error(`Unknown command: ${command}\n${usage}`);
   process.exit(1);
+}
+
+if (command === 'retro') {
+  if (!existsSync(retroCli)) {
+    console.error(`Moonshot Relay retro command not found: ${retroCli}`);
+    process.exit(1);
+  }
+  const result = spawnSync(process.execPath, [retroCli, ...args], {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: 'inherit',
+  });
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
 }
 
 if (command === 'delivery') {

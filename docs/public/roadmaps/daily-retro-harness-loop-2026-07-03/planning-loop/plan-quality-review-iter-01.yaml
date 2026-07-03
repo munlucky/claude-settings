@@ -1,0 +1,73 @@
+schemaVersion: 1
+reviewedPackageRoot: docs/public/roadmaps/daily-retro-harness-loop-2026-07-03
+iteration: 1
+status: accepted_after_parent_edits
+reviewers:
+  - id: "019f2865-0f36-7da3-b93a-5d851e84b11d"
+    perspective: "current repository fit, CLI, schema, docs, runtime boundary"
+  - id: "019f2865-32f7-78c2-abf0-61129c53594a"
+    perspective: "moonshot-architecture and moonshot-plan-writer contract readiness"
+blockingFindings: []
+acceptedChanges:
+  - finding: "CLI integration must be treated as public bin surface."
+    change: "Phase 05 and traceability now include usage, allowlist, routing, package tests, and retro --help verification."
+  - finding: "Avoid duplicating existing improvement schemas."
+    change: "SPEC_DELTA and Phase 04 require retro improvement schemas to map to or explicitly wrap existing improvement candidate/proposal schemas."
+  - finding: "Harness-history overlap should reuse advisory/redaction semantics while keeping storage separate."
+    change: "CURRENT_ARCHITECTURE, ADR-0001, and phase docs clarify separate plane with shared semantics."
+  - finding: "Public guideline classification must be updated."
+    change: "SPEC_DELTA and Phase 01 require repository-layout classification for daily-retro-workflow docs."
+  - finding: "Test names need normalization."
+    change: "Phase docs and traceability use daily-retro-contract, retro-improvement-proposer-contract, retro-issue-draft-contract, and retro-no-promotion-authority-contract."
+  - finding: "Architecture handoff artifact was missing."
+    change: "Added ARCHITECTURE_HANDOFF.json with selected decisions, constraints, owned paths, read-only paths, and verification signals."
+  - finding: "Traceability was too coarse."
+    change: "TRACEABILITY_MATRIX now includes requirement, ASR, QAS, ADR, spec delta, task, owner, evidence path, verification signal, and status."
+  - finding: "Phase surface classification must be present."
+    change: "Master and each phase doc classify source, package payload, runtime state, installed profile, and external service surfaces."
+  - finding: "Phase 01 had a path ownership conflict for docs/public/repository-layout.md."
+    change: "Removed docs/public/repository-layout.md from Phase 01 read-only paths; it remains an owned path because the classification table must be edited."
+  - finding: "Collect/export was underspecified."
+    change: "Added retro collect to the command contract, component view, Phase 02 scope, traceability, and verification commands."
+rejectedChanges:
+  - finding: "Run architecture-artifact-validate for meta_harness_design."
+    reason: "Current validator does not support meta_harness_design; warning is recorded in ARCHITECTURE_HANDOFF.json and manual architecture review is used for this package."
+remainingAmbiguity:
+  - "Exact JSON Schema composition mechanism for retro improvement candidate should be chosen during Phase 01 after implementation reads current schema test helpers."
+documentReview:
+  reviewed:
+    - README.md
+    - ARCHITECTURE_BRIEF.md
+    - REQUIREMENT_INVENTORY.md
+    - ASR_CATALOG.md
+    - CURRENT_ARCHITECTURE.md
+    - ARCHITECTURE_OPTIONS.md
+    - TRADEOFF_ANALYSIS.md
+    - SPEC_DELTA.md
+    - PLAN.md
+    - TRACEABILITY_MATRIX.md
+    - ARCHITECTURE_HANDOFF.json
+    - 00-master-plan-v1.ko.md
+    - 01-retro-contract-and-docs-v1.ko.md
+    - 02-retro-store-import-v1.ko.md
+    - 03-daily-analysis-v1.ko.md
+    - 04-proposal-and-issue-draft-v1.ko.md
+    - 05-cli-skill-docs-adoption-v1.ko.md
+    - ARCHITECTURE_REVIEW.md
+surfaceClassificationReview:
+  status: pass
+  reviewedCategories:
+    - source_only
+    - package_runtime_payload
+    - data_or_state_migration
+    - installed_profile_or_account_root
+    - external_deployment_or_service
+policyGateReview:
+  status: pass
+  policySources:
+    - AGENTS.md
+    - schemas/verification.contract.yaml
+    - docs/public/repository-layout.md
+    - docs/public/reference/runtime-skill-surface.md
+    - package.json
+    - tools/harness-lab/harness-history.mjs

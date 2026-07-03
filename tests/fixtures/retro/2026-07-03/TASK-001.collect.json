@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "retro.collect.v1",
+  "projectId": "fixture",
+  "taskId": "TASK-001",
+  "date": "2026-07-03",
+  "sourceRepo": "fixture/repo",
+  "sourceBranch": "main",
+  "commitSha": "abc001",
+  "status": "PARTIAL",
+  "score": {
+    "total": 0.82,
+    "status": "PARTIAL",
+    "hardGatesPassed": false
+  },
+  "execution": {
+    "startedAt": "",
+    "closedAt": "",
+    "replanCount": 1,
+    "verifyCount": 2,
+    "reviewCount": 1
+  },
+  "failureClasses": ["acceptance_mapping_missing"],
+  "reviewFindings": {
+    "critical": 0,
+    "important": 1,
+    "minor": 0
+  },
+  "changedFiles": {
+    "count": 2,
+    "paths": ["tools/example.mjs", "tests/example.test.mjs"]
+  },
+  "evidence": {
+    "verify": ".moonshot-relay/tasks/TASK-001/artifacts/verify.json",
+    "score": ".moonshot-relay/tasks/TASK-001/artifacts/score.json"
+  },
+  "candidateLessons": [
+    {
+      "type": "planning_rule",
+      "summary": "Acceptance criteria should map to verifier checks.",
+      "confidence": "medium"
+    }
+  ],
+  "redactions": {
+    "rawLogsCopied": false,
+    "secretsDetected": false
+  },
+  "promotionAuthority": false
+}

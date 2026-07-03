@@ -18,6 +18,8 @@ The shared common payload preserves canonical `skills/**` for internal support a
 
 Internal skill routing is metadata-first through `node scripts/skill-router.mjs search|inspect|load --json`. `search` and `inspect` return catalog/source metadata only; `load` returns the selected skill body with prompt-safety redaction for unsafe raw fields. Contract drift is checked by `node scripts/lint-skills.mjs --json`, which validates public skill headings, deep references, profile-local source references, translation heading structure, and agent input/output contracts.
 
+`moonshot-retro` is a canonical source skill for the advisory retro workflow, but it is not a profile-local public runtime entrypoint in the initial implementation. Use the CLI surface `moonshot-relay retro collect|import|daily|propose|issue-draft` and keep generated retro state outside source.
+
 ## Architecture Handoff Route
 
 Use `product-orchestrator` while the request is still product scope. When product work becomes architecture-heavy, route through `moonshot-architecture` and pass architecture package paths forward instead of inline summaries.

@@ -72,6 +72,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `c4-adr-design-contract.md` / `c4-adr-design-contract.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, planned architecture templates |
 | `code-review-graph-workflow.md` | policy-anchor | `skills/codex-review-code/**`, `scripts/code-review-graph-mcp-wrapper.js` |
 | `context-readiness-schema.md` / `context-readiness-schema.ko.md` | reference-index | `skills/context-readiness-gate/**`, `agents/context-builder*` |
+| `daily-retro-workflow.md` / `daily-retro-workflow.ko.md` | operational-procedure | planned retro schemas, templates, tools, skill, and tests |
 | `demo-first-mvp-gate.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/product-gate-reviewer/**` |
 | `document-memory-policy.md` | policy-anchor | `agents/*memory*`, `skills/doc-auto-sync/**`, `skills/commit-moonshot/**` |
 | `external-skill-pattern-transfer.md` | policy-anchor | `skills/moonshot-relay-maintainer/**` |

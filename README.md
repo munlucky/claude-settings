@@ -132,6 +132,7 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - 가이드라인: `docs/public/guidelines/*.md` (분석, 병렬 실행, 질문 템플릿, 요구사항 체크, 토큰 최적화 등)
 - 제품 정의 가이드: `docs/public/guidelines/product-definition-workflow.md`
 - 장시간 하네스 가이드: `docs/public/guidelines/long-running-harness.ko.md`
+- 일일 회고 가이드: `docs/public/guidelines/daily-retro-workflow.ko.md`
 - 외부 하네스 도입 검토 기록은 runtime/generated task output으로 남기며 source package에는 포함하지 않음
 - 작업 문서 루트: `.moonshot-relay/docs/tasks/` (runtime task output)
 - source roadmap 루트: `docs/public/roadmaps/` (tracked long-running harness plans, such as `docs/public/roadmaps/harness-control-plane-modernization/`)

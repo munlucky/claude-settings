@@ -302,6 +302,9 @@ test('moonshot-relay package dry-run includes explicit runtime fixture and helpe
   const planned = new Set(payload.runtimes?.[0]?.planned?.map((entry) => entry.from) || []);
   assert.equal(planned.has('scripts/lib/harness-environment-snapshot.mjs'), true);
   assert.equal(planned.has('tools/evals/fixtures/harness-search-fixtures/fixture-manifest.json'), true);
+  assert.equal(planned.has('tools/retro/retro-cli.mjs'), true);
+  assert.equal(planned.has('schemas/retro.collect.schema.json'), true);
+  assert.equal(planned.has('templates/retro/DAILY_RETRO.md'), true);
 });
 
 test('package scripts define the active gate without archive discovery', async () => {
@@ -318,6 +321,13 @@ test('package scripts define the active gate without archive discovery', async (
     'tests/eval-regression-contract.test.mjs',
     'tests/tool-sandbox-eval-contract.test.mjs',
     'tests/harness-lab-contract.test.mjs',
+    'tests/retro-collect-contract.test.mjs',
+    'tests/retro-redaction-contract.test.mjs',
+    'tests/daily-retro-contract.test.mjs',
+    'tests/retro-improvement-proposer-contract.test.mjs',
+    'tests/retro-issue-draft-contract.test.mjs',
+    'tests/retro-cli-contract.test.mjs',
+    'tests/retro-no-promotion-authority-contract.test.mjs',
     'tests/moonshot-architecture-skill-surface.test.mjs',
     'tests/moonshot-architecture-template-contract.test.mjs',
     'tests/moonshot-architecture-schema-contract.test.mjs',
@@ -345,8 +355,10 @@ test('package scripts define the active gate without archive discovery', async (
   assert.doesNotMatch(scripts.test, /archive[\\/]/);
   assert.doesNotMatch(scripts.test, /\.claude[\\/]scripts/);
   assert.equal(typeof scripts['test:package'], 'string', 'package.json should define scripts.test:package');
+  assert.equal(typeof scripts['test:retro'], 'string', 'package.json should define scripts.test:retro');
   assert.equal(typeof scripts['test:eval'], 'string', 'package.json should define scripts.test:eval');
   assert.equal(typeof scripts['test:lab'], 'string', 'package.json should define scripts.test:lab');
+  assert.match(scripts['test:retro'], /tests\/retro-collect-contract\.test\.mjs/);
   assert.match(scripts['test:eval'], /tools\/evals\/harness-control-plane\.mjs run --json/);
   assert.match(scripts['test:lab'], /tools\/harness-lab\/harness-lab\.mjs run --candidate-root \. --json/);
   assert.doesNotMatch(scripts['test:package'], /archive[\\/]/);

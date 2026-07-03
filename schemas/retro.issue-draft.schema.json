@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/retro.issue-draft.schema.json",
+  "title": "Retro Issue Draft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "date",
+    "candidateId",
+    "fingerprint",
+    "title",
+    "bodyPath",
+    "remoteWrite",
+    "promotionAuthority"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "retro.issue-draft.v1" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "fingerprint": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "bodyPath": { "type": "string", "minLength": 1 },
+    "remoteWrite": { "const": false },
+    "promotionAuthority": { "const": false }
+  }
+}

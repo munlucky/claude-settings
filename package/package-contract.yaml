@@ -175,6 +175,12 @@ requiredPayloadEntries:
       purpose: awtl_trace_to_testcase_candidate_contract
     - source: schemas/improvement-candidate-v1.schema.json
       purpose: eval_gated_improvement_candidate_contract_no_auto_source_mutation
+    - source: schemas/retro.collect.schema.json
+      purpose: advisory_retro_collect_record_contract
+    - source: schemas/retro.daily.schema.json
+      purpose: advisory_daily_retro_report_contract
+    - source: schemas/retro.improvement-candidate.schema.json
+      purpose: advisory_retro_improvement_candidate_envelope
     - source: schemas/memory-promotion-ledger.schema.json
       purpose: runtime_memory_promotion_ledger_contract
     - source: templates/**
@@ -207,6 +213,8 @@ requiredPayloadEntries:
       purpose: harness_lifecycle_loop_and_h0_closeout_cli
     - source: tools/harness-lab/harness-history.mjs
       purpose: read_only_harness_history_and_frontier_cli
+    - source: tools/retro/retro-cli.mjs
+      purpose: advisory_retro_collect_import_daily_propose_issue_draft_cli
     - source: tools/awtl/trace-to-testcase.mjs
       purpose: awtl_trace_to_testcase_candidate_generation
     - source: docs/public/guidelines/harness-bootstrap-lab.md

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-30T15:14:03.531Z",
+  "generatedAt": "2026-07-03T15:02:38.458Z",
   "sourceCommit": "",
   "skills": [
     {
@@ -504,6 +504,20 @@
       "permissionReview": {
         "status": "approved",
         "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewer": "skills-audit-generate-lock"
+      }
+    },
+    {
+      "name": "moonshot-retro",
+      "path": "skills/moonshot-retro",
+      "source": "canonical",
+      "contentHash": "d077a0269f3098ef89f7218673c8f86f45548977e49113dca7e9d1882ec46073",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [],
+      "permissionReview": {
+        "status": "approved",
+        "reviewedAt": "2026-07-03T15:02:38.458Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },

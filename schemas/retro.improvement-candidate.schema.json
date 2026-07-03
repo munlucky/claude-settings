@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/retro.improvement-candidate.schema.json",
+  "title": "Retro Improvement Candidate",
+  "description": "Advisory retro envelope for candidates that may later map to improvement-candidate-v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "priority",
+    "targetArea",
+    "expectedImpact",
+    "risk",
+    "evidencePatternIds",
+    "mapsToSchema",
+    "promotionAuthority"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "priority": { "enum": ["P0", "P1", "P2", "P3"] },
+    "targetArea": { "type": "string", "minLength": 1 },
+    "expectedImpact": { "type": "string", "minLength": 1 },
+    "risk": { "type": "string", "minLength": 1 },
+    "evidencePatternIds": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
+    "mapsToSchema": { "const": "schemas/improvement-candidate-v1.schema.json" },
+    "promotionAuthority": { "const": false }
+  }
+}
