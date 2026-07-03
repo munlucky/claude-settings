@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { readdir, readFile } from 'node:fs/promises';
 import { existsSync, lstatSync } from 'node:fs';
@@ -282,6 +283,25 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /^\s+- rules\/$/m);
   assert.match(contract, /runtimeExposureEntries:/);
   assert.match(contract, /legacyHarnessCorePolicy: remove_when_requested_after_backup/);
+});
+
+test('moonshot-relay package dry-run includes explicit runtime fixture and helper payloads', async () => {
+  const result = spawnSync(process.execPath, [
+    'package/build-package.mjs',
+    '--runtime',
+    'moonshot-relay',
+    '--dry-run',
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024 * 20,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  const planned = new Set(payload.runtimes?.[0]?.planned?.map((entry) => entry.from) || []);
+  assert.equal(planned.has('scripts/lib/harness-environment-snapshot.mjs'), true);
+  assert.equal(planned.has('tests/fixtures/harness-search-fixtures/fixture-manifest.json'), true);
 });
 
 test('package scripts define the active gate without archive discovery', async () => {

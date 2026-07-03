@@ -8,6 +8,7 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { appendLedgerEvent, readLedger, verifyLedger } from '../../scripts/lib/event-ledger.mjs';
+import { redactUnsafeObject, writeEnvironmentSnapshot } from '../../scripts/lib/harness-environment-snapshot.mjs';
 
 import { shouldRerunBaseline, sourceFingerprint } from './harness-lab.mjs';
 
@@ -46,7 +47,7 @@ const usage = () => `Usage:
   node tools/harness-lab/harness-loop.mjs resume --run-id <run-id> [--json]
   node tools/harness-lab/harness-loop.mjs cancel --run-id <run-id> --reason <text> [--json]
   node tools/harness-lab/harness-loop.mjs evaluate --run-id <run-id> [--json]
-  node tools/harness-lab/harness-loop.mjs evolve --run-id <run-id> --out-run-id <new-run-id> [--json]
+  node tools/harness-lab/harness-loop.mjs evolve --run-id <run-id> --out-run-id <new-run-id> [--hypothesis <text>] [--expected-metric <text>] [--risk <text>] [--rollback <text>] [--consulted-run <id>] [--json]
 
 Initializes and operates the local baseline -> candidate harness loop under .moonshot-relay/harness-lab/.`;
 
@@ -149,6 +150,7 @@ function buildRunSpec({
       runSpec: 'run-spec.json',
       events: 'events.jsonl',
       labResult: 'lab-result.json',
+      environmentSnapshot: 'environment-snapshot.json',
     },
   };
   return {
@@ -169,6 +171,7 @@ async function writeRunKernelStart({
   promotionCriteria = null,
   parentRunId = null,
   evolvedFromSpecHash = null,
+  snapshotWriter = writeEnvironmentSnapshot,
 } = {}) {
   const runRoot = path.resolve(outRoot, runId);
   await mkdir(runRoot, { recursive: true });
@@ -207,7 +210,28 @@ async function writeRunKernelStart({
       payload: { runId, specHash: spec.specHash, lifecyclePath, backend, parentRunId, evolvedFromSpecHash },
     });
   }
-  return { runRoot, spec, specHash: spec.specHash, specPath, eventsPath };
+  const environmentSnapshot = await snapshotWriter({
+    runRoot,
+    sourceRoot,
+    runId,
+    specHash: spec.specHash,
+    extra: {
+      lifecyclePath,
+      backend,
+      parentRunId,
+      evolvedFromSpecHash,
+    },
+  }).catch((error) => ({
+    path: path.join(runRoot, 'environment-snapshot.json'),
+    sha256: '',
+    snapshot: {
+      schemaVersion: 'moonshot-harness-environment-snapshot.v1',
+      status: 'snapshot_unavailable',
+      reason: error instanceof Error ? error.message : String(error),
+      promotionAuthority: false,
+    },
+  }));
+  return { runRoot, spec, specHash: spec.specHash, specPath, eventsPath, environmentSnapshot };
 }
 
 async function appendRunEvent(kernel, type, payload = {}) {
@@ -657,6 +681,11 @@ async function evolveLoop(options = {}) {
       specHash: kernel.specHash,
     },
   });
+  const proposal = await writeEvolveProposal({
+    kernel,
+    parentProjection: projection,
+    options,
+  });
   return {
     schemaVersion: 'moonshot-run-evolve.v1',
     status: 'created',
@@ -665,8 +694,78 @@ async function evolveLoop(options = {}) {
     parentSpecHash: projection.specHash,
     runSpecPath: kernel.specPath,
     eventsPath: kernel.eventsPath,
+    environmentSnapshotPath: kernel.environmentSnapshot?.path || '',
+    proposalPath: proposal.path,
     specHash: kernel.specHash,
   };
+}
+
+async function writeEvolveProposal({ kernel, parentProjection, options }) {
+  const warnings = [];
+  const consultedRuns = Array.isArray(options.consultedRun)
+    ? options.consultedRun
+    : (options.consultedRun ? [options.consultedRun] : []);
+  const consultedArtifacts = [];
+  for (const consultedRunId of consultedRuns) {
+    const consultedProjection = await loadRunProjection({
+      runId: consultedRunId,
+      runsRoot: options.runsRoot || DEFAULT_RUN_ROOT,
+    });
+    consultedArtifacts.push({
+      runId: consultedRunId,
+      status: consultedProjection.status,
+      specHash: consultedProjection.specHash || '',
+      runSpecPath: consultedProjection.valid ? consultedProjection.specPath : '',
+      runSpecSha256: consultedProjection.valid && existsSync(consultedProjection.specPath)
+        ? `sha256:${await sha256File(consultedProjection.specPath)}`
+        : '',
+      labResultPath: existsSync(path.join(consultedProjection.runRoot, 'lab-result.json'))
+        ? path.join(consultedProjection.runRoot, 'lab-result.json')
+        : '',
+      labResultSha256: existsSync(path.join(consultedProjection.runRoot, 'lab-result.json'))
+        ? `sha256:${await sha256File(path.join(consultedProjection.runRoot, 'lab-result.json'))}`
+        : '',
+    });
+  }
+  const proposal = {
+    schemaVersion: 'moonshot-harness-evolve-proposal.v1',
+    createdAt: new Date().toISOString(),
+    runId: options.outRunId,
+    parentRunId: options.runId,
+    parentSpecHash: parentProjection.specHash,
+    childSpecHash: kernel.specHash,
+    consultedArtifacts,
+    hypothesis: options.hypothesis || 'operator-supplied follow-up proposal pending',
+    expectedMetric: options.expectedMetric || 'no metric claim; proposal is preparation-only',
+    risk: options.risk || 'proposal is non-authoritative and cannot promote by itself',
+    rollback: options.rollback || `remove generated child run output ${kernel.runRoot}`,
+    verificationPlan: [
+      'run H0 candidate/compare evidence before any improvement claim',
+      'run package/eval gates before closeout',
+      'keep proposalAuthority false',
+    ],
+    promotionAuthority: false,
+  };
+  const sanitized = redactUnsafeObject(proposal, warnings, 'proposal');
+  sanitized.redaction = {
+    status: warnings.length > 0 ? 'redacted' : 'clean',
+    warnings,
+  };
+  const proposalPath = path.join(kernel.runRoot, 'evolve-proposal.json');
+  await writeFile(proposalPath, `${JSON.stringify(sanitized, null, 2)}\n`);
+  await appendRunEvent(kernel, 'artifact.written', {
+    artifactKind: 'evolve-proposal',
+    path: proposalPath,
+    sha256: await sha256File(proposalPath),
+    specHash: kernel.specHash,
+  });
+  await appendRunEvent(kernel, 'proposal.written', {
+    runId: options.outRunId,
+    parentRunId: options.runId,
+    proposalPath,
+    promotionAuthority: false,
+  });
+  return { path: proposalPath, proposal: sanitized };
 }
 
 function parseArgs(argv) {
@@ -689,6 +788,7 @@ function parseArgs(argv) {
     minDelta: '',
     lifecyclePath: '',
     calibrationCheck: false,
+    consultedRun: [],
   };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
@@ -708,7 +808,12 @@ function parseArgs(argv) {
       options.command = 'help';
     } else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, char) => char.toUpperCase());
-      options[key] = rest[++index] || '';
+      const value = rest[++index] || '';
+      if (key === 'consultedRun') {
+        options.consultedRun.push(value);
+      } else {
+        options[key] = value;
+      }
     } else {
       throw new Error(`Unknown argument: ${arg}\n${usage()}`);
     }

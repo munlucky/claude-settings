@@ -6,6 +6,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { recordEvalResult } from '../../scripts/lib/runtime-state-store.mjs';
+import { scoreHarnessSearchFixtures } from './harness-search-fixture-scorer.mjs';
 import { scoreResearchFixture } from './research-fixture-scorer.mjs';
 
 export const REQUIRED_HARNESS_CONTROL_PLANE_CASES = [
@@ -130,12 +131,20 @@ const main = async () => {
   const researchFixture = options.includeResearch
     ? await scoreResearchFixture()
     : null;
+  const searchFixture = options.includeResearch
+    ? await scoreHarnessSearchFixtures()
+    : null;
   const combinedOutput = researchFixture
     ? {
       ...output,
-      status: output.status === 'passed' && researchFixture.status === 'passed' ? 'passed' : 'failed',
-      score: Math.min(output.score, researchFixture.normalizedScore),
+      status: output.status === 'passed'
+        && researchFixture.status === 'passed'
+        && searchFixture.status === 'passed'
+        ? 'passed'
+        : 'failed',
+      score: Math.min(output.score, researchFixture.normalizedScore, searchFixture.status === 'passed' ? 1 : 0),
       researchFixture,
+      searchFixture,
     }
     : output;
   let evalResult = null;
@@ -153,7 +162,9 @@ const main = async () => {
         totalCount: combinedOutput.totalCount,
         missingCases: combinedOutput.missingCases,
       },
-      regressionWorsened: combinedOutput.regressionWorsened || researchFixture?.status === 'failed',
+      regressionWorsened: combinedOutput.regressionWorsened
+        || researchFixture?.status === 'failed'
+        || searchFixture?.status === 'failed',
       evidence: combinedOutput,
     });
   }

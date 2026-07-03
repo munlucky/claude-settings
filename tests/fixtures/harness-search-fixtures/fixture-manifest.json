@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "moonshot-harness-search-fixtures.v1",
+  "fixtureSetId": "harness-search-fixtures-v1",
+  "scorerVersion": "harness-search-fixture-scorer-v1",
+  "fixtures": [
+    {
+      "fixtureId": "identity-incomplete",
+      "fixtureClass": "fixture_identity_incomplete",
+      "inputHash": "sha256:harness-search-identity-incomplete-v1",
+      "expectedFailureClass": "fixture_identity_incomplete",
+      "signals": {
+        "identityComplete": false,
+        "score": 0.91,
+        "staleArtifacts": 0,
+        "mutationSafetyViolation": false,
+        "redactionUnsafe": false
+      }
+    },
+    {
+      "fixtureId": "score-drop",
+      "fixtureClass": "score_drop",
+      "inputHash": "sha256:harness-search-score-drop-v1",
+      "expectedFailureClass": "score_drop",
+      "signals": {
+        "identityComplete": true,
+        "score": 0.43,
+        "baselineScore": 0.91,
+        "staleArtifacts": 0,
+        "mutationSafetyViolation": false,
+        "redactionUnsafe": false
+      }
+    },
+    {
+      "fixtureId": "stale-artifact-evidence",
+      "fixtureClass": "stale_artifact",
+      "inputHash": "sha256:harness-search-stale-artifact-v1",
+      "expectedFailureClass": "stale_artifact",
+      "signals": {
+        "identityComplete": true,
+        "score": 0.84,
+        "staleArtifacts": 2,
+        "mutationSafetyViolation": false,
+        "redactionUnsafe": false
+      }
+    },
+    {
+      "fixtureId": "mutation-safety-violation",
+      "fixtureClass": "mutation_safety_violation",
+      "inputHash": "sha256:harness-search-mutation-safety-v1",
+      "expectedFailureClass": "mutation_safety_violation",
+      "signals": {
+        "identityComplete": true,
+        "score": 0.88,
+        "staleArtifacts": 0,
+        "mutationSafetyViolation": true,
+        "redactionUnsafe": false
+      }
+    },
+    {
+      "fixtureId": "redaction-snapshot-unsafe-field",
+      "fixtureClass": "redaction_snapshot_unsafe_field",
+      "inputHash": "sha256:harness-search-redaction-snapshot-v1",
+      "expectedFailureClass": "redaction_snapshot_unsafe_field",
+      "signals": {
+        "identityComplete": true,
+        "score": 0.82,
+        "staleArtifacts": 0,
+        "mutationSafetyViolation": false,
+        "redactionUnsafe": true
+      }
+    }
+  ]
+}

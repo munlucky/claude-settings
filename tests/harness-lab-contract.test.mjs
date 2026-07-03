@@ -54,6 +54,7 @@ import {
   shouldExcludeSourceSnapshotPath,
 } from '../tools/harness-lab/harness-loop.mjs';
 import { appendLedgerEvent, readLedger, verifyLedger } from '../scripts/lib/event-ledger.mjs';
+import { redactUnsafeObject } from '../scripts/lib/harness-environment-snapshot.mjs';
 
 const root = process.cwd();
 const tempRoots = [];
@@ -1183,8 +1184,14 @@ test('run spec hash excludes self hash and rejects in-place mutation', async () 
   });
   assert.equal(existsSync(kernel.specPath), true);
   assert.equal(existsSync(kernel.eventsPath), true);
+  assert.equal(existsSync(path.join(kernel.runRoot, 'environment-snapshot.json')), true);
   assert.equal((await readLedger(kernel.eventsPath)).map((event) => event.type).join(','), 'run.spec_written,run.started');
   assert.equal(verifyLedger(await readLedger(kernel.eventsPath)).valid, true);
+  const snapshot = JSON.parse(await readFile(path.join(kernel.runRoot, 'environment-snapshot.json'), 'utf8'));
+  assert.equal(snapshot.schemaVersion, 'moonshot-harness-environment-snapshot.v1');
+  assert.equal(snapshot.promotionAuthority, false);
+  assert.equal(Object.keys(snapshot.tools).includes('node'), true);
+  assert.equal(JSON.stringify(snapshot).includes('sk-'), false);
 
   const tamperedSpec = JSON.parse(await readFile(kernel.specPath, 'utf8'));
   tamperedSpec.objective = 'tampered-without-updating-spec-hash';
@@ -1213,6 +1220,59 @@ test('run spec hash excludes self hash and rejects in-place mutation', async () 
     }),
     /run-spec mutation rejected/,
   );
+});
+
+test('environment snapshot redacts planned unsafe evidence surfaces without redacting authority flags', () => {
+  const warnings = [];
+  const redacted = redactUnsafeObject({
+    authPath: 'C:/Users/moon/.codex/auth.json',
+    profileState: { token: 'sk-1234567890abcdef' },
+    rawLogs: 'line 1',
+    transcriptPath: 'sessions/raw-transcript.jsonl',
+    memoryGraphDump: { nodes: [] },
+    kgDump: { edges: [] },
+    envSecrets: { GITHUB_TOKEN: 'ghp_1234567890abcdef' },
+    nested: {
+      cookieJar: 'session=abc',
+      credentialFile: 'private',
+    },
+    promotionAuthority: false,
+  }, warnings);
+
+  assert.equal(redacted.authPath, '[REDACTED]');
+  assert.equal(redacted.profileState, '[REDACTED]');
+  assert.equal(redacted.rawLogs, '[REDACTED]');
+  assert.equal(redacted.transcriptPath, '[REDACTED]');
+  assert.equal(redacted.memoryGraphDump, '[REDACTED]');
+  assert.equal(redacted.kgDump, '[REDACTED]');
+  assert.equal(redacted.envSecrets, '[REDACTED]');
+  assert.equal(redacted.nested.cookieJar, '[REDACTED]');
+  assert.equal(redacted.nested.credentialFile, '[REDACTED]');
+  assert.equal(redacted.promotionAuthority, false);
+  assert.equal(warnings.length >= 9, true);
+});
+
+test('run kernel start treats environment snapshot failures as diagnostic only', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-run-kernel-snapshot-failsoft-'));
+  tempRoots.push(tempRoot);
+
+  const kernel = await writeRunKernelStart({
+    runId: 'candidate-kernel-snapshot-failsoft',
+    sourceRoot: root,
+    outRoot: tempRoot,
+    lifecyclePath: 'candidate_only',
+    backend: 'host',
+    snapshotWriter: async () => {
+      throw new Error('synthetic snapshot failure');
+    },
+  });
+
+  assert.equal(existsSync(kernel.specPath), true);
+  assert.equal(existsSync(kernel.eventsPath), true);
+  assert.equal(kernel.environmentSnapshot.snapshot.schemaVersion, 'moonshot-harness-environment-snapshot.v1');
+  assert.equal(kernel.environmentSnapshot.snapshot.status, 'snapshot_unavailable');
+  assert.equal(kernel.environmentSnapshot.snapshot.promotionAuthority, false);
+  assert.match(kernel.environmentSnapshot.snapshot.reason, /synthetic snapshot failure/);
 });
 
 test('host candidate lab result can be bound to run spec and events', async () => {
@@ -1460,20 +1520,37 @@ test('evolve creates a child run with parent lineage and leaves parent spec unch
     baselineId: 'baseline-0001',
   });
   const parentSpecBefore = await readFile(parent.specPath, 'utf8');
+  const parentEventsBefore = await readFile(parent.eventsPath, 'utf8');
   const result = await evolveLoop({
     runId: 'evolve-parent',
     outRunId: 'evolve-child',
     runsRoot: tempRoot,
+    hypothesis: 'try a smaller fixture set',
+    expectedMetric: 'score >= baseline',
+    risk: 'generated-only proposal',
+    rollback: 'remove child run output',
+    consultedRun: ['evolve-parent'],
   });
 
   assert.equal(result.status, 'created');
   assert.equal(await readFile(parent.specPath, 'utf8'), parentSpecBefore);
+  assert.equal(await readFile(parent.eventsPath, 'utf8'), parentEventsBefore);
   const childSpec = JSON.parse(await readFile(result.runSpecPath, 'utf8'));
   assert.equal(childSpec.lineage.parentRunId, 'evolve-parent');
   assert.equal(childSpec.lineage.evolvedFromSpecHash, parent.specHash);
   assert.equal(childSpec.baselineId, 'baseline-0001');
+  assert.equal(existsSync(result.proposalPath), true);
+  assert.equal(existsSync(result.environmentSnapshotPath), true);
+  const proposal = JSON.parse(await readFile(result.proposalPath, 'utf8'));
+  assert.equal(proposal.schemaVersion, 'moonshot-harness-evolve-proposal.v1');
+  assert.equal(proposal.parentRunId, 'evolve-parent');
+  assert.equal(proposal.parentSpecHash, parent.specHash);
+  assert.equal(proposal.promotionAuthority, false);
+  assert.equal(proposal.consultedArtifacts[0].runId, 'evolve-parent');
   const childEvents = await readLedger(result.eventsPath);
   assert.equal(childEvents.some((event) => event.type === 'run.evolved'), true);
+  assert.equal(childEvents.some((event) => event.type === 'proposal.written'), true);
+  assert.equal(childEvents.some((event) => event.type === 'artifact.written' && event.payload?.artifactKind === 'evolve-proposal'), true);
 });
 
 test('run-status rejects terminal events that are not last', async () => {

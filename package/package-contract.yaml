@@ -195,10 +195,18 @@ requiredPayloadEntries:
       purpose: runtime_state_native_sqlite_dependency
     - source: tools/evals/harness-control-plane.mjs
       purpose: harness_control_plane_golden_eval_gate
+    - source: tools/evals/harness-search-fixture-scorer.mjs
+      purpose: deterministic_harness_search_fixture_scorer
     - source: tools/evals/fixtures/harness-control-plane/golden-regression.json
       purpose: packaged_harness_control_plane_golden_eval_fixture
+    - source: tests/fixtures/harness-search-fixtures/fixture-manifest.json
+      purpose: packaged_harness_search_fixture_manifest
     - source: tools/harness-lab/harness-lab.mjs
       purpose: external_bootstrap_lab_for_harness_change_gates
+    - source: tools/harness-lab/harness-loop.mjs
+      purpose: harness_lifecycle_loop_and_h0_closeout_cli
+    - source: tools/harness-lab/harness-history.mjs
+      purpose: read_only_harness_history_and_frontier_cli
     - source: tools/awtl/trace-to-testcase.mjs
       purpose: awtl_trace_to_testcase_candidate_generation
     - source: docs/public/guidelines/harness-bootstrap-lab.md
@@ -218,6 +226,8 @@ requiredPayloadEntries:
         purpose: architecture_applicable_knowledge_slice_resolver
       - source: scripts/architecture-contract-bind.mjs
         purpose: architecture_contract_slice_binder
+      - source: scripts/lib/harness-environment-snapshot.mjs
+        purpose: redacted_harness_environment_snapshot_helper
       - source: scripts/architecture-handoff-build.mjs
         purpose: architecture_handoff_prompt_builder
       - source: scripts/architecture-feedback-render.mjs
