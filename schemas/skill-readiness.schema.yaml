@@ -1,0 +1,24 @@
+schema:
+  name: skillReadiness
+  version: "1.0"
+  purpose: "Evidence contract for task-relevant skill consultation."
+
+skillReadiness:
+  detectedTaskProfiles: []
+  requiredSkills: []
+  consultedSkills:
+    item:
+      path: ""
+      sha: ""
+  missingSkills: []
+  gate:
+    status:
+      allowed:
+        - pass
+        - blocked
+        - advisory
+
+rules:
+  - "Read task-relevant skills before execution."
+  - "Do not require blanket loading of unrelated skills."
+  - "Skill readiness does not modify public runtime skill surface."

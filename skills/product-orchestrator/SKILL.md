@@ -11,6 +11,11 @@ deepReferences:
   - docs/public/guidelines/demo-first-mvp-gate.md
   - docs/public/guidelines/external-skill-pattern-transfer.md
   - docs/public/guidelines/memorygraph-workflow.md
+  - docs/public/guidelines/agent-operating-policy.md
+  - docs/public/guidelines/retrieval-and-recency-policy.md
+  - docs/public/guidelines/context-relevance-policy.md
+  - docs/public/guidelines/research-evidence-policy.md
+  - docs/public/guidelines/skill-readiness-policy.md
 outputArtifacts:
   - PRODUCT_INTENT.md
   - PRD.md
@@ -111,6 +116,9 @@ Planning artifacts should also record:
 
 At every stage:
 - use `assumption-ledger` before stopping for ambiguity
+- gather available read-only context before asking the user unless a critical ambiguity would change scope, security, data shape, or user-visible behavior
+- use `docs/public/guidelines/retrieval-and-recency-policy.md` and `docs/public/guidelines/research-evidence-policy.md` for current or volatile product, market, dependency, platform, model, pricing, legal, or security facts
+- record task-relevant skill consultation through `docs/public/guidelines/skill-readiness-policy.md`
 - apply `docs/public/guidelines/memorygraph-workflow.md`
 - do not use `.moonshot-relay/docs/ko/` as a MemoryGraph source
 - omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy
@@ -210,6 +218,8 @@ Recommended next step:
 
 - `docs/public/guidelines/product-definition-workflow.md`
 - `docs/public/guidelines/demo-first-mvp-gate.md`
+- `docs/public/guidelines/retrieval-and-recency-policy.md`
+- `docs/public/guidelines/skill-readiness-policy.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/`
 - `skills/product-gate-reviewer/SKILL.md`
 - `skills/plan-ceo-review/SKILL.md`

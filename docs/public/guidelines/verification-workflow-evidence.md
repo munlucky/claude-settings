@@ -33,4 +33,5 @@ This guideline owns workflow evidence closeout policy for `completion-verifier`.
 - Missing required frontend, browser, accessibility, visual, or performance backends are setup gaps when the source contract declares them.
 - `QA_REPORT.md` should track review finding decisions as `accepted`, `challenged`, `deferred`, or `needs_clarification`.
 - `HANDOFF.md` should contain concrete continuation steps when verification is blocked or deferred.
+- Agent operating policy evidence can record retrieval, assumptions/blockers, untrusted content disposition, skill readiness, artifact routing, context relevance, and cumulative risk. It is evidence only; accepted completion authority remains with `scripts/runtime-state.mjs assess-completion`.
 - This guideline is evidence policy only; accepted completion authority remains with `scripts/runtime-state.mjs assess-completion`.

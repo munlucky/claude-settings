@@ -57,6 +57,7 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 6. Extract ASRs and quality attribute scenarios.
 7. Build domain model, capability map, and data/integration flow.
 8. For Brownfield/Hybrid work, recover current architecture and existing constraints from repository evidence.
+8.1. Apply `docs/public/guidelines/retrieval-and-recency-policy.md` and `docs/public/guidelines/research-evidence-policy.md` when architecture inputs include current product, dependency, platform, model, pricing, legal, or security facts.
 9. Generate at least two architecture options for non-trivial work.
 10. Run trade-off review.
 11. Write C4 model and ADRs for significant decisions.
@@ -96,6 +97,7 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 - Mode classification and input source path.
 - Architecture package path.
 - Project-local knowledge anchor disposition: consulted anchor IDs, consumed agreement paths, and skipped-anchor rationale when anchors were present.
+- Retrieval/research evidence for current or volatile external facts, plus context relevance disposition for project knowledge anchors.
 - Requirement inventory and ASR catalog.
 - Domain/capability model or Brownfield current architecture evidence.
 - Option comparison and trade-off review.

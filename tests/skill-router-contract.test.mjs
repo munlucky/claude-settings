@@ -23,6 +23,18 @@ test('skill router search and inspect expose metadata without skill body', async
   assert.equal(Object.hasOwn(inspect, 'promptBlock'), false);
 });
 
+test('skill router resolves repo-root deep references without skill-local prefixes', async () => {
+  const inspect = await inspectSkill('product-orchestrator', { repoRoot: root });
+
+  assert.equal(inspect.status, 'pass');
+  assert.ok(inspect.skill.references.includes('docs/public/guidelines/agent-operating-policy.md'));
+  assert.ok(inspect.skill.references.includes('docs/public/guidelines/retrieval-and-recency-policy.md'));
+  assert.equal(
+    inspect.skill.references.some((reference) => reference.startsWith('skills/product-orchestrator/docs/')),
+    false,
+  );
+});
+
 test('skill router load returns selected prompt block and redacts unsafe lines', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'skill-router-'));
   await mkdir(path.join(temp, 'catalog'), { recursive: true });

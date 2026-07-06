@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-03T15:02:38.458Z",
+  "generatedAt": "2026-07-06T12:37:37.454Z",
   "sourceCommit": "",
   "skills": [
     {
@@ -77,13 +77,13 @@
       "name": "assumption-ledger",
       "path": "skills/assumption-ledger",
       "source": "canonical",
-      "contentHash": "cb325e9acf895118ed337d7eefaef72e552323201b8d464ac102704ff92ece6f",
+      "contentHash": "00db8fd9fa918bde816ec374c6abea20914c04b0f46c25a373e58611c8f827dc",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-06T12:37:37.454Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -203,13 +203,13 @@
       "name": "completion-verifier",
       "path": "skills/completion-verifier",
       "source": "canonical",
-      "contentHash": "32f60668802957a70ab89618a8f31ffa23f3ce35b92f4c4f60638bef871b13d4",
+      "contentHash": "f422cac9eb4f33d670b2311eac989d1baa2086e4abbd04e32f50d2c0af737e01",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-06T12:37:37.454Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -343,13 +343,13 @@
       "name": "moonshot-architecture",
       "path": "skills/moonshot-architecture",
       "source": "canonical",
-      "contentHash": "331bfc3c1a6a1ed0627a81d1b7b59bce43d59fc34ad9a98b31b070e58e20e64c",
+      "contentHash": "6c55d53cc3da7ef341654bb3f316626dcc1b06594d6e164a4f0f21279eb9a2a4",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-06T12:37:37.454Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -427,13 +427,13 @@
       "name": "moonshot-orchestrator",
       "path": "skills/moonshot-orchestrator",
       "source": "canonical",
-      "contentHash": "2378f3915fb7ea4615c8af09fc69527cbbd9b7f95406237b07ff507fe227f297",
+      "contentHash": "11b8539b02e5c96f90646c3059accff4963ec59f39b252fec103c0ee517e07ba",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-06T12:37:37.454Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -455,13 +455,13 @@
       "name": "moonshot-phase-runner",
       "path": "skills/moonshot-phase-runner",
       "source": "canonical",
-      "contentHash": "cd8808103349af0611e316c3ab1341e713fdd59a440d5e67fa5c0f506336fce1",
+      "contentHash": "65d5e5175a58649f1618415f78136d1fc2ba91cad84253998b64e3d3b5870430",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-06T12:37:37.454Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -623,13 +623,13 @@
       "name": "product-orchestrator",
       "path": "skills/product-orchestrator",
       "source": "canonical",
-      "contentHash": "a678dae71f89ea5098cd372bf06d83bbf63516d578adb9c447a7e42b5dfd7a76",
+      "contentHash": "d973b227f4e7825522b21c4e61590c0d12d61626f91396d2e2563908aed7d4ac",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-06T12:37:37.454Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },

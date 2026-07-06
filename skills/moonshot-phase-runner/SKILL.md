@@ -59,6 +59,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 8. Build a compact phase-attempt brief from the active phase contract.
 8.1. Include `docs/public/guidelines/minimal-correct-implementation.md` in the phase-attempt brief as a mandatory implementation-shape constraint.
 8.2. Include declared read-only paths and owned/write-set paths in the phase-attempt brief; changed files outside that write set must be recorded as scope drift.
+8.3. Include compact agent operating policy evidence only when relevant: `retrieval-and-recency-policy.md`, `untrusted-content-boundary.md`, `context-relevance-policy.md`, `artifact-routing-policy.md`, `skill-readiness-policy.md`, and cumulative risk. `skill-readiness-policy.md` is an evidence plane, not a public runtime surface change.
 9. For architecture-derived plans, attach only selected ADR, traceability, owner, verification signal, and architecture review paths needed by the active phase.
 10. When phase metadata includes `architecture.handoff`, require `status=ready`, attach only `ARCHITECTURE_HANDOFF.promptBlock` plus compact metadata, and reject blocked handoff dispatch.
 11. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
@@ -78,6 +79,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Review evidence for code-changing phases.
 - Plan graph validation evidence or explicit markdown-compatible mode evidence.
 - Minimality decision evidence: lower-rung reuse/skip/new-surface choice from `docs/public/guidelines/minimal-correct-implementation.md`.
+- Agent operating policy evidence: source-backed retrieval for volatile facts, assumption/blocker disposition, untrusted content disposition, context relevance, artifact routing, skill readiness, and cumulative-risk carry-forward when encountered.
 - Fresh verifier verdict and scorecard agreement.
 - Coordinator closeout evidence and phase closeout result.
 - Operational Adoption Closeout evidence before any live account-root/profile sync: independent completion audit, independent operational adoption audit, `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, and `node package/build-package.mjs --runtime all --dry-run --json`.

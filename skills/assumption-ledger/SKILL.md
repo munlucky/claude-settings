@@ -15,6 +15,8 @@ Write to:
 
 ## Decision Policy
 
+Before asking the user, gather available read-only context from the current repository, plan package, supplied artifacts, and installed runtime metadata. Escalate only critical ambiguity; record safe ambiguity and continue.
+
 Write to `ASSUMPTIONS.md` when:
 - progress is still safe
 - the ambiguity affects detail, not core scope
@@ -28,6 +30,7 @@ Write to `BLOCKERS.md` when:
 ## Rules
 
 - Prefer forward progress with explicit assumptions
+- Do not ask for information that can be confirmed from available read-only context.
 - Keep blockers short and actionable
 - Do not duplicate the same item in both files
 - Update status when an assumption is resolved or a blocker is removed
@@ -50,6 +53,8 @@ Blocker entry:
 
 ## References
 
+- `docs/public/guidelines/agent-operating-policy.md`
+- `docs/public/guidelines/context-relevance-policy.md`
 - `docs/public/guidelines/product-definition-workflow.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/ASSUMPTIONS.template.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/BLOCKERS.template.md`

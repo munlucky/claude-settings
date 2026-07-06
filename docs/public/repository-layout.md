@@ -67,11 +67,14 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 
 | Guideline file | Class | Durable detail owner |
 |----------------|-------|----------------------|
+| `agent-operating-policy.md` | policy-anchor | `skills/moonshot-orchestrator/**`, `skills/moonshot-phase-runner/**`, `schemas/agent-operation.contract.yaml`, `tests/agent-policy/**` |
+| `artifact-routing-policy.md` | policy-anchor | `schemas/artifact-routing.schema.yaml`, `tests/agent-policy/artifact-routing.test.mjs`, source/runtime package boundary docs |
 | `asr-extraction.md` / `asr-extraction.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, planned architecture artifact schemas |
 | `brownfield-architecture-recovery.md` / `brownfield-architecture-recovery.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, planned `skills/codebase-architecture-recovery/**` |
 | `c4-adr-design-contract.md` / `c4-adr-design-contract.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, planned architecture templates |
 | `code-review-graph-workflow.md` | policy-anchor | `skills/codex-review-code/**`, `scripts/code-review-graph-mcp-wrapper.js` |
 | `context-readiness-schema.md` / `context-readiness-schema.ko.md` | reference-index | `skills/context-readiness-gate/**`, `agents/context-builder*` |
+| `context-relevance-policy.md` | policy-anchor | `scripts/knowledge-context-build.mjs`, `skills/*orchestrator*/**`, project-local knowledge anchor contracts |
 | `daily-retro-workflow.md` / `daily-retro-workflow.ko.md` | operational-procedure | planned retro schemas, templates, tools, skill, and tests |
 | `demo-first-mvp-gate.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/product-gate-reviewer/**` |
 | `document-memory-policy.md` | policy-anchor | `agents/*memory*`, `skills/doc-auto-sync/**`, `skills/commit-moonshot/**` |
@@ -87,11 +90,16 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `plan-review-canvas.md` | operational-procedure | `tools/plan-canvas/plan-canvas.mjs`, `schemas/plan-feedback.schema.json`, `tests/plan-canvas-contract.test.mjs` |
 | `provider-neutral-model-routing.md` | policy-anchor | runtime profile config templates and routing docs |
 | `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, tracked `docs/public/roadmaps/**` contracts, runtime `docs/implementation/**` execution scratch |
+| `research-evidence-policy.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/moonshot-architecture/**`, `schemas/retrieval-evidence.schema.yaml` |
 | `resumable-session-layer.md` | policy-anchor | phase-runner state helpers and runtime state docs |
+| `retrieval-and-recency-policy.md` | policy-anchor | `schemas/retrieval-evidence.schema.yaml`, `tests/agent-policy/retrieval-policy.test.mjs` |
+| `safety-drift-and-cumulative-risk.md` | policy-anchor | `schemas/agent-operation.contract.yaml`, runtime event and verification evidence payloads |
 | `session-compaction.md` | policy-anchor | `skills/session-logger/**`, `docs/public/reference/session-logger-reference.md` |
 | `skill-composition.md` | policy-anchor | `skills/**`, `package/package-contract.yaml` |
+| `skill-readiness-policy.md` | policy-anchor | `schemas/skill-readiness.schema.yaml`, `tests/agent-policy/skill-readiness.test.mjs`, task-profile skill consultation evidence |
 | `strategy-gate-rubric.md` / `strategy-gate-rubric.ko.md` | reference-index | `skills/plan-ceo-review/**`, `skills/plan-eng-review/**` |
 | `token-optimization.md` | policy-anchor | `skills/commit-moonshot/**`, session logging guidance |
+| `untrusted-content-boundary.md` | policy-anchor | `schemas/untrusted-content-boundary.schema.yaml`, `tests/agent-policy/untrusted-content-boundary.test.mjs`, sandbox/protected-path policy |
 | `verification-contract.md` / `verification-contract.ko.md` | reference-index | `schemas/verification.contract.yaml`, `agents/verification/**` |
 | `verification-workflow-evidence.md` / `verification-workflow-evidence.ko.md` | policy-anchor | `skills/completion-verifier/**`, `docs/public/guidelines/verification-contract.md` |
 

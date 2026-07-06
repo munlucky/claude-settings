@@ -1,0 +1,23 @@
+schema:
+  name: artifactRouting
+  version: "1.0"
+  purpose: "Evidence contract for output destination decisions."
+
+artifactRouting:
+  responseMode:
+    allowed:
+      - inline
+      - task_artifact
+      - runtime_artifact
+      - downloadable_file
+  reason: ""
+  outputRoot:
+    sourceOwned: ""
+    runtimeOwned: ""
+  forbidden:
+    - ".claude/** durable source"
+    - ".codex/** durable source"
+
+rules:
+  - "Durable source belongs in canonical source directories."
+  - "Generated evidence belongs in runtime state, not package payload."

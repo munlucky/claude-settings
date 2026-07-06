@@ -1,0 +1,30 @@
+schema:
+  name: retrievalEvidence
+  version: "1.0"
+  purpose: "Evidence contract for current or volatile fact retrieval."
+
+retrievalPolicy:
+  currentOrVolatile: false
+  requiredSources:
+    allowed:
+      - repository
+      - official_web
+      - internal_connector
+      - primary_source
+  searchBudget:
+    class:
+      allowed:
+        - small
+        - medium
+        - deep
+  evidenceRequiredFor:
+    allowed:
+      - product facts
+      - dependency versions
+      - model availability
+      - pricing
+      - legal/security/current policy
+
+rules:
+  - "When currentOrVolatile is true, at least one required source class must be recorded."
+  - "External product or model facts must not be treated as durable prompt policy."

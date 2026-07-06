@@ -1,0 +1,39 @@
+schema:
+  name: agentOperationEvidence
+  version: "1.0"
+  purpose: "Provider-neutral evidence bundle for agent operating policy checks."
+
+agentOperationEvidence:
+  requiredFields:
+    - retrieval
+    - assumptions
+    - untrustedContent
+    - skills
+    - cumulativeRisk
+    - completion
+  retrieval:
+    required: false
+    completed: false
+    sources: []
+  assumptions:
+    safeAssumptions: 0
+    blockers: 0
+  untrustedContent:
+    encountered: false
+    escalatedForConfirmation: false
+  skills:
+    required: []
+    consulted: []
+  cumulativeRisk:
+    level: none
+    reviewerRequired: false
+  completion:
+    freshEvidence: false
+    runtimeAuthority: required
+    completionAuthority: false
+    authoritySource: evidence_only
+
+rules:
+  - "agentOperationEvidence is evidence input only."
+  - "runtime-state accepted completion authority remains required for clean whole-plan completion."
+  - "Provider-specific prompt text, model availability strings, and UI tool schemas are not valid durable evidence."

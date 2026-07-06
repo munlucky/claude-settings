@@ -20,6 +20,7 @@ Use these owners instead of duplicating their rules in this prompt:
 | Verification profile guidance | `docs/public/guidelines/verification-contract.md` |
 | Workflow evidence closeout | `docs/public/guidelines/verification-workflow-evidence.md` |
 | Product acceptance policy | `docs/public/guidelines/product-acceptance-gate.md` |
+| Agent operating policy evidence | `docs/public/guidelines/agent-operating-policy.md`, `schemas/agent-operation.contract.yaml` |
 
 ## Inputs
 
@@ -52,7 +53,7 @@ Use these owners instead of duplicating their rules in this prompt:
 2. Determine the applicable profile and required checks from the contract, `TEST_GUIDE.md`, project docs, or fallback detection.
 3. Run executable checks that are in scope and record command/provenance for every completion-relevant claim.
 4. When verification plane evidence is available, record it through `scripts/verification-plane.mjs record-summary --json`.
-5. Read score, traceability, scenario, UAT, workflow evidence, and QA report state using `docs/public/guidelines/verification-workflow-evidence.md`.
+5. Read score, traceability, scenario, UAT, workflow evidence, agent operating policy evidence, and QA report state using `docs/public/guidelines/verification-workflow-evidence.md`.
 6. Run or request `scripts/runtime-state.mjs assess-completion --json` for whole-plan completion authority when available.
 7. Return the output shape below. Degrade to `failed` or `pass_with_warning` instead of inferring a clean pass.
 

@@ -122,6 +122,9 @@ export const loadSkillCatalog = async (options = {}) => {
     const publicEntry = catalogByName.get(name);
     const internalCluster = clusterBySkill.get(name);
     const description = frontmatter.description || publicEntry?.purpose || '';
+    const deepReferences = [frontmatter.deepReferences].flat().filter(Boolean).map((ref) => (
+      /^(?:docs|rules|schemas)\//.test(ref) ? ref : `skills/${name}/${ref}`
+    ));
     skills.push({
       name,
       exposure: publicNames.has(name) ? 'public' : 'internal',
@@ -131,7 +134,7 @@ export const loadSkillCatalog = async (options = {}) => {
       triggers: Array.isArray(frontmatter.triggers) ? frontmatter.triggers : [],
       references: [
         `skills/${name}/SKILL.md`,
-        ...[frontmatter.deepReferences].flat().filter(Boolean).map((ref) => `skills/${name}/${ref}`),
+        ...deepReferences,
       ],
       headings: extractHeadings(body),
       tokenEstimate: tokenEstimate(text),
