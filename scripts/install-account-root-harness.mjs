@@ -33,6 +33,7 @@ const commonSpec = {
   envName: 'MOONSHOT_RELAY_HOME',
   ownedEntries: new Set([
     'bin',
+    'catalog',
     'docs',
     'rules',
     'schemas',

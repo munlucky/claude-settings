@@ -689,6 +689,7 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills', 'completion-verifier', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills.lock.json')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'catalog', 'moonshot-catalog.json')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'better-sqlite3', 'package.json')), true);
