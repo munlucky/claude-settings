@@ -16,6 +16,8 @@ Use Claude Code Agent Teams in Claude runtime, and preserve equivalent isolated 
 
 This skill is not the owner of phase completion loops. For phase-based implementation, `moonshot-phase-runner` remains the public entrypoint and owns plan-directory completion, return-boundary checks, and automatic phase-wave parallelization. Use teams-runner as an analysis/review/verification helper, not as a replacement for the phase runner loop.
 
+Default multi-agent fanout is denied. This skill may run only when an explicit `agentFanoutContract` is present from an operator request, accepted plan graph, or reviewed handoff. Complexity alone is not a trigger.
+
 ## Runtime Execution Modes
 
 - `claude-code` mode:
@@ -26,6 +28,39 @@ This skill is not the owner of phase completion loops. For phase-based implement
   - Keep the current Codex session as coordinator only and merge back structured summaries
   - If a member cannot preserve isolation, degrade explicitly and record the degraded path in notes or workflow evidence
   - Does not require Claude Agent Teams flags or `mcp__codex__codex`
+
+## Fanout Safety Contract
+
+Before starting a team, validate and record:
+
+```yaml
+agentFanoutContract:
+  enabled: true
+  source: "operator_request | accepted_plan_graph | reviewed_handoff"
+  purpose: "research | review | verification | owned-path implementation"
+  coordinator: "current_session | forked_leader | external_runner"
+  environment: "local | sandbox | self_hosted | managed"
+  maxWorkers: 3
+  maxNestedDepth: 0
+  isolation:
+    contextInput: "artifact_summary"
+    outputShape: "teamReport"
+    toolBoundary: "read_only | owned_paths | verifier_only"
+  writeAccess:
+    default: "deny"
+    allowedOwnedPaths: []
+  verification:
+    required: true
+    mergeStrategy: "severity_first | source_aware | debate_resolution | ownership_aware"
+```
+
+Required gates:
+
+1. `enabled` must be true and `source` must name a local decision artifact or explicit operator request.
+2. `maxNestedDepth` must be `0`; members cannot spawn sub-teams or dynamic workflows.
+3. Research, review, and verification teams stay read-only.
+4. Implementation teams require `purpose: "owned-path implementation"`, `requirePlanApproval: true`, exclusive file ownership, non-empty `allowedOwnedPaths`, and fresh verification commands.
+5. If runtime isolation, tool limits, or event/session state cannot be preserved, degrade to single-coordinator execution and record `recordDegradedPath: true` in workflow evidence.
 
 ## Team Leader Agent Policy (Bias for Action)
 
@@ -404,11 +439,12 @@ Report generated after team execution:
 
 ## Integration with Orchestrator
 
-Automatically invoked by `moonshot-orchestrator`:
+`moonshot-orchestrator` may select this skill only after the fanout contract is explicit:
 
 ```yaml
 # analysisContext.signals
-useAgentTeams: true          # enabled by --use-teams
+useAgentTeams: true
+agentFanoutContractApproved: true
 
 # analysisContext.decisions
 skillChain:
@@ -422,6 +458,8 @@ Team trigger guide (aligned with orchestrator schema):
 1. `analysis-team`/`research-team`/`planning-team`: use in PM analysis stages (2.1~2.5).
 2. `impl-team`/`cross-layer-team`: use for complex implementation stages.
 3. `review-team`/`quality-team`/`verify-team`/`fix-team`: use after implementation or on failure events.
+
+These triggers are candidates only. They do not run unless `agentFanoutContractApproved == true`.
 
 Pattern selection guide:
 1. choose `fanout-fanin` for parallel analysis, review, and validation

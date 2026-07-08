@@ -9,6 +9,9 @@
 - No completion wording without fresh evidence; review findings stay open until `QA_REPORT.md` records disposition.
 - Tool selection, skipped components, schema loading mode, and approval-required operations must be represented in runtime evidence when the runtime control plane is available.
 - Unauthorized approval-required operations are blockers, not warnings.
+- Multi-agent fanout is default-deny. Use `moonshot-teams-runner` only when `agentFanoutContractApproved` is backed by an operator request, accepted plan graph, or reviewed handoff.
+- Dynamic decomposition can draft a run plan, but it cannot expand scope, worker count, write access, or budget without the local `agentFanoutContract`.
+- Nested teams and default implementation fanout are forbidden; implementation fanout requires owned paths, plan approval, and fresh verification commands.
 - Medium/complex or phase work keeps `SPRINT_CONTRACT`, `QA_REPORT`, `HANDOFF`.
 - Checkpoints, partial success, setup, milestones, refreshes, and progress reports do not justify stopping.
 - Continue until done criteria are met or in-scope work is exhausted without a stop condition.

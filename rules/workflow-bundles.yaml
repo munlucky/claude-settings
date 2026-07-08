@@ -2,6 +2,27 @@ schemaVersion: 1
 registryId: moonshot-workflow-bundles
 description: Canonical bundle routing registry for Moonshot internal sequence decisions.
 
+agentFanoutPolicy:
+  default: deny
+  requiredSignal: agentFanoutContractApproved
+  contractField: agentFanoutContract
+  maxNestedDepth: 0
+  allowedPurposes:
+    - research
+    - review
+    - verification
+    - owned-path implementation
+  implementationRequirements:
+    - explicit operator request, accepted plan graph, or reviewed handoff
+    - exclusive ownedPaths
+    - requirePlanApproval
+    - non-empty allowedOwnedPaths
+    - fresh verification commands
+  deniedByDefault:
+    - complexity-only routing
+    - automatic implementation fanout
+    - nested teams or dynamic workflows
+
 planes:
   read_only:
     defaultBundle: review-bundle
@@ -81,3 +102,5 @@ parallelGroups:
   forbidden:
     - [implementation-runner, codex-validate-plan]
     - [implementation-runner, completion-verifier]
+    - [implementation-runner, implementation-runner]
+    - [moonshot-teams-runner, moonshot-teams-runner]

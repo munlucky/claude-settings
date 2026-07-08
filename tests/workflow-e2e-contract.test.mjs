@@ -1708,6 +1708,37 @@ test('strict workflow overlay keeps workspace isolation but does not insert depr
   assert.doesNotMatch(workflow, /Strict runs pass `workspace-isolation-gate` before implementation and `verification-evidence-gate`/);
 });
 
+test('workflow registry and teams template keep multi-agent fanout opt-in', async () => {
+  const bundles = await readRoot('rules', 'workflow-bundles.yaml');
+  const template = await readRoot('templates', 'agent-teams-config.yaml');
+  const teamsRunner = await readRoot('skills', 'moonshot-teams-runner', 'SKILL.md');
+
+  assert.match(bundles, /agentFanoutPolicy:/);
+  assert.match(bundles, /default:\s*deny/);
+  assert.match(bundles, /requiredSignal:\s*agentFanoutContractApproved/);
+  assert.match(bundles, /maxNestedDepth:\s*0/);
+  assert.match(bundles, /automatic implementation fanout/);
+  assert.match(bundles, /\[implementation-runner, implementation-runner\]/);
+  assert.match(bundles, /\[moonshot-teams-runner, moonshot-teams-runner\]/);
+
+  assert.match(template, /agentFanoutContract:/);
+  assert.match(template, /default:\s*"deny"/);
+  assert.match(template, /requiredSignal:\s*"agentFanoutContractApproved"/);
+  assert.match(template, /maxNestedDepth:\s*0/);
+  assert.match(template, /defaultWriteAccess:\s*"deny"/);
+  assert.match(template, /requiredOutputShape:\s*"teamReport"/);
+
+  const triggerBlock = template.match(/triggers:\n([\s\S]*?)\n\n# Global Settings/)?.[1] || '';
+  const triggerConditions = [...triggerBlock.matchAll(/condition:\s*"([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(triggerConditions.length >= 9, 'expected teams template trigger conditions');
+  for (const condition of triggerConditions) {
+    assert.match(condition, /signals\.agentFanoutContractApproved == true/, condition);
+  }
+
+  assert.match(teamsRunner, /These triggers are candidates only/);
+  assert.match(teamsRunner, /agentFanoutContractApproved == true/);
+});
+
 test('product architecture handoff routes to bounded or phase execution without live adoption first', async () => {
   const product = await readRoot('skills', 'product-orchestrator', 'SKILL.md');
   const planWriter = await readRoot('skills', 'moonshot-plan-writer', 'SKILL.md');

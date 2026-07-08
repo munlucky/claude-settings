@@ -78,7 +78,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `daily-retro-workflow.md` / `daily-retro-workflow.ko.md` | operational-procedure | planned retro schemas, templates, tools, skill, and tests |
 | `demo-first-mvp-gate.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/product-gate-reviewer/**` |
 | `document-memory-policy.md` | policy-anchor | `agents/*memory*`, `skills/doc-auto-sync/**`, `skills/commit-moonshot/**` |
-| `external-skill-pattern-transfer.md` | policy-anchor | `skills/moonshot-relay-maintainer/**` |
+| `external-skill-pattern-transfer.md` | policy-anchor | `skills/moonshot-relay-maintainer/**`, `skills/moonshot-teams-runner/**`, `rules/workflow*`, `templates/agent-teams-config.yaml` |
 | `harness-bootstrap-lab.md` | operational-procedure | `tools/harness-lab/harness-lab.mjs`, `tests/harness-lab-contract.test.mjs` |
 | `knowledge-repository-ops.md` | policy-anchor | `scripts/knowledge-*.mjs`, `docs/public/project-knowledge-plane.md` |
 | `long-running-harness.ko.md` | policy-anchor | `skills/moonshot-phase-runner/**`, `skills/moonshot-in-session-coordinator/**` |

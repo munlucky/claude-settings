@@ -11,6 +11,28 @@ prerequisites:
   claudeVersion: "2.1.32"
   envFlag: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
 
+# Provider-neutral safety gate.
+# Agent teams are never enabled by complexity alone. A coordinator must provide
+# this local contract from an operator request, accepted plan graph, or reviewed
+# handoff before any team is started.
+agentFanoutContract:
+  default: "deny"
+  requiredSignal: "agentFanoutContractApproved"
+  allowedSources:
+    - "operator_request"
+    - "accepted_plan_graph"
+    - "reviewed_handoff"
+  maxWorkers: 3
+  maxNestedDepth: 0
+  defaultWriteAccess: "deny"
+  requiredOutputShape: "teamReport"
+  implementationRequires:
+    - "purpose == owned-path implementation"
+    - "requirePlanApproval == true"
+    - "fileOwnership.strategy == exclusive"
+    - "allowedOwnedPaths is non-empty"
+    - "verificationCommands is non-empty"
+
 # Pattern Definitions
 patterns:
   pipeline:
@@ -512,37 +534,40 @@ orchestratorHooks:
     # 기존 트리거
     - team: "review-team"
       after: "implementation-runner"
-      condition: "analysisContext.complexity in ['high', 'critical']"
+      condition: "signals.agentFanoutContractApproved == true && analysisContext.complexity in ['high', 'critical']"
     - team: "research-team"
       before: "context-builder"
-      condition: "analysisContext.estimates.estimatedFiles > 10"
+      condition: "signals.agentFanoutContractApproved == true && analysisContext.estimates.estimatedFiles > 10"
     - team: "planning-team"
       after: "moonshot-plan-writer"
-      condition: "analysisContext.complexity in ['high', 'critical']"
+      condition: "signals.agentFanoutContractApproved == true && analysisContext.complexity in ['high', 'critical']"
     - team: "quality-team"
       after: "completion-verifier"
-      condition: "signals.useAgentTeams == true"
+      condition: "signals.agentFanoutContractApproved == true && signals.useAgentTeams == true"
     - team: "analysis-team"
       before: "moonshot-classify-task"
-      condition: "signals.useAgentTeams == true"
+      condition: "signals.agentFanoutContractApproved == true && signals.useAgentTeams == true"
     - team: "fix-team"
       after: "build-error-resolver"
-      condition: "signals.buildFailed == true"
+      condition: "signals.agentFanoutContractApproved == true && signals.buildFailed == true"
     # 🆕 새 트리거
     - team: "impl-team"
       after: "moonshot-plan-writer"
-      condition: "signals.useParallelImpl == true && analysisContext.estimates.estimatedFiles > 3"
+      condition: "signals.agentFanoutContractApproved == true && signals.useParallelImpl == true && analysisContext.estimates.estimatedFiles > 3"
     - team: "cross-layer-team"
       after: "moonshot-plan-writer"
-      condition: "signals.crossLayerChange == true"
+      condition: "signals.agentFanoutContractApproved == true && signals.crossLayerChange == true"
     - team: "debug-team"
       on: "debug-request"
-      condition: "signals.debugMode == true"
+      condition: "signals.agentFanoutContractApproved == true && signals.debugMode == true"
 
 # Global Settings
 settings:
   logDirectory: ".claude/logs/teams/"
   maxConcurrentTeams: 1  # 동시 팀 실행 제한 (세션당 하나)
+  defaultFanout: "deny"
+  maxWorkers: 3
+  maxNestedDepth: 0
   defaultTimeout: 300
   defaultDelegationMode: true  # 모든 리더에 기본 적용
   defaultCommunication: true   # 모든 팀에 통신 기본 활성화

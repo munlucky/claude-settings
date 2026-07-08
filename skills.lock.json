@@ -525,7 +525,7 @@
       "name": "moonshot-teams-runner",
       "path": "skills/moonshot-teams-runner",
       "source": "canonical",
-      "contentHash": "5b84bc42acca27fc85fd2d3dfba7f266b5657d0637c293f5e83117bc00afb506",
+      "contentHash": "bcfa8f56d8931870d3605dd0bddd43073c71ed735c30ca561daae76e937a869c",
       "license": "MIT",
       "stages": [],
       "permissions": [],

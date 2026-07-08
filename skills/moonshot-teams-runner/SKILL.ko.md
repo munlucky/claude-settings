@@ -16,6 +16,8 @@ Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 동등한 격
 
 이 스킬은 phase completion loop의 owner가 아닙니다. phase 기반 구현에서는 `moonshot-phase-runner`가 public entrypoint로 남아 plan-directory completion, return-boundary checks, automatic phase-wave parallelization을 소유합니다. teams-runner는 phase runner loop의 대체물이 아니라 analysis/review/verification helper로 사용합니다.
 
+기본 multi-agent fanout은 금지입니다. 이 스킬은 operator request, accepted plan graph, reviewed handoff에서 명시된 `agentFanoutContract`가 있을 때만 실행할 수 있습니다. 복잡도만으로는 트리거하지 않습니다.
+
 ## 런타임 실행 모드
 
 - `claude-code` 모드:
@@ -26,6 +28,39 @@ Claude 런타임에서는 Agent Teams를, Codex 런타임에서는 동등한 격
   - 현재 Codex 세션은 coordinator로만 유지하고 구조화된 summary만 병합합니다.
   - 어떤 member가 격리를 유지할 수 없으면 degraded path를 notes 또는 workflow evidence에 명시적으로 남깁니다.
   - Claude Agent Teams 플래그나 `mcp__codex__codex` 의존은 없습니다.
+
+## Fanout 안전 계약
+
+팀을 시작하기 전에 아래 계약을 검증하고 기록합니다.
+
+```yaml
+agentFanoutContract:
+  enabled: true
+  source: "operator_request | accepted_plan_graph | reviewed_handoff"
+  purpose: "research | review | verification | owned-path implementation"
+  coordinator: "current_session | forked_leader | external_runner"
+  environment: "local | sandbox | self_hosted | managed"
+  maxWorkers: 3
+  maxNestedDepth: 0
+  isolation:
+    contextInput: "artifact_summary"
+    outputShape: "teamReport"
+    toolBoundary: "read_only | owned_paths | verifier_only"
+  writeAccess:
+    default: "deny"
+    allowedOwnedPaths: []
+  verification:
+    required: true
+    mergeStrategy: "severity_first | source_aware | debate_resolution | ownership_aware"
+```
+
+필수 게이트:
+
+1. `enabled`는 true여야 하며 `source`는 로컬 decision artifact 또는 명시적 operator request여야 합니다.
+2. `maxNestedDepth`는 `0`이어야 합니다. 멤버는 sub-team이나 dynamic workflow를 생성할 수 없습니다.
+3. research, review, verification 팀은 읽기 전용으로 유지합니다.
+4. implementation 팀은 `purpose: "owned-path implementation"`, `requirePlanApproval: true`, exclusive file ownership, 비어 있지 않은 `allowedOwnedPaths`, fresh verification commands가 필요합니다.
+5. 런타임 격리, 도구 제한, event/session state를 보존할 수 없으면 single-coordinator execution으로 degrade하고 workflow evidence에 `recordDegradedPath: true`를 기록합니다.
 
 ## Team Leader Agent 정책 (Bias for Action)
 
@@ -404,11 +439,12 @@ teamReport:
 
 ## 오케스트레이터 통합
 
-`moonshot-orchestrator`에서 자동으로 호출됩니다:
+`moonshot-orchestrator`는 fanout 계약이 명시된 뒤에만 이 스킬을 선택할 수 있습니다.
 
 ```yaml
 # analysisContext.signals
-useAgentTeams: true          # --use-teams로 활성화
+useAgentTeams: true
+agentFanoutContractApproved: true
 
 # analysisContext.decisions
 skillChain:
@@ -422,6 +458,8 @@ notes:
 1. `analysis-team`/`research-team`/`planning-team`: PM 분석 단계(2.1~2.5)에서 사용합니다.
 2. `impl-team`/`cross-layer-team`: 복잡한 구현 단계에서 사용합니다.
 3. `review-team`/`quality-team`/`verify-team`/`fix-team`: 구현 이후 또는 실패 이벤트 발생 시 사용합니다.
+
+이 트리거들은 후보일 뿐입니다. `agentFanoutContractApproved == true`가 아니면 실행하지 않습니다.
 
 패턴 선택 가이드:
 1. 병렬 분석, 리뷰, 검증에는 `fanout-fanin`

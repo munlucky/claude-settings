@@ -146,6 +146,37 @@ test('public guidelines are resolved from docs/public and classified', async () 
   assert.deepEqual(missing, []);
 });
 
+test('external dynamic workflow patterns stay provider-neutral and fanout default-deny', async () => {
+  const guideline = await readFile(fromRoot('docs/public/guidelines/external-skill-pattern-transfer.md'), 'utf8');
+  const teamsRunner = await readFile(fromRoot('skills/moonshot-teams-runner/SKILL.md'), 'utf8');
+  const teamsRunnerKo = await readFile(fromRoot('skills/moonshot-teams-runner/SKILL.ko.md'), 'utf8');
+  const workflow = await readFile(fromRoot('rules/workflow.md'), 'utf8');
+  const delegation = await readFile(fromRoot('rules/agents/agent-delegation.md'), 'utf8');
+  const repositoryLayout = await readFile(fromRoot('docs/public/repository-layout.md'), 'utf8');
+  const combined = `${guideline}\n${teamsRunner}\n${teamsRunnerKo}\n${workflow}\n${delegation}`;
+
+  assert.match(guideline, /Managed agent shape/);
+  assert.match(guideline, /Dynamic work decomposition/);
+  assert.match(guideline, /provider runtime coupling/i);
+  assert.match(guideline, /agentFanoutContract:/);
+  assert.match(guideline, /default[s]? to single-coordinator execution/i);
+  assert.match(guideline, /maxNestedDepth:\s*0/);
+  assert.match(guideline, /writeAccess:[\s\S]*default:\s*"deny"/);
+
+  for (const content of [teamsRunner, teamsRunnerKo, workflow, delegation]) {
+    assert.match(content, /agentFanoutContract/);
+    assert.match(content, /default[- ]deny|default multi-agent fanout is denied|기본 .*fanout.*금지/i);
+    assert.match(content, /maxNestedDepth.*0|nested teams|중첩/i);
+  }
+
+  assert.match(combined, /owned-path implementation/);
+  assert.match(combined, /requirePlanApproval:\s*true|requirePlanApproval.*true/);
+  assert.match(combined, /allowedOwnedPaths/);
+  assert.match(combined, /fresh verification commands|fresh verification/i);
+  assert.doesNotMatch(combined, /requires Claude-specific|must require Claude-specific|should require Claude-specific/i);
+  assert.match(repositoryLayout, /external-skill-pattern-transfer\.md[\s\S]*moonshot-teams-runner[\s\S]*rules\/workflow\*/);
+});
+
 test('minimal-correct implementation guideline is wired into implementation flows', async () => {
   const requiredRef = 'docs/public/guidelines/minimal-correct-implementation.md';
   const files = [
