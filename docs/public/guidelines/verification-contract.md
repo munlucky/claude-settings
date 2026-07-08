@@ -21,6 +21,10 @@ Verification profiles separate task-scope summary evidence from final completion
 
 Task verification classification is fail-closed. Unknown task class is `needs_classification`; frontend/UI work requires browser evidence by default, route/API integration work requires integration evidence by default, and docs-only work does not require browser evidence by default. A waiver must include a reason and approver.
 
+Spec-Test Obligations compile plan-document items into verification duties. Every in-scope `REQ-*`, every `SCN-*`, and every UAT-critical item needs a `specTestObligations` row. The validator command is `scripts/spec-test-obligations.mjs validate --json`, and completion summaries must include its result with `scripts/verification-plane.mjs record-summary --spec-test-obligations-json <json>` for phase closeout or completion claims. Missing validator output maps to `spec_test_obligation_result_missing`. Blocking findings keep `requiredChecksPassed=false` and `scripts/runtime-state.mjs assess-completion` must reject clean finish.
+
+`verificationMode: tdd_red_green` is the default for behavior-changing work. Use `characterization_first` only when a brownfield/current behavior pin is needed, and use `evidence_mandatory` only with a command, evidence path, and reason. `not_applicable` is limited to non-behavioral items with a reason.
+
 Browser completion result artifacts are evidence only. They use `artifactId=BROWSER_COMPLETION_RESULT`, `completionAuthority=false`, and `authoritySource=evidence_only`; they must not be confused with H0 `lab-result.json` or treated as runtime-state completion authority. Critical scenarios cannot cleanly close from smoke-only or `flaky_pass` browser evidence.
 
 Verification summaries expose two additive projection fields:

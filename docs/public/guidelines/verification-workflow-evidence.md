@@ -16,6 +16,8 @@ This guideline owns workflow evidence closeout policy for `completion-verifier`.
 - In-scope `REQ-*` rows need implementation and verification evidence or a blocker.
 - Critical `SCN-*` rows need fresh runtime, browser, generated artifact, or E2E evidence.
 - Smoke-only evidence for critical scenarios is warning evidence, not clean-finish evidence.
+- Spec-Test Obligations are required when plan artifacts enumerate `REQ-*`, `SCN-*`, or UAT-critical items. Run `scripts/spec-test-obligations.mjs validate --json`; pass failures to `scripts/verification-plane.mjs record-summary --spec-test-obligations-json` so `assess-completion` can reject clean finish.
+- Valid `verificationMode` values are `tdd_red_green`, `characterization_first`, `evidence_mandatory`, and `not_applicable`. TDD is the default for behavior-changing rows.
 - Browser completion result artifacts are verification-plane inputs only; runtime-state `assess-completion` remains the accepted completion authority.
 - Agentic browser confirmation is a semantic review evidence layer after deterministic Playwright evidence. It cannot replace Playwright failures, mutate scenario expectations, or claim completion authority.
 - Review-critique-loop receipts are semantic review evidence only. Completion claims and phase closeout must fail closed when the receipt is missing, tampered, blocking, mismatched to the candidate/source/bundle, or contaminated with raw prompts or transcripts.
@@ -30,6 +32,7 @@ This guideline owns workflow evidence closeout policy for `completion-verifier`.
 ## Closeout Policy
 
 - Non-empty `workflowEvidence.warnings` prevents clean `gateDecision: pass` in strict runs and must be surfaced in standard runs.
+- Blocking Spec-Test Obligation findings prevent clean `gateDecision: pass`, including `spec_test_obligation_result_missing`, `spec_test_obligation_missing`, `tdd_red_evidence_missing`, `tdd_green_evidence_missing`, `required_spec_test_not_run`, `critical_scenario_smoke_only`, `characterization_pin_missing`, `uat_critical_obligation_missing`, and `duplicate_spec_test_obligation`.
 - Missing required frontend, browser, accessibility, visual, or performance backends are setup gaps when the source contract declares them.
 - `QA_REPORT.md` should track review finding decisions as `accepted`, `challenged`, `deferred`, or `needs_clarification`.
 - `HANDOFF.md` should contain concrete continuation steps when verification is blocked or deferred.

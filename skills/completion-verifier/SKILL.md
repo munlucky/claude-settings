@@ -53,9 +53,10 @@ Use these owners instead of duplicating their rules in this prompt:
 2. Determine the applicable profile and required checks from the contract, `TEST_GUIDE.md`, project docs, or fallback detection.
 3. Run executable checks that are in scope and record command/provenance for every completion-relevant claim.
 4. When verification plane evidence is available, record it through `scripts/verification-plane.mjs record-summary --json`.
-5. Read score, traceability, scenario, UAT, workflow evidence, agent operating policy evidence, and QA report state using `docs/public/guidelines/verification-workflow-evidence.md`.
-6. Run or request `scripts/runtime-state.mjs assess-completion --json` for whole-plan completion authority when available.
-7. Return the output shape below. Degrade to `failed` or `pass_with_warning` instead of inferring a clean pass.
+5. When plan artifacts contain `specTestObligations`, run `scripts/spec-test-obligations.mjs validate --json` and pass its JSON to `record-summary` with `--spec-test-obligations-json`.
+6. Read score, traceability, scenario, UAT, workflow evidence, agent operating policy evidence, and QA report state using `docs/public/guidelines/verification-workflow-evidence.md`.
+7. Run or request `scripts/runtime-state.mjs assess-completion --json` for whole-plan completion authority when available.
+8. Return the output shape below. Degrade to `failed` or `pass_with_warning` instead of inferring a clean pass.
 
 ## Output Shape
 
@@ -84,6 +85,10 @@ completionStatus:
     scenariosMissingEvidence: []
     uatReady: true | false
     uatComplete: true | false
+  specTestObligations:
+    status: pass | fail | missing | not_applicable
+    missing: []
+    blockers: []
   taskLocalCompletion:
     status: complete | blocked | missing
   wholePlanAuthority:
@@ -107,7 +112,7 @@ qaReport:
 
 ## Passing Rule
 
-`gateDecision: pass` is allowed only when all applicable checks are fresh, required checks are complete, workflow evidence has no blocking warnings, score verdict is `done`, linked acceptance criteria are passing or explicitly `not_applicable`, critical scenarios have fresh evidence, UAT is ready for user-facing finish claims, and accepted runtime-state completion authority is present when required.
+`gateDecision: pass` is allowed only when all applicable checks are fresh, required checks are complete, required `specTestObligations` validator output exists and has no blocking findings, workflow evidence has no blocking warnings, score verdict is `done`, linked acceptance criteria are passing or explicitly `not_applicable`, critical scenarios have fresh evidence, UAT is ready for user-facing finish claims, and accepted runtime-state completion authority is present when required.
 
 ## Failure And Handoff
 

@@ -1035,6 +1035,14 @@ function verificationPlaneBlocker(evidencePayload) {
     return '';
   }
 
+  const taskEvidenceBlockers = Array.isArray(evidencePayload.taskEvidenceBlockers)
+    ? evidencePayload.taskEvidenceBlockers
+    : [];
+  const specTestBlocker = taskEvidenceBlockers.find((blocker) => /^spec_|^tdd_|^critical_scenario_|^uat_critical_|^characterization_|^behavior_changing_|^invalid_spec_test_|^required_spec_test_/.test(String(blocker?.code || '')));
+  if (evidencePayload.requiredChecksPassed !== true && specTestBlocker) {
+    return `${specTestBlocker.code}: ${specTestBlocker.reason || 'spec-test obligation blocker'}`;
+  }
+
   const requiredPlanes = Array.isArray(evidencePayload.completionAuthorityRequiredPlanes)
     ? evidencePayload.completionAuthorityRequiredPlanes
     : ['unit', 'package', 'installer', 'browser', 'security', 'quality'];
@@ -1066,9 +1074,6 @@ function verificationPlaneBlocker(evidencePayload) {
   }
 
   if (evidencePayload.requiredChecksPassed !== true) {
-    const taskEvidenceBlockers = Array.isArray(evidencePayload.taskEvidenceBlockers)
-      ? evidencePayload.taskEvidenceBlockers
-      : [];
     return taskEvidenceBlockers[0]?.reason || evidencePayload.reason || 'verification checks did not pass';
   }
 

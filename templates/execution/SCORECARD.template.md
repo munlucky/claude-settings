@@ -26,6 +26,7 @@
 | OBJ-VER | Required verification commands passed | 20 | pending/pass/fail |  |  |
 | OBJ-CLOSE | Review, finish closeout, and workflow-surface consistency recorded | 10 | pending/pass/fail |  |  |
 | OBJ-MIN | Minimal-correct implementation ladder checked; lower-rung reuse/skip/new-surface decision recorded | 5 | pending/pass/fail |  | `docs/public/guidelines/minimal-correct-implementation.md` |
+| OBJ-SPEC-TEST | Spec-Test Obligations covered | 10 | pending/pass/fail |  | `spec_test_obligation_result_missing`, `spec_test_obligation_missing`, `tdd_red_evidence_missing`, `tdd_green_evidence_missing`, `required_spec_test_not_run`, `critical_scenario_smoke_only`, and `duplicate_spec_test_obligation` must be zero |
 
 ## Frontend Preset Objectives
 
@@ -73,6 +74,17 @@ Use this section for harness, workflow, skill, or documentation changes.
 | Deprecated skills are not presented as default stage owners | pending/pass/fail |  |
 | Bundle references point to existing assets or documented aliases | pending/pass/fail |  |
 | Stage map still covers Intake, Plan, Ready / Isolate, Execute, Review, Verify, Finish / Handoff | pending/pass/fail |  |
+
+## Spec-Test Obligation Score
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| `specTestObligations` row exists for every `REQ-*`, `SCN-*`, and UAT-critical item | pending/pass/fail |  |
+| `verificationMode` is valid for every row: `tdd_red_green`, `characterization_first`, `evidence_mandatory`, or `not_applicable` | pending/pass/fail |  |
+| `interface`, `depth`, and `environment` are populated independently | pending/pass/fail |  |
+| TDD rows include `redCommand`, `redEvidencePath`, `greenCommand`, and `greenEvidencePath` | pending/pass/fail |  |
+| Exception rows include `requiredCommand`, `evidencePath`, and `bypassReason` | pending/pass/fail |  |
+| Critical scenario rows are not smoke-only when deeper evidence is required | pending/pass/fail |  |
 
 ## Score Summary
 - Current score: 0

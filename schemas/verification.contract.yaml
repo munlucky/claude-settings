@@ -225,6 +225,7 @@ artifacts:
   requirementsTraceability: "{tasksRoot}/{feature-name}/execution/REQUIREMENTS_TRACEABILITY.md"
   scenarioMatrix: "{tasksRoot}/{feature-name}/execution/SCENARIO_MATRIX.md"
   uatChecklist: "{tasksRoot}/{feature-name}/execution/UAT_CHECKLIST.md"
+  specTestObligations: "{tasksRoot}/{feature-name}/execution/<slice>/spec-test-obligations.json"
   teamMetrics: ".claude/team-metrics-<runId>.json"
 strict:
   required: true
@@ -292,6 +293,18 @@ qa:
     - "verification_evidence_missing"
     - "requirements_traceability_missing"
     - "critical_scenario_evidence_missing"
+    - "spec_test_obligation_result_missing"
+    - "spec_test_obligation_missing"
+    - "tdd_red_evidence_missing"
+    - "tdd_green_evidence_missing"
+    - "required_spec_test_not_run"
+    - "critical_scenario_smoke_only"
+    - "invalid_spec_test_bypass"
+    - "invalid_depth_interface_combo"
+    - "characterization_pin_missing"
+    - "behavior_changing_default_missing"
+    - "uat_critical_obligation_missing"
+    - "duplicate_spec_test_obligation"
   criteria:
     policyPropagation:
       threshold: "pass"

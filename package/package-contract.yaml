@@ -167,6 +167,8 @@ requiredPayloadEntries:
       purpose: runtime_tooling
     - source: schemas/**
       purpose: machine_readable_contracts
+    - source: schemas/spec-test-obligation.schema.json
+      purpose: plan_item_test_obligation_validator_result_contract
     - source: schemas/browser-completion-result.schema.json
       purpose: browser_completion_evidence_only_result_contract
     - source: schemas/context-pack.schema.json
@@ -360,6 +362,8 @@ requiredPayloadEntries:
         purpose: runtime_state_control_plane_cli
       - source: scripts/skills-audit.mjs
         purpose: skills_lock_supply_chain_audit
+      - source: scripts/spec-test-obligations.mjs
+        purpose: spec_item_test_obligation_validator_cli
       - source: scripts/lib/skills-lock.mjs
         purpose: skills_lock_audit_support
       - source: scripts/verification-plane.mjs

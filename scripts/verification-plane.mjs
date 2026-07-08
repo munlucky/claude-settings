@@ -83,6 +83,7 @@ const main = async () => {
         : undefined,
       taskVerificationClass: parseJsonOption(options.taskClassJson || options.taskJson, '--task-class-json', null),
       browserCompletionResult: parseJsonOption(options.browserResultJson, '--browser-result-json', null),
+      specTestObligations: parseJsonOption(options.specTestObligationsJson, '--spec-test-obligations-json', null),
       reviewCritiqueLoopReceipt: parseJsonOption(options.reviewCritiqueLoopJson || options.reviewReceiptJson, '--review-critique-loop-json', null),
       repairLoopReceipt: parseJsonOption(options.repairLoopJson, '--repair-loop-json', null),
       completionClaim: options.completionClaim === 'true',

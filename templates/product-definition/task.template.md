@@ -49,6 +49,32 @@
 - Refactor boundary:
 - Bypass reason and alternate verification, if any:
 
+## Spec-Test Obligations Seed
+- Generate one `specTestObligations` row for every detailed `REQ-*`, every `SCN-*`, and every UAT-critical item in this task.
+- Behavior-changing rows default to `verificationMode: tdd_red_green`.
+- Use `characterization_first` only when current brownfield behavior must be pinned before change.
+- Use `evidence_mandatory` only with `requiredCommand`, `evidencePath`, and `bypassReason`.
+- Populate `interface`, `depth`, and `environment` independently.
+
+```spec-obligations
+specTestObligations:
+  - id: REQ-001
+    source: TASK.md#REQ-001
+    behaviorChanging: true
+    verificationMode: tdd_red_green | characterization_first | evidence_mandatory | not_applicable
+    interface: code | api | cli | ui | browser
+    depth: unit | component | integration | ui_integration | e2e | broad_stack
+    environment: hermetic | local | docker | preview | staging | canary
+    redCommand: ""
+    redEvidencePath: ""
+    greenCommand: ""
+    greenEvidencePath: ""
+    requiredCommand: ""
+    evidencePath: ""
+    bypassReason: ""
+    status: pending | pass | fail | not_applicable
+```
+
 ## Contract Seed
 - Round goal
 - Explicit non-goals

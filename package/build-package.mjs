@@ -110,6 +110,7 @@ const runtimeSpecs = {
       'scripts/review-bundle-build.mjs',
       'scripts/runtime-state.mjs',
       'scripts/skills-audit.mjs',
+      'scripts/spec-test-obligations.mjs',
       'scripts/lib/skills-lock.mjs',
       'scripts/lib/runtime-state-store.mjs',
       'scripts/verification-plane.mjs',

@@ -32,6 +32,18 @@ const runGuard = (args, input = {}) => spawnSync(process.execPath, [
   },
 });
 
+const runRuntimeState = (args, dbPath) => spawnSync(process.execPath, [
+  'scripts/runtime-state.mjs',
+  ...args,
+], {
+  cwd: root,
+  encoding: 'utf8',
+  env: {
+    ...process.env,
+    PHASE_RUNTIME_DB: dbPath,
+  },
+});
+
 const parseJson = (result) => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return JSON.parse(result.stdout);
@@ -181,4 +193,55 @@ test('final guard treats all-complete phase projection without completion author
   assert.equal(payload.status, 'completion_authority_missing');
   assert.equal(payload.hookOutput.decision, 'block');
   assert.match(payload.hookOutput.reason, /accepted completion decision/);
+});
+
+test('final guard reports latest spec-test obligation blocker when all phases project complete', async () => {
+  const dir = await makeTempRoot();
+  const dbPath = path.join(dir, 'runtime-state.sqlite');
+  const statusFile = await writeStatus(dir, [
+    { doc: '01-contract-v1.md', status: 'complete' },
+    { doc: '02-validator-v1.md', status: 'complete' },
+  ], {
+    runId: 'run-spec-obligation-guard',
+    goalId: 'goal-spec-obligation-guard',
+  });
+  assert.equal(runRuntimeState(['init', '--json'], dbPath).status, 0);
+  assert.equal(runRuntimeState([
+    'record-event',
+    '--run-id',
+    'run-spec-obligation-guard',
+    '--goal-id',
+    'goal-spec-obligation-guard',
+    '--event-type',
+    'verification.evidence',
+    '--severity',
+    'blocking',
+    '--payload-json',
+    JSON.stringify({
+      fresh: true,
+      requiredChecksPassed: false,
+      taskEvidenceBlockers: [
+        { code: 'spec_test_obligation_missing', reason: 'REQ-002 has no specTestObligations row' },
+      ],
+    }),
+    '--json',
+  ], dbPath).status, 0);
+
+  const payload = parseJson(runGuard([
+    '--mode',
+    'claude-stop',
+    '--status-file',
+    statusFile,
+    '--db',
+    dbPath,
+    '--json',
+  ], {
+    hook_event_name: 'Stop',
+    last_assistant_message: '전체 작업 완료했습니다.',
+  }));
+
+  assert.equal(payload.status, 'completion_authority_missing');
+  assert.equal(payload.hookOutput.decision, 'block');
+  assert.match(payload.hookOutput.reason, /spec_test_obligation_missing/);
+  assert.match(payload.hookOutput.reason, /REQ-002/);
 });

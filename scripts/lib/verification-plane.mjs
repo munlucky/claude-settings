@@ -912,6 +912,7 @@ export function buildVerificationSummary({
   requiredPlanes = null,
   taskVerificationClass = null,
   browserCompletionResult = null,
+  specTestObligations = null,
   reviewCritiqueLoopReceipt = null,
   repairLoopReceipt = null,
   completionClaim = false,
@@ -978,6 +979,32 @@ export function buildVerificationSummary({
   if (taskClass?.requiresIntegrationEvidence && !planeByName.has('package')) {
     taskEvidenceBlockers.push({ code: 'integration_evidence_missing', reason: 'missing package/integration evidence for integration-required task' });
   }
+  const specTestResultRequired = toBool(completionClaim)
+    || toBool(phaseCloseout)
+    || identity?.completionClaim === true
+    || identity?.phaseCloseout === true
+    || identity?.closeoutIntent === true;
+  if (specTestResultRequired && !specTestObligations) {
+    taskEvidenceBlockers.push({
+      code: 'spec_test_obligation_result_missing',
+      reason: 'spec-test obligation validator result is required for completion claim or phase closeout',
+    });
+  }
+  if (specTestObligations?.status === 'fail') {
+    const findings = Array.isArray(specTestObligations.findings) ? specTestObligations.findings : [];
+    for (const entry of findings.filter((finding) => finding?.severity !== 'warning')) {
+      taskEvidenceBlockers.push({
+        code: entry.class || 'spec_test_obligation_failed',
+        reason: `${entry.id || 'spec'}: ${entry.message || entry.class || 'spec-test obligation failed'}`,
+      });
+    }
+    if (findings.length === 0) {
+      taskEvidenceBlockers.push({
+        code: 'spec_test_obligation_failed',
+        reason: 'spec-test obligations failed',
+      });
+    }
+  }
   const normalizedReviewReceipt = reviewCritiqueLoopReceipt
     ? normalizeReviewCritiqueLoopReceipt(reviewCritiqueLoopReceipt)
     : null;
@@ -1037,6 +1064,7 @@ export function buildVerificationSummary({
     profile,
     taskVerificationClass: taskClass,
     browserCompletionResult: browserCompletionResult || null,
+    specTestObligations: specTestObligations || null,
     reviewCritiqueLoopReceipt: normalizedReviewReceipt,
     reviewCritiqueLoopRequired: Boolean(reviewRequired),
     repairLoopReceipt: repairLoopReceipt || null,

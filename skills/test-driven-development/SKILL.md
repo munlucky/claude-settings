@@ -13,6 +13,8 @@ Require a test-first discipline for behavior-changing work before `implementatio
 This is an internal Execute-stage owner.
 Users should normally enter through `moonshot-orchestrator` or `moonshot-phase-runner`, not this skill directly.
 
+For plan-document work, treat the detailed spec item as the TDD unit. Each behavior-changing `REQ-*`, `SCN-*`, or UAT-critical item should have a `specTestObligations` row with `verificationMode: tdd_red_green` unless `characterization_first` or `evidence_mandatory` is explicitly justified.
+
 ## When to Use
 
 Use for:
@@ -24,6 +26,7 @@ Use for:
 
 May be bypassed only when the task is docs-only, read-only, or test-first evidence is genuinely infeasible.
 If bypassed, record why and name the alternate verification path.
+Bypass never removes the spec-test obligation. `evidence_mandatory` still needs `requiredCommand`, `evidencePath`, and `bypassReason`; `not_applicable` is limited to non-behavioral items.
 
 For meta-harness work, bypass is exceptional. MemoryGraph recall, manual diagnosis, or source inspection can justify what to test, but cannot replace RED/GREEN executable evidence.
 
@@ -57,6 +60,7 @@ tddEvidence:
 6. Repeat the next RED -> GREEN cycle only after the prior cycle is green.
 7. Refactor only after all active cycle tests are green and only inside the declared boundary.
 8. Record cycle evidence in `SPRINT_CONTRACT.md` and `QA_REPORT.md`.
+9. When plan artifacts contain `specTestObligations`, run `scripts/spec-test-obligations.mjs validate --json` and pass failures into `scripts/verification-plane.mjs record-summary --spec-test-obligations-json`.
 
 ## Meta-Harness Asset Rule
 

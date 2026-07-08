@@ -45,6 +45,48 @@ const createFakeBrowserctl = async (dir) => {
 
 const readRoot = async (...segments) => readFile(fromRoot(...segments), 'utf8');
 
+test('execution templates expose spec-test obligation contract fields', async () => {
+  const templateFiles = [
+    ['templates', 'execution', 'SPRINT_CONTRACT.template.md'],
+    ['templates', 'execution', 'QA_REPORT.template.md'],
+    ['templates', 'execution', 'REQUIREMENTS_TRACEABILITY.template.md'],
+    ['templates', 'execution', 'SCENARIO_MATRIX.template.md'],
+    ['templates', 'execution', 'SCORECARD.template.md'],
+    ['templates', 'product-definition', 'task.template.md'],
+  ];
+  const combined = (await Promise.all(templateFiles.map((file) => readRoot(...file)))).join('\n');
+
+  assert.match(combined, /Spec-Test Obligations/);
+  for (const field of [
+    'specTestObligations',
+    'verificationMode',
+    'tdd_red_green',
+    'characterization_first',
+    'evidence_mandatory',
+    'not_applicable',
+    'interface',
+    'depth',
+    'environment',
+    'redCommand',
+    'greenCommand',
+    'evidencePath',
+    'bypassReason',
+  ]) {
+    assert.match(combined, new RegExp(field));
+  }
+  for (const failureClass of [
+    'spec_test_obligation_result_missing',
+    'spec_test_obligation_missing',
+    'tdd_red_evidence_missing',
+    'tdd_green_evidence_missing',
+    'required_spec_test_not_run',
+    'critical_scenario_smoke_only',
+    'duplicate_spec_test_obligation',
+  ]) {
+    assert.match(combined, new RegExp(failureClass));
+  }
+});
+
 const parseYamlStringValue = (content, key) => {
   const match = new RegExp(`${key}:\\s*"([^"]+)"`).exec(content);
   return match ? match[1] : '';

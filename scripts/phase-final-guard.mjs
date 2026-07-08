@@ -220,12 +220,73 @@ async function readLatestCompletionDecision(dbPath, runId, goalId) {
   }
 }
 
-const buildResumeReason = ({ status, remainingPhases, latestCompletionDecision }) => {
+async function readLatestVerificationEvidence(dbPath, runId, goalId) {
+  if (!runId || !goalId || !await pathExists(dbPath)) {
+    return null;
+  }
+
+  let Database;
+  try {
+    Database = (await import('better-sqlite3')).default;
+  } catch (error) {
+    return {
+      status: 'unavailable',
+      reason: 'missing_native_module',
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  let db;
+  try {
+    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare(`
+      SELECT event_id, event_type, payload_json, created_at
+      FROM runtime_events
+      WHERE run_id = ?
+        AND goal_id = ?
+        AND event_type IN ('verification.evidence', 'verifier.evidence', 'verification.verdict')
+      ORDER BY event_sequence DESC, created_at DESC
+      LIMIT 1
+    `).get(runId, goalId);
+    if (!row) {
+      return null;
+    }
+    let payload = {};
+    try {
+      payload = JSON.parse(row.payload_json || '{}');
+    } catch {
+      payload = {};
+    }
+    return {
+      eventId: row.event_id,
+      eventType: row.event_type,
+      createdAt: row.created_at,
+      requiredChecksPassed: payload.requiredChecksPassed === true,
+      taskEvidenceBlockers: Array.isArray(payload.taskEvidenceBlockers) ? payload.taskEvidenceBlockers : [],
+    };
+  } catch (error) {
+    return {
+      status: 'unavailable',
+      reason: 'runtime_state_unreadable',
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    if (db) {
+      db.close();
+    }
+  }
+}
+
+const buildResumeReason = ({ status, remainingPhases, latestCompletionDecision, latestVerificationEvidence }) => {
   if (remainingPhases.length > 0) {
     const next = remainingPhases[0];
     return `Phase run is not complete. Continue ${next.doc || `phase ${next.number}`} (${next.status}).`;
   }
   if (!latestCompletionDecision || latestCompletionDecision.status !== 'accepted') {
+    const blocker = latestVerificationEvidence?.taskEvidenceBlockers?.[0];
+    if (blocker) {
+      return `All phase projections are complete, but verification evidence blocks accepted completion: ${blocker.code || 'verification_blocker'}: ${blocker.reason || 'no blocker reason recorded'}`;
+    }
     return 'All phase projections are complete, but runtime-state has no accepted completion decision.';
   }
   return status.activeExecutionStatus === 'blocked'
@@ -267,6 +328,9 @@ async function evaluateGuard(options, hookInput) {
   const latestCompletionDecision = remainingPhases.length === 0
     ? await readLatestCompletionDecision(dbPath, projection.runId, projection.goalId)
     : null;
+  const latestVerificationEvidence = remainingPhases.length === 0
+    ? await readLatestVerificationEvidence(dbPath, projection.runId, projection.goalId)
+    : null;
   const hasAcceptedCompletion = latestCompletionDecision?.status === 'accepted';
   const needsResume = remainingPhases.length > 0;
   const completionAuthorityMissing = !needsResume && !hasAcceptedCompletion;
@@ -275,7 +339,12 @@ async function evaluateGuard(options, hookInput) {
     : completionAuthorityMissing
       ? 'completion_authority_missing'
       : 'clear';
-  const reason = buildResumeReason({ status: projection, remainingPhases, latestCompletionDecision });
+  const reason = buildResumeReason({
+    status: projection,
+    remainingPhases,
+    latestCompletionDecision,
+    latestVerificationEvidence,
+  });
   const lastAssistantMessage = hookInput.last_assistant_message || hookInput.lastAssistantMessage || '';
   const shouldBlock = (options.mode === 'claude-stop' || options.mode === 'codex-stop')
     && status !== 'clear'
@@ -297,6 +366,7 @@ async function evaluateGuard(options, hookInput) {
     phaseStatus: projection,
     remainingPhases,
     latestCompletionDecision,
+    latestVerificationEvidence,
     finalCompletionClaim: isFinalCompletionClaim(lastAssistantMessage),
     hookOutput,
   };

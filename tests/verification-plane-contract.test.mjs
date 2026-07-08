@@ -1380,6 +1380,105 @@ test('record-summary consumes task class and browser completion result as task-l
   assert.equal(assessed.reason, 'missing verification plane: package');
 });
 
+test('record-summary consumes spec-test obligation failures as task-local blockers', async () => {
+  const { env } = await makeEnv();
+  json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
+
+  const summary = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-spec-obligation-fail',
+    '--goal-id',
+    'goal-spec-obligation-fail',
+    '--profile',
+    'script_change',
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
+    '--planes-json',
+    JSON.stringify([
+      { plane: 'unit', status: 'passed', command: 'npm test' },
+      { plane: 'quality', status: 'passed', command: 'git diff --check' },
+    ]),
+    '--spec-test-obligations-json',
+    JSON.stringify({
+      status: 'fail',
+      summary: { requiredItemCount: 2, obligationCount: 1, findingCount: 1 },
+      findings: [
+        {
+          class: 'spec_test_obligation_missing',
+          id: 'REQ-002',
+          severity: 'blocking',
+          message: 'REQ-002 has no specTestObligations row',
+        },
+      ],
+    }),
+    '--identity-json',
+    '{"runLeaseId":"lease-spec-obligation"}',
+    '--json',
+  ], env));
+  const assessed = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-spec-obligation-fail',
+    '--goal-id',
+    'goal-spec-obligation-fail',
+    '--json',
+  ], env));
+
+  assert.equal(summary.requiredChecksPassed, false);
+  assert.equal(summary.specTestObligations.status, 'fail');
+  assert.equal(summary.taskEvidenceBlockers[0].code, 'spec_test_obligation_missing');
+  assert.match(summary.taskEvidenceBlockers[0].reason, /REQ-002/);
+  assert.equal(assessed.status, 'rejected');
+  assert.match(assessed.reason, /REQ-002/);
+});
+
+test('phase closeout fails closed when spec-test obligation result is missing', async () => {
+  const { env } = await makeEnv();
+  json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
+
+  const summary = json(run([
+    'scripts/verification-plane.mjs',
+    'record-summary',
+    '--run-id',
+    'run-spec-obligation-missing-result',
+    '--goal-id',
+    'goal-spec-obligation-missing-result',
+    '--profile',
+    'script_change',
+    '--task-class-json',
+    '{"taskType":"docs_only"}',
+    '--planes-json',
+    JSON.stringify([
+      { plane: 'unit', status: 'passed', command: 'npm test' },
+      { plane: 'quality', status: 'passed', command: 'git diff --check' },
+    ]),
+    '--phase-closeout',
+    'true',
+    '--identity-json',
+    '{"runLeaseId":"lease-spec-obligation-missing-result"}',
+    '--json',
+  ], env));
+  const assessed = json(run([
+    'scripts/runtime-state.mjs',
+    'assess-completion',
+    '--run-id',
+    'run-spec-obligation-missing-result',
+    '--goal-id',
+    'goal-spec-obligation-missing-result',
+    '--json',
+  ], env));
+
+  assert.equal(summary.requiredChecksPassed, false);
+  assert.equal(summary.specTestObligations, null);
+  assert.equal(summary.taskEvidenceBlockers[0].code, 'spec_test_obligation_result_missing');
+  assert.match(summary.taskEvidenceBlockers[0].reason, /validator result is required/);
+  assert.equal(assessed.status, 'rejected');
+  assert.match(assessed.reason, /spec-test obligation validator result is required/);
+});
+
 test('record-summary fails closed without task class and browser result overrides forged passed browser plane', async () => {
   const { env } = await makeEnv();
   json(run(['scripts/runtime-state.mjs', 'init', '--json'], env));
@@ -1474,6 +1573,14 @@ test('record-summary requires review critique loop receipt for browser completio
     candidate_id: `cand_${'a'.repeat(32)}`,
     sourceDigest: 'b'.repeat(64),
     bundleDigest: 'c'.repeat(64),
+  };
+  const passingSpecTestObligations = {
+    schemaVersion: 1,
+    status: 'pass',
+    summary: { requiredItemCount: 0, obligationCount: 0, findingCount: 0 },
+    items: [],
+    obligations: [],
+    findings: [],
   };
 
   const missingReview = json(run([
@@ -1627,6 +1734,8 @@ test('record-summary requires review critique loop receipt for browser completio
     JSON.stringify({ ...identity, runLeaseId: 'lease-docs-only-completion' }),
     '--completion-claim',
     'true',
+    '--spec-test-obligations-json',
+    JSON.stringify(passingSpecTestObligations),
     '--json',
   ], env));
   const docsOnlyAssessed = json(run([
@@ -1661,6 +1770,8 @@ test('record-summary requires review critique loop receipt for browser completio
     '{"taskType":"docs_only"}',
     '--identity-json',
     JSON.stringify({ ...identity, runLeaseId: 'lease-review-loop-contaminated', completionClaim: true }),
+    '--spec-test-obligations-json',
+    JSON.stringify(passingSpecTestObligations),
     '--review-critique-loop-json',
     JSON.stringify(contaminatedReceipt),
     '--json',

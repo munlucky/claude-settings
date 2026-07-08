@@ -28,6 +28,32 @@
 - Refactor boundary observed:
 - Bypass reason and alternate verification:
 
+## Spec-Test Obligation Evidence
+- Validator command: `node scripts/spec-test-obligations.mjs validate --sprint-contract SPRINT_CONTRACT.md --qa-report QA_REPORT.md --requirements-traceability REQUIREMENTS_TRACEABILITY.md --scenario-matrix SCENARIO_MATRIX.md --scorecard SCORECARD.md --json`
+- Validator status: pass | fail | not_run
+- Evidence artifact:
+- Obligation coverage summary:
+  - requiredItemCount:
+  - obligationCount:
+  - findingCount:
+- Failure class counts:
+  - `spec_test_obligation_missing`:
+  - `spec_test_obligation_result_missing`:
+  - `tdd_red_evidence_missing`:
+  - `tdd_green_evidence_missing`:
+  - `required_spec_test_not_run`:
+  - `critical_scenario_smoke_only`:
+  - `duplicate_spec_test_obligation`:
+  - `invalid_spec_test_bypass`:
+  - `invalid_depth_interface_combo`:
+  - `characterization_pin_missing`:
+  - `behavior_changing_default_missing`:
+  - `uat_critical_obligation_missing`:
+
+| ID | verificationMode | interface | depth | environment | Required Command | Evidence Path | Status | Finding Class |
+|----|------------------|-----------|-------|-------------|------------------|---------------|--------|---------------|
+| REQ-001 | tdd_red_green | code | unit | hermetic |  |  | pending/pass/fail/not_applicable |  |
+
 ## Failure Loop
 - Failure class:
 - Root-cause evidence:

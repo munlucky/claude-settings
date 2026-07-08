@@ -87,3 +87,26 @@ test('plan writer defaults plan packages to project-scoped account-root planning
   assert.match(combined, /install-project-runtime-bridge\.mjs --plan-package docs\/implementation\/<plan-slug>/);
   assert.doesNotMatch(combined, /--execution-root\s+\{planRoot\}\/execution/);
 });
+
+test('plan writer and verifier guidance require spec-test obligation generation and validation', async () => {
+  const combined = (await Promise.all([
+    ...planWriterFiles,
+    ['skills', 'moonshot-phase-runner', 'SKILL.md'],
+    ['skills', 'completion-verifier', 'SKILL.md'],
+    ['skills', 'test-driven-development', 'SKILL.md'],
+    ['docs', 'public', 'guidelines', 'verification-workflow-evidence.md'],
+    ['docs', 'public', 'guidelines', 'verification-contract.md'],
+  ].map((file) => readRoot(...file)))).join('\n');
+
+  assert.match(combined, /Spec-Test Obligations|spec-test obligation/i);
+  assert.match(combined, /specTestObligations/);
+  assert.match(combined, /REQ-\*/);
+  assert.match(combined, /SCN-\*/);
+  assert.match(combined, /UAT-critical/);
+  assert.match(combined, /tdd_red_green/);
+  assert.match(combined, /characterization_first/);
+  assert.match(combined, /evidence_mandatory/);
+  assert.match(combined, /scripts\/spec-test-obligations\.mjs validate/);
+  assert.match(combined, /record-summary[\s\S]*spec-test-obligations-json|spec-test-obligations-json[\s\S]*record-summary/);
+  assert.match(combined, /assess-completion/);
+});

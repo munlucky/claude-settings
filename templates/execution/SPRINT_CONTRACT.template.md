@@ -120,6 +120,48 @@
 - Bypass reason if test-first is infeasible:
 - Alternate verification path:
 
+## Spec-Test Obligations
+- Source extraction rule: every in-scope `REQ-*`, every `SCN-*`, and every UAT-critical item must have one row below.
+- Default rule: behavior-changing rows use `verificationMode: tdd_red_green` unless legacy pinning requires `characterization_first`.
+- Exception rule: `evidence_mandatory` is not a bypass; it requires `requiredCommand`, `evidencePath`, and `bypassReason`.
+- `interface` and `depth` are separate axes. UI inclusion does not automatically mean E2E, and E2E does not require browser UI unless the scenario says so.
+- Critical `SCN-*` rows that require deeper evidence cannot close with smoke-only evidence.
+
+```spec-obligations
+specTestObligations:
+  - id: REQ-001
+    source: PLAN.md#REQ-001
+    behaviorChanging: true
+    verificationMode: tdd_red_green | characterization_first | evidence_mandatory | not_applicable
+    interface: code | api | cli | ui | browser
+    depth: unit | component | integration | ui_integration | e2e | broad_stack
+    environment: hermetic | local | docker | preview | staging | canary
+    redCommand: ""
+    redEvidencePath: ""
+    greenCommand: ""
+    greenEvidencePath: ""
+    characterizationCommand: ""
+    requiredCommand: ""
+    evidencePath: ""
+    bypassReason: ""
+    status: pending | pass | fail | not_applicable
+    owner: ""
+```
+
+### Spec-Test Obligation Hard Fail Classes
+- `spec_test_obligation_missing`
+- `spec_test_obligation_result_missing`
+- `tdd_red_evidence_missing`
+- `tdd_green_evidence_missing`
+- `required_spec_test_not_run`
+- `critical_scenario_smoke_only`
+- `duplicate_spec_test_obligation`
+- `invalid_spec_test_bypass`
+- `invalid_depth_interface_combo`
+- `characterization_pin_missing`
+- `behavior_changing_default_missing`
+- `uat_critical_obligation_missing`
+
 ## Contract Review
 - Contract reviewed by evaluator: yes | no | skipped_simple
 - Verification owner:

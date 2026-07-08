@@ -1,0 +1,3 @@
+# QA REPORT
+
+REQ-REAL and SCN-FENCED pass.

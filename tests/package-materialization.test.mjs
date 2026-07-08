@@ -75,6 +75,7 @@ const requiredCommonPayloadFiles = [
   'rules/workflow.md',
   'rules/workflow-bundles.yaml',
   'schemas/verification.contract.yaml',
+  'schemas/spec-test-obligation.schema.json',
   'schemas/browser-completion-result.schema.json',
   'schemas/browser-scenario.schema.json',
   'schemas/context-pack.schema.json',
@@ -120,6 +121,7 @@ const requiredCommonPayloadFiles = [
   'scripts/phase-runner-session-audit.mjs',
   'scripts/prepare-phase-runner-state.mjs',
   'scripts/skills-audit.mjs',
+  'scripts/spec-test-obligations.mjs',
   'scripts/doctor.mjs',
   'scripts/lib/skills-lock.mjs',
   'scripts/plan-graph-validate.mjs',
@@ -453,6 +455,8 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /source: scripts\/catalog-check\.mjs/);
   assert.match(contract, /source: scripts\/skill-router\.mjs/);
   assert.match(contract, /source: scripts\/lint-skills\.mjs/);
+  assert.match(contract, /source: scripts\/spec-test-obligations\.mjs/);
+  assert.match(contract, /source: schemas\/spec-test-obligation\.schema\.json/);
   assert.match(contract, /source: package-lock\.json/);
   assert.match(contract, /source: node_modules\/better-sqlite3\/\*\*/);
   assert.match(contract, /source: scripts\/lib\/browser-failure-package\.mjs/);
@@ -512,6 +516,8 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('scripts/review-bundle-build.mjs'));
   assert.ok(plannedFrom.includes('scripts/workspace-manager.mjs'));
   assert.ok(plannedFrom.includes('scripts/skills-audit.mjs'));
+  assert.ok(plannedFrom.includes('scripts/spec-test-obligations.mjs'));
+  assert.ok(plannedFrom.includes('schemas/spec-test-obligation.schema.json'));
   assert.ok(plannedFrom.includes('scripts/doctor.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/candidate-identity.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/browser-failure-package.mjs'));
