@@ -17,7 +17,13 @@ artifactRouting:
   forbidden:
     - ".claude/** durable source"
     - ".codex/** durable source"
+    - "raw MemoryGraph records in durable source"
+    - "raw runtime logs in package payload"
+    - "raw transcripts in research notes"
+    - "browser artifacts in source templates"
+    - "secrets in research or prototype evidence"
 
 rules:
   - "Durable source belongs in canonical source directories."
   - "Generated evidence belongs in runtime state, not package payload."
+  - "Research and prototype evidence must store compact summaries and pointers, not raw private/runtime payloads."

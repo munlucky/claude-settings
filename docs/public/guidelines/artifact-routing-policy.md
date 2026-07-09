@@ -19,3 +19,9 @@ artifactRouting:
 ```
 
 Do not put durable source in root `.claude/` or `.codex/`. Do not put generated state in package payloads.
+
+## Research And Prototype Evidence Routing
+
+Research notes and prototype decision notes are source artifacts only when they contain compact summaries, citations, command references, and decision links. They must not copy raw MemoryGraph records, runtime logs, long transcripts, browser artifacts, secrets, or external prompt bodies into durable source.
+
+Throwaway prototype code or generated output is excluded from package/runtime payload unless a later owned implementation phase deliberately absorbs the behavior into production source with tests.

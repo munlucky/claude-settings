@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-06T12:37:37.454Z",
+  "generatedAt": "2026-07-09T07:09:16.082Z",
   "sourceCommit": "",
   "skills": [
     {
@@ -13,7 +13,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -27,7 +27,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -41,7 +41,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -55,7 +55,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -69,7 +69,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -77,13 +77,13 @@
       "name": "assumption-ledger",
       "path": "skills/assumption-ledger",
       "source": "canonical",
-      "contentHash": "00db8fd9fa918bde816ec374c6abea20914c04b0f46c25a373e58611c8f827dc",
+      "contentHash": "d348edf3c319c95689a47f4172cb197cd5474fd81b4c002b7fa71dfeb1c98d10",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-07-06T12:37:37.454Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -97,7 +97,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -111,7 +111,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -125,7 +125,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -139,7 +139,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -153,7 +153,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -167,7 +167,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -181,7 +181,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -195,7 +195,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -203,13 +203,13 @@
       "name": "completion-verifier",
       "path": "skills/completion-verifier",
       "source": "canonical",
-      "contentHash": "09a33dbbc02c466dec72e953c52b689968012019a262bd89c670983a53e4303c",
+      "contentHash": "10f8ec0a1cdbae81a7a516eb50c04d40f86fd2978bf4c67a2396448e015ae044",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-07-06T12:37:37.454Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -223,7 +223,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -237,7 +237,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -251,7 +251,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -265,7 +265,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -279,7 +279,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -293,7 +293,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -307,7 +307,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -321,7 +321,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -335,7 +335,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -349,7 +349,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-07-06T12:37:37.454Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -363,7 +363,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -377,7 +377,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -391,7 +391,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -405,7 +405,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -419,7 +419,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -433,7 +433,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-07-06T12:37:37.454Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -447,7 +447,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -461,7 +461,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-07-06T12:37:37.454Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -469,13 +469,13 @@
       "name": "moonshot-plan-writer",
       "path": "skills/moonshot-plan-writer",
       "source": "canonical",
-      "contentHash": "7a851e967d674bd13e93d9ac3a1403441fdff366ac46bfb91cebd91f710eb2e9",
+      "contentHash": "e9e64daa72ce8529ddab3087025ecd1e87a86ff96d16533f47495725f6538cca",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -489,7 +489,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -503,7 +503,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -517,7 +517,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-07-03T15:02:38.458Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -531,7 +531,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -545,7 +545,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -559,7 +559,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -573,7 +573,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -587,7 +587,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -601,7 +601,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -615,7 +615,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -623,13 +623,13 @@
       "name": "product-orchestrator",
       "path": "skills/product-orchestrator",
       "source": "canonical",
-      "contentHash": "d973b227f4e7825522b21c4e61590c0d12d61626f91396d2e2563908aed7d4ac",
+      "contentHash": "00f67f27d3d9b878f05266c757de581961fa6b10658f14dc61ce057b542360d9",
       "license": "MIT",
       "stages": [],
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-07-06T12:37:37.454Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -643,7 +643,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -657,7 +657,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -671,7 +671,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -685,7 +685,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -699,7 +699,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -713,7 +713,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -727,7 +727,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -741,7 +741,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -755,7 +755,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -769,7 +769,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -783,7 +783,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -797,7 +797,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -811,7 +811,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     },
@@ -825,7 +825,7 @@
       "permissions": [],
       "permissionReview": {
         "status": "approved",
-        "reviewedAt": "2026-06-30T15:14:03.531Z",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
         "reviewer": "skills-audit-generate-lock"
       }
     }

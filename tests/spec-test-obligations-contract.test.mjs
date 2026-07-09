@@ -47,6 +47,8 @@ test('spec-test obligation schema is packaged as a machine-readable contract', a
   assert.ok(schema.properties.findings.items.properties.class.enum.includes('spec_test_obligation_missing'));
   assert.ok(schema.properties.findings.items.properties.class.enum.includes('critical_scenario_smoke_only'));
   assert.ok(schema.properties.findings.items.properties.class.enum.includes('duplicate_spec_test_obligation'));
+  assert.ok(schema.properties.findings.items.properties.class.enum.includes('seam_rationale_missing'));
+  assert.ok(schema.properties.obligations.items.properties.highestPublicSeam.enum.includes('browser'));
 });
 
 test('validator fails when a requirement lacks an obligation row', () => {
@@ -196,4 +198,68 @@ test('validator blocks duplicate obligation ids', () => {
 
   assert.equal(payload.status, 'fail');
   assert.ok(payload.findings.some((finding) => finding.class === 'duplicate_spec_test_obligation' && finding.id === 'REQ-DUP'));
+});
+
+test('strict seam mode blocks behavior-changing obligations without seam metadata', () => {
+  const payload = validateSpecTestObligations({
+    strictSeam: true,
+    documents: [
+      {
+        role: 'sprintContract',
+        path: 'SPRINT_CONTRACT.md',
+        text: [
+          'REQ-SEAM behaviorChanging: true',
+          '',
+          '```spec-obligations',
+          'specTestObligations:',
+          '  - id: REQ-SEAM',
+          '    behaviorChanging: true',
+          '    verificationMode: tdd_red_green',
+          '    redCommand: node --test tests/seam.test.mjs',
+          '    redEvidencePath: evidence/red.json',
+          '    greenCommand: node --test tests/seam.test.mjs',
+          '    greenEvidencePath: evidence/green.json',
+          '    status: pass',
+          '```',
+        ].join('\n'),
+      },
+    ],
+  });
+
+  assert.equal(payload.status, 'fail');
+  assert.ok(payload.findings.some((finding) => finding.class === 'seam_rationale_missing' && finding.id === 'REQ-SEAM'));
+});
+
+test('strict seam mode accepts highest public seam metadata', () => {
+  const payload = validateSpecTestObligations({
+    strictSeam: true,
+    documents: [
+      {
+        role: 'sprintContract',
+        path: 'SPRINT_CONTRACT.md',
+        text: [
+          'REQ-SEAM behaviorChanging: true',
+          '',
+          '```spec-obligations',
+          'specTestObligations:',
+          '  - id: REQ-SEAM',
+          '    behaviorChanging: true',
+          '    verificationMode: tdd_red_green',
+          '    interface: cli',
+          '    depth: integration',
+          '    environment: local',
+          '    highestPublicSeam: cli',
+          '    redCommand: node --test tests/seam.test.mjs',
+          '    redEvidencePath: evidence/red.json',
+          '    greenCommand: node --test tests/seam.test.mjs',
+          '    greenEvidencePath: evidence/green.json',
+          '    status: pass',
+          '```',
+        ].join('\n'),
+      },
+    ],
+  });
+
+  assert.equal(payload.status, 'pass');
+  assert.deepEqual(payload.findings, []);
 });

@@ -60,3 +60,31 @@ agentFanoutContract:
 ```
 
 Implementation fanout requires `purpose: "owned-path implementation"`, reviewed file ownership, `writeAccess.default: "deny"`, non-empty `allowedOwnedPaths`, and fresh verification commands. Research, review, and verification fanout should stay read-only unless a separately approved remediation task owns the edit.
+
+## Matt Pocock Skills v1.1 Pattern Transfer
+
+Matt Pocock `mattpocock/skills` v1.1 is treated as an external pattern source, not a prompt, file, or public skill source for Moonshot Relay. Reuse only the mechanics below, and route them through existing Moonshot owners.
+
+### Accepted Mechanics
+
+| External mechanic | Moonshot owner | Local adoption shape |
+|---|---|---|
+| Destination, fog, and frontier language before detailed planning | `product-orchestrator`, `moonshot-plan-writer` | Discovery Map contract that records what is known, unresolved, takeable, or out of scope before phase planning. |
+| Facts vs decisions | `assumption-ledger`, `agent-operating-policy` | Intake classification where facts require evidence and human decisions require explicit decision authority. |
+| Research ticket as a linked asset | `research-evidence-policy`, `moonshot-research` | Cited evidence note with source quality, recency, confidence, limits, and downstream claim or decision linkage. |
+| Prototype as decision evidence | `artifact-routing-policy`, product and architecture templates | Throwaway prototype result captured as decision evidence, then deleted, absorbed, or explicitly retained as non-production evidence. |
+| Vertical slice and blocker frontier language | `task-slicer`, plan graph metadata | Advisory frontier vocabulary for unblocked planning candidates without granting worker fanout or completion authority. |
+| Test seam agreement | `specTestObligations` | Behavior-changing obligations record the highest useful public seam or explain why a lower seam is chosen. |
+| Standards/spec review axes | review finding and review bundle contracts | Optional finding classification metadata only; review receipts and runtime closeout remain authoritative. |
+
+### Rejected Mechanics
+
+| External mechanic | Rejection reason |
+|---|---|
+| Importing Matt skills as profile-local public skills | Duplicates existing Moonshot entrypoints and expands public runtime surface without a lower-rung need. |
+| Using GitHub Issues as canonical runtime state | Moonshot runtime-state remains the blocker, resume, and completion authority. |
+| Letting a Discovery Map spawn workers by default | Violates deny-by-default fanout; execution fanout still requires an approved `agentFanoutContract`. |
+| Replacing `moonshot-orchestrator` or `moonshot-phase-runner` with a thin implement skill | Would bypass review, verification, phase closeout, and runtime-state authority. |
+| Copying external prompt text into durable policy | External pattern transfer captures reusable mechanics and local contracts, not external prompt bodies or branding. |
+
+Discovery Map, frontier, research, prototype, seam rationale, and review axis metadata are planning or evidence aids only. They do not authorize execution, baseline promotion, package/runtime adoption, live profile mutation, or whole-plan completion.

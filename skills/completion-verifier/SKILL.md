@@ -53,7 +53,7 @@ Use these owners instead of duplicating their rules in this prompt:
 2. Determine the applicable profile and required checks from the contract, `TEST_GUIDE.md`, project docs, or fallback detection.
 3. Run executable checks that are in scope and record command/provenance for every completion-relevant claim.
 4. When verification plane evidence is available, record it through `scripts/verification-plane.mjs record-summary --json`.
-5. When plan artifacts contain `specTestObligations`, run `scripts/spec-test-obligations.mjs validate --json` and pass its JSON to `record-summary` with `--spec-test-obligations-json`.
+5. When plan artifacts contain `specTestObligations`, run `scripts/spec-test-obligations.mjs validate --json` and pass its JSON to `record-summary` with `--spec-test-obligations-json`. Use `--strict-seam` when validating new behavior-changing obligations that opt into highest public seam enforcement.
 6. Read score, traceability, scenario, UAT, workflow evidence, agent operating policy evidence, and QA report state using `docs/public/guidelines/verification-workflow-evidence.md`.
 7. Run or request `scripts/runtime-state.mjs assess-completion --json` for whole-plan completion authority when available.
 8. Return the output shape below. Degrade to `failed` or `pass_with_warning` instead of inferring a clean pass.

@@ -196,6 +196,8 @@ requiredPayloadEntries:
       purpose: runtime_tooling
     - source: schemas/**
       purpose: machine_readable_contracts
+    - source: schemas/discovery-map.schema.json
+      purpose: discovery_map_planning_evidence_contract_no_execution_authority
     - source: schemas/spec-test-obligation.schema.json
       purpose: plan_item_test_obligation_validator_result_contract
     - source: schemas/browser-completion-result.schema.json
@@ -216,6 +218,14 @@ requiredPayloadEntries:
       purpose: runtime_memory_promotion_ledger_contract
     - source: templates/**
       purpose: reusable_templates
+    - source: templates/product-definition/DISCOVERY_MAP.template.md
+      purpose: product_definition_discovery_map_artifact_template
+    - source: templates/product-definition/DISCOVERY_TICKET.template.md
+      purpose: product_definition_discovery_ticket_artifact_template
+    - source: templates/product-definition/RESEARCH_NOTE.template.md
+      purpose: linked_research_evidence_note_template
+    - source: templates/product-definition/PROTOTYPE_DECISION.template.md
+      purpose: linked_prototype_decision_evidence_template
     - source: docs/public/**
       purpose: public_documentation
     - source: tests/package-layout.test.mjs

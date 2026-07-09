@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/discovery-map.schema.json",
+  "title": "DiscoveryMapV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactId", "destination", "lifecycleStatus", "notes", "decisionsSoFar", "notYetSpecified", "outOfScope", "tickets", "authorityBoundary"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactId": { "const": "DISCOVERY_MAP" },
+    "destination": { "type": "string", "minLength": 1 },
+    "lifecycleStatus": {
+      "type": "string",
+      "enum": ["draft", "ticketed", "resolving", "resolved", "promoted", "closed"]
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "decisionsSoFar": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/decisionRecord" }
+    },
+    "notYetSpecified": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "outOfScope": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/outOfScopeRecord" }
+    },
+    "tickets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ticket" }
+    },
+    "authorityBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executionAuthority", "fanoutAuthority", "promotionAuthority", "completionAuthority", "runtimeStateAuthority"],
+      "properties": {
+        "executionAuthority": { "const": false },
+        "fanoutAuthority": { "const": false },
+        "promotionAuthority": { "const": false },
+        "completionAuthority": { "const": false },
+        "runtimeStateAuthority": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "decisionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "decisionOwner", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "decisionOwner": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "outOfScopeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "reason"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ticket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "type", "humanInLoop", "status", "dependsOn", "question", "owner", "humanDecisionRequired", "decisionOwner", "factEvidence", "acceptedInto", "outOfScopeReason", "linkedEvidence", "resolutionSummary", "graduatedFromFog"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["research", "prototype", "grilling", "task"]
+        },
+        "humanInLoop": { "type": "boolean" },
+        "status": {
+          "type": "string",
+          "enum": ["open", "claimed", "resolved", "blocked", "out_of_scope"]
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "question": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "humanDecisionRequired": { "type": "boolean" },
+        "decisionOwner": { "type": "string" },
+        "factEvidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "acceptedInto": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["SPEC", "PLAN", "phase_metadata", "ADR"]
+          }
+        },
+        "outOfScopeReason": { "type": "string" },
+        "linkedEvidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "resolutionSummary": { "type": "string" },
+        "graduatedFromFog": { "type": "string" }
+      }
+    }
+  }
+}

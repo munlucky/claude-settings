@@ -116,6 +116,9 @@ Planning artifacts should also record:
 
 At every stage:
 - use `assumption-ledger` before stopping for ambiguity
+- when work is too foggy for PRD/SPEC/PLAN readiness, create or consume a Discovery Map as an internal planning artifact before promoting decisions into product artifacts
+- treat Discovery Map frontier output as advisory planning evidence only; it does not authorize execution, worker fanout, completion, or live adoption
+- classify unresolved input as fact, decision, assumption, or blocker; do not self-resolve decisions that affect scope, security, data, package/runtime surface, or user-visible behavior
 - gather available read-only context before asking the user unless a critical ambiguity would change scope, security, data shape, or user-visible behavior
 - use `docs/public/guidelines/retrieval-and-recency-policy.md` and `docs/public/guidelines/research-evidence-policy.md` for current or volatile product, market, dependency, platform, model, pricing, legal, or security facts
 - record task-relevant skill consultation through `docs/public/guidelines/skill-readiness-policy.md`
@@ -219,6 +222,9 @@ Recommended next step:
 - `docs/public/guidelines/product-definition-workflow.md`
 - `docs/public/guidelines/demo-first-mvp-gate.md`
 - `docs/public/guidelines/retrieval-and-recency-policy.md`
+- `templates/product-definition/DISCOVERY_MAP.template.md`
+- `templates/product-definition/DISCOVERY_TICKET.template.md`
+- `schemas/discovery-map.schema.json`
 - `docs/public/guidelines/skill-readiness-policy.md`
 - `<MOONSHOT_RELAY_HOME>/templates/product-definition/`
 - `skills/product-gate-reviewer/SKILL.md`

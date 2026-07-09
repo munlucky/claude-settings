@@ -54,3 +54,12 @@ test('review schemas are parseable closed contracts', async () => {
     assert.equal(schema.additionalProperties, false);
   }
 });
+
+test('review finding axis is optional metadata and does not alter blocking logic', async () => {
+  const schema = JSON.parse(await readFile(path.join(process.cwd(), 'schemas', 'review-finding.schema.json'), 'utf8'));
+
+  assert.ok(schema.properties.axis.enum.includes('runtime_authority'));
+  assert.equal(schema.required.includes('axis'), false);
+  assert.equal(classifyFinding({ severity: 'critical', disposition: 'informational', axis: 'documentation' }).blocksFullScore, true);
+  assert.equal(classifyFinding({ severity: 'info', disposition: 'informational', axis: 'security' }).blocksFullScore, false);
+});

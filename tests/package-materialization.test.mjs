@@ -86,6 +86,7 @@ const requiredCommonPayloadFiles = [
   'rules/workflow.md',
   'rules/workflow-bundles.yaml',
   'schemas/verification.contract.yaml',
+  'schemas/discovery-map.schema.json',
   'schemas/spec-test-obligation.schema.json',
   'schemas/browser-completion-result.schema.json',
   'schemas/browser-scenario.schema.json',
@@ -96,6 +97,10 @@ const requiredCommonPayloadFiles = [
   'schemas/verification-plane.schema.json',
   'schemas/tool-registry.schema.json',
   'templates/GOAL_CONTRACT.template.yaml',
+  'templates/product-definition/DISCOVERY_MAP.template.md',
+  'templates/product-definition/DISCOVERY_TICKET.template.md',
+  'templates/product-definition/RESEARCH_NOTE.template.md',
+  'templates/product-definition/PROTOTYPE_DECISION.template.md',
   'skills/completion-verifier/SKILL.md',
   'skills/moonshot-plan-writer/SKILL.md',
   'skills/verification-contract-gate/SKILL.md',
@@ -570,7 +575,12 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('scripts/workspace-manager.mjs'));
   assert.ok(plannedFrom.includes('scripts/skills-audit.mjs'));
   assert.ok(plannedFrom.includes('scripts/spec-test-obligations.mjs'));
+  assert.ok(plannedFrom.includes('schemas/discovery-map.schema.json'));
   assert.ok(plannedFrom.includes('schemas/spec-test-obligation.schema.json'));
+  assert.ok(plannedFrom.includes('templates/product-definition/DISCOVERY_MAP.template.md'));
+  assert.ok(plannedFrom.includes('templates/product-definition/DISCOVERY_TICKET.template.md'));
+  assert.ok(plannedFrom.includes('templates/product-definition/RESEARCH_NOTE.template.md'));
+  assert.ok(plannedFrom.includes('templates/product-definition/PROTOTYPE_DECISION.template.md'));
   assert.ok(plannedFrom.includes('scripts/doctor.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/candidate-identity.mjs'));
   assert.ok(plannedFrom.includes('scripts/lib/browser-failure-package.mjs'));

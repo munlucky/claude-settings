@@ -110,3 +110,20 @@ test('plan writer and verifier guidance require spec-test obligation generation 
   assert.match(combined, /record-summary[\s\S]*spec-test-obligations-json|spec-test-obligations-json[\s\S]*record-summary/);
   assert.match(combined, /assess-completion/);
 });
+
+test('plan writer consumes Discovery Map as evidence without granting execution authority', async () => {
+  const combined = (await Promise.all([
+    ['skills', 'moonshot-plan-writer', 'SKILL.md'],
+    ['docs', 'public', 'guidelines', 'external-skill-pattern-transfer.md'],
+    ['docs', 'public', 'guidelines', 'product-definition-workflow.md'],
+    ['templates', 'product-definition', 'DISCOVERY_MAP.template.md'],
+    ['templates', 'product-definition', 'DISCOVERY_TICKET.template.md'],
+  ].map((file) => readRoot(...file)))).join('\n');
+
+  assert.match(combined, /Discovery Map/);
+  assert.match(combined, /resolved decisions?/i);
+  assert.match(combined, /frontier output/);
+  assert.match(combined, /agent fanout|worker fanout/i);
+  assert.match(combined, /runtime-state authority|runtime-state completion/i);
+  assert.doesNotMatch(combined, /Discovery Map.*public runtime skill/i);
+});

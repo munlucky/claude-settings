@@ -8,6 +8,9 @@
   "properties": {
     "schemaVersion": { "const": 1 },
     "findingId": { "type": "string", "minLength": 1 },
+    "axis": {
+      "enum": ["spec", "standards", "runtime_authority", "security", "regression", "package_runtime", "documentation"]
+    },
     "severity": { "enum": ["info", "warning", "critical"] },
     "disposition": { "enum": ["autofix_safe", "replan_required", "human_decision", "informational"] },
     "blocksFullScore": { "type": "boolean" },

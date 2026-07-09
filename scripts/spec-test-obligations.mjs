@@ -15,16 +15,18 @@ const VALID_MODES = new Set([
   'not_applicable',
 ]);
 
-const usage = () => `Usage: node scripts/spec-test-obligations.mjs validate --sprint-contract <file> --qa-report <file> --requirements-traceability <file> --scenario-matrix <file> --scorecard <file> [--source <file>] [--json]`;
+const usage = () => `Usage: node scripts/spec-test-obligations.mjs validate --sprint-contract <file> --qa-report <file> --requirements-traceability <file> --scenario-matrix <file> --scorecard <file> [--source <file>] [--strict-seam] [--json]`;
 
 const parseArgs = (argv) => {
   const [command = ''] = argv;
-  const options = { command, json: false, sources: [] };
+  const options = { command, json: false, sources: [], strictSeam: false };
 
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--strict-seam') {
+      options.strictSeam = true;
     } else if (arg === '--source') {
       options.sources.push(argv[++index] || '');
     } else if (arg.startsWith('--')) {
@@ -249,7 +251,7 @@ const finding = (classification, id, message, sourcePath = '') => ({
   sourcePath,
 });
 
-const validateObligation = (obligation, item) => {
+const validateObligation = (obligation, item, options = {}) => {
   const findings = [];
   const mode = normalized(obligation.verificationMode);
   const behaviorChanging = truthy(obligation.behaviorChanging) || item?.behaviorChanging === true;
@@ -259,6 +261,9 @@ const validateObligation = (obligation, item) => {
   }
   if (mode && !VALID_MODES.has(mode)) {
     findings.push(finding('invalid_spec_test_bypass', obligation.id, `unsupported verificationMode: ${mode}`, obligation.sourcePath));
+  }
+  if (options.strictSeam && behaviorChanging && !present(obligation.highestPublicSeam || obligation.seamRationale)) {
+    findings.push(finding('seam_rationale_missing', obligation.id, 'behavior-changing obligation requires highestPublicSeam or seamRationale in strict seam mode', obligation.sourcePath));
   }
   if (normalized(obligation.interface) === 'code' && ['ui_integration', 'e2e'].includes(normalized(obligation.depth))) {
     findings.push(finding('invalid_depth_interface_combo', obligation.id, 'code interface cannot satisfy UI/E2E depth directly', obligation.sourcePath));
@@ -301,7 +306,7 @@ const validateObligation = (obligation, item) => {
   return findings;
 };
 
-export function validateSpecTestObligations({ documents = [] } = {}) {
+export function validateSpecTestObligations({ documents = [], strictSeam = false } = {}) {
   const items = extractItems(documents);
   const obligations = extractObligations(documents);
   const obligationById = new Map(obligations.map((obligation) => [obligation.id, obligation]));
@@ -336,7 +341,7 @@ export function validateSpecTestObligations({ documents = [] } = {}) {
   }
 
   for (const obligation of obligations) {
-    findings.push(...validateObligation(obligation, items.find((item) => item.id === obligation.id)));
+    findings.push(...validateObligation(obligation, items.find((item) => item.id === obligation.id), { strictSeam }));
   }
 
   return {
@@ -372,7 +377,7 @@ const main = async () => {
   }
 
   const documents = await readDocuments(options);
-  const result = validateSpecTestObligations({ documents });
+  const result = validateSpecTestObligations({ documents, strictSeam: options.strictSeam });
   writeResult(result, options.json);
   if (result.status === 'fail') {
     process.exitCode = 1;

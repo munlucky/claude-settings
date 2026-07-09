@@ -51,6 +51,10 @@
           "interface": { "type": "string" },
           "depth": { "type": "string" },
           "environment": { "type": "string" },
+          "highestPublicSeam": {
+            "enum": ["browser", "ui", "api", "cli", "code", "integration", "package", "runtime", ""]
+          },
+          "seamRationale": { "type": "string" },
           "status": { "type": "string" }
         }
       }
@@ -73,6 +77,7 @@
               "invalid_depth_interface_combo",
               "characterization_pin_missing",
               "behavior_changing_default_missing",
+              "seam_rationale_missing",
               "uat_critical_obligation_missing",
               "duplicate_spec_test_obligation"
             ]

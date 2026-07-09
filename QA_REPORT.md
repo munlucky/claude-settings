@@ -2,6 +2,25 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-09
+- Scope: Matt Pocock Skills v1.1 harness pattern transfer: Discovery Map, fact/decision intake, linked research/prototype evidence, strict seam rationale validation, review axis metadata, package gate wiring, and live account-root sync.
+- Changed areas:
+  - Added `schemas/discovery-map.schema.json` and product-definition templates for Discovery Map, Discovery Ticket, Research Note, and Prototype Decision artifacts.
+  - Updated public guidelines and owner skills so Discovery Map/frontier artifacts are planning evidence only, not execution, fanout, promotion, or completion authority.
+  - Extended fact/decision/assumption/blocker classification and artifact routing to reject raw runtime/private payloads in reusable evidence artifacts.
+  - Added strict seam metadata to spec-test obligations through `scripts/spec-test-obligations.mjs` and review finding `axis` metadata.
+  - Wired new contract tests into `npm test` and explicitly guarded new package-runtime schema/templates in package contract/materialization tests.
+- Verification evidence:
+  - Phase-runner readiness: all 5 phases complete with `SCORECARD.md`, `QA_REPORT.md`, and `HANDOFF.md` evidence.
+  - Runtime completion authority: `assess-completion` accepted, decision `fcbe2df8-a8bf-409e-bbf7-0d028e8a465f`, evidence hash `78e159c25f0542b94e3061733f2993f7075da2bf46808fc75a8415e7de069c24`.
+  - Independent review loop: completion audit and operational adoption audit both started with BLOCK findings, fixes were applied, and both final reviews passed.
+  - Source gates: `skills-audit` pass; `doctor` pass; package all-runtime dry-run pass; `npm run test:package` 57/57 pass; `npm run test:eval` pass; `npm run test:lab` pass as smoke-only; `npm test` 528 pass, 0 fail, 1 skipped.
+  - Focused gates: package layout/materialization 27/27 pass; new Discovery Map/research/fact-decision contracts 10/10 pass.
+  - Account-root sync: `install-account-root-harness.mjs --runtime all` completed with installId `20260709-075424`.
+  - Profile parity: Claude, Codex, and Qwen profile surface parity all pass; `extraCanonicalCount=0` for Codex.
+  - Installed parity: representative SHA256 checks match for `scripts/spec-test-obligations.mjs`, `schemas/discovery-map.schema.json`, Discovery Map and Research Note templates, `skills/moonshot-plan-writer/SKILL.md`, `skills/product-orchestrator/SKILL.md`, `package/runtime-surface.json`, and `skills.lock.json`.
+  - Installed doctor: explicit installed-root doctor exited 0 with runtime surface, skills lock, profile trust, and generated-state boundary passing; status is `degraded` only because installed-root lab/eval/research readiness artifacts are not initialized.
+
 - Date: 2026-07-08
 - Scope: Spec-Test Obligation Gate for plan-driven TDD and per-spec verification.
 - Changed areas:
