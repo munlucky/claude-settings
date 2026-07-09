@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/memory-claim.schema.json",
+  "title": "Memory Claim",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "claimId",
+    "status",
+    "scope",
+    "stage",
+    "claim",
+    "confidence",
+    "sensitivity",
+    "validity",
+    "provenance",
+    "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "claimId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["candidate", "verified", "rejected", "superseded", "rolled_back"] },
+    "scope": { "enum": ["run", "project", "harness", "global"] },
+    "stage": {
+      "enum": ["init", "requirements", "design", "plan", "validate-plan", "prepare", "execute", "review", "verify", "score", "replan", "close", "intake", "finish"]
+    },
+    "claim": { "type": "string", "minLength": 1 },
+    "confidence": { "enum": ["candidate", "verified", "rejected", "stale"] },
+    "sensitivity": { "enum": ["public", "internal", "secret_like", "unknown"] },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validFrom", "validTo", "supersedes"],
+      "properties": {
+        "validFrom": { "type": "string" },
+        "validTo": { "type": ["string", "null"] },
+        "supersedes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRef", "sourceCommand", "artifactSha256"],
+      "properties": {
+        "sourceRef": { "type": "string" },
+        "sourceCommand": { "type": "string" },
+        "artifactSha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "ref"],
+        "properties": {
+          "type": { "enum": ["CommandRun", "TestResult", "ReviewFinding", "Artifact", "VerificationResult"] },
+          "ref": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

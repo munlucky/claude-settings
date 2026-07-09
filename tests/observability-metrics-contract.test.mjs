@@ -64,3 +64,15 @@ test('team metrics preserve requiredFields compatibility and split decision/repo
     assert.ok(requiredFields.includes(field), `${field} should remain in deprecated requiredFields compatibility list`);
   }
 });
+
+test('observability contract names memory control-plane metric surfaces', async () => {
+  const contract = await readFile(path.join(root, 'schemas', 'verification.contract.yaml'), 'utf8');
+  for (const field of [
+    'metrics.memoryProvenanceCoverage',
+    'metrics.staleMemorySuppression',
+    'metrics.memoryGateFailureCount',
+    'metrics.memoryPromotionRollbackCount',
+  ]) {
+    assert.match(contract, new RegExp(field.replaceAll('.', '\\.')));
+  }
+});

@@ -381,6 +381,8 @@ test('account-root guard ignores live Codex volatile runtime files only', () => 
     'state_5.sqlite-shm',
     'state/cache.sqlite-journal',
     'process_manager/chat_processes.json',
+    '.sandbox/deny_read_acl_state.json',
+    '.sandbox/sandbox.2026-07-09.log',
   ];
   for (const relativePath of volatilePaths) {
     assert.equal(shouldExcludeGuardPath(relativePath), true, `${relativePath} should be volatile`);

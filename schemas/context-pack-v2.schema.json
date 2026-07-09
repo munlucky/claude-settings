@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/context-pack-v2.schema.json",
+  "title": "ContextPackV2 Candidate",
+  "description": "Additive candidate over ContextPackV1. It must not replace projectKnowledgeContext.promptBlock or remove v1 compatibility fields.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "promptFacingAuthority", "compatibility", "stagePolicy", "evidenceRefs", "omissions"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "promptFacingAuthority": { "const": "projectKnowledgeContext.promptBlock" },
+    "compatibility": {
+      "type": "object",
+      "required": ["extendsContextPackV1", "additiveOnly"],
+      "properties": {
+        "extendsContextPackV1": { "const": true },
+        "additiveOnly": { "const": true }
+      },
+      "additionalProperties": true
+    },
+    "stagePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "allowedPromptCategories", "localOnlyCategories", "forbiddenCategories"],
+      "properties": {
+        "stage": { "type": "string", "minLength": 1 },
+        "allowedPromptCategories": { "type": "array", "items": { "type": "string" } },
+        "localOnlyCategories": { "type": "array", "items": { "type": "string" } },
+        "forbiddenCategories": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "evidenceRefs": { "type": "array", "items": { "type": "string" } },
+    "omissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "reason"],
+        "properties": {
+          "category": { "type": "string", "minLength": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}

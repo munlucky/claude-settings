@@ -1,0 +1,50 @@
+reviewIteration: 1
+status: "reviewed-parent-edits-applied"
+reviewedPackageRoot: "docs/public/roadmaps/harness-memory-control-plane-2026-07-09"
+reviewScope:
+  - "00-master-plan-v1.ko.md"
+  - "01-current-memory-plane-baseline-v1.ko.md"
+  - "02-evidence-episode-ledger-v1.ko.md"
+  - "03-stage-scoped-retrieval-and-context-packs-v1.ko.md"
+  - "04-task-evidence-graph-ontology-verify-gates-v1.ko.md"
+  - "05-eval-failure-and-procedural-memory-v1.ko.md"
+  - "06-score-observability-package-rollout-v1.ko.md"
+reviewer:
+  type: "independent-agent"
+  agentId: "019f475b-69a3-7083-9551-55231de58642"
+blockingFindings:
+  - id: "IR1-BLOCKER-001"
+    finding: "Initial target package was a skeleton only when reviewed; a file-backed package with master plan, phase docs, review artifact, adoption classifications, and policy paths is required."
+    disposition: "accepted"
+  - id: "IR1-BLOCKER-002"
+    finding: "Phase 09 alone is too narrow; a dedicated roadmap is required because the memory strategy crosses context serving, eval, promotion, metrics, and rollout."
+    disposition: "accepted"
+  - id: "IR1-BLOCKER-003"
+    finding: "Phase boundaries must explicitly separate current inventory, stage policy, task/evidence graph, promotion amendment, eval/procedural candidates, and score/rollout."
+    disposition: "accepted"
+  - id: "IR1-BLOCKER-004"
+    finding: "Adoption surface classifications were required for source, package runtime, installed account-root, data/state migration, and external services."
+    disposition: "accepted"
+  - id: "IR1-BLOCKER-005"
+    finding: "Do not duplicate already-enforced Phase 09 promotion contracts; cite baseline tests and focus on gaps."
+    disposition: "accepted"
+acceptedChanges:
+  - "Created a dedicated tracked public roadmap package under docs/public/roadmaps/harness-memory-control-plane-2026-07-09."
+  - "Expanded the plan to six phase docs matching the independent review boundary recommendation."
+  - "Added source_only, package_runtime_payload, installed_profile_or_account_root, data_or_state_migration, and external_deployment_or_service classifications."
+  - "Kept Phase 09 as dependency/amendment target rather than the whole memory strategy container."
+  - "Moved eval/procedural-memory candidate work out of rollout and separated score/observability/package/account-root rollout."
+rejectedChanges: []
+remainingAmbiguity:
+  - "Exact live account-root install parity command must be sourced at implementation time."
+  - "External graph backend selection requires ADR/security/migration policy and remains out of v1 implementation."
+reviewedSurfaceClassifications:
+  - "memory-control-plane-source"
+  - "memory-control-plane-package-runtime"
+  - "memory-control-plane-installed-account-root"
+  - "memory-control-plane-external-graph-backend"
+  - "memory-control-plane-data-state"
+missingPolicyGates:
+  - "Exact live account-root install parity command must be sourced at implementation time."
+  - "External graph backend ADR/security/migration policy is intentionally missing and blocks backend adoption."
+  - "Runtime-state data migration rollback policy is intentionally missing and blocks non-dry-run table changes."

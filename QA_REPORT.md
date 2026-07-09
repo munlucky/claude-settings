@@ -2,6 +2,27 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-10
+- Scope: Harness memory control-plane strategy implementation and source-to-account-root closeout.
+- Changed areas:
+  - Added public memory control-plane and rollout guidelines for evidence-first memory, stage-scoped retrieval, memory quality gates, and rollout boundaries.
+  - Added MemoryClaim, EpisodeLedger, TaskEvidenceGraph, MemoryControlPlaneGate, FailureMemoryCandidate, and ContextPack v2 schemas.
+  - Added memory claim validation/ledger helpers and wired `knowledge-context-build` stage policies, `score-candidate` memory gates, and package payload materialization.
+  - Added regression tests for candidate claim evidence, task evidence graph endpoint pairs, stage-scoped omissions, failure-memory replanning, memory observability metrics, and package inclusion.
+  - Hardened Harness Lab account-root guard to ignore live Codex `.sandbox/**` volatile runtime files while preserving durable profile protection.
+- Verification evidence:
+  - Independent review loop: initial review found 5 P1/P2 findings; follow-up review found 2 remaining P1 findings; final review found no remaining P1/P2 findings.
+  - Source doctor: `node scripts\doctor.mjs check --json` pass.
+  - Skills audit: `node scripts\skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json` pass.
+  - Package dry-run: `node package\build-package.mjs --runtime all --dry-run --json` pass.
+  - Package gate: `npm run test:package` 57/57 pass.
+  - Eval gate: `npm run test:eval` pass, score `1`, 14/14 golden control-plane cases pass.
+  - Harness Lab gate: `npm run test:lab` pass, run `harness-lab-20260709-202459`, `accountRootGuard=passed`, promotion `smoke_only`.
+  - Full source gate: `npm test` 553 tests, 552 pass, 1 skipped.
+- Commit boundary:
+  - Source changes only.
+  - Generated lab state, account-root knowledge state, and local runtime artifacts are excluded from commit staging.
+
 - Date: 2026-07-09
 - Scope: Matt Pocock Skills v1.1 harness pattern transfer: Discovery Map, fact/decision intake, linked research/prototype evidence, strict seam rationale validation, review axis metadata, package gate wiring, and live account-root sync.
 - Changed areas:

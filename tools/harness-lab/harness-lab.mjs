@@ -474,6 +474,7 @@ const shouldExcludeGuardPath = (relativePath) => {
   if (
     segments.includes('.git')
     || segments.includes('logs')
+    || segments.includes('.sandbox')
     || segments.includes('cache')
     || segments.includes('sessions')
     || segments.includes('node_modules')

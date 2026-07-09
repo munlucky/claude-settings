@@ -134,6 +134,7 @@ const main = async () => {
       verification,
       reviewFindings: parseJsonOption(options.reviewFindingsJson, '--review-findings-json', []),
       hardGates: parseJsonOption(options.hardGatesJson, '--hard-gates-json', []),
+      memoryGates: parseJsonOption(options.memoryGatesJson, '--memory-gates-json', []),
       policyVersion: options.policyVersion || 'score-policy-v1',
     });
     result = {

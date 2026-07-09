@@ -1,0 +1,80 @@
+schema: "moonshot-relay.phase-runner.source-implementation-evidence.v1"
+date: "2026-07-09"
+scope: "harness-memory-control-plane-source-only"
+planPackage: "docs/public/roadmaps/harness-memory-control-plane-2026-07-09"
+executionMode: "markdown-compatible"
+liveAdoption:
+  accountRootSync: false
+  profileSync: false
+  reason: "Operational adoption closeout was not requested in this phase-runner turn."
+implementedSurfaces:
+  guidelines:
+    - "docs/public/guidelines/memory-control-plane.md"
+    - "docs/public/guidelines/memory-control-plane-rollout.md"
+  schemas:
+    - "schemas/memory-claim.schema.json"
+    - "schemas/episode-ledger.schema.json"
+    - "schemas/task-evidence-graph.schema.json"
+    - "schemas/memory-control-plane-gate.schema.json"
+    - "schemas/failure-memory-candidate.schema.json"
+    - "schemas/context-pack-v2.schema.json"
+  scripts:
+    - "scripts/lib/memory-control-plane-contracts.mjs"
+    - "scripts/lib/memory-claim-ledger.mjs"
+    - "scripts/memory-claim-validate.mjs"
+  existingContractsExtended:
+    - "scripts/knowledge-context-build.mjs"
+    - "scripts/lib/verification-plane.mjs"
+    - "schemas/context-pack.schema.json"
+    - "schemas/score-policy.schema.json"
+    - "schemas/verification.contract.yaml"
+    - "docs/public/repository-layout.md"
+verification:
+  preflight:
+    - command: "node scripts/project-identity.mjs --json"
+      status: "passed"
+    - command: "node scripts/knowledge-context-build.mjs --cwd . --stage execute --json"
+      status: "passed"
+      note: "Knowledge repository was not configured; advisory status did not block source execution."
+    - command: "node scripts/plan-graph-validate.mjs --markdown-phase-docs-json ... --json"
+      status: "passed"
+      result: "markdown-compatible, phaseCount=6"
+  sourceTests:
+    - command: "node --test tests/memory-claim-ledger-contract.test.mjs tests/task-evidence-graph-contract.test.mjs tests/ontology-constraint-contract.test.mjs tests/failure-memory-candidate-contract.test.mjs tests/failure-memory-replan-contract.test.mjs"
+      status: "passed"
+      tests: 14
+    - command: "node --test tests/knowledge-context-build-contract.test.mjs tests/context-pack-contract.test.mjs tests/score-policy-contract.test.mjs tests/observability-metrics-contract.test.mjs"
+      status: "passed"
+      tests: 16
+    - command: "node --test tests/active-contracts.test.mjs tests/context-pack-contract.test.mjs tests/knowledge-context-build-contract.test.mjs tests/score-policy-contract.test.mjs tests/observability-metrics-contract.test.mjs tests/memory-claim-ledger-contract.test.mjs tests/task-evidence-graph-contract.test.mjs tests/ontology-constraint-contract.test.mjs tests/failure-memory-candidate-contract.test.mjs tests/failure-memory-replan-contract.test.mjs"
+      status: "passed"
+      tests: 53
+      skipped: 1
+    - command: "npm run test:package"
+      status: "passed"
+      tests: 57
+    - command: "npm test"
+      status: "passed"
+      tests: 553
+      skipped: 1
+    - command: "git diff --check"
+      status: "passed"
+  repairNotes:
+    - issue: "Initial runtime-state tests were degraded because better-sqlite3 was built for an older Node ABI."
+      repair: "Ran npm rebuild better-sqlite3, then reran package and full tests successfully."
+    - issue: "Active docs contract initially rejected a missing rollout guideline and missing repository-layout classification."
+      repair: "Added memory-control-plane-rollout guideline and classified both memory-control-plane guidelines."
+    - issue: "Independent review found task evidence graph accepted wrong endpoint types when at least one valid edge existed."
+      repair: "Added relation endpoint-pair validation and regression tests for invalid extra edges."
+    - issue: "Independent review found score-candidate could accept memory gates with passed status and failing metrics."
+      repair: "Normalized inconsistent memory gates to failed before scoring and added CLI regression coverage."
+  independentReview:
+    - agent: "019f476c-3129-7c42-aef5-e6269af450ca"
+      status: "findings-addressed"
+      findings: 5
+    - agent: "019f4773-6f87-77b1-b696-adc68e160b2d"
+      status: "findings-addressed"
+      findings: 2
+    - agent: "019f4776-bacf-77c1-9c33-a3efe7c2ab2c"
+      status: "no-p1-p2-remaining"
+status: "source-implemented-and-tested"

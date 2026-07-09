@@ -82,6 +82,8 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `harness-bootstrap-lab.md` | operational-procedure | `tools/harness-lab/harness-lab.mjs`, `tests/harness-lab-contract.test.mjs` |
 | `knowledge-repository-ops.md` | policy-anchor | `scripts/knowledge-*.mjs`, `docs/public/project-knowledge-plane.md` |
 | `long-running-harness.ko.md` | policy-anchor | `skills/moonshot-phase-runner/**`, `skills/moonshot-in-session-coordinator/**` |
+| `memory-control-plane.md` | policy-anchor | `schemas/memory-claim.schema.json`, `schemas/task-evidence-graph.schema.json`, `scripts/lib/memory-control-plane-contracts.mjs`, `tests/*memory*contract.test.mjs` |
+| `memory-control-plane-rollout.md` | operational-procedure | `package/build-package.mjs`, `scripts/install-account-root-harness.mjs`, package materialization tests, eval and lab gates |
 | `memorygraph-workflow.md` / `memorygraph-workflow.ko.md` | policy-anchor | `scripts/memorygraph-*.mjs`, `skills/project-memory-refresh/**` |
 | `minimal-correct-implementation.md` | policy-anchor | `skills/moonshot-orchestrator/**`, `skills/moonshot-phase-runner/**`, `templates/execution/SCORECARD.template.md` |
 | `moonshot-architecture.md` / `moonshot-architecture.ko.md` | policy-anchor | `skills/moonshot-architecture/**`, `docs/public/roadmaps/moonshot-architecture/**` |

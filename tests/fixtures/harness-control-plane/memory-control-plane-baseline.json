@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-09T00:00:00.000Z",
+  "projectId": "munlucky-moonshot-relay",
+  "sourceTruth": {
+    "guidelines": [
+      "docs/public/guidelines/document-memory-policy.md",
+      "docs/public/guidelines/memorygraph-workflow.md",
+      "docs/public/guidelines/context-relevance-policy.md",
+      "docs/public/project-knowledge-plane.md"
+    ],
+    "scripts": [
+      "scripts/knowledge-context-build.mjs",
+      "scripts/awtl-memory-promotion.mjs",
+      "scripts/lib/awtl-memory-promotion.mjs",
+      "scripts/ontology-constraint-validate.mjs",
+      "scripts/verification-plane.mjs",
+      "scripts/runtime-state.mjs"
+    ],
+    "schemas": [
+      "schemas/knowledge-contract.schema.json",
+      "schemas/context-pack.schema.json",
+      "schemas/memory-promotion-ledger.schema.json",
+      "schemas/ontology-constraint.schema.json",
+      "schemas/awtl-memory-candidate-v1.schema.json"
+    ],
+    "tests": [
+      "tests/knowledge-context-build-contract.test.mjs",
+      "tests/context-pack-contract.test.mjs",
+      "tests/memory-promotion-contract.test.mjs",
+      "tests/verification-plane-contract.test.mjs",
+      "tests/score-policy-contract.test.mjs",
+      "tests/observability-metrics-contract.test.mjs"
+    ]
+  },
+  "existingPhase09Baseline": {
+    "path": "docs/public/roadmaps/harness-control-plane-modernization/09-memory-promotion-knowledge-and-decision-ledger-v2.md",
+    "alreadyCovered": [
+      "promotion requires evidence and review",
+      "stale memory produces warnings",
+      "rollback supersedes without deleting audit history",
+      "memory is not completion authority",
+      "raw MemoryGraph/KG/ontology records stay out of plan docs"
+    ],
+    "extensionGaps": [
+      "stage-scoped read/write/verify policy",
+      "typed episode and memory claim contracts",
+      "task evidence graph constraints",
+      "memory gate result in verification/score",
+      "failure-memory replan candidates without auto-promotion"
+    ]
+  },
+  "generatedStateBoundary": {
+    "sourceDocsMayContain": [
+      "compact summaries",
+      "schema definitions",
+      "test fixtures without secrets",
+      "policy and rollout gates"
+    ],
+    "sourceDocsMustNotContain": [
+      "raw MemoryGraph records",
+      "raw KG edges",
+      "raw ontology dumps",
+      "sqlite state",
+      "runtime logs",
+      "transcripts",
+      "browser artifacts",
+      "secret-like strings"
+    ]
+  },
+  "phase01Decision": {
+    "runtimeStateMutationAllowed": false,
+    "externalBackendAllowed": false,
+    "phase02MayProceedWithSourceContracts": true,
+    "phase02RuntimeMigrationRequiresPolicy": true
+  }
+}

@@ -20,6 +20,15 @@
           "requiredStatus": { "const": "passed" }
         }
       }
+    },
+    "memoryQualityWeights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retrievalPrecision": { "type": "number", "minimum": 0, "maximum": 1 },
+        "provenanceCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "staleSuppression": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
     }
   }
 }

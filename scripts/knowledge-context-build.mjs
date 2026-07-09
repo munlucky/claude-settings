@@ -8,7 +8,22 @@ import { fileURLToPath } from 'node:url';
 import { parseAndValidateJsonl } from './knowledge-records.mjs';
 import { resolveProjectIdentity } from './project-identity.mjs';
 
-const VALID_STAGES = new Set(['intake', 'plan', 'execute', 'verify', 'finish']);
+const VALID_STAGES = new Set([
+  'intake',
+  'init',
+  'requirements',
+  'design',
+  'plan',
+  'validate-plan',
+  'prepare',
+  'execute',
+  'review',
+  'verify',
+  'score',
+  'replan',
+  'close',
+  'finish',
+]);
 const DEFAULT_MAX_PROMPT_TOKENS = 900;
 const DEFAULT_STALE_AFTER_DAYS = 30;
 const CONTEXT_PACK_SCHEMA_VERSION = 1;
@@ -22,22 +37,72 @@ const KNOWLEDGE_FILES = Object.freeze([
 
 const STAGE_RULES = Object.freeze({
   intake: {
+    allowedTypes: ['policy_anchor', 'kg_relation', 'ontology_constraint'],
     limits: { policyAnchors: 3, semanticFacts: 2, graphSynopsis: 1, ontologyConstraints: 1 },
     weights: { policy_anchor: 70, semantic_fact: 45, kg_relation: 15, ontology_constraint: 20 },
   },
+  init: {
+    allowedTypes: ['policy_anchor', 'kg_relation', 'ontology_constraint'],
+    limits: { policyAnchors: 3, semanticFacts: 2, graphSynopsis: 1, ontologyConstraints: 1 },
+    weights: { policy_anchor: 70, semantic_fact: 45, kg_relation: 15, ontology_constraint: 20 },
+  },
+  requirements: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'ontology_constraint'],
+    limits: { policyAnchors: 3, semanticFacts: 3, graphSynopsis: 1, ontologyConstraints: 2 },
+    weights: { policy_anchor: 65, semantic_fact: 60, kg_relation: 20, ontology_constraint: 50 },
+  },
+  design: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'kg_relation', 'ontology_constraint'],
+    limits: { policyAnchors: 2, semanticFacts: 4, graphSynopsis: 3, ontologyConstraints: 3 },
+    weights: { policy_anchor: 45, semantic_fact: 65, kg_relation: 65, ontology_constraint: 55 },
+  },
   plan: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'kg_relation', 'ontology_constraint'],
     limits: { policyAnchors: 2, semanticFacts: 4, graphSynopsis: 2, ontologyConstraints: 2 },
     weights: { policy_anchor: 45, semantic_fact: 70, kg_relation: 35, ontology_constraint: 45 },
   },
+  'validate-plan': {
+    allowedTypes: ['policy_anchor', 'ontology_constraint'],
+    limits: { policyAnchors: 2, semanticFacts: 2, graphSynopsis: 2, ontologyConstraints: 5 },
+    weights: { policy_anchor: 45, semantic_fact: 45, kg_relation: 45, ontology_constraint: 90 },
+  },
+  prepare: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'kg_relation', 'ontology_constraint'],
+    limits: { policyAnchors: 3, semanticFacts: 3, graphSynopsis: 2, ontologyConstraints: 3 },
+    weights: { policy_anchor: 65, semantic_fact: 50, kg_relation: 45, ontology_constraint: 60 },
+  },
   execute: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'kg_relation', 'ontology_constraint'],
     limits: { policyAnchors: 2, semanticFacts: 3, graphSynopsis: 3, ontologyConstraints: 3 },
     weights: { policy_anchor: 35, semantic_fact: 50, kg_relation: 70, ontology_constraint: 65 },
   },
+  review: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'kg_relation', 'ontology_constraint'],
+    limits: { policyAnchors: 3, semanticFacts: 2, graphSynopsis: 3, ontologyConstraints: 4 },
+    weights: { policy_anchor: 70, semantic_fact: 40, kg_relation: 55, ontology_constraint: 75 },
+  },
   verify: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'ontology_constraint'],
     limits: { policyAnchors: 2, semanticFacts: 2, graphSynopsis: 2, ontologyConstraints: 4 },
     weights: { policy_anchor: 40, semantic_fact: 45, kg_relation: 45, ontology_constraint: 80 },
   },
+  score: {
+    allowedTypes: ['policy_anchor', 'ontology_constraint'],
+    limits: { policyAnchors: 2, semanticFacts: 2, graphSynopsis: 1, ontologyConstraints: 4 },
+    weights: { policy_anchor: 45, semantic_fact: 40, kg_relation: 30, ontology_constraint: 80 },
+  },
+  replan: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'kg_relation', 'ontology_constraint'],
+    limits: { policyAnchors: 2, semanticFacts: 3, graphSynopsis: 4, ontologyConstraints: 3 },
+    weights: { policy_anchor: 45, semantic_fact: 55, kg_relation: 80, ontology_constraint: 60 },
+  },
+  close: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'ontology_constraint'],
+    limits: { policyAnchors: 2, semanticFacts: 3, graphSynopsis: 1, ontologyConstraints: 3 },
+    weights: { policy_anchor: 55, semantic_fact: 60, kg_relation: 25, ontology_constraint: 65 },
+  },
   finish: {
+    allowedTypes: ['policy_anchor', 'semantic_fact', 'ontology_constraint'],
     limits: { policyAnchors: 2, semanticFacts: 3, graphSynopsis: 1, ontologyConstraints: 3 },
     weights: { policy_anchor: 55, semantic_fact: 60, kg_relation: 25, ontology_constraint: 65 },
   },
@@ -395,9 +460,18 @@ function toPromptItem(record, omittedByPolicy) {
 
 function selectItems(records, stage, projectId, omittedByPolicy) {
   const rule = STAGE_RULES[stage];
+  const allowedTypes = new Set(rule.allowedTypes || []);
   const visible = records
     .filter((record) => record.projectId === projectId)
-    .filter(isPromptVisibleRecord);
+    .filter(isPromptVisibleRecord)
+    .filter((record) => {
+      if (allowedTypes.has(record.type)) return true;
+      omittedByPolicy.push({
+        sourceRef: record.sourceRef || record.provenanceRef || record.id || record.type,
+        reason: `stage_${stage}_forbids_${record.type}`,
+      });
+      return false;
+    });
 
   const byType = {
     policyAnchors: visible.filter((record) => record.type === 'policy_anchor'),
@@ -721,7 +795,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: node knowledge-context-build.mjs --cwd <path> --stage <intake|plan|execute|verify|finish> [--run-id <id>] [--goal-id <id>] --json
+  console.log(`Usage: node knowledge-context-build.mjs --cwd <path> --stage <intake|init|requirements|design|plan|validate-plan|prepare|execute|review|verify|score|replan|close|finish> [--run-id <id>] [--goal-id <id>] --json
 
 Builds a deterministic, prompt-safe projectKnowledgeContext block from account-root project knowledge.`);
 }

@@ -78,6 +78,8 @@ test('context pack schema is present and names the stable status vocabulary', as
   const schemaPath = path.join(root, 'schemas', 'context-pack.schema.json');
   const schema = JSON.parse(await readFile(schemaPath, 'utf8'));
   assert.equal(schema.title, 'ContextPackV1');
+  assert.ok(schema.properties.stage.enum.includes('requirements'));
+  assert.ok(schema.properties.stage.enum.includes('replan'));
   assert.deepEqual(schema.properties.status.enum, [
     'ready',
     'stale',
@@ -86,4 +88,13 @@ test('context pack schema is present and names the stable status vocabulary', as
     'not_configured',
   ]);
   assert.equal(schema.properties.promptFacingAuthority.const, 'projectKnowledgeContext.promptBlock');
+});
+
+test('ContextPackV2 candidate is additive over promptBlock authority', async () => {
+  const schemaPath = path.join(root, 'schemas', 'context-pack-v2.schema.json');
+  const schema = JSON.parse(await readFile(schemaPath, 'utf8'));
+  assert.equal(schema.title, 'ContextPackV2 Candidate');
+  assert.equal(schema.properties.promptFacingAuthority.const, 'projectKnowledgeContext.promptBlock');
+  assert.equal(schema.properties.compatibility.properties.extendsContextPackV1.const, true);
+  assert.equal(schema.properties.compatibility.properties.additiveOnly.const, true);
 });

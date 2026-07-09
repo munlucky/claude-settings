@@ -1,0 +1,132 @@
+reviewIteration: 2
+status: "reviewed-parent-edits-applied"
+reviewedPackageRoot: "docs/public/roadmaps/harness-memory-control-plane-2026-07-09"
+reviewer:
+  type: "independent-agent"
+  agentId: "019f475b-69a3-7083-9551-55231de58642"
+reviewPurpose: "Per-document blocker confirmation after initial roadmap package creation."
+packageLevelFindings:
+  blockingFindings:
+    - id: "IR2-PKG-001"
+      finding: "Package files exist but are untracked in git."
+      disposition: "recorded_not_staged"
+      reason: "User requested document preparation, not staging or commit."
+    - id: "IR2-PKG-002"
+      finding: "Spec-test obligations under-covered."
+      disposition: "accepted"
+      acceptedEdit: "Expanded master plan specTestObligations to cover REQ-MEM-001 through REQ-MEM-007 and SCN-MEM-001 through SCN-MEM-003."
+    - id: "IR2-PKG-003"
+      finding: "Review artifact lacked per-document entries."
+      disposition: "accepted"
+      acceptedEdit: "Added perDocumentReview entries in this iter-02 artifact."
+perDocumentReview:
+  - document: "00-master-plan-v1.ko.md"
+    blockers:
+      - "Missing closure gate evidence."
+      - "Spec-test obligation coverage incomplete."
+      - "Placeholder plan graph command."
+    acceptedEdits:
+      - "Added closureGate evidence section with expected files, keyword search, markdown compatibility command/result, git tracking status, and missing policy gates."
+      - "Expanded specTestObligations and added spec-test-obligations validator command for follow-on execution packages."
+      - "Replaced placeholder plan graph command with exact PowerShell command used in this workspace."
+    rejectedEdits:
+      - "Did not stage files because staging/commit was not requested."
+    remainingAmbiguity:
+      - "Git status remains untracked until the operator requests staging/commit."
+    reviewedSurfaceClassifications:
+      - "source_only"
+      - "package_runtime_payload"
+      - "installed_profile_or_account_root"
+      - "external_deployment_or_service"
+      - "data_or_state_migration"
+  - document: "01-current-memory-plane-baseline-v1.ko.md"
+    blockers:
+      - "Owned paths overlapped every phase by claiming the whole roadmap package."
+    acceptedEdits:
+      - "Narrowed ownedPaths to the phase doc plus planned baseline/guideline artifacts."
+      - "Marked data/state surface as read-only audit only in this phase."
+      - "Replaced placeholder plan graph verification command with exact command."
+    rejectedEdits: []
+    remainingAmbiguity:
+      - "Runtime-state migration policy remains out of scope for baseline."
+    reviewedSurfaceClassifications:
+      - "source_only"
+      - "data_or_state_migration"
+  - document: "02-evidence-episode-ledger-v1.ko.md"
+    blockers:
+      - "Runtime-state files were both read-only and shared mutable."
+      - "Promotion ledger wording risked duplicating Phase 09."
+    acceptedEdits:
+      - "Moved runtime-state edits behind conditionalOwnedPathsAfterMigrationPolicy."
+      - "Reworded Phase 09 relationship so claim ledger feeds existing promotion ledger and promotion edits require a proven gap."
+      - "Added document memory and project knowledge policy paths."
+    rejectedEdits: []
+    remainingAmbiguity:
+      - "Whether claims become runtime-state tables or separate generated-state ledgers remains Phase 02 implementation decision after migration policy."
+    reviewedSurfaceClassifications:
+      - "source_only"
+      - "data_or_state_migration"
+  - document: "03-stage-scoped-retrieval-and-context-packs-v1.ko.md"
+    blockers: []
+    acceptedEdits:
+      - "Added context relevance policy and existing context-pack schema to policy source paths."
+      - "Added compatibility note that ContextPackV2 is an extension candidate and must preserve ContextPackV1 unless migration is explicitly accepted."
+    rejectedEdits: []
+    remainingAmbiguity:
+      - "Exact ContextPackV2 field set remains implementation work."
+    reviewedSurfaceClassifications:
+      - "source_only"
+  - document: "04-task-evidence-graph-ontology-verify-gates-v1.ko.md"
+    blockers:
+      - "Existing ontology and verification files were incorrectly marked planned."
+      - "Test target names were vague."
+    acceptedEdits:
+      - "Classified existing ontology and verification files as modify paths, not planned new paths."
+      - "Named exact planned test files: tests/task-evidence-graph-contract.test.mjs and tests/ontology-constraint-contract.test.mjs."
+    rejectedEdits: []
+    remainingAmbiguity:
+      - "Task evidence graph validator path is still planned source work."
+    reviewedSurfaceClassifications:
+      - "source_only"
+      - "data_or_state_migration"
+  - document: "05-eval-failure-and-procedural-memory-v1.ko.md"
+    blockers:
+      - "Eval file was both read-only and shared mutable."
+      - "Planned test names were vague."
+    acceptedEdits:
+      - "Moved eval file edits behind conditionalOwnedPathsAfterEvalPolicy."
+      - "Added explicit missing policy for candidate persistence rollback."
+      - "Named exact planned tests: tests/failure-memory-candidate-contract.test.mjs and tests/failure-memory-replan-contract.test.mjs."
+    rejectedEdits: []
+    remainingAmbiguity:
+      - "Whether failure-memory candidates persist in runtime DB or generated JSONL is deferred to implementation policy."
+    reviewedSurfaceClassifications:
+      - "source_only"
+      - "data_or_state_migration"
+  - document: "06-score-observability-package-rollout-v1.ko.md"
+    blockers:
+      - "Package/install files were read-only while rollout phase owned them."
+      - "Source policy paths were too narrow."
+    acceptedEdits:
+      - "Moved package build, installer, and skills lock paths to ownedPaths for controlled rollout."
+      - "Kept live account-root homes read-only until explicit approval."
+      - "Added AGENTS.md and schemas/verification.contract.yaml to source policy paths."
+    rejectedEdits: []
+    remainingAmbiguity:
+      - "Exact live account-root install parity command remains missing-policy blocker."
+    reviewedSurfaceClassifications:
+      - "source_only"
+      - "package_runtime_payload"
+      - "installed_profile_or_account_root"
+      - "external_deployment_or_service"
+closedBlockers:
+  - "Spec-test obligations expanded."
+  - "Per-document review entries recorded."
+  - "Path ownership/read-only conflicts corrected or made conditional."
+  - "Existing files no longer marked planned where they already exist."
+  - "Placeholder commands replaced or recorded as future execution-package validators."
+remainingBlockers:
+  - "Files are untracked until staging/commit is requested."
+  - "External backend adoption remains blocked on ADR/security/migration policy."
+  - "Runtime-state data migrations remain blocked on rollback policy."
+  - "Live account-root install parity remains blocked on current policy-sourced command confirmation."

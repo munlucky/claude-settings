@@ -32,7 +32,24 @@
     "projectId": { "type": "string", "minLength": 1 },
     "namespace": { "type": "string", "minLength": 1 },
     "knowledgeRevision": { "type": "string" },
-    "stage": { "enum": ["intake", "plan", "execute", "verify", "finish"] },
+    "stage": {
+      "enum": [
+        "intake",
+        "init",
+        "requirements",
+        "design",
+        "plan",
+        "validate-plan",
+        "prepare",
+        "execute",
+        "review",
+        "verify",
+        "score",
+        "replan",
+        "close",
+        "finish"
+      ]
+    },
     "strictness": { "enum": ["advisory", "required"] },
     "status": { "enum": ["ready", "stale", "degraded_read", "degraded_write", "not_configured"] },
     "blocking": { "type": "boolean" },

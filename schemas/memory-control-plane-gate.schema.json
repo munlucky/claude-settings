@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/memory-control-plane-gate.schema.json",
+  "title": "Memory Control Plane Gate Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "provenanceCoverage",
+    "staleMemoryErrorCount",
+    "unauthorizedMemoryAccess",
+    "candidateAsFactViolations",
+    "piiPolicyViolations",
+    "findings"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["passed", "failed"] },
+    "provenanceCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+    "staleMemoryErrorCount": { "type": "integer", "minimum": 0 },
+    "unauthorizedMemoryAccess": { "type": "integer", "minimum": 0 },
+    "candidateAsFactViolations": { "type": "integer", "minimum": 0 },
+    "piiPolicyViolations": { "type": "integer", "minimum": 0 },
+    "findings": { "type": "array", "items": { "type": "string" } }
+  }
+}

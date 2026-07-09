@@ -374,6 +374,10 @@ observability:
       - "metrics.contextCompactionRatio"
       - "metrics.stablePrefixHash"
       - "metrics.promptCacheHit"
+      - "metrics.memoryProvenanceCoverage"
+      - "metrics.staleMemorySuppression"
+      - "metrics.memoryGateFailureCount"
+      - "metrics.memoryPromotionRollbackCount"
   teamMetrics:
     # Deprecated compatibility surface. New consumers should read decisionFields
     # for routing/completion decisions and reportingFields for diagnostics.

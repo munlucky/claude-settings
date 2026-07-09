@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/episode-ledger.schema.json",
+  "title": "Episode Ledger Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "episodeId", "runId", "stage", "eventType", "timestamp", "sourceRef", "promptSafe"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "episodeId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "stage": { "type": "string", "minLength": 1 },
+    "eventType": { "enum": ["user_request", "command_run", "test_result", "review", "patch", "verification", "score", "replan"] },
+    "timestamp": { "type": "string", "minLength": 1 },
+    "sourceRef": { "type": "string", "minLength": 1 },
+    "rawRef": { "type": "string" },
+    "summary": { "type": "string" },
+    "promptSafe": { "type": "boolean" },
+    "omittedReasons": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -834,9 +834,29 @@ export function scoreCandidate({
   reviewFindings = [],
   policyVersion = 'score-policy-v1',
   hardGates = [],
+  memoryGates = [],
   weights = {},
 } = {}) {
   const candidate_id = normalizeCandidateId(candidate || verification);
+  const normalizedMemoryGates = memoryGates.map((gate) => {
+    const metricFailure = Number(gate.staleMemoryErrorCount || 0) > 0
+      || Number(gate.unauthorizedMemoryAccess || 0) > 0
+      || Number(gate.candidateAsFactViolations || 0) > 0
+      || Number(gate.piiPolicyViolations || 0) > 0
+      || (Number.isFinite(Number(gate.provenanceCoverage)) && Number(gate.provenanceCoverage) < 1)
+      || (Array.isArray(gate.findings) && gate.findings.length > 0);
+    if (gate.status === 'passed' && metricFailure) {
+      return {
+        ...gate,
+        status: 'failed',
+        findings: [
+          ...(Array.isArray(gate.findings) ? gate.findings : []),
+          'memory gate metrics are inconsistent with passed status',
+        ],
+      };
+    }
+    return gate;
+  });
   const binding = evidenceBinding({
     candidate_id,
     sourceDigest: verification?.sourceDigest || candidate?.dimensions?.source,
@@ -845,9 +865,16 @@ export function scoreCandidate({
   });
   const classifiedFindings = reviewFindings.map((finding) => classifyFinding(finding));
   const failedHardGates = hardGates.filter((gate) => gate.status !== 'passed');
+  const failedMemoryGates = normalizedMemoryGates.filter((gate) => gate.status !== 'passed');
   const blockingFindings = classifiedFindings.filter((finding) => finding.blocksFullScore);
   const verificationFailed = verification?.status !== 'passed';
-  const hardGateFailed = failedHardGates.length > 0 || blockingFindings.length > 0 || verificationFailed;
+  const hardGateFailed = failedHardGates.length > 0 || failedMemoryGates.length > 0 || blockingFindings.length > 0 || verificationFailed;
+  const provenanceValues = normalizedMemoryGates
+    .map((gate) => Number(gate.provenanceCoverage))
+    .filter((value) => Number.isFinite(value));
+  const provenanceCoverage = provenanceValues.length
+    ? provenanceValues.reduce((sum, value) => sum + value, 0) / provenanceValues.length
+    : 1;
   const weightedScore = hardGateFailed
     ? 0
     : Math.min(1, Object.values(weights).reduce((sum, value) => sum + Number(value || 0), 0) || 1);
@@ -863,6 +890,11 @@ export function scoreCandidate({
     status: hardGateFailed ? 'BLOCKED' : 'FULL',
     hardGates: [
       ...hardGates,
+      ...failedMemoryGates.map((gate, index) => ({
+        id: gate.id || `memory-gate-${index + 1}`,
+        status: 'failed',
+        reason: `memory gate failed: ${gate.findings?.join('; ') || gate.status}`,
+      })),
       ...blockingFindings.map((finding) => ({
         id: finding.findingId,
         status: 'failed',
@@ -870,6 +902,15 @@ export function scoreCandidate({
       })),
       ...(verificationFailed ? [{ id: 'verification-status', status: 'failed', reason: `verification status ${verification?.status || 'missing'}` }] : []),
     ],
+    memoryQuality: {
+      gateCount: normalizedMemoryGates.length,
+      failedGateCount: failedMemoryGates.length,
+      provenanceCoverage,
+      staleMemoryErrorCount: normalizedMemoryGates.reduce((sum, gate) => sum + Number(gate.staleMemoryErrorCount || 0), 0),
+      unauthorizedMemoryAccess: normalizedMemoryGates.reduce((sum, gate) => sum + Number(gate.unauthorizedMemoryAccess || 0), 0),
+      candidateAsFactViolations: normalizedMemoryGates.reduce((sum, gate) => sum + Number(gate.candidateAsFactViolations || 0), 0),
+      piiPolicyViolations: normalizedMemoryGates.reduce((sum, gate) => sum + Number(gate.piiPolicyViolations || 0), 0),
+    },
     weightedScore,
     wholePlanAuthority: {
       status: 'not_completion_authority',
