@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Moonshot Relay 설정 동기화 스크립트
-# 기본값은 계정 루트(~/.claude, ~/.codex)에 설치하고, --project일 때만 현재 프로젝트에 설치합니다.
+# 기본값은 계정 루트(~/.claude, ~/.codex, ~/.qwen)에 설치하고, --project일 때만 현재 프로젝트에 설치합니다.
 
 set -e
 
@@ -681,7 +681,7 @@ usage() {
 사용법: $0 [OPTIONS]
 
 옵션:
-  --account-root         계정 루트(~/.claude, ~/.codex)에 설치 (기본값)
+  --account-root         계정 루트(~/.claude, ~/.codex, ~/.qwen)에 설치 (기본값)
   --project              현재 프로젝트에 .claude/.codex compatibility payload 설치
   --no-backup            기존 AI 설정 백업하지 않음
   --dry-run              실제 변경 없이 미리보기만
@@ -694,9 +694,9 @@ usage() {
 기본 동작:
   - account-root 직접 설치가 기본값입니다.
   - 공통 Moonshot Relay runtime payload를 ~/.moonshot-relay에 설치합니다.
-  - Claude/Codex가 자동으로 읽는 profile 표면만 ~/.claude 및 ~/.codex에 설치합니다.
+  - Claude/Codex/Qwen이 자동으로 읽는 profile 표면만 ~/.claude, ~/.codex, ~/.qwen에 설치합니다.
   - Claude rules/skills/agents는 자동 적용 표면이므로 ~/.claude에 유지합니다.
-  - Claude/Codex 런타임 로컬 파일(settings, auth, sessions, plugins, caches 등)은 보호합니다.
+  - Claude/Codex/Qwen 런타임 로컬 파일(settings, auth, sessions, plugins, caches 등)은 보호합니다.
   - 각 계정 루트에 .moonshot-relay-install-manifest.json 설치 manifest를 남깁니다.
   - 현재 프로젝트에 compatibility payload가 필요하면 --project를 사용합니다.
 
@@ -1008,7 +1008,7 @@ if [ "$DRY_RUN" = true ]; then
 		echo "  - 백업할 파일: ${BACKUP_FILES[*]}"
 	fi
 	echo "  - Payload source: ${DOWNLOADED_ARCHIVE_REPO_URL:-local checkout}"
-	echo "  - ${PACKAGE_BUILDER}로 Claude/Codex payload materialize"
+	echo "  - ${PACKAGE_BUILDER}로 Claude/Codex/Qwen payload materialize"
 	echo "  - materialized Claude payload에서 .claude 디렉토리 설치"
 	echo "  - materialized Codex payload에서 .codex/config.toml 설치"
 	echo "  - materialized Codex payload에서 .codex/agents, .codex/skills 백업 없이 최신 복사본으로 동기화"

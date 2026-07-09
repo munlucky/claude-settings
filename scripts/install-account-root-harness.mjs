@@ -155,9 +155,51 @@ const runtimeSpecs = {
     ]),
     legacyHarnessCore: 'harness-core',
   },
+  qwen: {
+    payloadPath: path.join('qwen', 'profile', '.qwen'),
+    defaultHome: () => path.join(os.homedir(), '.qwen'),
+    envName: 'QWEN_HOME',
+    exposureEntries: new Set([
+      'QWEN.md',
+      'README.md',
+      'agents',
+      'rules',
+      'skills',
+      'verification.contract.yaml',
+    ]),
+    legacyNonExposureEntries: new Set([
+      'bin',
+      'docs',
+      'schemas',
+      'scripts',
+      'templates',
+      'tools',
+    ]),
+    protectedEntries: new Set([
+      '.env',
+      'auth.json',
+      'backups',
+      'cache',
+      'credentials.json',
+      'history.json',
+      'history.jsonl',
+      'logs',
+      'memory',
+      'memory.json',
+      'mcp-oauth-tokens.json',
+      'oauth_creds.json',
+      'plugins',
+      'settings.json',
+      'shell_history',
+      'startup-perf',
+      'tmp',
+      'todos',
+    ]),
+    legacyHarnessCore: 'harness-core',
+  },
 };
 
-const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex] [--source-root <repo>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
+const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex|qwen] [--source-root <repo>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--qwen-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
 
 const parseArgs = (argv) => {
   const options = {
@@ -184,6 +226,8 @@ const parseArgs = (argv) => {
       options.homes.codex = path.resolve(argv[++index]);
     } else if (arg === '--claude-home') {
       options.homes.claude = path.resolve(argv[++index]);
+    } else if (arg === '--qwen-home') {
+      options.homes.qwen = path.resolve(argv[++index]);
     } else if (arg === '--dry-run') {
       options.dryRun = true;
     } else if (arg === '--json') {
@@ -200,7 +244,7 @@ const parseArgs = (argv) => {
     }
   }
 
-  if (!['all', 'claude', 'codex'].includes(options.runtime)) {
+  if (!['all', 'claude', 'codex', 'qwen'].includes(options.runtime)) {
     throw new Error(`Unsupported runtime: ${options.runtime}\n${usage()}`);
   }
 
@@ -797,7 +841,7 @@ const listDirectoryNames = async (root) => {
 };
 
 const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntimeSkills }) => {
-  if (!['claude', 'codex'].includes(manifest.runtime)) {
+  if (!['claude', 'codex', 'qwen'].includes(manifest.runtime)) {
     return null;
   }
 
@@ -827,7 +871,7 @@ const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntime
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
   const sourceRepo = options.sourceRoot;
-  const runtimes = options.runtime === 'all' ? ['claude', 'codex'] : [options.runtime];
+  const runtimes = options.runtime === 'all' ? ['claude', 'codex', 'qwen'] : [options.runtime];
   const installId = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
   const payloadRoot = await materializePayloads(sourceRepo);
   const publicRuntimeSkills = await readRuntimeSurface(sourceRepo);

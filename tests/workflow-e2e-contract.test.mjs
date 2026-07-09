@@ -96,6 +96,7 @@ const profileGuidelinesRoots = new Map([
   ['AGENTS.md', 'docs/public/guidelines'],
   ['package/profile-templates/claude/.claude/CLAUDE.md', '${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines'],
   ['package/profile-templates/codex/.codex/AGENTS.md', '${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines'],
+  ['package/profile-templates/qwen/.qwen/QWEN.md', '${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines'],
   ['package/profile-templates/claude/.claude/PROJECT.md', '${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines'],
 ]);
 
@@ -106,7 +107,7 @@ test('root AGENTS is a source-checkout TOC, not a profile-local pointer', async 
   assert.match(content, /Canonical Source/i);
   assert.match(content, /skills\//);
   assert.match(content, /docs\/public/);
-  assert.match(content, /Local runtime profiles: root `\.claude\/` and `\.codex\/`/i);
+  assert.match(content, /Local runtime profiles: root `\.claude\/`, `\.codex\/`, and `\.qwen\/`/i);
 });
 
 test('profile document paths use one active task root and public guideline root', async () => {
@@ -114,6 +115,7 @@ test('profile document paths use one active task root and public guideline root'
     'AGENTS.md',
     'package/profile-templates/claude/.claude/CLAUDE.md',
     'package/profile-templates/codex/.codex/AGENTS.md',
+    'package/profile-templates/qwen/.qwen/QWEN.md',
     'package/profile-templates/claude/.claude/PROJECT.md',
   ];
 
@@ -132,6 +134,7 @@ test('service profile TOCs carry current boundary metadata', async () => {
   const files = [
     'package/profile-templates/claude/.claude/CLAUDE.md',
     'package/profile-templates/codex/.codex/AGENTS.md',
+    'package/profile-templates/qwen/.qwen/QWEN.md',
   ];
 
   for (const file of files) {
@@ -148,6 +151,7 @@ test('installed profile TOCs set up project-local knowledge anchor discovery', a
     'AGENTS.md',
     'package/profile-templates/claude/.claude/CLAUDE.md',
     'package/profile-templates/codex/.codex/AGENTS.md',
+    'package/profile-templates/qwen/.qwen/QWEN.md',
   ]) {
     const content = await readRoot(file);
     assert.match(content, /Project-Local Knowledge Anchors/, `${file} anchor section`);
@@ -159,16 +163,22 @@ test('installed profile TOCs set up project-local knowledge anchor discovery', a
 test('service profile TOCs point at their own profile entries and common home docs', async () => {
   const claude = await readRoot('package/profile-templates/claude/.claude/CLAUDE.md');
   const codex = await readRoot('package/profile-templates/codex/.codex/AGENTS.md');
+  const qwen = await readRoot('package/profile-templates/qwen/.qwen/QWEN.md');
 
   assert.match(claude, /Runtime contract: `CLAUDE\.md` \+ `verification\.contract\.yaml`/);
   assert.match(codex, /Runtime contract: `AGENTS\.md` \+ `verification\.contract\.yaml`/);
+  assert.match(qwen, /Runtime contract: `QWEN\.md` \+ `verification\.contract\.yaml`/);
   assert.match(claude, /@PROJECT\.md/);
   assert.match(claude, /@rules\/agents\/agent-definition\.md/);
   assert.match(codex, /@rules\/agents\/agent-definition\.md/);
+  assert.match(qwen, /@rules\/agents\/agent-definition\.md/);
   assert.match(claude, /\$\{MOONSHOT_RELAY_HOME:-~\/\.moonshot-relay\}\/docs\/public\/guidelines\//);
   assert.match(codex, /\$\{MOONSHOT_RELAY_HOME:-~\/\.moonshot-relay\}\/docs\/public\/guidelines\//);
+  assert.match(qwen, /\$\{MOONSHOT_RELAY_HOME:-~\/\.moonshot-relay\}\/docs\/public\/guidelines\//);
   assert.doesNotMatch(codex, /\.claude\//, 'Codex TOC must not point at Claude profile paths');
   assert.doesNotMatch(codex, /@docs\/public\/guidelines\//, 'Codex TOC common docs are not profile-local');
+  assert.doesNotMatch(qwen, /\.claude\/|\.codex\//, 'Qwen TOC must not point at Claude or Codex profile paths');
+  assert.doesNotMatch(qwen, /@docs\/public\/guidelines\//, 'Qwen TOC common docs are not profile-local');
 });
 
 test('plan readiness bridge reports ready state and planned outputs for reviewed plans', async () => {

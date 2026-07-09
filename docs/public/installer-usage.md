@@ -2,9 +2,9 @@
 
 `install-claude.sh` is a macOS/Git Bash compatibility installer for Moonshot Relay runtime profiles. The primary cross-platform account-root installer is `node bin/moonshot-relay.mjs install --runtime all` or `npx -y github:munlucky/moonshot-relay install`. Use `--project` only when a downstream repository needs project-local `.claude/` and `.codex/` compatibility payloads.
 
-The default mode is account-root installation into the shared Moonshot Relay home (`~/.moonshot-relay`) plus the local Claude/Codex homes (`~/.claude`, `~/.codex`).
+The default mode is account-root installation into the shared Moonshot Relay home (`~/.moonshot-relay`) plus the local Claude/Codex/Qwen homes (`~/.claude`, `~/.codex`, `~/.qwen`).
 
-The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex profile-local `skills/` discovery is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, and `session-logger`. Reinstalling prunes canonical source skills that are no longer in the service profile payload, while unrelated user-installed skills remain preserved.
+The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex/Qwen profile-local `skills/` discovery is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, and `session-logger`. Reinstalling prunes canonical source skills that are no longer in the service profile payload, while unrelated user-installed skills remain preserved.
 
 Shared runtime references must resolve through `MOONSHOT_RELAY_HOME`. In `cmd.exe` this is `%MOONSHOT_RELAY_HOME%`, in PowerShell it is `$env:MOONSHOT_RELAY_HOME`, and in bash/zsh it is `${MOONSHOT_RELAY_HOME}`. If the variable is unset, installers and skills use the account default `~/.moonshot-relay`.
 
@@ -36,7 +36,7 @@ Agent Skills CLI bootstraps the root `skills/` catalog and installs the `moonsho
 npx skills add munlucky/moonshot-relay
 ```
 
-This command does not execute arbitrary repository installers and may expose the source catalog during bootstrap. After it completes, invoke `moonshot-relay-setup` to run the account-root installer and materialize the smaller Claude/Codex runtime discovery surface under `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. Use `node bin/moonshot-relay.mjs install --runtime all` when running directly from a source checkout, or `npx -y github:munlucky/moonshot-relay install` when the desired result is a one-command full account-root install. Use `bash install-claude.sh` only for the supported macOS/Git Bash compatibility path.
+This command does not execute arbitrary repository installers and may expose the source catalog during bootstrap. After it completes, invoke `moonshot-relay-setup` to run the account-root installer and materialize the smaller Claude/Codex/Qwen runtime discovery surface under `~/.moonshot-relay`, `~/.claude`, `~/.codex`, and `~/.qwen`. Use `node bin/moonshot-relay.mjs install --runtime all` when running directly from a source checkout, or `npx -y github:munlucky/moonshot-relay install` when the desired result is a one-command full account-root install. Use `bash install-claude.sh` only for the supported macOS/Git Bash compatibility path.
 
 ## Contributor Flow
 
@@ -90,7 +90,7 @@ Do not claim `release-protected` from `.github/` files without GitHub settings/A
 
 ## Expected Dry-Run Signal
 
-The default dry run should show `mode: account-root-direct` and target `~/.moonshot-relay`, `~/.claude`, and `~/.codex`. A project dry run should show that the installer would create or update the downstream `.claude/` profile while preserving protected project-local files such as `PROJECT.md`, local settings, custom files, and environment files.
+The default dry run should show `mode: account-root-direct` and target `~/.moonshot-relay`, `~/.claude`, `~/.codex`, and `~/.qwen`. A project dry run should show that the installer would create or update the downstream `.claude/` profile while preserving protected project-local files such as `PROJECT.md`, local settings, custom files, and environment files.
 
 A bridge dry run should show only project-local bridge files and optional `.gitignore` plan-package exceptions. It must not copy shared runtime source, `node_modules`, generated state, or sqlite files into the downstream project.
 
@@ -100,7 +100,7 @@ Keep rollout evidence separated by target:
 
 - `source-smoke`: run from the checkout with source `scripts/runtime-state.mjs`.
 - `package-smoke`: run from materialized `package/moonshot-relay/profile/scripts/runtime-state.mjs`.
-- `temp-home-smoke`: install into explicit temp `--moonshot-home`, `--claude-home`, and `--codex-home` targets, then run the installed `runtime-state.mjs`.
+- `temp-home-smoke`: install into explicit temp `--moonshot-home`, `--claude-home`, `--codex-home`, and `--qwen-home` targets, then run the installed `runtime-state.mjs`.
 - `live-account-root-smoke`: run only after explicit adoption approval and state preservation evidence.
 
 `source-smoke`, `package-smoke`, and `temp-home-smoke` can close package readiness.

@@ -11,7 +11,7 @@
 - canonical source는 `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`와 allowlisted support script만 `scripts/`에서 관리하고, `.claude/`는 개발 profile 및 downstream compatibility wrapper로 유지
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
 - `npx -y github:munlucky/moonshot-relay install` 또는 `node bin/moonshot-relay.mjs install --runtime all`로 account-root 런타임을 설치
-- account-root 설치의 공통 payload는 canonical `skills/**`를 보존하지만 Claude/Codex profile-local discovery surface는 `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, `session-logger` 7개 skill로 제한
+- account-root 설치의 공통 payload는 canonical `skills/**`를 보존하지만 Claude/Codex/Qwen profile-local discovery surface는 `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, `session-logger` 7개 skill로 제한
 - compatibility window 동안 downstream 설치는 계속 `.claude/` payload를 생성하지만, 이 저장소의 source of truth는 root-level source directory입니다
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
@@ -23,8 +23,8 @@
 ## Repository Source Model
 
 - Canonical source: `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `tests/fixtures/`, `docs/public/`, plus allowlisted installer/MCP/memory/closeout support scripts under `scripts/`
-- Development profile: `.claude/` and `.codex/` for local agent runtime compatibility
-- Package payloads: `package/claude/profile/`, `package/codex/profile/`, `.claude-plugin/`, `.codex-plugin/`
+- Development profile: `.claude/`, `.codex/`, and `.qwen/` for local agent runtime compatibility
+- Package payloads: `package/claude/profile/`, `package/codex/profile/`, `package/qwen/profile/`, `.claude-plugin/`, `.codex-plugin/`
 - Generated state: `.moonshot-relay/`, legacy `.moonshot-state/`, `.claude/logs/`, `.claude/cache/`, `.claude/traces/`, `.claude/browser-artifacts/`, `.claude/browser-runtime/`, `.claude/memorygraph/`, sqlite files, and verdict JSON
 
 Do not add durable source under `.claude/skills`, `.claude/agents`, `.claude/scripts`, `.claude/bin`, `.claude/tools`, `.claude/schemas`, or `.claude/templates`. Add or modify reusable assets in the canonical root directory first, then refresh generated profile output or compatibility wrappers through the package/materialization flow.
@@ -56,7 +56,7 @@ moonshot-relay/
 └── AGENTS.md
 ```
 
-Root-level `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`, and allowlisted support files under `scripts/` are the canonical source directories. Root `.claude/` and `.codex/` are local runtime profiles and may be absent or contain only ignored runtime artifacts in a clean source checkout.
+Root-level `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`, and allowlisted support files under `scripts/` are the canonical source directories. Root `.claude/`, `.codex/`, and `.qwen/` are local runtime profiles and may be absent or contain only ignored runtime artifacts in a clean source checkout.
 
 Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; they are not runtime output and are not included in installed package payloads.
 
@@ -144,7 +144,7 @@ Regression fixture JSON and sample artifacts belong under `tests/fixtures/`; the
 - 제품 정의 템플릿: source checkout에서는 `templates/product-definition/*.md`, 설치 런타임에서는 `<MOONSHOT_RELAY_HOME>/templates/product-definition/*.md`
 - 실행 브리지 템플릿: source checkout에서는 `templates/execution/*.md`, 설치 런타임에서는 `<MOONSHOT_RELAY_HOME>/templates/execution/*.md`
 - Runtime payload support scripts are limited to installer, MCP, memory, and commit closeout flows. Workflow orchestration no longer installs `scripts/**` wholesale.
-- Runtime profile skill discovery is governed by `package/runtime-surface.json`; internal skills remain in the shared `~/.moonshot-relay/skills/` payload, not profile-local Claude/Codex `skills/`.
+- Runtime profile skill discovery is governed by `package/runtime-surface.json`; internal skills remain in the shared `~/.moonshot-relay/skills/` payload, not profile-local Claude/Codex/Qwen `skills/`.
 - 출력 템플릿: source checkout에서는 `templates/moonshot-output.*`, 설치 런타임에서는 `<MOONSHOT_RELAY_HOME>/templates/moonshot-output.*`
 
 ## 빠른 시작
@@ -177,7 +177,7 @@ npx skills add munlucky/moonshot-relay
 moonshot-relay-setup을 사용해서 account-root 설치까지 완료해줘.
 ```
 
-`npx skills add` 자체는 보안상 임의 installer를 실행하지 않으므로, 이 단계만으로는 `~/.moonshot-relay`, `~/.claude`, `~/.codex` 동기화가 끝난 것이 아닙니다. `npx` 한 줄로 전체 설치까지 끝내야 하면 `npx -y github:munlucky/moonshot-relay install`을 사용합니다. 전체 런타임 설치 완료 기준은 `moonshot-relay-setup`, `install-claude.sh`, 또는 `moonshot-relay` CLI가 `.moonshot-relay-install-manifest.json`을 각 계정 루트에 남기는 것입니다.
+`npx skills add` 자체는 보안상 임의 installer를 실행하지 않으므로, 이 단계만으로는 `~/.moonshot-relay`, `~/.claude`, `~/.codex`, `~/.qwen` 동기화가 끝난 것이 아닙니다. `npx` 한 줄로 전체 설치까지 끝내야 하면 `npx -y github:munlucky/moonshot-relay install`을 사용합니다. 전체 런타임 설치 완료 기준은 `moonshot-relay-setup`, `install-claude.sh`, 또는 `moonshot-relay` CLI가 `.moonshot-relay-install-manifest.json`을 각 계정 루트에 남기는 것입니다.
 
 옵션과 함께 사용:
 
@@ -190,7 +190,7 @@ chmod +x install-claude.sh
 # Git Bash 예시:
 # bash ./install-claude.sh
 
-# 기본 실행: 계정 루트(~/.claude, ~/.codex)에 Moonshot Relay 설치
+# 기본 실행: 계정 루트(~/.claude, ~/.codex, ~/.qwen)에 Moonshot Relay 설치
 ./install-claude.sh
 
 # 현재 프로젝트에 compatibility payload 설치
@@ -207,9 +207,9 @@ chmod +x install-claude.sh
 ```
 
 기본 동작:
-- 기본 설치는 account-root 직접 설치이며 공통 런타임 자산은 `~/.moonshot-relay`, 런타임별 자동 적용 표면은 `~/.claude`와 `~/.codex`에 동기화
-- Claude의 `rules/`, `skills/`, `agents/`처럼 런타임이 직접 읽는 디렉터리는 각 계정 홈에 유지하되, profile-local `skills/`에는 공개 runtime skill 7개만 설치
-- Claude/Codex 런타임 로컬 파일(settings, auth, sessions, plugins, caches 등)은 보호
+- 기본 설치는 account-root 직접 설치이며 공통 런타임 자산은 `~/.moonshot-relay`, 런타임별 자동 적용 표면은 `~/.claude`, `~/.codex`, `~/.qwen`에 동기화
+- Claude/Codex/Qwen의 `rules/`, `skills/`, `agents/`처럼 런타임이 직접 읽는 디렉터리는 각 계정 홈에 유지하되, profile-local `skills/`에는 공개 runtime skill 7개만 설치
+- Claude/Codex/Qwen 런타임 로컬 파일(settings, auth, sessions, plugins, caches 등)은 보호
 - 각 계정 루트에 `.moonshot-relay-install-manifest.json` 설치 manifest 기록
 - 현재 프로젝트에 `.claude`/`.codex` compatibility payload가 필요하면 `--project`를 사용
 - `--project` 설치는 기존처럼 `.claude`, `.codex`, `AGENTS.md`, `.claudeignore`, `.gitattributes`를 프로젝트에 설치하고 사용자 로컬 파일을 보호
@@ -261,7 +261,7 @@ bash /path/to/moonshot-relay/install-claude.sh --project
 # PROJECT.md와 workflow/design/glossary/daily/test/analysis 문서를 프로젝트에 맞게 수정
 ```
 
-Root `.claude/`와 `.codex/`는 canonical source가 아니라 local/generated profile output입니다. 수동 `cp -r moonshot-relay/.claude` 또는 `cp -r moonshot-relay/.codex` 방식은 사용하지 않습니다.
+Root `.claude/`, `.codex/`, `.qwen/`는 canonical source가 아니라 local/generated profile output입니다. 수동 `cp -r moonshot-relay/.claude`, `cp -r moonshot-relay/.codex`, 또는 `cp -r moonshot-relay/.qwen` 방식은 사용하지 않습니다.
 
 ### 부분 적용
 

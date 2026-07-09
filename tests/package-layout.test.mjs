@@ -27,6 +27,7 @@ const wrapperDirs = ['.claude-plugin', '.codex-plugin'];
 const profileTemplateDirs = [
   'package/profile-templates/claude/.claude',
   'package/profile-templates/codex/.codex',
+  'package/profile-templates/qwen/.qwen',
 ];
 
 const archiveDirs = [
@@ -65,6 +66,10 @@ const generatedStateExclusions = [
   '.codex/sqlite/**',
   '.codex/memories/**',
   '.codex/sessions/**',
+  '.qwen/cache/**',
+  '.qwen/logs/**',
+  '.qwen/tmp/**',
+  '.qwen/memory.json',
   '.code-review-graph/**',
 ];
 
@@ -239,6 +244,7 @@ test('package contract declares required source payload entries and generated-st
     'scripts/code-review-graph-mcp-wrapper.js',
     'package/profile-templates/claude/.claude/',
     'package/profile-templates/codex/.codex/',
+    'package/profile-templates/qwen/.qwen/',
     'package/moonshot-relay/profile/',
   ]) {
     assert.match(contract, new RegExp(entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${entry} should be listed`);
@@ -268,6 +274,7 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /common: "\$\{MOONSHOT_RELAY_HOME:-~\/\.moonshot-relay\}"/);
   assert.match(contract, /claude: "\$\{CLAUDE_HOME:-~\/\.claude\}"/);
   assert.match(contract, /codex: "\$\{CODEX_HOME:-~\/\.codex\}"/);
+  assert.match(contract, /qwen: "\$\{QWEN_HOME:-~\/\.qwen\}"/);
   assert.match(contract, /commonPayloadEntries:/);
   assert.match(contract, /skillExposure:/);
   assert.match(contract, /manifest: package\/runtime-surface\.json/);
@@ -349,6 +356,8 @@ test('package scripts define the active gate without archive discovery', async (
   ];
 
   assert.equal(typeof scripts.test, 'string', 'package.json should define scripts.test');
+  assert.match(manifest.description, /Claude, Codex, and Qwen profiles/);
+  assert.ok(manifest.files.includes('!package/qwen/profile/'), 'generated Qwen profile payload must stay out of npm package files');
   assert.equal(scripts['test:active'], 'npm test');
   assert.match(scripts.test, /^node --test tests\//);
   for (const contractTest of requiredModernizationContracts) {
@@ -377,7 +386,7 @@ test('repository layout docs name canonical source, local runtime profile, gener
     assert.match(combined, new RegExp(phrase, 'i'), `${phrase} boundary should be documented`);
   }
 
-  assert.match(repositoryLayout, /Do not add new canonical source under root `\.claude\/` or `\.codex\/`/);
+  assert.match(repositoryLayout, /Do not add new canonical source under root `\.claude\/`, `\.codex\/`, or `\.qwen\/`/);
   assert.match(repositoryLayout, /do not create or depend on nested `harness-core` directories/i);
   assert.match(packageReadme, /Generated state is never part of the package payload/);
   assert.match(packageReadme, /install-account-root-harness\.mjs/);
@@ -520,7 +529,7 @@ test('explicit Moonshot Relay script references point at packaged support script
 });
 
 test('root runtime profiles are local-only and not tracked source', () => {
-  const tracked = gitLsFiles(root, ['.claude', '.codex']).stdout.trim();
+  const tracked = gitLsFiles(root, ['.claude', '.codex', '.qwen']).stdout.trim();
 
-  assert.equal(tracked, '', 'root .claude/ and .codex/ must remain local-only and untracked');
+  assert.equal(tracked, '', 'root .claude/, .codex/, and .qwen/ must remain local-only and untracked');
 });

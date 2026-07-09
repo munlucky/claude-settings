@@ -1,9 +1,10 @@
 param(
-    [ValidateSet("all", "claude", "codex")]
+    [ValidateSet("all", "claude", "codex", "qwen")]
     [string]$Runtime = "all",
     [string]$MoonshotHome = "",
     [string]$ClaudeHome = "",
     [string]$CodexHome = "",
+    [string]$QwenHome = "",
     [switch]$DryRun,
     [switch]$NoBackup,
     [switch]$RemoveLegacyHarnessCore,
@@ -52,6 +53,9 @@ if ($ClaudeHome) {
 }
 if ($CodexHome) {
     $argsList += @("--codex-home", $CodexHome)
+}
+if ($QwenHome) {
+    $argsList += @("--qwen-home", $QwenHome)
 }
 
 Write-Info "Installing Moonshot Relay account-root runtime payloads."

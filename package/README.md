@@ -16,7 +16,7 @@ Canonical source belongs in root-level directories:
 - `tests/`
 - `docs/public/`
 
-Root `.claude/` and `.codex/` are local runtime profiles only and are not committed to the repository. Codex and Claude profile templates live under `package/profile-templates/`; generated profile payloads are written under `package/claude/profile/` and `package/codex/profile/` only when `package/build-package.mjs` runs.
+Root `.claude/`, `.codex/`, and `.qwen/` are local runtime profiles only and are not committed to the repository. Claude, Codex, and Qwen profile templates live under `package/profile-templates/`; generated profile payloads are written under `package/claude/profile/`, `package/codex/profile/`, and `package/qwen/profile/` only when `package/build-package.mjs` runs.
 
 The generated profile payloads must include concrete skills, agents, CLI entrypoints, runtime tools, schemas, templates, docs, and only the allowlisted support scripts needed for installer, MCP, memory, and closeout flows. Runtime workflow scripts are not copied wholesale into the package payload. README-only payload directories are invalid, but generated payload directories themselves are not committed.
 
@@ -28,7 +28,7 @@ Build local payloads with:
 node package/build-package.mjs --runtime all --clean
 ```
 
-Install the account-root runtime profiles directly into the local Claude/Codex homes with either the default shell installer or the direct Node installer:
+Install the account-root runtime profiles directly into the local Claude/Codex/Qwen homes with either the default shell installer or the direct Node installer:
 
 ```sh
 bash install-claude.sh
@@ -36,9 +36,9 @@ node scripts/install-account-root-harness.mjs --runtime all --remove-legacy-harn
 npx -y github:munlucky/moonshot-relay install
 ```
 
-This installs shared Moonshot Relay runtime assets into `MOONSHOT_RELAY_HOME`, defaulting to `~/.moonshot-relay`, then installs only runtime-discovered exposure entries into `%USERPROFILE%/.claude` and `%USERPROFILE%/.codex` on Windows or `~/.claude` and `~/.codex` on macOS/Linux without using a nested `harness-core` directory. Use `%MOONSHOT_RELAY_HOME%` in `cmd.exe`, `$env:MOONSHOT_RELAY_HOME` in PowerShell, and `${MOONSHOT_RELAY_HOME}` in bash/zsh. The common payload preserves canonical `skills/**`, and Claude/Codex profile `skills/` discovery is limited by `package/runtime-surface.json` to `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, and `session-logger`. Runtime-local files such as Claude settings, Codex auth/config, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.moonshot-relay-install-manifest.json` for hash verification and rollback evidence. Existing `.claude-settings-install-manifest.json` files are treated as legacy install evidence during the rename window.
+This installs shared Moonshot Relay runtime assets into `MOONSHOT_RELAY_HOME`, defaulting to `~/.moonshot-relay`, then installs only runtime-discovered exposure entries into `%USERPROFILE%/.claude`, `%USERPROFILE%/.codex`, and `%USERPROFILE%/.qwen` on Windows or `~/.claude`, `~/.codex`, and `~/.qwen` on macOS/Linux without using a nested `harness-core` directory. Use `%MOONSHOT_RELAY_HOME%` in `cmd.exe`, `$env:MOONSHOT_RELAY_HOME` in PowerShell, and `${MOONSHOT_RELAY_HOME}` in bash/zsh. The common payload preserves canonical `skills/**`, and Claude/Codex/Qwen profile `skills/` discovery is limited by `package/runtime-surface.json` to `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, and `session-logger`. Runtime-local files such as Claude settings, Codex auth/config, Qwen settings, sessions, caches, plugins, memories, and sqlite state are protected by default. Each target root receives `.moonshot-relay-install-manifest.json` for hash verification and rollback evidence. Existing `.claude-settings-install-manifest.json` files are treated as legacy install evidence during the rename window.
 
-Use `bash install-claude.sh --project` only when a downstream repository needs project-local `.claude/` and `.codex/` compatibility payloads.
+Use `bash install-claude.sh --project` only when a downstream repository needs project-local `.claude/` and `.codex/` compatibility payloads. Qwen support is account-root profile installation through the Node installer.
 
 Bootstrap from Agent Skills CLI with:
 

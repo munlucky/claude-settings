@@ -96,6 +96,7 @@ const packageDryRunPublicSkills = (repoRoot) => {
       error: result.stderr || result.stdout,
       claude: [],
       codex: [],
+      qwen: [],
     };
   }
 
@@ -120,6 +121,7 @@ const packageDryRunPublicSkills = (repoRoot) => {
     status: 'pass',
     claude: extract('claude', 'package/claude/profile/.claude'),
     codex: extract('codex', 'package/codex/profile/.codex'),
+    qwen: extract('qwen', 'package/qwen/profile/.qwen'),
   };
 };
 
@@ -195,7 +197,7 @@ export const checkCatalog = async (options = {}) => {
     if (packagePlan.status !== 'pass') {
       findings.push(finding('blocking', 'catalog.package_dry_run_failed', 'Package dry-run failed while checking service profile exposure.', { error: packagePlan.error }));
     } else {
-      for (const runtime of ['claude', 'codex']) {
+      for (const runtime of ['claude', 'codex', 'qwen']) {
         if (!sameSet(runtimePublic, packagePlan[runtime])) {
           findings.push(finding('blocking', 'catalog.profile_exposure_mismatch', `${runtime} profile dry-run exposes a different skill set than runtime-surface.json.`, {
             runtime,

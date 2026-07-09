@@ -2,18 +2,19 @@
 
 Last-Reviewed: 2026-06-06
 
-This repository's canonical source is the tracked root-level harness source, not the local `.claude/` or `.codex/` runtime profiles.
+This repository's canonical source is the tracked root-level harness source, not the local `.claude/`, `.codex/`, or `.qwen/` runtime profiles.
 
 ## Source Boundaries
 
 - Canonical source: `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`, and allowlisted support scripts under `scripts/`.
-- Local runtime profiles: root `.claude/` and `.codex/`. These may contain generated verdicts, local profile output, or installed compatibility files and are not required for a clean source checkout.
+- Local runtime profiles: root `.claude/`, `.codex/`, and `.qwen/`. These may contain generated verdicts, local profile output, or installed compatibility files and are not required for a clean source checkout.
 - Shared runtime home: resolve through `MOONSHOT_RELAY_HOME`; default `~/.moonshot-relay`.
 
 ## Runtime Contract
 
 - Installed Claude profile entrypoint: `.claude/CLAUDE.md`.
 - Installed Codex profile entrypoint: `.codex/AGENTS.md`.
+- Installed Qwen profile entrypoint: `.qwen/QWEN.md`.
 - Source checkout entrypoint: this file.
 - Verification contract source: `schemas/verification.contract.yaml`, materialized to profile `verification.contract.yaml`.
 

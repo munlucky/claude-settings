@@ -37,6 +37,7 @@ const materializePackage = async () => {
 
 const claudeProfile = async () => path.join(await materializePackage(), 'claude', 'profile', '.claude');
 const codexProfile = async () => path.join(await materializePackage(), 'codex', 'profile', '.codex');
+const qwenProfile = async () => path.join(await materializePackage(), 'qwen', 'profile', '.qwen');
 const commonProfile = async () => path.join(await materializePackage(), 'moonshot-relay', 'profile');
 
 const runtimeSurface = JSON.parse(await readFile(fromRoot('package', 'runtime-surface.json'), 'utf8'));
@@ -64,6 +65,16 @@ const requiredCodexEntries = [
   'README.md',
   'verification.contract.yaml',
   'config.toml',
+  'skills',
+  'agents',
+  'rules',
+];
+
+const requiredQwenEntries = [
+  'QWEN.md',
+  'README.md',
+  'verification.contract.yaml',
+  'settings.json',
   'skills',
   'agents',
   'rules',
@@ -181,6 +192,18 @@ const requiredConcreteCodexFiles = [
   'rules/workflow.md',
 ];
 
+const requiredConcreteQwenFiles = [
+  'skills/commit-moonshot/SKILL.md',
+  'skills/moonshot-architecture/SKILL.md',
+  'skills/moonshot-orchestrator/SKILL.md',
+  'skills/moonshot-phase-runner/SKILL.md',
+  'skills/moonshot-plan-writer/SKILL.md',
+  'skills/product-orchestrator/SKILL.md',
+  'skills/session-logger/SKILL.md',
+  'agents/phase-attempt-agent.md',
+  'rules/workflow.md',
+];
+
 const generatedStateFragments = [
   '.moonshot-relay/',
   '.moonshot-relay/harness-lab/',
@@ -195,6 +218,9 @@ const generatedStateFragments = [
   '/memories/',
   '/sessions/',
   '/sqlite/',
+  '/.qwen/cache/',
+  '/.qwen/logs/',
+  '/.qwen/tmp/',
   '/scripts/fixtures/',
   '/tests/fixtures/',
   '/node_modules/',
@@ -286,6 +312,10 @@ const runtimeStateDenylistExamples = [
   '.codex/sqlite/state.sqlite',
   '.codex/memories/project.jsonl',
   '.codex/sessions/session.json',
+  '.qwen/cache/session.json',
+  '.qwen/logs/qwen.log',
+  '.qwen/tmp/project/shell_history',
+  '.qwen/memory.json',
   '.code-review-graph/index.sqlite',
 ];
 
@@ -392,6 +422,23 @@ test('Codex package payload includes only service profile entries', async () => 
   }
 });
 
+test('Qwen package payload includes only service profile entries', async () => {
+  const profileRoot = await qwenProfile();
+  for (const entry of requiredQwenEntries) {
+    await assertEntryExists(profileRoot, entry);
+  }
+
+  for (const entry of requiredConcreteQwenFiles) {
+    await assertEntryExists(profileRoot, entry);
+  }
+  assert.deepEqual(await listSkillDirs(profileRoot), publicRuntimeSkills);
+  assert.equal(existsSync(path.join(profileRoot, 'skills', 'completion-verifier', 'SKILL.md')), false);
+
+  for (const entry of ['bin', 'tools', 'schemas', 'scripts', 'templates', 'docs/public']) {
+    assert.equal(existsSync(path.join(profileRoot, entry)), false, `${entry} should live in the common Moonshot Relay payload`);
+  }
+});
+
 test('Codex MCP config resolves shared scripts through Moonshot Relay home', async () => {
   const profileRoot = await codexProfile();
   const config = await readFile(path.join(profileRoot, 'config.toml'), 'utf8');
@@ -409,6 +456,7 @@ test('excludes runtime state from package payloads and local-only artifacts', as
     ...await listFiles(await commonProfile(), 'moonshot-relay'),
     ...await listFiles(await claudeProfile(), '.claude'),
     ...await listFiles(await codexProfile(), '.codex'),
+    ...await listFiles(await qwenProfile(), '.qwen'),
   ];
 
   for (const file of files) {
@@ -446,8 +494,10 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /generatedCopyPolicy: ignored_generated_package_payload/);
   assert.match(contract, /templateRoot: package\/profile-templates\/claude\/\.claude\//);
   assert.match(contract, /templateRoot: package\/profile-templates\/codex\/\.codex\//);
+  assert.match(contract, /templateRoot: package\/profile-templates\/qwen\/\.qwen\//);
   assert.match(contract, /generatedProfileRoot: package\/claude\/profile\/\.claude\//);
   assert.match(contract, /generatedProfileRoot: package\/codex\/profile\/\.codex\//);
+  assert.match(contract, /generatedProfileRoot: package\/qwen\/profile\/\.qwen\//);
   assert.match(contract, /materializer: package\/build-package\.mjs/);
   assert.match(contract, /commonSupportScripts:/);
   assert.match(contract, /source: package\.json/);
@@ -478,6 +528,9 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /\.codex\/sqlite\/\*\*/);
   assert.match(contract, /\.codex\/memories\/\*\*/);
   assert.match(contract, /\.codex\/sessions\/\*\*/);
+  assert.match(contract, /\.qwen\/cache\/\*\*/);
+  assert.match(contract, /\.qwen\/logs\/\*\*/);
+  assert.match(contract, /\.qwen\/tmp\/\*\*/);
   assert.doesNotMatch(contract, /excludedDevOnlyPayload:/);
 });
 
@@ -537,10 +590,13 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   assert.ok(plannedFrom.includes('scripts/architecture-feedback-render.mjs'));
   assert.ok(plannedTo.includes('package/moonshot-relay/profile/skills/completion-verifier/SKILL.md'));
   assert.ok(plannedTo.includes('package/codex/profile/.codex/skills/moonshot-phase-runner/SKILL.md'));
+  assert.ok(plannedTo.includes('package/qwen/profile/.qwen/skills/moonshot-phase-runner/SKILL.md'));
   assert.equal(plannedTo.includes('package/codex/profile/.codex/skills/completion-verifier/SKILL.md'), false);
   assert.equal(plannedTo.includes('package/claude/profile/.claude/skills/completion-verifier/SKILL.md'), false);
+  assert.equal(plannedTo.includes('package/qwen/profile/.qwen/skills/completion-verifier/SKILL.md'), false);
   assert.equal(plannedTo.includes('package/codex/profile/.codex/skills/skills-doctor/SKILL.md'), false);
   assert.equal(plannedTo.includes('package/claude/profile/.claude/skills/skills-doctor/SKILL.md'), false);
+  assert.equal(plannedTo.includes('package/qwen/profile/.qwen/skills/skills-doctor/SKILL.md'), false);
   assert.equal(plannedTo.some((target) => /\.claude\/verification-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/runtime-verdict-[^/]*\.json$/.test(target)), false);
   assert.equal(plannedTo.some((target) => /\.claude\/browser-flow-verdict-[^/]*\.json$/.test(target)), false);
@@ -593,7 +649,7 @@ test('package smoke runs materialized runtime-state from package home', async ()
 });
 
 test('generated package profiles are not tracked source files', () => {
-  const result = gitLsFiles(root, ['package/moonshot-relay/profile', 'package/claude/profile', 'package/codex/profile']);
+  const result = gitLsFiles(root, ['package/moonshot-relay/profile', 'package/claude/profile', 'package/codex/profile', 'package/qwen/profile']);
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), '', 'generated package profile files should not be tracked');
@@ -604,6 +660,7 @@ test('account-root installer merges shared directories without deleting unrelate
   const moonshotHome = path.join(installRoot, 'moonshot-home');
   const claudeHome = path.join(installRoot, 'claude-home');
   const codexHome = path.join(installRoot, 'codex-home');
+  const qwenHome = path.join(installRoot, 'qwen-home');
 
   await mkdir(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge'), { recursive: true });
   await writeFile(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge', 'preserve.txt'), 'keep\n');
@@ -621,6 +678,25 @@ test('account-root installer merges shared directories without deleting unrelate
   await mkdir(path.join(codexHome, 'docs', 'public'), { recursive: true });
   await writeFile(path.join(codexHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(codexHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
+    copied: [
+      { path: 'schemas/old-managed.schema.json' },
+      { path: 'skills/completion-verifier/SKILL.md' },
+    ],
+  })}\n`);
+  await mkdir(path.join(qwenHome, 'skills', 'external-skill'), { recursive: true });
+  await writeFile(path.join(qwenHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await mkdir(path.join(qwenHome, 'skills', 'completion-verifier'), { recursive: true });
+  await writeFile(path.join(qwenHome, 'skills', 'completion-verifier', 'SKILL.md'), 'stale managed\n');
+  await mkdir(path.join(qwenHome, 'skills', 'moonshot-phase-executor'), { recursive: true });
+  await writeFile(path.join(qwenHome, 'skills', 'moonshot-phase-executor', 'SKILL.md'), 'stale canonical internal\n');
+  await mkdir(path.join(qwenHome, 'tmp'), { recursive: true });
+  await writeFile(path.join(qwenHome, 'tmp', 'preserve.txt'), 'keep\n');
+  await writeFile(path.join(qwenHome, 'settings.json'), '{"user":"settings"}\n');
+  await mkdir(path.join(qwenHome, 'schemas'), { recursive: true });
+  await writeFile(path.join(qwenHome, 'schemas', 'old-managed.schema.json'), '{}\n');
+  await mkdir(path.join(qwenHome, 'docs', 'public'), { recursive: true });
+  await writeFile(path.join(qwenHome, 'docs', 'public', 'old.md'), 'old\n');
+  await writeFile(path.join(qwenHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
     copied: [
       { path: 'schemas/old-managed.schema.json' },
       { path: 'skills/completion-verifier/SKILL.md' },
@@ -661,6 +737,8 @@ test('account-root installer merges shared directories without deleting unrelate
       claudeHome,
       '--codex-home',
       codexHome,
+      '--qwen-home',
+      qwenHome,
       '--remove-legacy-harness-core',
       '--json',
     ], {
@@ -671,25 +749,35 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const installPayload = JSON.parse(result.stdout);
     assert.ok(installPayload.installId);
-    assert.equal(installPayload.profileSurfaceParity.length, 2);
+    assert.equal(installPayload.profileSurfaceParity.length, 3);
     const codexParity = installPayload.profileSurfaceParity.find((entry) => entry.runtime === 'codex');
     const claudeParity = installPayload.profileSurfaceParity.find((entry) => entry.runtime === 'claude');
+    const qwenParity = installPayload.profileSurfaceParity.find((entry) => entry.runtime === 'qwen');
     assert.equal(codexParity.status, 'pass');
     assert.equal(claudeParity.status, 'pass');
+    assert.equal(qwenParity.status, 'pass');
     assert.equal(codexParity.extraCanonicalCount, 0);
+    assert.equal(qwenParity.extraCanonicalCount, 0);
     assert.deepEqual(codexParity.missingPublicSkills, []);
     assert.deepEqual(claudeParity.missingPublicSkills, []);
+    assert.deepEqual(qwenParity.missingPublicSkills, []);
     assert.deepEqual(codexParity.extraCanonicalSkills, []);
+    assert.deepEqual(qwenParity.extraCanonicalSkills, []);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(qwenHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(qwenHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(qwenHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(qwenHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(qwenHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);
@@ -703,6 +791,8 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge', 'preserve.txt')), true);
     assert.equal(existsSync(path.join(codexHome, 'sessions', 'preserve.json')), true);
     assert.equal(existsSync(path.join(codexHome, 'auth.json')), true);
+    assert.equal(existsSync(path.join(qwenHome, 'tmp', 'preserve.txt')), true);
+    assert.equal(await readFile(path.join(qwenHome, 'settings.json'), 'utf8'), '{"user":"settings"}\n');
     assert.equal(existsSync(path.join(claudeHome, 'sessions', 'preserve.json')), true);
     assert.equal(existsSync(path.join(claudeHome, 'memory.json')), true);
     assert.equal(existsSync(path.join(claudeHome, 'scripts')), false);
@@ -711,6 +801,9 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(codexHome, 'scripts')), false);
     assert.equal(existsSync(path.join(codexHome, 'schemas')), false);
     assert.equal(existsSync(path.join(codexHome, 'docs', 'public')), false);
+    assert.equal(existsSync(path.join(qwenHome, 'scripts')), false);
+    assert.equal(existsSync(path.join(qwenHome, 'schemas')), false);
+    assert.equal(existsSync(path.join(qwenHome, 'docs', 'public')), false);
 
     const runtimeSmoke = spawnSync(process.execPath, [
       path.join(moonshotHome, 'scripts', 'runtime-state.mjs'),

@@ -38,7 +38,7 @@ test('CI workflow runs active gates across supported OS and Node matrix', async 
   assert.match(ci, /permissions:\s*\n\s*contents: read/);
   assert.match(ci, /concurrency:/);
   assert.match(ci, /name: CI \/ Node \$\{\{ matrix\.node \}\} on \$\{\{ matrix\.os \}\}/);
-  assert.match(ci, /--moonshot-home \$moonshotHome --claude-home \$claudeHome --codex-home \$codexHome/);
+  assert.match(ci, /--moonshot-home \$moonshotHome --claude-home \$claudeHome --codex-home \$codexHome --qwen-home \$qwenHome/);
   assert.match(ci, /\$payload\.dryRun -ne \$true/);
   assert.match(ci, /\$payload\.manifests/);
   assert.doesNotMatch(ci, /\$payload\.runtimes/);
@@ -145,6 +145,7 @@ test('temp-home installer dry-run does not target live account-root profiles', a
   const moonshotHome = path.join(tempRoot, 'moonshot-home');
   const claudeHome = path.join(tempRoot, 'claude-home');
   const codexHome = path.join(tempRoot, 'codex-home');
+  const qwenHome = path.join(tempRoot, 'qwen-home');
   const result = spawnSync(process.execPath, [
     'scripts/install-account-root-harness.mjs',
     '--runtime',
@@ -157,6 +158,8 @@ test('temp-home installer dry-run does not target live account-root profiles', a
     claudeHome,
     '--codex-home',
     codexHome,
+    '--qwen-home',
+    qwenHome,
   ], {
     cwd: root,
     encoding: 'utf8',
@@ -169,6 +172,7 @@ test('temp-home installer dry-run does not target live account-root profiles', a
     claudeHome,
     codexHome,
     moonshotHome,
+    qwenHome,
   ].sort());
   assert.equal(payload.manifests.reduce((sum, manifest) => sum + manifest.removedCount, 0), 0);
   assert.equal(payload.manifests.reduce((sum, manifest) => sum + manifest.backupCount, 0), 0);

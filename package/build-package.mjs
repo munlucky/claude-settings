@@ -146,6 +146,18 @@ const runtimeSpecs = {
     skillExposure: 'publicRuntimeSkills',
     verificationTarget: 'verification.contract.yaml',
   },
+  qwen: {
+    templateRoot: path.join(packageRoot, 'profile-templates', 'qwen', '.qwen'),
+    outputRoot: path.join('qwen', 'profile', '.qwen'),
+    sharedDirs: [
+      'skills',
+      'agents',
+      'rules',
+    ],
+    sharedFiles: [],
+    skillExposure: 'publicRuntimeSkills',
+    verificationTarget: 'verification.contract.yaml',
+  },
 };
 
 const denyRootSegments = new Set([
@@ -173,6 +185,7 @@ const denyRuntimeSegments = new Set([
 const denyRuntimeRoots = new Set([
   '.claude',
   '.codex',
+  '.qwen',
   '.moonshot-relay',
   '.moonshot-state',
 ]);
@@ -195,9 +208,9 @@ const denyBasenames = [
   /\.test\.py$/,
 ];
 
-const usage = () => `Usage: node package/build-package.mjs [--runtime all|moonshot-relay|claude|codex] [--out <dir>] [--clean] [--dry-run] [--json]`;
+const usage = () => `Usage: node package/build-package.mjs [--runtime all|moonshot-relay|claude|codex|qwen] [--out <dir>] [--clean] [--dry-run] [--json]`;
 
-const allRuntimeNames = ['moonshot-relay', 'claude', 'codex'];
+const allRuntimeNames = ['moonshot-relay', 'claude', 'codex', 'qwen'];
 let runtimeSurfaceCache = null;
 
 const parseArgs = (argv) => {

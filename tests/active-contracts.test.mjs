@@ -49,7 +49,7 @@ const walkEntries = async (relativeDir) => {
 
 const runtimeStateSnapshot = async () => {
   const entries = [];
-  for (const dir of ['.claude', '.codex', '.moonshot-relay', '.moonshot-state']) {
+  for (const dir of ['.claude', '.codex', '.qwen', '.moonshot-relay', '.moonshot-state']) {
     entries.push(...await walkEntries(dir));
   }
   return entries;

@@ -1,6 +1,6 @@
 # Runtime Skill Surface
 
-`package/runtime-surface.json` is the single authority for Claude/Codex profile-local runtime skill discovery.
+`package/runtime-surface.json` is the single authority for Claude/Codex/Qwen profile-local runtime skill discovery.
 
 `catalog/moonshot-catalog.json` is the source catalog that binds that public surface to source skill paths, internal support clusters, package-contract entries, and required documentation. `node scripts/catalog-check.mjs --json` fails when the catalog, runtime surface, package contract, docs, or package dry-run profile exposure drift apart.
 
@@ -14,7 +14,7 @@ Profile-local public runtime skills:
 - `commit-moonshot`
 - `session-logger`
 
-The shared common payload preserves canonical `skills/**` for internal support and source parity. `moonshot-plan-writer` is a user-invoked planning entrypoint and must remain installed into Claude/Codex profile-local public discovery.
+The shared common payload preserves canonical `skills/**` for internal support and source parity. `moonshot-plan-writer` is a user-invoked planning entrypoint and must remain installed into Claude/Codex/Qwen profile-local public discovery.
 
 Internal skill routing is metadata-first through `node scripts/skill-router.mjs search|inspect|load --json`. `search` and `inspect` return catalog/source metadata only; `load` returns the selected skill body with prompt-safety redaction for unsafe raw fields. Contract drift is checked by `node scripts/lint-skills.mjs --json`, which validates public skill headings, deep references, profile-local source references, translation heading structure, and agent input/output contracts.
 

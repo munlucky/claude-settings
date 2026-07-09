@@ -1,6 +1,6 @@
 schemaVersion: 1
 contractId: repository-physical-structure-refactor-phase-02
-description: "Canonical source and package payload contract for Claude and Codex runtime profiles."
+description: "Canonical source and package payload contract for Claude, Codex, and Qwen runtime profiles."
 
 canonicalSource:
   catalog: catalog/
@@ -39,6 +39,13 @@ runtimeProfiles:
     materializer: package/build-package.mjs
     materialization: local_copy_not_committed
     symlinkPolicy: avoid_required_symlinks
+  qwen:
+    templateRoot: package/profile-templates/qwen/.qwen/
+    generatedProfileRoot: package/qwen/profile/.qwen/
+    localRuntimeRoot: .qwen/
+    materializer: package/build-package.mjs
+    materialization: local_copy_not_committed
+    symlinkPolicy: avoid_required_symlinks
 
 accountRootInstall:
   installer: scripts/install-account-root-harness.mjs
@@ -55,6 +62,7 @@ accountRootInstall:
     common: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}"
     claude: "${CLAUDE_HOME:-~/.claude}"
     codex: "${CODEX_HOME:-~/.codex}"
+    qwen: "${QWEN_HOME:-~/.qwen}"
   commonPayloadEntries:
     - catalog/
     - bin/
@@ -87,6 +95,13 @@ accountRootInstall:
       - rules/
       - skills/
       - verification.contract.yaml
+    qwen:
+      - QWEN.md
+      - README.md
+      - agents/
+      - rules/
+      - skills/
+      - verification.contract.yaml
   manifestName: .moonshot-relay-install-manifest.json
   legacyManifestNames:
     - .claude-settings-install-manifest.json
@@ -108,6 +123,16 @@ accountRootInstall:
       - plugins/
       - memories/
       - sqlite/
+    qwen:
+      - .env
+      - settings.json
+      - auth.json
+      - credentials.json
+      - memory.json
+      - tmp/
+      - cache/
+      - logs/
+      - plugins/
   statePolicy: "Account-root profile installation must not write project knowledge, execution evidence, phase status, runtime logs, or verification verdict state."
   runtimeDependencyDelivery:
     nativeSqlite:
@@ -132,6 +157,10 @@ accountRootInstall:
     - "${CODEX_HOME:-~/.codex}/sessions/**"
     - "${CODEX_HOME:-~/.codex}/auth.json"
     - "${CODEX_HOME:-~/.codex}/sqlite/**"
+    - "${QWEN_HOME:-~/.qwen}/settings.json"
+    - "${QWEN_HOME:-~/.qwen}/.env"
+    - "${QWEN_HOME:-~/.qwen}/tmp/**"
+    - "${QWEN_HOME:-~/.qwen}/logs/**"
 
 skillExposure:
   manifest: package/runtime-surface.json
@@ -146,8 +175,8 @@ skillExposure:
     - moonshot-plan-writer
     - commit-moonshot
     - session-logger
-  internalSkillPolicy: "Internal and optional skills remain canonical source under skills/ and are preserved in the shared Moonshot Relay common payload, but Claude/Codex runtime profile discovery must not materialize them under profile-local skills/."
-  bootstrapSkillPolicy: "moonshot-relay-setup may be installed by Agent Skills CLI from repository source, but it is not part of the Claude/Codex account-root runtime profile public discovery surface."
+  internalSkillPolicy: "Internal and optional skills remain canonical source under skills/ and are preserved in the shared Moonshot Relay common payload, but Claude/Codex/Qwen runtime profile discovery must not materialize them under profile-local skills/."
+  bootstrapSkillPolicy: "moonshot-relay-setup may be installed by Agent Skills CLI from repository source, but it is not part of the Claude/Codex/Qwen account-root runtime profile public discovery surface."
 
 requiredPayloadEntries:
   sharedSource:
@@ -412,6 +441,16 @@ requiredPayloadEntries:
     - target: .codex-plugin/
       generatedFrom: package/build-package.mjs
       role: package_output
+  qwenRuntime:
+    - target: package/profile-templates/qwen/.qwen/
+      role: runtime_specific_static_template
+    - target: package/qwen/profile/.qwen/
+      generatedFrom: sharedSource
+      materializer: package/build-package.mjs
+      role: ignored_generated_package_payload
+    - target: .qwen/
+      generatedFrom: sharedSource
+      role: local_runtime_profile_not_committed
 
 excludedGeneratedState:
   - scripts/fixtures/**
@@ -446,6 +485,10 @@ excludedGeneratedState:
   - .codex/sqlite/**
   - .codex/memories/**
   - .codex/sessions/**
+  - .qwen/cache/**
+  - .qwen/logs/**
+  - .qwen/tmp/**
+  - .qwen/memory.json
   - .code-review-graph/**
 
 driftPolicy:

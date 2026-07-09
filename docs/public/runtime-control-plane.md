@@ -47,7 +47,7 @@ This keeps account-root/package rollout conservative while still requiring insta
 | --- | --- | --- |
 | source checkout | `node scripts/runtime-state.mjs status --json` | `available` |
 | materialized package | set `MOONSHOT_RELAY_HOME=<package>/moonshot-relay/profile`, then run `<package>/moonshot-relay/profile/scripts/runtime-state.mjs status --json` | `available` |
-| temp account-root install | set `MOONSHOT_RELAY_HOME=<temp-moonshot-home>`, then run `<temp-moonshot-home>/scripts/runtime-state.mjs status --json` with temp Claude/Codex homes | `available` |
+| temp account-root install | set `MOONSHOT_RELAY_HOME=<temp-moonshot-home>`, then run `<temp-moonshot-home>/scripts/runtime-state.mjs status --json` with temp Claude/Codex/Qwen homes | `available` |
 | live account-root install | installed `~/.moonshot-relay/scripts/runtime-state.mjs status --json` after explicit adoption approval | `available` |
 | project-local bridge | `moonshot-relay bridge --target <project>`, then run `<project>/scripts/runtime-state.mjs status --json` | `available` with DB under `<project>/.moonshot-relay/state` |
 

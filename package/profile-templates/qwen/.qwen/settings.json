@@ -1,0 +1,14 @@
+{
+  "context": {
+    "fileName": [
+      "QWEN.md",
+      "AGENTS.md"
+    ]
+  },
+  "experimental": {
+    "agentTeam": false
+  },
+  "telemetry": {
+    "includeSensitiveSpanAttributes": false
+  }
+}

@@ -373,6 +373,9 @@ const summarizeGeneratedStateBoundary = async ({ repoRoot, findings }) => {
     '.codex/sqlite/',
     '.codex/memories/',
     '.codex/sessions/',
+    '.qwen/cache/',
+    '.qwen/logs/',
+    '.qwen/tmp/',
   ];
   const forbiddenMatches = entries.filter((entry) => {
     const source = normalizePath(entry.source);
