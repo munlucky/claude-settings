@@ -1,0 +1,5 @@
+{
+  "providers": ["codex", "claude", "qwen"],
+  "sharedFields": ["routeClass", "effortProfile", "reason", "fallback", "applicationMode", "applicationSurface"],
+  "codexOnlyFields": ["billingGuardThreshold", "autoCompactTokenLimit", "longContextBillingRule", "cacheWriteInputMultiplier"]
+}

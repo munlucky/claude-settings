@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "moonshot-relay-routing-shadow-v1",
+  "tasks": [
+    {
+      "id": "mechanical-contract",
+      "provider": "codex",
+      "intent": { "routeClass": "mechanical", "effortProfile": "economy", "reason": "bounded mechanical edit" },
+      "projectedInputTokens": 90000,
+      "tokenEstimateSource": "approximation",
+      "estimatedOutputTokens": 3000
+    },
+    {
+      "id": "normal-implementation",
+      "provider": "codex",
+      "intent": { "routeClass": "normal", "effortProfile": "standard", "reason": "normal implementation" },
+      "projectedInputTokens": 150000,
+      "tokenEstimateSource": "approximation",
+      "estimatedOutputTokens": 12000
+    },
+    {
+      "id": "hard-review",
+      "provider": "codex",
+      "intent": { "routeClass": "hard_reasoning", "effortProfile": "deep", "reason": "high-risk review" },
+      "projectedInputTokens": 210000,
+      "tokenEstimateSource": "caller_supplied",
+      "estimatedOutputTokens": 18000
+    },
+    {
+      "id": "long-context-retrieval",
+      "provider": "codex",
+      "intent": { "routeClass": "long_context", "effortProfile": "deep", "requiredCapabilities": ["declared_context_or_state_capability"], "reason": "stateful retrieval" },
+      "projectedInputTokens": 245000,
+      "tokenEstimateSource": "approximation",
+      "estimatedOutputTokens": 16000
+    },
+    {
+      "id": "claude-capability-observation",
+      "provider": "claude",
+      "intent": { "routeClass": "normal", "effortProfile": "standard", "reason": "observe unsupported provider capability" },
+      "projectedInputTokens": 70000,
+      "tokenEstimateSource": "unknown"
+    }
+  ]
+}

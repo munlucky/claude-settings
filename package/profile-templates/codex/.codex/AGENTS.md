@@ -37,3 +37,4 @@ Project-specific anchor entries belong in the consuming project, not in this ins
 - `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines/knowledge-repository-ops.md`
 - `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines/provider-neutral-model-routing.md`
 - `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines/resumable-session-layer.md`
+- `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/docs/public/guidelines/codex-gpt-5-6-cost-control.md` (Codex-only cost guard)

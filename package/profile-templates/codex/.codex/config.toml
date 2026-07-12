@@ -1,5 +1,8 @@
 #:schema https://developers.openai.com/codex/config-schema.json
 
+model_context_window = 272000
+model_auto_compact_token_limit = 240000
+
 # Claude Settings - Codex project configuration.
 # Based on the ECC reference config, trimmed for this repository and Windows-safe defaults.
 

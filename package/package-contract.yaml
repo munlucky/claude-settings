@@ -244,6 +244,10 @@ requiredPayloadEntries:
       purpose: harness_control_plane_golden_eval_gate
     - source: tools/evals/harness-search-fixture-scorer.mjs
       purpose: deterministic_harness_search_fixture_scorer
+    - source: tools/evals/provider-model-routing.mjs
+      purpose: provider_model_routing_shadow_eval_gate
+    - source: tools/evals/provider-profile-adoption.mjs
+      purpose: provider_profile_adoption_branch_verifier
     - source: tools/evals/skill-deletion-eval.mjs
       purpose: public_skill_sentence_deletion_no_regression_evaluator
     - source: tools/evals/skill-lint-carry-forward.json
@@ -429,6 +433,12 @@ requiredPayloadEntries:
         purpose: conditional_workflow_bundle_loading
       - source: scripts/lib/verification-plane.mjs
         purpose: verification_plane_evidence_support
+      - source: scripts/provider-model-route-advisor.mjs
+        purpose: provider_model_routing_shadow_advisor
+      - source: scripts/lib/provider-model-routing.mjs
+        purpose: provider_neutral_routing_contract_support
+      - source: scripts/lib/providers/codex-gpt-5-6-adapter.mjs
+        purpose: codex_gpt_5_6_cost_routing_adapter
   archivedLegacyScripts:
     description: "Legacy delegated-terminal phase adapters, diagnostics, and script-local tests are preserved as source archive only. They are not active runtime payload and are not copied into installed profiles."
     root: archive/scripts/legacy-phase-adapters/

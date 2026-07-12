@@ -1,0 +1,14 @@
+{
+  "cases": [
+    { "name": "below_headroom", "projectedInputTokens": 219999, "tokenEstimateSource": "approximation" },
+    { "name": "headroom_boundary", "projectedInputTokens": 220000, "tokenEstimateSource": "caller_supplied" },
+    { "name": "above_headroom", "projectedInputTokens": 220001, "tokenEstimateSource": "approximation" },
+    { "name": "before_compact", "projectedInputTokens": 239999, "tokenEstimateSource": "runtime_authoritative" },
+    { "name": "compact_boundary", "projectedInputTokens": 240000, "tokenEstimateSource": "runtime_authoritative" },
+    { "name": "after_compact", "projectedInputTokens": 240001, "tokenEstimateSource": "runtime_authoritative" },
+    { "name": "billing_boundary", "projectedInputTokens": 272000, "tokenEstimateSource": "runtime_authoritative" },
+    { "name": "billing_overflow_authoritative", "projectedInputTokens": 272001, "tokenEstimateSource": "runtime_authoritative" },
+    { "name": "billing_overflow_approximate", "projectedInputTokens": 272001, "tokenEstimateSource": "approximation" },
+    { "name": "missing_measurement", "projectedInputTokens": null, "tokenEstimateSource": "unknown" }
+  ]
+}

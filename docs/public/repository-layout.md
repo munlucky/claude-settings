@@ -91,6 +91,7 @@ GitHub branch protection, required status checks, CODEOWNERS review enforcement,
 | `product-definition-workflow.md` | policy-anchor | `skills/product-orchestrator/**`, `templates/product-definition/**` |
 | `plan-review-canvas.md` | operational-procedure | `tools/plan-canvas/plan-canvas.mjs`, `schemas/plan-feedback.schema.json`, `tests/plan-canvas-contract.test.mjs` |
 | `provider-neutral-model-routing.md` | policy-anchor | runtime profile config templates and routing docs |
+| `codex-gpt-5-6-cost-control.md` | policy-anchor | Codex GPT-5.6 adapter policy and cost-guard tests |
 | `requirements-traceability-harness.md` | policy-anchor | `skills/task-slicer/**`, tracked `docs/public/roadmaps/**` contracts, runtime `docs/implementation/**` execution scratch |
 | `research-evidence-policy.md` | policy-anchor | `skills/product-orchestrator/**`, `skills/moonshot-architecture/**`, `schemas/retrieval-evidence.schema.yaml` |
 | `resumable-session-layer.md` | policy-anchor | phase-runner state helpers and runtime state docs |
