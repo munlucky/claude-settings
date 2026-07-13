@@ -68,7 +68,31 @@ Codex can run the same guard from a `Stop` hook without replacing `notify`:
 }
 ```
 
-When Codex receives `decision: "block"`, it continues with the guard `reason` as the next prompt.
+When Codex receives `decision: "block"`, it continues with the guard `reason` as the next prompt. The generic adapter retains final-message detection for compatibility; use the dedicated mode below for every-Stop Phase Runner enforcement.
+
+## Codex Phase-Runner Stop
+
+For a Phase Runner task that must not end early, configure the Stop hook with:
+
+```json
+{
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node <MOONSHOT_RELAY_HOME>/scripts/phase-final-guard.mjs --mode codex-phase-runner-stop",
+          "timeout": 30,
+          "statusMessage": "Verifying phase-runner completion"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The dedicated mode runs on every Stop event. It identifies the current task from the transcript, follows explicit continuation turns only across the same Phase Runner task boundary, and falls back to an active `phase-runner-*` projection when transcript data is unavailable. Unfinished work returns `decision: "block"` and writes the normal resume-required artifact.
 
 ## Codex Turn Ended Fallback
 

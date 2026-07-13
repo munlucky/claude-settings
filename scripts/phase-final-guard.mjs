@@ -27,7 +27,7 @@ const COMPLETE_PHASE_STATUSES = new Set([
   'skipped',
 ]);
 
-const usage = () => `Usage: node scripts/phase-final-guard.mjs [--mode check|claude-stop|codex-stop|codex-turn-ended] [--status-file <file>] [--resume-file <file>] [--db <file>] [--always-block] [--fail-on-resume-required] [--json]`;
+const usage = () => `Usage: node scripts/phase-final-guard.mjs [--mode check|claude-stop|codex-stop|codex-phase-runner-stop|codex-turn-ended] [--status-file <file>] [--resume-file <file>] [--db <file>] [--always-block] [--fail-on-resume-required] [--json]`;
 
 const parseArgs = (argv) => {
   const options = {
@@ -64,7 +64,7 @@ const parseArgs = (argv) => {
     }
   }
 
-  if (!['check', 'claude-stop', 'codex-stop', 'codex-turn-ended'].includes(options.mode)) {
+  if (!['check', 'claude-stop', 'codex-stop', 'codex-phase-runner-stop', 'codex-turn-ended'].includes(options.mode)) {
     throw new Error(`Unsupported mode: ${options.mode}\n${usage()}`);
   }
 
@@ -174,11 +174,84 @@ const parsePhaseStatusProjection = (text) => {
 
 const finalClaimPattern = /(\b(all set|complete|completed|done|finished|final|wrapped up)\b|완료|완료했습니다|진행 완료|작업 완료|전체 완료|마무리|끝났|종료)/i;
 const nonFinalPattern = /(아직|남아|남았습니다|남아 있습니다|not complete|not done|remaining|pending|in_progress|status|상태|중간보고|현재)/i;
+const phaseRunnerSignalPattern = /(moonshot[- ]phase[- ]runner|phase[- ]runner|phase runner|페이즈러너|모든 페이즈|phase-status\.yaml|assess-completion)/i;
+const continuationSignalPattern = /^\s*(이어서(?:\s+작업)?(?:\s+진행)?(?:해|해주세요)?|계속(?:\s+작업)?(?:\s+진행)?(?:해|해주세요)?|이어가(?:줘|주세요)?|continue|keep going|resume)\s*[.!?]*\s*$/i;
 
 const isFinalCompletionClaim = (message = '') => {
   const normalized = String(message || '');
   return finalClaimPattern.test(normalized) && !nonFinalPattern.test(normalized);
 };
+
+const textFromTranscriptContent = (content) => {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(textFromTranscriptContent).join(' ');
+  if (!content || typeof content !== 'object') return '';
+  return [content.text, content.message, content.input_text, content.output_text]
+    .filter((value) => value !== undefined)
+    .map(textFromTranscriptContent)
+    .join(' ');
+};
+
+const normalizeTranscriptUserText = (text) => String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+const phaseRunnerProjectionEvidence = (projection) => Boolean(
+  /^phase-runner(?:-|$)/i.test(String(projection.runId || ''))
+  && projection.planDir
+  && projection.masterPlan
+  && projection.phases.length > 0,
+);
+
+async function detectPreviousPhaseRunnerTask(hookInput, projection) {
+  if (hookInput.phase_runner === true || hookInput.phaseRunner === true || hookInput.moonshot_phase_runner === true) {
+    return { detected: true, source: 'hook_input' };
+  }
+
+  const transcriptPath = hookInput.transcript_path || hookInput.transcriptPath || '';
+  if (!transcriptPath) {
+    return { detected: phaseRunnerProjectionEvidence(projection), source: 'phase_projection_fallback' };
+  }
+
+  try {
+    const transcriptText = await readFile(transcriptPath, 'utf8');
+    const boundedText = transcriptText.length > 4 * 1024 * 1024 ? transcriptText.slice(-4 * 1024 * 1024) : transcriptText;
+    const lines = boundedText.split(/\r?\n/);
+    const userMessages = [];
+    lines.forEach((line, index) => {
+      try {
+        const record = JSON.parse(line);
+        const payload = record.payload || record;
+        if (payload.type === 'message' && payload.role === 'user') {
+          userMessages.push({ index, text: textFromTranscriptContent(payload.content) });
+        } else if (payload.type === 'user_message') {
+          userMessages.push({ index, text: textFromTranscriptContent(payload.message || payload.content) });
+        }
+      } catch {
+        // Partial transcript lines are ignored; runtime-state projection remains the fallback.
+      }
+    });
+
+    if (userMessages.length === 0) {
+      return { detected: phaseRunnerProjectionEvidence(projection), source: 'phase_projection_no_user_message' };
+    }
+
+    const distinct = userMessages.filter((message, index) => (
+      index === 0 || normalizeTranscriptUserText(message.text) !== normalizeTranscriptUserText(userMessages[index - 1].text)
+    ));
+    const latest = distinct[distinct.length - 1];
+    const directSignal = phaseRunnerSignalPattern.test(latest.text) || phaseRunnerSignalPattern.test(lines.slice(latest.index).join('\n'));
+    let boundaryIndex = distinct.length - 2;
+    while (boundaryIndex >= 0 && continuationSignalPattern.test(distinct[boundaryIndex].text)) boundaryIndex -= 1;
+    const boundary = boundaryIndex >= 0 ? distinct[boundaryIndex] : null;
+    const continuation = !directSignal
+      && continuationSignalPattern.test(latest.text)
+      && phaseRunnerProjectionEvidence(projection)
+      && boundary !== null
+      && phaseRunnerSignalPattern.test(boundary.text);
+    return { detected: directSignal || continuation, source: continuation ? 'transcript_continuation' : 'transcript' };
+  } catch {
+    return { detected: phaseRunnerProjectionEvidence(projection), source: 'phase_projection_transcript_fallback' };
+  }
+}
 
 async function readLatestCompletionDecision(dbPath, runId, goalId) {
   if (!runId || !goalId || !await pathExists(dbPath)) {
@@ -317,6 +390,20 @@ async function evaluateGuard(options, hookInput) {
   }
 
   const projection = parsePhaseStatusProjection(await readFile(statusFile, 'utf8'));
+  const phaseRunnerTaskEvidence = await detectPreviousPhaseRunnerTask(hookInput, projection);
+  if (options.mode === 'codex-phase-runner-stop' && !phaseRunnerTaskEvidence.detected) {
+    return {
+      status: 'not_phase_runner_task',
+      mode: options.mode,
+      statusFile,
+      resumeFile,
+      dbPath,
+      phaseStatus: projection,
+      phaseRunnerTaskEvidence,
+      remainingPhases: [],
+      hookOutput: {},
+    };
+  }
   const phases = projection.phases;
   const remainingPhases = phases.filter((phase) => {
     const phaseStatus = String(phase.status || '').toLowerCase();
@@ -346,13 +433,15 @@ async function evaluateGuard(options, hookInput) {
     latestVerificationEvidence,
   });
   const lastAssistantMessage = hookInput.last_assistant_message || hookInput.lastAssistantMessage || '';
-  const shouldBlock = (options.mode === 'claude-stop' || options.mode === 'codex-stop')
+  const shouldBlock = (options.mode === 'claude-stop' || options.mode === 'codex-stop' || options.mode === 'codex-phase-runner-stop')
     && status !== 'clear'
-    && (options.alwaysBlock || isFinalCompletionClaim(lastAssistantMessage));
+    && (options.mode === 'codex-phase-runner-stop' || options.alwaysBlock || isFinalCompletionClaim(lastAssistantMessage));
   const hookOutput = shouldBlock
     ? {
       decision: 'block',
-      reason,
+      reason: options.mode === 'codex-phase-runner-stop'
+        ? `The previous task used moonshot-phase-runner and is not fully complete. Resume it now. ${reason}`
+        : reason,
     }
     : {};
 
@@ -365,6 +454,7 @@ async function evaluateGuard(options, hookInput) {
     reason,
     phaseStatus: projection,
     remainingPhases,
+    phaseRunnerTaskEvidence,
     latestCompletionDecision,
     latestVerificationEvidence,
     finalCompletionClaim: isFinalCompletionClaim(lastAssistantMessage),
@@ -373,7 +463,7 @@ async function evaluateGuard(options, hookInput) {
 }
 
 async function writeResumeArtifact(result, hookInput) {
-  if (result.status === 'clear' || result.status === 'no_phase_status') {
+  if (result.status === 'clear' || result.status === 'no_phase_status' || result.status === 'not_phase_runner_task') {
     return null;
   }
 
@@ -382,7 +472,7 @@ async function writeResumeArtifact(result, hookInput) {
     status: result.status,
     reason: result.reason,
     createdAt: new Date().toISOString(),
-    runtimeAdapter: 'codex-turn-ended',
+    runtimeAdapter: result.mode === 'codex-turn-ended' ? 'codex-turn-ended' : 'codex-phase-runner-stop',
     cwd: process.cwd(),
     hookInputType: hookInput.type || hookInput.hook_event_name || '',
     statusFile: result.statusFile,
@@ -405,7 +495,7 @@ async function writeResumeArtifact(result, hookInput) {
 }
 
 const writeOutput = (payload, options) => {
-  if ((options.mode === 'claude-stop' || options.mode === 'codex-stop') && !options.json) {
+  if ((options.mode === 'claude-stop' || options.mode === 'codex-stop' || options.mode === 'codex-phase-runner-stop') && !options.json) {
     console.log(JSON.stringify(payload.hookOutput));
     return;
   }
@@ -420,7 +510,7 @@ const main = async () => {
   const hookInput = await readStdinJson();
   const result = await evaluateGuard(options, hookInput);
   let resumeArtifact = null;
-  if (options.mode === 'codex-turn-ended') {
+  if (options.mode === 'codex-turn-ended' || options.mode === 'codex-phase-runner-stop') {
     resumeArtifact = await writeResumeArtifact(result, hookInput);
   }
   const payload = {

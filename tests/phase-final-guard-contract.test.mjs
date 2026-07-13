@@ -74,6 +74,20 @@ const writeStatus = async (dir, phases, extra = {}) => {
   return statusFile;
 };
 
+const writeTranscript = async (dir, messages) => {
+  const transcriptPath = path.join(dir, 'transcript.jsonl');
+  const records = messages.map((text) => JSON.stringify({
+    type: 'response_item',
+    payload: {
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_text', text }],
+    },
+  }));
+  await writeFile(transcriptPath, `${records.join('\n')}\n`);
+  return transcriptPath;
+};
+
 test('Claude Stop adapter blocks final completion claims when actionable phases remain', async () => {
   const dir = await makeTempRoot();
   const statusFile = await writeStatus(dir, [
@@ -120,6 +134,69 @@ test('Codex Stop adapter uses the same block decision contract', async () => {
   assert.equal(payload.status, 'resume_required');
   assert.equal(payload.hookOutput.decision, 'block');
   assert.match(payload.hookOutput.reason, /02-package-v1\.md/);
+});
+
+test('Codex Phase Runner Stop blocks unfinished work without completion wording', async () => {
+  const dir = await makeTempRoot();
+  const statusFile = await writeStatus(dir, [
+    { doc: '01-baseline-v1.md', status: 'complete' },
+    { doc: '02-package-v1.md', status: 'in_progress' },
+  ]);
+  const transcriptPath = await writeTranscript(dir, [
+    '[$moonshot-phase-runner] 모든 페이즈 완료될 때까지 진행해',
+  ]);
+  const payload = parseJson(runGuard([
+    '--mode', 'codex-phase-runner-stop', '--status-file', statusFile, '--json',
+  ], {
+    hook_event_name: 'Stop',
+    transcript_path: transcriptPath,
+    last_assistant_message: '현재 Phase 02 작업을 계속합니다.',
+  }));
+
+  assert.equal(payload.status, 'resume_required');
+  assert.equal(payload.phaseRunnerTaskEvidence.detected, true);
+  assert.equal(payload.hookOutput.decision, 'block');
+  assert.match(payload.hookOutput.reason, /Resume it now/);
+});
+
+test('Codex Phase Runner Stop follows continuation turns in the same task', async () => {
+  const dir = await makeTempRoot();
+  const statusFile = await writeStatus(dir, [
+    { doc: '01-baseline-v1.md', status: 'complete' },
+    { doc: '02-package-v1.md', status: 'in_progress' },
+  ], { runId: 'phase-runner-continuation' });
+  const transcriptPath = await writeTranscript(dir, [
+    '[$moonshot-phase-runner] 모든 페이즈 완료될 때까지 진행해',
+    '이어서 진행해',
+    '계속 진행해',
+  ]);
+  const payload = parseJson(runGuard([
+    '--mode', 'codex-phase-runner-stop', '--status-file', statusFile, '--json',
+  ], { transcript_path: transcriptPath }));
+
+  assert.equal(payload.status, 'resume_required');
+  assert.equal(payload.phaseRunnerTaskEvidence.source, 'transcript_continuation');
+  assert.equal(payload.hookOutput.decision, 'block');
+});
+
+test('Codex Phase Runner Stop does not cross an unrelated task boundary', async () => {
+  const dir = await makeTempRoot();
+  const statusFile = await writeStatus(dir, [
+    { doc: '01-baseline-v1.md', status: 'complete' },
+    { doc: '02-package-v1.md', status: 'pending' },
+  ], { runId: 'phase-runner-stale-continuation' });
+  const transcriptPath = await writeTranscript(dir, [
+    '[$moonshot-phase-runner] 모든 페이즈 완료될 때까지 진행해',
+    '일반적인 단일 파일 점검만 해줘',
+    '계속 진행해',
+  ]);
+  const payload = parseJson(runGuard([
+    '--mode', 'codex-phase-runner-stop', '--status-file', statusFile, '--json',
+  ], { transcript_path: transcriptPath }));
+
+  assert.equal(payload.status, 'not_phase_runner_task');
+  assert.equal(payload.phaseRunnerTaskEvidence.detected, false);
+  assert.deepEqual(payload.hookOutput, {});
 });
 
 test('Claude Stop adapter allows non-final status reports while still reporting remaining work', async () => {
