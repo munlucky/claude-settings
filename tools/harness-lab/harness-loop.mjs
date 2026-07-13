@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 
 import { appendLedgerEvent, readLedger, verifyLedger } from '../../scripts/lib/event-ledger.mjs';
 import { redactUnsafeObject, writeEnvironmentSnapshot } from '../../scripts/lib/harness-environment-snapshot.mjs';
+import { spawnPortableCommandSync } from '../../scripts/lib/portable-command-runner.mjs';
 
 import { shouldRerunBaseline, sourceFingerprint } from './harness-lab.mjs';
 
@@ -836,12 +837,10 @@ function parseArgs(argv) {
 }
 
 function run(command, args, { cwd = process.cwd(), env = process.env, expect = 0 } = {}) {
-  const result = spawnSync(command, args, {
+  const result = spawnPortableCommandSync([command, ...args], {
     cwd,
     env,
-    encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
-    shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(command),
   });
   const exitCode = result.status ?? (result.error ? 1 : 0);
   if (expect !== null && exitCode !== expect) {
@@ -883,7 +882,7 @@ async function runCommandWithEvents(kernel, {
   return result;
 }
 
-const npmCommand = () => (process.platform === 'win32' ? 'npm.cmd' : 'npm');
+const npmCommand = () => 'npm';
 
 function nodeArgs(script, args) {
   return [script, ...args];

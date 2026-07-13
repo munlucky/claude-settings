@@ -96,6 +96,7 @@ const runtimeSpecs = {
       'scripts/lib/phase-runner-session-audit.mjs',
       'scripts/lib/phase-event-ledger.mjs',
       'scripts/lib/phase-run-lease-store.mjs',
+      'scripts/lib/portable-command-runner.mjs',
       'scripts/lib/review-bundle.mjs',
       'scripts/lib/runtime-state-db-path.mjs',
       'scripts/lib/runtime-state-root.mjs',

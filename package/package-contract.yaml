@@ -375,6 +375,8 @@ requiredPayloadEntries:
         purpose: workflow_event_ledger_support
       - source: scripts/lib/phase-run-lease-store.mjs
         purpose: workflow_run_lease_support
+      - source: scripts/lib/portable-command-runner.mjs
+        purpose: shell_free_portable_npm_execution_support
       - source: scripts/lib/review-bundle.mjs
         purpose: independent_review_bundle_support
       - source: scripts/lib/runtime-state-db-path.mjs
