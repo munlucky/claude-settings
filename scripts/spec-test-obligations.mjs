@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { link, open, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import path from 'node:path';
 import process from 'node:process';
 
 const ITEM_PATTERNS = {
@@ -15,23 +17,46 @@ const VALID_MODES = new Set([
   'not_applicable',
 ]);
 
-const usage = () => `Usage: node scripts/spec-test-obligations.mjs validate --sprint-contract <file> --qa-report <file> --requirements-traceability <file> --scenario-matrix <file> --scorecard <file> [--source <file>] [--strict-seam] [--json]`;
+const usage = () => `Usage: node scripts/spec-test-obligations.mjs validate --sprint-contract <file> --qa-report <file> --requirements-traceability <file> --scenario-matrix <file> --scorecard <file> [--source <file>] [--evidence-root <absolute-dir> --require-fixed-evidence --required-evidence <path>...] [--strict-seam] [--atomic-create --require-output-absent --out <absolute-json>] [--json]`;
 
 const parseArgs = (argv) => {
   const [command = ''] = argv;
-  const options = { command, json: false, sources: [], strictSeam: false };
+  const options = {
+    command,
+    json: false,
+    sources: [],
+    requiredEvidence: [],
+    strictSeam: false,
+    requireFixedEvidence: false,
+    atomicCreate: false,
+    requireOutputAbsent: false,
+  };
 
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
+    const takeValue = () => {
+      const value = argv[index + 1];
+      if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}\n${usage()}`);
+      index += 1;
+      return value;
+    };
     if (arg === '--json') {
       options.json = true;
     } else if (arg === '--strict-seam') {
       options.strictSeam = true;
+    } else if (arg === '--require-fixed-evidence') {
+      options.requireFixedEvidence = true;
+    } else if (arg === '--atomic-create') {
+      options.atomicCreate = true;
+    } else if (arg === '--require-output-absent') {
+      options.requireOutputAbsent = true;
+    } else if (arg === '--required-evidence') {
+      options.requiredEvidence.push(takeValue());
     } else if (arg === '--source') {
-      options.sources.push(argv[++index] || '');
+      options.sources.push(takeValue());
     } else if (arg.startsWith('--')) {
       const key = arg.slice(2).replace(/-([a-z])/g, (_, char) => char.toUpperCase());
-      options[key] = argv[++index] || '';
+      options[key] = takeValue();
     } else {
       throw new Error(`Unknown argument: ${arg}\n${usage()}`);
     }
@@ -358,6 +383,175 @@ export function validateSpecTestObligations({ documents = [], strictSeam = false
   };
 }
 
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])]));
+  }
+  return value;
+};
+
+const sha256Hex = (value) => createHash('sha256')
+  .update(JSON.stringify(canonicalJson(value)))
+  .digest('hex');
+
+const pathKey = (target) => (
+  process.platform === 'win32' ? path.resolve(target).toLowerCase() : path.resolve(target)
+);
+
+const isWithinRoot = (root, target) => {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
+const fixedEvidenceFields = (obligation) => {
+  const mode = normalized(obligation.verificationMode);
+  if (mode === 'tdd_red_green') return ['redEvidencePath', 'greenEvidencePath'];
+  if (mode === 'characterization_first' || mode === 'evidence_mandatory') return ['evidencePath'];
+  return [];
+};
+
+const requireEvidenceRoot = async (value) => {
+  if (!path.isAbsolute(value || '')) {
+    throw Object.assign(new Error('--evidence-root must be an absolute existing directory'), { exitCode: 2 });
+  }
+  try {
+    const canonical = await realpath(value);
+    if (!(await stat(canonical)).isDirectory()) throw new Error('not a directory');
+    return canonical;
+  } catch (error) {
+    throw Object.assign(new Error(`Unable to use --evidence-root ${value}: ${error.message}`), { exitCode: 2 });
+  }
+};
+
+const closeoutDocumentAuthority = async (documents) => {
+  const requiredRoles = ['sprintContract', 'qaReport', 'requirementsTraceability', 'scenarioMatrix', 'scorecard'];
+  const records = [];
+  for (const role of requiredRoles) {
+    const document = documents.find((entry) => entry.role === role);
+    if (!document) throw Object.assign(new Error(`fixed evidence requires the ${role} closeout document`), { exitCode: 2 });
+    const canonical = await realpath(document.path);
+    const info = await stat(canonical);
+    if (!info.isFile()) throw Object.assign(new Error(`${role} is not a regular file`), { exitCode: 2 });
+    records.push({ role, path: canonical, mtimeMs: info.mtimeMs });
+  }
+  return { records, newestMtimeMs: Math.max(...records.map((record) => record.mtimeMs)) };
+};
+
+const applyFixedEvidenceValidation = async (result, {
+  evidenceRoot,
+  requiredEvidence,
+  newestCloseoutMtimeMs,
+}) => {
+  const references = requiredEvidence.map((declaredPath) => ({
+    id: 'FIXED-EVIDENCE',
+    field: '--required-evidence',
+    declaredPath,
+    sourcePath: '',
+  }));
+  if (!references.length) {
+    result.findings.push(finding(
+      'spec_test_obligation_result_missing',
+      'FIXED-EVIDENCE',
+      '--require-fixed-evidence requires at least one --required-evidence member',
+    ));
+  }
+  for (const obligation of result.obligations) {
+    for (const field of fixedEvidenceFields(obligation)) {
+      const declaredPath = String(obligation[field] || '').trim();
+      if (!declaredPath) {
+        result.findings.push(finding(
+          'spec_test_obligation_result_missing',
+          obligation.id,
+          `${field} is required by --require-fixed-evidence`,
+          obligation.sourcePath,
+        ));
+      } else {
+        references.push({ id: obligation.id, field, declaredPath, sourcePath: obligation.sourcePath });
+      }
+    }
+  }
+
+  const validated = new Map();
+  for (const reference of references) {
+    const candidate = path.isAbsolute(reference.declaredPath)
+      ? path.normalize(reference.declaredPath)
+      : path.resolve(evidenceRoot, reference.declaredPath);
+    try {
+      const canonical = await realpath(candidate);
+      const info = await stat(canonical);
+      if (!isWithinRoot(evidenceRoot, canonical)) throw new Error('path escapes canonical evidence root');
+      if (!info.isFile()) throw new Error('path is not a regular file');
+      const handle = await open(canonical, 'r');
+      await handle.close();
+      validated.set(pathKey(canonical), { path: canonical, mtimeMs: info.mtimeMs });
+    } catch (error) {
+      result.findings.push(finding(
+        'spec_test_obligation_result_missing',
+        reference.id,
+        `${reference.field}: ${error.message}`,
+        reference.sourcePath,
+      ));
+    }
+  }
+  for (const evidence of validated.values()) {
+    if (evidence.mtimeMs < newestCloseoutMtimeMs) {
+      result.findings.push(finding(
+        'spec_test_obligation_result_missing',
+        'FIXED-EVIDENCE',
+        `${evidence.path} is stale; evidence must be newer than the closeout documents`,
+      ));
+    }
+  }
+  result.summary.findingCount = result.findings.length;
+  result.status = result.findings.length === 0 ? 'pass' : 'fail';
+  return [...validated.values()];
+};
+
+const resolveOutputTarget = async ({ out, evidenceRoot, protectedPaths }) => {
+  if (!path.isAbsolute(out || '')) throw Object.assign(new Error('--out must be an absolute path'), { exitCode: 2 });
+  const parent = await realpath(path.dirname(path.normalize(out)));
+  if (!(await stat(parent)).isDirectory()) throw Object.assign(new Error('--out parent is not a directory'), { exitCode: 2 });
+  const target = path.join(parent, path.basename(out));
+  if (evidenceRoot && !isWithinRoot(evidenceRoot, target)) {
+    throw Object.assign(new Error('--out must remain inside the canonical evidence root'), { exitCode: 2 });
+  }
+  let existingTarget = '';
+  try {
+    existingTarget = await realpath(target);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      throw Object.assign(new Error(`Unable to inspect --out ${target}: ${error.message}`), { exitCode: 2 });
+    }
+  }
+  if (protectedPaths.has(pathKey(target)) || (existingTarget && protectedPaths.has(pathKey(existingTarget)))) {
+    throw Object.assign(new Error('--out aliases an input document or evidence file'), { exitCode: 2 });
+  }
+  return target;
+};
+
+const atomicWriteJson = async (target, result, { requireAbsent }) => {
+  const temp = path.join(path.dirname(target), `.${path.basename(target)}.tmp.${process.pid}.${randomBytes(8).toString('hex')}`);
+  let handle;
+  try {
+    handle = await open(temp, 'wx', 0o600);
+    await handle.writeFile(`${JSON.stringify(result, null, 2)}\n`, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    if (requireAbsent) {
+      await link(temp, target);
+      await rm(temp, { force: true });
+    } else {
+      await rename(temp, target);
+    }
+  } catch (error) {
+    await handle?.close().catch(() => {});
+    await rm(temp, { force: true }).catch(() => {});
+    throw Object.assign(new Error(`Unable to atomically write --out ${target}: ${error.message}`), { exitCode: 2 });
+  }
+};
+
 const writeResult = (result, json) => {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
@@ -376,8 +570,42 @@ const main = async () => {
     throw Object.assign(new Error(`Unknown command: ${options.command}\n${usage()}`), { exitCode: 2 });
   }
 
+  if (options.atomicCreate !== options.requireOutputAbsent) {
+    throw Object.assign(new Error('--atomic-create and --require-output-absent must be used together'), { exitCode: 2 });
+  }
+  if ((options.atomicCreate || options.requireOutputAbsent) && !options.out) {
+    throw Object.assign(new Error('--atomic-create requires --out'), { exitCode: 2 });
+  }
+
   const documents = await readDocuments(options);
   const result = validateSpecTestObligations({ documents, strictSeam: options.strictSeam });
+  const closeoutAuthority = (options.requireFixedEvidence || options.out)
+    ? await closeoutDocumentAuthority(documents)
+    : null;
+  const evidenceRoot = options.requireFixedEvidence
+    ? await requireEvidenceRoot(options.evidenceRoot)
+    : null;
+  const validatedEvidence = options.requireFixedEvidence
+    ? await applyFixedEvidenceValidation(result, {
+      evidenceRoot,
+      requiredEvidence: options.requiredEvidence,
+      newestCloseoutMtimeMs: closeoutAuthority.newestMtimeMs,
+    })
+    : [];
+
+  result.contentSha256 = sha256Hex(result);
+  if (options.out) {
+    const protectedPaths = new Set([
+      ...closeoutAuthority.records.map((record) => pathKey(record.path)),
+      ...validatedEvidence.map((record) => pathKey(record.path)),
+    ]);
+    const outputTarget = await resolveOutputTarget({
+      out: options.out,
+      evidenceRoot,
+      protectedPaths,
+    });
+    await atomicWriteJson(outputTarget, result, { requireAbsent: options.requireOutputAbsent });
+  }
   writeResult(result, options.json);
   if (result.status === 'fail') {
     process.exitCode = 1;

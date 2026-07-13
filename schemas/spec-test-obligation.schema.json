@@ -4,7 +4,7 @@
   "title": "Spec-Test Obligation Validation Result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "status", "summary", "items", "obligations", "findings"],
+  "required": ["schemaVersion", "status", "summary", "items", "obligations", "findings", "contentSha256"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "status": { "enum": ["pass", "fail"] },
@@ -88,6 +88,7 @@
           "sourcePath": { "type": "string" }
         }
       }
-    }
+    },
+    "contentSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
   }
 }
