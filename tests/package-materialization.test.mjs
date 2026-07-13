@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -9,6 +10,7 @@ import { gitLsFiles } from '../scripts/lib/git-safe.mjs';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
+const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
 let materializedRoot = null;
 
@@ -681,6 +683,8 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
   await mkdir(path.join(codexHome, 'skills', 'completion-verifier'), { recursive: true });
   await writeFile(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md'), 'stale managed\n');
+  await mkdir(path.join(codexHome, 'skills', 'user-modified-managed'), { recursive: true });
+  await writeFile(path.join(codexHome, 'skills', 'user-modified-managed', 'SKILL.md'), 'user edit\n');
   await mkdir(path.join(codexHome, 'skills', 'moonshot-phase-executor'), { recursive: true });
   await writeFile(path.join(codexHome, 'skills', 'moonshot-phase-executor', 'SKILL.md'), 'stale canonical internal\n');
   await mkdir(path.join(codexHome, 'sessions'), { recursive: true });
@@ -692,8 +696,9 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(codexHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(codexHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
     copied: [
-      { path: 'schemas/old-managed.schema.json' },
-      { path: 'skills/completion-verifier/SKILL.md' },
+      { path: 'schemas/old-managed.schema.json', sha256: sha256('{}\n') },
+      { path: 'skills/completion-verifier/SKILL.md', sha256: sha256('stale managed\n') },
+      { path: 'skills/user-modified-managed/SKILL.md', sha256: sha256('original managed\n') },
     ],
   })}\n`);
   await mkdir(path.join(qwenHome, 'skills', 'external-skill'), { recursive: true });
@@ -711,8 +716,8 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(qwenHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(qwenHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
     copied: [
-      { path: 'schemas/old-managed.schema.json' },
-      { path: 'skills/completion-verifier/SKILL.md' },
+      { path: 'schemas/old-managed.schema.json', sha256: sha256('{}\n') },
+      { path: 'skills/completion-verifier/SKILL.md', sha256: sha256('stale managed\n') },
     ],
   })}\n`);
   await mkdir(path.join(claudeHome, 'skills', 'external-skill'), { recursive: true });
@@ -732,8 +737,8 @@ test('account-root installer merges shared directories without deleting unrelate
   await writeFile(path.join(claudeHome, 'docs', 'public', 'old.md'), 'old\n');
   await writeFile(path.join(claudeHome, '.moonshot-relay-install-manifest.json'), `${JSON.stringify({
     copied: [
-      { path: 'scripts/old-managed.mjs' },
-      { path: 'skills/completion-verifier/SKILL.md' },
+      { path: 'scripts/old-managed.mjs', sha256: sha256('old\n') },
+      { path: 'skills/completion-verifier/SKILL.md', sha256: sha256('stale managed\n') },
     ],
   })}\n`);
 
@@ -777,6 +782,7 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.deepEqual(codexParity.extraCanonicalSkills, []);
     assert.deepEqual(qwenParity.extraCanonicalSkills, []);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'external-skill', 'SKILL.md')), true);
+    assert.equal(await readFile(path.join(codexHome, 'skills', 'user-modified-managed', 'SKILL.md'), 'utf8'), 'user edit\n');
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(qwenHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
