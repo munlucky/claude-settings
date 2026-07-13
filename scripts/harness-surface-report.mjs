@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -26,6 +27,7 @@ const trackedFiles = () => git('ls-files', '-z', '--cached', '--others', '--excl
   .split('\0')
   .filter(Boolean)
   .map((entry) => entry.replaceAll('\\', '/'))
+  .filter((entry) => existsSync(path.join(sourceRoot, entry)))
   .sort();
 
 const isTestFile = (relative) => relative.startsWith('tests/') && (
@@ -34,6 +36,8 @@ const isTestFile = (relative) => relative.startsWith('tests/') && (
   || relative.endsWith('.test.cjs')
   || relative.endsWith('_test.py')
   || relative.endsWith('.spec.mjs')
+  || relative.endsWith('.spec.js')
+  || relative.endsWith('.spec.cjs')
 );
 
 const collectReport = async () => {
@@ -100,6 +104,9 @@ const check = async (report) => {
     if (report.totals[metric] > limit) blockers.push({ metric, actual: report.totals[metric], limit });
   }
   const allowedUnregistered = Number(config.allowedUnregisteredTests ?? 0);
+  if (!Number.isInteger(allowedUnregistered) || allowedUnregistered < 0) {
+    throw new Error('allowedUnregisteredTests must be a non-negative integer');
+  }
   if (report.testInventory.unregisteredCount > allowedUnregistered) {
     blockers.push({
       metric: 'unregisteredTests',

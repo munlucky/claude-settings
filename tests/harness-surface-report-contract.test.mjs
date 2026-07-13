@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -14,6 +14,27 @@ const run = (...args) => spawnSync(process.execPath, [script, ...args], {
   cwd: sourceRoot,
   encoding: 'utf8',
 });
+
+const fixture = async (files) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'moonshot-surface-fixture-'));
+  tempRoots.push(root);
+  for (const [relative, body] of Object.entries(files)) {
+    const target = path.join(root, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, body);
+  }
+  const initialized = spawnSync('git', ['init', '--quiet'], { cwd: root, encoding: 'utf8' });
+  assert.equal(initialized.status, 0, initialized.stderr);
+  const staged = spawnSync('git', ['add', '--all'], { cwd: root, encoding: 'utf8' });
+  assert.equal(staged.status, 0, staged.stderr);
+  const committed = spawnSync('git', [
+    '-c', 'user.name=Moonshot Fixture',
+    '-c', 'user.email=fixture@example.invalid',
+    'commit', '--quiet', '-m', 'fixture',
+  ], { cwd: root, encoding: 'utf8' });
+  assert.equal(committed.status, 0, committed.stderr);
+  return root;
+};
 
 test('surface report inventories every tracked test and current budget passes', () => {
   const reported = run('report', '--source-root', sourceRoot, '--json');
@@ -48,4 +69,44 @@ test('surface check blocks a deterministic over-budget source', async () => {
   const result = JSON.parse(checked.stdout);
   assert.equal(result.status, 'fail');
   assert.ok(result.blockers.some((blocker) => blocker.metric === 'files'));
+});
+
+test('surface report measures the actual worktree after an unstaged deletion', async () => {
+  const root = await fixture({
+    'README.md': 'remove me\n',
+    'package.json': JSON.stringify({ scripts: { test: 'node --test tests/registered.test.js' } }),
+    'tests/registered.test.js': 'export {};\n',
+  });
+  await rm(path.join(root, 'README.md'));
+  const reported = run('report', '--source-root', root, '--json');
+  assert.equal(reported.status, 0, reported.stderr);
+  const report = JSON.parse(reported.stdout);
+  assert.equal(report.totals.files, 2);
+  assert.equal(report.testInventory.unregisteredCount, 0);
+});
+
+test('surface report finds JS/CJS specs and invalid test allowances fail closed', async () => {
+  const root = await fixture({
+    'package.json': JSON.stringify({ scripts: {} }),
+    'tests/missed.spec.js': 'export {};\n',
+    'tests/missed.spec.cjs': 'module.exports = {};\n',
+  });
+  const reported = run('report', '--source-root', root, '--json');
+  assert.equal(reported.status, 0, reported.stderr);
+  const report = JSON.parse(reported.stdout);
+  assert.deepEqual(report.testInventory.unregistered, [
+    'tests/missed.spec.cjs',
+    'tests/missed.spec.js',
+  ]);
+
+  const config = path.join(root, 'budget.json');
+  await writeFile(config, `${JSON.stringify({
+    schemaVersion: 1,
+    baseline: report.totals,
+    allowedDelta: { files: 10, nonblankLines: 10, utf8Bytes: 1000, estimatedPromptTokens: 250 },
+    allowedUnregisteredTests: 'typo',
+  }, null, 2)}\n`);
+  const checked = run('check', '--source-root', root, '--config', config, '--json');
+  assert.equal(checked.status, 1);
+  assert.match(JSON.parse(checked.stdout).error, /non-negative integer/);
 });
