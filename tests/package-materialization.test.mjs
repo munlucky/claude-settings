@@ -562,6 +562,16 @@ test('package dry-run distinguishes source verdict helpers from generated verdic
   const plannedTo = payload.runtimes.flatMap((runtime) => runtime.planned.map((entry) => entry.to));
   const plannedPaths = [...plannedFrom, ...plannedTo];
 
+  for (const runtime of payload.runtimes) {
+    const destinations = runtime.planned.map((entry) => entry.to);
+    const duplicates = destinations.filter((destination, index) => destinations.indexOf(destination) !== index);
+    assert.equal(
+      new Set(destinations).size,
+      destinations.length,
+      `${runtime.runtime} package plan has duplicate destinations: ${[...new Set(duplicates)].join(', ')}`,
+    );
+  }
+
   assert.ok(plannedFrom.includes('scripts/verification-verdict-state.mjs'));
   assert.ok(plannedFrom.includes('catalog/moonshot-catalog.json'));
   assert.ok(plannedFrom.includes('scripts/catalog-check.mjs'));
