@@ -455,7 +455,7 @@
       "name": "moonshot-phase-runner",
       "path": "skills/moonshot-phase-runner",
       "source": "canonical",
-      "contentHash": "46ca10bdae8bcfd510138a19a8b82bdb2325258718a3bf19b31270e48e4415a8",
+      "contentHash": "7b2434226347bbe142216bba23d71114fc260037e3278e00cdb229d66e8d5c6c",
       "license": "MIT",
       "stages": [],
       "permissions": [],

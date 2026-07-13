@@ -6,7 +6,7 @@ policyClauseIds:
   - moonshot-phase-runner.policy.routing
   - moonshot-phase-runner.policy.hard-stops
   - moonshot-phase-runner.policy.output-contract
-policyDigest: 140500c4acbda662ae8912c6f616f03c011e99edf01b50ad3ff31536b54a1d87
+policyDigest: 8f5c3df46a7b426b7b5963d90b1bc9de7eb0ff88f12e7a45a4a9bf5aba8c499e
 triggers:
   - "phase runner"
   - "run phase"
@@ -47,6 +47,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Do not mutate live account-root, `.claude/**`, or `.codex/**` runtime profiles until the Operational Adoption Closeout gate passes from source evidence. Live adoption is a separate controlled step after harness-lab, package, eval, doctor, and runtime-surface parity evidence.
 - Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
 - Do not return final success until the in-session coordinator, fresh verifier evidence, scorecard, and repository closeout evidence agree.
+- Do not repeat full matrices per edit or reopen frozen source identity for advisory findings; use focused tests and reopen only for P0, security/data-integrity, authority, mandatory-execution, or proven broad regression blockers.
 
 ## 절차
 
@@ -60,6 +61,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 4.1. For an architecture package, carry selected ADR, traceability, owner, verification signal, `architecture.required`, and `ARCHITECTURE_HANDOFF.promptBlock`; reject a blocked handoff.
 5. Coordinate fresh implementation and review agents in-session; legacy terminal adapters remain explicit compatibility paths.
 6. Collect fresh verifier and scorecard evidence, reconcile the cursor, and continue every actionable phase.
+6.1. Escalate focused-to-full: batch focused remediation, freeze source identity, then run one required full matrix; rerun only after a blocker changes that identity.
 7. Keep rejected evidence as carry-forward blockers; only accepted runtime-state authority closes the whole plan.
 7.1. Do not stop the whole plan just because a completed phase produced review findings. Record carry-forward evidence and continue to the next independent actionable phase. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
 8. Before adoption, run the complete closeout in `references/closeout-gates.md`, then verify installed parity and requested Git closeout.
@@ -74,6 +76,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Minimality decision evidence: lower-rung reuse/skip/new-surface choice from `docs/public/guidelines/minimal-correct-implementation.md`.
 - Agent operating policy evidence: source-backed retrieval for volatile facts, assumption/blocker disposition, untrusted content disposition, context relevance, artifact routing, skill readiness, and cumulative-risk carry-forward when encountered.
 - Fresh verifier verdict and scorecard agreement.
+- Verification escalation: focused commands, frozen source identity, final full-gate commands, and any blocker that required a rerun.
 - Spec-Test Obligation validator evidence when plan artifacts contain `REQ-*`, `SCN-*`, or UAT-critical items; missing validator output at phase closeout or completion claim is `spec_test_obligation_result_missing`, and failures such as `spec_test_obligation_missing`, `tdd_red_evidence_missing`, `tdd_green_evidence_missing`, `required_spec_test_not_run`, `critical_scenario_smoke_only`, and `duplicate_spec_test_obligation` block clean finish.
 - Coordinator closeout evidence and phase closeout result.
 - Operational Adoption Closeout evidence before any live account-root/profile sync: independent completion audit, independent operational adoption audit, `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, and `node package/build-package.mjs --runtime all --dry-run --json`.

@@ -13,7 +13,8 @@ const publicSkillTokenBudgets = Object.freeze({
   'product-orchestrator': 1858,
   'moonshot-architecture': 1473,
   'moonshot-orchestrator': 1087,
-  'moonshot-phase-runner': 2145,
+  // Ratcheted only for the merged remote focused-to-full verification contract.
+  'moonshot-phase-runner': 2280,
   'moonshot-plan-writer': 1463,
   'commit-moonshot': 2353,
   'session-logger': 677,

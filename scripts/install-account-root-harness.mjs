@@ -267,6 +267,12 @@ const hashFile = async (target) => {
   return createHash('sha256').update(content).digest('hex');
 };
 
+const matchesManagedHash = async (record, target) => (
+  typeof record.sha256 === 'string'
+  && /^[a-f0-9]{64}$/u.test(record.sha256)
+  && await hashFile(target) === record.sha256
+);
+
 const listFiles = async (root, prefix = '') => {
   const entries = await readdir(root, { withFileTypes: true });
   const files = [];
@@ -395,6 +401,9 @@ const removePreviouslyManagedNonExposureFiles = async ({ targetRoot, exposureEnt
     if (targetStat.isDirectory()) {
       continue;
     }
+    if (!await matchesManagedHash(record, target)) {
+      continue;
+    }
 
     await rm(target, { force: true });
     removed.push(toPortable(record.path));
@@ -446,6 +455,9 @@ const removePreviouslyManagedSkillsAbsentFromPayload = async ({ targetRoot, sour
 
     const targetStat = await stat(target);
     if (targetStat.isDirectory()) {
+      continue;
+    }
+    if (!await matchesManagedHash(record, target)) {
       continue;
     }
 
