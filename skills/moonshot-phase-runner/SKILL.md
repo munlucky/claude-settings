@@ -32,6 +32,8 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Do not mutate live account-root, `.claude/**`, or `.codex/**` runtime profiles until the Operational Adoption Closeout gate passes from source evidence. Live adoption is a separate controlled step after harness-lab, package, eval, doctor, and runtime-surface parity evidence.
 - Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
 - Do not return final success until the in-session coordinator, fresh verifier evidence, scorecard, and repository closeout evidence agree.
+- Do not rerun an expensive full suite or clone matrix after every remediation edit. Use the exact failing test plus directly affected contract tests, batch related fixes, and freeze the source identity before the final full gate.
+- Do not reopen a frozen source identity or restart the full review/verification loop for advisory findings. Reopen only for a P0, security or data-integrity risk, authority bypass, mandatory execution blocker, or a focused regression that proves broader impact; carry lower-severity findings forward with an explicit `QA_REPORT.md` disposition.
 
 ## Inputs
 
@@ -66,6 +68,8 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 11. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
 12. Use deterministic scripts only for support checks that are still installed in the runtime payload. Do not auto-start legacy delegated-terminal adapters.
 13. After each phase, collect diff/evidence in the parent session and run coordinator closeout gates.
+13.1. During remediation, use the verification escalation ladder: run focused failing and directly affected tests, collect related fixes against the same candidate source, and avoid repeating already-passing expensive matrices.
+13.2. Once focused evidence passes, freeze the source identity and run the required full matrix at the immutable selection, promotion, adoption, or whole-plan closeout boundary, normally once for that identity. A failed full gate returns to the focused loop; rerun the full matrix only after focused evidence passes and a new source identity is frozen.
 14. If a phase completes with phase-local closeout evidence, reconcile runner state so the next incomplete phase becomes active before reporting status.
 15. If closeout gates reject a phase after useful implementation evidence was produced, record the rejection with `record-eval-result --regression-worsened true` or a blocking runtime event, keep the finding in carry-forward state, and continue to the next independent actionable phase.
 16. Continue to the next actionable phase until the whole plan directory is implemented. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
@@ -82,6 +86,7 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Minimality decision evidence: lower-rung reuse/skip/new-surface choice from `docs/public/guidelines/minimal-correct-implementation.md`.
 - Agent operating policy evidence: source-backed retrieval for volatile facts, assumption/blocker disposition, untrusted content disposition, context relevance, artifact routing, skill readiness, and cumulative-risk carry-forward when encountered.
 - Fresh verifier verdict and scorecard agreement.
+- Verification-escalation evidence: focused commands used during remediation, the frozen source identity, and the final full-gate command set. Any repeated full matrix must identify the blocking finding or changed source identity that invalidated the prior evidence.
 - Spec-Test Obligation validator evidence when plan artifacts contain `REQ-*`, `SCN-*`, or UAT-critical items; missing validator output at phase closeout or completion claim is `spec_test_obligation_result_missing`, and failures such as `spec_test_obligation_missing`, `tdd_red_evidence_missing`, `tdd_green_evidence_missing`, `required_spec_test_not_run`, `critical_scenario_smoke_only`, and `duplicate_spec_test_obligation` block clean finish.
 - Coordinator closeout evidence and phase closeout result.
 - Operational Adoption Closeout evidence before any live account-root/profile sync: independent completion audit, independent operational adoption audit, `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, and `node package/build-package.mjs --runtime all --dry-run --json`.
