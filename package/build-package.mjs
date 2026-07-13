@@ -65,6 +65,7 @@ const runtimeSpecs = {
       'scripts/install-browser-runtime.mjs',
       'scripts/install-browser-runtime.sh',
       'scripts/install-project-runtime-bridge.mjs',
+      'scripts/installed-release-resolve.mjs',
       'scripts/knowledge-context-build.mjs',
       'scripts/knowledge-improvement-lifecycle.mjs',
       'scripts/knowledge-records.mjs',
@@ -116,6 +117,9 @@ const runtimeSpecs = {
       'scripts/spec-test-obligations.mjs',
       'scripts/lib/skills-lock.mjs',
       'scripts/lib/runtime-state-store.mjs',
+      'scripts/lib/control-plane-policy.mjs',
+      'scripts/lib/execution-cursor.mjs',
+      'scripts/lib/workflow-bundle-resolver.mjs',
       'scripts/verification-plane.mjs',
       'scripts/lib/verification-plane.mjs',
       'scripts/verification-verdict-state.mjs',
@@ -346,7 +350,7 @@ const loadRuntimeSurface = async () => {
 
 const copyPublicRuntimeSkills = async (sourceRoot, destinationRoot, plannedCopies, options = {}) => {
   const surface = await loadRuntimeSurface();
-  const publicSkills = [...surface.publicRuntimeSkills].sort();
+  const publicSkills = [...surface.publicRuntimeSkills];
 
   for (const skillName of publicSkills) {
     const source = path.join(sourceRoot, skillName);

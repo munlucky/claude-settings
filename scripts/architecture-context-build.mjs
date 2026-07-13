@@ -4,6 +4,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { buildProjectKnowledgeContext } from './knowledge-context-build.mjs';
+import { assessArchitectureFixture } from './lib/control-plane-policy.mjs';
 
 const VALID_STAGES = new Set(['intake', 'plan', 'execute', 'verify', 'finish']);
 const VALID_MODES = new Set([
@@ -194,6 +195,10 @@ export function buildArchitectureContext(options = {}) {
 
   for (const reason of detectUnsafeText(promptBlock)) {
     pushError(errors, 'prompt_unsafe_output', `Architecture prompt block contains prompt-unsafe content: ${reason}`, 'architectureContext.promptBlock');
+  }
+  const architecturePolicy = assessArchitectureFixture({ promptBlock });
+  if (architecturePolicy.releaseBlocked && !errors.some((error) => error.code === 'prompt_unsafe_output')) {
+    pushError(errors, 'prompt_unsafe_output', architecturePolicy.reason, 'architectureContext.promptBlock');
   }
   for (const reason of detectUnsafeText(projectKnowledgeContext?.promptBlock || '')) {
     pushError(errors, 'prompt_unsafe_project_knowledge_prompt', `Project knowledge prompt block contains prompt-unsafe content: ${reason}`, 'projectKnowledgeContext.promptBlock');

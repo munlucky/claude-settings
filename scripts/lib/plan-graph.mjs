@@ -23,6 +23,14 @@ const matchesPattern = (file, pattern) => {
   return normalizedFile === normalizedPattern || normalizedFile.startsWith(`${normalizedPattern}/`);
 };
 
+const isContainedBy = (candidate, container) => {
+  const child = normalizePath(candidate);
+  const parent = normalizePath(container);
+  const parentPrefix = parent.endsWith('/**') ? parent.slice(0, -3) : parent;
+  if (child.endsWith('/**') && !parent.endsWith('/**')) return false;
+  return child === parent || child === parentPrefix || child.startsWith(`${parentPrefix}/`);
+};
+
 export const markdownPlanCompatibility = ({ phaseDocs = [] } = {}) => ({
   status: 'supported',
   executionMode: 'markdown-compatible',
@@ -51,6 +59,21 @@ export const validatePlanGraph = (graph = {}, { expectedPhaseDocs = [] } = {}) =
     ids.add(phase.id);
     if (!Array.isArray(phase.ownedPaths) || phase.ownedPaths.length === 0) {
       findings.push({ type: 'missing_owned_paths', phaseId: phase.id, severity: 'blocking' });
+    }
+    const sliceIds = new Set();
+    for (const slice of phase.slices || []) {
+      if (!slice.id || sliceIds.has(slice.id)) {
+        findings.push({ type: slice.id ? 'duplicate_slice_id' : 'missing_slice_id', phaseId: phase.id, sliceId: slice.id, severity: 'blocking' });
+      }
+      sliceIds.add(slice.id);
+      if (!slice.objective || !slice.procedure || !slice.evidence?.command || !slice.evidence?.path) {
+        findings.push({ type: 'incomplete_slice_contract', phaseId: phase.id, sliceId: slice.id, severity: 'blocking' });
+      }
+      for (const ownedPath of slice.ownedPaths || []) {
+        if (!(phase.ownedPaths || []).some((phasePath) => isContainedBy(ownedPath, phasePath))) {
+          findings.push({ type: 'slice_write_set_outside_phase', phaseId: phase.id, sliceId: slice.id, path: ownedPath, severity: 'blocking' });
+        }
+      }
     }
   }
 

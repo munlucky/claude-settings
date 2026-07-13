@@ -1,24 +1,37 @@
 ---
 name: commit-moonshot
 description: Update project memory and commit when the user explicitly wants both.
+policyClauseIds:
+  - commit-moonshot.policy.use-when
+  - commit-moonshot.policy.routing
+  - commit-moonshot.policy.hard-stops
+  - commit-moonshot.policy.output-contract
+policyDigest: 25cf6d4c72673a218d92d147fe5ce4895d7f4964f208f1320c3df95f84a830eb
 triggers:
   - "commit-moonshot"
   - "moonshot commit"
   - "memory commit"
+deepReferences:
+  - references/compatibility-contract.md
+  - references/commit-closeout-internals.md
 ---
 
 # Project Memory Update & Commit
 
 Supported public utility entrypoint. Use only when the user explicitly wants memory refresh plus commit.
 
-## Purpose
+## Role
 
 - refresh project memory before commit
 - keep the memory summary short
 - exclude `.claude/memory.json` and `.claude/memorygraph/` from commits by default after refreshing memory
 - create a Korean commit title and grouped bullet body
 
-## Required flow
+## Explicit Invocation
+
+Run only for `$commit-moonshot` or an explicit equivalent request.
+
+## Procedure
 
 1. inspect staged changes with compact git commands
 2. resolve `PROJECT_ID` through the Project Identity Resolver; do not derive durable identity directly from the current directory name
@@ -29,7 +42,7 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 7. build a filtered staging path list before `git add`; remove generated bridge paths, ignored files, and local MCP/memory artifacts
 8. create the commit in Korean
 
-## Hard rules
+## Hard Stops
 
 - always refresh memory before commit
 - do not read `.moonshot-relay/docs/ko/` as a memory source; it is a human-facing Korean mirror
@@ -59,35 +72,15 @@ Supported public utility entrypoint. Use only when the user explicitly wants mem
 
 ## Codex MCP Transport Fallback
 
-If the Memory MCP already attached to Codex Desktop fails with `Transport closed`, do not require a Codex restart. Immediately use the commit refresh helper, which starts a fresh MemoryGraph stdio child process and writes an auditable log under `.moonshot-relay/state/projects/<projectId>/knowledge/logs/memorygraph/`:
-
-```bash
-node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID> --mcp-error "Transport closed"
-```
-
-Rules:
-- Treat `Transport closed` as a failed Codex app-server MCP transport, not as a failed memory payload.
-- If the direct fallback succeeds, memory refresh is complete and the user does not need to restart Codex.
-- If a concrete `store_memory` payload failed through MCP, save that payload to a temporary JSON file and rerun the helper with `--store-json @<payload-file>` so the same content is written through direct fallback.
-- If no concrete payload is available, the helper runs `memorygraph-project-index.mjs` and `memorygraph-direct.mjs refresh-seed` as the commit-time memory refresh.
-- On Windows, if the sandbox blocks `memorygraph.exe`, rerun the same command with an approval-based escalated shell.
-- The helper has per-command timeout and owned child-process tree cleanup. It must not broad-kill unrelated `memorygraph.exe` processes.
-- The direct fallback uses the current account-root project knowledge namespace by default; `.claude/memorygraph/**` and `.claude/cache/memorygraph/**` are legacy project-local compatibility artifacts and stay unstaged unless the user explicitly includes memory artifacts.
+On `Transport closed`, use `commit-moonshot-memory-refresh.mjs` with the same payload and MCP error. Load `references/commit-closeout-internals.md` for transport and platform details.
 
 ## AWTL Promotion Audit
 
-After memory refresh and before Git staging, run the commit-time AWTL promotion audit when available:
+Run the audit helper before staging when available. Promotion remains audit-only unless the user explicitly authorizes verified writes; detailed counters and replay rules live in `references/commit-closeout-internals.md`.
 
-```bash
-node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json
-```
+## Output Contract
 
-Rules:
-- The default mode is audit-only. It may update `.claude/cache/awtl/replay_scorecard.jsonl`, but it must not write MemoryGraph facts.
-- Use `--write-verified` only when the user explicitly asked for long-term promotion or approval in the current commit turn.
-- `--approval approved` represents explicit human approval; do not infer it from a generic commit request.
-- MemoryGraph write failures from this audit are non-blocking for Git closeout.
-- Report `promotable`, `needs_replay`, `needs_human_approval`, `blocked`, `memorygraph_unavailable`, and `written` counts in the closeout summary.
+Report memory disposition, verification, staged paths, commit identity, and push or remote parity status.
 
 ## References
 
@@ -99,6 +92,8 @@ Rules:
 User context: $ARGUMENTS
 
 ## Project Knowledge Boundary
+
+Default to the account-root project knowledge namespace under `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/`.
 
 Commit closeout memory refresh is non-blocking. It can refresh or audit project knowledge after verification, but it is not part of attempt/system prompt assembly and must not put raw MemoryGraph/KG/ontology/log/transcript payloads into commit summaries or manifests.
 

@@ -66,6 +66,34 @@
               "minLength": 1
             },
             "default": []
+          },
+          "slices": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "objective", "ownedPaths", "procedure", "evidence"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "objective": { "type": "string", "minLength": 1 },
+                "requiredReads": { "type": "array", "items": { "type": "string" }, "default": [] },
+                "ownedPaths": { "type": "array", "items": { "type": "string" } },
+                "procedure": { "type": "string", "minLength": 1 },
+                "evidence": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["command", "passSignal", "path"],
+                  "properties": {
+                    "command": { "type": "string", "minLength": 1 },
+                    "passSignal": { "type": "object" },
+                    "path": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "onPass": { "type": "string", "default": "advance" },
+                "onFail": { "type": "string", "default": "diagnose" }
+              }
+            }
           }
         }
       }

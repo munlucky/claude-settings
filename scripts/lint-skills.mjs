@@ -1,11 +1,24 @@
 #!/usr/bin/env node
 import { access, readFile, readdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRootDefault = path.dirname(path.dirname(scriptPath));
+const publicSkillTokenBudgets = Object.freeze({
+  // Exact accepted P04 candidate estimates. Any growth requires an explicit reviewed ratchet update.
+  'product-orchestrator': 1858,
+  'moonshot-architecture': 1473,
+  'moonshot-orchestrator': 1087,
+  'moonshot-phase-runner': 2145,
+  'moonshot-plan-writer': 1463,
+  'commit-moonshot': 2353,
+  'session-logger': 677,
+});
+const estimatedTokens = (text) => Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
 
 const pathExists = async (target) => {
   try {
@@ -60,10 +73,39 @@ const headingLevels = (text) => text
 
 const hasHeading = (items, name) => items.some((item) => item.toLowerCase() === name.toLowerCase());
 const hasAnyHeading = (items, names) => names.some((name) => hasHeading(items, name));
+const koreanHeadingAliases = new Map([
+  ['사용 시점', 'Use When'], ['다른 경로', 'Route Away'], ['역할', 'Role'], ['절차', 'Procedure'],
+  ['중단 조건', 'Hard Stops'], ['출력 계약', 'Output Contract'], ['명시적 호출', 'Explicit Invocation'],
+]);
+const normalizedTopology = (text, korean = false) => text.split(/\r?\n/)
+  .filter((line) => /^##\s+/.test(line) && !/^###/.test(line))
+  .map((line) => line.replace(/^##\s+/, '').trim())
+  .map((heading) => korean ? (koreanHeadingAliases.get(heading) || heading) : heading);
+const canonicalPolicyBinding = (text, skillName, korean = false) => {
+  let canonical = text;
+  if (korean) for (const [ko, en] of koreanHeadingAliases) canonical = canonical.replace(new RegExp(`^## ${ko}$`, 'gm'), `## ${en}`);
+  const split = canonical.indexOf('\n---', 4); const body = split >= 0 ? canonical.slice(split + 4) : canonical;
+  const section = (heading) => body.match(new RegExp(`^##\\s+${heading}\\s*$([\\s\\S]*?)(?=^##\\s+|(?![\\s\\S]))`, 'mi'))?.[1].trim().replace(/\s+/g, ' ') || '';
+  const routing = ['commit-moonshot', 'session-logger'].includes(skillName) ? 'Explicit Invocation' : 'Route Away';
+  const clauses = [['use-when', section('Use When') || section('Role')], ['routing', section(routing)], ['hard-stops', section('Hard Stops')], ['output-contract', section('Output Contract')]];
+  const paths = [...new Set([...body.matchAll(/`([^`]*(?:\/|\\)[^`]*)`/g)].map((entry) => entry[1]).filter((entry) => !entry.includes(' ')).slice(0, 20))];
+  return { ids: clauses.map(([id]) => `${skillName}.policy.${id}`), digest: createHash('sha256').update(JSON.stringify({ clauses, defaultPathClauses: paths })).digest('hex') };
+};
 
 const addFinding = (findings, severity, code, message, details = {}) => {
   findings.push({ severity, code, message, ...details });
 };
+
+const findingFingerprint = (finding) => createHash('sha256')
+  .update(JSON.stringify([finding.severity, finding.code, finding.skill || '', finding.file || '', finding.reference || '', finding.key || '', finding.line || 0, finding.text || '']))
+  .digest('hex');
+
+const sectionLines = (text, heading) => {
+  const match = text.match(new RegExp(`^##\\s+${heading}\\s*$([\\s\\S]*?)(?=^##\\s+|(?![\\s\\S]))`, 'mi'));
+  return (match?.[1] || '').split(/\r?\n/).map((line) => line.trim()).filter((line) => /^[-*]\s+/.test(line));
+};
+
+const normalizedPolicyLine = (line) => line.replace(/^[-*]\s+/, '').replace(/`/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 const profileReferencePattern = /\.(claude|codex)[/\\](scripts|skills|agents|rules)(?:[/\\]|\b|$)/;
 const dangerousProfileSourcePattern = /\b(edit|add|create|write|modify|maintain)\b|canonical source|durable source|source of truth/i;
@@ -78,7 +120,7 @@ const listMarkdownFiles = async (target) => {
   return entries.filter((entry) => entry.isFile() && entry.name.endsWith('.md')).map((entry) => entry.name).sort();
 };
 
-const lintSkill = async (repoRoot, skillName, publicSkills, findings) => {
+const lintSkill = async (repoRoot, skillName, publicSkills, publicMetadata, triggerFixtureSkills, findings, tokenBudgetEvidence) => {
   const skillRoot = path.join(repoRoot, 'skills', skillName);
   const skillPath = path.join(skillRoot, 'SKILL.md');
   if (!await pathExists(skillPath)) {
@@ -98,19 +140,49 @@ const lintSkill = async (repoRoot, skillName, publicSkills, findings) => {
   }
 
   if (isPublic) {
-    const publicHeadingGroups = [
-      { code: 'role_or_purpose', label: 'Role or Purpose', choices: ['Role', 'Purpose'] },
-      { code: 'flow', label: 'Flow, Workflow, or operating flow', choices: ['Flow', 'Workflow', 'Required flow', 'Operating rules'] },
-      { code: 'safety', label: 'Hard Stops, Hard rules, Gate Policy, or Operating rules', choices: ['Hard Stops', 'Hard rules', 'Gate Policy', 'Operating rules'] },
-      { code: 'evidence_or_output', label: 'Required Evidence, output, or logging contract', choices: ['Required Evidence', 'Output Package', 'Handoff Contract', 'Default outputs', 'Minimum logging contract', 'AWTL Promotion Audit', 'Project Knowledge Boundary'] },
-    ];
-    for (const group of publicHeadingGroups) {
-      if (!hasAnyHeading(skillHeadings, group.choices)) {
-        addFinding(findings, 'blocking', 'skill.public_heading_missing', `Public skill ${skillName} is missing ${group.label}.`, { skill: skillName, required: group.code });
+    const budget = publicSkillTokenBudgets[skillName];
+    const actual = estimatedTokens(text);
+    tokenBudgetEvidence.push({ skill: skillName, metric: 'utf8_bytes_divided_by_4_ceiling', actual, budget: budget || null, status: budget && actual <= budget ? 'pass' : 'fail' });
+    if (!budget) addFinding(findings, 'blocking', 'skill.token_budget_missing', `Public skill ${skillName} has no token budget.`, { skill: skillName });
+    else if (actual > budget) addFinding(findings, 'blocking', 'skill.token_budget_exceeded', `Public skill ${skillName} exceeds its ${budget}-token budget (${actual}).`, { skill: skillName, actual, budget });
+    const metadata = publicMetadata.get(skillName);
+    if (!metadata?.invocationMode || !Array.isArray(metadata.allowedStages) || metadata.allowedStages.length === 0) {
+      addFinding(findings, 'blocking', 'skill.invocation_metadata_missing', `Public skill ${skillName} is missing invocationMode or allowedStages catalog metadata.`, { skill: skillName });
+    }
+    if (!metadata?.conditionalSkillGroups || Object.keys(metadata.conditionalSkillGroups).length === 0) {
+      addFinding(findings, 'blocking', 'skill.conditional_loading_missing', `Public skill ${skillName} must declare conditionalSkillGroups.`, { skill: skillName });
+    }
+    if (!triggerFixtureSkills.has(skillName)) {
+      addFinding(findings, 'blocking', 'skill.trigger_fixture_missing', `Public skill ${skillName} has no routing trigger fixture.`, { skill: skillName });
+    }
+    const binding = canonicalPolicyBinding(text, skillName);
+    if (JSON.stringify(frontmatter.policyClauseIds || []) !== JSON.stringify(binding.ids) || frontmatter.policyDigest !== binding.digest) {
+      addFinding(findings, 'blocking', 'skill.policy_binding_drift', `Public skill ${skillName} policy clause IDs or digest do not bind to its current policy text.`, { skill: skillName });
+    }
+    for (const heading of ['Role', 'Procedure', 'Hard Stops', 'Output Contract']) {
+      if (!hasHeading(skillHeadings, heading)) {
+        addFinding(findings, 'blocking', 'skill.public_heading_missing', `Public skill ${skillName} is missing typed heading ${heading}.`, { skill: skillName, required: heading });
+      }
+    }
+    const explicitUtilities = new Set(['commit-moonshot', 'session-logger']);
+    const routeHeadings = explicitUtilities.has(skillName)
+      ? ['Explicit Invocation']
+      : ['Use When', 'Route Away'];
+    for (const heading of routeHeadings) {
+      if (!hasHeading(skillHeadings, heading)) {
+        addFinding(findings, 'blocking', 'skill.public_routing_heading_missing', `Public skill ${skillName} is missing routing heading ${heading}.`, { skill: skillName, required: heading });
       }
     }
     if (!hasHeading(skillHeadings, 'References') && !frontmatter.deepReferences) {
       addFinding(findings, 'blocking', 'skill.public_references_missing', `Public skill ${skillName} must define References or deepReferences.`, { skill: skillName });
+    }
+    const policyLines = [...sectionLines(text, 'Hard Stops'), ...sectionLines(text, 'Output Contract')];
+    const seen = new Set();
+    for (const line of policyLines) {
+      const normalized = normalizedPolicyLine(line);
+      if (normalized.length < 24) continue;
+      if (seen.has(normalized)) addFinding(findings, 'blocking', 'skill.duplicate_policy_prose', `Public skill ${skillName} duplicates completion or hard-stop prose.`, { skill: skillName, text: normalized });
+      seen.add(normalized);
     }
   }
 
@@ -118,9 +190,8 @@ const lintSkill = async (repoRoot, skillName, publicSkills, findings) => {
     const referencePath = reference.startsWith('docs/') || reference.startsWith('rules/') || reference.startsWith('schemas/')
       ? path.join(repoRoot, reference)
       : path.join(skillRoot, reference);
-    if (!await pathExists(referencePath)) {
-      const severity = reference.startsWith('.moonshot-relay/') ? 'warning' : 'blocking';
-      addFinding(findings, severity, 'skill.deep_reference_missing', `Skill ${skillName} deep reference is missing: ${reference}`, { skill: skillName, reference });
+    if (!await pathExists(referencePath) && !reference.startsWith('.moonshot-relay/')) {
+      addFinding(findings, 'blocking', 'skill.deep_reference_missing', `Skill ${skillName} deep reference is missing: ${reference}`, { skill: skillName, reference });
     }
   }
 
@@ -143,10 +214,22 @@ const lintSkill = async (repoRoot, skillName, publicSkills, findings) => {
   const koreanPath = path.join(skillRoot, 'SKILL.ko.md');
   if (await pathExists(koreanPath)) {
     const koreanText = await readFile(koreanPath, 'utf8');
-    const englishLevels = headingLevels(text);
-    const koreanLevels = headingLevels(koreanText);
-    if (englishLevels.join(',') !== koreanLevels.join(',')) {
-      addFinding(findings, 'warning', 'skill.translation_heading_drift', `Skill ${skillName} Korean translation heading structure drifted from SKILL.md.`, { skill: skillName });
+    const koreanFrontmatter = parseFrontmatter(koreanText);
+    const englishTopology = normalizedTopology(text);
+    const koreanTopology = normalizedTopology(koreanText, true);
+    if (JSON.stringify(englishTopology) !== JSON.stringify(koreanTopology)) {
+      addFinding(findings, isPublic ? 'blocking' : 'warning', 'skill.translation_heading_drift', `Skill ${skillName} Korean translation heading topology drifted from SKILL.md.`, { skill: skillName, englishTopology, koreanTopology });
+    }
+    for (const key of ['name', 'triggers', 'outputArtifacts', 'deepReferences']) {
+      if (JSON.stringify(frontmatter[key] || []) !== JSON.stringify(koreanFrontmatter[key] || [])) {
+        addFinding(findings, isPublic ? 'blocking' : 'warning', 'skill.translation_policy_drift', `Skill ${skillName} Korean translation ${key} drifted from SKILL.md.`, { skill: skillName, key });
+      }
+    }
+    if (isPublic) {
+      const koreanBinding = canonicalPolicyBinding(koreanText, skillName, true);
+      if (JSON.stringify(koreanFrontmatter.policyClauseIds || []) !== JSON.stringify(koreanBinding.ids) || koreanFrontmatter.policyDigest !== koreanBinding.digest || koreanFrontmatter.policyDigest !== frontmatter.policyDigest) {
+        addFinding(findings, 'blocking', 'skill.translation_policy_binding_drift', `Skill ${skillName} Korean policy clauses do not bind to the canonical policy digest.`, { skill: skillName });
+      }
     }
   }
 };
@@ -175,9 +258,17 @@ export const lintSkillsAndAgents = async (options = {}) => {
   const runtimeSurface = await readJson(runtimeSurfacePath);
   const publicSkills = new Set(runtimeSurface.publicRuntimeSkills || []);
   const findings = [];
+  const tokenBudgetEvidence = [];
+  const carryForwardPath = options.carryForwardPath || path.join(repoRoot, 'tools', 'evals', 'skill-lint-carry-forward.json');
+  const catalogPath = options.catalogPath || path.join(repoRoot, 'catalog', 'moonshot-catalog.json');
+  const fixturePath = options.triggerFixturePath || path.join(repoRoot, 'tests', 'fixtures', 'skill-routing', 'public-entrypoint-cases.json');
+  const catalog = await pathExists(catalogPath) ? await readJson(catalogPath) : { publicEntrypoints: [] };
+  const fixture = await pathExists(fixturePath) ? await readJson(fixturePath) : { skills: [] };
+  const publicMetadata = new Map((catalog.publicEntrypoints || []).map((entry) => [entry.name, entry]));
+  const triggerFixtureSkills = new Set((fixture.skills || []).filter((entry) => Array.isArray(entry.positive) && entry.positive.length > 0 && Array.isArray(entry.negative) && entry.negative.length > 0).map((entry) => entry.name));
 
   for (const skillName of await listDirs(path.join(repoRoot, 'skills'))) {
-    await lintSkill(repoRoot, skillName, publicSkills, findings);
+    await lintSkill(repoRoot, skillName, publicSkills, publicMetadata, triggerFixtureSkills, findings, tokenBudgetEvidence);
   }
 
   for (const fileName of await listMarkdownFiles(path.join(repoRoot, 'agents'))) {
@@ -187,13 +278,39 @@ export const lintSkillsAndAgents = async (options = {}) => {
     await lintAgentFile(repoRoot, `agents/${fileName}`, findings);
   }
 
-  const blockingCount = findings.filter((item) => item.severity === 'blocking').length;
+  for (const finding of findings) finding.fingerprint = findingFingerprint(finding);
+  const warningFingerprints = findings.filter((finding) => finding.severity === 'warning').map((finding) => finding.fingerprint).sort();
+  const warningDigest = createHash('sha256').update(JSON.stringify(warningFingerprints)).digest('hex');
+  const carryForward = await pathExists(carryForwardPath) ? await readJson(carryForwardPath) : null;
+  const registryValid = Boolean(carryForward?.reviewed === true && carryForward.warningCount >= 0 && carryForward.warningFingerprintDigest);
+  if (!registryValid) addFinding(findings, 'blocking', 'skill.warning_baseline_missing', 'Reviewed warning carry-forward registry is required and must not be empty.');
+  const baselineInput = options.baselineFindingFingerprints;
+  const baselineFingerprints = baselineInput ? new Set(Array.isArray(baselineInput) ? baselineInput : (baselineInput.findingFingerprints || [])) : null;
+  const newFindingCount = baselineFingerprints ? findings.filter((finding) => !baselineFingerprints.has(finding.fingerprint)).length : 0;
+  if (baselineFingerprints && baselineFingerprints.size === 0) addFinding(findings, 'blocking', 'skill.warning_baseline_empty', 'Explicit warning baseline must not be empty.');
+  if (registryValid && (carryForward.warningCount !== warningFingerprints.length || carryForward.warningFingerprintDigest !== warningDigest)) {
+    addFinding(findings, 'blocking', 'skill.warning_ratchet_drift', 'Warning fingerprint set drifted from the reviewed carry-forward registry.', { expectedCount: carryForward.warningCount, actualCount: warningFingerprints.length });
+  }
+  if (registryValid) {
+    const publicWarnings = findings.filter((finding) => finding.severity === 'warning' && publicSkills.has(finding.skill));
+    for (const finding of publicWarnings) {
+      const explanation = (carryForward.publicCarryForward || []).find((entry) => entry.skill === finding.skill && entry.code === finding.code && entry.reason);
+      if (!explanation) addFinding(findings, 'blocking', 'skill.public_warning_unexplained', `Public skill warning lacks reviewed carry-forward rationale: ${finding.skill}/${finding.code}.`, { skill: finding.skill });
+    }
+  }
+  const rawBlockingCount = findings.filter((item) => item.severity === 'blocking').length;
+  const blockingCount = rawBlockingCount + newFindingCount;
   return {
-    schemaVersion: 'moonshot-skill-agent-lint.v1',
+    schemaVersion: 'moonshot-skill-agent-lint.v2',
     status: blockingCount === 0 ? 'pass' : 'fail',
     publicSkills: [...publicSkills].sort(),
     blockingCount,
-    warningCount: findings.length - blockingCount,
+    warningCount: findings.length - rawBlockingCount,
+    newFindingCount,
+    findingFingerprints: findings.map((finding) => finding.fingerprint).sort(),
+    warningFingerprintDigest: warningDigest,
+    carryForwardRegistry: registryValid ? carryForwardPath : null,
+    tokenBudgetEvidence: tokenBudgetEvidence.sort((a, b) => a.skill.localeCompare(b.skill)),
     findings,
   };
 };
@@ -208,6 +325,8 @@ const parseArgs = (argv) => {
       options.repoRoot = path.resolve(argv[++index]);
     } else if (arg === '--runtime-surface') {
       options.runtimeSurfacePath = path.resolve(argv[++index]);
+    } else if (arg === '--baseline-findings') {
+      options.baselineFindingFingerprints = JSON.parse(readFileSync(path.resolve(argv[++index]), 'utf8'));
     } else if (arg === '--help' || arg === '-h') {
       console.log('Usage: node scripts/lint-skills.mjs [--json] [--repo-root <dir>] [--runtime-surface <file>]');
       process.exit(0);

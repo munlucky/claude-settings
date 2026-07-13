@@ -1,6 +1,12 @@
 ---
 name: moonshot-architecture
 description: Convert a PRD or existing codebase objective into an evidence-grounded architecture design package before implementation planning.
+policyClauseIds:
+  - moonshot-architecture.policy.use-when
+  - moonshot-architecture.policy.routing
+  - moonshot-architecture.policy.hard-stops
+  - moonshot-architecture.policy.output-contract
+policyDigest: e767b62b476c046247fa2de568d0043c4a3aff79ae11dfff65343221985da58a
 layer: orchestrator
 loads:
   - architecture-design-artifacts
@@ -8,7 +14,9 @@ loads:
   - requirements-traceability
   - verdict-summaries
 deepReferences:
+  - references/compatibility-contract.md
   - references/architecture-design-contract.md
+  - references/architecture-flow.md
   - references/context-safety.md
   - references/handoff-boundaries.md
 outputArtifacts:
@@ -34,11 +42,17 @@ triggers:
 
 # Moonshot Architecture
 
+## Use When
+
+Use when a PRD or brownfield objective needs architecture decisions before planning.
+
+## Route Away
+
+Use `product-orchestrator` when intent is unresolved and `moonshot-plan-writer` after architecture acceptance.
+
 ## Role
 
-Create an evidence-grounded architecture design package between product definition and implementation execution.
-
-Use this skill when a request needs architectural reasoning before `moonshot-plan-writer`, `moonshot-orchestrator`, or `moonshot-phase-runner` can safely execute implementation work.
+Create an evidence-grounded design package between product definition and execution.
 
 ## Modes
 
@@ -47,7 +61,7 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 - `hybrid_prd_plus_existing_repo`: combine PRD normalization with Brownfield constraints and produce `SPEC_DELTA`.
 - `meta_harness_design`: design Moonshot Relay harness changes and hand them off to `moonshot-plan-writer`.
 
-## Flow
+## Procedure
 
 1. Classify the mode.
 2. Build `projectKnowledgeContext` with the current stage and preserve status-only metadata.
@@ -66,18 +80,11 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 14. Run `architecture-gate-reviewer` and write `ARCHITECTURE_REVIEW.md`.
 15. Hand off to `moonshot-plan-writer`, `moonshot-orchestrator`, or `moonshot-phase-runner` with explicit owned/read-only/staged paths and verification signals.
 
+Internal stage-owner mapping is loaded conditionally from `references/architecture-flow.md`.
+
 ## Internal Stage Owners
 
-`moonshot-architecture` coordinates these source-only internal skills. They remain out of profile-local public runtime discovery unless a later controlled adoption phase changes the runtime surface.
-
-| Stage | Internal Skill | Primary Artifacts |
-|---|---|---|
-| ASR extraction | `asr-extractor` | `ASR_CATALOG.md`, `QUALITY_ATTRIBUTE_SCENARIOS.md` |
-| Option generation | `architecture-option-generator` | `ARCHITECTURE_OPTIONS.md`, `CAPABILITY_MAP.md` |
-| Trade-off review | `architecture-tradeoff-reviewer` | `TRADEOFF_ANALYSIS.md`, ADR inputs |
-| C4 and ADR writing | `adr-c4-writer` | `C4/*.md`, `ADR/*.md` |
-| Architecture gate review | `architecture-gate-reviewer` | `ARCHITECTURE_REVIEW.md`, handoff readiness |
-| Brownfield recovery | `codebase-architecture-recovery` | `CURRENT_ARCHITECTURE.md`, `PRD_FIT_GAP.md`, `IMPACT_MAP.md`, `SPEC_DELTA.md` |
+Owners: `asr-extractor`, `architecture-option-generator`, `architecture-tradeoff-reviewer`, `adr-c4-writer`, `architecture-gate-reviewer`, and `codebase-architecture-recovery`. `architecture-gate-reviewer` supplies `ARCHITECTURE_REVIEW.md` readiness evidence; load the reference for artifact routing.
 
 ## Hard Stops
 
@@ -92,7 +99,7 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 - Do not mutate live `.claude/**`, `.codex/**`, account-root state, or runtime profiles during architecture design.
 - Do not replace `moonshot-phase-runner` completion authority or `scripts/runtime-state.mjs assess-completion`.
 
-## Required Evidence
+## Output Contract
 
 - Mode classification and input source path.
 - Architecture package path.
@@ -108,6 +115,4 @@ Use this skill when a request needs architectural reasoning before `moonshot-pla
 
 ## Public Surface Boundary
 
-`moonshot-architecture` is a public runtime entrypoint. Supporting skills for ASR extraction, option generation, trade-off review, C4/ADR writing, gate review, and Brownfield recovery remain internal source skills unless a later controlled adoption phase explicitly changes the runtime surface.
-
-Public guidelines mirror the durable policy under `docs/public/guidelines/`. Executable `deepReferences` stay local to this skill directory so package materialization can resolve them without profile-local public guideline paths.
+This is the public entrypoint; stage helpers stay internal. Executable `deepReferences` remain skill-local for package resolution.

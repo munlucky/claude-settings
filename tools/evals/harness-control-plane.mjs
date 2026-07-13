@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { recordEvalResult } from '../../scripts/lib/runtime-state-store.mjs';
 import { scoreHarnessSearchFixtures } from './harness-search-fixture-scorer.mjs';
 import { scoreResearchFixture } from './research-fixture-scorer.mjs';
+import { evaluateProductionCase } from './production-evaluators.mjs';
 
 export const REQUIRED_HARNESS_CONTROL_PLANE_CASES = [
   'completion-false-positive',
@@ -69,9 +70,16 @@ const parseArgs = (argv) => {
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-function evaluateCase(testcase = {}) {
+async function evaluateCase(testcase = {}) {
   const expected = isObject(testcase.expected) ? testcase.expected : {};
-  const actual = isObject(testcase.actual) ? testcase.actual : expected;
+  const execution = await evaluateProductionCase(testcase);
+  if (execution.status !== 'executed') {
+    return {
+      id: testcase.id || '', category: testcase.category || '', status: 'failed', expected, actual: null,
+      failureClass: execution.failureClass, reason: execution.reason, releaseBlocked: true, evaluatorExecuted: false,
+    };
+  }
+  const actual = execution.actual;
   const pass = JSON.stringify(actual) === JSON.stringify(expected);
   return {
     id: testcase.id || '',
@@ -81,14 +89,15 @@ function evaluateCase(testcase = {}) {
     actual,
     reason: pass ? '' : `expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`,
     releaseBlocked: actual.releaseBlocked === true,
+    evaluatorExecuted: true,
   };
 }
 
-export function runHarnessControlPlaneEval(fixture = {}) {
+export async function runHarnessControlPlaneEval(fixture = {}) {
   const cases = Array.isArray(fixture.cases) ? fixture.cases : [];
   const presentIds = new Set(cases.map((entry) => entry.id));
   const missingCases = REQUIRED_HARNESS_CONTROL_PLANE_CASES.filter((id) => !presentIds.has(id));
-  const results = cases.map(evaluateCase);
+  const results = await Promise.all(cases.map(evaluateCase));
   const failedCases = results.filter((result) => result.status !== 'passed');
   const passedCount = results.length - failedCases.length;
   const score = results.length > 0 ? passedCount / results.length : 0;
@@ -127,7 +136,7 @@ const main = async () => {
   }
 
   const fixture = await readFixture(options.fixture);
-  const output = runHarnessControlPlaneEval(fixture);
+  const output = await runHarnessControlPlaneEval(fixture);
   const researchFixture = options.includeResearch
     ? await scoreResearchFixture()
     : null;

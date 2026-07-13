@@ -1,11 +1,19 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, copyFile, rename, rm, realpath } from 'node:fs/promises';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 
 import { resolveDbPath } from './runtime-state-db-path.mjs';
+import {
+  assessCompletionFixture,
+  assessEvalFixture,
+  assessRunLifecycleFixture,
+  assessRuntimeCapabilityFixture,
+} from './control-plane-policy.mjs';
 
-export const RUNTIME_STATE_SCHEMA_VERSION = 1;
-export const RUNTIME_STATE_SCHEMA_NAME = 'runtime-control-plane-v1';
+export const RUNTIME_STATE_SCHEMA_VERSION = 2;
+export const RUNTIME_STATE_SCHEMA_NAME = 'runtime-control-plane-v2';
+export const RUNTIME_STATE_V2_MIGRATION_ID = '002_execution_cursor_v2';
 export const DEFAULT_RUN_LEASE_TTL_MS = 30 * 60 * 1000;
 
 const jsonText = (value) => {
@@ -50,6 +58,7 @@ const runtimeStoreErrorReasonSet = new Set([
   'sandbox_denied',
   'db_lock_timeout',
   'schema_mismatch',
+  'migration_required',
   'unresolved_db_path',
   'schema_or_open_failure',
 ]);
@@ -72,6 +81,7 @@ export function runtimeStoreErrorCode(error = {}, phase = '') {
     return 'db_lock_timeout';
   }
   if (code === 'SQLITE_CORRUPT' || /no such table|schema|migration|corrupt/.test(haystack)) {
+    if (code === 'MIGRATION_REQUIRED' || /migration required/.test(haystack)) return 'migration_required';
     return 'schema_mismatch';
   }
   if (/unresolved.*db.*path|db.*path.*unresolved|mkdir|parent directory|invalid path/.test(haystack)) {
@@ -92,6 +102,8 @@ export function recoveryHintForRuntimeReason(reason) {
       return 'wait for the active runtime-state writer or clean stale leases before retrying';
     case 'schema_mismatch':
       return 'verify runtime-state schema migration compatibility before reusing the database';
+    case 'migration_required':
+      return 'run explicit migrate-v2 only against an approved temporary database during staged rollout';
     case 'unresolved_db_path':
       return 'set MOONSHOT_RELAY_HOME or MOONSHOT_RELAY_STATE_ROOT to a resolvable writable path';
     case 'schema_or_open_failure':
@@ -101,6 +113,7 @@ export function recoveryHintForRuntimeReason(reason) {
 }
 
 export function degradedRuntimeStatus(reason, dbPath = resolveDbPath(), detail = '') {
+  const capabilityDecision = assessRuntimeCapabilityFixture({ runtimeStatus: 'degraded' });
   const normalizedReason = runtimeStoreErrorReasonSet.has(reason) ? reason : 'schema_or_open_failure';
   const recoveryHint = recoveryHintForRuntimeReason(normalizedReason);
   const metrics = emptyOperationalMetrics();
@@ -116,6 +129,7 @@ export function degradedRuntimeStatus(reason, dbPath = resolveDbPath(), detail =
       detail,
       dbPath,
       recoveryHint,
+      releaseBlocked: capabilityDecision.releaseBlocked,
     },
     operationalMetrics: evaluatedMetrics,
     compactStatus: {
@@ -301,8 +315,8 @@ function applySchema(db) {
     CREATE INDEX IF NOT EXISTS idx_memory_promotion_stale ON memory_promotion_decisions(run_id, goal_id, stale_after, status);
   `);
 
-  db.prepare('INSERT OR IGNORE INTO schema_migrations(version, name) VALUES (?, ?)')
-    .run(RUNTIME_STATE_SCHEMA_VERSION, RUNTIME_STATE_SCHEMA_NAME);
+  db.prepare('INSERT OR IGNORE INTO schema_migrations(version, name) VALUES (1, ?)')
+    .run('runtime-control-plane-v1');
 
   for (const [column, definition] of [
     ['heartbeat_at', 'TEXT'],
@@ -317,10 +331,166 @@ function applySchema(db) {
   }
 }
 
-async function withRuntimeDb(work) {
+const tableExists = (db, name) => Boolean(db.prepare(
+  "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+).get(name));
+
+const integrityCheck = (db) => db.pragma('integrity_check', { simple: true });
+
+const actualSchemaVersion = (db) => {
+  const v2 = db.prepare('SELECT name FROM schema_migrations WHERE version = 2').get();
+  return v2?.name === RUNTIME_STATE_V2_MIGRATION_ID && tableExists(db, 'execution_cursors') ? 2 : 1;
+};
+
+async function migrateSchemaV2(db, dbPath) {
+  const migration = db.prepare('SELECT version, name FROM schema_migrations WHERE version = 2').get();
+  const cursorTableExists = tableExists(db, 'execution_cursors');
+  if (migration && (!cursorTableExists || migration.name !== RUNTIME_STATE_V2_MIGRATION_ID)) {
+    const error = new Error('partial or corrupt runtime-state v2 migration');
+    error.code = 'schema_mismatch';
+    throw error;
+  }
+  if (!migration && cursorTableExists) {
+    const error = new Error('execution cursor table exists without v2 migration authority');
+    error.code = 'schema_mismatch';
+    throw error;
+  }
+  if (migration) return { status: 'already_applied', snapshotPath: '' };
+
+  const activeLease = db.prepare(`
+    SELECT run_id FROM runs
+    WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at > ?
+    LIMIT 1
+  `).get(nowIso());
+  if (activeLease) {
+    const error = new Error(`runtime-state migration requires quiescence; active lease: ${activeLease.run_id}`);
+    error.code = 'db_lock_timeout';
+    throw error;
+  }
+
+  const snapshotPath = `${dbPath}.pre-v2.snapshot`;
+  await db.backup(snapshotPath);
+  const Database = await loadDatabase();
+  const snapshot = new Database(snapshotPath, { readonly: true, fileMustExist: true });
+  try {
+    if (integrityCheck(snapshot) !== 'ok') {
+      const error = new Error('runtime-state pre-v2 snapshot failed integrity_check');
+      error.code = 'schema_mismatch';
+      throw error;
+    }
+  } finally {
+    snapshot.close();
+  }
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE execution_cursors (
+        run_id TEXT NOT NULL,
+        goal_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL DEFAULT '',
+        identity_hash TEXT NOT NULL DEFAULT '',
+        plan_id TEXT NOT NULL,
+        phase_id TEXT NOT NULL,
+        slices_json TEXT NOT NULL DEFAULT '[]',
+        current_slice_index INTEGER NOT NULL DEFAULT 0,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        failure_class TEXT NOT NULL DEFAULT '',
+        last_evidence_json TEXT NOT NULL DEFAULT '{}',
+        evidence_hash TEXT NOT NULL DEFAULT '',
+        cursor_revision INTEGER NOT NULL DEFAULT 0,
+        allowed_transitions_json TEXT NOT NULL DEFAULT '["check-step","advance","diagnose"]',
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        PRIMARY KEY (run_id, goal_id),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id)
+      );
+      CREATE INDEX idx_execution_cursor_plan_phase ON execution_cursors(plan_id, phase_id, updated_at);
+    `);
+    db.prepare('INSERT INTO schema_migrations(version, name) VALUES (2, ?)')
+      .run(RUNTIME_STATE_V2_MIGRATION_ID);
+  })();
+  return { status: 'applied', snapshotPath };
+}
+
+export async function rehearseRuntimeStateRestore({ snapshotPath, restorePath }) {
+  if (!snapshotPath || !restorePath || path.resolve(snapshotPath) === path.resolve(restorePath)) {
+    throw new Error('restore rehearsal requires distinct snapshot and restore paths');
+  }
+  const Database = await loadDatabase();
+  const source = new Database(snapshotPath, { readonly: true, fileMustExist: true });
+  try {
+    if (integrityCheck(source) !== 'ok') throw new Error('snapshot integrity_check failed');
+  } finally {
+    source.close();
+  }
+  const stagedPath = `${restorePath}.restore-staged`;
+  await copyFile(snapshotPath, stagedPath);
+  const staged = new Database(stagedPath, { readonly: true, fileMustExist: true });
+  try {
+    if (integrityCheck(staged) !== 'ok') throw new Error('staged restore integrity_check failed');
+    if (!tableExists(staged, 'runs') || !tableExists(staged, 'schema_migrations')) {
+      throw new Error('restored v1 read model is unavailable');
+    }
+  } finally {
+    staged.close();
+  }
+  await rename(stagedPath, restorePath);
+  await rm(`${restorePath}-wal`, { force: true });
+  await rm(`${restorePath}-shm`, { force: true });
+  return { status: 'rehearsed', snapshotPath, restorePath, integrity: 'ok', v1ReadModel: 'open' };
+}
+
+const requireSchemaV2 = (db) => {
+  const migration = db.prepare('SELECT version, name FROM schema_migrations WHERE version = 2').get();
+  if (!migration || migration.name !== RUNTIME_STATE_V2_MIGRATION_ID || !tableExists(db, 'execution_cursors')) {
+    const error = new Error('runtime-state v2 migration required; run explicit migrate-v2 against an approved temporary database');
+    error.code = 'migration_required';
+    throw error;
+  }
+};
+
+export async function migrateRuntimeStateV2({ confirmTempDb = false } = {}) {
+  if (!confirmTempDb) {
+    const error = new Error('migrate-v2 is restricted to explicitly confirmed temporary databases during staged rollout');
+    error.code = 'permission_denied';
+    throw error;
+  }
+  const requestedDbPath = resolveDbPath();
+  let resolvedDbPath;
+  let resolvedTempRoot;
+  try {
+    [resolvedDbPath, resolvedTempRoot] = await Promise.all([realpath(requestedDbPath), realpath(os.tmpdir())]);
+  } catch {
+    const error = new Error('migrate-v2 requires an existing database under the real temporary directory');
+    error.code = 'permission_denied';
+    throw error;
+  }
+  const relativeToTemp = path.relative(resolvedTempRoot, resolvedDbPath);
+  if (relativeToTemp.startsWith('..') || path.isAbsolute(relativeToTemp)) {
+    const error = new Error('migrate-v2 rejects non-temporary runtime-state database paths');
+    error.code = 'permission_denied';
+    throw error;
+  }
   const { db, dbPath } = await openRuntimeDatabase();
   try {
     applySchema(db);
+    const migration = await migrateSchemaV2(db, dbPath);
+    return {
+      status: migration.status === 'already_applied' ? 'already_migrated' : 'migrated',
+      dbPath,
+      schemaVersion: RUNTIME_STATE_SCHEMA_VERSION,
+      migrationId: RUNTIME_STATE_V2_MIGRATION_ID,
+      snapshotPath: migration.snapshotPath,
+    };
+  } finally {
+    db.close();
+  }
+}
+
+export async function withRuntimeDb(work, { requireV2 = false } = {}) {
+  const { db, dbPath } = await openRuntimeDatabase();
+  try {
+    applySchema(db);
+    if (requireV2) requireSchemaV2(db);
     return await work(db, dbPath);
   } finally {
     db.close();
@@ -376,6 +546,8 @@ function markExpiredRunLeases(db, now = nowIso(), reason = 'lease_ttl_expired') 
   `).all(now);
 
   for (const run of expired) {
+    const lifecycleDecision = assessRunLifecycleFixture({ leaseStatus: 'expired' });
+    if (!lifecycleDecision.releaseBlocked) continue;
     db.prepare(`
       UPDATE runs
       SET status = 'stale',
@@ -413,7 +585,7 @@ export async function initRuntimeState() {
     return {
       status: 'initialized',
       dbPath,
-      schemaVersion: RUNTIME_STATE_SCHEMA_VERSION,
+      schemaVersion: actualSchemaVersion(db),
       migrations,
       pragmas: {
         journalMode: db.pragma('journal_mode', { simple: true }),
@@ -600,6 +772,7 @@ export async function recordEvalResult({
   identity = {},
   workspaceId = '',
 }) {
+  const evalDecision = assessEvalFixture({ regressionWorsened });
   return withRuntimeDb((db, dbPath) => {
     const evalId = newId();
     db.transaction(() => {
@@ -607,7 +780,7 @@ export async function recordEvalResult({
       db.prepare(`
         INSERT INTO eval_results(eval_id, run_id, goal_id, suite, status, score_json, regression_worsened, evidence_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(evalId, runId, goalId, suite, status, jsonText(score), regressionWorsened ? 1 : 0, jsonText(evidence));
+      `).run(evalId, runId, goalId, suite, status, jsonText(score), evalDecision.releaseBlocked ? 1 : 0, jsonText(evidence));
     })();
     return { status: 'recorded', dbPath, evalId, runId, goalId };
   });
@@ -1490,23 +1663,19 @@ export async function assessCompletionAuthority({ runId, goalId }) {
 
     const verifierEvidence = readLatestVerifierEvidence(db, runId, goalId);
     const evidencePayload = parseJsonText(verifierEvidence?.payload_json, {});
-    if (evidencePayload.stale === true || evidencePayload.superseded === true) {
+    const evidenceDecision = assessCompletionFixture({
+      verdictFresh: evidencePayload.stale === true || evidencePayload.superseded === true ? false : undefined,
+      staleReason: evidencePayload.staleReason || 'stale verifier evidence',
+      activeIdentityPresent: evidencePayload.activeIdentityPresent,
+      identityMatches: evidencePayload.identityMatches,
+    });
+    if (evidenceDecision.releaseBlocked) {
       return {
         status: 'rejected',
         dbPath,
         runId,
         goalId,
-        reason: evidencePayload.staleReason || 'stale verifier evidence',
-        authoritySource: 'runtime-state.sqlite',
-      };
-    }
-    if (evidencePayload.activeIdentityPresent === true && evidencePayload.identityMatches === false) {
-      return {
-        status: 'rejected',
-        dbPath,
-        runId,
-        goalId,
-        reason: 'identity mismatch',
+        reason: evidenceDecision.reason,
         authoritySource: 'runtime-state.sqlite',
       };
     }
@@ -1679,7 +1848,7 @@ export async function buildRuntimeStatusReadModel({ runId = '', goalId = '' } = 
         runtimeCapabilityStatus: {
           status: 'available',
           dbPath,
-          schemaVersion: RUNTIME_STATE_SCHEMA_VERSION,
+          schemaVersion: actualSchemaVersion(db),
           activeRuns,
           staleRuns,
         },

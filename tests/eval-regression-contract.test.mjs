@@ -91,12 +91,12 @@ test('golden eval records scorecards into runtime eval_results', async () => {
   assert.equal(status.compactStatus.latestEval.score.score, 1);
 });
 
-test('worsened eval results block accepted completion', async () => {
+test('mutating expected output cannot make unchanged production behavior pass', async () => {
   const tempRoot = await makeTempRoot();
   const env = { PHASE_RUNTIME_DB: path.join(tempRoot, 'runtime-state.sqlite') };
   const fixturePath = path.join(tempRoot, 'failing-golden.json');
   const fixture = JSON.parse(await readFile(path.join(root, 'tests/fixtures/harness-control-plane/golden-regression.json'), 'utf8'));
-  fixture.cases[0].actual = { releaseBlocked: false, reason: 'false pass' };
+  fixture.cases[0].expected = { releaseBlocked: false, reason: 'false pass' };
   await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
 
   const evalRun = runNode([
@@ -114,6 +114,7 @@ test('worsened eval results block accepted completion', async () => {
   const output = JSON.parse(evalRun.stdout);
   assert.equal(output.regressionWorsened, true);
   assert.equal(output.failedCases[0].id, 'completion-false-positive');
+  assert.deepEqual(output.failedCases[0].actual, { releaseBlocked: true, reason: 'missing accepted completion decision' });
 
   const assessed = json(runNode([
     'scripts/runtime-state.mjs',
@@ -126,6 +127,19 @@ test('worsened eval results block accepted completion', async () => {
   ], env));
   assert.equal(assessed.status, 'rejected');
   assert.equal(assessed.reason, 'eval regression worsened: harness-control-plane-golden');
+});
+
+test('missing production evaluator is a typed failing result', async () => {
+  const tempRoot = await makeTempRoot();
+  const fixturePath = path.join(tempRoot, 'missing-evaluator.json');
+  const fixture = JSON.parse(await readFile(path.join(root, 'tests/fixtures/harness-control-plane/golden-regression.json'), 'utf8'));
+  fixture.cases[0].category = 'unregistered-category';
+  await writeFile(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`, 'utf8');
+  const result = runNode(['tools/evals/harness-control-plane.mjs', 'run', '--fixture', fixturePath, '--json']);
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.failedCases[0].failureClass, 'evaluator_missing');
+  assert.equal(output.failedCases[0].evaluatorExecuted, false);
 });
 
 test('low-score traces produce reviewed testcase candidates with rollback metadata', async () => {

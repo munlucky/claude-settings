@@ -31,7 +31,7 @@
       "id": "wrong-tool",
       "category": "tool_dispatch",
       "input": { "selectedGroup": "browser", "actualGroup": "shell" },
-      "expected": { "releaseBlocked": true, "reason": "wrong selected tool group" }
+      "expected": { "releaseBlocked": true, "reason": "wrong tool group for selected context" }
     },
     {
       "id": "invalid-schema",

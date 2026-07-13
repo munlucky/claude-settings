@@ -8,6 +8,11 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(scriptDir, '..');
 
+function defaultProfileHome() {
+  const injectedHome = process.env.MOONSHOT_BROWSER_PROFILE_HOME;
+  return injectedHome ? path.resolve(injectedHome) : os.homedir();
+}
+
 function candidateRuntimeRoots() {
   const moonshotHome = process.env.MOONSHOT_RELAY_HOME
     ? path.resolve(process.env.MOONSHOT_RELAY_HOME)
@@ -40,9 +45,12 @@ const localBrowserctl = browserRuntime.browserctl;
 const nodeClient = browserRuntime.nodeClient;
 const pythonEntry = browserRuntime.pythonEntry;
 
+const profileHome = defaultProfileHome();
 const state = {
   force: false,
-  binDir: path.join(os.homedir(), '.local', 'bin'),
+  profileHome,
+  binDir: path.join(profileHome, '.local', 'bin'),
+  binDirExplicit: false,
 };
 
 function usage() {
@@ -50,7 +58,10 @@ function usage() {
     ? path.join(state.binDir, 'browserctl.cmd')
     : path.join(state.binDir, 'browserctl');
   console.log(`Usage:
-  install-browser-runtime.sh [--bin-dir <dir>] [--force]
+  install-browser-runtime.sh [--bin-dir <dir>] [--profile-home <dir>] [--force]
+
+Profile home:
+  ${state.profileHome}
 
 Default target:
   ${target}`);
@@ -63,6 +74,7 @@ function parseArgs(argv) {
     switch (arg) {
       case '--bin-dir':
         state.binDir = args.shift() ?? state.binDir;
+        state.binDirExplicit = true;
         break;
       case '--bin-dir=':
         state.binDir = arg.slice('--bin-dir='.length);
@@ -70,6 +82,19 @@ function parseArgs(argv) {
       case '--force':
         state.force = true;
         break;
+      case '--profile-home': {
+        const value = args.shift();
+        if (!value) {
+          console.error('Missing value for --profile-home');
+          usage();
+          process.exit(64);
+        }
+        state.profileHome = path.resolve(value);
+        if (!state.binDirExplicit) {
+          state.binDir = path.join(state.profileHome, '.local', 'bin');
+        }
+        break;
+      }
       case '--help':
       case '-h':
         usage();
@@ -77,6 +102,20 @@ function parseArgs(argv) {
       default:
         if (arg.startsWith('--bin-dir=')) {
           state.binDir = arg.slice('--bin-dir='.length);
+          state.binDirExplicit = true;
+          break;
+        }
+        if (arg.startsWith('--profile-home=')) {
+          const value = arg.slice('--profile-home='.length);
+          if (!value) {
+            console.error('Missing value for --profile-home');
+            usage();
+            process.exit(64);
+          }
+          state.profileHome = path.resolve(value);
+          if (!state.binDirExplicit) {
+            state.binDir = path.join(state.profileHome, '.local', 'bin');
+          }
           break;
         }
         console.error(`Unknown argument: ${arg}`);
@@ -165,7 +204,7 @@ esac
 
   const profileWarnings = [];
   for (const profile of ['.zprofile', '.bash_profile', '.profile']) {
-    const profilePath = path.join(os.homedir(), profile);
+    const profilePath = path.join(state.profileHome, profile);
     const sourceLine = `. "${targetEnvFile}"`;
     let current = '';
     try {

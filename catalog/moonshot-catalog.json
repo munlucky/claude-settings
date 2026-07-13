@@ -19,6 +19,13 @@
       "name": "product-orchestrator",
       "stage": "product",
       "ownerCluster": "product-planning",
+      "engineRoute": "product-definition",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["product"],
+      "conditionalSkillGroups": {
+        "architectureRequired": ["moonshot-architecture"],
+        "planningRequired": ["moonshot-plan-writer"]
+      },
       "source": "skills/product-orchestrator/SKILL.md",
       "purpose": "Product-definition entrypoint for idea-to-plan work."
     },
@@ -26,6 +33,14 @@
       "name": "moonshot-architecture",
       "stage": "architecture",
       "ownerCluster": "architecture",
+      "engineRoute": "architecture-design",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["architecture"],
+      "conditionalSkillGroups": {
+        "brownfieldRecovery": ["codebase-architecture-recovery"],
+        "optionReview": ["architecture-tradeoff-reviewer"],
+        "gateReview": ["architecture-gate-reviewer"]
+      },
       "source": "skills/moonshot-architecture/SKILL.md",
       "purpose": "Architecture package entrypoint for PRD or brownfield objectives."
     },
@@ -33,6 +48,14 @@
       "name": "moonshot-orchestrator",
       "stage": "implementation",
       "ownerCluster": "bounded-execution",
+      "engineRoute": "bounded-implementation",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["implementation", "verification"],
+      "conditionalSkillGroups": {
+        "behaviorChange": ["test-driven-development"],
+        "reviewRequired": ["codex-review-code"],
+        "completionCheck": ["completion-verifier"]
+      },
       "source": "skills/moonshot-orchestrator/SKILL.md",
       "purpose": "Bounded implementation entrypoint when the phase harness is not required."
     },
@@ -40,6 +63,14 @@
       "name": "moonshot-phase-runner",
       "stage": "phase-execution",
       "ownerCluster": "phase-control-plane",
+      "engineRoute": "phase-execution",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["phase-execution", "verification"],
+      "conditionalSkillGroups": {
+        "phaseAttempt": ["moonshot-phase-executor"],
+        "reviewRequired": ["codex-review-code"],
+        "completionCheck": ["completion-verifier"]
+      },
       "source": "skills/moonshot-phase-runner/SKILL.md",
       "purpose": "Full plan-directory execution entrypoint for phase-based work."
     },
@@ -47,6 +78,12 @@
       "name": "moonshot-plan-writer",
       "stage": "planning",
       "ownerCluster": "planning",
+      "engineRoute": "plan-authoring",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["planning"],
+      "conditionalSkillGroups": {
+        "planReview": ["codex-validate-plan", "plan-eng-review", "plan-ceo-review"]
+      },
       "source": "skills/moonshot-plan-writer/SKILL.md",
       "purpose": "Plan package authoring and refresh entrypoint."
     },
@@ -54,6 +91,13 @@
       "name": "commit-moonshot",
       "stage": "closeout",
       "ownerCluster": "repository-closeout",
+      "engineRoute": "repository-closeout",
+      "invocationMode": "user_preferred",
+      "allowedStages": ["closeout"],
+      "conditionalSkillGroups": {
+        "memoryRefresh": ["project-memory-refresh"],
+        "completionCheck": ["completion-verifier"]
+      },
       "source": "skills/commit-moonshot/SKILL.md",
       "purpose": "Memory refresh and commit closeout utility."
     },
@@ -61,6 +105,12 @@
       "name": "session-logger",
       "stage": "closeout",
       "ownerCluster": "documentation-closeout",
+      "engineRoute": "session-closeout",
+      "invocationMode": "user_preferred",
+      "allowedStages": ["closeout"],
+      "conditionalSkillGroups": {
+        "knowledgeRefresh": ["project-memory-refresh"]
+      },
       "source": "skills/session-logger/SKILL.md",
       "purpose": "Session logging utility for durable handoff records."
     }

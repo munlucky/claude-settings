@@ -1,68 +1,70 @@
 ---
 name: moonshot-orchestrator
-description: phase harness가 필요 없고 충분한 컨텍스트가 있는 bounded implementation 작업에 사용합니다.
+description: Use for bounded implementation work that already has enough context and does not need the phase harness.
+policyClauseIds:
+  - moonshot-orchestrator.policy.use-when
+  - moonshot-orchestrator.policy.routing
+  - moonshot-orchestrator.policy.hard-stops
+  - moonshot-orchestrator.policy.output-contract
+policyDigest: a2ca28c6f515f7e7f2ab8412c1ec96bdaf42be948334851a919cc358034d24d9
 triggers:
   - "moonshot orchestrator"
   - "bounded implementation"
   - "implement this"
 deepReferences:
+  - references/compatibility-contract.md
   - references/bounded-flow.md
   - references/review-and-verification.md
 ---
 
 # Moonshot Orchestrator
 
+## 사용 시점
+
+Use for a bounded implementation objective with enough accepted context to execute and verify now.
+
 ## 역할
 
-phase runner가 필요 없는 경계가 명확한 구현 slice를 실행합니다. 현재 세션이 owner 역할을 유지하고, 변경은 수술적으로 적용하며, 완료는 review와 verification evidence로 증명합니다.
+Own and prove one implementation slice. Architecture-derived work consumes only the bounded selected ADR and traceability slice.
 
-architecture-derived 작업에서는 전체 architecture package가 아니라 bounded selected ADR and traceability slice만 실행합니다.
+## 다른 경로
 
-## 다른 경로로 라우팅
+- Use `moonshot-phase-runner` for multi-phase plans, long-running harness work, or staged adoption packages.
+- Use `product-orchestrator` when the user is still defining product scope.
+- Use `moonshot-architecture` before implementation when the request lacks an accepted architecture package for non-trivial architecture decisions.
+- Stop for clarification only when a wrong assumption would change scope, security, data shape, or user-visible behavior.
 
-- multi-phase plan, 장시간 harness 작업, staged adoption package는 `moonshot-phase-runner`를 사용합니다.
-- 사용자가 아직 제품 범위를 정의하는 단계라면 `product-orchestrator`를 사용합니다.
-- non-trivial architecture decision에 대해 accepted architecture package가 없으면 구현 전에 `moonshot-architecture`를 사용합니다.
-- 잘못된 가정이 scope, security, data shape, user-visible behavior를 바꿀 때만 clarification으로 멈춥니다.
+## 중단 조건
 
-## Hard Stops
+- Do not broaden scope beyond the user request.
+- Do not skip code review for non-trivial code changes.
+- Do not claim completion with stale, missing, or smoke-only evidence.
+- Do not execute a blocked `ARCHITECTURE_HANDOFF`, and do not bypass a ready handoff by copying raw KG, ontology, MemoryGraph, log, transcript, or browser scrape payloads into the attempt prompt.
+- When runtime-state completion authority is available, do not claim clean finish from chat output, markdown reports, phase status, or verifier JSON alone. Require `scripts/runtime-state.mjs assess-completion` to produce an accepted DB decision.
+- Before approval-required operations or writes near protected runtime paths, classify the operation with `tools/sandbox/policy.mjs check --json`; unauthorized blocking events must stop clean completion.
+- Do not mutate unrelated files or revert user changes.
 
-- 사용자 요청 범위를 넓히지 않습니다.
-- non-trivial code change에서 code review를 건너뛰지 않습니다.
-- stale, missing, smoke-only evidence로 완료를 주장하지 않습니다.
-- blocked `ARCHITECTURE_HANDOFF`를 실행하지 않고, ready handoff를 우회해 raw KG, ontology, MemoryGraph, log, transcript, browser scrape payload를 attempt prompt에 복사하지 않습니다.
-- runtime-state completion authority를 사용할 수 있으면 chat output, markdown report, phase status, verifier JSON만으로 clean finish를 주장하지 않습니다. `scripts/runtime-state.mjs assess-completion`의 accepted DB decision이 필요합니다.
-- approval-required operation 또는 protected runtime path 인근 write 전에는 `tools/sandbox/policy.mjs check --json`으로 operation을 분류합니다. unauthorized blocking event가 있으면 clean completion을 멈춥니다.
-- 무관한 파일을 변경하거나 사용자 변경을 되돌리지 않습니다.
+## 절차
 
-## Flow
+1. Confirm bounded scope and ready handoff guards; never replace architecture evidence with chat summaries.
+4. Apply `docs/public/guidelines/minimal-correct-implementation.md` before choosing the implementation shape, and apply `docs/public/guidelines/untrusted-content-boundary.md`.
+5. Implement, review, rerun invalidated checks, and report evidence or a typed blocker.
+6. For `moonshot-architecture` work, consume selected ADR `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `ARCHITECTURE_REVIEW.md`, and the traceability slice; pass only `ARCHITECTURE_HANDOFF.promptBlock`. On violation use `scripts/architecture-feedback-render.mjs`, never raw KG.
 
-1. 작업이 bounded이고 충분한 컨텍스트가 있는지 확인합니다.
-2. architecture package가 제공되면 선택된 `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `PLAN.md`, `ARCHITECTURE_REVIEW.md` path를 소비하고 chat-only summary로 대체하지 않습니다.
-3. `ARCHITECTURE_HANDOFF.json`이 제공되면 `status=ready`를 요구하고, `promptBlock`과 compact metadata만 소비하며, `ownedPaths`, `readOnlyPaths`, `verificationSignalIds`를 scope와 verification guard로 사용합니다.
-4. 구현 형태를 선택하기 전에 `docs/public/guidelines/minimal-correct-implementation.md`를 읽고 적용합니다.
-5. 편집 전에 local contract와 영향 파일을 확인합니다.
-6. 선택된 ADR, traceability slice, handoff constraints, minimal-correct implementation ladder를 만족하는 가장 작은 구현을 적용합니다.
-7. 집중 검증을 실행하고 실패를 implementation, verification, environment, contract로 분류합니다.
-8. contract violation이 있으면 `scripts/architecture-feedback-render.mjs`로 read-before-retry와 required-action feedback을 생성합니다.
-9. review feedback을 반영한 뒤, 변경으로 무효화된 검증만 다시 실행합니다.
-10. 변경 파일, 검증, minimality decision, 잔여 리스크를 보고하고 phase-style finalization claim은 하지 않습니다.
+## 출력 계약
 
-## Required Evidence
-
-- 영향 파일 목록과 이유.
-- minimality decision: 기존 surface 재사용, 새 surface 추가, 또는 lower-rung option skip 여부와 이유.
-- fresh test/build/lint 또는 targeted verification output.
-- behavior, shared contract, harness logic이 바뀌면 review evidence.
-- 필수 check를 실행할 수 없으면 명시적 blocker classification.
+- Affected file list and rationale.
+- Minimality decision: reused existing surface, added new surface, or skipped lower-rung options, with reason.
+- Fresh test/build/lint or targeted verification output.
+- Review evidence when behavior, shared contracts, or harness logic changes.
+- Agent operating policy evidence when applicable: retrieval, assumptions/blockers, untrusted content disposition, artifact routing, skill readiness, and cumulative risk. This evidence does not replace runtime-state completion authority.
+- Explicit blocker classification if a required check cannot run.
 
 ## References
 
-- `references/bounded-flow.md`: stage order, scope control, output contract.
-- `references/review-and-verification.md`: review gate, verifier expectation, failure taxonomy.
+- `references/bounded-flow.md`: stage order, scope control, and output contract.
+- `references/review-and-verification.md`: review gate, verifier expectations, and failure taxonomy.
 
 ## Project Knowledge Context Contract
 
-bounded implementation prompt를 만들기 전에 현재 작업 stage에 맞춰 `knowledge-context-build.mjs`의 `projectKnowledgeContext.promptBlock`을 사용합니다. 구현은 `execute`, 검증은 `verify` stage를 사용합니다. worker에는 compact summary block만 전달합니다.
-
-attempt/workflow metadata에는 `status`, `strictness`, `stage`, `blocking`, `unavailableCount`, `knowledgeRevision`만 기록할 수 있습니다. raw MemoryGraph/KG/ontology record, runtime log, transcript, secret-like string은 prompt와 manifest에 넣지 않습니다.
+Pass only the staged compact `projectKnowledgeContext.promptBlock` and status metadata. Raw knowledge records, logs, transcripts, and secrets are forbidden.

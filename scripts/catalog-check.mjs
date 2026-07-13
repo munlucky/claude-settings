@@ -34,6 +34,9 @@ const sameSet = (left, right) => {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 };
 
+const sameOrder = (left, right) => left.length === right.length
+  && left.every((value, index) => value === right[index]);
+
 const diffSets = (expected, actual) => ({
   missing: [...new Set(expected)].filter((value) => !actual.includes(value)).sort(),
   extra: [...new Set(actual)].filter((value) => !expected.includes(value)).sort(),
@@ -114,7 +117,7 @@ const packageDryRunPublicSkills = (repoRoot) => {
         skills.add(match[1]);
       }
     }
-    return [...skills].sort();
+    return [...skills];
   };
 
   return {
@@ -145,9 +148,15 @@ export const checkCatalog = async (options = {}) => {
   if (!sameSet(catalogPublic, runtimePublic)) {
     findings.push(finding('blocking', 'catalog.runtime_surface_mismatch', 'Catalog publicEntrypoints must match package/runtime-surface.json.', diffSets(catalogPublic, runtimePublic)));
   }
+  if (sameSet(catalogPublic, runtimePublic) && !sameOrder(catalogPublic, runtimePublic)) {
+    findings.push(finding('blocking', 'catalog.runtime_surface_order_mismatch', 'Catalog and runtime surface public entrypoints must use the same frozen order.', { expected: catalogPublic, actual: runtimePublic }));
+  }
 
   if (contractPublicLists.length === 0 || !sameSet(catalogPublic, contractPublic)) {
     findings.push(finding('blocking', 'catalog.package_contract_mismatch', 'Catalog publicEntrypoints must match package/package-contract.yaml publicRuntimeSkills.', diffSets(catalogPublic, contractPublic)));
+  }
+  if (contractPublicLists.length > 0 && sameSet(catalogPublic, contractPublic) && !sameOrder(catalogPublic, contractPublic)) {
+    findings.push(finding('blocking', 'catalog.package_contract_order_mismatch', 'Catalog and package contract public entrypoints must use the same frozen order.', { expected: catalogPublic, actual: contractPublic }));
   }
 
   const sourceSkillDirs = await listSourceSkillDirs(repoRoot);
@@ -204,6 +213,9 @@ export const checkCatalog = async (options = {}) => {
             ...diffSets(runtimePublic, packagePlan[runtime]),
           }));
         }
+        if (sameSet(runtimePublic, packagePlan[runtime]) && !sameOrder(runtimePublic, packagePlan[runtime])) {
+          findings.push(finding('blocking', 'catalog.profile_exposure_order_mismatch', `${runtime} profile dry-run must materialize public skills in frozen runtime-surface order.`, { runtime, expected: runtimePublic, actual: packagePlan[runtime] }));
+        }
       }
     }
   }
@@ -213,8 +225,8 @@ export const checkCatalog = async (options = {}) => {
     schemaVersion: 'moonshot-catalog-check.v1',
     status: blockingCount === 0 ? 'pass' : 'fail',
     catalog: toPortable(path.relative(repoRoot, catalogPath)),
-    publicEntrypoints: catalogPublic.sort(),
-    runtimeSurfacePublicSkills: runtimePublic.sort(),
+    publicEntrypoints: catalogPublic,
+    runtimeSurfacePublicSkills: runtimePublic,
     sourceSkillCount: sourceSkillDirs.length,
     findings,
   };

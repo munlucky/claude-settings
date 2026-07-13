@@ -244,6 +244,10 @@ requiredPayloadEntries:
       purpose: harness_control_plane_golden_eval_gate
     - source: tools/evals/harness-search-fixture-scorer.mjs
       purpose: deterministic_harness_search_fixture_scorer
+    - source: tools/evals/skill-deletion-eval.mjs
+      purpose: public_skill_sentence_deletion_no_regression_evaluator
+    - source: tools/evals/skill-lint-carry-forward.json
+      purpose: reviewed_skill_lint_warning_ratchet_registry
     - source: tools/evals/fixtures/harness-control-plane/golden-regression.json
       purpose: packaged_harness_control_plane_golden_eval_fixture
     - source: tools/evals/fixtures/harness-search-fixtures/fixture-manifest.json
@@ -313,6 +317,8 @@ requiredPayloadEntries:
         purpose: browser_runtime_install_entrypoint
       - source: scripts/install-project-runtime-bridge.mjs
         purpose: downstream_project_runtime_bridge_installer
+      - source: scripts/installed-release-resolve.mjs
+        purpose: installed_manifest_to_previous_release_materialization_resolver
       - source: scripts/knowledge-context-build.mjs
         purpose: project_knowledge_context
       - source: scripts/knowledge-improvement-lifecycle.mjs
@@ -415,6 +421,12 @@ requiredPayloadEntries:
         purpose: workspace_lease_return_safety_support
       - source: scripts/lib/runtime-state-store.mjs
         purpose: runtime_state_control_plane_store
+      - source: scripts/lib/control-plane-policy.mjs
+        purpose: shared_control_plane_policy_decisions
+      - source: scripts/lib/execution-cursor.mjs
+        purpose: db_authoritative_vertical_slice_cursor
+      - source: scripts/lib/workflow-bundle-resolver.mjs
+        purpose: conditional_workflow_bundle_loading
       - source: scripts/lib/verification-plane.mjs
         purpose: verification_plane_evidence_support
   archivedLegacyScripts:

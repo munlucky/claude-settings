@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.dev/schemas/skill-reference-route.schema.json",
+  "title": "Moonshot Skill Reference Response",
+  "type": "object",
+  "required": ["schemaVersion", "status", "command"],
+  "properties": {
+    "schemaVersion": { "const": "moonshot-skill-reference.v1" },
+    "status": { "enum": ["pass", "fail"] },
+    "command": { "const": "load-reference" },
+    "skill": { "type": "string" },
+    "referenceId": { "type": "string" },
+    "contentHash": { "type": "string", "pattern": "^[a-f0-9]{16}$" },
+    "promptSafety": {
+      "type": "object",
+      "required": ["status", "redactedLineCount"],
+      "properties": {
+        "status": { "enum": ["pass", "redacted"] },
+        "redactedLineCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "promptBlock": { "type": "string" },
+    "findings": { "type": "array" }
+  },
+  "additionalProperties": false
+}

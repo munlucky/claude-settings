@@ -1,11 +1,18 @@
 ---
 name: product-orchestrator
 description: Use when work is still at the idea-to-plan stage and needs bounded product-definition artifacts before implementation.
+policyClauseIds:
+  - product-orchestrator.policy.use-when
+  - product-orchestrator.policy.routing
+  - product-orchestrator.policy.hard-stops
+  - product-orchestrator.policy.output-contract
+policyDigest: cb67114d85778a5895df11db58bf7be43f0342526888a0be510798f0c85bddfc
 layer: orchestrator
 loads:
   - product-definition-artifacts
   - verdict-summaries
 deepReferences:
+  - references/compatibility-contract.md
   - docs/public/guidelines/product-definition-workflow.md
   - docs/public/guidelines/requirements-traceability-harness.md
   - docs/public/guidelines/demo-first-mvp-gate.md
@@ -31,6 +38,14 @@ triggers:
 
 # Product Orchestrator
 
+## Use When
+
+Use while an idea still needs bounded product definition before architecture or implementation.
+
+## Route Away
+
+Use `moonshot-architecture` after product approval and `moonshot-orchestrator` only for bounded implementation-ready work.
+
 ## Role
 
 Run the product-definition workflow before code-oriented Moonshot execution.
@@ -52,7 +67,7 @@ This skill is not for:
 
 It may prepare a `demo_first` MVP execution pack. That pack is a planning and execution contract, not a market experiment runner.
 
-## Output Package
+## Output Contract
 
 Write artifacts under:
 - `{tasksRoot}/{feature-name}/product/`
@@ -92,44 +107,19 @@ Planning artifacts should also record:
 - canonical domain terms or glossary gaps when language is ambiguous
 - testing decisions focused on user-visible behavior, not implementation details
 
-## Workflow
+## Procedure
 
-0. Build `projectKnowledgeContext` with `stage=intake`, `strictness=advisory`, and merge only the typed summary block/status metadata.
-1. Create or refresh `PRODUCT_INTENT.md`
-2. Before each reviewer/planning task, refresh `projectKnowledgeContext` for the current stage (`plan`) when the prior output changed scope, terms, or architecture.
-3. Run `product-gate-reviewer` for `PRODUCT_INTENT`
-4. Run `plan-ceo-review` for `PRODUCT_INTENT`
-5. Create or refresh `PRD.md`
-6. Run `product-gate-reviewer` for `PRD`
-7. Run `plan-ceo-review` for `PRD`
-8. Create or refresh `SOLUTION.md`
-9. Run `product-gate-reviewer` for `SOLUTION`
-10. Create or refresh `SPEC.md` and any needed `ADR/*.md`
-11. Run `product-gate-reviewer` for `SPEC`
-12. Run `plan-eng-review` for `SPEC`
-13. Create or refresh `PLAN.md`
-14. Run `task-slicer` to generate `tasks/*.md`
-15. Run `product-gate-reviewer` for `PLAN`
-16. Run `plan-ceo-review` for `PLAN`
-17. Run `plan-eng-review` for `PLAN`
-18. Hand off the plan package to `moonshot-orchestrator` with `projectKnowledgeContext`
+1. Build compact intake/plan knowledge context and classify facts, decisions, assumptions, and blockers.
+1.1. classify unresolved input as fact, decision, assumption, or blocker; do not self-resolve decisions affecting scope, security, data, package/runtime surface, or user-visible behavior.
+2. Draft `PRODUCT_INTENT.md`, `PRD.md`, `SOLUTION.md`, `SPEC.md`, and `PLAN.md` in order.
+3. Run the product gate at every stage; add CEO review for intent, PRD, and plan, plus engineering review for spec and plan.
+4. Use Discovery Map and current-fact references only when needed; they remain advisory and never authorize execution.
+4.1. Record task-relevant consultation through `docs/public/guidelines/skill-readiness-policy.md`.
+5. Slice accepted planning into tasks, retry a weak draft at most twice, and reduce scope when value is unclear.
+6. Hand the approved package and compact context to the appropriate execution entrypoint.
+6.1. Route architecture-heavy PRDs through `moonshot-architecture`, then preserve `REQUIREMENT_INVENTORY.md`, `TRACEABILITY_MATRIX.md`, and `ARCHITECTURE_REVIEW.md` for `moonshot-orchestrator` or `moonshot-phase-runner` handoff.
 
-At every stage:
-- use `assumption-ledger` before stopping for ambiguity
-- when work is too foggy for PRD/SPEC/PLAN readiness, create or consume a Discovery Map as an internal planning artifact before promoting decisions into product artifacts
-- treat Discovery Map frontier output as advisory planning evidence only; it does not authorize execution, worker fanout, completion, or live adoption
-- classify unresolved input as fact, decision, assumption, or blocker; do not self-resolve decisions that affect scope, security, data, package/runtime surface, or user-visible behavior
-- gather available read-only context before asking the user unless a critical ambiguity would change scope, security, data shape, or user-visible behavior
-- use `docs/public/guidelines/retrieval-and-recency-policy.md` and `docs/public/guidelines/research-evidence-policy.md` for current or volatile product, market, dependency, platform, model, pricing, legal, or security facts
-- record task-relevant skill consultation through `docs/public/guidelines/skill-readiness-policy.md`
-- apply `docs/public/guidelines/memorygraph-workflow.md`
-- do not use `.moonshot-relay/docs/ko/` as a MemoryGraph source
-- omit MemoryGraph entries that duplicate system/developer/AGENTS/rules policy
-- stop only for true blockers
-- use max 2 rewrite retries after the first draft
-- prefer scope reduction over speculative expansion when value is weak or unclear
-
-## Gate Policy
+## Hard Stops
 
 Every stage ends with one of:
 - `pass`: ready for the next stage
@@ -142,62 +132,7 @@ Escalation rules:
 - Hard dependency missing -> add to `BLOCKERS.md`
 - Weak value or poor cost/benefit -> reduce scope, hold scope, or fail the stage
 
-## Value Judgment Policy
-
-Do not treat completeness as sufficient.
-
-Before execution handoff, the planning package should answer:
-- why the work matters now
-- what will not be built
-- whether the benefit is large enough for the likely implementation cost
-- whether the current scope should be reduced before execution
-
-Preferred actions:
-- `scope_reduction`
-- `hold_scope`
-- `fail`
-
-## Stage Summary
-
-### PRODUCT_INTENT
-- Bound the problem
-- Name the user
-- State the core value
-- Freeze non-goals
-- Record why now
-
-### PRD
-- Define scenarios and acceptance
-- Keep the document product-facing
-- Do not introduce architecture
-- Assign stable `REQ-*` and `SCN-*` identifiers for downstream traceability
-- Prioritize features by value
-
-### SOLUTION
-- Model flows, state, entities, and exceptions
-- Do not discuss stack, classes, or modules
-- Use canonical project/domain terms and flag overloaded terms before downstream planning
-
-### SPEC
-- Translate behavior into architecture
-- Capture interfaces, containers, dependencies, and NFRs
-- Record major choices in ADRs
-- Prefer deep modules: small interfaces that hide meaningful behavior and improve locality
-- For hard-to-change interfaces, consider multiple materially different shapes before choosing one
-- For architecture-heavy PRDs, route through `moonshot-architecture` before final `PLAN.md`. Use the returned architecture package paths rather than rewriting architecture decisions inline.
-
-### EXECUTION_PLAN
-- Convert architecture into vertical slices
-- Make every task independently executable
-- Prepare for direct Moonshot handoff
-- Preserve `REQ-*` and `SCN-*` mappings so completion can be blocked on uncovered items
-- Narrow or reject slices whose cost is not justified by value
-- Mark slices as AFK or HITL when they may become external issues or agent handoffs
-- Prefer tracer-bullet vertical slices over horizontal layer batches
-- For user-facing MVP work that needs direct user validation, set `mvpMethodology.profile: demo_first` and preserve the Demo Approval Hard Stop in `PLAN.md` and `tasks/*.md`.
-- Demo-first plans must order each in-scope slice as `demo_ready_ui -> mock_functional_demo -> demo_evidence_capture -> user_demo_approval -> real_functional -> real_functional_verification -> production_hardening`.
-- Before approval, allow mock contracts, typed fixtures, mock handlers, in-memory state, and localStorage demo persistence; block production backend, real persistence, auth integration, irreversible migrations, production jobs, and production payment workflows.
-- Treat `USER_DEMO_APPROVAL.md` as the approval truth source and `DEMO_EVIDENCE.md` as the evidence source for what the user approved.
+Stage-specific detail, value tests, and demo-first sequencing are conditional references in `docs/public/guidelines/product-definition-workflow.md` and `docs/public/guidelines/demo-first-mvp-gate.md`.
 
 ## Approval Boundary
 

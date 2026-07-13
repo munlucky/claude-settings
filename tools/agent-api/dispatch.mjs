@@ -8,6 +8,7 @@ import {
   recordRuntimeEvent,
   recordToolCall,
 } from '../../scripts/lib/runtime-state-store.mjs';
+import { assessToolDispatchFixture } from '../../scripts/lib/control-plane-policy.mjs';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const registryPath = resolve(currentDir, 'registry.yaml');
@@ -191,9 +192,10 @@ const dispatchTool = async (options) => {
   }
 
   if (selectedIds.size > 0 && !selectedIds.has(group.id)) {
+    const policyDecision = assessToolDispatchFixture({ selectedGroup: [...selectedIds][0], actualGroup: group.id });
     const payload = {
       status: 'rejected',
-      reason: `wrong tool group for selected context: ${group.id}`,
+      reason: policyDecision.releaseBlocked ? policyDecision.reason : `wrong tool group for selected context: ${group.id}`,
       groupId: group.id,
       toolName: tool.name,
       schemaMode: 'rejected',
@@ -204,9 +206,10 @@ const dispatchTool = async (options) => {
 
   const errors = validateArgs(tool.schema, args);
   if (errors.length > 0) {
+    const policyDecision = assessToolDispatchFixture({ schemaMode: 'rejected' });
     const payload = {
       status: 'rejected',
-      reason: 'invalid tool arguments',
+      reason: policyDecision.releaseBlocked ? policyDecision.reason : 'invalid tool arguments',
       errors,
       groupId: group.id,
       toolName: tool.name,

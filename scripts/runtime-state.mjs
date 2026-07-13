@@ -9,6 +9,7 @@ import {
   degradedRuntimeStatus,
   heartbeatRunLease,
   initRuntimeState,
+  migrateRuntimeStateV2,
   recordCompletionDecision,
   recordMemoryPromotionDecision,
   recordRuntimeEvent,
@@ -19,8 +20,15 @@ import {
   rollbackMemoryPromotionDecision,
   supersedeCompletionDecision,
 } from './lib/runtime-state-store.mjs';
+import {
+  advanceExecutionCursor,
+  checkExecutionStep,
+  diagnoseExecutionCursor,
+  nextExecutionSlice,
+  resolveExecutionCursor,
+} from './lib/execution-cursor.mjs';
 
-const usage = () => `Usage: node scripts/runtime-state.mjs <init|status|acquire-run-lease|heartbeat-run-lease|cleanup-stale-leases|record-event|record-tool-call|record-eval-result|record-completion|record-memory-promotion|rollback-memory-promotion|assess-completion|snapshot-resume|supersede-completion> [--json]`;
+const usage = () => `Usage: node scripts/runtime-state.mjs <init|migrate-v2|status|resolve|next|check-step|advance|diagnose|acquire-run-lease|heartbeat-run-lease|cleanup-stale-leases|record-event|record-tool-call|record-eval-result|record-completion|record-memory-promotion|rollback-memory-promotion|assess-completion|snapshot-resume|supersede-completion> [--json]`;
 
 const parseArgs = (argv) => {
   const [command = ''] = argv;
@@ -74,6 +82,7 @@ const runtimeStoreErrorCodes = new Set([
   'permission_denied',
   'sandbox_denied',
   'schema_mismatch',
+  'migration_required',
   'schema_or_open_failure',
   'db_lock_timeout',
   'unresolved_db_path',
@@ -86,10 +95,45 @@ const main = async () => {
   try {
     if (options.command === 'init') {
       result = await initRuntimeState();
+    } else if (options.command === 'migrate-v2') {
+      result = await migrateRuntimeStateV2({
+        confirmTempDb: options.confirmTempDb === 'true' || options.confirmTempDb === '1',
+      });
     } else if (options.command === 'status') {
       result = await buildRuntimeStatusReadModel({
         runId: options.runId || '',
         goalId: options.goalId || '',
+      });
+    } else if (options.command === 'resolve') {
+      const sliceInput = parseJsonOption(options.sliceJson, '--slice-json');
+      result = await resolveExecutionCursor({
+        ...sliceInput,
+        runId: requireOption(options, 'runId'),
+        goalId: requireOption(options, 'goalId'),
+        planId: requireOption(options, 'planId'),
+        phaseId: requireOption(options, 'phaseId'),
+        workspaceId: options.workspaceId || '',
+        identity: parseJsonOption(options.identityJson, '--identity-json'),
+      });
+    } else if (options.command === 'next') {
+      result = await nextExecutionSlice({
+        runId: requireOption(options, 'runId'), goalId: requireOption(options, 'goalId'),
+        workspaceId: options.workspaceId || '', identity: parseJsonOption(options.identityJson, '--identity-json'),
+      });
+    } else if (options.command === 'check-step' || options.command === 'advance') {
+      const input = {
+        runId: requireOption(options, 'runId'), goalId: requireOption(options, 'goalId'),
+        expectedCursorRevision: requireOption(options, 'expectedCursorRevision'),
+        evidence: parseJsonOption(options.evidenceJson, '--evidence-json'),
+        workspaceId: options.workspaceId || '', identity: parseJsonOption(options.identityJson, '--identity-json'),
+      };
+      result = options.command === 'check-step' ? await checkExecutionStep(input) : await advanceExecutionCursor(input);
+    } else if (options.command === 'diagnose') {
+      result = await diagnoseExecutionCursor({
+        runId: requireOption(options, 'runId'), goalId: requireOption(options, 'goalId'),
+        expectedCursorRevision: requireOption(options, 'expectedCursorRevision'),
+        failureClass: options.failureClass || 'unclassified', workspaceId: options.workspaceId || '',
+        identity: parseJsonOption(options.identityJson, '--identity-json'),
       });
     } else if (options.command === 'acquire-run-lease') {
       result = await acquireRunLease({

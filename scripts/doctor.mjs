@@ -9,13 +9,14 @@ import {
   auditSkillsLock,
 } from './lib/skills-lock.mjs';
 
-const usage = () => 'Usage: node scripts/doctor.mjs check [--repo-root <root>] [--lock <skills-lock.json>] [--runtime-surface <runtime-surface.json>] [--expected-runtime-surface-json <json-array>] [--json]';
+const usage = () => 'Usage: node scripts/doctor.mjs check [--repo-root <root>] [--evidence-root <root>] [--lock <skills-lock.json>] [--runtime-surface <runtime-surface.json>] [--expected-runtime-surface-json <json-array>] [--json]';
 
 const parseArgs = (argv) => {
   const options = { command: argv[0] || '', json: false };
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--repo-root') options.repoRoot = argv[++index] || '';
+    else if (arg === '--evidence-root') options.evidenceRoot = argv[++index] || '';
     else if (arg === '--lock') options.lock = argv[++index] || '';
     else if (arg === '--runtime-surface') options.runtimeSurface = argv[++index] || '';
     else if (arg === '--expected-runtime-surface-json') options.expectedRuntimeSurfaceJson = argv[++index] || '';
@@ -84,6 +85,24 @@ const latestJsonByName = async (root, name) => {
   return { ...latest, ...parsed };
 };
 
+const latestHarnessLabResult = async (evidenceRoot) => latestJsonByName(
+  path.join(evidenceRoot, '.moonshot-relay', 'harness-lab-runs'),
+  'lab-result.json',
+);
+
+const modernLabSuiteEvidence = async ({ evidenceRoot, suiteId }) => {
+  const labResult = await latestHarnessLabResult(evidenceRoot);
+  if (!labResult) return null;
+  if (!labResult.ok) return { labResult, suite: null, artifact: null, artifactPath: null };
+  const suite = (labResult.value?.candidate?.results || []).find((entry) => entry.id === suiteId) || null;
+  const runRoot = path.dirname(labResult.path);
+  const declaredPath = suite?.stdout?.path;
+  const artifactPath = declaredPath ? path.resolve(runRoot, declaredPath) : null;
+  const safelyBound = artifactPath === runRoot || artifactPath?.startsWith(`${runRoot}${path.sep}`);
+  const artifact = safelyBound && artifactPath ? await tryReadJson(artifactPath) : null;
+  return { labResult, suite, artifact, artifactPath: safelyBound ? artifactPath : null };
+};
+
 const ageDays = (timestamp) => {
   const time = Date.parse(timestamp || '');
   if (Number.isNaN(time)) return null;
@@ -117,8 +136,71 @@ const summarizeSkillsLock = ({ repoRoot, lockPath, lock, skills }) => ({
   findingCount: skills.findings.length,
 });
 
-const summarizeLabReadiness = async ({ repoRoot, findings }) => {
-  const labRoot = path.join(repoRoot, '.moonshot-relay', 'harness-lab');
+const summarizeLabReadiness = async ({ evidenceRoot, findings }) => {
+  const modern = await latestHarnessLabResult(evidenceRoot);
+  if (modern) {
+    if (!modern.ok) {
+      findings.push({
+        type: 'lab_readiness_unreadable',
+        severity: 'degraded',
+        check: 'labReadiness',
+        reason: modern.error,
+      });
+      return {
+        status: 'degraded',
+        evidenceSource: 'harness-lab-runs',
+        latestResultPath: relativePath(evidenceRoot, modern.path),
+      };
+    }
+
+    const result = modern.value;
+    const timestamp = result.createdAt || (modern.mtimeMs ? new Date(modern.mtimeMs).toISOString() : null);
+    const stale = isStale(timestamp);
+    const requiredSuiteIds = ['harness-control-plane-eval', 'moonshot-research-fixture'];
+    const candidateResults = Array.isArray(result.candidate?.results) ? result.candidate.results : [];
+    const missingSuites = requiredSuiteIds.filter((id) => !candidateResults.some((entry) => entry.id === id));
+    const failedSuites = candidateResults
+      .filter((entry) => requiredSuiteIds.includes(entry.id) && entry.status !== 'passed')
+      .map((entry) => entry.id);
+    const failed = result.status !== 'passed' || result.candidate?.status !== 'passed' || failedSuites.length > 0;
+    if (failed) {
+      findings.push({
+        type: 'lab_readiness_failed',
+        severity: 'blocking',
+        check: 'labReadiness',
+        status: result.status ?? null,
+        failedSuites,
+      });
+    } else if (stale) {
+      findings.push({
+        type: 'lab_readiness_stale',
+        severity: 'degraded',
+        check: 'labReadiness',
+        ageDays: ageDays(timestamp),
+      });
+    } else if (missingSuites.length > 0) {
+      findings.push({
+        type: 'lab_readiness_partial',
+        severity: 'degraded',
+        check: 'labReadiness',
+        reason: 'Latest harness lab result does not contain all required readiness suites.',
+        missingSuites,
+      });
+    }
+
+    return {
+      status: failed ? 'degraded' : stale ? 'stale' : missingSuites.length > 0 ? 'degraded' : 'ready',
+      evidenceSource: 'harness-lab-runs',
+      latestResultPath: relativePath(evidenceRoot, modern.path),
+      latestRunId: result.runId || result.run?.runId || null,
+      latestEvidenceAt: timestamp,
+      promotable: result.promotable === true,
+      missingSuites,
+      failedSuites,
+    };
+  }
+
+  const labRoot = path.join(evidenceRoot, '.moonshot-relay', 'harness-lab');
   const baselinePath = path.join(labRoot, 'baselines', 'current.json');
   const baseline = await tryReadJson(baselinePath);
   const candidate = await latestJsonByName(path.join(labRoot, 'runs'), 'candidate-summary.json');
@@ -133,6 +215,7 @@ const summarizeLabReadiness = async ({ repoRoot, findings }) => {
     });
     return {
       status: 'not_initialized',
+      evidenceSource: 'legacy-harness-lab',
       baselinePointer: 'missing',
       latestCandidate: 'not_available',
       closeoutReceipt: 'not_available',
@@ -167,19 +250,67 @@ const summarizeLabReadiness = async ({ repoRoot, findings }) => {
 
   return {
     status: blockingGateCount > 0 ? 'degraded' : stale ? 'stale' : !baseline.ok || !candidate || !receipt ? 'degraded' : 'ready',
+    evidenceSource: 'legacy-harness-lab',
     baselineId: baseline.value?.baselineId ?? null,
-    baselinePointer: baseline.ok ? relativePath(repoRoot, baselinePath) : 'missing',
+    baselinePointer: baseline.ok ? relativePath(evidenceRoot, baselinePath) : 'missing',
     latestCandidateRunId: candidate?.value?.runId ?? null,
-    latestCandidatePath: candidate ? relativePath(repoRoot, candidate.path) : null,
-    closeoutReceiptPath: receipt ? relativePath(repoRoot, receipt.path) : null,
+    latestCandidatePath: candidate ? relativePath(evidenceRoot, candidate.path) : null,
+    closeoutReceiptPath: receipt ? relativePath(evidenceRoot, receipt.path) : null,
     blockingGateCount,
     latestEvidenceAt: latestTimestamp ?? null,
   };
 };
 
-const summarizeEvalReadiness = async ({ repoRoot, findings }) => {
-  const evalRoot = path.join(repoRoot, '.moonshot-relay', 'eval-artifacts');
-  const labEvalStdout = (await findFilesByName(path.join(repoRoot, '.moonshot-relay', 'harness-lab', 'runs'), ['stdout.txt']))
+const summarizeEvalReadiness = async ({ evidenceRoot, findings }) => {
+  const modern = await modernLabSuiteEvidence({ evidenceRoot, suiteId: 'harness-control-plane-eval' });
+  if (modern) {
+    const timestamp = modern.labResult.ok
+      ? modern.labResult.value.createdAt || new Date(modern.labResult.mtimeMs).toISOString()
+      : null;
+    const stale = isStale(timestamp);
+    const artifact = modern.artifact?.value;
+    const failedCount = Number(artifact?.failedCount ?? 0);
+    const failed = modern.suite?.status !== 'passed' || artifact?.status !== 'passed' || failedCount > 0;
+    if (!modern.labResult.ok || !modern.suite || !modern.artifact?.ok) {
+      findings.push({
+        type: 'eval_readiness_unreadable',
+        severity: 'degraded',
+        check: 'evalReadiness',
+        reason: modern.labResult.error || modern.artifact?.error || 'Eval suite or its stdout artifact is missing.',
+      });
+      return {
+        status: 'degraded',
+        evidenceSource: 'harness-lab-runs',
+        latestArtifact: modern.artifactPath ? relativePath(evidenceRoot, modern.artifactPath) : 'unavailable',
+      };
+    }
+    if (failed) {
+      findings.push({
+        type: 'eval_readiness_failed',
+        severity: 'blocking',
+        check: 'evalReadiness',
+        failedCount,
+      });
+    } else if (stale) {
+      findings.push({
+        type: 'eval_readiness_stale',
+        severity: 'degraded',
+        check: 'evalReadiness',
+        ageDays: ageDays(timestamp),
+      });
+    }
+    return {
+      status: failed ? 'degraded' : stale ? 'stale' : 'ready',
+      evidenceSource: 'harness-lab-runs',
+      latestArtifact: relativePath(evidenceRoot, modern.artifactPath),
+      latestEvidenceAt: timestamp,
+      score: artifact.score ?? null,
+      failedCount,
+    };
+  }
+
+  const evalRoot = path.join(evidenceRoot, '.moonshot-relay', 'eval-artifacts');
+  const labEvalStdout = (await findFilesByName(path.join(evidenceRoot, '.moonshot-relay', 'harness-lab', 'runs'), ['stdout.txt']))
     .find((entry) => normalizePath(entry.path).includes('/harness-control-plane-eval/stdout.txt'));
   const latest = labEvalStdout
     || await latestJsonByName(evalRoot, 'candidate.json')
@@ -255,8 +386,58 @@ const summarizeEvalReadiness = async ({ repoRoot, findings }) => {
   };
 };
 
-const summarizeResearchReadiness = async ({ repoRoot, findings }) => {
-  const researchRoot = path.join(repoRoot, '.moonshot-relay', 'docs', 'research');
+const summarizeResearchReadiness = async ({ evidenceRoot, findings }) => {
+  const modern = await modernLabSuiteEvidence({ evidenceRoot, suiteId: 'moonshot-research-fixture' });
+  if (modern) {
+    const timestamp = modern.labResult.ok
+      ? modern.labResult.value.createdAt || new Date(modern.labResult.mtimeMs).toISOString()
+      : null;
+    const stale = isStale(timestamp);
+    const artifact = modern.artifact?.value;
+    const failureCount = Number(artifact?.laneFailureCount ?? 0);
+    const failed = modern.suite?.status !== 'passed' || artifact?.status !== 'passed' || failureCount > 0;
+    if (!modern.labResult.ok || !modern.suite || !modern.artifact?.ok) {
+      findings.push({
+        type: 'research_readiness_unreadable',
+        severity: 'degraded',
+        check: 'researchReadiness',
+        reason: modern.labResult.error || modern.artifact?.error || 'Research fixture suite or its stdout artifact is missing.',
+      });
+      return {
+        status: 'degraded',
+        evidenceSource: 'harness-lab-runs',
+        latestRunPath: modern.artifactPath ? relativePath(evidenceRoot, modern.artifactPath) : null,
+      };
+    }
+    if (failed) {
+      findings.push({
+        type: 'research_fixture_failed',
+        severity: 'blocking',
+        check: 'researchReadiness',
+        failureCount,
+      });
+    } else if (stale) {
+      findings.push({
+        type: 'research_readiness_stale',
+        severity: 'degraded',
+        check: 'researchReadiness',
+        ageDays: ageDays(timestamp),
+      });
+    }
+    return {
+      status: failed ? 'degraded' : stale ? 'stale' : 'ready',
+      evidenceSource: 'harness-lab-runs',
+      latestRunPath: relativePath(evidenceRoot, modern.artifactPath),
+      latestEvidenceAt: timestamp,
+      fixtureSetId: artifact.fixtureSetId ?? null,
+      evidenceCount: Number(artifact.evidenceCount ?? 0),
+      queryCount: Number(artifact.queryVariantCount ?? 0),
+      failureCount,
+      claimLedgerCoverage: artifact.claimLedgerCoverage ?? null,
+    };
+  }
+
+  const researchRoot = path.join(evidenceRoot, '.moonshot-relay', 'docs', 'research');
   const latestRun = await latestJsonByName(researchRoot, 'run.json');
   if (!latestRun) {
     findings.push({
@@ -274,7 +455,7 @@ const summarizeResearchReadiness = async ({ repoRoot, findings }) => {
       check: 'researchReadiness',
       reason: latestRun.error,
     });
-    return { status: 'degraded', latestRunPath: relativePath(repoRoot, latestRun.path) };
+    return { status: 'degraded', latestRunPath: relativePath(evidenceRoot, latestRun.path) };
   }
 
   const runDir = path.dirname(latestRun.path);
@@ -313,7 +494,7 @@ const summarizeResearchReadiness = async ({ repoRoot, findings }) => {
 
   return {
     status: failureCount > 0 || !evidence.ok || !claims.ok || evidenceItems.length === 0 ? 'degraded' : stale ? 'stale' : 'ready',
-    latestRunPath: relativePath(repoRoot, latestRun.path),
+    latestRunPath: relativePath(evidenceRoot, latestRun.path),
     latestEvidenceAt: timestamp ?? null,
     lanes: latestRun.value.lanes || [],
     queryCount: Array.isArray(latestRun.value.queries) ? latestRun.value.queries.length : 0,
@@ -418,6 +599,7 @@ const main = async () => {
   if (args.command !== 'check') throw new Error(`Unknown command: ${args.command}\n${usage()}`);
 
   const repoRoot = path.resolve(args.repoRoot || process.cwd());
+  const evidenceRoot = path.resolve(args.evidenceRoot || repoRoot);
   const runtimeSurfacePath = args.runtimeSurface
     ? resolveFromRoot(repoRoot, args.runtimeSurface)
     : path.join(repoRoot, 'package', 'runtime-surface.json');
@@ -458,9 +640,9 @@ const main = async () => {
       findings,
     }),
     skillsLock: summarizeSkillsLock({ repoRoot, lockPath, lock, skills }),
-    labReadiness: await summarizeLabReadiness({ repoRoot, findings }),
-    evalReadiness: await summarizeEvalReadiness({ repoRoot, findings }),
-    researchReadiness: await summarizeResearchReadiness({ repoRoot, findings }),
+    labReadiness: await summarizeLabReadiness({ evidenceRoot, findings }),
+    evalReadiness: await summarizeEvalReadiness({ evidenceRoot, findings }),
+    researchReadiness: await summarizeResearchReadiness({ evidenceRoot, findings }),
     profileTrust: summarizeProfileTrust({ args, repoRoot, lockPath, runtimeSurfacePath }),
     generatedStateBoundary: await summarizeGeneratedStateBoundary({ repoRoot, findings }),
   };
@@ -472,6 +654,7 @@ const main = async () => {
       ...checks,
       runtimeSettings: checks.profileTrust.mode,
       repoRoot,
+      evidenceRoot,
       lockPath,
       runtimeSurfacePath,
       gitState: 'caller_owned',

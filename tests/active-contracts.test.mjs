@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -445,14 +445,20 @@ test('browser runtime installer resolves source checkout runtime assets', async 
   const emptyHome = path.join(tempRoot, 'empty-home');
   const binDir = path.join(tempRoot, 'bin');
   try {
+    await mkdir(emptyHome, { recursive: true });
     const result = spawnSync(process.execPath, [
       'scripts/install-browser-runtime.mjs',
       '--bin-dir',
       binDir,
+      '--profile-home',
+      emptyHome,
     ], {
       cwd: root,
       env: {
         ...process.env,
+        HOME: emptyHome,
+        USERPROFILE: emptyHome,
+        MOONSHOT_BROWSER_PROFILE_HOME: emptyHome,
         MOONSHOT_RELAY_HOME: emptyHome,
       },
       encoding: 'utf8',
@@ -463,6 +469,12 @@ test('browser runtime installer resolves source checkout runtime assets', async 
       ? path.join(binDir, 'browserctl.cmd')
       : path.join(binDir, 'browserctl');
     assert.ok(existsSync(installedShim), `expected installed browserctl shim at ${installedShim}`);
+    if (process.platform !== 'win32') {
+      for (const profile of ['.zprofile', '.bash_profile', '.profile']) {
+        const profileText = await readFile(path.join(emptyHome, profile), 'utf8');
+        assert.match(profileText, new RegExp(binDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      }
+    }
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

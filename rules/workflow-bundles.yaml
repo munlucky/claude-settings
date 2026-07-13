@@ -82,6 +82,41 @@ bundleExpansion:
   finish-bundle:
     - session-logger
 
+# Runtime loaders use this surface instead of eagerly expanding every bundle.
+# bundleExpansion remains as a compatibility registry for older readers.
+conditionalLoading:
+  product-definition-bundle:
+    requiredNow: [product-orchestrator]
+    conditional: {}
+  ready-isolate-bundle:
+    requiredNow: [pre-flight-check, project-contract-gate, context-readiness-gate, verification-contract-gate]
+    conditional: {}
+  planning-bundle:
+    requiredNow: [requirements-analyzer, context-builder]
+    conditional:
+      planReadyForValidation: [codex-validate-plan]
+  implementation-bundle:
+    requiredNow: [implementation-runner]
+    conditional:
+      behaviorChange: [test-driven-development]
+      complexImplementation: [karpathy-execution-gate]
+      implementationComplete: [code-simplifier]
+  harness-maintenance-bundle:
+    requiredNow: [moonshot-relay-maintainer]
+    conditional: {}
+  review-bundle:
+    requiredNow: []
+    conditional:
+      nonTrivialDiff: [codex-review-code]
+  verification-bundle:
+    requiredNow: []
+    conditional:
+      verificationRequired: [completion-verifier]
+  finish-bundle:
+    requiredNow: []
+    conditional:
+      closeoutRequested: [session-logger]
+
 overlays:
   strict:
     insert:

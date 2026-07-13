@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -25,14 +25,28 @@ test('catalog check passes against current source authority files', async () => 
 
   assert.equal(result.status, 'pass', JSON.stringify(result.findings, null, 2));
   assert.deepEqual(result.publicEntrypoints, [
-    'commit-moonshot',
+    'product-orchestrator',
     'moonshot-architecture',
     'moonshot-orchestrator',
     'moonshot-phase-runner',
     'moonshot-plan-writer',
-    'product-orchestrator',
+    'commit-moonshot',
     'session-logger',
   ]);
+});
+
+test('catalog check blocks public entrypoint order drift even when sets match', async () => {
+  const runtimeSurface = JSON.parse(await readFile(path.join(root, 'package', 'runtime-surface.json'), 'utf8'));
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'catalog-order-'));
+  const runtimeSurfacePath = path.join(temp, 'runtime-surface.json');
+  await writeJson(runtimeSurfacePath, {
+    ...runtimeSurface,
+    publicRuntimeSkills: [...runtimeSurface.publicRuntimeSkills].reverse(),
+  });
+
+  const result = await checkCatalog({ repoRoot: root, runtimeSurfacePath, runPackageDryRun: false });
+  assert.equal(result.status, 'fail');
+  assert.ok(result.findings.some((item) => item.code === 'catalog.runtime_surface_order_mismatch'));
 });
 
 test('catalog check fails when package contract public surface drifts', async () => {

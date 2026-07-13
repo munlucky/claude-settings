@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.dev/schemas/skill-route.schema.json",
+  "title": "Moonshot Skill Route Response",
+  "type": "object",
+  "required": ["schemaVersion", "status", "command"],
+  "properties": {
+    "schemaVersion": { "const": "moonshot-skill-route.v1" },
+    "status": { "enum": ["pass", "fail"] },
+    "command": { "const": "route" },
+    "route": {
+      "type": "object",
+      "required": ["selectedEntrypoint", "stage", "engineRoute", "invocationMode", "requiredNow", "conditionalSkillGroups", "referenceIds", "reasonCodes"],
+      "properties": {
+        "selectedEntrypoint": { "type": "string" },
+        "stage": { "type": "string" },
+        "engineRoute": { "type": "string" },
+        "invocationMode": { "enum": ["explicit", "implicit"] },
+        "requiredNow": { "type": "array", "items": { "type": "string" } },
+        "conditionalSkillGroups": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } },
+        "referenceIds": { "type": "array", "items": { "type": "string" } },
+        "reasonCodes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "findings": { "type": "array" }
+  },
+  "additionalProperties": false
+}

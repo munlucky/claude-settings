@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assessArchitectureFixture } from './lib/control-plane-policy.mjs';
 
 const MODES = new Set(['greenfield_prd', 'brownfield_codebase']);
 
@@ -249,7 +250,8 @@ const validateRequiredFiles = async (root, mode, result) => {
   for (const requiredFile of REQUIRED_BY_MODE[mode]) {
     const absolutePath = path.join(root, ...requiredFile.split('/'));
     if (!existsSync(absolutePath)) {
-      addError(result, 'missing_required_file', `Required artifact is missing: ${requiredFile}`, requiredFile);
+      const decision = assessArchitectureFixture({ missing: requiredFile });
+      addError(result, 'missing_required_file', decision.releaseBlocked ? decision.reason : `Required artifact is missing: ${requiredFile}`, requiredFile);
       continue;
     }
     const stats = await stat(absolutePath);
@@ -273,6 +275,10 @@ const validateCommonContracts = async (root, result) => {
   assertPattern(result, traceability, /ASR-[0-9]{3,}/, 'traceability_missing_asr', 'Traceability matrix must include ASR IDs.', 'TRACEABILITY_MATRIX.md');
   assertPattern(result, traceability, /ADR-[0-9]{4,}/, 'traceability_missing_adr', 'Traceability matrix must include ADR IDs.', 'TRACEABILITY_MATRIX.md');
   assertPattern(result, traceability, /Verification Signal/i, 'traceability_missing_verification', 'Traceability matrix must include verification signals.', 'TRACEABILITY_MATRIX.md');
+  const traceabilityDecision = assessArchitectureFixture({ traceabilityRow: { verificationSignal: /Verification Signal/i.test(traceability) ? 'declared' : '' } });
+  if (traceabilityDecision.releaseBlocked && !result.errors.some((error) => error.code === 'traceability_missing_verification')) {
+    addError(result, 'traceability_missing_verification', traceabilityDecision.reason, 'TRACEABILITY_MATRIX.md');
+  }
 
   const knownRequirementIds = extractIds(requirements, /REQ-[0-9]{3,}/g);
   const knownAsrIds = extractIds(asrs, /ASR-[0-9]{3,}/g);

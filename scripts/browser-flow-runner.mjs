@@ -530,7 +530,11 @@ const browserHealthStep = (options, context) => {
     cwd: process.cwd(),
     encoding: 'utf8',
     shell: useShell,
-    timeout: options.timeoutMs,
+    // Backend process startup can exceed a sub-second preview/readiness budget on
+    // loaded hosts. Keep the flow budget for probes, but give the health shim a
+    // deterministic startup floor so setup-gap classification is not rewritten
+    // as a generic backend timeout.
+    timeout: Math.max(Number(options.timeoutMs || 0), 5000),
     windowsHide: true,
   });
   const missingBackend = (result.error && result.error.code === 'ENOENT') || (pathLikeBrowserctl && !existsSync(options.browserctl));

@@ -74,7 +74,7 @@ test('harness golden eval includes architecture regression blockers', async () =
     assert.ok(caseIds.has(id), `${id} should be present in the golden fixture`);
   }
 
-  const result = runHarnessControlPlaneEval(fixture);
+  const result = await runHarnessControlPlaneEval(fixture);
   assert.equal(result.status, 'passed');
   assert.equal(result.regressionWorsened, false);
   assert.equal(result.missingCases.length, 0);

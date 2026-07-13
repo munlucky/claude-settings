@@ -67,7 +67,9 @@ Only after those pass may a live sync run `node bin/moonshot-relay.mjs install -
 After the install, run the installed doctor against the installed common payload, not the source checkout:
 
 ```powershell
-node "$env:MOONSHOT_RELAY_HOME\scripts\doctor.mjs" check --repo-root "$env:MOONSHOT_RELAY_HOME" --lock "$env:MOONSHOT_RELAY_HOME\skills.lock.json" --runtime-surface "$env:MOONSHOT_RELAY_HOME\package\runtime-surface.json" --json
+node "$env:MOONSHOT_RELAY_HOME\scripts\doctor.mjs" check --repo-root "$env:MOONSHOT_RELAY_HOME" --evidence-root "<preserved-closeout-evidence-root>" --lock "$env:MOONSHOT_RELAY_HOME\skills.lock.json" --runtime-surface "$env:MOONSHOT_RELAY_HOME\package\runtime-surface.json" --json
 ```
+
+`--evidence-root` is optional and defaults to `--repo-root`. For an installed payload, point it at the preserved source closeout root that contains the real `.moonshot-relay/harness-lab-runs/` tree. This does not relax installed trust: skills, lock, runtime surface, and package boundary checks remain bound to the explicit installed `--repo-root`.
 
 Close repository state with `commit-moonshot` when commit/push was requested. A pushed closeout must verify `HEAD == origin/<branch>`.

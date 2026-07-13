@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "moonshot-skill-lint-carry-forward.v1",
+  "reviewed": true,
+  "reviewBasis": "P04 accepted candidate review; all warnings are frozen and any count or fingerprint drift blocks.",
+  "warningCount": 86,
+  "warningFingerprintDigest": "2e956263dd6a2cc6763e535e851b9b22f31f6976efdd15279907209e30208068",
+  "publicCarryForward": [
+    {
+      "skill": "commit-moonshot",
+      "code": "skill.profile_local_source_reference",
+      "count": 2,
+      "reason": "The public utility explicitly identifies profile-local memory files as generated artifacts that must remain unstaged; it does not present them as canonical source."
+    }
+  ],
+  "internalCarryForwardReason": "Pre-existing non-public translation topology, agent reference-heading, and installed-profile description warnings are outside the seven-skill P04 target. They remain frozen for separate cleanup."
+}

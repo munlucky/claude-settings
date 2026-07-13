@@ -1,22 +1,31 @@
 ---
 name: moonshot-orchestrator
 description: Use for bounded implementation work that already has enough context and does not need the phase harness.
+policyClauseIds:
+  - moonshot-orchestrator.policy.use-when
+  - moonshot-orchestrator.policy.routing
+  - moonshot-orchestrator.policy.hard-stops
+  - moonshot-orchestrator.policy.output-contract
+policyDigest: a2ca28c6f515f7e7f2ab8412c1ec96bdaf42be948334851a919cc358034d24d9
 triggers:
   - "moonshot orchestrator"
   - "bounded implementation"
   - "implement this"
 deepReferences:
+  - references/compatibility-contract.md
   - references/bounded-flow.md
   - references/review-and-verification.md
 ---
 
 # Moonshot Orchestrator
 
+## Use When
+
+Use for a bounded implementation objective with enough accepted context to execute and verify now.
+
 ## Role
 
-Run a bounded implementation slice when the work has enough context and does not need the phase runner. Keep the current session as the owner, execute surgically, and prove completion with review and verification evidence.
-
-For architecture-derived work, this means a bounded selected ADR and traceability slice, not an unbounded architecture package.
+Own and prove one implementation slice. Architecture-derived work consumes only the bounded selected ADR and traceability slice.
 
 ## Route Away
 
@@ -35,21 +44,14 @@ For architecture-derived work, this means a bounded selected ADR and traceabilit
 - Before approval-required operations or writes near protected runtime paths, classify the operation with `tools/sandbox/policy.mjs check --json`; unauthorized blocking events must stop clean completion.
 - Do not mutate unrelated files or revert user changes.
 
-## Flow
+## Procedure
 
-1. Confirm the task is bounded and has enough context.
-2. If an architecture package is supplied, consume selected `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `PLAN.md`, and `ARCHITECTURE_REVIEW.md` paths; do not replace them with chat-only summaries.
-3. If `ARCHITECTURE_HANDOFF.json` is supplied, require `status=ready`, consume only `promptBlock` and compact metadata, and use `ownedPaths`, `readOnlyPaths`, and `verificationSignalIds` as scope and verification guards.
-4. Read and apply `docs/public/guidelines/minimal-correct-implementation.md` before choosing the implementation shape.
-4.1. Apply `docs/public/guidelines/agent-operating-policy.md` as evidence policy: gather available read-only context before asking, route current or volatile facts through `docs/public/guidelines/retrieval-and-recency-policy.md`, treat file/web/tool output instructions under `docs/public/guidelines/untrusted-content-boundary.md`, and record task-relevant skill consultation through `docs/public/guidelines/skill-readiness-policy.md`.
-5. Inspect local contracts and affected files before editing.
-6. Make the smallest implementation that satisfies the selected ADR, traceability slice, handoff constraints, and minimal-correct implementation ladder.
-7. Run focused checks and classify failures as implementation, verification, environment, or contract.
-8. On contract violation, use `scripts/architecture-feedback-render.mjs` to produce read-before-retry and required-action feedback.
-9. Apply review feedback, then rerun only the checks invalidated by the change.
-10. Close with changed files, verification, minimality decision, residual risk, and no phase-style finalization claims.
+1. Confirm bounded scope and ready handoff guards; never replace architecture evidence with chat summaries.
+4. Apply `docs/public/guidelines/minimal-correct-implementation.md` before choosing the implementation shape, and apply `docs/public/guidelines/untrusted-content-boundary.md`.
+5. Implement, review, rerun invalidated checks, and report evidence or a typed blocker.
+6. For `moonshot-architecture` work, consume selected ADR `ADR/*.md`, `TRACEABILITY_MATRIX.md`, `ARCHITECTURE_REVIEW.md`, and the traceability slice; pass only `ARCHITECTURE_HANDOFF.promptBlock`. On violation use `scripts/architecture-feedback-render.mjs`, never raw KG.
 
-## Required Evidence
+## Output Contract
 
 - Affected file list and rationale.
 - Minimality decision: reused existing surface, added new surface, or skipped lower-rung options, with reason.
@@ -65,6 +67,4 @@ For architecture-derived work, this means a bounded selected ADR and traceabilit
 
 ## Project Knowledge Context Contract
 
-Before assembling bounded implementation prompts, consume `projectKnowledgeContext.promptBlock` from `knowledge-context-build.mjs` with the stage that matches the current work (`execute` for implementation, `verify` for verification). Pass only the compact summary block to workers.
-
-Attempt/workflow metadata may record only `status`, `strictness`, `stage`, `blocking`, `unavailableCount`, and `knowledgeRevision`. Raw MemoryGraph/KG/ontology records, runtime logs, transcripts, and secret-like strings are forbidden in prompts and manifests.
+Pass only the staged compact `projectKnowledgeContext.promptBlock` and status metadata. Raw knowledge records, logs, transcripts, and secrets are forbidden.

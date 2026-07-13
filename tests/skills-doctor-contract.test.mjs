@@ -53,6 +53,57 @@ const createDoctorFixtureRoot = async () => {
   return tempRoot;
 };
 
+const seedPassedHarnessLabRun = async (evidenceRoot) => {
+  const runId = 'harness-lab-20260713-120000';
+  const runRoot = path.join(evidenceRoot, '.moonshot-relay', 'harness-lab-runs', runId);
+  const evalPath = path.join(runRoot, 'candidate', 'harness-control-plane-eval', 'stdout.txt');
+  const researchPath = path.join(runRoot, 'candidate', 'moonshot-research-fixture', 'stdout.txt');
+  await mkdir(path.dirname(evalPath), { recursive: true });
+  await mkdir(path.dirname(researchPath), { recursive: true });
+  await writeFile(evalPath, JSON.stringify({
+    schemaVersion: 1,
+    suite: 'harness-control-plane-golden',
+    status: 'passed',
+    score: 1,
+    scoreThreshold: 1,
+    passedCount: 14,
+    failedCount: 0,
+    totalCount: 14,
+  }, null, 2));
+  await writeFile(researchPath, JSON.stringify({
+    schemaVersion: 'moonshot-research-fixture-score.v1',
+    status: 'passed',
+    fixtureSetId: 'moonshot-research-fixtures-v1',
+    evidenceCount: 158,
+    queryVariantCount: 11,
+    laneFailureCount: 0,
+    claimLedgerCoverage: 1,
+  }, null, 2));
+  await writeFile(path.join(runRoot, 'lab-result.json'), JSON.stringify({
+    schemaVersion: 'moonshot-harness-lab-result.v1',
+    runId,
+    status: 'passed',
+    promotable: true,
+    createdAt: new Date().toISOString(),
+    candidate: {
+      status: 'passed',
+      results: [
+        {
+          id: 'harness-control-plane-eval',
+          status: 'passed',
+          stdout: { path: 'candidate/harness-control-plane-eval/stdout.txt' },
+        },
+        {
+          id: 'moonshot-research-fixture',
+          status: 'passed',
+          stdout: { path: 'candidate/moonshot-research-fixture/stdout.txt' },
+        },
+      ],
+    },
+  }, null, 2));
+  return { runId, runRoot };
+};
+
 const runDoctor = (args, options = {}) => spawnSync(process.execPath, [
   path.join(process.cwd(), 'scripts', 'doctor.mjs'),
   'check',
@@ -134,7 +185,7 @@ test('doctor uses repository skills lock by default', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.schemaVersion, 'moonshot-doctor-readiness.v1');
-  assert.equal(payload.status, 'pass');
+  assert.ok(['pass', 'degraded'].includes(payload.status));
   for (const key of [
     'runtimeSurface',
     'skillsLock',
@@ -148,6 +199,7 @@ test('doctor uses repository skills lock by default', () => {
   }
   assert.equal(payload.checks.runtimeSurface.status, 'pass');
   assert.equal(payload.checks.skillsLock.status, 'pass');
+  assert.equal(payload.findings.some((finding) => finding.severity === 'blocking'), false);
 });
 
 test('doctor can verify an explicit installed payload root', () => {
@@ -164,13 +216,14 @@ test('doctor can verify an explicit installed payload root', () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout);
-  assert.equal(payload.status, 'pass');
+  assert.ok(['pass', 'degraded'].includes(payload.status));
   assert.equal(payload.checks.runtimeSettings, 'explicit_repo_root');
   assert.equal(payload.checks.profileTrust.mode, 'explicit_repo_root');
   assert.equal(payload.checks.profileTrust.installedInputs, 'explicit');
   assert.equal(payload.checks.repoRoot, process.cwd());
   assert.match(payload.checks.lockPath, /skills\.lock\.json$/);
   assert.match(payload.checks.runtimeSurfacePath, /package[\\/]runtime-surface\.json$/);
+  assert.equal(payload.findings.some((finding) => finding.severity === 'blocking'), false);
 });
 
 test('doctor blocks missing lock and runtime surface expansion', async () => {
@@ -221,6 +274,79 @@ test('doctor treats missing optional readiness evidence as degraded not blocking
   assert.equal(payload.checks.evalReadiness.status, 'not_available');
   assert.equal(payload.checks.researchReadiness.status, 'not_available');
   assert.ok(payload.findings.every((finding) => finding.severity !== 'blocking'));
+});
+
+test('doctor discovers fresh passed readiness evidence from the latest real harness lab run', async () => {
+  const tempRoot = await createDoctorFixtureRoot();
+  await seedPassedHarnessLabRun(tempRoot);
+
+  const result = runDoctor([
+    '--repo-root',
+    tempRoot,
+    '--lock',
+    'skills.lock.json',
+    '--runtime-surface',
+    'package/runtime-surface.json',
+  ]);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, 'pass');
+  assert.equal(payload.checks.labReadiness.status, 'ready');
+  assert.equal(payload.checks.evalReadiness.status, 'ready');
+  assert.equal(payload.checks.researchReadiness.status, 'ready');
+  assert.equal(payload.checks.labReadiness.evidenceSource, 'harness-lab-runs');
+  assert.match(payload.checks.evalReadiness.latestArtifact, /harness-lab-runs.+harness-control-plane-eval\/stdout\.txt$/);
+  assert.match(payload.checks.researchReadiness.latestRunPath, /harness-lab-runs.+moonshot-research-fixture\/stdout\.txt$/);
+  assert.equal(payload.findings.length, 0);
+});
+
+test('installed doctor reads preserved readiness from an explicit external evidence root', async () => {
+  const installedRoot = await createDoctorFixtureRoot();
+  const evidenceRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-doctor-evidence-'));
+  tempRoots.push(evidenceRoot);
+  await seedPassedHarnessLabRun(evidenceRoot);
+
+  const withoutEvidenceRoot = runDoctor([
+    '--repo-root',
+    installedRoot,
+    '--lock',
+    'skills.lock.json',
+    '--runtime-surface',
+    'package/runtime-surface.json',
+  ]);
+  assert.equal(withoutEvidenceRoot.status, 0, withoutEvidenceRoot.stderr || withoutEvidenceRoot.stdout);
+  const degraded = JSON.parse(withoutEvidenceRoot.stdout);
+  assert.equal(degraded.status, 'degraded');
+  assert.equal(degraded.checks.evidenceRoot, installedRoot);
+  assert.equal(degraded.checks.labReadiness.status, 'not_initialized');
+  assert.equal(degraded.checks.profileTrust.mode, 'explicit_repo_root');
+  assert.equal(degraded.checks.profileTrust.installedInputs, 'explicit');
+
+  const withEvidenceRoot = runDoctor([
+    '--repo-root',
+    installedRoot,
+    '--evidence-root',
+    evidenceRoot,
+    '--lock',
+    'skills.lock.json',
+    '--runtime-surface',
+    'package/runtime-surface.json',
+  ]);
+  assert.equal(withEvidenceRoot.status, 0, withEvidenceRoot.stderr || withEvidenceRoot.stdout);
+  const passed = JSON.parse(withEvidenceRoot.stdout);
+  assert.equal(passed.status, 'pass');
+  assert.equal(passed.checks.repoRoot, installedRoot);
+  assert.equal(passed.checks.evidenceRoot, evidenceRoot);
+  assert.equal(passed.checks.labReadiness.status, 'ready');
+  assert.equal(passed.checks.evalReadiness.status, 'ready');
+  assert.equal(passed.checks.researchReadiness.status, 'ready');
+  assert.equal(passed.checks.profileTrust.mode, 'explicit_repo_root');
+  assert.equal(passed.checks.profileTrust.installedInputs, 'explicit');
+  assert.equal(passed.checks.runtimeSurface.status, 'pass');
+  assert.equal(passed.checks.skillsLock.status, 'pass');
+  assert.equal(passed.checks.generatedStateBoundary.status, 'pass');
+  assert.equal(passed.findings.length, 0);
 });
 
 test('doctor blocks generated state selected for package payload', async () => {

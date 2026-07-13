@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "moonshot-public-skill-semantic-contract.v1",
+  "skills": {
+    "product-orchestrator": {
+      "defaultPaths": [
+        "{tasksRoot}/{feature-name}/product/",
+        "ADR/*.md",
+        "tasks/*.md",
+        "execution/REQUIREMENTS_TRACEABILITY.md",
+        "execution/SCENARIO_MATRIX.md",
+        "execution/UAT_CHECKLIST.md",
+        "docs/public/guidelines/research-evidence-policy.md",
+        "docs/public/guidelines/skill-readiness-policy.md",
+        "docs/public/guidelines/memorygraph-workflow.md",
+        ".moonshot-relay/docs/ko/",
+        "/moonshot-orchestrator",
+        "docs/public/guidelines/product-definition-workflow.md",
+        "docs/public/guidelines/demo-first-mvp-gate.md",
+        "docs/public/guidelines/retrieval-and-recency-policy.md",
+        "templates/product-definition/DISCOVERY_MAP.template.md"
+      ],
+      "hardStopIds": [
+        "product-orchestrator.hard-stop.01:ce0d0397579e",
+        "product-orchestrator.hard-stop.02:921af7983c9f",
+        "product-orchestrator.hard-stop.03:e8882af9128e",
+        "product-orchestrator.hard-stop.04:d7285b6516b2",
+        "product-orchestrator.hard-stop.05:cd3d18f8b7c2",
+        "product-orchestrator.hard-stop.06:d085afcffb48",
+        "product-orchestrator.hard-stop.07:1afd789d89e8",
+        "product-orchestrator.hard-stop.08:bb596314d854",
+        "product-orchestrator.hard-stop.09:fabc3983ced0",
+        "product-orchestrator.hard-stop.10:3b48343c84ed",
+        "product-orchestrator.hard-stop.11:fd2da7c22529"
+      ]
+    },
+    "moonshot-architecture": {
+      "defaultPaths": [
+        "docs/public/guidelines/research-evidence-policy.md",
+        "C4/*.md",
+        "ADR/*.md",
+        ".claude/**",
+        ".codex/**"
+      ],
+      "hardStopIds": [
+        "moonshot-architecture.hard-stop.01:c0e45163c568",
+        "moonshot-architecture.hard-stop.02:73ef3bb53966",
+        "moonshot-architecture.hard-stop.03:edf75c233559",
+        "moonshot-architecture.hard-stop.04:defadc209fb3",
+        "moonshot-architecture.hard-stop.05:241588c9872c",
+        "moonshot-architecture.hard-stop.06:3c59f0359ef2",
+        "moonshot-architecture.hard-stop.07:1d90664d69ff",
+        "moonshot-architecture.hard-stop.08:6b82c0029076",
+        "moonshot-architecture.hard-stop.09:2fb267c046da",
+        "moonshot-architecture.hard-stop.10:c766614e8365"
+      ]
+    },
+    "moonshot-orchestrator": {
+      "defaultPaths": [
+        "ADR/*.md",
+        "docs/public/guidelines/minimal-correct-implementation.md",
+        "docs/public/guidelines/agent-operating-policy.md",
+        "docs/public/guidelines/retrieval-and-recency-policy.md",
+        "docs/public/guidelines/untrusted-content-boundary.md",
+        "docs/public/guidelines/skill-readiness-policy.md",
+        "scripts/architecture-feedback-render.mjs",
+        "references/bounded-flow.md",
+        "references/review-and-verification.md"
+      ],
+      "hardStopIds": [
+        "moonshot-orchestrator.hard-stop.01:95400a3f10e9",
+        "moonshot-orchestrator.hard-stop.02:64126940d94c",
+        "moonshot-orchestrator.hard-stop.03:e1d5ca71cdf7",
+        "moonshot-orchestrator.hard-stop.04:c902648f9b1d",
+        "moonshot-orchestrator.hard-stop.05:bbc8f70fee6e",
+        "moonshot-orchestrator.hard-stop.06:6aaf050d462a",
+        "moonshot-orchestrator.hard-stop.07:1283aa50043f",
+        "moonshot-orchestrator.hard-stop.08:3111cfb687b7",
+        "moonshot-orchestrator.hard-stop.09:efd8b910016b"
+      ]
+    },
+    "moonshot-phase-runner": {
+      "defaultPaths": [
+        ".claude/**",
+        ".codex/**",
+        "docs/implementation/<plan-slug>/",
+        ".moonshot-relay/docs/phase-status.yaml",
+        "scripts/project-identity.mjs",
+        "docs/public/guidelines/minimal-correct-implementation.md",
+        "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}",
+        "references/control-plane.md",
+        "references/execution-modes.md",
+        "references/closeout-gates.md"
+      ],
+      "hardStopIds": [
+        "moonshot-phase-runner.hard-stop.01:95a90f65f981",
+        "moonshot-phase-runner.hard-stop.02:c79a2647b4c6",
+        "moonshot-phase-runner.hard-stop.03:996aefa8eeca",
+        "moonshot-phase-runner.hard-stop.04:342243238a86",
+        "moonshot-phase-runner.hard-stop.05:d10c3055399f",
+        "moonshot-phase-runner.hard-stop.06:5c4f523101fa",
+        "moonshot-phase-runner.hard-stop.07:ea0f21951008",
+        "moonshot-phase-runner.hard-stop.08:dce97d726e49",
+        "moonshot-phase-runner.hard-stop.09:58c71e3b349e",
+        "moonshot-phase-runner.hard-stop.10:b49c975706fa",
+        "moonshot-phase-runner.hard-stop.11:41d38574cd27",
+        "moonshot-phase-runner.hard-stop.12:14a22e42f48d",
+        "moonshot-phase-runner.hard-stop.13:8bab2e87edeb",
+        "moonshot-phase-runner.hard-stop.14:75126b3a41f2",
+        "moonshot-phase-runner.hard-stop.15:c068ef535562",
+        "moonshot-phase-runner.hard-stop.16:a81b083e766d",
+        "moonshot-phase-runner.hard-stop.17:b7a84b6179ae"
+      ]
+    },
+    "moonshot-plan-writer": {
+      "defaultPaths": [
+        "scripts/project-identity.mjs",
+        "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/",
+        "docs/implementation/<plan-slug>/",
+        "ADR/*.md",
+        ".claude/**",
+        "namespaces.planningPackageRoot/<plan-slug>/",
+        "references/plan-package-contract.md",
+        "references/independent-review-loop.md"
+      ],
+      "hardStopIds": [
+        "moonshot-plan-writer.hard-stop.01:6419e1e35fa8",
+        "moonshot-plan-writer.hard-stop.02:d9c8f06700ad",
+        "moonshot-plan-writer.hard-stop.03:6bb2c8893ed6",
+        "moonshot-plan-writer.hard-stop.04:8ba6709718e6",
+        "moonshot-plan-writer.hard-stop.05:8ed89e69c324",
+        "moonshot-plan-writer.hard-stop.06:e4955095f6c4",
+        "moonshot-plan-writer.hard-stop.07:d32ab44e028a",
+        "moonshot-plan-writer.hard-stop.08:0245c3fbdcad",
+        "moonshot-plan-writer.hard-stop.09:296e979d337b",
+        "moonshot-plan-writer.hard-stop.10:52fc2a1898ff",
+        "moonshot-plan-writer.hard-stop.11:af88b7b16f6d",
+        "moonshot-plan-writer.hard-stop.12:5029851e7ae5",
+        "moonshot-plan-writer.hard-stop.13:d26c0d80dd74"
+      ]
+    },
+    "commit-moonshot": {
+      "defaultPaths": [
+        ".claude/memory.json",
+        ".claude/memorygraph/",
+        ".claude/cache/memorygraph/",
+        ".moonshot-relay/docs/ko/",
+        ".claude/rules/**",
+        ".agents/",
+        ".agents/skills",
+        ".agents/**",
+        ".claude/memorygraph/**",
+        ".claude/cache/memorygraph/**",
+        ".claude/cache/awtl/failed_turn_cases.jsonl",
+        "<MOONSHOT_RELAY_HOME>/scripts/**",
+        ".claude/skills/**"
+      ],
+      "hardStopIds": [
+        "commit-moonshot.hard-stop.01:3b1e70322d0c",
+        "commit-moonshot.hard-stop.02:e9f0c2e4b7ec",
+        "commit-moonshot.hard-stop.03:5c9e32136979",
+        "commit-moonshot.hard-stop.04:e3f280620aff",
+        "commit-moonshot.hard-stop.05:83ae1a653e64",
+        "commit-moonshot.hard-stop.06:3a0ce1ab9e12",
+        "commit-moonshot.hard-stop.07:73e48415b8f9",
+        "commit-moonshot.hard-stop.08:f1b10ce8fa4b",
+        "commit-moonshot.hard-stop.09:df439b44ecf3",
+        "commit-moonshot.hard-stop.10:5ec3801b0791",
+        "commit-moonshot.hard-stop.11:d0f9d23f744b",
+        "commit-moonshot.hard-stop.12:826ae3e4b8a9",
+        "commit-moonshot.hard-stop.13:c318637435cd",
+        "commit-moonshot.hard-stop.14:85b462d39c1e",
+        "commit-moonshot.hard-stop.15:95dcd93dc8e1",
+        "commit-moonshot.hard-stop.16:db3ef531c19f",
+        "commit-moonshot.hard-stop.17:c2c356c9eb88",
+        "commit-moonshot.hard-stop.18:de60cc0e7fac",
+        "commit-moonshot.hard-stop.19:24a589cfd886",
+        "commit-moonshot.hard-stop.20:47b312c1ff54",
+        "commit-moonshot.hard-stop.21:6efed7060b7d",
+        "commit-moonshot.hard-stop.22:13d8e3d2d808",
+        "commit-moonshot.hard-stop.23:40cb308503b1",
+        "commit-moonshot.hard-stop.24:bd949c26cd45",
+        "commit-moonshot.hard-stop.25:93c22455e2c7",
+        "commit-moonshot.hard-stop.26:db4df0cf4167",
+        "commit-moonshot.hard-stop.27:03a201daf5b7",
+        "commit-moonshot.hard-stop.28:46b7d3f20e43",
+        "commit-moonshot.hard-stop.29:687f67f2e3b7"
+      ]
+    },
+    "session-logger": {
+      "defaultPaths": [
+        "docs/daily/YYYY-MM-DD/{runtime}.md",
+        "docs/daily/README.md",
+        "{tasksRoot}/{feature-name}/session-logs/day-YYYY-MM-DD.md",
+        "{tasksRoot}/{feature-name}/HANDOFF.md",
+        ".moonshot-relay/docs/solutions/"
+      ],
+      "hardStopIds": [
+        "session-logger.hard-stop.01:b579b56abebc",
+        "session-logger.hard-stop.02:52f518d51c45",
+        "session-logger.hard-stop.03:ec2e362f2398",
+        "session-logger.hard-stop.04:5836d9b6c2f0",
+        "session-logger.hard-stop.05:fc74c6357527",
+        "session-logger.hard-stop.06:fadf9a963839",
+        "session-logger.hard-stop.07:18b14f4a0d7b",
+        "session-logger.hard-stop.08:f54f9bd3ce88",
+        "session-logger.hard-stop.09:34b40965ce87",
+        "session-logger.hard-stop.10:23c57fff7a58",
+        "session-logger.hard-stop.11:b8fe27765d18"
+      ]
+    }
+  }
+}

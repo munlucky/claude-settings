@@ -1,6 +1,12 @@
 ---
 name: moonshot-architecture
-description: PRD 또는 기존 코드베이스 목표를 구현 계획 전의 근거 기반 아키텍처 설계 패키지로 변환할 때 사용합니다.
+description: Convert a PRD or existing codebase objective into an evidence-grounded architecture design package before implementation planning.
+policyClauseIds:
+  - moonshot-architecture.policy.use-when
+  - moonshot-architecture.policy.routing
+  - moonshot-architecture.policy.hard-stops
+  - moonshot-architecture.policy.output-contract
+policyDigest: e767b62b476c046247fa2de568d0043c4a3aff79ae11dfff65343221985da58a
 layer: orchestrator
 loads:
   - architecture-design-artifacts
@@ -8,7 +14,9 @@ loads:
   - requirements-traceability
   - verdict-summaries
 deepReferences:
+  - references/compatibility-contract.md
   - references/architecture-design-contract.md
+  - references/architecture-flow.md
   - references/context-safety.md
   - references/handoff-boundaries.md
 outputArtifacts:
@@ -34,78 +42,77 @@ triggers:
 
 # Moonshot Architecture
 
+## 사용 시점
+
+Use when a PRD or brownfield objective needs architecture decisions before planning.
+
+## 다른 경로
+
+Use `product-orchestrator` when intent is unresolved and `moonshot-plan-writer` after architecture acceptance.
+
 ## 역할
 
-제품 정의와 구현 실행 사이에서 근거 기반 아키텍처 설계 패키지를 만듭니다.
+Create an evidence-grounded design package between product definition and execution.
 
-구현을 바로 시작하기 전에 ASR, 품질속성, 도메인/기능 경계, 아키텍처 옵션, ADR, C4, traceability가 필요한 작업에서 사용합니다.
+## Modes
 
-## 모드
+- `greenfield_prd`: start from a PRD and produce architecture decisions before implementation planning.
+- `brownfield_codebase`: recover the current architecture from repository evidence, then produce fit-gap and migration guidance.
+- `hybrid_prd_plus_existing_repo`: combine PRD normalization with Brownfield constraints and produce `SPEC_DELTA`.
+- `meta_harness_design`: design Moonshot Relay harness changes and hand them off to `moonshot-plan-writer`.
 
-- `greenfield_prd`: PRD를 입력으로 받아 구현 계획 전에 아키텍처 결정을 만듭니다.
-- `brownfield_codebase`: 현재 코드베이스 구조를 근거로 복구한 뒤 fit-gap과 migration guidance를 만듭니다.
-- `hybrid_prd_plus_existing_repo`: PRD 정규화와 Brownfield 제약을 함께 반영하고 `SPEC_DELTA`를 우선합니다.
-- `meta_harness_design`: Moonshot Relay 하네스 변경 설계를 만들고 `moonshot-plan-writer`로 넘깁니다.
+## 절차
 
-## 흐름
+1. Classify the mode.
+2. Build `projectKnowledgeContext` with the current stage and preserve status-only metadata.
+3. Inspect project-local `knowledgeAnchors` declared in the target root `AGENTS.md`, if present. Select only anchors whose `mustConsultFor`/keywords match the current architecture scope, then read the smallest referenced agreement documents needed for evidence.
+4. Build compact architecture context through `scripts/architecture-context-build.mjs` when available.
+5. Normalize requirements into `REQUIREMENT_INVENTORY.md`.
+6. Extract ASRs and quality attribute scenarios.
+7. Build domain model, capability map, and data/integration flow.
+8. For Brownfield/Hybrid work, recover current architecture and existing constraints from repository evidence.
+8.1. Apply `docs/public/guidelines/retrieval-and-recency-policy.md` and `docs/public/guidelines/research-evidence-policy.md` when architecture inputs include current product, dependency, platform, model, pricing, legal, or security facts.
+9. Generate at least two architecture options for non-trivial work.
+10. Run trade-off review.
+11. Write C4 model and ADRs for significant decisions.
+12. Produce `SPEC.md` or `SPEC_DELTA.md`.
+13. Produce `PLAN.md` and `TRACEABILITY_MATRIX.md`.
+14. Run `architecture-gate-reviewer` and write `ARCHITECTURE_REVIEW.md`.
+15. Hand off to `moonshot-plan-writer`, `moonshot-orchestrator`, or `moonshot-phase-runner` with explicit owned/read-only/staged paths and verification signals.
 
-1. 모드를 분류합니다.
-2. 현재 stage에 맞는 `projectKnowledgeContext`를 만들고 status metadata만 보존합니다.
-3. 대상 root `AGENTS.md`에 project-local `knowledgeAnchors`가 있으면 확인합니다. 현재 architecture scope에 맞는 anchor만 선택하고, 필요한 최소 agreement 문서만 evidence로 읽습니다.
-4. 가능하면 `scripts/architecture-context-build.mjs`로 compact architecture context를 만듭니다.
-5. 요구사항을 `REQUIREMENT_INVENTORY.md`로 정규화합니다.
-6. ASR과 품질속성 시나리오를 추출합니다.
-7. 도메인 모델, capability map, data/integration flow를 만듭니다.
-8. Brownfield/Hybrid 작업에서는 repository evidence로 현재 아키텍처와 기존 제약을 복구합니다.
-9. non-trivial 작업에는 최소 2개 architecture option을 만듭니다.
-10. trade-off review를 실행합니다.
-11. 중요한 결정은 C4 model과 ADR로 기록합니다.
-12. `SPEC.md` 또는 `SPEC_DELTA.md`를 만듭니다.
-13. `PLAN.md`와 `TRACEABILITY_MATRIX.md`를 만듭니다.
-14. `architecture-gate-reviewer`를 실행하고 `ARCHITECTURE_REVIEW.md`를 작성합니다.
-15. owned/read-only/staged paths와 verification signal을 명시해 `moonshot-plan-writer`, `moonshot-orchestrator`, `moonshot-phase-runner` 중 적절한 대상으로 handoff합니다.
+Internal stage-owner mapping is loaded conditionally from `references/architecture-flow.md`.
 
 ## Internal Stage Owners
 
-`moonshot-architecture`는 다음 source-only internal skills를 조합합니다. 별도 controlled adoption phase가 runtime surface를 변경하기 전까지 profile-local public runtime discovery에는 노출하지 않습니다.
+Owners: `asr-extractor`, `architecture-option-generator`, `architecture-tradeoff-reviewer`, `adr-c4-writer`, `architecture-gate-reviewer`, and `codebase-architecture-recovery`. `architecture-gate-reviewer` supplies `ARCHITECTURE_REVIEW.md` readiness evidence; load the reference for artifact routing.
 
-| Stage | Internal Skill | Primary Artifacts |
-|---|---|---|
-| ASR extraction | `asr-extractor` | `ASR_CATALOG.md`, `QUALITY_ATTRIBUTE_SCENARIOS.md` |
-| Option generation | `architecture-option-generator` | `ARCHITECTURE_OPTIONS.md`, `CAPABILITY_MAP.md` |
-| Trade-off review | `architecture-tradeoff-reviewer` | `TRADEOFF_ANALYSIS.md`, ADR inputs |
-| C4 and ADR writing | `adr-c4-writer` | `C4/*.md`, `ADR/*.md` |
-| Architecture gate review | `architecture-gate-reviewer` | `ARCHITECTURE_REVIEW.md`, handoff readiness |
-| Brownfield recovery | `codebase-architecture-recovery` | `CURRENT_ARCHITECTURE.md`, `PRD_FIT_GAP.md`, `IMPACT_MAP.md`, `SPEC_DELTA.md` |
+## 중단 조건
 
-## Hard Stops
+- Do not skip ASR extraction for non-trivial PRDs.
+- In `greenfield_prd` mode, do not require Brownfield current-architecture evidence.
+- Do not claim architecture readiness without ADRs for significant decisions.
+- Do not produce a Greenfield implementation `PLAN.md` unless every accepted requirement maps to a quality scenario, ASR, ADR, task owner, and verification signal.
+- Do not hand off to implementation without traceability from accepted requirements to owners and verification signals.
+- Do not hand off to implementation without `architecture-gate-reviewer` readiness evidence.
+- Do not invent Brownfield current architecture without repository evidence.
+- Do not inline raw MemoryGraph records, KG edge dumps, ontology dumps, runtime logs, transcripts, browser scrapes, or secret-like strings.
+- Do not mutate live `.claude/**`, `.codex/**`, account-root state, or runtime profiles during architecture design.
+- Do not replace `moonshot-phase-runner` completion authority or `scripts/runtime-state.mjs assess-completion`.
 
-- non-trivial PRD에서 ASR extraction을 생략하지 않습니다.
-- `greenfield_prd` mode에서는 Brownfield current-architecture evidence를 요구하지 않습니다.
-- 중요한 결정의 ADR 없이 architecture readiness를 주장하지 않습니다.
-- accepted requirement가 quality scenario, ASR, ADR, task owner, verification signal로 이어지기 전에는 Greenfield implementation `PLAN.md`를 만들지 않습니다.
-- accepted requirement에서 implementation owner와 verification signal까지 이어지는 traceability 없이 구현으로 넘기지 않습니다.
-- `architecture-gate-reviewer` readiness evidence 없이 구현으로 넘기지 않습니다.
-- Brownfield 현재 아키텍처를 repository evidence 없이 발명하지 않습니다.
-- raw MemoryGraph record, KG edge dump, ontology dump, runtime log, transcript, browser scrape, secret-like string을 prompt나 산출물에 넣지 않습니다.
-- architecture design 중 live `.claude/**`, `.codex/**`, account-root state, runtime profile을 mutate하지 않습니다.
-- `moonshot-phase-runner` completion authority나 `scripts/runtime-state.mjs assess-completion`을 대체하지 않습니다.
+## 출력 계약
 
-## Required Evidence
-
-- mode classification과 input source path.
-- architecture package path.
-- project-local knowledge anchor 처리 결과: anchor가 있으면 consulted anchor ID, 사용한 agreement path, skipped anchor 이유.
-- requirement inventory와 ASR catalog.
-- domain/capability model 또는 Brownfield current architecture evidence.
-- architecture option comparison과 trade-off review.
-- 주요 결정에 대한 ADR/C4 output.
+- Mode classification and input source path.
+- Architecture package path.
+- Project-local knowledge anchor disposition: consulted anchor IDs, consumed agreement paths, and skipped-anchor rationale when anchors were present.
+- Retrieval/research evidence for current or volatile external facts, plus context relevance disposition for project knowledge anchors.
+- Requirement inventory and ASR catalog.
+- Domain/capability model or Brownfield current architecture evidence.
+- Option comparison and trade-off review.
+- ADR/C4 outputs for significant decisions.
 - Architecture gate review status.
-- requirement ID를 implementation owner와 verification signal로 연결한 traceability matrix.
-- handoff target과 선택 이유.
+- Traceability matrix linking requirement IDs to implementation owners and verification signals.
+- Handoff target and rationale.
 
 ## Public Surface Boundary
 
-`moonshot-architecture`는 public runtime entrypoint입니다. ASR extraction, option generation, trade-off review, C4/ADR writing, gate review, Brownfield recovery용 supporting skill은 별도 controlled adoption phase가 runtime surface 변경을 승인하기 전까지 internal source skill로 남깁니다.
-
-Public guidelines는 durable policy를 `docs/public/guidelines/` 아래에 mirror합니다. 실행 가능한 `deepReferences`는 package materialization이 profile-local public guideline path 없이 해석할 수 있도록 skill-local reference로 유지합니다.
+This is the public entrypoint; stage helpers stay internal. Executable `deepReferences` remain skill-local for package resolution.

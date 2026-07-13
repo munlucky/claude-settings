@@ -1,18 +1,33 @@
 ---
 name: moonshot-phase-runner
 description: Use for large, phase-based, or long-running implementation work that should run from a prepared plan package.
+policyClauseIds:
+  - moonshot-phase-runner.policy.use-when
+  - moonshot-phase-runner.policy.routing
+  - moonshot-phase-runner.policy.hard-stops
+  - moonshot-phase-runner.policy.output-contract
+policyDigest: 140500c4acbda662ae8912c6f616f03c011e99edf01b50ad3ff31536b54a1d87
 triggers:
   - "phase runner"
   - "run phase"
   - "execute phase"
   - "agent loop"
 deepReferences:
+  - references/compatibility-contract.md
   - references/control-plane.md
   - references/execution-modes.md
   - references/closeout-gates.md
 ---
 
 # Moonshot Phase Runner
+
+## Use When
+
+Use for a prepared multi-phase or long-running plan package that must continue across phase attempts.
+
+## Route Away
+
+Use `moonshot-orchestrator` for one bounded implementation objective; use `product-orchestrator` or `moonshot-architecture` while definition or architecture is still missing.
 
 ## Role
 
@@ -33,46 +48,21 @@ Own the public control-plane entrypoint for phase-based work. Resolve the active
 - Do not use `agent-loop.mjs`, `moonshot-phase-dispatch.mjs`, or delegated-terminal adapters as the default execution path. They are legacy/headless compatibility adapters only.
 - Do not return final success until the in-session coordinator, fresh verifier evidence, scorecard, and repository closeout evidence agree.
 
-## Inputs
+## Procedure
 
-- Optional plan directory argument.
-- Optional master plan path inside the plan directory.
-- Plan directories may be account-root project planning packages, for example `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`. Repo-local `docs/implementation/<plan-slug>/` is tracked-source mode, not the default scratch location.
-- Optional run identity arguments: `--run-id`, `--goal-id`, `--workspace-id`.
-- Optional `--allow-parallel` only when the operator intentionally wants more than one active run for the same goal.
-- Optional `--lease-ttl-ms` for controlled lease windows; long phases should heartbeat instead of relying on stale active leases.
-- Active status file: `.moonshot-relay/docs/phase-status.yaml`, used as a phase cursor projection only.
-- Execution route: `in-session-coordinator` by default. `delegated-terminal` is legacy compatibility only and requires an explicit legacy maintenance reason.
-- Execution artifacts: `SPRINT_CONTRACT.md`, `QA_REPORT.md`, `SCORECARD.md`, `HANDOFF.md`, attempt manifest, and verifier verdict.
-- Default execution artifacts are written under the project-scoped account-root execution namespace resolved by `scripts/project-identity.mjs`, separated by projectId, worktree, branch, plan slug, and runId. Pass `--execution-root` only when an explicit alternate root is required.
+1. Resolve and validate the plan graph, cursor, execution root, run identity, and lease authority.
+2. Do not infer parallelism; require validated dependencies and disjoint write sets.
+3. Build a minimal phase brief with scope, selected architecture evidence, policy anchors, and applicable spec-test obligations.
+3.1. Include `docs/public/guidelines/minimal-correct-implementation.md` as a mandatory implementation-shape constraint, `docs/public/guidelines/skill-readiness-policy.md` as evidence that is not a public runtime surface change, and `docs/public/guidelines/untrusted-content-boundary.md`.
+4. Require ready handoff metadata and attach only its compact prompt block.
+4.1. For an architecture package, carry selected ADR, traceability, owner, verification signal, `architecture.required`, and `ARCHITECTURE_HANDOFF.promptBlock`; reject a blocked handoff.
+5. Coordinate fresh implementation and review agents in-session; legacy terminal adapters remain explicit compatibility paths.
+6. Collect fresh verifier and scorecard evidence, reconcile the cursor, and continue every actionable phase.
+7. Keep rejected evidence as carry-forward blockers; only accepted runtime-state authority closes the whole plan.
+7.1. Do not stop the whole plan just because a completed phase produced review findings. Record carry-forward evidence and continue to the next independent actionable phase. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
+8. Before adoption, run the complete closeout in `references/closeout-gates.md`, then verify installed parity and requested Git closeout.
 
-## Flow
-
-1. Resolve the active plan directory and active phase from `phase-status.yaml`.
-2. Validate master plan, root phase docs, and execution root consistency.
-2.1. If plan graph metadata is present, validate it before dispatch; if it is absent, continue in markdown-compatible sequential mode and do not infer parallelism.
-3. Prepare or resume a run with explicit `runId + goalId + workspaceId`; generate a unique run ID only when one was not provided.
-4. If another active run already owns the same goal, block by default unless `--allow-parallel` was explicitly requested.
-5. Treat expired leases as stale, recover them through runtime-state, and surface `compactStatus.staleWarnings` in the phase handoff instead of hiding old active runs.
-6. Heartbeat long-running phases with `scripts/runtime-state.mjs heartbeat-run-lease` before the lease window expires.
-7. Check protected paths and approval-required operations through `tools/sandbox/policy.mjs check --json` before executing sandbox-sensitive tool calls.
-8. Build a compact phase-attempt brief from the active phase contract.
-8.1. Include `docs/public/guidelines/minimal-correct-implementation.md` in the phase-attempt brief as a mandatory implementation-shape constraint.
-8.2. Include declared read-only paths and owned/write-set paths in the phase-attempt brief; changed files outside that write set must be recorded as scope drift.
-8.3. Include compact agent operating policy evidence only when relevant: `retrieval-and-recency-policy.md`, `untrusted-content-boundary.md`, `context-relevance-policy.md`, `artifact-routing-policy.md`, `skill-readiness-policy.md`, and cumulative risk. `skill-readiness-policy.md` is an evidence plane, not a public runtime surface change.
-8.4. If the phase contract or plan artifacts contain `specTestObligations`, run or require `scripts/spec-test-obligations.mjs validate --json` at attempt start and closeout. Failed obligations are carry-forward blockers and must be passed to `scripts/verification-plane.mjs record-summary --spec-test-obligations-json ...`.
-9. For architecture-derived plans, attach only selected ADR, traceability, owner, verification signal, and architecture review paths needed by the active phase.
-10. When phase metadata includes `architecture.handoff`, require `status=ready`, attach only `ARCHITECTURE_HANDOFF.promptBlock` plus compact metadata, and reject blocked handoff dispatch.
-11. In interactive runs, coordinate from the current session and delegate each phase attempt/review to a fresh forked agent.
-12. Use deterministic scripts only for support checks that are still installed in the runtime payload. Do not auto-start legacy delegated-terminal adapters.
-13. After each phase, collect diff/evidence in the parent session and run coordinator closeout gates.
-14. If a phase completes with phase-local closeout evidence, reconcile runner state so the next incomplete phase becomes active before reporting status.
-15. If closeout gates reject a phase after useful implementation evidence was produced, record the rejection with `record-eval-result --regression-worsened true` or a blocking runtime event, keep the finding in carry-forward state, and continue to the next independent actionable phase.
-16. Continue to the next actionable phase until the whole plan directory is implemented. Only the final whole-plan completion claim requires `assess-completion` to return `accepted`.
-17. Before any live account-root/profile adoption, run the Operational Adoption Closeout gate from `references/closeout-gates.md`: two independent audits, source doctor, skills audit, harness lab, package tests, eval tests, full tests, package dry-run, then live install and installed-profile parity checks.
-18. After adoption, verify installed doctor output and profile surface parity before repository closeout. If Git closeout is requested, use `commit-moonshot` and record staging, commit, push, and `HEAD == origin/<branch>` evidence.
-
-## Required Evidence
+## Output Contract
 
 - Plan resolution and active phase source.
 - Execution mode and any explicit legacy fallback reason.

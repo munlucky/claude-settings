@@ -1,237 +1,107 @@
 ---
 name: commit-moonshot
-description: 사용자가 둘 다 명시적으로 원할 때 프로젝트 메모리 현행화와 커밋을 함께 수행합니다.
+description: Update project memory and commit when the user explicitly wants both.
+policyClauseIds:
+  - commit-moonshot.policy.use-when
+  - commit-moonshot.policy.routing
+  - commit-moonshot.policy.hard-stops
+  - commit-moonshot.policy.output-contract
+policyDigest: 25cf6d4c72673a218d92d147fe5ce4895d7f4964f208f1320c3df95f84a830eb
 triggers:
   - "commit-moonshot"
   - "moonshot commit"
   - "memory commit"
+deepReferences:
+  - references/compatibility-contract.md
+  - references/commit-closeout-internals.md
 ---
 
-# 프로젝트 메모리 현행화 및 커밋
+# Project Memory Update & Commit
 
-## 상태
+Supported public utility entrypoint. Use only when the user explicitly wants memory refresh plus commit.
 
-지원되는 공개 유틸리티 진입점입니다.
-기본 구현 체인에는 포함하지 않지만, 사용자가 프로젝트 메모리 현행화와 커밋을 함께 원할 때 직접 호출 가능해야 합니다.
-자동 단계가 아니라 명시적 Finish-stage 유틸리티로 취급합니다.
+## 역할
 
-## 개요
-이 명령어는 메인 세션에서 실행되며, 변경사항을 분석하고 프로젝트 로컬 MemoryGraph에 프로젝트 메모리를 항상 최신 상태로 현행화합니다.
+- refresh project memory before commit
+- keep the memory summary short
+- exclude `.claude/memory.json` and `.claude/memorygraph/` from commits by default after refreshing memory
+- create a Korean commit title and grouped bullet body
 
-> **⚠️ 중요: 반드시 Memory 현행화(1~7단계)를 먼저 완료한 후 커밋(8단계)을 수행하세요.**
+## 명시적 호출
 
-## 1. 변경사항 분석
-```bash
-git status
-git diff --cached --stat
-git log -3 --oneline
-```
+Run only for `$commit-moonshot` or an explicit equivalent request.
 
-## 2. 프로젝트 ID 확인
-Phase 01 Project Identity Resolver 계약을 사용합니다. `.claude/project.identity.yaml`, 계정 루트 registry alias map, canonical git remote/package/basename/path-hash fallback 순서를 따르고, durable `projectId`를 현재 디렉토리명에서 직접 만들지 않습니다.
+## 절차
 
-## 3. 변경 파일 분석
-```bash
-git diff --cached --name-only
-```
+1. inspect staged changes with compact git commands
+2. resolve `PROJECT_ID` through the Project Identity Resolver; do not derive durable identity directly from the current directory name
+3. run `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-memory-refresh.mjs --project-id <PROJECT_ID>` when the project has the script; if a prior `mcp__memory__.store_memory` call failed, pass the same payload through `--store-json @<payload-file>` and the MCP error through `--mcp-error`
+4. run `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json` when the project has the script; this is audit-only by default
+5. summarize created or updated memory facts, direct fallback route, AWTL promotion audit counts, and promotion candidates in a short bullet list
+6. keep `.claude/memory.json`, `.claude/memorygraph/`, and `.claude/cache/memorygraph/` unstaged unless the user explicitly asks to include memory artifacts
+7. build a filtered staging path list before `git add`; remove generated bridge paths, ignored files, and local MCP/memory artifacts
+8. create the commit in Korean
 
-메모리 소스 경계:
-- `.moonshot-relay/docs/ko/`는 사용자가 읽기 위한 한국어 미러입니다.
-- MemoryGraph 현행화 중 이 경로를 메모리 소스로 읽거나, 이 경로에서만 나온 내용을 저장하지 않습니다.
-- `.agents/`와 `.agents/skills`는 생성된 agent bridge입니다. 사용자가 명시적으로 추적하라고 하지 않는 한 `git add -- <paths>` 목록에 넣지 않습니다.
-- 이전 명령, 도구 출력, 사용자가 붙여넣은 후보 경로 목록에 `.agents` 또는 `.agents/skills`가 들어 있어도 그대로 실행하지 않습니다. 실행 전 후보 목록에서 반드시 제거합니다.
-- `git add -A -- .agents`, `git add -A -- .agents/skills`, 또는 `.agents/skills`가 포함된 긴 explicit path list는 금지입니다.
-- `git add -- <paths>` 실행 전 후보 목록에서 다음 deny 패턴을 제거합니다: `.agents`, `.agents/**`, `.mcp.json`, `.claude/memory.json`, `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`.
-- installer/harness 커밋은 가능하면 루트 단위로 staging합니다: `.claude`, `.codex`, `.claudeignore`, `.gitattributes`, `.gitignore`, `AGENTS.md`, 그리고 명시적으로 바뀐 제품 문서/코드. `.agents`는 포함하지 않습니다.
+## 중단 조건
 
-변경 파일에서 다음 정보 추출:
-- 컴포넌트 이름 (from paths like `src/components/Button.tsx`)
-- 도메인 영역 (from paths like `src/domains/user/`)
-- API 엔드포인트 (from API-related files)
-- 코딩 패턴 (반복되는 구조)
+- always refresh memory before commit
+- do not read `.moonshot-relay/docs/ko/` as a memory source; it is a human-facing Korean mirror
+- do not store facts derived only from `.moonshot-relay/docs/ko/`
+- do not store system, developer, `AGENTS.md`, `.claude/rules/**`, or workflow hard rules as project memory; record duplicates under `projectMemory.omitted.duplicatedSystemRules`
+- never auto-stage account-root knowledge state, `.claude/memory.json`, or `.claude/memorygraph/` by default
+- never auto-stage `.claude/cache/memorygraph/` by default
+- never auto-stage generated agent bridge paths such as `.agents/` or `.agents/skills`; omit them from explicit `git add -- <paths>` lists unless the user explicitly asks to track generated bridge files
+- never run `git add -A -- .agents`, `git add -A -- .agents/skills`, or any generated explicit path list that still contains `.agents` or `.agents/skills`
+- before running `git add -- <paths>`, filter the candidate path list with these deny patterns: `.agents`, `.agents/**`, `.mcp.json`, `.claude/memory.json`, `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`
+- if the candidate list was produced from tool output or a previous assistant step, re-check it manually before execution; ignored/generated paths must be removed even when they appear in the user's pasted command
+- prefer root directories and policy files for installer commits: `.claude`, `.codex`, `.claudeignore`, `.gitattributes`, `.gitignore`, `AGENTS.md`, plus any explicitly changed product docs/code; never include `.agents`
+- only stage memory artifacts when the user explicitly asks to include memory in the commit
+- if MemoryGraph MCP is unavailable, treat it as `mcp_transport_failed -> direct_fallback`; record the failure only after the direct fallback also fails, then continue the Git closeout when the user explicitly requested commit/push
+- do not auto-promote project candidates into `moonshot-relay` during a normal project commit; run the AWTL promotion audit and write only when `--write-verified` is justified by replay evidence or explicit approval
+- use `commit-moonshot-promotion-audit.mjs --write-verified` only when the user explicitly asked for long-term promotion, for example `장기메모리승격 포함`, `승격 승인`, or `write verified memory`
+- keep failed-turn cases as next-run recall cache; do not treat `.claude/cache/awtl/failed_turn_cases.jsonl` itself as a long-term MemoryGraph source
+- warn before committing when product implementation changes are mixed with `<MOONSHOT_RELAY_HOME>/scripts/**`, `.claude/skills/**`, or `.claude/verification.contract.yaml` changes
+- require `QA_REPORT.md` to contain a `Harness Change Ledger` entry when harness/tool changes were made during a product phase
+- for Moonshot Relay harness/package/profile changes, require full Operational Adoption Closeout evidence before claiming commit-ready state: independent completion audit, independent operational adoption audit, source `doctor.mjs check --json`, `skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, package dry-run, and, when live account-root adoption occurred, live install `installId`, installed doctor with explicit `--repo-root`, `--lock`, and `--runtime-surface` paths, installer JSON `profileSurfaceParity`, and `profileSurfaceParity[runtime=codex].extraCanonicalCount=0`
+- when commit/push closeout is requested, do not claim push completion until `git rev-parse HEAD` equals `git rev-parse origin/<branch>` after `git push`; record this parity result with the push closeout evidence
+- keep the user-facing summary and commit body grouped by feature area
+- keep the summary compact; avoid long prose dumps
+- when a phase runner `runId` and `goalId` are available, pass them to commit memory/audit helpers so commit closeout writes runtime events under the active identity
+- if no active runtime identity exists, helpers use an audit-only commit closeout identity; that identity is evidence only and must not be treated as whole-plan completion authority
+- record staging, commit, and push outcomes through `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-closeout-event.mjs --event-type <type> --payload-json <json> --json`; do not hand-write ad hoc `runtime-state record-event` calls for commit closeout taxonomy
 
-## 4. 3단계 경계 현행화
+## Codex MCP Transport Fallback
 
-MemoryGraph 호출은 `stage=commit`, `memoryMode=write_requested`로 수행합니다.
-프로젝트에 `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs`가 있으면 먼저 실행해 운영 중인 코드베이스의 파일/import/symbol/API route 수준 seed를 생성한 뒤 `project-memory-refresh`로 반영합니다.
-system/developer/AGENTS/rules/workflow hard rule과 중복되는 항목은 저장하지 말고 `projectMemory.omitted.duplicatedSystemRules`에 기록합니다.
+On `Transport closed`, use `commit-moonshot-memory-refresh.mjs` with the same payload and MCP error. Load `references/commit-closeout-internals.md` for transport and platform details.
 
-### Codex MCP transport fallback
-Codex Desktop에 이미 붙어 있는 Memory MCP가 `Transport closed`로 실패하면 Codex 재시작을 요구하지 않습니다. 즉시 별도 MemoryGraph stdio child process를 띄우는 direct fallback을 사용합니다.
+## AWTL Promotion Audit
 
-```bash
-node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs health
-node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-project-index.mjs --max-files 500
-node <MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs refresh-seed --max-nodes 200
-```
+Run the audit helper before staging when available. Promotion remains audit-only unless the user explicitly authorizes verified writes; detailed counters and replay rules live in `references/commit-closeout-internals.md`.
 
-규칙:
-- `Transport closed`는 저장 payload 실패가 아니라 Codex app-server의 기존 MCP transport 실패로 간주합니다.
-- direct fallback이 성공하면 메모리 현행화는 완료로 취급하고, Codex 재시작을 사용자에게 요구하지 않습니다.
-- direct fallback도 실패한 경우에만 실패 원인을 기록하고 Git closeout을 계속 진행합니다.
-- Windows sandbox가 `memorygraph.exe` 실행을 막으면 동일 명령을 승인 기반 escalated shell로 재실행합니다.
-- direct fallback은 `<MOONSHOT_RELAY_HOME>/scripts/memorygraph-direct.mjs`가 해석한 account-root project knowledge namespace를 기본 대상으로 사용합니다. `.claude/memorygraph/**`, `.claude/cache/memorygraph/**`, `.moonshot-relay/cache/memorygraph/**`는 호환/cache artifact이며 사용자가 명시적으로 포함하지 않는 한 커밋하지 않습니다.
+## 출력 계약
 
-### 기존 경계 확인
-`recall_memories`와 `search_memories`로 `project:{PROJECT_ID}`, `boundary` 태그를 가진 메모리 검색
+Report memory disposition, verification, staged paths, commit identity, and push or remote parity status.
 
-### 경계가 없는 경우 (첫 사용)
-기본 경계 생성:
-```
-store_memory(type="boundary", title="AlwaysDo", content="커밋 전 lint 실행; 테스트 통과 확인", tags=["project:{PROJECT_ID}", "boundary", "always-do", "source:moonshot"], context={ "project_path": "{PROJECT_PATH}", "project_id": "{PROJECT_ID}" })
-store_memory(type="boundary", title="AskFirst", content="새 의존성 추가; DB 스키마 변경", tags=["project:{PROJECT_ID}", "boundary", "ask-first", "source:moonshot"], context={ "project_path": "{PROJECT_PATH}", "project_id": "{PROJECT_ID}" })
-store_memory(type="boundary", title="NeverDo", content=".env 파일 커밋 금지; 기존 테스트 삭제 금지", tags=["project:{PROJECT_ID}", "boundary", "never-do", "source:moonshot"], context={ "project_path": "{PROJECT_PATH}", "project_id": "{PROJECT_ID}" })
-```
+## References
 
-### 새로운 경계 발견 시 추가
-변경사항 분석 중 다음을 발견하면 해당 경계에 추가:
-
-| 발견 내용 | 추가 대상 |
-|----------|----------|
-| 필수 실행 명령어 | `boundary`, `always-do` 태그 |
-| 승인 필요 패턴 | `boundary`, `ask-first` 태그 |
-| 금지 패턴 | `boundary`, `never-do` 태그 |
-
-예시:
-```
-# CI에서 반드시 실행해야 하는 명령어 발견 시
-store_memory(type="boundary", title="Build requires lint", content="npm run build 전 npm run lint 필수", tags=["project:my-app", "boundary", "always-do", "source:moonshot"])
-```
-
-## 5. 도메인/컴포넌트 메모리 현행화
-
-### 메모리 생성/업데이트 규칙
-
-| 변경 유형 | 액션 |
-|----------|------|
-| 새 컴포넌트 파일 | `store_memory` + `component:[Name]` 태그 |
-| 기존 컴포넌트 수정 | `store_memory`로 압축 변경 사실 추가 |
-| API 엔드포인트 추가/변경 | `api` 태그로 업데이트 |
-| 도메인 로직 변경 | `domain` 태그로 업데이트 |
-
-### 관계 설정
-컴포넌트 간 의존관계 발견 시:
-```
-create_relationship(from_memory_id="{fromId}", to_memory_id="{toId}", relationship_type="USED_IN", context="Button uses ThemeContext")
-```
-
-## 6. 코딩 규약 현행화
-
-반복되는 패턴 발견 시 `convention` 태그와 함께 등록:
-- 네이밍 규칙 (예: 컴포넌트는 PascalCase)
-- 파일 구조 패턴 (예: feature-based structure)
-- 에러 처리 패턴 (예: try-catch with logging)
-- API 응답 형식 (예: { success, data, error })
-
-## 7. 현행화 요약 출력
-현행화 완료 후 변경 내용 요약:
-```markdown
-### 프로젝트 메모리 현행화 완료
-
-**프로젝트**: {PROJECT_ID}
-
-**생성된 엔티티:**
-- `project:{PROJECT_ID}` / `component:NewComponent`
-
-**업데이트된 엔티티:**
-- `project:{PROJECT_ID}` / `component:Button` (새 prop 추가됨)
-
-**새 관계:**
-- Button → ThemeContext (uses)
-
-**경계 업데이트:**
-- AlwaysDo: +1 항목
-```
-
-- AlwaysDo: +1 항목
-
-## 7.5 문서 스테이징 확인
-모든 문서 파일(자동 생성본 포함)이 스테이징되었는지 확인:
-```bash
-git add CHANGELOG.md README.md .claude/PROJECT.md docs/generated/*
-```
-
-생성된 agent bridge와 로컬 런타임 파일은 스테이징 후보에서 제거:
-```bash
-# 금지 예시:
-git add -A -- .agents/skills ...
-
-# 권장 예시:
-git add -- .claude .codex .claudeignore .gitattributes .gitignore AGENTS.md README.md
-```
-
-## 7.6 메모리 산출물 포함 여부 확인
-프로젝트 메모리 현행화는 항상 수행하세요. 사용자 확인이 필요한 것은 현행화 결과로 갱신된 계정 루트 knowledge state 또는 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/` 호환 artifact를 이번 커밋에 포함할지 여부뿐입니다.
-
-권장 질문:
-```text
-커밋 과정에서 프로젝트 메모리 산출물이 업데이트되었습니다. 이번 커밋에 함께 포함할까요?
-```
-
-규칙:
-- `.claude/memory.json` 포함 여부와 무관하게 프로젝트 메모리 현행화 자체는 항상 먼저 완료하세요.
-- 메모리 현행화 뒤 Git staging 전에 `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-promotion-audit.mjs --project-id <PROJECT_ID> --json`을 실행해 AWTL 승격 후보를 자동심사하세요. 기본은 audit-only입니다.
-- 사용자가 `장기메모리승격 포함`, `승격 승인`, `write verified memory`처럼 현재 commit turn에서 명시한 경우에만 `--write-verified`를 붙입니다.
-- 명시 승인으로 human approval 경로를 쓸 때만 `--approval approved`를 붙입니다. 일반 `commit-moonshot` 요청만으로 approval을 추정하지 마세요.
-- `.claude/cache/awtl/failed_turn_cases.jsonl`은 다음 실행 brief용 cache이며, 그 자체를 장기 MemoryGraph source로 취급하지 마세요.
-- 사용자 확인 없이 `.claude/memory.json`, `.claude/memorygraph/`, `.claude/cache/memorygraph/`를 자동으로 스테이징하지 마세요.
-- 사용자가 포함하자고 하면 코드/문서 변경과 함께 스테이징해서 커밋하세요.
-- 사용자가 제외하자고 하면 메모리 산출물은 unstaged 상태로 두고 나머지만 커밋하세요.
-- MemoryGraph 저장 실패는 direct fallback까지 시도한 뒤 기록하되, 사용자가 commit/push를 명시한 흐름에서는 Git closeout을 막지 마세요.
-- 일반 프로젝트 커밋 중 승격 후보를 `moonshot-relay` graph에 자동 저장하지 마세요. 자동심사는 수행하되, replay 검증 통과 또는 명시 승인 조건에서만 write를 시도하세요.
-- Moonshot Relay harness/package/profile 변경은 commit-ready라고 말하기 전에 전체 Operational Adoption Closeout evidence를 요구합니다. independent completion audit, independent operational adoption audit, source `doctor.mjs check --json`, `skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, package dry-run을 확인하고, live account-root adoption을 수행했다면 live install `installId`, explicit `--repo-root`, `--lock`, `--runtime-surface` 경로로 실행한 installed doctor, installer JSON `profileSurfaceParity`, `profileSurfaceParity[runtime=codex].extraCanonicalCount=0`까지 확인합니다.
-- commit/push closeout이 요청된 경우 `git push` 뒤 `git rev-parse HEAD`와 `git rev-parse origin/<branch>`가 같다는 것을 확인하기 전에는 push completion을 주장하지 않습니다. 이 parity 결과를 push closeout evidence에 기록합니다.
-- 최종 커밋 요약에 사용자의 선택을 명시하세요.
-
-## 8. 커밋 생성
-
-```bash
-# 사용자가 메모리 산출물 포함을 승인한 경우:
-git add [files] .claude/memory.json .claude/memorygraph
-
-# 사용자가 제외를 선택한 경우:
-git add [files]
-git commit -m "[간결한 한글 제목]" -m $'- 기능: [기능/영역명] - [핵심 변경]\n- 기능: [기능/영역명] - [핵심 변경]\n- 이유: [변경 이유]\n- 영향: [사용자 영향 또는 기대 효과]'
-```
-
-> **📌 중요: 메모리 산출물 포함 여부는 사용자 명시 선택을 따르세요.** durable knowledge state는 계정 루트 project namespace가 기본이며, `.claude/memorygraph/`는 레거시 호환 저장소일 수 있습니다.
-
-**커밋 메시지 규칙:**
-- 이모지, 특수문자 제외
-- 커밋 제목과 본문을 항상 한글로 작성
-- 간결하고 명확하게
-- 변경 목적 중심
-- 제목 1줄 + 본문 리스트 형식을 기본값으로 사용
-- 본문 첫 줄부터 변경내역을 기능 단위로 리스트업
-- 기능이 2개 이상이면 기능마다 별도 bullet로 분리
-- 각 기능 bullet은 `- 기능: [기능/영역명] - [핵심 변경]` 형식 사용
-- 기능 bullet 뒤에는 아래 항목을 필요 최소한으로 추가:
-  - `- 이유: [왜 변경했는지]`
-  - `- 영향: [사용자 영향, 운영 영향, 기대 효과 중 필요한 내용]`
-- 기능 단위로 묶기 어려운 변경도 가장 가까운 기능/영역 기준으로 분류
-
-**최종 사용자 보고 규칙:**
-- 커밋 전후 변경 요약도 항상 한글로 작성
-- 변경 요약은 커밋 메시지와 동일하게 기능 단위 bullet list로 정리
-- 파일 나열보다 사용자/도메인 관점의 기능 묶음을 우선 사용
+- [Commit Moonshot Reference](docs/public/reference/commit-moonshot-reference.md)
+- [Token Optimization Guidelines](docs/public/guidelines/token-optimization.md)
 
 ---
 
-사용자 컨텍스트: $ARGUMENTS
+User context: $ARGUMENTS
 
 ## Project Knowledge Boundary
 
-commit closeout memory refresh는 non-blocking입니다. 검증 뒤 project knowledge를 refresh/audit할 수 있지만 attempt/system prompt assembly의 일부가 아니며, raw MemoryGraph/KG/ontology/log/transcript payload를 commit summary나 manifest에 넣으면 안 됩니다.
+Default to the account-root project knowledge namespace under `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/`.
 
-Git closeout에는 knowledge refresh status, warning code, promotion/audit count만 기록할 수 있습니다. 사용자가 Git closeout을 명시적으로 요청한 경우 MemoryGraph transport failure가 commit/push를 막아서는 안 됩니다.
+Commit closeout memory refresh is non-blocking. It can refresh or audit project knowledge after verification, but it is not part of attempt/system prompt assembly and must not put raw MemoryGraph/KG/ontology/log/transcript payloads into commit summaries or manifests.
 
-계정 루트 프로젝트 knowledge state는 runtime state이며 commit payload가 아닙니다. repo commit에는 검토된 summary, evidence manifest, contract, 명시적 promotion candidate만 포함할 수 있고 raw knowledge state는 포함하지 않습니다.
+Git closeout may record only knowledge refresh status, warning codes, and promotion/audit counts. MemoryGraph transport failure must not block commit/push when the user explicitly requested Git closeout.
 
-phase runner의 `runId`와 `goalId`가 있으면 memory refresh/audit helper에 전달해 active runtime identity 아래 commit closeout event를 남기세요. active identity가 없으면 helper는 audit-only commit closeout identity를 사용하며, 이 identity는 증거일 뿐 whole-plan completion authority가 아닙니다.
+Account-root project knowledge state is runtime state, not a commit payload. Repo commits may include reviewed summaries, evidence manifests, contracts, or explicit promotion candidates, but not raw knowledge state.
 
-staging, commit, push 결과는 `node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-closeout-event.mjs --event-type <type> --payload-json <json> --json` helper로 기록하세요. commit closeout taxonomy는 이 helper가 강제하므로 ad hoc `runtime-state record-event`를 직접 조립하지 않습니다.
-
-commit closeout event taxonomy:
+Commit closeout runtime event taxonomy:
 
 - `commit.closeout.started`
 - `commit.memory_refresh.completed`
@@ -248,6 +118,19 @@ commit closeout event taxonomy:
 - `commit.push.completed`
 - `commit.push.failed`
 
-이 event들은 audit evidence입니다. `completion_decisions.status=accepted`를 만들거나 암시하면 안 됩니다.
+These events are audit evidence only. They must not create or imply an accepted `completion_decisions` row.
 
-Git 결과 payload에는 sanitized status, count, commit hash, remote, branch, reason, warning code만 넣습니다. raw MemoryGraph/KG/ontology/log/transcript payload나 후보 원문은 기록하지 않습니다.
+Use the closeout event helper for Git outcomes after memory refresh and promotion audit:
+
+```sh
+node <MOONSHOT_RELAY_HOME>/scripts/commit-moonshot-closeout-event.mjs \
+  --project-id <PROJECT_ID> \
+  --run-id <RUN_ID> \
+  --goal-id <GOAL_ID> \
+  --workspace-id <WORKSPACE_ID> \
+  --event-type commit.staging.selected \
+  --payload-json '{"selectedCount":0,"status":"selected"}' \
+  --json
+```
+
+Then record `commit.created`, `commit.failed`, `commit.push.skipped`, `commit.push.requested`, `commit.push.completed`, or `commit.push.failed` with sanitized status, counts, commit hash, remote, branch, reason, and warning codes only.

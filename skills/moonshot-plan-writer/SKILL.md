@@ -1,23 +1,36 @@
 ---
 name: moonshot-plan-writer
 description: Create, refresh, and organize project-scoped account-root master and phase plans for phase-based work.
+policyClauseIds:
+  - moonshot-plan-writer.policy.use-when
+  - moonshot-plan-writer.policy.routing
+  - moonshot-plan-writer.policy.hard-stops
+  - moonshot-plan-writer.policy.output-contract
+policyDigest: bf70b96da2991def9fd97c88cde29ce07fa7e73ba0ba5c1a06d3241207663c70
 triggers:
   - "write plan"
   - "master plan"
   - "phase plan"
   - "implementation plan"
 deepReferences:
+  - references/compatibility-contract.md
   - references/plan-package-contract.md
   - references/independent-review-loop.md
 ---
 
 # Moonshot Plan Writer
 
+## Use When
+
+Use to create or refresh a master and phase plan package for phase execution.
+
+## Route Away
+
+Use `moonshot-architecture` when decisions are missing and `moonshot-orchestrator` for one bounded implementation.
+
 ## Role
 
-Create or revise a phase-plan package that a phase runner can execute without guessing. The output is a master plan plus numbered phase docs, execution metadata, acceptance criteria, blockers, surface classification, and a clear adoption boundary.
-
-By default, write plan packages under the account-root project namespace resolved by `scripts/project-identity.mjs`, for example `${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/state/projects/<projectId>/planning/packages/<plan-slug>/`. Use repo-local `docs/implementation/<plan-slug>/` only when the operator explicitly asks for a tracked source design package or when existing tracked docs are the source artifact being revised.
+Create an executable master/phase plan with scope, evidence, and adoption boundaries. Default to `planningPackageRoot`; use tracked plans only when requested.
 
 ## Hard Stops
 
@@ -30,23 +43,17 @@ By default, write plan packages under the account-root project namespace resolve
 - Do not mark a plan execution-ready when it mutates package/runtime payloads, installed profiles, external services, or data/state without classifying that surface and naming required evidence slots.
 - Do not hide unresolved ambiguity. Record it as an assumption, blocker, or user question.
 
-## Flow
+## Procedure
 
-1. Identify the user objective and existing plan directory.
-1.1. Resolve project identity and choose the plan root. Prefer `namespaces.planningPackageRoot/<plan-slug>/` so concurrent work in different repositories cannot collide. Record the projectId and selected account-root plan directory in the master plan metadata.
-2. Audit current artifacts and stale phase docs.
-3. Draft or refresh `00-master-plan-*.md` and root `NN-*.md` phase files.
-4. Classify every planned change surface as `source_only`, `package_runtime_payload`, `installed_profile_or_account_root`, `external_deployment_or_service`, or `data_or_state_migration`.
-5. Load only the applicable local policy sources for those surfaces, such as root `AGENTS.md`, verification contracts, deployment runbooks, package contracts, migration policies, or project-local guideline anchors.
-6. Add phase execution metadata: dependencies, conflicts, owned paths, staged paths, read-only paths, write-set boundaries, adoption targets, live mutation policy, policy source paths, and required evidence slots.
-7. When an architecture package is present, map selected ADRs and `TRACEABILITY_MATRIX.md` rows into phase scope, owners, verification signals, and acceptance evidence.
-8. When `ARCHITECTURE_HANDOFF.json` is present, carry only its path, status, selected decision IDs, selected constraint IDs, owned/read-only/staged paths, verification signal IDs, and blocking preconditions into phase metadata.
-9. When a Discovery Map is provided, consume only resolved decisions with evidence and decision authority. Do not execute tickets directly, and do not treat frontier output as fanout, promotion, completion, or runtime-state authority.
-10. Draft Spec-Test Obligations for every detailed `REQ-*`, every `SCN-*`, and every UAT-critical item. Use `specTestObligations` rows with `verificationMode: tdd_red_green` by default for behavior-changing work, `characterization_first` for brownfield pinning, and `evidence_mandatory` only with command, artifact, and reason.
-11. Run independent review loops as sidecar review, then parent applies accepted edits.
-12. Prepare execution only after readiness, traceability, handoff status, phase boundary, surface classification, policy-sourced adoption checks, and spec-test obligation coverage are satisfied.
+1. Resolve objective, project identity, plan root, and stale artifacts; draft the master and phase files.
+2. Classify mutation surfaces, load applicable local policies, and declare dependencies, write sets, adoption targets, and evidence slots.
+3. Map selected architecture decisions, traceability rows, handoff status, owners, and verification signals into phase scope.
+3.1. Map selected ADRs and `TRACEABILITY_MATRIX.md` rows into phase metadata.
+4. Do not treat Discovery Map frontier output as execution, fanout, promotion, completion, or runtime-state authority.
+5. Draft Spec-Test Obligations for every detailed requirement, scenario, and UAT-critical item.
+6. Run independent sidecar review; the parent applies accepted edits and opens execution only after all readiness gates pass.
 
-## Required Evidence
+## Output Contract
 
 - Plan directory and master plan path.
 - Phase inventory with dependencies, read-only paths, owned paths, and write-set boundaries.
