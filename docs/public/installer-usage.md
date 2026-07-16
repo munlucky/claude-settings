@@ -2,11 +2,11 @@
 
 `install-claude.sh` is a macOS/Git Bash compatibility installer for Moonshot Relay runtime profiles. The primary cross-platform account-root installer is `node bin/moonshot-relay.mjs install --runtime all` or `npx -y github:munlucky/moonshot-relay install`. Use `--project` only when a downstream repository needs project-local `.claude/` and `.codex/` compatibility payloads.
 
-The default mode is account-root installation into the shared Moonshot Relay home (`~/.moonshot-relay`) plus the local Claude/Codex/Qwen homes (`~/.claude`, `~/.codex`, `~/.qwen`).
+The default mode is account-root installation into the shared Moonshot Relay home (`~/.moonshot-relay`) plus the local Claude/Codex/Qwen homes (`~/.claude`, `~/.codex`, `~/.qwen`) and the Antigravity IDE profile (`~/.gemini/antigravity`) with its global skill discovery root (`~/.gemini/config`).
 
-The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex/Qwen profile-local `skills/` discovery is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, `session-logger`, and `explain-diff-html`. Reinstalling prunes canonical source skills that are no longer in the service profile payload, while unrelated user-installed skills remain preserved.
+The shared Moonshot Relay home preserves canonical `skills/**` for internal references and source parity. Claude/Codex/Qwen profile-local and Antigravity global `skills/` discovery is governed by `package/runtime-surface.json`: `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, `session-logger`, and `explain-diff-html`. Reinstalling prunes canonical source skills that are no longer in the service profile payload, while unrelated user-installed skills remain preserved.
 
-Shared runtime references must resolve through `MOONSHOT_RELAY_HOME`. In `cmd.exe` this is `%MOONSHOT_RELAY_HOME%`, in PowerShell it is `$env:MOONSHOT_RELAY_HOME`, and in bash/zsh it is `${MOONSHOT_RELAY_HOME}`. If the variable is unset, installers and skills use the account default `~/.moonshot-relay`.
+Shared runtime references must resolve through `MOONSHOT_RELAY_HOME`. In `cmd.exe` this is `%MOONSHOT_RELAY_HOME%`, in PowerShell it is `$env:MOONSHOT_RELAY_HOME`, and in bash/zsh it is `${MOONSHOT_RELAY_HOME}`. Antigravity global skill discovery resolves through `ANTIGRAVITY_SKILLS_HOME`, defaulting to `~/.gemini/config`. If the variable is unset, installers and skills use the account default `~/.moonshot-relay`.
 
 ## Compatibility Window
 
@@ -100,7 +100,7 @@ Keep rollout evidence separated by target:
 
 - `source-smoke`: run from the checkout with source `scripts/runtime-state.mjs`.
 - `package-smoke`: run from materialized `package/moonshot-relay/profile/scripts/runtime-state.mjs`.
-- `temp-home-smoke`: install into explicit temp `--moonshot-home`, `--claude-home`, `--codex-home`, and `--qwen-home` targets, then run the installed `runtime-state.mjs`.
+- `temp-home-smoke`: install into explicit temp `--moonshot-home`, `--claude-home`, `--codex-home`, `--qwen-home`, `--antigravity-home`, and `--antigravity-skills-home` targets, then run the installed `runtime-state.mjs`.
 - `live-account-root-smoke`: run only after explicit adoption approval and state preservation evidence.
 
 `source-smoke`, `package-smoke`, and `temp-home-smoke` can close package readiness.

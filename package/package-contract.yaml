@@ -1,6 +1,6 @@
 schemaVersion: 1
 contractId: repository-physical-structure-refactor-phase-02
-description: "Canonical source and package payload contract for Claude, Codex, and Qwen runtime profiles."
+description: "Canonical source and package payload contract for Claude, Codex, Qwen, and Antigravity runtime profiles."
 
 canonicalSource:
   catalog: catalog/
@@ -50,6 +50,7 @@ runtimeProfiles:
     templateRoot: package/profile-templates/antigravity/.gemini/antigravity/
     generatedProfileRoot: package/antigravity/profile/.gemini/antigravity/
     localRuntimeRoot: .gemini/antigravity/
+    skillRuntimeRoot: .gemini/config/
     materializer: package/build-package.mjs
     materialization: local_copy_not_committed
     symlinkPolicy: avoid_required_symlinks
@@ -71,6 +72,7 @@ accountRootInstall:
     codex: "${CODEX_HOME:-~/.codex}"
     qwen: "${QWEN_HOME:-~/.qwen}"
     antigravity: "${ANTIGRAVITY_HOME:-~/.gemini/antigravity}"
+    antigravitySkills: "${ANTIGRAVITY_SKILLS_HOME:-~/.gemini/config}"
   commonPayloadEntries:
     - catalog/
     - bin/
@@ -120,6 +122,7 @@ accountRootInstall:
       - skills/
       - verification.contract.yaml
   manifestName: .moonshot-relay-install-manifest.json
+  antigravitySkillsManifestName: .moonshot-relay-antigravity-skills-manifest.json
   legacyManifestNames:
     - .claude-settings-install-manifest.json
   legacyHarnessCorePolicy: remove_when_requested_after_backup
@@ -194,7 +197,7 @@ skillExposure:
     - session-logger
     - explain-diff-html
   internalSkillPolicy: "Internal and optional skills remain canonical source under skills/ and are preserved in the shared Moonshot Relay common payload, but Claude/Codex/Qwen runtime profile discovery must not materialize them under profile-local skills/."
-  bootstrapSkillPolicy: "moonshot-relay-setup may be installed by Agent Skills CLI from repository source, but it is not part of the Claude/Codex/Qwen account-root runtime profile public discovery surface."
+  bootstrapSkillPolicy: "moonshot-relay-setup may be installed by Agent Skills CLI from repository source, but it is not part of the Claude/Codex/Qwen account-root or Antigravity global public discovery surface."
 
 requiredPayloadEntries:
   sharedSource:

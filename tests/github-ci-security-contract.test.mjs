@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -147,6 +147,7 @@ test('temp-home installer dry-run does not target live account-root profiles', a
   const codexHome = path.join(tempRoot, 'codex-home');
   const qwenHome = path.join(tempRoot, 'qwen-home');
   const antigravityHome = path.join(tempRoot, 'antigravity-home');
+  const antigravitySkillsHome = path.join(tempRoot, 'antigravity-skills-home');
   const result = spawnSync(process.execPath, [
     'scripts/install-account-root-harness.mjs',
     '--runtime',
@@ -163,6 +164,8 @@ test('temp-home installer dry-run does not target live account-root profiles', a
     qwenHome,
     '--antigravity-home',
     antigravityHome,
+    '--antigravity-skills-home',
+    antigravitySkillsHome,
   ], {
     cwd: root,
     encoding: 'utf8',
@@ -177,7 +180,81 @@ test('temp-home installer dry-run does not target live account-root profiles', a
     moonshotHome,
     qwenHome,
     antigravityHome,
+    antigravitySkillsHome,
   ].sort());
   assert.equal(payload.manifests.reduce((sum, manifest) => sum + manifest.removedCount, 0), 0);
   assert.equal(payload.manifests.reduce((sum, manifest) => sum + manifest.backupCount, 0), 0);
+});
+
+test('ANTIGRAVITY_HOME environment override keeps global skills projection beside temp profile', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-antigravity-env-'));
+  tempRoots.push(tempRoot);
+  const antigravityHome = path.join(tempRoot, '.gemini', 'antigravity');
+  const moonshotHome = path.join(tempRoot, 'moonshot-home');
+  const env = {
+    ...process.env,
+    ANTIGRAVITY_HOME: antigravityHome,
+    MOONSHOT_RELAY_HOME: moonshotHome,
+  };
+  delete env.ANTIGRAVITY_SKILLS_HOME;
+
+  const result = spawnSync(process.execPath, [
+    'scripts/install-account-root-harness.mjs',
+    '--runtime',
+    'antigravity',
+    '--dry-run',
+    '--json',
+  ], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.deepEqual(payload.manifests.map((manifest) => manifest.targetRoot).sort(), [
+    antigravityHome,
+    path.join(tempRoot, '.gemini', 'config'),
+    moonshotHome,
+  ].sort());
+});
+
+test('Antigravity global skills projection rejects symlinked target paths', async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'moonshot-antigravity-symlink-'));
+  tempRoots.push(tempRoot);
+  const antigravityHome = path.join(tempRoot, '.gemini', 'antigravity');
+  const antigravitySkillsHome = path.join(tempRoot, '.gemini', 'config');
+  const outsideRoot = path.join(tempRoot, 'outside');
+  const targetSkillsRoot = path.join(antigravitySkillsHome, 'skills');
+  await mkdir(outsideRoot, { recursive: true });
+  await mkdir(antigravitySkillsHome, { recursive: true });
+
+  try {
+    await symlink(outsideRoot, targetSkillsRoot, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'UNKNOWN'].includes(error.code)) {
+      t.skip(`symlink creation unavailable: ${error.code}`);
+      return;
+    }
+    throw error;
+  }
+
+  const result = spawnSync(process.execPath, [
+    'scripts/install-account-root-harness.mjs',
+    '--runtime',
+    'antigravity',
+    '--antigravity-home',
+    antigravityHome,
+    '--antigravity-skills-home',
+    antigravitySkillsHome,
+    '--no-backup',
+    '--json',
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unsafe symlink path under target root/);
+  assert.deepEqual(await readdir(outsideRoot), []);
 });

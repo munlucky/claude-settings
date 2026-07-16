@@ -562,6 +562,7 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /generatedProfileRoot: package\/qwen\/profile\/\.qwen\//);
   assert.match(contract, /templateRoot: package\/profile-templates\/antigravity\/\.gemini\/antigravity\//);
   assert.match(contract, /generatedProfileRoot: package\/antigravity\/profile\/\.gemini\/antigravity\//);
+  assert.match(contract, /skillRuntimeRoot: \.gemini\/config\//);
   assert.match(contract, /materializer: package\/build-package\.mjs/);
   assert.match(contract, /commonSupportScripts:/);
   assert.match(contract, /source: package\.json/);
@@ -741,6 +742,7 @@ test('account-root installer merges shared directories without deleting unrelate
   const codexHome = path.join(installRoot, 'codex-home');
   const qwenHome = path.join(installRoot, 'qwen-home');
   const antigravityHome = path.join(installRoot, 'antigravity-home');
+  const antigravitySkillsHome = path.join(installRoot, 'antigravity-skills-home');
 
   await mkdir(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge'), { recursive: true });
   await writeFile(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge', 'preserve.txt'), 'keep\n');
@@ -820,6 +822,17 @@ test('account-root installer merges shared directories without deleting unrelate
       { path: 'skills/completion-verifier/SKILL.md', sha256: sha256('stale managed\n') },
     ],
   })}\n`);
+  await mkdir(path.join(antigravitySkillsHome, 'skills', 'external-skill'), { recursive: true });
+  await writeFile(path.join(antigravitySkillsHome, 'skills', 'external-skill', 'SKILL.md'), 'external\n');
+  await mkdir(path.join(antigravitySkillsHome, 'skills', 'completion-verifier'), { recursive: true });
+  await writeFile(path.join(antigravitySkillsHome, 'skills', 'completion-verifier', 'SKILL.md'), 'stale managed\n');
+  await mkdir(path.join(antigravitySkillsHome, 'skills', 'moonshot-phase-executor'), { recursive: true });
+  await writeFile(path.join(antigravitySkillsHome, 'skills', 'moonshot-phase-executor', 'SKILL.md'), 'stale canonical internal\n');
+  await writeFile(path.join(antigravitySkillsHome, '.moonshot-relay-antigravity-skills-manifest.json'), `${JSON.stringify({
+    copied: [
+      { path: 'skills/completion-verifier/SKILL.md', sha256: sha256('stale managed\n') },
+    ],
+  })}\n`);
 
   try {
     const result = spawnSync(process.execPath, [
@@ -838,6 +851,8 @@ test('account-root installer merges shared directories without deleting unrelate
       qwenHome,
       '--antigravity-home',
       antigravityHome,
+      '--antigravity-skills-home',
+      antigravitySkillsHome,
       '--remove-legacy-harness-core',
       '--json',
     ], {
@@ -848,6 +863,18 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const installPayload = JSON.parse(result.stdout);
     assert.ok(installPayload.installId);
+    assert.equal(installPayload.verification.every((entry) => (
+      entry.missing.length === 0 && entry.mismatch.length === 0
+    )), true);
+    const globalSkillsManifest = JSON.parse(await readFile(
+      path.join(antigravitySkillsHome, '.moonshot-relay-antigravity-skills-manifest.json'),
+      'utf8',
+    ));
+    assert.ok(globalSkillsManifest.copied.length > 0);
+    assert.equal(
+      installPayload.manifests.find((manifest) => manifest.runtime === 'antigravity-global-skills').copiedCount,
+      globalSkillsManifest.copied.length,
+    );
     assert.equal(installPayload.profileSurfaceParity.length, 4);
     const codexParity = installPayload.profileSurfaceParity.find((entry) => entry.runtime === 'codex');
     const claudeParity = installPayload.profileSurfaceParity.find((entry) => entry.runtime === 'claude');
@@ -857,6 +884,7 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(claudeParity.status, 'pass');
     assert.equal(qwenParity.status, 'pass');
     assert.equal(antigravityParity.status, 'pass');
+    assert.equal(antigravityParity.skillTargetRoot, antigravitySkillsHome);
     assert.equal(codexParity.extraCanonicalCount, 0);
     assert.equal(qwenParity.extraCanonicalCount, 0);
     assert.equal(antigravityParity.extraCanonicalCount, 0);
@@ -872,22 +900,27 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(qwenHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(antigravityHome, 'skills', 'external-skill', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(antigravitySkillsHome, 'skills', 'external-skill', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(qwenHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(antigravityHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(antigravitySkillsHome, 'skills', 'completion-verifier', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(qwenHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(antigravityHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
+    assert.equal(existsSync(path.join(antigravitySkillsHome, 'skills', 'moonshot-phase-executor', 'SKILL.md')), false);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(qwenHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(antigravityHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(antigravitySkillsHome, 'skills', 'moonshot-phase-runner', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(codexHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(qwenHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(antigravityHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
+    assert.equal(existsSync(path.join(antigravitySkillsHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'skills', 'moonshot-plan-writer', 'SKILL.md')), true);
     assert.equal(existsSync(path.join(claudeHome, 'rules', 'workflow.md')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'rules', 'workflow-bundles.yaml')), true);

@@ -14,18 +14,18 @@ sourcePolicy:
     - tests/
     - docs/public/
   generatedProfileRoots:
-    - .gemini/antigravity/skills/
+    - .gemini/config/skills/
     - .gemini/antigravity/agents/
     - .gemini/antigravity/rules/
   commonHarnessRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/"
-  rule: "Edit canonical source first; expose only service profile files in .gemini/antigravity and keep common harness files under MOONSHOT_RELAY_HOME."
+  rule: "Edit canonical source first; expose Antigravity skills in .gemini/config/skills and other service profile files in .gemini/antigravity while keeping common harness files under MOONSHOT_RELAY_HOME."
 activeRuntimeFiles:
   - .gemini/antigravity/GEMINI.md
   - .gemini/antigravity/PROJECT.md
   - .gemini/antigravity/README.md
   - .gemini/antigravity/agents/**
   - .gemini/antigravity/rules/**
-  - .gemini/antigravity/skills/**
+  - .gemini/config/skills/**
   - .gemini/antigravity/verification.contract.yaml
 excludedGeneratedState:
   - .gemini/antigravity/logs/**

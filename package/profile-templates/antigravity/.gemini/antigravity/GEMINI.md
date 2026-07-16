@@ -10,7 +10,8 @@ Last-Reviewed: 2026-07-16
 4. Update canonical source docs first, then refresh TOC links.
 5. Resolve shared runtime assets through `MOONSHOT_RELAY_HOME` (default `~/.moonshot-relay`).
 6. Runtime contract: `GEMINI.md` + `verification.contract.yaml`.
-7. Generated state, logs, caches, traces, browser artifacts, sqlite state, memorygraph data, and verdict JSON are excluded from package payloads.
+7. Antigravity global skill discovery is materialized under `${ANTIGRAVITY_SKILLS_HOME:-~/.gemini/config}/skills/`; the legacy `.gemini/antigravity/skills/` mirror remains compatibility-only.
+8. Generated state, logs, caches, traces, browser artifacts, sqlite state, memorygraph data, and verdict JSON are excluded from package payloads.
 
 ## Default Document Paths
 

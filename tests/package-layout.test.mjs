@@ -280,6 +280,7 @@ test('package contract declares required source payload entries and generated-st
   assert.match(contract, /claude: "\$\{CLAUDE_HOME:-~\/\.claude\}"/);
   assert.match(contract, /codex: "\$\{CODEX_HOME:-~\/\.codex\}"/);
   assert.match(contract, /qwen: "\$\{QWEN_HOME:-~\/\.qwen\}"/);
+  assert.match(contract, /antigravitySkills: "\$\{ANTIGRAVITY_SKILLS_HOME:-~\/\.gemini\/config\}"/);
   assert.match(contract, /commonPayloadEntries:/);
   assert.match(contract, /skillExposure:/);
   assert.match(contract, /manifest: package\/runtime-surface\.json/);

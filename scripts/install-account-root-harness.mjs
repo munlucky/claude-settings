@@ -5,10 +5,12 @@ import {
   access,
   copyFile,
   cp,
+  lstat,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rm,
   rmdir,
   stat,
@@ -24,6 +26,7 @@ const scriptPath = fileURLToPath(import.meta.url);
 const defaultSourceRoot = path.dirname(path.dirname(scriptPath));
 
 const manifestName = '.moonshot-relay-install-manifest.json';
+const antigravitySkillsManifestName = '.moonshot-relay-antigravity-skills-manifest.json';
 const legacyManifestNames = Object.freeze(['.claude-settings-install-manifest.json']);
 
 const commonSpec = {
@@ -201,6 +204,9 @@ const runtimeSpecs = {
     payloadPath: path.join('antigravity', 'profile', '.gemini', 'antigravity'),
     defaultHome: () => path.join(os.homedir(), '.gemini', 'antigravity'),
     envName: 'ANTIGRAVITY_HOME',
+    skillHome: () => path.join(os.homedir(), '.gemini', 'config'),
+    skillEnvName: 'ANTIGRAVITY_SKILLS_HOME',
+    skillHomeOption: 'antigravitySkills',
     exposureEntries: new Set([
       'GEMINI.md',
       'PROJECT.md',
@@ -244,7 +250,7 @@ const runtimeSpecs = {
   },
 };
 
-const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex|qwen|antigravity] [--source-root <repo>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--qwen-home <dir>] [--antigravity-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
+const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex|qwen|antigravity] [--source-root <repo>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--qwen-home <dir>] [--antigravity-home <dir>] [--antigravity-skills-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
 
 const parseArgs = (argv) => {
   const options = {
@@ -275,6 +281,8 @@ const parseArgs = (argv) => {
       options.homes.qwen = path.resolve(argv[++index]);
     } else if (arg === '--antigravity-home') {
       options.homes.antigravity = path.resolve(argv[++index]);
+    } else if (arg === '--antigravity-skills-home') {
+      options.homes.antigravitySkills = path.resolve(argv[++index]);
     } else if (arg === '--dry-run') {
       options.dryRun = true;
     } else if (arg === '--json') {
@@ -344,6 +352,63 @@ const assertSafeChild = (root, candidate) => {
   if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`Unsafe path outside target root: ${resolvedCandidate}`);
   }
+};
+
+const assertSafeTargetPath = async (root, candidate) => {
+  assertSafeChild(root, candidate);
+
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidate);
+  const relative = path.relative(resolvedRoot, resolvedCandidate);
+  let realRoot = resolvedRoot;
+  try {
+    realRoot = await realpath(resolvedRoot);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  let current = resolvedRoot;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    try {
+      const currentStat = await lstat(current);
+      if (currentStat.isSymbolicLink()) {
+        throw new Error(`Unsafe symlink path under target root: ${current}`);
+      }
+      assertSafeChild(realRoot, await realpath(current));
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        break;
+      }
+      throw error;
+    }
+  }
+};
+
+const resolveSpecHome = ({ spec, runtime, options }) => path.resolve(
+  options.homes[runtime]
+    || process.env[spec.envName]
+    || spec.defaultHome(),
+);
+
+const resolveSkillHome = ({ spec, runtime, options, targetRoot }) => {
+  if (!spec.skillHome) {
+    return targetRoot;
+  }
+
+  const configured = options.homes[spec.skillHomeOption]
+    || process.env[spec.skillEnvName];
+  if (configured) {
+    return path.resolve(configured);
+  }
+
+  if (runtime === 'antigravity' && (options.homes.antigravity || process.env[spec.envName])) {
+    return path.resolve(path.join(path.dirname(targetRoot), 'config'));
+  }
+
+  return path.resolve(spec.skillHome());
 };
 
 const resolvePackageBuilder = async (sourceRoot) => {
@@ -439,7 +504,7 @@ const removePreviouslyManagedNonExposureFiles = async ({ targetRoot, exposureEnt
     }
 
     const target = path.join(targetRoot, ...segments);
-    assertSafeChild(targetRoot, target);
+    await assertSafeTargetPath(targetRoot, target);
     if (!await pathExists(target)) {
       continue;
     }
@@ -466,12 +531,17 @@ const removePreviouslyManagedNonExposureFiles = async ({ targetRoot, exposureEnt
   return removed;
 };
 
-const removePreviouslyManagedSkillsAbsentFromPayload = async ({ targetRoot, sourceRoot, options }) => {
+const removePreviouslyManagedSkillsAbsentFromPayload = async ({
+  targetRoot,
+  sourceRoot,
+  options,
+  manifestFileName = manifestName,
+}) => {
   if (options.dryRun) {
     return [];
   }
 
-  const manifest = await readJsonFile(path.join(targetRoot, manifestName));
+  const manifest = await readJsonFile(path.join(targetRoot, manifestFileName));
   if (!manifest || !Array.isArray(manifest.copied)) {
     return [];
   }
@@ -495,7 +565,7 @@ const removePreviouslyManagedSkillsAbsentFromPayload = async ({ targetRoot, sour
     }
 
     const target = path.join(targetRoot, ...segments);
-    assertSafeChild(targetRoot, target);
+    await assertSafeTargetPath(targetRoot, target);
     if (!await pathExists(target)) {
       continue;
     }
@@ -547,6 +617,8 @@ const removeCanonicalProfileSkillsAbsentFromPayload = async ({
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name));
 
+  await assertSafeTargetPath(targetRoot, targetSkillsRoot);
+
   const removed = [];
   const backups = [];
   const targetSkillEntries = await readdir(targetSkillsRoot, { withFileTypes: true });
@@ -559,7 +631,7 @@ const removeCanonicalProfileSkillsAbsentFromPayload = async ({
     }
 
     const target = path.join(targetSkillsRoot, entry.name);
-    assertSafeChild(targetRoot, target);
+    await assertSafeTargetPath(targetRoot, target);
     if (!options.dryRun && options.backup) {
       const backup = await backupTarget(target, backupRoot);
       if (backup) {
@@ -596,7 +668,7 @@ const removeLegacyNonExposureEntries = async ({
     }
 
     const target = path.join(targetRoot, entryName);
-    assertSafeChild(targetRoot, target);
+    await assertSafeTargetPath(targetRoot, target);
     if (!await pathExists(target)) {
       continue;
     }
@@ -617,11 +689,12 @@ const removeLegacyNonExposureEntries = async ({
   return { removed, backups };
 };
 
-const copyPayloadEntry = async ({ source, target, dryRun, replaceDirectories = false }) => {
+const copyPayloadEntry = async ({ source, target, targetRoot, dryRun, replaceDirectories = false }) => {
   if (dryRun) {
     return;
   }
 
+  await assertSafeTargetPath(targetRoot, target);
   await mkdir(path.dirname(target), { recursive: true });
   const sourceStat = await stat(source);
   if (sourceStat.isDirectory()) {
@@ -647,6 +720,7 @@ const copyPayloadEntry = async ({ source, target, dryRun, replaceDirectories = f
       await copyPayloadEntry({
         source: path.join(source, entry.name),
         target: path.join(target, entry.name),
+        targetRoot,
         dryRun,
         replaceDirectories,
       });
@@ -672,11 +746,8 @@ const installPayloadSpec = async ({
   ownedEntries,
   replaceDirectories = false,
 }) => {
-  const targetRoot = path.resolve(
-    options.homes[runtime]
-      || process.env[spec.envName]
-      || spec.defaultHome(),
-  );
+  const targetRoot = resolveSpecHome({ spec, runtime, options });
+  const skillTargetRoot = resolveSkillHome({ spec, runtime, options, targetRoot });
   const sourceRoot = path.join(payloadRoot, spec.payloadPath);
 
   if (!await pathExists(sourceRoot)) {
@@ -742,7 +813,7 @@ const installPayloadSpec = async ({
 
     const source = path.join(sourceRoot, entry.name);
     const target = path.join(targetRoot, entry.name);
-    assertSafeChild(targetRoot, target);
+    await assertSafeTargetPath(targetRoot, target);
 
     if (options.backup && !options.dryRun) {
       const backup = await backupTarget(target, backupRoot);
@@ -751,7 +822,7 @@ const installPayloadSpec = async ({
       }
     }
 
-    await copyPayloadEntry({ source, target, dryRun: options.dryRun, replaceDirectories });
+    await copyPayloadEntry({ source, target, targetRoot, dryRun: options.dryRun, replaceDirectories });
 
     const files = entry.isDirectory()
       ? await listFiles(source, entry.name)
@@ -798,6 +869,7 @@ const installPayloadSpec = async ({
         || process.env[commonSpec.envName]
         || commonSpec.defaultHome(),
     ),
+    skillTargetRoot,
     legacyHarnessCorePresent: legacyHarnessCore ? await pathExists(legacyHarnessCore) : false,
     copied,
     skipped,
@@ -833,6 +905,116 @@ const installPayloadSpec = async ({
   return manifest;
 };
 
+const installAntigravitySkillsProjection = async ({
+  spec,
+  payloadRoot,
+  options,
+  installId,
+  sourceRepo,
+}) => {
+  const profileTargetRoot = resolveSpecHome({ spec, runtime: 'antigravity', options });
+  const targetRoot = resolveSkillHome({
+    spec,
+    runtime: 'antigravity',
+    options,
+    targetRoot: profileTargetRoot,
+  });
+  const sourceRoot = path.join(payloadRoot, spec.payloadPath);
+  const sourceSkillsRoot = path.join(sourceRoot, 'skills');
+  const targetSkillsRoot = path.join(targetRoot, 'skills');
+  const backupRoot = path.join(targetRoot, 'backups', `moonshot-relay-antigravity-skills-${installId}`);
+  const copied = [];
+  const skipped = [];
+  const backups = [];
+  const removed = [];
+
+  if (!await pathExists(sourceSkillsRoot)) {
+    throw new Error(`Missing materialized antigravity skills payload: ${sourceSkillsRoot}`);
+  }
+
+  if (!options.dryRun) {
+    await mkdir(targetRoot, { recursive: true });
+    removed.push(...await removePreviouslyManagedSkillsAbsentFromPayload({
+      targetRoot,
+      sourceRoot,
+      options,
+      manifestFileName: antigravitySkillsManifestName,
+    }));
+
+    const canonicalSkillCleanup = await removeCanonicalProfileSkillsAbsentFromPayload({
+      targetRoot,
+      sourceRepo,
+      sourceRoot,
+      backupRoot,
+      options,
+    });
+    removed.push(...canonicalSkillCleanup.removed);
+    backups.push(...canonicalSkillCleanup.backups);
+  }
+
+  const sourceEntries = await readdir(sourceSkillsRoot, { withFileTypes: true });
+  for (const entry of sourceEntries) {
+    const source = path.join(sourceSkillsRoot, entry.name);
+    const target = path.join(targetSkillsRoot, entry.name);
+    await assertSafeTargetPath(targetRoot, target);
+
+    if (options.backup && !options.dryRun) {
+      const backup = await backupTarget(target, backupRoot);
+      if (backup) {
+        backups.push(toPortable(path.relative(targetRoot, backup)));
+      }
+    }
+
+    await copyPayloadEntry({
+      source,
+      target,
+      targetRoot,
+      dryRun: options.dryRun,
+      replaceDirectories: false,
+    });
+
+    const files = entry.isDirectory()
+      ? await listFiles(source, entry.name)
+      : [entry.name];
+    for (const relativeFile of files) {
+      const relativePath = path.join('skills', relativeFile);
+      const targetFile = path.join(targetRoot, relativePath);
+      copied.push({
+        path: toPortable(relativePath),
+        sha256: options.dryRun ? null : await hashFile(targetFile),
+      });
+    }
+  }
+
+  const manifest = {
+    schemaVersion: 1,
+    installId,
+    runtime: 'antigravity-global-skills',
+    installMode: 'account-root-direct',
+    targetRoot,
+    sourceRepo,
+    profileRoot: profileTargetRoot,
+    commonRoot: path.resolve(
+      options.homes[commonSpec.runtime]
+        || process.env[commonSpec.envName]
+        || commonSpec.defaultHome(),
+    ),
+    copied,
+    skipped,
+    backups,
+    removed,
+  };
+
+  if (!options.dryRun) {
+    await writeFile(
+      path.join(targetRoot, antigravitySkillsManifestName),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+  }
+
+  return manifest;
+};
+
 const installCommonRuntime = async ({ payloadRoot, options, installId, sourceRepo }) => installPayloadSpec({
   spec: commonSpec,
   runtime: commonSpec.runtime,
@@ -846,7 +1028,7 @@ const installCommonRuntime = async ({ payloadRoot, options, installId, sourceRep
 
 const installRuntime = async ({ runtime, payloadRoot, options, installId, sourceRepo }) => {
   const spec = runtimeSpecs[runtime];
-  return installPayloadSpec({
+  const manifest = await installPayloadSpec({
     spec,
     runtime,
     payloadRoot,
@@ -856,6 +1038,19 @@ const installRuntime = async ({ runtime, payloadRoot, options, installId, source
     ownedEntries: spec.exposureEntries,
     replaceDirectories: false,
   });
+
+  if (runtime !== 'antigravity') {
+    return [manifest];
+  }
+
+  const skillsManifest = await installAntigravitySkillsProjection({
+    spec,
+    payloadRoot,
+    options,
+    installId,
+    sourceRepo,
+  });
+  return [manifest, skillsManifest];
 };
 
 const verifyRuntimeManifest = async (manifest) => {
@@ -863,7 +1058,7 @@ const verifyRuntimeManifest = async (manifest) => {
   const mismatch = [];
 
   for (const record of manifest.copied) {
-    const target = path.join(manifest.targetRoot, record.path);
+    const target = path.join(record.targetRoot || manifest.targetRoot, record.path);
     if (!await pathExists(target)) {
       missing.push(record.path);
       continue;
@@ -904,7 +1099,8 @@ const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntime
     return null;
   }
 
-  const installedSkillNames = await listDirectoryNames(path.join(manifest.targetRoot, 'skills'));
+  const skillTargetRoot = manifest.skillTargetRoot || manifest.targetRoot;
+  const installedSkillNames = await listDirectoryNames(path.join(skillTargetRoot, 'skills'));
   const canonicalSkillNames = new Set(await listDirectoryNames(path.join(sourceRepo, 'skills')));
   const expected = [...publicRuntimeSkills].sort();
   const expectedSet = new Set(expected);
@@ -917,6 +1113,7 @@ const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntime
   return {
     runtime: manifest.runtime,
     targetRoot: manifest.targetRoot,
+    skillTargetRoot,
     expectedPublicSkills: expected,
     installedPublicSkills: installedSkillNames.filter((skill) => expectedSet.has(skill)).sort(),
     missingPublicSkills,
@@ -939,7 +1136,7 @@ const main = async () => {
     const manifests = [];
     manifests.push(await installCommonRuntime({ payloadRoot, options, installId, sourceRepo }));
     for (const runtime of runtimes) {
-      manifests.push(await installRuntime({ runtime, payloadRoot, options, installId, sourceRepo }));
+      manifests.push(...await installRuntime({ runtime, payloadRoot, options, installId, sourceRepo }));
     }
 
     const verification = options.dryRun
@@ -960,6 +1157,7 @@ const main = async () => {
       manifests: manifests.map((manifest) => ({
         runtime: manifest.runtime,
         targetRoot: manifest.targetRoot,
+        skillTargetRoot: manifest.skillTargetRoot || null,
         copiedCount: manifest.copied.length,
         legacyHarnessCorePresent: manifest.legacyHarnessCorePresent,
         skipped: manifest.skipped,

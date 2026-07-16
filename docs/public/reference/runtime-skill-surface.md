@@ -1,6 +1,6 @@
 # Runtime Skill Surface
 
-`package/runtime-surface.json` is the single authority for Claude/Codex/Qwen profile-local runtime skill discovery.
+`package/runtime-surface.json` is the single authority for Claude/Codex/Qwen profile-local and Antigravity global runtime skill discovery. Antigravity IDE skills are installed under `${ANTIGRAVITY_SKILLS_HOME:-~/.gemini/config}/skills/`; its `.gemini/antigravity/skills/` copy is compatibility-only.
 
 `catalog/moonshot-catalog.json` is the source catalog that binds that public surface to source skill paths, internal support clusters, package-contract entries, and required documentation. `node scripts/catalog-check.mjs --json` fails when the catalog, runtime surface, package contract, docs, or package dry-run profile exposure drift apart.
 
@@ -15,7 +15,7 @@ Profile-local public runtime skills:
 - `session-logger`
 - `explain-diff-html`
 
-The shared common payload preserves canonical `skills/**` for internal support and source parity. `moonshot-plan-writer` is a user-invoked planning entrypoint and must remain installed into Claude/Codex/Qwen profile-local public discovery.
+The shared common payload preserves canonical `skills/**` for internal support and source parity. `moonshot-plan-writer` is a user-invoked planning entrypoint and must remain installed into Claude/Codex/Qwen profile-local and Antigravity global public discovery.
 
 Internal skill routing is metadata-first through `node scripts/skill-router.mjs search|inspect|load --json`. `search` and `inspect` return catalog/source metadata only; `load` returns the selected skill body with prompt-safety redaction for unsafe raw fields. Contract drift is checked by `node scripts/lint-skills.mjs --json`, which validates public skill headings, deep references, profile-local source references, translation heading structure, and agent input/output contracts.
 
@@ -31,7 +31,7 @@ Use `product-orchestrator` while the request is still product scope. When produc
 
 Controlled adoption remains source-first: package dry-run and installer dry-run must pass before account-root or profile sync mutates live runtime files.
 
-Before live adoption, bind the rollback release to the current four install manifests with `node scripts/installed-release-resolve.mjs --candidate-root <detached-clean-worktree> --json`. The resolver first re-hashes every current managed file and rejects missing, mismatched, escaped, or duplicate manifest paths; it then installs that candidate into isolated temporary Moonshot/Claude/Codex/Qwen homes and requires exact `copied.path + sha256` parity. Any live-file drift or reproduced missing, extra, or mismatched file keeps adoption blocked. Preserve the four source manifests and the detached worktree outside the live profile roots before requesting approval.
+Before live adoption, bind the rollback release to the current six install manifests with `node scripts/installed-release-resolve.mjs --candidate-root <detached-clean-worktree> --json`. The resolver first re-hashes every current managed file and rejects missing, mismatched, escaped, or duplicate manifest paths; it then installs that candidate into isolated temporary Moonshot/Claude/Codex/Qwen/Antigravity profile and global-skill homes and requires exact `copied.path + sha256` parity. Any live-file drift or reproduced missing, extra, or mismatched file keeps adoption blocked. Preserve the six source manifests and the detached worktree outside the live profile roots before requesting approval.
 
 For harness/package/profile changes, live adoption also requires the regular Operational Adoption Closeout: independent completion audit, independent operational adoption audit, source `node scripts/doctor.mjs check --json`, `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json`, `npm run test:lab`, `npm run test:package`, `npm run test:eval`, `npm test`, `node package/build-package.mjs --runtime all --dry-run --json`, live `node bin/moonshot-relay.mjs install --runtime all --json`, installed doctor pass with explicit installed `--repo-root`, `--lock`, and `--runtime-surface` paths, and installer JSON `profileSurfaceParity[runtime=codex].extraCanonicalCount=0` for Codex managed canonical pruning.
 

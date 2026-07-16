@@ -2,6 +2,23 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-17
+- Scope: Hardened Antigravity global-skill projection for symlink/junction escape resistance, environment-based temp-home isolation, and manifest verification coverage.
+- Changed areas:
+  - Added target-path symlink and real-path boundary checks to `scripts/install-account-root-harness.mjs` before cleanup and projection writes.
+  - Made `ANTIGRAVITY_HOME` derive its sibling `config` skill root when `ANTIGRAVITY_SKILLS_HOME` is unset.
+  - Added security, environment-isolation, hash-verification, and global-manifest regression assertions.
+  - Updated runtime-surface and installer rollout documentation for the Antigravity global discovery root.
+- Verification evidence:
+  - Targeted installer/package contracts: 25/25 pass.
+  - Source doctor, skills audit, catalog check, package dry-run, and harness surface budget: pass.
+  - Full source gate: `npm test` 597 tests, 596 pass, 1 skipped.
+  - Package gate: `npm run test:package` 82/82 pass.
+  - Eval gate: `npm run test:eval` 14/14 pass, score `1`.
+  - Harness Lab gate: `npm run test:lab` pass, `promotable=true`, `accountRootGuard=passed`.
+  - Live account-root sync: installId `20260716-152954`; all six manifest verification sets have empty missing/mismatch arrays.
+  - Installed doctor and skills audit with explicit installed roots: pass; Claude, Codex, Qwen, and Antigravity profile parity pass with Codex `extraCanonicalCount=0`.
+
 - Date: 2026-07-16
 - Scope: Added support for the `antigravity` profile and agent runtime, including profile-templates, packaging materialization, installer sync, and verification tests.
 - Changed areas:
