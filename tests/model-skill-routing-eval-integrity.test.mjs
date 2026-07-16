@@ -19,7 +19,7 @@ test('model routing prompt blinds labels and emits a hash-bound private mapping'
     const schema = JSON.parse(await readFile(path.join(temp, 'output.schema.json'), 'utf8'));
     assert.doesNotMatch(prompt, /caseId": "[^\n]*(?:positive|negative)/);
     assert.match(prompt, /"caseId": "case-001"/);
-    assert.equal(binding.cases.length, 105);
+    assert.equal(binding.cases.length, 120);
     assert.match(binding.cases[0].canonicalId, /:(?:positive|negative):/);
     assert.ok(binding.cases.every((item) => /^[a-f0-9]{64}$/.test(item.promptHash)));
     assert.ok(schema.required.includes('evaluationId'));

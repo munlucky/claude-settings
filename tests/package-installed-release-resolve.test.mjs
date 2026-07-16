@@ -55,7 +55,7 @@ test('canonical skills lock and public runtime surface remain in parity', async 
   const runtimeSurface = JSON.parse(await readFile(path.join(repoRoot, 'package/runtime-surface.json'), 'utf8'));
   const result = await auditSkillsLock({ repoRoot, lock, runtimeSurface });
   assert.equal(result.status, 'pass', JSON.stringify(result.findings));
-  assert.equal(runtimeSurface.publicRuntimeSkills.length, 7);
+  assert.equal(runtimeSurface.publicRuntimeSkills.length, 8);
   assert.deepEqual(
     runtimeSurface.publicRuntimeSkills.filter((name) => !lock.skills.some((skill) => skill.name === name)),
     [],

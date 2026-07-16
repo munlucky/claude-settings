@@ -7,10 +7,10 @@
     "estimatedPromptTokens": 1815794
   },
   "allowedDelta": {
-    "files": 2,
-    "nonblankLines": 250,
-    "utf8Bytes": 25000,
-    "estimatedPromptTokens": 6250
+    "files": 4,
+    "nonblankLines": 400,
+    "utf8Bytes": 31000,
+    "estimatedPromptTokens": 8000
   },
   "allowedUnregisteredTests": 0
 }

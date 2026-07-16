@@ -12,13 +12,13 @@ import { caseContext } from '../tools/evals/skill-lightweight-comparison.mjs';
 
 const root = process.cwd();
 
-test('compatibility manifest deterministically freezes all seven public entrypoints in order', async () => {
+test('compatibility manifest deterministically freezes all eight public entrypoints in order', async () => {
   const first = await generateSkillCompatibilityManifest({ repoRoot: root, sourceFingerprint: 'test-source' });
   const second = await generateSkillCompatibilityManifest({ repoRoot: root, sourceFingerprint: 'test-source' });
   const runtimeSurface = JSON.parse(await readFile(path.join(root, 'package/runtime-surface.json'), 'utf8'));
   assert.deepEqual(first, second);
   assert.deepEqual(first.skills.map((skill) => skill.name), runtimeSurface.publicRuntimeSkills);
-  assert.equal(new Set(first.skills.map((skill) => skill.contractHash)).size, 7);
+  assert.equal(new Set(first.skills.map((skill) => skill.contractHash)).size, 8);
   assert.ok(first.skills.every((skill) => skill.directInvocationExamples.includes(`$${skill.name}`)));
   assert.ok(first.skills.every((skill) => skill.hardStopIds.length > 0));
   assert.ok(first.skills.every((skill) => skill.requiredOutputs.length > 0));
@@ -33,7 +33,7 @@ test('compatibility manifest CLI writes runtime-owned baseline-capable artifact'
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const manifest = JSON.parse(await readFile(out, 'utf8'));
     assert.equal(manifest.sourceFingerprint, 'test-source');
-    assert.equal(manifest.skills.length, 7);
+    assert.equal(manifest.skills.length, 8);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -131,13 +131,13 @@ test('routing baseline defines ten positive and five negative cases per public e
 
 test('baseline capture runs production router and freezes contract hashes without claiming model evidence', async () => {
   const baseline = await captureSkillRoutingBaseline({ repoRoot: root });
-  assert.equal(baseline.deterministic.results.length, 105);
+  assert.equal(baseline.deterministic.results.length, 120);
   assert.equal(baseline.deterministic.directInvocationSuccessRate, 1);
   assert.equal(baseline.deterministic.evaluator, 'scripts/skill-router.mjs#searchSkills');
   assert.match(baseline.sourceHeadSha, /^[a-f0-9]{40}$/);
   assert.equal(Object.hasOwn(baseline, 'previousReleaseSha'), false);
   assert.equal(baseline.previousRelease.status, 'unverified');
-  assert.equal(Object.keys(baseline.compatibilityManifestHashes).length, 7);
+  assert.equal(Object.keys(baseline.compatibilityManifestHashes).length, 8);
   assert.equal(baseline.model.status, 'not_run');
   assert.equal(baseline.installedMaterialization.liveAdoptionBlocked, true);
 });

@@ -11,7 +11,7 @@
 - canonical source는 `skills/`, `agents/`, `rules/`, `bin/`, `tools/`, `schemas/`, `templates/`, `tests/`, `docs/public/`와 allowlisted support script만 `scripts/`에서 관리하고, `.claude/`는 개발 profile 및 downstream compatibility wrapper로 유지
 - 대부분의 문서는 `.md`(영문)와 `.ko.md`(한글) 쌍으로 제공
 - `npx -y github:munlucky/moonshot-relay install` 또는 `node bin/moonshot-relay.mjs install --runtime all`로 account-root 런타임을 설치
-- account-root 설치의 공통 payload는 canonical `skills/**`를 보존하지만 Claude/Codex/Qwen profile-local discovery surface는 `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, `session-logger` 7개 skill로 제한
+- account-root 설치의 공통 payload는 canonical `skills/**`를 보존하지만 Claude/Codex/Qwen profile-local discovery surface는 `product-orchestrator`, `moonshot-architecture`, `moonshot-orchestrator`, `moonshot-phase-runner`, `moonshot-plan-writer`, `commit-moonshot`, `session-logger`, `explain-diff-html` 8개 skill로 제한
 - compatibility window 동안 downstream 설치는 계속 `.claude/` payload를 생성하지만, 이 저장소의 source of truth는 root-level source directory입니다
 - 기존 Moonshot 개발 실행 체인 앞에 제품 정의용 산출물 체인을 추가할 수 있음
 - 장시간 앱 개발용 `Sprint Contract -> QA Report -> Handoff` 브리지 아티팩트를 포함해 planner/generator/evaluator 분리를 강화
@@ -208,7 +208,7 @@ chmod +x install-claude.sh
 
 기본 동작:
 - 기본 설치는 account-root 직접 설치이며 공통 런타임 자산은 `~/.moonshot-relay`, 런타임별 자동 적용 표면은 `~/.claude`, `~/.codex`, `~/.qwen`에 동기화
-- Claude/Codex/Qwen의 `rules/`, `skills/`, `agents/`처럼 런타임이 직접 읽는 디렉터리는 각 계정 홈에 유지하되, profile-local `skills/`에는 공개 runtime skill 7개만 설치
+- Claude/Codex/Qwen의 `rules/`, `skills/`, `agents/`처럼 런타임이 직접 읽는 디렉터리는 각 계정 홈에 유지하되, profile-local `skills/`에는 공개 runtime skill 8개만 설치
 - Claude/Codex/Qwen 런타임 로컬 파일(settings, auth, sessions, plugins, caches 등)은 보호
 - 각 계정 루트에 `.moonshot-relay-install-manifest.json` 설치 manifest 기록
 - 현재 프로젝트에 `.claude`/`.codex` compatibility payload가 필요하면 `--project`를 사용
@@ -278,7 +278,7 @@ Root `.claude/`, `.codex/`, `.qwen/`는 canonical source가 아니라 local/gene
 
 ### Codex 설정 동기화
 
-기본 account-root 설치는 `~/.moonshot-relay`에 공통 Moonshot Relay 런타임을 설치하고, Codex가 직접 discovery하는 `~/.codex/agents/`와 `~/.codex/skills/`만 얇은 노출층으로 설치합니다. 기본 `.codex/skills/`에는 `package/runtime-surface.json`의 공개 runtime skill 7개만 들어가며, internal skill은 `~/.moonshot-relay/skills/`에 보존됩니다. 기존 `config.toml`, auth, sessions, plugins 등 Codex 런타임 로컬 파일은 보호합니다. `--project` 설치는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 현재 프로젝트에 실제 파일/디렉터리로 설치합니다. 재설치 시 프로젝트 `.codex/agents/`와 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. `.codex/skills/*`는 canonical `skills/`에서 materialized된 프로젝트 로컬 복사본이며, migration 중에는 `.claude/skills/*` compatibility profile output과 동기화될 수 있습니다.
+기본 account-root 설치는 `~/.moonshot-relay`에 공통 Moonshot Relay 런타임을 설치하고, Codex가 직접 discovery하는 `~/.codex/agents/`와 `~/.codex/skills/`만 얇은 노출층으로 설치합니다. 기본 `.codex/skills/`에는 `package/runtime-surface.json`의 공개 runtime skill 8개만 들어가며, internal skill은 `~/.moonshot-relay/skills/`에 보존됩니다. 기존 `config.toml`, auth, sessions, plugins 등 Codex 런타임 로컬 파일은 보호합니다. `--project` 설치는 `.codex/config.toml`, `.codex/agents/`, `.codex/skills/`를 현재 프로젝트에 실제 파일/디렉터리로 설치합니다. 재설치 시 프로젝트 `.codex/agents/`와 `.codex/skills/` 전체를 백업 없이 제거한 뒤 최신 복사본으로 교체합니다. `.codex/skills/*`는 canonical `skills/`에서 materialized된 프로젝트 로컬 복사본이며, migration 중에는 `.claude/skills/*` compatibility profile output과 동기화될 수 있습니다.
 
 Codex 프로젝트 설정에는 다음이 포함됩니다:
 - 기본 승인/샌드박스 정책: `approval_policy = "on-request"`, `sandbox_mode = "workspace-write"`

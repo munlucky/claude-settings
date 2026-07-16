@@ -32,6 +32,7 @@ test('catalog check passes against current source authority files', async () => 
     'moonshot-plan-writer',
     'commit-moonshot',
     'session-logger',
+    'explain-diff-html',
   ]);
 });
 

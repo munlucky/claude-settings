@@ -270,6 +270,20 @@
       }
     },
     {
+      "name": "explain-diff-html",
+      "path": "skills/explain-diff-html",
+      "source": "canonical",
+      "contentHash": "e742234e3541aadbccbf1734b9e01e4b1696704fd1f772382327d5f0c08f8c15",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [],
+      "permissionReview": {
+        "status": "approved",
+        "reviewedAt": "2026-07-09T07:09:16.082Z",
+        "reviewer": "skills-audit-generate-lock"
+      }
+    },
+    {
       "name": "figma-spec-synthesizer",
       "path": "skills/figma-spec-synthesizer",
       "source": "canonical",

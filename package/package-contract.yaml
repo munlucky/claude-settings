@@ -192,6 +192,7 @@ skillExposure:
     - moonshot-plan-writer
     - commit-moonshot
     - session-logger
+    - explain-diff-html
   internalSkillPolicy: "Internal and optional skills remain canonical source under skills/ and are preserved in the shared Moonshot Relay common payload, but Claude/Codex/Qwen runtime profile discovery must not materialize them under profile-local skills/."
   bootstrapSkillPolicy: "moonshot-relay-setup may be installed by Agent Skills CLI from repository source, but it is not part of the Claude/Codex/Qwen account-root runtime profile public discovery surface."
 

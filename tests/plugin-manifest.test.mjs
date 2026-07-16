@@ -43,6 +43,7 @@ test('runtime plugin manifests point at package materializers and canonical inpu
     'moonshot-plan-writer',
     'commit-moonshot',
     'session-logger',
+    'explain-diff-html',
   ]);
   assert.equal(runtimeSurface.serviceProfileSkillPolicy, 'allowlist_only');
   assert.equal(runtimeSurface.commonPayloadSkillPolicy, 'preserve_all_canonical_skills');

@@ -18,6 +18,7 @@ const publicSkillTokenBudgets = Object.freeze({
   'moonshot-plan-writer': 1463,
   'commit-moonshot': 2353,
   'session-logger': 677,
+  'explain-diff-html': 1100,
 });
 const estimatedTokens = (text) => Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
 

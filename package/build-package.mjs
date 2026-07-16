@@ -189,6 +189,7 @@ const denyRootSegments = new Set([
   '.moonshot-state',
   '.code-review-graph',
   'node_modules',
+  '__pycache__',
 ]);
 
 const denyRuntimeSegments = new Set([
@@ -230,6 +231,7 @@ const denyBasenames = [
   /\.e2e\.test\.[cm]?js$/,
   /_test\.py$/,
   /\.test\.py$/,
+  /\.pyc$/,
 ];
 
 const usage = () => `Usage: node package/build-package.mjs [--runtime all|moonshot-relay|claude|codex|qwen|antigravity] [--out <dir>] [--clean] [--dry-run] [--json]`;

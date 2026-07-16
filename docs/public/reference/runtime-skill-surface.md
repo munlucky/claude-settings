@@ -13,6 +13,7 @@ Profile-local public runtime skills:
 - `moonshot-plan-writer`
 - `commit-moonshot`
 - `session-logger`
+- `explain-diff-html`
 
 The shared common payload preserves canonical `skills/**` for internal support and source parity. `moonshot-plan-writer` is a user-invoked planning entrypoint and must remain installed into Claude/Codex/Qwen profile-local public discovery.
 

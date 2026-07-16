@@ -9,7 +9,7 @@
     "sourceFingerprint": { "type": "string", "minLength": 1 },
     "orderedPublicContractHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "skills": {
-      "type": "array", "minItems": 7, "maxItems": 7,
+      "type": "array", "minItems": 8, "maxItems": 8,
       "items": {
         "type": "object",
         "required": ["name", "publicPosition", "descriptionIntent", "triggers", "outputArtifacts", "requiredOutputs", "conditionalOutputs", "defaultPaths", "hardStopIds", "policyClauseIds", "sourcePolicyDigest", "completionSemantics", "directInvocationExamples", "contractHash"],

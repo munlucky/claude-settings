@@ -113,6 +113,19 @@
       },
       "source": "skills/session-logger/SKILL.md",
       "purpose": "Session logging utility for durable handoff records."
+    },
+    {
+      "name": "explain-diff-html",
+      "stage": "verification",
+      "ownerCluster": "change-explanation",
+      "engineRoute": "explain-diff",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["verification", "closeout"],
+      "conditionalSkillGroups": {
+        "alternativeOutput": []
+      },
+      "source": "skills/explain-diff-html/SKILL.md",
+      "purpose": "Rich interactive HTML explanation for an existing code change, diff, branch, or PR."
     }
   ],
   "internalDiscovery": {

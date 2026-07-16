@@ -113,7 +113,7 @@ export function validateSkillCompatibilityManifest(manifest, expectedNames = [],
     if (schemaErrors.length) throw new Error(`compatibility manifest schema validation failed: ${schemaErrors.join('; ')}`);
   }
   if (manifest?.schemaVersion !== 'moonshot-skill-compatibility.v1') throw new Error('invalid compatibility manifest schemaVersion');
-  if (!Array.isArray(manifest.skills) || manifest.skills.length !== 7) throw new Error('compatibility manifest must contain exactly seven skills');
+  if (!Array.isArray(manifest.skills) || (expectedNames.length > 0 ? manifest.skills.length !== expectedNames.length : manifest.skills.length === 0)) throw new Error('compatibility manifest skill count does not match the public runtime surface');
   const names = manifest.skills.map((skill) => skill.name);
   if (expectedNames.length && JSON.stringify(names) !== JSON.stringify(expectedNames)) throw new Error('compatibility manifest public order mismatch');
   for (const [index, skill] of manifest.skills.entries()) {

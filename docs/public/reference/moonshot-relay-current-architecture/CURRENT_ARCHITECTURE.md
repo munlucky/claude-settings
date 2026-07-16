@@ -8,7 +8,7 @@
 | README.md | Describes installation, public workflow entrypoints, package/runtime state boundaries, official test gates, and generated-state exclusions. | high |
 | docs/public/repository-layout.md | Documents canonical source, generated profile payloads, account-root runtime home, roadmap/execution scratch split, and contributor rules. | high |
 | package/package-contract.yaml | Declares physical source, package payload, account-root install, public runtime skill exposure, support scripts, protected runtime entries, and excluded generated state. | high |
-| package/runtime-surface.json | Defines the seven public runtime skills exposed in Claude/Codex profile-local discovery. | high |
+| package/runtime-surface.json | Defines the eight public runtime skills exposed in Claude/Codex profile-local discovery. | high |
 | bin/moonshot-relay.mjs | Routes CLI commands to account-root installer, project bridge installer, and delivery submission support. | high |
 | scripts/architecture-context-build.mjs | Builds prompt-safe architecture context and wraps project knowledge context without exposing raw graph/log/secret data. | high |
 | scripts/architecture-artifact-validate.mjs | Validates required architecture package files, ADRs, traceability, Brownfield evidence, path boundaries, and plan readiness. | high |

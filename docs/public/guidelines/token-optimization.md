@@ -12,7 +12,7 @@ Compaction should reduce repetition without dropping blockers, assumptions, veri
 
 ## Public Skill Budgets and Deletion Evidence
 
-`scripts/lint-skills.mjs` is the blocking contract for the seven public runtime skills. It records the deterministic UTF-8-byte/4 token estimate and enforces the exact accepted P04 estimate as a no-growth ceiling, plus catalog invocation metadata, conditional-loading declarations, resolvable deep references, trigger fixtures, translation parity, and duplicate hard-stop/completion prose. Any token growth requires an explicit reviewed budget-ratchet change and must still preserve the P01-to-candidate median reduction gate.
+`scripts/lint-skills.mjs` is the blocking contract for the eight public runtime skills. It records the deterministic UTF-8-byte/4 token estimate and enforces the exact accepted P04 estimate as a no-growth ceiling, plus catalog invocation metadata, conditional-loading declarations, resolvable deep references, trigger fixtures, translation parity, and duplicate hard-stop/completion prose. Any token growth requires an explicit reviewed budget-ratchet change and must still preserve the P01-to-candidate median reduction gate.
 
 Warning fingerprints may be captured as a baseline. A comparison run must fail on any new blocking finding or warning; legacy warnings outside the target public surface are carry-forward evidence, not permission to add more warnings.
 

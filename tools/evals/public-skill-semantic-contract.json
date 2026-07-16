@@ -207,6 +207,19 @@
         "session-logger.hard-stop.10:23c57fff7a58",
         "session-logger.hard-stop.11:b8fe27765d18"
       ]
+    },
+    "explain-diff-html": {
+      "defaultPaths": [
+        "scripts/render.py",
+        "skills/explain-diff-html/SKILL.md",
+        "tests/fixtures/skill-routing/public-entrypoint-cases.json"
+      ],
+      "hardStopIds": [
+        "explain-diff-html.hard-stop.01:b66c59ade83b",
+        "explain-diff-html.hard-stop.02:8c6ceea28c3a",
+        "explain-diff-html.hard-stop.03:4f75dcc3522b",
+        "explain-diff-html.hard-stop.04:93aeb5d53e5a"
+      ]
     }
   }
 }

@@ -193,6 +193,7 @@ const requiredClaudeConcreteFiles = [
   'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
+  'skills/explain-diff-html/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
 ];
@@ -205,6 +206,7 @@ const requiredConcreteCodexFiles = [
   'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
+  'skills/explain-diff-html/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
 ];
@@ -217,6 +219,7 @@ const requiredConcreteQwenFiles = [
   'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
+  'skills/explain-diff-html/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
 ];
@@ -240,6 +243,7 @@ const requiredConcreteAntigravityFiles = [
   'skills/moonshot-plan-writer/SKILL.md',
   'skills/product-orchestrator/SKILL.md',
   'skills/session-logger/SKILL.md',
+  'skills/explain-diff-html/SKILL.md',
   'agents/phase-attempt-agent.md',
   'rules/workflow.md',
 ];
