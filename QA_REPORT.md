@@ -2,6 +2,23 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-16
+- Scope: Added support for the `antigravity` profile and agent runtime, including profile-templates, packaging materialization, installer sync, and verification tests.
+- Changed areas:
+  - Added `package/profile-templates/antigravity/` profile templates (including `GEMINI.md`, `PROJECT.md`, `README.md`, and `profile-contract.yaml`).
+  - Modified `package/build-package.mjs` and `package/package-contract.yaml` to include `antigravity` in package profiles and build surface.
+  - Updated `scripts/install-account-root-harness.mjs` to installer sync the `antigravity` home directory and verify profile surface parity.
+  - Adjusted `.github/workflows/ci.yml` and `.gitignore` to support `antigravity` caching and tracking.
+  - Expanded `tests/github-ci-security-contract.test.mjs` and `tests/package-materialization.test.mjs` to cover the new `antigravity` profile.
+  - Updated budget in `package/harness-surface-budget.json`.
+- Verification evidence:
+  - Source doctor: `node scripts/doctor.mjs check --json` pass.
+  - Skills audit: `node scripts/skills-audit.mjs audit --lock skills.lock.json --runtime-surface package/runtime-surface.json --json` pass.
+  - Package gate: `npm run test:package` 82/82 pass.
+  - Eval gate: `npm run test:eval` pass.
+  - Harness Lab gate: `npm run test:lab` pass, status `passed`, `accountRootGuard=passed`, promotion `smoke_only`.
+  - Full source gate: `npm test` 595 tests, 594 pass, 1 skipped.
+
 - Date: 2026-07-10
 - Scope: Harness memory control-plane strategy implementation and source-to-account-root closeout.
 - Changed areas:

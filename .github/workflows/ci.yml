@@ -62,7 +62,8 @@ jobs:
           $claudeHome = Join-Path $root "claude-home"
           $codexHome = Join-Path $root "codex-home"
           $qwenHome = Join-Path $root "qwen-home"
-          $json = node scripts/install-account-root-harness.mjs --runtime all --dry-run --json --moonshot-home $moonshotHome --claude-home $claudeHome --codex-home $codexHome --qwen-home $qwenHome
+          $antigravityHome = Join-Path $root "antigravity-home"
+          $json = node scripts/install-account-root-harness.mjs --runtime all --dry-run --json --moonshot-home $moonshotHome --claude-home $claudeHome --codex-home $codexHome --qwen-home $qwenHome --antigravity-home $antigravityHome
           $payload = $json | ConvertFrom-Json
           if ($payload.dryRun -ne $true) { throw "installer did not report dryRun=true" }
           if (($payload.manifests | ForEach-Object { $_.removedCount } | Measure-Object -Sum).Sum -ne 0) { throw "dry-run planned removals" }

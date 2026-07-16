@@ -197,9 +197,54 @@ const runtimeSpecs = {
     ]),
     legacyHarnessCore: 'harness-core',
   },
+  antigravity: {
+    payloadPath: path.join('antigravity', 'profile', '.gemini', 'antigravity'),
+    defaultHome: () => path.join(os.homedir(), '.gemini', 'antigravity'),
+    envName: 'ANTIGRAVITY_HOME',
+    exposureEntries: new Set([
+      'GEMINI.md',
+      'PROJECT.md',
+      'README.md',
+      'agents',
+      'profile-contract.yaml',
+      'rules',
+      'skills',
+      'verification.contract.yaml',
+    ]),
+    legacyNonExposureEntries: new Set([
+      'bin',
+      'docs',
+      'schemas',
+      'scripts',
+      'templates',
+      'tools',
+    ]),
+    protectedEntries: new Set([
+      'annotations',
+      'antigravity_state.pbtxt',
+      'agyhub_summaries_proto.pb',
+      'backups',
+      'bin',
+      'brain',
+      'browser_recordings',
+      'browserOnboardingStatus.txt',
+      'code_tracker',
+      'context_state',
+      'conversations',
+      'html_artifacts',
+      'implicit',
+      'installation_id',
+      'knowledge',
+      'mcp_config.json',
+      'playground',
+      'scratch',
+      'user_settings.pb',
+    ]),
+    legacyHarnessCore: 'harness-core',
+  },
 };
 
-const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex|qwen] [--source-root <repo>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--qwen-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
+const usage = () => `Usage: node scripts/install-account-root-harness.mjs [--runtime all|claude|codex|qwen|antigravity] [--source-root <repo>] [--moonshot-home <dir>] [--codex-home <dir>] [--claude-home <dir>] [--qwen-home <dir>] [--antigravity-home <dir>] [--dry-run] [--json] [--no-backup] [--remove-legacy-harness-core]`;
 
 const parseArgs = (argv) => {
   const options = {
@@ -228,6 +273,8 @@ const parseArgs = (argv) => {
       options.homes.claude = path.resolve(argv[++index]);
     } else if (arg === '--qwen-home') {
       options.homes.qwen = path.resolve(argv[++index]);
+    } else if (arg === '--antigravity-home') {
+      options.homes.antigravity = path.resolve(argv[++index]);
     } else if (arg === '--dry-run') {
       options.dryRun = true;
     } else if (arg === '--json') {
@@ -244,7 +291,7 @@ const parseArgs = (argv) => {
     }
   }
 
-  if (!['all', 'claude', 'codex', 'qwen'].includes(options.runtime)) {
+  if (!['all', 'claude', 'codex', 'qwen', 'antigravity'].includes(options.runtime)) {
     throw new Error(`Unsupported runtime: ${options.runtime}\n${usage()}`);
   }
 
@@ -853,7 +900,7 @@ const listDirectoryNames = async (root) => {
 };
 
 const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntimeSkills }) => {
-  if (!['claude', 'codex', 'qwen'].includes(manifest.runtime)) {
+  if (!['claude', 'codex', 'qwen', 'antigravity'].includes(manifest.runtime)) {
     return null;
   }
 
@@ -883,7 +930,7 @@ const computeProfileSurfaceParity = async ({ manifest, sourceRepo, publicRuntime
 const main = async () => {
   const options = parseArgs(process.argv.slice(2));
   const sourceRepo = options.sourceRoot;
-  const runtimes = options.runtime === 'all' ? ['claude', 'codex', 'qwen'] : [options.runtime];
+  const runtimes = options.runtime === 'all' ? ['claude', 'codex', 'qwen', 'antigravity'] : [options.runtime];
   const installId = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
   const payloadRoot = await materializePayloads(sourceRepo);
   const publicRuntimeSkills = await readRuntimeSurface(sourceRepo);

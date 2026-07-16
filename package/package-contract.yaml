@@ -46,6 +46,13 @@ runtimeProfiles:
     materializer: package/build-package.mjs
     materialization: local_copy_not_committed
     symlinkPolicy: avoid_required_symlinks
+  antigravity:
+    templateRoot: package/profile-templates/antigravity/.gemini/antigravity/
+    generatedProfileRoot: package/antigravity/profile/.gemini/antigravity/
+    localRuntimeRoot: .gemini/antigravity/
+    materializer: package/build-package.mjs
+    materialization: local_copy_not_committed
+    symlinkPolicy: avoid_required_symlinks
 
 accountRootInstall:
   installer: scripts/install-account-root-harness.mjs
@@ -63,6 +70,7 @@ accountRootInstall:
     claude: "${CLAUDE_HOME:-~/.claude}"
     codex: "${CODEX_HOME:-~/.codex}"
     qwen: "${QWEN_HOME:-~/.qwen}"
+    antigravity: "${ANTIGRAVITY_HOME:-~/.gemini/antigravity}"
   commonPayloadEntries:
     - catalog/
     - bin/
@@ -99,6 +107,15 @@ accountRootInstall:
       - QWEN.md
       - README.md
       - agents/
+      - rules/
+      - skills/
+      - verification.contract.yaml
+    antigravity:
+      - GEMINI.md
+      - PROJECT.md
+      - README.md
+      - agents/
+      - profile-contract.yaml
       - rules/
       - skills/
       - verification.contract.yaml
@@ -485,6 +502,16 @@ requiredPayloadEntries:
     - target: .qwen/
       generatedFrom: sharedSource
       role: local_runtime_profile_not_committed
+  antigravityRuntime:
+    - target: package/profile-templates/antigravity/.gemini/antigravity/
+      role: runtime_specific_static_template
+    - target: package/antigravity/profile/.gemini/antigravity/
+      generatedFrom: sharedSource
+      materializer: package/build-package.mjs
+      role: ignored_generated_package_payload
+    - target: .gemini/antigravity/
+      generatedFrom: sharedSource
+      role: local_runtime_profile_not_committed
 
 excludedGeneratedState:
   - scripts/fixtures/**
@@ -524,6 +551,17 @@ excludedGeneratedState:
   - .qwen/tmp/**
   - .qwen/memory.json
   - .code-review-graph/**
+  - .gemini/antigravity/logs/**
+  - .gemini/antigravity/cache/**
+  - .gemini/antigravity/traces/**
+  - .gemini/antigravity/browser-artifacts/**
+  - .gemini/antigravity/browser-runtime/**
+  - .gemini/antigravity/tmp/**
+  - .gemini/antigravity/runtime-state.sqlite*
+  - .gemini/antigravity/memory.json
+  - .gemini/antigravity/memorygraph/**
+  - .gemini/antigravity/*verdict*.json
+  - .gemini/antigravity/knowledge-repo-audit-*.json
 
 driftPolicy:
   sourceOfTruth: canonicalSource

@@ -1,0 +1,41 @@
+schemaVersion: 1
+profileId: antigravity-development-profile
+role: development_profile
+canonicalSourceContract: package/package-contract.yaml
+compatibilityPolicy: move_with_wrapper_until_phase_06
+sourcePolicy:
+  durableSourceRoots:
+    - skills/
+    - agents/
+    - rules/
+    - scripts/
+    - schemas/
+    - templates/
+    - tests/
+    - docs/public/
+  generatedProfileRoots:
+    - .gemini/antigravity/skills/
+    - .gemini/antigravity/agents/
+    - .gemini/antigravity/rules/
+  commonHarnessRoot: "${MOONSHOT_RELAY_HOME:-~/.moonshot-relay}/"
+  rule: "Edit canonical source first; expose only service profile files in .gemini/antigravity and keep common harness files under MOONSHOT_RELAY_HOME."
+activeRuntimeFiles:
+  - .gemini/antigravity/GEMINI.md
+  - .gemini/antigravity/PROJECT.md
+  - .gemini/antigravity/README.md
+  - .gemini/antigravity/agents/**
+  - .gemini/antigravity/rules/**
+  - .gemini/antigravity/skills/**
+  - .gemini/antigravity/verification.contract.yaml
+excludedGeneratedState:
+  - .gemini/antigravity/logs/**
+  - .gemini/antigravity/cache/**
+  - .gemini/antigravity/traces/**
+  - .gemini/antigravity/browser-artifacts/**
+  - .gemini/antigravity/browser-runtime/**
+  - .gemini/antigravity/tmp/**
+  - .gemini/antigravity/runtime-state.sqlite*
+  - .gemini/antigravity/memory.json
+  - .gemini/antigravity/memorygraph/**
+  - .gemini/antigravity/*verdict*.json
+  - .gemini/antigravity/knowledge-repo-audit-*.json
