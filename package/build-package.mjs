@@ -122,6 +122,7 @@ const runtimeSpecs = {
       'scripts/lib/runtime-state-store.mjs',
       'scripts/lib/sqlite-driver.mjs',
       'scripts/lib/sqlite-drivers/node-sqlite.mjs',
+      'scripts/lib/moonshot-runtime-resolver.mjs',
       'scripts/lib/control-plane-policy.mjs',
       'scripts/lib/execution-cursor.mjs',
       'scripts/lib/workflow-bundle-resolver.mjs',

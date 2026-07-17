@@ -448,6 +448,8 @@ requiredPayloadEntries:
         purpose: sqlite_driver_factory
       - source: scripts/lib/sqlite-drivers/node-sqlite.mjs
         purpose: node_sqlite_compatibility_adapter
+      - source: scripts/lib/moonshot-runtime-resolver.mjs
+        purpose: managed_node_runtime_resolver
       - source: scripts/lib/control-plane-policy.mjs
         purpose: shared_control_plane_policy_decisions
       - source: scripts/lib/execution-cursor.mjs
