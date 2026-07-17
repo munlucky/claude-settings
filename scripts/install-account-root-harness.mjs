@@ -14,6 +14,8 @@ import {
   rm,
   rmdir,
   stat,
+  symlink,
+  rename,
   writeFile,
 } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
@@ -44,7 +46,6 @@ const commonSpec = {
     'skills',
     'templates',
     'tools',
-    'node_modules',
     'package',
     'package.json',
     'package-lock.json',
@@ -1015,16 +1016,114 @@ const installAntigravitySkillsProjection = async ({
   return manifest;
 };
 
-const installCommonRuntime = async ({ payloadRoot, options, installId, sourceRepo }) => installPayloadSpec({
-  spec: commonSpec,
-  runtime: commonSpec.runtime,
-  payloadRoot,
-  options,
-  installId,
-  sourceRepo,
-  ownedEntries: commonSpec.ownedEntries,
-  replaceDirectories: true,
-});
+const copyRecursive = async (src, dest) => {
+  const statVal = await stat(src);
+  if (statVal.isDirectory()) {
+    await mkdir(dest, { recursive: true });
+    const entries = await readdir(src);
+    for (const entry of entries) {
+      await copyRecursive(path.join(src, entry), path.join(dest, entry));
+    }
+  } else {
+    await copyFile(src, dest);
+  }
+};
+
+const installManagedNodeRuntime = async ({ targetRoot, payloadRoot, options }) => {
+  const sourceRuntimeDir = path.join(payloadRoot, 'moonshot-relay', 'profile', 'runtime');
+  const targetRuntimeDir = path.join(targetRoot, 'runtime');
+  
+  if (!await pathExists(sourceRuntimeDir)) {
+    return;
+  }
+  
+  const manifestPath = path.join(sourceRuntimeDir, 'runtime-manifest.json');
+  if (!await pathExists(manifestPath)) {
+    throw new Error(`Missing runtime-manifest.json in payload`);
+  }
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  const versionString = `${manifest.version}-${manifest.platform}-${manifest.arch}`;
+  
+  const sourceVersionDir = path.join(sourceRuntimeDir, 'versions', versionString);
+  const targetVersionsDir = path.join(targetRuntimeDir, 'versions');
+  const targetVersionDir = path.join(targetVersionsDir, versionString);
+  const targetCurrentDir = path.join(targetRuntimeDir, 'current');
+  
+  if (options.dryRun) {
+    console.log(`[dry-run] Would copy runtime version to ${targetVersionDir}`);
+    console.log(`[dry-run] Would atomically switch ${targetCurrentDir} to ${targetVersionDir}`);
+    return;
+  }
+  
+  await mkdir(targetVersionsDir, { recursive: true });
+  
+  const targetVersionTmpDir = `${targetVersionDir}.tmp`;
+  await rm(targetVersionTmpDir, { recursive: true, force: true });
+  await copyRecursive(sourceVersionDir, targetVersionTmpDir);
+  
+  const nodeBinaryName = manifest.platform === 'win32' ? 'node.exe' : 'bin/node';
+  const nodeBinaryPath = path.join(targetVersionTmpDir, nodeBinaryName);
+  
+  if (!await pathExists(nodeBinaryPath)) {
+    await rm(targetVersionTmpDir, { recursive: true, force: true });
+    throw new Error(`Missing Node binary in materialized payload: ${nodeBinaryPath}`);
+  }
+  
+  const { spawnSync } = await import('node:child_process');
+  const smoke = spawnSync(nodeBinaryPath, ['-v'], { encoding: 'utf8' });
+  if (smoke.status !== 0 || !smoke.stdout.startsWith('v')) {
+    await rm(targetVersionTmpDir, { recursive: true, force: true });
+    throw new Error(`Runtime binary failed execution smoke check: ${smoke.stderr || smoke.stdout}`);
+  }
+  
+  await rm(targetVersionDir, { recursive: true, force: true });
+  await rename(targetVersionTmpDir, targetVersionDir);
+  
+  let previousPath = null;
+  if (await pathExists(targetCurrentDir)) {
+    previousPath = await realpath(targetCurrentDir).catch(() => targetCurrentDir);
+  }
+  
+  const targetCurrentTmp = `${targetCurrentDir}.tmp`;
+  await rm(targetCurrentTmp, { recursive: true, force: true });
+  
+  try {
+    if (manifest.platform === 'win32') {
+      await symlink(targetVersionDir, targetCurrentTmp, 'junction');
+    } else {
+      await symlink(targetVersionDir, targetCurrentTmp);
+    }
+    await rm(targetCurrentDir, { recursive: true, force: true });
+    await rename(targetCurrentTmp, targetCurrentDir);
+  } catch (err) {
+    await copyRecursive(targetVersionDir, targetCurrentTmp);
+    await rm(targetCurrentDir, { recursive: true, force: true });
+    await rename(targetCurrentTmp, targetCurrentDir);
+  }
+  
+  await writeFile(path.join(targetRuntimeDir, 'runtime-manifest.json'), JSON.stringify({
+    ...manifest,
+    previousRuntime: previousPath ? path.relative(targetRuntimeDir, previousPath) : null
+  }, null, 2));
+};
+
+const installCommonRuntime = async ({ payloadRoot, options, installId, sourceRepo }) => {
+  const manifest = await installPayloadSpec({
+    spec: commonSpec,
+    runtime: commonSpec.runtime,
+    payloadRoot,
+    options,
+    installId,
+    sourceRepo,
+    ownedEntries: commonSpec.ownedEntries,
+    replaceDirectories: true,
+  });
+  
+  const targetRoot = resolveSpecHome({ spec: commonSpec, runtime: commonSpec.runtime, options });
+  await installManagedNodeRuntime({ targetRoot, payloadRoot, options });
+  
+  return manifest;
+};
 
 const installRuntime = async ({ runtime, payloadRoot, options, installId, sourceRepo }) => {
   const spec = runtimeSpecs[runtime];

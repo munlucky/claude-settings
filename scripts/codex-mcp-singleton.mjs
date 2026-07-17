@@ -173,7 +173,8 @@ function resolveRelayHomeToken(value) {
   return value
     .replaceAll('<MOONSHOT_RELAY_HOME>', relayHome())
     .replaceAll('${MOONSHOT_RELAY_HOME}', relayHome())
-    .replaceAll('%MOONSHOT_RELAY_HOME%', relayHome());
+    .replaceAll('%MOONSHOT_RELAY_HOME%', relayHome())
+    .replaceAll('@moonshot-node', process.execPath);
 }
 
 function removeLockIfOwned(lockFile) {
@@ -205,6 +206,7 @@ writeJson(lockFile, {
   host: os.hostname(),
 });
 
+console.error(`[codex-mcp-singleton] spawning child process with execPath: ${resolveCommand(command)}`);
 const child = spawn(resolveCommand(command), args, {
   cwd,
   env: process.env,

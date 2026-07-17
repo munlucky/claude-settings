@@ -1,0 +1,12 @@
+{
+  "platform": "win32",
+  "arch": "x64",
+  "offlineReady": true,
+  "npmBlocked": true,
+  "npxBlocked": true,
+  "nodeGypBlocked": true,
+  "networkBlocked": true,
+  "runtimeStateCreated": true,
+  "memoryPromotionPassed": true,
+  "rollbackPassed": true
+}

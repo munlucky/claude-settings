@@ -1,0 +1,2 @@
+AssertionError [ERR_ASSERTION]: [codex-mcp-singleton] failed to start test-mcp: spawn @moonshot-node ENOENT
+    at TestContext.<anonymous> (file:///C:/dev/moonshot-relay/tests/runtime-entrypoint-contract.test.mjs:19:10)

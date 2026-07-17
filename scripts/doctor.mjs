@@ -8,6 +8,7 @@ import {
   assertRuntimeSurfaceUnexpanded,
   auditSkillsLock,
 } from './lib/skills-lock.mjs';
+import { resolveRuntimeNode } from './lib/moonshot-runtime-resolver.mjs';
 
 const usage = () => 'Usage: node scripts/doctor.mjs check [--repo-root <root>] [--evidence-root <root>] [--lock <skills-lock.json>] [--runtime-surface <runtime-surface.json>] [--expected-runtime-surface-json <json-array>] [--json]';
 
@@ -631,6 +632,63 @@ const main = async () => {
   const skills = await auditSkillsLock({ repoRoot, lock, runtimeSurface });
   findings.push(...skills.findings);
 
+  let systemNodeVersion = process.version;
+  let runtimeNodeVersion = 'missing';
+  let runtimeExecPath = 'missing';
+  let runtimeSource = 'none';
+  let checksumStatus = 'missing_runtime';
+  const platform = process.platform;
+  const arch = process.arch;
+
+  try {
+    const resolved = resolveRuntimeNode({ env: process.env });
+    runtimeNodeVersion = resolved.version;
+    runtimeExecPath = resolved.execPath;
+    runtimeSource = resolved.source;
+    checksumStatus = resolved.checksumStatus;
+  } catch (error) {
+    checksumStatus = error.code || 'error';
+  }
+
+  let sqliteStatus = 'healthy';
+  try {
+    const { loadSqliteDatabaseClass } = await import('./lib/sqlite-driver.mjs');
+    const Database = await loadSqliteDatabaseClass();
+    const tempDb = new Database(':memory:');
+    tempDb.close();
+  } catch (error) {
+    sqliteStatus = 'runtime_sqlite_open_failed';
+  }
+
+  let memoryGraphStatus = 'healthy';
+  const { spawnSync } = await import('node:child_process');
+  const mgCheck = spawnSync('node', ['scripts/memorygraph-direct.mjs', 'health'], { encoding: 'utf8' });
+  if (mgCheck.status !== 0) {
+    const output = `${mgCheck.stdout} ${mgCheck.stderr}`.toLowerCase();
+    if (output.includes('not found') || output.includes('missing') || output.includes('enoent')) {
+      memoryGraphStatus = 'memorygraph_command_missing';
+    } else {
+      memoryGraphStatus = 'memorygraph_health_failed';
+    }
+  }
+
+  let runtimeNodeStatus = 'healthy';
+  if (runtimeNodeVersion === 'missing') {
+    runtimeNodeStatus = 'runtime_node_missing';
+  } else if (checksumStatus !== 'verified' && checksumStatus !== 'match') {
+    if (checksumStatus === 'missing_runtime') {
+      runtimeNodeStatus = 'runtime_node_missing';
+    } else {
+      runtimeNodeStatus = 'runtime_node_manifest_mismatch';
+    }
+  }
+
+  const offlineReadiness = {
+    runtimeNode: runtimeNodeStatus,
+    sqlite: sqliteStatus,
+    memoryGraph: memoryGraphStatus
+  };
+
   const checks = {
     runtimeSurface: summarizeRuntimeSurface({
       repoRoot,
@@ -645,6 +703,14 @@ const main = async () => {
     researchReadiness: await summarizeResearchReadiness({ evidenceRoot, findings }),
     profileTrust: summarizeProfileTrust({ args, repoRoot, lockPath, runtimeSurfacePath }),
     generatedStateBoundary: await summarizeGeneratedStateBoundary({ repoRoot, findings }),
+    systemNodeVersion,
+    runtimeNodeVersion,
+    runtimeExecPath,
+    runtimeSource,
+    platform,
+    arch,
+    checksumStatus,
+    offlineReadiness,
   };
 
   const result = {

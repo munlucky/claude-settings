@@ -1,0 +1,2 @@
+AssertionError [ERR_ASSERTION]: systemNodeVersion missing
+    at TestContext.<anonymous> (file:///C:/dev/moonshot-relay/tests/runtime-doctor-contract.test.mjs:23:10)

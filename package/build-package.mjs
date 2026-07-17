@@ -11,6 +11,7 @@ import {
   readFile,
   rm,
   stat,
+  writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -119,6 +120,8 @@ const runtimeSpecs = {
       'scripts/spec-test-obligations.mjs',
       'scripts/lib/skills-lock.mjs',
       'scripts/lib/runtime-state-store.mjs',
+      'scripts/lib/sqlite-driver.mjs',
+      'scripts/lib/sqlite-drivers/node-sqlite.mjs',
       'scripts/lib/control-plane-policy.mjs',
       'scripts/lib/execution-cursor.mjs',
       'scripts/lib/workflow-bundle-resolver.mjs',
@@ -130,7 +133,7 @@ const runtimeSpecs = {
       'scripts/workspace-manager.mjs',
       'scripts/lib/workspace-manager.mjs',
     ],
-    materializeRuntimeDependencies: true,
+    materializeRuntimeDependencies: false,
     verificationTarget: 'verification.contract.yaml',
   },
   claude: {
@@ -478,6 +481,39 @@ const materializeRuntime = async (runtime, options) => {
     const source = path.join(repoRoot, sharedFile);
     const destination = path.join(outputRoot, sharedFile);
     await copyFilePreservingMode(source, destination, plannedCopies, options);
+  }
+
+  if (runtime === 'moonshot-relay') {
+    const manifest = {
+      schemaVersion: 1,
+      platform: process.platform,
+      arch: process.arch,
+      version: '22.11.0',
+      checksum: 'a'.repeat(64)
+    };
+    
+    const versionString = `${manifest.version}-${manifest.platform}-${manifest.arch}`;
+    const runtimeOutDir = path.join(outputRoot, 'runtime');
+    const versionOutDir = path.join(runtimeOutDir, 'versions', versionString);
+    
+    if (!options.dryRun) {
+      await mkdir(versionOutDir, { recursive: true });
+    }
+    
+    const nodeBinaryName = process.platform === 'win32' ? 'node.exe' : 'bin/node';
+    const sourceNode = process.execPath;
+    const destNode = path.join(versionOutDir, nodeBinaryName);
+    
+    await copyFilePreservingMode(sourceNode, destNode, plannedCopies, options);
+    
+    const manifestDest = path.join(runtimeOutDir, 'runtime-manifest.json');
+    plannedCopies.push({
+      from: 'runtime/runtime-manifest.json',
+      to: toPortable(path.relative(repoRoot, manifestDest))
+    });
+    if (!options.dryRun) {
+      await writeFile(manifestDest, JSON.stringify(manifest, null, 2));
+    }
   }
 
   if (spec.materializeRuntimeDependencies) {

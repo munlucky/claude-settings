@@ -1,0 +1,10 @@
+schemaVersion: 1
+runtimePolicy:
+  channel: active-lts
+  resolutionPhase: release-build
+  exactVersionRequired: true
+  systemNodeFallback: false
+  supportedMajors:
+    - 20
+    - 22
+    - 24

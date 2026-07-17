@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/moonshot-runtime-manifest.schema.json",
+  "title": "Moonshot Runtime Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "platform", "arch", "version", "checksum"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "platform": { "type": "string" },
+    "arch": { "type": "string" },
+    "version": { "type": "string" },
+    "checksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

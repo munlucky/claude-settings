@@ -181,8 +181,8 @@ const requiredCommonPayloadFiles = [
   'docs/public/guidelines/harness-bootstrap-lab.md',
   'package.json',
   'package-lock.json',
-  'node_modules/better-sqlite3/package.json',
-  'node_modules/bindings/package.json',
+  'scripts/lib/sqlite-driver.mjs',
+  'scripts/lib/sqlite-drivers/node-sqlite.mjs',
 ];
 
 const requiredClaudeConcreteFiles = [
@@ -573,7 +573,7 @@ test('package materialization contract names generated payload roots and exclusi
   assert.match(contract, /source: scripts\/spec-test-obligations\.mjs/);
   assert.match(contract, /source: schemas\/spec-test-obligation\.schema\.json/);
   assert.match(contract, /source: package-lock\.json/);
-  assert.match(contract, /source: node_modules\/better-sqlite3\/\*\*/);
+  assert.doesNotMatch(contract, /source: node_modules\/better-sqlite3\/\*\*/);
   assert.match(contract, /source: scripts\/lib\/browser-failure-package\.mjs/);
   assert.match(contract, /source: scripts\/lib\/browser-scenario-contract\.mjs/);
   assert.match(contract, /runtimeDependencyDelivery:/);
@@ -725,7 +725,7 @@ test('package smoke runs materialized runtime-state from package home', async ()
   assert.equal(payload.runtimeCapabilityStatus.status, 'available');
   assert.equal(payload.runtimeCapabilityStatus.dbPath, expectedDbPath);
   assert.equal(existsSync(expectedDbPath), true);
-  assert.equal(existsSync(path.join(profileRoot, 'node_modules', 'better-sqlite3', 'package.json')), true);
+  assert.equal(existsSync(path.join(profileRoot, 'node_modules', 'better-sqlite3', 'package.json')), false);
 });
 
 test('generated package profiles are not tracked source files', () => {
@@ -929,8 +929,8 @@ test('account-root installer merges shared directories without deleting unrelate
     assert.equal(existsSync(path.join(moonshotHome, 'catalog', 'moonshot-catalog.json')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'scripts', 'install-account-root-harness.mjs')), true);
     assert.equal(existsSync(path.join(moonshotHome, 'templates', 'GOAL_CONTRACT.template.yaml')), true);
-    assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'better-sqlite3', 'package.json')), true);
-    assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'bindings', 'package.json')), true);
+    assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'better-sqlite3', 'package.json')), false);
+    assert.equal(existsSync(path.join(moonshotHome, 'node_modules', 'bindings', 'package.json')), false);
     assert.equal(existsSync(path.join(moonshotHome, 'state', 'projects', 'demo', 'knowledge', 'preserve.txt')), true);
     assert.equal(existsSync(path.join(codexHome, 'sessions', 'preserve.json')), true);
     assert.equal(existsSync(path.join(codexHome, 'auth.json')), true);

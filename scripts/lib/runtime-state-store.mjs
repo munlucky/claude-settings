@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { resolveDbPath } from './runtime-state-db-path.mjs';
+import { loadSqliteDatabaseClass } from './sqlite-driver.mjs';
 import {
   assessCompletionFixture,
   assessEvalFixture,
@@ -158,8 +159,8 @@ async function loadDatabase() {
   }
 
   try {
-    const module = await import('better-sqlite3');
-    return module.default;
+    const Database = await loadSqliteDatabaseClass();
+    return Database;
   } catch (error) {
     const wrapped = new Error(error instanceof Error ? error.message : String(error));
     wrapped.code = runtimeStoreErrorCode(error, 'loadDatabase');

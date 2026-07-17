@@ -27,12 +27,12 @@ url = "https://mcp.exa.ai/mcp"
 
 [mcp_servers.memory]
 command = "node"
-args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "memory", "--", "node", "<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.mjs"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "memory", "--", "@moonshot-node", "<MOONSHOT_RELAY_HOME>/scripts/memorygraph-mcp-wrapper.mjs"]
 startup_timeout_sec = 30
 
 [mcp_servers.code-review-graph]
 command = "node"
-args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "code-review-graph", "--", "node", "<MOONSHOT_RELAY_HOME>/scripts/code-review-graph-mcp-wrapper.js"]
+args = ["--input-type=module", "-e", "import path from 'node:path'; import os from 'node:os'; import { pathToFileURL } from 'node:url'; const home = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay'); const script = path.join(home, 'scripts', 'codex-mcp-singleton.mjs'); process.argv = [process.argv[0], script, ...process.argv.slice(1)]; await import(pathToFileURL(script).href);", "code-review-graph", "--", "@moonshot-node", "<MOONSHOT_RELAY_HOME>/scripts/code-review-graph-mcp-wrapper.js"]
 startup_timeout_sec = 30
 
 [mcp_servers.playwright]

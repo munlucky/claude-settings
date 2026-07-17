@@ -1,0 +1,2 @@
+AssertionError [ERR_ASSERTION]: [codex-mcp-singleton] failed to start test-child: spawn @moonshot-node ENOENT
+    at TestContext.<anonymous> (file:///C:/dev/moonshot-relay/tests/runtime-child-process-contract.test.mjs:18:10)

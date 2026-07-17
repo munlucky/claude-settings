@@ -1,0 +1,4 @@
+{
+  "driver": "node:sqlite",
+  "parity": "passed"
+}

@@ -1,0 +1,33 @@
+#!/usr/bin/env sh
+# Resolve the runtime path using our resolver script
+LAUNCHER_DIR="$(cd "$(dirname "$0")" && pwd)"
+export MOONSHOT_LAUNCHER_REPO_ROOT="$(cd "$LAUNCHER_DIR/.." && pwd)"
+
+RESOLVE_HOME="${MOONSHOT_RELAY_HOME:-$HOME/.moonshot-relay}"
+BUNDLED_NODE="$RESOLVE_HOME/runtime/current/bin/node"
+if [ ! -f "$BUNDLED_NODE" ]; then
+  # check Windows structure just in case of cygwin/msys
+  BUNDLED_NODE="$RESOLVE_HOME/runtime/current/node.exe"
+fi
+
+RESOLVE_NODE="node"
+if [ -f "$BUNDLED_NODE" ]; then
+  RESOLVE_NODE="$BUNDLED_NODE"
+fi
+
+EXEC_PATH=$("$RESOLVE_NODE" -e "
+const p = require('url').pathToFileURL(require('path').resolve(process.env.MOONSHOT_LAUNCHER_REPO_ROOT, 'scripts/lib/moonshot-runtime-resolver.mjs')).href;
+import(p)
+  .then(m => console.log(m.resolveRuntimeNode({ homeDir: process.env.MOONSHOT_RELAY_HOME || '' }).execPath))
+  .catch(err => {
+    console.error(err.message);
+    process.exit(1);
+  });
+" 2>/dev/null)
+
+if [ -z "$EXEC_PATH" ]; then
+  echo "Error: Failed to resolve managed Moonshot runtime node path." >&2
+  exit 1
+fi
+
+exec "$EXEC_PATH" "$@"

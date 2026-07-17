@@ -1,0 +1,12 @@
+✔ resolver validates manifest against schema (1.752ms)
+✔ resolver respects MOONSHOT_RELAY_RUNTIME_NODE env override (0.3059ms)
+✔ resolver resolves path using MOONSHOT_RELAY_HOME runtime current (3.4536ms)
+✔ resolver throws missing_runtime when current does not exist and fallback disallowed (0.4997ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 100.0225

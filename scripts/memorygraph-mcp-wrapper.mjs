@@ -53,6 +53,9 @@ function candidateCommands() {
     candidates.push(process.env.MEMORYGRAPH_COMMAND);
   }
 
+  const relayHome = process.env.MOONSHOT_RELAY_HOME || path.join(os.homedir(), '.moonshot-relay');
+  candidates.push(path.join(relayHome, 'runtime', 'current', 'memorygraph', isWindows ? 'memorygraph.exe' : 'memorygraph'));
+
   const home = os.homedir();
   if (home) {
     candidates.push(path.join(home, '.local', 'bin', isWindows ? 'memorygraph.exe' : 'memorygraph'));
