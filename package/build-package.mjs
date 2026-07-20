@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import {
   access,
@@ -485,12 +486,16 @@ const materializeRuntime = async (runtime, options) => {
   }
 
   if (runtime === 'moonshot-relay') {
+    const sourceNode = process.execPath;
+    const nodeContent = await readFile(sourceNode);
+    const checksum = createHash('sha256').update(nodeContent).digest('hex');
+
     const manifest = {
       schemaVersion: 1,
       platform: process.platform,
       arch: process.arch,
       version: '22.11.0',
-      checksum: 'a'.repeat(64)
+      checksum: checksum
     };
     
     const versionString = `${manifest.version}-${manifest.platform}-${manifest.arch}`;
@@ -502,7 +507,6 @@ const materializeRuntime = async (runtime, options) => {
     }
     
     const nodeBinaryName = process.platform === 'win32' ? 'node.exe' : 'bin/node';
-    const sourceNode = process.execPath;
     const destNode = path.join(versionOutDir, nodeBinaryName);
     
     await copyFilePreservingMode(sourceNode, destNode, plannedCopies, options);

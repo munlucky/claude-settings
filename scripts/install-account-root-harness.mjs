@@ -355,6 +355,33 @@ const assertSafeChild = (root, candidate) => {
   }
 };
 
+const getAllowedRoots = () => {
+  const roots = [];
+  if (process.env.MOONSHOT_RELAY_HOME) roots.push(process.env.MOONSHOT_RELAY_HOME);
+  if (process.env.CLAUDE_HOME) roots.push(process.env.CLAUDE_HOME);
+  if (process.env.CODEX_HOME) roots.push(process.env.CODEX_HOME);
+  if (process.env.QWEN_HOME) roots.push(process.env.QWEN_HOME);
+  if (process.env.ANTIGRAVITY_HOME) roots.push(process.env.ANTIGRAVITY_HOME);
+  if (process.env.ANTIGRAVITY_SKILLS_HOME) roots.push(process.env.ANTIGRAVITY_SKILLS_HOME);
+
+  roots.push(path.join(os.homedir(), '.moonshot-relay'));
+  roots.push(path.join(os.homedir(), '.claude'));
+  roots.push(path.join(os.homedir(), '.codex'));
+  roots.push(path.join(os.homedir(), '.qwen'));
+  roots.push(path.join(os.homedir(), '.gemini', 'antigravity'));
+  roots.push(path.join(os.homedir(), '.gemini', 'config'));
+
+  const argv = process.argv;
+  for (let i = 0; i < argv.length; i++) {
+    if (['--moonshot-home', '--claude-home', '--codex-home', '--qwen-home', '--antigravity-home', '--antigravity-skills-home'].includes(argv[i])) {
+      if (argv[i + 1]) {
+        roots.push(argv[i + 1]);
+      }
+    }
+  }
+  return roots.map((p) => path.resolve(p));
+};
+
 const assertSafeTargetPath = async (root, candidate) => {
   assertSafeChild(root, candidate);
 
@@ -370,15 +397,39 @@ const assertSafeTargetPath = async (root, candidate) => {
     }
   }
 
+  const allowedRoots = [realRoot];
+  for (const r of getAllowedRoots()) {
+    try {
+      allowedRoots.push(await realpath(r));
+    } catch {
+      allowedRoots.push(r);
+    }
+  }
+
   let current = resolvedRoot;
   for (const segment of relative.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
     try {
       const currentStat = await lstat(current);
       if (currentStat.isSymbolicLink()) {
-        throw new Error(`Unsafe symlink path under target root: ${current}`);
+        const linkTarget = await realpath(current);
+        const isSafe = allowedRoots.some((allowedRoot) => {
+          const rel = path.relative(allowedRoot, linkTarget);
+          return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+        });
+        if (!isSafe) {
+          throw new Error(`Unsafe symlink path under target root: ${current}`);
+        }
+      } else {
+        const resolvedCurrent = await realpath(current);
+        const isSafe = allowedRoots.some((allowedRoot) => {
+          const rel = path.relative(allowedRoot, resolvedCurrent);
+          return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+        });
+        if (!isSafe) {
+          throw new Error(`Unsafe path outside target root: ${resolvedCurrent}`);
+        }
       }
-      assertSafeChild(realRoot, await realpath(current));
     } catch (error) {
       if (error.code === 'ENOENT') {
         break;
@@ -1050,8 +1101,10 @@ const installManagedNodeRuntime = async ({ targetRoot, payloadRoot, options }) =
   const targetCurrentDir = path.join(targetRuntimeDir, 'current');
   
   if (options.dryRun) {
-    console.log(`[dry-run] Would copy runtime version to ${targetVersionDir}`);
-    console.log(`[dry-run] Would atomically switch ${targetCurrentDir} to ${targetVersionDir}`);
+    if (!options.json) {
+      console.log(`[dry-run] Would copy runtime version to ${targetVersionDir}`);
+      console.log(`[dry-run] Would atomically switch ${targetCurrentDir} to ${targetVersionDir}`);
+    }
     return;
   }
   
