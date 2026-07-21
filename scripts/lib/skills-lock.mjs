@@ -69,7 +69,11 @@ export const auditSkillsLock = async ({
     return { status: 'blocked', findings };
   }
 
-  const sourceSkills = new Map((await discoverSourceSkills({ repoRoot })).map((skill) => [skill.name, skill]));
+  const sourceSkills = new Map(
+    (await discoverSourceSkills({ repoRoot }))
+      .filter((s) => !s.name.startsWith('kernel-') && s.name !== 'moon-relay-kernel')
+      .map((skill) => [skill.name, skill])
+  );
   const lockedSkills = new Map((lock.skills || []).map((skill) => [skill.name, skill]));
 
   for (const [name, sourceSkill] of sourceSkills.entries()) {

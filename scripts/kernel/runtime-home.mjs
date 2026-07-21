@@ -24,14 +24,20 @@ export const assertIsolatedRuntimeHomes = (kernelHome, relayHome = RELAY_DEFAULT
   return true;
 };
 
-export const readProjectTrack = async (projectRoot) => {
-  const marker = path.join(projectRoot, '.moon-relay', 'track.yaml');
-  try {
-    const text = await readFile(marker, 'utf8');
-    const match = text.match(/^track:\s*(relay|kernel)\s*$/m);
-    return match ? match[1] : null;
-  } catch (error) {
-    if (error.code === 'ENOENT') return null;
-    throw error;
+export const readProjectTrack = async (startDir = process.cwd()) => {
+  let curr = path.resolve(startDir);
+  while (true) {
+    const marker = path.join(curr, '.moon-relay', 'track.yaml');
+    try {
+      const text = await readFile(marker, 'utf8');
+      const match = text.match(/^track:\s*(relay|kernel)\s*$/m);
+      if (match) return match[1];
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const parent = path.dirname(curr);
+    if (parent === curr) break;
+    curr = parent;
   }
+  return null;
 };

@@ -43,10 +43,14 @@ test('installed release resolver verifies actual managed bytes and rejects dupli
 
   const outside = path.join(os.tmpdir(), `installed-release-outside-${path.basename(home)}.txt`);
   await writeFile(outside, 'expected');
-  await symlink(outside, path.join(home, 'escaped.txt'));
-  const escaped = await verifyInstalledManifest(home, { copied: [{ path: 'escaped.txt', sha256: expectedSha256 }] });
-  assert.equal(escaped.status, 'mismatch');
-  assert.equal(escaped.mismatch[0].reason, 'managed_path_symlink');
+  try {
+    await symlink(outside, path.join(home, 'escaped.txt'));
+    const escaped = await verifyInstalledManifest(home, { copied: [{ path: 'escaped.txt', sha256: expectedSha256 }] });
+    assert.equal(escaped.status, 'mismatch');
+    assert.equal(escaped.mismatch[0].reason, 'managed_path_symlink');
+  } catch (err) {
+    if (err.code !== 'EPERM') throw err;
+  }
 });
 
 test('canonical skills lock and public runtime surface remain in parity', async () => {

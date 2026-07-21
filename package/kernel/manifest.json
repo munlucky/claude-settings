@@ -7,9 +7,9 @@
     "bin/moon-relay-kernel.mjs",
     "kernel/",
     "scripts/kernel/",
-    "schemas/kernel.",
+    "schemas/kernel.*",
     "skills/moon-relay-kernel/",
-    "skills/kernel-",
+    "skills/kernel-*",
     "catalog/kernel-skills.yaml",
     "package/kernel/profiles/"
   ],

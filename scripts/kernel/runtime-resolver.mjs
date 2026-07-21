@@ -1,20 +1,62 @@
 import path from 'node:path';
 import { access, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { resolveKernelRuntimeHome } from './runtime-home.mjs';
 
-const nodeRelativePath = (platform = process.platform) => platform === 'win32' ? 'node.exe' : path.join('bin', 'node');
+const nodeRelativePath = (platform = process.platform) => (platform === 'win32' ? 'node.exe' : path.join('bin', 'node'));
 
 export const sha256File = async (file) => createHash('sha256').update(await readFile(file)).digest('hex');
 
-export const resolveKernelNode = async ({ runtimeHome = resolveKernelRuntimeHome(), platform = process.platform, fallback = process.execPath } = {}) => {
+export const resolveKernelNode = async ({
+  runtimeHome = resolveKernelRuntimeHome(),
+  platform = process.platform,
+  arch = process.arch,
+  fallback = process.execPath,
+  skipExecuteCheck = false,
+} = {}) => {
   const managed = path.join(runtimeHome, 'runtime', 'current', nodeRelativePath(platform));
+  const manifestPath = path.join(runtimeHome, 'runtime', 'current', 'runtime-manifest.json');
+
   try {
     await access(managed);
-    return { source: 'managed', nodePath: managed };
   } catch {
-    return { source: 'host-fallback', nodePath: fallback };
+    return { source: 'host-fallback', nodePath: fallback, reason: 'managed-binary-not-found' };
   }
+
+  try {
+    const manifestText = await readFile(manifestPath, 'utf8');
+    const manifest = JSON.parse(manifestText);
+
+    if (manifest.platform && manifest.platform !== platform) {
+      return { source: 'host-fallback', nodePath: fallback, reason: `platform-mismatch:${manifest.platform}!=${platform}` };
+    }
+    if (manifest.arch && manifest.arch !== arch) {
+      return { source: 'host-fallback', nodePath: fallback, reason: `arch-mismatch:${manifest.arch}!=${arch}` };
+    }
+    const computedChecksum = await sha256File(managed);
+    if (manifest.checksum && manifest.checksum !== computedChecksum) {
+      return { source: 'host-fallback', nodePath: fallback, reason: 'checksum-mismatch' };
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      return { source: 'host-fallback', nodePath: fallback, reason: `invalid-manifest:${err.message}` };
+    }
+  }
+
+  if (!skipExecuteCheck) {
+    try {
+      const out = execFileSync(managed, ['--version'], { encoding: 'utf8', timeout: 3000 });
+      if (!out || !out.trim().startsWith('v')) {
+        return { source: 'host-fallback', nodePath: fallback, reason: 'binary-execution-invalid-output' };
+      }
+    } catch (execErr) {
+      return { source: 'host-fallback', nodePath: fallback, reason: `binary-execution-failed:${execErr.message}` };
+    }
+  }
+
+  const checksum = await sha256File(managed);
+  return { source: 'managed', nodePath: managed, checksum };
 };
 
 export const buildRuntimeManifest = async ({ runtimeHome, nodePath, platform = process.platform, arch = process.arch }) => ({

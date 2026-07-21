@@ -46,6 +46,19 @@
         "T3"
       ]
     },
+    "surfaces": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "security_boundary",
+          "data_migration",
+          "public_contract",
+          "schema_change",
+          "runtime_authority",
+          "installer"
+        ]
+      }
+    },
     "activeTrack": {
       "enum": [
         "relay",
