@@ -55,12 +55,16 @@ export const buildKernelContext = ({ stage, principles = [], taskContract, stage
   const blocks = [];
   if (principles.length) {
     const sanitizedPrinciples = principles.map((p) => `- ${sanitizeText(p)}`).join('\n');
+    const principlesDigest = createHash('sha256').update(sanitizedPrinciples).digest('hex');
+    included.push({ id: 'stable-principles', layer: 'stable-principles', revision: policyRevision, contentDigest: principlesDigest });
     blocks.push(`## Stable Principles\n${sanitizedPrinciples}`);
   }
 
   if (taskContract) {
     const redactedContract = redactSecretsInObject(taskContract);
     const contractJson = sanitizeText(JSON.stringify(redactedContract, null, 2));
+    const contractDigest = createHash('sha256').update(contractJson).digest('hex');
+    included.push({ id: 'task-contract', layer: 'task-contract', revision: policyRevision, contentDigest: contractDigest });
     blocks.push(`## Task Contract\n${contractJson}`);
   }
 

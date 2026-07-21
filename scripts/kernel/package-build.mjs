@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdir, readFile, writeFile, cp, readdir, stat, realpath } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, cp, readdir, stat, realpath, lstat } from 'node:fs/promises';
 import { auditSkillsLock } from '../lib/skills-lock.mjs';
 
 const forbidden = ['.moonshot-relay', 'runtime-state.sqlite', 'package/claude/profile', 'package/codex/profile', 'package/qwen/profile'];
@@ -9,6 +9,7 @@ const mandatoryKernelFiles = [
   'schemas/kernel.runtime-state.schema.json',
   'skills/kernel-minimal-correct-change/SKILL.md',
   'skills/kernel-verification-before-completion/SKILL.md',
+  'package/kernel/skills.lock.json',
 ];
 
 const exists = async (p) => {
@@ -37,6 +38,37 @@ const assertContained = async (sourceRoot, sourcePath) => {
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
+};
+
+const auditTreeContainment = async (sourceRoot, outputRoot, excludePatterns) => {
+  const realSourceRoot = await realpath(sourceRoot);
+  const realOutputRoot = await realpath(outputRoot);
+
+  const walk = async (dir) => {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      const relToOutput = path.relative(outputRoot, fullPath).replaceAll('\\', '/');
+
+      if (excludePatterns.some((ex) => relToOutput === ex || relToOutput.startsWith(ex + '/'))) {
+        throw new Error(`Excluded path found in materialized output tree: ${relToOutput}`);
+      }
+
+      const lst = await lstat(fullPath);
+      if (lst.isSymbolicLink()) {
+        const real = await realpath(fullPath);
+        if (!real.startsWith(realSourceRoot) && !real.startsWith(realOutputRoot)) {
+          throw new Error(`Symlink ${relToOutput} points outside allowed root: ${real}`);
+        }
+      }
+
+      if (lst.isDirectory()) {
+        await walk(fullPath);
+      }
+    }
+  };
+
+  await walk(outputRoot);
 };
 
 const resolvePattern = async (sourceRoot, entry) => {
@@ -109,7 +141,7 @@ export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot
     }
   }
 
-  return { manifest, planned };
+  return { manifest, planned, excludePatterns };
 };
 
 export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot, dryRun = false }) => {
@@ -119,9 +151,11 @@ export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), out
   if (await exists(lockPath)) {
     const lock = JSON.parse(await readFile(lockPath, 'utf8'));
     const audit = await auditSkillsLock({ repoRoot: sourceRoot, scope: 'kernel', lock });
-    if (audit.status === 'blocked') {
-      throw new Error(`Kernel skills lock audit failed: ${JSON.stringify(audit.findings)}`);
+    if (audit.status !== 'pass') {
+      throw new Error(`Kernel skills lock audit failed with status ${audit.status}: ${JSON.stringify(audit.findings)}`);
     }
+  } else {
+    throw new Error('Kernel skills lock file missing: package/kernel/skills.lock.json');
   }
 
   if (dryRun) return { dryRun: true, ...plan };
@@ -137,6 +171,8 @@ export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), out
       throw new Error(`Materialization verification failed, required file missing: ${targetFile}`);
     }
   }
+
+  await auditTreeContainment(sourceRoot, outputRoot, plan.excludePatterns);
 
   await writeFile(path.join(outputRoot, 'kernel-package-plan.json'), JSON.stringify(plan, null, 2));
   return { dryRun: false, ...plan };

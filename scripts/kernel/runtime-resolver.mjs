@@ -50,11 +50,17 @@ export const resolveKernelNode = async ({
     if (manifest.productId !== 'moon-relay-kernel') {
       return { source: 'host-fallback', nodePath: fallback, reason: `product-id-mismatch:${manifest.productId}` };
     }
-    if (manifest.platform && manifest.platform !== platform) {
+    if (!manifest.runtimeHome || manifest.runtimeHome !== runtimeHome) {
+      return { source: 'host-fallback', nodePath: fallback, reason: `runtime-home-mismatch:${manifest.runtimeHome}!=${runtimeHome}` };
+    }
+    if (!manifest.platform || manifest.platform !== platform) {
       return { source: 'host-fallback', nodePath: fallback, reason: `platform-mismatch:${manifest.platform}!=${platform}` };
     }
-    if (manifest.arch && manifest.arch !== arch) {
+    if (!manifest.arch || manifest.arch !== arch) {
       return { source: 'host-fallback', nodePath: fallback, reason: `arch-mismatch:${manifest.arch}!=${arch}` };
+    }
+    if (!manifest.nodePath || manifest.nodePath !== managed) {
+      return { source: 'host-fallback', nodePath: fallback, reason: `node-path-mismatch:${manifest.nodePath}!=${managed}` };
     }
     if (!manifest.checksum) {
       return { source: 'host-fallback', nodePath: fallback, reason: 'missing-manifest-checksum' };

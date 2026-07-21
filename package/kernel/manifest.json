@@ -11,6 +11,8 @@
     "skills/moon-relay-kernel/",
     "skills/kernel-*",
     "catalog/kernel-skills.yaml",
+    "package/kernel/manifest.json",
+    "package/kernel/skills.lock.json",
     "package/kernel/profiles/"
   ],
   "exclude": [

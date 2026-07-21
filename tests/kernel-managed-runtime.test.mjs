@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveKernelNode, buildRuntimeManifest, sha256File } from '../scripts/kernel/runtime-resolver.mjs';
 
-test('managed Node wins over host fallback when valid manifest and checksum exist', async () => {
+test('managed Node wins over host fallback when all 7 manifest fields and checksum match', async () => {
   const h = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-'));
   const p = path.join(h, 'runtime', 'current', process.platform === 'win32' ? 'node.exe' : path.join('bin', 'node'));
   await mkdir(path.dirname(p), { recursive: true });
@@ -18,8 +18,10 @@ test('managed Node wins over host fallback when valid manifest and checksum exis
     JSON.stringify({
       schemaVersion: 1,
       productId: 'moon-relay-kernel',
+      runtimeHome: h,
       platform: process.platform,
       arch: process.arch,
+      nodePath: p,
       checksum,
     })
   );
@@ -29,6 +31,10 @@ test('managed Node wins over host fallback when valid manifest and checksum exis
   assert.equal(r.nodePath, p);
 
   const m = await buildRuntimeManifest({ runtimeHome: h, nodePath: p, platform: process.platform, arch: process.arch });
+  assert.equal(m.schemaVersion, 1);
+  assert.equal(m.productId, 'moon-relay-kernel');
+  assert.equal(m.runtimeHome, h);
+  assert.equal(m.nodePath, p);
   assert.match(m.checksum, /^[a-f0-9]{64}$/);
 });
 
@@ -43,7 +49,7 @@ test('missing manifest triggers host fallback by default', async () => {
   assert.equal(r.reason, 'missing-manifest');
 });
 
-test('corrupted checksum or manifest platform mismatch falls back to host', async () => {
+test('incomplete or corrupt manifest fields fall back to host', async () => {
   const h = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-corrupt-'));
   const p = path.join(h, 'runtime', 'current', process.platform === 'win32' ? 'node.exe' : path.join('bin', 'node'));
   await mkdir(path.dirname(p), { recursive: true });
@@ -55,15 +61,14 @@ test('corrupted checksum or manifest platform mismatch falls back to host', asyn
     JSON.stringify({
       schemaVersion: 1,
       productId: 'moon-relay-kernel',
-      platform: 'invalid-platform',
-      arch: 'x64',
+      // missing runtimeHome, platform, arch, nodePath
       checksum: 'bad-checksum-1234567890123456789012345678901234567890123456789012345678901234',
     })
   );
 
   const r = await resolveKernelNode({ runtimeHome: h, fallback: '/host/node', skipExecuteCheck: true });
   assert.equal(r.source, 'host-fallback');
-  assert.match(r.reason, /platform-mismatch/);
+  assert.match(r.reason, /runtime-home-mismatch/);
 });
 
 test('checksum mismatch in manifest triggers host fallback', async () => {
@@ -78,8 +83,10 @@ test('checksum mismatch in manifest triggers host fallback', async () => {
     JSON.stringify({
       schemaVersion: 1,
       productId: 'moon-relay-kernel',
+      runtimeHome: h,
       platform: process.platform,
       arch: process.arch,
+      nodePath: p,
       checksum: 'wrong000000000000000000000000000000000000000000000000000000000000000',
     })
   );

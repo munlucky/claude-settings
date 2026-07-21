@@ -21,7 +21,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       state TEXT NOT NULL,
       status TEXT NOT NULL,
       revision INTEGER NOT NULL DEFAULT 0,
-      source_identity TEXT,
+      mutation_revision INTEGER NOT NULL DEFAULT 0,
+      source_identity TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS verifications (
@@ -30,6 +31,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       status TEXT NOT NULL,
       evidence_ref TEXT,
       verified_runtime_revision INTEGER,
+      verified_mutation_revision INTEGER,
       source_identity TEXT,
       command TEXT,
       exit_code INTEGER,
@@ -39,24 +41,34 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   `);
 
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN verified_runtime_revision INTEGER;`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN verified_mutation_revision INTEGER;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN command TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN exit_code INTEGER;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN evidence_digest TEXT;`); } catch {}
 
   const now = () => new Date().toISOString();
+  const sha256Regex = /^sha256:[a-f0-9]{64}$/i;
 
   return {
     dbPath,
-    createRun({ runId, objective, sourceIdentity = null }) {
-      db.prepare('INSERT INTO runs(run_id,objective,state,status,revision,source_identity,updated_at) VALUES(?,?,?,?,0,?,?)')
+    createRun({ runId, objective, sourceIdentity }) {
+      if (!sourceIdentity || typeof sourceIdentity !== 'string') {
+        throw new Error('sourceIdentity is required for Kernel run');
+      }
+      db.prepare('INSERT INTO runs(run_id,objective,state,status,revision,mutation_revision,source_identity,updated_at) VALUES(?,?,?,?,0,0,?,?)')
         .run(runId, objective, 'FRAME', 'active', sourceIdentity, now());
       return this.getRun(runId);
     },
 
     getRun(runId) {
-      return db.prepare('SELECT run_id as runId, objective, state, status, revision, source_identity as sourceIdentity, updated_at as updatedAt FROM runs WHERE run_id=?').get(runId) || null;
+      return db.prepare(`
+        SELECT run_id as runId, objective, state, status, revision,
+               mutation_revision as mutationRevision, source_identity as sourceIdentity, updated_at as updatedAt
+        FROM runs WHERE run_id=?
+      `).get(runId) || null;
     },
 
     transition(runId, nextState) {
@@ -66,22 +78,28 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       if (!canTransition(run.state, nextState)) {
         throw new Error(`Invalid Kernel transition ${run.state} -> ${nextState}`);
       }
-      db.prepare('UPDATE runs SET state=?, revision=revision+1, updated_at=? WHERE run_id=?').run(nextState, now(), runId);
+
+      // Backward transitions (re-opening or re-shaping) count as mutations that invalidate past verifications
+      const isMutation = nextState === 'SHAPE' || nextState === 'EXECUTE';
+      const mutationInc = isMutation ? 1 : 0;
+
+      db.prepare('UPDATE runs SET state=?, revision=revision+1, mutation_revision=mutation_revision+?, updated_at=? WHERE run_id=?')
+        .run(nextState, mutationInc, now(), runId);
       return this.getRun(runId);
     },
 
-    recordVerification(runId, { status, evidenceRef, sourceIdentity = null, command = null, exitCode = 0, evidenceDigest = null }) {
+    recordVerification(runId, { status, evidenceRef, sourceIdentity, command, exitCode = 0, evidenceDigest }) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status === 'completed') throw new Error(`Cannot add verification to completed run ${runId}`);
-      const verifiedRevision = run.revision;
+      if (!sourceIdentity) throw new Error('sourceIdentity is required for verification');
 
       db.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
         db.prepare(`
-          INSERT INTO verifications(run_id, status, evidence_ref, verified_runtime_revision, source_identity, command, exit_code, evidence_digest, observed_at)
-          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(runId, status, evidenceRef || null, verifiedRevision, sourceIdentity || run.sourceIdentity, command, exitCode, evidenceDigest, now());
+          INSERT INTO verifications(run_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, command, exit_code, evidence_digest, observed_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(runId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, command || null, exitCode, evidenceDigest || null, now());
 
         db.prepare('UPDATE runs SET revision=revision+1, updated_at=? WHERE run_id=?').run(now(), runId);
         db.exec('COMMIT');
@@ -104,6 +122,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
         const verification = db.prepare(`
           SELECT status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision,
+                 verified_mutation_revision as verifiedMutationRevision,
                  source_identity as sourceIdentity, command, exit_code as exitCode, evidence_digest as evidenceDigest,
                  observed_at as observedAt
           FROM verifications WHERE run_id=? ORDER BY id DESC LIMIT 1
@@ -116,23 +135,26 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           Number(verification.exitCode) === 0 &&
           verification.command &&
           verification.evidenceRef &&
-          verification.evidenceDigest
+          verification.evidenceDigest &&
+          sha256Regex.test(verification.evidenceDigest)
         );
 
         const isSourceIdentityMatch = Boolean(
+          run.sourceIdentity &&
           verification &&
-          (!run.sourceIdentity || verification.sourceIdentity === run.sourceIdentity) &&
+          verification.sourceIdentity &&
+          verification.sourceIdentity === run.sourceIdentity &&
           (!expectedSourceIdentity || verification.sourceIdentity === expectedSourceIdentity)
         );
 
-        // If run is ALREADY completed and state is CLOSE and verification is valid -> Idempotent accepted response!
         if (run.status === 'completed') {
           db.exec('COMMIT');
           const accepted = isClosed && isVerified && isSourceIdentityMatch;
           return { decision: accepted ? 'accepted' : 'blocked', run, verification: verification || null };
         }
 
-        const isRevisionBound = Boolean(verification && verification.verifiedRuntimeRevision === run.revision - 1);
+        const verifiedMutation = verification ? (verification.verifiedMutationRevision ?? verification.verifiedRuntimeRevision) : -1;
+        const isRevisionBound = Boolean(verification && verifiedMutation === run.mutationRevision);
         const accepted = isClosed && isVerified && isRevisionBound && isSourceIdentityMatch;
         const decision = accepted ? 'accepted' : 'blocked';
 
