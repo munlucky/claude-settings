@@ -7,6 +7,8 @@ const normalizePath = (value = '') => String(value).replaceAll('\\', '/');
 
 const readSkillBody = async (repoRoot, skillPath) => readFile(path.join(repoRoot, skillPath, 'SKILL.md'), 'utf8');
 
+const isKernelSkill = (name) => name.startsWith('kernel-') || name === 'moon-relay-kernel';
+
 export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoot = 'skills' } = {}) => {
   const root = path.join(repoRoot, skillsRoot);
   const entries = await readdir(root, { withFileTypes: true });
@@ -35,31 +37,38 @@ export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoo
 
 export const buildSkillsLock = async ({
   repoRoot = process.cwd(),
+  scope = 'relay',
   generatedAt = new Date().toISOString(),
   sourceCommit = '',
   defaultLicense = 'UNSPECIFIED',
   defaultStages = [],
   defaultPermissions = ['filesystem-read'],
-} = {}) => ({
-  schemaVersion: 1,
-  generatedAt,
-  sourceCommit,
-  skills: (await discoverSourceSkills({ repoRoot })).map((skill) => ({
-    name: skill.name,
-    path: skill.path,
-    source: 'canonical',
-    contentHash: skill.contentHash || sha256Hex('missing'),
-    license: defaultLicense,
-    stages: defaultStages,
-    permissions: defaultPermissions,
-    permissionReview: {
-      status: defaultPermissions.length > 0 ? 'required' : 'approved',
-    },
-  })),
-});
+} = {}) => {
+  const sourceSkills = (await discoverSourceSkills({ repoRoot })).filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : !isKernelSkill(s.name)));
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    sourceCommit,
+    scope,
+    skills: sourceSkills.map((skill) => ({
+      name: skill.name,
+      path: skill.path,
+      source: 'canonical',
+      contentHash: skill.contentHash || sha256Hex('missing'),
+      license: defaultLicense,
+      stages: defaultStages,
+      permissions: defaultPermissions,
+      permissionReview: {
+        status: defaultPermissions.length > 0 ? 'required' : 'approved',
+      },
+    })),
+  };
+};
 
 export const auditSkillsLock = async ({
   repoRoot = process.cwd(),
+  scope = 'relay',
   lock = null,
   runtimeSurface = null,
 } = {}) => {
@@ -71,7 +80,7 @@ export const auditSkillsLock = async ({
 
   const sourceSkills = new Map(
     (await discoverSourceSkills({ repoRoot }))
-      .filter((s) => !s.name.startsWith('kernel-') && s.name !== 'moon-relay-kernel')
+      .filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : !isKernelSkill(s.name)))
       .map((skill) => [skill.name, skill])
   );
   const lockedSkills = new Map((lock.skills || []).map((skill) => [skill.name, skill]));
@@ -93,10 +102,12 @@ export const auditSkillsLock = async ({
     }
   }
 
-  const publicSkills = new Set(runtimeSurface?.publicRuntimeSkills || []);
-  for (const skill of publicSkills) {
-    if (!sourceSkills.has(skill)) {
-      findings.push({ type: 'runtime_surface_missing_source_skill', severity: 'blocking', skill });
+  if (scope === 'relay') {
+    const publicSkills = new Set(runtimeSurface?.publicRuntimeSkills || []);
+    for (const skill of publicSkills) {
+      if (!sourceSkills.has(skill)) {
+        findings.push({ type: 'runtime_surface_missing_source_skill', severity: 'blocking', skill });
+      }
     }
   }
 

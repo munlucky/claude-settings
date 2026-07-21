@@ -1,19 +1,14 @@
+import { createHash } from 'node:crypto';
 import { makeContextReceipt } from './context-receipt.mjs';
 
 const secretKeyRegex = /^(?:api[_-]?key|token|password|secret|authorization|access[_-]?token|auth[_-]?token|private[_-]?key)$/i;
 
 const stringSecretPatterns = [
-  // Authorization / Bearer tokens
   { regex: /(?:Authorization\s*:\s*)?Bearer\s+\S+/gi, replace: 'Authorization: Bearer [REDACTED]' },
-  // PEM Private keys
   { regex: /-----BEGIN (?:[A-Z0-9\s]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9\s]+ )?PRIVATE KEY-----/g, replace: '[REDACTED_PEM_KEY]' },
-  // JWT tokens
   { regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, replace: '[REDACTED_JWT]' },
-  // Connection strings with password
   { regex: /\b([a-z0-9+.-]+:\/\/[^:\s]+:)([^@\s]+)(@[^\s]+)/gi, replace: '$1[REDACTED]$3' },
-  // JSON key-value: "token": "abc" or "api_key": 123
   { regex: /("(?:api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|private[_-]?key)"\s*:\s*)("(?:[^"\\]|\\.)*"|\S+)/gi, replace: '$1"[REDACTED]"' },
-  // Plain key-value: token=abc or api_key: "123"
   { regex: /((?:api[_-]?key|token|password|secret|access[_-]?token|auth[_-]?token|private[_-]?key)\s*[:=]\s*)("[^"]*"|'[^']*'|\S+)/gi, replace: '$1[REDACTED]' },
 ];
 
@@ -52,13 +47,15 @@ export const buildKernelContext = ({ stage, principles = [], taskContract, stage
       return null;
     }
     const content = sanitizeText(record.content);
-    included.push({ id: record.id, layer, revision: record.revision || 'unknown' });
+    const contentDigest = createHash('sha256').update(content).digest('hex');
+    included.push({ id: record.id, layer, revision: record.revision || 'unknown', contentDigest });
     return content;
   };
 
   const blocks = [];
   if (principles.length) {
-    blocks.push(`## Stable Principles\n${principles.map((p) => `- ${p}`).join('\n')}`);
+    const sanitizedPrinciples = principles.map((p) => `- ${sanitizeText(p)}`).join('\n');
+    blocks.push(`## Stable Principles\n${sanitizedPrinciples}`);
   }
 
   if (taskContract) {

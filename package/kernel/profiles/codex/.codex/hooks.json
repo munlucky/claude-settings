@@ -2,7 +2,7 @@
   "SessionStart": [
     {
       "type": "command",
-      "command": "node bin/moon-relay-kernel.mjs assert-track --json"
+      "command": "moon-relay-kernel assert-track --json"
     }
   ]
 }

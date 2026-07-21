@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { mkdir, readFile, writeFile, cp, readdir, stat } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, cp, readdir, stat, realpath } from 'node:fs/promises';
+import { auditSkillsLock } from '../lib/skills-lock.mjs';
 
 const forbidden = ['.moonshot-relay', 'runtime-state.sqlite', 'package/claude/profile', 'package/codex/profile', 'package/qwen/profile'];
 
@@ -19,10 +20,31 @@ const exists = async (p) => {
   }
 };
 
+const assertContained = async (sourceRoot, sourcePath) => {
+  const absRoot = path.resolve(sourceRoot);
+  const absSource = path.resolve(sourcePath);
+
+  if (absSource !== absRoot && !absSource.startsWith(absRoot + path.sep)) {
+    throw new Error(`Package source path ${sourcePath} escapes sourceRoot ${sourceRoot}`);
+  }
+
+  try {
+    const realRoot = await realpath(absRoot);
+    const realSource = await realpath(absSource);
+    if (realSource !== realRoot && !realSource.startsWith(realRoot + path.sep)) {
+      throw new Error(`Package source realpath ${realSource} escapes sourceRoot realpath ${realRoot}`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+};
+
 const resolvePattern = async (sourceRoot, entry) => {
   const isWildcard = entry.endsWith('*');
   const cleanEntry = isWildcard ? entry.slice(0, -1) : entry;
   const directPath = path.join(sourceRoot, cleanEntry);
+
+  await assertContained(sourceRoot, directPath);
 
   if (await exists(directPath)) {
     return [cleanEntry];
@@ -31,6 +53,8 @@ const resolvePattern = async (sourceRoot, entry) => {
   const parentDirRel = path.dirname(cleanEntry);
   const prefix = path.basename(cleanEntry);
   const parentDirAbs = path.join(sourceRoot, parentDirRel);
+
+  await assertContained(sourceRoot, parentDirAbs);
 
   if (await exists(parentDirAbs)) {
     const entries = await readdir(parentDirAbs, { withFileTypes: true });
@@ -46,14 +70,27 @@ const resolvePattern = async (sourceRoot, entry) => {
 export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot }) => {
   const manifest = JSON.parse(await readFile(path.join(sourceRoot, 'package', 'kernel', 'manifest.json'), 'utf8'));
 
+  const excludePatterns = [...forbidden, ...(manifest.exclude || [])].map((p) => p.replaceAll('\\', '/'));
+
   const planned = [];
   for (const entry of manifest.include) {
     const resolvedEntries = await resolvePattern(sourceRoot, entry);
     for (const rel of resolvedEntries) {
+      const normalizedRel = rel.replaceAll('\\', '/');
+
+      if (excludePatterns.some((ex) => normalizedRel === ex || normalizedRel.startsWith(ex + '/'))) {
+        continue;
+      }
+
+      const source = path.join(sourceRoot, rel);
+      const target = path.join(outputRoot, rel);
+
+      await assertContained(sourceRoot, source);
+
       planned.push({
-        source: path.join(sourceRoot, rel),
-        target: path.join(outputRoot, rel),
-        rel,
+        source,
+        target,
+        rel: normalizedRel,
       });
     }
   }
@@ -66,10 +103,7 @@ export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot
   }
 
   for (const req of mandatoryKernelFiles) {
-    const found = planned.some((p) => {
-      const normalizedRel = p.rel.replaceAll('\\', '/');
-      return normalizedRel === req || req.startsWith(normalizedRel + '/');
-    });
+    const found = planned.some((p) => p.rel === req || req.startsWith(p.rel + '/'));
     if (!found) {
       throw new Error(`Required kernel file missing from package plan: ${req}`);
     }
@@ -80,6 +114,16 @@ export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot
 
 export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot, dryRun = false }) => {
   const plan = await planKernelPackage({ sourceRoot, outputRoot });
+
+  const lockPath = path.join(sourceRoot, 'package', 'kernel', 'skills.lock.json');
+  if (await exists(lockPath)) {
+    const lock = JSON.parse(await readFile(lockPath, 'utf8'));
+    const audit = await auditSkillsLock({ repoRoot: sourceRoot, scope: 'kernel', lock });
+    if (audit.status === 'blocked') {
+      throw new Error(`Kernel skills lock audit failed: ${JSON.stringify(audit.findings)}`);
+    }
+  }
+
   if (dryRun) return { dryRun: true, ...plan };
   await mkdir(outputRoot, { recursive: true });
 

@@ -8,12 +8,21 @@ const nodeRelativePath = (platform = process.platform) => (platform === 'win32' 
 
 export const sha256File = async (file) => createHash('sha256').update(await readFile(file)).digest('hex');
 
+export const parseNodeVersion = (verStr) => {
+  const clean = String(verStr || '').trim().replace(/^v/, '');
+  const parts = clean.split('.').map(Number);
+  return { major: parts[0] || 0, minor: parts[1] || 0, patch: parts[2] || 0, raw: verStr };
+};
+
 export const resolveKernelNode = async ({
   runtimeHome = resolveKernelRuntimeHome(),
   platform = process.platform,
   arch = process.arch,
   fallback = process.execPath,
+  requireManifest = true,
   skipExecuteCheck = false,
+  minNodeMajor = 22,
+  minNodeMinor = 13,
 } = {}) => {
   const managed = path.join(runtimeHome, 'runtime', 'current', nodeRelativePath(platform));
   const manifestPath = path.join(runtimeHome, 'runtime', 'current', 'runtime-manifest.json');
@@ -24,23 +33,35 @@ export const resolveKernelNode = async ({
     return { source: 'host-fallback', nodePath: fallback, reason: 'managed-binary-not-found' };
   }
 
+  let manifest = null;
   try {
     const manifestText = await readFile(manifestPath, 'utf8');
-    const manifest = JSON.parse(manifestText);
+    manifest = JSON.parse(manifestText);
+  } catch (err) {
+    if (requireManifest) {
+      return { source: 'host-fallback', nodePath: fallback, reason: err.code === 'ENOENT' ? 'missing-manifest' : `invalid-manifest:${err.message}` };
+    }
+  }
 
+  if (manifest) {
+    if (manifest.schemaVersion !== 1) {
+      return { source: 'host-fallback', nodePath: fallback, reason: `schema-version-mismatch:${manifest.schemaVersion}` };
+    }
+    if (manifest.productId !== 'moon-relay-kernel') {
+      return { source: 'host-fallback', nodePath: fallback, reason: `product-id-mismatch:${manifest.productId}` };
+    }
     if (manifest.platform && manifest.platform !== platform) {
       return { source: 'host-fallback', nodePath: fallback, reason: `platform-mismatch:${manifest.platform}!=${platform}` };
     }
     if (manifest.arch && manifest.arch !== arch) {
       return { source: 'host-fallback', nodePath: fallback, reason: `arch-mismatch:${manifest.arch}!=${arch}` };
     }
-    const computedChecksum = await sha256File(managed);
-    if (manifest.checksum && manifest.checksum !== computedChecksum) {
-      return { source: 'host-fallback', nodePath: fallback, reason: 'checksum-mismatch' };
+    if (!manifest.checksum) {
+      return { source: 'host-fallback', nodePath: fallback, reason: 'missing-manifest-checksum' };
     }
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      return { source: 'host-fallback', nodePath: fallback, reason: `invalid-manifest:${err.message}` };
+    const computedChecksum = await sha256File(managed);
+    if (manifest.checksum !== computedChecksum) {
+      return { source: 'host-fallback', nodePath: fallback, reason: 'checksum-mismatch' };
     }
   }
 
@@ -49,6 +70,10 @@ export const resolveKernelNode = async ({
       const out = execFileSync(managed, ['--version'], { encoding: 'utf8', timeout: 3000 });
       if (!out || !out.trim().startsWith('v')) {
         return { source: 'host-fallback', nodePath: fallback, reason: 'binary-execution-invalid-output' };
+      }
+      const ver = parseNodeVersion(out.trim());
+      if (ver.major < minNodeMajor || (ver.major === minNodeMajor && ver.minor < minNodeMinor)) {
+        return { source: 'host-fallback', nodePath: fallback, reason: `node-version-insufficient:${ver.raw}` };
       }
     } catch (execErr) {
       return { source: 'host-fallback', nodePath: fallback, reason: `binary-execution-failed:${execErr.message}` };
