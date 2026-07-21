@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "moon-relay-kernel-skill-catalog.v1",
+  "authority": {
+    "publicRuntimeSurface": "package/kernel/manifest.json",
+    "packageContract": "package/kernel/manifest.json",
+    "sourceSkillRoot": "skills",
+    "serviceProfilePolicy": "allowlist_only",
+    "commonPayloadPolicy": "preserve_all_kernel_skills"
+  },
+  "requiredDocumentation": {
+    "files": [
+      "README.md"
+    ]
+  },
+  "publicEntrypoints": [
+    {
+      "name": "moon-relay-kernel",
+      "stage": "kernel",
+      "ownerCluster": "kernel-control-plane",
+      "engineRoute": "kernel-workflow",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["FRAME", "SHAPE", "EXECUTE", "PROVE", "CLOSE"],
+      "conditionalSkillGroups": {
+        "minimalChange": ["kernel-minimal-correct-change"],
+        "verificationRequired": ["kernel-verification-before-completion"]
+      },
+      "source": "skills/moon-relay-kernel/SKILL.md",
+      "purpose": "Kernel control plane entrypoint for adaptive risk-bound workflow."
+    }
+  ],
+  "internalDiscovery": {
+    "sourceRoot": "skills",
+    "includeUnlistedSourceSkills": true,
+    "profileLocalExposure": "forbidden"
+  },
+  "internalSkillClusters": [
+    {
+      "id": "kernel-internal-skills",
+      "stage": "kernel",
+      "skills": [
+        "kernel-minimal-correct-change",
+        "kernel-domain-modeling",
+        "kernel-tracer-slicing",
+        "kernel-test-driven-development",
+        "kernel-diagnosing-bugs",
+        "kernel-verification-before-completion",
+        "kernel-review-spec",
+        "kernel-review-standards",
+        "kernel-review-complexity"
+      ]
+    }
+  ],
+  "checks": {
+    "publicEntrypointsMatchRuntimeSurface": true,
+    "publicEntrypointsMatchPackageContract": true,
+    "publicEntrypointsDocumented": true,
+    "serviceProfilesExposeOnlyPublicEntrypoints": true,
+    "commonPayloadIncludesCatalog": true
+  }
+}

@@ -44,7 +44,42 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       command TEXT,
       exit_code INTEGER,
       evidence_digest TEXT,
-      observed_at TEXT NOT NULL
+      observed_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS leases (
+      run_id TEXT PRIMARY KEY,
+      holder TEXT NOT NULL,
+      acquired_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL,
+      state TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS waivers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      obligation_id TEXT NOT NULL,
+      approved_by TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      approved_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS evidence_lineage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      evidence_digest TEXT NOT NULL,
+      parent_digest TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
   `);
 
@@ -55,12 +90,6 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE runs ADD COLUMN required_obligations TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN acceptance_criteria TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN obligation_id TEXT DEFAULT 'default';`); } catch {}
-  try { db.exec(`ALTER TABLE verifications ADD COLUMN verified_runtime_revision INTEGER;`); } catch {}
-  try { db.exec(`ALTER TABLE verifications ADD COLUMN verified_mutation_revision INTEGER;`); } catch {}
-  try { db.exec(`ALTER TABLE verifications ADD COLUMN source_identity TEXT;`); } catch {}
-  try { db.exec(`ALTER TABLE verifications ADD COLUMN command TEXT;`); } catch {}
-  try { db.exec(`ALTER TABLE verifications ADD COLUMN exit_code INTEGER;`); } catch {}
-  try { db.exec(`ALTER TABLE verifications ADD COLUMN evidence_digest TEXT;`); } catch {}
 
   const now = () => new Date().toISOString();
 

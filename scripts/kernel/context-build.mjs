@@ -34,8 +34,16 @@ export const sanitizeText = (text) => {
   return str;
 };
 
+export const wrapUntrustedDataFence = (content, label = 'untrusted_content') => {
+  const sanitized = sanitizeText(content);
+  return `<${label}>\n${sanitized}\n</${label}>`;
+};
+
 const forbiddenType = new Set(['raw-runtime-log', 'transcript', 'full-knowledge-graph-dump']);
 const estimateTokens = (text) => Math.ceil(String(text).length / 4);
+
+export const MAX_PROMPT_TOKENS = 600;
+export const MAX_CONTEXT_TOKENS = 1800;
 
 export const buildKernelContext = ({ stage, principles = [], taskContract, stageRecords = [], references = [], evidence = [], policyRevision = '1' }) => {
   const included = [];
@@ -46,7 +54,7 @@ export const buildKernelContext = ({ stage, principles = [], taskContract, stage
       omitted.push({ id: record.id, reason: 'forbidden-type' });
       return null;
     }
-    const content = sanitizeText(record.content);
+    const content = wrapUntrustedDataFence(record.content, `untrusted_${layer.replaceAll('-', '_')}`);
     const contentDigest = createHash('sha256').update(content).digest('hex');
     included.push({ id: record.id, layer, revision: record.revision || 'unknown', contentDigest });
     return content;
@@ -77,9 +85,25 @@ export const buildKernelContext = ({ stage, principles = [], taskContract, stage
   const ev = evidence.map((r) => accept(r, 'evidence-digest')).filter(Boolean);
   if (ev.length) blocks.push(`## Evidence Digest\n${ev.join('\n')}`);
 
-  const promptBlock = blocks.join('\n\n');
+  let promptBlock = blocks.join('\n\n');
+  let currentTokens = estimateTokens(promptBlock);
+
+  // Deterministic Truncation Enforcement (KRN-AUD-P1-01)
+  if (currentTokens > MAX_CONTEXT_TOKENS) {
+    while (blocks.length > 2 && currentTokens > MAX_CONTEXT_TOKENS) {
+      blocks.pop();
+      promptBlock = blocks.join('\n\n');
+      currentTokens = estimateTokens(promptBlock);
+    }
+  }
+
   return {
     promptBlock,
-    receipt: makeContextReceipt({ stage, policyRevision, included, omitted, tokenEstimate: estimateTokens(promptBlock) }),
+    receipt: makeContextReceipt({ stage, policyRevision, included, omitted, tokenEstimate: currentTokens }),
   };
+};
+
+export const buildContextReceipt = async (options) => {
+  const result = buildKernelContext(options);
+  return result.receipt;
 };
