@@ -7,6 +7,8 @@
     "schemaVersion",
     "runId",
     "revision",
+    "mutationRevision",
+    "sourceIdentity",
     "status",
     "currentState"
   ],
@@ -21,6 +23,17 @@
       "type": "integer",
       "minimum": 0
     },
+    "mutationRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sourceIdentity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objective": {
+      "type": "string"
+    },
     "status": {
       "enum": [
         "active",
@@ -29,6 +42,9 @@
       ]
     },
     "currentState": {
+      "type": "string"
+    },
+    "updatedAt": {
       "type": "string"
     }
   }

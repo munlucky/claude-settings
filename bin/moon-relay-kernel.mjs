@@ -2,7 +2,6 @@
 import process from 'node:process';
 import { resolveKernelRuntimeHome, readProjectTrack } from '../scripts/kernel/runtime-home.mjs';
 import { resolveKernelNode } from '../scripts/kernel/runtime-resolver.mjs';
-import { materializeKernelPackage } from '../scripts/kernel/package-build.mjs';
 
 const args = process.argv.slice(2);
 const command = args[0] || 'doctor';
@@ -34,6 +33,7 @@ try {
       output({ productId: 'moon-relay-kernel', activeTrack, status: 'wrong_harness', message: 'package command requires active track to be kernel' });
       process.exitCode = 1;
     } else {
+      const { materializeKernelPackage } = await import('../scripts/kernel/package-build.mjs');
       const outArg = args.indexOf('--output');
       const outputRoot = outArg >= 0 ? args[outArg + 1] : `${process.cwd()}/dist/moon-relay-kernel`;
       output(await materializeKernelPackage({ sourceRoot: process.cwd(), outputRoot, dryRun: args.includes('--dry-run') }));

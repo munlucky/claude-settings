@@ -3,7 +3,12 @@ import { test } from 'node:test';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveKernelNode, buildRuntimeManifest, sha256File } from '../scripts/kernel/runtime-resolver.mjs';
+import { resolveKernelNode, buildRuntimeManifest, sha256File, parseNodeVersion } from '../scripts/kernel/runtime-resolver.mjs';
+
+test('parseNodeVersion correctly extracts major, minor, and patch', () => {
+  assert.deepEqual(parseNodeVersion('v22.13.0'), { major: 22, minor: 13, patch: 0, raw: 'v22.13.0' });
+  assert.deepEqual(parseNodeVersion('v20.18.1'), { major: 20, minor: 18, patch: 1, raw: 'v20.18.1' });
+});
 
 test('managed Node wins over host fallback when all 7 manifest fields and checksum match', async () => {
   const h = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-'));

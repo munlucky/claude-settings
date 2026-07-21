@@ -78,6 +78,19 @@ export const auditSkillsLock = async ({
     return { status: 'blocked', findings };
   }
 
+  if (lock.schemaVersion !== 1) {
+    findings.push({ type: 'schema_version_mismatch', severity: 'blocking', expected: 1, actual: lock.schemaVersion });
+  }
+
+  if (scope === 'kernel') {
+    if (lock.scope !== 'kernel') {
+      findings.push({ type: 'scope_mismatch', severity: 'blocking', expected: 'kernel', actual: lock.scope });
+    }
+    if (!lock.sourceCommit || typeof lock.sourceCommit !== 'string') {
+      findings.push({ type: 'missing_source_commit', severity: 'blocking' });
+    }
+  }
+
   const sourceSkills = new Map(
     (await discoverSourceSkills({ repoRoot }))
       .filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : !isKernelSkill(s.name)))
@@ -99,6 +112,12 @@ export const auditSkillsLock = async ({
     }
     if ((locked.permissions || []).length > 0 && locked.permissionReview?.status !== 'approved') {
       findings.push({ type: 'permission_review_required', severity: 'review', skill: name });
+    }
+  }
+
+  for (const [lockedName] of lockedSkills.entries()) {
+    if (!sourceSkills.has(lockedName)) {
+      findings.push({ type: 'unmapped_lock_entry', severity: 'blocking', skill: lockedName });
     }
   }
 

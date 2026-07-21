@@ -7,6 +7,8 @@
     "bin/moon-relay-kernel.mjs",
     "kernel/",
     "scripts/kernel/",
+    "scripts/lib/skills-lock.mjs",
+    "scripts/lib/candidate-identity.mjs",
     "schemas/kernel.*",
     "skills/moon-relay-kernel/",
     "skills/kernel-*",

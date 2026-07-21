@@ -6,6 +6,8 @@ import { openSqliteDb } from './sqlite-adapter.mjs';
 
 export const kernelDbPath = (runtimeHome = resolveKernelRuntimeHome()) => path.join(runtimeHome, 'state', 'runtime-state.sqlite');
 
+const sourceIdentityRegex = /^[a-zA-Z0-9_.:/-]{1,128}$/;
+
 export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome } = {}) => {
   assertIsolatedRuntimeHomes(runtimeHome, relayHome);
   const dbPath = kernelDbPath(runtimeHome);
@@ -55,8 +57,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   return {
     dbPath,
     createRun({ runId, objective, sourceIdentity }) {
-      if (!sourceIdentity || typeof sourceIdentity !== 'string') {
-        throw new Error('sourceIdentity is required for Kernel run');
+      if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
+        throw new Error('sourceIdentity is required and must be a valid non-empty identity string for Kernel run');
       }
       db.prepare('INSERT INTO runs(run_id,objective,state,status,revision,mutation_revision,source_identity,updated_at) VALUES(?,?,?,?,0,0,?,?)')
         .run(runId, objective, 'FRAME', 'active', sourceIdentity, now());
@@ -71,28 +73,52 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       `).get(runId) || null;
     },
 
-    transition(runId, nextState) {
-      const run = this.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      if (run.status === 'completed') throw new Error(`Cannot transition run ${runId} in completed state`);
-      if (!canTransition(run.state, nextState)) {
-        throw new Error(`Invalid Kernel transition ${run.state} -> ${nextState}`);
+    transition(runId, nextState, { expectedState, expectedRevision } = {}) {
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const run = this.getRun(runId);
+        if (!run) throw new Error(`Run ${runId} not found`);
+        if (run.status === 'completed') throw new Error(`Cannot transition run ${runId} in completed state`);
+
+        if (expectedState && run.state !== expectedState) {
+          throw new Error(`STATE_CONFLICT: Expected state ${expectedState} but found ${run.state} for run ${runId}`);
+        }
+        if (expectedRevision !== undefined && run.revision !== expectedRevision) {
+          throw new Error(`STALE_RUN_REVISION: Expected revision ${expectedRevision} but found ${run.revision} for run ${runId}`);
+        }
+
+        if (!canTransition(run.state, nextState)) {
+          throw new Error(`Invalid Kernel transition ${run.state} -> ${nextState}`);
+        }
+
+        const isMutation = nextState === 'SHAPE' || nextState === 'EXECUTE';
+        const mutationInc = isMutation ? 1 : 0;
+
+        const res = db.prepare(`
+          UPDATE runs
+          SET state=?, revision=revision+1, mutation_revision=mutation_revision+?, updated_at=?
+          WHERE run_id=? AND state=? AND revision=?
+        `).run(nextState, mutationInc, now(), runId, run.state, run.revision);
+
+        if (res.changes !== 1) {
+          throw new Error(`STATE_CONFLICT: Concurrent state or revision modification for run ${runId}`);
+        }
+
+        db.exec('COMMIT');
+        return this.getRun(runId);
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
       }
-
-      // Backward transitions (re-opening or re-shaping) count as mutations that invalidate past verifications
-      const isMutation = nextState === 'SHAPE' || nextState === 'EXECUTE';
-      const mutationInc = isMutation ? 1 : 0;
-
-      db.prepare('UPDATE runs SET state=?, revision=revision+1, mutation_revision=mutation_revision+?, updated_at=? WHERE run_id=?')
-        .run(nextState, mutationInc, now(), runId);
-      return this.getRun(runId);
     },
 
     recordVerification(runId, { status, evidenceRef, sourceIdentity, command, exitCode = 0, evidenceDigest }) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status === 'completed') throw new Error(`Cannot add verification to completed run ${runId}`);
-      if (!sourceIdentity) throw new Error('sourceIdentity is required for verification');
+      if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
+        throw new Error('sourceIdentity is required and must be a valid non-empty identity string for verification');
+      }
 
       db.exec('BEGIN IMMEDIATE TRANSACTION');
       try {

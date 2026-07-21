@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdtemp, stat } from 'node:fs/promises';
+import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +18,7 @@ test('Kernel package dry plan contains only Kernel payload roots and includes re
   assert.ok(plan.planned.some((p) => p.rel.includes('skills/kernel-minimal-correct-change')));
 });
 
-test('Kernel package materialization creates files on disk and validates mandatory files', async () => {
+test('Kernel package materialization creates files on disk, validates mandatory files, and executes doctor cleanly', async () => {
   const out = await mkdtemp(path.join(os.tmpdir(), 'kernel-pkg-mat-'));
   const result = await materializeKernelPackage({ sourceRoot, outputRoot: out, dryRun: false });
   assert.equal(result.dryRun, false);
@@ -27,10 +28,20 @@ test('Kernel package materialization creates files on disk and validates mandato
     'schemas/kernel.runtime-state.schema.json',
     'skills/kernel-minimal-correct-change/SKILL.md',
     'skills/kernel-verification-before-completion/SKILL.md',
+    'package/kernel/skills.lock.json',
+    'scripts/lib/skills-lock.mjs',
+    'scripts/lib/candidate-identity.mjs',
   ];
 
   for (const file of reqFiles) {
     const s = await stat(path.join(out, file));
     assert.ok(s.isFile(), `Expected file ${file} to exist in materialized package`);
   }
+
+  // Execute doctor command directly inside materialized package output directory to verify ESM dependency closure
+  const binPath = path.join(out, 'bin', 'moon-relay-kernel.mjs');
+  const doctorOutput = execSync(`node "${binPath}" doctor --json`, { cwd: out, encoding: 'utf8' });
+  const doctorJson = JSON.parse(doctorOutput);
+  assert.equal(doctorJson.productId, 'moon-relay-kernel');
+  assert.equal(doctorJson.status, 'wrong_harness');
 });

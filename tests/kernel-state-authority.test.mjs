@@ -42,11 +42,34 @@ test('natural PROVE -> verification -> CLOSE workflow results in accepted comple
   s.close();
 });
 
-test('createRun requires sourceIdentity', async () => {
+test('state transition optimistic concurrency control prevents stale revision update', async () => {
+  const h = await mkdtemp(path.join(os.tmpdir(), 'krn-state-occ-'));
+  const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
+
+  s.createRun({ runId: 'r-occ', objective: 'occ', sourceIdentity: 'src-1' });
+  s.transition('r-occ', 'SHAPE');
+
+  // Stale revision transition attempt
+  assert.throws(
+    () => s.transition('r-occ', 'EXECUTE', { expectedRevision: 0 }),
+    /STALE_RUN_REVISION/
+  );
+
+  // Stale state transition attempt
+  assert.throws(
+    () => s.transition('r-occ', 'EXECUTE', { expectedState: 'FRAME' }),
+    /STATE_CONFLICT/
+  );
+
+  s.close();
+});
+
+test('createRun requires valid sourceIdentity', async () => {
   const h = await mkdtemp(path.join(os.tmpdir(), 'krn-state-nosrc-'));
   const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
 
   assert.throws(() => s.createRun({ runId: 'r-nosrc', objective: 'test' }), /sourceIdentity is required/);
+  assert.throws(() => s.createRun({ runId: 'r-badsrc', objective: 'test', sourceIdentity: 'invalid identity space!' }), /sourceIdentity is required/);
   s.close();
 });
 

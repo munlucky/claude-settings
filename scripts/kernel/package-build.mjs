@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, cp, readdir, stat, realpath, lstat } from '
 import { auditSkillsLock } from '../lib/skills-lock.mjs';
 
 const forbidden = ['.moonshot-relay', 'runtime-state.sqlite', 'package/claude/profile', 'package/codex/profile', 'package/qwen/profile'];
+const forbiddenNames = new Set(['runtime-state.sqlite', '.moonshot-relay']);
 
 const mandatoryKernelFiles = [
   'schemas/kernel.track.schema.json',
@@ -21,18 +22,27 @@ const exists = async (p) => {
   }
 };
 
+const isForbiddenPath = (relPath) => {
+  const normalized = relPath.replaceAll('\\', '/');
+  const segments = normalized.split('/');
+  if (segments.some((seg) => forbiddenNames.has(seg))) return true;
+  return forbidden.some((token) => normalized.includes(token));
+};
+
 const assertContained = async (sourceRoot, sourcePath) => {
   const absRoot = path.resolve(sourceRoot);
   const absSource = path.resolve(sourcePath);
 
-  if (absSource !== absRoot && !absSource.startsWith(absRoot + path.sep)) {
+  const relLexical = path.relative(absRoot, absSource);
+  if (relLexical !== '' && (relLexical.startsWith('..') || path.isAbsolute(relLexical))) {
     throw new Error(`Package source path ${sourcePath} escapes sourceRoot ${sourceRoot}`);
   }
 
   try {
     const realRoot = await realpath(absRoot);
     const realSource = await realpath(absSource);
-    if (realSource !== realRoot && !realSource.startsWith(realRoot + path.sep)) {
+    const relReal = path.relative(realRoot, realSource);
+    if (relReal !== '' && (relReal.startsWith('..') || path.isAbsolute(relReal))) {
       throw new Error(`Package source realpath ${realSource} escapes sourceRoot realpath ${realRoot}`);
     }
   } catch (err) {
@@ -50,14 +60,19 @@ const auditTreeContainment = async (sourceRoot, outputRoot, excludePatterns) => 
       const fullPath = path.join(dir, entry.name);
       const relToOutput = path.relative(outputRoot, fullPath).replaceAll('\\', '/');
 
-      if (excludePatterns.some((ex) => relToOutput === ex || relToOutput.startsWith(ex + '/'))) {
-        throw new Error(`Excluded path found in materialized output tree: ${relToOutput}`);
+      if (isForbiddenPath(relToOutput) || excludePatterns.some((ex) => relToOutput === ex || relToOutput.startsWith(ex + '/'))) {
+        throw new Error(`Excluded or forbidden path found in materialized output tree: ${relToOutput}`);
       }
 
       const lst = await lstat(fullPath);
       if (lst.isSymbolicLink()) {
         const real = await realpath(fullPath);
-        if (!real.startsWith(realSourceRoot) && !real.startsWith(realOutputRoot)) {
+        const relSource = path.relative(realSourceRoot, real);
+        const relOutput = path.relative(realOutputRoot, real);
+        const inSource = relSource === '' || (!relSource.startsWith('..') && !path.isAbsolute(relSource));
+        const inOutput = relOutput === '' || (!relOutput.startsWith('..') && !path.isAbsolute(relOutput));
+
+        if (!inSource && !inOutput) {
           throw new Error(`Symlink ${relToOutput} points outside allowed root: ${real}`);
         }
       }
@@ -110,7 +125,7 @@ export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot
     for (const rel of resolvedEntries) {
       const normalizedRel = rel.replaceAll('\\', '/');
 
-      if (excludePatterns.some((ex) => normalizedRel === ex || normalizedRel.startsWith(ex + '/'))) {
+      if (isForbiddenPath(normalizedRel) || excludePatterns.some((ex) => normalizedRel === ex || normalizedRel.startsWith(ex + '/'))) {
         continue;
       }
 
@@ -128,9 +143,8 @@ export const planKernelPackage = async ({ sourceRoot = process.cwd(), outputRoot
   }
 
   for (const item of planned) {
-    const normalized = item.target.replaceAll('\\', '/');
-    if (forbidden.some((token) => normalized.includes(token))) {
-      throw new Error(`Forbidden Relay surface in Kernel package plan: ${normalized}`);
+    if (isForbiddenPath(item.rel)) {
+      throw new Error(`Forbidden Relay surface in Kernel package plan: ${item.rel}`);
     }
   }
 
