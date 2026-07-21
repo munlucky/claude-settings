@@ -1,0 +1,72 @@
+schemaVersion: 1
+reviewId: moon-relay-kernel-plan-review-iter-01
+reviewedPackageRoot: docs/public/roadmaps/moon-relay-kernel-2026-07-21
+reviewDate: 2026-07-21
+status: accepted_after_edits
+perspectives:
+  - architecture_authority
+  - operational_simplicity
+  - verification_adoption
+blockingFindings:
+  - id: PQR-001
+    finding: State files and SQLite could become competing mutable authorities.
+    disposition: accepted_with_modification
+    acceptedChange: Files own intent, SQLite owns execution and completion, projections are one-way and read-only.
+    affectedDocs:
+      - ADR/ADR-0002-state-authority-and-projection.md
+      - 04-state-authority-evidence-v1.ko.md
+  - id: PQR-002
+    finding: Fixed three-axis review would overcharge low-risk work.
+    disposition: accepted
+    acceptedChange: Replace with T0-T3 risk-adaptive proof routing and E0-E2 evidence tiers.
+    affectedDocs:
+      - ADR/ADR-0003-adaptive-workflow-proof-and-evidence.md
+      - 06-adaptive-proof-safe-wave-v1.ko.md
+  - id: PQR-003
+    finding: Task DAG lacked a bounded execution scheduling contract.
+    disposition: accepted_with_staging
+    acceptedChange: Add SCHEDULE and Safe Wave dry-run; keep sequential default and defer worker fanout.
+    affectedDocs:
+      - ADR/ADR-0004-managed-upstream-and-safe-wave.md
+      - 06-adaptive-proof-safe-wave-v1.ko.md
+  - id: PQR-004
+    finding: Pattern transfer could drift from upstream projects.
+    disposition: accepted_with_supply_chain_guard
+    acceptedChange: Add pinned upstream registry, diff, eval, proposal and approval; prohibit auto-apply.
+    affectedDocs:
+      - ADR/ADR-0004-managed-upstream-and-safe-wave.md
+      - 05-core-skills-upstream-registry-v1.ko.md
+  - id: PQR-005
+    finding: Reducing default documents could remove release traceability.
+    disposition: accepted
+    acceptedChange: Add conditional Evidence Pack and requirement-to-evidence traceability.
+    affectedDocs:
+      - TRACEABILITY_MATRIX.md
+      - SPEC_TEST_OBLIGATIONS.md
+      - 04-state-authority-evidence-v1.ko.md
+      - 06-adaptive-proof-safe-wave-v1.ko.md
+rejectedChanges:
+  - proposal: Remove SQLite and make Markdown the sole runtime authority.
+    reason: Loses atomic lease, attempt, transition and completion semantics; file locks would recreate a weaker state engine.
+  - proposal: Automatically synchronize and apply upstream skill changes.
+    reason: Breaks reproducibility and introduces supply-chain and model-regression risk.
+  - proposal: Enable multi-agent Wave execution by default.
+    reason: Vertical slices may share semantic surfaces despite missing explicit dependencies.
+  - proposal: Force fresh agents at every workflow stage.
+    reason: Adds spawn and context reconstruction cost inside one bounded objective.
+remainingAmbiguity:
+  - Risk classifier thresholds require Phase 07 A/B calibration.
+  - Predicted write-set semantic conflict precision must be measured before parallel execution is enabled.
+  - Codex app worktree hydration behavior must be validated against the current app version during Phase 07.
+reviewedSurfaceClassifications:
+  source_only: ready
+  package_runtime_payload: ready_with_phase_02_dry_run
+  data_or_state_migration: ready_for_new_kernel_state_only
+  installed_profile_or_account_root: blocked_until_phase_07
+  external_deployment_or_service: read_only_upstream_check_only
+missingPolicyGates: []
+acceptedChangesApplied: true
+reReview:
+  required: false
+  reason: All architecture and plan blockers were assigned explicit decisions, phases, owners and evidence slots.
+closureDecision: implementation_plan_ready
