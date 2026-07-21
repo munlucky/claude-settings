@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.context-receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "stage",
+    "policyRevision",
+    "tokenEstimate",
+    "included",
+    "omitted",
+    "digest"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "receiptId": {
+      "type": "string"
+    },
+    "stage": {
+      "enum": [
+        "FRAME",
+        "SHAPE",
+        "SLICE",
+        "SCHEDULE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ]
+    },
+    "policyRevision": {
+      "type": "string"
+    },
+    "tokenEstimate": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "included": {
+      "type": "array"
+    },
+    "omitted": {
+      "type": "array"
+    },
+    "digest": {
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

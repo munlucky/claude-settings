@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.state-projection.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "runtimeRevision",
+    "status",
+    "currentState",
+    "sourceDigest"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string"
+    },
+    "runtimeRevision": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "currentState": {
+      "type": "string"
+    },
+    "sourceDigest": {
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

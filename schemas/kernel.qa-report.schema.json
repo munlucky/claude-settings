@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.qa-report.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "tier",
+    "proofTier",
+    "checks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "tier": {
+      "enum": [
+        "E1",
+        "E2"
+      ]
+    },
+    "proofTier": {
+      "enum": [
+        "T1",
+        "T2",
+        "T3"
+      ]
+    },
+    "checks": {
+      "type": "array"
+    }
+  }
+}

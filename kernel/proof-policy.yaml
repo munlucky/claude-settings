@@ -1,0 +1,12 @@
+schemaVersion: 1
+tiers:
+  T0: deterministic-only
+  T1: compact-review
+  T2: dual-review
+  T3: full-proof
+hardFloors:
+  securityBoundary: T3
+  dataMigration: T3
+  publicContract: T3
+  schemaChange: T3
+  runtimeAuthority: T3

@@ -1,0 +1,13 @@
+schemaVersion: 1
+productId: moon-relay-kernel
+trackId: kernel
+branch: kernel/moon-relay-kernel
+runtimeHome: ~/.moon-relay-kernel
+stateNamespace: moon-relay-kernel
+profileNamespace: moon-relay-kernel
+publicEntrypoints:
+  - moon-relay-kernel
+relayCompatibility:
+  sourceReuse: allowed
+  runtimeSharing: forbidden
+  stateMigration: forbidden

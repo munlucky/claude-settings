@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict'; import {test} from 'node:test'; import {buildKernelContext} from '../scripts/kernel/context-build.mjs';
+test('same context input produces deterministic receipt',()=>{const input={stage:'EXECUTE',principles:['minimal'],taskContract:{objective:'x'},stageRecords:[{id:'code-1',type:'code',content:'const x=1',revision:'abc'}],policyRevision:'p1'}; const a=buildKernelContext(input),b=buildKernelContext(input); assert.equal(a.receipt.digest,b.receipt.digest); assert.equal(a.receipt.receiptId,b.receipt.receiptId);});

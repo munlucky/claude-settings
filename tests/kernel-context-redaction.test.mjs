@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict'; import {test} from 'node:test'; import {buildKernelContext} from '../scripts/kernel/context-build.mjs';
+test('raw logs are omitted and secrets are redacted',()=>{const r=buildKernelContext({stage:'PROVE',principles:[],taskContract:{objective:'x',token:'abc'},stageRecords:[{id:'log',type:'raw-runtime-log',content:'secret=raw'},{id:'doc',type:'doc',content:'api_key=123'}]}); assert.equal(r.receipt.omitted[0].reason,'forbidden-type'); assert.doesNotMatch(r.promptBlock,/123|secret=raw/); assert.match(r.promptBlock,/REDACTED/);});

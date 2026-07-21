@@ -1,0 +1,13 @@
+schemaVersion: 1
+public:
+  - moon-relay-kernel
+internal:
+  - kernel-minimal-correct-change
+  - kernel-domain-modeling
+  - kernel-tracer-slicing
+  - kernel-test-driven-development
+  - kernel-diagnosing-bugs
+  - kernel-verification-before-completion
+  - kernel-review-spec
+  - kernel-review-standards
+  - kernel-review-complexity

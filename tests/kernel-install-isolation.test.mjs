@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict'; import {test} from 'node:test'; import {readFile} from 'node:fs/promises';
+test('Kernel manifest explicitly excludes Relay state and profiles',async()=>{const m=JSON.parse(await readFile(new URL('../package/kernel/manifest.json',import.meta.url),'utf8')); assert.ok(m.exclude.includes('.moonshot-relay')); assert.ok(m.exclude.includes('runtime-state.sqlite')); assert.equal(m.runtimeHome,'~/.moon-relay-kernel');});

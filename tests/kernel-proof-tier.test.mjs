@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict'; import {test} from 'node:test'; import {selectProofTier,evidenceTierForProof} from '../scripts/kernel/proof-route.mjs';
+test('documentation-only change is T0 while security is hard-floor T3',()=>{assert.equal(selectProofTier({behaviorChanging:false}),'T0'); assert.equal(selectProofTier({requestedTier:'T0',surfaces:['securityBoundary']}),'T3'); assert.equal(evidenceTierForProof('T3'),'E2');});

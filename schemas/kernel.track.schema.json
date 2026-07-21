@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.track.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "track",
+    "product"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "track": {
+      "enum": [
+        "relay",
+        "kernel"
+      ]
+    },
+    "product": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

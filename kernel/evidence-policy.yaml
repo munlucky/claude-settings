@@ -1,0 +1,10 @@
+schemaVersion: 1
+tiers:
+  E0: [RUN_SUMMARY]
+  E1: [TASK_CONTRACT, QA_REPORT, RUN_SUMMARY]
+  E2: [TASK_CONTRACT, SLICE_GRAPH, QA_REPORT, RELEASE_EVIDENCE]
+proofToEvidence:
+  T0: E0
+  T1: E1
+  T2: E1
+  T3: E2

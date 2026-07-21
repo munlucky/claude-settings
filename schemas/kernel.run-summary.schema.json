@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.run-summary.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "tier",
+    "objective",
+    "status",
+    "evidenceRefs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "tier": {
+      "const": "E0"
+    },
+    "objective": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "evidenceRefs": {
+      "type": "array"
+    }
+  }
+}

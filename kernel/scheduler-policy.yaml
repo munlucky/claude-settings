@@ -1,0 +1,8 @@
+schemaVersion: 1
+defaultMode: sequential
+wave:
+  v1Mode: dry-run
+  maxWorkers: 2
+  requireDisjointWriteSets: true
+  requireDisjointSharedSurfaces: true
+  requireIntegrationVerification: true

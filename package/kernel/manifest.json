@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "productId": "moon-relay-kernel",
+  "runtimeHome": "~/.moon-relay-kernel",
+  "entrypoint": "bin/moon-relay-kernel.mjs",
+  "include": [
+    "bin/moon-relay-kernel.mjs",
+    "kernel/",
+    "scripts/kernel/",
+    "schemas/kernel.",
+    "skills/moon-relay-kernel/",
+    "skills/kernel-",
+    "catalog/kernel-skills.yaml",
+    "package/kernel/profiles/"
+  ],
+  "exclude": [
+    ".moonshot-relay",
+    "runtime-state.sqlite",
+    "package/claude/profile",
+    "package/codex/profile",
+    "package/qwen/profile"
+  ]
+}

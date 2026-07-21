@@ -1,0 +1,8 @@
+{
+  "SessionStart": [
+    {
+      "type": "command",
+      "command": "node bin/moon-relay-kernel.mjs doctor --json"
+    }
+  ]
+}

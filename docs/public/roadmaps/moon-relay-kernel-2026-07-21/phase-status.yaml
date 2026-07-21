@@ -1,0 +1,16 @@
+schemaVersion: 1
+plan: moon-relay-kernel-2026-07-21
+branch: kernel/moon-relay-kernel
+status: source-implementation-in-progress
+phases:
+  PH-01: implemented-local-verification-pending-repository
+  PH-02: implemented-local-verification-pending-repository
+  PH-03: implemented-local-verification-pending-repository
+  PH-04: implemented-local-verification-pending-repository
+  PH-05: implemented-local-verification-pending-repository
+  PH-06: implemented-local-verification-pending-repository
+  PH-07: source-profile-fixtures-only-live-adoption-blocked
+completionAuthority: runtime-state-required
+blockers:
+  - full repository npm test, package, routing, eval, and lab gates require a complete checkout/runtime
+  - live account-root and provider profile adoption remains forbidden
