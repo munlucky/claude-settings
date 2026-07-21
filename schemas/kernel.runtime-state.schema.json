@@ -6,17 +6,33 @@
   "required": [
     "schemaVersion",
     "runId",
+    "objective",
+    "currentState",
+    "state",
+    "status",
     "revision",
     "mutationRevision",
     "sourceIdentity",
-    "status",
-    "currentState"
+    "proofTier",
+    "evidenceTier",
+    "requiredObligations",
+    "acceptanceCriteria",
+    "updatedAt"
   ],
   "properties": {
     "schemaVersion": {
       "const": 1
     },
     "runId": {
+      "type": "string"
+    },
+    "objective": {
+      "type": "string"
+    },
+    "currentState": {
+      "type": "string"
+    },
+    "state": {
       "type": "string"
     },
     "revision": {
@@ -31,8 +47,32 @@
       "type": "string",
       "minLength": 1
     },
-    "objective": {
-      "type": "string"
+    "proofTier": {
+      "enum": [
+        "T0",
+        "T1",
+        "T2",
+        "T3"
+      ]
+    },
+    "evidenceTier": {
+      "enum": [
+        "E0",
+        "E1",
+        "E2"
+      ]
+    },
+    "requiredObligations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "status": {
       "enum": [
@@ -40,9 +80,6 @@
         "blocked",
         "completed"
       ]
-    },
-    "currentState": {
-      "type": "string"
     },
     "updatedAt": {
       "type": "string"

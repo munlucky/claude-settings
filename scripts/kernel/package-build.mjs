@@ -29,12 +29,14 @@ const isForbiddenPath = (relPath) => {
   return forbidden.some((token) => normalized.includes(token));
 };
 
+const isOutsideRelative = (relPath) => relPath === '..' || relPath.startsWith('..' + path.sep) || relPath.startsWith('../') || path.isAbsolute(relPath);
+
 const assertContained = async (sourceRoot, sourcePath) => {
   const absRoot = path.resolve(sourceRoot);
   const absSource = path.resolve(sourcePath);
 
   const relLexical = path.relative(absRoot, absSource);
-  if (relLexical !== '' && (relLexical.startsWith('..') || path.isAbsolute(relLexical))) {
+  if (isOutsideRelative(relLexical)) {
     throw new Error(`Package source path ${sourcePath} escapes sourceRoot ${sourceRoot}`);
   }
 
@@ -42,7 +44,7 @@ const assertContained = async (sourceRoot, sourcePath) => {
     const realRoot = await realpath(absRoot);
     const realSource = await realpath(absSource);
     const relReal = path.relative(realRoot, realSource);
-    if (relReal !== '' && (relReal.startsWith('..') || path.isAbsolute(relReal))) {
+    if (isOutsideRelative(relReal)) {
       throw new Error(`Package source realpath ${realSource} escapes sourceRoot realpath ${realRoot}`);
     }
   } catch (err) {
@@ -51,7 +53,6 @@ const assertContained = async (sourceRoot, sourcePath) => {
 };
 
 const auditTreeContainment = async (sourceRoot, outputRoot, excludePatterns) => {
-  const realSourceRoot = await realpath(sourceRoot);
   const realOutputRoot = await realpath(outputRoot);
 
   const walk = async (dir) => {
@@ -67,13 +68,9 @@ const auditTreeContainment = async (sourceRoot, outputRoot, excludePatterns) => 
       const lst = await lstat(fullPath);
       if (lst.isSymbolicLink()) {
         const real = await realpath(fullPath);
-        const relSource = path.relative(realSourceRoot, real);
         const relOutput = path.relative(realOutputRoot, real);
-        const inSource = relSource === '' || (!relSource.startsWith('..') && !path.isAbsolute(relSource));
-        const inOutput = relOutput === '' || (!relOutput.startsWith('..') && !path.isAbsolute(relOutput));
-
-        if (!inSource && !inOutput) {
-          throw new Error(`Symlink ${relToOutput} points outside allowed root: ${real}`);
+        if (isOutsideRelative(relOutput)) {
+          throw new Error(`Materialized release package symlink ${relToOutput} points outside output root: ${real}`);
         }
       }
 
@@ -172,7 +169,17 @@ export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), out
     throw new Error('Kernel skills lock file missing: package/kernel/skills.lock.json');
   }
 
-  if (dryRun) return { dryRun: true, ...plan };
+  // Create clean sanitized plan for package artifact (storing relative paths only)
+  const relativePlan = {
+    manifest: plan.manifest,
+    files: plan.planned.map((item) => ({
+      rel: item.rel,
+      sourceRel: item.rel,
+      targetRel: item.rel,
+    })),
+  };
+
+  if (dryRun) return { dryRun: true, plan: relativePlan };
   await mkdir(outputRoot, { recursive: true });
 
   for (const item of plan.planned) {
@@ -188,6 +195,6 @@ export const materializeKernelPackage = async ({ sourceRoot = process.cwd(), out
 
   await auditTreeContainment(sourceRoot, outputRoot, plan.excludePatterns);
 
-  await writeFile(path.join(outputRoot, 'kernel-package-plan.json'), JSON.stringify(plan, null, 2));
-  return { dryRun: false, ...plan };
+  await writeFile(path.join(outputRoot, 'kernel-package-plan.json'), JSON.stringify(relativePlan, null, 2));
+  return { dryRun: false, plan: relativePlan };
 };

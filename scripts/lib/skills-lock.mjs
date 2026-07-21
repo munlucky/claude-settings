@@ -8,6 +8,7 @@ const normalizePath = (value = '') => String(value).replaceAll('\\', '/');
 const readSkillBody = async (repoRoot, skillPath) => readFile(path.join(repoRoot, skillPath, 'SKILL.md'), 'utf8');
 
 const isKernelSkill = (name) => name.startsWith('kernel-') || name === 'moon-relay-kernel';
+const commitShaRegex = /^[a-f0-9]{40}$/i;
 
 export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoot = 'skills' } = {}) => {
   const root = path.join(repoRoot, skillsRoot);
@@ -86,9 +87,15 @@ export const auditSkillsLock = async ({
     if (lock.scope !== 'kernel') {
       findings.push({ type: 'scope_mismatch', severity: 'blocking', expected: 'kernel', actual: lock.scope });
     }
-    if (!lock.sourceCommit || typeof lock.sourceCommit !== 'string') {
-      findings.push({ type: 'missing_source_commit', severity: 'blocking' });
+    if (!lock.sourceCommit || typeof lock.sourceCommit !== 'string' || !commitShaRegex.test(lock.sourceCommit)) {
+      findings.push({ type: 'invalid_source_commit_sha', severity: 'blocking', actual: lock.sourceCommit });
     }
+  }
+
+  const lockedNames = (lock.skills || []).map((s) => s.name);
+  const duplicates = lockedNames.filter((name, idx) => lockedNames.indexOf(name) !== idx);
+  if (duplicates.length > 0) {
+    findings.push({ type: 'duplicate_lock_entries', severity: 'blocking', duplicates });
   }
 
   const sourceSkills = new Map(
