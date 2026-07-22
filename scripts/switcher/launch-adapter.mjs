@@ -23,10 +23,17 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
     const aumid = spec.aumid || null;
     env.MOON_SWITCHER_AUMID = aumid || '';
     env.MOON_SWITCHER_WINDOW_TITLE = spec.surface === 'antigravity_desktop' ? 'Antigravity' : 'ChatGPT';
-    const script = "$ErrorActionPreference='SilentlyContinue'; $args=@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json); if ($env:MOON_SWITCHER_AUMID) { Start-Process -FilePath ('shell:AppsFolder\\' + $env:MOON_SWITCHER_AUMID) -ArgumentList $args -WindowStyle Normal; try { $shell=New-Object -ComObject WScript.Shell; for ($i=0; $i -lt 20; $i++) { Start-Sleep -Milliseconds 500; if ($shell.AppActivate($env:MOON_SWITCHER_WINDOW_TITLE)) { break } } } catch {} } else { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList $args -WindowStyle Normal }";
-    const child = spawnImpl('powershell.exe', ['-NoProfile', '-Command', script], { env, windowsHide: false, detached: false, stdio: 'ignore' });
-    child.unref?.();
-    return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'powershell_shell_activation' : 'powershell_start_process' };
+    const shellTarget = `shell:AppsFolder\\${aumid}`;
+    let child;
+    if (aumid) {
+      child = spawnImpl('cmd.exe', ['/d', '/s', '/c', 'start', '', shellTarget, ...spec.args], { env, windowsHide: true, detached: false, stdio: 'ignore' });
+      const focusScript = "$ErrorActionPreference='SilentlyContinue'; try { $shell=New-Object -ComObject WScript.Shell; for ($i=0; $i -lt 20; $i++) { Start-Sleep -Milliseconds 500; if ($shell.AppActivate($env:MOON_SWITCHER_WINDOW_TITLE)) { break } } } catch {}";
+      spawnImpl('powershell.exe', ['-NoProfile', '-Command', focusScript], { env, windowsHide: true, detached: false, stdio: 'ignore' });
+    } else {
+      child = spawnImpl('powershell.exe', ['-NoProfile', '-Command', "$ErrorActionPreference='SilentlyContinue'; Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -WindowStyle Normal"], { env, windowsHide: true, detached: false, stdio: 'ignore' });
+      child.unref?.();
+    }
+    return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'cmd_shell_activation' : 'powershell_start_process' };
   }
   const child = spawnImpl(spec.command, spec.args, { env: spec.env, windowsHide: true, detached: false, stdio: 'ignore' });
   child.unref?.();
