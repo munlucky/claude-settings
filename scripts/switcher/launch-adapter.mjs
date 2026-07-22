@@ -22,7 +22,7 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
     };
     const aumid = spec.aumid || null;
     env.MOON_SWITCHER_AUMID = aumid || '';
-    const script = "$args=@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json); if ($env:MOON_SWITCHER_AUMID) { Start-Process -FilePath ('shell:AppsFolder\\' + $env:MOON_SWITCHER_AUMID) -ArgumentList $args -WindowStyle Hidden } else { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList $args -WindowStyle Hidden }";
+    const script = "$args=@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json); if ($env:MOON_SWITCHER_AUMID) { Start-Process -FilePath ('shell:AppsFolder\\' + $env:MOON_SWITCHER_AUMID) -ArgumentList $args -WindowStyle Normal } else { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList $args -WindowStyle Normal }";
     const child = spawnImpl('powershell.exe', ['-NoProfile', '-Command', script], { env, windowsHide: true, detached: false, stdio: 'ignore' });
     child.unref?.();
     return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'powershell_shell_activation' : 'powershell_start_process' };

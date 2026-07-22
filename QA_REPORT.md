@@ -7,6 +7,7 @@
 - Changed areas:
   - Added neutral CLI/GUI track selection, process guards, transaction receipts, dynamic app discovery, WindowsApps launch fallback, and safe switcher uninstall.
   - Added Kernel profile install/doctor/uninstall lifecycle for Claude, Codex, Qwen, and Antigravity.
+  - Changed packaged WindowsApps activation to request a normal visible window; hidden shell activation could create the Codex process without exposing its UI.
 - Verification evidence:
   - `npm test` passed (683 pass, 1 skipped); Kernel 79/79; package 169/169; routing 22/22; switcher 16/16; eval 14/14; Harness Lab passed; doctor, explicit skills audit, package dry-run, surface budget, and diff checks passed.
   - Administrator live adoption installId `1784702259577-4840` completed, then Relay metadata was restored for all five surfaces and manifest-owned static entries/shortcuts were removed without reading credentials.
