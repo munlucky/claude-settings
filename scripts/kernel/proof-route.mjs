@@ -1,4 +1,5 @@
 import { isHighRiskSurface } from './risk-surfaces.mjs';
+import { KERNEL_POLICY } from './policy.mjs';
 
 const rank = { T0: 0, T1: 1, T2: 2, T3: 3 };
 
@@ -9,13 +10,10 @@ export const selectProofTier = (task = {}) => {
   return tier;
 };
 
-export const evidenceTierForProof = (proofTier) => (proofTier === 'T0' ? 'E0' : proofTier === 'T3' ? 'E2' : 'E1');
+export const evidenceTierForProof = (proofTier) => KERNEL_POLICY.proofToEvidence[proofTier] || 'E1';
 
 export const requiredChecksForProof = (proofTier) => {
-  if (proofTier === 'T3') return ['static-analysis', 'unit-test', 'security-review'];
-  if (proofTier === 'T2') return ['static-analysis', 'unit-test'];
-  if (proofTier === 'T1') return ['unit-test'];
-  return ['default'];
+  return KERNEL_POLICY.requiredChecks[proofTier] || ['default'];
 };
 
 export const resolveProofRoute = (task = {}) => {

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 
 export const RELAY_DEFAULT_HOME = path.join(os.homedir(), '.moonshot-relay');
 export const KERNEL_DEFAULT_HOME = path.join(os.homedir(), '.moon-relay-kernel');
@@ -30,6 +31,24 @@ export const readProjectTrack = async (startDir = process.cwd()) => {
     const marker = path.join(curr, '.moon-relay', 'track.yaml');
     try {
       const text = await readFile(marker, 'utf8');
+      const match = text.match(/^track:\s*(relay|kernel)\s*$/m);
+      if (match) return match[1];
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    const parent = path.dirname(curr);
+    if (parent === curr) break;
+    curr = parent;
+  }
+  return null;
+};
+
+export const readProjectTrackSync = (startDir = process.cwd()) => {
+  let curr = path.resolve(startDir);
+  while (true) {
+    const marker = path.join(curr, '.moon-relay', 'track.yaml');
+    try {
+      const text = readFileSync(marker, 'utf8');
       const match = text.match(/^track:\s*(relay|kernel)\s*$/m);
       if (match) return match[1];
     } catch (error) {

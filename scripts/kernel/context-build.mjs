@@ -61,41 +61,83 @@ export const buildKernelContext = ({ stage, principles = [], taskContract, stage
   };
 
   const blocks = [];
+  const addBlock = (text, entries = []) => {
+    const maxChars = MAX_PROMPT_TOKENS * 4;
+    if (estimateTokens(text) <= MAX_PROMPT_TOKENS) {
+      blocks.push({ text, entries });
+      return;
+    }
+    const truncatedEntries = entries.map((entry) => ({ ...entry, truncated: true }));
+    blocks.push({ text: `${text.slice(0, maxChars - 24)}\n[TRUNCATED]`, entries: truncatedEntries });
+  };
   if (principles.length) {
     const sanitizedPrinciples = principles.map((p) => `- ${sanitizeText(p)}`).join('\n');
     const principlesDigest = createHash('sha256').update(sanitizedPrinciples).digest('hex');
-    included.push({ id: 'stable-principles', layer: 'stable-principles', revision: policyRevision, contentDigest: principlesDigest });
-    blocks.push(`## Stable Principles\n${sanitizedPrinciples}`);
+    addBlock(`## Stable Principles\n${sanitizedPrinciples}`, [{ id: 'stable-principles', layer: 'stable-principles', revision: policyRevision, contentDigest: principlesDigest }]);
   }
 
   if (taskContract) {
     const redactedContract = redactSecretsInObject(taskContract);
     const contractJson = sanitizeText(JSON.stringify(redactedContract, null, 2));
     const contractDigest = createHash('sha256').update(contractJson).digest('hex');
-    included.push({ id: 'task-contract', layer: 'task-contract', revision: policyRevision, contentDigest: contractDigest });
-    blocks.push(`## Task Contract\n${contractJson}`);
+    addBlock(`## Task Contract\n${contractJson}`, [{ id: 'task-contract', layer: 'task-contract', revision: policyRevision, contentDigest: contractDigest }]);
   }
 
-  const stageContent = stageRecords.map((r) => accept(r, 'stage-context')).filter(Boolean);
-  if (stageContent.length) blocks.push(`## Stage Context\n${stageContent.join('\n\n')}`);
+  const stageEntries = [];
+  const stageContent = stageRecords.map((r) => {
+    const before = included.length;
+    const content = accept(r, 'stage-context');
+    if (content) stageEntries.push(included[before]);
+    return content;
+  }).filter(Boolean);
+  if (stageContent.length) addBlock(`## Stage Context\n${stageContent.join('\n\n')}`, stageEntries);
 
-  const refs = references.map((r) => accept(r, 'on-demand-reference')).filter(Boolean);
-  if (refs.length) blocks.push(`## On-demand References\n${refs.join('\n')}`);
+  const referenceEntries = [];
+  const refs = references.map((r) => {
+    const before = included.length;
+    const content = accept(r, 'on-demand-reference');
+    if (content) referenceEntries.push(included[before]);
+    return content;
+  }).filter(Boolean);
+  if (refs.length) addBlock(`## On-demand References\n${refs.join('\n')}`, referenceEntries);
 
-  const ev = evidence.map((r) => accept(r, 'evidence-digest')).filter(Boolean);
-  if (ev.length) blocks.push(`## Evidence Digest\n${ev.join('\n')}`);
+  const evidenceEntries = [];
+  const ev = evidence.map((r) => {
+    const before = included.length;
+    const content = accept(r, 'evidence-digest');
+    if (content) evidenceEntries.push(included[before]);
+    return content;
+  }).filter(Boolean);
+  if (ev.length) addBlock(`## Evidence Digest\n${ev.join('\n')}`, evidenceEntries);
 
-  let promptBlock = blocks.join('\n\n');
+  let promptBlock = blocks.map((block) => block.text).join('\n\n');
   let currentTokens = estimateTokens(promptBlock);
 
   // Deterministic Truncation Enforcement (KRN-AUD-P1-01)
   if (currentTokens > MAX_CONTEXT_TOKENS) {
     while (blocks.length > 2 && currentTokens > MAX_CONTEXT_TOKENS) {
-      blocks.pop();
-      promptBlock = blocks.join('\n\n');
+      const removedBlock = blocks.pop();
+      omitted.push(...removedBlock.entries.map((entry) => ({ id: entry.id, reason: 'context-budget' })));
+      promptBlock = blocks.map((block) => block.text).join('\n\n');
       currentTokens = estimateTokens(promptBlock);
     }
   }
+
+  // Even the two authoritative blocks must honor the declared prompt budget.
+  if (currentTokens > MAX_CONTEXT_TOKENS) {
+    const maxChars = MAX_CONTEXT_TOKENS * 4;
+    promptBlock = `${promptBlock.slice(0, Math.max(0, maxChars - 24))}\n[TRUNCATED]`;
+    currentTokens = estimateTokens(promptBlock);
+  }
+
+  const retainedIds = new Set(blocks.flatMap((block) => block.entries.map((entry) => entry.id)));
+  const retainedEntries = blocks.flatMap((block) => block.entries);
+  const seenIds = new Set();
+  included.splice(0, included.length, ...retainedEntries.filter((entry) => {
+    if (!retainedIds.has(entry.id) || seenIds.has(entry.id)) return false;
+    seenIds.add(entry.id);
+    return true;
+  }));
 
   return {
     promptBlock,
@@ -105,5 +147,5 @@ export const buildKernelContext = ({ stage, principles = [], taskContract, stage
 
 export const buildContextReceipt = async (options) => {
   const result = buildKernelContext(options);
-  return result.receipt;
+  return { ...result, ...result.receipt };
 };

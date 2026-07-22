@@ -123,3 +123,45 @@ test('multi-connection OCC prevents state conflicts across independent DB handle
   s1.close();
   s2.close();
 });
+
+test('latest verification row wins and stale passes cannot produce completion', async () => {
+  const h = await mkdtemp(path.join(os.tmpdir(), 'krn-state-latest-'));
+  const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
+  s.createRun({ runId: 'r-latest', objective: 'latest row', sourceIdentity: 'src-latest', requiredObligations: ['unit-test'] });
+  s.transition('r-latest', 'SHAPE');
+  s.transition('r-latest', 'EXECUTE');
+  s.transition('r-latest', 'PROVE');
+  s.recordVerification('r-latest', { obligationId: 'unit-test', status: 'passed', evidenceRef: 'evidence://pass', command: 'npm test', evidenceDigest: validDigest, sourceIdentity: 'src-latest' });
+  s.recordVerification('r-latest', { obligationId: 'unit-test', status: 'failed', evidenceRef: 'evidence://fail', command: 'npm test', exitCode: 1, evidenceDigest: validDigest, sourceIdentity: 'src-latest' });
+  s.transition('r-latest', 'CLOSE');
+  assert.equal(s.assessCompletion('r-latest').decision, 'blocked');
+  s.close();
+});
+
+test('verification is restricted to PROVE and acceptance coverage is required', async () => {
+  const h = await mkdtemp(path.join(os.tmpdir(), 'krn-state-acceptance-'));
+  const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
+  s.createRun({ runId: 'r-acceptance', objective: 'acceptance', sourceIdentity: 'src-acceptance', requiredObligations: ['unit-test'], acceptanceCriteria: ['criterion-1'] });
+  assert.throws(() => s.recordVerification('r-acceptance', { obligationId: 'unit-test', status: 'passed', evidenceRef: 'evidence://x', command: 'npm test', evidenceDigest: validDigest, sourceIdentity: 'src-acceptance' }), /PROVE/);
+  s.transition('r-acceptance', 'SHAPE');
+  s.transition('r-acceptance', 'EXECUTE');
+  s.transition('r-acceptance', 'PROVE');
+  s.recordVerification('r-acceptance', { obligationId: 'unit-test', status: 'passed', evidenceRef: 'evidence://x', command: 'npm test', evidenceDigest: validDigest, sourceIdentity: 'src-acceptance' });
+  s.transition('r-acceptance', 'CLOSE');
+  assert.equal(s.assessCompletion('r-acceptance').decision, 'blocked');
+  s.close();
+});
+
+test('approved waiver can satisfy an obligation and foreign keys are enabled', async () => {
+  const h = await mkdtemp(path.join(os.tmpdir(), 'krn-state-waiver-'));
+  const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
+  assert.equal(s.dbPath.endsWith('runtime-state.sqlite'), true);
+  s.createRun({ runId: 'r-waiver', objective: 'waiver', sourceIdentity: 'src-waiver', requiredObligations: ['security-review'] });
+  s.transition('r-waiver', 'SHAPE');
+  s.transition('r-waiver', 'EXECUTE');
+  s.transition('r-waiver', 'PROVE');
+  s.addWaiver('r-waiver', { obligationId: 'security-review', approvedBy: 'reviewer', reason: 'not applicable', approvalReceipt: 'approval://1' });
+  s.transition('r-waiver', 'CLOSE');
+  assert.equal(s.assessCompletion('r-waiver').decision, 'accepted');
+  s.close();
+});

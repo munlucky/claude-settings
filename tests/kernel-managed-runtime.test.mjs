@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveKernelNode, buildRuntimeManifest, sha256File, parseNodeVersion } from '../scripts/kernel/runtime-resolver.mjs';
+import { installKernel, uninstallKernel } from '../scripts/kernel/installer.mjs';
 
 test('parseNodeVersion correctly extracts major, minor, and patch', () => {
   assert.deepEqual(parseNodeVersion('v22.13.0'), { major: 22, minor: 13, patch: 0, raw: 'v22.13.0' });
@@ -99,4 +100,36 @@ test('checksum mismatch in manifest triggers host fallback', async () => {
   const r = await resolveKernelNode({ runtimeHome: h, fallback: '/host/node', skipExecuteCheck: true });
   assert.equal(r.source, 'host-fallback');
   assert.equal(r.reason, 'checksum-mismatch');
+});
+
+test('Kernel installer places an external runtime source in the resolver runtime/current contract', async () => {
+  const project = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-install-project-'));
+  const runtimeSource = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-source-'));
+  const nodeRel = process.platform === 'win32' ? 'node.exe' : path.join('bin', 'node');
+  const nodeSource = path.join(runtimeSource, nodeRel);
+  await mkdir(path.dirname(nodeSource), { recursive: true });
+  await writeFile(nodeSource, 'managed-node-binary');
+  try {
+    await installKernel({ targetRoot: project, sourceRoot: process.cwd(), runtimeSource });
+    const runtimeHome = path.join(project, '.moon-relay', 'kernel-payload');
+    const resolved = await resolveKernelNode({ runtimeHome, fallback: '/host/node', skipExecuteCheck: true });
+    assert.equal(resolved.source, 'managed');
+    assert.equal(resolved.nodePath, path.join(runtimeHome, 'runtime', 'current', nodeRel));
+    await uninstallKernel({ targetRoot: project });
+  } finally {
+    await rm(project, { recursive: true, force: true });
+    await rm(runtimeSource, { recursive: true, force: true });
+  }
+});
+
+test('Kernel installer rejects an explicitly missing managed runtime source', async () => {
+  const project = await mkdtemp(path.join(os.tmpdir(), 'krn-runtime-missing-project-'));
+  try {
+    await assert.rejects(
+      () => installKernel({ targetRoot: project, sourceRoot: process.cwd(), runtimeSource: path.join(project, 'missing-runtime') }),
+      /managed runtime source does not exist/
+    );
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
 });

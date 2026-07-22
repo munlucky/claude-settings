@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
+import { computeKernelSourceIdentity, createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { routeSkill, resolveExplicitSkillInvocation } from '../scripts/skill-router.mjs';
 import { installKernel, uninstallKernel } from '../scripts/kernel/installer.mjs';
 
@@ -12,21 +12,22 @@ const validDigest = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123
 test('End-to-End Kernel Product Execution Flow', async () => {
   const tmpHome = await mkdtemp(path.join(os.tmpdir(), 'krn-e2e-home-'));
   const tmpProject = await mkdtemp(path.join(os.tmpdir(), 'krn-e2e-proj-'));
+  const sourceIdentity = computeKernelSourceIdentity({ projectRoot: tmpProject, objective: 'Complete E2E test', taskContract: { riskTier: 'T3', acceptanceCriteria: ['criteria-1'] } });
 
   // 1. Install Kernel track in project
   await installKernel({ targetRoot: tmpProject });
 
   // 2. Explicit skill resolution for $moon-relay-kernel
-  const explicitRes = await resolveExplicitSkillInvocation('$moon-relay-kernel', { repoRoot: process.cwd(), track: 'kernel' });
+  const explicitRes = await resolveExplicitSkillInvocation('$moon-relay-kernel', { repoRoot: process.cwd(), projectRoot: tmpProject });
   assert.equal(explicitRes.status, 'pass');
   assert.equal(explicitRes.selected, 'moon-relay-kernel');
 
   // 3. Initialize Control Plane & start run
-  const cp = await createKernelControlPlane({ runtimeHome: tmpHome });
+  const cp = await createKernelControlPlane({ runtimeHome: tmpHome, projectRoot: tmpProject });
   const run = await cp.startRun({
     runId: 'e2e-run-1',
     objective: 'Complete E2E test',
-    sourceIdentity: 'src-e2e-1',
+    sourceIdentity,
     taskContract: { riskTier: 'T3', acceptanceCriteria: ['criteria-1'] },
   });
 
@@ -51,7 +52,8 @@ test('End-to-End Kernel Product Execution Flow', async () => {
     command: 'npm run lint',
     exitCode: 0,
     evidenceDigest: validDigest,
-    sourceIdentity: 'src-e2e-1',
+    sourceIdentity,
+    acceptanceCoverage: ['criteria-1'],
   });
 
   await cp.recordProof('e2e-run-1', {
@@ -61,7 +63,7 @@ test('End-to-End Kernel Product Execution Flow', async () => {
     command: 'npm test',
     exitCode: 0,
     evidenceDigest: validDigest,
-    sourceIdentity: 'src-e2e-1',
+    sourceIdentity,
   });
 
   await cp.recordProof('e2e-run-1', {
@@ -71,12 +73,12 @@ test('End-to-End Kernel Product Execution Flow', async () => {
     command: 'npm run audit',
     exitCode: 0,
     evidenceDigest: validDigest,
-    sourceIdentity: 'src-e2e-1',
+    sourceIdentity,
   });
 
   // 7. Transition to CLOSE & assess completion
   await cp.closeRun('e2e-run-1');
-  const comp = await cp.assessCompletion('e2e-run-1', { expectedSourceIdentity: 'src-e2e-1' });
+  const comp = await cp.assessCompletion('e2e-run-1', { expectedSourceIdentity: sourceIdentity });
 
   assert.equal(comp.decision, 'accepted');
   assert.equal(comp.run.status, 'completed');
@@ -89,7 +91,10 @@ test('End-to-End Kernel Product Execution Flow', async () => {
 });
 
 test('Relay track project rejects Kernel-only explicit skill invocation with wrong_harness', async () => {
-  const res = await resolveExplicitSkillInvocation('$moon-relay-kernel', { repoRoot: process.cwd(), track: 'relay' });
+  const tmpRelay = await mkdtemp(path.join(os.tmpdir(), 'krn-e2e-relay-'));
+  await mkdir(path.join(tmpRelay, '.moon-relay'), { recursive: true });
+  await writeFile(path.join(tmpRelay, '.moon-relay', 'track.yaml'), 'schemaVersion: 1\ntrack: relay\nproduct: moonshot-relay\n');
+  const res = await resolveExplicitSkillInvocation('$moon-relay-kernel', { repoRoot: process.cwd(), projectRoot: tmpRelay });
   assert.equal(res.status, 'fail');
   assert.equal(res.findings[0].code, 'wrong_harness');
 });

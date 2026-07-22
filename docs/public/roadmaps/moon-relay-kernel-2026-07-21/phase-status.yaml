@@ -1,21 +1,19 @@
 schemaVersion: 1
 plan: moon-relay-kernel-2026-07-21
 branch: kernel/moon-relay-kernel
-status: source-implementation-complete-verification-blocked
+status: remediation-locally-verified-runtime-matrix-pending
 phases:
-  PH-01: source-implemented-focused-tests-passed
-  PH-02: source-implemented-focused-tests-passed
-  PH-03: source-implemented-focused-tests-passed
-  PH-04: source-implemented-focused-tests-passed
+  PH-01: remediation-source-updated-focused-tests-passed
+  PH-02: remediation-source-updated-focused-tests-passed
+  PH-03: remediation-source-updated-focused-tests-passed
+  PH-04: remediation-source-updated-focused-tests-passed
   PH-05: source-implemented-focused-tests-passed
-  PH-06: source-implemented-focused-tests-passed
-  PH-07: source-profile-fixtures-passed-live-adoption-blocked
+  PH-06: remediation-source-updated-focused-tests-passed
+  PH-07: installer-lifecycle-updated-product-e2e-passed
 focusedVerification:
   command: node --test tests/kernel-*.test.mjs
-  nodeVersion: v22.16.0
-  result: 31-pass-0-fail
+  nodeVersion: v24.18.0
+  result: 57-pass-0-fail
 completionAuthority: runtime-state-required
 blockers:
-  - full repository npm test, package, routing, eval, and lab gates require a complete checkout/runtime
-  - GitHub Actions has not produced a status for the implementation commit
-  - live account-root and provider profile adoption remains forbidden
+  - managed runtime multi-version execution matrix remains pending

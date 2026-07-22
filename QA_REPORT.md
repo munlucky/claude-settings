@@ -2,6 +2,23 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-22
+- Scope: Moon Relay Kernel remediation for completion authority, project-root routing, contained installer lifecycle, managed Node `runtime/current` resolution, atomic projection bundle reads, and rollback safety.
+- Changed areas:
+  - Bound Kernel source identity, latest verification rows, acceptance coverage, waiver receipts, mutation revisions, and E2 release evidence to runtime-state completion authority.
+  - Added project-root track guards, contained payload checksums, fail-closed managed runtime installation, resolver-compatible runtime manifests, complete reinstallation rollback, and target-root uninstall validation.
+  - Made projection verification consume the atomic projection bundle and added Kernel package metadata and policy surfaces.
+- Verification evidence:
+  - Independent final review: no remaining actionable implementation blockers.
+  - Source doctor and skills audit: pass.
+  - Package dry-run: pass.
+  - Kernel contracts: 57/57 pass; package contracts: 139/139 pass.
+  - Full source gate: 667 pass, 1 skipped, 0 failed; routing 22/22; golden eval 14/14; Harness Lab smoke passed with account-root guard unchanged.
+  - Disposable installed launcher resolved an actual managed Node from `runtime/current`; reinstallation rollback removed introduced runtime files and restored the prior manifest.
+- Commit boundary:
+  - Source, reviewed docs, tests, and QA ledger only.
+  - Live account-root/profile adoption and generated runtime/memory state are excluded from this commit.
+
 - Date: 2026-07-17
 - Scope: Hardened Antigravity global-skill projection for symlink/junction escape resistance, environment-based temp-home isolation, and manifest verification coverage.
 - Changed areas:

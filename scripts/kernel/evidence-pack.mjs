@@ -10,6 +10,8 @@ export const buildEvidencePack = ({
   longRunning = false,
   checks = [],
   acceptanceCoverage = [],
+  acceptance = acceptanceCoverage,
+  scope = [],
   completionDecision = 'blocked',
   riskTier = 'T0',
   nonGoals = [],
@@ -19,7 +21,8 @@ export const buildEvidencePack = ({
   const taskContractPayload = {
     objective,
     riskTier,
-    acceptanceCriteria: acceptanceCoverage,
+    acceptance,
+    scope,
     nonGoals,
   };
 
@@ -28,6 +31,7 @@ export const buildEvidencePack = ({
       schemaVersion: 1,
       tier,
       objective,
+      taskContract: taskContractPayload,
       status: completionDecision,
       evidenceRefs: checks.map((c) => c.evidenceRef).filter(Boolean),
     };
@@ -51,10 +55,10 @@ export const buildEvidencePack = ({
     taskContract: taskContractPayload,
     sliceGraph: { sliceCount },
     qaReport: qa,
-    releaseEvidence: {
+      releaseEvidence: {
       schemaVersion: 1,
       tier: 'E2',
-      acceptanceCoverage,
+      acceptanceCoverage: acceptance,
       completionDecision,
     },
   };

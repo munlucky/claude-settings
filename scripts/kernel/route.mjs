@@ -1,4 +1,5 @@
 import { isHighRiskSurface } from './risk-surfaces.mjs';
+import { readProjectTrackSync } from './runtime-home.mjs';
 
 export const classifyRisk = (task = {}) => {
   const surfaces = task.surfaces || [];
@@ -8,8 +9,9 @@ export const classifyRisk = (task = {}) => {
   return 'T0';
 };
 
-export const routeTask = (task = {}, { activeTrack = task.activeTrack } = {}) => {
-  if (activeTrack !== 'kernel') return { status: 'wrong_harness', requestedTrack: 'kernel', activeTrack: activeTrack || 'unknown', route: [] };
+export const routeTask = (task = {}, { projectRoot = process.cwd() } = {}) => {
+  const effectiveTrack = readProjectTrackSync(projectRoot);
+  if (effectiveTrack !== 'kernel') return { status: 'wrong_harness', requestedTrack: 'kernel', activeTrack: effectiveTrack || 'unknown', route: [] };
   const riskTier = task.riskTier || classifyRisk(task);
   const taskClass = task.taskClass || 'feature';
   let route;

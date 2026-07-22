@@ -120,10 +120,10 @@ const listSkillDirs = async (repoRoot) => {
   return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 };
 
-const detectTrack = async (repoRoot) => {
+const detectTrack = async (projectRoot) => {
   try {
     const { readProjectTrack } = await import('./kernel/runtime-home.mjs');
-    return await readProjectTrack(repoRoot);
+    return await readProjectTrack(projectRoot || process.cwd());
   } catch {
     return 'relay';
   }
@@ -131,10 +131,12 @@ const detectTrack = async (repoRoot) => {
 
 export const loadSkillCatalog = async (options = {}) => {
   const repoRoot = options.repoRoot || repoRootDefault;
-  const activeTrack = options.track || await detectTrack(repoRoot);
+  const projectRoot = options.projectRoot || process.cwd();
+  const activeTrack = await detectTrack(projectRoot);
+  const catalogRoot = options.catalogRoot || repoRoot;
   const defaultCatalog = activeTrack === 'kernel'
-    ? path.join(repoRoot, 'catalog', 'kernel-skills.json')
-    : path.join(repoRoot, 'catalog', 'moonshot-catalog.json');
+    ? path.join(catalogRoot, 'catalog', 'kernel-skills.json')
+    : path.join(catalogRoot, 'catalog', 'moonshot-catalog.json');
   const catalogPath = options.catalogPath || defaultCatalog;
   const catalog = await readJson(catalogPath);
   const publicNames = new Set((catalog.publicEntrypoints || []).map((entry) => entry.name));
@@ -189,7 +191,7 @@ export const loadSkillCatalog = async (options = {}) => {
       text,
     });
   }
-  return { repoRoot, catalogPath, activeTrack, skills, publicEntrypointNames: (catalog.publicEntrypoints || []).map((entry) => entry.name) };
+  return { repoRoot, projectRoot, catalogRoot, catalogPath, activeTrack, skills, publicEntrypointNames: (catalog.publicEntrypoints || []).map((entry) => entry.name) };
 };
 
 const publicView = (skill) => ({

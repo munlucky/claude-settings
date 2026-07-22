@@ -10,3 +10,8 @@ hardFloors:
   publicContract: T3
   schemaChange: T3
   runtimeAuthority: T3
+requiredChecks:
+  T0: [default]
+  T1: [unit-test]
+  T2: [static-analysis, unit-test]
+  T3: [static-analysis, unit-test, security-review]

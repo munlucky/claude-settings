@@ -1,11 +1,6 @@
-export const RISK_SURFACES = Object.freeze([
-  'security_boundary',
-  'data_migration',
-  'public_contract',
-  'schema_change',
-  'runtime_authority',
-  'installer',
-]);
+import { KERNEL_POLICY } from './policy.mjs';
+
+export const RISK_SURFACES = Object.freeze([...new Set([...Object.keys(KERNEL_POLICY.hardFloors), 'installer'])]);
 
 const highRiskSet = new Set(RISK_SURFACES);
 
