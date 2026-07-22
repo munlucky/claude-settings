@@ -8,17 +8,36 @@ const command = args[0] || 'status';
 const get = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : null; };
 const json = args.includes('--json');
 const output = (value) => console.log(json ? JSON.stringify(value) : Object.entries(value || {}).map(([key, item]) => `${key}: ${typeof item === 'object' ? JSON.stringify(item) : item}`).join('\n'));
+
+const normalizeSurface = (s) => {
+  if (!s || s === 'all') return 'all';
+  if (s === 'codex' || s === 'codex_desktop') return 'codex_desktop';
+  if (s === 'claude' || s === 'claude_cli') return 'claude_cli';
+  if (s === 'qwen' || s === 'qwen_cli') return 'qwen_cli';
+  if (s === 'antigravity' || s === 'antigravity_desktop' || s === 'agy') return 'antigravity_desktop';
+  return s;
+};
+
 try {
-  const surface = get('--surface');
+  const rawSurface = get('--surface');
+  const surface = normalizeSurface(rawSurface);
   const track = get('--track');
   let result;
-  if (command === 'status') result = await switchStatus({ surface });
-  else if (command === 'doctor') result = await switchDoctor({ surface });
+  if (command === 'status') result = await switchStatus({ surface: surface === 'all' ? null : surface });
+  else if (command === 'doctor') result = await switchDoctor({ surface: surface === 'all' ? null : surface });
   else if (command === 'preflight') result = await buildLivePreflight({ sourceRoot: get('--source-root') || process.cwd() });
   else if (command === 'adopt') result = await adoptLive({ sourceRoot: get('--source-root') || process.cwd(), approved: args.includes('--approved'), approvalToken: get('--approval-token') || '' });
-  else if (command === 'launch') result = await launchSwitch({ surface, track, sourceRoot: get('--source-root') || process.cwd(), dryRun: !args.includes('--execute') });
-  else if (command === 'recover') result = await recoverSwitch({ surface, closeApproval: args.includes('--approved') });
-  else if (command === 'rollback') result = await rollbackSwitch({ surface });
+  else if (command === 'launch') {
+    const targets = surface === 'all' ? ['codex_desktop', 'claude_cli', 'qwen_cli', 'antigravity_desktop'] : [surface];
+    const results = [];
+    for (const item of targets) {
+      const res = await launchSwitch({ surface: item, track, sourceRoot: get('--source-root') || process.cwd(), dryRun: !args.includes('--execute') });
+      results.push(res);
+    }
+    result = targets.length === 1 ? results[0] : { schemaVersion: 1, status: 'completed', operation: 'launch', track, results };
+  }
+  else if (command === 'recover') result = await recoverSwitch({ surface: surface === 'all' ? null : surface, closeApproval: args.includes('--approved') });
+  else if (command === 'rollback') result = await rollbackSwitch({ surface: surface === 'all' ? null : surface });
   else if (command === 'uninstall') result = await uninstallSwitcher({ home: get('--home') });
   else throw new Error(`unknown command: ${command}`);
   output(result);

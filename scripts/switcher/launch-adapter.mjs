@@ -13,6 +13,13 @@ export function buildProcessEnvironment({ surface, track, roots, workspaceRoot =
   return env;
 }
 
+const defaultCommand = (surface) => {
+  if (surface === 'claude_cli') return process.platform === 'win32' ? 'claude.cmd' : 'claude';
+  if (surface === 'qwen_cli') return process.platform === 'win32' ? 'qwen.cmd' : 'qwen';
+  if (surface === 'codex_cli') return process.platform === 'win32' ? 'codex.cmd' : 'codex';
+  return surface;
+};
+
 export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
   const resolvedWorkspace = workspaceRoot ? path.resolve(workspaceRoot) : (track === 'kernel' ? path.resolve(sourceRoot) : null);
   const expectedPublicSkills = track === 'kernel' ? ['moon-relay-kernel'] : null;
@@ -20,7 +27,7 @@ export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), wo
     schemaVersion: 1,
     surface,
     track,
-    command: command || surface,
+    command: command || defaultCommand(surface),
     args: [...args],
     aumid: null,
     roots,
