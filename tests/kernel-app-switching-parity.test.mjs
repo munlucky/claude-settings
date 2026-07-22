@@ -8,6 +8,7 @@ import { resolveAntigravity } from '../scripts/switcher/app-resolver/antigravity
 import { buildCodexDesktopLaunch, verifyCodexChild } from '../scripts/switcher/providers/codex.mjs';
 import { buildAntigravityLaunch, verifyAntigravityChild } from '../scripts/switcher/providers/antigravity.mjs';
 import { providerParityMatrix } from '../scripts/switcher/providers/matrix.mjs';
+import { resolveTrackRoots } from '../scripts/switcher/paths.mjs';
 test('phase 04 Codex launch carries process-specific home and disposable app data', () => {
   const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.tmpdir(), 'kernel', 'codex'), appDataRoot: path.join(os.tmpdir(), 'codex-app') };
   const spec = buildCodexDesktopLaunch({ track: 'kernel', roots, executable: 'ChatGPT.exe' });
@@ -22,6 +23,15 @@ test('phase 05 Antigravity launch carries Gemini home and user data dir', () => 
 test('phase 05 provider parity matrix keeps all surfaces disjoint', () => {
   const result = providerParityMatrix({ relayHome: path.join(os.tmpdir(), 'relay'), kernelHome: path.join(os.tmpdir(), 'kernel') });
   assert.equal(result.status, 'passed'); assert.equal(result.rows.length, 5); assert.ok(result.rows.every((row) => row.sensitiveContentRead === false));
+});
+test('Codex Desktop uses macOS Application Support roots for Relay and Kernel', () => {
+  const relayHome = path.join(os.tmpdir(), 'relay-macos');
+  const kernelHome = path.join(os.tmpdir(), 'kernel-macos');
+  const relay = resolveTrackRoots({ track: 'relay', surface: 'codex_desktop', relayHome, kernelHome, platform: 'darwin' });
+  const kernel = resolveTrackRoots({ track: 'kernel', surface: 'codex_desktop', relayHome, kernelHome, platform: 'darwin' });
+  assert.match(relay.appDataRoot, /Library[\\/]Application Support[\\/]OpenAI[\\/]Codex-Relay$/);
+  assert.match(kernel.appDataRoot, /Library[\\/]Application Support[\\/]OpenAI[\\/]Codex-Kernel$/);
+  assert.notEqual(relay.appDataRoot, kernel.appDataRoot);
 });
 test('phase 04/05 application resolvers do not hard-code a versioned WindowsApps path', async () => {
   const codex = await resolveCodexDesktop({ candidates: [], commandResolver: async () => null, windowsAppsResolver: async () => null });

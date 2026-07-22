@@ -11,7 +11,7 @@ export const receiptsPath = () => path.join(switcherHome(), 'receipts');
 export const journalPath = () => path.join(switcherHome(), 'state', 'journal.json');
 export const shortcutRoot = () => path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Moon Harness');
 
-export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), relayHome = process.env.MOONSHOT_RELAY_HOME, kernelHome = process.env.MOON_RELAY_KERNEL_HOME } = {}) {
+export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), relayHome = process.env.MOONSHOT_RELAY_HOME, kernelHome = process.env.MOON_RELAY_KERNEL_HOME, platform = process.platform } = {}) {
   if (!TRACKS.includes(track)) throw new Error(`wrong_harness: unsupported track ${track}`);
   if (!SURFACES.includes(surface)) throw new Error(`wrong_harness: unsupported surface ${surface}`);
   const relay = path.resolve(relayHome || path.join(process.env.USERPROFILE || os.homedir(), '.moonshot-relay'));
@@ -33,9 +33,12 @@ export function resolveTrackRoots({ track, surface, sourceRoot = process.cwd(), 
   const roots = track === 'relay'
     ? { runtimeHome: relay, providerHome: providerRelay[surface] }
     : { runtimeHome: kernel, providerHome: providerKernel[surface] };
-  if (surface === 'codex_desktop') roots.appDataRoot = track === 'relay'
-    ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'OpenAI', 'Codex-Relay')
-    : path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'OpenAI', 'Codex-Kernel');
+  if (surface === 'codex_desktop') {
+    const appDataBase = platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support')
+      : path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'));
+    roots.appDataRoot = path.join(appDataBase, 'OpenAI', track === 'relay' ? 'Codex-Relay' : 'Codex-Kernel');
+  }
   if (surface === 'antigravity_desktop') roots.appDataRoot = track === 'relay'
     ? path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity-Relay')
     : path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity-Kernel');
