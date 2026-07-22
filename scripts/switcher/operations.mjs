@@ -144,10 +144,6 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     if (quiescent.status !== 'quiescent') return createReceipt({ operation: 'launch', status: 'close_incomplete', surface, track: previous?.effectiveTrack || 'unknown', errorCode: 'process_active', effective: quiescent });
   }
 
-  if (surface === 'codex_desktop' || surface === 'codex_cli') {
-    await syncCodexGlobalSkillsIsolation({ track });
-  }
-
   if (track === 'kernel') {
     for (const root of [roots.runtimeHome, roots.providerHome, roots.appDataRoot].filter(Boolean)) {
       await assertSafeTarget(root, { protectedRoots: protectedRoots() });
@@ -162,6 +158,10 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     if (readiness.status !== 'launch_candidate') {
       return createReceipt({ operation: 'launch', status: readiness.status, surface, track, errorCode: readiness.reason || readiness.status });
     }
+  }
+
+  if (surface === 'codex_desktop' || surface === 'codex_cli') {
+    await syncCodexGlobalSkillsIsolation({ track });
   }
 
   const journal = await prepareTransaction({ surface, requestedTrack: track, roots, previousSelection: previous, processSet: active });
@@ -212,9 +212,11 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
 export async function recoverSwitch({ surface, processProvider, closeApproval = false, closeHandler = null } = {}) {
   const journal = await readJournal();
   if (!journal || (surface && journal.surface !== surface)) return createReceipt({ operation: 'recover', status: 'idle', surface: surface || 'unknown', track: 'unknown' });
-  if (!closeApproval || !closeHandler) return createReceipt({ operation: 'recover', status: 'recovery_required', surface: journal.surface, track: journal.requestedTrack, errorCode: 'operator_approval_missing' });
   const active = await listProviderProcesses({ surface: journal.surface, processProvider });
-  if (active.length && !(await closeHandler({ surface: journal.surface, processSet: active }))) return createReceipt({ operation: 'recover', status: 'close_incomplete', surface: journal.surface, track: journal.requestedTrack, errorCode: 'close_incomplete' });
+  if (active.length) {
+    if (!closeApproval || !closeHandler) return createReceipt({ operation: 'recover', status: 'recovery_required', surface: journal.surface, track: journal.requestedTrack, errorCode: 'operator_approval_missing' });
+    if (!(await closeHandler({ surface: journal.surface, processSet: active }))) return createReceipt({ operation: 'recover', status: 'close_incomplete', surface: journal.surface, track: journal.requestedTrack, errorCode: 'close_incomplete' });
+  }
   await recoverTransaction();
   await clearJournal();
   return createReceipt({ operation: 'recover', status: 'recovered', surface: journal.surface, track: journal.previousSelection?.effectiveTrack || 'relay', effective: { previousSelectionRestored: true } });

@@ -167,9 +167,15 @@ try {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');
     if (!runId) throw new Error('close command requires --run-id');
-    const res = await cp.closeRun(runId);
+    const closeRes = await cp.closeRun(runId);
+    let decisionRes = null;
+    try {
+      decisionRes = await cp.assessCompletion(runId, { commitDecision: true });
+    } catch {
+      /* non-blocking assessment if absent */
+    }
     await cp.close();
-    output(res);
+    output({ ...closeRes, completionDecision: decisionRes });
   } else if (command === 'resume') {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');
