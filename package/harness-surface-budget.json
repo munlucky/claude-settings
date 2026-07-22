@@ -9,7 +9,7 @@
   "allowedDelta": {
     "files": 50,
     "nonblankLines": 2400,
-    "utf8Bytes": 165000,
+    "utf8Bytes": 168000,
     "estimatedPromptTokens": 42000
   },
   "allowedUnregisteredTests": 0

@@ -50,7 +50,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     const application = await resolveApplication(surface);
     if (!application.executable) return createReceipt({ operation: 'launch', status: 'error', surface, track, errorCode: 'application_not_resolved', effective: { warnings: application.warnings || [] } });
     const args = roots.appDataRoot ? [`--user-data-dir=${roots.appDataRoot}`] : [];
-    spec = buildLaunchSpec({ surface, track, sourceRoot, roots, command: application.executable, args });
+    spec = { ...buildLaunchSpec({ surface, track, sourceRoot, roots, command: application.executable, args }), aumid: application.aumid || null };
   }
   spec ||= buildLaunchSpec({ surface, track, sourceRoot, roots });
   await advanceTransaction(journal, 'launch_requested', { launch: { commandName: spec.command, argCount: spec.args.length } });

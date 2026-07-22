@@ -10,7 +10,7 @@
 - Verification evidence:
   - `npm test` passed (683 pass, 1 skipped); Kernel 79/79; package 169/169; routing 22/22; switcher 16/16; eval 14/14; Harness Lab passed; doctor, explicit skills audit, package dry-run, surface budget, and diff checks passed.
   - Administrator live adoption installId `1784702259577-4840` completed, then Relay metadata was restored for all five surfaces and manifest-owned static entries/shortcuts were removed without reading credentials.
-  - Antigravity Kernel process-scoped app-data probe passed. Codex Desktop WindowsApps process-scoped verification remains blocked by direct-launch `EPERM` and shell-broker environment isolation; Phase 06 is partial, not complete.
+  - Antigravity Kernel process-scoped app-data probe passed. Codex Desktop packaged shell activation now passes with a verifiable Kernel `--user-data-dir` process argument and app-data root; direct launch remains `EPERM`, shell-broker `CODEX_HOME` inheritance is typed unknown, and Phase 06 remains partial only for the unrun manual auth-survival checkpoint.
 - Commit boundary:
   - Source implementation and tests are committed; live account-root data and generated runtime state remain excluded.
 

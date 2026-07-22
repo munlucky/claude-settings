@@ -10,7 +10,7 @@ export function buildProcessEnvironment({ surface, track, roots, baseEnv = proce
   return env;
 }
 export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
-  return { schemaVersion: 1, surface, track, command: command || surface, args: [...args], roots, env: buildProcessEnvironment({ surface, track, roots }) };
+  return { schemaVersion: 1, surface, track, command: command || surface, args: [...args], aumid: null, roots, env: buildProcessEnvironment({ surface, track, roots }) };
 }
 export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
   const useWindowsAppsFallback = process.platform === 'win32' && /[\\/]WindowsApps[\\/]/i.test(spec.command);
@@ -20,10 +20,12 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
       MOON_SWITCHER_TARGET: spec.command,
       MOON_SWITCHER_ARGS_JSON: JSON.stringify(spec.args),
     };
-    const script = "$target=$env:MOON_SWITCHER_TARGET; $args=@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json); Start-Process -FilePath $target -ArgumentList $args -WindowStyle Hidden";
+    const aumid = spec.aumid || null;
+    env.MOON_SWITCHER_AUMID = aumid || '';
+    const script = "$args=@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json); if ($env:MOON_SWITCHER_AUMID) { Start-Process -FilePath ('shell:AppsFolder\\' + $env:MOON_SWITCHER_AUMID) -ArgumentList $args -WindowStyle Hidden } else { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList $args -WindowStyle Hidden }";
     const child = spawnImpl('powershell.exe', ['-NoProfile', '-Command', script], { env, windowsHide: true, detached: false, stdio: 'ignore' });
     child.unref?.();
-    return { pid: null, status: 'launch_requested', child, launcher: 'powershell_start_process' };
+    return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'powershell_shell_activation' : 'powershell_start_process' };
   }
   const child = spawnImpl(spec.command, spec.args, { env: spec.env, windowsHide: true, detached: false, stdio: 'ignore' });
   child.unref?.();
