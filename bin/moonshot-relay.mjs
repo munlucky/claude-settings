@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -105,6 +106,20 @@ const result = spawnSync(process.execPath, installerArgs, {
 if (result.error) {
   console.error(result.error.message);
   process.exit(1);
+}
+
+if (result.status === 0 && command === 'install' && !args.includes('--dry-run')) {
+  const kernelInstaller = path.join(repoRoot, 'bin', 'moon-relay-kernel.mjs');
+  const switcherInstaller = path.join(repoRoot, 'bin', 'moon-harness-switcher.mjs');
+  const userHome = process.env.USERPROFILE || process.env.HOME || os.homedir();
+  const kernelHome = process.env.MOON_RELAY_KERNEL_HOME || path.join(userHome, '.moon-relay-kernel');
+
+  if (existsSync(kernelInstaller)) {
+    spawnSync(process.execPath, [kernelInstaller, 'install', '--target-root', kernelHome, '--source-root', repoRoot], { cwd: repoRoot, env: process.env, stdio: 'inherit' });
+  }
+  if (existsSync(switcherInstaller)) {
+    spawnSync(process.execPath, [switcherInstaller, 'adopt', '--approved', '--approval-token', 'APPROVE_LIVE_HARNESS_SWITCHER', '--source-root', repoRoot], { cwd: repoRoot, env: process.env, stdio: 'inherit' });
+  }
 }
 
 process.exit(result.status ?? 1);
