@@ -48,4 +48,13 @@ test('Codex resolver discovers the newest versioned WindowsApps install after an
   assert.equal(result.executable, newExecutable);
   assert.equal(result.launchKind, 'packaged_shell_activation');
 });
+test('Codex resolver discovers a macOS app bundle without a version-pinned path', async () => {
+  const root = await fsTempRoot();
+  const executable = path.join(root, 'Codex.app', 'Contents', 'MacOS', 'Codex');
+  await mkdir(path.dirname(executable), { recursive: true }); await writeFile(executable, 'fixture');
+  const result = await resolveCodexDesktop({ candidates: [], platform: 'darwin', macOsAppRoots: [root], windowsAppsResolver: async () => null, commandResolver: async () => null });
+  assert.equal(result.executable, executable);
+  assert.equal(result.launchKind, 'macos_app_bundle');
+  assert.equal(result.appDataRootMode, 'process_argument');
+});
 async function fsTempRoot() { return await mkdtemp(path.join(os.tmpdir(), 'codex-resolver-')); }

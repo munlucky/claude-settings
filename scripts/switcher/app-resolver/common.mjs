@@ -21,6 +21,24 @@ export async function resolveLatestWindowsAppsExecutable({ root, packagePrefix, 
     return null;
   }
 }
+export async function resolveMacOsAppExecutable({ roots = [], appNames = ['Codex.app', 'ChatGPT.app'], executableNames = ['Codex', 'ChatGPT'], platform = process.platform } = {}) {
+  if (platform !== 'darwin') return null;
+  const appCandidates = [];
+  for (const root of roots) {
+    if (!root) continue;
+    for (const appName of appNames) {
+      for (const executableName of executableNames) appCandidates.push(path.join(root, appName, 'Contents', 'MacOS', executableName));
+    }
+    try {
+      const entries = await readdir(root, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.toLowerCase().endsWith('.app')) continue;
+        for (const executableName of executableNames) appCandidates.push(path.join(root, entry.name, 'Contents', 'MacOS', executableName));
+      }
+    } catch {}
+  }
+  return resolveExecutable(appCandidates);
+}
 function comparePackageVersions(left, right) {
   const version = (value) => {
     const match = value.match(/_[0-9]+(?:\.[0-9]+)+_/);
