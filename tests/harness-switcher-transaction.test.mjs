@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { prepareTransaction, advanceTransaction, recoverTransaction } from '../scripts/switcher/transaction.mjs';
 import { readJournal } from '../scripts/switcher/state-store.mjs';
 import { switchDoctor, launchSwitch, recoverSwitch } from '../scripts/switcher/operations.mjs';
+import { installKernelProfile } from '../scripts/kernel/profile-install.mjs';
+import { hydrateKernelProject } from '../scripts/kernel/project-hydrate.mjs';
 
 test('phase 03 transaction journal follows prepare, stop, launch, and recovery states', async () => {
   const home = path.join(os.tmpdir(), `switcher-state-${Date.now()}`); process.env.MOON_HARNESS_SWITCHER_HOME = home;
@@ -33,9 +35,25 @@ test('phase 03 active GUI process refuses mutation without approval', async () =
 
 test('phase 03 CLI tracks use process-scoped roots and can coexist', async () => {
   const home = path.join(os.tmpdir(), `switcher-cli-${Date.now()}`); process.env.MOON_HARNESS_SWITCHER_HOME = home;
+  const runtimeHome = path.join(home, 'kernel');
+  const providerHome = path.join(home, 'kernel', 'codex');
+  const projectRoot = path.join(home, 'project');
+  await mkdir(runtimeHome, { recursive: true });
+  await writeFile(path.join(runtimeHome, 'install-manifest.json'), JSON.stringify({ productId: 'moon-relay-kernel' }), 'utf8');
+  await installKernelProfile({ sourceRoot: process.cwd(), runtime: 'codex', targetRoot: providerHome });
+  await hydrateKernelProject({ projectRoot, sourceRoot: process.cwd() });
+
   const relay = await launchSwitch({ surface: 'codex_cli', track: 'relay', sourceRoot: process.cwd(), dryRun: true });
-  const kernel = await launchSwitch({ surface: 'codex_cli', track: 'kernel', sourceRoot: process.cwd(), dryRun: true, launchSpec: { command: 'codex', args: [], roots: { runtimeHome: path.join(home, 'kernel'), providerHome: path.join(home, 'kernel', 'codex') }, env: {} } });
-  assert.equal(relay.status, 'committed'); assert.equal(kernel.status, 'committed');
+  const kernel = await launchSwitch({
+    surface: 'codex_cli',
+    track: 'kernel',
+    sourceRoot: process.cwd(),
+    projectRoot,
+    dryRun: true,
+    launchSpec: { command: 'codex', args: [], roots: { runtimeHome, providerHome, appDataRoot: path.join(home, 'app-data') }, env: {} },
+  });
+  assert.equal(relay.status, 'committed');
+  assert.equal(kernel.status, 'committed');
   assert.notEqual(relay.effective.providerHome, kernel.effective.providerHome);
   await rm(home, { recursive: true, force: true });
 });
