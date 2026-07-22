@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/harness-switcher.app-discovery.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "application", "status", "launchKind", "appDataRootMode", "processSet"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "application": { "type": "string" },
+    "status": { "enum": ["resolved", "not_found", "blocked", "degraded"] },
+    "launchKind": { "enum": ["direct_executable", "aumid", "command", "unknown"] },
+    "aumid": { "type": ["string", "null"] },
+    "packageFamily": { "type": ["string", "null"] },
+    "executable": { "type": ["string", "null"] },
+    "publisher": { "type": ["string", "null"] },
+    "version": { "type": ["string", "null"] },
+    "appDataRootMode": { "enum": ["process_argument", "environment", "fixed_shared", "unknown"] },
+    "appServerEffectiveHomeProbe": { "enum": ["supported", "unsupported", "not_run", "unknown"] },
+    "environmentInheritance": { "enum": ["inherited", "not_inherited", "unknown"] },
+    "gracefulCloseMechanism": { "type": "string" },
+    "processSet": { "type": "array", "items": { "type": "object" } },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

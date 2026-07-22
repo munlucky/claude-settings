@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "productId": "moon-harness-switcher",
+  "entrypoint": "bin/moon-harness-switcher.mjs",
+  "ownedStatic": ["bin/moon-harness-switcher.mjs", "scripts/switcher/", "schemas/harness-switcher.*", "package/switcher/"],
+  "stateRoot": "~/.moon-harness-switcher",
+  "preservedRoots": ["~/.moonshot-relay", "~/.codex", "~/.claude", "~/.qwen", "~/.gemini"]
+}

@@ -101,6 +101,18 @@ try {
     const { installKernel } = await import('../scripts/kernel/installer.mjs');
     const targetRoot = getArgValue('--target-root') || process.cwd();
     output(await installKernel({ targetRoot, sourceRoot: getArgValue('--source-root') || process.cwd(), runtimeSource: getArgValue('--runtime-source') }));
+  } else if (command === 'profile-install') {
+    const { installKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
+    output(await installKernelProfile({ runtime: getArgValue('--runtime-name') || getArgValue('--runtime'), targetRoot: getArgValue('--target-root') || process.cwd(), sourceRoot: getArgValue('--source-root') || process.cwd(), skillsRoot: getArgValue('--skills-root') }));
+  } else if (command === 'profile-doctor') {
+    const { doctorKernelProfile } = await import('../scripts/kernel/profile-doctor.mjs');
+    output(await doctorKernelProfile({ targetRoot: getArgValue('--target-root') || process.cwd(), runtime: getArgValue('--runtime-name') || getArgValue('--runtime') }));
+  } else if (command === 'profile-uninstall') {
+    const { uninstallKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
+    output(await uninstallKernelProfile({ targetRoot: getArgValue('--target-root') || process.cwd() }));
+  } else if (command === 'profile-rollback') {
+    const { rollbackKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
+    output(await rollbackKernelProfile({ targetRoot: getArgValue('--target-root') || process.cwd(), backupPath: getArgValue('--backup') }));
   } else if (command === 'uninstall') {
     const targetRoot = getArgValue('--target-root') || process.cwd();
     await assertKernelTrack(targetRoot);

@@ -1,0 +1,5 @@
+import { resolveCodexDesktop } from '../app-resolver/codex.mjs';
+import { buildLaunchSpec } from '../launch-adapter.mjs';
+export async function characterizeCodexDesktop(options = {}) { const discovery = await resolveCodexDesktop(options); return { ...discovery, processSpecificHome: true, appServerChild: { expectedEnv: 'CODEX_HOME', observed: 'not_run' }, sensitiveContentRead: false }; }
+export function buildCodexDesktopLaunch({ track, sourceRoot, roots, executable, extraArgs = [] } = {}) { return buildLaunchSpec({ surface: 'codex_desktop', track, sourceRoot, roots, command: executable || 'ChatGPT.exe', args: ['--user-data-dir', roots.appDataRoot, ...extraArgs] }); }
+export function verifyCodexChild({ expectedProviderHome, childEnvironment = {}, childExecutable, expectedExecutable = null } = {}) { const home = childEnvironment.CODEX_HOME; const executableMatch = !expectedExecutable || childExecutable === expectedExecutable; return { status: home === expectedProviderHome && executableMatch ? 'verified' : 'shared_mutable_surface', effectiveHome: home || null, executableMatch, sensitiveContentRead: false }; }
