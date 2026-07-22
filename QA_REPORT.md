@@ -3,6 +3,18 @@
 ## Harness Change Ledger
 
 - Date: 2026-07-22
+- Scope: Account-root harness switcher and four-profile lifecycle, including administrator live adoption, Relay restoration, and manifest-owned uninstall.
+- Changed areas:
+  - Added neutral CLI/GUI track selection, process guards, transaction receipts, dynamic app discovery, WindowsApps launch fallback, and safe switcher uninstall.
+  - Added Kernel profile install/doctor/uninstall lifecycle for Claude, Codex, Qwen, and Antigravity.
+- Verification evidence:
+  - `npm test` passed (683 pass, 1 skipped); Kernel 79/79; package 169/169; routing 22/22; switcher 16/16; eval 14/14; Harness Lab passed; doctor, explicit skills audit, package dry-run, surface budget, and diff checks passed.
+  - Administrator live adoption installId `1784702259577-4840` completed, then Relay metadata was restored for all five surfaces and manifest-owned static entries/shortcuts were removed without reading credentials.
+  - Antigravity Kernel process-scoped app-data probe passed. Codex Desktop WindowsApps process-scoped verification remains blocked by direct-launch `EPERM` and shell-broker environment isolation; Phase 06 is partial, not complete.
+- Commit boundary:
+  - Source implementation and tests are committed; live account-root data and generated runtime state remain excluded.
+
+- Date: 2026-07-22
 - Scope: Moon Relay Kernel remediation for completion authority, project-root routing, contained installer lifecycle, managed Node `runtime/current` resolution, atomic projection bundle reads, and rollback safety.
 - Changed areas:
   - Bound Kernel source identity, latest verification rows, acceptance coverage, waiver receipts, mutation revisions, and E2 release evidence to runtime-state completion authority.
