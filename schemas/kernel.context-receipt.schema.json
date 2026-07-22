@@ -8,6 +8,7 @@
     "receiptId",
     "stage",
     "policyRevision",
+    "policyDigest",
     "tokenEstimate",
     "included",
     "omitted",
@@ -34,17 +35,46 @@
     "policyRevision": {
       "type": "string"
     },
+    "policyDigest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
     "tokenEstimate": {
       "type": "integer",
       "minimum": 0
     },
     "included": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "layer", "revision", "contentDigest"],
+        "properties": {
+          "id": { "type": "string" },
+          "layer": { "type": "string" },
+          "revision": { "type": "string" },
+          "contentDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "sourceRef": { "type": "string" },
+          "sourceDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "trust": { "type": "string" },
+          "truncated": { "type": "boolean" }
+        }
+      }
     },
     "omitted": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
     },
     "digest": {
+      "type": "string",
       "pattern": "^[a-f0-9]{64}$"
     }
   }

@@ -1,5 +1,6 @@
 import { isHighRiskSurface } from './risk-surfaces.mjs';
 import { readProjectTrackSync } from './runtime-home.mjs';
+import { resolveKernelCapabilities } from './capability-resolver.mjs';
 
 export const classifyRisk = (task = {}) => {
   const surfaces = task.surfaces || [];
@@ -19,5 +20,6 @@ export const routeTask = (task = {}, { projectRoot = process.cwd() } = {}) => {
   else if (riskTier === 'T0') route = ['FRAME', 'EXECUTE', 'PROVE', 'CLOSE'];
   else if (taskClass === 'long-running' || task.complex === true) route = ['FRAME', 'SHAPE', 'SLICE', 'SCHEDULE', 'EXECUTE', 'PROVE', 'CLOSE'];
   else route = ['FRAME', 'SHAPE', 'EXECUTE', 'PROVE', 'CLOSE'];
-  return { status: 'ready', taskClass, riskTier, ambiguity: Boolean(task.ambiguityChangesOutcome), capabilities: task.capabilities || [], route };
+  const capabilityDecision = resolveKernelCapabilities({ ...task, taskClass, riskTier, route });
+  return { status: 'ready', taskClass, riskTier, ambiguity: Boolean(task.ambiguityChangesOutcome), capabilities: capabilityDecision.selected.map((entry) => entry.id), capabilityDecision, route };
 };

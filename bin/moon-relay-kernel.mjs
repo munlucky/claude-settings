@@ -2,6 +2,7 @@
 import process from 'node:process';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveKernelRuntimeHome, readProjectTrack } from '../scripts/kernel/runtime-home.mjs';
 import { resolveKernelNode } from '../scripts/kernel/runtime-resolver.mjs';
@@ -14,6 +15,19 @@ const json = args.includes('--json');
 const getArgValue = (flag) => {
   const idx = args.indexOf(flag);
   return idx >= 0 && idx + 1 < args.length ? args[idx + 1] : null;
+};
+
+const readContextJson = () => {
+  const file = getArgValue('--context-json');
+  if (!file) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path.resolve(file), 'utf8'));
+  } catch (error) {
+    throw new Error(`context-json must be a readable JSON object: ${error.message}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('context-json must contain a JSON object');
+  return parsed;
 };
 
 const installedPayloadRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -111,7 +125,8 @@ try {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');
     if (!runId) throw new Error('context command requires --run-id');
-    const res = await cp.buildStageContext(runId, { stage: getArgValue('--stage') || 'EXECUTE' });
+    const input = readContextJson();
+    const res = await cp.buildStageContext(runId, { ...input, stage: getArgValue('--stage') || input.stage || 'EXECUTE' });
     await cp.close();
     output(res);
   } else if (command === 'transition') {

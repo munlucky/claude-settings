@@ -1,4 +1,5 @@
 schemaVersion: 1
+revision: kernel-context-policy.v1
 layers:
   - stable-principles
   - task-contract

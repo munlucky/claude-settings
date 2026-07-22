@@ -38,6 +38,10 @@ test('End-to-End Kernel Product Execution Flow', async () => {
   // 4. Build context
   const contextReceipt = await cp.buildStageContext('e2e-run-1', { stage: 'EXECUTE' });
   assert.equal(contextReceipt.schemaVersion, 1);
+  assert.match(contextReceipt.promptBlock, /## Stable Principles/);
+  assert.ok(contextReceipt.receipt.included.some((entry) => entry.id === 'capability-decision-e2e-run-1'));
+  assert.equal(contextReceipt.receipt.policyRevision, 'kernel-context-policy.v1');
+  assert.match(contextReceipt.receipt.policyDigest, /^[a-f0-9]{64}$/);
 
   // 5. Workflow transitions: FRAME -> SHAPE -> EXECUTE -> PROVE
   await cp.transition('e2e-run-1', 'SHAPE');
@@ -65,6 +69,11 @@ test('End-to-End Kernel Product Execution Flow', async () => {
     evidenceDigest: validDigest,
     sourceIdentity,
   });
+
+  const proveContext = await cp.buildStageContext('e2e-run-1', { stage: 'PROVE' });
+  assert.match(proveContext.promptBlock, /## Evidence Digest/);
+  assert.ok(proveContext.receipt.included.some((entry) => entry.id === 'verification-static-analysis'));
+  assert.ok(proveContext.receipt.included.some((entry) => entry.sourceRef === 'evidence://unit/1'));
 
   await cp.recordProof('e2e-run-1', {
     obligationId: 'security-review',

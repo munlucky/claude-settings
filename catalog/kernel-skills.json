@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "catalogId": "moon-relay-kernel-skill-catalog.v1",
+  "capabilityConditionsRevision": "kernel-capability-conditions.v1",
   "authority": {
     "publicRuntimeSurface": "package/kernel/manifest.json",
     "packageContract": "package/kernel/manifest.json",
@@ -51,6 +52,17 @@
       ]
     }
   ],
+  "capabilityConditions": {
+    "kernel-minimal-correct-change": { "condition": "sourceMutation or behaviorChanging", "priority": 10, "guidance": "Keep the change minimal and contract-shaped." },
+    "kernel-domain-modeling": { "condition": "ambiguityChangesOutcome or domainTerminologyConflict", "priority": 20, "guidance": "Resolve domain ambiguity before implementation." },
+    "kernel-tracer-slicing": { "condition": "taskClass=long-running or complex or filesChanged>8", "priority": 30, "guidance": "Trace and slice complex work before execution." },
+    "kernel-test-driven-development": { "condition": "behaviorChanging", "priority": 40, "guidance": "Use a failing test and a focused green implementation." },
+    "kernel-diagnosing-bugs": { "condition": "taskClass=bug", "priority": 41, "guidance": "Diagnose the failure boundary before changing behavior." },
+    "kernel-review-spec": { "condition": "riskTier=T2/T3 or publicContract or acceptanceAmbiguity", "priority": 50, "guidance": "Review the public contract and acceptance semantics." },
+    "kernel-review-standards": { "condition": "T1+ behaviorChanging", "priority": 51, "guidance": "Review implementation against applicable engineering standards." },
+    "kernel-review-complexity": { "condition": "complex or newDependency or filesChanged>8", "priority": 60, "guidance": "Review complexity and dependency surface after functional review." },
+    "kernel-verification-before-completion": { "condition": "route includes EXECUTE or explicit completion attempt", "priority": 90, "guidance": "Require fresh, scope-matched evidence before completion." }
+  },
   "checks": {
     "publicEntrypointsMatchRuntimeSurface": true,
     "publicEntrypointsMatchPackageContract": true,

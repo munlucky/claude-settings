@@ -22,8 +22,8 @@ export const canonicalStringify = (value) => {
 
 export const digestObject = (value) => createHash('sha256').update(canonicalStringify(value)).digest('hex');
 
-export const makeContextReceipt = ({ stage, policyRevision, included, omitted, tokenEstimate }) => {
-  const payload = { schemaVersion: 1, stage, policyRevision, tokenEstimate, included, omitted };
+export const makeContextReceipt = ({ stage, policyRevision, policyDigest, included, omitted, tokenEstimate }) => {
+  const payload = { schemaVersion: 1, stage, policyRevision, policyDigest, tokenEstimate, included, omitted };
   const digest = digestObject(payload);
   return { ...payload, receiptId: `ctx-${digest.slice(0, 12)}`, digest };
 };

@@ -13,6 +13,7 @@
     "skills/moon-relay-kernel/",
     "skills/kernel-*",
     "catalog/kernel-skills.yaml",
+    "catalog/kernel-skills.json",
     "package/kernel/manifest.json",
     "package/kernel/skills.lock.json",
     "package/kernel/profiles/"

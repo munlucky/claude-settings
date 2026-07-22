@@ -6,6 +6,8 @@ import { planDryRunWave } from './wave-plan.mjs';
 import { buildReleaseEvidencePack } from './evidence-pack.mjs';
 import { projectRunState } from './state-projector.mjs';
 import { resolveKernelRuntimeHome } from './runtime-home.mjs';
+import { KernelPrinciplesError, loadKernelPrinciples } from './policy.mjs';
+import { resolveKernelCapabilities } from './capability-resolver.mjs';
 import { buildCandidateIdentity, gitTreeDigest, sha256Hex } from '../lib/candidate-identity.mjs';
 
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
@@ -19,6 +21,28 @@ export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objec
     policy: 'moon-relay-kernel.v1',
   }).candidateId;
 };
+
+const observed = (value) => ({ status: 'observed', value });
+const unavailable = (reason) => ({ status: 'unavailable', reason });
+
+export const buildKernelMeasurement = ({ run, completion, principles = loadKernelPrinciples(), verifications = [] }) => ({
+  schemaVersion: 1,
+  harnessIdentity: 'moon-relay-kernel',
+  sourceIdentity: run.sourceIdentity,
+  taskIdentity: `task-${createHash('sha256').update(run.objective).digest('hex').slice(0, 16)}`,
+  providerModelIdentity: unavailable('provider-usage-not-recorded'),
+  estimatedStaticTokens: Math.ceil(JSON.stringify(principles.principles).length / 4),
+  actualInputTokens: unavailable('provider-usage-not-recorded'),
+  actualOutputTokens: unavailable('provider-usage-not-recorded'),
+  successDecision: observed(completion.decision === 'accepted'),
+  falseCompletionDecision: unavailable('false-completion-evaluation-not-run'),
+  retryCount: unavailable('retry-history-not-recorded'),
+  replanCount: unavailable('replan-history-not-recorded'),
+  userInterventionCount: unavailable('user-intervention-history-not-recorded'),
+  wallClockMs: unavailable('run-duration-not-recorded'),
+  evidenceCoverage: observed({ passed: verifications.filter((verification) => verification.status === 'passed').length, total: verifications.length, required: run.requiredObligations.length }),
+  contaminationSignals: observed({ relayStateMutation: false, profileMutation: false, source: 'kernel-runtime-boundary' }),
+});
 
 export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome, projectRoot = process.cwd() } = {}) => {
   const store = await openKernelStateStore({ runtimeHome, relayHome });
@@ -56,15 +80,60 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return store.getRun(runId);
     },
 
-    async buildStageContext(runId, { stage = 'EXECUTE', taskContract = {}, principles = {} } = {}) {
+    async buildStageContext(runId, { stage = 'EXECUTE', taskContract = {}, principles, principleExtensions = [], stageRecords = [], references = [], evidence = [] } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
 
+      const canonical = loadKernelPrinciples();
+      const callerValues = principles === undefined || principles === null || (typeof principles === 'object' && !Array.isArray(principles) && Object.keys(principles).length === 0)
+        ? []
+        : (Array.isArray(principles) ? principles : Object.entries(principles).map(([id, value]) => ({ id, guidance: value, rationale: 'Caller-supplied extension' })));
+      const extensions = [...callerValues, ...(Array.isArray(principleExtensions) ? principleExtensions : [])].map((extension, index) => {
+        const candidate = typeof extension === 'string'
+          ? { id: `caller.${index + 1}`, guidance: extension, rationale: 'Caller-supplied extension' }
+          : extension;
+        if (!candidate || typeof candidate !== 'object' || !candidate.id || !candidate.guidance || !candidate.rationale) {
+          throw new KernelPrinciplesError('kernel_principle_extension_invalid', 'Caller principle extensions require id, guidance, and rationale');
+        }
+        if (canonical.principles.some((principle) => principle.id === candidate.id)) {
+          throw new KernelPrinciplesError('kernel_principle_override_forbidden', `Canonical principle override is forbidden: ${candidate.id}`);
+        }
+        if (!/^(?:caller|extension)[.:\/-]/.test(candidate.id)) {
+          throw new KernelPrinciplesError('kernel_principle_extension_namespace_required', `Caller principle extension must use caller.* or extension.* namespace: ${candidate.id}`);
+        }
+        return { id: String(candidate.id), guidance: String(candidate.guidance), rationale: String(candidate.rationale) };
+      });
+
+      const persistedEvidence = store.getVerifications(runId).map((verification) => ({
+        id: `verification-${verification.obligationId}`,
+        type: 'evidence-digest',
+        content: JSON.stringify({
+          obligationId: verification.obligationId,
+          status: verification.status,
+          evidenceRef: verification.evidenceRef,
+          command: verification.command,
+          exitCode: verification.exitCode,
+          evidenceDigest: verification.evidenceDigest,
+          acceptanceCoverage: verification.acceptanceCoverage,
+        }),
+        revision: String(verification.verifiedRuntimeRevision || run.revision),
+        sourceRef: verification.evidenceRef || `verification:${verification.id}`,
+        trust: 'persisted-verification',
+      }));
+      const capabilityDecision = resolveKernelCapabilities({ ...taskContract, stage, taskClass: taskContract.taskClass || 'feature' });
+
       const context = await buildContextReceipt({
         taskContract: { objective: run.objective, ...taskContract },
-        principles: Array.isArray(principles) ? principles : Object.entries(principles || {}).map(([key, value]) => `${key}: ${value}`),
+        principles: [...canonical.principles, ...extensions],
+        principleSource: canonical,
         stage,
-        stageRecords: [{ id: `stage-${runId}`, type: 'stage-context', content: JSON.stringify({ runId, state: run.state, stage }), revision: String(run.revision) }],
+        stageRecords: [
+          { id: `stage-${runId}`, type: 'stage-context', content: JSON.stringify({ runId, state: run.state, stage }), revision: String(run.revision), sourceRef: `run:${runId}`, trust: 'persisted-run-state' },
+          { id: `capability-decision-${runId}`, type: 'stage-context', content: JSON.stringify(capabilityDecision), revision: capabilityDecision.revision, sourceRef: 'catalog/kernel-skills.json', trust: 'canonical-catalog' },
+          ...stageRecords,
+        ],
+        references,
+        evidence: [...persistedEvidence, ...evidence],
       });
       return context;
     },
@@ -127,7 +196,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const run = store.getRun(runId);
       if (!run) return null;
       const completion = store.assessCompletion(runId, { commitDecision: false });
-      return { run, completion };
+      return { run, completion, measurement: buildKernelMeasurement({ run, completion, verifications: store.getVerifications(runId) }) };
     },
 
     async addWaiver(runId, options) {
