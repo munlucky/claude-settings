@@ -24,7 +24,7 @@ test('phase 05 provider parity matrix keeps all surfaces disjoint', () => {
   assert.equal(result.status, 'passed'); assert.equal(result.rows.length, 5); assert.ok(result.rows.every((row) => row.sensitiveContentRead === false));
 });
 test('phase 04/05 application resolvers do not hard-code a versioned WindowsApps path', async () => {
-  const codex = await resolveCodexDesktop({ candidates: [], commandResolver: async () => null });
+  const codex = await resolveCodexDesktop({ candidates: [], commandResolver: async () => null, windowsAppsResolver: async () => null });
   const anti = await resolveAntigravity({ candidates: [], commandResolver: async () => null });
   assert.doesNotMatch(JSON.stringify(codex), /OpenAI\.Codex_\d/); assert.doesNotMatch(JSON.stringify(anti), /Antigravity_\d/);
 });
@@ -36,5 +36,16 @@ test('phase 04 Codex resolver derives packaged shell activation metadata from th
   assert.equal(result.launchKind, 'packaged_shell_activation');
   assert.equal(result.aumid, 'OpenAI.Codex_2p2nqsd0c76g0!App');
   assert.equal(result.packageFamily, 'OpenAI.Codex_2p2nqsd0c76g0');
+});
+test('Codex resolver discovers the newest versioned WindowsApps install after an app update', async () => {
+  const root = await fsTempRoot();
+  const windowsAppsRoot = path.join(root, 'WindowsApps');
+  const oldExecutable = path.join(windowsAppsRoot, 'OpenAI.Codex_26.700.1.0_x64__publisher', 'app', 'ChatGPT.exe');
+  const newExecutable = path.join(windowsAppsRoot, 'OpenAI.Codex_26.715.9757.0_x64__publisher', 'app', 'ChatGPT.exe');
+  await mkdir(path.dirname(oldExecutable), { recursive: true }); await mkdir(path.dirname(newExecutable), { recursive: true });
+  await writeFile(oldExecutable, 'old'); await writeFile(newExecutable, 'new');
+  const result = await resolveCodexDesktop({ candidates: [], windowsAppsRoot, commandResolver: async () => null });
+  assert.equal(result.executable, newExecutable);
+  assert.equal(result.launchKind, 'packaged_shell_activation');
 });
 async function fsTempRoot() { return await mkdtemp(path.join(os.tmpdir(), 'codex-resolver-')); }

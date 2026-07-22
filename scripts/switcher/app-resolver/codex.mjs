@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { resolveCommand, resolveExecutable, hashExecutable, baseDiscovery } from './common.mjs';
+import { resolveCommand, resolveExecutable, resolveLatestWindowsAppsExecutable, hashExecutable, baseDiscovery } from './common.mjs';
 
 function packagedMetadata(executable) {
   const marker = `${path.sep}WindowsApps${path.sep}`.toLowerCase();
@@ -17,15 +17,17 @@ function packagedMetadata(executable) {
   } : {};
 }
 
-export async function resolveCodexDesktop({ candidates = [], commandResolver = resolveCommand } = {}) {
-  const defaults = [
-    ...candidates,
+export async function resolveCodexDesktop({ candidates = [], commandResolver = resolveCommand, windowsAppsResolver = resolveLatestWindowsAppsExecutable, windowsAppsRoot = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'WindowsApps') } = {}) {
+  const stableDefaults = [
     process.env.CODEX_DESKTOP_EXECUTABLE,
     path.join(process.env.LOCALAPPDATA || '', 'Programs', 'OpenAI', 'Codex', 'ChatGPT.exe'),
     path.join(process.env.ProgramFiles || 'C:\\Program Files', 'WindowsApps', 'OpenAI.Codex', 'app', 'ChatGPT.exe'),
   ];
-  const executable = await resolveExecutable(defaults) || await commandResolver('ChatGPT.exe');
-  const result = baseDiscovery({ application: 'codex_desktop', executable, warnings: executable ? [] : ['current packaged app executable was not resolved without version pinning'] });
+  const executable = await resolveExecutable(candidates)
+    || await windowsAppsResolver({ root: windowsAppsRoot, packagePrefix: 'OpenAI.Codex_', executableRelativePath: path.join('app', 'ChatGPT.exe') })
+    || await resolveExecutable(stableDefaults)
+    || await commandResolver('ChatGPT.exe');
+  const result = baseDiscovery({ application: 'codex_desktop', executable, warnings: executable ? [] : ['Codex Desktop executable was not resolved'] });
   if (executable) {
     Object.assign(result, packagedMetadata(executable));
     result.publisher = 'OpenAI'; result.appDataRootMode = 'process_argument';
