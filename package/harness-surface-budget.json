@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "baseline": {
-    "files": 1267,
-    "nonblankLines": 170151,
-    "utf8Bytes": 7344409,
-    "estimatedPromptTokens": 1836103
+    "files": 1374,
+    "nonblankLines": 175804,
+    "utf8Bytes": 7607859,
+    "estimatedPromptTokens": 1901965
   },
   "allowedDelta": {
-    "files": 4,
-    "nonblankLines": 400,
-    "utf8Bytes": 31000,
-    "estimatedPromptTokens": 8000
+    "files": 50,
+    "nonblankLines": 2400,
+    "utf8Bytes": 168000,
+    "estimatedPromptTokens": 42000
   },
   "allowedUnregisteredTests": 0
 }

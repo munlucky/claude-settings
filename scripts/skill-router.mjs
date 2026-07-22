@@ -120,9 +120,24 @@ const listSkillDirs = async (repoRoot) => {
   return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 };
 
+const detectTrack = async (projectRoot) => {
+  try {
+    const { readProjectTrack } = await import('./kernel/runtime-home.mjs');
+    return await readProjectTrack(projectRoot || process.cwd());
+  } catch {
+    return 'relay';
+  }
+};
+
 export const loadSkillCatalog = async (options = {}) => {
   const repoRoot = options.repoRoot || repoRootDefault;
-  const catalogPath = options.catalogPath || path.join(repoRoot, 'catalog', 'moonshot-catalog.json');
+  const projectRoot = options.projectRoot || process.cwd();
+  const activeTrack = await detectTrack(projectRoot);
+  const catalogRoot = options.catalogRoot || repoRoot;
+  const defaultCatalog = activeTrack === 'kernel'
+    ? path.join(catalogRoot, 'catalog', 'kernel-skills.json')
+    : path.join(catalogRoot, 'catalog', 'moonshot-catalog.json');
+  const catalogPath = options.catalogPath || defaultCatalog;
   const catalog = await readJson(catalogPath);
   const publicNames = new Set((catalog.publicEntrypoints || []).map((entry) => entry.name));
   const catalogByName = new Map((catalog.publicEntrypoints || []).map((entry) => [entry.name, entry]));
@@ -176,7 +191,7 @@ export const loadSkillCatalog = async (options = {}) => {
       text,
     });
   }
-  return { repoRoot, catalogPath, skills, publicEntrypointNames: (catalog.publicEntrypoints || []).map((entry) => entry.name) };
+  return { repoRoot, projectRoot, catalogRoot, catalogPath, activeTrack, skills, publicEntrypointNames: (catalog.publicEntrypoints || []).map((entry) => entry.name) };
 };
 
 const publicView = (skill) => ({
@@ -239,11 +254,26 @@ export const inspectSkill = async (name, options = {}) => {
 
 export const resolveExplicitSkillInvocation = async (invocation, options = {}) => {
   const requested = String(invocation || '').trim().replace(/^\$/, '');
-  const { skills } = await loadSkillCatalog(options);
+  const { skills, activeTrack } = await loadSkillCatalog(options);
   const skill = skills.find((entry) => entry.name === requested && entry.exposure === 'public');
-  return skill
-    ? { schemaVersion: 'moonshot-skill-router.v1', status: 'pass', command: 'resolve-explicit', evaluatorId: 'public-surface-explicit.v1', selected: skill.name, rerouted: false }
-    : { schemaVersion: 'moonshot-skill-router.v1', status: 'fail', command: 'resolve-explicit', evaluatorId: 'public-surface-explicit.v1', selected: '', rerouted: false, findings: [{ severity: 'blocking', code: 'skill.public_invocation_not_found', message: `Unknown public skill invocation: ${invocation}` }] };
+  if (!skill) {
+    const isKernelTarget = requested.includes('kernel') || requested.startsWith('kernel');
+    const errCode = (activeTrack === 'relay' && isKernelTarget) ? 'wrong_harness' : 'skill.public_invocation_not_found';
+    return {
+      schemaVersion: 'moonshot-skill-router.v1',
+      status: 'fail',
+      command: 'resolve-explicit',
+      evaluatorId: 'public-surface-explicit.v1',
+      selected: '',
+      rerouted: false,
+      findings: [{
+        severity: 'blocking',
+        code: errCode,
+        message: `Unknown public skill invocation: ${invocation}`,
+      }],
+    };
+  }
+  return { schemaVersion: 'moonshot-skill-router.v1', status: 'pass', command: 'resolve-explicit', evaluatorId: 'public-surface-explicit.v1', selected: skill.name, rerouted: false };
 };
 
 const routeView = (skill, mode, reasonCodes) => ({
@@ -266,7 +296,7 @@ const routeScore = (skill, task) => {
 
 export const routeSkill = async (task, options = {}) => {
   const request = String(task || '').trim();
-  const { repoRoot, skills, publicEntrypointNames } = await loadSkillCatalog(options);
+  const { repoRoot, skills, publicEntrypointNames, activeTrack } = await loadSkillCatalog(options);
   const publicSkills = skills.filter((skill) => skill.exposure === 'public');
   const invalidMetadata = publicSkills.find((skill) => (
     !skill.routeMetadata?.engineRoute
@@ -276,19 +306,24 @@ export const routeSkill = async (task, options = {}) => {
   if (invalidMetadata) {
     return { schemaVersion: routeSchemaVersion, status: 'fail', command: 'route', findings: [blockingFinding('route.metadata_invalid', `Public skill routing metadata is incomplete: ${invalidMetadata.name}`)] };
   }
-  try {
-    const runtimeSurface = await readJson(path.join(repoRoot, 'package', 'runtime-surface.json'));
-    if (JSON.stringify(publicEntrypointNames) !== JSON.stringify(runtimeSurface.publicRuntimeSkills || [])) {
-      return { schemaVersion: routeSchemaVersion, status: 'fail', command: 'route', findings: [blockingFinding('route.public_surface_drift', 'Catalog public entrypoints do not match the ordered runtime surface.')] };
+  if (activeTrack === 'relay') {
+    try {
+      const runtimeSurface = await readJson(path.join(repoRoot, 'package', 'runtime-surface.json'));
+      if (JSON.stringify(publicEntrypointNames) !== JSON.stringify(runtimeSurface.publicRuntimeSkills || [])) {
+        return { schemaVersion: routeSchemaVersion, status: 'fail', command: 'route', findings: [blockingFinding('route.public_surface_drift', 'Catalog public entrypoints do not match the ordered runtime surface.')] };
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
     }
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
   }
   if (request.startsWith('$')) {
     const requested = request.slice(1).split(/\s+/, 1)[0];
     const skill = publicSkills.find((entry) => entry.name === requested);
     if (!skill) {
-      return { schemaVersion: routeSchemaVersion, status: 'fail', command: 'route', findings: [blockingFinding('route.explicit_public_skill_not_found', `Unknown public skill invocation: $${requested}`)] };
+      const errCode = (activeTrack === 'relay' && (requested.includes('kernel') || requested === 'moon-relay-kernel'))
+        ? 'wrong_harness'
+        : 'route.explicit_public_skill_not_found';
+      return { schemaVersion: routeSchemaVersion, status: 'fail', command: 'route', findings: [blockingFinding(errCode, `Unknown public skill invocation: $${requested}`)] };
     }
     return { schemaVersion: routeSchemaVersion, status: 'pass', command: 'route', route: routeView(skill, 'explicit', ['explicit_exact_match']) };
   }
@@ -387,6 +422,8 @@ const parseArgs = (argv) => {
       options.repoRoot = path.resolve(argv[++index]);
     } else if (arg === '--catalog') {
       options.catalogPath = path.resolve(argv[++index]);
+    } else if (arg === '--track') {
+      options.track = argv[++index];
     } else if (arg === '--stage') {
       options.stage = argv[++index];
     } else if (arg === '--limit') {
@@ -400,7 +437,7 @@ const parseArgs = (argv) => {
     } else if (arg === '--locale') {
       options.locale = argv[++index];
     } else if (arg === '--help' || arg === '-h') {
-      console.log('Usage: node scripts/skill-router.mjs <search|inspect|load|route|load-reference> <query-or-skill-or-reference> [--json] [--stage <stage>] [--task <text>] [--skill <name>]');
+      console.log('Usage: node scripts/skill-router.mjs <search|inspect|load|route|load-reference> <query-or-skill-or-reference> [--json] [--stage <stage>] [--task <text>] [--skill <name>] [--track <kernel|relay>]');
       process.exit(0);
     } else {
       positional.push(arg);

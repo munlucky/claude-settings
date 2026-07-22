@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.runtime-state.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "objective",
+    "currentState",
+    "state",
+    "status",
+    "revision",
+    "mutationRevision",
+    "sourceIdentity",
+    "proofTier",
+    "evidenceTier",
+    "requiredObligations",
+    "acceptanceCriteria",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string"
+    },
+    "objective": {
+      "type": "string"
+    },
+    "currentState": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mutationRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sourceIdentity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proofTier": {
+      "enum": [
+        "T0",
+        "T1",
+        "T2",
+        "T3"
+      ]
+    },
+    "evidenceTier": {
+      "enum": [
+        "E0",
+        "E1",
+        "E2"
+      ]
+    },
+    "requiredObligations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "enum": [
+        "active",
+        "blocked",
+        "completed"
+      ]
+    },
+    "updatedAt": {
+      "type": "string"
+    }
+  }
+}

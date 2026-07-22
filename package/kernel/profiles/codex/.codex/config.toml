@@ -1,0 +1,5 @@
+developer_instructions = """
+This project runs under Moon Relay Kernel.
+Read .moon-relay/track.yaml and reject work unless track=kernel.
+Use Kernel runtime-state and completion authority only.
+"""

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.measurement.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "harnessIdentity", "sourceIdentity", "taskIdentity",
+    "providerModelIdentity", "estimatedStaticTokens", "actualInputTokens",
+    "actualOutputTokens", "successDecision", "falseCompletionDecision",
+    "retryCount", "replanCount", "userInterventionCount", "wallClockMs",
+    "evidenceCoverage", "contaminationSignals"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "harnessIdentity": { "type": "string", "minLength": 1 },
+    "sourceIdentity": { "type": "string", "minLength": 1 },
+    "taskIdentity": { "type": "string", "minLength": 1 },
+    "providerModelIdentity": { "$ref": "#/$defs/measurementValue" },
+    "estimatedStaticTokens": { "type": "integer", "minimum": 0 },
+    "actualInputTokens": { "$ref": "#/$defs/measurementValue" },
+    "actualOutputTokens": { "$ref": "#/$defs/measurementValue" },
+    "successDecision": { "$ref": "#/$defs/measurementValue" },
+    "falseCompletionDecision": { "$ref": "#/$defs/measurementValue" },
+    "retryCount": { "$ref": "#/$defs/measurementValue" },
+    "replanCount": { "$ref": "#/$defs/measurementValue" },
+    "userInterventionCount": { "$ref": "#/$defs/measurementValue" },
+    "wallClockMs": { "$ref": "#/$defs/measurementValue" },
+    "evidenceCoverage": { "$ref": "#/$defs/measurementValue" },
+    "contaminationSignals": { "$ref": "#/$defs/measurementValue" }
+  },
+  "$defs": {
+    "measurementValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "value"],
+          "properties": { "status": { "const": "observed" }, "value": {} }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": { "status": { "const": "unavailable" }, "reason": { "type": "string", "minLength": 1 } }
+        }
+      ]
+    }
+  }
+}

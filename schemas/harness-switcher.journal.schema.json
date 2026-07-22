@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/harness-switcher.journal.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "journalId", "surface", "requestedTrack", "state", "createdAt", "roots"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "journalId": { "type": "string", "minLength": 1 },
+    "surface": { "type": "string" },
+    "requestedTrack": { "enum": ["relay", "kernel"] },
+    "state": { "enum": ["prepared", "old_app_stopped", "launch_requested", "effective_verified", "committed", "recovery_required", "close_incomplete"] },
+    "createdAt": { "type": "string" },
+    "updatedAt": { "type": "string" },
+    "roots": { "type": "object", "additionalProperties": { "type": "string" } },
+    "previousSelection": { "type": ["object", "null"] },
+    "processSet": { "type": "array", "items": { "type": "object" } },
+    "errorCode": { "type": ["string", "null"] }
+  }
+}

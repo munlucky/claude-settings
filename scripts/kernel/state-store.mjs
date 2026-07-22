@@ -1,0 +1,378 @@
+import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from './runtime-home.mjs';
+import { canTransition } from './transition.mjs';
+import { openSqliteDb } from './sqlite-adapter.mjs';
+
+export const kernelDbPath = (runtimeHome = resolveKernelRuntimeHome()) => path.join(runtimeHome, 'state', 'runtime-state.sqlite');
+
+const sourceIdentityRegex = /^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64}|[a-zA-Z0-9_.:/-]{1,128})$/i;
+const sha256Regex = /^sha256:[a-f0-9]{64}$/i;
+
+export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome } = {}) => {
+  assertIsolatedRuntimeHomes(runtimeHome, relayHome);
+  const dbPath = kernelDbPath(runtimeHome);
+  await mkdir(path.dirname(dbPath), { recursive: true });
+  const db = await openSqliteDb(dbPath);
+
+  db.exec(`
+    PRAGMA journal_mode=WAL;
+    PRAGMA foreign_keys=ON;
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS runs (
+      run_id TEXT PRIMARY KEY,
+      objective TEXT NOT NULL,
+      state TEXT NOT NULL,
+      status TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
+      mutation_revision INTEGER NOT NULL DEFAULT 0,
+      source_identity TEXT NOT NULL,
+      proof_tier TEXT NOT NULL DEFAULT 'T0',
+      evidence_tier TEXT NOT NULL DEFAULT 'E0',
+      required_obligations TEXT NOT NULL DEFAULT '[]',
+      acceptance_criteria TEXT NOT NULL DEFAULT '[]',
+      release_evidence_required INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      obligation_id TEXT NOT NULL DEFAULT 'default',
+      status TEXT NOT NULL,
+      evidence_ref TEXT,
+      verified_runtime_revision INTEGER,
+      verified_mutation_revision INTEGER,
+      source_identity TEXT,
+      command TEXT,
+      exit_code INTEGER,
+      evidence_digest TEXT,
+      acceptance_coverage TEXT NOT NULL DEFAULT '[]',
+      observed_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS leases (
+      run_id TEXT PRIMARY KEY,
+      holder TEXT NOT NULL,
+      acquired_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL,
+      state TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS waivers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      obligation_id TEXT NOT NULL,
+      approved_by TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      approved_at TEXT NOT NULL,
+      approval_receipt TEXT NOT NULL,
+      acceptance_coverage TEXT NOT NULL DEFAULT '[]',
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS evidence_lineage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      evidence_digest TEXT NOT NULL,
+      parent_digest TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS evidence_packs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      pack_json TEXT NOT NULL,
+      mutation_revision INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+  `);
+
+  try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN proof_tier TEXT DEFAULT 'T0';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN evidence_tier TEXT DEFAULT 'E0';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN required_obligations TEXT DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN acceptance_criteria TEXT DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN release_evidence_required INTEGER DEFAULT 0;`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN obligation_id TEXT DEFAULT 'default';`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE waivers ADD COLUMN approval_receipt TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE waivers ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE evidence_packs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
+
+  const now = () => new Date().toISOString();
+
+  const safeJsonParse = (str, fallback = []) => {
+    try {
+      return JSON.parse(str || '[]');
+    } catch {
+      return fallback;
+    }
+  };
+
+  return {
+    dbPath,
+    createRun({
+      runId,
+      objective,
+      sourceIdentity,
+      proofTier = 'T0',
+      evidenceTier = 'E0',
+      requiredObligations = [],
+      acceptanceCriteria = [],
+      requireReleaseEvidence = false,
+    }) {
+      if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
+        throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
+      }
+      db.prepare(`
+        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, updated_at)
+        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        runId,
+        objective,
+        sourceIdentity,
+        proofTier,
+        evidenceTier,
+        JSON.stringify(requiredObligations),
+        JSON.stringify(acceptanceCriteria),
+        requireReleaseEvidence ? 1 : 0,
+        now()
+      );
+      return this.getRun(runId);
+    },
+
+    getRun(runId) {
+      const row = db.prepare(`
+        SELECT run_id as runId, objective, state, status, revision,
+               mutation_revision as mutationRevision, source_identity as sourceIdentity,
+               proof_tier as proofTier, evidence_tier as evidenceTier,
+               required_obligations as requiredObligations, acceptance_criteria as acceptanceCriteria,
+               release_evidence_required as releaseEvidenceRequired,
+               updated_at as updatedAt
+        FROM runs WHERE run_id=?
+      `).get(runId);
+
+      if (!row) return null;
+
+      return {
+        schemaVersion: 1,
+        runId: row.runId,
+        objective: row.objective,
+        currentState: row.state,
+        state: row.state,
+        status: row.status,
+        revision: row.revision,
+        mutationRevision: row.mutationRevision,
+        sourceIdentity: row.sourceIdentity,
+        proofTier: row.proofTier,
+        evidenceTier: row.evidenceTier,
+        requiredObligations: safeJsonParse(row.requiredObligations),
+        acceptanceCriteria: safeJsonParse(row.acceptanceCriteria),
+        releaseEvidenceRequired: Boolean(row.releaseEvidenceRequired),
+        updatedAt: row.updatedAt,
+      };
+    },
+
+    transition(runId, nextState, { expectedState, expectedRevision } = {}) {
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const run = this.getRun(runId);
+        if (!run) throw new Error(`Run ${runId} not found`);
+        if (run.status === 'completed') throw new Error(`Cannot transition run ${runId} in completed state`);
+
+        if (expectedState && run.state !== expectedState) {
+          throw new Error(`STATE_CONFLICT: Expected state ${expectedState} but found ${run.state} for run ${runId}`);
+        }
+        if (expectedRevision !== undefined && run.revision !== expectedRevision) {
+          throw new Error(`STALE_RUN_REVISION: Expected revision ${expectedRevision} but found ${run.revision} for run ${runId}`);
+        }
+
+        if (!canTransition(run.state, nextState)) {
+          throw new Error(`Invalid Kernel transition ${run.state} -> ${nextState}`);
+        }
+
+        const isMutation = nextState === 'SHAPE' || nextState === 'EXECUTE';
+        const mutationInc = isMutation ? 1 : 0;
+
+        const res = db.prepare(`
+          UPDATE runs
+          SET state=?, revision=revision+1, mutation_revision=mutation_revision+?, updated_at=?
+          WHERE run_id=? AND state=? AND revision=?
+        `).run(nextState, mutationInc, now(), runId, run.state, run.revision);
+
+        if (res.changes !== 1) {
+          throw new Error(`STATE_CONFLICT: Concurrent state or revision modification for run ${runId}`);
+        }
+
+        db.exec('COMMIT');
+        return this.getRun(runId);
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    recordVerification(runId, { obligationId = 'default', status, evidenceRef, sourceIdentity, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [] }) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      if (run.status === 'completed') throw new Error(`Cannot add verification to completed run ${runId}`);
+      if (run.state !== 'PROVE') throw new Error(`Verification can only be recorded in PROVE state for run ${runId}`);
+      if (!['passed', 'failed'].includes(status)) throw new Error(`Invalid verification status: ${status}`);
+      sourceIdentity = sourceIdentity || run.sourceIdentity;
+      if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity) || sourceIdentity !== run.sourceIdentity) {
+        throw new Error('sourceIdentity is required and must be a valid candidate identity string for verification');
+      }
+
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        db.prepare(`
+          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, command, exit_code, evidence_digest, acceptance_coverage, observed_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), now());
+
+        if (evidenceDigest && sha256Regex.test(evidenceDigest)) {
+          db.prepare(`INSERT INTO evidence_lineage(run_id, evidence_digest, created_at) VALUES(?, ?, ?)`).run(runId, evidenceDigest, now());
+        }
+
+        db.prepare('UPDATE runs SET revision=revision+1, updated_at=? WHERE run_id=?').run(now(), runId);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+
+      return this.getRun(runId);
+    },
+
+    recordEvidencePack(runId, { tier, pack, digest, mutationRevision }) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      if (!tier || !pack || !digest || !sha256Regex.test(digest) || mutationRevision !== run.mutationRevision) throw new Error('Evidence pack requires a tier, pack, sha256 digest, and current mutation revision');
+      if (tier === 'E2' && !Array.isArray(pack.qaReport?.checks)) throw new Error('E2 release evidence must persist its QA checks');
+      db.prepare(`INSERT INTO evidence_packs(run_id, tier, digest, pack_json, mutation_revision, created_at) VALUES(?, ?, ?, ?, ?, ?)`)
+        .run(runId, tier, digest, JSON.stringify(pack), mutationRevision, now());
+      return { runId, tier, digest, mutationRevision };
+    },
+
+    getVerifications(runId) {
+      return db.prepare(`SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+    },
+
+    addWaiver(runId, { obligationId, approvedBy, reason, approvalReceipt, acceptanceCoverage = [] }) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      if (!obligationId || !approvedBy || !reason || !approvalReceipt) throw new Error('Waiver requires obligation, approver, reason, and approval receipt');
+      db.prepare(`INSERT INTO waivers(run_id, obligation_id, approved_by, reason, approved_at, approval_receipt, acceptance_coverage) VALUES(?, ?, ?, ?, ?, ?, ?)`)
+        .run(runId, obligationId, approvedBy, reason, now(), approvalReceipt, JSON.stringify(acceptanceCoverage));
+      return this.getWaivers(runId).at(-1);
+    },
+
+    getWaivers(runId) {
+      return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, approved_by as approvedBy, reason, approved_at as approvedAt, approval_receipt as approvalReceipt, acceptance_coverage as acceptanceCoverage FROM waivers WHERE run_id=? ORDER BY id ASC`).all(runId).map((row) => ({ ...row, acceptanceCoverage: safeJsonParse(row.acceptanceCoverage) }));
+    },
+
+    recordLease(runId, { holder, expiresAt }) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`INSERT INTO leases(run_id, holder, acquired_at, expires_at) VALUES(?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET holder=excluded.holder, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at`).run(runId, holder, now(), expiresAt);
+      return db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt FROM leases WHERE run_id=?`).get(runId);
+    },
+
+    recordAttempt(runId, { attemptNumber, state, status = 'started', finishedAt = null }) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      const result = db.prepare(`INSERT INTO attempts(run_id, attempt_number, state, started_at, finished_at, status) VALUES(?, ?, ?, ?, ?, ?)`).run(runId, attemptNumber, state, now(), finishedAt, status);
+      return db.prepare(`SELECT id, run_id as runId, attempt_number as attemptNumber, state, started_at as startedAt, finished_at as finishedAt, status FROM attempts WHERE id=?`).get(result.lastInsertRowid);
+    },
+
+    getEvidenceLineage(runId) {
+      return db.prepare(`SELECT id, run_id as runId, evidence_digest as evidenceDigest, parent_digest as parentDigest, created_at as createdAt FROM evidence_lineage WHERE run_id=? ORDER BY id ASC`).all(runId);
+    },
+
+    assessCompletion(runId, { expectedSourceIdentity = null, commitDecision = true } = {}) {
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const run = this.getRun(runId);
+        if (!run) {
+          db.exec('COMMIT');
+          return { decision: 'blocked', run: null, verifications: [] };
+        }
+
+        const verifications = db.prepare(`
+          SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef,
+                 verified_runtime_revision as verifiedRuntimeRevision,
+                 verified_mutation_revision as verifiedMutationRevision,
+                 source_identity as sourceIdentity, command, exit_code as exitCode,
+                 evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt
+          FROM verifications WHERE run_id=? AND id IN (
+            SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id
+          ) ORDER BY id ASC
+        `).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+
+        const isClosed = Boolean(run.state === 'CLOSE');
+
+        const isVerificationValid = (v) => {
+          if (!v) return false;
+          if (v.status !== 'passed') return false;
+          if (Number(v.exitCode) !== 0) return false;
+          if (!v.command) return false;
+          if (!v.evidenceRef) return false;
+          if (!v.evidenceDigest || !sha256Regex.test(v.evidenceDigest)) return false;
+
+          const verifiedMutation = v.verifiedMutationRevision ?? v.verifiedRuntimeRevision;
+          if (verifiedMutation !== run.mutationRevision) return false;
+
+          if (!v.sourceIdentity || v.sourceIdentity !== run.sourceIdentity) return false;
+          if (expectedSourceIdentity && v.sourceIdentity !== expectedSourceIdentity) return false;
+
+          return true;
+        };
+
+        const requiredObligations = run.requiredObligations.length > 0 ? run.requiredObligations : ['default'];
+        const waivers = this.getWaivers(runId);
+        const passedObligations = new Set(verifications.filter(isVerificationValid).map((v) => v.obligationId));
+        const waivedObligations = new Set(waivers.filter((w) => w.approvalReceipt).map((w) => w.obligationId));
+
+        const allObligationsPassed = requiredObligations.every((ob) => passedObligations.has(ob) || waivedObligations.has(ob));
+        const coveredAcceptance = new Set([
+          ...verifications.flatMap((v) => v.acceptanceCoverage || []),
+          ...waivers.flatMap((w) => w.acceptanceCoverage || []),
+        ]);
+        const acceptanceCovered = run.acceptanceCriteria.every((criterion) => coveredAcceptance.has(criterion));
+        const releaseEvidence = db.prepare(`SELECT tier, digest, mutation_revision as mutationRevision, pack_json as packJson FROM evidence_packs WHERE run_id=? ORDER BY id DESC LIMIT 1`).get(runId);
+        const releaseEvidencePresent = !run.releaseEvidenceRequired || (releaseEvidence?.tier === 'E2' && releaseEvidence.mutationRevision === run.mutationRevision && sha256Regex.test(releaseEvidence.digest));
+        const accepted = isClosed && allObligationsPassed && acceptanceCovered && releaseEvidencePresent;
+
+        if (run.status === 'completed') {
+          db.exec('COMMIT');
+          return { decision: accepted ? 'accepted' : 'blocked', run, verifications };
+        }
+
+        const decision = accepted ? 'accepted' : 'blocked';
+        if (commitDecision) {
+          db.prepare('UPDATE runs SET status=?, revision=revision+1, updated_at=? WHERE run_id=?')
+            .run(accepted ? 'completed' : 'blocked', now(), runId);
+        }
+        db.exec('COMMIT');
+
+        return { decision, run: commitDecision ? this.getRun(runId) : run, verifications, waivers, releaseEvidence: releaseEvidence || null, acceptanceCovered: [...coveredAcceptance] };
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    close() {
+      db.close();
+    },
+  };
+};

@@ -2,6 +2,37 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-22
+- Scope: Account-root harness switcher and four-profile lifecycle, including administrator live adoption, Relay restoration, and manifest-owned uninstall.
+- Changed areas:
+  - Added neutral CLI/GUI track selection, process guards, transaction receipts, dynamic app discovery, WindowsApps launch fallback, and safe switcher uninstall.
+  - Added Kernel profile install/doctor/uninstall lifecycle for Claude, Codex, Qwen, and Antigravity.
+  - Changed packaged WindowsApps activation to request a normal visible window; hidden shell activation could create the Codex process without exposing its UI.
+  - Added a post-activation foreground request for the Codex/Antigravity main window so the shell broker does not leave a running app behind other windows.
+- Verification evidence:
+  - `npm test` passed (683 pass, 1 skipped); Kernel 79/79; package 169/169; routing 22/22; switcher 16/16; eval 14/14; Harness Lab passed; doctor, explicit skills audit, package dry-run, surface budget, and diff checks passed.
+  - Administrator live adoption installId `1784702259577-4840` completed, then Relay metadata was restored for all five surfaces and manifest-owned static entries/shortcuts were removed without reading credentials.
+  - Antigravity Kernel process-scoped app-data probe passed. Codex Desktop packaged shell activation now passes with a verifiable Kernel `--user-data-dir` process argument and app-data root; direct launch remains `EPERM`, shell-broker `CODEX_HOME` inheritance is typed unknown, and Phase 06 remains partial only for the unrun manual auth-survival checkpoint.
+- Commit boundary:
+  - Source implementation and tests are committed; live account-root data and generated runtime state remain excluded.
+
+- Date: 2026-07-22
+- Scope: Moon Relay Kernel remediation for completion authority, project-root routing, contained installer lifecycle, managed Node `runtime/current` resolution, atomic projection bundle reads, and rollback safety.
+- Changed areas:
+  - Bound Kernel source identity, latest verification rows, acceptance coverage, waiver receipts, mutation revisions, and E2 release evidence to runtime-state completion authority.
+  - Added project-root track guards, contained payload checksums, fail-closed managed runtime installation, resolver-compatible runtime manifests, complete reinstallation rollback, and target-root uninstall validation.
+  - Made projection verification consume the atomic projection bundle and added Kernel package metadata and policy surfaces.
+- Verification evidence:
+  - Independent final review: no remaining actionable implementation blockers.
+  - Source doctor and skills audit: pass.
+  - Package dry-run: pass.
+  - Kernel contracts: 57/57 pass; package contracts: 139/139 pass.
+  - Full source gate: 667 pass, 1 skipped, 0 failed; routing 22/22; golden eval 14/14; Harness Lab smoke passed with account-root guard unchanged.
+  - Disposable installed launcher resolved an actual managed Node from `runtime/current`; reinstallation rollback removed introduced runtime files and restored the prior manifest.
+- Commit boundary:
+  - Source, reviewed docs, tests, and QA ledger only.
+  - Live account-root/profile adoption and generated runtime/memory state are excluded from this commit.
+
 - Date: 2026-07-17
 - Scope: Hardened Antigravity global-skill projection for symlink/junction escape resistance, environment-based temp-home isolation, and manifest verification coverage.
 - Changed areas:

@@ -1,0 +1,7 @@
+schemaVersion: 1
+intentAuthority: file
+executionAuthority: sqlite
+projectionDirection: sqlite-to-file
+projectionWritable: false
+relayDatabaseMigration: forbidden
+completionRequiresFreshEvidence: true

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonshot-relay.local/schemas/harness-switcher.receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "receiptId", "operation", "status", "surface", "track", "sensitiveContentRead"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "receiptId": { "type": "string" },
+    "operation": { "enum": ["status", "doctor", "launch", "recover", "rollback", "uninstall"] },
+    "status": { "type": "string" },
+    "surface": { "type": "string" },
+    "track": { "enum": ["relay", "kernel", "unknown"] },
+    "effective": { "type": "object" },
+    "errorCode": { "type": ["string", "null"] },
+    "sensitiveContentRead": { "const": false },
+    "managedStaticHashes": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": { "path": { "type": "string" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } } }
+  }
+}

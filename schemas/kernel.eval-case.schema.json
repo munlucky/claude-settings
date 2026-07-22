@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.eval-case.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "taskClass",
+    "riskTier",
+    "objective",
+    "expectedRoute",
+    "sourceKind",
+    "requiredEvidence"
+  ],
+  "properties": {
+    "id": {
+      "pattern": "^KRN-EVAL-[0-9]{3}$"
+    },
+    "taskClass": {
+      "enum": [
+        "analysis",
+        "bug",
+        "feature",
+        "refactor",
+        "ui",
+        "long-running"
+      ]
+    },
+    "riskTier": {
+      "enum": [
+        "T0",
+        "T1",
+        "T2",
+        "T3"
+      ]
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 8
+    },
+    "expectedRoute": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "enum": [
+          "FRAME",
+          "SHAPE",
+          "SLICE",
+          "SCHEDULE",
+          "EXECUTE",
+          "PROVE",
+          "CLOSE"
+        ]
+      }
+    },
+    "sourceKind": {
+      "enum": [
+        "historical",
+        "synthetic"
+      ]
+    },
+    "requiredEvidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

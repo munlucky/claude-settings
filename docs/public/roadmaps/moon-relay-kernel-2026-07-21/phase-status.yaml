@@ -1,0 +1,19 @@
+schemaVersion: 1
+plan: moon-relay-kernel-2026-07-21
+branch: kernel/moon-relay-kernel
+status: remediation-locally-verified-runtime-matrix-pending
+phases:
+  PH-01: remediation-source-updated-focused-tests-passed
+  PH-02: remediation-source-updated-focused-tests-passed
+  PH-03: remediation-source-updated-focused-tests-passed
+  PH-04: remediation-source-updated-focused-tests-passed
+  PH-05: source-implemented-focused-tests-passed
+  PH-06: remediation-source-updated-focused-tests-passed
+  PH-07: installer-lifecycle-updated-product-e2e-passed
+focusedVerification:
+  command: node --test tests/kernel-*.test.mjs
+  nodeVersion: v24.18.0
+  result: 57-pass-0-fail
+completionAuthority: runtime-state-required
+blockers:
+  - managed runtime multi-version execution matrix remains pending

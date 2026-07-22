@@ -1,0 +1,84 @@
+import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const catalog = JSON.parse(readFileSync(path.join(sourceRoot, 'catalog', 'kernel-skills.json'), 'utf8'));
+const revision = catalog.capabilityConditionsRevision || 'kernel-capability-conditions.v1';
+const conditions = catalog.capabilityConditions || {};
+
+export class KernelCapabilityError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'KernelCapabilityError';
+    this.code = code;
+  }
+}
+
+const hasMutation = (task) => task.sourceMutation === true
+  || task.behaviorChanging === true
+  || Number(task.filesChanged || 0) > 0
+  || ['feature', 'refactor', 'bug', 'ui', 'long-running'].includes(task.taskClass);
+
+const conditionState = (task = {}) => {
+  const riskTier = task.riskTier || task.proofTier || 'T0';
+  const route = Array.isArray(task.route) ? task.route : [];
+  const routeIncludesExecute = route.length ? route.includes('EXECUTE') : task.taskClass !== 'analysis';
+  return {
+    sourceMutation: hasMutation(task),
+    behaviorChanging: task.behaviorChanging === true,
+    ambiguityChangesOutcome: task.ambiguityChangesOutcome === true,
+    domainTerminologyConflict: task.domainTerminologyConflict === true,
+    taskClass: String(task.taskClass || 'feature'),
+    complex: task.complex === true,
+    filesChanged: Number(task.filesChanged || 0),
+    bug: String(task.taskClass || '') === 'bug',
+    reviewSpec: ['T2', 'T3'].includes(riskTier) || task.publicContract === true || task.acceptanceAmbiguity === true,
+    reviewStandards: ['T1', 'T2', 'T3'].includes(riskTier) && task.behaviorChanging === true,
+    reviewComplexity: task.complex === true || task.newDependency === true || Number(task.filesChanged || 0) > 8,
+    verification: routeIncludesExecute || task.explicitCompletionAttempt === true,
+    riskTier,
+  };
+};
+
+const isActive = (id, state) => {
+  if (id === 'kernel-minimal-correct-change') return state.sourceMutation;
+  if (id === 'kernel-domain-modeling') return state.ambiguityChangesOutcome || state.domainTerminologyConflict;
+  if (id === 'kernel-tracer-slicing') return state.taskClass === 'long-running' || state.complex || state.filesChanged > 8;
+  if (id === 'kernel-test-driven-development') return state.behaviorChanging;
+  if (id === 'kernel-diagnosing-bugs') return state.bug;
+  if (id === 'kernel-review-spec') return state.reviewSpec;
+  if (id === 'kernel-review-standards') return state.reviewStandards;
+  if (id === 'kernel-review-complexity') return state.reviewComplexity;
+  if (id === 'kernel-verification-before-completion') return state.verification;
+  return false;
+};
+
+export const resolveKernelCapabilities = (task = {}) => {
+  const known = new Set(Object.keys(conditions));
+  const requested = Array.isArray(task.capabilities) ? task.capabilities : [];
+  for (const capability of requested) {
+    if (!known.has(capability)) throw new KernelCapabilityError('kernel_capability_unknown', `Unknown capability: ${capability}`);
+  }
+  const state = conditionState(task);
+  const selected = Object.entries(conditions)
+    .filter(([id]) => isActive(id, state))
+    .map(([id, metadata]) => ({ id, priority: metadata.priority, reason: metadata.condition, activationCondition: metadata.condition, guidance: metadata.guidance }))
+    .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  const selectedIds = new Set(selected.map((entry) => entry.id));
+  const deferred = Object.entries(conditions)
+    .filter(([id]) => !selectedIds.has(id))
+    .map(([id, metadata]) => ({ id, reason: 'condition_not_met', activationCondition: metadata.condition }));
+  const ignoredRequested = requested
+    .filter((id) => !selectedIds.has(id))
+    .map((id) => ({ id, reason: 'caller_forced_condition_not_met' }));
+  return {
+    schemaVersion: 1,
+    revision,
+    status: 'ready',
+    conditions: state,
+    selected,
+    deferred,
+    ignoredRequested,
+  };
+};

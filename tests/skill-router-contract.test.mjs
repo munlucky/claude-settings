@@ -191,7 +191,13 @@ test('load-reference rejects undeclared paths, dot-dot escapes, and symlink esca
     internalSkillClusters: [],
   });
   await writeFile(path.join(temp, 'outside.md'), '# outside\n');
-  await symlink(path.join(temp, 'outside.md'), path.join(temp, 'skills', 'alpha', 'references', 'escape.md'));
+  let hasSymlink = false;
+  try {
+    await symlink(path.join(temp, 'outside.md'), path.join(temp, 'skills', 'alpha', 'references', 'escape.md'));
+    hasSymlink = true;
+  } catch (err) {
+    if (err.code !== 'EPERM') throw err;
+  }
   await writeFile(path.join(temp, 'skills', 'alpha', 'SKILL.md'), `---
 name: alpha
 description: Alpha planner
@@ -205,11 +211,13 @@ deepReferences:
 
   const undeclared = await loadSkillReference('alpha', 'references/other.md', { repoRoot: temp });
   const traversal = await loadSkillReference('alpha', '../outside.md', { repoRoot: temp });
-  const escaped = await loadSkillReference('alpha', 'references/escape.md', { repoRoot: temp });
 
   assert.equal(undeclared.findings[0].code, 'reference.not_declared');
   assert.equal(traversal.findings[0].code, 'reference.path_escape');
-  assert.equal(escaped.findings[0].code, 'reference.symlink_escape');
+  if (hasSymlink) {
+    const escaped = await loadSkillReference('alpha', 'references/escape.md', { repoRoot: temp });
+    assert.equal(escaped.findings[0].code, 'reference.symlink_escape');
+  }
 });
 
 test('load-reference rejects a canonical root that is itself a symlink outside the repository', async () => {
@@ -218,7 +226,12 @@ test('load-reference rejects a canonical root that is itself a symlink outside t
   await mkdir(path.join(temp, 'catalog'), { recursive: true });
   await mkdir(path.join(temp, 'skills', 'alpha'), { recursive: true });
   await writeFile(path.join(outside, 'leak.md'), '# outside root\n');
-  await symlink(outside, path.join(temp, 'docs'));
+  try {
+    await symlink(outside, path.join(temp, 'docs'));
+  } catch (err) {
+    if (err.code !== 'EPERM') throw err;
+    return;
+  }
   await writeJson(path.join(temp, 'catalog', 'moonshot-catalog.json'), {
     schemaVersion: 1,
     publicEntrypoints: [{ name: 'alpha', stage: 'planning', source: 'skills/alpha/SKILL.md' }],

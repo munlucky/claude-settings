@@ -1,0 +1,19 @@
+schemaVersion: 1
+status: candidate
+hardGates:
+  falseCompletion: 0
+  securityRegression: 0
+  crossTrackStatePollution: 0
+  oppositeTrackDamageOnUninstall: 0
+  missingRequiredEvidence: 0
+qualityTargets:
+  staticPromptReductionPercent: 50
+  maxSuccessRateRegressionPercent: 5
+  intermediateArtifactReductionPercent: 40
+  maxUserInterventionIncrease: 0
+  provenanceCoveragePercent: 100
+promotionStages:
+  - experimental
+  - dogfood
+  - preview
+  - stable-candidate

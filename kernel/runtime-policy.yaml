@@ -1,0 +1,12 @@
+schemaVersion: 1
+productId: moon-relay-kernel
+defaultRuntimeHome: ~/.moon-relay-kernel
+managedNode:
+  preferBundled: true
+  supportedHostMajors: [20, 22, 24]
+  allowNetworkDownload: false
+isolation:
+  forbiddenRoots:
+    - ~/.moonshot-relay
+  distinctManifest: true
+  distinctStateDatabase: true

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.release-evidence.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "tier",
+    "acceptanceCoverage",
+    "completionDecision"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "tier": {
+      "const": "E2"
+    },
+    "acceptanceCoverage": {
+      "type": "array"
+    },
+    "completionDecision": {
+      "enum": [
+        "accepted",
+        "blocked"
+      ]
+    }
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-21T09:19:04.975Z",
+  "sourceCommit": "c602ecf44d68b7f9d4eec58e297f92d6342c65ce",
+  "scope": "kernel",
+  "skills": [
+    {
+      "name": "kernel-diagnosing-bugs",
+      "path": "skills/kernel-diagnosing-bugs",
+      "source": "canonical",
+      "contentHash": "309c07120b5f6c930c83ba9b2cb3caee69cbe8c7cd0a32834cce9fcfd2d1e831",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-domain-modeling",
+      "path": "skills/kernel-domain-modeling",
+      "source": "canonical",
+      "contentHash": "a85b2fdc123645465f8e9a9c70ce09c70f5e9f3185c43c41f212cdee907070fa",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-minimal-correct-change",
+      "path": "skills/kernel-minimal-correct-change",
+      "source": "canonical",
+      "contentHash": "4acf555b85be79c492633c7f890a9838fa3403f546564c8232d009fe79c305e7",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-review-complexity",
+      "path": "skills/kernel-review-complexity",
+      "source": "canonical",
+      "contentHash": "c73be928172dbf067445260d82eb361d0c04cce67103303c29ac584f8ca12c9a",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-review-spec",
+      "path": "skills/kernel-review-spec",
+      "source": "canonical",
+      "contentHash": "cbb5bad2d2b6f8041fb06c6a81e353082b836ecf224dd8698c91ef2df4fef6e1",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-review-standards",
+      "path": "skills/kernel-review-standards",
+      "source": "canonical",
+      "contentHash": "12b04843e5b4240f21c7239e24c52a907ca3b78513de721a159e0e78fbd31d82",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-test-driven-development",
+      "path": "skills/kernel-test-driven-development",
+      "source": "canonical",
+      "contentHash": "9c79957e08c8e18d00cb457005313bb4e114cbdee3a7249b3668631c76aeb4f6",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-tracer-slicing",
+      "path": "skills/kernel-tracer-slicing",
+      "source": "canonical",
+      "contentHash": "4fb16f6178bee5f918b061bdbbbb0b464aad7058e748bd5563989f3f6f21045e",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "kernel-verification-before-completion",
+      "path": "skills/kernel-verification-before-completion",
+      "source": "canonical",
+      "contentHash": "7f2f1025b5cfe7073043a5e4f27872ac2991c811855bd06f9fedcfabc29690b8",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
+    {
+      "name": "moon-relay-kernel",
+      "path": "skills/moon-relay-kernel",
+      "source": "canonical",
+      "contentHash": "3ced87d7fe3778734d553a8d981b53b7e27ef887af3d54f184fc27dec028e491",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+schemaVersion: 1
+autoApply: false
+sources:
+  - id: ponytail
+    repository: DietrichGebert/ponytail
+    adoptionMode: derived
+    pinnedRef: review-required
+    acceptedPatterns: [minimality-ladder, root-cause-shared-seam, safety-exclusions]
+  - id: mattpocock-skills
+    repository: mattpocock/skills
+    adoptionMode: derived
+    pinnedRef: review-required
+    acceptedPatterns: [domain-modeling, tracer-slicing, spec-standards-review]
+  - id: superpowers
+    repository: obra/superpowers
+    adoptionMode: derived
+    pinnedRef: review-required
+    acceptedPatterns: [tdd, systematic-debugging, verification-before-completion, skill-tdd]

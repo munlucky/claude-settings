@@ -1,0 +1,8 @@
+{
+  "SessionStart": [
+    {
+      "type": "command",
+      "command": "moon-relay-kernel assert-track --json"
+    }
+  ]
+}

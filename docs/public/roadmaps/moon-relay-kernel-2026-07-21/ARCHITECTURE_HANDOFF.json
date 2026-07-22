@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "ARCHITECTURE_HANDOFF",
+  "owner": "moonshot-architecture",
+  "sourceContractRef": "docs/public/roadmaps/moon-relay-kernel-2026-07-21/TRACEABILITY_MATRIX.md",
+  "handoffTarget": "moonshot-phase-runner",
+  "status": "ready",
+  "blocking": false,
+  "promptBlock": "Implement Moon Relay Kernel as an isolated product track on branch kernel/moon-relay-kernel. Reuse Relay managed runtime, project identity, sandbox, verification and runtime-state primitives only through explicit adapters. Keep Relay and Kernel runtime homes, DBs, profiles, skills, hooks and completion authority isolated. Implement a single public entrypoint, adaptive workflow, stage-scoped context compiler, file-intent/SQLite-execution authority, T0-T3 proof routing, E0-E2 evidence packs, pinned upstream skill registry, sequential-default Safe Wave dry-run, and controlled profile adoption. Do not migrate Relay DB, auto-update upstream skills, enable default fanout, or mutate live account-root profiles before Phase 07 gates pass.",
+  "metadata": {
+    "selectedDecisionIds": [
+      "ADR-0001",
+      "ADR-0002",
+      "ADR-0003",
+      "ADR-0004"
+    ],
+    "selectedConstraintIds": [
+      "CONSTRAINT-separate-product-track",
+      "CONSTRAINT-runtime-home-isolation",
+      "CONSTRAINT-no-relay-db-migration",
+      "CONSTRAINT-one-public-entrypoint",
+      "CONSTRAINT-sequential-default",
+      "CONSTRAINT-no-upstream-auto-apply",
+      "CONSTRAINT-live-profile-adoption-phase-07-only",
+      "CONSTRAINT-runtime-evidence-completion-authority"
+    ],
+    "verificationSignalIds": [
+      "VS-kernel-track-isolation",
+      "VS-kernel-package-parity",
+      "VS-kernel-workflow-context",
+      "VS-kernel-state-authority",
+      "VS-kernel-skill-eval",
+      "VS-kernel-proof-wave",
+      "VS-kernel-profile-dogfood",
+      "VS-full-regression"
+    ],
+    "selectedPlan": "docs/public/roadmaps/moon-relay-kernel-2026-07-21/00-master-plan-v1.ko.md",
+    "phaseDocs": [
+      "docs/public/roadmaps/moon-relay-kernel-2026-07-21/01-baseline-and-product-boundary-v1.ko.md",
+      "docs/public/roadmaps/moon-relay-kernel-2026-07-21/02-runtime-package-isolation-v1.ko.md",
+      "docs/public/roadmaps/moon-relay-kernel-2026-07-21/03-entrypoint-workflow-context-v1.ko.md",
+      "docs/public/roadmaps/moon-relay-kernel-2026-07-21/04-state-authority-evidence-v1.ko.md",
+      "docs/public/roadmaps/moon-relay-kernel-2026-07-21/05-core-skills-upstream-registry-v1.ko.md",
+      "docs/public/roadmaps/moon-relay-kernel-2026-07-21/06-adaptive-proof-safe-wave-v1.ko.md",
+      "docs/public/roadmaps/moon-relay-kernel-2026-07-21/07-profile-dogfood-adoption-v1.ko.md"
+    ],
+    "ownedPathGroups": [
+      "kernel/**",
+      "scripts/kernel/**",
+      "schemas/kernel.*",
+      "skills/moon-relay-kernel/**",
+      "skills/kernel-*/**",
+      "package/kernel/**",
+      "bin/moon-relay-kernel.mjs",
+      "tests/kernel-*.test.mjs",
+      "docs/public/guidelines/moon-relay-kernel-*.md"
+    ],
+    "readOnlyPathGroups": [
+      "AGENTS.md",
+      "skills/moonshot-orchestrator/**",
+      "skills/moonshot-phase-runner/**",
+      "scripts/runtime-state.mjs",
+      "scripts/lib/runtime-state-store.mjs",
+      "scripts/knowledge-context-build.mjs",
+      "scripts/install-account-root-harness.mjs",
+      "package/package-contract.yaml",
+      "schemas/verification.contract.yaml",
+      "tools/sandbox/policy.mjs",
+      "tools/harness-lab/**"
+    ]
+  },
+  "readBeforeRetry": [
+    "docs/public/roadmaps/moon-relay-kernel-2026-07-21/MOON_RELAY_KERNEL_FINAL_DESIGN.md",
+    "docs/public/roadmaps/moon-relay-kernel-2026-07-21/00-master-plan-v1.ko.md",
+    "docs/public/roadmaps/moon-relay-kernel-2026-07-21/TRACEABILITY_MATRIX.md",
+    "docs/public/roadmaps/moon-relay-kernel-2026-07-21/SPEC_TEST_OBLIGATIONS.md",
+    "docs/public/roadmaps/moon-relay-kernel-2026-07-21/ARCHITECTURE_REVIEW.md",
+    "docs/public/roadmaps/moon-relay-kernel-2026-07-21/planning-loop/plan-quality-review-iter-01.yaml"
+  ],
+  "warnings": [
+    {
+      "code": "live_profile_adoption_deferred",
+      "message": "Do not mutate live Claude, Codex, Qwen or account-root profiles before Phase 07 disposable-home, package parity, rollback and operator approval gates pass.",
+      "severity": "warning"
+    },
+    {
+      "code": "safe_wave_execution_deferred",
+      "message": "Kernel v1 requires Wave planning and conflict analysis; actual parallel worker execution remains behind a later maxWorkers=2 feature gate.",
+      "severity": "warning"
+    }
+  ],
+  "errors": []
+}

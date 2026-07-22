@@ -1,0 +1,16 @@
+schemaVersion: 1
+revision: kernel-context-policy.v1
+layers:
+  - stable-principles
+  - task-contract
+  - stage-context
+  - on-demand-references
+  - evidence-digest
+forbiddenContent:
+  - raw-runtime-log
+  - transcript
+  - secret-like-value
+  - full-knowledge-graph-dump
+receiptRequired: true
+stableTokenBudget: 600
+stageTokenBudget: 1800

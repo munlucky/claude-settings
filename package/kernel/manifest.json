@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "productId": "moon-relay-kernel",
+  "runtimeHome": "~/.moon-relay-kernel",
+  "entrypoint": "bin/moon-relay-kernel.mjs",
+  "include": [
+    "bin/moon-relay-kernel.mjs",
+    "bin/moon-harness-switcher.mjs",
+    "kernel/",
+    "scripts/kernel/",
+    "scripts/switcher/",
+    "scripts/lib/skills-lock.mjs",
+    "scripts/lib/candidate-identity.mjs",
+    "schemas/kernel.*",
+    "schemas/harness-switcher.*",
+    "skills/moon-relay-kernel/",
+    "skills/kernel-*",
+    "catalog/kernel-skills.yaml",
+    "catalog/kernel-skills.json",
+    "package/kernel/manifest.json",
+    "package/kernel/skills.lock.json",
+    "package/kernel/profiles/"
+    ,"scripts/kernel/profile-install.mjs"
+    ,"scripts/kernel/profile-doctor.mjs"
+    ,"package/switcher/manifest.json"
+    ,"package/switcher/"
+  ],
+  "exclude": [
+    ".moonshot-relay",
+    "runtime-state.sqlite",
+    "package/claude/profile",
+    "package/codex/profile",
+    "package/qwen/profile"
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "moon-relay-kernel-skill-catalog.v1",
+  "capabilityConditionsRevision": "kernel-capability-conditions.v1",
+  "authority": {
+    "publicRuntimeSurface": "package/kernel/manifest.json",
+    "packageContract": "package/kernel/manifest.json",
+    "sourceSkillRoot": "skills",
+    "serviceProfilePolicy": "allowlist_only",
+    "commonPayloadPolicy": "preserve_all_kernel_skills"
+  },
+  "requiredDocumentation": {
+    "files": [
+      "README.md"
+    ]
+  },
+  "publicEntrypoints": [
+    {
+      "name": "moon-relay-kernel",
+      "stage": "kernel",
+      "ownerCluster": "kernel-control-plane",
+      "engineRoute": "kernel-workflow",
+      "invocationMode": "user_or_model",
+      "allowedStages": ["FRAME", "SHAPE", "EXECUTE", "PROVE", "CLOSE"],
+      "conditionalSkillGroups": {
+        "minimalChange": ["kernel-minimal-correct-change"],
+        "verificationRequired": ["kernel-verification-before-completion"]
+      },
+      "source": "skills/moon-relay-kernel/SKILL.md",
+      "purpose": "Kernel control plane entrypoint for adaptive risk-bound workflow."
+    }
+  ],
+  "internalDiscovery": {
+    "sourceRoot": "skills",
+    "includeUnlistedSourceSkills": true,
+    "profileLocalExposure": "forbidden"
+  },
+  "internalSkillClusters": [
+    {
+      "id": "kernel-internal-skills",
+      "stage": "kernel",
+      "skills": [
+        "kernel-minimal-correct-change",
+        "kernel-domain-modeling",
+        "kernel-tracer-slicing",
+        "kernel-test-driven-development",
+        "kernel-diagnosing-bugs",
+        "kernel-verification-before-completion",
+        "kernel-review-spec",
+        "kernel-review-standards",
+        "kernel-review-complexity"
+      ]
+    }
+  ],
+  "capabilityConditions": {
+    "kernel-minimal-correct-change": { "condition": "sourceMutation or behaviorChanging", "priority": 10, "guidance": "Keep the change minimal and contract-shaped." },
+    "kernel-domain-modeling": { "condition": "ambiguityChangesOutcome or domainTerminologyConflict", "priority": 20, "guidance": "Resolve domain ambiguity before implementation." },
+    "kernel-tracer-slicing": { "condition": "taskClass=long-running or complex or filesChanged>8", "priority": 30, "guidance": "Trace and slice complex work before execution." },
+    "kernel-test-driven-development": { "condition": "behaviorChanging", "priority": 40, "guidance": "Use a failing test and a focused green implementation." },
+    "kernel-diagnosing-bugs": { "condition": "taskClass=bug", "priority": 41, "guidance": "Diagnose the failure boundary before changing behavior." },
+    "kernel-review-spec": { "condition": "riskTier=T2/T3 or publicContract or acceptanceAmbiguity", "priority": 50, "guidance": "Review the public contract and acceptance semantics." },
+    "kernel-review-standards": { "condition": "T1+ behaviorChanging", "priority": 51, "guidance": "Review implementation against applicable engineering standards." },
+    "kernel-review-complexity": { "condition": "complex or newDependency or filesChanged>8", "priority": 60, "guidance": "Review complexity and dependency surface after functional review." },
+    "kernel-verification-before-completion": { "condition": "route includes EXECUTE or explicit completion attempt", "priority": 90, "guidance": "Require fresh, scope-matched evidence before completion." }
+  },
+  "checks": {
+    "publicEntrypointsMatchRuntimeSurface": true,
+    "publicEntrypointsMatchPackageContract": true,
+    "publicEntrypointsDocumented": true,
+    "serviceProfilesExposeOnlyPublicEntrypoints": true,
+    "commonPayloadIncludesCatalog": true
+  }
+}

@@ -7,6 +7,9 @@ const normalizePath = (value = '') => String(value).replaceAll('\\', '/');
 
 const readSkillBody = async (repoRoot, skillPath) => readFile(path.join(repoRoot, skillPath, 'SKILL.md'), 'utf8');
 
+const isKernelSkill = (name) => name.startsWith('kernel-') || name === 'moon-relay-kernel';
+const commitShaRegex = /^[a-f0-9]{40}$/i;
+
 export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoot = 'skills' } = {}) => {
   const root = path.join(repoRoot, skillsRoot);
   const entries = await readdir(root, { withFileTypes: true });
@@ -35,31 +38,38 @@ export const discoverSourceSkills = async ({ repoRoot = process.cwd(), skillsRoo
 
 export const buildSkillsLock = async ({
   repoRoot = process.cwd(),
+  scope = 'relay',
   generatedAt = new Date().toISOString(),
   sourceCommit = '',
   defaultLicense = 'UNSPECIFIED',
   defaultStages = [],
   defaultPermissions = ['filesystem-read'],
-} = {}) => ({
-  schemaVersion: 1,
-  generatedAt,
-  sourceCommit,
-  skills: (await discoverSourceSkills({ repoRoot })).map((skill) => ({
-    name: skill.name,
-    path: skill.path,
-    source: 'canonical',
-    contentHash: skill.contentHash || sha256Hex('missing'),
-    license: defaultLicense,
-    stages: defaultStages,
-    permissions: defaultPermissions,
-    permissionReview: {
-      status: defaultPermissions.length > 0 ? 'required' : 'approved',
-    },
-  })),
-});
+} = {}) => {
+  const sourceSkills = (await discoverSourceSkills({ repoRoot })).filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : !isKernelSkill(s.name)));
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    sourceCommit,
+    scope,
+    skills: sourceSkills.map((skill) => ({
+      name: skill.name,
+      path: skill.path,
+      source: 'canonical',
+      contentHash: skill.contentHash || sha256Hex('missing'),
+      license: defaultLicense,
+      stages: defaultStages,
+      permissions: defaultPermissions,
+      permissionReview: {
+        status: defaultPermissions.length > 0 ? 'required' : 'approved',
+      },
+    })),
+  };
+};
 
 export const auditSkillsLock = async ({
   repoRoot = process.cwd(),
+  scope = 'relay',
   lock = null,
   runtimeSurface = null,
 } = {}) => {
@@ -69,7 +79,30 @@ export const auditSkillsLock = async ({
     return { status: 'blocked', findings };
   }
 
-  const sourceSkills = new Map((await discoverSourceSkills({ repoRoot })).map((skill) => [skill.name, skill]));
+  if (lock.schemaVersion !== 1) {
+    findings.push({ type: 'schema_version_mismatch', severity: 'blocking', expected: 1, actual: lock.schemaVersion });
+  }
+
+  if (scope === 'kernel') {
+    if (lock.scope !== 'kernel') {
+      findings.push({ type: 'scope_mismatch', severity: 'blocking', expected: 'kernel', actual: lock.scope });
+    }
+    if (!lock.sourceCommit || typeof lock.sourceCommit !== 'string' || !commitShaRegex.test(lock.sourceCommit)) {
+      findings.push({ type: 'invalid_source_commit_sha', severity: 'blocking', actual: lock.sourceCommit });
+    }
+  }
+
+  const lockedNames = (lock.skills || []).map((s) => s.name);
+  const duplicates = lockedNames.filter((name, idx) => lockedNames.indexOf(name) !== idx);
+  if (duplicates.length > 0) {
+    findings.push({ type: 'duplicate_lock_entries', severity: 'blocking', duplicates });
+  }
+
+  const sourceSkills = new Map(
+    (await discoverSourceSkills({ repoRoot }))
+      .filter((s) => (scope === 'kernel' ? isKernelSkill(s.name) : !isKernelSkill(s.name)))
+      .map((skill) => [skill.name, skill])
+  );
   const lockedSkills = new Map((lock.skills || []).map((skill) => [skill.name, skill]));
 
   for (const [name, sourceSkill] of sourceSkills.entries()) {
@@ -89,10 +122,18 @@ export const auditSkillsLock = async ({
     }
   }
 
-  const publicSkills = new Set(runtimeSurface?.publicRuntimeSkills || []);
-  for (const skill of publicSkills) {
-    if (!sourceSkills.has(skill)) {
-      findings.push({ type: 'runtime_surface_missing_source_skill', severity: 'blocking', skill });
+  for (const [lockedName] of lockedSkills.entries()) {
+    if (!sourceSkills.has(lockedName)) {
+      findings.push({ type: 'unmapped_lock_entry', severity: 'blocking', skill: lockedName });
+    }
+  }
+
+  if (scope === 'relay') {
+    const publicSkills = new Set(runtimeSurface?.publicRuntimeSkills || []);
+    for (const skill of publicSkills) {
+      if (!sourceSkills.has(skill)) {
+        findings.push({ type: 'runtime_surface_missing_source_skill', severity: 'blocking', skill });
+      }
     }
   }
 

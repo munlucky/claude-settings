@@ -1,0 +1,2 @@
+import assert from 'node:assert/strict'; import {test} from 'node:test'; import {planSafeWaves} from '../scripts/kernel/wave-plan.mjs';
+test('disjoint slices share a dry-run wave',()=>{const p=planSafeWaves([{id:'a',blockedBy:[],predictedWriteSet:['src/a/**'],sharedSurfaces:['none']},{id:'b',blockedBy:[],predictedWriteSet:['src/b/**'],sharedSurfaces:['none']}]); assert.deepEqual(p.waves[0].slices,['a','b']); assert.equal(p.waves[0].parallelEligible,true); assert.equal(p.defaultMode,'sequential');});
