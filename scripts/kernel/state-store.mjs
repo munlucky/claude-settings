@@ -239,6 +239,30 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       PRIMARY KEY(run_id, obligation_id),
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS finalization_authority_receipts (
+      receipt_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      transaction_id TEXT NOT NULL,
+      commit_digest TEXT NOT NULL,
+      knowledge_revision INTEGER NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS git_closeout_jobs (
+      job_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      commit_sha TEXT,
+      approval_receipt TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
   `);
 
   const addCol = (t, c, typ) => { try { db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${typ}`); } catch {} };
@@ -310,6 +334,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         knowledgeRevisionStart !== undefined && knowledgeRevisionStart !== null ? String(knowledgeRevisionStart) : null,
         now()
       );
+      for (const obId of requiredObligations) {
+        this.ensureRunObligation(runId, { obligationId: obId, sourceType: 'required_obligation' });
+      }
       return this.getRun(runId);
     },
 
@@ -606,6 +633,98 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         db.exec('ROLLBACK');
         throw err;
       }
+    },
+
+    commitFinalizationAuthorityTransaction({
+      runId,
+      projectId,
+      transactionId,
+      commitDigest,
+      knowledgeRevision,
+      canonicalRecords = [],
+      authorityReceipt,
+      gitCloseoutRequest = null,
+    }) {
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const run = this.getRun(runId);
+        if (!run) throw new Error(`Run ${runId} not found`);
+
+        const decisionJson = JSON.stringify({ decision: 'accepted', evidenceDigest: commitDigest });
+        db.prepare(`
+          INSERT INTO completion_decisions(run_id, decision, source_identity, mutation_revision, evidence_digest, decision_json, created_at)
+          VALUES(?, 'accepted', ?, ?, ?, ?, ?)
+          ON CONFLICT(run_id) DO UPDATE SET decision='accepted', evidence_digest=excluded.evidence_digest, decision_json=excluded.decision_json, created_at=excluded.created_at
+        `).run(runId, run.sourceIdentity, run.mutationRevision, commitDigest, decisionJson, now());
+
+        db.prepare(`
+          UPDATE runs SET state='CLOSE', status='completed', knowledge_revision_close=?, knowledge_status='committed', updated_at=? WHERE run_id=?
+        `).run(String(knowledgeRevision), now(), runId);
+
+        for (const rec of canonicalRecords) {
+          db.prepare(`
+            INSERT INTO knowledge_records(project_id, record_id, record_type, status, trust_tier, record_json, revision, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project_id, record_id) DO UPDATE SET status=excluded.status, trust_tier=excluded.trust_tier, record_json=excluded.record_json, revision=excluded.revision, updated_at=excluded.updated_at
+          `).run(projectId, rec.id, rec.type, rec.status, rec.trustTier, JSON.stringify(rec), knowledgeRevision, now(), now());
+        }
+
+        db.prepare(`
+          INSERT INTO knowledge_revisions(project_id, revision, updated_at)
+          VALUES(?, ?, ?)
+          ON CONFLICT(project_id) DO UPDATE SET revision=excluded.revision, updated_at=excluded.updated_at
+        `).run(projectId, knowledgeRevision, now());
+
+        db.prepare(`
+          INSERT INTO knowledge_transactions(transaction_id, project_id, run_id, expected_revision, target_revision, status, transaction_json, created_at, completed_at)
+          VALUES(?, ?, ?, ?, ?, 'completed', ?, ?, ?)
+          ON CONFLICT(transaction_id) DO UPDATE SET status='completed', completed_at=excluded.completed_at
+        `).run(transactionId, projectId, runId, knowledgeRevision - 1, knowledgeRevision, JSON.stringify({ transactionId, records: canonicalRecords }), now(), now());
+
+        const receiptPayload = {
+          runId,
+          projectId,
+          revisionBefore: String(knowledgeRevision - 1),
+          revisionAfter: String(knowledgeRevision),
+          status: 'committed',
+          committedCount: canonicalRecords.length,
+          completionDecisionRef: commitDigest,
+        };
+
+        db.prepare(`
+          INSERT INTO knowledge_commit_receipts(run_id, project_id, revision_before, revision_after, status, receipt_json, created_at)
+          VALUES(?, ?, ?, ?, 'committed', ?, ?)
+          ON CONFLICT(run_id) DO UPDATE SET revision_before=excluded.revision_before, revision_after=excluded.revision_after, status='committed', receipt_json=excluded.receipt_json, created_at=excluded.created_at
+        `).run(runId, projectId, String(knowledgeRevision - 1), String(knowledgeRevision), JSON.stringify(receiptPayload), now());
+
+        db.prepare(`
+          INSERT INTO finalization_authority_receipts(receipt_id, run_id, project_id, status, transaction_id, commit_digest, knowledge_revision, receipt_json, created_at)
+          VALUES(?, ?, ?, 'committed', ?, ?, ?, ?, ?)
+          ON CONFLICT(receipt_id) DO UPDATE SET status='committed', receipt_json=excluded.receipt_json
+        `).run(authorityReceipt.receiptId, runId, projectId, transactionId, commitDigest, knowledgeRevision, JSON.stringify(authorityReceipt), now());
+
+        if (gitCloseoutRequest && gitCloseoutRequest.requested) {
+          const jobId = `job-git-${runId}-${Date.now()}`;
+          db.prepare(`
+            INSERT INTO git_closeout_jobs(job_id, run_id, project_id, status, mode, commit_sha, approval_receipt, created_at, updated_at)
+            VALUES(?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+            ON CONFLICT(job_id) DO NOTHING
+          `).run(jobId, runId, projectId, gitCloseoutRequest.mode || 'commit', gitCloseoutRequest.commitSha || null, gitCloseoutRequest.approvalReceipt || null, now(), now());
+        }
+
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    getPendingGitCloseoutJobs() {
+      return db.prepare(`SELECT job_id as jobId, run_id as runId, project_id as projectId, status, mode, commit_sha as commitSha, approval_receipt as approvalReceipt FROM git_closeout_jobs WHERE status='pending'`).all();
+    },
+
+    updateGitCloseoutJobStatus(jobId, status, { error = null, receipt = null } = {}) {
+      db.prepare(`UPDATE git_closeout_jobs SET status=?, updated_at=? WHERE job_id=?`).run(status, now(), jobId);
     },
 
     getProjectKnowledgeRevision(projectId) {

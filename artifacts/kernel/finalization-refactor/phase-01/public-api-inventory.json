@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "phase": "PH-01",
+  "publicApiMethods": [
+    {
+      "name": "startRun",
+      "module": "scripts/kernel/control-plane.mjs",
+      "purpose": "Initialize run and load stage context"
+    },
+    {
+      "name": "buildStageContext",
+      "module": "scripts/kernel/control-plane.mjs",
+      "purpose": "Load stage context from SQLite"
+    },
+    {
+      "name": "recordProof",
+      "module": "scripts/kernel/control-plane.mjs",
+      "purpose": "Record proof verifications in PROVE state"
+    },
+    {
+      "name": "finalizeRun",
+      "module": "scripts/kernel/control-plane.mjs",
+      "purpose": "Single completion, review, commitment and closeout authority"
+    },
+    {
+      "name": "retryGitCloseout",
+      "module": "scripts/kernel/control-plane.mjs",
+      "purpose": "Retry failed Git push using existing commit SHA from DB"
+    },
+    {
+      "name": "evaluateCompletion",
+      "module": "scripts/kernel/state-store.mjs",
+      "purpose": "Read-only completion evaluation"
+    }
+  ]
+}

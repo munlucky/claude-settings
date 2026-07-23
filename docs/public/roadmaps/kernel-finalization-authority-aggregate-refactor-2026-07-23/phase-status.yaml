@@ -1,0 +1,31 @@
+schemaVersion: 1
+planPackage: docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23
+masterPlan: 00-master-plan-v1.ko.md
+status: completed
+currentPhase: "05"
+phases:
+  - id: "01"
+    name: "Baseline and Authority Boundary Freeze"
+    doc: "01-baseline-authority-boundary-v1.ko.md"
+    status: completed
+    dependsOn: []
+  - id: "02"
+    name: "Finalization Aggregate Prepare"
+    doc: "02-finalization-aggregate-prepare-v1.ko.md"
+    status: completed
+    dependsOn: ["01"]
+  - id: "03"
+    name: "Atomic Authority Transaction"
+    doc: "03-atomic-authority-transaction-v1.ko.md"
+    status: completed
+    dependsOn: ["02"]
+  - id: "04"
+    name: "SQLite Runtime Knowledge and Derived Projection"
+    doc: "04-sqlite-runtime-knowledge-projection-v1.ko.md"
+    status: completed
+    dependsOn: ["03"]
+  - id: "05"
+    name: "Git Outbox, Invariant Tests, Legacy Removal and Promotion"
+    doc: "05-git-outbox-invariants-promotion-v1.ko.md"
+    status: completed
+    dependsOn: ["04"]

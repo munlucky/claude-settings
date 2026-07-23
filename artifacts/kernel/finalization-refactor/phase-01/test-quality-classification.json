@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "phase": "PH-01",
+  "testQualityClassification": [
+    {
+      "testFile": "tests/kernel-completion-authority-required.test.mjs",
+      "classification": "real_integration",
+      "targetInRefactor": "preserve"
+    },
+    {
+      "testFile": "tests/kernel-finalization-lifecycle.test.mjs",
+      "classification": "real_integration",
+      "targetInRefactor": "preserve"
+    },
+    {
+      "testFile": "tests/kernel-git-closeout-safety.test.mjs",
+      "classification": "real_integration",
+      "targetInRefactor": "preserve"
+    },
+    {
+      "testFile": "tests/kernel-knowledge-commit.test.mjs",
+      "classification": "mapping_and_mock",
+      "targetInRefactor": "replace_with_real_sqlite_store"
+    }
+  ]
+}

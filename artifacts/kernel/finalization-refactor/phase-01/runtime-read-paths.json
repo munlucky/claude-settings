@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "phase": "PH-01",
+  "readPaths": [
+    {
+      "component": "buildProjectKnowledgeContext",
+      "authority": "SQLite",
+      "sourceMethod": "stateStore.listKnowledgeRecords({ projectId, statuses: ['committed'] })"
+    },
+    {
+      "component": "evaluateOntologyConstraints",
+      "authority": "SQLite",
+      "sourceMethod": "stateStore.listKnowledgeRecords({ projectId, statuses: ['committed'] })"
+    },
+    {
+      "component": "rebuildKnowledgeProjection",
+      "authority": "SQLite",
+      "sourceMethod": "stateStore.listKnowledgeRecords({ projectId, statuses: ['committed'] })"
+    }
+  ]
+}

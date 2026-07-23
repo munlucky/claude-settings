@@ -11,6 +11,8 @@ export const VALID_TYPES = [
   'ontology_constraint',
   'episodic_observation',
   'known_failure_pattern',
+  'failure_pattern',
+  'tacit_practice',
   'required_verification',
   'provenance_event',
   'knowledge_candidate',
@@ -25,7 +27,9 @@ export const CANDIDATE_TO_RECORD_TYPE = {
   kg_relation: 'kg_relation',
   ontology_constraint: 'ontology_constraint',
   tacit_observation: 'episodic_observation',
+  tacit_practice: 'tacit_practice',
   known_failure_pattern: 'known_failure_pattern',
+  failure_pattern: 'failure_pattern',
   required_verification: 'required_verification',
 };
 

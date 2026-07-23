@@ -1,9 +1,20 @@
 import { loadAllProjectRecords } from './store.mjs';
 import { matchPathScope } from './path-scope.mjs';
 
-export async function evaluateOntologyConstraints({ projectId, paths = [], changes = [], statements = [], riskTier = 'T0', env = process.env } = {}) {
-  const records = await loadAllProjectRecords(projectId, { env });
-  const constraints = records.ontologyConstraints || [];
+export async function evaluateOntologyConstraints({ projectId, stateStore = null, ontologyConstraints = null, candidates = [], paths = [], changes = [], statements = [], riskTier = 'T0', env = process.env } = {}) {
+  let constraints = [];
+  if (Array.isArray(ontologyConstraints) && ontologyConstraints.length > 0) {
+    constraints = ontologyConstraints;
+  } else if (stateStore && typeof stateStore.listKnowledgeRecords === 'function') {
+    constraints = stateStore.listKnowledgeRecords({ projectId, types: ['ontology_constraint'], statuses: ['committed', 'verified'] });
+  } else {
+    try {
+      const records = await loadAllProjectRecords(projectId, { env });
+      constraints = records.ontologyConstraints || [];
+    } catch {
+      constraints = [];
+    }
+  }
 
   const applicable = [];
   const violations = [];

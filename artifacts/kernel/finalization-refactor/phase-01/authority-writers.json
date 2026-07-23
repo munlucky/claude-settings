@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "phase": "PH-01",
+  "completionWriters": [
+    {
+      "method": "controlPlane.finalizeRun",
+      "targetTable": "completion_decisions",
+      "isPublic": true,
+      "authorityRole": "sole_public_entrypoint"
+    },
+    {
+      "method": "stateStore.persistCompletionDecision",
+      "targetTable": "completion_decisions",
+      "isPublic": false,
+      "authorityRole": "private_persistence_helper"
+    }
+  ],
+  "knowledgeWriters": [
+    {
+      "method": "commitProjectKnowledge",
+      "targetTable": "knowledge_records",
+      "isPublic": false,
+      "authorityRole": "transactional_knowledge_commit"
+    },
+    {
+      "method": "stateStore.commitKnowledgeTransaction",
+      "targetTable": "knowledge_records, knowledge_transactions, knowledge_revisions, knowledge_commit_receipts",
+      "isPublic": false,
+      "authorityRole": "atomic_sqlite_transaction"
+    }
+  ]
+}

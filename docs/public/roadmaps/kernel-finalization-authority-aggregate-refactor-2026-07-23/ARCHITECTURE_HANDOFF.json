@@ -4,9 +4,9 @@
   "owner": "moonshot-plan-writer",
   "sourceContractRef": "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/TRACEABILITY_MATRIX.md",
   "handoffTarget": "moonshot-phase-runner",
-  "status": "ready_after_phase_01_preflight",
-  "blocking": true,
-  "blockingReason": "Phase 01 independent blocker-confirmation review and authority inventory are required before implementation.",
+  "status": "ready",
+  "blocking": false,
+  "blockingReason": "",
   "promptBlock": "Refactor Moon Relay Kernel finalization as a single Finalization Aggregate. Implement a re-entrant prepare step that keeps blocked runs in PROVE, then commit completion decision, canonical typed knowledge, knowledge revision, receipts and run completion in one SQLite transaction. Use SQLite as the sole runtime knowledge authority and treat JSONL as rebuildable projection only. Deliver Git closeout through an outbox with exact-SHA push, clean index postconditions and idempotent retry. Remove legacy public low-level mutation APIs only after real SQLite and Git invariant tests pass. Do not continue incremental blocker patching, do not accept caller-authored completion evaluations or committed candidates, and do not use mock-only tests as merge gates.",
   "metadata": {
     "projectId": "munlucky-moonshot-relay",

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "phase": "PH-01",
+  "gitPostconditions": {
+    "commitCreatedBeforePush": true,
+    "stagedDiffEmptyAfterCommit": true,
+    "unselectedChangesPreserved": true,
+    "retryUsesRecordedCommitSha": true
+  }
+}
