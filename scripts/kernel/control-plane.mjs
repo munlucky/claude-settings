@@ -15,8 +15,9 @@ import { buildProjectKnowledgeContext } from './knowledge/context-load.mjs';
 import { extractKnowledgeCandidates } from './knowledge/candidate-extract.mjs';
 import { reviewKnowledgeCandidates } from './knowledge/candidate-review.mjs';
 import { commitProjectKnowledge } from './knowledge/commit.mjs';
-import { executeKernelGitCloseout } from './git/closeout.mjs';
+import { executeKernelGitCloseout, retryGitCloseout as retryGitCloseoutHelper } from './git/closeout.mjs';
 import { normalizeChangedContract } from './change-contract.mjs';
+import { VALID_TYPES, resolveRecordType } from './knowledge/records.mjs';
 
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
   const sourceDigest = gitTreeDigest(projectRoot) || sha256Hex({ projectRoot, objective });
@@ -255,7 +256,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const candidates = [];
       for (const obs of observations) {
         if (!obs || typeof obs !== 'object') continue;
-        const proposedType = obs.proposedType || 'semantic_fact';
+        const proposedType = resolveRecordType(obs.proposedType || obs.type || 'semantic_fact');
         if (!ALLOWED_TYPES.has(proposedType)) {
           throw new Error(`INVALID_CANDIDATE_TYPE: ${proposedType} is not an allowed candidate type`);
         }
@@ -274,17 +275,25 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       const verifications = store.getVerifications(runId);
       const lastVer = verifications[verifications.length - 1];
-      const evidencePack = { status: lastVer?.status || 'passed', digest: lastVer?.evidenceDigest || `sha256:${'0'.repeat(64)}` };
+      const evidencePack = lastVer ? { status: lastVer.status, digest: lastVer.evidenceDigest } : null;
 
       const reviewResult = await reviewKnowledgeCandidates({
         projectId: run.projectId,
+        runId,
+        stateStore: store,
         candidates,
         evidencePack,
-        approvals,
         env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
 
-      for (const candidate of [...reviewResult.verifiedCandidates, ...reviewResult.rejectedCandidates]) {
+      const allReviewed = [
+        ...(reviewResult.verifiedCandidates || []),
+        ...(reviewResult.rejectedCandidates || []),
+        ...(reviewResult.needsApprovalCandidates || []),
+        ...(reviewResult.pendingVerificationCandidates || []),
+      ];
+
+      for (const candidate of allReviewed) {
         store.recordKnowledgeCandidate(candidate.candidateId, runId, {
           projectId: run.projectId,
           proposedType: candidate.proposedType || 'semantic_fact',
@@ -293,27 +302,24 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         });
       }
 
+      const reviewDigest = createHash('sha256').update(JSON.stringify(reviewResult)).digest('hex');
+      store.recordKnowledgeReviewReceipt(runId, {
+        projectId: run.projectId,
+        status: reviewResult.status,
+        candidateCount: candidates.length,
+        verifiedCount: (reviewResult.verifiedCandidates || []).length,
+        rejectedCount: (reviewResult.rejectedCandidates || []).length,
+        waitingApprovalCount: (reviewResult.needsApprovalCandidates || []).length,
+        waitingVerificationCount: (reviewResult.pendingVerificationCandidates || []).length,
+        reviewDigest,
+        receiptJson: reviewResult,
+      });
+
       return reviewResult;
     },
 
-    async closeRun(runId, { gitCloseoutRequest = null, changedFiles = [] } = {}) {
+    async closeRun(runId) {
       const updated = store.transition(runId, 'CLOSE');
-      if (gitCloseoutRequest?.requested) {
-        const commitReceiptRow = store.getKnowledgeCommitReceipt(runId);
-        const knowledgeCommitReceipt = commitReceiptRow?.receiptJson;
-        if (!knowledgeCommitReceipt) {
-          throw new Error('KNOWLEDGE_RECEIPT_REQUIRED: Explicit Git closeout requires knowledge commit receipt');
-        }
-        const gitReceipt = await executeKernelGitCloseout({
-          runId,
-          projectId: updated.projectId,
-          repoRoot: projectRoot,
-          gitCloseoutRequest,
-          knowledgeCommitReceipt,
-          changedFiles,
-        });
-        updated.gitCloseoutReceipt = gitReceipt;
-      }
       await projectRunState(updated, { runtimeHome });
       return updated;
     },
@@ -324,7 +330,20 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       const normalizedChangeSet = normalizeChangedContract({ changedPaths, changedFileCount });
 
-      // Step 1: Observation review BEFORE completion assessment!
+      if (Array.isArray(approvals)) {
+        for (const app of approvals) {
+          if (app && app.candidateId && app.approvedBy && app.approvalReceipt) {
+            store.recordKnowledgeApproval(`app-${crypto.randomUUID()}`, {
+              runId,
+              candidateId: app.candidateId,
+              approvedBy: app.approvedBy,
+              approvalReceipt: app.approvalReceipt,
+            });
+          }
+        }
+      }
+
+      // Step 1: Observation review BEFORE completion assessment
       let reviewResult = { status: 'no_candidates', verifiedCandidates: [], rejectedCandidates: [] };
       if (Array.isArray(knowledgeObservations) && knowledgeObservations.length > 0) {
         reviewResult = await this.recordKnowledgeObservations(runId, { observations: knowledgeObservations, approvals });
@@ -333,13 +352,27 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         if (dbCandidates.length > 0) {
           const verifications = store.getVerifications(runId);
           const lastVer = verifications[verifications.length - 1];
-          const evidencePack = { status: lastVer?.status || 'passed', digest: lastVer?.evidenceDigest || `sha256:${'0'.repeat(64)}` };
+          const evidencePack = lastVer ? { status: lastVer.status, digest: lastVer.evidenceDigest } : null;
           reviewResult = await reviewKnowledgeCandidates({
             projectId: run.projectId,
+            runId,
+            stateStore: store,
             candidates: dbCandidates,
             evidencePack,
-            approvals,
             env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+          });
+
+          const reviewDigest = createHash('sha256').update(JSON.stringify(reviewResult)).digest('hex');
+          store.recordKnowledgeReviewReceipt(runId, {
+            projectId: run.projectId,
+            status: reviewResult.status,
+            candidateCount: dbCandidates.length,
+            verifiedCount: (reviewResult.verifiedCandidates || []).length,
+            rejectedCount: (reviewResult.rejectedCandidates || []).length,
+            waitingApprovalCount: (reviewResult.needsApprovalCandidates || []).length,
+            waitingVerificationCount: (reviewResult.pendingVerificationCandidates || []).length,
+            reviewDigest,
+            receiptJson: reviewResult,
           });
         }
       }
@@ -366,19 +399,21 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         store.transition(runId, 'CLOSE');
       }
 
-      // Step 3: Assess completion authority
-      const completionResult = store.assessCompletion(runId, { commitDecision: true });
-      if (completionResult.decision !== 'accepted') {
+      // Step 3: Assess & persist completion authority
+      const completionEval = store.evaluateCompletion(runId);
+      const completionRun = store.persistCompletionDecision(runId, completionEval);
+
+      if (completionEval.decision !== 'accepted') {
         const blockedCompletionReceipt = {
           schemaVersion: 1,
           runId,
           projectId: run.projectId,
-          completionStatus: completionResult.decision,
+          completionStatus: completionEval.decision,
           knowledgeStatus: 'blocked',
           projectionStatus: 'none',
           gitCloseoutStatus: 'skipped',
           finalizationStatus: 'blocked_completion',
-          completionResult,
+          completionResult: completionEval,
           reviewResult,
           reason: 'completion_not_accepted',
         };
@@ -386,34 +421,23 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         return blockedCompletionReceipt;
       }
 
-      // Step 4: Knowledge Commit
+      // Step 4: Transactional Knowledge Commit (always called, handles candidates > 0 and no_change)
       let knowledgeStatus = 'skipped';
       let commitReceipt = null;
       let knowledgeCommitError = null;
 
-      const verifiedCandidates = reviewResult.verifiedCandidates || [];
-      if (verifiedCandidates.length > 0) {
-        try {
-          commitReceipt = await commitProjectKnowledge({
-            runId,
-            projectId: run.projectId,
-            stateStore: store,
-            expectedKnowledgeRevision: run.knowledgeRevisionStart,
-            candidates: verifiedCandidates,
-            env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-          });
-          store.recordKnowledgeCommitReceipt(runId, {
-            projectId: run.projectId,
-            revisionBefore: commitReceipt.revisionBefore,
-            revisionAfter: commitReceipt.revisionAfter,
-            status: commitReceipt.status,
-            receiptJson: commitReceipt,
-          });
-          knowledgeStatus = commitReceipt.status || 'committed';
-        } catch (err) {
-          knowledgeStatus = 'failed';
-          knowledgeCommitError = err.message;
-        }
+      try {
+        commitReceipt = await commitProjectKnowledge({
+          runId,
+          projectId: run.projectId,
+          stateStore: store,
+          expectedKnowledgeRevision: run.knowledgeRevisionStart,
+          env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+        });
+        knowledgeStatus = commitReceipt.status || 'committed';
+      } catch (err) {
+        knowledgeStatus = 'failed';
+        knowledgeCommitError = err.message;
       }
 
       // Step 5: Git closeout
@@ -432,22 +456,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             gitReceipt = await executeKernelGitCloseout({
               runId,
               projectId: run.projectId,
+              stateStore: store,
               repoRoot: projectRoot,
               gitCloseoutRequest,
               knowledgeCommitReceipt,
               changedFiles: normalizedChangeSet.changedPaths,
             });
             gitCloseoutStatus = gitReceipt.status || 'completed';
-            store.recordGitCloseoutReceipt(runId, {
-              projectId: run.projectId,
-              mode: gitCloseoutRequest.mode || 'commit',
-              commitSha: gitReceipt.commitSha,
-              branch: gitReceipt.branch,
-              remote: 'origin',
-              pushStatus: gitReceipt.pushStatus || 'skipped',
-              parity: gitReceipt.parity || 'ok',
-              receiptJson: gitReceipt,
-            });
           } catch (err) {
             gitCloseoutStatus = 'failed';
             gitCloseoutError = err.message;
@@ -465,12 +480,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         schemaVersion: 1,
         runId,
         projectId: run.projectId,
-        completionStatus: completionResult.decision,
+        completionStatus: completionEval.decision,
         knowledgeStatus,
         projectionStatus: commitReceipt?.projectionStatus || 'completed',
         gitCloseoutStatus,
         finalizationStatus,
-        completionResult,
+        completionResult: completionEval,
         reviewResult,
         knowledgeCommitReceipt: commitReceipt,
         knowledgeCommitError,
@@ -479,90 +494,23 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       };
 
       store.recordFinalizationReceipt(runId, finalizationReceipt);
-
-      const updatedRun = store.getRun(runId);
-      if (updatedRun) {
-        await projectRunState(updatedRun, { runtimeHome });
-      }
+      await projectRunState(store.getRun(runId), { runtimeHome });
 
       return finalizationReceipt;
     },
 
-    async retryGitCloseout(runId, gitCloseoutRequest = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-
-      const completion = store.getCompletionDecision(runId);
-      if (!completion || completion.decision !== 'accepted') {
-        throw new Error('COMPLETION_NOT_ACCEPTED: Git closeout retry requires an accepted completion decision');
-      }
-
-      const commitReceiptRow = store.getKnowledgeCommitReceipt(runId);
-      const knowledgeCommitReceipt = commitReceiptRow?.receiptJson;
-      if (!knowledgeCommitReceipt) {
-        throw new Error('KNOWLEDGE_RECEIPT_REQUIRED: Git closeout retry requires an existing knowledge commit receipt');
-      }
-
-      const gitReceipt = await executeKernelGitCloseout({
-        runId,
-        projectId: run.projectId,
-        repoRoot: projectRoot,
-        gitCloseoutRequest,
-        knowledgeCommitReceipt,
-        changedFiles: [],
-      });
-
-      store.recordGitCloseoutReceipt(runId, {
-        projectId: run.projectId,
-        mode: gitCloseoutRequest.mode || 'commit',
-        commitSha: gitReceipt.commitSha,
-        branch: gitReceipt.branch,
-        remote: 'origin',
-        pushStatus: gitReceipt.pushStatus,
-        parity: gitReceipt.parity,
-        receiptJson: gitReceipt,
-      });
-
-      return gitReceipt;
+    async retryGitCloseout(runId) {
+      return retryGitCloseoutHelper(runId, { stateStore: store, repoRoot: projectRoot });
     },
 
-    async assessCompletion(runId, { expectedSourceIdentity = null, commitDecision = true, autoCommitKnowledge = true } = {}) {
-      const result = store.assessCompletion(runId, { expectedSourceIdentity, commitDecision });
-      if (result.decision === 'accepted' && commitDecision && autoCommitKnowledge && result.run?.projectId) {
-        const dbCandidates = store.getKnowledgeCandidates(runId).map((c) => c.candidateJson);
-        const verifiedCandidates = dbCandidates.filter((c) => c.status === 'verified');
-        try {
-          const commitReceipt = await commitProjectKnowledge({
-            runId,
-            projectId: result.run.projectId,
-            stateStore: store,
-            expectedKnowledgeRevision: result.run.knowledgeRevisionStart,
-            completionDecisionRef: result.digest || runId,
-            candidates: verifiedCandidates,
-            env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-          });
-          store.recordKnowledgeCommitReceipt(runId, {
-            projectId: result.run.projectId,
-            revisionBefore: commitReceipt.revisionBefore,
-            revisionAfter: commitReceipt.revisionAfter,
-            status: commitReceipt.status,
-            receiptJson: commitReceipt,
-          });
-          result.knowledgeCommitReceipt = commitReceipt;
-        } catch (err) {
-          result.knowledgeCommitError = err.message;
-        }
-      }
-      if (result.run) {
-        await projectRunState(result.run, { runtimeHome });
-      }
-      return result;
+    async assessCompletion(runId) {
+      return store.evaluateCompletion(runId);
     },
 
     async status(runId) {
       const run = store.getRun(runId);
       if (!run) return null;
-      const completion = store.assessCompletion(runId, { commitDecision: false });
+      const completion = store.evaluateCompletion(runId);
       return { run, completion, measurement: buildKernelMeasurement({ run, completion, verifications: store.getVerifications(runId) }) };
     },
 

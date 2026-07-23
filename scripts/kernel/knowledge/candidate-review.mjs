@@ -3,8 +3,9 @@ import { evaluateOntologyConstraints } from './ontology-evaluate.mjs';
 export async function reviewKnowledgeCandidates({
   candidates = [],
   projectId,
+  runId = null,
+  stateStore = null,
   evidencePack = null,
-  approvals = [],
   env = process.env,
 } = {}) {
   if (!candidates || candidates.length === 0) {
@@ -31,10 +32,6 @@ export async function reviewKnowledgeCandidates({
   const approvalRequired = [];
   const verificationsRequired = [];
   const candidateReviews = [];
-
-  const existingApprovalReceipts = new Set(
-    (Array.isArray(approvals) ? approvals : []).map((a) => a.candidateId || a.approvalReceipt || a)
-  );
 
   for (const candidate of candidates) {
     // 1. Project ID boundary check
@@ -71,7 +68,11 @@ export async function reviewKnowledgeCandidates({
 
     if (ontologyEval.approvalRequired.length > 0) {
       approvalRequired.push(...ontologyEval.approvalRequired);
-      const hasApproval = existingApprovalReceipts.has(candidate.candidateId);
+      let hasApproval = false;
+      if (stateStore && runId) {
+        const dbApp = stateStore.getKnowledgeApproval(runId, candidate.candidateId);
+        hasApproval = Boolean(dbApp && dbApp.approvalReceipt && dbApp.approvedBy);
+      }
       if (!hasApproval) {
         const rec = { ...candidate, status: 'needs_approval', rejectionReasons: ['ASK_FIRST_REQUIRED'] };
         needsApprovalCandidates.push(rec);
@@ -82,29 +83,68 @@ export async function reviewKnowledgeCandidates({
 
     if (ontologyEval.verificationsRequired.length > 0) {
       verificationsRequired.push(...ontologyEval.verificationsRequired);
-      const rec = { ...candidate, status: 'pending_verification', rejectionReasons: ['INVARIANT_VERIFICATION_REQUIRED'] };
-      pendingVerificationCandidates.push(rec);
-      candidateReviews.push({ candidateId: candidate.candidateId, decision: 'pending_verification', reason: 'INVARIANT_VERIFICATION_REQUIRED' });
-      continue;
+      let invariantSatisfied = false;
+      if (stateStore && runId) {
+        let allPassed = true;
+        for (const req of ontologyEval.verificationsRequired) {
+          const obId = req.obligationId || req.id || 'verify-invariant';
+          stateStore.ensureRunObligation(runId, { obligationId: obId, sourceType: 'ontology_constraint', sourceRef: req.id });
+          const dbObs = stateStore.getRunObligations(runId);
+          const currentOb = dbObs.find((o) => o.obligationId === obId);
+          if (!currentOb || (currentOb.status !== 'passed' && currentOb.status !== 'waived')) {
+            allPassed = false;
+          }
+        }
+        invariantSatisfied = allPassed;
+      }
+
+      if (!invariantSatisfied) {
+        const rec = { ...candidate, status: 'pending_verification', rejectionReasons: ['INVARIANT_VERIFICATION_REQUIRED'] };
+        pendingVerificationCandidates.push(rec);
+        candidateReviews.push({ candidateId: candidate.candidateId, decision: 'pending_verification', reason: 'INVARIANT_VERIFICATION_REQUIRED' });
+        continue;
+      }
     }
 
-    // 4. Evidence binding check (Fail-closed)
-    const hasEvidencePack = evidencePack && (evidencePack.status === 'pass' || evidencePack.status === 'passed');
-    const hasCandidateEvidence = Array.isArray(candidate.evidenceRefs) && candidate.evidenceRefs.length > 0;
-    if (!hasEvidencePack && !hasCandidateEvidence) {
+    // 4. Evidence binding check (Fail-closed - Section 6)
+    let candidateEvidenceDigest = null;
+    if (evidencePack && (evidencePack.status === 'pass' || evidencePack.status === 'passed') && evidencePack.digest) {
+      candidateEvidenceDigest = evidencePack.digest;
+    } else if (Array.isArray(candidate.evidenceRefs) && candidate.evidenceRefs.length > 0) {
+      const ref = candidate.evidenceRefs[0];
+      if (stateStore && runId) {
+        const verifications = stateStore.getVerifications(runId);
+        const match = verifications.find((v) => v.evidenceDigest === ref && v.status === 'passed' && Number(v.exitCode) === 0);
+        if (match) {
+          candidateEvidenceDigest = ref;
+          stateStore.recordCandidateEvidenceBinding({
+            candidateId: candidate.candidateId,
+            runId,
+            evidenceDigest: ref,
+            obligationId: match.obligationId || 'default',
+            sourceIdentity: match.sourceIdentity,
+            mutationRevision: match.verifiedMutationRevision,
+            bindingType: 'verification',
+          });
+        }
+      } else {
+        candidateEvidenceDigest = ref;
+      }
+    }
+
+    if (!candidateEvidenceDigest) {
       const rec = { ...candidate, status: 'rejected', rejectionReasons: ['MISSING_VERIFICATION_EVIDENCE'] };
       rejectedCandidates.push(rec);
       candidateReviews.push({ candidateId: candidate.candidateId, decision: 'rejected', reason: 'MISSING_VERIFICATION_EVIDENCE' });
       continue;
     }
 
-    const evidenceDigest = evidencePack?.digest || candidate.evidenceRefs?.[0] || 'evidence-pass';
     verifiedCandidates.push({
       ...candidate,
       status: 'verified',
-      evidenceRefs: [evidenceDigest],
+      evidenceRefs: [candidateEvidenceDigest],
     });
-    candidateReviews.push({ candidateId: candidate.candidateId, decision: 'verified', evidenceRef: evidenceDigest });
+    candidateReviews.push({ candidateId: candidate.candidateId, decision: 'verified', evidenceRef: candidateEvidenceDigest });
   }
 
   let status = 'passed';

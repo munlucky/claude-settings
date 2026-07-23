@@ -50,6 +50,7 @@ test('Full Kernel Project Knowledge Lifecycle E2E Scenario A (load -> prove -> a
     getRun: () => ({ runId: 'e2e-run-1', projectId, sourceIdentity: 's-e2e', mutationRevision: 1 }),
     getCompletionDecision: () => ({ decision: 'accepted', sourceIdentity: 's-e2e', mutationRevision: 1 }),
     getProjectKnowledgeRevision: () => rev,
+    listKnowledgeRecords: () => [{ id: 'cand-e2e-1', type: 'semantic_fact', statement: 'Verified E2E knowledge lifecycle flow.' }],
     commitKnowledgeTransaction: () => {
       const before = String(rev);
       rev += 1;

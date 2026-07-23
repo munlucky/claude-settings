@@ -37,23 +37,18 @@ test('executeKernelGitCloseout isolates pre-staged user changes using temporary 
     digest: 'kc-digest-123',
   };
 
-  const receipt = await executeKernelGitCloseout({
-    runId: 'git-run-1',
-    projectId: 'test-proj',
-    repoRoot: tmpRepo,
-    gitCloseoutRequest,
-    knowledgeCommitReceipt,
-    changedFiles: ['fileB.txt'],
-  });
-
-  assert.equal(receipt.status, 'completed');
-
-  // Verify that fileA.txt pre-staged modification is STILL in user's index (staged and uncommitted)
-  const statusRes = runGit(tmpRepo, ['status', '--porcelain']);
-  const statusOutput = String(statusRes.stdout || '').trim();
-
-  // fileA.txt should be M (staged modification)
-  assert.match(statusOutput, /M\s+fileA\.txt/);
+  await assert.rejects(
+    async () =>
+      executeKernelGitCloseout({
+        runId: 'git-run-1',
+        projectId: 'test-proj',
+        repoRoot: tmpRepo,
+        gitCloseoutRequest,
+        knowledgeCommitReceipt,
+        changedFiles: ['fileB.txt'],
+      }),
+    (err) => err instanceof KernelGitCloseoutError && err.code === 'GIT_PREEXISTING_STAGED_CHANGES'
+  );
 });
 
 test('executeKernelGitCloseout rejects detached HEAD', async () => {

@@ -48,16 +48,15 @@ test('KernelControlPlane wires full knowledge lifecycle end-to-end', async () =>
 
   assert.equal(proofRun.state, 'PROVE');
 
-  // Step 4: assessCompletion yields accepted decision & triggers knowledge commit
-  await cp.transition('cp-run-1', 'CLOSE');
-  const completion = await cp.assessCompletion('cp-run-1', { autoCommitKnowledge: true });
+  // Step 4: finalizeRun yields accepted decision & triggers knowledge commit
+  const finalizationReceipt = await cp.finalizeRun('cp-run-1');
 
-  if (completion.decision !== 'accepted') {
-    throw new Error(`Completion not accepted: decision=${completion.decision}, runState=${completion.run?.state}`);
+  if (finalizationReceipt.completionStatus !== 'accepted') {
+    throw new Error(`Completion not accepted: status=${finalizationReceipt.completionStatus}`);
   }
-  assert.equal(completion.decision, 'accepted');
-  assert.ok(completion.knowledgeCommitReceipt, `Expected knowledgeCommitReceipt but got error: ${completion.knowledgeCommitError}`);
-  assert.ok(['committed', 'no_change'].includes(completion.knowledgeCommitReceipt.status));
+  assert.equal(finalizationReceipt.completionStatus, 'accepted');
+  assert.ok(finalizationReceipt.knowledgeCommitReceipt, `Expected knowledgeCommitReceipt but got error: ${finalizationReceipt.knowledgeCommitError}`);
+  assert.ok(['committed', 'no_change'].includes(finalizationReceipt.knowledgeCommitReceipt.status));
 
   await cp.close();
 });

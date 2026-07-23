@@ -85,12 +85,10 @@ test('End-to-End Kernel Product Execution Flow', async () => {
     sourceIdentity,
   });
 
-  // 7. Transition to CLOSE & assess completion
-  await cp.closeRun('e2e-run-1');
-  const comp = await cp.assessCompletion('e2e-run-1', { expectedSourceIdentity: sourceIdentity });
-
-  assert.equal(comp.decision, 'accepted');
-  assert.equal(comp.run.status, 'completed');
+  // 7. Finalize run
+  const finRes = await cp.finalizeRun('e2e-run-1');
+  assert.equal(finRes.completionStatus, 'accepted');
+  assert.equal(finRes.finalizationStatus, 'completed');
 
   await cp.close();
 

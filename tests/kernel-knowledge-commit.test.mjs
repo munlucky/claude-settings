@@ -39,6 +39,7 @@ test('commitProjectKnowledge performs atomic commit and advances revision when a
     getRun: () => ({ runId: 'run-1', projectId: 'test-proj', sourceIdentity: 's1', mutationRevision: 1 }),
     getCompletionDecision: () => ({ decision: 'accepted', sourceIdentity: 's1', mutationRevision: 1 }),
     getProjectKnowledgeRevision: () => rev,
+    listKnowledgeRecords: () => [{ id: 'c1', type: 'semantic_fact', statement: 'Verified commitment' }],
     commitKnowledgeTransaction: () => {
       const before = String(rev);
       rev += 1;

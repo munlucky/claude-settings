@@ -44,6 +44,7 @@ export class KernelContextLoadError extends Error {
 
 export async function buildProjectKnowledgeContext({
   projectId,
+  stateStore = null,
   stage = 'FRAME',
   strictness = 'advisory',
   runId = 'standalone-run',
@@ -55,13 +56,27 @@ export async function buildProjectKnowledgeContext({
     throw new KernelContextLoadError('INVALID_STAGE', `Invalid stage: ${stage}`);
   }
 
-  const knowledgeRevision = await readProjectRevision(projectId, { env });
-  const records = await loadAllProjectRecords(projectId, { env });
+  let knowledgeRevision = '1';
+  let rawPolicyAnchors = [];
+  let rawSemanticFacts = [];
+  let rawGraphRelations = [];
+  let rawOntologyConstraints = [];
 
-  const rawPolicyAnchors = records.policyAnchors || [];
-  const rawSemanticFacts = records.semanticFacts || [];
-  const rawGraphRelations = records.kgRelations || [];
-  const rawOntologyConstraints = records.ontologyConstraints || [];
+  if (stateStore && typeof stateStore.listKnowledgeRecords === 'function') {
+    knowledgeRevision = String(stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 1);
+    const allRecords = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed', 'verified'] });
+    rawPolicyAnchors = allRecords.filter((r) => r.type === 'policy_anchor');
+    rawSemanticFacts = allRecords.filter((r) => r.type !== 'policy_anchor' && r.type !== 'kg_relation' && r.type !== 'ontology_constraint');
+    rawGraphRelations = allRecords.filter((r) => r.type === 'kg_relation');
+    rawOntologyConstraints = allRecords.filter((r) => r.type === 'ontology_constraint');
+  } else {
+    knowledgeRevision = await readProjectRevision(projectId, { env });
+    const records = await loadAllProjectRecords(projectId, { env });
+    rawPolicyAnchors = records.policyAnchors || [];
+    rawSemanticFacts = records.semanticFacts || [];
+    rawGraphRelations = records.kgRelations || [];
+    rawOntologyConstraints = records.ontologyConstraints || [];
+  }
 
   const staleOrUnavailable = [];
   const omittedByPolicy = [];

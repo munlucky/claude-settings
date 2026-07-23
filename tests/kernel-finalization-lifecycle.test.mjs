@@ -39,6 +39,7 @@ test('Kernel finalization orchestration (finalizeRun) executes full accepted lif
         proposedType: 'semantic_fact',
         statement: 'Finalization orchestration executed cleanly.',
         scope: ['scripts/kernel/**'],
+        evidenceRefs: [`sha256:${'a'.repeat(64)}`],
       },
     ],
     gitCloseoutRequest: { requested: false },

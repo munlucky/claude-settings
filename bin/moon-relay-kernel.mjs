@@ -164,18 +164,7 @@ try {
     await cp.close();
     output(res);
   } else if (command === 'close') {
-    const cp = await openControlPlane();
-    const runId = getArgValue('--run-id');
-    if (!runId) throw new Error('close command requires --run-id');
-    const closeRes = await cp.closeRun(runId);
-    let decisionRes = null;
-    try {
-      decisionRes = await cp.assessCompletion(runId, { commitDecision: true });
-    } catch {
-      /* non-blocking assessment if absent */
-    }
-    await cp.close();
-    output({ ...closeRes, completionDecision: decisionRes });
+    throw new Error('DEPRECATED_COMMAND: close cannot finalize a Kernel run. Use finalize.');
   } else if (command === 'resume') {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');
@@ -209,9 +198,7 @@ try {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');
     if (!runId) throw new Error('git-closeout command requires --run-id');
-    const input = readContextJson();
-    const gitCloseoutRequest = input.gitCloseoutRequest || { requested: true, mode: 'commit_and_push' };
-    const res = await cp.retryGitCloseout(runId, gitCloseoutRequest);
+    const res = await cp.retryGitCloseout(runId);
     await cp.close();
     output(res);
   } else {
