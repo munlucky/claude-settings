@@ -56,27 +56,21 @@ export async function buildProjectKnowledgeContext({
     throw new KernelContextLoadError('INVALID_STAGE', `Invalid stage: ${stage}`);
   }
 
-  let knowledgeRevision = '1';
-  let rawPolicyAnchors = [];
-  let rawSemanticFacts = [];
-  let rawGraphRelations = [];
-  let rawOntologyConstraints = [];
-
-  if (stateStore && typeof stateStore.listKnowledgeRecords === 'function') {
-    knowledgeRevision = String(stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 1);
-    const allRecords = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed', 'verified'] });
-    rawPolicyAnchors = allRecords.filter((r) => r.type === 'policy_anchor');
-    rawSemanticFacts = allRecords.filter((r) => r.type !== 'policy_anchor' && r.type !== 'kg_relation' && r.type !== 'ontology_constraint');
-    rawGraphRelations = allRecords.filter((r) => r.type === 'kg_relation');
-    rawOntologyConstraints = allRecords.filter((r) => r.type === 'ontology_constraint');
-  } else {
-    knowledgeRevision = await readProjectRevision(projectId, { env });
-    const records = await loadAllProjectRecords(projectId, { env });
-    rawPolicyAnchors = records.policyAnchors || [];
-    rawSemanticFacts = records.semanticFacts || [];
-    rawGraphRelations = records.kgRelations || [];
-    rawOntologyConstraints = records.ontologyConstraints || [];
+  if (!stateStore || typeof stateStore.listKnowledgeRecords !== 'function') {
+    if (env && env.MOON_RELAY_KERNEL_HOME) {
+      const { openKernelStateStore } = await import('../state-store.mjs');
+      stateStore = await openKernelStateStore({ runtimeHome: env.MOON_RELAY_KERNEL_HOME });
+    } else {
+      throw new KernelContextLoadError('SQLITE_KNOWLEDGE_AUTHORITY_REQUIRED', 'SQLite stateStore is required for buildProjectKnowledgeContext');
+    }
   }
+
+  const knowledgeRevision = String(stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 0);
+  const allRecords = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed', 'verified'] });
+  const rawPolicyAnchors = allRecords.filter((r) => r.type === 'policy_anchor');
+  const rawSemanticFacts = allRecords.filter((r) => r.type !== 'policy_anchor' && r.type !== 'kg_relation' && r.type !== 'ontology_constraint');
+  const rawGraphRelations = allRecords.filter((r) => r.type === 'kg_relation');
+  const rawOntologyConstraints = allRecords.filter((r) => r.type === 'ontology_constraint');
 
   const staleOrUnavailable = [];
   const omittedByPolicy = [];
@@ -99,12 +93,12 @@ export async function buildProjectKnowledgeContext({
   let selectedFacts = rawSemanticFacts.filter(isRecordActive);
   let selectedConstraints = rawOntologyConstraints.filter(isRecordActive);
 
-  // Filter 2: STAGE_TYPE_POLICY filtering
+  // Filter 2: STAGE_TYPE_POLICY filtering with exact match
   const allowedTypes = STAGE_TYPE_POLICY[stage] || [];
   if (allowedTypes.length > 0) {
     selectedFacts = selectedFacts.filter((f) => {
       const type = f.type || f.recordType || 'semantic_fact';
-      if (allowedTypes.includes(type) || allowedTypes.includes('semantic_fact')) return true;
+      if (allowedTypes.includes(type)) return true;
       omittedByPolicy.push({ id: f.id || 'unknown', reason: `type_${type}_not_in_${stage}` });
       return false;
     });

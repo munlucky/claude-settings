@@ -9,20 +9,34 @@ export async function processGitCloseoutOutbox({ stateStore = null, repoRoot = p
   const results = [];
 
   for (const job of pendingJobs) {
+    if (stateStore.claimGitCloseoutJob && !stateStore.claimGitCloseoutJob(job.jobId)) {
+      continue; // Skip if already claimed by another worker
+    }
+
     try {
-      const commitReceiptRow = stateStore.getKnowledgeCommitReceipt(job.runId);
+      const commitReceiptRow = stateStore.getKnowledgeCommitReceipt
+        ? stateStore.getKnowledgeCommitReceipt(job.runId)
+        : null;
+
       const receipt = await executeKernelGitCloseout({
         runId: job.runId,
         projectId: job.projectId,
         repoRoot,
         gitCloseoutRequest: { requested: true, mode: job.mode, approvalReceipt: job.approvalReceipt },
         knowledgeCommitReceipt: commitReceiptRow ? commitReceiptRow.receiptJson : { digest: 'outbox' },
+        changedFiles: job.selectedPaths || [],
       });
 
-      stateStore.updateGitCloseoutJobStatus(job.jobId, 'completed', { receipt });
-      results.push({ jobId: job.jobId, status: 'completed', receipt });
+      const nextStatus = receipt.status || 'completed';
+      if (stateStore.updateGitCloseoutJobStatus) {
+        stateStore.updateGitCloseoutJobStatus(job.jobId, nextStatus, { commitSha: receipt.commitSha, receipt });
+      }
+
+      results.push({ jobId: job.jobId, status: nextStatus, receipt });
     } catch (err) {
-      stateStore.updateGitCloseoutJobStatus(job.jobId, 'failed', { error: err.message });
+      if (stateStore.updateGitCloseoutJobStatus) {
+        stateStore.updateGitCloseoutJobStatus(job.jobId, 'failed', { errorCode: 'GIT_CLOSEOUT_FAILED', errorMessage: err.message });
+      }
       results.push({ jobId: job.jobId, status: 'failed', error: err.message });
     }
   }

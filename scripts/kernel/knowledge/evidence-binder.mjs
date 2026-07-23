@@ -6,18 +6,44 @@ export function bindCandidateEvidence(candidate, verifications = [], { currentRu
   }
 
   for (const ref of refs) {
-    const matchedVer = verifications.find((v) =>
-      v.status === 'passed' &&
-      Number(v.exitCode) === 0 &&
-      (v.evidenceRef === ref || v.evidenceDigest === ref || `sha256:${v.evidenceDigest}` === ref || (v.evidenceRef && ref.includes(v.evidenceRef))) &&
-      (!currentRun || !v.sourceIdentity || v.sourceIdentity === currentRun.sourceIdentity) &&
-      (!currentRun || v.verifiedMutationRevision === undefined || v.verifiedMutationRevision === null || Number(v.verifiedMutationRevision) === Number(currentRun.mutationRevision))
-    );
+    const matchedVer = verifications.find((v) => {
+      if (!v) return false;
+
+      // Only check runId cross-ref if BOTH candidate and verification have it populated
+      if (candidate.runId && v.runId && v.runId !== candidate.runId) return false;
+
+      if (v.status !== 'passed') return false;
+      if (Number(v.exitCode) !== 0) return false;
+      if (!v.command || typeof v.command !== 'string' || v.command.trim() === '') return false;
+
+      if (currentRun) {
+        if (!v.sourceIdentity || v.sourceIdentity !== currentRun.sourceIdentity) return false;
+        // Allow when verifiedMutationRevision is null/0 (e.g. run has never incremented)
+        const verMutRev = v.verifiedMutationRevision;
+        const currentMutRev = Number(currentRun.mutationRevision);
+        if (verMutRev !== null && verMutRev !== undefined && Number(verMutRev) !== currentMutRev) return false;
+      }
+
+      // Exact ref match: evidenceRef, evidenceDigest, or sha256 prefix
+      const vDigest = v.evidenceDigest || '';
+      const vRef = v.evidenceRef || '';
+      const isExact =
+        vRef === ref ||
+        vDigest === ref ||
+        `sha256:${vDigest}` === ref ||
+        (ref.startsWith('sha256:') && vDigest === ref.slice(7));
+
+      return isExact;
+    });
 
     if (matchedVer) {
       bindings.push({
         candidateId: candidate.candidateId,
-        verificationId: String(matchedVer.id || `ver-${matchedVer.evidenceDigest || '1'}`),
+        verificationId: matchedVer.id || 1,
+        runId: candidate.runId || (currentRun ? currentRun.runId : 'unknown'),
+        evidenceDigest: matchedVer.evidenceDigest || ref,
+        sourceIdentity: matchedVer.sourceIdentity || (currentRun ? currentRun.sourceIdentity : ''),
+        mutationRevision: currentRun ? currentRun.mutationRevision : (matchedVer.verifiedMutationRevision || 0),
         evidenceRef: ref,
         status: 'passed',
       });

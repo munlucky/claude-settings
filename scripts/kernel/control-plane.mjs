@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { openKernelStateStore } from './state-store.mjs';
 import { finalizeRunCoordinator } from './finalization/coordinator.mjs';
+import { prepareFinalization as prepareFinalizationHelper, approveKnowledgeCandidate as approveKnowledgeCandidateHelper } from './finalization/prepare.mjs';
 import { buildContextReceipt } from './context-build.mjs';
 import { resolveProofRoute } from './proof-route.mjs';
 import { planDryRunWave } from './wave-plan.mjs';
@@ -67,7 +68,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
       const projectId = identity.projectId;
       await ensureKnowledgeStoreDirectories(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
-      const knowledgeRevisionStart = await readProjectRevision(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
+      const knowledgeRevisionStart = store.getProjectKnowledgeRevision(projectId);
 
       const normalizedChangeSet = normalizeChangedContract(taskContract);
 
@@ -95,6 +96,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // Automatically load FRAME knowledge context and record receipt
       const frameKnowledgeCtx = await buildProjectKnowledgeContext({
         projectId,
+        stateStore: store,
         stage: 'FRAME',
         runId,
         objective: run.objective,
@@ -124,6 +126,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const projectId = run.projectId || resolveKernelProjectIdentity({ cwd: projectRoot }).projectId;
       const knowledgeCtx = await buildProjectKnowledgeContext({
         projectId,
+        stateStore: store,
         stage,
         runId,
         objective: run.objective,
@@ -236,109 +239,17 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return updated;
     },
 
-    async recordKnowledgeObservations(runId, { observations = [], approvals = [] } = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      if (!run.projectId) throw new Error(`Run ${runId} has no projectId`);
 
-      const ALLOWED_TYPES = new Set([
-        'semantic_fact',
-        'architecture_decision',
-        'domain_term',
-        'component_boundary',
-        'api_contract',
-        'kg_relation',
-        'ontology_constraint',
-        'tacit_observation',
-        'known_failure_pattern',
-        'required_verification',
-      ]);
 
-      const candidates = [];
-      for (const obs of observations) {
-        if (!obs || typeof obs !== 'object') continue;
-        const proposedType = resolveRecordType(obs.proposedType || obs.type || 'semantic_fact');
-        if (!ALLOWED_TYPES.has(proposedType)) {
-          throw new Error(`INVALID_CANDIDATE_TYPE: ${proposedType} is not an allowed candidate type`);
-        }
-        candidates.push({
-          candidateId: obs.candidateId || `cand-${runId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          runId,
-          projectId: run.projectId,
-          proposedType,
-          statement: obs.statement || '',
-          scope: obs.scope || [],
-          sourceRefs: obs.sourceRefs || [],
-          evidenceRefs: obs.evidenceRefs || [],
-          status: 'pending',
-        });
-      }
-
-      const verifications = store.getVerifications(runId);
-      const lastVer = verifications[verifications.length - 1];
-      const evidencePack = lastVer ? { status: lastVer.status, digest: lastVer.evidenceDigest } : null;
-
-      const reviewResult = await reviewKnowledgeCandidates({
-        projectId: run.projectId,
-        runId,
-        stateStore: store,
-        candidates,
-        evidencePack,
-        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-      });
-
-      const allReviewed = [
-        ...(reviewResult.verifiedCandidates || []),
-        ...(reviewResult.rejectedCandidates || []),
-        ...(reviewResult.needsApprovalCandidates || []),
-        ...(reviewResult.pendingVerificationCandidates || []),
-      ];
-
-      for (const candidate of allReviewed) {
-        store.recordKnowledgeCandidate(candidate.candidateId, runId, {
-          projectId: run.projectId,
-          proposedType: candidate.proposedType || 'semantic_fact',
-          status: candidate.status,
-          candidateJson: candidate,
-        });
-      }
-
-      const reviewDigest = createHash('sha256').update(JSON.stringify(reviewResult)).digest('hex');
-      store.recordKnowledgeReviewReceipt(runId, {
-        projectId: run.projectId,
-        status: reviewResult.status,
-        candidateCount: candidates.length,
-        verifiedCount: (reviewResult.verifiedCandidates || []).length,
-        rejectedCount: (reviewResult.rejectedCandidates || []).length,
-        waitingApprovalCount: (reviewResult.needsApprovalCandidates || []).length,
-        waitingVerificationCount: (reviewResult.pendingVerificationCandidates || []).length,
-        reviewDigest,
-        receiptJson: reviewResult,
-      });
-
-      return reviewResult;
+    async prepareFinalization(runId, options = {}) {
+      return prepareFinalizationHelper(runId, options, { stateStore: store });
     },
 
-    async closeRun(runId) {
-      const updated = store.transition(runId, 'CLOSE');
-      await projectRunState(updated, { runtimeHome });
-      return updated;
+    async approveKnowledgeCandidate(runId, candidateId, options = {}) {
+      return approveKnowledgeCandidateHelper(runId, candidateId, options, { stateStore: store });
     },
 
-    async finalizeRun(runId, { gitCloseoutRequest = null, changedPaths = [], changedFileCount = null, knowledgeObservations = [], approvals = [] } = {}) {
-      if (Array.isArray(approvals)) {
-        for (const app of approvals) {
-          if (app && app.candidateId && app.approvedBy && app.approvalReceipt) {
-            store.recordKnowledgeApproval(`app-${crypto.randomUUID()}`, {
-              runId,
-              candidateId: app.candidateId,
-              approvedBy: app.approvedBy,
-              approvalReceipt: app.approvalReceipt,
-            });
-          }
-        }
-      }
-
+    async finalizeRun(runId, { gitCloseoutRequest = null, changedPaths = [], changedFileCount = null, knowledgeObservations = [] } = {}) {
       return finalizeRunCoordinator(runId, {
         observations: knowledgeObservations,
         gitCloseoutRequest,
@@ -348,6 +259,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     async retryGitCloseout(runId) {
       return retryGitCloseoutHelper(runId, { stateStore: store, repoRoot: projectRoot });
+    },
+
+    async getFinalizationStatus(runId) {
+      return store.getFinalizationAuthorityReceipt ? store.getFinalizationAuthorityReceipt(runId) : null;
     },
 
     async assessCompletion(runId) {

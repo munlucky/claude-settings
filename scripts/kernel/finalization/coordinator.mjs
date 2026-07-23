@@ -1,8 +1,7 @@
 import { prepareFinalization } from './prepare.mjs';
-import { evaluateReadiness } from './readiness.mjs';
 import { commitFinalizationAuthority } from './authority-commit.mjs';
 import { rebuildKnowledgeProjection } from '../knowledge/projection.mjs';
-import { executeKernelGitCloseout } from '../git/closeout.mjs';
+import { processGitCloseoutOutbox } from '../git/closeout-outbox.mjs';
 
 export async function finalizeRunCoordinator(runId, { observations = [], gitCloseoutRequest = null, repoRoot = process.cwd() } = {}, { stateStore = null } = {}) {
   if (!stateStore) {
@@ -11,9 +10,8 @@ export async function finalizeRunCoordinator(runId, { observations = [], gitClos
 
   // 1. Re-entrant Prepare Step
   const snapshot = await prepareFinalization(runId, { observations }, { stateStore });
-  const readiness = evaluateReadiness(snapshot);
 
-  if (!readiness.isReady) {
+  if (snapshot.status !== 'ready') {
     const blockedReceipt = {
       schemaVersion: 1,
       runId,
@@ -32,32 +30,24 @@ export async function finalizeRunCoordinator(runId, { observations = [], gitClos
   }
 
   // 2. Atomic SQLite Authority Transaction
-  const authorityReceipt = await commitFinalizationAuthority(runId, snapshot, { gitCloseoutRequest }, { stateStore });
+  const authorityReceipt = await commitFinalizationAuthority(runId, { gitCloseoutRequest }, { stateStore });
 
   // 3. Derived Knowledge Projection (best-effort / rebuildable)
   let projectionStatus = 'completed';
   try {
     if (typeof rebuildKnowledgeProjection === 'function') {
-      await rebuildKnowledgeProjection(snapshot.projectId, { stateStore, rootDir: repoRoot });
+      await rebuildKnowledgeProjection(snapshot.projectId, { stateStore, runtimeHome: process.env.MOON_RELAY_KERNEL_HOME });
     }
   } catch (err) {
     projectionStatus = 'rebuild_deferred';
   }
 
-  // 4. Optional Git Closeout Delivery
+  // 4. Git Closeout Delivery via Outbox Worker
   let gitCloseoutReceipt = { status: 'skipped' };
   if (gitCloseoutRequest && gitCloseoutRequest.requested) {
-    try {
-      gitCloseoutReceipt = await executeKernelGitCloseout({
-        runId,
-        projectId: snapshot.projectId,
-        repoRoot,
-        gitCloseoutRequest,
-        knowledgeCommitReceipt: { digest: authorityReceipt.commitDigest },
-        changedFiles: snapshot.candidates.flatMap((c) => c.scope || []),
-      });
-    } catch (err) {
-      gitCloseoutReceipt = { status: 'failed', error: err.message };
+    const outboxResults = await processGitCloseoutOutbox({ stateStore, repoRoot });
+    if (outboxResults.length > 0 && outboxResults[0].receipt) {
+      gitCloseoutReceipt = outboxResults[0].receipt;
     }
   }
 
@@ -69,6 +59,7 @@ export async function finalizeRunCoordinator(runId, { observations = [], gitClos
     runId,
     projectId: snapshot.projectId,
     status: 'completed',
+    authorityStatus: 'committed',
     completionStatus: 'accepted',
     knowledgeStatus: authorityReceipt.status || 'committed',
     projectionStatus,

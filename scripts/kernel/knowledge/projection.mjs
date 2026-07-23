@@ -1,53 +1,109 @@
 import path from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
+import { mkdir, writeFile, rename, rm } from 'node:fs/promises';
 import { resolveKernelRuntimeHome } from '../runtime-home.mjs';
 
 export async function rebuildKnowledgeProjection(projectId, { stateStore = null, runtimeHome = resolveKernelRuntimeHome() } = {}) {
   if (!stateStore) return { status: 'skipped' };
 
-  const projectDir = path.join(runtimeHome, 'projects', projectId, 'knowledge');
-  await mkdir(projectDir, { recursive: true });
+  const projectKnowledgeDir = path.join(runtimeHome, 'projects', projectId, 'knowledge');
+  const genId = `gen-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  const tempGenDir = path.join(projectKnowledgeDir, '.projection', genId);
 
-  const records = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed'] });
-  const revision = stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 1;
+  await mkdir(tempGenDir, { recursive: true });
 
-  const facts = [];
-  const practices = [];
-  const constraints = [];
-  const failures = [];
+  const records = stateStore.listKnowledgeRecords({ projectId, statuses: ['committed', 'verified'] });
+  const revision = stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 0;
+
+  const buckets = {
+    'policy/anchors.jsonl': [],
+    'semantic/facts.jsonl': [],
+    'architecture/decisions.jsonl': [],
+    'domain/terms.jsonl': [],
+    'architecture/components.jsonl': [],
+    'architecture/api-contracts.jsonl': [],
+    'graph/relations.jsonl': [],
+    'ontology/constraints.jsonl': [],
+    'episodic/observations.jsonl': [],
+    'tacit/practices.jsonl': [],
+    'failures/patterns.jsonl': [],
+    'verification/required.jsonl': [],
+    'provenance/events.jsonl': [],
+    'facts.jsonl': [],
+    'practices.jsonl': [],
+    'constraints.jsonl': [],
+    'failures.jsonl': [],
+  };
 
   for (const rec of records) {
     const raw = rec.recordJson || rec;
     const type = rec.type || rec.recordType;
-    if (type === 'semantic_fact') facts.push(raw);
-    else if (type === 'tacit_practice' || type === 'episodic_observation') practices.push(raw);
-    else if (type === 'ontology_constraint') constraints.push(raw);
-    else if (type === 'known_failure_pattern' || type === 'failure_pattern') failures.push(raw);
+
+    if (type === 'policy_anchor') buckets['policy/anchors.jsonl'].push(raw);
+    else if (type === 'semantic_fact') {
+      buckets['semantic/facts.jsonl'].push(raw);
+      buckets['facts.jsonl'].push(raw);
+    } else if (type === 'architecture_decision') buckets['architecture/decisions.jsonl'].push(raw);
+    else if (type === 'domain_term') buckets['domain/terms.jsonl'].push(raw);
+    else if (type === 'component_boundary') buckets['architecture/components.jsonl'].push(raw);
+    else if (type === 'api_contract') buckets['architecture/api-contracts.jsonl'].push(raw);
+    else if (type === 'kg_relation') buckets['graph/relations.jsonl'].push(raw);
+    else if (type === 'ontology_constraint') {
+      buckets['ontology/constraints.jsonl'].push(raw);
+      buckets['constraints.jsonl'].push(raw);
+    } else if (type === 'episodic_observation') {
+      buckets['episodic/observations.jsonl'].push(raw);
+      buckets['practices.jsonl'].push(raw);
+    } else if (type === 'tacit_practice') {
+      buckets['tacit/practices.jsonl'].push(raw);
+      buckets['practices.jsonl'].push(raw);
+    } else if (type === 'known_failure_pattern' || type === 'failure_pattern') {
+      buckets['failures/patterns.jsonl'].push(raw);
+      buckets['failures.jsonl'].push(raw);
+    } else if (type === 'required_verification') buckets['verification/required.jsonl'].push(raw);
+    else if (type === 'provenance_event') buckets['provenance/events.jsonl'].push(raw);
   }
 
-  const writeJsonl = async (filename, items) => {
+  for (const [relPath, items] of Object.entries(buckets)) {
+    const targetFile = path.join(tempGenDir, relPath);
+    await mkdir(path.dirname(targetFile), { recursive: true });
     const content = items.map((item) => JSON.stringify(item)).join('\n') + (items.length ? '\n' : '');
-    await writeFile(path.join(projectDir, filename), content, 'utf8');
-  };
+    await writeFile(targetFile, content, 'utf8');
+  }
 
-  await writeJsonl('facts.jsonl', facts);
-  await writeJsonl('practices.jsonl', practices);
-  await writeJsonl('constraints.jsonl', constraints);
-  await writeJsonl('failures.jsonl', failures);
-
-  const revisionPayload = {
+  const manifest = {
+    schemaVersion: 1,
+    generationId: genId,
     projectId,
-    revision,
+    knowledgeRevision: revision,
     recordCount: records.length,
     updatedAt: new Date().toISOString(),
   };
-  await writeFile(path.join(projectDir, 'revision.json'), JSON.stringify(revisionPayload, null, 2), 'utf8');
+  await writeFile(path.join(tempGenDir, 'revision.json'), JSON.stringify(manifest, null, 2), 'utf8');
+
+  // Copy files to target project knowledge dir
+  for (const [relPath] of Object.entries(buckets)) {
+    const src = path.join(tempGenDir, relPath);
+    const dest = path.join(projectKnowledgeDir, relPath);
+    await mkdir(path.dirname(dest), { recursive: true });
+    const fileContent = itemsContent(buckets[relPath]);
+    await writeFile(dest, fileContent, 'utf8');
+  }
+  await writeFile(path.join(projectKnowledgeDir, 'revision.json'), JSON.stringify(manifest, null, 2), 'utf8');
+
+  try {
+    await rm(path.join(projectKnowledgeDir, '.projection'), { recursive: true, force: true });
+  } catch (_) {}
 
   return {
     status: 'rebuilt',
     projectId,
     revision,
     count: records.length,
-    projectDir,
+    projectDir: projectKnowledgeDir,
   };
+}
+
+function itemsContent(items) {
+  return items.map((item) => JSON.stringify(item)).join('\n') + (items.length ? '\n' : '');
 }

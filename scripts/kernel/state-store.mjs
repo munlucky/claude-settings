@@ -272,6 +272,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('git_closeout_receipts', 'error_code', 'TEXT');
   addCol('git_closeout_receipts', 'error_message', 'TEXT');
   addCol('git_closeout_receipts', 'updated_at', 'TEXT');
+  addCol('git_closeout_jobs', 'selected_paths', 'TEXT');
 
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
@@ -511,10 +512,17 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
     },
 
-    listKnowledgeRecords({ projectId, statuses = ['verified', 'committed'] } = {}) {
+    listKnowledgeRecords({ projectId, statuses = ['verified', 'committed'], types = null } = {}) {
       if (!projectId) return [];
-      const placeholders = statuses.map(() => '?').join(',');
-      const rows = db.prepare(`SELECT record_json as recordJson FROM knowledge_records WHERE project_id=? AND status IN (${placeholders})`).all(projectId, ...statuses);
+      const statusPlaceholders = statuses.map(() => '?').join(',');
+      let sql = `SELECT record_json as recordJson FROM knowledge_records WHERE project_id=? AND status IN (${statusPlaceholders})`;
+      const params = [projectId, ...statuses];
+      if (types && types.length > 0) {
+        const typePlaceholders = types.map(() => '?').join(',');
+        sql += ` AND record_type IN (${typePlaceholders})`;
+        params.push(...types);
+      }
+      const rows = db.prepare(sql).all(...params);
       return rows.map((r) => safeJsonParse(r.recordJson, null)).filter(Boolean);
     },
 
@@ -644,6 +652,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       canonicalRecords = [],
       authorityReceipt,
       gitCloseoutRequest = null,
+      faultInjector = null,
     }) {
       db.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
@@ -657,23 +666,38 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           ON CONFLICT(run_id) DO UPDATE SET decision='accepted', evidence_digest=excluded.evidence_digest, decision_json=excluded.decision_json, created_at=excluded.created_at
         `).run(runId, run.sourceIdentity, run.mutationRevision, commitDigest, decisionJson, now());
 
-        db.prepare(`
-          UPDATE runs SET state='CLOSE', status='completed', knowledge_revision_close=?, knowledge_status='committed', updated_at=? WHERE run_id=?
-        `).run(String(knowledgeRevision), now(), runId);
+        if (faultInjector && typeof faultInjector === 'function') faultInjector('after_completion_decision');
 
+        const runCasRes = db.prepare(`
+          UPDATE runs SET state='CLOSE', status='completed', knowledge_revision_close=?, knowledge_status='committed', updated_at=? WHERE run_id=? AND state='PROVE' AND status='active'
+        `).run(String(knowledgeRevision), now(), runId);
+        if (runCasRes.changes === 0) {
+          throw new Error(`STALE_RUN_STATE: Run ${runId} state update failed CAS check - already completed or not in PROVE state`);
+        }
+
+        if (faultInjector && typeof faultInjector === 'function') faultInjector('after_run_close');
+
+        let isFirstRecord = true;
         for (const rec of canonicalRecords) {
           db.prepare(`
             INSERT INTO knowledge_records(project_id, record_id, record_type, status, trust_tier, record_json, revision, created_at, updated_at)
             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, record_id) DO UPDATE SET status=excluded.status, trust_tier=excluded.trust_tier, record_json=excluded.record_json, revision=excluded.revision, updated_at=excluded.updated_at
           `).run(projectId, rec.id, rec.type, rec.status, rec.trustTier, JSON.stringify(rec), knowledgeRevision, now(), now());
+
+          if (isFirstRecord && faultInjector && typeof faultInjector === 'function') {
+            faultInjector('after_first_knowledge_record');
+            isFirstRecord = false;
+          }
         }
 
-        db.prepare(`
+        const revCasRes = db.prepare(`
           INSERT INTO knowledge_revisions(project_id, revision, updated_at)
           VALUES(?, ?, ?)
           ON CONFLICT(project_id) DO UPDATE SET revision=excluded.revision, updated_at=excluded.updated_at
         `).run(projectId, knowledgeRevision, now());
+
+        if (faultInjector && typeof faultInjector === 'function') faultInjector('after_revision_cas');
 
         db.prepare(`
           INSERT INTO knowledge_transactions(transaction_id, project_id, run_id, expected_revision, target_revision, status, transaction_json, created_at, completed_at)
@@ -697,6 +721,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           ON CONFLICT(run_id) DO UPDATE SET revision_before=excluded.revision_before, revision_after=excluded.revision_after, status='committed', receipt_json=excluded.receipt_json, created_at=excluded.created_at
         `).run(runId, projectId, String(knowledgeRevision - 1), String(knowledgeRevision), JSON.stringify(receiptPayload), now());
 
+        if (faultInjector && typeof faultInjector === 'function') faultInjector('after_knowledge_receipt');
+
+        if (faultInjector && typeof faultInjector === 'function') faultInjector('before_finalization_receipt');
+
         db.prepare(`
           INSERT INTO finalization_authority_receipts(receipt_id, run_id, project_id, status, transaction_id, commit_digest, knowledge_revision, receipt_json, created_at)
           VALUES(?, ?, ?, 'committed', ?, ?, ?, ?, ?)
@@ -705,11 +733,12 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
         if (gitCloseoutRequest && gitCloseoutRequest.requested) {
           const jobId = `job-git-${runId}-${Date.now()}`;
+          const selectedPathsJson = JSON.stringify(gitCloseoutRequest.selectedPaths || []);
           db.prepare(`
-            INSERT INTO git_closeout_jobs(job_id, run_id, project_id, status, mode, commit_sha, approval_receipt, created_at, updated_at)
-            VALUES(?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+            INSERT INTO git_closeout_jobs(job_id, run_id, project_id, status, mode, commit_sha, approval_receipt, selected_paths, created_at, updated_at)
+            VALUES(?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
             ON CONFLICT(job_id) DO NOTHING
-          `).run(jobId, runId, projectId, gitCloseoutRequest.mode || 'commit', gitCloseoutRequest.commitSha || null, gitCloseoutRequest.approvalReceipt || null, now(), now());
+          `).run(jobId, runId, projectId, gitCloseoutRequest.mode || 'commit', gitCloseoutRequest.commitSha || null, gitCloseoutRequest.approvalReceipt || null, selectedPathsJson, now(), now());
         }
 
         db.exec('COMMIT');
@@ -720,7 +749,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getPendingGitCloseoutJobs() {
-      return db.prepare(`SELECT job_id as jobId, run_id as runId, project_id as projectId, status, mode, commit_sha as commitSha, approval_receipt as approvalReceipt FROM git_closeout_jobs WHERE status='pending'`).all();
+      return db.prepare(`SELECT job_id as jobId, run_id as runId, project_id as projectId, status, mode, commit_sha as commitSha, approval_receipt as approvalReceipt, selected_paths as selectedPathsJson FROM git_closeout_jobs WHERE status='pending'`).all().map((j) => ({ ...j, selectedPaths: safeJsonParse(j.selectedPathsJson, []) }));
     },
 
     updateGitCloseoutJobStatus(jobId, status, { error = null, receipt = null } = {}) {
@@ -729,7 +758,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
     getProjectKnowledgeRevision(projectId) {
       const row = db.prepare(`SELECT revision FROM knowledge_revisions WHERE project_id=?`).get(projectId);
-      return row ? Number(row.revision) : 1;
+      return row ? Number(row.revision) : 0;
     },
 
     updateProjectKnowledgeRevision(projectId, expectedRevision, nextRevision) {
@@ -862,8 +891,18 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return { runId, tier, digest, mutationRevision };
     },
 
+    getLatestEvidencePack(runId) {
+      const row = db.prepare(`SELECT tier, digest, pack_json as packJson, mutation_revision as mutationRevision, created_at as createdAt FROM evidence_packs WHERE run_id=? ORDER BY id DESC LIMIT 1`).get(runId);
+      if (!row) return null;
+      return { ...row, pack: safeJsonParse(row.packJson, {}), mutationRevision: Number(row.mutationRevision) };
+    },
+
     getVerifications(runId) {
-      return db.prepare(`SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+      return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+    },
+
+    getAllVerifications(runId) {
+      return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt FROM verifications WHERE run_id=? ORDER BY id ASC`).all(runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
     },
 
     addWaiver(runId, { obligationId, approvedBy, reason, approvalReceipt, acceptanceCoverage = [] }) {

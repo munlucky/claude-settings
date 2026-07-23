@@ -1,28 +1,33 @@
-import crypto from 'node:crypto';
-
 export class FinalizationAggregateSnapshot {
   constructor({
-    runId,
-    projectId,
-    status = 'ready',
-    reviewStatus = 'passed',
-    blockers = [],
+    run,
+    staticObligations = [],
+    dynamicObligations = [],
     candidates = [],
-    evidenceBindings = [],
+    candidateBindings = [],
     approvals = [],
-    obligations = [],
-    reviewDigest = '',
-  } = {}) {
+    reviewReceipt = null,
+    verificationSummary = { passedObligations: [], failedObligations: [], staleObligations: [] },
+    acceptanceSummary = { required: [], covered: [], uncovered: [] },
+    releaseEvidence = { required: false, present: false, currentMutationRevision: false, digest: null },
+    readiness = { status: 'blocked', blockers: [] },
+  }) {
     this.schemaVersion = 1;
-    this.runId = runId;
-    this.projectId = projectId;
-    this.status = status; // 'ready' | 'blocked'
-    this.reviewStatus = reviewStatus; // 'no_candidates' | 'passed' | 'needs_approval' | 'pending_verification' | 'failed'
-    this.blockers = blockers;
+    this.run = run;
+    this.projectId = run ? run.projectId : 'unknown';
+    this.runId = run ? run.runId : 'unknown';
+    this.staticObligations = staticObligations;
+    this.dynamicObligations = dynamicObligations;
     this.candidates = candidates;
-    this.evidenceBindings = evidenceBindings;
+    this.candidateBindings = candidateBindings;
     this.approvals = approvals;
-    this.obligations = obligations;
-    this.reviewDigest = reviewDigest || crypto.createHash('sha256').update(JSON.stringify({ runId, reviewStatus, candidates, blockers })).digest('hex');
+    this.reviewReceipt = reviewReceipt;
+    this.verificationSummary = verificationSummary;
+    this.acceptanceSummary = acceptanceSummary;
+    this.releaseEvidence = releaseEvidence;
+    this.readiness = readiness;
+    this.status = readiness.status;
+    this.blockers = readiness.blockers;
+    this.reviewStatus = reviewReceipt ? reviewReceipt.status : readiness.status;
   }
 }

@@ -10,6 +10,25 @@ test('approveKnowledgeCandidate enables two-step approval lifecycle', async () =
   const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-app-test-'));
   const store = await openKernelStateStore({ runtimeHome: path.join(tmpRoot, 'kernel'), relayHome: path.join(tmpRoot, 'relay') });
 
+  // Seed an ontology constraint into the project knowledge base (requires approval for all mutations)
+  store.saveKnowledgeRecord('munlucky-moonshot-relay', 'ont-ask-first-1', {
+    recordType: 'ontology_constraint',
+    status: 'committed',
+    trustTier: 'verified',
+    recordJson: {
+      id: 'ont-ask-first-1',
+      type: 'ontology_constraint',
+      statement: 'Ask first before mutating core state.',
+      status: 'committed',
+      trustTier: 'verified',
+      constraintJson: { rule: 'ask_first', scope: ['scripts/**'] },
+      scope: ['scripts/**'],
+      revision: 1,
+    },
+    revision: 1,
+  });
+  store.updateProjectKnowledgeRevision('munlucky-moonshot-relay', 0, 1);
+
   store.createRun({ runId: 'app-r1', objective: 'approval test', sourceIdentity: 'src-a1', projectId: 'munlucky-moonshot-relay' });
   store.transition('app-r1', 'SHAPE');
   store.transition('app-r1', 'EXECUTE');
@@ -24,27 +43,7 @@ test('approveKnowledgeCandidate enables two-step approval lifecycle', async () =
     sourceIdentity: 'src-a1',
   });
 
-  // Store ontology constraint requiring approval
-  store.transition('app-r1', 'CLOSE');
-  const evalRes = store.evaluateCompletion('app-r1');
-  store.persistCompletionDecision('app-r1', evalRes);
-  store.commitKnowledgeTransaction({
-    transactionId: 'tx-ont-1',
-    runId: 'app-r1',
-    projectId: 'munlucky-moonshot-relay',
-    records: [
-      {
-        id: 'ont-1',
-        type: 'ontology_constraint',
-        statement: 'Ask first before mutating core state.',
-        scope: ['scripts/**'],
-        status: 'committed',
-        trustTier: 'verified',
-        constraintJson: { rule: 'ask_first', scope: ['scripts/**'] },
-      },
-    ],
-  });
-
+  // Initial prepare: the candidate should trigger ontology ask_first constraint → needs_approval
   const initialSnap = await prepareFinalization('app-r1', {
     observations: [
       {

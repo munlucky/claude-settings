@@ -154,6 +154,9 @@ export async function executeKernelGitCloseout({
         throw new KernelGitCloseoutError('GIT_REF_CONFLICT', `Git update-ref CAS conflict on branch ${currentBranch}: ${updateRefRes.stderr}`);
       }
 
+      // Reset real index to new HEAD so the index stays clean (postcondition: index == HEAD)
+      runGit(repoRoot, ['read-tree', 'HEAD']);
+
       // Record commit_created receipt BEFORE attempting push (Section 13.3)
       if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
         stateStore.recordGitCloseoutReceipt(runId, {

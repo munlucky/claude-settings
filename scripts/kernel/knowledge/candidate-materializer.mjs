@@ -10,10 +10,13 @@ export function materializeObservations(runId, projectId, observations = [], { a
       throw new Error(`INVALID_CANDIDATE_TYPE: ${proposedType} is not an allowed candidate type`);
     }
 
-    let candidateId = obs.candidateId || obs.id;
-    if (!candidateId) {
-      candidateId = `cand-${runId}-${crypto.randomUUID().slice(0, 8)}`;
+    if ((obs.candidateId || obs.id) && !allowCallerId) {
+      const err = new Error(`CALLER_CANDIDATE_ID_FORBIDDEN: Caller candidate ID ${obs.candidateId || obs.id} is forbidden in normal runtime`);
+      err.code = 'CALLER_CANDIDATE_ID_FORBIDDEN';
+      throw err;
     }
+
+    let candidateId = (obs.candidateId || obs.id) && allowCallerId ? (obs.candidateId || obs.id) : `cand-${runId}-${crypto.randomUUID().slice(0, 8)}`;
 
     candidates.push({
       candidateId,
