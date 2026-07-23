@@ -150,6 +150,19 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       created_at TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS finalization_receipts (
+      run_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      completion_status TEXT NOT NULL,
+      knowledge_status TEXT NOT NULL,
+      projection_status TEXT NOT NULL,
+      git_closeout_status TEXT NOT NULL,
+      finalization_status TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
     CREATE TABLE IF NOT EXISTS knowledge_records (
       project_id TEXT NOT NULL,
       record_id TEXT NOT NULL,
@@ -361,6 +374,89 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const row = db.prepare(`SELECT run_id as runId, project_id as projectId, mode, commit_sha as commitSha, branch, remote, push_status as pushStatus, parity, receipt_json as receiptJson, created_at as createdAt FROM git_closeout_receipts WHERE run_id=?`).get(runId);
       if (!row) return null;
       return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
+    },
+
+    recordFinalizationReceipt(runId, receipt = {}) {
+      const { projectId, completionStatus, knowledgeStatus, projectionStatus, gitCloseoutStatus, finalizationStatus, receiptJson } = receipt;
+      const jsonStr = typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson || receipt || {});
+      db.prepare(`
+        INSERT INTO finalization_receipts(run_id, project_id, completion_status, knowledge_status, projection_status, git_closeout_status, finalization_status, receipt_json, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET completion_status=excluded.completion_status, knowledge_status=excluded.knowledge_status, projection_status=excluded.projection_status, git_closeout_status=excluded.git_closeout_status, finalization_status=excluded.finalization_status, receipt_json=excluded.receipt_json, updated_at=excluded.updated_at
+      `).run(runId, projectId || 'unknown', completionStatus || 'unknown', knowledgeStatus || 'unknown', projectionStatus || 'completed', gitCloseoutStatus || 'skipped', finalizationStatus || 'unknown', jsonStr, now(), now());
+    },
+
+    getFinalizationReceipt(runId) {
+      const row = db.prepare(`SELECT run_id as runId, project_id as projectId, completion_status as completionStatus, knowledge_status as knowledgeStatus, projection_status as projectionStatus, git_closeout_status as gitCloseoutStatus, finalization_status as finalizationStatus, receipt_json as receiptJson, created_at as createdAt, updated_at as updatedAt FROM finalization_receipts WHERE run_id=?`).get(runId);
+      if (!row) return null;
+      return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
+    },
+
+    listKnowledgeRecords({ projectId, statuses = ['verified', 'committed'] } = {}) {
+      if (!projectId) return [];
+      const placeholders = statuses.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT record_json as recordJson FROM knowledge_records WHERE project_id=? AND status IN (${placeholders})`).all(projectId, ...statuses);
+      return rows.map((r) => safeJsonParse(r.recordJson, null)).filter(Boolean);
+    },
+
+    commitKnowledgeTransaction({ transactionId, runId, projectId, expectedRevision = null, records = [], supersessions = [], provenance = {}, faultInjection = null }) {
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const run = this.getRun(runId);
+        if (!run) {
+          throw new Error(`RUN_NOT_FOUND: Run ${runId} not found`);
+        }
+        const completion = this.getCompletionDecision(runId);
+        if (!completion || completion.decision !== 'accepted') {
+          throw new Error('COMPLETION_NOT_ACCEPTED: Transaction commit requires accepted completion decision');
+        }
+        if (run.projectId !== projectId) {
+          throw new Error(`PROJECT_ID_MISMATCH: Run project ${run.projectId} != ${projectId}`);
+        }
+
+        const currentRev = this.getProjectKnowledgeRevision(projectId);
+        if (expectedRevision !== null && expectedRevision !== undefined && Number(expectedRevision) !== Number(currentRev)) {
+          throw new Error(`STALE_KNOWLEDGE_REVISION: Expected revision ${expectedRevision} but found ${currentRev}`);
+        }
+
+        if (faultInjection === 'after_records_before_revision') {
+          throw new Error('FAULT_INJECTION_AFTER_RECORDS');
+        }
+
+        const nextRev = currentRev + 1;
+
+        for (const rec of records) {
+          const recId = rec.id || rec.candidateId;
+          const recType = rec.type || rec.proposedType || 'semantic_fact';
+          db.prepare(`
+            INSERT INTO knowledge_records(project_id, record_id, record_type, status, trust_tier, record_json, revision, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project_id, record_id) DO UPDATE SET record_type=excluded.record_type, status=excluded.status, trust_tier=excluded.trust_tier, record_json=excluded.record_json, revision=excluded.revision, updated_at=excluded.updated_at
+          `).run(projectId, recId, recType, rec.status || 'committed', rec.trustTier || 'verified', JSON.stringify({ ...rec, revision: nextRev }), nextRev, now(), now());
+        }
+
+        for (const supId of supersessions) {
+          db.prepare(`UPDATE knowledge_records SET status='superseded', updated_at=? WHERE project_id=? AND record_id=?`).run(now(), projectId, supId);
+        }
+
+        const casSuccess = this.updateProjectKnowledgeRevision(projectId, currentRev, nextRev);
+        if (!casSuccess) {
+          throw new Error(`STALE_KNOWLEDGE_REVISION: Revision CAS increment failed for ${projectId}`);
+        }
+
+        const txJson = JSON.stringify({ transactionId, runId, projectId, expectedRevision: currentRev, targetRevision: nextRev, recordsCount: records.length, provenance });
+        db.prepare(`
+          INSERT INTO knowledge_transactions(transaction_id, project_id, run_id, expected_revision, target_revision, status, transaction_json, created_at, completed_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(transaction_id) DO UPDATE SET status='completed', completed_at=excluded.completed_at
+        `).run(transactionId, projectId, runId, currentRev, nextRev, 'completed', txJson, now(), now());
+
+        db.exec('COMMIT');
+        return { revisionBefore: String(currentRev), revisionAfter: String(nextRev), status: 'committed' };
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
     },
 
     getProjectKnowledgeRevision(projectId) {

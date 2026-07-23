@@ -24,13 +24,13 @@ export const STAGE_BUDGETS = {
 };
 
 export const STAGE_TYPE_POLICY = {
-  FRAME: ['policy_anchor', 'architecture_decision', 'domain_term', 'ontology_constraint', 'tacit_practice'],
-  SHAPE: ['architecture_decision', 'component_boundary', 'api_contract', 'ontology_constraint', 'known_failure_pattern'],
-  SLICE: ['architecture_decision', 'component_boundary', 'api_contract'],
-  SCHEDULE: ['component_boundary', 'api_contract', 'required_verification'],
-  EXECUTE: ['component_boundary', 'api_contract', 'tacit_practice', 'required_verification'],
-  PROVE: ['ontology_constraint', 'required_verification', 'known_failure_pattern'],
-  CLOSE: ['policy_anchor', 'ontology_constraint', 'required_verification'],
+  FRAME: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'domain_term', 'ontology_constraint', 'tacit_practice'],
+  SHAPE: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'component_boundary', 'api_contract', 'ontology_constraint', 'known_failure_pattern'],
+  SLICE: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'component_boundary', 'api_contract'],
+  SCHEDULE: ['policy_anchor', 'semantic_fact', 'component_boundary', 'api_contract', 'required_verification'],
+  EXECUTE: ['policy_anchor', 'semantic_fact', 'component_boundary', 'api_contract', 'tacit_practice', 'required_verification'],
+  PROVE: ['policy_anchor', 'semantic_fact', 'ontology_constraint', 'required_verification', 'known_failure_pattern'],
+  CLOSE: ['policy_anchor', 'semantic_fact', 'ontology_constraint', 'required_verification'],
 };
 
 export class KernelContextLoadError extends Error {
@@ -95,13 +95,13 @@ export async function buildProjectKnowledgeContext({
     });
   }
 
-  // Filter 3: Relevance scoring & ranking
+  // Filter 3: Relevance scoring & ranking (score > 0 || isGlobal === true)
   selectedFacts = selectedFacts
     .map((fact) => {
       const score = scoreRelevance({ item: fact, objective, paths: changedPaths });
       return { fact, score };
     })
-    .filter(({ score }) => score >= 0)
+    .filter(({ fact, score }) => score > 0 || fact.isGlobal === true || (!fact.scope || fact.scope.length === 0))
     .sort((a, b) => b.score - a.score)
     .map(({ fact }) => fact);
 

@@ -34,9 +34,16 @@ test('commitProjectKnowledge performs atomic commit and advances revision when a
   const env = { MOON_RELAY_KERNEL_HOME: tmp };
   await ensureKnowledgeStoreDirectories('test-proj', { env });
 
+  let rev = 1;
   const mockAcceptedStore = {
     getRun: () => ({ runId: 'run-1', projectId: 'test-proj', sourceIdentity: 's1', mutationRevision: 1 }),
     getCompletionDecision: () => ({ decision: 'accepted', sourceIdentity: 's1', mutationRevision: 1 }),
+    getProjectKnowledgeRevision: () => rev,
+    commitKnowledgeTransaction: () => {
+      const before = String(rev);
+      rev += 1;
+      return { revisionBefore: before, revisionAfter: String(rev), status: 'committed' };
+    },
   };
 
   const revBefore = await readProjectRevision('test-proj', { env });

@@ -193,9 +193,18 @@ try {
       changedPaths: input.changedPaths || [],
       changedFileCount: input.changedFileCount || null,
       knowledgeObservations: input.knowledgeObservations || [],
+      approvals: input.approvals || [],
     });
     await cp.close();
     output(res);
+  } else if (command === 'finalization-status') {
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id');
+    if (!runId) throw new Error('finalization-status command requires --run-id');
+    const store = await (await import('../scripts/kernel/state-store.mjs')).openKernelStateStore({ runtimeHome: runtimeHomeArg || undefined });
+    const res = store.getFinalizationReceipt(runId);
+    await cp.close();
+    output(res || { status: 'not_found' });
   } else if (command === 'git-closeout') {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');

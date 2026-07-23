@@ -4,101 +4,129 @@ export async function reviewKnowledgeCandidates({
   candidates = [],
   projectId,
   evidencePack = null,
+  approvals = [],
   env = process.env,
 } = {}) {
+  if (!candidates || candidates.length === 0) {
+    return {
+      status: 'no_candidates',
+      verifiedCandidates: [],
+      rejectedCandidates: [],
+      needsApprovalCandidates: [],
+      pendingVerificationCandidates: [],
+      candidateReviews: [],
+      supersessionProposals: [],
+      ontologyViolations: [],
+      approvalRequired: [],
+      verificationsRequired: [],
+      evidenceCoverage: [],
+    };
+  }
+
   const verifiedCandidates = [];
-  const episodicCandidates = [];
   const rejectedCandidates = [];
+  const needsApprovalCandidates = [];
+  const pendingVerificationCandidates = [];
   const ontologyViolations = [];
   const approvalRequired = [];
+  const verificationsRequired = [];
   const candidateReviews = [];
 
-  const ontologyEval = await evaluateOntologyConstraints({
-    projectId,
-    paths: candidates.flatMap((c) => c.scope || []),
-    env,
-  });
-
-  if (!ontologyEval.passed) {
-    ontologyViolations.push(...ontologyEval.violations);
-  }
-  approvalRequired.push(...ontologyEval.approvalRequired);
+  const existingApprovalReceipts = new Set(
+    (Array.isArray(approvals) ? approvals : []).map((a) => a.candidateId || a.approvalReceipt || a)
+  );
 
   for (const candidate of candidates) {
-    // Project ID boundary check
+    // 1. Project ID boundary check
     if (candidate.projectId && candidate.projectId !== projectId) {
-      rejectedCandidates.push({
-        ...candidate,
-        status: 'rejected',
-        rejectionReasons: ['PROJECT_ID_MISMATCH'],
-      });
+      const rec = { ...candidate, status: 'rejected', rejectionReasons: ['PROJECT_ID_MISMATCH'] };
+      rejectedCandidates.push(rec);
       candidateReviews.push({ candidateId: candidate.candidateId, decision: 'rejected', reason: 'PROJECT_ID_MISMATCH' });
       continue;
     }
 
-    // Safety check: secret or transcript leak
-    if (/sk-[a-zA-Z0-9]{20,}/.test(candidate.statement) || candidate.statement.includes('raw_transcript_body')) {
-      rejectedCandidates.push({
-        ...candidate,
-        status: 'rejected',
-        rejectionReasons: ['FORBIDDEN_SAFETY_LEAK'],
-      });
+    // 2. Safety check: secret leak
+    if (/sk-[a-zA-Z0-9]{20,}/.test(candidate.statement) || (candidate.statement && candidate.statement.includes('raw_transcript_body'))) {
+      const rec = { ...candidate, status: 'rejected', rejectionReasons: ['FORBIDDEN_SAFETY_LEAK'] };
+      rejectedCandidates.push(rec);
       candidateReviews.push({ candidateId: candidate.candidateId, decision: 'rejected', reason: 'FORBIDDEN_SAFETY_LEAK' });
       continue;
     }
 
-    // Check ontology violations matching candidate scope
-    const candidateScopes = candidate.scope || [];
-    const matchedViolation = ontologyViolations.find((v) => {
-      if (!v.scope || v.scope.length === 0) return true;
-      return candidateScopes.some((cs) => v.scope.includes(cs));
+    // 3. Per-candidate ontology constraint evaluation
+    const ontologyEval = await evaluateOntologyConstraints({
+      projectId,
+      paths: candidate.scope || [],
+      statements: [candidate.statement],
+      env,
     });
 
-    if (matchedViolation) {
-      rejectedCandidates.push({
-        ...candidate,
-        status: 'rejected',
-        rejectionReasons: ['ONTOLOGY_VIOLATION'],
-      });
-      candidateReviews.push({ candidateId: candidate.candidateId, decision: 'rejected', reason: 'ONTOLOGY_VIOLATION' });
+    if (ontologyEval.violations.length > 0) {
+      ontologyViolations.push(...ontologyEval.violations);
+      const rec = { ...candidate, status: 'rejected', rejectionReasons: ['ONTOLOGY_NEVER_VIOLATION'] };
+      rejectedCandidates.push(rec);
+      candidateReviews.push({ candidateId: candidate.candidateId, decision: 'rejected', reason: 'ONTOLOGY_NEVER_VIOLATION' });
       continue;
     }
 
-    // Factuality check: evidence required
-    if (!evidencePack || (evidencePack.status !== 'pass' && evidencePack.status !== 'passed')) {
-      rejectedCandidates.push({
-        ...candidate,
-        status: 'rejected',
-        rejectionReasons: ['MISSING_VERIFICATION_EVIDENCE'],
-      });
+    if (ontologyEval.approvalRequired.length > 0) {
+      approvalRequired.push(...ontologyEval.approvalRequired);
+      const hasApproval = existingApprovalReceipts.has(candidate.candidateId);
+      if (!hasApproval) {
+        const rec = { ...candidate, status: 'needs_approval', rejectionReasons: ['ASK_FIRST_REQUIRED'] };
+        needsApprovalCandidates.push(rec);
+        candidateReviews.push({ candidateId: candidate.candidateId, decision: 'needs_approval', reason: 'ASK_FIRST_REQUIRED' });
+        continue;
+      }
+    }
+
+    if (ontologyEval.verificationsRequired.length > 0) {
+      verificationsRequired.push(...ontologyEval.verificationsRequired);
+      const rec = { ...candidate, status: 'pending_verification', rejectionReasons: ['INVARIANT_VERIFICATION_REQUIRED'] };
+      pendingVerificationCandidates.push(rec);
+      candidateReviews.push({ candidateId: candidate.candidateId, decision: 'pending_verification', reason: 'INVARIANT_VERIFICATION_REQUIRED' });
+      continue;
+    }
+
+    // 4. Evidence binding check (Fail-closed)
+    const hasEvidencePack = evidencePack && (evidencePack.status === 'pass' || evidencePack.status === 'passed');
+    const hasCandidateEvidence = Array.isArray(candidate.evidenceRefs) && candidate.evidenceRefs.length > 0;
+    if (!hasEvidencePack && !hasCandidateEvidence) {
+      const rec = { ...candidate, status: 'rejected', rejectionReasons: ['MISSING_VERIFICATION_EVIDENCE'] };
+      rejectedCandidates.push(rec);
       candidateReviews.push({ candidateId: candidate.candidateId, decision: 'rejected', reason: 'MISSING_VERIFICATION_EVIDENCE' });
       continue;
     }
 
-    // Pass review
+    const evidenceDigest = evidencePack?.digest || candidate.evidenceRefs?.[0] || 'evidence-pass';
     verifiedCandidates.push({
       ...candidate,
       status: 'verified',
-      evidenceRefs: [evidencePack.digest || 'evidence-pass'],
+      evidenceRefs: [evidenceDigest],
     });
-    candidateReviews.push({ candidateId: candidate.candidateId, decision: 'verified', evidenceRef: evidencePack.digest || 'evidence-pass' });
+    candidateReviews.push({ candidateId: candidate.candidateId, decision: 'verified', evidenceRef: evidenceDigest });
   }
 
-  const status = ontologyViolations.length > 0
-    ? 'failed'
-    : approvalRequired.length > 0
-      ? 'needs_approval'
-      : 'passed';
+  let status = 'passed';
+  if (ontologyViolations.length > 0 || (rejectedCandidates.length === candidates.length && candidates.length > 0)) {
+    status = 'failed';
+  } else if (needsApprovalCandidates.length > 0) {
+    status = 'needs_approval';
+  } else if (pendingVerificationCandidates.length > 0) {
+    status = 'pending_verification';
+  }
 
   return {
     status,
-    verifiedCandidates: status === 'failed' ? [] : verifiedCandidates,
-    episodicCandidates,
+    verifiedCandidates,
     rejectedCandidates,
+    needsApprovalCandidates,
+    pendingVerificationCandidates,
     candidateReviews,
     supersessionProposals: [],
     ontologyViolations,
     approvalRequired,
+    verificationsRequired,
     evidenceCoverage: evidencePack ? [evidencePack.digest || 'evidence-pack'] : [],
   };
 }

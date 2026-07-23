@@ -14,6 +14,13 @@ test('commitProjectKnowledge rejects concurrent modification when expected revis
   const mockStore = {
     getRun: () => ({ runId: 'run-occ', projectId: 'proj-occ', sourceIdentity: 's1', mutationRevision: 1 }),
     getCompletionDecision: () => ({ decision: 'accepted', sourceIdentity: 's1', mutationRevision: 1 }),
+    getProjectKnowledgeRevision: () => 1,
+    commitKnowledgeTransaction: ({ expectedRevision }) => {
+      if (expectedRevision !== null && expectedRevision !== undefined && String(expectedRevision) !== '1') {
+        throw new Error('STALE_KNOWLEDGE_REVISION: expected 1 but found ' + expectedRevision);
+      }
+      return { revisionBefore: '1', revisionAfter: '2', status: 'committed' };
+    },
   };
 
   // Stale revision '99' vs actual revision '1'

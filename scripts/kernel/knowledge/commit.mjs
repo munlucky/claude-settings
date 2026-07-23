@@ -1,9 +1,10 @@
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { loadAllProjectRecords, readProjectRevision, projectKnowledgeDirectory, writeAtomicJsonl, writeAtomicJson } from './store.mjs';
 import { advanceProjectRevision } from './revision.mjs';
 import { applySupersessions } from './supersession.mjs';
 import { buildKnowledgeCommitReceipt } from './receipt.mjs';
-import { validateKnowledgeRecord } from './records.mjs';
+import { validateKnowledgeRecord, resolveRecordType } from './records.mjs';
 
 export class KernelKnowledgeCommitError extends Error {
   constructor(code, message, details = {}) {
@@ -11,6 +12,21 @@ export class KernelKnowledgeCommitError extends Error {
     this.name = 'KernelKnowledgeCommitError';
     this.code = code;
     this.details = details;
+  }
+}
+
+export async function rebuildKnowledgeProjection(projectId, { env = process.env, stateStore = null } = {}) {
+  const root = projectKnowledgeDirectory(projectId, { env });
+  const kDir = path.join(root, 'knowledge');
+  const factsPath = path.join(kDir, 'semantic', 'verified-facts.jsonl');
+
+  let records = [];
+  if (stateStore && typeof stateStore.listKnowledgeRecords === 'function') {
+    records = stateStore.listKnowledgeRecords({ projectId, statuses: ['verified', 'committed'] });
+  }
+
+  if (records.length > 0) {
+    await writeAtomicJsonl(factsPath, records);
   }
 }
 
@@ -23,6 +39,7 @@ export async function commitProjectKnowledge({
   candidates = [],
   supersessionProposals = [],
   sourceIdentity = 'kernel-source',
+  faultInjection = null,
   env = process.env,
 } = {}) {
   if (!stateStore || typeof stateStore.getRun !== 'function') {
@@ -54,21 +71,11 @@ export async function commitProjectKnowledge({
     throw new KernelKnowledgeCommitError('STALE_COMPLETION_DECISION', `Completion decision mutation revision mismatch for run ${runId}`);
   }
 
-  const currentRevision = await readProjectRevision(projectId, { env });
-
-  // Optimistic Concurrency Control (OCC) check
-  if (expectedKnowledgeRevision !== null && expectedKnowledgeRevision !== undefined && String(expectedKnowledgeRevision) !== String(currentRevision)) {
-    throw new KernelKnowledgeCommitError(
-      'STALE_KNOWLEDGE_REVISION',
-      `Optimistic concurrency control conflict: expected revision ${expectedKnowledgeRevision} but found ${currentRevision}`
-    );
-  }
-  const records = await loadAllProjectRecords(projectId, { env });
-
-  const acceptedCandidates = candidates.filter((c) => c.status === 'verified');
+  const acceptedCandidates = candidates.filter((c) => c.status === 'verified' || c.status === 'committed');
   const rejectedCandidates = candidates.filter((c) => c.status === 'rejected');
 
   if (acceptedCandidates.length === 0 && supersessionProposals.length === 0) {
+    const currentRevision = String(stateStore.getProjectKnowledgeRevision ? stateStore.getProjectKnowledgeRevision(projectId) : 1);
     const receipt = buildKnowledgeCommitReceipt({
       runId,
       projectId,
@@ -82,54 +89,70 @@ export async function commitProjectKnowledge({
     return receipt;
   }
 
-  // Validate accepted candidate record shapes
-  const newVerifiedFacts = [...records.semanticFacts];
-  for (const cand of acceptedCandidates) {
+  // Format records preserving exact candidate type
+  const recordsToCommit = acceptedCandidates.map((cand) => {
+    const recType = resolveRecordType(cand.proposedType || cand.type);
     const rec = {
-      id: cand.candidateId,
+      id: cand.candidateId || cand.id || `rec-${crypto.randomUUID()}`,
+      candidateId: cand.candidateId || cand.id,
       projectId,
-      type: 'semantic_fact',
+      type: recType,
       statement: cand.statement,
+      scope: cand.scope || [],
       status: 'committed',
       trustTier: 'verified',
       createdAt: new Date().toISOString(),
-      evidence: { refs: cand.evidenceRefs },
+      evidence: { refs: cand.evidenceRefs || [] },
     };
     validateKnowledgeRecord(rec);
-    newVerifiedFacts.push(rec);
-  }
-
-  const { updatedFacts, supersessionLogEntries } = applySupersessions({
-    currentFacts: newVerifiedFacts,
-    supersessionProposals,
-    projectId,
+    return rec;
   });
 
-  const root = projectKnowledgeDirectory(projectId, { env });
-  const kDir = path.join(root, 'knowledge');
+  const transactionId = `tx-${crypto.randomUUID()}`;
+  const supersessions = supersessionProposals.map((p) => p.targetId || p);
 
-  // Atomic writes
-  const factsPath = path.join(kDir, 'semantic', 'verified-facts.jsonl');
-  const superLogPath = path.join(kDir, 'semantic', 'supersession-log.jsonl');
-  const provLogPath = path.join(kDir, 'provenance', 'prov-log.jsonl');
-
-  await writeAtomicJsonl(factsPath, updatedFacts);
-  if (supersessionLogEntries.length > 0) {
-    const existingLog = records.supersessionLog || [];
-    await writeAtomicJsonl(superLogPath, [...existingLog, ...supersessionLogEntries]);
+  let txResult;
+  try {
+    txResult = stateStore.commitKnowledgeTransaction({
+      transactionId,
+      runId,
+      projectId,
+      expectedRevision: expectedKnowledgeRevision,
+      records: recordsToCommit,
+      supersessions,
+      provenance: { runId, sourceIdentity, committedCount: recordsToCommit.length },
+      faultInjection,
+    });
+  } catch (err) {
+    throw new KernelKnowledgeCommitError(
+      err.message.includes('STALE_KNOWLEDGE_REVISION') ? 'STALE_KNOWLEDGE_REVISION' : 'TRANSACTION_FAILED',
+      err.message,
+      { originalError: err }
+    );
   }
 
-  const provEntry = {
-    runId,
-    projectId,
-    action: 'commitProjectKnowledge',
-    timestamp: new Date().toISOString(),
-    committedCount: acceptedCandidates.length,
-  };
-  await writeAtomicJsonl(provLogPath, [...records.provenanceLog, provEntry]);
+  const { revisionBefore, revisionAfter } = txResult;
 
-  // Advance revision manifest LAST
-  const { revisionBefore, revisionAfter } = await advanceProjectRevision(projectId, { env });
+  let projectionStatus = 'completed';
+  try {
+    const root = projectKnowledgeDirectory(projectId, { env });
+    const kDir = path.join(root, 'knowledge');
+    const factsPath = path.join(kDir, 'semantic', 'verified-facts.jsonl');
+    const provLogPath = path.join(kDir, 'provenance', 'prov-log.jsonl');
+
+    await writeAtomicJsonl(factsPath, recordsToCommit);
+    const provEntry = {
+      runId,
+      projectId,
+      action: 'commitProjectKnowledge',
+      timestamp: new Date().toISOString(),
+      committedCount: acceptedCandidates.length,
+    };
+    await writeAtomicJsonl(provLogPath, [provEntry]);
+    await advanceProjectRevision(projectId, { env });
+  } catch (projErr) {
+    projectionStatus = 'failed';
+  }
 
   const receipt = buildKnowledgeCommitReceipt({
     runId,
@@ -141,14 +164,19 @@ export async function commitProjectKnowledge({
     revisionAfter,
     acceptedCandidates,
     rejectedCandidates,
-    supersededRecords: supersessionProposals.map((p) => p.targetId),
+    supersededRecords: supersessions,
     evidenceRefs: acceptedCandidates.flatMap((c) => c.evidenceRefs || []),
-    filesWritten: [factsPath, superLogPath, provLogPath],
+    projectionStatus,
     status: 'committed',
   });
 
-  const receiptPath = path.join(root, 'receipts', `${runId}-knowledge-closeout.json`);
-  await writeAtomicJson(receiptPath, receipt);
+  try {
+    const root = projectKnowledgeDirectory(projectId, { env });
+    const receiptPath = path.join(root, 'receipts', `${runId}-knowledge-closeout.json`);
+    await writeAtomicJson(receiptPath, receipt);
+  } catch (e) {
+    // Non-fatal receipt save error
+  }
 
   return receipt;
 }

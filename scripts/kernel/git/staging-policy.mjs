@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 export const HARD_DENY_PATTERNS = [
+  /\.git\//i,
   /\.moon-relay\//i,
   /\.moonshot-relay\//i,
   /\.claude\/memory/i,

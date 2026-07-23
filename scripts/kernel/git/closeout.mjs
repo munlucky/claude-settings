@@ -51,56 +51,73 @@ export async function executeKernelGitCloseout({
 
   const { selectedPaths, excludedPaths } = filterStagingSelection(changedFiles);
 
+  // Empty selection check: do not make empty commits
+  if (selectedPaths.length === 0 && !gitCloseoutRequest.existingCommitSha) {
+    return {
+      schemaVersion: 1,
+      runId,
+      projectId,
+      requestedMode: gitCloseoutRequest.mode || 'soft',
+      status: 'skipped',
+      reason: 'no_selected_changes',
+      digest: crypto.createHash('sha256').update(`${runId}:no_selected_changes`).digest('hex'),
+    };
+  }
+
   const beforeHeadRes = runGit(repoRoot, ['rev-parse', 'HEAD']);
   const beforeHeadSha = beforeHeadRes.status === 0 ? String(beforeHeadRes.stdout || '').trim() : '';
 
-  // Use a temporary index file to isolate Kernel staging from pre-existing user staged changes
-  const tempIndexFile = path.join(os.tmpdir(), `kernel-git-index-${runId}-${Date.now()}-${Math.random().toString(36).slice(2)}.idx`);
-  const tempGitEnv = { ...process.env, GIT_INDEX_FILE: tempIndexFile };
+  let commitSha = gitCloseoutRequest.existingCommitSha || beforeHeadSha;
 
-  let commitSha = beforeHeadSha;
+  // If retry with existing commitSha, skip creating new commit
+  if (!gitCloseoutRequest.existingCommitSha) {
+    const tempIndexFile = path.join(os.tmpdir(), `kernel-git-index-${runId}-${Date.now()}-${Math.random().toString(36).slice(2)}.idx`);
+    const tempGitEnv = { ...process.env, GIT_INDEX_FILE: tempIndexFile };
 
-  try {
-    if (beforeHeadSha) {
-      runGit(repoRoot, ['read-tree', 'HEAD'], { env: tempGitEnv });
-    }
+    try {
+      if (beforeHeadSha) {
+        runGit(repoRoot, ['read-tree', 'HEAD'], { env: tempGitEnv });
+      }
 
-    if (selectedPaths.length > 0) {
       const addRes = runGit(repoRoot, ['add', '--', ...selectedPaths], { env: tempGitEnv });
       if (addRes.status !== 0) {
         throw new KernelGitCloseoutError('GIT_ADD_FAILED', `Git add failed: ${addRes.stderr}`);
       }
-    }
 
-    const writeTreeRes = runGit(repoRoot, ['write-tree'], { env: tempGitEnv });
-    if (writeTreeRes.status !== 0) {
-      throw new KernelGitCloseoutError('GIT_WRITE_TREE_FAILED', `Git write-tree failed: ${writeTreeRes.stderr}`);
-    }
-    const treeSha = String(writeTreeRes.stdout || '').trim();
+      const writeTreeRes = runGit(repoRoot, ['write-tree'], { env: tempGitEnv });
+      if (writeTreeRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_WRITE_TREE_FAILED', `Git write-tree failed: ${writeTreeRes.stderr}`);
+      }
+      const treeSha = String(writeTreeRes.stdout || '').trim();
 
-    const commitMsg = `feat(kernel): update ${projectId} implementation\n\n- Completed phase execution for ${runId}\n- Knowledge commit ref: ${knowledgeCommitReceipt.digest || 'none'}`;
-    const commitArgs = ['commit-tree', treeSha, '-m', commitMsg];
-    if (beforeHeadSha) {
-      commitArgs.push('-p', beforeHeadSha);
-    }
+      const commitMsg = `feat(kernel): update ${projectId} implementation\n\n- Completed phase execution for ${runId}\n- Knowledge commit ref: ${knowledgeCommitReceipt.digest || 'none'}`;
+      const commitArgs = ['commit-tree', treeSha, '-m', commitMsg];
+      if (beforeHeadSha) {
+        commitArgs.push('-p', beforeHeadSha);
+      }
 
-    const commitTreeRes = runGit(repoRoot, commitArgs, { env: tempGitEnv });
-    if (commitTreeRes.status !== 0) {
-      throw new KernelGitCloseoutError('GIT_COMMIT_FAILED', `Git commit-tree failed: ${commitTreeRes.stderr}`);
-    }
-    commitSha = String(commitTreeRes.stdout || '').trim();
+      const commitTreeRes = runGit(repoRoot, commitArgs, { env: tempGitEnv });
+      if (commitTreeRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_COMMIT_FAILED', `Git commit-tree failed: ${commitTreeRes.stderr}`);
+      }
+      commitSha = String(commitTreeRes.stdout || '').trim();
 
-    if (!commitSha || commitSha === beforeHeadSha) {
-      throw new KernelGitCloseoutError('GIT_COMMIT_NOT_CREATED', 'Git commit was not created (HEAD did not advance)');
-    }
+      if (!commitSha || commitSha === beforeHeadSha) {
+        throw new KernelGitCloseoutError('GIT_COMMIT_NOT_CREATED', 'Git commit was not created (HEAD did not advance)');
+      }
 
-    // Update branch ref to new commit
-    const updateRefRes = runGit(repoRoot, ['update-ref', `refs/heads/${currentBranch}`, commitSha]);
-    if (updateRefRes.status !== 0) {
-      throw new KernelGitCloseoutError('GIT_UPDATE_REF_FAILED', `Git update-ref failed: ${updateRefRes.stderr}`);
+      // Branch ref CAS update (with beforeHeadSha)
+      const updateRefArgs = ['update-ref', `refs/heads/${currentBranch}`, commitSha];
+      if (beforeHeadSha) {
+        updateRefArgs.push(beforeHeadSha);
+      }
+      const updateRefRes = runGit(repoRoot, updateRefArgs);
+      if (updateRefRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_REF_CONFLICT', `Git update-ref CAS conflict on branch ${currentBranch}: ${updateRefRes.stderr}`);
+      }
+    } finally {
+      try { await rm(tempIndexFile, { force: true }); } catch {}
     }
-  } finally {
-    try { await rm(tempIndexFile, { force: true }); } catch {}
   }
 
   let pushStatus = 'skipped';

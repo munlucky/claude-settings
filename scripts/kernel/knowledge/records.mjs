@@ -3,12 +3,35 @@ import crypto from 'node:crypto';
 export const VALID_TYPES = [
   'policy_anchor',
   'semantic_fact',
-  'episodic_observation',
+  'architecture_decision',
+  'domain_term',
+  'component_boundary',
+  'api_contract',
   'kg_relation',
   'ontology_constraint',
+  'episodic_observation',
+  'known_failure_pattern',
+  'required_verification',
   'provenance_event',
   'knowledge_candidate',
 ];
+
+export const CANDIDATE_TO_RECORD_TYPE = {
+  semantic_fact: 'semantic_fact',
+  architecture_decision: 'architecture_decision',
+  domain_term: 'domain_term',
+  component_boundary: 'component_boundary',
+  api_contract: 'api_contract',
+  kg_relation: 'kg_relation',
+  ontology_constraint: 'ontology_constraint',
+  tacit_observation: 'episodic_observation',
+  known_failure_pattern: 'known_failure_pattern',
+  required_verification: 'required_verification',
+};
+
+export function resolveRecordType(proposedType) {
+  return CANDIDATE_TO_RECORD_TYPE[proposedType] || proposedType || 'semantic_fact';
+}
 
 export const VALID_STATUSES = [
   'observed',
