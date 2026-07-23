@@ -26,6 +26,7 @@ export async function ensureKnowledgeStoreDirectories(projectId, { env = process
     root,
     path.join(root, 'knowledge', 'policy'),
     path.join(root, 'knowledge', 'semantic'),
+    path.join(root, 'knowledge', 'architecture'),
     path.join(root, 'knowledge', 'episodic'),
     path.join(root, 'knowledge', 'graph'),
     path.join(root, 'knowledge', 'ontology'),
@@ -108,6 +109,8 @@ export async function loadAllProjectRecords(projectId, { env = process.env } = {
 
   const policyAnchors = await readJsonlIfExists(path.join(kDir, 'policy', 'policy-anchors.jsonl'));
   const semanticFacts = await readJsonlIfExists(path.join(kDir, 'semantic', 'verified-facts.jsonl'));
+  const architectureRecords = await readJsonlIfExists(path.join(kDir, 'architecture', 'records.jsonl'));
+  const architectureDecisions = await readJsonlIfExists(path.join(kDir, 'architecture', 'decisions.jsonl'));
   const supersessionLog = await readJsonlIfExists(path.join(kDir, 'semantic', 'supersession-log.jsonl'));
   const observations = await readJsonlIfExists(path.join(kDir, 'episodic', 'observations.jsonl'));
   const kgRelations = await readJsonlIfExists(path.join(kDir, 'graph', 'kg-relations.jsonl'));
@@ -119,6 +122,8 @@ export async function loadAllProjectRecords(projectId, { env = process.env } = {
   return {
     policyAnchors,
     semanticFacts,
+    architectureRecords,
+    architectureDecisions,
     supersessionLog,
     observations,
     kgRelations,

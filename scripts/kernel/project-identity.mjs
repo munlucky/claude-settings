@@ -143,9 +143,10 @@ export function resolveKernelProjectIdentity({ cwd = process.cwd(), env = proces
     }
     if (remoteUrl) {
       const normalized = normalizeRemoteUrl(remoteUrl);
-      const match = normalized.match(/[\/:]([^\/]+)\/([^\/]+)$/);
+      const match = normalized.match(/^(?:https?:\/\/)?([^/:]+)[/:]([^\/]+)\/([^\/]+)$/);
       if (match) {
-        const repoSlug = `${match[1]}-${match[2]}`;
+        const hostSlug = match[1].replace(/[^a-z0-9]/gi, '-');
+        const repoSlug = `${hostSlug}-${match[2]}-${match[3]}`;
         projectId = sanitizeId(repoSlug);
         identitySource = 'git_remote_origin';
         aliases.push(normalized);

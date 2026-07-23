@@ -12,10 +12,10 @@ test('resolveKernelProjectIdentity resolves deterministic identity from git remo
   await writeFile(path.join(gitDir, 'config'), '[remote "origin"]\n  url = git@github.com:myorg/my-cool-project.git\n');
 
   const result = resolveKernelProjectIdentity({ cwd: tmp, env: { MOON_RELAY_KERNEL_HOME: path.join(tmp, '.moon-relay-kernel') } });
-  assert.equal(result.projectId, 'myorg-my-cool-project');
+  assert.equal(result.projectId, 'github-com-myorg-my-cool-project');
   assert.equal(result.identitySource, 'git_remote_origin');
   assert.ok(result.identityDigest);
-  assert.ok(result.namespaces.projectKnowledgeRoot.includes('myorg-my-cool-project'));
+  assert.ok(result.namespaces.projectKnowledgeRoot.includes('github-com-myorg-my-cool-project'));
 });
 
 test('normalizeRemoteUrl normalizes git ssh and https URLs cleanly', () => {

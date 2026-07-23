@@ -472,7 +472,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       // Step 6: Finalization receipt
       let finalizationStatus = 'completed';
-      if (knowledgeStatus === 'failed' || gitCloseoutStatus === 'failed') {
+      if (knowledgeStatus === 'failed' || gitCloseoutStatus === 'failed' || commitReceipt?.projectionStatus === 'failed') {
         finalizationStatus = 'partial';
       }
 

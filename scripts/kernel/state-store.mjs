@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from './runtime-home.mjs';
 import { canTransition } from './transition.mjs';
 import { openSqliteDb } from './sqlite-adapter.mjs';
+import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapper.mjs';
 
 export const kernelDbPath = (runtimeHome = resolveKernelRuntimeHome()) => path.join(runtimeHome, 'state', 'runtime-state.sqlite');
 
@@ -524,7 +525,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         let recordsToCommit = records;
         if (recordsToCommit === null || recordsToCommit === undefined) {
           const rawCandidates = this.getKnowledgeCandidates(runId);
-          recordsToCommit = rawCandidates.filter((c) => c.status === 'verified').map((c) => c.candidateJson);
+          recordsToCommit = rawCandidates
+            .filter((c) => c.status === 'verified')
+            .map((c) => mapCandidateToCanonicalRecord(c.candidateJson || c, { runId, projectId, revision: currentRev + 1 }));
         }
 
         const isNoChange = noChange || recordsToCommit.length === 0;
@@ -558,11 +561,12 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         for (const rec of recordsToCommit) {
           const recId = rec.id || rec.candidateId;
           const recType = rec.type || rec.proposedType || 'semantic_fact';
+          const recPayload = { ...rec, status: 'committed', revision: nextRev };
           db.prepare(`
             INSERT INTO knowledge_records(project_id, record_id, record_type, status, trust_tier, record_json, revision, created_at, updated_at)
             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, record_id) DO UPDATE SET record_type=excluded.record_type, status=excluded.status, trust_tier=excluded.trust_tier, record_json=excluded.record_json, revision=excluded.revision, updated_at=excluded.updated_at
-          `).run(projectId, recId, recType, rec.status || 'committed', rec.trustTier || 'verified', JSON.stringify({ ...rec, revision: nextRev }), nextRev, now(), now());
+          `).run(projectId, recId, recType, 'committed', rec.trustTier || 'verified', JSON.stringify(recPayload), nextRev, now(), now());
         }
 
         for (const supId of supersessions) {

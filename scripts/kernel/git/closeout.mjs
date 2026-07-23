@@ -55,6 +55,12 @@ export async function executeKernelGitCloseout({
     throw new KernelGitCloseoutError('KNOWLEDGE_RECEIPT_REQUIRED', 'Git closeout follows knowledge closeout receipt');
   }
 
+  const requestedMode = gitCloseoutRequest.mode || 'commit';
+  const ALLOWED_MODES = new Set(['commit', 'commit_and_push', 'push', 'soft', 'none']);
+  if (!ALLOWED_MODES.has(requestedMode)) {
+    throw new KernelGitCloseoutError('INVALID_GIT_CLOSEOUT_MODE', `Unsupported git closeout mode: ${requestedMode}`);
+  }
+
   // Pre-existing staged changes check (Section 1.4, 13.2)
   const stagedDiffRes = runGit(repoRoot, ['diff', '--cached', '--quiet']);
   if (stagedDiffRes.status !== 0) {
@@ -66,10 +72,15 @@ export async function executeKernelGitCloseout({
     throw new KernelGitCloseoutError('DETACHED_HEAD', 'Git closeout requires an active branch, found detached HEAD');
   }
 
+  const gitStatusRes = runGit(repoRoot, ['status', '--porcelain']);
+  const gitChangedPaths = gitStatusRes.status === 0
+    ? gitStatusRes.stdout.split(/\r?\n/).map((l) => l.slice(3).trim()).filter(Boolean)
+    : null;
+
   // Validate path containment and safety (Section 14)
   for (const file of changedFiles) {
     try {
-      validateGitCloseoutPath(repoRoot, file);
+      validateGitCloseoutPath(repoRoot, file, { changedPathsInGit: gitChangedPaths });
     } catch (pathErr) {
       throw new KernelGitCloseoutError('INVALID_GIT_PATH', pathErr.message, { originalError: pathErr });
     }
@@ -153,6 +164,9 @@ export async function executeKernelGitCloseout({
       if (updateRefRes.status !== 0) {
         throw new KernelGitCloseoutError('GIT_REF_CONFLICT', `Git update-ref CAS conflict on branch ${currentBranch}: ${updateRefRes.stderr}`);
       }
+
+      // Reset main working tree index against advanced HEAD commit
+      runGit(repoRoot, ['read-tree', 'HEAD']);
 
       // Record commit_created receipt BEFORE attempting push (Section 13.3)
       if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
@@ -281,8 +295,9 @@ export async function retryGitCloseout(runId, { stateStore, repoRoot = process.c
   const commitSha = receipt.commitSha;
   const branch = receipt.branch || gitCurrentBranch(repoRoot);
 
-  if (!commitSha) {
-    throw new KernelGitCloseoutError('GIT_CLOSEOUT_NOT_RETRYABLE', 'No commit SHA recorded in DB receipt for retry');
+  const reqMode = receipt.mode || receipt.receiptJson?.gitCloseoutRequest?.mode || 'commit';
+  if (reqMode === 'commit' || reqMode === 'soft' || reqMode === 'none') {
+    return receipt.receiptJson || receipt;
   }
 
   const pushRes = runGit(repoRoot, ['push', 'origin', `${commitSha}:refs/heads/${branch}`]);

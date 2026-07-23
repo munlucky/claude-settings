@@ -1,16 +1,16 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
-import { resolveKernelRuntimeHome } from '../runtime-home.mjs';
+import { projectKnowledgeDirectory } from './store.mjs';
 
 function itemsContent(items) {
   return items.map((item) => JSON.stringify(item)).join('\n') + (items.length ? '\n' : '');
 }
 
-export async function rebuildKnowledgeProjection(projectId, { stateStore = null, runtimeHome = resolveKernelRuntimeHome() } = {}) {
+export async function rebuildKnowledgeProjection(projectId, { stateStore = null, runtimeHome = resolveKernelRuntimeHome(), env = process.env } = {}) {
   if (!stateStore) return { status: 'skipped' };
 
-  const projectKnowledgeDir = path.join(runtimeHome, 'projects', projectId, 'knowledge');
+  const projectKnowledgeDir = path.join(projectKnowledgeDirectory(projectId, { env: { ...env, MOON_RELAY_KERNEL_HOME: runtimeHome } }), 'knowledge');
   const genId = `gen-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
   const tempGenDir = path.join(projectKnowledgeDir, '.projection', genId);
 
