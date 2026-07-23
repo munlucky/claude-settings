@@ -24,11 +24,11 @@ export const STAGE_BUDGETS = {
 };
 
 export const STAGE_TYPE_POLICY = {
-  FRAME: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'domain_term', 'ontology_constraint', 'tacit_practice'],
+  FRAME: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'domain_term', 'ontology_constraint', 'tacit_practice', 'episodic_observation'],
   SHAPE: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'component_boundary', 'api_contract', 'ontology_constraint', 'known_failure_pattern'],
   SLICE: ['policy_anchor', 'semantic_fact', 'architecture_decision', 'component_boundary', 'api_contract'],
   SCHEDULE: ['policy_anchor', 'semantic_fact', 'component_boundary', 'api_contract', 'required_verification'],
-  EXECUTE: ['policy_anchor', 'semantic_fact', 'component_boundary', 'api_contract', 'tacit_practice', 'required_verification'],
+  EXECUTE: ['policy_anchor', 'semantic_fact', 'component_boundary', 'api_contract', 'tacit_practice', 'episodic_observation', 'required_verification'],
   PROVE: ['policy_anchor', 'semantic_fact', 'ontology_constraint', 'required_verification', 'known_failure_pattern'],
   CLOSE: ['policy_anchor', 'semantic_fact', 'ontology_constraint', 'required_verification'],
 };
@@ -78,7 +78,6 @@ export async function buildProjectKnowledgeContext({
       ...(records.architectureRecords || []),
       ...(records.architectureDecisions || []),
       ...(records.observations || []),
-      ...(records.provenanceLog || []),
     ];
     rawGraphRelations = records.kgRelations || [];
     rawOntologyConstraints = records.ontologyConstraints || [];

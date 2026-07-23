@@ -57,16 +57,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   const store = await openKernelStateStore({ runtimeHome, relayHome });
 
   return {
-    async startRun({ runId, objective, sourceIdentity, taskContract = {}, projectId: optionsProjectId } = {}) {
+    async startRun({ runId, objective, sourceIdentity, taskContract = {} } = {}) {
       const trustedSourceIdentity = computeKernelSourceIdentity({ projectRoot, objective: objective || taskContract.objective || 'Kernel execution task', taskContract });
       if (sourceIdentity && sourceIdentity !== trustedSourceIdentity) {
         throw new Error('sourceIdentity is computed by Kernel and cannot be caller-authored');
       }
 
       const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
-      const projectId = optionsProjectId || taskContract.projectId || identity.projectId;
+      const projectId = identity.projectId;
       await ensureKnowledgeStoreDirectories(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
-      const knowledgeRevisionStart = await readProjectRevision(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
+      const knowledgeRevisionStart = String(store.getProjectKnowledgeRevision(projectId));
 
       const normalizedChangeSet = normalizeChangedContract(taskContract);
 
@@ -251,6 +251,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         'kg_relation',
         'ontology_constraint',
         'tacit_observation',
+        'episodic_observation',
+        'tacit_practice',
         'known_failure_pattern',
         'required_verification',
       ]);

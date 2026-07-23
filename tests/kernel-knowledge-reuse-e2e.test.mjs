@@ -5,7 +5,7 @@ import os from 'node:os';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
-test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context retrieval, projection resilience, and project isolation', async () => {
+test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context retrieval, revision continuity after projection deletion, and project root isolation', async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'kernel-reuse-e2e-'));
   const kernelHome = path.join(tmpDir, '.moon-relay-kernel');
   const projectRoot = path.join(tmpDir, 'project-root');
@@ -15,26 +15,24 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
     runtimeHome: kernelHome,
   });
 
-  const projectId = 'e2e-knowledge-project';
-
   // --- 1. Run 1: Create, Record Proof, Record Typed Candidates & Finalize ---
   const run1 = await controlPlane.startRun({
     runId: 'run-e2e-1',
     objective: 'Implement authentication service',
-    projectId,
   });
   assert.equal(run1.runId, 'run-e2e-1');
+  assert.equal(run1.knowledgeRevisionStart, '1');
 
   // Transition run to EXECUTE -> PROVE state to allow proof recording
   await controlPlane.transition('run-e2e-1', 'EXECUTE');
   await controlPlane.transition('run-e2e-1', 'PROVE');
 
-  const proofDigest = 'sha256:' + '1'.repeat(64);
+  const proofDigest1 = 'sha256:' + '1'.repeat(64);
   await controlPlane.recordProof('run-e2e-1', {
     obligationId: 'default',
     status: 'passed',
     evidenceRef: 'proof:test-e2e-1',
-    evidenceDigest: proofDigest,
+    evidenceDigest: proofDigest1,
     exitCode: 0,
     command: 'npm test',
   });
@@ -42,55 +40,65 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
   // Transition run to CLOSE state to allow acceptance finalization
   await controlPlane.transition('run-e2e-1', 'CLOSE');
 
-  // Record typed knowledge observations (architecture_decision & semantic_fact)
-  const observations = [
+  // Record typed knowledge observations (architecture_decision, semantic_fact, domain_term, episodic_observation)
+  const observations1 = [
     {
       id: 'arch-jwt-01',
       proposedType: 'architecture_decision',
       statement: 'Use JWT stateless session tokens for auth service',
       rationale: 'Scalable auth without session DB lookup',
       trustTier: 'verified',
-      isGlobal: true,
     },
     {
       id: 'fact-port-4000',
       proposedType: 'semantic_fact',
       statement: 'Authentication service runs on port 4000',
       trustTier: 'verified',
-      isGlobal: true,
     },
     {
       id: 'domain-auth-term',
       proposedType: 'domain_term',
       statement: 'Access Token: Short-lived bearer token used for API requests',
       trustTier: 'verified',
-      isGlobal: true,
+    },
+    {
+      id: 'episodic-token-expiry',
+      proposedType: 'tacit_observation',
+      statement: 'Token expiration handling required graceful retry logic',
+      trustTier: 'verified',
     },
   ];
 
   await controlPlane.recordKnowledgeObservations('run-e2e-1', {
-    observations,
+    observations: observations1,
     approvals: [
       { candidateId: 'arch-jwt-01', approved: true, approvedBy: 'user' },
       { candidateId: 'fact-port-4000', approved: true, approvedBy: 'user' },
       { candidateId: 'domain-auth-term', approved: true, approvedBy: 'user' },
+      { candidateId: 'episodic-token-expiry', approved: true, approvedBy: 'user' },
     ],
   });
 
-  const finalizationResult = await controlPlane.finalizeRun('run-e2e-1', {
+  const finalizationResult1 = await controlPlane.finalizeRun('run-e2e-1', {
     gitCloseoutRequest: { mode: 'none', approvalReceipt: { approved: true, approvedBy: 'user' } },
   });
 
-  assert.equal(finalizationResult.finalizationStatus, 'completed');
-  assert.equal(finalizationResult.knowledgeStatus, 'committed');
+  assert.equal(finalizationResult1.finalizationStatus, 'completed');
+  assert.equal(finalizationResult1.knowledgeStatus, 'committed');
 
-  // --- 2. Run 2: Start new Run and verify automatic retrieval from SQLite ---
+  // --- 2. Projection Deletion: Remove physical projection directory completely ---
+  const projectId = run1.projectId;
+  const projectionDir = path.join(kernelHome, 'state', 'projects', projectId, 'knowledge');
+  await rm(projectionDir, { recursive: true, force: true });
+
+  // --- 3. Run 2: Start new Run, verify SQLite revision authority & re-commit ---
   const run2 = await controlPlane.startRun({
     runId: 'run-e2e-2',
     objective: 'Build user dashboard requiring auth',
-    projectId,
   });
   assert.equal(run2.runId, 'run-e2e-2');
+  // Crucial check: start revision is 2 (read directly from SQLite authority, not reset by missing revision.json!)
+  assert.equal(run2.knowledgeRevisionStart, '2');
 
   const run2FrameContext = await controlPlane.buildStageContext('run-e2e-2', { stage: 'FRAME' });
   assert.ok(run2FrameContext.knowledgeContext);
@@ -101,27 +109,55 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
   assert.ok(promptBlockText.includes('Authentication service runs on port 4000'));
   assert.ok(promptBlockText.includes('Access Token: Short-lived bearer token used for API requests'));
 
-  // --- 3. Projection Tolerance: Delete physical projection directory ---
-  const projectionDir = path.join(kernelHome, 'state', 'projects', projectId, 'knowledge');
-  await rm(projectionDir, { recursive: true, force: true });
+  // Transition run2 to EXECUTE -> PROVE -> CLOSE
+  await controlPlane.transition('run-e2e-2', 'EXECUTE');
+  await controlPlane.transition('run-e2e-2', 'PROVE');
 
-  // Query stage context for Run 2 again after projection deletion
-  const run2ShapeContext = await controlPlane.buildStageContext('run-e2e-2', { stage: 'SHAPE' });
-  assert.ok(run2ShapeContext.knowledgeContext);
-  assert.equal(run2ShapeContext.knowledgeContext.status, 'ready');
-
-  const shapePromptBlock = run2ShapeContext.knowledgeContext.promptBlock;
-  assert.ok(shapePromptBlock.includes('Use JWT stateless session tokens for auth service'));
-  assert.ok(shapePromptBlock.includes('Authentication service runs on port 4000'));
-
-  // --- 4. Project Isolation: Verify different projectId cannot see this knowledge ---
-  const runOther = await controlPlane.startRun({
-    runId: 'run-e2e-other',
-    objective: 'Unrelated payment service work',
-    projectId: 'unrelated-project-id',
+  const proofDigest2 = 'sha256:' + '2'.repeat(64);
+  await controlPlane.recordProof('run-e2e-2', {
+    obligationId: 'default',
+    status: 'passed',
+    evidenceRef: 'proof:test-e2e-2',
+    evidenceDigest: proofDigest2,
+    exitCode: 0,
+    command: 'npm test',
   });
 
-  const otherContext = await controlPlane.buildStageContext('run-e2e-other', { stage: 'SHAPE' });
+  await controlPlane.transition('run-e2e-2', 'CLOSE');
+
+  // Record a new observation in Run 2 and finalize
+  await controlPlane.recordKnowledgeObservations('run-e2e-2', {
+    observations: [
+      {
+        id: 'fact-mfa-support',
+        proposedType: 'semantic_fact',
+        statement: 'MFA TOTP authentication supported for admin accounts',
+        trustTier: 'verified',
+      },
+    ],
+    approvals: [{ candidateId: 'fact-mfa-support', approved: true, approvedBy: 'user' }],
+  });
+
+  const finalizationResult2 = await controlPlane.finalizeRun('run-e2e-2', {
+    gitCloseoutRequest: { mode: 'none', approvalReceipt: { approved: true, approvedBy: 'user' } },
+  });
+
+  assert.equal(finalizationResult2.finalizationStatus, 'completed');
+  assert.equal(finalizationResult2.knowledgeStatus, 'committed');
+
+  // --- 4. Project Root Isolation: Verify distinct projectRoot does not see this knowledge ---
+  const projectRootOther = path.join(tmpDir, 'project-root-other');
+  const controlPlaneOther = await createKernelControlPlane({
+    projectRoot: projectRootOther,
+    runtimeHome: kernelHome,
+  });
+
+  const runOther = await controlPlaneOther.startRun({
+    runId: 'run-e2e-other',
+    objective: 'Unrelated payment service work',
+  });
+
+  const otherContext = await controlPlaneOther.buildStageContext('run-e2e-other', { stage: 'SHAPE' });
   const otherPromptBlock = otherContext.knowledgeContext.promptBlock;
   assert.equal(otherPromptBlock.includes('Use JWT stateless session tokens for auth service'), false);
   assert.equal(otherPromptBlock.includes('Authentication service runs on port 4000'), false);
