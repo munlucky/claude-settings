@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "KERNEL_PROJECT_KNOWLEDGE_LIFECYCLE_HANDOFF",
+  "projectId": "munlucky-moonshot-relay",
+  "branch": "plan/kernel-project-knowledge-lifecycle",
+  "packageRoot": "docs/public/roadmaps/kernel-project-knowledge-lifecycle-2026-07-23",
+  "status": "ready_after_phase_01_preflight",
+  "objective": "Bind project-specific architecture, knowledge, ontology, and tacit context before Kernel work; review and commit verified knowledge after accepted completion; optionally run explicit commit-moonshot Git closeout.",
+  "selectedConstraints": [
+    "Kernel and Relay runtime, state, profile, and project knowledge namespaces must remain isolated.",
+    "Raw graph, ontology dump, transcript, runtime log, tool body, and secret-like values must never enter prompt-facing context.",
+    "Verified project knowledge writes require accepted Kernel completion and candidate-level evidence.",
+    "Knowledge revision updates must be atomic, conflict-aware, and preserve supersession history.",
+    "Git commit or push requires explicit request and approval and follows knowledge closeout.",
+    "Git closeout evidence cannot create or replace Kernel completion authority.",
+    "Account-root project knowledge is excluded from Git staging and preserved on uninstall by default."
+  ],
+  "selectedVerificationSignals": [
+    "project identity collision and alias determinism",
+    "Relay/Kernel no-contamination and no-migration",
+    "knowledge record transition and provenance validation",
+    "stage/path/objective retrieval golden digest",
+    "prompt purity and redaction fuzz",
+    "ontology applicability and conflict matrix",
+    "candidate evidence binding and false-promotion regression",
+    "pre-completion knowledge write rejection",
+    "atomic revision crash and concurrency recovery",
+    "supersession cycle and cross-project rejection",
+    "explicit Git closeout approval enforcement",
+    "staging denylist and unrelated-change exclusion",
+    "commit/push idempotency and remote parity",
+    "package/profile discovery isolation",
+    "disposable-home install/uninstall/rollback",
+    "full Kernel/package/routing/eval/lab/regression gates"
+  ],
+  "phaseOrder": [
+    "01-baseline-identity-and-contracts-v1.ko.md",
+    "02-knowledge-store-and-context-load-v1.ko.md",
+    "03-architecture-ontology-tacit-retrieval-v1.ko.md",
+    "04-post-work-candidate-review-v1.ko.md",
+    "05-knowledge-commit-and-supersession-v1.ko.md",
+    "06-commit-moonshot-kernel-closeout-v1.ko.md",
+    "07-package-profile-adoption-e2e-v1.ko.md"
+  ],
+  "traceability": "TRACEABILITY_MATRIX.md",
+  "specTestObligations": "SPEC_TEST_OBLIGATIONS.md",
+  "architectureReview": "ARCHITECTURE_REVIEW.md",
+  "adrs": [
+    "ADR/ADR-0001-kernel-project-knowledge-isolation.md",
+    "ADR/ADR-0002-completion-gated-knowledge-write.md",
+    "ADR/ADR-0003-explicit-git-closeout-boundary.md"
+  ],
+  "surfaceClassification": {
+    "source_only": [
+      "scripts/kernel/knowledge/**",
+      "scripts/kernel/git/**",
+      "schemas/kernel.knowledge.*",
+      "schemas/kernel.git-closeout-*",
+      "skills/kernel-project-*",
+      "skills/kernel-commit-closeout"
+    ],
+    "package_runtime_payload": [
+      "package/kernel/**",
+      "catalog/kernel-skills.*",
+      "bin/moon-relay-kernel.mjs"
+    ],
+    "data_or_state_migration": [
+      "Kernel runtime DB additive schema",
+      "~/.moon-relay-kernel/state/projects/<projectId>/knowledge/**"
+    ],
+    "installed_profile_or_account_root": [
+      "Kernel Claude/Codex/Qwen/Antigravity profiles"
+    ],
+    "external_deployment_or_service": [
+      "optional Git commit/push to configured remote"
+    ]
+  },
+  "executionAuthority": "Kernel runtime-state DB",
+  "knowledgeWriteAuthority": "accepted completion plus candidate evidence and knowledge commit transaction",
+  "gitCloseoutAuthority": "explicit user/task-contract approval only",
+  "blockedItems": [],
+  "preflightItems": [
+    "confirm current Kernel DB additive migration fixture conventions",
+    "confirm package manifest include/exclude ownership for new knowledge and Git modules",
+    "confirm targeted test command registration policy",
+    "create RED tests before behavior implementation"
+  ]
+}
