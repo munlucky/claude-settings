@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready_after_preflight`
+`complete`
 
 ## Objective
 

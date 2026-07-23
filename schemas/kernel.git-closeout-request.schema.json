@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelGitCloseoutRequest",
+  "type": "object",
+  "required": [
+    "requested",
+    "mode",
+    "approvedBy",
+    "approvalReceipt"
+  ],
+  "properties": {
+    "requested": { "type": "boolean" },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "commit",
+        "commit_and_push"
+      ]
+    },
+    "approvedBy": { "type": "string" },
+    "approvalReceipt": { "type": "string" }
+  },
+  "additionalProperties": true
+}

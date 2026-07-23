@@ -2,7 +2,7 @@
 
 ## Status
 
-`blocked_by_phase_01`
+`complete`
 
 ## Objective
 

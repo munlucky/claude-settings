@@ -48,7 +48,8 @@
         "kernel-verification-before-completion",
         "kernel-review-spec",
         "kernel-review-standards",
-        "kernel-review-complexity"
+        "kernel-review-complexity",
+        "kernel-commit-closeout"
       ]
     }
   ],

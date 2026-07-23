@@ -96,6 +96,36 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       created_at TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS knowledge_context_receipts (
+      run_id TEXT NOT NULL,
+      stage TEXT NOT NULL,
+      knowledge_revision TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (run_id, stage),
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_candidates (
+      candidate_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      proposed_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      candidate_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_commit_receipts (
+      run_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      revision_before TEXT NOT NULL,
+      revision_after TEXT NOT NULL,
+      status TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
   `);
 
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
@@ -105,6 +135,11 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE runs ADD COLUMN required_obligations TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN acceptance_criteria TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN release_evidence_required INTEGER DEFAULT 0;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN project_id TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN knowledge_revision_start TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN knowledge_revision_close TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN knowledge_status TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN context_pack_ref TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN obligation_id TEXT DEFAULT 'default';`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE waivers ADD COLUMN approval_receipt TEXT;`); } catch {}

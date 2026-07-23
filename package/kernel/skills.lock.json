@@ -1,9 +1,23 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-21T09:19:04.975Z",
+  "generatedAt": "2026-07-23T02:28:59.124Z",
   "sourceCommit": "c602ecf44d68b7f9d4eec58e297f92d6342c65ce",
   "scope": "kernel",
   "skills": [
+    {
+      "name": "kernel-commit-closeout",
+      "path": "skills/kernel-commit-closeout",
+      "source": "canonical",
+      "contentHash": "7dfea211753bd6cfcb7d64f53660a8c616d24af7b63b2e0e6761108d303d9098",
+      "license": "MIT",
+      "stages": [],
+      "permissions": [
+        "filesystem-read"
+      ],
+      "permissionReview": {
+        "status": "approved"
+      }
+    },
     {
       "name": "kernel-diagnosing-bugs",
       "path": "skills/kernel-diagnosing-bugs",

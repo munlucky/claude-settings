@@ -54,7 +54,7 @@ test('Codex resolver discovers the newest versioned WindowsApps install after an
   const newExecutable = path.join(windowsAppsRoot, 'OpenAI.Codex_26.715.9757.0_x64__publisher', 'app', 'ChatGPT.exe');
   await mkdir(path.dirname(oldExecutable), { recursive: true }); await mkdir(path.dirname(newExecutable), { recursive: true });
   await writeFile(oldExecutable, 'old'); await writeFile(newExecutable, 'new');
-  const result = await resolveCodexDesktop({ candidates: [], windowsAppsRoot, commandResolver: async () => null });
+  const result = await resolveCodexDesktop({ candidates: [], platform: 'win32', windowsAppsRoot, commandResolver: async () => null });
   assert.equal(result.executable, newExecutable);
   assert.equal(result.launchKind, 'packaged_shell_activation');
 });

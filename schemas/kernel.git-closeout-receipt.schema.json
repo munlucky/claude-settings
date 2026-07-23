@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelGitCloseoutReceipt",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "projectId",
+    "requestedMode",
+    "status",
+    "digest"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string" },
+    "projectId": { "type": "string" },
+    "requestedMode": { "type": "string" },
+    "knowledgeCommitReceiptRef": { "type": "string" },
+    "selectedPaths": { "type": "array" },
+    "excludedPaths": { "type": "array" },
+    "commitSha": { "type": "string" },
+    "branch": { "type": "string" },
+    "remote": { "type": "string" },
+    "pushStatus": {
+      "type": "string",
+      "enum": [
+        "skipped",
+        "completed",
+        "failed"
+      ]
+    },
+    "remoteHeadSha": { "type": "string" },
+    "parity": {
+      "type": "string",
+      "enum": [
+        "matched",
+        "mismatched",
+        "not_requested"
+      ]
+    },
+    "approvalReceipt": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "partial",
+        "failed",
+        "skipped"
+      ]
+    },
+    "digest": { "type": "string" }
+  },
+  "additionalProperties": true
+}

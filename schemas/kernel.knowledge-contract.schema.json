@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelKnowledgeContract",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "knowledgeRevision",
+    "status",
+    "strictness",
+    "stage"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "knowledgeRevision": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "stale",
+        "degraded_read",
+        "degraded_write",
+        "not_configured"
+      ]
+    },
+    "strictness": {
+      "type": "string",
+      "enum": [
+        "advisory",
+        "required"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "FRAME",
+        "SHAPE",
+        "SLICE",
+        "SCHEDULE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ]
+    },
+    "policyAnchors": {
+      "type": "array"
+    },
+    "semanticFacts": {
+      "type": "array"
+    },
+    "graphSynopsis": {
+      "type": "array"
+    },
+    "ontologyConstraints": {
+      "type": "array"
+    },
+    "staleOrUnavailable": {
+      "type": "array"
+    },
+    "omittedByPolicy": {
+      "type": "array"
+    },
+    "promptBlock": {
+      "type": "string"
+    },
+    "contextPackRef": {
+      "type": "string"
+    },
+    "digest": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}
