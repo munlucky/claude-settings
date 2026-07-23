@@ -29,7 +29,7 @@ export async function resolveCodexDesktop({ candidates = [], commandResolver = r
     path.join(process.env.ProgramFiles || 'C:\\Program Files', 'WindowsApps', 'OpenAI.Codex', 'app', 'ChatGPT.exe'),
   ];
   const executable = await resolveExecutable(candidates)
-    || (platform === 'win32' && await windowsAppsResolver({ root: windowsAppsRoot, packagePrefix: 'OpenAI.Codex_', executableRelativePath: path.join('app', 'ChatGPT.exe') }))
+    || (platform === 'win32' && await windowsAppsResolver({ root: windowsAppsRoot, packagePrefix: 'OpenAI.Codex_', executableRelativePath: path.join('app', 'ChatGPT.exe'), platform }))
     || (platform === 'darwin' && await macOsResolver({ roots: macOsAppRoots, appNames: ['Codex.app', 'ChatGPT.app'], executableNames: ['Codex', 'ChatGPT'], platform }))
     || await resolveExecutable(stableDefaults)
     || await commandResolver('ChatGPT.exe');

@@ -1,0 +1,99 @@
+schemaVersion: 1
+reviewId: kernel-project-knowledge-lifecycle-plan-review-iter-01
+reviewedAt: 2026-07-23
+reviewedPackageRoot: docs/public/roadmaps/kernel-project-knowledge-lifecycle-2026-07-23
+reviewMode: independent-sidecar-synthesis
+perspectives:
+  - state-authority-and-architecture
+  - security-and-data-integrity
+  - operations-and-git-closeout
+surfaceClassificationsReviewed:
+  - source_only
+  - package_runtime_payload
+  - data_or_state_migration
+  - installed_profile_or_account_root
+  - external_deployment_or_service
+blockingFindings: []
+acceptedChanges:
+  - id: REVIEW-CHANGE-001
+    finding: Knowledge writes could be confused with runtime completion authority.
+    applied: Added explicit accepted-completion gate and defined knowledge receipts as post-completion lineage only.
+  - id: REVIEW-CHANGE-002
+    finding: Concurrent runs could silently overwrite a newer knowledge revision.
+    applied: Added revision conflict detection, re-review queue, and no last-write-wins rule.
+  - id: REVIEW-CHANGE-003
+    finding: commit-moonshot integration could trigger repository mutation from a generic close request.
+    applied: Added explicit gitCloseout request and approval receipt; close/complete/knowledge refresh are not Git approval.
+  - id: REVIEW-CHANGE-004
+    finding: Git staging needed stronger separation from account-root knowledge and generated runtime files.
+    applied: Added hard denylist, scoped path allowlist, and unrelated-user-change exclusion.
+  - id: REVIEW-CHANGE-005
+    finding: Push process success alone does not prove delivery.
+    applied: Added local HEAD versus remote branch SHA parity requirement.
+  - id: REVIEW-CHANGE-006
+    finding: Uninstall could accidentally delete durable project knowledge.
+    applied: Project knowledge is preserved by default; purge requires separate explicit approval and receipt.
+  - id: REVIEW-CHANGE-007
+    finding: Tacit knowledge promotion was underspecified.
+    applied: Required repeated observations across runs, verification/reviewer evidence, scoped applicability, and contradiction handling.
+  - id: REVIEW-CHANGE-008
+    finding: Context lineage did not explicitly bind omissions and source identity.
+    applied: Context receipt now includes projectId, stage, knowledge revision, source identity, digest, token estimate, and omissions.
+rejectedChanges:
+  - id: REVIEW-REJECT-001
+    proposal: Reuse Relay project knowledge namespace directly to reduce duplication.
+    reason: Violates Kernel/Relay product and state isolation; rollback and schema authority would be coupled.
+  - id: REVIEW-REJECT-002
+    proposal: Automatically commit every accepted Kernel task.
+    reason: Repository mutation requires explicit user intent and may capture unrelated changes.
+  - id: REVIEW-REJECT-003
+    proposal: Store all architecture graph nodes in every prompt for completeness.
+    reason: Violates prompt budget, safety, and relevance constraints; compact scoped synopsis is required.
+remainingAmbiguity:
+  - id: AMB-001
+    item: Whether Kernel run identity should use additive columns on runs or a normalized run_project_context table.
+    disposition: Resolve in Phase 01 after inspecting current migration fixtures; external receipt contract remains fixed.
+  - id: AMB-002
+    item: Exact targeted npm script names for new test files.
+    disposition: Register during implementation according to package.json policy; repository-level gates are already fixed.
+  - id: AMB-003
+    item: Whether an existing Git safety helper fully satisfies staging rollback needs.
+    disposition: Characterize existing helper before adding a Kernel-specific implementation.
+policyGatesReviewed:
+  - path: AGENTS.md
+    status: present
+  - path: kernel/product.yaml
+    status: present
+  - path: kernel/context-policy.yaml
+    status: present
+  - path: package/kernel/manifest.json
+    status: present
+  - path: package/package-contract.yaml
+    status: present
+  - path: schemas/verification.contract.yaml
+    status: present
+  - path: skills/commit-moonshot/SKILL.md
+    status: present
+  - path: skills/moonshot-plan-writer/references/plan-package-contract.md
+    status: present
+reviewDecision: conditional_pass
+conditions:
+  - Phase 01 preflight must resolve AMB-001 through AMB-003.
+  - Behavior changes must begin with RED characterization/TDD evidence.
+  - Live account-root adoption remains prohibited until Phase 07 disposable-home evidence passes.
+closureChecks:
+  expectedFilesListed: true
+  phaseDependenciesDeclared: true
+  ownedAndReadOnlyPathsDeclared: true
+  surfaceClassificationsDeclared: true
+  policySourcesDeclared: true
+  evidenceSlotsDeclared: true
+  traceabilityPresent: true
+  specTestObligationsPresent: true
+  architectureHandoffPresent: true
+  finalFilesystemVerification: passed
+  comparedBase: main
+  comparedHead: plan/kernel-project-knowledge-lifecycle
+  changedFileCount: 16
+  docsOnlyChanges: true
+  behindMainBy: 0

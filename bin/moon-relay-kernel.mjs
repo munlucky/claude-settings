@@ -164,18 +164,7 @@ try {
     await cp.close();
     output(res);
   } else if (command === 'close') {
-    const cp = await openControlPlane();
-    const runId = getArgValue('--run-id');
-    if (!runId) throw new Error('close command requires --run-id');
-    const closeRes = await cp.closeRun(runId);
-    let decisionRes = null;
-    try {
-      decisionRes = await cp.assessCompletion(runId, { commitDecision: true });
-    } catch {
-      /* non-blocking assessment if absent */
-    }
-    await cp.close();
-    output({ ...closeRes, completionDecision: decisionRes });
+    throw new Error('DEPRECATED_COMMAND: close cannot finalize a Kernel run. Use finalize.');
   } else if (command === 'resume') {
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id');
@@ -183,6 +172,35 @@ try {
     const res = await cp.getRun(runId);
     await cp.close();
     output(res || { status: 'not_found' });
+  } else if (command === 'finalize') {
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id');
+    if (!runId) throw new Error('finalize command requires --run-id');
+    const input = readContextJson();
+    const res = await cp.finalizeRun(runId, {
+      gitCloseoutRequest: input.gitCloseoutRequest || null,
+      changedPaths: input.changedPaths || [],
+      changedFileCount: input.changedFileCount || null,
+      knowledgeObservations: input.knowledgeObservations || [],
+      approvals: input.approvals || [],
+    });
+    await cp.close();
+    output(res);
+  } else if (command === 'finalization-status') {
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id');
+    if (!runId) throw new Error('finalization-status command requires --run-id');
+    const store = await (await import('../scripts/kernel/state-store.mjs')).openKernelStateStore({ runtimeHome: runtimeHomeArg || undefined });
+    const res = store.getFinalizationReceipt(runId);
+    await cp.close();
+    output(res || { status: 'not_found' });
+  } else if (command === 'git-closeout') {
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id');
+    if (!runId) throw new Error('git-closeout command requires --run-id');
+    const res = await cp.retryGitCloseout(runId);
+    await cp.close();
+    output(res);
   } else {
     throw new Error(`Unknown command: ${command}`);
   }

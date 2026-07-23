@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelApplicableKnowledgeSlice",
+  "type": "object",
+  "required": [
+    "architectureDecisions",
+    "architectureRequirements",
+    "domainTerms",
+    "componentBoundaries",
+    "ontologyConstraints",
+    "tacitPractices",
+    "provenance"
+  ],
+  "properties": {
+    "architectureDecisions": { "type": "array" },
+    "architectureRequirements": { "type": "array" },
+    "domainTerms": { "type": "array" },
+    "componentBoundaries": { "type": "array" },
+    "apiDataContracts": { "type": "array" },
+    "graphRelations": { "type": "array" },
+    "ontologyConstraints": { "type": "array" },
+    "tacitPractices": { "type": "array" },
+    "knownFailurePatterns": { "type": "array" },
+    "requiredVerifications": { "type": "array" },
+    "unresolvedConflicts": { "type": "array" },
+    "provenance": { "type": "array" }
+  },
+  "additionalProperties": true
+}

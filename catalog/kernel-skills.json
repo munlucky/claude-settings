@@ -48,7 +48,8 @@
         "kernel-verification-before-completion",
         "kernel-review-spec",
         "kernel-review-standards",
-        "kernel-review-complexity"
+        "kernel-review-complexity",
+        "kernel-commit-closeout"
       ]
     }
   ],
@@ -61,6 +62,7 @@
     "kernel-review-spec": { "condition": "riskTier=T2/T3 or publicContract or acceptanceAmbiguity", "priority": 50, "guidance": "Review the public contract and acceptance semantics." },
     "kernel-review-standards": { "condition": "T1+ behaviorChanging", "priority": 51, "guidance": "Review implementation against applicable engineering standards." },
     "kernel-review-complexity": { "condition": "complex or newDependency or filesChanged>8", "priority": 60, "guidance": "Review complexity and dependency surface after functional review." },
+    "kernel-commit-closeout": { "condition": "gitCloseoutRequested and completionAccepted and knowledgeCommitReceiptExists", "priority": 100, "guidance": "Run explicit approved Git closeout after knowledge commit." },
     "kernel-verification-before-completion": { "condition": "route includes EXECUTE or explicit completion attempt", "priority": 90, "guidance": "Require fresh, scope-matched evidence before completion." }
   },
   "checks": {

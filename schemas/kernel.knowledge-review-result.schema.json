@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelKnowledgeReviewResult",
+  "type": "object",
+  "required": [
+    "status",
+    "verifiedCandidates",
+    "episodicCandidates",
+    "rejectedCandidates"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "needs_approval",
+        "degraded"
+      ]
+    },
+    "verifiedCandidates": { "type": "array" },
+    "episodicCandidates": { "type": "array" },
+    "rejectedCandidates": { "type": "array" },
+    "supersessionProposals": { "type": "array" },
+    "ontologyViolations": { "type": "array" },
+    "approvalRequired": { "type": "array" },
+    "evidenceCoverage": { "type": "array" }
+  },
+  "additionalProperties": true
+}

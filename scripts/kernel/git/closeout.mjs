@@ -1,0 +1,344 @@
+import crypto from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+import { rm } from 'node:fs/promises';
+import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
+import { filterStagingSelection, validateGitCloseoutPath } from './staging-policy.mjs';
+import { verifyRemoteParity } from './remote-parity.mjs';
+
+export class KernelGitCloseoutError extends Error {
+  constructor(code, message, details = {}) {
+    super(message);
+    this.name = 'KernelGitCloseoutError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export async function executeKernelGitCloseout({
+  runId,
+  projectId,
+  stateStore = null,
+  repoRoot = process.cwd(),
+  gitCloseoutRequest = null,
+  knowledgeCommitReceipt = null,
+  changedFiles = [],
+}) {
+  // If not explicitly requested, return skipped receipt
+  if (!gitCloseoutRequest || !gitCloseoutRequest.requested) {
+    const skippedReceipt = {
+      schemaVersion: 1,
+      runId,
+      projectId,
+      requestedMode: 'none',
+      status: 'skipped',
+      digest: crypto.createHash('sha256').update(`${runId}:skipped`).digest('hex'),
+    };
+    if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
+      stateStore.recordGitCloseoutReceipt(runId, {
+        projectId,
+        mode: 'none',
+        pushStatus: 'skipped',
+        parity: 'not_requested',
+        status: 'skipped',
+        receiptJson: skippedReceipt,
+      });
+    }
+    return skippedReceipt;
+  }
+
+  if (!gitCloseoutRequest.approvalReceipt) {
+    throw new KernelGitCloseoutError('APPROVAL_REQUIRED', 'Explicit Git closeout requires valid approvalReceipt');
+  }
+
+  if (!knowledgeCommitReceipt) {
+    throw new KernelGitCloseoutError('KNOWLEDGE_RECEIPT_REQUIRED', 'Git closeout follows knowledge closeout receipt');
+  }
+
+  // Pre-existing staged changes check (Section 1.4, 13.2)
+  const stagedDiffRes = runGit(repoRoot, ['diff', '--cached', '--quiet']);
+  if (stagedDiffRes.status !== 0) {
+    throw new KernelGitCloseoutError('GIT_PREEXISTING_STAGED_CHANGES', 'Pre-existing staged changes present in working tree');
+  }
+
+  const currentBranch = gitCurrentBranch(repoRoot);
+  if (!currentBranch) {
+    throw new KernelGitCloseoutError('DETACHED_HEAD', 'Git closeout requires an active branch, found detached HEAD');
+  }
+
+  // Validate path containment and safety (Section 14)
+  for (const file of changedFiles) {
+    try {
+      validateGitCloseoutPath(repoRoot, file);
+    } catch (pathErr) {
+      throw new KernelGitCloseoutError('INVALID_GIT_PATH', pathErr.message, { originalError: pathErr });
+    }
+  }
+
+  const { selectedPaths, excludedPaths } = filterStagingSelection(changedFiles);
+
+  // Empty selection check: do not make empty commits
+  if (selectedPaths.length === 0 && !gitCloseoutRequest.existingCommitSha) {
+    const skippedReceipt = {
+      schemaVersion: 1,
+      runId,
+      projectId,
+      requestedMode: gitCloseoutRequest.mode || 'soft',
+      status: 'skipped',
+      reason: 'no_selected_changes',
+      digest: crypto.createHash('sha256').update(`${runId}:no_selected_changes`).digest('hex'),
+    };
+    if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
+      stateStore.recordGitCloseoutReceipt(runId, {
+        projectId,
+        mode: gitCloseoutRequest.mode || 'soft',
+        pushStatus: 'skipped',
+        parity: 'not_requested',
+        status: 'skipped',
+        selectedPaths: [],
+        receiptJson: skippedReceipt,
+      });
+    }
+    return skippedReceipt;
+  }
+
+  const beforeHeadRes = runGit(repoRoot, ['rev-parse', 'HEAD']);
+  const beforeHeadSha = beforeHeadRes.status === 0 ? String(beforeHeadRes.stdout || '').trim() : '';
+
+  let commitSha = gitCloseoutRequest.existingCommitSha || beforeHeadSha;
+
+  // If retry with existing commitSha, skip creating new commit
+  if (!gitCloseoutRequest.existingCommitSha) {
+    const tempIndexFile = path.join(os.tmpdir(), `kernel-git-index-${runId}-${Date.now()}-${Math.random().toString(36).slice(2)}.idx`);
+    const tempGitEnv = { ...process.env, GIT_INDEX_FILE: tempIndexFile };
+
+    try {
+      if (beforeHeadSha) {
+        runGit(repoRoot, ['read-tree', 'HEAD'], { env: tempGitEnv });
+      }
+
+      const addRes = runGit(repoRoot, ['add', '--', ...selectedPaths], { env: tempGitEnv });
+      if (addRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_ADD_FAILED', `Git add failed: ${addRes.stderr}`);
+      }
+
+      const writeTreeRes = runGit(repoRoot, ['write-tree'], { env: tempGitEnv });
+      if (writeTreeRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_WRITE_TREE_FAILED', `Git write-tree failed: ${writeTreeRes.stderr}`);
+      }
+      const treeSha = String(writeTreeRes.stdout || '').trim();
+
+      const commitMsg = `feat(kernel): update ${projectId} implementation\n\n- Completed phase execution for ${runId}\n- Knowledge commit ref: ${knowledgeCommitReceipt.digest || 'none'}`;
+      const commitArgs = ['commit-tree', treeSha, '-m', commitMsg];
+      if (beforeHeadSha) {
+        commitArgs.push('-p', beforeHeadSha);
+      }
+
+      const commitTreeRes = runGit(repoRoot, commitArgs, { env: tempGitEnv });
+      if (commitTreeRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_COMMIT_FAILED', `Git commit-tree failed: ${commitTreeRes.stderr}`);
+      }
+      commitSha = String(commitTreeRes.stdout || '').trim();
+
+      if (!commitSha || commitSha === beforeHeadSha) {
+        throw new KernelGitCloseoutError('GIT_COMMIT_NOT_CREATED', 'Git commit was not created (HEAD did not advance)');
+      }
+
+      // Branch ref CAS update (with beforeHeadSha)
+      const updateRefArgs = ['update-ref', `refs/heads/${currentBranch}`, commitSha];
+      if (beforeHeadSha) {
+        updateRefArgs.push(beforeHeadSha);
+      }
+      const updateRefRes = runGit(repoRoot, updateRefArgs);
+      if (updateRefRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_REF_CONFLICT', `Git update-ref CAS conflict on branch ${currentBranch}: ${updateRefRes.stderr}`);
+      }
+
+      // Record commit_created receipt BEFORE attempting push (Section 13.3)
+      if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
+        stateStore.recordGitCloseoutReceipt(runId, {
+          projectId,
+          mode: gitCloseoutRequest.mode || 'soft',
+          commitSha,
+          branch: currentBranch,
+          pushStatus: 'skipped',
+          parity: 'not_requested',
+          status: 'commit_created',
+          beforeHeadSha,
+          selectedPaths,
+          receiptJson: { runId, projectId, commitSha, branch: currentBranch, status: 'commit_created' },
+        });
+      }
+    } finally {
+      try { await rm(tempIndexFile, { force: true }); } catch {}
+    }
+  }
+
+  let pushStatus = 'skipped';
+  let parity = 'not_requested';
+  let remoteHeadSha = '';
+
+  if (gitCloseoutRequest.mode === 'commit_and_push') {
+    // Explicit SHA Push (Section 13.4)
+    const pushRes = runGit(repoRoot, ['push', 'origin', `${commitSha}:refs/heads/${currentBranch}`]);
+    if (pushRes.status === 0) {
+      pushStatus = 'completed';
+      const parityCheck = verifyRemoteParity(repoRoot, { branch: currentBranch, remote: 'origin' });
+      parity = parityCheck.parity;
+      remoteHeadSha = parityCheck.remoteHeadSha;
+
+      if (parityCheck.parity !== 'matched') {
+        if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
+          stateStore.recordGitCloseoutReceipt(runId, {
+            projectId,
+            mode: gitCloseoutRequest.mode,
+            commitSha,
+            branch: currentBranch,
+            pushStatus: 'completed',
+            parity: parityCheck.parity,
+            status: 'parity_failed',
+            errorCode: 'REMOTE_PARITY_MISMATCH',
+            errorMessage: `Remote parity mismatch: local ${commitSha} != remote ${remoteHeadSha}`,
+          });
+        }
+        throw new KernelGitCloseoutError('REMOTE_PARITY_MISMATCH', `Remote parity mismatch on branch ${currentBranch}: local ${commitSha} != remote ${remoteHeadSha}`);
+      }
+    } else {
+      pushStatus = 'failed';
+      if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
+        stateStore.recordGitCloseoutReceipt(runId, {
+          projectId,
+          mode: gitCloseoutRequest.mode,
+          commitSha,
+          branch: currentBranch,
+          pushStatus: 'failed',
+          parity: 'failed',
+          status: 'push_failed',
+          errorCode: 'GIT_PUSH_FAILED',
+          errorMessage: pushRes.stderr,
+        });
+      }
+      throw new KernelGitCloseoutError('GIT_PUSH_FAILED', `Git push failed: ${pushRes.stderr}`);
+    }
+  }
+
+  const payload = {
+    schemaVersion: 1,
+    runId,
+    projectId,
+    requestedMode: gitCloseoutRequest.mode,
+    knowledgeCommitReceiptRef: knowledgeCommitReceipt.digest || '',
+    selectedPaths,
+    excludedPaths,
+    commitSha,
+    branch: currentBranch,
+    pushStatus,
+    remoteHeadSha,
+    parity,
+    approvalReceipt: gitCloseoutRequest.approvalReceipt,
+    status: 'completed',
+  };
+
+  const digest = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  payload.digest = digest;
+
+  if (stateStore && typeof stateStore.recordGitCloseoutReceipt === 'function') {
+    stateStore.recordGitCloseoutReceipt(runId, {
+      projectId,
+      mode: gitCloseoutRequest.mode,
+      commitSha,
+      branch: currentBranch,
+      pushStatus,
+      parity,
+      status: 'completed',
+      beforeHeadSha,
+      selectedPaths,
+      receiptJson: payload,
+    });
+  }
+
+  return payload;
+}
+
+export async function retryGitCloseout(runId, { stateStore, repoRoot = process.cwd() } = {}) {
+  if (!stateStore || typeof stateStore.getGitCloseoutReceipt !== 'function') {
+    throw new KernelGitCloseoutError('GIT_CLOSEOUT_RECEIPT_REQUIRED', 'stateStore is required for retry');
+  }
+
+  const receipt = stateStore.getGitCloseoutReceipt(runId);
+  if (!receipt) {
+    throw new KernelGitCloseoutError('GIT_CLOSEOUT_RECEIPT_REQUIRED', `No git closeout receipt found for run ${runId}`);
+  }
+
+  if (receipt.status === 'completed' || receipt.receiptJson?.status === 'completed') {
+    return receipt.receiptJson || receipt;
+  }
+
+  if (!['commit_created', 'push_failed', 'parity_failed'].includes(receipt.status)) {
+    throw new KernelGitCloseoutError('GIT_CLOSEOUT_NOT_RETRYABLE', `Git closeout status ${receipt.status} is not retryable`);
+  }
+
+  const commitSha = receipt.commitSha;
+  const branch = receipt.branch || gitCurrentBranch(repoRoot);
+
+  if (!commitSha) {
+    throw new KernelGitCloseoutError('GIT_CLOSEOUT_NOT_RETRYABLE', 'No commit SHA recorded in DB receipt for retry');
+  }
+
+  const pushRes = runGit(repoRoot, ['push', 'origin', `${commitSha}:refs/heads/${branch}`]);
+  if (pushRes.status !== 0) {
+    stateStore.recordGitCloseoutReceipt(runId, {
+      projectId: receipt.projectId,
+      mode: receipt.mode || 'commit_and_push',
+      commitSha,
+      branch,
+      pushStatus: 'failed',
+      parity: 'failed',
+      status: 'push_failed',
+      errorCode: 'GIT_PUSH_FAILED',
+      errorMessage: pushRes.stderr,
+    });
+    throw new KernelGitCloseoutError('GIT_PUSH_FAILED', `Git push failed during retry: ${pushRes.stderr}`);
+  }
+
+  const parityCheck = verifyRemoteParity(repoRoot, { branch, remote: 'origin' });
+  if (parityCheck.parity !== 'matched') {
+    stateStore.recordGitCloseoutReceipt(runId, {
+      projectId: receipt.projectId,
+      mode: receipt.mode || 'commit_and_push',
+      commitSha,
+      branch,
+      pushStatus: 'completed',
+      parity: parityCheck.parity,
+      status: 'parity_failed',
+      errorCode: 'REMOTE_PARITY_MISMATCH',
+      errorMessage: `Parity mismatch: local ${commitSha} != remote ${parityCheck.remoteHeadSha}`,
+    });
+    throw new KernelGitCloseoutError('REMOTE_PARITY_MISMATCH', `Parity mismatch during retry on branch ${branch}`);
+  }
+
+  const updatedReceipt = {
+    ...(receipt.receiptJson || {}),
+    runId,
+    projectId: receipt.projectId,
+    commitSha,
+    branch,
+    pushStatus: 'completed',
+    parity: parityCheck.parity,
+    status: 'completed',
+  };
+
+  stateStore.recordGitCloseoutReceipt(runId, {
+    projectId: receipt.projectId,
+    mode: receipt.mode || 'commit_and_push',
+    commitSha,
+    branch,
+    pushStatus: 'completed',
+    parity: parityCheck.parity,
+    status: 'completed',
+    receiptJson: updatedReceipt,
+  });
+
+  return updatedReceipt;
+}
+

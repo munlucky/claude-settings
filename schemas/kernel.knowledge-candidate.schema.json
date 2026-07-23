@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelKnowledgeCandidate",
+  "type": "object",
+  "required": [
+    "candidateId",
+    "runId",
+    "projectId",
+    "proposedType",
+    "statement",
+    "status"
+  ],
+  "properties": {
+    "candidateId": { "type": "string" },
+    "runId": { "type": "string" },
+    "projectId": { "type": "string" },
+    "proposedType": {
+      "type": "string",
+      "enum": [
+        "policy_anchor",
+        "semantic_fact",
+        "kg_relation",
+        "ontology_constraint",
+        "episodic_observation"
+      ]
+    },
+    "statement": { "type": "string" },
+    "scope": { "type": "array" },
+    "relatedFiles": { "type": "array" },
+    "sourceRefs": { "type": "array" },
+    "evidenceRefs": { "type": "array" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "staged",
+        "verified",
+        "rejected",
+        "committed",
+        "superseded",
+        "archived"
+      ]
+    },
+    "supersedes": { "type": "array" },
+    "rejectionReasons": { "type": "array" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelKnowledgeCommitReceipt",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "runId",
+    "projectId",
+    "sourceIdentity",
+    "revisionBefore",
+    "revisionAfter",
+    "status",
+    "digest"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "runId": { "type": "string" },
+    "projectId": { "type": "string" },
+    "sourceIdentity": { "type": "string" },
+    "mutationRevision": { "type": "integer" },
+    "completionDecisionRef": { "type": "string" },
+    "revisionBefore": { "type": "string" },
+    "revisionAfter": { "type": "string" },
+    "acceptedCandidates": { "type": "array" },
+    "rejectedCandidates": { "type": "array" },
+    "supersededRecords": { "type": "array" },
+    "evidenceRefs": { "type": "array" },
+    "filesWritten": { "type": "array" },
+    "digest": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "committed",
+        "no_change",
+        "conflict",
+        "failed"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

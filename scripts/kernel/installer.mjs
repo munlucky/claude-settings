@@ -10,6 +10,7 @@ const PAYLOAD_ENTRIES = [
   'kernel',
   'scripts/kernel',
   'scripts/lib/candidate-identity.mjs',
+  'scripts/lib/git-safe.mjs',
   'schemas/kernel.track.schema.json',
   'schemas/kernel.runtime-state.schema.json',
   'catalog/kernel-skills.json',

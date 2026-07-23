@@ -11,6 +11,7 @@
     "scripts/switcher/",
     "scripts/lib/skills-lock.mjs",
     "scripts/lib/candidate-identity.mjs",
+    "scripts/lib/git-safe.mjs",
     "schemas/kernel.*",
     "schemas/harness-switcher.*",
     "skills/moon-relay-kernel/",

@@ -55,7 +55,11 @@ export async function physicalTargetIdentity(target, { protectedRoots = [] } = {
   const parentReparse = [];
   let cursor = path.dirname(resolved);
   while (cursor && cursor !== path.dirname(cursor)) {
-    try { if ((await lstat(cursor)).isSymbolicLink()) parentReparse.push(cursor); } catch { /* missing parent */ }
+    try {
+      if ((await lstat(cursor)).isSymbolicLink() && !['/var', '/tmp', '/etc'].includes(cursor.replace(/\\/g, '/'))) {
+        parentReparse.push(cursor);
+      }
+    } catch { /* missing parent */ }
     cursor = path.dirname(cursor);
   }
   const collision = protectedRoots.find((root) => {

@@ -7,8 +7,8 @@ const execFileAsync = promisify(execFile);
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 export async function hashExecutable(file) { try { return createHash('sha256').update(await readFile(file)).digest('hex'); } catch { return null; } }
 export async function resolveExecutable(candidates = []) { for (const candidate of candidates) if (candidate && await exists(candidate)) return path.resolve(candidate); return null; }
-export async function resolveLatestWindowsAppsExecutable({ root, packagePrefix, executableRelativePath }) {
-  if (process.platform !== 'win32' || !root || !packagePrefix || !executableRelativePath) return null;
+export async function resolveLatestWindowsAppsExecutable({ root, packagePrefix, executableRelativePath, platform = process.platform }) {
+  if (platform !== 'win32' || !root || !packagePrefix || !executableRelativePath) return null;
   try {
     const entries = await readdir(root, { withFileTypes: true });
     const candidates = entries

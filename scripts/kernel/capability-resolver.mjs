@@ -37,6 +37,9 @@ const conditionState = (task = {}) => {
     reviewStandards: ['T1', 'T2', 'T3'].includes(riskTier) && task.behaviorChanging === true,
     reviewComplexity: task.complex === true || task.newDependency === true || Number(task.filesChanged || 0) > 8,
     verification: routeIncludesExecute || task.explicitCompletionAttempt === true,
+    gitCloseoutRequested: task.gitCloseoutRequested === true,
+    completionAccepted: task.completionAccepted === true,
+    knowledgeCommitReceiptExists: task.knowledgeCommitReceiptExists === true,
     riskTier,
   };
 };
@@ -51,6 +54,9 @@ const isActive = (id, state) => {
   if (id === 'kernel-review-standards') return state.reviewStandards;
   if (id === 'kernel-review-complexity') return state.reviewComplexity;
   if (id === 'kernel-verification-before-completion') return state.verification;
+  if (id === 'kernel-commit-closeout') {
+    return Boolean(state.gitCloseoutRequested && state.completionAccepted && state.knowledgeCommitReceiptExists);
+  }
   return false;
 };
 

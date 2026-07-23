@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KernelKnowledgeRecord",
+  "type": "object",
+  "required": [
+    "id",
+    "projectId",
+    "type",
+    "statement",
+    "status",
+    "trustTier",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9._-]{1,128}$"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "policy_anchor",
+        "semantic_fact",
+        "episodic_observation",
+        "kg_relation",
+        "ontology_constraint",
+        "provenance_event",
+        "knowledge_candidate"
+      ]
+    },
+    "statement": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "staged",
+        "verified",
+        "rejected",
+        "committed",
+        "superseded",
+        "archived"
+      ]
+    },
+    "trustTier": {
+      "type": "string",
+      "enum": [
+        "authoritative",
+        "verified",
+        "derived",
+        "quarantined",
+        "degraded"
+      ]
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "string"
+    },
+    "sourceRef": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "object"
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "supersedes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

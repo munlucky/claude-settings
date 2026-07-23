@@ -1,0 +1,21 @@
+version: 1
+policy:
+  trustTiers:
+    authoritative: 5
+    verified: 4
+    derived: 3
+    quarantined: 2
+    degraded: 1
+  stageBudgets:
+    FRAME: 1200
+    SHAPE: 1500
+    SLICE: 1500
+    SCHEDULE: 1200
+    EXECUTE: 2000
+    PROVE: 1500
+    CLOSE: 1000
+  redaction:
+    omitRawGraph: true
+    omitRawOntologyDump: true
+    omitLogsAndTranscripts: true
+    redactSecrets: true

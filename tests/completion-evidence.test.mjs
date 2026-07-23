@@ -1,0 +1,29 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+test('Completion Evidence - requires fresh verification evidence', async () => {
+  const tmp = await mkdtemp(join(tmpdir(), 'mr-test-comp-ev-'));
+  const store = await openKernelStateStore({ runtimeHome: tmp });
+  try {
+    store.createRun({
+      runId: 'run-comp-ev-1',
+      objective: 'Test evidence evaluation',
+      sourceIdentity: 'cand-12345678901234567890123456789012',
+      projectId: 'proj-1',
+    });
+
+    store.transition('run-comp-ev-1', 'EXECUTE');
+    store.transition('run-comp-ev-1', 'PROVE');
+
+    // Without verification, evaluation should reject completion
+    const evalRes = store.evaluateCompletion('run-comp-ev-1');
+    assert.notEqual(evalRes.decision, 'accepted');
+  } finally {
+    store.close();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});

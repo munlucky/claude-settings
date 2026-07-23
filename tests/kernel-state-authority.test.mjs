@@ -33,7 +33,8 @@ test('natural PROVE -> verification -> CLOSE workflow results in accepted comple
 
   const comp = s.assessCompletion('r1', { expectedSourceIdentity: 'src-1' });
   assert.equal(comp.decision, 'accepted');
-  assert.equal(comp.run.status, 'completed');
+  const finalRun = s.persistCompletionDecision('r1', comp);
+  assert.equal(finalRun.status, 'completed');
 
   s.close();
 });
@@ -98,7 +99,8 @@ test('multi-obligation proof contract requires all declared obligations to pass'
 
   const comp = s.assessCompletion('r-t3');
   assert.equal(comp.decision, 'accepted');
-  assert.equal(comp.run.status, 'completed');
+  const finalRun = s.persistCompletionDecision('r-t3', comp);
+  assert.equal(finalRun.status, 'completed');
 
   s.close();
 });
