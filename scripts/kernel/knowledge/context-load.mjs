@@ -73,7 +73,13 @@ export async function buildProjectKnowledgeContext({
     knowledgeRevision = await readProjectRevision(projectId, { env });
     const records = await loadAllProjectRecords(projectId, { env });
     rawPolicyAnchors = records.policyAnchors || [];
-    rawSemanticFacts = records.semanticFacts || [];
+    rawSemanticFacts = [
+      ...(records.semanticFacts || []),
+      ...(records.architectureRecords || []),
+      ...(records.architectureDecisions || []),
+      ...(records.observations || []),
+      ...(records.provenanceLog || []),
+    ];
     rawGraphRelations = records.kgRelations || [];
     rawOntologyConstraints = records.ontologyConstraints || [];
   }
@@ -104,7 +110,7 @@ export async function buildProjectKnowledgeContext({
   if (allowedTypes.length > 0) {
     selectedFacts = selectedFacts.filter((f) => {
       const type = f.type || f.recordType || 'semantic_fact';
-      if (allowedTypes.includes(type) || allowedTypes.includes('semantic_fact')) return true;
+      if (allowedTypes.includes(type)) return true;
       omittedByPolicy.push({ id: f.id || 'unknown', reason: `type_${type}_not_in_${stage}` });
       return false;
     });

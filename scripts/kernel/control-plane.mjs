@@ -57,14 +57,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   const store = await openKernelStateStore({ runtimeHome, relayHome });
 
   return {
-    async startRun({ runId, objective, sourceIdentity, taskContract = {} }) {
+    async startRun({ runId, objective, sourceIdentity, taskContract = {}, projectId: optionsProjectId } = {}) {
       const trustedSourceIdentity = computeKernelSourceIdentity({ projectRoot, objective: objective || taskContract.objective || 'Kernel execution task', taskContract });
       if (sourceIdentity && sourceIdentity !== trustedSourceIdentity) {
         throw new Error('sourceIdentity is computed by Kernel and cannot be caller-authored');
       }
 
       const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
-      const projectId = identity.projectId;
+      const projectId = optionsProjectId || taskContract.projectId || identity.projectId;
       await ensureKnowledgeStoreDirectories(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
       const knowledgeRevisionStart = await readProjectRevision(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
 
@@ -98,6 +98,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         runId,
         objective: run.objective,
         changedPaths: normalizedChangeSet.changedPaths,
+        stateStore: store,
         env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
       store.recordKnowledgeContextReceipt(runId, {
@@ -127,6 +128,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         runId,
         objective: run.objective,
         changedPaths: normalizedChangeSet.changedPaths,
+        stateStore: store,
         env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
       store.recordKnowledgeContextReceipt(runId, {
@@ -260,8 +262,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         if (!ALLOWED_TYPES.has(proposedType)) {
           throw new Error(`INVALID_CANDIDATE_TYPE: ${proposedType} is not an allowed candidate type`);
         }
+        const candidateId = obs.candidateId || obs.id || `cand-${runId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         candidates.push({
-          candidateId: obs.candidateId || `cand-${runId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          candidateId,
           runId,
           projectId: run.projectId,
           proposedType,
@@ -270,6 +273,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           sourceRefs: obs.sourceRefs || [],
           evidenceRefs: obs.evidenceRefs || [],
           status: 'pending',
+          ...obs,
+          candidateId,
         });
       }
 
