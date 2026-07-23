@@ -1,0 +1,108 @@
+schemaVersion: 1
+reviewId: kernel-finalization-authority-aggregate-refactor-iter-01
+reviewedPackageRoot: docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23
+reviewedBaselineCommit: ad8fa53488dbd79766b993c2113454eb1379b7e8
+reviewMode: degraded_sidecar
+isolationMode: unavailable
+degradedReason: >-
+  The publishing session could not start a separate isolated reviewer runtime.
+  Phase 01 therefore carries a blocking independent blocker-confirmation review.
+reviewPerspectives:
+  - id: authority-boundary
+    focus: public completion writers, aggregate boundary, atomicity, recoverability
+  - id: persistence-and-knowledge
+    focus: candidate binding order, canonical records, SQLite-only reads, projection recovery
+  - id: git-delivery
+    focus: outbox separation, exact SHA retry, index and working-tree postconditions
+score:
+  total: 0.88
+  ambiguity: 0.18
+decision: revise
+blockingFindings:
+  - id: PQR-BLK-001
+    severity: blocker
+    finding: Independent reviewer isolation is missing.
+    requiredChange: >-
+      Phase 01 must obtain one isolated blocker-confirmation review before any implementation
+      source path is mutated.
+    ownerPhase: PH-01
+acceptedChanges:
+  - id: PQR-ACC-001
+    change: Replace repeated blocker patching with a Finalization Aggregate refactor Epic.
+    appliedTo:
+      - 00-master-plan-v1.ko.md
+      - FINALIZATION_AUTHORITY_AGGREGATE_DESIGN.md
+  - id: PQR-ACC-002
+    change: Split finalization into re-entrant prepare and atomic authority commit.
+    appliedTo:
+      - 02-finalization-aggregate-prepare-v1.ko.md
+      - 03-atomic-authority-transaction-v1.ko.md
+      - ADR/ADR-0001-finalization-aggregate-single-authority.md
+  - id: PQR-ACC-003
+    change: Make SQLite the only runtime knowledge authority and files derived projections.
+    appliedTo:
+      - 04-sqlite-runtime-knowledge-projection-v1.ko.md
+      - ADR/ADR-0002-sqlite-runtime-authority-derived-projections.md
+  - id: PQR-ACC-004
+    change: Separate Git closeout as an exact-SHA outbox delivery with real postcondition tests.
+    appliedTo:
+      - 05-git-outbox-invariants-promotion-v1.ko.md
+      - ADR/ADR-0003-git-closeout-outbox-delivery.md
+  - id: PQR-ACC-005
+    change: Replace mock-only blocker gates with actual SQLite/Git invariant tests.
+    appliedTo:
+      - SPEC_TEST_OBLIGATIONS.md
+      - TRACEABILITY_MATRIX.md
+rejectedChanges:
+  - id: PQR-REJ-001
+    proposal: Continue fixing the currently listed seven blockers independently.
+    reason: The same distributed authority surfaces would remain and create new review findings.
+  - id: PQR-REJ-002
+    proposal: Add a CLOSE-to-PROVE reverse transition for recovery.
+    reason: It weakens terminal-state semantics and complicates authority lineage.
+  - id: PQR-REJ-003
+    proposal: Keep JSONL fallback for runtime resilience.
+    reason: It reintroduces stale dual authority during projection failures.
+remainingAmbiguity:
+  - id: PQR-AMB-001
+    description: Exact independent reviewer identity/session is not yet selected.
+    disposition: Phase 01 blocker; operator or isolated reviewer session must be recorded.
+reviewedSurfaceClassifications:
+  - source_only
+  - data_or_state_migration
+  - package_runtime_payload
+  - external_deployment_or_service
+missingPolicyGates: []
+perDocumentReview:
+  - path: 00-master-plan-v1.ko.md
+    decision: revise
+    findings:
+      - Phase 01 independent review gate must remain blocking.
+  - path: FINALIZATION_AUTHORITY_AGGREGATE_DESIGN.md
+    decision: pass
+    findings: []
+  - path: 01-baseline-authority-boundary-v1.ko.md
+    decision: pass
+    findings: []
+  - path: 02-finalization-aggregate-prepare-v1.ko.md
+    decision: pass
+    findings: []
+  - path: 03-atomic-authority-transaction-v1.ko.md
+    decision: pass
+    findings: []
+  - path: 04-sqlite-runtime-knowledge-projection-v1.ko.md
+    decision: pass
+    findings: []
+  - path: 05-git-outbox-invariants-promotion-v1.ko.md
+    decision: pass
+    findings: []
+  - path: ARCHITECTURE_HANDOFF.json
+    decision: revise
+    findings:
+      - Handoff remains blocking until Phase 01 review is recorded.
+parentAppliedEdits: true
+nextReview:
+  iteration: 2
+  mode: blocker_confirmation_only
+  ownerPhase: PH-01
+  maxPerspectives: 3
