@@ -91,4 +91,9 @@ closureChecks:
   traceabilityPresent: true
   specTestObligationsPresent: true
   architectureHandoffPresent: true
-  finalFilesystemVerification: pending_after_write
+  finalFilesystemVerification: passed
+  comparedBase: main
+  comparedHead: plan/kernel-project-knowledge-lifecycle
+  changedFileCount: 16
+  docsOnlyChanges: true
+  behindMainBy: 0
