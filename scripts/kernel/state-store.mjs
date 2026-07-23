@@ -623,7 +623,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return res.changes === 1;
     },
 
-    saveKnowledgeRecord(projectId, recordId, { recordType, status, trustTier, recordJson, revision }) {
+    saveKnowledgeRecord(projectId, recordId, { recordType = 'semantic_fact', status = 'committed', trustTier = 'verified', recordJson = {}, revision = 1 } = {}) {
       db.prepare(`
         INSERT INTO knowledge_records(project_id, record_id, record_type, status, trust_tier, record_json, revision, created_at, updated_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
