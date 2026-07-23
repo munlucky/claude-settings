@@ -17,41 +17,41 @@ export class KernelKnowledgeCommitError extends Error {
 export async function commitProjectKnowledge({
   runId,
   projectId,
+  stateStore = null,
   expectedKnowledgeRevision = null,
   completionDecisionRef = null,
-  stateStore = null,
-  isCompletionAccepted = false,
   candidates = [],
   supersessionProposals = [],
   sourceIdentity = 'kernel-source',
   env = process.env,
 } = {}) {
-  // Fail-closed completion decision validation
-  let accepted = Boolean(isCompletionAccepted);
-
-  if (stateStore && typeof stateStore.assessCompletion === 'function') {
-    const assessment = stateStore.assessCompletion(runId, { commitDecision: false });
-    const run = stateStore.getRun ? stateStore.getRun(runId) : assessment?.run;
-    if (!run || run.projectId !== projectId) {
-      throw new KernelKnowledgeCommitError(
-        'PROJECT_ID_MISMATCH',
-        `Run project identity mismatch for run ${runId}: expected ${projectId}`
-      );
-    }
-    accepted = assessment.decision === 'accepted' || run.status === 'completed';
-    if (completionDecisionRef && completionDecisionRef !== runId && completionDecisionRef !== `accepted-${runId}`) {
-      const dbReceipt = stateStore.getKnowledgeCommitReceipt ? stateStore.getKnowledgeCommitReceipt(runId) : null;
-      if (!dbReceipt && assessment.decision !== 'accepted') {
-        accepted = false;
-      }
-    }
+  if (!stateStore || typeof stateStore.getRun !== 'function') {
+    throw new KernelKnowledgeCommitError(
+      'COMPLETION_AUTHORITY_REQUIRED',
+      'Kernel stateStore is required for completion authority'
+    );
   }
 
-  if (!accepted) {
-    throw new KernelKnowledgeCommitError(
-      'COMPLETION_NOT_ACCEPTED',
-      'Verified project knowledge write requires accepted completion decision from Kernel authority'
-    );
+  const run = stateStore.getRun(runId);
+  const completion = stateStore.getCompletionDecision ? stateStore.getCompletionDecision(runId) : null;
+
+  if (!run) {
+    throw new KernelKnowledgeCommitError('RUN_NOT_FOUND', `Run ${runId} not found`);
+  }
+  if (!completion) {
+    throw new KernelKnowledgeCommitError('COMPLETION_DECISION_REQUIRED', `Run ${runId} has no authoritative completion decision`);
+  }
+  if (completion.decision !== 'accepted') {
+    throw new KernelKnowledgeCommitError('COMPLETION_NOT_ACCEPTED', `Run ${runId} completion decision is ${completion.decision}`);
+  }
+  if (run.projectId !== projectId) {
+    throw new KernelKnowledgeCommitError('PROJECT_ID_MISMATCH', `Run project mismatch: expected ${projectId} but found ${run.projectId}`);
+  }
+  if (completion.sourceIdentity !== run.sourceIdentity) {
+    throw new KernelKnowledgeCommitError('SOURCE_IDENTITY_MISMATCH', `Completion decision source identity mismatch for run ${runId}`);
+  }
+  if (completion.mutationRevision !== run.mutationRevision) {
+    throw new KernelKnowledgeCommitError('STALE_COMPLETION_DECISION', `Completion decision mutation revision mismatch for run ${runId}`);
   }
 
   const currentRevision = await readProjectRevision(projectId, { env });
@@ -134,7 +134,9 @@ export async function commitProjectKnowledge({
   const receipt = buildKnowledgeCommitReceipt({
     runId,
     projectId,
-    sourceIdentity,
+    sourceIdentity: completion.sourceIdentity || sourceIdentity,
+    mutationRevision: completion.mutationRevision || 1,
+    completionDecisionRef: completion.evidenceDigest || completionDecisionRef || `accepted-${runId}`,
     revisionBefore,
     revisionAfter,
     acceptedCandidates,

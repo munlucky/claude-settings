@@ -183,6 +183,28 @@ try {
     const res = await cp.getRun(runId);
     await cp.close();
     output(res || { status: 'not_found' });
+  } else if (command === 'finalize') {
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id');
+    if (!runId) throw new Error('finalize command requires --run-id');
+    const input = readContextJson();
+    const res = await cp.finalizeRun(runId, {
+      gitCloseoutRequest: input.gitCloseoutRequest || null,
+      changedPaths: input.changedPaths || [],
+      changedFileCount: input.changedFileCount || null,
+      knowledgeObservations: input.knowledgeObservations || [],
+    });
+    await cp.close();
+    output(res);
+  } else if (command === 'git-closeout') {
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id');
+    if (!runId) throw new Error('git-closeout command requires --run-id');
+    const input = readContextJson();
+    const gitCloseoutRequest = input.gitCloseoutRequest || { requested: true, mode: 'commit_and_push' };
+    const res = await cp.retryGitCloseout(runId, gitCloseoutRequest);
+    await cp.close();
+    output(res);
   } else {
     throw new Error(`Unknown command: ${command}`);
   }

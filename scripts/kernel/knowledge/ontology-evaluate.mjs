@@ -27,8 +27,10 @@ export async function evaluateOntologyConstraints({ projectId, paths = [], chang
       });
 
       if (constraint.severity === 'never') {
-        if (statementMatchesPattern || !constraint.pattern) {
+        if (statementMatchesPattern) {
           violations.push(constraint);
+        } else if (!constraint.pattern) {
+          approvalRequired.push(constraint);
         }
       } else if (constraint.severity === 'ask_first') {
         approvalRequired.push(constraint);

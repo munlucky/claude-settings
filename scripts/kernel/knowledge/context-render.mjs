@@ -15,6 +15,26 @@ export function redactSecrets(text) {
   return str;
 }
 
+export function deepRedact(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'string') return redactSecrets(obj);
+  if (Array.isArray(obj)) return obj.map((item) => deepRedact(item));
+  if (typeof obj === 'object') {
+    const res = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (typeof val === 'string') {
+        res[key] = redactSecrets(val);
+      } else if (typeof val === 'object' && val !== null) {
+        res[key] = deepRedact(val);
+      } else {
+        res[key] = val;
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
 export function renderPromptBlock({ stage, policyAnchors = [], semanticFacts = [], graphSynopsis = [], ontologyConstraints = [] }) {
   const lines = [`[Project Knowledge Context - Stage: ${stage}]`];
 

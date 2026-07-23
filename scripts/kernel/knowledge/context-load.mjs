@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { loadAllProjectRecords, readProjectRevision, projectKnowledgeDirectory, writeAtomicJson } from './store.mjs';
-import { renderPromptBlock, computeContextDigest } from './context-render.mjs';
-import { matchPathScope, calculatePathRelevance } from './path-scope.mjs';
+import { renderPromptBlock, computeContextDigest, deepRedact } from './context-render.mjs';
+import { matchPathScope, scoreRelevance } from './path-scope.mjs';
 
 export const VALID_STAGES = [
   'FRAME',
@@ -21,6 +21,16 @@ export const STAGE_BUDGETS = {
   EXECUTE: 2000,
   PROVE: 1500,
   CLOSE: 1000,
+};
+
+export const STAGE_TYPE_POLICY = {
+  FRAME: ['policy_anchor', 'architecture_decision', 'domain_term', 'ontology_constraint', 'tacit_practice'],
+  SHAPE: ['architecture_decision', 'component_boundary', 'api_contract', 'ontology_constraint', 'known_failure_pattern'],
+  SLICE: ['architecture_decision', 'component_boundary', 'api_contract'],
+  SCHEDULE: ['component_boundary', 'api_contract', 'required_verification'],
+  EXECUTE: ['component_boundary', 'api_contract', 'tacit_practice', 'required_verification'],
+  PROVE: ['ontology_constraint', 'required_verification', 'known_failure_pattern'],
+  CLOSE: ['policy_anchor', 'ontology_constraint', 'required_verification'],
 };
 
 export class KernelContextLoadError extends Error {
@@ -74,27 +84,32 @@ export async function buildProjectKnowledgeContext({
   let selectedFacts = rawSemanticFacts.filter(isRecordActive);
   let selectedConstraints = rawOntologyConstraints.filter(isRecordActive);
 
-  // Filter 2: Path-relevance and objective-aware filtering if changedPaths provided
-  if (Array.isArray(changedPaths) && changedPaths.length > 0) {
-    selectedFacts = selectedFacts
-      .map((fact) => {
-        const score = calculatePathRelevance(changedPaths, fact.scope || []);
-        return { fact, score };
-      })
-      .filter(({ score }) => score >= 0)
-      .sort((a, b) => b.score - a.score)
-      .map(({ fact }) => fact);
-
-    selectedConstraints = selectedConstraints.filter((constraint) => {
-      if (!constraint.scope || constraint.scope.length === 0) return true;
-      return changedPaths.some((p) => matchPathScope(p, constraint.scope));
+  // Filter 2: STAGE_TYPE_POLICY filtering
+  const allowedTypes = STAGE_TYPE_POLICY[stage] || [];
+  if (allowedTypes.length > 0) {
+    selectedFacts = selectedFacts.filter((f) => {
+      const type = f.type || f.recordType || 'semantic_fact';
+      if (allowedTypes.includes(type) || allowedTypes.includes('semantic_fact')) return true;
+      omittedByPolicy.push({ id: f.id || 'unknown', reason: `type_${type}_not_in_${stage}` });
+      return false;
     });
   }
 
-  // Filter 3: Stage-specific filter
-  if (stage === 'PROVE' || stage === 'CLOSE') {
-    selectedFacts = selectedFacts.filter((f) => f.status === 'verified' || f.status === 'committed');
-  }
+  // Filter 3: Relevance scoring & ranking
+  selectedFacts = selectedFacts
+    .map((fact) => {
+      const score = scoreRelevance({ item: fact, objective, paths: changedPaths });
+      return { fact, score };
+    })
+    .filter(({ score }) => score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .map(({ fact }) => fact);
+
+  selectedConstraints = selectedConstraints.filter((constraint) => {
+    if (!constraint.scope || constraint.scope.length === 0) return true;
+    if (changedPaths.length === 0) return true;
+    return changedPaths.some((p) => matchPathScope(p, constraint.scope));
+  });
 
   const selectedGraph = rawGraphRelations
     .filter(isRecordActive)
@@ -105,26 +120,34 @@ export async function buildProjectKnowledgeContext({
       statement: `${rel.from} ${rel.relation} ${rel.to}`,
     }));
 
-  // Quota enforcement and budget truncation
-  const maxBudget = STAGE_BUDGETS[stage] || 1500;
+  // Record-based budget truncation
+  const maxBudgetTokens = STAGE_BUDGETS[stage] || 1500;
+  const maxChars = maxBudgetTokens * 4;
+
+  const budgetedFacts = [];
+  let currentLength = 0;
+  for (const fact of selectedFacts) {
+    const factLen = (fact.statement || JSON.stringify(fact)).length + 10;
+    if (currentLength + factLen > maxChars) {
+      omittedByPolicy.push({ id: fact.id || 'unknown', reason: 'record_budget_exceeded' });
+    } else {
+      budgetedFacts.push(fact);
+      currentLength += factLen;
+    }
+  }
+
   const promptBlock = renderPromptBlock({
     stage,
     policyAnchors: selectedPolicy,
-    semanticFacts: selectedFacts,
+    semanticFacts: budgetedFacts,
     graphSynopsis: selectedGraph,
     ontologyConstraints: selectedConstraints,
   });
 
-  let finalPromptBlock = promptBlock;
-  if (promptBlock.length > maxBudget * 4) {
-    finalPromptBlock = promptBlock.slice(0, maxBudget * 4) + '\n...[truncated by budget]';
-    omittedByPolicy.push({ reason: 'budget_exceeded', maxBudget });
-  }
-
   const contextPackRef = path.join('context-packs', runId, `${stage}.json`);
   const status = 'ready';
 
-  const contextPayload = {
+  const rawPayload = {
     schemaVersion: 1,
     projectId,
     knowledgeRevision,
@@ -132,15 +155,16 @@ export async function buildProjectKnowledgeContext({
     strictness,
     stage,
     policyAnchors: selectedPolicy,
-    semanticFacts: selectedFacts,
+    semanticFacts: budgetedFacts,
     graphSynopsis: selectedGraph,
     ontologyConstraints: selectedConstraints,
     staleOrUnavailable,
     omittedByPolicy,
-    promptBlock: finalPromptBlock,
+    promptBlock,
     contextPackRef,
   };
 
+  const contextPayload = deepRedact(rawPayload);
   const digest = computeContextDigest(contextPayload);
   contextPayload.digest = digest;
 

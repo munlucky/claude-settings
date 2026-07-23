@@ -20,22 +20,44 @@ export function matchPathScope(targetPath, scopes = []) {
 }
 
 export function scoreRelevance({ item, objective = '', paths = [] }) {
-  let score = 0;
-  const itemText = JSON.stringify(item).toLowerCase();
-  const objWords = objective.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!item || typeof item !== 'object') return 0;
+  const status = item.status || 'committed';
+  if (['superseded', 'rejected', 'quarantined'].includes(status)) return -100;
 
+  let score = 0;
+  const itemType = item.type || item.recordType || '';
+  if (itemType === 'policy_anchor') score += 100;
+  if (item.trustTier === 'verified') score += 8;
+  if (status === 'committed') score += 5;
+  if (item.evidence?.refs?.length > 0) score += 3;
+
+  if (item.scope && Array.isArray(item.scope) && item.scope.length > 0) {
+    for (const p of paths) {
+      if (!p) continue;
+      const targetPath = p.replace(/\\/g, '/').toLowerCase();
+      for (const scope of item.scope) {
+        const s = scope.replace(/\\/g, '/').toLowerCase();
+        if (s === targetPath) {
+          score += 40;
+        } else if (matchPathScope(targetPath, [scope])) {
+          score += 25;
+        }
+      }
+    }
+  } else {
+    score += 1;
+  }
+
+  const itemText = JSON.stringify(item).toLowerCase();
+  const objWords = objective.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
   for (const word of objWords) {
-    if (word.length > 3 && itemText.includes(word)) {
-      score += 2;
+    if (itemText.includes(word)) {
+      score += 10;
     }
   }
 
-  if (item && item.scope && Array.isArray(item.scope)) {
-    for (const p of paths) {
-      if (matchPathScope(p, item.scope)) {
-        score += 5;
-      }
-    }
+  if (itemType === 'domain_term' && objWords.some((w) => itemText.includes(w))) {
+    score += 8;
   }
 
   return score;

@@ -13,7 +13,7 @@ test('buildProjectKnowledgeContext returns deterministic context and digest', as
 
   const root = projectKnowledgeDirectory('test-proj', { env });
   await writeAtomicJsonl(path.join(root, 'knowledge', 'semantic', 'verified-facts.jsonl'), [
-    { id: 'fact-1', projectId: 'test-proj', type: 'semantic_fact', statement: 'System uses UTC timestamping.', status: 'verified', trustTier: 'verified', createdAt: '2026-07-23T00:00:00.000Z' },
+    { id: 'fact-1', projectId: 'test-proj', type: 'policy_anchor', statement: 'System uses UTC timestamping.', status: 'verified', trustTier: 'verified', createdAt: '2026-07-23T00:00:00.000Z' },
   ]);
 
   const ctx1 = await buildProjectKnowledgeContext({ projectId: 'test-proj', stage: 'FRAME', env });

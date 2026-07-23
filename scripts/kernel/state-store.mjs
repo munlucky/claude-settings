@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from './runtime-home.mjs';
 import { canTransition } from './transition.mjs';
@@ -123,6 +124,66 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       revision_after TEXT NOT NULL,
       status TEXT NOT NULL,
       receipt_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS completion_decisions (
+      run_id TEXT PRIMARY KEY,
+      decision TEXT NOT NULL,
+      source_identity TEXT NOT NULL,
+      mutation_revision INTEGER NOT NULL,
+      evidence_digest TEXT NOT NULL,
+      decision_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS git_closeout_receipts (
+      run_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      commit_sha TEXT,
+      branch TEXT,
+      remote TEXT,
+      push_status TEXT NOT NULL,
+      parity TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_records (
+      project_id TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      record_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      trust_tier TEXT NOT NULL,
+      record_json TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(project_id, record_id)
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_revisions (
+      project_id TEXT PRIMARY KEY,
+      revision INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_transactions (
+      transaction_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      expected_revision INTEGER NOT NULL,
+      target_revision INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      transaction_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_approvals (
+      approval_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      candidate_id TEXT NOT NULL,
+      approved_by TEXT NOT NULL,
+      approval_receipt TEXT NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
@@ -272,6 +333,77 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const row = db.prepare(`SELECT run_id as runId, project_id as projectId, revision_before as revisionBefore, revision_after as revisionAfter, status, receipt_json as receiptJson, created_at as createdAt FROM knowledge_commit_receipts WHERE run_id=?`).get(runId);
       if (!row) return null;
       return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
+    },
+
+    recordCompletionDecision(runId, { decision, sourceIdentity, mutationRevision, evidenceDigest, decisionJson }) {
+      db.prepare(`
+        INSERT INTO completion_decisions(run_id, decision, source_identity, mutation_revision, evidence_digest, decision_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET decision=excluded.decision, source_identity=excluded.source_identity, mutation_revision=excluded.mutation_revision, evidence_digest=excluded.evidence_digest, decision_json=excluded.decision_json, created_at=excluded.created_at
+      `).run(runId, decision, sourceIdentity, mutationRevision, evidenceDigest, typeof decisionJson === 'string' ? decisionJson : JSON.stringify(decisionJson), now());
+    },
+
+    getCompletionDecision(runId) {
+      const row = db.prepare(`SELECT run_id as runId, decision, source_identity as sourceIdentity, mutation_revision as mutationRevision, evidence_digest as evidenceDigest, decision_json as decisionJson, created_at as createdAt FROM completion_decisions WHERE run_id=?`).get(runId);
+      if (!row) return null;
+      return { ...row, decisionJson: safeJsonParse(row.decisionJson, {}) };
+    },
+
+    recordGitCloseoutReceipt(runId, { projectId, mode, commitSha, branch, remote = 'origin', pushStatus, parity, receiptJson }) {
+      db.prepare(`
+        INSERT INTO git_closeout_receipts(run_id, project_id, mode, commit_sha, branch, remote, push_status, parity, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET mode=excluded.mode, commit_sha=excluded.commit_sha, branch=excluded.branch, remote=excluded.remote, push_status=excluded.push_status, parity=excluded.parity, receipt_json=excluded.receipt_json, created_at=excluded.created_at
+      `).run(runId, projectId, mode, commitSha || null, branch || null, remote, pushStatus, parity, typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson), now());
+    },
+
+    getGitCloseoutReceipt(runId) {
+      const row = db.prepare(`SELECT run_id as runId, project_id as projectId, mode, commit_sha as commitSha, branch, remote, push_status as pushStatus, parity, receipt_json as receiptJson, created_at as createdAt FROM git_closeout_receipts WHERE run_id=?`).get(runId);
+      if (!row) return null;
+      return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
+    },
+
+    getProjectKnowledgeRevision(projectId) {
+      const row = db.prepare(`SELECT revision FROM knowledge_revisions WHERE project_id=?`).get(projectId);
+      return row ? Number(row.revision) : 1;
+    },
+
+    updateProjectKnowledgeRevision(projectId, expectedRevision, nextRevision) {
+      const existing = db.prepare(`SELECT revision FROM knowledge_revisions WHERE project_id=?`).get(projectId);
+      if (!existing) {
+        db.prepare(`INSERT INTO knowledge_revisions(project_id, revision, updated_at) VALUES(?, ?, ?)`).run(projectId, nextRevision, now());
+        return true;
+      }
+      const res = db.prepare(`UPDATE knowledge_revisions SET revision=?, updated_at=? WHERE project_id=? AND revision=?`).run(nextRevision, now(), projectId, expectedRevision);
+      return res.changes === 1;
+    },
+
+    saveKnowledgeRecord(projectId, recordId, { recordType, status, trustTier, recordJson, revision }) {
+      db.prepare(`
+        INSERT INTO knowledge_records(project_id, record_id, record_type, status, trust_tier, record_json, revision, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id, record_id) DO UPDATE SET record_type=excluded.record_type, status=excluded.status, trust_tier=excluded.trust_tier, record_json=excluded.record_json, revision=excluded.revision, updated_at=excluded.updated_at
+      `).run(projectId, recordId, recordType, status, trustTier, typeof recordJson === 'string' ? recordJson : JSON.stringify(recordJson), revision, now(), now());
+    },
+
+    saveKnowledgeTransaction(transactionId, { projectId, runId, expectedRevision, targetRevision, status, transactionJson }) {
+      db.prepare(`
+        INSERT INTO knowledge_transactions(transaction_id, project_id, run_id, expected_revision, target_revision, status, transaction_json, created_at, completed_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(transaction_id) DO UPDATE SET status=excluded.status, completed_at=excluded.completed_at
+      `).run(transactionId, projectId, runId, expectedRevision, targetRevision, status, typeof transactionJson === 'string' ? transactionJson : JSON.stringify(transactionJson), now(), now());
+    },
+
+    recordKnowledgeApproval(approvalId, { runId, candidateId, approvedBy, approvalReceipt }) {
+      db.prepare(`
+        INSERT INTO knowledge_approvals(approval_id, run_id, candidate_id, approved_by, approval_receipt, created_at)
+        VALUES(?, ?, ?, ?, ?, ?)
+        ON CONFLICT(approval_id) DO UPDATE SET approved_by=excluded.approved_by, approval_receipt=excluded.approval_receipt
+      `).run(approvalId, runId, candidateId, approvedBy, approvalReceipt, now());
+    },
+
+    getKnowledgeApprovals(runId) {
+      return db.prepare(`SELECT approval_id as approvalId, run_id as runId, candidate_id as candidateId, approved_by as approvedBy, approval_receipt as approvalReceipt, created_at as createdAt FROM knowledge_approvals WHERE run_id=?`).all(runId);
     },
 
     transition(runId, nextState, { expectedState, expectedRevision } = {}) {
@@ -442,19 +574,29 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         const releaseEvidencePresent = !run.releaseEvidenceRequired || (releaseEvidence?.tier === 'E2' && releaseEvidence.mutationRevision === run.mutationRevision && sha256Regex.test(releaseEvidence.digest));
         const accepted = isClosed && allObligationsPassed && acceptanceCovered && releaseEvidencePresent;
 
-        if (run.status === 'completed') {
-          db.exec('COMMIT');
-          return { decision: accepted ? 'accepted' : 'blocked', run, verifications };
-        }
-
         const decision = accepted ? 'accepted' : 'blocked';
+        const decisionPayload = {
+          runId,
+          decision,
+          sourceIdentity: run.sourceIdentity,
+          mutationRevision: run.mutationRevision,
+          evidenceDigest: releaseEvidence?.digest || verifications[0]?.evidenceDigest || `sha256:${'0'.repeat(64)}`,
+          verifications,
+        };
+        const decisionDigest = `sha256:${createHash('sha256').update(JSON.stringify(decisionPayload)).digest('hex')}`;
+        db.prepare(`
+          INSERT INTO completion_decisions(run_id, decision, source_identity, mutation_revision, evidence_digest, decision_json, created_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(run_id) DO UPDATE SET decision=excluded.decision, source_identity=excluded.source_identity, mutation_revision=excluded.mutation_revision, evidence_digest=excluded.evidence_digest, decision_json=excluded.decision_json, created_at=excluded.created_at
+        `).run(runId, decision, run.sourceIdentity, run.mutationRevision, decisionDigest, JSON.stringify({ ...decisionPayload, digest: decisionDigest }), now());
+
         if (commitDecision) {
           db.prepare('UPDATE runs SET status=?, revision=revision+1, updated_at=? WHERE run_id=?')
             .run(accepted ? 'completed' : 'blocked', now(), runId);
         }
         db.exec('COMMIT');
 
-        return { decision, run: commitDecision ? this.getRun(runId) : run, verifications, waivers, releaseEvidence: releaseEvidence || null, acceptanceCovered: [...coveredAcceptance] };
+        return { decision, digest: decisionDigest, run: commitDecision ? this.getRun(runId) : run, verifications, waivers, releaseEvidence: releaseEvidence || null, acceptanceCovered: [...coveredAcceptance] };
       } catch (err) {
         db.exec('ROLLBACK');
         throw err;

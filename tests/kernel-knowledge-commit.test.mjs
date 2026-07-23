@@ -11,12 +11,17 @@ test('commitProjectKnowledge rejects write when completion is not accepted', asy
   const env = { MOON_RELAY_KERNEL_HOME: tmp };
   await ensureKnowledgeStoreDirectories('test-proj', { env });
 
+  const mockBlockedStore = {
+    getRun: () => ({ runId: 'run-1', projectId: 'test-proj', sourceIdentity: 's1', mutationRevision: 1 }),
+    getCompletionDecision: () => ({ decision: 'blocked', sourceIdentity: 's1', mutationRevision: 1 }),
+  };
+
   await assert.rejects(
     async () =>
       commitProjectKnowledge({
         runId: 'run-1',
         projectId: 'test-proj',
-        isCompletionAccepted: false,
+        stateStore: mockBlockedStore,
         candidates: [{ candidateId: 'c1', status: 'verified', statement: 'Test' }],
         env,
       }),
@@ -29,11 +34,16 @@ test('commitProjectKnowledge performs atomic commit and advances revision when a
   const env = { MOON_RELAY_KERNEL_HOME: tmp };
   await ensureKnowledgeStoreDirectories('test-proj', { env });
 
+  const mockAcceptedStore = {
+    getRun: () => ({ runId: 'run-1', projectId: 'test-proj', sourceIdentity: 's1', mutationRevision: 1 }),
+    getCompletionDecision: () => ({ decision: 'accepted', sourceIdentity: 's1', mutationRevision: 1 }),
+  };
+
   const revBefore = await readProjectRevision('test-proj', { env });
   const receipt = await commitProjectKnowledge({
     runId: 'run-1',
     projectId: 'test-proj',
-    isCompletionAccepted: true,
+    stateStore: mockAcceptedStore,
     candidates: [{ candidateId: 'c1', status: 'verified', statement: 'Verified commitment', evidenceRefs: ['ev-1'] }],
     env,
   });

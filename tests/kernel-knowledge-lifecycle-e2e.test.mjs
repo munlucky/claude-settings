@@ -45,11 +45,16 @@ test('Full Kernel Project Knowledge Lifecycle E2E Scenario A (load -> prove -> a
   assert.equal(reviewResult.verifiedCandidates.length, 1);
 
   // Step 4: Knowledge Commit Gated by Accepted Completion
+  const mockAcceptedStore = {
+    getRun: () => ({ runId: 'e2e-run-1', projectId, sourceIdentity: 's-e2e', mutationRevision: 1 }),
+    getCompletionDecision: () => ({ decision: 'accepted', sourceIdentity: 's-e2e', mutationRevision: 1 }),
+  };
+
   const revBefore = await readProjectRevision(projectId, { env });
   const receipt = await commitProjectKnowledge({
     runId: 'e2e-run-1',
     projectId,
-    isCompletionAccepted: true,
+    stateStore: mockAcceptedStore,
     candidates: reviewResult.verifiedCandidates,
     env,
   });
