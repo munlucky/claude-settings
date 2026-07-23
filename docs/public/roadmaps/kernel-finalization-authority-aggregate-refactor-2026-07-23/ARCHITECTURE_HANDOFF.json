@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "artifactId": "ARCHITECTURE_HANDOFF",
+  "owner": "moonshot-plan-writer",
+  "sourceContractRef": "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/TRACEABILITY_MATRIX.md",
+  "handoffTarget": "moonshot-phase-runner",
+  "status": "ready_after_phase_01_preflight",
+  "blocking": true,
+  "blockingReason": "Phase 01 independent blocker-confirmation review and authority inventory are required before implementation.",
+  "promptBlock": "Refactor Moon Relay Kernel finalization as a single Finalization Aggregate. Implement a re-entrant prepare step that keeps blocked runs in PROVE, then commit completion decision, canonical typed knowledge, knowledge revision, receipts and run completion in one SQLite transaction. Use SQLite as the sole runtime knowledge authority and treat JSONL as rebuildable projection only. Deliver Git closeout through an outbox with exact-SHA push, clean index postconditions and idempotent retry. Remove legacy public low-level mutation APIs only after real SQLite and Git invariant tests pass. Do not continue incremental blocker patching, do not accept caller-authored completion evaluations or committed candidates, and do not use mock-only tests as merge gates.",
+  "metadata": {
+    "projectId": "munlucky-moonshot-relay",
+    "branch": "plan/kernel-project-knowledge-lifecycle",
+    "baselineCommit": "ad8fa53488dbd79766b993c2113454eb1379b7e8",
+    "selectedDecisionIds": [
+      "ADR-0001",
+      "ADR-0002",
+      "ADR-0003"
+    ],
+    "selectedConstraintIds": [
+      "CONSTRAINT-finalize-sole-completion-authority",
+      "CONSTRAINT-blocked-run-remains-prove",
+      "CONSTRAINT-candidate-explicit-evidence-binding",
+      "CONSTRAINT-approval-two-step-only",
+      "CONSTRAINT-authority-single-sqlite-transaction",
+      "CONSTRAINT-sqlite-runtime-knowledge-authority",
+      "CONSTRAINT-jsonl-derived-projection-only",
+      "CONSTRAINT-git-outbox-exact-sha-retry",
+      "CONSTRAINT-real-resource-invariant-gates"
+    ],
+    "verificationSignalIds": [
+      "VS-public-authority-inventory",
+      "VS-blocked-run-remains-prove",
+      "VS-candidate-binding-order",
+      "VS-two-step-approval",
+      "VS-all-or-nothing-authority",
+      "VS-multi-connection-occ",
+      "VS-projection-rebuild-parity",
+      "VS-git-outbox-state-machine",
+      "VS-head-index-worktree-postconditions",
+      "VS-legacy-surface-zero",
+      "VS-full-regression"
+    ],
+    "selectedPlan": "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/00-master-plan-v1.ko.md",
+    "phaseDocs": [
+      "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/01-baseline-authority-boundary-v1.ko.md",
+      "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/02-finalization-aggregate-prepare-v1.ko.md",
+      "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/03-atomic-authority-transaction-v1.ko.md",
+      "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/04-sqlite-runtime-knowledge-projection-v1.ko.md",
+      "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/05-git-outbox-invariants-promotion-v1.ko.md"
+    ],
+    "ownedPathGroups": [
+      "scripts/kernel/finalization/**",
+      "scripts/kernel/knowledge/**",
+      "scripts/kernel/persistence/**",
+      "scripts/kernel/git/**",
+      "scripts/kernel/control-plane.mjs",
+      "scripts/kernel/state-store.mjs",
+      "bin/moon-relay-kernel.mjs",
+      "tests/kernel-finalization-*.test.mjs",
+      "tests/kernel-git-*.test.mjs"
+    ],
+    "readOnlyPathGroups": [
+      "AGENTS.md",
+      "skills/moonshot-plan-writer/**",
+      "package/package-contract.yaml",
+      "schemas/verification.contract.yaml",
+      "scripts/lib/git-safe.mjs"
+    ]
+  },
+  "readBeforeRetry": [
+    "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/FINALIZATION_AUTHORITY_AGGREGATE_DESIGN.md",
+    "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/00-master-plan-v1.ko.md",
+    "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/TRACEABILITY_MATRIX.md",
+    "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/SPEC_TEST_OBLIGATIONS.md",
+    "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/ARCHITECTURE_REVIEW.md",
+    "docs/public/roadmaps/kernel-finalization-authority-aggregate-refactor-2026-07-23/planning-loop/plan-quality-review-iter-01.yaml"
+  ],
+  "warnings": [
+    {
+      "code": "independent_review_required",
+      "message": "Phase 01 must obtain an isolated blocker-confirmation review before implementation source mutation.",
+      "severity": "blocking"
+    },
+    {
+      "code": "legacy_api_removal_deferred",
+      "message": "Remove legacy authority mutation APIs only after the replacement aggregate invariant suite is green.",
+      "severity": "warning"
+    },
+    {
+      "code": "live_profile_mutation_out_of_scope",
+      "message": "Do not mutate installed Claude, Codex, Qwen or account-root profiles in this plan.",
+      "severity": "warning"
+    }
+  ],
+  "errors": []
+}
