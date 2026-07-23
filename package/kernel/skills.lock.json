@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-23T02:28:59.124Z",
-  "sourceCommit": "c602ecf44d68b7f9d4eec58e297f92d6342c65ce",
+  "generatedAt": "2026-07-23T03:52:57.760Z",
+  "sourceCommit": "761a0d19dc8abdccd9d32469af79f0ec600d104f",
   "scope": "kernel",
   "skills": [
     {
@@ -12,7 +12,11 @@
       "license": "MIT",
       "stages": [],
       "permissions": [
-        "filesystem-read"
+        "filesystem-read",
+        "filesystem-write",
+        "subprocess-exec",
+        "git-commit",
+        "git-push"
       ],
       "permissionReview": {
         "status": "approved"

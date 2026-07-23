@@ -9,6 +9,13 @@ import { resolveKernelRuntimeHome } from './runtime-home.mjs';
 import { KernelPrinciplesError, loadKernelPrinciples } from './policy.mjs';
 import { resolveKernelCapabilities } from './capability-resolver.mjs';
 import { buildCandidateIdentity, gitTreeDigest, sha256Hex } from '../lib/candidate-identity.mjs';
+import { resolveKernelProjectIdentity } from './project-identity.mjs';
+import { readProjectRevision, ensureKnowledgeStoreDirectories } from './knowledge/store.mjs';
+import { buildProjectKnowledgeContext } from './knowledge/context-load.mjs';
+import { extractKnowledgeCandidates } from './knowledge/candidate-extract.mjs';
+import { reviewKnowledgeCandidates } from './knowledge/candidate-review.mjs';
+import { commitProjectKnowledge } from './knowledge/commit.mjs';
+import { executeKernelGitCloseout } from './git/closeout.mjs';
 
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
   const sourceDigest = gitTreeDigest(projectRoot) || sha256Hex({ projectRoot, objective });
@@ -53,6 +60,12 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (sourceIdentity && sourceIdentity !== trustedSourceIdentity) {
         throw new Error('sourceIdentity is computed by Kernel and cannot be caller-authored');
       }
+
+      const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
+      const projectId = identity.projectId;
+      await ensureKnowledgeStoreDirectories(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
+      const knowledgeRevisionStart = await readProjectRevision(projectId, { env: { MOON_RELAY_KERNEL_HOME: runtimeHome } });
+
       const riskSummary = {
         requestedTier: taskContract.riskTier || taskContract.proofTier || taskContract.requestedTier,
         filesChanged: taskContract.filesChanged || 1,
@@ -70,6 +83,24 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         requiredObligations: proofRoute.requiredChecks || ['default'],
         acceptanceCriteria: taskContract.acceptance || taskContract.acceptanceCriteria || [],
         requireReleaseEvidence: proofRoute.evidenceTier === 'E2',
+        projectId,
+        knowledgeRevisionStart,
+      });
+
+      // Automatically load FRAME knowledge context and record receipt
+      const frameKnowledgeCtx = await buildProjectKnowledgeContext({
+        projectId,
+        stage: 'FRAME',
+        runId,
+        objective: run.objective,
+        changedPaths: taskContract.filesChanged || [],
+        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+      });
+      store.recordKnowledgeContextReceipt(runId, {
+        stage: 'FRAME',
+        knowledgeRevision: frameKnowledgeCtx.knowledgeRevision,
+        digest: frameKnowledgeCtx.digest,
+        receiptJson: frameKnowledgeCtx,
       });
 
       await projectRunState(run, { runtimeHome });
@@ -83,6 +114,22 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async buildStageContext(runId, { stage = 'EXECUTE', taskContract = {}, principles, principleExtensions = [], stageRecords = [], references = [], evidence = [] } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
+
+      const projectId = run.projectId || resolveKernelProjectIdentity({ cwd: projectRoot }).projectId;
+      const knowledgeCtx = await buildProjectKnowledgeContext({
+        projectId,
+        stage,
+        runId,
+        objective: run.objective,
+        changedPaths: taskContract.filesChanged || taskContract.changedFiles || [],
+        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+      });
+      store.recordKnowledgeContextReceipt(runId, {
+        stage,
+        knowledgeRevision: knowledgeCtx.knowledgeRevision,
+        digest: knowledgeCtx.digest,
+        receiptJson: knowledgeCtx,
+      });
 
       const canonical = loadKernelPrinciples();
       const callerValues = principles === undefined || principles === null || (typeof principles === 'object' && !Array.isArray(principles) && Object.keys(principles).length === 0)
@@ -130,11 +177,13 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         stageRecords: [
           { id: `stage-${runId}`, type: 'stage-context', content: JSON.stringify({ runId, state: run.state, stage }), revision: String(run.revision), sourceRef: `run:${runId}`, trust: 'persisted-run-state' },
           { id: `capability-decision-${runId}`, type: 'stage-context', content: JSON.stringify(capabilityDecision), revision: capabilityDecision.revision, sourceRef: 'catalog/kernel-skills.json', trust: 'canonical-catalog' },
+          { id: `knowledge-context-${runId}`, type: 'knowledge-context', content: JSON.stringify({ digest: knowledgeCtx.digest, contextPackRef: knowledgeCtx.contextPackRef, promptBlock: knowledgeCtx.promptBlock }), revision: String(knowledgeCtx.knowledgeRevision), sourceRef: knowledgeCtx.contextPackRef, trust: 'verified-knowledge' },
           ...stageRecords,
         ],
         references,
         evidence: [...persistedEvidence, ...evidence],
       });
+      context.knowledgeContext = knowledgeCtx;
       return context;
     },
 
@@ -150,12 +199,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return planDryRunWave(slices);
     },
 
-    async recordProof(runId, { obligationId = 'default', status, sourceIdentity, evidenceRef, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [] }) {
+    async recordProof(runId, { obligationId = 'default', status, sourceIdentity, evidenceRef, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [], changedFiles = [] } = {}) {
+      const run = store.getRun(runId);
+      const effectiveSourceIdentity = sourceIdentity || run?.sourceIdentity;
       const updated = store.recordVerification(runId, {
         obligationId,
         status,
         evidenceRef,
-        sourceIdentity,
+        sourceIdentity: effectiveSourceIdentity,
         command,
         exitCode,
         evidenceDigest,
@@ -174,18 +225,87 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         const digest = `sha256:${createHash('sha256').update(JSON.stringify({ pack, mutationRevision: updated.mutationRevision })).digest('hex')}`;
         store.recordEvidencePack(runId, { tier: 'E2', pack, digest, mutationRevision: updated.mutationRevision });
       }
+
+      // Candidate extraction & review during PROVE
+      if (updated.projectId) {
+        const rawCandidates = extractKnowledgeCandidates({
+          runId,
+          projectId: updated.projectId,
+          objective: updated.objective,
+          changedFiles,
+          evidencePack: { status, digest: evidenceDigest || 'evidence-digest' },
+          observedStatements: [command].filter(Boolean),
+        });
+        const reviewResult = await reviewKnowledgeCandidates({
+          projectId: updated.projectId,
+          candidates: rawCandidates,
+          evidencePack: { status, digest: evidenceDigest || 'evidence-digest' },
+          env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+        });
+        for (const candidate of [...reviewResult.verifiedCandidates, ...reviewResult.rejectedCandidates]) {
+          store.recordKnowledgeCandidate(candidate.candidateId, runId, {
+            projectId: updated.projectId,
+            proposedType: candidate.proposedType || 'semantic_fact',
+            status: candidate.status,
+            candidateJson: candidate,
+          });
+        }
+      }
+
       await projectRunState(updated, { runtimeHome });
       return updated;
     },
 
-    async closeRun(runId) {
+    async closeRun(runId, { gitCloseoutRequest = null, changedFiles = [] } = {}) {
       const updated = store.transition(runId, 'CLOSE');
+      if (gitCloseoutRequest?.requested) {
+        const commitReceiptRow = store.getKnowledgeCommitReceipt(runId);
+        const knowledgeCommitReceipt = commitReceiptRow?.receiptJson;
+        if (!knowledgeCommitReceipt) {
+          throw new Error('KNOWLEDGE_RECEIPT_REQUIRED: Explicit Git closeout requires knowledge commit receipt');
+        }
+        const gitReceipt = await executeKernelGitCloseout({
+          runId,
+          projectId: updated.projectId,
+          repoRoot: projectRoot,
+          gitCloseoutRequest,
+          knowledgeCommitReceipt,
+          changedFiles,
+        });
+        updated.gitCloseoutReceipt = gitReceipt;
+      }
       await projectRunState(updated, { runtimeHome });
       return updated;
     },
 
-    async assessCompletion(runId, { expectedSourceIdentity = null, commitDecision = true } = {}) {
+    async assessCompletion(runId, { expectedSourceIdentity = null, commitDecision = true, autoCommitKnowledge = true } = {}) {
       const result = store.assessCompletion(runId, { expectedSourceIdentity, commitDecision });
+      if (result.decision === 'accepted' && commitDecision && autoCommitKnowledge && result.run?.projectId) {
+        const dbCandidates = store.getKnowledgeCandidates(runId).map((c) => c.candidateJson);
+        const verifiedCandidates = dbCandidates.filter((c) => c.status === 'verified');
+        try {
+          const commitReceipt = await commitProjectKnowledge({
+            runId,
+            projectId: result.run.projectId,
+            expectedKnowledgeRevision: result.run.knowledgeRevisionStart,
+            completionDecisionRef: runId,
+            stateStore: store,
+            isCompletionAccepted: true,
+            candidates: verifiedCandidates,
+            env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+          });
+          store.recordKnowledgeCommitReceipt(runId, {
+            projectId: result.run.projectId,
+            revisionBefore: commitReceipt.revisionBefore,
+            revisionAfter: commitReceipt.revisionAfter,
+            status: commitReceipt.status,
+            receiptJson: commitReceipt,
+          });
+          result.knowledgeCommitReceipt = commitReceipt;
+        } catch (err) {
+          result.knowledgeCommitError = err.message;
+        }
+      }
       if (result.run) {
         await projectRunState(result.run, { runtimeHome });
       }

@@ -3,10 +3,15 @@ import crypto from 'node:crypto';
 export function redactSecrets(text) {
   if (!text || typeof text !== 'string') return text;
   let str = text;
-  // Redact API keys, tokens, passwords
+  // Redact API keys, tokens, passwords, headers
   str = str.replace(/(api[_-]?key|secret|token|password|auth_header)\s*[:=]\s*["']?([a-zA-Z0-9_\-\.]{16,})["']?/gi, '$1: "[REDACTED]"');
   str = str.replace(/\b(sk-[a-zA-Z0-9]{20,})\b/g, '[REDACTED_KEY]');
   str = str.replace(/\b(ghp_[a-zA-Z0-9]{20,})\b/g, '[REDACTED_TOKEN]');
+  // Redact Bearer tokens, private keys, JWTs, and connection strings
+  str = str.replace(/\bBearer\s+[a-zA-Z0-9_\-\.=]{16,}\b/gi, 'Bearer [REDACTED_TOKEN]');
+  str = str.replace(/-----BEGIN (?:RSA|EC|PGP|OPENSSH) PRIVATE KEY-----[\s\S]*?-----END (?:RSA|EC|PGP|OPENSSH) PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]');
+  str = str.replace(/\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g, '[REDACTED_JWT]');
+  str = str.replace(/\b(mongodb|postgres|mysql|redis):\/\/[^\s"']+/gi, '$1://[REDACTED_CONNECTION_STRING]');
   return str;
 }
 

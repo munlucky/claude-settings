@@ -13,6 +13,17 @@ export function applySupersessions({ currentFacts = [], supersessionProposals = 
         status: 'superseded',
         updatedAt: new Date().toISOString(),
       };
+      const superIdx = updatedFacts.findIndex((f) => f.id === prop.supersedingId);
+      if (superIdx >= 0) {
+        const existingSupersedes = updatedFacts[superIdx].supersedes || [];
+        if (!existingSupersedes.includes(prop.targetId)) {
+          updatedFacts[superIdx] = {
+            ...updatedFacts[superIdx],
+            supersedes: [...existingSupersedes, prop.targetId],
+            updatedAt: new Date().toISOString(),
+          };
+        }
+      }
       supersessionLogEntries.push({
         targetId: prop.targetId,
         supersedingId: prop.supersedingId,

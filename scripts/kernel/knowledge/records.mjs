@@ -18,6 +18,7 @@ export const VALID_STATUSES = [
   'committed',
   'superseded',
   'archived',
+  'quarantined',
 ];
 
 export const TRUST_TIERS = [
@@ -82,9 +83,9 @@ export function validateKnowledgeRecord(record) {
   if (!TRUST_TIERS.includes(record.trustTier)) {
     throw new KernelKnowledgeRecordError('INVALID_TRUST_TIER', `Invalid trust tier: ${record.trustTier}`);
   }
-  if (record.type === 'semantic_fact' && record.status === 'verified') {
+  if (record.type === 'semantic_fact' && (record.status === 'verified' || record.status === 'committed')) {
     if (!record.evidence || (Array.isArray(record.evidence) && record.evidence.length === 0) || (typeof record.evidence === 'object' && Object.keys(record.evidence).length === 0)) {
-      throw new KernelKnowledgeRecordError('MISSING_EVIDENCE', 'Verified semantic fact requires fresh verification evidence');
+      throw new KernelKnowledgeRecordError('MISSING_EVIDENCE', 'Verified or committed semantic fact requires fresh verification evidence');
     }
   }
   if (record.trustTier === 'quarantined' && (record.status === 'committed' || record.status === 'verified')) {

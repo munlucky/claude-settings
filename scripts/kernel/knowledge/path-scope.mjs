@@ -30,7 +30,7 @@ export function scoreRelevance({ item, objective = '', paths = [] }) {
     }
   }
 
-  if (item.scope && Array.isArray(item.scope)) {
+  if (item && item.scope && Array.isArray(item.scope)) {
     for (const p of paths) {
       if (matchPathScope(p, item.scope)) {
         score += 5;
@@ -39,4 +39,15 @@ export function scoreRelevance({ item, objective = '', paths = [] }) {
   }
 
   return score;
+}
+
+export function calculatePathRelevance(paths = [], scopes = []) {
+  if (!scopes || scopes.length === 0) return 0;
+  let matches = 0;
+  for (const p of paths) {
+    if (matchPathScope(p, scopes)) {
+      matches += 5;
+    }
+  }
+  return matches;
 }

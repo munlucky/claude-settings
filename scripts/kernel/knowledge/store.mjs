@@ -66,8 +66,9 @@ export async function readJsonIfExists(filePath, fallback = null) {
   try {
     const text = await readFile(filePath, 'utf8');
     return JSON.parse(text);
-  } catch {
-    return fallback;
+  } catch (err) {
+    if (err.code === 'ENOENT') return fallback;
+    throw new KernelKnowledgeStoreError('STORE_CORRUPTED', `Knowledge store file corrupted: ${filePath} - ${err.message}`, { filePath, error: err });
   }
 }
 
@@ -79,8 +80,9 @@ export async function readJsonlIfExists(filePath) {
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => JSON.parse(line));
-  } catch {
-    return [];
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw new KernelKnowledgeStoreError('STORE_CORRUPTED', `Knowledge store file corrupted: ${filePath} - ${err.message}`, { filePath, error: err });
   }
 }
 

@@ -167,13 +167,15 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       requiredObligations = [],
       acceptanceCriteria = [],
       requireReleaseEvidence = false,
+      projectId = null,
+      knowledgeRevisionStart = null,
     }) {
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
       }
       db.prepare(`
-        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, updated_at)
-        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, updated_at)
+        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
       `).run(
         runId,
         objective,
@@ -183,6 +185,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         JSON.stringify(requiredObligations),
         JSON.stringify(acceptanceCriteria),
         requireReleaseEvidence ? 1 : 0,
+        projectId || null,
+        knowledgeRevisionStart !== undefined && knowledgeRevisionStart !== null ? String(knowledgeRevisionStart) : null,
         now()
       );
       return this.getRun(runId);
@@ -195,6 +199,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                proof_tier as proofTier, evidence_tier as evidenceTier,
                required_obligations as requiredObligations, acceptance_criteria as acceptanceCriteria,
                release_evidence_required as releaseEvidenceRequired,
+               project_id as projectId, knowledge_revision_start as knowledgeRevisionStart,
+               knowledge_revision_close as knowledgeRevisionClose, knowledge_status as knowledgeStatus,
+               context_pack_ref as contextPackRef,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
       `).get(runId);
@@ -216,8 +223,55 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         requiredObligations: safeJsonParse(row.requiredObligations),
         acceptanceCriteria: safeJsonParse(row.acceptanceCriteria),
         releaseEvidenceRequired: Boolean(row.releaseEvidenceRequired),
+        projectId: row.projectId || null,
+        knowledgeRevisionStart: row.knowledgeRevisionStart || null,
+        knowledgeRevisionClose: row.knowledgeRevisionClose || null,
+        knowledgeStatus: row.knowledgeStatus || null,
+        contextPackRef: row.contextPackRef || null,
         updatedAt: row.updatedAt,
       };
+    },
+
+    recordKnowledgeContextReceipt(runId, { stage, knowledgeRevision, digest, receiptJson }) {
+      db.prepare(`
+        INSERT INTO knowledge_context_receipts(run_id, stage, knowledge_revision, digest, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, stage) DO UPDATE SET knowledge_revision=excluded.knowledge_revision, digest=excluded.digest, receipt_json=excluded.receipt_json, created_at=excluded.created_at
+      `).run(runId, stage, knowledgeRevision, digest, typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson), now());
+      db.prepare(`UPDATE runs SET context_pack_ref=?, updated_at=? WHERE run_id=?`).run(`context-packs/${runId}/${stage}.json`, now(), runId);
+    },
+
+    getKnowledgeContextReceipt(runId, stage) {
+      const row = db.prepare(`SELECT run_id as runId, stage, knowledge_revision as knowledgeRevision, digest, receipt_json as receiptJson, created_at as createdAt FROM knowledge_context_receipts WHERE run_id=? AND stage=?`).get(runId, stage);
+      if (!row) return null;
+      return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
+    },
+
+    recordKnowledgeCandidate(candidateId, runId, { projectId, proposedType = 'semantic_fact', status = 'pending', candidateJson }) {
+      db.prepare(`
+        INSERT INTO knowledge_candidates(candidate_id, run_id, project_id, proposed_type, status, candidate_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(candidate_id) DO UPDATE SET status=excluded.status, candidate_json=excluded.candidate_json, created_at=excluded.created_at
+      `).run(candidateId, runId, projectId, proposedType, status, typeof candidateJson === 'string' ? candidateJson : JSON.stringify(candidateJson), now());
+    },
+
+    getKnowledgeCandidates(runId) {
+      return db.prepare(`SELECT candidate_id as candidateId, run_id as runId, project_id as projectId, proposed_type as proposedType, status, candidate_json as candidateJson, created_at as createdAt FROM knowledge_candidates WHERE run_id=?`).all(runId).map((row) => ({ ...row, candidateJson: safeJsonParse(row.candidateJson, {}) }));
+    },
+
+    recordKnowledgeCommitReceipt(runId, { projectId, revisionBefore, revisionAfter, status = 'committed', receiptJson }) {
+      db.prepare(`
+        INSERT INTO knowledge_commit_receipts(run_id, project_id, revision_before, revision_after, status, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET revision_before=excluded.revision_before, revision_after=excluded.revision_after, status=excluded.status, receipt_json=excluded.receipt_json, created_at=excluded.created_at
+      `).run(runId, projectId, revisionBefore, revisionAfter, status, typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson), now());
+      db.prepare(`UPDATE runs SET knowledge_revision_close=?, knowledge_status=?, updated_at=? WHERE run_id=?`).run(revisionAfter, status, now(), runId);
+    },
+
+    getKnowledgeCommitReceipt(runId) {
+      const row = db.prepare(`SELECT run_id as runId, project_id as projectId, revision_before as revisionBefore, revision_after as revisionAfter, status, receipt_json as receiptJson, created_at as createdAt FROM knowledge_commit_receipts WHERE run_id=?`).get(runId);
+      if (!row) return null;
+      return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
     },
 
     transition(runId, nextState, { expectedState, expectedRevision } = {}) {
@@ -384,6 +438,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         ]);
         const acceptanceCovered = run.acceptanceCriteria.every((criterion) => coveredAcceptance.has(criterion));
         const releaseEvidence = db.prepare(`SELECT tier, digest, mutation_revision as mutationRevision, pack_json as packJson FROM evidence_packs WHERE run_id=? ORDER BY id DESC LIMIT 1`).get(runId);
+        
         const releaseEvidencePresent = !run.releaseEvidenceRequired || (releaseEvidence?.tier === 'E2' && releaseEvidence.mutationRevision === run.mutationRevision && sha256Regex.test(releaseEvidence.digest));
         const accepted = isClosed && allObligationsPassed && acceptanceCovered && releaseEvidencePresent;
 

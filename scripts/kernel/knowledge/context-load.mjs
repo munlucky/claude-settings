@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { loadAllProjectRecords, readProjectRevision, projectKnowledgeDirectory, writeAtomicJson } from './store.mjs';
 import { renderPromptBlock, computeContextDigest } from './context-render.mjs';
+import { matchPathScope, calculatePathRelevance } from './path-scope.mjs';
 
 export const VALID_STAGES = [
   'FRAME',
@@ -36,6 +37,8 @@ export async function buildProjectKnowledgeContext({
   stage = 'FRAME',
   strictness = 'advisory',
   runId = 'standalone-run',
+  objective = '',
+  changedPaths = [],
   env = process.env,
 } = {}) {
   if (!VALID_STAGES.includes(stage)) {
@@ -45,24 +48,62 @@ export async function buildProjectKnowledgeContext({
   const knowledgeRevision = await readProjectRevision(projectId, { env });
   const records = await loadAllProjectRecords(projectId, { env });
 
-  const policyAnchors = records.policyAnchors || [];
-  const semanticFacts = records.semanticFacts || [];
-  const graphSynopsis = (records.kgRelations || []).map((rel) => ({
-    from: rel.from,
-    to: rel.to,
-    relation: rel.relation,
-    statement: `${rel.from} ${rel.relation} ${rel.to}`,
-  }));
-  const ontologyConstraints = records.ontologyConstraints || [];
+  const rawPolicyAnchors = records.policyAnchors || [];
+  const rawSemanticFacts = records.semanticFacts || [];
+  const rawGraphRelations = records.kgRelations || [];
+  const rawOntologyConstraints = records.ontologyConstraints || [];
 
   const staleOrUnavailable = [];
   const omittedByPolicy = [];
 
-  // Filter based on stage relevance
-  let selectedPolicy = policyAnchors;
-  let selectedFacts = semanticFacts;
-  let selectedGraph = graphSynopsis;
-  let selectedConstraints = ontologyConstraints;
+  // Filter 1: Exclude stale or superseded records
+  const isRecordActive = (rec) => {
+    if (!rec || typeof rec !== 'object') return false;
+    if (['superseded', 'rejected', 'archived'].includes(rec.status)) {
+      staleOrUnavailable.push({ id: rec.id || 'unknown', reason: `status_${rec.status}` });
+      return false;
+    }
+    if (rec.trustTier === 'quarantined' && stage !== 'FRAME') {
+      omittedByPolicy.push({ id: rec.id || 'unknown', reason: 'quarantined_trust_tier' });
+      return false;
+    }
+    return true;
+  };
+
+  let selectedPolicy = rawPolicyAnchors.filter(isRecordActive);
+  let selectedFacts = rawSemanticFacts.filter(isRecordActive);
+  let selectedConstraints = rawOntologyConstraints.filter(isRecordActive);
+
+  // Filter 2: Path-relevance and objective-aware filtering if changedPaths provided
+  if (Array.isArray(changedPaths) && changedPaths.length > 0) {
+    selectedFacts = selectedFacts
+      .map((fact) => {
+        const score = calculatePathRelevance(changedPaths, fact.scope || []);
+        return { fact, score };
+      })
+      .filter(({ score }) => score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .map(({ fact }) => fact);
+
+    selectedConstraints = selectedConstraints.filter((constraint) => {
+      if (!constraint.scope || constraint.scope.length === 0) return true;
+      return changedPaths.some((p) => matchPathScope(p, constraint.scope));
+    });
+  }
+
+  // Filter 3: Stage-specific filter
+  if (stage === 'PROVE' || stage === 'CLOSE') {
+    selectedFacts = selectedFacts.filter((f) => f.status === 'verified' || f.status === 'committed');
+  }
+
+  const selectedGraph = rawGraphRelations
+    .filter(isRecordActive)
+    .map((rel) => ({
+      from: rel.from,
+      to: rel.to,
+      relation: rel.relation,
+      statement: `${rel.from} ${rel.relation} ${rel.to}`,
+    }));
 
   // Quota enforcement and budget truncation
   const maxBudget = STAGE_BUDGETS[stage] || 1500;
@@ -76,7 +117,6 @@ export async function buildProjectKnowledgeContext({
 
   let finalPromptBlock = promptBlock;
   if (promptBlock.length > maxBudget * 4) {
-    // Truncate cleanly if tokens exceed estimate
     finalPromptBlock = promptBlock.slice(0, maxBudget * 4) + '\n...[truncated by budget]';
     omittedByPolicy.push({ reason: 'budget_exceeded', maxBudget });
   }

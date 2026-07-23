@@ -17,21 +17,52 @@ export class KernelKnowledgeCommitError extends Error {
 export async function commitProjectKnowledge({
   runId,
   projectId,
-  isCompletionAccepted = true,
+  expectedKnowledgeRevision = null,
+  completionDecisionRef = null,
+  stateStore = null,
+  isCompletionAccepted = false,
   candidates = [],
   supersessionProposals = [],
   sourceIdentity = 'kernel-source',
   env = process.env,
 } = {}) {
-  // Precondition: Completion MUST be accepted before verified knowledge write
-  if (!isCompletionAccepted) {
+  // Fail-closed completion decision validation
+  let accepted = Boolean(isCompletionAccepted);
+
+  if (stateStore && typeof stateStore.assessCompletion === 'function') {
+    const assessment = stateStore.assessCompletion(runId, { commitDecision: false });
+    const run = stateStore.getRun ? stateStore.getRun(runId) : assessment?.run;
+    if (!run || run.projectId !== projectId) {
+      throw new KernelKnowledgeCommitError(
+        'PROJECT_ID_MISMATCH',
+        `Run project identity mismatch for run ${runId}: expected ${projectId}`
+      );
+    }
+    accepted = assessment.decision === 'accepted' || run.status === 'completed';
+    if (completionDecisionRef && completionDecisionRef !== runId && completionDecisionRef !== `accepted-${runId}`) {
+      const dbReceipt = stateStore.getKnowledgeCommitReceipt ? stateStore.getKnowledgeCommitReceipt(runId) : null;
+      if (!dbReceipt && assessment.decision !== 'accepted') {
+        accepted = false;
+      }
+    }
+  }
+
+  if (!accepted) {
     throw new KernelKnowledgeCommitError(
       'COMPLETION_NOT_ACCEPTED',
-      'Verified project knowledge write requires accepted completion decision'
+      'Verified project knowledge write requires accepted completion decision from Kernel authority'
     );
   }
 
   const currentRevision = await readProjectRevision(projectId, { env });
+
+  // Optimistic Concurrency Control (OCC) check
+  if (expectedKnowledgeRevision !== null && expectedKnowledgeRevision !== undefined && String(expectedKnowledgeRevision) !== String(currentRevision)) {
+    throw new KernelKnowledgeCommitError(
+      'STALE_KNOWLEDGE_REVISION',
+      `Optimistic concurrency control conflict: expected revision ${expectedKnowledgeRevision} but found ${currentRevision}`
+    );
+  }
   const records = await loadAllProjectRecords(projectId, { env });
 
   const acceptedCandidates = candidates.filter((c) => c.status === 'verified');

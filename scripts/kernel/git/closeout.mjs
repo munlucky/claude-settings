@@ -1,5 +1,8 @@
 import crypto from 'node:crypto';
-import { runGit } from '../../lib/git-safe.mjs';
+import os from 'node:os';
+import path from 'node:path';
+import { rm } from 'node:fs/promises';
+import { runGit, gitCurrentBranch } from '../../lib/git-safe.mjs';
 import { filterStagingSelection } from './staging-policy.mjs';
 import { verifyRemoteParity } from './remote-parity.mjs';
 
@@ -41,34 +44,83 @@ export async function executeKernelGitCloseout({
     throw new KernelGitCloseoutError('KNOWLEDGE_RECEIPT_REQUIRED', 'Git closeout follows knowledge closeout receipt');
   }
 
-  const { selectedPaths, excludedPaths } = filterStagingSelection(changedFiles);
-
-  if (selectedPaths.length > 0) {
-    const addRes = runGit(repoRoot, ['add', '--', ...selectedPaths]);
-    if (addRes.status !== 0) {
-      throw new KernelGitCloseoutError('GIT_ADD_FAILED', `Git add failed: ${addRes.stderr}`);
-    }
+  const currentBranch = gitCurrentBranch(repoRoot);
+  if (!currentBranch) {
+    throw new KernelGitCloseoutError('DETACHED_HEAD', 'Git closeout requires an active branch, found detached HEAD');
   }
 
-  const commitMsg = `feat(kernel): update ${projectId} implementation\n\n- Completed phase execution for ${runId}\n- Knowledge commit ref: ${knowledgeCommitReceipt.digest || 'none'}`;
-  const commitRes = runGit(repoRoot, ['commit', '-m', commitMsg]);
+  const { selectedPaths, excludedPaths } = filterStagingSelection(changedFiles);
 
-  const revRes = runGit(repoRoot, ['rev-parse', 'HEAD']);
-  const commitSha = String(revRes.stdout || '').trim();
+  const beforeHeadRes = runGit(repoRoot, ['rev-parse', 'HEAD']);
+  const beforeHeadSha = beforeHeadRes.status === 0 ? String(beforeHeadRes.stdout || '').trim() : '';
+
+  // Use a temporary index file to isolate Kernel staging from pre-existing user staged changes
+  const tempIndexFile = path.join(os.tmpdir(), `kernel-git-index-${runId}-${Date.now()}-${Math.random().toString(36).slice(2)}.idx`);
+  const tempGitEnv = { ...process.env, GIT_INDEX_FILE: tempIndexFile };
+
+  let commitSha = beforeHeadSha;
+
+  try {
+    if (beforeHeadSha) {
+      runGit(repoRoot, ['read-tree', 'HEAD'], { env: tempGitEnv });
+    }
+
+    if (selectedPaths.length > 0) {
+      const addRes = runGit(repoRoot, ['add', '--', ...selectedPaths], { env: tempGitEnv });
+      if (addRes.status !== 0) {
+        throw new KernelGitCloseoutError('GIT_ADD_FAILED', `Git add failed: ${addRes.stderr}`);
+      }
+    }
+
+    const writeTreeRes = runGit(repoRoot, ['write-tree'], { env: tempGitEnv });
+    if (writeTreeRes.status !== 0) {
+      throw new KernelGitCloseoutError('GIT_WRITE_TREE_FAILED', `Git write-tree failed: ${writeTreeRes.stderr}`);
+    }
+    const treeSha = String(writeTreeRes.stdout || '').trim();
+
+    const commitMsg = `feat(kernel): update ${projectId} implementation\n\n- Completed phase execution for ${runId}\n- Knowledge commit ref: ${knowledgeCommitReceipt.digest || 'none'}`;
+    const commitArgs = ['commit-tree', treeSha, '-m', commitMsg];
+    if (beforeHeadSha) {
+      commitArgs.push('-p', beforeHeadSha);
+    }
+
+    const commitTreeRes = runGit(repoRoot, commitArgs, { env: tempGitEnv });
+    if (commitTreeRes.status !== 0) {
+      throw new KernelGitCloseoutError('GIT_COMMIT_FAILED', `Git commit-tree failed: ${commitTreeRes.stderr}`);
+    }
+    commitSha = String(commitTreeRes.stdout || '').trim();
+
+    if (!commitSha || commitSha === beforeHeadSha) {
+      throw new KernelGitCloseoutError('GIT_COMMIT_NOT_CREATED', 'Git commit was not created (HEAD did not advance)');
+    }
+
+    // Update branch ref to new commit
+    const updateRefRes = runGit(repoRoot, ['update-ref', `refs/heads/${currentBranch}`, commitSha]);
+    if (updateRefRes.status !== 0) {
+      throw new KernelGitCloseoutError('GIT_UPDATE_REF_FAILED', `Git update-ref failed: ${updateRefRes.stderr}`);
+    }
+  } finally {
+    try { await rm(tempIndexFile, { force: true }); } catch {}
+  }
 
   let pushStatus = 'skipped';
   let parity = 'not_requested';
   let remoteHeadSha = '';
 
   if (gitCloseoutRequest.mode === 'commit_and_push') {
-    const pushRes = runGit(repoRoot, ['push', 'origin', 'HEAD']);
+    const pushRes = runGit(repoRoot, ['push', 'origin', `HEAD:refs/heads/${currentBranch}`]);
     if (pushRes.status === 0) {
       pushStatus = 'completed';
-      const parityCheck = verifyRemoteParity(repoRoot);
+      const parityCheck = verifyRemoteParity(repoRoot, { branch: currentBranch, remote: 'origin' });
       parity = parityCheck.parity;
       remoteHeadSha = parityCheck.remoteHeadSha;
+
+      if (parityCheck.parity !== 'matched') {
+        throw new KernelGitCloseoutError('REMOTE_PARITY_MISMATCH', `Remote parity mismatch on branch ${currentBranch}: local ${commitSha} != remote ${remoteHeadSha}`);
+      }
     } else {
       pushStatus = 'failed';
+      throw new KernelGitCloseoutError('GIT_PUSH_FAILED', `Git push failed: ${pushRes.stderr}`);
     }
   }
 
@@ -81,11 +133,12 @@ export async function executeKernelGitCloseout({
     selectedPaths,
     excludedPaths,
     commitSha,
+    branch: currentBranch,
     pushStatus,
     remoteHeadSha,
     parity,
     approvalReceipt: gitCloseoutRequest.approvalReceipt,
-    status: pushStatus === 'failed' ? 'partial' : 'completed',
+    status: 'completed',
   };
 
   const digest = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
