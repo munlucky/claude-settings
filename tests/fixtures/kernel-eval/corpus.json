@@ -1,1 +1,547 @@
-{"schemaVersion":1,"cases":[{"id":"KRN-EVAL-001","taskClass":"analysis","riskTier":"T0","objective":"analysis representative task 1 with verifiable outcome","expectedRoute":["FRAME","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-002","taskClass":"analysis","riskTier":"T1","objective":"analysis representative task 2 with verifiable outcome","expectedRoute":["FRAME","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-003","taskClass":"analysis","riskTier":"T2","objective":"Reject Kernel entrypoint when active project track is Relay","expectedRoute":["FRAME","CLOSE"],"sourceKind":"historical","requiredEvidence":["wrong-harness-receipt"]},{"id":"KRN-EVAL-004","taskClass":"analysis","riskTier":"T3","objective":"analysis representative task 4 with verifiable outcome","expectedRoute":["FRAME","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-005","taskClass":"analysis","riskTier":"T0","objective":"analysis representative task 5 with verifiable outcome","expectedRoute":["FRAME","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-006","taskClass":"bug","riskTier":"T2","objective":"bug representative task 6 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-007","taskClass":"bug","riskTier":"T3","objective":"bug representative task 7 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-008","taskClass":"bug","riskTier":"T0","objective":"bug representative task 8 with verifiable outcome","expectedRoute":["FRAME","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-009","taskClass":"bug","riskTier":"T1","objective":"bug representative task 9 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-010","taskClass":"bug","riskTier":"T2","objective":"bug representative task 10 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-011","taskClass":"feature","riskTier":"T0","objective":"feature representative task 11 with verifiable outcome","expectedRoute":["FRAME","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-012","taskClass":"feature","riskTier":"T1","objective":"feature representative task 12 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-013","taskClass":"feature","riskTier":"T2","objective":"feature representative task 13 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-014","taskClass":"feature","riskTier":"T3","objective":"feature representative task 14 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-015","taskClass":"feature","riskTier":"T0","objective":"feature representative task 15 with verifiable outcome","expectedRoute":["FRAME","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-016","taskClass":"refactor","riskTier":"T2","objective":"refactor representative task 16 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-017","taskClass":"refactor","riskTier":"T3","objective":"refactor representative task 17 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-018","taskClass":"refactor","riskTier":"T0","objective":"refactor representative task 18 with verifiable outcome","expectedRoute":["FRAME","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-019","taskClass":"refactor","riskTier":"T1","objective":"refactor representative task 19 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-020","taskClass":"refactor","riskTier":"T2","objective":"refactor representative task 20 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-021","taskClass":"ui","riskTier":"T0","objective":"ui representative task 21 with verifiable outcome","expectedRoute":["FRAME","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-022","taskClass":"ui","riskTier":"T1","objective":"ui representative task 22 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-023","taskClass":"ui","riskTier":"T2","objective":"ui representative task 23 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-024","taskClass":"ui","riskTier":"T3","objective":"ui representative task 24 with verifiable outcome","expectedRoute":["FRAME","SHAPE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-025","taskClass":"ui","riskTier":"T0","objective":"ui representative task 25 with verifiable outcome","expectedRoute":["FRAME","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-026","taskClass":"long-running","riskTier":"T2","objective":"long-running representative task 26 with verifiable outcome","expectedRoute":["FRAME","SHAPE","SLICE","SCHEDULE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-027","taskClass":"long-running","riskTier":"T3","objective":"long-running representative task 27 with verifiable outcome","expectedRoute":["FRAME","SHAPE","SLICE","SCHEDULE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-028","taskClass":"long-running","riskTier":"T0","objective":"long-running representative task 28 with verifiable outcome","expectedRoute":["FRAME","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-029","taskClass":"long-running","riskTier":"T1","objective":"long-running representative task 29 with verifiable outcome","expectedRoute":["FRAME","SHAPE","SLICE","SCHEDULE","EXECUTE","PROVE","CLOSE"],"sourceKind":"historical","requiredEvidence":["route-receipt","verification-result"]},{"id":"KRN-EVAL-030","taskClass":"long-running","riskTier":"T2","objective":"long-running representative task 30 with verifiable outcome","expectedRoute":["FRAME","SHAPE","SLICE","SCHEDULE","EXECUTE","PROVE","CLOSE"],"sourceKind":"synthetic","requiredEvidence":["route-receipt","verification-result"]}]}
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "KRN-EVAL-001",
+      "taskClass": "analysis",
+      "riskTier": "T0",
+      "objective": "analysis representative task 1 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-002",
+      "taskClass": "analysis",
+      "riskTier": "T1",
+      "objective": "analysis representative task 2 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-003",
+      "taskClass": "analysis",
+      "riskTier": "T2",
+      "objective": "Reject Kernel entrypoint when active project track is Relay",
+      "expectedRoute": [
+        "FRAME",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "wrong-harness-receipt"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-004",
+      "taskClass": "analysis",
+      "riskTier": "T3",
+      "objective": "analysis representative task 4 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-005",
+      "taskClass": "analysis",
+      "riskTier": "T0",
+      "objective": "analysis representative task 5 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-006",
+      "taskClass": "bug",
+      "riskTier": "T2",
+      "objective": "bug representative task 6 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ],
+      "surfaces": [
+        "public_contract"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-007",
+      "taskClass": "bug",
+      "riskTier": "T3",
+      "objective": "bug representative task 7 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ],
+      "surfaces": [
+        "security_boundary"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-008",
+      "taskClass": "bug",
+      "riskTier": "T0",
+      "objective": "bug representative task 8 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-009",
+      "taskClass": "bug",
+      "riskTier": "T1",
+      "objective": "bug representative task 9 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-010",
+      "taskClass": "bug",
+      "riskTier": "T2",
+      "objective": "bug representative task 10 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-011",
+      "taskClass": "feature",
+      "riskTier": "T0",
+      "objective": "feature representative task 11 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-012",
+      "taskClass": "feature",
+      "riskTier": "T1",
+      "objective": "feature representative task 12 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-013",
+      "taskClass": "feature",
+      "riskTier": "T2",
+      "objective": "feature representative task 13 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ],
+      "surfaces": [
+        "public_contract"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-014",
+      "taskClass": "feature",
+      "riskTier": "T3",
+      "objective": "feature representative task 14 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ],
+      "surfaces": [
+        "security_boundary"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-015",
+      "taskClass": "feature",
+      "riskTier": "T0",
+      "objective": "feature representative task 15 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-016",
+      "taskClass": "refactor",
+      "riskTier": "T2",
+      "objective": "refactor representative task 16 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ],
+      "surfaces": [
+        "schema_change"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-017",
+      "taskClass": "refactor",
+      "riskTier": "T3",
+      "objective": "refactor representative task 17 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ],
+      "surfaces": [
+        "data_migration"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-018",
+      "taskClass": "refactor",
+      "riskTier": "T0",
+      "objective": "refactor representative task 18 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-019",
+      "taskClass": "refactor",
+      "riskTier": "T1",
+      "objective": "refactor representative task 19 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-020",
+      "taskClass": "refactor",
+      "riskTier": "T2",
+      "objective": "refactor representative task 20 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-021",
+      "taskClass": "ui",
+      "riskTier": "T0",
+      "objective": "ui representative task 21 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-022",
+      "taskClass": "ui",
+      "riskTier": "T1",
+      "objective": "ui representative task 22 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-023",
+      "taskClass": "ui",
+      "riskTier": "T2",
+      "objective": "ui representative task 23 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-024",
+      "taskClass": "ui",
+      "riskTier": "T3",
+      "objective": "ui representative task 24 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ],
+      "surfaces": [
+        "public_contract"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-025",
+      "taskClass": "ui",
+      "riskTier": "T0",
+      "objective": "ui representative task 25 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-026",
+      "taskClass": "long-running",
+      "riskTier": "T2",
+      "objective": "long-running representative task 26 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "SLICE",
+        "SCHEDULE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-027",
+      "taskClass": "long-running",
+      "riskTier": "T3",
+      "objective": "long-running representative task 27 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "SLICE",
+        "SCHEDULE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-028",
+      "taskClass": "long-running",
+      "riskTier": "T0",
+      "objective": "long-running representative task 28 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "SLICE",
+        "SCHEDULE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-029",
+      "taskClass": "long-running",
+      "riskTier": "T1",
+      "objective": "long-running representative task 29 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "SLICE",
+        "SCHEDULE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "historical",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    },
+    {
+      "id": "KRN-EVAL-030",
+      "taskClass": "long-running",
+      "riskTier": "T2",
+      "objective": "long-running representative task 30 with verifiable outcome",
+      "expectedRoute": [
+        "FRAME",
+        "SHAPE",
+        "SLICE",
+        "SCHEDULE",
+        "EXECUTE",
+        "PROVE",
+        "CLOSE"
+      ],
+      "sourceKind": "synthetic",
+      "requiredEvidence": [
+        "route-receipt",
+        "verification-result"
+      ]
+    }
+  ]
+}

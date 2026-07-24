@@ -158,11 +158,11 @@ test('approved waiver can satisfy an obligation and foreign keys are enabled', a
   const h = await mkdtemp(path.join(os.tmpdir(), 'krn-state-waiver-'));
   const s = await openKernelStateStore({ runtimeHome: h, relayHome: path.join(h, '..', 'relay') });
   assert.equal(s.dbPath.endsWith('runtime-state.sqlite'), true);
-  s.createRun({ runId: 'r-waiver', objective: 'waiver', sourceIdentity: 'src-waiver', requiredObligations: ['security-review'] });
+  s.createRun({ runId: 'r-waiver', objective: 'waiver', sourceIdentity: 'src-waiver', requiredObligations: ['lint-check'] });
   s.transition('r-waiver', 'SHAPE');
   s.transition('r-waiver', 'EXECUTE');
   s.transition('r-waiver', 'PROVE');
-  s.addWaiver('r-waiver', { obligationId: 'security-review', approvedBy: 'reviewer', reason: 'not applicable', approvalReceipt: 'approval://1' });
+  s.addWaiver('r-waiver', { obligationId: 'lint-check', approvedBy: 'reviewer', reason: 'not applicable', approvalReceipt: 'approval://1' });
   s.transition('r-waiver', 'CLOSE');
   assert.equal(s.assessCompletion('r-waiver').decision, 'accepted');
   s.close();

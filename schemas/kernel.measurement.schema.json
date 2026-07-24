@@ -5,6 +5,7 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion", "harnessIdentity", "sourceIdentity", "taskIdentity",
+    "currentWorkspaceIdentity", "hardEvidenceCoverage", "promptTokenBudget",
     "providerModelIdentity", "estimatedStaticTokens", "actualInputTokens",
     "actualOutputTokens", "successDecision", "falseCompletionDecision",
     "retryCount", "replanCount", "userInterventionCount", "wallClockMs",
@@ -15,6 +16,9 @@
     "harnessIdentity": { "type": "string", "minLength": 1 },
     "sourceIdentity": { "type": "string", "minLength": 1 },
     "taskIdentity": { "type": "string", "minLength": 1 },
+    "currentWorkspaceIdentity": { "$ref": "#/$defs/measurementValue" },
+    "hardEvidenceCoverage": { "$ref": "#/$defs/measurementValue" },
+    "promptTokenBudget": { "$ref": "#/$defs/measurementValue" },
     "providerModelIdentity": { "$ref": "#/$defs/measurementValue" },
     "estimatedStaticTokens": { "type": "integer", "minimum": 0 },
     "actualInputTokens": { "$ref": "#/$defs/measurementValue" },

@@ -1,4 +1,4 @@
-import { isHighRiskSurface } from './risk-surfaces.mjs';
+import { floorForSurface } from './risk-surfaces.mjs';
 import { KERNEL_POLICY } from './policy.mjs';
 
 const rank = { T0: 0, T1: 1, T2: 2, T3: 3 };
@@ -6,7 +6,10 @@ const rank = { T0: 0, T1: 1, T2: 2, T3: 3 };
 export const selectProofTier = (task = {}) => {
   let tier = task.requestedTier || task.proofTier || (task.behaviorChanging ? 'T1' : 'T0');
   if (task.filesChanged > 8 || task.crossLayer) tier = rank[tier] < rank.T2 ? 'T2' : tier;
-  if ((task.surfaces || []).some((s) => isHighRiskSurface(s))) tier = 'T3';
+  for (const surface of task.surfaces || []) {
+    const floor = floorForSurface(surface);
+    if (floor && rank[tier] < rank[floor]) tier = floor;
+  }
   return tier;
 };
 
