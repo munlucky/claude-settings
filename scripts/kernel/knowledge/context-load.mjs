@@ -2,6 +2,7 @@ import path from 'node:path';
 import { loadAllProjectRecords, readProjectRevision, projectKnowledgeDirectory, writeAtomicJson } from './store.mjs';
 import { renderPromptBlock, computeContextDigest, deepRedact } from './context-render.mjs';
 import { matchPathScope, scoreRelevance } from './path-scope.mjs';
+import { cheapReVerify } from './freshness.mjs';
 
 export const VALID_STAGES = [
   'FRAME',
@@ -50,6 +51,7 @@ export async function buildProjectKnowledgeContext({
   runId = 'standalone-run',
   objective = '',
   changedPaths = [],
+  projectRoot = null,
   env = process.env,
 } = {}) {
   if (!VALID_STAGES.includes(stage)) {
@@ -96,6 +98,17 @@ export async function buildProjectKnowledgeContext({
     if (rec.trustTier === 'quarantined' && stage !== 'FRAME') {
       omittedByPolicy.push({ id: rec.id || 'unknown', reason: 'quarantined_trust_tier' });
       return false;
+    }
+    // Filter 1.5: freshness (§21.3). When the project filesystem is available,
+    // a cheap re-verify decides keep-vs-stale. A record whose referenced source
+    // vanished ('stale') or drifted ('needs_deep_verify') is omitted from the
+    // served context rather than rendered as still-verified knowledge.
+    if (projectRoot && Array.isArray(rec.sourceRefs) && rec.sourceRefs.length > 0) {
+      const freshness = cheapReVerify(rec, { projectRoot });
+      if (freshness.status === 'stale' || freshness.status === 'needs_deep_verify') {
+        staleOrUnavailable.push({ id: rec.id || 'unknown', reason: `freshness_${freshness.status}` });
+        return false;
+      }
     }
     return true;
   };

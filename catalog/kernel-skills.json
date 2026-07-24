@@ -21,7 +21,7 @@
       "ownerCluster": "kernel-control-plane",
       "engineRoute": "kernel-workflow",
       "invocationMode": "user_or_model",
-      "allowedStages": ["FRAME", "SHAPE", "EXECUTE", "PROVE", "CLOSE"],
+      "allowedStages": ["FRAME", "SHAPE", "SLICE", "SCHEDULE", "EXECUTE", "PROVE", "CLOSE"],
       "conditionalSkillGroups": {
         "minimalChange": ["kernel-minimal-correct-change"],
         "verificationRequired": ["kernel-verification-before-completion"]

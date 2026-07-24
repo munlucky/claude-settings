@@ -49,7 +49,7 @@ test('every case declares risk, route, source, and evidence and resolves proof r
 test('eval corpus executes route and evidence assertions for every case', () => {
   for (const c of corpus.cases) {
     const activeTrack = c.id === 'KRN-EVAL-003' ? 'relay' : 'kernel';
-    const routed = routeTask({ taskClass: c.taskClass, riskTier: c.riskTier, objective: c.objective }, { projectRoot: evalProjects[activeTrack] });
+    const routed = routeTask({ taskClass: c.taskClass, riskTier: c.riskTier, objective: c.objective, surfaces: c.surfaces || [] }, { projectRoot: evalProjects[activeTrack] });
     if (activeTrack === 'relay') {
       assert.equal(routed.status, 'wrong_harness');
       assert.ok(c.requiredEvidence.includes('wrong-harness-receipt'));

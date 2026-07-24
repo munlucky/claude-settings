@@ -8,7 +8,8 @@ import { spawnSync } from 'node:child_process';
 import { installKernel, uninstallKernel } from '../scripts/kernel/installer.mjs';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
-const unavailableFields = ['providerModelIdentity', 'actualInputTokens', 'actualOutputTokens', 'falseCompletionDecision', 'retryCount', 'replanCount', 'userInterventionCount', 'wallClockMs'];
+const unavailableFields = ['providerModelIdentity', 'actualInputTokens', 'actualOutputTokens', 'falseCompletionDecision', 'wallClockMs'];
+const observedFields = ['retryCount', 'replanCount', 'userInterventionCount', 'hardEvidenceCoverage', 'promptTokenBudget'];
 
 test('measurement schema is closed and status exposes typed unavailable fields', async () => {
   const schema = JSON.parse(await readFile(new URL('../schemas/kernel.measurement.schema.json', import.meta.url), 'utf8'));
@@ -27,6 +28,11 @@ test('measurement schema is closed and status exposes typed unavailable fields',
     assert.equal(status.measurement[field].status, 'unavailable', field);
     assert.ok(status.measurement[field].reason, field);
   }
+  for (const field of observedFields) {
+    assert.equal(status.measurement[field].status, 'observed', field);
+  }
+  assert.equal(status.measurement.retryCount.value, 0);
+  assert.equal(status.measurement.userInterventionCount.value, 0);
   assert.equal(status.measurement.contaminationSignals.status, 'observed');
   await cp.close();
 });

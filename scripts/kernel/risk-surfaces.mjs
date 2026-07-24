@@ -30,3 +30,10 @@ export const isHighRiskSurface = (surface) => {
   const normalized = normalizeRiskSurface(surface);
   return highRiskSet.has(normalized);
 };
+
+// Per-surface hard floor from proof policy (T2 for compatible public
+// contract/schema work, T3 for security/migration/authority surfaces).
+export const floorForSurface = (surface) => {
+  const normalized = normalizeRiskSurface(surface);
+  return KERNEL_POLICY.hardFloors[normalized] || null;
+};

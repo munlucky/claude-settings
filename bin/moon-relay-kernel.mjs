@@ -118,7 +118,30 @@ try {
     await assertKernelTrack(targetRoot);
     const { uninstallKernel } = await import('../scripts/kernel/installer.mjs');
     output(await uninstallKernel({ targetRoot }));
+  } else if (command === 'next') {
+    // Model-visible runtime command 1 of 2.
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id') || args[1];
+    if (!runId || runId.startsWith('--')) throw new Error('next command requires a run id: kernel next <run-id>');
+    const res = await cp.next(runId);
+    await cp.close();
+    output(res);
+  } else if (command === 'report') {
+    // Model-visible runtime command 2 of 2.
+    const cp = await openControlPlane();
+    const runId = getArgValue('--run-id') || args[1];
+    if (!runId || runId.startsWith('--')) throw new Error('report command requires a run id: kernel report <run-id> --report-json <file>');
+    const reportFile = getArgValue('--report-json') || getArgValue('--context-json');
+    let payload = {};
+    if (reportFile) {
+      payload = JSON.parse(readFileSync(path.resolve(reportFile), 'utf8'));
+    }
+    const res = await cp.report(runId, payload);
+    await cp.close();
+    output(res);
   } else if (command === 'start-run') {
+    // Commands below this point are internal/debug surface; models use only
+    // `next` and `report`.
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id') || `run-${Date.now()}`;
     const objective = getArgValue('--objective') || 'Kernel execution task';
@@ -167,9 +190,9 @@ try {
     throw new Error('DEPRECATED_COMMAND: close cannot finalize a Kernel run. Use finalize.');
   } else if (command === 'resume') {
     const cp = await openControlPlane();
-    const runId = getArgValue('--run-id');
-    if (!runId) throw new Error('resume command requires --run-id');
-    const res = await cp.getRun(runId);
+    const runId = getArgValue('--run-id') || args[1];
+    if (!runId || runId.startsWith('--')) throw new Error('resume command requires a run id: kernel resume <run-id>');
+    const res = await cp.resume(runId);
     await cp.close();
     output(res || { status: 'not_found' });
   } else if (command === 'finalize') {

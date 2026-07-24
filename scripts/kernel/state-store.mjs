@@ -5,6 +5,10 @@ import { resolveKernelRuntimeHome, assertIsolatedRuntimeHomes } from './runtime-
 import { canTransition } from './transition.mjs';
 import { openSqliteDb } from './sqlite-adapter.mjs';
 import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapper.mjs';
+import { isProtectedObligation } from './proof/protected-obligations.mjs';
+
+const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
+const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
 
 export const kernelDbPath = (runtimeHome = resolveKernelRuntimeHome()) => path.join(runtimeHome, 'state', 'runtime-state.sqlite');
 
@@ -252,6 +256,13 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN run_start_workspace_identity TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN current_workspace_identity TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN blocked_reason TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN intervention_count INTEGER DEFAULT 0;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN project_mode TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_failures TEXT DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN replan_count INTEGER DEFAULT 0;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN proof_tier TEXT DEFAULT 'T0';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN evidence_tier TEXT DEFAULT 'E0';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN required_obligations TEXT DEFAULT '[]';`); } catch {}
@@ -264,6 +275,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE runs ADD COLUMN context_pack_ref TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN obligation_id TEXT DEFAULT 'default';`); } catch {}
   try { db.exec(`ALTER TABLE verifications ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN verified_source_identity TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN executor TEXT DEFAULT 'caller-attested';`); } catch {}
+  try { db.exec(`ALTER TABLE verifications ADD COLUMN network_isolation TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE waivers ADD COLUMN approval_receipt TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE waivers ADD COLUMN acceptance_coverage TEXT DEFAULT '[]';`); } catch {}
   try { db.exec(`ALTER TABLE evidence_packs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
@@ -291,17 +305,25 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       requireReleaseEvidence = false,
       projectId = null,
       knowledgeRevisionStart = null,
+      workspaceIdentity = null,
+      projectMode = null,
     }) {
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
       }
+      if (workspaceIdentity !== null && !sha256Regex.test(workspaceIdentity)) {
+        throw new Error('workspaceIdentity must be a sha256:<hex> digest when provided');
+      }
       db.prepare(`
-        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, updated_at)
-        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, updated_at)
+        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
       `).run(
         runId,
         objective,
         sourceIdentity,
+        workspaceIdentity,
+        workspaceIdentity,
+        projectMode || null,
         proofTier,
         evidenceTier,
         JSON.stringify(requiredObligations),
@@ -314,10 +336,111 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return this.getRun(runId);
     },
 
+    // Within a run, route and tier may only be promoted, never demoted
+    // (§13.5). Demotion requires a new run.
+    escalateRun(runId, { proofTier, evidenceTier, addObligations = [] } = {}) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      if (run.status === 'completed') throw new Error(`Cannot escalate completed run ${runId}`);
+
+      let nextTier = run.proofTier;
+      if (proofTier) {
+        if (TIER_RANK[proofTier] === undefined) throw new Error(`Unknown proof tier: ${proofTier}`);
+        if (TIER_RANK[proofTier] < TIER_RANK[run.proofTier]) {
+          throw new Error(`ROUTE_DEMOTION_FORBIDDEN: cannot demote ${run.proofTier} -> ${proofTier}; start a new run instead`);
+        }
+        nextTier = proofTier;
+      }
+
+      let nextEvidence = run.evidenceTier;
+      if (evidenceTier) {
+        if (EVIDENCE_RANK[evidenceTier] === undefined) throw new Error(`Unknown evidence tier: ${evidenceTier}`);
+        if (EVIDENCE_RANK[evidenceTier] < EVIDENCE_RANK[run.evidenceTier]) {
+          throw new Error(`ROUTE_DEMOTION_FORBIDDEN: cannot demote evidence ${run.evidenceTier} -> ${evidenceTier}`);
+        }
+        nextEvidence = evidenceTier;
+      }
+
+      const mergedObligations = [...new Set([...run.requiredObligations, ...addObligations])];
+      db.prepare(`UPDATE runs SET proof_tier=?, evidence_tier=?, required_obligations=?, release_evidence_required=?, revision=revision+1, updated_at=? WHERE run_id=?`)
+        .run(nextTier, nextEvidence, JSON.stringify(mergedObligations), nextEvidence === 'E2' ? 1 : (run.releaseEvidenceRequired ? 1 : 0), now(), runId);
+      return this.getRun(runId);
+    },
+
+    setBaselineFailures(runId, failures = []) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`UPDATE runs SET baseline_failures=?, updated_at=? WHERE run_id=?`).run(JSON.stringify(failures), now(), runId);
+      return this.getRun(runId);
+    },
+
+    // A replan is a durable event; counting it keeps the measurement honest.
+    incrementReplanCount(runId) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`UPDATE runs SET replan_count=replan_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
+      return this.getRun(runId);
+    },
+
+    markRunBlocked(runId, reason) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      if (run.status === 'completed') throw new Error(`Cannot block completed run ${runId}`);
+      db.prepare(`UPDATE runs SET status='blocked', blocked_reason=?, revision=revision+1, updated_at=? WHERE run_id=?`).run(String(reason || 'question'), now(), runId);
+      return this.getRun(runId);
+    },
+
+    // Each blocked->active resume is a user intervention; counting it here
+    // keeps the measurement honest without a caller-held tally.
+    resumeBlockedRun(runId) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      if (run.status !== 'blocked') return run;
+      db.prepare(`UPDATE runs SET status='active', blocked_reason=NULL, intervention_count=intervention_count+1, revision=revision+1, updated_at=? WHERE run_id=?`).run(now(), runId);
+      return this.getRun(runId);
+    },
+
+    // Mutation revision advances only when the observed workspace identity
+    // actually changes, never on state transitions alone.
+    observeWorkspaceIdentity(runId, identity) {
+      if (!identity || !sha256Regex.test(identity)) {
+        throw new Error('observeWorkspaceIdentity requires a sha256:<hex> workspace identity');
+      }
+      db.exec('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        const run = this.getRun(runId);
+        if (!run) throw new Error(`Run ${runId} not found`);
+        if (run.currentWorkspaceIdentity === identity) {
+          db.exec('COMMIT');
+          return { changed: false, run };
+        }
+        const isInitialObservation = !run.currentWorkspaceIdentity;
+        db.prepare(`
+          UPDATE runs
+          SET current_workspace_identity=?,
+              run_start_workspace_identity=COALESCE(run_start_workspace_identity, ?),
+              mutation_revision=mutation_revision+?,
+              revision=revision+1,
+              updated_at=?
+          WHERE run_id=?
+        `).run(identity, identity, isInitialObservation ? 0 : 1, now(), runId);
+        db.exec('COMMIT');
+        return { changed: !isInitialObservation, run: this.getRun(runId) };
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
     getRun(runId) {
       const row = db.prepare(`
         SELECT run_id as runId, objective, state, status, revision,
                mutation_revision as mutationRevision, source_identity as sourceIdentity,
+               run_start_workspace_identity as runStartWorkspaceIdentity,
+               current_workspace_identity as currentWorkspaceIdentity,
+               blocked_reason as blockedReason,
+               intervention_count as interventionCount,
+               project_mode as projectMode,
+               baseline_failures as baselineFailures,
+               replan_count as replanCount,
                proof_tier as proofTier, evidence_tier as evidenceTier,
                required_obligations as requiredObligations, acceptance_criteria as acceptanceCriteria,
                release_evidence_required as releaseEvidenceRequired,
@@ -340,6 +463,13 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         revision: row.revision,
         mutationRevision: row.mutationRevision,
         sourceIdentity: row.sourceIdentity,
+        runStartWorkspaceIdentity: row.runStartWorkspaceIdentity || null,
+        currentWorkspaceIdentity: row.currentWorkspaceIdentity || null,
+        blockedReason: row.blockedReason || null,
+        interventionCount: row.interventionCount || 0,
+        projectMode: row.projectMode || null,
+        baselineFailures: safeJsonParse(row.baselineFailures, []),
+        replanCount: row.replanCount || 0,
         proofTier: row.proofTier,
         evidenceTier: row.evidenceTier,
         requiredObligations: safeJsonParse(row.requiredObligations),
@@ -680,14 +810,11 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           throw new Error(`Invalid Kernel transition ${run.state} -> ${nextState}`);
         }
 
-        const isMutation = nextState === 'SHAPE' || nextState === 'EXECUTE';
-        const mutationInc = isMutation ? 1 : 0;
-
         const res = db.prepare(`
           UPDATE runs
-          SET state=?, revision=revision+1, mutation_revision=mutation_revision+?, updated_at=?
+          SET state=?, revision=revision+1, updated_at=?
           WHERE run_id=? AND state=? AND revision=?
-        `).run(nextState, mutationInc, now(), runId, run.state, run.revision);
+        `).run(nextState, now(), runId, run.state, run.revision);
 
         if (res.changes !== 1) {
           throw new Error(`STATE_CONFLICT: Concurrent state or revision modification for run ${runId}`);
@@ -701,7 +828,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       }
     },
 
-    recordVerification(runId, { obligationId = 'default', status, evidenceRef, sourceIdentity, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [] }) {
+    recordVerification(runId, { obligationId = 'default', status, evidenceRef, sourceIdentity, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [], verifiedSourceIdentity = null, executor = 'caller-attested', networkIsolation = null }) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status === 'completed') throw new Error(`Cannot add verification to completed run ${runId}`);
@@ -711,13 +838,22 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity) || sourceIdentity !== run.sourceIdentity) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for verification');
       }
+      if (verifiedSourceIdentity !== null && !sha256Regex.test(verifiedSourceIdentity)) {
+        throw new Error('verifiedSourceIdentity must be a sha256:<hex> workspace identity when provided');
+      }
+      if (!['kernel-runtime', 'caller-attested'].includes(executor)) {
+        throw new Error(`Invalid verification executor: ${executor}`);
+      }
+      if (executor === 'kernel-runtime' && !verifiedSourceIdentity) {
+        throw new Error('kernel-runtime verification requires the verifiedSourceIdentity it was executed against');
+      }
 
       db.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
         db.prepare(`
-          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, command, exit_code, evidence_digest, acceptance_coverage, observed_at)
-          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), now());
+          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, verified_source_identity, executor, network_isolation, command, exit_code, evidence_digest, acceptance_coverage, observed_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, verifiedSourceIdentity, executor, networkIsolation, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), now());
 
         if (evidenceDigest && sha256Regex.test(evidenceDigest)) {
           db.prepare(`INSERT INTO evidence_lineage(run_id, evidence_digest, created_at) VALUES(?, ?, ?)`).run(runId, evidenceDigest, now());
@@ -748,12 +884,15 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getVerifications(runId) {
-      return db.prepare(`SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+      return db.prepare(`SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
     },
 
     addWaiver(runId, { obligationId, approvedBy, reason, approvalReceipt, acceptanceCoverage = [] }) {
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
       if (!obligationId || !approvedBy || !reason || !approvalReceipt) throw new Error('Waiver requires obligation, approver, reason, and approval receipt');
+      if (isProtectedObligation(obligationId)) {
+        throw new Error(`PROTECTED_OBLIGATION_WAIVER_FORBIDDEN: ${obligationId} (auth/payment/migration/data-loss/security/core-scenario) requires real evidence and cannot be waived`);
+      }
       db.prepare(`INSERT INTO waivers(run_id, obligation_id, approved_by, reason, approved_at, approval_receipt, acceptance_coverage) VALUES(?, ?, ?, ?, ?, ?, ?)`)
         .run(runId, obligationId, approvedBy, reason, now(), approvalReceipt, JSON.stringify(acceptanceCoverage));
       return this.getWaivers(runId).at(-1);
@@ -769,10 +908,42 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt FROM leases WHERE run_id=?`).get(runId);
     },
 
+    getLease(runId) {
+      return db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt FROM leases WHERE run_id=?`).get(runId) || null;
+    },
+
+    // Detects a still-valid lease held by a different runner, so a resumed
+    // session does not silently stomp another live process's run.
+    acquireLease(runId, { holder, ttlMs = 30 * 60 * 1000 } = {}) {
+      const existing = this.getLease(runId);
+      const nowMs = Date.now();
+      if (existing && existing.holder !== holder && existing.expiresAt && Date.parse(existing.expiresAt) > nowMs) {
+        return { acquired: false, lease: existing, conflict: true };
+      }
+      const lease = this.recordLease(runId, { holder, expiresAt: new Date(nowMs + ttlMs).toISOString() });
+      return { acquired: true, lease, conflict: false };
+    },
+
     recordAttempt(runId, { attemptNumber, state, status = 'started', finishedAt = null }) {
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
       const result = db.prepare(`INSERT INTO attempts(run_id, attempt_number, state, started_at, finished_at, status) VALUES(?, ?, ?, ?, ?, ?)`).run(runId, attemptNumber, state, now(), finishedAt, status);
       return db.prepare(`SELECT id, run_id as runId, attempt_number as attemptNumber, state, started_at as startedAt, finished_at as finishedAt, status FROM attempts WHERE id=?`).get(result.lastInsertRowid);
+    },
+
+    getAttempts(runId) {
+      return db.prepare(`SELECT id, run_id as runId, attempt_number as attemptNumber, state, started_at as startedAt, finished_at as finishedAt, status FROM attempts WHERE run_id=? ORDER BY id ASC`).all(runId);
+    },
+
+    // Next attempt number is derived from persisted rows, so retry counting
+    // survives process restarts without a caller-held counter.
+    nextAttemptNumber(runId) {
+      const row = db.prepare(`SELECT MAX(attempt_number) as maxAttempt FROM attempts WHERE run_id=?`).get(runId);
+      return (row?.maxAttempt || 0) + 1;
+    },
+
+    finishAttempt(attemptId, status = 'finished') {
+      db.prepare(`UPDATE attempts SET status=?, finished_at=? WHERE id=?`).run(status, now(), attemptId);
+      return db.prepare(`SELECT id, run_id as runId, attempt_number as attemptNumber, state, started_at as startedAt, finished_at as finishedAt, status FROM attempts WHERE id=?`).get(attemptId);
     },
 
     getEvidenceLineage(runId) {
@@ -789,7 +960,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef,
                verified_runtime_revision as verifiedRuntimeRevision,
                verified_mutation_revision as verifiedMutationRevision,
-               source_identity as sourceIdentity, command, exit_code as exitCode,
+               source_identity as sourceIdentity,
+               verified_source_identity as verifiedSourceIdentity,
+               executor, network_isolation as networkIsolation, command, exit_code as exitCode,
                evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt
         FROM verifications WHERE run_id=? AND id IN (
           SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id
@@ -812,6 +985,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         if (!v.sourceIdentity || v.sourceIdentity !== run.sourceIdentity) return false;
         if (expectedSourceIdentity && v.sourceIdentity !== expectedSourceIdentity) return false;
 
+        // Evidence proven against a different workspace state than the one the
+        // run currently observes is stale regardless of its other fields.
+        if (v.verifiedSourceIdentity && run.currentWorkspaceIdentity && v.verifiedSourceIdentity !== run.currentWorkspaceIdentity) return false;
+
         return true;
       };
 
@@ -833,14 +1010,34 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const releaseEvidence = db.prepare(`SELECT tier, digest, mutation_revision as mutationRevision, pack_json as packJson FROM evidence_packs WHERE run_id=? ORDER BY id DESC LIMIT 1`).get(runId);
       
       const releaseEvidencePresent = !run.releaseEvidenceRequired || (releaseEvidence?.tier === 'E2' && releaseEvidence.mutationRevision === run.mutationRevision && sha256Regex.test(releaseEvidence.digest));
-      const accepted = isClosed && staticPassed && dynamicPassed && acceptanceCovered && releaseEvidencePresent;
+
+      // A run that actually mutated the workspace cannot complete on
+      // caller-attested proofs alone; at least one verification must have been
+      // executed by the Kernel runtime itself.
+      const hardEvidenceRequired = run.mutationRevision > 0;
+      const hardEvidenceCount = verifications.filter((v) => isVerificationValid(v) && v.executor === 'kernel-runtime').length;
+      const hardEvidenceSatisfied = !hardEvidenceRequired || hardEvidenceCount > 0;
+
+      // All completion gates except the CLOSE-state requirement. Callers use
+      // this to decide whether it is SAFE to transition to CLOSE, so a run is
+      // never closed into an unrecoverable blocked state.
+      const readyExceptClose = staticPassed && dynamicPassed && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied;
+      const gates = { isClosed, staticPassed, dynamicPassed, acceptanceCovered, releaseEvidencePresent, hardEvidenceSatisfied };
+
+      const accepted = isClosed && readyExceptClose;
 
       const decision = accepted ? 'accepted' : 'blocked';
+      // A run that leaned on any waiver to pass is completed but degraded
+      // (§17.5), never silently clean.
+      const completionQuality = accepted && waivers.length > 0 ? 'degraded' : (accepted ? 'clean' : 'none');
       const decisionPayload = {
         runId,
         decision,
+        completionQuality,
         sourceIdentity: run.sourceIdentity,
+        currentWorkspaceIdentity: run.currentWorkspaceIdentity,
         mutationRevision: run.mutationRevision,
+        hardEvidence: { required: hardEvidenceRequired, count: hardEvidenceCount },
         evidenceDigest: releaseEvidence?.digest || verifications[0]?.evidenceDigest || `sha256:${'0'.repeat(64)}`,
         verifications,
       };
@@ -848,12 +1045,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
       return {
         decision,
+        completionQuality,
         digest: decisionDigest,
         run,
         verifications,
         waivers,
         releaseEvidence: releaseEvidence || null,
         acceptanceCovered: [...coveredAcceptance],
+        hardEvidence: { required: hardEvidenceRequired, count: hardEvidenceCount },
+        gates,
+        readyExceptClose,
         decisionPayload,
       };
     },

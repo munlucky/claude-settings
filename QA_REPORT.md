@@ -2,6 +2,85 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-24
+- Scope: Kernel E2E workflow — Codex PR review remediation (5 findings on commit 4d03637).
+- Changed areas:
+  - F3 (completion-gate deadlock): `finalizeRun` now pre-flights all completion gates except CLOSE before transitioning; a gate-incomplete run stays in PROVE (recoverable) with an `incomplete_gates` receipt listing `unmetGates`, instead of being stranded in terminal CLOSE. `evaluateCompletion` exposes `gates` and `readyExceptClose`.
+  - F1 (flaky auto-satisfy, §17): a flaky verification (divergent pass/fail across identical runs) is now recorded as `failed` and blocking; it can only pass through an explicit waiver (which marks the run degraded). `executeWithFlakyRerun` still reports honest per-run facts; the blocking policy is applied in `executeProof`.
+  - F2 (evidence bound to pre-execution workspace): `executeProof` re-observes the workspace after running; if the verification command mutated tracked source, the evidence is bound to the post-execution identity and recorded `failed`, so it cannot complete a workspace state that no longer exists.
+  - F5 (freshness not applied on load): `buildProjectKnowledgeContext` now runs `cheapReVerify` when a `projectRoot` is supplied, omitting `stale` / `needs_deep_verify` records from served context (reason `freshness_*`); backward compatible when no `projectRoot` is passed.
+  - F4 (lease unenforced in report): `report` acquires the run lease for the current holder before mutating state; a report from a runner without the live lease is refused with `lease-conflict`.
+- Verification evidence:
+  - New tests: `kernel-completion-gate-recovery`, `kernel-flaky-and-selfmutation`, `kernel-knowledge-freshness-load`, `kernel-report-lease`.
+  - `npm run test:kernel` 214/214; full serial source gate re-run (see run below); surface budget re-baselined and passing.
+  - Sentinel set still reports 0 false completions.
+- Commit boundary:
+  - Source, tests, surface budget, and QA ledger only; generated runtime state and evidence artifacts excluded.
+
+- Date: 2026-07-24
+- Scope: Kernel E2E workflow P3 — optional quality expansion (strategy baseline `docs/public/roadmaps/kernel-e2e-workflow-2026-07-24/`).
+- Changed areas:
+  - Two-stage review (`scripts/kernel/proof/review-pipeline.mjs`, §31): contract review and engineering review are separate stages defined by a fixed reviewer I/O contract (verdict/findings/risks), not personas. `control-plane.reviewPlan` selects applicable stages by tier; `recordReview` stores a structured judgment and, at T3, requires an independent reviewer (`INDEPENDENT_REVIEW_REQUIRED` when reviewer == implementer).
+  - Bounded multi-agent scheduling (`scripts/kernel/run/bounded-wave.mjs`, §20): worker count defaults to 1, general cap 2, and 3 only for a high-risk run with independent review. A wave is only `parallel` when its slices have disjoint write sets, per-slice verification, and a declared integration check; otherwise it downgrades to sequential. Worker overflow spills to the next chunk. Kernel plans and bounds; the Host executes (no in-core agent spawning).
+  - Stagnation detection (`scripts/kernel/run/stagnation.mjs`) and replan: repeated failing attempts with no progress on the same obligation are flagged; `signalReplan` records a durable, measured replan event.
+  - Measurement-based model routing (`scripts/kernel/run/model-routing.mjs`, §25): a policy-only hook that recommends replan / escalate-model / independent-review / stay from observed signals — no provider client, preserving the Host boundary (§5.1).
+  - Measurement: `replanCount` is now observed (was unavailable), completing the North-star measurement set alongside `retryCount` and `userInterventionCount`.
+  - Evidence-plan gate (`scripts/kernel/task/evidence-plan.mjs`, §8, closing the last §29 P0 checklist item): a structured acceptance criterion that omits its evidence plan blocks the run at `startRun` (`MISSING_EVIDENCE_PLAN`); plain-string acceptance remains ergonomic and is enforced by the existing completion-time coverage gate.
+- Verification evidence:
+  - New tests: `kernel-review-pipeline`, `kernel-bounded-wave`, `kernel-stagnation-routing`, `kernel-evidence-plan`.
+  - `npm run test:kernel` 202/202; full serial source gate re-run (see run below); surface budget passes (files 1563).
+- Commit boundary:
+  - Source, roadmap docs, tests, and QA ledger only; generated runtime state and evidence artifacts excluded.
+
+- Date: 2026-07-24
+- Scope: Kernel E2E workflow P2 — Greenfield, knowledge freshness, and isolation (strategy baseline `docs/public/roadmaps/kernel-e2e-workflow-2026-07-24/`).
+- Changed areas:
+  - Greenfield bootstrap (`scripts/kernel/task/greenfield-bootstrap.mjs`): plans the minimal runnable vertical slice (walking skeleton) and states project-type completion evidence (§15.6); design only expands on explicit signals. `control-plane.greenfieldPlan` is applicable only to greenfield runs.
+  - Knowledge freshness (`scripts/kernel/knowledge/freshness.mjs`): committed records now carry `sourceRefs`/`sourceDigest`/`lastVerifiedAt`/`freshnessPolicy`/`confidence` (§21.3). Cheap re-verify keeps digest-unchanged records fresh, marks deleted references stale, and defers digest-drift to a deep verify at use time. Read-only topology projection (`topology-projection.mjs`) is explicitly non-authoritative.
+  - Network policy (`scripts/kernel/proof/network-policy.mjs`, §11.5): `inherited` records `networkIsolation: none`; `blocked`/`required` are honored only when the host declares a real sandbox (`MOON_RELAY_KERNEL_NETWORK_SANDBOX`), otherwise the run is blocked with reason `network-policy` rather than recording a false isolation boundary.
+  - Migration workflow (`scripts/kernel/task/migration-workflow.mjs`, §16.4): change-seam impact analysis; a required migration must declare a rollback path and a verification seam or the run blocks. `control-plane.analyzeMigration` escalates a required migration to T3 and adds the protected `data-migration-smoke` obligation (which cannot be waived).
+  - The canonical record mapper attaches freshness metadata on commit.
+- Verification evidence:
+  - New tests: `kernel-greenfield-bootstrap`, `kernel-knowledge-freshness`, `kernel-network-policy`, `kernel-migration-workflow`.
+  - `npm run test:kernel` 188/188; full serial source gate re-run (see run below); surface budget passes (files 1556).
+- Commit boundary:
+  - Source, schema, roadmap docs, tests, and QA ledger only; generated runtime state and evidence artifacts excluded.
+
+- Date: 2026-07-24
+- Scope: Kernel E2E workflow P1 — resumability and Brownfield stability (strategy baseline `docs/public/roadmaps/kernel-e2e-workflow-2026-07-24/`).
+- Changed areas:
+  - Leases/attempts are now connected with readers and tests (`getLease`/`acquireLease`, `getAttempts`/`nextAttemptNumber`/`finishAttempt`); each report records a durable attempt and `retryCount` is derived from persisted rows, satisfying the writer·reader·test hard gate for previously-unused schema.
+  - Deterministic resume: `control-plane.resume(runId)` (and `kernel resume <run-id>`) reconstructs the next action from SQLite alone across a fresh process, acquires a lease, and reports a `lease-conflict` when another live runner holds the run.
+  - Project Mode Detector (`scripts/kernel/task/project-mode.mjs`): Greenfield vs Brownfield is decided from manifests, source count, git history, and prior Kernel knowledge, persisted on the run as an internal `projectMode` (never surfaced in `next`).
+  - Brownfield Evidence Scan (`scripts/kernel/task/evidence-scan.mjs`), Baseline Proof (`scripts/kernel/proof/baseline-proof.mjs`), and failure classification (`scripts/kernel/proof/failure-classify.mjs`): `captureBaseline` runs trusted commands and records already-failing ones; report results classify failures into task-blocking / pre-existing / unrelated against that baseline.
+  - Route escalation (`escalateRun`/`escalateRoute`) is raise-only; demotion of proof or evidence tier throws `ROUTE_DEMOTION_FORBIDDEN`. Protected obligations (auth/payment/migration/data-loss/security/core-scenario) cannot be waived (`PROTECTED_OBLIGATION_WAIVER_FORBIDDEN`); a run that passed on any waiver is completed but marked `completionQuality: degraded`. Discovered/ad-hoc commands run only via `executeApprovedProof` with an explicit approval and an executable allowlist; flaky reruns re-execute once at the same identity and flag divergent pass/fail.
+  - Measurement: `retryCount` and `userInterventionCount` are now observed (attempts and blocked→resume interventions); the closed measurement schema was extended to include the P0 fields (`currentWorkspaceIdentity`, `hardEvidenceCoverage`, `promptTokenBudget`) it had been missing.
+  - Sentinel evaluation set (`tests/fixtures/kernel-sentinel/corpus.json`, `scripts/kernel/eval/sentinel-eval.mjs`): 8 fixed false-completion traps plus a positive control, run against real control-plane runs, with revision/seed/kernel-revision provenance.
+- Verification evidence:
+  - New tests: `kernel-resume-lease`, `kernel-project-mode`, `kernel-brownfield-scan`, `kernel-route-flaky-approval`, `kernel-sentinel-eval` (sentinel reports 0 false completions, 0 missed accepts across 8 cases).
+  - `npm run test:kernel` 170/170; full serial source gate re-run after change (see run below).
+  - Surface budget check passes (files 1547, nonblankLines 188352).
+- Commit boundary:
+  - Source, policy, schema, roadmap docs, tests, and QA ledger only; generated runtime state and evidence artifacts excluded.
+
+- Date: 2026-07-24
+- Scope: Kernel E2E workflow P0 — trust boundary and host boundary (strategy baseline `docs/public/roadmaps/kernel-e2e-workflow-2026-07-24/`), closing gaps G1, G2, G3, G5, G6, G7.
+- Changed areas:
+  - Added `scripts/kernel/run/workspace-identity.mjs`: workspace observation covering the dirty working tree (git status + content hashes, stat-walk fallback); runs now persist `runStartWorkspaceIdentity` and `currentWorkspaceIdentity` separately from the provenance `sourceIdentity`.
+  - Mutation revision now increments only when the observed workspace identity actually changes; the SHAPE/EXECUTE transition increment was removed from `scripts/kernel/state-store.mjs`.
+  - Added `scripts/kernel/proof/proof-executor.mjs`: trusted proof execution limited to package-manifest scripts, with command/args separation, allowlisted child env, mandatory timeout, stdout/stderr digests, secret-like redaction, raw output isolated under runtime-home `evidence/`, and honest `networkIsolation: none` / `networkPolicy: inherited` recording.
+  - Added model-visible host loop `next`/`report` (`scripts/kernel/run/run-loop.mjs`, control-plane `next`/`report`/`executeProof`, CLI `kernel next|report`): report re-observes workspace identity, executes requested trusted verifications as `kernel-runtime` hard evidence, records structured judgments as caller-attested evidence, auto-advances states, blocks on the BLOCKED reason vocabulary (including `unsafe-command`), and finalizes when required obligations pass. Low-level CLI commands are demoted to internal/debug surface.
+  - Completion authority: verifications with a `verifiedSourceIdentity` different from the run's current workspace identity are stale; a run whose mutation revision is above zero requires at least one valid `kernel-runtime` verification, so caller-attested proof alone can no longer complete a source-mutating run.
+  - Contract alignment: catalog `allowedStages` now lists all seven workflow states; the default feature route drops SHAPE unless a contract/boundary/irreversibility signal is present (`needsShape`); proof-policy hard floors are per-surface (`publicContract`/`schemaChange` T2; `securityBoundary`/`dataMigration`/`runtimeAuthority`/`destructiveSchemaChange`/`installer` T3) with raise-only semantics; tier meanings renamed to mechanical/scenario/semantic/independent.
+  - Measurement: `buildKernelMeasurement` adds observed hard-evidence coverage, current workspace identity, and prompt token budgets.
+  - Public skill `moon-relay-kernel` SKILL.md rewritten around the two runtime commands without exposing internal state names; packaged codex profile copy and `package/kernel/skills.lock.json` content hash updated; surface budget re-baselined for the new modules and roadmap package.
+- Verification evidence:
+  - New `tests/kernel-host-loop-e2e.test.mjs` (7 tests): identity observation vs. working-tree change, manifest-only trust boundary with honest failure facts, redaction, state-path planning without state-name exposure, full fail→fix→hard-evidence→accepted E2E, `unsafe-command` blocking, and rejection of caller-attested-only completion for mutating runs.
+  - `npm run test:kernel` 149/149; full source gate `node --test --test-concurrency=1` 728 tests, 728 pass, 0 fail (exit 0).
+  - Pre-existing failure classification: under default parallel file execution, `tests/workflow-e2e-contract.test.mjs` rewrites `.moonshot-relay/browser-artifacts/run/goal/agentic/snapshot.json` in the repo runtime state while `tests/active-contracts.test.mjs` asserts snapshot invariance; on this machine the ~256K-file local `.moonshot-relay` widens the race window to ~50s per walk, so the parallel run fails that single test. Unrelated to the P0 change set; fixed the helper's spread-push RangeError so the test can run at all, and left the isolation fix as a follow-up.
+- Commit boundary:
+  - Source, policy, catalog, roadmap docs, tests, and QA ledger only; generated runtime state and evidence artifacts remain excluded.
+
 - Date: 2026-07-22
 - Scope: Account-root harness switcher and four-profile lifecycle, including administrator live adoption, Relay restoration, and manifest-owned uninstall.
 - Changed areas:

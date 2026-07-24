@@ -1,15 +1,17 @@
 schemaVersion: 1
 tiers:
-  T0: deterministic-only
-  T1: compact-review
-  T2: dual-review
-  T3: full-proof
+  T0: mechanical
+  T1: scenario
+  T2: semantic
+  T3: independent
 hardFloors:
   securityBoundary: T3
   dataMigration: T3
-  publicContract: T3
-  schemaChange: T3
   runtimeAuthority: T3
+  destructiveSchemaChange: T3
+  installer: T3
+  publicContract: T2
+  schemaChange: T2
 requiredChecks:
   T0: [default]
   T1: [unit-test]

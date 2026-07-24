@@ -38,7 +38,9 @@ const walkEntries = async (relativeDir) => {
     const relative = path.join(relativeDir, entry.name);
     const portable = relative.replaceAll(path.sep, '/');
     if (entry.isDirectory()) {
-      results.push(...await walkEntries(relative));
+      // Avoid spread-push: large local runtime state trees exceed the
+      // maximum argument count and throw RangeError.
+      for (const nested of await walkEntries(relative)) results.push(nested);
     } else {
       const info = await stat(path.join(absolute, entry.name));
       results.push(`${portable}:${info.size}:${info.mtimeMs}`);
@@ -50,7 +52,7 @@ const walkEntries = async (relativeDir) => {
 const runtimeStateSnapshot = async () => {
   const entries = [];
   for (const dir of ['.claude', '.codex', '.qwen', '.moonshot-relay', '.moonshot-state']) {
-    entries.push(...await walkEntries(dir));
+    for (const entry of await walkEntries(dir)) entries.push(entry);
   }
   return entries;
 };
