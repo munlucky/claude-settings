@@ -1018,7 +1018,13 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const hardEvidenceCount = verifications.filter((v) => isVerificationValid(v) && v.executor === 'kernel-runtime').length;
       const hardEvidenceSatisfied = !hardEvidenceRequired || hardEvidenceCount > 0;
 
-      const accepted = isClosed && staticPassed && dynamicPassed && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied;
+      // All completion gates except the CLOSE-state requirement. Callers use
+      // this to decide whether it is SAFE to transition to CLOSE, so a run is
+      // never closed into an unrecoverable blocked state.
+      const readyExceptClose = staticPassed && dynamicPassed && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied;
+      const gates = { isClosed, staticPassed, dynamicPassed, acceptanceCovered, releaseEvidencePresent, hardEvidenceSatisfied };
+
+      const accepted = isClosed && readyExceptClose;
 
       const decision = accepted ? 'accepted' : 'blocked';
       // A run that leaned on any waiver to pass is completed but degraded
@@ -1047,6 +1053,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         releaseEvidence: releaseEvidence || null,
         acceptanceCovered: [...coveredAcceptance],
         hardEvidence: { required: hardEvidenceRequired, count: hardEvidenceCount },
+        gates,
+        readyExceptClose,
         decisionPayload,
       };
     },

@@ -151,6 +151,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         runId,
         objective: run.objective,
         changedPaths: normalizedChangeSet.changedPaths,
+        projectRoot,
         stateStore: store,
         env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
@@ -181,6 +182,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         runId,
         objective: run.objective,
         changedPaths: normalizedChangeSet.changedPaths,
+        projectRoot,
         stateStore: store,
         env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
       });
@@ -399,22 +401,40 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         : () => executeTrustedProof({ projectRoot, commandRef, timeoutMs, evidenceDir, networkPolicy });
       const execution = flakyRerun ? executeWithFlakyRerun(runner) : runner();
 
+      // Re-observe the workspace AFTER execution. If the verification command
+      // itself mutated tracked source (e.g. a formatter or codegen step), the
+      // evidence was produced against a state that no longer exists — bind it
+      // to the post-execution identity so the completion gate treats it as
+      // stale rather than accepting evidence for a vanished workspace (F2).
+      const postObservation = observeWorkspaceIdentity({ projectRoot });
+      const workspaceMutatedByProof = postObservation.identity !== observation.identity;
+      if (workspaceMutatedByProof) {
+        store.observeWorkspaceIdentity(runId, postObservation.identity);
+      }
+
+      // A flaky result (divergent pass/fail across identical runs) is blocking
+      // by default (§17); it may only pass through an explicit waiver, which
+      // marks the run degraded. A proof that mutated its own workspace cannot
+      // stand as valid evidence for that workspace either.
+      const blockedForFlaky = execution.flaky === true;
+      const recordedStatus = (blockedForFlaky || workspaceMutatedByProof) ? 'failed' : execution.status;
+
       const updated = store.recordVerification(runId, {
         obligationId,
-        status: execution.status,
+        status: recordedStatus,
         evidenceRef: execution.evidenceRef,
         command: [execution.command, ...execution.args].join(' '),
-        exitCode: execution.exitCode,
+        exitCode: recordedStatus === 'failed' && execution.exitCode === 0 ? 1 : execution.exitCode,
         evidenceDigest: execution.outputDigest,
         acceptanceCoverage,
-        verifiedSourceIdentity: observation.identity,
+        verifiedSourceIdentity: workspaceMutatedByProof ? postObservation.identity : observation.identity,
         executor: 'kernel-runtime',
         networkIsolation: execution.networkIsolation,
       });
       persistReleaseEvidenceIfNeeded(runId, updated);
 
       await projectRunState(updated, { runtimeHome });
-      return { run: updated, execution };
+      return { run: updated, execution: { ...execution, recordedStatus, flaky: blockedForFlaky, workspaceMutatedByProof } };
     },
 
     // Model-visible command 1 of 2: what to do now.
@@ -498,6 +518,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       if (run.status === 'completed') {
         return { schemaVersion: 1, runId, status: 'completed', next: await this.next(runId) };
       }
+
+      // Enforce the run lease before mutating any state (F4). If another runner
+      // holds a live lease, refuse the report so concurrent processes cannot
+      // interleave attempts, transitions, and finalization on the same run.
+      const leaseResult = store.acquireLease(runId, { holder });
+      if (!leaseResult.acquired) {
+        return { schemaVersion: 1, runId, status: 'lease-conflict', lease: leaseResult.lease, next: await this.next(runId) };
+      }
+
       const report = normalizeReport(payload);
 
       if (report.blocker) {
@@ -535,9 +564,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
               acceptanceCoverage: request.acceptanceCoverage || [],
               networkPolicy: request.networkPolicy || 'inherited',
             });
-            executed.push({ obligationId, commandRef: request.commandRef, status: execution.status, exitCode: execution.exitCode, evidenceDigest: execution.outputDigest });
-            if (execution.status !== 'passed') {
-              failures.push({ obligationId, commandRef: request.commandRef, command: [execution.command, ...execution.args].join(' '), errorSummary: execution.errorSummary });
+            // recordedStatus reflects flaky/self-mutation blocking policy, not
+            // just the raw command exit; use it so the report is consistent
+            // with what completion authority actually sees.
+            const effectiveStatus = execution.recordedStatus || execution.status;
+            executed.push({ obligationId, commandRef: request.commandRef, status: effectiveStatus, exitCode: execution.exitCode, evidenceDigest: execution.outputDigest, flaky: Boolean(execution.flaky), workspaceMutatedByProof: Boolean(execution.workspaceMutatedByProof) });
+            if (effectiveStatus !== 'passed') {
+              const flakyNote = execution.flaky ? ' (flaky: divergent pass/fail — requires a waiver to pass)' : '';
+              const mutationNote = execution.workspaceMutatedByProof ? ' (verification command mutated tracked source; evidence invalid)' : '';
+              failures.push({ obligationId, commandRef: request.commandRef, command: [execution.command, ...execution.args].join(' '), errorSummary: `${execution.errorSummary || ''}${flakyNote}${mutationNote}`.trim() || null });
             }
           } catch (error) {
             if (error instanceof UntrustedCommandError) {
@@ -778,8 +813,31 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         return blockedReceipt;
       }
 
-      // Step 2: Transition to CLOSE
+      // Step 2: Pre-flight completion gates BEFORE closing. CLOSE is terminal
+      // (no transition back to PROVE), so closing a run whose acceptance,
+      // hard-evidence, or release-evidence gates are unmet would strand it in
+      // an unrecoverable blocked state. When gates are unmet, stay in the
+      // current (recoverable) state and report which gates are missing.
       if (run.state !== 'CLOSE' && run.status !== 'completed') {
+        const preflight = store.evaluateCompletion(runId);
+        if (!preflight.readyExceptClose) {
+          const recoverableReceipt = {
+            schemaVersion: 1,
+            runId,
+            projectId: run.projectId,
+            completionStatus: 'blocked',
+            knowledgeStatus: 'skipped',
+            projectionStatus: 'none',
+            gitCloseoutStatus: 'skipped',
+            finalizationStatus: 'incomplete_gates',
+            completionResult: preflight,
+            reviewResult,
+            reason: 'completion_gates_unmet',
+            unmetGates: Object.entries(preflight.gates).filter(([key, value]) => key !== 'isClosed' && !value).map(([key]) => key),
+          };
+          store.recordFinalizationReceipt(runId, recoverableReceipt);
+          return recoverableReceipt;
+        }
         store.transition(runId, 'CLOSE');
       }
 

@@ -3,6 +3,21 @@
 ## Harness Change Ledger
 
 - Date: 2026-07-24
+- Scope: Kernel E2E workflow — Codex PR review remediation (5 findings on commit 4d03637).
+- Changed areas:
+  - F3 (completion-gate deadlock): `finalizeRun` now pre-flights all completion gates except CLOSE before transitioning; a gate-incomplete run stays in PROVE (recoverable) with an `incomplete_gates` receipt listing `unmetGates`, instead of being stranded in terminal CLOSE. `evaluateCompletion` exposes `gates` and `readyExceptClose`.
+  - F1 (flaky auto-satisfy, §17): a flaky verification (divergent pass/fail across identical runs) is now recorded as `failed` and blocking; it can only pass through an explicit waiver (which marks the run degraded). `executeWithFlakyRerun` still reports honest per-run facts; the blocking policy is applied in `executeProof`.
+  - F2 (evidence bound to pre-execution workspace): `executeProof` re-observes the workspace after running; if the verification command mutated tracked source, the evidence is bound to the post-execution identity and recorded `failed`, so it cannot complete a workspace state that no longer exists.
+  - F5 (freshness not applied on load): `buildProjectKnowledgeContext` now runs `cheapReVerify` when a `projectRoot` is supplied, omitting `stale` / `needs_deep_verify` records from served context (reason `freshness_*`); backward compatible when no `projectRoot` is passed.
+  - F4 (lease unenforced in report): `report` acquires the run lease for the current holder before mutating state; a report from a runner without the live lease is refused with `lease-conflict`.
+- Verification evidence:
+  - New tests: `kernel-completion-gate-recovery`, `kernel-flaky-and-selfmutation`, `kernel-knowledge-freshness-load`, `kernel-report-lease`.
+  - `npm run test:kernel` 214/214; full serial source gate re-run (see run below); surface budget re-baselined and passing.
+  - Sentinel set still reports 0 false completions.
+- Commit boundary:
+  - Source, tests, surface budget, and QA ledger only; generated runtime state and evidence artifacts excluded.
+
+- Date: 2026-07-24
 - Scope: Kernel E2E workflow P3 — optional quality expansion (strategy baseline `docs/public/roadmaps/kernel-e2e-workflow-2026-07-24/`).
 - Changed areas:
   - Two-stage review (`scripts/kernel/proof/review-pipeline.mjs`, §31): contract review and engineering review are separate stages defined by a fixed reviewer I/O contract (verdict/findings/risks), not personas. `control-plane.reviewPlan` selects applicable stages by tier; `recordReview` stores a structured judgment and, at T3, requires an independent reviewer (`INDEPENDENT_REVIEW_REQUIRED` when reviewer == implementer).
