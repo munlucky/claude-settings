@@ -33,20 +33,32 @@ const exists = async (file) => {
   }
 };
 
-export async function syncCodexGlobalSkillsIsolation({ track }) {
-  const userCodexSkills = path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex', 'skills');
-  const backupSkills = path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex', '.skills-relay-backup');
+const SURFACE_SKILLS_DIR = {
+  codex_desktop: '.codex',
+  codex_cli: '.codex',
+  claude_cli: '.claude',
+  qwen_cli: '.qwen',
+  antigravity_desktop: path.join('.gemini', 'antigravity'),
+};
+
+export async function syncGlobalSkillsIsolation({ surface, track }) {
+  const dirName = SURFACE_SKILLS_DIR[surface];
+  if (!dirName) return;
+
+  const baseDir = path.join(process.env.USERPROFILE || process.env.HOME || '', dirName);
+  const userSkills = path.join(baseDir, 'skills');
+  const backupSkills = path.join(baseDir, '.skills-relay-backup');
 
   if (track === 'kernel') {
-    if ((await exists(userCodexSkills)) && !(await exists(backupSkills))) {
+    if ((await exists(userSkills)) && !(await exists(backupSkills))) {
       try {
-        await rename(userCodexSkills, backupSkills);
+        await rename(userSkills, backupSkills);
       } catch {
         /* locked file */
       }
     }
-    await mkdir(userCodexSkills, { recursive: true });
-    const kernelSkillDir = path.join(userCodexSkills, 'moon-relay-kernel');
+    await mkdir(userSkills, { recursive: true });
+    const kernelSkillDir = path.join(userSkills, 'moon-relay-kernel');
     await mkdir(kernelSkillDir, { recursive: true });
     await writeFile(
       path.join(kernelSkillDir, 'SKILL.md'),
@@ -55,9 +67,9 @@ export async function syncCodexGlobalSkillsIsolation({ track }) {
     );
     if (await exists(backupSkills)) {
       try {
-        for (const entry of await readdir(userCodexSkills, { withFileTypes: true })) {
+        for (const entry of await readdir(userSkills, { withFileTypes: true })) {
           if (entry.name !== 'moon-relay-kernel') {
-            await rm(path.join(userCodexSkills, entry.name), { force: true, recursive: true });
+            await rm(path.join(userSkills, entry.name), { force: true, recursive: true });
           }
         }
       } catch {
@@ -67,13 +79,17 @@ export async function syncCodexGlobalSkillsIsolation({ track }) {
   } else if (track === 'relay') {
     if (await exists(backupSkills)) {
       try {
-        await rm(userCodexSkills, { force: true, recursive: true });
-        await rename(backupSkills, userCodexSkills);
+        await rm(userSkills, { force: true, recursive: true });
+        await rename(backupSkills, userSkills);
       } catch {
         /* locked file */
       }
     }
   }
+}
+
+export async function syncCodexGlobalSkillsIsolation({ track }) {
+  return syncGlobalSkillsIsolation({ surface: 'codex_cli', track });
 }
 
 export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, projectRoot = null, appDataRoot = null, sourceRoot = process.cwd() } = {}) {
@@ -160,9 +176,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     }
   }
 
-  if (surface === 'codex_desktop' || surface === 'codex_cli') {
-    await syncCodexGlobalSkillsIsolation({ track });
-  }
+  await syncGlobalSkillsIsolation({ surface, track });
 
   const journal = await prepareTransaction({ surface, requestedTrack: track, roots, previousSelection: previous, processSet: active });
   await advanceTransaction(journal, 'old_app_stopped');

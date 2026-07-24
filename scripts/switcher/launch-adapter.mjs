@@ -39,12 +39,14 @@ export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), wo
 }
 
 export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
+  const isCmdOrBat = process.platform === 'win32' && (/\.(cmd|bat)$/i.test(spec.command) || spec.surface?.endsWith('_cli'));
   const options = {
     env: spec.env,
     cwd: spec.cwd || process.cwd(),
     windowsHide: true,
     detached: false,
     stdio: 'ignore',
+    ...(isCmdOrBat ? { shell: true } : {}),
   };
 
   try {
