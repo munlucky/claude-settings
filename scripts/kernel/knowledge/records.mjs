@@ -25,6 +25,7 @@ export const CANDIDATE_TO_RECORD_TYPE = {
   kg_relation: 'kg_relation',
   ontology_constraint: 'ontology_constraint',
   tacit_observation: 'episodic_observation',
+  tacit_practice: 'episodic_observation',
   known_failure_pattern: 'known_failure_pattern',
   required_verification: 'required_verification',
 };

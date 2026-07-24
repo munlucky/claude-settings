@@ -10,7 +10,7 @@ import { KernelPrinciplesError, loadKernelPrinciples } from './policy.mjs';
 import { resolveKernelCapabilities } from './capability-resolver.mjs';
 import { buildCandidateIdentity, gitTreeDigest, sha256Hex } from '../lib/candidate-identity.mjs';
 import { resolveKernelProjectIdentity } from './project-identity.mjs';
-import { readProjectRevision, ensureKnowledgeStoreDirectories } from './knowledge/store.mjs';
+import { ensureKnowledgeStoreDirectories } from './knowledge/store.mjs';
 import { buildProjectKnowledgeContext } from './knowledge/context-load.mjs';
 import { extractKnowledgeCandidates } from './knowledge/candidate-extract.mjs';
 import { reviewKnowledgeCandidates } from './knowledge/candidate-review.mjs';

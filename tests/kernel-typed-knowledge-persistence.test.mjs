@@ -8,6 +8,8 @@ test('resolveRecordType preserves typed candidate types', () => {
   assert.equal(resolveRecordType('component_boundary'), 'component_boundary');
   assert.equal(resolveRecordType('api_contract'), 'api_contract');
   assert.equal(resolveRecordType('tacit_observation'), 'episodic_observation');
+  assert.equal(resolveRecordType('tacit_practice'), 'episodic_observation');
+  assert.equal(resolveRecordType('episodic_observation'), 'episodic_observation');
   assert.equal(resolveRecordType('known_failure_pattern'), 'known_failure_pattern');
   assert.equal(resolveRecordType('required_verification'), 'required_verification');
   assert.equal(resolveRecordType('semantic_fact'), 'semantic_fact');

@@ -108,6 +108,7 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
   assert.ok(promptBlockText.includes('Use JWT stateless session tokens for auth service'));
   assert.ok(promptBlockText.includes('Authentication service runs on port 4000'));
   assert.ok(promptBlockText.includes('Access Token: Short-lived bearer token used for API requests'));
+  assert.ok(promptBlockText.includes('Token expiration handling required graceful retry logic'));
 
   // Transition run2 to EXECUTE -> PROVE -> CLOSE
   await controlPlane.transition('run-e2e-2', 'EXECUTE');
@@ -125,7 +126,7 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
 
   await controlPlane.transition('run-e2e-2', 'CLOSE');
 
-  // Record a new observation in Run 2 and finalize
+  // Record new observations in Run 2 (including tacit_practice alias) and finalize
   await controlPlane.recordKnowledgeObservations('run-e2e-2', {
     observations: [
       {
@@ -134,8 +135,17 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
         statement: 'MFA TOTP authentication supported for admin accounts',
         trustTier: 'verified',
       },
+      {
+        id: 'tacit-auth-retry',
+        proposedType: 'tacit_practice',
+        statement: 'Retry transient authentication failures with bounded backoff',
+        trustTier: 'verified',
+      },
     ],
-    approvals: [{ candidateId: 'fact-mfa-support', approved: true, approvedBy: 'user' }],
+    approvals: [
+      { candidateId: 'fact-mfa-support', approved: true, approvedBy: 'user' },
+      { candidateId: 'tacit-auth-retry', approved: true, approvedBy: 'user' },
+    ],
   });
 
   const finalizationResult2 = await controlPlane.finalizeRun('run-e2e-2', {
@@ -144,6 +154,9 @@ test('Cross-Run Knowledge Reuse E2E: verifies direct SQLite knowledge context re
 
   assert.equal(finalizationResult2.finalizationStatus, 'completed');
   assert.equal(finalizationResult2.knowledgeStatus, 'committed');
+  assert.equal(finalizationResult2.knowledgeCommitReceipt.revisionBefore, '2');
+  assert.equal(finalizationResult2.knowledgeCommitReceipt.revisionAfter, '3');
+  assert.equal(finalizationResult2.knowledgeCommitReceipt.status, 'committed');
 
   // --- 4. Project Root Isolation: Verify distinct projectRoot does not see this knowledge ---
   const projectRootOther = path.join(tmpDir, 'project-root-other');
