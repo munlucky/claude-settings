@@ -39,6 +39,13 @@ if (!['install', 'bridge', 'delivery', 'retro'].includes(command)) {
   process.exit(1);
 }
 
+// In --json mode the primary installer prints one JSON document to stdout.
+// The chained kernel-install and switcher-adopt steps must NOT pollute stdout
+// with their human logs, or `install --json` stops being parseable. Route
+// their output to stderr in json mode; keep everything on stdout otherwise.
+const jsonMode = args.includes('--json');
+const chainedStdio = jsonMode ? ['inherit', 2, 2] : 'inherit';
+
 if (command === 'retro') {
   if (!existsSync(retroCli)) {
     console.error(`Moonshot Relay retro command not found: ${retroCli}`);
@@ -115,10 +122,10 @@ if (result.status === 0 && command === 'install' && !args.includes('--dry-run'))
   const kernelHome = process.env.MOON_RELAY_KERNEL_HOME || path.join(userHome, '.moon-relay-kernel');
 
   if (existsSync(kernelInstaller)) {
-    spawnSync(process.execPath, [kernelInstaller, 'install', '--target-root', kernelHome, '--source-root', repoRoot], { cwd: repoRoot, env: process.env, stdio: 'inherit' });
+    spawnSync(process.execPath, [kernelInstaller, 'install', '--target-root', kernelHome, '--source-root', repoRoot], { cwd: repoRoot, env: process.env, stdio: chainedStdio });
   }
   if (existsSync(switcherInstaller)) {
-    spawnSync(process.execPath, [switcherInstaller, 'adopt', '--approved', '--approval-token', 'APPROVE_LIVE_HARNESS_SWITCHER', '--source-root', repoRoot], { cwd: repoRoot, env: process.env, stdio: 'inherit' });
+    spawnSync(process.execPath, [switcherInstaller, 'adopt', '--approved', '--approval-token', 'APPROVE_LIVE_HARNESS_SWITCHER', '--source-root', repoRoot], { cwd: repoRoot, env: process.env, stdio: chainedStdio });
   }
 }
 
