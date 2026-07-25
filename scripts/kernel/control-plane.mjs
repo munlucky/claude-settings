@@ -6,7 +6,8 @@ import { resolveProofRoute } from './proof-route.mjs';
 import { planDryRunWave } from './wave-plan.mjs';
 import { planBoundedWaves } from './run/bounded-wave.mjs';
 import { detectStagnation } from './run/stagnation.mjs';
-import { recommendModelRouting } from './run/model-routing.mjs';
+import { recommendModelRouting, resolveModelRoute } from './run/model-routing.mjs';
+import { normalizeHostCapabilities, resolveEnforcementStrategy, summarizeModelRouting } from './run/model-route-contract.mjs';
 import { buildReleaseEvidencePack } from './evidence-pack.mjs';
 import { projectRunState } from './state-projector.mjs';
 import { resolveKernelRuntimeHome } from './runtime-home.mjs';
@@ -31,7 +32,7 @@ import { needsShape } from './route.mjs';
 import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } from './run/session-holder.mjs';
 import { planWalkingSkeleton } from './task/greenfield-bootstrap.mjs';
 import { buildImpactAnalysis } from './task/migration-workflow.mjs';
-import { resolveReviewPlan, normalizeReviewVerdict, assertIndependentReview } from './proof/review-pipeline.mjs';
+import { resolveReviewPlan, normalizeReviewVerdict, assertIndependentReview, assertIndependentReviewSession, classifyReviewFindings } from './proof/review-pipeline.mjs';
 import { scanRepositoryEvidence } from './task/evidence-scan.mjs';
 import { captureBaselineProof } from './proof/baseline-proof.mjs';
 import { classifyFailures } from './proof/failure-classify.mjs';
@@ -51,8 +52,25 @@ export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objec
 const observed = (value) => ({ status: 'observed', value });
 const unavailable = (reason) => ({ status: 'unavailable', reason });
 
-export const buildKernelMeasurement = ({ run, completion, principles = loadKernelPrinciples(), verifications = [], attempts = [] }) => ({
-  schemaVersion: 1,
+// Provider usage becomes observable only when the Host files receipts. Without
+// them the fields stay `unavailable` — an unmeasured run must never look free.
+const providerUsageMeasurement = (receipts = []) => {
+  const withTokens = receipts.filter((receipt) => receipt.inputTokens !== null || receipt.outputTokens !== null);
+  const models = [...new Set(receipts.map((receipt) => receipt.resolvedModel).filter(Boolean))];
+  const durations = receipts.map((receipt) => receipt.wallClockMs).filter((value) => Number.isInteger(value));
+  const sum = (key) => withTokens.reduce((total, receipt) => total + (receipt[key] ?? 0), 0);
+  return {
+    providerModelIdentity: models.length > 0
+      ? observed({ models, enforcedTurns: receipts.filter((receipt) => receipt.enforcementStatus === 'enforced').length, turns: receipts.length })
+      : unavailable('provider-usage-not-recorded'),
+    actualInputTokens: withTokens.length > 0 ? observed({ total: sum('inputTokens'), cached: sum('cachedInputTokens'), reportedTurns: withTokens.length }) : unavailable('provider-usage-not-recorded'),
+    actualOutputTokens: withTokens.length > 0 ? observed({ total: sum('outputTokens'), reportedTurns: withTokens.length }) : unavailable('provider-usage-not-recorded'),
+    wallClockMs: durations.length > 0 ? observed({ modelTurnsTotalMs: durations.reduce((total, value) => total + value, 0), reportedTurns: durations.length }) : unavailable('run-duration-not-recorded'),
+  };
+};
+
+export const buildKernelMeasurement = ({ run, completion, principles = loadKernelPrinciples(), verifications = [], attempts = [], routeDecisions = [], usageReceipts = [] }) => ({
+  schemaVersion: 2,
   harnessIdentity: 'moon-relay-kernel',
   sourceIdentity: run.sourceIdentity,
   currentWorkspaceIdentity: run.currentWorkspaceIdentity ? observed(run.currentWorkspaceIdentity) : unavailable('workspace-identity-not-observed'),
@@ -67,18 +85,27 @@ export const buildKernelMeasurement = ({ run, completion, principles = loadKerne
     stageTokenBudget: KERNEL_POLICY.context.stageTokenBudget,
   }),
   taskIdentity: `task-${createHash('sha256').update(run.objective).digest('hex').slice(0, 16)}`,
-  providerModelIdentity: unavailable('provider-usage-not-recorded'),
+  ...providerUsageMeasurement(usageReceipts),
+  modelRouting: routeDecisions.length > 0 ? observed(summarizeModelRouting(routeDecisions, usageReceipts)) : unavailable('model-routing-not-recorded'),
   estimatedStaticTokens: Math.ceil(JSON.stringify(principles.principles).length / 4),
-  actualInputTokens: unavailable('provider-usage-not-recorded'),
-  actualOutputTokens: unavailable('provider-usage-not-recorded'),
   successDecision: observed(completion.decision === 'accepted'),
   falseCompletionDecision: unavailable('false-completion-evaluation-not-run'),
   retryCount: observed(Math.max(0, attempts.length - 1)),
   replanCount: observed(run.replanCount || 0),
   userInterventionCount: observed(run.interventionCount || 0),
-  wallClockMs: unavailable('run-duration-not-recorded'),
   evidenceCoverage: observed({ passed: verifications.filter((verification) => verification.status === 'passed').length, total: verifications.length, required: run.requiredObligations.length }),
   contaminationSignals: observed({ relayStateMutation: false, profileMutation: false, source: 'kernel-runtime-boundary' }),
+});
+
+// Model-visible actions carry no routing vocabulary, so the Host maps the one
+// action the model was handed onto the action kind the router understands.
+const ACTION_FOR_MODEL_ACTION = Object.freeze({
+  implement: 'implement',
+  fix: 'debug',
+  report: 'prove',
+  finalize: 'close',
+  done: 'close',
+  blocked: 'understand',
 });
 
 // The route a run follows is fixed at start (P1-1) so SHAPE is never skipped
@@ -419,9 +446,87 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return recommendModelRouting({
         riskTier: run.proofTier,
         stagnant: stagnation.stagnant,
-        retryCount: Math.max(0, attempts.length - 1),
+        retryCount: attempts.filter((attempt) => attempt.status === 'failed').length,
         independentReviewRequired,
       });
+    },
+
+    // Decides the LOGICAL model class for the action the model is about to
+    // perform and persists it before the Host dispatches (§16.5). Provider
+    // identity is never decided here — only the class the Host must satisfy.
+    async decideModelRoute(runId, { actionKind, obligationId = null, independentReviewRequired = false, planInvalid = false, architectureDeviation = false, protectedObligationFailed = false } = {}) {
+      const run = store.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const attempts = store.getAttempts(runId);
+      const priorDecisions = store.listModelRouteDecisions(runId);
+      const decision = resolveModelRoute({
+        runId,
+        actionKind,
+        riskTier: run.proofTier,
+        attemptNumber: attempts.length || 1,
+        replanCount: run.replanCount || 0,
+        // Retries are counted as FAILED attempts, not attempts made. Counting
+        // every attempt would push the retry threshold onto the same turn as
+        // the stagnation threshold, and stagnation outranks it — which would
+        // make retry escalation unreachable on the failing-report path.
+        retryCount: attempts.filter((attempt) => attempt.status === 'failed').length,
+        stagnant: this.detectStagnation(runId).stagnant,
+        protectedObligationFailed,
+        planInvalid,
+        architectureDeviation,
+        independentReviewRequired,
+        currentPlanRevision: Number(run.contractRevision || 1),
+        obligationId,
+        // §5.4: an escalation holds for the rest of this plan revision, but a
+        // replan produces a new revision that may return to the value class.
+        escalatedObligations: priorDecisions
+          .filter((entry) => entry.modelClass === 'frontier_reasoning' && entry.role === 'implementer' && entry.obligationId)
+          .map((entry) => ({ planRevision: entry.planRevision, obligationId: entry.obligationId })),
+        sequence: priorDecisions.length,
+      });
+      return store.recordModelRouteDecision(runId, decision);
+    },
+
+    // Host-only turn API (§8.2). `next` stays exactly as the model sees it;
+    // the routing directive travels beside it, never inside it.
+    async hostNext(runId, { hostCapabilities = {}, actionContext = {} } = {}) {
+      const run = store.getRun(runId);
+      if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
+      const capabilities = normalizeHostCapabilities(hostCapabilities);
+      const modelInput = await this.next(runId);
+      const decision = await this.decideModelRoute(runId, {
+        actionKind: actionContext.actionKind || ACTION_FOR_MODEL_ACTION[modelInput.action?.type] || 'implement',
+        obligationId: actionContext.obligationId ?? modelInput.action?.outstandingObligations?.[0] ?? null,
+        independentReviewRequired: actionContext.independentReviewRequired === true,
+        planInvalid: actionContext.planInvalid === true,
+        architectureDeviation: actionContext.architectureDeviation === true,
+        protectedObligationFailed: actionContext.protectedObligationFailed === true,
+      });
+      return {
+        schemaVersion: 1,
+        runId,
+        modelInput,
+        hostDirective: {
+          modelRouteDecision: decision,
+          hostCapabilities: capabilities,
+          enforcementStrategy: resolveEnforcementStrategy(capabilities, decision),
+        },
+      };
+    },
+
+    // The Host reports what it actually ran. This is the only evidence that a
+    // routing decision was honoured; without it the turn stays unobserved.
+    async recordModelUsage(runId, usageReceipt = {}, { lateObservation = false } = {}) {
+      const run = store.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      if (run.status === 'completed' && !lateObservation) {
+        throw new Error(`Run ${runId} is completed; a late usage receipt requires an explicit late-observation flag`);
+      }
+      return store.recordModelUsageReceipt(runId, { ...usageReceipt, runId });
+    },
+
+    modelRoutingSummary(runId) {
+      return summarizeModelRouting(store.listModelRouteDecisions(runId), store.listModelUsageReceipts(runId));
     },
 
     // Two-stage review plan (§31): which reviews apply and whether an
@@ -434,12 +539,23 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     // Records a structured review verdict as a judgment obligation. At T3 the
     // verdict must come from a reviewer independent of the implementer.
-    async recordReview(runId, verdict = {}, { implementerId } = {}) {
+    async recordReview(runId, verdict = {}, { implementerId, reviewReceiptId = null } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       const normalized = normalizeReviewVerdict(verdict);
       if (run.proofTier === 'T3') {
         assertIndependentReview({ verdict: normalized, implementerId });
+        // Once the Host is routing models, the reviewer string is no longer
+        // enough: independence is checked against the session that implemented.
+        const implementationSession = store.getLatestImplementationSession(runId);
+        if (implementationSession || reviewReceiptId) {
+          const reviewReceipt = reviewReceiptId ? store.getModelUsageReceipt(reviewReceiptId, { runId }) : null;
+          assertIndependentReviewSession({
+            reviewReceipt,
+            reviewDecision: reviewReceipt ? store.getModelRouteDecision(reviewReceipt.decisionId, { runId }) : null,
+            implementationSession,
+          });
+        }
       }
       const obligationId = `review-${normalized.stage}`;
       const updated = await this.recordProof(runId, {
@@ -451,7 +567,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         evidenceDigest: `sha256:${createHash('sha256').update(JSON.stringify(normalized)).digest('hex')}`,
         evidenceClass: 'judgment',
       });
-      return { review: normalized, run: updated };
+      // The follow-up class is decided here, so an architecture defect cannot
+      // be quietly handed back to the implementer as a local patch (§9.3).
+      return { review: normalized, run: updated, followUp: classifyReviewFindings(normalized.findings) };
     },
 
     // Within-run route/tier promotion only (§13.5). Demotion throws.
@@ -972,7 +1090,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const run = store.getRun(runId);
       if (!run) return null;
       const completion = store.evaluateCompletion(runId);
-      return { run, completion, measurement: buildKernelMeasurement({ run, completion, verifications: store.getVerifications(runId), attempts: store.getAttempts(runId) }) };
+      return {
+        run,
+        completion,
+        measurement: buildKernelMeasurement({
+          run,
+          completion,
+          verifications: store.getVerifications(runId),
+          attempts: store.getAttempts(runId),
+          routeDecisions: store.listModelRouteDecisions(runId),
+          usageReceipts: store.listModelUsageReceipts(runId),
+        }),
+      };
     },
 
     async addWaiver(runId, options) {

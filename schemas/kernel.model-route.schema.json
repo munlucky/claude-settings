@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.model-route.schema.json",
+  "title": "Kernel model route decision",
+  "description": "Logical model class decided by the Kernel for one action. Provider model identity, credentials, prompts, and raw output are Host-side and forbidden here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "decisionId", "runId", "attemptNumber", "replanCount",
+    "planRevision", "actionKind", "role", "modelClass", "riskTier",
+    "independentContextRequired", "permissions", "reasonCodes", "policyRevision", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "decisionId": { "type": "string", "pattern": "^route-[a-f0-9]{8,64}$" },
+    "runId": { "type": "string", "minLength": 1 },
+    "attemptNumber": { "type": "integer", "minimum": 0 },
+    "replanCount": { "type": "integer", "minimum": 0 },
+    "planRevision": { "type": "integer", "minimum": 0 },
+    "obligationId": { "type": ["string", "null"] },
+    "actionKind": { "enum": ["understand", "design", "plan", "implement", "debug", "review_contract", "review_engineering", "replan", "prove", "close"] },
+    "role": { "enum": ["planner", "implementer", "reviewer", "kernel"] },
+    "modelClass": { "enum": ["frontier_reasoning", "value_coding", "kernel"] },
+    "riskTier": { "enum": ["T0", "T1", "T2", "T3"] },
+    "independentContextRequired": { "type": "boolean" },
+    "permissions": { "enum": ["read_only", "plan_write", "workspace_write", "kernel_runtime"] },
+    "reasonCodes": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[A-Z0-9_]+$" } },
+    "policyRevision": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "minLength": 1 }
+  }
+}

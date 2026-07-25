@@ -82,6 +82,15 @@ const runtimeSpecs = {
       'scripts/lib/awtl-replay-scorecard.mjs',
       'scripts/lib/awtl-trace-sink.mjs',
       'scripts/lib/candidate-identity.mjs',
+      // Host-side Kernel model routing. These map a logical model class onto a
+      // provider model for the installed Host; they carry no provider SDK and
+      // are deliberately NOT part of the Kernel payload (§4.1).
+      'scripts/host/kernel/model-registry.mjs',
+      'scripts/host/kernel/turn-dispatcher.mjs',
+      'scripts/host/kernel/usage-receipt.mjs',
+      'scripts/host/kernel/adapters/claude.mjs',
+      'scripts/host/kernel/adapters/codex.mjs',
+      'scripts/host/kernel/adapters/fable.mjs',
       'scripts/lib/browser-failure-package.mjs',
       'scripts/lib/browser-scenario-contract.mjs',
       'scripts/lib/context-state-engine.mjs',

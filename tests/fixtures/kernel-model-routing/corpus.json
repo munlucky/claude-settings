@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "taskSetRevision": "kernel-model-routing.v1",
+  "description": "Fixed routing corpus. Each case is a turn sequence a Kernel run actually produces, replayed through the real routing policy under two arms: all-frontier (baseline A) and policy-routed (candidate B). Turn counts model a run shape where planning and review are few turns and the implementation loop is several edit/verify turns. The frontier TURN ratio is sensitive to that build-turn count; the token-weighted cost proxy is the more stable metric. Token figures are a FIXED SYNTHETIC WORKLOAD, not measured provider usage, and no price is encoded here.",
+  "costWeights": { "frontier_reasoning": 5, "value_coding": 1, "kernel": 0 },
+  "cases": [
+    {
+      "id": "MR-001",
+      "title": "documentation typo fix",
+      "riskTier": "T0",
+      "turns": [
+        { "actionKind": "plan", "estimatedTokens": 3000 },
+        { "actionKind": "implement", "estimatedTokens": 4000 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-002",
+      "title": "small bug fix with a focused test",
+      "riskTier": "T1",
+      "turns": [
+        { "actionKind": "plan", "estimatedTokens": 5000 },
+        { "actionKind": "implement", "estimatedTokens": 7000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "implement", "estimatedTokens": 5000 },
+        { "actionKind": "review_engineering", "estimatedTokens": 6000 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-003",
+      "title": "new API endpoint",
+      "riskTier": "T2",
+      "turns": [
+        { "actionKind": "design", "estimatedTokens": 8000 },
+        { "actionKind": "plan", "estimatedTokens": 6000 },
+        { "actionKind": "implement", "estimatedTokens": 10000 },
+        { "actionKind": "debug", "estimatedTokens": 6000 },
+        { "actionKind": "implement", "estimatedTokens": 8000 },
+        { "actionKind": "debug", "estimatedTokens": 6000 },
+        { "actionKind": "implement", "estimatedTokens": 7000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "implement", "estimatedTokens": 6000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "review_contract", "estimatedTokens": 7000 },
+        { "actionKind": "review_engineering", "estimatedTokens": 7000 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-004",
+      "title": "public contract change",
+      "riskTier": "T2",
+      "turns": [
+        { "actionKind": "design", "estimatedTokens": 9000 },
+        { "actionKind": "plan", "estimatedTokens": 7000 },
+        { "actionKind": "implement", "estimatedTokens": 9000 },
+        { "actionKind": "debug", "estimatedTokens": 6000 },
+        { "actionKind": "implement", "estimatedTokens": 7000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "review_contract", "estimatedTokens": 8000 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-005",
+      "title": "authentication boundary change",
+      "riskTier": "T3",
+      "requiresIndependentReview": true,
+      "turns": [
+        { "actionKind": "design", "estimatedTokens": 10000 },
+        { "actionKind": "plan", "estimatedTokens": 8000 },
+        { "actionKind": "implement", "estimatedTokens": 9000 },
+        { "actionKind": "debug", "estimatedTokens": 7000 },
+        { "actionKind": "implement", "estimatedTokens": 8000 },
+        { "actionKind": "debug", "estimatedTokens": 6000 },
+        { "actionKind": "implement", "estimatedTokens": 7000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "review_contract", "estimatedTokens": 9000 },
+        { "actionKind": "review_engineering", "estimatedTokens": 9000 },
+        { "actionKind": "prove", "estimatedTokens": 0 },
+        { "actionKind": "close", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-006",
+      "title": "migration with rollback seam",
+      "riskTier": "T3",
+      "requiresIndependentReview": true,
+      "expectEscalation": true,
+      "turns": [
+        { "actionKind": "design", "estimatedTokens": 11000 },
+        { "actionKind": "plan", "estimatedTokens": 9000 },
+        { "actionKind": "implement", "estimatedTokens": 10000 },
+        { "actionKind": "debug", "estimatedTokens": 7000 },
+        { "actionKind": "implement", "estimatedTokens": 8000 },
+        { "actionKind": "debug", "estimatedTokens": 6000 },
+        { "actionKind": "debug", "estimatedTokens": 7000, "signals": { "protectedObligationFailed": true } },
+        { "actionKind": "review_engineering", "estimatedTokens": 10000 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-007",
+      "title": "flaky test investigation",
+      "riskTier": "T1",
+      "turns": [
+        { "actionKind": "plan", "estimatedTokens": 5000 },
+        { "actionKind": "implement", "estimatedTokens": 6000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "implement", "estimatedTokens": 4000 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-008",
+      "title": "repeated failure forces a replan, then value coding resumes",
+      "riskTier": "T2",
+      "expectEscalation": true,
+      "turns": [
+        { "actionKind": "plan", "estimatedTokens": 6000 },
+        { "actionKind": "implement", "estimatedTokens": 9000 },
+        { "actionKind": "implement", "estimatedTokens": 9000, "signals": { "retryCount": 2 } },
+        { "actionKind": "implement", "estimatedTokens": 8000, "signals": { "stagnant": true } },
+        { "actionKind": "implement", "estimatedTokens": 8000, "planRevision": 2 },
+        { "actionKind": "implement", "estimatedTokens": 7000, "planRevision": 2 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-009",
+      "title": "engineering review returns an architecture finding",
+      "riskTier": "T2",
+      "expectEscalation": true,
+      "turns": [
+        { "actionKind": "plan", "estimatedTokens": 6000 },
+        { "actionKind": "implement", "estimatedTokens": 10000 },
+        { "actionKind": "debug", "estimatedTokens": 6000 },
+        { "actionKind": "review_engineering", "estimatedTokens": 8000 },
+        { "actionKind": "debug", "estimatedTokens": 7000 },
+        { "actionKind": "implement", "estimatedTokens": 6000, "signals": { "architectureDeviation": true } },
+        { "actionKind": "implement", "estimatedTokens": 6000, "planRevision": 2 },
+        { "actionKind": "implement", "estimatedTokens": 5000, "planRevision": 2 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    },
+    {
+      "id": "MR-010",
+      "title": "positive control: plain refactor inside an approved plan",
+      "riskTier": "T1",
+      "positiveControl": true,
+      "turns": [
+        { "actionKind": "plan", "estimatedTokens": 4000 },
+        { "actionKind": "implement", "estimatedTokens": 8000 },
+        { "actionKind": "debug", "estimatedTokens": 5000 },
+        { "actionKind": "implement", "estimatedTokens": 5000 },
+        { "actionKind": "debug", "estimatedTokens": 4000 },
+        { "actionKind": "review_engineering", "estimatedTokens": 5000 },
+        { "actionKind": "prove", "estimatedTokens": 0 }
+      ]
+    }
+  ]
+}

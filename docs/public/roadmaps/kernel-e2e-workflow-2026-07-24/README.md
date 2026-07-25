@@ -28,6 +28,9 @@ P0~P3 전 단계가 구현되고 검증되었다. 단계별 상세 변경 내역
 | P2 | Greenfield·Knowledge·격리: walking skeleton, knowledge freshness·cheap re-verify·topology projection, network policy(inherited/blocked/required), migration workflow | 완료 |
 | P3 | 선택적 품질: contract→engineering 2단계 review·independent reviewer, bounded multi-agent·safe wave, stagnation·replan·측정 기반 routing, evidence-plan gate | 완료 |
 
+후속 패키지: `kernel-stage-model-routing-2026-07-25` — P3의 측정 기반 routing 권고를
+action별 모델 등급 결정과 Host 실행 증거까지 연결한다. 공개 표면과 완료 권위는 불변이다.
+
 핵심 불변식: 공개 스킬 1개(`moon-relay-kernel`), 모델 가시 runtime command는 `next`/`report`
 (복구용 `resume`), Kernel 코어에 provider client 없음, 소스 변경 Run은 kernel-runtime hard
 evidence 필수, sentinel set에서 false completion 0.

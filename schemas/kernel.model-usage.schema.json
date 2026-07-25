@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.model-usage.schema.json",
+  "title": "Kernel model usage receipt",
+  "description": "What the Host actually did with a model route decision. Unknown tokens or cost stay null and are reported as unavailable; they are never recorded as 0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "receiptId", "decisionId", "runId", "hostSurface",
+    "actorSessionId", "enforcementStatus", "resultStatus", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "receiptId": { "type": "string", "pattern": "^usage-[a-f0-9]{8,64}$" },
+    "decisionId": { "type": "string", "pattern": "^route-[a-f0-9]{8,64}$" },
+    "runId": { "type": "string", "minLength": 1 },
+    "hostSurface": { "type": "string", "minLength": 1 },
+    "actorSessionId": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "parentSessionId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }] },
+    "resolvedModel": { "type": ["string", "null"] },
+    "resolvedEffort": { "type": ["string", "null"] },
+    "enforcementStatus": { "enum": ["enforced", "fallback", "advisory", "unsupported", "failed"] },
+    "resultStatus": { "enum": ["completed", "failed", "interrupted", "abandoned"] },
+    "startedAt": { "type": ["string", "null"] },
+    "finishedAt": { "type": ["string", "null"] },
+    "wallClockMs": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "inputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "cachedInputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "outputTokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "costMicros": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+    "createdAt": { "type": "string", "minLength": 1 }
+  }
+}

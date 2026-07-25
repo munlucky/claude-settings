@@ -8,19 +8,19 @@ import { spawnSync } from 'node:child_process';
 import { installKernel, uninstallKernel } from '../scripts/kernel/installer.mjs';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
-const unavailableFields = ['providerModelIdentity', 'actualInputTokens', 'actualOutputTokens', 'falseCompletionDecision', 'wallClockMs'];
+const unavailableFields = ['providerModelIdentity', 'actualInputTokens', 'actualOutputTokens', 'falseCompletionDecision', 'wallClockMs', 'modelRouting'];
 const observedFields = ['retryCount', 'replanCount', 'userInterventionCount', 'hardEvidenceCoverage', 'promptTokenBudget'];
 
 test('measurement schema is closed and status exposes typed unavailable fields', async () => {
   const schema = JSON.parse(await readFile(new URL('../schemas/kernel.measurement.schema.json', import.meta.url), 'utf8'));
-  assert.equal(schema.properties.schemaVersion.const, 1);
+  assert.equal(schema.properties.schemaVersion.const, 2);
   assert.equal(schema.additionalProperties, false);
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-measurement-home-'));
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'krn-measurement-project-'));
   const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
   await cp.startRun({ runId: 'measurement-status', objective: 'measurement contract' });
   const status = await cp.status('measurement-status');
-  assert.equal(status.measurement.schemaVersion, 1);
+  assert.equal(status.measurement.schemaVersion, 2);
   assert.equal(status.measurement.harnessIdentity, 'moon-relay-kernel');
   assert.match(status.measurement.sourceIdentity, /^[a-zA-Z0-9_.:/-]+$/);
   assert.ok(status.measurement.estimatedStaticTokens > 0);
