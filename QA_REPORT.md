@@ -2,6 +2,17 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-25 (3)
+- Scope: Kernel — active track could not be resolved without a per-project `.moon-relay` marker.
+- Defect: the switcher already establishes the track process-scoped — `switcher/launch-adapter.mjs` exports `MOON_RELAY_TRACK` for the surface it launches, and its receipt reports `processScoped: true`. `readProjectTrack` ignored that variable and read only `.moon-relay/track.yaml`, walking up from the working directory. A Kernel session launched by the switcher into a workspace without a marker therefore resolved `activeTrack: null` and every runtime command returned `wrong_harness`, so `next` and `report` — the only two model-visible commands — could not run at all under an account-root install. Confirmed directly: `MOON_RELAY_TRACK=kernel kernel doctor` returned `wrong_harness` before the fix and `ready` after.
+- Change: `readProjectTrack` / `readProjectTrackSync` fall back to `MOON_RELAY_TRACK` when no marker is found. A marker still wins when present, because an explicit repository declaration must not be overridden by an ambient session variable — a repo pinned to one track cannot be hijacked by a session on the other. An unrecognised value is not treated as a track.
+- Verification evidence:
+  - `tests/kernel-track-contract.test.mjs` covers: no marker and no session (null), session-only resolution for both tracks, sync and async parity, an unknown value rejected, and a marker outranking a conflicting session.
+  - End-to-end through the real CLI with no `.moon-relay` anywhere in the project: `next --contract-json` bootstrapped the run and returned the objective with its constraints and non-goals; a first `report` failed on real evidence (`expected 401, got 500`) and returned the `fix` action; a second `report` from a separate process reached `completed` with finalization `completed` and the `done` action. The project directory was left containing only its own files, confirming no workspace marker is written.
+  - `npm run test:kernel` 238/238; `npm test` 818/819 (the remaining failure is the pre-existing `browser flow` isolation flake).
+- Commit boundary:
+  - Source, tests, and QA ledger only.
+
 - Date: 2026-07-25 (2)
 - Scope: Kernel — automated review findings on `7dddf196` (5 x P1). All confirmed and fixed.
 - Why these mattered: three of the five re-opened a defence the previous entry reported as closed. The common cause was that the new tests exercised success paths and one convenient failure path, not the adversarial variants.
