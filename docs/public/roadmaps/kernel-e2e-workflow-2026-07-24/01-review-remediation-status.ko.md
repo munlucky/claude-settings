@@ -193,16 +193,15 @@ report status           : completed        ← 두 리뷰 단계 없이 완료
 
 작업량은 작다. `startRun`에서 `resolveReviewPlan`을 호출해 `review-*`를 `evidenceClass: judgment`(T3면 `protected`)로 선언하면 기존 컴파일러가 처리한다.
 
-## 6.2 Sentinel corpus 17 → 20+ (리뷰 P2-16)
+## 6.2 Sentinel corpus — 해소됨
 
-숫자 충족이 목적이 아니라 아직 덮이지 않은 실제 경로가 기준이다. 남은 후보:
+리뷰가 요구한 20개 이상을 **21케이스로 충족**했다(`kernel-sentinel.v3`). 숫자를 채운 것이 아니라 자동 리뷰가 지적한 실제 우회 경로 4건을 트랩으로 추가한 결과다.
 
-- contract 축소 (현재 단위 테스트로만 방어, sentinel 미포함)
+남은 후보(향후 추가 시):
+
 - lease fencing token 추월 — 일시정지된 러너가 승계된 뒤 finalize 시도
 - flaky waiver 경로 — waiver로 통과한 Run이 degraded로 기록되는지
 - migration 에스컬레이션 — `analyzeMigration`이 T3로 올린 뒤 `migration-smoke` 없이 완료 시도
-
-네 건을 더하면 21케이스가 되며 모두 실제 우회 경로다. 6.1을 구현하면 그 회귀 방어도 겸한다.
 
 ## 6.3 `state-store.mjs` 파일 크기 — 분할하지 않기로 판단
 
@@ -243,7 +242,6 @@ BEGIN IMMEDIATE 트랜잭션 경계: 5곳
 | 순위 | 항목 | 근거 |
 | --- | --- | --- |
 | 1 | 6.1 리뷰 obligation 연결 | 유일하게 선언된 정책이 강제되지 않는 지점 |
-| 2 | 6.2 Sentinel 4건 추가 | 저비용이며 6.1의 회귀 방어를 겸함 |
-| 3 | 5.1 Linux에서 `test:kernel` 1회 실행 | 미실행 경로 3건 중 대부분 해소 |
-| 4 | 6.3 `decideCompletion` 추출 | 운영자 결정 대기 |
+| 2 | 5.1 Linux에서 `test:kernel` 1회 실행 | 미실행 경로 3건 중 대부분 해소 |
+| 3 | 6.3 `decideCompletion` 추출 | 운영자 결정 대기 |
 | — | 6.4 Bounded wave receipt | 실사용 발생 후 |
