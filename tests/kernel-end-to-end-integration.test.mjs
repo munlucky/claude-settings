@@ -75,13 +75,33 @@ test('End-to-End Kernel Product Execution Flow', async () => {
   assert.ok(proveContext.receipt.included.some((entry) => entry.id === 'verification-static-analysis'));
   assert.ok(proveContext.receipt.included.some((entry) => entry.sourceRef === 'evidence://unit/1'));
 
+  // `security-review` is a judgment obligation: it is satisfied by a structured
+  // independent verdict, never by an attested command that merely claims it.
+  await assert.rejects(
+    (async () => {
+      await cp.recordProof('e2e-run-1', {
+        obligationId: 'security-review',
+        status: 'passed',
+        evidenceRef: 'evidence://security/1',
+        command: 'npm run audit',
+        exitCode: 0,
+        evidenceDigest: validDigest,
+        sourceIdentity,
+      });
+      const blocked = await cp.assessCompletion('e2e-run-1');
+      if (blocked.decision !== 'accepted') throw new Error('security-review not satisfiable by attested command');
+    })(),
+    /security-review not satisfiable by attested command/,
+  );
+
   await cp.recordProof('e2e-run-1', {
     obligationId: 'security-review',
     status: 'passed',
     evidenceRef: 'evidence://security/1',
-    command: 'npm run audit',
+    command: 'structured-judgment',
     exitCode: 0,
     evidenceDigest: validDigest,
+    evidenceClass: 'judgment',
     sourceIdentity,
   });
 

@@ -1,15 +1,133 @@
 {
   "schemaVersion": 1,
-  "taskSetRevision": "kernel-sentinel.v1",
-  "description": "Fixed false-completion sentinel set. Each 'reject' case is a trap the Kernel must NOT accept; 'accept' controls verify the harness is not trivially blocking everything.",
+  "taskSetRevision": "kernel-sentinel.v3",
+  "description": "Fixed false-completion sentinel set. Each 'reject' case is a trap the Kernel must NOT accept; 'accept' controls verify the harness is not trivially blocking everything, and that the legitimate end-to-end paths (bootstrap, resume, non-Node proof, sequential CLI processes) still complete.",
   "cases": [
-    { "id": "SEN-001", "trap": "caller_attested_only_mutating", "expect": "reject", "rationale": "Source mutated but only caller-attested proof supplied; needs kernel-runtime hard evidence." },
-    { "id": "SEN-002", "trap": "stale_identity", "expect": "reject", "rationale": "Verification passed, then source mutated again; evidence is stale." },
-    { "id": "SEN-003", "trap": "missing_obligation", "expect": "reject", "rationale": "A required obligation was never satisfied." },
-    { "id": "SEN-004", "trap": "uncovered_acceptance", "expect": "reject", "rationale": "Acceptance criterion has no covering evidence." },
-    { "id": "SEN-005", "trap": "no_verification_mutating", "expect": "reject", "rationale": "Mutating run closed with no verification at all." },
-    { "id": "SEN-006", "trap": "protected_waiver", "expect": "reject", "rationale": "Protected obligation (auth) waived instead of proven." },
-    { "id": "SEN-007", "trap": "failing_evidence", "expect": "reject", "rationale": "The only evidence is a failing verification." },
-    { "id": "SEN-100", "trap": "clean_hard_evidence", "expect": "accept", "rationale": "Legitimate: mutating run with passing kernel-runtime hard evidence and covered acceptance." }
+    {
+      "id": "SEN-001",
+      "trap": "caller_attested_only_mutating",
+      "expect": "reject",
+      "rationale": "Source mutated but only caller-attested proof supplied; needs kernel-runtime hard evidence."
+    },
+    {
+      "id": "SEN-002",
+      "trap": "stale_identity",
+      "expect": "reject",
+      "rationale": "Verification passed, then source mutated again; evidence is stale."
+    },
+    {
+      "id": "SEN-003",
+      "trap": "missing_obligation",
+      "expect": "reject",
+      "rationale": "A required obligation was never satisfied."
+    },
+    {
+      "id": "SEN-004",
+      "trap": "uncovered_acceptance",
+      "expect": "reject",
+      "rationale": "Acceptance criterion has no covering evidence."
+    },
+    {
+      "id": "SEN-005",
+      "trap": "no_verification_mutating",
+      "expect": "reject",
+      "rationale": "Mutating run closed with no verification at all."
+    },
+    {
+      "id": "SEN-006",
+      "trap": "protected_waiver",
+      "expect": "reject",
+      "rationale": "Protected obligation (auth) waived instead of proven."
+    },
+    {
+      "id": "SEN-007",
+      "trap": "failing_evidence",
+      "expect": "reject",
+      "rationale": "The only evidence is a failing verification."
+    },
+    {
+      "id": "SEN-008",
+      "trap": "forged_obligation_name",
+      "expect": "reject",
+      "rationale": "A trivially-passing script filed under typed obligation names; the command binding must reject it."
+    },
+    {
+      "id": "SEN-009",
+      "trap": "judgment_for_hard_obligation",
+      "expect": "reject",
+      "rationale": "Structured judgments cannot satisfy executable obligations."
+    },
+    {
+      "id": "SEN-010",
+      "trap": "trivial_hard_plus_judgments",
+      "expect": "reject",
+      "rationale": "One trivial hard proof plus judgments for every other obligation must not complete a T3 run."
+    },
+    {
+      "id": "SEN-011",
+      "trap": "partial_finalization_reported_done",
+      "expect": "reject",
+      "rationale": "Accepted completion with failed finalization must not be reported as done."
+    },
+    {
+      "id": "SEN-012",
+      "trap": "false_network_isolation",
+      "expect": "reject",
+      "rationale": "A requested but unenforceable network sandbox must block rather than record isolation."
+    },
+    {
+      "id": "SEN-013",
+      "trap": "evidence_plan_names_noop",
+      "expect": "reject",
+      "rationale": "An evidence plan named a no-op script as hard proof; plan commands face the same classification check as policy obligations."
+    },
+    {
+      "id": "SEN-014",
+      "trap": "contract_revision_shrinks_acceptance",
+      "expect": "reject",
+      "rationale": "A shorter later contract must not overwrite an earlier acceptance criterion through its positional id."
+    },
+    {
+      "id": "SEN-015",
+      "trap": "judgment_without_implementer",
+      "expect": "reject",
+      "rationale": "A protected T3 judgment submitted without an implementer identity must not skip the independence check."
+    },
+    {
+      "id": "SEN-016",
+      "trap": "closeout_retry_loses_paths",
+      "expect": "reject",
+      "rationale": "A finalization retry must not turn an unfinished Git closeout into a clean completion by losing the selected paths."
+    },
+    {
+      "id": "SEN-100",
+      "trap": "clean_hard_evidence",
+      "expect": "accept",
+      "rationale": "Legitimate: mutating run with passing kernel-runtime hard evidence and covered acceptance."
+    },
+    {
+      "id": "SEN-101",
+      "trap": "contract_survives_resume",
+      "expect": "accept",
+      "rationale": "Legitimate: a run resumed in a fresh control plane keeps its constraints and non-goals and can still complete."
+    },
+    {
+      "id": "SEN-102",
+      "trap": "sequential_process_reports",
+      "expect": "accept",
+      "rationale": "Legitimate: consecutive CLI-style processes must not deadlock on an abandoned lease."
+    },
+    {
+      "id": "SEN-103",
+      "trap": "non_node_proof_path",
+      "expect": "accept",
+      "rationale": "Legitimate: a Makefile-declared command is provable without a package.json script."
+    },
+    {
+      "id": "SEN-104",
+      "trap": "host_bootstrap_without_start",
+      "expect": "accept",
+      "rationale": "Legitimate: the host bootstraps the run idempotently; the model never calls a start command."
+    }
   ]
 }

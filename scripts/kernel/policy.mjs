@@ -101,6 +101,29 @@ const parseListMap = (text, section) => {
   const map = parseMap(text, section);
   return Object.fromEntries(Object.entries(map).map(([key, value]) => [key, value.replace(/^\[|\]$/g, '').split(',').map((item) => item.trim()).filter(Boolean)]));
 };
+const parseScalarOrList = (value) => (/^\[.*\]$/.test(value)
+  ? value.replace(/^\[|\]$/g, '').split(',').map((item) => item.trim()).filter(Boolean)
+  : value);
+// Two-level map: `section:` -> `  key:` -> `    field: value`.
+const parseNestedMap = (text, section) => {
+  const start = text.indexOf(`${section}:`);
+  if (start < 0) return {};
+  const result = {};
+  let currentKey = null;
+  for (const line of text.slice(start).split(/\r?\n/).slice(1)) {
+    if (/^\S/.test(line) && line.trim()) break;
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    const key = line.match(/^\s{2}([A-Za-z0-9_-]+):\s*$/);
+    if (key) {
+      currentKey = key[1];
+      result[currentKey] = {};
+      continue;
+    }
+    const field = line.match(/^\s{4}([A-Za-z0-9_-]+):\s*(.+)$/);
+    if (field && currentKey) result[currentKey][field[1]] = parseScalarOrList(field[2].trim());
+  }
+  return result;
+};
 
 const proofPolicy = readPolicy('proof-policy.yaml');
 const evidencePolicy = readPolicy('evidence-policy.yaml');
@@ -166,6 +189,7 @@ export const KERNEL_POLICY = Object.freeze({
   proofTiers: parseMap(proofPolicy, 'tiers'),
   hardFloors: Object.fromEntries(Object.entries(parseMap(proofPolicy, 'hardFloors')).map(([key, value]) => [toSurface(key), value])),
   requiredChecks: parseListMap(proofPolicy, 'requiredChecks'),
+  obligations: parseNestedMap(proofPolicy, 'obligations'),
   proofToEvidence: parseMap(evidencePolicy, 'proofToEvidence'),
   context: contextPolicy,
 });

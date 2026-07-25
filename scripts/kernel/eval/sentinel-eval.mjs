@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../control-plane.mjs';
+import { discoverProjectCommands } from '../proof/command-catalog.mjs';
 
 const validDigest = `sha256:${'a'.repeat(64)}`;
 
@@ -87,8 +88,235 @@ const TRAPS = {
     await cp.report('sen', { summary: 'try', verifications: [{ obligationId: 'default', commandRef: 'test:fail' }] });
     return cp.finalizeRun('sen');
   },
+
+  // --- Bypass paths the first sentinel set did not cover -------------------
+
+  // A trivially-passing script filed under a typed obligation name. The
+  // obligation's command binding must reject it before it runs (P0-2).
+  async forged_obligation_name(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { riskTier: 'T2', behaviorChanging: true } });
+    await mutate(projectRoot, 1);
+    const rejected = await cp.report('sen', {
+      summary: 'claiming coverage',
+      verifications: [
+        { obligationId: 'static-analysis', commandRef: 'noop' },
+        { obligationId: 'unit-test', commandRef: 'noop' },
+      ],
+    });
+    const result = await cp.finalizeRun('sen');
+    return { ...result, reportStatus: rejected.status };
+  },
+
+  // Structured judgments claiming executable obligations. Judgment evidence
+  // can never satisfy a hard obligation (P0-3).
+  async judgment_for_hard_obligation(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { riskTier: 'T2', behaviorChanging: true } });
+    await mutate(projectRoot, 1);
+    await cp.report('sen', {
+      summary: 'asserting quality',
+      judgments: [
+        { obligationId: 'static-analysis', verdict: 'pass', reason: 'looks fine' },
+        { obligationId: 'unit-test', verdict: 'pass', reason: 'looks fine' },
+      ],
+    });
+    return cp.finalizeRun('sen');
+  },
+
+  // One passing hard proof plus judgments for everything else — the exact
+  // "trivial hard evidence + judgment" substitution the review described.
+  async trivial_hard_plus_judgments(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { riskTier: 'T3' } });
+    await mutate(projectRoot, 1);
+    await cp.report('sen', {
+      summary: 'mixed evidence',
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok' }],
+      judgments: [
+        { obligationId: 'static-analysis', verdict: 'pass', reason: 'reviewed' },
+        { obligationId: 'security-review', verdict: 'pass', reason: 'reviewed', reviewerId: 'reviewer-1', rationale: 'no auth surface touched' },
+      ],
+    });
+    return cp.finalizeRun('sen');
+  },
+
+  // A run whose completion was accepted but whose finalization did not finish
+  // must not report itself done (P0-7).
+  async partial_finalization_reported_done(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await mutate(projectRoot, 1);
+    const report = await cp.report('sen', {
+      summary: 'fix',
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      // Git closeout is requested but cannot succeed in this fixture, so
+      // finalization is partial.
+      gitCloseoutRequest: { requested: true, mode: 'commit', message: 'sentinel' },
+    });
+    const nextPayload = await cp.next('sen');
+    return { ...report, doneClaimed: report.status === 'completed' || nextPayload.action?.type === 'done' };
+  },
+
+  // A declared-but-unenforceable network sandbox must block, not record a
+  // false isolation boundary (P1-5).
+  async false_network_isolation(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x' });
+    await mutate(projectRoot, 1);
+    const result = await cp.report('sen', {
+      summary: 'isolated run',
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', networkPolicy: 'blocked' }],
+    });
+    return { ...result, blockedForPolicy: result.status === 'blocked' && result.blockedReason === 'network-policy' };
+  },
+
+  // --- Bypasses found by review of the first remediation ------------------
+
+  // An evidence plan naming a command that proves nothing. The plan's own
+  // commands are subject to the same classification check as policy
+  // obligations, so a no-op cannot become hard evidence (F1).
+  async evidence_plan_names_noop(cp, projectRoot) {
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'x',
+      taskContract: { acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }] },
+    });
+    await mutate(projectRoot, 1);
+    const run = await cp.getRun('sen');
+    const planned = run.requiredObligations.find((id) => id.startsWith('acceptance-')) || 'default';
+    await cp.report('sen', {
+      summary: 'claiming coverage',
+      verifications: [{ obligationId: planned, commandRef: 'noop', acceptanceCoverage: ['works'] }],
+    });
+    return cp.finalizeRun('sen');
+  },
+
+  // A later, shorter contract must not overwrite an earlier acceptance
+  // criterion through its positional id (F2).
+  async contract_revision_shrinks_acceptance(cp, projectRoot, { runtimeHome }) {
+    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['A must hold', 'B must hold'] } });
+    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['C must hold'] } });
+    const run = await cp.getRun('sen');
+    const dropped = !run.acceptanceCriteria.includes('A must hold');
+    await mutate(projectRoot, 1);
+    // Cover only what the shrunken contract would have required.
+    const report = await cp.report('sen', {
+      summary: 'fix',
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['C must hold'] }],
+    });
+    return { ...report, acceptanceDropped: dropped };
+  },
+
+  // A protected T3 judgment submitted without an implementer identity must not
+  // skip the independence check (F5).
+  async judgment_without_implementer(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { riskTier: 'T3' } });
+    await mutate(projectRoot, 1);
+    await cp.report('sen', {
+      summary: 'self-reviewed',
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok' }, { obligationId: 'static-analysis', commandRef: 'lint' }],
+      judgments: [{ obligationId: 'security-review', verdict: 'pass', reason: 'ok', reviewerId: 'me', rationale: 'looks fine' }],
+    });
+    return cp.finalizeRun('sen');
+  },
+
+  // A finalization retry must not turn an unfinished Git closeout into a clean
+  // completion by losing the selected paths (F4).
+  async closeout_retry_loses_paths(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await mutate(projectRoot, 1);
+    await cp.report('sen', {
+      summary: 'fix',
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      gitCloseoutRequest: { requested: true, mode: 'commit', message: 'sentinel' },
+    });
+    const retried = await cp.report('sen', { summary: 'retry' });
+    const nextPayload = await cp.next('sen');
+    return { ...retried, doneClaimed: retried.status === 'completed' || nextPayload.action?.type === 'done' };
+  },
+
+  // Positive controls ------------------------------------------------------
+
   async clean_hard_evidence(cp, projectRoot) {
     await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await mutate(projectRoot, 1);
+    return cp.report('sen', { summary: 'fix', verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }] });
+  },
+
+  // The contract survives a process boundary: a second control plane over the
+  // same SQLite home must still see constraints and non-goals (P0-4).
+  async contract_survives_resume(cp, projectRoot, { runtimeHome }) {
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'fix login',
+      taskContract: {
+        acceptance: ['works'],
+        constraints: ['keep public response shape'],
+        nonGoals: ['do not redesign auth'],
+      },
+    });
+    await mutate(projectRoot, 1);
+    const fresh = await createKernelControlPlane({ runtimeHome, projectRoot });
+    try {
+      const resumed = await fresh.next('sen');
+      const preserved = resumed.constraints.includes('keep public response shape')
+        && resumed.nonGoals.includes('do not redesign auth');
+      const report = await fresh.report('sen', {
+        summary: 'fix',
+        verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      });
+      return { ...report, contractPreserved: preserved };
+    } finally {
+      await fresh.close();
+    }
+  },
+
+  // Two sequential CLI-style processes must not deadlock on a stale lease
+  // (P0-6): the second control plane represents the next `kernel report`.
+  async sequential_process_reports(cp, projectRoot, { runtimeHome }) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await mutate(projectRoot, 1);
+    const first = await cp.report('sen', { summary: 'attempt', verifications: [{ obligationId: 'default', commandRef: 'test:fail' }] });
+    const second = await createKernelControlPlane({ runtimeHome, projectRoot });
+    try {
+      const result = await second.report('sen', {
+        summary: 'retry',
+        verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      });
+      return { ...result, firstStatus: first.status, leaseBlocked: result.status === 'lease-conflict' };
+    } finally {
+      await second.close();
+    }
+  },
+
+  // A non-Node project must be provable through its own manifest (P1-4): the
+  // command is discovered from the Makefile, classified, and bound to the
+  // obligation. It is only *executed* where the toolchain exists, so the
+  // corpus stays deterministic on hosts without `make`.
+  async non_node_proof_path(cp, projectRoot) {
+    await writeFile(path.join(projectRoot, 'Makefile'), 'test:\n\t@echo ok\n');
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+
+    const discovered = discoverProjectCommands({ projectRoot }).find((command) => command.commandRef === 'make:test');
+    const bound = (await cp.next('sen')).action?.obligations?.some((obligation) => obligation.allowedCommandRefs.includes('make:test'));
+    const nonNodeCommandBound = Boolean(discovered && discovered.commandClass === 'unit-test' && bound);
+
+    const makeAvailable = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['make'], { encoding: 'utf8' }).status === 0;
+    await mutate(projectRoot, 1);
+    const report = await cp.report('sen', {
+      summary: 'manifest-declared proof',
+      verifications: [{ obligationId: 'default', commandRef: makeAvailable ? 'make:test' : 'test:ok', acceptanceCoverage: ['works'] }],
+    });
+    return { ...report, nonNodeCommandBound, executedThroughMake: makeAvailable };
+  },
+
+  // The host bootstraps the run; the model never needs a `start` command (P0-1).
+  async host_bootstrap_without_start(cp, projectRoot) {
+    const ensured = await cp.ensureRun({
+      runId: 'sen',
+      objective: 'bootstrap',
+      taskContract: { acceptance: ['works'] },
+    });
+    if (ensured.status !== 'created') throw new Error(`expected bootstrap to create the run, got ${ensured.status}`);
+    const again = await cp.ensureRun({ runId: 'sen', objective: 'bootstrap', taskContract: { acceptance: ['works'] } });
+    if (again.status !== 'resumed') throw new Error('ensureRun must be idempotent');
     await mutate(projectRoot, 1);
     return cp.report('sen', { summary: 'fix', verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }] });
   },
@@ -96,8 +324,16 @@ const TRAPS = {
 
 const isAccepted = (result) => {
   if (!result) return false;
-  if (result.completionStatus) return result.completionStatus === 'accepted';
-  if (result.finalization) return result.finalization.completionStatus === 'accepted';
+  // Explicit trap flags win: a trap can assert something stronger than the
+  // completion decision (e.g. "did not claim done", "was not lease-blocked").
+  if (result.doneClaimed !== undefined) return result.doneClaimed === true;
+  if (result.acceptanceDropped !== undefined) return result.acceptanceDropped === true || result.status === 'completed';
+  if (result.blockedForPolicy !== undefined) return result.blockedForPolicy !== true;
+  if (result.leaseBlocked !== undefined) return result.leaseBlocked !== true && result.status === 'completed';
+  if (result.nonNodeCommandBound !== undefined) return result.nonNodeCommandBound === true && result.status === 'completed';
+  if (result.contractPreserved !== undefined) return result.contractPreserved === true && result.status === 'completed';
+  if (result.completionStatus) return result.completionStatus === 'accepted' && result.finalizationStatus === 'completed';
+  if (result.finalization) return result.finalization.completionStatus === 'accepted' && result.finalization.finalizationStatus === 'completed';
   if (result.status) return result.status === 'completed';
   return false;
 };
@@ -110,10 +346,15 @@ export const runSentinelEvaluation = async ({ corpus, seed = 0 } = {}) => {
     const trap = TRAPS[testCase.trap];
     if (!trap) throw new Error(`Unknown sentinel trap: ${testCase.trap}`);
     const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-sentinel-home-'));
-    const projectRoot = await makeProject({ 'test:ok': 'node -e "process.exit(0)"', 'test:fail': 'node -e "process.exit(1)"' });
+    const projectRoot = await makeProject({
+      'test:ok': 'node -e "process.exit(0)"',
+      'test:fail': 'node -e "process.exit(1)"',
+      lint: 'node -e "process.exit(0)"',
+      noop: 'node -e "process.exit(0)"',
+    });
     const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
     try {
-      const outcome = await trap(cp, projectRoot);
+      const outcome = await trap(cp, projectRoot, { runtimeHome });
       const accepted = isAccepted(outcome);
       const falseCompletion = testCase.expect === 'reject' && accepted;
       const missedAccept = testCase.expect === 'accept' && !accepted;
@@ -128,7 +369,7 @@ export const runSentinelEvaluation = async ({ corpus, seed = 0 } = {}) => {
 
   return {
     taskSetRevision: corpus.taskSetRevision,
-    kernelRevision: 'kernel-e2e-workflow-2026-07-24',
+    kernelRevision: 'kernel-e2e-remediation-2026-07-25b',
     seed,
     caseCount: corpus.cases.length,
     falseCompletions,

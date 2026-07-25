@@ -60,10 +60,18 @@ const assertKernelTrack = async (root = projectRoot) => {
   return activeTrack;
 };
 
+// The lease holder must be stable across the separate processes of one model
+// session; `--session-id` lets a host pin it explicitly (P0-6).
+const sessionId = getArgValue('--session-id') || process.env.MOON_RELAY_KERNEL_SESSION_ID || null;
+
 const openControlPlane = async () => {
   await assertKernelTrack();
   const { createKernelControlPlane } = await import('../scripts/kernel/control-plane.mjs');
-  return createKernelControlPlane({ runtimeHome: runtimeHomeArg || undefined, projectRoot });
+  return createKernelControlPlane({
+    runtimeHome: runtimeHomeArg || undefined,
+    projectRoot,
+    env: sessionId ? { ...process.env, MOON_RELAY_KERNEL_SESSION_ID: sessionId } : process.env,
+  });
 };
 
 const output = (value) =>
@@ -119,11 +127,21 @@ try {
     const { uninstallKernel } = await import('../scripts/kernel/installer.mjs');
     output(await uninstallKernel({ targetRoot }));
   } else if (command === 'next') {
-    // Model-visible runtime command 1 of 2.
+    // Model-visible runtime command 1 of 2. When the host supplies a task
+    // contract, `next` bootstraps the run idempotently so the model never
+    // needs a separate `start` command (P0-1).
     const cp = await openControlPlane();
     const runId = getArgValue('--run-id') || args[1];
     if (!runId || runId.startsWith('--')) throw new Error('next command requires a run id: kernel next <run-id>');
-    const res = await cp.next(runId);
+    const contractFile = getArgValue('--contract-json') || getArgValue('--objective-json');
+    let res;
+    if (contractFile) {
+      const taskContract = JSON.parse(readFileSync(path.resolve(contractFile), 'utf8'));
+      const ensured = await cp.ensureRun({ runId, objective: taskContract.objective, taskContract });
+      res = ensured.next;
+    } else {
+      res = await cp.next(runId);
+    }
     await cp.close();
     output(res);
   } else if (command === 'report') {
