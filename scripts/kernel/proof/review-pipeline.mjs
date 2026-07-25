@@ -56,6 +56,69 @@ export const assertIndependentReview = ({ verdict, implementerId }) => {
   return true;
 };
 
+export const REVIEW_SEVERITIES = Object.freeze(['critical', 'important', 'minor']);
+export const REVIEW_CATEGORIES = Object.freeze(['contract', 'architecture', 'implementation', 'security', 'verification']);
+export const REVIEW_REQUIRED_ACTIONS = Object.freeze(['fix', 'replan', 'block']);
+
+// §9.3: where a finding sends the run. A contract or architecture defect is
+// not something the implementer can patch locally — it invalidates the plan.
+const ACTION_FOR_CATEGORY = Object.freeze({
+  contract: 'replan',
+  architecture: 'replan',
+  implementation: 'fix',
+  verification: 'fix',
+  security: 'block',
+});
+
+export const normalizeReviewFinding = (finding) => {
+  if (typeof finding === 'string') {
+    return { severity: 'minor', category: 'implementation', path: null, summary: finding, requiredAction: 'fix' };
+  }
+  if (!finding || typeof finding !== 'object') throw new Error('a review finding must be a string or an object');
+  const category = REVIEW_CATEGORIES.includes(finding.category) ? finding.category : 'implementation';
+  const severity = REVIEW_SEVERITIES.includes(finding.severity) ? finding.severity : 'minor';
+  const inferred = severity === 'critical' && category === 'security' ? 'block' : ACTION_FOR_CATEGORY[category];
+  return {
+    severity,
+    category,
+    path: finding.path ? String(finding.path) : null,
+    summary: String(finding.summary || ''),
+    requiredAction: REVIEW_REQUIRED_ACTIONS.includes(finding.requiredAction) ? finding.requiredAction : inferred,
+  };
+};
+
+// Decides which model class must handle the follow-up, so an architecture
+// defect is never handed back to the implementer for a local patch.
+export const classifyReviewFindings = (findings = []) => {
+  const normalized = findings.map(normalizeReviewFinding);
+  const requiredAction = normalized.some((finding) => finding.requiredAction === 'block') ? 'block'
+    : normalized.some((finding) => finding.requiredAction === 'replan') ? 'replan'
+      : normalized.some((finding) => finding.requiredAction === 'fix') ? 'fix' : 'none';
+  return {
+    findings: normalized,
+    requiredAction,
+    blocking: requiredAction === 'block',
+    actionKind: requiredAction === 'fix' ? 'debug' : requiredAction === 'none' ? null : 'replan',
+    modelClass: requiredAction === 'fix' ? 'value_coding' : requiredAction === 'none' ? null : 'frontier_reasoning',
+  };
+};
+
+// §9.2: at T3 independence is proven by the Host session that actually ran the
+// review, not by a caller-supplied reviewer string that anyone can invent.
+export const assertIndependentReviewSession = ({ reviewDecision, reviewReceipt, implementationSession } = {}) => {
+  if (!reviewReceipt) throw new Error('INDEPENDENT_REVIEW_REQUIRED: a routed T3 review requires the Host usage receipt for the reviewing session');
+  if (!reviewDecision || reviewDecision.modelClass !== 'frontier_reasoning') {
+    throw new Error('INDEPENDENT_REVIEW_REQUIRED: a T3 review must run on the frontier reasoning class');
+  }
+  if (!['enforced', 'fallback'].includes(reviewReceipt.enforcementStatus)) {
+    throw new Error(`INDEPENDENT_REVIEW_REQUIRED: a T3 review cannot rest on ${reviewReceipt.enforcementStatus} model routing`);
+  }
+  if (implementationSession && reviewReceipt.actorSessionId === implementationSession.actorSessionId) {
+    throw new Error('INDEPENDENT_REVIEW_REQUIRED: the reviewing session is the implementing session');
+  }
+  return true;
+};
+
 export const buildReviewContract = ({ stage, objective, acceptance = [], changedPaths = [] } = {}) => ({
   role: 'reviewer',
   stage,

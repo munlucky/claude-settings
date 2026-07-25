@@ -1,0 +1,61 @@
+schemaVersion: 1
+policyRevision: kernel-model-routing.v1
+
+# Logical model classes only. Provider model ids are resolved by the Host
+# registry, never here: the Kernel must stay free of provider identity.
+thresholds:
+  retryEscalationThreshold: 2
+  stagnationThreshold: 3
+
+modelClasses:
+  frontier_reasoning:
+    requiredCapabilities: [complex_reasoning, planning, review]
+    providerModelRequired: true
+  value_coding:
+    requiredCapabilities: [code_edit, test_authoring, debugging]
+    providerModelRequired: true
+  kernel:
+    requiredCapabilities: []
+    providerModelRequired: false
+
+actionDefaults:
+  understand:
+    modelClass: frontier_reasoning
+    role: planner
+    permissions: read_only
+  design:
+    modelClass: frontier_reasoning
+    role: planner
+    permissions: plan_write
+  plan:
+    modelClass: frontier_reasoning
+    role: planner
+    permissions: plan_write
+  implement:
+    modelClass: value_coding
+    role: implementer
+    permissions: workspace_write
+  debug:
+    modelClass: value_coding
+    role: implementer
+    permissions: workspace_write
+  review_contract:
+    modelClass: frontier_reasoning
+    role: reviewer
+    permissions: read_only
+  review_engineering:
+    modelClass: frontier_reasoning
+    role: reviewer
+    permissions: read_only
+  replan:
+    modelClass: frontier_reasoning
+    role: planner
+    permissions: plan_write
+  prove:
+    modelClass: kernel
+    role: kernel
+    permissions: kernel_runtime
+  close:
+    modelClass: kernel
+    role: kernel
+    permissions: kernel_runtime

@@ -7,6 +7,7 @@ import { openSqliteDb } from './sqlite-adapter.mjs';
 import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapper.mjs';
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { assertCommandBinding } from './run/obligation-compiler.mjs';
+import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -245,6 +246,46 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       created_at TEXT NOT NULL,
       PRIMARY KEY(candidate_id, evidence_digest),
       FOREIGN KEY(candidate_id) REFERENCES knowledge_candidates(candidate_id),
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS model_route_decisions (
+      decision_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL,
+      replan_count INTEGER NOT NULL DEFAULT 0,
+      plan_revision INTEGER NOT NULL DEFAULT 1,
+      obligation_id TEXT,
+      action_kind TEXT NOT NULL,
+      role TEXT NOT NULL,
+      model_class TEXT NOT NULL,
+      risk_tier TEXT NOT NULL,
+      independent_context_required INTEGER NOT NULL DEFAULT 0,
+      permissions TEXT NOT NULL,
+      reason_codes_json TEXT NOT NULL,
+      policy_revision TEXT NOT NULL,
+      decision_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS model_usage_receipts (
+      receipt_id TEXT PRIMARY KEY,
+      decision_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      host_surface TEXT NOT NULL,
+      actor_session_id TEXT NOT NULL,
+      parent_session_id TEXT,
+      resolved_model TEXT,
+      resolved_effort TEXT,
+      enforcement_status TEXT NOT NULL,
+      input_tokens INTEGER,
+      cached_input_tokens INTEGER,
+      output_tokens INTEGER,
+      cost_micros INTEGER,
+      wall_clock_ms INTEGER,
+      result_status TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(decision_id) REFERENCES model_route_decisions(decision_id),
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
     CREATE TABLE IF NOT EXISTS run_obligations (
@@ -742,6 +783,79 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const row = db.prepare(`SELECT run_id as runId, project_id as projectId, completion_status as completionStatus, knowledge_status as knowledgeStatus, projection_status as projectionStatus, git_closeout_status as gitCloseoutStatus, finalization_status as finalizationStatus, receipt_json as receiptJson, created_at as createdAt, updated_at as updatedAt FROM finalization_receipts WHERE run_id=?`).get(runId);
       if (!row) return null;
       return { ...row, receiptJson: safeJsonParse(row.receiptJson, {}) };
+    },
+
+    // Model routing evidence (§7). The decision is written BEFORE the Host
+    // dispatches, so a crashed turn leaves an interrupted decision rather than
+    // an invisible one; the receipt is what proves the Host actually complied.
+    recordModelRouteDecision(runId, decision) {
+      const normalized = normalizeModelRouteDecision(decision);
+      if (normalized.runId !== runId) throw new Error(`model route decision runId ${normalized.runId} does not match run ${runId}`);
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`
+        INSERT INTO model_route_decisions(decision_id, run_id, attempt_number, replan_count, plan_revision, obligation_id, action_kind, role, model_class, risk_tier, independent_context_required, permissions, reason_codes_json, policy_revision, decision_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(decision_id) DO UPDATE SET decision_json=excluded.decision_json, reason_codes_json=excluded.reason_codes_json, model_class=excluded.model_class, action_kind=excluded.action_kind, independent_context_required=excluded.independent_context_required
+      `).run(
+        normalized.decisionId, runId, normalized.attemptNumber, normalized.replanCount, normalized.planRevision,
+        normalized.obligationId, normalized.actionKind, normalized.role, normalized.modelClass, normalized.riskTier,
+        normalized.independentContextRequired ? 1 : 0, normalized.permissions, JSON.stringify(normalized.reasonCodes),
+        normalized.policyRevision, JSON.stringify(normalized), normalized.createdAt,
+      );
+      return normalized;
+    },
+
+    getModelRouteDecision(decisionId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, decision_json as decisionJson FROM model_route_decisions WHERE decision_id=?`).get(decisionId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.decisionJson, null);
+    },
+
+    listModelRouteDecisions(runId) {
+      return db.prepare(`SELECT decision_json as decisionJson FROM model_route_decisions WHERE run_id=? ORDER BY rowid ASC`).all(runId)
+        .map((row) => safeJsonParse(row.decisionJson, null)).filter(Boolean);
+    },
+
+    recordModelUsageReceipt(runId, receipt) {
+      const normalized = normalizeModelUsageReceipt(receipt);
+      if (normalized.runId !== runId) throw new Error(`model usage receipt runId ${normalized.runId} does not match run ${runId}`);
+      const decision = this.getModelRouteDecision(normalized.decisionId, { runId });
+      if (!decision) throw new Error(`model usage receipt references decision ${normalized.decisionId}, which does not belong to run ${runId}`);
+      db.prepare(`
+        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, receipt_json=excluded.receipt_json
+      `).run(
+        normalized.receiptId, normalized.decisionId, runId, normalized.hostSurface, normalized.actorSessionId,
+        normalized.parentSessionId, normalized.resolvedModel, normalized.resolvedEffort, normalized.enforcementStatus,
+        normalized.inputTokens, normalized.cachedInputTokens, normalized.outputTokens, normalized.costMicros,
+        normalized.wallClockMs, normalized.resultStatus, JSON.stringify(normalized), normalized.createdAt,
+      );
+      return normalized;
+    },
+
+    getModelUsageReceipt(receiptId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, receipt_json as receiptJson FROM model_usage_receipts WHERE receipt_id=?`).get(receiptId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.receiptJson, null);
+    },
+
+    listModelUsageReceipts(runId) {
+      return db.prepare(`SELECT receipt_json as receiptJson FROM model_usage_receipts WHERE run_id=? ORDER BY rowid ASC`).all(runId)
+        .map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
+    },
+
+    // Reviewer independence at T3 is checked against the session that actually
+    // implemented, not against a caller-supplied string (§9.2).
+    getLatestImplementationSession(runId) {
+      const row = db.prepare(`
+        SELECT u.receipt_id as receiptId, u.actor_session_id as actorSessionId, u.decision_id as decisionId, d.model_class as modelClass, d.action_kind as actionKind
+        FROM model_usage_receipts u JOIN model_route_decisions d ON d.decision_id = u.decision_id
+        WHERE u.run_id=? AND d.role='implementer' ORDER BY u.rowid DESC LIMIT 1
+      `).get(runId);
+      return row || null;
     },
 
     listKnowledgeRecords({ projectId, statuses = ['verified', 'committed'] } = {}) {
