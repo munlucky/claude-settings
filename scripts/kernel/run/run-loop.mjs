@@ -28,30 +28,90 @@ export const planStatePath = (from, to) => {
   return null;
 };
 
+// Steps along the route fixed at run start (P1-1). Following the stored route
+// keeps conditional stages (SHAPE, SLICE, SCHEDULE) in the path instead of
+// letting the shortest route to PROVE skip them.
+export const planRouteSteps = (route, from, to) => {
+  if (!Array.isArray(route) || route.length === 0) return null;
+  const fromIndex = route.indexOf(from);
+  const toIndex = route.indexOf(to);
+  if (fromIndex < 0 || toIndex < 0 || toIndex < fromIndex) return null;
+  const steps = route.slice(fromIndex + 1, toIndex + 1);
+  // Only usable when every hop is a legal transition; otherwise fall back.
+  let cursor = from;
+  for (const step of steps) {
+    if (!(TRANSITIONS[cursor] || []).includes(step)) return null;
+    cursor = step;
+  }
+  return steps;
+};
+
 const summarizeEvidence = (verifications = []) => verifications.map((verification) => ({
   obligationId: verification.obligationId,
   status: verification.status,
   executor: verification.executor || 'caller-attested',
+  evidenceClass: verification.evidenceClass || 'attested',
   command: verification.command || null,
   exitCode: verification.exitCode,
   evidenceDigest: verification.evidenceDigest || null,
   observedAt: verification.observedAt,
 }));
 
-// Model-visible payload for `kernel next`: objective, acceptance, current
-// evidence, and one action. Internal state names are never exposed.
-export const buildNextPayload = ({ run, verifications = [], requiredObligations = [], failures = [], knowledgePromptBlock = null }) => {
+// What the model needs to satisfy an obligation: the class of evidence that
+// counts and the exact commands that are bound to it. Without this the model
+// has to guess, and guessing is what produced forged obligation names.
+const describeObligations = (obligations = [], obligationIds = []) => obligationIds.map((obligationId) => {
+  const declared = obligations.find((obligation) => obligation.obligationId === obligationId);
+  return {
+    obligationId,
+    evidenceClass: declared?.evidenceClass || 'hard',
+    verificationMethod: declared?.verificationMethod || 'kernel-executed-command',
+    allowedCommandRefs: declared?.allowedCommandRefs || [],
+    acceptanceIds: declared?.acceptanceIds || [],
+  };
+});
+
+// Model-visible payload for `kernel next`: contract, current evidence, and one
+// action. Internal state names are never exposed.
+export const buildNextPayload = ({
+  run,
+  verifications = [],
+  requiredObligations = [],
+  obligations = [],
+  contract = null,
+  failures = [],
+  knowledgePromptBlock = null,
+  capabilities = [],
+}) => {
   const base = {
     schemaVersion: 1,
     runId: run.runId,
     objective: run.objective,
-    acceptance: run.acceptanceCriteria || [],
+    acceptance: contract?.acceptance?.map((item) => item.statement) || run.acceptanceCriteria || [],
+    // Constraints and non-goals come from persisted SQLite state, so a run
+    // resumed in a fresh process does not lose them (P0-4).
+    constraints: contract?.constraints || [],
+    nonGoals: contract?.nonGoals || [],
+    risks: contract?.risks || [],
     evidence: summarizeEvidence(verifications),
     knowledge: knowledgePromptBlock,
+    capabilities,
   };
 
-  if (run.status === 'completed') {
+  if (run.status === 'completed' && (run.finalizationStatus || 'completed') === 'completed') {
     return { ...base, action: { type: 'done', guidance: 'Run is complete. No further work is required.' } };
+  }
+  // Accepted completion whose knowledge commit or Git closeout did not finish
+  // is NOT done; the run stays retryable (P0-7).
+  if (run.status === 'completed') {
+    return {
+      ...base,
+      action: {
+        type: 'finalize',
+        finalizationStatus: run.finalizationStatus,
+        guidance: 'Evidence was accepted but finalization did not complete. Submit kernel report again to retry the outstanding finalization step.',
+      },
+    };
   }
   if (run.status === 'blocked' && run.blockedReason) {
     return { ...base, action: { type: 'blocked', reason: run.blockedReason, guidance: 'Resolve the blocker with the user, then submit a new report.' } };
@@ -68,6 +128,7 @@ export const buildNextPayload = ({ run, verifications = [], requiredObligations 
           obligationId: failure.obligationId,
           command: failure.command || failure.commandRef || null,
           errorSummary: failure.errorSummary || null,
+          allowedCommandRefs: failure.allowedCommandRefs || undefined,
         })),
       },
     };
@@ -76,12 +137,18 @@ export const buildNextPayload = ({ run, verifications = [], requiredObligations 
   const passed = new Set(verifications.filter((verification) => verification.status === 'passed').map((verification) => verification.obligationId));
   const outstanding = requiredObligations.filter((obligation) => !passed.has(obligation));
   if (verifications.length === 0 || outstanding.length > 0) {
+    const unsatisfiable = describeObligations(obligations, outstanding)
+      .filter((entry) => entry.evidenceClass === 'hard' && entry.allowedCommandRefs.length === 0);
     return {
       ...base,
       action: {
         type: 'implement',
-        guidance: 'Implement the objective, then submit kernel report with a summary, changed paths, and the verifications to run.',
+        guidance: unsatisfiable.length > 0
+          ? 'Implement the objective. Some required evidence has no runnable project command yet — add one to the project manifest, or report an unsupported-verification blocker.'
+          : 'Implement the objective, then submit kernel report with a summary, changed paths, and the verifications to run.',
         outstandingObligations: outstanding,
+        obligations: describeObligations(obligations, outstanding),
+        shapeRequired: Boolean(run.route?.shapeRequired),
       },
     };
   }
@@ -114,10 +181,13 @@ export const normalizeReport = (payload = {}) => {
   }
   return {
     summary: typeof payload.summary === 'string' ? payload.summary : '',
+    implementerId: payload.implementerId ? String(payload.implementerId) : null,
     changedPaths: Array.isArray(payload.changedPaths) ? payload.changedPaths.map(String) : [],
     risks: Array.isArray(payload.risks) ? payload.risks.map(String) : [],
     verifications,
     judgments,
+    // Evidence plans the model produced in FRAME; persisted before execution.
+    evidencePlans: Array.isArray(payload.evidencePlans) ? payload.evidencePlans : [],
     blocker,
     gitCloseoutRequest: payload.gitCloseoutRequest && typeof payload.gitCloseoutRequest === 'object' ? payload.gitCloseoutRequest : null,
     knowledgeObservations: Array.isArray(payload.knowledgeObservations) ? payload.knowledgeObservations : [],

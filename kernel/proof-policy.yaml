@@ -17,3 +17,29 @@ requiredChecks:
   T1: [unit-test]
   T2: [static-analysis, unit-test]
   T3: [static-analysis, unit-test, security-review]
+# Authoritative binding between an obligation name and how it may be satisfied.
+# evidenceClass: hard      -> only a Kernel-executed command counts
+# evidenceClass: judgment  -> only a structured judgment/review verdict counts
+# commandClasses           -> the project command classes allowed to prove it
+obligations:
+  default:
+    evidenceClass: hard
+    commandClasses: [unit-test, integration-test, e2e, static-analysis, build, script]
+  unit-test:
+    evidenceClass: hard
+    commandClasses: [unit-test, integration-test]
+  integration-test:
+    evidenceClass: hard
+    commandClasses: [integration-test, e2e]
+  static-analysis:
+    evidenceClass: hard
+    commandClasses: [static-analysis, build]
+  build:
+    evidenceClass: hard
+    commandClasses: [build]
+  migration-smoke:
+    evidenceClass: hard
+    commandClasses: [integration-test, e2e, unit-test]
+  security-review:
+    evidenceClass: judgment
+    commandClasses: []

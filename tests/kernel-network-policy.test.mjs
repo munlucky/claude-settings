@@ -20,14 +20,43 @@ test('blocked/required refuse to claim isolation when no sandbox is available', 
   assert.throws(() => resolveNetworkExecution({ policy: 'required', env: {} }), NetworkPolicyUnenforceableError);
 });
 
-test('blocked is only honored when the host declares a real sandbox', () => {
+test('declaring a mechanism is not enforcement: unknown or absent wrappers stay unenforceable', () => {
+  // An arbitrary string is a declaration, not a mechanism the Kernel can apply.
+  const bogus = probeNetworkEnforcement({ env: { MOON_RELAY_KERNEL_NETWORK_SANDBOX: 'totally-made-up' }, platform: 'linux', binaryExists: () => true });
+  assert.equal(bogus.enforceable, false);
+  assert.match(bogus.reason, /unsupported-mechanism/);
+
+  // A known mechanism whose binary is missing cannot isolate anything.
+  const missing = probeNetworkEnforcement({ env: { MOON_RELAY_KERNEL_NETWORK_SANDBOX: 'firejail' }, platform: 'linux', binaryExists: () => false });
+  assert.equal(missing.enforceable, false);
+  assert.match(missing.reason, /binary-not-found/);
+
+  // A known mechanism on an unsupported platform likewise cannot.
+  const wrongPlatform = probeNetworkEnforcement({ env: { MOON_RELAY_KERNEL_NETWORK_SANDBOX: 'firejail' }, platform: 'win32', binaryExists: () => true });
+  assert.equal(wrongPlatform.enforceable, false);
+});
+
+test('blocked is honored only when a real wrapper is applied to the child argv', () => {
   const env = { MOON_RELAY_KERNEL_NETWORK_SANDBOX: 'firejail' };
-  const probe = probeNetworkEnforcement({ env });
+  const probe = probeNetworkEnforcement({ env, platform: 'linux', binaryExists: () => true });
   assert.equal(probe.enforceable, true);
-  const resolved = resolveNetworkExecution({ policy: 'blocked', env });
+
+  const resolved = resolveNetworkExecution({ policy: 'blocked', env, platform: 'linux', binaryExists: () => true });
   assert.equal(resolved.networkIsolation, 'blocked');
   assert.equal(resolved.enforced, true);
   assert.equal(resolved.mechanism, 'firejail');
+
+  // The isolation claim is only honest because the argv is actually wrapped.
+  const wrapped = resolved.wrapArgv('npm', ['run', 'test']);
+  assert.equal(wrapped.command, 'firejail');
+  assert.deepEqual(wrapped.args, ['--quiet', '--net=none', '--', 'npm', 'run', 'test']);
+});
+
+test('an unenforceable declaration blocks instead of recording false isolation', () => {
+  assert.throws(
+    () => resolveNetworkExecution({ policy: 'blocked', env: { MOON_RELAY_KERNEL_NETWORK_SANDBOX: 'firejail' }, platform: 'linux', binaryExists: () => false }),
+    NetworkPolicyUnenforceableError,
+  );
 });
 
 test('trusted proof records isolation none under inherited policy', async () => {

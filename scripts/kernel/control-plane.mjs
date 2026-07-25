@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import os from 'node:os';
 import { openKernelStateStore } from './state-store.mjs';
 import { buildContextReceipt } from './context-build.mjs';
 import { resolveProofRoute } from './proof-route.mjs';
@@ -17,18 +16,19 @@ import { buildCandidateIdentity, gitTreeDigest, sha256Hex } from '../lib/candida
 import { resolveKernelProjectIdentity } from './project-identity.mjs';
 import { ensureKnowledgeStoreDirectories } from './knowledge/store.mjs';
 import { buildProjectKnowledgeContext } from './knowledge/context-load.mjs';
-import { extractKnowledgeCandidates } from './knowledge/candidate-extract.mjs';
-import { reviewKnowledgeCandidates } from './knowledge/candidate-review.mjs';
-import { commitProjectKnowledge } from './knowledge/commit.mjs';
-import { executeKernelGitCloseout, retryGitCloseout as retryGitCloseoutHelper } from './git/closeout.mjs';
+import { retryGitCloseout as retryGitCloseoutHelper } from './git/closeout.mjs';
+import { finalizeRun, recordKnowledgeObservations } from './run/finalization.mjs';
 import { normalizeChangedContract } from './change-contract.mjs';
-import { VALID_TYPES, resolveRecordType } from './knowledge/records.mjs';
 import { observeWorkspaceIdentity } from './run/workspace-identity.mjs';
 import { executeTrustedProof, executeApprovedProof, executeWithFlakyRerun, UntrustedCommandError, CommandApprovalRequiredError } from './proof/proof-executor.mjs';
 import { NetworkPolicyUnenforceableError } from './proof/network-policy.mjs';
-import { buildNextPayload, normalizeReport, planStatePath } from './run/run-loop.mjs';
+import { buildNextPayload, normalizeReport, planStatePath, planRouteSteps } from './run/run-loop.mjs';
 import { detectProjectMode } from './task/project-mode.mjs';
-import { assertEvidencePlans, acceptanceStatements } from './task/evidence-plan.mjs';
+import { normalizeTaskContract, applyEvidencePlans, mergeContractRevision, contractBriefing, riskSummaryFromContract } from './task/task-contract.mjs';
+import { compileRunObligations, assertCommandBinding, ObligationBindingError } from './run/obligation-compiler.mjs';
+import { discoverProjectCommands } from './proof/command-catalog.mjs';
+import { needsShape } from './route.mjs';
+import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } from './run/session-holder.mjs';
 import { planWalkingSkeleton } from './task/greenfield-bootstrap.mjs';
 import { buildImpactAnalysis } from './task/migration-workflow.mjs';
 import { resolveReviewPlan, normalizeReviewVerdict, assertIndependentReview } from './proof/review-pipeline.mjs';
@@ -81,8 +81,20 @@ export const buildKernelMeasurement = ({ run, completion, principles = loadKerne
   contaminationSignals: observed({ relayStateMutation: false, profileMutation: false, source: 'kernel-runtime-boundary' }),
 });
 
-export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome, projectRoot = process.cwd(), holder = `${os.hostname()}:${process.pid}` } = {}) => {
+// The route a run follows is fixed at start (P1-1) so SHAPE is never skipped
+// for contract/boundary/migration work just because PROVE is reachable sooner.
+const refreshedTier = (store, runId) => store.getRun(runId)?.proofTier;
+
+const buildRunRoute = (contract, riskSummary) => {
+  if (contract.taskClass === 'analysis') return ['FRAME', 'CLOSE'];
+  if (contract.taskClass === 'long-running' || contract.flags.complex === true) return ['FRAME', 'SHAPE', 'SLICE', 'SCHEDULE', 'EXECUTE', 'PROVE', 'CLOSE'];
+  if (needsShape(riskSummary)) return ['FRAME', 'SHAPE', 'EXECUTE', 'PROVE', 'CLOSE'];
+  return ['FRAME', 'EXECUTE', 'PROVE', 'CLOSE'];
+};
+
+export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRuntimeHome(), relayHome, projectRoot = process.cwd(), holder: holderOption, env = process.env } = {}) => {
   const store = await openKernelStateStore({ runtimeHome, relayHome });
+  const holder = resolveHostSessionHolder({ holder: holderOption, env, projectRoot });
 
   const persistReleaseEvidenceIfNeeded = (runId, updated) => {
     if (updated.evidenceTier !== 'E2') return;
@@ -107,9 +119,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
 
       // Evidence-plan gate (§8): a structured acceptance criterion without a
-      // plan for how it will be proven blocks the run before execution.
-      const rawAcceptance = taskContract.acceptance || taskContract.acceptanceCriteria || [];
-      assertEvidencePlans(rawAcceptance);
+      // plan for how it will be proven blocks the run before execution. The
+      // normalized contract is what gets persisted, so constraints, non-goals,
+      // risks, and evidence plans survive a process restart (P0-4/P0-5).
+      const contract = normalizeTaskContract(taskContract, { objective: objective || taskContract.objective });
 
       const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
       const projectId = identity.projectId;
@@ -120,29 +133,45 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       const normalizedChangeSet = normalizeChangedContract(taskContract);
 
+      // Risk carries behaviorChanging through to the tier resolver, so an
+      // ordinary behavior change is not left at T0 (P1-1).
       const riskSummary = {
-        requestedTier: taskContract.riskTier || taskContract.proofTier || taskContract.requestedTier,
-        filesChanged: normalizedChangeSet.changedFileCount,
-        surfaces: taskContract.surfaces || [],
-        crossLayer: taskContract.crossLayer || false,
+        ...riskSummaryFromContract(contract),
+        filesChanged: contract.filesChanged || normalizedChangeSet.changedFileCount,
       };
       const proofRoute = resolveProofRoute(riskSummary);
+      const route = buildRunRoute(contract, riskSummary);
+      const projectCommands = discoverProjectCommands({ projectRoot });
+
+      // Obligations are compiled once and fixed: each records its evidence
+      // class and the exact commands allowed to prove it (P0-2/P0-3).
+      const obligations = compileRunObligations({
+        projectRoot,
+        requiredChecks: proofRoute.requiredChecks || ['default'],
+        contract,
+        contractRevision: 1,
+        commands: projectCommands,
+      });
 
       const workspaceObservation = observeWorkspaceIdentity({ projectRoot });
       const run = store.createRun({
         runId,
-        objective: objective || taskContract.objective || 'Kernel execution task',
+        objective: contract.objective,
         sourceIdentity: trustedSourceIdentity,
         workspaceIdentity: workspaceObservation.identity,
         proofTier: proofRoute.proofTier,
         evidenceTier: proofRoute.evidenceTier,
-        requiredObligations: proofRoute.requiredChecks || ['default'],
-        acceptanceCriteria: acceptanceStatements(rawAcceptance),
+        requiredObligations: obligations.map((obligation) => obligation.obligationId),
+        acceptanceCriteria: contract.acceptance.map((item) => item.statement).filter(Boolean),
         requireReleaseEvidence: proofRoute.evidenceTier === 'E2',
         projectId,
         knowledgeRevisionStart,
         projectMode: projectMode.mode,
+        taskContract: contract,
+        contractRevision: 1,
+        route: { stages: route, riskTier: proofRoute.proofTier, shapeRequired: route.includes('SHAPE') },
       });
+      store.declareRunObligations(runId, obligations);
 
       // Automatically load FRAME knowledge context and record receipt
       const frameKnowledgeCtx = await buildProjectKnowledgeContext({
@@ -164,6 +193,53 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       await projectRunState(run, { runtimeHome });
       return run;
+    },
+
+    // Host bootstrap (P0-1). The model only ever calls `next` and `report`, so
+    // the run must come into existence without a model-visible `start` command.
+    // ensureRun is idempotent: it creates the run on first call for a run id
+    // and resumes it afterwards, and it is what `kernel next --contract-json`
+    // uses to bootstrap a turn.
+    async ensureRun({ runId, objective, taskContract = {} } = {}) {
+      if (!runId) throw new Error('ensureRun requires a runId');
+      const existing = store.getRun(runId);
+      if (!existing) {
+        const run = await this.startRun({ runId, objective, taskContract });
+        return { status: 'created', run, next: await this.next(runId) };
+      }
+      // An existing run may still be refined: a contract that now carries
+      // evidence plans or new constraints is a revision, never a new run.
+      if (objective || (taskContract && Object.keys(taskContract).length > 0)) {
+        // A revision may only refine the contract; scope it already carries is
+        // never dropped, so a later turn cannot shrink the completion gate.
+        const merged = mergeContractRevision(
+          existing.taskContract,
+          normalizeTaskContract(taskContract, { objective: objective || existing.objective }),
+        );
+        if (existing.taskContract && merged.digest !== existing.taskContract.digest) {
+          await this.reviseContract(runId, merged);
+        }
+      }
+      return { status: 'resumed', run: store.getRun(runId), next: await this.next(runId) };
+    },
+
+    // Persists a refined Task Contract and recompiles obligations against it,
+    // so a plan supplied after FRAME is a binding change, not a note (P0-5).
+    async reviseContract(runId, contract) {
+      const run = store.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const updated = store.updateTaskContract(runId, contract);
+      const obligations = compileRunObligations({
+        projectRoot,
+        requiredChecks: KERNEL_POLICY.requiredChecks[updated.proofTier] || ['default'],
+        contract,
+        contractRevision: updated.contractRevision,
+      });
+      store.declareRunObligations(runId, obligations);
+      const merged = [...new Set([...updated.requiredObligations, ...obligations.map((obligation) => obligation.obligationId)])];
+      const escalated = store.escalateRun(runId, { addObligations: merged });
+      await projectRunState(escalated, { runtimeHome });
+      return escalated;
     },
 
     async getRun(runId) {
@@ -270,7 +346,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return planBoundedWaves(slices, { riskTier: run.proofTier, includeIndependentReview, integrationVerification });
     },
 
-    async recordProof(runId, { obligationId = 'default', status, sourceIdentity, evidenceRef, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [] } = {}) {
+    async recordProof(runId, { obligationId = 'default', status, sourceIdentity, evidenceRef, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [], evidenceClass = null } = {}) {
       const run = store.getRun(runId);
       const effectiveSourceIdentity = sourceIdentity || run?.sourceIdentity;
       const updated = store.recordVerification(runId, {
@@ -282,6 +358,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         exitCode,
         evidenceDigest,
         acceptanceCoverage,
+        evidenceClass,
         executor: 'caller-attested',
       });
       persistReleaseEvidenceIfNeeded(runId, updated);
@@ -372,6 +449,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         command: 'structured-review',
         exitCode: normalized.verdict === 'pass' ? 0 : 1,
         evidenceDigest: `sha256:${createHash('sha256').update(JSON.stringify(normalized)).digest('hex')}`,
+        evidenceClass: 'judgment',
       });
       return { review: normalized, run: updated };
     },
@@ -423,6 +501,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         obligationId,
         status: recordedStatus,
         evidenceRef: execution.evidenceRef,
+        commandRef: discovered ? null : commandRef,
         command: [execution.command, ...execution.args].join(' '),
         exitCode: recordedStatus === 'failed' && execution.exitCode === 0 ? 1 : execution.exitCode,
         evidenceDigest: execution.outputDigest,
@@ -437,17 +516,114 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return { run: updated, execution: { ...execution, recordedStatus, flaky: blockedForFlaky, workspaceMutatedByProof } };
     },
 
+    // Builds (and records a receipt for) the knowledge context of the run's
+    // CURRENT stage, so an EXECUTE turn is not handed FRAME knowledge (P1-2).
+    async refreshStageKnowledge(runId, { stage } = {}) {
+      const run = store.getRun(runId);
+      if (!run) return null;
+      const effectiveStage = stage || run.state;
+      const existing = store.getKnowledgeContextReceipt(runId, effectiveStage);
+      const projectId = run.projectId;
+      if (!projectId) return existing?.receiptJson || null;
+      const knowledgeRevision = String(store.getProjectKnowledgeRevision(projectId));
+      // Reuse the receipt when nothing about the stage or the knowledge base
+      // changed; rebuilding on every `next` would re-verify records needlessly.
+      if (existing && String(existing.knowledgeRevision) === knowledgeRevision) return existing.receiptJson;
+      try {
+        const context = await buildProjectKnowledgeContext({
+          projectId,
+          stage: effectiveStage,
+          runId,
+          objective: run.objective,
+          changedPaths: run.taskContract?.changedPaths || [],
+          projectRoot,
+          stateStore: store,
+          env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
+        });
+        store.recordKnowledgeContextReceipt(runId, {
+          stage: effectiveStage,
+          knowledgeRevision: context.knowledgeRevision,
+          digest: context.digest,
+          receiptJson: context,
+        });
+        return context;
+      } catch {
+        return existing?.receiptJson || null;
+      }
+    },
+
     // Model-visible command 1 of 2: what to do now.
     async next(runId) {
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
-      const latestReceipt = store.getKnowledgeContextReceipt(runId, run.state) || store.getKnowledgeContextReceipt(runId, 'FRAME');
-      return buildNextPayload({
+
+      const stageContext = await this.refreshStageKnowledge(runId);
+      const obligations = store.getRunObligations(runId);
+      const capabilityDecision = resolveKernelCapabilities({
+        ...(run.taskContract?.flags || {}),
+        taskClass: run.taskContract?.taskClass || 'feature',
+        riskTier: run.proofTier,
+        stage: run.state,
+        route: run.route?.stages || [],
+        filesChanged: run.taskContract?.filesChanged || 0,
+      });
+
+      const payload = buildNextPayload({
         run,
         verifications: store.getVerifications(runId),
         requiredObligations: run.requiredObligations,
-        knowledgePromptBlock: latestReceipt?.receiptJson?.promptBlock || null,
+        obligations,
+        contract: run.taskContract ? contractBriefing(run.taskContract) : null,
+        knowledgePromptBlock: stageContext?.promptBlock || null,
+        capabilities: capabilityDecision.selected.map((entry) => ({ id: entry.id, guidance: entry.guidance })),
       });
+
+      if (payload.action?.type === 'implement') {
+        payload.action.projectContext = await this.buildImplementationContext(runId, run);
+      }
+      return payload;
+    },
+
+    // Greenfield/Brownfield guidance is attached to the one action that can
+    // use it, instead of living in an API the host loop never calls (P1-3).
+    // The mode itself stays an internal policy signal and is never named in
+    // the model-visible payload; only its consequences are.
+    async buildImplementationContext(runId, run) {
+      if (run.projectMode === 'greenfield') {
+        return {
+          walkingSkeleton: planWalkingSkeleton({
+            projectType: run.taskContract?.flags?.projectType || 'library',
+            objective: run.objective,
+            taskContract: run.taskContract || {},
+          }),
+        };
+      }
+      const scan = scanRepositoryEvidence({ projectRoot });
+      const baseline = await this.captureBaselineIfPossible(runId, run);
+      return {
+        entrypoints: scan.entrypoints,
+        manifests: scan.manifests,
+        knownCommands: [...scan.testCommands, ...scan.buildCommands].map((entry) => entry.commandRef),
+        baseline,
+      };
+    },
+
+    // A baseline is only meaningful before the workspace changes. When the run
+    // is still at its start identity we capture it automatically; afterwards we
+    // say so honestly instead of pretending failures are pre-existing.
+    async captureBaselineIfPossible(runId, run) {
+      if ((run.baselineFailures || []).length > 0) return { status: 'captured', failures: run.baselineFailures };
+      if (String(env.MOON_RELAY_KERNEL_BASELINE || 'auto') === 'off') return { status: 'disabled' };
+      if (run.projectMode === 'greenfield') return { status: 'not-applicable' };
+      if (!run.runStartWorkspaceIdentity || run.currentWorkspaceIdentity !== run.runStartWorkspaceIdentity) {
+        return { status: 'unavailable-workspace-already-changed' };
+      }
+      const commandRefs = [...new Set(store.getRunObligations(runId)
+        .filter((obligation) => obligation.evidenceClass === 'hard')
+        .flatMap((obligation) => obligation.allowedCommandRefs))].slice(0, 3);
+      if (commandRefs.length === 0) return { status: 'no-bound-commands' };
+      const baseline = await this.captureBaseline(runId, { commandRefs, timeoutMs: 120000 });
+      return { status: 'captured', commandRefs, failures: baseline.baselineFailures };
     },
 
     // Brownfield repository scan (§16.2): objective-relevant evidence only.
@@ -489,7 +665,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async resume(runId) {
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
-      const leaseResult = store.acquireLease(runId, { holder });
+      const leaseResult = store.acquireLease(runId, { holder, ttlMs: SESSION_LEASE_TTL_MS });
       if (!leaseResult.acquired) {
         return { schemaVersion: 1, runId, status: 'lease-conflict', lease: leaseResult.lease, next: await this.next(runId) };
       }
@@ -515,19 +691,60 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     async report(runId, payload = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
-      if (run.status === 'completed') {
+      // A completed run is only *done* when finalization also completed
+      // (P0-7); a partial finalization stays retryable instead of reporting a
+      // success the Kernel did not actually achieve.
+      if (run.status === 'completed' && run.finalizationStatus === 'completed') {
         return { schemaVersion: 1, runId, status: 'completed', next: await this.next(runId) };
       }
 
       // Enforce the run lease before mutating any state (F4). If another runner
       // holds a live lease, refuse the report so concurrent processes cannot
       // interleave attempts, transitions, and finalization on the same run.
-      const leaseResult = store.acquireLease(runId, { holder });
+      const leaseResult = store.acquireLease(runId, { holder, ttlMs: REPORT_LEASE_TTL_MS });
       if (!leaseResult.acquired) {
         return { schemaVersion: 1, runId, status: 'lease-conflict', lease: leaseResult.lease, next: await this.next(runId) };
       }
+      const fencingToken = leaseResult.lease.fencingToken;
+      try {
+        return await this.reportUnderLease(runId, payload, { fencingToken });
+      } finally {
+        // The lease is released when the command finishes so the next CLI
+        // process — a different PID, same session — is never locked out (P0-6).
+        store.releaseLease(runId, { holder, fencingToken });
+      }
+    },
+
+    async reportUnderLease(runId, payload, { fencingToken }) {
+      const run = store.getRun(runId);
+      // A run that already reached accepted completion but whose finalization
+      // is partial re-enters finalization instead of restarting the loop.
+      if (run.status === 'completed' && run.finalizationStatus !== 'completed') {
+        const retried = await this.finalizeRun(runId, {
+          gitCloseoutRequest: payload?.gitCloseoutRequest || null,
+          changedPaths: Array.isArray(payload?.changedPaths) ? payload.changedPaths : [],
+          knowledgeObservations: Array.isArray(payload?.knowledgeObservations) ? payload.knowledgeObservations : [],
+        });
+        const finalRun = store.getRun(runId);
+        return {
+          schemaVersion: 1,
+          runId,
+          status: retried.finalizationStatus === 'completed' ? 'completed' : 'finalization-incomplete',
+          executed: [],
+          failures: [],
+          finalization: retried,
+          next: await this.next(runId),
+        };
+      }
 
       const report = normalizeReport(payload);
+
+      // A refined contract (new constraints, or the evidence plan the model
+      // produced in FRAME) is persisted before any execution (P0-5).
+      if (run.taskContract && report.evidencePlans.length > 0) {
+        const revised = applyEvidencePlans(run.taskContract, report.evidencePlans);
+        if (revised) await this.reviseContract(runId, revised);
+      }
 
       if (report.blocker) {
         store.markRunBlocked(runId, report.blocker.reason);
@@ -546,9 +763,52 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const failures = [];
       const executed = [];
 
+      // Binding pre-check (P0-2): a requested verification whose command is not
+      // bound to its obligation is rejected BEFORE anything runs, so a passing
+      // unrelated command can never be filed under a required obligation.
+      const bindingFailures = [];
+      for (const request of report.verifications) {
+        const obligationId = request.obligationId || request.commandRef;
+        const declared = store.getRunObligation(runId, obligationId);
+        if (!declared || declared.sourceType === 'ad-hoc') continue;
+        try {
+          assertCommandBinding(declared, request.commandRef);
+        } catch (error) {
+          if (!(error instanceof ObligationBindingError)) throw error;
+          bindingFailures.push({
+            obligationId,
+            commandRef: request.commandRef,
+            errorSummary: error.message,
+            allowedCommandRefs: declared.allowedCommandRefs,
+            requiredEvidenceClass: declared.evidenceClass,
+          });
+        }
+      }
+      if (bindingFailures.length > 0) {
+        const currentRun = store.getRun(runId);
+        return {
+          schemaVersion: 1,
+          runId,
+          status: 'evidence-rejected',
+          executed: [],
+          failures: bindingFailures,
+          finalization: null,
+          next: buildNextPayload({
+            run: currentRun,
+            verifications: store.getVerifications(runId),
+            requiredObligations: currentRun.requiredObligations,
+            obligations: store.getRunObligations(runId),
+            contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
+            failures: bindingFailures,
+          }),
+        };
+      }
+
       if (report.verifications.length > 0 || report.judgments.length > 0) {
         const current = store.getRun(runId);
-        const pathToProve = planStatePath(current.state, 'PROVE');
+        // Follow the route fixed at run start rather than the shortest path to
+        // PROVE, so SHAPE is not silently skipped for boundary work (P1-1).
+        const pathToProve = planRouteSteps(current.route?.stages, current.state, 'PROVE') ?? planStatePath(current.state, 'PROVE');
         if (pathToProve === null) throw new Error(`Cannot advance run ${runId} from ${current.state} to verification`);
         for (const stateStep of pathToProve) {
           await this.transition(runId, stateStep);
@@ -592,6 +852,20 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         }
 
         for (const judgment of report.judgments) {
+          // A judgment standing in for a protected obligation (security, auth,
+          // payment, migration) must name its reviewer and its reasoning, and
+          // at T3 that reviewer may not be the implementer (§31).
+          const declaredJudgment = store.getRunObligation(runId, judgment.obligationId);
+          if (declaredJudgment?.protected) {
+            if (!judgment.reviewerId || !judgment.rationale) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Protected obligation "${judgment.obligationId}" requires a judgment with reviewerId and rationale` });
+              continue;
+            }
+            if (refreshedTier(store, runId) === 'T3' && report.implementerId && judgment.reviewerId === report.implementerId) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `T3 protected obligation "${judgment.obligationId}" requires a reviewer independent of the implementer` });
+              continue;
+            }
+          }
           const judgmentDigest = `sha256:${createHash('sha256').update(JSON.stringify(judgment)).digest('hex')}`;
           await this.recordProof(runId, {
             obligationId: judgment.obligationId,
@@ -600,6 +874,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
             command: 'structured-judgment',
             exitCode: judgment.verdict === 'pass' ? 0 : 1,
             evidenceDigest: judgmentDigest,
+            evidenceClass: 'judgment',
             acceptanceCoverage: judgment.acceptanceCoverage || (judgment.acceptanceMapping || []).map((mapping) => mapping.acceptance),
           });
           if (judgment.verdict !== 'pass') {
@@ -610,11 +885,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       const refreshed = store.getRun(runId);
       const verifications = store.getVerifications(runId);
-      const passedObligations = new Set(verifications.filter((verification) => verification.status === 'passed').map((verification) => verification.obligationId));
-      const outstanding = refreshed.requiredObligations.filter((obligation) => !passedObligations.has(obligation));
+      const completionPreview = store.evaluateCompletion(runId);
+      const outstanding = completionPreview.unsatisfiedObligations.map((entry) => entry.obligationId);
 
       let finalization = null;
       if (failures.length === 0 && outstanding.length === 0 && verifications.length > 0 && refreshed.state === 'PROVE') {
+        // Only the runner that still holds the lease it acquired may finalize.
+        if (!store.isLeaseHeld(runId, { holder, fencingToken })) {
+          return { schemaVersion: 1, runId, status: 'lease-conflict', lease: store.getLease(runId), next: await this.next(runId) };
+        }
         finalization = await this.finalizeRun(runId, {
           gitCloseoutRequest: report.gitCloseoutRequest,
           changedPaths: report.changedPaths,
@@ -623,8 +902,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
 
       const finalRun = store.getRun(runId);
+      // `completed` requires BOTH an accepted completion decision and a
+      // finalization that actually finished (P0-7).
       const status = finalization?.completionStatus === 'accepted'
-        ? 'completed'
+        ? (finalization.finalizationStatus === 'completed' ? 'completed' : 'finalization-incomplete')
         : failures.length > 0 ? 'evidence-failed' : 'in-progress';
 
       store.finishAttempt(attempt.id, failures.length > 0 ? 'failed' : 'finished');
@@ -645,96 +926,19 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         failures,
         failureClassification,
         finalization,
-        next: buildNextPayload({ run: finalRun, verifications: store.getVerifications(runId), requiredObligations: finalRun.requiredObligations, failures }),
+        next: buildNextPayload({
+          run: finalRun,
+          verifications: store.getVerifications(runId),
+          requiredObligations: finalRun.requiredObligations,
+          obligations: store.getRunObligations(runId),
+          contract: finalRun.taskContract ? contractBriefing(finalRun.taskContract) : null,
+          failures,
+        }),
       };
     },
 
-    async recordKnowledgeObservations(runId, { observations = [], approvals = [] } = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-      if (!run.projectId) throw new Error(`Run ${runId} has no projectId`);
-
-      const ALLOWED_TYPES = new Set([
-        'semantic_fact',
-        'architecture_decision',
-        'domain_term',
-        'component_boundary',
-        'api_contract',
-        'kg_relation',
-        'ontology_constraint',
-        'tacit_observation',
-        'episodic_observation',
-        'tacit_practice',
-        'known_failure_pattern',
-        'required_verification',
-      ]);
-
-      const candidates = [];
-      for (const obs of observations) {
-        if (!obs || typeof obs !== 'object') continue;
-        const proposedType = resolveRecordType(obs.proposedType || obs.type || 'semantic_fact');
-        if (!ALLOWED_TYPES.has(proposedType)) {
-          throw new Error(`INVALID_CANDIDATE_TYPE: ${proposedType} is not an allowed candidate type`);
-        }
-        const candidateId = obs.candidateId || obs.id || `cand-${runId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        candidates.push({
-          candidateId,
-          runId,
-          projectId: run.projectId,
-          proposedType,
-          statement: obs.statement || '',
-          scope: obs.scope || [],
-          sourceRefs: obs.sourceRefs || [],
-          evidenceRefs: obs.evidenceRefs || [],
-          status: 'pending',
-          ...obs,
-          candidateId,
-        });
-      }
-
-      const verifications = store.getVerifications(runId);
-      const lastVer = verifications[verifications.length - 1];
-      const evidencePack = lastVer ? { status: lastVer.status, digest: lastVer.evidenceDigest } : null;
-
-      const reviewResult = await reviewKnowledgeCandidates({
-        projectId: run.projectId,
-        runId,
-        stateStore: store,
-        candidates,
-        evidencePack,
-        env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-      });
-
-      const allReviewed = [
-        ...(reviewResult.verifiedCandidates || []),
-        ...(reviewResult.rejectedCandidates || []),
-        ...(reviewResult.needsApprovalCandidates || []),
-        ...(reviewResult.pendingVerificationCandidates || []),
-      ];
-
-      for (const candidate of allReviewed) {
-        store.recordKnowledgeCandidate(candidate.candidateId, runId, {
-          projectId: run.projectId,
-          proposedType: candidate.proposedType || 'semantic_fact',
-          status: candidate.status,
-          candidateJson: candidate,
-        });
-      }
-
-      const reviewDigest = createHash('sha256').update(JSON.stringify(reviewResult)).digest('hex');
-      store.recordKnowledgeReviewReceipt(runId, {
-        projectId: run.projectId,
-        status: reviewResult.status,
-        candidateCount: candidates.length,
-        verifiedCount: (reviewResult.verifiedCandidates || []).length,
-        rejectedCount: (reviewResult.rejectedCandidates || []).length,
-        waitingApprovalCount: (reviewResult.needsApprovalCandidates || []).length,
-        waitingVerificationCount: (reviewResult.pendingVerificationCandidates || []).length,
-        reviewDigest,
-        receiptJson: reviewResult,
-      });
-
-      return reviewResult;
+    async recordKnowledgeObservations(runId, { observations = [] } = {}) {
+      return recordKnowledgeObservations({ store, runtimeHome, runId, observations });
     },
 
     async closeRun(runId) {
@@ -743,202 +947,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return updated;
     },
 
-    async finalizeRun(runId, { gitCloseoutRequest = null, changedPaths = [], changedFileCount = null, knowledgeObservations = [], approvals = [] } = {}) {
-      const run = store.getRun(runId);
-      if (!run) throw new Error(`Run ${runId} not found`);
-
-      const normalizedChangeSet = normalizeChangedContract({ changedPaths, changedFileCount });
-
-      if (Array.isArray(approvals)) {
-        for (const app of approvals) {
-          if (app && app.candidateId && app.approvedBy && app.approvalReceipt) {
-            store.recordKnowledgeApproval(`app-${crypto.randomUUID()}`, {
-              runId,
-              candidateId: app.candidateId,
-              approvedBy: app.approvedBy,
-              approvalReceipt: app.approvalReceipt,
-            });
-          }
-        }
-      }
-
-      // Step 1: Observation review BEFORE completion assessment
-      let reviewResult = { status: 'no_candidates', verifiedCandidates: [], rejectedCandidates: [] };
-      if (Array.isArray(knowledgeObservations) && knowledgeObservations.length > 0) {
-        reviewResult = await this.recordKnowledgeObservations(runId, { observations: knowledgeObservations, approvals });
-      } else {
-        const dbCandidates = store.getKnowledgeCandidates(runId).map((c) => c.candidateJson);
-        if (dbCandidates.length > 0) {
-          const verifications = store.getVerifications(runId);
-          const lastVer = verifications[verifications.length - 1];
-          const evidencePack = lastVer ? { status: lastVer.status, digest: lastVer.evidenceDigest } : null;
-          reviewResult = await reviewKnowledgeCandidates({
-            projectId: run.projectId,
-            runId,
-            stateStore: store,
-            candidates: dbCandidates,
-            evidencePack,
-            env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-          });
-
-          const reviewDigest = createHash('sha256').update(JSON.stringify(reviewResult)).digest('hex');
-          store.recordKnowledgeReviewReceipt(runId, {
-            projectId: run.projectId,
-            status: reviewResult.status,
-            candidateCount: dbCandidates.length,
-            verifiedCount: (reviewResult.verifiedCandidates || []).length,
-            rejectedCount: (reviewResult.rejectedCandidates || []).length,
-            waitingApprovalCount: (reviewResult.needsApprovalCandidates || []).length,
-            waitingVerificationCount: (reviewResult.pendingVerificationCandidates || []).length,
-            reviewDigest,
-            receiptJson: reviewResult,
-          });
-        }
-      }
-
-      if (!['passed', 'no_candidates'].includes(reviewResult.status)) {
-        const blockedReceipt = {
-          schemaVersion: 1,
-          runId,
-          projectId: run.projectId,
-          completionStatus: 'blocked',
-          knowledgeStatus: 'blocked',
-          projectionStatus: 'none',
-          gitCloseoutStatus: 'skipped',
-          finalizationStatus: `blocked_${reviewResult.status}`,
-          reviewResult,
-          reason: `knowledge_review_${reviewResult.status}`,
-        };
-        store.recordFinalizationReceipt(runId, blockedReceipt);
-        return blockedReceipt;
-      }
-
-      // Step 2: Pre-flight completion gates BEFORE closing. CLOSE is terminal
-      // (no transition back to PROVE), so closing a run whose acceptance,
-      // hard-evidence, or release-evidence gates are unmet would strand it in
-      // an unrecoverable blocked state. When gates are unmet, stay in the
-      // current (recoverable) state and report which gates are missing.
-      if (run.state !== 'CLOSE' && run.status !== 'completed') {
-        const preflight = store.evaluateCompletion(runId);
-        if (!preflight.readyExceptClose) {
-          const recoverableReceipt = {
-            schemaVersion: 1,
-            runId,
-            projectId: run.projectId,
-            completionStatus: 'blocked',
-            knowledgeStatus: 'skipped',
-            projectionStatus: 'none',
-            gitCloseoutStatus: 'skipped',
-            finalizationStatus: 'incomplete_gates',
-            completionResult: preflight,
-            reviewResult,
-            reason: 'completion_gates_unmet',
-            unmetGates: Object.entries(preflight.gates).filter(([key, value]) => key !== 'isClosed' && !value).map(([key]) => key),
-          };
-          store.recordFinalizationReceipt(runId, recoverableReceipt);
-          return recoverableReceipt;
-        }
-        store.transition(runId, 'CLOSE');
-      }
-
-      // Step 3: Assess & persist completion authority
-      const completionEval = store.evaluateCompletion(runId);
-      const completionRun = store.persistCompletionDecision(runId, completionEval);
-
-      if (completionEval.decision !== 'accepted') {
-        const blockedCompletionReceipt = {
-          schemaVersion: 1,
-          runId,
-          projectId: run.projectId,
-          completionStatus: completionEval.decision,
-          knowledgeStatus: 'blocked',
-          projectionStatus: 'none',
-          gitCloseoutStatus: 'skipped',
-          finalizationStatus: 'blocked_completion',
-          completionResult: completionEval,
-          reviewResult,
-          reason: 'completion_not_accepted',
-        };
-        store.recordFinalizationReceipt(runId, blockedCompletionReceipt);
-        return blockedCompletionReceipt;
-      }
-
-      // Step 4: Transactional Knowledge Commit (always called, handles candidates > 0 and no_change)
-      let knowledgeStatus = 'skipped';
-      let commitReceipt = null;
-      let knowledgeCommitError = null;
-
-      try {
-        commitReceipt = await commitProjectKnowledge({
-          runId,
-          projectId: run.projectId,
-          stateStore: store,
-          expectedKnowledgeRevision: run.knowledgeRevisionStart,
-          env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
-        });
-        knowledgeStatus = commitReceipt.status || 'committed';
-      } catch (err) {
-        knowledgeStatus = 'failed';
-        knowledgeCommitError = err.message;
-      }
-
-      // Step 5: Git closeout
-      let gitCloseoutStatus = 'skipped';
-      let gitReceipt = null;
-      let gitCloseoutError = null;
-
-      if (gitCloseoutRequest?.requested) {
-        const commitReceiptRow = store.getKnowledgeCommitReceipt(runId);
-        const knowledgeCommitReceipt = commitReceiptRow?.receiptJson;
-        if (!knowledgeCommitReceipt) {
-          gitCloseoutStatus = 'failed';
-          gitCloseoutError = 'KNOWLEDGE_RECEIPT_REQUIRED: Explicit Git closeout requires knowledge commit receipt';
-        } else {
-          try {
-            gitReceipt = await executeKernelGitCloseout({
-              runId,
-              projectId: run.projectId,
-              stateStore: store,
-              repoRoot: projectRoot,
-              gitCloseoutRequest,
-              knowledgeCommitReceipt,
-              changedFiles: normalizedChangeSet.changedPaths,
-            });
-            gitCloseoutStatus = gitReceipt.status || 'completed';
-          } catch (err) {
-            gitCloseoutStatus = 'failed';
-            gitCloseoutError = err.message;
-          }
-        }
-      }
-
-      // Step 6: Finalization receipt
-      let finalizationStatus = 'completed';
-      if (knowledgeStatus === 'failed' || gitCloseoutStatus === 'failed' || commitReceipt?.projectionStatus === 'failed') {
-        finalizationStatus = 'partial';
-      }
-
-      const finalizationReceipt = {
-        schemaVersion: 1,
-        runId,
-        projectId: run.projectId,
-        completionStatus: completionEval.decision,
-        knowledgeStatus,
-        projectionStatus: commitReceipt?.projectionStatus || 'completed',
-        gitCloseoutStatus,
-        finalizationStatus,
-        completionResult: completionEval,
-        reviewResult,
-        knowledgeCommitReceipt: commitReceipt,
-        knowledgeCommitError,
-        gitCloseoutReceipt: gitReceipt,
-        gitCloseoutError,
-      };
-
-      store.recordFinalizationReceipt(runId, finalizationReceipt);
-      await projectRunState(store.getRun(runId), { runtimeHome });
-
-      return finalizationReceipt;
+    async finalizeRun(runId, options = {}) {
+      return finalizeRun({ store, runtimeHome, projectRoot, runId, ...options });
     },
 
     async retryGitCloseout(runId) {

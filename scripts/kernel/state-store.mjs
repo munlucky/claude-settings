@@ -6,6 +6,7 @@ import { canTransition } from './transition.mjs';
 import { openSqliteDb } from './sqlite-adapter.mjs';
 import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapper.mjs';
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
+import { assertCommandBinding } from './run/obligation-compiler.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -254,6 +255,22 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('git_closeout_receipts', 'error_message', 'TEXT');
   addCol('git_closeout_receipts', 'updated_at', 'TEXT');
 
+  // Task Contract authority (P0-4), finalization split (P0-7), route cursor (P1-1).
+  addCol('runs', 'task_contract_json', 'TEXT');
+  addCol('runs', 'contract_revision', 'INTEGER DEFAULT 1');
+  addCol('runs', 'finalization_status', "TEXT DEFAULT 'pending'");
+  addCol('runs', 'route_json', 'TEXT');
+  // Obligation binding authority (P0-2/P0-3).
+  addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
+  addCol('run_obligations', 'verification_method', 'TEXT');
+  addCol('run_obligations', 'allowed_command_refs', "TEXT DEFAULT '[]'");
+  addCol('run_obligations', 'acceptance_ids', "TEXT DEFAULT '[]'");
+  addCol('run_obligations', 'protected', 'INTEGER DEFAULT 0');
+  addCol('run_obligations', 'contract_revision', 'INTEGER DEFAULT 1');
+  addCol('verifications', 'evidence_class', "TEXT DEFAULT 'attested'");
+  addCol('verifications', 'contract_revision', 'INTEGER DEFAULT 1');
+  addCol('leases', 'fencing_token', 'INTEGER DEFAULT 0');
+
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN run_start_workspace_identity TEXT;`); } catch {}
@@ -307,6 +324,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       knowledgeRevisionStart = null,
       workspaceIdentity = null,
       projectMode = null,
+      taskContract = null,
+      contractRevision = 1,
+      route = null,
     }) {
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
@@ -315,8 +335,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         throw new Error('workspaceIdentity must be a sha256:<hex> digest when provided');
       }
       db.prepare(`
-        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, updated_at)
-        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, updated_at)
+        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?)
       `).run(
         runId,
         objective,
@@ -331,9 +351,68 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         requireReleaseEvidence ? 1 : 0,
         projectId || null,
         knowledgeRevisionStart !== undefined && knowledgeRevisionStart !== null ? String(knowledgeRevisionStart) : null,
+        taskContract ? JSON.stringify(taskContract) : null,
+        Number(contractRevision) || 1,
+        route ? JSON.stringify(route) : null,
         now()
       );
       return this.getRun(runId);
+    },
+
+    // Task Contract is the run's authority; a revision bump records that the
+    // model refined it (e.g. supplied a missing evidence plan) mid-run.
+    updateTaskContract(runId, taskContract, { bumpRevision = true } = {}) {
+      const run = this.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const nextRevision = bumpRevision ? Number(run.contractRevision || 1) + 1 : Number(run.contractRevision || 1);
+      db.prepare(`UPDATE runs SET task_contract_json=?, contract_revision=?, acceptance_criteria=?, revision=revision+1, updated_at=? WHERE run_id=?`)
+        .run(JSON.stringify(taskContract), nextRevision, JSON.stringify((taskContract.acceptance || []).map((item) => item.statement).filter(Boolean)), now(), runId);
+      return this.getRun(runId);
+    },
+
+    setRunRoute(runId, route) {
+      db.prepare(`UPDATE runs SET route_json=?, revision=revision+1, updated_at=? WHERE run_id=?`).run(JSON.stringify(route), now(), runId);
+      return this.getRun(runId);
+    },
+
+    // Finalization is tracked separately from completion (P0-7): an accepted
+    // completion whose knowledge commit or Git closeout failed is NOT done.
+    setFinalizationStatus(runId, finalizationStatus) {
+      db.prepare(`UPDATE runs SET finalization_status=?, revision=revision+1, updated_at=? WHERE run_id=?`).run(String(finalizationStatus), now(), runId);
+      return this.getRun(runId);
+    },
+
+    // Compiled obligations are the run's binding authority: which evidence
+    // class and which project commands may satisfy each required obligation.
+    declareRunObligations(runId, obligations = []) {
+      for (const obligation of obligations) {
+        db.prepare(`
+          INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, acceptance_ids, protected, contract_revision, created_at, updated_at)
+          VALUES(?, ?, ?, ?, 'required', ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(run_id, obligation_id) DO UPDATE SET
+            evidence_class=excluded.evidence_class,
+            verification_method=excluded.verification_method,
+            allowed_command_refs=excluded.allowed_command_refs,
+            acceptance_ids=excluded.acceptance_ids,
+            protected=excluded.protected,
+            contract_revision=excluded.contract_revision,
+            updated_at=excluded.updated_at
+        `).run(
+          runId,
+          obligation.obligationId,
+          obligation.sourceType || 'proof-policy',
+          obligation.sourceRef || null,
+          obligation.evidenceClass || 'hard',
+          obligation.verificationMethod || null,
+          JSON.stringify(obligation.allowedCommandRefs || []),
+          JSON.stringify(obligation.acceptanceIds || []),
+          obligation.protected ? 1 : 0,
+          Number(obligation.contractRevision) || 1,
+          now(),
+          now(),
+        );
+      }
+      return this.getRunObligations(runId);
     },
 
     // Within a run, route and tier may only be promoted, never demoted
@@ -447,6 +526,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                project_id as projectId, knowledge_revision_start as knowledgeRevisionStart,
                knowledge_revision_close as knowledgeRevisionClose, knowledge_status as knowledgeStatus,
                context_pack_ref as contextPackRef,
+               task_contract_json as taskContractJson,
+               contract_revision as contractRevision,
+               finalization_status as finalizationStatus,
+               route_json as routeJson,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
       `).get(runId);
@@ -480,6 +563,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         knowledgeRevisionClose: row.knowledgeRevisionClose || null,
         knowledgeStatus: row.knowledgeStatus || null,
         contextPackRef: row.contextPackRef || null,
+        taskContract: row.taskContractJson ? safeJsonParse(row.taskContractJson, null) : null,
+        contractRevision: Number(row.contractRevision || 1),
+        finalizationStatus: row.finalizationStatus || 'pending',
+        route: row.routeJson ? safeJsonParse(row.routeJson, null) : null,
         updatedAt: row.updatedAt,
       };
     },
@@ -540,12 +627,27 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return db.prepare(`SELECT candidate_id as candidateId, run_id as runId, evidence_digest as evidenceDigest, obligation_id as obligationId, source_identity as sourceIdentity, mutation_revision as mutationRevision, binding_type as bindingType, created_at as createdAt FROM candidate_evidence_bindings WHERE run_id=?`).all(runId);
     },
 
-    ensureRunObligation(runId, { obligationId, sourceType = 'ontology_constraint', sourceRef = null }) {
+    ensureRunObligation(runId, { obligationId, sourceType = 'ontology_constraint', sourceRef = null, evidenceClass = 'hard', verificationMethod = null, allowedCommandRefs = [], acceptanceIds = [], status = 'required' }) {
+      const run = this.getRun(runId);
       db.prepare(`
-        INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, created_at, updated_at)
-        VALUES(?, ?, ?, ?, 'required', ?, ?)
+        INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, acceptance_ids, protected, contract_revision, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, obligation_id) DO NOTHING
-      `).run(runId, obligationId, sourceType, sourceRef || null, now(), now());
+      `).run(
+        runId,
+        obligationId,
+        sourceType,
+        sourceRef || null,
+        status,
+        evidenceClass,
+        verificationMethod,
+        JSON.stringify(allowedCommandRefs),
+        JSON.stringify(acceptanceIds),
+        isProtectedObligation(obligationId) ? 1 : 0,
+        Number(run?.contractRevision || 1),
+        now(),
+        now(),
+      );
     },
 
     markRunObligationPassed(runId, obligationId) {
@@ -553,7 +655,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getRunObligations(runId) {
-      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId);
+      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, evidence_class as evidenceClass, verification_method as verificationMethod, allowed_command_refs as allowedCommandRefs, acceptance_ids as acceptanceIds, protected, contract_revision as contractRevision, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId).map((row) => ({
+        ...row,
+        allowedCommandRefs: safeJsonParse(row.allowedCommandRefs, []),
+        acceptanceIds: safeJsonParse(row.acceptanceIds, []),
+        protected: Boolean(row.protected),
+      }));
+    },
+
+    getRunObligation(runId, obligationId) {
+      return this.getRunObligations(runId).find((obligation) => obligation.obligationId === obligationId) || null;
     },
 
     recordKnowledgeCommitReceipt(runId, { projectId, revisionBefore, revisionAfter, status = 'committed', receiptJson }) {
@@ -828,7 +939,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       }
     },
 
-    recordVerification(runId, { obligationId = 'default', status, evidenceRef, sourceIdentity, command, exitCode = 0, evidenceDigest, acceptanceCoverage = [], verifiedSourceIdentity = null, executor = 'caller-attested', networkIsolation = null }) {
+    recordVerification(runId, { obligationId = 'default', status, evidenceRef, sourceIdentity, command, commandRef = null, exitCode = 0, evidenceDigest, acceptanceCoverage = [], verifiedSourceIdentity = null, executor = 'caller-attested', networkIsolation = null, evidenceClass = null }) {
       const run = this.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       if (run.status === 'completed') throw new Error(`Cannot add verification to completed run ${runId}`);
@@ -848,12 +959,35 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         throw new Error('kernel-runtime verification requires the verifiedSourceIdentity it was executed against');
       }
 
+      // Obligation binding (P0-2). A declared obligation fixes HOW it may be
+      // satisfied; a Kernel execution may only be recorded against it when the
+      // command it ran is bound to that obligation. Undeclared obligation names
+      // are recorded as ad-hoc evidence that can never satisfy a required one.
+      const declared = this.getRunObligation(runId, obligationId);
+      if (declared && declared.sourceType !== 'ad-hoc' && executor === 'kernel-runtime') {
+        assertCommandBinding(declared, commandRef);
+      }
+      if (!declared) {
+        this.ensureRunObligation(runId, {
+          obligationId,
+          sourceType: 'ad-hoc',
+          sourceRef: 'reported-verification',
+          evidenceClass: executor === 'kernel-runtime' ? 'hard' : 'attested',
+          status: 'optional',
+        });
+      }
+      // The class is a fact about how this evidence was produced, never a
+      // caller assertion: only the Kernel running a bound command is `hard`.
+      const resolvedEvidenceClass = executor === 'kernel-runtime'
+        ? 'hard'
+        : (evidenceClass === 'judgment' ? 'judgment' : 'attested');
+
       db.exec('BEGIN IMMEDIATE TRANSACTION');
       try {
         db.prepare(`
-          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, verified_source_identity, executor, network_isolation, command, exit_code, evidence_digest, acceptance_coverage, observed_at)
-          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, verifiedSourceIdentity, executor, networkIsolation, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), now());
+          INSERT INTO verifications(run_id, obligation_id, status, evidence_ref, verified_runtime_revision, verified_mutation_revision, source_identity, verified_source_identity, executor, network_isolation, command, exit_code, evidence_digest, acceptance_coverage, evidence_class, contract_revision, observed_at)
+          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(runId, obligationId, status, evidenceRef || null, run.revision, run.mutationRevision, sourceIdentity, verifiedSourceIdentity, executor, networkIsolation, command || null, exitCode, evidenceDigest || null, JSON.stringify(acceptanceCoverage), resolvedEvidenceClass, Number(run.contractRevision || 1), now());
 
         if (evidenceDigest && sha256Regex.test(evidenceDigest)) {
           db.prepare(`INSERT INTO evidence_lineage(run_id, evidence_digest, created_at) VALUES(?, ?, ?)`).run(runId, evidenceDigest, now());
@@ -884,7 +1018,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getVerifications(runId) {
-      return db.prepare(`SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
+      return db.prepare(`SELECT id, obligation_id as obligationId, status, evidence_ref as evidenceRef, verified_runtime_revision as verifiedRuntimeRevision, verified_mutation_revision as verifiedMutationRevision, source_identity as sourceIdentity, verified_source_identity as verifiedSourceIdentity, executor, network_isolation as networkIsolation, command, exit_code as exitCode, evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, evidence_class as evidenceClass, contract_revision as contractRevision, observed_at as observedAt FROM verifications WHERE run_id=? AND id IN (SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id) ORDER BY id ASC`).all(runId, runId).map((v) => ({ ...v, acceptanceCoverage: safeJsonParse(v.acceptanceCoverage) }));
     },
 
     addWaiver(runId, { obligationId, approvedBy, reason, approvalReceipt, acceptanceCoverage = [] }) {
@@ -902,26 +1036,55 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, approved_by as approvedBy, reason, approved_at as approvedAt, approval_receipt as approvalReceipt, acceptance_coverage as acceptanceCoverage FROM waivers WHERE run_id=? ORDER BY id ASC`).all(runId).map((row) => ({ ...row, acceptanceCoverage: safeJsonParse(row.acceptanceCoverage) }));
     },
 
-    recordLease(runId, { holder, expiresAt }) {
+    recordLease(runId, { holder, expiresAt, fencingToken }) {
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
-      db.prepare(`INSERT INTO leases(run_id, holder, acquired_at, expires_at) VALUES(?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET holder=excluded.holder, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at`).run(runId, holder, now(), expiresAt);
-      return db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt FROM leases WHERE run_id=?`).get(runId);
+      db.prepare(`INSERT INTO leases(run_id, holder, acquired_at, expires_at, fencing_token) VALUES(?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET holder=excluded.holder, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at, fencing_token=excluded.fencing_token`)
+        .run(runId, holder, now(), expiresAt, Number(fencingToken) || 1);
+      return this.getLease(runId);
     },
 
     getLease(runId) {
-      return db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt FROM leases WHERE run_id=?`).get(runId) || null;
+      const row = db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt, fencing_token as fencingToken FROM leases WHERE run_id=?`).get(runId);
+      return row ? { ...row, fencingToken: Number(row.fencingToken || 0) } : null;
     },
 
     // Detects a still-valid lease held by a different runner, so a resumed
-    // session does not silently stomp another live process's run.
-    acquireLease(runId, { holder, ttlMs = 30 * 60 * 1000 } = {}) {
+    // session does not silently stomp another live process's run. Each
+    // acquisition mints a monotonically increasing fencing token, so a runner
+    // that was superseded while paused can be rejected even if it still holds
+    // the same holder string (P0-6).
+    acquireLease(runId, { holder, ttlMs = 15 * 60 * 1000 } = {}) {
       const existing = this.getLease(runId);
       const nowMs = Date.now();
       if (existing && existing.holder !== holder && existing.expiresAt && Date.parse(existing.expiresAt) > nowMs) {
         return { acquired: false, lease: existing, conflict: true };
       }
-      const lease = this.recordLease(runId, { holder, expiresAt: new Date(nowMs + ttlMs).toISOString() });
+      const lease = this.recordLease(runId, {
+        holder,
+        expiresAt: new Date(nowMs + ttlMs).toISOString(),
+        fencingToken: (existing?.fencingToken || 0) + 1,
+      });
       return { acquired: true, lease, conflict: false };
+    },
+
+    // A command that finishes releases its lease, so the next CLI invocation
+    // (a new process) is never blocked by a lease its predecessor abandoned.
+    releaseLease(runId, { holder, fencingToken = null } = {}) {
+      const existing = this.getLease(runId);
+      if (!existing || existing.holder !== holder) return false;
+      if (fencingToken !== null && existing.fencingToken !== Number(fencingToken)) return false;
+      db.prepare(`DELETE FROM leases WHERE run_id=? AND holder=?`).run(runId, holder);
+      return true;
+    },
+
+    // True when the caller still owns the lease it acquired; a superseded
+    // holder must not be allowed to finalize.
+    isLeaseHeld(runId, { holder, fencingToken = null } = {}) {
+      const existing = this.getLease(runId);
+      if (!existing) return false;
+      if (existing.holder !== holder) return false;
+      if (fencingToken !== null && existing.fencingToken !== Number(fencingToken)) return false;
+      return Date.parse(existing.expiresAt) > Date.now();
     },
 
     recordAttempt(runId, { attemptNumber, state, status = 'started', finishedAt = null }) {
@@ -963,7 +1126,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                source_identity as sourceIdentity,
                verified_source_identity as verifiedSourceIdentity,
                executor, network_isolation as networkIsolation, command, exit_code as exitCode,
-               evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage, observed_at as observedAt
+               evidence_digest as evidenceDigest, acceptance_coverage as acceptanceCoverage,
+               evidence_class as evidenceClass, contract_revision as contractRevision, observed_at as observedAt
         FROM verifications WHERE run_id=? AND id IN (
           SELECT MAX(v2.id) FROM verifications v2 WHERE v2.run_id=? GROUP BY v2.obligation_id
         ) ORDER BY id ASC
@@ -993,20 +1157,67 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       };
 
       const requiredObligations = run.requiredObligations.length > 0 ? run.requiredObligations : ['default'];
-      const dynamicObligationRows = db.prepare(`SELECT obligation_id as obligationId, status FROM run_obligations WHERE run_id=?`).all(runId);
+      const declaredObligations = this.getRunObligations(runId);
+      const declaredById = new Map(declaredObligations.map((obligation) => [obligation.obligationId, obligation]));
+      const dynamicObligationRows = declaredObligations.filter((obligation) => obligation.status === 'required' && obligation.sourceType !== 'ad-hoc');
 
       const waivers = this.getWaivers(runId);
-      const passedObligations = new Set(verifications.filter(isVerificationValid).map((v) => v.obligationId));
       const waivedObligations = new Set(waivers.filter((w) => w.approvalReceipt).map((w) => w.obligationId));
+      const latestByObligation = new Map(verifications.map((v) => [v.obligationId, v]));
 
-      const staticPassed = requiredObligations.every((ob) => passedObligations.has(ob) || waivedObligations.has(ob));
-      const dynamicPassed = dynamicObligationRows.every((row) => row.status === 'passed' || row.status === 'waived' || waivedObligations.has(row.obligationId));
+      // Evidence class is not substitutable (P0-3): a `hard` obligation needs
+      // executable evidence, a `judgment` obligation needs a structured
+      // verdict, and neither can stand in for the other. A run that actually
+      // mutated the workspace tightens `hard` further — only the Kernel
+      // executing the bound command counts. A protected obligation can never
+      // be waived.
+      const runMutatedWorkspace = run.mutationRevision > 0;
+      const obligationSatisfied = (obligationId) => {
+        const declared = declaredById.get(obligationId);
+        const expectedClass = declared?.evidenceClass || 'hard';
+        const verification = latestByObligation.get(obligationId);
+        if (verification && isVerificationValid(verification)) {
+          if (expectedClass === 'judgment') {
+            if (verification.evidenceClass === 'judgment') return true;
+          } else if (verification.executor === 'kernel-runtime' && verification.evidenceClass === 'hard') {
+            return true;
+          } else if (!runMutatedWorkspace && verification.evidenceClass !== 'judgment') {
+            // Nothing changed, so attested evidence is still an honest record;
+            // a judgment verdict is never accepted for an executable obligation.
+            return true;
+          }
+        }
+        if (waivedObligations.has(obligationId) && !(declared?.protected || isProtectedObligation(obligationId))) return true;
+        return false;
+      };
+
+      const obligationStatuses = [...new Set([...requiredObligations, ...dynamicObligationRows.map((row) => row.obligationId)])]
+        .map((obligationId) => {
+          const declared = declaredById.get(obligationId);
+          const verification = latestByObligation.get(obligationId);
+          return {
+            obligationId,
+            requiredEvidenceClass: declared?.evidenceClass || 'hard',
+            observedEvidenceClass: verification?.evidenceClass || null,
+            executor: verification?.executor || null,
+            satisfied: obligationSatisfied(obligationId),
+            waived: waivedObligations.has(obligationId),
+          };
+        });
+
+      const staticPassed = requiredObligations.every((ob) => obligationSatisfied(ob));
+      const dynamicPassed = dynamicObligationRows.every((row) => row.status === 'passed' || row.status === 'waived' || obligationSatisfied(row.obligationId));
 
       const coveredAcceptance = new Set([
-        ...verifications.flatMap((v) => v.acceptanceCoverage || []),
+        ...verifications.filter(isVerificationValid).flatMap((v) => v.acceptanceCoverage || []),
         ...waivers.flatMap((w) => w.acceptanceCoverage || []),
       ]);
-      const acceptanceCovered = run.acceptanceCriteria.every((criterion) => coveredAcceptance.has(criterion));
+      // Coverage may be declared by acceptance id (AC-1) or by statement.
+      const contractAcceptance = run.taskContract?.acceptance || [];
+      const acceptanceCovered = run.acceptanceCriteria.every((criterion, index) => {
+        const declared = contractAcceptance[index];
+        return coveredAcceptance.has(criterion) || (declared?.id && coveredAcceptance.has(declared.id));
+      });
       const releaseEvidence = db.prepare(`SELECT tier, digest, mutation_revision as mutationRevision, pack_json as packJson FROM evidence_packs WHERE run_id=? ORDER BY id DESC LIMIT 1`).get(runId);
       
       const releaseEvidencePresent = !run.releaseEvidenceRequired || (releaseEvidence?.tier === 'E2' && releaseEvidence.mutationRevision === run.mutationRevision && sha256Regex.test(releaseEvidence.digest));
@@ -1023,6 +1234,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       // never closed into an unrecoverable blocked state.
       const readyExceptClose = staticPassed && dynamicPassed && acceptanceCovered && releaseEvidencePresent && hardEvidenceSatisfied;
       const gates = { isClosed, staticPassed, dynamicPassed, acceptanceCovered, releaseEvidencePresent, hardEvidenceSatisfied };
+      const unsatisfiedObligations = obligationStatuses.filter((entry) => !entry.satisfied);
 
       const accepted = isClosed && readyExceptClose;
 
@@ -1053,6 +1265,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         releaseEvidence: releaseEvidence || null,
         acceptanceCovered: [...coveredAcceptance],
         hardEvidence: { required: hardEvidenceRequired, count: hardEvidenceCount },
+        obligationStatuses,
+        unsatisfiedObligations,
         gates,
         readyExceptClose,
         decisionPayload,
