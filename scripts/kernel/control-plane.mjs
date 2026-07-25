@@ -861,9 +861,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
               failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Protected obligation "${judgment.obligationId}" requires a judgment with reviewerId and rationale` });
               continue;
             }
-            if (refreshedTier(store, runId) === 'T3' && report.implementerId && judgment.reviewerId === report.implementerId) {
-              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `T3 protected obligation "${judgment.obligationId}" requires a reviewer independent of the implementer` });
-              continue;
+            // At T3 both identities are mandatory. Making the comparison
+            // conditional on `implementerId` being present would let a caller
+            // skip the independence gate simply by omitting the field.
+            if (refreshedTier(store, runId) === 'T3') {
+              if (!report.implementerId) {
+                failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `T3 protected obligation "${judgment.obligationId}" requires the report to declare implementerId so reviewer independence can be checked` });
+                continue;
+              }
+              if (judgment.reviewerId === report.implementerId) {
+                failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `T3 protected obligation "${judgment.obligationId}" requires a reviewer independent of the implementer` });
+                continue;
+              }
             }
           }
           const judgmentDigest = `sha256:${createHash('sha256').update(JSON.stringify(judgment)).digest('hex')}`;

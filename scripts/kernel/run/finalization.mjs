@@ -129,9 +129,23 @@ export const finalizeRun = async ({
   // A Git closeout that was requested once stays requested across finalization
   // retries; otherwise omitting it on the next report would silently turn a
   // failed closeout into a clean completion (P0-7).
+  //
+  // Restoring the request alone is not enough: without the selected paths the
+  // retry stages nothing and the closeout reports `skipped`, and without the
+  // SHA of a commit that was already created a failed push is never retried.
+  // Both are recovered here so a retry resumes where the failure happened.
   const priorReceipt = store.getFinalizationReceipt(runId)?.receiptJson;
-  const effectiveCloseoutRequest = gitCloseoutRequest || priorReceipt?.gitCloseoutRequest || null;
-  const normalizedChangeSet = normalizeChangedContract({ changedPaths, changedFileCount });
+  const priorGitReceipt = store.getGitCloseoutReceipt(runId);
+  const normalizedChangeSet = normalizeChangedContract({
+    changedPaths: changedPaths.length > 0 ? changedPaths : (priorReceipt?.changedPaths || []),
+    changedFileCount,
+  });
+
+  const requestedCloseout = gitCloseoutRequest || priorReceipt?.gitCloseoutRequest || null;
+  const unfinishedCommitSha = priorGitReceipt && priorGitReceipt.status !== 'completed' ? priorGitReceipt.commitSha : null;
+  const effectiveCloseoutRequest = requestedCloseout && unfinishedCommitSha
+    ? { ...requestedCloseout, existingCommitSha: requestedCloseout.existingCommitSha || unfinishedCommitSha }
+    : requestedCloseout;
 
   for (const approval of Array.isArray(approvals) ? approvals : []) {
     if (approval?.candidateId && approval.approvedBy && approval.approvalReceipt) {
@@ -283,8 +297,12 @@ export const finalizeRun = async ({
   }
 
   // Step 6: finalization receipt. A failure in either step keeps the run in
-  // `partial`, which is what stops it being reported as done.
-  const finalizationStatus = (knowledgeStatus === 'failed' || gitCloseoutStatus === 'failed' || commitReceipt?.projectionStatus === 'failed')
+  // `partial`, which is what stops it being reported as done. A closeout that
+  // was *requested* must actually complete: anything else — failed, skipped
+  // because nothing was staged, parity mismatch — leaves work the caller asked
+  // for unfinished, so it is partial rather than done.
+  const requestedCloseoutUnfinished = Boolean(effectiveCloseoutRequest?.requested) && gitCloseoutStatus !== 'completed';
+  const finalizationStatus = (knowledgeStatus === 'failed' || gitCloseoutStatus === 'failed' || requestedCloseoutUnfinished || commitReceipt?.projectionStatus === 'failed')
     ? 'partial'
     : 'completed';
 
@@ -300,6 +318,7 @@ export const finalizeRun = async ({
     completionResult: completionEval,
     reviewResult,
     gitCloseoutRequest: effectiveCloseoutRequest,
+    changedPaths: normalizedChangeSet.changedPaths,
     knowledgeCommitReceipt: commitReceipt,
     knowledgeCommitError,
     gitCloseoutReceipt: gitReceipt,

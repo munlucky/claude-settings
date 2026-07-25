@@ -166,6 +166,72 @@ const TRAPS = {
     return { ...result, blockedForPolicy: result.status === 'blocked' && result.blockedReason === 'network-policy' };
   },
 
+  // --- Bypasses found by review of the first remediation ------------------
+
+  // An evidence plan naming a command that proves nothing. The plan's own
+  // commands are subject to the same classification check as policy
+  // obligations, so a no-op cannot become hard evidence (F1).
+  async evidence_plan_names_noop(cp, projectRoot) {
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'x',
+      taskContract: { acceptance: [{ acceptance: 'works', evidencePlan: { class: 'hard', method: 'unit-test', commandRefs: ['noop'] } }] },
+    });
+    await mutate(projectRoot, 1);
+    const run = await cp.getRun('sen');
+    const planned = run.requiredObligations.find((id) => id.startsWith('acceptance-')) || 'default';
+    await cp.report('sen', {
+      summary: 'claiming coverage',
+      verifications: [{ obligationId: planned, commandRef: 'noop', acceptanceCoverage: ['works'] }],
+    });
+    return cp.finalizeRun('sen');
+  },
+
+  // A later, shorter contract must not overwrite an earlier acceptance
+  // criterion through its positional id (F2).
+  async contract_revision_shrinks_acceptance(cp, projectRoot, { runtimeHome }) {
+    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['A must hold', 'B must hold'] } });
+    await cp.ensureRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['C must hold'] } });
+    const run = await cp.getRun('sen');
+    const dropped = !run.acceptanceCriteria.includes('A must hold');
+    await mutate(projectRoot, 1);
+    // Cover only what the shrunken contract would have required.
+    const report = await cp.report('sen', {
+      summary: 'fix',
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['C must hold'] }],
+    });
+    return { ...report, acceptanceDropped: dropped };
+  },
+
+  // A protected T3 judgment submitted without an implementer identity must not
+  // skip the independence check (F5).
+  async judgment_without_implementer(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { riskTier: 'T3' } });
+    await mutate(projectRoot, 1);
+    await cp.report('sen', {
+      summary: 'self-reviewed',
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok' }, { obligationId: 'static-analysis', commandRef: 'lint' }],
+      judgments: [{ obligationId: 'security-review', verdict: 'pass', reason: 'ok', reviewerId: 'me', rationale: 'looks fine' }],
+    });
+    return cp.finalizeRun('sen');
+  },
+
+  // A finalization retry must not turn an unfinished Git closeout into a clean
+  // completion by losing the selected paths (F4).
+  async closeout_retry_loses_paths(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'] } });
+    await mutate(projectRoot, 1);
+    await cp.report('sen', {
+      summary: 'fix',
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+      gitCloseoutRequest: { requested: true, mode: 'commit', message: 'sentinel' },
+    });
+    const retried = await cp.report('sen', { summary: 'retry' });
+    const nextPayload = await cp.next('sen');
+    return { ...retried, doneClaimed: retried.status === 'completed' || nextPayload.action?.type === 'done' };
+  },
+
   // Positive controls ------------------------------------------------------
 
   async clean_hard_evidence(cp, projectRoot) {
@@ -261,6 +327,7 @@ const isAccepted = (result) => {
   // Explicit trap flags win: a trap can assert something stronger than the
   // completion decision (e.g. "did not claim done", "was not lease-blocked").
   if (result.doneClaimed !== undefined) return result.doneClaimed === true;
+  if (result.acceptanceDropped !== undefined) return result.acceptanceDropped === true || result.status === 'completed';
   if (result.blockedForPolicy !== undefined) return result.blockedForPolicy !== true;
   if (result.leaseBlocked !== undefined) return result.leaseBlocked !== true && result.status === 'completed';
   if (result.nonNodeCommandBound !== undefined) return result.nonNodeCommandBound === true && result.status === 'completed';
@@ -282,6 +349,7 @@ export const runSentinelEvaluation = async ({ corpus, seed = 0 } = {}) => {
     const projectRoot = await makeProject({
       'test:ok': 'node -e "process.exit(0)"',
       'test:fail': 'node -e "process.exit(1)"',
+      lint: 'node -e "process.exit(0)"',
       noop: 'node -e "process.exit(0)"',
     });
     const cp = await createKernelControlPlane({ runtimeHome, projectRoot });
@@ -301,7 +369,7 @@ export const runSentinelEvaluation = async ({ corpus, seed = 0 } = {}) => {
 
   return {
     taskSetRevision: corpus.taskSetRevision,
-    kernelRevision: 'kernel-e2e-remediation-2026-07-25',
+    kernelRevision: 'kernel-e2e-remediation-2026-07-25b',
     seed,
     caseCount: corpus.cases.length,
     falseCompletions,

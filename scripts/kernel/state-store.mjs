@@ -13,6 +13,19 @@ const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
 
 export const kernelDbPath = (runtimeHome = resolveKernelRuntimeHome()) => path.join(runtimeHome, 'state', 'runtime-state.sqlite');
 
+// A lease whose owning process has exited cannot be a live conflict; this is
+// what lets consecutive CLI invocations of one session proceed while genuinely
+// concurrent runners are still detected.
+const isProcessAlive = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+};
+
 const sourceIdentityRegex = /^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64}|[a-zA-Z0-9_.:/-]{1,128})$/i;
 const sha256Regex = /^sha256:[a-f0-9]{64}$/i;
 
@@ -267,9 +280,11 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('run_obligations', 'acceptance_ids', "TEXT DEFAULT '[]'");
   addCol('run_obligations', 'protected', 'INTEGER DEFAULT 0');
   addCol('run_obligations', 'contract_revision', 'INTEGER DEFAULT 1');
+  addCol('run_obligations', 'rejected_command_refs', "TEXT DEFAULT '[]'");
   addCol('verifications', 'evidence_class', "TEXT DEFAULT 'attested'");
   addCol('verifications', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('leases', 'fencing_token', 'INTEGER DEFAULT 0');
+  addCol('leases', 'owner_pid', 'INTEGER');
 
   try { db.exec(`ALTER TABLE runs ADD COLUMN source_identity TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN mutation_revision INTEGER DEFAULT 0;`); } catch {}
@@ -387,12 +402,13 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     declareRunObligations(runId, obligations = []) {
       for (const obligation of obligations) {
         db.prepare(`
-          INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, acceptance_ids, protected, contract_revision, created_at, updated_at)
-          VALUES(?, ?, ?, ?, 'required', ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO run_obligations(run_id, obligation_id, source_type, source_ref, status, evidence_class, verification_method, allowed_command_refs, rejected_command_refs, acceptance_ids, protected, contract_revision, created_at, updated_at)
+          VALUES(?, ?, ?, ?, 'required', ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(run_id, obligation_id) DO UPDATE SET
             evidence_class=excluded.evidence_class,
             verification_method=excluded.verification_method,
             allowed_command_refs=excluded.allowed_command_refs,
+            rejected_command_refs=excluded.rejected_command_refs,
             acceptance_ids=excluded.acceptance_ids,
             protected=excluded.protected,
             contract_revision=excluded.contract_revision,
@@ -405,6 +421,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           obligation.evidenceClass || 'hard',
           obligation.verificationMethod || null,
           JSON.stringify(obligation.allowedCommandRefs || []),
+          JSON.stringify(obligation.rejectedCommandRefs || []),
           JSON.stringify(obligation.acceptanceIds || []),
           obligation.protected ? 1 : 0,
           Number(obligation.contractRevision) || 1,
@@ -655,9 +672,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     },
 
     getRunObligations(runId) {
-      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, evidence_class as evidenceClass, verification_method as verificationMethod, allowed_command_refs as allowedCommandRefs, acceptance_ids as acceptanceIds, protected, contract_revision as contractRevision, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId).map((row) => ({
+      return db.prepare(`SELECT run_id as runId, obligation_id as obligationId, source_type as sourceType, source_ref as sourceRef, status, evidence_class as evidenceClass, verification_method as verificationMethod, allowed_command_refs as allowedCommandRefs, rejected_command_refs as rejectedCommandRefs, acceptance_ids as acceptanceIds, protected, contract_revision as contractRevision, created_at as createdAt, updated_at as updatedAt FROM run_obligations WHERE run_id=?`).all(runId).map((row) => ({
         ...row,
         allowedCommandRefs: safeJsonParse(row.allowedCommandRefs, []),
+        rejectedCommandRefs: safeJsonParse(row.rejectedCommandRefs, []),
         acceptanceIds: safeJsonParse(row.acceptanceIds, []),
         protected: Boolean(row.protected),
       }));
@@ -1036,16 +1054,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return db.prepare(`SELECT id, run_id as runId, obligation_id as obligationId, approved_by as approvedBy, reason, approved_at as approvedAt, approval_receipt as approvalReceipt, acceptance_coverage as acceptanceCoverage FROM waivers WHERE run_id=? ORDER BY id ASC`).all(runId).map((row) => ({ ...row, acceptanceCoverage: safeJsonParse(row.acceptanceCoverage) }));
     },
 
-    recordLease(runId, { holder, expiresAt, fencingToken }) {
+    recordLease(runId, { holder, expiresAt, fencingToken, ownerPid = process.pid }) {
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
-      db.prepare(`INSERT INTO leases(run_id, holder, acquired_at, expires_at, fencing_token) VALUES(?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET holder=excluded.holder, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at, fencing_token=excluded.fencing_token`)
-        .run(runId, holder, now(), expiresAt, Number(fencingToken) || 1);
+      db.prepare(`INSERT INTO leases(run_id, holder, acquired_at, expires_at, fencing_token, owner_pid) VALUES(?, ?, ?, ?, ?, ?) ON CONFLICT(run_id) DO UPDATE SET holder=excluded.holder, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at, fencing_token=excluded.fencing_token, owner_pid=excluded.owner_pid`)
+        .run(runId, holder, now(), expiresAt, Number(fencingToken) || 1, Number(ownerPid) || null);
       return this.getLease(runId);
     },
 
     getLease(runId) {
-      const row = db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt, fencing_token as fencingToken FROM leases WHERE run_id=?`).get(runId);
-      return row ? { ...row, fencingToken: Number(row.fencingToken || 0) } : null;
+      const row = db.prepare(`SELECT run_id as runId, holder, acquired_at as acquiredAt, expires_at as expiresAt, fencing_token as fencingToken, owner_pid as ownerPid FROM leases WHERE run_id=?`).get(runId);
+      return row ? { ...row, fencingToken: Number(row.fencingToken || 0), ownerPid: row.ownerPid ? Number(row.ownerPid) : null } : null;
     },
 
     // Detects a still-valid lease held by a different runner, so a resumed
@@ -1056,7 +1074,15 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     acquireLease(runId, { holder, ttlMs = 15 * 60 * 1000 } = {}) {
       const existing = this.getLease(runId);
       const nowMs = Date.now();
-      if (existing && existing.holder !== holder && existing.expiresAt && Date.parse(existing.expiresAt) > nowMs) {
+      const live = Boolean(existing?.expiresAt && Date.parse(existing.expiresAt) > nowMs);
+      if (existing && existing.holder !== holder && live) {
+        return { acquired: false, lease: existing, conflict: true };
+      }
+      // Two sessions in the same project share the fallback holder when the
+      // host exports no session id. Matching holders are therefore not enough
+      // to prove same-owner: a live lease whose owning process is still running
+      // and is not us belongs to a genuinely concurrent runner.
+      if (existing && existing.holder === holder && live && existing.ownerPid && existing.ownerPid !== process.pid && isProcessAlive(existing.ownerPid)) {
         return { acquired: false, lease: existing, conflict: true };
       }
       const lease = this.recordLease(runId, {

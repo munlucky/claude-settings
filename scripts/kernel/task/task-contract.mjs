@@ -162,23 +162,50 @@ export const contractBriefing = (contract) => ({
   risks: contract.risks,
 });
 
+const nextAcceptanceId = (items) => {
+  const used = new Set(items.map((item) => item.id));
+  let index = items.length + 1;
+  while (used.has(`AC-${index}`)) index += 1;
+  return `AC-${index}`;
+};
+
+// Acceptance is merged by STATEMENT, never by id. Plain-string acceptance is
+// numbered positionally, so `AC-1` means "the first criterion of whichever list
+// was submitted" — merging on it would let a later, shorter list overwrite an
+// earlier criterion in place (["A","B"] revised with ["C"] becoming ["C","B"]),
+// silently dropping A and re-pointing A's existing evidence at C.
+//
+// A statement that already exists is refined in place (its plan may be filled
+// in); a statement that does not is appended under a fresh id. Rewording a
+// criterion therefore adds one rather than replacing one, which is the
+// conservative direction: a revision can never shrink the completion gate.
+const mergeAcceptance = (previous = [], next = []) => {
+  const merged = previous.map((item) => ({ ...item }));
+  const indexByStatement = new Map(merged.map((item, index) => [item.statement, index]));
+  for (const item of next) {
+    const existingIndex = indexByStatement.get(item.statement);
+    if (existingIndex !== undefined) {
+      const existing = merged[existingIndex];
+      merged[existingIndex] = { ...existing, evidencePlan: item.evidencePlan || existing.evidencePlan };
+      continue;
+    }
+    const appended = { ...item, id: nextAcceptanceId(merged) };
+    indexByStatement.set(appended.statement, merged.length);
+    merged.push(appended);
+  }
+  return merged;
+};
+
 // Within a run a contract may only be REFINED, never weakened — the same rule
 // route and tier already follow. Acceptance, constraints, non-goals, risks and
 // risk flags are unioned, so a later turn cannot quietly drop a criterion the
 // completion gate is meant to enforce. Dropping scope requires a new run.
 export const mergeContractRevision = (previous, next) => {
   if (!previous) return next;
-  const byId = new Map(previous.acceptance.map((item) => [item.id, item]));
-  for (const item of next.acceptance) {
-    const existing = byId.get(item.id);
-    byId.set(item.id, existing
-      ? { ...existing, statement: item.statement || existing.statement, evidencePlan: item.evidencePlan || existing.evidencePlan }
-      : item);
-  }
   const union = (left = [], right = []) => [...new Set([...left, ...right])];
   const merged = {
     ...next,
-    acceptance: [...byId.values()],
+    acceptance: mergeAcceptance(previous.acceptance, next.acceptance),
     constraints: union(previous.constraints, next.constraints),
     nonGoals: union(previous.nonGoals, next.nonGoals),
     risks: union(previous.risks, next.risks),

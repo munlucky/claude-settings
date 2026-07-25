@@ -2,6 +2,22 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-25 (2)
+- Scope: Kernel — automated review findings on `7dddf196` (5 x P1). All confirmed and fixed.
+- Why these mattered: three of the five re-opened a defence the previous entry reported as closed. The common cause was that the new tests exercised success paths and one convenient failure path, not the adversarial variants.
+- Changed areas:
+  - F1 (evidence plan bypassed command classification): `compileRunObligations` copied an evidence plan's `commandRefs` verbatim, so `{ class: 'hard', method: 'unit-test', commandRefs: ['noop'] }` bound a no-op script as hard evidence — the exact bypass P0-2 exists to prevent, reached through the P0-5 path. Plan commands are now filtered against the catalog: a ref the project does not declare, or whose class cannot prove the plan's method family, is rejected and named in the error. Matching is by family (test vs analysis) rather than exact class, because name-based classification cannot tell `test:auth` (integration) from a unit test and an exact match would reject honest plans.
+  - F2 (acceptance merge was not monotonic): `mergeContractRevision` merged by acceptance id, but plain-string acceptance is numbered positionally, so revising `['A','B']` with `['C']` produced `['C','B']` — dropping A and re-pointing A's existing evidence at C. Merging is now by statement: an existing statement is refined in place, a new one is appended under a fresh id. The previous test passed only because it revised with a prefix of the original list, so the positional ids coincidentally aligned.
+  - F3 (fallback lease holder collapsed concurrent sessions): with no `MOON_RELAY_KERNEL_SESSION_ID`, every process in a project shared one holder and could take over a live lease. Leases now record `owner_pid`; a live lease whose owning process is still running and is not us is a conflict even under a matching holder, while a holder whose process has exited stays acquirable so consecutive CLI invocations are not blocked.
+  - F4 (finalization retry lost Git closeout state): only `gitCloseoutRequest` was restored, so a payload-less retry ran the closeout with no selected paths and no record of an already-created commit. The closeout then reported `skipped`, which finalization scored as `completed` — a commit-and-push whose push failed could be declared done. `changedPaths` are persisted in the receipt and restored, an unfinished commit SHA is recovered from the Git receipt, and a closeout that was *requested* must reach `completed` or finalization stays `partial`.
+  - F5 (T3 independence check was optional): the comparison ran only when `implementerId` was present, so omitting the field skipped the gate. Both identities are now mandatory for a protected T3 judgment.
+- Verification evidence:
+  - `tests/kernel-obligation-binding.test.mjs` 21 cases (was 16) — one per finding plus a control that an honest cross-family evidence plan still binds.
+  - Sentinel corpus 17 -> 21 cases (`kernel-sentinel.v3`): `evidence_plan_names_noop`, `contract_revision_shrinks_acceptance`, `judgment_without_implementer`, `closeout_retry_loses_paths`. 0 false completions, 0 missed accepts.
+  - `npm run test:kernel` 237/237 pass.
+- Commit boundary:
+  - Source, tests, sentinel corpus, and QA ledger only.
+
 - Date: 2026-07-25
 - Scope: Kernel E2E workflow — external review remediation (`REQUEST_CHANGES` on merge commit `8a16200e`). Closes all 7 P0 blockers and P1-1..P1-6.
 - Changed areas:

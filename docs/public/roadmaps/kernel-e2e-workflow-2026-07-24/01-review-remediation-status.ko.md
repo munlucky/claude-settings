@@ -2,7 +2,7 @@
 
 **문서 상태:** Remediation Report
 **기준 리뷰:** `REQUEST_CHANGES` (머지 커밋 `8a16200e` 대상)
-**기준일:** 2026-07-25
+**기준일:** 2026-07-25 (자동 리뷰 대응 반영)
 **전략 baseline:** `00-final-strategy.ko.md`
 **검증 기록:** 저장소 루트 `QA_REPORT.md` (2026-07-25 항목)
 
@@ -113,6 +113,42 @@ holder를 PID 기반에서 **host session 기반**으로 바꿨다(`MOON_RELAY_K
 - **false completion 0, missed accept 0.**
 - `npm run test:kernel` 232/232.
 - `npm test` 전체 직렬 게이트 811/812. 실패 1건(`browser flow missing runner ...`)은 기존 테스트 격리 flake다. 단독 실행 시 변경 전후 모두 통과하고, 차이는 `.moonshot-relay/browser-artifacts/.../snapshot.json`의 mtime 하나뿐이며 이 경로는 `node --test`가 동시 실행하는 다른 9개 테스트 파일이 쓰고 커널 코드는 건드리지 않는다.
+
+---
+
+# 4-1. 자동 리뷰 대응 (커밋 `7dddf196`)
+
+1차 대응 직후 자동 리뷰가 P1 5건을 제기했고 **전부 유효로 확인되어 수정했다.** 그중 3건은 4장에서 "닫았다"고 보고한 방어를 각각 다시 여는 것이었다.
+
+| | 내용 | 성격 |
+| --- | --- | --- |
+| F1 | evidence plan의 `commandRefs`가 catalog 검증 없이 복사되어, `{class:'hard', method:'unit-test', commandRefs:['noop']}`가 no-op을 hard evidence로 결합 | **P0-2 방어를 P0-5 경로가 무력화** |
+| F2 | `mergeContractRevision`이 id 기준 병합이라 `['A','B']` → `['C']`가 `['C','B']`가 되어 A 소멸 + A의 증거가 C의 커버리지로 오귀속 | **P0-4에서 고쳤다고 보고한 축소 결함이 미해결** |
+| F3 | fallback holder가 같으면 동시 세션이 서로의 살아있는 lease를 탈취 | P0-6 트레이드오프의 부작용 |
+| F4 | finalization 재시도가 `changedPaths`와 기존 commit SHA를 복원하지 않아, closeout이 `skipped`가 되고 finalization이 `completed`로 기록 | **P0-7이 막으려던 거짓 완료** |
+| F5 | T3 독립성 검사가 `implementerId` 존재 시에만 동작 → 필드 누락으로 우회 | 게이트가 옵션 |
+
+## 원인
+
+공통 원인은 **테스트가 성공 경로와 편리한 실패 경로만 검증**한 것이다. 구체적으로,
+
+- F2의 기존 테스트는 `['A','B']` → `['A']`라는 **접두사 케이스**만 봐서 위치 id가 우연히 맞아 통과했다
+- F4의 기존 테스트는 실패 사유가 지속형(`approvalReceipt` 누락)이라 재시도도 같은 이유로 실패했다. **일시적 실패를 검증하지 않았다**
+
+## 수정
+
+- **F1** — plan의 command ref를 catalog와 method 계열에 대해 필터링한다. 미선언 ref와 계열 불일치 ref는 거부하고 오류 메시지에 이름을 명시한다. 계열 매칭은 정확 클래스가 아니라 **test / analysis 두 계열**로 한다. 이름 기반 분류는 `test:auth`(통합)와 단위 테스트를 구분할 수 없어 정확 매칭은 정직한 plan을 오탐하기 때문이다
+- **F2** — 병합 키를 id에서 **statement**로 바꿨다. 기존 문장은 제자리 정제, 새 문장은 새 id로 추가. 문구 수정은 교체가 아니라 추가가 되며, 이는 게이트를 줄일 수 없는 보수적 방향이다
+- **F3** — lease에 `owner_pid`를 기록한다. holder가 같아도 **살아있는 다른 PID**가 보유 중이면 충돌로 처리하고, 프로세스가 종료된 holder는 획득 가능하게 두어 순차 CLI 호출은 막히지 않는다
+- **F4** — `changedPaths`를 receipt에 영속화해 재시도에서 복원하고, 완료되지 않은 commit SHA는 Git receipt에서 회수한다. **요청된 closeout은 `completed`에 도달해야만** finalization이 완료된다
+- **F5** — T3 protected judgment는 두 신원 모두 필수
+
+## 검증
+
+- `tests/kernel-obligation-binding.test.mjs` 16 → **21 케이스**
+- Sentinel 17 → **21 케이스** (`kernel-sentinel.v3`) — `evidence_plan_names_noop`, `contract_revision_shrinks_acceptance`, `judgment_without_implementer`, `closeout_retry_loses_paths`
+- false completion 0, missed accept 0
+- `npm run test:kernel` **237/237**
 
 ---
 

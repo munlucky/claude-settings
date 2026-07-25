@@ -28,6 +28,39 @@ const DEFAULT_OBLIGATION_POLICY = Object.freeze({
   commandClasses: ['unit-test', 'integration-test', 'e2e', 'static-analysis', 'build', 'script'],
 });
 
+// An evidence plan names how a criterion will be proven. Its command refs are
+// therefore subject to the SAME classification check as a policy obligation —
+// otherwise a plan saying `{ class: 'hard', method: 'unit-test',
+// commandRefs: ['noop'] }` would bind a no-op script as hard evidence and walk
+// straight around the binding that P0-2 exists to enforce.
+// Matching is by family, not by exact class. Classification is name-based, so
+// a project's `test:auth` script reads as `unit-test` even when it is really
+// the integration test — demanding an exact class match would reject honest
+// plans and push callers to mislabel their method. Families are coarse enough
+// to avoid that while still refusing a plainly wrong binding (a linter standing
+// in for a browser scenario) and, above all, a `script` that proves nothing.
+const TEST_CLASSES = Object.freeze(['unit-test', 'integration-test', 'e2e']);
+const ANALYSIS_CLASSES = Object.freeze(['static-analysis', 'build']);
+const PROOF_COMMAND_CLASSES = Object.freeze([...TEST_CLASSES, ...ANALYSIS_CLASSES]);
+
+const METHOD_FAMILIES = Object.freeze({
+  'unit-test': TEST_CLASSES,
+  unit: TEST_CLASSES,
+  'integration-test': TEST_CLASSES,
+  integration: TEST_CLASSES,
+  e2e: TEST_CLASSES,
+  'browser-scenario': TEST_CLASSES,
+  scenario: TEST_CLASSES,
+  'static-analysis': ANALYSIS_CLASSES,
+  lint: ANALYSIS_CLASSES,
+  typecheck: ANALYSIS_CLASSES,
+  build: ANALYSIS_CLASSES,
+});
+
+// With no declared method, any command that proves something is acceptable —
+// but never a plain `script`, which carries no semantic claim at all.
+export const classesForEvidenceMethod = (method) => METHOD_FAMILIES[String(method || '').toLowerCase()] || PROOF_COMMAND_CLASSES;
+
 export const obligationPolicyFor = (obligationId) => {
   const policy = KERNEL_POLICY.obligations?.[obligationId];
   if (!policy) return DEFAULT_OBLIGATION_POLICY;
@@ -62,11 +95,31 @@ export const compileRunObligations = ({
   const declare = (obligationId, { sourceType, sourceRef = null, acceptanceIds = [], commandRefs = null, evidenceClass = null, method = null }) => {
     const policy = obligationPolicyFor(obligationId);
     const resolvedClass = evidenceClass || policy.evidenceClass;
-    const allowed = resolvedClass === 'judgment'
-      ? []
-      : (commandRefs && commandRefs.length > 0
-        ? commandRefs
-        : commandRefsForClasses({ projectRoot, classes: policy.commandClasses, commands: projectCommands }));
+
+    // Command refs requested by an evidence plan are filtered against the
+    // catalog and the classes the plan's own method implies. A ref that the
+    // project does not declare, or that carries no matching semantic class, is
+    // rejected rather than trusted.
+    const rejectedCommandRefs = [];
+    let allowed;
+    if (resolvedClass === 'judgment') {
+      allowed = [];
+    } else if (commandRefs && commandRefs.length > 0) {
+      const permitted = new Set(classesForEvidenceMethod(method));
+      allowed = [];
+      for (const ref of commandRefs) {
+        const command = projectCommands.find((entry) => entry.commandRef === ref);
+        if (!command) {
+          rejectedCommandRefs.push({ commandRef: ref, reason: 'not-declared-by-project' });
+        } else if (!permitted.has(command.commandClass)) {
+          rejectedCommandRefs.push({ commandRef: ref, reason: `class-${command.commandClass}-does-not-prove-${method || 'this-obligation'}` });
+        } else {
+          allowed.push(ref);
+        }
+      }
+    } else {
+      allowed = commandRefsForClasses({ projectRoot, classes: policy.commandClasses, commands: projectCommands });
+    }
 
     const existing = compiled.get(obligationId);
     if (existing) {
@@ -78,6 +131,7 @@ export const compileRunObligations = ({
       evidenceClass: resolvedClass,
       verificationMethod: resolvedClass === 'judgment' ? (method || 'structured-judgment') : (method || 'kernel-executed-command'),
       allowedCommandRefs: [...new Set(allowed)],
+      rejectedCommandRefs,
       acceptanceIds: [...new Set(acceptanceIds)],
       protected: isProtectedObligation(obligationId),
       sourceType,
@@ -132,10 +186,13 @@ export const assertCommandBinding = (obligation, commandRef) => {
   }
   if (!commandRef) return;
   if (obligation.allowedCommandRefs.length === 0) {
+    const rejected = (obligation.rejectedCommandRefs || []).map((entry) => `${entry.commandRef} (${entry.reason})`);
     throw new ObligationBindingError(
       'OBLIGATION_UNSATISFIABLE',
-      `Obligation "${obligation.obligationId}" has no project command that can prove it; declare one in the project manifest or report an unsupported-verification blocker`,
-      { obligationId: obligation.obligationId },
+      rejected.length > 0
+        ? `Obligation "${obligation.obligationId}" has no usable command: the evidence plan named ${rejected.join(', ')}. Name a project command that actually performs this kind of verification, or report an unsupported-verification blocker`
+        : `Obligation "${obligation.obligationId}" has no project command that can prove it; declare one in the project manifest or report an unsupported-verification blocker`,
+      { obligationId: obligation.obligationId, rejectedCommandRefs: obligation.rejectedCommandRefs || [] },
     );
   }
   if (!obligation.allowedCommandRefs.includes(commandRef)) {
