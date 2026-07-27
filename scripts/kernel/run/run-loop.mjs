@@ -173,12 +173,21 @@ export const normalizeReport = (payload = {}) => {
       throw new Error('each requested verification requires a commandRef');
     }
   }
-  const judgments = Array.isArray(payload.judgments) ? payload.judgments : [];
-  for (const judgment of judgments) {
+  // A judgment carries the Review Receipt it rests on, not a reviewer name the
+  // report invented; protected and T3 judgments are refused without one.
+  const judgments = (Array.isArray(payload.judgments) ? payload.judgments : []).map((judgment) => {
     if (!judgment || typeof judgment !== 'object' || !judgment.obligationId || !['pass', 'fail'].includes(judgment.verdict)) {
       throw new Error('each judgment requires an obligationId and a pass/fail verdict');
     }
-  }
+    if (judgment.reviewReceiptId !== undefined && judgment.reviewReceiptId !== null && !/^review-receipt-[a-f0-9]{8,64}$/.test(String(judgment.reviewReceiptId))) {
+      throw new Error('judgment.reviewReceiptId must be a review-receipt-<hex> identifier recorded by the Kernel');
+    }
+    return {
+      ...judgment,
+      reviewReceiptId: judgment.reviewReceiptId ? String(judgment.reviewReceiptId) : null,
+      acceptanceCoverage: Array.isArray(judgment.acceptanceCoverage) ? judgment.acceptanceCoverage.map(String) : undefined,
+    };
+  });
   return {
     summary: typeof payload.summary === 'string' ? payload.summary : '',
     implementerId: payload.implementerId ? String(payload.implementerId) : null,

@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
+import { activeGate } from './helpers/active-gate.mjs';
 
 const root = process.cwd();
 const readRoot = (...segments) => readFile(path.join(root, ...segments), 'utf8');
@@ -114,7 +115,7 @@ test('required check names are stable and mapped to workflow jobs', async () => 
 test('active npm test includes CI security contract', async () => {
   const packageJson = JSON.parse(await readRoot('package.json'));
 
-  assert.match(packageJson.scripts.test, /tests\/github-ci-security-contract\.test\.mjs/);
+  assert.match(activeGate(packageJson), /tests\/github-ci-security-contract\.test\.mjs/);
 });
 
 test('docs name required branch protection checks and review roots', async () => {

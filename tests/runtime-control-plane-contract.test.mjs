@@ -9,6 +9,7 @@ import { after, test } from 'node:test';
 import Database from 'better-sqlite3';
 
 import { resolveDbPath } from '../scripts/lib/runtime-state-db-path.mjs';
+import { activeGate } from './helpers/active-gate.mjs';
 
 const root = process.cwd();
 const tempRoots = [];
@@ -292,5 +293,5 @@ test('materialized runtime-state support has native sqlite authority when runtim
 
 test('runtime control-plane contract is included in the active npm gate', async () => {
   const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-  assert.match(manifest.scripts.test, /tests\/runtime-control-plane-contract\.test\.mjs/);
+  assert.match(activeGate(manifest), /tests\/runtime-control-plane-contract\.test\.mjs/);
 });

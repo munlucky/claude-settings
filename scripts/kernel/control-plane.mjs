@@ -33,6 +33,9 @@ import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } f
 import { planWalkingSkeleton } from './task/greenfield-bootstrap.mjs';
 import { buildImpactAnalysis } from './task/migration-workflow.mjs';
 import { resolveReviewPlan, normalizeReviewVerdict, assertIndependentReview, assertIndependentReviewSession, classifyReviewFindings } from './proof/review-pipeline.mjs';
+import { digestOfPaths, evaluateReviewReceipt, reviewEvidenceRef } from './proof/review-receipt.mjs';
+import { isProtectedObligation } from './proof/protected-obligations.mjs';
+import { hashSessionId } from './run/model-route-contract.mjs';
 import { scanRepositoryEvidence } from './task/evidence-scan.mjs';
 import { captureBaselineProof } from './proof/baseline-proof.mjs';
 import { classifyFailures } from './proof/failure-classify.mjs';
@@ -111,6 +114,36 @@ const ACTION_FOR_MODEL_ACTION = Object.freeze({
 // The route a run follows is fixed at start (P1-1) so SHAPE is never skipped
 // for contract/boundary/migration work just because PROVE is reachable sooner.
 const refreshedTier = (store, runId) => store.getRun(runId)?.proofTier;
+
+// What a review claims to have reviewed: the evidence state at review time.
+// Recording it in the receipt is what makes a review of an older evidence set
+// visible instead of silently reusable.
+const digestOfEvidence = (verifications = []) => `sha256:${createHash('sha256').update(JSON.stringify(
+  verifications.map((verification) => ({
+    obligationId: verification.obligationId,
+    status: verification.status,
+    evidenceDigest: verification.evidenceDigest || null,
+  })),
+)).digest('hex')}`;
+
+const FINDING_CLASS_RANK = Object.freeze({ critical: 3, important: 2, minor: 1 });
+
+const findingClassOf = (findings = []) => {
+  let highest = 'none';
+  for (const finding of findings) {
+    const severity = typeof finding === 'object' && finding ? finding.severity : 'minor';
+    if ((FINDING_CLASS_RANK[severity] || 1) > (FINDING_CLASS_RANK[highest] || 0)) highest = severity in FINDING_CLASS_RANK ? severity : 'minor';
+  }
+  return highest;
+};
+
+// K0: which judgments may not rest on caller-supplied reviewer strings.
+const reviewReceiptRequired = ({ obligationId, declared, proofTier, independentReviewRequired = false }) =>
+  Boolean(declared?.protected)
+  || isProtectedObligation(obligationId)
+  || obligationId === 'security-review'
+  || independentReviewRequired === true
+  || (proofTier === 'T3' && (declared?.evidenceClass || 'hard') === 'judgment');
 
 const buildRunRoute = (contract, riskSummary) => {
   if (contract.taskClass === 'analysis') return ['FRAME', 'CLOSE'];
@@ -539,37 +572,88 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     // Records a structured review verdict as a judgment obligation. At T3 the
     // verdict must come from a reviewer independent of the implementer.
-    async recordReview(runId, verdict = {}, { implementerId, reviewReceiptId = null } = {}) {
+    //
+    // K0: the receipt is written FIRST and the judgment verification references
+    // it, so every judgment the completion gate accepts has a lineage it can
+    // re-check later. A review the Host never routed is still recorded, but as
+    // `unrouted` — visible, and never sufficient for a protected or T3 judgment.
+    async recordReview(runId, verdict = {}, {
+      implementerId,
+      reviewReceiptId = null,
+      obligationId = null,
+      acceptanceCoverage = [],
+      changedPaths = [],
+      rationale = null,
+    } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       const normalized = normalizeReviewVerdict(verdict);
+      const implementationSession = store.getLatestImplementationSession(runId);
+      const usageReceipt = reviewReceiptId ? store.getModelUsageReceipt(reviewReceiptId, { runId }) : null;
+      const reviewDecision = usageReceipt ? store.getModelRouteDecision(usageReceipt.decisionId, { runId }) : null;
+
       if (run.proofTier === 'T3') {
         assertIndependentReview({ verdict: normalized, implementerId });
         // Once the Host is routing models, the reviewer string is no longer
         // enough: independence is checked against the session that implemented.
-        const implementationSession = store.getLatestImplementationSession(runId);
         if (implementationSession || reviewReceiptId) {
-          const reviewReceipt = reviewReceiptId ? store.getModelUsageReceipt(reviewReceiptId, { runId }) : null;
-          assertIndependentReviewSession({
-            reviewReceipt,
-            reviewDecision: reviewReceipt ? store.getModelRouteDecision(reviewReceipt.decisionId, { runId }) : null,
-            implementationSession,
-          });
+          assertIndependentReviewSession({ reviewReceipt: usageReceipt, reviewDecision, implementationSession });
         }
       }
-      const obligationId = `review-${normalized.stage}`;
+
+      const targetObligation = obligationId || `review-${normalized.stage}`;
+      const reviewReceipt = store.recordReviewReceipt(runId, {
+        runId,
+        obligationId: targetObligation,
+        reviewStage: normalized.stage,
+        verdict: normalized.verdict,
+        findingClass: findingClassOf(normalized.findings),
+        planRevision: Number(run.contractRevision || 1),
+        reviewer: usageReceipt
+          ? {
+            actorSessionId: usageReceipt.actorSessionId,
+            usageReceiptId: usageReceipt.receiptId,
+            routeDecisionId: usageReceipt.decisionId,
+            modelClass: reviewDecision?.modelClass || 'unrouted',
+            resolvedModel: usageReceipt.resolvedModel,
+            enforcementStatus: usageReceipt.enforcementStatus,
+          }
+          : {
+            actorSessionId: hashSessionId(normalized.reviewerId || `unrouted-reviewer:${runId}:${normalized.stage}`),
+            usageReceiptId: null,
+            routeDecisionId: null,
+            modelClass: 'unrouted',
+            resolvedModel: null,
+            enforcementStatus: 'unrouted',
+          },
+        implementer: {
+          actorSessionId: implementationSession?.actorSessionId || null,
+          usageReceiptId: implementationSession?.receiptId || null,
+        },
+        subject: {
+          workspaceIdentity: run.currentWorkspaceIdentity,
+          mutationRevision: run.mutationRevision,
+          changedPathsDigest: digestOfPaths(changedPaths),
+          evidenceDigest: digestOfEvidence(store.getVerifications(runId)),
+        },
+        acceptanceCoverage,
+        findings: normalized.findings,
+        rationale: rationale || `${normalized.stage} review verdict: ${normalized.verdict}`,
+      });
+
       const updated = await this.recordProof(runId, {
-        obligationId,
+        obligationId: targetObligation,
         status: normalized.verdict === 'pass' ? 'passed' : 'failed',
-        evidenceRef: `review://${runId}/${normalized.stage}`,
+        evidenceRef: reviewEvidenceRef(runId, reviewReceipt.receiptId),
         command: 'structured-review',
         exitCode: normalized.verdict === 'pass' ? 0 : 1,
-        evidenceDigest: `sha256:${createHash('sha256').update(JSON.stringify(normalized)).digest('hex')}`,
+        evidenceDigest: reviewReceipt.digest,
         evidenceClass: 'judgment',
+        acceptanceCoverage: reviewReceipt.acceptanceCoverage,
       });
       // The follow-up class is decided here, so an architecture defect cannot
       // be quietly handed back to the implementer as a local patch (§9.3).
-      return { review: normalized, run: updated, followUp: classifyReviewFindings(normalized.findings) };
+      return { review: normalized, reviewReceipt, run: updated, followUp: classifyReviewFindings(normalized.findings) };
     },
 
     // Within-run route/tier promotion only (§13.5). Demotion throws.
@@ -993,16 +1077,63 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
               }
             }
           }
-          const judgmentDigest = `sha256:${createHash('sha256').update(JSON.stringify(judgment)).digest('hex')}`;
+          let judgmentEvidenceRef = `judgment://${runId}/${judgment.obligationId}`;
+          let judgmentDigest = `sha256:${createHash('sha256').update(JSON.stringify(judgment)).digest('hex')}`;
+          let judgmentCoverage = judgment.acceptanceCoverage || (judgment.acceptanceMapping || []).map((mapping) => mapping.acceptance);
+
+          // K0: a protected or T3 judgment may not be self-asserted in the
+          // report. It must name a Review Receipt whose reviewer lineage the
+          // Kernel itself recorded, and that receipt must still describe the
+          // workspace and evidence state the run is in now.
+          const currentTier = refreshedTier(store, runId);
+          if (reviewReceiptRequired({
+            obligationId: judgment.obligationId,
+            declared: declaredJudgment,
+            proofTier: currentTier,
+            independentReviewRequired: judgment.independentReviewRequired === true,
+          })) {
+            if (!judgment.reviewReceiptId) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Obligation "${judgment.obligationId}" requires a reviewReceiptId: a review recorded by the Kernel from a routed reviewer session, not a reviewer identifier supplied in the report` });
+              continue;
+            }
+            const receipt = store.getReviewReceipt(judgment.reviewReceiptId, { runId });
+            if (!receipt) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${judgment.reviewReceiptId}" does not exist for this run` });
+              continue;
+            }
+            if (receipt.obligationId !== judgment.obligationId) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${receipt.receiptId}" reviewed "${receipt.obligationId}" and cannot satisfy "${judgment.obligationId}"` });
+              continue;
+            }
+            const lineage = evaluateReviewReceipt({
+              receipt,
+              run: store.getRun(runId),
+              requireIndependentSession: currentTier === 'T3',
+              requireFrontierClass: currentTier === 'T3',
+              requireTrustedEnforcement: true,
+            });
+            if (!lineage.usable) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${receipt.receiptId}" cannot prove "${judgment.obligationId}": ${lineage.reasons.join(', ')}` });
+              continue;
+            }
+            if (judgment.verdict === 'pass' && receipt.verdict !== 'pass') {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${receipt.receiptId}" recorded verdict "${receipt.verdict}" and cannot back a passing judgment` });
+              continue;
+            }
+            judgmentEvidenceRef = reviewEvidenceRef(runId, receipt.receiptId);
+            judgmentDigest = receipt.digest;
+            judgmentCoverage = [...new Set([...(judgmentCoverage || []), ...receipt.acceptanceCoverage])];
+          }
+
           await this.recordProof(runId, {
             obligationId: judgment.obligationId,
             status: judgment.verdict === 'pass' ? 'passed' : 'failed',
-            evidenceRef: `judgment://${runId}/${judgment.obligationId}`,
+            evidenceRef: judgmentEvidenceRef,
             command: 'structured-judgment',
             exitCode: judgment.verdict === 'pass' ? 0 : 1,
             evidenceDigest: judgmentDigest,
             evidenceClass: 'judgment',
-            acceptanceCoverage: judgment.acceptanceCoverage || (judgment.acceptanceMapping || []).map((mapping) => mapping.acceptance),
+            acceptanceCoverage: judgmentCoverage,
           });
           if (judgment.verdict !== 'pass') {
             failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: judgment.reason || 'structured judgment failed' });

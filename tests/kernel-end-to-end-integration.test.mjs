@@ -6,6 +6,7 @@ import path from 'node:path';
 import { computeKernelSourceIdentity, createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { routeSkill, resolveExplicitSkillInvocation } from '../scripts/skill-router.mjs';
 import { installKernel, uninstallKernel } from '../scripts/kernel/installer.mjs';
+import { hashSessionId } from '../scripts/kernel/run/model-route-contract.mjs';
 
 const validDigest = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
@@ -94,16 +95,35 @@ test('End-to-End Kernel Product Execution Flow', async () => {
     /security-review not satisfiable by attested command/,
   );
 
-  await cp.recordProof('e2e-run-1', {
-    obligationId: 'security-review',
-    status: 'passed',
-    evidenceRef: 'evidence://security/1',
-    command: 'structured-judgment',
-    exitCode: 0,
-    evidenceDigest: validDigest,
-    evidenceClass: 'judgment',
-    sourceIdentity,
+  // K0: nor by a judgment the report authored itself. The verdict must come
+  // from a routed, independent reviewer session and be recorded as a Review
+  // Receipt that the completion gate can re-check.
+  const implementDecision = await cp.decideModelRoute('e2e-run-1', { actionKind: 'implement', obligationId: 'unit-test' });
+  await cp.recordModelUsage('e2e-run-1', {
+    decisionId: implementDecision.decisionId,
+    runId: 'e2e-run-1',
+    hostSurface: 'claude',
+    actorSessionId: hashSessionId('e2e-implementer'),
+    resolvedModel: 'configured-model',
+    enforcementStatus: 'enforced',
+    resultStatus: 'completed',
   });
+  const reviewDecision = await cp.decideModelRoute('e2e-run-1', { actionKind: 'review_engineering', obligationId: 'security-review' });
+  const reviewUsage = await cp.recordModelUsage('e2e-run-1', {
+    decisionId: reviewDecision.decisionId,
+    runId: 'e2e-run-1',
+    hostSurface: 'claude',
+    actorSessionId: hashSessionId('e2e-reviewer'),
+    resolvedModel: 'configured-model',
+    enforcementStatus: 'enforced',
+    resultStatus: 'completed',
+  });
+  const review = await cp.recordReview(
+    'e2e-run-1',
+    { stage: 'engineering', verdict: 'pass', reviewerId: 'reviewer-2' },
+    { implementerId: 'implementer-1', reviewReceiptId: reviewUsage.receiptId, obligationId: 'security-review', rationale: 'no security boundary regression' },
+  );
+  assert.equal(review.reviewReceipt.reviewer.enforcementStatus, 'enforced');
 
   // 7. Finalize run
   const finRes = await cp.finalizeRun('e2e-run-1');

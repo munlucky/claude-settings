@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { activeGate } from './helpers/active-gate.mjs';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
@@ -567,8 +568,8 @@ test('browser flow missing runner uses temp verdict path and leaves repo state u
 
 test('active archive boundary scan has zero violations', async () => {
   const manifest = JSON.parse(await readFile(fromRoot('package.json'), 'utf8'));
-  const activeGate = manifest.scripts.test;
+  const gate = activeGate(manifest);
 
-  assert.doesNotMatch(activeGate, /legacy-archive-contract\.test\.mjs/);
-  assert.doesNotMatch(activeGate, /archive[\\/]/);
+  assert.doesNotMatch(gate, /legacy-archive-contract\.test\.mjs/);
+  assert.doesNotMatch(gate, /archive[\\/]/);
 });

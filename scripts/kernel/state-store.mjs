@@ -8,6 +8,7 @@ import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapp
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { assertCommandBinding } from './run/obligation-compiler.mjs';
 import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
+import { evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -288,6 +289,38 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       FOREIGN KEY(decision_id) REFERENCES model_route_decisions(decision_id),
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS review_receipts (
+      receipt_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      obligation_id TEXT NOT NULL,
+      review_stage TEXT NOT NULL,
+      verdict TEXT NOT NULL,
+      finding_class TEXT NOT NULL DEFAULT 'none',
+      plan_revision INTEGER NOT NULL DEFAULT 1,
+      reviewer_usage_receipt_id TEXT,
+      implementer_usage_receipt_id TEXT,
+      reviewer_session_id TEXT NOT NULL,
+      implementer_session_id TEXT,
+      route_decision_id TEXT,
+      model_class TEXT NOT NULL,
+      resolved_model TEXT,
+      enforcement_status TEXT NOT NULL,
+      workspace_identity TEXT NOT NULL,
+      mutation_revision INTEGER NOT NULL,
+      changed_paths_digest TEXT NOT NULL,
+      evidence_digest TEXT NOT NULL,
+      acceptance_coverage_json TEXT NOT NULL DEFAULT '[]',
+      findings_json TEXT NOT NULL DEFAULT '[]',
+      rationale TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_by_version TEXT,
+      migration_origin TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_review_receipts_run ON review_receipts(run_id);
+    CREATE INDEX IF NOT EXISTS idx_review_receipts_obligation ON review_receipts(run_id, obligation_id);
     CREATE TABLE IF NOT EXISTS run_obligations (
       run_id TEXT NOT NULL,
       obligation_id TEXT NOT NULL,
@@ -847,6 +880,47 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         .map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
     },
 
+    // Review receipts (K0). A judgment obligation is proven by a receipt whose
+    // reviewer lineage and reviewed subject are both persisted, so a later
+    // completion check can re-derive whether the review still holds.
+    recordReviewReceipt(runId, receipt) {
+      const normalized = normalizeReviewReceipt({ ...receipt, runId: receipt?.runId || runId });
+      if (normalized.runId !== runId) throw new Error(`review receipt runId ${normalized.runId} does not match run ${runId}`);
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`
+        INSERT INTO review_receipts(receipt_id, run_id, obligation_id, review_stage, verdict, finding_class, plan_revision, reviewer_usage_receipt_id, implementer_usage_receipt_id, reviewer_session_id, implementer_session_id, route_decision_id, model_class, resolved_model, enforcement_status, workspace_identity, mutation_revision, changed_paths_digest, evidence_digest, acceptance_coverage_json, findings_json, rationale, digest, receipt_json, created_by_version, migration_origin, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(receipt_id) DO NOTHING
+      `).run(
+        normalized.receiptId, runId, normalized.obligationId, normalized.reviewStage, normalized.verdict,
+        normalized.findingClass, normalized.planRevision,
+        normalized.reviewer.usageReceiptId, normalized.implementer.usageReceiptId,
+        normalized.reviewer.actorSessionId, normalized.implementer.actorSessionId,
+        normalized.reviewer.routeDecisionId, normalized.reviewer.modelClass, normalized.reviewer.resolvedModel,
+        normalized.reviewer.enforcementStatus,
+        normalized.subject.workspaceIdentity, normalized.subject.mutationRevision,
+        normalized.subject.changedPathsDigest, normalized.subject.evidenceDigest,
+        JSON.stringify(normalized.acceptanceCoverage), JSON.stringify(normalized.findings),
+        normalized.rationale, normalized.digest, JSON.stringify(normalized),
+        normalized.createdByVersion, normalized.migrationOrigin, normalized.createdAt,
+      );
+      return normalized;
+    },
+
+    getReviewReceipt(receiptId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, receipt_json as receiptJson FROM review_receipts WHERE receipt_id=?`).get(receiptId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.receiptJson, null);
+    },
+
+    listReviewReceipts(runId, { obligationId = null } = {}) {
+      const rows = obligationId
+        ? db.prepare(`SELECT receipt_json as receiptJson FROM review_receipts WHERE run_id=? AND obligation_id=? ORDER BY rowid ASC`).all(runId, obligationId)
+        : db.prepare(`SELECT receipt_json as receiptJson FROM review_receipts WHERE run_id=? ORDER BY rowid ASC`).all(runId);
+      return rows.map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
+    },
+
     // Reviewer independence at T3 is checked against the session that actually
     // implemented, not against a caller-supplied string (§9.2).
     getLatestImplementationSession(runId) {
@@ -1312,13 +1386,45 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       // executing the bound command counts. A protected obligation can never
       // be waived.
       const runMutatedWorkspace = run.mutationRevision > 0;
+
+      // K0: a judgment that stands in for a protected obligation, or any
+      // judgment in a T3 run, must be backed by a Review Receipt whose reviewer
+      // lineage and reviewed subject still hold. Two different reviewer strings
+      // are not evidence that an independent review happened.
+      const reviewLineageFor = (obligationId, verification, declared) => {
+        const protectedObligation = Boolean(declared?.protected || isProtectedObligation(obligationId));
+        const independenceRequired = run.proofTier === 'T3';
+        if (!protectedObligation && !independenceRequired) {
+          return { required: false, usable: true, receiptId: null, reasons: [] };
+        }
+        const parsed = parseReviewEvidenceRef(verification?.evidenceRef);
+        if (!parsed || parsed.runId !== runId) {
+          return { required: true, usable: false, receiptId: null, reasons: ['review-receipt-not-referenced'] };
+        }
+        const receipt = this.getReviewReceipt(parsed.receiptId, { runId });
+        const reasons = [];
+        if (receipt) {
+          if (receipt.obligationId !== obligationId) reasons.push('review-receipt-obligation-mismatch');
+          if (verification.evidenceDigest !== receipt.digest) reasons.push('review-receipt-digest-mismatch');
+        }
+        const evaluation = evaluateReviewReceipt({
+          receipt,
+          run,
+          requireIndependentSession: independenceRequired,
+          requireFrontierClass: independenceRequired,
+          requireTrustedEnforcement: true,
+        });
+        const allReasons = [...reasons, ...evaluation.reasons];
+        return { required: true, usable: allReasons.length === 0, receiptId: parsed.receiptId, reasons: allReasons };
+      };
+
       const obligationSatisfied = (obligationId) => {
         const declared = declaredById.get(obligationId);
         const expectedClass = declared?.evidenceClass || 'hard';
         const verification = latestByObligation.get(obligationId);
         if (verification && isVerificationValid(verification)) {
           if (expectedClass === 'judgment') {
-            if (verification.evidenceClass === 'judgment') return true;
+            if (verification.evidenceClass === 'judgment') return reviewLineageFor(obligationId, verification, declared).usable;
           } else if (verification.executor === 'kernel-runtime' && verification.evidenceClass === 'hard') {
             return true;
           } else if (!runMutatedWorkspace && verification.evidenceClass !== 'judgment') {
@@ -1335,11 +1441,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         .map((obligationId) => {
           const declared = declaredById.get(obligationId);
           const verification = latestByObligation.get(obligationId);
+          const requiredEvidenceClass = declared?.evidenceClass || 'hard';
+          const reviewLineage = requiredEvidenceClass === 'judgment' && verification
+            ? reviewLineageFor(obligationId, verification, declared)
+            : null;
           return {
             obligationId,
-            requiredEvidenceClass: declared?.evidenceClass || 'hard',
+            requiredEvidenceClass,
             observedEvidenceClass: verification?.evidenceClass || null,
             executor: verification?.executor || null,
+            reviewLineage,
             satisfied: obligationSatisfied(obligationId),
             waived: waivedObligations.has(obligationId),
           };

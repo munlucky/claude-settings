@@ -5,6 +5,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { existsSync, lstatSync } from 'node:fs';
 import path from 'node:path';
 import { gitLsFiles } from '../scripts/lib/git-safe.mjs';
+import { activeGate, activeGateSegments } from './helpers/active-gate.mjs';
 
 const root = process.cwd();
 const fromRoot = (...segments) => path.join(root, ...segments);
@@ -368,13 +369,20 @@ test('package scripts define the active gate without archive discovery', async (
   assert.match(manifest.description, /Claude, Codex, and Qwen profiles/);
   assert.ok(manifest.files.includes('!package/qwen/profile/'), 'generated Qwen profile payload must stay out of npm package files');
   assert.equal(scripts['test:active'], 'npm test');
-  assert.match(scripts.test, /^node --test tests\//);
-  for (const contractTest of requiredModernizationContracts) {
-    assert.match(scripts.test, new RegExp(contractTest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${contractTest} should be in npm test`);
+  // The gate is segmented because one string of every test path exceeds the
+  // Windows command-line limit; every segment is still a plain node --test run.
+  const gateSegments = activeGateSegments(manifest);
+  assert.ok(gateSegments.length > 0, 'the active gate must resolve to at least one node --test segment');
+  for (const segment of gateSegments) {
+    assert.match(segment, /^node --test tests\//);
+    assert.doesNotMatch(segment, /(?:^|\s)node --test\s*$/);
   }
-  assert.doesNotMatch(scripts.test, /(?:^|\s)node --test\s*$/);
-  assert.doesNotMatch(scripts.test, /archive[\\/]/);
-  assert.doesNotMatch(scripts.test, /\.claude[\\/]scripts/);
+  const gate = activeGate(manifest);
+  for (const contractTest of requiredModernizationContracts) {
+    assert.match(gate, new RegExp(contractTest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${contractTest} should be in npm test`);
+  }
+  assert.doesNotMatch(gate, /archive[\\/]/);
+  assert.doesNotMatch(gate, /\.claude[\\/]scripts/);
   assert.equal(typeof scripts['test:package'], 'string', 'package.json should define scripts.test:package');
   assert.equal(typeof scripts['test:retro'], 'string', 'package.json should define scripts.test:retro');
   assert.equal(typeof scripts['test:eval'], 'string', 'package.json should define scripts.test:eval');
