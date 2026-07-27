@@ -191,6 +191,9 @@ export const normalizeReport = (payload = {}) => {
   return {
     summary: typeof payload.summary === 'string' ? payload.summary : '',
     implementerId: payload.implementerId ? String(payload.implementerId) : null,
+    // The bounded context (K1) and the work unit (K2) this report answers.
+    capsuleId: payload.capsuleId ? String(payload.capsuleId) : null,
+    stepId: payload.stepId ? String(payload.stepId) : null,
     changedPaths: Array.isArray(payload.changedPaths) ? payload.changedPaths.map(String) : [],
     risks: Array.isArray(payload.risks) ? payload.risks.map(String) : [],
     verifications,

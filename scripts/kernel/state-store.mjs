@@ -289,6 +289,57 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       FOREIGN KEY(decision_id) REFERENCES model_route_decisions(decision_id),
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS run_steps (
+      step_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      objective TEXT NOT NULL,
+      state TEXT NOT NULL,
+      plan_revision INTEGER NOT NULL DEFAULT 1,
+      dependency_ids_json TEXT NOT NULL DEFAULT '[]',
+      allowed_paths_json TEXT NOT NULL DEFAULT '[]',
+      forbidden_paths_json TEXT NOT NULL DEFAULT '[]',
+      acceptance_ids_json TEXT NOT NULL DEFAULT '[]',
+      obligation_ids_json TEXT NOT NULL DEFAULT '[]',
+      expected_outputs_json TEXT NOT NULL DEFAULT '[]',
+      assigned_role TEXT NOT NULL DEFAULT 'implementer',
+      synthetic INTEGER NOT NULL DEFAULT 0,
+      migration_origin TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      capsule_digest TEXT,
+      result_digest TEXT,
+      workspace_identity_start TEXT,
+      workspace_identity_end TEXT,
+      blocked_reason TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(run_id, step_id),
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_steps_run ON run_steps(run_id, plan_revision, sequence);
+    CREATE TABLE IF NOT EXISTS run_step_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      step_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL,
+      actor_session_id TEXT,
+      capsule_digest TEXT,
+      route_decision_id TEXT,
+      usage_receipt_id TEXT,
+      status TEXT NOT NULL,
+      workspace_identity_start TEXT,
+      workspace_identity_end TEXT,
+      summary TEXT,
+      changed_paths_json TEXT NOT NULL DEFAULT '[]',
+      result_digest TEXT,
+      failure_reasons_json TEXT NOT NULL DEFAULT '[]',
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_step_attempts_step ON run_step_attempts(run_id, step_id);
     CREATE TABLE IF NOT EXISTS run_capsules (
       capsule_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
@@ -362,6 +413,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('runs', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('runs', 'finalization_status', "TEXT DEFAULT 'pending'");
   addCol('runs', 'route_json', 'TEXT');
+  // Plan revision (K2) is the ledger's own revision: a replan supersedes the
+  // live steps and writes the replacement plan at the next revision, without
+  // touching the task contract's revision.
+  addCol('runs', 'plan_revision', 'INTEGER DEFAULT 1');
   // Obligation binding authority (P0-2/P0-3).
   addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
   addCol('run_obligations', 'verification_method', 'TEXT');
@@ -644,6 +699,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                contract_revision as contractRevision,
                finalization_status as finalizationStatus,
                route_json as routeJson,
+               plan_revision as planRevision,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
       `).get(runId);
@@ -681,6 +737,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         contractRevision: Number(row.contractRevision || 1),
         finalizationStatus: row.finalizationStatus || 'pending',
         route: row.routeJson ? safeJsonParse(row.routeJson, null) : null,
+        planRevision: Number(row.planRevision || 1),
         updatedAt: row.updatedAt,
       };
     },
@@ -903,6 +960,159 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     listModelUsageReceipts(runId) {
       return db.prepare(`SELECT receipt_json as receiptJson FROM model_usage_receipts WHERE run_id=? ORDER BY rowid ASC`).all(runId)
         .map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
+    },
+
+    // Run Step Ledger (K2). The work cursor is state, not chat context: which
+    // unit is running, what it may touch, what it must prove, and how many times
+    // it has already failed all survive a process restart.
+    createRunSteps(runId, steps = []) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      const insert = db.prepare(`
+        INSERT INTO run_steps(step_id, run_id, sequence, objective, state, plan_revision, dependency_ids_json, allowed_paths_json, forbidden_paths_json, acceptance_ids_json, obligation_ids_json, expected_outputs_json, assigned_role, synthetic, migration_origin, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, step_id) DO NOTHING
+      `);
+      for (const step of steps) {
+        insert.run(
+          step.stepId, runId, Number(step.sequence) || 1, String(step.objective || ''), String(step.state || 'planned'),
+          Number(step.planRevision) || 1,
+          JSON.stringify(step.dependencyIds || []), JSON.stringify(step.allowedPaths || []), JSON.stringify(step.forbiddenPaths || []),
+          JSON.stringify(step.acceptanceIds || []), JSON.stringify(step.obligationIds || []), JSON.stringify(step.expectedOutputs || []),
+          String(step.assignedRole || 'implementer'), step.synthetic ? 1 : 0, step.migrationOrigin || null, now(), now(),
+        );
+      }
+      return this.getRunSteps(runId);
+    },
+
+    getRunSteps(runId, { planRevision = null } = {}) {
+      const rows = planRevision === null
+        ? db.prepare(`SELECT * FROM run_steps WHERE run_id=? ORDER BY plan_revision ASC, sequence ASC`).all(runId)
+        : db.prepare(`SELECT * FROM run_steps WHERE run_id=? AND plan_revision=? ORDER BY sequence ASC`).all(runId, planRevision);
+      return rows.map((row) => ({
+        stepId: row.step_id,
+        runId: row.run_id,
+        sequence: row.sequence,
+        objective: row.objective,
+        state: row.state,
+        planRevision: row.plan_revision,
+        dependencyIds: safeJsonParse(row.dependency_ids_json, []),
+        allowedPaths: safeJsonParse(row.allowed_paths_json, []),
+        forbiddenPaths: safeJsonParse(row.forbidden_paths_json, []),
+        acceptanceIds: safeJsonParse(row.acceptance_ids_json, []),
+        obligationIds: safeJsonParse(row.obligation_ids_json, []),
+        expectedOutputs: safeJsonParse(row.expected_outputs_json, []),
+        assignedRole: row.assigned_role,
+        synthetic: Boolean(row.synthetic),
+        migrationOrigin: row.migration_origin || null,
+        attemptCount: row.attempt_count,
+        capsuleDigest: row.capsule_digest || null,
+        resultDigest: row.result_digest || null,
+        workspaceIdentityStart: row.workspace_identity_start || null,
+        workspaceIdentityEnd: row.workspace_identity_end || null,
+        blockedReason: row.blocked_reason || null,
+        createdAt: row.created_at,
+        startedAt: row.started_at || null,
+        completedAt: row.completed_at || null,
+        updatedAt: row.updated_at,
+      }));
+    },
+
+    getRunStep(runId, stepId) {
+      return this.getRunSteps(runId).find((step) => step.stepId === stepId) || null;
+    },
+
+    updateRunStep(runId, stepId, patch = {}) {
+      const columns = {
+        state: 'state',
+        attemptCount: 'attempt_count',
+        capsuleDigest: 'capsule_digest',
+        resultDigest: 'result_digest',
+        workspaceIdentityStart: 'workspace_identity_start',
+        workspaceIdentityEnd: 'workspace_identity_end',
+        blockedReason: 'blocked_reason',
+        startedAt: 'started_at',
+        completedAt: 'completed_at',
+      };
+      const assignments = [];
+      const values = [];
+      for (const [key, column] of Object.entries(columns)) {
+        if (patch[key] === undefined) continue;
+        assignments.push(`${column}=?`);
+        values.push(patch[key]);
+      }
+      if (assignments.length === 0) return this.getRunStep(runId, stepId);
+      db.prepare(`UPDATE run_steps SET ${assignments.join(', ')}, updated_at=? WHERE run_id=? AND step_id=?`).run(...values, now(), runId, stepId);
+      return this.getRunStep(runId, stepId);
+    },
+
+    // A replan never edits an attempted step; it supersedes it, so what was tried
+    // stays readable at its own plan revision.
+    supersedeRunSteps(runId, { planRevision }) {
+      db.prepare(`UPDATE run_steps SET state='superseded', updated_at=? WHERE run_id=? AND plan_revision=? AND state NOT IN ('passed','superseded','cancelled')`)
+        .run(now(), runId, planRevision);
+      return this.getRunSteps(runId);
+    },
+
+    setPlanRevision(runId, planRevision) {
+      db.prepare(`UPDATE runs SET plan_revision=?, revision=revision+1, updated_at=? WHERE run_id=?`).run(Number(planRevision), now(), runId);
+      return this.getRun(runId);
+    },
+
+    recordStepAttempt(runId, { stepId, actorSessionId = null, capsuleDigest = null, routeDecisionId = null, usageReceiptId = null, workspaceIdentityStart = null, summary = null, changedPaths = [] }) {
+      const attemptNumber = this.nextStepAttemptNumber(runId, stepId);
+      const result = db.prepare(`
+        INSERT INTO run_step_attempts(run_id, step_id, attempt_number, actor_session_id, capsule_digest, route_decision_id, usage_receipt_id, status, workspace_identity_start, summary, changed_paths_json, started_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?)
+      `).run(runId, stepId, attemptNumber, actorSessionId, capsuleDigest, routeDecisionId, usageReceiptId, workspaceIdentityStart, summary, JSON.stringify(changedPaths), now());
+      db.prepare(`UPDATE run_steps SET attempt_count=attempt_count+1, updated_at=? WHERE run_id=? AND step_id=?`).run(now(), runId, stepId);
+      return this.getStepAttempt(result.lastInsertRowid);
+    },
+
+    finishStepAttempt(attemptId, { status = 'finished', workspaceIdentityEnd = null, resultDigest = null, failureReasons = [], changedPaths = null } = {}) {
+      const assignments = ['status=?', 'finished_at=?', 'workspace_identity_end=?', 'result_digest=?', 'failure_reasons_json=?'];
+      const values = [status, now(), workspaceIdentityEnd, resultDigest, JSON.stringify(failureReasons)];
+      if (changedPaths) {
+        assignments.push('changed_paths_json=?');
+        values.push(JSON.stringify(changedPaths));
+      }
+      db.prepare(`UPDATE run_step_attempts SET ${assignments.join(', ')} WHERE id=?`).run(...values, attemptId);
+      return this.getStepAttempt(attemptId);
+    },
+
+    getStepAttempt(id) {
+      const row = db.prepare(`SELECT * FROM run_step_attempts WHERE id=?`).get(id);
+      if (!row) return null;
+      return {
+        id: row.id,
+        runId: row.run_id,
+        stepId: row.step_id,
+        attemptNumber: row.attempt_number,
+        actorSessionId: row.actor_session_id || null,
+        capsuleDigest: row.capsule_digest || null,
+        routeDecisionId: row.route_decision_id || null,
+        usageReceiptId: row.usage_receipt_id || null,
+        status: row.status,
+        workspaceIdentityStart: row.workspace_identity_start || null,
+        workspaceIdentityEnd: row.workspace_identity_end || null,
+        summary: row.summary || null,
+        changedPaths: safeJsonParse(row.changed_paths_json, []),
+        resultDigest: row.result_digest || null,
+        failureReasons: safeJsonParse(row.failure_reasons_json, []),
+        startedAt: row.started_at,
+        finishedAt: row.finished_at || null,
+      };
+    },
+
+    getStepAttempts(runId, { stepId = null } = {}) {
+      const rows = stepId
+        ? db.prepare(`SELECT id FROM run_step_attempts WHERE run_id=? AND step_id=? ORDER BY id ASC`).all(runId, stepId)
+        : db.prepare(`SELECT id FROM run_step_attempts WHERE run_id=? ORDER BY id ASC`).all(runId);
+      return rows.map((row) => this.getStepAttempt(row.id));
+    },
+
+    nextStepAttemptNumber(runId, stepId) {
+      const row = db.prepare(`SELECT MAX(attempt_number) as maxAttempt FROM run_step_attempts WHERE run_id=? AND step_id=?`).get(runId, stepId);
+      return (row?.maxAttempt || 0) + 1;
     },
 
     // Execution capsules (K1). The capsule a worker actually received is

@@ -102,6 +102,9 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     // Work-unit scope (K1). Declared here so an Execution Capsule can bound a
     // worker to the paths the contract actually authorises; an empty list means
     // the whole workspace and can never be violated.
+    // Declared decomposition (K2). Present only when the caller actually split
+    // the work; otherwise the run gets one synthetic step.
+    steps: Array.isArray(contract.steps) ? contract.steps : [],
     allowedPaths: asStringList(contract.allowedPaths),
     forbiddenPaths: asStringList(contract.forbiddenPaths),
     filesChanged: Number.isFinite(contract.filesChanged) ? Number(contract.filesChanged) : changedFileCount,
@@ -120,6 +123,7 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   taskClass: contract.taskClass,
   requestedTier: contract.requestedTier,
   requiredObligations: contract.requiredObligations,
+  steps: contract.steps,
   allowedPaths: contract.allowedPaths,
   forbiddenPaths: contract.forbiddenPaths,
   flags: contract.flags,
@@ -218,6 +222,7 @@ export const mergeContractRevision = (previous, next) => {
     risks: union(previous.risks, next.risks),
     surfaces: union(previous.surfaces, next.surfaces),
     requiredObligations: union(previous.requiredObligations, next.requiredObligations),
+    steps: next.steps?.length ? next.steps : (previous.steps || []),
     allowedPaths: union(previous.allowedPaths, next.allowedPaths),
     forbiddenPaths: union(previous.forbiddenPaths, next.forbiddenPaths),
     flags: { ...previous.flags, ...next.flags },

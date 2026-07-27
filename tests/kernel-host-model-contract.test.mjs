@@ -30,8 +30,14 @@ test('the model-visible next payload is unchanged and carries no routing vocabul
   await withRun(async (cp, runId) => {
     const plain = await cp.next(runId);
     const host = await cp.hostNext(runId, { hostCapabilities: CLAUDE });
-    assert.deepEqual(host.modelInput, plain);
-    const serialized = JSON.stringify(plain);
+    // The Host turn adds exactly one field: the handle for the bounded context
+    // the worker is being given (K1), which the model echoes back in `report`.
+    // Everything else the model sees must be identical, and no routing
+    // vocabulary may reach it through either path.
+    const { capsuleId, ...hostAction } = host.modelInput.action;
+    assert.match(capsuleId, /^capsule-[a-f0-9]{8,64}$/);
+    assert.deepEqual({ ...host.modelInput, action: hostAction }, plain);
+    const serialized = JSON.stringify(host.modelInput);
     for (const term of ['modelClass', 'frontier_reasoning', 'value_coding', 'modelRouteDecision', 'enforcementStrategy', 'hostDirective']) {
       assert.doesNotMatch(serialized, new RegExp(term), `next payload must not mention ${term}`);
     }
