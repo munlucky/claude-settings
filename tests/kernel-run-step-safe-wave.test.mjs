@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { selectExecutableSteps } from '../scripts/kernel/run/run-step-ledger.mjs';
+import { scopesOverlap, selectExecutableSteps } from '../scripts/kernel/run/run-step-ledger.mjs';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 
 const step = (sequence, allowedPaths, overrides = {}) => ({
@@ -276,4 +276,22 @@ test('K2: a declared step id is what the next step depends on', async () => {
     await cp.close();
     await cleanup(fixture);
   }
+});
+
+test('K2: write sets are compared with the matcher semantics, not case-sensitively', () => {
+  // `matchPathScope()` lowercases both sides, so these two scopes authorise the
+  // same files. A case-sensitive comparison would have called them disjoint and
+  // dispatched two workers onto the same tree.
+  assert.equal(scopesOverlap('src/Auth/**', 'src/auth/**'), true);
+  assert.equal(scopesOverlap('SRC/auth', 'src/auth/service.mjs'), true);
+  assert.equal(scopesOverlap(String.raw`src\auth\**`, 'src/auth/**'), true, 'separators normalise too');
+  assert.equal(scopesOverlap('src/auth/**', 'src/billing/**'), false);
+  assert.equal(scopesOverlap('src/auth/**', ''), true, 'an unbounded scope overlaps everything');
+
+  const wave = selectExecutableSteps(
+    [step(1, ['src/Auth/**']), step(2, ['src/auth/tokens/**'])],
+    { planRevision: 1, safeWave: true, integrationVerification: INTEGRATION },
+  );
+  assert.deepEqual(wave.steps.map((entry) => entry.stepId), ['step-1-1']);
+  assert.equal(wave.reason, 'safe-wave-write-set-conflict');
 });

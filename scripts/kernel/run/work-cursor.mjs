@@ -109,6 +109,9 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
       obligations: store.getRunObligations(runId),
       planRevision: nextRevision,
       deltaSteps: steps,
+      // Step ids are unique per run, so a replacement that reuses a declared id
+      // is qualified rather than silently colliding with the step it replaces.
+      reservedStepIds: store.getRunSteps(runId).map((step) => step.stepId),
     });
     store.createRunSteps(runId, replacement);
     store.setPlanRevision(runId, nextRevision);

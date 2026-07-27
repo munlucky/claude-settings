@@ -57,6 +57,18 @@ export const liveSteps = (steps = [], planRevision = null) => steps.filter((step
   LIVE_STEP_STATES.includes(step.state) && (planRevision === null || step.planRevision === planRevision)
 ));
 
+// Write sets are compared with the SAME semantics the scope matcher uses:
+// separator- and case-insensitive. Comparing them case-sensitively here while
+// `matchPathScope()` lowercases would call `src/Auth/**` and `src/auth/**`
+// disjoint and let two workers race on the same files.
+export const scopesOverlap = (left, right) => {
+  const normalize = (value) => String(value || '').replaceAll('\\', '/').toLowerCase().replace(/\/\*+$/, '');
+  const a = normalize(left);
+  const b = normalize(right);
+  if (!a || !b) return true;
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+};
+
 // Selection rule (§7.6). Deterministic: the lowest sequence among the steps that
 // are actually runnable now.
 export const selectExecutableSteps = (steps = [], {
@@ -85,7 +97,7 @@ export const selectExecutableSteps = (steps = [], {
       if (selected.length === 0) selected.push(step);
       break;
     }
-    const conflicts = claimed.some((existing) => existing.some((path) => paths.some((candidate) => path === candidate || path.startsWith(`${candidate.replace(/\/\*+$/, '')}/`) || candidate.startsWith(`${path.replace(/\/\*+$/, '')}/`))));
+    const conflicts = claimed.some((existing) => existing.some((path) => paths.some((candidate) => scopesOverlap(path, candidate))));
     if (conflicts) break;
     claimed.push(paths);
     selected.push(step);
@@ -111,7 +123,10 @@ export const currentStep = (steps = [], { planRevision = null } = {}) => {
 // finished anything.
 export const allStepsPassed = (steps = [], planRevision = null) => {
   const scoped = steps.filter((step) => planRevision === null || step.planRevision === planRevision);
-  if (scoped.length === 0) return true;
+  // A run that has steps but none at the current revision has a broken plan,
+  // not a finished one — treating that as settled would let a lost replacement
+  // step complete the run.
+  if (scoped.length === 0) return steps.length === 0;
   return scoped.every((step) => TERMINAL_STEP_STATES.includes(step.state))
     && scoped.some((step) => step.state === 'passed');
 };

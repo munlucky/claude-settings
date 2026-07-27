@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "baseline": {
     "files": 1644,
-    "nonblankLines": 201769,
-    "utf8Bytes": 8996400,
-    "estimatedPromptTokens": 2249100
+    "nonblankLines": 201965,
+    "utf8Bytes": 9009026,
+    "estimatedPromptTokens": 2252257
   },
   "allowedDelta": {
     "files": 50,

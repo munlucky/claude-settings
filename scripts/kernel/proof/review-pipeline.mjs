@@ -6,6 +6,8 @@
 // long persona. High-risk work (T3) additionally requires an INDEPENDENT
 // reviewer whose context differs from the implementer's.
 
+import { REVIEW_ACTIONS } from '../run/model-route-contract.mjs';
+
 const RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 
 export const REVIEW_STAGES = ['contract', 'engineering'];
@@ -109,6 +111,12 @@ export const assertIndependentReviewSession = ({ reviewDecision, reviewReceipt, 
   if (!reviewReceipt) throw new Error('INDEPENDENT_REVIEW_REQUIRED: a routed T3 review requires the Host usage receipt for the reviewing session');
   if (!reviewDecision || reviewDecision.modelClass !== 'frontier_reasoning') {
     throw new Error('INDEPENDENT_REVIEW_REQUIRED: a T3 review must run on the frontier reasoning class');
+  }
+  // The class and the session are not enough: a planner or implementer turn on
+  // the frontier class in its own session satisfies both. Only a turn the
+  // Kernel actually routed AS a review can mint a review receipt.
+  if (reviewDecision.role !== 'reviewer' || !REVIEW_ACTIONS.includes(reviewDecision.actionKind)) {
+    throw new Error(`INDEPENDENT_REVIEW_REQUIRED: a T3 review must come from a routed reviewer turn, not a ${reviewDecision.role || 'unknown'} ${reviewDecision.actionKind || 'turn'}`);
   }
   if (!['enforced', 'fallback'].includes(reviewReceipt.enforcementStatus)) {
     throw new Error(`INDEPENDENT_REVIEW_REQUIRED: a T3 review cannot rest on ${reviewReceipt.enforcementStatus} model routing`);
