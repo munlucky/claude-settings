@@ -2,6 +2,15 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-27 (3)
+- Scope: Kernel — five defects found by automated review on PR #16. All five were real; each is now closed with a regression test.
+- P1 — **a review receipt survived an evidence change.** `evaluateReviewReceipt` bound a verdict to the workspace identity and mutation revision but never to the evidence set. Re-running a failing check until it passes changes neither of those, so a verdict formed against the failing set still completed the run. `digestOfEvidence()` now backs `subject.evidenceDigest` on both sides of the comparison, excluding the obligation the review itself answers (recording the judgment adds a verification, which would otherwise make every receipt stale the instant it was written).
+- P1 — **a replan left a superseded capsule governing scope.** `capsuleStaleness` exempted any capsule carrying a `stepId` from the plan-revision check, and `assertCapsuleScope` enforced the latest capsule's `allowedPaths` even when the report answered a different step. A replan bumps the plan revision without touching the workspace, so the superseded capsule looked current. A step capsule is now checked against `run.planRevision`, and the capsule governs scope only while it is current AND belongs to the step being reported; otherwise the step's own scope does.
+- P1 — **a Safe Wave approval outlived the contract it was granted for.** `mergeContractRevision` fell back to the previous `safeWave` object whenever the revision did not restate it, which is the opposite of the default-deny rule the adjacent comment claimed. An approval is now revoked by any revision that does not restate it; the request and the named integration command survive so the operator can re-approve without restating everything.
+- P2 — **a declared `stepId` broke the dependency chain.** A step that omitted `dependsOn` defaulted to the *generated* id of the previous step, so a plan whose first step declared its own id left the rest permanently unrunnable. Ids are assigned first, then each step depends on the one actually before it.
+- P2 — **the file reduction tiers shared one array.** The `adjacent-file` loop popped straight through the acceptance and work-unit files, so the later tiers were never reached and every drop was mislabelled. Each tier now drops only files of its own tier, identified by the reason the ranking recorded, and a `scope-file` tier was added as the last resort so work-unit files are the last thing to go.
+- Verification evidence: `npm run test:kernel` 416/416, `npm run test:package` 237/237, `npm run test:routing` 33/33, sentinel 25 cases with 0 false completions, surface check pass. Five regression tests, one per finding.
+
 - Date: 2026-07-27 (2)
 - Scope: Kernel — the four surfaces the K1–K4 entry below shipped as partial. Found by auditing the guide's own checklist against the code after the six-commit split, not by a test failure.
 - What was partial, and what closed it:
