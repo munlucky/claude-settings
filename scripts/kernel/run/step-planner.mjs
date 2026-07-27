@@ -1,0 +1,119 @@
+// Step planning (K2 §7.3). The ledger is not forced on every task: an ordinary
+// change is one synthetic step, so the loop the model sees does not change. Only
+// long or complex work is decomposed, and even then the decomposition comes from
+// the contract and the route — never from a free-form plan the model narrated.
+
+const FILES_CHANGED_THRESHOLD = 8;
+
+export const stepLedgerApplies = ({ contract = {}, route = {}, filesChanged = 0, safeWaveRequested = false } = {}) => {
+  const stages = route?.stages || [];
+  const signals = {
+    longRunning: contract.taskClass === 'long-running',
+    complex: contract.flags?.complex === true,
+    manyFiles: Number(filesChanged || contract.filesChanged || 0) > FILES_CHANGED_THRESHOLD,
+    slicedRoute: stages.includes('SLICE') || stages.includes('SCHEDULE'),
+    declaredDecomposition: Array.isArray(contract.steps) && contract.steps.length > 0,
+    safeWaveRequested: safeWaveRequested === true,
+  };
+  return { applies: Object.values(signals).some(Boolean), signals };
+};
+
+const stepId = (runId, sequence, planRevision) => `step-${planRevision}-${sequence}`;
+
+// `previousStepId` is the id of the step actually before this one, which is not
+// always the generated one: a declared step may carry its own `stepId`, and
+// defaulting to the generated id would point the chain at a step that does not
+// exist, leaving the plan with nothing runnable after the first unit passes.
+const normalizeDeclaredStep = ({ declared, index, runId, planRevision, contract, previousStepId = null }) => ({
+  stepId: declared.stepId ? String(declared.stepId) : stepId(runId, index + 1, planRevision),
+  sequence: index + 1,
+  objective: String(declared.objective || contract.objective || ''),
+  state: 'planned',
+  planRevision,
+  dependencyIds: Array.isArray(declared.dependsOn) ? declared.dependsOn.map(String) : (previousStepId ? [previousStepId] : []),
+  allowedPaths: Array.isArray(declared.allowedPaths) ? declared.allowedPaths.map(String) : (contract.allowedPaths || []),
+  forbiddenPaths: Array.isArray(declared.forbiddenPaths) ? declared.forbiddenPaths.map(String) : (contract.forbiddenPaths || []),
+  acceptanceIds: Array.isArray(declared.acceptanceIds) ? declared.acceptanceIds.map(String) : [],
+  obligationIds: Array.isArray(declared.obligationIds) ? declared.obligationIds.map(String) : [],
+  assignedRole: String(declared.role || 'implementer'),
+  expectedOutputs: Array.isArray(declared.expectedOutputs) ? declared.expectedOutputs.map(String) : [],
+});
+
+// Ids are assigned first so each step can depend on the one actually before it.
+const normalizeDeclaredSteps = ({ declared = [], runId, planRevision, contract }) => {
+  const steps = [];
+  for (const [index, entry] of declared.entries()) {
+    steps.push(normalizeDeclaredStep({
+      declared: entry,
+      index,
+      runId,
+      planRevision,
+      contract,
+      previousStepId: steps.length > 0 ? steps[steps.length - 1].stepId : null,
+    }));
+  }
+  return steps;
+};
+
+// The synthetic single step. It carries the whole run: the same acceptance, the
+// same obligations, the same scope. This is what keeps `next`/`report` identical
+// for simple work while still giving every run a durable cursor.
+export const buildSyntheticStep = ({ run, contract = {}, obligations = [], planRevision = 1 }) => ({
+  stepId: stepId(run.runId, 1, planRevision),
+  sequence: 1,
+  objective: run.objective,
+  state: 'ready',
+  planRevision,
+  dependencyIds: [],
+  allowedPaths: contract.allowedPaths || [],
+  forbiddenPaths: contract.forbiddenPaths || [],
+  acceptanceIds: (contract.acceptance || []).map((item) => item.id),
+  obligationIds: obligations.map((obligation) => obligation.obligationId),
+  assignedRole: 'implementer',
+  expectedOutputs: [],
+  synthetic: true,
+});
+
+// A declared decomposition binds each unit to the acceptance and obligations it
+// is responsible for; anything it leaves unclaimed stays on the last step, so no
+// obligation can fall between two units and never be proven.
+export const planRunSteps = ({
+  run,
+  contract = {},
+  obligations = [],
+  route = {},
+  planRevision = 1,
+  safeWaveRequested = false,
+} = {}) => {
+  const decision = stepLedgerApplies({ contract, route, filesChanged: contract.filesChanged, safeWaveRequested });
+  const declared = Array.isArray(contract.steps) ? contract.steps : [];
+
+  if (!decision.applies || declared.length === 0) {
+    return { applies: decision.applies, signals: decision.signals, steps: [buildSyntheticStep({ run, contract, obligations, planRevision })] };
+  }
+
+  const steps = normalizeDeclaredSteps({ declared, runId: run.runId, planRevision, contract });
+
+  const claimedObligations = new Set(steps.flatMap((step) => step.obligationIds));
+  const claimedAcceptance = new Set(steps.flatMap((step) => step.acceptanceIds));
+  const last = steps[steps.length - 1];
+  last.obligationIds = [...new Set([...last.obligationIds, ...obligations.map((o) => o.obligationId).filter((id) => !claimedObligations.has(id))])];
+  last.acceptanceIds = [...new Set([...last.acceptanceIds, ...(contract.acceptance || []).map((item) => item.id).filter((id) => !claimedAcceptance.has(id))])];
+
+  // Only the first step (or every dependency-free step) starts ready.
+  for (const step of steps) {
+    if (step.dependencyIds.length === 0) step.state = 'ready';
+  }
+  return { applies: true, signals: decision.signals, steps };
+};
+
+// A replan does not edit history: the live steps of the old revision are
+// superseded and the new plan is written at a new revision, so what was
+// attempted stays readable.
+export const planReplacementSteps = ({ run, contract = {}, obligations = [], planRevision, deltaSteps = [] } = {}) => {
+  if (!Array.isArray(deltaSteps) || deltaSteps.length === 0) {
+    return [buildSyntheticStep({ run, contract, obligations, planRevision })];
+  }
+  return normalizeDeclaredSteps({ declared: deltaSteps, runId: run.runId, planRevision, contract })
+    .map((step) => (step.dependencyIds.length === 0 ? { ...step, state: 'ready' } : step));
+};

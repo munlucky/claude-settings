@@ -216,6 +216,24 @@ const TRAPS = {
     return cp.finalizeRun('sen');
   },
 
+  // A protected T3 judgment carrying two different reviewer STRINGS but no
+  // Review Receipt must not satisfy the obligation: an independent review is
+  // proven by recorded lineage, not by naming a second identifier (K0).
+  async forged_review_identity(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { riskTier: 'T3', acceptance: ['works'] } });
+    await mutate(projectRoot, 1);
+    await cp.report('sen', {
+      summary: 'reviewed by someone else, honestly',
+      implementerId: 'implementer-1',
+      verifications: [
+        { obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['works'] },
+        { obligationId: 'static-analysis', commandRef: 'lint' },
+      ],
+      judgments: [{ obligationId: 'security-review', verdict: 'pass', reason: 'ok', reviewerId: 'reviewer-2', rationale: 'no auth surface touched' }],
+    });
+    return cp.finalizeRun('sen');
+  },
+
   // A finalization retry must not turn an unfinished Git closeout into a clean
   // completion by losing the selected paths (F4).
   async closeout_retry_loses_paths(cp, projectRoot) {
@@ -230,6 +248,67 @@ const TRAPS = {
     const retried = await cp.report('sen', { summary: 'retry' });
     const nextPayload = await cp.next('sen');
     return { ...retried, doneClaimed: retried.status === 'completed' || nextPayload.action?.type === 'done' };
+  },
+
+  // A capsule built before the workspace moved describes a state that no longer
+  // exists; re-submitting against it must not be accepted (K1).
+  async stale_capsule_reuse(cp, projectRoot) {
+    await cp.startRun({ runId: 'sen', objective: 'x', taskContract: { acceptance: ['works'], allowedPaths: ['**'] } });
+    const capsule = await cp.buildCapsule('sen');
+    await mutate(projectRoot, 1);
+    await cp.report('sen', { summary: 'first pass', changedPaths: ['app.mjs'] });
+    const reused = await cp.report('sen', {
+      summary: 'reusing the old capsule',
+      capsuleId: capsule.capsuleId,
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+    });
+    return { ...reused, capsuleRejected: reused.status === 'scope-rejected' };
+  },
+
+  // A worker that changed files its work unit never claimed has changed the
+  // plan, not just the code (K1/K2).
+  async out_of_scope_change(cp, projectRoot) {
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'x',
+      taskContract: { acceptance: ['works'], allowedPaths: ['src/**'], forbiddenPaths: ['app.mjs'] },
+    });
+    await cp.buildCapsule('sen');
+    await mutate(projectRoot, 1);
+    const rejected = await cp.report('sen', {
+      summary: 'touched a forbidden path',
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'default', commandRef: 'test:ok', acceptanceCoverage: ['works'] }],
+    });
+    return { ...rejected, scopeRejected: rejected.status === 'scope-rejected' };
+  },
+
+  // A report that answers a different unit of work than the one in progress
+  // must not advance the cursor (K2).
+  async foreign_step_report(cp, projectRoot) {
+    await cp.startRun({
+      runId: 'sen',
+      objective: 'x',
+      taskContract: {
+        complex: true,
+        riskTier: 'T2',
+        acceptance: ['a holds', 'b holds'],
+        steps: [
+          { objective: 'first', allowedPaths: ['**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
+          { objective: 'second', allowedPaths: ['**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
+        ],
+      },
+    });
+    const steps = cp.getRunSteps('sen');
+    await mutate(projectRoot, 1);
+    const rejected = await cp.report('sen', {
+      summary: 'skipping to the second unit',
+      stepId: steps[1].stepId,
+      changedPaths: ['app.mjs'],
+      verifications: [{ obligationId: 'static-analysis', commandRef: 'lint', acceptanceCoverage: ['AC-2'] }],
+    });
+    return { ...rejected, stepRejected: rejected.status === 'step-rejected' };
   },
 
   // Positive controls ------------------------------------------------------
@@ -327,6 +406,9 @@ const isAccepted = (result) => {
   // Explicit trap flags win: a trap can assert something stronger than the
   // completion decision (e.g. "did not claim done", "was not lease-blocked").
   if (result.doneClaimed !== undefined) return result.doneClaimed === true;
+  if (result.capsuleRejected !== undefined) return result.capsuleRejected !== true;
+  if (result.scopeRejected !== undefined) return result.scopeRejected !== true;
+  if (result.stepRejected !== undefined) return result.stepRejected !== true;
   if (result.acceptanceDropped !== undefined) return result.acceptanceDropped === true || result.status === 'completed';
   if (result.blockedForPolicy !== undefined) return result.blockedForPolicy !== true;
   if (result.leaseBlocked !== undefined) return result.leaseBlocked !== true && result.status === 'completed';

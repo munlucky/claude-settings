@@ -17,14 +17,14 @@ export const createFableAdapter = ({ surface = 'fable', capabilities = {}, launc
   return {
     surface,
     capabilities: resolved,
-    async dispatch({ decision, resolution, strategy, executionContract }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract }) {
       const advisory = {
         requestedModelClass: decision.modelClass,
         advisoryModel: resolution.model,
         permissions: decision.permissions,
       };
       if (!launch) return { status: 'unsupported', resultStatus: 'completed', resolvedModel: null, advisory };
-      const result = (await launch({ advisory, executionContract, decision, strategy })) || {};
+      const result = (await launch({ advisory, executionCapsule, executionContract, decision, strategy })) || {};
       return {
         status: result.status || 'unsupported',
         resultStatus: result.resultStatus || 'completed',

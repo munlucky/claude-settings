@@ -36,10 +36,10 @@ export const buildClaudeInvocation = ({ decision, resolution }) => {
 export const createClaudeAdapter = ({ launch = null, capabilities = {} } = {}) => ({
   surface: 'claude',
   capabilities: { ...CLAUDE_CAPABILITIES, ...capabilities },
-  async dispatch({ decision, resolution, strategy, executionContract }) {
+  async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract }) {
     const invocation = buildClaudeInvocation({ decision, resolution });
     if (!launch) return { status: 'unsupported', resultStatus: 'completed', invocation };
-    const result = (await launch({ invocation, executionContract, decision, strategy })) || {};
+    const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy })) || {};
     return {
       status: result.status || 'completed',
       resultStatus: result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed'),

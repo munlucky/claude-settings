@@ -1,0 +1,184 @@
+// Run Step Ledger (K2). Long work is not one atomic act — it is a sequence of
+// units with dependencies, retries, and a cursor. Before this, that cursor lived
+// only in whatever chat context happened to survive; a restarted process had to
+// guess where it was. Here the cursor is state, and the rules that move it are
+// pure functions over persisted rows.
+
+export const STEP_STATES = Object.freeze([
+  'planned', 'ready', 'running', 'reported', 'verifying',
+  'passed', 'failed', 'blocked', 'superseded', 'cancelled',
+]);
+
+export const TERMINAL_STEP_STATES = Object.freeze(['passed', 'superseded', 'cancelled']);
+export const LIVE_STEP_STATES = Object.freeze(['planned', 'ready', 'running', 'reported', 'verifying', 'failed', 'blocked']);
+
+// A retry returns a failed step to `ready`; a replan supersedes it instead. Both
+// are legal, and which one applies is decided by the stagnation signal, never by
+// the worker that just failed.
+const STEP_TRANSITIONS = Object.freeze({
+  planned: ['ready', 'blocked', 'superseded', 'cancelled'],
+  ready: ['running', 'blocked', 'superseded', 'cancelled'],
+  running: ['reported', 'failed', 'blocked', 'superseded', 'cancelled'],
+  reported: ['verifying', 'failed', 'blocked', 'superseded'],
+  verifying: ['passed', 'failed', 'blocked', 'superseded'],
+  passed: ['superseded'],
+  failed: ['ready', 'blocked', 'superseded', 'cancelled'],
+  blocked: ['ready', 'superseded', 'cancelled'],
+  superseded: [],
+  cancelled: [],
+});
+
+export class RunStepError extends Error {
+  constructor(code, message, detail = {}) {
+    super(message);
+    this.name = 'RunStepError';
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+export const canTransitionStep = (from, to) => (STEP_TRANSITIONS[from] || []).includes(to);
+
+export const assertStepTransition = (from, to) => {
+  if (!STEP_STATES.includes(to)) throw new RunStepError('STEP_STATE_UNKNOWN', `Unknown run step state: ${to}`);
+  if (!canTransitionStep(from, to)) throw new RunStepError('STEP_TRANSITION_INVALID', `Invalid run step transition ${from} -> ${to}`);
+  return true;
+};
+
+// Dependencies are satisfied only by a PASSED step. A dependency that merely
+// reported is not done, and treating it as done is how a cursor advances past
+// unfinished work.
+export const dependenciesSatisfied = (step, steps = []) => {
+  const byId = new Map(steps.map((entry) => [entry.stepId, entry]));
+  return (step.dependencyIds || []).every((dependencyId) => byId.get(dependencyId)?.state === 'passed');
+};
+
+export const liveSteps = (steps = [], planRevision = null) => steps.filter((step) => (
+  LIVE_STEP_STATES.includes(step.state) && (planRevision === null || step.planRevision === planRevision)
+));
+
+// Selection rule (§7.6). Deterministic: the lowest sequence among the steps that
+// are actually runnable now.
+export const selectExecutableSteps = (steps = [], {
+  planRevision = null,
+  safeWave = false,
+  integrationVerification = null,
+  maxWorkers = 2,
+} = {}) => {
+  const runnable = steps
+    .filter((step) => (planRevision === null || step.planRevision === planRevision))
+    .filter((step) => step.state === 'ready' || step.state === 'failed')
+    .filter((step) => dependenciesSatisfied(step, steps))
+    .sort((a, b) => a.sequence - b.sequence);
+
+  if (runnable.length === 0) return { steps: [], reason: 'no-runnable-step' };
+  if (!safeWave) return { steps: runnable.slice(0, 1), reason: 'sequential' };
+
+  // A parallel wave is only safe when the write sets are disjoint AND an
+  // integration verification exists to catch what per-step evidence cannot.
+  if (!integrationVerification) return { steps: runnable.slice(0, 1), reason: 'safe-wave-requires-integration-verification' };
+  const selected = [];
+  const claimed = [];
+  for (const step of runnable) {
+    const paths = step.allowedPaths || [];
+    if (paths.length === 0 || paths.includes('**')) {
+      if (selected.length === 0) selected.push(step);
+      break;
+    }
+    const conflicts = claimed.some((existing) => existing.some((path) => paths.some((candidate) => path === candidate || path.startsWith(`${candidate.replace(/\/\*+$/, '')}/`) || candidate.startsWith(`${path.replace(/\/\*+$/, '')}/`))));
+    if (conflicts) break;
+    claimed.push(paths);
+    selected.push(step);
+    // The wave is capped by the bounded-wave worker limit; overflow stays for
+    // the next wave rather than widening the parallelism.
+    if (selected.length >= maxWorkers) break;
+  }
+  return {
+    steps: selected,
+    reason: selected.length > 1 ? 'safe-wave' : 'safe-wave-write-set-conflict',
+  };
+};
+
+export const currentStep = (steps = [], { planRevision = null } = {}) => {
+  const active = steps.find((step) => ['running', 'reported', 'verifying'].includes(step.state)
+    && (planRevision === null || step.planRevision === planRevision));
+  if (active) return active;
+  return selectExecutableSteps(steps, { planRevision }).steps[0] || null;
+};
+
+// True only when every step of the current plan revision is done and at least
+// one of them actually passed. A run whose steps were all superseded has not
+// finished anything.
+export const allStepsPassed = (steps = [], planRevision = null) => {
+  const scoped = steps.filter((step) => planRevision === null || step.planRevision === planRevision);
+  if (scoped.length === 0) return true;
+  return scoped.every((step) => TERMINAL_STEP_STATES.includes(step.state))
+    && scoped.some((step) => step.state === 'passed');
+};
+
+// What a step must have before it may be called passed (§7.7). Evidence alone is
+// not enough: it must be evidence at the CURRENT revision, covering the
+// acceptance this step is responsible for.
+export const evaluateStepCompletion = ({
+  step,
+  verifications = [],
+  run,
+  acceptance = [],
+  requiredObligationIds = null,
+  changedPaths = [],
+} = {}) => {
+  const reasons = [];
+  const byObligation = new Map(verifications.map((verification) => [verification.obligationId, verification]));
+
+  for (const obligationId of requiredObligationIds || step.obligationIds || []) {
+    const verification = byObligation.get(obligationId);
+    if (!verification || verification.status !== 'passed') {
+      reasons.push(`obligation-unsatisfied:${obligationId}`);
+      continue;
+    }
+    const verifiedMutation = verification.verifiedMutationRevision ?? verification.verifiedRuntimeRevision;
+    if (run && verifiedMutation !== run.mutationRevision) reasons.push(`obligation-stale:${obligationId}`);
+  }
+
+  // Coverage may be declared by acceptance id or by statement, exactly as the
+  // run-level completion gate accepts it.
+  const covered = new Set(verifications.filter((verification) => verification.status === 'passed').flatMap((verification) => verification.acceptanceCoverage || []));
+  const statementOf = new Map(acceptance.map((item) => [item.id, item.statement]));
+  for (const acceptanceId of step.acceptanceIds || []) {
+    if (covered.has(acceptanceId)) continue;
+    if (statementOf.has(acceptanceId) && covered.has(statementOf.get(acceptanceId))) continue;
+    reasons.push(`acceptance-uncovered:${acceptanceId}`);
+  }
+
+  if (!run?.currentWorkspaceIdentity) reasons.push('workspace-identity-unobserved');
+
+  return { complete: reasons.length === 0, reasons, changedPaths };
+};
+
+// Step-scoped stagnation (§7.9). The signal is about ONE unit of work failing
+// the same way, which is what a run-wide attempt counter cannot see.
+export const detectStepStagnation = ({ step, attempts = [], threshold = 3 } = {}) => {
+  const stepAttempts = attempts.filter((attempt) => attempt.stepId === step?.stepId);
+  const recent = stepAttempts.slice(-threshold);
+  const consecutiveFailures = recent.length >= threshold && recent.every((attempt) => attempt.status === 'failed');
+
+  const workspaceUnchanged = stepAttempts.filter((attempt) => (
+    attempt.status === 'failed' && attempt.workspaceIdentityStart && attempt.workspaceIdentityStart === attempt.workspaceIdentityEnd
+  )).length >= 2;
+
+  const repeatedResult = (() => {
+    const digests = stepAttempts.filter((attempt) => attempt.resultDigest).map((attempt) => attempt.resultDigest);
+    return digests.length >= 2 && digests.at(-1) === digests.at(-2);
+  })();
+
+  const signals = { consecutiveFailures, workspaceUnchanged, repeatedResult };
+  const stagnant = Object.values(signals).some(Boolean);
+  return {
+    stagnant,
+    signals,
+    attemptCount: stepAttempts.length,
+    // A stagnant step is not retried into the ground: it is replanned, and at
+    // T2/T3 by a frontier planner rather than the implementer that is stuck.
+    recommendation: stagnant ? 'replan' : 'retry',
+  };
+};

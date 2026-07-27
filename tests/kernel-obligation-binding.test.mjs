@@ -133,7 +133,11 @@ test('P0-3: evidence classes are not substitutable in either direction', async (
     const byId = Object.fromEntries(completion.obligationStatuses.map((entry) => [entry.obligationId, entry]));
     assert.equal(byId['unit-test'].satisfied, true, 'kernel-executed command satisfies a hard obligation');
     assert.equal(byId['static-analysis'].satisfied, false, 'a judgment must not satisfy an executable obligation');
-    assert.equal(byId['security-review'].satisfied, true, 'a structured verdict satisfies a judgment obligation');
+    // K0: a self-asserted verdict no longer satisfies a protected judgment
+    // obligation either — it needs a Review Receipt with a real reviewer
+    // lineage. See tests/kernel-review-receipt.test.mjs.
+    assert.equal(byId['security-review'].satisfied, false, 'a report-authored verdict cannot satisfy a protected judgment obligation');
+    assert.deepEqual(byId['security-review'].reviewLineage, null, 'the rejected judgment is never recorded, so there is no lineage to inspect');
     assert.equal(completion.decision, 'blocked');
   } finally {
     await cp.close();

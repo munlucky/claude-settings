@@ -44,12 +44,12 @@ export const createCodexAdapter = ({ launch = null, capabilities = {} } = {}) =>
   return {
     surface: 'codex',
     capabilities: resolved,
-    async dispatch({ decision, resolution, strategy, executionContract }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       if (!launch || invocation.mechanism === 'unsupported') {
         return { status: 'unsupported', resultStatus: 'completed', invocation };
       }
-      const result = (await launch({ invocation, executionContract, decision, strategy })) || {};
+      const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy })) || {};
       return {
         status: result.status || 'completed',
         resultStatus: result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed'),

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "taskSetRevision": "kernel-sentinel.v3",
+  "taskSetRevision": "kernel-sentinel.v5",
   "description": "Fixed false-completion sentinel set. Each 'reject' case is a trap the Kernel must NOT accept; 'accept' controls verify the harness is not trivially blocking everything, and that the legitimate end-to-end paths (bootstrap, resume, non-Node proof, sequential CLI processes) still complete.",
   "cases": [
     {
@@ -98,6 +98,30 @@
       "trap": "closeout_retry_loses_paths",
       "expect": "reject",
       "rationale": "A finalization retry must not turn an unfinished Git closeout into a clean completion by losing the selected paths."
+    },
+    {
+      "id": "SEN-017",
+      "trap": "forged_review_identity",
+      "expect": "reject",
+      "rationale": "A protected T3 judgment naming a second reviewer string, with no Review Receipt behind it, must not satisfy the obligation."
+    },
+    {
+      "id": "SEN-018",
+      "trap": "stale_capsule_reuse",
+      "expect": "reject",
+      "rationale": "An execution capsule built before the workspace moved describes a state that no longer exists and cannot be reported against."
+    },
+    {
+      "id": "SEN-019",
+      "trap": "out_of_scope_change",
+      "expect": "reject",
+      "rationale": "A change outside the work unit scope is a plan change; the report is refused before any evidence runs."
+    },
+    {
+      "id": "SEN-020",
+      "trap": "foreign_step_report",
+      "expect": "reject",
+      "rationale": "A report naming a step that is not the current work unit must not advance the cursor."
     },
     {
       "id": "SEN-100",

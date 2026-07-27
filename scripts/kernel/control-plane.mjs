@@ -33,7 +33,14 @@ import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } f
 import { planWalkingSkeleton } from './task/greenfield-bootstrap.mjs';
 import { buildImpactAnalysis } from './task/migration-workflow.mjs';
 import { resolveReviewPlan, normalizeReviewVerdict, assertIndependentReview, assertIndependentReviewSession, classifyReviewFindings } from './proof/review-pipeline.mjs';
+import { digestOfEvidence, digestOfPaths, evaluateReviewReceipt, reviewEvidenceRef } from './proof/review-receipt.mjs';
+import { isProtectedObligation } from './proof/protected-obligations.mjs';
+import { hashSessionId } from './run/model-route-contract.mjs';
 import { scanRepositoryEvidence } from './task/evidence-scan.mjs';
+import { allStepsPassed } from './run/run-step-ledger.mjs';
+import { planRunSteps } from './run/step-planner.mjs';
+import { createWorkCursorApi } from './run/work-cursor.mjs';
+import { admitRoute } from './routing/route-admission.mjs';
 import { captureBaselineProof } from './proof/baseline-proof.mjs';
 import { classifyFailures } from './proof/failure-classify.mjs';
 
@@ -112,6 +119,25 @@ const ACTION_FOR_MODEL_ACTION = Object.freeze({
 // for contract/boundary/migration work just because PROVE is reachable sooner.
 const refreshedTier = (store, runId) => store.getRun(runId)?.proofTier;
 
+const FINDING_CLASS_RANK = Object.freeze({ critical: 3, important: 2, minor: 1 });
+
+const findingClassOf = (findings = []) => {
+  let highest = 'none';
+  for (const finding of findings) {
+    const severity = typeof finding === 'object' && finding ? finding.severity : 'minor';
+    if ((FINDING_CLASS_RANK[severity] || 1) > (FINDING_CLASS_RANK[highest] || 0)) highest = severity in FINDING_CLASS_RANK ? severity : 'minor';
+  }
+  return highest;
+};
+
+// K0: which judgments may not rest on caller-supplied reviewer strings.
+const reviewReceiptRequired = ({ obligationId, declared, proofTier, independentReviewRequired = false }) =>
+  Boolean(declared?.protected)
+  || isProtectedObligation(obligationId)
+  || obligationId === 'security-review'
+  || independentReviewRequired === true
+  || (proofTier === 'T3' && (declared?.evidenceClass || 'hard') === 'judgment');
+
 const buildRunRoute = (contract, riskSummary) => {
   if (contract.taskClass === 'analysis') return ['FRAME', 'CLOSE'];
   if (contract.taskClass === 'long-running' || contract.flags.complex === true) return ['FRAME', 'SHAPE', 'SLICE', 'SCHEDULE', 'EXECUTE', 'PROVE', 'CLOSE'];
@@ -139,6 +165,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
   };
 
   return {
+    // K1 + K2 live in one module: the current work unit and the bounded context
+    // it is executed with. Spread as methods so `this` stays the control plane.
+    ...createWorkCursorApi({ store, projectRoot }),
+
     async startRun({ runId, objective, sourceIdentity, taskContract = {} } = {}) {
       const trustedSourceIdentity = computeKernelSourceIdentity({ projectRoot, objective: objective || taskContract.objective || 'Kernel execution task', taskContract });
       if (sourceIdentity && sourceIdentity !== trustedSourceIdentity) {
@@ -199,6 +229,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         route: { stages: route, riskTier: proofRoute.proofTier, shapeRequired: route.includes('SHAPE') },
       });
       store.declareRunObligations(runId, obligations);
+
+      // K2: every run gets a durable work cursor. Ordinary work is one synthetic
+      // step — the model-visible loop is unchanged — while long or complex work
+      // is decomposed into units the ledger can resume, retry, and replan.
+      const planned = planRunSteps({
+        run,
+        contract,
+        obligations,
+        route: { stages: route },
+        planRevision: 1,
+      });
+      store.createRunSteps(runId, planned.steps);
 
       // Automatically load FRAME knowledge context and record receipt
       const frameKnowledgeCtx = await buildProjectKnowledgeContext({
@@ -437,11 +479,31 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return updated;
     },
 
+    // K2 §7.9: stagnation is judged per unit of work as well as per run. A step
+    // that keeps failing the same way escalates the route even when the run-wide
+    // attempt counter has not reached its threshold yet.
+    // Only the step's CONSECUTIVE-FAILURE signal escalates the route. Its looser
+    // signals (a no-op retry, an identical result digest) fire at two attempts,
+    // which would overtake the retry-escalation threshold and make it
+    // unreachable — stagnation outranks retry. Those signals still drive the
+    // replan recommendation and suspend a Safe Wave.
+    stagnationSignal(runId) {
+      const runLevel = this.detectStagnation(runId);
+      const stepLevel = this.detectStepStagnation(runId);
+      const stepEscalates = stepLevel.signals?.consecutiveFailures === true;
+      return {
+        stagnant: runLevel.stagnant || stepEscalates,
+        runLevel,
+        stepLevel,
+        source: runLevel.stagnant ? 'run' : (stepEscalates ? 'step' : null),
+      };
+    },
+
     // Measurement-based routing recommendation (policy only; no provider call).
     recommendRouting(runId, { independentReviewRequired = false } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
-      const stagnation = this.detectStagnation(runId);
+      const stagnation = this.stagnationSignal(runId);
       const attempts = store.getAttempts(runId);
       return recommendModelRouting({
         riskTier: run.proofTier,
@@ -470,7 +532,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         // the stagnation threshold, and stagnation outranks it — which would
         // make retry escalation unreachable on the failing-report path.
         retryCount: attempts.filter((attempt) => attempt.status === 'failed').length,
-        stagnant: this.detectStagnation(runId).stagnant,
+        stagnant: this.stagnationSignal(runId).stagnant,
         protectedObligationFailed,
         planInvalid,
         architectureDeviation,
@@ -502,16 +564,63 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         architectureDeviation: actionContext.architectureDeviation === true,
         protectedObligationFailed: actionContext.protectedObligationFailed === true,
       });
+
+      // K1: the worker's bounded context is built here, beside the routing
+      // directive, so the model-visible payload keeps its shape while the Host
+      // gains everything a fresh session needs. Kernel-owned actions dispatch no
+      // worker, so they get no capsule.
+      let executionCapsule = null;
+      if (decision.modelClass !== 'kernel') {
+        executionCapsule = decision.role === 'reviewer'
+          ? await this.buildReviewerCapsule(runId, {
+            decision,
+            stage: decision.actionKind === 'review_contract' ? 'contract' : 'engineering',
+            obligationId: decision.obligationId,
+            changedPaths: actionContext.changedPaths || [],
+          })
+          : await this.buildCapsule(runId, { role: 'implementer', decision, changedPaths: actionContext.changedPaths || [] });
+        if (modelInput.action) modelInput.action.capsuleId = executionCapsule.capsuleId;
+      }
+
       return {
         schemaVersion: 1,
         runId,
         modelInput,
+        executionCapsule,
         hostDirective: {
           modelRouteDecision: decision,
           hostCapabilities: capabilities,
           enforcementStrategy: resolveEnforcementStrategy(capabilities, decision),
+          executionCapsule,
         },
       };
+    },
+
+    // K3: the Host asks for admission between the route decision and the actual
+    // dispatch, and the answer is persisted whatever it is. A blocked admission
+    // is evidence that a turn was refused, not an absence of a turn.
+    async admitRoute(runId, { decision, resolution, capabilities = {}, capsule = null, step = null, policies, economics = {} } = {}) {
+      const run = store.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const admission = admitRoute({
+        run,
+        step: step || this.getCurrentStep(runId),
+        decision,
+        resolution,
+        capabilities,
+        capsule,
+        policies,
+        economics,
+      });
+      return store.recordRouteAdmission(runId, admission);
+    },
+
+    getRouteAdmission(runId, admissionId) {
+      return store.getRouteAdmission(admissionId, { runId });
+    },
+
+    listRouteAdmissions(runId, options = {}) {
+      return store.listRouteAdmissions(runId, options);
     },
 
     // The Host reports what it actually ran. This is the only evidence that a
@@ -539,37 +648,88 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     // Records a structured review verdict as a judgment obligation. At T3 the
     // verdict must come from a reviewer independent of the implementer.
-    async recordReview(runId, verdict = {}, { implementerId, reviewReceiptId = null } = {}) {
+    //
+    // K0: the receipt is written FIRST and the judgment verification references
+    // it, so every judgment the completion gate accepts has a lineage it can
+    // re-check later. A review the Host never routed is still recorded, but as
+    // `unrouted` — visible, and never sufficient for a protected or T3 judgment.
+    async recordReview(runId, verdict = {}, {
+      implementerId,
+      reviewReceiptId = null,
+      obligationId = null,
+      acceptanceCoverage = [],
+      changedPaths = [],
+      rationale = null,
+    } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
       const normalized = normalizeReviewVerdict(verdict);
+      const implementationSession = store.getLatestImplementationSession(runId);
+      const usageReceipt = reviewReceiptId ? store.getModelUsageReceipt(reviewReceiptId, { runId }) : null;
+      const reviewDecision = usageReceipt ? store.getModelRouteDecision(usageReceipt.decisionId, { runId }) : null;
+
       if (run.proofTier === 'T3') {
         assertIndependentReview({ verdict: normalized, implementerId });
         // Once the Host is routing models, the reviewer string is no longer
         // enough: independence is checked against the session that implemented.
-        const implementationSession = store.getLatestImplementationSession(runId);
         if (implementationSession || reviewReceiptId) {
-          const reviewReceipt = reviewReceiptId ? store.getModelUsageReceipt(reviewReceiptId, { runId }) : null;
-          assertIndependentReviewSession({
-            reviewReceipt,
-            reviewDecision: reviewReceipt ? store.getModelRouteDecision(reviewReceipt.decisionId, { runId }) : null,
-            implementationSession,
-          });
+          assertIndependentReviewSession({ reviewReceipt: usageReceipt, reviewDecision, implementationSession });
         }
       }
-      const obligationId = `review-${normalized.stage}`;
+
+      const targetObligation = obligationId || `review-${normalized.stage}`;
+      const reviewReceipt = store.recordReviewReceipt(runId, {
+        runId,
+        obligationId: targetObligation,
+        reviewStage: normalized.stage,
+        verdict: normalized.verdict,
+        findingClass: findingClassOf(normalized.findings),
+        planRevision: Number(run.contractRevision || 1),
+        reviewer: usageReceipt
+          ? {
+            actorSessionId: usageReceipt.actorSessionId,
+            usageReceiptId: usageReceipt.receiptId,
+            routeDecisionId: usageReceipt.decisionId,
+            modelClass: reviewDecision?.modelClass || 'unrouted',
+            resolvedModel: usageReceipt.resolvedModel,
+            enforcementStatus: usageReceipt.enforcementStatus,
+          }
+          : {
+            actorSessionId: hashSessionId(normalized.reviewerId || `unrouted-reviewer:${runId}:${normalized.stage}`),
+            usageReceiptId: null,
+            routeDecisionId: null,
+            modelClass: 'unrouted',
+            resolvedModel: null,
+            enforcementStatus: 'unrouted',
+          },
+        implementer: {
+          actorSessionId: implementationSession?.actorSessionId || null,
+          usageReceiptId: implementationSession?.receiptId || null,
+        },
+        subject: {
+          workspaceIdentity: run.currentWorkspaceIdentity,
+          mutationRevision: run.mutationRevision,
+          changedPathsDigest: digestOfPaths(changedPaths),
+          evidenceDigest: digestOfEvidence(store.getVerifications(runId), { excludeObligationId: targetObligation }),
+        },
+        acceptanceCoverage,
+        findings: normalized.findings,
+        rationale: rationale || `${normalized.stage} review verdict: ${normalized.verdict}`,
+      });
+
       const updated = await this.recordProof(runId, {
-        obligationId,
+        obligationId: targetObligation,
         status: normalized.verdict === 'pass' ? 'passed' : 'failed',
-        evidenceRef: `review://${runId}/${normalized.stage}`,
+        evidenceRef: reviewEvidenceRef(runId, reviewReceipt.receiptId),
         command: 'structured-review',
         exitCode: normalized.verdict === 'pass' ? 0 : 1,
-        evidenceDigest: `sha256:${createHash('sha256').update(JSON.stringify(normalized)).digest('hex')}`,
+        evidenceDigest: reviewReceipt.digest,
         evidenceClass: 'judgment',
+        acceptanceCoverage: reviewReceipt.acceptanceCoverage,
       });
       // The follow-up class is decided here, so an architecture defect cannot
       // be quietly handed back to the implementer as a local patch (§9.3).
-      return { review: normalized, run: updated, followUp: classifyReviewFindings(normalized.findings) };
+      return { review: normalized, reviewReceipt, run: updated, followUp: classifyReviewFindings(normalized.findings) };
     },
 
     // Within-run route/tier promotion only (§13.5). Demotion throws.
@@ -698,6 +858,18 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       if (payload.action?.type === 'implement') {
         payload.action.projectContext = await this.buildImplementationContext(runId, run);
+      }
+      // K2: the model is handed ONE work unit, never the whole plan. A synthetic
+      // step carries the run itself, so a simple task looks exactly as before.
+      const step = this.getCurrentStep(runId);
+      if (step && ['implement', 'fix'].includes(payload.action?.type)) {
+        payload.action.step = {
+          stepId: step.stepId,
+          objective: step.objective,
+          acceptanceIds: step.acceptanceIds,
+          allowedPaths: step.allowedPaths,
+          forbiddenPaths: step.forbiddenPaths,
+        };
       }
       return payload;
     },
@@ -871,12 +1043,59 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       }
       if (run.status === 'blocked') store.resumeBlockedRun(runId);
 
+      // K1: a report answers a capsule. A report that names a capsule the
+      // Kernel never issued, or one built against a workspace the run has
+      // already moved past, is refused before any evidence is executed — and a
+      // change outside the capsule's work unit is a scope violation, not a
+      // stylistic problem.
+      // K2: which unit of work this report answers, resolved from the ledger
+      // rather than from whatever the model remembered.
+      const stepResolution = this.resolveReportStep(runId, report);
+      const activeStep = stepResolution.step || null;
+
+      const capsuleRejection = stepResolution.rejection || this.assertCapsuleScope(runId, report, activeStep);
+      if (capsuleRejection) {
+        const currentRun = store.getRun(runId);
+        return {
+          schemaVersion: 1,
+          runId,
+          status: stepResolution.rejection ? 'step-rejected' : 'scope-rejected',
+          executed: [],
+          failures: capsuleRejection,
+          finalization: null,
+          next: buildNextPayload({
+            run: currentRun,
+            verifications: store.getVerifications(runId),
+            requiredObligations: currentRun.requiredObligations,
+            obligations: store.getRunObligations(runId),
+            contract: currentRun.taskContract ? contractBriefing(currentRun.taskContract) : null,
+            failures: capsuleRejection,
+          }),
+        };
+      }
+
       // Each report is a durable attempt; the number is derived from persisted
       // rows so retry counting survives restarts.
       const attempt = store.recordAttempt(runId, { attemptNumber: store.nextAttemptNumber(runId), state: run.state, status: 'started' });
 
       const observation = observeWorkspaceIdentity({ projectRoot });
       const observed = store.observeWorkspaceIdentity(runId, observation.identity);
+
+      // The step moves to `running` and opens its own attempt row, so retries
+      // and failures are counted per unit of work rather than per run.
+      let stepAttempt = null;
+      if (activeStep) {
+        if (['ready', 'failed', 'planned'].includes(activeStep.state)) {
+          this.startStep(runId, activeStep.stepId, { workspaceIdentity: observation.identity, capsuleDigest: report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId })?.provenance?.capsuleDigest : null });
+        }
+        stepAttempt = store.recordStepAttempt(runId, {
+          stepId: activeStep.stepId,
+          capsuleDigest: report.capsuleId ? store.getExecutionCapsule(report.capsuleId, { runId })?.provenance?.capsuleDigest || null : null,
+          workspaceIdentityStart: observation.identity,
+          summary: report.summary || null,
+          changedPaths: report.changedPaths,
+        });
+      }
 
       const failures = [];
       const executed = [];
@@ -993,16 +1212,64 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
               }
             }
           }
-          const judgmentDigest = `sha256:${createHash('sha256').update(JSON.stringify(judgment)).digest('hex')}`;
+          let judgmentEvidenceRef = `judgment://${runId}/${judgment.obligationId}`;
+          let judgmentDigest = `sha256:${createHash('sha256').update(JSON.stringify(judgment)).digest('hex')}`;
+          let judgmentCoverage = judgment.acceptanceCoverage || (judgment.acceptanceMapping || []).map((mapping) => mapping.acceptance);
+
+          // K0: a protected or T3 judgment may not be self-asserted in the
+          // report. It must name a Review Receipt whose reviewer lineage the
+          // Kernel itself recorded, and that receipt must still describe the
+          // workspace and evidence state the run is in now.
+          const currentTier = refreshedTier(store, runId);
+          if (reviewReceiptRequired({
+            obligationId: judgment.obligationId,
+            declared: declaredJudgment,
+            proofTier: currentTier,
+            independentReviewRequired: judgment.independentReviewRequired === true,
+          })) {
+            if (!judgment.reviewReceiptId) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Obligation "${judgment.obligationId}" requires a reviewReceiptId: a review recorded by the Kernel from a routed reviewer session, not a reviewer identifier supplied in the report` });
+              continue;
+            }
+            const receipt = store.getReviewReceipt(judgment.reviewReceiptId, { runId });
+            if (!receipt) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${judgment.reviewReceiptId}" does not exist for this run` });
+              continue;
+            }
+            if (receipt.obligationId !== judgment.obligationId) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${receipt.receiptId}" reviewed "${receipt.obligationId}" and cannot satisfy "${judgment.obligationId}"` });
+              continue;
+            }
+            const lineage = evaluateReviewReceipt({
+              receipt,
+              run: store.getRun(runId),
+              requireIndependentSession: currentTier === 'T3',
+              requireFrontierClass: currentTier === 'T3',
+              requireTrustedEnforcement: true,
+              currentEvidenceDigest: digestOfEvidence(store.getVerifications(runId), { excludeObligationId: judgment.obligationId }),
+            });
+            if (!lineage.usable) {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${receipt.receiptId}" cannot prove "${judgment.obligationId}": ${lineage.reasons.join(', ')}` });
+              continue;
+            }
+            if (judgment.verdict === 'pass' && receipt.verdict !== 'pass') {
+              failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${receipt.receiptId}" recorded verdict "${receipt.verdict}" and cannot back a passing judgment` });
+              continue;
+            }
+            judgmentEvidenceRef = reviewEvidenceRef(runId, receipt.receiptId);
+            judgmentDigest = receipt.digest;
+            judgmentCoverage = [...new Set([...(judgmentCoverage || []), ...receipt.acceptanceCoverage])];
+          }
+
           await this.recordProof(runId, {
             obligationId: judgment.obligationId,
             status: judgment.verdict === 'pass' ? 'passed' : 'failed',
-            evidenceRef: `judgment://${runId}/${judgment.obligationId}`,
+            evidenceRef: judgmentEvidenceRef,
             command: 'structured-judgment',
             exitCode: judgment.verdict === 'pass' ? 0 : 1,
             evidenceDigest: judgmentDigest,
             evidenceClass: 'judgment',
-            acceptanceCoverage: judgment.acceptanceCoverage || (judgment.acceptanceMapping || []).map((mapping) => mapping.acceptance),
+            acceptanceCoverage: judgmentCoverage,
           });
           if (judgment.verdict !== 'pass') {
             failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: judgment.reason || 'structured judgment failed' });
@@ -1015,8 +1282,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const completionPreview = store.evaluateCompletion(runId);
       const outstanding = completionPreview.unsatisfiedObligations.map((entry) => entry.obligationId);
 
+      // Settle the step BEFORE completion is considered: a step that passed
+      // moves the cursor, and only a plan whose every step passed can reach
+      // run-level completion.
+      const stepOutcome = activeStep
+        ? this.settleStep(runId, { step: activeStep, attempt: stepAttempt, report, failures, outstanding, observation })
+        : null;
+      const stepsSettled = allStepsPassed(store.getRunSteps(runId, { planRevision: refreshed.planRevision }), refreshed.planRevision);
+
       let finalization = null;
-      if (failures.length === 0 && outstanding.length === 0 && verifications.length > 0 && refreshed.state === 'PROVE') {
+      if (failures.length === 0 && outstanding.length === 0 && stepsSettled && verifications.length > 0 && refreshed.state === 'PROVE') {
         // Only the runner that still holds the lease it acquired may finalize.
         if (!store.isLeaseHeld(runId, { holder, fencingToken })) {
           return { schemaVersion: 1, runId, status: 'lease-conflict', lease: store.getLease(runId), next: await this.next(runId) };
@@ -1052,6 +1327,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         executed,
         failures,
         failureClassification,
+        step: stepOutcome,
         finalization,
         next: buildNextPayload({
           run: finalRun,

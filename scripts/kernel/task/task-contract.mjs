@@ -78,6 +78,22 @@ const RISK_FLAGS = [
   'domainTerminologyConflict', 'destructiveSchemaChange', 'schemaChange', 'acceptanceAmbiguity',
 ];
 
+const normalizeSafeWave = (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { requested: false, approved: false, approvedBy: null, integrationVerification: null };
+  }
+  const commandRef = input.integrationVerification?.commandRef || input.integrationVerification || null;
+  const approvedBy = input.approvedBy ? String(input.approvedBy) : null;
+  return {
+    requested: input.requested === true || input.approved === true,
+    // Approval requires all three: the flag, a named approver, and an
+    // integration command. Any one missing leaves the run sequential.
+    approved: input.approved === true && Boolean(approvedBy) && Boolean(commandRef),
+    approvedBy,
+    integrationVerification: commandRef ? { commandRef: String(commandRef) } : null,
+  };
+};
+
 // The full contract the Kernel persists. Everything the model needs on resume
 // must be reachable from this object alone.
 export const normalizeTaskContract = (input = {}, { objective, changedFileCount = 0 } = {}) => {
@@ -99,6 +115,19 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     taskClass: String(contract.taskClass || 'feature'),
     requestedTier: contract.riskTier || contract.proofTier || contract.requestedTier || null,
     requiredObligations: asStringList(contract.requiredObligations),
+    // Work-unit scope (K1). Declared here so an Execution Capsule can bound a
+    // worker to the paths the contract actually authorises; an empty list means
+    // the whole workspace and can never be violated.
+    // Declared decomposition (K2). Present only when the caller actually split
+    // the work; otherwise the run gets one synthetic step.
+    steps: Array.isArray(contract.steps) ? contract.steps : [],
+    // Safe Wave (§2.4/§7.6) is default-deny. Parallel step execution needs an
+    // explicit operator approval, an approver on record, and the integration
+    // check that per-step evidence cannot replace — declaring the intent alone
+    // is a request, never an authorisation.
+    safeWave: normalizeSafeWave(contract.safeWave),
+    allowedPaths: asStringList(contract.allowedPaths),
+    forbiddenPaths: asStringList(contract.forbiddenPaths),
     filesChanged: Number.isFinite(contract.filesChanged) ? Number(contract.filesChanged) : changedFileCount,
     flags,
   };
@@ -115,6 +144,10 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   taskClass: contract.taskClass,
   requestedTier: contract.requestedTier,
   requiredObligations: contract.requiredObligations,
+  steps: contract.steps,
+  safeWave: contract.safeWave,
+  allowedPaths: contract.allowedPaths,
+  forbiddenPaths: contract.forbiddenPaths,
   flags: contract.flags,
 })).digest('hex')}`;
 
@@ -211,6 +244,20 @@ export const mergeContractRevision = (previous, next) => {
     risks: union(previous.risks, next.risks),
     surfaces: union(previous.surfaces, next.surfaces),
     requiredObligations: union(previous.requiredObligations, next.requiredObligations),
+    steps: next.steps?.length ? next.steps : (previous.steps || []),
+    // An approval is NOT inherited: a revision that does not restate it revokes
+    // it. Carrying the previous object forward would let a replanned contract
+    // keep dispatching parallel workers under an approval granted for the plan
+    // it replaced. The request and the named integration command survive so the
+    // operator can re-approve without restating everything.
+    safeWave: next.safeWave?.approved ? next.safeWave : {
+      requested: Boolean(previous.safeWave?.requested || next.safeWave?.requested),
+      approved: false,
+      approvedBy: null,
+      integrationVerification: next.safeWave?.integrationVerification || previous.safeWave?.integrationVerification || null,
+    },
+    allowedPaths: union(previous.allowedPaths, next.allowedPaths),
+    forbiddenPaths: union(previous.forbiddenPaths, next.forbiddenPaths),
     flags: { ...previous.flags, ...next.flags },
     filesChanged: Math.max(Number(previous.filesChanged) || 0, Number(next.filesChanged) || 0),
     requestedTier: next.requestedTier || previous.requestedTier,

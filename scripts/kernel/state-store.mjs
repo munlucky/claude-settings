@@ -8,6 +8,7 @@ import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapp
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { assertCommandBinding } from './run/obligation-compiler.mjs';
 import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
+import { digestOfEvidence, evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -288,6 +289,122 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       FOREIGN KEY(decision_id) REFERENCES model_route_decisions(decision_id),
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS route_admissions (
+      admission_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      step_id TEXT,
+      decision_id TEXT NOT NULL,
+      capsule_id TEXT,
+      requested_json TEXT NOT NULL,
+      resolved_json TEXT NOT NULL,
+      policy_json TEXT NOT NULL,
+      economics_json TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      rejection_code TEXT,
+      digest TEXT NOT NULL,
+      admission_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_admissions_run ON route_admissions(run_id, decision_id);
+    CREATE TABLE IF NOT EXISTS run_steps (
+      step_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      objective TEXT NOT NULL,
+      state TEXT NOT NULL,
+      plan_revision INTEGER NOT NULL DEFAULT 1,
+      dependency_ids_json TEXT NOT NULL DEFAULT '[]',
+      allowed_paths_json TEXT NOT NULL DEFAULT '[]',
+      forbidden_paths_json TEXT NOT NULL DEFAULT '[]',
+      acceptance_ids_json TEXT NOT NULL DEFAULT '[]',
+      obligation_ids_json TEXT NOT NULL DEFAULT '[]',
+      expected_outputs_json TEXT NOT NULL DEFAULT '[]',
+      assigned_role TEXT NOT NULL DEFAULT 'implementer',
+      synthetic INTEGER NOT NULL DEFAULT 0,
+      migration_origin TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      capsule_digest TEXT,
+      result_digest TEXT,
+      workspace_identity_start TEXT,
+      workspace_identity_end TEXT,
+      blocked_reason TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(run_id, step_id),
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_steps_run ON run_steps(run_id, plan_revision, sequence);
+    CREATE TABLE IF NOT EXISTS run_step_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      step_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL,
+      actor_session_id TEXT,
+      capsule_digest TEXT,
+      route_decision_id TEXT,
+      usage_receipt_id TEXT,
+      status TEXT NOT NULL,
+      workspace_identity_start TEXT,
+      workspace_identity_end TEXT,
+      summary TEXT,
+      changed_paths_json TEXT NOT NULL DEFAULT '[]',
+      result_digest TEXT,
+      failure_reasons_json TEXT NOT NULL DEFAULT '[]',
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_step_attempts_step ON run_step_attempts(run_id, step_id);
+    CREATE TABLE IF NOT EXISTS run_capsules (
+      capsule_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      step_id TEXT,
+      role TEXT NOT NULL,
+      plan_revision INTEGER NOT NULL DEFAULT 1,
+      mutation_revision INTEGER NOT NULL DEFAULT 0,
+      workspace_identity TEXT NOT NULL,
+      route_decision_id TEXT,
+      digest TEXT NOT NULL,
+      capsule_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_capsules_run ON run_capsules(run_id, role);
+    CREATE TABLE IF NOT EXISTS review_receipts (
+      receipt_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      obligation_id TEXT NOT NULL,
+      review_stage TEXT NOT NULL,
+      verdict TEXT NOT NULL,
+      finding_class TEXT NOT NULL DEFAULT 'none',
+      plan_revision INTEGER NOT NULL DEFAULT 1,
+      reviewer_usage_receipt_id TEXT,
+      implementer_usage_receipt_id TEXT,
+      reviewer_session_id TEXT NOT NULL,
+      implementer_session_id TEXT,
+      route_decision_id TEXT,
+      model_class TEXT NOT NULL,
+      resolved_model TEXT,
+      enforcement_status TEXT NOT NULL,
+      workspace_identity TEXT NOT NULL,
+      mutation_revision INTEGER NOT NULL,
+      changed_paths_digest TEXT NOT NULL,
+      evidence_digest TEXT NOT NULL,
+      acceptance_coverage_json TEXT NOT NULL DEFAULT '[]',
+      findings_json TEXT NOT NULL DEFAULT '[]',
+      rationale TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      receipt_json TEXT NOT NULL,
+      created_by_version TEXT,
+      migration_origin TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_review_receipts_run ON review_receipts(run_id);
+    CREATE INDEX IF NOT EXISTS idx_review_receipts_obligation ON review_receipts(run_id, obligation_id);
     CREATE TABLE IF NOT EXISTS run_obligations (
       run_id TEXT NOT NULL,
       obligation_id TEXT NOT NULL,
@@ -314,6 +431,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('runs', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('runs', 'finalization_status', "TEXT DEFAULT 'pending'");
   addCol('runs', 'route_json', 'TEXT');
+  // Plan revision (K2) is the ledger's own revision: a replan supersedes the
+  // live steps and writes the replacement plan at the next revision, without
+  // touching the task contract's revision.
+  addCol('runs', 'plan_revision', 'INTEGER DEFAULT 1');
   // Obligation binding authority (P0-2/P0-3).
   addCol('run_obligations', 'evidence_class', "TEXT DEFAULT 'hard'");
   addCol('run_obligations', 'verification_method', 'TEXT');
@@ -322,6 +443,14 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('run_obligations', 'protected', 'INTEGER DEFAULT 0');
   addCol('run_obligations', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('run_obligations', 'rejected_command_refs', "TEXT DEFAULT '[]'");
+  // Capsule (K1), admission (K3), and step (K2) lineage on the usage receipt.
+  // Legacy receipts keep NULL: a turn that ran before these existed is not
+  // retroactively claimed to have had them.
+  addCol('model_usage_receipts', 'capsule_id', 'TEXT');
+  addCol('model_usage_receipts', 'capsule_digest', 'TEXT');
+  addCol('model_usage_receipts', 'admission_id', 'TEXT');
+  addCol('model_usage_receipts', 'admission_digest', 'TEXT');
+  addCol('model_usage_receipts', 'step_id', 'TEXT');
   addCol('verifications', 'evidence_class', "TEXT DEFAULT 'attested'");
   addCol('verifications', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('leases', 'fencing_token', 'INTEGER DEFAULT 0');
@@ -588,6 +717,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                contract_revision as contractRevision,
                finalization_status as finalizationStatus,
                route_json as routeJson,
+               plan_revision as planRevision,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
       `).get(runId);
@@ -625,6 +755,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         contractRevision: Number(row.contractRevision || 1),
         finalizationStatus: row.finalizationStatus || 'pending',
         route: row.routeJson ? safeJsonParse(row.routeJson, null) : null,
+        planRevision: Number(row.planRevision || 1),
         updatedAt: row.updatedAt,
       };
     },
@@ -823,14 +954,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const decision = this.getModelRouteDecision(normalized.decisionId, { runId });
       if (!decision) throw new Error(`model usage receipt references decision ${normalized.decisionId}, which does not belong to run ${runId}`);
       db.prepare(`
-        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, receipt_json, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, receipt_json=excluded.receipt_json
+        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, capsule_id, capsule_digest, admission_id, admission_digest, step_id, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, capsule_id=excluded.capsule_id, capsule_digest=excluded.capsule_digest, admission_id=excluded.admission_id, admission_digest=excluded.admission_digest, step_id=excluded.step_id, receipt_json=excluded.receipt_json
       `).run(
         normalized.receiptId, normalized.decisionId, runId, normalized.hostSurface, normalized.actorSessionId,
         normalized.parentSessionId, normalized.resolvedModel, normalized.resolvedEffort, normalized.enforcementStatus,
         normalized.inputTokens, normalized.cachedInputTokens, normalized.outputTokens, normalized.costMicros,
-        normalized.wallClockMs, normalized.resultStatus, JSON.stringify(normalized), normalized.createdAt,
+        normalized.wallClockMs, normalized.resultStatus,
+        normalized.capsuleId, normalized.capsuleDigest, normalized.admissionId, normalized.admissionDigest, normalized.stepId,
+        JSON.stringify(normalized), normalized.createdAt,
       );
       return normalized;
     },
@@ -847,11 +980,281 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         .map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
     },
 
+    // Route admissions (K3). Recorded whatever the outcome: a blocked admission
+    // is the evidence that a dispatch was refused, and losing it would make a
+    // refusal indistinguishable from a turn that never happened.
+    recordRouteAdmission(runId, admission) {
+      if (!admission?.admissionId) throw new Error('recordRouteAdmission requires a built admission');
+      if (admission.runId !== runId) throw new Error(`route admission runId ${admission.runId} does not match run ${runId}`);
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`
+        INSERT INTO route_admissions(admission_id, run_id, step_id, decision_id, capsule_id, requested_json, resolved_json, policy_json, economics_json, decision, rejection_code, digest, admission_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(admission_id) DO NOTHING
+      `).run(
+        admission.admissionId, runId, admission.stepId || null, admission.decisionId, admission.capsuleId || null,
+        JSON.stringify(admission.requested), JSON.stringify(admission.resolved), JSON.stringify(admission.policy),
+        JSON.stringify(admission.economics), admission.decision, admission.rejectionCode || null,
+        admission.digest, JSON.stringify(admission), admission.createdAt,
+      );
+      return admission;
+    },
+
+    getRouteAdmission(admissionId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, admission_json as admissionJson FROM route_admissions WHERE admission_id=?`).get(admissionId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.admissionJson, null);
+    },
+
+    listRouteAdmissions(runId, { decisionId = null } = {}) {
+      const rows = decisionId
+        ? db.prepare(`SELECT admission_json as admissionJson FROM route_admissions WHERE run_id=? AND decision_id=? ORDER BY rowid ASC`).all(runId, decisionId)
+        : db.prepare(`SELECT admission_json as admissionJson FROM route_admissions WHERE run_id=? ORDER BY rowid ASC`).all(runId);
+      return rows.map((row) => safeJsonParse(row.admissionJson, null)).filter(Boolean);
+    },
+
+    // Run Step Ledger (K2). The work cursor is state, not chat context: which
+    // unit is running, what it may touch, what it must prove, and how many times
+    // it has already failed all survive a process restart.
+    createRunSteps(runId, steps = []) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      const insert = db.prepare(`
+        INSERT INTO run_steps(step_id, run_id, sequence, objective, state, plan_revision, dependency_ids_json, allowed_paths_json, forbidden_paths_json, acceptance_ids_json, obligation_ids_json, expected_outputs_json, assigned_role, synthetic, migration_origin, created_at, updated_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, step_id) DO NOTHING
+      `);
+      for (const step of steps) {
+        insert.run(
+          step.stepId, runId, Number(step.sequence) || 1, String(step.objective || ''), String(step.state || 'planned'),
+          Number(step.planRevision) || 1,
+          JSON.stringify(step.dependencyIds || []), JSON.stringify(step.allowedPaths || []), JSON.stringify(step.forbiddenPaths || []),
+          JSON.stringify(step.acceptanceIds || []), JSON.stringify(step.obligationIds || []), JSON.stringify(step.expectedOutputs || []),
+          String(step.assignedRole || 'implementer'), step.synthetic ? 1 : 0, step.migrationOrigin || null, now(), now(),
+        );
+      }
+      return this.getRunSteps(runId);
+    },
+
+    getRunSteps(runId, { planRevision = null } = {}) {
+      const rows = planRevision === null
+        ? db.prepare(`SELECT * FROM run_steps WHERE run_id=? ORDER BY plan_revision ASC, sequence ASC`).all(runId)
+        : db.prepare(`SELECT * FROM run_steps WHERE run_id=? AND plan_revision=? ORDER BY sequence ASC`).all(runId, planRevision);
+      return rows.map((row) => ({
+        stepId: row.step_id,
+        runId: row.run_id,
+        sequence: row.sequence,
+        objective: row.objective,
+        state: row.state,
+        planRevision: row.plan_revision,
+        dependencyIds: safeJsonParse(row.dependency_ids_json, []),
+        allowedPaths: safeJsonParse(row.allowed_paths_json, []),
+        forbiddenPaths: safeJsonParse(row.forbidden_paths_json, []),
+        acceptanceIds: safeJsonParse(row.acceptance_ids_json, []),
+        obligationIds: safeJsonParse(row.obligation_ids_json, []),
+        expectedOutputs: safeJsonParse(row.expected_outputs_json, []),
+        assignedRole: row.assigned_role,
+        synthetic: Boolean(row.synthetic),
+        migrationOrigin: row.migration_origin || null,
+        attemptCount: row.attempt_count,
+        capsuleDigest: row.capsule_digest || null,
+        resultDigest: row.result_digest || null,
+        workspaceIdentityStart: row.workspace_identity_start || null,
+        workspaceIdentityEnd: row.workspace_identity_end || null,
+        blockedReason: row.blocked_reason || null,
+        createdAt: row.created_at,
+        startedAt: row.started_at || null,
+        completedAt: row.completed_at || null,
+        updatedAt: row.updated_at,
+      }));
+    },
+
+    getRunStep(runId, stepId) {
+      return this.getRunSteps(runId).find((step) => step.stepId === stepId) || null;
+    },
+
+    updateRunStep(runId, stepId, patch = {}) {
+      const columns = {
+        state: 'state',
+        attemptCount: 'attempt_count',
+        capsuleDigest: 'capsule_digest',
+        resultDigest: 'result_digest',
+        workspaceIdentityStart: 'workspace_identity_start',
+        workspaceIdentityEnd: 'workspace_identity_end',
+        blockedReason: 'blocked_reason',
+        startedAt: 'started_at',
+        completedAt: 'completed_at',
+      };
+      const assignments = [];
+      const values = [];
+      for (const [key, column] of Object.entries(columns)) {
+        if (patch[key] === undefined) continue;
+        assignments.push(`${column}=?`);
+        values.push(patch[key]);
+      }
+      if (assignments.length === 0) return this.getRunStep(runId, stepId);
+      db.prepare(`UPDATE run_steps SET ${assignments.join(', ')}, updated_at=? WHERE run_id=? AND step_id=?`).run(...values, now(), runId, stepId);
+      return this.getRunStep(runId, stepId);
+    },
+
+    // A replan never edits an attempted step; it supersedes it, so what was tried
+    // stays readable at its own plan revision.
+    supersedeRunSteps(runId, { planRevision }) {
+      db.prepare(`UPDATE run_steps SET state='superseded', updated_at=? WHERE run_id=? AND plan_revision=? AND state NOT IN ('passed','superseded','cancelled')`)
+        .run(now(), runId, planRevision);
+      return this.getRunSteps(runId);
+    },
+
+    setPlanRevision(runId, planRevision) {
+      db.prepare(`UPDATE runs SET plan_revision=?, revision=revision+1, updated_at=? WHERE run_id=?`).run(Number(planRevision), now(), runId);
+      return this.getRun(runId);
+    },
+
+    recordStepAttempt(runId, { stepId, actorSessionId = null, capsuleDigest = null, routeDecisionId = null, usageReceiptId = null, workspaceIdentityStart = null, summary = null, changedPaths = [] }) {
+      const attemptNumber = this.nextStepAttemptNumber(runId, stepId);
+      const result = db.prepare(`
+        INSERT INTO run_step_attempts(run_id, step_id, attempt_number, actor_session_id, capsule_digest, route_decision_id, usage_receipt_id, status, workspace_identity_start, summary, changed_paths_json, started_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, 'started', ?, ?, ?, ?)
+      `).run(runId, stepId, attemptNumber, actorSessionId, capsuleDigest, routeDecisionId, usageReceiptId, workspaceIdentityStart, summary, JSON.stringify(changedPaths), now());
+      db.prepare(`UPDATE run_steps SET attempt_count=attempt_count+1, updated_at=? WHERE run_id=? AND step_id=?`).run(now(), runId, stepId);
+      return this.getStepAttempt(result.lastInsertRowid);
+    },
+
+    finishStepAttempt(attemptId, { status = 'finished', workspaceIdentityEnd = null, resultDigest = null, failureReasons = [], changedPaths = null } = {}) {
+      const assignments = ['status=?', 'finished_at=?', 'workspace_identity_end=?', 'result_digest=?', 'failure_reasons_json=?'];
+      const values = [status, now(), workspaceIdentityEnd, resultDigest, JSON.stringify(failureReasons)];
+      if (changedPaths) {
+        assignments.push('changed_paths_json=?');
+        values.push(JSON.stringify(changedPaths));
+      }
+      db.prepare(`UPDATE run_step_attempts SET ${assignments.join(', ')} WHERE id=?`).run(...values, attemptId);
+      return this.getStepAttempt(attemptId);
+    },
+
+    getStepAttempt(id) {
+      const row = db.prepare(`SELECT * FROM run_step_attempts WHERE id=?`).get(id);
+      if (!row) return null;
+      return {
+        id: row.id,
+        runId: row.run_id,
+        stepId: row.step_id,
+        attemptNumber: row.attempt_number,
+        actorSessionId: row.actor_session_id || null,
+        capsuleDigest: row.capsule_digest || null,
+        routeDecisionId: row.route_decision_id || null,
+        usageReceiptId: row.usage_receipt_id || null,
+        status: row.status,
+        workspaceIdentityStart: row.workspace_identity_start || null,
+        workspaceIdentityEnd: row.workspace_identity_end || null,
+        summary: row.summary || null,
+        changedPaths: safeJsonParse(row.changed_paths_json, []),
+        resultDigest: row.result_digest || null,
+        failureReasons: safeJsonParse(row.failure_reasons_json, []),
+        startedAt: row.started_at,
+        finishedAt: row.finished_at || null,
+      };
+    },
+
+    getStepAttempts(runId, { stepId = null } = {}) {
+      const rows = stepId
+        ? db.prepare(`SELECT id FROM run_step_attempts WHERE run_id=? AND step_id=? ORDER BY id ASC`).all(runId, stepId)
+        : db.prepare(`SELECT id FROM run_step_attempts WHERE run_id=? ORDER BY id ASC`).all(runId);
+      return rows.map((row) => this.getStepAttempt(row.id));
+    },
+
+    nextStepAttemptNumber(runId, stepId) {
+      const row = db.prepare(`SELECT MAX(attempt_number) as maxAttempt FROM run_step_attempts WHERE run_id=? AND step_id=?`).get(runId, stepId);
+      return (row?.maxAttempt || 0) + 1;
+    },
+
+    // Execution capsules (K1). The capsule a worker actually received is
+    // persisted, so a resumed process can hand out the same bounded context and
+    // a report can be checked against the capsule it claims to answer.
+    recordExecutionCapsule(runId, capsule) {
+      if (!capsule?.capsuleId) throw new Error('recordExecutionCapsule requires a normalized capsule');
+      if (capsule.runId !== runId) throw new Error(`capsule runId ${capsule.runId} does not match run ${runId}`);
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`
+        INSERT INTO run_capsules(capsule_id, run_id, step_id, role, plan_revision, mutation_revision, workspace_identity, route_decision_id, digest, capsule_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(capsule_id) DO NOTHING
+      `).run(
+        capsule.capsuleId, runId, capsule.stepId || null, capsule.role,
+        Number(capsule.planRevision || 1),
+        Number(capsule.mutationRevision ?? capsule.subject?.mutationRevision ?? 0),
+        capsule.provenance.workspaceIdentity, capsule.provenance.routeDecisionId || null,
+        capsule.provenance.capsuleDigest, JSON.stringify(capsule), capsule.createdAt,
+      );
+      return capsule;
+    },
+
+    getExecutionCapsule(capsuleId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, capsule_json as capsuleJson FROM run_capsules WHERE capsule_id=?`).get(capsuleId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.capsuleJson, null);
+    },
+
+    latestExecutionCapsule(runId, { role = 'implementer', stepId = null } = {}) {
+      const row = stepId
+        ? db.prepare(`SELECT capsule_json as capsuleJson FROM run_capsules WHERE run_id=? AND role=? AND step_id=? ORDER BY rowid DESC LIMIT 1`).get(runId, role, stepId)
+        : db.prepare(`SELECT capsule_json as capsuleJson FROM run_capsules WHERE run_id=? AND role=? ORDER BY rowid DESC LIMIT 1`).get(runId, role);
+      return row ? safeJsonParse(row.capsuleJson, null) : null;
+    },
+
+    listExecutionCapsules(runId) {
+      return db.prepare(`SELECT capsule_json as capsuleJson FROM run_capsules WHERE run_id=? ORDER BY rowid ASC`).all(runId)
+        .map((row) => safeJsonParse(row.capsuleJson, null)).filter(Boolean);
+    },
+
+    // Review receipts (K0). A judgment obligation is proven by a receipt whose
+    // reviewer lineage and reviewed subject are both persisted, so a later
+    // completion check can re-derive whether the review still holds.
+    recordReviewReceipt(runId, receipt) {
+      const normalized = normalizeReviewReceipt({ ...receipt, runId: receipt?.runId || runId });
+      if (normalized.runId !== runId) throw new Error(`review receipt runId ${normalized.runId} does not match run ${runId}`);
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`
+        INSERT INTO review_receipts(receipt_id, run_id, obligation_id, review_stage, verdict, finding_class, plan_revision, reviewer_usage_receipt_id, implementer_usage_receipt_id, reviewer_session_id, implementer_session_id, route_decision_id, model_class, resolved_model, enforcement_status, workspace_identity, mutation_revision, changed_paths_digest, evidence_digest, acceptance_coverage_json, findings_json, rationale, digest, receipt_json, created_by_version, migration_origin, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(receipt_id) DO NOTHING
+      `).run(
+        normalized.receiptId, runId, normalized.obligationId, normalized.reviewStage, normalized.verdict,
+        normalized.findingClass, normalized.planRevision,
+        normalized.reviewer.usageReceiptId, normalized.implementer.usageReceiptId,
+        normalized.reviewer.actorSessionId, normalized.implementer.actorSessionId,
+        normalized.reviewer.routeDecisionId, normalized.reviewer.modelClass, normalized.reviewer.resolvedModel,
+        normalized.reviewer.enforcementStatus,
+        normalized.subject.workspaceIdentity, normalized.subject.mutationRevision,
+        normalized.subject.changedPathsDigest, normalized.subject.evidenceDigest,
+        JSON.stringify(normalized.acceptanceCoverage), JSON.stringify(normalized.findings),
+        normalized.rationale, normalized.digest, JSON.stringify(normalized),
+        normalized.createdByVersion, normalized.migrationOrigin, normalized.createdAt,
+      );
+      return normalized;
+    },
+
+    getReviewReceipt(receiptId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, receipt_json as receiptJson FROM review_receipts WHERE receipt_id=?`).get(receiptId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.receiptJson, null);
+    },
+
+    listReviewReceipts(runId, { obligationId = null } = {}) {
+      const rows = obligationId
+        ? db.prepare(`SELECT receipt_json as receiptJson FROM review_receipts WHERE run_id=? AND obligation_id=? ORDER BY rowid ASC`).all(runId, obligationId)
+        : db.prepare(`SELECT receipt_json as receiptJson FROM review_receipts WHERE run_id=? ORDER BY rowid ASC`).all(runId);
+      return rows.map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
+    },
+
     // Reviewer independence at T3 is checked against the session that actually
     // implemented, not against a caller-supplied string (§9.2).
     getLatestImplementationSession(runId) {
       const row = db.prepare(`
-        SELECT u.receipt_id as receiptId, u.actor_session_id as actorSessionId, u.decision_id as decisionId, d.model_class as modelClass, d.action_kind as actionKind
+        SELECT u.receipt_id as receiptId, u.actor_session_id as actorSessionId, u.decision_id as decisionId,
+               u.capsule_id as capsuleId, u.capsule_digest as capsuleDigest, u.resolved_model as resolvedModel,
+               d.model_class as modelClass, d.action_kind as actionKind
         FROM model_usage_receipts u JOIN model_route_decisions d ON d.decision_id = u.decision_id
         WHERE u.run_id=? AND d.role='implementer' ORDER BY u.rowid DESC LIMIT 1
       `).get(runId);
@@ -1312,13 +1715,48 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       // executing the bound command counts. A protected obligation can never
       // be waived.
       const runMutatedWorkspace = run.mutationRevision > 0;
+
+      // K0: a judgment that stands in for a protected obligation, or any
+      // judgment in a T3 run, must be backed by a Review Receipt whose reviewer
+      // lineage and reviewed subject still hold. Two different reviewer strings
+      // are not evidence that an independent review happened.
+      const reviewLineageFor = (obligationId, verification, declared) => {
+        const protectedObligation = Boolean(declared?.protected || isProtectedObligation(obligationId));
+        const independenceRequired = run.proofTier === 'T3';
+        if (!protectedObligation && !independenceRequired) {
+          return { required: false, usable: true, receiptId: null, reasons: [] };
+        }
+        const parsed = parseReviewEvidenceRef(verification?.evidenceRef);
+        if (!parsed || parsed.runId !== runId) {
+          return { required: true, usable: false, receiptId: null, reasons: ['review-receipt-not-referenced'] };
+        }
+        const receipt = this.getReviewReceipt(parsed.receiptId, { runId });
+        const reasons = [];
+        if (receipt) {
+          if (receipt.obligationId !== obligationId) reasons.push('review-receipt-obligation-mismatch');
+          if (verification.evidenceDigest !== receipt.digest) reasons.push('review-receipt-digest-mismatch');
+        }
+        const evaluation = evaluateReviewReceipt({
+          receipt,
+          run,
+          requireIndependentSession: independenceRequired,
+          requireFrontierClass: independenceRequired,
+          requireTrustedEnforcement: true,
+          // The verdict must describe the evidence set the run has NOW; a check
+          // rerun after the review changes nothing about the workspace.
+          currentEvidenceDigest: digestOfEvidence(verifications, { excludeObligationId: obligationId }),
+        });
+        const allReasons = [...reasons, ...evaluation.reasons];
+        return { required: true, usable: allReasons.length === 0, receiptId: parsed.receiptId, reasons: allReasons };
+      };
+
       const obligationSatisfied = (obligationId) => {
         const declared = declaredById.get(obligationId);
         const expectedClass = declared?.evidenceClass || 'hard';
         const verification = latestByObligation.get(obligationId);
         if (verification && isVerificationValid(verification)) {
           if (expectedClass === 'judgment') {
-            if (verification.evidenceClass === 'judgment') return true;
+            if (verification.evidenceClass === 'judgment') return reviewLineageFor(obligationId, verification, declared).usable;
           } else if (verification.executor === 'kernel-runtime' && verification.evidenceClass === 'hard') {
             return true;
           } else if (!runMutatedWorkspace && verification.evidenceClass !== 'judgment') {
@@ -1335,11 +1773,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         .map((obligationId) => {
           const declared = declaredById.get(obligationId);
           const verification = latestByObligation.get(obligationId);
+          const requiredEvidenceClass = declared?.evidenceClass || 'hard';
+          const reviewLineage = requiredEvidenceClass === 'judgment' && verification
+            ? reviewLineageFor(obligationId, verification, declared)
+            : null;
           return {
             obligationId,
-            requiredEvidenceClass: declared?.evidenceClass || 'hard',
+            requiredEvidenceClass,
             observedEvidenceClass: verification?.evidenceClass || null,
             executor: verification?.executor || null,
+            reviewLineage,
             satisfied: obligationSatisfied(obligationId),
             waived: waivedObligations.has(obligationId),
           };

@@ -4,6 +4,7 @@
 
 import { buildUsageReceipt } from './usage-receipt.mjs';
 import { createModelRegistry } from './model-registry.mjs';
+import { currentHostPolicies, revalidateBeforeDispatch } from './admission-revalidator.mjs';
 
 // Only the execution contract crosses to the worker (§4.4) — never the
 // planner's reasoning, the conversation, or unrelated repository context.
@@ -47,6 +48,9 @@ export const dispatchKernelTurn = async ({
   overrides = {},
   actionContext = {},
   parentSessionId = null,
+  toolPolicy = {},
+  permissionPolicy = {},
+  economics = {},
   now = () => new Date().toISOString(),
 } = {}) => {
   if (!adapter) throw new Error('dispatchKernelTurn requires a Host adapter');
@@ -64,6 +68,44 @@ export const dispatchKernelTurn = async ({
 
   const modelRegistry = registry || createModelRegistry({ surface: hostCapabilities.surface, runtimeHome, env, overrides });
   const resolution = modelRegistry.resolve(decision.modelClass, overrides);
+  // K1: the capsule is the authority for what the worker may see and touch.
+  // The flat contract is still passed for adapters that have not moved yet.
+  const executionCapsule = turn.executionCapsule || hostDirective.executionCapsule || null;
+
+  // K3: admission sits between the decision and the dispatch. A blocked or
+  // drifted admission stops the turn here — no worker runs, and the refusal is
+  // persisted rather than looking like a turn that never happened.
+  const policies = currentHostPolicies({ registry: modelRegistry, capabilities: hostCapabilities, toolPolicy, permissionPolicy });
+  const admission = await controlPlane.admitRoute(runId, {
+    decision,
+    resolution,
+    capabilities: hostCapabilities,
+    capsule: executionCapsule,
+    policies,
+    economics,
+  });
+  if (admission.decision === 'blocked' || admission.decision === 'redecision_required') {
+    return { schemaVersion: 1, runId, dispatched: false, reason: admission.rejectionCode || admission.decision, admission, modelInput, hostDirective, executionCapsule, receipt: null };
+  }
+  const revalidated = revalidateBeforeDispatch({
+    admission,
+    registry: modelRegistry,
+    capabilities: adapter.capabilities,
+    toolPolicy,
+    permissionPolicy,
+  });
+  if (!revalidated.valid) {
+    const drifted = await controlPlane.admitRoute(runId, {
+      decision,
+      resolution,
+      capabilities: adapter.capabilities,
+      capsule: executionCapsule,
+      policies: currentHostPolicies({ registry: modelRegistry, capabilities: adapter.capabilities, toolPolicy, permissionPolicy }),
+      economics,
+    });
+    return { schemaVersion: 1, runId, dispatched: false, reason: revalidated.rejectionCode, admission: drifted, drift: revalidated.drift, modelInput, hostDirective, executionCapsule, receipt: null };
+  }
+
   const startedAt = now();
   let dispatch;
   try {
@@ -71,6 +113,7 @@ export const dispatchKernelTurn = async ({
       decision,
       resolution,
       strategy: hostDirective.enforcementStrategy,
+      executionCapsule,
       executionContract: buildExecutionContract(modelInput, decision),
     }) || {};
   } catch (error) {
@@ -83,11 +126,13 @@ export const dispatchKernelTurn = async ({
     strategy: hostDirective.enforcementStrategy,
     resolution,
     dispatch,
+    capsule: executionCapsule,
+    admission,
     actorSessionId: dispatch.actorSessionId || `${hostCapabilities.surface}:${decision.decisionId}`,
     parentSessionId,
     startedAt,
     finishedAt: now(),
   });
   await controlPlane.recordModelUsage(runId, receipt);
-  return { schemaVersion: 1, runId, dispatched: true, modelInput, hostDirective, resolution, dispatch, receipt };
+  return { schemaVersion: 1, runId, dispatched: true, modelInput, hostDirective, resolution, dispatch, executionCapsule, admission, receipt };
 };
