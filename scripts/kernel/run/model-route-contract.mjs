@@ -225,6 +225,14 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
     parentSessionId: receipt.parentSessionId ? String(receipt.parentSessionId) : null,
     resolvedModel,
     resolvedEffort: receipt.resolvedEffort ? String(receipt.resolvedEffort) : null,
+    // Lineage the later phases attach: which bounded context the turn ran on
+    // (K1) and which admission let it dispatch (K3). Absent on a legacy or
+    // un-capsuled turn, never invented.
+    capsuleId: receipt.capsuleId ? String(receipt.capsuleId) : null,
+    capsuleDigest: receipt.capsuleDigest ? String(receipt.capsuleDigest) : null,
+    admissionId: receipt.admissionId ? String(receipt.admissionId) : null,
+    admissionDigest: receipt.admissionDigest ? String(receipt.admissionDigest) : null,
+    stepId: receipt.stepId ? String(receipt.stepId) : null,
     enforcementStatus: receipt.enforcementStatus,
     resultStatus: receipt.resultStatus,
     startedAt,

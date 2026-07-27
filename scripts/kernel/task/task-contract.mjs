@@ -99,6 +99,11 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     taskClass: String(contract.taskClass || 'feature'),
     requestedTier: contract.riskTier || contract.proofTier || contract.requestedTier || null,
     requiredObligations: asStringList(contract.requiredObligations),
+    // Work-unit scope (K1). Declared here so an Execution Capsule can bound a
+    // worker to the paths the contract actually authorises; an empty list means
+    // the whole workspace and can never be violated.
+    allowedPaths: asStringList(contract.allowedPaths),
+    forbiddenPaths: asStringList(contract.forbiddenPaths),
     filesChanged: Number.isFinite(contract.filesChanged) ? Number(contract.filesChanged) : changedFileCount,
     flags,
   };
@@ -115,6 +120,8 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   taskClass: contract.taskClass,
   requestedTier: contract.requestedTier,
   requiredObligations: contract.requiredObligations,
+  allowedPaths: contract.allowedPaths,
+  forbiddenPaths: contract.forbiddenPaths,
   flags: contract.flags,
 })).digest('hex')}`;
 
@@ -211,6 +218,8 @@ export const mergeContractRevision = (previous, next) => {
     risks: union(previous.risks, next.risks),
     surfaces: union(previous.surfaces, next.surfaces),
     requiredObligations: union(previous.requiredObligations, next.requiredObligations),
+    allowedPaths: union(previous.allowedPaths, next.allowedPaths),
+    forbiddenPaths: union(previous.forbiddenPaths, next.forbiddenPaths),
     flags: { ...previous.flags, ...next.flags },
     filesChanged: Math.max(Number(previous.filesChanged) || 0, Number(next.filesChanged) || 0),
     requestedTier: next.requestedTier || previous.requestedTier,

@@ -289,6 +289,21 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       FOREIGN KEY(decision_id) REFERENCES model_route_decisions(decision_id),
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS run_capsules (
+      capsule_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      step_id TEXT,
+      role TEXT NOT NULL,
+      plan_revision INTEGER NOT NULL DEFAULT 1,
+      mutation_revision INTEGER NOT NULL DEFAULT 0,
+      workspace_identity TEXT NOT NULL,
+      route_decision_id TEXT,
+      digest TEXT NOT NULL,
+      capsule_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_capsules_run ON run_capsules(run_id, role);
     CREATE TABLE IF NOT EXISTS review_receipts (
       receipt_id TEXT PRIMARY KEY,
       run_id TEXT NOT NULL,
@@ -355,6 +370,14 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('run_obligations', 'protected', 'INTEGER DEFAULT 0');
   addCol('run_obligations', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('run_obligations', 'rejected_command_refs', "TEXT DEFAULT '[]'");
+  // Capsule (K1), admission (K3), and step (K2) lineage on the usage receipt.
+  // Legacy receipts keep NULL: a turn that ran before these existed is not
+  // retroactively claimed to have had them.
+  addCol('model_usage_receipts', 'capsule_id', 'TEXT');
+  addCol('model_usage_receipts', 'capsule_digest', 'TEXT');
+  addCol('model_usage_receipts', 'admission_id', 'TEXT');
+  addCol('model_usage_receipts', 'admission_digest', 'TEXT');
+  addCol('model_usage_receipts', 'step_id', 'TEXT');
   addCol('verifications', 'evidence_class', "TEXT DEFAULT 'attested'");
   addCol('verifications', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('leases', 'fencing_token', 'INTEGER DEFAULT 0');
@@ -856,14 +879,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       const decision = this.getModelRouteDecision(normalized.decisionId, { runId });
       if (!decision) throw new Error(`model usage receipt references decision ${normalized.decisionId}, which does not belong to run ${runId}`);
       db.prepare(`
-        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, receipt_json, created_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, receipt_json=excluded.receipt_json
+        INSERT INTO model_usage_receipts(receipt_id, decision_id, run_id, host_surface, actor_session_id, parent_session_id, resolved_model, resolved_effort, enforcement_status, input_tokens, cached_input_tokens, output_tokens, cost_micros, wall_clock_ms, result_status, capsule_id, capsule_digest, admission_id, admission_digest, step_id, receipt_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(receipt_id) DO UPDATE SET enforcement_status=excluded.enforcement_status, resolved_model=excluded.resolved_model, resolved_effort=excluded.resolved_effort, input_tokens=excluded.input_tokens, cached_input_tokens=excluded.cached_input_tokens, output_tokens=excluded.output_tokens, cost_micros=excluded.cost_micros, wall_clock_ms=excluded.wall_clock_ms, result_status=excluded.result_status, capsule_id=excluded.capsule_id, capsule_digest=excluded.capsule_digest, admission_id=excluded.admission_id, admission_digest=excluded.admission_digest, step_id=excluded.step_id, receipt_json=excluded.receipt_json
       `).run(
         normalized.receiptId, normalized.decisionId, runId, normalized.hostSurface, normalized.actorSessionId,
         normalized.parentSessionId, normalized.resolvedModel, normalized.resolvedEffort, normalized.enforcementStatus,
         normalized.inputTokens, normalized.cachedInputTokens, normalized.outputTokens, normalized.costMicros,
-        normalized.wallClockMs, normalized.resultStatus, JSON.stringify(normalized), normalized.createdAt,
+        normalized.wallClockMs, normalized.resultStatus,
+        normalized.capsuleId, normalized.capsuleDigest, normalized.admissionId, normalized.admissionDigest, normalized.stepId,
+        JSON.stringify(normalized), normalized.createdAt,
       );
       return normalized;
     },
@@ -878,6 +903,46 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     listModelUsageReceipts(runId) {
       return db.prepare(`SELECT receipt_json as receiptJson FROM model_usage_receipts WHERE run_id=? ORDER BY rowid ASC`).all(runId)
         .map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
+    },
+
+    // Execution capsules (K1). The capsule a worker actually received is
+    // persisted, so a resumed process can hand out the same bounded context and
+    // a report can be checked against the capsule it claims to answer.
+    recordExecutionCapsule(runId, capsule) {
+      if (!capsule?.capsuleId) throw new Error('recordExecutionCapsule requires a normalized capsule');
+      if (capsule.runId !== runId) throw new Error(`capsule runId ${capsule.runId} does not match run ${runId}`);
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`
+        INSERT INTO run_capsules(capsule_id, run_id, step_id, role, plan_revision, mutation_revision, workspace_identity, route_decision_id, digest, capsule_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(capsule_id) DO NOTHING
+      `).run(
+        capsule.capsuleId, runId, capsule.stepId || null, capsule.role,
+        Number(capsule.planRevision || 1),
+        Number(capsule.mutationRevision ?? capsule.subject?.mutationRevision ?? 0),
+        capsule.provenance.workspaceIdentity, capsule.provenance.routeDecisionId || null,
+        capsule.provenance.capsuleDigest, JSON.stringify(capsule), capsule.createdAt,
+      );
+      return capsule;
+    },
+
+    getExecutionCapsule(capsuleId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, capsule_json as capsuleJson FROM run_capsules WHERE capsule_id=?`).get(capsuleId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.capsuleJson, null);
+    },
+
+    latestExecutionCapsule(runId, { role = 'implementer', stepId = null } = {}) {
+      const row = stepId
+        ? db.prepare(`SELECT capsule_json as capsuleJson FROM run_capsules WHERE run_id=? AND role=? AND step_id=? ORDER BY rowid DESC LIMIT 1`).get(runId, role, stepId)
+        : db.prepare(`SELECT capsule_json as capsuleJson FROM run_capsules WHERE run_id=? AND role=? ORDER BY rowid DESC LIMIT 1`).get(runId, role);
+      return row ? safeJsonParse(row.capsuleJson, null) : null;
+    },
+
+    listExecutionCapsules(runId) {
+      return db.prepare(`SELECT capsule_json as capsuleJson FROM run_capsules WHERE run_id=? ORDER BY rowid ASC`).all(runId)
+        .map((row) => safeJsonParse(row.capsuleJson, null)).filter(Boolean);
     },
 
     // Review receipts (K0). A judgment obligation is proven by a receipt whose
@@ -925,7 +990,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     // implemented, not against a caller-supplied string (§9.2).
     getLatestImplementationSession(runId) {
       const row = db.prepare(`
-        SELECT u.receipt_id as receiptId, u.actor_session_id as actorSessionId, u.decision_id as decisionId, d.model_class as modelClass, d.action_kind as actionKind
+        SELECT u.receipt_id as receiptId, u.actor_session_id as actorSessionId, u.decision_id as decisionId,
+               u.capsule_id as capsuleId, u.capsule_digest as capsuleDigest, u.resolved_model as resolvedModel,
+               d.model_class as modelClass, d.action_kind as actionKind
         FROM model_usage_receipts u JOIN model_route_decisions d ON d.decision_id = u.decision_id
         WHERE u.run_id=? AND d.role='implementer' ORDER BY u.rowid DESC LIMIT 1
       `).get(runId);

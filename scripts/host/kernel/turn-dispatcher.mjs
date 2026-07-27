@@ -64,6 +64,10 @@ export const dispatchKernelTurn = async ({
 
   const modelRegistry = registry || createModelRegistry({ surface: hostCapabilities.surface, runtimeHome, env, overrides });
   const resolution = modelRegistry.resolve(decision.modelClass, overrides);
+  // K1: the capsule is the authority for what the worker may see and touch.
+  // The flat contract is still passed for adapters that have not moved yet.
+  const executionCapsule = turn.executionCapsule || hostDirective.executionCapsule || null;
+
   const startedAt = now();
   let dispatch;
   try {
@@ -71,6 +75,7 @@ export const dispatchKernelTurn = async ({
       decision,
       resolution,
       strategy: hostDirective.enforcementStrategy,
+      executionCapsule,
       executionContract: buildExecutionContract(modelInput, decision),
     }) || {};
   } catch (error) {
@@ -83,6 +88,7 @@ export const dispatchKernelTurn = async ({
     strategy: hostDirective.enforcementStrategy,
     resolution,
     dispatch,
+    capsule: executionCapsule,
     actorSessionId: dispatch.actorSessionId || `${hostCapabilities.surface}:${decision.decisionId}`,
     parentSessionId,
     startedAt,
