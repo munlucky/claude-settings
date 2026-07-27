@@ -40,6 +40,7 @@ import { scanRepositoryEvidence } from './task/evidence-scan.mjs';
 import { allStepsPassed } from './run/run-step-ledger.mjs';
 import { planRunSteps } from './run/step-planner.mjs';
 import { createWorkCursorApi } from './run/work-cursor.mjs';
+import { admitRoute } from './routing/route-admission.mjs';
 import { captureBaselineProof } from './proof/baseline-proof.mjs';
 import { classifyFailures } from './proof/failure-classify.mjs';
 
@@ -584,6 +585,33 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           executionCapsule,
         },
       };
+    },
+
+    // K3: the Host asks for admission between the route decision and the actual
+    // dispatch, and the answer is persisted whatever it is. A blocked admission
+    // is evidence that a turn was refused, not an absence of a turn.
+    async admitRoute(runId, { decision, resolution, capabilities = {}, capsule = null, step = null, policies, economics = {} } = {}) {
+      const run = store.getRun(runId);
+      if (!run) throw new Error(`Run ${runId} not found`);
+      const admission = admitRoute({
+        run,
+        step: step || this.getCurrentStep(runId),
+        decision,
+        resolution,
+        capabilities,
+        capsule,
+        policies,
+        economics,
+      });
+      return store.recordRouteAdmission(runId, admission);
+    },
+
+    getRouteAdmission(runId, admissionId) {
+      return store.getRouteAdmission(admissionId, { runId });
+    },
+
+    listRouteAdmissions(runId, options = {}) {
+      return store.listRouteAdmissions(runId, options);
     },
 
     // The Host reports what it actually ran. This is the only evidence that a

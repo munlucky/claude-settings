@@ -289,6 +289,24 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       FOREIGN KEY(decision_id) REFERENCES model_route_decisions(decision_id),
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
     );
+    CREATE TABLE IF NOT EXISTS route_admissions (
+      admission_id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      step_id TEXT,
+      decision_id TEXT NOT NULL,
+      capsule_id TEXT,
+      requested_json TEXT NOT NULL,
+      resolved_json TEXT NOT NULL,
+      policy_json TEXT NOT NULL,
+      economics_json TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      rejection_code TEXT,
+      digest TEXT NOT NULL,
+      admission_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_route_admissions_run ON route_admissions(run_id, decision_id);
     CREATE TABLE IF NOT EXISTS run_steps (
       step_id TEXT NOT NULL,
       run_id TEXT NOT NULL,
@@ -960,6 +978,40 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     listModelUsageReceipts(runId) {
       return db.prepare(`SELECT receipt_json as receiptJson FROM model_usage_receipts WHERE run_id=? ORDER BY rowid ASC`).all(runId)
         .map((row) => safeJsonParse(row.receiptJson, null)).filter(Boolean);
+    },
+
+    // Route admissions (K3). Recorded whatever the outcome: a blocked admission
+    // is the evidence that a dispatch was refused, and losing it would make a
+    // refusal indistinguishable from a turn that never happened.
+    recordRouteAdmission(runId, admission) {
+      if (!admission?.admissionId) throw new Error('recordRouteAdmission requires a built admission');
+      if (admission.runId !== runId) throw new Error(`route admission runId ${admission.runId} does not match run ${runId}`);
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`
+        INSERT INTO route_admissions(admission_id, run_id, step_id, decision_id, capsule_id, requested_json, resolved_json, policy_json, economics_json, decision, rejection_code, digest, admission_json, created_at)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(admission_id) DO NOTHING
+      `).run(
+        admission.admissionId, runId, admission.stepId || null, admission.decisionId, admission.capsuleId || null,
+        JSON.stringify(admission.requested), JSON.stringify(admission.resolved), JSON.stringify(admission.policy),
+        JSON.stringify(admission.economics), admission.decision, admission.rejectionCode || null,
+        admission.digest, JSON.stringify(admission), admission.createdAt,
+      );
+      return admission;
+    },
+
+    getRouteAdmission(admissionId, { runId = null } = {}) {
+      const row = db.prepare(`SELECT run_id as runId, admission_json as admissionJson FROM route_admissions WHERE admission_id=?`).get(admissionId);
+      if (!row) return null;
+      if (runId && row.runId !== runId) return null;
+      return safeJsonParse(row.admissionJson, null);
+    },
+
+    listRouteAdmissions(runId, { decisionId = null } = {}) {
+      const rows = decisionId
+        ? db.prepare(`SELECT admission_json as admissionJson FROM route_admissions WHERE run_id=? AND decision_id=? ORDER BY rowid ASC`).all(runId, decisionId)
+        : db.prepare(`SELECT admission_json as admissionJson FROM route_admissions WHERE run_id=? ORDER BY rowid ASC`).all(runId);
+      return rows.map((row) => safeJsonParse(row.admissionJson, null)).filter(Boolean);
     },
 
     // Run Step Ledger (K2). The work cursor is state, not chat context: which

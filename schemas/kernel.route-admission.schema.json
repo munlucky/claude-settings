@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moon-relay-kernel.local/schemas/kernel.route-admission.schema.json",
+  "title": "Kernel route admission",
+  "description": "The check between a logical model route decision and the actual Host dispatch. Records what the Kernel requested, what the Host resolved, and the policy snapshot both were computed against, so configuration drift is detected before a worker runs. 'advisory_admitted' means the installed Host default ran and the requested class was NOT applied; it can never carry a T3 independent review.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "admissionId", "runId", "decisionId", "role", "riskTier",
+    "requested", "resolved", "policy", "economics", "decision", "digest", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "admissionId": { "type": "string", "pattern": "^admission-[a-f0-9]{8,64}$" },
+    "runId": { "type": "string", "minLength": 1 },
+    "stepId": { "type": ["string", "null"] },
+    "decisionId": { "type": "string", "pattern": "^route-[a-f0-9]{8,64}$" },
+    "capsuleId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^capsule-[a-f0-9]{8,64}$" }] },
+    "capsuleDigest": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }] },
+    "planRevision": { "type": "integer", "minimum": 1 },
+    "role": { "enum": ["planner", "implementer", "reviewer", "kernel"] },
+    "riskTier": { "enum": ["T0", "T1", "T2", "T3"] },
+    "requested": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelClass", "permissions", "independentContextRequired"],
+      "properties": {
+        "modelClass": { "enum": ["frontier_reasoning", "value_coding", "kernel"] },
+        "permissions": { "enum": ["read_only", "plan_write", "workspace_write", "kernel_runtime"] },
+        "independentContextRequired": { "type": "boolean" },
+        "role": { "type": "string" }
+      }
+    },
+    "resolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "surface": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "effort": { "type": ["string", "null"] },
+        "source": { "enum": ["invocation-override", "environment", "profile-config", "host-default", "kernel-runtime"] },
+        "adapter": { "type": ["string", "null"] },
+        "adapterVersion": { "type": "string" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modelPolicyRevision", "profileDigest", "hostCapabilityDigest", "toolPolicyDigest", "permissionPolicyDigest"],
+      "properties": {
+        "modelPolicyRevision": { "type": "string" },
+        "profileDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "hostCapabilityDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "toolPolicyDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "permissionPolicyDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "economics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "costClass": { "type": "string" },
+        "maxCostUnits": { "type": ["number", "null"] },
+        "estimatedCostUnits": { "type": ["number", "null"] }
+      }
+    },
+    "decision": { "enum": ["admitted", "fallback_admitted", "advisory_admitted", "blocked", "redecision_required"] },
+    "rejectionCode": { "type": ["string", "null"] },
+    "createdByVersion": { "type": "string" },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "createdAt": { "type": "string", "minLength": 1 }
+  }
+}
