@@ -1288,7 +1288,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const stepOutcome = activeStep
         ? this.settleStep(runId, { step: activeStep, attempt: stepAttempt, report, failures, outstanding, observation })
         : null;
-      const stepsSettled = allStepsPassed(store.getRunSteps(runId, { planRevision: refreshed.planRevision }), refreshed.planRevision);
+      const stepsSettled = allStepsPassed(store.getRunSteps(runId), refreshed.planRevision);
 
       let finalization = null;
       if (failures.length === 0 && outstanding.length === 0 && stepsSettled && verifications.length > 0 && refreshed.state === 'PROVE') {

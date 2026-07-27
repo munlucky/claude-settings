@@ -1019,6 +1019,16 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     // it has already failed all survive a process restart.
     createRunSteps(runId, steps = []) {
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      // Step ids are unique per run. A replacement plan that reuses an id from a
+      // superseded revision would be swallowed by the upsert and vanish, leaving
+      // the run pointing at a plan that is missing steps — so it fails loudly.
+      const existing = new Map(this.getRunSteps(runId).map((step) => [step.stepId, step.planRevision]));
+      for (const step of steps) {
+        const collidesWith = existing.get(step.stepId);
+        if (collidesWith !== undefined && collidesWith !== Number(step.planRevision || 1)) {
+          throw new Error(`STEP_ID_COLLISION: step "${step.stepId}" already exists at plan revision ${collidesWith}; a replacement plan needs its own ids`);
+        }
+      }
       const insert = db.prepare(`
         INSERT INTO run_steps(step_id, run_id, sequence, objective, state, plan_revision, dependency_ids_json, allowed_paths_json, forbidden_paths_json, acceptance_ids_json, obligation_ids_json, expected_outputs_json, assigned_role, synthetic, migration_origin, created_at, updated_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

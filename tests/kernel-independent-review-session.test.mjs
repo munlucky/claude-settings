@@ -80,7 +80,10 @@ test('once the Host routes models, a T3 review without a receipt is refused', as
 });
 
 test('an advisory or unsupported routing cannot carry a T3 independence claim', () => {
-  const base = { reviewDecision: { modelClass: 'frontier_reasoning' }, implementationSession: { actorSessionId: IMPLEMENTER } };
+  const base = {
+    reviewDecision: { modelClass: 'frontier_reasoning', role: 'reviewer', actionKind: 'review_engineering' },
+    implementationSession: { actorSessionId: IMPLEMENTER },
+  };
   for (const enforcementStatus of ['advisory', 'unsupported', 'failed']) {
     assert.throws(
       () => assertIndependentReviewSession({ ...base, reviewReceipt: { enforcementStatus, actorSessionId: REVIEWER } }),
@@ -92,4 +95,51 @@ test('an advisory or unsupported routing cannot carry a T3 independence claim', 
     /must run on the frontier reasoning class/,
   );
   assert.ok(assertIndependentReviewSession({ ...base, reviewReceipt: { enforcementStatus: 'fallback', actorSessionId: REVIEWER } }));
+});
+
+test('a frontier turn that was not routed as a review cannot mint a review receipt', async () => {
+  await withT3Run(async (cp, runId) => {
+    await routeAndRun(cp, runId, 'implement', IMPLEMENTER);
+    // A planner turn: frontier class, its own session, enforced routing — it
+    // satisfies every check except the one that matters, that the Kernel routed
+    // it AS a review.
+    const planner = await routeAndRun(cp, runId, 'plan', REVIEWER);
+    assert.equal(planner.decision.modelClass, 'frontier_reasoning');
+    assert.equal(planner.decision.role, 'planner');
+
+    await assert.rejects(
+      cp.recordReview(runId, { stage: 'engineering', verdict: 'pass', reviewerId: 'reviewer-2' }, { implementerId: 'impl-1', reviewReceiptId: planner.receipt.receiptId, obligationId: 'security-review' }),
+      /must come from a routed reviewer turn, not a planner/,
+    );
+
+    // The same session, routed as a review, is accepted.
+    const review = await routeAndRun(cp, runId, 'review_engineering', REVIEWER);
+    await cp.transition(runId, 'SHAPE');
+    await cp.transition(runId, 'EXECUTE');
+    await cp.transition(runId, 'PROVE');
+    const recorded = await cp.recordReview(runId, { stage: 'engineering', verdict: 'pass', reviewerId: 'reviewer-2' }, { implementerId: 'impl-1', reviewReceiptId: review.receipt.receiptId, obligationId: 'security-review' });
+    assert.equal(recorded.reviewReceipt.reviewer.enforcementStatus, 'enforced');
+  });
+});
+
+test('the routed-reviewer rule is enforced on the decision, not on the receipt alone', () => {
+  const receipt = { enforcementStatus: 'enforced', actorSessionId: REVIEWER };
+  const implementationSession = { actorSessionId: IMPLEMENTER };
+  for (const reviewDecision of [
+    { modelClass: 'frontier_reasoning', role: 'implementer', actionKind: 'implement' },
+    { modelClass: 'frontier_reasoning', role: 'planner', actionKind: 'replan' },
+    { modelClass: 'frontier_reasoning', role: 'reviewer', actionKind: 'implement' },
+  ]) {
+    assert.throws(
+      () => assertIndependentReviewSession({ reviewDecision, reviewReceipt: receipt, implementationSession }),
+      /must come from a routed reviewer turn/,
+    );
+  }
+  for (const actionKind of ['review_contract', 'review_engineering']) {
+    assert.ok(assertIndependentReviewSession({
+      reviewDecision: { modelClass: 'frontier_reasoning', role: 'reviewer', actionKind },
+      reviewReceipt: receipt,
+      implementationSession,
+    }));
+  }
 });

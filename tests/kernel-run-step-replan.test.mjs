@@ -9,7 +9,8 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
-import { detectStepStagnation } from '../scripts/kernel/run/run-step-ledger.mjs';
+import { allStepsPassed, detectStepStagnation } from '../scripts/kernel/run/run-step-ledger.mjs';
+import { openKernelStateStore } from '../scripts/kernel/state-store.mjs';
 
 const CONTRACT = {
   complex: true,
@@ -223,6 +224,91 @@ test('K1/K2: a replan invalidates the superseded step capsule and its scope', as
     assert.notEqual(unnamed.status, 'scope-rejected', JSON.stringify(unnamed.failures));
     assert.equal(unnamed.step.state, 'passed');
   } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('K2: a replacement plan that reuses a declared step id does not swallow the step', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-idreuse',
+      objective: 'Harden auth',
+      taskContract: {
+        complex: true,
+        riskTier: 'T2',
+        acceptance: ['auth holds', 'suite holds'],
+        steps: [
+          { stepId: 'auth-slice', objective: 'Auth', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
+          { stepId: 'test-slice', objective: 'Tests', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
+        ],
+      },
+    });
+    assert.deepEqual(cp.getRunSteps('r-idreuse').map((step) => step.stepId), ['auth-slice', 'test-slice']);
+
+    // The replacement reuses both ids. Step ids are unique per run, so the
+    // upsert would have silently dropped both rows and left the new revision
+    // with no steps at all — which `allStepsPassed` would have read as settled.
+    const replanned = await cp.replanSteps('r-idreuse', {
+      steps: [
+        { stepId: 'auth-slice', objective: 'Auth again', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
+        { stepId: 'test-slice', objective: 'Tests again', allowedPaths: ['tests/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
+      ],
+    });
+    assert.equal(replanned.steps.length, 2, 'the replacement plan is not swallowed');
+    assert.deepEqual(replanned.steps.map((step) => step.stepId), ['auth-slice@r2', 'test-slice@r2']);
+    assert.deepEqual(replanned.steps[1].dependencyIds, ['auth-slice@r2'], 'the chain follows the qualified ids');
+
+    // The superseded rows survive at their own revision.
+    const all = cp.getRunSteps('r-idreuse');
+    assert.equal(all.find((step) => step.stepId === 'auth-slice').planRevision, 1);
+    assert.equal(all.find((step) => step.stepId === 'auth-slice').state, 'superseded');
+    assert.equal(cp.getCurrentStep('r-idreuse').stepId, 'auth-slice@r2');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('K2: a plan with no steps at the current revision is not a settled plan', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({ runId: 'r-emptyplan', objective: 'Harden auth', taskContract: CONTRACT });
+    const [first] = cp.getRunSteps('r-emptyplan');
+    await writeFile(path.join(fixture.projectRoot, 'src', 'auth', 'service.mjs'), 'export const v = 1;\n');
+    await cp.report('r-emptyplan', {
+      summary: 'first unit',
+      stepId: first.stepId,
+      changedPaths: ['src/auth/service.mjs'],
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] }],
+    });
+
+    // Steps exist, but none at revision 2 — a broken plan, not a finished one.
+    assert.equal(allStepsPassed(cp.getRunSteps('r-emptyplan'), 2), false);
+    // A run with no ledger at all is a different case and stays settled.
+    assert.equal(allStepsPassed([], 1), true);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('K2: a store-level id collision fails loudly instead of dropping the row', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  const store = await openKernelStateStore({ runtimeHome: fixture.runtimeHome });
+  try {
+    await cp.startRun({ runId: 'r-collide', objective: 'x', taskContract: CONTRACT });
+    const [first] = cp.getRunSteps('r-collide');
+    assert.throws(
+      () => store.createRunSteps('r-collide', [{ ...first, planRevision: 2, state: 'ready' }]),
+      /STEP_ID_COLLISION/,
+    );
+  } finally {
+    store.close();
     await cp.close();
     await cleanup(fixture);
   }
