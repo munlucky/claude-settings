@@ -36,7 +36,7 @@ const cleanup = async ({ runtimeHome, projectRoot }) => {
 
 const AUTH_FILES = {
   'src/auth/index.mjs': 'export const verify = () => true;\n',
-  'src/auth/service.mjs': 'export class AuthService {}\n',
+  'src/auth/service.mjs': 'export class AuthService {}\nexport const verifyToken = () => true;\nconst privateHelper = () => 0;\n',
   'src/billing/invoice.mjs': 'export const invoice = () => 0;\n',
   '.env': 'SECRET=do-not-leak\n',
   'src/auth/credentials.pem': 'not-a-real-key\n',
@@ -83,6 +83,20 @@ test('K1-1: a brownfield capsule carries the seam, the work unit, and the requir
     const unitTest = capsule.verification.obligations.find((entry) => entry.obligationId === 'unit-test');
     assert.deepEqual(unitTest.allowedCommandRefs, ['test:ok']);
     assert.equal(unitTest.evidenceClass, 'hard');
+
+    // Declared symbols index the seam by name and path, so a fresh worker knows
+    // where to start reading rather than having to grep for it.
+    const symbols = capsule.repositoryContext.relevantSymbols;
+    assert.ok(symbols.length > 0, JSON.stringify(symbols));
+    assert.deepEqual(symbols.find((entry) => entry.symbol === 'AuthService'), { symbol: 'AuthService', path: 'src/auth/service.mjs' });
+    assert.ok(symbols.some((entry) => entry.symbol === 'verifyToken'));
+    assert.ok(!symbols.some((entry) => entry.symbol === 'privateHelper'), 'a private helper is not a seam');
+    assert.ok(symbols.every((entry) => files.includes(entry.path)), 'symbols only come from files already in the capsule');
+    assert.deepEqual(
+      symbols.map((entry) => `${entry.path}#${entry.symbol}`),
+      [...symbols.map((entry) => `${entry.path}#${entry.symbol}`)].sort(),
+      'symbol order is deterministic',
+    );
 
     // Provenance binds it to the state it was built from.
     assert.match(capsule.provenance.capsuleDigest, /^sha256:[a-f0-9]{64}$/);

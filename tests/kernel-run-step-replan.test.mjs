@@ -139,3 +139,48 @@ test('K2: stagnation also fires on repeated no-op reports and repeated identical
     attempts: [{ stepId: 'step-1-1', status: 'failed', resultDigest: 'sha256:a' }, { stepId: 'step-1-1', status: 'passed', resultDigest: 'sha256:b' }],
   }).stagnant, false);
 });
+
+test('K2-6: step stagnation escalates the route, without overtaking retry escalation', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({ runId: 'r-escalate', objective: 'Harden auth', taskContract: CONTRACT });
+    const [first] = cp.getRunSteps('r-escalate');
+    assert.equal((await cp.decideModelRoute('r-escalate', { actionKind: 'implement', obligationId: 'unit-test' })).modelClass, 'value_coding');
+
+    for (const value of [1, 2]) {
+      await writeFile(path.join(fixture.projectRoot, 'src', 'auth', 'service.mjs'), `export const v = ${value};\n`);
+      await cp.report('r-escalate', {
+        summary: `attempt ${value}`,
+        stepId: first.stepId,
+        changedPaths: ['src/auth/service.mjs'],
+        verifications: [{ obligationId: 'unit-test', commandRef: 'test:fail' }],
+      });
+    }
+    // Two failures is a retry, not stagnation: the looser step signals must not
+    // overtake the retry threshold, or retry escalation becomes unreachable.
+    assert.equal(cp.stagnationSignal('r-escalate').stagnant, false);
+
+    await writeFile(path.join(fixture.projectRoot, 'src', 'auth', 'service.mjs'), 'export const v = 3;\n');
+    await cp.report('r-escalate', {
+      summary: 'attempt 3',
+      stepId: first.stepId,
+      changedPaths: ['src/auth/service.mjs'],
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:fail' }],
+    });
+
+    const signal = cp.stagnationSignal('r-escalate');
+    assert.equal(signal.stagnant, true);
+    assert.equal(signal.stepLevel.signals.consecutiveFailures, true);
+
+    // The stuck unit is replanned on the frontier class rather than handed back
+    // to the implementer that is stuck.
+    const escalated = await cp.decideModelRoute('r-escalate', { actionKind: 'implement', obligationId: 'unit-test' });
+    assert.equal(escalated.actionKind, 'replan');
+    assert.equal(escalated.modelClass, 'frontier_reasoning');
+    assert.equal(escalated.role, 'planner');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});

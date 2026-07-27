@@ -82,6 +82,12 @@ test('K1-8: the reviewer capsule is read-only and carries subject plus evidence 
 
     // Subject and evidence: what changed, against which state, and what ran.
     assert.deepEqual(reviewCapsule.subject.changedPaths, ['src/auth/service.mjs']);
+    // The diff digest identifies the exact file states reviewed, without the
+    // capsule carrying the diff — and it moves when the files move.
+    assert.match(reviewCapsule.subject.diffDigest, /^sha256:[a-f0-9]{64}$/);
+    await writeFile(path.join(fixture.projectRoot, 'src', 'auth', 'service.mjs'), 'export const v = 2;\n');
+    const afterEdit = await cp.buildReviewerCapsule('r-revcap', { stage: 'engineering', obligationId: 'security-review', changedPaths: ['src/auth/service.mjs'] });
+    assert.notEqual(afterEdit.subject.diffDigest, reviewCapsule.subject.diffDigest);
     assert.equal(reviewCapsule.subject.mutationRevision, (await cp.getRun('r-revcap')).mutationRevision);
     const evidence = Object.fromEntries(reviewCapsule.verificationEvidence.map((entry) => [entry.obligationId, entry]));
     assert.equal(evidence['unit-test'].status, 'passed');

@@ -8,7 +8,9 @@
 // lifecycle (stage knowledge, implementation context, replan accounting).
 
 import { buildExecutionCapsule, buildReviewCapsule, capsuleStaleness, findScopeViolations } from './execution-capsule.mjs';
-import { rankRelevantFiles, selectKnowledgeRecords } from './capsule-selection.mjs';
+import { digestOfChangedFiles, extractRelevantSymbols, rankRelevantFiles, selectKnowledgeRecords } from './capsule-selection.mjs';
+import { resolveWorkerBound } from './bounded-wave.mjs';
+import { discoverProjectCommands } from '../proof/command-catalog.mjs';
 import { currentStep as selectCurrentStep, dependenciesSatisfied, detectStepStagnation, evaluateStepCompletion, selectExecutableSteps } from './run-step-ledger.mjs';
 import { planReplacementSteps, planRunSteps } from './step-planner.mjs';
 import { scanRepositoryEvidence } from '../task/evidence-scan.mjs';
@@ -114,6 +116,51 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
     return { planRevision: nextRevision, steps: store.getRunSteps(runId, { planRevision: nextRevision }) };
   },
 
+  // The wave the Host may dispatch right now (§7.6). Sequential is the answer
+  // unless the contract carries an approved Safe Wave whose integration command
+  // the project actually declares, the write sets are disjoint, and nothing in
+  // the current plan is stagnant — a stuck plan returns to one step at a time.
+  getExecutableSteps(runId) {
+    const run = store.getRun(runId);
+    if (!run) return { steps: [], reason: 'run-not-found', mode: 'sequential' };
+    const steps = this.ensureRunStepsMigrated(runId);
+    const safeWave = run.taskContract?.safeWave || null;
+
+    let integrationVerification = null;
+    let blockedReason = null;
+    if (safeWave?.approved) {
+      const declared = discoverProjectCommands({ projectRoot })
+        .some((command) => command.commandRef === safeWave.integrationVerification.commandRef);
+      if (!declared) blockedReason = 'safe-wave-integration-command-not-declared';
+      else if (this.planIsStagnant(runId)) blockedReason = 'safe-wave-suspended-by-stagnation';
+      else integrationVerification = safeWave.integrationVerification;
+    } else if (safeWave?.requested) {
+      blockedReason = 'safe-wave-not-approved';
+    }
+
+    const selection = selectExecutableSteps(steps, {
+      planRevision: run.planRevision,
+      safeWave: Boolean(integrationVerification),
+      integrationVerification,
+      maxWorkers: resolveWorkerBound({ riskTier: run.proofTier, includeIndependentReview: run.proofTier === 'T3' }),
+    });
+    return {
+      steps: selection.steps,
+      reason: blockedReason || selection.reason,
+      mode: selection.steps.length > 1 ? 'parallel' : 'sequential',
+      integrationVerification,
+    };
+  },
+
+  // True when any live step of the current plan is stuck. Used to collapse a
+  // parallel wave back to sequential execution.
+  planIsStagnant(runId) {
+    const run = store.getRun(runId);
+    return this.ensureRunStepsMigrated(runId)
+      .filter((step) => step.planRevision === run.planRevision && !['passed', 'superseded', 'cancelled'].includes(step.state))
+      .some((step) => detectStepStagnation({ step, attempts: store.getStepAttempts(runId, { stepId: step.stepId }) }).stagnant);
+  },
+
   detectStepStagnation(runId, { stepId = null } = {}) {
     const step = stepId ? store.getRunStep(runId, stepId) : this.getCurrentStep(runId);
     if (!step) return { stagnant: false, signals: {}, attemptCount: 0, recommendation: 'retry' };
@@ -208,7 +255,7 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
         knownCommands: projectContext.knownCommands || [],
         walkingSkeleton: projectContext.walkingSkeleton || null,
         relevantFiles: relevantFiles.map((file) => ({ path: file.path, reason: file.reason, digest: file.digest })),
-        relevantSymbols: [],
+          relevantSymbols: extractRelevantSymbols({ projectRoot, files: relevantFiles }),
         architectureRecords: selected.architectureRecords,
         knowledgeRecords: selected.knowledgeRecords,
         baseline: {
@@ -235,6 +282,9 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
       obligationId,
       requiredChecks,
       changedPaths,
+      // Identifies the exact file states the verdict is formed on, without
+      // carrying the diff itself into the capsule.
+      diffDigest: digestOfChangedFiles({ projectRoot, changedPaths }),
       verifications: store.getVerifications(runId),
       implementationSession: store.getLatestImplementationSession(runId),
     });

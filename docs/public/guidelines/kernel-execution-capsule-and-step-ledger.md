@@ -40,6 +40,30 @@ The work cursor is persisted, not remembered.
   final report to re-prove earlier evidence.
 - A replan supersedes the live steps and writes the replacement at the next
   plan revision. Attempted work is never edited.
+- Only the **consecutive-failure** signal (three failures on one step) escalates
+  the model route. The looser signals — a no-op retry, an identical result
+  digest — fire at two attempts, which would overtake the retry-escalation
+  threshold and make it unreachable, since stagnation outranks retry. They still
+  drive the replan recommendation and suspend a Safe Wave.
+
+### Safe Wave
+
+Parallel step execution is default-deny and needs all of:
+
+1. `safeWave.approved: true` **and** a named `approvedBy` **and** an
+   `integrationVerification.commandRef` in the task contract — declaring the
+   intent alone is a request, never an authorisation;
+2. an integration command the project actually declares (an unknown ref cannot
+   authorise parallelism);
+3. disjoint write sets across the steps of the wave;
+4. no stagnant step in the current plan.
+
+Any one missing collapses the wave back to a single step, with the reason named
+(`safe-wave-not-approved`, `safe-wave-integration-command-not-declared`,
+`safe-wave-write-set-conflict`, `safe-wave-suspended-by-stagnation`). Width is
+capped by the bounded-wave worker limit — 2, or 3 at T3 with an independent
+review. The wave is a Host concern reached through `getExecutableSteps`; `next`
+still hands the model exactly one work unit.
 
 ## Execution Capsule
 
@@ -47,9 +71,13 @@ The bounded brief for one worker session, built from persisted state only.
 
 Contains: objective, acceptance, constraints, non-goals, the work unit
 (`allowedPaths`, `forbiddenPaths`, expected outputs), a scoped repository seam
-(entrypoints, manifests, ranked relevant files, architecture and knowledge
-records, baseline), the obligations with the command refs that can prove them,
-permissions, and provenance digests.
+(entrypoints, manifests, ranked relevant files, the exported symbols declared in
+those files, architecture and knowledge records, baseline), the obligations with
+the command refs that can prove them, permissions, and provenance digests.
+
+Symbols are extracted by name from the already-selected files — exported or
+public declarations only, no parser and no private helpers. The capsule says
+WHERE the seam is, not what the code means.
 
 Never contains: the conversation, the planner's reasoning, unrelated repository
 files, file bodies, secret-bearing paths (`.env`, keys, `secrets/`), or an
@@ -67,7 +95,10 @@ capsule, and a capsule built before the workspace moved is detectably stale.
 
 Reviewers receive a **different** capsule (`kernel.review-capsule.schema.json`):
 subject, verification evidence, the implementation receipt identity, and the
-review scope — read-only, with no implementer context.
+review scope — read-only, with no implementer context. The subject's
+`diffDigest` is the digest of the changed paths and their current content
+digests, so the verdict is bound to the exact file states it was formed on
+without the capsule carrying the diff.
 
 ## Route Admission
 

@@ -63,6 +63,7 @@ export const selectExecutableSteps = (steps = [], {
   planRevision = null,
   safeWave = false,
   integrationVerification = null,
+  maxWorkers = 2,
 } = {}) => {
   const runnable = steps
     .filter((step) => (planRevision === null || step.planRevision === planRevision))
@@ -88,6 +89,9 @@ export const selectExecutableSteps = (steps = [], {
     if (conflicts) break;
     claimed.push(paths);
     selected.push(step);
+    // The wave is capped by the bounded-wave worker limit; overflow stays for
+    // the next wave rather than widening the parallelism.
+    if (selected.length >= maxWorkers) break;
   }
   return {
     steps: selected,

@@ -2,6 +2,16 @@
 
 ## Harness Change Ledger
 
+- Date: 2026-07-27 (2)
+- Scope: Kernel — the four surfaces the K1–K4 entry below shipped as partial. Found by auditing the guide's own checklist against the code after the six-commit split, not by a test failure.
+- What was partial, and what closed it:
+  - **Safe Wave was unreachable.** `selectExecutableSteps(safeWave: true)` and its write-set conflict check existed and were unit-tested, but no caller ever passed the flag, so parallel step execution could not happen at all. The task contract now carries a `safeWave` block and `getExecutableSteps()` is the Host's entry point. It stays default-deny: approval requires the flag AND a named approver AND an integration command, the command must be one the project actually declares, write sets must be disjoint, and no step in the plan may be stagnant. Each refusal names itself. Width is capped by the existing bounded-wave worker limit rather than a second one. `next` still hands the model exactly one unit.
+  - **Step stagnation never reached the router.** §7.9 asks for escalation to a frontier planner; `decideModelRoute` was still reading only the run-level attempt counter. It now reads a combined signal — but only the step's consecutive-failure signal escalates. The looser step signals (a no-op retry, an identical result digest) fire at two attempts and would have overtaken the retry-escalation threshold, making `RETRY_ESCALATION` unreachable since stagnation outranks retry. That was caught by an existing escalation test failing, and the boundary is now explicit in code, docs, and a regression test.
+  - **`relevantSymbols` was always empty.** The schema, budget, and reduction order carried it; nothing produced it. Symbols are now extracted by name from the already-selected files — exported/public declarations only, no parser dependency, sorted for determinism, and private helpers excluded.
+  - **`diffDigest` was always null.** The reviewer capsule now carries the digest of the changed paths and their current content digests, so a verdict is bound to the exact file states it was formed on without the capsule carrying the diff.
+- Verification evidence: `npm run test:kernel` 411/411, `npm run test:package` 237/237, `npm run test:routing` 33/33, `npm run test:eval` passed, surface check pass. Five new tests cover the wave approval gate, the undeclared integration command, the stagnation suspension, the escalation boundary, and the symbol/diff-digest content.
+- Surface budget re-baselined again (201,499 non-blank lines); `allowedDelta` unchanged.
+
 - Date: 2026-07-27
 - Scope: Kernel — K1 (Execution Capsule), K2 (Run Step Ledger), K3 (Route Admission), K4 (integration E2E, migration) of the execution-reliability guide, on top of the K0 entry below. Public surface unchanged: one skill, `kernel next` / `kernel report`.
 - What the four phases actually close:

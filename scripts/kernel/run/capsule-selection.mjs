@@ -107,6 +107,74 @@ export const rankRelevantFiles = ({
   }));
 };
 
+// Declared symbols, extracted by name from the files already selected. This is
+// deliberately shallow: the capsule tells a worker WHERE the seam is, not what
+// the code means, so a name-and-path index is enough and no parser (or parser
+// dependency) is needed. Only exported/public declarations are listed — a
+// private helper is not a seam.
+const SYMBOL_PATTERNS = Object.freeze({
+  js: [
+    /^\s*export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/,
+    /^\s*export\s+class\s+([A-Za-z_$][\w$]*)/,
+    /^\s*export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/,
+    /^\s*export\s+(?:interface|type|enum)\s+([A-Za-z_$][\w$]*)/,
+  ],
+  py: [/^\s*def\s+([A-Za-z_]\w*)/, /^\s*class\s+([A-Za-z_]\w*)/],
+  go: [/^\s*func\s+(?:\([^)]*\)\s*)?([A-Z]\w*)/, /^\s*type\s+([A-Z]\w*)/],
+  rs: [/^\s*pub\s+(?:async\s+)?fn\s+([A-Za-z_]\w*)/, /^\s*pub\s+(?:struct|enum|trait)\s+([A-Za-z_]\w*)/],
+  rb: [/^\s*def\s+([A-Za-z_]\w*)/, /^\s*class\s+([A-Z]\w*)/],
+});
+
+const PATTERNS_FOR_EXTENSION = Object.freeze({
+  '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js', '.ts': 'js', '.tsx': 'js',
+  '.py': 'py', '.go': 'go', '.rs': 'rs', '.rb': 'rb',
+});
+
+const MAX_SYMBOL_SOURCE_BYTES = 512 * 1024;
+
+export const extractRelevantSymbols = ({
+  projectRoot = process.cwd(),
+  files = [],
+  limit = CAPSULE_BUDGET.maxRelevantSymbols,
+} = {}) => {
+  const found = [];
+  for (const file of files) {
+    const relative = normalize(file?.path || file);
+    const patterns = SYMBOL_PATTERNS[PATTERNS_FOR_EXTENSION[path.extname(relative).toLowerCase()]];
+    if (!patterns || isSensitivePath(relative)) continue;
+    let source;
+    try {
+      const absolute = path.join(projectRoot, relative);
+      if (!existsSync(absolute) || statSync(absolute).size > MAX_SYMBOL_SOURCE_BYTES) continue;
+      source = readFileSync(absolute, 'utf8');
+    } catch {
+      continue;
+    }
+    const seen = new Set();
+    for (const line of source.split(/\r?\n/)) {
+      for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (!match || seen.has(match[1])) continue;
+        seen.add(match[1]);
+        found.push({ symbol: match[1], path: relative });
+      }
+    }
+  }
+  // Sorted by (path, symbol) so a rebuilt capsule is byte-identical.
+  return found
+    .sort((a, b) => a.path.localeCompare(b.path) || a.symbol.localeCompare(b.symbol))
+    .slice(0, limit);
+};
+
+// Identifies the reviewed change without carrying it: the changed paths plus the
+// content digest of each. A reviewer capsule can therefore be checked against
+// the exact file states the verdict was formed on.
+export const digestOfChangedFiles = ({ projectRoot = process.cwd(), changedPaths = [] } = {}) => {
+  const entries = [...new Set(changedPaths.map(normalize))].sort()
+    .map((relative) => [relative, fileDigest(projectRoot, relative)]);
+  return `sha256:${createHash('sha256').update(canonicalJson(entries)).digest('hex')}`;
+};
+
 const recordSummary = (record) => {
   const statement = record?.statement || record?.summary || record?.title || '';
   return String(statement).slice(0, 400);

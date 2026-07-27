@@ -78,6 +78,22 @@ const RISK_FLAGS = [
   'domainTerminologyConflict', 'destructiveSchemaChange', 'schemaChange', 'acceptanceAmbiguity',
 ];
 
+const normalizeSafeWave = (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { requested: false, approved: false, approvedBy: null, integrationVerification: null };
+  }
+  const commandRef = input.integrationVerification?.commandRef || input.integrationVerification || null;
+  const approvedBy = input.approvedBy ? String(input.approvedBy) : null;
+  return {
+    requested: input.requested === true || input.approved === true,
+    // Approval requires all three: the flag, a named approver, and an
+    // integration command. Any one missing leaves the run sequential.
+    approved: input.approved === true && Boolean(approvedBy) && Boolean(commandRef),
+    approvedBy,
+    integrationVerification: commandRef ? { commandRef: String(commandRef) } : null,
+  };
+};
+
 // The full contract the Kernel persists. Everything the model needs on resume
 // must be reachable from this object alone.
 export const normalizeTaskContract = (input = {}, { objective, changedFileCount = 0 } = {}) => {
@@ -105,6 +121,11 @@ export const normalizeTaskContract = (input = {}, { objective, changedFileCount 
     // Declared decomposition (K2). Present only when the caller actually split
     // the work; otherwise the run gets one synthetic step.
     steps: Array.isArray(contract.steps) ? contract.steps : [],
+    // Safe Wave (§2.4/§7.6) is default-deny. Parallel step execution needs an
+    // explicit operator approval, an approver on record, and the integration
+    // check that per-step evidence cannot replace — declaring the intent alone
+    // is a request, never an authorisation.
+    safeWave: normalizeSafeWave(contract.safeWave),
     allowedPaths: asStringList(contract.allowedPaths),
     forbiddenPaths: asStringList(contract.forbiddenPaths),
     filesChanged: Number.isFinite(contract.filesChanged) ? Number(contract.filesChanged) : changedFileCount,
@@ -124,6 +145,7 @@ export const contractDigest = (contract) => `sha256:${createHash('sha256').updat
   requestedTier: contract.requestedTier,
   requiredObligations: contract.requiredObligations,
   steps: contract.steps,
+  safeWave: contract.safeWave,
   allowedPaths: contract.allowedPaths,
   forbiddenPaths: contract.forbiddenPaths,
   flags: contract.flags,
@@ -223,6 +245,8 @@ export const mergeContractRevision = (previous, next) => {
     surfaces: union(previous.surfaces, next.surfaces),
     requiredObligations: union(previous.requiredObligations, next.requiredObligations),
     steps: next.steps?.length ? next.steps : (previous.steps || []),
+    // An approval is not inherited by a later revision that does not restate it.
+    safeWave: next.safeWave?.approved ? next.safeWave : (previous.safeWave || next.safeWave),
     allowedPaths: union(previous.allowedPaths, next.allowedPaths),
     forbiddenPaths: union(previous.forbiddenPaths, next.forbiddenPaths),
     flags: { ...previous.flags, ...next.flags },

@@ -490,11 +490,31 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return updated;
     },
 
+    // K2 §7.9: stagnation is judged per unit of work as well as per run. A step
+    // that keeps failing the same way escalates the route even when the run-wide
+    // attempt counter has not reached its threshold yet.
+    // Only the step's CONSECUTIVE-FAILURE signal escalates the route. Its looser
+    // signals (a no-op retry, an identical result digest) fire at two attempts,
+    // which would overtake the retry-escalation threshold and make it
+    // unreachable — stagnation outranks retry. Those signals still drive the
+    // replan recommendation and suspend a Safe Wave.
+    stagnationSignal(runId) {
+      const runLevel = this.detectStagnation(runId);
+      const stepLevel = this.detectStepStagnation(runId);
+      const stepEscalates = stepLevel.signals?.consecutiveFailures === true;
+      return {
+        stagnant: runLevel.stagnant || stepEscalates,
+        runLevel,
+        stepLevel,
+        source: runLevel.stagnant ? 'run' : (stepEscalates ? 'step' : null),
+      };
+    },
+
     // Measurement-based routing recommendation (policy only; no provider call).
     recommendRouting(runId, { independentReviewRequired = false } = {}) {
       const run = store.getRun(runId);
       if (!run) throw new Error(`Run ${runId} not found`);
-      const stagnation = this.detectStagnation(runId);
+      const stagnation = this.stagnationSignal(runId);
       const attempts = store.getAttempts(runId);
       return recommendModelRouting({
         riskTier: run.proofTier,
@@ -523,7 +543,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         // the stagnation threshold, and stagnation outranks it — which would
         // make retry escalation unreachable on the failing-report path.
         retryCount: attempts.filter((attempt) => attempt.status === 'failed').length,
-        stagnant: this.detectStagnation(runId).stagnant,
+        stagnant: this.stagnationSignal(runId).stagnant,
         protectedObligationFailed,
         planInvalid,
         architectureDeviation,
