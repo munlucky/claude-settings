@@ -20,13 +20,17 @@ export const stepLedgerApplies = ({ contract = {}, route = {}, filesChanged = 0,
 
 const stepId = (runId, sequence, planRevision) => `step-${planRevision}-${sequence}`;
 
-const normalizeDeclaredStep = ({ declared, index, runId, planRevision, contract, defaultObligations }) => ({
+// `previousStepId` is the id of the step actually before this one, which is not
+// always the generated one: a declared step may carry its own `stepId`, and
+// defaulting to the generated id would point the chain at a step that does not
+// exist, leaving the plan with nothing runnable after the first unit passes.
+const normalizeDeclaredStep = ({ declared, index, runId, planRevision, contract, previousStepId = null }) => ({
   stepId: declared.stepId ? String(declared.stepId) : stepId(runId, index + 1, planRevision),
   sequence: index + 1,
   objective: String(declared.objective || contract.objective || ''),
   state: 'planned',
   planRevision,
-  dependencyIds: Array.isArray(declared.dependsOn) ? declared.dependsOn.map(String) : (index === 0 ? [] : [stepId(runId, index, planRevision)]),
+  dependencyIds: Array.isArray(declared.dependsOn) ? declared.dependsOn.map(String) : (previousStepId ? [previousStepId] : []),
   allowedPaths: Array.isArray(declared.allowedPaths) ? declared.allowedPaths.map(String) : (contract.allowedPaths || []),
   forbiddenPaths: Array.isArray(declared.forbiddenPaths) ? declared.forbiddenPaths.map(String) : (contract.forbiddenPaths || []),
   acceptanceIds: Array.isArray(declared.acceptanceIds) ? declared.acceptanceIds.map(String) : [],
@@ -34,6 +38,22 @@ const normalizeDeclaredStep = ({ declared, index, runId, planRevision, contract,
   assignedRole: String(declared.role || 'implementer'),
   expectedOutputs: Array.isArray(declared.expectedOutputs) ? declared.expectedOutputs.map(String) : [],
 });
+
+// Ids are assigned first so each step can depend on the one actually before it.
+const normalizeDeclaredSteps = ({ declared = [], runId, planRevision, contract }) => {
+  const steps = [];
+  for (const [index, entry] of declared.entries()) {
+    steps.push(normalizeDeclaredStep({
+      declared: entry,
+      index,
+      runId,
+      planRevision,
+      contract,
+      previousStepId: steps.length > 0 ? steps[steps.length - 1].stepId : null,
+    }));
+  }
+  return steps;
+};
 
 // The synthetic single step. It carries the whole run: the same acceptance, the
 // same obligations, the same scope. This is what keeps `next`/`report` identical
@@ -72,9 +92,7 @@ export const planRunSteps = ({
     return { applies: decision.applies, signals: decision.signals, steps: [buildSyntheticStep({ run, contract, obligations, planRevision })] };
   }
 
-  const steps = declared.map((entry, index) => normalizeDeclaredStep({
-    declared: entry, index, runId: run.runId, planRevision, contract, defaultObligations: obligations,
-  }));
+  const steps = normalizeDeclaredSteps({ declared, runId: run.runId, planRevision, contract });
 
   const claimedObligations = new Set(steps.flatMap((step) => step.obligationIds));
   const claimedAcceptance = new Set(steps.flatMap((step) => step.acceptanceIds));
@@ -96,7 +114,6 @@ export const planReplacementSteps = ({ run, contract = {}, obligations = [], pla
   if (!Array.isArray(deltaSteps) || deltaSteps.length === 0) {
     return [buildSyntheticStep({ run, contract, obligations, planRevision })];
   }
-  return deltaSteps.map((entry, index) => normalizeDeclaredStep({
-    declared: entry, index, runId: run.runId, planRevision, contract, defaultObligations: obligations,
-  })).map((step) => (step.dependencyIds.length === 0 ? { ...step, state: 'ready' } : step));
+  return normalizeDeclaredSteps({ declared: deltaSteps, runId: run.runId, planRevision, contract })
+    .map((step) => (step.dependencyIds.length === 0 ? { ...step, state: 'ready' } : step));
 };

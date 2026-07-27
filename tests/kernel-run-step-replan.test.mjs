@@ -184,3 +184,46 @@ test('K2-6: step stagnation escalates the route, without overtaking retry escala
     await cleanup(fixture);
   }
 });
+
+test('K1/K2: a replan invalidates the superseded step capsule and its scope', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({ runId: 'r-capreplan', objective: 'Harden auth', taskContract: CONTRACT });
+    const [first] = cp.getRunSteps('r-capreplan');
+    const oldCapsule = await cp.buildCapsule('r-capreplan', { step: first });
+    assert.deepEqual(oldCapsule.workUnit.allowedPaths, ['src/auth/**']);
+
+    // A replan bumps the plan revision without touching the workspace, so the
+    // mutation revision and workspace identity are unchanged.
+    const replanned = await cp.replanSteps('r-capreplan', {
+      steps: [{ objective: 'Rework in the tests tree', allowedPaths: ['tests/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] }],
+    });
+    assert.equal(replanned.planRevision, 2);
+
+    // Naming the superseded capsule is refused outright.
+    const named = await cp.report('r-capreplan', {
+      summary: 'old capsule after replan',
+      capsuleId: oldCapsule.capsuleId,
+      stepId: replanned.steps[0].stepId,
+      changedPaths: ['tests/auth.test.mjs'],
+    });
+    assert.equal(named.status, 'scope-rejected');
+    assert.match(named.failures[0].errorSummary, /capsule-stale-plan-revision/);
+
+    // And omitting it does not silently fall back to the superseded capsule's
+    // scope: the replacement step governs, so its own paths are allowed.
+    await writeFile(path.join(fixture.projectRoot, 'tests', 'auth.test.mjs'), 'export const t = 1;\n');
+    const unnamed = await cp.report('r-capreplan', {
+      summary: 'new step scope',
+      stepId: replanned.steps[0].stepId,
+      changedPaths: ['tests/auth.test.mjs'],
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] }],
+    });
+    assert.notEqual(unnamed.status, 'scope-rejected', JSON.stringify(unnamed.failures));
+    assert.equal(unnamed.step.state, 'passed');
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});

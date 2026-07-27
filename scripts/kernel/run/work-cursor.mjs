@@ -355,22 +355,9 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
       return [{ obligationId: 'capsule', command: 'kernel report', errorSummary: `Execution capsule "${report.capsuleId}" was not issued for this run` }];
     }
     const capsule = named || store.latestExecutionCapsule(runId, { role: 'implementer' });
-    if (!capsule) {
-      // No capsule was ever issued (the Host is not routing workers), but a
-      // decomposed step still declares the scope its report must respect.
-      const stepViolations = step ? findScopeViolations({
-        changedPaths: report.changedPaths,
-        allowedPaths: step.allowedPaths || [],
-        forbiddenPaths: step.forbiddenPaths || [],
-      }) : [];
-      if (stepViolations.length === 0) return null;
-      return stepViolations.map((violation) => ({
-        obligationId: 'step',
-        command: 'kernel report',
-        errorSummary: `Changed path "${violation.path}" is ${violation.reason === 'forbidden-path' ? 'inside a forbidden path' : 'outside the allowed paths'} of step ${step.stepId} (allowed: ${(step.allowedPaths || []).join(', ') || 'none'})`,
-      }));
-    }
 
+    // A named capsule must still describe this run; naming a stale one is an
+    // error rather than something to silently fall back from.
     if (report.capsuleId) {
       const staleness = capsuleStaleness({ capsule, run });
       if (staleness.stale) {
@@ -378,16 +365,28 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
       }
     }
 
+    // The scope actually enforced comes from the capsule ONLY while that capsule
+    // is current and belongs to the step being reported. Otherwise the step's
+    // own scope governs — a superseded capsule must never widen or narrow the
+    // replacement step's boundary.
+    const capsuleGoverns = Boolean(capsule)
+      && !capsuleStaleness({ capsule, run }).stale
+      && (!capsule.stepId || (Boolean(step) && capsule.stepId === step.stepId));
+    const scope = capsuleGoverns
+      ? { source: 'capsule', label: `work unit ${capsule.capsuleId}`, obligationId: 'capsule', allowedPaths: capsule.workUnit?.allowedPaths || [], forbiddenPaths: capsule.workUnit?.forbiddenPaths || [] }
+      : (step ? { source: 'step', label: `step ${step.stepId}`, obligationId: 'step', allowedPaths: step.allowedPaths || [], forbiddenPaths: step.forbiddenPaths || [] } : null);
+    if (!scope) return null;
+
     const violations = findScopeViolations({
       changedPaths: report.changedPaths,
-      allowedPaths: capsule.workUnit?.allowedPaths || [],
-      forbiddenPaths: capsule.workUnit?.forbiddenPaths || [],
+      allowedPaths: scope.allowedPaths,
+      forbiddenPaths: scope.forbiddenPaths,
     });
     if (violations.length === 0) return null;
     return violations.map((violation) => ({
-      obligationId: 'capsule',
+      obligationId: scope.obligationId,
       command: 'kernel report',
-      errorSummary: `Changed path "${violation.path}" is ${violation.reason === 'forbidden-path' ? 'inside a forbidden path' : 'outside the allowed paths'} of work unit ${capsule.capsuleId} (allowed: ${(capsule.workUnit?.allowedPaths || []).join(', ') || 'none'})`,
+      errorSummary: `Changed path "${violation.path}" is ${violation.reason === 'forbidden-path' ? 'inside a forbidden path' : 'outside the allowed paths'} of ${scope.label} (allowed: ${scope.allowedPaths.join(', ') || 'none'})`,
     }));
   },
 });

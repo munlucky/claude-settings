@@ -133,7 +133,9 @@ test('K0: a judgment whose digest does not match its receipt is refused', async 
 
     const { entry } = await statusFor(cp, 'r-digest', 'security-review');
     assert.equal(entry.satisfied, false);
-    assert.deepEqual(entry.reviewLineage.reasons, ['review-receipt-digest-mismatch']);
+    assert.ok(entry.reviewLineage.reasons.includes('review-receipt-digest-mismatch'), JSON.stringify(entry.reviewLineage.reasons));
+    // The hand-forged receipt also claims an evidence set the run never had.
+    assert.ok(entry.reviewLineage.reasons.includes('review-stale-evidence-set'));
   } finally {
     await cp.close();
     await cleanup(fixture);

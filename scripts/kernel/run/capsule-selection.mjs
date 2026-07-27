@@ -47,8 +47,13 @@ export const CAPSULE_REDUCTION_ORDER = Object.freeze([
   { field: 'knownFailures', label: 'known-failure' },
   { field: 'architectureRecords', label: 'architecture-record' },
   { field: 'relevantSymbols', label: 'relevant-symbol' },
-  { field: 'adjacentFiles', label: 'adjacent-file' },
-  { field: 'acceptanceFiles', label: 'acceptance-file' },
+  // The three file tiers share one array, so each drops only files of its own
+  // tier. Without that, the first file tier would keep popping through the
+  // acceptance and work-unit files too, and the later tiers would never be
+  // reached — the declared priority would exist only on paper.
+  { field: 'relevantFiles', label: 'adjacent-file', fileTier: 'adjacentFiles' },
+  { field: 'relevantFiles', label: 'acceptance-file', fileTier: 'acceptanceFiles' },
+  { field: 'relevantFiles', label: 'scope-file', fileTier: 'scopeFiles' },
 ]);
 
 // Selection tiers, highest priority first: the step's own scope, then files the
@@ -232,9 +237,25 @@ const listsOf = (capsule) => ({
   knownFailures: capsule.repositoryContext?.baseline?.knownFailures,
   architectureRecords: capsule.repositoryContext?.architectureRecords,
   relevantSymbols: capsule.repositoryContext?.relevantSymbols,
-  adjacentFiles: capsule.repositoryContext?.relevantFiles,
-  acceptanceFiles: capsule.repositoryContext?.relevantFiles,
+  relevantFiles: capsule.repositoryContext?.relevantFiles,
 });
+
+const REASON_FOR_TIER = Object.fromEntries(FILE_TIERS.map((tier) => [tier.group, tier.reason]));
+
+// Drops the last entry of the given tier and reports whether anything went. A
+// file list is shared across three tiers, so the tier is identified by the
+// reason the ranking recorded rather than by position.
+const dropOne = (list, fileTier) => {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  if (!fileTier) return Boolean(list.pop());
+  const reason = REASON_FOR_TIER[fileTier];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    if (list[index]?.reason !== reason) continue;
+    list.splice(index, 1);
+    return true;
+  }
+  return false;
+};
 
 const serializedBytes = (capsule) => Buffer.byteLength(canonicalJson(capsule), 'utf8');
 
@@ -264,11 +285,7 @@ export const applyCapsuleBudget = (capsule, budget = CAPSULE_BUDGET) => {
   for (const step of CAPSULE_REDUCTION_ORDER) {
     while (serializedBytes(working) > budget.maxSerializedBytes) {
       const lists = listsOf(working);
-      const list = lists[step.field];
-      if (!Array.isArray(list) || list.length === 0) break;
-      // Files reduce from the lowest-priority tail, which the ranking already
-      // placed last, so acceptance-tier files outlive adjacent-tier ones.
-      list.pop();
+      if (!dropOne(lists[step.field], step.fileTier)) break;
       const existing = reductions.find((entry) => entry.label === step.label && entry.kind === 'budget');
       if (existing) existing.dropped += 1;
       else reductions.push({ label: step.label, kind: 'budget', dropped: 1, limit: budget.maxSerializedBytes });

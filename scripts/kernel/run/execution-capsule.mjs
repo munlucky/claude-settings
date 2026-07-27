@@ -363,9 +363,13 @@ export const capsuleStaleness = ({ capsule, run } = {}) => {
   if (run.currentWorkspaceIdentity && capsule.provenance.workspaceIdentity !== run.currentWorkspaceIdentity) {
     reasons.push('capsule-stale-workspace-identity');
   }
-  if (capsule.planRevision !== Number(run.contractRevision || 1) && !capsule.stepId) {
-    reasons.push('capsule-stale-plan-revision');
-  }
+  // A step capsule belongs to a PLAN revision, a run-level one to the contract
+  // revision. Exempting step capsules from the check let a replan — which bumps
+  // the plan revision without touching the workspace — leave a superseded
+  // capsule looking current, so its allowed paths would be enforced instead of
+  // the replacement step's.
+  const expectedRevision = capsule.stepId ? Number(run.planRevision || 1) : Number(run.contractRevision || 1);
+  if (capsule.planRevision !== expectedRevision) reasons.push('capsule-stale-plan-revision');
   return { stale: reasons.length > 0, reasons };
 };
 

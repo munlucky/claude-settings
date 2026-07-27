@@ -85,3 +85,44 @@ test('K1: knowledge selection splits architecture from general facts and respect
   assert.ok(factIds.includes('policy-1'), 'a global policy anchor is always in scope');
   assert.ok(!factIds.includes('fact-2'), 'knowledge scoped to another area is not this work unit s context');
 });
+
+test('K1: each file tier reduces only its own files, so scoped files outlive the rest', () => {
+  const fileAt = (tier, index) => ({
+    path: `src/${tier}/file-${String(index).padStart(2, '0')}.mjs`,
+    reason: {
+      scope: 'inside the work unit scope',
+      acceptance: 'named by the acceptance criteria',
+      adjacent: 'adjacent to a changed path',
+    }[tier],
+    digest: null,
+    // Padding so dropping files is what actually moves the byte total.
+    note: 'x'.repeat(8000),
+  });
+  const capsule = {
+    schemaVersion: 1,
+    runId: 'r-tier',
+    role: 'implementer',
+    repositoryContext: {
+      relevantFiles: [
+        ...Array.from({ length: 6 }, (_, i) => fileAt('scope', i)),
+        ...Array.from({ length: 6 }, (_, i) => fileAt('acceptance', i)),
+        ...Array.from({ length: 6 }, (_, i) => fileAt('adjacent', i)),
+      ],
+      relevantSymbols: [],
+      knowledgeRecords: [],
+      architectureRecords: [],
+      baseline: { status: 'captured', digest: null, knownFailures: [] },
+    },
+  };
+
+  const { capsule: reduced, reductions } = applyCapsuleBudget(capsule);
+  const survivingReasons = reduced.repositoryContext.relevantFiles.map((file) => file.reason);
+  const labels = reductions.filter((entry) => entry.kind === 'budget').map((entry) => entry.label);
+
+  // Adjacent files go first and are reported as such; work-unit scope survives.
+  assert.ok(!survivingReasons.includes('adjacent to a changed path'), JSON.stringify(survivingReasons));
+  assert.ok(survivingReasons.includes('inside the work unit scope'));
+  assert.deepEqual(labels, ['adjacent-file', 'acceptance-file'], JSON.stringify(reductions));
+  const dropped = Object.fromEntries(reductions.filter((entry) => entry.kind === 'budget').map((entry) => [entry.label, entry.dropped]));
+  assert.equal(dropped['adjacent-file'], 6, 'the adjacent tier drops only adjacent files');
+});

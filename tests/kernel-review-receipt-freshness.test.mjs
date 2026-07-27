@@ -22,7 +22,7 @@ const setup = async () => {
   await writeFile(path.join(projectRoot, 'package.json'), JSON.stringify({
     name: 'rrf-fixture',
     version: '0.0.1',
-    scripts: { 'test:ok': 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"' },
+    scripts: { 'test:ok': 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"', 'lint:fail': 'node -e "process.exit(1)"' },
   }, null, 2));
   await writeFile(path.join(projectRoot, 'app.mjs'), 'export const v = 0;\n');
   return { runtimeHome, projectRoot };
@@ -151,6 +151,67 @@ test('K0-6b: a re-review at the new workspace state restores completion', async 
     const run = await cp.getRun('r-rereview');
     assert.equal(recorded.reviewReceipt.subject.mutationRevision, run.mutationRevision);
     assert.equal((await cp.assessCompletion('r-rereview')).readyExceptClose, true);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('K0: evidence that changed after the review makes the receipt stale, even with no workspace change', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    // Prove the executable obligations, but let static-analysis FAIL first, so
+    // the reviewer forms a verdict against a failing evidence set.
+    await cp.startRun({ runId: 'r-evidence', objective: 'auth boundary', taskContract: { surfaces: ['security_boundary'], acceptance: ['works'] } });
+    await mutate(fixture.projectRoot, 1);
+    await routeAndRun(cp, 'r-evidence', 'implement', IMPLEMENTER);
+    await cp.report('r-evidence', {
+      summary: 'first pass',
+      changedPaths: ['app.mjs'],
+      verifications: [
+        { obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['works'] },
+        { obligationId: 'static-analysis', commandRef: 'lint:fail' },
+      ],
+    });
+
+    const review = await routeAndRun(cp, 'r-evidence', 'review_engineering', REVIEWER);
+    const recorded = await cp.recordReview(
+      'r-evidence',
+      { stage: 'engineering', verdict: 'pass', reviewerId: 'reviewer-2' },
+      { implementerId: 'impl-1', reviewReceiptId: review.receipt.receiptId, obligationId: 'security-review' },
+    );
+
+    // Re-run the failing check until it passes. Nothing about the workspace
+    // moved, so mutation revision and workspace identity are unchanged — the
+    // only thing that changed is the evidence the reviewer never saw.
+    const before = await cp.getRun('r-evidence');
+    await cp.report('r-evidence', {
+      summary: 'rerun the analyser',
+      verifications: [{ obligationId: 'static-analysis', commandRef: 'lint' }],
+    });
+    const after = await cp.getRun('r-evidence');
+    assert.equal(after.mutationRevision, before.mutationRevision, 'the workspace did not move');
+    assert.equal(after.currentWorkspaceIdentity, before.currentWorkspaceIdentity);
+
+    const completion = await cp.assessCompletion('r-evidence');
+    const entry = completion.obligationStatuses.find((item) => item.obligationId === 'security-review');
+    assert.equal(entry.satisfied, false, 'a verdict formed on a different evidence set cannot complete the run');
+    assert.ok(entry.reviewLineage.reasons.includes('review-stale-evidence-set'), JSON.stringify(entry.reviewLineage.reasons));
+
+    // Re-reviewing the current evidence set restores it.
+    const second = await routeAndRun(cp, 'r-evidence', 'review_engineering', REVIEWER);
+    await cp.recordReview(
+      'r-evidence',
+      { stage: 'engineering', verdict: 'pass', reviewerId: 'reviewer-2' },
+      { implementerId: 'impl-1', reviewReceiptId: second.receipt.receiptId, obligationId: 'security-review' },
+    );
+    const restored = await cp.assessCompletion('r-evidence');
+    const restoredEntry = restored.obligationStatuses.find((item) => item.obligationId === 'security-review');
+    assert.equal(restoredEntry.satisfied, true);
+    // A different receipt now backs the obligation: the two describe different
+    // evidence sets, which is exactly what the check is for.
+    assert.notEqual(restoredEntry.reviewLineage.receiptId, recorded.reviewReceipt.receiptId);
   } finally {
     await cp.close();
     await cleanup(fixture);

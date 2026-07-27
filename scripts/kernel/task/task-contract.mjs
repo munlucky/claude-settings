@@ -245,8 +245,17 @@ export const mergeContractRevision = (previous, next) => {
     surfaces: union(previous.surfaces, next.surfaces),
     requiredObligations: union(previous.requiredObligations, next.requiredObligations),
     steps: next.steps?.length ? next.steps : (previous.steps || []),
-    // An approval is not inherited by a later revision that does not restate it.
-    safeWave: next.safeWave?.approved ? next.safeWave : (previous.safeWave || next.safeWave),
+    // An approval is NOT inherited: a revision that does not restate it revokes
+    // it. Carrying the previous object forward would let a replanned contract
+    // keep dispatching parallel workers under an approval granted for the plan
+    // it replaced. The request and the named integration command survive so the
+    // operator can re-approve without restating everything.
+    safeWave: next.safeWave?.approved ? next.safeWave : {
+      requested: Boolean(previous.safeWave?.requested || next.safeWave?.requested),
+      approved: false,
+      approvedBy: null,
+      integrationVerification: next.safeWave?.integrationVerification || previous.safeWave?.integrationVerification || null,
+    },
     allowedPaths: union(previous.allowedPaths, next.allowedPaths),
     forbiddenPaths: union(previous.forbiddenPaths, next.forbiddenPaths),
     flags: { ...previous.flags, ...next.flags },

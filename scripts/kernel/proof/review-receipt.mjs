@@ -56,6 +56,21 @@ export const parseReviewEvidenceRef = (evidenceRef) => {
   return { runId: match[1], receiptId: match[2] };
 };
 
+// The evidence state a review was formed against. The obligation the review
+// itself answers is excluded, because recording the judgment adds a
+// verification of its own — including it would make every receipt stale the
+// instant it was written.
+export const digestOfEvidence = (verifications = [], { excludeObligationId = null } = {}) => `sha256:${createHash('sha256').update(canonicalJson(
+  verifications
+    .filter((verification) => verification.obligationId !== excludeObligationId)
+    .map((verification) => ({
+      obligationId: verification.obligationId,
+      status: verification.status,
+      evidenceDigest: verification.evidenceDigest || null,
+    }))
+    .sort((a, b) => a.obligationId.localeCompare(b.obligationId)),
+)).digest('hex')}`;
+
 export const digestOfPaths = (paths = []) =>
   `sha256:${createHash('sha256').update(canonicalJson([...new Set((paths || []).map(String))].sort())).digest('hex')}`;
 
@@ -148,10 +163,19 @@ export const evaluateReviewReceipt = ({
   requireIndependentSession = false,
   requireFrontierClass = false,
   requireTrustedEnforcement = false,
+  currentEvidenceDigest = null,
 } = {}) => {
   const reasons = [];
   if (!receipt) return { usable: false, reasons: ['review-receipt-missing'] };
   if (receipt.verdict !== 'pass') reasons.push(`review-verdict-${receipt.verdict}`);
+  // Evidence can change without the workspace changing — a failing check rerun
+  // until it passes leaves the mutation revision untouched. A verdict formed
+  // against a different evidence set is not a verdict about this one.
+  const effectiveEvidenceDigest = currentEvidenceDigest
+    || (run && Array.isArray(run.verifications) ? digestOfEvidence(run.verifications, { excludeObligationId: receipt.obligationId }) : null);
+  if (effectiveEvidenceDigest && receipt.subject.evidenceDigest !== effectiveEvidenceDigest) {
+    reasons.push('review-stale-evidence-set');
+  }
   if (run) {
     if (run.runId && receipt.runId !== run.runId) reasons.push('review-receipt-run-mismatch');
     if (receipt.subject.mutationRevision !== run.mutationRevision) reasons.push('review-stale-mutation-revision');

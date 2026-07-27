@@ -8,7 +8,7 @@ import { mapCandidateToCanonicalRecord } from './knowledge/canonical-record-mapp
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { assertCommandBinding } from './run/obligation-compiler.mjs';
 import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
-import { evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
+import { digestOfEvidence, evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -1742,6 +1742,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
           requireIndependentSession: independenceRequired,
           requireFrontierClass: independenceRequired,
           requireTrustedEnforcement: true,
+          // The verdict must describe the evidence set the run has NOW; a check
+          // rerun after the review changes nothing about the workspace.
+          currentEvidenceDigest: digestOfEvidence(verifications, { excludeObligationId: obligationId }),
         });
         const allReasons = [...reasons, ...evaluation.reasons];
         return { required: true, usable: allReasons.length === 0, receiptId: parsed.receiptId, reasons: allReasons };

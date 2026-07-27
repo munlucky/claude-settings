@@ -213,3 +213,67 @@ test('K2-10: overlapping write sets and a stagnant plan both collapse the wave',
     await cleanup(fixture);
   }
 });
+
+test('K2: an approval is revoked by a revision that does not restate it', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  const approved = { approved: true, approvedBy: 'operator', integrationVerification: 'test:integration' };
+  try {
+    await cp.ensureRun({ runId: 'r-revoke', objective: 'x', taskContract: contractWith(approved) });
+    assert.equal(cp.getExecutableSteps('r-revoke').mode, 'parallel');
+
+    // A later revision that says nothing about the wave must not keep dispatching
+    // parallel workers under an approval granted for the contract it replaced.
+    await cp.ensureRun({ runId: 'r-revoke', objective: 'x', taskContract: { constraints: ['keep the response shape'] } });
+    const run = await cp.getRun('r-revoke');
+    assert.equal(run.taskContract.safeWave.approved, false);
+    assert.equal(run.taskContract.safeWave.approvedBy, null);
+    assert.equal(run.taskContract.safeWave.requested, true, 'the request survives so it can be re-approved');
+    assert.equal(cp.getExecutableSteps('r-revoke').mode, 'sequential');
+
+    // Restating the approval re-enables it.
+    await cp.ensureRun({ runId: 'r-revoke', objective: 'x', taskContract: { safeWave: approved } });
+    assert.equal((await cp.getRun('r-revoke')).taskContract.safeWave.approved, true);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});
+
+test('K2: a declared step id is what the next step depends on', async () => {
+  const fixture = await setup();
+  const cp = await createKernelControlPlane(fixture);
+  try {
+    await cp.startRun({
+      runId: 'r-customids',
+      objective: 'x',
+      taskContract: {
+        complex: true,
+        riskTier: 'T2',
+        acceptance: ['auth holds', 'billing holds'],
+        steps: [
+          { stepId: 'auth-slice', objective: 'Auth', allowedPaths: ['src/auth/**'], acceptanceIds: ['AC-1'], obligationIds: ['unit-test'] },
+          { objective: 'Billing', allowedPaths: ['src/billing/**'], acceptanceIds: ['AC-2'], obligationIds: ['static-analysis'] },
+        ],
+      },
+    });
+    const [first, second] = cp.getRunSteps('r-customids');
+    assert.equal(first.stepId, 'auth-slice');
+    assert.deepEqual(second.dependencyIds, ['auth-slice'], 'the chain points at the id that exists');
+
+    // The plan is actually runnable to the end rather than deadlocking after the
+    // first unit passes.
+    await writeFile(path.join(fixture.projectRoot, 'src', 'auth', 'service.mjs'), 'export const v = 1;\n');
+    const step1 = await cp.report('r-customids', {
+      summary: 'auth',
+      stepId: 'auth-slice',
+      changedPaths: ['src/auth/service.mjs'],
+      verifications: [{ obligationId: 'unit-test', commandRef: 'test:ok', acceptanceCoverage: ['AC-1'] }],
+    });
+    assert.equal(step1.step.state, 'passed');
+    assert.equal(cp.getCurrentStep('r-customids').stepId, second.stepId);
+  } finally {
+    await cp.close();
+    await cleanup(fixture);
+  }
+});

@@ -33,7 +33,7 @@ import { resolveHostSessionHolder, REPORT_LEASE_TTL_MS, SESSION_LEASE_TTL_MS } f
 import { planWalkingSkeleton } from './task/greenfield-bootstrap.mjs';
 import { buildImpactAnalysis } from './task/migration-workflow.mjs';
 import { resolveReviewPlan, normalizeReviewVerdict, assertIndependentReview, assertIndependentReviewSession, classifyReviewFindings } from './proof/review-pipeline.mjs';
-import { digestOfPaths, evaluateReviewReceipt, reviewEvidenceRef } from './proof/review-receipt.mjs';
+import { digestOfEvidence, digestOfPaths, evaluateReviewReceipt, reviewEvidenceRef } from './proof/review-receipt.mjs';
 import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { hashSessionId } from './run/model-route-contract.mjs';
 import { scanRepositoryEvidence } from './task/evidence-scan.mjs';
@@ -118,17 +118,6 @@ const ACTION_FOR_MODEL_ACTION = Object.freeze({
 // The route a run follows is fixed at start (P1-1) so SHAPE is never skipped
 // for contract/boundary/migration work just because PROVE is reachable sooner.
 const refreshedTier = (store, runId) => store.getRun(runId)?.proofTier;
-
-// What a review claims to have reviewed: the evidence state at review time.
-// Recording it in the receipt is what makes a review of an older evidence set
-// visible instead of silently reusable.
-const digestOfEvidence = (verifications = []) => `sha256:${createHash('sha256').update(JSON.stringify(
-  verifications.map((verification) => ({
-    obligationId: verification.obligationId,
-    status: verification.status,
-    evidenceDigest: verification.evidenceDigest || null,
-  })),
-)).digest('hex')}`;
 
 const FINDING_CLASS_RANK = Object.freeze({ critical: 3, important: 2, minor: 1 });
 
@@ -721,7 +710,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           workspaceIdentity: run.currentWorkspaceIdentity,
           mutationRevision: run.mutationRevision,
           changedPathsDigest: digestOfPaths(changedPaths),
-          evidenceDigest: digestOfEvidence(store.getVerifications(runId)),
+          evidenceDigest: digestOfEvidence(store.getVerifications(runId), { excludeObligationId: targetObligation }),
         },
         acceptanceCoverage,
         findings: normalized.findings,
@@ -1257,6 +1246,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
               requireIndependentSession: currentTier === 'T3',
               requireFrontierClass: currentTier === 'T3',
               requireTrustedEnforcement: true,
+              currentEvidenceDigest: digestOfEvidence(store.getVerifications(runId), { excludeObligationId: judgment.obligationId }),
             });
             if (!lineage.usable) {
               failures.push({ obligationId: judgment.obligationId, command: 'structured-judgment', errorSummary: `Review receipt "${receipt.receiptId}" cannot prove "${judgment.obligationId}": ${lineage.reasons.join(', ')}` });
