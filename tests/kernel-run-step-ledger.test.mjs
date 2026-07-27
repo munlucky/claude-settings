@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createKernelControlPlane } from '../scripts/kernel/control-plane.mjs';
 import { allStepsPassed, dependenciesSatisfied, evaluateStepCompletion, selectExecutableSteps } from '../scripts/kernel/run/run-step-ledger.mjs';
-import { stepLedgerApplies } from '../scripts/kernel/run/step-planner.mjs';
+import { planReplacementSteps, stepLedgerApplies } from '../scripts/kernel/run/step-planner.mjs';
 
 const setup = async () => {
   const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'krn-step-home-'));
@@ -180,4 +180,27 @@ test('K2: a step is only complete with current-revision evidence for what it own
     evaluateStepCompletion({ step, run, acceptance, verifications: [] }).reasons,
     ['obligation-unsatisfied:unit-test', 'acceptance-uncovered:AC-1'],
   );
+});
+
+test('K2: explicit dependencies are remapped to qualified step IDs during replan', () => {
+  const run = { runId: 'r-replan-deps', objective: 'Replan test' };
+  const reservedStepIds = ['auth-slice'];
+  const deltaSteps = [
+    { stepId: 'auth-slice', objective: 'Auth slice v2' },
+    { stepId: 'auth-test', objective: 'Auth test', dependsOn: ['auth-slice'] },
+  ];
+  const steps = planReplacementSteps({ run, planRevision: 2, deltaSteps, reservedStepIds });
+  assert.equal(steps[0].stepId, 'auth-slice@r2');
+  assert.equal(steps[1].stepId, 'auth-test');
+  assert.deepEqual(steps[1].dependencyIds, ['auth-slice@r2']);
+});
+
+test('K2: step ID qualification loops until unique when fallback names exist in ledger', () => {
+  const run = { runId: 'r-qual-loop', objective: 'Loop qualification test' };
+  const reservedStepIds = ['foo', 'foo@r2', 'foo@r2-1'];
+  const deltaSteps = [
+    { stepId: 'foo', objective: 'Step foo' },
+  ];
+  const steps = planReplacementSteps({ run, planRevision: 2, deltaSteps, reservedStepIds });
+  assert.equal(steps[0].stepId, 'foo@r2-2');
 });

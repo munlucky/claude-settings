@@ -45,8 +45,10 @@ const normalizeDeclaredStep = ({ declared, index, runId, planRevision, contract,
 // replacement step collide with the step it replaces.
 const normalizeDeclaredSteps = ({ declared = [], runId, planRevision, contract, reservedStepIds = [] }) => {
   const taken = new Set(reservedStepIds);
+  const idMap = new Map();
   const steps = [];
   for (const [index, entry] of declared.entries()) {
+    const originalId = entry.stepId ? String(entry.stepId) : stepId(runId, index + 1, planRevision);
     const step = normalizeDeclaredStep({
       declared: entry,
       index,
@@ -55,18 +57,33 @@ const normalizeDeclaredSteps = ({ declared = [], runId, planRevision, contract, 
       contract,
       previousStepId: steps.length > 0 ? steps[steps.length - 1].stepId : null,
     });
-    if (taken.has(step.stepId)) step.stepId = `${step.stepId}@r${planRevision}`;
-    if (taken.has(step.stepId)) step.stepId = `${step.stepId}-${index + 1}`;
+    if (taken.has(step.stepId)) {
+      let candidate = `${step.stepId}@r${planRevision}`;
+      let attempt = 1;
+      while (taken.has(candidate)) {
+        candidate = `${step.stepId}@r${planRevision}-${attempt}`;
+        attempt++;
+      }
+      step.stepId = candidate;
+    }
     taken.add(step.stepId);
+    idMap.set(originalId, step.stepId);
     steps.push(step);
   }
   // Dependencies default to the preceding step, so they are resolved after the
   // ids are final rather than against a name that was just qualified away.
-  return steps.map((step, index) => (
-    Array.isArray(declared[index]?.dependsOn) || index === 0
-      ? step
-      : { ...step, dependencyIds: [steps[index - 1].stepId] }
-  ));
+  return steps.map((step, index) => {
+    if (Array.isArray(declared[index]?.dependsOn)) {
+      return {
+        ...step,
+        dependencyIds: declared[index].dependsOn.map((id) => idMap.get(String(id)) || String(id)),
+      };
+    }
+    if (index === 0) {
+      return step;
+    }
+    return { ...step, dependencyIds: [steps[index - 1].stepId] };
+  });
 };
 
 // The synthetic single step. It carries the whole run: the same acceptance, the
