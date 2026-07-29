@@ -86,3 +86,26 @@ test('MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on applies the recommendation to the a
     assert.equal(seenResolution.model, CODEX_MODELS.terra, 'the adapter must dispatch with the applied resolution, not the registry default');
   });
 });
+
+test('model-policy mode never claims enforced on Claude with no concrete model configured', async () => {
+  // Regression: Claude's recommendation supplies only an effort (model:
+  // null). Applying it unconditionally still flipped source/enforcementIntent
+  // to 'model-policy'/'enforced' even though resolution.model stayed null —
+  // which is exactly what admission's checkRoleRules() uses to decide a T3
+  // review ran on a proven, enforced model. A registry with nothing
+  // configured must keep reporting an unenforced, no-model resolution.
+  const { createClaudeAdapter } = await import('../scripts/host/kernel/adapters/claude.mjs');
+  await withRun(async (cp, runId) => {
+    const adapter = createClaudeAdapter({ launch: async () => ({ sessionId: 'claude-session-3' }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'claude' }),
+      env: { MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on' },
+    });
+    assert.equal(result.resolution.model, null);
+    assert.notEqual(result.resolution.source, 'model-policy');
+    assert.notEqual(result.resolution.enforcementIntent, 'enforced');
+  });
+});

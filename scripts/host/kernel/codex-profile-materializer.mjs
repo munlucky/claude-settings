@@ -98,6 +98,11 @@ export const resolveCodexProfilePath = (profile, options = {}) => {
 
 export const materializeCodexProfiles = async ({ runtimeHome = null, env = process.env, profiles = CODEX_PROFILE_NAMES, includeAgentsMd = true } = {}) => {
   const dir = resolveCodexProfileDir({ runtimeHome, env });
+  // The isolation check exists specifically to catch a caller-supplied
+  // runtimeHome that resolves inside the user's global Codex home; it must
+  // run before any directory is created or file written, not just live as an
+  // assertion its own unit test calls directly.
+  assertCodexProfileIsolation(dir, { env });
   await mkdir(dir, { recursive: true });
   const written = [];
   for (const profile of profiles) {

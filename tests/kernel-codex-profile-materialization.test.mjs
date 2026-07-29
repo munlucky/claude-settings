@@ -84,6 +84,26 @@ test('materializing into the user global Codex home is refused', () => {
   assert.equal(assertCodexProfileIsolation(path.join(os.tmpdir(), 'kernel-home', 'codex', 'config.toml'), { userCodexHome: userHome }), true);
 });
 
+test('materializeCodexProfiles itself refuses a runtimeHome inside the user global Codex home', async () => {
+  // Regression: assertCodexProfileIsolation existed but was only ever called
+  // by its own unit test — materializeCodexProfiles created the directory
+  // and wrote files before anything checked whether runtimeHome resolved
+  // inside the caller's own .codex/, so a misconfigured runtimeHome would
+  // silently overwrite the user's real Codex config.
+  const fakeHome = await mkdtemp(path.join(os.tmpdir(), 'kernel-codex-fake-userhome-'));
+  try {
+    const userCodexHome = path.join(fakeHome, '.codex');
+    await assert.rejects(
+      materializeCodexProfiles({ runtimeHome: userCodexHome, env: { HOME: fakeHome, USERPROFILE: fakeHome } }),
+      /must not be materialized inside the user global Codex home/,
+    );
+    const { existsSync } = await import('node:fs');
+    assert.equal(existsSync(path.join(userCodexHome, 'codex')), false, 'no directory should have been created before the isolation check ran');
+  } finally {
+    await rm(fakeHome, { recursive: true, force: true });
+  }
+});
+
 test('an unknown profile name is refused rather than rendered empty', () => {
   assert.throws(() => renderCodexProfileToml('turbo'), /Unknown Codex profile/);
   assert.throws(() => resolveCodexProfilePath('turbo'), /Unknown Codex profile/);

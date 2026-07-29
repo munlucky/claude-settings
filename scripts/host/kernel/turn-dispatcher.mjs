@@ -176,12 +176,18 @@ export const dispatchKernelTurn = async ({
   const modelPolicyMode = resolveOptimizationModes(env).modelPolicyMode;
   const modelPolicyRecommendation = resolveTurnModelPolicy({ decision, hostCapabilities });
   if (modelPolicyMode === 'on' && modelPolicyRecommendation) {
+    const appliedModel = modelPolicyRecommendation.model || resolution.model;
     resolution = {
       ...resolution,
-      model: modelPolicyRecommendation.model || resolution.model,
+      model: appliedModel,
       effort: modelPolicyRecommendation.effort || resolution.effort,
-      source: 'model-policy',
-      enforcementIntent: 'enforced',
+      // Claiming 'model-policy'/'enforced' asserts a concrete, Host-decided
+      // model exists. Claude's recommendation supplies only an effort, so a
+      // registry with no configured model would otherwise still flip to
+      // 'enforced' with no model behind it — letting a T3 review's
+      // checkRoleRules() pass on an unproven resolution. Only claim it when
+      // the merge actually produced a model.
+      ...(appliedModel ? { source: 'model-policy', enforcementIntent: 'enforced' } : {}),
     };
   }
   // K1: the capsule is the authority for what the worker may see and touch.
