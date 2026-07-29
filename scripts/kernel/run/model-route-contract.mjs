@@ -307,14 +307,33 @@ export const normalizeModelUsageReceipt = (receipt = {}) => {
 const ratio = (numerator, denominator) =>
   (numerator === null || denominator === null || !denominator ? null : numerator / denominator);
 
+const sum = (receipts, field) => receipts.reduce((total, receipt) => (receipt[field] === null || receipt[field] === undefined ? total : (total ?? 0) + receipt[field]), null);
+
+// A ratio summed independently per field mixes populations: a receipt that
+// reports the denominator but not the numerator (or the reverse) still
+// contributes to one side, silently pulling the published rate toward
+// whichever side happened to be reported. Only a receipt that reports BOTH
+// fields may contribute to either side of the ratio.
+const pairedRatio = (receipts, numeratorField, denominatorField) => {
+  let numerator = null;
+  let denominator = null;
+  for (const receipt of receipts) {
+    const numValue = receipt[numeratorField];
+    const denValue = receipt[denominatorField];
+    if (numValue === null || numValue === undefined || denValue === null || denValue === undefined) continue;
+    numerator = (numerator ?? 0) + numValue;
+    denominator = (denominator ?? 0) + denValue;
+  }
+  return ratio(numerator, denominator);
+};
+
 export const summarizeCacheEconomics = (receipts = []) => {
-  const sum = (field) => receipts.reduce((total, receipt) => (receipt[field] === null || receipt[field] === undefined ? total : (total ?? 0) + receipt[field]), null);
-  const eligiblePrefixTokens = sum('eligiblePrefixTokens');
-  const cacheReadInputTokens = sum('cacheReadInputTokens');
-  const cacheWriteInputTokens = sum('cacheWriteInputTokens');
-  const inputTokens = sum('inputTokens');
-  const outputTokens = sum('outputTokens');
-  const reasoningTokens = sum('reasoningTokens');
+  const eligiblePrefixTokens = sum(receipts, 'eligiblePrefixTokens');
+  const cacheReadInputTokens = sum(receipts, 'cacheReadInputTokens');
+  const cacheWriteInputTokens = sum(receipts, 'cacheWriteInputTokens');
+  const inputTokens = sum(receipts, 'inputTokens');
+  const outputTokens = sum(receipts, 'outputTokens');
+  const reasoningTokens = sum(receipts, 'reasoningTokens');
   const continuationEligible = receipts.filter((receipt) => receipt.sessionLineageId !== null);
   const continued = continuationEligible.filter((receipt, index, all) =>
     all.findIndex((other) => other.sessionLineageId === receipt.sessionLineageId) !== index);
@@ -322,10 +341,10 @@ export const summarizeCacheEconomics = (receipts = []) => {
     schemaVersion: 1,
     receipts: receipts.length,
     totals: Object.freeze({ eligiblePrefixTokens, cacheReadInputTokens, cacheWriteInputTokens, inputTokens, outputTokens, reasoningTokens }),
-    eligibleHitRatio: ratio(cacheReadInputTokens, eligiblePrefixTokens),
-    totalInputCacheRatio: ratio(cacheReadInputTokens, inputTokens),
-    writeReadRatio: ratio(cacheWriteInputTokens, cacheReadInputTokens),
-    reasoningRatio: ratio(reasoningTokens, outputTokens),
+    eligibleHitRatio: pairedRatio(receipts, 'cacheReadInputTokens', 'eligiblePrefixTokens'),
+    totalInputCacheRatio: pairedRatio(receipts, 'cacheReadInputTokens', 'inputTokens'),
+    writeReadRatio: pairedRatio(receipts, 'cacheWriteInputTokens', 'cacheReadInputTokens'),
+    reasoningRatio: pairedRatio(receipts, 'reasoningTokens', 'outputTokens'),
     sessionContinuationRate: continuationEligible.length ? continued.length / continuationEligible.length : null,
     missReasons: Object.freeze(Object.fromEntries(
       [...new Set(receipts.map((receipt) => receipt.cacheMissReason).filter(Boolean))]

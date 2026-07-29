@@ -51,4 +51,24 @@ test('an explicit reset ends the lineage even when nothing else changed', () => 
   const lineage = resolveSessionLineage({ previous, current: identity(), explicitReset: true });
   assert.equal(lineage.continued, false);
   assert.deepEqual([...lineage.resetReasons], ['explicit-reset']);
+  // Regression: a forced reset with an unchanged affinity key must not reuse
+  // the previous lineage id, or a consumer keyed by lineage id would treat
+  // two genuinely distinct sessions as one continuing session.
+  assert.notEqual(lineage.sessionLineageId, 'lineage-1');
+});
+
+test('two consecutive forced resets with an identical identity each get a distinct lineage id', () => {
+  // Two reviewer turns back to back never continue each other, but nothing
+  // in their SESSION_KEY_FIELDS differs between them (role is 'reviewer'
+  // both times) — the case the mint-on-forced-reset path exists for.
+  const reviewerIdentity = identity({ role: 'reviewer' });
+  const first = resolveSessionLineage({ previous: null, current: reviewerIdentity, role: 'reviewer' });
+  const second = resolveSessionLineage({
+    previous: { ...reviewerIdentity, sessionLineageId: first.sessionLineageId },
+    current: reviewerIdentity,
+    role: 'reviewer',
+  });
+  assert.equal(second.continued, false);
+  assert.notEqual(second.sessionLineageId, first.sessionLineageId);
+  assert.equal(second.sessionAffinityKey, first.sessionAffinityKey, 'the identity fingerprint is unchanged even though the instance is not');
 });

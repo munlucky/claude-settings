@@ -49,6 +49,15 @@ const pick = (identity = {}) => Object.fromEntries(SESSION_KEY_FIELDS.map((field
 export const buildSessionAffinityKey = (identity = {}) =>
   `session-${createHash('sha256').update(canonicalJson(pick(identity))).digest('hex').slice(0, 32)}`;
 
+// A reset forced by role/independent-context/explicit-reset can happen while
+// every SESSION_KEY_FIELDS value is unchanged (e.g. the same implementer
+// identity, freshly required to run independently). The affinity key alone
+// cannot distinguish that fresh instance from the one it replaces, so its
+// lineage id is derived from the key plus the lineage it is replacing —
+// deterministic and reproducible, but never equal to the id it supersedes.
+const mintResetLineageId = (key, previousLineageId) =>
+  `session-${createHash('sha256').update(`${key}|reset|${previousLineageId || ''}`).digest('hex').slice(0, 32)}`;
+
 // Returns every reason the lineage must restart, not just the first: a receipt
 // that says only "model-changed" when the run contract also moved would make a
 // later cache-miss analysis point at the wrong cause.
@@ -71,10 +80,15 @@ export const resolveSessionLineage = ({
   if (explicitReset) reasons.push('explicit-reset');
   const unique = [...new Set(reasons)].sort();
   const continued = Boolean(previous) && unique.length === 0;
+  const keyFieldsChanged = Boolean(previous) && key !== buildSessionAffinityKey(previous);
+  const forcedWithSameKey = !continued && Boolean(previous) && !keyFieldsChanged;
+  const sessionLineageId = continued
+    ? previous.sessionLineageId || key
+    : (forcedWithSameKey ? mintResetLineageId(key, previous.sessionLineageId) : key);
   return Object.freeze({
     schemaVersion: 1,
     sessionAffinityKey: key,
-    sessionLineageId: continued ? previous.sessionLineageId || key : key,
+    sessionLineageId,
     continued,
     resetReasons: Object.freeze(unique),
   });

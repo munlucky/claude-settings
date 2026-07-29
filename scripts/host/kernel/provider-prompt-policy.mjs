@@ -51,14 +51,21 @@ export const MODEL_ESCALATION_REASONS = Object.freeze([
 
 const readMode = (value, fallback = 'shadow') => (CACHE_MODES.includes(String(value)) ? String(value) : fallback);
 
-// Rollout is per provider on purpose: one global switch would make a Claude
-// regression force a Codex rollback.
-export const resolveOptimizationModes = (env = process.env) => Object.freeze({
-  cacheMode: readMode(env.MOON_RELAY_KERNEL_CACHE_MODE),
-  modelPolicyMode: readMode(env.MOON_RELAY_KERNEL_MODEL_POLICY_MODE),
-  claude: readMode(env.MOON_RELAY_KERNEL_CLAUDE_OPTIMIZATION),
-  codex: readMode(env.MOON_RELAY_KERNEL_CODEX_OPTIMIZATION),
-});
+// Rollout is per provider on purpose: an explicit per-provider setting always
+// wins, so a Claude regression can be rolled back with CLAUDE_OPTIMIZATION=off
+// without touching Codex. But an operator who sets only the general
+// MOON_RELAY_KERNEL_CACHE_MODE switch still expects it to take effect, so an
+// *unset* provider variable inherits the resolved cache mode as its default
+// rather than a hardcoded 'shadow' that could never be overridden by it.
+export const resolveOptimizationModes = (env = process.env) => {
+  const cacheMode = readMode(env.MOON_RELAY_KERNEL_CACHE_MODE);
+  return Object.freeze({
+    cacheMode,
+    modelPolicyMode: readMode(env.MOON_RELAY_KERNEL_MODEL_POLICY_MODE),
+    claude: readMode(env.MOON_RELAY_KERNEL_CLAUDE_OPTIMIZATION, cacheMode),
+    codex: readMode(env.MOON_RELAY_KERNEL_CODEX_OPTIMIZATION, cacheMode),
+  });
+};
 
 export const resolveProviderOptimizationMode = (provider, env = process.env) => {
   const modes = resolveOptimizationModes(env);

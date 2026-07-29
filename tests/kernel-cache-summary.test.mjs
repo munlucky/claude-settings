@@ -40,6 +40,35 @@ test('the reasoning ratio is computed from reported tokens only', () => {
   assert.equal(summary.reasoningRatio, 0.25);
 });
 
+test('a receipt reporting only the denominator does not drag the ratio down', () => {
+  // Regression: one turn reports 50/100 (a real 50% hit), a second turn
+  // reports an eligiblePrefixTokens of 100 but never reports a read. Summing
+  // each field independently would divide 50 by 200 and publish 25% for a
+  // combined rate that is actually unknown on the second turn. Only the
+  // fully-reported turn may contribute to either side.
+  const summary = summarizeCacheEconomics([
+    receipt({ eligiblePrefixTokens: 100, cacheReadInputTokens: 50 }),
+    receipt({ eligiblePrefixTokens: 100, cacheReadInputTokens: null }),
+  ]);
+  assert.equal(summary.eligibleHitRatio, 0.5);
+});
+
+test('a receipt reporting only the numerator is excluded the same way', () => {
+  const summary = summarizeCacheEconomics([
+    receipt({ inputTokens: 100, cacheReadInputTokens: 40 }),
+    receipt({ inputTokens: null, cacheReadInputTokens: 10 }),
+  ]);
+  assert.equal(summary.totalInputCacheRatio, 0.4);
+});
+
+test('no receipt reporting both sides of a ratio yields null, not a partial sum', () => {
+  const summary = summarizeCacheEconomics([
+    receipt({ eligiblePrefixTokens: 100, cacheReadInputTokens: null }),
+    receipt({ eligiblePrefixTokens: null, cacheReadInputTokens: 50 }),
+  ]);
+  assert.equal(summary.eligibleHitRatio, null);
+});
+
 test('miss reasons are counted so a regression points at its cause', () => {
   const summary = summarizeCacheEconomics([
     receipt({ cacheMissReason: 'cold-prefix' }),
