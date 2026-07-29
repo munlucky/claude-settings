@@ -66,9 +66,19 @@ export const assertMutationAllowed = ({
   if (['git_reset', 'destructive_command'].includes(operation)) fail('mutation_operation_forbidden', operation);
   if (operation === 'git_commit' && capsule.permissions?.canCommit !== true) fail('mutation_operation_forbidden', operation);
 
-  const lock = stateStore.getWorkspaceMutationLock?.(run.projectId);
-  if (lock && (lock.holderRunId !== runId || (fencingToken !== null && lock.fencingToken !== fencingToken) || (sessionToken && lock.sessionToken !== sessionToken))) {
-    fail('workspace_mutation_locked', run.projectId);
+  const lock = stateStore.getWorkspaceMutationLock(run.projectId);
+  if (!lock) {
+    fail('workspace_mutation_lock_missing', run.projectId);
+  }
+  if (fencingToken === null || fencingToken === undefined || !sessionToken) {
+    fail('mutation_fence_credentials_missing', run.projectId);
+  }
+  if (
+    lock.holderRunId !== runId
+    || lock.fencingToken !== fencingToken
+    || lock.sessionToken !== sessionToken
+  ) {
+    fail('workspace_mutation_fence_mismatch', run.projectId);
   }
 
   const relativePaths = targetPaths.map((targetPath) => canonicalMutationPath({ workspaceRoot, targetPath }));

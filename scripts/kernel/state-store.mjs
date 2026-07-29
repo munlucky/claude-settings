@@ -832,6 +832,28 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return Number(result.changes || 0) > 0;
     },
 
+    renewWorkspaceMutationLock({ projectId, runId, sessionToken, fencingToken, ttlMs = 60000 } = {}) {
+      if (!projectId || !runId || !sessionToken || fencingToken === null || fencingToken === undefined) {
+        throw new Error('renewWorkspaceMutationLock requires projectId, runId, sessionToken, and fencingToken');
+      }
+      const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const current = db.prepare(`SELECT project_id as projectId, holder_run_id as holderRunId, session_token as sessionToken, fencing_token as fencingToken, acquired_at as acquiredAt, expires_at as expiresAt FROM workspace_mutation_locks WHERE project_id=?`).get(projectId);
+        if (!current || current.holderRunId !== runId || current.sessionToken !== sessionToken || current.fencingToken !== fencingToken) {
+          db.exec('ROLLBACK');
+          return { renewed: false, lock: current || null };
+        }
+        db.prepare(`UPDATE workspace_mutation_locks SET expires_at=? WHERE project_id=? AND holder_run_id=? AND session_token=? AND fencing_token=?`)
+          .run(expiresAt, projectId, runId, sessionToken, fencingToken);
+        db.exec('COMMIT');
+        return { renewed: true, lock: { ...current, expiresAt } };
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    },
+
     recordKnowledgeContextReceipt(runId, { stage, knowledgeRevision, digest, receiptJson }) {
       db.prepare(`
         INSERT INTO knowledge_context_receipts(run_id, stage, knowledge_revision, digest, receipt_json, created_at)

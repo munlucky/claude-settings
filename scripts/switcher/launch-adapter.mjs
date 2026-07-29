@@ -1,7 +1,29 @@
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { SURFACE_ENV } from './constants.mjs';
 import { resolveTrackRoots } from './paths.mjs';
+
+function resolveClaudeDesktopAumid() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-Command', '(Get-AppxPackage *Claude*).PackageFamilyName'], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+    const familyName = out.trim();
+    if (familyName) return `${familyName}!Claude`;
+  } catch {}
+  return 'Claude_pzs8sxrjxfjjc!Claude';
+}
+
+function resolveCommandPath(command) {
+  if (!command || path.isAbsolute(command)) return command;
+  if (process.platform === 'win32') {
+    try {
+      const output = execFileSync('where.exe', [command], { encoding: 'utf8', windowsHide: true, timeout: 3000 });
+      const found = output.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+      if (found) return found;
+    } catch {}
+  }
+  return command;
+}
 
 export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, runId = null, projectId = null, sessionId = null, baseEnv = process.env } = {}) {
   const env = { ...baseEnv };
@@ -28,9 +50,9 @@ export function buildProcessEnvironment({ surface, track, roots, workspaceRoot =
 }
 
 const defaultCommand = (surface) => {
-  if (surface === 'claude_cli') return process.platform === 'win32' ? 'claude.cmd' : 'claude';
-  if (surface === 'qwen_cli') return process.platform === 'win32' ? 'qwen.cmd' : 'qwen';
-  if (surface === 'codex_cli') return process.platform === 'win32' ? 'codex.cmd' : 'codex';
+  if (surface === 'claude_cli') return 'claude';
+  if (surface === 'qwen_cli') return 'qwen';
+  if (surface === 'codex_cli') return 'codex';
   return surface;
 };
 
@@ -53,6 +75,38 @@ export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), wo
 }
 
 export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
+  if (process.platform === 'win32' && (spec.surface === 'claude_cli' || spec.surface === 'claude')) {
+    const cmdExecutable = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+    const aumid = resolveClaudeDesktopAumid();
+    if (aumid) {
+      const shellTarget = `shell:AppsFolder\\${aumid}`;
+      const child = spawnImpl(cmdExecutable, ['/c', 'start', shellTarget, ...spec.args], {
+        env: spec.env,
+        cwd: spec.cwd || process.cwd(),
+        windowsHide: false,
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.on?.('error', () => {});
+      child.unref?.();
+      return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'cmd_shell_activation' };
+    }
+  }
+  if (process.platform === 'win32' && spec.surface?.endsWith('_cli')) {
+    const cmdExecutable = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+    const resolvedTarget = resolveCommandPath(spec.command);
+    const child = spawnImpl(cmdExecutable, ['/d', '/s', '/c', 'start', '', resolvedTarget, ...spec.args], {
+      env: spec.env,
+      cwd: spec.cwd || process.cwd(),
+      windowsHide: false,
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.on?.('error', () => {});
+    child.unref?.();
+    return { pid: child.pid || null, status: 'launch_requested', child, launcher: 'cmd_start_cli' };
+  }
+
   const isCmdOrBat = process.platform === 'win32' && (/\.(cmd|bat)$/i.test(spec.command) || spec.surface?.endsWith('_cli'));
   const options = {
     env: spec.env,
@@ -81,12 +135,18 @@ export function spawnTrack(spec, { spawnImpl = spawn } = {}) {
       const shellTarget = `shell:AppsFolder\\${aumid}`;
       let child;
       if (aumid) {
-        child = spawnImpl('cmd.exe', ['/d', '/s', '/c', 'start', '', shellTarget, ...spec.args], { ...options, env });
+        const cmdExecutable = process.env.ComSpec || (process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe') : 'cmd.exe');
+        child = spawnImpl(cmdExecutable, ['/c', 'start', shellTarget, ...spec.args], { ...options, env });
+        child.on?.('error', () => {});
         const focusScript = "$ErrorActionPreference='SilentlyContinue'; try { $shell=New-Object -ComObject WScript.Shell; for ($i=0; $i -lt 20; $i++) { Start-Sleep -Milliseconds 500; if ($shell.AppActivate($env:MOON_SWITCHER_WINDOW_TITLE)) { break } } } catch {}";
-        spawnImpl('powershell.exe', ['-NoProfile', '-Command', focusScript], { ...options, env });
+        const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
+        const focusChild = spawnImpl(psExec, ['-NoProfile', '-Command', focusScript], { ...options, env });
+        focusChild.on?.('error', () => {});
       } else {
         const psScript = "$ErrorActionPreference='SilentlyContinue'; $envHash = @{}; Get-ChildItem env: | ForEach-Object { $envHash[$_.Name] = $_.Value }; try { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -Environment $envHash -WindowStyle Normal } catch { Start-Process -FilePath $env:MOON_SWITCHER_TARGET -ArgumentList (@($env:MOON_SWITCHER_ARGS_JSON | ConvertFrom-Json)) -WindowStyle Normal }";
-        child = spawnImpl('powershell.exe', ['-NoProfile', '-Command', psScript], { ...options, env });
+        const psExec = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell';
+        child = spawnImpl(psExec, ['-NoProfile', '-Command', psScript], { ...options, env });
+        child.on?.('error', () => {});
         child.unref?.();
       }
       return { pid: null, status: 'launch_requested', child, launcher: aumid ? 'cmd_shell_activation' : 'powershell_start_process' };

@@ -1,4 +1,4 @@
-import { readFile, stat, mkdir, rename, rm, readdir } from 'node:fs/promises';
+import { readFile, stat, mkdir, rename, rm, readdir, cp } from 'node:fs/promises';
 import path from 'node:path';
 import { GUI_SURFACES, SURFACES, TRACKS } from './constants.mjs';
 import { resolveApplication } from './app-resolver/index.mjs';
@@ -10,6 +10,7 @@ import { clearJournal, readJournal, readState, updateState } from './state-store
 import { uninstallSwitcherPackage } from './installer.mjs';
 import { advanceTransaction, commitTransaction, prepareTransaction, recoverTransaction } from './transaction.mjs';
 import { inspectProfile } from '../kernel/profile-install.mjs';
+import { hydrateKernelProject, unhydrateKernelProject } from '../kernel/project-hydrate.mjs';
 
 const validate = (surface, track) => {
   if (!SURFACES.includes(surface)) throw new Error(`wrong_harness: unsupported surface ${surface}`);
@@ -138,6 +139,58 @@ export async function restoreGlobalSkillsBackup({ surface } = {}) {
   return { status, restored, conflicts, errors, userSkills, backupSkills };
 }
 
+export async function isolateGlobalSkillsForKernel({ surface, sourceRoot = process.cwd(), dryRun = false } = {}) {
+  const restoreResult = await restoreGlobalSkillsBackup({ surface });
+  if (dryRun) return restoreResult.status === 'restored' ? restoreResult : { status: 'noop', backedUp: [], errors: [] };
+  const paths = globalSkillsPaths(surface);
+  if (!paths) return { status: 'not_applicable', backedUp: [], errors: [] };
+  const { userSkills, backupSkills } = paths;
+
+  await mkdir(userSkills, { recursive: true });
+  await mkdir(backupSkills, { recursive: true });
+
+  const backedUp = [];
+  const errors = [];
+
+  try {
+    const entries = await readdir(userSkills, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === KERNEL_ENTRYPOINT_SKILL || entry.name.startsWith('.')) continue;
+      const src = path.join(userSkills, entry.name);
+      const dest = path.join(backupSkills, entry.name);
+      try {
+        if (!(await exists(dest))) {
+          await rename(src, dest);
+          backedUp.push(entry.name);
+        } else {
+          await rm(src, { force: true, recursive: true });
+          backedUp.push(entry.name);
+        }
+      } catch (err) {
+        errors.push({ path: src, code: err.code || 'unknown' });
+      }
+    }
+  } catch (err) {
+    errors.push({ path: userSkills, code: err.code || 'unknown' });
+  }
+
+  const kernelSkillSrc = path.join(sourceRoot, 'skills', KERNEL_ENTRYPOINT_SKILL);
+  const kernelSkillDest = path.join(userSkills, KERNEL_ENTRYPOINT_SKILL);
+  if (await exists(kernelSkillSrc)) {
+    try {
+      await mkdir(kernelSkillDest, { recursive: true });
+      const skillFiles = await readdir(kernelSkillSrc);
+      for (const f of skillFiles) {
+        await cp(path.join(kernelSkillSrc, f), path.join(kernelSkillDest, f), { recursive: true, force: true });
+      }
+    } catch (err) {
+      errors.push({ path: kernelSkillDest, code: err.code || 'unknown' });
+    }
+  }
+
+  return { status: errors.length ? 'isolation_incomplete' : 'isolated', backedUp, errors, userSkills, backupSkills };
+}
+
 export async function discoverProviderSkills(providerHome) {
   if (!providerHome) return [];
   try {
@@ -248,8 +301,27 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   }
 
   const journal = await prepareTransaction({ surface, requestedTrack: track, roots, previousSelection: previous, processSet: active });
-  const globalSkillsRestore = await restoreGlobalSkillsBackup({ surface });
+  let globalSkillsRestore = null;
+  if (track === 'kernel') {
+    globalSkillsRestore = await isolateGlobalSkillsForKernel({ surface, sourceRoot, dryRun });
+  } else {
+    globalSkillsRestore = await restoreGlobalSkillsBackup({ surface });
+  }
   await advanceTransaction(journal, 'old_app_stopped', { globalSkillsRestore });
+
+  if (targetProjectRoot) {
+    if (track === 'kernel') {
+      try {
+        await hydrateKernelProject({ projectRoot: targetProjectRoot, sourceRoot, dryRun });
+      } catch (error) {
+        if (!error.message?.includes('target_collision') && !error.message?.includes('catalog_missing')) throw error;
+      }
+    } else if (track === 'relay') {
+      try {
+        await unhydrateKernelProject({ projectRoot: targetProjectRoot });
+      } catch {}
+    }
+  }
 
   let spec = launchSpec;
   if (!spec && GUI_SURFACES.has(surface)) {

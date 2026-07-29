@@ -108,8 +108,16 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     return { status: prior ? 'reinstalled' : 'installed', runtime, targetRoot: root, manifestPath, backupPath, installedFilesCount: staged.length };
   } catch (error) {
     if (prior && backupPath && await exists(backupPath)) {
-      for (const rel of await files(backupPath)) await copyTree(safeJoin(backupPath, rel), safeJoin(root, rel));
-      await atomicWrite(manifestPath, JSON.stringify(prior, null, 2));
+      try {
+        await rollbackKernelProfile({ targetRoot: root, backupPath });
+      } catch {
+        for (const rel of await files(backupPath)) await copyTree(safeJoin(backupPath, rel), safeJoin(root, rel));
+        await atomicWrite(manifestPath, JSON.stringify(prior, null, 2));
+      }
+    } else if (!prior) {
+      for (const rel of stagedPaths) {
+        await rm(safeJoin(root, rel), { force: true, recursive: true });
+      }
     }
     throw error;
   }
@@ -139,7 +147,52 @@ export async function rollbackKernelProfile({ targetRoot, backupPath } = {}) {
   const priorManifest = JSON.parse(await readFile(path.join(backup, PROFILE_MANIFEST_NAME), 'utf8'));
   const current = await inspectProfile(root);
   if (current.status === 'drift') return { status: 'collision', targetRoot: root };
+
+  const currentManifest = current.manifest || (await exists(profileManifestPath(root)) ? JSON.parse(await readFile(profileManifestPath(root), 'utf8')) : null);
+  const priorFiles = new Set((priorManifest.files || []).map((f) => f.path));
+  const currentFiles = currentManifest?.files || [];
+  const introducedEntries = currentFiles.filter((f) => !priorFiles.has(f.path));
+
+  for (const entry of introducedEntries) {
+    const file = safeJoin(root, entry.path);
+    if (await exists(file)) {
+      await rejectSymlink(file);
+      if (entry.checksum && (await sha256(file)) !== entry.checksum) {
+        return { status: 'collision', targetRoot: root, path: entry.path };
+      }
+    }
+  }
+
+  for (const entry of introducedEntries) {
+    const file = safeJoin(root, entry.path);
+    await rm(file, { force: true, recursive: true });
+  }
+
   for (const rel of await files(backup)) await copyTree(safeJoin(backup, rel), safeJoin(root, rel));
   await atomicWrite(profileManifestPath(root), JSON.stringify(priorManifest, null, 2));
+
+  for (const entry of introducedEntries) {
+    let dir = path.dirname(safeJoin(root, entry.path));
+    while (dir !== root && dir.startsWith(root)) {
+      try {
+        const entries = await readdir(dir);
+        if (entries.length === 0) {
+          await rm(dir, { recursive: true, force: true });
+          dir = path.dirname(dir);
+        } else {
+          break;
+        }
+      } catch {
+        break;
+      }
+    }
+  }
+
+  const postVerification = await inspectProfile(root);
+  if (postVerification.status !== 'ready') {
+    throw new Error(`rollback_failed: post-rollback inspectProfile status is ${postVerification.status}`);
+  }
+
   return { status: 'rolled_back', targetRoot: root, backupPath: backup };
 }
+

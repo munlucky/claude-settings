@@ -418,7 +418,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       return context;
     },
 
+    async materializeStageKnowledge(runId, { stage, strict = true } = {}) {
+      return this.refreshStageKnowledge(runId, { stage, strict });
+    },
+
     async transition(runId, nextState, options = {}) {
+      await this.materializeStageKnowledge(runId, {
+        stage: nextState,
+        strict: true,
+      });
+
       const updated = store.transition(runId, nextState, options);
       await projectRunState(updated, { runtimeHome });
       return updated;
@@ -916,7 +925,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     // Builds (and records a receipt for) the knowledge context of the run's
     // CURRENT stage, so an EXECUTE turn is not handed FRAME knowledge (P1-2).
-    async refreshStageKnowledge(runId, { stage } = {}) {
+    async refreshStageKnowledge(runId, { stage, strict = false } = {}) {
       const run = store.getRun(runId);
       if (!run) return null;
       const effectiveStage = stage || run.state;
@@ -924,20 +933,38 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const projectId = run.projectId;
       if (!projectId) return existing?.receiptJson || null;
       const knowledgeRevision = String(store.getProjectKnowledgeRevision(projectId));
-      // Reuse the receipt when nothing about the stage or the knowledge base
-      // changed; rebuilding on every `next` would re-verify records needlessly.
-      if (existing && String(existing.knowledgeRevision) === knowledgeRevision) return existing.receiptJson;
+      const contractRevision = Number(run.contractRevision || 1);
+      const objectiveDigest = sha256Hex(run.objective || '');
+      const changedPaths = run.taskContract?.changedPaths || [];
+      const changedPathsDigest = sha256Hex(JSON.stringify([...changedPaths].sort()));
+
+      const receiptMeta = existing?.receiptJson?.selectionMeta;
+      const isMatch = existing
+        && String(existing.knowledgeRevision) === knowledgeRevision
+        && (receiptMeta?.contractRevision === undefined || receiptMeta.contractRevision === contractRevision)
+        && (receiptMeta?.objectiveDigest === undefined || receiptMeta.objectiveDigest === objectiveDigest)
+        && (receiptMeta?.changedPathsDigest === undefined || receiptMeta.changedPathsDigest === changedPathsDigest);
+
+      if (isMatch) return existing.receiptJson;
+
       try {
         const context = await buildProjectKnowledgeContext({
           projectId,
           stage: effectiveStage,
           runId,
           objective: run.objective,
-          changedPaths: run.taskContract?.changedPaths || [],
+          changedPaths,
           projectRoot,
           stateStore: store,
           env: { MOON_RELAY_KERNEL_HOME: runtimeHome },
         });
+        context.selectionMeta = {
+          stage: effectiveStage,
+          knowledgeRevision,
+          contractRevision,
+          objectiveDigest,
+          changedPathsDigest,
+        };
         store.recordKnowledgeContextReceipt(runId, {
           stage: effectiveStage,
           knowledgeRevision: context.knowledgeRevision,
@@ -945,7 +972,8 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           receiptJson: context,
         });
         return context;
-      } catch {
+      } catch (error) {
+        if (strict) throw error;
         return existing?.receiptJson || null;
       }
     },
@@ -955,9 +983,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
 
-      const stageContext = store.getKnowledgeContextReceipt(runId, run.state)?.receiptJson
-        || store.getKnowledgeContextReceipt(runId, 'FRAME')?.receiptJson
-        || null;
+      let stageContext = store.getKnowledgeContextReceipt(runId, run.state)?.receiptJson;
+      if (!stageContext) {
+        stageContext = await this.refreshStageKnowledge(runId, { stage: run.state });
+      }
+      if (!stageContext) {
+        stageContext = store.getKnowledgeContextReceipt(runId, 'FRAME')?.receiptJson || null;
+      }
+
       const obligations = store.getRunObligations(runId);
       const capabilityDecision = resolveKernelCapabilities({
         ...(run.taskContract?.flags || {}),

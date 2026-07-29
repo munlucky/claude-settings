@@ -9,18 +9,40 @@ export const computeCompletionView = ({
   const required = obligations.filter((item) => item.status === 'required');
   const hard = required.filter((item) => item.evidenceClass === 'hard');
   const judgment = required.filter((item) => item.evidenceClass === 'judgment');
-  const passed = new Set(verifications.filter((item) => item.status === 'passed').map((item) => item.obligationId));
-  const anyFailed = verifications.some((item) => item.status === 'failed');
-  const reviewFailed = reviews.some((item) => item.verdict !== 'pass');
+
+  // Reduce verifications to latest row per obligationId
+  const latestVerifications = new Map();
+  for (const item of verifications) {
+    latestVerifications.set(item.obligationId, item);
+  }
+
+  // Reduce reviews to latest receipt per obligationId for current mutation revision
+  const currentMutationRevision = run?.mutationRevision ?? null;
+  const latestReviews = new Map();
+  for (const item of reviews) {
+    if (item.subject?.mutationRevision !== undefined && currentMutationRevision !== null && item.subject.mutationRevision < currentMutationRevision) {
+      continue;
+    }
+    const key = item.obligationId || `review-${item.reviewStage || item.stage}`;
+    latestReviews.set(key, item);
+  }
+
+  const anyHardFailed = hard.some((item) => latestVerifications.get(item.obligationId)?.status === 'failed');
+  const anyJudgmentFailed = judgment.some((item) => {
+    const key = item.obligationId;
+    const rev = latestReviews.get(key);
+    return rev ? rev.verdict !== 'pass' : false;
+  }) || [...latestReviews.values()].some((item) => item.verdict === 'fail');
+
   const implementation = step
     ? (step.state === 'passed' ? 'complete' : ['active', 'ready'].includes(step.state) ? 'active' : 'pending')
     : (run?.mutationRevision > 0 ? 'complete' : 'pending');
   const verification = hard.length === 0
     ? 'not-required'
-    : anyFailed ? 'failed' : hard.every((item) => passed.has(item.obligationId)) ? 'passed' : 'pending';
+    : anyHardFailed ? 'failed' : hard.every((item) => latestVerifications.get(item.obligationId)?.status === 'passed') ? 'passed' : 'pending';
   const review = judgment.length === 0
     ? 'not-required'
-    : reviewFailed ? 'failed' : judgment.every((item) => passed.has(item.obligationId)) ? 'passed' : 'pending';
+    : anyJudgmentFailed ? 'failed' : judgment.every((item) => latestReviews.get(item.obligationId)?.verdict === 'pass') ? 'passed' : 'pending';
   const kernelAcceptance = completionDecision?.decision === 'accepted' ? 'accepted'
     : completionDecision?.decision === 'rejected' ? 'rejected' : 'pending';
   const finalization = run?.finalizationStatus === 'completed' ? 'complete' : 'pending';
@@ -35,3 +57,4 @@ export const computeCompletionView = ({
     overall: done ? 'done' : blocked ? 'blocked' : 'active',
   };
 };
+
