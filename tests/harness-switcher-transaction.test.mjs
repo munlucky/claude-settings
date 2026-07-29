@@ -57,3 +57,52 @@ test('phase 03 CLI tracks use process-scoped roots and can coexist', async () =>
   assert.notEqual(relay.effective.providerHome, kernel.effective.providerHome);
   await rm(home, { recursive: true, force: true });
 });
+
+test('a Kernel-launched surface can launch another Kernel surface', async () => {
+  const original = {
+    track: process.env.MOON_RELAY_TRACK,
+    relayHome: process.env.MOONSHOT_RELAY_HOME,
+    kernelHome: process.env.MOON_RELAY_KERNEL_HOME,
+    codexHome: process.env.CODEX_HOME,
+    switcherHome: process.env.MOON_HARNESS_SWITCHER_HOME,
+  };
+  const home = path.join(os.tmpdir(), `switcher-kernel-nested-${Date.now()}`);
+  const runtimeHome = path.join(home, 'kernel');
+  const providerHome = path.join(runtimeHome, 'providers', 'claude');
+  try {
+    process.env.MOON_RELAY_TRACK = 'kernel';
+    process.env.MOONSHOT_RELAY_HOME = runtimeHome;
+    process.env.MOON_RELAY_KERNEL_HOME = runtimeHome;
+    process.env.CODEX_HOME = path.join(runtimeHome, 'providers', 'codex');
+    process.env.MOON_HARNESS_SWITCHER_HOME = path.join(home, 'switcher');
+    await mkdir(runtimeHome, { recursive: true });
+    await writeFile(path.join(runtimeHome, 'install-manifest.json'), JSON.stringify({ productId: 'moon-relay-kernel' }), 'utf8');
+    await installKernelProfile({ sourceRoot: process.cwd(), runtime: 'claude', targetRoot: providerHome });
+
+    const receipt = await launchSwitch({
+      surface: 'claude_cli',
+      track: 'kernel',
+      sourceRoot: process.cwd(),
+      dryRun: true,
+      launchSpec: {
+        command: 'claude',
+        args: [],
+        roots: { runtimeHome, providerHome },
+        env: {},
+      },
+    });
+    assert.equal(receipt.status, 'committed');
+  } finally {
+    for (const [key, value] of [
+      ['MOON_RELAY_TRACK', original.track],
+      ['MOONSHOT_RELAY_HOME', original.relayHome],
+      ['MOON_RELAY_KERNEL_HOME', original.kernelHome],
+      ['CODEX_HOME', original.codexHome],
+      ['MOON_HARNESS_SWITCHER_HOME', original.switcherHome],
+    ]) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(home, { recursive: true, force: true });
+  }
+});

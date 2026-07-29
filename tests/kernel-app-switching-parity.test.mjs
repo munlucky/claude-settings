@@ -8,7 +8,33 @@ import { resolveAntigravity } from '../scripts/switcher/app-resolver/antigravity
 import { buildCodexDesktopLaunch, verifyCodexChild } from '../scripts/switcher/providers/codex.mjs';
 import { buildAntigravityLaunch, verifyAntigravityChild } from '../scripts/switcher/providers/antigravity.mjs';
 import { providerParityMatrix } from '../scripts/switcher/providers/matrix.mjs';
+import { buildProcessEnvironment } from '../scripts/switcher/launch-adapter.mjs';
 import { resolveTrackRoots } from '../scripts/switcher/paths.mjs';
+test('Kernel launch exports the Kernel home without poisoning the Relay home', () => {
+  const runtimeHome = path.join(os.tmpdir(), 'kernel-env');
+  const providerHome = path.join(runtimeHome, 'providers', 'claude');
+  const env = buildProcessEnvironment({
+    surface: 'claude_cli',
+    track: 'kernel',
+    roots: { runtimeHome, providerHome },
+    baseEnv: { MOONSHOT_RELAY_HOME: runtimeHome },
+  });
+  assert.equal(env.MOON_RELAY_KERNEL_HOME, runtimeHome);
+  assert.equal(env.CLAUDE_CONFIG_DIR, providerHome);
+  assert.equal(env.MOON_RELAY_TRACK, 'kernel');
+  assert.equal(env.MOONSHOT_RELAY_HOME, undefined);
+});
+test('Kernel launch preserves a distinct custom Relay home', () => {
+  const runtimeHome = path.join(os.tmpdir(), 'kernel-env-custom');
+  const relayHome = path.join(os.tmpdir(), 'relay-env-custom');
+  const env = buildProcessEnvironment({
+    surface: 'claude_cli',
+    track: 'kernel',
+    roots: { runtimeHome, providerHome: path.join(runtimeHome, 'providers', 'claude') },
+    baseEnv: { MOONSHOT_RELAY_HOME: relayHome },
+  });
+  assert.equal(env.MOONSHOT_RELAY_HOME, relayHome);
+});
 test('phase 04 Codex launch carries process-specific home and disposable app data', () => {
   const roots = { runtimeHome: path.join(os.tmpdir(), 'kernel'), providerHome: path.join(os.tmpdir(), 'kernel', 'codex'), appDataRoot: path.join(os.tmpdir(), 'codex-app') };
   const spec = buildCodexDesktopLaunch({ track: 'kernel', roots, executable: 'ChatGPT.exe' });

@@ -16,13 +16,26 @@ const validate = (surface, track) => {
   if (!TRACKS.includes(track)) throw new Error(`wrong_harness: unsupported track ${track}`);
 };
 
-const protectedRoots = () => [
-  process.env.MOONSHOT_RELAY_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.moonshot-relay'),
-  process.env.CODEX_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.codex'),
-  process.env.CLAUDE_CONFIG_DIR || path.join(process.env.USERPROFILE || process.env.HOME || '', '.claude'),
-  process.env.QWEN_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.qwen'),
-  process.env.ANTIGRAVITY_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.gemini', 'antigravity'),
-];
+const protectedRoots = ({ kernelRuntimeHome = null } = {}) => {
+  const userHome = process.env.USERPROFILE || process.env.HOME || '';
+  const roots = [
+    process.env.MOONSHOT_RELAY_HOME || path.join(userHome, '.moonshot-relay'),
+    process.env.CODEX_HOME || path.join(userHome, '.codex'),
+    process.env.CLAUDE_CONFIG_DIR || path.join(userHome, '.claude'),
+    process.env.QWEN_HOME || path.join(userHome, '.qwen'),
+    process.env.ANTIGRAVITY_HOME || path.join(userHome, '.gemini', 'antigravity'),
+  ];
+  if (process.env.MOON_RELAY_TRACK !== 'kernel' || !kernelRuntimeHome) return roots;
+
+  const kernelRoot = path.resolve(kernelRuntimeHome);
+  // A Kernel-launched surface legitimately inherits its process-scoped
+  // provider home beneath the Kernel runtime. Those paths are not Relay roots
+  // and must not make a subsequent Kernel surface collide with itself.
+  return roots.filter((root) => {
+    const candidate = path.resolve(root);
+    return candidate !== kernelRoot && !candidate.startsWith(`${kernelRoot}${path.sep}`);
+  });
+};
 
 const exists = async (file) => {
   try {
@@ -162,7 +175,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
 
   if (track === 'kernel') {
     for (const root of [roots.runtimeHome, roots.providerHome, roots.appDataRoot].filter(Boolean)) {
-      await assertSafeTarget(root, { protectedRoots: protectedRoots() });
+      await assertSafeTarget(root, { protectedRoots: protectedRoots({ kernelRuntimeHome: roots.runtimeHome }) });
     }
     const readiness = await inspectKernelLaunchReadiness({
       runtimeHome: roots.runtimeHome,

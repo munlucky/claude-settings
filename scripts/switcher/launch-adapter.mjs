@@ -6,7 +6,17 @@ import { resolveTrackRoots } from './paths.mjs';
 export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, baseEnv = process.env } = {}) {
   const env = { ...baseEnv };
   if (SURFACE_ENV[surface]) env[SURFACE_ENV[surface]] = roots.providerHome;
-  env.MOONSHOT_RELAY_HOME = roots.runtimeHome;
+  if (track === 'kernel') {
+    env.MOON_RELAY_KERNEL_HOME = roots.runtimeHome;
+    // Older switcher builds incorrectly exported the Kernel runtime through
+    // MOONSHOT_RELAY_HOME. Do not propagate that poisoned alias into another
+    // Kernel surface, while preserving a genuinely distinct custom Relay home.
+    if (env.MOONSHOT_RELAY_HOME && path.resolve(env.MOONSHOT_RELAY_HOME) === path.resolve(roots.runtimeHome)) {
+      delete env.MOONSHOT_RELAY_HOME;
+    }
+  } else {
+    env.MOONSHOT_RELAY_HOME = roots.runtimeHome;
+  }
   env.MOON_RELAY_TRACK = track;
   if (workspaceRoot) env.MOON_RELAY_WORKSPACE_ROOT = workspaceRoot;
   if (surface === 'antigravity_desktop') env.GEMINI_HOME = roots.providerHome;
