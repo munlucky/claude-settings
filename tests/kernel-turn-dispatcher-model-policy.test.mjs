@@ -124,3 +124,47 @@ test('an ESCALATION_LOCKED decision keeps the Codex recommendation on Sol/xhigh'
   assert.equal(recommendation.model, CODEX_MODELS.sol);
   assert.equal(recommendation.effort, 'xhigh');
 });
+
+test('an explicit invocation-override model survives model-policy mode', async () => {
+  // Regression: 'invocation-override' is the registry's own highest-
+  // precedence source (§10.2) — an explicit per-call model request. Applying
+  // the model-policy recommendation on top of it silently ran Terra/Sol/Luna
+  // instead of the model a caller explicitly asked for.
+  await withRun(async (cp, runId) => {
+    let seenModel = null;
+    const adapter = createCodexAdapter({
+      launch: async ({ invocation }) => { seenModel = invocation.model; return { resolvedModel: invocation.model, sessionId: 'codex-session-4' }; },
+    });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'codex' }),
+      overrides: { value_coding: 'explicit-strong-model' },
+      env: { MOON_RELAY_KERNEL_MODEL_POLICY_MODE: 'on' },
+    });
+    assert.equal(result.resolution.source, 'invocation-override');
+    assert.equal(result.resolution.model, 'explicit-strong-model');
+    assert.equal(seenModel, 'explicit-strong-model');
+  });
+});
+
+test('shadow mode still records the model-policy escalation reason on the receipt', async () => {
+  // Regression: modelEscalationReason was gated on modelPolicyMode==='on',
+  // discarding the only receipt-level evidence of the recommendation shadow
+  // mode is supposed to let an operator measure before turning it on.
+  await withRun(async (cp, runId) => {
+    const adapter = createCodexAdapter({ launch: async () => ({ resolvedModel: 'host-configured', sessionId: 'codex-session-5' }) });
+    const result = await dispatchKernelTurn({
+      controlPlane: cp,
+      runId,
+      adapter,
+      registry: createModelRegistry({ surface: 'codex' }),
+      actionContext: { actionKind: 'review_engineering', obligationId: 'security-review' },
+      // No MOON_RELAY_KERNEL_MODEL_POLICY_MODE set: defaults to shadow.
+    });
+    assert.equal(result.receipt.cacheMode, 'shadow');
+    assert.notEqual(result.resolution.model, CODEX_MODELS.sol, 'shadow must not apply the recommendation to the actual resolution');
+    assert.equal(result.receipt.modelEscalationReason, 'review-policy');
+  });
+});

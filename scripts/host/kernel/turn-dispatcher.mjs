@@ -192,7 +192,12 @@ export const dispatchKernelTurn = async ({
   // MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on — shadow must not change what runs.
   const modelPolicyMode = resolveOptimizationModes(env).modelPolicyMode;
   const modelPolicyRecommendation = resolveTurnModelPolicy({ decision, hostCapabilities });
-  if (modelPolicyMode === 'on' && modelPolicyRecommendation) {
+  // 'invocation-override' is the registry's own highest-precedence source
+  // (§10.2: an explicit per-call override outranks environment, profile, and
+  // host-default). Applying the model-policy recommendation on top of it would
+  // silently run a different model than the one a caller explicitly asked
+  // for — e.g. an experiment pinning a specific model for one call.
+  if (modelPolicyMode === 'on' && modelPolicyRecommendation && resolution.source !== 'invocation-override') {
     const appliedModel = modelPolicyRecommendation.model || resolution.model;
     resolution = {
       ...resolution,
@@ -298,7 +303,13 @@ export const dispatchKernelTurn = async ({
     envelope,
     sessionLineage,
     cacheContext: {
-      modelEscalationReason: modelPolicyMode === 'on' ? firstMappedEscalationReason(modelPolicyRecommendation?.reasons) : null,
+      // Recorded regardless of modelPolicyMode: the whole point of computing
+      // the recommendation unconditionally is that shadow mode can measure
+      // which turns *would* have escalated (for risk, complexity, review
+      // policy, or repeated failure) before the mode is ever turned on.
+      // Gating this on 'on' discarded the only receipt-level evidence of
+      // that measurement.
+      modelEscalationReason: firstMappedEscalationReason(modelPolicyRecommendation?.reasons),
       // The denominator eligibleHitRatio needs: the token estimate of every
       // segment this turn declared cacheable. Without it every live receipt
       // reports a null eligiblePrefixTokens, so summarizeCacheEconomics() can
