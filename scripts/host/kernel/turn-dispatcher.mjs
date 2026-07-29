@@ -18,10 +18,14 @@ import { buildModelCapsuleView } from './model-capsule-view.mjs';
 // today, only actionKind/riskTier/reasonCodes, so the recommendation below is
 // computed from those alone; `shapes` stays at each policy function's
 // default. `repeatedFailure` mirrors the predicate summarizeModelRouting()
-// already uses to count an escalated turn, so both readings of the same
-// decision agree on what counts as a retry escalation.
+// already uses to count an escalated turn, plus 'ESCALATION_LOCKED' — the
+// reason resolveModelRoute() emits to KEEP an already-escalated obligation on
+// frontier_reasoning for its subsequent attempts. Without it, applying the
+// model-policy recommendation on a locked turn would fall through to the
+// default Codex Terra/medium (or Claude's default effort) and silently undo
+// the very escalation the lock exists to hold.
 const isRepeatedFailure = (decision) =>
-  (decision.reasonCodes || []).some((code) => code.endsWith('_ESCALATION') || code.endsWith('_REPLAN') || code === 'PROTECTED_OBLIGATION_FAILURE');
+  (decision.reasonCodes || []).some((code) => code.endsWith('_ESCALATION') || code.endsWith('_REPLAN') || code === 'PROTECTED_OBLIGATION_FAILURE' || code === 'ESCALATION_LOCKED');
 
 // Maps each policy module's internal reason vocabulary onto the receipt's
 // closed MODEL_ESCALATION_REASONS enum; a reason with no honest mapping

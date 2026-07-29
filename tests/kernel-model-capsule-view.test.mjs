@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildModelCapsuleView, findControlMetadataLeaks, CONTROL_ONLY_CAPSULE_FIELDS } from '../scripts/host/kernel/model-capsule-view.mjs';
+import { normalizeReviewCapsule } from '../scripts/kernel/run/execution-capsule.mjs';
 
 const persistedCapsule = () => ({
   capsuleId: 'capsule-1',
@@ -82,4 +83,41 @@ test('an implementer-shaped capsule keeps its populated workUnit and verificatio
   });
   assert.deepEqual(view.workUnit.allowedPaths, ['src/']);
   assert.deepEqual(view.verification.obligations, [{ obligationId: 'default' }]);
+});
+
+const realReviewCapsule = () => normalizeReviewCapsule({
+  runId: 'r-1',
+  reviewScope: { stage: 'contract', requiredChecks: ['test:kernel'], obligationId: 'security-review' },
+  subject: { changedPaths: ['src/auth/login.mjs'], diffDigest: `sha256:${'b'.repeat(64)}`, workspaceIdentity: `sha256:${'a'.repeat(64)}`, mutationRevision: 2 },
+  verificationEvidence: [{ obligationId: 'default', status: 'passed', evidenceDigest: `sha256:${'c'.repeat(64)}`, command: 'npm test', exitCode: 0 }],
+  implementationReceipt: { actorSessionId: `sha256:${'d'.repeat(64)}`, capsuleDigest: `sha256:${'e'.repeat(64)}`, modelClass: 'value_coding', resolvedModel: 'model-a' },
+});
+
+test('a real review capsule projects the fields a reviewer actually needs to judge', () => {
+  // Regression: none of subject/verificationEvidence/reviewScope were
+  // allowlisted, so a real reviewer turn's launcher received a capsule with
+  // nothing to review — no changed files, no evidence, no scope.
+  const view = buildModelCapsuleView(realReviewCapsule(), { role: 'reviewer' });
+  assert.deepEqual(view.changedPaths, ['src/auth/login.mjs']);
+  assert.equal(view.verificationEvidence.length, 1);
+  assert.equal(view.verificationEvidence[0].obligationId, 'default');
+  assert.equal(view.reviewScope.stage, 'contract');
+  assert.deepEqual(view.reviewScope.requiredChecks, ['test:kernel']);
+  assert.equal(view.reviewScope.obligationId, 'security-review');
+});
+
+test('subject.workspaceIdentity/mutationRevision and the whole implementationReceipt stay out of the view', () => {
+  const view = buildModelCapsuleView(realReviewCapsule(), { role: 'reviewer' });
+  assert.deepEqual(findControlMetadataLeaks(view), []);
+  assert.equal(view.implementationReceipt, undefined);
+  const serialized = JSON.stringify(view);
+  assert.ok(!serialized.includes(realReviewCapsule().subject.diffDigest));
+  assert.ok(!serialized.includes(realReviewCapsule().implementationReceipt.capsuleDigest));
+});
+
+test('the greenfield walking skeleton reaches the view; an absent one does not fabricate a repositoryContext key', () => {
+  const withSkeleton = buildModelCapsuleView({ repositoryContext: { walkingSkeleton: { slices: [{ name: 'auth' }] } } });
+  assert.deepEqual(withSkeleton.repositoryContext.walkingSkeleton, { slices: [{ name: 'auth' }] });
+  const withoutSkeleton = buildModelCapsuleView({ repositoryContext: { entrypoints: ['bin/x.mjs'] } });
+  assert.equal(withoutSkeleton.repositoryContext.walkingSkeleton, null);
 });

@@ -12,6 +12,7 @@ const list = (value) => Object.freeze(Array.isArray(value) ? [...value] : []);
 export const MODEL_VISIBLE_CAPSULE_FIELDS = Object.freeze([
   'role', 'objective', 'acceptance', 'constraints', 'nonGoals',
   'workUnit', 'repositoryContext', 'verification', 'permissions',
+  'changedPaths', 'verificationEvidence', 'reviewScope',
 ]);
 
 // Present in the persisted capsule, never in the view.
@@ -58,11 +59,43 @@ export const buildModelCapsuleView = (capsule = {}, { role = null } = {}) => {
       knowledgeRecords: list(repositoryContext.knowledgeRecords),
       knownFailurePatterns: list(repositoryContext.knownFailurePatterns),
       baseline: repositoryContext.baseline || null,
+      // A greenfield run has no repository seam to relevantFiles/entrypoints
+      // yet — buildCapsule() puts the generated vertical-slice plan here
+      // instead. Omitting it left a greenfield worker with no starting plan
+      // at all once live dispatch switched to this projected capsule.
+      walkingSkeleton: repositoryContext.walkingSkeleton || null,
     });
   }
   if (capsule.verification) {
     view.verification = Object.freeze({ obligations: list(capsule.verification.obligations) });
   }
+  // A review capsule (buildReviewCapsule) has no workUnit/repositoryContext/
+  // verification at all; its own content lives in subject/verificationEvidence/
+  // reviewScope instead. Without projecting those, a reviewer turn's launcher
+  // received an empty capsule and had nothing to judge.
+  if (capsule.subject) {
+    // subject.workspaceIdentity/mutationRevision/diffDigest are provenance —
+    // the same digests CONTROL_ONLY_CAPSULE_FIELDS already excludes at the
+    // top level — so only changedPaths, the content the reviewer actually
+    // reads, crosses into the view.
+    view.changedPaths = list(capsule.subject.changedPaths);
+  }
+  if (capsule.verificationEvidence) {
+    view.verificationEvidence = list(capsule.verificationEvidence);
+  }
+  if (capsule.reviewScope) {
+    view.reviewScope = Object.freeze({
+      stage: capsule.reviewScope.stage || null,
+      requiredChecks: list(capsule.reviewScope.requiredChecks),
+      obligationId: capsule.reviewScope.obligationId || null,
+    });
+  }
+  // implementationReceipt (actorSessionId, capsuleDigest, modelClass,
+  // resolvedModel) is deliberately never projected: every field that is not
+  // itself a raw session/capsule digest duplicates data the Kernel already
+  // binds server-side when it records the review, and the two digest fields
+  // are exactly the provenance shape this view exists to keep out of a
+  // cacheable prompt.
   return Object.freeze(view);
 };
 
