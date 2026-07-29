@@ -17,13 +17,31 @@ const resolveEnforcementStatus = ({ resolution, capabilities, strategy, dispatch
 
 const countOrNull = (value, allowed) => (allowed && Number.isInteger(value) && value >= 0 ? value : null);
 
-export const buildUsageReceipt = ({ decision, capabilities, strategy, resolution, dispatch = {}, capsule = null, admission = null, actorSessionId, parentSessionId = null, startedAt = null, finishedAt = null } = {}) => {
+// Cache read/write counts are only trusted when the Host declared it can
+// observe them. A provider that reports nothing leaves them null and the miss
+// reason `usage-unreported`, which is a different diagnosis from a real miss.
+const resolveCacheTelemetry = ({ capabilities, dispatch, cacheContext }) => {
+  const readAllowed = capabilities.supportsCacheReadTokens === true;
+  const writeAllowed = capabilities.supportsCacheWriteTokens === true;
+  const read = readAllowed ? countOrNull(dispatch.cacheReadInputTokens ?? dispatch.cachedInputTokens, true) : null;
+  const write = writeAllowed ? countOrNull(dispatch.cacheWriteInputTokens, true) : null;
+  let missReason = cacheContext.cacheMissReason ?? null;
+  if (!missReason) {
+    if (capabilities.supportsPromptCache !== true) missReason = 'provider-unsupported';
+    else if (read === null) missReason = 'usage-unreported';
+    else if (read === 0) missReason = 'cold-prefix';
+  }
+  return { read, write, missReason };
+};
+
+export const buildUsageReceipt = ({ decision, capabilities, strategy, resolution, dispatch = {}, capsule = null, admission = null, actorSessionId, parentSessionId = null, startedAt = null, finishedAt = null, cacheContext = {}, envelope = null, sessionLineage = null } = {}) => {
   if (!decision) throw new Error('a usage receipt requires the route decision it answers');
   if (decision.modelClass === 'kernel') throw new Error('kernel-owned actions run no provider model and produce no usage receipt');
   const actor = hashSessionId(actorSessionId);
   if (!actor) throw new Error('a usage receipt requires the Host session that performed the turn');
   const enforcementStatus = resolveEnforcementStatus({ resolution, capabilities, strategy, dispatch });
   const tokensAllowed = capabilities.supportsUsageTokens === true;
+  const cache = resolveCacheTelemetry({ capabilities, dispatch, cacheContext });
   return normalizeModelUsageReceipt({
     receiptId: buildReceiptId({ decisionId: decision.decisionId, actorSessionId: actor, startedAt: startedAt || '' }),
     decisionId: decision.decisionId,
@@ -51,5 +69,27 @@ export const buildUsageReceipt = ({ decision, capabilities, strategy, resolution
     cachedInputTokens: countOrNull(dispatch.cachedInputTokens, tokensAllowed),
     outputTokens: countOrNull(dispatch.outputTokens, tokensAllowed),
     costMicros: countOrNull(dispatch.costMicros, tokensAllowed),
+    // Wave 8: cache and routing economics. The prefix digest is what makes a
+    // hit or miss attributable to a specific prompt shape rather than to "the
+    // cache", so it travels with the numbers.
+    provider: capabilities.surface || null,
+    surface: capabilities.surface || null,
+    speedMode: dispatch.speedMode ?? cacheContext.speedMode ?? null,
+    reasoningContext: envelope?.modelPolicy?.reasoningContext ?? null,
+    reasoningMode: dispatch.reasoningMode ?? null,
+    delegationMode: envelope?.modelPolicy?.delegationMode ?? null,
+    sessionLineageId: sessionLineage?.sessionLineageId ?? null,
+    previousResponseIdDigest: dispatch.previousResponseId ? hashSessionId(dispatch.previousResponseId) : null,
+    promptPrefixDigest: envelope?.cacheIdentity?.prefixDigest ?? null,
+    promptCacheKeyDigest: cacheContext.promptCacheKeyDigest ?? null,
+    cacheMode: envelope?.cachePolicy?.requestedMode ?? cacheContext.cacheMode ?? null,
+    cacheTtl: envelope?.cachePolicy?.ttlClass ?? null,
+    cacheMissReason: cache.missReason,
+    modelEscalationReason: cacheContext.modelEscalationReason ?? null,
+    eligiblePrefixTokens: countOrNull(cacheContext.eligiblePrefixTokens, true),
+    uncachedInputTokens: countOrNull(dispatch.uncachedInputTokens, tokensAllowed),
+    cacheReadInputTokens: cache.read,
+    cacheWriteInputTokens: cache.write,
+    reasoningTokens: countOrNull(dispatch.reasoningTokens, tokensAllowed),
   });
 };
