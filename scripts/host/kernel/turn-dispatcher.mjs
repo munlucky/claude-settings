@@ -5,6 +5,10 @@
 import { buildUsageReceipt } from './usage-receipt.mjs';
 import { createModelRegistry } from './model-registry.mjs';
 import { currentHostPolicies, revalidateBeforeDispatch } from './admission-revalidator.mjs';
+import { buildPromptEnvelope } from './prompt-envelope.mjs';
+import { buildToolManifest } from './tool-manifest.mjs';
+import { resolveSessionLineage } from './session-affinity.mjs';
+import { buildKernelContextSegments } from '../../kernel/context-segments.mjs';
 
 // Only the execution contract crosses to the worker (§4.4) — never the
 // planner's reasoning, the conversation, or unrelated repository context.
@@ -36,6 +40,49 @@ export const buildExecutionContract = (modelInput = {}, decision = {}) => {
     requiredEvidence: action.obligations || [],
     currentEvidence: modelInput.evidence || [],
   };
+};
+
+// Compiles the Host prompt envelope for one turn from the Kernel's `next`
+// payload (§Wave 3). Project-stable knowledge is left empty here: `next`
+// exposes it today only as `knowledge`, a single pre-rendered text block
+// that mixes project- and task-scoped facts, so it cannot yet be split into
+// the project-stable / volatile layers the envelope expects. Splitting that
+// requires a Kernel-side change to `buildStageContext`'s return shape and is
+// tracked separately; this wiring does not fabricate a split it cannot prove.
+// Likewise no tool schema reaches this generic dispatcher yet, so the tool
+// manifest is empty rather than guessed.
+export const buildTurnPromptEnvelope = ({ modelInput = {}, decision, resolution, hostCapabilities, env = process.env } = {}) => {
+  const action = modelInput.action || {};
+  const step = modelInput.step || {};
+  const contextSegments = buildKernelContextSegments({
+    runStable: {
+      objective: modelInput.objective,
+      acceptance: modelInput.acceptance || [],
+      constraints: modelInput.constraints || [],
+      nonGoals: modelInput.nonGoals || [],
+      obligations: action.obligations || [],
+    },
+    volatile: {
+      action: { type: action.type, guidance: action.guidance },
+      step: { stepId: step.stepId, objective: step.objective },
+      allowedPaths: step.allowedPaths || [],
+      forbiddenPaths: step.forbiddenPaths || [],
+      evidence: modelInput.evidence || [],
+    },
+  }).segments;
+  return buildPromptEnvelope({
+    provider: hostCapabilities.surface,
+    surface: hostCapabilities.surface,
+    role: decision.role,
+    action: decision.actionKind,
+    riskTier: decision.riskTier,
+    toolManifest: buildToolManifest([]),
+    contextSegments,
+    modelPolicy: { modelClass: decision.modelClass, resolvedModel: resolution.model, resolvedEffort: resolution.effort },
+    capabilities: hostCapabilities,
+    control: { runId: decision.runId, stepId: step.stepId, capsuleId: action.capsuleId },
+    env,
+  });
 };
 
 export const dispatchKernelTurn = async ({
@@ -106,6 +153,19 @@ export const dispatchKernelTurn = async ({
     return { schemaVersion: 1, runId, dispatched: false, reason: revalidated.rejectionCode, admission: drifted, drift: revalidated.drift, modelInput, hostDirective, executionCapsule, receipt: null };
   }
 
+  // Wave 3/7: the envelope is computed on every real turn — not only in the
+  // replay corpus — so its digests and cache policy are what the launcher and
+  // the usage receipt actually see. Computing it here does not itself change
+  // `executionContract`, so a Host still on the legacy path behaves exactly
+  // as before; a Host whose `launch()` reads `envelope.segments` gets the
+  // cache-stable prompt and breakpoints described in Waves 3-5.
+  const envelope = buildTurnPromptEnvelope({ modelInput, decision, resolution, hostCapabilities, env });
+  // No persisted cross-turn lineage store exists yet (§Wave 7 follow-up), so
+  // `previous` stays null and continuity is not claimed; the affinity key
+  // and its reset reasons are still recorded so the fields are populated on
+  // every real receipt instead of forced to null.
+  const sessionLineage = resolveSessionLineage({ previous: null, current: envelope.cacheIdentity, role: decision.role });
+
   const startedAt = now();
   let dispatch;
   try {
@@ -115,6 +175,7 @@ export const dispatchKernelTurn = async ({
       strategy: hostDirective.enforcementStrategy,
       executionCapsule,
       executionContract: buildExecutionContract(modelInput, decision),
+      envelope,
     }) || {};
   } catch (error) {
     dispatch = { status: 'failed', resultStatus: 'failed', errorSummary: error.message };
@@ -132,7 +193,9 @@ export const dispatchKernelTurn = async ({
     parentSessionId,
     startedAt,
     finishedAt: now(),
+    envelope,
+    sessionLineage,
   });
   await controlPlane.recordModelUsage(runId, receipt);
-  return { schemaVersion: 1, runId, dispatched: true, modelInput, hostDirective, resolution, dispatch, executionCapsule, admission, receipt };
+  return { schemaVersion: 1, runId, dispatched: true, modelInput, hostDirective, resolution, dispatch, executionCapsule, admission, receipt, envelope };
 };

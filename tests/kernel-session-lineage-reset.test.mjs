@@ -28,6 +28,23 @@ test('a reset produces a new lineage id derived from the new identity', () => {
   assert.equal(lineage.sessionLineageId, lineage.sessionAffinityKey);
 });
 
+test('every session-key field has its own reset reason, not just the original eight', () => {
+  // Regression: provider, surface, and commonHostStableDigest changed the
+  // affinity key without ever appearing in resetReasons, so a provider switch
+  // or a common-prompt revision looked like a continued session.
+  const previous = { ...identity(), sessionLineageId: 'lineage-1' };
+  const cases = [
+    [identity({ provider: 'codex' }), 'provider-changed'],
+    [identity({ surface: 'codex-cloud' }), 'surface-changed'],
+    [identity({ commonHostStableDigest: 'sha256:common-2' }), 'common-host-stable-changed'],
+  ];
+  for (const [current, reason] of cases) {
+    const lineage = resolveSessionLineage({ previous, current });
+    assert.equal(lineage.continued, false, reason);
+    assert.ok(lineage.resetReasons.includes(reason), `expected ${reason}, got ${lineage.resetReasons}`);
+  }
+});
+
 test('every reported reason comes from the closed vocabulary', () => {
   const lineage = resolveSessionLineage({
     previous: { ...identity(), sessionLineageId: 'lineage-1' },

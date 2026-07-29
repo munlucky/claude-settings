@@ -2,6 +2,8 @@
 // model/model_provider unset, so a global frontier pin cannot leak into cheap
 // implementation turns. Model selection happens per worker invocation only.
 
+import { materializeCodexProfiles } from '../codex-profile-materializer.mjs';
+
 export const CODEX_CAPABILITIES = Object.freeze({
   surface: 'codex',
   supportsSubagentModel: false,
@@ -55,17 +57,29 @@ export const buildCodexInvocation = ({ decision, resolution, capabilities }) => 
   };
 };
 
-export const createCodexAdapter = ({ launch = null, capabilities = {} } = {}) => {
+// `runtimeHome` is optional: when a caller supplies it, the four profile
+// overlays are (re)materialized under the Kernel runtime home before the
+// first dispatch that needs them, giving `codex-profile-materializer.mjs` an
+// actual production caller instead of only the packaging-time snapshot in
+// `package/profile-templates/codex/`. Materializing is idempotent (it just
+// rewrites the overlay files) and never touches the caller's own `.codex/`
+// config, so a Host that omits `runtimeHome` behaves exactly as before.
+export const createCodexAdapter = ({ launch = null, capabilities = {}, runtimeHome = null, env = process.env } = {}) => {
   const resolved = { ...CODEX_CAPABILITIES, ...capabilities };
+  let profilesMaterialized = null;
   return {
     surface: 'codex',
     capabilities: resolved,
-    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract }) {
+    async dispatch({ decision, resolution, strategy, executionCapsule = null, executionContract, envelope = null }) {
       const invocation = buildCodexInvocation({ decision, resolution, capabilities: resolved });
       if (!launch || invocation.mechanism === 'unsupported') {
         return { status: 'unsupported', resultStatus: 'completed', invocation };
       }
-      const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy })) || {};
+      if (runtimeHome && !profilesMaterialized) {
+        profilesMaterialized = materializeCodexProfiles({ runtimeHome, env });
+        await profilesMaterialized;
+      }
+      const result = (await launch({ invocation, executionCapsule, executionContract, decision, strategy, envelope })) || {};
       return {
         status: result.status || 'completed',
         resultStatus: result.resultStatus || (result.status === 'failed' ? 'failed' : 'completed'),

@@ -14,28 +14,40 @@ export const SESSION_KEY_FIELDS = Object.freeze([
   'projectStableDigest', 'runStableDigest',
 ]);
 
+// One reset reason per SESSION_KEY_FIELDS entry. A field present in the key
+// but missing here would change the key silently while `resolveSessionLineage`
+// kept reporting `continued: true` for it — the shape of bug this map guards
+// against, so the two are asserted to cover each other below rather than
+// trusted to stay in sync by hand.
+const FIELD_RESET_REASON = Object.freeze({
+  provider: 'provider-changed',
+  surface: 'surface-changed',
+  role: 'role-changed',
+  resolvedModel: 'model-changed',
+  resolvedEffort: 'effort-changed',
+  speedMode: 'speed-mode-changed',
+  toolSchemaDigest: 'tool-schema-changed',
+  commonHostStableDigest: 'common-host-stable-changed',
+  providerStableDigest: 'provider-stable-changed',
+  projectStableDigest: 'project-stable-changed',
+  runStableDigest: 'run-stable-changed',
+});
+
+for (const field of SESSION_KEY_FIELDS) {
+  if (!Object.hasOwn(FIELD_RESET_REASON, field)) {
+    throw new Error(`session-affinity: SESSION_KEY_FIELDS entry "${field}" has no FIELD_RESET_REASON`);
+  }
+}
+
 export const LINEAGE_RESET_REASONS = Object.freeze([
-  'role-changed', 'model-changed', 'effort-changed', 'speed-mode-changed',
-  'provider-stable-changed', 'project-stable-changed', 'run-stable-changed',
-  'tool-schema-changed', 'independent-context-required', 'reviewer-turn',
-  'explicit-reset',
-]);
+  ...Object.values(FIELD_RESET_REASON),
+  'independent-context-required', 'reviewer-turn', 'explicit-reset',
+].sort());
 
 const pick = (identity = {}) => Object.fromEntries(SESSION_KEY_FIELDS.map((field) => [field, identity[field] ?? null]));
 
 export const buildSessionAffinityKey = (identity = {}) =>
   `session-${createHash('sha256').update(canonicalJson(pick(identity))).digest('hex').slice(0, 32)}`;
-
-const FIELD_RESET_REASON = Object.freeze({
-  role: 'role-changed',
-  resolvedModel: 'model-changed',
-  resolvedEffort: 'effort-changed',
-  speedMode: 'speed-mode-changed',
-  providerStableDigest: 'provider-stable-changed',
-  projectStableDigest: 'project-stable-changed',
-  runStableDigest: 'run-stable-changed',
-  toolSchemaDigest: 'tool-schema-changed',
-});
 
 // Returns every reason the lineage must restart, not just the first: a receipt
 // that says only "model-changed" when the run contract also moved would make a
