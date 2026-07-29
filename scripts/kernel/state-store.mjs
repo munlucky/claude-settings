@@ -9,6 +9,7 @@ import { isProtectedObligation } from './proof/protected-obligations.mjs';
 import { assertCommandBinding } from './run/obligation-compiler.mjs';
 import { normalizeModelRouteDecision, normalizeModelUsageReceipt } from './run/model-route-contract.mjs';
 import { digestOfEvidence, evaluateReviewReceipt, normalizeReviewReceipt, parseReviewEvidenceRef } from './proof/review-receipt.mjs';
+import { sanitizePersistentPayload, sanitizePersistentText } from './persistent-sanitizer.mjs';
 
 const TIER_RANK = { T0: 0, T1: 1, T2: 2, T3: 3 };
 const EVIDENCE_RANK = { E0: 0, E1: 1, E2: 2 };
@@ -39,6 +40,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
   db.exec(`
     PRAGMA journal_mode=WAL;
+    PRAGMA synchronous=NORMAL;
+    PRAGMA busy_timeout=5000;
     PRAGMA foreign_keys=ON;
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS runs (
@@ -78,6 +81,14 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       acquired_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       FOREIGN KEY(run_id) REFERENCES runs(run_id)
+    );
+    CREATE TABLE IF NOT EXISTS workspace_mutation_locks (
+      project_id TEXT PRIMARY KEY,
+      holder_run_id TEXT NOT NULL,
+      session_token TEXT NOT NULL,
+      fencing_token INTEGER NOT NULL,
+      acquired_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS attempts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,6 +442,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   addCol('runs', 'contract_revision', 'INTEGER DEFAULT 1');
   addCol('runs', 'finalization_status', "TEXT DEFAULT 'pending'");
   addCol('runs', 'route_json', 'TEXT');
+  addCol('runs', 'implementation_context_json', 'TEXT');
   // Plan revision (K2) is the ledger's own revision: a replan supersedes the
   // live steps and writes the replacement plan at the next revision, without
   // touching the task contract's revision.
@@ -464,6 +476,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
   try { db.exec(`ALTER TABLE runs ADD COLUMN intervention_count INTEGER DEFAULT 0;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN project_mode TEXT;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_failures TEXT DEFAULT '[]';`); } catch {}
+  try { db.exec(`ALTER TABLE runs ADD COLUMN baseline_status TEXT DEFAULT 'pending';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN replan_count INTEGER DEFAULT 0;`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN proof_tier TEXT DEFAULT 'T0';`); } catch {}
   try { db.exec(`ALTER TABLE runs ADD COLUMN evidence_tier TEXT DEFAULT 'E0';`); } catch {}
@@ -493,6 +506,9 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return fallback;
     }
   };
+  const persistentJson = (value) => typeof value === 'string'
+    ? sanitizePersistentText(value)
+    : JSON.stringify(sanitizePersistentPayload(value));
 
   return {
     dbPath,
@@ -512,6 +528,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       taskContract = null,
       contractRevision = 1,
       route = null,
+      implementationContext = null,
     }) {
       if (!sourceIdentity || typeof sourceIdentity !== 'string' || !sourceIdentityRegex.test(sourceIdentity)) {
         throw new Error('sourceIdentity is required and must be a valid candidate identity string for Kernel run');
@@ -520,8 +537,8 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         throw new Error('workspaceIdentity must be a sha256:<hex> digest when provided');
       }
       db.prepare(`
-        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, updated_at)
-        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?)
+        INSERT INTO runs(run_id, objective, state, status, revision, mutation_revision, source_identity, run_start_workspace_identity, current_workspace_identity, project_mode, proof_tier, evidence_tier, required_obligations, acceptance_criteria, release_evidence_required, project_id, knowledge_revision_start, knowledge_status, task_contract_json, contract_revision, finalization_status, route_json, implementation_context_json, updated_at)
+        VALUES(?, ?, 'FRAME', 'active', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, 'pending', ?, ?, ?)
       `).run(
         runId,
         objective,
@@ -536,9 +553,10 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         requireReleaseEvidence ? 1 : 0,
         projectId || null,
         knowledgeRevisionStart !== undefined && knowledgeRevisionStart !== null ? String(knowledgeRevisionStart) : null,
-        taskContract ? JSON.stringify(taskContract) : null,
+        taskContract ? persistentJson(taskContract) : null,
         Number(contractRevision) || 1,
         route ? JSON.stringify(route) : null,
+        implementationContext ? persistentJson(implementationContext) : null,
         now()
       );
       return this.getRun(runId);
@@ -551,7 +569,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       if (!run) throw new Error(`Run ${runId} not found`);
       const nextRevision = bumpRevision ? Number(run.contractRevision || 1) + 1 : Number(run.contractRevision || 1);
       db.prepare(`UPDATE runs SET task_contract_json=?, contract_revision=?, acceptance_criteria=?, revision=revision+1, updated_at=? WHERE run_id=?`)
-        .run(JSON.stringify(taskContract), nextRevision, JSON.stringify((taskContract.acceptance || []).map((item) => item.statement).filter(Boolean)), now(), runId);
+        .run(persistentJson(taskContract), nextRevision, persistentJson((taskContract.acceptance || []).map((item) => item.statement).filter(Boolean)), now(), runId);
       return this.getRun(runId);
     },
 
@@ -639,6 +657,12 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
       return this.getRun(runId);
     },
 
+    setBaselineStatus(runId, status) {
+      if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
+      db.prepare(`UPDATE runs SET baseline_status=?, updated_at=? WHERE run_id=?`).run(String(status), now(), runId);
+      return this.getRun(runId);
+    },
+
     // A replan is a durable event; counting it keeps the measurement honest.
     incrementReplanCount(runId) {
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
@@ -706,6 +730,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                intervention_count as interventionCount,
                project_mode as projectMode,
                baseline_failures as baselineFailures,
+               baseline_status as baselineStatus,
                replan_count as replanCount,
                proof_tier as proofTier, evidence_tier as evidenceTier,
                required_obligations as requiredObligations, acceptance_criteria as acceptanceCriteria,
@@ -717,6 +742,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
                contract_revision as contractRevision,
                finalization_status as finalizationStatus,
                route_json as routeJson,
+               implementation_context_json as implementationContextJson,
                plan_revision as planRevision,
                updated_at as updatedAt
         FROM runs WHERE run_id=?
@@ -740,6 +766,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         interventionCount: row.interventionCount || 0,
         projectMode: row.projectMode || null,
         baselineFailures: safeJsonParse(row.baselineFailures, []),
+        baselineStatus: row.baselineStatus || 'pending',
         replanCount: row.replanCount || 0,
         proofTier: row.proofTier,
         evidenceTier: row.evidenceTier,
@@ -755,9 +782,54 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         contractRevision: Number(row.contractRevision || 1),
         finalizationStatus: row.finalizationStatus || 'pending',
         route: row.routeJson ? safeJsonParse(row.routeJson, null) : null,
+        implementationContext: row.implementationContextJson ? safeJsonParse(row.implementationContextJson, null) : null,
         planRevision: Number(row.planRevision || 1),
         updatedAt: row.updatedAt,
       };
+    },
+
+    listActiveRuns({ projectId = null } = {}) {
+      const rows = projectId
+        ? db.prepare(`SELECT run_id as runId FROM runs WHERE project_id=? AND status='active' ORDER BY updated_at DESC`).all(projectId)
+        : db.prepare(`SELECT run_id as runId FROM runs WHERE status='active' ORDER BY updated_at DESC`).all();
+      return rows.map((row) => this.getRun(row.runId)).filter(Boolean);
+    },
+
+    acquireWorkspaceMutationLock({ projectId, runId, sessionToken, ttlMs = 60000 } = {}) {
+      if (!projectId || !runId || !sessionToken) throw new Error('workspace mutation lock requires projectId, runId, and sessionToken');
+      const acquiredAt = now();
+      const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const current = db.prepare(`SELECT project_id as projectId, holder_run_id as holderRunId, session_token as sessionToken, fencing_token as fencingToken, acquired_at as acquiredAt, expires_at as expiresAt FROM workspace_mutation_locks WHERE project_id=?`).get(projectId);
+        if (current && Date.parse(current.expiresAt) > Date.now() && (current.holderRunId !== runId || current.sessionToken !== sessionToken)) {
+          db.exec('ROLLBACK');
+          return { acquired: false, lock: current };
+        }
+        const fencingToken = Number(current?.fencingToken || 0) + 1;
+        db.prepare(`
+          INSERT INTO workspace_mutation_locks(project_id, holder_run_id, session_token, fencing_token, acquired_at, expires_at)
+          VALUES(?, ?, ?, ?, ?, ?)
+          ON CONFLICT(project_id) DO UPDATE SET holder_run_id=excluded.holder_run_id, session_token=excluded.session_token, fencing_token=excluded.fencing_token, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at
+        `).run(projectId, runId, sessionToken, fencingToken, acquiredAt, expiresAt);
+        db.exec('COMMIT');
+        return { acquired: true, lock: { projectId, holderRunId: runId, sessionToken, fencingToken, acquiredAt, expiresAt } };
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    },
+
+    getWorkspaceMutationLock(projectId) {
+      const row = db.prepare(`SELECT project_id as projectId, holder_run_id as holderRunId, session_token as sessionToken, fencing_token as fencingToken, acquired_at as acquiredAt, expires_at as expiresAt FROM workspace_mutation_locks WHERE project_id=?`).get(projectId);
+      if (!row || Date.parse(row.expiresAt) <= Date.now()) return null;
+      return row;
+    },
+
+    releaseWorkspaceMutationLock({ projectId, runId, sessionToken } = {}) {
+      const result = db.prepare(`UPDATE workspace_mutation_locks SET expires_at=? WHERE project_id=? AND holder_run_id=? AND session_token=?`)
+        .run('1970-01-01T00:00:00.000Z', projectId, runId, sessionToken);
+      return Number(result.changes || 0) > 0;
     },
 
     recordKnowledgeContextReceipt(runId, { stage, knowledgeRevision, digest, receiptJson }) {
@@ -765,7 +837,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         INSERT INTO knowledge_context_receipts(run_id, stage, knowledge_revision, digest, receipt_json, created_at)
         VALUES(?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, stage) DO UPDATE SET knowledge_revision=excluded.knowledge_revision, digest=excluded.digest, receipt_json=excluded.receipt_json, created_at=excluded.created_at
-      `).run(runId, stage, knowledgeRevision, digest, typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson), now());
+      `).run(runId, stage, knowledgeRevision, digest, persistentJson(receiptJson), now());
       db.prepare(`UPDATE runs SET context_pack_ref=?, updated_at=? WHERE run_id=?`).run(`context-packs/${runId}/${stage}.json`, now(), runId);
     },
 
@@ -780,7 +852,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         INSERT INTO knowledge_candidates(candidate_id, run_id, project_id, proposed_type, status, candidate_json, created_at)
         VALUES(?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(candidate_id) DO UPDATE SET status=excluded.status, candidate_json=excluded.candidate_json, created_at=excluded.created_at
-      `).run(candidateId, runId, projectId, proposedType, status, typeof candidateJson === 'string' ? candidateJson : JSON.stringify(candidateJson), now());
+      `).run(candidateId, runId, projectId, proposedType, status, persistentJson(candidateJson), now());
     },
 
     getKnowledgeCandidates(runId) {
@@ -792,7 +864,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         INSERT INTO knowledge_review_receipts(run_id, project_id, status, candidate_count, verified_count, rejected_count, waiting_approval_count, waiting_verification_count, review_digest, receipt_json, created_at, updated_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET status=excluded.status, candidate_count=excluded.candidate_count, verified_count=excluded.verified_count, rejected_count=excluded.rejected_count, waiting_approval_count=excluded.waiting_approval_count, waiting_verification_count=excluded.waiting_verification_count, review_digest=excluded.review_digest, receipt_json=excluded.receipt_json, updated_at=excluded.updated_at
-      `).run(runId, projectId, status, candidateCount, verifiedCount, rejectedCount, waitingApprovalCount, waitingVerificationCount, reviewDigest, typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson || {}), now(), now());
+      `).run(runId, projectId, status, candidateCount, verifiedCount, rejectedCount, waitingApprovalCount, waitingVerificationCount, reviewDigest, persistentJson(receiptJson || {}), now(), now());
     },
 
     getKnowledgeReviewReceipt(runId) {
@@ -862,7 +934,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         INSERT INTO knowledge_commit_receipts(run_id, project_id, revision_before, revision_after, status, receipt_json, created_at)
         VALUES(?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET revision_before=excluded.revision_before, revision_after=excluded.revision_after, status=excluded.status, receipt_json=excluded.receipt_json, created_at=excluded.created_at
-      `).run(runId, projectId, revisionBefore, revisionAfter, status, typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson), now());
+      `).run(runId, projectId, revisionBefore, revisionAfter, status, persistentJson(receiptJson), now());
       db.prepare(`UPDATE runs SET knowledge_revision_close=?, knowledge_status=?, updated_at=? WHERE run_id=?`).run(revisionAfter, status, now(), runId);
     },
 
@@ -877,7 +949,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         INSERT INTO completion_decisions(run_id, decision, source_identity, mutation_revision, evidence_digest, decision_json, created_at)
         VALUES(?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id) DO UPDATE SET decision=excluded.decision, source_identity=excluded.source_identity, mutation_revision=excluded.mutation_revision, evidence_digest=excluded.evidence_digest, decision_json=excluded.decision_json, created_at=excluded.created_at
-      `).run(runId, decision, sourceIdentity, mutationRevision, evidenceDigest, typeof decisionJson === 'string' ? decisionJson : JSON.stringify(decisionJson), now());
+      `).run(runId, decision, sourceIdentity, mutationRevision, evidenceDigest, persistentJson(decisionJson), now());
     },
 
     getCompletionDecision(runId) {
@@ -902,7 +974,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
 
     recordFinalizationReceipt(runId, receipt = {}) {
       const { projectId, completionStatus, knowledgeStatus, projectionStatus, gitCloseoutStatus, finalizationStatus, receiptJson } = receipt;
-      const jsonStr = typeof receiptJson === 'string' ? receiptJson : JSON.stringify(receiptJson || receipt || {});
+      const jsonStr = persistentJson(receiptJson || receipt || {});
       db.prepare(`
         INSERT INTO finalization_receipts(run_id, project_id, completion_status, knowledge_status, projection_status, git_closeout_status, finalization_status, receipt_json, created_at, updated_at)
         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -931,7 +1003,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         normalized.decisionId, runId, normalized.attemptNumber, normalized.replanCount, normalized.planRevision,
         normalized.obligationId, normalized.actionKind, normalized.role, normalized.modelClass, normalized.riskTier,
         normalized.independentContextRequired ? 1 : 0, normalized.permissions, JSON.stringify(normalized.reasonCodes),
-        normalized.policyRevision, JSON.stringify(normalized), normalized.createdAt,
+        normalized.policyRevision, persistentJson(normalized), normalized.createdAt,
       );
       return normalized;
     },
@@ -963,7 +1035,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         normalized.inputTokens, normalized.cachedInputTokens, normalized.outputTokens, normalized.costMicros,
         normalized.wallClockMs, normalized.resultStatus,
         normalized.capsuleId, normalized.capsuleDigest, normalized.admissionId, normalized.admissionDigest, normalized.stepId,
-        JSON.stringify(normalized), normalized.createdAt,
+        persistentJson(normalized), normalized.createdAt,
       );
       return normalized;
     },
@@ -995,7 +1067,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         admission.admissionId, runId, admission.stepId || null, admission.decisionId, admission.capsuleId || null,
         JSON.stringify(admission.requested), JSON.stringify(admission.resolved), JSON.stringify(admission.policy),
         JSON.stringify(admission.economics), admission.decision, admission.rejectionCode || null,
-        admission.digest, JSON.stringify(admission), admission.createdAt,
+        admission.digest, persistentJson(admission), admission.createdAt,
       );
       return admission;
     },
@@ -1193,7 +1265,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         Number(capsule.planRevision || 1),
         Number(capsule.mutationRevision ?? capsule.subject?.mutationRevision ?? 0),
         capsule.provenance.workspaceIdentity, capsule.provenance.routeDecisionId || null,
-        capsule.provenance.capsuleDigest, JSON.stringify(capsule), capsule.createdAt,
+        capsule.provenance.capsuleDigest, persistentJson(capsule), capsule.createdAt,
       );
       return capsule;
     },
@@ -1221,7 +1293,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
     // reviewer lineage and reviewed subject are both persisted, so a later
     // completion check can re-derive whether the review still holds.
     recordReviewReceipt(runId, receipt) {
-      const normalized = normalizeReviewReceipt({ ...receipt, runId: receipt?.runId || runId });
+      const normalized = normalizeReviewReceipt(sanitizePersistentPayload({ ...receipt, runId: receipt?.runId || runId }));
       if (normalized.runId !== runId) throw new Error(`review receipt runId ${normalized.runId} does not match run ${runId}`);
       if (!this.getRun(runId)) throw new Error(`Run ${runId} not found`);
       db.prepare(`
@@ -1238,7 +1310,7 @@ export const openKernelStateStore = async ({ runtimeHome = resolveKernelRuntimeH
         normalized.subject.workspaceIdentity, normalized.subject.mutationRevision,
         normalized.subject.changedPathsDigest, normalized.subject.evidenceDigest,
         JSON.stringify(normalized.acceptanceCoverage), JSON.stringify(normalized.findings),
-        normalized.rationale, normalized.digest, JSON.stringify(normalized),
+        sanitizePersistentText(normalized.rationale), normalized.digest, persistentJson(normalized),
         normalized.createdByVersion, normalized.migrationOrigin, normalized.createdAt,
       );
       return normalized;

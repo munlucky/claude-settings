@@ -1,3 +1,3 @@
 # Moon Relay Kernel
 
-Use the Kernel workflow and project-scoped Kernel skill catalog. Do not use Relay state or completion artifacts.
+Use the project-scoped `moon-relay-kernel` entrypoint and current work unit. Stay inside allowed paths, add no unrequested reviewer or process, and report changes, evidence, and blockers. Only the Kernel completion decision can finish the run.

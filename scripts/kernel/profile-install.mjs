@@ -6,6 +6,9 @@ import { KERNEL_PROFILE_RUNTIMES } from './profile-build.mjs';
 export const PROFILE_PRODUCT_ID = 'moon-relay-kernel-profile';
 export const PROFILE_MANIFEST_NAME = '.moon-relay-kernel-profile-manifest.json';
 export const PROFILE_MARKER_NAME = '.moon-relay-kernel-profile.json';
+export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
+export const KERNEL_SKILL_INSTALL_REL = `skills/${KERNEL_ENTRYPOINT_SKILL}`;
+export const canonicalKernelSkillDir = (sourceRoot) => path.resolve(sourceRoot, 'skills', KERNEL_ENTRYPOINT_SKILL);
 
 const exists = async (file) => { try { await stat(file); return true; } catch { return false; } };
 const sha256 = async (file) => createHash('sha256').update(await readFile(file)).digest('hex');
@@ -74,17 +77,32 @@ export async function installKernelProfile({ sourceRoot = process.cwd(), runtime
     }
     await atomicWrite(path.join(backupPath, PROFILE_MANIFEST_NAME), JSON.stringify(prior, null, 2));
   }
+  const canonicalSkill = canonicalKernelSkillDir(sourceRoot);
+  if (!(await exists(canonicalSkill))) throw new Error(`skill_source_missing: ${canonicalSkill}`);
+
   const staged = [];
+  const stagedPaths = new Set();
+  const stage = async (rel) => {
+    const normalized = rel.replaceAll('\\', '/');
+    if (stagedPaths.has(normalized)) return;
+    stagedPaths.add(normalized);
+    staged.push({ path: normalized, checksum: await sha256(safeJoin(root, normalized)) });
+  };
   try {
     await copyTree(source, root);
+    // Every Kernel provider home serves the public entrypoint skill from the
+    // single canonical skill root, applied after the profile tree so a
+    // profile-local duplicate can never win. Launch-time mutation of the
+    // operator's account-root skills directory is not a substitute for this.
+    await copyTree(canonicalSkill, safeJoin(root, KERNEL_SKILL_INSTALL_REL));
     const marker = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, track: 'kernel', runtime, ownership: 'manifest-owned-static-only' };
     await atomicWrite(markerPath, JSON.stringify(marker, null, 2));
     if (skillsRoot && runtime === 'antigravity') {
-      const skillSource = path.resolve(sourceRoot, 'package', 'kernel', 'profiles', runtime, 'skills');
-      if (await exists(skillSource)) await copyTree(skillSource, path.resolve(skillsRoot, 'skills'));
+      await copyTree(canonicalSkill, path.resolve(skillsRoot, 'skills', KERNEL_ENTRYPOINT_SKILL));
     }
-    for (const rel of await files(source)) staged.push({ path: rel, checksum: await sha256(safeJoin(root, rel)) });
-    staged.push({ path: PROFILE_MARKER_NAME, checksum: await sha256(markerPath) });
+    for (const rel of await files(source)) await stage(rel);
+    for (const rel of await files(canonicalSkill)) await stage(`${KERNEL_SKILL_INSTALL_REL}/${rel}`);
+    await stage(PROFILE_MARKER_NAME);
     const manifest = { schemaVersion: 1, productId: PROFILE_PRODUCT_ID, track: 'kernel', runtime, targetRoot: root, installedAt: new Date().toISOString(), backupPath, files: staged };
     await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));
     return { status: prior ? 'reinstalled' : 'installed', runtime, targetRoot: root, manifestPath, backupPath, installedFilesCount: staged.length };

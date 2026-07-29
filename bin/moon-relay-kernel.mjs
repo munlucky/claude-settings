@@ -80,7 +80,9 @@ const output = (value) =>
   );
 
 try {
-  if (command === 'doctor') {
+  if (command === '--version' || command === 'version') {
+    output({ productId: 'moon-relay-kernel', version: '0.1.0' });
+  } else if (command === 'doctor') {
     const runtimeHome = resolveKernelRuntimeHome();
     const activeTrack = await readProjectTrack(process.cwd());
     output({ productId: 'moon-relay-kernel', runtimeHome, activeTrack, status: activeTrack === 'kernel' ? 'ready' : 'wrong_harness' });
@@ -108,13 +110,23 @@ try {
   } else if (command === 'install') {
     const { installKernel } = await import('../scripts/kernel/installer.mjs');
     const targetRoot = getArgValue('--target-root') || process.cwd();
-    output(await installKernel({ targetRoot, sourceRoot: getArgValue('--source-root') || process.cwd(), runtimeSource: getArgValue('--runtime-source') }));
+    const resolvedRuntimeHome = resolveKernelRuntimeHome();
+    output(await installKernel({
+      targetRoot,
+      sourceRoot: getArgValue('--source-root') || process.cwd(),
+      runtimeSource: getArgValue('--runtime-source'),
+      trackHome: getArgValue('--track-home') || (path.resolve(targetRoot) === path.resolve(resolvedRuntimeHome) ? resolvedRuntimeHome : null),
+    }));
   } else if (command === 'profile-install') {
     const { installKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
     output(await installKernelProfile({ runtime: getArgValue('--runtime-name') || getArgValue('--runtime'), targetRoot: getArgValue('--target-root') || process.cwd(), sourceRoot: getArgValue('--source-root') || process.cwd(), skillsRoot: getArgValue('--skills-root') }));
   } else if (command === 'profile-doctor') {
     const { doctorKernelProfile } = await import('../scripts/kernel/profile-doctor.mjs');
-    output(await doctorKernelProfile({ targetRoot: getArgValue('--target-root') || process.cwd(), runtime: getArgValue('--runtime-name') || getArgValue('--runtime') }));
+    output(await doctorKernelProfile({
+      targetRoot: getArgValue('--target-root') || process.cwd(),
+      runtime: getArgValue('--runtime-name') || getArgValue('--runtime'),
+      runtimeHome: getArgValue('--runtime-home') || resolveKernelRuntimeHome(),
+    }));
   } else if (command === 'profile-uninstall') {
     const { uninstallKernelProfile } = await import('../scripts/kernel/profile-install.mjs');
     output(await uninstallKernelProfile({ targetRoot: getArgValue('--target-root') || process.cwd() }));
@@ -131,8 +143,11 @@ try {
     // contract, `next` bootstraps the run idempotently so the model never
     // needs a separate `start` command (P0-1).
     const cp = await openControlPlane();
-    const runId = getArgValue('--run-id') || args[1];
-    if (!runId || runId.startsWith('--')) throw new Error('next command requires a run id: kernel next <run-id>');
+    const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
+    const runId = await cp.resolveRunId({
+      explicitRunId: getArgValue('--run-id') || positionalRunId,
+      envRunId: process.env.MOON_RELAY_KERNEL_RUN_ID || null,
+    });
     const contractFile = getArgValue('--contract-json') || getArgValue('--objective-json');
     let res;
     if (contractFile) {
@@ -147,8 +162,11 @@ try {
   } else if (command === 'report') {
     // Model-visible runtime command 2 of 2.
     const cp = await openControlPlane();
-    const runId = getArgValue('--run-id') || args[1];
-    if (!runId || runId.startsWith('--')) throw new Error('report command requires a run id: kernel report <run-id> --report-json <file>');
+    const positionalRunId = args[1] && !args[1].startsWith('--') ? args[1] : null;
+    const runId = await cp.resolveRunId({
+      explicitRunId: getArgValue('--run-id') || positionalRunId,
+      envRunId: process.env.MOON_RELAY_KERNEL_RUN_ID || null,
+    });
     const reportFile = getArgValue('--report-json') || getArgValue('--context-json');
     let payload = {};
     if (reportFile) {

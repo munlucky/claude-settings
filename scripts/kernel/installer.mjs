@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { cp, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { buildRuntimeManifest } from './runtime-resolver.mjs';
 
 const PRODUCT_ID = 'moon-relay-kernel';
@@ -61,6 +61,28 @@ const collectFiles = async (root, rel = '') => {
 };
 
 const readManifest = async (manifestPath) => JSON.parse(await readFile(manifestPath, 'utf8'));
+
+export const materializeKernelCommandShim = async ({ runtimeHome, entrypoint } = {}) => {
+  if (!runtimeHome || !entrypoint) throw new Error('Kernel command shim requires runtimeHome and entrypoint');
+  const root = path.resolve(runtimeHome);
+  const cli = path.resolve(entrypoint);
+  const binDir = path.join(root, 'bin');
+  await mkdir(binDir, { recursive: true });
+  const written = [];
+  if (process.platform === 'win32') {
+    const cmd = path.join(binDir, 'kernel.cmd');
+    const ps1 = path.join(binDir, 'kernel.ps1');
+    await atomicWrite(cmd, `@echo off\r\nnode "${cli}" %*\r\n`);
+    await atomicWrite(ps1, `& node "${cli}" @args\r\n`);
+    written.push(cmd, ps1);
+  } else {
+    const shim = path.join(binDir, 'kernel');
+    await atomicWrite(shim, `#!/bin/sh\nexec node "${cli}" "$@"\n`);
+    await chmod(shim, 0o755);
+    written.push(shim);
+  }
+  return { status: 'installed', runtimeHome: root, entrypoint: cli, written };
+};
 
 export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = process.cwd(), runtimeSource, trackHome } = {}) => {
   const root = path.resolve(targetRoot);
@@ -150,7 +172,14 @@ export const installKernel = async ({ targetRoot = process.cwd(), sourceRoot = p
       await atomicWrite(path.join(backupPath, 'backup-manifest.json'), JSON.stringify({ schemaVersion: 1, productId: PRODUCT_ID, manifest: existingManifest, files: existingFiles }, null, 2));
     }
     await atomicWrite(manifestPath, JSON.stringify(manifest, null, 2));
-    return { status: 'installed', targetRoot: root, installedFilesCount: installed.length, manifestPath, backupPath: existingFiles.length ? backupPath : null };
+    const runtimeHome = trackHome ? path.resolve(trackHome) : null;
+    const commandShim = runtimeHome
+      ? await materializeKernelCommandShim({
+        runtimeHome,
+        entrypoint: path.join(kernelDir, 'kernel-payload', 'bin', 'moon-relay-kernel.mjs'),
+      })
+      : null;
+    return { status: 'installed', targetRoot: root, installedFilesCount: installed.length, manifestPath, backupPath: existingFiles.length ? backupPath : null, commandShim };
   } catch (error) {
     await rm(path.join(kernelDir, 'kernel-payload'), { force: true, recursive: true });
     for (const file of existingFiles) {

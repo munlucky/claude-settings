@@ -16,6 +16,7 @@ import { planReplacementSteps, planRunSteps } from './step-planner.mjs';
 import { scanRepositoryEvidence } from '../task/evidence-scan.mjs';
 import { canonicalDigest } from '../canonical-digest.mjs';
 import { gitLsFiles } from '../../lib/git-safe.mjs';
+import { observeWorkspaceIdentity } from './workspace-identity.mjs';
 
 export const createWorkCursorApi = ({ store, projectRoot }) => ({
   // --- Run Step Ledger (K2) -------------------------------------------
@@ -193,7 +194,22 @@ export const createWorkCursorApi = ({ store, projectRoot }) => ({
           }],
         };
       }
-      if (['passed', 'superseded', 'cancelled'].includes(named.state)) {
+      if (named.state === 'passed') {
+        const active = selectCurrentStep(steps, { planRevision: run.planRevision });
+        const workspaceChanged = observeWorkspaceIdentity({ projectRoot }).identity !== run.currentWorkspaceIdentity;
+        if (!active && workspaceChanged && report.changedPaths.length > 0 && !report.capsuleId) {
+          return { step: named, reopened: true };
+        }
+        const lastPassedAttempt = store.getStepAttempts(runId, { stepId: named.stepId })
+          .filter((attempt) => attempt.status === 'passed').at(-1);
+        const normalized = (paths = []) => [...new Set(paths.map(String))].sort();
+        const sameChangedPaths = JSON.stringify(normalized(report.changedPaths)) === JSON.stringify(normalized(lastPassedAttempt?.changedPaths || []));
+        if (!active && run.state === 'PROVE' && sameChangedPaths && !report.capsuleId) {
+          return { step: null, settledStep: named };
+        }
+        return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is already passed and only an unchanged PROVE finalization report may follow` }] };
+      }
+      if (['superseded', 'cancelled'].includes(named.state)) {
         return { rejection: [{ obligationId: 'step', command: 'kernel report', errorSummary: `Step "${named.stepId}" is already ${named.state} and cannot be reported again` }] };
       }
       const active = selectCurrentStep(steps, { planRevision: run.planRevision });

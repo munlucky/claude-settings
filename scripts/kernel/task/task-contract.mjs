@@ -7,6 +7,7 @@
 // evidence can be bound to it rather than to a free-text string.
 
 import { createHash } from 'node:crypto';
+import { assertNoRawSecret } from '../persistent-sanitizer.mjs';
 
 const EVIDENCE_CLASSES = ['hard', 'judgment'];
 
@@ -76,6 +77,7 @@ const RISK_FLAGS = [
   'migration', 'dataStorageChange', 'externalIntegration', 'componentBoundaryChange',
   'irreversibleDecision', 'crossLayer', 'complex', 'newDependency', 'ambiguityChangesOutcome',
   'domainTerminologyConflict', 'destructiveSchemaChange', 'schemaChange', 'acceptanceAmbiguity',
+  'baselineRequired',
 ];
 
 const normalizeSafeWave = (input) => {
@@ -97,6 +99,7 @@ const normalizeSafeWave = (input) => {
 // The full contract the Kernel persists. Everything the model needs on resume
 // must be reachable from this object alone.
 export const normalizeTaskContract = (input = {}, { objective, changedFileCount = 0 } = {}) => {
+  assertNoRawSecret(input);
   const contract = input && typeof input === 'object' ? input : {};
   const acceptance = assertEvidencePlans(contract.acceptance || contract.acceptanceCriteria || []);
   const flags = {};
@@ -169,13 +172,22 @@ export const surfacesFromFlags = (flags = {}) => [...new Set(
   Object.entries(FLAG_SURFACES).filter(([flag]) => flags[flag] === true).map(([, surface]) => surface),
 )];
 
+const surfacesFromDeclaredRisks = (risks = []) => [...new Set(risks.flatMap((risk) => {
+  const value = String(risk).toLowerCase();
+  if (/(security|auth(?:entication|orization)?)/.test(value)) return ['security_boundary'];
+  if (/migration/.test(value)) return ['data_migration'];
+  if (/(data.?loss|data.?deletion|irreversible)/.test(value)) return ['destructive_schema_change'];
+  if (/payment/.test(value)) return ['payment_boundary'];
+  return [];
+}))];
+
 // The risk summary the proof-route and task-route resolvers consume. Behavior
 // change is carried through so an ordinary behavior-changing task is not left
 // at T0 (P1-1).
 export const riskSummaryFromContract = (contract) => ({
   requestedTier: contract.requestedTier || undefined,
   filesChanged: contract.filesChanged,
-  surfaces: [...new Set([...contract.surfaces, ...surfacesFromFlags(contract.flags)])],
+  surfaces: [...new Set([...contract.surfaces, ...surfacesFromFlags(contract.flags), ...surfacesFromDeclaredRisks(contract.risks)])],
   taskClass: contract.taskClass,
   crossLayer: contract.flags.crossLayer === true,
   // Declared behaviour change reaches the tier resolver (P1-1); it is never

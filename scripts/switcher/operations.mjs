@@ -1,4 +1,4 @@
-import { readFile, stat, mkdir, rename, rm, readdir, writeFile } from 'node:fs/promises';
+import { readFile, stat, mkdir, rename, rm, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { GUI_SURFACES, SURFACES, TRACKS } from './constants.mjs';
 import { resolveApplication } from './app-resolver/index.mjs';
@@ -54,55 +54,99 @@ const SURFACE_SKILLS_DIR = {
   antigravity_desktop: path.join('.gemini', 'antigravity'),
 };
 
-export async function syncGlobalSkillsIsolation({ surface, track }) {
+export const KERNEL_ENTRYPOINT_SKILL = 'moon-relay-kernel';
+
+// Exact stub that pre-K-1 switcher builds wrote into the account-root skills
+// directory. Matched byte-for-byte so the repair below can only remove our own
+// damage, never a skill the operator authored.
+const LEGACY_ACCOUNT_ROOT_STUB = '---\nname: moon-relay-kernel\ndescription: Single public entrypoint for Moon Relay Kernel task routing.\n---\n\n# Moon Relay Kernel\n';
+
+const globalSkillsPaths = (surface) => {
   const dirName = SURFACE_SKILLS_DIR[surface];
-  if (!dirName) return;
-
+  if (!dirName) return null;
   const baseDir = path.join(process.env.USERPROFILE || process.env.HOME || '', dirName);
-  const userSkills = path.join(baseDir, 'skills');
-  const backupSkills = path.join(baseDir, '.skills-relay-backup');
+  return { userSkills: path.join(baseDir, 'skills'), backupSkills: path.join(baseDir, '.skills-relay-backup') };
+};
 
-  if (track === 'kernel') {
-    if ((await exists(userSkills)) && !(await exists(backupSkills))) {
-      try {
-        await rename(userSkills, backupSkills);
-      } catch {
-        /* locked file */
-      }
-    }
-    await mkdir(userSkills, { recursive: true });
-    const kernelSkillDir = path.join(userSkills, 'moon-relay-kernel');
-    await mkdir(kernelSkillDir, { recursive: true });
-    await writeFile(
-      path.join(kernelSkillDir, 'SKILL.md'),
-      `---\nname: moon-relay-kernel\ndescription: Single public entrypoint for Moon Relay Kernel task routing.\n---\n\n# Moon Relay Kernel\n`,
-      'utf8'
-    );
-    if (await exists(backupSkills)) {
-      try {
-        for (const entry of await readdir(userSkills, { withFileTypes: true })) {
-          if (entry.name !== 'moon-relay-kernel') {
-            await rm(path.join(userSkills, entry.name), { force: true, recursive: true });
-          }
-        }
-      } catch {
-        /* locked file */
-      }
-    }
-  } else if (track === 'relay') {
-    if (await exists(backupSkills)) {
-      try {
-        await rm(userSkills, { force: true, recursive: true });
-        await rename(backupSkills, userSkills);
-      } catch {
-        /* locked file */
-      }
+const isLegacyAccountRootStub = async (skillDir) => {
+  let entries;
+  try {
+    entries = await readdir(skillDir);
+  } catch {
+    return false;
+  }
+  if (entries.length !== 1 || entries[0] !== 'SKILL.md') return false;
+  try {
+    return (await readFile(path.join(skillDir, 'SKILL.md'), 'utf8')) === LEGACY_ACCOUNT_ROOT_STUB;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Repairs an account-root skills directory that an earlier switcher build
+ * replaced with a Kernel stub. Kernel isolation is process-scoped through the
+ * provider home, so the account root owns the operator's Relay skills in both
+ * tracks. Nothing is blind-deleted: only the exact legacy stub is removed, and
+ * an entry that already exists under the account root always wins over its
+ * backup copy. Failures are reported, never swallowed.
+ */
+export async function restoreGlobalSkillsBackup({ surface } = {}) {
+  const paths = globalSkillsPaths(surface);
+  if (!paths) return { status: 'not_applicable', restored: [], conflicts: [], errors: [] };
+  const { userSkills, backupSkills } = paths;
+  if (!(await exists(backupSkills))) return { status: 'noop', restored: [], conflicts: [], errors: [] };
+
+  const restored = [];
+  const conflicts = [];
+  const errors = [];
+  const record = (target, error) => errors.push({ path: target, code: error.code || 'unknown' });
+
+  const stubDir = path.join(userSkills, KERNEL_ENTRYPOINT_SKILL);
+  if (await isLegacyAccountRootStub(stubDir)) {
+    try {
+      await rm(stubDir, { force: true, recursive: true });
+    } catch (error) {
+      record(stubDir, error);
     }
   }
+
+  await mkdir(userSkills, { recursive: true });
+  for (const entry of await readdir(backupSkills)) {
+    const target = path.join(userSkills, entry);
+    if (await exists(target)) {
+      conflicts.push(entry);
+      continue;
+    }
+    try {
+      await rename(path.join(backupSkills, entry), target);
+      restored.push(entry);
+    } catch (error) {
+      record(target, error);
+    }
+  }
+
+  if (!conflicts.length && !errors.length) {
+    try {
+      await rm(backupSkills, { force: true, recursive: true });
+    } catch (error) {
+      record(backupSkills, error);
+    }
+  }
+
+  const status = errors.length ? 'restore_incomplete' : conflicts.length ? 'partial' : 'restored';
+  return { status, restored, conflicts, errors, userSkills, backupSkills };
 }
 
-export async function syncCodexGlobalSkillsIsolation({ track }) {
-  return syncGlobalSkillsIsolation({ surface: 'codex_cli', track });
+export async function discoverProviderSkills(providerHome) {
+  if (!providerHome) return [];
+  try {
+    const entries = await readdir(path.join(providerHome, 'skills'), { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.')).map((entry) => entry.name).sort();
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
 }
 
 export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, projectRoot = null, appDataRoot = null, sourceRoot = process.cwd() } = {}) {
@@ -133,7 +177,18 @@ export async function inspectKernelLaunchReadiness({ runtimeHome, providerHome, 
     return { status: 'unsafe_target', reason: 'app_data_root_missing' };
   }
 
-  return { status: 'launch_candidate', ready: true };
+  // The public Kernel surface is exactly one entrypoint skill. Read what the
+  // provider home actually serves instead of asserting the expected answer.
+  const discoveredSkills = await discoverProviderSkills(providerHome);
+  if (!discoveredSkills.includes(KERNEL_ENTRYPOINT_SKILL)) {
+    return { status: 'kernel_profile_not_ready', reason: 'skill_discovery_missing', discoveredSkills };
+  }
+  const foreignSkills = discoveredSkills.filter((name) => name !== KERNEL_ENTRYPOINT_SKILL);
+  if (foreignSkills.length) {
+    return { status: 'shared_mutable_surface', reason: 'shared_mutable_surface', discoveredSkills, foreignSkills };
+  }
+
+  return { status: 'launch_candidate', ready: true, discoveredSkills };
 }
 
 export async function switchStatus({ surface = null } = {}) {
@@ -173,11 +228,12 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     if (quiescent.status !== 'quiescent') return createReceipt({ operation: 'launch', status: 'close_incomplete', surface, track: previous?.effectiveTrack || 'unknown', errorCode: 'process_active', effective: quiescent });
   }
 
+  let readiness = null;
   if (track === 'kernel') {
     for (const root of [roots.runtimeHome, roots.providerHome, roots.appDataRoot].filter(Boolean)) {
       await assertSafeTarget(root, { protectedRoots: protectedRoots({ kernelRuntimeHome: roots.runtimeHome }) });
     }
-    const readiness = await inspectKernelLaunchReadiness({
+    readiness = await inspectKernelLaunchReadiness({
       runtimeHome: roots.runtimeHome,
       providerHome: roots.providerHome,
       projectRoot: targetProjectRoot,
@@ -185,14 +241,15 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
       sourceRoot,
     });
     if (readiness.status !== 'launch_candidate') {
-      return createReceipt({ operation: 'launch', status: readiness.status, surface, track, errorCode: readiness.reason || readiness.status });
+      // Refused before the journal exists and before anything is spawned, so a
+      // rejected launch leaves no partial transaction behind.
+      return createReceipt({ operation: 'launch', status: readiness.status, surface, track, errorCode: readiness.reason || readiness.status, effective: { discoveredSkills: readiness.discoveredSkills || [] } });
     }
   }
 
-  await syncGlobalSkillsIsolation({ surface, track });
-
   const journal = await prepareTransaction({ surface, requestedTrack: track, roots, previousSelection: previous, processSet: active });
-  await advanceTransaction(journal, 'old_app_stopped');
+  const globalSkillsRestore = await restoreGlobalSkillsBackup({ surface });
+  await advanceTransaction(journal, 'old_app_stopped', { globalSkillsRestore });
 
   let spec = launchSpec;
   if (!spec && GUI_SURFACES.has(surface)) {
@@ -210,7 +267,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
   await advanceTransaction(journal, 'provider_home_verified', { providerHome: roots.providerHome });
   await advanceTransaction(journal, 'workspace_verified', { workspaceRoot: spec.workspaceRoot });
 
-  const discoveredSkills = track === 'kernel' ? ['moon-relay-kernel'] : [];
+  const discoveredSkills = readiness?.discoveredSkills || await discoverProviderSkills(roots.providerHome);
   await advanceTransaction(journal, 'skill_discovery_verified', { discoveredSkills });
 
   const effective = {
@@ -220,6 +277,7 @@ export async function launchSwitch({ surface, track, sourceRoot = process.cwd(),
     appDataRoot: roots.appDataRoot || null,
     workspaceRoot: spec.workspaceRoot || null,
     discoveredSkills,
+    globalSkillsRestore,
     pid: started.pid || null,
     processScoped: true,
   };

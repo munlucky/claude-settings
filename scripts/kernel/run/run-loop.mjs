@@ -1,4 +1,5 @@
 import { TRANSITIONS } from '../transition.mjs';
+import { sanitizePersistentPayload } from '../persistent-sanitizer.mjs';
 
 export const REPORT_BLOCK_REASONS = Object.freeze([
   'question',
@@ -188,7 +189,7 @@ export const normalizeReport = (payload = {}) => {
       acceptanceCoverage: Array.isArray(judgment.acceptanceCoverage) ? judgment.acceptanceCoverage.map(String) : undefined,
     };
   });
-  return {
+  return sanitizePersistentPayload({
     summary: typeof payload.summary === 'string' ? payload.summary : '',
     implementerId: payload.implementerId ? String(payload.implementerId) : null,
     // The bounded context (K1) and the work unit (K2) this report answers.
@@ -203,5 +204,5 @@ export const normalizeReport = (payload = {}) => {
     blocker,
     gitCloseoutRequest: payload.gitCloseoutRequest && typeof payload.gitCloseoutRequest === 'object' ? payload.gitCloseoutRequest : null,
     knowledgeObservations: Array.isArray(payload.knowledgeObservations) ? payload.knowledgeObservations : [],
-  };
+  });
 };
