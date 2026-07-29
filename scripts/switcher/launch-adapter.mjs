@@ -3,11 +3,15 @@ import { spawn } from 'node:child_process';
 import { SURFACE_ENV } from './constants.mjs';
 import { resolveTrackRoots } from './paths.mjs';
 
-export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, baseEnv = process.env } = {}) {
+export function buildProcessEnvironment({ surface, track, roots, workspaceRoot = null, runId = null, projectId = null, sessionId = null, baseEnv = process.env } = {}) {
   const env = { ...baseEnv };
   if (SURFACE_ENV[surface]) env[SURFACE_ENV[surface]] = roots.providerHome;
   if (track === 'kernel') {
     env.MOON_RELAY_KERNEL_HOME = roots.runtimeHome;
+    env.PATH = `${path.join(roots.runtimeHome, 'bin')}${path.delimiter}${env.PATH || ''}`;
+    if (runId) env.MOON_RELAY_KERNEL_RUN_ID = String(runId);
+    if (projectId) env.MOON_RELAY_KERNEL_PROJECT_ID = String(projectId);
+    if (sessionId) env.MOON_RELAY_KERNEL_SESSION_ID = String(sessionId);
     // Older switcher builds incorrectly exported the Kernel runtime through
     // MOONSHOT_RELAY_HOME. Do not propagate that poisoned alias into another
     // Kernel surface, while preserving a genuinely distinct custom Relay home.
@@ -30,7 +34,7 @@ const defaultCommand = (surface) => {
   return surface;
 };
 
-export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
+export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), workspaceRoot = null, runId = null, projectId = null, sessionId = null, command, args = [], roots = resolveTrackRoots({ track, surface, sourceRoot }) } = {}) {
   const resolvedWorkspace = workspaceRoot ? path.resolve(workspaceRoot) : (track === 'kernel' ? path.resolve(sourceRoot) : null);
   const expectedPublicSkills = track === 'kernel' ? ['moon-relay-kernel'] : null;
   return {
@@ -44,7 +48,7 @@ export function buildLaunchSpec({ surface, track, sourceRoot = process.cwd(), wo
     workspaceRoot: resolvedWorkspace,
     cwd: resolvedWorkspace || process.cwd(),
     expectedPublicSkills,
-    env: buildProcessEnvironment({ surface, track, roots, workspaceRoot: resolvedWorkspace }),
+    env: buildProcessEnvironment({ surface, track, roots, workspaceRoot: resolvedWorkspace, runId, projectId, sessionId }),
   };
 }
 

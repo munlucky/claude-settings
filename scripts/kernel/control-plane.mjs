@@ -43,6 +43,9 @@ import { createWorkCursorApi } from './run/work-cursor.mjs';
 import { admitRoute } from './routing/route-admission.mjs';
 import { captureBaselineProof } from './proof/baseline-proof.mjs';
 import { classifyFailures } from './proof/failure-classify.mjs';
+import { computeCompletionView } from './run/completion-view.mjs';
+import { assertMutationAllowed } from './run/mutation-guard.mjs';
+import { assertRequiredHostCapabilities } from './run/required-host-capabilities.mjs';
 
 export const computeKernelSourceIdentity = ({ projectRoot = process.cwd(), objective = '', taskContract = {} } = {}) => {
   const sourceDigest = gitTreeDigest(projectRoot) || sha256Hex({ projectRoot, objective });
@@ -169,7 +172,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
     // it is executed with. Spread as methods so `this` stays the control plane.
     ...createWorkCursorApi({ store, projectRoot }),
 
-    async startRun({ runId, objective, sourceIdentity, taskContract = {} } = {}) {
+    async startRun({ runId, objective, sourceIdentity, taskContract = {}, hostCapabilities = null } = {}) {
       const trustedSourceIdentity = computeKernelSourceIdentity({ projectRoot, objective: objective || taskContract.objective || 'Kernel execution task', taskContract });
       if (sourceIdentity && sourceIdentity !== trustedSourceIdentity) {
         throw new Error('sourceIdentity is computed by Kernel and cannot be caller-authored');
@@ -180,6 +183,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // normalized contract is what gets persisted, so constraints, non-goals,
       // risks, and evidence plans survive a process restart (P0-4/P0-5).
       const contract = normalizeTaskContract(taskContract, { objective: objective || taskContract.objective });
+      if (hostCapabilities) assertRequiredHostCapabilities(contract, hostCapabilities);
 
       const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
       const projectId = identity.projectId;
@@ -187,6 +191,15 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const knowledgeRevisionStart = String(store.getProjectKnowledgeRevision(projectId));
       const hasKernelKnowledge = store.listKnowledgeRecords({ projectId }).length > 0;
       const projectMode = detectProjectMode({ projectRoot, hasKernelKnowledge });
+      const repositoryScan = projectMode.mode === 'greenfield' ? null : scanRepositoryEvidence({ projectRoot });
+      const implementationContext = projectMode.mode === 'greenfield'
+        ? { walkingSkeleton: planWalkingSkeleton({ projectType: contract.flags?.projectType || 'library', objective: contract.objective, taskContract: contract }) }
+        : {
+          entrypoints: repositoryScan.entrypoints,
+          manifests: repositoryScan.manifests,
+          knownCommands: [...repositoryScan.testCommands, ...repositoryScan.buildCommands].map((entry) => entry.commandRef),
+          baseline: { status: contract.flags?.baselineRequired ? 'required' : 'deferred' },
+        };
 
       const normalizedChangeSet = normalizeChangedContract(taskContract);
 
@@ -227,6 +240,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         taskContract: contract,
         contractRevision: 1,
         route: { stages: route, riskTier: proofRoute.proofTier, shapeRequired: route.includes('SHAPE') },
+        implementationContext,
       });
       store.declareRunObligations(runId, obligations);
 
@@ -262,6 +276,16 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
       await projectRunState(run, { runtimeHome });
       return run;
+    },
+
+    async resolveRunId({ explicitRunId = null, envRunId = null } = {}) {
+      if (explicitRunId) return String(explicitRunId);
+      if (envRunId) return String(envRunId);
+      const identity = resolveKernelProjectIdentity({ cwd: projectRoot });
+      const active = store.listActiveRuns({ projectId: identity.projectId });
+      if (active.length === 1) return active[0].runId;
+      if (active.length > 1) throw new Error(`ambiguous_active_run: ${active.map((run) => run.runId).join(', ')}`);
+      throw new Error('active_run_not_found: pass --run-id or launch through a Kernel host');
     },
 
     // Host bootstrap (P0-1). The model only ever calls `next` and `report`, so
@@ -555,7 +579,32 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
       const capabilities = normalizeHostCapabilities(hostCapabilities);
-      const modelInput = await this.next(runId);
+      let modelInput = await this.next(runId);
+      if (modelInput.action?.type === 'baseline-required') {
+        await this.captureBaseline(runId, {
+          commandRefs: modelInput.action.commandRefs,
+          timeoutMs: actionContext.baselineTimeoutMs || 120000,
+        });
+        modelInput = await this.next(runId);
+      }
+      let mutationLock = null;
+      if (['implement', 'fix'].includes(modelInput.action?.type)) {
+        const lockResult = store.acquireWorkspaceMutationLock({
+          projectId: run.projectId,
+          runId,
+          sessionToken: holder,
+          ttlMs: actionContext.mutationLockTtlMs || 60000,
+        });
+        if (!lockResult.acquired) {
+          modelInput.action = {
+            type: 'blocked',
+            reason: 'workspace_mutation_locked',
+            guidance: `Workspace is held by run ${lockResult.lock.holderRunId}.`,
+          };
+        } else {
+          mutationLock = lockResult.lock;
+        }
+      }
       const decision = await this.decideModelRoute(runId, {
         actionKind: actionContext.actionKind || ACTION_FOR_MODEL_ACTION[modelInput.action?.type] || 'implement',
         obligationId: actionContext.obligationId ?? modelInput.action?.outstandingObligations?.[0] ?? null,
@@ -592,8 +641,17 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           hostCapabilities: capabilities,
           enforcementStrategy: resolveEnforcementStrategy(capabilities, decision),
           executionCapsule,
+          mutationLock,
         },
       };
+    },
+
+    assertMutationAllowed(request = {}) {
+      return assertMutationAllowed({
+        stateStore: store,
+        workspaceRoot: projectRoot,
+        ...request,
+      });
     },
 
     // K3: the Host asks for admission between the route decision and the actual
@@ -636,6 +694,10 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
 
     modelRoutingSummary(runId) {
       return summarizeModelRouting(store.listModelRouteDecisions(runId), store.listModelUsageReceipts(runId));
+    },
+
+    listReviewReceipts(runId, options = {}) {
+      return store.listReviewReceipts(runId, options);
     },
 
     // Two-stage review plan (§31): which reviews apply and whether an
@@ -730,6 +792,64 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       // The follow-up class is decided here, so an architecture defect cannot
       // be quietly handed back to the implementer as a local patch (§9.3).
       return { review: normalized, reviewReceipt, run: updated, followUp: classifyReviewFindings(normalized.findings) };
+    },
+
+    async ingestReviewerOutcome({
+      runId,
+      stepId = null,
+      capsuleId,
+      routeDecisionId,
+      usageReceiptId,
+      reviewerSessionId,
+      outcome,
+    } = {}) {
+      const run = store.getRun(runId);
+      if (!run) throw new Error(`incomplete_review_chain: run ${runId} not found`);
+      if (!outcome || !['pass', 'fail', 'blocked'].includes(outcome.verdict)
+        || !Array.isArray(outcome.findings) || !Array.isArray(outcome.evidenceRefs)
+        || !Number.isInteger(outcome.reviewedMutationRevision)) {
+        throw new Error('incomplete_review_chain: invalid reviewer outcome schema');
+      }
+      const capsule = store.getExecutionCapsule(capsuleId, { runId });
+      const usage = store.getModelUsageReceipt(usageReceiptId, { runId });
+      const decision = store.getModelRouteDecision(routeDecisionId, { runId });
+      const admission = usage?.admissionId ? store.getRouteAdmission(usage.admissionId, { runId }) : null;
+      const implementationSession = store.getLatestImplementationSession(runId);
+      const reviewerSessionHash = hashSessionId(reviewerSessionId);
+      const chainComplete = capsule?.role === 'reviewer'
+        && (!stepId || capsule.stepId === stepId)
+        && capsule.provenance.routeDecisionId === routeDecisionId
+        && capsule.subject.mutationRevision === run.mutationRevision
+        && capsule.subject.workspaceIdentity === run.currentWorkspaceIdentity
+        && outcome.reviewedMutationRevision === run.mutationRevision
+        && decision?.role === 'reviewer'
+        && decision.permissions === 'read_only'
+        && usage?.decisionId === routeDecisionId
+        && usage.capsuleId === capsuleId
+        && usage.actorSessionId === reviewerSessionHash
+        && admission?.decision === 'admitted'
+        && admission.capsuleId === capsuleId
+        && admission.decisionId === routeDecisionId
+        && implementationSession?.actorSessionId
+        && implementationSession.actorSessionId !== usage.actorSessionId;
+      if (!chainComplete) throw new Error('incomplete_review_chain: route, capsule, usage, session, read-only, or mutation lineage is missing');
+      if (outcome.verdict === 'blocked') {
+        return { status: 'blocked', blockedReason: 'incomplete_review_chain', findings: outcome.findings };
+      }
+      const obligationId = capsule.reviewScope?.obligationId || decision.obligationId || 'security-review';
+      return this.recordReview(runId, {
+        stage: capsule.reviewScope?.stage || 'engineering',
+        verdict: outcome.verdict,
+        reviewerId: reviewerSessionHash,
+        findings: outcome.findings,
+      }, {
+        implementerId: implementationSession.actorSessionId,
+        reviewReceiptId: usageReceiptId,
+        obligationId,
+        acceptanceCoverage: capsule.acceptance?.map((item) => item.id) || [],
+        changedPaths: capsule.subject.changedPaths,
+        rationale: `Host-ingested reviewer outcome (${outcome.evidenceRefs.length} evidence refs)`,
+      });
     },
 
     // Within-run route/tier promotion only (§13.5). Demotion throws.
@@ -835,7 +955,9 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       const run = store.getRun(runId);
       if (!run) return { schemaVersion: 1, runId, status: 'not_found' };
 
-      const stageContext = await this.refreshStageKnowledge(runId);
+      const stageContext = store.getKnowledgeContextReceipt(runId, run.state)?.receiptJson
+        || store.getKnowledgeContextReceipt(runId, 'FRAME')?.receiptJson
+        || null;
       const obligations = store.getRunObligations(runId);
       const capabilityDecision = resolveKernelCapabilities({
         ...(run.taskContract?.flags || {}),
@@ -856,8 +978,25 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
         capabilities: capabilityDecision.selected.map((entry) => ({ id: entry.id, guidance: entry.guidance })),
       });
 
-      if (payload.action?.type === 'implement') {
-        payload.action.projectContext = await this.buildImplementationContext(runId, run);
+      if (payload.action?.type === 'implement' && run.projectMode !== 'greenfield' && run.taskContract?.flags?.baselineRequired === true && run.baselineStatus === 'pending') {
+        const commandRefs = [...new Set(obligations
+          .filter((obligation) => obligation.evidenceClass === 'hard')
+          .flatMap((obligation) => obligation.allowedCommandRefs))].slice(0, 3);
+        if (commandRefs.length > 0 && run.runStartWorkspaceIdentity === run.currentWorkspaceIdentity) {
+          payload.action = {
+            type: 'baseline-required',
+            guidance: 'The Kernel host must capture the bound baseline commands before implementation.',
+            commandRefs,
+          };
+        }
+      }
+      if (payload.action?.type === 'implement' && run.implementationContext) {
+        payload.action.projectContext = {
+          ...run.implementationContext,
+          baseline: run.baselineStatus === 'captured'
+            ? { status: 'captured', failures: run.baselineFailures }
+            : run.implementationContext.baseline,
+        };
       }
       // K2: the model is handed ONE work unit, never the whole plan. A synthetic
       // step carries the run itself, so a simple task looks exactly as before.
@@ -871,6 +1010,14 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
           forbiddenPaths: step.forbiddenPaths,
         };
       }
+      payload.completion = computeCompletionView({
+        run,
+        step,
+        verifications: store.getVerifications(runId),
+        obligations,
+        reviews: store.listReviewReceipts(runId),
+        completionDecision: store.getCompletionDecision(runId),
+      });
       return payload;
     },
 
@@ -946,6 +1093,7 @@ export const createKernelControlPlane = async ({ runtimeHome = resolveKernelRunt
       });
       store.observeWorkspaceIdentity(runId, baseline.workspaceIdentity);
       store.setBaselineFailures(runId, baseline.baselineFailures);
+      store.setBaselineStatus(runId, 'captured');
       return baseline;
     },
 

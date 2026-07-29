@@ -1,9 +1,11 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolveTrackRoots, physicalTargetIdentity } from './paths.mjs';
 import { listProviderProcesses } from './process-guard.mjs';
 import { installKernelProfile } from '../kernel/profile-install.mjs';
+import { materializeKernelCommandShim } from '../kernel/installer.mjs';
 import { installSwitcher } from './installer.mjs';
 const execFileAsync = promisify(execFile);
 
@@ -35,6 +37,13 @@ export async function adoptLive({ sourceRoot = process.cwd(), approved = false, 
   const switcherHome = process.env.MOON_HARNESS_SWITCHER_HOME || path.join(user, '.moon-harness-switcher');
   const installed = [];
   for (const [runtime, target] of [['claude', path.join(kernelHome, 'providers', 'claude')], ['codex', path.join(kernelHome, 'providers', 'codex')], ['qwen', path.join(kernelHome, 'providers', 'qwen')], ['antigravity', path.join(kernelHome, 'providers', 'antigravity')]]) installed.push(await installKernelProfile({ sourceRoot, runtime, targetRoot: target }));
+  const entrypointCandidates = [
+    path.join(kernelHome, '.moon-relay', 'kernel-payload', 'bin', 'moon-relay-kernel.mjs'),
+    path.join(kernelHome, 'kernel-payload', 'bin', 'moon-relay-kernel.mjs'),
+  ];
+  const entrypoint = entrypointCandidates.find(existsSync);
+  if (!entrypoint) throw new Error('kernel_entrypoint_missing: install the Kernel runtime before provider adoption');
+  installed.push(await materializeKernelCommandShim({ runtimeHome: kernelHome, entrypoint }));
   installed.push(await installSwitcher({ sourceRoot, targetRoot: switcherHome }));
   return { status: 'adopted', installId: `${Date.now()}-${process.pid}`, installed, preflight, liveMutationCount: installed.length, rollback: 'metadata/profile manifest rollback only; provider-created data preserved' };
 }
