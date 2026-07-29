@@ -20,6 +20,19 @@ const PLANNING_ACTIONS = new Set(['understand', 'design', 'plan', 'replan']);
 const REVIEW_ACTIONS = new Set(['review_contract', 'review_engineering']);
 const HIGH_RISK_SHAPES = Object.freeze(['security', 'migration', 'authentication', 'authorization', 'payment', 'data-loss', 'irreversible']);
 
+// The Codex "launch-profile" dispatch mechanism (§11.2) selects one of the
+// four profiles codex-profile-materializer.mjs actually writes
+// (default/plan/review/batch), not a Kernel model class name — a model class
+// alone cannot distinguish a protected review from a routine one, and the
+// profile choice needs exactly that distinction. No `complexity`/`shapes`
+// signal reaches this call site from a route decision today, so 'batch' is
+// not reachable here; that stays a known limitation, not a silent guess.
+export const selectCodexProfileName = ({ actionKind = 'implement' } = {}) => {
+  if (REVIEW_ACTIONS.has(actionKind)) return 'review';
+  if (PLANNING_ACTIONS.has(actionKind)) return 'plan';
+  return 'default';
+};
+
 export const resolveCodexModelPolicy = ({
   actionKind = 'implement',
   riskTier = 'T1',

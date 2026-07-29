@@ -39,12 +39,21 @@ test('the invocation carries the sandbox and approval policy the permissions imp
   assert.equal(review.freshSessionRequired, true);
 });
 
-test('a launch profile is named by class only, never by provider model id', () => {
+test('a launch profile is named by the materialized overlay, never by provider model id', () => {
+  // Regression: this used to assert 'kernel-frontier'/'kernel-value', names
+  // codex-profile-materializer.mjs never writes — a launch-profile dispatch
+  // would have requested a profile that does not exist. The profile is now
+  // named by the action shape a Kernel model class alone cannot distinguish
+  // (a protected review and a routine implementation can share
+  // frontier_reasoning), matching the four overlays that actually get written.
   const profileOnly = { ...CODEX_CAPABILITIES, supportsSessionModelOverride: false, supportsLaunchProfile: true };
-  const frontier = buildCodexInvocation({ decision: decisionFor('plan'), resolution: resolution('m'), capabilities: profileOnly });
-  const value = buildCodexInvocation({ decision: decisionFor('implement'), resolution: resolution('m'), capabilities: profileOnly });
-  assert.equal(frontier.profile, 'kernel-frontier');
-  assert.equal(value.profile, 'kernel-value');
+  const plan = buildCodexInvocation({ decision: decisionFor('plan'), resolution: resolution('m'), capabilities: profileOnly });
+  const review = buildCodexInvocation({ decision: decisionFor('review_engineering'), resolution: resolution('m'), capabilities: profileOnly });
+  const implement = buildCodexInvocation({ decision: decisionFor('implement'), resolution: resolution('m'), capabilities: profileOnly });
+  assert.equal(plan.profile, 'plan');
+  assert.equal(review.profile, 'review');
+  assert.equal(implement.profile, 'default');
+  assert.ok(!/^kernel-/.test(plan.profile));
 });
 
 test('Codex reports no usage tokens, so they stay unavailable rather than zero', async () => {

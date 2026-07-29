@@ -67,6 +67,7 @@ export const resolveSessionLineage = ({
   independentContextRequired = false,
   role = null,
   explicitReset = false,
+  instanceSeed = null,
 } = {}) => {
   const key = buildSessionAffinityKey(current);
   const reasons = [];
@@ -82,9 +83,25 @@ export const resolveSessionLineage = ({
   const continued = Boolean(previous) && unique.length === 0;
   const keyFieldsChanged = Boolean(previous) && key !== buildSessionAffinityKey(previous);
   const forcedWithSameKey = !continued && Boolean(previous) && !keyFieldsChanged;
-  const sessionLineageId = continued
-    ? previous.sessionLineageId || key
-    : (forcedWithSameKey ? mintResetLineageId(key, previous.sessionLineageId) : key);
+  let sessionLineageId;
+  if (continued) {
+    sessionLineageId = previous.sessionLineageId || key;
+  } else if (forcedWithSameKey) {
+    sessionLineageId = mintResetLineageId(key, previous.sessionLineageId);
+  } else if (!previous && instanceSeed) {
+    // No persisted prior session exists to compare against, so `previous` is
+    // always null on a real turn today. Without `instanceSeed`, two wholly
+    // independent turns that happen to share the same identity fingerprint
+    // would mint the identical lineage id and be misread by an aggregate
+    // (e.g. summarizeCacheEconomics) as one continuing session even though
+    // neither ever actually reused a provider session. Folding in a value
+    // that is unique per turn (the route decision id) keeps the id
+    // deterministic for a retry of the same turn while guaranteeing it never
+    // collides with an unrelated turn's id.
+    sessionLineageId = mintResetLineageId(key, instanceSeed);
+  } else {
+    sessionLineageId = key;
+  }
   return Object.freeze({
     schemaVersion: 1,
     sessionAffinityKey: key,

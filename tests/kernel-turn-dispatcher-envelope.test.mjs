@@ -90,3 +90,22 @@ test('computing the envelope does not change the legacy execution contract sent 
     assert.ok(!Object.hasOwn(seenContract, 'envelope'));
   });
 });
+
+test('two independent turns with the same identity fingerprint do not share a session-lineage id', async () => {
+  // Regression: with no persisted prior session, resolveSessionLineage was
+  // called with previous:null every time, so two wholly separate dispatches
+  // that happened to share the same role/model/effort/digests minted the
+  // identical sessionLineageId — a downstream aggregate (summarizeCacheEconomics)
+  // would then misread them as one continued session even though neither
+  // ever actually reused a provider session.
+  await withRun(async (cp, runId) => {
+    const adapter = createClaudeAdapter({
+      launch: async ({ invocation }) => ({ resolvedModel: invocation.model, sessionId: 'claude-session-1' }),
+    });
+    const registry = createModelRegistry({ surface: 'claude', env: FRONTIER_ENV });
+    const first = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry });
+    const second = await dispatchKernelTurn({ controlPlane: cp, runId, adapter, registry });
+    assert.equal(first.envelope.cacheIdentity.prefixDigest, second.envelope.cacheIdentity.prefixDigest, 'the two turns must share the same identity fingerprint for this regression to be meaningful');
+    assert.notEqual(first.receipt.sessionLineageId, second.receipt.sessionLineageId);
+  });
+});

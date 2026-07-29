@@ -9,6 +9,60 @@ import { buildPromptEnvelope } from './prompt-envelope.mjs';
 import { buildToolManifest } from './tool-manifest.mjs';
 import { resolveSessionLineage } from './session-affinity.mjs';
 import { buildKernelContextSegments } from '../../kernel/context-segments.mjs';
+import { resolveOptimizationModes } from './provider-prompt-policy.mjs';
+import { resolveCodexModelPolicy } from './codex-model-policy.mjs';
+import { resolveClaudeEffort } from './claude-effort-policy.mjs';
+
+// A decision carries no risk-shape data (security/migration/...) to the Host
+// today, only actionKind/riskTier/reasonCodes, so the recommendation below is
+// computed from those alone; `shapes` stays at each policy function's
+// default. `repeatedFailure` mirrors the predicate summarizeModelRouting()
+// already uses to count an escalated turn, so both readings of the same
+// decision agree on what counts as a retry escalation.
+const isRepeatedFailure = (decision) =>
+  (decision.reasonCodes || []).some((code) => code.endsWith('_ESCALATION') || code.endsWith('_REPLAN') || code === 'PROTECTED_OBLIGATION_FAILURE');
+
+// Maps each policy module's internal reason vocabulary onto the receipt's
+// closed MODEL_ESCALATION_REASONS enum; a reason with no honest mapping
+// (the default-path reasons) reports no escalation rather than 'unknown'.
+const ESCALATION_REASON_MAP = Object.freeze({
+  'protected-review': 'risk-tier',
+  'engineering-review': 'review-policy',
+  'planning-action': 'complexity',
+  'complex-implementation': 'complexity',
+  'routine-batch': 'complexity',
+  'repeated-failure-escalation': 'repeated-failure',
+  'repeated-failure': 'repeated-failure',
+  'user-requested-model': 'user-request',
+  'user-requested-reasoning': 'user-request',
+  'user-requested': 'user-request',
+});
+
+const firstMappedEscalationReason = (reasons = []) => {
+  for (const reason of reasons) {
+    const mapped = ESCALATION_REASON_MAP[reason];
+    if (mapped) return mapped;
+  }
+  return null;
+};
+
+// Resolves the Wave 5/6 provider model-policy recommendation for this turn.
+// Returned unconditionally (not gated on modelPolicyMode) so shadow mode can
+// still measure what *would* have been chosen; only the caller decides
+// whether to apply it to the resolution actually used for admission and
+// dispatch.
+export const resolveTurnModelPolicy = ({ decision, hostCapabilities } = {}) => {
+  const repeatedFailure = isRepeatedFailure(decision);
+  if (hostCapabilities.surface === 'codex') {
+    const policy = resolveCodexModelPolicy({ actionKind: decision.actionKind, riskTier: decision.riskTier, repeatedFailure });
+    return { model: policy.model, effort: policy.reasoning, reasons: policy.reasons };
+  }
+  if (hostCapabilities.surface === 'claude') {
+    const policy = resolveClaudeEffort({ actionKind: decision.actionKind, riskTier: decision.riskTier, triggers: repeatedFailure ? ['repeated-failure'] : [] });
+    return { model: null, effort: policy.effort, reasons: policy.reasons };
+  }
+  return null;
+};
 
 // Only the execution contract crosses to the worker (§4.4) — never the
 // planner's reasoning, the conversation, or unrelated repository context.
@@ -114,7 +168,22 @@ export const dispatchKernelTurn = async ({
   }
 
   const modelRegistry = registry || createModelRegistry({ surface: hostCapabilities.surface, runtimeHome, env, overrides });
-  const resolution = modelRegistry.resolve(decision.modelClass, overrides);
+  let resolution = modelRegistry.resolve(decision.modelClass, overrides);
+  // Wave 5/6: the model-policy recommendation is computed unconditionally so
+  // its reasons can be recorded on the receipt even in shadow mode, but it is
+  // only applied to the resolution admission and dispatch actually use when
+  // MOON_RELAY_KERNEL_MODEL_POLICY_MODE=on — shadow must not change what runs.
+  const modelPolicyMode = resolveOptimizationModes(env).modelPolicyMode;
+  const modelPolicyRecommendation = resolveTurnModelPolicy({ decision, hostCapabilities });
+  if (modelPolicyMode === 'on' && modelPolicyRecommendation) {
+    resolution = {
+      ...resolution,
+      model: modelPolicyRecommendation.model || resolution.model,
+      effort: modelPolicyRecommendation.effort || resolution.effort,
+      source: 'model-policy',
+      enforcementIntent: 'enforced',
+    };
+  }
   // K1: the capsule is the authority for what the worker may see and touch.
   // The flat contract is still passed for adapters that have not moved yet.
   const executionCapsule = turn.executionCapsule || hostDirective.executionCapsule || null;
@@ -161,10 +230,13 @@ export const dispatchKernelTurn = async ({
   // cache-stable prompt and breakpoints described in Waves 3-5.
   const envelope = buildTurnPromptEnvelope({ modelInput, decision, resolution, hostCapabilities, env });
   // No persisted cross-turn lineage store exists yet (§Wave 7 follow-up), so
-  // `previous` stays null and continuity is not claimed; the affinity key
-  // and its reset reasons are still recorded so the fields are populated on
-  // every real receipt instead of forced to null.
-  const sessionLineage = resolveSessionLineage({ previous: null, current: envelope.cacheIdentity, role: decision.role });
+  // `previous` stays null and continuity is never claimed (`continued` is
+  // always false here). `instanceSeed` still keys the id off this turn's own
+  // decisionId, so two independent turns that happen to share the same
+  // identity fingerprint do not mint the same sessionLineageId — without it,
+  // an aggregate that groups receipts by lineage id would misread them as one
+  // continued session.
+  const sessionLineage = resolveSessionLineage({ previous: null, current: envelope.cacheIdentity, role: decision.role, instanceSeed: decision.decisionId });
 
   const startedAt = now();
   let dispatch;
@@ -195,6 +267,9 @@ export const dispatchKernelTurn = async ({
     finishedAt: now(),
     envelope,
     sessionLineage,
+    cacheContext: {
+      modelEscalationReason: modelPolicyMode === 'on' ? firstMappedEscalationReason(modelPolicyRecommendation?.reasons) : null,
+    },
   });
   await controlPlane.recordModelUsage(runId, receipt);
   return { schemaVersion: 1, runId, dispatched: true, modelInput, hostDirective, resolution, dispatch, executionCapsule, admission, receipt, envelope };

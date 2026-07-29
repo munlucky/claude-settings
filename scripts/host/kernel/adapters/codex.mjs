@@ -3,6 +3,7 @@
 // implementation turns. Model selection happens per worker invocation only.
 
 import { materializeCodexProfiles } from '../codex-profile-materializer.mjs';
+import { selectCodexProfileName } from '../codex-model-policy.mjs';
 
 export const CODEX_CAPABILITIES = Object.freeze({
   surface: 'codex',
@@ -29,11 +30,6 @@ export const CODEX_CAPABILITIES = Object.freeze({
   supportsUltra: false,
 });
 
-export const CODEX_PROFILE_FOR_CLASS = Object.freeze({
-  frontier_reasoning: 'kernel-frontier',
-  value_coding: 'kernel-value',
-});
-
 // Support order (§11.2): per-worker model override, then a separate session
 // override, then a named launch profile; anything else can only be advisory.
 export const selectCodexMechanism = ({ capabilities, resolution }) => {
@@ -50,7 +46,10 @@ export const buildCodexInvocation = ({ decision, resolution, capabilities }) => 
     mechanism,
     model: resolution.model,
     effort: resolution.effort,
-    profile: mechanism === 'launch-profile' ? CODEX_PROFILE_FOR_CLASS[decision.modelClass] || null : null,
+    // Named by the materialized profile (default/plan/review/batch), which a
+    // Kernel model class alone cannot distinguish — a protected review and a
+    // routine implementation can share `frontier_reasoning`.
+    profile: mechanism === 'launch-profile' ? selectCodexProfileName({ actionKind: decision.actionKind }) : null,
     sandbox: decision.permissions === 'workspace_write' ? 'workspace-write' : 'read-only',
     approvalPolicy: decision.permissions === 'workspace_write' ? 'on-failure' : 'on-request',
     freshSessionRequired: decision.independentContextRequired === true || decision.role === 'reviewer',

@@ -13,14 +13,30 @@ const withTempHome = async (fn) => {
   try { return await fn(dir); } finally { await rm(dir, { recursive: true, force: true }); }
 };
 
-test('all four profiles materialize under the Kernel runtime home', async () => {
+test('all four profiles plus the AGENTS contract materialize under the Kernel runtime home', async () => {
   await withTempHome(async (runtimeHome) => {
     const result = await materializeCodexProfiles({ runtimeHome });
-    assert.deepEqual(result.written.map((w) => w.profile), [...CODEX_PROFILE_NAMES]);
+    assert.deepEqual(result.written.map((w) => w.profile), [...CODEX_PROFILE_NAMES, 'agents-md']);
     for (const { path: file } of result.written) {
       assert.ok(file.startsWith(path.join(runtimeHome, 'codex')), `profile escaped the runtime home: ${file}`);
       assert.ok((await readFile(file, 'utf8')).length > 0);
     }
+  });
+});
+
+test('AGENTS.md materialization can be opted out of', async () => {
+  await withTempHome(async (runtimeHome) => {
+    const result = await materializeCodexProfiles({ runtimeHome, includeAgentsMd: false });
+    assert.deepEqual(result.written.map((w) => w.profile), [...CODEX_PROFILE_NAMES]);
+  });
+});
+
+test('the materialized AGENTS.md matches the packaged reference', async () => {
+  await withTempHome(async (runtimeHome) => {
+    await materializeCodexProfiles({ runtimeHome });
+    const materialized = await readFile(path.join(runtimeHome, 'codex', 'AGENTS.md'), 'utf8');
+    const packaged = await readFile('package/profile-templates/codex/AGENTS.md', 'utf8');
+    assert.equal(materialized, packaged);
   });
 });
 
